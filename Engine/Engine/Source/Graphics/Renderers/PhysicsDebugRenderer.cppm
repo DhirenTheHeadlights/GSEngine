@@ -81,7 +81,7 @@ export namespace gse::renderer::physics_debug {
 
 	struct state {
 		gpu::pipeline pipeline;
-		per_frame_resource<vulkan::descriptor_region> descriptors;
+		per_frame_resource<gpu::descriptor_region> descriptors;
 
 		resource::handle<shader> shader_handle;
 
@@ -119,7 +119,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, gpu::context
 		max_vertices *= 2;
 	}
 
-	vertex_buffer = gpu::create_buffer(ctx, {
+	vertex_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = max_vertices * sizeof(debug_vertex),
 		.usage = gpu::buffer_flag::vertex
 	});
@@ -141,29 +141,20 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 
 	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 
-	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
-		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		s.descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
+		s.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
 
-		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
-			{
-				"CameraUBO",
-				{
-					.buffer = s.ubo_allocations["CameraUBO"][i].native().buffer,
-					.offset = 0,
-					.range = camera_ubo.size
-				}
-			}
-		};
-
-		gpu::write_descriptors(ctx, s.descriptors[i], *s.shader_handle, buffer_infos);
+		gpu::descriptor_writer(s.shader_handle, s.descriptors[i])
+			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
+			.commit();
 	}
 
-	s.pipeline = gpu::create_graphics_pipeline(ctx, *s.shader_handle, {
+	s.pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.shader_handle, {
 		.rasterization = {
 			.polygon = gpu::polygon_mode::line,
 			.cull = gpu::cull_mode::none
@@ -440,13 +431,12 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
 
 	auto pass = ctx.graph().add_pass<state>();
-	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index].native());
+	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
 
 	const vec2u ext_size{ ext_w, ext_h };
 
-	pass
-		.color_output_load()
-		.record([&s, frame_index, ext_size, vertex_count, &vertex_buffer](vulkan::recording_context& ctx) {
+	pass.color_output_load()
+		.record([&s, frame_index, ext_size, vertex_count, &vertex_buffer](gpu::recording_context& ctx) {
 			ctx.bind(s.pipeline);
 			ctx.set_viewport(ext_size);
 			ctx.set_scissor(ext_size);

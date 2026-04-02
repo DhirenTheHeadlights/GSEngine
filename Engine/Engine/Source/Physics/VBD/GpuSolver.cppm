@@ -293,7 +293,7 @@ export namespace gse::vbd {
 			gpu::pipeline collision_build_adjacency_pipeline;
 			gpu::pipeline update_joint_lambda_pipeline;
 
-			vulkan::descriptor_region descriptors;
+			gpu::descriptor_region descriptors;
 			gpu::compute_queue queue;
 			float solve_ms = 0.f;
 			bool descriptors_initialized = false;
@@ -374,23 +374,23 @@ auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
 	const auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
 	const auto storage_src_dst = storage_src | gpu::buffer_flag::transfer_dst;
 
-	m_body_buffer = gpu::create_buffer(ctx, {
+	m_body_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = max_bodies * m_body_layout.stride,
 		.usage = storage_src_dst
 	});
 
-	m_contact_buffer = gpu::create_buffer(ctx, {
+	m_contact_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = max_contacts * m_contact_layout.stride,
 		.usage = storage_src
 	});
 
-	m_motor_buffer = gpu::create_buffer(ctx, {
+	m_motor_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = max_motors * m_motor_layout.stride,
 		.usage = gpu::buffer_flag::storage
 	});
 
 	const std::size_t color_buffer_size = max_colors * sizeof(std::uint32_t) * 2 + max_bodies * sizeof(std::uint32_t);
-	m_color_buffer = gpu::create_buffer(ctx, {
+	m_color_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = color_buffer_size,
 		.usage = gpu::buffer_flag::storage
 	});
@@ -402,36 +402,36 @@ auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
 		max_bodies * sizeof(std::uint32_t) * 2 +
 		max_joints * 2 * sizeof(std::uint32_t);
 
-	m_body_contact_map_buffer = gpu::create_buffer(ctx, {
+	m_body_contact_map_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = map_buffer_size,
 		.usage = gpu::buffer_flag::storage
 	});
 
-	m_solve_state_buffer = gpu::create_buffer(ctx, {
+	m_solve_state_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = max_bodies * solve_state_float4s_per_body * sizeof(float) * 4,
 		.usage = gpu::buffer_flag::storage
 	});
 
 	const std::size_t collision_pair_size = sizeof(std::uint32_t) + max_collision_pairs * 2 * sizeof(std::uint32_t);
-	m_collision_pair_buffer = gpu::create_buffer(ctx, {
+	m_collision_pair_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = collision_pair_size,
 		.usage = gpu::buffer_flag::storage
 	});
 
 	const std::size_t collision_state_size = collision_state_uints * sizeof(std::uint32_t);
-	m_collision_state_buffer = gpu::create_buffer(ctx, {
+	m_collision_state_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = collision_state_size,
 		.usage = storage_src
 	});
 
 	const std::size_t warm_start_size = max_contacts * m_warm_start_layout.stride;
-	m_warm_start_buffer = gpu::create_buffer(ctx, {
+	m_warm_start_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = std::max<std::size_t>(warm_start_size, 16),
 		.usage = gpu::buffer_flag::storage
 	});
 
 	const std::size_t joint_buffer_size = max_joints * m_joint_layout.stride;
-	m_joint_buffer = gpu::create_buffer(ctx, {
+	m_joint_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = std::max<std::size_t>(joint_buffer_size, 16),
 		.usage = storage_src
 	});
@@ -442,7 +442,7 @@ auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
 		collision_state_uints * sizeof(std::uint32_t) +
 		max_joints * m_joint_layout.stride;
 
-	m_readback_buffer = gpu::create_buffer(ctx, {
+	m_readback_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = readback_size,
 		.usage = storage_dst
 	});
@@ -875,7 +875,7 @@ auto gse::vbd::gpu_solver::total_substeps() const -> std::uint32_t {
 }
 
 auto gse::vbd::gpu_solver::commit_upload() -> void {
-	if (!m_pending_dispatch || m_body_count == 0) return;
+	if (!m_buffers_created || !m_pending_dispatch || m_body_count == 0) return;
 
 	if (m_latest_gpu_body_count > 0 && !m_latest_gpu_body_data.empty() && !m_upload_body_data.empty()) {
 		const auto& [
@@ -1177,16 +1177,16 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	ctx.instantly_load(m_compute.collision_build_adjacency);
 	ctx.instantly_load(m_compute.update_joint_lambda);
 
-	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.predict, "vbd_push_constants");
-	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.solve_color, "vbd_push_constants");
-	m_compute.update_lambda_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.update_lambda, "vbd_push_constants");
-	m_compute.derive_velocities_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.derive_velocities, "vbd_push_constants");
-	m_compute.finalize_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.finalize, "vbd_push_constants");
-	m_compute.collision_reset_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_reset, "vbd_push_constants");
-	m_compute.collision_broad_phase_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_broad_phase, "vbd_push_constants");
-	m_compute.collision_narrow_phase_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_narrow_phase, "vbd_push_constants");
-	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_build_adjacency, "vbd_push_constants");
-	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.update_joint_lambda, "vbd_push_constants");
+	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.predict, "vbd_push_constants");
+	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.solve_color, "vbd_push_constants");
+	m_compute.update_lambda_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.update_lambda, "vbd_push_constants");
+	m_compute.derive_velocities_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.derive_velocities, "vbd_push_constants");
+	m_compute.finalize_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.finalize, "vbd_push_constants");
+	m_compute.collision_reset_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_reset, "vbd_push_constants");
+	m_compute.collision_broad_phase_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_broad_phase, "vbd_push_constants");
+	m_compute.collision_narrow_phase_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_narrow_phase, "vbd_push_constants");
+	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_build_adjacency, "vbd_push_constants");
+	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.update_joint_lambda, "vbd_push_constants");
 
 	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
 		const auto block = sh->uniform_block(name);
@@ -1299,29 +1299,28 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 
 	create_buffers(ctx);
 
-	m_compute.queue = gpu::create_compute_queue(ctx);
+	m_compute.queue = gpu::create_compute_queue(ctx.device_ref());
 
 	m_compute.initialized = true;
 }
 
 auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
+	if (!m_buffers_created) return;
 	if (!m_compute.descriptors_initialized) {
-		m_compute.descriptors = gpu::allocate_descriptors(ctx, *m_compute.predict);
+		m_compute.descriptors = gpu::allocate_descriptors(ctx.device_ref(), *m_compute.predict);
 
-		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
-			{ "body_data",         { .buffer = m_body_buffer.native().buffer,             .offset = 0, .range = m_body_buffer.size() } },
-			{ "contact_data",      { .buffer = m_contact_buffer.native().buffer,          .offset = 0, .range = m_contact_buffer.size() } },
-			{ "motor_data",        { .buffer = m_motor_buffer.native().buffer,            .offset = 0, .range = m_motor_buffer.size() } },
-			{ "color_data",        { .buffer = m_color_buffer.native().buffer,            .offset = 0, .range = m_color_buffer.size() } },
-			{ "body_contact_map",  { .buffer = m_body_contact_map_buffer.native().buffer, .offset = 0, .range = m_body_contact_map_buffer.size() } },
-			{ "solve_state",       { .buffer = m_solve_state_buffer.native().buffer,      .offset = 0, .range = m_solve_state_buffer.size() } },
-			{ "collision_pairs",   { .buffer = m_collision_pair_buffer.native().buffer,   .offset = 0, .range = m_collision_pair_buffer.size() } },
-			{ "collision_state",   { .buffer = m_collision_state_buffer.native().buffer,  .offset = 0, .range = m_collision_state_buffer.size() } },
-			{ "warm_starts",       { .buffer = m_warm_start_buffer.native().buffer,       .offset = 0, .range = m_warm_start_buffer.size() } },
-			{ "joint_data",        { .buffer = m_joint_buffer.native().buffer,            .offset = 0, .range = m_joint_buffer.size() } }
-		};
-
-		gpu::write_descriptors(ctx, m_compute.descriptors, *m_compute.predict, buffer_infos);
+		gpu::descriptor_writer(m_compute.predict, m_compute.descriptors)
+			.buffer("body_data", m_body_buffer)
+			.buffer("contact_data", m_contact_buffer)
+			.buffer("motor_data", m_motor_buffer)
+			.buffer("color_data", m_color_buffer)
+			.buffer("body_contact_map", m_body_contact_map_buffer)
+			.buffer("solve_state", m_solve_state_buffer)
+			.buffer("collision_pairs", m_collision_pair_buffer)
+			.buffer("collision_state", m_collision_state_buffer)
+			.buffer("warm_starts", m_warm_start_buffer)
+			.buffer("joint_data", m_joint_buffer)
+			.commit();
 
 		m_compute.descriptors_initialized = true;
 	}

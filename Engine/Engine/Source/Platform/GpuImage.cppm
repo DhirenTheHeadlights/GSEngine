@@ -9,10 +9,21 @@ import gse.utility;
 import gse.math;
 
 export namespace gse::gpu {
+	class image_view {
+	public:
+		image_view() = default;
+		explicit image_view(vk::ImageView handle) : m_handle(handle) {}
+
+		[[nodiscard]] auto native() const -> vk::ImageView { return m_handle; }
+		explicit operator bool() const { return static_cast<bool>(m_handle); }
+	private:
+		vk::ImageView m_handle{};
+	};
+
 	class image final : public non_copyable {
 	public:
 		image() = default;
-		image(vulkan::image_resource&& resource, image_format fmt, vec2u extent);
+		image(vulkan::image_resource&& resource, image_format fmt, vec2u extent, std::vector<vk::raii::ImageView>&& layer_views = {});
 		image(image&&) noexcept = default;
 		auto operator=(image&&) noexcept -> image& = default;
 
@@ -22,12 +33,15 @@ export namespace gse::gpu {
 		auto set_layout(image_layout l) -> void;
 
 		[[nodiscard]] auto native(this auto&& self) -> auto&& { return std::forward_like<decltype(self)>(self.m_resource); }
+		[[nodiscard]] auto view(this const image& self) -> image_view { return image_view(self.m_resource.view); }
+		[[nodiscard]] auto layer_view(std::uint32_t layer) const -> image_view;
 
 		explicit operator bool() const;
 	private:
 		vulkan::image_resource m_resource;
 		image_format m_format = image_format::d32_sfloat;
 		vec2u m_extent = { 1, 1 };
+		std::vector<vk::raii::ImageView> m_layer_views;
 	};
 }
 
@@ -49,8 +63,12 @@ namespace {
 	}
 }
 
-gse::gpu::image::image(vulkan::image_resource&& resource, image_format fmt, vec2u extent)
-	: m_resource(std::move(resource)), m_format(fmt), m_extent(extent) {}
+gse::gpu::image::image(vulkan::image_resource&& resource, image_format fmt, vec2u extent, std::vector<vk::raii::ImageView>&& layer_views)
+	: m_resource(std::move(resource)), m_format(fmt), m_extent(extent), m_layer_views(std::move(layer_views)) {}
+
+auto gse::gpu::image::layer_view(const std::uint32_t layer) const -> image_view {
+	return image_view(*m_layer_views[layer]);
+}
 
 auto gse::gpu::image::layout(this const image& self) -> image_layout {
 	return from_vk_layout(self.m_resource.current_layout);

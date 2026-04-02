@@ -13,8 +13,8 @@ export namespace gse::renderer::cull_compute {
 	struct state {
 		resource::handle<shader> shader_handle;
 		gpu::pipeline pipeline;
-		per_frame_resource<vulkan::descriptor_region> normal_descriptors;
-		per_frame_resource<vulkan::descriptor_region> skinned_descriptors;
+		per_frame_resource<gpu::descriptor_region> normal_descriptors;
+		per_frame_resource<gpu::descriptor_region> skinned_descriptors;
 		per_frame_resource<gpu::buffer> frustum_buffer;
 		per_frame_resource<gpu::buffer> batch_info_buffer;
 		std::uint32_t batch_stride = 0;
@@ -56,68 +56,43 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 
 	const auto* gc = phase.try_state_of<geometry_collector::state>();
 
-	s.pipeline = gpu::create_compute_pipeline(ctx, *s.shader_handle, "push_constants");
+	s.pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *s.shader_handle, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		constexpr vk::DeviceSize frustum_size = sizeof(std::array<vec4f, 6>);
-		s.frustum_buffer[i] = gpu::create_buffer(ctx, {
+		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
+		s.frustum_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = frustum_size,
 			.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
 		});
 
-		const vk::DeviceSize batch_info_size = geometry_collector::state::max_batches * 2 * s.batch_stride;
-		s.batch_info_buffer[i] = gpu::create_buffer(ctx, {
+		const std::size_t batch_info_size = geometry_collector::state::max_batches * 2 * s.batch_stride;
+		s.batch_info_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = batch_info_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 	}
 
-	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
-		s.normal_descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
-		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+		s.normal_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
+		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
 	}
 
-	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
-		const vk::DescriptorBufferInfo frustum_info{
-			.buffer = s.frustum_buffer[i].native().buffer,
-			.offset = 0,
-			.range = sizeof(std::array<vec4f, 6>)
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+		auto write_shared = [&](gpu::descriptor_writer& w) -> gpu::descriptor_writer& {
+			return w.buffer("FrustumUBO", s.frustum_buffer[i], 0, sizeof(std::array<vec4f, 6>))
+				.buffer("instances", gc->instance_buffer[i])
+				.buffer("batches", s.batch_info_buffer[i]);
 		};
 
-		const vk::DescriptorBufferInfo instance_info{
-			.buffer = gc->instance_buffer[i].native().buffer,
-			.offset = 0,
-			.range = gc->instance_buffer[i].size()
-		};
+		gpu::descriptor_writer normal_writer(s.shader_handle, s.normal_descriptors[i]);
+		write_shared(normal_writer)
+			.buffer("indirectCommands", gc->normal_indirect_commands_buffer[i])
+			.commit();
 
-		const vk::DescriptorBufferInfo batch_info{
-			.buffer = s.batch_info_buffer[i].native().buffer,
-			.offset = 0,
-			.range = s.batch_info_buffer[i].size()
-		};
-
-		const std::unordered_map<std::string, vk::DescriptorBufferInfo> shared_infos = {
-			{ "FrustumUBO", frustum_info },
-			{ "instances", instance_info },
-			{ "batches", batch_info }
-		};
-
-		auto normal_infos = shared_infos;
-		normal_infos["indirectCommands"] = {
-			.buffer = gc->normal_indirect_commands_buffer[i].native().buffer,
-			.offset = 0,
-			.range = gc->normal_indirect_commands_buffer[i].size()
-		};
-
-		auto skinned_infos = shared_infos;
-		skinned_infos["indirectCommands"] = {
-			.buffer = gc->skinned_indirect_commands_buffer[i].native().buffer,
-			.offset = 0,
-			.range = gc->skinned_indirect_commands_buffer[i].size()
-		};
-
-		gpu::write_descriptors(ctx, s.normal_descriptors[i], *s.shader_handle, normal_infos);
-		gpu::write_descriptors(ctx, s.skinned_descriptors[i], *s.shader_handle, skinned_infos);
+		gpu::descriptor_writer skinned_writer(s.shader_handle, s.skinned_descriptors[i]);
+		write_shared(skinned_writer)
+			.buffer("indirectCommands", gc->skinned_indirect_commands_buffer[i])
+			.commit();
 	}
 }
 
@@ -178,12 +153,12 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 			cull_pc.set("batch_offset", 0u);
 
 			auto normal_pass = graph.add_pass<state>();
-			normal_pass.track(s.frustum_buffer[frame_index].native());
-			normal_pass.track(s.batch_info_buffer[frame_index].native());
+			normal_pass.track(s.frustum_buffer[frame_index]);
+			normal_pass.track(s.batch_info_buffer[frame_index]);
 
 			normal_pass
-				.writes(vulkan::storage(gc->normal_indirect_commands_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eComputeShader))
-				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
+				.writes(gpu::storage_write(gc->normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader))
+				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), cull_pc = std::move(cull_pc)](gpu::recording_context& ctx) {
 					ctx.bind(s.pipeline);
 					ctx.bind_descriptors(s.pipeline, s.normal_descriptors[frame_index]);
 					ctx.push(s.pipeline, cull_pc);
@@ -196,13 +171,13 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 			cull_pc.set("batch_offset", static_cast<std::uint32_t>(normal_batches.size()));
 
 			auto skinned_pass = graph.add_pass<state>();
-			skinned_pass.track(s.frustum_buffer[frame_index].native());
-			skinned_pass.track(s.batch_info_buffer[frame_index].native());
+			skinned_pass.track(s.frustum_buffer[frame_index]);
+			skinned_pass.track(s.batch_info_buffer[frame_index]);
 
 			skinned_pass
 				.after<skin_compute::state>()
-				.writes(vulkan::storage(gc->skinned_indirect_commands_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eComputeShader))
-				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
+				.writes(gpu::storage_write(gc->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader))
+				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), cull_pc = std::move(cull_pc)](gpu::recording_context& ctx) {
 					ctx.bind(s.pipeline);
 					ctx.bind_descriptors(s.pipeline, s.skinned_descriptors[frame_index]);
 					ctx.push(s.pipeline, cull_pc);
@@ -213,12 +188,12 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 		if (!normal_batches.empty()) {
 			auto normal_upload = graph.add_pass<state>();
 			normal_upload.track(gc->normal_indirect_commands_buffer[frame_index].native());
-			normal_upload.record([](vulkan::recording_context&) {});
+			normal_upload.record([](gpu::recording_context&) {});
 		}
 		if (!skinned_batches.empty()) {
 			auto skinned_upload = graph.add_pass<state>();
 			skinned_upload.track(gc->skinned_indirect_commands_buffer[frame_index].native());
-			skinned_upload.record([](vulkan::recording_context&) {});
+			skinned_upload.record([](gpu::recording_context&) {});
 		}
 	}
 }

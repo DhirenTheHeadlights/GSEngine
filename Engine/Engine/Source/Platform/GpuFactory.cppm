@@ -6,14 +6,16 @@ import :gpu_types;
 import :gpu_buffer;
 import :gpu_pipeline;
 import :gpu_image;
+import :gpu_descriptor;
+import :gpu_descriptor_writer;
 import :gpu_compute;
 import :gpu_device;
-import :gpu_context;
 import :shader;
 import :render_graph;
 
 import gse.assert;
 import :vulkan_allocator;
+import :vulkan_uploader;
 import gse.utility;
 
 export namespace gse::gpu {
@@ -57,16 +59,26 @@ export namespace gse::gpu {
 	auto allocate_descriptors(
 		device& dev,
 		const shader& s
-	) -> vulkan::descriptor_region;
+	) -> descriptor_region;
 
 	auto write_descriptors(
 		device& dev,
-		const vulkan::descriptor_region& region,
+		const descriptor_region& region,
 		const shader& s,
-		const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
-		const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos = {},
-		const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos = {}
+		const std::unordered_map<std::string, buffer_binding>& buffer_infos,
+		const std::unordered_map<std::string, image_binding>& image_infos = {},
+		const std::unordered_map<std::string, std::vector<image_binding>>& image_array_infos = {}
 	) -> void;
+
+	auto create_descriptor_writer(
+		resource::handle<shader> s,
+		descriptor_region& region
+	) -> descriptor_writer;
+
+	auto create_push_writer(
+		device& dev,
+		resource::handle<shader> s
+	) -> descriptor_writer;
 
 	struct buffer_upload {
 		const buffer* dst = nullptr;
@@ -84,15 +96,20 @@ export namespace gse::gpu {
 		device& dev
 	) -> compute_queue;
 
-	inline auto create_buffer(context& ctx, const buffer_desc& desc) -> buffer { return create_buffer(ctx.device_ref(), desc); }
-	inline auto create_graphics_pipeline(context& ctx, const shader& s, const graphics_pipeline_desc& desc = {}) -> pipeline { return create_graphics_pipeline(ctx.device_ref(), s, desc); }
-	inline auto create_compute_pipeline(context& ctx, const shader& s, const std::string& push_constant_block = {}) -> pipeline { return create_compute_pipeline(ctx.device_ref(), s, push_constant_block); }
-	inline auto create_image(context& ctx, const image_desc& desc) -> image { return create_image(ctx.device_ref(), desc); }
-	inline auto create_sampler(context& ctx, const sampler_desc& desc = {}) -> sampler { return create_sampler(ctx.device_ref(), desc); }
-	inline auto allocate_descriptors(context& ctx, const shader& s) -> vulkan::descriptor_region { return allocate_descriptors(ctx.device_ref(), s); }
-	inline auto write_descriptors(context& ctx, const vulkan::descriptor_region& region, const shader& s, const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos = {}, const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos = {}) -> void { write_descriptors(ctx.device_ref(), region, s, buffer_infos, image_infos, image_array_infos); }
-	inline auto upload_to_buffers(context& ctx, std::span<const buffer_upload> uploads) -> void { upload_to_buffers(ctx.device_ref(), uploads); }
-	inline auto create_compute_queue(context& ctx) -> compute_queue { return create_compute_queue(ctx.device_ref()); }
+	auto upload_image_2d(
+		device& dev,
+		image& img,
+		const void* pixel_data,
+		std::size_t data_size
+	) -> void;
+
+	auto upload_image_layers(
+		device& dev,
+		image& img,
+		const std::vector<const void*>& face_data,
+		std::size_t bytes_per_face
+	) -> void;
+
 }
 
 namespace {
@@ -180,6 +197,57 @@ namespace {
 		return vk::BorderColor::eFloatOpaqueWhite;
 	}
 
+	auto to_vk(gse::gpu::image_layout l) -> vk::ImageLayout {
+		switch (l) {
+			case gse::gpu::image_layout::general:          return vk::ImageLayout::eGeneral;
+			case gse::gpu::image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
+			default:                                       return vk::ImageLayout::eUndefined;
+		}
+	}
+
+	auto to_vk_buffer_infos(const std::unordered_map<std::string, gse::gpu::buffer_binding>& bindings) -> std::unordered_map<std::string, vk::DescriptorBufferInfo> {
+		std::unordered_map<std::string, vk::DescriptorBufferInfo> result;
+		result.reserve(bindings.size());
+		for (const auto& [name, b] : bindings) {
+			result.emplace(name, vk::DescriptorBufferInfo{
+				.buffer = b.buf->native().buffer,
+				.offset = static_cast<vk::DeviceSize>(b.offset),
+				.range = static_cast<vk::DeviceSize>(b.range)
+			});
+		}
+		return result;
+	}
+
+	auto to_vk_image_infos(const std::unordered_map<std::string, gse::gpu::image_binding>& bindings) -> std::unordered_map<std::string, vk::DescriptorImageInfo> {
+		std::unordered_map<std::string, vk::DescriptorImageInfo> result;
+		result.reserve(bindings.size());
+		for (const auto& [name, b] : bindings) {
+			result.emplace(name, vk::DescriptorImageInfo{
+				.sampler = b.samp ? b.samp->native() : nullptr,
+				.imageView = b.img->native().view,
+				.imageLayout = to_vk(b.layout)
+			});
+		}
+		return result;
+	}
+
+	auto to_vk_image_array_infos(const std::unordered_map<std::string, std::vector<gse::gpu::image_binding>>& bindings) -> std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> {
+		std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> result;
+		result.reserve(bindings.size());
+		for (const auto& [name, arr] : bindings) {
+			auto& vec = result[name];
+			vec.reserve(arr.size());
+			for (const auto& b : arr) {
+				vec.push_back({
+					.sampler = b.samp ? b.samp->native() : nullptr,
+					.imageView = b.img->native().view,
+					.imageLayout = to_vk(b.layout)
+				});
+			}
+		}
+		return result;
+	}
+
 	auto make_blend_attachment(gse::gpu::blend_preset preset) -> vk::PipelineColorBlendAttachmentState {
 		switch (preset) {
 			case gse::gpu::blend_preset::none:
@@ -232,8 +300,9 @@ auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
 			case image_format::r8g8b8_srgb:      return vk::Format::eR8G8B8Srgb;
 			case image_format::r8g8b8_unorm:     return vk::Format::eR8G8B8Unorm;
 			case image_format::r8_unorm:          return vk::Format::eR8Unorm;
-			case image_format::b10g11r11_ufloat:  return vk::Format::eB10G11R11UfloatPack32;
-			case image_format::r8g8_snorm:        return vk::Format::eR8G8Snorm;
+			case image_format::b10g11r11_ufloat:      return vk::Format::eB10G11R11UfloatPack32;
+			case image_format::r8g8_snorm:            return vk::Format::eR8G8Snorm;
+			case image_format::r16g16b16a16_sfloat:   return vk::Format::eR16G16B16A16Sfloat;
 		}
 		return vk::Format::eD32Sfloat;
 	};
@@ -290,12 +359,19 @@ auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
 		const auto aspect = is_depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
 		const auto img = resource.image;
 
-		dev.add_transient_work([img, target, aspect, layers](const auto& cmd) {
+		dev.add_transient_work([img, target, aspect, layers, is_depth](const auto& cmd) {
+			const auto dst_stage = is_depth
+				? (vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests)
+				: vk::PipelineStageFlagBits2::eAllCommands;
+			const auto dst_access = is_depth
+				? (vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead)
+				: vk::AccessFlagBits2::eShaderRead;
+
 			const vk::ImageMemoryBarrier2 barrier{
 				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
 				.srcAccessMask = {},
-				.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-				.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+				.dstStageMask = dst_stage,
+				.dstAccessMask = dst_access,
 				.oldLayout = vk::ImageLayout::eUndefined,
 				.newLayout = target,
 				.image = img,
@@ -315,7 +391,28 @@ auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
 		resource.current_layout = target;
 	}
 
-	return image(std::move(resource), desc.format, desc.size);
+	std::vector<vk::raii::ImageView> layer_views;
+	if (is_cube) {
+		const auto& vk_device = dev.logical_device();
+		const auto aspect = is_depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
+		layer_views.reserve(layers);
+		for (std::uint32_t i = 0; i < layers; ++i) {
+			layer_views.push_back(vk_device.createImageView({
+				.image = resource.image,
+				.viewType = vk::ImageViewType::e2D,
+				.format = vk_format,
+				.subresourceRange = {
+					.aspectMask = aspect,
+					.baseMipLevel = 0,
+					.levelCount = 1,
+					.baseArrayLayer = i,
+					.layerCount = 1
+				}
+			}));
+		}
+	}
+
+	return image(std::move(resource), desc.format, desc.size, std::move(layer_views));
 }
 
 auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const graphics_pipeline_desc& desc) -> pipeline {
@@ -512,19 +609,27 @@ auto gse::gpu::create_sampler(device& dev, const sampler_desc& desc) -> sampler 
 	return sampler(vk_device.createSampler(info));
 }
 
-auto gse::gpu::allocate_descriptors(device& dev, const shader& s) -> vulkan::descriptor_region {
-	return s.allocate_descriptors(dev.descriptor_heap());
+auto gse::gpu::allocate_descriptors(device& dev, const shader& s) -> descriptor_region {
+	return descriptor_region(s.allocate_descriptors(dev.descriptor_heap()));
 }
 
 auto gse::gpu::write_descriptors(
 	device& dev,
-	const vulkan::descriptor_region& region,
+	const descriptor_region& region,
 	const shader& s,
-	const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
-	const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos,
-	const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos
+	const std::unordered_map<std::string, buffer_binding>& buffer_infos,
+	const std::unordered_map<std::string, image_binding>& image_infos,
+	const std::unordered_map<std::string, std::vector<image_binding>>& image_array_infos
 ) -> void {
-	s.write_descriptors(region, buffer_infos, image_infos, image_array_infos);
+	s.write_descriptors(region.native(), to_vk_buffer_infos(buffer_infos), to_vk_image_infos(image_infos), to_vk_image_array_infos(image_array_infos));
+}
+
+auto gse::gpu::create_descriptor_writer(resource::handle<shader> s, descriptor_region& region) -> descriptor_writer {
+	return descriptor_writer(std::move(s), region);
+}
+
+auto gse::gpu::create_push_writer(device& dev, resource::handle<shader> s) -> descriptor_writer {
+	return descriptor_writer(std::move(s), dev.descriptor_heap());
 }
 
 auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_upload> uploads) -> void {
@@ -539,7 +644,8 @@ auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_uploa
 
 	std::vector<upload_entry> entries;
 	entries.reserve(uploads.size());
-	for (const auto& [dst, data, size, dst_offset] : uploads) {
+	for (std::size_t i = 0; i < uploads.size(); ++i) {
+		const auto& [dst, data, size, dst_offset] = uploads[i];
 		entries.push_back({
 			.dst = dst->native().buffer,
 			.data = data,
@@ -564,6 +670,16 @@ auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_uploa
 
 		return transient;
 	});
+}
+
+auto gse::gpu::upload_image_2d(device& dev, image& img, const void* pixel_data, const std::size_t data_size) -> void {
+	vulkan::uploader::upload_image_2d(dev.runtime_ref(), img.native(), img.extent(), pixel_data, data_size, vk::ImageLayout::eShaderReadOnlyOptimal);
+	img.set_layout(image_layout::shader_read_only);
+}
+
+auto gse::gpu::upload_image_layers(device& dev, image& img, const std::vector<const void*>& face_data, const std::size_t bytes_per_face) -> void {
+	vulkan::uploader::upload_image_layers(dev.runtime_ref(), img.native(), img.extent(), face_data, bytes_per_face, vk::ImageLayout::eShaderReadOnlyOptimal);
+	img.set_layout(image_layout::shader_read_only);
 }
 
 auto gse::gpu::create_compute_queue(device& dev) -> compute_queue {

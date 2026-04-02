@@ -101,7 +101,8 @@ export namespace gse::gpu {
 		r8g8b8_unorm,
 		r8_unorm,
 		b10g11r11_ufloat,
-		r8g8_snorm
+		r8g8_snorm,
+		r16g16b16a16_sfloat
 	};
 
 	enum class image_view_type : std::uint8_t {
@@ -142,5 +143,29 @@ export namespace gse::gpu {
 	enum class bind_point : std::uint8_t {
 		graphics,
 		compute
+	};
+
+	enum class pipeline_stage : std::uint8_t {
+		vertex_shader,
+		fragment_shader,
+		compute_shader,
+		draw_indirect,
+		late_fragment_tests,
+	};
+
+	struct draw_indexed_indirect_command {
+		std::uint32_t index_count;
+		std::uint32_t instance_count;
+		std::uint32_t first_index;
+		std::int32_t  vertex_offset;
+		std::uint32_t first_instance;
+	};
+
+	struct color_clear {
+		float r = 0.0f, g = 0.0f, b = 0.0f, a = 1.0f;
+	};
+
+	struct depth_clear {
+		float depth = 1.0f;
 	};
 }

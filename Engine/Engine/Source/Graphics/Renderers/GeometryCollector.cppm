@@ -236,37 +236,37 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
-		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
+		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
 		constexpr std::size_t skin_buffer_size = state::max_skin_matrices * sizeof(mat4f);
-		s.skin_buffer[i] = gpu::create_buffer(ctx, {
+		s.skin_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = skin_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 		s.skin_staging[i].reserve(state::max_skin_matrices);
 
 		const std::size_t instance_buffer_size = state::max_instances * 2 * s.instance_stride;
-		s.instance_buffer[i] = gpu::create_buffer(ctx, {
+		s.instance_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = instance_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 		s.instance_staging[i].reserve(instance_buffer_size);
 
-		constexpr std::size_t indirect_buffer_size = state::max_batches * sizeof(vk::DrawIndexedIndirectCommand);
-		s.normal_indirect_commands_buffer[i] = gpu::create_buffer(ctx, {
+		constexpr std::size_t indirect_buffer_size = state::max_batches * sizeof(gpu::draw_indexed_indirect_command);
+		s.normal_indirect_commands_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = indirect_buffer_size,
 			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
-		s.skinned_indirect_commands_buffer[i] = gpu::create_buffer(ctx, {
+		s.skinned_indirect_commands_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = indirect_buffer_size,
 			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 
 		constexpr std::size_t local_pose_size = state::max_skin_matrices * sizeof(mat4f);
-		s.local_pose_buffer[i] = gpu::create_buffer(ctx, {
+		s.local_pose_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = local_pose_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
@@ -282,7 +282,7 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 		s.joint_offsets[name] = member.offset;
 	}
 
-	s.skeleton_buffer = gpu::create_buffer(ctx, {
+	s.skeleton_buffer = gpu::create_buffer(ctx.device_ref(), {
 		.size = state::max_joints * s.joint_stride,
 		.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 	});
@@ -554,18 +554,18 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 	}
 
 	if (!normal_batches.empty()) {
-		std::vector<vk::DrawIndexedIndirectCommand> normal_indirect_commands;
+		std::vector<gpu::draw_indexed_indirect_command> normal_indirect_commands;
 		normal_indirect_commands.reserve(normal_batches.size());
 
 		for (const auto& batch : normal_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-			vk::DrawIndexedIndirectCommand cmd{
-				.indexCount = static_cast<std::uint32_t>(mesh.indices().size()),
-				.instanceCount = batch.instance_count,
-				.firstIndex = 0,
-				.vertexOffset = 0,
-				.firstInstance = batch.first_instance
+			gpu::draw_indexed_indirect_command cmd{
+				.index_count = static_cast<std::uint32_t>(mesh.indices().size()),
+				.instance_count = batch.instance_count,
+				.first_index = 0,
+				.vertex_offset = 0,
+				.first_instance = batch.first_instance
 			};
 
 			normal_indirect_commands.push_back(cmd);
@@ -577,18 +577,18 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 	}
 
 	if (!skinned_batches.empty()) {
-		std::vector<vk::DrawIndexedIndirectCommand> skinned_indirect_commands;
+		std::vector<gpu::draw_indexed_indirect_command> skinned_indirect_commands;
 		skinned_indirect_commands.reserve(skinned_batches.size());
 
 		for (const auto& batch : skinned_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-			vk::DrawIndexedIndirectCommand cmd{
-				.indexCount = static_cast<std::uint32_t>(mesh.indices().size()),
-				.instanceCount = batch.instance_count,
-				.firstIndex = 0,
-				.vertexOffset = 0,
-				.firstInstance = batch.first_instance
+			gpu::draw_indexed_indirect_command cmd{
+				.index_count = static_cast<std::uint32_t>(mesh.indices().size()),
+				.instance_count = batch.instance_count,
+				.first_index = 0,
+				.vertex_offset = 0,
+				.first_instance = batch.first_instance
 			};
 
 			skinned_indirect_commands.push_back(cmd);

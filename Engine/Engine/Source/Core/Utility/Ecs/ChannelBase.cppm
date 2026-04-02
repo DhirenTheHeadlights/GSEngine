@@ -127,6 +127,9 @@ export namespace gse {
 
 		auto end(
 		) const -> std::vector<T>::const_iterator;
+
+		auto front(
+		) const -> const T&;
 	private:
 		const std::vector<T>* m_data;
 		const std::uint32_t* m_previous_expected = nullptr;
@@ -246,4 +249,14 @@ auto gse::channel_read_guard<T>::begin() const -> std::vector<T>::const_iterator
 template <typename T>
 auto gse::channel_read_guard<T>::end() const -> std::vector<T>::const_iterator {
 	return m_data->end();
+}
+
+template <typename T>
+auto gse::channel_read_guard<T>::front() const -> const T& {
+	assert(
+		!m_data->empty(),
+		std::source_location::current(),
+		"Attempted to access front of empty channel read guard"
+	);
+	return (*m_data)[0];
 }

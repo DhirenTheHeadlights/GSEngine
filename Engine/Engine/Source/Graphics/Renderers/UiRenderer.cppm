@@ -85,11 +85,6 @@ namespace gse::renderer::ui {
 	static constexpr std::size_t max_indices = max_quads_per_frame * indices_per_quad;
 	static constexpr std::size_t frames_in_flight = 2;
 
-	auto to_vulkan_scissor(
-		const rect_t<vec2f>& rect,
-		const vec2f& window_size
-	) -> vk::Rect2D;
-
 	auto add_sprite_quad(
 		std::vector<vertex>& vertices,
 		std::vector<std::uint32_t>& indices,
@@ -126,27 +121,6 @@ export namespace gse::renderer::ui {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
 		static auto update(const update_phase& phase, state& s) -> void;
 		static auto render(render_phase& phase, const state& s) -> void;
-	};
-}
-
-auto gse::renderer::ui::to_vulkan_scissor(const rect_t<vec2f>& rect, const vec2f& window_size) -> vk::Rect2D {
-	const float left = std::max(0.0f, rect.left());
-	const float right = std::min(window_size.x(), rect.right());
-	const float bottom = std::max(0.0f, rect.bottom());
-	const float top = std::min(window_size.y(), rect.top());
-
-	const float width = std::max(0.0f, right - left);
-	const float height = std::max(0.0f, top - bottom);
-
-	return {
-		.offset = {
-			static_cast<std::int32_t>(left),
-			static_cast<std::int32_t>(window_size.y() - top)
-		},
-		.extent = {
-			static_cast<std::uint32_t>(width),
-			static_cast<std::uint32_t>(height)
-		}
 	};
 }
 
@@ -239,7 +213,7 @@ auto gse::renderer::ui::system::initialize(initialize_phase& phase, state& s) ->
 	s.sprite_shader = ctx.get<shader>("Shaders/Standard2D/sprite");
 	ctx.instantly_load(s.sprite_shader);
 
-	s.sprite_pipeline = gpu::create_graphics_pipeline(ctx, *s.sprite_shader, {
+	s.sprite_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.sprite_shader, {
 		.rasterization = { .cull = gpu::cull_mode::none },
 		.depth = { .test = false, .write = false },
 		.blend = gpu::blend_preset::alpha_premultiplied,
@@ -250,7 +224,7 @@ auto gse::renderer::ui::system::initialize(initialize_phase& phase, state& s) ->
 	s.text_shader = ctx.get<shader>("Shaders/Standard2D/msdf");
 	ctx.instantly_load(s.text_shader);
 
-	s.text_pipeline = gpu::create_graphics_pipeline(ctx, *s.text_shader, {
+	s.text_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.text_shader, {
 		.rasterization = { .cull = gpu::cull_mode::none },
 		.depth = { .test = false, .write = false },
 		.blend = gpu::blend_preset::alpha_premultiplied,
@@ -263,12 +237,12 @@ auto gse::renderer::ui::system::initialize(initialize_phase& phase, state& s) ->
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
 	for (auto& [vertex_buffer, index_buffer] : s.resources) {
-		vertex_buffer = gpu::create_buffer(ctx, {
+		vertex_buffer = gpu::create_buffer(ctx.device_ref(), {
 			.size = vertex_buffer_size,
 			.usage = gpu::buffer_flag::vertex
 		});
 
-		index_buffer = gpu::create_buffer(ctx, {
+		index_buffer = gpu::create_buffer(ctx.device_ref(), {
 			.size = index_buffer_size,
 			.usage = gpu::buffer_flag::index
 		});
@@ -451,12 +425,12 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 	auto text_pc = s.text_shader->cache_push_block("push_constants");
 	text_pc.set("projection", projection);
 
-	auto sprite_writer = s.sprite_shader->create_writer(ctx.descriptor_heap(), shader::set::binding_type::push);
-	auto text_writer = s.text_shader->create_writer(ctx.descriptor_heap(), shader::set::binding_type::push);
+	auto sprite_writer = gpu::create_push_writer(ctx.device_ref(), s.sprite_shader);
+	auto text_writer = gpu::create_push_writer(ctx.device_ref(), s.text_shader);
 
 	auto pass = ctx.graph().add_pass<ui::state>();
-	pass.track(vertex_buffer.native());
-	pass.track(index_buffer.native());
+	pass.track(vertex_buffer);
+	pass.track(index_buffer);
 
 	const vec2u ext_size{ width, height };
 
@@ -465,7 +439,7 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 		.record([&s, &batches, frame_index, ext_size, window_size,
 			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
 			sprite_writer = std::move(sprite_writer), text_writer = std::move(text_writer),
-			&vertex_buffer, &index_buffer](vulkan::recording_context& ctx) mutable {
+			&vertex_buffer, &index_buffer](gpu::recording_context& ctx) mutable {
 
 			ctx.bind_vertex(vertex_buffer);
 			ctx.bind_index(index_buffer);
@@ -499,25 +473,31 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 
 				if (type == command_type::sprite) {
 					if (texture.valid() && texture.id() != bound_texture.id()) {
-						const auto info = texture->descriptor_info();
 						sprite_writer.begin(frame_index);
-						sprite_writer.image(0, info.imageView, info.sampler, info.imageLayout);
-						ctx.commit(sprite_writer, s.sprite_pipeline, 1);
+						sprite_writer.image("spriteTexture", texture->gpu_image(), texture->gpu_sampler(), gpu::image_layout::shader_read_only);
+						ctx.commit(sprite_writer.native_writer(), s.sprite_pipeline, 1);
 						bound_texture = texture;
 					}
 				} else {
 					if (font.valid() && font.id() != bound_font.id()) {
-						const auto info = font->texture()->descriptor_info();
 						text_writer.begin(frame_index);
-						text_writer.image(0, info.imageView, info.sampler, info.imageLayout);
-						ctx.commit(text_writer, s.text_pipeline, 1);
+						text_writer.image("spriteTexture", font->texture()->gpu_image(), font->texture()->gpu_sampler(), gpu::image_layout::shader_read_only);
+						ctx.commit(text_writer.native_writer(), s.text_pipeline, 1);
 						bound_font = font;
 					}
 				}
 
 				if (clip_rect) {
-					const auto sc = to_vulkan_scissor(*clip_rect, window_size);
-					ctx.set_scissor(sc.offset.x, sc.offset.y, sc.extent.width, sc.extent.height);
+					const float left = std::max(0.0f, clip_rect->left());
+					const float right = std::min(window_size.x(), clip_rect->right());
+					const float bottom = std::max(0.0f, clip_rect->bottom());
+					const float top = std::min(window_size.y(), clip_rect->top());
+					ctx.set_scissor(
+						static_cast<std::int32_t>(left),
+						static_cast<std::int32_t>(window_size.y() - top),
+						static_cast<std::uint32_t>(std::max(0.0f, right - left)),
+						static_cast<std::uint32_t>(std::max(0.0f, top - bottom))
+					);
 				} else {
 					ctx.set_scissor(ext_size);
 				}

@@ -31,12 +31,6 @@ export namespace gse {
 
         auto initialize(gpu::context& ctx) -> void;
 
-        auto bind(vk::CommandBuffer command_buffer) const -> void;
-        auto draw(vk::CommandBuffer command_buffer) const -> void;
-        auto draw_instanced(vk::CommandBuffer command_buffer, std::uint32_t instance_count, std::uint32_t first_instance = 0) const -> void;
-
-        auto vertex_buffer() const -> vk::Buffer { return m_vertex_buffer.native().buffer; }
-        auto index_buffer() const -> vk::Buffer { return m_index_buffer.native().buffer; }
         auto vertex_gpu_buffer(this const skinned_mesh& self) -> const gpu::buffer& { return self.m_vertex_buffer; }
         auto index_gpu_buffer(this const skinned_mesh& self) -> const gpu::buffer& { return self.m_index_buffer; }
 
@@ -72,37 +66,20 @@ auto gse::skinned_mesh::initialize(gpu::context& ctx) -> void {
     const std::size_t vertex_buffer_size = sizeof(skinned_vertex) * m_vertices.size();
     const std::size_t index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-    m_vertex_buffer = gpu::create_buffer(ctx, {
+    m_vertex_buffer = gpu::create_buffer(ctx.device_ref(), {
         .size = vertex_buffer_size,
         .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst
     });
 
-    m_index_buffer = gpu::create_buffer(ctx, {
+    m_index_buffer = gpu::create_buffer(ctx.device_ref(), {
         .size = index_buffer_size,
         .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
     });
 
-    gpu::upload_to_buffers(ctx, std::array{
+    gpu::upload_to_buffers(ctx.device_ref(), std::array{
         gpu::buffer_upload{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
         gpu::buffer_upload{ &m_index_buffer, m_indices.data(), index_buffer_size }
     });
-}
-
-auto gse::skinned_mesh::bind(const vk::CommandBuffer command_buffer) const -> void {
-    if (!m_vertex_buffer || !m_index_buffer) {
-        return;
-    }
-
-    command_buffer.bindVertexBuffers(0, { vertex_buffer() }, { 0 });
-    command_buffer.bindIndexBuffer(index_buffer(), 0, vk::IndexType::eUint32);
-}
-
-auto gse::skinned_mesh::draw(const vk::CommandBuffer command_buffer) const -> void {
-    command_buffer.drawIndexed(static_cast<std::uint32_t>(m_indices.size()), 1, 0, 0, 0);
-}
-
-auto gse::skinned_mesh::draw_instanced(const vk::CommandBuffer command_buffer, const std::uint32_t instance_count, const std::uint32_t first_instance) const -> void {
-    command_buffer.drawIndexed(static_cast<std::uint32_t>(m_indices.size()), instance_count, 0, 0, first_instance);
 }
 
 auto gse::skinned_mesh::center_of_mass() const -> vec3<displacement> {

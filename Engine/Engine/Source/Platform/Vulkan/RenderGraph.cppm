@@ -6,6 +6,7 @@ import :gpu_types;
 import :gpu_buffer;
 import :gpu_pipeline;
 import :gpu_image;
+import :gpu_descriptor;
 import :gpu_device;
 import :gpu_swapchain;
 import :gpu_frame;
@@ -19,6 +20,7 @@ import gse.math;
 export namespace gse::vulkan {
 	class render_graph;
 	class pass_builder;
+	class recording_context;
 
 	struct push_constant_member {
 		std::uint32_t offset = 0;
@@ -42,13 +44,8 @@ export namespace gse::vulkan {
 		) const -> void;
 	};
 
-	struct color_clear {
-		float r = 0.0f, g = 0.0f, b = 0.0f, a = 1.0f;
-	};
-
-	struct depth_clear {
-		float depth = 1.0f;
-	};
+	using color_clear = gpu::color_clear;
+	using depth_clear = gpu::depth_clear;
 
 	enum class load_op {
 		clear_color,
@@ -110,7 +107,33 @@ export namespace gse::vulkan {
 		const image_resource& img,
 		vk::PipelineStageFlags2 stage
 	) -> resource_usage;
+}
 
+export namespace gse::gpu {
+	using recording_context = vulkan::recording_context;
+
+	auto storage_read(
+		const buffer& buf,
+		pipeline_stage stage
+	) -> vulkan::resource_usage;
+
+	auto storage_write(
+		const buffer& buf,
+		pipeline_stage stage
+	) -> vulkan::resource_usage;
+
+	auto sampled(
+		const image& img,
+		pipeline_stage stage
+	) -> vulkan::resource_usage;
+
+	auto indirect_read(
+		const buffer& buf,
+		pipeline_stage stage
+	) -> vulkan::resource_usage;
+}
+
+export namespace gse::vulkan {
 	class recording_context {
 	public:
 		auto bind_pipeline(
@@ -218,7 +241,7 @@ export namespace gse::vulkan {
 
 		auto draw_indirect(
 			const gpu::buffer& buf,
-			vk::DeviceSize offset,
+			std::size_t offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
 		) -> void;
@@ -241,6 +264,12 @@ export namespace gse::vulkan {
 		auto bind_descriptors(
 			const gpu::pipeline& p,
 			const descriptor_region& region,
+			std::uint32_t set_index = 0
+		) -> void;
+
+		auto bind_descriptors(
+			const gpu::pipeline& p,
+			const gpu::descriptor_region& region,
 			std::uint32_t set_index = 0
 		) -> void;
 
@@ -274,6 +303,12 @@ export namespace gse::vulkan {
 			const gpu::image* depth = nullptr,
 			gpu::image_layout depth_layout = gpu::image_layout::general,
 			bool clear_depth = true,
+			float clear_depth_value = 1.0f
+		) -> void;
+
+		auto begin_rendering(
+			gpu::image_view depth_view,
+			vec2u extent,
 			float clear_depth_value = 1.0f
 		) -> void;
 
@@ -397,7 +432,7 @@ export namespace gse::vulkan {
 		) const -> vk::ImageView;
 
 		[[nodiscard]] auto depth_image(
-		) const -> const image_resource&;
+		) const -> const gpu::image&;
 
 		[[nodiscard]] auto frame_in_progress(
 		) const -> bool;
@@ -503,8 +538,8 @@ auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const cached_p
 	cache.replay(m_cmd, p.native_layout());
 }
 
-auto gse::vulkan::recording_context::draw_indirect(const gpu::buffer& buf, const vk::DeviceSize offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
-	m_cmd.drawIndexedIndirect(buf.native().buffer, offset, draw_count, stride);
+auto gse::vulkan::recording_context::draw_indirect(const gpu::buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
+	m_cmd.drawIndexedIndirect(buf.native().buffer, static_cast<vk::DeviceSize>(offset), draw_count, stride);
 }
 
 auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) -> void {
@@ -520,6 +555,10 @@ auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, co
 		? vk::PipelineBindPoint::eGraphics
 		: vk::PipelineBindPoint::eCompute;
 	region.heap->bind(m_cmd, point, p.native_layout(), 0, region);
+}
+
+auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) -> void {
+	bind_descriptors(p, region.native(), set_index);
 }
 
 auto gse::vulkan::recording_context::bind_vertex(const gpu::buffer& buf, const std::size_t offset) -> void {
@@ -577,6 +616,24 @@ auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const g
 	m_cmd.beginRendering(ri);
 }
 
+auto gse::vulkan::recording_context::begin_rendering(const gpu::image_view depth_view, const vec2u extent, const float clear_depth_value) -> void {
+	const vk::RenderingAttachmentInfo depth_att{
+		.imageView = depth_view.native(),
+		.imageLayout = vk::ImageLayout::eGeneral,
+		.loadOp = vk::AttachmentLoadOp::eClear,
+		.storeOp = vk::AttachmentStoreOp::eStore,
+		.clearValue = vk::ClearValue{ .depthStencil = { clear_depth_value, 0 } }
+	};
+	const vk::RenderingInfo ri{
+		.renderArea = { { 0, 0 }, { extent.x(), extent.y() } },
+		.layerCount = 1,
+		.colorAttachmentCount = 0,
+		.pColorAttachments = nullptr,
+		.pDepthAttachment = &depth_att
+	};
+	m_cmd.beginRendering(ri);
+}
+
 auto gse::vulkan::recording_context::commit(descriptor_writer& writer, const gpu::pipeline& p, std::uint32_t set_index) -> void {
 	const auto point = p.point() == gpu::bind_point::graphics
 		? vk::PipelineBindPoint::eGraphics
@@ -615,6 +672,35 @@ auto gse::vulkan::attachment(const image_resource& img, vk::PipelineStageFlags2 
 		? vk::AccessFlagBits2::eDepthStencilAttachmentWrite
 		: vk::AccessFlagBits2::eColorAttachmentWrite;
 	return { { .ptr = std::addressof(img), .type = resource_type::image }, stage, access };
+}
+
+namespace {
+	auto to_vk_stage(gse::gpu::pipeline_stage s) -> vk::PipelineStageFlags2 {
+		switch (s) {
+			case gse::gpu::pipeline_stage::vertex_shader:       return vk::PipelineStageFlagBits2::eVertexShader;
+			case gse::gpu::pipeline_stage::fragment_shader:     return vk::PipelineStageFlagBits2::eFragmentShader;
+			case gse::gpu::pipeline_stage::compute_shader:      return vk::PipelineStageFlagBits2::eComputeShader;
+			case gse::gpu::pipeline_stage::draw_indirect:       return vk::PipelineStageFlagBits2::eDrawIndirect;
+			case gse::gpu::pipeline_stage::late_fragment_tests: return vk::PipelineStageFlagBits2::eLateFragmentTests;
+		}
+		return vk::PipelineStageFlagBits2::eNone;
+	}
+}
+
+auto gse::gpu::storage_read(const buffer& buf, pipeline_stage stage) -> vulkan::resource_usage {
+	return vulkan::storage_read(buf.native(), to_vk_stage(stage));
+}
+
+auto gse::gpu::storage_write(const buffer& buf, pipeline_stage stage) -> vulkan::resource_usage {
+	return vulkan::storage(buf.native(), to_vk_stage(stage));
+}
+
+auto gse::gpu::sampled(const image& img, pipeline_stage stage) -> vulkan::resource_usage {
+	return vulkan::sampled(img.native(), to_vk_stage(stage));
+}
+
+auto gse::gpu::indirect_read(const buffer& buf, pipeline_stage stage) -> vulkan::resource_usage {
+	return vulkan::indirect_read(buf.native(), to_vk_stage(stage));
 }
 
 namespace {
@@ -695,7 +781,7 @@ auto gse::vulkan::pass_builder::depth_output(const depth_clear& clear_value) -> 
 		.op = load_op::clear_depth,
 		.clear_value = clear_value
 	};
-	m_pass.writes.push_back(attachment(m_graph->m_swapchain->depth_image(), vk::PipelineStageFlagBits2::eLateFragmentTests));
+	m_pass.writes.push_back(attachment(m_graph->m_swapchain->depth_image().native(), vk::PipelineStageFlagBits2::eLateFragmentTests));
 	return *this;
 }
 
@@ -750,14 +836,14 @@ auto gse::vulkan::render_graph::extent() const -> vec2u {
 }
 
 auto gse::vulkan::render_graph::swapchain_image_view() const -> vk::ImageView {
-	return m_swapchain->image_view(m_frame->image_index());
+	return *m_swapchain->runtime_ref().swap_chain_config().image_views[m_frame->image_index()];
 }
 
 auto gse::vulkan::render_graph::depth_image_view() const -> vk::ImageView {
-	return m_swapchain->depth_image().view;
+	return m_swapchain->depth_image().native().view;
 }
 
-auto gse::vulkan::render_graph::depth_image() const -> const image_resource& {
+auto gse::vulkan::render_graph::depth_image() const -> const gpu::image& {
 	return m_swapchain->depth_image();
 }
 
@@ -986,7 +1072,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 				}
 
 				depth_att = vk::RenderingAttachmentInfo{
-					.imageView = swap_runtime.depth_image.view,
+					.imageView = swap_runtime.depth_image.native().view,
 					.imageLayout = vk::ImageLayout::eGeneral,
 					.loadOp = vk_load,
 					.storeOp = vk::AttachmentStoreOp::eStore,

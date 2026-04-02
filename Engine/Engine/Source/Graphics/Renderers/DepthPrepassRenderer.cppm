@@ -12,11 +12,11 @@ import gse.utility;
 export namespace gse::renderer::depth_prepass {
 	struct state {
 		gpu::pipeline meshlet_pipeline;
-		per_frame_resource<vulkan::descriptor_region> meshlet_descriptors;
+		per_frame_resource<gpu::descriptor_region> meshlet_descriptors;
 		resource::handle<shader> meshlet_shader;
 
 		gpu::pipeline skinned_pipeline;
-		per_frame_resource<vulkan::descriptor_region> skinned_descriptors;
+		per_frame_resource<gpu::descriptor_region> skinned_descriptors;
 		resource::handle<shader> skinned_shader;
 
 		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
@@ -40,130 +40,48 @@ export namespace gse::renderer::depth_prepass {
 auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
-	auto* gpu = &ctx;
-	auto transition_depth = [gpu]() {
-		gpu->add_transient_work([gpu](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
-			auto& depth = gpu->graph().depth_image();
-			const vk::ImageMemoryBarrier2 barrier{
-				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-				.srcAccessMask = {},
-				.dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-				.dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-				.oldLayout = vk::ImageLayout::eUndefined,
-				.newLayout = vk::ImageLayout::eGeneral,
-				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.image = depth.image,
-				.subresourceRange = {
-					.aspectMask = vk::ImageAspectFlagBits::eDepth,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1
-				}
-			};
-
-			const vk::DependencyInfo dep{
-				.imageMemoryBarrierCount = 1,
-				.pImageMemoryBarriers = &barrier
-			};
-
-			cmd.pipelineBarrier2(dep);
-			const_cast<vulkan::image_resource&>(depth).current_layout = vk::ImageLayout::eGeneral;
-
-			return {};
-		});
-	};
-
-	transition_depth();
-	ctx.on_swap_chain_recreate([gpu]() {
-		gpu->add_transient_work([gpu](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
-			auto& depth = gpu->graph().depth_image();
-			const vk::ImageMemoryBarrier2 barrier{
-				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-				.srcAccessMask = {},
-				.dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-				.dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-				.oldLayout = vk::ImageLayout::eUndefined,
-				.newLayout = vk::ImageLayout::eGeneral,
-				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.image = depth.image,
-				.subresourceRange = {
-					.aspectMask = vk::ImageAspectFlagBits::eDepth,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1
-				}
-			};
-			const vk::DependencyInfo dep{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier };
-			cmd.pipelineBarrier2(dep);
-			const_cast<vulkan::image_resource&>(depth).current_layout = vk::ImageLayout::eGeneral;
-			return {};
-		});
-	});
-
 	s.meshlet_shader = ctx.get<shader>("Shaders/Standard3D/meshlet_depth_only");
 	ctx.instantly_load(s.meshlet_shader);
 
 	const auto meshlet_camera_ubo = s.meshlet_shader->uniform_block("CameraUBO");
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
+		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = meshlet_camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 	}
 
-	s.meshlet_pipeline = gpu::create_graphics_pipeline(ctx, *s.meshlet_shader, {
+	s.meshlet_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.meshlet_shader, {
 		.depth = { .test = true, .write = true, .compare = gpu::compare_op::less },
 		.color = gpu::color_format::none,
 		.push_constant_block = "push_constants"
 	});
 
 
-	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
-		s.meshlet_descriptors[i] = gpu::allocate_descriptors(ctx, *s.meshlet_shader);
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+		s.meshlet_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.meshlet_shader);
 
-		const std::unordered_map<std::string, vk::DescriptorBufferInfo> meshlet_buffer_infos{
-			{
-				"CameraUBO",
-				{
-					.buffer = s.ubo_allocations["CameraUBO"][i].native().buffer,
-					.offset = 0,
-					.range = meshlet_camera_ubo.size
-				}
-			}
-		};
-
-		gpu::write_descriptors(ctx, s.meshlet_descriptors[i], *s.meshlet_shader, meshlet_buffer_infos);
+		gpu::descriptor_writer(s.meshlet_shader, s.meshlet_descriptors[i])
+			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, meshlet_camera_ubo.size)
+			.commit();
 	}
 
 	s.skinned_shader = ctx.get<shader>("Shaders/Standard3D/skinned_depth_only");
 	ctx.instantly_load(s.skinned_shader);
 
-	s.skinned_pipeline = gpu::create_graphics_pipeline(ctx, *s.skinned_shader, {
+	s.skinned_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.skinned_shader, {
 		.depth = { .test = true, .write = true, .compare = gpu::compare_op::less },
 		.color = gpu::color_format::none
 	});
 
 
 	const auto skinned_camera_ubo = s.skinned_shader->uniform_block("CameraUBO");
-	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
-		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *s.skinned_shader);
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.skinned_shader);
 
-		const std::unordered_map<std::string, vk::DescriptorBufferInfo> skinned_buffer_infos{
-			{
-				"CameraUBO",
-				{
-					.buffer = s.ubo_allocations["CameraUBO"][i].native().buffer,
-					.offset = 0,
-					.range = skinned_camera_ubo.size
-				}
-			}
-		};
-
-		gpu::write_descriptors(ctx, s.skinned_descriptors[i], *s.skinned_shader, skinned_buffer_infos);
+		gpu::descriptor_writer(s.skinned_shader, s.skinned_descriptors[i])
+			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, skinned_camera_ubo.size)
+			.commit();
 	}
 }
 
@@ -201,21 +119,21 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 	const auto ext_w = ext.x();
 	const auto ext_h = ext.y();
 
-	auto meshlet_writer = s.meshlet_shader->create_writer(ctx.descriptor_heap(), shader::set::binding_type::push);
-	auto skinned_writer = s.skinned_shader->create_writer(ctx.descriptor_heap(), shader::set::binding_type::push);
+	auto meshlet_writer = gpu::create_push_writer(ctx.device_ref(), s.meshlet_shader);
+	auto skinned_writer = gpu::create_push_writer(ctx.device_ref(), s.skinned_shader);
 
 	auto pass = ctx.graph().add_pass<state>();
-	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index].native());
-	pass.track(gc_state->instance_buffer[frame_index].native());
+	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
+	pass.track(gc_state->instance_buffer[frame_index]);
 
 	pass.after<cull_compute::state>()
 		.reads(
-			vulkan::storage_read(gc_state->skin_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eVertexShader),
-			vulkan::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eDrawIndirect)
+			gpu::storage_read(gc_state->skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
+			gpu::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
-		.depth_output(vulkan::depth_clear{ 1.0f })
+		.depth_output(gpu::depth_clear{ 1.0f })
 		.record([&s, gc_state, &data, frame_index, ext_w, ext_h,
-			meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](vulkan::recording_context& ctx) mutable {
+			meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](gpu::recording_context& ctx) mutable {
 			const vec2u ext_size{ ext_w, ext_h };
 			ctx.set_viewport(ext_size);
 			ctx.set_scissor(ext_size);
@@ -224,11 +142,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 				ctx.bind(s.meshlet_pipeline);
 				ctx.bind_descriptors(s.meshlet_pipeline, s.meshlet_descriptors[frame_index]);
 
-				const vk::DescriptorBufferInfo instance_buffer_info{
-					.buffer = gc_state->instance_buffer[frame_index].native().buffer,
-					.offset = 0,
-					.range = gc_state->instance_buffer[frame_index].size()
-				};
+				const auto& instance_buf = gc_state->instance_buffer[frame_index];
 
 				for (const auto& batch : data.normal_batches) {
 					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
@@ -237,14 +151,9 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 					}
 
 					meshlet_writer.begin(frame_index);
-					meshlet_writer
-						.buffer(0, mesh.vertex_storage_buffer(), 0, mesh.vertex_storage_buffer_size())
-						.buffer(1, mesh.meshlet_descriptor_buffer(), 0, mesh.meshlet_descriptor_buffer_size())
-						.buffer(2, mesh.meshlet_vertex_buffer(), 0, mesh.meshlet_vertex_buffer_size())
-						.buffer(3, mesh.meshlet_triangle_buffer(), 0, mesh.meshlet_triangle_buffer_size())
-						.buffer(4, mesh.meshlet_bounds_buffer(), 0, mesh.meshlet_bounds_buffer_size())
-						.buffer(5, instance_buffer_info.buffer, instance_buffer_info.offset, instance_buffer_info.range);
-					ctx.commit(meshlet_writer, s.meshlet_pipeline, 1);
+					mesh.meshlet_gpu().bind(meshlet_writer);
+					meshlet_writer.buffer("instanceData", instance_buf);
+					ctx.commit(meshlet_writer.native_writer(), s.meshlet_pipeline, 1);
 
 					const std::uint32_t meshlet_count = mesh.meshlet_count();
 					for (std::uint32_t inst = 0; inst < batch.instance_count; ++inst) {
@@ -264,23 +173,14 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 				ctx.bind(s.skinned_pipeline);
 				ctx.bind_descriptors(s.skinned_pipeline, s.skinned_descriptors[frame_index]);
 
-				const vk::DescriptorBufferInfo skin_buffer_info{
-					.buffer = gc_state->skin_buffer[frame_index].native().buffer,
-					.offset = 0,
-					.range = gc_state->skin_buffer[frame_index].size()
-				};
-
-				const vk::DescriptorBufferInfo instance_buffer_info{
-					.buffer = gc_state->instance_buffer[frame_index].native().buffer,
-					.offset = 0,
-					.range = gc_state->instance_buffer[frame_index].size()
-				};
+				const auto& skin_buf     = gc_state->skin_buffer[frame_index];
+				const auto& instance_buf = gc_state->instance_buffer[frame_index];
 
 				skinned_writer.begin(frame_index);
 				skinned_writer
-					.buffer(0, skin_buffer_info.buffer, skin_buffer_info.offset, skin_buffer_info.range)
-					.buffer(1, instance_buffer_info.buffer, instance_buffer_info.offset, instance_buffer_info.range);
-				ctx.commit(skinned_writer, s.skinned_pipeline, 1);
+					.buffer("skinMatrices", skin_buf)
+					.buffer("instanceData", instance_buf);
+				ctx.commit(skinned_writer.native_writer(), s.skinned_pipeline, 1);
 
 				for (std::size_t i = 0; i < data.skinned_batches.size(); ++i) {
 					const auto& batch = data.skinned_batches[i];
@@ -291,7 +191,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 
 					ctx.draw_indirect(
 						gc_state->skinned_indirect_commands_buffer[frame_index],
-						i * sizeof(vk::DrawIndexedIndirectCommand),
+						i * sizeof(gpu::draw_indexed_indirect_command),
 						1,
 						0
 					);

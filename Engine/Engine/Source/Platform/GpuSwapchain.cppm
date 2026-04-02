@@ -3,7 +3,7 @@ export module gse.platform:gpu_swapchain;
 import std;
 
 import :vulkan_runtime;
-import :vulkan_allocator;
+import :gpu_image;
 
 import gse.utility;
 import gse.math;
@@ -16,24 +16,8 @@ export namespace gse::gpu {
 		[[nodiscard]] auto extent(
 		) const -> vec2u;
 
-		[[nodiscard]] auto vk_extent(
-		) const -> vk::Extent2D;
-
-		[[nodiscard]] auto surface_format(
-		) const -> vk::SurfaceFormatKHR;
-
-		[[nodiscard]] auto format(
-		) const -> vk::Format;
-
 		[[nodiscard]] auto depth_image(
-		) const -> const vulkan::image_resource&;
-
-		[[nodiscard]] auto image_view(
-			std::uint32_t index
-		) const -> vk::ImageView;
-
-		[[nodiscard]] auto images(
-		) const -> const std::vector<vk::Image>&;
+		) const -> const gpu::image&;
 
 		using recreate_callback = std::function<void()>;
 		auto on_recreate(
@@ -59,28 +43,8 @@ auto gse::gpu::swapchain::extent() const -> vec2u {
 	return { e.width, e.height };
 }
 
-auto gse::gpu::swapchain::vk_extent() const -> vk::Extent2D {
-	return m_runtime->swap_chain_config().extent;
-}
-
-auto gse::gpu::swapchain::surface_format() const -> vk::SurfaceFormatKHR {
-	return m_runtime->swap_chain_config().surface_format;
-}
-
-auto gse::gpu::swapchain::format() const -> vk::Format {
-	return m_runtime->swap_chain_config().surface_format.format;
-}
-
-auto gse::gpu::swapchain::depth_image() const -> const vulkan::image_resource& {
+auto gse::gpu::swapchain::depth_image() const -> const gpu::image& {
 	return m_runtime->swap_chain_config().depth_image;
-}
-
-auto gse::gpu::swapchain::image_view(std::uint32_t index) const -> vk::ImageView {
-	return *m_runtime->swap_chain_config().image_views[index];
-}
-
-auto gse::gpu::swapchain::images() const -> const std::vector<vk::Image>& {
-	return m_runtime->swap_chain_config().images;
 }
 
 auto gse::gpu::swapchain::on_recreate(recreate_callback callback) -> void {

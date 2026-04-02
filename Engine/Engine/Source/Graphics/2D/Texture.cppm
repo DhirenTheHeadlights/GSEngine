@@ -42,8 +42,11 @@ export namespace gse {
 		auto unload(
 		) -> void;
 
-		auto descriptor_info(
-		) const -> vk::DescriptorImageInfo;
+		auto gpu_image(
+		) const -> const gpu::image&;
+
+		auto gpu_sampler(
+		) const -> const gpu::sampler&;
 
 		auto image_data(
 		) const -> const image::data&;
@@ -53,8 +56,8 @@ export namespace gse {
 			profile texture_profile
 		) -> void;
 
-		vulkan::image_resource m_texture_image;
-		vk::raii::Sampler m_texture_sampler = nullptr;
+		gpu::image m_image;
+		gpu::sampler m_sampler;
 		image::data m_image_data;
 		profile m_profile = profile::generic_repeat;
 	};
@@ -104,16 +107,16 @@ auto gse::texture::load(const gpu::context& context) -> void {
 
 auto gse::texture::unload() -> void {
 	m_image_data = {};
-	m_texture_image = {};
-	m_texture_sampler = nullptr;
+	m_image = {};
+	m_sampler = {};
 }
 
-auto gse::texture::descriptor_info() const -> vk::DescriptorImageInfo {
-	return {
-		.sampler = m_texture_sampler,
-		.imageView = m_texture_image.view,
-		.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-	};
+auto gse::texture::gpu_image() const -> const gpu::image& {
+	return m_image;
+}
+
+auto gse::texture::gpu_sampler() const -> const gpu::sampler& {
+	return m_sampler;
 }
 
 auto gse::texture::image_data() const -> const image::data& {
@@ -134,83 +137,48 @@ auto gse::texture::create_vulkan_resources(gpu::context& context, const profile 
 	);
 
 	const bool use_linear = (texture_profile == profile::msdf);
-	const auto format = channels == 4
-		? (use_linear ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Srgb)
+	const auto gpu_format = channels == 4
+		? (use_linear ? gpu::image_format::r8g8b8a8_unorm : gpu::image_format::r8g8b8a8_srgb)
 		: channels == 1
-			? vk::Format::eR8Unorm
-			: (use_linear ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8B8Srgb);
+			? gpu::image_format::r8_unorm
+			: (use_linear ? gpu::image_format::r8g8b8_unorm : gpu::image_format::r8g8b8_srgb);
 
-	m_texture_image = context.allocator().create_image(
-		vk::ImageCreateInfo{
-			.imageType = vk::ImageType::e2D,
-			.format = format,
-			.extent = {width, height, 1},
-			.mipLevels = 1,
-			.arrayLayers = 1,
-			.samples = vk::SampleCountFlagBits::e1,
-			.tiling = vk::ImageTiling::eOptimal,
-			.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-			.sharingMode = vk::SharingMode::eExclusive,
-			.initialLayout = vk::ImageLayout::eUndefined
-		},
-		vk::MemoryPropertyFlagBits::eDeviceLocal,
-		vk::ImageViewCreateInfo{
-			.viewType = vk::ImageViewType::e2D,
-			.format = format,
-			.subresourceRange = {
-				.aspectMask = vk::ImageAspectFlagBits::eColor,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1
-			}
-		}
-	);
+	m_image = gpu::create_image(context.device_ref(), {
+		.size = { width, height },
+		.format = gpu_format,
+		.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst
+	});
 
-	context.upload_image_2d(
-		m_texture_image,
-		{ width, height },
-		m_image_data.pixels.data(),
-		data_size,
-		vk::ImageLayout::eShaderReadOnlyOptimal
-	);
+	gpu::upload_image_2d(context.device_ref(), m_image, m_image_data.pixels.data(), data_size);
 
-	vk::SamplerCreateInfo sampler_info;
-	sampler_info.maxLod = 1.0f;
+	const auto clamp = gpu::sampler_address_mode::clamp_to_edge;
+	const auto repeat = gpu::sampler_address_mode::repeat;
+	const auto linear = gpu::sampler_filter::linear;
+	const auto nearest = gpu::sampler_filter::nearest;
+
+	gpu::sampler_desc desc;
+	desc.max_lod = 1.0f;
 
 	switch (texture_profile) {
 	case profile::generic_repeat:
-		sampler_info.magFilter = vk::Filter::eLinear;
-		sampler_info.minFilter = vk::Filter::eLinear;
-		sampler_info.addressModeU = vk::SamplerAddressMode::eRepeat;
-		sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
-		sampler_info.addressModeW = vk::SamplerAddressMode::eRepeat;
-		sampler_info.anisotropyEnable = vk::True;
-		sampler_info.maxAnisotropy = 16.0f;
+		desc.mag = linear; desc.min = linear;
+		desc.address_u = repeat; desc.address_v = repeat; desc.address_w = repeat;
+		desc.max_anisotropy = 16.0f;
 		break;
 	case profile::generic_clamp_to_edge:
-		sampler_info.magFilter = vk::Filter::eLinear;
-		sampler_info.minFilter = vk::Filter::eLinear;
-		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+		desc.mag = linear; desc.min = linear;
+		desc.address_u = clamp; desc.address_v = clamp; desc.address_w = clamp;
 		break;
 	case profile::msdf:
-		sampler_info.magFilter = vk::Filter::eLinear;
-		sampler_info.minFilter = vk::Filter::eLinear;
-		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+		desc.mag = linear; desc.min = linear;
+		desc.address_u = clamp; desc.address_v = clamp; desc.address_w = clamp;
 		break;
 	case profile::pixel_art:
-		sampler_info.magFilter = vk::Filter::eNearest;
-		sampler_info.minFilter = vk::Filter::eNearest;
-		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+		desc.mag = nearest; desc.min = nearest;
+		desc.address_u = clamp; desc.address_v = clamp; desc.address_w = clamp;
 		break;
 	}
-	m_texture_sampler = context.device().createSampler(sampler_info);
+	m_sampler = gpu::create_sampler(context.device_ref(), desc);
 
 	m_image_data.pixels.clear();
 	m_image_data.pixels.shrink_to_fit();

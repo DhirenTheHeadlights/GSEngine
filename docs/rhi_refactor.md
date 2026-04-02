@@ -169,27 +169,53 @@ Renderers receive `gpu::frame&` for recording and `gpu::device&` for resource cr
 - Render graph constructor takes `gpu::device&, gpu::swapchain&, gpu::frame&` instead of `runtime&`
 - `gpu::context` delegates device/queue/allocator/format/descriptor methods through the new types
 - `context::begin_frame()` returns `std::expected<frame_token, frame_status>`
-- **Deferred:** `gpu::resource_manager` extraction blocked by circular module dependency (`resource::loader<T, context>` templated on `context`). Will address in Phase 5 when loader system is reworked.
 - **Remaining runtime usage in context:** `begin_frame`/`end_frame` (vulkan free functions take `runtime&`), `upload_image_2d`/`upload_image_layers` (uploader takes `runtime&`), `on_swap_chain_recreate` (const method quirk), shutdown depth_image cleanup
 
-### Phase 3: Descriptor abstraction
-- Implement `gpu::descriptor_writer` with fluent API
-- Integrate with shader reflection (shader knows binding names and types)
-- Migrate renderers from manual descriptor writes to writer API
+### Phase 3: Descriptor abstraction ✓
+- `gpu::descriptor_writer` (`GpuDescriptorWriter.cppm`) — fluent name-based API for both persistent and push descriptor paths
+  - Takes `resource::handle<shader>` — resolves binding names to indices via shader reflection
+  - Persistent mode: accumulates `buffer()`/`image()`/`image_array()` calls, writes to `descriptor_region` on `commit()`
+  - Push mode: created via `gpu::create_push_writer()`, `begin(frame_index)` allocates transient region, committed via `ctx.commit(writer.native_writer(), pipeline, set)`
+  - `image_array()` supports both uniform sampler and per-element sampler overloads
+- `meshlet_gpu_data::bind(gpu::descriptor_writer&)` — name-based overload using shader binding names
+- Factory functions: `create_descriptor_writer()`, `create_push_writer()` in `GpuFactory.cppm`
+- All renderers migrated: no `gpu::buffer_binding`/`gpu::image_binding` structs, no `gpu::write_descriptors()` calls, no `vulkan::descriptor_writer` or `shader::create_writer()` in renderer code
+- Old `vulkan::descriptor_writer` index-based path retained internally for `gpu::descriptor_writer` push mode
 
-### Phase 4: Renderer migration
-- Migrate all renderers to use only `gpu::` types
-- Remove all `vk::` includes from renderer modules
-- Remove `.native()` escape hatches from public API
-- Audit: no file outside `Platform/Vulkan/` should import vulkan headers
+### Phase 4: Renderer migration ✓
+- All renderers use only `gpu::` types for pipeline/descriptor/sampler/buffer/image/barrier operations
+- Zero `vk::` types in any exported `gse.graphics` or `gse.platform` interface
+- `.native()` escape hatches remain only inside `Platform/Vulkan/` implementation files
+- `vulkan::` types removed from all renderer and consumer `.cppm` files
 
-### Phase 5: Cleanup
+### Phase 5: Resource system refactor ✓
+- `ResourceHandle.cppm` (`:resource_handle`) — leaf partition: `resource::state`, `resource::resource_slot<T>`, `resource::handle<T>` with direct typed slot pointer
+  - `handle<T>` holds `resource_slot<T>*` directly — zero virtual dispatch, zero `void*` casting for resolution
+  - Consumers only need this partition to use `handle<shader>`, `handle<texture>`, etc.
+- `ResourceLoader.cppm` (`:resource_loader`) — implementation partition:
+  - `resource_context<C>` concept constrains the loader's context type (`gpu_queue_size`, `mark_pending_for_finalization`, `wait_idle`, `process_gpu_queue`)
+  - `loader_base` slimmed — resolve/state/version virtuals removed (now bypassed by direct slot pointer)
+  - `loader<T, C>` uses `id_mapped_collection<std::unique_ptr<resource_slot<T>>>` for heap-allocated stable-address slots
+  - `loader::state_of(id)` — typed replacement for removed `loader_base::resource_state()` virtual
+  - `instantly_load` rewritten to use before/after `gpu_queue_size()` pattern
+- Circular module dependency between `resource::loader<T, context>` and `gpu::context` is broken — `loader` constrains via concept, never imports `context`
+
+### Phase 6: Cleanup (in progress)
+**Done:**
+- `context&` forwarding overloads removed from `GpuFactory.cppm` — all callers migrated to `ctx.device_ref()`
+- `gpu::buffer_binding` / `gpu::image_binding` structs obsoleted by `descriptor_writer` — retained in `GpuDescriptor.cppm` for backward compat, no renderer uses them
+- `gpu::write_descriptors()` free function obsoleted by `descriptor_writer` — retained internally, no renderer uses it
+- Dead `vulkan::descriptor_region` overload removed from `compute_queue`
+- 5 vk-leaking swapchain methods deleted; `context::execute_and_detect_gpu_queue` removed
+
+**Remaining:**
+- Remove `gpu::buffer_binding`, `gpu::image_binding`, `gpu::write_descriptors()` from public API
+- Remove old `meshlet_gpu_data::bind(vulkan::descriptor_writer&, uint32_t)` overload
 - Remove dead `vulkan::` types that are now fully wrapped
 - Merge or remove compute context into `gpu::device` queue model
 - Update compilers (model, material, texture, etc.) to use `gpu::` types only
-- Extract `gpu::resource_manager` from context (requires reworking `resource::loader<T>` to not be templated on `context`)
+- Extract `gpu::resource_manager` from `gpu::context` — now unblocked by the concept-based loader split
 - Eliminate `vulkan::runtime` — move remaining ownership into device/swapchain/frame
-- Remove `context&` forwarding overloads from factory functions
 
 ## Non-Goals
 
