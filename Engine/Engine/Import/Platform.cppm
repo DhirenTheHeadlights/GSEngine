@@ -12,6 +12,7 @@ export import :app;
 export import :asset_compiler;
 export import :resource_handle;
 export import :resource_loader;
+export import :gpu_resource_manager;
 export import :shader_layout;
 export import :shader_layout_compiler;
 export import :asset_pipeline;

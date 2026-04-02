@@ -60,6 +60,18 @@ export namespace gse {
     };
 }
 
+export namespace gse {
+    template<archive Ar>
+    auto serialize(Ar& ar, shader_layout_binding& b) -> void {
+        ar & b.name & b.layout_binding;
+    }
+
+    template<archive Ar>
+    auto serialize(Ar& ar, shader_layout_set& s) -> void {
+        ar & s.set_index & s.bindings;
+    }
+}
+
 gse::shader_layout::shader_layout(const std::filesystem::path& path)
     : identifiable(path, config::baked_resource_path)
     , m_name(path.stem().string())
@@ -69,45 +81,13 @@ gse::shader_layout::shader_layout(const std::filesystem::path& path)
 auto gse::shader_layout::load(const vk::raii::Device& device) -> void {
     std::ifstream in(m_path, std::ios::binary);
     assert(in.is_open(), std::source_location::current(), "Failed to open layout file: {}", m_path.string());
+    if (!in.is_open()) return;
 
-    auto read_string = [](std::ifstream& stream) -> std::string {
-        std::uint32_t size = 0;
-        stream.read(reinterpret_cast<char*>(&size), sizeof(size));
-        std::string str(size, '\0');
-        stream.read(str.data(), size);
-        return str;
-    };
+    binary_reader ar(in, 0x474C4159, 1, m_path.string());
+    if (!ar.valid()) return;
 
-    auto read_data = [](std::ifstream& stream, auto& value) {
-        stream.read(reinterpret_cast<char*>(&value), sizeof(value));
-    };
-
-    constexpr std::uint32_t expected_magic = 0x474C4159; // "GLAY"
-    std::uint32_t magic = 0;
-    read_data(in, magic);
-    assert(magic == expected_magic, std::source_location::current(), "Invalid layout file magic");
-
-    std::uint32_t version = 0;
-    read_data(in, version);
-
-    m_name = read_string(in);
-
-    std::uint32_t set_count = 0;
-    read_data(in, set_count);
-
-    m_sets.resize(set_count);
-    for (auto& set : m_sets) {
-        read_data(in, set.set_index);
-
-        std::uint32_t binding_count = 0;
-        read_data(in, binding_count);
-
-        set.bindings.resize(binding_count);
-        for (auto& binding : set.bindings) {
-            binding.name = read_string(in);
-            read_data(in, binding.layout_binding);
-        }
-    }
+    ar & m_name;
+    ar & m_sets;
 
     // Create Vulkan descriptor set layouts
     std::uint32_t max_set = 0;

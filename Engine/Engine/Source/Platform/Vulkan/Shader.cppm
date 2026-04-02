@@ -158,6 +158,38 @@ namespace gse {
 	};
 }
 
+export namespace gse {
+    template<archive Ar>
+    auto serialize(Ar& ar, shader::uniform_member& m) -> void {
+        ar & m.name & m.offset & m.size & m.array_size;
+    }
+
+    template<archive Ar>
+    auto serialize(Ar& ar, struct shader::uniform_block& b) -> void {
+        ar & b.name & b.binding & b.set & b.size & b.members & b.stage_flags;
+    }
+
+    template<archive Ar>
+    auto serialize(Ar& ar, shader::binding& b) -> void {
+        ar & b.name & b.desc.binding & b.desc.type & b.desc.count & b.desc.stages & b.member;
+    }
+
+    template<archive Ar>
+    auto serialize(Ar& ar, shader::set& s) -> void {
+        ar & s.type & s.bindings;
+    }
+
+    template<archive Ar>
+    auto serialize(Ar& ar, shader::layout& l) -> void {
+        ar & l.sets;
+    }
+
+    template<archive Ar>
+    auto serialize(Ar& ar, gpu::vertex_attribute_desc& attr) -> void {
+        ar & attr.location & attr.binding & attr.format & attr.offset;
+    }
+}
+
 gse::shader::shader(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path) {
 	m_info = {
 		.name = path.stem().string(),
@@ -170,124 +202,28 @@ auto gse::shader::load(const auto&) -> void {
 	assert(in.is_open(), std::source_location::current(), "Failed to open gshader asset: {}", m_info.path.string());
 	if (!in.is_open()) return;
 
-	auto read_string = [](std::ifstream& stream, std::string& str) {
-		std::uint32_t size;
-		stream.read(reinterpret_cast<char*>(&size), sizeof(size));
-		str.resize(size);
-		stream.read(str.data(), size);
-	};
-
-	auto read_data = [](std::ifstream& stream, auto& value) {
-		stream.read(reinterpret_cast<char*>(&value), sizeof(value));
-	};
+	binary_reader ar(in, 0x47534852, 1, m_info.path.string());
+	if (!ar.valid()) return;
 
 	std::uint8_t shader_type = 0;
-	read_data(in, shader_type);
+	ar & shader_type;
 	m_is_compute = (shader_type == 1);
 	m_is_mesh_shader_pipeline = (shader_type == 2);
 
-	read_string(in, m_layout_name);
-
-	std::uint32_t attr_count = 0;
-	read_data(in, attr_count);
-	m_vertex_input.attributes.resize(attr_count);
-	for (auto& [location, binding, format, offset] : m_vertex_input.attributes) {
-		read_data(in, location);
-		read_data(in, binding);
-		read_data(in, format);
-		read_data(in, offset);
-	}
-
-	std::uint32_t num_sets = 0;
-	read_data(in, num_sets);
-	for (std::uint32_t i = 0; i < num_sets; ++i) {
-		gpu::descriptor_set_type type;
-		read_data(in, type);
-		std::uint32_t num_bindings = 0;
-		read_data(in, num_bindings);
-		std::vector<binding> bindings;
-		for (std::uint32_t j = 0; j < num_bindings; ++j) {
-			binding b;
-			read_string(in, b.name);
-			read_data(in, b.desc.binding);
-			read_data(in, b.desc.type);
-			read_data(in, b.desc.count);
-			std::uint8_t raw_stages = 0;
-			read_data(in, raw_stages);
-			b.desc.stages = gpu::stage_flags::from_bits(raw_stages);
-			bool has_member = false;
-			read_data(in, has_member);
-			if (has_member) {
-				struct uniform_block member;
-				read_string(in, member.name);
-				read_data(in, member.binding);
-				read_data(in, member.set);
-				read_data(in, member.size);
-				std::uint32_t num_ubo_members = 0;
-				read_data(in, num_ubo_members);
-				for (std::uint32_t k = 0; k < num_ubo_members; ++k) {
-					std::string key_name;
-					uniform_member ubo_member;
-					read_string(in, key_name);
-					read_string(in, ubo_member.name);
-					read_data(in, ubo_member.offset);
-					read_data(in, ubo_member.size);
-					read_data(in, ubo_member.array_size);
-					member.members[key_name] = ubo_member;
-				}
-				b.member = member;
-			}
-			bindings.push_back(std::move(b));
-		}
-		m_layout.sets[type] = { .type = type, .bindings = std::move(bindings) };
-	}
-
-	std::uint32_t pc_count = 0;
-	read_data(in, pc_count);
-	m_push_constants.resize(pc_count);
-	for (auto& pc : m_push_constants) {
-		read_string(in, pc.name);
-		read_data(in, pc.size);
-		std::uint8_t raw_stages = 0;
-		read_data(in, raw_stages);
-		pc.stage_flags = gpu::stage_flags::from_bits(raw_stages);
-		std::uint32_t member_count = 0;
-		read_data(in, member_count);
-		for (std::uint32_t i = 0; i < member_count; ++i) {
-			std::string key, name;
-			std::uint32_t offset = 0, size = 0, arr = 0;
-			read_string(in, key);
-			read_string(in, name);
-			read_data(in, offset);
-			read_data(in, size);
-			read_data(in, arr);
-			pc.members[key] = {
-				.name = name,
-				.type_name = {},
-				.offset = offset,
-				.size = size,
-				.array_size = arr
-			};
-		}
-	}
-
-	auto read_spirv = [&]() -> std::vector<std::uint32_t> {
-		std::uint64_t size = 0;
-		read_data(in, size);
-		std::vector<std::uint32_t> code(size / sizeof(std::uint32_t));
-		in.read(reinterpret_cast<char*>(code.data()), size);
-		return code;
-	};
+	ar & m_layout_name;
+	ar & m_vertex_input.attributes;
+	ar & m_layout;
+	ar & m_push_constants;
 
 	if (m_is_compute) {
-		m_compute_spirv = read_spirv();
+		ar & raw_blob(m_compute_spirv);
 	} else if (m_is_mesh_shader_pipeline) {
-		m_task_spirv = read_spirv();
-		m_mesh_spirv = read_spirv();
-		m_frag_spirv = read_spirv();
+		ar & raw_blob(m_task_spirv);
+		ar & raw_blob(m_mesh_spirv);
+		ar & raw_blob(m_frag_spirv);
 	} else {
-		m_vert_spirv = read_spirv();
-		m_frag_spirv = read_spirv();
+		ar & raw_blob(m_vert_spirv);
+		ar & raw_blob(m_frag_spirv);
 	}
 
 	if (!m_vertex_input.attributes.empty()) {

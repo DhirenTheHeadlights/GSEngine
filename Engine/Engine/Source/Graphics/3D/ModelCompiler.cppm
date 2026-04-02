@@ -6,6 +6,7 @@ import gse.platform;
 import gse.assert;
 import gse.log;
 import gse.math;
+import gse.utility;
 
 import :mesh;
 import :model;
@@ -98,18 +99,6 @@ private:
         std::span<const std::uint8_t> meshlet_triangles
     ) -> meshlet_bounds;
 
-    static auto write_binary(
-        std::ofstream& out,
-        const void* data,
-        const std::size_t size
-    ) -> void {
-        out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
-    }
-
-    template <typename T>
-    static auto write_value(std::ofstream& out, const T& value) -> void {
-        write_binary(out, &value, sizeof(T));
-    }
 };
 
 auto gse::asset_compiler<gse::model>::compile_one(
@@ -239,41 +228,19 @@ auto gse::asset_compiler<gse::model>::compile_one(
         return false;
     }
 
-    constexpr std::uint32_t magic = 0x474D444C;
-    constexpr std::uint32_t version = 2;
-    write_value(out_file, magic);
-    write_value(out_file, version);
+    binary_writer ar(out_file, 0x474D444C, 3);
 
-    const std::uint64_t mesh_count = meshes.size();
-    write_value(out_file, mesh_count);
+    const auto mesh_count = static_cast<std::uint32_t>(meshes.size());
+    ar & mesh_count;
 
-    for (const auto& m : meshes) {
-        const std::uint64_t mat_name_len = m.material_name.length();
-        write_value(out_file, mat_name_len);
-        write_binary(out_file, m.material_name.c_str(), mat_name_len);
-
-        const std::uint64_t vertex_count = m.vertices.size();
-        write_value(out_file, vertex_count);
-        write_binary(out_file, m.vertices.data(), vertex_count * sizeof(vertex));
-
-        const std::uint64_t index_count = m.indices.size();
-        write_value(out_file, index_count);
-        write_binary(out_file, m.indices.data(), index_count * sizeof(std::uint32_t));
-
-        const std::uint64_t meshlet_count = m.meshlets.descriptors.size();
-        write_value(out_file, meshlet_count);
-
-        write_binary(out_file, m.meshlets.descriptors.data(), meshlet_count * sizeof(meshlet_descriptor));
-
-        const std::uint64_t meshlet_vertex_count = m.meshlets.vertex_indices.size();
-        write_value(out_file, meshlet_vertex_count);
-        write_binary(out_file, m.meshlets.vertex_indices.data(), meshlet_vertex_count * sizeof(std::uint32_t));
-
-        const std::uint64_t meshlet_triangle_count = m.meshlets.triangles.size();
-        write_value(out_file, meshlet_triangle_count);
-        write_binary(out_file, m.meshlets.triangles.data(), meshlet_triangle_count);
-
-        write_binary(out_file, m.meshlets.bounds.data(), meshlet_count * sizeof(meshlet_bounds));
+    for (auto& m : meshes) {
+        ar & m.material_name;
+        ar & raw_blob(m.vertices);
+        ar & raw_blob(m.indices);
+        ar & raw_blob(m.meshlets.descriptors);
+        ar & raw_blob(m.meshlets.vertex_indices);
+        ar & raw_blob(m.meshlets.triangles);
+        ar & raw_blob(m.meshlets.bounds);
     }
 
     log::println(log::category::assets, "Model compiled: {} ({} meshes)", destination.filename().string(), mesh_count);

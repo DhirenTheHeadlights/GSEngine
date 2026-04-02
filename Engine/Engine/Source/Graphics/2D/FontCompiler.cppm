@@ -11,6 +11,7 @@ import std;
 import gse.platform;
 import gse.assert;
 import gse.log;
+import gse.utility;
 
 import :font;
 
@@ -135,20 +136,9 @@ struct gse::asset_compiler<gse::font> {
             return false;
         }
 
-        constexpr std::uint32_t magic = 0x47464E54;
-        constexpr std::uint32_t version = 1;
-        out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-        out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
-
         const std::string relative_src_str = source.lexically_relative(config::resource_path).string();
-        std::uint64_t path_len = relative_src_str.length();
-        out_file.write(reinterpret_cast<const char*>(&path_len), sizeof(path_len));
-        out_file.write(relative_src_str.c_str(), path_len);
 
-        out_file.write(reinterpret_cast<const char*>(&ascender), sizeof(ascender));
-        out_file.write(reinterpret_cast<const char*>(&descender), sizeof(descender));
-
-        constexpr uint32_t channels = 4;
+        constexpr std::uint32_t channels = 4;
         std::vector<std::byte> rgba_data(static_cast<size_t>(atlas_width) * atlas_height * channels);
         for (int i = 0; i < atlas_width * atlas_height; ++i) {
             rgba_data[static_cast<size_t>(i) * 4 + 0] = static_cast<std::byte>(atlas_data[static_cast<size_t>(i) * 3 + 0]);
@@ -158,19 +148,13 @@ struct gse::asset_compiler<gse::font> {
         }
 
         const std::uint32_t u_atlas_width = atlas_width, u_atlas_height = atlas_height;
-        out_file.write(reinterpret_cast<const char*>(&u_atlas_width), sizeof(u_atlas_width));
-        out_file.write(reinterpret_cast<const char*>(&u_atlas_height), sizeof(u_atlas_height));
-        out_file.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
-        std::uint64_t data_size = rgba_data.size();
-        out_file.write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
-        out_file.write(reinterpret_cast<const char*>(rgba_data.data()), data_size);
 
-        std::uint64_t glyph_map_size = glyphs.size();
-        out_file.write(reinterpret_cast<const char*>(&glyph_map_size), sizeof(glyph_map_size));
-        for (const auto& [ch, glyph_data] : glyphs) {
-            out_file.write(&ch, sizeof(ch));
-            out_file.write(reinterpret_cast<const char*>(&glyph_data), sizeof(glyph_data));
-        }
+        binary_writer ar(out_file, 0x47464E54, 2);
+        ar & relative_src_str;
+        ar & ascender & descender;
+        ar & u_atlas_width & u_atlas_height & channels;
+        ar & raw_blob(rgba_data);
+        ar & glyphs;
 
         log::println(log::category::assets, "Font compiled: {}", destination.filename().string());
         return true;

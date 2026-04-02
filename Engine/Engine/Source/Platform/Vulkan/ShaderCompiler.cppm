@@ -12,6 +12,7 @@ import std;
 
 import gse.assert;
 import gse.log;
+import gse.utility;
 
 import :asset_compiler;
 import :shader;
@@ -29,16 +30,6 @@ namespace gse::shader_compile {
         log::println(log::level::error, log::category::assets, "{}", message);
     }
 
-    auto write_string(std::ofstream& stream, const std::string& str) -> void {
-        const auto size = static_cast<std::uint32_t>(str.size());
-        stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
-        stream.write(str.c_str(), size);
-    }
-
-    template<typename T>
-    auto write_data(std::ofstream& stream, const T& value) -> void {
-        stream.write(reinterpret_cast<const char*>(&value), sizeof(value));
-    }
 
     auto to_vertex_format(slang::TypeReflection* type) -> gpu::vertex_format {
         using kind = slang::TypeReflection::Kind;
@@ -693,81 +684,40 @@ struct gse::asset_compiler<gse::shader> {
         std::ofstream out(destination, std::ios::binary);
         if (!out.is_open()) return false;
 
+        binary_writer ar(out, 0x47534852, 1);
+
         const std::uint8_t shader_type = is_compute ? std::uint8_t(1) : is_mesh_pipeline ? std::uint8_t(2) : std::uint8_t(0);
-        write_data(out, shader_type);
-        write_string(out, shader_layout_name);
+        ar & shader_type;
+        ar & shader_layout_name;
+        ar & reflected_vertex_input.attributes;
 
-        write_data(out, static_cast<std::uint32_t>(reflected_vertex_input.attributes.size()));
-        for (const auto& attr : reflected_vertex_input.attributes) {
-            write_data(out, attr.location);
-            write_data(out, attr.binding);
-            write_data(out, attr.format);
-            write_data(out, attr.offset);
-        }
+        shader::layout layout_data;
+        layout_data.sets = std::move(reflected_sets);
+        ar & layout_data;
 
-        write_data(out, static_cast<std::uint32_t>(reflected_sets.size()));
-        for (const auto& [type, set_data] : reflected_sets) {
-            write_data(out, type);
-            write_data(out, static_cast<std::uint32_t>(set_data.bindings.size()));
-            for (const auto& [name, desc, member] : set_data.bindings) {
-                write_string(out, name);
-                write_data(out, desc.binding);
-                write_data(out, desc.type);
-                write_data(out, desc.count);
-                write_data(out, desc.stages.bits());
-                write_data(out, member.has_value());
-                if (member) {
-                    write_string(out, member->name);
-                    write_data(out, member->binding);
-                    write_data(out, member->set);
-                    write_data(out, member->size);
-                    write_data(out, static_cast<std::uint32_t>(member->members.size()));
-                    for (const auto& [m_name, m_data] : member->members) {
-                        write_string(out, m_name);
-                        write_string(out, m_data.name);
-                        write_data(out, m_data.offset);
-                        write_data(out, m_data.size);
-                        write_data(out, m_data.array_size);
-                    }
-                }
-            }
-        }
+        ar & reflected_pcs;
 
-        write_data(out, static_cast<std::uint32_t>(reflected_pcs.size()));
-        for (const auto& pc : reflected_pcs) {
-            write_string(out, pc.name);
-            write_data(out, pc.size);
-            write_data(out, pc.stage_flags.bits());
-            write_data(out, static_cast<std::uint32_t>(pc.members.size()));
-            for (const auto& [m_name, m_data] : pc.members) {
-                write_string(out, m_name);
-                write_string(out, m_data.name);
-                write_data(out, m_data.offset);
-                write_data(out, m_data.size);
-                write_data(out, m_data.array_size);
-            }
-        }
-
-        auto write_blob = [&](std::uint32_t entry_point_index) -> bool {
+        auto write_spirv = [&](std::uint32_t entry_point_index) -> bool {
             Slang::ComPtr<ISlangBlob> blob, gen_diags;
             if (SLANG_FAILED(program->getEntryPointCode(entry_point_index, 0, blob.writeRef(), gen_diags.writeRef())) || !blob) {
                 return false;
             }
-            const auto size = blob->getBufferSize();
-            write_data(out, size);
-            out.write(static_cast<const char*>(blob->getBufferPointer()), size);
+            const auto byte_size = blob->getBufferSize();
+            std::vector<std::uint32_t> spirv(byte_size / sizeof(std::uint32_t));
+            std::memcpy(spirv.data(), blob->getBufferPointer(), byte_size);
+            ar & raw_blob(spirv);
             return true;
         };
 
         if (is_compute) {
-            if (!write_blob(0)) return false;
+            if (!write_spirv(0)) return false;
         } else if (is_mesh_pipeline) {
-            if (!write_blob(0)) return false;
-            if (!write_blob(1)) return false;
-            if (!write_blob(2)) return false;
+            if (!write_spirv(0)) return false;
+            if (!write_spirv(1)) return false;
+            if (!write_spirv(2)) return false;
         } else {
-            if (!write_blob(0)) return false;
-            if (!write_blob(1)) return false;
+            if (!write_spirv(0)) return false;
+            if (!write_spirv(1)) return false;
         }
 
         constexpr const char* type_names[] = { "Graphics", "Compute", "Mesh Pipeline" };

@@ -5,6 +5,7 @@ import std;
 import gse.platform;
 import gse.assert;
 import gse.log;
+import gse.utility;
 
 import :texture;
 
@@ -30,7 +31,7 @@ struct gse::asset_compiler<gse::texture> {
         const std::filesystem::path& source,
         const std::filesystem::path& destination
     ) -> bool {
-        const auto image_data = image::load(source);
+        auto image_data = image::load(source);
         if (image_data.pixels.empty()) {
             log::println(log::level::warning, log::category::assets, "Failed to load texture '{}', skipping", source.string());
             return false;
@@ -63,23 +64,13 @@ struct gse::asset_compiler<gse::texture> {
             return false;
         }
 
-        constexpr std::uint32_t magic = 0x47544558;
-        constexpr std::uint32_t version = 1;
-        out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-        out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
-
         const std::uint32_t width = image_data.size.x();
         const std::uint32_t height = image_data.size.y();
         const std::uint32_t channels = image_data.channels;
 
-        out_file.write(reinterpret_cast<const char*>(&width), sizeof(width));
-        out_file.write(reinterpret_cast<const char*>(&height), sizeof(height));
-        out_file.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
-        out_file.write(reinterpret_cast<const char*>(&texture_profile), sizeof(texture_profile));
-
-        const std::uint64_t data_size = image_data.size_bytes();
-        out_file.write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
-        out_file.write(reinterpret_cast<const char*>(image_data.pixels.data()), data_size);
+        binary_writer ar(out_file, 0x47544558, 1);
+        ar & width & height & channels & texture_profile;
+        ar & raw_blob(image_data.pixels);
 
         log::println(log::category::assets, "Texture compiled: {}", destination.filename().string());
         return true;

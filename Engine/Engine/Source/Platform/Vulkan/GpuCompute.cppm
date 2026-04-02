@@ -108,7 +108,7 @@ export namespace gse::gpu {
 }
 
 namespace {
-	auto to_vk(gse::gpu::barrier_scope scope) -> vk::MemoryBarrier2 {
+	auto to_vk(const gse::gpu::barrier_scope scope) -> vk::MemoryBarrier2 {
 		using enum gse::gpu::barrier_scope;
 		switch (scope) {
 			case compute_to_compute:
@@ -157,8 +157,8 @@ gse::gpu::compute_queue::compute_queue(
 	vk::raii::Fence&& fence,
 	vk::raii::QueryPool&& query_pool,
 	const vk::raii::Queue* queue,
-	const vk::raii::Device* device,
-	float timestamp_period
+	const vk::raii::Device* device, 
+	const float timestamp_period
 ) : m_pool(std::move(pool)),
     m_cmd(std::move(cmd)),
     m_fence(std::move(fence)),

@@ -2,6 +2,12 @@ export module gse.utility;
 
 export import gse.config;
 
+export import :archive;
+
+export import :linear_vector;
+export import :slot_map;
+export import :static_vector;
+
 export import :channel_base;
 export import :clock;
 export import :behavior_hook;

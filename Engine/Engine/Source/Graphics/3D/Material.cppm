@@ -40,7 +40,7 @@ export namespace gse {
             normal_texture(normal_texture),
 			specular_texture(specular_texture) {}
 
-        auto load(const gpu::context& context) -> void;
+        auto load(gpu::resource_manager& context) -> void;
 
         auto unload() -> void;
 
@@ -62,24 +62,17 @@ export namespace gse {
     };
 }
 
-auto gse::material::load(const gpu::context& context) -> void {
+auto gse::material::load(gpu::resource_manager& context) -> void {
 	if (path.empty()) {
 		return;
 	}
 
 	std::ifstream in_file(path, std::ios::binary);
 	assert(in_file.is_open(), std::source_location::current(), "Failed to open baked material file for reading: {}", path.string());
+	if (!in_file.is_open()) return;
 
-	auto read_string = [](std::ifstream& stream) -> std::string {
-		uint64_t len = 0;
-		stream.read(reinterpret_cast<char*>(&len), sizeof(len));
-		if (len > 0) {
-			std::string str(len, '\0');
-			stream.read(&str[0], len);
-			return str;
-		}
-		return "";
-	};
+	binary_reader ar(in_file, 0x474D4154, 2, path.string());
+	if (!ar.valid()) return;
 
 	auto material_relative = path.lexically_relative(config::baked_resource_path);
 	auto material_dir = material_relative.parent_path();
@@ -95,25 +88,19 @@ auto gse::material::load(const gpu::context& context) -> void {
 		return material_dir_str + "/" + stem;
 	};
 
-	uint32_t magic, version;
-	in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-	in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
-	in_file.read(reinterpret_cast<char*>(&ambient), sizeof(ambient));
-	in_file.read(reinterpret_cast<char*>(&diffuse), sizeof(diffuse));
-	in_file.read(reinterpret_cast<char*>(&specular), sizeof(specular));
-	in_file.read(reinterpret_cast<char*>(&emission), sizeof(emission));
-	in_file.read(reinterpret_cast<char*>(&shininess), sizeof(shininess));
-	in_file.read(reinterpret_cast<char*>(&optical_density), sizeof(optical_density));
-	in_file.read(reinterpret_cast<char*>(&transparency), sizeof(transparency));
-	in_file.read(reinterpret_cast<char*>(&illumination_model), sizeof(illumination_model));
+	ar & ambient & diffuse & specular & emission;
+	ar & shininess & optical_density & transparency & illumination_model;
 
-	if (const auto diffuse_filename = read_string(in_file); !diffuse_filename.empty()) {
+	std::string diffuse_filename, normal_filename, specular_filename;
+	ar & diffuse_filename & normal_filename & specular_filename;
+
+	if (!diffuse_filename.empty()) {
 		diffuse_texture = context.get<texture>(make_texture_path(diffuse_filename));
 	}
-	if (const auto normal_filename = read_string(in_file); !normal_filename.empty()) {
+	if (!normal_filename.empty()) {
 		normal_texture = context.get<texture>(make_texture_path(normal_filename));
 	}
-	if (const auto specular_filename = read_string(in_file); !specular_filename.empty()) {
+	if (!specular_filename.empty()) {
 		specular_texture = context.get<texture>(make_texture_path(specular_filename));
 	}
 }

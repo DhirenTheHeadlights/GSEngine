@@ -61,7 +61,7 @@ export namespace gse {
         ~font();
 
         auto load(
-            const gpu::context& context
+            gpu::resource_manager& context
         ) -> void;
 
         auto unload(
@@ -118,7 +118,7 @@ gse::font::~font() {
     }
 }
 
-auto gse::font::load(const gpu::context& context) -> void {
+auto gse::font::load(gpu::resource_manager& context) -> void {
     std::ifstream in_file(m_baked_path, std::ios::binary);
     assert(
         in_file.is_open(), std::source_location::current(),
@@ -126,32 +126,20 @@ auto gse::font::load(const gpu::context& context) -> void {
         m_baked_path.string()
     );
 
-    std::uint32_t magic, version;
-    in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-    in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
+    binary_reader ar(in_file, 0x47464E54, 2, m_baked_path.string());
+    if (!ar.valid()) return;
 
-    assert(
-        magic == 0x47464E54 && version == 1, 
-        std::source_location::current(), "Invalid baked font file format or version: {}", m_baked_path.string()
-    );
-
-    std::uint64_t path_len;
-    in_file.read(reinterpret_cast<char*>(&path_len), sizeof(path_len));
-    std::string relative_src_str(path_len, '\0');
-    in_file.read(&relative_src_str[0], path_len);
+    std::string relative_src_str;
+    ar & relative_src_str;
     const auto source_font_path = config::resource_path / relative_src_str;
 
-    in_file.read(reinterpret_cast<char*>(&m_ascender), sizeof(m_ascender));
-    in_file.read(reinterpret_cast<char*>(&m_descender), sizeof(m_descender));
+    ar & m_ascender & m_descender;
 
-    std::uint32_t atlas_width, atlas_height, channels;
-    std::uint64_t data_size;
-    in_file.read(reinterpret_cast<char*>(&atlas_width), sizeof(atlas_width));
-    in_file.read(reinterpret_cast<char*>(&atlas_height), sizeof(atlas_height));
-    in_file.read(reinterpret_cast<char*>(&channels), sizeof(channels));
-    in_file.read(reinterpret_cast<char*>(&data_size), sizeof(data_size));
-    std::vector<std::byte> atlas_pixel_data(data_size);
-    in_file.read(reinterpret_cast<char*>(atlas_pixel_data.data()), data_size);
+    std::uint32_t atlas_width = 0, atlas_height = 0, channels = 0;
+    ar & atlas_width & atlas_height & channels;
+
+    std::vector<std::byte> atlas_pixel_data;
+    ar & raw_blob(atlas_pixel_data);
 
     m_texture = std::make_unique<gse::texture>(
         std::format("msdf_font_atlas_{}", m_baked_path.stem().string()),
@@ -163,16 +151,7 @@ auto gse::font::load(const gpu::context& context) -> void {
 
     m_texture->load(context);
 
-    std::uint64_t glyph_count;
-    in_file.read(reinterpret_cast<char*>(&glyph_count), sizeof(glyph_count));
-    m_glyphs.reserve(glyph_count);
-    for (std::uint64_t i = 0; i < glyph_count; ++i) {
-        char ch;
-        glyph glyph_data;
-        in_file.read(&ch, sizeof(ch));
-        in_file.read(reinterpret_cast<char*>(&glyph_data), sizeof(glyph_data));
-        m_glyphs[ch] = glyph_data;
-    }
+    ar & m_glyphs;
 
     assert(
         FT_Init_FreeType(&m_ft) == 0, 

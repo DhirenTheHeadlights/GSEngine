@@ -13,6 +13,7 @@ import std;
 import :vulkan_allocator;
 import gse.assert;
 import gse.log;
+import gse.utility;
 
 import :asset_compiler;
 import :shader_layout;
@@ -30,16 +31,6 @@ namespace gse::layout_compile {
         log::println(log::level::error, log::category::assets, "{}", message);
     }
 
-    auto write_string(std::ofstream& stream, const std::string& str) -> void {
-        const auto size = static_cast<std::uint32_t>(str.size());
-        stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
-        stream.write(str.c_str(), size);
-    }
-
-    template<typename T>
-    auto write_data(std::ofstream& stream, const T& value) -> void {
-        stream.write(reinterpret_cast<const char*>(&value), sizeof(value));
-    }
 
     auto to_vk_descriptor_type(
         slang::TypeLayoutReflection* tl,
@@ -250,24 +241,14 @@ struct gse::asset_compiler<gse::shader_layout> {
             return false;
         }
 
-        constexpr std::uint32_t magic = 0x474C4159;
-        constexpr std::uint32_t version = 1;
-        write_data(out, magic);
-        write_data(out, version);
-        write_string(out, layout_name);
+        binary_writer ar(out, 0x474C4159, 1);
+        ar & layout_name;
 
         const auto set_count = static_cast<std::uint32_t>(sets_map.size());
-        write_data(out, set_count);
+        ar & set_count;
 
         for (const auto& [set_idx, bindings] : sets_map) {
-            write_data(out, set_idx);
-            const auto binding_count = static_cast<std::uint32_t>(bindings.size());
-            write_data(out, binding_count);
-
-            for (const auto& b : bindings) {
-                write_string(out, b.name);
-                write_data(out, b.layout_binding);
-            }
+            ar & set_idx & bindings;
         }
 
         log::println(log::category::assets, "Layout compiled: {}", destination.filename().string());

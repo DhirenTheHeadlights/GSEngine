@@ -47,7 +47,7 @@ export namespace gse {
 		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
-		auto load(gpu::context& context) -> void;
+		auto load(gpu::resource_manager& context) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;
@@ -68,35 +68,27 @@ gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : 
 	}
 }
 
-auto gse::model::load(gpu::context& context) -> void {
+auto gse::model::load(gpu::resource_manager& context) -> void {
 	if (!m_baked_model_path.empty()) {
 		m_meshes.clear();
 
 		std::ifstream in_file(m_baked_model_path, std::ios::binary);
 		assert(in_file.is_open(), std::source_location::current(), "Failed to open baked model file for reading.");
+		if (!in_file.is_open()) return;
 
-		auto read_val = [&]<typename T>(T& val) {
-			in_file.read(reinterpret_cast<char*>(&val), sizeof(T));
-		};
+		binary_reader ar(in_file, 0x474D444C, 3, m_baked_model_path.string());
+		if (!ar.valid()) return;
 
-		std::uint32_t magic, version;
-		read_val(magic);
-		read_val(version);
-		assert(magic == 0x474D444C && version == 2, std::source_location::current(),
-			"Invalid or outdated .gmdl file: {}", m_baked_model_path.string());
-
-		std::uint64_t mesh_count;
-		read_val(mesh_count);
+		std::uint32_t mesh_count = 0;
+		ar & mesh_count;
 		m_meshes.reserve(mesh_count);
 
 		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
 		const auto material_dir = config::baked_resource_path / "Materials" / model_relative.parent_path();
 
-		for (std::uint64_t i = 0; i < mesh_count; ++i) {
-			std::uint64_t mat_name_len;
-			read_val(mat_name_len);
-			std::string material_name(mat_name_len, '\0');
-			in_file.read(material_name.data(), mat_name_len);
+		for (std::uint32_t i = 0; i < mesh_count; ++i) {
+			std::string material_name;
+			ar & material_name;
 
 			const auto material_path = material_dir / (material_name + ".gmat");
 			resource::handle<material> material_handle;
@@ -104,21 +96,18 @@ auto gse::model::load(gpu::context& context) -> void {
 				material_handle = context.queue<material>(material_path.string());
 			}
 
-			std::uint64_t vertex_count;
-			read_val(vertex_count);
-			std::vector<vertex> vertices(vertex_count);
-			in_file.read(reinterpret_cast<char*>(vertices.data()), vertex_count * sizeof(vertex));
-
-			std::uint64_t index_count;
-			read_val(index_count);
-			std::vector<std::uint32_t> indices(index_count);
-			in_file.read(reinterpret_cast<char*>(indices.data()), index_count * sizeof(std::uint32_t));
-
 			meshlet_data ml;
+			std::vector<vertex> vertices;
+			std::vector<std::uint32_t> indices;
 
-			std::uint64_t meshlet_count;
-			read_val(meshlet_count);
-			if (meshlet_count == 0) {
+			ar & raw_blob(vertices);
+			ar & raw_blob(indices);
+			ar & raw_blob(ml.descriptors);
+			ar & raw_blob(ml.vertex_indices);
+			ar & raw_blob(ml.triangles);
+			ar & raw_blob(ml.bounds);
+
+			if (ml.descriptors.empty()) {
 				log::println(
 					log::level::warning,
 					log::category::render,
@@ -127,22 +116,6 @@ auto gse::model::load(gpu::context& context) -> void {
 					i
 				);
 			}
-
-			ml.descriptors.resize(meshlet_count);
-			in_file.read(reinterpret_cast<char*>(ml.descriptors.data()), meshlet_count * sizeof(meshlet_descriptor));
-
-			std::uint64_t meshlet_vertex_count;
-			read_val(meshlet_vertex_count);
-			ml.vertex_indices.resize(meshlet_vertex_count);
-			in_file.read(reinterpret_cast<char*>(ml.vertex_indices.data()), meshlet_vertex_count * sizeof(std::uint32_t));
-
-			std::uint64_t meshlet_triangle_count;
-			read_val(meshlet_triangle_count);
-			ml.triangles.resize(meshlet_triangle_count);
-			in_file.read(reinterpret_cast<char*>(ml.triangles.data()), meshlet_triangle_count);
-
-			ml.bounds.resize(meshlet_count);
-			in_file.read(reinterpret_cast<char*>(ml.bounds.data()), meshlet_count * sizeof(meshlet_bounds));
 
 			m_meshes.emplace_back(mesh_data{
 				.vertices = std::move(vertices),
@@ -154,8 +127,8 @@ auto gse::model::load(gpu::context& context) -> void {
 	}
 
 	context.queue_gpu_command<model>(
-		this, 
-		[](gpu::context& ctx, model& self) {
+		this,
+		[](gpu::resource_manager& ctx, model& self) {
 			for (auto& mesh : self.m_meshes) {
 				mesh.initialize(ctx);
 			}

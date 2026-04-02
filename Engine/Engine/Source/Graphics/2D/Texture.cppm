@@ -36,7 +36,7 @@ export namespace gse {
 		);
 
 		auto load(
-			const gpu::context& context
+			gpu::resource_manager& context
 		) -> void;
 
 		auto unload(
@@ -52,7 +52,7 @@ export namespace gse {
 		) const -> const image::data&;
 	private:
 		auto create_vulkan_resources(
-			gpu::context& context,
+			gpu::resource_manager& context,
 			profile texture_profile
 		) -> void;
 
@@ -69,38 +69,32 @@ gse::texture::texture(const std::string_view name, const vec4f& color, const vec
 
 gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const vec2u size, const std::uint32_t channels, const profile texture_profile) : identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
 
-auto gse::texture::load(const gpu::context& context) -> void {
+auto gse::texture::load(gpu::resource_manager& context) -> void {
 	if (!m_image_data.path.empty()) {
 		std::ifstream in_file(m_image_data.path, std::ios::binary);
 		assert(
-			in_file.is_open(), 
+			in_file.is_open(),
 			std::source_location::current(),
 			"Failed to open baked texture file: {}",
 			m_image_data.path.string()
 		);
+		if (!in_file.is_open()) return;
 
-		std::uint32_t magic, version;
-		in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-		in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
-		assert(magic == 0x47544558 && version == 1, std::source_location::current(), "Invalid baked texture file format or version.");
+		binary_reader ar(in_file, 0x47544558, 1, m_image_data.path.string());
+		if (!ar.valid()) return;
 
-		std::uint32_t width, height, channels;
-		profile texture_profile;
-		in_file.read(reinterpret_cast<char*>(&width), sizeof(width));
-		in_file.read(reinterpret_cast<char*>(&height), sizeof(height));
-		in_file.read(reinterpret_cast<char*>(&channels), sizeof(channels));
-		in_file.read(reinterpret_cast<char*>(&texture_profile), sizeof(texture_profile));
+		std::uint32_t width = 0, height = 0, channels = 0;
+		profile texture_profile{};
+		ar & width & height & channels & texture_profile;
 
-		std::uint64_t data_size;
-		in_file.read(reinterpret_cast<char*>(&data_size), sizeof(data_size));
-		m_image_data.pixels.resize(data_size);
-		in_file.read(reinterpret_cast<char*>(m_image_data.pixels.data()), data_size);
+		ar & raw_blob(m_image_data.pixels);
 
 		m_image_data.size = { width, height };
 		m_image_data.channels = channels;
+		m_profile = texture_profile;
 	}
 
-	context.queue_gpu_command<texture>(this, [](gpu::context& ctx, texture& self) {
+	context.queue_gpu_command<texture>(this, [](gpu::resource_manager& ctx, texture& self) {
 		self.create_vulkan_resources(ctx, self.m_profile);
 	});
 }
@@ -123,7 +117,7 @@ auto gse::texture::image_data() const -> const image::data& {
 	return m_image_data;
 }
 
-auto gse::texture::create_vulkan_resources(gpu::context& context, const profile texture_profile) -> void {
+auto gse::texture::create_vulkan_resources(gpu::resource_manager& context, const profile texture_profile) -> void {
 	const auto width = m_image_data.size.x();
 	const auto height = m_image_data.size.y();
 	const auto channels = m_image_data.channels;

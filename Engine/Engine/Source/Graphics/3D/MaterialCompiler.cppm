@@ -6,6 +6,7 @@ import gse.platform;
 import gse.assert;
 import gse.log;
 import gse.math;
+import gse.utility;
 
 import :material;
 
@@ -46,12 +47,6 @@ struct gse::asset_compiler<gse::material> {
             float optical_density = 1.0f;
             float transparency = 1.0f;
             int illumination_model = 0;
-        };
-
-        auto write_string = [](std::ofstream& stream, const std::string& str) {
-            const uint64_t len = str.length();
-            stream.write(reinterpret_cast<const char*>(&len), sizeof(len));
-            stream.write(str.c_str(), len);
         };
 
         auto split = [](const std::string& str) -> std::vector<std::string> {
@@ -96,23 +91,10 @@ struct gse::asset_compiler<gse::material> {
                 return false;
             }
 
-            constexpr uint32_t magic = 0x474D4154;
-            constexpr uint32_t version = 1;
-            out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-            out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
-
-            out_file.write(reinterpret_cast<const char*>(&mat_data.ambient), sizeof(mat_data.ambient));
-            out_file.write(reinterpret_cast<const char*>(&mat_data.diffuse), sizeof(mat_data.diffuse));
-            out_file.write(reinterpret_cast<const char*>(&mat_data.specular), sizeof(mat_data.specular));
-            out_file.write(reinterpret_cast<const char*>(&mat_data.emission), sizeof(mat_data.emission));
-            out_file.write(reinterpret_cast<const char*>(&mat_data.shininess), sizeof(mat_data.shininess));
-            out_file.write(reinterpret_cast<const char*>(&mat_data.optical_density), sizeof(mat_data.optical_density));
-            out_file.write(reinterpret_cast<const char*>(&mat_data.transparency), sizeof(mat_data.transparency));
-            out_file.write(reinterpret_cast<const char*>(&mat_data.illumination_model), sizeof(mat_data.illumination_model));
-
-            write_string(out_file, diffuse_path);
-            write_string(out_file, normal_path);
-            write_string(out_file, specular_path);
+            binary_writer ar(out_file, 0x474D4154, 2);
+            ar & mat_data.ambient & mat_data.diffuse & mat_data.specular & mat_data.emission;
+            ar & mat_data.shininess & mat_data.optical_density & mat_data.transparency & mat_data.illumination_model;
+            ar & diffuse_path & normal_path & specular_path;
 
             log::println(log::category::assets, "Material compiled: {}", baked_path.filename().string());
             return true;
