@@ -39,17 +39,17 @@ export namespace gse::renderer::light_culling {
 			};
 		}
 
-		auto light_index_list(std::uint32_t frame) const -> const gpu::buffer& {
+		auto light_index_list(const std::uint32_t frame) const -> const gpu::buffer& {
 			return light_index_list_buffers[frame];
 		}
 
-		auto tile_light_table(std::uint32_t frame) const -> const gpu::buffer& {
+		auto tile_light_table(const std::uint32_t frame) const -> const gpu::buffer& {
 			return tile_light_table_buffers[frame];
 		}
 	};
 
 	struct system {
-		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto initialize(const initialize_phase& phase, state& s) -> void;
 		static auto render(const render_phase& phase, const state& s) -> void;
 	};
 }
@@ -61,7 +61,7 @@ namespace gse::renderer::light_culling {
 
 auto gse::renderer::light_culling::update_depth_descriptor(state& s) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(s.shader_handle, s.descriptors[i])
+		gpu::descriptor_writer(s.ctx->device_ref(), s.shader_handle, s.descriptors[i])
 			.image("g_depth", s.ctx->graph().depth_image(), s.depth_sampler, gpu::image_layout::general)
 			.commit();
 	}
@@ -90,7 +90,7 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(state& s) -> void {
 			.usage = gpu::buffer_flag::storage
 		});
 
-		gpu::descriptor_writer(s.shader_handle, s.descriptors[i])
+		gpu::descriptor_writer(s.ctx->device_ref(), s.shader_handle, s.descriptors[i])
 			.buffer("CullingParams", s.culling_params_buffers[i], 0, params_block.size)
 			.buffer("lights", s.light_buffers[i], 0, light_block.size)
 			.buffer("light_index_list", s.light_index_list_buffers[i], 0, index_list_size)
@@ -101,7 +101,7 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(state& s) -> void {
 	update_depth_descriptor(s);
 }
 
-auto gse::renderer::light_culling::system::initialize(initialize_phase& phase, state& s) -> void {
+auto gse::renderer::light_culling::system::initialize(const initialize_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	s.ctx = &ctx;
 
@@ -162,7 +162,7 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
 	const auto inv_proj = proj.inverse();
 
-	const auto& params_alloc = s.culling_params_buffers[frame_index].native().allocation;
+	const auto& params_alloc = s.culling_params_buffers[frame_index];
 	s.shader_handle->set_uniform("CullingParams.projection", proj, params_alloc);
 	s.shader_handle->set_uniform("CullingParams.inv_proj", inv_proj, params_alloc);
 
@@ -174,7 +174,7 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 	const auto spot_chunk = phase.registry.view<spot_light_component>();
 	const auto point_chunk = phase.registry.view<point_light_component>();
 
-	const auto& light_alloc = s.light_buffers[frame_index].native().allocation;
+	const auto& light_alloc = s.light_buffers[frame_index];
 	const auto light_block = s.shader_handle->uniform_block("lights");
 	const auto stride = light_block.size;
 	std::vector zero_elem(stride, std::byte{ 0 });

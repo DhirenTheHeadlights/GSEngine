@@ -25,23 +25,11 @@ export namespace gse::gpu {
 	private:
 		vulkan::descriptor_region m_region;
 	};
-
-	struct buffer_binding {
-		const buffer* buf = nullptr;
-		std::size_t offset = 0;
-		std::size_t range = 0;
-	};
-
-	struct image_binding {
-		const image* img = nullptr;
-		const sampler* samp = nullptr;
-		image_layout layout = image_layout::general;
-	};
 }
 
 gse::gpu::descriptor_region::descriptor_region(vulkan::descriptor_region&& region)
 	: m_region(region) {}
 
 gse::gpu::descriptor_region::operator bool() const {
-	return static_cast<bool>(m_region);
+	return m_region;
 }

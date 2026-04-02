@@ -61,16 +61,8 @@ export namespace gse::gpu {
 		const shader& s
 	) -> descriptor_region;
 
-	auto write_descriptors(
-		device& dev,
-		const descriptor_region& region,
-		const shader& s,
-		const std::unordered_map<std::string, buffer_binding>& buffer_infos,
-		const std::unordered_map<std::string, image_binding>& image_infos = {},
-		const std::unordered_map<std::string, std::vector<image_binding>>& image_array_infos = {}
-	) -> void;
-
 	auto create_descriptor_writer(
+		device& dev,
 		resource::handle<shader> s,
 		descriptor_region& region
 	) -> descriptor_writer;
@@ -203,49 +195,6 @@ namespace {
 			case gse::gpu::image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
 			default:                                       return vk::ImageLayout::eUndefined;
 		}
-	}
-
-	auto to_vk_buffer_infos(const std::unordered_map<std::string, gse::gpu::buffer_binding>& bindings) -> std::unordered_map<std::string, vk::DescriptorBufferInfo> {
-		std::unordered_map<std::string, vk::DescriptorBufferInfo> result;
-		result.reserve(bindings.size());
-		for (const auto& [name, b] : bindings) {
-			result.emplace(name, vk::DescriptorBufferInfo{
-				.buffer = b.buf->native().buffer,
-				.offset = static_cast<vk::DeviceSize>(b.offset),
-				.range = static_cast<vk::DeviceSize>(b.range)
-			});
-		}
-		return result;
-	}
-
-	auto to_vk_image_infos(const std::unordered_map<std::string, gse::gpu::image_binding>& bindings) -> std::unordered_map<std::string, vk::DescriptorImageInfo> {
-		std::unordered_map<std::string, vk::DescriptorImageInfo> result;
-		result.reserve(bindings.size());
-		for (const auto& [name, b] : bindings) {
-			result.emplace(name, vk::DescriptorImageInfo{
-				.sampler = b.samp ? b.samp->native() : nullptr,
-				.imageView = b.img->native().view,
-				.imageLayout = to_vk(b.layout)
-			});
-		}
-		return result;
-	}
-
-	auto to_vk_image_array_infos(const std::unordered_map<std::string, std::vector<gse::gpu::image_binding>>& bindings) -> std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> {
-		std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> result;
-		result.reserve(bindings.size());
-		for (const auto& [name, arr] : bindings) {
-			auto& vec = result[name];
-			vec.reserve(arr.size());
-			for (const auto& b : arr) {
-				vec.push_back({
-					.sampler = b.samp ? b.samp->native() : nullptr,
-					.imageView = b.img->native().view,
-					.imageLayout = to_vk(b.layout)
-				});
-			}
-		}
-		return result;
 	}
 
 	auto make_blend_attachment(gse::gpu::blend_preset preset) -> vk::PipelineColorBlendAttachmentState {
@@ -417,13 +366,19 @@ auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
 
 auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const graphics_pipeline_desc& desc) -> pipeline {
 	auto& vk_device = dev.logical_device();
+	const auto& cache = dev.shader_cache(s);
 
-	auto layouts = s.layouts();
+	const auto& layouts = cache.layout_handles;
 
 	const bool has_push = !desc.push_constant_block.empty();
 	vk::PushConstantRange pc_range;
 	if (has_push) {
-		pc_range = s.push_constant_range(desc.push_constant_block);
+		const auto pb = s.push_block(desc.push_constant_block);
+		pc_range = vk::PushConstantRange{
+			vulkan::to_vk_stage_flags(pb.stage_flags),
+			0,
+			pb.size
+		};
 	}
 
 	vk::raii::PipelineLayout pipeline_layout = vk_device.createPipelineLayout({
@@ -512,8 +467,20 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 		.pAttachments = has_color ? &blend_attachment : nullptr
 	};
 
+	auto make_stage = [&](gpu::shader_stage stage, vk::ShaderStageFlagBits vk_stage) -> vk::PipelineShaderStageCreateInfo {
+		return {
+			.stage = vk_stage,
+			.module = *cache.modules.at(stage),
+			.pName = "main"
+		};
+	};
+
 	if (s.is_mesh_shader()) {
-		const auto stages = s.mesh_shader_stages();
+		const std::array stages = {
+			make_stage(gpu::shader_stage::task, vk::ShaderStageFlagBits::eTaskEXT),
+			make_stage(gpu::shader_stage::mesh, vk::ShaderStageFlagBits::eMeshEXT),
+			make_stage(gpu::shader_stage::fragment, vk::ShaderStageFlagBits::eFragment),
+		};
 
 		vk::raii::Pipeline handle = vk_device.createGraphicsPipeline(nullptr, {
 			.pNext = &rendering_info,
@@ -535,8 +502,39 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 		return pipeline(std::move(handle), std::move(pipeline_layout), bind_point::graphics);
 	}
 
-	const auto stages = s.shader_stages();
-	const auto vertex_input = s.vertex_input_state();
+	const std::array stages = {
+		make_stage(gpu::shader_stage::vertex, vk::ShaderStageFlagBits::eVertex),
+		make_stage(gpu::shader_stage::fragment, vk::ShaderStageFlagBits::eFragment),
+	};
+
+	const auto& vi = s.vertex_input_data();
+	std::vector<vk::VertexInputBindingDescription> vk_bindings;
+	vk_bindings.reserve(vi.bindings.size());
+	for (const auto& b : vi.bindings) {
+		vk_bindings.push_back({
+			.binding = b.binding,
+			.stride = b.stride,
+			.inputRate = b.per_instance ? vk::VertexInputRate::eInstance : vk::VertexInputRate::eVertex
+		});
+	}
+
+	std::vector<vk::VertexInputAttributeDescription> vk_attrs;
+	vk_attrs.reserve(vi.attributes.size());
+	for (const auto& a : vi.attributes) {
+		vk_attrs.push_back({
+			.location = a.location,
+			.binding = a.binding,
+			.format = vulkan::to_vk_format(a.format),
+			.offset = a.offset
+		});
+	}
+
+	const vk::PipelineVertexInputStateCreateInfo vertex_input{
+		.vertexBindingDescriptionCount = static_cast<std::uint32_t>(vk_bindings.size()),
+		.pVertexBindingDescriptions = vk_bindings.data(),
+		.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(vk_attrs.size()),
+		.pVertexAttributeDescriptions = vk_attrs.data()
+	};
 
 	vk::raii::Pipeline handle = vk_device.createGraphicsPipeline(nullptr, {
 		.pNext = &rendering_info,
@@ -560,13 +558,19 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 
 auto gse::gpu::create_compute_pipeline(device& dev, const shader& s, const std::string& push_constant_block) -> pipeline {
 	auto& vk_device = dev.logical_device();
+	const auto& cache = dev.shader_cache(s);
 
-	auto layouts = s.layouts();
+	const auto& layouts = cache.layout_handles;
 
 	const bool has_push = !push_constant_block.empty();
 	vk::PushConstantRange pc_range;
 	if (has_push) {
-		pc_range = s.push_constant_range(push_constant_block);
+		const auto pb = s.push_block(push_constant_block);
+		pc_range = vk::PushConstantRange{
+			vulkan::to_vk_stage_flags(pb.stage_flags),
+			0,
+			pb.size
+		};
 	}
 
 	vk::raii::PipelineLayout pipeline_layout = vk_device.createPipelineLayout({
@@ -576,9 +580,15 @@ auto gse::gpu::create_compute_pipeline(device& dev, const shader& s, const std::
 		.pPushConstantRanges = has_push ? &pc_range : nullptr
 	});
 
+	const vk::PipelineShaderStageCreateInfo compute_stage{
+		.stage = vk::ShaderStageFlagBits::eCompute,
+		.module = *cache.modules.at(gpu::shader_stage::compute),
+		.pName = "main"
+	};
+
 	vk::raii::Pipeline handle = vk_device.createComputePipeline(nullptr, {
 		.flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT,
-		.stage = s.compute_stage(),
+		.stage = compute_stage,
 		.layout = *pipeline_layout
 	});
 
@@ -610,26 +620,22 @@ auto gse::gpu::create_sampler(device& dev, const sampler_desc& desc) -> sampler 
 }
 
 auto gse::gpu::allocate_descriptors(device& dev, const shader& s) -> descriptor_region {
-	return descriptor_region(s.allocate_descriptors(dev.descriptor_heap()));
+	const auto& cache = dev.shader_cache(s);
+	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
+	assert(persistent_idx < cache.layout_handles.size(), std::source_location::current(), "Shader has no persistent descriptor set to allocate");
+
+	auto& heap = dev.descriptor_heap();
+	const auto set_layout = cache.layout_handles[persistent_idx];
+	const auto size = heap.layout_size(set_layout);
+	return descriptor_region(heap.allocate(size));
 }
 
-auto gse::gpu::write_descriptors(
-	device& dev,
-	const descriptor_region& region,
-	const shader& s,
-	const std::unordered_map<std::string, buffer_binding>& buffer_infos,
-	const std::unordered_map<std::string, image_binding>& image_infos,
-	const std::unordered_map<std::string, std::vector<image_binding>>& image_array_infos
-) -> void {
-	s.write_descriptors(region.native(), to_vk_buffer_infos(buffer_infos), to_vk_image_infos(image_infos), to_vk_image_array_infos(image_array_infos));
-}
-
-auto gse::gpu::create_descriptor_writer(resource::handle<shader> s, descriptor_region& region) -> descriptor_writer {
-	return descriptor_writer(std::move(s), region);
+auto gse::gpu::create_descriptor_writer(device& dev, resource::handle<shader> s, descriptor_region& region) -> descriptor_writer {
+	return descriptor_writer(dev, std::move(s), region);
 }
 
 auto gse::gpu::create_push_writer(device& dev, resource::handle<shader> s) -> descriptor_writer {
-	return descriptor_writer(std::move(s), dev.descriptor_heap());
+	return descriptor_writer(dev, std::move(s));
 }
 
 auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_upload> uploads) -> void {
@@ -673,12 +679,12 @@ auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_uploa
 }
 
 auto gse::gpu::upload_image_2d(device& dev, image& img, const void* pixel_data, const std::size_t data_size) -> void {
-	vulkan::uploader::upload_image_2d(dev.runtime_ref(), img.native(), img.extent(), pixel_data, data_size, vk::ImageLayout::eShaderReadOnlyOptimal);
+	vulkan::uploader::upload_image_2d(dev, img.native(), img.extent(), pixel_data, data_size, vk::ImageLayout::eShaderReadOnlyOptimal);
 	img.set_layout(image_layout::shader_read_only);
 }
 
 auto gse::gpu::upload_image_layers(device& dev, image& img, const std::vector<const void*>& face_data, const std::size_t bytes_per_face) -> void {
-	vulkan::uploader::upload_image_layers(dev.runtime_ref(), img.native(), img.extent(), face_data, bytes_per_face, vk::ImageLayout::eShaderReadOnlyOptimal);
+	vulkan::uploader::upload_image_layers(dev, img.native(), img.extent(), face_data, bytes_per_face, vk::ImageLayout::eShaderReadOnlyOptimal);
 	img.set_layout(image_layout::shader_read_only);
 }
 

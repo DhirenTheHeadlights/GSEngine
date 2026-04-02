@@ -16,8 +16,7 @@ export namespace gse::renderer::skin_compute {
 	};
 
 	struct system {
-		static auto initialize(
-			initialize_phase& phase,
+		static auto initialize(const initialize_phase& phase,
 			state& s
 		) -> void;
 
@@ -28,7 +27,7 @@ export namespace gse::renderer::skin_compute {
 	};
 }
 
-auto gse::renderer::skin_compute::system::initialize(initialize_phase& phase, state& s) -> void {
+auto gse::renderer::skin_compute::system::initialize(const initialize_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	s.shader_handle = ctx.get<shader>("Shaders/Compute/skin_compute");
@@ -46,7 +45,7 @@ auto gse::renderer::skin_compute::system::initialize(initialize_phase& phase, st
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		s.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
 
-		gpu::descriptor_writer(s.shader_handle, s.descriptors[i])
+		gpu::descriptor_writer(ctx.device_ref(), s.shader_handle, s.descriptors[i])
 			.buffer("skeletonData", gc->skeleton_buffer, 0, geometry_collector::state::max_joints * gc->joint_stride)
 			.buffer("localPoses", gc->local_pose_buffer[i], 0, local_pose_size)
 			.buffer("skinMatrices", gc->skin_buffer[i], 0, skin_buffer_size)
@@ -55,7 +54,7 @@ auto gse::renderer::skin_compute::system::initialize(initialize_phase& phase, st
 }
 
 auto gse::renderer::skin_compute::system::render(const render_phase& phase, const state& s) -> void {
-	auto& ctx = phase.get<gpu::context>();
+	const auto& ctx = phase.get<gpu::context>();
 
 	const auto& render_items = phase.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {

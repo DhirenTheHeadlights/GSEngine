@@ -209,13 +209,75 @@ Renderers receive `gpu::frame&` for recording and `gpu::device&` for resource cr
 - 5 vk-leaking swapchain methods deleted; `context::execute_and_detect_gpu_queue` removed
 
 **Remaining:**
-- Remove `gpu::buffer_binding`, `gpu::image_binding`, `gpu::write_descriptors()` from public API
-- Remove old `meshlet_gpu_data::bind(vulkan::descriptor_writer&, uint32_t)` overload
-- Remove dead `vulkan::` types that are now fully wrapped
-- Merge or remove compute context into `gpu::device` queue model
-- Update compilers (model, material, texture, etc.) to use `gpu::` types only
 - Extract `gpu::resource_manager` from `gpu::context` — now unblocked by the concept-based loader split
-- Eliminate `vulkan::runtime` — move remaining ownership into device/swapchain/frame
+
+**Done (remaining issue cleanup):**
+- `cached_push_constants` and `push_constant_member` moved from `vulkan::` to `gpu::` namespace
+- `compute_queue::push(pipeline, cached_push_constants)` added — replaces `shader->push(cmd, layout, ...)` pattern
+- `GpuSolver.cppm` fully cleaned: zero `vk::` types, zero `.native()` calls
+  - `shader->push()` replaced with `cache_push_block()` + individual `set()` + `compute_queue::push()`
+  - `vk::DeviceSize` → `std::size_t`
+  - Raw `cmd.copyBuffer()` → `compute_queue::copy_buffer()`
+- **Final state: zero `vk::` types and zero `.native()` calls outside `Platform/Vulkan/`**
+
+**Done (shader API-agnostic refactor):**
+- `shader` class is now a pure data container — zero `vk::` types in its interface
+- New gpu-agnostic types in `GpuTypes.cppm`: `shader_stage`, `stage_flag`/`stage_flags`, `descriptor_type`, `vertex_format`, `vertex_binding_desc`, `vertex_attribute_desc`, `descriptor_binding_desc`, `descriptor_set_type`
+- Shader stores SPIR-V bytecode as `std::vector<std::uint32_t>` per stage, reflection data uses gpu enums
+- `set_uniform`/`set_ssbo` methods use `buf.mapped()` directly — no `vulkan::allocation` dependency
+- New data accessors: `spirv()`, `vertex_input_data()`, `layout_data()`, `push_constants()`, `layout_name()`
+- All vk::-dependent methods (`shader_stages`, `compute_stage`, `vertex_input_state`, `layouts`, `push_constant_range`, `allocate_descriptors`, `create_writer`, `write_descriptors`, `push_descriptor`, `push_bytes`, `push`) removed from shader class
+- `ShaderCompiler` serializes gpu-agnostic types — binary format changed (auto-recompiles via asset pipeline)
+- `gpu::device` owns shader cache (`shader_cache_entry` with modules + layouts), lazily created per shader
+- `gpu::device` owns shader layout loading (`load_shader_layouts()`)
+- `GpuFactory` pipeline/descriptor creation uses device cache for modules, layouts, and conversions
+- `GpuDescriptorWriter` uses shader data + device cache — no shader methods for descriptor operations
+- Conversion helpers (`to_vk_stage_flags`, `to_vk_descriptor_type`, `to_vk_format`) live in GpuDevice.cppm as internal functions
+
+**Done (dead code removal + renderer .native() elimination):**
+- `gpu::buffer_binding`, `gpu::image_binding` structs deleted from `GpuDescriptor.cppm`
+- `gpu::write_descriptors()` free function and its helpers (`to_vk_buffer_infos`, `to_vk_image_infos`, `to_vk_image_array_infos`) deleted from `GpuFactory.cppm`
+- `meshlet_gpu_data::bind(vulkan::descriptor_writer&)` overload already removed — only name-based overload exists
+- All Runtime.cppm config structs verified active — no dead types to remove
+- Compute context kept as-is — focused single-purpose type with one consumer (GpuSolver)
+- `shader::set_uniform()`, `set_uniform_block()`, `set_ssbo_element()`, `set_ssbo_struct()` — added `gpu::buffer&` overloads that forward to allocation internally
+- All 6 graphics renderers migrated from `.native().allocation` to passing `gpu::buffer&` directly — zero `.native()` escape hatches remain in Graphics/
+- `CullComputeRenderer` migrated from `buffer.native()` to passing `gpu::buffer&` directly to `track()`
+- Asset compilers verified clean — no `vk::` types, no `.native()` calls
+
+**Done (runtime elimination):**
+- `vulkan::runtime` class deleted from `Runtime.cppm` — config structs (`instance_config`, `device_config`, `queue_config`, `command_config`, `sync_config`, `swap_chain_config`, `frame_context_config`, `queue_family`) retained as pure data types
+- `gpu::device` now owns: `instance_config`, `device_config`, `allocator`, `queue_config`, `command_config`, `descriptor_heap`, `descriptor_buffer_properties`, transient work graveyard, device lost reporting — constructor takes all by rvalue reference
+- `gpu::swapchain` now owns: `swap_chain_config`, recreate callbacks, generation counter — stores `gpu::device*` for recreation; exposes `image()`, `image_view()`, `format()`, `config()` accessors
+- `gpu::frame` now owns: `sync_config`, `frame_context_config`, current frame index, frame-in-progress flag — stores `gpu::device*` and `gpu::swapchain*`; `begin()`/`end()` methods encapsulate all frame lifecycle logic previously in `vulkan::begin_frame()`/`vulkan::end_frame()`
+- `gpu::context` constructs device/swapchain/frame directly from helper functions (`create_instance_and_surface`, `create_device_and_queues`, etc.) — no `runtime` intermediary; destruction order: frame → swapchain → device
+- `create_runtime()`, `begin_frame()`, `end_frame()` free functions deleted from `Context.cppm`; helper functions (`create_instance_and_surface`, `create_device_and_queues`, `create_command_objects`, `create_sync_objects`, `create_swap_chain_resources`) exported for direct use
+- `runtime_ref()` removed from all three wrapper types (`device`, `swapchain`, `frame`)
+- Uploader functions (`upload_image_2d`, `upload_image_layers`, `upload_image_3d`, `upload_mip_mapped_image`) take `gpu::device&` instead of `runtime&`
+- `device::surface_format()` cached at construction instead of reaching through `swap_chain_config`
+- `RenderGraph` uses `swapchain::image()`, `swapchain::image_view()`, `swapchain::extent()` instead of `runtime_ref().swap_chain_config()`
+- `transient_work_graveyard` moved from `sync_config` to `gpu::device` — `sync_config` is now purely synchronization primitives
+
+**Done (GLFW isolation + file reorganization):**
+- GLFW headers now only included in `GLFW/Window.cppm`, `GLFW/Input.cppm`, `GLFW/Keys.cppm` — zero GLFW outside the `GLFW/` folder
+- `create_instance_and_surface()` split: renamed to `create_instance(std::span<const char* const>)`, surface created separately via `window.create_vulkan_surface()`
+- `create_swap_chain_resources()` takes `vec2i framebuffer_size` instead of `GLFWwindow*`
+- `gpu::frame::begin()`/`end()` take `gse::window&` instead of `GLFWwindow*` + `bool` + `bool` — queries `win.minimized()`, `win.frame_buffer_resized()`, `win.viewport()` internally
+- `gse::window::vulkan_instance_extensions()` added — static method wrapping `glfwGetRequiredInstanceExtensions()`, keeps GLFW contained in `GLFW/` folder
+- `Vulkan/Context.cppm` GLFW include removed — no longer depends on GLFW at all
+- 10 vulkan-dependent `Gpu*.cppm` files moved from `Platform/` root to `Platform/Vulkan/`: GpuBuffer, GpuImage, GpuPipeline, GpuDescriptor, GpuDescriptorWriter, GpuCompute, GpuFactory, GpuDevice, GpuSwapchain, GpuFrame
+- `Platform/` root now contains only API-agnostic files: GpuTypes, GpuContext (facade), App, AssetCompiler, AssetPipeline, PlayerController, ResourceHandle, ResourceLoader
+
+**Done (Context.cppm dissolution):**
+- `Vulkan/Context.cppm` deleted — all creation code distributed to owning types
+- `gpu::device::create(window&, save::state&)` static factory encapsulates instance, device, queue, command, allocator, descriptor heap creation
+- `gpu::swapchain::create(vec2i, device&)` static factory encapsulates swap chain resource creation; `swapchain::recreate(vec2i)` for swap chain recreation
+- `gpu::frame::create(device&, swapchain&)` static factory encapsulates sync object creation
+- `vulkan::find_queue_families` exported from GpuDevice.cppm for use by GpuSwapchain swap chain creation
+- `vulkan::max_frames_in_flight` and `vulkan::device_creation_result` exported from GpuDevice.cppm
+- `GpuContext` constructor reduced to three factory calls + render graph creation
+- Dead `:vulkan_context` imports removed from Uploader.cppm, GpuFrame.cppm, GpuContext.cppm
+- Dead `:vulkan_allocator`, `:descriptor_heap`, `:descriptor_buffer_types` imports removed from GpuContext.cppm
 
 ## Non-Goals
 

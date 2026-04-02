@@ -39,8 +39,6 @@ export namespace gse::renderer::forward {
 		gpu::sampler placeholder_cube_sampler;
 
 		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
-
-		state() = default;
 	};
 
 	struct system {
@@ -122,7 +120,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 
 		s.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
 
-		gpu::descriptor_writer(s.shader_handle, s.descriptors[i])
+		gpu::descriptor_writer(ctx.device_ref(), s.shader_handle, s.descriptors[i])
 			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.buffer("lights_ssbo", s.light_buffers[i], 0, light_block.size)
 			.buffer("ShadowParams", s.shadow_params_buffers[i], 0, shadow_block.size)
@@ -150,7 +148,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 	const auto* lc_state = phase.try_state_of<light_culling::state>();
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer writer(s.shader_handle, s.descriptors[i]);
+		gpu::descriptor_writer writer(ctx.device_ref(), s.shader_handle, s.descriptors[i]);
 
 		if (lc_state) {
 			const auto fi = static_cast<std::uint32_t>(i);
@@ -163,11 +161,11 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 			.commit();
 	}
 
-	ctx.on_swap_chain_recreate([&s, lc_state]() {
+	ctx.on_swap_chain_recreate([&s, lc_state, &ctx]() {
 		if (!lc_state) return;
 		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
-			gpu::descriptor_writer(s.shader_handle, s.descriptors[i])
+			gpu::descriptor_writer(ctx.device_ref(), s.shader_handle, s.descriptors[i])
 				.buffer("light_index_list", lc_state->light_index_list(fi))
 				.buffer("tile_light_table", lc_state->tile_light_table(fi))
 				.commit();
@@ -186,7 +184,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.skinned_shader);
 
-		gpu::descriptor_writer(s.skinned_shader, s.skinned_descriptors[i])
+		gpu::descriptor_writer(ctx.device_ref(), s.skinned_shader, s.skinned_descriptors[i])
 			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
@@ -219,7 +217,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
-	const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index].native().allocation;
+	const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index];
 	s.shader_handle->set_uniform("CameraUBO.view", view, cam_alloc);
 	s.shader_handle->set_uniform("CameraUBO.proj", proj, cam_alloc);
 	s.shader_handle->set_uniform("CameraUBO.inv_view", view.inverse(), cam_alloc);
@@ -228,7 +226,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	auto spot_chunk = phase.registry.view<spot_light_component>();
 	auto point_chunk = phase.registry.view<point_light_component>();
 
-	const auto& light_alloc = s.light_buffers[frame_index].native().allocation;
+	const auto& light_alloc = s.light_buffers[frame_index];
 	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
 	const auto stride = light_block.size;
 	std::vector zero_elem(stride, std::byte{ 0 });
@@ -309,7 +307,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		point_shadow_entries = shadow_items[0].point_lights;
 	}
 
-	const auto& shadow_alloc = s.shadow_params_buffers[frame_index].native().allocation;
+	const auto& shadow_alloc = s.shadow_params_buffers[frame_index];
 	std::array<int, max_shadow_lights> shadow_indices{};
 	std::array<view_projection_matrix, max_shadow_lights> shadow_view_proj{};
 	const std::size_t shadow_light_count = std::min<std::size_t>(shadow_entries.size(), max_shadow_lights);
@@ -327,7 +325,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	shadow_data.emplace("shadow_texel_size", std::as_bytes(std::span(std::addressof(texel_size), 1)));
 	s.shader_handle->set_uniform_block("ShadowParams", shadow_data, shadow_alloc);
 
-	const auto& point_shadow_alloc = s.point_shadow_params_buffers[frame_index].native().allocation;
+	const auto& point_shadow_alloc = s.point_shadow_params_buffers[frame_index];
 	std::size_t dir_count = 0;
 	for (const auto& comp : dir_chunk) {
 		(void)comp; ++dir_count;
@@ -434,7 +432,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 					const std::uint32_t ml_count = mesh.meshlet_count();
 					for (std::uint32_t inst = 0; inst < batch.instance_count; ++inst) {
 						auto pc = s.shader_handle->cache_push_block("push_constants");
-						pc.set("meshlet_offset", std::uint32_t(0));
+						pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
 						pc.set("meshlet_count", ml_count);
 						pc.set("instance_index", batch.first_instance + inst);
 						pc.set("num_lights", num_lights_i);

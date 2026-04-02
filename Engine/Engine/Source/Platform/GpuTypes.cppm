@@ -168,4 +168,69 @@ export namespace gse::gpu {
 	struct depth_clear {
 		float depth = 1.0f;
 	};
+
+	enum class shader_stage : std::uint8_t {
+		vertex, fragment, compute, task, mesh
+	};
+
+	enum class stage_flag : std::uint8_t {
+		vertex   = 1 << 0,
+		fragment = 1 << 1,
+		compute  = 1 << 2,
+		task     = 1 << 3,
+		mesh     = 1 << 4,
+	};
+
+	using stage_flags = gse::flags<stage_flag>;
+	constexpr auto operator|(stage_flag a, stage_flag b) -> stage_flags { return stage_flags(a) | b; }
+
+	enum class descriptor_type : std::uint8_t {
+		uniform_buffer,
+		storage_buffer,
+		combined_image_sampler,
+		sampled_image,
+		storage_image,
+		sampler
+	};
+
+	enum class vertex_format : std::uint8_t {
+		r32_sfloat,
+		r32g32_sfloat,
+		r32g32b32_sfloat,
+		r32g32b32a32_sfloat,
+		r32_sint,
+		r32g32_sint,
+		r32g32b32_sint,
+		r32g32b32a32_sint,
+		r32_uint,
+		r32g32_uint,
+		r32g32b32_uint,
+		r32g32b32a32_uint
+	};
+
+	struct vertex_binding_desc {
+		std::uint32_t binding = 0;
+		std::uint32_t stride = 0;
+		bool per_instance = false;
+	};
+
+	struct vertex_attribute_desc {
+		std::uint32_t location = 0;
+		std::uint32_t binding = 0;
+		vertex_format format = vertex_format::r32_sfloat;
+		std::uint32_t offset = 0;
+	};
+
+	struct descriptor_binding_desc {
+		std::uint32_t binding = 0;
+		descriptor_type type = descriptor_type::uniform_buffer;
+		std::uint32_t count = 1;
+		stage_flags stages;
+	};
+
+	enum class descriptor_set_type : std::uint8_t {
+		persistent = 0,
+		push = 1,
+		bind_less = 2
+	};
 }

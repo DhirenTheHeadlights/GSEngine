@@ -149,7 +149,7 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 
 		s.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
 
-		gpu::descriptor_writer(s.shader_handle, s.descriptors[i])
+		gpu::descriptor_writer(ctx.device_ref(), s.shader_handle, s.descriptors[i])
 			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
@@ -422,8 +422,8 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 	const auto view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
 	const auto proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
-	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].native().allocation);
-	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].native().allocation);
+	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index]);
+	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index]);
 
 	const auto ext = ctx.graph().extent();
 	const auto ext_w = ext.x();

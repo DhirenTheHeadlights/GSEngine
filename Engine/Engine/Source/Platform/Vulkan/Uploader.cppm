@@ -2,16 +2,15 @@ export module gse.platform:vulkan_uploader;
 
 import std;
 
-import :vulkan_runtime;
 import :vulkan_allocator;
-import :vulkan_context;
+import :gpu_device;
 
 import gse.math;
 import gse.utility;
 
 export namespace gse::vulkan::uploader {
     auto upload_image_2d(
-        runtime& runtime_state,
+        gpu::device& dev,
         image_resource& resource,
         vec2u size,
         const void* pixel_data,
@@ -20,7 +19,7 @@ export namespace gse::vulkan::uploader {
     ) -> void;
 
     auto upload_image_layers(
-        runtime& runtime_state,
+        gpu::device& dev,
         image_resource& resource,
         vec2u size,
         const std::vector<const void*>& face_data,
@@ -29,7 +28,7 @@ export namespace gse::vulkan::uploader {
     ) -> void;
 
     auto upload_image_3d(
-        runtime& runtime_state,
+        gpu::device& dev,
         image_resource& resource,
         vec3u size,
         const void* pixel_data,
@@ -44,7 +43,7 @@ export namespace gse::vulkan::uploader {
     };
 
     auto upload_mip_mapped_image(
-        runtime& runtime_state,
+        gpu::device& dev,
         image_resource& resource,
         const std::span<mip_level_data>& mip_levels,
         vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal
@@ -70,10 +69,10 @@ export namespace gse::vulkan::uploader {
     ) -> void;
 }
 
-auto gse::vulkan::uploader::upload_image_2d(runtime& runtime_state, image_resource& resource, const vec2u size, const void* pixel_data, const std::size_t data_size, const vk::ImageLayout final_layout) -> void {
-    runtime_state.add_transient_work(
+auto gse::vulkan::uploader::upload_image_2d(gpu::device& dev, image_resource& resource, const vec2u size, const void* pixel_data, const std::size_t data_size, const vk::ImageLayout final_layout) -> void {
+    dev.add_transient_work(
         [&, size](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
-            auto staging_buffer = runtime_state.allocator().create_buffer(
+            auto staging_buffer = dev.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = data_size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -115,13 +114,13 @@ auto gse::vulkan::uploader::upload_image_2d(runtime& runtime_state, image_resour
     );
 }
 
-auto gse::vulkan::uploader::upload_image_layers(runtime& runtime_state, image_resource& resource, const vec2u size, const std::vector<const void*>& face_data, const std::size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_layers(gpu::device& dev, image_resource& resource, const vec2u size, const std::vector<const void*>& face_data, const std::size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
     const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
     const std::size_t total_size = layer_count * bytes_per_face;
 
-    runtime_state.add_transient_work(
+    dev.add_transient_work(
         [&, size, layer_count, total_size](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
-            auto staging_buffer = runtime_state.allocator().create_buffer(
+            auto staging_buffer = dev.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = total_size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -173,10 +172,10 @@ auto gse::vulkan::uploader::upload_image_layers(runtime& runtime_state, image_re
     );
 }
 
-auto gse::vulkan::uploader::upload_image_3d(runtime& runtime_state, image_resource& resource, const vec3u size, const void* pixel_data, const std::size_t data_size, const vk::ImageLayout final_layout) -> void {
-    runtime_state.add_transient_work(
+auto gse::vulkan::uploader::upload_image_3d(gpu::device& dev, image_resource& resource, const vec3u size, const void* pixel_data, const std::size_t data_size, const vk::ImageLayout final_layout) -> void {
+    dev.add_transient_work(
         [&, size](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
-            auto staging_buffer = runtime_state.allocator().create_buffer(
+            auto staging_buffer = dev.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = data_size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -218,8 +217,8 @@ auto gse::vulkan::uploader::upload_image_3d(runtime& runtime_state, image_resour
     );
 }
 
-auto gse::vulkan::uploader::upload_mip_mapped_image(runtime& runtime_state, image_resource& resource, const std::span<mip_level_data>& mip_levels, const vk::ImageLayout final_layout) -> void {
-    runtime_state.add_transient_work(
+auto gse::vulkan::uploader::upload_mip_mapped_image(gpu::device& dev, image_resource& resource, const std::span<mip_level_data>& mip_levels, const vk::ImageLayout final_layout) -> void {
+    dev.add_transient_work(
         [&](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
             const std::uint32_t mip_count = static_cast<std::uint32_t>(mip_levels.size());
 
@@ -235,7 +234,7 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(runtime& runtime_state, imag
             );
 
             for (const auto& [pixels, size, mip_level] : mip_levels) {
-                auto staging = runtime_state.allocator().create_buffer(
+                auto staging = dev.allocator().create_buffer(
                     vk::BufferCreateInfo{
                         .size = mip_level,
                         .usage = vk::BufferUsageFlagBits::eTransferSrc,
