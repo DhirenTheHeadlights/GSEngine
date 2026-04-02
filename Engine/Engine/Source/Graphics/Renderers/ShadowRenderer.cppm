@@ -19,9 +19,9 @@ import gse.utility;
 
 export namespace gse::renderer::shadow {
 	struct system {
-		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto initialize(const initialize_phase& phase, state& s) -> void;
 		static auto update(update_phase& phase, state& s) -> void;
-		static auto render(render_phase& phase, const state& s) -> void;
+		static auto render(const render_phase& phase, const state& s) -> void;
 	};
 }
 
@@ -48,7 +48,7 @@ auto gse::renderer::shadow::state::shadow_texel_size() const -> vec2f {
 	);
 }
 
-auto gse::renderer::shadow::system::initialize(initialize_phase& phase, state& s) -> void {
+auto gse::renderer::shadow::system::initialize(const initialize_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	s.shader_handle = ctx.get<shader>("Shaders/Deferred3D/shadow_pass");
@@ -217,7 +217,7 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 	phase.channels.push(std::move(data));
 }
 
-auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) -> void {
+auto gse::renderer::shadow::system::render(const render_phase& phase, const state& s) -> void {
     auto& ctx = phase.get<gpu::context>();
 
     const auto& shadow_items = phase.read_channel<render_data>();

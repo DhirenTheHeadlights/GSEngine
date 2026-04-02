@@ -85,6 +85,9 @@ export namespace gse {
 		auto raw_handle(
 		) const -> GLFWwindow*;
 
+		[[nodiscard]] static auto vulkan_instance_extensions(
+		) -> std::span<const char* const>;
+
 		[[nodiscard]] static auto enumerate_monitors(
 		) -> std::vector<monitor_info>;
 
@@ -446,9 +449,9 @@ auto gse::window::process_pending_operations() -> void {
 		const int selected_monitor = std::clamp(m_monitor_index, 0, monitor_count - 1);
 		GLFWmonitor* target_monitor = monitors[selected_monitor];
 
-		int target_width = 0;
-		int target_height = 0;
-		int target_refresh = 0;
+		int target_width;
+		int target_height;
+		int target_refresh;
 
 		if (m_resolution_index == 0) {
 			const GLFWvidmode* native_mode = glfwGetVideoMode(target_monitor);
@@ -458,9 +461,8 @@ auto gse::window::process_pending_operations() -> void {
 		}
 		else {
 			const auto resolutions = enumerate_resolutions(selected_monitor);
-			const int res_idx = m_resolution_index - 1;
 
-			if (res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())) {
+			if (const int res_idx = m_resolution_index - 1; res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())) {
 				target_width = resolutions[res_idx].width;
 				target_height = resolutions[res_idx].height;
 				target_refresh = resolutions[res_idx].refresh_rate;
@@ -491,6 +493,12 @@ auto gse::window::set_mouse_visible(const bool visible) -> void {
 
 auto gse::window::raw_handle() const -> GLFWwindow* {
 	return m_window;
+}
+
+auto gse::window::vulkan_instance_extensions() -> std::span<const char* const> {
+	std::uint32_t count = 0;
+	const char** extensions = glfwGetRequiredInstanceExtensions(&count);
+	return { extensions, count };
 }
 
 auto gse::window::enumerate_monitors() -> std::vector<monitor_info> {

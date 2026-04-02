@@ -6,10 +6,11 @@ import :gpu_types;
 import :gpu_buffer;
 import :gpu_pipeline;
 import :gpu_descriptor;
+import :vulkan_allocator;
 import :descriptor_heap;
+import :gpu_push_constants;
 
 import gse.assert;
-import :vulkan_allocator;
 import gse.utility;
 
 export namespace gse::gpu {
@@ -44,52 +45,53 @@ export namespace gse::gpu {
 		compute_queue(compute_queue&&) noexcept = default;
 		auto operator=(compute_queue&&) noexcept -> compute_queue& = default;
 
-		auto wait() -> void;
-		auto begin() -> void;
+		auto wait() const -> void;
+		auto begin() const -> void;
 		auto submit() -> void;
 
 		auto bind_pipeline(
 			const pipeline& p
-		) -> void;
+		) const -> void;
 
 		auto bind_descriptors(
 			const pipeline& p,
 			const descriptor_region& region
-		) -> void;
+		) const -> void;
 
 		auto dispatch(
 			std::uint32_t x,
 			std::uint32_t y = 1,
 			std::uint32_t z = 1
-		) -> void;
+		) const -> void;
 
 		auto barrier(
 			barrier_scope scope = barrier_scope::compute_to_compute
-		) -> void;
+		) const -> void;
 
 		auto barriers(
 			std::span<const barrier_scope> scopes
-		) -> void;
+		) const -> void;
 
 		auto copy_buffer(
 			const buffer_copy& copy
-		) -> void;
+		) const -> void;
+
+		auto push(
+			const pipeline& p,
+			const cached_push_constants& cache
+		) const -> void;
 
 		auto begin_timing(
-		) -> void;
+		) const -> void;
 
 		auto end_timing(
-		) -> void;
+		) const -> void;
 
 		[[nodiscard]] auto read_timing(
-		) -> float;
+		) const -> float;
 
 		[[nodiscard]] auto native_command_buffer(
 		) const -> vk::CommandBuffer;
-
-		[[nodiscard]] auto native_layout(
-			const pipeline& p
-		) const -> vk::PipelineLayout;
 
 		explicit operator bool() const;
 
@@ -165,12 +167,12 @@ gse::gpu::compute_queue::compute_queue(
     m_device(device),
     m_timestamp_period(timestamp_period) {}
 
-auto gse::gpu::compute_queue::wait() -> void {
+auto gse::gpu::compute_queue::wait() const -> void {
 	if (!*m_fence) return;
 	static_cast<void>(m_device->waitForFences(*m_fence, vk::True, std::numeric_limits<std::uint64_t>::max()));
 }
 
-auto gse::gpu::compute_queue::begin() -> void {
+auto gse::gpu::compute_queue::begin() const -> void {
 	m_cmd.reset({});
 	m_cmd.begin({});
 	(*m_cmd).resetQueryPool(*m_query_pool, 0, 4);
@@ -183,31 +185,31 @@ auto gse::gpu::compute_queue::submit() -> void {
 		.commandBufferCount = 1,
 		.pCommandBuffers = &submit_cmd
 	};
-	static_cast<vk::Device>(**m_device).resetFences(*m_fence);
+	(**m_device).resetFences(*m_fence);
 	m_queue->submit(submit_info, *m_fence);
 	++m_frame_count;
 }
 
-auto gse::gpu::compute_queue::bind_pipeline(const pipeline& p) -> void {
+auto gse::gpu::compute_queue::bind_pipeline(const pipeline& p) const -> void {
 	(*m_cmd).bindPipeline(vk::PipelineBindPoint::eCompute, p.native_pipeline());
 }
 
-auto gse::gpu::compute_queue::bind_descriptors(const pipeline& p, const descriptor_region& region) -> void {
+auto gse::gpu::compute_queue::bind_descriptors(const pipeline& p, const descriptor_region& region) const -> void {
 	const auto& native = region.native();
 	native.heap->bind(*m_cmd, vk::PipelineBindPoint::eCompute, p.native_layout(), 0, native);
 }
 
-auto gse::gpu::compute_queue::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) -> void {
+auto gse::gpu::compute_queue::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
 	(*m_cmd).dispatch(x, y, z);
 }
 
-auto gse::gpu::compute_queue::barrier(const barrier_scope scope) -> void {
+auto gse::gpu::compute_queue::barrier(const barrier_scope scope) const -> void {
 	const auto b = to_vk(scope);
 	const vk::DependencyInfo dep{ .memoryBarrierCount = 1, .pMemoryBarriers = &b };
 	(*m_cmd).pipelineBarrier2(dep);
 }
 
-auto gse::gpu::compute_queue::barriers(const std::span<const barrier_scope> scopes) -> void {
+auto gse::gpu::compute_queue::barriers(const std::span<const barrier_scope> scopes) const -> void {
 	std::vector<vk::MemoryBarrier2> vk_barriers;
 	vk_barriers.reserve(scopes.size());
 	for (const auto s : scopes) {
@@ -220,7 +222,7 @@ auto gse::gpu::compute_queue::barriers(const std::span<const barrier_scope> scop
 	(*m_cmd).pipelineBarrier2(dep);
 }
 
-auto gse::gpu::compute_queue::copy_buffer(const buffer_copy& copy) -> void {
+auto gse::gpu::compute_queue::copy_buffer(const buffer_copy& copy) const -> void {
 	(*m_cmd).copyBuffer(
 		copy.src->native().buffer,
 		copy.dst->native().buffer,
@@ -232,18 +234,22 @@ auto gse::gpu::compute_queue::copy_buffer(const buffer_copy& copy) -> void {
 	);
 }
 
-auto gse::gpu::compute_queue::begin_timing() -> void {
+auto gse::gpu::compute_queue::push(const pipeline& p, const cached_push_constants& cache) const -> void {
+	cache.replay(*m_cmd, p.native_layout());
+}
+
+auto gse::gpu::compute_queue::begin_timing() const -> void {
 	(*m_cmd).writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *m_query_pool, 0);
 }
 
-auto gse::gpu::compute_queue::end_timing() -> void {
+auto gse::gpu::compute_queue::end_timing() const -> void {
 	(*m_cmd).writeTimestamp2(vk::PipelineStageFlagBits2::eComputeShader, *m_query_pool, 1);
 }
 
-auto gse::gpu::compute_queue::read_timing() -> float {
+auto gse::gpu::compute_queue::read_timing() const -> float {
 	if (m_frame_count < 2) return 0.0f;
 	std::array<std::uint64_t, 2> timestamps{};
-	const auto result = static_cast<vk::Device>(**m_device).getQueryPoolResults(
+	const auto result = (**m_device).getQueryPoolResults(
 		*m_query_pool, 0, 2,
 		sizeof(timestamps), timestamps.data(), sizeof(std::uint64_t),
 		vk::QueryResultFlagBits::e64
@@ -256,10 +262,6 @@ auto gse::gpu::compute_queue::read_timing() -> float {
 
 auto gse::gpu::compute_queue::native_command_buffer() const -> vk::CommandBuffer {
 	return *m_cmd;
-}
-
-auto gse::gpu::compute_queue::native_layout(const pipeline& p) const -> vk::PipelineLayout {
-	return p.native_layout();
 }
 
 gse::gpu::compute_queue::operator bool() const {

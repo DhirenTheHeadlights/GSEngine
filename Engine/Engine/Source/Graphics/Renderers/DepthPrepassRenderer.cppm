@@ -25,8 +25,7 @@ export namespace gse::renderer::depth_prepass {
 	};
 
 	struct system {
-		static auto initialize(
-			initialize_phase& phase,
+		static auto initialize(const initialize_phase& phase,
 			state& s
 		) -> void;
 
@@ -37,7 +36,7 @@ export namespace gse::renderer::depth_prepass {
 	};
 }
 
-auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, state& s) -> void {
+auto gse::renderer::depth_prepass::system::initialize(const initialize_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	s.meshlet_shader = ctx.get<shader>("Shaders/Standard3D/meshlet_depth_only");
@@ -61,7 +60,7 @@ auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, s
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		s.meshlet_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.meshlet_shader);
 
-		gpu::descriptor_writer(s.meshlet_shader, s.meshlet_descriptors[i])
+		gpu::descriptor_writer(ctx.device_ref(), s.meshlet_shader, s.meshlet_descriptors[i])
 			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, meshlet_camera_ubo.size)
 			.commit();
 	}
@@ -79,7 +78,7 @@ auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, s
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.skinned_shader);
 
-		gpu::descriptor_writer(s.skinned_shader, s.skinned_descriptors[i])
+		gpu::descriptor_writer(ctx.device_ref(), s.skinned_shader, s.skinned_descriptors[i])
 			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, skinned_camera_ubo.size)
 			.commit();
 	}
@@ -109,7 +108,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
-	const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index].native().allocation;
+	const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index];
 	s.meshlet_shader->set_uniform("CameraUBO.view", view, cam_alloc);
 	s.meshlet_shader->set_uniform("CameraUBO.proj", proj, cam_alloc);
 	s.skinned_shader->set_uniform("CameraUBO.view", view, cam_alloc);
@@ -158,7 +157,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 					const std::uint32_t meshlet_count = mesh.meshlet_count();
 					for (std::uint32_t inst = 0; inst < batch.instance_count; ++inst) {
 						auto pc = s.meshlet_shader->cache_push_block("push_constants");
-						pc.set("meshlet_offset", std::uint32_t(0));
+						pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
 						pc.set("meshlet_count", meshlet_count);
 						pc.set("instance_index", batch.first_instance + inst);
 						ctx.push(s.meshlet_pipeline, pc);

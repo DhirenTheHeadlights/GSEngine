@@ -93,10 +93,10 @@ export namespace gse::renderer {
 
 	struct system {
 		static auto initialize(const initialize_phase& phase, state& s) -> void;
-		static auto update(update_phase& phase, state& s) -> void;
-		static auto begin_frame(begin_frame_phase& phase, state& s) -> bool;
-		static auto end_frame(end_frame_phase& phase, state& s) -> void;
-		static auto shutdown(shutdown_phase& phase, const state& s) -> void;
+		static auto update(const update_phase& phase, state& s) -> void;
+		static auto begin_frame(const begin_frame_phase& phase, state& s) -> bool;
+		static auto end_frame(const end_frame_phase& phase, state& s) -> void;
+		static auto shutdown(const shutdown_phase& phase, const state& s) -> void;
 	};
 }
 
@@ -124,7 +124,7 @@ auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) 
 	});
 }
 
-auto gse::renderer::system::update(update_phase& phase, state& s) -> void {
+auto gse::renderer::system::update(const update_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	if (s.hot_reload_enabled != ctx.hot_reload_enabled()) {
@@ -153,7 +153,7 @@ auto gse::renderer::system::update(update_phase& phase, state& s) -> void {
 	}
 }
 
-auto gse::renderer::system::begin_frame(begin_frame_phase& phase, state& s) -> bool {
+auto gse::renderer::system::begin_frame(const begin_frame_phase& phase, state& s) -> bool {
 	auto& ctx = phase.get<gpu::context>();
 
 	ctx.process_gpu_queue();
@@ -168,7 +168,7 @@ auto gse::renderer::system::begin_frame(begin_frame_phase& phase, state& s) -> b
 	return s.frame_begun;
 }
 
-auto gse::renderer::system::end_frame(end_frame_phase& phase, state& s) -> void {
+auto gse::renderer::system::end_frame(const end_frame_phase& phase, state& s) -> void {
 	if (!s.frame_begun) {
 		return;
 	}
@@ -182,7 +182,7 @@ auto gse::renderer::system::end_frame(end_frame_phase& phase, state& s) -> void 
 	s.frame_begun = false;
 }
 
-auto gse::renderer::system::shutdown(shutdown_phase& phase, const state& s) -> void {
+auto gse::renderer::system::shutdown(const shutdown_phase& phase, const state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	ctx.wait_idle();

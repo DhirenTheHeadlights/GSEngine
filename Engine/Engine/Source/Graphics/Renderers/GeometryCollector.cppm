@@ -305,7 +305,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 	) {
 		const auto frame_index = s.ctx->graph().current_frame();
 
-		const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index].native().allocation;
+		const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index];
 		s.shader_handle->set_uniform("CameraUBO.view", view_matrix, cam_alloc);
 		s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, cam_alloc);
 

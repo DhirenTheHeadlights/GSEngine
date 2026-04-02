@@ -5,7 +5,6 @@ import std;
 import :resource_loader;
 import :asset_pipeline;
 import :asset_compiler;
-import :shader_layout;
 import :shader_layout_compiler;
 import :window;
 import :input_state;
@@ -16,9 +15,6 @@ import :gpu_frame;
 
 import gse.log;
 import gse.utility;
-import :vulkan_runtime;
-import :vulkan_context;
-import :descriptor_heap;
 
 export namespace gse {
 	enum class render_layer : std::uint8_t {
@@ -185,10 +181,6 @@ export namespace gse::gpu {
 			this auto& self
 		) -> auto&;
 
-		[[nodiscard]] auto shader_layout(
-			const std::string& name
-		) const -> const shader_layout*;
-
 		auto load_layouts(
 		) -> void;
 
@@ -202,10 +194,9 @@ export namespace gse::gpu {
 		) const -> resource::loader_base*;
 
 		gse::window m_window;
-		std::unique_ptr<vulkan::runtime> m_runtime;
-		device m_device;
-		gpu::swapchain m_swapchain;
-		gpu::frame m_frame;
+		std::unique_ptr<device> m_device;
+		std::unique_ptr<swap_chain> m_swapchain;
+		std::unique_ptr<gpu::frame> m_frame;
 		asset_pipeline m_pipeline{ config::resource_path, config::baked_resource_path };
 		std::unordered_map<std::type_index, std::unique_ptr<resource::loader_base>> m_resource_loaders;
 
@@ -217,11 +208,15 @@ export namespace gse::gpu {
 		bool m_ui_focus = false;
 		bool m_validation_layers_enabled = false;
 
-		std::unordered_map<std::string, std::unique_ptr<gse::shader_layout>> m_shader_layouts;
 	};
 }
 
-gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_runtime(vulkan::create_runtime(m_window.raw_handle(), save)), m_device(*m_runtime), m_swapchain(*m_runtime), m_frame(*m_runtime), m_render_graph(std::make_unique<vulkan::render_graph>(m_device, m_swapchain, m_frame)) {
+gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save) {
+	m_device = device::create(m_window, save);
+	m_swapchain = swap_chain::create(m_window.viewport(), *m_device);
+	m_frame = frame::create(*m_device, *m_swapchain);
+	m_render_graph = std::make_unique<vulkan::render_graph>(*m_device, *m_swapchain, *m_frame);
+
 	save.bind("Graphics", "Validation Layers", m_validation_layers_enabled)
 		.description("Enable Vulkan validation layers for debugging (impacts performance significantly)")
 		.default_value(false)
@@ -229,26 +224,28 @@ gse::gpu::context::context(const std::string& window_title, input::system_state&
 		.commit();
 
 	auto transition_depth = [this]() {
-		m_device.transition_image_layout(m_render_graph->depth_image(), image_layout::general);
+		m_device->transition_image_layout(m_render_graph->depth_image(), image_layout::general);
 	};
 	transition_depth();
-	m_runtime->on_swap_chain_recreate([transition_depth]() { transition_depth(); });
+	m_swapchain->on_recreate([transition_depth]() { transition_depth(); });
 }
 
 gse::gpu::context::~context() {
-	m_runtime.reset();
+	m_frame.reset();
+	m_swapchain.reset();
+	m_device.reset();
 }
 
 auto gse::gpu::context::device_ref(this auto& self) -> auto& {
-	return self.m_device;
+	return *self.m_device;
 }
 
 auto gse::gpu::context::swapchain(this auto& self) -> auto& {
-	return self.m_swapchain;
+	return *self.m_swapchain;
 }
 
 auto gse::gpu::context::frame(this auto& self) -> auto& {
-	return self.m_frame;
+	return *self.m_frame;
 }
 
 template <typename T>
@@ -353,7 +350,7 @@ auto gse::gpu::context::process_gpu_queue() -> void {
 }
 
 auto gse::gpu::context::compile() -> void {
-	m_pipeline.register_compiler_only<gse::shader_layout>();
+	m_pipeline.register_compiler_only<shader_layout>();
 
 	if (const auto result = m_pipeline.compile_all(); result.success_count > 0 || result.failure_count > 0) {
 		log::println(
@@ -405,43 +402,33 @@ auto gse::gpu::context::loader(this auto&& self) -> decltype(auto) {
 }
 
 auto gse::gpu::context::begin_frame() -> std::expected<frame_token, frame_status> {
-	auto result = vulkan::begin_frame({
-		.window = m_window.raw_handle(),
-		.frame_buffer_resized = m_window.frame_buffer_resized(),
-		.minimized = m_window.minimized(),
-		.runtime = *m_runtime
-	});
+	auto result = m_frame->begin(m_window);
 
 	if (result) {
-		m_device.descriptor_heap().begin_frame(result->frame_index);
+		m_device->descriptor_heap().begin_frame(result->frame_index);
 	}
 
 	return result;
 }
 
 auto gse::gpu::context::end_frame() -> void {
-	vulkan::end_frame({
-		.window = m_window.raw_handle(),
-		.frame_buffer_resized = m_window.frame_buffer_resized(),
-		.minimized = m_window.minimized(),
-		.runtime = *m_runtime
-	});
+	m_frame->end(m_window);
 }
 
 auto gse::gpu::context::wait_idle() -> void {
-	m_device.wait_idle();
+	m_device->wait_idle();
 }
 
 auto gse::gpu::context::add_transient_work(const auto& commands) -> void {
-	m_device.add_transient_work(commands);
+	m_device->add_transient_work(commands);
 }
 
 auto gse::gpu::context::descriptor_heap(this auto& self) -> decltype(auto) {
-	return self.m_device.descriptor_heap();
+	return self.m_device->descriptor_heap();
 }
 
 auto gse::gpu::context::on_swap_chain_recreate(swap_chain_recreate_callback callback) const -> void {
-	m_runtime->on_swap_chain_recreate(std::move(callback));
+	m_swapchain->on_recreate(std::move(callback));
 }
 
 auto gse::gpu::context::graph() const -> vulkan::render_graph& {
@@ -475,20 +462,18 @@ auto gse::gpu::context::ui_focus() const -> bool {
 }
 
 auto gse::gpu::context::shutdown() -> void {
-	if (!m_runtime) return;
+	if (!m_device) return;
 
 	m_window.shutdown();
 
-	m_device.wait_idle();
+	m_device->wait_idle();
 
 	for (auto& loader : m_resource_loaders | std::views::values) {
 		loader.reset();
 	}
 
 	m_resource_loaders.clear();
-	m_shader_layouts.clear();
-
-	m_runtime->swap_chain_config().depth_image = {};
+	m_swapchain->clear_depth_image();
 }
 
 auto gse::gpu::context::loader(const std::type_index& type_index) const -> resource::loader_base* {
@@ -496,31 +481,8 @@ auto gse::gpu::context::loader(const std::type_index& type_index) const -> resou
 	return m_resource_loaders.at(type_index).get();
 }
 
-auto gse::gpu::context::shader_layout(const std::string& name) const -> const gse::shader_layout* {
-	if (const auto it = m_shader_layouts.find(name); it != m_shader_layouts.end()) {
-		return it->second.get();
-	}
-	return nullptr;
-}
-
 auto gse::gpu::context::load_layouts() -> void {
-	const auto layouts_dir = config::baked_resource_path / "Layouts";
-	if (!std::filesystem::exists(layouts_dir)) {
-		return;
-	}
-
-	for (const auto& entry : std::filesystem::directory_iterator(layouts_dir)) {
-		if (!entry.is_regular_file() || entry.path().extension() != ".glayout") {
-			continue;
-		}
-
-		auto layout = std::make_unique<gse::shader_layout>(entry.path());
-		layout->load(m_device.logical_device());
-
-		const auto& name = layout->name();
-		log::println(log::category::assets, "Layout loaded: {}", name);
-		m_shader_layouts[name] = std::move(layout);
-	}
+	m_device->load_shader_layouts();
 }
 
 auto gse::gpu::context::enumerate_resources(const std::string& baked_dir, const std::string& baked_ext) -> std::vector<std::string> {

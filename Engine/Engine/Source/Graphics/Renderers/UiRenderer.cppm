@@ -118,7 +118,7 @@ export namespace gse::renderer::ui {
 	};
 
 	struct system {
-		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto initialize(const initialize_phase& phase, state& s) -> void;
 		static auto update(const update_phase& phase, state& s) -> void;
 		static auto render(render_phase& phase, const state& s) -> void;
 	};
@@ -207,7 +207,7 @@ auto gse::renderer::ui::add_text_quads(std::vector<vertex>& vertices, std::vecto
 	}
 }
 
-auto gse::renderer::ui::system::initialize(initialize_phase& phase, state& s) -> void {
+auto gse::renderer::ui::system::initialize(const initialize_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	s.sprite_shader = ctx.get<shader>("Shaders/Standard2D/sprite");

@@ -25,8 +25,7 @@ export namespace gse::renderer::cull_compute {
 	};
 
 	struct system {
-		static auto initialize(
-			initialize_phase& phase,
+		static auto initialize(const initialize_phase& phase,
 			state& s
 		) -> void;
 
@@ -37,7 +36,7 @@ export namespace gse::renderer::cull_compute {
 	};
 }
 
-auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, state& s) -> void {
+auto gse::renderer::cull_compute::system::initialize(const initialize_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	s.shader_handle = ctx.get<shader>("Shaders/Compute/cull_instances");
@@ -84,12 +83,12 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 				.buffer("batches", s.batch_info_buffer[i]);
 		};
 
-		gpu::descriptor_writer normal_writer(s.shader_handle, s.normal_descriptors[i]);
+		gpu::descriptor_writer normal_writer(ctx.device_ref(), s.shader_handle, s.normal_descriptors[i]);
 		write_shared(normal_writer)
 			.buffer("indirectCommands", gc->normal_indirect_commands_buffer[i])
 			.commit();
 
-		gpu::descriptor_writer skinned_writer(s.shader_handle, s.skinned_descriptors[i]);
+		gpu::descriptor_writer skinned_writer(ctx.device_ref(), s.shader_handle, s.skinned_descriptors[i]);
 		write_shared(skinned_writer)
 			.buffer("indirectCommands", gc->skinned_indirect_commands_buffer[i])
 			.commit();
@@ -114,9 +113,8 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 
 	const auto& normal_batches = data.normal_batches;
 	const auto& skinned_batches = data.skinned_batches;
-	const std::size_t total_batch_count = normal_batches.size() + skinned_batches.size();
 
-	if (total_batch_count > 0 && s.enabled) {
+	if (const std::size_t total_batch_count = normal_batches.size() + skinned_batches.size(); total_batch_count > 0 && s.enabled) {
 		const auto* cam_state = phase.try_state_of<camera::state>();
 		const auto view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
 		const auto proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
@@ -187,12 +185,12 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 	} else {
 		if (!normal_batches.empty()) {
 			auto normal_upload = graph.add_pass<state>();
-			normal_upload.track(gc->normal_indirect_commands_buffer[frame_index].native());
+			normal_upload.track(gc->normal_indirect_commands_buffer[frame_index]);
 			normal_upload.record([](gpu::recording_context&) {});
 		}
 		if (!skinned_batches.empty()) {
 			auto skinned_upload = graph.add_pass<state>();
-			skinned_upload.track(gc->skinned_indirect_commands_buffer[frame_index].native());
+			skinned_upload.track(gc->skinned_indirect_commands_buffer[frame_index]);
 			skinned_upload.record([](gpu::recording_context&) {});
 		}
 	}

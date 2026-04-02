@@ -11,9 +11,9 @@ import :gpu_device;
 import :gpu_swapchain;
 import :gpu_frame;
 import :descriptor_heap;
+import :gpu_push_constants;
 
 import gse.assert;
-import :vulkan_runtime;
 import gse.utility;
 import gse.math;
 
@@ -21,28 +21,6 @@ export namespace gse::vulkan {
 	class render_graph;
 	class pass_builder;
 	class recording_context;
-
-	struct push_constant_member {
-		std::uint32_t offset = 0;
-		std::uint32_t size = 0;
-	};
-
-	struct cached_push_constants {
-		std::vector<std::byte> data;
-		vk::ShaderStageFlags stage_flags{};
-		std::unordered_map<std::string, push_constant_member> members;
-
-		template <typename T>
-		auto set(
-			std::string_view name,
-			const T& value
-		) -> void;
-
-		auto replay(
-			vk::CommandBuffer cmd,
-			vk::PipelineLayout layout
-		) const -> void;
-	};
 
 	using color_clear = gpu::color_clear;
 	using depth_clear = gpu::depth_clear;
@@ -149,7 +127,7 @@ export namespace gse::vulkan {
 		) -> void;
 
 		auto push(
-			const cached_push_constants& cache,
+			const gpu::cached_push_constants& cache,
 			vk::PipelineLayout layout
 		) -> void;
 
@@ -236,7 +214,7 @@ export namespace gse::vulkan {
 
 		auto push(
 			const gpu::pipeline& p,
-			const cached_push_constants& cache
+			const gpu::cached_push_constants& cache
 		) -> void;
 
 		auto draw_indirect(
@@ -405,7 +383,7 @@ export namespace gse::vulkan {
 	public:
 		explicit render_graph(
 			gpu::device& device,
-			gpu::swapchain& swapchain,
+			gpu::swap_chain& swapchain,
 			gpu::frame& frame
 		);
 
@@ -445,24 +423,11 @@ export namespace gse::vulkan {
 		) -> void;
 
 		gpu::device* m_device;
-		gpu::swapchain* m_swapchain;
+		gpu::swap_chain* m_swapchain;
 		gpu::frame* m_frame;
 		std::vector<render_pass_data> m_passes;
 	};
 }
-
-template <typename T>
-auto gse::vulkan::cached_push_constants::set(const std::string_view name, const T& value) -> void {
-	const auto it = members.find(std::string(name));
-	assert(it != members.end(), std::source_location::current(), "Push constant member '{}' not found", name);
-	assert(sizeof(T) <= it->second.size, std::source_location::current(), "Push constant member '{}' size mismatch", name);
-	std::memcpy(data.data() + it->second.offset, std::addressof(value), sizeof(T));
-}
-
-auto gse::vulkan::cached_push_constants::replay(vk::CommandBuffer cmd, vk::PipelineLayout layout) const -> void {
-	cmd.pushConstants(layout, stage_flags, 0, static_cast<std::uint32_t>(data.size()), data.data());
-}
-
 
 gse::vulkan::recording_context::recording_context(vk::CommandBuffer cmd) : m_cmd(cmd) {}
 
@@ -475,7 +440,7 @@ auto gse::vulkan::recording_context::bind_descriptors(vk::PipelineBindPoint poin
 	region.heap->bind(m_cmd, point, layout, set_index, region);
 }
 
-auto gse::vulkan::recording_context::push(const cached_push_constants& cache, vk::PipelineLayout layout) -> void {
+auto gse::vulkan::recording_context::push(const gpu::cached_push_constants& cache, vk::PipelineLayout layout) -> void {
 	cache.replay(m_cmd, layout);
 }
 
@@ -534,7 +499,7 @@ auto gse::vulkan::recording_context::bind_descriptors(const vk::PipelineBindPoin
 	region.heap->bind(m_cmd, point, p.native_layout(), set_index, region);
 }
 
-auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const cached_push_constants& cache) -> void {
+auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::cached_push_constants& cache) -> void {
 	cache.replay(m_cmd, p.native_layout());
 }
 
@@ -810,7 +775,7 @@ auto gse::vulkan::pass_builder::submit() -> void {
 	m_graph->submit_pass(std::move(m_pass));
 }
 
-gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swapchain& swapchain, gpu::frame& frame) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)) {}
+gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)) {}
 
 template <typename PassType>
 auto gse::vulkan::render_graph::add_pass() -> pass_builder {
@@ -836,7 +801,7 @@ auto gse::vulkan::render_graph::extent() const -> vec2u {
 }
 
 auto gse::vulkan::render_graph::swapchain_image_view() const -> vk::ImageView {
-	return *m_swapchain->runtime_ref().swap_chain_config().image_views[m_frame->image_index()];
+	return m_swapchain->image_view(m_frame->image_index());
 }
 
 auto gse::vulkan::render_graph::depth_image_view() const -> vk::ImageView {
@@ -858,7 +823,9 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 	const auto command = m_frame->command_buffer();
 	const auto image_index = m_frame->image_index();
-	auto& swap_runtime = m_swapchain->runtime_ref().swap_chain_config();
+	const auto swap_image = m_swapchain->image(image_index);
+	const auto swap_extent = m_swapchain->extent();
+	const vk::Extent2D vk_extent{ swap_extent.x(), swap_extent.y() };
 
 	const vk::ImageMemoryBarrier2 begin_barrier{
 		.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
@@ -869,7 +836,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 		.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-		.image = swap_runtime.images[image_index],
+		.image = swap_image,
 		.subresourceRange = {
 			.aspectMask = vk::ImageAspectFlagBits::eColor,
 			.baseMipLevel = 0,
@@ -895,7 +862,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 			.newLayout = vk::ImageLayout::ePresentSrcKHR,
 			.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 			.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-			.image = swap_runtime.images[image_index],
+			.image = swap_image,
 			.subresourceRange = {
 				.aspectMask = vk::ImageAspectFlagBits::eColor,
 				.baseMipLevel = 0,
@@ -1051,7 +1018,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 				}
 
 				color_attachments.push_back({
-					.imageView = *swap_runtime.image_views[image_index],
+					.imageView = m_swapchain->image_view(image_index),
 					.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 					.loadOp = vk_load,
 					.storeOp = vk::AttachmentStoreOp::eStore,
@@ -1072,7 +1039,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 				}
 
 				depth_att = vk::RenderingAttachmentInfo{
-					.imageView = swap_runtime.depth_image.native().view,
+					.imageView = m_swapchain->depth_image().native().view,
 					.imageLayout = vk::ImageLayout::eGeneral,
 					.loadOp = vk_load,
 					.storeOp = vk::AttachmentStoreOp::eStore,
@@ -1081,7 +1048,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 			}
 
 			const vk::RenderingInfo ri{
-				.renderArea = { { 0, 0 }, swap_runtime.extent },
+				.renderArea = { { 0, 0 }, vk_extent },
 				.layerCount = 1,
 				.colorAttachmentCount = static_cast<std::uint32_t>(color_attachments.size()),
 				.pColorAttachments = color_attachments.empty() ? nullptr : color_attachments.data(),
@@ -1104,7 +1071,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 		.newLayout = vk::ImageLayout::ePresentSrcKHR,
 		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-		.image = swap_runtime.images[image_index],
+		.image = swap_image,
 		.subresourceRange = {
 			.aspectMask = vk::ImageAspectFlagBits::eColor,
 			.baseMipLevel = 0,

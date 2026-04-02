@@ -10,7 +10,6 @@ export module gse.platform:shader_compiler;
 
 import std;
 
-import :vulkan_allocator;
 import gse.assert;
 import gse.log;
 
@@ -41,7 +40,7 @@ namespace gse::shader_compile {
         stream.write(reinterpret_cast<const char*>(&value), sizeof(value));
     }
 
-    auto to_vk_vertex_format(slang::TypeReflection* type) -> vk::Format {
+    auto to_vertex_format(slang::TypeReflection* type) -> gpu::vertex_format {
         using kind = slang::TypeReflection::Kind;
 
         auto elem_and_count = [](slang::TypeReflection* t) -> std::pair<slang::TypeReflection*, int> {
@@ -53,45 +52,45 @@ namespace gse::shader_compile {
         };
 
         auto [elem, count] = elem_and_count(type);
-        if (!elem || count <= 0) return vk::Format::eUndefined;
+        if (!elem || count <= 0) return gpu::vertex_format::r32_sfloat;
 
         switch (elem->getScalarType()) {
             case slang::TypeReflection::Float32:
                 switch (count) {
-                    case 1: return vk::Format::eR32Sfloat;
-                    case 2: return vk::Format::eR32G32Sfloat;
-                    case 3: return vk::Format::eR32G32B32Sfloat;
-                    case 4: return vk::Format::eR32G32B32A32Sfloat;
-                    default: return vk::Format::eUndefined;
+                    case 1: return gpu::vertex_format::r32_sfloat;
+                    case 2: return gpu::vertex_format::r32g32_sfloat;
+                    case 3: return gpu::vertex_format::r32g32b32_sfloat;
+                    case 4: return gpu::vertex_format::r32g32b32a32_sfloat;
+                    default: return gpu::vertex_format::r32_sfloat;
                 }
             case slang::TypeReflection::Int32:
                 switch (count) {
-                    case 1: return vk::Format::eR32Sint;
-                    case 2: return vk::Format::eR32G32Sint;
-                    case 3: return vk::Format::eR32G32B32Sint;
-                    case 4: return vk::Format::eR32G32B32A32Sint;
-                    default: return vk::Format::eUndefined;
+                    case 1: return gpu::vertex_format::r32_sint;
+                    case 2: return gpu::vertex_format::r32g32_sint;
+                    case 3: return gpu::vertex_format::r32g32b32_sint;
+                    case 4: return gpu::vertex_format::r32g32b32a32_sint;
+                    default: return gpu::vertex_format::r32_sint;
                 }
             case slang::TypeReflection::UInt32:
                 switch (count) {
-                    case 1: return vk::Format::eR32Uint;
-                    case 2: return vk::Format::eR32G32Uint;
-                    case 3: return vk::Format::eR32G32B32Uint;
-                    case 4: return vk::Format::eR32G32B32A32Uint;
-                    default: return vk::Format::eUndefined;
+                    case 1: return gpu::vertex_format::r32_uint;
+                    case 2: return gpu::vertex_format::r32g32_uint;
+                    case 3: return gpu::vertex_format::r32g32b32_uint;
+                    case 4: return gpu::vertex_format::r32g32b32a32_uint;
+                    default: return gpu::vertex_format::r32_uint;
                 }
             default: break;
         }
-        return vk::Format::eUndefined;
+        return gpu::vertex_format::r32_sfloat;
     }
 
-    auto to_vk_descriptor_type(
-        slang::TypeLayoutReflection* tl, 
+    auto to_descriptor_type(
+        slang::TypeLayoutReflection* tl,
         const int range_index
-    ) -> vk::DescriptorType {
-        if (tl == nullptr) return vk::DescriptorType::eStorageBuffer;
+    ) -> gpu::descriptor_type {
+        if (tl == nullptr) return gpu::descriptor_type::storage_buffer;
         if (const int range_count = tl->getBindingRangeCount(); range_index < 0 || range_index >= range_count) {
-            return vk::DescriptorType::eStorageBuffer;
+            return gpu::descriptor_type::storage_buffer;
         }
 
         const slang::BindingType bt = tl->getBindingRangeType(range_index);
@@ -102,24 +101,18 @@ namespace gse::shader_compile {
         slang::TypeLayoutReflection* leaf_layout = tl->getBindingRangeLeafTypeLayout(range_index);
         slang::TypeReflection* leaf_type = leaf_layout ? leaf_layout->getType() : nullptr;
         const auto access = leaf_type ? leaf_type->getResourceAccess() : SLANG_RESOURCE_ACCESS_READ;
-        const auto shape = leaf_type ? static_cast<SlangResourceShape>(leaf_type->getResourceShape() & SLANG_RESOURCE_BASE_SHAPE_MASK) : static_cast<SlangResourceShape>(0);
 
         switch (base_bt) {
-            case SLANG_BINDING_TYPE_COMBINED_TEXTURE_SAMPLER: return vk::DescriptorType::eCombinedImageSampler;
+            case SLANG_BINDING_TYPE_COMBINED_TEXTURE_SAMPLER: return gpu::descriptor_type::combined_image_sampler;
             case SLANG_BINDING_TYPE_TEXTURE:
-                if (shape == SLANG_TEXTURE_BUFFER) {
-                    return (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) ? vk::DescriptorType::eStorageTexelBuffer : vk::DescriptorType::eUniformTexelBuffer;
-                }
-                return (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) ? vk::DescriptorType::eStorageImage : vk::DescriptorType::eSampledImage;
-            case SLANG_BINDING_TYPE_SAMPLER: return vk::DescriptorType::eSampler;
-            case SLANG_BINDING_TYPE_TYPED_BUFFER:
-                return (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) ? vk::DescriptorType::eStorageTexelBuffer : vk::DescriptorType::eUniformTexelBuffer;
-            case SLANG_BINDING_TYPE_RAW_BUFFER: return vk::DescriptorType::eStorageBuffer;
+                return (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) ? gpu::descriptor_type::storage_image : gpu::descriptor_type::sampled_image;
+            case SLANG_BINDING_TYPE_SAMPLER: return gpu::descriptor_type::sampler;
+            case SLANG_BINDING_TYPE_RAW_BUFFER: return gpu::descriptor_type::storage_buffer;
+            case SLANG_BINDING_TYPE_TYPED_BUFFER: return gpu::descriptor_type::storage_buffer;
             case SLANG_BINDING_TYPE_CONSTANT_BUFFER:
-            case SLANG_BINDING_TYPE_PARAMETER_BLOCK: return vk::DescriptorType::eUniformBuffer;
-            case SLANG_BINDING_TYPE_INPUT_RENDER_TARGET: return vk::DescriptorType::eSampledImage;
-            case SLANG_BINDING_TYPE_RAY_TRACING_ACCELERATION_STRUCTURE: return vk::DescriptorType::eAccelerationStructureKHR;
-            default: return vk::DescriptorType::eStorageBuffer;
+            case SLANG_BINDING_TYPE_PARAMETER_BLOCK: return gpu::descriptor_type::uniform_buffer;
+            case SLANG_BINDING_TYPE_INPUT_RENDER_TARGET: return gpu::descriptor_type::sampled_image;
+            default: return gpu::descriptor_type::storage_buffer;
         }
     }
 
@@ -191,21 +184,21 @@ namespace gse::shader_compile {
         return struct_layout && struct_layout->getKind() == slang::TypeReflection::Kind::Struct ? struct_layout : nullptr;
     }
 
-    auto to_vk_stage_flags(const SlangStage slang_stage) -> vk::ShaderStageFlags {
+    auto to_stage_flags(const SlangStage slang_stage) -> gpu::stage_flags {
+        using enum gpu::stage_flag;
         switch (slang_stage) {
-            case SLANG_STAGE_VERTEX:        return vk::ShaderStageFlagBits::eVertex;
-            case SLANG_STAGE_FRAGMENT:      return vk::ShaderStageFlagBits::eFragment;
-            case SLANG_STAGE_GEOMETRY:      return vk::ShaderStageFlagBits::eGeometry;
-            case SLANG_STAGE_COMPUTE:       return vk::ShaderStageFlagBits::eCompute;
-            case SLANG_STAGE_AMPLIFICATION: return vk::ShaderStageFlagBits::eTaskEXT;
-            case SLANG_STAGE_MESH:          return vk::ShaderStageFlagBits::eMeshEXT;
+            case SLANG_STAGE_VERTEX:        return vertex;
+            case SLANG_STAGE_FRAGMENT:      return fragment;
+            case SLANG_STAGE_COMPUTE:       return compute;
+            case SLANG_STAGE_AMPLIFICATION: return task;
+            case SLANG_STAGE_MESH:          return mesh;
             default: return {};
         }
     }
 
     auto reflect_descriptor_sets(
         slang::ProgramLayout* program_layout,
-        const std::function<vk::DescriptorType(slang::TypeLayoutReflection*, int)>& to_vk_desc_type,
+        const std::function<gpu::descriptor_type(slang::TypeLayoutReflection*, int)>& to_desc_type,
         const std::function<std::unordered_map<std::string, shader::uniform_member>(slang::TypeLayoutReflection*, std::optional<slang::ParameterCategory>)>& reflect_mem,
         const std::function<slang::TypeLayoutReflection*(slang::VariableLayoutReflection*)>& extract_struct
     ) -> struct shader::layout {
@@ -246,17 +239,17 @@ namespace gse::shader_compile {
             const auto binding_range_count = tl->getBindingRangeCount();
 
             for (int range_index = 0; range_index < binding_range_count; ++range_index) {
-                const auto binding = static_cast<std::uint32_t>(var->getOffset(slang::ParameterCategory::DescriptorTableSlot));
+                const auto binding_idx = static_cast<std::uint32_t>(var->getOffset(slang::ParameterCategory::DescriptorTableSlot));
                 const auto set_idx = container_space + static_cast<std::uint32_t>(var->getBindingSpace(slang::ParameterCategory::DescriptorTableSlot));
 
-                auto set_type = static_cast<shader::set::binding_type>(set_idx);
+                auto set_type = static_cast<gpu::descriptor_set_type>(set_idx);
                 auto& current_set = result.sets[set_type];
                 current_set.type = set_type;
 
-                vk::DescriptorSetLayoutBinding layout_binding{
-                    .binding = binding,
-                    .descriptorType = to_vk_desc_type(tl, range_index),
-                    .descriptorCount = tl->getKind() == slang::TypeReflection::Kind::Array ? static_cast<std::uint32_t>(tl->getElementCount()) : 1u,
+                gpu::descriptor_binding_desc desc{
+                    .binding = binding_idx,
+                    .type = to_desc_type(tl, range_index),
+                    .count = tl->getKind() == slang::TypeReflection::Kind::Array ? static_cast<std::uint32_t>(tl->getElementCount()) : 1u,
                 };
 
                 using kind = slang::TypeReflection::Kind;
@@ -321,7 +314,7 @@ namespace gse::shader_compile {
                     if (auto* struct_layout = extract_struct(var)) {
                         struct shader::uniform_block block = {
                             .name = var->getName(),
-                            .binding = binding,
+                            .binding = binding_idx,
                             .set = set_idx,
                             .size = static_cast<std::uint32_t>(struct_layout->getSize(slang::ParameterCategory::Uniform)),
                             .members = reflect_mem(struct_layout, slang::ParameterCategory::Uniform)
@@ -329,15 +322,15 @@ namespace gse::shader_compile {
                         if (block.size > 0 && !block.members.empty()) block_member = block;
                     }
                 } else {
-                    block_member = try_structured_buffer_block(var, tl, binding, set_idx);
+                    block_member = try_structured_buffer_block(var, tl, binding_idx, set_idx);
                 }
 
                 const bool binding_exists = std::ranges::any_of(current_set.bindings, [&](const auto& b) {
-                    return b.layout_binding.binding == binding;
+                    return b.desc.binding == binding_idx;
                 });
 
                 if (!binding_exists) {
-                    current_set.bindings.emplace_back(var->getName(), layout_binding, block_member);
+                    current_set.bindings.emplace_back(var->getName(), desc, block_member);
                 }
             }
         }
@@ -481,7 +474,6 @@ struct gse::asset_compiler<gse::shader> {
             return false;
         }
 
-        // Map LayoutKind enum values (from common.slang) to layout file names
         auto map_layout_kind = [](const SlangInt v) -> std::string {
             switch (v) {
                 case 0: return "deferred_3d";
@@ -530,7 +522,7 @@ struct gse::asset_compiler<gse::shader> {
         }
 
         shader::vertex_input reflected_vertex_input;
-        std::unordered_map<shader::set::binding_type, shader::set> reflected_sets;
+        std::unordered_map<gpu::descriptor_set_type, shader::set> reflected_sets;
         std::vector<struct shader::uniform_block> reflected_pcs;
 
         auto unwrap_to_struct = [](slang::TypeLayoutReflection* tl) -> slang::TypeLayoutReflection* {
@@ -607,8 +599,7 @@ struct gse::asset_compiler<gse::shader> {
                 auto* ty = tl->getType();
                 if (!ty) return;
 
-                const vk::Format fmt = to_vk_vertex_format(ty);
-                if (fmt == vk::Format::eUndefined) return;
+                const auto fmt = to_vertex_format(ty);
 
                 std::uint32_t loc;
                 if (const auto el = explicit_location(vl, session->getGlobalSession()); el && !used_locations.contains(*el)) {
@@ -619,7 +610,7 @@ struct gse::asset_compiler<gse::shader> {
                 }
                 used_locations.insert(loc);
 
-                reflected_vertex_input.attributes.push_back(vk::VertexInputAttributeDescription{
+                reflected_vertex_input.attributes.push_back({
                     .location = loc,
                     .binding = 0,
                     .format = fmt,
@@ -632,19 +623,19 @@ struct gse::asset_compiler<gse::shader> {
             }
         }
 
-        std::ranges::sort(reflected_vertex_input.attributes, {}, &vk::VertexInputAttributeDescription::location);
+        std::ranges::sort(reflected_vertex_input.attributes, {}, &gpu::vertex_attribute_desc::location);
 
-        auto [sets] = reflect_descriptor_sets(layout, to_vk_descriptor_type, reflect_members, extract_struct_layout);
-        vk::ShaderStageFlags used_stages{};
+        auto [sets] = reflect_descriptor_sets(layout, to_descriptor_type, reflect_members, extract_struct_layout);
+        gpu::stage_flags used_stages{};
 
         for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
             auto* ep = layout->getEntryPointByIndex(epi);
             if (!ep) continue;
-            used_stages |= to_vk_stage_flags(ep->getStage());
+            used_stages |= to_stage_flags(ep->getStage());
         }
 
         for (auto& s_data : sets | std::views::values) {
-            for (auto& [n, lb, mem] : s_data.bindings) lb.stageFlags = used_stages;
+            for (auto& b : s_data.bindings) b.desc.stages = used_stages;
         }
 
         reflected_sets = std::move(sets);
@@ -652,7 +643,7 @@ struct gse::asset_compiler<gse::shader> {
         auto process_push_constant_variable = [&](
             slang::VariableLayoutReflection* var,
             std::vector<struct shader::uniform_block>& pcs,
-            const vk::ShaderStageFlags stage
+            const gpu::stage_flags stage
         ) {
             if (!var || var->getCategory() != slang::ParameterCategory::PushConstantBuffer) return;
             auto* struct_layout = extract_struct_layout(var);
@@ -678,16 +669,16 @@ struct gse::asset_compiler<gse::shader> {
 
         for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
             if (auto* ep = layout->getEntryPointByIndex(epi)) {
-                vk::ShaderStageFlags stage_flag = to_vk_stage_flags(ep->getStage());
+                gpu::stage_flags stage_flag = to_stage_flags(ep->getStage());
                 process_push_constant_variable(ep->getVarLayout(), reflected_pcs, stage_flag);
             }
         }
 
         if (auto* globals_vl = layout->getGlobalParamsVarLayout()) {
-            vk::ShaderStageFlags all_entry_point_stages = {};
+            gpu::stage_flags all_entry_point_stages = {};
             for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
                 if (auto* ep = layout->getEntryPointByIndex(epi)) {
-                    all_entry_point_stages |= to_vk_stage_flags(ep->getStage());
+                    all_entry_point_stages |= to_stage_flags(ep->getStage());
                 }
             }
 
@@ -705,16 +696,25 @@ struct gse::asset_compiler<gse::shader> {
         const std::uint8_t shader_type = is_compute ? std::uint8_t(1) : is_mesh_pipeline ? std::uint8_t(2) : std::uint8_t(0);
         write_data(out, shader_type);
         write_string(out, shader_layout_name);
+
         write_data(out, static_cast<std::uint32_t>(reflected_vertex_input.attributes.size()));
-        for (const auto& attr : reflected_vertex_input.attributes) write_data(out, attr);
+        for (const auto& attr : reflected_vertex_input.attributes) {
+            write_data(out, attr.location);
+            write_data(out, attr.binding);
+            write_data(out, attr.format);
+            write_data(out, attr.offset);
+        }
 
         write_data(out, static_cast<std::uint32_t>(reflected_sets.size()));
         for (const auto& [type, set_data] : reflected_sets) {
             write_data(out, type);
             write_data(out, static_cast<std::uint32_t>(set_data.bindings.size()));
-            for (const auto& [name, layout_binding, member] : set_data.bindings) {
+            for (const auto& [name, desc, member] : set_data.bindings) {
                 write_string(out, name);
-                write_data(out, layout_binding);
+                write_data(out, desc.binding);
+                write_data(out, desc.type);
+                write_data(out, desc.count);
+                write_data(out, desc.stages.bits());
                 write_data(out, member.has_value());
                 if (member) {
                     write_string(out, member->name);
@@ -737,7 +737,7 @@ struct gse::asset_compiler<gse::shader> {
         for (const auto& pc : reflected_pcs) {
             write_string(out, pc.name);
             write_data(out, pc.size);
-            write_data(out, pc.stage_flags);
+            write_data(out, pc.stage_flags.bits());
             write_data(out, static_cast<std::uint32_t>(pc.members.size()));
             for (const auto& [m_name, m_data] : pc.members) {
                 write_string(out, m_name);

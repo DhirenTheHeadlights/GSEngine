@@ -969,8 +969,8 @@ auto gse::vbd::gpu_solver::stage_readback() -> void {
 	m_staged_body_count = info.body_count;
 	m_latest_gpu_body_data.assign(rb, rb + info.body_count * m_body_layout.stride);
 
-	const vk::DeviceSize contact_region_offset = max_bodies * m_body_layout.stride;
-	const vk::DeviceSize state_offset = contact_region_offset + max_contacts * m_contact_layout.stride;
+	const std::size_t contact_region_offset = max_bodies * m_body_layout.stride;
+	const std::size_t state_offset = contact_region_offset + max_contacts * m_contact_layout.stride;
 
 	std::array<std::uint32_t, collision_state_uints> staged_collision_state{};
 	gse::memcpy(
@@ -984,13 +984,13 @@ auto gse::vbd::gpu_solver::stage_readback() -> void {
 	m_staged_color_count = std::min(staged_collision_state[1], max_colors);
 	m_contact_count = m_staged_contact_count;
 
-	const vk::DeviceSize contact_data_size = m_staged_contact_count * m_contact_layout.stride;
+	const std::size_t contact_data_size = m_staged_contact_count * m_contact_layout.stride;
 	m_staged_contact_data.assign(rb + contact_region_offset, rb + contact_region_offset + contact_data_size);
 
-	const vk::DeviceSize joint_region_offset = state_offset + collision_state_uints * sizeof(std::uint32_t);
+	const std::size_t joint_region_offset = state_offset + collision_state_uints * sizeof(std::uint32_t);
 	m_staged_joint_count = info.joint_count;
 	if (m_staged_joint_count > 0) {
-		const vk::DeviceSize joint_data_size = m_staged_joint_count * m_joint_layout.stride;
+		const std::size_t joint_data_size = m_staged_joint_count * m_joint_layout.stride;
 		m_staged_joint_data.assign(rb + joint_region_offset, rb + joint_region_offset + joint_data_size);
 	} else {
 		m_staged_joint_data.clear();
@@ -1309,7 +1309,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 	if (!m_compute.descriptors_initialized) {
 		m_compute.descriptors = gpu::allocate_descriptors(ctx.device_ref(), *m_compute.predict);
 
-		gpu::descriptor_writer(m_compute.predict, m_compute.descriptors)
+		gpu::descriptor_writer(ctx.device_ref(), m_compute.predict, m_compute.descriptors)
 			.buffer("body_data", m_body_buffer)
 			.buffer("contact_data", m_contact_buffer)
 			.buffer("motor_data", m_motor_buffer)
@@ -1332,7 +1332,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 	m_compute.queue.wait();
 	m_compute.queue.begin();
 
-	constexpr gpu::barrier_scope init_scopes[] = { gpu::barrier_scope::host_to_compute, gpu::barrier_scope::transfer_to_transfer };
+	constexpr std::array init_scopes = { gpu::barrier_scope::host_to_compute, gpu::barrier_scope::transfer_to_transfer };
 	m_compute.queue.barriers(init_scopes);
 
 	const auto& cfg = m_solver_cfg;
@@ -1349,34 +1349,34 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 	auto bind_and_push = [&](const resource::handle<shader>& sh, const gpu::pipeline& pipeline, std::uint32_t color_offset, std::uint32_t color_count, std::uint32_t substep, std::uint32_t iteration, float current_alpha, const std::uint32_t warm_start_count) {
 		m_compute.queue.bind_pipeline(pipeline);
 		m_compute.queue.bind_descriptors(pipeline, m_compute.descriptors);
-		sh->push(m_compute.queue.native_command_buffer(), pipeline.native_layout(), "vbd_push_constants",
-			"body_count", m_body_count,
-			"contact_count", max_contacts,
-			"motor_count", m_motor_count,
-			"color_offset", color_offset,
-			"color_count", color_count,
-			"warm_start_count", warm_start_count,
-			"post_stabilize", cfg.post_stabilize ? 1u : 0u,
-			"joint_count", m_joint_count,
-			"h_squared", h_squared,
-			"dt", sub_dt,
-			"beta", cfg.beta,
-			"ang_beta", cfg.ang_beta,
-			"linear_damping", 0.0f,
-			"velocity_sleep_threshold", cfg.velocity_sleep_threshold,
-			"angular_sleep_threshold", cfg.angular_sleep_threshold,
-			"current_alpha", current_alpha,
-			"collision_margin", cfg.collision_margin,
-			"friction_coefficient", cfg.friction_coefficient,
-			"penalty_min", cfg.penalty_min,
-			"penalty_max", cfg.penalty_max,
-			"gamma", cfg.gamma,
-			"solver_alpha", cfg.alpha,
-			"speculative_margin", cfg.speculative_margin,
-			"stick_threshold", cfg.stick_threshold,
-			"substep", substep,
-			"iteration", iteration
-		);
+		auto pc = sh->cache_push_block("vbd_push_constants");
+		pc.set("body_count", m_body_count);
+		pc.set("contact_count", max_contacts);
+		pc.set("motor_count", m_motor_count);
+		pc.set("color_offset", color_offset);
+		pc.set("color_count", color_count);
+		pc.set("warm_start_count", warm_start_count);
+		pc.set("post_stabilize", cfg.post_stabilize ? 1u : 0u);
+		pc.set("joint_count", m_joint_count);
+		pc.set("h_squared", h_squared);
+		pc.set("dt", sub_dt);
+		pc.set("beta", cfg.beta);
+		pc.set("ang_beta", cfg.ang_beta);
+		pc.set("linear_damping", 0.0f);
+		pc.set("velocity_sleep_threshold", cfg.velocity_sleep_threshold);
+		pc.set("angular_sleep_threshold", cfg.angular_sleep_threshold);
+		pc.set("current_alpha", current_alpha);
+		pc.set("collision_margin", cfg.collision_margin);
+		pc.set("friction_coefficient", cfg.friction_coefficient);
+		pc.set("penalty_min", cfg.penalty_min);
+		pc.set("penalty_max", cfg.penalty_max);
+		pc.set("gamma", cfg.gamma);
+		pc.set("solver_alpha", cfg.alpha);
+		pc.set("speculative_margin", cfg.speculative_margin);
+		pc.set("stick_threshold", cfg.stick_threshold);
+		pc.set("substep", substep);
+		pc.set("iteration", iteration);
+		m_compute.queue.push(pipeline, pc);
 	};
 
 	const std::uint32_t n = m_body_count;
@@ -1455,55 +1455,20 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 
 	m_compute.queue.barrier(gpu::barrier_scope::compute_to_transfer);
 
-	const auto cmd = m_compute.queue.native_command_buffer();
+	const std::size_t body_copy_size = m_body_count * m_body_layout.stride;
+	m_compute.queue.copy_buffer({ .src = &m_body_buffer, .dst = &m_readback_buffer, .size = body_copy_size });
 
-	const vk::DeviceSize body_copy_size = m_body_count * m_body_layout.stride;
-	cmd.copyBuffer(
-		m_body_buffer.native().buffer,
-		m_readback_buffer.native().buffer,
-		vk::BufferCopy{
-			.srcOffset = 0,
-			.dstOffset = 0,
-			.size = body_copy_size
-		}
-	);
+	const std::size_t contact_dst_base = max_bodies * m_body_layout.stride;
+	const std::size_t contact_copy_size = max_contacts * m_contact_layout.stride;
+	m_compute.queue.copy_buffer({ .src = &m_contact_buffer, .dst = &m_readback_buffer, .dst_offset = contact_dst_base, .size = contact_copy_size });
 
-	const vk::DeviceSize contact_dst_base = max_bodies * m_body_layout.stride;
-	const vk::DeviceSize contact_copy_size = max_contacts * m_contact_layout.stride;
-
-	cmd.copyBuffer(
-		m_contact_buffer.native().buffer,
-		m_readback_buffer.native().buffer,
-		vk::BufferCopy{
-			.srcOffset = 0,
-			.dstOffset = contact_dst_base,
-			.size = contact_copy_size
-		}
-	);
-
-	const vk::DeviceSize count_dst = contact_dst_base + contact_copy_size;
-	cmd.copyBuffer(
-		m_collision_state_buffer.native().buffer,
-		m_readback_buffer.native().buffer,
-		vk::BufferCopy{
-			.srcOffset = 0,
-			.dstOffset = count_dst,
-			.size = collision_state_uints * sizeof(std::uint32_t)
-		}
-	);
+	const std::size_t count_dst = contact_dst_base + contact_copy_size;
+	m_compute.queue.copy_buffer({ .src = &m_collision_state_buffer, .dst = &m_readback_buffer, .dst_offset = count_dst, .size = collision_state_uints * sizeof(std::uint32_t) });
 
 	if (m_joint_count > 0) {
-		const vk::DeviceSize joint_dst = count_dst + collision_state_uints * sizeof(std::uint32_t);
-		const vk::DeviceSize joint_copy_size = m_joint_count * m_joint_layout.stride;
-		cmd.copyBuffer(
-			m_joint_buffer.native().buffer,
-			m_readback_buffer.native().buffer,
-			vk::BufferCopy{
-				.srcOffset = 0,
-				.dstOffset = joint_dst,
-				.size = joint_copy_size
-			}
-		);
+		const std::size_t joint_dst = count_dst + collision_state_uints * sizeof(std::uint32_t);
+		const std::size_t joint_copy_size = m_joint_count * m_joint_layout.stride;
+		m_compute.queue.copy_buffer({ .src = &m_joint_buffer, .dst = &m_readback_buffer, .dst_offset = joint_dst, .size = joint_copy_size });
 	}
 
 	m_compute.queue.barrier(gpu::barrier_scope::transfer_to_host);

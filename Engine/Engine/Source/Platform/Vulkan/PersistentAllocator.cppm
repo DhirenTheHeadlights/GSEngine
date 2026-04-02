@@ -1,9 +1,7 @@
-module;
-
 export module gse.platform:vulkan_allocator;
 
 import std;
-export import vulkan;
+import vulkan;
 
 import gse.assert;
 import gse.log;
