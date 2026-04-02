@@ -25,20 +25,20 @@ export namespace gse::renderer::shadow {
 	};
 }
 
-auto gse::renderer::shadow::state::shadow_map_view(const std::size_t index) const -> vk::ImageView {
-	return shadow_maps[index].native().view;
+auto gse::renderer::shadow::state::shadow_map(const std::size_t index) const -> const gpu::image& {
+	return shadow_maps[index];
 }
 
-auto gse::renderer::shadow::state::point_shadow_cube_view(const std::size_t index) const -> vk::ImageView {
-	return point_shadow_cubemaps[index].image_resource().view;
+auto gse::renderer::shadow::state::point_shadow_gpu_image(const std::size_t index) const -> const gpu::image& {
+	return point_shadow_cubemaps[index].gpu_image();
 }
 
-auto gse::renderer::shadow::state::point_shadow_face_view(const std::size_t index, const std::size_t face) const -> vk::ImageView {
+auto gse::renderer::shadow::state::point_shadow_gpu_sampler(const std::size_t index) const -> const gpu::sampler& {
+	return point_shadow_cubemaps[index].gpu_sampler();
+}
+
+auto gse::renderer::shadow::state::point_shadow_face_view(const std::size_t index, const std::size_t face) const -> gpu::image_view {
 	return point_shadow_cubemaps[index].face_view(face);
-}
-
-auto gse::renderer::shadow::state::point_shadow_sampler(const std::size_t index) const -> vk::Sampler {
-	return point_shadow_cubemaps[index].sampler();
 }
 
 auto gse::renderer::shadow::state::shadow_texel_size() const -> vec2f {
@@ -54,7 +54,7 @@ auto gse::renderer::shadow::system::initialize(initialize_phase& phase, state& s
 	s.shader_handle = ctx.get<shader>("Shaders/Deferred3D/shadow_pass");
 	ctx.instantly_load(s.shader_handle);
 
-	s.pipeline = gpu::create_graphics_pipeline(ctx, *s.shader_handle, {
+	s.pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.shader_handle, {
 		.rasterization = {
 			.cull = gpu::cull_mode::back,
 			.depth_bias = true,
@@ -71,110 +71,18 @@ auto gse::renderer::shadow::system::initialize(initialize_phase& phase, state& s
 		.push_constant_block = "push_constants"
 	});
 
-	const vk::ImageCreateInfo image_info{
-		.flags = {},
-		.imageType = vk::ImageType::e2D,
-		.format = vk::Format::eD32Sfloat,
-		.extent = {
-			.width = s.shadow_extent.x(),
-			.height = s.shadow_extent.y(),
-			.depth = 1u
-		},
-		.mipLevels = 1u,
-		.arrayLayers = 1u,
-		.samples = vk::SampleCountFlagBits::e1,
-		.tiling = vk::ImageTiling::eOptimal,
-		.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
-		.sharingMode = vk::SharingMode::eExclusive,
-		.initialLayout = vk::ImageLayout::eUndefined
-	};
-
-	constexpr vk::ImageViewCreateInfo view_info{
-		.flags = {},
-		.image = nullptr,
-		.viewType = vk::ImageViewType::e2D,
-		.format = vk::Format::eD32Sfloat,
-		.components = {},
-		.subresourceRange = {
-			.aspectMask = vk::ImageAspectFlagBits::eDepth,
-			.baseMipLevel = 0u,
-			.levelCount = 1u,
-			.baseArrayLayer = 0u,
-			.layerCount = 1u
-		}
-	};
-
 	for (auto& img : s.shadow_maps) {
-		img = gpu::create_image(ctx, {
+		img = gpu::create_image(ctx.device_ref(), {
 			.size = s.shadow_extent,
 			.format = gpu::image_format::d32_sfloat,
-			.usage = gpu::image_flag::depth_attachment | gpu::image_flag::sampled
+			.usage = gpu::image_flag::depth_attachment | gpu::image_flag::sampled,
+			.ready_layout = gpu::image_layout::general
 		});
 	}
 
 	for (auto& cm : s.point_shadow_cubemaps) {
 		cm.create(ctx, static_cast<int>(s.point_shadow_extent.x()), true);
 	}
-
-	ctx.add_transient_work(
-        [&s](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
-            std::vector<vk::ImageMemoryBarrier2> barriers;
-            barriers.reserve(s.shadow_maps.size() + s.point_shadow_cubemaps.size());
-
-            for (auto& img : s.shadow_maps) {
-                barriers.push_back({
-                    .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-                    .srcAccessMask = {},
-                    .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-                    .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-                    .oldLayout = vk::ImageLayout::eUndefined,
-                    .newLayout = vk::ImageLayout::eGeneral,
-                    .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-                    .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                    .image = img.native().image,
-                    .subresourceRange = {
-                        .aspectMask = vk::ImageAspectFlagBits::eDepth,
-                        .baseMipLevel = 0,
-                        .levelCount = 1,
-                        .baseArrayLayer = 0,
-                        .layerCount = 1
-                    }
-                });
-
-                img.set_layout(gpu::image_layout::general);
-            }
-
-            for (auto& cm : s.point_shadow_cubemaps) {
-                barriers.push_back({
-                    .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-                    .srcAccessMask = {},
-                    .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-                    .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-                    .oldLayout = vk::ImageLayout::eUndefined,
-                    .newLayout = vk::ImageLayout::eGeneral,
-                    .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-                    .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                    .image = cm.image_resource().image,
-                    .subresourceRange = {
-                        .aspectMask = vk::ImageAspectFlagBits::eDepth,
-                        .baseMipLevel = 0,
-                        .levelCount = 1,
-                        .baseArrayLayer = 0,
-                        .layerCount = 6
-                    }
-                });
-            }
-
-            const vk::DependencyInfo dep{
-                .imageMemoryBarrierCount = static_cast<std::uint32_t>(barriers.size()),
-                .pImageMemoryBarriers = barriers.data()
-            };
-
-            cmd.pipelineBarrier2(dep);
-
-            return {};
-        }
-    );
 }
 
 auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> void {
@@ -333,8 +241,8 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
     struct shadow_draw_batch {
         std::vector<render_queue_entry> draw_list;
         view_projection_matrix light_view_proj;
-        vk::ImageView depth_view;
-        vk::Extent2D extent;
+        gpu::image_view depth_view;
+        vec2u extent;
     };
 
     std::vector<shadow_draw_batch> batches;
@@ -352,8 +260,8 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
         batches.push_back({
             .draw_list = std::move(draw_list),
             .light_view_proj = proj * view,
-            .depth_view = s.shadow_maps[static_cast<std::size_t>(shadow_index)].native().view,
-            .extent = { s.shadow_extent.x(), s.shadow_extent.y() }
+            .depth_view = s.shadow_maps[static_cast<std::size_t>(shadow_index)].view(),
+            .extent = s.shadow_extent
         });
     }
 
@@ -374,7 +282,7 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
                 .draw_list = draw_list,
                 .light_view_proj = pl.face_view_proj[face],
                 .depth_view = s.point_shadow_face_view(cubemap_index, face),
-                .extent = { s.point_shadow_extent.x(), s.point_shadow_extent.y() }
+                .extent = s.point_shadow_extent
             });
         }
     }
@@ -385,33 +293,14 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
 
     ctx.graph()
         .add_pass<state>()
-        .record([&s, batches = std::move(batches)](vulkan::recording_context& ctx) {
+        .record([&s, batches = std::move(batches)](gpu::recording_context& ctx) {
             for (const auto& batch : batches) {
-                vk::RenderingAttachmentInfo depth_attachment{
-                    .imageView = batch.depth_view,
-                    .imageLayout = vk::ImageLayout::eGeneral,
-                    .loadOp = vk::AttachmentLoadOp::eClear,
-                    .storeOp = vk::AttachmentStoreOp::eStore,
-                    .clearValue = vk::ClearValue{
-                        .depthStencil = { 1.0f, 0 }
-                    }
-                };
-
-                const vk::RenderingInfo rendering_info{
-                    .renderArea = { { 0, 0 }, batch.extent },
-                    .layerCount = 1,
-                    .colorAttachmentCount = 0,
-                    .pColorAttachments = nullptr,
-                    .pDepthAttachment = &depth_attachment
-                };
-
-                ctx.begin_rendering(rendering_info);
+                ctx.begin_rendering(batch.depth_view, batch.extent);
 
                 ctx.bind(s.pipeline);
 
-                const vec2u ext{ batch.extent.width, batch.extent.height };
-                ctx.set_viewport(ext);
-                ctx.set_scissor(ext);
+                ctx.set_viewport(batch.extent);
+                ctx.set_scissor(batch.extent);
 
                 for (const auto& e : batch.draw_list) {
                     auto pc = s.shader_handle->cache_push_block("push_constants");

@@ -5,6 +5,7 @@ import std;
 import :gpu_types;
 import :gpu_buffer;
 import :gpu_pipeline;
+import :gpu_descriptor;
 import :descriptor_heap;
 
 import gse.assert;
@@ -53,7 +54,7 @@ export namespace gse::gpu {
 
 		auto bind_descriptors(
 			const pipeline& p,
-			const vulkan::descriptor_region& region
+			const descriptor_region& region
 		) -> void;
 
 		auto dispatch(
@@ -191,8 +192,9 @@ auto gse::gpu::compute_queue::bind_pipeline(const pipeline& p) -> void {
 	(*m_cmd).bindPipeline(vk::PipelineBindPoint::eCompute, p.native_pipeline());
 }
 
-auto gse::gpu::compute_queue::bind_descriptors(const pipeline& p, const vulkan::descriptor_region& region) -> void {
-	region.heap->bind(*m_cmd, vk::PipelineBindPoint::eCompute, p.native_layout(), 0, region);
+auto gse::gpu::compute_queue::bind_descriptors(const pipeline& p, const descriptor_region& region) -> void {
+	const auto& native = region.native();
+	native.heap->bind(*m_cmd, vk::PipelineBindPoint::eCompute, p.native_layout(), 0, native);
 }
 
 auto gse::gpu::compute_queue::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) -> void {

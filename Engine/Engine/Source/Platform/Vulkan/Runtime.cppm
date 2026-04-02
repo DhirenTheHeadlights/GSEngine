@@ -7,6 +7,7 @@ import std;
 import :vulkan_allocator;
 import :descriptor_heap;
 import :descriptor_buffer_types;
+import :gpu_image;
 
 import gse.assert;
 import gse.log;
@@ -117,7 +118,7 @@ export namespace gse::vulkan {
         std::vector<vk::raii::ImageView> image_views;
         vk::Format format;
         swap_chain_details details;
-        image_resource depth_image;
+        gpu::image depth_image;
 
         swap_chain_config(
             vk::raii::SwapchainKHR&& swap_chain,
@@ -128,7 +129,7 @@ export namespace gse::vulkan {
             std::vector<vk::raii::ImageView>&& image_views,
             const vk::Format format,
             swap_chain_details&& details,
-            image_resource&& depth_image
+            gpu::image&& depth_image
         )
             : swap_chain(std::move(swap_chain)),
             surface_format(surface_format),
@@ -289,8 +290,8 @@ export namespace gse::vulkan {
             using self_t = std::remove_reference_t<decltype(self)>;
             using heap_ref_t = std::conditional_t<
                 std::is_const_v<self_t>,
-                const gse::vulkan::descriptor_heap&,
-                gse::vulkan::descriptor_heap&
+                const vulkan::descriptor_heap&,
+                vulkan::descriptor_heap&
             >;
             assert(self.m_descriptor_heap.get(),
                 std::source_location::current(),
@@ -334,14 +335,6 @@ export namespace gse::vulkan {
             return *m_allocator;
         }
 
-        auto set_mesh_shaders_enabled(const bool enabled) -> void {
-	        m_mesh_shaders_enabled = enabled;
-        }
-
-        [[nodiscard]] auto mesh_shaders_enabled() const -> bool {
-	        return m_mesh_shaders_enabled;
-        }
-
         [[nodiscard]] auto descriptor_buffer_props() const -> const descriptor_buffer_properties& {
 	        return m_descriptor_buffer_props;
         }
@@ -358,7 +351,6 @@ export namespace gse::vulkan {
         std::uint32_t m_current_frame = 0;
         std::uint64_t m_swap_chain_generation = 0;
         bool m_frame_in_progress = false;
-        bool m_mesh_shaders_enabled = false;
         descriptor_buffer_properties m_descriptor_buffer_props;
         std::atomic<bool> m_device_lost_reported = false;
         std::vector<swap_chain_recreate_callback> m_swap_chain_recreate_callbacks;
@@ -366,8 +358,7 @@ export namespace gse::vulkan {
 }
 
 auto gse::vulkan::runtime::report_device_lost(const std::string_view operation) -> void {
-    bool expected = false;
-    if (!m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
+	if (bool expected = false; !m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
         return;
     }
 
@@ -452,7 +443,7 @@ export namespace gse::vulkan {
         std::optional<std::uint32_t> compute_family;
 
         auto complete() const -> bool {
-            return graphics_family.has_value() && present_family.has_value();
+			return graphics_family.has_value() && present_family.has_value() && compute_family.has_value();
         }
     };
 }

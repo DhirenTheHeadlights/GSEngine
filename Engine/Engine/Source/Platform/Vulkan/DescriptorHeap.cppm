@@ -6,6 +6,10 @@ import std;
 
 import :vulkan_allocator;
 import :descriptor_buffer_types;
+import :gpu_types;
+import :gpu_buffer;
+import :gpu_image;
+import :gpu_pipeline;
 
 import gse.assert;
 import gse.log;
@@ -145,11 +149,25 @@ export namespace gse::vulkan {
 			vk::DeviceSize range
 		) -> descriptor_writer&;
 
+		auto buffer(
+			std::uint32_t binding,
+			const gpu::buffer& buf,
+			vk::DeviceSize offset,
+			vk::DeviceSize range
+		) -> descriptor_writer&;
+
 		auto image(
 			std::uint32_t binding,
 			vk::ImageView view,
 			vk::Sampler sampler,
 			vk::ImageLayout layout = vk::ImageLayout::eGeneral
+		) -> descriptor_writer&;
+
+		auto image(
+			std::uint32_t binding,
+			const gpu::image& img,
+			const gpu::sampler& samp,
+			gpu::image_layout layout = gpu::image_layout::general
 		) -> descriptor_writer&;
 
 		auto commit(
@@ -479,6 +497,31 @@ auto gse::vulkan::descriptor_writer::image(
 
 	m_heap->write_descriptor(m_current_region, info.offset, get_info, info.descriptor_size);
 	return *this;
+}
+
+auto gse::vulkan::descriptor_writer::buffer(
+	std::uint32_t binding,
+	const gpu::buffer& buf,
+	vk::DeviceSize offset,
+	vk::DeviceSize range
+) -> descriptor_writer& {
+	return buffer(binding, buf.native().buffer, offset, range);
+}
+
+auto gse::vulkan::descriptor_writer::image(
+	std::uint32_t binding,
+	const gpu::image& img,
+	const gpu::sampler& samp,
+	gpu::image_layout layout
+) -> descriptor_writer& {
+	const auto vk_layout = [&] {
+		switch (layout) {
+			case gpu::image_layout::general:          return vk::ImageLayout::eGeneral;
+			case gpu::image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
+			default:                                  return vk::ImageLayout::eUndefined;
+		}
+	}();
+	return image(binding, img.native().view, samp.native(), vk_layout);
 }
 
 auto gse::vulkan::descriptor_writer::commit(

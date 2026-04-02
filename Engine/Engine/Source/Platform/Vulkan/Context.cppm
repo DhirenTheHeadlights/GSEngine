@@ -12,6 +12,7 @@ import :vulkan_allocator;
 import :descriptor_heap;
 import :descriptor_buffer_types;
 import :gpu_frame;
+import :gpu_image;
 
 import gse.assert;
 import gse.log;
@@ -92,14 +93,14 @@ namespace gse::vulkan {
 
 auto gse::vulkan::create_runtime(GLFWwindow* window, save::state& save_state) -> std::unique_ptr<runtime> {
 	auto instance_data = create_instance_and_surface(window);
-	auto result = create_device_and_queues(instance_data);
-	auto alloc = std::make_unique<allocator>(result.device.device, result.device.physical_device, save_state);
-	auto swap_chain_data = create_swap_chain_resources(window, instance_data, result.device, *alloc);
-	auto command = create_command_objects(result.device, instance_data);
-	auto sync = create_sync_objects(result.device, swap_chain_data);
+	auto [device, queue, mesh_shaders_enabled, desc_buf_props] = create_device_and_queues(instance_data);
+	auto alloc = std::make_unique<allocator>(device.device, device.physical_device, save_state);
+	auto swap_chain_data = create_swap_chain_resources(window, instance_data, device, *alloc);
+	auto command = create_command_objects(device, instance_data);
+	auto sync = create_sync_objects(device, swap_chain_data);
 
-	auto desc_heap = result.desc_buf_props.supported
-		? std::make_unique<descriptor_heap>(result.device.device, result.device.physical_device, result.desc_buf_props)
+	auto desc_heap = desc_buf_props.supported
+		? std::make_unique<descriptor_heap>(device.device, device.physical_device, desc_buf_props)
 		: nullptr;
 
 	frame_context_config frame_context(
@@ -109,18 +110,17 @@ auto gse::vulkan::create_runtime(GLFWwindow* window, save::state& save_state) ->
 
 	auto runtime_state = std::make_unique<runtime>(
 		std::move(instance_data),
-		std::move(result.device),
-		std::move(result.queue),
+		std::move(device),
+		std::move(queue),
 		std::move(command),
 		std::move(sync),
 		std::move(swap_chain_data),
 		std::move(frame_context),
 		std::move(alloc),
 		std::move(desc_heap),
-		std::move(result.desc_buf_props)
+		std::move(desc_buf_props)
 	);
 
-	runtime_state->set_mesh_shaders_enabled(result.mesh_shaders_enabled);
 	return runtime_state;
 }
 
@@ -878,6 +878,8 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
     );
 
     depth_image.current_layout = vk::ImageLayout::eUndefined;
+    const vec2u depth_extent{ extent.width, extent.height };
+    auto depth_gpu_image = gpu::image(std::move(depth_image), gpu::image_format::d32_sfloat, depth_extent);
 
     std::vector<vk::raii::ImageView> image_views;
     image_views.reserve(images.size());
@@ -909,6 +911,6 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
         std::move(image_views),
         format,
         std::move(details),
-        std::move(depth_image)
+        std::move(depth_gpu_image)
     );
 }

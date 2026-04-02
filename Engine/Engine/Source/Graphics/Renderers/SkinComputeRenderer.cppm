@@ -10,7 +10,7 @@ export namespace gse::renderer::skin_compute {
 	struct state {
 		resource::handle<shader> shader_handle;
 		gpu::pipeline pipeline;
-		per_frame_resource<vulkan::descriptor_region> descriptors;
+		per_frame_resource<gpu::descriptor_region> descriptors;
 
 		state() = default;
 	};
@@ -38,42 +38,19 @@ auto gse::renderer::skin_compute::system::initialize(initialize_phase& phase, st
 
 	const auto* gc = phase.try_state_of<geometry_collector::state>();
 
-	s.pipeline = gpu::create_compute_pipeline(ctx, *s.shader_handle, "push_constants");
+	s.pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *s.shader_handle, "push_constants");
 
-	constexpr vk::DeviceSize skin_buffer_size = geometry_collector::state::max_skin_matrices * sizeof(mat4f);
-	constexpr vk::DeviceSize local_pose_size = geometry_collector::state::max_skin_matrices * sizeof(mat4f);
+	constexpr std::size_t skin_buffer_size = geometry_collector::state::max_skin_matrices * sizeof(mat4f);
+	constexpr std::size_t local_pose_size = geometry_collector::state::max_skin_matrices * sizeof(mat4f);
 
-	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
-		s.descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+		s.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
 
-		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
-			{
-				"skeletonData",
-				{
-					.buffer = gc->skeleton_buffer.native().buffer,
-					.offset = 0,
-					.range = geometry_collector::state::max_joints * gc->joint_stride
-				}
-			},
-			{
-				"localPoses",
-				{
-					.buffer = gc->local_pose_buffer[i].native().buffer,
-					.offset = 0,
-					.range = local_pose_size
-				}
-			},
-			{
-				"skinMatrices",
-				{
-					.buffer = gc->skin_buffer[i].native().buffer,
-					.offset = 0,
-					.range = skin_buffer_size
-				}
-			}
-		};
-
-		gpu::write_descriptors(ctx, s.descriptors[i], *s.shader_handle, buffer_infos);
+		gpu::descriptor_writer(s.shader_handle, s.descriptors[i])
+			.buffer("skeletonData", gc->skeleton_buffer, 0, geometry_collector::state::max_joints * gc->joint_stride)
+			.buffer("localPoses", gc->local_pose_buffer[i], 0, local_pose_size)
+			.buffer("skinMatrices", gc->skin_buffer[i], 0, skin_buffer_size)
+			.commit();
 	}
 }
 
@@ -85,7 +62,7 @@ auto gse::renderer::skin_compute::system::render(const render_phase& phase, cons
 		return;
 	}
 
-	const auto& data = render_items[0];
+	const auto& data = render_items.front();
 	const auto frame_index = data.frame_index;
 
 	const auto* gc = phase.try_state_of<geometry_collector::state>();
@@ -102,11 +79,11 @@ auto gse::renderer::skin_compute::system::render(const render_phase& phase, cons
 	auto pass = ctx.graph().add_pass<state>();
 	pass.when(data.pending_compute_instance_count > 0);
 
-	pass.track(gc->skeleton_buffer.native());
-	pass.track(gc->local_pose_buffer[frame_index].native());
+	pass.track(gc->skeleton_buffer);
+	pass.track(gc->local_pose_buffer[frame_index]);
 
-	pass.writes(vulkan::storage(gc->skin_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eComputeShader))
-		.record([&s, frame_index, instance_count = data.pending_compute_instance_count, skin_pc = std::move(skin_pc)](vulkan::recording_context& ctx) {
+	pass.writes(gpu::storage_write(gc->skin_buffer[frame_index], gpu::pipeline_stage::compute_shader))
+		.record([&s, frame_index, instance_count = data.pending_compute_instance_count, skin_pc = std::move(skin_pc)](gpu::recording_context& ctx) {
 			ctx.bind(s.pipeline);
 			ctx.bind_descriptors(s.pipeline, s.descriptors[frame_index]);
 			ctx.push(s.pipeline, skin_pc);

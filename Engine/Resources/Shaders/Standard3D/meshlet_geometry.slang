@@ -2,14 +2,6 @@ import common;
 import forward_3d;
 import meshlet_common;
 
-[[vk::binding(0, 1)]] StructuredBuffer<Vertex> vertices;
-[[vk::binding(1, 1)]] StructuredBuffer<MeshletDescriptor> meshlets;
-[[vk::binding(2, 1)]] StructuredBuffer<uint> meshletVertexIndices;
-[[vk::binding(3, 1)]] ByteAddressBuffer meshletTriangles;
-[[vk::binding(4, 1)]] StructuredBuffer<MeshletBounds> meshletBounds;
-[[vk::binding(5, 1)]] StructuredBuffer<InstanceData> instanceData;
-[[vk::binding(6, 1)]] Sampler2D diffuseSampler;
-
 [[vk::push_constant]]
 cbuffer PushConstants {
     uint meshlet_offset;

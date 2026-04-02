@@ -53,22 +53,22 @@ export namespace gse::renderer::shadow {
 
 		state() = default;
 
-		auto shadow_map_view(
+		auto shadow_map(
 			std::size_t index
-		) const -> vk::ImageView;
+		) const -> const gpu::image&;
 
-		auto point_shadow_cube_view(
+		auto point_shadow_gpu_image(
 			std::size_t index
-		) const -> vk::ImageView;
+		) const -> const gpu::image&;
+
+		auto point_shadow_gpu_sampler(
+			std::size_t index
+		) const -> const gpu::sampler&;
 
 		auto point_shadow_face_view(
 			std::size_t index,
 			std::size_t face
-		) const -> vk::ImageView;
-
-		auto point_shadow_sampler(
-			std::size_t index
-		) const -> vk::Sampler;
+		) const -> gpu::image_view;
 
 		auto shadow_texel_size(
 		) const -> vec2f;

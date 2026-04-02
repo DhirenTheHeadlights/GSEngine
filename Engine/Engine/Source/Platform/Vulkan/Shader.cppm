@@ -14,9 +14,9 @@ import :gpu_context;
 import :shader_layout;
 import :render_graph;
 import :descriptor_heap;
+import :vulkan_allocator;
 
 import gse.assert;
-import :vulkan_allocator;
 import gse.utility;
 
 namespace gse {
@@ -352,10 +352,13 @@ auto gse::shader::load(const gpu::context& context) -> void {
 			};
 		}
 
-		for (auto& [type, reflected_set] : reflected_sets) {
-			if (!m_layout.sets.contains(type)) {
-				m_layout.sets[type] = std::move(reflected_set);
-			}
+		for (const auto& type : reflected_sets | std::views::keys) {
+			assert(
+				m_layout.sets.contains(type),
+				std::source_location::current(),
+				"Shader '{}' has bindings in set type {} not defined in layout '{}' — add them to the layout or remove them from the shader",
+				m_info.name, static_cast<int>(type), m_layout_name
+			);
 		}
 	}
 
@@ -391,7 +394,7 @@ auto gse::shader::load(const gpu::context& context) -> void {
 		read_data(in, size);
 		std::vector<char> code(size);
 		in.read(code.data(), size);
-		return context.device().createShaderModule({
+		return context.device_ref().logical_device().createShaderModule({
 			.codeSize = code.size(),
 			.pCode = reinterpret_cast<const std::uint32_t*>(code.data())
 		});
@@ -458,13 +461,13 @@ auto gse::shader::load(const gpu::context& context) -> void {
 
 		vk::DescriptorSetLayoutCreateInfo ci{
 			.flags = type == set::binding_type::push
-				? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
+				? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
 				: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 			.bindingCount = static_cast<uint32_t>(raw_bindings.size()),
 			.pBindings = raw_bindings.data()
 		};
 
-		set_data.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.device(), ci);
+		set_data.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.device_ref().logical_device(), ci);
 	}
 
 	std::uint32_t max_set_index = 0;
@@ -476,14 +479,14 @@ auto gse::shader::load(const gpu::context& context) -> void {
 		if (auto t = static_cast<set::binding_type>(i); !m_layout.sets.contains(t)) {
 			vk::DescriptorSetLayoutCreateInfo ci{
 				.flags = t == set::binding_type::push
-					? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
+					? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
 					: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 				.bindingCount = 0,
 				.pBindings = nullptr
 			};
 			set empty_set{
 				.type = t,
-				.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.device(), ci)
+				.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.device_ref().logical_device(), ci)
 			};
 			m_layout.sets.emplace(t, std::move(empty_set));
 		}

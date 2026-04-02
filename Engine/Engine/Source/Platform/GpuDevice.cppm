@@ -5,6 +5,8 @@ import std;
 import :vulkan_runtime;
 import :vulkan_allocator;
 import :descriptor_heap;
+import :gpu_types;
+import :gpu_image;
 
 import gse.utility;
 
@@ -43,22 +45,25 @@ export namespace gse::gpu {
 			const auto& commands
 		) -> void;
 
+		auto transition_image_layout(
+			const image& img,
+			image_layout target
+		) -> void;
+
 		auto wait_idle(
 		) -> void;
 
 		auto report_device_lost(
 			std::string_view operation
-		) -> void;
-
-		[[nodiscard]] auto mesh_shaders_enabled(
-		) const -> bool;
+		) const -> void;
 
 		[[nodiscard]] auto runtime_ref(
-		) -> vulkan::runtime&;
-
+		) const -> vulkan::runtime&;
 	private:
 		vulkan::runtime* m_runtime;
 	};
+
+	auto transition_image_layout(device& dev, const image& img, image_layout target) -> void;
 }
 
 gse::gpu::device::device(vulkan::runtime& runtime)
@@ -109,14 +114,55 @@ auto gse::gpu::device::wait_idle() -> void {
 	m_runtime->device_config().device.waitIdle();
 }
 
-auto gse::gpu::device::report_device_lost(std::string_view operation) -> void {
+auto gse::gpu::device::report_device_lost(const std::string_view operation) const -> void {
 	m_runtime->report_device_lost(operation);
 }
 
-auto gse::gpu::device::mesh_shaders_enabled() const -> bool {
-	return m_runtime->mesh_shaders_enabled();
+auto gse::gpu::device::runtime_ref() const -> vulkan::runtime& {
+	return *m_runtime;
 }
 
-auto gse::gpu::device::runtime_ref() -> vulkan::runtime& {
-	return *m_runtime;
+auto gse::gpu::transition_image_layout(device& dev, const image& img, image_layout target) -> void {
+	const bool is_depth = img.format() == image_format::d32_sfloat;
+	const auto aspect = is_depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
+	const auto target_vk = [&] -> vk::ImageLayout {
+		switch (target) {
+			case image_layout::general:          return vk::ImageLayout::eGeneral;
+			case image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
+			default:                             return vk::ImageLayout::eUndefined;
+		}
+	}();
+	const auto img_handle = img.native().image;
+	const auto dst_stage = is_depth
+		? (vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests)
+		: vk::PipelineStageFlagBits2::eAllCommands;
+	const auto dst_access = is_depth
+		? (vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead)
+		: vk::AccessFlagBits2::eShaderRead;
+
+	dev.add_transient_work([img_handle, target_vk, aspect, dst_stage, dst_access](const auto& cmd) {
+		const vk::ImageMemoryBarrier2 barrier{
+			.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+			.srcAccessMask = {},
+			.dstStageMask = dst_stage,
+			.dstAccessMask = dst_access,
+			.oldLayout = vk::ImageLayout::eUndefined,
+			.newLayout = target_vk,
+			.image = img_handle,
+			.subresourceRange = {
+				.aspectMask = aspect,
+				.baseMipLevel = 0, .levelCount = 1,
+				.baseArrayLayer = 0, .layerCount = 1
+			}
+		};
+		const vk::DependencyInfo dep{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier };
+		cmd.pipelineBarrier2(dep);
+		return std::vector<vulkan::buffer_resource>{};
+	});
+
+	const_cast<image&>(img).set_layout(target);
+}
+
+auto gse::gpu::device::transition_image_layout(const image& img, image_layout target) -> void {
+	gpu::transition_image_layout(*this, img, target);
 }
