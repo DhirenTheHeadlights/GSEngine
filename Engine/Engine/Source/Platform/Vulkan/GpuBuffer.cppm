@@ -16,7 +16,7 @@ export namespace gse::gpu {
 		auto operator=(buffer&&) noexcept -> buffer& = default;
 
 		[[nodiscard]] auto mapped(this const buffer& self) -> std::byte* { return self.m_resource.allocation.mapped(); }
-		[[nodiscard]] auto size(this const buffer& self) -> std::size_t { return static_cast<std::size_t>(self.m_resource.size); }
+		[[nodiscard]] auto size(this const buffer& self) -> std::size_t { return self.m_resource.size; }
 		[[nodiscard]] auto native(this auto&& self) -> auto&& { return std::forward_like<decltype(self)>(self.m_resource); }
 
 		explicit operator bool() const;

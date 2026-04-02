@@ -132,8 +132,20 @@ void cs_main(
         return;
     }
 
+    frustum tile_frustum = build_tile_frustum(group_id.xy);
+    float z_near = asfloat(tile_depth_min);
+    float z_far  = asfloat(tile_depth_max);
+
     for (uint i = local_index; i < num_lights; i += TILE_SIZE * TILE_SIZE) {
-        if (true) {
+        Light light = lights[i];
+        bool visible;
+        if (light.light_type == LightType::Directional) {
+            visible = true;
+        } else {
+            float radius = light_radius(light);
+            visible = sphere_inside_frustum(light.position, radius, tile_frustum, z_near, z_far);
+        }
+        if (visible) {
             uint slot;
             InterlockedAdd(tile_light_count, 1, slot);
             if (slot < MAX_LIGHTS_PER_TILE) {

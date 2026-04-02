@@ -23,7 +23,7 @@ export namespace gse {
 		);
 
 		auto load(
-			const gpu::context& context
+			gpu::resource_manager& context
 		) -> void;
 
 		auto unload(
@@ -188,7 +188,7 @@ export namespace gse::audio {
 
 gse::audio_clip::audio_clip(const std::filesystem::path& filepath) : identifiable(filepath, config::baked_resource_path), m_path(filepath) {}
 
-auto gse::audio_clip::load(const gpu::context&) -> void {
+auto gse::audio_clip::load(gpu::resource_manager&) -> void {
 	std::ifstream file(m_path, std::ios::binary | std::ios::ate);
 	assert(
 		file.is_open(),

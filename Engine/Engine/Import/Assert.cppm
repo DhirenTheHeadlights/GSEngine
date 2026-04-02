@@ -32,7 +32,7 @@ namespace gse {
 }
 
 template <class... Args>
-auto gse::assert(const bool condition, const std::source_location loc, std::string_view fmt, Args&&... args) -> void {
+auto gse::assert(const bool condition, const std::source_location loc, const std::string_view fmt, Args&&... args) -> void {
     if (condition) return;
 
 	const std::string comment = std::vformat(fmt, std::make_format_args(args...));

@@ -70,48 +70,7 @@ export namespace gse::vulkan::uploader {
 }
 
 auto gse::vulkan::uploader::upload_image_2d(gpu::device& dev, image_resource& resource, const vec2u size, const void* pixel_data, const std::size_t data_size, const vk::ImageLayout final_layout) -> void {
-    dev.add_transient_work(
-        [&, size](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
-            auto staging_buffer = dev.allocator().create_buffer(
-                vk::BufferCreateInfo{
-                    .size = data_size,
-                    .usage = vk::BufferUsageFlagBits::eTransferSrc
-                },
-                pixel_data
-            );
-
-            transition_image_layout(
-	            *cmd, resource,
-	            vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor,
-	            vk::PipelineStageFlagBits2::eTopOfPipe, {},
-	            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite
-            );
-
-            const vk::BufferImageCopy region{
-                .bufferOffset = 0,
-                .imageSubresource = {
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
-                    .mipLevel = 0,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1
-                },
-                .imageExtent = { size.x(), size.y(), 1 }
-            };
-
-            cmd.copyBufferToImage(staging_buffer.buffer, resource.image, vk::ImageLayout::eTransferDstOptimal, region);
-
-            transition_image_layout(
-	            *cmd, resource,
-	            final_layout, vk::ImageAspectFlagBits::eColor,
-	            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
-	            vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead
-            );
-
-            std::vector<buffer_resource> buffers;
-            buffers.push_back(std::move(staging_buffer));
-            return buffers;
-        }
-    );
+    upload_image_3d(dev, resource, { size.x(), size.y(), 1 }, pixel_data, data_size, final_layout);
 }
 
 auto gse::vulkan::uploader::upload_image_layers(gpu::device& dev, image_resource& resource, const vec2u size, const std::vector<const void*>& face_data, const std::size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
