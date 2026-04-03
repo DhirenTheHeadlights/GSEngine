@@ -18,8 +18,8 @@ namespace gse {
 		};
 
 		struct vertex_input {
-			std::vector<gpu::vertex_binding_desc> bindings;
-			std::vector<gpu::vertex_attribute_desc> attributes;
+			static_vector<gpu::vertex_binding_desc, 4>   bindings;
+			static_vector<gpu::vertex_attribute_desc, 16> attributes;
 		};
 
 		struct uniform_member {
@@ -42,7 +42,7 @@ namespace gse {
 		struct binding {
 			std::string name;
 			gpu::descriptor_binding_desc desc;
-			std::optional<struct uniform_block> member;
+			std::optional<uniform_block> member;
 		};
 
 		struct set {
@@ -126,7 +126,7 @@ namespace gse {
 		) const -> const layout&;
 
 		[[nodiscard]] auto push_constants(
-		) const -> const std::vector<class uniform_block>&;
+		) const -> std::span<const struct uniform_block>;
 
 		[[nodiscard]] auto layout_name(
 		) const -> const std::string&;
@@ -144,7 +144,7 @@ namespace gse {
 
 		layout m_layout;
 		vertex_input m_vertex_input;
-		std::vector<struct uniform_block> m_push_constants;
+		static_vector<struct uniform_block, 8> m_push_constants;
 		info m_info;
 		std::string m_layout_name;
 
@@ -447,8 +447,8 @@ auto gse::shader::layout_data() const -> const layout& {
 	return m_layout;
 }
 
-auto gse::shader::push_constants() const -> const std::vector<class uniform_block>& {
-	return m_push_constants;
+auto gse::shader::push_constants() const -> std::span<const struct uniform_block> {
+	return m_push_constants.span();
 }
 
 auto gse::shader::layout_name() const -> const std::string& {

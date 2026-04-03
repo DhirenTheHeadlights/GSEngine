@@ -14,19 +14,20 @@ import :hook_link;
 export template <>
 class gse::hook<gse::entity> : public identifiable_owned {
 public:
-	virtual ~hook() = default;
+	virtual ~hook(
+	) = default;
 
 	virtual auto initialize(
-	) -> void {}
+	) -> void;
 
 	virtual auto update(
-	) -> void {}
+	) -> void;
 
 	virtual auto render(
-	) -> void {}
+	) -> void;
 
 	virtual auto shutdown(
-	) -> void {}
+	) -> void;
 
 	template <is_component T> requires has_params<T>
 	auto add_component(
@@ -34,8 +35,8 @@ public:
 	) -> T*;
 
 	template <is_component T> requires (!has_params<T>)
-		auto add_component(
-		) -> T*;
+	auto add_component(
+	) -> T*;
 
 	template <is_entity_hook T> requires has_params<T>
 	auto add_hook(
@@ -86,6 +87,11 @@ private:
 		registry* reg
 	) -> void;
 };
+
+auto gse::hook<gse::entity>::initialize() -> void {}
+auto gse::hook<gse::entity>::update() -> void {}
+auto gse::hook<gse::entity>::render() -> void {}
+auto gse::hook<gse::entity>::shutdown() -> void {}
 
 template <gse::is_component T> requires gse::has_params<T>
 auto gse::hook<gse::entity>::add_component(typename T::params p) -> T* {

@@ -566,7 +566,10 @@ auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_in
 	constexpr auto device_addressable_usage =
 		vk::BufferUsageFlagBits::eUniformBuffer
 		| vk::BufferUsageFlagBits::eStorageBuffer
-		| vk::BufferUsageFlagBits::eIndirectBuffer;
+		| vk::BufferUsageFlagBits::eIndirectBuffer
+		| vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR
+		| vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+		| vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	const bool needs_device_address = static_cast<bool>(actual_buffer_info.usage & device_addressable_usage);
 
 	if (needs_device_address) {
@@ -811,6 +814,10 @@ auto gse::vulkan::allocator::memory_flag_preferences(const vk::BufferUsageFlags 
 			mpf::eHostVisible | mpf::eHostCoherent,
 			mpf::eDeviceLocal
 		};
+	}
+
+	if (usage & vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR) {
+		return { mpf::eDeviceLocal };
 	}
 
 	return { mpf::eHostVisible | mpf::eHostCoherent };

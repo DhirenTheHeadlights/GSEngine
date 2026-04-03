@@ -31,3 +31,4 @@ export import :shader;
 export import :gpu_factory;
 export import :shader_compiler;
 export import :render_graph;
+export import :acceleration_structure;

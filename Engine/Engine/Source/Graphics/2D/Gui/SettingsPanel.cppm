@@ -63,6 +63,7 @@ export namespace gse::settings_panel {
         render_layer layer = render_layer::popup;
         std::function<void(save::update_request)> publish_update;
         std::function<void()> request_save;
+        std::function<void()> request_restart;
         gui::tooltip_state* tooltip = nullptr;
         gui::input_layer* input_layers = nullptr;
         std::function<std::vector<actions::action_binding_info>()> all_bindings;
@@ -1344,10 +1345,9 @@ auto gse::settings_panel::draw_restart_popup(state& panel_state, const context& 
             panel_state.active_popup = popup_type::none;
         } else if (restart_hovered) {
             panel_state.active_popup = popup_type::none;
-            if (ctx.request_save) {
-                ctx.request_save();
+            if (ctx.request_restart) {
+                ctx.request_restart();
             }
-            app::restart();
         }
     }
 }

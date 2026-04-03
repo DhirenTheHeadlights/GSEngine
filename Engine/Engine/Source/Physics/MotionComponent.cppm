@@ -38,7 +38,7 @@ export namespace gse::physics {
         bool position_locked = false;
         bool can_sleep = true;
         bool sleeping = false;
-		bool update_orientation = true;
+        bool update_orientation = true;
 
         vec3<previous_position> previous_position;
         quat previous_orientation = quat(1.f, 0.f, 0.f, 0.f);
@@ -54,8 +54,11 @@ export namespace gse::physics {
     struct motion_component : component<motion_component_data, motion_component_net> {
         using component::component;
 
-        auto transformation_matrix() const -> mat4f;
-        auto inv_inertial_tensor() const -> mat3<inverse_inertia>;
+        auto transformation_matrix(
+        ) const -> mat4f;
+
+        auto inv_inertial_tensor(
+        ) const -> mat3<inverse_inertia>;
     };
 }
 

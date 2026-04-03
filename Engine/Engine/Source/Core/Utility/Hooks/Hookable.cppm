@@ -11,7 +11,8 @@ export namespace gse {
 	template <typename T>
 	class hookable : public identifiable {
 	public:
-		virtual ~hookable() = default;
+		virtual ~hookable(
+	) = default;
 
 		explicit hookable(
 			std::string_view name,
@@ -52,7 +53,9 @@ export namespace gse {
 
 template <typename T>
 gse::hookable<T>::hookable(const std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks) : identifiable(name) {
-	for (auto&& h : hooks) m_hooks.push_back(std::move(const_cast<std::unique_ptr<hook<T>>&>(h)));
+	for (auto&& h : hooks) {
+		m_hooks.push_back(std::move(const_cast<std::unique_ptr<hook<T>>&>(h)));
+	}
 }
 
 template <typename T>

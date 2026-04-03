@@ -81,7 +81,7 @@ namespace gse::narrow_phase_collision {
 	};
 
 	struct clipped_face_contacts {
-		std::vector<clip_vertex> vertices;
+		static_vector<clip_vertex, 8> vertices;
 		bool reference_is_a = true;
 		std::uint8_t reference_face = 0;
 		std::uint8_t incident_face = 0;
@@ -139,12 +139,12 @@ namespace gse::narrow_phase_collision {
 	) -> std::uint8_t;
 
 	auto clip_polygon(
-		const std::vector<clip_vertex>& subject,
+		const static_vector<clip_vertex, 8>& subject,
 		const plane& p,
 		bool keep_greater,
 		bool tag_reference_side,
 		std::uint8_t reference_side
-	) -> std::vector<clip_vertex>;
+	) -> static_vector<clip_vertex, 8>;
 
 	auto build_clipped_face_contacts(
 		const bounding_box& bb1,
@@ -192,25 +192,132 @@ namespace gse::narrow_phase_collision {
 		length signed_distance;
 	};
 
-	auto capsule_endpoints(const bounding_box& bb, length half_height) -> std::pair<vec3<position>, vec3<position>>;
-	auto closest_point_on_segment(const vec3<position>& a, const vec3<position>& b, const vec3<position>& p) -> vec3<position>;
-	auto segment_segment_closest_params(const vec3<position>& p1, const vec3<position>& q1, const vec3<position>& p2, const vec3<position>& q2) -> std::pair<float, float>;
-	auto query_obb(const bounding_box& bb, const vec3<position>& point) -> obb_query_result;
-	auto segment_obb_query(const bounding_box& bb, const vec3<position>& seg_start, const vec3<position>& seg_end) -> std::pair<vec3<position>, obb_query_result>;
-	auto classify_box_face(const bounding_box& bb, const vec3f& direction) -> std::uint8_t;
-	auto classify_capsule_feature(float t_param) -> std::pair<feature_type, std::uint8_t>;
+	auto capsule_endpoints(
+		const bounding_box& bb,
+		length half_height
+	) -> std::pair<vec3<position>, vec3<position>>;
 
-	auto sphere_sphere_speculative(const vec3<position>& ca, length ra, const vec3<position>& cb, length rb, length margin) -> std::optional<sat_result>;
-	auto box_sphere_speculative(const bounding_box& bb, const vec3<position>& center, length radius, length margin) -> std::optional<sat_result>;
-	auto capsule_capsule_speculative(const bounding_box& bb_a, length ha, length ra, const bounding_box& bb_b, length hb, length rb, length margin) -> std::optional<sat_result>;
-	auto box_capsule_speculative(const bounding_box& bb, const bounding_box& cap_bb, length half_h, length radius, length margin) -> std::optional<sat_result>;
-	auto sphere_capsule_speculative(const vec3<position>& sph_center, length sph_r, const bounding_box& cap_bb, length cap_h, length cap_r, length margin) -> std::optional<sat_result>;
+	auto closest_point_on_segment(
+		const vec3<position>& a,
+		const vec3<position>& b,
+		const vec3<position>& p
+	) -> vec3<position>;
 
-	auto sphere_sphere_manifold(const vec3<position>& ca, length ra, const vec3<position>& cb, length rb, const vec3f& normal, separation separation) -> contact_manifold;
-	auto box_sphere_manifold(const bounding_box& bb, const vec3<position>& center, length radius, const vec3f& normal, separation separation) -> contact_manifold;
-	auto capsule_capsule_manifold(const bounding_box& bb_a, length ha, length ra, const bounding_box& bb_b, length hb, length rb, const vec3f& normal, separation separation) -> contact_manifold;
-	auto box_capsule_manifold(const bounding_box& bb, const bounding_box& cap_bb, length cap_h, length cap_r, const vec3f& normal, separation separation) -> contact_manifold;
-	auto sphere_capsule_manifold(const vec3<position>& sph_center, length sph_r, const bounding_box& cap_bb, length cap_h, length cap_r, const vec3f& normal, separation separation) -> contact_manifold;
+	auto segment_segment_closest_params(
+		const vec3<position>& p1,
+		const vec3<position>& q1,
+		const vec3<position>& p2,
+		const vec3<position>& q2
+	) -> std::pair<float, float>;
+
+	auto query_obb(
+		const bounding_box& bb,
+		const vec3<position>& point
+	) -> obb_query_result;
+
+	auto segment_obb_query(
+		const bounding_box& bb,
+		const vec3<position>& seg_start,
+		const vec3<position>& seg_end
+	) -> std::pair<vec3<position>, obb_query_result>;
+
+	auto classify_box_face(
+		const bounding_box& bb,
+		const vec3f& direction
+	) -> std::uint8_t;
+
+	auto classify_capsule_feature(
+		float t_param
+	) -> std::pair<feature_type, std::uint8_t>;
+
+	auto sphere_sphere_speculative(
+		const vec3<position>& ca,
+		length ra,
+		const vec3<position>& cb,
+		length rb,
+		length margin
+	) -> std::optional<sat_result>;
+
+	auto box_sphere_speculative(
+		const bounding_box& bb,
+		const vec3<position>& center,
+		length radius,
+		length margin
+	) -> std::optional<sat_result>;
+
+	auto capsule_capsule_speculative(
+		const bounding_box& bb_a,
+		length ha,
+		length ra,
+		const bounding_box& bb_b,
+		length hb,
+		length rb,
+		length margin
+	) -> std::optional<sat_result>;
+
+	auto box_capsule_speculative(
+		const bounding_box& bb,
+		const bounding_box& cap_bb,
+		length half_h,
+		length radius,
+		length margin
+	) -> std::optional<sat_result>;
+
+	auto sphere_capsule_speculative(
+		const vec3<position>& sph_center,
+		length sph_r,
+		const bounding_box& cap_bb,
+		length cap_h,
+		length cap_r,
+		length margin
+	) -> std::optional<sat_result>;
+
+	auto sphere_sphere_manifold(
+		const vec3<position>& ca,
+		length ra,
+		const vec3<position>& cb,
+		length rb,
+		const vec3f& normal,
+		separation separation
+	) -> contact_manifold;
+
+	auto box_sphere_manifold(
+		const bounding_box& bb,
+		const vec3<position>& center,
+		length radius,
+		const vec3f& normal,
+		separation separation
+	) -> contact_manifold;
+
+	auto capsule_capsule_manifold(
+		const bounding_box& bb_a,
+		length ha,
+		length ra,
+		const bounding_box& bb_b,
+		length hb,
+		length rb,
+		const vec3f& normal,
+		separation separation
+	) -> contact_manifold;
+
+	auto box_capsule_manifold(
+		const bounding_box& bb,
+		const bounding_box& cap_bb,
+		length cap_h,
+		length cap_r,
+		const vec3f& normal,
+		separation separation
+	) -> contact_manifold;
+
+	auto sphere_capsule_manifold(
+		const vec3<position>& sph_center,
+		length sph_r,
+		const bounding_box& cap_bb,
+		length cap_h,
+		length cap_r,
+		const vec3f& normal,
+		separation separation
+	) -> contact_manifold;
 }
 
 auto gse::narrow_phase_collision::support_obb(const bounding_box& bb, const vec3f& dir) -> vec3<position> {
@@ -223,8 +330,12 @@ auto gse::narrow_phase_collision::support_obb(const bounding_box& bb, const vec3
 		const float d = dot(dir, obb.axes[i]);
 
 		float s = 0.0f;
-		if (d > tol) s = 1.0f;
-		if (d < -tol) s = -1.0f;
+		if (d > tol) {
+			s = 1.0f;
+		}
+		if (d < -tol) {
+			s = -1.0f;
+		}
 
 		result += obb.axes[i] * he[i] * s;
 	}
@@ -257,7 +368,7 @@ auto gse::narrow_phase_collision::add_side(active_sides& sides, const std::uint8
 	}
 
 	sides.values[sides.count++] = side;
-	std::sort(sides.values.begin(), sides.values.begin() + sides.count);
+	std::ranges::sort(sides.values.begin(), sides.values.begin() + sides.count);
 }
 
 auto gse::narrow_phase_collision::shared_sides(const active_sides& lhs, const active_sides& rhs) -> active_sides {
@@ -320,8 +431,8 @@ auto gse::narrow_phase_collision::reference_edge_side_id(const std::size_t edge_
 	return side_ids[edge_index % side_ids.size()];
 }
 
-auto gse::narrow_phase_collision::clip_polygon(const std::vector<clip_vertex>& subject, const plane& p, const bool keep_greater, const bool tag_reference_side, const std::uint8_t reference_side) -> std::vector<clip_vertex> {
-	std::vector<clip_vertex> out;
+auto gse::narrow_phase_collision::clip_polygon(const static_vector<clip_vertex, 8>& subject, const plane& p, const bool keep_greater, const bool tag_reference_side, const std::uint8_t reference_side) -> static_vector<clip_vertex, 8> {
+	static_vector<clip_vertex, 8> out;
 	if (subject.empty()) {
 		return out;
 	}
@@ -388,8 +499,7 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 	const auto& reference_info = reference_is_a ? info1 : info2;
 	const auto& incident_info = reference_is_a ? info2 : info1;
 
-	std::vector<clip_vertex> polygon;
-	polygon.reserve(incident_info.vertices.size());
+	static_vector<clip_vertex, 8> polygon;
 	for (std::uint8_t i = 0; i < incident_info.vertices.size(); ++i) {
 		polygon.push_back(clip_vertex{
 			.point = incident_info.vertices[i],
@@ -481,8 +591,7 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 			);
 		}
 
-		std::vector<clip_vertex> filtered;
-		filtered.reserve(polygon.size());
+		static_vector<clip_vertex, 8> filtered;
 		for (const auto& vertex : polygon) {
 			if (const length dist = dot(reference_normal, vertex.point - reference_plane.point); closest_plane_distance - dist <= contact_band) {
 				filtered.push_back(vertex);
@@ -582,7 +691,9 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
 	sat_axis_choice best_face_axis;
 
 	auto test_axis = [&](vec3f axis, const sat_axis_source source, const length extent_scale) {
-		if (is_zero(axis)) return;
+		if (is_zero(axis)) {
+			return;
+		}
 		axis = normalize(axis);
 
 		auto project = [&](const bounding_box& bb) {
@@ -630,7 +741,9 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 	bool all_positive = true;
 
 	auto test_axis = [&](vec3f axis, const sat_axis_source source, const length extent_scale) {
-		if (is_zero(axis)) return true;
+		if (is_zero(axis)) {
+			return true;
+		}
 		axis = normalize(axis);
 
 		auto project = [&](const bounding_box& bb) {
@@ -665,13 +778,19 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 	auto half = bb1.half_extents();
 	auto half2 = bb2.half_extents();
 	for (int i = 0; i < 3; ++i) {
-		if (!test_axis(bb1.obb().axes[i], sat_axis_source::face, half[i])) return std::nullopt;
-		if (!test_axis(bb2.obb().axes[i], sat_axis_source::face, half2[i])) return std::nullopt;
+		if (!test_axis(bb1.obb().axes[i], sat_axis_source::face, half[i])) {
+			return std::nullopt;
+		}
+		if (!test_axis(bb2.obb().axes[i], sat_axis_source::face, half2[i])) {
+			return std::nullopt;
+		}
 	}
 
 	for (int i = 0; i < 3; ++i) {
 		for (int j = 0; j < 3; ++j) {
-			if (!test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]), sat_axis_source::cross, length{})) return std::nullopt;
+			if (!test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]), sat_axis_source::cross, length{})) {
+				return std::nullopt;
+			}
 		}
 	}
 
@@ -822,15 +941,21 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 	std::ranges::sort(candidates, [&](const manifold_candidate& lhs, const manifold_candidate& rhs) {
 		const std::uint64_t lhs_key = pack_feature(lhs.feature);
 		const std::uint64_t rhs_key = pack_feature(rhs.feature);
-		if (lhs_key != rhs_key) return lhs_key < rhs_key;
+		if (lhs_key != rhs_key) {
+			return lhs_key < rhs_key;
+		}
 
 		const int lhs_u = quantize(dot(candidate_midpoint(lhs) - sort_origin, tangent_u));
 		const int rhs_u = quantize(dot(candidate_midpoint(rhs) - sort_origin, tangent_u));
-		if (lhs_u != rhs_u) return lhs_u < rhs_u;
+		if (lhs_u != rhs_u) {
+			return lhs_u < rhs_u;
+		}
 
 		const int lhs_v = quantize(dot(candidate_midpoint(lhs) - sort_origin, tangent_v));
 		const int rhs_v = quantize(dot(candidate_midpoint(rhs) - sort_origin, tangent_v));
-		if (lhs_v != rhs_v) return lhs_v < rhs_v;
+		if (lhs_v != rhs_v) {
+			return lhs_v < rhs_v;
+		}
 
 		return dot(candidate_midpoint(lhs) - sort_origin, normal) < dot(candidate_midpoint(rhs) - sort_origin, normal);
 	});
@@ -845,7 +970,9 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 	}
 
 	for (const auto& [position_on_a, position_on_b, feature] : unique_candidates) {
-		if (manifold.point_count >= 4) break;
+		if (manifold.point_count >= 4) {
+			break;
+		}
 
 		manifold.add_point(contact_point{
 			.position_on_a = position_on_a,

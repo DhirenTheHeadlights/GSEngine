@@ -165,10 +165,10 @@ export namespace gse {
 
 	struct local_input_source {
 		template <typename Fn>
-		auto for_each_context(
+		static auto for_each_context(
 			world& w,
 			Fn&& fn
-		) const -> void {
+		) -> void {
 			const auto local_id = w.local_controlled_entity();
 			if (!local_id.exists()) {
 				return;
@@ -197,7 +197,7 @@ export namespace gse {
 				return;
 			}
 
-			const auto& factory = current->get_player_factory();
+			const auto& factory = current->player_factory();
 			if (!factory) {
 				return;
 			}

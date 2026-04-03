@@ -124,12 +124,12 @@ auto gse::mesh::initialize(gpu::resource_manager& ctx) -> void {
 
     m_vertex_buffer = gpu::create_buffer(ctx.device_ref(), {
         .size = vertex_buffer_size,
-        .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst
+        .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst | gpu::buffer_flag::acceleration_structure_build_input
     });
 
     m_index_buffer = gpu::create_buffer(ctx.device_ref(), {
         .size = index_buffer_size,
-        .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
+        .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst | gpu::buffer_flag::acceleration_structure_build_input
     });
 
     std::vector<gpu::buffer_upload> uploads{

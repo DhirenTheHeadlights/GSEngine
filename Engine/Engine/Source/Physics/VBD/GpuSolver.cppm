@@ -347,24 +347,24 @@ export namespace gse::vbd {
 			std::uint32_t joint_count = 0;
 		} m_readback_info;
 
-		std::vector<std::byte> m_upload_body_data;
-		std::vector<std::byte> m_upload_motor_data;
-		std::vector<std::byte> m_upload_warm_start_data;
-		std::vector<std::byte> m_upload_joint_data;
-		std::vector<std::uint32_t> m_upload_color_data;
-		std::vector<std::uint32_t> m_upload_body_contact_map;
-		std::vector<std::uint32_t> m_upload_collision_state;
-		std::vector<std::uint8_t> m_upload_authoritative_bodies;
+		linear_vector<std::byte>      m_upload_body_data;
+		linear_vector<std::byte>      m_upload_motor_data;
+		linear_vector<std::byte>      m_upload_warm_start_data;
+		linear_vector<std::byte>      m_upload_joint_data;
+		linear_vector<std::uint32_t>  m_upload_color_data;
+		linear_vector<std::uint32_t>  m_upload_body_contact_map;
+		linear_vector<std::uint32_t>  m_upload_collision_state;
+		linear_vector<std::uint8_t>   m_upload_authoritative_bodies;
 
-		std::vector<std::byte> m_staged_contact_data;
-		std::vector<std::byte> m_staged_joint_data;
+		linear_vector<std::byte> m_staged_contact_data;
+		linear_vector<std::byte> m_staged_joint_data;
 		std::uint32_t m_staged_body_count = 0;
 		std::uint32_t m_staged_contact_count = 0;
 		std::uint32_t m_staged_joint_count = 0;
 		std::uint32_t m_staged_color_count = max_colors;
 		bool m_staged_valid = false;
 
-		std::vector<std::byte> m_latest_gpu_body_data;
+		linear_vector<std::byte> m_latest_gpu_body_data;
 		std::uint32_t m_latest_gpu_body_count = 0;
 	};
 }
@@ -447,6 +447,18 @@ auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
 		.usage = storage_dst
 	});
 	std::memset(m_readback_buffer.mapped(), 0, m_readback_buffer.size());
+
+	m_upload_body_data.reserve(max_bodies * m_body_layout.stride);
+	m_upload_motor_data.reserve(max_motors * m_motor_layout.stride);
+	m_upload_warm_start_data.reserve(max_contacts * m_warm_start_layout.stride);
+	m_upload_joint_data.reserve(max_joints * m_joint_layout.stride);
+	m_upload_color_data.reserve(max_colors * 2 + max_bodies);
+	m_upload_body_contact_map.reserve(max_bodies * 2 + max_contacts * 2 + max_bodies + max_bodies * 2 + max_joints * 2);
+	m_upload_collision_state.reserve(collision_state_uints);
+	m_upload_authoritative_bodies.reserve(max_bodies);
+	m_staged_contact_data.reserve(max_contacts * m_contact_layout.stride);
+	m_staged_joint_data.reserve(max_joints * m_joint_layout.stride);
+	m_latest_gpu_body_data.reserve(max_bodies * m_body_layout.stride);
 
 	m_buffers_created = true;
 }

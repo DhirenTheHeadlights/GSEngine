@@ -117,19 +117,19 @@ export namespace gse::vulkan {
 		auto bind_pipeline(
 			vk::PipelineBindPoint point,
 			vk::Pipeline pipeline
-		) -> void;
+		) const -> void;
 
 		auto bind_descriptors(
 			vk::PipelineBindPoint point,
 			vk::PipelineLayout layout,
 			const descriptor_region& region,
 			std::uint32_t set_index = 0
-		) -> void;
+		) const -> void;
 
 		auto push(
 			const gpu::cached_push_constants& cache,
 			vk::PipelineLayout layout
-		) -> void;
+		) const -> void;
 
 		auto set_viewport(
 			float x,
@@ -138,21 +138,21 @@ export namespace gse::vulkan {
 			float height,
 			float min_depth = 0.0f,
 			float max_depth = 1.0f
-		) -> void;
+		) const -> void;
 
 		auto set_scissor(
 			std::int32_t x,
 			std::int32_t y,
 			std::uint32_t width,
 			std::uint32_t height
-		) -> void;
+		) const -> void;
 
 		auto draw(
 			std::uint32_t vertex_count,
 			std::uint32_t instance_count = 1,
 			std::uint32_t first_vertex = 0,
 			std::uint32_t first_instance = 0
-		) -> void;
+		) const -> void;
 
 		auto draw_indexed(
 			std::uint32_t index_count,
@@ -160,90 +160,90 @@ export namespace gse::vulkan {
 			std::uint32_t first_index = 0,
 			std::int32_t vertex_offset = 0,
 			std::uint32_t first_instance = 0
-		) -> void;
+		) const -> void;
 
 		auto draw_indirect(
 			vk::Buffer buffer,
 			vk::DeviceSize offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
-		) -> void;
+		) const -> void;
 
 		auto draw_mesh_tasks(
 			std::uint32_t x,
 			std::uint32_t y = 1,
 			std::uint32_t z = 1
-		) -> void;
+		) const -> void;
 
 		auto dispatch(
 			std::uint32_t x,
 			std::uint32_t y = 1,
 			std::uint32_t z = 1
-		) -> void;
+		) const -> void;
 
 		auto bind_vertex_buffers(
 			std::uint32_t first,
 			std::span<const vk::Buffer> buffers,
 			std::span<const vk::DeviceSize> offsets
-		) -> void;
+		) const -> void;
 
 		auto bind_index_buffer(
 			vk::Buffer buffer,
 			vk::DeviceSize offset,
 			vk::IndexType index_type
-		) -> void;
+		) const -> void;
 
 		auto begin_rendering(
 			const vk::RenderingInfo& info
-		) -> void;
+		) const -> void;
 
 		auto end_rendering(
-		) -> void;
+		) const -> void;
 
 		auto bind_pipeline(
 			vk::PipelineBindPoint point,
 			const gpu::pipeline& p
-		) -> void;
+		) const -> void;
 
 		auto bind_descriptors(
 			vk::PipelineBindPoint point,
 			const gpu::pipeline& p,
 			const descriptor_region& region,
 			std::uint32_t set_index = 0
-		) -> void;
+		) const -> void;
 
 		auto push(
 			const gpu::pipeline& p,
 			const gpu::cached_push_constants& cache
-		) -> void;
+		) const -> void;
 
 		auto draw_indirect(
 			const gpu::buffer& buf,
 			std::size_t offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
-		) -> void;
+		) const -> void;
 
 		auto bind_vertex_buffer(
 			const gpu::buffer& buf,
 			vk::DeviceSize offset = 0
-		) -> void;
+		) const -> void;
 
 		auto bind_index_buffer(
 			const gpu::buffer& buf,
 			vk::DeviceSize offset = 0,
 			vk::IndexType index_type = vk::IndexType::eUint32
-		) -> void;
+		) const -> void;
 
 		auto bind(
 			const gpu::pipeline& p
-		) -> void;
+		) const -> void;
 
 		auto bind_descriptors(
 			const gpu::pipeline& p,
 			const descriptor_region& region,
 			std::uint32_t set_index = 0
-		) -> void;
+		) const -> void;
 
 		auto bind_descriptors(
 			const gpu::pipeline& p,
@@ -254,27 +254,36 @@ export namespace gse::vulkan {
 		auto bind_vertex(
 			const gpu::buffer& buf,
 			std::size_t offset = 0
-		) -> void;
+		) const -> void;
 
 		auto bind_index(
 			const gpu::buffer& buf,
 			gpu::index_type type = gpu::index_type::uint32,
 			std::size_t offset = 0
-		) -> void;
+		) const -> void;
 
 		auto set_viewport(
 			vec2u extent
-		) -> void;
+		) const -> void;
 
 		auto set_scissor(
 			vec2u extent
-		) -> void;
+		) const -> void;
 
 		auto commit(
 			descriptor_writer& writer,
 			const gpu::pipeline& p,
 			std::uint32_t set_index = 0
-		) -> void;
+		) const -> void;
+
+		auto build_acceleration_structure(
+			const vk::AccelerationStructureBuildGeometryInfoKHR& build_info,
+			std::span<const vk::AccelerationStructureBuildRangeInfoKHR* const> range_infos
+		) const -> void;
+
+		auto pipeline_barrier(
+			const vk::DependencyInfo& dep
+		) const -> void;
 
 		auto begin_rendering(
 			vec2u extent,
@@ -282,13 +291,13 @@ export namespace gse::vulkan {
 			gpu::image_layout depth_layout = gpu::image_layout::general,
 			bool clear_depth = true,
 			float clear_depth_value = 1.0f
-		) -> void;
+		) const -> void;
 
 		auto begin_rendering(
 			gpu::image_view depth_view,
 			vec2u extent,
 			float clear_depth_value = 1.0f
-		) -> void;
+		) const -> void;
 
 	private:
 		friend class render_graph;
@@ -431,90 +440,101 @@ export namespace gse::vulkan {
 
 gse::vulkan::recording_context::recording_context(vk::CommandBuffer cmd) : m_cmd(cmd) {}
 
-auto gse::vulkan::recording_context::bind_pipeline(vk::PipelineBindPoint point, vk::Pipeline pipeline) -> void {
+auto gse::vulkan::recording_context::build_acceleration_structure(
+	const vk::AccelerationStructureBuildGeometryInfoKHR& build_info,
+	const std::span<const vk::AccelerationStructureBuildRangeInfoKHR* const> range_infos
+) const -> void {
+	m_cmd.buildAccelerationStructuresKHR(build_info, range_infos);
+}
+
+auto gse::vulkan::recording_context::pipeline_barrier(const vk::DependencyInfo& dep) const -> void {
+	m_cmd.pipelineBarrier2(dep);
+}
+
+auto gse::vulkan::recording_context::bind_pipeline(vk::PipelineBindPoint point, vk::Pipeline pipeline) const -> void {
 	m_cmd.bindPipeline(point, pipeline);
 }
 
-auto gse::vulkan::recording_context::bind_descriptors(vk::PipelineBindPoint point, vk::PipelineLayout layout, const descriptor_region& region, std::uint32_t set_index) -> void {
+auto gse::vulkan::recording_context::bind_descriptors(vk::PipelineBindPoint point, vk::PipelineLayout layout, const descriptor_region& region, std::uint32_t set_index) const -> void {
 	assert(region, std::source_location::current(), "Cannot bind null descriptor region");
 	region.heap->bind(m_cmd, point, layout, set_index, region);
 }
 
-auto gse::vulkan::recording_context::push(const gpu::cached_push_constants& cache, vk::PipelineLayout layout) -> void {
+auto gse::vulkan::recording_context::push(const gpu::cached_push_constants& cache, vk::PipelineLayout layout) const -> void {
 	cache.replay(m_cmd, layout);
 }
 
-auto gse::vulkan::recording_context::set_viewport(float x, float y, float width, float height, float min_depth, float max_depth) -> void {
+auto gse::vulkan::recording_context::set_viewport(float x, float y, float width, float height, float min_depth, float max_depth) const -> void {
 	const vk::Viewport vp{ .x = x, .y = y, .width = width, .height = height, .minDepth = min_depth, .maxDepth = max_depth };
 	m_cmd.setViewport(0, vp);
 }
 
-auto gse::vulkan::recording_context::set_scissor(std::int32_t x, std::int32_t y, std::uint32_t width, std::uint32_t height) -> void {
+auto gse::vulkan::recording_context::set_scissor(std::int32_t x, std::int32_t y, std::uint32_t width, std::uint32_t height) const -> void {
 	const vk::Rect2D sc{ .offset = { x, y }, .extent = { width, height } };
 	m_cmd.setScissor(0, sc);
 }
 
-auto gse::vulkan::recording_context::draw(std::uint32_t vertex_count, std::uint32_t instance_count, std::uint32_t first_vertex, std::uint32_t first_instance) -> void {
+auto gse::vulkan::recording_context::draw(std::uint32_t vertex_count, std::uint32_t instance_count, std::uint32_t first_vertex, std::uint32_t first_instance) const -> void {
 	m_cmd.draw(vertex_count, instance_count, first_vertex, first_instance);
 }
 
-auto gse::vulkan::recording_context::draw_indexed(std::uint32_t index_count, std::uint32_t instance_count, std::uint32_t first_index, std::int32_t vertex_offset, std::uint32_t first_instance) -> void {
+auto gse::vulkan::recording_context::draw_indexed(std::uint32_t index_count, std::uint32_t instance_count, std::uint32_t first_index, std::int32_t vertex_offset, std::uint32_t first_instance) const -> void {
 	m_cmd.drawIndexed(index_count, instance_count, first_index, vertex_offset, first_instance);
 }
 
-auto gse::vulkan::recording_context::draw_indirect(vk::Buffer buffer, vk::DeviceSize offset, std::uint32_t draw_count, std::uint32_t stride) -> void {
+auto gse::vulkan::recording_context::draw_indirect(vk::Buffer buffer, vk::DeviceSize offset, std::uint32_t draw_count, std::uint32_t stride) const -> void {
 	m_cmd.drawIndexedIndirect(buffer, offset, draw_count, stride);
 }
 
-auto gse::vulkan::recording_context::draw_mesh_tasks(std::uint32_t x, std::uint32_t y, std::uint32_t z) -> void {
+auto gse::vulkan::recording_context::draw_mesh_tasks(std::uint32_t x, std::uint32_t y, std::uint32_t z) const -> void {
 	m_cmd.drawMeshTasksEXT(x, y, z);
 }
 
-auto gse::vulkan::recording_context::dispatch(std::uint32_t x, std::uint32_t y, std::uint32_t z) -> void {
+auto gse::vulkan::recording_context::dispatch(std::uint32_t x, std::uint32_t y, std::uint32_t z) const -> void {
 	m_cmd.dispatch(x, y, z);
 }
 
-auto gse::vulkan::recording_context::bind_vertex_buffers(std::uint32_t first, std::span<const vk::Buffer> buffers, std::span<const vk::DeviceSize> offsets) -> void {
+auto gse::vulkan::recording_context::bind_vertex_buffers(std::uint32_t first, std::span<const vk::Buffer> buffers, std::span<const vk::DeviceSize> offsets) const -> void {
 	m_cmd.bindVertexBuffers(first, static_cast<std::uint32_t>(buffers.size()), buffers.data(), offsets.data());
 }
 
-auto gse::vulkan::recording_context::bind_index_buffer(vk::Buffer buffer, vk::DeviceSize offset, vk::IndexType index_type) -> void {
+auto gse::vulkan::recording_context::bind_index_buffer(vk::Buffer buffer, vk::DeviceSize offset, vk::IndexType index_type) const -> void {
 	m_cmd.bindIndexBuffer(buffer, offset, index_type);
 }
 
-auto gse::vulkan::recording_context::begin_rendering(const vk::RenderingInfo& info) -> void {
+auto gse::vulkan::recording_context::begin_rendering(const vk::RenderingInfo& info) const -> void {
 	m_cmd.beginRendering(info);
 }
 
-auto gse::vulkan::recording_context::end_rendering() -> void {
+auto gse::vulkan::recording_context::end_rendering() const -> void {
 	m_cmd.endRendering();
 }
 
-auto gse::vulkan::recording_context::bind_pipeline(const vk::PipelineBindPoint point, const gpu::pipeline& p) -> void {
+auto gse::vulkan::recording_context::bind_pipeline(const vk::PipelineBindPoint point, const gpu::pipeline& p) const -> void {
 	m_cmd.bindPipeline(point, p.native_pipeline());
 }
 
-auto gse::vulkan::recording_context::bind_descriptors(const vk::PipelineBindPoint point, const gpu::pipeline& p, const descriptor_region& region, const std::uint32_t set_index) -> void {
+auto gse::vulkan::recording_context::bind_descriptors(const vk::PipelineBindPoint point, const gpu::pipeline& p, const descriptor_region& region, const std::uint32_t set_index) const -> void {
 	assert(region, std::source_location::current(), "Cannot bind null descriptor region");
 	region.heap->bind(m_cmd, point, p.native_layout(), set_index, region);
 }
 
-auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::cached_push_constants& cache) -> void {
+auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::cached_push_constants& cache) const -> void {
 	cache.replay(m_cmd, p.native_layout());
 }
 
-auto gse::vulkan::recording_context::draw_indirect(const gpu::buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
+auto gse::vulkan::recording_context::draw_indirect(const gpu::buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
 	m_cmd.drawIndexedIndirect(buf.native().buffer, static_cast<vk::DeviceSize>(offset), draw_count, stride);
 }
 
-auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) -> void {
+auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) const -> void {
 	const auto point = p.point() == gpu::bind_point::graphics
 		? vk::PipelineBindPoint::eGraphics
 		: vk::PipelineBindPoint::eCompute;
 	m_cmd.bindPipeline(point, p.native_pipeline());
 }
 
-auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const descriptor_region& region, const std::uint32_t set_index) -> void {
+auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const descriptor_region& region, const std::uint32_t set_index) const -> void {
 	assert(region, std::source_location::current(), "Cannot bind null descriptor region");
 	const auto point = p.point() == gpu::bind_point::graphics
 		? vk::PipelineBindPoint::eGraphics
@@ -526,18 +546,18 @@ auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, co
 	bind_descriptors(p, region.native(), set_index);
 }
 
-auto gse::vulkan::recording_context::bind_vertex(const gpu::buffer& buf, const std::size_t offset) -> void {
+auto gse::vulkan::recording_context::bind_vertex(const gpu::buffer& buf, const std::size_t offset) const -> void {
 	const vk::Buffer buffers[]{ buf.native().buffer };
 	const vk::DeviceSize offsets[]{ static_cast<vk::DeviceSize>(offset) };
 	m_cmd.bindVertexBuffers(0, 1, buffers, offsets);
 }
 
-auto gse::vulkan::recording_context::bind_index(const gpu::buffer& buf, const gpu::index_type type, const std::size_t offset) -> void {
+auto gse::vulkan::recording_context::bind_index(const gpu::buffer& buf, const gpu::index_type type, const std::size_t offset) const -> void {
 	const auto vk_type = type == gpu::index_type::uint16 ? vk::IndexType::eUint16 : vk::IndexType::eUint32;
 	m_cmd.bindIndexBuffer(buf.native().buffer, static_cast<vk::DeviceSize>(offset), vk_type);
 }
 
-auto gse::vulkan::recording_context::set_viewport(const vec2u extent) -> void {
+auto gse::vulkan::recording_context::set_viewport(const vec2u extent) const -> void {
 	const vk::Viewport vp{
 		.x = 0.0f, .y = 0.0f,
 		.width = static_cast<float>(extent.x()), .height = static_cast<float>(extent.y()),
@@ -546,12 +566,12 @@ auto gse::vulkan::recording_context::set_viewport(const vec2u extent) -> void {
 	m_cmd.setViewport(0, vp);
 }
 
-auto gse::vulkan::recording_context::set_scissor(const vec2u extent) -> void {
+auto gse::vulkan::recording_context::set_scissor(const vec2u extent) const -> void {
 	const vk::Rect2D sc{ .offset = { 0, 0 }, .extent = { extent.x(), extent.y() } };
 	m_cmd.setScissor(0, sc);
 }
 
-auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const gpu::image* depth, const gpu::image_layout depth_layout, const bool clear_depth, const float clear_depth_value) -> void {
+auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const gpu::image* depth, const gpu::image_layout depth_layout, const bool clear_depth, const float clear_depth_value) const -> void {
 	auto to_vk = [](gpu::image_layout l) -> vk::ImageLayout {
 		switch (l) {
 			case gpu::image_layout::general:          return vk::ImageLayout::eGeneral;
@@ -581,7 +601,7 @@ auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const g
 	m_cmd.beginRendering(ri);
 }
 
-auto gse::vulkan::recording_context::begin_rendering(const gpu::image_view depth_view, const vec2u extent, const float clear_depth_value) -> void {
+auto gse::vulkan::recording_context::begin_rendering(const gpu::image_view depth_view, const vec2u extent, const float clear_depth_value) const -> void {
 	const vk::RenderingAttachmentInfo depth_att{
 		.imageView = depth_view.native(),
 		.imageLayout = vk::ImageLayout::eGeneral,
@@ -599,20 +619,20 @@ auto gse::vulkan::recording_context::begin_rendering(const gpu::image_view depth
 	m_cmd.beginRendering(ri);
 }
 
-auto gse::vulkan::recording_context::commit(descriptor_writer& writer, const gpu::pipeline& p, std::uint32_t set_index) -> void {
+auto gse::vulkan::recording_context::commit(descriptor_writer& writer, const gpu::pipeline& p, std::uint32_t set_index) const -> void {
 	const auto point = p.point() == gpu::bind_point::graphics
 		? vk::PipelineBindPoint::eGraphics
 		: vk::PipelineBindPoint::eCompute;
 	writer.commit(m_cmd, point, p.native_layout(), set_index);
 }
 
-auto gse::vulkan::recording_context::bind_vertex_buffer(const gpu::buffer& buf, const vk::DeviceSize offset) -> void {
+auto gse::vulkan::recording_context::bind_vertex_buffer(const gpu::buffer& buf, const vk::DeviceSize offset) const -> void {
 	const vk::Buffer buffers[]{ buf.native().buffer };
 	const vk::DeviceSize offsets[]{ offset };
 	m_cmd.bindVertexBuffers(0, 1, buffers, offsets);
 }
 
-auto gse::vulkan::recording_context::bind_index_buffer(const gpu::buffer& buf, const vk::DeviceSize offset, const vk::IndexType index_type) -> void {
+auto gse::vulkan::recording_context::bind_index_buffer(const gpu::buffer& buf, const vk::DeviceSize offset, const vk::IndexType index_type) const -> void {
 	m_cmd.bindIndexBuffer(buf.native().buffer, offset, index_type);
 }
 

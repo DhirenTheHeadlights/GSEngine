@@ -58,30 +58,27 @@ public:
 		registry* m_registry = nullptr;
 
 		auto ensure_behavior_hook(
-		) -> behavior_hook*;
+		) const -> behavior_hook*;
 	};
 
 	hook(
 		scene* owner
 	);
 
-	virtual ~hook() = default;
+	virtual ~hook(
+	) = default;
 
 	virtual auto initialize(
-	) -> void {
-	}
+	) -> void;
 
 	virtual auto update(
-	) -> void {
-	}
+	) -> void;
 
 	virtual auto render(
-	) -> void {
-	}
+	) -> void;
 
 	virtual auto shutdown(
-	) -> void {
-	}
+	) -> void;
 
 	auto build(
 		const std::string& name
@@ -89,6 +86,11 @@ public:
 protected:
 	scene* m_owner = nullptr;
 };
+
+auto gse::hook<gse::scene>::initialize() -> void {}
+auto gse::hook<gse::scene>::update() -> void {}
+auto gse::hook<gse::scene>::render() -> void {}
+auto gse::hook<gse::scene>::shutdown() -> void {}
 
 gse::hook<gse::scene>::builder::builder(const id entity_id, registry* reg) : m_entity_id(entity_id), m_registry(reg) {}
 
@@ -140,7 +142,7 @@ auto gse::hook<gse::scene>::builder::identify() const -> id {
 	return m_entity_id;
 }
 
-auto gse::hook<gse::scene>::builder::ensure_behavior_hook() -> behavior_hook* {
+auto gse::hook<gse::scene>::builder::ensure_behavior_hook() const -> behavior_hook* {
 	if (auto* hook = m_registry->try_linked_object_write<behavior_hook>(m_entity_id)) {
 		return hook;
 	}

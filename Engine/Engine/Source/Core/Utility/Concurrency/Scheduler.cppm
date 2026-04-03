@@ -248,7 +248,9 @@ auto gse::scheduler::update() -> void {
 	phase.gpu_ctx = m_gpu_ctx;
 
 	task::parallel_for(0uz, m_nodes.size(), [&](const std::size_t i) {
-		m_nodes[i]->update(phase);
+		trace::scope(m_nodes[i]->trace_id(), [&] {
+			m_nodes[i]->update(phase);
+		});
 	});
 
 	if (work.work().empty()) {

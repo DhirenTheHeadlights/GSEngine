@@ -12,15 +12,25 @@ import :concepts;
 export namespace gse {
 	class hook_link_base {
 	public:
-		virtual ~hook_link_base() = default;
-		virtual auto activate(id id) -> bool = 0;
-		virtual auto remove(id id) -> void = 0;
-		virtual auto initialize_hook(id owner_id) -> void = 0;
-		virtual auto hooks_as_base() -> std::vector<hook<entity>*> = 0;
-	};
-}
+		virtual ~hook_link_base(
+		) = default;
 
-export namespace gse {
+		virtual auto activate(
+			id id
+		) -> bool = 0;
+
+		virtual auto remove(
+			id id
+		) -> void = 0;
+
+		virtual auto initialize_hook(
+			id owner_id
+		) -> void = 0;
+
+		virtual auto hooks_as_base(
+		) -> std::vector<hook<entity>*> = 0;
+	};
+
 	class registry;
 
 	template <is_entity_hook T>
@@ -72,8 +82,7 @@ export namespace gse {
 }
 
 template <gse::is_entity_hook T>
-gse::hook_link<T>::hook_link(registry& reg) : m_registry(reg) {
-}
+gse::hook_link<T>::hook_link(registry& reg) : m_registry(reg) {}
 
 template <gse::is_entity_hook T>
 template <typename ... Args>
@@ -112,9 +121,10 @@ auto gse::hook_link<T>::remove(const owner_id_t owner_id) -> void {
 
 	std::erase_if(
 		m_link_to_owner_map,
-		[&](const auto& pair) {
-		return pair.second == owner_id;
-	}
+		[&](const auto& entry) {
+			const auto& [link_id, owner] = entry;
+			return owner == owner_id;
+		}
 	);
 }
 

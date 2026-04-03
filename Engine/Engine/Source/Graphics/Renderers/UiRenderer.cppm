@@ -54,10 +54,17 @@ namespace gse::renderer::ui {
 		resource::handle<font> font;
 	};
 
+	static constexpr std::size_t max_quads_per_frame = 32768;
+	static constexpr std::size_t vertices_per_quad = 4;
+	static constexpr std::size_t indices_per_quad = 6;
+	static constexpr std::size_t max_vertices = max_quads_per_frame * vertices_per_quad;
+	static constexpr std::size_t max_indices = max_quads_per_frame * indices_per_quad;
+	static constexpr std::size_t frames_in_flight = 2;
+
 	struct frame_data {
-		std::vector<vertex> vertices;
-		std::vector<std::uint32_t> indices;
-		std::vector<draw_batch> batches;
+		linear_vector<vertex>        vertices{ max_vertices };
+		linear_vector<std::uint32_t> indices{ max_indices };
+		linear_vector<draw_batch>    batches{ 512 };
 	};
 
 	struct unified_command {
@@ -78,22 +85,15 @@ namespace gse::renderer::ui {
 		float scale;
 	};
 
-	static constexpr std::size_t max_quads_per_frame = 32768;
-	static constexpr std::size_t vertices_per_quad = 4;
-	static constexpr std::size_t indices_per_quad = 6;
-	static constexpr std::size_t max_vertices = max_quads_per_frame * vertices_per_quad;
-	static constexpr std::size_t max_indices = max_quads_per_frame * indices_per_quad;
-	static constexpr std::size_t frames_in_flight = 2;
-
 	auto add_sprite_quad(
-		std::vector<vertex>& vertices,
-		std::vector<std::uint32_t>& indices,
+		linear_vector<vertex>& vertices,
+		linear_vector<std::uint32_t>& indices,
 		const unified_command& cmd
 	) -> void;
 
 	auto add_text_quads(
-		std::vector<vertex>& vertices,
-		std::vector<std::uint32_t>& indices,
+		linear_vector<vertex>& vertices,
+		linear_vector<std::uint32_t>& indices,
 		const unified_command& cmd
 	) -> void;
 }
@@ -124,7 +124,7 @@ export namespace gse::renderer::ui {
 	};
 }
 
-auto gse::renderer::ui::add_sprite_quad(std::vector<vertex>& vertices, std::vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
+auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
 	if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 		return;
 	}
@@ -159,10 +159,10 @@ auto gse::renderer::ui::add_sprite_quad(std::vector<vertex>& vertices, std::vect
 	const float u1 = cmd.uv_rect.x() + cmd.uv_rect.z();
 	const float v1 = cmd.uv_rect.y() + cmd.uv_rect.w();
 
-	vertices.push_back({ p0, { u0, v0 }, cmd.color });
-	vertices.push_back({ p1, { u1, v0 }, cmd.color });
-	vertices.push_back({ p2, { u1, v1 }, cmd.color });
-	vertices.push_back({ p3, { u0, v1 }, cmd.color });
+	vertices.push_back(vertex{ p0, { u0, v0 }, cmd.color });
+	vertices.push_back(vertex{ p1, { u1, v0 }, cmd.color });
+	vertices.push_back(vertex{ p2, { u1, v1 }, cmd.color });
+	vertices.push_back(vertex{ p3, { u0, v1 }, cmd.color });
 
 	indices.push_back(base_index + 0);
 	indices.push_back(base_index + 2);
@@ -172,7 +172,7 @@ auto gse::renderer::ui::add_sprite_quad(std::vector<vertex>& vertices, std::vect
 	indices.push_back(base_index + 2);
 }
 
-auto gse::renderer::ui::add_text_quads(std::vector<vertex>& vertices, std::vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
+auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
 	for (const auto& [screen_rect, uv_rect] : cmd.font->text_layout(cmd.text, cmd.position, cmd.scale)) {
 		if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 			break;
@@ -248,10 +248,6 @@ auto gse::renderer::ui::system::initialize(const initialize_phase& phase, state&
 		});
 	}
 
-	auto& [vertices, indices, batches] = s.data.write();
-	vertices.reserve(max_vertices);
-	indices.reserve(max_indices);
-	batches.reserve(512);
 }
 
 auto gse::renderer::ui::system::update(const update_phase& phase, state& s) -> void {
@@ -434,8 +430,7 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 
 	const vec2u ext_size{ width, height };
 
-	pass
-		.color_output_load()
+	pass.color_output_load()
 		.record([&s, &batches, frame_index, ext_size, window_size,
 			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
 			sprite_writer = std::move(sprite_writer), text_writer = std::move(text_writer),

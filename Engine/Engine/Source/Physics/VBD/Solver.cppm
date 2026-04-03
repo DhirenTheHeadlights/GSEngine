@@ -42,7 +42,7 @@ export namespace gse::vbd {
 		) const -> const solver_config&;
 
 		auto begin_frame(
-			const std::vector<body_state>& bodies,
+			std::span<const body_state> bodies,
 			contact_cache& cache
 		) -> void;
 
@@ -72,12 +72,14 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto body_states(
-		) -> std::vector<body_state>&;
+		) -> linear_vector<body_state>&;
 
 		auto body_states(
 		) const -> std::span<const body_state>;
 
-		auto graph(this auto&& self) -> auto& { return self.m_graph; }
+		auto graph(
+			this auto&& self
+		) -> auto&;
 	private:
 		auto accumulate_contact(
 			const contact_constraint& constraint,
@@ -112,22 +114,28 @@ export namespace gse::vbd {
 			time_squared h_squared
 		) -> void;
 
+		static constexpr std::uint32_t max_solver_bodies = 500;
+
 		solver_config m_config;
 		constraint_graph m_graph;
-		std::vector<body_state> m_bodies;
-		std::vector<body_solve_state> m_solve_state;
+		linear_vector<body_state> m_bodies{ max_solver_bodies };
+		linear_vector<body_solve_state> m_solve_state{ max_solver_bodies };
 
 		static constexpr std::uint32_t no_motor = std::numeric_limits<std::uint32_t>::max();
-		std::vector<std::uint32_t> m_body_motor_index;
-		std::vector<bool> m_body_in_color_group;
+		linear_vector<std::uint32_t> m_body_motor_index{ max_solver_bodies };
+		linear_vector<bool> m_body_in_color_group{ max_solver_bodies };
 
-		std::vector<vec3<velocity>> m_prev_velocity;
-		std::vector<float> m_accel_weight;
+		linear_vector<vec3<velocity>> m_prev_velocity{ max_solver_bodies };
+		linear_vector<float> m_accel_weight{ max_solver_bodies };
 	};
 }
 
+template <typename Self>
+auto gse::vbd::solver::graph(this Self&& self) -> auto& {
+	return self.m_graph;
+}
+
 namespace gse::vbd {
-	// MSVC modules ADL workaround: gse::operator*(quat, vec3f) not found from gse::vbd
 	auto rotate_axis(
 		const quat& q,
 		const vec3f& v
@@ -157,8 +165,8 @@ auto gse::vbd::solver::config() const -> const solver_config& {
 	return m_config;
 }
 
-auto gse::vbd::solver::begin_frame(const std::vector<body_state>& bodies, contact_cache& cache) -> void {
-	m_bodies = bodies;
+auto gse::vbd::solver::begin_frame(const std::span<const body_state> bodies, contact_cache& cache) -> void {
+	m_bodies.assign(bodies.begin(), bodies.end());
 	m_solve_state.resize(m_bodies.size());
 	m_graph.clear();
 
@@ -186,11 +194,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	const auto num_bodies = static_cast<std::uint32_t>(m_bodies.size());
 	const time_squared h_squared = dt * dt;
 
-	std::vector<bool> locked(num_bodies);
+	static_vector<bool, max_solver_bodies> locked;
 	for (std::uint32_t i = 0; i < num_bodies; ++i) {
-		locked[i] = m_bodies[i].locked;
+		locked.push_back(m_bodies[i].locked);
 	}
-	m_graph.compute_coloring(num_bodies, locked);
+	m_graph.compute_coloring(num_bodies, locked.span());
 
 	m_body_motor_index.assign(num_bodies, no_motor);
 	for (std::uint32_t mi = 0; mi < m_graph.motor_constraints().size(); ++mi) {
@@ -761,10 +769,10 @@ auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache&
 		});
 	}
 
-	bodies = m_bodies;
+	bodies.assign(m_bodies.begin(), m_bodies.end());
 }
 
-auto gse::vbd::solver::body_states() -> std::vector<body_state>& {
+auto gse::vbd::solver::body_states() -> linear_vector<body_state>& {
 	return m_bodies;
 }
 

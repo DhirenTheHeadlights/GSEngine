@@ -14,6 +14,7 @@ export namespace gse::vulkan {
         vk::DeviceSize combined_image_sampler_descriptor_size = 0;
         vk::DeviceSize storage_image_descriptor_size = 0;
         vk::DeviceSize input_attachment_descriptor_size = 0;
+        vk::DeviceSize acceleration_structure_descriptor_size = 0;
         bool push_descriptors_supported = false;
         bool bufferless_push_descriptors = false;
         bool supported = false;

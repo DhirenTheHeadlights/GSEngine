@@ -97,6 +97,7 @@ auto gse::engine::initialize() -> void {
 	auto& reg = m_world.registry();
 	auto& save = m_scheduler.add_system<save::system, save::state>(reg);
 	save.set_auto_save(true, config::resource_path / "Misc/settings.toml");
+	save.on_restart([] { app::restart(); });
 
 	auto& input = m_scheduler.add_system<input::system, input::system_state>(reg);
 	m_scheduler.add_system<actions::system, actions::system_state>(reg);
@@ -118,7 +119,7 @@ auto gse::engine::initialize() -> void {
 		m_scheduler.add_system<physics::system, physics::state, physics::render_state>(reg);
 		m_scheduler.add_system<camera::system, camera::state>(reg);
 		m_scheduler.add_system<renderer::system, renderer::state>(reg);
-		m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg);
+		m_scheduler.add_system<renderer::rt_shadow::system, renderer::rt_shadow::state, renderer::rt_shadow::render_state>(reg);
 		m_scheduler.add_system<renderer::geometry_collector::system, renderer::geometry_collector::state>(reg);
 		m_scheduler.add_system<renderer::skin_compute::system, renderer::skin_compute::state>(reg);
 		m_scheduler.add_system<renderer::cull_compute::system, renderer::cull_compute::state>(reg);

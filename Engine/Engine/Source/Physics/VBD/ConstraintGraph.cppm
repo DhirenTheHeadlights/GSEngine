@@ -25,7 +25,7 @@ export namespace gse::vbd {
 
 		auto compute_coloring(
 			std::uint32_t num_bodies,
-			const std::vector<bool>& locked
+			std::span<const bool> locked
 		) -> void;
 
 		auto clear(
@@ -66,7 +66,7 @@ export namespace gse::vbd {
 		std::vector<contact_constraint> m_contacts;
 		std::vector<velocity_motor_constraint> m_motors;
 		std::vector<joint_constraint> m_joints;
-		std::vector<std::vector<std::uint32_t>> m_body_colors;
+		static_vector<std::vector<std::uint32_t>, 64> m_body_colors;
 		std::vector<std::vector<std::uint32_t>> m_body_contacts;
 		std::vector<std::vector<std::uint32_t>> m_body_joints;
 	};
@@ -96,10 +96,7 @@ auto gse::vbd::constraint_graph::remove_joint(const std::uint32_t index) -> void
 	}
 }
 
-auto gse::vbd::constraint_graph::compute_coloring(
-	const std::uint32_t num_bodies,
-	const std::vector<bool>& locked
-) -> void {
+auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies, const std::span<const bool> locked) -> void {
 	m_body_colors.clear();
 	m_body_contacts.assign(num_bodies, {});
 	m_body_joints.assign(num_bodies, {});
@@ -132,7 +129,7 @@ auto gse::vbd::constraint_graph::compute_coloring(
 		adj.erase(std::ranges::unique(adj).begin(), adj.end());
 	}
 
-	std::vector<int> body_color(num_bodies, -1);
+	std::vector body_color(num_bodies, -1);
 
 	for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
 		if (locked[bi] || (m_body_contacts[bi].empty() && m_body_joints[bi].empty())) continue;
@@ -196,7 +193,7 @@ auto gse::vbd::constraint_graph::joint_constraints() const -> std::span<const jo
 }
 
 auto gse::vbd::constraint_graph::body_colors() const -> std::span<const std::vector<std::uint32_t>> {
-	return m_body_colors;
+	return m_body_colors.span();
 }
 
 auto gse::vbd::constraint_graph::body_contact_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {

@@ -7,13 +7,15 @@ import gse.math;
 
 export namespace gse::gpu {
 	enum class buffer_flag : std::uint32_t {
-		uniform      = 0x01,
-		storage      = 0x02,
-		indirect     = 0x04,
-		transfer_dst = 0x08,
-		vertex       = 0x10,
-		index        = 0x20,
-		transfer_src = 0x40,
+		uniform                        = 0x01,
+		storage                        = 0x02,
+		indirect                       = 0x04,
+		transfer_dst                   = 0x08,
+		vertex                         = 0x10,
+		index                          = 0x20,
+		transfer_src                   = 0x40,
+		acceleration_structure_storage = 0x80,
+		acceleration_structure_build_input = 0x100,
 	};
 
 	using buffer_usage = gse::flags<buffer_flag>;
@@ -190,7 +192,8 @@ export namespace gse::gpu {
 		combined_image_sampler,
 		sampled_image,
 		storage_image,
-		sampler
+		sampler,
+		acceleration_structure
 	};
 
 	enum class vertex_format : std::uint8_t {
