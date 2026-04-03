@@ -128,7 +128,7 @@ export namespace gse::gpu {
 		) -> decltype(auto);
 
 		auto add_transient_work(
-			const auto& commands
+			auto&& commands
 		) -> void;
 
 		using swap_chain_recreate_callback = std::function<void()>;
@@ -317,8 +317,8 @@ auto gse::gpu::context::wait_idle() -> void {
 	m_device->wait_idle();
 }
 
-auto gse::gpu::context::add_transient_work(const auto& commands) -> void {
-	m_device->add_transient_work(commands);
+auto gse::gpu::context::add_transient_work(auto&& commands) -> void {
+	m_device->add_transient_work(std::forward<decltype(commands)>(commands));
 }
 
 auto gse::gpu::context::descriptor_heap(this auto& self) -> decltype(auto) {

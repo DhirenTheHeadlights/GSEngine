@@ -7,14 +7,13 @@ import :spot_light;
 import :directional_light;
 import :camera_system;
 import :depth_prepass_renderer;
-import :shadow_data;
-
 import gse.platform;
 import gse.utility;
 
 export namespace gse::renderer::light_culling {
 	constexpr std::uint32_t tile_size = 16;
 	constexpr std::uint32_t max_lights_per_tile = 64;
+	constexpr std::size_t max_lights = 10;
 
 	struct state {
 		gpu::pipeline pipeline;
@@ -201,7 +200,7 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 	std::size_t light_count = 0;
 
 	for (const auto& comp : dir_chunk) {
-		if (light_count >= max_shadow_lights) break;
+		if (light_count >= max_lights) break;
 		zero_at(light_count);
 		int type = 0;
 		set(light_count, "light_type", type);
@@ -213,7 +212,7 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 	}
 
 	for (const auto& comp : spot_chunk) {
-		if (light_count >= max_shadow_lights) break;
+		if (light_count >= max_lights) break;
 		zero_at(light_count);
 		int type = 2;
 		const float cut_off_cos = gse::cos(comp.cut_off);
@@ -233,7 +232,7 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 	}
 
 	for (const auto& comp : point_chunk) {
-		if (light_count >= max_shadow_lights) break;
+		if (light_count >= max_lights) break;
 		zero_at(light_count);
 		int type = 1;
 		set(light_count, "light_type", type);

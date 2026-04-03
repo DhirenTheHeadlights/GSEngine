@@ -32,6 +32,7 @@ export namespace gse::vulkan {
 		device_config device;
 		queue_config queue;
 		bool mesh_shaders_enabled = false;
+		bool ray_tracing_enabled = false;
 		descriptor_buffer_properties desc_buf_props;
 	};
 
@@ -79,6 +80,7 @@ namespace gse::vulkan {
 		log::println(log::category::vulkan, "  storage image size: {}", db.storageImageDescriptorSize);
 		log::println(log::category::vulkan, "  input attachment size: {}", db.inputAttachmentDescriptorSize);
 		log::println(log::category::vulkan, "  bufferless push descriptors: {}", db.bufferlessPushDescriptors ? "true" : "false");
+		log::println(log::category::vulkan, "  acceleration structure size: {}", db.accelerationStructureDescriptorSize);
 
 		return {
 			.offset_alignment = db.descriptorBufferOffsetAlignment,
@@ -89,6 +91,7 @@ namespace gse::vulkan {
 			.combined_image_sampler_descriptor_size = db.combinedImageSamplerDescriptorSize,
 			.storage_image_descriptor_size = db.storageImageDescriptorSize,
 			.input_attachment_descriptor_size = db.inputAttachmentDescriptorSize,
+			.acceleration_structure_descriptor_size = db.accelerationStructureDescriptorSize,
 			.push_descriptors_supported = false,
 			.bufferless_push_descriptors = static_cast<bool>(db.bufferlessPushDescriptors),
 			.supported = true
@@ -266,11 +269,18 @@ namespace gse::vulkan {
 		};
 		const bool device_fault_extension_supported = supports_extension(vk::EXTDeviceFaultExtensionName);
 
+		const bool rt_extensions_available =
+			supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
+			supports_extension(vk::KHRAccelerationStructureExtensionName) &&
+			supports_extension(vk::KHRRayQueryExtensionName);
+
 		const auto feature_chain = physical_device.getFeatures2<
 			vk::PhysicalDeviceFeatures2,
 			vk::PhysicalDeviceMeshShaderFeaturesEXT,
 			vk::PhysicalDeviceDescriptorBufferFeaturesEXT,
-			vk::PhysicalDeviceFaultFeaturesEXT
+			vk::PhysicalDeviceFaultFeaturesEXT,
+			vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+			vk::PhysicalDeviceRayQueryFeaturesKHR
 		>();
 		const auto& mesh_shader_query = feature_chain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
 		const bool mesh_shaders_supported = mesh_shader_query.meshShader && mesh_shader_query.taskShader;
@@ -280,6 +290,9 @@ namespace gse::vulkan {
 		const auto& fault_query = feature_chain.get<vk::PhysicalDeviceFaultFeaturesEXT>();
 		const bool device_fault_supported = device_fault_extension_supported && fault_query.deviceFault;
 		const bool device_fault_vendor_binary_supported = device_fault_supported && fault_query.deviceFaultVendorBinary;
+		const auto& as_query = feature_chain.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+		const auto& rq_query = feature_chain.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+		const bool ray_tracing_supported = rt_extensions_available && as_query.accelerationStructure && rq_query.rayQuery;
 
 		if (mesh_shaders_supported) {
 			log::println(log::category::vulkan, "Mesh shader support detected");
@@ -299,6 +312,12 @@ namespace gse::vulkan {
 
 		if (device_fault_supported) {
 			log::println(log::category::vulkan, "Device fault support detected");
+		}
+
+		if (ray_tracing_supported) {
+			log::println(log::category::vulkan, "Ray tracing support detected");
+		} else {
+			log::println(log::level::warning, log::category::vulkan, "Ray tracing not supported");
 		}
 
 		vk::PhysicalDeviceVulkan13Features vulkan13_features{
@@ -333,11 +352,25 @@ namespace gse::vulkan {
 			.descriptorBufferPushDescriptors = descriptor_buffer_push_descriptors_supported ? vk::True : vk::False
 		};
 
-		void* feature_chain_head = descriptor_buffer_supported
+		void* pre_rt_chain_head = descriptor_buffer_supported
 			? static_cast<void*>(&descriptor_buffer_features)
 			: (mesh_shaders_supported
 				? static_cast<void*>(&mesh_shader_features)
 				: static_cast<void*>(&vulkan11_features));
+
+		vk::PhysicalDeviceAccelerationStructureFeaturesKHR as_features{
+			.pNext = pre_rt_chain_head,
+			.accelerationStructure = vk::True
+		};
+
+		vk::PhysicalDeviceRayQueryFeaturesKHR ray_query_features{
+			.pNext = &as_features,
+			.rayQuery = vk::True
+		};
+
+		void* feature_chain_head = ray_tracing_supported
+			? static_cast<void*>(&ray_query_features)
+			: pre_rt_chain_head;
 
 		vk::PhysicalDeviceFaultFeaturesEXT fault_features{
 			.pNext = feature_chain_head,
@@ -377,6 +410,12 @@ namespace gse::vulkan {
 			device_extensions.push_back(vk::EXTDeviceFaultExtensionName);
 		}
 
+		if (ray_tracing_supported) {
+			device_extensions.push_back(vk::KHRDeferredHostOperationsExtensionName);
+			device_extensions.push_back(vk::KHRAccelerationStructureExtensionName);
+			device_extensions.push_back(vk::KHRRayQueryExtensionName);
+		}
+
 		vk::DeviceCreateInfo create_info{
 			.pNext = &features2,
 			.flags = {},
@@ -412,6 +451,7 @@ namespace gse::vulkan {
 			),
 			.queue = queue_config(std::move(graphics_queue), std::move(present_queue), std::move(compute_queue), compute_family.value()),
 			.mesh_shaders_enabled = mesh_shaders_supported,
+			.ray_tracing_enabled = ray_tracing_supported,
 			.desc_buf_props = std::move(desc_buf_props)
 		};
 	}
@@ -478,6 +518,7 @@ namespace gse::vulkan {
 			case gpu::descriptor_type::sampled_image:           return vk::DescriptorType::eSampledImage;
 			case gpu::descriptor_type::storage_image:           return vk::DescriptorType::eStorageImage;
 			case gpu::descriptor_type::sampler:                 return vk::DescriptorType::eSampler;
+			case gpu::descriptor_type::acceleration_structure:  return vk::DescriptorType::eAccelerationStructureKHR;
 		}
 		return vk::DescriptorType::eStorageBuffer;
 	}
@@ -545,7 +586,7 @@ export namespace gse::gpu {
 		) -> const vk::raii::Queue&;
 
 		auto add_transient_work(
-			const auto& commands
+			auto&& commands
 		) -> void;
 
 		auto cleanup_finished_frame_resources(
@@ -581,6 +622,9 @@ export namespace gse::gpu {
 		[[nodiscard]] auto descriptor_buffer_props(
 		) const -> const vulkan::descriptor_buffer_properties&;
 
+		[[nodiscard]] auto ray_tracing_enabled(
+		) const -> bool;
+
 		[[nodiscard]] auto current_transient_frame(
 		) const -> std::uint32_t;
 
@@ -604,7 +648,8 @@ export namespace gse::gpu {
 			std::unique_ptr<vulkan::descriptor_heap>&& desc_heap,
 			vulkan::descriptor_buffer_properties&& desc_buf_props,
 			vk::Format surface_format,
-			std::uint32_t max_frames
+			std::uint32_t max_frames,
+			bool ray_tracing_enabled
 		);
 
 		vulkan::instance_config m_instance;
@@ -620,6 +665,7 @@ export namespace gse::gpu {
 		std::uint32_t m_current_transient_frame = 0;
 		std::unordered_map<id, vulkan::shader_cache_entry> m_shader_cache;
 		std::unordered_map<std::string, std::unique_ptr<shader_layout>> m_shader_layouts;
+		bool m_ray_tracing_enabled = false;
 	};
 
 	auto transition_image_layout(device& dev, const image& img, image_layout target) -> void;
@@ -631,7 +677,7 @@ auto gse::gpu::device::create(
 ) -> std::unique_ptr<device> {
 	auto instance_data = vulkan::create_instance(window::vulkan_instance_extensions());
 	instance_data.surface = vk::raii::SurfaceKHR(instance_data.instance, win.create_vulkan_surface(*instance_data.instance));
-	auto [dev_config, queue, mesh_shaders_enabled, desc_buf_props] = vulkan::create_device_and_queues(instance_data);
+	auto [dev_config, queue, mesh_shaders_enabled, ray_tracing_enabled, desc_buf_props] = vulkan::create_device_and_queues(instance_data);
 	auto alloc = std::make_unique<vulkan::allocator>(dev_config.device, dev_config.physical_device, save);
 	auto command = vulkan::create_command_objects(dev_config, instance_data);
 
@@ -658,7 +704,8 @@ auto gse::gpu::device::create(
 		std::move(desc_heap),
 		std::move(desc_buf_props),
 		surface_format,
-		vulkan::max_frames_in_flight
+		vulkan::max_frames_in_flight,
+		ray_tracing_enabled
 	));
 }
 
@@ -671,7 +718,8 @@ gse::gpu::device::device(
 	std::unique_ptr<vulkan::descriptor_heap>&& desc_heap,
 	vulkan::descriptor_buffer_properties&& desc_buf_props,
 	const vk::Format surface_format,
-	const std::uint32_t max_frames
+	const std::uint32_t max_frames,
+	const bool ray_tracing_enabled
 )
 	: m_instance(std::move(instance)),
 	  m_device_config(std::move(dev_config)),
@@ -680,7 +728,8 @@ gse::gpu::device::device(
 	  m_command(std::move(command)),
 	  m_descriptor_heap(std::move(desc_heap)),
 	  m_descriptor_buffer_props(std::move(desc_buf_props)),
-	  m_surface_format(surface_format) {
+	  m_surface_format(surface_format),
+	  m_ray_tracing_enabled(ray_tracing_enabled) {
 	m_transient_work_graveyard.resize(max_frames);
 }
 
@@ -723,7 +772,7 @@ auto gse::gpu::device::compute_queue() -> const vk::raii::Queue& {
 	return m_queue.compute;
 }
 
-auto gse::gpu::device::add_transient_work(const auto& commands) -> void {
+auto gse::gpu::device::add_transient_work(auto&& commands) -> void {
 	const vk::CommandBufferAllocateInfo alloc_info{
 		.commandPool = *m_command.pool,
 		.level = vk::CommandBufferLevel::ePrimary,
@@ -738,7 +787,14 @@ auto gse::gpu::device::add_transient_work(const auto& commands) -> void {
 	};
 
 	command_buffer.begin(begin_info);
-	auto transient_buffers = commands(command_buffer);
+
+	std::vector<vulkan::buffer_resource> transient_buffers;
+	if constexpr (std::is_void_v<std::invoke_result_t<decltype(commands), vk::raii::CommandBuffer&>>) {
+		std::invoke(std::forward<decltype(commands)>(commands), command_buffer);
+	} else {
+		transient_buffers = std::invoke(std::forward<decltype(commands)>(commands), command_buffer);
+	}
+
 	command_buffer.end();
 
 	vk::raii::Fence fence = m_device_config.device.createFence({});
@@ -881,6 +937,10 @@ auto gse::gpu::device::command_config() -> vulkan::command_config& {
 
 auto gse::gpu::device::descriptor_buffer_props() const -> const vulkan::descriptor_buffer_properties& {
 	return m_descriptor_buffer_props;
+}
+
+auto gse::gpu::device::ray_tracing_enabled() const -> bool {
+	return m_ray_tracing_enabled;
 }
 
 auto gse::gpu::device::current_transient_frame() const -> std::uint32_t {

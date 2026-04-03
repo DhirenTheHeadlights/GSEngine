@@ -23,8 +23,7 @@ export namespace gse {
 }
 
 template <gse::is_identifiable T>
-gse::hook_base<T>::hook_base(T* owner) : m_owner(owner) {
-}
+gse::hook_base<T>::hook_base(T* owner) : m_owner(owner) {}
 
 template <gse::is_identifiable T>
 auto gse::hook_base<T>::owner_id() const -> id {

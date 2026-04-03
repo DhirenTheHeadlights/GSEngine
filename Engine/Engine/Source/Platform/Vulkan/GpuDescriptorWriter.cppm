@@ -28,6 +28,7 @@ export namespace gse::gpu {
 		auto image(std::string_view name, const image& img, const sampler& samp, image_layout layout = image_layout::shader_read_only) -> descriptor_writer&;
 		auto image_array(std::string_view name, std::span<const gpu::image* const> images, const sampler& samp, image_layout layout = image_layout::shader_read_only) -> descriptor_writer&;
 		auto image_array(std::string_view name, std::span<const gpu::image* const> images, std::span<const sampler* const> samplers, image_layout layout = image_layout::shader_read_only) -> descriptor_writer&;
+		auto acceleration_structure(std::string_view name, vk::AccelerationStructureKHR as) -> descriptor_writer&;
 
 		auto commit() -> void;
 
@@ -47,6 +48,7 @@ export namespace gse::gpu {
 		std::unordered_map<std::string, vk::DescriptorBufferInfo> m_buffer_infos;
 		std::unordered_map<std::string, vk::DescriptorImageInfo> m_image_infos;
 		std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> m_image_array_infos;
+		std::unordered_map<std::string, vk::AccelerationStructureKHR> m_as_infos;
 
 		vulkan::descriptor_writer m_push_writer;
 	};
@@ -88,6 +90,7 @@ namespace {
 				case gse::gpu::descriptor_type::sampled_image:           return props.sampled_image_descriptor_size;
 				case gse::gpu::descriptor_type::storage_image:           return props.storage_image_descriptor_size;
 				case gse::gpu::descriptor_type::sampler:                 return props.sampler_descriptor_size;
+			case gse::gpu::descriptor_type::acceleration_structure:  return props.acceleration_structure_descriptor_size;
 			}
 			return props.storage_buffer_descriptor_size;
 		};
@@ -175,6 +178,11 @@ auto gse::gpu::descriptor_writer::image_array(const std::string_view name, const
 	return *this;
 }
 
+auto gse::gpu::descriptor_writer::acceleration_structure(const std::string_view name, const vk::AccelerationStructureKHR as) -> descriptor_writer& {
+	m_as_infos[std::string(name)] = as;
+	return *this;
+}
+
 auto gse::gpu::descriptor_writer::image_array(const std::string_view name, const std::span<const gpu::image* const> images, const std::span<const sampler* const> samplers, const image_layout layout) -> descriptor_writer& {
 	auto& vec = m_image_array_infos[std::string(name)];
 	vec.clear();
@@ -257,12 +265,23 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 				.data = { .pCombinedImageSampler = &it2->second }
 			};
 			heap.write_descriptor(region, boff, get_info, props.combined_image_sampler_descriptor_size);
+			continue;
+		}
+
+		if (auto it_as = m_as_infos.find(b.name); it_as != m_as_infos.end()) {
+			const vk::DeviceAddress as_addr = m_device->logical_device().getAccelerationStructureAddressKHR({ .accelerationStructure = it_as->second });
+			const vk::DescriptorGetInfoEXT get_info{
+				.type = vk::DescriptorType::eAccelerationStructureKHR,
+				.data = { .accelerationStructure = as_addr }
+			};
+			heap.write_descriptor(region, boff, get_info, props.acceleration_structure_descriptor_size);
 		}
 	}
 
 	m_buffer_infos.clear();
 	m_image_infos.clear();
 	m_image_array_infos.clear();
+	m_as_infos.clear();
 }
 
 auto gse::gpu::descriptor_writer::begin(const std::uint32_t frame_index) -> void {

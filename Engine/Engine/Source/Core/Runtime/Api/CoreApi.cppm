@@ -35,7 +35,7 @@ export namespace gse {
         T&& request
     ) -> void;
 
-    template <typename State, typename F>
+    template <typename F>
     auto defer(
         F&& fn
     ) -> void;
@@ -77,9 +77,9 @@ auto gse::channel_add(T&& request) -> void {
     engine_instance->channel<std::decay_t<T>>().push(std::forward<T>(request));
 }
 
-template <typename State, typename F>
+template <typename F>
 auto gse::defer(F&& fn) -> void {
-    engine_instance->defer<State>(std::forward<F>(fn));
+    engine_instance->defer<first_arg_t<F>>(std::forward<F>(fn));
 }
 
 template <typename... Hooks>

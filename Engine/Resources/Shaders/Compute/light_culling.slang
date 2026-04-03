@@ -125,16 +125,9 @@ void cs_main(
 
     GroupMemoryBarrierWithGroupSync();
 
-    if (tile_depth_min == 0x7F7FFFFF) {
-        if (local_index == 0) {
-            tile_light_table[tile_index] = uint2(0, 0);
-        }
-        return;
-    }
-
     frustum tile_frustum = build_tile_frustum(group_id.xy);
-    float z_near = asfloat(tile_depth_min);
-    float z_far  = asfloat(tile_depth_max);
+    float z_near = tile_depth_min == 0x7F7FFFFF ? 0.0 : asfloat(tile_depth_min);
+    float z_far  = tile_depth_min == 0x7F7FFFFF ? 1e30 : asfloat(tile_depth_max);
 
     for (uint i = local_index; i < num_lights; i += TILE_SIZE * TILE_SIZE) {
         Light light = lights[i];

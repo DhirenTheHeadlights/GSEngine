@@ -43,10 +43,10 @@ auto gse::procedural_model::box(const resource::handle<material>& mat, const vec
     constexpr float h = 0.5f;
 
     auto push_face = [&](const vec3<length>& a, const vec3<length>& b, const vec3<length>& c, const vec3<length>& d, const vec3f n, float u_scale, float v_scale) {
-        v.push_back(vertex{ a, n, { 0.0f, 0.0f } });
-        v.push_back(vertex{ b, n, { u_scale, 0.0f } });
-        v.push_back(vertex{ c, n, { u_scale, v_scale } });
-        v.push_back(vertex{ d, n, { 0.0f, v_scale } });
+        v.push_back({ a, n, { 0.0f, 0.0f } });
+        v.push_back({ b, n, { u_scale, 0.0f } });
+        v.push_back({ c, n, { u_scale, v_scale } });
+        v.push_back({ d, n, { 0.0f, v_scale } });
     };
 
     push_face({  h, -h, -h }, { -h, -h, -h }, { -h,  h, -h }, {  h,  h, -h }, {  0,  0, -1 }, sx, sy);
@@ -128,7 +128,7 @@ auto gse::procedural_model::sphere(const resource::handle<material>& mat, std::u
             	v
             };
 
-            vertices.push_back(vertex{ 
+            vertices.push_back({ 
                 p, n, t
             });
         }

@@ -4,7 +4,7 @@ import std;
 
 import :geometry_collector;
 import :depth_prepass_renderer;
-import :shadow_data;
+import :rt_shadow_renderer;
 import :light_culling_renderer;
 import :camera_system;
 import :texture;
@@ -17,6 +17,8 @@ import gse.utility;
 import gse.platform;
 
 export namespace gse::renderer::forward {
+	constexpr std::size_t max_lights = 10;
+
 	struct state {
 		gpu::pipeline pipeline;
 		per_frame_resource<gpu::descriptor_region> descriptors;
@@ -27,16 +29,8 @@ export namespace gse::renderer::forward {
 		resource::handle<shader> skinned_shader;
 
 		per_frame_resource<gpu::buffer> light_buffers;
-		per_frame_resource<gpu::buffer> shadow_params_buffers;
-		per_frame_resource<gpu::buffer> point_shadow_params_buffers;
-
-		gpu::sampler shadow_sampler;
 
 		resource::handle<texture> blank_texture;
-
-		gpu::image placeholder_depth;
-		gpu::image placeholder_cube_depth;
-		gpu::sampler placeholder_cube_sampler;
 
 		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
 	};
@@ -62,40 +56,6 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 
 	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
-	const auto shadow_block = s.shader_handle->uniform_block("ShadowParams");
-	const auto point_shadow_block = s.shader_handle->uniform_block("PointShadowParams");
-
-	s.shadow_sampler = gpu::create_sampler(ctx.device_ref(), {
-		.min = gpu::sampler_filter::linear,
-		.mag = gpu::sampler_filter::linear,
-		.address_u = gpu::sampler_address_mode::clamp_to_border,
-		.address_v = gpu::sampler_address_mode::clamp_to_border,
-		.address_w = gpu::sampler_address_mode::clamp_to_border,
-		.border = gpu::border_color::float_opaque_white,
-		.max_lod = 1.0f
-	});
-
-	s.placeholder_depth = gpu::create_image(ctx.device_ref(), {
-		.format = gpu::image_format::d32_sfloat,
-		.view = gpu::image_view_type::e2d,
-		.usage = gpu::image_flag::sampled | gpu::image_flag::depth_attachment,
-		.ready_layout = gpu::image_layout::general
-	});
-
-	s.placeholder_cube_depth = gpu::create_image(ctx.device_ref(), {
-		.format = gpu::image_format::d32_sfloat,
-		.view = gpu::image_view_type::cube,
-		.usage = gpu::image_flag::sampled | gpu::image_flag::depth_attachment,
-		.ready_layout = gpu::image_layout::general
-	});
-
-	s.placeholder_cube_sampler = gpu::create_sampler(ctx.device_ref(), {
-		.min = gpu::sampler_filter::nearest,
-		.mag = gpu::sampler_filter::nearest,
-		.address_u = gpu::sampler_address_mode::clamp_to_edge,
-		.address_v = gpu::sampler_address_mode::clamp_to_edge,
-		.address_w = gpu::sampler_address_mode::clamp_to_edge
-	});
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
@@ -108,67 +68,48 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 			.usage = gpu::buffer_flag::storage
 		});
 
-		s.shadow_params_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
-			.size = shadow_block.size,
-			.usage = gpu::buffer_flag::uniform
-		});
-
-		s.point_shadow_params_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
-			.size = point_shadow_block.size,
-			.usage = gpu::buffer_flag::uniform
-		});
-
 		s.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
 
 		gpu::descriptor_writer(ctx.device_ref(), s.shader_handle, s.descriptors[i])
 			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.buffer("lights_ssbo", s.light_buffers[i], 0, light_block.size)
-			.buffer("ShadowParams", s.shadow_params_buffers[i], 0, shadow_block.size)
-			.buffer("PointShadowParams", s.point_shadow_params_buffers[i], 0, point_shadow_block.size)
 			.commit();
 	}
 
-	const auto* shadow_state = phase.try_state_of<shadow::state>();
-
-	std::vector<const gpu::image*> shadow_images;
-	shadow_images.reserve(max_shadow_lights);
-	for (std::size_t i = 0; i < max_shadow_lights; ++i) {
-		shadow_images.push_back(shadow_state ? &shadow_state->shadow_map(i) : &s.placeholder_depth);
-	}
-
-	std::vector<const gpu::image*> point_shadow_images;
-	std::vector<const gpu::sampler*> point_shadow_samplers;
-	point_shadow_images.reserve(max_point_shadow_lights);
-	point_shadow_samplers.reserve(max_point_shadow_lights);
-	for (std::size_t i = 0; i < max_point_shadow_lights; ++i) {
-		point_shadow_images.push_back(shadow_state ? &shadow_state->point_shadow_gpu_image(i) : &s.placeholder_cube_depth);
-		point_shadow_samplers.push_back(shadow_state ? &shadow_state->point_shadow_gpu_sampler(i) : &s.placeholder_cube_sampler);
-	}
-
+	const auto* rt_state = phase.try_state_of<rt_shadow::state>();
 	const auto* lc_state = phase.try_state_of<light_culling::state>();
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+		const auto fi = static_cast<std::uint32_t>(i);
 		gpu::descriptor_writer writer(ctx.device_ref(), s.shader_handle, s.descriptors[i]);
 
+		if (rt_state) {
+			writer.acceleration_structure("tlas", rt_state->tlas_handle(fi));
+		}
+
 		if (lc_state) {
-			const auto fi = static_cast<std::uint32_t>(i);
 			writer.buffer("light_index_list", lc_state->light_index_list(fi))
 				.buffer("tile_light_table", lc_state->tile_light_table(fi));
 		}
 
-		writer.image_array("shadow_maps", shadow_images, s.shadow_sampler, gpu::image_layout::general)
-			.image_array("point_shadow_maps", point_shadow_images, point_shadow_samplers, gpu::image_layout::general)
-			.commit();
+		writer.commit();
 	}
 
-	ctx.on_swap_chain_recreate([&s, lc_state, &ctx]() {
-		if (!lc_state) return;
+	ctx.on_swap_chain_recreate([&s, lc_state, rt_state, &ctx]() {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
-			gpu::descriptor_writer(ctx.device_ref(), s.shader_handle, s.descriptors[i])
-				.buffer("light_index_list", lc_state->light_index_list(fi))
-				.buffer("tile_light_table", lc_state->tile_light_table(fi))
-				.commit();
+			gpu::descriptor_writer writer(ctx.device_ref(), s.shader_handle, s.descriptors[i]);
+
+			if (rt_state) {
+				writer.acceleration_structure("tlas", rt_state->tlas_handle(fi));
+			}
+
+			if (lc_state) {
+				writer.buffer("light_index_list", lc_state->light_index_list(fi))
+					.buffer("tile_light_table", lc_state->tile_light_table(fi));
+			}
+
+			writer.commit();
 		}
 	});
 
@@ -250,7 +191,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	std::size_t light_count = 0;
 
 	for (const auto& comp : dir_chunk) {
-		if (light_count >= max_shadow_lights) break;
+		if (light_count >= max_lights) break;
 		zero_at(light_count);
 		int type = 0;
 		set_light(light_count, "light_type", type);
@@ -262,7 +203,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	}
 
 	for (const auto& comp : spot_chunk) {
-		if (light_count >= max_shadow_lights) break;
+		if (light_count >= max_lights) break;
 		zero_at(light_count);
 		int type = 2;
 		const float cut_off_cos = gse::cos(comp.cut_off);
@@ -282,7 +223,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	}
 
 	for (const auto& comp : point_chunk) {
-		if (light_count >= max_shadow_lights) break;
+		if (light_count >= max_lights) break;
 		zero_at(light_count);
 		int type = 1;
 		set_light(light_count, "light_type", type);
@@ -295,68 +236,6 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		set_light(light_count, "ambient_strength", comp.ambient_strength);
 		++light_count;
 	}
-
-	const auto* shadow_state = phase.try_state_of<shadow::state>();
-	vec2f texel_size{};
-	std::span<const shadow_light_entry> shadow_entries{};
-	std::span<const point_shadow_light_entry> point_shadow_entries{};
-	const auto& shadow_items = phase.read_channel<shadow::render_data>();
-	if (shadow_state && !shadow_items.empty()) {
-		texel_size = shadow_state->shadow_texel_size();
-		shadow_entries = shadow_items[0].lights;
-		point_shadow_entries = shadow_items[0].point_lights;
-	}
-
-	const auto& shadow_alloc = s.shadow_params_buffers[frame_index];
-	std::array<int, max_shadow_lights> shadow_indices{};
-	std::array<view_projection_matrix, max_shadow_lights> shadow_view_proj{};
-	const std::size_t shadow_light_count = std::min<std::size_t>(shadow_entries.size(), max_shadow_lights);
-
-	for (std::size_t idx = 0; idx < shadow_light_count; ++idx) {
-		shadow_indices[idx] = static_cast<int>(idx);
-		shadow_view_proj[idx] = shadow_entries[idx].proj * shadow_entries[idx].view;
-	}
-
-	int shadow_count_i = static_cast<int>(shadow_light_count);
-	std::unordered_map<std::string, std::span<const std::byte>> shadow_data;
-	shadow_data.emplace("shadow_light_count", std::as_bytes(std::span(std::addressof(shadow_count_i), 1)));
-	shadow_data.emplace("shadow_light_indices", std::as_bytes(std::span(shadow_indices.data(), shadow_indices.size())));
-	shadow_data.emplace("shadow_view_proj", std::as_bytes(std::span(shadow_view_proj.data(), shadow_view_proj.size())));
-	shadow_data.emplace("shadow_texel_size", std::as_bytes(std::span(std::addressof(texel_size), 1)));
-	s.shader_handle->set_uniform_block("ShadowParams", shadow_data, shadow_alloc);
-
-	const auto& point_shadow_alloc = s.point_shadow_params_buffers[frame_index];
-	std::size_t dir_count = 0;
-	for (const auto& comp : dir_chunk) {
-		(void)comp; ++dir_count;
-	}
-	std::size_t spot_count = 0;
-	for (const auto& comp : spot_chunk) {
-		(void)comp; ++spot_count;
-	}
-
-	const std::size_t point_shadow_count = std::min<std::size_t>(point_shadow_entries.size(), max_point_shadow_lights);
-	std::array<int, max_point_shadow_lights> ps_light_indices{};
-	std::array<vec3<length>, max_point_shadow_lights> ps_positions{};
-	std::array<length, max_point_shadow_lights> ps_near{};
-	std::array<length, max_point_shadow_lights> ps_far{};
-
-	for (std::size_t idx = 0; idx < point_shadow_count; ++idx) {
-		const auto& entry = point_shadow_entries[idx];
-		ps_light_indices[idx] = static_cast<int>(dir_count + spot_count + idx);
-		ps_positions[idx] = entry.world_position;
-		ps_near[idx] = entry.near_plane;
-		ps_far[idx] = entry.far_plane;
-	}
-
-	int ps_count_i = static_cast<int>(point_shadow_count);
-	std::unordered_map<std::string, std::span<const std::byte>> point_shadow_data;
-	point_shadow_data.emplace("point_shadow_count", std::as_bytes(std::span(std::addressof(ps_count_i), 1)));
-	point_shadow_data.emplace("point_shadow_light_indices", std::as_bytes(std::span(ps_light_indices.data(), ps_light_indices.size())));
-	point_shadow_data.emplace("point_shadow_positions_world", std::as_bytes(std::span(ps_positions.data(), ps_positions.size())));
-	point_shadow_data.emplace("point_shadow_near", std::as_bytes(std::span(ps_near.data(), ps_near.size())));
-	point_shadow_data.emplace("point_shadow_far", std::as_bytes(std::span(ps_far.data(), ps_far.size())));
-	s.shader_handle->set_uniform_block("PointShadowParams", point_shadow_data, point_shadow_alloc);
 
 	const auto& normal_batches = data.normal_batches;
 	const auto& skinned_batches = data.skinned_batches;
@@ -379,11 +258,10 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	auto pass = ctx.graph().add_pass<state>();
 	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
 	pass.track(s.light_buffers[frame_index]);
-	pass.track(s.shadow_params_buffers[frame_index]);
-	pass.track(s.point_shadow_params_buffers[frame_index]);
 	pass.track(gc_state->instance_buffer[frame_index]);
 
-	pass.after<light_culling::state>()
+	pass.after<rt_shadow::render_state>()
+		.after<light_culling::state>()
 		.after<depth_prepass::state>()
 		.reads(
 			gpu::storage_read(lc_state->tile_light_table_buffers[frame_index], gpu::pipeline_stage::fragment_shader),

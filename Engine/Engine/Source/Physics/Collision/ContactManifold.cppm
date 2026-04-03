@@ -23,7 +23,9 @@ export namespace gse {
 		std::uint8_t side_b0 = feature_side_none;
 		std::uint8_t side_b1 = feature_side_none;
 
-		auto operator==(const feature_id&) const -> bool = default;
+		auto operator==(
+			const feature_id&
+		) const -> bool = default;
 	};
 
 	struct contact_point {
@@ -42,8 +44,12 @@ export namespace gse {
 		vec3f tangent_u;
 		vec3f tangent_v;
 
-		auto add_point(const contact_point& p) -> bool;
-		auto clear() -> void;
+		auto add_point(
+			const contact_point& p
+		) -> bool;
+
+		auto clear(
+		) -> void;
 	};
 
 	auto compute_tangent_basis(
@@ -67,7 +73,8 @@ auto gse::compute_tangent_basis(const vec3f& normal) -> std::pair<vec3f, vec3f> 
 	vec3f u;
 	if (std::abs(normal.x()) < 0.9f) {
 		u = cross(normal, vec3f(1.f, 0.f, 0.f));
-	} else {
+	}
+	else {
 		u = cross(normal, vec3f(0.f, 1.f, 0.f));
 	}
 	u = normalize(u);

@@ -159,6 +159,11 @@ export namespace gse::gui {
 		mutable tooltip_state tooltip;
 		mutable render_layer input_layer_render = render_layer::content;
 		mutable input_layer input_layers_data;
+		mutable std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
+
+		auto scroll_for(std::uint64_t key) const -> scroll_state& {
+			return widget_scrolls[key];
+		}
 
 		static constexpr time update_interval = seconds(30.f);
 
@@ -635,6 +640,9 @@ auto gse::gui::system::end_frame(end_frame_phase& phase, system_state& s) -> voi
 		.request_save = [&phase] {
 			phase.channels.push(save::save_request{});
 		},
+		.request_restart = [&phase] {
+			phase.channels.push(save::restart_request{});
+		},
 		.tooltip = &s.tooltip,
 		.input_layers = &s.input_layers_data,
 		.all_bindings = [actions_state]() -> std::vector<actions::action_binding_info> {
@@ -1097,7 +1105,27 @@ auto gse::gui::system::profiler(const system_state& s) -> void {
 	const float tree_w = draw_x_dur - menu_content.left() - pad;
 	draw_header_item("Node Name", menu_content.left(), std::max(0.f, tree_w));
 
-	s.context->layout_cursor.y() -= (row_h + (row_h * 0.15f));
+	s.context->layout_cursor.y() -= (row_h + (row_h * 0.15f) + pad);
+
+	const float tree_start_y = s.context->layout_cursor.y();
+	const float visible_height = tree_start_y - menu_content.bottom() - pad;
+
+	const ui_rect scroll_rect = ui_rect::from_position_size(
+		{ menu_content.left(), tree_start_y },
+		{ menu_content.width(), std::max(0.f, visible_height) }
+	);
+
+	const scroll_config profiler_scroll_config{
+		.scrollbar_width = 6.f,
+		.scrollbar_min_height = 20.f,
+		.scroll_speed = row_h * 2.f,
+		.smooth_factor = 0.2f,
+		.auto_hide_scrollbar = true,
+		.smooth_scrolling = true
+	};
+
+	scroll_state& profiler_scroll = s.scroll_for(ids::stable_key("gui.profiler"));
+	auto scroll_ctx = scroll::begin(profiler_scroll, scroll_rect, s.context->style, s.context->input, profiler_scroll_config);
 
 	static draw::tree_selection selection;
 	static draw::tree_options options{
@@ -1107,6 +1135,8 @@ auto gse::gui::system::profiler(const system_state& s) -> void {
 		.multi_select = false
 	};
 	options.extra_right_padding = total_cols_w;
+	options.scroll_offset = profiler_scroll.offset;
+	options.clip_rect = scroll_rect;
 
 	time_t<std::uint64_t> frame_start = roots[0].start;
 	time_t<std::uint64_t> frame_end = roots[0].stop;
@@ -1118,9 +1148,29 @@ auto gse::gui::system::profiler(const system_state& s) -> void {
 
 	const double frame_ns = static_cast<double>((frame_end - frame_start).as<nanoseconds>());
 
+	static std::unordered_map<const trace::node*, std::vector<trace::node>> children_sort_cache;
+	static std::vector<trace::node> sorted_roots_buf;
+
+	children_sort_cache.clear();
+
+	const auto sort_by_duration = [](const trace::node& a, const trace::node& b) {
+		return (a.stop - a.start) > (b.stop - b.start);
+	};
+
+	sorted_roots_buf.assign(roots.begin(), roots.end());
+	std::ranges::sort(sorted_roots_buf, sort_by_duration);
+
 	const draw::tree_ops<trace::node> ops{
 		.children = [](const trace::node& n) -> std::span<const trace::node> {
-			return { n.children_first, n.children_count };
+			if (n.children_count == 0) return {};
+			auto& vec = children_sort_cache[&n];
+			if (vec.empty()) {
+				vec.assign(n.children_first, n.children_first + n.children_count);
+				std::ranges::sort(vec, [](const trace::node& a, const trace::node& b) {
+					return (a.stop - a.start) > (b.stop - b.start);
+				});
+			}
+			return vec;
 		},
 		.label = [](const trace::node& n) -> std::string_view {
 			return tag(n.id);
@@ -1168,7 +1218,26 @@ auto gse::gui::system::profiler(const system_state& s) -> void {
 	};
 
 	ids::scope tree_scope("gui.tree.profiler");
-	trace::set_finalize_paused(tree(s, roots, ops, options, &selection));
+	trace::set_finalize_paused(tree(s, std::span<const trace::node>(sorted_roots_buf), ops, options, &selection));
+
+	const float tree_end_y = s.context->layout_cursor.y();
+	scroll::end(
+		profiler_scroll, scroll_ctx,
+		tree_end_y + profiler_scroll.offset,
+		s.context->style, s.context->input,
+		s.blank_texture, s.context->sprites, s.context->current_layer,
+		profiler_scroll_config
+	);
+
+	const ui_rect header_cover = ui_rect::from_position_size(
+		{ menu_content.left(), header_y },
+		{ menu_content.width(), row_h }
+	);
+	s.context->queue_sprite({
+		.rect = header_cover,
+		.color = s.context->style.color_title_bar,
+		.texture = s.context->blank_texture
+	});
 }
 
 auto gse::gui::begin_menu(const system_state& s, const std::string& name) -> bool {

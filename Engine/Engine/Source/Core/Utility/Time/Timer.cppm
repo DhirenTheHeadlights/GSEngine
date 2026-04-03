@@ -10,13 +10,21 @@ import gse.math;
 export namespace gse {
 	class scoped_timer : public clock {
 	public:
-		explicit scoped_timer(std::string name, const bool print = true);
+		explicit scoped_timer(
+			std::string name,
+			bool print = true
+		);
+
 		~scoped_timer();
 
-		auto completed() const -> bool ;
-		auto name() const -> std::string ;
-		auto set_completed() -> void ;
+		auto completed(
+		) const -> bool;
 
+		auto name(
+		) const -> std::string_view;
+
+		auto set_completed(
+		) -> void;
 	private:
 		std::string m_name;
 		bool m_print = false;
@@ -39,7 +47,7 @@ auto gse::scoped_timer::completed() const -> bool {
 	return m_completed;
 }
 
-auto gse::scoped_timer::name() const -> std::string {
+auto gse::scoped_timer::name() const -> std::string_view {
 	return m_name;
 }
 

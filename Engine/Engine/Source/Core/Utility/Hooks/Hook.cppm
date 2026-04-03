@@ -12,18 +12,33 @@ export namespace gse {
 	public:
 		explicit hook(
 			T* owner
-		) : hook_base<T>(owner) {}
+		);
 
 		virtual auto initialize(
-		) -> void {}
+		) -> void;
 
 		virtual auto update(
-		) -> void {}
+		) -> void;
 
 		virtual auto render(
-		) -> void {}
+		) -> void;
 
 		virtual auto shutdown(
-		) -> void {}
+		) -> void;
 	};
 }
+
+template <typename T>
+gse::hook<T>::hook(T* owner) : hook_base<T>(owner) {}
+
+template <typename T>
+auto gse::hook<T>::initialize() -> void {}
+
+template <typename T>
+auto gse::hook<T>::update() -> void {}
+
+template <typename T>
+auto gse::hook<T>::render() -> void {}
+
+template <typename T>
+auto gse::hook<T>::shutdown() -> void {}

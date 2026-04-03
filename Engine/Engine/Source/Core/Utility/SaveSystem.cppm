@@ -33,6 +33,7 @@ export namespace gse::save {
     };
 
     struct save_request {};
+    struct restart_request {};
 
     struct bind_int_map_request {
         std::string category;
@@ -420,6 +421,10 @@ export namespace gse::save {
             change_callback cb
         ) -> void;
 
+        auto on_restart(
+            std::function<void()> fn
+        ) -> void;
+
         auto notify_change(
             property_base& prop
         ) -> void;
@@ -452,6 +457,7 @@ export namespace gse::save {
         toml::table m_loaded_toml;
         bool m_auto_save = false;
         bool m_restart_pending = false;
+        std::function<void()> m_restart_fn;
 
         auto process_registration(
             const save::register_property& reg
@@ -970,6 +976,13 @@ auto gse::save::state::do_update(update_phase& phase) -> void {
         save();
     }
 
+    if (!phase.read_channel<restart_request>().empty()) {
+        save();
+        if (m_restart_fn) {
+            m_restart_fn();
+        }
+    }
+
     for (const auto& [category, name, apply] : phase.read_channel<update_request>()) {
         if (auto* prop = find(category, name)) {
             apply(*prop);
@@ -1250,6 +1263,10 @@ auto gse::save::state::mark_all_clean() -> void {
 
 auto gse::save::state::on_change(change_callback cb) -> void {
     m_callbacks.push_back(std::move(cb));
+}
+
+auto gse::save::state::on_restart(std::function<void()> fn) -> void {
+    m_restart_fn = std::move(fn);
 }
 
 auto gse::save::state::notify_change(property_base& prop) -> void {

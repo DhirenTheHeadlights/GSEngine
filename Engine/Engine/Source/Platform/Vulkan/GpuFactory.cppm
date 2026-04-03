@@ -115,6 +115,14 @@ namespace {
 		if (usage.test(vertex))       flags |= vk::BufferUsageFlagBits::eVertexBuffer;
 		if (usage.test(index))        flags |= vk::BufferUsageFlagBits::eIndexBuffer;
 		if (usage.test(transfer_src)) flags |= vk::BufferUsageFlagBits::eTransferSrc;
+		if (usage.test(acceleration_structure_storage)) {
+			flags |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR
+			       | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+		}
+		if (usage.test(acceleration_structure_build_input)) {
+			flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+			       | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+		}
 		if (usage.test(uniform) || usage.test(storage) || usage.test(indirect)) {
 			flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
 		}

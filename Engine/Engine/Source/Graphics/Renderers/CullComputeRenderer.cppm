@@ -64,7 +64,7 @@ auto gse::renderer::cull_compute::system::initialize(const initialize_phase& pha
 			.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
 		});
 
-		const std::size_t batch_info_size = geometry_collector::state::max_batches * 2 * s.batch_stride;
+		const std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * s.batch_stride;
 		s.batch_info_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = batch_info_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst

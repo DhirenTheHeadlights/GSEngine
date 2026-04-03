@@ -141,7 +141,6 @@ export namespace gse {
 
 		auto update() -> void;
 		auto render() -> void;
-
 	private:
 		std::vector<std::pair<id, deferred_action>> m_deferred_actions;
 		id_mapped_collection<entity> m_active_entities;

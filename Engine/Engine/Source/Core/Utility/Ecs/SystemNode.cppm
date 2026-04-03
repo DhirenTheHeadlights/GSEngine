@@ -3,6 +3,7 @@ export module gse.utility:system_node;
 import std;
 
 import :phase_context;
+import :id;
 
 export namespace gse {
 	class system_node_base {
@@ -41,6 +42,9 @@ export namespace gse {
 
 		virtual auto state_type(
 		) const -> std::type_index = 0;
+
+		virtual auto trace_id(
+		) const -> id = 0;
 	};
 
 	template <typename T>
@@ -99,6 +103,9 @@ export namespace gse {
 			this auto& self
 		) -> auto&;
 
+		auto trace_id(
+		) const -> id override;
+
 	private:
 		State m_state;
 		[[no_unique_address]] render_state_storage<RenderState> m_render_state;
@@ -112,12 +119,31 @@ gse::system_node<S, State, RenderState>::system_node(Args&&... args)
 
 template <typename S, typename State, typename RenderState>
 auto gse::system_node<S, State, RenderState>::initialize(initialize_phase& phase) -> void {
-	if constexpr (has_initialize<S, State>) {
+	if constexpr (!std::is_void_v<RenderState> && has_initialize_with_state<S, State, RenderState>) {
+		S::initialize(phase, m_state, m_render_state.value);
+	} else if constexpr (has_initialize<S, State>) {
 		S::initialize(phase, m_state);
 	}
-	if constexpr (!std::is_void_v<RenderState> && has_initialize_render_state<S, State, RenderState>) {
-		S::initialize_render_state(phase, m_state, m_render_state.value);
-	}
+}
+
+template <typename S, typename State, typename RenderState>
+auto gse::system_node<S, State, RenderState>::trace_id() const -> id {
+	static const auto cached = [] {
+		std::string_view raw = typeid(S).name();
+		for (std::string_view prefix : {"struct ", "class "}) {
+			if (raw.starts_with(prefix)) {
+				raw.remove_prefix(prefix.size());
+				break;
+			}
+		}
+		const auto last = raw.rfind("::");
+		if (last != std::string_view::npos && last > 0) {
+			const auto prev = raw.rfind("::", last - 1);
+			raw = (prev != std::string_view::npos) ? raw.substr(prev + 2) : raw.substr(last + 2);
+		}
+		return find_or_generate_id(raw);
+	}();
+	return cached;
 }
 
 template <typename S, typename State, typename RenderState>

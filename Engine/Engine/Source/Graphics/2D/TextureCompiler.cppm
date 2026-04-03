@@ -38,12 +38,10 @@ struct gse::asset_compiler<gse::texture> {
         }
 
         auto texture_profile = texture::profile::generic_repeat;
-        const auto meta_path = source.parent_path() / (source.stem().string() + ".meta");
 
-        if (std::filesystem::exists(meta_path)) {
+        if (const auto meta_path = source.parent_path() / (source.stem().string() + ".meta"); std::filesystem::exists(meta_path)) {
             std::ifstream meta_file(meta_path);
-            std::string line;
-            if (std::getline(meta_file, line) && line.starts_with("profile:")) {
+            if (std::string line; std::getline(meta_file, line) && line.starts_with("profile:")) {
                 std::string profile_str = line.substr(8);
                 profile_str.erase(0, profile_str.find_first_not_of(" \t\r\n"));
                 profile_str.erase(profile_str.find_last_not_of(" \t\r\n") + 1);
@@ -90,8 +88,7 @@ struct gse::asset_compiler<gse::texture> {
             return true;
         }
 
-        const auto meta_path = source.parent_path() / (source.stem().string() + ".meta");
-        if (std::filesystem::exists(meta_path) && std::filesystem::last_write_time(meta_path) > dst_time) {
+        if (const auto meta_path = source.parent_path() / (source.stem().string() + ".meta"); std::filesystem::exists(meta_path) && std::filesystem::last_write_time(meta_path) > dst_time) {
             return true;
         }
 
@@ -102,8 +99,7 @@ struct gse::asset_compiler<gse::texture> {
         const std::filesystem::path& source
     ) -> std::vector<std::filesystem::path> {
         std::vector<std::filesystem::path> deps;
-        const auto meta_path = source.parent_path() / (source.stem().string() + ".meta");
-        if (std::filesystem::exists(meta_path)) {
+        if (const auto meta_path = source.parent_path() / (source.stem().string() + ".meta"); std::filesystem::exists(meta_path)) {
             deps.push_back(meta_path);
         }
         return deps;

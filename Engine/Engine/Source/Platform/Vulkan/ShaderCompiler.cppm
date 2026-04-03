@@ -103,6 +103,7 @@ namespace gse::shader_compile {
             case SLANG_BINDING_TYPE_CONSTANT_BUFFER:
             case SLANG_BINDING_TYPE_PARAMETER_BLOCK: return gpu::descriptor_type::uniform_buffer;
             case SLANG_BINDING_TYPE_INPUT_RENDER_TARGET: return gpu::descriptor_type::sampled_image;
+            case SLANG_BINDING_TYPE_RAY_TRACING_ACCELERATION_STRUCTURE: return gpu::descriptor_type::acceleration_structure;
             default: return gpu::descriptor_type::storage_buffer;
         }
     }

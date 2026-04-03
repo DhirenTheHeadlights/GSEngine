@@ -127,12 +127,14 @@ export namespace gse::renderer {
 
 export namespace gse::renderer::geometry_collector {
 	struct render_data {
+		static constexpr std::size_t max_batches = 256;
+
 		std::uint32_t frame_index = 0;
 		std::vector<render_queue_entry> render_queue;
 		std::vector<id> render_queue_owners;
 		std::vector<skinned_render_queue_entry> skinned_render_queue;
-		std::vector<normal_instance_batch> normal_batches;
-		std::vector<skinned_instance_batch> skinned_batches;
+		static_vector<normal_instance_batch, max_batches>  normal_batches;
+		static_vector<skinned_instance_batch, max_batches> skinned_batches;
 		std::uint32_t pending_compute_instance_count = 0;
 	};
 
@@ -157,7 +159,6 @@ export namespace gse::renderer::geometry_collector {
 		static constexpr std::size_t max_instances = 4096;
 		static constexpr std::size_t max_skin_matrices = 256 * 128;
 		static constexpr std::size_t max_joints = 256;
-		static constexpr std::size_t max_batches = 256;
 
 		per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
 		per_frame_resource<gpu::buffer> skinned_indirect_commands_buffer;
@@ -255,7 +256,7 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 		});
 		s.instance_staging[i].reserve(instance_buffer_size);
 
-		constexpr std::size_t indirect_buffer_size = state::max_batches * sizeof(gpu::draw_indexed_indirect_command);
+		constexpr std::size_t indirect_buffer_size = render_data::max_batches * sizeof(gpu::draw_indexed_indirect_command);
 		s.normal_indirect_commands_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = indirect_buffer_size,
 			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
@@ -554,8 +555,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 	}
 
 	if (!normal_batches.empty()) {
-		std::vector<gpu::draw_indexed_indirect_command> normal_indirect_commands;
-		normal_indirect_commands.reserve(normal_batches.size());
+		static_vector<gpu::draw_indexed_indirect_command, render_data::max_batches> normal_indirect_commands;
 
 		for (const auto& batch : normal_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
@@ -577,8 +577,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 	}
 
 	if (!skinned_batches.empty()) {
-		std::vector<gpu::draw_indexed_indirect_command> skinned_indirect_commands;
-		skinned_indirect_commands.reserve(skinned_batches.size());
+		static_vector<gpu::draw_indexed_indirect_command, render_data::max_batches> skinned_indirect_commands;
 
 		for (const auto& batch : skinned_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
