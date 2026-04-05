@@ -25,59 +25,153 @@ export namespace gse::gpu {
 		std::uint32_t index_count   = 0;
 	};
 
-	struct blas {
-		buffer storage;
-		vk::raii::AccelerationStructureKHR handle{ nullptr };
-		vk::DeviceAddress device_address = 0;
+	struct acceleration_structure_instance {
+		mat4f transform = mat4(1.0f);
+		std::uint32_t custom_index = 0;
+		std::uint8_t mask = 0xFF;
+		std::uint32_t sbt_offset = 0;
+		bool cull_disable = true;
+		std::uint64_t blas_address = 0;
 	};
 
-	struct tlas {
-		buffer storage;
-		buffer scratch;
-		buffer instance_buffer;
-		vk::raii::AccelerationStructureKHR handle{ nullptr };
+	class blas final : public non_copyable {
+	public:
+		blas() = default;
+		blas(
+			buffer&& storage,
+			vk::raii::AccelerationStructureKHR&& handle,
+			vk::DeviceAddress addr
+		);
+		blas(blas&&) noexcept = default;
+		auto operator=(blas&&) noexcept -> blas& = default;
+
+		[[nodiscard]] auto native_handle
+		(this const blas& self
+		) -> acceleration_structure_handle;
+
+		[[nodiscard]] auto device_address(
+			this const blas& self
+		) -> std::uint64_t;
+
+		explicit operator bool(
+		) const;
+	private:
+		buffer m_storage;
+		vk::raii::AccelerationStructureKHR m_handle{ nullptr };
+		vk::DeviceAddress m_device_address = 0;
 	};
 
-	auto build_blas(device& dev, const blas_geometry_desc& desc) -> blas;
-	auto build_tlas(device& dev, std::uint32_t max_instances) -> tlas;
+	class tlas final : public non_copyable {
+	public:
+		tlas() = default;
+		tlas(
+			buffer&& storage,
+			buffer&& scratch,
+			buffer&& instance_buffer,
+			vk::raii::AccelerationStructureKHR&& handle
+		);
+
+		tlas(tlas&&) noexcept = default;
+		auto operator=(tlas&&) noexcept -> tlas& = default;
+
+		[[nodiscard]] auto native_handle(
+			this const tlas& self
+		) -> acceleration_structure_handle;
+
+		explicit operator bool(
+		) const;
+	private:
+		buffer m_storage;
+		buffer m_scratch;
+		buffer m_instance_buffer;
+		vk::raii::AccelerationStructureKHR m_handle{ nullptr };
+
+		friend auto rebuild_tlas(device&, tlas&, std::span<const acceleration_structure_instance>, vulkan::recording_context&) -> void;
+	};
+
+	auto build_blas(
+		device& dev, 
+		const blas_geometry_desc& desc
+	) -> blas;
+
+	auto build_tlas(
+		device& dev, 
+		std::uint32_t max_instances
+	) -> tlas;
 
 	auto rebuild_tlas(
 		device& dev,
 		tlas& t,
-		std::span<const vk::AccelerationStructureInstanceKHR> instances,
+		std::span<const acceleration_structure_instance> instances,
 		vulkan::recording_context& ctx
 	) -> void;
+
+}
+
+namespace gse::gpu {
+	auto to_vk_instance(
+		const acceleration_structure_instance& inst
+	) -> vk::AccelerationStructureInstanceKHR;
+}
+
+auto gse::gpu::to_vk_instance(const acceleration_structure_instance& inst) -> vk::AccelerationStructureInstanceKHR {
+	vk::TransformMatrixKHR transform{};
+	for (int row = 0; row < 3; ++row) {
+		for (int col = 0; col < 4; ++col) {
+			transform.matrix[row][col] = inst.transform[col][row];
+		}
+	}
+
+	return {
+		.transform = transform,
+		.instanceCustomIndex = inst.custom_index,
+		.mask = inst.mask,
+		.instanceShaderBindingTableRecordOffset = inst.sbt_offset,
+		.flags = static_cast<std::uint8_t>(inst.cull_disable ? vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable : vk::GeometryInstanceFlagBitsKHR{}),
+		.accelerationStructureReference = inst.blas_address
+	};
 }
 
 auto gse::gpu::build_blas(device& dev, const blas_geometry_desc& desc) -> blas {
 	const auto& vk_device = dev.logical_device();
 
-	const vk::DeviceAddress vertex_addr = vk_device.getBufferAddress({ .buffer = desc.vertex_buffer->native().buffer });
-	const vk::DeviceAddress index_addr  = vk_device.getBufferAddress({ .buffer = desc.index_buffer->native().buffer });
+	const vk::DeviceAddress vertex_addr = vk_device.getBufferAddress({
+		.buffer = desc.vertex_buffer->native().buffer 
+	});
+
+	const vk::DeviceAddress index_addr  = vk_device.getBufferAddress({ 
+		.buffer = desc.index_buffer->native().buffer
+	});
 
 	const vk::AccelerationStructureGeometryTrianglesDataKHR triangles{
 		.vertexFormat = vk::Format::eR32G32B32Sfloat,
-		.vertexData   = { .deviceAddress = vertex_addr },
+		.vertexData = { 
+			.deviceAddress = vertex_addr
+		},
 		.vertexStride = desc.vertex_stride,
-		.maxVertex    = desc.vertex_count - 1,
-		.indexType    = vk::IndexType::eUint32,
-		.indexData    = { .deviceAddress = index_addr }
+		.maxVertex = desc.vertex_count - 1,
+		.indexType = vk::IndexType::eUint32,
+		.indexData = { 
+			.deviceAddress = index_addr
+		}
 	};
 
 	const vk::AccelerationStructureGeometryKHR geometry{
 		.geometryType = vk::GeometryTypeKHR::eTriangles,
-		.geometry     = { .triangles = triangles },
-		.flags        = vk::GeometryFlagBitsKHR::eOpaque
+		.geometry = { 
+			.triangles = triangles 
+		},
+		.flags = vk::GeometryFlagBitsKHR::eOpaque
 	};
 
 	const std::uint32_t prim_count = desc.index_count / 3;
 
 	vk::AccelerationStructureBuildGeometryInfoKHR build_info{
-		.type          = vk::AccelerationStructureTypeKHR::eBottomLevel,
-		.flags         = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
-		.mode          = vk::BuildAccelerationStructureModeKHR::eBuild,
+		.type = vk::AccelerationStructureTypeKHR::eBottomLevel,
+		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
 		.geometryCount = 1,
-		.pGeometries   = &geometry
+		.pGeometries = &geometry
 	};
 
 	const auto sizes = vk_device.getAccelerationStructureBuildSizesKHR(
@@ -87,30 +181,37 @@ auto gse::gpu::build_blas(device& dev, const blas_geometry_desc& desc) -> blas {
 	);
 
 	auto storage_buf = create_buffer(dev, {
-		.size  = sizes.accelerationStructureSize,
+		.size = sizes.accelerationStructureSize,
 		.usage = buffer_flag::acceleration_structure_storage
 	});
 
 	auto as = vk_device.createAccelerationStructureKHR({
 		.buffer = storage_buf.native().buffer,
-		.size   = sizes.accelerationStructureSize,
-		.type   = vk::AccelerationStructureTypeKHR::eBottomLevel
+		.size = sizes.accelerationStructureSize,
+		.type = vk::AccelerationStructureTypeKHR::eBottomLevel
 	});
 
 	build_info.dstAccelerationStructure = *as;
 
 	const vk::DeviceSize scratch_size = sizes.buildScratchSize;
 
-	dev.add_transient_work([&dev, &geometry, &build_info, prim_count, scratch_size](const auto& cmd) {
+	constexpr vk::DeviceSize scratch_alignment = 128;
+
+	dev.add_transient_work([&dev, &geometry, &build_info, prim_count, scratch_size](const vk::raii::CommandBuffer& cmd) {
 		auto scratch = dev.allocator().create_buffer({
-			.size  = scratch_size,
+			.size  = scratch_size + scratch_alignment,
 			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress
 		}, nullptr);
 
 		build_info.pGeometries = &geometry;
-		build_info.scratchData.deviceAddress = dev.logical_device().getBufferAddress({ .buffer = scratch.buffer });
+		const auto scratch_addr = dev.logical_device().getBufferAddress({
+			.buffer = scratch.buffer
+		});
+		build_info.scratchData.deviceAddress = (scratch_addr + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
-		const vk::AccelerationStructureBuildRangeInfoKHR range{ .primitiveCount = prim_count };
+		const vk::AccelerationStructureBuildRangeInfoKHR range{ 
+			.primitiveCount = prim_count
+		};
 		const vk::AccelerationStructureBuildRangeInfoKHR* range_ptr = &range;
 
 		cmd.buildAccelerationStructuresKHR(build_info, range_ptr);
@@ -132,32 +233,37 @@ auto gse::gpu::build_blas(device& dev, const blas_geometry_desc& desc) -> blas {
 		return transient_buffers;
 	});
 
-	const vk::DeviceAddress device_address = vk_device.getAccelerationStructureAddressKHR({ .accelerationStructure = *as });
+	const vk::DeviceAddress device_address = vk_device.getAccelerationStructureAddressKHR({ 
+		.accelerationStructure = *as 
+	});
 
 	return blas{
-		.storage        = std::move(storage_buf),
-		.handle         = std::move(as),
-		.device_address = device_address
+		std::move(storage_buf),
+		std::move(as),
+		device_address
 	};
 }
 
 auto gse::gpu::build_tlas(device& dev, const std::uint32_t max_instances) -> tlas {
 	const auto& vk_device = dev.logical_device();
 
-	const vk::AccelerationStructureGeometryInstancesDataKHR instances_data{
+	constexpr vk::AccelerationStructureGeometryInstancesDataKHR instances_data{
 		.arrayOfPointers = vk::False
 	};
-	const vk::AccelerationStructureGeometryKHR geometry{
+
+	constexpr vk::AccelerationStructureGeometryKHR geometry{
 		.geometryType = vk::GeometryTypeKHR::eInstances,
-		.geometry     = { .instances = instances_data }
+		.geometry = { 
+			.instances = instances_data 
+		}
 	};
 
 	const vk::AccelerationStructureBuildGeometryInfoKHR build_info{
-		.type          = vk::AccelerationStructureTypeKHR::eTopLevel,
-		.flags         = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild | vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
-		.mode          = vk::BuildAccelerationStructureModeKHR::eBuild,
+		.type = vk::AccelerationStructureTypeKHR::eTopLevel,
+		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild | vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
+		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
 		.geometryCount = 1,
-		.pGeometries   = &geometry
+		.pGeometries = &geometry
 	};
 
 	const auto sizes = vk_device.getAccelerationStructureBuildSizesKHR(
@@ -167,83 +273,124 @@ auto gse::gpu::build_tlas(device& dev, const std::uint32_t max_instances) -> tla
 	);
 
 	auto storage_buf = create_buffer(dev, {
-		.size  = sizes.accelerationStructureSize,
+		.size = sizes.accelerationStructureSize,
 		.usage = buffer_flag::acceleration_structure_storage
 	});
 
+	constexpr vk::DeviceSize scratch_alignment = 128;
 	auto scratch_buf = buffer(dev.allocator().create_buffer({
-		.size  = std::max(sizes.buildScratchSize, sizes.updateScratchSize),
+		.size = std::max(sizes.buildScratchSize, sizes.updateScratchSize) + scratch_alignment,
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress
 	}));
 
 	const vk::DeviceSize instance_buf_size = max_instances * sizeof(vk::AccelerationStructureInstanceKHR);
 	auto instance_buf = dev.allocator().create_buffer({
-		.size  = instance_buf_size,
+		.size = instance_buf_size,
 		.usage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress
 	});
 
 	auto as = vk_device.createAccelerationStructureKHR({
 		.buffer = storage_buf.native().buffer,
-		.size   = sizes.accelerationStructureSize,
-		.type   = vk::AccelerationStructureTypeKHR::eTopLevel
+		.size = sizes.accelerationStructureSize,
+		.type = vk::AccelerationStructureTypeKHR::eTopLevel
 	});
 
 	return tlas{
-		.storage         = std::move(storage_buf),
-		.scratch         = std::move(scratch_buf),
-		.instance_buffer = buffer(std::move(instance_buf)),
-		.handle          = std::move(as)
+		std::move(storage_buf),
+		std::move(scratch_buf),
+		buffer(std::move(instance_buf)),
+		std::move(as)
 	};
 }
 
-auto gse::gpu::rebuild_tlas(
-	device& dev,
-	tlas& t,
-	const std::span<const vk::AccelerationStructureInstanceKHR> instances,
-	vulkan::recording_context& ctx
-) -> void {
+auto gse::gpu::rebuild_tlas(device& dev, tlas& t, const std::span<const acceleration_structure_instance> instances, vulkan::recording_context& ctx) -> void {
 	const auto& vk_device = dev.logical_device();
 
-	auto* mapped = t.instance_buffer.mapped();
-	if (mapped && !instances.empty()) {
-		std::memcpy(mapped, instances.data(), instances.size_bytes());
+	std::vector<vk::AccelerationStructureInstanceKHR> vk_instances;
+	vk_instances.reserve(instances.size());
+	for (const auto& inst : instances) {
+		vk_instances.push_back(to_vk_instance(inst));
 	}
 
-	const vk::DeviceAddress instance_addr = vk_device.getBufferAddress({ .buffer = t.instance_buffer.native().buffer });
-	const vk::DeviceAddress scratch_addr  = vk_device.getBufferAddress({ .buffer = t.scratch.native().buffer });
+	if (auto* mapped = t.m_instance_buffer.mapped(); mapped && !vk_instances.empty()) {
+		std::memcpy(mapped, vk_instances.data(), vk_instances.size() * sizeof(vk::AccelerationStructureInstanceKHR));
+	}
+
+	const vk::DeviceAddress instance_addr = vk_device.getBufferAddress({ 
+		.buffer = t.m_instance_buffer.native().buffer
+	});
+
+	constexpr vk::DeviceSize scratch_alignment = 128;
+	const vk::DeviceAddress scratch_raw = vk_device.getBufferAddress({
+		.buffer = t.m_scratch.native().buffer
+	});
+	const vk::DeviceAddress scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
 	const vk::AccelerationStructureGeometryInstancesDataKHR instances_data{
 		.arrayOfPointers = vk::False,
-		.data            = { .deviceAddress = instance_addr }
+		.data = { 
+			.deviceAddress = instance_addr
+		}
 	};
 	const vk::AccelerationStructureGeometryKHR geometry{
 		.geometryType = vk::GeometryTypeKHR::eInstances,
-		.geometry     = { .instances = instances_data }
+		.geometry = {
+			.instances = instances_data
+		}
 	};
 
 	const vk::AccelerationStructureBuildGeometryInfoKHR build_info{
-		.type                      = vk::AccelerationStructureTypeKHR::eTopLevel,
-		.flags                     = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild | vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
-		.mode                      = vk::BuildAccelerationStructureModeKHR::eBuild,
-		.dstAccelerationStructure  = *t.handle,
-		.geometryCount             = 1,
-		.pGeometries               = &geometry,
-		.scratchData               = { .deviceAddress = scratch_addr }
+		.type = vk::AccelerationStructureTypeKHR::eTopLevel,
+		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild | vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
+		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
+		.dstAccelerationStructure = *t.m_handle,
+		.geometryCount = 1,
+		.pGeometries = &geometry,
+		.scratchData = { 
+			.deviceAddress = scratch_addr 
+		}
 	};
 
 	const vk::AccelerationStructureBuildRangeInfoKHR range{
-		.primitiveCount = static_cast<std::uint32_t>(instances.size())
+		.primitiveCount = static_cast<std::uint32_t>(vk_instances.size())
 	};
 	const vk::AccelerationStructureBuildRangeInfoKHR* range_ptr = &range;
 
 	ctx.build_acceleration_structure(build_info, { &range_ptr, 1 });
 
-	const vk::MemoryBarrier2 barrier{
-		.srcStageMask  = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+	constexpr vk::MemoryBarrier2 barrier{
+		.srcStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
 		.srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
-		.dstStageMask  = vk::PipelineStageFlagBits2::eRayTracingShaderKHR | vk::PipelineStageFlagBits2::eFragmentShader,
-		.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR
+		.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR | vk::PipelineStageFlagBits2::eFragmentShader,
+		.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR
 	};
-	const vk::DependencyInfo dep{ .memoryBarrierCount = 1, .pMemoryBarriers = &barrier };
+	const vk::DependencyInfo dep{
+		.memoryBarrierCount = 1,
+		.pMemoryBarriers = &barrier
+	};
 	ctx.pipeline_barrier(dep);
+}
+
+gse::gpu::blas::blas(buffer&& storage, vk::raii::AccelerationStructureKHR&& handle, const vk::DeviceAddress addr) : m_storage(std::move(storage)), m_handle(std::move(handle)), m_device_address(addr) {}
+
+auto gse::gpu::blas::native_handle(this const blas& self) -> acceleration_structure_handle {
+	return { reinterpret_cast<std::uint64_t>(static_cast<VkAccelerationStructureKHR>(*self.m_handle)) };
+}
+
+auto gse::gpu::blas::device_address(this const blas& self) -> std::uint64_t {
+	return self.m_device_address;
+}
+
+gse::gpu::blas::operator bool() const {
+	return *m_handle != nullptr;
+}
+
+gse::gpu::tlas::tlas(buffer&& storage, buffer&& scratch, buffer&& instance_buffer, vk::raii::AccelerationStructureKHR&& handle) : m_storage(std::move(storage)), m_scratch(std::move(scratch)), m_instance_buffer(std::move(instance_buffer)), m_handle(std::move(handle)) {}
+
+auto gse::gpu::tlas::native_handle(this const tlas& self) -> acceleration_structure_handle {
+	return { reinterpret_cast<std::uint64_t>(static_cast<VkAccelerationStructureKHR>(*self.m_handle)) };
+}
+
+gse::gpu::tlas::operator bool() const {
+	return *m_handle != nullptr;
 }

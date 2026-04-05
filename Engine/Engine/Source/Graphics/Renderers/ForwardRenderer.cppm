@@ -84,7 +84,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 		gpu::descriptor_writer writer(ctx.device_ref(), s.shader_handle, s.descriptors[i]);
 
 		if (rt_state) {
-			writer.acceleration_structure("tlas", rt_state->tlas_handle(fi));
+			writer.acceleration_structure("tlas", rt_state->tlas(fi).native_handle());
 		}
 
 		if (lc_state) {
@@ -101,7 +101,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 			gpu::descriptor_writer writer(ctx.device_ref(), s.shader_handle, s.descriptors[i]);
 
 			if (rt_state) {
-				writer.acceleration_structure("tlas", rt_state->tlas_handle(fi));
+				writer.acceleration_structure("tlas", rt_state->tlas(fi).native_handle());
 			}
 
 			if (lc_state) {

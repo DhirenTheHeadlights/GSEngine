@@ -162,7 +162,8 @@ auto gse::renderer::system::begin_frame(const begin_frame_phase& phase, state& s
 	s.frame_begun = result.has_value();
 
 	if (!result && result.error() == gpu::frame_status::device_lost) {
-		log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame");
+		log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame — terminating");
+		std::abort();
 	}
 
 	return s.frame_begun;

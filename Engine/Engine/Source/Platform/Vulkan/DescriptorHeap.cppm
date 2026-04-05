@@ -134,8 +134,7 @@ export namespace gse::vulkan {
 			descriptor_heap& heap,
 			vk::DescriptorSetLayout layout,
 			vk::DeviceSize layout_size,
-			std::vector<descriptor_binding_info> bindings,
-			bool is_push = false
+			std::vector<descriptor_binding_info> bindings
 		);
 
 		auto begin(
@@ -182,10 +181,6 @@ export namespace gse::vulkan {
 		vk::DeviceSize m_layout_size = 0;
 		std::vector<descriptor_binding_info> m_bindings;
 		descriptor_region m_current_region;
-		bool m_is_push = false;
-		std::vector<vk::DescriptorBufferInfo> m_push_buffer_infos;
-		std::vector<vk::DescriptorImageInfo> m_push_image_infos;
-		std::vector<vk::WriteDescriptorSet> m_push_writes;
 	};
 }
 
@@ -270,6 +265,8 @@ auto gse::vulkan::descriptor_heap::allocate(const vk::DeviceSize size) -> descri
 	);
 
 	m_bump_offset = aligned_offset + aligned_size;
+
+	std::memset(static_cast<std::byte*>(m_mapped) + aligned_offset, 0, aligned_size);
 
 	return {
 		.offset = aligned_offset,
@@ -391,21 +388,10 @@ gse::vulkan::descriptor_writer::descriptor_writer(
 	descriptor_heap& heap,
 	vk::DescriptorSetLayout layout,
 	const vk::DeviceSize layout_size,
-	std::vector<descriptor_binding_info> bindings,
-	const bool is_push
-) : m_heap(&heap), m_layout_size(layout_size), m_bindings(std::move(bindings)), m_is_push(is_push) {}
+	std::vector<descriptor_binding_info> bindings
+) : m_heap(&heap), m_layout_size(layout_size), m_bindings(std::move(bindings)) {}
 
 auto gse::vulkan::descriptor_writer::begin(const std::uint32_t frame_index) -> descriptor_region {
-	if (m_is_push) {
-		m_push_buffer_infos.clear();
-		m_push_image_infos.clear();
-		m_push_writes.clear();
-		m_push_buffer_infos.reserve(m_bindings.size());
-		m_push_image_infos.reserve(m_bindings.size());
-		m_push_writes.reserve(m_bindings.size());
-		m_current_region = {};
-		return m_current_region;
-	}
 	m_current_region = m_heap->allocate_transient(frame_index, m_layout_size);
 	return m_current_region;
 }
@@ -418,22 +404,6 @@ auto gse::vulkan::descriptor_writer::buffer(
 ) -> descriptor_writer& {
 	assert(binding < m_bindings.size(), std::source_location::current(),
 		"Binding {} out of range (max {})", binding, m_bindings.size());
-
-	if (m_is_push) {
-		const auto& info = m_bindings[binding];
-		m_push_buffer_infos.push_back({
-			.buffer = buf,
-			.offset = offset,
-			.range = range
-		});
-		m_push_writes.push_back({
-			.dstBinding = binding,
-			.descriptorCount = 1,
-			.descriptorType = info.type,
-			.pBufferInfo = &m_push_buffer_infos.back()
-		});
-		return *this;
-	}
 
 	const auto& [binding_offset, descriptor_size, type] = m_bindings[binding];
 	const auto addr = m_heap->buffer_address(buf);
@@ -466,21 +436,6 @@ auto gse::vulkan::descriptor_writer::image(
 ) -> descriptor_writer& {
 	assert(binding < m_bindings.size(), std::source_location::current(),
 		"Binding {} out of range (max {})", binding, m_bindings.size());
-
-	if (m_is_push) {
-		m_push_image_infos.push_back({
-			.sampler = sampler,
-			.imageView = view,
-			.imageLayout = layout
-		});
-		m_push_writes.push_back({
-			.dstBinding = binding,
-			.descriptorCount = 1,
-			.descriptorType = m_bindings[binding].type,
-			.pImageInfo = &m_push_image_infos.back()
-		});
-		return *this;
-	}
 
 	const auto& info = m_bindings[binding];
 
@@ -530,11 +485,6 @@ auto gse::vulkan::descriptor_writer::commit(
 	const vk::PipelineLayout layout,
 	const std::uint32_t set_index
 ) const -> void {
-	if (m_is_push) {
-		cmd.pushDescriptorSetKHR(point, layout, set_index,
-			static_cast<std::uint32_t>(m_push_writes.size()), m_push_writes.data());
-		return;
-	}
 	assert(m_current_region, std::source_location::current(), "Cannot commit without begin()");
 	m_current_region.heap->bind(cmd, point, layout, set_index, m_current_region);
 }

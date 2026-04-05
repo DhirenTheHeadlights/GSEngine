@@ -14,11 +14,11 @@ export namespace gse::renderer::rt_shadow {
 	constexpr std::uint32_t max_instances = 4096;
 
 	struct state {
-		per_frame_resource<vk::AccelerationStructureKHR> tlas_handles{};
+		per_frame_resource<const gpu::tlas*> tlas_ptrs{};
 		bool initialized = false;
 
-		[[nodiscard]] auto tlas_handle(std::uint32_t frame_index) const -> vk::AccelerationStructureKHR {
-			return tlas_handles[frame_index];
+		[[nodiscard]] auto tlas(const std::uint32_t frame_index) const -> const gpu::tlas& {
+			return *tlas_ptrs[frame_index];
 		}
 	};
 
@@ -55,9 +55,7 @@ auto gse::renderer::rt_shadow::system::initialize(const initialize_phase& phase,
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
 		rs.tlas_per_frame[i] = gpu::build_tlas(ctx.device_ref(), max_instances);
-		s.tlas_handles[i] = *rs.tlas_per_frame[i].handle;
-		log::println(log::category::render, "RT shadow: TLAS[{}] handle={}", i,
-			reinterpret_cast<std::uint64_t>(static_cast<VkAccelerationStructureKHR>(s.tlas_handles[i])));
+		s.tlas_ptrs[i] = &rs.tlas_per_frame[i];
 	}
 }
 
@@ -108,7 +106,7 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 			});
 
 			log::println(log::category::render, "RT shadow: BLAS built device_address={:#x}",
-				rs.blas_cache[mesh_ptr].device_address);
+				rs.blas_cache[mesh_ptr].device_address());
 
 			any_new_blas = true;
 		}
@@ -119,7 +117,7 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 		ctx.device_ref().wait_idle();
 	}
 
-	std::vector<vk::AccelerationStructureInstanceKHR> instances;
+	std::vector<gpu::acceleration_structure_instance> instances;
 	instances.reserve(data.render_queue.size());
 
 	for (const auto& entry : data.render_queue) {
@@ -134,21 +132,10 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 			continue;
 		}
 
-		vk::TransformMatrixKHR transform{};
-		const auto& m = entry.model_matrix;
-		for (int row = 0; row < 3; ++row) {
-			for (int col = 0; col < 4; ++col) {
-				transform.matrix[row][col] = m[col][row];
-			}
-		}
-
 		instances.push_back({
-			.transform                              = transform,
-			.instanceCustomIndex                    = 0,
-			.mask                                   = 0xFF,
-			.instanceShaderBindingTableRecordOffset = 0,
-			.flags                                  = static_cast<std::uint8_t>(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable),
-			.accelerationStructureReference         = it->second.device_address
+			.transform    = entry.model_matrix,
+			.cull_disable = true,
+			.blas_address = it->second.device_address()
 		});
 
 		if (instances.size() >= max_instances) {

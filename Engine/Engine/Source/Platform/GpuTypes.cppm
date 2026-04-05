@@ -236,4 +236,10 @@ export namespace gse::gpu {
 		push = 1,
 		bind_less = 2
 	};
+
+	struct acceleration_structure_handle {
+		std::uint64_t value = 0;
+
+		explicit operator bool() const { return value != 0; }
+	};
 }
