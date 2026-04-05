@@ -45,7 +45,7 @@ export namespace gse {
         };
 
         render_component(
-            const id owner_id,
+            id owner_id,
             const params& p
         );
 

@@ -172,7 +172,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 				ctx.bind(s.skinned_pipeline);
 				ctx.bind_descriptors(s.skinned_pipeline, s.skinned_descriptors[frame_index]);
 
-				const auto& skin_buf     = gc_state->skin_buffer[frame_index];
+				const auto& skin_buf = gc_state->skin_buffer[frame_index];
 				const auto& instance_buf = gc_state->instance_buffer[frame_index];
 
 				skinned_writer.begin(frame_index);

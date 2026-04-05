@@ -11,7 +11,6 @@ import :gpu_device;
 import :descriptor_heap;
 import :resource_handle;
 import :shader;
-
 import gse.assert;
 import gse.utility;
 
@@ -28,7 +27,7 @@ export namespace gse::gpu {
 		auto image(std::string_view name, const image& img, const sampler& samp, image_layout layout = image_layout::shader_read_only) -> descriptor_writer&;
 		auto image_array(std::string_view name, std::span<const gpu::image* const> images, const sampler& samp, image_layout layout = image_layout::shader_read_only) -> descriptor_writer&;
 		auto image_array(std::string_view name, std::span<const gpu::image* const> images, std::span<const sampler* const> samplers, image_layout layout = image_layout::shader_read_only) -> descriptor_writer&;
-		auto acceleration_structure(std::string_view name, vk::AccelerationStructureKHR as) -> descriptor_writer&;
+		auto acceleration_structure(std::string_view name, acceleration_structure_handle as) -> descriptor_writer&;
 
 		auto commit() -> void;
 
@@ -48,7 +47,7 @@ export namespace gse::gpu {
 		std::unordered_map<std::string, vk::DescriptorBufferInfo> m_buffer_infos;
 		std::unordered_map<std::string, vk::DescriptorImageInfo> m_image_infos;
 		std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> m_image_array_infos;
-		std::unordered_map<std::string, vk::AccelerationStructureKHR> m_as_infos;
+		std::unordered_map<std::string, acceleration_structure_handle> m_as_infos;
 
 		vulkan::descriptor_writer m_push_writer;
 	};
@@ -81,6 +80,7 @@ namespace {
 
 		const auto& set_data = set_it->second;
 		const auto set_layout = cache.layout_handles[push_idx];
+		const auto total_size = heap.layout_size(set_layout);
 
 		auto descriptor_size_for = [&](gse::gpu::descriptor_type dt) -> vk::DeviceSize {
 			switch (dt) {
@@ -102,19 +102,16 @@ namespace {
 
 		std::vector<gse::vulkan::descriptor_binding_info> bindings(max_binding + 1);
 
-		vk::DeviceSize running_offset = 0;
 		for (const auto& b : set_data.bindings) {
 			const auto idx = b.desc.binding;
-			const auto desc_size = descriptor_size_for(b.desc.type);
 			bindings[idx] = {
-				.offset = running_offset,
-				.descriptor_size = desc_size,
+				.offset = heap.binding_offset(set_layout, idx),
+				.descriptor_size = descriptor_size_for(b.desc.type),
 				.type = gse::vulkan::to_vk_descriptor_type(b.desc.type)
 			};
-			running_offset += desc_size;
 		}
 
-		return gse::vulkan::descriptor_writer(heap, set_layout, running_offset, std::move(bindings), true);
+		return gse::vulkan::descriptor_writer(heap, set_layout, total_size, std::move(bindings));
 	}
 }
 
@@ -178,7 +175,7 @@ auto gse::gpu::descriptor_writer::image_array(const std::string_view name, const
 	return *this;
 }
 
-auto gse::gpu::descriptor_writer::acceleration_structure(const std::string_view name, const vk::AccelerationStructureKHR as) -> descriptor_writer& {
+auto gse::gpu::descriptor_writer::acceleration_structure(const std::string_view name, const acceleration_structure_handle as) -> descriptor_writer& {
 	m_as_infos[std::string(name)] = as;
 	return *this;
 }
@@ -269,7 +266,8 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 		}
 
 		if (auto it_as = m_as_infos.find(b.name); it_as != m_as_infos.end()) {
-			const vk::DeviceAddress as_addr = m_device->logical_device().getAccelerationStructureAddressKHR({ .accelerationStructure = it_as->second });
+			const auto vk_as = reinterpret_cast<VkAccelerationStructureKHR>(it_as->second.value);
+			const vk::DeviceAddress as_addr = m_device->logical_device().getAccelerationStructureAddressKHR({ .accelerationStructure = vk_as });
 			const vk::DescriptorGetInfoEXT get_info{
 				.type = vk::DescriptorType::eAccelerationStructureKHR,
 				.data = { .accelerationStructure = as_addr }

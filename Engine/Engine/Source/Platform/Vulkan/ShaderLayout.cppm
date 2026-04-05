@@ -107,12 +107,8 @@ auto gse::shader_layout::load(const vk::raii::Device& device) -> void {
             raw_bindings.push_back(lb);
         }
 
-        const bool is_push_set = (set.set_index == 1);
-
         vk::DescriptorSetLayoutCreateInfo ci{
-            .flags = is_push_set
-                ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
-                : vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
+            .flags = vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
             .bindingCount = static_cast<std::uint32_t>(raw_bindings.size()),
             .pBindings = raw_bindings.data()
         };
@@ -122,11 +118,8 @@ auto gse::shader_layout::load(const vk::raii::Device& device) -> void {
 
     for (std::uint32_t i = 0; i <= max_set; ++i) {
         if (!m_vk_layouts[i]) {
-            const bool is_push_set = (i == 1);
             vk::DescriptorSetLayoutCreateInfo ci{
-                .flags = is_push_set
-                    ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
-                    : vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
+                .flags = vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
                 .bindingCount = 0,
                 .pBindings = nullptr
             };

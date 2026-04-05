@@ -1084,11 +1084,8 @@ auto gse::gpu::device::shader_cache(const shader& s) -> const vulkan::shader_cac
 			});
 		}
 
-		const bool is_push = (type == descriptor_set_type::push);
 		vk::DescriptorSetLayoutCreateInfo ci{
-			.flags = is_push
-				? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
-				: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
+			.flags = vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 			.bindingCount = static_cast<std::uint32_t>(raw_bindings.size()),
 			.pBindings = raw_bindings.data()
 		};
@@ -1098,11 +1095,8 @@ auto gse::gpu::device::shader_cache(const shader& s) -> const vulkan::shader_cac
 
 	for (std::uint32_t i = 0; i <= max_set_index; ++i) {
 		if (!*entry.owned_layouts[i]) {
-			const bool is_push = (i == 1);
 			vk::DescriptorSetLayoutCreateInfo ci{
-				.flags = is_push
-					? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
-					: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
+				.flags = vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 				.bindingCount = 0,
 				.pBindings = nullptr
 			};

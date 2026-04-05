@@ -539,7 +539,7 @@ auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, co
 	const auto point = p.point() == gpu::bind_point::graphics
 		? vk::PipelineBindPoint::eGraphics
 		: vk::PipelineBindPoint::eCompute;
-	region.heap->bind(m_cmd, point, p.native_layout(), 0, region);
+	region.heap->bind(m_cmd, point, p.native_layout(), set_index, region);
 }
 
 auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) -> void {
