@@ -97,7 +97,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 	}
 
 	const auto& data = render_items[0];
-	const auto frame_index = data.frame_index;
+	const auto frame_index = ctx.graph().current_frame();
 
 	const auto* gc_state = phase.try_state_of<geometry_collector::state>();
 	if (!gc_state) {

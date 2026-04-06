@@ -26,11 +26,11 @@ export namespace gse::gpu {
 	class frame final : public non_copyable {
 	public:
 		[[nodiscard]] static auto create(
-			gpu::device& dev,
-			gpu::swap_chain& sc
+			device& dev,
+			swap_chain& sc
 		) -> std::unique_ptr<frame>;
 
-		frame(vulkan::sync_config&& sync, vulkan::frame_context_config&& frame_ctx, gpu::device& dev, gpu::swap_chain& sc);
+		frame(vulkan::sync_config&& sync, vulkan::frame_context_config&& frame_ctx, device& dev, swap_chain& sc);
 
 		[[nodiscard]] auto current_frame(
 		) const -> std::uint32_t;
@@ -45,11 +45,11 @@ export namespace gse::gpu {
 		) const -> bool;
 
 		auto begin(
-			gse::window& win
+			window& win
 		) -> std::expected<frame_token, frame_status>;
 
 		auto end(
-			gse::window& win
+			window& win
 		) -> void;
 
 		auto set_sync(
@@ -58,15 +58,15 @@ export namespace gse::gpu {
 
 	private:
 		auto recreate_resources(
-			gse::window& win
+			window& win
 		) -> void;
 
 		vulkan::sync_config m_sync;
 		vulkan::frame_context_config m_frame_context;
 		std::uint32_t m_current_frame = 0;
 		bool m_frame_in_progress = false;
-		gpu::device* m_device;
-		gpu::swap_chain* m_swapchain;
+		device* m_device;
+		swap_chain* m_swapchain;
 	};
 }
 
@@ -74,13 +74,13 @@ namespace gse::vulkan {
 	auto create_sync_objects(const device_config& device_data, const swap_chain_config& swap_chain_data) -> sync_config;
 }
 
-auto gse::gpu::frame::create(gpu::device& dev, gpu::swap_chain& sc) -> std::unique_ptr<frame> {
+auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<frame> {
 	auto sync = create_sync_objects(dev.device_config(), sc.config());
 	vulkan::frame_context_config frame_ctx(0, *dev.command_config().buffers[0]);
 	return std::make_unique<frame>(std::move(sync), std::move(frame_ctx), dev, sc);
 }
 
-gse::gpu::frame::frame(vulkan::sync_config&& sync, vulkan::frame_context_config&& frame_ctx, gpu::device& dev, gpu::swap_chain& sc)
+gse::gpu::frame::frame(vulkan::sync_config&& sync, vulkan::frame_context_config&& frame_ctx, device& dev, swap_chain& sc)
 	: m_sync(std::move(sync)), m_frame_context(std::move(frame_ctx)), m_device(&dev), m_swapchain(&sc) {}
 
 auto gse::gpu::frame::current_frame() const -> std::uint32_t {
@@ -103,7 +103,7 @@ auto gse::gpu::frame::set_sync(vulkan::sync_config&& sync) -> void {
 	m_sync = std::move(sync);
 }
 
-auto gse::gpu::frame::recreate_resources(gse::window& win) -> void {
+auto gse::gpu::frame::recreate_resources(window& win) -> void {
 	m_device->wait_idle();
 	m_swapchain->recreate(win.viewport());
 	m_sync = create_sync_objects(m_device->device_config(), m_swapchain->config());
@@ -111,7 +111,7 @@ auto gse::gpu::frame::recreate_resources(gse::window& win) -> void {
 	m_device->wait_idle();
 }
 
-auto gse::gpu::frame::begin(gse::window& win) -> std::expected<frame_token, frame_status> {
+auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_status> {
 	const auto& device = m_device->device_config().device;
 
 	m_frame_in_progress = false;
@@ -191,7 +191,7 @@ auto gse::gpu::frame::begin(gse::window& win) -> std::expected<frame_token, fram
 	};
 }
 
-auto gse::gpu::frame::end(gse::window& win) -> void {
+auto gse::gpu::frame::end(window& win) -> void {
 	const auto& device = m_device->device_config().device;
 
 	m_frame_context.command_buffer.end();

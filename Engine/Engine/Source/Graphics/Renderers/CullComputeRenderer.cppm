@@ -20,8 +20,6 @@ export namespace gse::renderer::cull_compute {
 		std::uint32_t batch_stride = 0;
 		std::unordered_map<std::string, std::uint32_t> batch_offsets;
 		bool enabled = true;
-
-		state() = default;
 	};
 
 	struct system {
@@ -104,7 +102,7 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 	}
 
 	const auto& data = render_items[0];
-	const auto frame_index = data.frame_index;
+	const auto frame_index = ctx.graph().current_frame();
 
 	const auto* gc = phase.try_state_of<geometry_collector::state>();
 	if (!gc) {

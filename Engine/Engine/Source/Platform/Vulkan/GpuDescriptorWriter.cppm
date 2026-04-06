@@ -13,6 +13,7 @@ import :resource_handle;
 import :shader;
 import gse.assert;
 import gse.utility;
+import gse.log;
 
 export namespace gse::gpu {
 	class descriptor_writer final : public non_copyable {
@@ -268,6 +269,19 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 		if (auto it_as = m_as_infos.find(b.name); it_as != m_as_infos.end()) {
 			const auto vk_as = reinterpret_cast<VkAccelerationStructureKHR>(it_as->second.value);
 			const vk::DeviceAddress as_addr = m_device->logical_device().getAccelerationStructureAddressKHR({ .accelerationStructure = vk_as });
+			log::println(log::category::vulkan,
+				"Descriptor AS write: binding='{}' handle={:#x} address={:#x} descriptor_offset={} descriptor_size={}",
+				b.name,
+				it_as->second.value,
+				as_addr,
+				boff,
+				props.acceleration_structure_descriptor_size);
+			if (as_addr == 0) {
+				log::println(log::level::warning, log::category::vulkan,
+					"Descriptor AS write produced address 0 for binding='{}' handle={:#x}",
+					b.name,
+					it_as->second.value);
+			}
 			const vk::DescriptorGetInfoEXT get_info{
 				.type = vk::DescriptorType::eAccelerationStructureKHR,
 				.data = { .accelerationStructure = as_addr }

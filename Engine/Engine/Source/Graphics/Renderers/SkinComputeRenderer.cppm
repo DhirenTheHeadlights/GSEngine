@@ -62,7 +62,7 @@ auto gse::renderer::skin_compute::system::render(const render_phase& phase, cons
 	}
 
 	const auto& data = render_items.front();
-	const auto frame_index = data.frame_index;
+	const auto frame_index = ctx.graph().current_frame();
 
 	const auto* gc = phase.try_state_of<geometry_collector::state>();
 	if (!gc) {

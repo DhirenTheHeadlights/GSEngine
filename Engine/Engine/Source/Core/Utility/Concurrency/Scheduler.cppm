@@ -292,6 +292,18 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 		}
 	}
 
+	prepare_render_phase pr_phase{
+		.snapshots = *this,
+		.channel_reader = *this
+	};
+	pr_phase.gpu_ctx = m_gpu_ctx;
+
+	for (std::size_t i = 0; i < m_nodes.size(); ++i) {
+		if (started[i]) {
+			m_nodes[i]->prepare_render(pr_phase);
+		}
+	}
+
 	const registry_access const_reg_access = m_registry_access;
 
 	render_phase r_phase{

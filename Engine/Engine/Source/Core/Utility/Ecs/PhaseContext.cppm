@@ -290,6 +290,23 @@ export namespace gse {
 		) const -> const State*;
 	};
 
+	struct prepare_render_phase : phase_gpu_access {
+		const state_snapshot_provider& snapshots;
+		const channel_reader_provider& channel_reader;
+
+		template <typename State>
+		auto state_of(
+		) const -> const State&;
+
+		template <typename State>
+		auto try_state_of(
+		) const -> const State*;
+
+		template <typename T>
+		auto read_channel(
+		) const -> channel_read_guard<T>;
+	};
+
 	struct render_phase : phase_gpu_access {
 		const registry_access& registry;
 		const state_snapshot_provider& snapshots;
@@ -341,6 +358,11 @@ export namespace gse {
 	};
 
 	template <typename S, typename State>
+	concept has_prepare_render = requires(prepare_render_phase& p, State& s) {
+		{ S::prepare_render(p, s) } -> std::same_as<void>;
+	};
+
+	template <typename S, typename State>
 	concept has_render = requires(render_phase& p, const State& s) {
 		{ S::render(p, s) } -> std::same_as<void>;
 	};
@@ -353,6 +375,11 @@ export namespace gse {
 	template <typename S, typename State>
 	concept has_shutdown = requires(shutdown_phase& p, State& s) {
 		{ S::shutdown(p, s) } -> std::same_as<void>;
+	};
+
+	template <typename S, typename State, typename RenderState>
+	concept has_prepare_render_with_state = requires(prepare_render_phase& p, State& s, RenderState& rs) {
+		{ S::prepare_render(p, s, rs) } -> std::same_as<void>;
 	};
 
 	template <typename S, typename State, typename RenderState>
@@ -654,6 +681,21 @@ auto gse::begin_frame_phase::state_of() const -> const State& {
 template <typename State>
 auto gse::begin_frame_phase::try_state_of() const -> const State* {
 	return snapshots.try_state_of<State>();
+}
+
+template <typename State>
+auto gse::prepare_render_phase::state_of() const -> const State& {
+	return snapshots.state_of<State>();
+}
+
+template <typename State>
+auto gse::prepare_render_phase::try_state_of() const -> const State* {
+	return snapshots.try_state_of<State>();
+}
+
+template <typename T>
+auto gse::prepare_render_phase::read_channel() const -> channel_read_guard<T> {
+	return channel_read_guard<T>(channel_reader.read<T>());
 }
 
 template <typename State>

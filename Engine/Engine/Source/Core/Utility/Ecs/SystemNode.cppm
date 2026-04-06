@@ -22,6 +22,10 @@ export namespace gse {
 			begin_frame_phase&
 		) -> bool = 0;
 
+		virtual auto prepare_render(
+			prepare_render_phase&
+		) -> void = 0;
+
 		virtual auto render(
 			render_phase&
 		) -> void = 0;
@@ -77,6 +81,10 @@ export namespace gse {
 		auto begin_frame(
 			begin_frame_phase& phase
 		) -> bool override;
+
+		auto prepare_render(
+			prepare_render_phase& phase
+		) -> void override;
 
 		auto render(
 			render_phase& phase
@@ -161,6 +169,15 @@ auto gse::system_node<S, State, RenderState>::begin_frame(begin_frame_phase& pha
 		return S::begin_frame(phase, m_state);
 	}
 	return true;
+}
+
+template <typename S, typename State, typename RenderState>
+auto gse::system_node<S, State, RenderState>::prepare_render(prepare_render_phase& phase) -> void {
+	if constexpr (!std::is_void_v<RenderState> && has_prepare_render_with_state<S, State, RenderState>) {
+		S::prepare_render(phase, m_state, m_render_state.value);
+	} else if constexpr (has_prepare_render<S, State>) {
+		S::prepare_render(phase, m_state);
+	}
 }
 
 template <typename S, typename State, typename RenderState>
