@@ -77,6 +77,18 @@ export namespace gse::vulkan {
 			const descriptor_region& region
 		) const -> void;
 
+		auto bind_buffer(
+			vk::CommandBuffer cmd
+		) const -> void;
+
+		auto set_offset(
+			vk::CommandBuffer cmd,
+			vk::PipelineBindPoint point,
+			vk::PipelineLayout layout,
+			std::uint32_t first_set,
+			const descriptor_region& region
+		) const -> void;
+
 		[[nodiscard]] auto layout_size(
 			vk::DescriptorSetLayout layout
 		) const -> vk::DeviceSize;
@@ -297,14 +309,20 @@ auto gse::vulkan::descriptor_heap::write_descriptor(const descriptor_region& reg
 }
 
 auto gse::vulkan::descriptor_heap::bind(const vk::CommandBuffer cmd, const vk::PipelineBindPoint point, const vk::PipelineLayout layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
+	bind_buffer(cmd);
+	set_offset(cmd, point, layout, first_set, region);
+}
+
+auto gse::vulkan::descriptor_heap::bind_buffer(const vk::CommandBuffer cmd) const -> void {
 	const vk::DescriptorBufferBindingInfoEXT binding{
 		.address = m_address,
 		.usage = vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT
 			| vk::BufferUsageFlagBits::eSamplerDescriptorBufferEXT
 	};
-
 	cmd.bindDescriptorBuffersEXT(1, &binding);
+}
 
+auto gse::vulkan::descriptor_heap::set_offset(const vk::CommandBuffer cmd, const vk::PipelineBindPoint point, const vk::PipelineLayout layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
 	constexpr std::uint32_t buffer_index = 0;
 	cmd.setDescriptorBufferOffsetsEXT(
 		point, layout, first_set, 1, &buffer_index, &region.offset
@@ -486,5 +504,5 @@ auto gse::vulkan::descriptor_writer::commit(
 	const std::uint32_t set_index
 ) const -> void {
 	assert(m_current_region, std::source_location::current(), "Cannot commit without begin()");
-	m_current_region.heap->bind(cmd, point, layout, set_index, m_current_region);
+	m_current_region.heap->set_offset(cmd, point, layout, set_index, m_current_region);
 }

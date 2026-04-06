@@ -15,6 +15,7 @@ import :directional_light;
 import gse.math;
 import gse.utility;
 import gse.platform;
+import gse.log;
 
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 10;
@@ -148,13 +149,14 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	}
 
 	const auto& data = render_items[0];
-	const auto frame_index = data.frame_index;
+	const auto frame_index = ctx.graph().current_frame();
 
 	if (!ctx.graph().frame_in_progress()) {
 		return;
 	}
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
+	const auto* rt_state = phase.try_state_of<rt_shadow::state>();
 	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
 

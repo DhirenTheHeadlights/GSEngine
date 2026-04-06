@@ -129,13 +129,19 @@ export namespace gse::renderer::geometry_collector {
 	struct render_data {
 		static constexpr std::size_t max_batches = 256;
 
-		std::uint32_t frame_index = 0;
 		std::vector<render_queue_entry> render_queue;
 		std::vector<id> render_queue_owners;
 		std::vector<skinned_render_queue_entry> skinned_render_queue;
 		static_vector<normal_instance_batch, max_batches>  normal_batches;
 		static_vector<skinned_instance_batch, max_batches> skinned_batches;
+
+		std::vector<std::byte> instance_staging;
+		std::vector<mat4f> skin_staging;
+		std::vector<mat4f> local_pose_staging;
 		std::uint32_t pending_compute_instance_count = 0;
+
+		view_matrix view;
+		projection_matrix proj;
 	};
 
 	struct state {
@@ -143,12 +149,9 @@ export namespace gse::renderer::geometry_collector {
 
 		per_frame_resource<gpu::buffer> instance_buffer;
 
-		per_frame_resource<std::vector<std::byte>> instance_staging;
 		std::uint32_t instance_stride = 0;
 		std::unordered_map<std::string, std::uint32_t> instance_offsets;
 
-		per_frame_resource<std::vector<mat4f>> skin_staging;
-		per_frame_resource<std::vector<mat4f>> local_pose_staging;
 		const skeleton* current_skeleton = nullptr;
 		std::uint32_t current_joint_count = 0;
 		std::uint32_t joint_stride = 0;
@@ -184,6 +187,7 @@ export namespace gse::renderer::geometry_collector {
 	struct system {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
 		static auto update(update_phase& phase, state& s) -> void;
+		static auto prepare_render(prepare_render_phase& phase, state& s) -> void;
 	};
 }
 
@@ -247,14 +251,11 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 			.size = skin_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
-		s.skin_staging[i].reserve(state::max_skin_matrices);
-
 		const std::size_t instance_buffer_size = state::max_instances * 2 * s.instance_stride;
 		s.instance_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = instance_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
-		s.instance_staging[i].reserve(instance_buffer_size);
 
 		constexpr std::size_t indirect_buffer_size = render_data::max_batches * sizeof(gpu::draw_indexed_indirect_command);
 		s.normal_indirect_commands_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
@@ -271,7 +272,6 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 			.size = local_pose_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
-		s.local_pose_staging[i].reserve(state::max_skin_matrices);
 	}
 
 	auto skin_compute = ctx.get<shader>("Shaders/Compute/skin_compute");
@@ -304,24 +304,16 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 		chunk<const physics::collision_component> collision,
 		chunk<const animation_component> anim
 	) {
-		const auto frame_index = s.ctx->graph().current_frame();
-
-		const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index];
-		s.shader_handle->set_uniform("CameraUBO.view", view_matrix, cam_alloc);
-		s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, cam_alloc);
-
 		render_data data;
-		data.frame_index = frame_index;
+		data.view = view_matrix;
+		data.proj = proj_matrix;
 
 		auto& out = data.render_queue;
 		auto& owners_out = data.render_queue_owners;
 		auto& skinned_out = data.skinned_render_queue;
 
-		auto& skin_staging = s.skin_staging[frame_index];
-		skin_staging.clear();
-
-		auto& local_pose_staging = s.local_pose_staging[frame_index];
-		local_pose_staging.clear();
+		auto& skin_staging = data.skin_staging;
+		auto& local_pose_staging = data.local_pose_staging;
 
 		std::uint32_t skinned_instance_count = 0;
 
@@ -407,11 +399,9 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 		std::uint32_t joint_count;
 	};
 
-	auto& instance_staging = s.instance_staging[frame_index];
+	auto& instance_staging = data.instance_staging;
 	auto& normal_batches = data.normal_batches;
 	auto& skinned_batches = data.skinned_batches;
-
-	instance_staging.clear();
 
 	std::uint32_t global_instance_offset = 0;
 
@@ -550,25 +540,46 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 		}
 	}
 
-	if (!instance_staging.empty()) {
-		gse::memcpy(s.instance_buffer[frame_index].mapped(), instance_staging);
+	if (!local_pose_staging.empty() && s.current_joint_count > 0) {
+		data.pending_compute_instance_count = skinned_instance_count;
+	} else {
+		data.pending_compute_instance_count = 0;
 	}
 
-	if (!normal_batches.empty()) {
+		channels.push(std::move(data));
+	});
+}
+
+auto gse::renderer::geometry_collector::system::prepare_render(prepare_render_phase& phase, state& s) -> void {
+	const auto& items = phase.read_channel<render_data>();
+	if (items.empty()) {
+		return;
+	}
+
+	const auto& data = items[0];
+	const auto frame_index = s.ctx->graph().current_frame();
+
+	const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index];
+	s.shader_handle->set_uniform("CameraUBO.view", data.view, cam_alloc);
+	s.shader_handle->set_uniform("CameraUBO.proj", data.proj, cam_alloc);
+
+	if (!data.instance_staging.empty()) {
+		gse::memcpy(s.instance_buffer[frame_index].mapped(), data.instance_staging);
+	}
+
+	if (!data.normal_batches.empty()) {
 		static_vector<gpu::draw_indexed_indirect_command, render_data::max_batches> normal_indirect_commands;
 
-		for (const auto& batch : normal_batches) {
+		for (const auto& batch : data.normal_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-			gpu::draw_indexed_indirect_command cmd{
+			normal_indirect_commands.push_back({
 				.index_count = static_cast<std::uint32_t>(mesh.indices().size()),
 				.instance_count = batch.instance_count,
 				.first_index = 0,
 				.vertex_offset = 0,
 				.first_instance = batch.first_instance
-			};
-
-			normal_indirect_commands.push_back(cmd);
+			});
 		}
 
 		if (!normal_indirect_commands.empty()) {
@@ -576,21 +587,19 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 		}
 	}
 
-	if (!skinned_batches.empty()) {
+	if (!data.skinned_batches.empty()) {
 		static_vector<gpu::draw_indexed_indirect_command, render_data::max_batches> skinned_indirect_commands;
 
-		for (const auto& batch : skinned_batches) {
+		for (const auto& batch : data.skinned_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-			gpu::draw_indexed_indirect_command cmd{
+			skinned_indirect_commands.push_back({
 				.index_count = static_cast<std::uint32_t>(mesh.indices().size()),
 				.instance_count = batch.instance_count,
 				.first_index = 0,
 				.vertex_offset = 0,
 				.first_instance = batch.first_instance
-			};
-
-			skinned_indirect_commands.push_back(cmd);
+			});
 		}
 
 		if (!skinned_indirect_commands.empty()) {
@@ -598,16 +607,9 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 		}
 	}
 
-	if (!local_pose_staging.empty() && s.current_joint_count > 0) {
-		gse::memcpy(s.local_pose_buffer[frame_index].mapped(), local_pose_staging);
-		data.pending_compute_instance_count = skinned_instance_count;
-	} else if (!skin_staging.empty()) {
-		gse::memcpy(s.skin_buffer[frame_index].mapped(), skin_staging);
-		data.pending_compute_instance_count = 0;
-	} else {
-		data.pending_compute_instance_count = 0;
+	if (!data.local_pose_staging.empty() && s.current_joint_count > 0) {
+		gse::memcpy(s.local_pose_buffer[frame_index].mapped(), data.local_pose_staging);
+	} else if (!data.skin_staging.empty()) {
+		gse::memcpy(s.skin_buffer[frame_index].mapped(), data.skin_staging);
 	}
-
-		channels.push(std::move(data));
-	});
 }
