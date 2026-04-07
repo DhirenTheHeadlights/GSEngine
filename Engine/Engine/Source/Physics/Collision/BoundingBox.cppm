@@ -35,6 +35,8 @@ namespace gse {
 
 	class bounding_box {
 	public:
+		bounding_box() = default;
+
 		bounding_box(
 			const vec3<position>& center,
 			const vec3<displacement>& size,

@@ -218,13 +218,13 @@ auto gse::network::client::tick() -> void {
 		bool handled_internally = false;
 
 		match_message(stream, id)
-			.if_is<connection_accepted>([&](const connection_accepted&) {
+			.if_is<connection_accepted>([&](const connection_accepted& ca) {
 				log::println(log::category::network, "Client connected to {}:{}", m_server.addr().ip, m_server.addr().port);
 				m_state = state::connected;
 				send_ack();
 				{
 					std::lock_guard lk(m_inbox_mutex);
-					m_inbox.emplace_back(connection_accepted{});
+					m_inbox.emplace_back(ca);
 				}
 				handled_internally = true;
 			})

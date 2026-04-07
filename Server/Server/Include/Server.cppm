@@ -92,7 +92,6 @@ export namespace gse {
 		spsc_ring_buffer<incoming_packet, 1024> m_incoming;
 		mpsc_ring_buffer<outgoing_packet, 1024> m_outgoing;
 		std::jthread m_thread;
-		std::uint32_t m_next_player_id = 0;
 
 		auto resend_reliable_messages(
 		) -> void;
@@ -293,7 +292,7 @@ auto gse::server::update() -> void {
 				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
 
 				if (auto* scene = m_owner->current_scene()) {
-					const auto controller_name = std::format("PlayerController_{}", m_next_player_id++);
+					const auto controller_name = std::format("PlayerController_{}:{}", pkt.from.ip, pkt.from.port);
 					auto controller_id = scene->registry().create(controller_name);
 					scene->registry().add_component<player_controller>(controller_id, player_controller_data{});
 					scene->registry().activate(controller_id);
@@ -303,9 +302,9 @@ auto gse::server::update() -> void {
 						m_host_entity = controller_id;
 						m_host_addr = pkt.from;
 					}
-				}
 
-				send_reliable(network::connection_accepted{}, pkt.from);
+					send_reliable(network::connection_accepted{ .controller_id = controller_id }, pkt.from);
+					}
 				std::println("Client [{}:{}] connected ({}/{})",
 					pkt.from.ip, pkt.from.port, m_clients.size(), max_players);
 
@@ -324,7 +323,7 @@ auto gse::server::update() -> void {
 
 		if (network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
 			if (auto client_it = m_clients.find(pkt.from); client_it != m_clients.end()) {
-				std::println("Client [{}:{}] reconnecting...", pkt.from.ip, pkt.from.port);
+				std::println("Client [{}:{}] reconnecting", pkt.from.ip, pkt.from.port);
 				if (auto* scene = m_owner->current_scene()) {
 					if (auto* pc = scene->registry().try_linked_object_write<player_controller>(client_it->second.controller_id)) {
 						if (pc->controlled_entity_id.exists()) {
@@ -336,20 +335,21 @@ auto gse::server::update() -> void {
 				m_clients.erase(client_it);
 			}
 
+			id reconnect_controller_id{};
 			if (auto* scene = m_owner->current_scene()) {
-				const auto controller_name = std::format("PlayerController_{}", m_next_player_id++);
+				const auto controller_name = std::format("PlayerController_{}:{}", pkt.from.ip, pkt.from.port);
 				auto controller_id = scene->registry().create(controller_name);
 				scene->registry().add_component<player_controller>(controller_id, player_controller_data{});
 				scene->registry().activate(controller_id);
 				m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
+				reconnect_controller_id = controller_id;
 
 				if (m_host_addr == pkt.from) {
 					m_host_entity = controller_id;
 				}
 			}
 
-			send_reliable(network::connection_accepted{}, pkt.from);
-			std::println("Client [{}:{}] reconnected", pkt.from.ip, pkt.from.port);
+			send_reliable(network::connection_accepted{ .controller_id = reconnect_controller_id }, pkt.from);
 
 			if (const auto* active = m_owner->current_scene()) {
 				const network::notify_scene_change msg{
@@ -434,7 +434,7 @@ auto gse::server::update() -> void {
 				cd.latest_input.ensure_capacity(fh.action_word_count * 64);
 				cd.latest_input.load_state(pressed, released, held);
 
-				
+
 				cd.latest_input.clear_all_axes();
 
 				for (auto& [idv, value] : a1) {
@@ -479,6 +479,26 @@ auto gse::server::update() -> void {
 
 			for (const auto& addr : m_clients | std::views::keys) {
 				send_reliable(msg, addr);
+			}
+		}
+	}
+
+	{
+		static std::uint32_t s_frame_counter = 0;
+		if (++s_frame_counter % 120 == 0) {
+			if (auto* sc = m_owner->current_scene()) {
+				for (const auto& [addr, cd] : m_clients) {
+					auto* pc = sc->registry().try_linked_object_read<player_controller>(cd.controller_id);
+					if (!pc || !pc->controlled_entity_id.exists()) continue;
+					const auto* mc = sc->registry().try_linked_object_read<physics::motion_component>(pc->controlled_entity_id);
+					if (!mc) continue;
+					const auto pos = mc->current_position;
+					std::println("[{}:{}] pos=({:.2f}, {:.2f}, {:.2f})",
+						addr.ip, addr.port,
+						pos.x().as<decltype(meters)>(),
+						pos.y().as<decltype(meters)>(),
+						pos.z().as<decltype(meters)>());
+				}
 			}
 		}
 	}
