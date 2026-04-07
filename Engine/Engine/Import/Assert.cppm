@@ -11,6 +11,8 @@ import <Windows.h>;
 
 import std;
 
+import gse.log;
+
 export namespace gse {
 	template <typename... Args>
     auto assert(
@@ -60,6 +62,12 @@ auto gse::assert_func_production(const std::string_view message) noexcept -> voi
 }
 
 auto gse::assert_func_internal(std::string_view message) noexcept -> void {
+    log::println(
+        log::level::error,
+        log::category::general,
+        "{}", message
+    );
+
 #ifdef _WIN32
     const int action = MessageBoxA(
         nullptr,
@@ -80,7 +88,6 @@ auto gse::assert_func_internal(std::string_view message) noexcept -> void {
         std::terminate();
     }
 #else
-	std::println("Internal Assert: {}", message);
     std::terminate();
 #endif
 }
