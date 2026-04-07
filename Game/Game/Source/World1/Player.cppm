@@ -274,6 +274,7 @@ namespace gs {
 		gse::actions::button_channel m_shift_channel;
 		gse::actions::button_channel m_jump_channel;
 		gse::actions::axis2_channel m_move_axis_channel;
+
 	};
 
 	class player final : public gse::hook<gse::entity> {

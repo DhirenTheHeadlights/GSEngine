@@ -24,6 +24,10 @@ export namespace gse::network {
 	) -> std::string_view;
 
 	template <>
+	consteval auto component_name<physics::collision_component>(
+	) -> std::string_view;
+
+	template <>
 	consteval auto component_name<render_component>(
 	) -> std::string_view;
 
@@ -95,6 +99,7 @@ export namespace gse::network {
 
 	constexpr auto networked_types = std::tuple<
 		std::type_identity<physics::motion_component>,
+		std::type_identity<physics::collision_component>,
 		std::type_identity<render_component>,
 		std::type_identity<player_controller>
 	>{};
@@ -116,6 +121,11 @@ consteval auto gse::network::stable_code(std::string_view s) -> std::uint16_t {
 template <>
 consteval auto gse::network::component_name<gse::physics::motion_component>() -> std::string_view {
 	return "gse.physics.motion_component";
+}
+
+template <>
+consteval auto gse::network::component_name<gse::physics::collision_component>() -> std::string_view {
+	return "gse.physics.collision_component";
 }
 
 template <>
