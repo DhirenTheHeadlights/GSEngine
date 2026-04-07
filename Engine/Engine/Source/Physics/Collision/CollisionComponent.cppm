@@ -18,5 +18,5 @@ export namespace gse::physics {
 		bool resolve_collisions = true;
 	};
 
-	using collision_component = component<collision_component_data>;
+	using collision_component = component<collision_component_data, bounding_box>;
 }
