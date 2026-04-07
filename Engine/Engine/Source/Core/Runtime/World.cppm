@@ -89,6 +89,13 @@ export namespace gse {
 		auto local_controlled_entity(
 		) const -> gse::id;
 
+		auto set_local_controller_id(
+			gse::id controller_id
+		) -> void;
+
+		auto local_controller_id(
+		) const -> gse::id;
+
 		auto registry(
 		) -> registry&;
 
@@ -113,6 +120,7 @@ export namespace gse {
 		bool m_authoritative = true;
 		std::optional<gse::id> m_client_id = std::nullopt;
 		gse::id m_local_controlled_entity{};
+		gse::id m_local_controller_id{};
 	};
 
 	template <typename InputSource>
@@ -206,7 +214,7 @@ export namespace gse {
 
 			if (!m_owner->networked()) {
 				if (!m_local_player_created) {
-					const auto player_id = factory(*current);
+					const auto player_id = factory(*current, std::nullopt);
 					m_owner->set_local_controlled_entity(player_id);
 					m_local_player_created = true;
 				}
@@ -218,7 +226,7 @@ export namespace gse {
 			if (!is_server) {
 				const auto current_local = m_owner->local_controlled_entity();
 				if (current_local.exists()) {
-					
+
 					id our_controller{};
 					for (const auto& [ctrl_id, local_id] : m_controller_to_local_player) {
 						if (local_id == current_local) {
@@ -246,7 +254,7 @@ export namespace gse {
 						continue;
 					}
 
-					const auto player_id = factory(*current);
+					const auto player_id = factory(*current, std::nullopt);
 					pc.controlled_entity_id = player_id;
 					reg.mark_component_updated<player_controller>(controller_id);
 				}
@@ -256,6 +264,12 @@ export namespace gse {
 					}
 
 					if (m_processed.contains(controller_id)) {
+						continue;
+					}
+
+					const auto our_controller = m_owner->local_controller_id();
+					if (!our_controller.exists() || controller_id != our_controller) {
+						m_processed.insert(controller_id);
 						continue;
 					}
 
@@ -279,7 +293,7 @@ export namespace gse {
 						}
 					}
 
-					const auto local_player_id = factory(*current);
+					const auto local_player_id = factory(*current, pc.controlled_entity_id);
 					m_owner->set_local_controlled_entity(local_player_id);
 					m_processed.insert(controller_id);
 					m_controller_to_local_player[controller_id] = local_player_id;
@@ -490,6 +504,14 @@ auto gse::world::set_local_controlled_entity(const gse::id entity_id) -> void {
 
 auto gse::world::local_controlled_entity() const -> gse::id {
 	return m_local_controlled_entity;
+}
+
+auto gse::world::set_local_controller_id(const gse::id controller_id) -> void {
+	m_local_controller_id = controller_id;
+}
+
+auto gse::world::local_controller_id() const -> gse::id {
+	return m_local_controller_id;
 }
 
 auto gse::world::registry() -> gse::registry& {

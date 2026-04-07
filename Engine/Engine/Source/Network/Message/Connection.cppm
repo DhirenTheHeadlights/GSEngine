@@ -2,6 +2,8 @@ export module gse.network:connection;
 
 import :message;
 
+import gse.utility;
+
 export namespace gse::network {
     struct connection_request {
     };
@@ -21,6 +23,7 @@ export namespace gse::network {
     ) -> connection_request;
 
     struct connection_accepted {
+        id controller_id{};
     };
 
     constexpr auto message_id(
@@ -42,11 +45,14 @@ constexpr auto gse::network::message_id(std::type_identity<connection_accepted>)
     return 0x0001;
 }
 
-auto gse::network::encode(bitstream& stream, const connection_accepted&) -> void {
+auto gse::network::encode(bitstream& stream, const connection_accepted& m) -> void {
+    stream.write(m.controller_id);
 }
 
 auto gse::network::decode(bitstream& stream, std::type_identity<connection_accepted>) -> connection_accepted {
-    return {};
+    return {
+        .controller_id = stream.read<id>()
+    };
 }
 
 constexpr auto gse::network::message_id(std::type_identity<connection_request>) -> std::uint16_t {

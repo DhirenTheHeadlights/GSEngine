@@ -12,7 +12,7 @@ import :registry;
 export namespace gse {
 	class scene final : public hookable<scene> {
 	public:
-		using player_factory_fn = std::function<gse::id(scene&)>;
+		using player_factory_fn = std::function<gse::id(scene&, std::optional<gse::id>)>;
 
 		explicit scene(
 			registry& registry,

@@ -56,9 +56,10 @@ auto gs::client::initialize() -> void {
 auto gs::client::update() -> void {
     gse::network::drain([this](gse::network::inbox_message& m) {
         gse::match(m)
-            .if_is([&](const gse::network::connection_accepted&) {
+            .if_is([&](const gse::network::connection_accepted& msg) {
                 m_owner->set_networked(true);
                 m_owner->set_authoritative(false);
+                m_owner->set_local_controller_id(msg.controller_id);
                 if (const auto* scene = m_owner->current_scene()) {
                     m_owner->deactivate_scene(scene->id());
                 }

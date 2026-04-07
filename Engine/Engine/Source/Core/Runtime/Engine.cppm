@@ -55,6 +55,10 @@ export namespace gse {
 			bool authoritative
 		) -> void;
 
+		auto set_local_controller_id(
+			gse::id controller_id
+		) -> void;
+
 		template <typename T, typename... Args>
 		auto add_scene(
 			Args... args
@@ -192,6 +196,10 @@ auto gse::engine::set_networked(const bool networked) -> void {
 
 auto gse::engine::set_authoritative(const bool authoritative) -> void {
 	m_world.set_authoritative(authoritative);
+}
+
+auto gse::engine::set_local_controller_id(const gse::id controller_id) -> void {
+	m_world.set_local_controller_id(controller_id);
 }
 
 auto gse::engine::activate_scene(const gse::id scene_id) -> void {
