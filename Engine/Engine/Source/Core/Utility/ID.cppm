@@ -484,7 +484,7 @@ auto gse::find(const uuid number) -> id {
 
 auto gse::find(const std::string_view tag) -> id {
 	const auto found_id = try_find(tag);
-	assert(found_id.has_value(), std::source_location::current(), "Inconsistent registry state!");
+	assert(found_id.has_value(), std::source_location::current(), "ID {} not found", tag);
 	return *found_id;
 }
 

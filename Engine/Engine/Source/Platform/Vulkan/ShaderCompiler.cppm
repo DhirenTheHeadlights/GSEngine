@@ -193,8 +193,8 @@ namespace gse::shader_compile {
         const std::function<gpu::descriptor_type(slang::TypeLayoutReflection*, int)>& to_desc_type,
         const std::function<std::unordered_map<std::string, shader::uniform_member>(slang::TypeLayoutReflection*, std::optional<slang::ParameterCategory>)>& reflect_mem,
         const std::function<slang::TypeLayoutReflection*(slang::VariableLayoutReflection*)>& extract_struct
-    ) -> struct shader::layout {
-        struct shader::layout result;
+    ) -> shader::layout {
+	    shader::layout result;
         auto* globals_vl = program_layout->getGlobalParamsVarLayout();
         if (!globals_vl) return result;
 
@@ -235,8 +235,8 @@ namespace gse::shader_compile {
                 const auto set_idx = container_space + static_cast<std::uint32_t>(var->getBindingSpace(slang::ParameterCategory::DescriptorTableSlot));
 
                 auto set_type = static_cast<gpu::descriptor_set_type>(set_idx);
-                auto& current_set = result.sets[set_type];
-                current_set.type = set_type;
+                auto& [type, bindings] = result.sets[set_type];
+                type = set_type;
 
                 gpu::descriptor_binding_desc desc{
                     .binding = binding_idx,
@@ -317,12 +317,12 @@ namespace gse::shader_compile {
                     block_member = try_structured_buffer_block(var, tl, binding_idx, set_idx);
                 }
 
-                const bool binding_exists = std::ranges::any_of(current_set.bindings, [&](const auto& b) {
+                const bool binding_exists = std::ranges::any_of(bindings, [&](const auto& b) {
                     return b.desc.binding == binding_idx;
                 });
 
                 if (!binding_exists) {
-                    current_set.bindings.emplace_back(var->getName(), desc, block_member);
+                    bindings.emplace_back(var->getName(), desc, block_member);
                 }
             }
         }
@@ -473,6 +473,7 @@ struct gse::asset_compiler<gse::shader> {
                 case 2: return "post_process";
                 case 3: return "standard_2d";
                 case 4: return "standard_3d";
+                case 5: return "vbd_physics";
                 default: return "";
             }
         };
@@ -490,8 +491,10 @@ struct gse::asset_compiler<gse::shader> {
         };
 
         std::string shader_layout_name;
-        if (!is_compute) {
-            std::array<std::string, 4> candidates = {
+        if (is_compute) {
+            shader_layout_name = layout_from_attr(cs_ep.get());
+        } else {
+            std::array candidates = {
                 layout_from_attr(vs_ep.get()),
                 layout_from_attr(fs_ep.get()),
                 layout_from_attr(as_ep.get()),
@@ -626,8 +629,8 @@ struct gse::asset_compiler<gse::shader> {
             used_stages |= to_stage_flags(ep->getStage());
         }
 
-        for (auto& s_data : sets | std::views::values) {
-            for (auto& b : s_data.bindings) b.desc.stages = used_stages;
+        for (auto& [type, bindings] : sets | std::views::values) {
+            for (auto& b : bindings) b.desc.stages = used_stages;
         }
 
         reflected_sets = std::move(sets);
@@ -644,9 +647,7 @@ struct gse::asset_compiler<gse::shader> {
             const std::string block_name = struct_layout->getName() && struct_layout->getName()[0]
                 ? struct_layout->getName() : "push_constants";
 
-            const auto it = std::ranges::find_if(pcs, [&](const auto& b) { return b.name == block_name; });
-
-            if (it != pcs.end()) {
+            if (const auto it = std::ranges::find_if(pcs, [&](const auto& b) { return b.name == block_name; }); it != pcs.end()) {
                 it->stage_flags |= stage;
             } else {
                 struct shader::uniform_block b{
@@ -687,7 +688,7 @@ struct gse::asset_compiler<gse::shader> {
 
         binary_writer ar(out, 0x47534852, 1);
 
-        const std::uint8_t shader_type = is_compute ? std::uint8_t(1) : is_mesh_pipeline ? std::uint8_t(2) : std::uint8_t(0);
+        const std::uint8_t shader_type = is_compute ? static_cast<std::uint8_t>(1) : is_mesh_pipeline ? static_cast<std::uint8_t>(2) : static_cast<std::uint8_t>(0);
         ar & shader_type;
         ar & shader_layout_name;
         ar & reflected_vertex_input.attributes;
@@ -698,7 +699,7 @@ struct gse::asset_compiler<gse::shader> {
 
         ar & reflected_pcs;
 
-        auto write_spirv = [&](std::uint32_t entry_point_index) -> bool {
+        auto write_spirv = [&](const std::uint32_t entry_point_index) -> bool {
             Slang::ComPtr<ISlangBlob> blob, gen_diags;
             if (SLANG_FAILED(program->getEntryPointCode(entry_point_index, 0, blob.writeRef(), gen_diags.writeRef())) || !blob) {
                 return false;
@@ -739,18 +740,12 @@ struct gse::asset_compiler<gse::shader> {
 
     static auto dependencies(const std::filesystem::path& source) -> std::vector<std::filesystem::path> {
         std::vector<std::filesystem::path> deps;
-        if (const auto layout_dir = config::resource_path / "Shaders" / "Layouts"; std::filesystem::exists(layout_dir)) {
-            for (const auto& entry : std::filesystem::directory_iterator(layout_dir)) {
-                if (entry.is_regular_file()) {
-                    deps.push_back(entry.path());
-                }
+        const auto shader_root = config::resource_path / "Shaders";
+        if (!std::filesystem::exists(shader_root)) return deps;
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(shader_root)) {
+            if (entry.is_regular_file() && entry.path() != source) {
+                deps.push_back(entry.path());
             }
-        }
-        if (const auto common_file = config::resource_path / "Shaders" / "common.slang"; std::filesystem::exists(common_file)) {
-            deps.push_back(common_file);
-        }
-        if (const auto shared_file = config::resource_path / "Shaders" / "Compute" / "vbd_shared.slang"; std::filesystem::exists(shared_file)) {
-            deps.push_back(shared_file);
         }
         return deps;
     }

@@ -117,7 +117,6 @@ auto gse::engine::initialize() -> void {
 		auto& ctx = *m_render_ctx.get();
 		ctx.add_loader<shader>();
 		ctx.compile();
-
 		m_scheduler.set_gpu_context(&ctx);
 
 		m_scheduler.add_system<physics::system, physics::state, physics::render_state>(reg);

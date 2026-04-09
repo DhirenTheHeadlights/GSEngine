@@ -32,7 +32,7 @@ export namespace gse {
         ) const -> const std::string&;
 
         [[nodiscard]] auto sets(
-        ) const -> const std::vector<shader_layout_set>&;
+        ) const -> std::span<const shader_layout_set>;
 
         [[nodiscard]] auto vk_layout(
             std::uint32_t set_index
@@ -56,7 +56,7 @@ export namespace gse {
         std::string m_name;
         std::filesystem::path m_path;
         std::vector<shader_layout_set> m_sets;
-        std::vector<std::shared_ptr<vk::raii::DescriptorSetLayout>> m_vk_layouts;
+        std::vector<std::optional<vk::raii::DescriptorSetLayout>> m_vk_layouts;
     };
 }
 
@@ -89,20 +89,19 @@ auto gse::shader_layout::load(const vk::raii::Device& device) -> void {
     ar & m_name;
     ar & m_sets;
 
-    // Create Vulkan descriptor set layouts
     std::uint32_t max_set = 0;
-    for (const auto& set : m_sets) {
-        max_set = std::max(max_set, set.set_index);
+    for (const auto& [set_index, bindings] : m_sets) {
+        max_set = std::max(max_set, set_index);
     }
 
     m_vk_layouts.resize(max_set + 1);
 
-    for (const auto& set : m_sets) {
+    for (const auto& [set_index, bindings] : m_sets) {
         std::vector<vk::DescriptorSetLayoutBinding> raw_bindings;
-        raw_bindings.reserve(set.bindings.size());
+        raw_bindings.reserve(bindings.size());
 
-        for (const auto& b : set.bindings) {
-            auto lb = b.layout_binding;
+        for (const auto& [name, layout_binding] : bindings) {
+            auto lb = layout_binding;
             lb.pImmutableSamplers = nullptr;
             raw_bindings.push_back(lb);
         }
@@ -113,7 +112,7 @@ auto gse::shader_layout::load(const vk::raii::Device& device) -> void {
             .pBindings = raw_bindings.data()
         };
 
-        m_vk_layouts[set.set_index] = std::make_shared<vk::raii::DescriptorSetLayout>(device, ci);
+        m_vk_layouts[set_index].emplace(device, ci);
     }
 
     for (std::uint32_t i = 0; i <= max_set; ++i) {
@@ -123,7 +122,7 @@ auto gse::shader_layout::load(const vk::raii::Device& device) -> void {
                 .bindingCount = 0,
                 .pBindings = nullptr
             };
-            m_vk_layouts[i] = std::make_shared<vk::raii::DescriptorSetLayout>(device, ci);
+            m_vk_layouts[i].emplace(device, ci);
         }
     }
 }
@@ -137,7 +136,7 @@ auto gse::shader_layout::name() const -> const std::string& {
     return m_name;
 }
 
-auto gse::shader_layout::sets() const -> const std::vector<shader_layout_set>& {
+auto gse::shader_layout::sets() const -> std::span<const shader_layout_set> {
     return m_sets;
 }
 
@@ -162,7 +161,7 @@ auto gse::shader_layout::layout_size(const vk::raii::Device& device, std::uint32
     return (*device).getDescriptorSetLayoutSizeEXT(**m_vk_layouts[set_index]);
 }
 
-auto gse::shader_layout::binding_offset(const vk::raii::Device& device, std::uint32_t set_index, std::uint32_t binding) const -> vk::DeviceSize {
+auto gse::shader_layout::binding_offset(const vk::raii::Device& device, std::uint32_t set_index, const std::uint32_t binding) const -> vk::DeviceSize {
     assert(set_index < m_vk_layouts.size() && m_vk_layouts[set_index],
         std::source_location::current(), "Layout set {} not found", set_index);
     return (*device).getDescriptorSetLayoutBindingOffsetEXT(**m_vk_layouts[set_index], binding);

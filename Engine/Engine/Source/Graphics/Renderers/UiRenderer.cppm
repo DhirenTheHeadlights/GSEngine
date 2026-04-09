@@ -466,20 +466,25 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 					first_batch = false;
 				}
 
+				bool has_descriptor = false;
 				if (type == command_type::sprite) {
-					if (texture.valid() && texture.id() != bound_texture.id()) {
+					if (texture.valid()) {
 						sprite_writer.begin(frame_index);
 						sprite_writer.image("spriteTexture", texture->gpu_image(), texture->gpu_sampler(), gpu::image_layout::shader_read_only);
 						ctx.commit(sprite_writer.native_writer(), s.sprite_pipeline, 1);
-						bound_texture = texture;
+						has_descriptor = true;
 					}
 				} else {
-					if (font.valid() && font.id() != bound_font.id()) {
+					if (font.valid()) {
 						text_writer.begin(frame_index);
 						text_writer.image("spriteTexture", font->texture()->gpu_image(), font->texture()->gpu_sampler(), gpu::image_layout::shader_read_only);
 						ctx.commit(text_writer.native_writer(), s.text_pipeline, 1);
-						bound_font = font;
+						has_descriptor = true;
 					}
+				}
+
+				if (!has_descriptor) {
+					continue;
 				}
 
 				if (clip_rect) {

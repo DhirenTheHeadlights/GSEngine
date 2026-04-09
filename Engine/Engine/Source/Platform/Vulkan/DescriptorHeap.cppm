@@ -305,11 +305,11 @@ auto gse::vulkan::descriptor_heap::descriptor(const vk::DescriptorGetInfoEXT& in
 auto gse::vulkan::descriptor_heap::write_descriptor(const descriptor_region& region, const vk::DeviceSize binding_offset, const vk::DescriptorGetInfoEXT& info, const vk::DeviceSize descriptor_size) const -> void {
 	std::vector<std::byte> scratch(descriptor_size);
 	descriptor(info, descriptor_size, scratch.data());
+
 	write_bytes(region, binding_offset, scratch.data(), descriptor_size);
 }
 
 auto gse::vulkan::descriptor_heap::bind(const vk::CommandBuffer cmd, const vk::PipelineBindPoint point, const vk::PipelineLayout layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
-	bind_buffer(cmd);
 	set_offset(cmd, point, layout, first_set, region);
 }
 

@@ -1,6 +1,10 @@
 module;
 
 #include <vulkan/vulkan_hpp_macros.hpp>
+#include <vulkan/vulkan.h>
+#include <GFSDK_Aftermath.h>
+#include <GFSDK_Aftermath_GpuCrashDump.h>
+#include <GFSDK_Aftermath_GpuCrashDumpDecoding.h>
 
 export module gse.platform:gpu_device;
 
@@ -96,6 +100,90 @@ namespace gse::vulkan {
 			.bufferless_push_descriptors = static_cast<bool>(db.bufferlessPushDescriptors),
 			.supported = true
 		};
+	}
+
+	std::mutex g_aftermath_mutex;
+	std::string g_aftermath_dump_path;
+	bool g_aftermath_initialized = false;
+
+	void GFSDK_AFTERMATH_CALL aftermath_crash_dump_cb(const void* gpu_crash_dump, const uint32_t gpu_crash_dump_size, void*) {
+		std::lock_guard lock(g_aftermath_mutex);
+		const auto path = config::resource_path / "Misc/gpu_crash.nv-gpudmp";
+		std::ofstream out(path, std::ios::binary);
+		if (out.is_open()) {
+			out.write(static_cast<const char*>(gpu_crash_dump), gpu_crash_dump_size);
+			g_aftermath_dump_path = path.string();
+			log::println(log::level::error, log::category::vulkan,
+				"Aftermath: GPU crash dump written to {} ({} bytes)", path.string(), gpu_crash_dump_size);
+		}
+	}
+
+	void GFSDK_AFTERMATH_CALL aftermath_shader_debug_info_cb(const void* shader_debug_info, const uint32_t shader_debug_info_size, void*) {
+		std::lock_guard lock(g_aftermath_mutex);
+
+		GFSDK_Aftermath_ShaderDebugInfoIdentifier id{};
+		GFSDK_Aftermath_GetShaderDebugInfoIdentifier(
+			GFSDK_Aftermath_Version_API,
+			shader_debug_info, shader_debug_info_size,
+			&id
+		);
+
+		const auto dir = config::resource_path / "Misc/aftermath_shaders";
+		std::filesystem::create_directories(dir);
+		const auto path = dir / std::format("{:016x}-{:016x}.nvdbg", id.id[0], id.id[1]);
+		std::ofstream out(path, std::ios::binary);
+		if (out.is_open()) {
+			out.write(static_cast<const char*>(shader_debug_info), shader_debug_info_size);
+		}
+	}
+	void GFSDK_AFTERMATH_CALL aftermath_description_cb(PFN_GFSDK_Aftermath_AddGpuCrashDumpDescription add_value, void*) {
+		add_value(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationName, "GSEngine");
+	}
+
+	auto init_aftermath() -> void {
+		const auto result = GFSDK_Aftermath_EnableGpuCrashDumps(
+			GFSDK_Aftermath_Version_API,
+			GFSDK_Aftermath_GpuCrashDumpWatchedApiFlags_Vulkan,
+			GFSDK_Aftermath_GpuCrashDumpFeatureFlags_DeferDebugInfoCallbacks,
+			aftermath_crash_dump_cb,
+			aftermath_shader_debug_info_cb,
+			aftermath_description_cb,
+			nullptr,
+			nullptr
+		);
+
+		if (result == GFSDK_Aftermath_Result_Success) {
+			g_aftermath_initialized = true;
+			log::println(log::category::vulkan, "Aftermath: GPU crash dump collection enabled");
+		} else {
+			log::println(log::level::warning, log::category::vulkan,
+				"Aftermath: Failed to enable GPU crash dumps (result=0x{:x})", static_cast<uint32_t>(result));
+		}
+	}
+
+	auto wait_for_aftermath_dump() -> void {
+		if (!g_aftermath_initialized) return;
+
+		GFSDK_Aftermath_CrashDump_Status status = GFSDK_Aftermath_CrashDump_Status_Unknown;
+		GFSDK_Aftermath_GetCrashDumpStatus(&status);
+
+		constexpr int max_wait_ms = 5000;
+		int waited = 0;
+		while (status != GFSDK_Aftermath_CrashDump_Status_CollectingDataFailed &&
+		       status != GFSDK_Aftermath_CrashDump_Status_Finished &&
+		       waited < max_wait_ms) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			waited += 50;
+			GFSDK_Aftermath_GetCrashDumpStatus(&status);
+		}
+
+		if (!g_aftermath_dump_path.empty()) {
+			log::println(log::level::error, log::category::vulkan,
+				"Aftermath: Crash dump saved to: {}", g_aftermath_dump_path);
+		} else {
+			log::println(log::level::warning, log::category::vulkan,
+				"Aftermath: No crash dump generated (status={})", static_cast<int>(status));
+		}
 	}
 
 	auto create_instance(const std::span<const char* const> required_extensions) -> instance_config {
@@ -378,9 +466,23 @@ namespace gse::vulkan {
 			.deviceFaultVendorBinary = device_fault_vendor_binary_supported ? vk::True : vk::False
 		};
 
+		VkDeviceDiagnosticsConfigCreateInfoNV aftermath_diagnostics_config{
+			.sType = VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV,
+			.pNext = nullptr,
+			.flags = VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV
+			       | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV
+			       | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV
+			       | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV
+		};
+
 		vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
 			.pNext = device_fault_supported ? static_cast<void*>(&fault_features) : feature_chain_head
 		};
+
+		if (g_aftermath_initialized) {
+			aftermath_diagnostics_config.pNext = present_wait_features.pNext;
+			present_wait_features.pNext = &aftermath_diagnostics_config;
+		}
 
 		vk::PhysicalDeviceFeatures2 features2{
 			.pNext = &present_wait_features,
@@ -414,6 +516,11 @@ namespace gse::vulkan {
 			device_extensions.push_back(vk::KHRDeferredHostOperationsExtensionName);
 			device_extensions.push_back(vk::KHRAccelerationStructureExtensionName);
 			device_extensions.push_back(vk::KHRRayQueryExtensionName);
+		}
+
+		if (g_aftermath_initialized) {
+			device_extensions.push_back(VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME);
+			device_extensions.push_back(VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME);
 		}
 
 		vk::DeviceCreateInfo create_info{
@@ -547,6 +654,7 @@ export namespace gse::vulkan {
 		std::unordered_map<gpu::shader_stage, vk::raii::ShaderModule> modules;
 		std::vector<vk::raii::DescriptorSetLayout> owned_layouts;
 		std::vector<vk::DescriptorSetLayout> layout_handles;
+		const shader_layout* external_layout = nullptr;
 	};
 }
 
@@ -675,6 +783,7 @@ auto gse::gpu::device::create(
 	const window& win,
 	save::state& save
 ) -> std::unique_ptr<device> {
+	vulkan::init_aftermath();
 	auto instance_data = vulkan::create_instance(window::vulkan_instance_extensions());
 	instance_data.surface = vk::raii::SurfaceKHR(instance_data.instance, win.create_vulkan_surface(*instance_data.instance));
 	auto [dev_config, queue, mesh_shaders_enabled, ray_tracing_enabled, desc_buf_props] = vulkan::create_device_and_queues(instance_data);
@@ -847,6 +956,8 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 
 	log::println(log::level::error, log::category::vulkan, "Vulkan device lost during {}", operation);
 
+	vulkan::wait_for_aftermath_dump();
+
 	if (!m_device_config.device_fault_enabled) {
 		log::println(log::level::warning, log::category::vulkan, "VK_EXT_device_fault is unavailable on this device");
 		return;
@@ -1000,6 +1111,8 @@ auto gse::gpu::device::transition_image_layout(const image& img, const image_lay
 }
 
 auto gse::gpu::device::load_shader_layouts() -> void {
+	if (!m_shader_layouts.empty()) return;
+
 	const auto layouts_dir = config::baked_resource_path / "Layouts";
 	if (!std::filesystem::exists(layouts_dir)) return;
 
@@ -1025,6 +1138,30 @@ auto gse::gpu::device::shader_cache(const shader& s) -> const vulkan::shader_cac
 	auto create_module = [&](const shader_stage stage) -> vk::raii::ShaderModule {
 		const auto spirv = s.spirv(stage);
 		if (spirv.empty()) return nullptr;
+
+		if (vulkan::g_aftermath_initialized) {
+			static const auto stage_name = [](shader_stage st) {
+				switch (st) {
+					case shader_stage::vertex:   return "vert";
+					case shader_stage::fragment:  return "frag";
+					case shader_stage::compute:  return "comp";
+					case shader_stage::task:     return "task";
+					case shader_stage::mesh:     return "mesh";
+					default:                     return "unknown";
+				}
+			};
+			auto tag = std::string(s.id().tag());
+			std::ranges::replace(tag, '/', '_');
+			std::ranges::replace(tag, '\\', '_');
+			const auto dir = config::resource_path / "Misc/aftermath_shaders";
+			std::filesystem::create_directories(dir);
+			const auto path = dir / std::format("{}_{}.spv", tag, stage_name(stage));
+			std::ofstream out(path, std::ios::binary);
+			if (out.is_open()) {
+				out.write(reinterpret_cast<const char*>(spirv.data()), spirv.size_bytes());
+			}
+		}
+
 		return m_device_config.device.createShaderModule({
 			.codeSize = spirv.size_bytes(),
 			.pCode = spirv.data()
@@ -1054,6 +1191,7 @@ auto gse::gpu::device::shader_cache(const shader& s) -> const vulkan::shader_cac
 
 	if (external_layout) {
 		entry.layout_handles = external_layout->vk_layouts();
+		entry.external_layout = external_layout;
 		auto [result_it, inserted] = m_shader_cache.emplace(s.id(), std::move(entry));
 		return result_it->second;
 	}

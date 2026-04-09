@@ -22,6 +22,12 @@ target_include_directories(Editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Editor/Inc
 target_link_libraries(Editor PRIVATE Engine)
 target_link_libraries(Editor PRIVATE GoonSquadLib)
 
+if(AFTERMATH_DLL)
+    add_custom_command(TARGET Editor POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${AFTERMATH_DLL}" "$<TARGET_FILE_DIR:Editor>"
+    )
+endif()
+
 # Define the resource path
 set(EDITOR_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 

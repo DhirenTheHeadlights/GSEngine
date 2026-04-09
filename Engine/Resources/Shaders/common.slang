@@ -28,11 +28,10 @@ public enum class LayoutKind : int {
     PostProcess = 2,
     Standard2D  = 3,
     Standard3D  = 4,
+    VBDPhysics  = 5,
 };
 
 [__AttributeUsage(_AttributeTargets.Function)]
 public struct LayoutAttribute {
     LayoutKind kind;
 };
-
-#define LAYOUT_KIND_AND_NAME(K) K, #K
