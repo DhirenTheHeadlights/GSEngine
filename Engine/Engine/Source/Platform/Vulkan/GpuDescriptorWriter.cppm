@@ -8,6 +8,7 @@ import :gpu_pipeline;
 import :gpu_image;
 import :gpu_descriptor;
 import :gpu_device;
+import :shader_layout;
 import :descriptor_heap;
 import :resource_handle;
 import :shader;
@@ -205,21 +206,14 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 
 	const auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
 	const auto set_layout = cache.layout_handles[persistent_idx];
-
-	const auto& layout_data = m_shader->layout_data();
-	auto set_it = layout_data.sets.find(descriptor_set_type::persistent);
-	if (set_it == layout_data.sets.end()) return;
-
 	const auto& region = m_region->native();
 
-	for (const auto& b : set_it->second.bindings) {
-		const auto boff = heap.binding_offset(set_layout, b.desc.binding);
+	auto write_binding = [&](const std::string& name, std::uint32_t binding, bool is_uniform, std::uint32_t count) {
+		const auto boff = heap.binding_offset(set_layout, binding);
 
-		if (auto it = m_buffer_infos.find(b.name); it != m_buffer_infos.end()) {
+		if (auto it = m_buffer_infos.find(name); it != m_buffer_infos.end()) {
 			const auto& buf_info = it->second;
 			const auto buf_addr = heap.buffer_address(buf_info.buffer);
-
-			const bool is_uniform = b.desc.type == descriptor_type::uniform_buffer;
 
 			const vk::DescriptorAddressInfoEXT addr_info{
 				.address = buf_addr + buf_info.offset,
@@ -240,38 +234,38 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 				};
 				heap.write_descriptor(region, boff, get_info, props.storage_buffer_descriptor_size);
 			}
-			continue;
+			return;
 		}
 
-		if (auto it_arr = m_image_array_infos.find(b.name); it_arr != m_image_array_infos.end()) {
+		if (auto it_arr = m_image_array_infos.find(name); it_arr != m_image_array_infos.end()) {
 			const auto& vec = it_arr->second;
 			const auto desc_size = props.combined_image_sampler_descriptor_size;
 
-			for (std::size_t i = 0; i < vec.size() && i < b.desc.count; ++i) {
+			for (std::size_t i = 0; i < vec.size() && i < count; ++i) {
 				const vk::DescriptorGetInfoEXT get_info{
 					.type = vk::DescriptorType::eCombinedImageSampler,
 					.data = { .pCombinedImageSampler = &vec[i] }
 				};
 				heap.write_descriptor(region, boff + i * desc_size, get_info, desc_size);
 			}
-			continue;
+			return;
 		}
 
-		if (auto it2 = m_image_infos.find(b.name); it2 != m_image_infos.end()) {
+		if (auto it2 = m_image_infos.find(name); it2 != m_image_infos.end()) {
 			const vk::DescriptorGetInfoEXT get_info{
 				.type = vk::DescriptorType::eCombinedImageSampler,
 				.data = { .pCombinedImageSampler = &it2->second }
 			};
 			heap.write_descriptor(region, boff, get_info, props.combined_image_sampler_descriptor_size);
-			continue;
+			return;
 		}
 
-		if (auto it_as = m_as_infos.find(b.name); it_as != m_as_infos.end()) {
+		if (auto it_as = m_as_infos.find(name); it_as != m_as_infos.end()) {
 			const auto vk_as = reinterpret_cast<VkAccelerationStructureKHR>(it_as->second.value);
 			const vk::DeviceAddress as_addr = m_device->logical_device().getAccelerationStructureAddressKHR({ .accelerationStructure = vk_as });
 			log::println(log::category::vulkan,
 				"Descriptor AS write: binding='{}' handle={:#x} address={:#x} descriptor_offset={} descriptor_size={}",
-				b.name,
+				name,
 				it_as->second.value,
 				as_addr,
 				boff,
@@ -279,7 +273,7 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 			if (as_addr == 0) {
 				log::println(log::level::warning, log::category::vulkan,
 					"Descriptor AS write produced address 0 for binding='{}' handle={:#x}",
-					b.name,
+					name,
 					it_as->second.value);
 			}
 			const vk::DescriptorGetInfoEXT get_info{
@@ -287,6 +281,28 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 				.data = { .accelerationStructure = as_addr }
 			};
 			heap.write_descriptor(region, boff, get_info, props.acceleration_structure_descriptor_size);
+		}
+	};
+
+	if (cache.external_layout) {
+		for (const auto& set : cache.external_layout->sets()) {
+			if (set.set_index == persistent_idx) {
+				for (const auto& b : set.bindings) {
+					write_binding(
+						b.name, b.layout_binding.binding,
+						b.layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer,
+						b.layout_binding.descriptorCount
+					);
+				}
+				break;
+			}
+		}
+	} else {
+		const auto& layout_data = m_shader->layout_data();
+		auto set_it = layout_data.sets.find(descriptor_set_type::persistent);
+		if (set_it == layout_data.sets.end()) return;
+		for (const auto& b : set_it->second.bindings) {
+			write_binding(b.name, b.desc.binding, b.desc.type == descriptor_type::uniform_buffer, b.desc.count);
 		}
 	}
 

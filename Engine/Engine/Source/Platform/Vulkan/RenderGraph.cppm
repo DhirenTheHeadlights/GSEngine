@@ -968,6 +968,8 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 	recording_context ctx(command);
 
+	m_device->descriptor_heap().bind_buffer(command);
+
 	for (std::size_t si = 0; si < sorted.size(); ++si) {
 		auto& pass = m_passes[sorted[si]];
 

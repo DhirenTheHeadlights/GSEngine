@@ -86,6 +86,12 @@ else()
     target_link_libraries(Engine PUBLIC "${SLANG_LIBRARY}")
 endif()
 
+set(AFTERMATH_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/External/aftermath")
+target_include_directories(Engine PRIVATE "${AFTERMATH_SDK_DIR}/include")
+target_link_libraries(Engine PRIVATE "${AFTERMATH_SDK_DIR}/lib/x64/GFSDK_Aftermath_Lib.x64.lib")
+
+set(AFTERMATH_DLL "${AFTERMATH_SDK_DIR}/lib/x64/GFSDK_Aftermath_Lib.x64.dll" CACHE FILEPATH "" FORCE)
+
 target_link_libraries(Engine PUBLIC
     glfw
     Freetype::Freetype

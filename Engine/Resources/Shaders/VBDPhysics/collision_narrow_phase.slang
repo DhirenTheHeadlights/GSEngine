@@ -1,15 +1,6 @@
+import common;
 import vbd_shared;
-
-[[vk::binding(0, 0)]] RWStructuredBuffer<GpuBody> body_data;
-[[vk::binding(1, 0)]] RWStructuredBuffer<GpuContact> contact_data;
-[[vk::binding(2, 0)]] StructuredBuffer<GpuMotor> motor_data;
-[[vk::binding(3, 0)]] RWStructuredBuffer<uint> color_data;
-[[vk::binding(4, 0)]] RWStructuredBuffer<uint> body_contact_map;
-[[vk::binding(5, 0)]] RWStructuredBuffer<float4> solve_state;
-[[vk::binding(6, 0)]] RWStructuredBuffer<uint> collision_pairs;
-[[vk::binding(7, 0)]] RWStructuredBuffer<uint> collision_state;
-[[vk::binding(8, 0)]] StructuredBuffer<GpuWarmStart> warm_starts;
-[[vk::binding(9, 0)]] RWStructuredBuffer<GpuJoint> joint_data;
+import vbd_physics;
 
 [[vk::push_constant]]
 ConstantBuffer<vbd_push_constants> pc;
@@ -941,6 +932,7 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint 
     return false;
 }
 
+[Layout(LayoutKind::VBDPhysics)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
@@ -983,7 +975,6 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         uint ci;
         InterlockedAdd(collision_state[0], 1, ci);
         if (ci >= MAX_CONTACTS) {
-            InterlockedAdd(collision_state[0], -1, ci);
             return;
         }
 

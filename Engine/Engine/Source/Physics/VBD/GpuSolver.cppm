@@ -26,7 +26,51 @@ export namespace gse::vbd {
 
 	struct buffer_layout {
 		std::uint32_t stride = 0;
-		std::unordered_map<std::string, std::uint32_t> offsets;
+		gse::flat_map<std::string, std::uint32_t> offsets;
+
+		auto operator[](const std::string& name) const -> std::uint32_t {
+			return offsets.at(name);
+		}
+	};
+
+	class struct_writer {
+	public:
+		struct_writer(std::byte* base) : m_base(base) {}
+
+		template<typename T>
+		void write(std::size_t offset, const T& value) {
+			gse::memcpy(m_base + offset, value);
+		}
+
+		void write_index(
+			std::size_t offset,
+			std::uint32_t index,
+			std::uint32_t max,
+			std::source_location loc = std::source_location::current()
+		) {
+			assert(index < max, loc, "Buffer index {} out of bounds (max {})", index, max);
+			write(offset, index);
+		}
+
+	private:
+		std::byte* m_base;
+	};
+
+	class struct_reader {
+	public:
+		struct_reader(const std::byte* base) : m_base(base) {}
+
+		template<typename T>
+		void read(std::size_t offset, T& dest) const {
+			gse::memcpy(dest, m_base + offset);
+		}
+
+		void read_raw(std::size_t src_offset, std::byte* dst, std::size_t size) const {
+			gse::memcpy(dst, m_base + src_offset, size);
+		}
+
+	private:
+		const std::byte* m_base;
 	};
 
 	constexpr std::uint32_t flag_locked = 1u;
@@ -67,95 +111,6 @@ export namespace gse::vbd {
 		vec3<force> lambda;
 		vec3f penalty;
 		float friction_coeff = 0.f;
-	};
-
-	struct cached_body_offsets {
-		std::uint32_t position = 0;
-		std::uint32_t predicted_position = 0;
-		std::uint32_t inertia_target = 0;
-		std::uint32_t old_position = 0;
-		std::uint32_t velocity = 0;
-		std::uint32_t orientation = 0;
-		std::uint32_t predicted_orientation = 0;
-		std::uint32_t angular_inertia_target = 0;
-		std::uint32_t old_orientation = 0;
-		std::uint32_t angular_velocity = 0;
-		std::uint32_t motor_target = 0;
-		std::uint32_t mass = 0;
-		std::uint32_t flags = 0;
-		std::uint32_t sleep_counter = 0;
-		std::uint32_t accel_weight = 0;
-		std::uint32_t inv_inertia_col0 = 0;
-		std::uint32_t inv_inertia_col1 = 0;
-		std::uint32_t inv_inertia_col2 = 0;
-		std::uint32_t half_extents = 0;
-		std::uint32_t aabb_min = 0;
-		std::uint32_t aabb_max = 0;
-	};
-
-	struct cached_contact_offsets {
-		std::uint32_t body_a = 0;
-		std::uint32_t body_b = 0;
-		std::uint32_t feature_key_hi = 0;
-		std::uint32_t feature_key_lo = 0;
-		std::uint32_t sticking = 0;
-		std::uint32_t normal = 0;
-		std::uint32_t tangent_u = 0;
-		std::uint32_t tangent_v = 0;
-		std::uint32_t r_a = 0;
-		std::uint32_t r_b = 0;
-		std::uint32_t c0_friction = 0;
-		std::uint32_t lambda = 0;
-		std::uint32_t penalty = 0;
-	};
-
-	struct cached_motor_offsets {
-		std::uint32_t body_index = 0;
-		std::uint32_t compliance = 0;
-		std::uint32_t max_force = 0;
-		std::uint32_t horizontal_only = 0;
-		std::uint32_t target_velocity = 0;
-	};
-
-	struct cached_warm_start_offsets {
-		std::uint32_t body_a = 0;
-		std::uint32_t body_b = 0;
-		std::uint32_t feature_key_hi = 0;
-		std::uint32_t feature_key_lo = 0;
-		std::uint32_t sticking = 0;
-		std::uint32_t normal = 0;
-		std::uint32_t tangent_u = 0;
-		std::uint32_t tangent_v = 0;
-		std::uint32_t local_anchor_a = 0;
-		std::uint32_t local_anchor_b = 0;
-		std::uint32_t lambda = 0;
-		std::uint32_t penalty = 0;
-	};
-
-	struct cached_joint_offsets {
-		std::uint32_t body_a = 0;
-		std::uint32_t body_b = 0;
-		std::uint32_t type = 0;
-		std::uint32_t limits_enabled = 0;
-		std::uint32_t local_anchor_a = 0;
-		std::uint32_t local_anchor_b = 0;
-		std::uint32_t local_axis_a = 0;
-		std::uint32_t local_axis_b = 0;
-		std::uint32_t target_distance = 0;
-		std::uint32_t compliance = 0;
-		std::uint32_t damping = 0;
-		std::uint32_t limit_lower = 0;
-		std::uint32_t limit_upper = 0;
-		std::uint32_t rest_orientation = 0;
-		std::uint32_t pos_lambda = 0;
-		std::uint32_t pos_penalty = 0;
-		std::uint32_t ang_lambda = 0;
-		std::uint32_t ang_penalty = 0;
-		std::uint32_t limit_lambda = 0;
-		std::uint32_t limit_penalty = 0;
-		std::uint32_t pos_c0 = 0;
-		std::uint32_t ang_c0 = 0;
-		std::uint32_t limit_c0 = 0;
 	};
 
 	class gpu_solver {
@@ -320,12 +275,6 @@ export namespace gse::vbd {
 		buffer_layout m_motor_layout;
 		buffer_layout m_warm_start_layout;
 		buffer_layout m_joint_layout;
-
-		cached_body_offsets m_bo;
-		cached_contact_offsets m_co;
-		cached_motor_offsets m_mo;
-		cached_warm_start_offsets m_wo;
-		cached_joint_offsets m_jo;
 
 		std::uint32_t m_warm_start_count = 0;
 
@@ -494,14 +443,6 @@ auto gse::vbd::gpu_solver::upload(
 		return v + s * t + cross(u, t);
 	};
 
-	const auto& [
-		bo_position, bo_predicted_position, bo_inertia_target, bo_old_position,
-		bo_velocity, bo_orientation, bo_predicted_orientation,
-		bo_angular_inertia_target, bo_old_orientation, bo_angular_velocity,
-		bo_motor_target, bo_mass, bo_flags, bo_sleep_counter, bo_accel_weight,
-		bo_inv_inertia_col0, bo_inv_inertia_col1, bo_inv_inertia_col2,
-		bo_half_extents, bo_aabb_min, bo_aabb_max
-	] = m_bo;
 	m_upload_body_data.resize(m_body_count * m_body_layout.stride, std::byte{0});
 	m_upload_authoritative_bodies.assign(m_body_count, 0);
 	for (const auto body_index : authoritative_body_indices) {
@@ -530,74 +471,75 @@ auto gse::vbd::gpu_solver::upload(
 			sleep_counter
 		] = bodies[i];
 
-		auto* elem = m_upload_body_data.data() + i * m_body_layout.stride;
+		struct_writer elem(m_upload_body_data.data() + i * m_body_layout.stride);
 
 		const bool has_valid_pos = locked || magnitude(position) > decltype(magnitude(position)){};
 
 		if (has_valid_pos || m_frame_count < 2) {
-			gse::memcpy(elem + bo_position, position);
-			gse::memcpy(elem + bo_predicted_position, predicted_position);
-			gse::memcpy(elem + bo_inertia_target, inertia_target);
-			gse::memcpy(elem + bo_old_position, initial_position);
-			gse::memcpy(elem + bo_velocity, body_velocity);
-			gse::memcpy(elem + bo_orientation, orientation);
-			gse::memcpy(elem + bo_predicted_orientation, predicted_orientation);
-			gse::memcpy(elem + bo_angular_inertia_target, angular_inertia_target);
-			gse::memcpy(elem + bo_old_orientation, initial_orientation);
-			gse::memcpy(elem + bo_angular_velocity, body_angular_velocity);
+			elem.write(m_body_layout["position"], position);
+			elem.write(m_body_layout["predicted_position"], predicted_position);
+			elem.write(m_body_layout["inertia_target"], inertia_target);
+			elem.write(m_body_layout["old_position"], initial_position);
+			elem.write(m_body_layout["velocity"], body_velocity);
+			elem.write(m_body_layout["orientation"], orientation);
+			elem.write(m_body_layout["predicted_orientation"], predicted_orientation);
+			elem.write(m_body_layout["angular_inertia_target"], angular_inertia_target);
+			elem.write(m_body_layout["old_orientation"], initial_orientation);
+			elem.write(m_body_layout["angular_velocity"], body_angular_velocity);
 		}
 
-		gse::memcpy(elem + bo_motor_target, motor_target);
+		elem.write(m_body_layout["motor_target"], motor_target);
 
-		gse::memcpy(elem + bo_mass, mass_value);
+		elem.write(m_body_layout["mass"], mass_value);
 
 		std::uint32_t flags = 0;
-		if (locked) flags |= flag_locked;
-		if (update_orientation) flags |= flag_update_orientation;
-		if (affected_by_gravity) flags |= flag_affected_by_gravity;
-		gse::memcpy(elem + bo_flags, flags);
+		if (locked) {
+			flags |= flag_locked;
+		}
+		if (update_orientation) {
+			flags |= flag_update_orientation;
+		}
+		if (affected_by_gravity) {
+			flags |= flag_affected_by_gravity;
+		}
+		elem.write(m_body_layout["flags"], flags);
 
-		gse::memcpy(elem + bo_sleep_counter, sleep_counter);
+		elem.write(m_body_layout["sleep_counter"], sleep_counter);
 
 		const float accel_weight =
 			i < accel_weights.size()
 				? accel_weights[i]
 				: 0.f;
-		gse::memcpy(elem + bo_accel_weight, accel_weight);
+		elem.write(m_body_layout["accel_weight"], accel_weight);
 
-		gse::memcpy(elem + bo_inv_inertia_col0, inv_inertia[0]);
-		gse::memcpy(elem + bo_inv_inertia_col1, inv_inertia[1]);
-		gse::memcpy(elem + bo_inv_inertia_col2, inv_inertia[2]);
+		elem.write(m_body_layout["inv_inertia_col0"], inv_inertia[0]);
+		elem.write(m_body_layout["inv_inertia_col1"], inv_inertia[1]);
+		elem.write(m_body_layout["inv_inertia_col2"], inv_inertia[2]);
 
 		if (i < collision_data.size()) {
 			const auto& [half_extents, aabb_min, aabb_max] = collision_data[i];
-			gse::memcpy(elem + bo_half_extents, half_extents);
-			gse::memcpy(elem + bo_aabb_min, aabb_min);
-			gse::memcpy(elem + bo_aabb_max, aabb_max);
+			elem.write(m_body_layout["half_extents"], half_extents);
+			elem.write(m_body_layout["aabb_min"], aabb_min);
+			elem.write(m_body_layout["aabb_max"], aabb_max);
 		}
 	}
 
-	const auto& [
-		mo_body_index, mo_compliance, mo_max_force,
-		mo_horizontal_only, mo_target_velocity
-	] = m_mo;
 	m_upload_motor_data.assign(m_motor_count * m_motor_layout.stride, std::byte{0});
 	for (std::uint32_t i = 0; i < m_motor_count; ++i) {
 		const auto& [
 			body_index, target_velocity,
 			compliance, max_force, horizontal_only
 		] = motors[i];
-		auto* elem = m_upload_motor_data.data() + i * m_motor_layout.stride;
+		struct_writer elem(m_upload_motor_data.data() + i * m_motor_layout.stride);
 
-		gse::memcpy(elem + mo_body_index, body_index);
-		gse::memcpy(elem + mo_compliance, compliance);
-
-		gse::memcpy(elem + mo_max_force, max_force);
+		elem.write_index(m_motor_layout["body_index"], body_index, m_body_count);
+		elem.write(m_motor_layout["compliance"], compliance);
+		elem.write(m_motor_layout["max_force"], max_force);
 
 		const std::uint32_t horiz = horizontal_only ? 1u : 0u;
-		gse::memcpy(elem + mo_horizontal_only, horiz);
+		elem.write(m_motor_layout["horizontal_only"], horiz);
 
-		gse::memcpy(elem + mo_target_velocity, target_velocity);
+		elem.write(m_motor_layout["target_velocity"], target_velocity);
 	}
 
 	constexpr std::uint32_t color_data_size = max_colors * 2 + max_bodies;
@@ -622,11 +564,6 @@ auto gse::vbd::gpu_solver::upload(
 
 	m_warm_start_count = static_cast<std::uint32_t>(std::min(prev_contacts.size(), static_cast<std::size_t>(max_contacts)));
 
-	const auto& [
-		wo_body_a, wo_body_b, wo_feature_key_hi, wo_feature_key_lo,
-		wo_sticking, wo_normal, wo_tangent_u, wo_tangent_v,
-		wo_local_anchor_a, wo_local_anchor_b, wo_lambda, wo_penalty
-	] = m_wo;
 	m_upload_warm_start_data.assign(m_warm_start_count * m_warm_start_layout.stride, std::byte{0});
 	for (std::uint32_t i = 0; i < m_warm_start_count; ++i) {
 		const auto& [
@@ -635,73 +572,65 @@ auto gse::vbd::gpu_solver::upload(
 			ws_local_anchor_a, ws_local_anchor_b,
 			ws_lambda, ws_penalty
 		] = prev_contacts[i];
-		auto* elem = m_upload_warm_start_data.data() + i * m_warm_start_layout.stride;
+		struct_writer elem(m_upload_warm_start_data.data() + i * m_warm_start_layout.stride);
 
-		gse::memcpy(elem + wo_body_a, ws_body_a);
-		gse::memcpy(elem + wo_body_b, ws_body_b);
+		elem.write_index(m_warm_start_layout["body_a"], ws_body_a, m_body_count);
+		elem.write_index(m_warm_start_layout["body_b"], ws_body_b, m_body_count);
 		const auto feature_hi = static_cast<std::uint32_t>(ws_feature_key >> 32);
 		const auto feature_lo = static_cast<std::uint32_t>(ws_feature_key & 0xFFFFFFFFu);
-		gse::memcpy(elem + wo_feature_key_hi, feature_hi);
-		gse::memcpy(elem + wo_feature_key_lo, feature_lo);
+		elem.write(m_warm_start_layout["feature_key_hi"], feature_hi);
+		elem.write(m_warm_start_layout["feature_key_lo"], feature_lo);
 
 		const std::uint32_t sticking = ws_sticking ? 1u : 0u;
-		gse::memcpy(elem + wo_sticking, sticking);
+		elem.write(m_warm_start_layout["sticking"], sticking);
 
-		gse::memcpy(elem + wo_normal, ws_normal);
-		gse::memcpy(elem + wo_tangent_u, ws_tangent_u);
-		gse::memcpy(elem + wo_tangent_v, ws_tangent_v);
+		elem.write(m_warm_start_layout["normal"], ws_normal);
+		elem.write(m_warm_start_layout["tangent_u"], ws_tangent_u);
+		elem.write(m_warm_start_layout["tangent_v"], ws_tangent_v);
 
-		gse::memcpy(elem + wo_local_anchor_a, ws_local_anchor_a);
-		gse::memcpy(elem + wo_local_anchor_b, ws_local_anchor_b);
-		gse::memcpy(elem + wo_lambda, ws_lambda);
+		elem.write(m_warm_start_layout["local_anchor_a"], ws_local_anchor_a);
+		elem.write(m_warm_start_layout["local_anchor_b"], ws_local_anchor_b);
+		elem.write(m_warm_start_layout["lambda"], ws_lambda);
 
-		gse::memcpy(elem + wo_penalty, ws_penalty);
+		elem.write(m_warm_start_layout["penalty"], ws_penalty);
 	}
 
-	m_joint_count = static_cast<std::uint32_t>(std::min(joints.size(), static_cast<std::size_t>(max_joints)));
-
-	const auto& [
-		jo_body_a, jo_body_b, jo_type, jo_limits_enabled,
-		jo_local_anchor_a, jo_local_anchor_b, jo_local_axis_a, jo_local_axis_b,
-		jo_target_distance, jo_compliance, jo_damping, jo_limit_lower, jo_limit_upper,
-		jo_rest_orientation,
-		jo_pos_lambda, jo_pos_penalty, jo_ang_lambda, jo_ang_penalty,
-		jo_limit_lambda, jo_limit_penalty,
-		jo_pos_c0, jo_ang_c0, jo_limit_c0
-	] = m_jo;
-
-	m_upload_joint_data.assign(m_joint_count * m_joint_layout.stride, std::byte{0});
+	m_joint_count = 0;
+	m_upload_joint_data.assign(std::min(joints.size(), static_cast<std::size_t>(max_joints)) * m_joint_layout.stride, std::byte{0});
 
 	const time_step sub_dt = dt / static_cast<float>(std::max(m_steps, 1u));
 	const time_squared h_squared = sub_dt * sub_dt;
 
-	for (std::uint32_t i = 0; i < m_joint_count; ++i) {
+	for (std::size_t i = 0; i < joints.size() && m_joint_count < max_joints; ++i) {
 		const auto& j = joints[i];
-		auto* elem = m_upload_joint_data.data() + i * m_joint_layout.stride;
+		if (j.body_a >= m_body_count || j.body_b >= m_body_count) {
+			continue;
+		}
+		struct_writer elem(m_upload_joint_data.data() + m_joint_count * m_joint_layout.stride);
 
-		gse::memcpy(elem + jo_body_a, j.body_a);
-		gse::memcpy(elem + jo_body_b, j.body_b);
+		elem.write_index(m_joint_layout["body_a"], j.body_a, m_body_count);
+		elem.write_index(m_joint_layout["body_b"], j.body_b, m_body_count);
 
 		const auto type_val = static_cast<std::uint32_t>(j.type);
-		gse::memcpy(elem + jo_type, type_val);
+		elem.write(m_joint_layout["type"], type_val);
 
 		const std::uint32_t limits = j.limits_enabled ? 1u : 0u;
-		gse::memcpy(elem + jo_limits_enabled, limits);
+		elem.write(m_joint_layout["limits_enabled"], limits);
 
-		gse::memcpy(elem + jo_local_anchor_a, j.local_anchor_a);
-		gse::memcpy(elem + jo_local_anchor_b, j.local_anchor_b);
+		elem.write(m_joint_layout["local_anchor_a"], j.local_anchor_a);
+		elem.write(m_joint_layout["local_anchor_b"], j.local_anchor_b);
 
-		gse::memcpy(elem + jo_local_axis_a, j.local_axis_a);
-		gse::memcpy(elem + jo_local_axis_b, j.local_axis_b);
+		elem.write(m_joint_layout["local_axis_a"], j.local_axis_a);
+		elem.write(m_joint_layout["local_axis_b"], j.local_axis_b);
 
-		gse::memcpy(elem + jo_target_distance, j.target_distance);
-		gse::memcpy(elem + jo_compliance, j.compliance);
-		gse::memcpy(elem + jo_damping, j.damping);
+		elem.write(m_joint_layout["target_distance"], j.target_distance);
+		elem.write(m_joint_layout["compliance"], j.compliance);
+		elem.write(m_joint_layout["damping"], j.damping);
 
-		gse::memcpy(elem + jo_limit_lower, j.limit_lower);
-		gse::memcpy(elem + jo_limit_upper, j.limit_upper);
+		elem.write(m_joint_layout["limit_lower"], j.limit_lower);
+		elem.write(m_joint_layout["limit_upper"], j.limit_upper);
 
-		gse::memcpy(elem + jo_rest_orientation, j.rest_orientation);
+		elem.write(m_joint_layout["rest_orientation"], j.rest_orientation);
 
 		const auto& body_a_state = bodies[j.body_a];
 		const auto& body_b_state = bodies[j.body_b];
@@ -865,18 +794,19 @@ auto gse::vbd::gpu_solver::upload(
 			for (int k = 0; k < 3; ++k) ang_c0_val[k] = slider_theta[k];
 		}
 
-		gse::memcpy(elem + jo_pos_lambda, pos_lambda);
-		gse::memcpy(elem + jo_pos_penalty, pos_penalty);
+		elem.write(m_joint_layout["pos_lambda"], pos_lambda);
+		elem.write(m_joint_layout["pos_penalty"], pos_penalty);
 
-		gse::memcpy(elem + jo_ang_lambda, ang_lambda);
-		gse::memcpy(elem + jo_ang_penalty, ang_penalty);
+		elem.write(m_joint_layout["ang_lambda"], ang_lambda);
+		elem.write(m_joint_layout["ang_penalty"], ang_penalty);
 
-		gse::memcpy(elem + jo_limit_lambda, limit_lambda_val);
-		gse::memcpy(elem + jo_limit_penalty, limit_penalty_val);
+		elem.write(m_joint_layout["limit_lambda"], limit_lambda_val);
+		elem.write(m_joint_layout["limit_penalty"], limit_penalty_val);
 
-		gse::memcpy(elem + jo_pos_c0, pos_c0_val);
-		gse::memcpy(elem + jo_ang_c0, ang_c0_val);
-		gse::memcpy(elem + jo_limit_c0, limit_c0_val);
+		elem.write(m_joint_layout["pos_c0"], pos_c0_val);
+		elem.write(m_joint_layout["ang_c0"], ang_c0_val);
+		elem.write(m_joint_layout["limit_c0"], limit_c0_val);
+		++m_joint_count;
 	}
 
 	m_pending_dispatch = true;
@@ -890,53 +820,60 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 	if (!m_buffers_created || !m_pending_dispatch || m_body_count == 0) return;
 
 	if (m_latest_gpu_body_count > 0 && !m_latest_gpu_body_data.empty() && !m_upload_body_data.empty()) {
-		const auto& [
-			bo_position, bo_predicted_position, bo_inertia_target, bo_old_position,
-			bo_velocity, bo_orientation, bo_predicted_orientation,
-			bo_angular_inertia_target, bo_old_orientation, bo_angular_velocity,
-			bo_motor_target, bo_mass, bo_flags, bo_sleep_counter, bo_accel_weight,
-			bo_inv_inertia_col0, bo_inv_inertia_col1, bo_inv_inertia_col2,
-			bo_half_extents, bo_aabb_min, bo_aabb_max
-		] = m_bo;
 		const std::uint32_t patch_count = std::min(m_latest_gpu_body_count, m_body_count);
 		for (std::uint32_t i = 0; i < patch_count; ++i) {
-			const auto* src = m_latest_gpu_body_data.data() + i * m_body_layout.stride;
-			auto* dst = m_upload_body_data.data() + i * m_body_layout.stride;
+			struct_reader src(m_latest_gpu_body_data.data() + i * m_body_layout.stride);
+			struct_reader dst_reader(m_upload_body_data.data() + i * m_body_layout.stride);
+			struct_writer dst(m_upload_body_data.data() + i * m_body_layout.stride);
 
 			if (i < m_upload_authoritative_bodies.size() && m_upload_authoritative_bodies[i] != 0) {
 				continue;
 			}
 
 			std::uint32_t cpu_flags = 0;
-			gse::memcpy(cpu_flags, dst + bo_flags);
-			if (cpu_flags & flag_locked) continue;
+			dst_reader.read(m_body_layout["flags"], cpu_flags);
+			if (cpu_flags & flag_locked) {
+				continue;
+			}
 
 			quat orient_q;
-			gse::memcpy(orient_q, src + bo_orientation);
-			if (gse::dot(orient_q, orient_q) < 0.5f) continue;
+			src.read(m_body_layout["orientation"], orient_q);
+			if (gse::dot(orient_q, orient_q) < 0.5f) {
+				continue;
+			}
 
 			vec3f pos;
-			gse::memcpy(pos, src + bo_position);
-			if (!gse::isfinite(pos)) continue;
+			src.read(m_body_layout["position"], pos);
+			if (!gse::isfinite(pos)) {
+				continue;
+			}
 
 			vec3f vel;
-			gse::memcpy(vel, src + bo_velocity);
-			if (!gse::isfinite(vel)) continue;
+			src.read(m_body_layout["velocity"], vel);
+			if (!gse::isfinite(vel)) {
+				continue;
+			}
 
-			gse::memcpy(dst + bo_position, pos);
-			gse::memcpy(dst + bo_velocity, vel);
-			gse::memcpy(dst + bo_orientation, orient_q);
-			gse::memcpy(dst + bo_angular_velocity, src + bo_angular_velocity, sizeof(float) * 3);
-			gse::memcpy(dst + bo_sleep_counter, src + bo_sleep_counter, sizeof(std::uint32_t));
+			dst.write(m_body_layout["position"], pos);
+			dst.write(m_body_layout["velocity"], vel);
+			dst.write(m_body_layout["orientation"], orient_q);
+
+			vec3f ang_vel;
+			src.read(m_body_layout["angular_velocity"], ang_vel);
+			dst.write(m_body_layout["angular_velocity"], ang_vel);
+
+			std::uint32_t sleep_ctr;
+			src.read(m_body_layout["sleep_counter"], sleep_ctr);
+			dst.write(m_body_layout["sleep_counter"], sleep_ctr);
 
 			vec3f he;
-			gse::memcpy(he, dst + bo_half_extents);
+			dst_reader.read(m_body_layout["half_extents"], he);
 			const auto rot = mat3_cast(orient_q);
 			const vec3f aabb_he = gse::abs(rot[0]) * he[0] + gse::abs(rot[1]) * he[1] + gse::abs(rot[2]) * he[2];
 			const vec3f amin = pos - aabb_he;
 			const vec3f amax = pos + aabb_he;
-			gse::memcpy(dst + bo_aabb_min, amin);
-			gse::memcpy(dst + bo_aabb_max, amax);
+			dst.write(m_body_layout["aabb_min"], amin);
+			dst.write(m_body_layout["aabb_max"], amax);
 		}
 	}
 
@@ -1019,96 +956,82 @@ auto gse::vbd::gpu_solver::stage_readback() -> void {
 auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vector<contact_readback_entry>& contacts_out, const std::span<joint_constraint> joints_out) -> void {
 	if (!m_staged_valid) return;
 
-	const auto& [
-		bo_position, bo_predicted_position, bo_inertia_target, bo_old_position,
-		bo_velocity, bo_orientation, bo_predicted_orientation,
-		bo_angular_inertia_target, bo_old_orientation, bo_angular_velocity,
-		bo_motor_target, bo_mass, bo_flags, bo_sleep_counter, bo_accel_weight,
-		bo_inv_inertia_col0, bo_inv_inertia_col1, bo_inv_inertia_col2,
-		bo_half_extents, bo_aabb_min, bo_aabb_max
-	] = m_bo;
 	const std::uint32_t count = std::min(m_staged_body_count, static_cast<std::uint32_t>(bodies.size()));
 	for (std::uint32_t i = 0; i < count; ++i) {
-		const auto* elem = m_latest_gpu_body_data.data() + i * m_body_layout.stride;
+		struct_reader elem(m_latest_gpu_body_data.data() + i * m_body_layout.stride);
 		auto& b = bodies[i];
 
-		gse::memcpy(b.orientation, elem + bo_orientation);
-		if (gse::dot(b.orientation, b.orientation) < 0.5f) continue;
+		elem.read(m_body_layout["orientation"], b.orientation);
+		if (gse::dot(b.orientation, b.orientation) < 0.5f) {
+			continue;
+		}
 
-		gse::memcpy(b.position, elem + bo_position);
-		if (!gse::isfinite(b.position)) continue;
+		elem.read(m_body_layout["position"], b.position);
+		if (!gse::isfinite(b.position)) {
+			continue;
+		}
 
-		gse::memcpy(b.body_velocity, elem + bo_velocity);
-		if (!gse::isfinite(b.body_velocity)) b.body_velocity = {};
+		elem.read(m_body_layout["velocity"], b.body_velocity);
+		if (!gse::isfinite(b.body_velocity)) {
+			b.body_velocity = {};
+		}
 
-		gse::memcpy(b.body_angular_velocity, elem + bo_angular_velocity);
-		if (!gse::isfinite(b.body_angular_velocity)) b.body_angular_velocity = {};
+		elem.read(m_body_layout["angular_velocity"], b.body_angular_velocity);
+		if (!gse::isfinite(b.body_angular_velocity)) {
+			b.body_angular_velocity = {};
+		}
 
-		gse::memcpy(b.sleep_counter, elem + bo_sleep_counter);
+		elem.read(m_body_layout["sleep_counter"], b.sleep_counter);
 	}
 
-	const auto& [
-		co_body_a, co_body_b, co_feature_key_hi, co_feature_key_lo,
-		co_sticking, co_normal, co_tangent_u, co_tangent_v,
-		co_r_a, co_r_b, co_c0_friction, co_lambda, co_penalty
-	] = m_co;
 	contacts_out.clear();
 	contacts_out.reserve(m_staged_contact_count);
 	for (std::uint32_t i = 0; i < m_staged_contact_count; ++i) {
-		const auto* elem = m_staged_contact_data.data() + i * m_contact_layout.stride;
+		struct_reader elem(m_staged_contact_data.data() + i * m_contact_layout.stride);
 
 		contact_readback_entry entry;
-		gse::memcpy(entry.body_a, elem + co_body_a);
-		gse::memcpy(entry.body_b, elem + co_body_b);
+		elem.read(m_contact_layout["body_a"], entry.body_a);
+		elem.read(m_contact_layout["body_b"], entry.body_b);
 		std::uint32_t feature_hi = 0;
 		std::uint32_t feature_lo = 0;
-		gse::memcpy(feature_hi, elem + co_feature_key_hi);
-		gse::memcpy(feature_lo, elem + co_feature_key_lo);
+		elem.read(m_contact_layout["feature_key_hi"], feature_hi);
+		elem.read(m_contact_layout["feature_key_lo"], feature_lo);
 		entry.feature_key =
 			(static_cast<std::uint64_t>(feature_hi) << 32) |
 			static_cast<std::uint64_t>(feature_lo);
 
 		std::uint32_t sticking = 0;
-		gse::memcpy(sticking, elem + co_sticking);
+		elem.read(m_contact_layout["sticking"], sticking);
 		entry.sticking = sticking != 0;
 
-		gse::memcpy(entry.normal, elem + co_normal);
-		gse::memcpy(entry.tangent_u, elem + co_tangent_u);
-		gse::memcpy(entry.tangent_v, elem + co_tangent_v);
+		elem.read(m_contact_layout["normal"], entry.normal);
+		elem.read(m_contact_layout["tangent_u"], entry.tangent_u);
+		elem.read(m_contact_layout["tangent_v"], entry.tangent_v);
 
-		gse::memcpy(entry.local_anchor_a, elem + co_r_a);
-		gse::memcpy(entry.local_anchor_b, elem + co_r_b);
+		elem.read(m_contact_layout["r_a"], entry.local_anchor_a);
+		elem.read(m_contact_layout["r_b"], entry.local_anchor_b);
 
-		gse::memcpy(entry.c0, elem + co_c0_friction);
-		gse::memcpy(entry.friction_coeff, elem + co_c0_friction + 3 * sizeof(float));
+		elem.read(m_contact_layout["c0_friction"], entry.c0);
+		gse::memcpy(entry.friction_coeff, m_staged_contact_data.data() + i * m_contact_layout.stride + m_contact_layout["c0_friction"] + 3 * sizeof(float));
 
-		gse::memcpy(entry.lambda, elem + co_lambda);
+		elem.read(m_contact_layout["lambda"], entry.lambda);
 
-		gse::memcpy(entry.penalty, elem + co_penalty);
+		elem.read(m_contact_layout["penalty"], entry.penalty);
 
 		contacts_out.push_back(entry);
 	}
 
-	const auto& [
-		jo_body_a, jo_body_b, jo_type, jo_limits_enabled,
-		jo_local_anchor_a, jo_local_anchor_b, jo_local_axis_a, jo_local_axis_b,
-		jo_target_distance, jo_compliance, jo_damping, jo_limit_lower, jo_limit_upper,
-		jo_rest_orientation,
-		jo_pos_lambda, jo_pos_penalty, jo_ang_lambda, jo_ang_penalty,
-		jo_limit_lambda, jo_limit_penalty,
-		jo_pos_c0, jo_ang_c0, jo_limit_c0
-	] = m_jo;
 	const std::uint32_t jcount = std::min(m_staged_joint_count, static_cast<std::uint32_t>(joints_out.size()));
 	for (std::uint32_t i = 0; i < jcount; ++i) {
-		const auto* elem = m_staged_joint_data.data() + i * m_joint_layout.stride;
+		struct_reader elem(m_staged_joint_data.data() + i * m_joint_layout.stride);
 		auto& jout = joints_out[i];
 
-		gse::memcpy(jout.pos_lambda, elem + jo_pos_lambda);
-		gse::memcpy(jout.pos_penalty, elem + jo_pos_penalty);
-		gse::memcpy(jout.ang_lambda, elem + jo_ang_lambda);
-		gse::memcpy(jout.ang_penalty, elem + jo_ang_penalty);
-		gse::memcpy(jout.limit_lambda, elem + jo_limit_lambda);
-		gse::memcpy(jout.limit_penalty, elem + jo_limit_penalty);
+		elem.read(m_joint_layout["pos_lambda"], jout.pos_lambda);
+		elem.read(m_joint_layout["pos_penalty"], jout.pos_penalty);
+		elem.read(m_joint_layout["ang_lambda"], jout.ang_lambda);
+		elem.read(m_joint_layout["ang_penalty"], jout.ang_penalty);
+		elem.read(m_joint_layout["limit_lambda"], jout.limit_lambda);
+		elem.read(m_joint_layout["limit_penalty"], jout.limit_penalty);
 	}
 
 	m_staged_valid = false;
@@ -1167,16 +1090,16 @@ auto gse::vbd::gpu_solver::solve_time() const -> time_step {
 }
 
 auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
-	m_compute.predict = ctx.get<shader>("Shaders/Compute/vbd_predict");
-	m_compute.solve_color = ctx.get<shader>("Shaders/Compute/vbd_solve_color");
-	m_compute.update_lambda = ctx.get<shader>("Shaders/Compute/vbd_update_lambda");
-	m_compute.derive_velocities = ctx.get<shader>("Shaders/Compute/vbd_derive_velocities");
-	m_compute.finalize = ctx.get<shader>("Shaders/Compute/vbd_finalize");
-	m_compute.collision_reset = ctx.get<shader>("Shaders/Compute/collision_reset");
-	m_compute.collision_broad_phase = ctx.get<shader>("Shaders/Compute/collision_broad_phase");
-	m_compute.collision_narrow_phase = ctx.get<shader>("Shaders/Compute/collision_narrow_phase");
-	m_compute.collision_build_adjacency = ctx.get<shader>("Shaders/Compute/collision_build_adjacency");
-	m_compute.update_joint_lambda = ctx.get<shader>("Shaders/Compute/vbd_update_joint_lambda");
+	m_compute.predict = ctx.get<shader>("Shaders/VBDPhysics/vbd_predict");
+	m_compute.solve_color = ctx.get<shader>("Shaders/VBDPhysics/vbd_solve_color");
+	m_compute.update_lambda = ctx.get<shader>("Shaders/VBDPhysics/vbd_update_lambda");
+	m_compute.derive_velocities = ctx.get<shader>("Shaders/VBDPhysics/vbd_derive_velocities");
+	m_compute.finalize = ctx.get<shader>("Shaders/VBDPhysics/vbd_finalize");
+	m_compute.collision_reset = ctx.get<shader>("Shaders/VBDPhysics/collision_reset");
+	m_compute.collision_broad_phase = ctx.get<shader>("Shaders/VBDPhysics/collision_broad_phase");
+	m_compute.collision_narrow_phase = ctx.get<shader>("Shaders/VBDPhysics/collision_narrow_phase");
+	m_compute.collision_build_adjacency = ctx.get<shader>("Shaders/VBDPhysics/collision_build_adjacency");
+	m_compute.update_joint_lambda = ctx.get<shader>("Shaders/VBDPhysics/vbd_update_joint_lambda");
 
 	ctx.instantly_load(m_compute.predict);
 	ctx.instantly_load(m_compute.solve_color);
@@ -1215,99 +1138,6 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_motor_layout = extract_layout(m_compute.predict, "motor_data");
 	m_warm_start_layout = extract_layout(m_compute.predict, "warm_starts");
 	m_joint_layout = extract_layout(m_compute.predict, "joint_data");
-	{
-		const auto& o = m_body_layout.offsets;
-		m_bo.position = o.at("position");
-		m_bo.predicted_position = o.at("predicted_position");
-		m_bo.inertia_target = o.at("inertia_target");
-		m_bo.old_position = o.at("old_position");
-		m_bo.velocity = o.at("velocity");
-		m_bo.orientation = o.at("orientation");
-		m_bo.predicted_orientation = o.at("predicted_orientation");
-		m_bo.angular_inertia_target = o.at("angular_inertia_target");
-		m_bo.old_orientation = o.at("old_orientation");
-		m_bo.angular_velocity = o.at("angular_velocity");
-		m_bo.motor_target = o.at("motor_target");
-		m_bo.mass = o.at("mass");
-		m_bo.flags = o.at("flags");
-		m_bo.sleep_counter = o.at("sleep_counter");
-		m_bo.accel_weight = o.at("accel_weight");
-		m_bo.inv_inertia_col0 = o.at("inv_inertia_col0");
-		m_bo.inv_inertia_col1 = o.at("inv_inertia_col1");
-		m_bo.inv_inertia_col2 = o.at("inv_inertia_col2");
-		m_bo.half_extents = o.at("half_extents");
-		m_bo.aabb_min = o.at("aabb_min");
-		m_bo.aabb_max = o.at("aabb_max");
-	}
-
-	{
-		const auto& o = m_contact_layout.offsets;
-		m_co.body_a = o.at("body_a");
-		m_co.body_b = o.at("body_b");
-		m_co.feature_key_hi = o.at("feature_key_hi");
-		m_co.feature_key_lo = o.at("feature_key_lo");
-		m_co.sticking = o.at("sticking");
-		m_co.normal = o.at("normal");
-		m_co.tangent_u = o.at("tangent_u");
-		m_co.tangent_v = o.at("tangent_v");
-		m_co.r_a = o.at("r_a");
-		m_co.r_b = o.at("r_b");
-		m_co.c0_friction = o.at("c0_friction");
-		m_co.lambda = o.at("lambda");
-		m_co.penalty = o.at("penalty");
-	}
-
-	{
-		const auto& o = m_motor_layout.offsets;
-		m_mo.body_index = o.at("body_index");
-		m_mo.compliance = o.at("compliance");
-		m_mo.max_force = o.at("max_force");
-		m_mo.horizontal_only = o.at("horizontal_only");
-		m_mo.target_velocity = o.at("target_velocity");
-	}
-
-	{
-		const auto& o = m_warm_start_layout.offsets;
-		m_wo.body_a = o.at("body_a");
-		m_wo.body_b = o.at("body_b");
-		m_wo.feature_key_hi = o.at("feature_key_hi");
-		m_wo.feature_key_lo = o.at("feature_key_lo");
-		m_wo.sticking = o.at("sticking");
-		m_wo.normal = o.at("normal");
-		m_wo.tangent_u = o.at("tangent_u");
-		m_wo.tangent_v = o.at("tangent_v");
-		m_wo.local_anchor_a = o.at("local_anchor_a");
-		m_wo.local_anchor_b = o.at("local_anchor_b");
-		m_wo.lambda = o.at("lambda");
-		m_wo.penalty = o.at("penalty");
-	}
-
-	{
-		const auto& o = m_joint_layout.offsets;
-		m_jo.body_a = o.at("body_a");
-		m_jo.body_b = o.at("body_b");
-		m_jo.type = o.at("type");
-		m_jo.limits_enabled = o.at("limits_enabled");
-		m_jo.local_anchor_a = o.at("local_anchor_a");
-		m_jo.local_anchor_b = o.at("local_anchor_b");
-		m_jo.local_axis_a = o.at("local_axis_a");
-		m_jo.local_axis_b = o.at("local_axis_b");
-		m_jo.target_distance = o.at("target_distance");
-		m_jo.compliance = o.at("compliance");
-		m_jo.damping = o.at("damping");
-		m_jo.limit_lower = o.at("limit_lower");
-		m_jo.limit_upper = o.at("limit_upper");
-		m_jo.rest_orientation = o.at("rest_orientation");
-		m_jo.pos_lambda = o.at("pos_lambda");
-		m_jo.pos_penalty = o.at("pos_penalty");
-		m_jo.ang_lambda = o.at("ang_lambda");
-		m_jo.ang_penalty = o.at("ang_penalty");
-		m_jo.limit_lambda = o.at("limit_lambda");
-		m_jo.limit_penalty = o.at("limit_penalty");
-		m_jo.pos_c0 = o.at("pos_c0");
-		m_jo.ang_c0 = o.at("ang_c0");
-		m_jo.limit_c0 = o.at("limit_c0");
-	}
 
 	create_buffers(ctx);
 
@@ -1358,7 +1188,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 
 	m_compute.queue.begin_timing();
 
-	auto bind_and_push = [&](const resource::handle<shader>& sh, const gpu::pipeline& pipeline, std::uint32_t color_offset, std::uint32_t color_count, std::uint32_t substep, std::uint32_t iteration, float current_alpha, const std::uint32_t warm_start_count) {
+	auto bind_and_push = [&](const resource::handle<shader>& sh, const gpu::pipeline& pipeline, const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
 		m_compute.queue.bind_pipeline(pipeline);
 		m_compute.queue.bind_descriptors(pipeline, m_compute.descriptors);
 		auto pc = sh->cache_push_block("vbd_push_constants");
@@ -1404,7 +1234,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 		const std::uint32_t substep_warm_start_count = (sub == 0) ? m_warm_start_count : 0u;
 
 		bind_and_push(m_compute.collision_reset, m_compute.collision_reset_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		m_compute.queue.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
+		m_compute.queue.dispatch(ceil_div(std::max(m_body_count, max_contacts), workgroup_size), 1, 1);
 		m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		bind_and_push(m_compute.collision_broad_phase, m_compute.collision_broad_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
@@ -1508,6 +1338,6 @@ auto gse::vbd::gpu_solver::contact_stride() const -> std::uint32_t {
 }
 
 auto gse::vbd::gpu_solver::contact_lambda_offset() const -> std::uint32_t {
-	return m_co.lambda;
+	return m_contact_layout["lambda"];
 }
 

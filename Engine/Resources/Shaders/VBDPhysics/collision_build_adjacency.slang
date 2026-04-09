@@ -1,19 +1,11 @@
+import common;
 import vbd_shared;
-
-[[vk::binding(0, 0)]] RWStructuredBuffer<GpuBody> body_data;
-[[vk::binding(1, 0)]] RWStructuredBuffer<GpuContact> contact_data;
-[[vk::binding(2, 0)]] StructuredBuffer<GpuMotor> motor_data;
-[[vk::binding(3, 0)]] RWStructuredBuffer<uint> color_data;
-[[vk::binding(4, 0)]] RWStructuredBuffer<uint> body_contact_map;
-[[vk::binding(5, 0)]] RWStructuredBuffer<float4> solve_state;
-[[vk::binding(6, 0)]] RWStructuredBuffer<uint> collision_pairs;
-[[vk::binding(7, 0)]] RWStructuredBuffer<uint> collision_state;
-[[vk::binding(8, 0)]] StructuredBuffer<GpuWarmStart> warm_starts;
-[[vk::binding(9, 0)]] RWStructuredBuffer<GpuJoint> joint_data;
+import vbd_physics;
 
 [[vk::push_constant]]
 ConstantBuffer<vbd_push_constants> pc;
 
+[Layout(LayoutKind::VBDPhysics)]
 [shader("compute")]
 [numthreads(1, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
@@ -27,6 +19,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     for (uint ci = 0; ci < num_contacts; ci++) {
         GpuContact c = contact_data[ci];
+        if (c.body_a >= body_count || c.body_b >= body_count) continue;
         body_contact_map[MAX_BODIES + c.body_a]++;
         body_contact_map[MAX_BODIES + c.body_b]++;
     }
@@ -44,6 +37,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     for (uint ci = 0; ci < num_contacts; ci++) {
         GpuContact c = contact_data[ci];
+        if (c.body_a >= body_count || c.body_b >= body_count) continue;
         uint off_a = body_contact_map[c.body_a] + slot_offsets[c.body_a];
         body_contact_map[MAX_BODIES * 2 + off_a] = ci;
         slot_offsets[c.body_a]++;
@@ -61,6 +55,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     for (uint ji = 0; ji < num_joints; ji++) {
         GpuJoint j = joint_data[ji];
+        if (j.body_a >= body_count || j.body_b >= body_count) continue;
         body_contact_map[JOINT_MAP_BASE + MAX_BODIES + j.body_a]++;
         body_contact_map[JOINT_MAP_BASE + MAX_BODIES + j.body_b]++;
     }
@@ -77,6 +72,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     for (uint ji = 0; ji < num_joints; ji++) {
         GpuJoint j = joint_data[ji];
+        if (j.body_a >= body_count || j.body_b >= body_count) continue;
         uint off_a = body_contact_map[JOINT_MAP_BASE + j.body_a] + slot_offsets[j.body_a];
         body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + off_a] = ji;
         slot_offsets[j.body_a]++;
@@ -88,6 +84,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     for (uint ji = 0; ji < num_joints; ji++) {
         GpuJoint j = joint_data[ji];
+        if (j.body_a >= body_count || j.body_b >= body_count) continue;
         GpuBody ba = body_data[j.body_a];
         GpuBody bb = body_data[j.body_b];
         float3 r_aw = rotate_vector(ba.orientation, j.local_anchor_a.xyz);

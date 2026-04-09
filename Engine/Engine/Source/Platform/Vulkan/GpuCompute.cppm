@@ -40,6 +40,7 @@ export namespace gse::gpu {
 			vk::raii::QueryPool&& query_pool,
 			const vk::raii::Queue* queue,
 			const vk::raii::Device* device,
+			vulkan::descriptor_heap* heap,
 			float timestamp_period
 		);
 		compute_queue(compute_queue&&) noexcept = default;
@@ -102,6 +103,7 @@ export namespace gse::gpu {
 		vk::raii::QueryPool m_query_pool = nullptr;
 		const vk::raii::Queue* m_queue = nullptr;
 		const vk::raii::Device* m_device = nullptr;
+		vulkan::descriptor_heap* m_descriptor_heap = nullptr;
 		float m_timestamp_period = 0.0f;
 		std::uint32_t m_frame_count = 0;
 	};
@@ -157,7 +159,8 @@ gse::gpu::compute_queue::compute_queue(
 	vk::raii::Fence&& fence,
 	vk::raii::QueryPool&& query_pool,
 	const vk::raii::Queue* queue,
-	const vk::raii::Device* device, 
+	const vk::raii::Device* device,
+	vulkan::descriptor_heap* heap,
 	const float timestamp_period
 ) : m_pool(std::move(pool)),
     m_cmd(std::move(cmd)),
@@ -165,6 +168,7 @@ gse::gpu::compute_queue::compute_queue(
     m_query_pool(std::move(query_pool)),
     m_queue(queue),
     m_device(device),
+    m_descriptor_heap(heap),
     m_timestamp_period(timestamp_period) {}
 
 auto gse::gpu::compute_queue::wait() const -> void {
@@ -176,6 +180,9 @@ auto gse::gpu::compute_queue::begin() const -> void {
 	m_cmd.reset({});
 	m_cmd.begin({});
 	(*m_cmd).resetQueryPool(*m_query_pool, 0, 4);
+	if (m_descriptor_heap) {
+		m_descriptor_heap->bind_buffer(*m_cmd);
+	}
 }
 
 auto gse::gpu::compute_queue::submit() -> void {

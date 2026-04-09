@@ -32,6 +32,12 @@ target_link_libraries(GoonSquadLib PRIVATE Engine)
 add_executable(GoonSquad "${MAIN_CPPM}")
 target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
 
+if(AFTERMATH_DLL)
+    add_custom_command(TARGET GoonSquad POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${AFTERMATH_DLL}" "$<TARGET_FILE_DIR:GoonSquad>"
+    )
+endif()
+
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     add_compile_options(/arch:AVX2 /MP)

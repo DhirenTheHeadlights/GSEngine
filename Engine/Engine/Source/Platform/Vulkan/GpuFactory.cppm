@@ -730,6 +730,7 @@ auto gse::gpu::create_compute_queue(device& dev) -> compute_queue {
 		std::move(query_pool),
 		&dev.compute_queue(),
 		&vk_device,
+		&dev.descriptor_heap(),
 		timestamp_period
 	);
 }

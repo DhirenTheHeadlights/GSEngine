@@ -4,6 +4,7 @@ export import gse.config;
 
 export import :archive;
 
+export import :flat_map;
 export import :linear_vector;
 export import :slot_map;
 export import :static_vector;
