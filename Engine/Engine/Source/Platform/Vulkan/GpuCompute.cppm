@@ -47,6 +47,7 @@ export namespace gse::gpu {
 		auto operator=(compute_queue&&) noexcept -> compute_queue& = default;
 
 		auto wait() const -> void;
+		auto is_complete() const -> bool;
 		auto begin() const -> void;
 		auto submit() -> void;
 
@@ -172,8 +173,17 @@ gse::gpu::compute_queue::compute_queue(
     m_timestamp_period(timestamp_period) {}
 
 auto gse::gpu::compute_queue::wait() const -> void {
-	if (!*m_fence) return;
+	if (!*m_fence) {
+		return;
+	}
 	static_cast<void>(m_device->waitForFences(*m_fence, vk::True, std::numeric_limits<std::uint64_t>::max()));
+}
+
+auto gse::gpu::compute_queue::is_complete() const -> bool {
+	if (!*m_fence) {
+		return true;
+	}
+	return m_fence.getStatus() == vk::Result::eSuccess;
 }
 
 auto gse::gpu::compute_queue::begin() const -> void {

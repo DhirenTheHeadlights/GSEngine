@@ -1481,7 +1481,11 @@ auto gse::physics::system::render(const render_phase& phase, const state& s, ren
 		return;
 	}
 
+	clock timer;
+
 	rs.gpu_solver.stage_readback();
+	const auto readback_time = timer.reset();
+
 	if (rs.gpu_solver.has_readback_data()) {
 		if (rs.in_flight.has_value()) {
 			gpu_readback_result result;
@@ -1505,6 +1509,7 @@ auto gse::physics::system::render(const render_phase& phase, const state& s, ren
 			rs.gpu_solver.readback(discard_bodies, discard_contacts, discard_joints);
 		}
 	}
+	const auto process_time = timer.reset();
 
 	if (const auto& uploads = phase.read_channel<gpu_upload_payload>(); !uploads.empty()) {
 		const auto& [bodies, collision_data, accel_weights, motors, joints, warm_starts, authoritative_body_indices, solver_cfg, dt, steps, entity_ids, joint_count] = uploads[0];
@@ -1528,11 +1533,22 @@ auto gse::physics::system::render(const render_phase& phase, const state& s, ren
 			.gpu_joint_count = joint_count
 		};
 	}
+	const auto upload_time = timer.reset();
 
 	if (rs.gpu_solver.pending_dispatch() && rs.gpu_solver.ready_to_dispatch()) {
 		rs.gpu_solver.commit_upload();
 		auto& ctx = phase.get<gpu::context>();
 		rs.gpu_solver.dispatch_compute(ctx);
+	}
+	const auto dispatch_time = timer.reset();
+
+	static std::uint32_t log_counter = 0;
+	if (log_counter++ % 120 == 0) {
+		log::println(
+			log::category::physics,
+			"render: readback={} process={} upload={} dispatch={}",
+			readback_time, process_time, upload_time, dispatch_time
+		);
 	}
 }
 
