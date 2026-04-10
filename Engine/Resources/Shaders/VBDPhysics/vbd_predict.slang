@@ -29,12 +29,14 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
         if (sleeping) {
             float wake_thresh = pc.velocity_sleep_threshold * 10.0;
-            uint co = body_contact_map[bi];
-            uint cc = body_contact_map[MAX_BODIES + bi];
+            uint co = contact_offsets[bi];
+            uint cc = contact_counts[bi];
             for (uint k = 0; k < cc; k++) {
-                uint ci = body_contact_map[MAX_BODIES * 2 + co + k];
+                uint ci = safe_load_uint(contact_adjacency, co + k, MAX_CONTACT_ADJACENCY);
+                if (ci >= MAX_CONTACTS) continue;
                 GpuContact c = contact_data[ci];
                 uint other = (c.body_a == bi) ? c.body_b : c.body_a;
+                if (other >= pc.body_count) continue;
                 GpuBody other_body = body_data[other];
                 bool other_locked = (other_body.flags & FLAG_LOCKED) != 0;
                 bool other_sleeping = other_body.sleep_counter >= SLEEP_THRESHOLD;
@@ -48,12 +50,14 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             }
 
             if (sleeping) {
-                uint j_off = body_contact_map[JOINT_MAP_BASE + bi];
-                uint jc = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+                uint j_off = joint_offsets[bi];
+                uint jc = joint_counts[bi];
                 for (uint k = 0; k < jc; k++) {
-                    uint ji = body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + j_off + k];
+                    uint ji = safe_load_uint(joint_adjacency, j_off + k, MAX_JOINT_ADJACENCY);
+                    if (ji >= MAX_JOINTS) continue;
                     GpuJoint jnt = joint_data[ji];
                     uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
+                    if (other >= pc.body_count) continue;
                     GpuBody other_body = body_data[other];
                     bool other_locked = (other_body.flags & FLAG_LOCKED) != 0;
                     bool other_sleeping = other_body.sleep_counter >= SLEEP_THRESHOLD;

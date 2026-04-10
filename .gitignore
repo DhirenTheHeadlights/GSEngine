@@ -18,3 +18,4 @@ Makefile
 /.claude/settings.local.json
 /.claude
 /nul
+/Engine/Resources/Misc

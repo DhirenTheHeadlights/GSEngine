@@ -23,8 +23,8 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     }
 
     if (bi < pc.body_count) {
-        body_contact_map[bi] = 0;
-        body_contact_map[MAX_BODIES + bi] = 0;
+        contact_offsets[bi] = 0;
+        contact_counts[bi] = 0;
     }
 
     if (bi < MAX_CONTACTS) {

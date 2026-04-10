@@ -13,21 +13,22 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint body_count = pc.body_count;
 
     for (uint bi = 0; bi < body_count; bi++) {
-        body_contact_map[bi] = 0;
-        body_contact_map[MAX_BODIES + bi] = 0;
+        contact_offsets[bi] = 0;
+        contact_counts[bi] = 0;
     }
 
     for (uint ci = 0; ci < num_contacts; ci++) {
         GpuContact c = contact_data[ci];
         if (c.body_a >= body_count || c.body_b >= body_count) continue;
-        body_contact_map[MAX_BODIES + c.body_a]++;
-        body_contact_map[MAX_BODIES + c.body_b]++;
+        contact_counts[c.body_a]++;
+        contact_counts[c.body_b]++;
     }
 
     uint running_offset = 0;
     for (uint bi = 0; bi < body_count; bi++) {
-        body_contact_map[bi] = running_offset;
-        running_offset += body_contact_map[MAX_BODIES + bi];
+        contact_offsets[bi] = running_offset;
+        running_offset += contact_counts[bi];
+        running_offset = min(running_offset, MAX_CONTACT_ADJACENCY);
     }
 
     uint slot_offsets[MAX_BODIES];
@@ -38,32 +39,38 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     for (uint ci = 0; ci < num_contacts; ci++) {
         GpuContact c = contact_data[ci];
         if (c.body_a >= body_count || c.body_b >= body_count) continue;
-        uint off_a = body_contact_map[c.body_a] + slot_offsets[c.body_a];
-        body_contact_map[MAX_BODIES * 2 + off_a] = ci;
+
+        uint off_a = contact_offsets[c.body_a] + slot_offsets[c.body_a];
+        if (off_a < MAX_CONTACT_ADJACENCY) {
+            contact_adjacency[off_a] = ci;
+        }
         slot_offsets[c.body_a]++;
 
-        uint off_b = body_contact_map[c.body_b] + slot_offsets[c.body_b];
-        body_contact_map[MAX_BODIES * 2 + off_b] = ci;
+        uint off_b = contact_offsets[c.body_b] + slot_offsets[c.body_b];
+        if (off_b < MAX_CONTACT_ADJACENCY) {
+            contact_adjacency[off_b] = ci;
+        }
         slot_offsets[c.body_b]++;
     }
 
-    uint num_joints = pc.joint_count;
+    uint num_joints = min(pc.joint_count, MAX_JOINTS);
     for (uint bi = 0; bi < body_count; bi++) {
-        body_contact_map[JOINT_MAP_BASE + bi] = 0;
-        body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi] = 0;
+        joint_offsets[bi] = 0;
+        joint_counts[bi] = 0;
     }
 
     for (uint ji = 0; ji < num_joints; ji++) {
         GpuJoint j = joint_data[ji];
         if (j.body_a >= body_count || j.body_b >= body_count) continue;
-        body_contact_map[JOINT_MAP_BASE + MAX_BODIES + j.body_a]++;
-        body_contact_map[JOINT_MAP_BASE + MAX_BODIES + j.body_b]++;
+        joint_counts[j.body_a]++;
+        joint_counts[j.body_b]++;
     }
 
     uint joint_running_offset = 0;
     for (uint bi = 0; bi < body_count; bi++) {
-        body_contact_map[JOINT_MAP_BASE + bi] = joint_running_offset;
-        joint_running_offset += body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+        joint_offsets[bi] = joint_running_offset;
+        joint_running_offset += joint_counts[bi];
+        joint_running_offset = min(joint_running_offset, MAX_JOINT_ADJACENCY);
     }
 
     for (uint bi = 0; bi < body_count; bi++) {
@@ -73,12 +80,17 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     for (uint ji = 0; ji < num_joints; ji++) {
         GpuJoint j = joint_data[ji];
         if (j.body_a >= body_count || j.body_b >= body_count) continue;
-        uint off_a = body_contact_map[JOINT_MAP_BASE + j.body_a] + slot_offsets[j.body_a];
-        body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + off_a] = ji;
+
+        uint off_a = joint_offsets[j.body_a] + slot_offsets[j.body_a];
+        if (off_a < MAX_JOINT_ADJACENCY) {
+            joint_adjacency[off_a] = ji;
+        }
         slot_offsets[j.body_a]++;
 
-        uint off_b = body_contact_map[JOINT_MAP_BASE + j.body_b] + slot_offsets[j.body_b];
-        body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + off_b] = ji;
+        uint off_b = joint_offsets[j.body_b] + slot_offsets[j.body_b];
+        if (off_b < MAX_JOINT_ADJACENCY) {
+            joint_adjacency[off_b] = ji;
+        }
         slot_offsets[j.body_b]++;
     }
 
@@ -154,27 +166,29 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         bool locked = (body_data[bi].flags & FLAG_LOCKED) != 0;
         if (locked) continue;
 
-        uint cc = body_contact_map[MAX_BODIES + bi];
-        uint jc = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+        uint cc = contact_counts[bi];
+        uint jc = joint_counts[bi];
         if (cc == 0 && jc == 0) continue;
 
         uint neighbor_colors = 0;
-        uint off = body_contact_map[bi];
+        uint off = contact_offsets[bi];
         for (uint k = 0; k < cc; k++) {
-            uint ci = body_contact_map[MAX_BODIES * 2 + off + k];
+            uint ci = safe_load_uint(contact_adjacency, off + k, MAX_CONTACT_ADJACENCY);
+            if (ci >= num_contacts) continue;
             GpuContact con = contact_data[ci];
             uint other = (con.body_a == bi) ? con.body_b : con.body_a;
-            if (body_color[other] < MAX_COLORS) {
+            if (other < body_count && body_color[other] < MAX_COLORS) {
                 neighbor_colors |= (1u << body_color[other]);
             }
         }
 
-        uint j_off = body_contact_map[JOINT_MAP_BASE + bi];
+        uint j_off = joint_offsets[bi];
         for (uint k = 0; k < jc; k++) {
-            uint ji = body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + j_off + k];
+            uint ji = safe_load_uint(joint_adjacency, j_off + k, MAX_JOINT_ADJACENCY);
+            if (ji >= num_joints) continue;
             GpuJoint jnt = joint_data[ji];
             uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
-            if (body_color[other] < MAX_COLORS) {
+            if (other < body_count && body_color[other] < MAX_COLORS) {
                 neighbor_colors |= (1u << body_color[other]);
             }
         }
@@ -199,14 +213,13 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint motor_only_color = max_contact_color < MAX_COLORS ? max_contact_color : 0;
     bool used_motor_only_color = false;
 
-    uint motor_map_offset = MAX_BODIES * 2 + MAX_CONTACTS * 2;
     for (uint bi = 0; bi < body_count; bi++) {
         bool locked = (body_data[bi].flags & FLAG_LOCKED) != 0;
         if (locked) continue;
 
-        uint cc = body_contact_map[MAX_BODIES + bi];
-        bool has_motor = body_contact_map[motor_map_offset + bi] != 0xFFFFFFFF;
-        uint jc = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+        uint cc = contact_counts[bi];
+        bool has_motor = motor_map[bi] != 0xFFFFFFFF;
+        uint jc = joint_counts[bi];
 
         if (cc == 0 && !has_motor && jc == 0) continue;
 
@@ -224,9 +237,9 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         bool locked = (body_data[bi].flags & FLAG_LOCKED) != 0;
         if (locked) continue;
 
-        uint cc = body_contact_map[MAX_BODIES + bi];
-        bool has_motor = body_contact_map[motor_map_offset + bi] != 0xFFFFFFFF;
-        uint jc = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+        uint cc = contact_counts[bi];
+        bool has_motor = motor_map[bi] != 0xFFFFFFFF;
+        uint jc = joint_counts[bi];
 
         if (cc != 0 || has_motor || jc != 0) continue;
 
@@ -247,10 +260,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     collision_state[1] = max_used_color;
 
-    uint color_offsets[MAX_COLORS];
+    uint color_offsets_arr[MAX_COLORS];
     uint idx = 0;
     for (uint c = 0; c < max_used_color; c++) {
-        color_offsets[c] = idx;
+        color_offsets_arr[c] = idx;
         idx += color_group_count[c];
     }
 
@@ -262,13 +275,13 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     for (uint bi = 0; bi < body_count; bi++) {
         uint c = body_color[bi];
         if (c >= max_used_color) continue;
-        uint pos = color_offsets[c] + fill_offsets[c];
+        uint pos = color_offsets_arr[c] + fill_offsets[c];
         color_group_bodies[pos] = bi;
         fill_offsets[c]++;
     }
 
     for (uint c = 0; c < max_used_color; c++) {
-        color_data[c] = color_offsets[c];
+        color_data[c] = color_offsets_arr[c];
         color_data[MAX_COLORS + c] = color_group_count[c];
     }
     for (uint c = max_used_color; c < MAX_COLORS; c++) {
