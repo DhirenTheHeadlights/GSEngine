@@ -244,6 +244,8 @@ export namespace gse::vbd {
 			resource::handle<shader> collision_build_adjacency;
 			resource::handle<shader> collision_grid_build;
 			resource::handle<shader> update_joint_lambda;
+			resource::handle<shader> prepare_indirect;
+			resource::handle<shader> prepare_contact_indirect;
 
 			gpu::pipeline predict_pipeline;
 			gpu::pipeline solve_color_pipeline;
@@ -256,6 +258,8 @@ export namespace gse::vbd {
 			gpu::pipeline collision_narrow_phase_pipeline;
 			gpu::pipeline collision_build_adjacency_pipeline;
 			gpu::pipeline update_joint_lambda_pipeline;
+			gpu::pipeline prepare_indirect_pipeline;
+			gpu::pipeline prepare_contact_indirect_pipeline;
 
 			float solve_ms = 0.f;
 			bool initialized = false;
@@ -284,6 +288,7 @@ export namespace gse::vbd {
 			gpu::buffer joint_buffer;
 			gpu::buffer grid_buffer;
 			gpu::buffer physics_snapshot_buffer;
+			gpu::buffer indirect_dispatch_buffer;
 
 			struct readback_frame_info {
 				std::uint32_t body_count = 0;
@@ -457,6 +462,12 @@ auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
 			.usage = storage_dst
 		});
 		std::memset(f.physics_snapshot_buffer.mapped(), 0, f.physics_snapshot_buffer.size());
+
+		f.indirect_dispatch_buffer = gpu::create_buffer(ctx.device_ref(), {
+			.size = 2 * 3 * sizeof(std::uint32_t),
+			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::indirect
+		});
+		std::memset(f.indirect_dispatch_buffer.mapped(), 0, f.indirect_dispatch_buffer.size());
 	}
 
 	m_upload_body_data.reserve(max_bodies * m_body_layout.stride);
@@ -1165,6 +1176,8 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.collision_build_adjacency = ctx.get<shader>("Shaders/VBDPhysics/collision_build_adjacency");
 	m_compute.collision_grid_build = ctx.get<shader>("Shaders/VBDPhysics/collision_grid_build");
 	m_compute.update_joint_lambda = ctx.get<shader>("Shaders/VBDPhysics/vbd_update_joint_lambda");
+	m_compute.prepare_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_indirect");
+	m_compute.prepare_contact_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_contact_indirect");
 
 	ctx.instantly_load(m_compute.predict);
 	ctx.instantly_load(m_compute.solve_color);
@@ -1177,6 +1190,8 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	ctx.instantly_load(m_compute.collision_build_adjacency);
 	ctx.instantly_load(m_compute.collision_grid_build);
 	ctx.instantly_load(m_compute.update_joint_lambda);
+	ctx.instantly_load(m_compute.prepare_indirect);
+	ctx.instantly_load(m_compute.prepare_contact_indirect);
 
 	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.predict, "vbd_push_constants");
 	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.solve_color, "vbd_push_constants");
@@ -1189,6 +1204,8 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.collision_grid_build_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_grid_build, "vbd_push_constants");
 	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_build_adjacency, "vbd_push_constants");
 	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.update_joint_lambda, "vbd_push_constants");
+	m_compute.prepare_indirect_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.prepare_indirect, "vbd_push_constants");
+	m_compute.prepare_contact_indirect_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.prepare_contact_indirect, "vbd_push_constants");
 
 	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
 		const auto block = sh->uniform_block(name);
@@ -1230,6 +1247,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 			.buffer("joint_counts", f.joint_counts_buffer)
 			.buffer("joint_adjacency", f.joint_adjacency_buffer)
 			.buffer("grid_data", f.grid_buffer)
+			.buffer("indirect_args", f.indirect_dispatch_buffer)
 			.commit();
 	}
 
@@ -1317,9 +1335,17 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 		f.queue.dispatch(ceil_div(total_pairs, workgroup_size), 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
+		bind_and_push(m_compute.prepare_indirect, m_compute.prepare_indirect_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		f.queue.dispatch(1, 1, 1);
+		f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
+
 		bind_and_push(m_compute.collision_narrow_phase, m_compute.collision_narrow_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(ceil_div(max_collision_pairs, workgroup_size), 1, 1);
+		f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 0);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+
+		bind_and_push(m_compute.prepare_contact_indirect, m_compute.prepare_contact_indirect_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		f.queue.dispatch(1, 1, 1);
+		f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
 
 		bind_and_push(m_compute.collision_build_adjacency, m_compute.collision_build_adjacency_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(1, 1, 1);
@@ -1335,7 +1361,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 			bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
-			f.queue.dispatch(ceil_div(max_contacts, workgroup_size), 1, 1);
+			f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
 			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 		}
 
