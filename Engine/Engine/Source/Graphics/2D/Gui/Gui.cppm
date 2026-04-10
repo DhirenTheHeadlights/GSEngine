@@ -41,7 +41,7 @@ namespace gse::gui {
 		vec2f mouse_position,
 		bool mouse_held,
 		const style& style
-	) -> gui::state;
+	) -> state;
 
 	auto handle_dragging_state(
 		const system_state& s,
@@ -50,7 +50,7 @@ namespace gse::gui {
 		vec2f mouse_position,
 		bool mouse_held,
 		const gpu::context& ctx
-	) -> gui::state;
+	) -> state;
 
 	auto handle_resizing_state(
 		const system_state& s,
@@ -59,7 +59,7 @@ namespace gse::gui {
 		bool mouse_held,
 		const style& style,
 		const gpu::context& ctx
-	) -> gui::state;
+	) -> state;
 
 	auto handle_resizing_divider_state(
 		const system_state& s,
@@ -67,14 +67,14 @@ namespace gse::gui {
 		vec2f mouse_position,
 		bool mouse_held,
 		const style& style
-	) -> gui::state;
+	) -> state;
 
 	auto handle_pending_drag_state(
 		const system_state& s,
 		const states::pending_drag& current,
 		vec2f mouse_position,
 		bool mouse_held
-	) -> gui::state;
+	) -> state;
 
 	auto draw_menu_chrome(
 		const system_state& s,
@@ -129,7 +129,7 @@ export namespace gse::gui {
 		resource::handle<texture> blank_texture;
 
 		mutable std::optional<dock::space> active_dock_space;
-		mutable gui::state current_state;
+		mutable state current_state;
 
 		std::filesystem::path file_path = "Misc/gui_layout.toml";
 		clock save_clock;
@@ -227,18 +227,18 @@ export namespace gse::gui {
 		static auto slider(
 			const system_state& s,
 			const std::string& name,
-			gse::vec<T, N>& v,
-			gse::vec<T, N> min,
-			gse::vec<T, N> max
+			vec<T, N>& v,
+			vec<T, N> min,
+			vec<T, N> max
 		) -> void;
 
 		template <typename T, int N, auto Unit = typename T::default_unit{}>
 		static auto slider(
 			const system_state& s,
 			const std::string& name,
-			gse::vec<T, N>& v,
-			gse::vec<T, N> min,
-			gse::vec<T, N> max
+			vec<T, N>& v,
+			vec<T, N> min,
+			vec<T, N> max
 		) -> void;
 
 		template <is_arithmetic T>
@@ -266,7 +266,7 @@ export namespace gse::gui {
 		static auto vec(
 			const system_state& s,
 			const std::string& name,
-			gse::vec<T, N> v
+			vec<T, N> v
 		) -> void;
 
 		template <typename T, int N, auto Unit = typename T::default_unit{}>
@@ -1502,7 +1502,7 @@ auto gse::gui::draw_tab_bar(const system_state& s, const input::state& input_sta
 	}
 }
 
-auto gse::gui::handle_idle_state(const system_state& s, const input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_idle_state(const system_state& s, const input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> state {
 	struct interaction_candidate {
 		std::variant<states::resizing, states::dragging, states::resizing_divider, states::pending_drag> future_state;
 		cursor::style cursor;
@@ -1752,7 +1752,7 @@ auto gse::gui::handle_idle_state(const system_state& s, const input::state& inpu
 				}
 			}
 
-			return std::visit([](auto&& arg) -> gui::state { return arg; }, hot_item->future_state);
+			return std::visit([](auto&& arg) -> state { return arg; }, hot_item->future_state);
 		}
 	} else {
 		set_style(cursor::style::arrow);
@@ -1761,7 +1761,7 @@ auto gse::gui::handle_idle_state(const system_state& s, const input::state& inpu
 	return states::idle{};
 }
 
-auto gse::gui::handle_dragging_state(const system_state& s, const states::dragging& current, const window& window, const vec2f mouse_position, const bool mouse_held, const gpu::context& ctx) -> gui::state {
+auto gse::gui::handle_dragging_state(const system_state& s, const states::dragging& current, const window& window, const vec2f mouse_position, const bool mouse_held, const gpu::context& ctx) -> state {
 	menu* m = s.menus.try_get(current.menu_id);
 	if (!m) {
 		set_style(cursor::style::arrow);
@@ -1883,7 +1883,7 @@ auto gse::gui::handle_dragging_state(const system_state& s, const states::draggi
 	return current;
 }
 
-auto gse::gui::handle_resizing_state(const system_state& s, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const gpu::context& ctx) -> gui::state {
+auto gse::gui::handle_resizing_state(const system_state& s, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const gpu::context& ctx) -> state {
 	if (!mouse_held) {
 		s.active_dock_space.reset();
 		set_style(cursor::style::arrow);
@@ -2100,7 +2100,7 @@ auto gse::gui::handle_resizing_state(const system_state& s, const states::resizi
 	return current;
 }
 
-auto gse::gui::handle_resizing_divider_state(const system_state& s, const states::resizing_divider& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_resizing_divider_state(const system_state& s, const states::resizing_divider& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> state {
 	menu* parent = s.menus.try_get(current.parent_id);
 	menu* child = s.menus.try_get(current.child_id);
 
@@ -2216,7 +2216,7 @@ auto gse::gui::handle_resizing_divider_state(const system_state& s, const states
 	return current;
 }
 
-auto gse::gui::handle_pending_drag_state(const system_state& s, const states::pending_drag& current, const vec2f mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_pending_drag_state(const system_state& s, const states::pending_drag& current, const vec2f mouse_position, const bool mouse_held) -> state {
 	if (!mouse_held) {
 		return states::idle{};
 	}
