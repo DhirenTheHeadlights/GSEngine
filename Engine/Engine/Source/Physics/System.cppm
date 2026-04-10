@@ -174,8 +174,7 @@ namespace gse::physics {
 		) const noexcept -> std::size_t;
 	};
 
-	auto refresh_airborne_from_collisions(
-		state& s,
+	auto refresh_airborne_from_collisions(const state& s,
 		chunk<motion_component>& motion,
 		chunk<collision_component>& collision
 	) -> void;
@@ -246,7 +245,7 @@ auto gse::physics::contact_compare_key_hash::operator()(const contact_compare_ke
 	return seed;
 }
 
-auto gse::physics::refresh_airborne_from_collisions(state& s, chunk<motion_component>& motion, chunk<collision_component>& collision) -> void {
+auto gse::physics::refresh_airborne_from_collisions(const state& s, chunk<motion_component>& motion, chunk<collision_component>& collision) -> void {
 	std::vector<collision_pair> objects;
 	objects.reserve(collision.size());
 
