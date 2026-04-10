@@ -18,3 +18,10 @@ public[[vk::binding(13, 0)]] RWStructuredBuffer<uint> joint_offsets;
 public[[vk::binding(14, 0)]] RWStructuredBuffer<uint> joint_counts;
 public[[vk::binding(15, 0)]] RWStructuredBuffer<uint> joint_adjacency;
 public[[vk::binding(16, 0)]] RWStructuredBuffer<uint> grid_data;
+
+public struct DispatchArgs {
+    public uint x;
+    public uint y;
+    public uint z;
+};
+public[[vk::binding(17, 0)]] RWStructuredBuffer<DispatchArgs> indirect_args;

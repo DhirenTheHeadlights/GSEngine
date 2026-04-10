@@ -16,6 +16,7 @@ import gse.utility;
 export namespace gse::gpu {
 	enum class barrier_scope : std::uint8_t {
 		compute_to_compute,
+		compute_to_indirect,
 		host_to_compute,
 		compute_to_transfer,
 		transfer_to_host,
@@ -64,6 +65,11 @@ export namespace gse::gpu {
 			std::uint32_t x,
 			std::uint32_t y = 1,
 			std::uint32_t z = 1
+		) const -> void;
+
+		auto dispatch_indirect(
+			const buffer& buf,
+			std::size_t offset = 0
 		) const -> void;
 
 		auto barrier(
@@ -120,6 +126,13 @@ namespace {
 					.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
 					.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
 					.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
+				};
+			case compute_to_indirect:
+				return {
+					.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+					.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+					.dstStageMask = vk::PipelineStageFlagBits2::eDrawIndirect | vk::PipelineStageFlagBits2::eComputeShader,
+					.dstAccessMask = vk::AccessFlagBits2::eIndirectCommandRead | vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
 				};
 			case host_to_compute:
 				return {
@@ -218,6 +231,10 @@ auto gse::gpu::compute_queue::bind_descriptors(const pipeline& p, const descript
 
 auto gse::gpu::compute_queue::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
 	(*m_cmd).dispatch(x, y, z);
+}
+
+auto gse::gpu::compute_queue::dispatch_indirect(const buffer& buf, const std::size_t offset) const -> void {
+	(*m_cmd).dispatchIndirect(buf.native().buffer, static_cast<vk::DeviceSize>(offset));
 }
 
 auto gse::gpu::compute_queue::barrier(const barrier_scope scope) const -> void {
