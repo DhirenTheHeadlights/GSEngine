@@ -434,7 +434,7 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 		.record([&s, &batches, frame_index, ext_size, window_size,
 			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
 			sprite_writer = std::move(sprite_writer), text_writer = std::move(text_writer),
-			&vertex_buffer, &index_buffer](gpu::recording_context& ctx) mutable {
+			&vertex_buffer, &index_buffer](const gpu::recording_context& ctx) mutable {
 
 			ctx.bind_vertex(vertex_buffer);
 			ctx.bind_index(index_buffer);
@@ -443,8 +443,6 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 			ctx.set_scissor(ext_size);
 
 			auto bound_type = command_type::sprite;
-			resource::handle<texture> bound_texture;
-			resource::handle<font> bound_font;
 			bool first_batch = true;
 
 			for (const auto& [type, index_offset, index_count, clip_rect, texture, font] : batches) {
@@ -461,8 +459,6 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 						ctx.push(s.text_pipeline, text_pc);
 					}
 					bound_type = type;
-					bound_texture = {};
-					bound_font = {};
 					first_batch = false;
 				}
 

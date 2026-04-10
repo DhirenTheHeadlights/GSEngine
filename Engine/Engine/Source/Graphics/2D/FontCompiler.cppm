@@ -67,7 +67,7 @@ struct gse::asset_compiler<gse::font> {
 
         constexpr int first_char = 32, last_char = 126;
         constexpr int glyph_count = last_char - first_char + 1;
-        constexpr float glyph_cell_size = 64.f, padding = 8.f;
+        constexpr float glyph_cell_size = 64.f;
 
         constexpr int atlas_cols = 16;
         const int atlas_rows = static_cast<int>(std::ceil(glyph_count / static_cast<float>(atlas_cols)));
@@ -80,7 +80,8 @@ struct gse::asset_compiler<gse::font> {
         int glyph_index = 0;
 
         for (int c = first_char; c <= last_char; ++c, ++glyph_index) {
-            msdfgen::Shape shape;
+	        constexpr float padding = 8.f;
+	        msdfgen::Shape shape;
             if (!loadGlyph(shape, font_handle, c)) continue;
 
             shape.normalize();

@@ -67,10 +67,11 @@ void as_main(uint gtid : SV_GroupThreadID, uint gid : SV_GroupID) {
 
 struct MeshOutput {
     precise float4 clip_pos    : SV_Position;
-    float3 world_pos   : TEXCOORD0;
-    float3 view_pos    : TEXCOORD1;
-    float3 view_normal : TEXCOORD2;
-    float2 tex_coord   : TEXCOORD3;
+    float3 world_pos    : TEXCOORD0;
+    float3 world_normal : TEXCOORD1;
+    float3 view_pos     : TEXCOORD2;
+    float3 view_normal  : TEXCOORD3;
+    float2 tex_coord    : TEXCOORD4;
 };
 
 [Layout(LayoutKind::Forward3D)]
@@ -99,6 +100,7 @@ void ms_main(
         MeshOutput mo;
         mo.clip_pos = mv.clip_pos;
         mo.world_pos = mv.world_pos;
+        mo.world_normal = mv.world_normal;
         mo.view_pos = mv.view_pos;
         mo.view_normal = mv.view_normal;
         mo.tex_coord = mv.tex_coord;
@@ -124,12 +126,12 @@ float spot_factor(float3 frag_to_light, float3 spot_dir, float cut_off, float ou
     return t;
 }
 
-float trace_shadow(float3 origin, float3 direction, float t_max) {
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER> q;
+float trace_shadow(float3 origin, float3 normal, float3 direction, float t_max) {
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_CULL_BACK_FACING_TRIANGLES> q;
     RayDesc ray;
-    ray.Origin    = origin;
+    ray.Origin    = origin + normal * 0.1;
     ray.Direction = direction;
-    ray.TMin      = 0.005;
+    ray.TMin      = 0.0;
     ray.TMax      = t_max;
     q.TraceRayInline(tlas, RAY_FLAG_NONE, 0xFF, ray);
     while (q.Proceed()) {}
@@ -153,38 +155,44 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
     uint list_offset = tile_info.x;
     uint tile_count = tile_info.y;
 
-    float3 shadow_origin = pos_world;
+    float3 world_n = normalize(input.world_normal);
 
     for (uint t = 0; t < tile_count; ++t) {
         int i = (int)light_index_list[list_offset + t];
         Light light = lights_ssbo[i];
 
+        float3 light_color = light.color;
+        float light_intensity = light.intensity;
+        float light_ambient = light.ambient_strength;
+
         if (light.light_type == LightType::Directional) {
-            float3 world_dir = normalize(mul((float3x3)inv_view, light.direction));
-            float shadow = trace_shadow(shadow_origin, -world_dir, 1000.0);
             float3 L = normalize(-light.direction);
             float NdotL = max(dot(normal_vs, L), 0.0);
-            result += albedo * light.color * light.intensity * NdotL * shadow;
-            result += albedo * light.color * light.ambient_strength;
+            float3 diffuse = albedo * light_color * light_intensity * NdotL;
+            float3 ambient = albedo * light_color * light_ambient;
+            float shadow = trace_shadow(pos_world, world_n, normalize(-light.world_direction), 1000.0);
+            result += diffuse * shadow + ambient;
         } else if (light.light_type == LightType::Point) {
-            float3 world_light_pos = mul(inv_view, float4(light.position, 1.0)).xyz;
-            float dist = length(world_light_pos - pos_world);
-            float shadow = trace_shadow(shadow_origin, normalize(world_light_pos - pos_world), dist - 0.01);
             float3 Lvec = light.position - pos_vs;
             float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
             float att = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);
-            result += albedo * light.color * light.intensity * NdotL * att * shadow;
-            result += albedo * light.color * light.ambient_strength;
+            float3 diffuse = albedo * light_color * light_intensity * NdotL * att;
+            float3 ambient = albedo * light_color * light_ambient;
+            float3 to_light = light.world_position - pos_world;
+            float dist = length(to_light);
+            float shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0);
+            result += diffuse * shadow + ambient;
         } else if (light.light_type == LightType::Spot) {
-            float3 world_light_pos = mul(inv_view, float4(light.position, 1.0)).xyz;
-            float dist = length(world_light_pos - pos_world);
-            float shadow = trace_shadow(shadow_origin, normalize(world_light_pos - pos_world), dist - 0.01);
             float3 Lvec = light.position - pos_vs;
             float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
             float att = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);
             float sf = spot_factor(Lvec, light.direction, light.cut_off, light.outer_cut_off);
-            result += albedo * light.color * light.intensity * NdotL * att * sf * shadow;
-            result += albedo * light.color * light.ambient_strength;
+            float3 diffuse = albedo * light_color * light_intensity * NdotL * att * sf;
+            float3 ambient = albedo * light_color * light_ambient;
+            float3 to_light = light.world_position - pos_world;
+            float dist = length(to_light);
+            float shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0);
+            result += diffuse * shadow + ambient;
         }
     }
 

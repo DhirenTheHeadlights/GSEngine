@@ -131,8 +131,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 			gpu::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.depth_output(gpu::depth_clear{ 1.0f })
-		.record([&s, gc_state, &data, frame_index, ext_w, ext_h,
-			meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](gpu::recording_context& ctx) mutable {
+		.record([&s, gc_state, &data, frame_index, ext_w, ext_h, meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](gpu::recording_context& ctx) mutable {
 			const vec2u ext_size{ ext_w, ext_h };
 			ctx.set_viewport(ext_size);
 			ctx.set_scissor(ext_size);

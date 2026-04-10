@@ -1,4 +1,3 @@
-public static const int MAX_LIGHTS = 10;
 public static const int MAX_POINT_SHADOW_LIGHTS = 4;
 
 public enum class LightType {
@@ -11,6 +10,8 @@ public struct Light {
     public LightType light_type;
     public float3 position;
     public float3 direction;
+    public float3 world_position;
+    public float3 world_direction;
     public float3 color;
     public float  intensity;
     public float  constant;

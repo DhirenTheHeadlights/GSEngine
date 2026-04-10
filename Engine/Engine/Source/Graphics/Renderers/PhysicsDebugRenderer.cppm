@@ -91,8 +91,6 @@ export namespace gse::renderer::physics_debug {
 		per_frame_resource<std::size_t> max_vertices;
 		bool enabled = true;
 		debug_stats latest_stats;
-
-		state() = default;
 	};
 
 	struct system {

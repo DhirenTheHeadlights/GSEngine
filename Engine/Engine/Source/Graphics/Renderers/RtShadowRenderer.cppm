@@ -67,9 +67,11 @@ auto gse::renderer::rt_shadow::system::initialize(const initialize_phase& phase,
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
 		rs.tlas_per_frame[i] = gpu::build_tlas(ctx.device_ref(), max_instances);
 		s.tlas_ptrs[i] = &rs.tlas_per_frame[i];
-		log::println(log::category::render, "RT shadow: frame_slot={} tlas_handle={:#x}",
+		log::println(
+			log::category::render, "RT shadow: frame_slot={} tlas_handle={:#x}",
 			i,
-			s.tlas(static_cast<std::uint32_t>(i)).native_handle().value);
+			s.tlas(static_cast<std::uint32_t>(i)).native_handle().value
+		);
 	}
 }
 
@@ -168,22 +170,26 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 		unique_blas.insert(inst.blas_address);
 	}
 
-	log::println(log::category::render,
+	log::println(
+		log::category::render,
 		"RT shadow: frame={} instances_in_tlas={} unique_blas={} invalid_blas={} nonfinite_transforms={}",
 		frame_index,
 		instances.size(),
 		unique_blas.size(),
 		invalid_blas_count,
-		nonfinite_transform_count);
+		nonfinite_transform_count
+	);
 	for (std::size_t i = 0; i < std::min<std::size_t>(instances.size(), 3); ++i) {
 		const auto& instance = instances[i];
-		log::println(log::category::render,
+		log::println(
+			log::category::render,
 			"RT shadow: instance[{}] blas={:#x} translation=({:.3f}, {:.3f}, {:.3f})",
 			i,
 			instance.blas_address,
 			instance.transform[3][0],
 			instance.transform[3][1],
-			instance.transform[3][2]);
+			instance.transform[3][2]
+		);
 	}
 
 	auto pass = ctx.graph().add_pass<render_state>();

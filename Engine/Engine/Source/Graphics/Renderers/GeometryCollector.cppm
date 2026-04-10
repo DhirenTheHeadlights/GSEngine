@@ -33,8 +33,8 @@ export namespace gse::renderer {
 			vec4<length>(local_max.x(), local_max.y(), local_max.z(), meters(1.0f))
 		};
 
-		vec3<length> world_min(meters(std::numeric_limits<float>::max()));
-		vec3<length> world_max(meters(std::numeric_limits<float>::lowest()));
+		vec3 world_min(meters(std::numeric_limits<float>::max()));
+		vec3 world_max(meters(std::numeric_limits<float>::lowest()));
 
 		for (const auto& corner : corners) {
 			const auto wc = model_matrix * corner;
@@ -187,7 +187,7 @@ export namespace gse::renderer::geometry_collector {
 	struct system {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
 		static auto update(update_phase& phase, state& s) -> void;
-		static auto prepare_render(prepare_render_phase& phase, state& s) -> void;
+		static auto prepare_render(const prepare_render_phase& phase, state& s) -> void;
 	};
 }
 
@@ -240,7 +240,7 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 		s.instance_offsets[name] = member.offset;
 	}
 
-	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
@@ -550,7 +550,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 	});
 }
 
-auto gse::renderer::geometry_collector::system::prepare_render(prepare_render_phase& phase, state& s) -> void {
+auto gse::renderer::geometry_collector::system::prepare_render(const prepare_render_phase& phase, state& s) -> void {
 	const auto& items = phase.read_channel<render_data>();
 	if (items.empty()) {
 		return;
