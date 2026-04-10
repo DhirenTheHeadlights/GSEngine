@@ -501,7 +501,7 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 
 	static_vector<clip_vertex, 9> polygon;
 	for (std::uint8_t i = 0; i < incident_info.vertices.size(); ++i) {
-		polygon.push_back(clip_vertex{
+		polygon.push_back({
 			.point = incident_info.vertices[i],
 			.incident_sides = vertex_side_set(i)
 		});
