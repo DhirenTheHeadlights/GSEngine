@@ -125,6 +125,7 @@ auto gse::engine::initialize() -> void {
 		m_scheduler.add_system<renderer::rt_shadow::system, renderer::rt_shadow::state, renderer::rt_shadow::render_state>(reg);
 		m_scheduler.add_system<renderer::geometry_collector::system, renderer::geometry_collector::state>(reg);
 		m_scheduler.add_system<renderer::skin_compute::system, renderer::skin_compute::state>(reg);
+		m_scheduler.add_system<renderer::physics_transform::system, renderer::physics_transform::state>(reg);
 		m_scheduler.add_system<renderer::cull_compute::system, renderer::cull_compute::state>(reg);
 		m_scheduler.add_system<renderer::depth_prepass::system, renderer::depth_prepass::state>(reg);
 		m_scheduler.add_system<renderer::light_culling::system, renderer::light_culling::state>(reg);
