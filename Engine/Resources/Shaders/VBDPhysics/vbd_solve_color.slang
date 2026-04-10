@@ -471,11 +471,18 @@ void solve_body(uint bi) {
     float3 delta_theta = -mat3_mul_vec(s_inv, g_ang - mat3_mul_vec(mat3_mul(h_tx, h_xx_inv), g_lin));
     float3 delta_x = -mat3_mul_vec(h_xx_inv, g_lin + mat3_mul_vec(hess_xt, delta_theta));
 
-    if (!is_finite3(delta_x) || !is_finite3(delta_theta)) { body_data[bi] = body; return; }
+    if (!is_finite3(delta_x) || !is_finite3(delta_theta)) {
+        body_data[bi] = body;
+        return;
+    }
     float lin_size = length(delta_x);
-    if (lin_size > 0.5) delta_x *= (0.5 / lin_size);
+    if (lin_size > 0.5) {
+        delta_x *= (0.5 / lin_size);
+    }
     float ang_size = length(delta_theta);
-    if (ang_size > 0.5) delta_theta *= (0.5 / ang_size);
+    if (ang_size > 0.5) {
+        delta_theta *= (0.5 / ang_size);
+    }
 
     body.predicted_position.xyz += delta_x;
 

@@ -17,3 +17,4 @@ public[[vk::binding(12, 0)]] RWStructuredBuffer<uint> motor_map;
 public[[vk::binding(13, 0)]] RWStructuredBuffer<uint> joint_offsets;
 public[[vk::binding(14, 0)]] RWStructuredBuffer<uint> joint_counts;
 public[[vk::binding(15, 0)]] RWStructuredBuffer<uint> joint_adjacency;
+public[[vk::binding(16, 0)]] RWStructuredBuffer<uint> grid_data;

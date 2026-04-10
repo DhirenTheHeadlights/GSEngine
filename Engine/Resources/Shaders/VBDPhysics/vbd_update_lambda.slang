@@ -11,7 +11,9 @@ ConstantBuffer<vbd_push_constants> pc;
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint ci = dispatch_id.x;
     uint actual_contact_count = min(collision_state[0], MAX_CONTACTS);
-    if (ci >= actual_contact_count) return;
+    if (ci >= actual_contact_count) {
+        return;
+    }
 
     GpuContact c = contact_data[ci];
     GpuBody body_a = body_data[c.body_a];

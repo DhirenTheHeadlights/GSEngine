@@ -145,7 +145,8 @@ export namespace gse::physics {
 			render_state& rs
 		) -> bool;
 
-		static auto render(const render_phase& phase,
+		static auto render(
+			const render_phase& phase,
 			const state& s,
 			render_state& rs
 		) -> void;
