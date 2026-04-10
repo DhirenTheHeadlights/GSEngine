@@ -526,7 +526,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
     uint idx = dispatch_id.x;
     uint local_id = group_thread_id.x;
     uint num_groups = (pc.body_count + 63u) / 64u;
-    uint num_colors = pc.color_count;
+    uint num_colors = min(collision_state[1], pc.color_count);
 
     for (uint color = 0; color < num_colors; color++) {
         uint count = color_data[MAX_COLORS + color];
