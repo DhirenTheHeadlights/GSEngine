@@ -20,6 +20,14 @@ import gse.log;
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;
 
+	enum class shadow_quality_level : int {
+		off    = 0,
+		hard   = 1,
+		low    = 2,
+		medium = 3,
+		high   = 4
+	};
+
 	struct state {
 		gpu::pipeline pipeline;
 		per_frame_resource<gpu::descriptor_region> descriptors;
@@ -34,6 +42,8 @@ export namespace gse::renderer::forward {
 		resource::handle<texture> blank_texture;
 
 		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
+
+		shadow_quality_level shadow_quality = shadow_quality_level::medium;
 	};
 
 	struct system {
@@ -51,6 +61,15 @@ export namespace gse::renderer::forward {
 
 auto gse::renderer::forward::system::initialize(const initialize_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
+
+	phase.channels.push(save::register_property{
+		.category = "Graphics",
+		.name = "Shadow Quality",
+		.description = "Controls the number of shadow rays per pixel (Off, Hard, Low, Medium, High)",
+		.ref = reinterpret_cast<void*>(&s.shadow_quality),
+		.type = typeid(int),
+		.enum_options = { { "Off", 0 }, { "Hard", 1 }, { "Low", 2 }, { "Medium", 3 }, { "High", 4 } }
+	});
 
 	s.shader_handle = ctx.get<shader>("Shaders/Standard3D/meshlet_geometry");
 	ctx.instantly_load(s.shader_handle);
@@ -174,7 +193,9 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
 	const auto stride = light_block.size;
 
-	std::vector<std::byte> staging(max_lights * stride, std::byte{ 0 });
+	const std::size_t total_lights = std::min(
+		dir_chunk.size() + spot_chunk.size() + point_chunk.size(), max_lights);
+	std::vector<std::byte> staging(total_lights * stride, std::byte{ 0 });
 	std::size_t light_count = 0;
 
 	auto write = [&](const std::size_t index, const std::string_view member, const auto& v) {
@@ -190,6 +211,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		write(light_count, "color", comp.color);
 		write(light_count, "intensity", comp.intensity);
 		write(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "source_radius", comp.source_radius);
 		++light_count;
 	}
 
@@ -211,6 +233,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		write(light_count, "cut_off", cut_off_cos);
 		write(light_count, "outer_cut_off", outer_cut_off_cos);
 		write(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "source_radius", comp.source_radius);
 		++light_count;
 	}
 
@@ -226,10 +249,11 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		write(light_count, "linear", comp.linear);
 		write(light_count, "quadratic", comp.quadratic);
 		write(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "source_radius", comp.source_radius);
 		++light_count;
 	}
 
-	gse::memcpy(light_alloc.mapped(), staging);
+	gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
 
 	const auto& normal_batches = data.normal_batches;
 	const auto& skinned_batches = data.skinned_batches;
@@ -245,6 +269,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const auto ext_h = ext.y();
 	const int num_lights_i = static_cast<int>(light_count);
 	const std::array screen_sz = { ext_w, ext_h };
+	const int shadow_quality_i = static_cast<int>(s.shadow_quality);
 
 	auto meshlet_writer = gpu::create_push_writer(ctx.device_ref(), s.shader_handle);
 	auto skinned_writer = gpu::create_push_writer(ctx.device_ref(), s.skinned_shader);
@@ -265,7 +290,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		)
 		.color_output(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f })
 		.depth_output_load()
-		.record([&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, ext_w, ext_h,
+		.record([&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, shadow_quality_i, ext_w, ext_h,
 			meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](gpu::recording_context& ctx) mutable {
 			const vec2u ext_size{ ext_w, ext_h };
 			ctx.set_viewport(ext_size);
@@ -309,6 +334,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 						pc.set("instance_index", batch.first_instance + inst);
 						pc.set("num_lights", num_lights_i);
 						pc.set("screen_size", screen_sz);
+						pc.set("shadow_quality", shadow_quality_i);
 						ctx.push(s.pipeline, pc);
 
 						const std::uint32_t task_groups = (ml_count + 31) / 32;

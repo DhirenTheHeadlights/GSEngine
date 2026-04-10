@@ -182,7 +182,7 @@ auto gse::gpu::build_blas(device& dev, const blas_geometry_desc& desc) -> blas {
 
 	vk::AccelerationStructureBuildGeometryInfoKHR build_info{
 		.type = vk::AccelerationStructureTypeKHR::eBottomLevel,
-		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild,
 		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
 		.geometryCount = 1,
 		.pGeometries = &geometry
@@ -343,28 +343,10 @@ auto gse::gpu::build_tlas(device& dev, const std::uint32_t max_instances) -> tla
 
 auto gse::gpu::rebuild_tlas(device& dev, tlas& t, const std::span<const acceleration_structure_instance> instances, vulkan::recording_context& ctx) -> void {
 	const auto& vk_device = dev.logical_device();
-	const auto transform_is_finite = [](const mat4f& transform) {
-		for (int row = 0; row < 4; ++row) {
-			for (int col = 0; col < 4; ++col) {
-				if (!std::isfinite(transform[col][row])) {
-					return false;
-				}
-			}
-		}
-		return true;
-	};
 
 	std::vector<vk::AccelerationStructureInstanceKHR> vk_instances;
 	vk_instances.reserve(instances.size());
-	std::size_t invalid_blas_count = 0;
-	std::size_t nonfinite_transform_count = 0;
 	for (const auto& inst : instances) {
-		if (inst.blas_address == 0) {
-			++invalid_blas_count;
-		}
-		if (!transform_is_finite(inst.transform)) {
-			++nonfinite_transform_count;
-		}
 		vk_instances.push_back(to_vk_instance(inst));
 	}
 
@@ -372,7 +354,7 @@ auto gse::gpu::rebuild_tlas(device& dev, tlas& t, const std::span<const accelera
 		std::memcpy(mapped, vk_instances.data(), vk_instances.size() * sizeof(vk::AccelerationStructureInstanceKHR));
 	}
 
-	const vk::DeviceAddress instance_addr = vk_device.getBufferAddress({ 
+	const vk::DeviceAddress instance_addr = vk_device.getBufferAddress({
 		.buffer = t.m_instance_buffer.native().buffer
 	});
 
@@ -381,20 +363,6 @@ auto gse::gpu::rebuild_tlas(device& dev, tlas& t, const std::span<const accelera
 		.buffer = t.m_scratch.native().buffer
 	});
 	const vk::DeviceAddress scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
-	log::println(log::category::render,
-		"AS TLAS rebuild: instances={} handle={:#x} instance_addr={:#x} scratch_addr={:#x} invalid_blas={} nonfinite_transforms={}",
-		instances.size(),
-		reinterpret_cast<std::uint64_t>(static_cast<VkAccelerationStructureKHR>(*t.m_handle)),
-		instance_addr,
-		scratch_addr,
-		invalid_blas_count,
-		nonfinite_transform_count);
-	if (invalid_blas_count > 0 || nonfinite_transform_count > 0) {
-		log::println(log::level::warning, log::category::render,
-			"AS TLAS rebuild has suspect inputs: invalid_blas={} nonfinite_transforms={}",
-			invalid_blas_count,
-			nonfinite_transform_count);
-	}
 
 	constexpr vk::MemoryBarrier2 host_write_barrier{
 		.srcStageMask = vk::PipelineStageFlagBits2::eHost,
@@ -428,8 +396,8 @@ auto gse::gpu::rebuild_tlas(device& dev, tlas& t, const std::span<const accelera
 		.dstAccelerationStructure = *t.m_handle,
 		.geometryCount = 1,
 		.pGeometries = &geometry,
-		.scratchData = { 
-			.deviceAddress = scratch_addr 
+		.scratchData = {
+			.deviceAddress = scratch_addr
 		}
 	};
 

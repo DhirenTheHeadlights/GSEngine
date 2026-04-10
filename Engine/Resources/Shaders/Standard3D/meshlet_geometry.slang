@@ -9,6 +9,7 @@ cbuffer PushConstants {
     uint instance_index;
     int num_lights;
     uint2 screen_size;
+    int shadow_quality;
 };
 
 groupshared MeshletPayload s_payload;
@@ -126,16 +127,52 @@ float spot_factor(float3 frag_to_light, float3 spot_dir, float cut_off, float ou
     return t;
 }
 
-float trace_shadow(float3 origin, float3 normal, float3 direction, float t_max) {
+float trace_shadow_ray(float3 origin, float3 direction, float t_max) {
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_CULL_BACK_FACING_TRIANGLES> q;
     RayDesc ray;
-    ray.Origin    = origin + normal * 0.1;
+    ray.Origin    = origin;
     ray.Direction = direction;
     ray.TMin      = 0.0;
     ray.TMax      = t_max;
     q.TraceRayInline(tlas, RAY_FLAG_NONE, 0xFF, ray);
     while (q.Proceed()) {}
     return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : 1.0;
+}
+
+float interleaved_gradient_noise(float2 pixel) {
+    return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
+}
+
+static const int MAX_SHADOW_SAMPLES = 8;
+static const float GOLDEN_ANGLE = 2.39996;
+
+float trace_shadow(float3 origin, float3 normal, float3 direction, float t_max, float light_radius, float2 pixel, int sample_count) {
+    float3 biased_origin = origin + normal * 0.1;
+
+    if (sample_count <= 1 || light_radius <= 0.0) {
+        return trace_shadow_ray(biased_origin, direction, t_max);
+    }
+
+    float3 up = abs(direction.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 tangent = normalize(cross(up, direction));
+    float3 bitangent = cross(direction, tangent);
+
+    float jitter_scale = light_radius / max(t_max, 0.01);
+    float rotation = interleaved_gradient_noise(pixel) * 6.28318;
+    float inv_count = 1.0 / float(sample_count);
+    float shadow = 0.0;
+
+    [unroll]
+    for (int s = 0; s < MAX_SHADOW_SAMPLES; ++s) {
+        if (s >= sample_count) break;
+        float r = sqrt((float(s) + 0.5) * inv_count);
+        float theta = float(s) * GOLDEN_ANGLE + rotation;
+        float2 disk = float2(cos(theta), sin(theta)) * r;
+        float3 jittered_dir = normalize(direction + (tangent * disk.x + bitangent * disk.y) * jitter_scale);
+        shadow += trace_shadow_ray(biased_origin, jittered_dir, t_max);
+    }
+
+    return shadow * inv_count;
 }
 
 [Layout(LayoutKind::Forward3D)]
@@ -156,6 +193,10 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
     uint tile_count = tile_info.y;
 
     float3 world_n = normalize(input.world_normal);
+    float2 pixel = input.clip_pos.xy;
+
+    static const int sample_counts[] = { 0, 1, 2, 4, 8 };
+    int samples = sample_counts[clamp(shadow_quality, 0, 4)];
 
     for (uint t = 0; t < tile_count; ++t) {
         int i = (int)light_index_list[list_offset + t];
@@ -170,7 +211,10 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
             float NdotL = max(dot(normal_vs, L), 0.0);
             float3 diffuse = albedo * light_color * light_intensity * NdotL;
             float3 ambient = albedo * light_color * light_ambient;
-            float shadow = trace_shadow(pos_world, world_n, normalize(-light.world_direction), 1000.0);
+            float shadow = 1.0;
+            if (samples > 0 && NdotL > 0.0) {
+                shadow = trace_shadow(pos_world, world_n, normalize(-light.world_direction), 1000.0, light.source_radius, pixel, samples);
+            }
             result += diffuse * shadow + ambient;
         } else if (light.light_type == LightType::Point) {
             float3 Lvec = light.position - pos_vs;
@@ -180,7 +224,10 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
             float3 ambient = albedo * light_color * light_ambient;
             float3 to_light = light.world_position - pos_world;
             float dist = length(to_light);
-            float shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0);
+            float shadow = 1.0;
+            if (samples > 0 && NdotL > 0.0) {
+                shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0, light.source_radius, pixel, samples);
+            }
             result += diffuse * shadow + ambient;
         } else if (light.light_type == LightType::Spot) {
             float3 Lvec = light.position - pos_vs;
@@ -191,7 +238,10 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
             float3 ambient = albedo * light_color * light_ambient;
             float3 to_light = light.world_position - pos_world;
             float dist = length(to_light);
-            float shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0);
+            float shadow = 1.0;
+            if (samples > 0 && NdotL > 0.0) {
+                shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0, light.source_radius, pixel, samples);
+            }
             result += diffuse * shadow + ambient;
         }
     }

@@ -156,42 +156,6 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 		}
 	}
 
-	std::size_t invalid_blas_count = 0;
-	std::size_t nonfinite_transform_count = 0;
-	std::unordered_set<std::uint64_t> unique_blas;
-	unique_blas.reserve(instances.size());
-	for (const auto& inst : instances) {
-		if (inst.blas_address == 0) {
-			++invalid_blas_count;
-		}
-		if (!transform_is_finite(inst.transform)) {
-			++nonfinite_transform_count;
-		}
-		unique_blas.insert(inst.blas_address);
-	}
-
-	log::println(
-		log::category::render,
-		"RT shadow: frame={} instances_in_tlas={} unique_blas={} invalid_blas={} nonfinite_transforms={}",
-		frame_index,
-		instances.size(),
-		unique_blas.size(),
-		invalid_blas_count,
-		nonfinite_transform_count
-	);
-	for (std::size_t i = 0; i < std::min<std::size_t>(instances.size(), 3); ++i) {
-		const auto& instance = instances[i];
-		log::println(
-			log::category::render,
-			"RT shadow: instance[{}] blas={:#x} translation=({:.3f}, {:.3f}, {:.3f})",
-			i,
-			instance.blas_address,
-			instance.transform[3][0],
-			instance.transform[3][1],
-			instance.transform[3][2]
-		);
-	}
-
 	auto pass = ctx.graph().add_pass<render_state>();
 	pass.record([&rs, &ctx, instances = std::move(instances), frame_index](vulkan::recording_context& record_ctx) mutable {
 		gpu::rebuild_tlas(ctx.device_ref(), rs.tlas_per_frame[frame_index], instances, record_ctx);
