@@ -24,6 +24,7 @@ import gse.log;
 import gse.utility;
 import gse.platform;
 import gse.audio;
+import gse.math;
 
 export namespace gse::renderer {
 	struct state {
@@ -158,8 +159,14 @@ auto gse::renderer::system::begin_frame(const begin_frame_phase& phase, state& s
 
 	ctx.process_gpu_queue();
 
+	clock fence_timer;
 	auto result = ctx.begin_frame();
+	const auto fence_wait = fence_timer.elapsed();
 	s.frame_begun = result.has_value();
+
+	if (fence_wait > milliseconds(4.f)) {
+		log::println(log::level::warning, log::category::vulkan, "begin_frame fence stall: {}ms", fence_wait.as<milliseconds>());
+	}
 
 	if (!result && result.error() == gpu::frame_status::device_lost) {
 		log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame — terminating");

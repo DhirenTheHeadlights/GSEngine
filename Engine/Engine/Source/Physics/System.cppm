@@ -60,6 +60,10 @@ export namespace gse::physics {
 		std::uint32_t joint_count = 0;
 	};
 
+	struct gpu_body_index_map {
+		std::vector<std::pair<id, std::uint32_t>> entries;
+	};
+
 	struct gpu_readback_result {
 		std::vector<id> entity_ids;
 		std::vector<vbd::body_state> gpu_input_bodies;
@@ -624,6 +628,12 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 	while (s.accumulator >= const_update_time) {
 		s.accumulator -= const_update_time;
 		steps++;
+	}
+
+	constexpr int max_physics_steps = 2;
+	if (steps > max_physics_steps) {
+		s.accumulator = {};
+		steps = max_physics_steps;
 	}
 
 	const float alpha = s.accumulator / const_update_time;
@@ -1219,6 +1229,15 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		.joint_count = static_cast<std::uint32_t>(gpu_joints.size())
 	});
 
+	{
+		gpu_body_index_map body_map;
+		body_map.entries.reserve(id_to_body_index.size());
+		for (const auto& [eid, idx] : id_to_body_index) {
+			body_map.entries.emplace_back(eid, idx);
+		}
+		channels.push(std::move(body_map));
+	}
+
 	if (s.compare_solvers && s.comparison_timer.tick()) {
 		if (steps != 1) {
 			log::println("SOLVER COMPARE: skipped for {} fixed steps; single-step captures are the only apples-to-apples parity check right now", steps);
@@ -1546,8 +1565,8 @@ auto gse::physics::system::render(const render_phase& phase, const state& s, ren
 	if (log_counter++ % 120 == 0) {
 		log::println(
 			log::category::physics,
-			"render: readback={} process={} upload={} dispatch={}",
-			readback_time, process_time, upload_time, dispatch_time
+			"render: readback={} process={} upload={} dispatch={} gpu_solve={}",
+			readback_time, process_time, upload_time, dispatch_time, rs.gpu_solver.solve_time()
 		);
 	}
 }

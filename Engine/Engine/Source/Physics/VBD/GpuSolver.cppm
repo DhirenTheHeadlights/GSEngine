@@ -221,6 +221,16 @@ export namespace gse::vbd {
 		auto solve_time(
 		) const -> time_step;
 
+		auto snapshot_buffer(
+			std::uint32_t slot
+		) const -> const gpu::buffer&;
+
+		auto latest_snapshot_slot(
+		) const -> std::uint32_t;
+
+		auto body_layout(
+		) const -> const buffer_layout&;
+
 	private:
 		struct compute_shaders {
 			resource::handle<shader> predict;
@@ -273,6 +283,7 @@ export namespace gse::vbd {
 			gpu::buffer warm_start_buffer;
 			gpu::buffer joint_buffer;
 			gpu::buffer grid_buffer;
+			gpu::buffer physics_snapshot_buffer;
 
 			struct readback_frame_info {
 				std::uint32_t body_count = 0;
@@ -440,6 +451,12 @@ auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
 			.usage = storage_dst
 		});
 		std::memset(f.readback_buffer.mapped(), 0, f.readback_buffer.size());
+
+		f.physics_snapshot_buffer = gpu::create_buffer(ctx.device_ref(), {
+			.size = max_bodies * m_body_layout.stride,
+			.usage = storage_dst
+		});
+		std::memset(f.physics_snapshot_buffer.mapped(), 0, f.physics_snapshot_buffer.size());
 	}
 
 	m_upload_body_data.reserve(max_bodies * m_body_layout.stride);
@@ -1124,6 +1141,18 @@ auto gse::vbd::gpu_solver::solve_time() const -> time_step {
 	return milliseconds(m_compute.solve_ms);
 }
 
+auto gse::vbd::gpu_solver::snapshot_buffer(const std::uint32_t slot) const -> const gpu::buffer& {
+	return m_frames[slot].physics_snapshot_buffer;
+}
+
+auto gse::vbd::gpu_solver::latest_snapshot_slot() const -> std::uint32_t {
+	return 1 - m_dispatch_slot;
+}
+
+auto gse::vbd::gpu_solver::body_layout() const -> const buffer_layout& {
+	return m_body_layout;
+}
+
 auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.predict = ctx.get<shader>("Shaders/VBDPhysics/vbd_predict");
 	m_compute.solve_color = ctx.get<shader>("Shaders/VBDPhysics/vbd_solve_color");
@@ -1376,6 +1405,12 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 	f.queue.copy_buffer({
 		.src = &f.body_buffer,
 		.dst = &other.body_buffer,
+		.size = body_copy_size
+	});
+
+	f.queue.copy_buffer({
+		.src = &f.body_buffer,
+		.dst = &f.physics_snapshot_buffer,
 		.size = body_copy_size
 	});
 
