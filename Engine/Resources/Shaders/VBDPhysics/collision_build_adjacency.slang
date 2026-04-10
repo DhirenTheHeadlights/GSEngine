@@ -5,96 +5,133 @@ import vbd_physics;
 [[vk::push_constant]]
 ConstantBuffer<vbd_push_constants> pc;
 
+static const uint WG_SIZE = 64;
+
+groupshared uint gs_neighbor[MAX_CONTACT_ADJACENCY];
+groupshared uint gs_joint_neighbor[MAX_JOINT_ADJACENCY];
+groupshared uint gs_body_flags[MAX_BODIES];
+groupshared uint gs_body_color[MAX_BODIES];
+groupshared uint gs_color_group_count[MAX_COLORS];
+groupshared uint gs_color_group_bodies[MAX_BODIES];
+groupshared uint gs_max_used_color;
+
 [Layout(LayoutKind::VBDPhysics)]
 [shader("compute")]
-[numthreads(1, 1, 1)]
-void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
-    uint num_contacts = min(collision_state[0], MAX_CONTACTS);
+[numthreads(64, 1, 1)]
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV_GroupThreadID) {
+    uint tid = group_thread_id.x;
     uint body_count = pc.body_count;
+    uint num_contacts = min(collision_state[0], MAX_CONTACTS);
+    uint num_joints = min(pc.joint_count, MAX_JOINTS);
 
-    for (uint bi = 0; bi < body_count; bi++) {
+    for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
         contact_offsets[bi] = 0;
         contact_counts[bi] = 0;
+        gs_body_flags[bi] = body_data[bi].flags;
     }
+    AllMemoryBarrierWithGroupSync();
 
-    for (uint ci = 0; ci < num_contacts; ci++) {
+    for (uint ci = tid; ci < num_contacts; ci += WG_SIZE) {
         GpuContact c = contact_data[ci];
-        if (c.body_a >= body_count || c.body_b >= body_count) continue;
-        contact_counts[c.body_a]++;
-        contact_counts[c.body_b]++;
+        if (c.body_a < body_count && c.body_b < body_count) {
+            uint dummy;
+            InterlockedAdd(contact_counts[c.body_a], 1u, dummy);
+            InterlockedAdd(contact_counts[c.body_b], 1u, dummy);
+        }
     }
+    AllMemoryBarrierWithGroupSync();
 
-    uint running_offset = 0;
-    for (uint bi = 0; bi < body_count; bi++) {
-        contact_offsets[bi] = running_offset;
-        running_offset += contact_counts[bi];
-        running_offset = min(running_offset, MAX_CONTACT_ADJACENCY);
+    if (tid == 0) {
+        uint running = 0;
+        for (uint bi = 0; bi < body_count; bi++) {
+            contact_offsets[bi] = running;
+            running += contact_counts[bi];
+            running = min(running, MAX_CONTACT_ADJACENCY);
+        }
     }
+    AllMemoryBarrierWithGroupSync();
 
-    uint slot_offsets[MAX_BODIES];
-    for (uint bi = 0; bi < body_count; bi++) {
-        slot_offsets[bi] = 0;
+    for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
+        contact_counts[bi] = 0;
     }
+    AllMemoryBarrierWithGroupSync();
 
-    for (uint ci = 0; ci < num_contacts; ci++) {
+    for (uint ci = tid; ci < num_contacts; ci += WG_SIZE) {
         GpuContact c = contact_data[ci];
-        if (c.body_a >= body_count || c.body_b >= body_count) continue;
+        if (c.body_a < body_count && c.body_b < body_count) {
+            uint slot_a;
+            InterlockedAdd(contact_counts[c.body_a], 1u, slot_a);
+            uint off_a = contact_offsets[c.body_a] + slot_a;
+            if (off_a < MAX_CONTACT_ADJACENCY) {
+                contact_adjacency[off_a] = ci;
+                gs_neighbor[off_a] = c.body_b;
+            }
 
-        uint off_a = contact_offsets[c.body_a] + slot_offsets[c.body_a];
-        if (off_a < MAX_CONTACT_ADJACENCY) {
-            contact_adjacency[off_a] = ci;
+            uint slot_b;
+            InterlockedAdd(contact_counts[c.body_b], 1u, slot_b);
+            uint off_b = contact_offsets[c.body_b] + slot_b;
+            if (off_b < MAX_CONTACT_ADJACENCY) {
+                contact_adjacency[off_b] = ci;
+                gs_neighbor[off_b] = c.body_a;
+            }
         }
-        slot_offsets[c.body_a]++;
-
-        uint off_b = contact_offsets[c.body_b] + slot_offsets[c.body_b];
-        if (off_b < MAX_CONTACT_ADJACENCY) {
-            contact_adjacency[off_b] = ci;
-        }
-        slot_offsets[c.body_b]++;
     }
+    AllMemoryBarrierWithGroupSync();
 
-    uint num_joints = min(pc.joint_count, MAX_JOINTS);
-    for (uint bi = 0; bi < body_count; bi++) {
+    for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
         joint_offsets[bi] = 0;
         joint_counts[bi] = 0;
     }
+    AllMemoryBarrierWithGroupSync();
 
-    for (uint ji = 0; ji < num_joints; ji++) {
+    for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
         GpuJoint j = joint_data[ji];
-        if (j.body_a >= body_count || j.body_b >= body_count) continue;
-        joint_counts[j.body_a]++;
-        joint_counts[j.body_b]++;
+        if (j.body_a < body_count && j.body_b < body_count) {
+            uint dummy;
+            InterlockedAdd(joint_counts[j.body_a], 1u, dummy);
+            InterlockedAdd(joint_counts[j.body_b], 1u, dummy);
+        }
     }
+    AllMemoryBarrierWithGroupSync();
 
-    uint joint_running_offset = 0;
-    for (uint bi = 0; bi < body_count; bi++) {
-        joint_offsets[bi] = joint_running_offset;
-        joint_running_offset += joint_counts[bi];
-        joint_running_offset = min(joint_running_offset, MAX_JOINT_ADJACENCY);
+    if (tid == 0) {
+        uint running = 0;
+        for (uint bi = 0; bi < body_count; bi++) {
+            joint_offsets[bi] = running;
+            running += joint_counts[bi];
+            running = min(running, MAX_JOINT_ADJACENCY);
+        }
     }
+    AllMemoryBarrierWithGroupSync();
 
-    for (uint bi = 0; bi < body_count; bi++) {
-        slot_offsets[bi] = 0;
+    for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
+        joint_counts[bi] = 0;
     }
+    AllMemoryBarrierWithGroupSync();
 
-    for (uint ji = 0; ji < num_joints; ji++) {
+    for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
         GpuJoint j = joint_data[ji];
-        if (j.body_a >= body_count || j.body_b >= body_count) continue;
+        if (j.body_a < body_count && j.body_b < body_count) {
+            uint slot_a;
+            InterlockedAdd(joint_counts[j.body_a], 1u, slot_a);
+            uint off_a = joint_offsets[j.body_a] + slot_a;
+            if (off_a < MAX_JOINT_ADJACENCY) {
+                joint_adjacency[off_a] = ji;
+                gs_joint_neighbor[off_a] = j.body_b;
+            }
 
-        uint off_a = joint_offsets[j.body_a] + slot_offsets[j.body_a];
-        if (off_a < MAX_JOINT_ADJACENCY) {
-            joint_adjacency[off_a] = ji;
+            uint slot_b;
+            InterlockedAdd(joint_counts[j.body_b], 1u, slot_b);
+            uint off_b = joint_offsets[j.body_b] + slot_b;
+            if (off_b < MAX_JOINT_ADJACENCY) {
+                joint_adjacency[off_b] = ji;
+                gs_joint_neighbor[off_b] = j.body_a;
+            }
         }
-        slot_offsets[j.body_a]++;
-
-        uint off_b = joint_offsets[j.body_b] + slot_offsets[j.body_b];
-        if (off_b < MAX_JOINT_ADJACENCY) {
-            joint_adjacency[off_b] = ji;
-        }
-        slot_offsets[j.body_b]++;
     }
+    AllMemoryBarrierWithGroupSync();
 
-    for (uint ji = 0; ji < num_joints; ji++) {
+    for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
         GpuJoint j = joint_data[ji];
         if (j.body_a >= body_count || j.body_b >= body_count) continue;
         GpuBody ba = body_data[j.body_a];
@@ -150,144 +187,140 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
         joint_data[ji] = j;
     }
+    AllMemoryBarrierWithGroupSync();
 
-    uint body_color[MAX_BODIES];
-    for (uint bi = 0; bi < body_count; bi++) {
-        body_color[bi] = 0xFFFFFFFF;
+    for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
+        gs_body_color[bi] = 0xFFFFFFFF;
     }
-
-    uint color_group_count[MAX_COLORS];
-    uint color_group_bodies[MAX_BODIES];
-    for (uint c = 0; c < MAX_COLORS; c++) {
-        color_group_count[c] = 0;
+    for (uint c = tid; c < MAX_COLORS; c += WG_SIZE) {
+        gs_color_group_count[c] = 0;
     }
+    if (tid == 0) {
+        gs_max_used_color = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
 
-    for (uint bi = 0; bi < body_count; bi++) {
-        bool locked = (body_data[bi].flags & FLAG_LOCKED) != 0;
-        if (locked) continue;
+    if (tid == 0) {
+        for (uint bi = 0; bi < body_count; bi++) {
+            if ((gs_body_flags[bi] & FLAG_LOCKED) != 0) continue;
 
-        uint cc = contact_counts[bi];
-        uint jc = joint_counts[bi];
-        if (cc == 0 && jc == 0) continue;
+            uint cc = contact_counts[bi];
+            uint jc = joint_counts[bi];
+            if (cc == 0 && jc == 0) continue;
 
-        uint neighbor_colors = 0;
-        uint off = contact_offsets[bi];
-        for (uint k = 0; k < cc; k++) {
-            uint ci = safe_load_uint(contact_adjacency, off + k, MAX_CONTACT_ADJACENCY);
-            if (ci >= num_contacts) continue;
-            GpuContact con = contact_data[ci];
-            uint other = (con.body_a == bi) ? con.body_b : con.body_a;
-            if (other < body_count && body_color[other] < MAX_COLORS) {
-                neighbor_colors |= (1u << body_color[other]);
+            uint neighbor_colors = 0;
+            uint off = contact_offsets[bi];
+            for (uint k = 0; k < cc; k++) {
+                uint idx = off + k;
+                if (idx >= MAX_CONTACT_ADJACENCY) break;
+                uint other = gs_neighbor[idx];
+                if (other < body_count && gs_body_color[other] < MAX_COLORS) {
+                    neighbor_colors |= (1u << gs_body_color[other]);
+                }
+            }
+
+            uint j_off = joint_offsets[bi];
+            for (uint k = 0; k < jc; k++) {
+                uint idx = j_off + k;
+                if (idx >= MAX_JOINT_ADJACENCY) break;
+                uint other = gs_joint_neighbor[idx];
+                if (other < body_count && gs_body_color[other] < MAX_COLORS) {
+                    neighbor_colors |= (1u << gs_body_color[other]);
+                }
+            }
+
+            uint chosen = 0;
+            while (chosen < MAX_COLORS && (neighbor_colors & (1u << chosen)) != 0) {
+                chosen++;
+            }
+
+            if (chosen < MAX_COLORS) {
+                gs_body_color[bi] = chosen;
             }
         }
 
-        uint j_off = joint_offsets[bi];
-        for (uint k = 0; k < jc; k++) {
-            uint ji = safe_load_uint(joint_adjacency, j_off + k, MAX_JOINT_ADJACENCY);
-            if (ji >= num_joints) continue;
-            GpuJoint jnt = joint_data[ji];
-            uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
-            if (other < body_count && body_color[other] < MAX_COLORS) {
-                neighbor_colors |= (1u << body_color[other]);
+        uint max_contact_color = 0;
+        for (uint bi = 0; bi < body_count; bi++) {
+            if (gs_body_color[bi] < MAX_COLORS && gs_body_color[bi] + 1 > max_contact_color) {
+                max_contact_color = gs_body_color[bi] + 1;
             }
         }
 
-        uint chosen = 0;
-        while (chosen < MAX_COLORS && (neighbor_colors & (1u << chosen)) != 0) {
-            chosen++;
-        }
+        uint motor_only_color = max_contact_color < MAX_COLORS ? max_contact_color : 0;
+        bool used_motor_only_color = false;
 
-        if (chosen < MAX_COLORS) {
-            body_color[bi] = chosen;
-        }
-    }
+        for (uint bi = 0; bi < body_count; bi++) {
+            if ((gs_body_flags[bi] & FLAG_LOCKED) != 0) continue;
 
-    uint max_contact_color = 0;
-    for (uint bi = 0; bi < body_count; bi++) {
-        if (body_color[bi] < MAX_COLORS && body_color[bi] + 1 > max_contact_color) {
-            max_contact_color = body_color[bi] + 1;
-        }
-    }
+            uint cc = contact_counts[bi];
+            bool has_motor = motor_map[bi] != 0xFFFFFFFF;
+            uint jc = joint_counts[bi];
 
-    uint motor_only_color = max_contact_color < MAX_COLORS ? max_contact_color : 0;
-    bool used_motor_only_color = false;
+            if (cc == 0 && !has_motor && jc == 0) continue;
 
-    for (uint bi = 0; bi < body_count; bi++) {
-        bool locked = (body_data[bi].flags & FLAG_LOCKED) != 0;
-        if (locked) continue;
-
-        uint cc = contact_counts[bi];
-        bool has_motor = motor_map[bi] != 0xFFFFFFFF;
-        uint jc = joint_counts[bi];
-
-        if (cc == 0 && !has_motor && jc == 0) continue;
-
-        if (body_color[bi] == 0xFFFFFFFF) {
-            body_color[bi] = motor_only_color;
-            used_motor_only_color = true;
-        }
-    }
-
-    uint free_body_color =
-        (used_motor_only_color && motor_only_color + 1 < MAX_COLORS)
-            ? (motor_only_color + 1)
-            : motor_only_color;
-    for (uint bi = 0; bi < body_count; bi++) {
-        bool locked = (body_data[bi].flags & FLAG_LOCKED) != 0;
-        if (locked) continue;
-
-        uint cc = contact_counts[bi];
-        bool has_motor = motor_map[bi] != 0xFFFFFFFF;
-        uint jc = joint_counts[bi];
-
-        if (cc != 0 || has_motor || jc != 0) continue;
-
-        if (body_color[bi] == 0xFFFFFFFF) {
-            body_color[bi] = free_body_color;
-        }
-    }
-
-    uint max_used_color = 0;
-    for (uint bi = 0; bi < body_count; bi++) {
-        if (body_color[bi] < MAX_COLORS) {
-            color_group_count[body_color[bi]]++;
-            if (body_color[bi] + 1 > max_used_color) {
-                max_used_color = body_color[bi] + 1;
+            if (gs_body_color[bi] == 0xFFFFFFFF) {
+                gs_body_color[bi] = motor_only_color;
+                used_motor_only_color = true;
             }
         }
-    }
 
-    collision_state[1] = max_used_color;
+        uint free_body_color =
+            (used_motor_only_color && motor_only_color + 1 < MAX_COLORS)
+                ? (motor_only_color + 1)
+                : motor_only_color;
+        for (uint bi = 0; bi < body_count; bi++) {
+            if ((gs_body_flags[bi] & FLAG_LOCKED) != 0) continue;
 
-    uint color_offsets_arr[MAX_COLORS];
-    uint idx = 0;
-    for (uint c = 0; c < max_used_color; c++) {
-        color_offsets_arr[c] = idx;
-        idx += color_group_count[c];
-    }
+            uint cc = contact_counts[bi];
+            bool has_motor = motor_map[bi] != 0xFFFFFFFF;
+            uint jc = joint_counts[bi];
 
-    uint fill_offsets[MAX_COLORS];
-    for (uint c = 0; c < max_used_color; c++) {
-        fill_offsets[c] = 0;
-    }
+            if (cc != 0 || has_motor || jc != 0) continue;
 
-    for (uint bi = 0; bi < body_count; bi++) {
-        uint c = body_color[bi];
-        if (c >= max_used_color) continue;
-        uint pos = color_offsets_arr[c] + fill_offsets[c];
-        color_group_bodies[pos] = bi;
-        fill_offsets[c]++;
-    }
+            if (gs_body_color[bi] == 0xFFFFFFFF) {
+                gs_body_color[bi] = free_body_color;
+            }
+        }
 
-    for (uint c = 0; c < max_used_color; c++) {
-        color_data[c] = color_offsets_arr[c];
-        color_data[MAX_COLORS + c] = color_group_count[c];
-    }
-    for (uint c = max_used_color; c < MAX_COLORS; c++) {
-        color_data[MAX_COLORS + c] = 0;
-    }
-    for (uint i = 0; i < idx; i++) {
-        color_data[MAX_COLORS * 2 + i] = color_group_bodies[i];
+        uint max_used_color = 0;
+        for (uint bi = 0; bi < body_count; bi++) {
+            if (gs_body_color[bi] < MAX_COLORS) {
+                gs_color_group_count[gs_body_color[bi]]++;
+                if (gs_body_color[bi] + 1 > max_used_color) {
+                    max_used_color = gs_body_color[bi] + 1;
+                }
+            }
+        }
+
+        collision_state[1] = max_used_color;
+        gs_max_used_color = max_used_color;
+
+        uint color_offsets_arr[MAX_COLORS];
+        uint fill_offsets[MAX_COLORS];
+        uint idx = 0;
+        for (uint c = 0; c < max_used_color; c++) {
+            color_offsets_arr[c] = idx;
+            fill_offsets[c] = 0;
+            idx += gs_color_group_count[c];
+        }
+
+        for (uint bi = 0; bi < body_count; bi++) {
+            uint c = gs_body_color[bi];
+            if (c >= max_used_color) continue;
+            uint pos = color_offsets_arr[c] + fill_offsets[c];
+            gs_color_group_bodies[pos] = bi;
+            fill_offsets[c]++;
+        }
+
+        for (uint c = 0; c < max_used_color; c++) {
+            color_data[c] = color_offsets_arr[c];
+            color_data[MAX_COLORS + c] = gs_color_group_count[c];
+        }
+        for (uint c = max_used_color; c < MAX_COLORS; c++) {
+            color_data[MAX_COLORS + c] = 0;
+        }
+        for (uint i = 0; i < idx; i++) {
+            color_data[MAX_COLORS * 2 + i] = gs_color_group_bodies[i];
+        }
     }
 }
