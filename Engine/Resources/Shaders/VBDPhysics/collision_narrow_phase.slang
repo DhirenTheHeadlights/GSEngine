@@ -276,7 +276,7 @@ FaceInfo find_best_face(float3 center, float3 he, float3 axes[3], float3 dir) {
     return info;
 }
 
-static const int MAX_CLIP_VERTS = 8;
+static const int MAX_CLIP_VERTS = 9;
 
 struct ActiveSides {
     uint values[2];

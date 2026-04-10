@@ -153,14 +153,14 @@ auto gse::static_vector<T, N>::operator=(static_vector&& other) noexcept -> stat
 
 template <typename T, std::size_t N>
 auto gse::static_vector<T, N>::push_back(const T& value) -> reference {
-    gse::assert(m_size < N, std::source_location::current(), "static_vector overflow (capacity: {})", N);
+    assert(m_size < N, std::source_location::current(), "static_vector overflow (capacity: {})", N);
     new (slot(m_size)) T(value);
     return *slot(m_size++);
 }
 
 template <typename T, std::size_t N>
 auto gse::static_vector<T, N>::push_back(T&& value) -> reference {
-    gse::assert(m_size < N, std::source_location::current(), "static_vector overflow (capacity: {})", N);
+    assert(m_size < N, std::source_location::current(), "static_vector overflow (capacity: {})", N);
     new (slot(m_size)) T(std::move(value));
     return *slot(m_size++);
 }
@@ -168,14 +168,14 @@ auto gse::static_vector<T, N>::push_back(T&& value) -> reference {
 template <typename T, std::size_t N>
 template <typename... Args>
 auto gse::static_vector<T, N>::emplace_back(Args&&... args) -> reference {
-    gse::assert(m_size < N, std::source_location::current(), "static_vector overflow (capacity: {})", N);
+    assert(m_size < N, std::source_location::current(), "static_vector overflow (capacity: {})", N);
     new (slot(m_size)) T(std::forward<Args>(args)...);
     return *slot(m_size++);
 }
 
 template <typename T, std::size_t N>
 auto gse::static_vector<T, N>::pop_back() -> void {
-    gse::assert(m_size > 0, std::source_location::current(), "pop_back called on empty static_vector");
+    assert(m_size > 0, std::source_location::current(), "pop_back called on empty static_vector");
     slot(--m_size)->~T();
 }
 

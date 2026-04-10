@@ -13,7 +13,12 @@ public static const uint JOINT_TYPE_FIXED = 1;
 public static const uint JOINT_TYPE_HINGE = 2;
 public static const uint JOINT_TYPE_SLIDER = 3;
 
-public static const uint JOINT_MAP_BASE = MAX_BODIES * 2 + MAX_CONTACTS * 2 + MAX_BODIES;
+public static const uint MAX_CONTACT_ADJACENCY = MAX_CONTACTS * 2;
+public static const uint MAX_JOINT_ADJACENCY = MAX_JOINTS * 2;
+
+public uint safe_load_uint(RWStructuredBuffer<uint> buf, uint index, uint max_index) {
+    return (index < max_index) ? buf[index] : 0;
+}
 
 public struct GpuBody {
     public float4 position;

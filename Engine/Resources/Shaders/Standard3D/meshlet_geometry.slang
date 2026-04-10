@@ -188,20 +188,5 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
         }
     }
 
-    // DEBUG: visualize shadow for first light as grayscale
-    if (tile_count > 0) {
-        int di = (int)light_index_list[list_offset];
-        Light dlight = lights_ssbo[di];
-        float shadow;
-        if (dlight.light_type == LightType::Directional) {
-            float3 world_dir = normalize(mul((float3x3)inv_view, dlight.direction));
-            shadow = trace_shadow(shadow_origin, -world_dir, 1000.0);
-        } else {
-            float3 world_light_pos = mul(inv_view, float4(dlight.position, 1.0)).xyz;
-            float dist = length(world_light_pos - pos_world);
-            shadow = trace_shadow(shadow_origin, normalize(world_light_pos - pos_world), dist - 0.01);
-        }
-        return float4(shadow, shadow, shadow, 1.0);
-    }
-    return float4(1.0, 0.0, 1.0, 1.0);
+    return float4(result, 1.0);
 }

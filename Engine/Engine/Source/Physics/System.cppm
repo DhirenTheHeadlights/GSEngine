@@ -145,8 +145,7 @@ export namespace gse::physics {
 			render_state& rs
 		) -> bool;
 
-		static auto render(
-			render_phase& phase,
+		static auto render(const render_phase& phase,
 			const state& s,
 			render_state& rs
 		) -> void;
@@ -529,7 +528,7 @@ auto gse::physics::build_contact_cache_from_warm_start(const std::span<const vbd
 	for (const auto& c : warm_start_contacts) {
 		cache.store(c.body_a, c.body_b, unpack_feature(c.feature_key), vbd::cached_lambda{
 			.lambda = c.lambda,
-			.penalty = { newtons_per_meter(c.penalty.x()), newtons_per_meter(c.penalty.y()), newtons_per_meter(c.penalty.z()) },
+			.penalty = c.penalty,
 			.normal = c.normal,
 			.tangent_u = c.tangent_u,
 			.tangent_v = c.tangent_v,
@@ -881,14 +880,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 				++matched_contacts;
 				const auto* gpu_contact = it->second;
-				const vec3<stiffness> gpu_penalty{
-					newtons_per_meter(gpu_contact->penalty.x()),
-					newtons_per_meter(gpu_contact->penalty.y()),
-					newtons_per_meter(gpu_contact->penalty.z())
-				};
-
 				const force lambda_err = magnitude(cpu_contact->lambda - gpu_contact->lambda);
-				const stiffness penalty_err = magnitude(cpu_contact->penalty - gpu_penalty);
+				const stiffness penalty_err = magnitude(cpu_contact->penalty - gpu_contact->penalty);
 				const length c0_err = magnitude(cpu_contact->c0 - gpu_contact->c0);
 
 				if (lambda_err > max_contact_lambda_err) {
@@ -908,7 +901,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				}
 			}
 
-			for (const auto& [key, gpu_contact] : gpu_contact_map) {
+			for (const auto& key : gpu_contact_map | std::views::keys) {
 				if (!cpu_contact_map.contains(key)) {
 					++gpu_only_contacts;
 				}
@@ -959,7 +952,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				}
 			}
 
-			gse::log::println(
+			log::println(
 				"SOLVER COMPARE: bodies={} max_pos_err={} (body {}), max_vel_err={}, max_ang_err={}, contacts cpu={} gpu={} matched={} cpu_only={} gpu_only={}, joints cpu={} gpu={}",
 				count,
 				max_pos_err,
@@ -975,14 +968,14 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				completed.gpu_joint_readback.size()
 			);
 
-			gse::log::println(
+			log::println(
 				"  contact deltas: max_lambda_err={}, max_penalty_err={}, max_c0_err={}",
 				max_contact_lambda_err,
 				max_contact_penalty_err,
 				max_contact_c0_err
 			);
 
-			gse::log::println(
+			log::println(
 				"  joint deltas: max_pos_lambda_err={} (joint {}), max_pos_penalty_err={}, max_ang_lambda_err={} (joint {}), max_ang_penalty_err={}, max_limit_lambda_err={} (joint {}), max_limit_penalty_err={}",
 				max_joint_pos_lambda_err,
 				worst_joint_pos_idx,
@@ -998,7 +991,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			if (max_pos_err > meters(1e-4f)) {
 				const auto& cb = cpu[worst_pos_idx];
 				const auto& gb = gpu[worst_pos_idx];
-				gse::log::println(
+				log::println(
 					"  worst body[{}] entity={}: cpu_pos={} gpu_pos={} cpu_vel={} gpu_vel={} cpu_ang={} gpu_ang={}",
 					worst_pos_idx,
 					worst_pos_idx < completed.entity_ids.size() ? completed.entity_ids[worst_pos_idx] : id{},
@@ -1012,7 +1005,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			}
 
 			if (worst_cpu_contact && worst_gpu_contact) {
-				gse::log::println(
+				log::println(
 					"  worst contact: bodies=({}, {}), feature={}, cpu_lambda={} gpu_lambda={} cpu_penalty={} gpu_penalty={} cpu_c0={} gpu_c0={}",
 					worst_contact_key.body_a,
 					worst_contact_key.body_b,
@@ -1020,11 +1013,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 					worst_cpu_contact->lambda,
 					worst_gpu_contact->lambda,
 					worst_cpu_contact->penalty,
-					vec3<stiffness>{
-						newtons_per_meter(worst_gpu_contact->penalty.x()),
-						newtons_per_meter(worst_gpu_contact->penalty.y()),
-						newtons_per_meter(worst_gpu_contact->penalty.z())
-					},
+					worst_gpu_contact->penalty,
 					worst_cpu_contact->c0,
 					worst_gpu_contact->c0
 				);
@@ -1232,7 +1221,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 	if (s.compare_solvers && s.comparison_timer.tick()) {
 		if (steps != 1) {
-			gse::log::println("SOLVER COMPARE: skipped for {} fixed steps; single-step captures are the only apples-to-apples parity check right now", steps);
+			log::println("SOLVER COMPARE: skipped for {} fixed steps; single-step captures are the only apples-to-apples parity check right now", steps);
 		}
 		else {
 			vbd::solver cpu_ref;
@@ -1281,7 +1270,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 }
 
 auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision) -> void {
-	const time_t<float, seconds> const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
+	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	std::unordered_map<id, std::uint32_t> id_to_body_index;
 	id_to_body_index.reserve(motion.size());
@@ -1484,7 +1473,7 @@ auto gse::physics::system::begin_frame(begin_frame_phase&, state& s, render_stat
 	return true;
 }
 
-auto gse::physics::system::render(render_phase& phase, const state& s, render_state& rs) -> void {
+auto gse::physics::system::render(const render_phase& phase, const state& s, render_state& rs) -> void {
 	if (!phase.try_get<gpu::context>() || !s.use_gpu_solver) {
 		return;
 	}
@@ -1507,9 +1496,9 @@ auto gse::physics::system::render(render_phase& phase, const state& s, render_st
 			rs.completed = std::move(result);
 		}
 		else {
-			static thread_local std::vector<vbd::body_state> discard_bodies;
-			static thread_local std::vector<vbd::contact_readback_entry> discard_contacts;
-			static thread_local std::vector<vbd::joint_constraint> discard_joints;
+			thread_local std::vector<vbd::body_state> discard_bodies;
+			thread_local std::vector<vbd::contact_readback_entry> discard_contacts;
+			thread_local std::vector<vbd::joint_constraint> discard_joints;
 			discard_bodies.clear();
 			discard_contacts.clear();
 			discard_joints.clear();
@@ -1517,27 +1506,26 @@ auto gse::physics::system::render(render_phase& phase, const state& s, render_st
 		}
 	}
 
-	const auto& uploads = phase.read_channel<gpu_upload_payload>();
-	if (!uploads.empty()) {
-		const auto& payload = uploads[0];
+	if (const auto& uploads = phase.read_channel<gpu_upload_payload>(); !uploads.empty()) {
+		const auto& [bodies, collision_data, accel_weights, motors, joints, warm_starts, authoritative_body_indices, solver_cfg, dt, steps, entity_ids, joint_count] = uploads[0];
 
 		rs.gpu_solver.upload(
-			payload.bodies,
-			payload.collision_data,
-			payload.accel_weights,
-			payload.motors,
-			payload.joints,
-			payload.warm_starts,
-			payload.authoritative_body_indices,
-			payload.solver_cfg,
-			payload.dt,
-			payload.steps
+			bodies,
+			collision_data,
+			accel_weights,
+			motors,
+			joints,
+			warm_starts,
+			authoritative_body_indices,
+			solver_cfg,
+			dt,
+			steps
 		);
 
 		rs.in_flight = render_state::readback_frame{
-			.entity_ids = payload.entity_ids,
-			.gpu_input_bodies = payload.bodies,
-			.gpu_joint_count = payload.joint_count
+			.entity_ids = entity_ids,
+			.gpu_input_bodies = bodies,
+			.gpu_joint_count = joint_count
 		};
 	}
 

@@ -287,13 +287,15 @@ void solve_body(uint bi) {
     mat3 ang_hess = mat3_identity(0);
     mat3 hess_xt = mat3_identity(0);
 
-    uint contact_offset = body_contact_map[bi];
-    uint contact_count = body_contact_map[MAX_BODIES + bi];
+    uint contact_offset = contact_offsets[bi];
+    uint contact_count = contact_counts[bi];
 
     for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
-        uint ci = body_contact_map[MAX_BODIES * 2 + contact_offset + ci_idx];
+        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, MAX_CONTACT_ADJACENCY);
+        if (ci >= MAX_CONTACTS) continue;
         GpuContact c = contact_data[ci];
 
+        if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) continue;
         GpuBody body_a = body_data[c.body_a];
         GpuBody body_b = body_data[c.body_b];
 
@@ -341,7 +343,7 @@ void solve_body(uint bi) {
         }
     }
 
-    uint motor_idx = body_contact_map[MAX_BODIES * 2 + MAX_CONTACTS * 2 + bi];
+    uint motor_idx = motor_map[bi];
     if (motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count) {
         GpuMotor m = motor_data[motor_idx];
         float alpha = max(m.compliance, 1e-6);
@@ -360,10 +362,12 @@ void solve_body(uint bi) {
         float grad_before = length(motor_grad);
 
         for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
-            uint ci = body_contact_map[MAX_BODIES * 2 + contact_offset + ci_idx];
+            uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, MAX_CONTACT_ADJACENCY);
+            if (ci >= MAX_CONTACTS) continue;
             GpuContact c = contact_data[ci];
             bool is_a = (c.body_a == bi);
             uint other = is_a ? c.body_b : c.body_a;
+            if (other >= pc.body_count) continue;
             GpuBody other_body = body_data[other];
             bool blocking_body =
                 ((other_body.flags & FLAG_LOCKED) != 0) ||
@@ -399,12 +403,14 @@ void solve_body(uint bi) {
         hess = mat3_add(hess, motor_hess);
     }
 
-    uint joint_offset = body_contact_map[JOINT_MAP_BASE + bi];
-    uint joint_count_for_body = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+    uint joint_offset = joint_offsets[bi];
+    uint joint_count_for_body = joint_counts[bi];
 
     for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
-        uint ji = body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + joint_offset + ji_idx];
+        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, MAX_JOINT_ADJACENCY);
+        if (ji >= MAX_JOINTS) continue;
         GpuJoint j = joint_data[ji];
+        if (j.body_a >= pc.body_count || j.body_b >= pc.body_count) continue;
         accumulate_joint_for_body(bi, j, update_orient, grad, hess, ang_grad, ang_hess, hess_xt);
     }
 

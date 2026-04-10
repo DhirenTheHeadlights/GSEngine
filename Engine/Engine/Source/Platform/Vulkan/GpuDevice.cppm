@@ -356,6 +356,7 @@ namespace gse::vulkan {
 			});
 		};
 		const bool device_fault_extension_supported = supports_extension(vk::EXTDeviceFaultExtensionName);
+		const bool robustness2_extension_supported = supports_extension(vk::EXTRobustness2ExtensionName);
 
 		const bool rt_extensions_available =
 			supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
@@ -368,7 +369,8 @@ namespace gse::vulkan {
 			vk::PhysicalDeviceDescriptorBufferFeaturesEXT,
 			vk::PhysicalDeviceFaultFeaturesEXT,
 			vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-			vk::PhysicalDeviceRayQueryFeaturesKHR
+			vk::PhysicalDeviceRayQueryFeaturesKHR,
+			vk::PhysicalDeviceRobustness2FeaturesEXT
 		>();
 		const auto& mesh_shader_query = feature_chain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
 		const bool mesh_shaders_supported = mesh_shader_query.meshShader && mesh_shader_query.taskShader;
@@ -381,6 +383,8 @@ namespace gse::vulkan {
 		const auto& as_query = feature_chain.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
 		const auto& rq_query = feature_chain.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
 		const bool ray_tracing_supported = rt_extensions_available && as_query.accelerationStructure && rq_query.rayQuery;
+		const auto& robustness2_query = feature_chain.get<vk::PhysicalDeviceRobustness2FeaturesEXT>();
+		const bool robustness2_supported = robustness2_extension_supported && robustness2_query.robustBufferAccess2;
 
 		if (mesh_shaders_supported) {
 			log::println(log::category::vulkan, "Mesh shader support detected");
@@ -400,6 +404,12 @@ namespace gse::vulkan {
 
 		if (device_fault_supported) {
 			log::println(log::category::vulkan, "Device fault support detected");
+		}
+
+		if (robustness2_supported) {
+			log::println(log::category::vulkan, "Robustness2 support detected (robustBufferAccess2)");
+		} else {
+			log::println(log::level::warning, log::category::vulkan, "VK_EXT_robustness2 not supported");
 		}
 
 		if (ray_tracing_supported) {
@@ -475,8 +485,17 @@ namespace gse::vulkan {
 			       | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV
 		};
 
+		void* post_fault_chain_head = device_fault_supported ? static_cast<void*>(&fault_features) : feature_chain_head;
+
+		vk::PhysicalDeviceRobustness2FeaturesEXT robustness2_features{
+			.pNext = post_fault_chain_head,
+			.robustBufferAccess2 = robustness2_supported ? vk::True : vk::False,
+			.robustImageAccess2 = robustness2_supported ? vk::True : vk::False,
+			.nullDescriptor = robustness2_supported ? vk::True : vk::False
+		};
+
 		vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
-			.pNext = device_fault_supported ? static_cast<void*>(&fault_features) : feature_chain_head
+			.pNext = robustness2_supported ? static_cast<void*>(&robustness2_features) : post_fault_chain_head
 		};
 
 		if (g_aftermath_initialized) {
@@ -510,6 +529,10 @@ namespace gse::vulkan {
 
 		if (device_fault_supported) {
 			device_extensions.push_back(vk::EXTDeviceFaultExtensionName);
+		}
+
+		if (robustness2_supported) {
+			device_extensions.push_back(vk::EXTRobustness2ExtensionName);
 		}
 
 		if (ray_tracing_supported) {
