@@ -31,4 +31,12 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         contact_data[bi].body_a = 0;
         contact_data[bi].body_b = 0;
     }
+
+    if (bi == 0) {
+        grid_data[0] = 0;
+    }
+    uint grid_idx = bi + 1;
+    if (grid_idx <= GRID_TABLE_SIZE) {
+        grid_data[grid_idx] = 0;
+    }
 }

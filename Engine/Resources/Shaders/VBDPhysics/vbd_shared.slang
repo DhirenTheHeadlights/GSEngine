@@ -16,6 +16,12 @@ public static const uint JOINT_TYPE_SLIDER = 3;
 public static const uint MAX_CONTACT_ADJACENCY = MAX_CONTACTS * 2;
 public static const uint MAX_JOINT_ADJACENCY = MAX_JOINTS * 2;
 
+public static const uint CONVERGENCE_MAX_DELTA_INDEX = 4;
+public static const uint CONVERGED_FLAG_INDEX = 5;
+
+public static const uint GRID_TABLE_SIZE = 4096;
+public static const uint GRID_MAX_ENTRIES = MAX_BODIES * 8;
+
 public uint safe_load_uint(RWStructuredBuffer<uint> buf, uint index, uint max_index) {
     return (index < max_index) ? buf[index] : 0;
 }
@@ -146,6 +152,8 @@ public struct vbd_push_constants {
     public float stick_threshold;
     public uint substep;
     public uint iteration;
+    public float convergence_threshold;
+    public float grid_cell_size;
 };
 
 public float3 rotate_vector(float4 q, float3 v) {

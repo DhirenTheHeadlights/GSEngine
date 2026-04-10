@@ -30,6 +30,7 @@ export namespace gse::vbd {
 		velocity velocity_sleep_threshold = meters_per_second(0.001f);
 		angular_velocity angular_sleep_threshold = radians_per_second(0.05f);
 		gap speculative_margin = meters(0.02f);
+		float convergence_threshold = 0.001f;
 	};
 
 	class solver {
