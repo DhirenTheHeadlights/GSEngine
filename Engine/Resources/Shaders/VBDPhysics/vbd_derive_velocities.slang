@@ -10,6 +10,12 @@ ConstantBuffer<vbd_push_constants> pc;
 [numthreads(64, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint bi = dispatch_id.x;
+
+    if (bi == 0) {
+        collision_state[CONVERGED_FLAG_INDEX] = 0;
+        collision_state[CONVERGENCE_MAX_DELTA_INDEX] = 0;
+    }
+
     if (bi >= pc.body_count) return;
 
     GpuBody body = body_data[bi];

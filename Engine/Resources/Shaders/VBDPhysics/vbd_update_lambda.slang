@@ -9,7 +9,12 @@ ConstantBuffer<vbd_push_constants> pc;
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
+    if (collision_state[CONVERGED_FLAG_INDEX] != 0) {
+        return;
+    }
+
     uint ci = dispatch_id.x;
+
     uint actual_contact_count = min(collision_state[0], MAX_CONTACTS);
     if (ci >= actual_contact_count) {
         return;
@@ -44,6 +49,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     if (lambda.x < 0.0) {
         penalty.x = min(penalty.x + pc.beta * abs(C.x), pc.penalty_max);
+        InterlockedMax(collision_state[CONVERGENCE_MAX_DELTA_INDEX], asuint(abs(C.x)));
     }
 
     if (friction_bound > 1e-10) {
