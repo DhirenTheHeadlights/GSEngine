@@ -177,7 +177,9 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 	const auto light_block = s.shader_handle->uniform_block("lights");
 	const auto stride = light_block.size;
 
-	std::vector<std::byte> staging(max_lights * stride, std::byte{ 0 });
+	const std::size_t total_lights = std::min(
+		dir_chunk.size() + spot_chunk.size() + point_chunk.size(), max_lights);
+	std::vector<std::byte> staging(total_lights * stride, std::byte{ 0 });
 	std::size_t light_count = 0;
 
 	auto write = [&](const std::size_t index, const std::string_view member, const auto& v) {
@@ -193,6 +195,7 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 		write(light_count, "color", comp.color);
 		write(light_count, "intensity", comp.intensity);
 		write(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "source_radius", comp.source_radius);
 		++light_count;
 	}
 
@@ -214,6 +217,7 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 		write(light_count, "cut_off", cut_off_cos);
 		write(light_count, "outer_cut_off", outer_cut_off_cos);
 		write(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "source_radius", comp.source_radius);
 		++light_count;
 	}
 
@@ -229,10 +233,11 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 		write(light_count, "linear", comp.linear);
 		write(light_count, "quadratic", comp.quadratic);
 		write(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "source_radius", comp.source_radius);
 		++light_count;
 	}
 
-	gse::memcpy(light_alloc.mapped(), staging);
+	gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
 
 	const std::uint32_t num_lights = static_cast<std::uint32_t>(light_count);
 	s.shader_handle->set_uniform("CullingParams.num_lights", num_lights, params_alloc);

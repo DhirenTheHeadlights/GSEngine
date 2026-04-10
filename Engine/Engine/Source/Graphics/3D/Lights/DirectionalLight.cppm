@@ -11,6 +11,7 @@ export namespace gse {
 		float intensity = 1.0f;
 		vec3f direction = { 0.0f, -1.0f, 0.0f };
 		float ambient_strength = 1.0f;
+		float source_radius = 0.02f;
 		length near_plane = meters(0.1f);
 		length far_plane = meters(10000.f);
 		std::vector<id> ignore_list_ids;

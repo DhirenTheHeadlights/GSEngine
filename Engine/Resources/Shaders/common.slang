@@ -20,6 +20,7 @@ public struct Light {
     public float  cut_off;
     public float  outer_cut_off;
     public float ambient_strength;
+    public float source_radius;
     public int shadow_index;
 };
 
