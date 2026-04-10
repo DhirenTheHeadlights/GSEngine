@@ -153,6 +153,7 @@ public struct vbd_push_constants {
     public uint substep;
     public uint iteration;
     public float convergence_threshold;
+    public uint min_iterations;
     public float grid_cell_size;
 };
 

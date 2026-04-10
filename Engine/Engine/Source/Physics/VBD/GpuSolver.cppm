@@ -1265,14 +1265,16 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 		pc.set("stick_threshold", cfg.stick_threshold);
 		pc.set("substep", substep);
 		pc.set("iteration", iteration);
-		pc.set("convergence_threshold", cfg.convergence_threshold);
+		pc.set("convergence_threshold", cfg.convergence_threshold.linear);
+		pc.set("min_iterations", cfg.min_iterations);
 		pc.set("grid_cell_size", m_grid_cell_size);
 		f.queue.push(pipeline, pc);
 	};
 
 	const std::uint32_t body_workgroups = ceil_div(m_body_count, workgroup_size);
 	constexpr std::uint32_t num_colors = max_colors;
-	const std::uint32_t total_iterations = cfg.iterations + (cfg.post_stabilize ? 1u : 0u);
+	const std::uint32_t num_iterations = cfg.iterations;
+	const float solve_alpha = cfg.post_stabilize ? 1.f : cfg.alpha;
 
 	for (std::uint32_t sub = 0; sub < total; ++sub) {
 		const std::uint32_t substep_warm_start_count = (sub == 0) ? m_warm_start_count : 0u;
@@ -1298,37 +1300,30 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-		for (std::uint32_t iterations = 0; iterations < total_iterations; ++iterations) {
-			const float current_alpha =
-				cfg.post_stabilize
-					? (iterations < cfg.iterations ? 1.f : 0.f)
-					: cfg.alpha;
-
-			bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, current_alpha, substep_warm_start_count);
+		for (std::uint32_t iterations = 0; iterations < num_iterations; ++iterations) {
+			bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, solve_alpha, substep_warm_start_count);
 			f.queue.dispatch(body_workgroups, 1, 1);
 			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-			if (iterations < cfg.iterations) {
-				bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, current_alpha, substep_warm_start_count);
-				f.queue.dispatch(ceil_div(max_contacts, workgroup_size), 1, 1);
-				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-			}
+			bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
+			f.queue.dispatch(ceil_div(max_contacts, workgroup_size), 1, 1);
+			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+		}
 
-			if (cfg.iterations > 0 && iterations == cfg.iterations - 1u) {
-				if (m_joint_count > 0) {
-					bind_and_push(m_compute.update_joint_lambda, m_compute.update_joint_lambda_pipeline, 0u, 0u, sub, iterations, current_alpha, substep_warm_start_count);
-					f.queue.dispatch(ceil_div(m_joint_count, workgroup_size), 1, 1);
-					f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-				}
-
-				bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, iterations, current_alpha, substep_warm_start_count);
-				f.queue.dispatch(body_workgroups, 1, 1);
+		if (num_iterations > 0) {
+			if (m_joint_count > 0) {
+				bind_and_push(m_compute.update_joint_lambda, m_compute.update_joint_lambda_pipeline, 0u, 0u, sub, num_iterations - 1u, solve_alpha, substep_warm_start_count);
+				f.queue.dispatch(ceil_div(m_joint_count, workgroup_size), 1, 1);
 				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 			}
 		}
 
-		if (cfg.iterations == 0u) {
-			bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, num_iterations, solve_alpha, substep_warm_start_count);
+		f.queue.dispatch(body_workgroups, 1, 1);
+		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+
+		if (cfg.post_stabilize) {
+			bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, num_colors, sub, num_iterations, 0.f, substep_warm_start_count);
 			f.queue.dispatch(body_workgroups, 1, 1);
 			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 		}

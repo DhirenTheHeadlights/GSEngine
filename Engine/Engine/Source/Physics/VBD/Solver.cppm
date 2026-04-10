@@ -12,6 +12,11 @@ import :motion_component;
 export namespace gse::vbd {
 	using time_step = time_t<float, seconds>;
 
+	struct step_delta {
+		length linear{};
+		angle angular{};
+	};
+
 	struct solver_config {
 		std::uint32_t iterations = 10;
 		float alpha = 0.99f;
@@ -30,7 +35,10 @@ export namespace gse::vbd {
 		velocity velocity_sleep_threshold = meters_per_second(0.001f);
 		angular_velocity angular_sleep_threshold = radians_per_second(0.05f);
 		gap speculative_margin = meters(0.02f);
-		float convergence_threshold = 0.001f;
+		step_delta convergence_threshold = { meters(0.001f), radians(0.001f) };
+		std::uint32_t min_iterations = 3;
+		float linear_damping = 0.f;
+		float angular_damping = 0.01f;
 	};
 
 	class solver {
@@ -97,7 +105,7 @@ export namespace gse::vbd {
 		auto perform_newton_step(
 			std::uint32_t body_idx,
 			time_squared h_squared
-		) -> void;
+		) -> step_delta;
 
 		auto accumulate_joint(
 			const joint_constraint& constraint,
@@ -109,7 +117,7 @@ export namespace gse::vbd {
 
 		auto update_dual(
 			float alpha
-		) -> void;
+		) -> step_delta;
 
 		auto update_joint_dual(
 			time_squared h_squared
@@ -509,6 +517,9 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			continue;
 		}
 
+		body.body_velocity *= (1.f - m_config.linear_damping);
+		body.body_angular_velocity *= (1.f - m_config.angular_damping);
+
 		constexpr angular_velocity max_angular_speed = radians_per_second(50.f);
 		if (const auto w = magnitude(body.body_angular_velocity); w > max_angular_speed) {
 			body.body_angular_velocity *= (max_angular_speed / w);
@@ -598,22 +609,18 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	const auto& motors = m_graph.motor_constraints();
 	const auto& joints = m_graph.joint_constraints();
 
-	const int total_iterations = static_cast<int>(m_config.iterations) + (m_config.post_stabilize ? 1 : 0);
+	const int num_iterations = static_cast<int>(m_config.iterations);
+	const float solve_alpha = m_config.post_stabilize ? 1.0f : m_config.alpha;
 
-	for (int it = 0; it < total_iterations; ++it) {
-		float current_alpha = m_config.alpha;
-		if (m_config.post_stabilize) {
-			current_alpha = it < static_cast<int>(m_config.iterations) ? 1.0f : 0.0f;
-		}
-
+	auto solve_iteration = [&](const float alpha) {
 		for (const auto& body_color : m_graph.body_colors()) {
 			for (const auto bi : body_color) {
 				m_solve_state[bi] = {};
 				for (const auto ci : m_graph.body_contact_indices(bi)) {
-					accumulate_contact(contacts[ci], bi, h_squared, current_alpha);
+					accumulate_contact(contacts[ci], bi, h_squared, alpha);
 				}
 				for (const auto ji : m_graph.body_joint_indices(bi)) {
-					accumulate_joint(joints[ji], bi, h_squared, dt, current_alpha);
+					accumulate_joint(joints[ji], bi, h_squared, dt, alpha);
 				}
 				if (const auto mi = m_body_motor_index[bi]; mi != no_motor) {
 					accumulate_motor(motors[mi], h_squared);
@@ -630,7 +637,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				m_solve_state[motor.body_index] = {};
 				accumulate_motor(motor, h_squared);
 				for (const auto ji : m_graph.body_joint_indices(motor.body_index)) {
-					accumulate_joint(joints[ji], motor.body_index, h_squared, dt, current_alpha);
+					accumulate_joint(joints[ji], motor.body_index, h_squared, dt, alpha);
 				}
 				perform_newton_step(motor.body_index, h_squared);
 			}
@@ -648,79 +655,87 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			}
 			m_solve_state[i] = {};
 			for (const auto ji : m_graph.body_joint_indices(i)) {
-				accumulate_joint(joints[ji], i, h_squared, dt, current_alpha);
+				accumulate_joint(joints[ji], i, h_squared, dt, alpha);
 			}
 			perform_newton_step(i, h_squared);
 		}
+	};
 
-		if (it < static_cast<int>(m_config.iterations)) {
-			update_dual(current_alpha);
+	for (int it = 0; it < num_iterations; ++it) {
+		solve_iteration(solve_alpha);
+		const auto violation = update_dual(solve_alpha);
+
+		if (it + 1 >= static_cast<int>(m_config.min_iterations) &&
+			violation.linear < m_config.convergence_threshold.linear &&
+			violation.angular < m_config.convergence_threshold.angular) {
+			break;
 		}
+	}
 
-		if (it == static_cast<int>(m_config.iterations) - 1) {
-			update_joint_dual(h_squared);
-			for (auto& body : m_bodies) {
-				if (!body.locked && !body.sleeping() && body.mass_value > mass{}) {
-					body.body_velocity = (body.predicted_position - body.initial_position) / dt;
+	update_joint_dual(h_squared);
 
-					if (body.update_orientation) {
-						body.body_angular_velocity = difference_axis_angle(body.initial_orientation, body.predicted_orientation) / dt;
-					}
-				}
-			}
+	for (auto& body : m_bodies) {
+		if (!body.locked && !body.sleeping() && body.mass_value > mass{}) {
+			body.body_velocity = (body.predicted_position - body.initial_position) / dt;
 
-			{
-				for (const auto& c : m_graph.contact_constraints()) {
-					if (c.restitution <= 0.f) {
-						continue;
-					}
-					if (c.lambda[0] >= force{}) {
-						continue;
-					}
-					if (c.approach_speed >= -m_config.restitution_threshold) {
-						continue;
-					}
-
-					auto& ba = m_bodies[c.body_a];
-					auto& bb = m_bodies[c.body_b];
-
-					const vec3<lever_arm> rAW = rotate_vector(ba.orientation, c.r_a);
-					const vec3<lever_arm> rBW = rotate_vector(bb.orientation, c.r_b);
-
-					const auto va = ba.body_velocity + cross(ba.body_angular_velocity, rAW) / rad;
-					const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, rBW) / rad;
-					const velocity v_rel_after = dot(c.normal, va - vb);
-
-					const float speed_ratio = std::clamp(
-						(-c.approach_speed - m_config.restitution_threshold) / m_config.restitution_threshold,
-						0.f, 1.f
-					);
-					const velocity v_target = -c.restitution * speed_ratio * c.approach_speed;
-					const velocity dv = v_target - v_rel_after;
-
-					if (dv <= velocity{}) {
-						continue;
-					}
-
-					const inverse_mass w_a = ba.locked ? inverse_mass{} : 1.f / ba.mass_value;
-					const inverse_mass w_b = bb.locked ? inverse_mass{} : 1.f / bb.mass_value;
-					const inverse_mass w_total = w_a + w_b;
-
-					if (w_total <= inverse_mass{}) {
-						continue;
-					}
-
-					const auto impulse = c.normal * (dv / w_total);
-
-					if (!ba.locked) {
-						ba.body_velocity += impulse * w_a;
-					}
-					if (!bb.locked) {
-						bb.body_velocity -= impulse * w_b;
-					}
-				}
+			if (body.update_orientation) {
+				body.body_angular_velocity = difference_axis_angle(body.initial_orientation, body.predicted_orientation) / dt;
 			}
 		}
+	}
+
+	for (const auto& c : m_graph.contact_constraints()) {
+		if (c.restitution <= 0.f) {
+			continue;
+		}
+		if (c.lambda[0] >= force{}) {
+			continue;
+		}
+		if (c.approach_speed >= -m_config.restitution_threshold) {
+			continue;
+		}
+
+		auto& ba = m_bodies[c.body_a];
+		auto& bb = m_bodies[c.body_b];
+
+		const vec3<lever_arm> rAW = rotate_vector(ba.orientation, c.r_a);
+		const vec3<lever_arm> rBW = rotate_vector(bb.orientation, c.r_b);
+
+		const auto va = ba.body_velocity + cross(ba.body_angular_velocity, rAW) / rad;
+		const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, rBW) / rad;
+		const velocity v_rel_after = dot(c.normal, va - vb);
+
+		const float speed_ratio = std::clamp(
+			(-c.approach_speed - m_config.restitution_threshold) / m_config.restitution_threshold,
+			0.f, 1.f
+		);
+		const velocity v_target = -c.restitution * speed_ratio * c.approach_speed;
+		const velocity dv = v_target - v_rel_after;
+
+		if (dv <= velocity{}) {
+			continue;
+		}
+
+		const inverse_mass w_a = ba.locked ? inverse_mass{} : 1.f / ba.mass_value;
+		const inverse_mass w_b = bb.locked ? inverse_mass{} : 1.f / bb.mass_value;
+		const inverse_mass w_total = w_a + w_b;
+
+		if (w_total <= inverse_mass{}) {
+			continue;
+		}
+
+		const auto impulse = c.normal * (dv / w_total);
+
+		if (!ba.locked) {
+			ba.body_velocity += impulse * w_a;
+		}
+		if (!bb.locked) {
+			bb.body_velocity -= impulse * w_b;
+		}
+	}
+
+	if (m_config.post_stabilize) {
+		solve_iteration(0.0f);
 	}
 
 	for (auto& body : m_bodies) {
@@ -902,14 +917,14 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 	m_solve_state[m.body_index].hessian += motor_hessian;
 }
 
-auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const time_squared h_squared) -> void {
+auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const time_squared h_squared) -> step_delta {
 	auto& body = m_bodies[body_idx];
 
 	if (body.locked || body.sleeping()) {
-		return;
+		return {};
 	}
 	if (body.inverse_mass() < per_kilograms(1e-10f)) {
-		return;
+		return {};
 	}
 
 	const stiffness inertia_weight = body.mass_value / h_squared;
@@ -927,12 +942,13 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 		auto delta_x = -(inv_h * g_lin);
 
 		constexpr length max_step = meters(0.5f);
-		if (const auto step_size = magnitude(delta_x); step_size > max_step) {
+		const auto step_size = magnitude(delta_x);
+		if (step_size > max_step) {
 			delta_x *= (max_step / step_size);
 		}
 
 		body.predicted_position += delta_x;
-		return;
+		return { step_size, angle{} };
 	}
 
 	const quat q_rel = body.predicted_orientation * conjugate(body.angular_inertia_target);
@@ -963,21 +979,28 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	constexpr length max_lin_step = meters(0.5f);
 	constexpr angle max_ang_step = radians(0.5f);
 
-	if (const auto lin_size = magnitude(delta_x); lin_size > max_lin_step) {
-		delta_x *= (max_lin_step / lin_size);
+	const auto lin_step = magnitude(delta_x);
+	const auto ang_step = magnitude(delta_theta);
+
+	if (lin_step > max_lin_step) {
+		delta_x *= (max_lin_step / lin_step);
 	}
-	if (const auto ang_size = magnitude(delta_theta); ang_size > max_ang_step) {
-		delta_theta *= (max_ang_step / ang_size);
+	if (ang_step > max_ang_step) {
+		delta_theta *= (max_ang_step / ang_step);
 	}
 
 	body.predicted_position += delta_x;
 
-	if (magnitude(delta_theta) > radians(1e-7f)) {
+	if (ang_step > radians(1e-7f)) {
 		body.predicted_orientation = normalize(from_axis_angle_vector(vec3<angle>(delta_theta)) * body.predicted_orientation);
 	}
+
+	return { lin_step, ang_step };
 }
 
-auto gse::vbd::solver::update_dual(const float alpha) -> void {
+auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
+	step_delta max_violation;
+
 	for (auto& con : m_graph.contact_constraints()) {
 		const auto& body_a = m_bodies[con.body_a];
 		const auto& body_b = m_bodies[con.body_b];
@@ -1004,6 +1027,7 @@ auto gse::vbd::solver::update_dual(const float alpha) -> void {
 
 		if (con.lambda[0] < force{}) {
 			con.penalty[0] = std::min(con.penalty[0] + m_config.beta * internal::to_storage(abs(c[0])), m_config.penalty_max);
+			max_violation.linear = std::max<length>(max_violation.linear, abs(c[0]));
 		}
 
 		if (friction_bound > newtons(1e-10f)) {
@@ -1015,6 +1039,8 @@ auto gse::vbd::solver::update_dual(const float alpha) -> void {
 			}
 		}
 	}
+
+	return max_violation;
 }
 
 auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, const std::uint32_t body_idx, const time_squared h_squared, const time_step dt, const float alpha) -> void {
