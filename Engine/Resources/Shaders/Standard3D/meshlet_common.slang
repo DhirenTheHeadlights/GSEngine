@@ -60,6 +60,7 @@ public bool frustum_cull_sphere(float3 center, float radius, float4x4 view, floa
 public struct MeshVertexOutput {
     public precise float4 clip_pos;
     public float3 world_pos;
+    public float3 world_normal;
     public float3 view_pos;
     public float3 view_normal;
     public float2 tex_coord;
@@ -77,6 +78,7 @@ public MeshVertexOutput compute_mesh_vertex(Vertex v, InstanceData inst, float4x
 
     o.clip_pos = clip_pos;
     o.world_pos = world_pos.xyz;
+    o.world_normal = world_n;
     o.view_pos = view_pos.xyz;
     o.view_normal = view_n;
     o.tex_coord = v.tex_coords;

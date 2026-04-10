@@ -11,8 +11,6 @@ export namespace gse::renderer::skin_compute {
 		resource::handle<shader> shader_handle;
 		gpu::pipeline pipeline;
 		per_frame_resource<gpu::descriptor_region> descriptors;
-
-		state() = default;
 	};
 
 	struct system {

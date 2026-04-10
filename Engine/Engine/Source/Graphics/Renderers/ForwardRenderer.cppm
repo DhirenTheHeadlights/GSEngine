@@ -18,7 +18,7 @@ import gse.platform;
 import gse.log;
 
 export namespace gse::renderer::forward {
-	constexpr std::size_t max_lights = 10;
+	constexpr std::size_t max_lights = 1024;
 
 	struct state {
 		gpu::pipeline pipeline;
@@ -38,7 +38,7 @@ export namespace gse::renderer::forward {
 
 	struct system {
 		static auto initialize(
-			initialize_phase& phase,
+			const initialize_phase& phase,
 			state& s
 		) -> void;
 
@@ -49,7 +49,7 @@ export namespace gse::renderer::forward {
 	};
 }
 
-auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& s) -> void {
+auto gse::renderer::forward::system::initialize(const initialize_phase& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	s.shader_handle = ctx.get<shader>("Shaders/Standard3D/meshlet_geometry");
@@ -57,6 +57,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 
 	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
+	const auto light_buffer_size = light_block.size * max_lights;
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
@@ -65,7 +66,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 		});
 
 		s.light_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
-			.size = light_block.size,
+			.size = light_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
@@ -73,7 +74,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 
 		gpu::descriptor_writer(ctx.device_ref(), s.shader_handle, s.descriptors[i])
 			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
-			.buffer("lights_ssbo", s.light_buffers[i], 0, light_block.size)
+			.buffer("lights_ssbo", s.light_buffers[i], 0, light_buffer_size)
 			.commit();
 	}
 
@@ -172,72 +173,63 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const auto& light_alloc = s.light_buffers[frame_index];
 	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
 	const auto stride = light_block.size;
-	std::vector zero_elem(stride, std::byte{ 0 });
 
-	auto zero_at = [&](const std::size_t index) {
-		s.shader_handle->set_ssbo_struct(
-			"lights_ssbo", index,
-			std::span<const std::byte>(zero_elem.data(), zero_elem.size()),
-			light_alloc
-		);
-	};
-
-	auto set_light = [&](const std::size_t index, const std::string_view member, auto const& v) {
-		s.shader_handle->set_ssbo_element(
-			"lights_ssbo", index, member,
-			std::as_bytes(std::span(std::addressof(v), 1)),
-			light_alloc
-		);
-	};
-
+	std::vector<std::byte> staging(max_lights * stride, std::byte{ 0 });
 	std::size_t light_count = 0;
+
+	auto write = [&](const std::size_t index, const std::string_view member, const auto& v) {
+		gse::memcpy(staging.data() + index * stride + light_block.members.at(std::string(member)).offset, v);
+	};
 
 	for (const auto& comp : dir_chunk) {
 		if (light_count >= max_lights) break;
-		zero_at(light_count);
 		int type = 0;
-		set_light(light_count, "light_type", type);
-		set_light(light_count, "direction", view.transform_direction(comp.direction));
-		set_light(light_count, "color", comp.color);
-		set_light(light_count, "intensity", comp.intensity);
-		set_light(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "light_type", type);
+		write(light_count, "direction", view.transform_direction(comp.direction));
+		write(light_count, "world_direction", comp.direction);
+		write(light_count, "color", comp.color);
+		write(light_count, "intensity", comp.intensity);
+		write(light_count, "ambient_strength", comp.ambient_strength);
 		++light_count;
 	}
 
 	for (const auto& comp : spot_chunk) {
 		if (light_count >= max_lights) break;
-		zero_at(light_count);
 		int type = 2;
 		const float cut_off_cos = gse::cos(comp.cut_off);
 		const float outer_cut_off_cos = gse::cos(comp.outer_cut_off);
-		set_light(light_count, "light_type", type);
-		set_light(light_count, "position", view.transform_point(comp.position));
-		set_light(light_count, "direction", view.transform_direction(comp.direction));
-		set_light(light_count, "color", comp.color);
-		set_light(light_count, "intensity", comp.intensity);
-		set_light(light_count, "constant", comp.constant);
-		set_light(light_count, "linear", comp.linear);
-		set_light(light_count, "quadratic", comp.quadratic);
-		set_light(light_count, "cut_off", cut_off_cos);
-		set_light(light_count, "outer_cut_off", outer_cut_off_cos);
-		set_light(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "light_type", type);
+		write(light_count, "position", view.transform_point(comp.position));
+		write(light_count, "direction", view.transform_direction(comp.direction));
+		write(light_count, "world_position", comp.position);
+		write(light_count, "world_direction", comp.direction);
+		write(light_count, "color", comp.color);
+		write(light_count, "intensity", comp.intensity);
+		write(light_count, "constant", comp.constant);
+		write(light_count, "linear", comp.linear);
+		write(light_count, "quadratic", comp.quadratic);
+		write(light_count, "cut_off", cut_off_cos);
+		write(light_count, "outer_cut_off", outer_cut_off_cos);
+		write(light_count, "ambient_strength", comp.ambient_strength);
 		++light_count;
 	}
 
 	for (const auto& comp : point_chunk) {
 		if (light_count >= max_lights) break;
-		zero_at(light_count);
 		int type = 1;
-		set_light(light_count, "light_type", type);
-		set_light(light_count, "position", view.transform_point(comp.position));
-		set_light(light_count, "color", comp.color);
-		set_light(light_count, "intensity", comp.intensity);
-		set_light(light_count, "constant", comp.constant);
-		set_light(light_count, "linear", comp.linear);
-		set_light(light_count, "quadratic", comp.quadratic);
-		set_light(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "light_type", type);
+		write(light_count, "position", view.transform_point(comp.position));
+		write(light_count, "world_position", comp.position);
+		write(light_count, "color", comp.color);
+		write(light_count, "intensity", comp.intensity);
+		write(light_count, "constant", comp.constant);
+		write(light_count, "linear", comp.linear);
+		write(light_count, "quadratic", comp.quadratic);
+		write(light_count, "ambient_strength", comp.ambient_strength);
 		++light_count;
 	}
+
+	gse::memcpy(light_alloc.mapped(), staging);
 
 	const auto& normal_batches = data.normal_batches;
 	const auto& skinned_batches = data.skinned_batches;

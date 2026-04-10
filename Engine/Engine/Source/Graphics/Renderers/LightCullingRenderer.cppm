@@ -13,7 +13,7 @@ import gse.utility;
 export namespace gse::renderer::light_culling {
 	constexpr std::uint32_t tile_size = 16;
 	constexpr std::uint32_t max_lights_per_tile = 64;
-	constexpr std::size_t max_lights = 10;
+	constexpr std::size_t max_lights = 1024;
 
 	struct state {
 		gpu::pipeline pipeline;
@@ -91,7 +91,7 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(state& s) -> void {
 
 		gpu::descriptor_writer(s.ctx->device_ref(), s.shader_handle, s.descriptors[i])
 			.buffer("CullingParams", s.culling_params_buffers[i], 0, params_block.size)
-			.buffer("lights", s.light_buffers[i], 0, light_block.size)
+			.buffer("lights", s.light_buffers[i], 0, light_block.size * max_lights)
 			.buffer("light_index_list", s.light_index_list_buffers[i], 0, index_list_size)
 			.buffer("tile_light_table", s.tile_light_table_buffers[i], 0, tile_table_size)
 			.commit();
@@ -122,7 +122,7 @@ auto gse::renderer::light_culling::system::initialize(const initialize_phase& ph
 		});
 
 		s.light_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
-			.size = light_block.size,
+			.size = light_block.size * max_lights,
 			.usage = gpu::buffer_flag::storage
 		});
 	}
@@ -176,75 +176,63 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 	const auto& light_alloc = s.light_buffers[frame_index];
 	const auto light_block = s.shader_handle->uniform_block("lights");
 	const auto stride = light_block.size;
-	std::vector zero_elem(stride, std::byte{ 0 });
 
-	auto zero_at = [&](const std::size_t index) {
-		s.shader_handle->set_ssbo_struct(
-			"lights",
-			index,
-			std::span<const std::byte>(zero_elem.data(), zero_elem.size()),
-			light_alloc
-		);
-	};
-
-	auto set = [&](const std::size_t index, const std::string_view member, auto const& v) {
-		s.shader_handle->set_ssbo_element(
-			"lights",
-			index,
-			member,
-			std::as_bytes(std::span(std::addressof(v), 1)),
-			light_alloc
-		);
-	};
-
+	std::vector<std::byte> staging(max_lights * stride, std::byte{ 0 });
 	std::size_t light_count = 0;
+
+	auto write = [&](const std::size_t index, const std::string_view member, const auto& v) {
+		gse::memcpy(staging.data() + index * stride + light_block.members.at(std::string(member)).offset, v);
+	};
 
 	for (const auto& comp : dir_chunk) {
 		if (light_count >= max_lights) break;
-		zero_at(light_count);
 		int type = 0;
-		set(light_count, "light_type", type);
-		set(light_count, "direction", view.transform_direction(comp.direction));
-		set(light_count, "color", comp.color);
-		set(light_count, "intensity", comp.intensity);
-		set(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "light_type", type);
+		write(light_count, "direction", view.transform_direction(comp.direction));
+		write(light_count, "world_direction", comp.direction);
+		write(light_count, "color", comp.color);
+		write(light_count, "intensity", comp.intensity);
+		write(light_count, "ambient_strength", comp.ambient_strength);
 		++light_count;
 	}
 
 	for (const auto& comp : spot_chunk) {
 		if (light_count >= max_lights) break;
-		zero_at(light_count);
 		int type = 2;
 		const float cut_off_cos = gse::cos(comp.cut_off);
 		const float outer_cut_off_cos = gse::cos(comp.outer_cut_off);
-		set(light_count, "light_type", type);
-		set(light_count, "position", view.transform_point(comp.position));
-		set(light_count, "direction", view.transform_direction(comp.direction));
-		set(light_count, "color", comp.color);
-		set(light_count, "intensity", comp.intensity);
-		set(light_count, "constant", comp.constant);
-		set(light_count, "linear", comp.linear);
-		set(light_count, "quadratic", comp.quadratic);
-		set(light_count, "cut_off", cut_off_cos);
-		set(light_count, "outer_cut_off", outer_cut_off_cos);
-		set(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "light_type", type);
+		write(light_count, "position", view.transform_point(comp.position));
+		write(light_count, "direction", view.transform_direction(comp.direction));
+		write(light_count, "world_position", comp.position);
+		write(light_count, "world_direction", comp.direction);
+		write(light_count, "color", comp.color);
+		write(light_count, "intensity", comp.intensity);
+		write(light_count, "constant", comp.constant);
+		write(light_count, "linear", comp.linear);
+		write(light_count, "quadratic", comp.quadratic);
+		write(light_count, "cut_off", cut_off_cos);
+		write(light_count, "outer_cut_off", outer_cut_off_cos);
+		write(light_count, "ambient_strength", comp.ambient_strength);
 		++light_count;
 	}
 
 	for (const auto& comp : point_chunk) {
 		if (light_count >= max_lights) break;
-		zero_at(light_count);
 		int type = 1;
-		set(light_count, "light_type", type);
-		set(light_count, "position", view.transform_point(comp.position));
-		set(light_count, "color", comp.color);
-		set(light_count, "intensity", comp.intensity);
-		set(light_count, "constant", comp.constant);
-		set(light_count, "linear", comp.linear);
-		set(light_count, "quadratic", comp.quadratic);
-		set(light_count, "ambient_strength", comp.ambient_strength);
+		write(light_count, "light_type", type);
+		write(light_count, "position", view.transform_point(comp.position));
+		write(light_count, "world_position", comp.position);
+		write(light_count, "color", comp.color);
+		write(light_count, "intensity", comp.intensity);
+		write(light_count, "constant", comp.constant);
+		write(light_count, "linear", comp.linear);
+		write(light_count, "quadratic", comp.quadratic);
+		write(light_count, "ambient_strength", comp.ambient_strength);
 		++light_count;
 	}
+
+	gse::memcpy(light_alloc.mapped(), staging);
 
 	const std::uint32_t num_lights = static_cast<std::uint32_t>(light_count);
 	s.shader_handle->set_uniform("CullingParams.num_lights", num_lights, params_alloc);
