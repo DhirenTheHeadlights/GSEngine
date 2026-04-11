@@ -16,6 +16,7 @@ export namespace gse::renderer::rt_shadow {
 	struct state {
 		per_frame_resource<const gpu::tlas*> tlas_ptrs{};
 		bool initialized = false;
+		mutable std::uint32_t last_rebuilt_frame = 0;
 
 		[[nodiscard]] auto tlas(const std::uint32_t frame_index) const -> const gpu::tlas& {
 			return *tlas_ptrs[frame_index];
@@ -130,34 +131,36 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 		ctx.device_ref().wait_idle();
 	}
 
-	std::vector<gpu::acceleration_structure_instance> instances;
-	instances.reserve(data.render_queue.size());
+	ctx.scheduler().submit<render_state>([&rs, &ctx, &data, frame_index] {
+		std::vector<gpu::acceleration_structure_instance> instances;
+		instances.reserve(data.render_queue.size());
 
-	for (const auto& entry : data.render_queue) {
-		const auto* mdl = entry.model.resolve();
-		if (!mdl || entry.index >= mdl->meshes().size()) {
-			continue;
+		for (const auto& entry : data.render_queue) {
+			const auto* mdl = entry.model.resolve();
+			if (!mdl || entry.index >= mdl->meshes().size()) {
+				continue;
+			}
+
+			const auto* mesh_ptr = &mdl->meshes()[entry.index];
+			const auto it = rs.blas_cache.find(mesh_ptr);
+			if (it == rs.blas_cache.end()) {
+				continue;
+			}
+
+			instances.push_back({
+				.transform    = entry.model_matrix,
+				.cull_disable = true,
+				.blas_address = it->second.device_address()
+			});
+
+			if (instances.size() >= max_instances) {
+				break;
+			}
 		}
 
-		const auto* mesh_ptr = &mdl->meshes()[entry.index];
-		const auto it = rs.blas_cache.find(mesh_ptr);
-		if (it == rs.blas_cache.end()) {
-			continue;
-		}
-
-		instances.push_back({
-			.transform    = entry.model_matrix,
-			.cull_disable = true,
-			.blas_address = it->second.device_address()
+		auto pass = ctx.graph().add_pass<render_state>();
+		pass.record([&rs, &ctx, instances = std::move(instances), frame_index](vulkan::recording_context& record_ctx) mutable {
+			gpu::rebuild_tlas(ctx.device_ref(), rs.tlas_per_frame[frame_index], instances, record_ctx);
 		});
-
-		if (instances.size() >= max_instances) {
-			break;
-		}
-	}
-
-	auto pass = ctx.graph().add_pass<render_state>();
-	pass.record([&rs, &ctx, instances = std::move(instances), frame_index](vulkan::recording_context& record_ctx) mutable {
-		gpu::rebuild_tlas(ctx.device_ref(), rs.tlas_per_frame[frame_index], instances, record_ctx);
 	});
 }

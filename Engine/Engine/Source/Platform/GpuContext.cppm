@@ -9,6 +9,7 @@ import :render_graph;
 import :gpu_device;
 import :gpu_swapchain;
 import :gpu_frame;
+import :frame_scheduler;
 
 import gse.utility;
 
@@ -155,6 +156,10 @@ export namespace gse::gpu {
 		auto shutdown(
 		) -> void;
 
+		[[nodiscard]] auto scheduler(
+			this auto& self
+		) -> auto& { return self.m_scheduler; }
+
 		[[nodiscard]] auto device_ref(
 			this auto& self
 		) -> auto&;
@@ -179,6 +184,7 @@ export namespace gse::gpu {
 		std::unique_ptr<gpu::frame> m_frame;
 		resource_manager m_resource_manager;
 		std::unique_ptr<vulkan::render_graph> m_render_graph;
+		frame_scheduler m_scheduler;
 		bool m_ui_focus = false;
 		bool m_validation_layers_enabled = false;
 	};

@@ -27,6 +27,7 @@ export import :gpu_device;
 export import :gpu_swapchain;
 export import :gpu_frame;
 export import :gpu_context;
+export import :frame_scheduler;
 export import :shader;
 export import :gpu_factory;
 export import :shader_compiler;

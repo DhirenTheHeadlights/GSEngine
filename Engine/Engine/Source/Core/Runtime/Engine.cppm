@@ -168,6 +168,7 @@ auto gse::engine::render() -> void {
 
 	m_scheduler.render([this] {
 		if (m_render_ctx) {
+			m_render_ctx->scheduler().flush();
 			m_render_ctx->graph().execute();
 		}
 

@@ -18,7 +18,7 @@ export namespace gse::vbd {
 	};
 
 	struct solver_config {
-		std::uint32_t iterations = 10;
+		std::uint32_t iterations = 4;
 		float alpha = 0.99f;
 		stiffness beta = newtons_per_meter(100000.f);
 		angular_stiffness ang_beta = newton_meters_per_radian(100000.f);
