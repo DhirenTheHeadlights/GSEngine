@@ -78,6 +78,7 @@ export namespace gse::physics {
 		bool update_phys = true;
 		bool use_gpu_solver = false;
 		bool gpu_buffers_created = false;
+		int solver_iterations = 4;
 
 		vbd::solver vbd_solver;
 		vbd::contact_cache contact_cache;
@@ -565,7 +566,7 @@ auto gse::physics::invalidate_warm_start_entries(linear_vector<vbd::warm_start_e
 }
 
 auto gse::physics::system::initialize(const initialize_phase& phase, state& s, render_state& rs) -> void {
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "Physics",
 		.name = "Update Physics",
 		.description = "Enable or disable the physics system update loop",
@@ -573,7 +574,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s, r
 		.type = typeid(bool)
 	});
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "Physics",
 		.name = "Use GPU Solver",
 		.description = "Run VBD solver on GPU via compute shaders",
@@ -581,7 +582,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s, r
 		.type = typeid(bool)
 	});
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "Physics",
 		.name = "Compare Solvers",
 		.description = "Log CPU vs GPU solver comparison every 0.25 seconds",
@@ -589,8 +590,16 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s, r
 		.type = typeid(bool)
 	});
 
+	phase.channels.push<save::register_property>({
+		.category = "Physics",
+		.name = "Solver Iterations",
+		.description = "Number of VBD solver iterations per substep (CPU and GPU)",
+		.ref = &s.solver_iterations,
+		.type = typeid(int)
+	});
+
 	s.vbd_solver.configure(vbd::solver_config{
-		.iterations = 10,
+		.iterations = static_cast<std::uint32_t>(s.solver_iterations),
 		.alpha = 0.99f,
 		.beta = newtons_per_meter(100000.f),
 		.gamma = 0.99f,
@@ -617,6 +626,11 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 		return;
 	}
 
+	if (auto cfg = s.vbd_solver.config(); cfg.iterations != static_cast<std::uint32_t>(s.solver_iterations)) {
+		cfg.iterations = static_cast<std::uint32_t>(s.solver_iterations);
+		s.vbd_solver.configure(cfg);
+	}
+
 	auto frame_time = system_clock::dt<time_t<float, seconds>>();
 	constexpr time_t<float, seconds> max_time_step = seconds(0.25f);
 	frame_time = std::min(frame_time, max_time_step);
@@ -630,8 +644,7 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 		steps++;
 	}
 
-	constexpr int max_physics_steps = 2;
-	if (steps > max_physics_steps) {
+	if (constexpr int max_physics_steps = 2; steps > max_physics_steps) {
 		s.accumulator = {};
 		steps = max_physics_steps;
 	}
@@ -1214,13 +1227,13 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		});
 	}
 
-	channels.push(gpu_upload_payload{
+	channels.push<gpu_upload_payload>({
 		.bodies = bodies,
 		.collision_data = collision_data,
 		.accel_weights = accel_weights,
 		.motors = motors,
 		.joints = gpu_joints,
-		.warm_starts = std::vector<vbd::warm_start_entry>(s.gpu_prev.warm_start_contacts.begin(), s.gpu_prev.warm_start_contacts.end()),
+		.warm_starts = std::vector(s.gpu_prev.warm_start_contacts.begin(), s.gpu_prev.warm_start_contacts.end()),
 		.authoritative_body_indices = jumped_body_indices,
 		.solver_cfg = s.vbd_solver.config(),
 		.dt = dt * static_cast<float>(steps),
@@ -1277,12 +1290,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 			s.comparison_pending = state::solver_comparison_snapshot{
 				.cpu_result = std::move(cpu_result),
-				.cpu_contacts = cpu_ref.graph().contact_constraints()
-					| std::views::all
-					| std::ranges::to<std::vector>(),
-				.cpu_joints = cpu_ref.graph().joint_constraints()
-					| std::views::all
-					| std::ranges::to<std::vector>(),
+				.cpu_contacts = cpu_ref.graph().contact_constraints() | std::views::all | std::ranges::to<std::vector>(),
+				.cpu_joints = cpu_ref.graph().joint_constraints() | std::views::all | std::ranges::to<std::vector>(),
 			};
 		}
 	}
@@ -1556,8 +1565,7 @@ auto gse::physics::system::render(const render_phase& phase, const state& s, ren
 
 	if (rs.gpu_solver.pending_dispatch() && rs.gpu_solver.ready_to_dispatch()) {
 		rs.gpu_solver.commit_upload();
-		auto& ctx = phase.get<gpu::context>();
-		rs.gpu_solver.dispatch_compute(ctx);
+		rs.gpu_solver.dispatch_compute();
 	}
 	const auto dispatch_time = timer.reset();
 

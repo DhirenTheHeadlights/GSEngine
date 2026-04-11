@@ -139,7 +139,6 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto dispatch_compute(
-			gpu::context& ctx
 		) -> void;
 
 		auto compute_initialized(
@@ -1254,7 +1253,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.initialized = true;
 }
 
-auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
+auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 	if (!m_buffers_created || m_body_count == 0) {
 		return;
 	}

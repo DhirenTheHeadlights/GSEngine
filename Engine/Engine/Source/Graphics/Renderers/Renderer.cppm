@@ -164,9 +164,7 @@ auto gse::renderer::system::begin_frame(const begin_frame_phase& phase, state& s
 	const auto fence_wait = fence_timer.elapsed();
 	s.frame_begun = result.has_value();
 
-	if (fence_wait > milliseconds(33.f)) {
-		log::println(log::level::warning, log::category::vulkan, "begin_frame fence stall: {}ms", fence_wait.as<milliseconds>());
-	}
+	ctx.scheduler().report_frame_time(fence_wait);
 
 	if (!result && result.error() == gpu::frame_status::device_lost) {
 		log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame — terminating");
