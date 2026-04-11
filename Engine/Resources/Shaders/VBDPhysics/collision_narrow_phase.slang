@@ -17,19 +17,6 @@ static const float SAT_AXIS_ABSOLUTE_TOLERANCE = 0.01;
 static const uint SAT_AXIS_FACE = 0;
 static const uint SAT_AXIS_CROSS = 1;
 
-typedef float3x3 mat3;
-
-mat3 rotation_from_quat(float4 q) {
-    float3 ax = rotate_vector(q, float3(1, 0, 0));
-    float3 ay = rotate_vector(q, float3(0, 1, 0));
-    float3 az = rotate_vector(q, float3(0, 0, 1));
-    return mat3(ax, ay, az);
-}
-
-float3 mat3_mul_vec(mat3 m, float3 v) {
-    return m[0] * v.x + m[1] * v.y + m[2] * v.z;
-}
-
 float contact_effective_mass(
     GpuBody body_a,
     GpuBody body_b,
@@ -47,13 +34,13 @@ float contact_effective_mass(
     }
 
     if ((body_a.flags & FLAG_UPDATE_ORIENTATION) != 0 && (body_a.flags & FLAG_LOCKED) == 0) {
-        mat3 inv_i_a = mat3(body_a.inv_inertia_col0.xyz, body_a.inv_inertia_col1.xyz, body_a.inv_inertia_col2.xyz);
+        mat3 inv_i_a = mat3_inverse(body_a.inertia);
         float3 ang_j_a = cross(rAW, dir);
         inv_mass_sum += dot(cross(mat3_mul_vec(inv_i_a, ang_j_a), rAW), dir);
     }
 
     if ((body_b.flags & FLAG_UPDATE_ORIENTATION) != 0 && (body_b.flags & FLAG_LOCKED) == 0) {
-        mat3 inv_i_b = mat3(body_b.inv_inertia_col0.xyz, body_b.inv_inertia_col1.xyz, body_b.inv_inertia_col2.xyz);
+        mat3 inv_i_b = mat3_inverse(body_b.inertia);
         float3 ang_j_b = cross(rBW, dir);
         inv_mass_sum += dot(cross(mat3_mul_vec(inv_i_b, ang_j_b), rBW), dir);
     }

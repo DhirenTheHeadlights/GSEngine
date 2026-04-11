@@ -5,56 +5,75 @@ import vbd_physics;
 [[vk::push_constant]]
 ConstantBuffer<vbd_push_constants> pc;
 
+int3 world_to_cell(float3 pos, float cell_size) {
+    return int3(floor(pos / cell_size));
+}
+
+uint hash_cell(int3 cell) {
+    uint h = uint(cell.x * 73856093 ^ cell.y * 19349663 ^ cell.z * 83492791);
+    return (h % GRID_TABLE_SIZE) + 1;
+}
+
 [Layout(LayoutKind::VBDPhysics)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
-    uint n = pc.body_count;
-    uint total_pairs = n * (n - 1) / 2;
-    uint tid = dispatch_id.x;
-    if (tid >= total_pairs) {
+    uint i = dispatch_id.x;
+    if (i >= pc.body_count) {
         return;
     }
 
-    float fn = float(n);
-    float ftid = float(tid);
-    float term = 2.0f * fn - 1.0f;
-    uint i = (uint)floor((term - sqrt(term * term - 8.0f * ftid)) * 0.5f);
-    uint j = tid - i * (2 * n - i - 1) / 2 + i + 1;
+    GpuBody body_i = body_data[i];
 
-    if (i >= n || j >= n || i >= j) {
-        return;
-    }
-
-    bool i_locked = (body_data[i].flags & FLAG_LOCKED) != 0;
-    bool j_locked = (body_data[j].flags & FLAG_LOCKED) != 0;
-    if (i_locked && j_locked) {
-        return;
-    }
-
-    float3 min_a = body_data[i].aabb_min.xyz;
-    float3 max_a = body_data[i].aabb_max.xyz;
-    float3 min_b = body_data[j].aabb_min.xyz;
-    float3 max_b = body_data[j].aabb_max.xyz;
+    bool i_locked = (body_i.flags & FLAG_LOCKED) != 0;
 
     float margin = pc.speculative_margin;
-    bool overlap =
-        min_a.x - margin <= max_b.x && max_a.x + margin >= min_b.x &&
-        min_a.y - margin <= max_b.y && max_a.y + margin >= min_b.y &&
-        min_a.z - margin <= max_b.z && max_a.z + margin >= min_b.z;
+    float3 min_a = body_i.aabb_min.xyz;
+    float3 max_a = body_i.aabb_max.xyz;
 
-    if (!overlap) {
-        return;
+    float cell_size = pc.grid_cell_size;
+    int3 min_cell = world_to_cell(min_a - margin, cell_size);
+    int3 max_cell = world_to_cell(max_a + margin, cell_size);
+
+    for (int cx = min_cell.x; cx <= max_cell.x; cx++) {
+        for (int cy = min_cell.y; cy <= max_cell.y; cy++) {
+            for (int cz = min_cell.z; cz <= max_cell.z; cz++) {
+                uint bucket = hash_cell(int3(cx, cy, cz));
+                uint entry_ptr = grid_data[bucket];
+
+                while (entry_ptr != 0 && entry_ptr >= GRID_TABLE_SIZE + 1) {
+                    uint j = grid_data[entry_ptr];
+                    uint next = grid_data[entry_ptr + 1];
+
+                    if (j > i && j < pc.body_count) {
+                        bool j_locked = (body_data[j].flags & FLAG_LOCKED) != 0;
+                        if (!(i_locked && j_locked)) {
+                            float3 min_b = body_data[j].aabb_min.xyz;
+                            float3 max_b = body_data[j].aabb_max.xyz;
+
+                            bool overlap =
+                                min_a.x - margin <= max_b.x && max_a.x + margin >= min_b.x &&
+                                min_a.y - margin <= max_b.y && max_a.y + margin >= min_b.y &&
+                                min_a.z - margin <= max_b.z && max_a.z + margin >= min_b.z;
+
+                            if (overlap) {
+                                uint slot;
+                                InterlockedAdd(collision_pairs[0], 1, slot);
+
+                                if (slot >= MAX_COLLISION_PAIRS) {
+                                    InterlockedAdd(collision_pairs[0], -1, slot);
+                                    return;
+                                }
+
+                                collision_pairs[1 + slot * 2] = i;
+                                collision_pairs[1 + slot * 2 + 1] = j;
+                            }
+                        }
+                    }
+
+                    entry_ptr = next;
+                }
+            }
+        }
     }
-
-    uint slot;
-    InterlockedAdd(collision_pairs[0], 1, slot);
-
-    if (slot >= MAX_COLLISION_PAIRS) {
-        InterlockedAdd(collision_pairs[0], -1, slot);
-        return;
-    }
-
-    collision_pairs[1 + slot * 2] = i;
-    collision_pairs[1 + slot * 2 + 1] = j;
 }
