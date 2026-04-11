@@ -572,9 +572,8 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 				: 0.f;
 		elem.write(m_body_layout["accel_weight"], accel_weight);
 
-		elem.write(m_body_layout["inv_inertia_col0"], inv_inertia[0]);
-		elem.write(m_body_layout["inv_inertia_col1"], inv_inertia[1]);
-		elem.write(m_body_layout["inv_inertia_col2"], inv_inertia[2]);
+		const auto inertia = inv_inertia.inverse();
+		elem.write(m_body_layout["inertia"], inertia);
 
 		if (i < collision_data.size()) {
 			elem.write(m_body_layout["half_extents"], collision_data[i].half_extents);
@@ -1327,9 +1326,12 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 		f.queue.dispatch(ceil_div(std::max({m_body_count, max_contacts, grid_table_size}), workgroup_size), 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-		const std::uint32_t total_pairs = m_body_count * (m_body_count - 1) / 2;
+		bind_and_push(m_compute.collision_grid_build, m_compute.collision_grid_build_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		f.queue.dispatch(body_workgroups, 1, 1);
+		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+
 		bind_and_push(m_compute.collision_broad_phase, m_compute.collision_broad_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(ceil_div(total_pairs, workgroup_size), 1, 1);
+		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		bind_and_push(m_compute.prepare_indirect, m_compute.prepare_indirect_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);

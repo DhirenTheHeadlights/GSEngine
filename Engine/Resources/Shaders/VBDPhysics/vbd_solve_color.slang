@@ -5,91 +5,6 @@ import vbd_physics;
 [[vk::push_constant]]
 ConstantBuffer<vbd_push_constants> pc;
 
-typedef float3x3 mat3;
-
-mat3 outer_product3(float3 a, float3 b) {
-    return mat3(
-        a * b.x,
-        a * b.y,
-        a * b.z
-    );
-}
-
-mat3 mat3_identity(float s) {
-    return mat3(
-        float3(s, 0, 0),
-        float3(0, s, 0),
-        float3(0, 0, s)
-    );
-}
-
-mat3 mat3_add(mat3 a, mat3 b) {
-    return mat3(a[0] + b[0], a[1] + b[1], a[2] + b[2]);
-}
-
-float3 mat3_mul_vec(mat3 m, float3 v) {
-    return m[0] * v.x + m[1] * v.y + m[2] * v.z;
-}
-
-mat3 mat3_mul(mat3 a, mat3 b) {
-    return mat3(
-        mat3_mul_vec(a, b[0]),
-        mat3_mul_vec(a, b[1]),
-        mat3_mul_vec(a, b[2])
-    );
-}
-
-mat3 mat3_scale(mat3 m, float s) {
-    return mat3(m[0] * s, m[1] * s, m[2] * s);
-}
-
-mat3 mat3_transpose(mat3 m) {
-    return mat3(
-        float3(m[0].x, m[1].x, m[2].x),
-        float3(m[0].y, m[1].y, m[2].y),
-        float3(m[0].z, m[1].z, m[2].z)
-    );
-}
-
-float mat3_det(mat3 m) {
-    return m[0].x * (m[1].y * m[2].z - m[2].y * m[1].z)
-         - m[1].x * (m[0].y * m[2].z - m[2].y * m[0].z)
-         + m[2].x * (m[0].y * m[1].z - m[1].y * m[0].z);
-}
-
-bool is_finite3(float3 v) {
-    return !isinf(v.x) && !isinf(v.y) && !isinf(v.z)
-        && !isnan(v.x) && !isnan(v.y) && !isnan(v.z);
-}
-
-mat3 mat3_inverse(mat3 m) {
-    float d = mat3_det(m);
-    float diag_max = max(abs(m[0].x), max(abs(m[1].y), abs(m[2].z)));
-    float threshold = diag_max * diag_max * diag_max * 1e-12;
-    if (abs(d) < max(threshold, 1e-20)) {
-        float s = (diag_max > 1e-20) ? 1.0 / diag_max : 1.0;
-        return mat3_identity(s);
-    }
-    float inv_d = 1.0 / d;
-    mat3 result;
-    result[0] = float3(
-        (m[1].y * m[2].z - m[2].y * m[1].z) * inv_d,
-        (m[2].y * m[0].z - m[0].y * m[2].z) * inv_d,
-        (m[0].y * m[1].z - m[1].y * m[0].z) * inv_d
-    );
-    result[1] = float3(
-        (m[2].x * m[1].z - m[1].x * m[2].z) * inv_d,
-        (m[0].x * m[2].z - m[2].x * m[0].z) * inv_d,
-        (m[1].x * m[0].z - m[0].x * m[1].z) * inv_d
-    );
-    result[2] = float3(
-        (m[1].x * m[2].y - m[2].x * m[1].y) * inv_d,
-        (m[2].x * m[0].y - m[0].x * m[2].y) * inv_d,
-        (m[0].x * m[1].y - m[1].x * m[0].y) * inv_d
-    );
-    return result;
-}
-
 void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout mat3 ang_hess) {
     float rd = dot(r, dir);
     for (int j = 0; j < 3; j++) {
@@ -286,9 +201,35 @@ void solve_body(uint bi) {
     float3 ang_grad = float3(0, 0, 0);
     mat3 ang_hess = mat3_identity(0);
     mat3 hess_xt = mat3_identity(0);
+    bool has_cross_terms = false;
 
     uint contact_offset = contact_offsets[bi];
     uint contact_count = contact_counts[bi];
+
+    uint motor_idx = motor_map[bi];
+    bool has_motor = motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count;
+    float3 motor_grad = float3(0, 0, 0);
+    float motor_grad_before = 0.0;
+    float motor_stiffness = 0.0;
+    bool motor_horizontal_only = false;
+
+    if (has_motor) {
+        GpuMotor m = motor_data[motor_idx];
+        float alpha = max(m.compliance, 1e-6);
+        float iw = body.mass / pc.h_squared;
+        motor_stiffness = iw / alpha;
+        motor_horizontal_only = m.horizontal_only != 0;
+
+        float3 diff = body.predicted_position.xyz - body.motor_target.xyz;
+        if (motor_horizontal_only) diff.y = 0.0;
+
+        motor_grad = diff * motor_stiffness;
+        float grad_mag = length(motor_grad);
+        if (grad_mag > m.max_force) {
+            motor_grad *= (m.max_force / grad_mag);
+        }
+        motor_grad_before = length(motor_grad);
+    }
 
     for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
         uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, MAX_CONTACT_ADJACENCY);
@@ -296,16 +237,21 @@ void solve_body(uint bi) {
         GpuContact c = contact_data[ci];
 
         if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) continue;
-        GpuBody body_a = body_data[c.body_a];
-        GpuBody body_b = body_data[c.body_b];
 
         bool is_a = (c.body_a == bi);
+        uint other_idx = is_a ? c.body_b : c.body_a;
+        GpuBody other = body_data[other_idx];
 
-        float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a.xyz);
-        float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b.xyz);
+        float4 orient_a = is_a ? body.predicted_orientation : other.predicted_orientation;
+        float4 orient_b = is_a ? other.predicted_orientation : body.predicted_orientation;
+        float3 pos_a = is_a ? body.predicted_position.xyz : other.predicted_position.xyz;
+        float3 pos_b = is_a ? other.predicted_position.xyz : body.predicted_position.xyz;
 
-        float3 p_a = body_a.predicted_position.xyz + world_r_a;
-        float3 p_b = body_b.predicted_position.xyz + world_r_b;
+        float3 world_r_a = rotate_vector(orient_a, c.r_a.xyz);
+        float3 world_r_b = rotate_vector(orient_b, c.r_b.xyz);
+
+        float3 p_a = pos_a + world_r_a;
+        float3 p_b = pos_b + world_r_b;
 
         float3 d = p_a - p_b;
         float3 Cn = float3(
@@ -339,67 +285,37 @@ void solve_body(uint bi) {
                 ang_grad += J_ang * force[row];
                 ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(J_ang, J_ang), c.penalty[row]));
                 hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(J_lin, J_ang), c.penalty[row]));
+                has_cross_terms = true;
+            }
+        }
+
+        if (has_motor) {
+            bool blocking_body =
+                ((other.flags & FLAG_LOCKED) != 0) ||
+                (other.mass >= body.mass);
+            if (blocking_body) {
+                float normal_gap = dot(c.normal.xyz, d) + pc.collision_margin;
+                if (normal_gap < 0.0 || c.lambda.x < -1e-3) {
+                    float3 push_dir = is_a ? c.normal.xyz : -c.normal.xyz;
+                    float proj = dot(motor_grad, push_dir);
+                    if (proj > 0.0) {
+                        motor_grad -= push_dir * proj;
+                    }
+                }
             }
         }
     }
 
-    uint motor_idx = motor_map[bi];
-    if (motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count) {
-        GpuMotor m = motor_data[motor_idx];
-        float alpha = max(m.compliance, 1e-6);
-        float inertia_weight = body.mass / pc.h_squared;
-        float stiffness = inertia_weight / alpha;
-
-        float3 diff = body.predicted_position.xyz - body.motor_target.xyz;
-        if (m.horizontal_only != 0) diff.y = 0.0;
-
-        float3 motor_grad = diff * stiffness;
-        float grad_mag = length(motor_grad);
-        if (grad_mag > m.max_force) {
-            motor_grad *= (m.max_force / grad_mag);
-        }
-
-        float grad_before = length(motor_grad);
-
-        for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
-            uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, MAX_CONTACT_ADJACENCY);
-            if (ci >= MAX_CONTACTS) continue;
-            GpuContact c = contact_data[ci];
-            bool is_a = (c.body_a == bi);
-            uint other = is_a ? c.body_b : c.body_a;
-            if (other >= pc.body_count) continue;
-            GpuBody other_body = body_data[other];
-            bool blocking_body =
-                ((other_body.flags & FLAG_LOCKED) != 0) ||
-                (other_body.mass >= body.mass);
-            if (!blocking_body) continue;
-
-            GpuBody contact_body_a = body_data[c.body_a];
-            GpuBody contact_body_b = body_data[c.body_b];
-            float3 contact_r_a = rotate_vector(contact_body_a.predicted_orientation, c.r_a.xyz);
-            float3 contact_r_b = rotate_vector(contact_body_b.predicted_orientation, c.r_b.xyz);
-            float3 contact_p_a = contact_body_a.predicted_position.xyz + contact_r_a;
-            float3 contact_p_b = contact_body_b.predicted_position.xyz + contact_r_b;
-            float3 contact_d = contact_p_a - contact_p_b;
-            float normal_gap = dot(c.normal.xyz, contact_d) + pc.collision_margin;
-            if (normal_gap >= 0.0 && c.lambda.x >= -1e-3) continue;
-
-            float3 push_dir = is_a ? c.normal.xyz : -c.normal.xyz;
-            float proj = dot(motor_grad, push_dir);
-            if (proj > 0.0) {
-                motor_grad -= push_dir * proj;
-            }
-        }
-
-        float grad_after = length(motor_grad);
-        float motor_scale = (grad_before > 1e-10) ? (grad_after / grad_before) : 0.0;
+    if (has_motor) {
+        float motor_grad_after = length(motor_grad);
+        float motor_scale = (motor_grad_before > 1e-10) ? (motor_grad_after / motor_grad_before) : 0.0;
 
         grad += motor_grad;
 
         mat3 motor_hess = mat3_identity(0);
-        motor_hess[0].x = stiffness * motor_scale;
-        motor_hess[1].y = (m.horizontal_only != 0) ? 0.0 : stiffness * motor_scale;
-        motor_hess[2].z = stiffness * motor_scale;
+        motor_hess[0].x = motor_stiffness * motor_scale;
+        motor_hess[1].y = motor_horizontal_only ? 0.0 : motor_stiffness * motor_scale;
+        motor_hess[2].z = motor_stiffness * motor_scale;
         hess = mat3_add(hess, motor_hess);
     }
 
@@ -412,6 +328,7 @@ void solve_body(uint bi) {
         GpuJoint j = joint_data[ji];
         if (j.body_a >= pc.body_count || j.body_b >= pc.body_count) continue;
         accumulate_joint_for_body(bi, j, update_orient, grad, hess, ang_grad, ang_hess, hess_xt);
+        if (update_orient) has_cross_terms = true;
     }
 
     float inertia_weight = body.mass / pc.h_squared;
@@ -424,9 +341,10 @@ void solve_body(uint bi) {
     h_xx[1].y += reg;
     h_xx[2].z += reg;
 
+    mat3 h_xx_inv = mat3_inverse(h_xx);
+
     if (!update_orient) {
-        mat3 inv_h = mat3_inverse(h_xx);
-        float3 delta_x = -mat3_mul_vec(inv_h, g_lin);
+        float3 delta_x = -mat3_mul_vec(h_xx_inv, g_lin);
 
         if (!is_finite3(delta_x)) { body_data[bi] = body; return; }
         float step_size = length(delta_x);
@@ -451,8 +369,7 @@ void solve_body(uint bi) {
         theta_diff = q_v * 2.0;
     }
 
-    mat3 i_inv = mat3(body.inv_inertia_col0.xyz, body.inv_inertia_col1.xyz, body.inv_inertia_col2.xyz);
-    mat3 i_mat = mat3_inverse(i_inv);
+    mat3 i_mat = body.inertia;
     float ang_scale = 1.0 / pc.h_squared;
 
     float3 g_ang = mat3_mul_vec(i_mat, theta_diff) * ang_scale + ang_grad;
@@ -463,13 +380,21 @@ void solve_body(uint bi) {
     h_tt[1].y += ang_reg;
     h_tt[2].z += ang_reg;
 
-    mat3 h_tx = mat3_transpose(hess_xt);
-    mat3 h_xx_inv = mat3_inverse(h_xx);
-    mat3 s = mat3_add(h_tt, mat3_scale(mat3_mul(h_tx, mat3_mul(h_xx_inv, hess_xt)), -1.0));
-    mat3 s_inv = mat3_inverse(s);
+    float3 delta_x;
+    float3 delta_theta;
 
-    float3 delta_theta = -mat3_mul_vec(s_inv, g_ang - mat3_mul_vec(mat3_mul(h_tx, h_xx_inv), g_lin));
-    float3 delta_x = -mat3_mul_vec(h_xx_inv, g_lin + mat3_mul_vec(hess_xt, delta_theta));
+    if (has_cross_terms) {
+        mat3 h_tx = mat3_transpose(hess_xt);
+        mat3 s = mat3_add(h_tt, mat3_scale(mat3_mul(h_tx, mat3_mul(h_xx_inv, hess_xt)), -1.0));
+        mat3 s_inv = mat3_inverse(s);
+
+        delta_theta = -mat3_mul_vec(s_inv, g_ang - mat3_mul_vec(mat3_mul(h_tx, h_xx_inv), g_lin));
+        delta_x = -mat3_mul_vec(h_xx_inv, g_lin + mat3_mul_vec(hess_xt, delta_theta));
+    } else {
+        mat3 h_tt_inv = mat3_inverse(h_tt);
+        delta_theta = -mat3_mul_vec(h_tt_inv, g_ang);
+        delta_x = -mat3_mul_vec(h_xx_inv, g_lin);
+    }
 
     if (!is_finite3(delta_x) || !is_finite3(delta_theta)) {
         body_data[bi] = body;
