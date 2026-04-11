@@ -1356,7 +1356,46 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 
 		for (std::uint32_t iterations = 0; iterations < num_iterations; ++iterations) {
 			bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, solve_alpha, substep_warm_start_count);
-			f.queue.dispatch(body_workgroups, 1, 1);
+			auto color_pc = m_compute.solve_color->cache_push_block("vbd_push_constants");
+			color_pc.set("body_count", m_body_count);
+			color_pc.set("contact_count", max_contacts);
+			color_pc.set("motor_count", m_motor_count);
+			color_pc.set("color_offset", 0u);
+			color_pc.set("color_count", num_colors);
+			color_pc.set("warm_start_count", substep_warm_start_count);
+			color_pc.set("post_stabilize", cfg.post_stabilize ? 1u : 0u);
+			color_pc.set("joint_count", m_joint_count);
+			color_pc.set("h_squared", h_squared);
+			color_pc.set("dt", sub_dt);
+			color_pc.set("beta", cfg.beta);
+			color_pc.set("ang_beta", cfg.ang_beta);
+			color_pc.set("linear_damping", 0.0f);
+			color_pc.set("velocity_sleep_threshold", cfg.velocity_sleep_threshold);
+			color_pc.set("angular_sleep_threshold", cfg.angular_sleep_threshold);
+			color_pc.set("current_alpha", solve_alpha);
+			color_pc.set("collision_margin", cfg.collision_margin);
+			color_pc.set("friction_coefficient", cfg.friction_coefficient);
+			color_pc.set("penalty_min", cfg.penalty_min);
+			color_pc.set("penalty_max", cfg.penalty_max);
+			color_pc.set("gamma", cfg.gamma);
+			color_pc.set("solver_alpha", cfg.alpha);
+			color_pc.set("speculative_margin", cfg.speculative_margin);
+			color_pc.set("stick_threshold", cfg.stick_threshold);
+			color_pc.set("substep", sub);
+			color_pc.set("iteration", iterations);
+			color_pc.set("convergence_threshold", cfg.convergence_threshold.linear);
+			color_pc.set("min_iterations", cfg.min_iterations);
+			color_pc.set("grid_cell_size", m_grid_cell_size);
+
+			for (std::uint32_t color = 0; color < num_colors; ++color) {
+				color_pc.set("color_offset", color);
+				f.queue.push(m_compute.solve_color_pipeline, color_pc);
+				f.queue.dispatch(body_workgroups, 1, 1);
+				if (color + 1 < num_colors) {
+					f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+				}
+			}
+
 			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 			bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);

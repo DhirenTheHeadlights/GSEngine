@@ -424,70 +424,35 @@ void solve_body(uint bi) {
     body_data[bi] = body;
 }
 
-static const uint BARRIER_COUNTER_INDEX = 3;
-
-groupshared uint gs_barrier_target;
-
-void global_barrier(uint local_id, uint num_groups) {
-    DeviceMemoryBarrierWithGroupSync();
-
-    if (local_id == 0) {
-        uint prev;
-        InterlockedAdd(collision_state[BARRIER_COUNTER_INDEX], 1u, prev);
-        gs_barrier_target = ((prev / num_groups) + 1u) * num_groups;
-    }
-
-    GroupMemoryBarrierWithGroupSync();
-
-    if (local_id == 0) {
-        uint target = gs_barrier_target;
-        while (true) {
-            uint val;
-            InterlockedAdd(collision_state[BARRIER_COUNTER_INDEX], 0u, val);
-            if (val >= target) break;
-        }
-    }
-
-    DeviceMemoryBarrierWithGroupSync();
-}
-
 [Layout(LayoutKind::VBDPhysics)]
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV_GroupThreadID) {
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint idx = dispatch_id.x;
-    uint local_id = group_thread_id.x;
-    uint num_groups = (pc.body_count + 63u) / 64u;
 
-    bool converged = collision_state[CONVERGED_FLAG_INDEX] != 0;
+    if (collision_state[CONVERGED_FLAG_INDEX] != 0) return;
 
     uint num_colors = min(collision_state[1], pc.color_count);
+    uint color = pc.color_offset;
+    if (color >= num_colors) return;
 
-    for (uint color = 0; color < num_colors; color++) {
-        if (!converged) {
-            uint count = color_data[MAX_COLORS + color];
-            if (idx < count) {
-                uint offset = color_data[color];
-                uint bi = color_data[MAX_COLORS * 2 + offset + idx];
-                if (bi < pc.body_count) {
-                    solve_body(bi);
-                }
-            }
-        }
-
-        if (color + 1u < num_colors) {
-            global_barrier(local_id, num_groups);
+    uint count = color_data[MAX_COLORS + color];
+    if (idx < count) {
+        uint offset = color_data[color];
+        uint bi = color_data[MAX_COLORS * 2 + offset + idx];
+        if (bi < pc.body_count) {
+            solve_body(bi);
         }
     }
 
-    if (!converged && pc.current_alpha > 0.0 && pc.iteration >= pc.min_iterations && idx == 0) {
+    if (color == num_colors - 1 && pc.current_alpha > 0.0 && pc.iteration >= pc.min_iterations && idx == 0) {
         float max_viol = asfloat(collision_state[CONVERGENCE_MAX_DELTA_INDEX]);
         if (max_viol < pc.convergence_threshold) {
             collision_state[CONVERGED_FLAG_INDEX] = 1;
         }
     }
 
-    if (idx == 0) {
+    if (color == num_colors - 1 && idx == 0) {
         collision_state[CONVERGENCE_MAX_DELTA_INDEX] = 0;
     }
 }
