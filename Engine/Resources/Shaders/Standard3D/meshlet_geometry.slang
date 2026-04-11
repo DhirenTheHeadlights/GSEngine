@@ -143,36 +143,71 @@ float interleaved_gradient_noise(float2 pixel) {
     return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
 }
 
-static const int MAX_SHADOW_SAMPLES = 8;
+static const int MAX_SHADOW_SAMPLES = 4;
 static const float GOLDEN_ANGLE = 2.39996;
 
-float trace_shadow(float3 origin, float3 normal, float3 direction, float t_max, float light_radius, float2 pixel, int sample_count) {
+struct shadow_config {
+    int max_samples;
+    float max_range;
+    float fade_start;
+    int near_samples;
+    int mid_samples;
+    int far_samples;
+    float near_dist;
+    float mid_dist;
+};
+
+shadow_config get_shadow_config(int quality) {
+    switch (quality) {
+        case 1: return { 1, 50.0,  40.0,  1, 1, 1, 10.0, 30.0 };
+        case 2: return { 1, 100.0, 80.0,  1, 1, 1, 20.0, 60.0 };
+        case 3: return { 2, 200.0, 150.0, 2, 1, 1, 30.0, 100.0 };
+        case 4: return { 4, 500.0, 400.0, 4, 2, 1, 50.0, 200.0 };
+        default: return { 0, 0.0, 0.0, 0, 0, 0, 0.0, 0.0 };
+    }
+}
+
+float trace_shadow(float3 origin, float3 normal, float3 direction, float t_max, float light_radius, float2 pixel, shadow_config cfg, float view_dist) {
+    if (view_dist > cfg.max_range) return 1.0;
+
+    int sample_count = cfg.near_samples;
+    if (view_dist > cfg.mid_dist) sample_count = cfg.far_samples;
+    else if (view_dist > cfg.near_dist) sample_count = cfg.mid_samples;
+
+    float range_clamp = min(t_max, cfg.max_range - view_dist);
     float3 biased_origin = origin + normal * 0.1;
 
+    float shadow;
     if (sample_count <= 1 || light_radius <= 0.0) {
-        return trace_shadow_ray(biased_origin, direction, t_max);
+        shadow = trace_shadow_ray(biased_origin, direction, range_clamp);
+    }
+    else {
+        float3 up = abs(direction.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+        float3 tangent = normalize(cross(up, direction));
+        float3 bitangent = cross(direction, tangent);
+
+        float jitter_scale = light_radius / max(range_clamp, 0.01);
+        float rotation = interleaved_gradient_noise(pixel) * 6.28318;
+        float inv_count = 1.0 / float(sample_count);
+        shadow = 0.0;
+
+        [unroll]
+        for (int s = 0; s < MAX_SHADOW_SAMPLES; ++s) {
+            if (s >= sample_count) break;
+            float r = sqrt((float(s) + 0.5) * inv_count);
+            float theta = float(s) * GOLDEN_ANGLE + rotation;
+            float2 disk = float2(cos(theta), sin(theta)) * r;
+            float3 jittered_dir = normalize(direction + (tangent * disk.x + bitangent * disk.y) * jitter_scale);
+            shadow += trace_shadow_ray(biased_origin, jittered_dir, range_clamp);
+        }
+        shadow *= inv_count;
     }
 
-    float3 up = abs(direction.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
-    float3 tangent = normalize(cross(up, direction));
-    float3 bitangent = cross(direction, tangent);
-
-    float jitter_scale = light_radius / max(t_max, 0.01);
-    float rotation = interleaved_gradient_noise(pixel) * 6.28318;
-    float inv_count = 1.0 / float(sample_count);
-    float shadow = 0.0;
-
-    [unroll]
-    for (int s = 0; s < MAX_SHADOW_SAMPLES; ++s) {
-        if (s >= sample_count) break;
-        float r = sqrt((float(s) + 0.5) * inv_count);
-        float theta = float(s) * GOLDEN_ANGLE + rotation;
-        float2 disk = float2(cos(theta), sin(theta)) * r;
-        float3 jittered_dir = normalize(direction + (tangent * disk.x + bitangent * disk.y) * jitter_scale);
-        shadow += trace_shadow_ray(biased_origin, jittered_dir, t_max);
+    if (view_dist > cfg.fade_start) {
+        shadow = lerp(shadow, 1.0, (view_dist - cfg.fade_start) / (cfg.max_range - cfg.fade_start));
     }
 
-    return shadow * inv_count;
+    return shadow;
 }
 
 [Layout(LayoutKind::Forward3D)]
@@ -194,9 +229,9 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
 
     float3 world_n = normalize(input.world_normal);
     float2 pixel = input.clip_pos.xy;
+    float view_dist = length(pos_vs);
 
-    static const int sample_counts[] = { 0, 1, 2, 4, 8 };
-    int samples = sample_counts[clamp(shadow_quality, 0, 4)];
+    shadow_config scfg = get_shadow_config(clamp(shadow_quality, 0, 4));
 
     for (uint t = 0; t < tile_count; ++t) {
         int i = (int)light_index_list[list_offset + t];
@@ -212,8 +247,8 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
             float3 diffuse = albedo * light_color * light_intensity * NdotL;
             float3 ambient = albedo * light_color * light_ambient;
             float shadow = 1.0;
-            if (samples > 0 && NdotL > 0.0) {
-                shadow = trace_shadow(pos_world, world_n, normalize(-light.world_direction), 1000.0, light.source_radius, pixel, samples);
+            if (scfg.max_samples > 0 && NdotL > 0.0) {
+                shadow = trace_shadow(pos_world, world_n, normalize(-light.world_direction), 1000.0, light.source_radius, pixel, scfg, view_dist);
             }
             result += diffuse * shadow + ambient;
         } else if (light.light_type == LightType::Point) {
@@ -225,8 +260,8 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
             float3 to_light = light.world_position - pos_world;
             float dist = length(to_light);
             float shadow = 1.0;
-            if (samples > 0 && NdotL > 0.0) {
-                shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0, light.source_radius, pixel, samples);
+            if (scfg.max_samples > 0 && NdotL > 0.0) {
+                shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0, light.source_radius, pixel, scfg, view_dist);
             }
             result += diffuse * shadow + ambient;
         } else if (light.light_type == LightType::Spot) {
@@ -239,8 +274,8 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
             float3 to_light = light.world_position - pos_world;
             float dist = length(to_light);
             float shadow = 1.0;
-            if (samples > 0 && NdotL > 0.0) {
-                shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0, light.source_radius, pixel, samples);
+            if (scfg.max_samples > 0 && NdotL > 0.0) {
+                shadow = trace_shadow(pos_world, world_n, normalize(to_light), dist - 1.0, light.source_radius, pixel, scfg, view_dist);
             }
             result += diffuse * shadow + ambient;
         }

@@ -65,7 +65,7 @@ auto gse::renderer::forward::system::initialize(const initialize_phase& phase, s
 	phase.channels.push(save::register_property{
 		.category = "Graphics",
 		.name = "Shadow Quality",
-		.description = "Controls the number of shadow rays per pixel (Off, Hard, Low, Medium, High)",
+		.description = "Off: no shadows | Hard: 1 ray, 50m range | Low: 1 ray, distance-adaptive, 100m | Medium: 2 rays near/1 far, 200m | High: 4 rays near/2 mid/1 far, 500m",
 		.ref = reinterpret_cast<void*>(&s.shadow_quality),
 		.type = typeid(int),
 		.enum_options = { { "Off", 0 }, { "Hard", 1 }, { "Low", 2 }, { "Medium", 3 }, { "High", 4 } }
