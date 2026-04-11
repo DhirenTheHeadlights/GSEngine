@@ -1109,7 +1109,8 @@ auto gse::vbd::gpu_solver::pending_dispatch() const -> bool {
 
 auto gse::vbd::gpu_solver::ready_to_dispatch() const -> bool {
 	const auto& f = m_frames[m_dispatch_slot];
-	return f.first_submit || f.queue.is_complete();
+	const auto& other = m_frames[1 - m_dispatch_slot];
+	return (f.first_submit || f.queue.is_complete()) && !other.readback_pending;
 }
 
 auto gse::vbd::gpu_solver::mark_dispatched() -> void {
@@ -1260,10 +1261,6 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 	}
 
 	auto& f = m_frames[m_dispatch_slot];
-
-	if (!f.first_submit) {
-		f.queue.wait();
-	}
 
 	m_compute.solve_ms = f.queue.read_timing();
 	f.queue.begin();

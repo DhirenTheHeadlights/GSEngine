@@ -157,12 +157,26 @@ auto gse::gpu::swap_chain::create_swap_chain_resources(const vec2i framebuffer_s
 	}
 
 	auto present_mode = vk::PresentModeKHR::eFifo;
-	for (const auto& available_present_mode : details.present_modes) {
-		if (available_present_mode == vk::PresentModeKHR::eMailbox) {
-			present_mode = available_present_mode;
+	for (const auto& mode : details.present_modes) {
+		if (mode == vk::PresentModeKHR::eMailbox) {
+			present_mode = mode;
 			break;
 		}
+		if (mode == vk::PresentModeKHR::eImmediate && present_mode == vk::PresentModeKHR::eFifo) {
+			present_mode = mode;
+		}
 	}
+
+	auto mode_name = [](vk::PresentModeKHR m) -> std::string_view {
+		switch (m) {
+			case vk::PresentModeKHR::eImmediate: return "Immediate";
+			case vk::PresentModeKHR::eMailbox: return "Mailbox";
+			case vk::PresentModeKHR::eFifo: return "FIFO (VSync)";
+			case vk::PresentModeKHR::eFifoRelaxed: return "FIFO Relaxed";
+			default: return "Unknown";
+		}
+	};
+	log::println(log::category::vulkan, "Present mode: {}", mode_name(present_mode));
 
 	vk::Extent2D extent;
 	if (details.capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
