@@ -40,7 +40,7 @@ export namespace gse::actions {
 
 	class handle {
 	public:
-		explicit handle(id action_id = {}) : m_action_id(action_id) {}
+		explicit handle(const id action_id = {}) : m_action_id(action_id) {}
 
 		auto id() const -> gse::id {
 			return m_action_id;
@@ -256,7 +256,7 @@ export namespace gse::actions {
 	thread_local bool g_context_camera_yaw_set = false;
 	thread_local std::unordered_map<id, angle> g_entity_camera_yaw;
 
-	auto set_context_camera_yaw(angle yaw) -> void {
+	auto set_context_camera_yaw(const angle yaw) -> void {
 		g_context_camera_yaw = yaw;
 		g_context_camera_yaw_set = true;
 	}
@@ -272,18 +272,18 @@ export namespace gse::actions {
 		return std::nullopt;
 	}
 
-	auto set_entity_camera_yaw(id entity_id, angle yaw) -> void {
+	auto set_entity_camera_yaw(const id entity_id, const angle yaw) -> void {
 		g_entity_camera_yaw[entity_id] = yaw;
 	}
 
-	auto entity_camera_yaw(id entity_id) -> std::optional<angle> {
-		if (auto it = g_entity_camera_yaw.find(entity_id); it != g_entity_camera_yaw.end()) {
+	auto entity_camera_yaw(const id entity_id) -> std::optional<angle> {
+		if (const auto it = g_entity_camera_yaw.find(entity_id); it != g_entity_camera_yaw.end()) {
 			return it->second;
 		}
 		return std::nullopt;
 	}
 
-	auto clear_entity_camera_yaw(id entity_id) -> void {
+	auto clear_entity_camera_yaw(const id entity_id) -> void {
 		g_entity_camera_yaw.erase(entity_id);
 	}
 
@@ -374,7 +374,7 @@ export namespace gse::actions {
 
 		auto description(
 			id action_id
-		) const -> const actions::description*;
+		) const -> const description*;
 
 		auto register_channel(
 			id owner_id,
@@ -433,9 +433,15 @@ export namespace gse::actions {
 	};
 
 	struct system {
-		static auto initialize(initialize_phase& phase, system_state& s) -> void;
-		static auto update(update_phase& phase, system_state& s) -> void;
-		static auto end_frame(end_frame_phase& phase, system_state& s) -> void;
+		static auto initialize(
+			initialize_phase& phase,
+			system_state& s
+		) -> void;
+
+		static auto update(
+			update_context& ctx,
+			system_state& s
+		) -> void;
 	};
 }
 
@@ -534,8 +540,8 @@ auto gse::actions::state::reset_axes(const std::span<const std::uint16_t> axes1,
 }
 
 auto gse::actions::state::clear_all_axes() -> void {
-	std::fill(m_axes1.begin(), m_axes1.end(), 0.f);
-	std::fill(m_axes2.begin(), m_axes2.end(), axis{});
+	std::ranges::fill(m_axes1, 0.f);
+	std::ranges::fill(m_axes2, axis{});
 }
 
 auto gse::actions::state::set_pressed(const std::uint16_t bit_index, const std::size_t count) -> void {
@@ -659,28 +665,39 @@ auto gse::actions::state::camera_yaw() const -> angle {
 auto gse::actions::system::initialize(initialize_phase& phase, system_state& s) -> void {
 	phase.channels.push(save::bind_int_map_request{
 		.category = "Controls",
-		.map_ptr = &s.rebinds
+		.initial_data = s.rebinds
 	});
 
 	phase.channels.push(save::bind_int_map_request{
 		.category = "ActionDefaults",
-		.map_ptr = &s.action_defaults
+		.initial_data = s.action_defaults
 	});
 
 	s.finalize_bindings();
 }
 
-auto gse::actions::system::update(update_phase& phase, system_state& s) -> void {
+auto gse::actions::system::update(update_context& ctx, system_state& s) -> void {
+	s.states.flip();
+
+	for (const auto& [category, data] : ctx.read_channel<save::int_map_loaded>()) {
+		if (category == "Controls") {
+			s.rebinds = data;
+		}
+		else if (category == "ActionDefaults") {
+			s.action_defaults = data;
+		}
+	}
+
 	bool config_changed = false;
 
-	for (const auto& [name, default_key, action_id] : phase.read_channel<add_action_request>()) {
+	for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
 		s.add_description(name, action_id);
 		s.pending_key_bindings.emplace_back(name, default_key, action_id);
 		s.action_defaults[name] = static_cast<int>(default_key);
 		config_changed = true;
 	}
 
-	for (const auto& [info, axis_id] : phase.read_channel<bind_axis2_request>()) {
+	for (const auto& [info, axis_id] : ctx.read_channel<bind_axis2_request>()) {
 		s.pending_axis2_reqs.push_back({
 			info,
 			axis_id
@@ -688,15 +705,17 @@ auto gse::actions::system::update(update_phase& phase, system_state& s) -> void 
 		config_changed = true;
 	}
 
-	for (const auto& [action_name, new_key] : phase.read_channel<rebind_request>()) {
+	for (const auto& [action_name, new_key] : ctx.read_channel<rebind_request>()) {
 		s.rebind(action_name, new_key);
 	}
 
 	if (config_changed) {
 		s.finalize_bindings();
+		ctx.channels.push(save::int_map_sync{ "Controls", s.rebinds });
+		ctx.channels.push(save::int_map_sync{ "ActionDefaults", s.action_defaults });
 	}
 
-	const auto* input_state = phase.try_state_of<input::system_state>();
+	const auto* input_state = ctx.try_state_of<input::system_state>();
 	if (!input_state) {
 		return;
 	}
@@ -742,26 +761,22 @@ auto gse::actions::system::update(update_phase& phase, system_state& s) -> void 
 
 	for (const auto& desc : s.descriptions.items()) {
 		if (const auto idx = desc.bit_index(); action_state.pressed(idx) || action_state.released(idx) || action_state.held(idx)) {
-			phase.channels.push(button_channel{ desc.id(), action_state.held(idx), action_state.pressed(idx), action_state.released(idx) });
+			ctx.channels.push(button_channel{ desc.id(), action_state.held(idx), action_state.pressed(idx), action_state.released(idx) });
 		}
 	}
 
 	for (const auto axis_id : s.axis1_ids_cache) {
 		if (const float val = action_state.axis1(axis_id); std::abs(val) > 0.001f) {
-			phase.channels.push(axis1_channel{ axis_id, val });
+			ctx.channels.push(axis1_channel{ axis_id, val });
 		}
 	}
 
 	for (const auto& [id, left, right, back, fwd, scale] : s.axis2_by_id.items()) {
 		const auto axis_id = static_cast<std::uint16_t>(id.number());
 		if (const auto val = action_state.axis2_v(axis_id); val.x() > 0.001f || val.y() > 0.001f) {
-			phase.channels.push(axis2_channel{ id, val });
+			ctx.channels.push(axis2_channel{ id, val });
 		}
 	}
-}
-
-auto gse::actions::system::end_frame(end_frame_phase&, system_state& s) -> void {
-	s.states.flip();
 }
 
 auto gse::actions::system_state::current_state() const -> const state& {
@@ -905,7 +920,7 @@ auto gse::actions::system_state::all_bindings() const -> std::vector<action_bind
 	std::map<std::string, action_binding_info> merged;
 
 	for (const auto& [name, default_key] : action_defaults) {
-		const key def = static_cast<key>(default_key);
+		const auto def = static_cast<key>(default_key);
 		key current = def;
 		if (const auto it = rebinds.find(name); it != rebinds.end()) {
 			current = static_cast<key>(it->second);
@@ -923,7 +938,7 @@ auto gse::actions::system_state::all_bindings() const -> std::vector<action_bind
 
 	std::vector<action_binding_info> result;
 	result.reserve(merged.size());
-	for (auto& [name, info] : merged) {
+	for (auto& info : merged | std::views::values) {
 		result.push_back(std::move(info));
 	}
 

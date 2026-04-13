@@ -16,7 +16,9 @@ export namespace gs {
 			build("Floor")
 				.with<gse::box>({
 					.initial_position = floor_pos,
-					.size = gse::vec3<gse::length>(60.f, 1.f, 60.f)
+					.size = gse::vec3<gse::length>(60.f, 1.f, 60.f),
+					.roughness = 0.05f,
+					.metallic = 1.0f
 				})
 				.with_init([](hook<gse::entity>& h) {
 					h.configure_when_present([](gse::physics::motion_component& mc) {

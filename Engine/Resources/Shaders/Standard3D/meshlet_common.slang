@@ -23,8 +23,8 @@ public struct InstanceData {
     public float4x4 normal_matrix;
     public uint skin_offset;
     public uint joint_count;
+    public uint material_index;
     public uint _pad0;
-    public uint _pad1;
 };
 
 public struct MeshletPayload {

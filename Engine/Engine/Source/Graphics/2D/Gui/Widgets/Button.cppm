@@ -8,6 +8,7 @@ import gse.utility;
 import :types;
 import :ids;
 import :styles;
+import :builder;
 
 export namespace gse::gui::draw {
 	auto button(
@@ -16,6 +17,16 @@ export namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& active_widget_id
 	) -> bool;
+}
+
+export namespace gse::gui {
+	struct button {
+		using result = bool;
+		struct params { std::string_view text; };
+		static auto draw(const draw_context& ctx, const params p, id& hot, id& active, id&) -> bool {
+			return draw::button(ctx, std::string(p.text), hot, active);
+		}
+	};
 }
 
 auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id) -> bool {
@@ -43,17 +54,18 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
         active_widget_id = widget_id;
     }
 
-    vec4f bg_color = ctx.style.color_widget_background;
+    vec4f target_color = ctx.style.color_widget_background;
     if (active_widget_id == widget_id) {
-        bg_color = ctx.style.color_widget_active;
+        target_color = ctx.style.color_widget_active;
     } else if (hot_widget_id == widget_id) {
-        bg_color = ctx.style.color_widget_hovered;
+        target_color = ctx.style.color_widget_hovered;
     }
 
     ctx.queue_sprite({
         .rect = button_rect,
-        .color = bg_color,
-        .texture = ctx.blank_texture
+        .color = ctx.animated_color(widget_id, target_color),
+        .texture = ctx.blank_texture,
+        .corner_radius = ctx.style.corner_radius
     });
 
     const float text_width = ctx.font->width(name, ctx.style.font_size);

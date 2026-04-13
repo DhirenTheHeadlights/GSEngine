@@ -2,32 +2,31 @@ export module gse.utility:lambda_traits;
 
 import std;
 
+import :access_token;
+
 export namespace gse {
     template <typename T>
-    class chunk;
-
-    template <typename T>
-    struct chunk_traits {
-        static constexpr bool is_chunk = false;
+    struct access_traits {
+        static constexpr bool is_access = false;
         static constexpr bool is_const_element = false;
         using element_type = void;
     };
 
-    template <typename T>
-    struct chunk_traits<chunk<T>> {
-        static constexpr bool is_chunk = true;
-        static constexpr bool is_const_element = std::is_const_v<T>;
-        using element_type = std::remove_const_t<T>;
+    template <is_component T, access_mode M>
+    struct access_traits<access<T, M>> {
+        static constexpr bool is_access = true;
+        static constexpr bool is_const_element = (M == access_mode::read);
+        using element_type = T;
     };
 
     template <typename T>
-    constexpr bool is_chunk_v = chunk_traits<std::remove_cvref_t<T>>::is_chunk;
+    constexpr bool is_access_v = access_traits<std::remove_cvref_t<T>>::is_access;
 
     template <typename T>
-    constexpr bool is_read_chunk_v = chunk_traits<std::remove_cvref_t<T>>::is_const_element;
+    constexpr bool is_read_access_v = access_traits<std::remove_cvref_t<T>>::is_const_element;
 
     template <typename T>
-    using chunk_element_t = chunk_traits<std::remove_cvref_t<T>>::element_type;
+    using access_element_t = access_traits<std::remove_cvref_t<T>>::element_type;
 
     template <typename... Args>
     struct param_info {
@@ -100,8 +99,8 @@ export namespace gse {
 template <typename... Args>
 auto gse::param_info<Args...>::read_types() -> std::vector<std::type_index> {
     std::vector<std::type_index> result;
-    ((is_chunk_v<Args> && is_read_chunk_v<Args>
-        ? result.push_back(typeid(chunk_element_t<Args>))
+    ((is_access_v<Args> && is_read_access_v<Args>
+        ? result.push_back(typeid(access_element_t<Args>))
         : void()), ...);
     return result;
 }
@@ -109,8 +108,8 @@ auto gse::param_info<Args...>::read_types() -> std::vector<std::type_index> {
 template <typename... Args>
 auto gse::param_info<Args...>::write_types() -> std::vector<std::type_index> {
     std::vector<std::type_index> result;
-    ((is_chunk_v<Args> && !is_read_chunk_v<Args>
-        ? result.push_back(typeid(chunk_element_t<Args>))
+    ((is_access_v<Args> && !is_read_access_v<Args>
+        ? result.push_back(typeid(access_element_t<Args>))
         : void()), ...);
     return result;
 }

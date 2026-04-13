@@ -20,9 +20,6 @@ export namespace gse {
 		angle outer_cut_off;
 		float ambient_strength = 0.025f;
 		float source_radius = 0.3f;
-		length near_plane = meters(0.1f);
-		length far_plane = meters(10000.f);
-		std::vector<id> ignore_list_ids;
 	};
 
 	struct spot_light_component : component<spot_light_data> {

@@ -8,6 +8,7 @@ import gse.utility;
 import :types;
 import :ids;
 import :styles;
+import :builder;
 
 export namespace gse::gui::draw {
 	auto selectable(
@@ -17,6 +18,16 @@ export namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& active_widget_id
 	) -> bool;
+}
+
+export namespace gse::gui {
+	struct selectable {
+		using result = bool;
+		struct params { std::string_view text; bool selected = false; };
+		static auto draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> bool {
+			return draw::selectable(ctx, std::string(p.text), p.selected, hot, active);
+		}
+	};
 }
 
 auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name, const bool selected, id& hot_widget_id, id& active_widget_id) -> bool {
@@ -44,19 +55,20 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
         active_widget_id = widget_id;
     }
 
-    vec4f bg_color = ctx.style.color_widget_background;
+    vec4f target_color = ctx.style.color_widget_background;
     if (selected) {
-        bg_color = ctx.style.color_widget_selected;
+        target_color = ctx.style.color_widget_selected;
     } else if (active_widget_id == widget_id) {
-        bg_color = ctx.style.color_widget_active;
+        target_color = ctx.style.color_widget_active;
     } else if (hot_widget_id == widget_id) {
-        bg_color = ctx.style.color_widget_hovered;
+        target_color = ctx.style.color_widget_hovered;
     }
 
     ctx.queue_sprite({
         .rect = row_rect,
-        .color = bg_color,
-        .texture = ctx.blank_texture
+        .color = ctx.animated_color(widget_id, target_color),
+        .texture = ctx.blank_texture,
+        .corner_radius = ctx.style.corner_radius
     });
 
     const float text_w = ctx.font->width(name, ctx.style.font_size);

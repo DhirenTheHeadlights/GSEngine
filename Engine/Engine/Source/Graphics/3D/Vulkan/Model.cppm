@@ -3,7 +3,6 @@ export module gse.graphics:model;
 import std;
 
 import :mesh;
-import :material;
 
 import gse.utility;
 import gse.platform;
@@ -76,7 +75,7 @@ auto gse::model::load(gpu::resource_manager& context) -> void {
 		assert(in_file.is_open(), std::source_location::current(), "Failed to open baked model file for reading.");
 		if (!in_file.is_open()) return;
 
-		binary_reader ar(in_file, 0x474D444C, 3, m_baked_model_path.string());
+		binary_reader ar(in_file, 0x474D444C, 4, m_baked_model_path.string());
 		if (!ar.valid()) return;
 
 		std::uint32_t mesh_count = 0;
@@ -84,44 +83,41 @@ auto gse::model::load(gpu::resource_manager& context) -> void {
 		m_meshes.reserve(mesh_count);
 
 		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
-		const auto material_dir = config::baked_resource_path / "Materials" / model_relative.parent_path();
+		auto texture_dir = model_relative.parent_path().string();
+		std::ranges::replace(texture_dir, '\\', '/');
+		if (texture_dir.starts_with("Models/")) {
+			texture_dir = "Textures/" + texture_dir.substr(7);
+		}
 
 		for (std::uint32_t i = 0; i < mesh_count; ++i) {
-			std::string material_name;
-			ar & material_name;
+			gse::material mat;
+			ar & mat.base_color & mat.roughness & mat.metallic;
 
-			const auto material_path = material_dir / (material_name + ".gmat");
-			resource::handle<material> material_handle;
-			if (std::filesystem::exists(material_path)) {
-				material_handle = context.queue<material>(material_path.string());
+			std::string albedo_file, normal_file, rm_file;
+			ar & albedo_file & normal_file & rm_file;
+
+			if (!albedo_file.empty()) {
+				auto stem = std::filesystem::path(albedo_file).stem().string();
+				mat.diffuse_texture = context.get<texture>(texture_dir + "/" + stem);
+			}
+			if (!normal_file.empty()) {
+				auto stem = std::filesystem::path(normal_file).stem().string();
+				mat.normal_texture = context.get<texture>(texture_dir + "/" + stem);
+			}
+			if (!rm_file.empty()) {
+				auto stem = std::filesystem::path(rm_file).stem().string();
+				mat.specular_texture = context.get<texture>(texture_dir + "/" + stem);
 			}
 
-			meshlet_data ml;
 			std::vector<vertex> vertices;
 			std::vector<std::uint32_t> indices;
-
 			ar & raw_blob(vertices);
 			ar & raw_blob(indices);
-			ar & raw_blob(ml.descriptors);
-			ar & raw_blob(ml.vertex_indices);
-			ar & raw_blob(ml.triangles);
-			ar & raw_blob(ml.bounds);
-
-			if (ml.descriptors.empty()) {
-				log::println(
-					log::level::warning,
-					log::category::render,
-					"Model '{}' mesh {} has no meshlets; mesh shader path will skip it",
-					m_baked_model_path.string(),
-					i
-				);
-			}
 
 			m_meshes.emplace_back(mesh_data{
 				.vertices = std::move(vertices),
 				.indices = std::move(indices),
-				.material = material_handle,
-				.meshlets = std::move(ml)
+				.material = std::move(mat),
 			});
 		}
 	}

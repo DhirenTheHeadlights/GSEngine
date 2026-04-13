@@ -11,6 +11,10 @@ export namespace gse {
 			const T& value
 		) -> bool;
 
+		auto push(
+			T&& value
+		) -> bool;
+
 		auto pop(
 			T& out
 		) -> bool;
@@ -43,6 +47,27 @@ auto gse::mpsc_ring_buffer<T, Capacity>::push(const T& value) -> bool {
 		}
 	}
 	m_data[index(head_old)] = value;
+	return true;
+}
+
+template <typename T, std::size_t Capacity>
+auto gse::mpsc_ring_buffer<T, Capacity>::push(T&& value) -> bool {
+	std::size_t head_old;
+	for (;;) {
+		head_old = m_head.load(std::memory_order_relaxed);
+		if (const auto tail = m_tail.load(std::memory_order_acquire); head_old - tail >= Capacity) {
+			return false;
+		}
+		if (m_head.compare_exchange_weak(
+				head_old,
+				head_old + 1,
+				std::memory_order_acq_rel,
+				std::memory_order_relaxed
+			)) {
+			break;
+		}
+	}
+	m_data[index(head_old)] = std::move(value);
 	return true;
 }
 

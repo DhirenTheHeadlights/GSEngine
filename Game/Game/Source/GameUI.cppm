@@ -16,34 +16,39 @@ export namespace gs {
 			if (gse::keyboard::pressed(gse::key::n) || gse::mouse::pressed(gse::mouse_button::button_3)) {
 				m_show_cross_hair = !m_show_cross_hair;
 			}
-		}
 
-		auto render() -> void override {
-			gse::gui::start(
-				"Test",
-				[&] {
-					gse::gui::value("FPS", gse::system_clock::fps());
-					gse::gui::value("Test Value", 42);
-					gse::gui::value("Test Quantity", gse::meters(5.0f));
-					gse::gui::vec("Test Vec", gse::vec3<gse::length>(1.f, 2.f, 3.f));
-					gse::gui::vec("Mouse Position", gse::mouse::position());
-					gse::gui::input("Input Test", m_buff);
-					gse::gui::slider("Slider Test", m_slider_value, gse::meters(0.0f), gse::meters(10.0f));
-					gse::gui::slider("Vec Slider Test", m_vec_value, gse::vec3<gse::length>(gse::meters(0.f)), gse::vec3<gse::length>(gse::meters(10.f)));
-				}
-			);
+			gse::gui::panel("Test", [&](gse::gui::builder& ui) {
+				ui.draw<gse::gui::value<float>>({
+					.name = "FPS",
+					.val = static_cast<float>(gse::system_clock::fps())
+				});
+				ui.draw<gse::gui::value<int>>({
+					.name = "Test Value",
+					.val = 42
+				});
+				ui.draw<gse::gui::text>({
+					.content = std::format("Test Quantity: {:.2f} m", gse::meters(5.0f).as<gse::meters>())
+				});
+				ui.draw<gse::gui::input>({
+					.name = "Input Test",
+					.buffer = m_buff
+				});
+				ui.draw<gse::gui::slider<float>>({
+					.name = "Slider Test",
+					.value = m_slider_f,
+					.min = 0.f,
+					.max = 10.f
+				});
+			});
 
-			gse::gui::start(
-				"Profiler",
-				[] {
-					gse::gui::profiler();
-				}
-			);
+			gse::gui::panel("Profiler", [](gse::gui::builder& ui) {
+				ui.draw<gse::gui::profiler>();
+			});
 
 			if (const auto* pds = gse::try_state_of<gse::renderer::physics_debug::state>()) {
 				if (pds->enabled) {
 					const auto& [
-						body_count, 
+						body_count,
 						sleeping_count,
 						contact_count,
 						motor_count,
@@ -55,22 +60,42 @@ export namespace gs {
 						gpu_solver_active
 					] = pds->latest_stats;
 
-					gse::gui::start(
-						"Physics Debug",
-						[&] {
-							gse::gui::value("Bodies", body_count);
-							gse::gui::value("Sleeping", sleeping_count);
-							gse::gui::value("Colliding Pairs", colliding_pairs);
-							gse::gui::value("Max Penetration", max_penetration);
-							gse::gui::value("Max Linear Speed", max_linear_speed);
-							gse::gui::value("Max Angular Speed", max_angular_speed);
-							if (gpu_solver_active) {
-								gse::gui::value("GPU Contacts", contact_count);
-								gse::gui::value("GPU Motors", motor_count);
-								gse::gui::value("GPU Solve Time", gse::in<gse::milliseconds>(solve_time));
-							}
+					gse::gui::panel("Physics Debug", [&](gse::gui::builder& ui) {
+						ui.draw<gse::gui::value<std::uint32_t>>({
+							.name = "Bodies",
+							.val = body_count
+						});
+						ui.draw<gse::gui::value<std::uint32_t>>({
+							.name = "Sleeping",
+							.val = sleeping_count
+						});
+						ui.draw<gse::gui::value<std::uint32_t>>({
+							.name = "Colliding Pairs",
+							.val = colliding_pairs
+						});
+						ui.draw<gse::gui::text>({
+							.content = std::format("Max Penetration: {:.4f}", max_penetration.as<gse::meters>())
+						});
+						ui.draw<gse::gui::text>({
+							.content = std::format("Max Linear Speed: {:.2f}", max_linear_speed.as<gse::meters_per_second>())
+						});
+						ui.draw<gse::gui::text>({
+							.content = std::format("Max Angular Speed: {:.2f}", max_angular_speed.as<gse::radians_per_second>())
+						});
+						if (gpu_solver_active) {
+							ui.draw<gse::gui::value<std::uint32_t>>({
+								.name = "GPU Contacts",
+								.val = contact_count
+							});
+							ui.draw<gse::gui::value<std::uint32_t>>({
+								.name = "GPU Motors",
+								.val = motor_count
+							});
+							ui.draw<gse::gui::text>({
+								.content = std::format("GPU Solve Time: {:.2f} ms", solve_time.as<gse::milliseconds>())
+							});
 						}
-					);
+					});
 				}
 			}
 
@@ -80,7 +105,6 @@ export namespace gs {
 	private:
 		bool m_show_cross_hair = false;
 		std::string m_buff;
-		gse::length m_slider_value = gse::meters(0.0f);
-		gse::vec3<gse::length> m_vec_value = { gse::meters(1.f), gse::meters(2.f), gse::meters(3.f) };
+		float m_slider_f = 0.f;
 	};
 }

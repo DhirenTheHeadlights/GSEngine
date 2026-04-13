@@ -9,6 +9,7 @@ import :types;
 import :ids;
 import :styles;
 import :scroll_widget;
+import :builder;
 
 export namespace gse::gui {
 	struct dropdown_state {
@@ -49,6 +50,26 @@ export namespace gse::gui::draw {
 		id& active_widget_id,
 		const dropdown_config& config = {}
 	) -> dropdown_result;
+}
+
+export namespace gse::gui {
+	struct dropdown {
+		using result = dropdown_result;
+		struct params {
+			std::string_view name;
+			std::size_t& current_index;
+			std::span<const std::string> options;
+			dropdown_state& state;
+			dropdown_config config = {};
+		};
+		static auto draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> dropdown_result {
+			auto r = draw::dropdown(ctx, std::string(p.name), p.current_index, p.options, p.state, hot, active, p.config);
+			if (r.changed) {
+				p.current_index = r.new_index;
+			}
+			return r;
+		}
+	};
 }
 
 namespace gse::gui::draw {

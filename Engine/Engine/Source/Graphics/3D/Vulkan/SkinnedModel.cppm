@@ -3,7 +3,6 @@ export module gse.graphics:skinned_model;
 import std;
 
 import :skinned_mesh;
-import :material;
 
 import gse.utility;
 import gse.platform;
@@ -69,82 +68,104 @@ gse::skinned_model::skinned_model(const std::string_view name, std::vector<skinn
 	}
 }
 
+auto read_string(std::ifstream& file) -> std::string {
+	std::uint32_t len;
+	file.read(reinterpret_cast<char*>(&len), sizeof(len));
+	std::string s(len, '\0');
+	file.read(s.data(), len);
+	return s;
+}
+
+template <typename T>
+auto read_value(std::ifstream& file) -> T {
+	T v;
+	file.read(reinterpret_cast<char*>(&v), sizeof(T));
+	return v;
+}
+
 auto gse::skinned_model::load(gpu::resource_manager& context) -> void {
 	if (!m_baked_model_path.empty() && exists(m_baked_model_path)) {
 		m_meshes.clear();
 
 		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
-		const auto material_dir = config::baked_resource_path / "Materials" / model_relative.parent_path();
+		auto texture_dir = model_relative.parent_path().string();
+		std::ranges::replace(texture_dir, '\\', '/');
+		if (texture_dir.starts_with("SkinnedModels")) {
+			texture_dir = "Textures/" + texture_dir;
+		}
 
 		if (std::ifstream file(m_baked_model_path, std::ios::binary); file) {
 			char magic[4];
 			file.read(magic, 4);
 
-			if (std::memcmp(magic, "GSMD", 4) == 0) {
-				std::uint32_t version;
-				file.read(reinterpret_cast<char*>(&version), sizeof(version));
+			if (std::memcmp(magic, "GSMD", 4) != 0) return;
 
-				std::uint32_t mesh_count;
-				file.read(reinterpret_cast<char*>(&mesh_count), sizeof(mesh_count));
+			const auto version = read_value<std::uint32_t>(file);
+			const auto mesh_count = read_value<std::uint32_t>(file);
+			m_meshes.reserve(mesh_count);
 
-				m_meshes.reserve(mesh_count);
+			for (std::uint32_t m = 0; m < mesh_count; ++m) {
+				gse::material mat;
 
-				for (std::uint32_t m = 0; m < mesh_count; ++m) {
-					std::uint32_t material_name_len;
-					file.read(reinterpret_cast<char*>(&material_name_len), sizeof(material_name_len));
-					std::string material_name(material_name_len, '\0');
-					file.read(material_name.data(), material_name_len);
+				if (version >= 2) {
+					mat.base_color = {
+						read_value<float>(file),
+						read_value<float>(file),
+						read_value<float>(file)
+					};
+					mat.roughness = read_value<float>(file);
+					mat.metallic = read_value<float>(file);
 
-					const auto material_path = material_dir / (material_name + ".gmat");
-					resource::handle<material> material_handle;
-					if (std::filesystem::exists(material_path)) {
-						material_handle = context.queue<material>(material_path.string());
+					auto albedo_file = read_string(file);
+					auto normal_file = read_string(file);
+					auto rm_file = read_string(file);
+
+					if (!albedo_file.empty()) {
+						auto stem = std::filesystem::path(albedo_file).stem().string();
+						mat.diffuse_texture = context.get<texture>(texture_dir + "/" + stem);
 					}
-
-					std::uint32_t vertex_count;
-					file.read(reinterpret_cast<char*>(&vertex_count), sizeof(vertex_count));
-
-					std::vector<skinned_vertex> vertices(vertex_count);
-					for (std::uint32_t v = 0; v < vertex_count; ++v) {
-						float px, py, pz;
-						file.read(reinterpret_cast<char*>(&px), sizeof(float));
-						file.read(reinterpret_cast<char*>(&py), sizeof(float));
-						file.read(reinterpret_cast<char*>(&pz), sizeof(float));
-						vertices[v].position = vec3<displacement>{ meters(px), meters(py), meters(pz) };
-
-						float nx, ny, nz;
-						file.read(reinterpret_cast<char*>(&nx), sizeof(float));
-						file.read(reinterpret_cast<char*>(&ny), sizeof(float));
-						file.read(reinterpret_cast<char*>(&nz), sizeof(float));
-						vertices[v].normal = vec3f{ nx, ny, nz };
-
-						float u, vt;
-						file.read(reinterpret_cast<char*>(&u), sizeof(float));
-						file.read(reinterpret_cast<char*>(&vt), sizeof(float));
-						vertices[v].tex_coords = vec2f{ u, vt };
-
-						file.read(reinterpret_cast<char*>(vertices[v].bone_indices.data()), 4 * sizeof(std::uint32_t));
-
-						float w0, w1, w2, w3;
-						file.read(reinterpret_cast<char*>(&w0), sizeof(float));
-						file.read(reinterpret_cast<char*>(&w1), sizeof(float));
-						file.read(reinterpret_cast<char*>(&w2), sizeof(float));
-						file.read(reinterpret_cast<char*>(&w3), sizeof(float));
-						vertices[v].bone_weights = vec4f{ w0, w1, w2, w3 };
+					if (!normal_file.empty()) {
+						auto stem = std::filesystem::path(normal_file).stem().string();
+						mat.normal_texture = context.get<texture>(texture_dir + "/" + stem);
 					}
-
-					std::uint32_t index_count;
-					file.read(reinterpret_cast<char*>(&index_count), sizeof(index_count));
-
-					std::vector<std::uint32_t> indices(index_count);
-					file.read(reinterpret_cast<char*>(indices.data()), index_count * sizeof(std::uint32_t));
-
-					m_meshes.emplace_back(skinned_mesh_data{
-						.vertices = std::move(vertices),
-						.indices = std::move(indices),
-						.material = material_handle
-					});
+					if (!rm_file.empty()) {
+						auto stem = std::filesystem::path(rm_file).stem().string();
+						mat.specular_texture = context.get<texture>(texture_dir + "/" + stem);
+					}
 				}
+				else {
+					read_string(file);
+				}
+
+				const auto vertex_count = read_value<std::uint32_t>(file);
+
+				std::vector<skinned_vertex> vertices(vertex_count);
+				for (std::uint32_t v = 0; v < vertex_count; ++v) {
+					float px = read_value<float>(file), py = read_value<float>(file), pz = read_value<float>(file);
+					vertices[v].position = vec3<displacement>{ meters(px), meters(py), meters(pz) };
+
+					float nx = read_value<float>(file), ny = read_value<float>(file), nz = read_value<float>(file);
+					vertices[v].normal = vec3f{ nx, ny, nz };
+
+					float u = read_value<float>(file), vt = read_value<float>(file);
+					vertices[v].tex_coords = vec2f{ u, vt };
+
+					file.read(reinterpret_cast<char*>(vertices[v].bone_indices.data()), 4 * sizeof(std::uint32_t));
+
+					float w0 = read_value<float>(file), w1 = read_value<float>(file);
+					float w2 = read_value<float>(file), w3 = read_value<float>(file);
+					vertices[v].bone_weights = vec4f{ w0, w1, w2, w3 };
+				}
+
+				const auto index_count = read_value<std::uint32_t>(file);
+				std::vector<std::uint32_t> indices(index_count);
+				file.read(reinterpret_cast<char*>(indices.data()), index_count * sizeof(std::uint32_t));
+
+				m_meshes.emplace_back(skinned_mesh_data{
+					.vertices = std::move(vertices),
+					.indices = std::move(indices),
+					.material = std::move(mat)
+				});
 			}
 		}
 	}

@@ -9,6 +9,7 @@ import gse.utility;
 import :types;
 import :ids;
 import :styles;
+import :builder;
 
 export namespace gse::gui::draw {
     template <is_arithmetic T>
@@ -54,6 +55,35 @@ export namespace gse::gui::draw {
         id& hot_widget_id,
         id& active_widget_id
     ) -> void;
+}
+
+export namespace gse::gui {
+	template <is_arithmetic T>
+	struct slider {
+		using result = void;
+		struct params { std::string_view name; T& value; T min; T max; };
+		static auto draw(draw_context& ctx, params p, id& hot, id& active, id&) -> void {
+			draw::slider(ctx, std::string(p.name), p.value, p.min, p.max, hot, active);
+		}
+	};
+
+	template <internal::is_quantity T, auto Unit = typename T::default_unit{}>
+	struct quantity_slider {
+		using result = void;
+		struct params { std::string_view name; T& value; T min; T max; };
+		static auto draw(draw_context& ctx, params p, id& hot, id& active, id&) -> void {
+			draw::slider<T, Unit>(ctx, std::string(p.name), p.value, p.min, p.max, hot, active);
+		}
+	};
+
+	template <is_arithmetic T, std::size_t N>
+	struct vec_slider {
+		using result = void;
+		struct params { std::string_view name; vec<T, N>& value; vec<T, N> min; vec<T, N> max; };
+		static auto draw(draw_context& ctx, params p, id& hot, id& active, id&) -> void {
+			draw::slider<T, N>(ctx, std::string(p.name), p.value, p.min, p.max, hot, active);
+		}
+	};
 }
 
 namespace gse::gui::draw {
@@ -152,7 +182,8 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
     ctx.queue_sprite({
         .rect = rect,
         .color = ctx.style.color_widget_background,
-        .texture = ctx.blank_texture
+        .texture = ctx.blank_texture,
+        .corner_radius = ctx.style.corner_radius
     });
 
     float fill_ratio = 0.0f;
@@ -181,7 +212,8 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
     ctx.queue_sprite({
         .rect = fill_rect,
         .color = ctx.style.color_slider_fill,
-        .texture = ctx.blank_texture
+        .texture = ctx.blank_texture,
+        .corner_radius = ctx.style.corner_radius
     });
 
     std::string value_str;

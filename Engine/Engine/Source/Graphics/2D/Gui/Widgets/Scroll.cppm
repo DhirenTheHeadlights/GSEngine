@@ -10,6 +10,9 @@ import :font;
 import :texture;
 import :ui_renderer;
 import :styles;
+import :types;
+import :ids;
+import :builder;
 
 export namespace gse::gui {
 	using ui_rect = rect_t<vec2f>;
@@ -41,6 +44,16 @@ export namespace gse::gui {
 	};
 }
 
+export namespace gse::gui {
+	auto scroll_area(
+		builder& b,
+		std::string_view scroll_id,
+		float height,
+		const std::function<void(builder&)>& content,
+		const scroll_config& cfg = {}
+	) -> void;
+}
+
 export namespace gse::gui::scroll {
 	auto begin(
 		const scroll_state& state,
@@ -55,8 +68,7 @@ export namespace gse::gui::scroll {
 		const scroll_context& ctx,
 		float content_cursor_y,
 		const style& sty,
-		const input::state& input,
-		resource::handle<texture> blank_texture,
+		const input::state& input, const resource::handle<texture>& blank_texture,
 		std::vector<renderer::sprite_command>& sprites,
 		render_layer layer,
 		const scroll_config& config = {}
@@ -100,7 +112,7 @@ auto gse::gui::scroll::end(
 	const float content_cursor_y,
 	const style& sty,
 	const input::state& input,
-	const resource::handle<texture> blank_texture,
+	const resource::handle<texture>& blank_texture,
 	std::vector<renderer::sprite_command>& sprites,
 	const render_layer layer,
 	const scroll_config& config
@@ -239,4 +251,56 @@ auto gse::gui::scroll::is_visible(const ui_rect& item_rect, const scroll_context
 	const float item_top = item_rect.top() + ctx.scroll_offset;
 	const float item_bottom = item_rect.bottom() + ctx.scroll_offset;
 	return item_top >= ctx.visible_rect.bottom() && item_bottom <= ctx.visible_rect.top();
+}
+
+namespace {
+	std::unordered_map<std::uint64_t, gse::gui::scroll_state> g_scroll_states;
+}
+
+export auto gse::gui::scroll_area(
+	builder& b,
+	const std::string_view scroll_id,
+	const float height,
+	const std::function<void(builder&)>& content,
+	const scroll_config& cfg
+) -> void {
+	if (!b.ctx.current_menu) {
+		return;
+	}
+
+	const ui_rect content_rect = b.ctx.current_menu->rect.inset({ b.ctx.style.padding, b.ctx.style.padding });
+	const float available_height = height > 0.f ? height : (b.ctx.layout_cursor.y() - content_rect.bottom());
+
+	const ui_rect scroll_rect = ui_rect::from_position_size(
+		{ content_rect.left(), b.ctx.layout_cursor.y() },
+		{ content_rect.width(), available_height }
+	);
+
+	const auto key = ids::stable_key(std::string(scroll_id));
+	scroll_state& state = g_scroll_states[key];
+
+	const float saved_y = b.ctx.layout_cursor.y();
+	b.ctx.layout_cursor.y() = scroll_rect.top() + state.offset;
+
+	auto saved_clip = b.ctx.current_menu->rect;
+	b.ctx.current_menu->rect = ui_rect::from_position_size(
+		{ scroll_rect.left(), scroll_rect.top() },
+		{ scroll_rect.width(), scroll_rect.height() }
+	);
+
+	content(b);
+
+	const float content_end_y = b.ctx.layout_cursor.y();
+	b.ctx.current_menu->rect = saved_clip;
+
+	auto scroll_ctx = scroll::begin(state, scroll_rect, b.ctx.style, b.ctx.input, cfg);
+	scroll::end(
+		state, scroll_ctx,
+		content_end_y + state.offset,
+		b.ctx.style, b.ctx.input,
+		b.ctx.blank_texture, b.ctx.sprites, b.ctx.current_layer,
+		cfg
+	);
+
+	b.ctx.layout_cursor.y() = saved_y - available_height - b.ctx.style.padding;
 }

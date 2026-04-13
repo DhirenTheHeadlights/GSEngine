@@ -8,6 +8,7 @@ import gse.utility;
 import :types;
 import :ids;
 import :styles;
+import :builder;
 
 export namespace gse::gui::draw {
 	auto input(
@@ -17,6 +18,16 @@ export namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& focus_widget_id
 	) -> void;
+}
+
+export namespace gse::gui {
+	struct input {
+		using result = void;
+		struct params { std::string_view name; std::string& buffer; };
+		static auto draw(const draw_context& ctx, const params& p, id& hot, id&, id& focus) -> void {
+			draw::input(ctx, std::string(p.name), p.buffer, hot, focus);
+		}
+	};
 }
 
 namespace gse::gui::draw {
@@ -280,7 +291,8 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
     ctx.queue_sprite({
         .rect = box_rect,
         .color = ctx.style.color_input_background,
-        .texture = ctx.blank_texture
+        .texture = ctx.blank_texture,
+        .corner_radius = ctx.style.corner_radius
     });
 
     constexpr float text_padding = 5.f;

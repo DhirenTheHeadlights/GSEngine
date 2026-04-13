@@ -307,43 +307,58 @@ def export_clip(filepath, armature, action, bone_name_to_index, mesh_obj=None):
 
     return True
 
-def get_material_textures(material):
-    textures = {
-        'diffuse': None,
-        'normal': None,
-        'specular': None
+def get_linked_image(node_input):
+    if node_input and node_input.is_linked:
+        linked_node = node_input.links[0].from_node
+        if linked_node.type == 'NORMAL_MAP':
+            color_input = linked_node.inputs.get('Color')
+            if color_input and color_input.is_linked:
+                tex_node = color_input.links[0].from_node
+                if tex_node.type == 'TEX_IMAGE' and tex_node.image:
+                    return tex_node.image
+        elif linked_node.type == 'TEX_IMAGE' and linked_node.image:
+            return linked_node.image
+    return None
+
+def get_input_value(node_input, default):
+    if node_input is None:
+        return default
+    if node_input.is_linked:
+        return default
+    return node_input.default_value
+
+def get_pbr_material(material):
+    result = {
+        'base_color': (1.0, 1.0, 1.0),
+        'roughness': 0.5,
+        'metallic': 0.0,
+        'albedo_image': None,
+        'normal_image': None,
+        'roughness_metallic_image': None,
     }
 
     if material is None or not material.use_nodes:
-        return textures
+        return result
 
     for node in material.node_tree.nodes:
-        if node.type == 'BSDF_PRINCIPLED':
-            base_color_input = node.inputs.get('Base Color')
-            if base_color_input and base_color_input.is_linked:
-                linked_node = base_color_input.links[0].from_node
-                if linked_node.type == 'TEX_IMAGE' and linked_node.image:
-                    textures['diffuse'] = linked_node.image
+        if node.type != 'BSDF_PRINCIPLED':
+            continue
 
-            normal_input = node.inputs.get('Normal')
-            if normal_input and normal_input.is_linked:
-                linked_node = normal_input.links[0].from_node
-                if linked_node.type == 'NORMAL_MAP':
-                    color_input = linked_node.inputs.get('Color')
-                    if color_input and color_input.is_linked:
-                        tex_node = color_input.links[0].from_node
-                        if tex_node.type == 'TEX_IMAGE' and tex_node.image:
-                            textures['normal'] = tex_node.image
-                elif linked_node.type == 'TEX_IMAGE' and linked_node.image:
-                    textures['normal'] = linked_node.image
+        bc = get_input_value(node.inputs.get('Base Color'), (1.0, 1.0, 1.0, 1.0))
+        result['base_color'] = (bc[0], bc[1], bc[2])
+        result['roughness'] = get_input_value(node.inputs.get('Roughness'), 0.5)
+        result['metallic'] = get_input_value(node.inputs.get('Metallic'), 0.0)
 
-            specular_input = node.inputs.get('Specular IOR Level') or node.inputs.get('Specular')
-            if specular_input and specular_input.is_linked:
-                linked_node = specular_input.links[0].from_node
-                if linked_node.type == 'TEX_IMAGE' and linked_node.image:
-                    textures['specular'] = linked_node.image
+        result['albedo_image'] = get_linked_image(node.inputs.get('Base Color'))
+        result['normal_image'] = get_linked_image(node.inputs.get('Normal'))
 
-    return textures
+        roughness_img = get_linked_image(node.inputs.get('Roughness'))
+        metallic_img = get_linked_image(node.inputs.get('Metallic'))
+        result['roughness_metallic_image'] = roughness_img or metallic_img
+
+        break
+
+    return result
 
 def export_texture(image, textures_dir):
     if image is None:
@@ -368,76 +383,100 @@ def export_texture(image, textures_dir):
 
     return safe_name
 
-def export_materials_mtl(mesh_obj, resources_root, asset_name):
-    textures_dir = os.path.join(resources_root, "Textures")
-    skinned_models_dir = os.path.join(resources_root, "SkinnedModels")
+GMDL_MAGIC = b'GMDL'
+GMDL_VERSION = 4
+GSMDL_VERSION = 2
 
-    os.makedirs(textures_dir, exist_ok=True)
+def write_embedded_material(f, mesh_obj, textures_dir):
+    mat = None
+    if mesh_obj.material_slots and mesh_obj.material_slots[0].material:
+        mat = mesh_obj.material_slots[0].material
 
-    mtl_path = os.path.join(skinned_models_dir, asset_name + ".mtl")
+    pbr = get_pbr_material(mat)
+    f.write(struct.pack('<fff', *pbr['base_color']))
+    f.write(struct.pack('<f', pbr['roughness']))
+    f.write(struct.pack('<f', pbr['metallic']))
 
-    exported_materials = []
+    albedo_file = export_texture(pbr['albedo_image'], textures_dir) if pbr['albedo_image'] else ""
+    normal_file = export_texture(pbr['normal_image'], textures_dir) if pbr['normal_image'] else ""
+    rm_file = export_texture(pbr['roughness_metallic_image'], textures_dir) if pbr['roughness_metallic_image'] else ""
 
-    with open(mtl_path, 'w') as f:
-        for slot in mesh_obj.material_slots:
-            if slot.material is None:
-                continue
+    write_string(f, albedo_file)
+    write_string(f, normal_file)
+    write_string(f, rm_file)
 
-            mat = slot.material
-            mat_name = mat.name
-            exported_materials.append(mat_name)
+def collect_static_mesh(mesh_obj, depsgraph):
+    mesh_eval = mesh_obj.evaluated_get(depsgraph)
+    mesh = mesh_eval.to_mesh()
+    mesh.calc_loop_triangles()
+    if not mesh.uv_layers:
+        mesh.uv_layers.new()
+    uv_layer = mesh.uv_layers.active.data
 
-            textures = get_material_textures(mat)
+    vertices = []
+    indices = []
+    vertex_map = {}
 
-            diffuse_file = None
-            normal_file = None
-            specular_file = None
+    for tri in mesh.loop_triangles:
+        for loop_index in tri.loops:
+            loop = mesh.loops[loop_index]
+            vert = mesh.vertices[loop.vertex_index]
 
-            if textures['diffuse']:
-                diffuse_file = export_texture(textures['diffuse'], textures_dir)
-            if textures['normal']:
-                normal_file = export_texture(textures['normal'], textures_dir)
-            if textures['specular']:
-                specular_file = export_texture(textures['specular'], textures_dir)
+            pos_blender = mesh_obj.matrix_world @ vert.co
+            pos = convert_position(pos_blender)
 
-            f.write(f"newmtl {mat_name}\n")
-            f.write("Ka 1.0 1.0 1.0\n")
-            f.write("Kd 1.0 1.0 1.0\n")
-            f.write("Ks 0.0 0.0 0.0\n")
-            f.write("Ns 0.0\n")
-            f.write("d 1.0\n")
-            f.write("illum 2\n")
+            if tri.use_smooth:
+                normal_blender = (mesh_obj.matrix_world.to_3x3() @ vert.normal).normalized()
+            else:
+                normal_blender = (mesh_obj.matrix_world.to_3x3() @ tri.normal).normalized()
+            normal = convert_direction(normal_blender)
 
-            if diffuse_file:
-                f.write(f"map_Kd {diffuse_file}\n")
-            if normal_file:
-                f.write(f"map_Bump {normal_file}\n")
-            if specular_file:
-                f.write(f"map_Ks {specular_file}\n")
+            uv = (uv_layer[loop_index].uv[0], 1.0 - uv_layer[loop_index].uv[1])
+            vertex_key = (pos, normal, uv)
 
-            f.write("\n")
+            if vertex_key in vertex_map:
+                indices.append(vertex_map[vertex_key])
+            else:
+                new_index = len(vertices)
+                vertex_map[vertex_key] = new_index
+                vertices.append({'position': pos, 'normal': normal, 'uv': uv})
+                indices.append(new_index)
 
-    return mtl_path, exported_materials
+    mesh_eval.to_mesh_clear()
+    return vertices, indices
 
-def export_skinned_model(filepath, mesh_objects, armature, bone_name_to_index, resources_root, asset_name):
-    """Export skinned model from one or multiple mesh objects."""
-    # Handle both single mesh and list of meshes for backwards compatibility
+def export_static_model(filepath, mesh_objects, textures_dir):
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+
+    with open(filepath, 'wb') as f:
+        f.write(GMDL_MAGIC)
+        f.write(struct.pack('<I', GMDL_VERSION))
+        f.write(struct.pack('<I', len(mesh_objects)))
+
+        for mesh_obj in mesh_objects:
+            write_embedded_material(f, mesh_obj, textures_dir)
+
+            vertices, indices = collect_static_mesh(mesh_obj, depsgraph)
+
+            f.write(struct.pack('<I', len(vertices)))
+            for v in vertices:
+                write_vec3(f, v['position'])
+                write_vec3(f, v['normal'])
+                write_vec2(f, v['uv'])
+
+            f.write(struct.pack('<I', len(indices)))
+            for idx in indices:
+                f.write(struct.pack('<I', idx))
+
+    return True
+
+def export_skinned_model(filepath, mesh_objects, armature, bone_name_to_index, textures_dir):
     if not isinstance(mesh_objects, list):
         mesh_objects = [mesh_objects]
 
-    # Use first mesh for materials (could be improved to merge materials)
-    mtl_path, exported_materials = export_materials_mtl(mesh_objects[0], resources_root, asset_name)
-
-    # CRITICAL: Set armature to REST pose before exporting mesh vertices.
-    # The Armature modifier deforms the mesh based on current pose, but our
-    # inverse_bind matrices are computed from REST pose. If we export vertices
-    # in a different pose, skinning will collapse vertices to joint positions.
     original_pose_position = armature.data.pose_position
     armature.data.pose_position = 'REST'
-
-    # Force update to apply the rest pose
     bpy.context.view_layer.update()
-
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
     vertices = []
@@ -445,16 +484,13 @@ def export_skinned_model(filepath, mesh_objects, armature, bone_name_to_index, r
     vertex_map = {}
 
     for mesh_obj in mesh_objects:
-
         mesh_eval = mesh_obj.evaluated_get(depsgraph)
         mesh = mesh_eval.to_mesh()
-
         mesh.calc_loop_triangles()
         if not mesh.uv_layers:
             mesh.uv_layers.new()
         uv_layer = mesh.uv_layers.active.data
 
-        # Build vertex group to bone index mapping for THIS mesh object
         vertex_groups = mesh_obj.vertex_groups
         group_name_to_bone_index = {}
         for vg in vertex_groups:
@@ -464,22 +500,18 @@ def export_skinned_model(filepath, mesh_objects, armature, bone_name_to_index, r
         for tri in mesh.loop_triangles:
             for loop_index in tri.loops:
                 loop = mesh.loops[loop_index]
-                vert_index = loop.vertex_index
-                vert = mesh.vertices[vert_index]
+                vert = mesh.vertices[loop.vertex_index]
 
-                # Get position in Blender world space, then convert to engine coords
                 pos_blender = mesh_obj.matrix_world @ vert.co
                 pos = convert_position(pos_blender)
 
-                # Get normal in Blender world space, then convert to engine coords
                 if tri.use_smooth:
                     normal_blender = (mesh_obj.matrix_world.to_3x3() @ vert.normal).normalized()
                 else:
                     normal_blender = (mesh_obj.matrix_world.to_3x3() @ tri.normal).normalized()
                 normal = convert_direction(normal_blender)
 
-                uv = tuple(uv_layer[loop_index].uv)
-                uv = (uv[0], 1.0 - uv[1])
+                uv = (uv_layer[loop_index].uv[0], 1.0 - uv_layer[loop_index].uv[1])
 
                 bone_indices = [0, 0, 0, 0]
                 bone_weights = [0.0, 0.0, 0.0, 0.0]
@@ -487,8 +519,7 @@ def export_skinned_model(filepath, mesh_objects, armature, bone_name_to_index, r
                 weights = []
                 for g in vert.groups:
                     if g.group in group_name_to_bone_index:
-                        bone_idx = group_name_to_bone_index[g.group]
-                        weights.append((bone_idx, g.weight))
+                        weights.append((group_name_to_bone_index[g.group], g.weight))
 
                 weights.sort(key=lambda x: x[1], reverse=True)
                 weights = weights[:4]
@@ -509,11 +540,8 @@ def export_skinned_model(filepath, mesh_objects, armature, bone_name_to_index, r
                     new_index = len(vertices)
                     vertex_map[vertex_key] = new_index
                     vertices.append({
-                        'position': pos,
-                        'normal': normal,
-                        'uv': uv,
-                        'bone_indices': bone_indices,
-                        'bone_weights': bone_weights
+                        'position': pos, 'normal': normal, 'uv': uv,
+                        'bone_indices': bone_indices, 'bone_weights': bone_weights
                     })
                     indices.append(new_index)
 
@@ -521,17 +549,12 @@ def export_skinned_model(filepath, mesh_objects, armature, bone_name_to_index, r
 
     with open(filepath, 'wb') as f:
         f.write(GSMDL_MAGIC)
-        f.write(struct.pack('<I', VERSION))
-
+        f.write(struct.pack('<I', GSMDL_VERSION))
         f.write(struct.pack('<I', 1))
 
-        material_name = "default"
-        if mesh_obj.material_slots and mesh_obj.material_slots[0].material:
-            material_name = mesh_obj.material_slots[0].material.name
-        write_string(f, material_name)
+        write_embedded_material(f, mesh_objects[0], textures_dir)
 
         f.write(struct.pack('<I', len(vertices)))
-
         for v in vertices:
             write_vec3(f, v['position'])
             write_vec3(f, v['normal'])
@@ -543,11 +566,9 @@ def export_skinned_model(filepath, mesh_objects, armature, bone_name_to_index, r
         for idx in indices:
             f.write(struct.pack('<I', idx))
 
-    # Restore the original pose position
     armature.data.pose_position = original_pose_position
     bpy.context.view_layer.update()
-
-    return True, mtl_path
+    return True
 
 class GSE_OT_Export(bpy.types.Operator, ExportHelper):
     bl_idname = "export_scene.gse"
@@ -569,7 +590,7 @@ class GSE_OT_Export(bpy.types.Operator, ExportHelper):
 
     asset_name: StringProperty(
         name="Asset Name",
-        description="Name for the exported asset (skeleton and mesh filenames)",
+        description="Name for the exported asset",
         default="character",
     )
 
@@ -585,59 +606,83 @@ class GSE_OT_Export(bpy.types.Operator, ExportHelper):
         default=True,
     )
 
-    export_mesh: BoolProperty(
+    export_skinned_mesh: BoolProperty(
         name="Export Skinned Mesh",
-        description="Export skinned mesh (.gsmdl)",
+        description="Export skinned mesh (.gsmdl) with embedded PBR materials",
         default=True,
     )
 
+    export_static_mesh: BoolProperty(
+        name="Export Static Mesh",
+        description="Export static mesh (.gmdl) with embedded PBR materials",
+        default=False,
+    )
+
     def execute(self, context):
-        armature, mesh_objects = get_armature_and_meshes(context)
-
-        if armature is None:
-            self.report({'ERROR'}, "No armature found")
-            return {'CANCELLED'}
-
         resources_root = os.path.dirname(self.filepath) if os.path.isfile(self.filepath) else self.filepath
         if not os.path.isdir(resources_root):
             self.report({'ERROR'}, f"Invalid directory: {resources_root}")
             return {'CANCELLED'}
 
-        skeletons_dir = os.path.join(resources_root, "Skeletons")
-        clips_dir = os.path.join(resources_root, "Clips")
-        skinned_models_dir = os.path.join(resources_root, "SkinnedModels")
-
-        os.makedirs(skeletons_dir, exist_ok=True)
-        os.makedirs(clips_dir, exist_ok=True)
-        os.makedirs(skinned_models_dir, exist_ok=True)
-
-        bone_name_to_index = {}
-
-        # Use first mesh for skeleton export (for compatibility)
-        first_mesh = mesh_objects[0] if mesh_objects else None
-
-        if self.export_skeleton:
-            skel_path = os.path.join(skeletons_dir, self.asset_name + ".gskel")
-            _, bone_name_to_index = export_skeleton(skel_path, armature, first_mesh)
-            self.report({'INFO'}, f"Exported skeleton: {skel_path}")
-        else:
-            _, bone_name_to_index = build_bone_order(armature)
-
-        if self.export_animations:
-            for action in bpy.data.actions:
-                clip_path = os.path.join(clips_dir, action.name + ".gclip")
-                export_clip(clip_path, armature, action, bone_name_to_index, first_mesh)
-                self.report({'INFO'}, f"Exported clip: {clip_path}")
-
-        if self.export_mesh:
+        if self.export_static_mesh:
+            mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
             if not mesh_objects:
-                self.report({'WARNING'}, "No mesh found for skinned export")
+                mesh_objects = [obj for obj in bpy.data.objects if obj.type == 'MESH']
+
+            if not mesh_objects:
+                self.report({'WARNING'}, "No mesh objects found for static export")
             else:
-                mesh_path = os.path.join(skinned_models_dir, self.asset_name + ".gsmdl")
-                # Pass ALL mesh objects to combine them into one exported mesh
-                success, mtl_path = export_skinned_model(mesh_path, mesh_objects, armature, bone_name_to_index, resources_root, self.asset_name)
-                self.report({'INFO'}, f"Exported skinned mesh: {mesh_path} ({len(mesh_objects)} mesh objects combined)")
-                self.report({'INFO'}, f"Exported materials: {mtl_path}")
+                models_dir = os.path.join(resources_root, "Models", self.asset_name)
+                textures_dir = os.path.join(resources_root, "Textures", "Models", self.asset_name)
+                os.makedirs(models_dir, exist_ok=True)
+                os.makedirs(textures_dir, exist_ok=True)
+
+                model_path = os.path.join(models_dir, self.asset_name + ".gmdl")
+                export_static_model(model_path, mesh_objects, textures_dir)
+                self.report({'INFO'}, f"Exported static model: {model_path} ({len(mesh_objects)} meshes)")
+
+        armature, mesh_objects = get_armature_and_meshes(context)
+
+        if armature is None and (self.export_skeleton or self.export_animations or self.export_skinned_mesh):
+            if not self.export_static_mesh:
+                self.report({'ERROR'}, "No armature found")
+                return {'CANCELLED'}
+            return {'FINISHED'}
+
+        if armature:
+            skeletons_dir = os.path.join(resources_root, "Skeletons")
+            clips_dir = os.path.join(resources_root, "Clips")
+            skinned_models_dir = os.path.join(resources_root, "SkinnedModels")
+            textures_dir = os.path.join(resources_root, "Textures", "SkinnedModels")
+
+            os.makedirs(skeletons_dir, exist_ok=True)
+            os.makedirs(clips_dir, exist_ok=True)
+            os.makedirs(skinned_models_dir, exist_ok=True)
+            os.makedirs(textures_dir, exist_ok=True)
+
+            bone_name_to_index = {}
+            first_mesh = mesh_objects[0] if mesh_objects else None
+
+            if self.export_skeleton:
+                skel_path = os.path.join(skeletons_dir, self.asset_name + ".gskel")
+                _, bone_name_to_index = export_skeleton(skel_path, armature, first_mesh)
+                self.report({'INFO'}, f"Exported skeleton: {skel_path}")
+            else:
+                _, bone_name_to_index = build_bone_order(armature)
+
+            if self.export_animations:
+                for action in bpy.data.actions:
+                    clip_path = os.path.join(clips_dir, action.name + ".gclip")
+                    export_clip(clip_path, armature, action, bone_name_to_index, first_mesh)
+                    self.report({'INFO'}, f"Exported clip: {clip_path}")
+
+            if self.export_skinned_mesh:
+                if not mesh_objects:
+                    self.report({'WARNING'}, "No mesh found for skinned export")
+                else:
+                    mesh_path = os.path.join(skinned_models_dir, self.asset_name + ".gsmdl")
+                    export_skinned_model(mesh_path, mesh_objects, armature, bone_name_to_index, textures_dir)
+                    self.report({'INFO'}, f"Exported skinned mesh: {mesh_path} ({len(mesh_objects)} mesh objects)")
 
         return {'FINISHED'}
 
@@ -649,12 +694,14 @@ class GSE_OT_Export(bpy.types.Operator, ExportHelper):
         layout = self.layout
         layout.prop(self, "asset_name")
         layout.separator()
+        layout.prop(self, "export_static_mesh")
+        layout.separator()
         layout.prop(self, "export_skeleton")
         layout.prop(self, "export_animations")
-        layout.prop(self, "export_mesh")
+        layout.prop(self, "export_skinned_mesh")
 
 def menu_func_export(self, context):
-    self.layout.operator(GSE_OT_Export.bl_idname, text="GSE Export (.gskel/.gclip/.gsmdl)")
+    self.layout.operator(GSE_OT_Export.bl_idname, text="GSE Export (.gmdl/.gsmdl/.gskel/.gclip)")
 
 def register():
     bpy.utils.register_class(GSE_OT_Export)

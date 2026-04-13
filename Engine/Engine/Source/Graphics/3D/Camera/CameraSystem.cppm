@@ -53,8 +53,15 @@ namespace gse::camera {
 
 export namespace gse::camera {
 	struct system {
-		static auto initialize(initialize_phase& phase, state& s) -> void;
-		static auto update(update_phase& phase, state& s) -> void;
+		static auto initialize(
+			initialize_phase& phase,
+			state& s
+		) -> void;
+
+		static auto update(
+			update_context& ctx,
+			state& s
+		) -> void;
 	};
 }
 
@@ -64,19 +71,19 @@ auto gse::camera::system::initialize(initialize_phase&, state& s) -> void {
 	s.projection_matrix = compute_projection_matrix(s.current, s.viewport);
 }
 
-auto gse::camera::system::update(update_phase& phase, state& s) -> void {
+auto gse::camera::system::update(update_context& ctx, state& s) -> void {
 	const time dt = system_clock::dt();
 
-	for (const auto& [focus] : phase.read_channel<ui_focus_update>()) {
+	for (const auto& [focus] : ctx.read_channel<ui_focus_update>()) {
 		s.ui_focus = focus;
 	}
 
-	for (const auto& [size] : phase.read_channel<viewport_update>()) {
+	for (const auto& [size] : ctx.read_channel<viewport_update>()) {
 		s.viewport = size;
 	}
 
 	if (!s.ui_focus) {
-		if (const auto* input_state = phase.try_state_of<input::system_state>()) {
+		if (const auto* input_state = ctx.try_state_of<input::system_state>()) {
 			const auto delta = input_state->current_state().mouse_delta();
 			const auto transformed_offset = delta * s.mouse_sensitivity;
 			s.yaw -= degrees(transformed_offset.x());
@@ -89,7 +96,7 @@ auto gse::camera::system::update(update_phase& phase, state& s) -> void {
 	const quat pitch_rotation = quat({ 1.f, 0.f, 0.f }, s.pitch);
 	const quat new_orientation = normalize(yaw_rotation * pitch_rotation);
 
-	phase.schedule([&s, new_orientation, dt](chunk<follow_component> cameras) {
+	ctx.schedule([&s, new_orientation, dt](read<follow_component> cameras) {
 		int highest_priority = -1;
 		id best_controller{};
 		target best_target{};

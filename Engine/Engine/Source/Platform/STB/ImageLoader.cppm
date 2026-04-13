@@ -2,6 +2,8 @@ module;
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
 #undef assert
 
 export module gse.platform:image_loader;
@@ -54,6 +56,14 @@ export namespace gse::image {
 	auto dimensions(
         const std::filesystem::path& path
     ) -> vec2u;
+
+	auto write_png(
+		const std::filesystem::path& path,
+		std::uint32_t width,
+		std::uint32_t height,
+		std::uint32_t channels,
+		const void* pixels
+	) -> bool;
 }
 
 auto gse::image::load(const std::filesystem::path& path) -> data {
@@ -138,4 +148,21 @@ auto gse::image::dimensions(const std::filesystem::path& path) -> vec2u {
     return {
     	static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h)
     };
+}
+
+auto gse::image::write_png(
+	const std::filesystem::path& path,
+	const std::uint32_t width,
+	const std::uint32_t height,
+	const std::uint32_t channels,
+	const void* pixels
+) -> bool {
+	return stbi_write_png(
+		path.string().c_str(),
+		static_cast<int>(width),
+		static_cast<int>(height),
+		static_cast<int>(channels),
+		pixels,
+		static_cast<int>(width * channels)
+	) != 0;
 }

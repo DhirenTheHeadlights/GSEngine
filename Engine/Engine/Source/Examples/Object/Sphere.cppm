@@ -6,6 +6,7 @@ import gse.runtime;
 import gse.utility;
 import gse.graphics;
 import gse.physics;
+import gse.platform;
 
 import :procedural_models;
 
@@ -43,10 +44,7 @@ export namespace gse {
 			add_component<render_component>({
 				.models = {
 					procedural_model::sphere(
-						gse::queue<material>(
-							"sun_material",
-							gse::get<texture>("Textures/Textures/sun")
-						),
+						material{ .diffuse_texture = gse::get<texture>("Textures/Textures/sun") },
 						m_params.sectors,
 						m_params.stacks
 					)

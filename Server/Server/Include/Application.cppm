@@ -13,7 +13,6 @@ export namespace gse {
 
 		auto initialize() -> void override;
 		auto update() -> void override;
-		auto render() -> void override;
 
 	private:
 		server* m_server = nullptr;
@@ -43,21 +42,36 @@ auto gse::server_app::update() -> void {
 	if (keyboard::pressed(key::escape)) {
 		gse::shutdown();
 	}
-}
 
-auto gse::server_app::render() -> void {
-	gui::start("Server Control", [&] {
-		gui::text("This is a simple server application.");
-		gui::value("Peers", static_cast<std::uint32_t>(m_server->peers().size()));
-		gui::value("Clients", static_cast<std::uint32_t>(m_server->clients().size()));
+	gui::panel("Server Control", [&](gui::builder& ui) {
+		ui.draw<gui::text>({
+			.content = "This is a simple server application."
+		});
+		ui.draw<gui::value<std::uint32_t>>({
+			.name = "Peers",
+			.val = static_cast<std::uint32_t>(m_server->peers().size())
+		});
+		ui.draw<gui::value<std::uint32_t>>({
+			.name = "Clients",
+			.val = static_cast<std::uint32_t>(m_server->clients().size())
+		});
 		if (const auto h = m_server->host_entity()) {
-			gui::text(std::format("Host entity: {}", *h));
+			ui.draw<gui::text>({
+				.content = std::format("Host entity: {}", *h)
+			});
 		} else {
-			gui::text("Host entity: <none>");
+			ui.draw<gui::text>({
+				.content = "Host entity: <none>"
+			});
 		}
 		for (const auto& [ip, port] : m_server->peers() | std::views::keys) {
-			gui::text(std::format("Peer: {}:{}", ip, port));
+			ui.draw<gui::text>({
+				.content = std::format("Peer: {}:{}", ip, port)
+			});
 		}
-		gui::value("Ticks", m_tick_count);
+		ui.draw<gui::value<std::uint32_t>>({
+			.name = "Ticks",
+			.val = m_tick_count
+		});
 	});
 }

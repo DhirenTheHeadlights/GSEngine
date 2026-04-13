@@ -9,7 +9,6 @@ export namespace gs {
         using hook::hook;
         auto initialize() -> void override;
         auto update() -> void override;
-        auto render() -> void override;
     private:
         std::uint32_t m_ping_seq = 0;
         int m_selected = -1;
@@ -83,39 +82,59 @@ auto gs::client::update() -> void {
     if (gse::network::state() == gse::network::client::state::connected && m_server_info_timer.tick()) {
         gse::network::send(gse::network::server_info_request{});
     }
-}
 
-auto gs::client::render() -> void {
-    gse::gui::start("Network", [&] {
+    gse::gui::panel("Network", [&](gse::gui::builder& ui) {
         switch (gse::network::state()) {
-            case gse::network::client::state::disconnected: gse::gui::text("Status: Disconnected"); break;
-            case gse::network::client::state::connecting:   gse::gui::text("Status: Connecting..."); break;
+            case gse::network::client::state::disconnected:
+				ui.draw<gse::gui::text>({
+					.content = "Status: Disconnected"
+				});
+				break;
+            case gse::network::client::state::connecting:
+				ui.draw<gse::gui::text>({
+					.content = "Status: Connecting..."
+				});
+				break;
             case gse::network::client::state::connected:
-                gse::gui::text(std::format("Status: Connected ({}/{})", m_connected_players, m_connected_max_players));
+                ui.draw<gse::gui::text>({
+					.content = std::format("Status: Connected ({}/{})", m_connected_players, m_connected_max_players)
+				});
                 break;
             default: break;
         }
 
-        if (gse::gui::button("Refresh")) {
+        if (ui.draw<gse::gui::button>({
+			.text = "Refresh"
+		})) {
             gse::network::refresh_servers(gse::milliseconds(150));
         }
 
         const auto list = gse::network::servers();
-        gse::gui::text(std::format("Found: {}", list.size()));
+        ui.draw<gse::gui::text>({
+			.content = std::format("Found: {}", list.size())
+		});
 
         for (auto [idx, s] : list | std::views::enumerate) {
-            if (const bool picked = (m_selected == static_cast<int>(idx)); gse::gui::selectable(std::format("{}  {}:{}  {}/{}  v{}", s.name, s.addr.ip, s.addr.port, s.players, s.max_players, s.build), picked)) {
+            const bool picked = (m_selected == static_cast<int>(idx));
+            if (ui.draw<gse::gui::selectable>({
+				.text = std::format("{}  {}:{}  {}/{}  v{}", s.name, s.addr.ip, s.addr.port, s.players, s.max_players, s.build),
+				.selected = picked
+			})) {
                 m_selected = static_cast<int>(idx);
             }
         }
 
-        if (gse::gui::button("Connect") && m_selected >= 0 && m_selected < static_cast<int>(list.size())) {
+        if (ui.draw<gse::gui::button>({
+			.text = "Connect"
+		}) && m_selected >= 0 && m_selected < static_cast<int>(list.size())) {
             const auto& pick = list[static_cast<std::size_t>(m_selected)];
             gse::network::connect(pick, gse::network::address{ "0.0.0.0", 0 }, gse::seconds(5), gse::seconds(1));
         }
 
-        if (gse::gui::button("Send Ping") && gse::network::state() == gse::network::client::state::connected) {
-            gse::network::send(gse::network::ping{ 
+        if (ui.draw<gse::gui::button>({
+			.text = "Send Ping"
+		}) && gse::network::state() == gse::network::client::state::connected) {
+            gse::network::send(gse::network::ping{
                 .sequence = ++m_ping_seq
             });
         }

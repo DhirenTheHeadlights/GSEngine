@@ -1,14 +1,7 @@
-module;
-
-#include <vulkan/vulkan_hpp_macros.hpp>
-#include <vulkan/vulkan.h>
-#include <GFSDK_Aftermath.h>
-#include <GFSDK_Aftermath_GpuCrashDump.h>
-#include <GFSDK_Aftermath_GpuCrashDumpDecoding.h>
-
 export module gse.platform:gpu_device;
 
 import std;
+import vulkan;
 
 import :vulkan_runtime;
 import :vulkan_allocator;
@@ -37,6 +30,7 @@ export namespace gse::vulkan {
 		queue_config queue;
 		bool mesh_shaders_enabled = false;
 		bool ray_tracing_enabled = false;
+		bool video_encode_enabled = false;
 		descriptor_buffer_properties desc_buf_props;
 	};
 
@@ -50,6 +44,7 @@ namespace gse::vulkan {
 		queue_family indices;
 		const auto queue_families = device.getQueueFamilyProperties();
 		for (std::uint32_t i = 0; i < queue_families.size(); i++) {
+			log::println(log::category::vulkan, "Queue family {}: flags = {}", i, vk::to_string(queue_families[i].queueFlags));
 			if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
 				indices.graphics_family = i;
 			}
@@ -59,6 +54,10 @@ namespace gse::vulkan {
 			if ((queue_families[i].queueFlags & vk::QueueFlagBits::eCompute) &&
 				!(queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
 				indices.compute_family = i;
+			}
+			if ((queue_families[i].queueFlags & vk::QueueFlagBits::eVideoEncodeKHR) &&
+				!indices.video_encode_family.has_value()) {
+				indices.video_encode_family = i;
 			}
 		}
 		if (!indices.compute_family.has_value()) {
@@ -100,90 +99,6 @@ namespace gse::vulkan {
 			.bufferless_push_descriptors = static_cast<bool>(db.bufferlessPushDescriptors),
 			.supported = true
 		};
-	}
-
-	std::mutex g_aftermath_mutex;
-	std::string g_aftermath_dump_path;
-	bool g_aftermath_initialized = false;
-
-	void GFSDK_AFTERMATH_CALL aftermath_crash_dump_cb(const void* gpu_crash_dump, const uint32_t gpu_crash_dump_size, void*) {
-		std::lock_guard lock(g_aftermath_mutex);
-		const auto path = config::resource_path / "Misc/gpu_crash.nv-gpudmp";
-		std::ofstream out(path, std::ios::binary);
-		if (out.is_open()) {
-			out.write(static_cast<const char*>(gpu_crash_dump), gpu_crash_dump_size);
-			g_aftermath_dump_path = path.string();
-			log::println(log::level::error, log::category::vulkan,
-				"Aftermath: GPU crash dump written to {} ({} bytes)", path.string(), gpu_crash_dump_size);
-		}
-	}
-
-	void GFSDK_AFTERMATH_CALL aftermath_shader_debug_info_cb(const void* shader_debug_info, const uint32_t shader_debug_info_size, void*) {
-		std::lock_guard lock(g_aftermath_mutex);
-
-		GFSDK_Aftermath_ShaderDebugInfoIdentifier id{};
-		GFSDK_Aftermath_GetShaderDebugInfoIdentifier(
-			GFSDK_Aftermath_Version_API,
-			shader_debug_info, shader_debug_info_size,
-			&id
-		);
-
-		const auto dir = config::resource_path / "Misc/aftermath_shaders";
-		std::filesystem::create_directories(dir);
-		const auto path = dir / std::format("{:016x}-{:016x}.nvdbg", id.id[0], id.id[1]);
-		std::ofstream out(path, std::ios::binary);
-		if (out.is_open()) {
-			out.write(static_cast<const char*>(shader_debug_info), shader_debug_info_size);
-		}
-	}
-	void GFSDK_AFTERMATH_CALL aftermath_description_cb(PFN_GFSDK_Aftermath_AddGpuCrashDumpDescription add_value, void*) {
-		add_value(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationName, "GSEngine");
-	}
-
-	auto init_aftermath() -> void {
-		const auto result = GFSDK_Aftermath_EnableGpuCrashDumps(
-			GFSDK_Aftermath_Version_API,
-			GFSDK_Aftermath_GpuCrashDumpWatchedApiFlags_Vulkan,
-			GFSDK_Aftermath_GpuCrashDumpFeatureFlags_DeferDebugInfoCallbacks,
-			aftermath_crash_dump_cb,
-			aftermath_shader_debug_info_cb,
-			aftermath_description_cb,
-			nullptr,
-			nullptr
-		);
-
-		if (result == GFSDK_Aftermath_Result_Success) {
-			g_aftermath_initialized = true;
-			log::println(log::category::vulkan, "Aftermath: GPU crash dump collection enabled");
-		} else {
-			log::println(log::level::warning, log::category::vulkan,
-				"Aftermath: Failed to enable GPU crash dumps (result=0x{:x})", static_cast<uint32_t>(result));
-		}
-	}
-
-	auto wait_for_aftermath_dump() -> void {
-		if (!g_aftermath_initialized) return;
-
-		GFSDK_Aftermath_CrashDump_Status status = GFSDK_Aftermath_CrashDump_Status_Unknown;
-		GFSDK_Aftermath_GetCrashDumpStatus(&status);
-
-		constexpr int max_wait_ms = 5000;
-		int waited = 0;
-		while (status != GFSDK_Aftermath_CrashDump_Status_CollectingDataFailed &&
-		       status != GFSDK_Aftermath_CrashDump_Status_Finished &&
-		       waited < max_wait_ms) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(50));
-			waited += 50;
-			GFSDK_Aftermath_GetCrashDumpStatus(&status);
-		}
-
-		if (!g_aftermath_dump_path.empty()) {
-			log::println(log::level::error, log::category::vulkan,
-				"Aftermath: Crash dump saved to: {}", g_aftermath_dump_path);
-		} else {
-			log::println(log::level::warning, log::category::vulkan,
-				"Aftermath: No crash dump generated (status={})", static_cast<int>(status));
-		}
 	}
 
 	auto create_instance(const std::span<const char* const> required_extensions) -> instance_config {
@@ -329,7 +244,7 @@ namespace gse::vulkan {
 		const auto physical_device_properties = physical_device.getProperties();
 		log::println(log::category::vulkan, "Selected GPU: {}", std::string_view(physical_device_properties.deviceName.data()));
 
-		auto [graphics_family, present_family, compute_family] = find_queue_families(physical_device, instance_data.surface);
+		auto [graphics_family, present_family, compute_family, video_encode_family] = find_queue_families(physical_device, instance_data.surface);
 
 		std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
 		std::set unique_queue_families = {
@@ -337,6 +252,10 @@ namespace gse::vulkan {
 			present_family.value(),
 			compute_family.value()
 		};
+
+		if (video_encode_family.has_value()) {
+			unique_queue_families.insert(video_encode_family.value());
+		}
 
 		float queue_priority = 1.0f;
 		for (std::uint32_t queue_family_index : unique_queue_families) {
@@ -362,6 +281,11 @@ namespace gse::vulkan {
 			supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
 			supports_extension(vk::KHRAccelerationStructureExtensionName) &&
 			supports_extension(vk::KHRRayQueryExtensionName);
+
+		const bool video_encode_extensions_available =
+			video_encode_family.has_value() &&
+			supports_extension(vk::KHRVideoQueueExtensionName) &&
+			supports_extension(vk::KHRVideoEncodeQueueExtensionName);
 
 		const auto feature_chain = physical_device.getFeatures2<
 			vk::PhysicalDeviceFeatures2,
@@ -476,15 +400,6 @@ namespace gse::vulkan {
 			.deviceFaultVendorBinary = device_fault_vendor_binary_supported ? vk::True : vk::False
 		};
 
-		VkDeviceDiagnosticsConfigCreateInfoNV aftermath_diagnostics_config{
-			.sType = VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV,
-			.pNext = nullptr,
-			.flags = VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV
-			       | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV
-			       | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV
-			       | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV
-		};
-
 		void* post_fault_chain_head = device_fault_supported ? static_cast<void*>(&fault_features) : feature_chain_head;
 
 		vk::PhysicalDeviceRobustness2FeaturesEXT robustness2_features{
@@ -498,14 +413,10 @@ namespace gse::vulkan {
 			.pNext = robustness2_supported ? static_cast<void*>(&robustness2_features) : post_fault_chain_head
 		};
 
-		if (g_aftermath_initialized) {
-			aftermath_diagnostics_config.pNext = present_wait_features.pNext;
-			present_wait_features.pNext = &aftermath_diagnostics_config;
-		}
-
 		vk::PhysicalDeviceFeatures2 features2{
 			.pNext = &present_wait_features,
 			.features = {
+				.robustBufferAccess = robustness2_supported ? vk::True : vk::False,
 				.drawIndirectFirstInstance = vk::True,
 				.fillModeNonSolid = vk::True,
 				.samplerAnisotropy = vk::True
@@ -541,9 +452,15 @@ namespace gse::vulkan {
 			device_extensions.push_back(vk::KHRRayQueryExtensionName);
 		}
 
-		if (g_aftermath_initialized) {
-			device_extensions.push_back(VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME);
-			device_extensions.push_back(VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME);
+		if (video_encode_extensions_available) {
+			device_extensions.push_back(vk::KHRVideoQueueExtensionName);
+			device_extensions.push_back(vk::KHRVideoEncodeQueueExtensionName);
+			if (supports_extension(vk::KHRVideoEncodeAv1ExtensionName)) {
+				device_extensions.push_back(vk::KHRVideoEncodeAv1ExtensionName);
+			}
+			if (supports_extension(vk::KHRVideoEncodeH265ExtensionName)) {
+				device_extensions.push_back(vk::KHRVideoEncodeH265ExtensionName);
+			}
 		}
 
 		vk::DeviceCreateInfo create_info{
@@ -572,7 +489,7 @@ namespace gse::vulkan {
 			: descriptor_buffer_properties{};
 		desc_buf_props.push_descriptors_supported = descriptor_buffer_push_descriptors_supported;
 
-		return {
+		auto result = device_creation_result{
 			.device = device_config(
 				std::move(physical_device),
 				std::move(device),
@@ -582,12 +499,20 @@ namespace gse::vulkan {
 			.queue = queue_config(std::move(graphics_queue), std::move(present_queue), std::move(compute_queue), compute_family.value()),
 			.mesh_shaders_enabled = mesh_shaders_supported,
 			.ray_tracing_enabled = ray_tracing_supported,
+			.video_encode_enabled = video_encode_extensions_available,
 			.desc_buf_props = std::move(desc_buf_props)
 		};
+
+		if (video_encode_extensions_available) {
+			result.queue.set_video_encode(result.device.device.getQueue(video_encode_family.value(), 0), video_encode_family.value());
+			log::println(log::category::vulkan, "Video encode queue acquired (family {})", video_encode_family.value());
+		}
+
+		return result;
 	}
 
 	auto create_command_objects(const device_config& device_data, const instance_config& instance_data) -> command_config {
-		const auto [graphics_family, present_family, _] = find_queue_families(device_data.physical_device, instance_data.surface);
+		const auto [graphics_family, present_family, _, __] = find_queue_families(device_data.physical_device, instance_data.surface);
 
 		const vk::CommandPoolCreateInfo pool_info{
 			.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -756,6 +681,9 @@ export namespace gse::gpu {
 		[[nodiscard]] auto ray_tracing_enabled(
 		) const -> bool;
 
+		[[nodiscard]] auto video_encode_enabled(
+		) const -> bool;
+
 		[[nodiscard]] auto current_transient_frame(
 		) const -> std::uint32_t;
 
@@ -780,7 +708,8 @@ export namespace gse::gpu {
 			vulkan::descriptor_buffer_properties&& desc_buf_props,
 			vk::Format surface_format,
 			std::uint32_t max_frames,
-			bool ray_tracing_enabled
+			bool ray_tracing_enabled,
+			bool video_encode_enabled
 		);
 
 		vulkan::instance_config m_instance;
@@ -797,6 +726,7 @@ export namespace gse::gpu {
 		std::unordered_map<id, vulkan::shader_cache_entry> m_shader_cache;
 		std::unordered_map<std::string, std::unique_ptr<shader_layout>> m_shader_layouts;
 		bool m_ray_tracing_enabled = false;
+		bool m_video_encode_enabled = false;
 	};
 
 	auto transition_image_layout(device& dev, const image& img, image_layout target) -> void;
@@ -806,10 +736,9 @@ auto gse::gpu::device::create(
 	const window& win,
 	save::state& save
 ) -> std::unique_ptr<device> {
-	vulkan::init_aftermath();
 	auto instance_data = vulkan::create_instance(window::vulkan_instance_extensions());
 	instance_data.surface = vk::raii::SurfaceKHR(instance_data.instance, win.create_vulkan_surface(*instance_data.instance));
-	auto [dev_config, queue, mesh_shaders_enabled, ray_tracing_enabled, desc_buf_props] = vulkan::create_device_and_queues(instance_data);
+	auto [dev_config, queue, mesh_shaders_enabled, ray_tracing_enabled, video_encode_enabled, desc_buf_props] = vulkan::create_device_and_queues(instance_data);
 	auto alloc = std::make_unique<vulkan::allocator>(dev_config.device, dev_config.physical_device, save);
 	auto command = vulkan::create_command_objects(dev_config, instance_data);
 
@@ -837,7 +766,8 @@ auto gse::gpu::device::create(
 		std::move(desc_buf_props),
 		surface_format,
 		vulkan::max_frames_in_flight,
-		ray_tracing_enabled
+		ray_tracing_enabled,
+		video_encode_enabled
 	));
 }
 
@@ -851,7 +781,8 @@ gse::gpu::device::device(
 	vulkan::descriptor_buffer_properties&& desc_buf_props,
 	const vk::Format surface_format,
 	const std::uint32_t max_frames,
-	const bool ray_tracing_enabled
+	const bool ray_tracing_enabled,
+	const bool video_encode_enabled
 )
 	: m_instance(std::move(instance)),
 	  m_device_config(std::move(dev_config)),
@@ -861,7 +792,8 @@ gse::gpu::device::device(
 	  m_descriptor_heap(std::move(desc_heap)),
 	  m_descriptor_buffer_props(std::move(desc_buf_props)),
 	  m_surface_format(surface_format),
-	  m_ray_tracing_enabled(ray_tracing_enabled) {
+	  m_ray_tracing_enabled(ray_tracing_enabled),
+	  m_video_encode_enabled(video_encode_enabled) {
 	m_transient_work_graveyard.resize(max_frames);
 }
 
@@ -979,8 +911,6 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 
 	log::println(log::level::error, log::category::vulkan, "Vulkan device lost during {}", operation);
 
-	vulkan::wait_for_aftermath_dump();
-
 	if (!m_device_config.device_fault_enabled) {
 		log::println(log::level::warning, log::category::vulkan, "VK_EXT_device_fault is unavailable on this device");
 		return;
@@ -1077,6 +1007,10 @@ auto gse::gpu::device::ray_tracing_enabled() const -> bool {
 	return m_ray_tracing_enabled;
 }
 
+auto gse::gpu::device::video_encode_enabled() const -> bool {
+	return m_video_encode_enabled;
+}
+
 auto gse::gpu::device::current_transient_frame() const -> std::uint32_t {
 	return m_current_transient_frame;
 }
@@ -1161,29 +1095,6 @@ auto gse::gpu::device::shader_cache(const shader& s) -> const vulkan::shader_cac
 	auto create_module = [&](const shader_stage stage) -> vk::raii::ShaderModule {
 		const auto spirv = s.spirv(stage);
 		if (spirv.empty()) return nullptr;
-
-		if (vulkan::g_aftermath_initialized) {
-			static const auto stage_name = [](shader_stage st) {
-				switch (st) {
-					case shader_stage::vertex:   return "vert";
-					case shader_stage::fragment:  return "frag";
-					case shader_stage::compute:  return "comp";
-					case shader_stage::task:     return "task";
-					case shader_stage::mesh:     return "mesh";
-					default:                     return "unknown";
-				}
-			};
-			auto tag = std::string(s.id().tag());
-			std::ranges::replace(tag, '/', '_');
-			std::ranges::replace(tag, '\\', '_');
-			const auto dir = config::resource_path / "Misc/aftermath_shaders";
-			std::filesystem::create_directories(dir);
-			const auto path = dir / std::format("{}_{}.spv", tag, stage_name(stage));
-			std::ofstream out(path, std::ios::binary);
-			if (out.is_open()) {
-				out.write(reinterpret_cast<const char*>(spirv.data()), spirv.size_bytes());
-			}
-		}
 
 		return m_device_config.device.createShaderModule({
 			.codeSize = spirv.size_bytes(),

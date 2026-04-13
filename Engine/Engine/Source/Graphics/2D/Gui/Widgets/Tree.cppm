@@ -9,6 +9,7 @@ import gse.platform;
 import :types;
 import :ids;
 import :styles;
+import :builder;
 
 export namespace gse::gui::draw {
     struct tree_options {
@@ -62,6 +63,22 @@ export namespace gse::gui::draw {
         tree_selection* sel,
         id& active_widget_id
     ) -> bool;
+}
+
+export namespace gse::gui {
+	template <typename T>
+	struct tree {
+		using result = bool;
+		struct params {
+			std::span<const T> roots;
+			const draw::tree_ops<T>& ops;
+			draw::tree_options options = {};
+			draw::tree_selection* selection = nullptr;
+		};
+		static auto draw(draw_context& ctx, params p, id&, id& active, id&) -> bool {
+			return draw::tree(ctx, p.roots, p.ops, p.options, p.selection, active);
+		}
+	};
 }
 
 namespace gse::gui::draw {

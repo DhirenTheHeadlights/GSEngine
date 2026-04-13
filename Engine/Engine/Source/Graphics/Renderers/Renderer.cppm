@@ -4,7 +4,6 @@ import std;
 
 import :clip;
 import :render_component;
-import :material;
 import :font;
 import :model;
 import :skinned_model;
@@ -13,8 +12,6 @@ import :texture;
 
 import :texture_compiler;
 import :font_compiler;
-import :model_compiler;
-import :material_compiler;
 import :skeleton_compiler;
 import :clip_compiler;
 import :skinned_model_compiler;
@@ -94,7 +91,7 @@ export namespace gse::renderer {
 
 	struct system {
 		static auto initialize(const initialize_phase& phase, state& s) -> void;
-		static auto update(const update_phase& phase, state& s) -> void;
+		static auto update(update_context& ctx, state& s) -> void;
 		static auto begin_frame(const begin_frame_phase& phase, state& s) -> bool;
 		static auto end_frame(const end_frame_phase& phase, state& s) -> void;
 		static auto shutdown(const shutdown_phase& phase, const state& s) -> void;
@@ -109,7 +106,6 @@ auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) 
 	ctx.add_loader<model>();
 	ctx.add_loader<skinned_model>();
 	ctx.add_loader<font>();
-	ctx.add_loader<material>();
 	ctx.add_loader<skeleton>();
 	ctx.add_loader<clip_asset>();
 	ctx.add_loader<audio_clip>();
@@ -125,31 +121,31 @@ auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) 
 	});
 }
 
-auto gse::renderer::system::update(const update_phase& phase, state& s) -> void {
-	auto& ctx = phase.get<gpu::context>();
+auto gse::renderer::system::update(update_context& ctx, state& s) -> void {
+	auto& gpu = ctx.get<gpu::context>();
 
-	if (s.hot_reload_enabled != ctx.hot_reload_enabled()) {
+	if (s.hot_reload_enabled != gpu.hot_reload_enabled()) {
 		if (s.hot_reload_enabled) {
-			ctx.enable_hot_reload();
+			gpu.enable_hot_reload();
 		} else {
-			ctx.disable_hot_reload();
+			gpu.disable_hot_reload();
 		}
 	}
 
-	ctx.poll_assets();
-	ctx.process_resource_queue();
-	ctx.window().update(ctx.ui_focus());
+	gpu.poll_assets();
+	gpu.process_resource_queue();
+	gpu.window().update(gpu.ui_focus());
 
-	phase.channels.push(camera::ui_focus_update{ .focus = ctx.ui_focus() });
+	ctx.channels.push(camera::ui_focus_update{ .focus = gpu.ui_focus() });
 
-	const auto window_size = ctx.window().viewport();
+	const auto window_size = gpu.window().viewport();
 	const auto new_viewport = vec2f(
 		static_cast<float>(window_size.x()),
 		static_cast<float>(window_size.y())
 	);
 
 	if (new_viewport.x() != s.last_viewport.x() || new_viewport.y() != s.last_viewport.y()) {
-		phase.channels.push(camera::viewport_update{ .size = new_viewport });
+		ctx.channels.push(camera::viewport_update{ .size = new_viewport });
 		s.last_viewport = new_viewport;
 	}
 }

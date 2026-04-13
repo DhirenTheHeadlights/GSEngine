@@ -119,6 +119,16 @@ export namespace gse::gui {
 			const id& widget_id,
 			const std::string& text
 		) const -> void;
+
+		auto next_row(
+			float height_multiplier = 1.f
+		) const -> ui_rect;
+
+		auto animated_color(
+			const id& widget_id,
+			vec4f target,
+			float speed = 10.f
+		) const -> vec4f;
 	};
 }
 
@@ -191,4 +201,39 @@ auto gse::gui::draw_context::set_tooltip(const id& widget_id, const std::string&
 	tooltip->pending_widget_id = widget_id;
 	tooltip->text = text;
 	tooltip->position = input.mouse_position();
+}
+
+auto gse::gui::draw_context::next_row(const float height_multiplier) const -> ui_rect {
+	if (!current_menu) {
+		return {};
+	}
+
+	const float row_height = (font->line_height(style.font_size) + style.padding * style.widget_height_padding) * height_multiplier;
+	const ui_rect content_rect = current_menu->rect.inset({ style.padding, style.padding });
+
+	const ui_rect row = ui_rect::from_position_size(
+		{ content_rect.left(), layout_cursor.y() },
+		{ content_rect.width(), row_height }
+	);
+
+	layout_cursor.y() -= row_height + style.padding + style.item_spacing;
+	return row;
+}
+
+namespace {
+	std::unordered_map<std::uint64_t, gse::vec4f> g_widget_anim_colors;
+}
+
+auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f target, const float speed) const -> vec4f {
+	const auto key = widget_id.number();
+	auto it = g_widget_anim_colors.find(key);
+	if (it == g_widget_anim_colors.end()) {
+		g_widget_anim_colors[key] = target;
+		return target;
+	}
+
+	const float dt = system_clock::dt<time>().as<seconds>();
+	const float t = std::clamp(speed * dt, 0.f, 1.f);
+	it->second = it->second + (target - it->second) * t;
+	return it->second;
 }

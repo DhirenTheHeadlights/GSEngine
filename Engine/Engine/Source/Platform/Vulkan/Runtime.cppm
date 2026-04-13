@@ -1,5 +1,3 @@
-module;
-
 export module gse.platform:vulkan_runtime;
 
 import std;
@@ -46,11 +44,20 @@ export namespace gse::vulkan {
         vk::raii::Queue compute;
         std::uint32_t compute_family_index = 0;
         std::unique_ptr<std::recursive_mutex> mutex;
+
+        vk::raii::Queue video_encode{nullptr};
+        std::optional<std::uint32_t> video_encode_family_index;
+
         queue_config(vk::raii::Queue&& graphics, vk::raii::Queue&& present, vk::raii::Queue&& compute, std::uint32_t compute_family)
             : graphics(std::move(graphics)), present(std::move(present)), compute(std::move(compute)), compute_family_index(compute_family), mutex(std::make_unique<std::recursive_mutex>()) {
         }
         queue_config(queue_config&&) = default;
         auto operator=(queue_config&&) -> queue_config & = default;
+
+        auto set_video_encode(vk::raii::Queue&& q, std::uint32_t family) -> void {
+            video_encode = std::move(q);
+            video_encode_family_index = family;
+        }
     };
 
     struct command_config {
@@ -157,6 +164,7 @@ export namespace gse::vulkan {
         std::optional<std::uint32_t> graphics_family;
         std::optional<std::uint32_t> present_family;
         std::optional<std::uint32_t> compute_family;
+        std::optional<std::uint32_t> video_encode_family;
 
         auto complete() const -> bool {
 			return graphics_family.has_value() && present_family.has_value() && compute_family.has_value();

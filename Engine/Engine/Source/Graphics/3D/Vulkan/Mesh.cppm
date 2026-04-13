@@ -51,19 +51,19 @@ export namespace gse {
     struct mesh_data {
         std::vector<vertex> vertices;
         std::vector<std::uint32_t> indices;
-        resource::handle<material> material;
+        gse::material material;
         meshlet_data meshlets;
     };
 
     class mesh final : non_copyable {
     public:
         explicit mesh(mesh_data&& data);
-        mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const resource::handle<material>& material = {}) : m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(material) {}
+        mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {}) : m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(mat) {}
 
         auto initialize(gpu::resource_manager& ctx) -> void;
 
         auto center_of_mass() const -> vec3<displacement>;
-        auto material() const -> const resource::handle<material>&;
+        auto material() const -> const gse::material&;
         auto indices() const -> const std::vector<std::uint32_t>&;
         auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
 
@@ -80,7 +80,7 @@ export namespace gse {
 
         std::vector<vertex> m_vertices;
         std::vector<std::uint32_t> m_indices;
-        resource::handle<gse::material> m_material;
+        gse::material m_material;
         meshlet_data m_meshlets;
     };
 
@@ -200,7 +200,7 @@ auto gse::mesh::center_of_mass() const -> vec3<displacement> {
     return vec3<displacement>(moment / total_volume);
 }
 
-auto gse::mesh::material() const -> const resource::handle<gse::material>& {
+auto gse::mesh::material() const -> const gse::material& {
     return m_material;
 }
 

@@ -21,6 +21,8 @@ export namespace gse::system_clock {
 	auto constant_update_time() -> Q;
 
 	auto fps() -> std::uint32_t;
+
+	auto timestamp_filename() -> std::string;
 }
 
 namespace gse::system_clock {
@@ -67,4 +69,14 @@ auto gse::system_clock::constant_update_time() -> Q {
 
 auto gse::system_clock::fps() -> std::uint32_t {
 	return frame_rate_count;
+}
+
+auto gse::system_clock::timestamp_filename() -> std::string {
+	const auto now = std::chrono::system_clock::now();
+	try {
+		const auto local = std::chrono::zoned_time{ std::chrono::current_zone(), now }.get_local_time();
+		return std::format("{:%Y%m%d_%H%M%S}", std::chrono::floor<std::chrono::seconds>(local));
+	} catch (const std::runtime_error&) {
+		return std::format("{:%Y%m%d_%H%M%S}", std::chrono::floor<std::chrono::seconds>(now));
+	}
 }

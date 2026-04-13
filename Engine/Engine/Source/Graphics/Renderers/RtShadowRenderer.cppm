@@ -145,8 +145,14 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 			continue;
 		}
 
+		std::uint32_t palette_idx = 0;
+		if (const auto palette_it = data.material_palette_map.find(&mesh_ptr->material()); palette_it != data.material_palette_map.end()) {
+			palette_idx = palette_it->second;
+		}
+
 		instances.push_back({
 			.transform    = entry.model_matrix,
+			.custom_index = palette_idx,
 			.cull_disable = true,
 			.blas_address = it->second.device_address()
 		});

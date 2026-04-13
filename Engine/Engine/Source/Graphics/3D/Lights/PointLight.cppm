@@ -2,8 +2,6 @@ export module gse.graphics:point_light;
 
 import std;
 
-import :cube_map;
-
 import gse.math;
 import gse.utility;
 
@@ -17,9 +15,6 @@ export namespace gse {
 		float quadratic = 0.032f; 
 		float ambient_strength = 0.025f;
 		float source_radius = 0.5f;
-		std::vector<id> ignore_list_ids;
-		length near_plane = meters(0.1f);
-		length far_plane = meters(10000.f);
 	};
 
 	struct point_light_component : component<point_light_data> {

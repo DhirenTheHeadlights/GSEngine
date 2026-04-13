@@ -181,6 +181,18 @@ export namespace gse::vulkan {
 			gpu::image_layout layout = gpu::image_layout::general
 		) -> descriptor_writer&;
 
+		auto storage_image(
+			std::uint32_t binding,
+			vk::ImageView view,
+			vk::ImageLayout layout = vk::ImageLayout::eGeneral
+		) -> descriptor_writer&;
+
+		auto storage_image(
+			std::uint32_t binding,
+			const gpu::image& img,
+			gpu::image_layout layout = gpu::image_layout::general
+		) -> descriptor_writer&;
+
 		auto commit(
 			vk::CommandBuffer cmd,
 			vk::PipelineBindPoint point,
@@ -495,6 +507,46 @@ auto gse::vulkan::descriptor_writer::image(
 		}
 	}();
 	return image(binding, img.native().view, samp.native(), vk_layout);
+}
+
+auto gse::vulkan::descriptor_writer::storage_image(
+	const std::uint32_t binding,
+	const vk::ImageView view,
+	const vk::ImageLayout layout
+) -> descriptor_writer& {
+	assert(binding < m_bindings.size(), std::source_location::current(),
+		"Binding {} out of range (max {})", binding, m_bindings.size());
+
+	const auto& info = m_bindings[binding];
+
+	const vk::DescriptorImageInfo img_info{
+		.sampler = nullptr,
+		.imageView = view,
+		.imageLayout = layout
+	};
+
+	const vk::DescriptorGetInfoEXT get_info{
+		.type = vk::DescriptorType::eStorageImage,
+		.data = { .pStorageImage = &img_info }
+	};
+
+	m_heap->write_descriptor(m_current_region, info.offset, get_info, info.descriptor_size);
+	return *this;
+}
+
+auto gse::vulkan::descriptor_writer::storage_image(
+	const std::uint32_t binding,
+	const gpu::image& img,
+	const gpu::image_layout layout
+) -> descriptor_writer& {
+	const auto vk_layout = [&] {
+		switch (layout) {
+			case gpu::image_layout::general:          return vk::ImageLayout::eGeneral;
+			case gpu::image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
+			default:                                  return vk::ImageLayout::eUndefined;
+		}
+	}();
+	return storage_image(binding, img.native().view, vk_layout);
 }
 
 auto gse::vulkan::descriptor_writer::commit(

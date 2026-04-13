@@ -17,6 +17,7 @@ public static const uint MAX_LIGHTS_PER_TILE = 64;
 
 public[[vk::binding(3, 0)]] StructuredBuffer<uint> light_index_list;
 public[[vk::binding(4, 0)]] StructuredBuffer<uint2> tile_light_table;
+public[[vk::binding(5, 0)]] StructuredBuffer<MaterialData> material_palette;
 
 public[[vk::binding(0, 1)]] StructuredBuffer<Vertex> vertices;
 public[[vk::binding(1, 1)]] StructuredBuffer<MeshletDescriptor> meshlets;

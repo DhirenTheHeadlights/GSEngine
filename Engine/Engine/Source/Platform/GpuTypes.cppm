@@ -104,6 +104,7 @@ export namespace gse::gpu {
 		r8_unorm,
 		b10g11r11_ufloat,
 		r8g8_snorm,
+		r8g8_unorm,
 		r16g16b16a16_sfloat
 	};
 
@@ -117,7 +118,8 @@ export namespace gse::gpu {
 		depth_attachment = 1 << 1,
 		color_attachment = 1 << 2,
 		transfer_dst     = 1 << 3,
-		storage          = 1 << 4
+		storage          = 1 << 4,
+		transfer_src     = 1 << 5
 	};
 
 	using image_usage = gse::flags<image_flag>;

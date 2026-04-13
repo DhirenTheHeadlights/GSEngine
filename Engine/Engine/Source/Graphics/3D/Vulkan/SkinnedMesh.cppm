@@ -20,7 +20,7 @@ export namespace gse {
     struct skinned_mesh_data {
         std::vector<skinned_vertex> vertices;
         std::vector<std::uint32_t> indices;
-        resource::handle<material> material;
+        gse::material material;
     };
 
     class skinned_mesh final : non_copyable {
@@ -35,7 +35,7 @@ export namespace gse {
         auto index_gpu_buffer(this const skinned_mesh& self) -> const gpu::buffer& { return self.m_index_buffer; }
 
         auto center_of_mass() const -> vec3<displacement>;
-        auto material() const -> const resource::handle<material>&;
+        auto material() const -> const gse::material&;
         auto indices() const -> const std::vector<std::uint32_t>&;
         auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
     private:
@@ -44,7 +44,7 @@ export namespace gse {
 
         std::vector<skinned_vertex> m_vertices;
         std::vector<std::uint32_t> m_indices;
-        resource::handle<gse::material> m_material;
+        gse::material m_material;
     };
 }
 
@@ -121,7 +121,7 @@ auto gse::skinned_mesh::center_of_mass() const -> vec3<displacement> {
     return vec3<displacement>(moment / total_volume);
 }
 
-auto gse::skinned_mesh::material() const -> const resource::handle<gse::material>& {
+auto gse::skinned_mesh::material() const -> const gse::material& {
     return m_material;
 }
 
