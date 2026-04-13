@@ -5,7 +5,6 @@ import :skybox_scene;
 import :second_test_scene;
 import :physics_stress_test_scene;
 import :physics_joint_test_scene;
-import :animation_test_scene;
 import :sphere_collision_test_scene;
 
 export namespace gs {
@@ -17,7 +16,6 @@ export namespace gs {
 			m_default_scene_key = gse::actions::add<"Load Default Scene">(gse::key::f1);
 			m_skybox_scene_key = gse::actions::add<"Load Skybox Scene">(gse::key::f2);
 			m_second_test_scene_key = gse::actions::add<"Load Second Test Scene">(gse::key::f3);
-			m_animation_test_scene_key = gse::actions::add<"Load Animation Test Scene">(gse::key::f4);
 			m_stress_test_scene_key = gse::actions::add<"Load Stress Test Scene">(gse::key::f5);
 			m_joint_test_scene_key = gse::actions::add<"Load Joint Test Scene">(gse::key::f6);
 			m_sphere_test_scene_key = gse::actions::add<"Load Sphere Test Scene">(gse::key::f7);
@@ -39,12 +37,6 @@ export namespace gs {
 					.scene_id = m_owner->add_scene<second_test_scene>("Second Test Scene")->id(),
 					.condition = [&](const gse::evaluation_context& ctx) {
 						return gse::actions::pressed(m_second_test_scene_key, *ctx.input);
-					}
-				})
-				.when({
-					.scene_id = m_owner->add_scene<animation_test_scene>("Animation Test Scene")->id(),
-					.condition = [&](const gse::evaluation_context& ctx) {
-						return gse::actions::pressed(m_animation_test_scene_key, *ctx.input);
 					}
 				})
 				.when({

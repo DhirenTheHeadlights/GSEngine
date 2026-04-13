@@ -95,7 +95,7 @@ export namespace gse::renderer::physics_debug {
 
 	struct system {
 		static auto initialize(const initialize_phase& phase, state& s) -> void;
-		static auto update(const update_phase& phase, state& s) -> void;
+		static auto update(update_context& ctx, state& s) -> void;
 		static auto render(const render_phase& phase, const state& s) -> void;
 	};
 }
@@ -336,7 +336,7 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 	}
 }
 
-auto gse::renderer::physics_debug::system::update(const update_phase& phase, state& s) -> void {
+auto gse::renderer::physics_debug::system::update(update_context& ctx, state& s) -> void {
 	if (!s.enabled) {
 		return;
 	}
@@ -344,7 +344,7 @@ auto gse::renderer::physics_debug::system::update(const update_phase& phase, sta
 	std::vector<debug_vertex> vertices;
 	debug_stats stats;
 
-	for (const auto& mc : phase.registry.view<physics::motion_component>()) {
+	for (const auto& mc : ctx.reg.linked_objects_read<physics::motion_component>()) {
 		stats.body_count++;
 		if (mc.sleeping) stats.sleeping_count++;
 
@@ -354,12 +354,12 @@ auto gse::renderer::physics_debug::system::update(const update_phase& phase, sta
 		if (ang > stats.max_angular_speed) stats.max_angular_speed = ang;
 	}
 
-	for (const auto& coll : phase.registry.view<physics::collision_component>()) {
+	for (const auto& coll : ctx.reg.linked_objects_read<physics::collision_component>()) {
 		if (!coll.resolve_collisions) {
 			continue;
 		}
 
-		const auto* mc = phase.registry.try_read<physics::motion_component>(coll.owner_id());
+		const auto* mc = ctx.reg.try_linked_object_read<physics::motion_component>(coll.owner_id());
 		build_shape_lines_for_collider(coll, mc, vertices);
 
 		if (mc) {
@@ -373,7 +373,7 @@ auto gse::renderer::physics_debug::system::update(const update_phase& phase, sta
 		}
 	}
 
-	if (const auto* ps = phase.try_state_of<physics::state>()) {
+	if (const auto* ps = ctx.try_state_of<physics::state>()) {
 		if (ps->use_gpu_solver && ps->gpu_stats.active) {
 			stats.gpu_solver_active = true;
 			stats.contact_count = ps->gpu_stats.contact_count;
@@ -383,7 +383,7 @@ auto gse::renderer::physics_debug::system::update(const update_phase& phase, sta
 	}
 
 	s.latest_stats = stats;
-	phase.channels.push(render_data{ std::move(vertices), stats });
+	ctx.channels.push(render_data{ std::move(vertices), stats });
 }
 
 auto gse::renderer::physics_debug::system::render(const render_phase& phase, const state& s) -> void {

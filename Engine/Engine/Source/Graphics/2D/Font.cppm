@@ -81,9 +81,15 @@ export namespace gse {
         ) const -> float;
 
 		auto width(
-            std::string_view text, 
+            std::string_view text,
             float scale = 1.0f
         ) const -> float;
+
+		auto pixel_range(
+		) const -> float;
+
+		auto glyph_cell_size(
+		) const -> float;
     private:
         std::unique_ptr<gse::texture> m_texture;
         std::unordered_map<char, glyph> m_glyphs;
@@ -380,4 +386,12 @@ auto gse::font::width(const std::string_view text, const float scale) const -> f
     }
 
     return total_width;
+}
+
+auto gse::font::pixel_range() const -> float {
+	return 4.f;
+}
+
+auto gse::font::glyph_cell_size() const -> float {
+	return m_glyph_cell_size;
 }

@@ -259,6 +259,7 @@ auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
 			case image_format::r8_unorm:          return vk::Format::eR8Unorm;
 			case image_format::b10g11r11_ufloat:      return vk::Format::eB10G11R11UfloatPack32;
 			case image_format::r8g8_snorm:            return vk::Format::eR8G8Snorm;
+			case image_format::r8g8_unorm:            return vk::Format::eR8G8Unorm;
 			case image_format::r16g16b16a16_sfloat:   return vk::Format::eR16G16B16A16Sfloat;
 		}
 		return vk::Format::eD32Sfloat;
@@ -276,6 +277,7 @@ auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
 	if (desc.usage.test(color_attachment)) usage |= vk::ImageUsageFlagBits::eColorAttachment;
 	if (desc.usage.test(transfer_dst))     usage |= vk::ImageUsageFlagBits::eTransferDst;
 	if (desc.usage.test(storage))          usage |= vk::ImageUsageFlagBits::eStorage;
+	if (desc.usage.test(transfer_src))     usage |= vk::ImageUsageFlagBits::eTransferSrc;
 
 	auto resource = dev.allocator().create_image(
 		{

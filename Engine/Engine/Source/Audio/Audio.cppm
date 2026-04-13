@@ -175,7 +175,7 @@ export namespace gse::audio {
 		) -> void;
 
 		static auto update(
-			update_phase& phase,
+			update_context& ctx,
 			state& s
 		) -> void;
 
@@ -353,7 +353,7 @@ auto gse::audio::system::initialize(const initialize_phase& phase, state& s) -> 
 	ma_engine_set_volume(&s.engine, s.master_vol.value(percentage<float>::bound::zero_to_one));
 }
 
-auto gse::audio::system::update(update_phase&, state& s) -> void {
+auto gse::audio::system::update(update_context&, state& s) -> void {
 	s.cleanup_finished();
 }
 

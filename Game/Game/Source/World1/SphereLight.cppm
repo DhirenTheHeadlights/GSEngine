@@ -21,15 +21,12 @@ export namespace gs {
 
 			add_component<gse::point_light_component>({
 				.color = gse::vec3f(1.f),
-				.intensity = 25.f,
+				.intensity = 78.5f,
 				.position = m_position,
 				.constant = 1.0f,
 				.linear = 0.09f,
 				.quadratic = 0.032f,
 				.ambient_strength = 0.025f,
-				.ignore_list_ids = { owner_id() },
-				.near_plane = gse::meters(1.f),
-				.far_plane = gse::meters(100.f),
 			});
 
 			configure_when_present([](gse::physics::motion_component& mc) {

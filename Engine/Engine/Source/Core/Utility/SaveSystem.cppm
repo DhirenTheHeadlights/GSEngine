@@ -7,6 +7,7 @@ import gse.log;
 import :id;
 import :concepts;
 import :phase_context;
+import :update_context;
 
 export namespace gse::save {
     class property_base;
@@ -37,7 +38,17 @@ export namespace gse::save {
 
     struct bind_int_map_request {
         std::string category;
-        std::map<std::string, int>* map_ptr = nullptr;
+        std::map<std::string, int> initial_data;
+    };
+
+    struct int_map_sync {
+        std::string category;
+        std::map<std::string, int> data;
+    };
+
+    struct int_map_loaded {
+        std::string category;
+        std::map<std::string, int> data;
     };
 
     struct register_property {
@@ -173,11 +184,20 @@ export namespace gse::save {
             bool requires_restart = false
         );
 
-        [[nodiscard]] auto name() const -> std::string_view override;
-        [[nodiscard]] auto category() const -> std::string_view override;
-        [[nodiscard]] auto description() const -> std::string_view override;
-        [[nodiscard]] auto type() const -> std::type_index override;
-        [[nodiscard]] auto dirty() const -> bool override;
+        [[nodiscard]] auto name(
+        ) const -> std::string_view override;
+
+        [[nodiscard]] auto category(
+        ) const -> std::string_view override;
+
+        [[nodiscard]] auto description(
+        ) const -> std::string_view override;
+
+        [[nodiscard]] auto type(
+        ) const -> std::type_index override;
+
+        [[nodiscard]] auto dirty(
+        ) const -> bool override;
 
         auto mark_clean(
         ) -> void override;
@@ -340,10 +360,17 @@ export namespace gse::save {
             std::span<property_base* const> properties
         );
 
-        [[nodiscard]] auto begin() const -> std::span<property_base* const>::iterator;
-        [[nodiscard]] auto end() const -> std::span<property_base* const>::iterator;
-        [[nodiscard]] auto size() const -> std::size_t;
-        [[nodiscard]] auto empty() const -> bool;
+        [[nodiscard]] auto begin(
+        ) const -> std::span<property_base* const>::iterator;
+
+        [[nodiscard]] auto end(
+        ) const -> std::span<property_base* const>::iterator;
+
+        [[nodiscard]] auto size(
+        ) const -> std::size_t;
+
+        [[nodiscard]] auto empty(
+        ) const -> bool;
     private:
         std::span<property_base* const> m_properties;
     };
@@ -352,9 +379,17 @@ export namespace gse::save {
     public:
         state() = default;
 
-        auto do_initialize(initialize_phase& phase) -> void;
-        auto do_update(update_phase& phase) -> void;
-        auto do_shutdown(shutdown_phase& phase) -> void;
+        auto do_initialize(
+            initialize_phase& phase
+        ) -> void;
+
+        auto do_update(
+            update_context& ctx
+        ) -> void;
+
+        auto do_shutdown(
+            shutdown_phase& phase
+        ) -> void;
 
         template <typename T>
         auto bind(
@@ -411,7 +446,7 @@ export namespace gse::save {
         ) const -> bool;
 
         auto mark_all_clean(
-        ) -> void;
+        ) const -> void;
 
         auto clear_restart_pending(
         ) -> void;
@@ -436,9 +471,9 @@ export namespace gse::save {
             T default_value = T{}
         ) const -> T;
 
-        auto bind_int_map(
+        auto apply_int_map(
             std::string_view category,
-            std::map<std::string, int>& map
+            std::map<std::string, int> data
         ) -> void;
 
         [[nodiscard]] auto int_map(
@@ -450,8 +485,7 @@ export namespace gse::save {
         std::unordered_map<std::string, std::vector<property_base*>> m_by_category;
         std::vector<change_callback> m_callbacks;
 
-        std::unordered_map<std::string, std::map<std::string, int>*> m_int_maps;
-        std::unordered_map<std::string, std::map<std::string, int>> m_int_map_cache;
+        std::unordered_map<std::string, std::map<std::string, int>> m_int_maps;
 
         std::filesystem::path m_auto_save_path;
         toml::table m_loaded_toml;
@@ -465,15 +499,24 @@ export namespace gse::save {
     };
 
     struct system {
-        static auto initialize(initialize_phase& phase, state& s) -> void {
+        static auto initialize(
+            initialize_phase& phase,
+            state& s
+        ) -> void {
             s.do_initialize(phase);
         }
 
-        static auto update(update_phase& phase, state& s) -> void {
-            s.do_update(phase);
+        static auto update(
+            update_context& ctx,
+            state& s
+        ) -> void {
+            s.do_update(ctx);
         }
 
-        static auto shutdown(shutdown_phase& phase, state& s) -> void {
+        static auto shutdown(
+            shutdown_phase& phase,
+            state& s
+        ) -> void {
             s.do_shutdown(phase);
         }
     };
@@ -559,23 +602,15 @@ auto gse::save::property_base::set_string(std::string_view) -> void {
 }
 
 template <typename T, typename Constraint>
-gse::save::property<T, Constraint>::property(
-    state* st,
-    const std::string_view category,
-    const std::string_view name,
-    const std::string_view description,
-    T& ref,
-    T default_value,
-    Constraint constraint,
-    const bool requires_restart
-) : m_state(st)
-  , m_category(category)
-  , m_name(name)
-  , m_description(description)
-  , m_ref(ref)
-  , m_default(std::move(default_value))
-  , m_constraint(std::move(constraint))
-  , m_requires_restart(requires_restart) {}
+gse::save::property<T, Constraint>::property(state* st, const std::string_view category, const std::string_view name, const std::string_view description, T& ref, T default_value, Constraint constraint, const bool requires_restart) 
+	: m_state(st)
+	, m_category(category)
+	, m_name(name)
+	, m_description(description)
+	, m_ref(ref)
+	, m_default(std::move(default_value))
+	, m_constraint(std::move(constraint))
+	, m_requires_restart(requires_restart) {}
 
 template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::name() const -> std::string_view {
@@ -848,16 +883,7 @@ auto gse::save::property<T, Constraint>::set(T value) -> void {
 }
 
 template <typename T>
-gse::save::property_builder<T>::property_builder(
-    state& st,
-    const std::string_view category,
-    const std::string_view name,
-    T& ref
-) : m_state(st)
-  , m_category(category)
-  , m_name(name)
-  , m_ref(ref)
-  , m_default(ref) {}
+gse::save::property_builder<T>::property_builder(state& st, const std::string_view category, const std::string_view name, T& ref) : m_state(st), m_category(category), m_name(name), m_ref(ref), m_default(ref) {}
 
 template <typename T>
 auto gse::save::property_builder<T>::description(const std::string_view desc) -> property_builder& {
@@ -961,29 +987,32 @@ auto gse::save::state::do_initialize(initialize_phase&) -> void {
     }
 }
 
-auto gse::save::state::do_update(update_phase& phase) -> void {
-    for (const auto& reg : phase.read_channel<save::register_property>()) {
+auto gse::save::state::do_update(update_context& ctx) -> void {
+    for (const auto& reg : ctx.read_channel<save::register_property>()) {
         process_registration(reg);
     }
 
-    for (const auto& [category, map_ptr] : phase.read_channel<bind_int_map_request>()) {
-        if (map_ptr) {
-            bind_int_map(category, *map_ptr);
-        }
+    for (const auto& [category, initial_data] : ctx.read_channel<bind_int_map_request>()) {
+        apply_int_map(category, initial_data);
+        ctx.channels.push(int_map_loaded{ category, m_int_maps[category] });
     }
 
-    if (!phase.read_channel<save_request>().empty()) {
+    for (const auto& [category, data] : ctx.read_channel<int_map_sync>()) {
+        m_int_maps[category] = data;
+    }
+
+    if (!ctx.read_channel<save_request>().empty()) {
         save();
     }
 
-    if (!phase.read_channel<restart_request>().empty()) {
+    if (!ctx.read_channel<restart_request>().empty()) {
         save();
         if (m_restart_fn) {
             m_restart_fn();
         }
     }
 
-    for (const auto& [category, name, apply] : phase.read_channel<update_request>()) {
+    for (const auto& [category, name, apply] : ctx.read_channel<update_request>()) {
         if (auto* prop = find(category, name)) {
             apply(*prop);
         }
@@ -1021,17 +1050,21 @@ auto gse::save::state::process_registration(const save::register_property& reg) 
     }
     else if (reg.type == typeid(float)) {
         auto* ref = static_cast<float*>(reg.ref);
-        range_constraint<float> constraint{ reg.range_min, reg.range_max, reg.range_step };
+        range_constraint constraint{ 
+        	.min = reg.range_min, 
+        	.max = reg.range_max, 
+        	.step = reg.range_step
+        };
         prop = std::make_unique<property<float, range_constraint<float>>>(
             this, reg.category, reg.name, reg.description, *ref, *ref, constraint, reg.requires_restart
         );
     }
     else if (reg.type == typeid(int)) {
         auto* ref = static_cast<int*>(reg.ref);
-        range_constraint<int> constraint{
-            static_cast<int>(reg.range_min),
-            static_cast<int>(reg.range_max),
-            static_cast<int>(reg.range_step)
+        range_constraint constraint{
+            .min = static_cast<int>(reg.range_min),
+            .max = static_cast<int>(reg.range_max),
+            .step = static_cast<int>(reg.range_step)
         };
         prop = std::make_unique<property<int, range_constraint<int>>>(
             this, reg.category, reg.name, reg.description, *ref, *ref, constraint, reg.requires_restart
@@ -1059,7 +1092,7 @@ auto gse::save::state::register_property(std::unique_ptr<property_base> prop) ->
     const std::string cat(prop->category());
     const std::string name(prop->name());
 
-    auto it = std::ranges::find_if(m_properties, [&](const auto& p) {
+    const auto it = std::ranges::find_if(m_properties, [&](const auto& p) {
         return p->category() == cat && p->name() == name;
     });
     if (it != m_properties.end()) {
@@ -1132,11 +1165,11 @@ auto gse::save::state::save_to_file(const std::filesystem::path& path) -> bool {
         prop->write_toml(*root[category].as_table(), prop->name());
     }
 
-    for (const auto& [category, map_ptr] : m_int_maps) {
-        if (!map_ptr || map_ptr->empty()) continue;
+    for (const auto& [category, map_data] : m_int_maps) {
+        if (map_data.empty()) continue;
 
         toml::table map_table;
-        for (const auto& [key, value] : *map_ptr) {
+        for (const auto& [key, value] : map_data) {
             map_table.insert(key, static_cast<std::int64_t>(value));
         }
         root.insert(category, std::move(map_table));
@@ -1188,9 +1221,7 @@ auto gse::save::state::load_from_file(const std::filesystem::path& path) -> bool
         std::map<std::string, int> int_map_entries;
 
         for (const auto& [name, value_node] : *cat_table) {
-            auto* prop = find(cat_str, name.str());
-
-            if (prop) {
+	        if (auto* prop = find(cat_str, name.str())) {
                 prop->read_toml(value_node);
             }
             else if (value_node.is_integer()) {
@@ -1199,11 +1230,7 @@ auto gse::save::state::load_from_file(const std::filesystem::path& path) -> bool
         }
 
         if (!int_map_entries.empty()) {
-            m_int_map_cache[cat_str] = std::move(int_map_entries);
-
-            if (auto it = m_int_maps.find(cat_str); it != m_int_maps.end() && it->second) {
-                *it->second = m_int_map_cache[cat_str];
-            }
+            m_int_maps[cat_str] = std::move(int_map_entries);
         }
     }
 
@@ -1225,18 +1252,21 @@ auto gse::save::state::save() -> bool {
     return save_to_file(m_auto_save_path);
 }
 
-auto gse::save::state::bind_int_map(const std::string_view category, std::map<std::string, int>& map) -> void {
-    std::string cat_str(category);
-    m_int_maps[cat_str] = &map;
-
-    if (auto it = m_int_map_cache.find(cat_str); it != m_int_map_cache.end()) {
-        map = it->second;
+auto gse::save::state::apply_int_map(const std::string_view category, std::map<std::string, int> data) -> void {
+    const std::string cat_str(category);
+    if (const auto it = m_int_maps.find(cat_str); it != m_int_maps.end()) {
+        for (const auto& [k, v] : data) {
+            it->second.try_emplace(k, v);
+        }
+    }
+    else {
+        m_int_maps[cat_str] = std::move(data);
     }
 }
 
 auto gse::save::state::int_map(const std::string_view category) const -> const std::map<std::string, int>* {
     if (const auto it = m_int_maps.find(std::string(category)); it != m_int_maps.end()) {
-        return it->second;
+        return &it->second;
     }
     return nullptr;
 }
@@ -1255,7 +1285,7 @@ auto gse::save::state::clear_restart_pending() -> void {
     m_restart_pending = false;
 }
 
-auto gse::save::state::mark_all_clean() -> void {
+auto gse::save::state::mark_all_clean() const -> void {
     for (const auto& prop : m_properties) {
         prop->mark_clean();
     }

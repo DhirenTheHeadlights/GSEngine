@@ -9,6 +9,7 @@ import :frame_sync;
 
 import :entity;
 import :concepts;
+import :access_token;
 import :component_link;
 import :hook_link;
 
@@ -55,6 +56,14 @@ export namespace gse {
 		template <typename U>
 		auto linked_objects_write(
 		) -> std::span<U>;
+
+		template <is_component U>
+		auto acquire_read(
+		) -> read<U>;
+
+		template <is_component U>
+		auto acquire_write(
+		) -> write<U>;
 
 		auto all_hooks(
 		) const -> std::vector<hook<entity>*>;
@@ -544,5 +553,14 @@ auto gse::registry::update() -> void {
 }
 
 auto gse::registry::render() -> void {
-	// Rendering is handled by the scheduler's render phase
+}
+
+template <gse::is_component U>
+auto gse::registry::acquire_read() -> read<U> {
+	return read<U>{ linked_objects_read<U>() };
+}
+
+template <gse::is_component U>
+auto gse::registry::acquire_write() -> write<U> {
+	return write<U>{ linked_objects_write<U>() };
 }

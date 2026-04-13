@@ -3,6 +3,12 @@ export module gse.utility:scheduler;
 import std;
 
 import :phase_context;
+import :update_context;
+import :frame_context;
+import :task_graph;
+import :async_task;
+import :frame_arena;
+import :mpsc_ring_buffer;
 import :system_node;
 import :registry;
 import :task;
@@ -87,6 +93,13 @@ export namespace gse {
 	private:
 		auto drain_deferred(
 		) -> void;
+
+		auto run_graph_update(
+		) -> void;
+
+		auto run_graph_frame(
+		) -> void;
+
 		std::vector<std::unique_ptr<system_node_base>> m_nodes;
 		std::unordered_map<std::type_index, system_node_base*> m_state_index;
 		std::unordered_map<std::type_index, std::unique_ptr<channel_base>> m_channels;
@@ -96,6 +109,10 @@ export namespace gse {
 		registry* m_registry = nullptr;
 		registry_access m_registry_access{};
 		void* m_gpu_ctx = nullptr;
+		task_graph m_update_graph;
+		task_graph m_frame_graph;
+		mpsc_ring_buffer<std::move_only_function<void()>, 64> m_update_deferred_ops;
+		std::binary_semaphore m_update_complete{ 0 };
 
 		auto snapshot_all_channels(
 		) -> void;
@@ -107,11 +124,18 @@ export namespace gse {
 
 		auto make_channel_writer(
 		) -> channel_writer;
-
-		static auto build_work_batches(
-			std::vector<queued_work>& work
-		) -> std::vector<std::vector<queued_work*>>;
 	};
+}
+
+namespace gse {
+	auto wrap_work(
+		std::move_only_function<void()> fn
+	) -> async::task<>;
+}
+
+auto gse::wrap_work(std::move_only_function<void()> fn) -> async::task<> {
+	fn();
+	co_return;
 }
 
 template <typename S, typename State, typename RenderState, typename... Args>
@@ -189,6 +213,8 @@ auto gse::scheduler::set_gpu_context(void* ctx) -> void {
 }
 
 auto gse::scheduler::initialize() -> void {
+	frame_arena::create();
+
 	frame_sync::on_begin([this] {
 		snapshot_all_channels();
 	});
@@ -233,43 +259,63 @@ auto gse::scheduler::defer(F&& fn) -> void {
 
 auto gse::scheduler::update() -> void {
 	drain_deferred();
+	run_graph_update();
+	m_update_complete.release();
+}
+
+auto gse::scheduler::run_graph_update() -> void {
 	auto writer = make_channel_writer();
-	work_queue work;
+	std::vector<scheduled_work> collected_work;
 
-	const registry_access const_registry_access = m_registry_access;
-
-	update_phase phase{
-		.registry = const_registry_access,
+	update_context u_ctx{
+		.reg = *m_registry,
 		.snapshots = *this,
 		.channels = writer,
 		.channel_reader = *this,
-		.work = work
+		.graph = m_update_graph,
+		.work = collected_work,
+		.deferred_ops = m_update_deferred_ops
 	};
-	phase.gpu_ctx = m_gpu_ctx;
+	u_ctx.gpu_ctx = m_gpu_ctx;
 
-	task::parallel_for(0uz, m_nodes.size(), [&](const std::size_t i) {
-		trace::scope(m_nodes[i]->trace_id(), [&] {
-			m_nodes[i]->update(phase);
+	for (const auto& node : m_nodes) {
+		trace::scope(node->trace_id(), [&] {
+			node->graph_update(u_ctx);
 		});
-	});
-
-	if (work.work().empty()) {
-		return;
 	}
 
-	for (auto& batch : build_work_batches(work.work())) {
-		if (batch.size() == 1) {
-			trace::scope(batch[0]->name, [&] {
-				batch[0]->execute(*m_registry);
-			});
+	if (!collected_work.empty()) {
+		for (auto& item : collected_work) {
+			m_update_graph.submit(
+				find_or_generate_id("schedule_work"),
+				wrap_work(std::move(item.execute)),
+				std::move(item.reads),
+				std::move(item.writes)
+			);
 		}
-		else {
-			task::parallel_for(0uz, batch.size(), [&](const size_t i) {
-				trace::scope(batch[i]->name, [&] {
-					batch[i]->execute(*m_registry);
-				});
-			});
-		}
+		m_update_graph.execute();
+		m_update_graph.clear();
+	}
+
+	std::move_only_function<void()> op;
+	while (m_update_deferred_ops.pop(op)) {
+		op();
+	}
+}
+
+auto gse::scheduler::run_graph_frame() -> void {
+	frame_context f_ctx{
+		.snapshots = *this,
+		.channel_reader = *this,
+		.graph = m_frame_graph
+	};
+	f_ctx.gpu_ctx = m_gpu_ctx;
+
+	for (const auto& node : m_nodes) {
+		trace::scope(node->trace_id(), [&] {
+			auto coro = node->graph_frame(f_ctx);
+			coro.start();
+		});
 	}
 }
 
@@ -283,6 +329,7 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 
 	if (!m_nodes.empty()) {
 		started[0] = m_nodes[0]->begin_frame(bf_phase);
+		m_update_complete.acquire();
 		if (!started[0]) {
 			return;
 		}
@@ -317,6 +364,8 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 		n->render(r_phase);
 	}
 
+	run_graph_frame();
+
 	if (in_frame) {
 		in_frame();
 	}
@@ -334,6 +383,8 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 			m_nodes[i]->end_frame(ef_phase);
 		}
 	}
+
+	frame_arena::reset();
 }
 
 auto gse::scheduler::shutdown() -> void {
@@ -345,6 +396,8 @@ auto gse::scheduler::shutdown() -> void {
 	for (const auto& node : m_nodes | std::views::reverse) {
 		node->shutdown(phase);
 	}
+
+	frame_arena::destroy();
 }
 
 auto gse::scheduler::clear() -> void {
@@ -386,33 +439,3 @@ auto gse::scheduler::make_channel_writer() -> channel_writer {
 	});
 }
 
-auto gse::scheduler::build_work_batches(std::vector<queued_work>& work) -> std::vector<std::vector<queued_work*>> {
-	std::vector<std::vector<queued_work*>> batches;
-
-	for (auto& w : work) {
-		bool placed = false;
-
-		for (auto& batch : batches) {
-			bool conflicts = false;
-
-			for (const auto* existing : batch) {
-				if (w.conflicts_with(*existing)) {
-					conflicts = true;
-					break;
-				}
-			}
-
-			if (!conflicts) {
-				batch.push_back(&w);
-				placed = true;
-				break;
-			}
-		}
-
-		if (!placed) {
-			batches.push_back({ &w });
-		}
-	}
-
-	return batches;
-}

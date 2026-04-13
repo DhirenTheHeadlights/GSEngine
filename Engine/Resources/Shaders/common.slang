@@ -21,7 +21,15 @@ public struct Light {
     public float  outer_cut_off;
     public float ambient_strength;
     public float source_radius;
-    public int shadow_index;
+};
+
+public struct MaterialData {
+    public float3 base_color;
+    public float roughness;
+    public float metallic;
+    public float _pad0;
+    public float _pad1;
+    public float _pad2;
 };
 
 public enum class LayoutKind : int {

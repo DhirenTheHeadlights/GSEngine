@@ -140,7 +140,7 @@ export namespace gse::physics {
 		) -> void;
 
 		static auto update(
-			update_phase& phase,
+			update_context& ctx,
 			state& s
 		) -> void;
 
@@ -181,13 +181,13 @@ namespace gse::physics {
 	};
 
 	auto refresh_airborne_from_collisions(const state& s,
-		chunk<motion_component>& motion,
-		chunk<collision_component>& collision
+		write<motion_component>& motion,
+		write<collision_component>& collision
 	) -> void;
 
 	auto collect_collision_objects(
-		chunk<motion_component>& motion,
-		chunk<collision_component>& collision
+		write<motion_component>& motion,
+		write<collision_component>& collision
 	) -> std::vector<collision_pair>;
 
 	auto add_scene_contacts_to_solver(
@@ -218,15 +218,15 @@ namespace gse::physics {
 	auto update_vbd(
 		int steps,
 		state& s,
-		chunk<motion_component>& motion,
-		chunk<collision_component>& collision
+		write<motion_component>& motion,
+		write<collision_component>& collision
 	) -> void;
 
 	auto update_vbd_gpu(
 		int steps,
 		state& s,
-		chunk<motion_component>& motion,
-		chunk<collision_component>& collision,
+		write<motion_component>& motion,
+		write<collision_component>& collision,
 		time_t<float, seconds> dt,
 		channel_writer& channels
 	) -> void;
@@ -251,7 +251,7 @@ auto gse::physics::contact_compare_key_hash::operator()(const contact_compare_ke
 	return seed;
 }
 
-auto gse::physics::refresh_airborne_from_collisions(const state& s, chunk<motion_component>& motion, chunk<collision_component>& collision) -> void {
+auto gse::physics::refresh_airborne_from_collisions(const state& s, write<motion_component>& motion, write<collision_component>& collision) -> void {
 	std::vector<collision_pair> objects;
 	objects.reserve(collision.size());
 
@@ -324,7 +324,7 @@ auto gse::physics::refresh_airborne_from_collisions(const state& s, chunk<motion
 	}
 }
 
-auto gse::physics::collect_collision_objects(chunk<motion_component>& motion, chunk<collision_component>& collision) -> std::vector<collision_pair> {
+auto gse::physics::collect_collision_objects(write<motion_component>& motion, write<collision_component>& collision) -> std::vector<collision_pair> {
 	std::vector<collision_pair> objects;
 	objects.reserve(collision.size());
 	for (collision_component& cc : collision) {
@@ -553,9 +553,7 @@ auto gse::physics::invalidate_warm_start_entries(linear_vector<vbd::warm_start_e
 
 	std::size_t i = 0;
 	while (i < warm_start_contacts.size()) {
-		const auto& entry = warm_start_contacts[i];
-		if (std::ranges::find(body_indices, entry.body_a) != body_indices.end() ||
-			std::ranges::find(body_indices, entry.body_b) != body_indices.end()) {
+		if (const auto& entry = warm_start_contacts[i]; std::ranges::find(body_indices, entry.body_a) != body_indices.end() || std::ranges::find(body_indices, entry.body_b) != body_indices.end()) {
 			warm_start_contacts[i] = std::move(warm_start_contacts[warm_start_contacts.size() - 1]);
 			warm_start_contacts.pop_back();
 		}
@@ -621,7 +619,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s, r
 	}
 }
 
-auto gse::physics::system::update(update_phase& phase, state& s) -> void {
+auto gse::physics::system::update(update_context& ctx, state& s) -> void {
 	if (!s.update_phys) {
 		return;
 	}
@@ -652,7 +650,7 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 	const float alpha = s.accumulator / const_update_time;
 
 	if (s.use_gpu_solver) {
-		phase.schedule([steps, frame_time, &s, const_update_time, &channels = phase.channels](chunk<motion_component> motion, chunk<collision_component> collision) {
+		ctx.schedule([steps, frame_time, &s, const_update_time, &channels = ctx.channels](write<motion_component> motion, write<collision_component> collision) {
 			update_vbd_gpu(steps, s, motion, collision, const_update_time, channels);
 
 			const float blend = std::min(frame_time / (const_update_time * 2.f), 1.f);
@@ -671,7 +669,7 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 		return;
 	}
 
-	phase.schedule([steps, alpha, &s](chunk<motion_component> motion, chunk<collision_component> collision) {
+	ctx.schedule([steps, alpha, &s](write<motion_component> motion, write<collision_component> collision) {
 		update_vbd(steps, s, motion, collision);
 
 		for (motion_component& mc : motion) {
@@ -687,7 +685,7 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 	});
 }
 
-auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision, const time_t<float, seconds> dt, channel_writer& channels) -> void {
+auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_component>& motion, write<collision_component>& collision, const time_t<float, seconds> dt, channel_writer& channels) -> void {
 	if (!s.gpu_buffers_created) {
 		return;
 	}
@@ -1297,7 +1295,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 	}
 }
 
-auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision) -> void {
+auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>& motion, write<collision_component>& collision) -> void {
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	std::unordered_map<id, std::uint32_t> id_to_body_index;

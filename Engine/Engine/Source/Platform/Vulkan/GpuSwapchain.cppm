@@ -56,6 +56,9 @@ export namespace gse::gpu {
 		[[nodiscard]] auto format(
 		) const -> vk::Format;
 
+		[[nodiscard]] auto is_bgra(
+		) const -> bool;
+
 		[[nodiscard]] auto generation(
 		) const -> std::uint64_t;
 
@@ -125,6 +128,11 @@ auto gse::gpu::swap_chain::image_view(const std::uint32_t index) const -> vk::Im
 
 auto gse::gpu::swap_chain::format() const -> vk::Format {
 	return m_config.format;
+}
+
+auto gse::gpu::swap_chain::is_bgra() const -> bool {
+	return m_config.format == vk::Format::eB8G8R8A8Srgb
+		|| m_config.format == vk::Format::eB8G8R8A8Unorm;
 }
 
 auto gse::gpu::swap_chain::generation() const -> std::uint64_t {
@@ -214,7 +222,7 @@ auto gse::gpu::swap_chain::create_swap_chain_resources(const vec2i framebuffer_s
 		.imageColorSpace = surface_format.colorSpace,
 		.imageExtent = extent,
 		.imageArrayLayers = 1,
-		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment
+		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc
 	};
 
 	const auto families = vulkan::find_queue_families(device_data.physical_device, instance_data.surface);

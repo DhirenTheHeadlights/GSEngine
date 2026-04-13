@@ -131,8 +131,15 @@ export namespace gse::animation {
 	};
 
 	struct system {
-		static auto initialize(initialize_phase& phase, state& s) -> void;
-		static auto update(update_phase& phase, state& s) -> void;
+		static auto initialize(
+			initialize_phase& phase,
+			state& s
+		) -> void;
+
+		static auto update(
+			update_context& ctx,
+			state& s
+		) -> void;
 	};
 }
 
@@ -140,18 +147,18 @@ auto gse::animation::system::initialize(initialize_phase&, state& s) -> void {
 	s.last_tick = system_clock::now();
 }
 
-auto gse::animation::system::update(update_phase& phase, state& s) -> void {
-	const auto* renderer_state = phase.try_state_of<renderer::state>();
+auto gse::animation::system::update(update_context& ctx, state& s) -> void {
+	const auto* renderer_state = ctx.try_state_of<renderer::state>();
 	if (!renderer_state) {
 		return;
 	}
 
 	const time dt = system_clock::dt();
 
-	phase.schedule([&s, renderer_state, dt](
-		chunk<animation_component> animations,
-		chunk<controller_component> controllers,
-		chunk<clip_component> clips
+	ctx.schedule([&s, renderer_state, dt](
+		write<animation_component> animations,
+		write<controller_component> controllers,
+		write<clip_component> clips
 	) {
 		s.jobs.clear();
 		s.controller_jobs.clear();

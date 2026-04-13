@@ -92,8 +92,10 @@ export namespace gse::input {
 	};
 
 	struct system {
-		static auto update(update_phase& phase, system_state& s) -> void;
-		static auto end_frame(end_frame_phase& phase, system_state& s) -> void;
+		static auto update(
+			update_context& ctx,
+			system_state& s
+		) -> void;
 	};
 }
 
@@ -159,13 +161,14 @@ auto gse::input::system_state::to_mouse_button(const int glfw_button) -> std::op
 	return std::nullopt;
 }
 
-auto gse::input::system::update(update_phase& phase, system_state& s) -> void {
+auto gse::input::system::update(update_context& ctx, system_state& s) -> void {
 	std::vector<event> events_to_process;
 
 	{
 		std::scoped_lock lock(s.mutex);
 		events_to_process.swap(s.queue);
 	}
+
 
 	const auto& tok = detail::token();
 	auto& persistent_state = s.states.write();
@@ -201,10 +204,8 @@ auto gse::input::system::update(update_phase& phase, system_state& s) -> void {
 	persistent_state.end_frame(tok);
 
 	for (auto& e : events_to_process) {
-		phase.channels.push(std::move(e));
+		ctx.channels.push(std::move(e));
 	}
-}
 
-auto gse::input::system::end_frame(end_frame_phase&, system_state& s) -> void {
 	s.states.flip();
 }

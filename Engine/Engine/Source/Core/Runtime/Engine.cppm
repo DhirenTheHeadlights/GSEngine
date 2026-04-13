@@ -132,6 +132,7 @@ auto gse::engine::initialize() -> void {
 		m_scheduler.add_system<renderer::forward::system, renderer::forward::state>(reg);
 		m_scheduler.add_system<renderer::physics_debug::system, renderer::physics_debug::state>(reg);
 		m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg);
+		m_scheduler.add_system<renderer::capture::system, renderer::capture::state>(reg);
 		m_scheduler.add_system<gui::system, gui::system_state>(reg);
 		m_scheduler.add_system<animation::system, animation::state>(reg);
 		m_scheduler.add_system<audio::system, audio::state>(reg);

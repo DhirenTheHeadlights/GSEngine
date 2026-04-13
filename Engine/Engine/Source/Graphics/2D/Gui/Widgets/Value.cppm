@@ -3,9 +3,11 @@ export module gse.graphics:value_widget;
 import std;
 
 import gse.math;
+import gse.utility;
 
 import :types;
 import :styles;
+import :builder;
 
 export namespace gse::gui::draw {
     template <is_arithmetic T>
@@ -49,6 +51,26 @@ export namespace gse::gui::draw {
         const std::string& name,
         unit_display<Unit, gse::vec<T, N>> ud
     ) -> void;
+}
+
+export namespace gse::gui {
+	template <is_arithmetic T>
+	struct value {
+		using result = void;
+		struct params { std::string_view name; T val; };
+		static auto draw(draw_context& ctx, params p, id&, id&, id&) -> void {
+			draw::value(ctx, std::string(p.name), p.val);
+		}
+	};
+
+	template <is_arithmetic T, int N>
+	struct vec_value {
+		using result = void;
+		struct params { std::string_view name; gse::vec<T, N> val; };
+		static auto draw(draw_context& ctx, params p, id&, id&, id&) -> void {
+			draw::vec(ctx, std::string(p.name), p.val);
+		}
+	};
 }
 
 namespace gse::gui::draw {
@@ -113,7 +135,8 @@ auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value
     ctx.queue_sprite({
         .rect = rect,
         .color = ctx.style.color_widget_background,
-        .texture = ctx.blank_texture
+        .texture = ctx.blank_texture,
+        .corner_radius = ctx.style.corner_radius
     });
 
     const float text_width = ctx.font->width(value, ctx.style.font_size);

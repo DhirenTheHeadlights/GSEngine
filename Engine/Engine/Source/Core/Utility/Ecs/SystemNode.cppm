@@ -3,6 +3,9 @@ export module gse.utility:system_node;
 import std;
 
 import :phase_context;
+import :update_context;
+import :frame_context;
+import :async_task;
 import :id;
 
 export namespace gse {
@@ -12,10 +15,6 @@ export namespace gse {
 
 		virtual auto initialize(
 			initialize_phase&
-		) -> void = 0;
-
-		virtual auto update(
-			update_phase&
 		) -> void = 0;
 
 		virtual auto begin_frame(
@@ -38,11 +37,20 @@ export namespace gse {
 			shutdown_phase&
 		) -> void = 0;
 
+		virtual auto graph_update(
+			update_context&
+		) -> void = 0;
+
+		virtual auto graph_frame(
+			frame_context&
+		) -> async::task<> = 0;
+
 		virtual auto state_ptr(
 		) -> void* = 0;
 
 		virtual auto state_ptr(
 		) const -> const void* = 0;
+
 
 		virtual auto state_type(
 		) const -> std::type_index = 0;
@@ -62,6 +70,26 @@ export namespace gse {
 	template <>
 	struct render_state_storage<void> {};
 
+	template <typename S, typename State>
+	concept has_graph_update = requires(update_context& ctx, State& s) {
+		{ S::update(ctx, s) } -> std::same_as<void>;
+	};
+
+	template <typename S, typename State>
+	concept has_graph_frame = requires(frame_context& ctx, const State& s) {
+		{ S::frame(ctx, s) } -> std::same_as<async::task<>>;
+	};
+
+	template <typename S, typename State, typename RenderState>
+	concept has_graph_update_with_state = requires(update_context& ctx, State& s, RenderState& rs) {
+		{ S::update(ctx, s, rs) } -> std::same_as<void>;
+	};
+
+	template <typename S, typename State, typename RenderState>
+	concept has_graph_frame_with_state = requires(frame_context& ctx, const State& s, RenderState& rs) {
+		{ S::frame(ctx, s, rs) } -> std::same_as<async::task<>>;
+	};
+
 	template <typename S, typename State, typename RenderState = void>
 	class system_node final : public system_node_base {
 	public:
@@ -72,10 +100,6 @@ export namespace gse {
 
 		auto initialize(
 			initialize_phase& phase
-		) -> void override;
-
-		auto update(
-			update_phase& phase
 		) -> void override;
 
 		auto begin_frame(
@@ -98,11 +122,20 @@ export namespace gse {
 			shutdown_phase& phase
 		) -> void override;
 
+		auto graph_update(
+			update_context& ctx
+		) -> void override;
+
+		auto graph_frame(
+			frame_context& ctx
+		) -> async::task<> override;
+
 		auto state_ptr(
 		) -> void* override;
 
 		auto state_ptr(
 		) const -> const void* override;
+
 
 		auto state_type(
 		) const -> std::type_index override;
@@ -154,12 +187,6 @@ auto gse::system_node<S, State, RenderState>::trace_id() const -> id {
 	return cached;
 }
 
-template <typename S, typename State, typename RenderState>
-auto gse::system_node<S, State, RenderState>::update(update_phase& phase) -> void {
-	if constexpr (has_update<S, State>) {
-		S::update(phase, m_state);
-	}
-}
 
 template <typename S, typename State, typename RenderState>
 auto gse::system_node<S, State, RenderState>::begin_frame(begin_frame_phase& phase) -> bool {
@@ -203,6 +230,27 @@ auto gse::system_node<S, State, RenderState>::shutdown(shutdown_phase& phase) ->
 	if constexpr (has_shutdown<S, State>) {
 		S::shutdown(phase, m_state);
 	}
+}
+
+template <typename S, typename State, typename RenderState>
+auto gse::system_node<S, State, RenderState>::graph_update(update_context& ctx) -> void {
+	if constexpr (!std::is_void_v<RenderState> && has_graph_update_with_state<S, State, RenderState>) {
+		S::update(ctx, m_state, m_render_state.value);
+	}
+	else if constexpr (has_graph_update<S, State>) {
+		S::update(ctx, m_state);
+	}
+}
+
+template <typename S, typename State, typename RenderState>
+auto gse::system_node<S, State, RenderState>::graph_frame(frame_context& ctx) -> async::task<> {
+	if constexpr (!std::is_void_v<RenderState> && has_graph_frame_with_state<S, State, RenderState>) {
+		co_await S::frame(ctx, m_state, m_render_state.value);
+	}
+	else if constexpr (has_graph_frame<S, State>) {
+		co_await S::frame(ctx, m_state);
+	}
+	co_return;
 }
 
 template <typename S, typename State, typename RenderState>

@@ -150,6 +150,8 @@ export namespace gse::renderer::geometry_collector {
 		std::vector<physics_mapping_entry> physics_mappings;
 		std::uint32_t physics_mapping_count = 0;
 
+		flat_map<const material*, std::uint32_t> material_palette_map;
+
 		view_matrix view;
 		projection_matrix proj;
 	};
@@ -198,7 +200,7 @@ export namespace gse::renderer::geometry_collector {
 
 	struct system {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
-		static auto update(update_phase& phase, state& s) -> void;
+		static auto update(update_context& ctx, state& s) -> void;
 		static auto prepare_render(const prepare_render_phase& phase, state& s) -> void;
 	};
 }
@@ -307,27 +309,27 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 	});
 }
 
-auto gse::renderer::geometry_collector::system::update(update_phase& phase, state& s) -> void {
-	if (phase.registry.view<render_component>().empty()) {
+auto gse::renderer::geometry_collector::system::update(update_context& ctx, state& s) -> void {
+	if (ctx.reg.linked_objects_read<render_component>().empty()) {
 		return;
 	}
 
-	const auto* cam_state = phase.try_state_of<camera::state>();
+	const auto* cam_state = ctx.try_state_of<camera::state>();
 	const view_matrix view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
 	const projection_matrix proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
 	std::unordered_map<id, std::uint32_t> body_index_map;
-	for (const auto& m : phase.read_channel<physics::gpu_body_index_map>()) {
+	for (const auto& m : ctx.read_channel<physics::gpu_body_index_map>()) {
 		for (const auto& [eid, idx] : m.entries) {
 			body_index_map[eid] = idx;
 		}
 	}
 
-	phase.schedule([&s, &channels = phase.channels, view_matrix, proj_matrix, body_index_map = std::move(body_index_map)](
-		chunk<render_component> render,
-		chunk<const physics::motion_component> motion,
-		chunk<const physics::collision_component> collision,
-		chunk<const animation_component> anim
+	ctx.schedule([&s, &channels = ctx.channels, view_matrix, proj_matrix, body_index_map = std::move(body_index_map)](
+		write<render_component> render,
+		read<physics::motion_component> motion,
+		read<physics::collision_component> collision,
+		read<animation_component> anim
 	) {
 		render_data data;
 		data.view = view_matrix;
@@ -457,6 +459,16 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 			const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
 			const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
 
+			const auto* mat_ptr = &mesh.material();
+			std::uint32_t mat_idx = 0;
+			if (auto it = data.material_palette_map.find(mat_ptr); it != data.material_palette_map.end()) {
+				mat_idx = it->second;
+			}
+			else {
+				mat_idx = static_cast<std::uint32_t>(data.material_palette_map.size());
+				data.material_palette_map.insert({ mat_ptr, mat_idx });
+			}
+
 			vec3 world_aabb_min(meters(std::numeric_limits<float>::max()));
 			vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
 
@@ -495,6 +507,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 				gse::memcpy(offset + s.instance_offsets["normal_matrix"], inst.normal_matrix);
 				gse::memcpy(offset + s.instance_offsets["skin_offset"], inst.skin_offset);
 				gse::memcpy(offset + s.instance_offsets["joint_count"], inst.joint_count);
+				gse::memcpy(offset + s.instance_offsets["material_index"], mat_idx);
 
 				if (const auto it = body_index_map.find(inst.owner); it != body_index_map.end()) {
 					data.physics_mappings.push_back({
@@ -539,6 +552,16 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 			const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
 			const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
 
+			const auto* mat_ptr = &mesh.material();
+			std::uint32_t mat_idx = 0;
+			if (auto it = data.material_palette_map.find(mat_ptr); it != data.material_palette_map.end()) {
+				mat_idx = it->second;
+			}
+			else {
+				mat_idx = static_cast<std::uint32_t>(data.material_palette_map.size());
+				data.material_palette_map.insert({ mat_ptr, mat_idx });
+			}
+
 			vec3 world_aabb_min(meters(std::numeric_limits<float>::max()));
 			vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
 
@@ -575,6 +598,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 				gse::memcpy(offset + s.instance_offsets["normal_matrix"], normal_matrix);
 				gse::memcpy(offset + s.instance_offsets["skin_offset"], skin_offset);
 				gse::memcpy(offset + s.instance_offsets["joint_count"], joint_count);
+				gse::memcpy(offset + s.instance_offsets["material_index"], mat_idx);
 
 				global_instance_offset++;
 			}

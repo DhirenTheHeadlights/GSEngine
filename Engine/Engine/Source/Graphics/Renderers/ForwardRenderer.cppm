@@ -19,6 +19,7 @@ import gse.log;
 
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;
+	constexpr std::size_t max_materials = 1024;
 
 	enum class shadow_quality_level : int {
 		off    = 0,
@@ -26,6 +27,21 @@ export namespace gse::renderer::forward {
 		low    = 2,
 		medium = 3,
 		high   = 4
+	};
+
+	enum class ao_quality_level : int {
+		off   = 0,
+		low   = 1,
+		medium = 2,
+		high  = 3,
+		ultra = 4
+	};
+
+	enum class reflection_quality_level : int {
+		off    = 0,
+		low    = 1,
+		medium = 2,
+		high   = 3
 	};
 
 	struct state {
@@ -38,12 +54,15 @@ export namespace gse::renderer::forward {
 		resource::handle<shader> skinned_shader;
 
 		per_frame_resource<gpu::buffer> light_buffers;
+		per_frame_resource<gpu::buffer> material_palette_buffers;
 
 		resource::handle<texture> blank_texture;
 
 		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
 
 		shadow_quality_level shadow_quality = shadow_quality_level::medium;
+		ao_quality_level ao_quality = ao_quality_level::medium;
+		reflection_quality_level reflection_quality = reflection_quality_level::medium;
 	};
 
 	struct system {
@@ -71,12 +90,32 @@ auto gse::renderer::forward::system::initialize(const initialize_phase& phase, s
 		.enum_options = { { "Off", 0 }, { "Hard", 1 }, { "Low", 2 }, { "Medium", 3 }, { "High", 4 } }
 	});
 
+	phase.channels.push(save::register_property{
+		.category = "Graphics",
+		.name = "AO Quality",
+		.description = "Off: no AO | Low: 1 ray, 5m | Medium: 2 rays, 10m | High: 4 rays, 20m | Ultra: 8 rays, 30m",
+		.ref = reinterpret_cast<void*>(&s.ao_quality),
+		.type = typeid(int),
+		.enum_options = { { "Off", 0 }, { "Low", 1 }, { "Medium", 2 }, { "High", 3 }, { "Ultra", 4 } }
+	});
+
+	phase.channels.push(save::register_property{
+		.category = "Graphics",
+		.name = "Reflection Quality",
+		.description = "Off: no reflections | Low: mirror only (roughness<0.1), 100m | Medium: glossy (roughness<0.3), 200m | High: 2 rays glossy (roughness<0.5), 500m",
+		.ref = reinterpret_cast<void*>(&s.reflection_quality),
+		.type = typeid(int),
+		.enum_options = { { "Off", 0 }, { "Low", 1 }, { "Medium", 2 }, { "High", 3 } }
+	});
+
 	s.shader_handle = ctx.get<shader>("Shaders/Standard3D/meshlet_geometry");
 	ctx.instantly_load(s.shader_handle);
 
 	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
 	const auto light_buffer_size = light_block.size * max_lights;
+	const auto material_block = s.shader_handle->uniform_block("material_palette");
+	const auto material_buffer_size = material_block.size * max_materials;
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
@@ -89,11 +128,17 @@ auto gse::renderer::forward::system::initialize(const initialize_phase& phase, s
 			.usage = gpu::buffer_flag::storage
 		});
 
+		s.material_palette_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
+			.size = material_buffer_size,
+			.usage = gpu::buffer_flag::storage
+		});
+
 		s.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
 
 		gpu::descriptor_writer(ctx.device_ref(), s.shader_handle, s.descriptors[i])
 			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.buffer("lights_ssbo", s.light_buffers[i], 0, light_buffer_size)
+			.buffer("material_palette", s.material_palette_buffers[i], 0, material_buffer_size)
 			.commit();
 	}
 
@@ -255,6 +300,28 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 
 	gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
 
+	const auto& material_alloc = s.material_palette_buffers[frame_index];
+	const auto material_block = s.shader_handle->uniform_block("material_palette");
+	const auto mat_stride = material_block.size;
+	const auto material_count = std::min(data.material_palette_map.size(), max_materials);
+
+	if (material_count > 0) {
+		std::vector<std::byte> mat_staging(material_count * mat_stride, std::byte{ 0 });
+
+		auto mat_write = [&](const std::size_t index, const std::string_view member, const auto& v) {
+			gse::memcpy(mat_staging.data() + index * mat_stride + material_block.members.at(std::string(member)).offset, v);
+		};
+
+		for (const auto& [mat_ptr, idx] : data.material_palette_map) {
+			if (idx >= max_materials) continue;
+			mat_write(idx, "base_color", mat_ptr->base_color);
+			mat_write(idx, "roughness", mat_ptr->roughness);
+			mat_write(idx, "metallic", mat_ptr->metallic);
+		}
+
+		gse::memcpy(material_alloc.mapped(), mat_staging.data(), material_count * mat_stride);
+	}
+
 	const auto& normal_batches = data.normal_batches;
 	const auto& skinned_batches = data.skinned_batches;
 
@@ -270,6 +337,8 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const int num_lights_i = static_cast<int>(light_count);
 	const std::array screen_sz = { ext_w, ext_h };
 	const int shadow_quality_i = static_cast<int>(s.shadow_quality);
+	const int ao_quality_i = static_cast<int>(s.ao_quality);
+	const int reflection_quality_i = static_cast<int>(s.reflection_quality);
 
 	auto meshlet_writer = gpu::create_push_writer(ctx.device_ref(), s.shader_handle);
 	auto skinned_writer = gpu::create_push_writer(ctx.device_ref(), s.skinned_shader);
@@ -277,6 +346,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	auto pass = ctx.graph().add_pass<state>();
 	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
 	pass.track(s.light_buffers[frame_index]);
+	pass.track(s.material_palette_buffers[frame_index]);
 	pass.track(gc_state->instance_buffer[frame_index]);
 
 	pass.after<rt_shadow::render_state>()
@@ -290,7 +360,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		)
 		.color_output(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f })
 		.depth_output_load()
-		.record([&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, shadow_quality_i, ext_w, ext_h,
+		.record([&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, shadow_quality_i, ao_quality_i, reflection_quality_i, ext_w, ext_h,
 			meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](gpu::recording_context& ctx) mutable {
 			const vec2u ext_size{ ext_w, ext_h };
 			ctx.set_viewport(ext_size);
@@ -309,9 +379,9 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 						continue;
 					}
 
-					const bool has_texture = mesh.material().valid() && mesh.material()->diffuse_texture.valid();
-					const auto& tex_img  = has_texture ? mesh.material()->diffuse_texture->gpu_image()  : s.blank_texture->gpu_image();
-					const auto& tex_samp = has_texture ? mesh.material()->diffuse_texture->gpu_sampler() : s.blank_texture->gpu_sampler();
+					const bool has_texture = mesh.material().diffuse_texture.valid();
+					const auto& tex_img  = has_texture ? mesh.material().diffuse_texture->gpu_image()  : s.blank_texture->gpu_image();
+					const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : s.blank_texture->gpu_sampler();
 
 					if (!pipeline_bound) {
 						ctx.bind(s.pipeline);
@@ -335,6 +405,8 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 						pc.set("num_lights", num_lights_i);
 						pc.set("screen_size", screen_sz);
 						pc.set("shadow_quality", shadow_quality_i);
+						pc.set("ao_quality", ao_quality_i);
+						pc.set("reflection_quality", reflection_quality_i);
 						ctx.push(s.pipeline, pc);
 
 						const std::uint32_t task_groups = (ml_count + 31) / 32;
@@ -354,9 +426,9 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 					const auto& batch = skinned_batches[i];
 					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-					const bool has_texture = mesh.material().valid() && mesh.material()->diffuse_texture.valid();
-					const auto& tex_img  = has_texture ? mesh.material()->diffuse_texture->gpu_image()  : s.blank_texture->gpu_image();
-					const auto& tex_samp = has_texture ? mesh.material()->diffuse_texture->gpu_sampler() : s.blank_texture->gpu_sampler();
+					const bool has_texture = mesh.material().diffuse_texture.valid();
+					const auto& tex_img  = has_texture ? mesh.material().diffuse_texture->gpu_image()  : s.blank_texture->gpu_image();
+					const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : s.blank_texture->gpu_sampler();
 
 					skinned_writer.begin(frame_index);
 					skinned_writer

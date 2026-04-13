@@ -2,8 +2,11 @@ export module gse.graphics:text_widget;
 
 import std;
 
+import gse.utility;
+
 import :types;
 import :styles;
+import :builder;
 
 export namespace gse::gui::draw {
     auto text(
@@ -11,6 +14,16 @@ export namespace gse::gui::draw {
         const std::string& name,
         const std::string& text
     ) -> void;
+}
+
+export namespace gse::gui {
+	struct text {
+		using result = void;
+		struct params { std::string_view content; };
+		static auto draw(const draw_context& ctx, const params p, id&, id&, id&) -> void {
+			draw::text(ctx, "", std::string(p.content));
+		}
+	};
 }
 
 auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, const std::string& text) -> void {

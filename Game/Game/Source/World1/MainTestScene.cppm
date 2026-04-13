@@ -3,9 +3,6 @@ export module gs:main_test_scene;
 import :player;
 import :arena;
 import :sphere_light;
-import :backpack;
-import :ironman;
-import :black_knight;
 
 import gse;
 
@@ -32,9 +29,6 @@ export namespace gs {
 			});
 
 			arena::create(this);
-
-			build("Backpack")
-				.with<backpack>();
 
 			build("Smaller Box")
 				.with<gse::box>({
@@ -63,12 +57,6 @@ export namespace gs {
 					.radius = gse::meters(1.f),
 					.sectors = 18,
 					.stacks = 10
-				});
-
-			build("Animated Box")
-				.with<gse::animated_box>({
-					.initial_position = gse::vec3<gse::position>(5.f, -35.f, 0.f),
-					.size = gse::vec3<gse::length>(2.f, 2.f, 2.f)
 				});
 		}
 	};

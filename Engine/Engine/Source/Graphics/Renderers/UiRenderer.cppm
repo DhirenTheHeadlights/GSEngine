@@ -19,6 +19,7 @@ export namespace gse::renderer {
 		angle rotation;
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
+		float corner_radius = 0.f;
 	};
 
 	struct text_command {
@@ -43,6 +44,10 @@ namespace gse::renderer::ui {
 		vec2f position;
 		vec2f uv;
 		vec4f color;
+		vec2f local_pos;
+		vec2f half_size;
+		float corner_radius = 0.f;
+		float px_range = 0.f;
 	};
 
 	struct draw_batch {
@@ -78,6 +83,7 @@ namespace gse::renderer::ui {
 		vec4f color;
 		vec4f uv_rect;
 		angle rotation;
+		float corner_radius = 0.f;
 
 		resource::handle<font> font;
 		std::string text;
@@ -119,7 +125,7 @@ export namespace gse::renderer::ui {
 
 	struct system {
 		static auto initialize(const initialize_phase& phase, state& s) -> void;
-		static auto update(const update_phase& phase, state& s) -> void;
+		static auto update(update_context& ctx, state& s) -> void;
 		static auto render(render_phase& phase, const state& s) -> void;
 	};
 }
@@ -139,30 +145,25 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 	};
 
 	const vec2f half = { size.x() * 0.5f, size.y() * 0.5f };
-	vec2f o0 = { -half.x(),  half.y() };
-	vec2f o1 = { half.x(),  half.y() };
-	vec2f o2 = { half.x(), -half.y() };
-	vec2f o3 = { -half.x(), -half.y() };
+	const vec2f l0 = { -half.x(),  half.y() };
+	const vec2f l1 = {  half.x(),  half.y() };
+	const vec2f l2 = {  half.x(), -half.y() };
+	const vec2f l3 = { -half.x(), -half.y() };
 
-	o0 = rotate(o0, cmd.rotation);
-	o1 = rotate(o1, cmd.rotation);
-	o2 = rotate(o2, cmd.rotation);
-	o3 = rotate(o3, cmd.rotation);
-
-	const vec2f p0 = center + o0;
-	const vec2f p1 = center + o1;
-	const vec2f p2 = center + o2;
-	const vec2f p3 = center + o3;
+	const vec2f p0 = center + rotate(l0, cmd.rotation);
+	const vec2f p1 = center + rotate(l1, cmd.rotation);
+	const vec2f p2 = center + rotate(l2, cmd.rotation);
+	const vec2f p3 = center + rotate(l3, cmd.rotation);
 
 	const float u0 = cmd.uv_rect.x();
 	const float v0 = cmd.uv_rect.y();
 	const float u1 = cmd.uv_rect.x() + cmd.uv_rect.z();
 	const float v1 = cmd.uv_rect.y() + cmd.uv_rect.w();
 
-	vertices.push_back(vertex{ p0, { u0, v0 }, cmd.color });
-	vertices.push_back(vertex{ p1, { u1, v0 }, cmd.color });
-	vertices.push_back(vertex{ p2, { u1, v1 }, cmd.color });
-	vertices.push_back(vertex{ p3, { u0, v1 }, cmd.color });
+	vertices.push_back(vertex{ p0, { u0, v0 }, cmd.color, l0, half, cmd.corner_radius, 0.f });
+	vertices.push_back(vertex{ p1, { u1, v0 }, cmd.color, l1, half, cmd.corner_radius, 0.f });
+	vertices.push_back(vertex{ p2, { u1, v1 }, cmd.color, l2, half, cmd.corner_radius, 0.f });
+	vertices.push_back(vertex{ p3, { u0, v1 }, cmd.color, l3, half, cmd.corner_radius, 0.f });
 
 	indices.push_back(base_index + 0);
 	indices.push_back(base_index + 2);
@@ -173,6 +174,8 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 }
 
 auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
+	const float font_px_range = cmd.font->pixel_range() * (cmd.scale / cmd.font->glyph_cell_size());
+
 	for (const auto& [screen_rect, uv_rect] : cmd.font->text_layout(cmd.text, cmd.position, cmd.scale)) {
 		if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 			break;
@@ -193,10 +196,10 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 		const float u1 = uv_rect.x() + uv_rect.z();
 		const float v1 = uv_rect.y() + uv_rect.w();
 
-		vertices.push_back({ p0, { u0, v1 }, cmd.color });
-		vertices.push_back({ p1, { u1, v1 }, cmd.color });
-		vertices.push_back({ p2, { u1, v0 }, cmd.color });
-		vertices.push_back({ p3, { u0, v0 }, cmd.color });
+		vertices.push_back({ p0, { u0, v1 }, cmd.color, {}, {}, 0.f, font_px_range });
+		vertices.push_back({ p1, { u1, v1 }, cmd.color, {}, {}, 0.f, font_px_range });
+		vertices.push_back({ p2, { u1, v0 }, cmd.color, {}, {}, 0.f, font_px_range });
+		vertices.push_back({ p3, { u0, v0 }, cmd.color, {}, {}, 0.f, font_px_range });
 
 		indices.push_back(base_index + 0);
 		indices.push_back(base_index + 2);
@@ -250,9 +253,9 @@ auto gse::renderer::ui::system::initialize(const initialize_phase& phase, state&
 
 }
 
-auto gse::renderer::ui::system::update(const update_phase& phase, state& s) -> void {
-	const auto& sprite_commands = phase.read_channel<sprite_command>();
-	const auto& text_commands = phase.read_channel<text_command>();
+auto gse::renderer::ui::system::update(update_context& ctx, state& s) -> void {
+	const auto& sprite_commands = ctx.read_channel<sprite_command>();
+	const auto& text_commands = ctx.read_channel<text_command>();
 
 	if (sprite_commands.empty() && text_commands.empty()) {
 		return;
@@ -266,7 +269,7 @@ auto gse::renderer::ui::system::update(const update_phase& phase, state& s) -> v
 	std::vector<unified_command> unified;
 	unified.reserve(sprite_commands.size() + text_commands.size());
 
-	for (const auto& [rect, color, texture, uv_rect, clip_rect, rotation, layer, z_order] : sprite_commands) {
+	for (const auto& [rect, color, texture, uv_rect, clip_rect, rotation, layer, z_order, corner_radius] : sprite_commands) {
 		if (!texture.valid()) {
 			continue;
 		}
@@ -281,6 +284,7 @@ auto gse::renderer::ui::system::update(const update_phase& phase, state& s) -> v
 			.color = color,
 			.uv_rect = uv_rect,
 			.rotation = rotation,
+			.corner_radius = corner_radius,
 			.font = {},
 			.text = {},
 			.position = {},

@@ -29,6 +29,7 @@ export namespace gse::gpu {
 		auto image(std::string_view name, const image& img, const sampler& samp, image_layout layout = image_layout::shader_read_only) -> descriptor_writer&;
 		auto image_array(std::string_view name, std::span<const gpu::image* const> images, const sampler& samp, image_layout layout = image_layout::shader_read_only) -> descriptor_writer&;
 		auto image_array(std::string_view name, std::span<const gpu::image* const> images, std::span<const sampler* const> samplers, image_layout layout = image_layout::shader_read_only) -> descriptor_writer&;
+		auto storage_image(std::string_view name, const gpu::image& img, image_layout layout = image_layout::general) -> descriptor_writer&;
 		auto acceleration_structure(std::string_view name, acceleration_structure_handle as) -> descriptor_writer&;
 
 		auto commit() -> void;
@@ -49,6 +50,7 @@ export namespace gse::gpu {
 		std::unordered_map<std::string, vk::DescriptorBufferInfo> m_buffer_infos;
 		std::unordered_map<std::string, vk::DescriptorImageInfo> m_image_infos;
 		std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> m_image_array_infos;
+		std::unordered_map<std::string, vk::DescriptorImageInfo> m_storage_image_infos;
 		std::unordered_map<std::string, acceleration_structure_handle> m_as_infos;
 
 		vulkan::descriptor_writer m_push_writer;
@@ -92,7 +94,7 @@ namespace {
 				case gse::gpu::descriptor_type::sampled_image:           return props.sampled_image_descriptor_size;
 				case gse::gpu::descriptor_type::storage_image:           return props.storage_image_descriptor_size;
 				case gse::gpu::descriptor_type::sampler:                 return props.sampler_descriptor_size;
-			case gse::gpu::descriptor_type::acceleration_structure:  return props.acceleration_structure_descriptor_size;
+				case gse::gpu::descriptor_type::acceleration_structure:  return props.acceleration_structure_descriptor_size;
 			}
 			return props.storage_buffer_descriptor_size;
 		};
@@ -177,6 +179,20 @@ auto gse::gpu::descriptor_writer::image_array(const std::string_view name, const
 	return *this;
 }
 
+auto gse::gpu::descriptor_writer::storage_image(const std::string_view name, const gpu::image& img, const image_layout layout) -> descriptor_writer& {
+	if (m_mode == mode::persistent) {
+		m_storage_image_infos[std::string(name)] = vk::DescriptorImageInfo{
+			.sampler = nullptr,
+			.imageView = img.native().view,
+			.imageLayout = to_vk_layout(layout)
+		};
+	}
+	else {
+		m_push_writer.storage_image(find_binding_index(name), img, layout);
+	}
+	return *this;
+}
+
 auto gse::gpu::descriptor_writer::acceleration_structure(const std::string_view name, const acceleration_structure_handle as) -> descriptor_writer& {
 	m_as_infos[std::string(name)] = as;
 	return *this;
@@ -201,10 +217,10 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 	assert(m_region && *m_region, std::source_location::current(), "Cannot commit to null descriptor region");
 
 	const auto& cache = m_device->shader_cache(*m_shader);
-	auto& heap = *m_region->native().heap;
+	const auto& heap = *m_region->native().heap;
 	const auto& props = heap.props();
 
-	const auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
+	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
 	const auto set_layout = cache.layout_handles[persistent_idx];
 	const auto& region = m_region->native();
 
@@ -212,12 +228,12 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 		const auto boff = heap.binding_offset(set_layout, binding);
 
 		if (auto it = m_buffer_infos.find(name); it != m_buffer_infos.end()) {
-			const auto& buf_info = it->second;
-			const auto buf_addr = heap.buffer_address(buf_info.buffer);
+			const auto& [buffer, offset, range] = it->second;
+			const auto buf_addr = heap.buffer_address(buffer);
 
 			const vk::DescriptorAddressInfoEXT addr_info{
-				.address = buf_addr + buf_info.offset,
-				.range = buf_info.range,
+				.address = buf_addr + offset,
+				.range = range,
 				.format = vk::Format::eUndefined
 			};
 
@@ -260,47 +276,64 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 			return;
 		}
 
+		if (auto it_si = m_storage_image_infos.find(name); it_si != m_storage_image_infos.end()) {
+			const vk::DescriptorGetInfoEXT get_info{
+				.type = vk::DescriptorType::eStorageImage,
+				.data = { .pStorageImage = &it_si->second }
+			};
+			heap.write_descriptor(region, boff, get_info, props.storage_image_descriptor_size);
+			return;
+		}
+
 		if (auto it_as = m_as_infos.find(name); it_as != m_as_infos.end()) {
 			const auto vk_as = reinterpret_cast<VkAccelerationStructureKHR>(it_as->second.value);
-			const vk::DeviceAddress as_addr = m_device->logical_device().getAccelerationStructureAddressKHR({ .accelerationStructure = vk_as });
-			log::println(log::category::vulkan,
+			const vk::DeviceAddress as_addr = m_device->logical_device().getAccelerationStructureAddressKHR({
+				.accelerationStructure = vk_as
+			});
+			log::println(
+				log::category::vulkan,
 				"Descriptor AS write: binding='{}' handle={:#x} address={:#x} descriptor_offset={} descriptor_size={}",
 				name,
 				it_as->second.value,
 				as_addr,
 				boff,
-				props.acceleration_structure_descriptor_size);
+				props.acceleration_structure_descriptor_size
+			);
 			if (as_addr == 0) {
-				log::println(log::level::warning, log::category::vulkan,
+				log::println(
+					log::level::warning, log::category::vulkan,
 					"Descriptor AS write produced address 0 for binding='{}' handle={:#x}",
 					name,
-					it_as->second.value);
+					it_as->second.value
+				);
 			}
 			const vk::DescriptorGetInfoEXT get_info{
 				.type = vk::DescriptorType::eAccelerationStructureKHR,
-				.data = { .accelerationStructure = as_addr }
+				.data = { 
+					.accelerationStructure = as_addr
+				}
 			};
 			heap.write_descriptor(region, boff, get_info, props.acceleration_structure_descriptor_size);
 		}
 	};
 
 	if (cache.external_layout) {
-		for (const auto& set : cache.external_layout->sets()) {
-			if (set.set_index == persistent_idx) {
-				for (const auto& b : set.bindings) {
+		for (const auto& [set_index, bindings] : cache.external_layout->sets()) {
+			if (set_index == persistent_idx) {
+				for (const auto& [name, layout_binding] : bindings) {
 					write_binding(
-						b.name, b.layout_binding.binding,
-						b.layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer,
-						b.layout_binding.descriptorCount
+						name, layout_binding.binding,
+						layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer,
+						layout_binding.descriptorCount
 					);
 				}
 				break;
 			}
 		}
 	} else {
-		const auto& layout_data = m_shader->layout_data();
-		auto set_it = layout_data.sets.find(descriptor_set_type::persistent);
-		if (set_it == layout_data.sets.end()) return;
+		const auto& [sets] = m_shader->layout_data();
+		const auto set_it = sets.find(descriptor_set_type::persistent);
+		if (set_it == sets.end()) return;
 		for (const auto& b : set_it->second.bindings) {
 			write_binding(b.name, b.desc.binding, b.desc.type == descriptor_type::uniform_buffer, b.desc.count);
 		}

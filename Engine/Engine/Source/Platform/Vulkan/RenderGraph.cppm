@@ -249,7 +249,7 @@ export namespace gse::vulkan {
 			const gpu::pipeline& p,
 			const gpu::descriptor_region& region,
 			std::uint32_t set_index = 0
-		) -> void;
+		) const -> void;
 
 		auto bind_vertex(
 			const gpu::buffer& buf,
@@ -283,6 +283,25 @@ export namespace gse::vulkan {
 
 		auto pipeline_barrier(
 			const vk::DependencyInfo& dep
+		) const -> void;
+
+		auto copy_image_to_buffer(
+			vk::Image src_image,
+			vk::ImageLayout src_layout,
+			vk::Buffer dst_buffer,
+			std::span<const vk::BufferImageCopy> regions
+		) const -> void;
+
+		auto capture_swapchain(
+			const gpu::swap_chain& swapchain,
+			const gpu::frame& frame,
+			const gpu::buffer& dst
+		) const -> void;
+
+		auto blit_swapchain_to_image(
+			const gpu::swap_chain& swapchain,
+			const gpu::frame& frame,
+			const gpu::image& dst
 		) const -> void;
 
 		auto begin_rendering(
@@ -451,6 +470,178 @@ auto gse::vulkan::recording_context::pipeline_barrier(const vk::DependencyInfo& 
 	m_cmd.pipelineBarrier2(dep);
 }
 
+auto gse::vulkan::recording_context::copy_image_to_buffer(
+	const vk::Image src_image,
+	const vk::ImageLayout src_layout,
+	const vk::Buffer dst_buffer,
+	const std::span<const vk::BufferImageCopy> regions
+) const -> void {
+	m_cmd.copyImageToBuffer(src_image, src_layout, dst_buffer, regions);
+}
+
+auto gse::vulkan::recording_context::capture_swapchain(
+	const gpu::swap_chain& swapchain,
+	const gpu::frame& frame,
+	const gpu::buffer& dst
+) const -> void {
+	const auto image = swapchain.image(frame.image_index());
+	const auto ext = swapchain.extent();
+	const auto dst_buffer = dst.native().buffer;
+
+	const vk::ImageSubresourceRange subresource{
+		.aspectMask = vk::ImageAspectFlagBits::eColor,
+		.baseMipLevel = 0, .levelCount = 1,
+		.baseArrayLayer = 0, .layerCount = 1
+	};
+
+	const vk::ImageMemoryBarrier2 to_transfer{
+		.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+		.dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+		.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+		.newLayout = vk::ImageLayout::eTransferSrcOptimal,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = image,
+		.subresourceRange = subresource
+	};
+	m_cmd.pipelineBarrier2(vk::DependencyInfo{
+		.imageMemoryBarrierCount = 1,
+		.pImageMemoryBarriers = &to_transfer
+	});
+
+	const vk::BufferImageCopy region{
+		.bufferOffset = 0,
+		.bufferRowLength = 0,
+		.bufferImageHeight = 0,
+		.imageSubresource = {
+			.aspectMask = vk::ImageAspectFlagBits::eColor,
+			.mipLevel = 0,
+			.baseArrayLayer = 0,
+			.layerCount = 1
+		},
+		.imageOffset = {0, 0, 0},
+		.imageExtent = {ext.x(), ext.y(), 1}
+	};
+	m_cmd.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, dst_buffer, region);
+
+	const vk::ImageMemoryBarrier2 back_to_color{
+		.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+		.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+		.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+		.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+		.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = image,
+		.subresourceRange = subresource
+	};
+	m_cmd.pipelineBarrier2(vk::DependencyInfo{
+		.imageMemoryBarrierCount = 1,
+		.pImageMemoryBarriers = &back_to_color
+	});
+}
+
+auto gse::vulkan::recording_context::blit_swapchain_to_image(
+	const gpu::swap_chain& swapchain,
+	const gpu::frame& frame,
+	const gpu::image& dst
+) const -> void {
+	const auto src_image = swapchain.image(frame.image_index());
+	const auto src_ext = swapchain.extent();
+	const auto dst_ext = dst.extent();
+
+	const vk::ImageSubresourceRange subresource{
+		.aspectMask = vk::ImageAspectFlagBits::eColor,
+		.baseMipLevel = 0, .levelCount = 1,
+		.baseArrayLayer = 0, .layerCount = 1
+	};
+
+	const vk::ImageMemoryBarrier2 src_to_transfer{
+		.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+		.dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+		.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+		.newLayout = vk::ImageLayout::eTransferSrcOptimal,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = src_image,
+		.subresourceRange = subresource
+	};
+
+	const vk::ImageMemoryBarrier2 dst_to_transfer{
+		.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+		.srcAccessMask = vk::AccessFlagBits2::eNone,
+		.dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+		.dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+		.oldLayout = vk::ImageLayout::eUndefined,
+		.newLayout = vk::ImageLayout::eTransferDstOptimal,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = dst.native().image,
+		.subresourceRange = subresource
+	};
+
+	const std::array pre_barriers = { src_to_transfer, dst_to_transfer };
+	m_cmd.pipelineBarrier2(vk::DependencyInfo{
+		.imageMemoryBarrierCount = static_cast<std::uint32_t>(pre_barriers.size()),
+		.pImageMemoryBarriers = pre_barriers.data()
+	});
+
+	const vk::ImageBlit region{
+		.srcSubresource = { .aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1 },
+		.srcOffsets = std::array{
+			vk::Offset3D{0, 0, 0},
+			vk::Offset3D{static_cast<int>(src_ext.x()), static_cast<int>(src_ext.y()), 1}
+		},
+		.dstSubresource = { .aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1 },
+		.dstOffsets = std::array{
+			vk::Offset3D{0, 0, 0},
+			vk::Offset3D{static_cast<int>(dst_ext.x()), static_cast<int>(dst_ext.y()), 1}
+		}
+	};
+	m_cmd.blitImage(
+		src_image, vk::ImageLayout::eTransferSrcOptimal,
+		dst.native().image, vk::ImageLayout::eTransferDstOptimal,
+		region, vk::Filter::eNearest
+	);
+
+	const vk::ImageMemoryBarrier2 src_back{
+		.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+		.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+		.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+		.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+		.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = src_image,
+		.subresourceRange = subresource
+	};
+
+	const vk::ImageMemoryBarrier2 dst_to_read{
+		.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+		.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead,
+		.oldLayout = vk::ImageLayout::eTransferDstOptimal,
+		.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = dst.native().image,
+		.subresourceRange = subresource
+	};
+
+	const std::array post_barriers = { src_back, dst_to_read };
+	m_cmd.pipelineBarrier2(vk::DependencyInfo{
+		.imageMemoryBarrierCount = static_cast<std::uint32_t>(post_barriers.size()),
+		.pImageMemoryBarriers = post_barriers.data()
+	});
+}
+
 auto gse::vulkan::recording_context::bind_pipeline(vk::PipelineBindPoint point, vk::Pipeline pipeline) const -> void {
 	m_cmd.bindPipeline(point, pipeline);
 }
@@ -542,7 +733,7 @@ auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, co
 	region.heap->bind(m_cmd, point, p.native_layout(), set_index, region);
 }
 
-auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) -> void {
+auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) const -> void {
 	bind_descriptors(p, region.native(), set_index);
 }
 

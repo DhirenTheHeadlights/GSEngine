@@ -2,9 +2,12 @@ export module gse.utility;
 
 export import gse.config;
 
+export import :access_token;
 export import :archive;
+export import :async_task;
 
 export import :flat_map;
+export import :frame_arena;
 export import :linear_vector;
 export import :slot_map;
 export import :static_vector;
@@ -41,11 +44,14 @@ export import :phase_context;
 export import :system_node;
 export import :system_clock;
 export import :task;
+export import :task_graph;
 export import :timed_lock;
 export import :timer;
 export import :trace;
 export import :variant_match;
 export import :file_watcher;
+export import :frame_context;
+export import :update_context;
 
 export namespace gse {
 	template <typename T>

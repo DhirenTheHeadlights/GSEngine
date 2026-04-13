@@ -105,7 +105,7 @@ export namespace gse::network {
 
 	struct system {
 		static auto initialize(initialize_phase& phase, system_state& s) -> void;
-		static auto update(const update_phase& phase, system_state& s) -> void;
+		static auto update(update_context& ctx, system_state& s) -> void;
 		static auto shutdown(shutdown_phase& phase, system_state& s) -> void;
 	};
 }
@@ -119,12 +119,12 @@ auto gse::network::system::shutdown(shutdown_phase&, system_state& s) -> void {
 	// WinSock cleanup handled by static initializer destructor in Socket.cppm
 }
 
-auto gse::network::system::update(const update_phase& phase, system_state& s) -> void {
+auto gse::network::system::update(update_context& ctx, system_state& s) -> void {
 	if (!s.client_ptr) {
 		return;
 	}
 
-	const auto* renderer_state = phase.try_state_of<renderer::state>();
+	const auto* renderer_state = ctx.try_state_of<renderer::state>();
 
 	s.client_ptr->drain([&s, renderer_state](inbox_message& msg) {
 		if (auto* rep = std::get_if<replication_message>(&msg)) {
@@ -215,14 +215,14 @@ auto gse::network::system::update(const update_phase& phase, system_state& s) ->
 	});
 
 	for (auto& d : s.deferred) {
-		d(*phase.registry.reg);
+		d(ctx.reg);
 	}
 	s.deferred.clear();
 
 	if (s.client_ptr->current_state() == client::state::connected) {
-		if (const auto* actions_state = phase.try_state_of<actions::system_state>()) {
+		if (const auto* actions_state = ctx.try_state_of<actions::system_state>()) {
 			angle yaw;
-			if (const auto* cam_state = phase.try_state_of<camera::state>()) {
+			if (const auto* cam_state = ctx.try_state_of<camera::state>()) {
 				yaw = cam_state->yaw;
 			}
 			s.client_ptr->push_input(
