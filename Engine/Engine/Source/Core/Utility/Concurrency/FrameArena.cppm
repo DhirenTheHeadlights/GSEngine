@@ -3,77 +3,98 @@ export module gse.utility:frame_arena;
 import std;
 
 export namespace gse::frame_arena {
-	constexpr std::size_t default_capacity = 4 * 1024 * 1024;
-
-	auto create(
-		std::size_t capacity = default_capacity
-	) -> void;
-
-	auto destroy(
-	) -> void;
-
 	auto allocate(
 		std::size_t size,
 		std::size_t align = alignof(std::max_align_t)
 	) -> void*;
 
-	auto contains(
-		const void* ptr
-	) noexcept -> bool;
-
-	auto reset(
-	) noexcept -> void;
-
-	auto bytes_used(
-	) noexcept -> std::size_t;
+	auto deallocate(
+		void* ptr,
+		std::size_t size
+	) -> void;
 }
 
 namespace gse::frame_arena {
-	std::byte* buffer = nullptr;
-	std::size_t buffer_capacity = 0;
-	std::atomic<std::size_t> offset{ 0 };
+	constexpr std::size_t bucket_count = 5;
+	constexpr std::size_t min_bucket_size = 64;
+
+	struct block {
+		block* next = nullptr;
+	};
+
+	struct bucket {
+		block* free_list = nullptr;
+		std::size_t block_size = 0;
+	};
+
+	struct thread_pool {
+		std::array<bucket, bucket_count> buckets;
+
+		thread_pool() {
+			std::size_t size = min_bucket_size;
+			for (auto& b : buckets) {
+				b.block_size = size;
+				size <<= 1;
+			}
+		}
+
+		~thread_pool() {
+			for (auto& b : buckets) {
+				while (b.free_list) {
+					auto* blk = b.free_list;
+					b.free_list = blk->next;
+					::operator delete(blk);
+				}
+			}
+		}
+	};
+
+	thread_local thread_pool pool;
+
+	auto bucket_index(
+		std::size_t size
+	) -> std::size_t;
 }
 
-auto gse::frame_arena::create(const std::size_t capacity) -> void {
-	buffer = static_cast<std::byte*>(::operator new(capacity, std::align_val_t{ alignof(std::max_align_t) }));
-	buffer_capacity = capacity;
-	offset.store(0, std::memory_order_relaxed);
-}
-
-auto gse::frame_arena::destroy() -> void {
-	if (buffer) {
-		::operator delete(buffer, std::align_val_t{ alignof(std::max_align_t) });
-		buffer = nullptr;
-		buffer_capacity = 0;
-		offset.store(0, std::memory_order_relaxed);
+auto gse::frame_arena::bucket_index(const std::size_t size) -> std::size_t {
+	std::size_t s = min_bucket_size;
+	for (std::size_t i = 0; i < bucket_count; ++i) {
+		if (size <= s) {
+			return i;
+		}
+		s <<= 1;
 	}
+	return bucket_count;
 }
 
-auto gse::frame_arena::allocate(const std::size_t size, const std::size_t align) -> void* {
-	if (!buffer) {
+auto gse::frame_arena::allocate(const std::size_t size, const std::size_t) -> void* {
+	const auto idx = bucket_index(size);
+
+	if (idx >= bucket_count) {
 		return ::operator new(size);
 	}
 
-	const std::size_t aligned_size = (size + align - 1) & ~(align - 1);
-	const std::size_t old = offset.fetch_add(aligned_size, std::memory_order_relaxed);
+	auto& b = pool.buckets[idx];
 
-	if (old + aligned_size > buffer_capacity) {
-		return ::operator new(size);
+	if (b.free_list) {
+		auto* blk = b.free_list;
+		b.free_list = blk->next;
+		return blk;
 	}
 
-	return buffer + old;
+	return ::operator new(b.block_size);
 }
 
-auto gse::frame_arena::contains(const void* ptr) noexcept -> bool {
-	if (!buffer) return false;
-	const auto* p = static_cast<const std::byte*>(ptr);
-	return p >= buffer && p < buffer + buffer_capacity;
-}
+auto gse::frame_arena::deallocate(void* ptr, const std::size_t size) -> void {
+	const auto idx = bucket_index(size);
 
-auto gse::frame_arena::reset() noexcept -> void {
-	offset.store(0, std::memory_order_release);
-}
+	if (idx >= bucket_count) {
+		::operator delete(ptr);
+		return;
+	}
 
-auto gse::frame_arena::bytes_used() noexcept -> std::size_t {
-	return offset.load(std::memory_order_relaxed);
+	auto& b = pool.buckets[idx];
+	auto* blk = static_cast<block*>(ptr);
+	blk->next = b.free_list;
+	b.free_list = blk;
 }

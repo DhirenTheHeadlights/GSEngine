@@ -54,7 +54,7 @@ namespace gse::camera {
 export namespace gse::camera {
 	struct system {
 		static auto initialize(
-			initialize_phase& phase,
+			init_context& phase,
 			state& s
 		) -> void;
 
@@ -65,7 +65,7 @@ export namespace gse::camera {
 	};
 }
 
-auto gse::camera::system::initialize(initialize_phase&, state& s) -> void {
+auto gse::camera::system::initialize(init_context&, state& s) -> void {
 	s.current.orientation = identity<float>();
 	s.view_matrix = compute_view_matrix(s.current);
 	s.projection_matrix = compute_projection_matrix(s.current, s.viewport);

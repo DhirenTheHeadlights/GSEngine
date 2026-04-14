@@ -98,7 +98,14 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
 
     engine_instance->initialize();
     task::start([&] {
+        std::optional<task::group> pending_frame;
+
         while (!should_shutdown.load(std::memory_order_acquire)) {
+            if (pending_frame) {
+                pending_frame->wait();
+                pending_frame.reset();
+            }
+
             if (engine_flags.test(engine_flag::create_window)) {
                 window::poll_events();
             }
@@ -106,17 +113,11 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
             frame_sync::begin();
 
             trace::scope(engine_instance->id(), [&] {
-                task::group frame_tasks;
-
-                frame_tasks.post(
-                    [&] {
-	                    engine_instance->update();
-	                },
-                    find_or_generate_id("Engine::Update")
-                );
+                engine_instance->update();
 
                 if (engine_flags.test(engine_flag::render)) {
-                    frame_tasks.post(
+                    pending_frame.emplace(find_or_generate_id("Engine::Frame"));
+                    pending_frame->post(
                         [&] {
                             engine_instance->render();
                         },
@@ -129,6 +130,9 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
             trace::finalize_frame();
         }
 
+        if (pending_frame) {
+            pending_frame->wait();
+        }
         task::wait_idle();
     });
 }

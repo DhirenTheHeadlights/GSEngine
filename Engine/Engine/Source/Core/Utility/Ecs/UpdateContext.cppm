@@ -25,6 +25,7 @@ export namespace gse {
 		const state_snapshot_provider& snapshots;
 		channel_writer& channels;
 		const channel_reader_provider& channel_reader;
+		const resources_provider& resources;
 		task_graph& graph;
 		std::vector<scheduled_work>& work;
 		mpsc_ring_buffer<std::move_only_function<void()>, 64>& deferred_ops;
@@ -48,6 +49,14 @@ export namespace gse {
 		template <typename T>
 		auto read_channel(
 		) const -> channel_read_guard<T>;
+
+		template <typename Resources>
+		auto resources_of(
+		) const -> const Resources&;
+
+		template <typename Resources>
+		auto try_resources_of(
+		) const -> const Resources*;
 
 		template <typename F>
 		auto schedule(
@@ -126,6 +135,16 @@ auto gse::update_context::try_state_of() const -> const State* {
 template <typename T>
 auto gse::update_context::read_channel() const -> channel_read_guard<T> {
 	return channel_read_guard<T>(channel_reader.read<T>());
+}
+
+template <typename Resources>
+auto gse::update_context::resources_of() const -> const Resources& {
+	return resources.resources_of<Resources>();
+}
+
+template <typename Resources>
+auto gse::update_context::try_resources_of() const -> const Resources* {
+	return resources.try_resources_of<Resources>();
 }
 
 template <typename F>

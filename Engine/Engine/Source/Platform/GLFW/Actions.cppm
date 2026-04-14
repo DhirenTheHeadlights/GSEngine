@@ -434,7 +434,7 @@ export namespace gse::actions {
 
 	struct system {
 		static auto initialize(
-			initialize_phase& phase,
+			init_context& phase,
 			system_state& s
 		) -> void;
 
@@ -662,7 +662,7 @@ auto gse::actions::state::camera_yaw() const -> angle {
 	return m_camera_yaw;
 }
 
-auto gse::actions::system::initialize(initialize_phase& phase, system_state& s) -> void {
+auto gse::actions::system::initialize(init_context& phase, system_state& s) -> void {
 	phase.channels.push(save::bind_int_map_request{
 		.category = "Controls",
 		.initial_data = s.rebinds

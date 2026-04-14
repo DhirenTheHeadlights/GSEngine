@@ -66,7 +66,7 @@ namespace gse::renderer::ui {
 	static constexpr std::size_t max_indices = max_quads_per_frame * indices_per_quad;
 	static constexpr std::size_t frames_in_flight = 2;
 
-	struct frame_data {
+	struct gpu_frame_data {
 		linear_vector<vertex>        vertices{ max_vertices };
 		linear_vector<std::uint32_t> indices{ max_indices };
 		linear_vector<draw_batch>    batches{ 512 };
@@ -110,23 +110,41 @@ export namespace gse::renderer::ui {
 		gpu::buffer index_buffer;
 	};
 
-	struct state {
-		gpu::pipeline sprite_pipeline;
-		resource::handle<shader> sprite_shader;
-
-		gpu::pipeline text_pipeline;
-		resource::handle<shader> text_shader;
-
-		std::array<frame_resources, frames_in_flight> resources;
-		triple_buffer<frame_data> data;
-
-		state() = default;
-	};
+	struct state {};
 
 	struct system {
-		static auto initialize(const initialize_phase& phase, state& s) -> void;
-		static auto update(update_context& ctx, state& s) -> void;
-		static auto render(render_phase& phase, const state& s) -> void;
+		struct resources {
+			gpu::pipeline sprite_pipeline;
+			resource::handle<shader> sprite_shader;
+			gpu::pipeline text_pipeline;
+			resource::handle<shader> text_shader;
+			std::array<frame_resources, frames_in_flight> gpu_frames;
+		};
+
+		struct frame_data {
+			triple_buffer<gpu_frame_data> data;
+		};
+
+		static auto initialize(
+			const init_context& phase,
+			resources& r,
+			frame_data& fd,
+			state& s
+		) -> void;
+
+		static auto update(
+			update_context& ctx,
+			const resources& r,
+			frame_data& fd,
+			state& s
+		) -> void;
+
+		static auto frame(
+			frame_context& ctx,
+			const resources& r,
+			frame_data& fd,
+			const state& s
+		) -> async::task<>;
 	};
 }
 
@@ -210,13 +228,13 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 	}
 }
 
-auto gse::renderer::ui::system::initialize(const initialize_phase& phase, state& s) -> void {
+auto gse::renderer::ui::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
-	s.sprite_shader = ctx.get<shader>("Shaders/Standard2D/sprite");
-	ctx.instantly_load(s.sprite_shader);
+	r.sprite_shader = ctx.get<shader>("Shaders/Standard2D/sprite");
+	ctx.instantly_load(r.sprite_shader);
 
-	s.sprite_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.sprite_shader, {
+	r.sprite_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.sprite_shader, {
 		.rasterization = { .cull = gpu::cull_mode::none },
 		.depth = { .test = false, .write = false },
 		.blend = gpu::blend_preset::alpha_premultiplied,
@@ -224,10 +242,10 @@ auto gse::renderer::ui::system::initialize(const initialize_phase& phase, state&
 		.push_constant_block = "push_constants"
 	});
 
-	s.text_shader = ctx.get<shader>("Shaders/Standard2D/msdf");
-	ctx.instantly_load(s.text_shader);
+	r.text_shader = ctx.get<shader>("Shaders/Standard2D/msdf");
+	ctx.instantly_load(r.text_shader);
 
-	s.text_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.text_shader, {
+	r.text_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.text_shader, {
 		.rasterization = { .cull = gpu::cull_mode::none },
 		.depth = { .test = false, .write = false },
 		.blend = gpu::blend_preset::alpha_premultiplied,
@@ -239,7 +257,7 @@ auto gse::renderer::ui::system::initialize(const initialize_phase& phase, state&
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
-	for (auto& [vertex_buffer, index_buffer] : s.resources) {
+	for (auto& [vertex_buffer, index_buffer] : r.gpu_frames) {
 		vertex_buffer = gpu::create_buffer(ctx.device_ref(), {
 			.size = vertex_buffer_size,
 			.usage = gpu::buffer_flag::vertex
@@ -253,7 +271,7 @@ auto gse::renderer::ui::system::initialize(const initialize_phase& phase, state&
 
 }
 
-auto gse::renderer::ui::system::update(update_context& ctx, state& s) -> void {
+auto gse::renderer::ui::system::update(update_context& ctx, const resources& r, frame_data& fd, state& s) -> void {
 	const auto& sprite_commands = ctx.read_channel<sprite_command>();
 	const auto& text_commands = ctx.read_channel<text_command>();
 
@@ -261,7 +279,7 @@ auto gse::renderer::ui::system::update(update_context& ctx, state& s) -> void {
 		return;
 	}
 
-	auto& [vertices, indices, batches] = s.data.write();
+	auto& [vertices, indices, batches] = fd.data.write();
 	vertices.clear();
 	indices.clear();
 	batches.clear();
@@ -384,28 +402,28 @@ auto gse::renderer::ui::system::update(update_context& ctx, state& s) -> void {
 
 	flush_batch();
 
-	s.data.publish();
+	fd.data.publish();
 }
 
-auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> void {
-	auto& ctx = phase.get<gpu::context>();
+auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
+	auto& gpu = ctx.get<gpu::context>();
 
-	if (!ctx.graph().frame_in_progress()) {
-		return;
+	if (!gpu.graph().frame_in_progress()) {
+		co_return;
 	}
 
-	const auto& [vertices, indices, batches] = s.data.read();
+	const auto& [vertices, indices, batches] = fd.data.read();
 
 	if (batches.empty()) {
-		return;
+		co_return;
 	}
-	const auto frame_index = ctx.graph().current_frame();
-	auto& [vertex_buffer, index_buffer] = s.resources[frame_index];
+	const auto frame_index = gpu.graph().current_frame();
+	auto& [vertex_buffer, index_buffer] = r.gpu_frames[frame_index];
 
 	gse::memcpy(vertex_buffer.mapped(), vertices);
 	gse::memcpy(index_buffer.mapped(), indices);
 
-	const auto ext = ctx.graph().extent();
+	const auto ext = gpu.graph().extent();
 	const auto width = ext.x();
 	const auto height = ext.y();
 	const vec2f window_size = { static_cast<float>(width), static_cast<float>(height) };
@@ -419,32 +437,32 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 		meters(1.0f)
 	);
 
-	auto sprite_pc = s.sprite_shader->cache_push_block("push_constants");
+	auto sprite_pc = r.sprite_shader->cache_push_block("push_constants");
 	sprite_pc.set("projection", projection);
 
-	auto text_pc = s.text_shader->cache_push_block("push_constants");
+	auto text_pc = r.text_shader->cache_push_block("push_constants");
 	text_pc.set("projection", projection);
 
-	auto sprite_writer = gpu::create_push_writer(ctx.device_ref(), s.sprite_shader);
-	auto text_writer = gpu::create_push_writer(ctx.device_ref(), s.text_shader);
+	auto sprite_writer = gpu::create_push_writer(gpu.device_ref(), r.sprite_shader);
+	auto text_writer = gpu::create_push_writer(gpu.device_ref(), r.text_shader);
 
-	auto pass = ctx.graph().add_pass<ui::state>();
+	auto pass = gpu.graph().add_pass<ui::state>();
 	pass.track(vertex_buffer);
 	pass.track(index_buffer);
 
 	const vec2u ext_size{ width, height };
 
 	pass.color_output_load()
-		.record([&s, &batches, frame_index, ext_size, window_size,
+		.record([&r, &batches, frame_index, ext_size, window_size,
 			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
 			sprite_writer = std::move(sprite_writer), text_writer = std::move(text_writer),
-			&vertex_buffer, &index_buffer](const gpu::recording_context& ctx) mutable {
+			&vertex_buffer, &index_buffer](const gpu::recording_context& rec) mutable {
 
-			ctx.bind_vertex(vertex_buffer);
-			ctx.bind_index(index_buffer);
+			rec.bind_vertex(vertex_buffer);
+			rec.bind_index(index_buffer);
 
-			ctx.set_viewport(ext_size);
-			ctx.set_scissor(ext_size);
+			rec.set_viewport(ext_size);
+			rec.set_scissor(ext_size);
 
 			auto bound_type = command_type::sprite;
 			bool first_batch = true;
@@ -456,11 +474,11 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 
 				if (first_batch || type != bound_type) {
 					if (type == command_type::sprite) {
-						ctx.bind(s.sprite_pipeline);
-						ctx.push(s.sprite_pipeline, sprite_pc);
+						rec.bind(r.sprite_pipeline);
+						rec.push(r.sprite_pipeline, sprite_pc);
 					} else {
-						ctx.bind(s.text_pipeline);
-						ctx.push(s.text_pipeline, text_pc);
+						rec.bind(r.text_pipeline);
+						rec.push(r.text_pipeline, text_pc);
 					}
 					bound_type = type;
 					first_batch = false;
@@ -471,14 +489,14 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 					if (texture.valid()) {
 						sprite_writer.begin(frame_index);
 						sprite_writer.image("spriteTexture", texture->gpu_image(), texture->gpu_sampler(), gpu::image_layout::shader_read_only);
-						ctx.commit(sprite_writer.native_writer(), s.sprite_pipeline, 1);
+						rec.commit(sprite_writer.native_writer(), r.sprite_pipeline, 1);
 						has_descriptor = true;
 					}
 				} else {
 					if (font.valid()) {
 						text_writer.begin(frame_index);
 						text_writer.image("spriteTexture", font->texture()->gpu_image(), font->texture()->gpu_sampler(), gpu::image_layout::shader_read_only);
-						ctx.commit(text_writer.native_writer(), s.text_pipeline, 1);
+						rec.commit(text_writer.native_writer(), r.text_pipeline, 1);
 						has_descriptor = true;
 					}
 				}
@@ -492,17 +510,17 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 					const float right = std::min(window_size.x(), clip_rect->right());
 					const float bottom = std::max(0.0f, clip_rect->bottom());
 					const float top = std::min(window_size.y(), clip_rect->top());
-					ctx.set_scissor(
+					rec.set_scissor(
 						static_cast<std::int32_t>(left),
 						static_cast<std::int32_t>(window_size.y() - top),
 						static_cast<std::uint32_t>(std::max(0.0f, right - left)),
 						static_cast<std::uint32_t>(std::max(0.0f, top - bottom))
 					);
 				} else {
-					ctx.set_scissor(ext_size);
+					rec.set_scissor(ext_size);
 				}
 
-				ctx.draw_indexed(index_count, 1, index_offset, 0, 0);
+				rec.draw_indexed(index_count, 1, index_offset, 0, 0);
 			}
 		});
 }

@@ -26,7 +26,6 @@ import gse.math;
 export namespace gse::renderer {
 	struct state {
 		gpu::context* ctx = nullptr;
-		bool frame_begun = false;
 		bool hot_reload_enabled = false;
 		vec2f last_viewport{ 1920.f, 1080.f };
 
@@ -34,10 +33,6 @@ export namespace gse::renderer {
 
 		auto set_ui_focus(const bool focus) const -> void {
 			ctx->set_ui_focus(focus);
-		}
-
-		auto is_frame_begun() const -> bool {
-			return frame_begun;
 		}
 
 		template <typename Resource>
@@ -90,15 +85,13 @@ export namespace gse::renderer {
 	};
 
 	struct system {
-		static auto initialize(const initialize_phase& phase, state& s) -> void;
+		static auto initialize(const init_context& phase, state& s) -> void;
 		static auto update(update_context& ctx, state& s) -> void;
-		static auto begin_frame(const begin_frame_phase& phase, state& s) -> bool;
-		static auto end_frame(const end_frame_phase& phase, state& s) -> void;
-		static auto shutdown(const shutdown_phase& phase, const state& s) -> void;
+		static auto shutdown(const shutdown_context& phase, const state& s) -> void;
 	};
 }
 
-auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) -> void {
+auto gse::renderer::system::initialize(const init_context& phase, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	s.ctx = &ctx;
 
@@ -150,41 +143,7 @@ auto gse::renderer::system::update(update_context& ctx, state& s) -> void {
 	}
 }
 
-auto gse::renderer::system::begin_frame(const begin_frame_phase& phase, state& s) -> bool {
-	auto& ctx = phase.get<gpu::context>();
-
-	ctx.process_gpu_queue();
-
-	clock fence_timer;
-	auto result = ctx.begin_frame();
-	const auto fence_wait = fence_timer.elapsed();
-	s.frame_begun = result.has_value();
-
-	ctx.scheduler().report_frame_time(fence_wait);
-
-	if (!result && result.error() == gpu::frame_status::device_lost) {
-		log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame — terminating");
-		std::abort();
-	}
-
-	return s.frame_begun;
-}
-
-auto gse::renderer::system::end_frame(const end_frame_phase& phase, state& s) -> void {
-	if (!s.frame_begun) {
-		return;
-	}
-
-	auto& ctx = phase.get<gpu::context>();
-
-	ctx.end_frame();
-
-	ctx.finalize_reloads();
-
-	s.frame_begun = false;
-}
-
-auto gse::renderer::system::shutdown(const shutdown_phase& phase, const state& s) -> void {
+auto gse::renderer::system::shutdown(const shutdown_context& phase, const state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	ctx.wait_idle();

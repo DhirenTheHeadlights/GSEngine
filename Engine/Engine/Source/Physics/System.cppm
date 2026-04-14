@@ -73,53 +73,25 @@ export namespace gse::physics {
 		std::uint32_t gpu_joint_count = 0;
 	};
 
+	struct gpu_solver_stats {
+		bool active = false;
+		std::uint32_t contact_count = 0;
+		std::uint32_t motor_count = 0;
+		time_t<float, seconds> solve_time{};
+	};
+
+	struct gpu_solver_frame_info {
+		const vbd::gpu_solver* solver = nullptr;
+	};
+
 	struct state {
-		time_t<float, seconds> accumulator{};
 		bool update_phys = true;
 		bool use_gpu_solver = false;
 		bool gpu_buffers_created = false;
 		int solver_iterations = 4;
-
-		vbd::solver vbd_solver;
-		vbd::contact_cache contact_cache;
-		std::unordered_map<id, std::uint32_t> sleep_counters;
-		std::vector<joint_definition> joints;
-
 		bool compare_solvers = false;
-		interval_timer<> comparison_timer{ seconds(0.25f) };
-		struct solver_comparison_snapshot {
-			std::vector<vbd::body_state> cpu_result;
-			std::vector<vbd::contact_constraint> cpu_contacts;
-			std::vector<vbd::joint_constraint> cpu_joints;
-		};
-		std::optional<solver_comparison_snapshot> comparison_pending;
-
-		struct gpu_prev_frame {
-			linear_vector<vbd::body_state> result_bodies{ vbd::max_bodies };
-			linear_vector<id> result_entity_ids{ vbd::max_bodies };
-			linear_vector<vbd::warm_start_entry> warm_start_contacts{ vbd::max_contacts };
-		} gpu_prev;
-
-		std::optional<gpu_readback_result> completed_readback;
-
-		struct gpu_solver_stats {
-			bool active = false;
-			std::uint32_t contact_count = 0;
-			std::uint32_t motor_count = 0;
-			time_t<float, seconds> solve_time{};
-		} gpu_stats;
-	};
-
-	struct render_state {
-		vbd::gpu_solver gpu_solver;
-
-		struct readback_frame {
-			std::vector<id> entity_ids;
-			std::vector<vbd::body_state> gpu_input_bodies;
-			std::uint32_t gpu_joint_count = 0;
-		};
-		std::optional<readback_frame> in_flight;
-		std::optional<gpu_readback_result> completed;
+		gpu_solver_stats gpu_stats;
+		std::vector<joint_definition> joints;
 	};
 
 	auto create_joint(
@@ -133,28 +105,54 @@ export namespace gse::physics {
 	) -> void;
 
 	struct system {
+		struct update_data {
+			time_t<float, seconds> accumulator{};
+			vbd::solver vbd_solver;
+			vbd::contact_cache contact_cache;
+			std::unordered_map<id, std::uint32_t> sleep_counters;
+			interval_timer<> comparison_timer{ seconds(0.25f) };
+			struct solver_comparison_snapshot {
+				std::vector<vbd::body_state> cpu_result;
+				std::vector<vbd::contact_constraint> cpu_contacts;
+				std::vector<vbd::joint_constraint> cpu_joints;
+			};
+			std::optional<solver_comparison_snapshot> comparison_pending;
+			struct gpu_prev_frame {
+				linear_vector<vbd::body_state> result_bodies{ vbd::max_bodies };
+				linear_vector<id> result_entity_ids{ vbd::max_bodies };
+				linear_vector<vbd::warm_start_entry> warm_start_contacts{ vbd::max_contacts };
+			} gpu_prev;
+			std::optional<gpu_readback_result> completed_readback;
+		};
+
+		struct frame_data {
+			vbd::gpu_solver gpu_solver;
+			struct readback_frame {
+				std::vector<id> entity_ids;
+				std::vector<vbd::body_state> gpu_input_bodies;
+				std::uint32_t gpu_joint_count = 0;
+			};
+			std::optional<readback_frame> in_flight;
+		};
+
 		static auto initialize(
-			const initialize_phase& phase,
-			state& s,
-			render_state& rs
+			const init_context& phase,
+			update_data& ud,
+			frame_data& fd,
+			state& s
 		) -> void;
 
 		static auto update(
 			update_context& ctx,
+			update_data& ud,
 			state& s
 		) -> void;
 
-		static auto begin_frame(
-			begin_frame_phase& phase,
-			state& s,
-			render_state& rs
-		) -> bool;
-
-		static auto render(
-			const render_phase& phase,
-			const state& s,
-			render_state& rs
-		) -> void;
+		static auto frame(
+			frame_context& ctx,
+			frame_data& fd,
+			const state& s
+		) -> async::task<>;
 	};
 }
 
@@ -180,7 +178,8 @@ namespace gse::physics {
 		) const noexcept -> std::size_t;
 	};
 
-	auto refresh_airborne_from_collisions(const state& s,
+	auto refresh_airborne_from_collisions(
+		const system::update_data& ud,
 		write<motion_component>& motion,
 		write<collision_component>& collision
 	) -> void;
@@ -217,6 +216,7 @@ namespace gse::physics {
 
 	auto update_vbd(
 		int steps,
+		system::update_data& ud,
 		state& s,
 		write<motion_component>& motion,
 		write<collision_component>& collision
@@ -224,6 +224,7 @@ namespace gse::physics {
 
 	auto update_vbd_gpu(
 		int steps,
+		system::update_data& ud,
 		state& s,
 		write<motion_component>& motion,
 		write<collision_component>& collision,
@@ -251,7 +252,7 @@ auto gse::physics::contact_compare_key_hash::operator()(const contact_compare_ke
 	return seed;
 }
 
-auto gse::physics::refresh_airborne_from_collisions(const state& s, write<motion_component>& motion, write<collision_component>& collision) -> void {
+auto gse::physics::refresh_airborne_from_collisions(const system::update_data& ud, write<motion_component>& motion, write<collision_component>& collision) -> void {
 	std::vector<collision_pair> objects;
 	objects.reserve(collision.size());
 
@@ -272,7 +273,7 @@ auto gse::physics::refresh_airborne_from_collisions(const state& s, write<motion
 		}
 	}
 
-	const auto speculative_margin = s.vbd_solver.config().speculative_margin;
+	const auto speculative_margin = ud.vbd_solver.config().speculative_margin;
 	for (std::size_t i = 0; i < objects.size(); ++i) {
 		for (std::size_t j = i + 1; j < objects.size(); ++j) {
 			auto& [collision_a, motion_a] = objects[i];
@@ -563,7 +564,7 @@ auto gse::physics::invalidate_warm_start_entries(linear_vector<vbd::warm_start_e
 	}
 }
 
-auto gse::physics::system::initialize(const initialize_phase& phase, state& s, render_state& rs) -> void {
+auto gse::physics::system::initialize(const init_context& phase, update_data& ud, frame_data& fd, state& s) -> void {
 	phase.channels.push<save::register_property>({
 		.category = "Physics",
 		.name = "Update Physics",
@@ -596,7 +597,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s, r
 		.type = typeid(int)
 	});
 
-	s.vbd_solver.configure(vbd::solver_config{
+	ud.vbd_solver.configure(vbd::solver_config{
 		.iterations = static_cast<std::uint32_t>(s.solver_iterations),
 		.alpha = 0.99f,
 		.beta = newtons_per_meter(100000.f),
@@ -614,44 +615,52 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s, r
 
 	if (phase.try_get<gpu::context>()) {
 		auto& ctx = phase.get<gpu::context>();
-		rs.gpu_solver.initialize_compute(ctx);
-		s.gpu_buffers_created = rs.gpu_solver.buffers_created();
+		fd.gpu_solver.initialize_compute(ctx);
+		s.gpu_buffers_created = fd.gpu_solver.buffers_created();
 	}
 }
 
-auto gse::physics::system::update(update_context& ctx, state& s) -> void {
+auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s) -> void {
+	if (const auto& readbacks = ctx.read_channel<gpu_readback_result>(); !readbacks.empty()) {
+		auto completed = readbacks[0];
+		ud.completed_readback = std::move(completed);
+	}
+	if (const auto& stats_channel = ctx.read_channel<gpu_solver_stats>(); !stats_channel.empty()) {
+		s.gpu_stats = stats_channel[0];
+	}
+
 	if (!s.update_phys) {
 		return;
 	}
 
-	if (auto cfg = s.vbd_solver.config(); cfg.iterations != static_cast<std::uint32_t>(s.solver_iterations)) {
+	if (auto cfg = ud.vbd_solver.config(); cfg.iterations != static_cast<std::uint32_t>(s.solver_iterations)) {
 		cfg.iterations = static_cast<std::uint32_t>(s.solver_iterations);
-		s.vbd_solver.configure(cfg);
+		ud.vbd_solver.configure(cfg);
 	}
 
 	auto frame_time = system_clock::dt<time_t<float, seconds>>();
 	constexpr time_t<float, seconds> max_time_step = seconds(0.25f);
 	frame_time = std::min(frame_time, max_time_step);
-	s.accumulator += frame_time;
+	ud.accumulator += frame_time;
 
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	int steps = 0;
-	while (s.accumulator >= const_update_time) {
-		s.accumulator -= const_update_time;
+	while (ud.accumulator >= const_update_time) {
+		ud.accumulator -= const_update_time;
 		steps++;
 	}
 
 	if (constexpr int max_physics_steps = 2; steps > max_physics_steps) {
-		s.accumulator = {};
+		ud.accumulator = {};
 		steps = max_physics_steps;
 	}
 
-	const float alpha = s.accumulator / const_update_time;
+	const float alpha = ud.accumulator / const_update_time;
 
 	if (s.use_gpu_solver) {
-		ctx.schedule([steps, frame_time, &s, const_update_time, &channels = ctx.channels](write<motion_component> motion, write<collision_component> collision) {
-			update_vbd_gpu(steps, s, motion, collision, const_update_time, channels);
+		ctx.schedule([steps, frame_time, &ud, &s, const_update_time, &channels = ctx.channels](write<motion_component> motion, write<collision_component> collision) {
+			update_vbd_gpu(steps, ud, s, motion, collision, const_update_time, channels);
 
 			const float blend = std::min(frame_time / (const_update_time * 2.f), 1.f);
 
@@ -669,8 +678,8 @@ auto gse::physics::system::update(update_context& ctx, state& s) -> void {
 		return;
 	}
 
-	ctx.schedule([steps, alpha, &s](write<motion_component> motion, write<collision_component> collision) {
-		update_vbd(steps, s, motion, collision);
+	ctx.schedule([steps, alpha, &ud, &s](write<motion_component> motion, write<collision_component> collision) {
+		update_vbd(steps, ud, s, motion, collision);
 
 		for (motion_component& mc : motion) {
 			if (mc.position_locked) {
@@ -685,14 +694,14 @@ auto gse::physics::system::update(update_context& ctx, state& s) -> void {
 	});
 }
 
-auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_component>& motion, write<collision_component>& collision, const time_t<float, seconds> dt, channel_writer& channels) -> void {
+auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, const time_t<float, seconds> dt, channel_writer& channels) -> void {
 	if (!s.gpu_buffers_created) {
 		return;
 	}
 
-	if (s.completed_readback) {
-		auto completed = std::move(*s.completed_readback);
-		s.completed_readback.reset();
+	if (ud.completed_readback) {
+		auto completed = std::move(*ud.completed_readback);
+		ud.completed_readback.reset();
 
 		for (std::size_t i = 0; i < completed.entity_ids.size(); ++i) {
 			const auto eid = completed.entity_ids[i];
@@ -716,7 +725,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 					mc->angular_velocity = bs.body_angular_velocity;
 				}
 
-				s.sleep_counters[eid] = bs.sleep_counter;
+				ud.sleep_counters[eid] = bs.sleep_counter;
 				mc->sleeping = bs.sleeping();
 			}
 
@@ -735,7 +744,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 			}
 		}
 
-		const auto& cfg = s.vbd_solver.config();
+		const auto& cfg = ud.vbd_solver.config();
 		for (const auto& c : completed.gpu_contacts) {
 			const auto body_a = c.body_a;
 			const auto body_b = c.body_b;
@@ -780,7 +789,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 			}
 		}
 
-		s.gpu_prev.warm_start_contacts.clear();
+		ud.gpu_prev.warm_start_contacts.clear();
 		for (const auto& c : completed.gpu_contacts) {
 			const force friction_bound = abs(c.lambda[0]) * c.friction_coeff;
 			const force tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
@@ -790,7 +799,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 				tangential_gap < cfg.stick_threshold &&
 				tangential_lambda < friction_bound;
 
-			s.gpu_prev.warm_start_contacts.push_back(vbd::warm_start_entry{
+			ud.gpu_prev.warm_start_contacts.push_back(vbd::warm_start_entry{
 				.body_a = c.body_a,
 				.body_b = c.body_b,
 				.feature_key = c.feature_key,
@@ -804,7 +813,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 				.penalty = c.penalty,
 			});
 		}
-		std::ranges::sort(s.gpu_prev.warm_start_contacts, [](const vbd::warm_start_entry& a, const vbd::warm_start_entry& b) {
+		std::ranges::sort(ud.gpu_prev.warm_start_contacts, [](const vbd::warm_start_entry& a, const vbd::warm_start_entry& b) {
 			if (a.body_a != b.body_a) {
 				return a.body_a < b.body_a;
 			}
@@ -831,11 +840,11 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 			}
 		}
 
-		if (s.comparison_pending.has_value()) {
-			const auto& cpu = s.comparison_pending->cpu_result;
+		if (ud.comparison_pending.has_value()) {
+			const auto& cpu = ud.comparison_pending->cpu_result;
 			const auto& gpu = completed.gpu_result_bodies;
-			const auto& cpu_contacts = s.comparison_pending->cpu_contacts;
-			const auto& cpu_joints = s.comparison_pending->cpu_joints;
+			const auto& cpu_contacts = ud.comparison_pending->cpu_contacts;
+			const auto& cpu_joints = ud.comparison_pending->cpu_joints;
 			const auto count = std::min(cpu.size(), gpu.size());
 
 			length max_pos_err{};
@@ -1040,11 +1049,11 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 				);
 			}
 
-			s.comparison_pending.reset();
+			ud.comparison_pending.reset();
 		}
 
-		s.gpu_prev.result_bodies.assign(completed.gpu_result_bodies.begin(), completed.gpu_result_bodies.end());
-		s.gpu_prev.result_entity_ids.assign(completed.entity_ids.begin(), completed.entity_ids.end());
+		ud.gpu_prev.result_bodies.assign(completed.gpu_result_bodies.begin(), completed.gpu_result_bodies.end());
+		ud.gpu_prev.result_entity_ids.assign(completed.entity_ids.begin(), completed.entity_ids.end());
 	}
 
 	if (steps <= 0) {
@@ -1060,7 +1069,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 		}
 		if (magnitude(mc.pending_impulse) > newton_seconds(1e-6f)) {
 			mc.current_velocity += mc.pending_impulse / mc.mass;
-			s.sleep_counters[mc.owner_id()] = 0;
+			ud.sleep_counters[mc.owner_id()] = 0;
 			launched_entities.push_back(mc.owner_id());
 			mc.pending_impulse = {};
 		}
@@ -1076,9 +1085,9 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 	accel_weights.reserve(motion.size());
 
 	std::unordered_map<id, vec3<velocity>> prev_gpu_velocity;
-	prev_gpu_velocity.reserve(s.gpu_prev.result_entity_ids.size());
-	for (std::size_t i = 0; i < s.gpu_prev.result_entity_ids.size() && i < s.gpu_prev.result_bodies.size(); ++i) {
-		prev_gpu_velocity.emplace(s.gpu_prev.result_entity_ids[i], s.gpu_prev.result_bodies[i].body_velocity);
+	prev_gpu_velocity.reserve(ud.gpu_prev.result_entity_ids.size());
+	for (std::size_t i = 0; i < ud.gpu_prev.result_entity_ids.size() && i < ud.gpu_prev.result_bodies.size(); ++i) {
+		prev_gpu_velocity.emplace(ud.gpu_prev.result_entity_ids[i], ud.gpu_prev.result_bodies[i].body_velocity);
 	}
 
 	constexpr acceleration gravity_mag = meters_per_second_squared(9.8f);
@@ -1088,8 +1097,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 		const auto eid = mc.owner_id();
 		id_to_body_index[eid] = body_idx++;
 
-		const auto sc_it = s.sleep_counters.find(eid);
-		const auto sc = sc_it != s.sleep_counters.end() ? sc_it->second : 0u;
+		const auto sc_it = ud.sleep_counters.find(eid);
+		const auto sc = sc_it != ud.sleep_counters.end() ? sc_it->second : 0u;
 
 		float accel_weight = 0.f;
 		if (!mc.position_locked && sc < 60u && dt > time_t<float, seconds>(seconds(1e-6f))) {
@@ -1133,7 +1142,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 			jumped_body_indices.push_back(it->second);
 		}
 	}
-	invalidate_warm_start_entries(s.gpu_prev.warm_start_contacts, jumped_body_indices);
+	invalidate_warm_start_entries(ud.gpu_prev.warm_start_contacts, jumped_body_indices);
 
 	std::vector<vbd::collision_body_data> collision_data(bodies.size());
 	for (auto& cd : collision_data) {
@@ -1159,7 +1168,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 		};
 	}
 
-	refresh_airborne_from_collisions(s, motion, collision);
+	refresh_airborne_from_collisions(ud, motion, collision);
 
 	std::vector<vbd::velocity_motor_constraint> motors;
 	for (motion_component& mc : motion) {
@@ -1231,9 +1240,9 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 		.accel_weights = accel_weights,
 		.motors = motors,
 		.joints = gpu_joints,
-		.warm_starts = std::vector(s.gpu_prev.warm_start_contacts.begin(), s.gpu_prev.warm_start_contacts.end()),
+		.warm_starts = std::vector(ud.gpu_prev.warm_start_contacts.begin(), ud.gpu_prev.warm_start_contacts.end()),
 		.authoritative_body_indices = jumped_body_indices,
-		.solver_cfg = s.vbd_solver.config(),
+		.solver_cfg = ud.vbd_solver.config(),
 		.dt = dt * static_cast<float>(steps),
 		.steps = steps,
 		.entity_ids = entity_ids,
@@ -1249,14 +1258,14 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 		channels.push(std::move(body_map));
 	}
 
-	if (s.compare_solvers && s.comparison_timer.tick()) {
+	if (s.compare_solvers && ud.comparison_timer.tick()) {
 		if (steps != 1) {
 			log::println("SOLVER COMPARE: skipped for {} fixed steps; single-step captures are the only apples-to-apples parity check right now", steps);
 		}
 		else {
 			vbd::solver cpu_ref;
-			cpu_ref.configure(s.vbd_solver.config());
-			auto ref_cache = build_contact_cache_from_warm_start(s.gpu_prev.warm_start_contacts);
+			cpu_ref.configure(ud.vbd_solver.config());
+			auto ref_cache = build_contact_cache_from_warm_start(ud.gpu_prev.warm_start_contacts);
 			cpu_ref.begin_frame(bodies, ref_cache);
 
 			std::vector<vec3<velocity>> ref_prev_velocities;
@@ -1286,7 +1295,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 			std::vector<vbd::body_state> cpu_result;
 			cpu_ref.end_frame(cpu_result, ref_cache);
 
-			s.comparison_pending = state::solver_comparison_snapshot{
+			ud.comparison_pending = system::update_data::solver_comparison_snapshot{
 				.cpu_result = std::move(cpu_result),
 				.cpu_contacts = cpu_ref.graph().contact_constraints() | std::views::all | std::ranges::to<std::vector>(),
 				.cpu_joints = cpu_ref.graph().joint_constraints() | std::views::all | std::ranges::to<std::vector>(),
@@ -1295,7 +1304,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, write<motion_compon
 	}
 }
 
-auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>& motion, write<collision_component>& collision) -> void {
+auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision) -> void {
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	std::unordered_map<id, std::uint32_t> id_to_body_index;
@@ -1322,8 +1331,8 @@ auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>
 			mc.previous_orientation = mc.orientation;
 
 			const auto eid = mc.owner_id();
-			const auto sc_it = s.sleep_counters.find(eid);
-			const auto sc = sc_it != s.sleep_counters.end() ? sc_it->second : 0u;
+			const auto sc_it = ud.sleep_counters.find(eid);
+			const auto sc = sc_it != ud.sleep_counters.end() ? sc_it->second : 0u;
 
 			bodies.push_back({
 				.position = mc.current_position,
@@ -1361,8 +1370,8 @@ auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>
 			};
 		}
 
-		s.vbd_solver.begin_frame(bodies, s.contact_cache);
-		add_scene_contacts_to_solver(s.vbd_solver, s.contact_cache, objects, id_to_body_index, true);
+		ud.vbd_solver.begin_frame(bodies, ud.contact_cache);
+		add_scene_contacts_to_solver(ud.vbd_solver, ud.contact_cache, objects, id_to_body_index, true);
 
 		for (motion_component& mc : motion) {
 			if (!mc.velocity_drive_active) {
@@ -1376,7 +1385,7 @@ auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>
 				continue;
 			}
 
-			s.vbd_solver.add_motor_constraint(vbd::velocity_motor_constraint{
+			ud.vbd_solver.add_motor_constraint(vbd::velocity_motor_constraint{
 				.body_index = it->second,
 				.target_velocity = mc.velocity_drive_target,
 				.compliance = 0.5f,
@@ -1397,7 +1406,7 @@ auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>
 				jd.rest_orientation_initialized = true;
 			}
 
-			s.vbd_solver.add_joint_constraint(vbd::joint_constraint{
+			ud.vbd_solver.add_joint_constraint(vbd::joint_constraint{
 				.body_a = it_a->second,
 				.body_b = it_b->second,
 				.type = jd.type,
@@ -1421,11 +1430,11 @@ auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>
 			});
 		}
 
-		s.vbd_solver.solve(const_update_time);
+		ud.vbd_solver.solve(const_update_time);
 
 		{
 			std::uint32_t ji = 0;
-			const auto& solved_joints = s.vbd_solver.graph().joint_constraints();
+			const auto& solved_joints = ud.vbd_solver.graph().joint_constraints();
 			for (auto& jd : s.joints) {
 				const auto it_a = id_to_body_index.find(jd.entity_a);
 				const auto it_b = id_to_body_index.find(jd.entity_b);
@@ -1446,7 +1455,7 @@ auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>
 		}
 
 		std::vector<vbd::body_state> result_bodies;
-		s.vbd_solver.end_frame(result_bodies, s.contact_cache);
+		ud.vbd_solver.end_frame(result_bodies, ud.contact_cache);
 
 		for (std::size_t i = 0; i < motion_ptrs.size(); ++i) {
 			auto* mc = motion_ptrs[i];
@@ -1459,7 +1468,7 @@ auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>
 				mc->angular_velocity = bs.body_angular_velocity;
 			}
 
-			s.sleep_counters[mc->owner_id()] = bs.sleep_counter;
+			ud.sleep_counters[mc->owner_id()] = bs.sleep_counter;
 			mc->sleeping = bs.sleeping();
 
 			if (auto* cc = collision.find(mc->owner_id())) {
@@ -1473,9 +1482,9 @@ auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>
 			}
 			if (magnitude(mc.pending_impulse) > newton_seconds(1e-6f)) {
 				mc.current_velocity += mc.pending_impulse / mc.mass;
-				s.sleep_counters[mc.owner_id()] = 0;
+				ud.sleep_counters[mc.owner_id()] = 0;
 				if (const auto it = id_to_body_index.find(mc.owner_id()); it != id_to_body_index.end()) {
-					s.contact_cache.remove_body(it->second);
+					ud.contact_cache.remove_body(it->second);
 				}
 				mc.pending_impulse = {};
 			}
@@ -1483,47 +1492,31 @@ auto gse::physics::update_vbd(const int steps, state& s, write<motion_component>
 	}
 }
 
-auto gse::physics::system::begin_frame(begin_frame_phase&, state& s, render_state& rs) -> bool {
-	if (rs.completed) {
-		s.completed_readback = std::move(rs.completed);
-		rs.completed.reset();
+auto gse::physics::system::frame(frame_context& ctx, frame_data& fd, const state& s) -> async::task<> {
+	if (!ctx.try_get<gpu::context>() || !s.use_gpu_solver) {
+		co_return;
 	}
-	if (rs.gpu_solver.compute_initialized()) {
-		s.gpu_stats = {
-			.active = true,
-			.contact_count = rs.gpu_solver.contact_count(),
-			.motor_count = rs.gpu_solver.motor_count(),
-			.solve_time = rs.gpu_solver.solve_time(),
-		};
-	}
-	return true;
-}
-
-auto gse::physics::system::render(const render_phase& phase, const state& s, render_state& rs) -> void {
-	if (!phase.try_get<gpu::context>() || !s.use_gpu_solver) {
-		return;
-	}
-	if (!rs.gpu_solver.compute_initialized()) {
-		return;
+	if (!fd.gpu_solver.compute_initialized()) {
+		co_return;
 	}
 
 	clock timer;
 
-	rs.gpu_solver.stage_readback();
+	fd.gpu_solver.stage_readback();
 	const auto readback_time = timer.reset();
 
-	if (rs.gpu_solver.has_readback_data()) {
-		if (rs.in_flight.has_value()) {
+	if (fd.gpu_solver.has_readback_data()) {
+		if (fd.in_flight.has_value()) {
 			gpu_readback_result result;
-			result.entity_ids = std::move(rs.in_flight->entity_ids);
-			result.gpu_input_bodies = std::move(rs.in_flight->gpu_input_bodies);
+			result.entity_ids = std::move(fd.in_flight->entity_ids);
+			result.gpu_input_bodies = std::move(fd.in_flight->gpu_input_bodies);
 			result.gpu_result_bodies = result.gpu_input_bodies;
-			result.gpu_joint_count = rs.in_flight->gpu_joint_count;
+			result.gpu_joint_count = fd.in_flight->gpu_joint_count;
 			std::vector<vbd::joint_constraint> joint_readback(result.gpu_joint_count);
-			rs.gpu_solver.readback(result.gpu_result_bodies, result.gpu_contacts, joint_readback);
+			fd.gpu_solver.readback(result.gpu_result_bodies, result.gpu_contacts, joint_readback);
 			result.gpu_joint_readback = std::move(joint_readback);
-			rs.in_flight.reset();
-			rs.completed = std::move(result);
+			fd.in_flight.reset();
+			ctx.channels.push(std::move(result));
 		}
 		else {
 			thread_local std::vector<vbd::body_state> discard_bodies;
@@ -1532,15 +1525,15 @@ auto gse::physics::system::render(const render_phase& phase, const state& s, ren
 			discard_bodies.clear();
 			discard_contacts.clear();
 			discard_joints.clear();
-			rs.gpu_solver.readback(discard_bodies, discard_contacts, discard_joints);
+			fd.gpu_solver.readback(discard_bodies, discard_contacts, discard_joints);
 		}
 	}
 	const auto process_time = timer.reset();
 
-	if (const auto& uploads = phase.read_channel<gpu_upload_payload>(); !uploads.empty()) {
+	if (const auto& uploads = ctx.read_channel<gpu_upload_payload>(); !uploads.empty()) {
 		const auto& [bodies, collision_data, accel_weights, motors, joints, warm_starts, authoritative_body_indices, solver_cfg, dt, steps, entity_ids, joint_count] = uploads[0];
 
-		rs.gpu_solver.upload(
+		fd.gpu_solver.upload(
 			bodies,
 			collision_data,
 			accel_weights,
@@ -1553,7 +1546,7 @@ auto gse::physics::system::render(const render_phase& phase, const state& s, ren
 			steps
 		);
 
-		rs.in_flight = render_state::readback_frame{
+		fd.in_flight = system::frame_data::readback_frame{
 			.entity_ids = entity_ids,
 			.gpu_input_bodies = bodies,
 			.gpu_joint_count = joint_count
@@ -1561,18 +1554,29 @@ auto gse::physics::system::render(const render_phase& phase, const state& s, ren
 	}
 	const auto upload_time = timer.reset();
 
-	if (rs.gpu_solver.pending_dispatch() && rs.gpu_solver.ready_to_dispatch()) {
-		rs.gpu_solver.commit_upload();
-		rs.gpu_solver.dispatch_compute();
+	if (fd.gpu_solver.pending_dispatch() && fd.gpu_solver.ready_to_dispatch()) {
+		fd.gpu_solver.commit_upload();
+		fd.gpu_solver.dispatch_compute();
 	}
 	const auto dispatch_time = timer.reset();
+
+	ctx.channels.push(gpu_solver_stats{
+		.active = true,
+		.contact_count = fd.gpu_solver.contact_count(),
+		.motor_count = fd.gpu_solver.motor_count(),
+		.solve_time = fd.gpu_solver.solve_time(),
+	});
+
+	ctx.channels.push(gpu_solver_frame_info{
+		.solver = &fd.gpu_solver,
+	});
 
 	static std::uint32_t log_counter = 0;
 	if (log_counter++ % 120 == 0) {
 		log::println(
 			log::category::physics,
-			"render: readback={} process={} upload={} dispatch={} gpu_solve={}",
-			readback_time, process_time, upload_time, dispatch_time, rs.gpu_solver.solve_time()
+			"frame: readback={} process={} upload={} dispatch={} gpu_solve={}",
+			readback_time, process_time, upload_time, dispatch_time, fd.gpu_solver.solve_time()
 		);
 	}
 }

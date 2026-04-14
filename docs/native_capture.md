@@ -246,11 +246,39 @@ Registration:
 - No F10/F11 hotkeys registered yet — deferred to Phases 2/3
 - Uses `input::system_state` directly instead of actions system to avoid `gse.runtime` cyclic dependency
 
-### Phase 1 — Codec backend + encode online
-- Implement `codec_backend` abstraction with AV1 backend (+ H.265 fallback).
-- Color convert + downscale compute shader (`rgba_to_nv12.slang`).
-- Vulkan Video session creation, encode every frame, discard bitstream.
-- **Deliverable:** encode running, validated via RenderDoc / Vulkan validation. No output yet.
+### Phase 1 — Codec backend + encode online — CODE COMPLETE, AWAITING HARDWARE VALIDATION
+
+**What was built:**
+
+Platform layer:
+- `VideoEncoder.cppm` (new) — `gse::gpu::video_encoder` class with `probe()`, `create()`, `encode_frame()`, `wait()`
+  - Probes AV1 first, falls back to H.265 via `vkGetPhysicalDeviceVideoCapabilitiesKHR`
+  - Creates `VkVideoSessionKHR`, session parameters (SPS/PPS for H.265, sequence header for AV1), DPB images, per-frame NV12 input images + bitstream buffers + command pools/fences
+  - `encode_frame()`: copies Y+UV planes into multi-plane NV12 image, records `vkCmdEncodeVideoKHR`, submits on video encode queue
+  - `vk_enum<>` helper for HPP→C video enum conversion at aggregate init boundaries
+- `GpuTypes.cppm` — added `r8g8_unorm` image format, `image_flag::transfer_src`
+- `GpuFactory.cppm` — `r8g8_unorm` format mapping, `transfer_src` usage flag mapping
+- `DescriptorHeap.cppm` + `GpuDescriptorWriter.cppm` — added `storage_image()` descriptor write support
+- `RenderGraph.cppm` — added `blit_swapchain_to_image()`, made `bind_descriptors(gpu::descriptor_region)` const
+- `GpuDevice.cppm` — `video_encode_enabled()` accessor, codec-specific extensions (AV1+H.265), queue family diagnostic logging, fixed `robustBufferAccess` validation error
+
+Shader:
+- `Engine/Resources/Shaders/Compute/rgba_to_nv12.slang` — sRGB RGBA → BT.709 NV12 compute shader (16x16 workgroups, 4:2:0 subsampling)
+
+Renderer:
+- `CaptureRenderer.cppm` — expanded with `encode_resources` (compute pipeline, per-frame RGBA/Y/UV images, descriptors, sampler, encoder)
+  - `initialize`: probes encoder, creates color convert pipeline + images + descriptors + encoder
+  - `render`: blit swapchain → RGBA, compute dispatch RGBA → Y+UV
+  - `prepare_render`: waits encoder fence, submits encode for previous frame's Y/UV
+
+Registration:
+- `Platform.cppm` — re-exports `:video_encoder`
+
+**Status:** Builds and runs. Entire encode path is gated on `video_encode_enabled()`. On Intel Arc 140V (Lunar Lake), the driver exposes `VideoDecodeKHR` but NOT `VideoEncodeKHR` — encode path is unreachable on this hardware. Needs validation on NVIDIA RTX 5090 or similar GPU with Vulkan Video encode support.
+
+**Deviations from original plan:**
+- No separate codec_backend abstraction class — codec differences handled internally via `video_codec` enum switch + `vk_enum<>` helper
+- Color convert and encode gated on same `video_encode_enabled()` flag — if no encode queue, neither runs
 
 ### Phase 2 — Ring buffer + clip save (F10)
 - Coded-unit ring buffer with keyframe index.
@@ -285,6 +313,11 @@ Registration:
 - **Module cycle risk**: `CaptureRenderer` cannot import `gse.runtime` (cyclic via `Engine.cppm` → `Graphics.cppm`). Solved by using `input::system_state` from `gse.platform` directly.
 - **Swapchain alpha**: compositeAlpha is eOpaque so swapchain alpha is garbage. Fixed by forcing alpha to 0xFF before PNG write.
 - **`gse::system_clock` name collision**: `system_clock::now()` inside `SystemClock.cppm` resolves to the engine's quantity-based clock, not `std::chrono::system_clock::now()`. Fixed by fully qualifying all `std::chrono::` calls in `timestamp_filename()`.
+
+### Resolved / discovered in Phase 1
+- ~~**Driver support probe.**~~ Probe logic works. AV1 → H.265 fallback chain implemented. Issue: Intel Arc 140V (Lunar Lake) driver exposes `VideoDecodeKHR` but not `VideoEncodeKHR`. Encode HW exists on the chip but isn't exposed through Vulkan Video on this driver/SKU. Needs RTX 5090 to validate.
+- **HPP video enum mismatch**: Vulkan HPP `vk::VideoEncode*` structs have C-enum-typed fields (`StdVideoH265ProfileIdc`) even in HPP mode. HPP video enums (`vk::video::H265ProfileIdc`) don't implicitly convert. Solved with `vk_enum<decltype(field)>(hpp_value)` helper.
+- **`robustBufferAccess` validation error**: Pre-existing bug — `robustBufferAccess2` was enabled without base `robustBufferAccess`. Fixed by conditionally enabling `robustBufferAccess` in `VkPhysicalDeviceFeatures2`.
 
 ---
 

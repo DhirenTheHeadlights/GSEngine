@@ -43,9 +43,6 @@ export namespace gse {
 	auto set_ui_focus(
 		const bool focus
 	) -> void;
-
-	auto frame_begun(
-	) -> bool;
 }
 
 template <typename Resource>
@@ -101,11 +98,4 @@ auto gse::set_ui_focus(const bool focus) -> void {
 		return;
 	}
 	state_of<renderer::state>().set_ui_focus(focus);
-}
-
-auto gse::frame_begun() -> bool {
-	if (!has_state<renderer::state>()) {
-		return false;
-	}
-	return state_of<renderer::state>().is_frame_begun();
 }
