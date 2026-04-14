@@ -66,6 +66,11 @@ export namespace gse::task {
 	auto wait_idle(
 	) -> void;
 
+	template <typename F>
+	auto isolate(
+		F&& fn
+	) -> std::invoke_result_t<F&>;
+
 	class group : non_copyable, non_movable {
 	public:
 		explicit group(
@@ -338,6 +343,11 @@ auto gse::task::wait_idle() -> void {
 	idle_cv.wait(lk, [] {
 		return likely_idle();
 	});
+}
+
+template <typename F>
+auto gse::task::isolate(F&& fn) -> std::invoke_result_t<F&> {
+	return tbb::this_task_arena::isolate(std::forward<F>(fn));
 }
 
 auto gse::task::enqueue(job j, id id, parent parent) -> void {

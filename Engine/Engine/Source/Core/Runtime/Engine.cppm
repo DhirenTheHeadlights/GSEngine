@@ -167,7 +167,6 @@ auto gse::engine::render() -> void {
 	bool frame_ok = false;
 
 	if (m_render_ctx) {
-		m_render_ctx->graph().clear();
 		m_render_ctx->process_gpu_queue();
 
 		const clock fence_timer;

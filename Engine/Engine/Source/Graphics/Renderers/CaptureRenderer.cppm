@@ -112,21 +112,8 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
 			.commit();
 	}
 
-	const auto caps = gpu::video_encoder::probe(ctx.device_ref());
-	if (!caps.available) {
-		log::println(log::category::render, "Capture color convert initialized but no encoder available");
-		r.encode_active = true;
-		return;
-	}
-
-	const auto cap_ext = vec2u{
-		std::min(ext.x(), caps.max_extent.x()),
-		std::min(ext.y(), caps.max_extent.y())
-	};
-
-	fd.encoder = gpu::video_encoder::create(ctx.device_ref(), cap_ext, caps.codec);
+	log::println(log::category::render, "Capture color convert initialized but no encoder available");
 	r.encode_active = true;
-	log::println(log::category::render, "Capture encode pipeline initialized ({}x{})", ext.x(), ext.y());
 }
 
 auto gse::renderer::capture::system::update(update_context& ctx, state& s) -> void {
