@@ -8,6 +8,7 @@ import gse.graphics;
 import gse.audio;
 import gse.physics;
 import gse.platform;
+import gse.log;
 
 import :world;
 
@@ -119,10 +120,10 @@ auto gse::engine::initialize() -> void {
 		ctx.compile();
 		m_scheduler.set_gpu_context(&ctx);
 
-		m_scheduler.add_system<physics::system, physics::state, physics::render_state>(reg);
+		m_scheduler.add_system<physics::system, physics::state>(reg);
 		m_scheduler.add_system<camera::system, camera::state>(reg);
 		m_scheduler.add_system<renderer::system, renderer::state>(reg);
-		m_scheduler.add_system<renderer::rt_shadow::system, renderer::rt_shadow::state, renderer::rt_shadow::render_state>(reg);
+		m_scheduler.add_system<renderer::rt_shadow::system, renderer::rt_shadow::state>(reg);
 		m_scheduler.add_system<renderer::geometry_collector::system, renderer::geometry_collector::state>(reg);
 		m_scheduler.add_system<renderer::skin_compute::system, renderer::skin_compute::state>(reg);
 		m_scheduler.add_system<renderer::physics_transform::system, renderer::physics_transform::state>(reg);
@@ -163,11 +164,26 @@ auto gse::engine::update() -> void {
 }
 
 auto gse::engine::render() -> void {
+	bool frame_ok = false;
+
 	if (m_render_ctx) {
 		m_render_ctx->graph().clear();
+		m_render_ctx->process_gpu_queue();
+
+		const clock fence_timer;
+		auto result = m_render_ctx->begin_frame();
+		const auto fence_wait = fence_timer.elapsed();
+
+		m_render_ctx->scheduler().report_frame_time(fence_wait);
+		frame_ok = result.has_value();
+
+		if (!result && result.error() == gpu::frame_status::device_lost) {
+			log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame — terminating");
+			std::abort();
+		}
 	}
 
-	m_scheduler.render([this] {
+	m_scheduler.render(frame_ok, [this] {
 		if (m_render_ctx) {
 			m_render_ctx->scheduler().flush();
 			m_render_ctx->graph().execute();
@@ -179,6 +195,11 @@ auto gse::engine::render() -> void {
 
 		m_world.render();
 	});
+
+	if (frame_ok && m_render_ctx) {
+		m_render_ctx->end_frame();
+		m_render_ctx->finalize_reloads();
+	}
 }
 
 auto gse::engine::shutdown() -> void {

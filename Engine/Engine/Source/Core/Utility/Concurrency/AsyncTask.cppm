@@ -228,11 +228,8 @@ auto gse::async::promise_base::operator new(const std::size_t size) -> void* {
 	return frame_arena::allocate(size);
 }
 
-auto gse::async::promise_base::operator delete(void* ptr, std::size_t) -> void {
-	if (frame_arena::contains(ptr)) {
-		return;
-	}
-	::operator delete(ptr);
+auto gse::async::promise_base::operator delete(void* ptr, const std::size_t size) -> void {
+	frame_arena::deallocate(ptr, size);
 }
 
 template <typename T>
@@ -366,7 +363,7 @@ auto gse::async::when_all_impl(std::vector<task<>> tasks) -> task<> {
 		co_return;
 	}
 
-	auto state = std::make_shared<when_all_state>();
+	const auto state = std::make_shared<when_all_state>();
 	state->remaining.store(static_cast<int>(tasks.size()), std::memory_order_relaxed);
 
 	std::vector<task<>> helpers;
@@ -375,8 +372,7 @@ auto gse::async::when_all_impl(std::vector<task<>> tasks) -> task<> {
 		helpers.push_back(when_all_helper(std::move(t), state));
 	}
 
-	std::coroutine_handle<> self_handle;
-	co_await suspend_and_capture{ self_handle, helpers };
+	co_await suspend_and_capture{ state->continuation, helpers };
 
 	if (state->first_exception) {
 		std::rethrow_exception(state->first_exception);

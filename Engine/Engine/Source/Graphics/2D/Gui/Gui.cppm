@@ -172,16 +172,15 @@ export namespace gse::gui {
 	};
 
 	struct system {
-		static auto initialize(initialize_phase& phase, system_state& s) -> void;
+		static auto initialize(init_context& phase, system_state& s) -> void;
 		static auto update(update_context& ctx, system_state& s) -> void;
-		static auto render(render_phase& phase, system_state& s) -> void;
-		static auto shutdown(shutdown_phase& phase, system_state& s) -> void;
+		static auto shutdown(shutdown_context& phase, system_state& s) -> void;
 
 		static auto save(system_state& s) -> void;
 	};
 }
 
-auto gse::gui::system::initialize(initialize_phase& phase, system_state& s) -> void {
+auto gse::gui::system::initialize(init_context& phase, system_state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	s.available_fonts = ctx.enumerate_resources("Fonts", ".gfont");
 
@@ -667,9 +666,7 @@ auto gse::gui::system::update(update_context& ctx, system_state& s) -> void {
 	s.fstate = {};
 }
 
-auto gse::gui::system::render(render_phase&, system_state&) -> void {}
-
-auto gse::gui::system::shutdown(shutdown_phase&, system_state& s) -> void {
+auto gse::gui::system::shutdown(shutdown_context&, system_state& s) -> void {
 	gui::save(s.menus, config::resource_path / s.file_path);
 }
 

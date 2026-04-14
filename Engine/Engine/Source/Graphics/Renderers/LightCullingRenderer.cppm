@@ -16,20 +16,7 @@ export namespace gse::renderer::light_culling {
 	constexpr std::size_t max_lights = 1024;
 
 	struct state {
-		gpu::pipeline pipeline;
-		per_frame_resource<gpu::descriptor_region> descriptors;
-
-		resource::handle<shader> shader_handle;
-
-		per_frame_resource<gpu::buffer> culling_params_buffers;
-		per_frame_resource<gpu::buffer> light_buffers;
-		per_frame_resource<gpu::buffer> light_index_list_buffers;
-		per_frame_resource<gpu::buffer> tile_light_table_buffers;
-
-		gpu::sampler depth_sampler;
-
 		vec2u current_extent{};
-		gpu::context* ctx = nullptr;
 
 		auto tile_count() const -> vec2u {
 			return {
@@ -37,37 +24,53 @@ export namespace gse::renderer::light_culling {
 				(current_extent.y() + tile_size - 1) / tile_size
 			};
 		}
-
-		auto light_index_list(const std::uint32_t frame) const -> const gpu::buffer& {
-			return light_index_list_buffers[frame];
-		}
-
-		auto tile_light_table(const std::uint32_t frame) const -> const gpu::buffer& {
-			return tile_light_table_buffers[frame];
-		}
 	};
 
 	struct system {
-		static auto initialize(const initialize_phase& phase, state& s) -> void;
-		static auto render(const render_phase& phase, const state& s) -> void;
+		struct resources {
+			gpu::pipeline pipeline;
+			per_frame_resource<gpu::descriptor_region> descriptors;
+
+			resource::handle<shader> shader_handle;
+
+			per_frame_resource<gpu::buffer> culling_params_buffers;
+			per_frame_resource<gpu::buffer> light_buffers;
+			per_frame_resource<gpu::buffer> light_index_list_buffers;
+			per_frame_resource<gpu::buffer> tile_light_table_buffers;
+
+			gpu::sampler depth_sampler;
+
+			gpu::context* ctx = nullptr;
+
+			auto light_index_list(const std::uint32_t frame) const -> const gpu::buffer& {
+				return light_index_list_buffers[frame];
+			}
+
+			auto tile_light_table(const std::uint32_t frame) const -> const gpu::buffer& {
+				return tile_light_table_buffers[frame];
+			}
+		};
+
+		static auto initialize(const init_context& phase, resources& r, state& s) -> void;
+		static auto frame(frame_context& ctx, const resources& r, const state& s) -> async::task<>;
 	};
 }
 
 namespace gse::renderer::light_culling {
-	auto update_depth_descriptor(state& s) -> void;
-	auto rebuild_tile_buffers(state& s) -> void;
+	auto update_depth_descriptor(system::resources& r) -> void;
+	auto rebuild_tile_buffers(system::resources& r, state& s) -> void;
 }
 
-auto gse::renderer::light_culling::update_depth_descriptor(state& s) -> void {
+auto gse::renderer::light_culling::update_depth_descriptor(system::resources& r) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(s.ctx->device_ref(), s.shader_handle, s.descriptors[i])
-			.image("g_depth", s.ctx->graph().depth_image(), s.depth_sampler, gpu::image_layout::general)
+		gpu::descriptor_writer(r.ctx->device_ref(), r.shader_handle, r.descriptors[i])
+			.image("g_depth", r.ctx->graph().depth_image(), r.depth_sampler, gpu::image_layout::general)
 			.commit();
 	}
 }
 
-auto gse::renderer::light_culling::rebuild_tile_buffers(state& s) -> void {
-	const auto ext = s.ctx->graph().extent();
+auto gse::renderer::light_culling::rebuild_tile_buffers(system::resources& r, state& s) -> void {
+	const auto ext = r.ctx->graph().extent();
 	s.current_extent = ext;
 
 	const auto tiles = s.tile_count();
@@ -75,59 +78,59 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(state& s) -> void {
 	const std::uint32_t index_list_size = total_tiles * max_lights_per_tile * sizeof(std::uint32_t);
 	const std::uint32_t tile_table_size = total_tiles * 2 * sizeof(std::uint32_t);
 
-	const auto light_block = s.shader_handle->uniform_block("lights");
-	const auto params_block = s.shader_handle->uniform_block("CullingParams");
+	const auto light_block = r.shader_handle->uniform_block("lights");
+	const auto params_block = r.shader_handle->uniform_block("CullingParams");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		s.light_index_list_buffers[i] = gpu::create_buffer(s.ctx->device_ref(), {
+		r.light_index_list_buffers[i] = gpu::create_buffer(r.ctx->device_ref(), {
 			.size = index_list_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		s.tile_light_table_buffers[i] = gpu::create_buffer(s.ctx->device_ref(), {
+		r.tile_light_table_buffers[i] = gpu::create_buffer(r.ctx->device_ref(), {
 			.size = tile_table_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		gpu::descriptor_writer(s.ctx->device_ref(), s.shader_handle, s.descriptors[i])
-			.buffer("CullingParams", s.culling_params_buffers[i], 0, params_block.size)
-			.buffer("lights", s.light_buffers[i], 0, light_block.size * max_lights)
-			.buffer("light_index_list", s.light_index_list_buffers[i], 0, index_list_size)
-			.buffer("tile_light_table", s.tile_light_table_buffers[i], 0, tile_table_size)
+		gpu::descriptor_writer(r.ctx->device_ref(), r.shader_handle, r.descriptors[i])
+			.buffer("CullingParams", r.culling_params_buffers[i], 0, params_block.size)
+			.buffer("lights", r.light_buffers[i], 0, light_block.size * max_lights)
+			.buffer("light_index_list", r.light_index_list_buffers[i], 0, index_list_size)
+			.buffer("tile_light_table", r.tile_light_table_buffers[i], 0, tile_table_size)
 			.commit();
 	}
 
-	update_depth_descriptor(s);
+	update_depth_descriptor(r);
 }
 
-auto gse::renderer::light_culling::system::initialize(const initialize_phase& phase, state& s) -> void {
+auto gse::renderer::light_culling::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	s.ctx = &ctx;
+	r.ctx = &ctx;
 
-	s.shader_handle = ctx.get<shader>("Shaders/Compute/light_culling");
-	ctx.instantly_load(s.shader_handle);
-	assert(s.shader_handle->is_compute(), std::source_location::current(), "Shader for light culling system must be a compute shader");
+	r.shader_handle = ctx.get<shader>("Shaders/Compute/light_culling");
+	ctx.instantly_load(r.shader_handle);
+	assert(r.shader_handle->is_compute(), std::source_location::current(), "Shader for light culling system must be a compute shader");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		s.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.shader_handle);
 	}
 
-	const auto params_block = s.shader_handle->uniform_block("CullingParams");
-	const auto light_block = s.shader_handle->uniform_block("lights");
+	const auto params_block = r.shader_handle->uniform_block("CullingParams");
+	const auto light_block = r.shader_handle->uniform_block("lights");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		s.culling_params_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.culling_params_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = params_block.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		s.light_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.light_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = light_block.size * max_lights,
 			.usage = gpu::buffer_flag::storage
 		});
 	}
 
-	s.depth_sampler = gpu::create_sampler(ctx.device_ref(), {
+	r.depth_sampler = gpu::create_sampler(ctx.device_ref(), {
 		.min = gpu::sampler_filter::nearest,
 		.mag = gpu::sampler_filter::nearest,
 		.address_u = gpu::sampler_address_mode::clamp_to_edge,
@@ -137,48 +140,52 @@ auto gse::renderer::light_culling::system::initialize(const initialize_phase& ph
 		.max_lod = 1.0f
 	});
 
-	s.pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *s.shader_handle);
+	r.pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *r.shader_handle);
 
-	rebuild_tile_buffers(s);
+	rebuild_tile_buffers(r, s);
 
-	ctx.on_swap_chain_recreate([&s]() {
-		rebuild_tile_buffers(s);
+	ctx.on_swap_chain_recreate([&r, &s]() {
+		rebuild_tile_buffers(r, s);
 	});
 }
 
-auto gse::renderer::light_culling::system::render(const render_phase& phase, const state& s) -> void {
-	auto& ctx = phase.get<gpu::context>();
-	auto& graph = ctx.graph();
+auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resources& r, const state& s) -> async::task<> {
+	co_await ctx.after<geometry_collector::state>();
+
+	auto& gpu = ctx.get<gpu::context>();
+	auto& graph = gpu.graph();
 
 	if (!graph.frame_in_progress()) {
-		return;
+		co_return;
 	}
 
 	const auto frame_index = graph.current_frame();
 
-	const auto* cam_state = phase.try_state_of<camera::state>();
+	const auto* cam_state = ctx.try_state_of<camera::state>();
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
 	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
 	const auto inv_proj = proj.inverse();
 
-	const auto& params_alloc = s.culling_params_buffers[frame_index];
-	s.shader_handle->set_uniform("CullingParams.projection", proj, params_alloc);
-	s.shader_handle->set_uniform("CullingParams.inv_proj", inv_proj, params_alloc);
+	const auto& params_alloc = r.culling_params_buffers[frame_index];
+	r.shader_handle->set_uniform("CullingParams.projection", proj, params_alloc);
+	r.shader_handle->set_uniform("CullingParams.inv_proj", inv_proj, params_alloc);
 
 	const auto extent = graph.extent();
 	const std::array screen_size_arr = { extent.x(), extent.y() };
-	s.shader_handle->set_uniform("CullingParams.screen_size", screen_size_arr, params_alloc);
+	r.shader_handle->set_uniform("CullingParams.screen_size", screen_size_arr, params_alloc);
 
-	const auto dir_chunk = phase.registry.view<directional_light_component>();
-	const auto spot_chunk = phase.registry.view<spot_light_component>();
-	const auto point_chunk = phase.registry.view<point_light_component>();
+	const auto dir_chunk = ctx.reg.linked_objects_read<directional_light_component>();
+	const auto spot_chunk = ctx.reg.linked_objects_read<spot_light_component>();
+	const auto point_chunk = ctx.reg.linked_objects_read<point_light_component>();
 
-	const auto& light_alloc = s.light_buffers[frame_index];
-	const auto light_block = s.shader_handle->uniform_block("lights");
+	const auto& light_alloc = r.light_buffers[frame_index];
+	const auto light_block = r.shader_handle->uniform_block("lights");
 	const auto stride = light_block.size;
 
 	const std::size_t total_lights = std::min(
-		dir_chunk.size() + spot_chunk.size() + point_chunk.size(), max_lights);
+		dir_chunk.size() + spot_chunk.size() + point_chunk.size(),
+		max_lights
+	);
 	std::vector<std::byte> staging(total_lights * stride, std::byte{ 0 });
 	std::size_t light_count = 0;
 
@@ -240,23 +247,23 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 	gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
 
 	const std::uint32_t num_lights = static_cast<std::uint32_t>(light_count);
-	s.shader_handle->set_uniform("CullingParams.num_lights", num_lights, params_alloc);
+	r.shader_handle->set_uniform("CullingParams.num_lights", num_lights, params_alloc);
 
 	const auto tiles = s.tile_count();
 	auto pass = graph.add_pass<state>();
 	pass.after<depth_prepass::state>();
 
-	pass.track(s.culling_params_buffers[frame_index]);
-	pass.track(s.light_buffers[frame_index]);
+	pass.track(r.culling_params_buffers[frame_index]);
+	pass.track(r.light_buffers[frame_index]);
 
 	pass.reads(gpu::sampled(graph.depth_image(), gpu::pipeline_stage::compute_shader))
 		.writes(
-			gpu::storage_write(s.tile_light_table_buffers[frame_index], gpu::pipeline_stage::compute_shader),
-			gpu::storage_write(s.light_index_list_buffers[frame_index], gpu::pipeline_stage::compute_shader)
+			gpu::storage_write(r.tile_light_table_buffers[frame_index], gpu::pipeline_stage::compute_shader),
+			gpu::storage_write(r.light_index_list_buffers[frame_index], gpu::pipeline_stage::compute_shader)
 		)
-		.record([&s, frame_index, tiles](gpu::recording_context& ctx) {
-			ctx.bind(s.pipeline);
-			ctx.bind_descriptors(s.pipeline, s.descriptors[frame_index]);
-			ctx.dispatch(tiles.x(), tiles.y(), 1);
+		.record([&r, frame_index, tiles](gpu::recording_context& rec) {
+			rec.bind(r.pipeline);
+			rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
+			rec.dispatch(tiles.x(), tiles.y(), 1);
 		});
 }

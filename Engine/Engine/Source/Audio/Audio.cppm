@@ -170,7 +170,7 @@ export namespace gse::audio {
 
 	struct system {
 		static auto initialize(
-			const initialize_phase& phase,
+			const init_context& phase,
 			state& s
 		) -> void;
 
@@ -180,7 +180,7 @@ export namespace gse::audio {
 		) -> void;
 
 		static auto shutdown(
-			shutdown_phase& phase,
+			shutdown_context& phase,
 			state& s
 		) -> void;
 	};
@@ -342,7 +342,7 @@ auto gse::audio::state::valid_voice(const voice_handle handle) const -> bool {
 		&& voices[handle.index]->generation == handle.generation;
 }
 
-auto gse::audio::system::initialize(const initialize_phase& phase, state& s) -> void {
+auto gse::audio::system::initialize(const init_context& phase, state& s) -> void {
 	if (phase.try_get<gpu::context>()) {
 		s.ctx = &phase.get<gpu::context>();
 	}
@@ -357,7 +357,7 @@ auto gse::audio::system::update(update_context&, state& s) -> void {
 	s.cleanup_finished();
 }
 
-auto gse::audio::system::shutdown(shutdown_phase&, state& s) -> void {
+auto gse::audio::system::shutdown(shutdown_context&, state& s) -> void {
 	s.stop_all();
 	if (s.engine_initialized) {
 		ma_engine_uninit(&s.engine);

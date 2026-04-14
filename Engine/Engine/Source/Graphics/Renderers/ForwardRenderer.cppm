@@ -45,40 +45,44 @@ export namespace gse::renderer::forward {
 	};
 
 	struct state {
-		gpu::pipeline pipeline;
-		per_frame_resource<gpu::descriptor_region> descriptors;
-		resource::handle<shader> shader_handle;
-
-		gpu::pipeline skinned_pipeline;
-		per_frame_resource<gpu::descriptor_region> skinned_descriptors;
-		resource::handle<shader> skinned_shader;
-
-		per_frame_resource<gpu::buffer> light_buffers;
-		per_frame_resource<gpu::buffer> material_palette_buffers;
-
-		resource::handle<texture> blank_texture;
-
-		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
-
 		shadow_quality_level shadow_quality = shadow_quality_level::medium;
 		ao_quality_level ao_quality = ao_quality_level::medium;
 		reflection_quality_level reflection_quality = reflection_quality_level::medium;
 	};
 
 	struct system {
+		struct resources {
+			gpu::pipeline pipeline;
+			per_frame_resource<gpu::descriptor_region> descriptors;
+			resource::handle<shader> shader_handle;
+
+			gpu::pipeline skinned_pipeline;
+			per_frame_resource<gpu::descriptor_region> skinned_descriptors;
+			resource::handle<shader> skinned_shader;
+
+			per_frame_resource<gpu::buffer> light_buffers;
+			per_frame_resource<gpu::buffer> material_palette_buffers;
+
+			resource::handle<texture> blank_texture;
+
+			std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
+		};
+
 		static auto initialize(
-			const initialize_phase& phase,
+			const init_context& phase,
+			resources& r,
 			state& s
 		) -> void;
 
-		static auto render(
-			const render_phase& phase,
+		static auto frame(
+			frame_context& ctx,
+			const resources& r,
 			const state& s
-		) -> void;
+		) -> async::task<>;
 	};
 }
 
-auto gse::renderer::forward::system::initialize(const initialize_phase& phase, state& s) -> void {
+auto gse::renderer::forward::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	phase.channels.push(save::register_property{
@@ -108,134 +112,136 @@ auto gse::renderer::forward::system::initialize(const initialize_phase& phase, s
 		.enum_options = { { "Off", 0 }, { "Low", 1 }, { "Medium", 2 }, { "High", 3 } }
 	});
 
-	s.shader_handle = ctx.get<shader>("Shaders/Standard3D/meshlet_geometry");
-	ctx.instantly_load(s.shader_handle);
+	r.shader_handle = ctx.get<shader>("Shaders/Standard3D/meshlet_geometry");
+	ctx.instantly_load(r.shader_handle);
 
-	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
-	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
+	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
+	const auto light_block = r.shader_handle->uniform_block("lights_ssbo");
 	const auto light_buffer_size = light_block.size * max_lights;
-	const auto material_block = s.shader_handle->uniform_block("material_palette");
+	const auto material_block = r.shader_handle->uniform_block("material_palette");
 	const auto material_buffer_size = material_block.size * max_materials;
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
+		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		s.light_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.light_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = light_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		s.material_palette_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.material_palette_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = material_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		s.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.shader_handle);
 
-		gpu::descriptor_writer(ctx.device_ref(), s.shader_handle, s.descriptors[i])
-			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
-			.buffer("lights_ssbo", s.light_buffers[i], 0, light_buffer_size)
-			.buffer("material_palette", s.material_palette_buffers[i], 0, material_buffer_size)
+		gpu::descriptor_writer(ctx.device_ref(), r.shader_handle, r.descriptors[i])
+			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
+			.buffer("lights_ssbo", r.light_buffers[i], 0, light_buffer_size)
+			.buffer("material_palette", r.material_palette_buffers[i], 0, material_buffer_size)
 			.commit();
 	}
 
 	const auto* rt_state = phase.try_state_of<rt_shadow::state>();
-	const auto* lc_state = phase.try_state_of<light_culling::state>();
+	const auto* lc_r = phase.try_resources_of<light_culling::system::resources>();
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		gpu::descriptor_writer writer(ctx.device_ref(), s.shader_handle, s.descriptors[i]);
+		gpu::descriptor_writer writer(ctx.device_ref(), r.shader_handle, r.descriptors[i]);
 
 		if (rt_state) {
 			writer.acceleration_structure("tlas", rt_state->tlas(fi).native_handle());
 		}
 
-		if (lc_state) {
-			writer.buffer("light_index_list", lc_state->light_index_list(fi))
-				.buffer("tile_light_table", lc_state->tile_light_table(fi));
+		if (lc_r) {
+			writer.buffer("light_index_list", lc_r->light_index_list(fi))
+				.buffer("tile_light_table", lc_r->tile_light_table(fi));
 		}
 
 		writer.commit();
 	}
 
-	ctx.on_swap_chain_recreate([&s, lc_state, rt_state, &ctx]() {
+	ctx.on_swap_chain_recreate([&r, lc_r, rt_state, &ctx]() {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
-			gpu::descriptor_writer writer(ctx.device_ref(), s.shader_handle, s.descriptors[i]);
+			gpu::descriptor_writer writer(ctx.device_ref(), r.shader_handle, r.descriptors[i]);
 
 			if (rt_state) {
 				writer.acceleration_structure("tlas", rt_state->tlas(fi).native_handle());
 			}
 
-			if (lc_state) {
-				writer.buffer("light_index_list", lc_state->light_index_list(fi))
-					.buffer("tile_light_table", lc_state->tile_light_table(fi));
+			if (lc_r) {
+				writer.buffer("light_index_list", lc_r->light_index_list(fi))
+					.buffer("tile_light_table", lc_r->tile_light_table(fi));
 			}
 
 			writer.commit();
 		}
 	});
 
-	s.pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.shader_handle, {
+	r.pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.shader_handle, {
 		.depth = { .test = true, .write = false, .compare = gpu::compare_op::less_or_equal },
 		.push_constant_block = "push_constants"
 	});
 
 
-	s.skinned_shader = ctx.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
-	ctx.instantly_load(s.skinned_shader);
+	r.skinned_shader = ctx.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
+	ctx.instantly_load(r.skinned_shader);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *s.skinned_shader);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.skinned_shader);
 
-		gpu::descriptor_writer(ctx.device_ref(), s.skinned_shader, s.skinned_descriptors[i])
-			.buffer("CameraUBO", s.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
+		gpu::descriptor_writer(ctx.device_ref(), r.skinned_shader, r.skinned_descriptors[i])
+			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
 
-	s.skinned_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *s.skinned_shader, {
+	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.skinned_shader, {
 		.depth = { .test = true, .write = false, .compare = gpu::compare_op::less_or_equal }
 	});
 
 
-	s.blank_texture = ctx.queue<texture>("blank", vec4f(1, 1, 1, 1));
-	ctx.instantly_load(s.blank_texture);
+	r.blank_texture = ctx.queue<texture>("blank", vec4f(1, 1, 1, 1));
+	ctx.instantly_load(r.blank_texture);
 }
 
-auto gse::renderer::forward::system::render(const render_phase& phase, const state& s) -> void {
-	auto& ctx = phase.get<gpu::context>();
+auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& r, const state& s) -> async::task<> {
+	co_await ctx.after<geometry_collector::state>();
 
-	const auto& render_items = phase.read_channel<geometry_collector::render_data>();
+	auto& gpu = ctx.get<gpu::context>();
+
+	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
-		return;
+		co_return;
 	}
 
 	const auto& data = render_items[0];
-	const auto frame_index = ctx.graph().current_frame();
+	const auto frame_index = gpu.graph().current_frame();
 
-	if (!ctx.graph().frame_in_progress()) {
-		return;
+	if (!gpu.graph().frame_in_progress()) {
+		co_return;
 	}
 
-	const auto* cam_state = phase.try_state_of<camera::state>();
-	const auto* rt_state = phase.try_state_of<rt_shadow::state>();
+	const auto* cam_state = ctx.try_state_of<camera::state>();
+	const auto* rt_state = ctx.try_state_of<rt_shadow::state>();
 	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
-	const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index];
-	s.shader_handle->set_uniform("CameraUBO.view", view, cam_alloc);
-	s.shader_handle->set_uniform("CameraUBO.proj", proj, cam_alloc);
-	s.shader_handle->set_uniform("CameraUBO.inv_view", view.inverse(), cam_alloc);
+	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
+	r.shader_handle->set_uniform("CameraUBO.view", view, cam_alloc);
+	r.shader_handle->set_uniform("CameraUBO.proj", proj, cam_alloc);
+	r.shader_handle->set_uniform("CameraUBO.inv_view", view.inverse(), cam_alloc);
 
-	auto dir_chunk = phase.registry.view<directional_light_component>();
-	auto spot_chunk = phase.registry.view<spot_light_component>();
-	auto point_chunk = phase.registry.view<point_light_component>();
+	auto dir_chunk = ctx.reg.linked_objects_read<directional_light_component>();
+	auto spot_chunk = ctx.reg.linked_objects_read<spot_light_component>();
+	auto point_chunk = ctx.reg.linked_objects_read<point_light_component>();
 
-	const auto& light_alloc = s.light_buffers[frame_index];
-	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
+	const auto& light_alloc = r.light_buffers[frame_index];
+	const auto light_block = r.shader_handle->uniform_block("lights_ssbo");
 	const auto stride = light_block.size;
 
 	const std::size_t total_lights = std::min(
@@ -300,8 +306,8 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 
 	gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
 
-	const auto& material_alloc = s.material_palette_buffers[frame_index];
-	const auto material_block = s.shader_handle->uniform_block("material_palette");
+	const auto& material_alloc = r.material_palette_buffers[frame_index];
+	const auto material_block = r.shader_handle->uniform_block("material_palette");
 	const auto mat_stride = material_block.size;
 	const auto material_count = std::min(data.material_palette_map.size(), max_materials);
 
@@ -325,13 +331,13 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const auto& normal_batches = data.normal_batches;
 	const auto& skinned_batches = data.skinned_batches;
 
-	const auto* gc_state = phase.try_state_of<geometry_collector::state>();
-	const auto* lc_state = phase.try_state_of<light_culling::state>();
-	if (!gc_state || !lc_state) {
-		return;
+	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
+	const auto* lc_r = ctx.try_resources_of<light_culling::system::resources>();
+	if (!gc_r || !lc_r) {
+		co_return;
 	}
 
-	const auto ext = ctx.graph().extent();
+	const auto ext = gpu.graph().extent();
 	const auto ext_w = ext.x();
 	const auto ext_h = ext.y();
 	const int num_lights_i = static_cast<int>(light_count);
@@ -340,34 +346,34 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const int ao_quality_i = static_cast<int>(s.ao_quality);
 	const int reflection_quality_i = static_cast<int>(s.reflection_quality);
 
-	auto meshlet_writer = gpu::create_push_writer(ctx.device_ref(), s.shader_handle);
-	auto skinned_writer = gpu::create_push_writer(ctx.device_ref(), s.skinned_shader);
+	auto meshlet_writer = gpu::create_push_writer(gpu.device_ref(), r.shader_handle);
+	auto skinned_writer = gpu::create_push_writer(gpu.device_ref(), r.skinned_shader);
 
-	auto pass = ctx.graph().add_pass<state>();
-	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
-	pass.track(s.light_buffers[frame_index]);
-	pass.track(s.material_palette_buffers[frame_index]);
-	pass.track(gc_state->instance_buffer[frame_index]);
+	auto pass = gpu.graph().add_pass<state>();
+	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);
+	pass.track(r.light_buffers[frame_index]);
+	pass.track(r.material_palette_buffers[frame_index]);
+	pass.track(gc_r->instance_buffer[frame_index]);
 
-	pass.after<rt_shadow::render_state>()
+	pass.after<rt_shadow::state>()
 		.after<light_culling::state>()
 		.after<depth_prepass::state>()
 		.reads(
-			gpu::storage_read(lc_state->tile_light_table_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
-			gpu::storage_read(lc_state->light_index_list_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
-			gpu::storage_read(gc_state->skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
-			gpu::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
+			gpu::storage_read(lc_r->tile_light_table_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
+			gpu::storage_read(lc_r->light_index_list_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
+			gpu::storage_read(gc_r->skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
+			gpu::indirect_read(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.color_output(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f })
 		.depth_output_load()
-		.record([&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, shadow_quality_i, ao_quality_i, reflection_quality_i, ext_w, ext_h,
+		.record([&r, &normal_batches, &skinned_batches, gc_r, frame_index, num_lights_i, screen_sz, shadow_quality_i, ao_quality_i, reflection_quality_i, ext_w, ext_h,
 			meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](gpu::recording_context& ctx) mutable {
 			const vec2u ext_size{ ext_w, ext_h };
 			ctx.set_viewport(ext_size);
 			ctx.set_scissor(ext_size);
 
 			if (!normal_batches.empty()) {
-				const auto& instance_buf = gc_state->instance_buffer[frame_index];
+				const auto& instance_buf = gc_r->instance_buffer[frame_index];
 
 				bool pipeline_bound = false;
 
@@ -380,12 +386,12 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 					}
 
 					const bool has_texture = mesh.material().diffuse_texture.valid();
-					const auto& tex_img  = has_texture ? mesh.material().diffuse_texture->gpu_image()  : s.blank_texture->gpu_image();
-					const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : s.blank_texture->gpu_sampler();
+					const auto& tex_img  = has_texture ? mesh.material().diffuse_texture->gpu_image()  : r.blank_texture->gpu_image();
+					const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : r.blank_texture->gpu_sampler();
 
 					if (!pipeline_bound) {
-						ctx.bind(s.pipeline);
-						ctx.bind_descriptors(s.pipeline, s.descriptors[frame_index]);
+						ctx.bind(r.pipeline);
+						ctx.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
 						pipeline_bound = true;
 					}
 
@@ -394,11 +400,11 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 					meshlet_writer
 						.buffer("instanceData", instance_buf)
 						.image("diffuseSampler", tex_img, tex_samp, gpu::image_layout::shader_read_only);
-					ctx.commit(meshlet_writer.native_writer(), s.pipeline, 1);
+					ctx.commit(meshlet_writer.native_writer(), r.pipeline, 1);
 
 					const std::uint32_t ml_count = mesh.meshlet_count();
 					for (std::uint32_t inst = 0; inst < batch.instance_count; ++inst) {
-						auto pc = s.shader_handle->cache_push_block("push_constants");
+						auto pc = r.shader_handle->cache_push_block("push_constants");
 						pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
 						pc.set("meshlet_count", ml_count);
 						pc.set("instance_index", batch.first_instance + inst);
@@ -407,7 +413,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 						pc.set("shadow_quality", shadow_quality_i);
 						pc.set("ao_quality", ao_quality_i);
 						pc.set("reflection_quality", reflection_quality_i);
-						ctx.push(s.pipeline, pc);
+						ctx.push(r.pipeline, pc);
 
 						const std::uint32_t task_groups = (ml_count + 31) / 32;
 						ctx.draw_mesh_tasks(task_groups, 1, 1);
@@ -416,32 +422,32 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 			}
 
 			if (!skinned_batches.empty()) {
-				ctx.bind(s.skinned_pipeline);
-				ctx.bind_descriptors(s.skinned_pipeline, s.skinned_descriptors[frame_index]);
+				ctx.bind(r.skinned_pipeline);
+				ctx.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
 
-				const auto& skin_buf     = gc_state->skin_buffer[frame_index];
-				const auto& instance_buf = gc_state->instance_buffer[frame_index];
+				const auto& skin_buf     = gc_r->skin_buffer[frame_index];
+				const auto& instance_buf = gc_r->instance_buffer[frame_index];
 
 				for (std::size_t i = 0; i < skinned_batches.size(); ++i) {
 					const auto& batch = skinned_batches[i];
 					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
 					const bool has_texture = mesh.material().diffuse_texture.valid();
-					const auto& tex_img  = has_texture ? mesh.material().diffuse_texture->gpu_image()  : s.blank_texture->gpu_image();
-					const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : s.blank_texture->gpu_sampler();
+					const auto& tex_img  = has_texture ? mesh.material().diffuse_texture->gpu_image()  : r.blank_texture->gpu_image();
+					const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : r.blank_texture->gpu_sampler();
 
 					skinned_writer.begin(frame_index);
 					skinned_writer
 						.image("diffuseSampler", tex_img, tex_samp, gpu::image_layout::shader_read_only)
 						.buffer("skinMatrices", skin_buf)
 						.buffer("instanceData", instance_buf);
-					ctx.commit(skinned_writer.native_writer(), s.skinned_pipeline, 1);
+					ctx.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
 
 					ctx.bind_vertex(mesh.vertex_gpu_buffer());
 					ctx.bind_index(mesh.index_gpu_buffer());
 
 					ctx.draw_indirect(
-						gc_state->skinned_indirect_commands_buffer[frame_index],
+						gc_r->skinned_indirect_commands_buffer[frame_index],
 						i * sizeof(gpu::draw_indexed_indirect_command),
 						1,
 						0

@@ -104,17 +104,17 @@ export namespace gse::network {
 	};
 
 	struct system {
-		static auto initialize(initialize_phase& phase, system_state& s) -> void;
+		static auto initialize(init_context& phase, system_state& s) -> void;
 		static auto update(update_context& ctx, system_state& s) -> void;
-		static auto shutdown(shutdown_phase& phase, system_state& s) -> void;
+		static auto shutdown(shutdown_context& phase, system_state& s) -> void;
 	};
 }
 
-auto gse::network::system::initialize(initialize_phase&, system_state&) -> void {
+auto gse::network::system::initialize(init_context&, system_state&) -> void {
 	// WinSock initialization handled by static initializer in Socket.cppm
 }
 
-auto gse::network::system::shutdown(shutdown_phase&, system_state& s) -> void {
+auto gse::network::system::shutdown(shutdown_context&, system_state& s) -> void {
 	s.client_ptr.reset();
 	// WinSock cleanup handled by static initializer destructor in Socket.cppm
 }

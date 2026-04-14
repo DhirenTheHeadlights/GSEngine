@@ -380,7 +380,7 @@ export namespace gse::save {
         state() = default;
 
         auto do_initialize(
-            initialize_phase& phase
+            init_context& phase
         ) -> void;
 
         auto do_update(
@@ -388,7 +388,7 @@ export namespace gse::save {
         ) -> void;
 
         auto do_shutdown(
-            shutdown_phase& phase
+            shutdown_context& phase
         ) -> void;
 
         template <typename T>
@@ -500,7 +500,7 @@ export namespace gse::save {
 
     struct system {
         static auto initialize(
-            initialize_phase& phase,
+            init_context& phase,
             state& s
         ) -> void {
             s.do_initialize(phase);
@@ -514,7 +514,7 @@ export namespace gse::save {
         }
 
         static auto shutdown(
-            shutdown_phase& phase,
+            shutdown_context& phase,
             state& s
         ) -> void {
             s.do_shutdown(phase);
@@ -979,7 +979,7 @@ auto gse::save::category_view::empty() const -> bool {
     return m_properties.empty();
 }
 
-auto gse::save::state::do_initialize(initialize_phase&) -> void {
+auto gse::save::state::do_initialize(init_context&) -> void {
     if (!m_auto_save_path.empty() && std::filesystem::exists(m_auto_save_path)) {
         if (!load_from_file(m_auto_save_path)) {
             log::println(log::level::warning, log::category::save_system, "Failed to load settings from {}", m_auto_save_path.string());
@@ -1019,7 +1019,7 @@ auto gse::save::state::do_update(update_context& ctx) -> void {
     }
 }
 
-auto gse::save::state::do_shutdown(shutdown_phase&) -> void {
+auto gse::save::state::do_shutdown(shutdown_context&) -> void {
     if (m_auto_save && !m_auto_save_path.empty()) {
         if (!save_to_file(m_auto_save_path)) {
             log::println(log::level::warning, log::category::save_system, "Failed to save settings to {}", m_auto_save_path.string());

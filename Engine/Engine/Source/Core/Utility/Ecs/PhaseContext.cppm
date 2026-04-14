@@ -77,29 +77,21 @@ export namespace gse {
 		) const -> const std::vector<T>&;
 	};
 
-	struct registry_access {
-		registry* reg;
+	class resources_provider {
+	public:
+		virtual ~resources_provider() = default;
 
-		template <is_component T>
-		auto view(
-		) const -> std::span<const T>;
+		virtual auto resources_ptr(
+			std::type_index type
+		) const -> const void* = 0;
 
-		template <is_component T>
-		auto try_read(
-			id owner
-		) const -> const T*;
+		template <typename Resources>
+		auto resources_of(
+		) const -> const Resources&;
 
-		auto entity_active(
-			id owner
-		) const -> bool;
-
-		auto ensure_active(
-			id owner
-		) const -> void;
-
-		auto ensure_exists(
-			id owner
-		) const -> void;
+		template <typename Resources>
+		auto try_resources_of(
+		) const -> const Resources*;
 	};
 
 	struct phase_gpu_access {
@@ -114,9 +106,10 @@ export namespace gse {
 		) const -> T*;
 	};
 
-	struct initialize_phase : phase_gpu_access {
-		registry_access& registry;
+	struct init_context : phase_gpu_access {
+		registry& reg;
 		const state_snapshot_provider& snapshots;
+		const resources_provider& resource_provider;
 		channel_writer& channels;
 
 		template <typename State>
@@ -126,128 +119,30 @@ export namespace gse {
 		template <typename State>
 		auto try_state_of(
 		) const -> const State*;
+
+		template <typename Resources>
+		auto resources_of(
+		) const -> const Resources&;
+
+		template <typename Resources>
+		auto try_resources_of(
+		) const -> const Resources*;
 	};
 
-
-	struct begin_frame_phase : phase_gpu_access {
-		const state_snapshot_provider& snapshots;
-
-		template <typename State>
-		auto state_of(
-		) const -> const State&;
-
-		template <typename State>
-		auto try_state_of(
-		) const -> const State*;
-	};
-
-	struct prepare_render_phase : phase_gpu_access {
-		const state_snapshot_provider& snapshots;
-		const channel_reader_provider& channel_reader;
-
-		template <typename State>
-		auto state_of(
-		) const -> const State&;
-
-		template <typename State>
-		auto try_state_of(
-		) const -> const State*;
-
-		template <typename T>
-		auto read_channel(
-		) const -> channel_read_guard<T>;
-	};
-
-	struct render_phase : phase_gpu_access {
-		const registry_access& registry;
-		const state_snapshot_provider& snapshots;
-		const channel_reader_provider& channel_reader;
-
-		template <typename State>
-		auto state_of(
-		) const -> const State&;
-
-		template <typename State>
-		auto try_state_of(
-		) const -> const State*;
-
-		template <typename T>
-		auto read_channel(
-		) const -> channel_read_guard<T>;
-	};
-
-	struct end_frame_phase : phase_gpu_access {
-		const state_snapshot_provider& snapshots;
-		channel_writer& channels;
-
-		template <typename State>
-		auto state_of(
-		) const -> const State&;
-
-		template <typename State>
-		auto try_state_of(
-		) const -> const State*;
-	};
-
-	struct shutdown_phase : phase_gpu_access {
-		registry_access& registry;
+	struct shutdown_context : phase_gpu_access {
+		registry& reg;
 	};
 
 	template <typename S, typename State>
-	concept has_initialize = requires(initialize_phase& p, State& s) {
+	concept has_initialize = requires(init_context& p, State& s) {
 		{ S::initialize(p, s) } -> std::same_as<void>;
 	};
 
-
 	template <typename S, typename State>
-	concept has_begin_frame = requires(begin_frame_phase& p, State& s) {
-		{ S::begin_frame(p, s) } -> std::same_as<bool>;
-	};
-
-	template <typename S, typename State>
-	concept has_prepare_render = requires(prepare_render_phase& p, State& s) {
-		{ S::prepare_render(p, s) } -> std::same_as<void>;
-	};
-
-	template <typename S, typename State>
-	concept has_render = requires(render_phase& p, const State& s) {
-		{ S::render(p, s) } -> std::same_as<void>;
-	};
-
-	template <typename S, typename State>
-	concept has_end_frame = requires(end_frame_phase& p, State& s) {
-		{ S::end_frame(p, s) } -> std::same_as<void>;
-	};
-
-	template <typename S, typename State>
-	concept has_shutdown = requires(shutdown_phase& p, State& s) {
+	concept has_shutdown = requires(shutdown_context& p, State& s) {
 		{ S::shutdown(p, s) } -> std::same_as<void>;
 	};
 
-	template <typename S, typename State, typename RenderState>
-	concept has_prepare_render_with_state = requires(prepare_render_phase& p, State& s, RenderState& rs) {
-		{ S::prepare_render(p, s, rs) } -> std::same_as<void>;
-	};
-
-	template <typename S, typename State, typename RenderState>
-	concept has_render_with_state = requires(render_phase& p, const State& s, RenderState& rs) {
-		{ S::render(p, s, rs) } -> std::same_as<void>;
-	};
-
-	template <typename S, typename State, typename RenderState>
-	concept has_begin_frame_with_state = requires(begin_frame_phase& p, State& s, RenderState& rs) {
-		{ S::begin_frame(p, s, rs) } -> std::same_as<bool>;
-	};
-
-	template <typename S, typename State, typename RenderState>
-	concept has_end_frame_with_state = requires(end_frame_phase& p, State& s, RenderState& rs) {
-		{ S::end_frame(p, s, rs) } -> std::same_as<void>;
-	};
-
-	template <typename S, typename State, typename RenderState>
-	concept has_initialize_with_state = requires(initialize_phase& p, State& s, RenderState& rs) {
-		{ S::initialize(p, s, rs) } -> std::same_as<void>;
-	};
 }
 
 template <typename State>
@@ -285,28 +180,6 @@ auto gse::channel_reader_provider::read() const -> const std::vector<T>& {
 	return *static_cast<const std::vector<T>*>(ptr);
 }
 
-template <gse::is_component T>
-auto gse::registry_access::view() const -> std::span<const T> {
-	return reg->linked_objects_read<T>();
-}
-
-template <gse::is_component T>
-auto gse::registry_access::try_read(const id owner) const -> const T* {
-	return reg->try_linked_object_read<T>(owner);
-}
-
-auto gse::registry_access::entity_active(const id owner) const -> bool {
-	return reg->active(owner);
-}
-
-auto gse::registry_access::ensure_active(const id owner) const -> void {
-	reg->ensure_active(owner);
-}
-
-auto gse::registry_access::ensure_exists(const id owner) const -> void {
-	reg->ensure_exists(owner);
-}
-
 template <typename T>
 auto gse::phase_gpu_access::get() const -> T& {
 	return *static_cast<T*>(gpu_ctx);
@@ -318,61 +191,34 @@ auto gse::phase_gpu_access::try_get() const -> T* {
 }
 
 template <typename State>
-auto gse::initialize_phase::state_of() const -> const State& {
+auto gse::init_context::state_of() const -> const State& {
 	return snapshots.state_of<State>();
 }
 
 template <typename State>
-auto gse::initialize_phase::try_state_of() const -> const State* {
+auto gse::init_context::try_state_of() const -> const State* {
 	return snapshots.try_state_of<State>();
 }
 
-template <typename State>
-auto gse::begin_frame_phase::state_of() const -> const State& {
-	return snapshots.state_of<State>();
+template <typename Resources>
+auto gse::init_context::resources_of() const -> const Resources& {
+	return resource_provider.resources_of<Resources>();
 }
 
-template <typename State>
-auto gse::begin_frame_phase::try_state_of() const -> const State* {
-	return snapshots.try_state_of<State>();
+template <typename Resources>
+auto gse::init_context::try_resources_of() const -> const Resources* {
+	return resource_provider.try_resources_of<Resources>();
 }
 
-template <typename State>
-auto gse::prepare_render_phase::state_of() const -> const State& {
-	return snapshots.state_of<State>();
+template <typename Resources>
+auto gse::resources_provider::resources_of() const -> const Resources& {
+	const auto* ptr = resources_ptr(std::type_index(typeid(Resources)));
+	return *static_cast<const Resources*>(ptr);
 }
 
-template <typename State>
-auto gse::prepare_render_phase::try_state_of() const -> const State* {
-	return snapshots.try_state_of<State>();
+template <typename Resources>
+auto gse::resources_provider::try_resources_of() const -> const Resources* {
+	const auto* ptr = resources_ptr(std::type_index(typeid(Resources)));
+	return static_cast<const Resources*>(ptr);
 }
 
-template <typename T>
-auto gse::prepare_render_phase::read_channel() const -> channel_read_guard<T> {
-	return channel_read_guard<T>(channel_reader.read<T>());
-}
-
-template <typename State>
-auto gse::render_phase::state_of() const -> const State& {
-	return snapshots.state_of<State>();
-}
-
-template <typename State>
-auto gse::render_phase::try_state_of() const -> const State* {
-	return snapshots.try_state_of<State>();
-}
-
-template <typename T>
-auto gse::render_phase::read_channel() const -> channel_read_guard<T> {
-	return channel_read_guard<T>(channel_reader.read<T>());
-}
-
-template <typename State>
-auto gse::end_frame_phase::state_of() const -> const State& {
-	return snapshots.state_of<State>();
-}
-
-template <typename State>
-auto gse::end_frame_phase::try_state_of() const -> const State* {
-	return snapshots.try_state_of<State>();
-}

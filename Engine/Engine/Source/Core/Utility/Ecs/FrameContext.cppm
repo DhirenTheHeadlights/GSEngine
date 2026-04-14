@@ -10,8 +10,11 @@ import :id;
 
 export namespace gse {
 	struct frame_context : phase_gpu_access {
+		const registry& reg;
 		const state_snapshot_provider& snapshots;
 		const channel_reader_provider& channel_reader;
+		channel_writer& channels;
+		const resources_provider& resources;
 		task_graph& graph;
 
 		template <typename State>
@@ -25,6 +28,14 @@ export namespace gse {
 		template <typename T>
 		auto read_channel(
 		) const -> channel_read_guard<T>;
+
+		template <typename Resources>
+		auto resources_of(
+		) const -> const Resources&;
+
+		template <typename Resources>
+		auto try_resources_of(
+		) const -> const Resources*;
 
 		template <typename State>
 		auto after(
@@ -49,6 +60,16 @@ auto gse::frame_context::try_state_of() const -> const State* {
 template <typename T>
 auto gse::frame_context::read_channel() const -> channel_read_guard<T> {
 	return channel_read_guard<T>(channel_reader.read<T>());
+}
+
+template <typename Resources>
+auto gse::frame_context::resources_of() const -> const Resources& {
+	return resources.resources_of<Resources>();
+}
+
+template <typename Resources>
+auto gse::frame_context::try_resources_of() const -> const Resources* {
+	return resources.try_resources_of<Resources>();
 }
 
 template <typename State>

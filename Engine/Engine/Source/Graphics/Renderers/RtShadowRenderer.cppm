@@ -22,23 +22,23 @@ export namespace gse::renderer::rt_shadow {
 		}
 	};
 
-	struct render_state {
-		std::unordered_map<const mesh*, gpu::blas> blas_cache;
-		per_frame_resource<gpu::tlas> tlas_per_frame;
-	};
-
 	struct system {
+		struct frame_data {
+			std::unordered_map<const mesh*, gpu::blas> blas_cache;
+			per_frame_resource<gpu::tlas> tlas_per_frame;
+		};
+
 		static auto initialize(
-			const initialize_phase& phase,
-			state& s,
-			render_state& rs
+			const init_context& phase,
+			frame_data& fd,
+			state& s
 		) -> void;
 
-		static auto render(
-			const render_phase& phase,
-			const state& s,
-			render_state& rs
-		) -> void;
+		static auto frame(
+			frame_context& ctx,
+			frame_data& fd,
+			const state& s
+		) -> async::task<>;
 	};
 
 	[[nodiscard]] auto transform_is_finite(const mat4f& transform) -> bool {
@@ -53,7 +53,7 @@ export namespace gse::renderer::rt_shadow {
 	}
 }
 
-auto gse::renderer::rt_shadow::system::initialize(const initialize_phase& phase, state& s, render_state& rs) -> void {
+auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, frame_data& fd, state& s) -> void {
 	const auto& ctx = phase.get<gpu::context>();
 
 	if (!ctx.device_ref().ray_tracing_enabled()) {
@@ -65,8 +65,8 @@ auto gse::renderer::rt_shadow::system::initialize(const initialize_phase& phase,
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
-		rs.tlas_per_frame[i] = gpu::build_tlas(ctx.device_ref(), max_instances);
-		s.tlas_ptrs[i] = &rs.tlas_per_frame[i];
+		fd.tlas_per_frame[i] = gpu::build_tlas(ctx.device_ref(), max_instances);
+		s.tlas_ptrs[i] = &fd.tlas_per_frame[i];
 		log::println(
 			log::category::render, "RT shadow: frame_slot={} tlas_handle={:#x}",
 			i,
@@ -75,30 +75,32 @@ auto gse::renderer::rt_shadow::system::initialize(const initialize_phase& phase,
 	}
 }
 
-auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const state& s, render_state& rs) -> void {
+auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd, const state& s) -> async::task<> {
 	if (!s.initialized) {
-		return;
+		co_return;
 	}
 
-	auto& ctx = phase.get<gpu::context>();
+	co_await ctx.after<geometry_collector::state>();
 
-	const auto& render_items = phase.read_channel<geometry_collector::render_data>();
+	auto& gpu = ctx.get<gpu::context>();
+
+	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
-		return;
+		co_return;
 	}
 
-	if (!ctx.graph().frame_in_progress()) {
-		return;
+	if (!gpu.graph().frame_in_progress()) {
+		co_return;
 	}
 
 	const auto& data = render_items[0];
-	const auto frame_index = ctx.graph().current_frame();
+	const auto frame_index = gpu.graph().current_frame();
 
 	bool any_new_blas = false;
 	for (const auto& batch : data.normal_batches) {
 		const auto& m = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-		if (const auto* mesh_ptr = &m; !rs.blas_cache.contains(mesh_ptr)) {
+		if (const auto* mesh_ptr = &m; !fd.blas_cache.contains(mesh_ptr)) {
 			const auto vertex_count = static_cast<std::uint32_t>(m.vertex_gpu_buffer().size() / sizeof(vertex));
 			const auto index_count  = static_cast<std::uint32_t>(m.index_gpu_buffer().size() / sizeof(std::uint32_t));
 
@@ -110,7 +112,7 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 				continue;
 			}
 
-			rs.blas_cache[mesh_ptr] = gpu::build_blas(ctx.device_ref(), {
+			fd.blas_cache[mesh_ptr] = gpu::build_blas(gpu.device_ref(), {
 				.vertex_buffer = &m.vertex_gpu_buffer(),
 				.vertex_count  = vertex_count,
 				.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
@@ -119,7 +121,7 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 			});
 
 			log::println(log::category::render, "RT shadow: BLAS built device_address={:#x}",
-				rs.blas_cache[mesh_ptr].device_address());
+				fd.blas_cache[mesh_ptr].device_address());
 
 			any_new_blas = true;
 		}
@@ -127,7 +129,7 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 
 	if (any_new_blas) {
 		log::println(log::category::render, "RT shadow: wait_idle for BLAS completion");
-		ctx.device_ref().wait_idle();
+		gpu.device_ref().wait_idle();
 	}
 
 	std::vector<gpu::acceleration_structure_instance> instances;
@@ -140,8 +142,8 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 		}
 
 		const auto* mesh_ptr = &mdl->meshes()[entry.index];
-		const auto it = rs.blas_cache.find(mesh_ptr);
-		if (it == rs.blas_cache.end()) {
+		const auto it = fd.blas_cache.find(mesh_ptr);
+		if (it == fd.blas_cache.end()) {
 			continue;
 		}
 
@@ -162,8 +164,8 @@ auto gse::renderer::rt_shadow::system::render(const render_phase& phase, const s
 		}
 	}
 
-	auto pass = ctx.graph().add_pass<render_state>();
-	pass.record([&rs, &ctx, instances = std::move(instances), frame_index](vulkan::recording_context& record_ctx) mutable {
-		gpu::rebuild_tlas(ctx.device_ref(), rs.tlas_per_frame[frame_index], instances, record_ctx);
+	auto pass = gpu.graph().add_pass<state>();
+	pass.record([&fd, &gpu, instances = std::move(instances), frame_index](vulkan::recording_context& record_ctx) mutable {
+		gpu::rebuild_tlas(gpu.device_ref(), fd.tlas_per_frame[frame_index], instances, record_ctx);
 	});
 }

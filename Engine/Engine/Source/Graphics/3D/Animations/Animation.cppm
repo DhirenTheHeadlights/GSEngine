@@ -132,7 +132,7 @@ export namespace gse::animation {
 
 	struct system {
 		static auto initialize(
-			initialize_phase& phase,
+			init_context& phase,
 			state& s
 		) -> void;
 
@@ -143,7 +143,7 @@ export namespace gse::animation {
 	};
 }
 
-auto gse::animation::system::initialize(initialize_phase&, state& s) -> void {
+auto gse::animation::system::initialize(init_context&, state& s) -> void {
 	s.last_tick = system_clock::now();
 }
 
