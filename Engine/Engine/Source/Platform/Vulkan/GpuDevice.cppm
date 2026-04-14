@@ -413,8 +413,19 @@ namespace gse::vulkan {
 			.pNext = robustness2_supported ? static_cast<void*>(&robustness2_features) : post_fault_chain_head
 		};
 
-		vk::PhysicalDeviceFeatures2 features2{
+		const bool av1_encode_supported = video_encode_extensions_available && supports_extension(vk::KHRVideoEncodeAv1ExtensionName);
+
+		vk::PhysicalDeviceVideoEncodeAV1FeaturesKHR av1_encode_features{
 			.pNext = &present_wait_features,
+			.videoEncodeAV1 = vk::True
+		};
+
+		void* post_video_chain_head = av1_encode_supported
+			? static_cast<void*>(&av1_encode_features)
+			: static_cast<void*>(&present_wait_features);
+
+		vk::PhysicalDeviceFeatures2 features2{
+			.pNext = post_video_chain_head,
 			.features = {
 				.robustBufferAccess = robustness2_supported ? vk::True : vk::False,
 				.drawIndirectFirstInstance = vk::True,

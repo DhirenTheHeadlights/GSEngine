@@ -11,7 +11,7 @@ export namespace gse {
 	) noexcept(std::is_nothrow_constructible_v<std::decay_t<F>, F&&>);
 }
 
-namespace gse {
+export namespace gse {
 	template <class F>
 	class scope_exit : non_copyable {
 	public:
@@ -44,7 +44,7 @@ auto gse::make_scope_exit(F&& f) noexcept(std::is_nothrow_constructible_v<std::d
 }
 
 template <class F>
-gse::scope_exit<F>::scope_exit(F&& f) noexcept(std::is_nothrow_move_constructible_v<F>): m_func(std::move(f)), m_active(true) {}
+gse::scope_exit<F>::scope_exit(F&& f) noexcept(std::is_nothrow_move_constructible_v<F>): m_func(std::move(f)) {}
 
 template <class F>
 gse::scope_exit<F>::scope_exit(scope_exit&& other) noexcept(std::is_nothrow_move_constructible_v<F>): m_func(std::move(other.m_func)), m_active(other.m_active) {

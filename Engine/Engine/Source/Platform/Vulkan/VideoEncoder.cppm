@@ -20,6 +20,7 @@ export namespace gse::gpu {
 		bool available = false;
 		video_codec codec = video_codec::av1;
 		vec2u max_extent{};
+		vk::ExtensionProperties std_header_version{};
 	};
 
 	class video_encoder final : public non_copyable {
@@ -41,7 +42,7 @@ export namespace gse::gpu {
 		static auto create(
 			device& dev,
 			vec2u extent,
-			video_codec codec
+			const encode_capabilities& probe_caps
 		) -> video_encoder;
 
 		auto encode_frame(
@@ -76,8 +77,8 @@ export namespace gse::gpu {
 		vk::raii::VideoSessionKHR m_session = nullptr;
 		vk::raii::VideoSessionParametersKHR m_params = nullptr;
 		std::vector<vk::DeviceMemory> m_session_memory;
-		std::array<per_frame, 2> m_slots;
-		std::array<dpb_slot, 2> m_dpb;
+		per_frame_resource<per_frame> m_slots;
+		per_frame_resource<dpb_slot> m_dpb;
 		video_codec m_codec = video_codec::h265;
 		vec2u m_extent{};
 		std::uint64_t m_frame_number = 0;
@@ -100,8 +101,9 @@ namespace gse::gpu {
 	) -> To;
 
 	auto build_profile(
+		profile_chain& chain,
 		video_codec codec
-	) -> profile_chain;
+	) -> void;
 
 	constexpr vk::DeviceSize bitstream_buffer_size = 4 * 1024 * 1024;
 	constexpr auto nv12_format = vk::Format::eG8B8R82Plane420Unorm;
@@ -137,38 +139,52 @@ auto gse::gpu::video_encoder::probe(device& dev) -> encode_capabilities {
 	const auto& physical = dev.physical_device();
 
 	for (const auto codec : { video_codec::av1, video_codec::h265 }) {
-		auto chain = build_profile(codec);
-
-		vk::VideoCapabilitiesKHR caps;
+		profile_chain chain{};
+		build_profile(chain, codec);
 
 		try {
-			caps = physical.getVideoCapabilitiesKHR(chain.profile);
+			vk::VideoCapabilitiesKHR caps;
+			if (codec == video_codec::av1) {
+				caps = physical.getVideoCapabilitiesKHR<
+					vk::VideoCapabilitiesKHR,
+					vk::VideoEncodeCapabilitiesKHR,
+					vk::VideoEncodeAV1CapabilitiesKHR
+				>(chain.profile).get<vk::VideoCapabilitiesKHR>();
+			} else {
+				caps = physical.getVideoCapabilitiesKHR<
+					vk::VideoCapabilitiesKHR,
+					vk::VideoEncodeCapabilitiesKHR,
+					vk::VideoEncodeH265CapabilitiesKHR
+				>(chain.profile).get<vk::VideoCapabilitiesKHR>();
+			}
+
+			const auto codec_name = codec == video_codec::av1 ? "AV1" : "H.265";
+			log::println(log::category::vulkan, "Video encode probe: {} supported (max {}x{})", codec_name, caps.maxCodedExtent.width, caps.maxCodedExtent.height);
+
+			return {
+				.available = true,
+				.codec = codec,
+				.max_extent = { caps.maxCodedExtent.width, caps.maxCodedExtent.height },
+				.std_header_version = caps.stdHeaderVersion
+			};
 		}
 		catch (const vk::SystemError&) {
 			continue;
 		}
-
-		const auto codec_name = codec == video_codec::av1 ? "AV1" : "H.265";
-		log::println(log::category::vulkan, "Video encode probe: {} supported (max {}x{})", codec_name, caps.maxCodedExtent.width, caps.maxCodedExtent.height);
-
-		return {
-			.available = true,
-			.codec = codec,
-			.max_extent = { caps.maxCodedExtent.width, caps.maxCodedExtent.height }
-		};
 	}
 
 	log::println(log::category::vulkan, "Video encode probe: no supported codec found");
 	return {};
 }
 
-auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const video_codec codec) -> video_encoder {
+auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const encode_capabilities& probe_caps) -> video_encoder {
 	video_encoder enc;
 	enc.m_device = &dev;
-	enc.m_codec = codec;
+	enc.m_codec = probe_caps.codec;
 	enc.m_extent = extent;
 
-	auto chain = build_profile(codec);
+	profile_chain chain{};
+	build_profile(chain, probe_caps.codec);
 	const auto& vk_dev = dev.logical_device();
 	const auto& physical = dev.physical_device();
 	const auto encode_family = dev.queue_config().video_encode_family_index.value();
@@ -178,8 +194,7 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const vide
 		.pProfiles = &chain.profile
 	};
 
-	auto caps = physical.getVideoCapabilitiesKHR(chain.profile);
-
+	auto std_header_version = probe_caps.std_header_version;
 	enc.m_session = vk_dev.createVideoSessionKHR({
 		.queueFamilyIndex = encode_family,
 		.pVideoProfile = &chain.profile,
@@ -188,7 +203,7 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const vide
 		.referencePictureFormat = nv12_format,
 		.maxDpbSlots = 2,
 		.maxActiveReferencePictures = 1,
-		.pStdHeaderVersion = &caps.stdHeaderVersion
+		.pStdHeaderVersion = &std_header_version
 	});
 
 	for (const auto& req : enc.m_session.getMemoryRequirements()) {
@@ -207,7 +222,7 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const vide
 		enc.m_session_memory.push_back(mem);
 	}
 
-	if (codec == video_codec::h265) {
+	if (probe_caps.codec == video_codec::h265) {
 		static vk::video::H265DecPicBufMgr dpb_mgr{};
 		dpb_mgr.max_dec_pic_buffering_minus1[0] = 1;
 
@@ -292,7 +307,7 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const vide
 		slot.nv12_memory = mem;
 	}
 
-	const auto codec_name = codec == video_codec::av1 ? "AV1" : "H.265";
+	const auto codec_name = probe_caps.codec == video_codec::av1 ? "AV1" : "H.265";
 	log::println(log::category::vulkan, "Video encoder created: {} {}x{}", codec_name, extent.x(), extent.y());
 
 	return enc;
@@ -518,8 +533,8 @@ constexpr auto gse::gpu::vk_enum(const From v) -> To {
 	return static_cast<To>(static_cast<std::underlying_type_t<From>>(v));
 }
 
-auto gse::gpu::build_profile(const video_codec codec) -> profile_chain {
-	profile_chain chain{};
+auto gse::gpu::build_profile(profile_chain& chain, const video_codec codec) -> void {
+	chain = {};
 
 	chain.usage = vk::VideoEncodeUsageInfoKHR{
 		.videoUsageHints = vk::VideoEncodeUsageFlagBitsKHR::eRecording,
@@ -544,8 +559,6 @@ auto gse::gpu::build_profile(const video_codec codec) -> profile_chain {
 
 	chain.usage.pNext = chain.profile.pNext;
 	chain.profile.pNext = &chain.usage;
-
-	return chain;
 }
 
 auto gse::gpu::create_nv12_image(const vk::raii::Device& device, const vk::raii::PhysicalDevice& physical_device, vec2u extent, vk::ImageUsageFlags usage, const vk::VideoProfileListInfoKHR& profile_list) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory> {

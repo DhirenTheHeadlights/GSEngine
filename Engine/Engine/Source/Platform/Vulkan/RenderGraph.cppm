@@ -454,6 +454,7 @@ export namespace gse::vulkan {
 		gpu::swap_chain* m_swapchain;
 		gpu::frame* m_frame;
 		std::vector<render_pass_data> m_passes;
+		std::mutex m_pass_mutex;
 	};
 }
 
@@ -986,7 +987,9 @@ auto gse::vulkan::pass_builder::submit() -> void {
 	m_graph->submit_pass(std::move(m_pass));
 }
 
-gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)) {}
+gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)) {
+	m_passes.reserve(32);
+}
 
 template <typename PassType>
 auto gse::vulkan::render_graph::add_pass() -> pass_builder {
@@ -995,11 +998,13 @@ auto gse::vulkan::render_graph::add_pass() -> pass_builder {
 
 auto gse::vulkan::render_graph::submit_pass(render_pass_data pass) -> void {
 	if (pass.enabled) {
+		std::lock_guard lock(m_pass_mutex);
 		m_passes.push_back(std::move(pass));
 	}
 }
 
 auto gse::vulkan::render_graph::clear() -> void {
+	std::lock_guard lock(m_pass_mutex);
 	m_passes.clear();
 }
 
@@ -1030,6 +1035,12 @@ auto gse::vulkan::render_graph::frame_in_progress() const -> bool {
 auto gse::vulkan::render_graph::execute() -> void {
 	if (!m_frame->frame_in_progress()) {
 		return;
+	}
+
+	std::vector<render_pass_data> passes;
+	{
+		std::lock_guard lock(m_pass_mutex);
+		passes = std::move(m_passes);
 	}
 
 	const auto command = m_frame->command_buffer();
@@ -1063,7 +1074,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 	};
 	command.pipelineBarrier2(begin_dep);
 
-	if (m_passes.empty()) {
+	if (passes.empty()) {
 		const vk::ImageMemoryBarrier2 present_barrier{
 			.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 			.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -1091,12 +1102,12 @@ auto gse::vulkan::render_graph::execute() -> void {
 	}
 
 	std::unordered_map<std::type_index, std::size_t> type_to_index;
-	for (std::size_t i = 0; i < m_passes.size(); ++i) {
-		type_to_index[m_passes[i].pass_type] = i;
+	for (std::size_t i = 0; i < passes.size(); ++i) {
+		type_to_index[passes[i].pass_type] = i;
 	}
 
-	std::vector<std::vector<std::size_t>> adj(m_passes.size());
-	std::vector<std::size_t> in_degree(m_passes.size(), 0);
+	std::vector<std::vector<std::size_t>> adj(passes.size());
+	std::vector<std::size_t> in_degree(passes.size(), 0);
 
 	auto add_edge = [&](std::size_t from, std::size_t to) {
 		for (const auto n : adj[from]) {
@@ -1106,26 +1117,26 @@ auto gse::vulkan::render_graph::execute() -> void {
 		++in_degree[to];
 	};
 
-	for (std::size_t i = 0; i < m_passes.size(); ++i) {
-		for (const auto& dep : m_passes[i].after_passes) {
+	for (std::size_t i = 0; i < passes.size(); ++i) {
+		for (const auto& dep : passes[i].after_passes) {
 			if (auto it = type_to_index.find(dep); it != type_to_index.end()) {
 				add_edge(it->second, i);
 			}
 		}
 	}
 
-	for (std::size_t i = 0; i < m_passes.size(); ++i) {
-		for (std::size_t j = i + 1; j < m_passes.size(); ++j) {
+	for (std::size_t i = 0; i < passes.size(); ++i) {
+		for (std::size_t j = i + 1; j < passes.size(); ++j) {
 			bool i_writes_j_reads = false;
 			bool j_writes_i_reads = false;
 
-			for (const auto& w : m_passes[i].writes) {
-				for (const auto& r : m_passes[j].reads) {
+			for (const auto& w : passes[i].writes) {
+				for (const auto& r : passes[j].reads) {
 					if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) i_writes_j_reads = true;
 				}
 			}
-			for (const auto& w : m_passes[j].writes) {
-				for (const auto& r : m_passes[i].reads) {
+			for (const auto& w : passes[j].writes) {
+				for (const auto& r : passes[i].reads) {
 					if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) j_writes_i_reads = true;
 				}
 			}
@@ -1141,10 +1152,10 @@ auto gse::vulkan::render_graph::execute() -> void {
 	}
 
 	std::vector<std::size_t> sorted;
-	sorted.reserve(m_passes.size());
+	sorted.reserve(passes.size());
 
 	std::queue<std::size_t> queue;
-	for (std::size_t i = 0; i < m_passes.size(); ++i) {
+	for (std::size_t i = 0; i < passes.size(); ++i) {
 		if (in_degree[i] == 0) queue.push(i);
 	}
 
@@ -1162,7 +1173,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 	m_device->descriptor_heap().bind_buffer(command);
 
 	for (std::size_t si = 0; si < sorted.size(); ++si) {
-		auto& pass = m_passes[sorted[si]];
+		auto& pass = passes[sorted[si]];
 
 		std::vector<vk::MemoryBarrier2> barriers;
 
@@ -1176,7 +1187,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 		}
 
 		for (std::size_t pi = 0; pi < si; ++pi) {
-			const auto& prev = m_passes[sorted[pi]];
+			const auto& prev = passes[sorted[pi]];
 			for (const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
 				if (!prev_resource.ptr) continue;
 				for (const auto& [read_resource, read_stage, read_access] : pass.reads) {

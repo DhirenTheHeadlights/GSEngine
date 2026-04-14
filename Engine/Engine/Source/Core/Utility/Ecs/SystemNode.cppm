@@ -205,123 +205,177 @@ namespace gse {
 template <typename S, typename State>
 auto gse::dispatch_initialize(init_context& phase, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, State& state) -> void {
 	if constexpr (has_resources<S> && has_update_data<S> && has_frame_data<S>) {
-		if constexpr (requires { S::initialize(phase, resources.value, update_data.value, frame_data.value, state); }) {
-			S::initialize(phase, resources.value, update_data.value, frame_data.value, state);
+		auto& r = resources.value; auto& u = update_data.value; auto& f = frame_data.value;
+		if constexpr (requires { S::initialize(phase, r, u, f, state); }) {
+			S::initialize(phase, r, u, f, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, r, u, f); }) {
+			S::initialize(phase, r, u, f);
 			return;
 		}
 	}
 	if constexpr (has_resources<S> && has_frame_data<S>) {
-		if constexpr (requires { S::initialize(phase, resources.value, frame_data.value, state); }) {
-			S::initialize(phase, resources.value, frame_data.value, state);
+		auto& r = resources.value; auto& f = frame_data.value;
+		if constexpr (requires { S::initialize(phase, r, f, state); }) {
+			S::initialize(phase, r, f, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, r, f); }) {
+			S::initialize(phase, r, f);
 			return;
 		}
 	}
 	if constexpr (has_resources<S> && has_update_data<S>) {
-		if constexpr (requires { S::initialize(phase, resources.value, update_data.value, state); }) {
-			S::initialize(phase, resources.value, update_data.value, state);
+		auto& r = resources.value; auto& u = update_data.value;
+		if constexpr (requires { S::initialize(phase, r, u, state); }) {
+			S::initialize(phase, r, u, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, r, u); }) {
+			S::initialize(phase, r, u);
 			return;
 		}
 	}
 	if constexpr (has_resources<S>) {
-		if constexpr (requires { S::initialize(phase, resources.value, state); }) {
-			S::initialize(phase, resources.value, state);
+		auto& r = resources.value;
+		if constexpr (requires { S::initialize(phase, r, state); }) {
+			S::initialize(phase, r, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, r); }) {
+			S::initialize(phase, r);
 			return;
 		}
 	}
-	if constexpr (!has_resources<S> && has_update_data<S> && has_frame_data<S>) {
-		if constexpr (requires { S::initialize(phase, update_data.value, frame_data.value, state); }) {
-			S::initialize(phase, update_data.value, frame_data.value, state);
+	if constexpr (has_frame_data<S>) {
+		auto& f = frame_data.value;
+		if constexpr (requires { S::initialize(phase, f, state); }) {
+			S::initialize(phase, f, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, f); }) {
+			S::initialize(phase, f);
 			return;
 		}
 	}
-	if constexpr (!has_resources<S> && has_frame_data<S>) {
-		if constexpr (requires { S::initialize(phase, frame_data.value, state); }) {
-			S::initialize(phase, frame_data.value, state);
-			return;
-		}
-	}
-	if constexpr (!has_resources<S> && has_update_data<S>) {
-		if constexpr (requires { S::initialize(phase, update_data.value, state); }) {
-			S::initialize(phase, update_data.value, state);
-			return;
-		}
-	}
-	if constexpr (has_initialize<S, State>) {
+	if constexpr (requires { S::initialize(phase, state); }) {
 		S::initialize(phase, state);
+		return;
+	}
+	if constexpr (requires { S::initialize(phase); }) {
+		S::initialize(phase);
 	}
 }
 
 template <typename S, typename State>
 auto gse::dispatch_update(update_context& ctx, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, State& state) -> void {
 	if constexpr (has_resources<S> && has_update_data<S> && has_frame_data<S>) {
-		if constexpr (requires { S::update(ctx, std::as_const(resources.value), update_data.value, frame_data.value, state); }) {
-			S::update(ctx, std::as_const(resources.value), update_data.value, frame_data.value, state);
+		const auto& r = std::as_const(resources.value); auto& u = update_data.value; auto& f = frame_data.value;
+		if constexpr (requires { S::update(ctx, r, u, f, state); }) {
+			S::update(ctx, r, u, f, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, r, u, f); }) {
+			S::update(ctx, r, u, f);
 			return;
 		}
 	}
 	if constexpr (has_resources<S> && has_frame_data<S>) {
-		if constexpr (requires { S::update(ctx, std::as_const(resources.value), frame_data.value, state); }) {
-			S::update(ctx, std::as_const(resources.value), frame_data.value, state);
+		const auto& r = std::as_const(resources.value); auto& f = frame_data.value;
+		if constexpr (requires { S::update(ctx, r, f, state); }) {
+			S::update(ctx, r, f, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, r, f); }) {
+			S::update(ctx, r, f);
 			return;
 		}
 	}
 	if constexpr (has_resources<S> && has_update_data<S>) {
-		if constexpr (requires { S::update(ctx, std::as_const(resources.value), update_data.value, state); }) {
-			S::update(ctx, std::as_const(resources.value), update_data.value, state);
+		const auto& r = std::as_const(resources.value); auto& u = update_data.value;
+		if constexpr (requires { S::update(ctx, r, u, state); }) {
+			S::update(ctx, r, u, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, r, u); }) {
+			S::update(ctx, r, u);
 			return;
 		}
 	}
 	if constexpr (has_resources<S>) {
-		if constexpr (requires { S::update(ctx, std::as_const(resources.value), state); }) {
-			S::update(ctx, std::as_const(resources.value), state);
+		const auto& r = std::as_const(resources.value);
+		if constexpr (requires { S::update(ctx, r, state); }) {
+			S::update(ctx, r, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, r); }) {
+			S::update(ctx, r);
 			return;
 		}
 	}
-	if constexpr (!has_resources<S> && has_update_data<S> && has_frame_data<S>) {
-		if constexpr (requires { S::update(ctx, update_data.value, frame_data.value, state); }) {
-			S::update(ctx, update_data.value, frame_data.value, state);
+	if constexpr (has_frame_data<S>) {
+		auto& f = frame_data.value;
+		if constexpr (requires { S::update(ctx, f, state); }) {
+			S::update(ctx, f, state);
 			return;
 		}
-	}
-	if constexpr (!has_resources<S> && has_frame_data<S>) {
-		if constexpr (requires { S::update(ctx, frame_data.value, state); }) {
-			S::update(ctx, frame_data.value, state);
-			return;
-		}
-	}
-	if constexpr (has_update_data<S>) {
-		if constexpr (requires { S::update(ctx, update_data.value, state); }) {
-			S::update(ctx, update_data.value, state);
+		if constexpr (requires { S::update(ctx, f); }) {
+			S::update(ctx, f);
 			return;
 		}
 	}
 	if constexpr (requires { S::update(ctx, state); }) {
 		S::update(ctx, state);
+		return;
+	}
+	if constexpr (requires { S::update(ctx); }) {
+		S::update(ctx);
 	}
 }
 
 template <typename S, typename State>
 auto gse::dispatch_frame(frame_context& ctx, resource_storage<S>& resources, frame_data_storage<S>& frame_data, const State& state) -> async::task<> {
 	if constexpr (has_resources<S> && has_frame_data<S>) {
-		if constexpr (requires { S::frame(ctx, std::as_const(resources.value), frame_data.value, state); }) {
-			co_await S::frame(ctx, std::as_const(resources.value), frame_data.value, state);
+		const auto& r = std::as_const(resources.value); auto& f = frame_data.value;
+		if constexpr (requires { S::frame(ctx, r, f, state); }) {
+			co_await S::frame(ctx, r, f, state);
+			co_return;
+		}
+		if constexpr (requires { S::frame(ctx, r, f); }) {
+			co_await S::frame(ctx, r, f);
 			co_return;
 		}
 	}
 	if constexpr (has_resources<S>) {
-		if constexpr (requires { S::frame(ctx, std::as_const(resources.value), state); }) {
-			co_await S::frame(ctx, std::as_const(resources.value), state);
+		const auto& r = std::as_const(resources.value);
+		if constexpr (requires { S::frame(ctx, r, state); }) {
+			co_await S::frame(ctx, r, state);
+			co_return;
+		}
+		if constexpr (requires { S::frame(ctx, r); }) {
+			co_await S::frame(ctx, r);
 			co_return;
 		}
 	}
 	if constexpr (has_frame_data<S>) {
-		if constexpr (requires { S::frame(ctx, frame_data.value, state); }) {
-			co_await S::frame(ctx, frame_data.value, state);
+		auto& f = frame_data.value;
+		if constexpr (requires { S::frame(ctx, f, state); }) {
+			co_await S::frame(ctx, f, state);
+			co_return;
+		}
+		if constexpr (requires { S::frame(ctx, f); }) {
+			co_await S::frame(ctx, f);
 			co_return;
 		}
 	}
 	if constexpr (requires { S::frame(ctx, state); }) {
 		co_await S::frame(ctx, state);
+		co_return;
+	}
+	if constexpr (requires { S::frame(ctx); }) {
+		co_await S::frame(ctx);
+		co_return;
 	}
 	co_return;
 }
@@ -332,9 +386,15 @@ auto gse::dispatch_has_frame() -> bool {
 		if constexpr (requires(frame_context& c, const typename S::resources& r, typename S::frame_data& fd, const State& s) { S::frame(c, r, fd, s); }) {
 			return true;
 		}
+		if constexpr (requires(frame_context& c, const typename S::resources& r, typename S::frame_data& fd) { S::frame(c, r, fd); }) {
+			return true;
+		}
 	}
 	if constexpr (has_resources<S>) {
 		if constexpr (requires(frame_context& c, const typename S::resources& r, const State& s) { S::frame(c, r, s); }) {
+			return true;
+		}
+		if constexpr (requires(frame_context& c, const typename S::resources& r) { S::frame(c, r); }) {
 			return true;
 		}
 	}
@@ -342,8 +402,14 @@ auto gse::dispatch_has_frame() -> bool {
 		if constexpr (requires(frame_context& c, typename S::frame_data& fd, const State& s) { S::frame(c, fd, s); }) {
 			return true;
 		}
+		if constexpr (requires(frame_context& c, typename S::frame_data& fd) { S::frame(c, fd); }) {
+			return true;
+		}
 	}
 	if constexpr (requires(frame_context& c, const State& s) { S::frame(c, s); }) {
+		return true;
+	}
+	if constexpr (requires(frame_context& c) { S::frame(c); }) {
 		return true;
 	}
 	return false;
