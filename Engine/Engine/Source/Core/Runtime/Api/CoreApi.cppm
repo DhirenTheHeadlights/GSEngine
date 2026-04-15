@@ -115,6 +115,7 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
 
             frame_sync::end();
             trace::finalize_frame();
+            profile::ingest_frame();
         }
 
         task::wait_idle();

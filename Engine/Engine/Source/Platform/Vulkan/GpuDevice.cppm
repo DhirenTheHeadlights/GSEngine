@@ -430,7 +430,8 @@ namespace gse::vulkan {
 				.robustBufferAccess = robustness2_supported ? vk::True : vk::False,
 				.drawIndirectFirstInstance = vk::True,
 				.fillModeNonSolid = vk::True,
-				.samplerAnisotropy = vk::True
+				.samplerAnisotropy = vk::True,
+				.pipelineStatisticsQuery = vk::True
 			}
 		};
 

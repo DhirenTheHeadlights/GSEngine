@@ -76,6 +76,10 @@ export namespace gse {
 			id other
 		) const -> bool;
 
+		auto operator<=>(
+			id other
+		) const -> std::strong_ordering;
+
 		auto number(
 		) const -> uuid;
 
@@ -120,6 +124,10 @@ auto gse::id::operator==(const id other) const -> bool {
 	}
 
 	return m_number == other.m_number;
+}
+
+auto gse::id::operator<=>(const id other) const -> std::strong_ordering {
+	return m_number <=> other.m_number;
 }
 
 auto gse::id::number() const -> uuid {

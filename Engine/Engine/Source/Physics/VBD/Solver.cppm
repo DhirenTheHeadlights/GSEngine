@@ -41,6 +41,13 @@ export namespace gse::vbd {
 		float angular_damping = 0.01f;
 	};
 
+	struct frozen_contact_jacobian {
+		vec3<lever_arm> world_r_a;
+		vec3<lever_arm> world_r_b;
+		mat3<length> J_ang_a;
+		mat3<length> J_ang_b;
+	};
+
 	class solver {
 	public:
 		auto configure(
@@ -92,6 +99,7 @@ export namespace gse::vbd {
 	private:
 		auto accumulate_contact(
 			const contact_constraint& constraint,
+			const frozen_contact_jacobian& frozen,
 			std::uint32_t body_idx,
 			time_squared h_squared,
 			float alpha
@@ -136,6 +144,9 @@ export namespace gse::vbd {
 
 		linear_vector<vec3<velocity>> m_prev_velocity{ max_solver_bodies };
 		linear_vector<float> m_accel_weight{ max_solver_bodies };
+
+		static constexpr std::uint32_t max_contacts = 2000;
+		linear_vector<frozen_contact_jacobian> m_frozen_jacobians{ max_contacts };
 	};
 }
 
@@ -613,12 +624,30 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	const float solve_alpha = m_config.post_stabilize ? 1.0f : m_config.alpha;
 	const bool can_stop_on_contact_convergence = joints.empty();
 
+	m_frozen_jacobians.resize(contacts.size());
+	for (std::uint32_t ci = 0; ci < contacts.size(); ++ci) {
+		const auto& c = contacts[ci];
+		const auto& ba = m_bodies[c.body_a];
+		const auto& bb = m_bodies[c.body_b];
+
+		const vec3<lever_arm> r_aw = rotate_vector(ba.predicted_orientation, c.r_a);
+		const vec3<lever_arm> r_bw = rotate_vector(bb.predicted_orientation, c.r_b);
+		const std::array dirs = { c.normal, c.tangent_u, c.tangent_v };
+
+		m_frozen_jacobians[ci] = {
+			.world_r_a = r_aw,
+			.world_r_b = r_bw,
+			.J_ang_a = { cross(r_aw, dirs[0]), cross(r_aw, dirs[1]), cross(r_aw, dirs[2]) },
+			.J_ang_b = { cross(r_bw, dirs[0]), cross(r_bw, dirs[1]), cross(r_bw, dirs[2]) },
+		};
+	}
+
 	auto solve_iteration = [&](const float alpha) {
 		for (const auto& body_color : m_graph.body_colors()) {
 			for (const auto bi : body_color) {
 				m_solve_state[bi] = {};
 				for (const auto ci : m_graph.body_contact_indices(bi)) {
-					accumulate_contact(contacts[ci], bi, h_squared, alpha);
+					accumulate_contact(contacts[ci], m_frozen_jacobians[ci], bi, h_squared, alpha);
 				}
 				for (const auto ji : m_graph.body_joint_indices(bi)) {
 					accumulate_joint(joints[ji], bi, h_squared, dt, alpha);
@@ -797,15 +826,13 @@ auto gse::vbd::solver::body_states() const -> std::span<const body_state> {
 	return m_bodies;
 }
 
-auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, const std::uint32_t body_idx, const time_squared h_squared, const float alpha) -> void {
+auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, const frozen_contact_jacobian& frozen, const std::uint32_t body_idx, const time_squared h_squared, const float alpha) -> void {
 	const auto& body_a = m_bodies[constraint.body_a];
 	const auto& body_b = m_bodies[constraint.body_b];
 	const bool is_a = (body_idx == constraint.body_a);
 
-	const vec3<lever_arm> r_aw = rotate_vector(body_a.predicted_orientation, constraint.r_a);
-	const vec3<lever_arm> r_bw = rotate_vector(body_b.predicted_orientation, constraint.r_b);
-	const vec3<predicted_position> p_a = body_a.predicted_position + r_aw;
-	const vec3<predicted_position> p_b = body_b.predicted_position + r_bw;
+	const vec3<predicted_position> p_a = body_a.predicted_position + frozen.world_r_a;
+	const vec3<predicted_position> p_b = body_b.predicted_position + frozen.world_r_b;
 	const vec3<displacement> d = p_a - p_b;
 
 	const vec3<gap> cn = {
@@ -822,9 +849,9 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 	const force f2 = std::clamp<force>(constraint.penalty[2] * c[2] + constraint.lambda[2], -friction_bound, friction_bound);
 
 	const float sign = is_a ? 1.f : -1.f;
-	const vec3<lever_arm> r = (is_a ? r_aw : r_bw) * sign;
 	const std::array dirs = { constraint.normal, constraint.tangent_u, constraint.tangent_v };
 	const std::array f = { f0, f1, f2 };
+	const auto& J_ang_frozen = is_a ? frozen.J_ang_a : frozen.J_ang_b;
 
 	for (int i = 0; i < 3; i++) {
 		if (i > 0 && friction_bound <= newtons(1e-10f)) {
@@ -835,7 +862,7 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 		}
 
 		const vec3f j_lin = dirs[i] * sign;
-		const vec3<length> j_ang = cross(r, dirs[i]);
+		const vec3<length> j_ang = J_ang_frozen[i] * sign;
 
 		m_solve_state[body_idx].gradient += j_lin * f[i];
 		m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.penalty[i];

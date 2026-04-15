@@ -248,6 +248,7 @@ export namespace gse::vbd {
 			resource::handle<shader> update_joint_lambda;
 			resource::handle<shader> prepare_indirect;
 			resource::handle<shader> prepare_contact_indirect;
+			resource::handle<shader> freeze_jacobians;
 
 			gpu::pipeline predict_pipeline;
 			gpu::pipeline solve_color_pipeline;
@@ -262,6 +263,7 @@ export namespace gse::vbd {
 			gpu::pipeline update_joint_lambda_pipeline;
 			gpu::pipeline prepare_indirect_pipeline;
 			gpu::pipeline prepare_contact_indirect_pipeline;
+			gpu::pipeline freeze_jacobians_pipeline;
 
 			float solve_ms = 0.f;
 			bool initialized = false;
@@ -291,6 +293,7 @@ export namespace gse::vbd {
 			gpu::buffer grid_buffer;
 			gpu::buffer physics_snapshot_buffer;
 			gpu::buffer indirect_dispatch_buffer;
+			gpu::buffer frozen_jacobian_buffer;
 
 			struct readback_frame_info {
 				std::uint32_t body_count = 0;
@@ -324,6 +327,7 @@ export namespace gse::vbd {
 		buffer_layout m_motor_layout;
 		buffer_layout m_warm_start_layout;
 		buffer_layout m_joint_layout;
+		buffer_layout m_frozen_jacobian_layout;
 
 		std::uint32_t m_warm_start_count = 0;
 
@@ -470,6 +474,11 @@ auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::indirect
 		});
 		std::memset(f.indirect_dispatch_buffer.mapped(), 0, f.indirect_dispatch_buffer.size());
+
+		f.frozen_jacobian_buffer = gpu::create_buffer(ctx.device_ref(), {
+			.size = max_contacts * m_frozen_jacobian_layout.stride,
+			.usage = gpu::buffer_flag::storage
+		});
 	}
 
 	m_upload_body_data.reserve(max_bodies * m_body_layout.stride);
@@ -1185,6 +1194,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.update_joint_lambda = ctx.get<shader>("Shaders/VBDPhysics/vbd_update_joint_lambda");
 	m_compute.prepare_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_indirect");
 	m_compute.prepare_contact_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_contact_indirect");
+	m_compute.freeze_jacobians = ctx.get<shader>("Shaders/VBDPhysics/vbd_freeze_jacobians");
 
 	ctx.instantly_load(m_compute.predict);
 	ctx.instantly_load(m_compute.solve_color);
@@ -1199,6 +1209,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	ctx.instantly_load(m_compute.update_joint_lambda);
 	ctx.instantly_load(m_compute.prepare_indirect);
 	ctx.instantly_load(m_compute.prepare_contact_indirect);
+	ctx.instantly_load(m_compute.freeze_jacobians);
 
 	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.predict, "vbd_push_constants");
 	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.solve_color, "vbd_push_constants");
@@ -1213,6 +1224,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.update_joint_lambda, "vbd_push_constants");
 	m_compute.prepare_indirect_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.prepare_indirect, "vbd_push_constants");
 	m_compute.prepare_contact_indirect_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.prepare_contact_indirect, "vbd_push_constants");
+	m_compute.freeze_jacobians_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.freeze_jacobians, "vbd_push_constants");
 
 	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
 		const auto block = sh->uniform_block(name);
@@ -1229,6 +1241,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_motor_layout = extract_layout(m_compute.predict, "motor_data");
 	m_warm_start_layout = extract_layout(m_compute.predict, "warm_starts");
 	m_joint_layout = extract_layout(m_compute.predict, "joint_data");
+	m_frozen_jacobian_layout = extract_layout(m_compute.freeze_jacobians, "frozen_jacobians");
 
 	create_buffers(ctx);
 
@@ -1255,6 +1268,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 			.buffer("joint_adjacency", f.joint_adjacency_buffer)
 			.buffer("grid_data", f.grid_buffer)
 			.buffer("indirect_args", f.indirect_dispatch_buffer)
+			.buffer("frozen_jacobians", f.frozen_jacobian_buffer)
 			.commit();
 	}
 
@@ -1359,6 +1373,10 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 
 		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(body_workgroups, 1, 1);
+		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+
+		bind_and_push(m_compute.freeze_jacobians, m_compute.freeze_jacobians_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		for (std::uint32_t iterations = 0; iterations < num_iterations; ++iterations) {

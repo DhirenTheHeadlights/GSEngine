@@ -27,6 +27,10 @@ export namespace gse::renderer {
 	struct state {
 		gpu::context* ctx = nullptr;
 		bool hot_reload_enabled = false;
+		bool gpu_timestamps_enabled = true;
+		bool gpu_pipeline_stats_enabled = false;
+		bool profile_aggregator_enabled = true;
+		actions::handle dump_profile_action;
 		vec2f last_viewport{ 1920.f, 1080.f };
 
 		state() = default;
@@ -112,6 +116,38 @@ auto gse::renderer::system::initialize(const init_context& phase, state& s) -> v
 		.ref = &s.hot_reload_enabled,
 		.type = typeid(bool)
 	});
+
+	phase.channels.push(save::register_property{
+		.category = "Profiling",
+		.name = "GPU Timestamps",
+		.description = "Measure per-pass GPU time via timestamp queries",
+		.ref = &s.gpu_timestamps_enabled,
+		.type = typeid(bool)
+	});
+
+	phase.channels.push(save::register_property{
+		.category = "Profiling",
+		.name = "GPU Pipeline Stats",
+		.description = "Record draw/primitive/invocation counts per graphics pass",
+		.ref = &s.gpu_pipeline_stats_enabled,
+		.type = typeid(bool)
+	});
+
+	phase.channels.push(save::register_property{
+		.category = "Profiling",
+		.name = "Rolling Averages",
+		.description = "Aggregate CPU and GPU samples into rolling EMAs",
+		.ref = &s.profile_aggregator_enabled,
+		.type = typeid(bool)
+	});
+
+	const id dump_profile_id = generate_id("Dump Profile");
+	phase.channels.push(actions::add_action_request{
+		.name = "Dump Profile",
+		.default_key = key::f11,
+		.action_id = dump_profile_id
+	});
+	s.dump_profile_action = actions::handle(dump_profile_id);
 }
 
 auto gse::renderer::system::update(const update_context& ctx, state& s) -> void {
@@ -123,6 +159,15 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> void 
 		} else {
 			gpu.disable_hot_reload();
 		}
+	}
+
+	gpu.graph().set_gpu_timestamps_enabled(s.gpu_timestamps_enabled);
+	gpu.graph().set_gpu_pipeline_stats_enabled(s.gpu_pipeline_stats_enabled);
+	profile::set_enabled(s.profile_aggregator_enabled);
+
+	if (const auto* sys = ctx.try_state_of<actions::system_state>(); sys && s.dump_profile_action.pressed(sys->current_state(), *sys)) {
+		profile::dump();
+		log::println(log::category::render, "Profile dumped");
 	}
 
 	gpu.poll_assets();

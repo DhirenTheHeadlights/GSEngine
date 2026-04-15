@@ -25,3 +25,4 @@ public struct DispatchArgs {
     public uint z;
 };
 public[[vk::binding(17, 0)]] RWStructuredBuffer<DispatchArgs> indirect_args;
+public[[vk::binding(18, 0)]] RWStructuredBuffer<FrozenJacobian> frozen_jacobians;

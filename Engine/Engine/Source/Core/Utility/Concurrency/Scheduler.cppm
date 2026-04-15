@@ -311,6 +311,7 @@ auto gse::scheduler::update() -> void {
 auto gse::scheduler::run_graph_update() -> void {
 	auto writer = make_channel_writer();
 	std::vector<scheduled_work> collected_work;
+	std::mutex collected_work_mutex;
 
 	update_context u_ctx{
 		.reg = *m_registry,
@@ -320,20 +321,27 @@ auto gse::scheduler::run_graph_update() -> void {
 		.resources = *this,
 		.graph = m_update_graph,
 		.work = collected_work,
+		.work_mutex = collected_work_mutex,
 		.deferred_ops = m_update_deferred_ops
 	};
 	u_ctx.gpu_ctx = m_gpu_ctx;
 
-	for (const auto& node : m_nodes) {
-		trace::scope(node->trace_id(), [&] {
-			node->graph_update(u_ctx);
-		});
+	{
+		task::group group;
+		for (const auto& node : m_nodes) {
+			group.post([&, node = node.get()] {
+				trace::scope(node->trace_id(), [&] {
+					node->graph_update(u_ctx);
+				});
+			});
+		}
+		group.wait();
 	}
 
 	if (!collected_work.empty()) {
 		for (auto& item : collected_work) {
 			m_update_graph.submit(
-				find_or_generate_id("schedule_work"),
+				item.work_id,
 				wrap_work(std::move(item.execute)),
 				std::move(item.reads),
 				std::move(item.writes)

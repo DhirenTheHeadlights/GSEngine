@@ -123,6 +123,13 @@ public struct GpuJoint {
     public float _pad7;
 };
 
+public struct FrozenJacobian {
+    public float4 world_r_a;
+    public float4 world_r_b;
+    public float3x3 J_ang_a;
+    public float3x3 J_ang_b;
+};
+
 public struct vbd_push_constants {
     public uint body_count;
     public uint contact_count;
