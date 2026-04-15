@@ -136,20 +136,23 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 	pass.track(fd.mapping_buffers[frame_index]);
 	pass.track(gc_r->instance_buffer[frame_index]);
 
-	pass.writes(gpu::storage_write(gc_r->instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
+	pass.reads(
+			gpu::storage_read(snapshot, gpu::pipeline_stage::compute_shader),
+			gpu::storage_read(fd.mapping_buffers[frame_index], gpu::pipeline_stage::compute_shader),
+			gpu::transfer_read(gc_r->instance_buffer[frame_index])
+		)
+		.writes(gpu::transfer_write(gc_r->instance_buffer[frame_index]))
 		.after<geometry_collector::state>()
 		.record([&r, &fd, &staging, gc_r, frame_index, workgroups, copy_size, pc = std::move(pc)](const gpu::recording_context& rec) {
-			rec.full_barrier();
 			rec.copy_buffer(gc_r->instance_buffer[frame_index], staging, copy_size);
-			rec.full_barrier();
+			rec.barrier(gpu::barrier_scope::transfer_to_compute);
 
 			rec.bind(r.pipeline);
 			rec.bind_descriptors(r.pipeline, fd.descriptors[frame_index]);
 			rec.push(r.pipeline, pc);
 			rec.dispatch(workgroups, 1, 1);
+			rec.barrier(gpu::barrier_scope::compute_to_transfer);
 
-			rec.full_barrier();
 			rec.copy_buffer(staging, gc_r->instance_buffer[frame_index], copy_size);
-			rec.full_barrier();
 		});
 }

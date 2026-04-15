@@ -76,6 +76,14 @@ export namespace gse::vulkan {
 		vk::PipelineStageFlags2 stage
 	) -> resource_usage;
 
+	auto transfer_read(
+		const buffer_resource& buf
+	) -> resource_usage;
+
+	auto transfer_write(
+		const buffer_resource& buf
+	) -> resource_usage;
+
 	auto indirect_read(
 		const buffer_resource& buf,
 		vk::PipelineStageFlags2 stage
@@ -98,6 +106,14 @@ export namespace gse::gpu {
 	auto storage_write(
 		const buffer& buf,
 		pipeline_stage stage
+	) -> vulkan::resource_usage;
+
+	auto transfer_read(
+		const buffer& buf
+	) -> vulkan::resource_usage;
+
+	auto transfer_write(
+		const buffer& buf
 	) -> vulkan::resource_usage;
 
 	auto sampled(
@@ -275,20 +291,16 @@ export namespace gse::vulkan {
 			std::uint32_t set_index = 0
 		) const -> void;
 
-		auto storage_barrier(
-			gpu::pipeline_stage src,
-			gpu::pipeline_stage dst
-		) const -> void;
-
-		auto full_barrier(
-		) const -> void;
-
 		auto copy_buffer(
 			const gpu::buffer& src,
 			const gpu::buffer& dst,
 			std::size_t size,
 			std::size_t src_offset = 0,
 			std::size_t dst_offset = 0
+		) const -> void;
+
+		auto barrier(
+			gpu::barrier_scope scope
 		) const -> void;
 
 		auto build_acceleration_structure(
@@ -477,35 +489,13 @@ namespace gse::vulkan {
 	auto to_vk_stage(
 		gpu::pipeline_stage s
 	) -> vk::PipelineStageFlags2;
+
+	auto to_vk_barrier(
+		gpu::barrier_scope scope
+	) -> vk::MemoryBarrier2;
 }
 
 gse::vulkan::recording_context::recording_context(const vk::CommandBuffer cmd) : m_cmd(cmd) {}
-
-auto gse::vulkan::recording_context::storage_barrier(const gpu::pipeline_stage src, const gpu::pipeline_stage dst) const -> void {
-	const vk::MemoryBarrier2 barrier{
-		.srcStageMask = to_vk_stage(src),
-		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
-		.dstStageMask = to_vk_stage(dst),
-		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead
-	};
-	m_cmd.pipelineBarrier2(vk::DependencyInfo{
-		.memoryBarrierCount = 1,
-		.pMemoryBarriers = &barrier
-	});
-}
-
-auto gse::vulkan::recording_context::full_barrier() const -> void {
-	const vk::MemoryBarrier2 barrier{
-		.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-		.srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-		.dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite
-	};
-	m_cmd.pipelineBarrier2(vk::DependencyInfo{
-		.memoryBarrierCount = 1,
-		.pMemoryBarriers = &barrier
-	});
-}
 
 auto gse::vulkan::recording_context::copy_buffer(const gpu::buffer& src, const gpu::buffer& dst, const std::size_t size, const std::size_t src_offset, const std::size_t dst_offset) const -> void {
 	m_cmd.copyBuffer(src.native().buffer, dst.native().buffer, vk::BufferCopy{
@@ -513,6 +503,15 @@ auto gse::vulkan::recording_context::copy_buffer(const gpu::buffer& src, const g
 		.dstOffset = dst_offset,
 		.size = size
 	});
+}
+
+auto gse::vulkan::recording_context::barrier(const gpu::barrier_scope scope) const -> void {
+	const auto memory_barrier = to_vk_barrier(scope);
+	const vk::DependencyInfo dep{
+		.memoryBarrierCount = 1,
+		.pMemoryBarriers = &memory_barrier
+	};
+	m_cmd.pipelineBarrier2(dep);
 }
 
 auto gse::vulkan::recording_context::build_acceleration_structure(
@@ -886,6 +885,28 @@ auto gse::vulkan::storage_read(const buffer_resource& buf, const vk::PipelineSta
 	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, vk::AccessFlagBits2::eShaderStorageRead };
 }
 
+auto gse::vulkan::transfer_read(const buffer_resource& buf) -> resource_usage {
+	return {
+		{
+			.ptr = std::addressof(buf),
+			.type = resource_type::buffer
+		},
+		vk::PipelineStageFlagBits2::eCopy,
+		vk::AccessFlagBits2::eTransferRead
+	};
+}
+
+auto gse::vulkan::transfer_write(const buffer_resource& buf) -> resource_usage {
+	return {
+		{
+			.ptr = std::addressof(buf),
+			.type = resource_type::buffer
+		},
+		vk::PipelineStageFlagBits2::eCopy,
+		vk::AccessFlagBits2::eTransferWrite
+	};
+}
+
 auto gse::vulkan::indirect_read(const buffer_resource& buf, const vk::PipelineStageFlags2 stage) -> resource_usage {
 	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, vk::AccessFlagBits2::eIndirectCommandRead };
 }
@@ -903,6 +924,14 @@ auto gse::gpu::storage_read(const buffer& buf, const pipeline_stage stage) -> vu
 
 auto gse::gpu::storage_write(const buffer& buf, const pipeline_stage stage) -> vulkan::resource_usage {
 	return vulkan::storage(buf.native(), vulkan::to_vk_stage(stage));
+}
+
+auto gse::gpu::transfer_read(const buffer& buf) -> vulkan::resource_usage {
+	return vulkan::transfer_read(buf.native());
+}
+
+auto gse::gpu::transfer_write(const buffer& buf) -> vulkan::resource_usage {
+	return vulkan::transfer_write(buf.native());
 }
 
 auto gse::gpu::sampled(const image& img, const pipeline_stage stage) -> vulkan::resource_usage {
@@ -1002,7 +1031,14 @@ auto gse::vulkan::pass_builder::depth_output_load() -> pass_builder& {
 	m_pass.depth_output = depth_output_info{
 		.op = load_op::load
 	};
-	m_pass.reads.push_back(attachment(m_graph->m_swapchain->depth_image().native(), vk::PipelineStageFlagBits2::eEarlyFragmentTests));
+	m_pass.reads.push_back({
+		{
+			.ptr = std::addressof(m_graph->m_swapchain->depth_image().native()),
+			.type = resource_type::image
+		},
+		vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+		vk::AccessFlagBits2::eDepthStencilAttachmentRead
+	});
 	return *this;
 }
 
@@ -1218,11 +1254,39 @@ auto gse::vulkan::render_graph::execute() -> void {
 		std::vector<vk::MemoryBarrier2> barriers;
 
 		if (!pass.tracked_buffers.empty()) {
+			vk::PipelineStageFlags2 tracked_stage{};
+			vk::AccessFlags2 tracked_access{};
+			bool has_unmatched_tracked_buffer = false;
+
+			for (const auto* tracked : pass.tracked_buffers) {
+				bool matched = false;
+				for (const auto& [resource, stage, access] : pass.reads) {
+					if (resource.ptr == tracked && resource.type == resource_type::buffer) {
+						tracked_stage |= stage;
+						tracked_access |= access;
+						matched = true;
+					}
+				}
+				if (!matched) {
+					has_unmatched_tracked_buffer = true;
+				}
+			}
+
+			if (has_unmatched_tracked_buffer || tracked_stage == vk::PipelineStageFlags2{}) {
+				tracked_stage |= pass.tracked_stage;
+				tracked_access |= vk::AccessFlagBits2::eShaderStorageRead
+					| vk::AccessFlagBits2::eUniformRead
+					| vk::AccessFlagBits2::eTransferRead
+					| vk::AccessFlagBits2::eIndirectCommandRead
+					| vk::AccessFlagBits2::eVertexAttributeRead
+					| vk::AccessFlagBits2::eIndexRead;
+			}
+
 			barriers.push_back({
 				.srcStageMask = vk::PipelineStageFlagBits2::eHost,
 				.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
-				.dstStageMask = pass.tracked_stage,
-				.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eUniformRead
+				.dstStageMask = tracked_stage,
+				.dstAccessMask = tracked_access
 			});
 		}
 
@@ -1358,4 +1422,60 @@ auto gse::vulkan::to_vk_stage(const gpu::pipeline_stage s) -> vk::PipelineStageF
 		case gpu::pipeline_stage::late_fragment_tests: return vk::PipelineStageFlagBits2::eLateFragmentTests;
 	}
 	return vk::PipelineStageFlagBits2::eNone;
+}
+
+auto gse::vulkan::to_vk_barrier(const gpu::barrier_scope scope) -> vk::MemoryBarrier2 {
+	using enum gpu::barrier_scope;
+	switch (scope) {
+		case compute_to_compute:
+			return {
+				.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+				.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+				.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+				.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
+			};
+		case compute_to_indirect:
+			return {
+				.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+				.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+				.dstStageMask = vk::PipelineStageFlagBits2::eDrawIndirect | vk::PipelineStageFlagBits2::eComputeShader,
+				.dstAccessMask = vk::AccessFlagBits2::eIndirectCommandRead | vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
+			};
+		case host_to_compute:
+			return {
+				.srcStageMask = vk::PipelineStageFlagBits2::eHost,
+				.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+				.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+				.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
+			};
+		case transfer_to_compute:
+			return {
+				.srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+				.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+				.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+				.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
+			};
+		case compute_to_transfer:
+			return {
+				.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+				.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+				.dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+				.dstAccessMask = vk::AccessFlagBits2::eTransferRead
+			};
+		case transfer_to_host:
+			return {
+				.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+				.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+				.dstStageMask = vk::PipelineStageFlagBits2::eHost,
+				.dstAccessMask = vk::AccessFlagBits2::eHostRead
+			};
+		case transfer_to_transfer:
+			return {
+				.srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+				.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+				.dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+				.dstAccessMask = vk::AccessFlagBits2::eTransferWrite
+			};
+	}
+	return {};
 }

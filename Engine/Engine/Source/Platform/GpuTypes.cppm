@@ -157,6 +157,16 @@ export namespace gse::gpu {
 		late_fragment_tests,
 	};
 
+	enum class barrier_scope : std::uint8_t {
+		compute_to_compute,
+		compute_to_indirect,
+		host_to_compute,
+		transfer_to_compute,
+		compute_to_transfer,
+		transfer_to_host,
+		transfer_to_transfer
+	};
+
 	struct draw_indexed_indirect_command {
 		std::uint32_t index_count;
 		std::uint32_t instance_count;

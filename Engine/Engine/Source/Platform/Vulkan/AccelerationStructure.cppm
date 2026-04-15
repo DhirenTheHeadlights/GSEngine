@@ -209,14 +209,6 @@ auto gse::gpu::build_blas(device& dev, const blas_geometry_desc& desc) -> blas {
 
 	const vk::DeviceSize scratch_size = sizes.buildScratchSize;
 	const vk::DeviceSize scratch_alignment = acceleration_structure_scratch_alignment(dev);
-	log::println(log::category::render,
-		"AS BLAS build: prims={} vertex_addr={:#x} index_addr={:#x} storage_size={} scratch_size={} scratch_alignment={}",
-		prim_count,
-		vertex_addr,
-		index_addr,
-		sizes.accelerationStructureSize,
-		scratch_size,
-		scratch_alignment);
 
 	dev.add_transient_work([&dev, &geometry, &build_info, prim_count, scratch_size, scratch_alignment](const vk::raii::CommandBuffer& cmd) {
 		auto scratch = dev.allocator().create_buffer({
@@ -315,23 +307,6 @@ auto gse::gpu::build_tlas(device& dev, const std::uint32_t max_instances) -> tla
 		.size = sizes.accelerationStructureSize,
 		.type = vk::AccelerationStructureTypeKHR::eTopLevel
 	});
-
-	const auto scratch_buffer_addr = vk_device.getBufferAddress({
-		.buffer = scratch_buf.native().buffer
-	});
-	const auto instance_buffer_addr = vk_device.getBufferAddress({
-		.buffer = instance_buf.buffer
-	});
-	log::println(log::category::render,
-		"AS TLAS create: max_instances={} handle={:#x} storage_size={} build_scratch={} update_scratch={} scratch_alignment={} scratch_addr={:#x} instance_addr={:#x}",
-		max_instances,
-		reinterpret_cast<std::uint64_t>(static_cast<VkAccelerationStructureKHR>(*as)),
-		sizes.accelerationStructureSize,
-		sizes.buildScratchSize,
-		sizes.updateScratchSize,
-		scratch_alignment,
-		scratch_buffer_addr,
-		instance_buffer_addr);
 
 	return tlas{
 		std::move(storage_buf),
