@@ -36,14 +36,8 @@ export namespace gse::physics {
         bool affected_by_gravity = true;
         bool airborne = true;
         bool position_locked = false;
-        bool can_sleep = true;
         bool sleeping = false;
         bool update_orientation = true;
-
-        vec3<previous_position> previous_position;
-        quat previous_orientation = quat(1.f, 0.f, 0.f, 0.f);
-        vec3<render_position> render_position;
-        quat render_orientation = quat(1.f, 0.f, 0.f, 0.f);
 
         vec3<velocity> velocity_drive_target;
         bool velocity_drive_active = false;

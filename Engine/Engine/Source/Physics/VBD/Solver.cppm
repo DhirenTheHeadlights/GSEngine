@@ -248,10 +248,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, c.r_b);
 
 		const stiffness base_floor = std::max(c.penalty_floor, m_config.penalty_min);
-		const bool persistent_active_normal = c.lambda[0] < newtons(-1e-3f) && c.c0[0] < meters(-1e-4f);
+		const bool active_normal = c.lambda[0] < newtons(-1e-3f) || c.c0[0] < meters(-1e-4f);
 
 		const stiffness normal_floor =
-			persistent_active_normal
+			active_normal
 				? std::clamp<stiffness>(
 					contact_effective_mass(ba, bb, r_aw, r_bw, c.normal) / h_squared,
 					base_floor,

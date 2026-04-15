@@ -1036,11 +1036,11 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         );
 
         float base_floor = pc.penalty_min;
-        bool persistent_active_normal =
-            init_lambda.x < -1e-3 &&
+        bool active_normal =
+            init_lambda.x < -1e-3 ||
             C0.x < -1e-4;
         float normal_floor =
-            persistent_active_normal
+            active_normal
                 ? clamp(contact_effective_mass(ba, bb, rAW, rBW, constraint_normal) / pc.h_squared, base_floor, pc.penalty_max)
                 : base_floor;
 

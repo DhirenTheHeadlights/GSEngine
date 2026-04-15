@@ -66,21 +66,28 @@ export namespace gse::renderer::forward {
 			std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
 		};
 
+		struct frame_data {
+			linear_vector<std::byte> light_staging;
+			linear_vector<std::byte> material_staging;
+		};
+
 		static auto initialize(
 			const init_context& phase,
 			resources& r,
+			frame_data& fd,
 			state& s
 		) -> void;
 
 		static auto frame(
 			frame_context& ctx,
 			const resources& r,
+			frame_data& fd,
 			const state& s
 		) -> async::task<>;
 	};
 }
 
-auto gse::renderer::forward::system::initialize(const init_context& phase, resources& r, state& s) -> void {
+auto gse::renderer::forward::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	phase.channels.push(save::register_property{
@@ -118,6 +125,8 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	const auto light_buffer_size = light_block.size * max_lights;
 	const auto material_block = r.shader_handle->uniform_block("material_palette");
 	const auto material_buffer_size = material_block.size * max_materials;
+	fd.light_staging.reserve(light_buffer_size);
+	fd.material_staging.reserve(material_buffer_size);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
@@ -207,7 +216,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	ctx.instantly_load(r.blank_texture);
 }
 
-auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& r, const state& s) -> async::task<> {
+auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
 	co_await ctx.after<geometry_collector::state>();
 
 	auto& gpu = ctx.get<gpu::context>();
@@ -245,7 +254,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 		dir_chunk.size() + spot_chunk.size() + point_chunk.size(), 
 		max_lights
 	);
-	std::vector staging(total_lights * stride, std::byte{ 0 });
+	auto& staging = fd.light_staging;
+	staging.assign(total_lights * stride, std::byte{ 0 });
 	std::size_t light_count = 0;
 
 	auto write = [&](const std::size_t index, const std::string_view member, const auto& v) {
@@ -311,7 +321,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const auto material_count = std::min(data.material_palette_map.size(), max_materials);
 
 	if (material_count > 0) {
-		std::vector mat_staging(material_count * mat_stride, std::byte{ 0 });
+		auto& mat_staging = fd.material_staging;
+		mat_staging.assign(material_count * mat_stride, std::byte{ 0 });
 
 		auto mat_write = [&](const std::size_t index, const std::string_view member, const auto& v) {
 			gse::memcpy(mat_staging.data() + index * mat_stride + material_block.members.at(std::string(member)).offset, v);

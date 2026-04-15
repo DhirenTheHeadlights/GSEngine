@@ -168,7 +168,7 @@ namespace gs {
 			m_bindings.update();
 
 			auto& cam_follow = component_write<gse::camera::follow_component>();
-			cam_follow.position = motion.render_position;
+			cam_follow.position = motion.current_position;
 		}
 
 	private:

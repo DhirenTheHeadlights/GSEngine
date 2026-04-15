@@ -663,41 +663,15 @@ auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s
 		steps = max_physics_steps;
 	}
 
-	const float alpha = ud.accumulator / const_update_time;
-
 	if (s.use_gpu_solver) {
-		ctx.schedule([steps, frame_time, &ud, &s, const_update_time, &channels = ctx.channels](write<motion_component> motion, write<collision_component> collision) {
+		ctx.schedule([steps, &ud, &s, const_update_time, &channels = ctx.channels](write<motion_component> motion, write<collision_component> collision) {
 			update_vbd_gpu(steps, ud, s, motion, collision, const_update_time, channels);
-
-			const float blend = std::min(frame_time / (const_update_time * 2.f), 1.f);
-
-			for (motion_component& mc : motion) {
-				if (mc.position_locked) {
-					mc.render_position = mc.current_position;
-					mc.render_orientation = mc.orientation;
-				}
-				else {
-					mc.render_position = lerp(mc.render_position, mc.current_position, blend);
-					mc.render_orientation = slerp(mc.render_orientation, mc.orientation, blend);
-				}
-			}
 		});
 		return;
 	}
 
-	ctx.schedule([steps, alpha, &ud, &s](write<motion_component> motion, write<collision_component> collision) {
+	ctx.schedule([steps, &ud, &s](write<motion_component> motion, write<collision_component> collision) {
 		update_vbd(steps, ud, s, motion, collision);
-
-		for (motion_component& mc : motion) {
-			if (mc.position_locked) {
-				mc.render_position = mc.current_position;
-				mc.render_orientation = mc.orientation;
-			}
-			else {
-				mc.render_position = lerp(mc.previous_position, mc.current_position, alpha);
-				mc.render_orientation = slerp(mc.previous_orientation, mc.orientation, alpha);
-			}
-		}
 	});
 }
 
@@ -720,12 +694,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 			const auto& bs = completed.gpu_result_bodies[i];
 
 			if (!mc->position_locked) {
-				if (const auto diff = bs.position - mc->current_position; magnitude(diff) > meters(1e-6f)) {
-					mc->previous_position = mc->current_position;
-					mc->previous_orientation = mc->orientation;
-					mc->current_position = bs.position;
-				}
-
+				mc->current_position = bs.position;
 				mc->current_velocity = bs.body_velocity;
 				if (mc->update_orientation) {
 					mc->orientation = bs.orientation;
@@ -1333,37 +1302,6 @@ auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s
 		std::vector<vbd::body_state> bodies;
 		bodies.reserve(motion.size());
 
-		for (motion_component& mc : motion) {
-			mc.previous_position = mc.current_position;
-			mc.previous_orientation = mc.orientation;
-
-			const auto eid = mc.owner_id();
-			const auto sc_it = ud.sleep_counters.find(eid);
-			const auto sc = sc_it != ud.sleep_counters.end() ? sc_it->second : 0u;
-
-			bodies.push_back({
-				.position = mc.current_position,
-				.predicted_position = mc.current_position,
-				.inertia_target = mc.current_position,
-				.initial_position = mc.current_position,
-				.body_velocity = mc.current_velocity,
-				.orientation = mc.orientation,
-				.predicted_orientation = mc.orientation,
-				.angular_inertia_target = mc.orientation,
-				.initial_orientation = mc.orientation,
-				.body_angular_velocity = mc.angular_velocity,
-				.motor_target = mc.current_position,
-				.mass_value = mc.mass,
-				.inv_inertia = mc.inv_inertial_tensor(),
-				.locked = mc.position_locked,
-				.update_orientation = mc.update_orientation,
-				.affected_by_gravity = mc.affected_by_gravity,
-				.sleep_counter = sc
-			});
-
-			mc.airborne = true;
-		}
-
 		for (collision_component& cc : collision) {
 			if (!cc.resolve_collisions) {
 				continue;
@@ -1379,27 +1317,6 @@ auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s
 
 		ud.vbd_solver.begin_frame(bodies, ud.contact_cache);
 		add_scene_contacts_to_solver(ud.vbd_solver, ud.contact_cache, objects, id_to_body_index, true);
-
-		for (motion_component& mc : motion) {
-			if (!mc.velocity_drive_active) {
-				continue;
-			}
-			if (mc.airborne) {
-				continue;
-			}
-			const auto it = id_to_body_index.find(mc.owner_id());
-			if (it == id_to_body_index.end()) {
-				continue;
-			}
-
-			ud.vbd_solver.add_motor_constraint(vbd::velocity_motor_constraint{
-				.body_index = it->second,
-				.target_velocity = mc.velocity_drive_target,
-				.compliance = 0.5f,
-				.max_force = mc.mass * meters_per_second_squared(50.f),
-				.horizontal_only = true,
-			});
-		}
 
 		for (auto& jd : s.joints) {
 			const auto it_a = id_to_body_index.find(jd.entity_a);
@@ -1480,20 +1397,6 @@ auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s
 
 			if (auto* cc = collision.find(mc->owner_id())) {
 				cc->bounding_box.update(mc->current_position, mc->orientation);
-			}
-		}
-
-		for (motion_component& mc : motion) {
-			if (mc.position_locked) {
-				continue;
-			}
-			if (magnitude(mc.pending_impulse) > newton_seconds(1e-6f)) {
-				mc.current_velocity += mc.pending_impulse / mc.mass;
-				ud.sleep_counters[mc.owner_id()] = 0;
-				if (const auto it = id_to_body_index.find(mc.owner_id()); it != id_to_body_index.end()) {
-					ud.contact_cache.remove_body(it->second);
-				}
-				mc.pending_impulse = {};
 			}
 		}
 	}

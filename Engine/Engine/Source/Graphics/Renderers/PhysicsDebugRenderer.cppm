@@ -193,7 +193,7 @@ auto gse::renderer::physics_debug::add_line(const vec3<position>& a, const vec3<
 auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
 	auto bb = coll.bounding_box;
 	if (mc) {
-		bb.update(mc->render_position, mc->render_orientation);
+		bb.update(mc->current_position, mc->orientation);
 	}
 	std::array<vec3<position>, 8> corners;
 
@@ -225,7 +225,7 @@ auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::c
 auto gse::renderer::physics_debug::build_sphere_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
 	auto bb = coll.bounding_box;
 	if (mc) {
-		bb.update(mc->render_position, mc->render_orientation);
+		bb.update(mc->current_position, mc->orientation);
 	}
 
 	const auto center = bb.center();
@@ -254,7 +254,7 @@ auto gse::renderer::physics_debug::build_sphere_lines_for_collider(const physics
 auto gse::renderer::physics_debug::build_capsule_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
 	auto bb = coll.bounding_box;
 	if (mc) {
-		bb.update(mc->render_position, mc->render_orientation);
+		bb.update(mc->current_position, mc->orientation);
 	}
 
 	const auto center = bb.center();
@@ -362,10 +362,15 @@ auto gse::renderer::physics_debug::system::update(const update_context& ctx, con
 		return;
 	}
 
+	constexpr std::size_t max_shape_debug_vertices = 256;
+	const auto motion_components = ctx.reg.linked_objects_read<physics::motion_component>();
+	const auto collision_components = ctx.reg.linked_objects_read<physics::collision_component>();
+
 	std::vector<debug_vertex> vertices;
+	vertices.reserve(collision_components.size() * max_shape_debug_vertices);
 	debug_stats stats;
 
-	for (const auto& mc : ctx.reg.linked_objects_read<physics::motion_component>()) {
+	for (const auto& mc : motion_components) {
 		stats.body_count++;
 		if (mc.sleeping) stats.sleeping_count++;
 
@@ -375,7 +380,7 @@ auto gse::renderer::physics_debug::system::update(const update_context& ctx, con
 		if (ang > stats.max_angular_speed) stats.max_angular_speed = ang;
 	}
 
-	for (const auto& coll : ctx.reg.linked_objects_read<physics::collision_component>()) {
+	for (const auto& coll : collision_components) {
 		if (!coll.resolve_collisions) {
 			continue;
 		}

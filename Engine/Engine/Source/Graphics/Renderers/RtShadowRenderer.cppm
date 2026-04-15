@@ -26,6 +26,7 @@ export namespace gse::renderer::rt_shadow {
 		struct frame_data {
 			std::unordered_map<const mesh*, gpu::blas> blas_cache;
 			per_frame_resource<gpu::tlas> tlas_per_frame;
+			per_frame_resource<linear_vector<gpu::acceleration_structure_instance>> instances;
 		};
 
 		static auto initialize(
@@ -67,6 +68,7 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, fra
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
 		fd.tlas_per_frame[i] = gpu::build_tlas(ctx.device_ref(), max_instances);
 		s.tlas_ptrs[i] = &fd.tlas_per_frame[i];
+		fd.instances[i].reserve(max_instances);
 	}
 }
 
@@ -119,10 +121,11 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 		gpu.device_ref().wait_idle();
 	}
 
-	std::vector<gpu::acceleration_structure_instance> instances;
-	instances.reserve(data.render_queue.size());
+	auto& instances = fd.instances[frame_index];
+	instances.clear();
 
-	for (const auto& entry : data.render_queue) {
+	for (const auto& item : data.render_queue) {
+		const auto& entry = item.entry;
 		const auto* mdl = entry.model.resolve();
 		if (!mdl || entry.index >= mdl->meshes().size()) {
 			continue;
@@ -152,7 +155,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 	}
 
 	auto pass = gpu.graph().add_pass<state>();
-	pass.record([&fd, &gpu, instances = std::move(instances), frame_index](vulkan::recording_context& record_ctx) mutable {
-		gpu::rebuild_tlas(gpu.device_ref(), fd.tlas_per_frame[frame_index], instances, record_ctx);
+	pass.record([&fd, &gpu, frame_index](gpu::recording_context& record_ctx) {
+		gpu::rebuild_tlas(gpu.device_ref(), fd.tlas_per_frame[frame_index], fd.instances[frame_index].span(), record_ctx);
 	});
 }
