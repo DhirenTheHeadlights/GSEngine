@@ -430,6 +430,10 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 	w.start();
 	done.acquire();
 
+	while (!w.done()) {
+		std::this_thread::yield();
+	}
+
 	if (has_exception) {
 		std::rethrow_exception(ep);
 	}
@@ -454,6 +458,10 @@ auto gse::async::sync_wait(task<T>&& t) -> T {
 	auto w = wrapper();
 	w.start();
 	done.acquire();
+
+	while (!w.done()) {
+		std::this_thread::yield();
+	}
 
 	if (ep) {
 		std::rethrow_exception(ep);

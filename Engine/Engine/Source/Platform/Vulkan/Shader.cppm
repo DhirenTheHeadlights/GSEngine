@@ -284,8 +284,8 @@ auto gse::shader::is_mesh_shader() const -> bool {
 
 auto gse::shader::required_bindings() const -> std::vector<std::string> {
 	std::vector<std::string> result;
-	for (const auto& s : m_layout.sets | std::views::values) {
-		for (const auto& b : s.bindings) {
+	for (const auto& [type, bindings] : m_layout.sets | std::views::values) {
+		for (const auto& b : bindings) {
 			if (b.desc.type == gpu::descriptor_type::storage_buffer) {
 				result.push_back(b.name);
 			}

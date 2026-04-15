@@ -31,6 +31,12 @@ export namespace gse::gpu {
 		std::size_t size = 0;
 	};
 
+	struct compute_semaphore_state {
+		vk::Semaphore semaphore{};
+		std::uint64_t value = 0;
+		vk::PipelineStageFlags2 dst_stage = vk::PipelineStageFlagBits2::eAllCommands;
+	};
+
 	class compute_queue final : public non_copyable {
 	public:
 		compute_queue() = default;
@@ -38,6 +44,7 @@ export namespace gse::gpu {
 			vk::raii::CommandPool&& pool,
 			vk::raii::CommandBuffer&& cmd,
 			vk::raii::Fence&& fence,
+			vk::raii::Semaphore&& timeline,
 			vk::raii::QueryPool&& query_pool,
 			const vk::raii::Queue* queue,
 			const vk::raii::Device* device,
@@ -51,6 +58,9 @@ export namespace gse::gpu {
 		auto is_complete() const -> bool;
 		auto begin() const -> void;
 		auto submit() -> void;
+
+		[[nodiscard]] auto semaphore_state(
+		) const -> compute_semaphore_state;
 
 		auto bind_pipeline(
 			const pipeline& p
@@ -107,6 +117,8 @@ export namespace gse::gpu {
 		vk::raii::CommandPool m_pool = nullptr;
 		vk::raii::CommandBuffer m_cmd = nullptr;
 		vk::raii::Fence m_fence = nullptr;
+		vk::raii::Semaphore m_timeline = nullptr;
+		std::uint64_t m_timeline_value = 0;
 		vk::raii::QueryPool m_query_pool = nullptr;
 		const vk::raii::Queue* m_queue = nullptr;
 		const vk::raii::Device* m_device = nullptr;
@@ -171,6 +183,7 @@ gse::gpu::compute_queue::compute_queue(
 	vk::raii::CommandPool&& pool,
 	vk::raii::CommandBuffer&& cmd,
 	vk::raii::Fence&& fence,
+	vk::raii::Semaphore&& timeline,
 	vk::raii::QueryPool&& query_pool,
 	const vk::raii::Queue* queue,
 	const vk::raii::Device* device,
@@ -179,6 +192,7 @@ gse::gpu::compute_queue::compute_queue(
 ) : m_pool(std::move(pool)),
     m_cmd(std::move(cmd)),
     m_fence(std::move(fence)),
+    m_timeline(std::move(timeline)),
     m_query_pool(std::move(query_pool)),
     m_queue(queue),
     m_device(device),
@@ -210,14 +224,39 @@ auto gse::gpu::compute_queue::begin() const -> void {
 
 auto gse::gpu::compute_queue::submit() -> void {
 	m_cmd.end();
-	const vk::CommandBuffer submit_cmd = *m_cmd;
-	const vk::SubmitInfo submit_info{
-		.commandBufferCount = 1,
-		.pCommandBuffers = &submit_cmd
+
+	++m_timeline_value;
+
+	const vk::CommandBufferSubmitInfo cmd_info{
+		.commandBuffer = *m_cmd,
+		.deviceMask = 1
 	};
+
+	const vk::SemaphoreSubmitInfo signal_info{
+		.semaphore = *m_timeline,
+		.value = m_timeline_value,
+		.stageMask = vk::PipelineStageFlagBits2::eAllCommands,
+		.deviceIndex = 0
+	};
+
+	const vk::SubmitInfo2 submit_info{
+		.commandBufferInfoCount = 1,
+		.pCommandBufferInfos = &cmd_info,
+		.signalSemaphoreInfoCount = 1,
+		.pSignalSemaphoreInfos = &signal_info
+	};
+
 	(**m_device).resetFences(*m_fence);
-	m_queue->submit(submit_info, *m_fence);
+	m_queue->submit2(submit_info, *m_fence);
 	++m_frame_count;
+}
+
+auto gse::gpu::compute_queue::semaphore_state() const -> compute_semaphore_state {
+	return {
+		.semaphore = *m_timeline,
+		.value = m_timeline_value,
+		.dst_stage = vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eVertexShader
+	};
 }
 
 auto gse::gpu::compute_queue::bind_pipeline(const pipeline& p) const -> void {

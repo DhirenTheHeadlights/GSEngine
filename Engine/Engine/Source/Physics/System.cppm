@@ -81,14 +81,18 @@ export namespace gse::physics {
 	};
 
 	struct gpu_solver_frame_info {
-		const vbd::gpu_solver* solver = nullptr;
+		const gpu::buffer* snapshot = nullptr;
+		gpu::compute_semaphore_state semaphore{};
+		std::uint32_t body_count = 0;
+		std::uint32_t body_stride = 0;
+		std::uint32_t position_offset = 0;
 	};
 
 	struct state {
 		bool update_phys = true;
 		bool use_gpu_solver = false;
 		bool gpu_buffers_created = false;
-		int solver_iterations = 4;
+		int solver_iterations = 10;
 		bool compare_solvers = false;
 		gpu_solver_stats gpu_stats;
 		std::vector<joint_definition> joints;
@@ -594,7 +598,10 @@ auto gse::physics::system::initialize(const init_context& phase, update_data& ud
 		.name = "Solver Iterations",
 		.description = "Number of VBD solver iterations per substep (CPU and GPU)",
 		.ref = &s.solver_iterations,
-		.type = typeid(int)
+		.type = typeid(int),
+		.range_min = 1,
+		.range_max = 20,
+		.range_step = 1
 	});
 
 	ud.vbd_solver.configure(vbd::solver_config{
@@ -1567,8 +1574,15 @@ auto gse::physics::system::frame(frame_context& ctx, frame_data& fd, const state
 		.solve_time = fd.gpu_solver.solve_time(),
 	});
 
+	const auto snap_slot = fd.gpu_solver.latest_snapshot_slot();
+	const auto& layout = fd.gpu_solver.body_layout();
+
 	ctx.channels.push(gpu_solver_frame_info{
-		.solver = &fd.gpu_solver,
+		.snapshot = &fd.gpu_solver.snapshot_buffer(snap_slot),
+		.semaphore = fd.gpu_solver.compute_semaphore(),
+		.body_count = fd.gpu_solver.body_count(),
+		.body_stride = layout.stride,
+		.position_offset = layout["position"]
 	});
 
 	static std::uint32_t log_counter = 0;

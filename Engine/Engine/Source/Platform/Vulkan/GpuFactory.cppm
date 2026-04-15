@@ -716,6 +716,14 @@ auto gse::gpu::create_compute_queue(device& dev) -> compute_queue {
 		.flags = vk::FenceCreateFlagBits::eSignaled
 	});
 
+	const vk::SemaphoreTypeCreateInfo timeline_type{
+		.semaphoreType = vk::SemaphoreType::eTimeline,
+		.initialValue = 0
+	};
+	auto timeline = vk_device.createSemaphore({
+		.pNext = &timeline_type
+	});
+
 	auto query_pool = vk_device.createQueryPool({
 		.queryType = vk::QueryType::eTimestamp,
 		.queryCount = 4
@@ -729,6 +737,7 @@ auto gse::gpu::create_compute_queue(device& dev) -> compute_queue {
 		std::move(pool),
 		std::move(cmd),
 		std::move(fence),
+		std::move(timeline),
 		std::move(query_pool),
 		&dev.compute_queue(),
 		&vk_device,

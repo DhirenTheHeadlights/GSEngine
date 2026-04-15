@@ -67,11 +67,6 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, fra
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
 		fd.tlas_per_frame[i] = gpu::build_tlas(ctx.device_ref(), max_instances);
 		s.tlas_ptrs[i] = &fd.tlas_per_frame[i];
-		log::println(
-			log::category::render, "RT shadow: frame_slot={} tlas_handle={:#x}",
-			i,
-			s.tlas(static_cast<std::uint32_t>(i)).native_handle().value
-		);
 	}
 }
 
@@ -104,31 +99,23 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 			const auto vertex_count = static_cast<std::uint32_t>(m.vertex_gpu_buffer().size() / sizeof(vertex));
 			const auto index_count  = static_cast<std::uint32_t>(m.index_gpu_buffer().size() / sizeof(std::uint32_t));
 
-			log::println(log::category::render, "RT shadow: building BLAS mesh_ptr={} vertices={} indices={}",
-				reinterpret_cast<std::uint64_t>(mesh_ptr), vertex_count, index_count);
-
 			if (vertex_count == 0 || index_count == 0) {
-				log::println(log::level::warning, log::category::render, "RT shadow: skipping BLAS — empty buffers");
 				continue;
 			}
 
 			fd.blas_cache[mesh_ptr] = gpu::build_blas(gpu.device_ref(), {
 				.vertex_buffer = &m.vertex_gpu_buffer(),
-				.vertex_count  = vertex_count,
+				.vertex_count = vertex_count,
 				.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
-				.index_buffer  = &m.index_gpu_buffer(),
-				.index_count   = index_count
+				.index_buffer = &m.index_gpu_buffer(),
+				.index_count = index_count
 			});
-
-			log::println(log::category::render, "RT shadow: BLAS built device_address={:#x}",
-				fd.blas_cache[mesh_ptr].device_address());
 
 			any_new_blas = true;
 		}
 	}
 
 	if (any_new_blas) {
-		log::println(log::category::render, "RT shadow: wait_idle for BLAS completion");
 		gpu.device_ref().wait_idle();
 	}
 
@@ -153,7 +140,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 		}
 
 		instances.push_back({
-			.transform    = entry.model_matrix,
+			.transform = entry.model_matrix,
 			.custom_index = palette_idx,
 			.cull_disable = true,
 			.blas_address = it->second.device_address()

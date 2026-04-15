@@ -47,12 +47,12 @@ export namespace gse::renderer::capture {
 		) -> void;
 
 		static auto update(
-			update_context& ctx,
+			const update_context& ctx,
 			state& s
 		) -> void;
 
 		static auto frame(
-			frame_context& ctx,
+			const frame_context& ctx,
 			const resources& r,
 			frame_data& fd,
 			const state& s
@@ -116,13 +116,13 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
 	r.encode_active = true;
 }
 
-auto gse::renderer::capture::system::update(update_context& ctx, state& s) -> void {
+auto gse::renderer::capture::system::update(const update_context& ctx, state& s) -> void {
 	if (const auto* input = ctx.try_state_of<input::system_state>(); input && input->current_state().key_pressed(key::f9)) {
 		ctx.channels.push(screenshot_request{});
 	}
 }
 
-auto gse::renderer::capture::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
+auto gse::renderer::capture::system::frame(const frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
 	auto* gpu_ctx = ctx.try_get<gpu::context>();
 	if (!gpu_ctx) co_return;
 

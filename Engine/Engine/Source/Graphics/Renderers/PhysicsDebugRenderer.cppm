@@ -8,6 +8,7 @@ import gse.utility;
 import gse.platform;
 
 import :camera_system;
+import gse.log;
 
 namespace gse::renderer::physics_debug {
 	struct debug_vertex {
@@ -98,13 +99,12 @@ export namespace gse::renderer::physics_debug {
 		) -> void;
 
 		static auto update(
-			update_context& ctx,
+			const update_context& ctx,
 			const resources& r,
 			state& s
 		) -> void;
 
-		static auto frame(
-			frame_context& ctx,
+		static auto frame(const frame_context& ctx,
 			const resources& r,
 			frame_data& fd,
 			const state& s
@@ -357,7 +357,7 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 	}
 }
 
-auto gse::renderer::physics_debug::system::update(update_context& ctx, const resources& r, state& s) -> void {
+auto gse::renderer::physics_debug::system::update(const update_context& ctx, const resources& r, state& s) -> void {
 	if (!s.enabled) {
 		return;
 	}
@@ -407,7 +407,7 @@ auto gse::renderer::physics_debug::system::update(update_context& ctx, const res
 	ctx.channels.push(render_data{ std::move(vertices), stats });
 }
 
-auto gse::renderer::physics_debug::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
+auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
 
 	if (!s.enabled) {
@@ -444,20 +444,16 @@ auto gse::renderer::physics_debug::system::frame(frame_context& ctx, const resou
 	r.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, r.ubo_allocations.at("CameraUBO")[frame_index]);
 
 	const auto ext = gpu.graph().extent();
-	const auto ext_w = ext.x();
-	const auto ext_h = ext.y();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);
 
-	const vec2u ext_size{ ext_w, ext_h };
-
 	pass.color_output_load()
-		.record([&r, frame_index, ext_size, vertex_count, &vertex_buffer](gpu::recording_context& rec) {
+		.record([&r, frame_index, ext, vertex_count, &vertex_buffer](const gpu::recording_context& rec) {
 			rec.bind(r.pipeline);
-			rec.set_viewport(ext_size);
-			rec.set_scissor(ext_size);
+			rec.set_viewport(ext);
+			rec.set_scissor(ext);
 			rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
 			rec.bind_vertex(vertex_buffer);
 			rec.draw(vertex_count);

@@ -270,10 +270,25 @@ export namespace gse::vulkan {
 			vec2u extent
 		) const -> void;
 
-		auto commit(
-			descriptor_writer& writer,
+		auto commit(const descriptor_writer& writer,
 			const gpu::pipeline& p,
 			std::uint32_t set_index = 0
+		) const -> void;
+
+		auto storage_barrier(
+			gpu::pipeline_stage src,
+			gpu::pipeline_stage dst
+		) const -> void;
+
+		auto full_barrier(
+		) const -> void;
+
+		auto copy_buffer(
+			const gpu::buffer& src,
+			const gpu::buffer& dst,
+			std::size_t size,
+			std::size_t src_offset = 0,
+			std::size_t dst_offset = 0
 		) const -> void;
 
 		auto build_acceleration_structure(
@@ -458,7 +473,47 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::recording_context::recording_context(vk::CommandBuffer cmd) : m_cmd(cmd) {}
+namespace gse::vulkan {
+	auto to_vk_stage(
+		gpu::pipeline_stage s
+	) -> vk::PipelineStageFlags2;
+}
+
+gse::vulkan::recording_context::recording_context(const vk::CommandBuffer cmd) : m_cmd(cmd) {}
+
+auto gse::vulkan::recording_context::storage_barrier(const gpu::pipeline_stage src, const gpu::pipeline_stage dst) const -> void {
+	const vk::MemoryBarrier2 barrier{
+		.srcStageMask = to_vk_stage(src),
+		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+		.dstStageMask = to_vk_stage(dst),
+		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead
+	};
+	m_cmd.pipelineBarrier2(vk::DependencyInfo{
+		.memoryBarrierCount = 1,
+		.pMemoryBarriers = &barrier
+	});
+}
+
+auto gse::vulkan::recording_context::full_barrier() const -> void {
+	const vk::MemoryBarrier2 barrier{
+		.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+		.srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+		.dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite
+	};
+	m_cmd.pipelineBarrier2(vk::DependencyInfo{
+		.memoryBarrierCount = 1,
+		.pMemoryBarriers = &barrier
+	});
+}
+
+auto gse::vulkan::recording_context::copy_buffer(const gpu::buffer& src, const gpu::buffer& dst, const std::size_t size, const std::size_t src_offset, const std::size_t dst_offset) const -> void {
+	m_cmd.copyBuffer(src.native().buffer, dst.native().buffer, vk::BufferCopy{
+		.srcOffset = src_offset,
+		.dstOffset = dst_offset,
+		.size = size
+	});
+}
 
 auto gse::vulkan::recording_context::build_acceleration_structure(
 	const vk::AccelerationStructureBuildGeometryInfoKHR& build_info,
@@ -471,12 +526,7 @@ auto gse::vulkan::recording_context::pipeline_barrier(const vk::DependencyInfo& 
 	m_cmd.pipelineBarrier2(dep);
 }
 
-auto gse::vulkan::recording_context::copy_image_to_buffer(
-	const vk::Image src_image,
-	const vk::ImageLayout src_layout,
-	const vk::Buffer dst_buffer,
-	const std::span<const vk::BufferImageCopy> regions
-) const -> void {
+auto gse::vulkan::recording_context::copy_image_to_buffer(const vk::Image src_image, const vk::ImageLayout src_layout, const vk::Buffer dst_buffer, const std::span<const vk::BufferImageCopy> regions) const -> void {
 	m_cmd.copyImageToBuffer(src_image, src_layout, dst_buffer, regions);
 }
 
@@ -489,7 +539,7 @@ auto gse::vulkan::recording_context::capture_swapchain(
 	const auto ext = swapchain.extent();
 	const auto dst_buffer = dst.native().buffer;
 
-	const vk::ImageSubresourceRange subresource{
+	constexpr vk::ImageSubresourceRange subresource{
 		.aspectMask = vk::ImageAspectFlagBits::eColor,
 		.baseMipLevel = 0, .levelCount = 1,
 		.baseArrayLayer = 0, .layerCount = 1
@@ -545,16 +595,12 @@ auto gse::vulkan::recording_context::capture_swapchain(
 	});
 }
 
-auto gse::vulkan::recording_context::blit_swapchain_to_image(
-	const gpu::swap_chain& swapchain,
-	const gpu::frame& frame,
-	const gpu::image& dst
-) const -> void {
+auto gse::vulkan::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const gpu::image& dst) const -> void {
 	const auto src_image = swapchain.image(frame.image_index());
 	const auto src_ext = swapchain.extent();
 	const auto dst_ext = dst.extent();
 
-	const vk::ImageSubresourceRange subresource{
+	constexpr vk::ImageSubresourceRange subresource{
 		.aspectMask = vk::ImageAspectFlagBits::eColor,
 		.baseMipLevel = 0, .levelCount = 1,
 		.baseArrayLayer = 0, .layerCount = 1
@@ -643,54 +689,54 @@ auto gse::vulkan::recording_context::blit_swapchain_to_image(
 	});
 }
 
-auto gse::vulkan::recording_context::bind_pipeline(vk::PipelineBindPoint point, vk::Pipeline pipeline) const -> void {
+auto gse::vulkan::recording_context::bind_pipeline(const vk::PipelineBindPoint point, const vk::Pipeline pipeline) const -> void {
 	m_cmd.bindPipeline(point, pipeline);
 }
 
-auto gse::vulkan::recording_context::bind_descriptors(vk::PipelineBindPoint point, vk::PipelineLayout layout, const descriptor_region& region, std::uint32_t set_index) const -> void {
+auto gse::vulkan::recording_context::bind_descriptors(const vk::PipelineBindPoint point, const vk::PipelineLayout layout, const descriptor_region& region, const std::uint32_t set_index) const -> void {
 	assert(region, std::source_location::current(), "Cannot bind null descriptor region");
 	region.heap->bind(m_cmd, point, layout, set_index, region);
 }
 
-auto gse::vulkan::recording_context::push(const gpu::cached_push_constants& cache, vk::PipelineLayout layout) const -> void {
+auto gse::vulkan::recording_context::push(const gpu::cached_push_constants& cache, const vk::PipelineLayout layout) const -> void {
 	cache.replay(m_cmd, layout);
 }
 
-auto gse::vulkan::recording_context::set_viewport(float x, float y, float width, float height, float min_depth, float max_depth) const -> void {
+auto gse::vulkan::recording_context::set_viewport(const float x, const float y, const float width, const float height, const float min_depth, const float max_depth) const -> void {
 	const vk::Viewport vp{ .x = x, .y = y, .width = width, .height = height, .minDepth = min_depth, .maxDepth = max_depth };
 	m_cmd.setViewport(0, vp);
 }
 
-auto gse::vulkan::recording_context::set_scissor(std::int32_t x, std::int32_t y, std::uint32_t width, std::uint32_t height) const -> void {
+auto gse::vulkan::recording_context::set_scissor(const std::int32_t x, const std::int32_t y, const std::uint32_t width, const std::uint32_t height) const -> void {
 	const vk::Rect2D sc{ .offset = { x, y }, .extent = { width, height } };
 	m_cmd.setScissor(0, sc);
 }
 
-auto gse::vulkan::recording_context::draw(std::uint32_t vertex_count, std::uint32_t instance_count, std::uint32_t first_vertex, std::uint32_t first_instance) const -> void {
+auto gse::vulkan::recording_context::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) const -> void {
 	m_cmd.draw(vertex_count, instance_count, first_vertex, first_instance);
 }
 
-auto gse::vulkan::recording_context::draw_indexed(std::uint32_t index_count, std::uint32_t instance_count, std::uint32_t first_index, std::int32_t vertex_offset, std::uint32_t first_instance) const -> void {
+auto gse::vulkan::recording_context::draw_indexed(const std::uint32_t index_count, const std::uint32_t instance_count, const std::uint32_t first_index, const std::int32_t vertex_offset, const std::uint32_t first_instance) const -> void {
 	m_cmd.drawIndexed(index_count, instance_count, first_index, vertex_offset, first_instance);
 }
 
-auto gse::vulkan::recording_context::draw_indirect(vk::Buffer buffer, vk::DeviceSize offset, std::uint32_t draw_count, std::uint32_t stride) const -> void {
+auto gse::vulkan::recording_context::draw_indirect(const vk::Buffer buffer, const vk::DeviceSize offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
 	m_cmd.drawIndexedIndirect(buffer, offset, draw_count, stride);
 }
 
-auto gse::vulkan::recording_context::draw_mesh_tasks(std::uint32_t x, std::uint32_t y, std::uint32_t z) const -> void {
+auto gse::vulkan::recording_context::draw_mesh_tasks(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
 	m_cmd.drawMeshTasksEXT(x, y, z);
 }
 
-auto gse::vulkan::recording_context::dispatch(std::uint32_t x, std::uint32_t y, std::uint32_t z) const -> void {
+auto gse::vulkan::recording_context::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
 	m_cmd.dispatch(x, y, z);
 }
 
-auto gse::vulkan::recording_context::bind_vertex_buffers(std::uint32_t first, std::span<const vk::Buffer> buffers, std::span<const vk::DeviceSize> offsets) const -> void {
+auto gse::vulkan::recording_context::bind_vertex_buffers(const std::uint32_t first, const std::span<const vk::Buffer> buffers, const std::span<const vk::DeviceSize> offsets) const -> void {
 	m_cmd.bindVertexBuffers(first, static_cast<std::uint32_t>(buffers.size()), buffers.data(), offsets.data());
 }
 
-auto gse::vulkan::recording_context::bind_index_buffer(vk::Buffer buffer, vk::DeviceSize offset, vk::IndexType index_type) const -> void {
+auto gse::vulkan::recording_context::bind_index_buffer(const vk::Buffer buffer, const vk::DeviceSize offset, const vk::IndexType index_type) const -> void {
 	m_cmd.bindIndexBuffer(buffer, offset, index_type);
 }
 
@@ -716,7 +762,7 @@ auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::cac
 }
 
 auto gse::vulkan::recording_context::draw_indirect(const gpu::buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
-	m_cmd.drawIndexedIndirect(buf.native().buffer, static_cast<vk::DeviceSize>(offset), draw_count, stride);
+	m_cmd.drawIndexedIndirect(buf.native().buffer, offset, draw_count, stride);
 }
 
 auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) const -> void {
@@ -740,13 +786,13 @@ auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, co
 
 auto gse::vulkan::recording_context::bind_vertex(const gpu::buffer& buf, const std::size_t offset) const -> void {
 	const vk::Buffer buffers[]{ buf.native().buffer };
-	const vk::DeviceSize offsets[]{ static_cast<vk::DeviceSize>(offset) };
+	const vk::DeviceSize offsets[]{ offset };
 	m_cmd.bindVertexBuffers(0, 1, buffers, offsets);
 }
 
 auto gse::vulkan::recording_context::bind_index(const gpu::buffer& buf, const gpu::index_type type, const std::size_t offset) const -> void {
 	const auto vk_type = type == gpu::index_type::uint16 ? vk::IndexType::eUint16 : vk::IndexType::eUint32;
-	m_cmd.bindIndexBuffer(buf.native().buffer, static_cast<vk::DeviceSize>(offset), vk_type);
+	m_cmd.bindIndexBuffer(buf.native().buffer, offset, vk_type);
 }
 
 auto gse::vulkan::recording_context::set_viewport(const vec2u extent) const -> void {
@@ -764,11 +810,11 @@ auto gse::vulkan::recording_context::set_scissor(const vec2u extent) const -> vo
 }
 
 auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const gpu::image* depth, const gpu::image_layout depth_layout, const bool clear_depth, const float clear_depth_value) const -> void {
-	auto to_vk = [](gpu::image_layout l) -> vk::ImageLayout {
+	auto to_vk = [](const gpu::image_layout l) -> vk::ImageLayout {
 		switch (l) {
-			case gpu::image_layout::general:          return vk::ImageLayout::eGeneral;
+			case gpu::image_layout::general: return vk::ImageLayout::eGeneral;
 			case gpu::image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
-			default:                                  return vk::ImageLayout::eUndefined;
+			default: return vk::ImageLayout::eUndefined;
 		}
 	};
 
@@ -811,7 +857,7 @@ auto gse::vulkan::recording_context::begin_rendering(const gpu::image_view depth
 	m_cmd.beginRendering(ri);
 }
 
-auto gse::vulkan::recording_context::commit(descriptor_writer& writer, const gpu::pipeline& p, std::uint32_t set_index) const -> void {
+auto gse::vulkan::recording_context::commit(const descriptor_writer& writer, const gpu::pipeline& p, const std::uint32_t set_index) const -> void {
 	const auto point = p.point() == gpu::bind_point::graphics
 		? vk::PipelineBindPoint::eGraphics
 		: vk::PipelineBindPoint::eCompute;
@@ -828,63 +874,50 @@ auto gse::vulkan::recording_context::bind_index_buffer(const gpu::buffer& buf, c
 	m_cmd.bindIndexBuffer(buf.native().buffer, offset, index_type);
 }
 
-auto gse::vulkan::sampled(const image_resource& img, vk::PipelineStageFlags2 stage) -> resource_usage {
+auto gse::vulkan::sampled(const image_resource& img, const vk::PipelineStageFlags2 stage) -> resource_usage {
 	return { { .ptr = std::addressof(img), .type = resource_type::image }, stage, vk::AccessFlagBits2::eShaderSampledRead };
 }
 
-auto gse::vulkan::storage(const buffer_resource& buf, vk::PipelineStageFlags2 stage) -> resource_usage {
+auto gse::vulkan::storage(const buffer_resource& buf, const vk::PipelineStageFlags2 stage) -> resource_usage {
 	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite };
 }
 
-auto gse::vulkan::storage_read(const buffer_resource& buf, vk::PipelineStageFlags2 stage) -> resource_usage {
+auto gse::vulkan::storage_read(const buffer_resource& buf, const vk::PipelineStageFlags2 stage) -> resource_usage {
 	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, vk::AccessFlagBits2::eShaderStorageRead };
 }
 
-auto gse::vulkan::indirect_read(const buffer_resource& buf, vk::PipelineStageFlags2 stage) -> resource_usage {
+auto gse::vulkan::indirect_read(const buffer_resource& buf, const vk::PipelineStageFlags2 stage) -> resource_usage {
 	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, vk::AccessFlagBits2::eIndirectCommandRead };
 }
 
-auto gse::vulkan::attachment(const image_resource& img, vk::PipelineStageFlags2 stage) -> resource_usage {
+auto gse::vulkan::attachment(const image_resource& img, const vk::PipelineStageFlags2 stage) -> resource_usage {
 	const auto access = (stage == vk::PipelineStageFlagBits2::eLateFragmentTests || stage == vk::PipelineStageFlagBits2::eEarlyFragmentTests)
 		? vk::AccessFlagBits2::eDepthStencilAttachmentWrite
 		: vk::AccessFlagBits2::eColorAttachmentWrite;
 	return { { .ptr = std::addressof(img), .type = resource_type::image }, stage, access };
 }
 
-namespace {
-	auto to_vk_stage(gse::gpu::pipeline_stage s) -> vk::PipelineStageFlags2 {
-		switch (s) {
-			case gse::gpu::pipeline_stage::vertex_shader:       return vk::PipelineStageFlagBits2::eVertexShader;
-			case gse::gpu::pipeline_stage::fragment_shader:     return vk::PipelineStageFlagBits2::eFragmentShader;
-			case gse::gpu::pipeline_stage::compute_shader:      return vk::PipelineStageFlagBits2::eComputeShader;
-			case gse::gpu::pipeline_stage::draw_indirect:       return vk::PipelineStageFlagBits2::eDrawIndirect;
-			case gse::gpu::pipeline_stage::late_fragment_tests: return vk::PipelineStageFlagBits2::eLateFragmentTests;
-		}
-		return vk::PipelineStageFlagBits2::eNone;
-	}
+auto gse::gpu::storage_read(const buffer& buf, const pipeline_stage stage) -> vulkan::resource_usage {
+	return vulkan::storage_read(buf.native(), vulkan::to_vk_stage(stage));
 }
 
-auto gse::gpu::storage_read(const buffer& buf, pipeline_stage stage) -> vulkan::resource_usage {
-	return vulkan::storage_read(buf.native(), to_vk_stage(stage));
+auto gse::gpu::storage_write(const buffer& buf, const pipeline_stage stage) -> vulkan::resource_usage {
+	return vulkan::storage(buf.native(), vulkan::to_vk_stage(stage));
 }
 
-auto gse::gpu::storage_write(const buffer& buf, pipeline_stage stage) -> vulkan::resource_usage {
-	return vulkan::storage(buf.native(), to_vk_stage(stage));
+auto gse::gpu::sampled(const image& img, const pipeline_stage stage) -> vulkan::resource_usage {
+	return vulkan::sampled(img.native(), vulkan::to_vk_stage(stage));
 }
 
-auto gse::gpu::sampled(const image& img, pipeline_stage stage) -> vulkan::resource_usage {
-	return vulkan::sampled(img.native(), to_vk_stage(stage));
-}
-
-auto gse::gpu::indirect_read(const buffer& buf, pipeline_stage stage) -> vulkan::resource_usage {
-	return vulkan::indirect_read(buf.native(), to_vk_stage(stage));
+auto gse::gpu::indirect_read(const buffer& buf, const pipeline_stage stage) -> vulkan::resource_usage {
+	return vulkan::indirect_read(buf.native(), vulkan::to_vk_stage(stage));
 }
 
 namespace {
 	const char swapchain_sentinel = 0;
 }
 
-gse::vulkan::pass_builder::pass_builder(render_graph& graph, std::type_index pass_type)
+gse::vulkan::pass_builder::pass_builder(render_graph& graph, const std::type_index pass_type)
 	: m_graph(std::addressof(graph)), m_pass{ .pass_type = pass_type } {}
 
 gse::vulkan::pass_builder::~pass_builder() {
@@ -946,7 +979,10 @@ auto gse::vulkan::pass_builder::color_output_load() -> pass_builder& {
 		.op = load_op::load
 	};
 	m_pass.reads.push_back({
-		{ .ptr = &swapchain_sentinel, .type = resource_type::image },
+		{
+			.ptr = &swapchain_sentinel, 
+			.type = resource_type::image
+		},
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 		vk::AccessFlagBits2::eColorAttachmentRead
 	});
@@ -966,13 +1002,17 @@ auto gse::vulkan::pass_builder::depth_output_load() -> pass_builder& {
 	m_pass.depth_output = depth_output_info{
 		.op = load_op::load
 	};
+	m_pass.reads.push_back(attachment(m_graph->m_swapchain->depth_image().native(), vk::PipelineStageFlagBits2::eEarlyFragmentTests));
 	return *this;
 }
 
 auto gse::vulkan::pass_builder::record(std::move_only_function<void(recording_context&)> fn) -> void {
 	if (m_pass.color_output) {
 		m_pass.writes.push_back({
-			{ .ptr = &swapchain_sentinel, .type = resource_type::image },
+			{
+				.ptr = &swapchain_sentinel, 
+				.type = resource_type::image
+			},
 			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 			vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead
 		});
@@ -1109,7 +1149,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 	std::vector<std::vector<std::size_t>> adj(passes.size());
 	std::vector<std::size_t> in_degree(passes.size(), 0);
 
-	auto add_edge = [&](std::size_t from, std::size_t to) {
+	auto add_edge = [&](const std::size_t from, const std::size_t to) {
 		for (const auto n : adj[from]) {
 			if (n == to) return;
 		}
@@ -1187,8 +1227,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 		}
 
 		for (std::size_t pi = 0; pi < si; ++pi) {
-			const auto& prev = passes[sorted[pi]];
-			for (const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
+			for (const auto& prev = passes[sorted[pi]]; const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
 				if (!prev_resource.ptr) continue;
 				for (const auto& [read_resource, read_stage, read_access] : pass.reads) {
 					if (read_resource.ptr && prev_resource.ptr == read_resource.ptr) {
@@ -1221,15 +1260,13 @@ auto gse::vulkan::render_graph::execute() -> void {
 			command.pipelineBarrier2(dep);
 		}
 
-		bool has_graphics = pass.color_output || pass.depth_output;
-
-		if (has_graphics) {
+		if (pass.color_output || pass.depth_output) {
 			std::vector<vk::RenderingAttachmentInfo> color_attachments;
 			std::optional<vk::RenderingAttachmentInfo> depth_att;
 
 			if (pass.color_output) {
 				const auto& co = *pass.color_output;
-				vk::AttachmentLoadOp vk_load = vk::AttachmentLoadOp::eDontCare;
+				auto vk_load = vk::AttachmentLoadOp::eDontCare;
 				vk::ClearValue clear_val{};
 
 				if (co.op == load_op::clear_color) {
@@ -1251,14 +1288,14 @@ auto gse::vulkan::render_graph::execute() -> void {
 			}
 
 			if (pass.depth_output) {
-				const auto& dpo = *pass.depth_output;
-				vk::AttachmentLoadOp vk_load = vk::AttachmentLoadOp::eDontCare;
+				const auto& [op, clear_value] = *pass.depth_output;
+				auto vk_load = vk::AttachmentLoadOp::eDontCare;
 				vk::ClearValue clear_val{};
 
-				if (dpo.op == load_op::clear_depth) {
+				if (op == load_op::clear_depth) {
 					vk_load = vk::AttachmentLoadOp::eClear;
-					clear_val.depthStencil = vk::ClearDepthStencilValue{ .depth = dpo.clear_value.depth };
-				} else if (dpo.op == load_op::load) {
+					clear_val.depthStencil = vk::ClearDepthStencilValue{ .depth = clear_value.depth };
+				} else if (op == load_op::load) {
 					vk_load = vk::AttachmentLoadOp::eLoad;
 				}
 
@@ -1310,4 +1347,15 @@ auto gse::vulkan::render_graph::execute() -> void {
 		.pImageMemoryBarriers = &present_barrier
 	};
 	command.pipelineBarrier2(end_dep);
+}
+
+auto gse::vulkan::to_vk_stage(const gpu::pipeline_stage s) -> vk::PipelineStageFlags2 {
+	switch (s) {
+		case gpu::pipeline_stage::vertex_shader:       return vk::PipelineStageFlagBits2::eVertexShader;
+		case gpu::pipeline_stage::fragment_shader:     return vk::PipelineStageFlagBits2::eFragmentShader;
+		case gpu::pipeline_stage::compute_shader:      return vk::PipelineStageFlagBits2::eComputeShader;
+		case gpu::pipeline_stage::draw_indirect:       return vk::PipelineStageFlagBits2::eDrawIndirect;
+		case gpu::pipeline_stage::late_fragment_tests: return vk::PipelineStageFlagBits2::eLateFragmentTests;
+	}
+	return vk::PipelineStageFlagBits2::eNone;
 }

@@ -5,6 +5,7 @@ import std;
 import :vulkan_runtime;
 import :gpu_device;
 import :gpu_swapchain;
+import :gpu_compute;
 import :window;
 
 import gse.assert;
@@ -56,6 +57,10 @@ export namespace gse::gpu {
 			vulkan::sync_config&& sync
 		) -> void;
 
+		auto add_wait_semaphore(
+			compute_semaphore_state state
+		) -> void;
+
 	private:
 		auto recreate_resources(
 			window& win
@@ -67,6 +72,7 @@ export namespace gse::gpu {
 		bool m_frame_in_progress = false;
 		device* m_device;
 		swap_chain* m_swapchain;
+		std::vector<compute_semaphore_state> m_extra_waits;
 	};
 }
 
@@ -191,17 +197,34 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
 	};
 }
 
+auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state state) -> void {
+	if (state.semaphore && state.value > 0) {
+		m_extra_waits.push_back(state);
+	}
+}
+
 auto gse::gpu::frame::end(window& win) -> void {
 	const auto& device = m_device->device_config().device;
 
 	m_frame_context.command_buffer.end();
 
-	const vk::SemaphoreSubmitInfo wait_info{
+	std::vector<vk::SemaphoreSubmitInfo> wait_infos;
+	wait_infos.push_back({
 		.semaphore = *m_sync.image_available_semaphores[m_current_frame],
 		.value = 0,
 		.stageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
 		.deviceIndex = 0
-	};
+	});
+
+	for (const auto& [sem, val, dst_stage] : m_extra_waits) {
+		wait_infos.push_back({
+			.semaphore = sem,
+			.value = val,
+			.stageMask = dst_stage,
+			.deviceIndex = 0
+		});
+	}
+	m_extra_waits.clear();
 
 	const vk::CommandBufferSubmitInfo cmd_info{
 		.commandBuffer = m_frame_context.command_buffer,
@@ -217,8 +240,8 @@ auto gse::gpu::frame::end(window& win) -> void {
 
 	const vk::SubmitInfo2 submit_info2{
 		.flags = {},
-		.waitSemaphoreInfoCount = 1,
-		.pWaitSemaphoreInfos = &wait_info,
+		.waitSemaphoreInfoCount = static_cast<std::uint32_t>(wait_infos.size()),
+		.pWaitSemaphoreInfos = wait_infos.data(),
 		.commandBufferInfoCount = 1,
 		.pCommandBufferInfos = &cmd_info,
 		.signalSemaphoreInfoCount = 1,

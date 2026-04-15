@@ -4,6 +4,7 @@ import std;
 
 import :geometry_collector;
 import :cull_compute_renderer;
+import :physics_transform_renderer;
 import :camera_system;
 
 import gse.platform;
@@ -25,7 +26,8 @@ export namespace gse::renderer::depth_prepass {
 			std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
 		};
 
-		static auto initialize(const init_context& phase,
+		static auto initialize(
+			const init_context& phase,
 			resources& r,
 			state& s
 		) -> void;
@@ -130,12 +132,14 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 	pass.track(gc_r->instance_buffer[frame_index]);
 
 	pass.after<cull_compute::state>()
+		.after<physics_transform::state>()
 		.reads(
+			gpu::storage_read(gc_r->instance_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
 			gpu::storage_read(gc_r->skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
 			gpu::indirect_read(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.depth_output(gpu::depth_clear{ 1.0f })
-		.record([&r, gc_r, &data, frame_index, ext_w, ext_h, meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](gpu::recording_context& rec) mutable {
+		.record([&r, gc_r, &data, frame_index, ext_w, ext_h, meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](const gpu::recording_context& rec) mutable {
 			const vec2u ext_size{ ext_w, ext_h };
 			rec.set_viewport(ext_size);
 			rec.set_scissor(ext_size);

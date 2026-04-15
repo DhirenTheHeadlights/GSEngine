@@ -19,6 +19,12 @@ export namespace gse::renderer::physics_transform {
 
 		struct frame_data {
 			per_frame_resource<gpu::descriptor_region> descriptors;
+			per_frame_resource<gpu::buffer> staging_buffers;
+			std::size_t staging_size = 0;
+
+			per_frame_resource<gpu::buffer> mapping_buffers;
+			std::size_t mapping_buffer_size = 0;
+			std::uint32_t cached_mapping_count = 0;
 		};
 
 		static auto initialize(
@@ -58,51 +64,92 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 	const auto& gpu = ctx.get<gpu::context>();
 
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
-	if (solver_infos.empty() || !solver_infos[0].solver || !solver_infos[0].solver->buffers_created()) {
+	if (solver_infos.empty() || !solver_infos[0].snapshot || solver_infos[0].semaphore.value == 0 || solver_infos[0].body_count == 0) {
 		co_return;
 	}
-	const auto* gpu_solver = solver_infos[0].solver;
-
-	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
-	if (render_items.empty()) {
-		co_return;
-	}
-
-	const auto& data = render_items.front();
-	if (data.physics_mapping_count == 0) {
-		co_return;
-	}
-
-	const auto frame_index = gpu.graph().current_frame();
-	const auto snapshot_slot = gpu_solver->latest_snapshot_slot();
+	const auto& info = solver_infos[0];
+	const auto& snapshot = *info.snapshot;
 
 	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
 	if (!gc_r) {
 		co_return;
 	}
 
+	const auto frame_index = gpu.graph().current_frame();
+
+	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+	if (!render_items.empty() && render_items[0].physics_mapping_count > 0) {
+		const auto& data = render_items[0];
+		const auto required = data.physics_mapping_count * sizeof(geometry_collector::physics_mapping_entry);
+
+		fd.cached_mapping_count = data.physics_mapping_count;
+
+		if (fd.mapping_buffer_size < required) {
+			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+				fd.mapping_buffers[i] = gpu::create_buffer(gpu.device_ref(), {
+					.size = required,
+					.usage = gpu::buffer_flag::storage,
+					.data = data.physics_mappings.data()
+				});
+			}
+			fd.mapping_buffer_size = required;
+		} else {
+			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+				gse::memcpy(fd.mapping_buffers[i].mapped(), data.physics_mappings.data(), required);
+			}
+		}
+	}
+
+	if (fd.cached_mapping_count == 0) {
+		co_return;
+	}
+
+	gpu.frame().add_wait_semaphore(info.semaphore);
+
+	const auto required_size = gc_r->instance_buffer[frame_index].size();
+	if (fd.staging_size < required_size) {
+		for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+			fd.staging_buffers[i] = gpu::create_buffer(gpu.device_ref(), {
+				.size = required_size,
+				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
+			});
+		}
+		fd.staging_size = required_size;
+	}
+
+	auto& staging = fd.staging_buffers[frame_index];
+
 	gpu::descriptor_writer(gpu.device_ref(), r.shader_handle, fd.descriptors[frame_index])
-		.buffer("body_data", gpu_solver->snapshot_buffer(snapshot_slot), 0, gpu_solver->snapshot_buffer(snapshot_slot).size())
-		.buffer("mapping_data", gc_r->physics_mapping_buffer[frame_index], 0, gc_r->physics_mapping_buffer[frame_index].size())
-		.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())
+		.buffer("body_data", snapshot, 0, info.body_count * info.body_stride)
+		.buffer("mapping_data", fd.mapping_buffers[frame_index], 0, fd.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry))
+		.buffer("instance_data", staging, 0, staging.size())
 		.commit();
 
 	auto pc = r.shader_handle->cache_push_block("push_constants");
-	pc.set("mapping_count", data.physics_mapping_count);
+	pc.set("mapping_count", fd.cached_mapping_count);
+	pc.set("body_count", info.body_count);
 
-	const std::uint32_t workgroups = (data.physics_mapping_count + 63) / 64;
+	const std::uint32_t workgroups = (fd.cached_mapping_count + 63) / 64;
+	const auto copy_size = required_size;
 
 	auto pass = gpu.graph().add_pass<state>();
-	pass.when(data.physics_mapping_count > 0);
-
-	pass.track(gc_r->physics_mapping_buffer[frame_index]);
+	pass.track(fd.mapping_buffers[frame_index]);
+	pass.track(gc_r->instance_buffer[frame_index]);
 
 	pass.writes(gpu::storage_write(gc_r->instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
 		.after<geometry_collector::state>()
-		.record([&r, &fd, frame_index, workgroups, pc = std::move(pc)](gpu::recording_context& rec) {
+		.record([&r, &fd, &staging, gc_r, frame_index, workgroups, copy_size, pc = std::move(pc)](const gpu::recording_context& rec) {
+			rec.full_barrier();
+			rec.copy_buffer(gc_r->instance_buffer[frame_index], staging, copy_size);
+			rec.full_barrier();
+
 			rec.bind(r.pipeline);
 			rec.bind_descriptors(r.pipeline, fd.descriptors[frame_index]);
 			rec.push(r.pipeline, pc);
 			rec.dispatch(workgroups, 1, 1);
+
+			rec.full_barrier();
+			rec.copy_buffer(staging, gc_r->instance_buffer[frame_index], copy_size);
+			rec.full_barrier();
 		});
 }
