@@ -14,15 +14,6 @@ import gse.assert;
 import gse.utility;
 
 export namespace gse::gpu {
-	enum class barrier_scope : std::uint8_t {
-		compute_to_compute,
-		compute_to_indirect,
-		host_to_compute,
-		compute_to_transfer,
-		transfer_to_host,
-		transfer_to_transfer
-	};
-
 	struct buffer_copy {
 		const buffer* src = nullptr;
 		const buffer* dst = nullptr;
@@ -128,9 +119,9 @@ export namespace gse::gpu {
 	};
 }
 
-namespace {
-	auto to_vk(const gse::gpu::barrier_scope scope) -> vk::MemoryBarrier2 {
-		using enum gse::gpu::barrier_scope;
+namespace gse::vulkan {
+	auto to_vk(const gpu::barrier_scope scope) -> vk::MemoryBarrier2 {
+		using enum gpu::barrier_scope;
 		switch (scope) {
 			case compute_to_compute:
 				return {
@@ -150,6 +141,13 @@ namespace {
 				return {
 					.srcStageMask = vk::PipelineStageFlagBits2::eHost,
 					.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+					.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+					.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
+				};
+			case transfer_to_compute:
+				return {
+					.srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+					.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
 					.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
 					.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
 				};
@@ -255,7 +253,7 @@ auto gse::gpu::compute_queue::semaphore_state() const -> compute_semaphore_state
 	return {
 		.semaphore = *m_timeline,
 		.value = m_timeline_value,
-		.dst_stage = vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eVertexShader
+		.dst_stage = vk::PipelineStageFlagBits2::eComputeShader
 	};
 }
 
@@ -277,7 +275,7 @@ auto gse::gpu::compute_queue::dispatch_indirect(const buffer& buf, const std::si
 }
 
 auto gse::gpu::compute_queue::barrier(const barrier_scope scope) const -> void {
-	const auto b = to_vk(scope);
+	const auto b = vulkan::to_vk(scope);
 	const vk::DependencyInfo dep{ .memoryBarrierCount = 1, .pMemoryBarriers = &b };
 	(*m_cmd).pipelineBarrier2(dep);
 }
@@ -286,7 +284,7 @@ auto gse::gpu::compute_queue::barriers(const std::span<const barrier_scope> scop
 	std::vector<vk::MemoryBarrier2> vk_barriers;
 	vk_barriers.reserve(scopes.size());
 	for (const auto s : scopes) {
-		vk_barriers.push_back(to_vk(s));
+		vk_barriers.push_back(vulkan::to_vk(s));
 	}
 	const vk::DependencyInfo dep{
 		.memoryBarrierCount = static_cast<std::uint32_t>(vk_barriers.size()),

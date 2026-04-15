@@ -317,11 +317,11 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 	const projection_matrix proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
 	std::unordered_map<id, std::uint32_t> body_index_map;
-	for (const auto& m : ctx.read_channel<physics::gpu_body_index_map>()) {
-		for (const auto& [eid, idx] : m.entries) {
+	for (const auto& [entries] : ctx.read_channel<physics::gpu_body_index_map>()) {
+		for (const auto& [eid, idx] : entries) {
 			body_index_map[eid] = idx;
 		}
-	}
+	}	
 
 	ctx.schedule([&s, &r, &channels = ctx.channels, view_matrix, proj_matrix, body_index_map = std::move(body_index_map)](
 		write<render_component> render,
@@ -389,19 +389,42 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			}
 		}
 
+		struct owned_render_queue_entry {
+			render_queue_entry entry;
+			id owner;
+		};
+
+		std::vector<owned_render_queue_entry> owned_out;
+		owned_out.reserve(out.size());
+		for (std::size_t i = 0; i < out.size(); ++i) {
+			owned_out.push_back({
+				.entry = out[i],
+				.owner = owners_out[i]
+			});
+		}
+
 		std::ranges::sort(
-			out,
-			[](const render_queue_entry& a, const render_queue_entry& b) {
-				const auto* ma = a.model.resolve();
-				const auto* mb = b.model.resolve();
+			owned_out,
+			[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
+				const auto* ma = a.entry.model.resolve();
+				const auto* mb = b.entry.model.resolve();
 
 				if (ma != mb) {
 					return ma < mb;
 				}
 
-				return a.index < b.index;
+				return a.entry.index < b.entry.index;
 			}
 		);
+
+		out.clear();
+		owners_out.clear();
+		out.reserve(owned_out.size());
+		owners_out.reserve(owned_out.size());
+		for (const auto& [entry, owner] : owned_out) {
+			out.push_back(entry);
+			owners_out.push_back(owner);
+		}
 
 		std::ranges::sort(
 			skinned_out,
