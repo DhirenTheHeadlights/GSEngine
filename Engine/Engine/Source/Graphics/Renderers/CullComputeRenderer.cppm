@@ -26,7 +26,8 @@ export namespace gse::renderer::cull_compute {
 			std::unordered_map<std::string, std::uint32_t> batch_offsets;
 		};
 
-		static auto initialize(const init_context& phase,
+		static auto initialize(
+			const init_context& phase,
 			resources& r,
 			state& s
 		) -> void;
@@ -161,7 +162,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 
 			normal_pass
 				.writes(gpu::storage_write(gc_r->normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-				.record([&r, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), cull_pc = std::move(cull_pc)](gpu::recording_context& rec) {
+				.record([&r, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), cull_pc = std::move(cull_pc)](const gpu::recording_context& rec) {
 					rec.bind(r.pipeline);
 					rec.bind_descriptors(r.pipeline, r.normal_descriptors[frame_index]);
 					rec.push(r.pipeline, cull_pc);
@@ -180,7 +181,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 			skinned_pass
 				.after<skin_compute::state>()
 				.writes(gpu::storage_write(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-				.record([&r, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), cull_pc = std::move(cull_pc)](gpu::recording_context& rec) {
+				.record([&r, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), cull_pc = std::move(cull_pc)](const gpu::recording_context& rec) {
 					rec.bind(r.pipeline);
 					rec.bind_descriptors(r.pipeline, r.skinned_descriptors[frame_index]);
 					rec.push(r.pipeline, cull_pc);

@@ -132,8 +132,7 @@ export namespace gse::renderer::ui {
 			state& s
 		) -> void;
 
-		static auto update(
-			update_context& ctx,
+		static auto update(const update_context& ctx,
 			const resources& r,
 			frame_data& fd,
 			state& s
@@ -271,7 +270,7 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
 
 }
 
-auto gse::renderer::ui::system::update(update_context& ctx, const resources& r, frame_data& fd, state& s) -> void {
+auto gse::renderer::ui::system::update(const update_context& ctx, const resources& r, frame_data& fd, state& s) -> void {
 	const auto& sprite_commands = ctx.read_channel<sprite_command>();
 	const auto& text_commands = ctx.read_channel<text_command>();
 

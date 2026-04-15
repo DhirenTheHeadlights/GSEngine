@@ -5,7 +5,6 @@ import std;
 import gse.math;
 import gse.utility;
 import gse.platform;
-
 import :camera_data;
 import :camera_component;
 

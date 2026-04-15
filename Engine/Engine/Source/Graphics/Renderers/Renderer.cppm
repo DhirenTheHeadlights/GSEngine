@@ -86,7 +86,7 @@ export namespace gse::renderer {
 
 	struct system {
 		static auto initialize(const init_context& phase, state& s) -> void;
-		static auto update(update_context& ctx, state& s) -> void;
+		static auto update(const update_context& ctx, state& s) -> void;
 		static auto shutdown(const shutdown_context& phase, const state& s) -> void;
 	};
 }
@@ -114,7 +114,7 @@ auto gse::renderer::system::initialize(const init_context& phase, state& s) -> v
 	});
 }
 
-auto gse::renderer::system::update(update_context& ctx, state& s) -> void {
+auto gse::renderer::system::update(const update_context& ctx, state& s) -> void {
 	auto& gpu = ctx.get<gpu::context>();
 
 	if (s.hot_reload_enabled != gpu.hot_reload_enabled()) {

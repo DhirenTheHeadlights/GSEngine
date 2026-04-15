@@ -9,7 +9,6 @@ import :camera_system;
 import :depth_prepass_renderer;
 import gse.platform;
 import gse.utility;
-
 export namespace gse::renderer::light_culling {
 	constexpr std::uint32_t tile_size = 16;
 	constexpr std::uint32_t max_lights_per_tile = 64;
@@ -250,6 +249,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 	r.shader_handle->set_uniform("CullingParams.num_lights", num_lights, params_alloc);
 
 	const auto tiles = s.tile_count();
+
 	auto pass = graph.add_pass<state>();
 	pass.after<depth_prepass::state>();
 
@@ -261,7 +261,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 			gpu::storage_write(r.tile_light_table_buffers[frame_index], gpu::pipeline_stage::compute_shader),
 			gpu::storage_write(r.light_index_list_buffers[frame_index], gpu::pipeline_stage::compute_shader)
 		)
-		.record([&r, frame_index, tiles](gpu::recording_context& rec) {
+		.record([&r, frame_index, tiles](const gpu::recording_context& rec) {
 			rec.bind(r.pipeline);
 			rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
 			rec.dispatch(tiles.x(), tiles.y(), 1);

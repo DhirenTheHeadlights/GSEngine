@@ -15,33 +15,31 @@ import :directional_light;
 import gse.math;
 import gse.utility;
 import gse.platform;
-import gse.log;
-
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;
 	constexpr std::size_t max_materials = 1024;
 
 	enum class shadow_quality_level : int {
-		off    = 0,
-		hard   = 1,
-		low    = 2,
+		off = 0,
+		hard = 1,
+		low = 2,
 		medium = 3,
-		high   = 4
+		high = 4
 	};
 
 	enum class ao_quality_level : int {
-		off   = 0,
-		low   = 1,
+		off = 0,
+		low = 1,
 		medium = 2,
-		high  = 3,
+		high = 3,
 		ultra = 4
 	};
 
 	enum class reflection_quality_level : int {
-		off    = 0,
-		low    = 1,
+		off = 0,
+		low = 1,
 		medium = 2,
-		high   = 3
+		high = 3
 	};
 
 	struct state {
@@ -230,7 +228,6 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const auto* rt_state = ctx.try_state_of<rt_shadow::state>();
 	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
-
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
 	r.shader_handle->set_uniform("CameraUBO.view", view, cam_alloc);
 	r.shader_handle->set_uniform("CameraUBO.proj", proj, cam_alloc);
@@ -245,8 +242,10 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const auto stride = light_block.size;
 
 	const std::size_t total_lights = std::min(
-		dir_chunk.size() + spot_chunk.size() + point_chunk.size(), max_lights);
-	std::vector<std::byte> staging(total_lights * stride, std::byte{ 0 });
+		dir_chunk.size() + spot_chunk.size() + point_chunk.size(), 
+		max_lights
+	);
+	std::vector staging(total_lights * stride, std::byte{ 0 });
 	std::size_t light_count = 0;
 
 	auto write = [&](const std::size_t index, const std::string_view member, const auto& v) {
@@ -312,7 +311,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const auto material_count = std::min(data.material_palette_map.size(), max_materials);
 
 	if (material_count > 0) {
-		std::vector<std::byte> mat_staging(material_count * mat_stride, std::byte{ 0 });
+		std::vector mat_staging(material_count * mat_stride, std::byte{ 0 });
 
 		auto mat_write = [&](const std::size_t index, const std::string_view member, const auto& v) {
 			gse::memcpy(mat_staging.data() + index * mat_stride + material_block.members.at(std::string(member)).offset, v);
@@ -338,10 +337,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	}
 
 	const auto ext = gpu.graph().extent();
-	const auto ext_w = ext.x();
-	const auto ext_h = ext.y();
 	const int num_lights_i = static_cast<int>(light_count);
-	const std::array screen_sz = { ext_w, ext_h };
 	const int shadow_quality_i = static_cast<int>(s.shadow_quality);
 	const int ao_quality_i = static_cast<int>(s.ao_quality);
 	const int reflection_quality_i = static_cast<int>(s.reflection_quality);
@@ -366,11 +362,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 		)
 		.color_output(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f })
 		.depth_output_load()
-		.record([&r, &normal_batches, &skinned_batches, gc_r, frame_index, num_lights_i, screen_sz, shadow_quality_i, ao_quality_i, reflection_quality_i, ext_w, ext_h,
-			meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](gpu::recording_context& ctx) mutable {
-			const vec2u ext_size{ ext_w, ext_h };
-			ctx.set_viewport(ext_size);
-			ctx.set_scissor(ext_size);
+		.record([&r, &normal_batches, &skinned_batches, ext, gc_r, frame_index, num_lights_i, shadow_quality_i, ao_quality_i, reflection_quality_i, meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](const gpu::recording_context& ctx) mutable {
+			ctx.set_viewport(ext);
+			ctx.set_scissor(ext);
 
 			if (!normal_batches.empty()) {
 				const auto& instance_buf = gc_r->instance_buffer[frame_index];
@@ -409,7 +403,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 						pc.set("meshlet_count", ml_count);
 						pc.set("instance_index", batch.first_instance + inst);
 						pc.set("num_lights", num_lights_i);
-						pc.set("screen_size", screen_sz);
+						pc.set("screen_size", ext);
 						pc.set("shadow_quality", shadow_quality_i);
 						pc.set("ao_quality", ao_quality_i);
 						pc.set("reflection_quality", reflection_quality_i);
@@ -425,7 +419,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 				ctx.bind(r.skinned_pipeline);
 				ctx.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
 
-				const auto& skin_buf     = gc_r->skin_buffer[frame_index];
+				const auto& skin_buf = gc_r->skin_buffer[frame_index];
 				const auto& instance_buf = gc_r->instance_buffer[frame_index];
 
 				for (std::size_t i = 0; i < skinned_batches.size(); ++i) {
@@ -433,7 +427,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
 					const bool has_texture = mesh.material().diffuse_texture.valid();
-					const auto& tex_img  = has_texture ? mesh.material().diffuse_texture->gpu_image()  : r.blank_texture->gpu_image();
+					const auto& tex_img = has_texture ? mesh.material().diffuse_texture->gpu_image()  : r.blank_texture->gpu_image();
 					const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : r.blank_texture->gpu_sampler();
 
 					skinned_writer.begin(frame_index);

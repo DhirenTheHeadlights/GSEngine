@@ -266,7 +266,7 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 		const std::size_t instance_buffer_size = resources::max_instances * 2 * r.instance_stride;
 		r.instance_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = instance_buffer_size,
-			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
+			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
 		});
 
 		constexpr std::size_t indirect_buffer_size = render_data::max_batches * sizeof(gpu::draw_indexed_indirect_command);

@@ -248,6 +248,28 @@ auto gse::dispatch_initialize(init_context& phase, resource_storage<S>& resource
 			return;
 		}
 	}
+	if constexpr (has_update_data<S> && has_frame_data<S>) {
+		auto& u = update_data.value; auto& f = frame_data.value;
+		if constexpr (requires { S::initialize(phase, u, f, state); }) {
+			S::initialize(phase, u, f, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, u, f); }) {
+			S::initialize(phase, u, f);
+			return;
+		}
+	}
+	if constexpr (has_update_data<S>) {
+		auto& u = update_data.value;
+		if constexpr (requires { S::initialize(phase, u, state); }) {
+			S::initialize(phase, u, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, u); }) {
+			S::initialize(phase, u);
+			return;
+		}
+	}
 	if constexpr (has_frame_data<S>) {
 		auto& f = frame_data.value;
 		if constexpr (requires { S::initialize(phase, f, state); }) {
@@ -311,6 +333,28 @@ auto gse::dispatch_update(update_context& ctx, resource_storage<S>& resources, u
 		}
 		if constexpr (requires { S::update(ctx, r); }) {
 			S::update(ctx, r);
+			return;
+		}
+	}
+	if constexpr (has_update_data<S> && has_frame_data<S>) {
+		auto& u = update_data.value; auto& f = frame_data.value;
+		if constexpr (requires { S::update(ctx, u, f, state); }) {
+			S::update(ctx, u, f, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, u, f); }) {
+			S::update(ctx, u, f);
+			return;
+		}
+	}
+	if constexpr (has_update_data<S>) {
+		auto& u = update_data.value;
+		if constexpr (requires { S::update(ctx, u, state); }) {
+			S::update(ctx, u, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, u); }) {
+			S::update(ctx, u);
 			return;
 		}
 	}

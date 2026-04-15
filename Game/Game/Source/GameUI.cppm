@@ -73,14 +73,17 @@ export namespace gs {
 							.name = "Colliding Pairs",
 							.val = colliding_pairs
 						});
-						ui.draw<gse::gui::text>({
-							.content = std::format("Max Penetration: {:.4f}", max_penetration.as<gse::meters>())
+						ui.draw<gse::gui::value<float>>({
+							.name = "Max Penetration",
+							.val = max_penetration.as<gse::meters>()
 						});
-						ui.draw<gse::gui::text>({
-							.content = std::format("Max Linear Speed: {:.2f}", max_linear_speed.as<gse::meters_per_second>())
+						ui.draw<gse::gui::value<float>>({
+							.name = "Max Linear Speed",
+							.val = max_linear_speed.as<gse::meters_per_second>()
 						});
-						ui.draw<gse::gui::text>({
-							.content = std::format("Max Angular Speed: {:.2f}", max_angular_speed.as<gse::radians_per_second>())
+						ui.draw<gse::gui::value<float>>({
+							.name = "Max Angular Speed",
+							.val = max_angular_speed.as<gse::radians_per_second>()
 						});
 						if (gpu_solver_active) {
 							ui.draw<gse::gui::value<std::uint32_t>>({
@@ -91,8 +94,9 @@ export namespace gs {
 								.name = "GPU Motors",
 								.val = motor_count
 							});
-							ui.draw<gse::gui::text>({
-								.content = std::format("GPU Solve Time: {:.2f} ms", solve_time.as<gse::milliseconds>())
+							ui.draw<gse::gui::value<float>>({
+								.name = "GPU Solve Time (ms)",
+								.val = solve_time.as<gse::milliseconds>()
 							});
 						}
 					});

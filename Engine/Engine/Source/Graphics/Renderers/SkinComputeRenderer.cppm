@@ -91,7 +91,7 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resour
 	pass.track(gc_r->local_pose_buffer[frame_index]);
 
 	pass.writes(gpu::storage_write(gc_r->skin_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-		.record([&r, frame_index, instance_count = data.pending_compute_instance_count, skin_pc = std::move(skin_pc)](gpu::recording_context& rec) {
+		.record([&r, frame_index, instance_count = data.pending_compute_instance_count, skin_pc = std::move(skin_pc)](const gpu::recording_context& rec) {
 			rec.bind(r.pipeline);
 			rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
 			rec.push(r.pipeline, skin_pc);

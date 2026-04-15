@@ -445,7 +445,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         }
     }
 
-    if (color == num_colors - 1 && pc.current_alpha > 0.0 && pc.iteration >= pc.min_iterations && idx == 0) {
+    if (color == num_colors - 1 && pc.joint_count == 0 && pc.current_alpha > 0.0 && pc.iteration + 1 >= pc.min_iterations && idx == 0) {
         float max_viol = asfloat(collision_state[CONVERGENCE_MAX_DELTA_INDEX]);
         if (max_viol < pc.convergence_threshold) {
             collision_state[CONVERGED_FLAG_INDEX] = 1;

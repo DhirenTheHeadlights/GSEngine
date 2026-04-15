@@ -36,7 +36,7 @@ export namespace gse::vbd {
 		angular_velocity angular_sleep_threshold = radians_per_second(0.05f);
 		gap speculative_margin = meters(0.02f);
 		step_delta convergence_threshold = { meters(0.001f), radians(0.001f) };
-		std::uint32_t min_iterations = 3;
+		std::uint32_t min_iterations = 4;
 		float linear_damping = 0.f;
 		float angular_damping = 0.01f;
 	};
@@ -611,6 +611,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	const int num_iterations = static_cast<int>(m_config.iterations);
 	const float solve_alpha = m_config.post_stabilize ? 1.0f : m_config.alpha;
+	const bool can_stop_on_contact_convergence = joints.empty();
 
 	auto solve_iteration = [&](const float alpha) {
 		for (const auto& body_color : m_graph.body_colors()) {
@@ -664,15 +665,15 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	for (int it = 0; it < num_iterations; ++it) {
 		solve_iteration(solve_alpha);
 		const auto violation = update_dual(solve_alpha);
+		update_joint_dual(h_squared);
 
-		if (it + 1 >= static_cast<int>(m_config.min_iterations) &&
+		if (can_stop_on_contact_convergence &&
+			it + 1 >= static_cast<int>(m_config.min_iterations) &&
 			violation.linear < m_config.convergence_threshold.linear &&
 			violation.angular < m_config.convergence_threshold.angular) {
 			break;
 		}
 	}
-
-	update_joint_dual(h_squared);
 
 	for (auto& body : m_bodies) {
 		if (!body.locked && !body.sleeping() && body.mass_value > mass{}) {
