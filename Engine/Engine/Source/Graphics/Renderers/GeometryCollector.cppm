@@ -87,12 +87,6 @@ export namespace gse::renderer {
 		}
 	};
 
-	struct normal_batch_key_hash {
-		auto operator()(const normal_batch_key& key) const -> std::size_t {
-			return std::hash<const void*>{}(key.model_ptr) ^ std::hash<std::size_t>{}(key.mesh_index);
-		}
-	};
-
 	struct normal_instance_batch {
 		normal_batch_key key;
 		std::uint32_t first_instance;
@@ -107,12 +101,6 @@ export namespace gse::renderer {
 
 		auto operator==(const skinned_batch_key& other) const -> bool {
 			return model_ptr == other.model_ptr && mesh_index == other.mesh_index;
-		}
-	};
-
-	struct skinned_batch_key_hash {
-		auto operator()(const skinned_batch_key& key) const -> std::size_t {
-			return std::hash<const void*>{}(key.model_ptr) ^ std::hash<std::size_t>{}(key.mesh_index);
 		}
 	};
 
@@ -133,11 +121,15 @@ export namespace gse::renderer::geometry_collector {
 		float _pad;
 	};
 
+	struct owned_render_queue_entry {
+		render_queue_entry entry;
+		id owner;
+	};
+
 	struct render_data {
 		static constexpr std::size_t max_batches = 256;
 
-		std::vector<render_queue_entry> render_queue;
-		std::vector<id> render_queue_owners;
+		std::vector<owned_render_queue_entry> render_queue;
 		std::vector<skinned_render_queue_entry> skinned_render_queue;
 		static_vector<normal_instance_batch, max_batches>  normal_batches;
 		static_vector<skinned_instance_batch, max_batches> skinned_batches;
@@ -207,13 +199,13 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 	std::vector<render_queue_entry> result;
 	result.reserve(data.render_queue.size());
 
-	for (std::size_t i = 0; i < data.render_queue.size(); ++i) {
+	for (const auto& item : data.render_queue) {
 		const bool excluded = std::ranges::any_of(exclude_ids, [&](const id& ex) {
-			return ex == data.render_queue_owners[i];
+			return ex == item.owner;
 		});
 
 		if (!excluded) {
-			result.push_back(data.render_queue[i]);
+			result.push_back(item.entry);
 		}
 	}
 
@@ -321,7 +313,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 		for (const auto& [eid, idx] : entries) {
 			body_index_map[eid] = idx;
 		}
-	}	
+	}
 
 	ctx.schedule([&s, &r, &channels = ctx.channels, view_matrix, proj_matrix, body_index_map = std::move(body_index_map)](
 		write<render_component> render,
@@ -334,10 +326,8 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 		data.proj = proj_matrix;
 
 		auto& out = data.render_queue;
-		auto& owners_out = data.render_queue_owners;
 		auto& skinned_out = data.skinned_render_queue;
 
-		auto& skin_staging = data.skin_staging;
 		auto& local_pose_staging = data.local_pose_staging;
 
 		std::uint32_t skinned_instance_count = 0;
@@ -357,8 +347,12 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 				model_handle.update(*mc, *cc);
 				const auto entries = model_handle.render_queue_entries();
-				out.append_range(entries);
-				owners_out.resize(owners_out.size() + entries.size(), component.owner_id());
+				for (const auto& entry : entries) {
+					out.push_back({
+						.entry = entry,
+						.owner = component.owner_id()
+					});
+				}
 			}
 
 			const auto* anim_comp = anim.find(component.owner_id());
@@ -389,22 +383,8 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			}
 		}
 
-		struct owned_render_queue_entry {
-			render_queue_entry entry;
-			id owner;
-		};
-
-		std::vector<owned_render_queue_entry> owned_out;
-		owned_out.reserve(out.size());
-		for (std::size_t i = 0; i < out.size(); ++i) {
-			owned_out.push_back({
-				.entry = out[i],
-				.owner = owners_out[i]
-			});
-		}
-
 		std::ranges::sort(
-			owned_out,
+			out,
 			[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
 				const auto* ma = a.entry.model.resolve();
 				const auto* mb = b.entry.model.resolve();
@@ -416,15 +396,6 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 				return a.entry.index < b.entry.index;
 			}
 		);
-
-		out.clear();
-		owners_out.clear();
-		out.reserve(owned_out.size());
-		owners_out.reserve(owned_out.size());
-		for (const auto& [entry, owner] : owned_out) {
-			out.push_back(entry);
-			owners_out.push_back(owner);
-		}
 
 		std::ranges::sort(
 			skinned_out,
@@ -440,61 +411,70 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			}
 		);
 
-	struct instance_data {
-		mat4f model_matrix;
-		mat4f normal_matrix;
-		std::uint32_t skin_offset;
-		std::uint32_t joint_count;
-		id owner;
-	};
+		auto& instance_staging = data.instance_staging;
+		auto& normal_batches = data.normal_batches;
+		auto& skinned_batches = data.skinned_batches;
 
-	auto& instance_staging = data.instance_staging;
-	auto& normal_batches = data.normal_batches;
-	auto& skinned_batches = data.skinned_batches;
+		instance_staging.reserve((out.size() + skinned_out.size()) * r.instance_stride);
+		data.physics_mappings.reserve(out.size());
 
-	std::uint32_t global_instance_offset = 0;
+		auto material_index = [&data](const material* mat_ptr) -> std::uint32_t {
+			if (auto it = data.material_palette_map.find(mat_ptr); it != data.material_palette_map.end()) {
+				return it->second;
+			}
+			const auto index = static_cast<std::uint32_t>(data.material_palette_map.size());
+			data.material_palette_map.insert({ mat_ptr, index });
+			return index;
+		};
 
-	if (!out.empty()) {
-		std::unordered_map<normal_batch_key, std::vector<instance_data>, normal_batch_key_hash> normal_batch_map;
+		auto write_instance = [&instance_staging, &r](
+			const mat4f& model_matrix,
+			const mat4f& normal_matrix,
+			const std::uint32_t skin_offset,
+			const std::uint32_t joint_count,
+			const std::uint32_t mat_idx
+		) {
+			const auto offset_value = instance_staging.size();
+			instance_staging.resize(offset_value + r.instance_stride);
+			std::byte* offset = instance_staging.data() + offset_value;
 
-		for (std::size_t i = 0; i < out.size(); ++i) {
-			const auto& entry = out[i];
+			memcpy(offset + r.instance_offsets.at("model_matrix"), model_matrix);
+			memcpy(offset + r.instance_offsets.at("normal_matrix"), normal_matrix);
+			memcpy(offset + r.instance_offsets.at("skin_offset"), skin_offset);
+			memcpy(offset + r.instance_offsets.at("joint_count"), joint_count);
+			memcpy(offset + r.instance_offsets.at("material_index"), mat_idx);
+		};
+
+		std::uint32_t global_instance_offset = 0;
+
+		std::size_t batch_begin = 0;
+		while (batch_begin < out.size()) {
+			const auto& first = out[batch_begin].entry;
 			const normal_batch_key key{
-				.model_ptr = entry.model.resolve(),
-				.mesh_index = entry.index
+				.model_ptr = first.model.resolve(),
+				.mesh_index = first.index
 			};
 
-			instance_data inst{
-				.model_matrix = entry.model_matrix,
-				.normal_matrix = entry.normal_matrix,
-				.skin_offset = 0,
-				.joint_count = 0,
-				.owner = owners_out[i]
-			};
+			std::size_t batch_end = batch_begin + 1;
+			while (batch_end < out.size()) {
+				const auto& entry = out[batch_end].entry;
+				if (entry.model.resolve() != key.model_ptr || entry.index != key.mesh_index) {
+					break;
+				}
+				++batch_end;
+			}
 
-			normal_batch_map[key].push_back(inst);
-		}
-
-		for (auto& [key, instances] : normal_batch_map) {
 			const auto& mesh = key.model_ptr->meshes()[key.mesh_index];
 			const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
-			const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
-
-			const auto* mat_ptr = &mesh.material();
-			std::uint32_t mat_idx = 0;
-			if (auto it = data.material_palette_map.find(mat_ptr); it != data.material_palette_map.end()) {
-				mat_idx = it->second;
-			}
-			else {
-				mat_idx = static_cast<std::uint32_t>(data.material_palette_map.size());
-				data.material_palette_map.insert({ mat_ptr, mat_idx });
-			}
+			const auto instance_count = static_cast<std::uint32_t>(batch_end - batch_begin);
+			const auto mat_idx = material_index(&mesh.material());
 
 			vec3 world_aabb_min(meters(std::numeric_limits<float>::max()));
 			vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
 
-			for (const auto& inst : instances) {
-				const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, inst.model_matrix);
+			for (std::size_t i = batch_begin; i < batch_end; ++i) {
+				const auto& entry = out[i].entry;
+				const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, entry.model_matrix);
 
 				world_aabb_min = vec3<length>(
 					std::min(world_aabb_min.x(), inst_min.x()),
@@ -509,31 +489,27 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 				);
 			}
 
-			normal_instance_batch batch{
+			normal_batches.push_back({
 				.key = key,
 				.first_instance = global_instance_offset,
 				.instance_count = instance_count,
 				.world_aabb_min = world_aabb_min,
 				.world_aabb_max = world_aabb_max
-			};
+			});
 
 			const vec3 center_of_mass = key.model_ptr->center_of_mass();
 
-			for (const auto& [model_matrix, normal_matrix, skin_offset, joint_count, owner] : instances) {
-				std::byte* offset = instance_staging.data() + (global_instance_offset * r.instance_stride);
-				instance_staging.resize(instance_staging.size() + r.instance_stride);
-				offset = instance_staging.data() + (global_instance_offset * r.instance_stride);
+			for (std::size_t i = batch_begin; i < batch_end; ++i) {
+				const auto& item = out[i];
+				const auto& entry = item.entry;
+				const auto instance_index = global_instance_offset++;
 
-				memcpy(offset + r.instance_offsets.at("model_matrix"), model_matrix);
-				memcpy(offset + r.instance_offsets.at("normal_matrix"), normal_matrix);
-				memcpy(offset + r.instance_offsets.at("skin_offset"), skin_offset);
-				memcpy(offset + r.instance_offsets.at("joint_count"), joint_count);
-				memcpy(offset + r.instance_offsets.at("material_index"), mat_idx);
+				write_instance(entry.model_matrix, entry.normal_matrix, 0, 0, mat_idx);
 
-				if (const auto it = body_index_map.find(owner); it != body_index_map.end()) {
+				if (const auto it = body_index_map.find(item.owner); it != body_index_map.end()) {
 					data.physics_mappings.push_back({
 						.body_index = it->second,
-						.instance_index = global_instance_offset,
+						.instance_index = instance_index,
 						.center_of_mass = {
 							center_of_mass.x().as<meters>(),
 							center_of_mass.y().as<meters>(),
@@ -542,52 +518,39 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 						._pad = 0.f
 					});
 				}
-
-				global_instance_offset++;
 			}
-			normal_batches.push_back(std::move(batch));
+
+			batch_begin = batch_end;
 		}
-	}
 
-	if (!skinned_out.empty()) {
-		std::unordered_map<skinned_batch_key, std::vector<instance_data>, skinned_batch_key_hash> skinned_batch_map;
-
-		for (const auto& entry : skinned_out) {
+		batch_begin = 0;
+		while (batch_begin < skinned_out.size()) {
+			const auto& first = skinned_out[batch_begin];
 			const skinned_batch_key key{
-				.model_ptr = entry.model.resolve(),
-				.mesh_index = entry.index
+				.model_ptr = first.model.resolve(),
+				.mesh_index = first.index
 			};
 
-			instance_data inst{
-				.model_matrix = entry.model_matrix,
-				.normal_matrix = entry.normal_matrix,
-				.skin_offset = entry.skin_offset,
-				.joint_count = entry.joint_count
-			};
+			std::size_t batch_end = batch_begin + 1;
+			while (batch_end < skinned_out.size()) {
+				const auto& entry = skinned_out[batch_end];
+				if (entry.model.resolve() != key.model_ptr || entry.index != key.mesh_index) {
+					break;
+				}
+				++batch_end;
+			}
 
-			skinned_batch_map[key].push_back(inst);
-		}
-
-		for (auto& [key, instances] : skinned_batch_map) {
 			const auto& mesh = key.model_ptr->meshes()[key.mesh_index];
 			const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
-			const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
-
-			const auto* mat_ptr = &mesh.material();
-			std::uint32_t mat_idx = 0;
-			if (auto it = data.material_palette_map.find(mat_ptr); it != data.material_palette_map.end()) {
-				mat_idx = it->second;
-			}
-			else {
-				mat_idx = static_cast<std::uint32_t>(data.material_palette_map.size());
-				data.material_palette_map.insert({ mat_ptr, mat_idx });
-			}
+			const auto instance_count = static_cast<std::uint32_t>(batch_end - batch_begin);
+			const auto mat_idx = material_index(&mesh.material());
 
 			vec3 world_aabb_min(meters(std::numeric_limits<float>::max()));
 			vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
 
-			for (const auto& inst : instances) {
-				const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, inst.model_matrix);
+			for (std::size_t i = batch_begin; i < batch_end; ++i) {
+				const auto& entry = skinned_out[i];
+				const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, entry.model_matrix);
 
 				world_aabb_min = vec3<length>(
 					std::min(world_aabb_min.x(), inst_min.x()),
@@ -602,39 +565,30 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 				);
 			}
 
-			skinned_instance_batch batch{
+			skinned_batches.push_back({
 				.key = key,
 				.first_instance = global_instance_offset,
 				.instance_count = instance_count,
 				.world_aabb_min = world_aabb_min,
 				.world_aabb_max = world_aabb_max
-			};
+			});
 
-			for (const auto& [model_matrix, normal_matrix, skin_offset, joint_count, owner] : instances) {
-				std::byte* offset = instance_staging.data() + (global_instance_offset * r.instance_stride);
-				instance_staging.resize(instance_staging.size() + r.instance_stride);
-				offset = instance_staging.data() + (global_instance_offset * r.instance_stride);
-
-				memcpy(offset + r.instance_offsets.at("model_matrix"), model_matrix);
-				memcpy(offset + r.instance_offsets.at("normal_matrix"), normal_matrix);
-				memcpy(offset + r.instance_offsets.at("skin_offset"), skin_offset);
-				memcpy(offset + r.instance_offsets.at("joint_count"), joint_count);
-				memcpy(offset + r.instance_offsets.at("material_index"), mat_idx);
-
-				global_instance_offset++;
+			for (std::size_t i = batch_begin; i < batch_end; ++i) {
+				const auto& entry = skinned_out[i];
+				write_instance(entry.model_matrix, entry.normal_matrix, entry.skin_offset, entry.joint_count, mat_idx);
+				++global_instance_offset;
 			}
 
-			skinned_batches.push_back(std::move(batch));
+			batch_begin = batch_end;
 		}
-	}
 
-	if (!local_pose_staging.empty() && s.current_joint_count > 0) {
-		data.pending_compute_instance_count = skinned_instance_count;
-	} else {
-		data.pending_compute_instance_count = 0;
-	}
+		if (!local_pose_staging.empty() && s.current_joint_count > 0) {
+			data.pending_compute_instance_count = skinned_instance_count;
+		} else {
+			data.pending_compute_instance_count = 0;
+		}
 
-	data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
+		data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
 
 		channels.push(std::move(data));
 	});

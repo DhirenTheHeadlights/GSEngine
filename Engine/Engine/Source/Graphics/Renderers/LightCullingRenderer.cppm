@@ -50,8 +50,23 @@ export namespace gse::renderer::light_culling {
 			}
 		};
 
-		static auto initialize(const init_context& phase, resources& r, state& s) -> void;
-		static auto frame(frame_context& ctx, const resources& r, const state& s) -> async::task<>;
+		struct frame_data {
+			linear_vector<std::byte> light_staging;
+		};
+
+		static auto initialize(
+			const init_context& phase,
+			resources& r,
+			frame_data& fd,
+			state& s
+		) -> void;
+
+		static auto frame(
+			frame_context& ctx,
+			const resources& r,
+			frame_data& fd,
+			const state& s
+		) -> async::task<>;
 	};
 }
 
@@ -102,7 +117,7 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(system::resources& r, st
 	update_depth_descriptor(r);
 }
 
-auto gse::renderer::light_culling::system::initialize(const init_context& phase, resources& r, state& s) -> void {
+auto gse::renderer::light_culling::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	r.ctx = &ctx;
 
@@ -116,6 +131,7 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 
 	const auto params_block = r.shader_handle->uniform_block("CullingParams");
 	const auto light_block = r.shader_handle->uniform_block("lights");
+	fd.light_staging.reserve(light_block.size * max_lights);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		r.culling_params_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
@@ -148,7 +164,7 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 	});
 }
 
-auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resources& r, const state& s) -> async::task<> {
+auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
 	co_await ctx.after<geometry_collector::state>();
 
 	auto& gpu = ctx.get<gpu::context>();
@@ -185,7 +201,8 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 		dir_chunk.size() + spot_chunk.size() + point_chunk.size(),
 		max_lights
 	);
-	std::vector<std::byte> staging(total_lights * stride, std::byte{ 0 });
+	auto& staging = fd.light_staging;
+	staging.assign(total_lights * stride, std::byte{ 0 });
 	std::size_t light_count = 0;
 
 	auto write = [&](const std::size_t index, const std::string_view member, const auto& v) {
