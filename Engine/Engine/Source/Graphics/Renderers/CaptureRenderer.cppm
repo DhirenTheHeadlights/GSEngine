@@ -17,8 +17,12 @@ export namespace gse::renderer::capture {
 	};
 
 	struct screenshot_request {};
+	struct video_capture_toggle {};
 
-	struct state {};
+	struct state {
+		actions::handle screenshot_action;
+		actions::handle video_capture_action;
+	};
 
 	struct system {
 		struct resources {
@@ -35,6 +39,7 @@ export namespace gse::renderer::capture {
 		struct frame_data {
 			per_frame_resource<pending_screenshot> screenshots;
 			bool screenshot_requested = false;
+			bool capturing = false;
 			std::unique_ptr<std::atomic<bool>> write_in_progress = std::make_unique<std::atomic<bool>>(false);
 			gpu::video_encoder encoder;
 		};
@@ -61,6 +66,19 @@ export namespace gse::renderer::capture {
 }
 
 auto gse::renderer::capture::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
+	const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
+		const id action_id = generate_id(name);
+		phase.channels.push(actions::add_action_request{
+			.name = std::string(name),
+			.default_key = default_key,
+			.action_id = action_id
+		});
+		return actions::handle(action_id);
+	};
+
+	s.screenshot_action = register_action("Screenshot", key::f9);
+	s.video_capture_action = register_action("Toggle Video Capture", key::f10);
+
 	auto& ctx = phase.get<gpu::context>();
 
 	if (!ctx.device_ref().video_encode_enabled()) {
@@ -117,8 +135,18 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
 }
 
 auto gse::renderer::capture::system::update(const update_context& ctx, state& s) -> void {
-	if (const auto* input = ctx.try_state_of<input::system_state>(); input && input->current_state().key_pressed(key::f9)) {
+	const auto* sys = ctx.try_state_of<actions::system_state>();
+	if (!sys) {
+		return;
+	}
+
+	const auto& action_state = sys->current_state();
+
+	if (s.screenshot_action.pressed(action_state, *sys)) {
 		ctx.channels.push(screenshot_request{});
+	}
+	if (s.video_capture_action.pressed(action_state, *sys)) {
+		ctx.channels.push(video_capture_toggle{});
 	}
 }
 
@@ -145,7 +173,9 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
 
 		task::post([pixels = std::move(pixels), w, h, needs_swizzle, timestamp, write_flag = fd.write_in_progress.get()] mutable {
 			for (std::size_t i = 0; i < pixels.size(); i += 4) {
-				if (needs_swizzle) std::swap(pixels[i], pixels[i + 2]);
+				if (needs_swizzle) {
+					std::swap(pixels[i], pixels[i + 2]);
+				}
 				pixels[i + 3] = std::byte{0xFF};
 			}
 
@@ -159,7 +189,12 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
 		});
 	}
 
-	if (r.encode_active && fd.encoder) {
+	if (!ctx.read_channel<video_capture_toggle>().empty()) {
+		fd.capturing = !fd.capturing;
+		log::println(log::category::render, "Video capture {}", fd.capturing ? "started" : "stopped");
+	}
+
+	if (r.encode_active && fd.capturing && fd.encoder) {
 		fd.encoder.wait(frame_index);
 		fd.encoder.encode_frame(frame_index, r.y_planes[frame_index], r.uv_planes[frame_index]);
 	}
@@ -192,7 +227,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
 		fd.screenshot_requested = false;
 	}
 
-	if (r.encode_active) {
+	if (r.encode_active && fd.capturing) {
 		const auto ext = gpu_ctx->graph().extent();
 
 		gpu_ctx->graph().add_pass<pending_screenshot>()
@@ -202,7 +237,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
 			});
 
 		auto pc = r.convert_shader->cache_push_block("push_constants");
-		pc.set("extent", std::array{ ext.x(), ext.y() });
+		pc.set("extent", ext);
 
 		gpu_ctx->graph().add_pass<state>()
 			.after<pending_screenshot>()

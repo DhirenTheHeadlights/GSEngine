@@ -15,6 +15,7 @@ import :concepts;
 
 export namespace gse {
 	struct scheduled_work {
+		id work_id;
 		std::vector<std::type_index> reads;
 		std::vector<std::type_index> writes;
 		std::move_only_function<void()> execute;
@@ -28,6 +29,7 @@ export namespace gse {
 		const resources_provider& resources;
 		task_graph& graph;
 		std::vector<scheduled_work>& work;
+		std::mutex& work_mutex;
 		mpsc_ring_buffer<std::move_only_function<void()>, 64>& deferred_ops;
 
 		template <is_component T>
@@ -148,17 +150,27 @@ auto gse::update_context::try_resources_of() const -> const Resources* {
 }
 
 template <typename F>
-auto gse::update_context::schedule(F&& action, std::source_location) -> void {
+auto gse::update_context::schedule(F&& action, std::source_location loc) -> void {
 	using traits = lambda_traits<std::decay_t<F>>;
 	using arg_tuple = typename traits::arg_tuple;
 
+	static const id work_id = [loc] {
+		const std::string_view full = loc.file_name();
+		const auto sep = full.find_last_of("/\\");
+		const std::string_view filename = sep == std::string_view::npos ? full : full.substr(sep + 1);
+		return find_or_generate_id(std::format("schedule_work[{}:{}]", filename, loc.line()));
+	}();
+
+	std::lock_guard lock(work_mutex);
 	if constexpr (traits::arity == 1 && std::is_same_v<std::tuple_element_t<0, arg_tuple>, registry&>) {
 		work.push_back({
+			.work_id = work_id,
 			.execute = [&r = reg, a = std::forward<F>(action)]() mutable { a(r); }
 		});
 	}
 	else {
 		work.push_back({
+			.work_id = work_id,
 			.reads = traits::reads(),
 			.writes = traits::writes(),
 			.execute = [&r = reg, a = std::forward<F>(action)]() mutable {

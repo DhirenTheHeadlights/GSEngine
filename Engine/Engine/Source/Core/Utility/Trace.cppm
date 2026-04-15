@@ -61,6 +61,51 @@ export namespace gse::trace {
 		double value
 	) -> void;
 
+	constexpr std::uint32_t gpu_virtual_tid = 0xFFFFFFFFu;
+	constexpr std::uint32_t gpu_stats_virtual_tid = 0xFFFFFFFEu;
+
+	auto begin_async_at(
+		id id,
+		std::uint64_t key,
+		std::uint32_t tid,
+		time_t<std::uint64_t> ts
+	) -> void;
+
+	auto end_async_at(
+		id id,
+		std::uint64_t key,
+		std::uint32_t tid,
+		time_t<std::uint64_t> ts
+	) -> void;
+
+	auto counter_at(
+		id id,
+		double value,
+		std::uint32_t tid,
+		time_t<std::uint64_t> ts
+	) -> void;
+
+	auto register_virtual_thread(
+		std::uint32_t tid,
+		std::string_view name
+	) -> void;
+
+	auto mark_hidden(
+		id id
+	) -> void;
+
+	auto is_hidden(
+		uuid id
+	) -> bool;
+
+	auto mark_pool_root(
+		id id
+	) -> void;
+
+	auto is_pool_root(
+		uuid id
+	) -> bool;
+
 	auto current_eid(
 	) -> std::uint64_t;
 
@@ -82,11 +127,6 @@ export namespace gse::trace {
 	};
 
 	auto finalize_frame(
-	) -> void;
-
-	auto dump_browser(
-		const std::filesystem::path& path,
-		const frame_view& view
 	) -> void;
 
 	auto view(
@@ -116,7 +156,7 @@ export namespace gse::trace {
 }
 
 namespace gse::trace {
-	using tick_step = time_t<std::uint64_t>;
+	export using tick_step = time_t<std::uint64_t>;
 
 	enum struct event_type : std::uint8_t {
 		begin,
@@ -221,6 +261,15 @@ namespace gse::trace {
 	std::unordered_set<std::uint64_t> open_parents;
 	std::mutex open_m;
 
+	std::shared_mutex hidden_ids_mutex;
+	std::unordered_set<uuid> hidden_ids;
+
+	std::shared_mutex pool_root_ids_mutex;
+	std::unordered_set<uuid> pool_root_ids;
+
+	std::shared_mutex virtual_thread_mutex;
+	std::unordered_map<std::uint32_t, std::string> virtual_thread_names;
+
 	auto ensure_tls_registered(
 	) -> void;
 
@@ -254,6 +303,13 @@ auto gse::trace::start(const config& cfg) -> void {
 
 	frames = frame_storage{};
 	global_open_spans.clear();
+
+	mark_hidden(find_or_generate_id("task_graph::execute"));
+	mark_hidden(find_or_generate_id("task.start.reentrant"));
+	mark_hidden(find_or_generate_id("task.start.body"));
+
+	register_virtual_thread(gpu_virtual_tid, "GPU");
+	register_virtual_thread(gpu_stats_virtual_tid, "GPU Stats");
 }
 
 auto gse::trace::begin_block(id id, std::uint64_t parent) -> std::uint64_t {
@@ -452,6 +508,78 @@ auto gse::trace::counter(id id, const double value) -> void {
 	});
 }
 
+auto gse::trace::begin_async_at(id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
+	if (paused()) {
+		return;
+	}
+
+	ensure_tls_registered();
+
+	emit({
+		.type = event_type::async_begin,
+		.id = id.number(),
+		.eid = 0,
+		.parent_eid = 0,
+		.tid = tid,
+		.ts = ts,
+		.value = 0.0,
+		.key = key
+	});
+}
+
+auto gse::trace::end_async_at(id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
+	if (paused()) {
+		return;
+	}
+
+	ensure_tls_registered();
+
+	emit({
+		.type = event_type::async_end,
+		.id = id.number(),
+		.eid = 0,
+		.parent_eid = 0,
+		.tid = tid,
+		.ts = ts,
+		.value = 0.0,
+		.key = key
+	});
+}
+
+auto gse::trace::counter_at(id id, const double value, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
+	if (paused()) {
+		return;
+	}
+
+	ensure_tls_registered();
+
+	emit({
+		.type = event_type::counter,
+		.id = id.number(),
+		.eid = 0,
+		.parent_eid = 0,
+		.tid = tid,
+		.ts = ts,
+		.value = value,
+		.key = 0,
+	});
+}
+
+auto gse::trace::register_virtual_thread(const std::uint32_t tid, const std::string_view name) -> void {
+	std::unique_lock lk(virtual_thread_mutex);
+	virtual_thread_names[tid] = std::string(name);
+}
+
+auto gse::trace::mark_hidden(id id) -> void {
+	std::unique_lock lk(hidden_ids_mutex);
+	hidden_ids.insert(id.number());
+}
+
+auto gse::trace::is_hidden(const uuid id) -> bool {
+	std::shared_lock lk(hidden_ids_mutex);
+	return hidden_ids.contains(id);
+}
+
 auto gse::trace::current_eid() -> std::uint64_t {
 	return current_parent_eid();
 }
@@ -464,50 +592,6 @@ auto gse::trace::finalize_frame() -> void {
 	if (timer.tick() && !finalize_paused()) {
 		frames.flip();
 	}
-}
-
-auto gse::trace::dump_browser(const std::filesystem::path& path, const frame_view& view) -> void {
-	std::ofstream out(path);
-
-	assert(
-		out.is_open(),
-		std::source_location::current(),
-		"Failed to open trace output file"
-	);
-
-	out << R"({"traceEvents":[)";
-
-	bool first = true;
-
-	std::function<void(const node&)> emit_node = [&](const node& n) {
-		const auto& tag = find(n.id).tag();
-
-		if (!first) {
-			out << ',';
-		}
-
-		first = false;
-
-		const auto dur = n.stop - n.start;
-
-		out << R"({"name":")" << tag << R"(",)"
-			<< R"("ph":"X",)"
-			<< R"("ts":)" << n.start.as<microseconds>() << ','
-			<< R"("dur":)" << dur.as<microseconds>() << ','
-			<< R"("pid":0,)"
-			<< R"("tid":)" << n.trace_id
-			<< "}";
-
-		for (std::size_t i = 0; i < n.children_count; ++i) {
-			emit_node(n.children_first[i]);
-		}
-	};
-
-	for (const auto& r : view.roots) {
-		emit_node(r);
-	}
-
-	out << "]}";
 }
 
 auto gse::trace::view() -> frame_view {

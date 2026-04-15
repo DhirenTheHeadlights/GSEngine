@@ -33,6 +33,7 @@ export import :misc;
 export import :mpsc_ring_buffer;
 export import :non_copyable;
 export import :percentage;
+export import :profile_aggregator;
 export import :registry;
 export import :scene_hook;
 export import :scene;

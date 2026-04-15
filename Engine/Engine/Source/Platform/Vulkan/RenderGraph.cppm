@@ -452,6 +452,14 @@ export namespace gse::vulkan {
 		auto clear(
 		) -> void;
 
+		auto set_gpu_timestamps_enabled(
+			bool enabled
+		) -> void;
+
+		auto set_gpu_pipeline_stats_enabled(
+			bool enabled
+		) -> void;
+
 		[[nodiscard]] auto current_frame(
 		) const -> std::uint32_t;
 
@@ -473,8 +481,29 @@ export namespace gse::vulkan {
 	private:
 		friend class pass_builder;
 
+		static constexpr std::uint32_t max_profiled_passes = 128;
+
+		struct gpu_profile_slot {
+			vk::raii::QueryPool timestamp_pool = nullptr;
+			vk::raii::QueryPool stats_pool = nullptr;
+			static_vector<std::type_index, max_profiled_passes> pass_types;
+			std::uint32_t pass_count = 0;
+			bool stats_issued = false;
+			time_t<std::uint64_t> cpu_ref{};
+			std::uint64_t frame_counter = 0;
+			bool results_valid = false;
+		};
+
 		auto submit_pass(
 			render_pass_data pass
+		) -> void;
+
+		auto ensure_profile_pools(
+			gpu_profile_slot& slot
+		) const -> void;
+
+		auto read_profile_slot(
+			gpu_profile_slot& slot
 		) -> void;
 
 		gpu::device* m_device;
@@ -482,6 +511,11 @@ export namespace gse::vulkan {
 		gpu::frame* m_frame;
 		std::vector<render_pass_data> m_passes;
 		std::mutex m_pass_mutex;
+		per_frame_resource<gpu_profile_slot> m_profile_slots;
+		std::atomic<bool> m_gpu_timestamps_enabled{ true };
+		std::atomic<bool> m_gpu_pipeline_stats_enabled{ false };
+		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
+		std::uint64_t m_frames_submitted = 0;
 	};
 }
 
@@ -1065,6 +1099,120 @@ auto gse::vulkan::pass_builder::submit() -> void {
 
 gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)) {
 	m_passes.reserve(32);
+	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.device_config().physical_device.getProperties().limits.timestampPeriod));
+}
+
+auto gse::vulkan::render_graph::set_gpu_timestamps_enabled(const bool enabled) -> void {
+	m_gpu_timestamps_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+auto gse::vulkan::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) -> void {
+	m_gpu_pipeline_stats_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+auto gse::vulkan::render_graph::ensure_profile_pools(gpu_profile_slot& slot) const -> void {
+	if (!*slot.timestamp_pool) {
+		slot.timestamp_pool = m_device->logical_device().createQueryPool({
+			.queryType = vk::QueryType::eTimestamp,
+			.queryCount = max_profiled_passes * 2 + 1
+		});
+	}
+	if (!*slot.stats_pool) {
+		slot.stats_pool = m_device->logical_device().createQueryPool({
+			.queryType = vk::QueryType::ePipelineStatistics,
+			.queryCount = max_profiled_passes,
+			.pipelineStatistics =
+				vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices
+				| vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives
+				| vk::QueryPipelineStatisticFlagBits::eClippingInvocations
+				| vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations
+		});
+	}
+}
+
+auto gse::vulkan::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
+	if (!slot.results_valid || slot.pass_count == 0) {
+		return;
+	}
+
+	const std::uint32_t timestamp_count = slot.pass_count * 2 + 1;
+	const auto [ts_status, timestamps] = slot.timestamp_pool.getResults<std::uint64_t>(
+		0,
+		timestamp_count,
+		timestamp_count * sizeof(std::uint64_t),
+		sizeof(std::uint64_t),
+		vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait
+	);
+
+	if (ts_status != vk::Result::eSuccess) {
+		slot.results_valid = false;
+		return;
+	}
+
+	const auto period = m_timestamp_period_per_tick;
+	const auto gpu_ref = static_cast<double>(timestamps[0]) * period;
+	const auto offset = time_t<double>(slot.cpu_ref) - gpu_ref;
+
+	const auto pass_tag = [](const std::type_index& ti) -> std::string {
+		std::string_view raw = ti.name();
+		for (const std::string_view prefix : { "struct ", "class " }) {
+			if (raw.starts_with(prefix)) {
+				raw.remove_prefix(prefix.size());
+			}
+		}
+		if (constexpr std::string_view ns = "gse::renderer::"; raw.starts_with(ns)) {
+			raw.remove_prefix(ns.size());
+		}
+
+		const auto bracket = raw.find('[');
+		std::string_view name = bracket == std::string_view::npos ? raw : raw.substr(0, bracket);
+		const std::string_view module_suffix = bracket == std::string_view::npos ? "" : raw.substr(bracket);
+
+		if (constexpr std::string_view tail = "::state"; name.ends_with(tail)) {
+			name.remove_suffix(tail.size());
+		}
+
+		return std::format("gpu:{}{}", name, module_suffix);
+	};
+
+	for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
+		const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
+		const auto end = static_cast<double>(timestamps[2 + i * 2]) * period + offset;
+		const auto gpu_id = find_or_generate_id(pass_tag(slot.pass_types[i]));
+		const std::uint64_t key = (slot.frame_counter << 16) | i;
+
+		trace::begin_async_at(gpu_id, key, trace::gpu_virtual_tid, time_t<std::uint64_t>(start));
+		trace::end_async_at(gpu_id, key, trace::gpu_virtual_tid, time_t<std::uint64_t>(end));
+
+		profile::ingest_gpu_sample(gpu_id, end - start);
+	}
+
+	if (slot.stats_issued) {
+		constexpr std::uint32_t stats_per_pass = 4;
+		const auto [stats_status, stats] = slot.stats_pool.getResults<std::uint64_t>(
+			0,
+			slot.pass_count,
+			slot.pass_count * stats_per_pass * sizeof(std::uint64_t),
+			sizeof(std::uint64_t) * stats_per_pass,
+			vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait
+		);
+
+		if (stats_status == vk::Result::eSuccess) {
+			static constexpr std::array<const char*, stats_per_pass> labels{
+				":ia_verts", ":ia_prims", ":clip_invocs", ":fs_invocs"
+			};
+			for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
+				const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
+				const auto pass_name = pass_tag(slot.pass_types[i]);
+				for (std::uint32_t s = 0; s < stats_per_pass; ++s) {
+					const auto stat_id = find_or_generate_id(pass_name + labels[s]);
+					trace::counter_at(stat_id, static_cast<double>(stats[i * stats_per_pass + s]), trace::gpu_stats_virtual_tid, time_t<std::uint64_t>(start));
+				}
+			}
+		}
+	}
+
+	slot.results_valid = false;
 }
 
 template <typename PassType>
@@ -1125,6 +1273,18 @@ auto gse::vulkan::render_graph::execute() -> void {
 	const auto swap_extent = m_swapchain->extent();
 	const vk::Extent2D vk_extent{ swap_extent.x(), swap_extent.y() };
 
+	auto& slot = m_profile_slots[m_frame->current_frame()];
+	const bool timestamps_enabled = m_gpu_timestamps_enabled.load(std::memory_order_relaxed);
+	const bool stats_enabled = m_gpu_pipeline_stats_enabled.load(std::memory_order_relaxed);
+
+	if (m_frames_submitted >= per_frame_resource<gpu_profile_slot>::frames_in_flight) {
+		read_profile_slot(slot);
+	}
+
+	auto bump_frames = make_scope_exit([this] {
+		++m_frames_submitted;
+	});
+
 	const vk::ImageMemoryBarrier2 begin_barrier{
 		.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
 		.srcAccessMask = {},
@@ -1149,6 +1309,22 @@ auto gse::vulkan::render_graph::execute() -> void {
 		.pImageMemoryBarriers = &begin_barrier
 	};
 	command.pipelineBarrier2(begin_dep);
+
+	slot.pass_types.clear();
+	slot.pass_count = 0;
+	slot.stats_issued = false;
+	slot.results_valid = false;
+
+	if (timestamps_enabled) {
+		ensure_profile_pools(slot);
+		command.resetQueryPool(*slot.timestamp_pool, 0, max_profiled_passes * 2 + 1);
+		if (stats_enabled) {
+			command.resetQueryPool(*slot.stats_pool, 0, max_profiled_passes);
+		}
+		slot.cpu_ref = system_clock::now<trace::tick_step>();
+		slot.frame_counter = m_frames_submitted;
+		command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 0);
+	}
 
 	if (passes.empty()) {
 		const vk::ImageMemoryBarrier2 present_barrier{
@@ -1324,7 +1500,22 @@ auto gse::vulkan::render_graph::execute() -> void {
 			command.pipelineBarrier2(dep);
 		}
 
-		if (pass.color_output || pass.depth_output) {
+		const bool profile_pass = timestamps_enabled && slot.pass_count < max_profiled_passes;
+		const std::uint32_t pass_index = slot.pass_count;
+		const bool is_graphics_pass = pass.color_output || pass.depth_output;
+		const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
+
+		if (profile_pass) {
+			command.writeTimestamp2(vk::PipelineStageFlagBits2::eNone, *slot.timestamp_pool, 1 + pass_index * 2);
+			slot.pass_types.push_back(pass.pass_type);
+			++slot.pass_count;
+			if (issue_stats) {
+				command.beginQuery(*slot.stats_pool, pass_index, {});
+				slot.stats_issued = true;
+			}
+		}
+
+		if (is_graphics_pass) {
 			std::vector<vk::RenderingAttachmentInfo> color_attachments;
 			std::optional<vk::RenderingAttachmentInfo> depth_att;
 
@@ -1385,6 +1576,17 @@ auto gse::vulkan::render_graph::execute() -> void {
 		} else {
 			pass.record_fn(ctx);
 		}
+
+		if (profile_pass) {
+			if (issue_stats) {
+				command.endQuery(*slot.stats_pool, pass_index);
+			}
+			command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 2 + pass_index * 2);
+		}
+	}
+
+	if (timestamps_enabled && slot.pass_count > 0) {
+		slot.results_valid = true;
 	}
 
 	const vk::ImageMemoryBarrier2 present_barrier{

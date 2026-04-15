@@ -242,14 +242,12 @@ void solve_body(uint bi) {
         uint other_idx = is_a ? c.body_b : c.body_a;
         GpuBody other = body_data[other_idx];
 
-        float4 orient_a = is_a ? body.predicted_orientation : other.predicted_orientation;
-        float4 orient_b = is_a ? other.predicted_orientation : body.predicted_orientation;
+        FrozenJacobian fj = frozen_jacobians[ci];
+        float3 world_r_a = fj.world_r_a.xyz;
+        float3 world_r_b = fj.world_r_b.xyz;
+
         float3 pos_a = is_a ? body.predicted_position.xyz : other.predicted_position.xyz;
         float3 pos_b = is_a ? other.predicted_position.xyz : body.predicted_position.xyz;
-
-        float3 world_r_a = rotate_vector(orient_a, c.r_a.xyz);
-        float3 world_r_b = rotate_vector(orient_b, c.r_b.xyz);
-
         float3 p_a = pos_a + world_r_a;
         float3 p_b = pos_b + world_r_b;
 
@@ -268,15 +266,15 @@ void solve_body(uint bi) {
         force.z = clamp(c.penalty.z * C.z + c.lambda.z, -friction_bound, friction_bound);
 
         float sign = is_a ? 1.0 : -1.0;
-        float3 r = is_a ? world_r_a : world_r_b;
         float3 dirs[3] = { c.normal.xyz, c.tangent_u.xyz, c.tangent_v.xyz };
+        float3x3 J_ang_frozen = is_a ? fj.J_ang_a : fj.J_ang_b;
 
         for (uint row = 0; row < 3; row++) {
             if (row > 0 && friction_bound <= 1e-10) continue;
             if (abs(force[row]) < 1e-12 && c.penalty[row] < 1e-6) continue;
 
             float3 J_lin = dirs[row] * sign;
-            float3 J_ang = cross(r, dirs[row]) * sign;
+            float3 J_ang = J_ang_frozen[row] * sign;
 
             grad += J_lin * force[row];
             hess = mat3_add(hess, mat3_scale(outer_product3(J_lin, J_lin), c.penalty[row]));
