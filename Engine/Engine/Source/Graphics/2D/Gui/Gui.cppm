@@ -22,7 +22,6 @@ import :builder;
 
 namespace gse::gui {
 	struct frame_state {
-		const gpu::context* rctx = nullptr;
 		style sty{};
 		bool active = false;
 	};
@@ -101,25 +100,21 @@ namespace gse::gui {
 		system_state& s,
 		const gpu::context& ctx
 	) -> void;
-
-	auto begin_menu(
-		system_state& s,
-		const std::string& name
-	) -> bool;
-
-	auto end_menu(
-		system_state& s
-	) -> void;
-
-	auto process_menu(
-		system_state& s,
-		const input::state& input_state,
-		const std::string& name,
-		const std::function<void(builder&)>& build
-	) -> void;
 }
 
 export namespace gse::gui {
+	struct system {
+		struct resources {
+			std::unique_ptr<ids::scope> current_scope;
+		};
+
+		static auto initialize(init_context& phase, resources& r, system_state& s) -> void;
+		static auto update(update_context& ctx, resources& r, system_state& s) -> void;
+		static auto shutdown(shutdown_context& phase, resources& r, system_state& s) -> void;
+
+		static auto save(system_state& s) -> void;
+	};
+
 	struct system_state {
 		id_mapped_collection<menu> menus;
 		menu* current_menu = nullptr;
@@ -136,8 +131,6 @@ export namespace gse::gui {
 		id hot_widget_id;
 		id active_widget_id;
 		id focus_widget_id;
-
-		std::unique_ptr<ids::scope> current_scope;
 
 		frame_state fstate{};
 		draw_context* context = nullptr;
@@ -165,22 +158,29 @@ export namespace gse::gui {
 		}
 
 		static constexpr time update_interval = seconds(30.f);
-
-		auto input_layers() -> input_layer& {
-			return input_layers_data;
-		}
 	};
 
-	struct system {
-		static auto initialize(init_context& phase, system_state& s) -> void;
-		static auto update(update_context& ctx, system_state& s) -> void;
-		static auto shutdown(shutdown_context& phase, system_state& s) -> void;
+	auto begin_menu(
+		system::resources& r,
+		system_state& s,
+		const std::string& name
+	) -> bool;
 
-		static auto save(system_state& s) -> void;
-	};
+	auto end_menu(
+		system::resources& r,
+		system_state& s
+	) -> void;
+
+	auto process_menu(
+		system::resources& r,
+		system_state& s,
+		const input::state& input_state,
+		const std::string& name,
+		const std::function<void(builder&)>& build
+	) -> void;
 }
 
-auto gse::gui::system::initialize(init_context& phase, system_state& s) -> void {
+auto gse::gui::system::initialize(init_context& phase, resources&, system_state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	s.available_fonts = ctx.enumerate_resources("Fonts", ".gfont");
 
@@ -306,7 +306,7 @@ auto gse::gui::system::initialize(init_context& phase, system_state& s) -> void 
 	s.previous_viewport_size = vec2f(ctx.window().viewport());
 }
 
-auto gse::gui::system::update(update_context& ctx, system_state& s) -> void {
+auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s) -> void {
 	auto& gpu = ctx.get<gpu::context>();
 	const auto current_viewport_size = vec2f(gpu.window().viewport());
 
@@ -380,7 +380,6 @@ auto gse::gui::system::update(update_context& ctx, system_state& s) -> void {
 	const style frame_sty = apply_scale(s, style::from_theme(s.current_theme), current_viewport_size.y());
 
 	s.fstate = {
-		.rctx = &gpu,
 		.sty = frame_sty,
 		.active = s.gui_font.valid()
 	};
@@ -537,7 +536,7 @@ auto gse::gui::system::update(update_context& ctx, system_state& s) -> void {
 	}
 
 	for (const auto& content : ctx.read_channel<menu_content>()) {
-		process_menu(s, input_st, content.menu, content.build);
+		process_menu(r, s, input_st, content.menu, content.build);
 	}
 
 	if (s.tooltip.pending_widget_id.exists()) {
@@ -608,8 +607,8 @@ auto gse::gui::system::update(update_context& ctx, system_state& s) -> void {
 
 	s.tooltip.pending_widget_id.reset();
 
-	if (s.fstate.rctx && s.fstate.rctx->ui_focus()) {
-		cursor::render_to(*s.fstate.rctx, s.sprite_commands, input_st.mouse_position());
+	if (gpu.ui_focus()) {
+		cursor::render_to(gpu, s.sprite_commands, input_st.mouse_position());
 	}
 
 	s.visible_menu_ids_last_frame.clear();
@@ -666,7 +665,7 @@ auto gse::gui::system::update(update_context& ctx, system_state& s) -> void {
 	s.fstate = {};
 }
 
-auto gse::gui::system::shutdown(shutdown_context&, system_state& s) -> void {
+auto gse::gui::system::shutdown(shutdown_context&, resources& r, system_state& s) -> void {
 	gui::save(s.menus, config::resource_path / s.file_path);
 }
 
@@ -674,12 +673,12 @@ auto gse::gui::system::save(system_state& s) -> void {
 	gui::save(s.menus, config::resource_path / s.file_path);
 }
 
-auto gse::gui::process_menu(system_state& s, const input::state& input_state, const std::string& name, const std::function<void(builder&)>& build) -> void {
+auto gse::gui::process_menu(system::resources& r, system_state& s, const input::state& input_state, const std::string& name, const std::function<void(builder&)>& build) -> void {
 	if (!s.fstate.active) {
 		return;
 	}
 
-	if (!begin_menu(s, name)) {
+	if (!begin_menu(r, s, name)) {
 		return;
 	}
 
@@ -695,7 +694,7 @@ auto gse::gui::process_menu(system_state& s, const input::state& input_state, co
 		(std::distance(current_menu.tab_contents.begin(), it) == static_cast<ptrdiff_t>(current_menu.active_tab_index));
 
 	if (!is_active_tab) {
-		end_menu(s);
+		end_menu(r, s);
 		return;
 	}
 
@@ -748,15 +747,15 @@ auto gse::gui::process_menu(system_state& s, const input::state& input_state, co
 	build(b);
 	s.context = nullptr;
 
-	end_menu(s);
+	end_menu(r, s);
 }
 
-auto gse::gui::begin_menu(system_state& s, const std::string& name) -> bool {
+auto gse::gui::begin_menu(system::resources& r, system_state& s, const std::string& name) -> bool {
 	for (menu& m : s.menus.items()) {
 		if (const auto it = std::ranges::find(m.tab_contents, name); it != m.tab_contents.end()) {
 			s.current_menu = &m;
 			s.current_menu->was_begun_this_frame = true;
-			s.current_scope = std::make_unique<ids::scope>(s.current_menu->id().number());
+			r.current_scope = std::make_unique<ids::scope>(s.current_menu->id().number());
 			return true;
 		}
 	}
@@ -765,7 +764,7 @@ auto gse::gui::begin_menu(system_state& s, const std::string& name) -> bool {
 		if (m.id().tag() == name) {
 			s.current_menu = &m;
 			s.current_menu->was_begun_this_frame = true;
-			s.current_scope = std::make_unique<ids::scope>(s.current_menu->id().number());
+			r.current_scope = std::make_unique<ids::scope>(s.current_menu->id().number());
 			return true;
 		}
 	}
@@ -787,15 +786,15 @@ auto gse::gui::begin_menu(system_state& s, const std::string& name) -> bool {
 	if (menu* menu_ptr = s.menus.try_get(new_id)) {
 		s.current_menu = menu_ptr;
 		s.current_menu->was_begun_this_frame = true;
-		s.current_scope = std::make_unique<ids::scope>(s.current_menu->id().number());
+		r.current_scope = std::make_unique<ids::scope>(s.current_menu->id().number());
 		return true;
 	}
 
 	return false;
 }
 
-auto gse::gui::end_menu(system_state& s) -> void {
-	s.current_scope.reset();
+auto gse::gui::end_menu(system::resources& r, system_state& s) -> void {
+	r.current_scope.reset();
 	s.current_menu = nullptr;
 }
 

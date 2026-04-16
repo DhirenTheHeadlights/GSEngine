@@ -191,7 +191,11 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	});
 
 	r.pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.shader_handle, {
-		.depth = { .test = true, .write = false, .compare = gpu::compare_op::less_or_equal },
+		.depth = { 
+			.test = true, 
+			.write = false, 
+			.compare = gpu::compare_op::less_or_equal
+		},
 		.push_constant_block = "push_constants"
 	});
 
@@ -208,7 +212,11 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	}
 
 	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.skinned_shader, {
-		.depth = { .test = true, .write = false, .compare = gpu::compare_op::less_or_equal }
+		.depth = { 
+			.test = true, 
+			.write = false, 
+			.compare = gpu::compare_op::less_or_equal
+		}
 	});
 
 
@@ -234,10 +242,10 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	}
 
 	const auto* cam_state = ctx.try_state_of<camera::state>();
-	const auto* rt_state = ctx.try_state_of<rt_shadow::state>();
 	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
+
 	r.shader_handle->set_uniform("CameraUBO.view", view, cam_alloc);
 	r.shader_handle->set_uniform("CameraUBO.proj", proj, cam_alloc);
 	r.shader_handle->set_uniform("CameraUBO.inv_view", view.inverse(), cam_alloc);

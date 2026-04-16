@@ -90,28 +90,31 @@ auto gse::task_graph::build_edges() const -> void {
 			auto& na = *m_nodes[a];
 			auto& nb = *m_nodes[b];
 
-			bool conflict = false;
+			bool a_before_b = false;
+			bool b_before_a = false;
 
 			for (const auto& w : na.writes) {
-				if (std::ranges::contains(nb.writes, w) ||
-					std::ranges::contains(nb.reads, w)) {
-					conflict = true;
+				if (std::ranges::contains(nb.reads, w) ||
+					std::ranges::contains(nb.writes, w)) {
+					a_before_b = true;
 					break;
 				}
 			}
 
-			if (!conflict) {
-				for (const auto& r : na.reads) {
-					if (std::ranges::contains(nb.writes, r)) {
-						conflict = true;
-						break;
-					}
+			for (const auto& w : nb.writes) {
+				if (std::ranges::contains(na.reads, w)) {
+					b_before_a = true;
+					break;
 				}
 			}
 
-			if (conflict) {
+			if (a_before_b) {
 				na.dependents.push_back(b);
 				nb.in_degree.fetch_add(1, std::memory_order_relaxed);
+			}
+			else if (b_before_a) {
+				nb.dependents.push_back(a);
+				na.in_degree.fetch_add(1, std::memory_order_relaxed);
 			}
 		}
 	}
@@ -140,10 +143,16 @@ auto gse::task_graph::execute() -> void {
 
 	task::group work_group(find_or_generate_id("task_graph::execute"));
 
+	std::vector<graph_node*> initially_ready;
+	initially_ready.reserve(m_nodes.size());
 	for (auto& node : m_nodes) {
 		if (node->in_degree.load(std::memory_order_relaxed) == 0) {
-			enqueue_ready(*node, work_group);
+			initially_ready.push_back(node.get());
 		}
+	}
+
+	for (auto* node : initially_ready) {
+		enqueue_ready(*node, work_group);
 	}
 
 	work_group.wait();

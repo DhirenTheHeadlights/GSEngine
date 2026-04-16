@@ -37,6 +37,9 @@ export namespace gse {
 		template <typename State>
 		auto has_state() const -> bool;
 
+		template <typename Resources>
+		auto resources_of() const -> const Resources&;
+
 		template <typename T>
 		auto channel() -> channel<T>&;
 
@@ -253,6 +256,11 @@ auto gse::engine::try_state_of() -> const State* {
 template <typename State>
 auto gse::engine::has_state() const -> bool {
 	return m_scheduler.has<State>();
+}
+
+template <typename Resources>
+auto gse::engine::resources_of() const -> const Resources& {
+	return m_scheduler.resources_of<Resources>();
 }
 
 template <typename T>

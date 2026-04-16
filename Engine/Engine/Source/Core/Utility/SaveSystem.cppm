@@ -375,7 +375,7 @@ export namespace gse::save {
         std::span<property_base* const> m_properties;
     };
 
-    class state {
+    class state : non_copyable {
     public:
         state() = default;
 
@@ -1345,12 +1345,15 @@ auto gse::save::read_setting_early(const std::filesystem::path& path, const std:
 
     if (value_node->is_boolean()) {
         return value_node->value_or(false) ? "true" : "false";
-    } else if (value_node->is_integer()) {
-        return std::to_string(value_node->value_or<std::int64_t>(0));
-    } else if (value_node->is_floating_point()) {
-        return std::to_string(value_node->value_or(0.0));
-    } else if (value_node->is_string()) {
-        return value_node->value_or<std::string>("");
+    }
+    if (value_node->is_integer()) {
+	    return std::to_string(value_node->value_or<std::int64_t>(0));
+    }
+    if (value_node->is_floating_point()) {
+	    return std::to_string(value_node->value_or(0.0));
+    }
+    if (value_node->is_string()) {
+	    return value_node->value_or<std::string>("");
     }
 
     return std::nullopt;

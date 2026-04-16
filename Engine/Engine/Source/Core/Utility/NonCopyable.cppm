@@ -13,6 +13,7 @@ export namespace gse {
 		virtual ~non_copyable() = default;
 	};
 
+
 	class non_movable {
 		public:
 		non_movable() = default;
