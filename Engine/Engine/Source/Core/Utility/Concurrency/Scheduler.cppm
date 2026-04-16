@@ -327,7 +327,7 @@ auto gse::scheduler::run_graph_update() -> void {
 	u_ctx.gpu_ctx = m_gpu_ctx;
 
 	{
-		task::group group;
+		task::group group(find_or_generate_id("scheduler::parallel_updates"));
 		for (const auto& node : m_nodes) {
 			group.post([&, node = node.get()] {
 				trace::scope(node->trace_id(), [&] {

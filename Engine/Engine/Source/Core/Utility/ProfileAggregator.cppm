@@ -20,6 +20,7 @@ export namespace gse::profile {
 		sample_time peak{};
 		std::uint64_t sample_count = 0;
 		std::uint32_t thread_id = 0;
+		bool pooled = false;
 	};
 
 	auto ingest_frame(
@@ -78,17 +79,19 @@ namespace gse::profile {
 		flat_map<id, entry>& map,
 		id id,
 		sample_time duration,
-		std::uint32_t thread_id
+		std::uint32_t thread_id,
+		bool pooled
 	) -> void;
 
 	auto walk_node(
 		const trace::node& n,
-		flat_map<id, entry>& cpu_agg
+		flat_map<id, entry>& cpu_agg,
+		bool pooled
 	) -> void;
 }
 
-auto gse::profile::update_entry(flat_map<id, entry>& map, const id id, const sample_time duration, const std::uint32_t thread_id) -> void {
-	auto& [e_id, ema, last, peak, sample_count, e_thread] = map[id];
+auto gse::profile::update_entry(flat_map<id, entry>& map, const id id, const sample_time duration, const std::uint32_t thread_id, const bool pooled) -> void {
+	auto& [e_id, ema, last, peak, sample_count, e_thread, e_pooled] = map[id];
 	if (sample_count == 0) {
 		e_id = id;
 		ema = duration;
@@ -102,15 +105,17 @@ auto gse::profile::update_entry(flat_map<id, entry>& map, const id id, const sam
 		peak = duration;
 	}
 	e_thread = thread_id;
+	e_pooled = e_pooled || pooled;
 	++sample_count;
 }
 
-auto gse::profile::walk_node(const trace::node& n, flat_map<id, entry>& cpu_agg) -> void {
+auto gse::profile::walk_node(const trace::node& n, flat_map<id, entry>& cpu_agg, const bool pooled) -> void {
 	if (!trace::is_hidden(n.id)) {
-		update_entry(cpu_agg, generate_temp_id(n.id), sample_time(n.self), n.trace_id);
+		update_entry(cpu_agg, generate_temp_id(n.id), sample_time(n.self), n.trace_id, pooled);
 	}
+	const bool child_pooled = pooled || trace::is_pool_root(n.id);
 	for (std::size_t i = 0; i < n.children_count; ++i) {
-		walk_node(n.children_first[i], cpu_agg);
+		walk_node(n.children_first[i], cpu_agg, child_pooled);
 	}
 }
 
@@ -127,7 +132,7 @@ auto gse::profile::ingest_frame() -> void {
 	}
 	frame_count.fetch_add(1, std::memory_order_relaxed);
 	for (const auto& root : roots) {
-		walk_node(root, cpu_entries);
+		walk_node(root, cpu_entries, false);
 	}
 }
 
@@ -137,7 +142,7 @@ auto gse::profile::ingest_gpu_sample(const id pass_id, const sample_time duratio
 	}
 
 	std::unique_lock lk(state_mutex);
-	update_entry(gpu_entries, pass_id, duration, 0);
+	update_entry(gpu_entries, pass_id, duration, 0, false);
 }
 
 auto gse::profile::lookup_cpu(const id id) -> std::optional<entry> {
@@ -221,7 +226,7 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 
 		const auto top = rows.empty() ? sample_time{} : rows.front().ema;
 
-		for (const auto& [e_id, ema, last, peak, sample_count, thread_id] : rows) {
+		for (const auto& [e_id, ema, last, peak, sample_count, thread_id, pooled] : rows) {
 			const double pct_top = top > sample_time{} ? (ema / top) * 100.0 : 0.0;
 			const double calls_per_frame = frames > 0 ? static_cast<double>(sample_count) / static_cast<double>(frames) : 0.0;
 			const auto per_frame_time = ema * calls_per_frame;
@@ -248,11 +253,10 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 	std::vector<entry> gpu_rows;
 	{
 		std::shared_lock lk(state_mutex);
-		const auto main_tid = main_thread_id.load(std::memory_order_relaxed);
 		main_rows.reserve(cpu_entries.size());
 		worker_rows.reserve(cpu_entries.size());
 		for (const auto& e : cpu_entries | std::views::values) {
-			(e.thread_id == main_tid ? main_rows : worker_rows).push_back(e);
+			(e.pooled ? worker_rows : main_rows).push_back(e);
 		}
 		gpu_rows.reserve(gpu_entries.size());
 		for (const auto& e : gpu_entries | std::views::values) {

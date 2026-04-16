@@ -165,10 +165,14 @@ export namespace gse::vulkan {
 			std::source_location loc = std::source_location::current()
 		) -> image_resource;
 
-		auto clean_up() -> void;
+		auto clean_up(
+		) -> void;
 
-		[[nodiscard]] auto live_allocation_count() const -> std::uint32_t { return m_live_allocation_count.load(); }
-		[[nodiscard]] auto tracking_enabled() const -> bool { return m_tracking_enabled; }
+		[[nodiscard]] auto live_allocation_count(
+		) const -> std::uint32_t;
+
+		[[nodiscard]] auto tracking_enabled(
+		) const -> bool;
 	private:
 		friend class allocation;
 		auto free(
@@ -789,6 +793,14 @@ auto gse::vulkan::allocator::clean_up() -> void {
 		}
 	}
 	m_pools.clear();
+}
+
+auto gse::vulkan::allocator::live_allocation_count() const -> std::uint32_t {
+	return m_live_allocation_count.load();
+}
+
+auto gse::vulkan::allocator::tracking_enabled() const -> bool {
+	return m_tracking_enabled;
 }
 
 auto gse::vulkan::allocator::memory_flag_preferences(const vk::BufferUsageFlags usage) -> std::vector<vk::MemoryPropertyFlags> {
