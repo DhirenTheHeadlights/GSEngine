@@ -191,7 +191,7 @@ namespace gse::physics {
 		vbd::solver& solver,
 		vbd::contact_cache& contact_cache,
 		const std::vector<collision_pair>& objects,
-		const std::unordered_map<id, std::uint32_t>& id_to_body_index,
+		const flat_map<id, std::uint32_t>& id_to_body_index,
 		bool update_scene_state
 	) -> void;
 
@@ -265,7 +265,7 @@ auto gse::physics::collect_collision_objects(write<motion_component>& motion, wr
 	return objects;
 }
 
-auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, const std::vector<collision_pair>& objects, const std::unordered_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state) -> void {
+auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, const std::vector<collision_pair>& objects, const flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state) -> void {
 	for (std::size_t i = 0; i < objects.size(); ++i) {
 		for (std::size_t j = i + 1; j < objects.size(); ++j) {
 			auto& [collision_a, motion_a] = objects[i];
@@ -976,28 +976,34 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 		}
 	});
 
-	std::unordered_map<id, std::uint32_t> id_to_body_index;
+	flat_map<id, std::uint32_t> id_to_body_index;
 	std::vector<vbd::body_state> bodies;
 	std::vector<id> entity_ids;
 	std::vector<float> accel_weights;
-	std::unordered_map<id, vec3<velocity>> prev_gpu_velocity;
+	flat_map<id, vec3<velocity>> prev_gpu_velocity;
+
+	std::vector<std::pair<id, std::uint32_t>> id_to_body_index_staging;
 
 	trace::scope(find_or_generate_id("vbd_gpu::build_bodies"), [&] {
 		bodies.reserve(motion.size());
 		entity_ids.reserve(motion.size());
 		accel_weights.reserve(motion.size());
+		id_to_body_index_staging.reserve(motion.size());
 
-		prev_gpu_velocity.reserve(ud.gpu_prev.result_entity_ids.size());
-		for (std::size_t i = 0; i < ud.gpu_prev.result_entity_ids.size() && i < ud.gpu_prev.result_bodies.size(); ++i) {
-			prev_gpu_velocity.emplace(ud.gpu_prev.result_entity_ids[i], ud.gpu_prev.result_bodies[i].body_velocity);
+		const auto prev_count = std::min(ud.gpu_prev.result_entity_ids.size(), ud.gpu_prev.result_bodies.size());
+		std::vector<std::pair<id, vec3<velocity>>> prev_staging;
+		prev_staging.reserve(prev_count);
+		for (std::size_t i = 0; i < prev_count; ++i) {
+			prev_staging.emplace_back(ud.gpu_prev.result_entity_ids[i], ud.gpu_prev.result_bodies[i].body_velocity);
 		}
+		prev_gpu_velocity.assign_unsorted(std::move(prev_staging));
 
 		constexpr acceleration gravity_mag = meters_per_second_squared(9.8f);
 
 		std::uint32_t body_idx = 0;
 		for (motion_component& mc : motion) {
 		const auto eid = mc.owner_id();
-		id_to_body_index[eid] = body_idx++;
+		id_to_body_index_staging.emplace_back(eid, body_idx++);
 
 		const auto sc_it = ud.sleep_counters.find(eid);
 		const auto sc = sc_it != ud.sleep_counters.end() ? sc_it->second : 0u;
@@ -1036,6 +1042,8 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 		});
 		entity_ids.push_back(eid);
 	}
+
+		id_to_body_index.assign_unsorted(std::move(id_to_body_index_staging));
 	});
 
 	std::vector<std::uint32_t> jumped_body_indices;
@@ -1225,17 +1233,19 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision) -> void {
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
-	std::unordered_map<id, std::uint32_t> id_to_body_index;
-	id_to_body_index.reserve(motion.size());
+	flat_map<id, std::uint32_t> id_to_body_index;
 	std::vector<motion_component*> motion_ptrs;
 	motion_ptrs.reserve(motion.size());
 
 	{
+		std::vector<std::pair<id, std::uint32_t>> id_staging;
+		id_staging.reserve(motion.size());
 		std::uint32_t body_idx = 0;
 		for (motion_component& mc : motion) {
-			id_to_body_index[mc.owner_id()] = body_idx++;
+			id_staging.emplace_back(mc.owner_id(), body_idx++);
 			motion_ptrs.push_back(std::addressof(mc));
 		}
+		id_to_body_index.assign_unsorted(std::move(id_staging));
 	}
 
 	const auto objects = collect_collision_objects(motion, collision);

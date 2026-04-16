@@ -170,10 +170,15 @@ auto gse::engine::render() -> void {
 	bool frame_ok = false;
 
 	if (m_render_ctx) {
-		m_render_ctx->process_gpu_queue();
+		trace::scope(find_or_generate_id("render::process_gpu_queue"), [&] {
+			m_render_ctx->process_gpu_queue();
+		});
 
 		const clock fence_timer;
-		auto result = m_render_ctx->begin_frame();
+		std::expected<gpu::frame_token, gpu::frame_status> result;
+		trace::scope(find_or_generate_id("render::begin_frame"), [&] {
+			result = m_render_ctx->begin_frame();
+		});
 		const auto fence_wait = fence_timer.elapsed();
 
 		m_render_ctx->scheduler().report_frame_time(fence_wait);
@@ -186,21 +191,33 @@ auto gse::engine::render() -> void {
 	}
 
 	m_scheduler.render(frame_ok, [this] {
-		if (m_render_ctx) {
-			m_render_ctx->scheduler().flush();
-			m_render_ctx->graph().execute();
-		}
+		trace::scope(find_or_generate_id("render::in_frame"), [&] {
+			if (m_render_ctx) {
+				trace::scope(find_or_generate_id("render::scheduler_flush"), [&] {
+					m_render_ctx->scheduler().flush();
+				});
+				trace::scope(find_or_generate_id("render::graph_execute"), [&] {
+					m_render_ctx->graph().execute();
+				});
+			}
 
-		for (const auto& h : m_hooks) {
-			h->render();
-		}
+			trace::scope(find_or_generate_id("render::hooks"), [&] {
+				for (const auto& h : m_hooks) {
+					h->render();
+				}
+			});
 
-		m_world.render();
+			trace::scope(find_or_generate_id("render::world_render"), [&] {
+				m_world.render();
+			});
+		});
 	});
 
 	if (frame_ok && m_render_ctx) {
-		m_render_ctx->end_frame();
-		m_render_ctx->finalize_reloads();
+		trace::scope(find_or_generate_id("render::end_frame"), [&] {
+			m_render_ctx->end_frame();
+			m_render_ctx->finalize_reloads();
+		});
 	}
 }
 

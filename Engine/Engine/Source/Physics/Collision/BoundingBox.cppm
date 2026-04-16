@@ -221,41 +221,17 @@ auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const -> 
 }
 
 auto gse::bounding_box::recalculate_aabb() const -> void {
-	const auto obb_data = obb();
-	const auto half_size = obb_data.size / 2.0f;
+	const auto rotation = mat3_cast(m_orientation);
+	const auto half_size = m_scaled_size / 2.0f;
 
-	std::array<vec3<position>, 8> corners;
-	for (int i = 0; i < 8; ++i) {
-		const auto x = (i & 1 ? 1 : -1) * half_size.x();
-		const auto y = (i & 2 ? 1 : -1) * half_size.y();
-		const auto z = (i & 4 ? 1 : -1) * half_size.z();
-		corners[i] = m_center + (obb_data.axes[0] * x + obb_data.axes[1] * y + obb_data.axes[2] * z);
-	}
-
-	vec3<position> min_corner(
-		std::numeric_limits<float>::max(),
-		std::numeric_limits<float>::max(),
-		std::numeric_limits<float>::max()
-	);
-	vec3<position> max_corner(
-		std::numeric_limits<float>::lowest(),
-		std::numeric_limits<float>::lowest(),
-		std::numeric_limits<float>::lowest()
-	);
-
-	for (const auto& corner : corners) {
-		min_corner.x() = std::min(min_corner.x(), corner.x());
-		min_corner.y() = std::min(min_corner.y(), corner.y());
-		min_corner.z() = std::min(min_corner.z(), corner.z());
-
-		max_corner.x() = std::max(max_corner.x(), corner.x());
-		max_corner.y() = std::max(max_corner.y(), corner.y());
-		max_corner.z() = std::max(max_corner.z(), corner.z());
-	}
+	const auto extent =
+		gse::abs(rotation[0]) * half_size.x() +
+		gse::abs(rotation[1]) * half_size.y() +
+		gse::abs(rotation[2]) * half_size.z();
 
 	m_aabb = {
-		.max = max_corner,
-		.min = min_corner
+		.max = m_center + extent,
+		.min = m_center - extent
 	};
 	m_is_aabb_dirty = false;
 }
