@@ -30,10 +30,19 @@ export namespace gse {
     template <typename State>
     auto has_state() -> bool;
 
+    template <typename Resources>
+    auto resources_of(
+    ) -> const Resources&;
+
     template <typename T>
     auto channel_add(
         T&& request
     ) -> void;
+
+    template <promiseable T>
+    auto channel_add(
+        T&& request
+    ) -> channel_future<typename std::decay_t<T>::result_type>;
 
     template <typename F>
     auto defer(
@@ -72,9 +81,23 @@ auto gse::has_state() -> bool {
     return engine_instance && engine_instance->has_state<State>();
 }
 
+template <typename Resources>
+auto gse::resources_of() -> const Resources& {
+	return engine_instance->resources_of<Resources>();
+}
+
 template <typename T>
 auto gse::channel_add(T&& request) -> void {
     engine_instance->channel<std::decay_t<T>>().push(std::forward<T>(request));
+}
+
+template <gse::promiseable T>
+auto gse::channel_add(T&& request) -> channel_future<typename std::decay_t<T>::result_type> {
+	using R = typename std::decay_t<T>::result_type;
+	auto [future, promise] = make_promise<R>();
+	request.promise = std::move(promise);
+	engine_instance->channel<std::decay_t<T>>().push(std::forward<T>(request));
+	return future;
 }
 
 template <typename F>

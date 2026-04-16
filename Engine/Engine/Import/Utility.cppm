@@ -13,6 +13,7 @@ export import :slot_map;
 export import :static_vector;
 
 export import :channel_base;
+export import :channel_promise;
 export import :clock;
 export import :behavior_hook;
 export import :component;

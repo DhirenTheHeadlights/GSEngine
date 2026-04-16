@@ -693,13 +693,13 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	for (int it = 0; it < num_iterations; ++it) {
 		solve_iteration(solve_alpha);
-		const auto violation = update_dual(solve_alpha);
+		const auto [linear, angular] = update_dual(solve_alpha);
 		update_joint_dual(h_squared);
 
 		if (can_stop_on_contact_convergence &&
 			it + 1 >= static_cast<int>(m_config.min_iterations) &&
-			violation.linear < m_config.convergence_threshold.linear &&
-			violation.angular < m_config.convergence_threshold.angular) {
+			linear < m_config.convergence_threshold.linear &&
+			angular < m_config.convergence_threshold.angular) {
 			break;
 		}
 	}

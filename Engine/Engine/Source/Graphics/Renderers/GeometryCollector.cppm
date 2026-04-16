@@ -117,8 +117,7 @@ export namespace gse::renderer::geometry_collector {
 	struct physics_mapping_entry {
 		std::uint32_t body_index;
 		std::uint32_t instance_index;
-		float center_of_mass[3];
-		float _pad;
+		vec3<length> center_of_mass;
 	};
 
 	struct owned_render_queue_entry {
@@ -148,9 +147,16 @@ export namespace gse::renderer::geometry_collector {
 		projection_matrix proj;
 	};
 
+	struct render_cache {
+		std::optional<render_data> data;
+		std::size_t last_render_count = 0;
+		bool had_body_map = false;
+	};
+
 	struct state {
-		const skeleton* current_skeleton = nullptr;
+		resource::handle<skeleton> current_skeleton;
 		std::uint32_t current_joint_count = 0;
+		render_cache cache;
 	};
 
 	auto filter_render_queue(
@@ -199,13 +205,13 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 	std::vector<render_queue_entry> result;
 	result.reserve(data.render_queue.size());
 
-	for (const auto& item : data.render_queue) {
+	for (const auto& [entry, owner] : data.render_queue) {
 		const bool excluded = std::ranges::any_of(exclude_ids, [&](const id& ex) {
-			return ex == item.owner;
+			return ex == owner;
 		});
 
 		if (!excluded) {
-			result.push_back(item.entry);
+			result.push_back(entry);
 		}
 	}
 
@@ -300,10 +306,6 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 }
 
 auto gse::renderer::geometry_collector::system::update(update_context& ctx, const resources& r, state& s) -> void {
-	if (ctx.reg.linked_objects_read<render_component>().empty()) {
-		return;
-	}
-
 	const auto* cam_state = ctx.try_state_of<camera::state>();
 	const view_matrix view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
 	const projection_matrix proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
@@ -321,6 +323,26 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 		read<physics::collision_component> collision,
 		read<animation_component> anim
 	) {
+		if (render.empty()) {
+			return;
+		}
+
+		const auto render_count = render.size();
+		const bool entity_set_changed = render_count != s.cache.last_render_count;
+		s.cache.last_render_count = render_count;
+
+		const bool body_map_available = !body_index_map.empty();
+		const bool body_map_changed = body_map_available != s.cache.had_body_map;
+		s.cache.had_body_map = body_map_available;
+
+		if (!entity_set_changed && !body_map_changed && s.cache.data.has_value()) {
+			auto cached = *s.cache.data;
+			cached.view = view_matrix;
+			cached.proj = proj_matrix;
+			channels.push(std::move(cached));
+			return;
+		}
+
 		render_data data;
 		data.view = view_matrix;
 		data.proj = proj_matrix;
@@ -332,84 +354,86 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 		std::uint32_t skinned_instance_count = 0;
 
-		for (auto& component : render) {
-			if (!component.render) {
-				continue;
-			}
-
-			const auto* mc = motion.find(component.owner_id());
-			const auto* cc = collision.find(component.owner_id());
-
-			for (auto& model_handle : component.model_instances) {
-				if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+		trace::scope(find_or_generate_id("geom_collect::collect"), [&] {
+			for (auto& component : render) {
+				if (!component.render) {
 					continue;
 				}
 
-				model_handle.update(*mc, *cc);
-				const auto entries = model_handle.render_queue_entries();
-				for (const auto& entry : entries) {
-					out.push_back({
-						.entry = entry,
-						.owner = component.owner_id()
-					});
-				}
-			}
+				const auto* mc = motion.find(component.owner_id());
+				const auto* cc = collision.find(component.owner_id());
 
-			const auto* anim_comp = anim.find(component.owner_id());
-
-			for (auto& skinned_model_handle : component.skinned_model_instances) {
-				if (!skinned_model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
-					continue;
-				}
-
-				if (anim_comp != nullptr && !anim_comp->local_pose.empty()) {
-					std::uint32_t skin_offset = 0;
-					skin_offset = static_cast<std::uint32_t>(local_pose_staging.size());
-
-					local_pose_staging.insert(local_pose_staging.end(), anim_comp->local_pose.begin(), anim_comp->local_pose.end());
-
-					if (anim_comp->skeleton && (s.current_skeleton == nullptr || s.current_skeleton->id() != anim_comp->skeleton.id())) {
-						s.current_skeleton = anim_comp->skeleton.resolve();
-						s.current_joint_count = static_cast<std::uint32_t>(anim_comp->skeleton->joint_count());
-						r.upload_skeleton_data(*anim_comp->skeleton);
+				for (auto& model_handle : component.model_instances) {
+					if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+						continue;
 					}
 
-					++skinned_instance_count;
-
-					skinned_model_handle.update(*mc, *cc, skin_offset, s.current_joint_count);
-					const auto entries = skinned_model_handle.render_queue_entries();
-					skinned_out.append_range(entries);
-				}
-			}
-		}
-
-		std::ranges::sort(
-			out,
-			[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
-				const auto* ma = a.entry.model.resolve();
-				const auto* mb = b.entry.model.resolve();
-
-				if (ma != mb) {
-					return ma < mb;
+					model_handle.update(*mc, *cc);
+					for (const auto& entry : model_handle.render_queue_entries()) {
+						out.push_back({
+							.entry = entry,
+							.owner = component.owner_id()
+						});
+					}
 				}
 
-				return a.entry.index < b.entry.index;
-			}
-		);
+				const auto* anim_comp = anim.find(component.owner_id());
 
-		std::ranges::sort(
-			skinned_out,
-			[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
-				const auto* ma = a.model.resolve();
-				const auto* mb = b.model.resolve();
+				for (auto& skinned_model_handle : component.skinned_model_instances) {
+					if (!skinned_model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+						continue;
+					}
 
-				if (ma != mb) {
-					return ma < mb;
+					if (anim_comp != nullptr && !anim_comp->local_pose.empty()) { 
+						const std::uint32_t skin_offset = static_cast<std::uint32_t>(local_pose_staging.size());
+
+						local_pose_staging.insert(local_pose_staging.end(), anim_comp->local_pose.begin(), anim_comp->local_pose.end());
+
+						if (anim_comp->skeleton && (!s.current_skeleton.valid() || s.current_skeleton != anim_comp->skeleton)) {
+							s.current_skeleton = anim_comp->skeleton;
+							s.current_joint_count = static_cast<std::uint32_t>(anim_comp->skeleton->joint_count());
+							r.upload_skeleton_data(*anim_comp->skeleton);
+						}
+
+						++skinned_instance_count;
+
+						skinned_model_handle.update(*mc, *cc, skin_offset, s.current_joint_count);
+						const auto entries = skinned_model_handle.render_queue_entries();
+						skinned_out.append_range(entries);
+					}
 				}
-
-				return a.index < b.index;
 			}
-		);
+		});
+
+		trace::scope(find_or_generate_id("geom_collect::sort"), [&] {
+			std::ranges::sort(
+				out,
+				[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
+					const auto* ma = a.entry.model.resolve();
+					const auto* mb = b.entry.model.resolve();
+
+					if (ma != mb) {
+						return ma < mb;
+					}
+
+					return a.entry.index < b.entry.index;
+				}
+			);
+
+			std::ranges::sort(
+				skinned_out,
+				[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
+					const auto* ma = a.model.resolve();
+					const auto* mb = b.model.resolve();
+
+					if (ma != mb) {
+						return ma < mb;
+					}
+
+					return a.index < b.index;
+				}
+			);
+		});
 
 		auto& instance_staging = data.instance_staging;
 		auto& normal_batches = data.normal_batches;
@@ -447,6 +471,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 		std::uint32_t global_instance_offset = 0;
 
+		trace::scope(find_or_generate_id("geom_collect::batch_normal"), [&] {
 		std::size_t batch_begin = 0;
 		while (batch_begin < out.size()) {
 			const auto& first = out[batch_begin].entry;
@@ -457,8 +482,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 			std::size_t batch_end = batch_begin + 1;
 			while (batch_end < out.size()) {
-				const auto& entry = out[batch_end].entry;
-				if (entry.model.resolve() != key.model_ptr || entry.index != key.mesh_index) {
+				if (const auto& entry = out[batch_end].entry; entry.model.resolve() != key.model_ptr || entry.index != key.mesh_index) {
 					break;
 				}
 				++batch_end;
@@ -500,30 +524,26 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			const vec3 center_of_mass = key.model_ptr->center_of_mass();
 
 			for (std::size_t i = batch_begin; i < batch_end; ++i) {
-				const auto& item = out[i];
-				const auto& entry = item.entry;
+				const auto& [entry, owner] = out[i];
 				const auto instance_index = global_instance_offset++;
 
 				write_instance(entry.model_matrix, entry.normal_matrix, 0, 0, mat_idx);
 
-				if (const auto it = body_index_map.find(item.owner); it != body_index_map.end()) {
+				if (const auto it = body_index_map.find(owner); it != body_index_map.end()) {
 					data.physics_mappings.push_back({
 						.body_index = it->second,
 						.instance_index = instance_index,
-						.center_of_mass = {
-							center_of_mass.x().as<meters>(),
-							center_of_mass.y().as<meters>(),
-							center_of_mass.z().as<meters>()
-						},
-						._pad = 0.f
+						.center_of_mass = center_of_mass
 					});
 				}
 			}
 
 			batch_begin = batch_end;
 		}
+		});
 
-		batch_begin = 0;
+		trace::scope(find_or_generate_id("geom_collect::batch_skinned"), [&] {
+		std::size_t batch_begin = 0;
 		while (batch_begin < skinned_out.size()) {
 			const auto& first = skinned_out[batch_begin];
 			const skinned_batch_key key{
@@ -581,6 +601,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 			batch_begin = batch_end;
 		}
+		});
 
 		if (!local_pose_staging.empty() && s.current_joint_count > 0) {
 			data.pending_compute_instance_count = skinned_instance_count;
@@ -590,6 +611,9 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 		data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
 
+		if (!data.normal_batches.empty() || !data.skinned_batches.empty()) {
+			s.cache.data = data;
+		}
 		channels.push(std::move(data));
 	});
 }

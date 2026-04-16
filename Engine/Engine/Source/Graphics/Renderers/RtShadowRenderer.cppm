@@ -3,6 +3,7 @@ export module gse.graphics:rt_shadow_renderer;
 import std;
 
 import :geometry_collector;
+import :physics_transform_renderer;
 import :mesh;
 
 import gse.platform;
@@ -17,7 +18,9 @@ export namespace gse::renderer::rt_shadow {
 		per_frame_resource<const gpu::tlas*> tlas_ptrs{};
 		bool initialized = false;
 
-		[[nodiscard]] auto tlas(const std::uint32_t frame_index) const -> const gpu::tlas& {
+		[[nodiscard]] auto tlas(
+			const std::uint32_t frame_index
+		) const -> const gpu::tlas& {
 			return *tlas_ptrs[frame_index];
 		}
 	};
@@ -27,6 +30,12 @@ export namespace gse::renderer::rt_shadow {
 			std::unordered_map<const mesh*, gpu::blas> blas_cache;
 			per_frame_resource<gpu::tlas> tlas_per_frame;
 			per_frame_resource<linear_vector<gpu::acceleration_structure_instance>> instances;
+
+			resource::handle<shader> tlas_update_shader;
+			gpu::pipeline tlas_update_pipeline;
+			per_frame_resource<gpu::descriptor_region> tlas_update_descriptors;
+			per_frame_resource<gpu::buffer> mapping_buffers;
+			std::size_t mapping_buffer_capacity = 0;
 		};
 
 		static auto initialize(
@@ -41,21 +50,10 @@ export namespace gse::renderer::rt_shadow {
 			const state& s
 		) -> async::task<>;
 	};
-
-	[[nodiscard]] auto transform_is_finite(const mat4f& transform) -> bool {
-		for (int row = 0; row < 4; ++row) {
-			for (int col = 0; col < 4; ++col) {
-				if (!std::isfinite(transform[col][row])) {
-					return false;
-				}
-			}
-		}
-		return true;
-	}
 }
 
 auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, frame_data& fd, state& s) -> void {
-	const auto& ctx = phase.get<gpu::context>();
+	auto& ctx = phase.get<gpu::context>();
 
 	if (!ctx.device_ref().ray_tracing_enabled()) {
 		log::println(log::level::warning, log::category::render, "RT shadow: ray tracing not supported, skipping");
@@ -69,6 +67,15 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, fra
 		fd.tlas_per_frame[i] = gpu::build_tlas(ctx.device_ref(), max_instances);
 		s.tlas_ptrs[i] = &fd.tlas_per_frame[i];
 		fd.instances[i].reserve(max_instances);
+	}
+
+	fd.tlas_update_shader = ctx.get<shader>("Shaders/Compute/tlas_transform_update");
+	ctx.instantly_load(fd.tlas_update_shader);
+
+	fd.tlas_update_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *fd.tlas_update_shader, "push_constants");
+
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *fd.tlas_update_shader);
 	}
 }
 
@@ -124,16 +131,21 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 	auto& instances = fd.instances[frame_index];
 	instances.clear();
 
-	for (const auto& item : data.render_queue) {
-		const auto& entry = item.entry;
+	linear_vector<std::uint32_t> index_mapping;
+	index_mapping.reserve(data.render_queue.size());
+
+	std::uint32_t render_queue_idx = 0;
+	for (const auto& [entry, owner] : data.render_queue) {
 		const auto* mdl = entry.model.resolve();
 		if (!mdl || entry.index >= mdl->meshes().size()) {
+			++render_queue_idx;
 			continue;
 		}
 
 		const auto* mesh_ptr = &mdl->meshes()[entry.index];
 		const auto it = fd.blas_cache.find(mesh_ptr);
 		if (it == fd.blas_cache.end()) {
+			++render_queue_idx;
 			continue;
 		}
 
@@ -149,13 +161,70 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 			.blas_address = it->second.device_address()
 		});
 
+		index_mapping.push_back(render_queue_idx);
+		++render_queue_idx;
+
 		if (instances.size() >= max_instances) {
 			break;
 		}
 	}
 
-	auto pass = gpu.graph().add_pass<state>();
-	pass.record([&fd, &gpu, frame_index](gpu::recording_context& record_ctx) {
-		gpu::rebuild_tlas(gpu.device_ref(), fd.tlas_per_frame[frame_index], fd.instances[frame_index].span(), record_ctx);
-	});
+	if (instances.empty()) {
+		co_return;
+	}
+
+	const auto instance_count = static_cast<std::uint32_t>(instances.size());
+
+	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
+
+	gpu::write_tlas_instances(fd.tlas_per_frame[frame_index], instances.span());
+
+	if (gc_r) {
+		const auto mapping_bytes = instance_count * sizeof(std::uint32_t);
+		if (fd.mapping_buffer_capacity < mapping_bytes) {
+			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+				fd.mapping_buffers[i] = gpu::create_buffer(gpu.device_ref(), {
+					.size = mapping_bytes,
+					.usage = gpu::buffer_flag::storage
+				});
+			}
+			fd.mapping_buffer_capacity = mapping_bytes;
+		}
+
+		gse::memcpy(fd.mapping_buffers[frame_index].mapped(), index_mapping.data(), mapping_bytes);
+
+		auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instances_buffer();
+
+		gpu::descriptor_writer(gpu.device_ref(), fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
+			.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())
+			.buffer("index_mapping", fd.mapping_buffers[frame_index], 0, mapping_bytes)
+			.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)
+			.commit();
+
+		auto pc = fd.tlas_update_shader->cache_push_block("push_constants");
+		pc.set("count", instance_count);
+		pc.set("instance_stride", gc_r->instance_stride);
+		pc.set("model_matrix_offset", gc_r->instance_offsets.at("model_matrix"));
+
+		const std::uint32_t workgroups = (instance_count + 63) / 64;
+
+		auto pass = gpu.graph().add_pass<state>();
+		pass.track(gc_r->instance_buffer[frame_index]);
+		pass.reads(gpu::storage_read(gc_r->instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
+			.after<geometry_collector::state>()
+			.record([&fd, &gpu, frame_index, instance_count, workgroups, pc = std::move(pc)](gpu::recording_context& rec) {
+				rec.barrier(gpu::barrier_scope::transfer_to_compute);
+				rec.bind(fd.tlas_update_pipeline);
+				rec.bind_descriptors(fd.tlas_update_pipeline, fd.tlas_update_descriptors[frame_index]);
+				rec.push(fd.tlas_update_pipeline, pc);
+				rec.dispatch(workgroups, 1, 1);
+				gpu::build_tlas_in_place(gpu.device_ref(), fd.tlas_per_frame[frame_index], instance_count, rec);
+			});
+	}
+	else {
+		auto pass = gpu.graph().add_pass<state>();
+		pass.record([&fd, &gpu, frame_index](gpu::recording_context& rec) {
+			gpu::rebuild_tlas(gpu.device_ref(), fd.tlas_per_frame[frame_index], fd.instances[frame_index].span(), rec);
+		});
+	}
 }

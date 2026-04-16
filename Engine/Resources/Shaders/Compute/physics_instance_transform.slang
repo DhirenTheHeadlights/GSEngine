@@ -5,7 +5,6 @@ struct PhysicsMapping {
     uint body_index;
     uint instance_index;
     float3 center_of_mass;
-    float _pad;
 };
 
 [[vk::binding(0, 0)]]

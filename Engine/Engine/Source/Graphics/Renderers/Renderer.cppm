@@ -22,82 +22,135 @@ import gse.utility;
 import gse.platform;
 import gse.audio;
 import gse.math;
+import gse.utility;
 
 export namespace gse::renderer {
 	struct state {
-		gpu::context* ctx = nullptr;
 		bool hot_reload_enabled = false;
 		bool gpu_timestamps_enabled = true;
 		bool gpu_pipeline_stats_enabled = false;
 		bool profile_aggregator_enabled = true;
 		actions::handle dump_profile_action;
 		vec2f last_viewport{ 1920.f, 1080.f };
-
-		state() = default;
-
-		auto set_ui_focus(const bool focus) const -> void {
-			ctx->set_ui_focus(focus);
-		}
-
-		template <typename Resource>
-		auto get(const id& resource_id) const -> resource::handle<Resource> {
-			return ctx->get<Resource>(resource_id);
-		}
-
-		template <typename Resource>
-		auto get(const std::string& filename) const -> resource::handle<Resource> {
-			return ctx->get<Resource>(filename);
-		}
-
-		template <typename Resource>
-		auto try_get(const id& resource_id) const -> resource::handle<Resource> {
-			return ctx->try_get<Resource>(resource_id);
-		}
-
-		template <typename Resource>
-		auto try_get(const std::string& filename) const -> resource::handle<Resource> {
-			return ctx->try_get<Resource>(filename);
-		}
-
-		template <typename Resource, typename... Args>
-		auto queue(const std::string& name, Args&&... args) const -> resource::handle<Resource> {
-			return ctx->queue<Resource>(name, std::forward<Args>(args)...);
-		}
-
-		template <typename Resource>
-		auto instantly_load(const id& resource_id) const -> resource::handle<Resource> {
-			return ctx->instantly_load<Resource>(resource_id);
-		}
-
-		template <typename Resource>
-		auto add(Resource&& resource) const -> void {
-			ctx->add<Resource>(std::forward<Resource>(resource));
-		}
-
-		template <typename Resource>
-		auto resource_state(const id& resource_id) const -> resource::state {
-			return ctx->resource_state<Resource>(resource_id);
-		}
-
-		auto context_ref() -> gpu::context& {
-			return *ctx;
-		}
-
-		auto context_ref() const -> const gpu::context& {
-			return *ctx;
-		}
 	};
 
 	struct system {
-		static auto initialize(const init_context& phase, state& s) -> void;
+		struct resources {
+			gpu::context* ctx = nullptr;
+
+			auto set_ui_focus(
+				bool focus
+			) const -> void;
+
+			template <typename Resource>
+			auto get(
+				const id& resource_id
+			) const -> resource::handle<Resource>;
+
+			template <typename Resource>
+			auto get(
+				const std::string& filename
+			) const -> resource::handle<Resource>;
+
+			template <typename Resource>
+			auto try_get(
+				const id& resource_id
+			) const -> resource::handle<Resource>;
+
+			template <typename Resource>
+			auto try_get(
+				const std::string& filename
+			) const -> resource::handle<Resource>;
+
+			template <typename Resource, typename... Args>
+			auto queue(
+				const std::string& name,
+				Args&&... args
+			) const -> resource::handle<Resource>;
+
+			template <typename Resource>
+			auto instantly_load(
+				const id& resource_id
+			) const -> resource::handle<Resource>;
+
+			template <typename Resource>
+			auto add(
+				Resource&& resource
+			) const -> void;
+
+			template <typename Resource>
+			auto resource_state(
+				const id& resource_id
+			) const -> resource::state;
+
+			auto context_ref(
+			) -> gpu::context&;
+
+			auto context_ref(
+			) const -> const gpu::context&;
+		};
+
+		static auto initialize(const init_context& phase, resources& r, state& s) -> void;
 		static auto update(const update_context& ctx, state& s) -> void;
-		static auto shutdown(const shutdown_context& phase, const state& s) -> void;
+		static auto shutdown(const shutdown_context& phase) -> void;
 	};
 }
 
-auto gse::renderer::system::initialize(const init_context& phase, state& s) -> void {
+auto gse::renderer::system::resources::set_ui_focus(const bool focus) const -> void {
+	ctx->set_ui_focus(focus);
+}
+
+template <typename Resource>
+auto gse::renderer::system::resources::get(const id& resource_id) const -> resource::handle<Resource> {
+	return ctx->get<Resource>(resource_id);
+}
+
+template <typename Resource>
+auto gse::renderer::system::resources::get(const std::string& filename) const -> resource::handle<Resource> {
+	return ctx->get<Resource>(filename);
+}
+
+template <typename Resource>
+auto gse::renderer::system::resources::try_get(const id& resource_id) const -> resource::handle<Resource> {
+	return ctx->try_get<Resource>(resource_id);
+}
+
+template <typename Resource>
+auto gse::renderer::system::resources::try_get(const std::string& filename) const -> resource::handle<Resource> {
+	return ctx->try_get<Resource>(filename);
+}
+
+template <typename Resource, typename... Args>
+auto gse::renderer::system::resources::queue(const std::string& name, Args&&... args) const -> resource::handle<Resource> {
+	return ctx->queue<Resource>(name, std::forward<Args>(args)...);
+}
+
+template <typename Resource>
+auto gse::renderer::system::resources::instantly_load(const id& resource_id) const -> resource::handle<Resource> {
+	return ctx->instantly_load<Resource>(resource_id);
+}
+
+template <typename Resource>
+auto gse::renderer::system::resources::add(Resource&& resource) const -> void {
+	ctx->add<Resource>(std::forward<Resource>(resource));
+}
+
+template <typename Resource>
+auto gse::renderer::system::resources::resource_state(const id& resource_id) const -> resource::state {
+	return ctx->resource_state<Resource>(resource_id);
+}
+
+auto gse::renderer::system::resources::context_ref() -> gpu::context& {
+	return *ctx;
+}
+
+auto gse::renderer::system::resources::context_ref() const -> const gpu::context& {
+	return *ctx;
+}
+
+auto gse::renderer::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	s.ctx = &ctx;
+	r.ctx = &ctx;
 
 	ctx.add_loader<texture>();
 	ctx.add_loader<model>();
@@ -188,7 +241,7 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> void 
 	}
 }
 
-auto gse::renderer::system::shutdown(const shutdown_context& phase, const state& s) -> void {
+auto gse::renderer::system::shutdown(const shutdown_context& phase) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
 	ctx.wait_idle();

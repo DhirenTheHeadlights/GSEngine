@@ -45,7 +45,7 @@ auto gs::client::initialize() -> void {
             .build = 1
         }
     };
-	gse::network::add_discovery_provider(std::make_unique<gse::network::wan_directory_provider>(std::move(seed)));
+	gse::network::add_discovery_provider(std::make_shared<gse::network::wan_directory_provider>(std::move(seed)));
 	gse::network::refresh_servers(gse::milliseconds(200));
 
     m_owner->hook_world<gse::networked_world<gse::local_input_source>>();
@@ -53,7 +53,7 @@ auto gs::client::initialize() -> void {
 }
 
 auto gs::client::update() -> void {
-    gse::network::drain([this](gse::network::inbox_message& m) {
+    gse::network::drain([this](const gse::network::inbox_message& m) {
         gse::match(m)
             .if_is([&](const gse::network::connection_accepted& msg) {
                 m_owner->set_networked(true);
@@ -79,12 +79,12 @@ auto gs::client::update() -> void {
         m_refresh_clock.reset();
     }
 
-    if (gse::network::state() == gse::network::client::state::connected && m_server_info_timer.tick()) {
+    if (gse::network::connection_state() == gse::network::client::state::connected && m_server_info_timer.tick()) {
         gse::network::send(gse::network::server_info_request{});
     }
 
     gse::gui::panel("Network", [&](gse::gui::builder& ui) {
-        switch (gse::network::state()) {
+        switch (gse::network::connection_state()) {
             case gse::network::client::state::disconnected:
 				ui.draw<gse::gui::text>({
 					.content = "Status: Disconnected"
@@ -133,7 +133,7 @@ auto gs::client::update() -> void {
 
         if (ui.draw<gse::gui::button>({
 			.text = "Send Ping"
-		}) && gse::network::state() == gse::network::client::state::connected) {
+		}) && gse::network::connection_state() == gse::network::client::state::connected) {
             gse::network::send(gse::network::ping{
                 .sequence = ++m_ping_seq
             });

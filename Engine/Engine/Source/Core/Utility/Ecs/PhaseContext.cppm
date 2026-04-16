@@ -7,6 +7,7 @@ import :registry;
 import :id;
 import :n_buffer;
 import :channel_base;
+import :channel_promise;
 
 export namespace gse {
 	class system_provider {
@@ -59,6 +60,11 @@ export namespace gse {
 		auto push(
 			T item
 		) -> void;
+
+		template <promiseable T>
+		auto push(
+			T item
+		) -> channel_future<typename T::result_type>;
 
 	private:
 		push_fn m_push;
@@ -168,6 +174,20 @@ auto gse::channel_writer::push(T item) -> void {
 			return std::make_unique<typed_channel<T>>();
 		}
 	);
+}
+
+template <gse::promiseable T>
+auto gse::channel_writer::push(T item) -> channel_future<typename T::result_type> {
+	auto [future, promise] = make_promise<typename T::result_type>();
+	item.promise = std::move(promise);
+	m_push(
+		std::type_index(typeid(T)),
+		std::any(std::move(item)),
+		+[]() -> std::unique_ptr<channel_base> {
+			return std::make_unique<typed_channel<T>>();
+		}
+	);
+	return future;
 }
 
 template <typename T>

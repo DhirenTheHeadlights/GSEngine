@@ -40,9 +40,10 @@ export namespace gse::actions {
 
 	class handle {
 	public:
-		explicit handle(const id action_id = {}) : m_action_id(action_id) {}
+		handle() = default;
+		explicit handle(const id action_id) : m_action_id(action_id) {}
 
-		auto id() const -> gse::id {
+		auto id() const -> id {
 			return m_action_id;
 		}
 
@@ -419,7 +420,7 @@ export namespace gse::actions {
 			id action_id
 		) -> actions::description&;
 
-		double_buffer<state> states;
+		state current_input_state;
 		id_mapped_collection<actions::description> descriptions;
 		std::vector<pending_key_binding> pending_key_bindings;
 		std::map<std::string, int> rebinds;
@@ -677,8 +678,6 @@ auto gse::actions::system::initialize(init_context& phase, system_state& s) -> v
 }
 
 auto gse::actions::system::update(update_context& ctx, system_state& s) -> void {
-	s.states.flip();
-
 	for (const auto& [category, data] : ctx.read_channel<save::int_map_loaded>()) {
 		if (category == "Controls") {
 			s.rebinds = data;
@@ -721,7 +720,7 @@ auto gse::actions::system::update(update_context& ctx, system_state& s) -> void 
 	}
 	const auto& in = input_state->current_state();
 
-	auto& action_state = s.states.write();
+	auto& action_state = s.current_input_state;
 	action_state.begin_frame();
 
 	const auto count = s.descriptions.size();
@@ -780,7 +779,7 @@ auto gse::actions::system::update(update_context& ctx, system_state& s) -> void 
 }
 
 auto gse::actions::system_state::current_state() const -> const state& {
-	return states.read();
+	return current_input_state;
 }
 
 auto gse::actions::system_state::axis1_ids() const -> std::span<const std::uint16_t> {

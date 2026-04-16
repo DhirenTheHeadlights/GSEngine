@@ -315,7 +315,7 @@ auto gse::trace::start(const config& cfg) -> void {
 	register_virtual_thread(gpu_stats_virtual_tid, "GPU Stats");
 }
 
-auto gse::trace::begin_block(id id, std::uint64_t parent) -> std::uint64_t {
+auto gse::trace::begin_block(const id id, std::uint64_t parent) -> std::uint64_t {
 	if (paused()) return 0;
 
 	ensure_tls_registered();
@@ -344,7 +344,7 @@ auto gse::trace::begin_block(id id, std::uint64_t parent) -> std::uint64_t {
 	return eid;
 }
 
-auto gse::trace::end_block(id id, const std::uint64_t eid, const std::uint64_t parent) -> void {
+auto gse::trace::end_block(const id id, const std::uint64_t eid, const std::uint64_t parent) -> void {
 	if (paused() || eid == 0) {
 		return;
 	}
@@ -373,7 +373,7 @@ auto gse::trace::scope(id id, F&& f) -> void {
 }
 
 template <typename F>
-auto gse::trace::scope(id id, F&& f, std::uint64_t parent) -> void {
+auto gse::trace::scope(const id id, F&& f, std::uint64_t parent) -> void {
 	if (paused()) {
 		std::forward<F>(f)();
 		return;
@@ -435,7 +435,7 @@ auto gse::trace::scope(id id, F&& f, std::uint64_t parent) -> void {
 	std::forward<F>(f)();
 }
 
-auto gse::trace::begin_async(id id, const std::uint64_t key) -> void {
+auto gse::trace::begin_async(const id id, const std::uint64_t key) -> void {
 	if (paused()) {
 		return;
 	}
@@ -454,7 +454,7 @@ auto gse::trace::begin_async(id id, const std::uint64_t key) -> void {
 	});
 }
 
-auto gse::trace::end_async(id id, const std::uint64_t key) -> void {
+auto gse::trace::end_async(const id id, const std::uint64_t key) -> void {
 	if (paused()) {
 		return;
 	}
@@ -473,7 +473,7 @@ auto gse::trace::end_async(id id, const std::uint64_t key) -> void {
 	});
 }
 
-auto gse::trace::mark(id id) -> void {
+auto gse::trace::mark(const id id) -> void {
 	if (paused()) {
 		return;
 	}
@@ -492,7 +492,7 @@ auto gse::trace::mark(id id) -> void {
 	});
 }
 
-auto gse::trace::counter(id id, const double value) -> void {
+auto gse::trace::counter(const id id, const double value) -> void {
 	if (paused()) {
 		return;
 	}
@@ -511,7 +511,7 @@ auto gse::trace::counter(id id, const double value) -> void {
 	});
 }
 
-auto gse::trace::begin_async_at(id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
+auto gse::trace::begin_async_at(const id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
 	if (paused()) {
 		return;
 	}
@@ -530,7 +530,7 @@ auto gse::trace::begin_async_at(id id, const std::uint64_t key, const std::uint3
 	});
 }
 
-auto gse::trace::end_async_at(id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
+auto gse::trace::end_async_at(const id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
 	if (paused()) {
 		return;
 	}
@@ -549,7 +549,7 @@ auto gse::trace::end_async_at(id id, const std::uint64_t key, const std::uint32_
 	});
 }
 
-auto gse::trace::counter_at(id id, const double value, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
+auto gse::trace::counter_at(const id id, const double value, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
 	if (paused()) {
 		return;
 	}
@@ -573,7 +573,7 @@ auto gse::trace::register_virtual_thread(const std::uint32_t tid, const std::str
 	virtual_thread_names[tid] = std::string(name);
 }
 
-auto gse::trace::mark_hidden(id id) -> void {
+auto gse::trace::mark_hidden(const id id) -> void {
 	std::unique_lock lk(hidden_ids_mutex);
 	hidden_ids.insert(id.number());
 }
@@ -583,7 +583,7 @@ auto gse::trace::is_hidden(const uuid id) -> bool {
 	return hidden_ids.contains(id);
 }
 
-auto gse::trace::mark_pool_root(id id) -> void {
+auto gse::trace::mark_pool_root(const id id) -> void {
 	std::unique_lock lk(pool_root_ids_mutex);
 	pool_root_ids.insert(id.number());
 }
@@ -635,7 +635,7 @@ auto gse::trace::enabled() -> bool {
 	return trace_enabled.load(std::memory_order_relaxed);
 }
 
-auto gse::trace::set_finalize_paused(bool pause) -> void {
+auto gse::trace::set_finalize_paused(const bool pause) -> void {
 	finalize_paused_flag.store(pause, std::memory_order_relaxed);
 }
 
@@ -973,7 +973,7 @@ auto gse::trace::make_loc_id(const std::source_location& loc) -> id {
 			"__cdecl", "__stdcall", "__thiscall", "__vectorcall", "cdecl", "stdcall", "thiscall", "vectorcall"
 		};
 
-		if (auto it = std::ranges::find_if(candidates, [&](std::string_view cc) {
+		if (auto it = std::ranges::find_if(candidates, [&](const std::string_view cc) {
 			return tag.size() > cc.size() && tag.starts_with(cc);
 		}); it != std::end(candidates)) {
 			tag.remove_prefix(it->size());

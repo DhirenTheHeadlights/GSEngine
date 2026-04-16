@@ -1244,6 +1244,34 @@ auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s
 		std::vector<vbd::body_state> bodies;
 		bodies.reserve(motion.size());
 
+		for (motion_component& mc : motion) {
+			const auto eid = mc.owner_id();
+			const auto sc_it = ud.sleep_counters.find(eid);
+			const auto sc = sc_it != ud.sleep_counters.end() ? sc_it->second : 0u;
+
+			bodies.push_back({
+				.position = mc.current_position,
+				.predicted_position = mc.current_position,
+				.inertia_target = mc.current_position,
+				.initial_position = mc.current_position,
+				.body_velocity = mc.current_velocity,
+				.orientation = mc.orientation,
+				.predicted_orientation = mc.orientation,
+				.angular_inertia_target = mc.orientation,
+				.initial_orientation = mc.orientation,
+				.body_angular_velocity = mc.angular_velocity,
+				.motor_target = mc.current_position,
+				.mass_value = mc.mass,
+				.inv_inertia = mc.inv_inertial_tensor(),
+				.locked = mc.position_locked,
+				.update_orientation = mc.update_orientation,
+				.affected_by_gravity = mc.affected_by_gravity,
+				.sleep_counter = sc
+			});
+
+			mc.airborne = true;
+		}
+
 		for (collision_component& cc : collision) {
 			if (!cc.resolve_collisions) {
 				continue;
@@ -1259,6 +1287,32 @@ auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s
 
 		ud.vbd_solver.begin_frame(bodies, ud.contact_cache);
 		add_scene_contacts_to_solver(ud.vbd_solver, ud.contact_cache, objects, id_to_body_index, true);
+
+		for (motion_component& mc : motion) {
+			if (!mc.velocity_drive_active) {
+				continue;
+			}
+			if (mc.airborne) {
+				continue;
+			}
+			const auto it = id_to_body_index.find(mc.owner_id());
+			if (it == id_to_body_index.end()) {
+				continue;
+			}
+
+			auto& solver_body = ud.vbd_solver.body_states()[it->second];
+			if (solver_body.sleeping() && magnitude(mc.velocity_drive_target) > meters_per_second(.01f)) {
+				solver_body.sleep_counter = 0;
+			}
+
+			ud.vbd_solver.add_motor_constraint(vbd::velocity_motor_constraint{
+				.body_index = it->second,
+				.target_velocity = mc.velocity_drive_target,
+				.compliance = 0.5f,
+				.max_force = mc.mass * meters_per_second_squared(50.f),
+				.horizontal_only = true,
+			});
+		}
 
 		for (auto& jd : s.joints) {
 			const auto it_a = id_to_body_index.find(jd.entity_a);

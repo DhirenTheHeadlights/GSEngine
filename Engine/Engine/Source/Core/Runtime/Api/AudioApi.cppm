@@ -12,12 +12,12 @@ export namespace gse::audio {
 	auto play(
 		const std::string& clip_name,
 		bool loop = false
-	) -> void;
+	) -> channel_future<voice_handle>;
 
 	auto play(
 		const resource::handle<audio_clip>& clip,
 		bool loop = false
-	) -> void;
+	) -> channel_future<voice_handle>;
 
 	auto stop(
 		voice_handle handle
@@ -44,49 +44,52 @@ export namespace gse::audio {
 	) -> percentage<float>;
 }
 
-auto gse::audio::play(const std::string& clip_name, bool loop) -> void {
-	defer([clip_name, loop](state& s) { 
-		const auto clip = s.ctx->get<audio_clip>(clip_name);
-		s.play(*clip, loop);
+auto gse::audio::play(const std::string& clip_name, const bool loop) -> channel_future<voice_handle> {
+	const auto clip = resources_of<renderer::system::resources>().get<audio_clip>(clip_name);
+	return channel_add<play_request>({
+		.clip = clip.resolve(),
+		.loop = loop
 	});
 }
 
-auto gse::audio::play(const resource::handle<audio_clip>& clip, bool loop) -> void {
-	defer([clip, loop](state& s) {
-		s.play(*clip, loop);
+auto gse::audio::play(const resource::handle<audio_clip>& clip, const bool loop) -> channel_future<voice_handle> {
+	return channel_add<play_request>({
+		.clip = clip.resolve(),
+		.loop = loop
 	});
 }
 
-auto gse::audio::stop(voice_handle handle) -> void {
-	defer([handle](state& s) {
-		s.stop(handle);
+auto gse::audio::stop(const voice_handle handle) -> void {
+	channel_add<stop_request>({
+		.handle = handle
 	});
 }
 
-auto gse::audio::pause(voice_handle handle) -> void {
-	defer([handle](const state& s) {
-		s.pause(handle);
+auto gse::audio::pause(const voice_handle handle) -> void {
+	channel_add<pause_request>({
+		.handle = handle
 	});
 }
 
-auto gse::audio::resume(voice_handle handle) -> void {
-	defer([handle](const state& s) {
-		s.resume(handle);
+auto gse::audio::resume(const voice_handle handle) -> void {
+	channel_add<resume_request>({
+		.handle = handle
 	});
 }
 
-auto gse::audio::set_volume(voice_handle handle, percentage<float> vol) -> void {
-	defer([handle, vol](const state& s) {
-		s.set_volume(handle, vol);
+auto gse::audio::set_volume(const voice_handle handle, const percentage<float> vol) -> void {
+	channel_add<set_volume_request>({
+		.handle = handle,
+		.vol = vol
 	});
 }
 
-auto gse::audio::set_master_volume(percentage<float> vol) -> void {
-	defer([vol](state& s) {
-		s.set_master_volume(vol);
+auto gse::audio::set_master_volume(const percentage<float> vol) -> void {
+	channel_add<set_master_volume_request>({
+		.vol = vol
 	});
 }
 
 auto gse::audio::master_volume() -> percentage<float> {
-	return state_of<state>().master_volume();
+	return state_of<state>().master_vol;
 }

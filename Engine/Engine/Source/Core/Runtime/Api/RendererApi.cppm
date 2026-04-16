@@ -45,12 +45,18 @@ export namespace gse {
 	) -> void;
 }
 
+namespace gse {
+	auto renderer_resources() -> const renderer::system::resources& {
+		return resources_of<renderer::system::resources>();
+	}
+}
+
 template <typename Resource>
 auto gse::get(const id& id) -> resource::handle<Resource> {
 	if (!has_state<renderer::state>()) {
 		return {};
 	}
-	return state_of<renderer::state>().get<Resource>(id);
+	return renderer_resources().get<Resource>(id);
 }
 
 template <typename Resource>
@@ -58,7 +64,7 @@ auto gse::get(const std::string& filename) -> resource::handle<Resource> {
 	if (!has_state<renderer::state>()) {
 		return {};
 	}
-	return state_of<renderer::state>().get<Resource>(filename);
+	return renderer_resources().get<Resource>(filename);
 }
 
 template <typename Resource, typename... Args>
@@ -66,7 +72,7 @@ auto gse::queue(const std::string& name, Args&&... args) -> resource::handle<Res
 	if (!has_state<renderer::state>()) {
 		return {};
 	}
-	return state_of<renderer::state>().queue<Resource>(name, std::forward<Args>(args)...);
+	return renderer_resources().queue<Resource>(name, std::forward<Args>(args)...);
 }
 
 template <typename Resource>
@@ -74,7 +80,7 @@ auto gse::instantly_load(const id& id) -> resource::handle<Resource> {
 	if (!has_state<renderer::state>()) {
 		return {};
 	}
-	return state_of<renderer::state>().instantly_load<Resource>(id);
+	return renderer_resources().instantly_load<Resource>(id);
 }
 
 template <typename Resource>
@@ -82,7 +88,7 @@ auto gse::add(Resource&& resource) -> void {
 	if (!has_state<renderer::state>()) {
 		return;
 	}
-	state_of<renderer::state>().add<Resource>(std::forward<Resource>(resource));
+	renderer_resources().add<Resource>(std::forward<Resource>(resource));
 }
 
 template <typename Resource>
@@ -90,12 +96,12 @@ auto gse::resource_state(const id& id) -> resource::state {
 	if (!has_state<renderer::state>()) {
 		return resource::state::unloaded;
 	}
-	return state_of<renderer::state>().resource_state<Resource>(id);
+	return renderer_resources().resource_state<Resource>(id);
 }
 
 auto gse::set_ui_focus(const bool focus) -> void {
 	if (!has_state<renderer::state>()) {
 		return;
 	}
-	state_of<renderer::state>().set_ui_focus(focus);
+	renderer_resources().set_ui_focus(focus);
 }

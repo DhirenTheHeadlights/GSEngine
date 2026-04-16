@@ -9,14 +9,14 @@ import :core_api;
 
 export namespace gse::network {
 	auto add_discovery_provider(
-		std::unique_ptr<discovery_provider> p
+		std::shared_ptr<discovery_provider> p
 	) -> void;
 
 	auto clear_discovery_providers(
 	) -> void;
 
 	auto refresh_servers(
-		const time_t<std::uint32_t> timeout = milliseconds(350)
+		time_t<std::uint32_t> timeout = milliseconds(350)
 	) -> void;
 
 	auto servers(
@@ -24,25 +24,24 @@ export namespace gse::network {
 
 	auto connect(
 		const connection_options& options
-	) -> void;
-
-	auto drain(
-		const std::function<void(inbox_message&)>& handler,
-		const time_t<std::uint32_t> timeout = seconds(5)
-	) -> void;
+	) -> channel_future<bool>;
 
 	auto connect(
 		const discovery_result& pick,
 		const std::optional<address>& local = std::nullopt,
-		const time_t<std::uint32_t> timeout = seconds(5),
-		const time_t<std::uint32_t> retry = seconds(1)
-	) -> void;
+		time_t<std::uint32_t> timeout = seconds(5),
+		time_t<std::uint32_t> retry = seconds(1)
+	) -> channel_future<bool>;
 
 	auto disconnect(
 	) -> void;
 
-	auto state(
+	auto connection_state(
 	) -> client::state;
+
+	auto drain(
+		const std::function<void(const inbox_message&)>& handler
+	) -> void;
 
 	template <typename T>
 	auto send(
@@ -50,59 +49,62 @@ export namespace gse::network {
 	) -> void;
 }
 
-auto gse::network::add_discovery_provider(std::unique_ptr<discovery_provider> p) -> void {
-	defer([p = std::move(p)](system_state& s) mutable {
-		s.add_discovery_provider(std::move(p));
+auto gse::network::add_discovery_provider(std::shared_ptr<discovery_provider> p) -> void {
+	channel_add<add_provider_request>({
+		.provider = std::move(p)
 	});
 }
 
 auto gse::network::clear_discovery_providers() -> void {
-	defer([](system_state& s) {
-		s.clear_discovery_providers();
-	});
+	channel_add<clear_providers_request>({});
 }
 
 auto gse::network::refresh_servers(const time_t<std::uint32_t> timeout) -> void {
-	defer([timeout](system_state& s) {
-		s.refresh_servers(timeout);
+	channel_add<refresh_servers_request>({
+		.timeout = timeout
 	});
 }
 
 auto gse::network::servers() -> std::span<const discovery_result> {
-	return state_of<system_state>().servers();
+	return state_of<system_state>().available_servers;
 }
 
-auto gse::network::connect(const connection_options& options) -> void {
-	defer([options](system_state& s) {
-		s.connect(options);
+auto gse::network::connect(const connection_options& options) -> channel_future<bool> {
+	return channel_add<connect_request>({
+		.options = options
 	});
 }
 
-auto gse::network::drain(const std::function<void(inbox_message&)>& handler, const time_t<std::uint32_t> timeout) -> void {
-	defer([handler, timeout](system_state& s) {
-		s.drain(handler, timeout);
-	});
-}
-
-auto gse::network::connect(const discovery_result& pick, const std::optional<address>& local, const time_t<std::uint32_t> timeout, const time_t<std::uint32_t> retry) -> void {
-	defer([pick, local, timeout, retry](system_state& s) {
-		s.connect(pick, local, timeout, retry);
+auto gse::network::connect(const discovery_result& pick, const std::optional<address>& local, const time_t<std::uint32_t> timeout, const time_t<std::uint32_t> retry) -> channel_future<bool> {
+	return channel_add<connect_request>({
+		.options = {
+			.addr = pick.addr,
+			.local_bind = local,
+			.timeout = timeout,
+			.retry = retry
+		}
 	});
 }
 
 auto gse::network::disconnect() -> void {
-	defer([](system_state& s) {
-		s.disconnect();
-	});
+	channel_add<disconnect_request>({});
 }
 
-auto gse::network::state() -> client::state {
-	return state_of<system_state>().current_state();
+auto gse::network::connection_state() -> client::state {
+	return state_of<system_state>().connection_state;
+}
+
+auto gse::network::drain(const std::function<void(const inbox_message&)>& handler) -> void {
+	for (auto& msg : state_of<system_state>().user_inbox) {
+		handler(msg);
+	}
 }
 
 template <typename T>
 auto gse::network::send(const T& m) -> void {
-	defer([m](system_state& s) {
-		s.send(m);
+	channel_add<send_request>({
+		.action = [m](client& c) {
+			c.send(m);
+		}
 	});
 }

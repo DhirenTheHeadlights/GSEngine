@@ -79,6 +79,10 @@ export namespace gse::gpu {
 			this const tlas& self
 		) -> acceleration_structure_handle;
 
+		[[nodiscard]] auto instances_buffer(
+			this tlas& self
+		) -> buffer&;
+
 		explicit operator bool(
 		) const;
 	private:
@@ -88,6 +92,8 @@ export namespace gse::gpu {
 		vk::raii::AccelerationStructureKHR m_handle{ nullptr };
 
 		friend auto rebuild_tlas(device&, tlas&, std::span<const acceleration_structure_instance>, vulkan::recording_context&) -> void;
+		friend auto write_tlas_instances(tlas&, std::span<const acceleration_structure_instance>) -> void;
+		friend auto build_tlas_in_place(device&, tlas&, std::uint32_t, vulkan::recording_context&) -> void;
 	};
 
 	auto build_blas(
@@ -104,6 +110,18 @@ export namespace gse::gpu {
 		device& dev,
 		tlas& t,
 		std::span<const acceleration_structure_instance> instances,
+		vulkan::recording_context& ctx
+	) -> void;
+
+	auto write_tlas_instances(
+		tlas& t,
+		std::span<const acceleration_structure_instance> instances
+	) -> void;
+
+	auto build_tlas_in_place(
+		device& dev,
+		tlas& t,
+		std::uint32_t instance_count,
 		vulkan::recording_context& ctx
 	) -> void;
 
@@ -299,7 +317,7 @@ auto gse::gpu::build_tlas(device& dev, const std::uint32_t max_instances) -> tla
 	const vk::DeviceSize instance_buf_size = max_instances * sizeof(vk::AccelerationStructureInstanceKHR);
 	auto instance_buf = dev.allocator().create_buffer({
 		.size = instance_buf_size,
-		.usage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress
+		.usage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer
 	});
 
 	auto as = vk_device.createAccelerationStructureKHR({
@@ -416,6 +434,92 @@ auto gse::gpu::tlas::native_handle(this const tlas& self) -> acceleration_struct
 	return { reinterpret_cast<std::uint64_t>(static_cast<VkAccelerationStructureKHR>(*self.m_handle)) };
 }
 
+auto gse::gpu::tlas::instances_buffer(this tlas& self) -> buffer& {
+	return self.m_instance_buffer;
+}
+
 gse::gpu::tlas::operator bool() const {
 	return *m_handle != nullptr;
+}
+
+auto gse::gpu::write_tlas_instances(tlas& t, const std::span<const acceleration_structure_instance> instances) -> void {
+	std::vector<vk::AccelerationStructureInstanceKHR> vk_instances;
+	vk_instances.reserve(instances.size());
+	for (const auto& inst : instances) {
+		vk_instances.push_back(to_vk_instance(inst));
+	}
+
+	if (auto* mapped = t.m_instance_buffer.mapped(); mapped && !vk_instances.empty()) {
+		std::memcpy(mapped, vk_instances.data(), vk_instances.size() * sizeof(vk::AccelerationStructureInstanceKHR));
+	}
+}
+
+auto gse::gpu::build_tlas_in_place(device& dev, tlas& t, const std::uint32_t instance_count, vulkan::recording_context& ctx) -> void {
+	const auto& vk_device = dev.logical_device();
+
+	const vk::DeviceAddress instance_addr = vk_device.getBufferAddress({
+		.buffer = t.m_instance_buffer.native().buffer
+	});
+
+	const vk::DeviceSize scratch_alignment = acceleration_structure_scratch_alignment(dev);
+	const vk::DeviceAddress scratch_raw = vk_device.getBufferAddress({
+		.buffer = t.m_scratch.native().buffer
+	});
+	const vk::DeviceAddress scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
+
+	constexpr vk::MemoryBarrier2 pre_barrier{
+		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+		.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR
+	};
+	const vk::DependencyInfo pre_dep{
+		.memoryBarrierCount = 1,
+		.pMemoryBarriers = &pre_barrier
+	};
+	ctx.pipeline_barrier(pre_dep);
+
+	const vk::AccelerationStructureGeometryInstancesDataKHR instances_data{
+		.arrayOfPointers = vk::False,
+		.data = {
+			.deviceAddress = instance_addr
+		}
+	};
+	const vk::AccelerationStructureGeometryKHR geometry{
+		.geometryType = vk::GeometryTypeKHR::eInstances,
+		.geometry = {
+			.instances = instances_data
+		}
+	};
+
+	const vk::AccelerationStructureBuildGeometryInfoKHR build_info{
+		.type = vk::AccelerationStructureTypeKHR::eTopLevel,
+		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild | vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
+		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
+		.dstAccelerationStructure = *t.m_handle,
+		.geometryCount = 1,
+		.pGeometries = &geometry,
+		.scratchData = {
+			.deviceAddress = scratch_addr
+		}
+	};
+
+	const vk::AccelerationStructureBuildRangeInfoKHR range{
+		.primitiveCount = instance_count
+	};
+	const vk::AccelerationStructureBuildRangeInfoKHR* range_ptr = &range;
+
+	ctx.build_acceleration_structure(build_info, { &range_ptr, 1 });
+
+	constexpr vk::MemoryBarrier2 post_barrier{
+		.srcStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+		.srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
+		.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR | vk::PipelineStageFlagBits2::eFragmentShader,
+		.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR
+	};
+	const vk::DependencyInfo post_dep{
+		.memoryBarrierCount = 1,
+		.pMemoryBarriers = &post_barrier
+	};
+	ctx.pipeline_barrier(post_dep);
 }
