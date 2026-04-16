@@ -85,6 +85,10 @@ export namespace gse {
             size_type capacity
         ) -> void;
 
+        auto assign_unsorted(
+            std::vector<value_type> values
+        ) -> void;
+
     private:
         [[nodiscard]] auto lower(
             const Key& key
@@ -213,6 +217,14 @@ auto gse::flat_map<Key, Value, Compare>::end(this Self& self) -> decltype(auto) 
 template <typename Key, typename Value, typename Compare>
 auto gse::flat_map<Key, Value, Compare>::reserve(const size_type capacity) -> void {
     m_data.reserve(capacity);
+}
+
+template <typename Key, typename Value, typename Compare>
+auto gse::flat_map<Key, Value, Compare>::assign_unsorted(std::vector<value_type> values) -> void {
+    m_data = std::move(values);
+    std::ranges::sort(m_data, m_compare, &value_type::first);
+    const auto dup_begin = std::ranges::unique(m_data, {}, &value_type::first).begin();
+    m_data.erase(dup_begin, m_data.end());
 }
 
 template <typename Key, typename Value, typename Compare>

@@ -330,10 +330,8 @@ auto gse::scheduler::run_graph_update() -> void {
 		task::group group(find_or_generate_id("scheduler::parallel_updates"));
 		for (const auto& node : m_nodes) {
 			group.post([&, node = node.get()] {
-				trace::scope(node->trace_id(), [&] {
-					node->graph_update(u_ctx);
-				});
-			});
+				node->graph_update(u_ctx);
+			}, node->trace_id());
 		}
 		group.wait();
 	}

@@ -120,7 +120,12 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
     });
 
     engine_instance->initialize();
+    trace::finalize_frame();
+
     task::start([&] {
+        const auto update_id = find_or_generate_id("engine::update");
+        const auto render_id = find_or_generate_id("engine::render");
+
         while (!should_shutdown.load(std::memory_order_acquire)) {
             if (engine_flags.test(engine_flag::create_window)) {
                 window::poll_events();
@@ -129,10 +134,14 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
             frame_sync::begin();
 
             trace::scope(engine_instance->id(), [&] {
-                engine_instance->update();
+                trace::scope(update_id, [&] {
+                    engine_instance->update();
+                });
 
                 if (engine_flags.test(engine_flag::render)) {
-                    engine_instance->render();
+                    trace::scope(render_id, [&] {
+                        engine_instance->render();
+                    });
                 }
             });
 

@@ -168,14 +168,19 @@ auto gse::task_graph::clear() -> void {
 }
 
 auto gse::task_graph::notify_state_ready(const std::type_index state_type) -> void {
-	std::lock_guard lock(m_state_mutex);
-	m_state_ready[state_type] = true;
+	std::vector<std::coroutine_handle<>> handles;
+	{
+		std::lock_guard lock(m_state_mutex);
+		m_state_ready[state_type] = true;
 
-	if (const auto it = m_state_waiters.find(state_type); it != m_state_waiters.end()) {
-		for (auto h : it->second) {
-			task::post([h] { h.resume(); });
+		if (const auto it = m_state_waiters.find(state_type); it != m_state_waiters.end()) {
+			handles = std::move(it->second);
+			it->second.clear();
 		}
-		it->second.clear();
+	}
+
+	for (auto h : handles) {
+		task::post([h] { h.resume(); });
 	}
 }
 
@@ -199,12 +204,20 @@ auto gse::task_graph::wait_state_ready(const std::type_index state_type) -> asyn
 		auto await_suspend(
 			std::coroutine_handle<> h
 		) const noexcept -> void {
-			std::lock_guard lock(graph.m_state_mutex);
-			if (graph.m_state_ready.contains(type) && graph.m_state_ready[type]) {
-				task::post([h] { h.resume(); });
-				return;
+			bool ready_now = false;
+			{
+				std::lock_guard lock(graph.m_state_mutex);
+				if (graph.m_state_ready.contains(type) && graph.m_state_ready[type]) {
+					ready_now = true;
+				}
+				else {
+					graph.m_state_waiters[type].push_back(h);
+				}
 			}
-			graph.m_state_waiters[type].push_back(h);
+
+			if (ready_now) {
+				task::post([h] { h.resume(); });
+			}
 		}
 
 		static auto await_resume(

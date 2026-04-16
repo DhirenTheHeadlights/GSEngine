@@ -1353,6 +1353,9 @@ auto gse::vulkan::render_graph::execute() -> void {
 		return;
 	}
 
+	std::vector<std::size_t> sorted;
+
+	gse::trace::scope(gse::find_or_generate_id("graph::plan"), [&]() {
 	std::unordered_map<std::type_index, std::size_t> type_to_index;
 	for (std::size_t i = 0; i < passes.size(); ++i) {
 		type_to_index[passes[i].pass_type] = i;
@@ -1403,7 +1406,6 @@ auto gse::vulkan::render_graph::execute() -> void {
 		}
 	}
 
-	std::vector<std::size_t> sorted;
 	sorted.reserve(passes.size());
 
 	std::queue<std::size_t> queue;
@@ -1419,11 +1421,13 @@ auto gse::vulkan::render_graph::execute() -> void {
 			if (--in_degree[next] == 0) queue.push(next);
 		}
 	}
+	});
 
 	recording_context ctx(command);
 
 	m_device->descriptor_heap().bind_buffer(command);
 
+	gse::trace::scope(gse::find_or_generate_id("graph::record"), [&] {
 	for (std::size_t si = 0; si < sorted.size(); ++si) {
 		auto& pass = passes[sorted[si]];
 
@@ -1584,6 +1588,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 			command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 2 + pass_index * 2);
 		}
 	}
+	});
 
 	if (timestamps_enabled && slot.pass_count > 0) {
 		slot.results_valid = true;

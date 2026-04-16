@@ -174,6 +174,11 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 		co_return;
 	}
 
+	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
+	if (render_items.empty()) {
+		co_return;
+	}
+
 	const auto frame_index = graph.current_frame();
 
 	const auto* cam_state = ctx.try_state_of<camera::state>();
