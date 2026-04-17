@@ -16,7 +16,7 @@ export namespace gse::vbd {
 	constexpr std::uint32_t max_contacts = 16384;
 	constexpr std::uint32_t max_motors = 16;
 	constexpr std::uint32_t max_joints = 128;
-	constexpr std::uint32_t max_colors = 32;
+	constexpr std::uint32_t max_colors = 16;
 	constexpr std::uint32_t max_collision_pairs = 16384;
 	constexpr std::uint32_t workgroup_size = 64;
 	constexpr std::uint32_t collision_state_header_uints = 8;
@@ -258,7 +258,9 @@ export namespace gse::vbd {
 			resource::handle<shader> update_joint_lambda;
 			resource::handle<shader> prepare_indirect;
 			resource::handle<shader> prepare_contact_indirect;
+			resource::handle<shader> prepare_color_indirect;
 			resource::handle<shader> freeze_jacobians;
+			resource::handle<shader> apply_jacobi;
 
 			gpu::pipeline predict_pipeline;
 			gpu::pipeline solve_color_pipeline;
@@ -273,7 +275,9 @@ export namespace gse::vbd {
 			gpu::pipeline update_joint_lambda_pipeline;
 			gpu::pipeline prepare_indirect_pipeline;
 			gpu::pipeline prepare_contact_indirect_pipeline;
+			gpu::pipeline prepare_color_indirect_pipeline;
 			gpu::pipeline freeze_jacobians_pipeline;
+			gpu::pipeline apply_jacobi_pipeline;
 
 			float solve_ms = 0.f;
 			bool initialized = false;
@@ -304,6 +308,7 @@ export namespace gse::vbd {
 			gpu::buffer physics_snapshot_buffer;
 			gpu::buffer indirect_dispatch_buffer;
 			gpu::buffer frozen_jacobian_buffer;
+			gpu::buffer solve_deltas_buffer;
 
 			struct readback_frame_info {
 				std::uint32_t body_count = 0;
@@ -480,13 +485,18 @@ auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
 		std::memset(f.physics_snapshot_buffer.mapped(), 0, f.physics_snapshot_buffer.size());
 
 		f.indirect_dispatch_buffer = gpu::create_buffer(ctx.device_ref(), {
-			.size = 2 * 3 * sizeof(std::uint32_t),
+			.size = (2 + max_colors) * 3 * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::indirect
 		});
 		std::memset(f.indirect_dispatch_buffer.mapped(), 0, f.indirect_dispatch_buffer.size());
 
 		f.frozen_jacobian_buffer = gpu::create_buffer(ctx.device_ref(), {
 			.size = max_contacts * m_frozen_jacobian_layout.stride,
+			.usage = gpu::buffer_flag::storage
+		});
+
+		f.solve_deltas_buffer = gpu::create_buffer(ctx.device_ref(), {
+			.size = max_bodies * 2 * sizeof(float) * 4,
 			.usage = gpu::buffer_flag::storage
 		});
 	}
@@ -1204,7 +1214,9 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.update_joint_lambda = ctx.get<shader>("Shaders/VBDPhysics/vbd_update_joint_lambda");
 	m_compute.prepare_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_indirect");
 	m_compute.prepare_contact_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_contact_indirect");
+	m_compute.prepare_color_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_color_indirect");
 	m_compute.freeze_jacobians = ctx.get<shader>("Shaders/VBDPhysics/vbd_freeze_jacobians");
+	m_compute.apply_jacobi = ctx.get<shader>("Shaders/VBDPhysics/vbd_apply_jacobi");
 
 	ctx.instantly_load(m_compute.predict);
 	ctx.instantly_load(m_compute.solve_color);
@@ -1219,7 +1231,9 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	ctx.instantly_load(m_compute.update_joint_lambda);
 	ctx.instantly_load(m_compute.prepare_indirect);
 	ctx.instantly_load(m_compute.prepare_contact_indirect);
+	ctx.instantly_load(m_compute.prepare_color_indirect);
 	ctx.instantly_load(m_compute.freeze_jacobians);
+	ctx.instantly_load(m_compute.apply_jacobi);
 
 	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.predict, "vbd_push_constants");
 	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.solve_color, "vbd_push_constants");
@@ -1234,7 +1248,9 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.update_joint_lambda, "vbd_push_constants");
 	m_compute.prepare_indirect_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.prepare_indirect, "vbd_push_constants");
 	m_compute.prepare_contact_indirect_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.prepare_contact_indirect, "vbd_push_constants");
+	m_compute.prepare_color_indirect_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.prepare_color_indirect, "vbd_push_constants");
 	m_compute.freeze_jacobians_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.freeze_jacobians, "vbd_push_constants");
+	m_compute.apply_jacobi_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.apply_jacobi, "vbd_push_constants");
 
 	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
 		const auto block = sh->uniform_block(name);
@@ -1279,6 +1295,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 			.buffer("grid_data", f.grid_buffer)
 			.buffer("indirect_args", f.indirect_dispatch_buffer)
 			.buffer("frozen_jacobians", f.frozen_jacobian_buffer)
+			.buffer("solve_deltas", f.solve_deltas_buffer)
 			.commit();
 	}
 
@@ -1356,6 +1373,8 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 		pc.set("convergence_threshold", cfg.convergence_threshold.linear);
 		pc.set("min_iterations", cfg.min_iterations);
 		pc.set("grid_cell_size", m_grid_cell_size);
+		pc.set("use_jacobi", cfg.use_jacobi ? 1u : 0u);
+		pc.set("jacobi_omega", cfg.jacobi_omega);
 		f.queue.push(pipeline, pc);
 	};
 
@@ -1393,7 +1412,7 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 
 		bind_and_push(m_compute.collision_build_adjacency, m_compute.collision_build_adjacency_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(1, 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+		f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
 
 		f.queue.mark_timing(timing_slot::after_collision);
 
@@ -1439,26 +1458,37 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 			color_pc.set("convergence_threshold", cfg.convergence_threshold.linear);
 			color_pc.set("min_iterations", cfg.min_iterations);
 			color_pc.set("grid_cell_size", m_grid_cell_size);
+			color_pc.set("use_jacobi", cfg.use_jacobi ? 1u : 0u);
+			color_pc.set("jacobi_omega", cfg.jacobi_omega);
 
-			for (std::uint32_t color = 0; color < num_colors; ++color) {
-				color_pc.set("color_offset", color);
+			if (cfg.use_jacobi) {
 				f.queue.push(m_compute.solve_color_pipeline, color_pc);
 				f.queue.dispatch(body_workgroups, 1, 1);
-				if (color + 1 < num_colors) {
-					f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-				}
-			}
+				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+				bind_and_push(m_compute.apply_jacobi, m_compute.apply_jacobi_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
+				f.queue.dispatch(body_workgroups, 1, 1);
+				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+			} else {
+				for (std::uint32_t color = 0; color < num_colors; ++color) {
+					color_pc.set("color_offset", color);
+					f.queue.push(m_compute.solve_color_pipeline, color_pc);
+					f.queue.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
+					if (color + 1 < num_colors) {
+						f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+					}
+				}
+
+				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+			}
 
 			bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
 			f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
-			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 			if (m_joint_count > 0) {
 				bind_and_push(m_compute.update_joint_lambda, m_compute.update_joint_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
 				f.queue.dispatch(ceil_div(m_joint_count, workgroup_size), 1, 1);
-				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 			}
+			f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
 		}
 
 		f.queue.mark_timing(timing_slot::after_solve);
@@ -1468,6 +1498,10 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		if (cfg.post_stabilize) {
+			bind_and_push(m_compute.prepare_color_indirect, m_compute.prepare_color_indirect_pipeline, 0u, 0u, sub, num_iterations, 0.f, substep_warm_start_count);
+			f.queue.dispatch(1, 1, 1);
+			f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
+
 			auto color_pc = m_compute.solve_color->cache_push_block("vbd_push_constants");
 			color_pc.set("body_count", m_body_count);
 			color_pc.set("contact_count", max_contacts);
@@ -1498,19 +1532,31 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 			color_pc.set("convergence_threshold", cfg.convergence_threshold.linear);
 			color_pc.set("min_iterations", cfg.min_iterations);
 			color_pc.set("grid_cell_size", m_grid_cell_size);
+			color_pc.set("use_jacobi", cfg.use_jacobi ? 1u : 0u);
+			color_pc.set("jacobi_omega", cfg.jacobi_omega);
 
 			f.queue.bind_pipeline(m_compute.solve_color_pipeline);
 			f.queue.bind_descriptors(m_compute.solve_color_pipeline, f.descriptors);
 
-			for (std::uint32_t color = 0; color < num_colors; ++color) {
-				color_pc.set("color_offset", color);
+			if (cfg.use_jacobi) {
 				f.queue.push(m_compute.solve_color_pipeline, color_pc);
 				f.queue.dispatch(body_workgroups, 1, 1);
-				if (color + 1 < num_colors) {
-					f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+
+				bind_and_push(m_compute.apply_jacobi, m_compute.apply_jacobi_pipeline, 0u, 0u, sub, num_iterations, 0.f, substep_warm_start_count);
+				f.queue.dispatch(body_workgroups, 1, 1);
+				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+			} else {
+				for (std::uint32_t color = 0; color < num_colors; ++color) {
+					color_pc.set("color_offset", color);
+					f.queue.push(m_compute.solve_color_pipeline, color_pc);
+					f.queue.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
+					if (color + 1 < num_colors) {
+						f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+					}
 				}
+				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 			}
-			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 		}
 
 		f.queue.mark_timing(timing_slot::after_velocity);

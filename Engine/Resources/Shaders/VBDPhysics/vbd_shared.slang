@@ -5,7 +5,7 @@ public static const uint SLEEP_THRESHOLD = 60;
 public static const uint MAX_BODIES = 2048;
 public static const uint MAX_CONTACTS = 16384;
 public static const uint MAX_COLLISION_PAIRS = 16384;
-public static const uint MAX_COLORS = 32;
+public static const uint MAX_COLORS = 16;
 public static const uint MAX_JOINTS = 128;
 
 public static const uint JOINT_TYPE_DISTANCE = 0;
@@ -160,6 +160,8 @@ public struct vbd_push_constants {
     public float convergence_threshold;
     public uint min_iterations;
     public float grid_cell_size;
+    public uint use_jacobi;
+    public float jacobi_omega;
 };
 
 public float3 rotate_vector(float4 q, float3 v) {

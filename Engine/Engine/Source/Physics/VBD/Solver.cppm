@@ -35,10 +35,12 @@ export namespace gse::vbd {
 		velocity velocity_sleep_threshold = meters_per_second(0.001f);
 		angular_velocity angular_sleep_threshold = radians_per_second(0.05f);
 		gap speculative_margin = meters(0.02f);
-		step_delta convergence_threshold = { meters(0.001f), radians(0.001f) };
+		step_delta convergence_threshold = { meters(0.01f), radians(0.01f) };
 		std::uint32_t min_iterations = 4;
 		float linear_damping = 0.f;
 		float angular_damping = 0.01f;
+		bool use_jacobi = false;
+		float jacobi_omega = 0.67f;
 	};
 
 	struct frozen_contact_jacobian {
@@ -542,6 +544,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		body.body_velocity *= (1.f - m_config.linear_damping);
 		body.body_angular_velocity *= (1.f - m_config.angular_damping);
 
+		constexpr velocity max_linear_speed = meters_per_second(15.f);
+		if (const auto v = magnitude(body.body_velocity); v > max_linear_speed) {
+			body.body_velocity *= (max_linear_speed / v);
+		}
+
 		constexpr angular_velocity max_angular_speed = radians_per_second(50.f);
 		if (const auto w = magnitude(body.body_angular_velocity); w > max_angular_speed) {
 			body.body_angular_velocity *= (max_angular_speed / w);
@@ -653,7 +660,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		};
 	}
 
-	auto solve_iteration = [&](const float alpha) {
+	auto solve_iteration_gauss_seidel = [&](const float alpha) {
 		for (const auto& body_color : m_graph.body_colors()) {
 			for (const auto bi : body_color) {
 				m_solve_state[bi] = {};
@@ -699,6 +706,40 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				accumulate_joint(joints[ji], i, h_squared, dt, alpha);
 			}
 			perform_newton_step(i, h_squared);
+		}
+	};
+
+	auto solve_iteration_jacobi = [&](const float alpha) {
+		for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
+			if (m_bodies[bi].locked || m_bodies[bi].sleeping()) {
+				continue;
+			}
+			m_solve_state[bi] = {};
+			for (const auto ci : m_graph.body_contact_indices(bi)) {
+				accumulate_contact(contacts[ci], m_frozen_jacobians[ci], bi, h_squared, alpha);
+			}
+			for (const auto ji : m_graph.body_joint_indices(bi)) {
+				accumulate_joint(joints[ji], bi, h_squared, dt, alpha);
+			}
+			if (const auto mi = m_body_motor_index[bi]; mi != no_motor) {
+				accumulate_motor(motors[mi], h_squared);
+			}
+		}
+
+		for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
+			if (m_bodies[bi].locked || m_bodies[bi].sleeping()) {
+				continue;
+			}
+			perform_newton_step(bi, h_squared);
+		}
+	};
+
+	auto solve_iteration = [&](const float alpha) {
+		if (m_config.use_jacobi) {
+			solve_iteration_jacobi(alpha);
+		}
+		else {
+			solve_iteration_gauss_seidel(alpha);
 		}
 	};
 
@@ -972,17 +1013,19 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	h_xx[1][1] += reg;
 	h_xx[2][2] += reg;
 
+	const float omega = m_config.use_jacobi ? m_config.jacobi_omega : 1.f;
+
 	if (!body.update_orientation) {
 		const auto inv_h = h_xx.inverse();
 		auto delta_x = -(inv_h * g_lin);
 
-		constexpr length max_step = meters(0.5f);
+		constexpr length max_step = meters(0.1f);
 		const auto step_size = magnitude(delta_x);
 		if (step_size > max_step) {
 			delta_x *= (max_step / step_size);
 		}
 
-		body.predicted_position += delta_x;
+		body.predicted_position += delta_x * omega;
 		return { step_size, angle{} };
 	}
 
@@ -1011,7 +1054,7 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	auto delta_theta = -(s_inv * (g_ang - h_tx * (h_xx_inv * g_lin)));
 	auto delta_x = -(h_xx_inv * (g_lin + h_xt * delta_theta));
 
-	constexpr length max_lin_step = meters(0.5f);
+	constexpr length max_lin_step = meters(0.1f);
 	constexpr angle max_ang_step = radians(0.5f);
 
 	const auto lin_step = magnitude(delta_x);
@@ -1024,10 +1067,10 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 		delta_theta *= (max_ang_step / ang_step);
 	}
 
-	body.predicted_position += delta_x;
+	body.predicted_position += delta_x * omega;
 
 	if (ang_step > radians(1e-7f)) {
-		body.predicted_orientation = normalize(from_axis_angle_vector(vec3<angle>(delta_theta)) * body.predicted_orientation);
+		body.predicted_orientation = normalize(from_axis_angle_vector(vec3<angle>(delta_theta) * omega) * body.predicted_orientation);
 	}
 
 	return { lin_step, ang_step };

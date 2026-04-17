@@ -223,6 +223,8 @@ void solve_body(uint bi) {
         float3 diff = body.predicted_position.xyz - body.motor_target.xyz;
         if (motor_horizontal_only) diff.y = 0.0;
 
+        InterlockedMax(collision_state[CONVERGENCE_MAX_DELTA_INDEX], asuint(length(diff)));
+
         motor_grad = diff * motor_stiffness;
         float grad_mag = length(motor_grad);
         if (grad_mag > m.max_force) {
@@ -344,12 +346,16 @@ void solve_body(uint bi) {
     if (!update_orient) {
         float3 delta_x = -mat3_mul_vec(h_xx_inv, g_lin);
 
-        if (!is_finite3(delta_x)) { body_data[bi] = body; return; }
+        if (!is_finite3(delta_x)) return;
         float step_size = length(delta_x);
-        if (step_size > 0.5) delta_x *= (0.5 / step_size);
+        if (step_size > 0.1) delta_x *= (0.1 / step_size);
 
-        body.predicted_position.xyz += delta_x;
-        body_data[bi] = body;
+        if (pc.use_jacobi != 0) {
+            solve_deltas[bi * 2] = float4(delta_x * pc.jacobi_omega, 0);
+        } else {
+            body.predicted_position.xyz += delta_x;
+            body_data[bi] = body;
+        }
         return;
     }
 
@@ -395,16 +401,21 @@ void solve_body(uint bi) {
     }
 
     if (!is_finite3(delta_x) || !is_finite3(delta_theta)) {
-        body_data[bi] = body;
         return;
     }
     float lin_size = length(delta_x);
-    if (lin_size > 0.5) {
-        delta_x *= (0.5 / lin_size);
+    if (lin_size > 0.1) {
+        delta_x *= (0.1 / lin_size);
     }
     float ang_size = length(delta_theta);
     if (ang_size > 0.5) {
         delta_theta *= (0.5 / ang_size);
+    }
+
+    if (pc.use_jacobi != 0) {
+        solve_deltas[bi * 2] = float4(delta_x * pc.jacobi_omega, 0);
+        solve_deltas[bi * 2 + 1] = float4(delta_theta * pc.jacobi_omega, 0);
+        return;
     }
 
     body.predicted_position.xyz += delta_x;
@@ -430,6 +441,25 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     if (collision_state[CONVERGED_FLAG_INDEX] != 0) return;
 
+    if (pc.use_jacobi != 0) {
+        uint bi = idx;
+        if (bi >= pc.body_count) return;
+
+        solve_deltas[bi * 2] = float4(0, 0, 0, 0);
+        solve_deltas[bi * 2 + 1] = float4(0, 0, 0, 0);
+
+        solve_body(bi);
+
+        if (bi == 0 && pc.current_alpha > 0.0 && pc.iteration + 1 >= pc.min_iterations) {
+            float max_viol = asfloat(collision_state[CONVERGENCE_MAX_DELTA_INDEX]);
+            if (max_viol < pc.convergence_threshold) {
+                collision_state[CONVERGED_FLAG_INDEX] = 1;
+            }
+            collision_state[CONVERGENCE_MAX_DELTA_INDEX] = 0;
+        }
+        return;
+    }
+
     uint num_colors = min(collision_state[1], pc.color_count);
     uint color = pc.color_offset;
     if (color >= num_colors) return;
@@ -443,10 +473,14 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         }
     }
 
-    if (color == num_colors - 1 && pc.joint_count == 0 && pc.current_alpha > 0.0 && pc.iteration + 1 >= pc.min_iterations && idx == 0) {
+    if (color == num_colors - 1 && pc.current_alpha > 0.0 && pc.iteration + 1 >= pc.min_iterations && idx == 0) {
         float max_viol = asfloat(collision_state[CONVERGENCE_MAX_DELTA_INDEX]);
         if (max_viol < pc.convergence_threshold) {
             collision_state[CONVERGED_FLAG_INDEX] = 1;
+            indirect_args[1].x = 0;
+            for (uint c = 0; c < MAX_COLORS; c++) {
+                indirect_args[2 + c].x = 0;
+            }
         }
     }
 
