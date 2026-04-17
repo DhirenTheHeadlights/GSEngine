@@ -144,9 +144,9 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
 
-		gpu::descriptor_writer(ctx.device_ref(), r.shader_handle, r.descriptors[i])
+		gpu::descriptor_writer(ctx, r.shader_handle, r.descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.buffer("lights_ssbo", r.light_buffers[i], 0, light_buffer_size)
 			.buffer("material_palette", r.material_palette_buffers[i], 0, material_buffer_size)
@@ -158,7 +158,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		gpu::descriptor_writer writer(ctx.device_ref(), r.shader_handle, r.descriptors[i]);
+		gpu::descriptor_writer writer(ctx, r.shader_handle, r.descriptors[i]);
 
 		if (rt_state) {
 			writer.acceleration_structure("tlas", rt_state->tlas(fi).native_handle());
@@ -175,7 +175,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	ctx.on_swap_chain_recreate([&r, lc_r, rt_state, &ctx]() {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
-			gpu::descriptor_writer writer(ctx.device_ref(), r.shader_handle, r.descriptors[i]);
+			gpu::descriptor_writer writer(ctx, r.shader_handle, r.descriptors[i]);
 
 			if (rt_state) {
 				writer.acceleration_structure("tlas", rt_state->tlas(fi).native_handle());
@@ -190,7 +190,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 		}
 	});
 
-	r.pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.shader_handle, {
+	r.pipeline = gpu::create_graphics_pipeline(ctx, *r.shader_handle, {
 		.depth = { 
 			.test = true, 
 			.write = false, 
@@ -204,14 +204,14 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	ctx.instantly_load(r.skinned_shader);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.skinned_shader);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *r.skinned_shader);
 
-		gpu::descriptor_writer(ctx.device_ref(), r.skinned_shader, r.skinned_descriptors[i])
+		gpu::descriptor_writer(ctx, r.skinned_shader, r.skinned_descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
 
-	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.skinned_shader, {
+	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx, *r.skinned_shader, {
 		.depth = { 
 			.test = true, 
 			.write = false, 
@@ -361,8 +361,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const int ao_quality_i = static_cast<int>(s.ao_quality);
 	const int reflection_quality_i = static_cast<int>(s.reflection_quality);
 
-	auto meshlet_writer = gpu::create_push_writer(gpu.device_ref(), r.shader_handle);
-	auto skinned_writer = gpu::create_push_writer(gpu.device_ref(), r.skinned_shader);
+	auto meshlet_writer = gpu::create_push_writer(gpu, r.shader_handle);
+	auto skinned_writer = gpu::create_push_writer(gpu, r.skinned_shader);
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);

@@ -42,12 +42,10 @@ export namespace gse {
         ) const -> std::vector<vk::DescriptorSetLayout>;
 
         [[nodiscard]] auto layout_size(
-            const vk::raii::Device& device,
             std::uint32_t set_index
         ) const -> vk::DeviceSize;
 
         [[nodiscard]] auto binding_offset(
-            const vk::raii::Device& device,
             std::uint32_t set_index,
             std::uint32_t binding
         ) const -> vk::DeviceSize;
@@ -141,8 +139,10 @@ auto gse::shader_layout::sets() const -> std::span<const shader_layout_set> {
 }
 
 auto gse::shader_layout::vk_layout(const std::uint32_t set_index) const -> vk::DescriptorSetLayout {
-    assert(set_index < m_vk_layouts.size() && m_vk_layouts[set_index],
-        std::source_location::current(), "Layout set {} not found", set_index);
+    assert(
+        set_index < m_vk_layouts.size() && m_vk_layouts[set_index],
+        std::source_location::current(), "Layout set {} not found", set_index
+    );
     return **m_vk_layouts[set_index];
 }
 
@@ -155,14 +155,18 @@ auto gse::shader_layout::vk_layouts() const -> std::vector<vk::DescriptorSetLayo
     return result;
 }
 
-auto gse::shader_layout::layout_size(const vk::raii::Device& device, std::uint32_t set_index) const -> vk::DeviceSize {
-    assert(set_index < m_vk_layouts.size() && m_vk_layouts[set_index],
-        std::source_location::current(), "Layout set {} not found", set_index);
-    return (*device).getDescriptorSetLayoutSizeEXT(**m_vk_layouts[set_index]);
+auto gse::shader_layout::layout_size(std::uint32_t set_index) const -> vk::DeviceSize {
+    assert(
+        set_index < m_vk_layouts.size() && m_vk_layouts[set_index],
+        std::source_location::current(), "Layout set {} not found", set_index
+    );
+    return m_vk_layouts[set_index]->getSizeEXT();
 }
 
-auto gse::shader_layout::binding_offset(const vk::raii::Device& device, std::uint32_t set_index, const std::uint32_t binding) const -> vk::DeviceSize {
-    assert(set_index < m_vk_layouts.size() && m_vk_layouts[set_index],
-        std::source_location::current(), "Layout set {} not found", set_index);
-    return (*device).getDescriptorSetLayoutBindingOffsetEXT(**m_vk_layouts[set_index], binding);
+auto gse::shader_layout::binding_offset(std::uint32_t set_index, const std::uint32_t binding) const -> vk::DeviceSize {
+    assert(
+        set_index < m_vk_layouts.size() && m_vk_layouts[set_index],
+        std::source_location::current(), "Layout set {} not found", set_index
+    );
+    return m_vk_layouts[set_index]->getBindingOffsetEXT(binding);
 }

@@ -111,6 +111,8 @@ export namespace gse::physics {
 	struct system {
 		struct update_data {
 			time_t<float, seconds> accumulator{};
+			clock tick_clock;
+			bool tick_clock_primed = false;
 			vbd::solver vbd_solver;
 			vbd::contact_cache contact_cache;
 			std::unordered_map<id, std::uint32_t> sleep_counters;
@@ -122,9 +124,15 @@ export namespace gse::physics {
 			};
 			std::optional<solver_comparison_snapshot> comparison_pending;
 			struct gpu_prev_frame {
-				linear_vector<vbd::body_state> result_bodies{ vbd::max_bodies };
-				linear_vector<id> result_entity_ids{ vbd::max_bodies };
-				linear_vector<vbd::warm_start_entry> warm_start_contacts{ vbd::max_contacts };
+				std::vector<vbd::body_state> result_bodies;
+				std::vector<id> result_entity_ids;
+				std::vector<vbd::warm_start_entry> warm_start_contacts;
+
+				gpu_prev_frame() {
+					result_bodies.reserve(vbd::max_bodies);
+					result_entity_ids.reserve(vbd::max_bodies);
+					warm_start_contacts.reserve(vbd::max_contacts);
+				}
 			} gpu_prev;
 			std::optional<gpu_readback_result> completed_readback;
 		};
@@ -208,7 +216,7 @@ namespace gse::physics {
 	) -> vbd::contact_cache;
 
 	auto invalidate_warm_start_entries(
-		linear_vector<vbd::warm_start_entry>& warm_start_contacts,
+		std::vector<vbd::warm_start_entry>& warm_start_contacts,
 		const std::span<const std::uint32_t> body_indices
 	) -> void;
 
@@ -472,7 +480,7 @@ auto gse::physics::build_contact_cache_from_warm_start(const std::span<const vbd
 	return cache;
 }
 
-auto gse::physics::invalidate_warm_start_entries(linear_vector<vbd::warm_start_entry>& warm_start_contacts, const std::span<const std::uint32_t> body_indices) -> void {
+auto gse::physics::invalidate_warm_start_entries(std::vector<vbd::warm_start_entry>& warm_start_contacts, const std::span<const std::uint32_t> body_indices) -> void {
 	if (body_indices.empty()) {
 		return;
 	}
@@ -566,9 +574,14 @@ auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s
 		ud.vbd_solver.configure(cfg);
 	}
 
-	auto frame_time = system_clock::dt<time_t<float, seconds>>();
+	if (!ud.tick_clock_primed) {
+		ud.tick_clock.reset<float>();
+		ud.tick_clock_primed = true;
+	}
+
+	const time_t<float, seconds> elapsed = ud.tick_clock.reset<float>();
 	constexpr time_t<float, seconds> max_time_step = seconds(0.25f);
-	frame_time = std::min(frame_time, max_time_step);
+	const time_t<float, seconds> frame_time = std::min(elapsed, max_time_step);
 	ud.accumulator += frame_time;
 
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
@@ -579,7 +592,7 @@ auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s
 		steps++;
 	}
 
-	if (constexpr int max_physics_steps = 2; steps > max_physics_steps) {
+	if (constexpr int max_physics_steps = 4; steps > max_physics_steps) {
 		ud.accumulator = {};
 		steps = max_physics_steps;
 	}
@@ -985,10 +998,11 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 	std::vector<std::pair<id, std::uint32_t>> id_to_body_index_staging;
 
 	trace::scope(find_or_generate_id("vbd_gpu::build_bodies"), [&] {
-		bodies.reserve(motion.size());
-		entity_ids.reserve(motion.size());
-		accel_weights.reserve(motion.size());
-		id_to_body_index_staging.reserve(motion.size());
+		const auto body_count = motion.size();
+		bodies.resize(body_count);
+		entity_ids.resize(body_count);
+		accel_weights.resize(body_count);
+		id_to_body_index_staging.resize(body_count);
 
 		const auto prev_count = std::min(ud.gpu_prev.result_entity_ids.size(), ud.gpu_prev.result_bodies.size());
 		std::vector<std::pair<id, vec3<velocity>>> prev_staging;
@@ -999,49 +1013,51 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 		prev_gpu_velocity.assign_unsorted(std::move(prev_staging));
 
 		constexpr acceleration gravity_mag = meters_per_second_squared(9.8f);
+		const auto& sleep_counters_ref = ud.sleep_counters;
+		const auto& prev_gpu_velocity_ref = prev_gpu_velocity;
 
-		std::uint32_t body_idx = 0;
-		for (motion_component& mc : motion) {
-		const auto eid = mc.owner_id();
-		id_to_body_index_staging.emplace_back(eid, body_idx++);
+		task::parallel_invoke_range(0, body_count, [&, dt](std::size_t i) {
+			motion_component& mc = motion[i];
+			const auto eid = mc.owner_id();
+			id_to_body_index_staging[i] = { eid, static_cast<std::uint32_t>(i) };
 
-		const auto sc_it = ud.sleep_counters.find(eid);
-		const auto sc = sc_it != ud.sleep_counters.end() ? sc_it->second : 0u;
+			const auto sc_it = sleep_counters_ref.find(eid);
+			const auto sc = sc_it != sleep_counters_ref.end() ? sc_it->second : 0u;
 
-		float accel_weight = 0.f;
-		if (!mc.position_locked && sc < 60u && dt > time_t<float, seconds>(seconds(1e-6f))) {
-			if (const auto prev_it = prev_gpu_velocity.find(eid); prev_it != prev_gpu_velocity.end()) {
-				const velocity delta_vy = mc.current_velocity.y() - prev_it->second.y();
-				const acceleration accel_y = delta_vy / dt;
-				accel_weight = std::clamp(-accel_y / gravity_mag, 0.f, 1.f);
-				if (!std::isfinite(accel_weight)) {
-					accel_weight = 0.f;
+			float accel_weight = 0.f;
+			if (!mc.position_locked && sc < 60u && dt > time_t<float, seconds>(seconds(1e-6f))) {
+				if (const auto prev_it = prev_gpu_velocity_ref.find(eid); prev_it != prev_gpu_velocity_ref.end()) {
+					const velocity delta_vy = mc.current_velocity.y() - prev_it->second.y();
+					const acceleration accel_y = delta_vy / dt;
+					accel_weight = std::clamp(-accel_y / gravity_mag, 0.f, 1.f);
+					if (!std::isfinite(accel_weight)) {
+						accel_weight = 0.f;
+					}
 				}
 			}
-		}
-		accel_weights.push_back(accel_weight);
+			accel_weights[i] = accel_weight;
 
-		bodies.push_back({
-			.position = mc.current_position,
-			.predicted_position = mc.current_position,
-			.inertia_target = mc.current_position,
-			.initial_position = mc.current_position,
-			.body_velocity = mc.current_velocity,
-			.orientation = mc.orientation,
-			.predicted_orientation = mc.orientation,
-			.angular_inertia_target = mc.orientation,
-			.initial_orientation = mc.orientation,
-			.body_angular_velocity = mc.angular_velocity,
-			.motor_target = mc.current_position,
-			.mass_value = mc.mass,
-			.inv_inertia = mc.inv_inertial_tensor(),
-			.locked = mc.position_locked,
-			.update_orientation = mc.update_orientation,
-			.affected_by_gravity = mc.affected_by_gravity,
-			.sleep_counter = sc
+			bodies[i] = {
+				.position = mc.current_position,
+				.predicted_position = mc.current_position,
+				.inertia_target = mc.current_position,
+				.initial_position = mc.current_position,
+				.body_velocity = mc.current_velocity,
+				.orientation = mc.orientation,
+				.predicted_orientation = mc.orientation,
+				.angular_inertia_target = mc.orientation,
+				.initial_orientation = mc.orientation,
+				.body_angular_velocity = mc.angular_velocity,
+				.motor_target = mc.current_position,
+				.mass_value = mc.mass,
+				.inv_inertia = mc.inv_inertial_tensor(),
+				.locked = mc.position_locked,
+				.update_orientation = mc.update_orientation,
+				.affected_by_gravity = mc.affected_by_gravity,
+				.sleep_counter = sc
+			};
+			entity_ids[i] = eid;
 		});
-		entity_ids.push_back(eid);
-	}
 
 		id_to_body_index.assign_unsorted(std::move(id_to_body_index_staging));
 	});
@@ -1069,13 +1085,15 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 		});
 
 		trace::scope(find_or_generate_id("vbd_gpu::collision_bbox"), [&] {
-			for (collision_component& cc : collision) {
+			const auto& id_to_body_index_ref = id_to_body_index;
+			task::parallel_invoke_range(0, collision.size(), [&](std::size_t i) {
+				collision_component& cc = collision[i];
 				if (!cc.resolve_collisions) {
-					continue;
+					return;
 				}
-				const auto it = id_to_body_index.find(cc.owner_id());
-				if (it == id_to_body_index.end()) {
-					continue;
+				const auto it = id_to_body_index_ref.find(cc.owner_id());
+				if (it == id_to_body_index_ref.end()) {
+					return;
 				}
 
 				cc.bounding_box.update(bodies[it->second].position, bodies[it->second].orientation);
@@ -1085,7 +1103,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 					.aabb_min = min,
 					.aabb_max = max
 				};
-			}
+			});
 		});
 
 	});

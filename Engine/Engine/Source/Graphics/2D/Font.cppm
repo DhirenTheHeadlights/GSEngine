@@ -61,7 +61,7 @@ export namespace gse {
         ~font();
 
         auto load(
-            gpu::resource_manager& context
+            gpu::context& context
         ) -> void;
 
         auto unload(
@@ -124,7 +124,7 @@ gse::font::~font() {
     }
 }
 
-auto gse::font::load(gpu::resource_manager& context) -> void {
+auto gse::font::load(gpu::context& context) -> void {
     std::ifstream in_file(m_baked_path, std::ios::binary);
     assert(
         in_file.is_open(), std::source_location::current(),

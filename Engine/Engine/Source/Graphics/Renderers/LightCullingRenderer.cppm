@@ -77,7 +77,7 @@ namespace gse::renderer::light_culling {
 
 auto gse::renderer::light_culling::update_depth_descriptor(system::resources& r) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(r.ctx->device_ref(), r.shader_handle, r.descriptors[i])
+		gpu::descriptor_writer(*r.ctx, r.shader_handle, r.descriptors[i])
 			.image("g_depth", r.ctx->graph().depth_image(), r.depth_sampler, gpu::image_layout::general)
 			.commit();
 	}
@@ -106,7 +106,7 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(system::resources& r, st
 			.usage = gpu::buffer_flag::storage
 		});
 
-		gpu::descriptor_writer(r.ctx->device_ref(), r.shader_handle, r.descriptors[i])
+		gpu::descriptor_writer(*r.ctx, r.shader_handle, r.descriptors[i])
 			.buffer("CullingParams", r.culling_params_buffers[i], 0, params_block.size)
 			.buffer("lights", r.light_buffers[i], 0, light_block.size * max_lights)
 			.buffer("light_index_list", r.light_index_list_buffers[i], 0, index_list_size)
@@ -126,7 +126,7 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 	assert(r.shader_handle->is_compute(), std::source_location::current(), "Shader for light culling system must be a compute shader");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
 	}
 
 	const auto params_block = r.shader_handle->uniform_block("CullingParams");
@@ -155,7 +155,7 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 		.max_lod = 1.0f
 	});
 
-	r.pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *r.shader_handle);
+	r.pipeline = gpu::create_compute_pipeline(ctx, *r.shader_handle);
 
 	rebuild_tile_buffers(r, s);
 

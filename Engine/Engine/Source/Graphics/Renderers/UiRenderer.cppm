@@ -233,7 +233,7 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
 	r.sprite_shader = ctx.get<shader>("Shaders/Standard2D/sprite");
 	ctx.instantly_load(r.sprite_shader);
 
-	r.sprite_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.sprite_shader, {
+	r.sprite_pipeline = gpu::create_graphics_pipeline(ctx, *r.sprite_shader, {
 		.rasterization = { .cull = gpu::cull_mode::none },
 		.depth = { .test = false, .write = false },
 		.blend = gpu::blend_preset::alpha_premultiplied,
@@ -244,7 +244,7 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
 	r.text_shader = ctx.get<shader>("Shaders/Standard2D/msdf");
 	ctx.instantly_load(r.text_shader);
 
-	r.text_pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.text_shader, {
+	r.text_pipeline = gpu::create_graphics_pipeline(ctx, *r.text_shader, {
 		.rasterization = { .cull = gpu::cull_mode::none },
 		.depth = { .test = false, .write = false },
 		.blend = gpu::blend_preset::alpha_premultiplied,
@@ -442,8 +442,8 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, fr
 	auto text_pc = r.text_shader->cache_push_block("push_constants");
 	text_pc.set("projection", projection);
 
-	auto sprite_writer = gpu::create_push_writer(gpu.device_ref(), r.sprite_shader);
-	auto text_writer = gpu::create_push_writer(gpu.device_ref(), r.text_shader);
+	auto sprite_writer = gpu::create_push_writer(gpu, r.sprite_shader);
+	auto text_writer = gpu::create_push_writer(gpu, r.text_shader);
 
 	auto pass = gpu.graph().add_pass<ui::state>();
 	pass.track(vertex_buffer);

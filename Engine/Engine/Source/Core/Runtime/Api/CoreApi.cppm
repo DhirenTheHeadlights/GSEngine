@@ -123,31 +123,50 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
     trace::finalize_frame();
 
     task::start([&] {
+        const auto loop_id = find_or_generate_id("frame::loop");
+        const auto poll_id = find_or_generate_id("frame::poll_events");
+        const auto sync_begin_id = find_or_generate_id("frame::sync_begin");
+        const auto sync_end_id = find_or_generate_id("frame::sync_end");
+        const auto finalize_id = find_or_generate_id("frame::finalize_trace");
+        const auto ingest_id = find_or_generate_id("frame::ingest_profile");
         const auto update_id = find_or_generate_id("engine::update");
         const auto render_id = find_or_generate_id("engine::render");
 
         while (!should_shutdown.load(std::memory_order_acquire)) {
-            if (engine_flags.test(engine_flag::create_window)) {
-                window::poll_events();
-            }
-
-            frame_sync::begin();
-
-            trace::scope(engine_instance->id(), [&] {
-                trace::scope(update_id, [&] {
-                    engine_instance->update();
-                });
-
-                if (engine_flags.test(engine_flag::render)) {
-                    trace::scope(render_id, [&] {
-                        engine_instance->render();
+            trace::scope(loop_id, [&] {
+                if (engine_flags.test(engine_flag::create_window)) {
+                    trace::scope(poll_id, [&] {
+                        window::poll_events();
                     });
                 }
+
+                trace::scope(sync_begin_id, [&] {
+                    frame_sync::begin();
+                });
+
+                trace::scope(engine_instance->id(), [&] {
+                    trace::scope(update_id, [&] {
+                        engine_instance->update();
+                    });
+
+                    if (engine_flags.test(engine_flag::render)) {
+                        trace::scope(render_id, [&] {
+                            engine_instance->render();
+                        });
+                    }
+                });
+
+                trace::scope(sync_end_id, [&] {
+                    frame_sync::end();
+                });
             });
 
-            frame_sync::end();
-            trace::finalize_frame();
-            profile::ingest_frame();
+            trace::scope(finalize_id, [&] {
+                trace::finalize_frame();
+            });
+            trace::scope(ingest_id, [&] {
+                profile::ingest_frame();
+            });
         }
 
         task::wait_idle();

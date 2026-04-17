@@ -224,6 +224,8 @@ auto gse::engine::render() -> void {
 }
 
 auto gse::engine::shutdown() -> void {
+	profile::dump();
+
 	m_scheduler.shutdown();
 	m_world.shutdown();
 
@@ -248,6 +250,7 @@ auto gse::engine::set_local_controller_id(const gse::id controller_id) -> void {
 
 auto gse::engine::activate_scene(const gse::id scene_id) -> void {
 	m_world.activate(scene_id);
+	profile::reset();
 }
 
 auto gse::engine::deactivate_scene(const gse::id scene_id) -> void {

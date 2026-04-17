@@ -23,9 +23,12 @@ export namespace gse::gpu {
 	};
 
 	struct compute_semaphore_state {
-		vk::Semaphore semaphore{};
+		const vk::raii::Semaphore* semaphore = nullptr;
 		std::uint64_t value = 0;
 		vk::PipelineStageFlags2 dst_stage = vk::PipelineStageFlagBits2::eAllCommands;
+
+		[[nodiscard]] auto has_signaled(
+		) const -> bool;
 	};
 
 	class compute_queue final : public non_copyable {
@@ -90,13 +93,24 @@ export namespace gse::gpu {
 			const cached_push_constants& cache
 		) const -> void;
 
+		static constexpr std::uint32_t timing_slot_count = 32;
+
 		auto begin_timing(
 		) const -> void;
 
 		auto end_timing(
 		) const -> void;
 
+		auto mark_timing(
+			std::uint32_t slot
+		) const -> void;
+
 		[[nodiscard]] auto read_timing(
+		) const -> float;
+
+		[[nodiscard]] auto read_timing(
+			std::uint32_t start_slot,
+			std::uint32_t end_slot
 		) const -> float;
 
 		[[nodiscard]] auto native_command_buffer(
@@ -214,7 +228,7 @@ auto gse::gpu::compute_queue::is_complete() const -> bool {
 auto gse::gpu::compute_queue::begin() const -> void {
 	m_cmd.reset({});
 	m_cmd.begin({});
-	(*m_cmd).resetQueryPool(*m_query_pool, 0, 4);
+	m_cmd.resetQueryPool(*m_query_pool, 0, timing_slot_count);
 	if (m_descriptor_heap) {
 		m_descriptor_heap->bind_buffer(*m_cmd);
 	}
@@ -244,21 +258,28 @@ auto gse::gpu::compute_queue::submit() -> void {
 		.pSignalSemaphoreInfos = &signal_info
 	};
 
-	(**m_device).resetFences(*m_fence);
+	m_device->resetFences(*m_fence);
 	m_queue->submit2(submit_info, *m_fence);
 	++m_frame_count;
 }
 
 auto gse::gpu::compute_queue::semaphore_state() const -> compute_semaphore_state {
 	return {
-		.semaphore = *m_timeline,
+		.semaphore = &m_timeline,
 		.value = m_timeline_value,
 		.dst_stage = vk::PipelineStageFlagBits2::eComputeShader
 	};
 }
 
+auto gse::gpu::compute_semaphore_state::has_signaled() const -> bool {
+	if (semaphore == nullptr || value == 0) {
+		return false;
+	}
+	return semaphore->getCounterValue() >= value;
+}
+
 auto gse::gpu::compute_queue::bind_pipeline(const pipeline& p) const -> void {
-	(*m_cmd).bindPipeline(vk::PipelineBindPoint::eCompute, p.native_pipeline());
+	m_cmd.bindPipeline(vk::PipelineBindPoint::eCompute, p.native_pipeline());
 }
 
 auto gse::gpu::compute_queue::bind_descriptors(const pipeline& p, const descriptor_region& region) const -> void {
@@ -267,17 +288,17 @@ auto gse::gpu::compute_queue::bind_descriptors(const pipeline& p, const descript
 }
 
 auto gse::gpu::compute_queue::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
-	(*m_cmd).dispatch(x, y, z);
+	m_cmd.dispatch(x, y, z);
 }
 
 auto gse::gpu::compute_queue::dispatch_indirect(const buffer& buf, const std::size_t offset) const -> void {
-	(*m_cmd).dispatchIndirect(buf.native().buffer, static_cast<vk::DeviceSize>(offset));
+	m_cmd.dispatchIndirect(buf.native().buffer, static_cast<vk::DeviceSize>(offset));
 }
 
 auto gse::gpu::compute_queue::barrier(const barrier_scope scope) const -> void {
 	const auto b = vulkan::to_vk(scope);
 	const vk::DependencyInfo dep{ .memoryBarrierCount = 1, .pMemoryBarriers = &b };
-	(*m_cmd).pipelineBarrier2(dep);
+	m_cmd.pipelineBarrier2(dep);
 }
 
 auto gse::gpu::compute_queue::barriers(const std::span<const barrier_scope> scopes) const -> void {
@@ -290,11 +311,11 @@ auto gse::gpu::compute_queue::barriers(const std::span<const barrier_scope> scop
 		.memoryBarrierCount = static_cast<std::uint32_t>(vk_barriers.size()),
 		.pMemoryBarriers = vk_barriers.data()
 	};
-	(*m_cmd).pipelineBarrier2(dep);
+	m_cmd.pipelineBarrier2(dep);
 }
 
 auto gse::gpu::compute_queue::copy_buffer(const buffer_copy& copy) const -> void {
-	(*m_cmd).copyBuffer(
+	m_cmd.copyBuffer(
 		copy.src->native().buffer,
 		copy.dst->native().buffer,
 		vk::BufferCopy{
@@ -310,23 +331,33 @@ auto gse::gpu::compute_queue::push(const pipeline& p, const cached_push_constant
 }
 
 auto gse::gpu::compute_queue::begin_timing() const -> void {
-	(*m_cmd).writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *m_query_pool, 0);
+	m_cmd.writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *m_query_pool, 0);
 }
 
 auto gse::gpu::compute_queue::end_timing() const -> void {
-	(*m_cmd).writeTimestamp2(vk::PipelineStageFlagBits2::eComputeShader, *m_query_pool, 1);
+	m_cmd.writeTimestamp2(vk::PipelineStageFlagBits2::eComputeShader, *m_query_pool, 1);
+}
+
+auto gse::gpu::compute_queue::mark_timing(const std::uint32_t slot) const -> void {
+	assert(slot < timing_slot_count, std::source_location::current(), "mark_timing slot out of range");
+	m_cmd.writeTimestamp2(vk::PipelineStageFlagBits2::eComputeShader, *m_query_pool, slot);
 }
 
 auto gse::gpu::compute_queue::read_timing() const -> float {
+	return read_timing(0, 1);
+}
+
+auto gse::gpu::compute_queue::read_timing(const std::uint32_t start_slot, const std::uint32_t end_slot) const -> float {
 	if (m_frame_count < 2) return 0.0f;
-	std::array<std::uint64_t, 2> timestamps{};
-	const auto result = (**m_device).getQueryPoolResults(
-		*m_query_pool, 0, 2,
-		sizeof(timestamps), timestamps.data(), sizeof(std::uint64_t),
-		vk::QueryResultFlagBits::e64
+	assert(start_slot < timing_slot_count && end_slot < timing_slot_count, std::source_location::current(), "read_timing slot out of range");
+	const auto [r0, start_ts] = m_query_pool.getResult<std::uint64_t>(
+		start_slot, 1, sizeof(std::uint64_t), vk::QueryResultFlagBits::e64
 	);
-	if (result == vk::Result::eSuccess) {
-		return static_cast<float>(timestamps[1] - timestamps[0]) * m_timestamp_period * 1e-6f;
+	const auto [r1, end_ts] = m_query_pool.getResult<std::uint64_t>(
+		end_slot, 1, sizeof(std::uint64_t), vk::QueryResultFlagBits::e64
+	);
+	if (r0 == vk::Result::eSuccess && r1 == vk::Result::eSuccess) {
+		return static_cast<float>(end_ts - start_ts) * m_timestamp_period * 1e-6f;
 	}
 	return 0.0f;
 }

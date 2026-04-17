@@ -29,7 +29,7 @@ export namespace gse {
 
         skinned_mesh(skinned_mesh&& other) noexcept;
 
-        auto initialize(gpu::resource_manager& ctx) -> void;
+        auto initialize(gpu::context& ctx) -> void;
 
         auto vertex_gpu_buffer(this const skinned_mesh& self) -> const gpu::buffer& { return self.m_vertex_buffer; }
         auto index_gpu_buffer(this const skinned_mesh& self) -> const gpu::buffer& { return self.m_index_buffer; }
@@ -58,7 +58,7 @@ gse::skinned_mesh::skinned_mesh(skinned_mesh&& other) noexcept
     other.m_index_buffer = {};
 }
 
-auto gse::skinned_mesh::initialize(gpu::resource_manager& ctx) -> void {
+auto gse::skinned_mesh::initialize(gpu::context& ctx) -> void {
     if (m_vertices.empty() || m_indices.empty()) {
         return;
     }
@@ -76,7 +76,7 @@ auto gse::skinned_mesh::initialize(gpu::resource_manager& ctx) -> void {
         .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
     });
 
-    gpu::upload_to_buffers(ctx.device_ref(), std::array{
+    gpu::upload_to_buffers(ctx, std::array{
         gpu::buffer_upload{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
         gpu::buffer_upload{ &m_index_buffer, m_indices.data(), index_buffer_size }
     });

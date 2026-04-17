@@ -44,6 +44,8 @@ export import :texture;
 export import :ui_renderer;
 export import :rt_shadow_renderer;
 export import :capture_renderer;
+export import :capture_ring;
+export import :mp4_muxer;
 export import :texture_compiler;
 export import :skeleton_compiler;
 export import :clip_compiler;

@@ -4,6 +4,7 @@ import std;
 import vulkan;
 
 import :gpu_types;
+import :vulkan_enums;
 
 import gse.assert;
 import gse.utility;
@@ -33,19 +34,6 @@ export namespace gse::gpu {
 	};
 }
 
-namespace {
-	auto to_vk_stage_flags(const gse::gpu::stage_flags flags) -> vk::ShaderStageFlags {
-		vk::ShaderStageFlags result;
-		using enum gse::gpu::stage_flag;
-		if (flags.test(vertex))   result |= vk::ShaderStageFlagBits::eVertex;
-		if (flags.test(fragment)) result |= vk::ShaderStageFlagBits::eFragment;
-		if (flags.test(compute))  result |= vk::ShaderStageFlagBits::eCompute;
-		if (flags.test(task))     result |= vk::ShaderStageFlagBits::eTaskEXT;
-		if (flags.test(mesh))     result |= vk::ShaderStageFlagBits::eMeshEXT;
-		return result;
-	}
-}
-
 template <typename T>
 auto gse::gpu::cached_push_constants::set(const std::string_view name, const T& value) -> void {
 	const auto it = members.find(std::string(name));
@@ -55,5 +43,5 @@ auto gse::gpu::cached_push_constants::set(const std::string_view name, const T& 
 }
 
 auto gse::gpu::cached_push_constants::replay(const vk::CommandBuffer cmd, const vk::PipelineLayout layout) const -> void {
-	cmd.pushConstants(layout, to_vk_stage_flags(stage_flags), 0, static_cast<std::uint32_t>(data.size()), data.data());
+	cmd.pushConstants(layout, vulkan::to_vk(stage_flags), 0, static_cast<std::uint32_t>(data.size()), data.data());
 }

@@ -24,7 +24,8 @@ export namespace gse::gpu {
 		) const -> vec2u;
 
 		[[nodiscard]] auto depth_image(
-		) const -> const image&;
+			this auto& self
+		) -> auto&;
 
 		auto clear_depth_image(
 		) -> void;
@@ -90,8 +91,8 @@ auto gse::gpu::swap_chain::extent() const -> vec2u {
 	return { m_config.extent.width, m_config.extent.height };
 }
 
-auto gse::gpu::swap_chain::depth_image() const -> const gpu::image& {
-	return m_config.depth_image;
+auto gse::gpu::swap_chain::depth_image(this auto& self) -> auto& {
+	return (self.m_config.depth_image);
 }
 
 auto gse::gpu::swap_chain::clear_depth_image() -> void {
@@ -166,11 +167,11 @@ auto gse::gpu::swap_chain::create_swap_chain_resources(const vec2i framebuffer_s
 
 	auto present_mode = vk::PresentModeKHR::eFifo;
 	for (const auto& mode : details.present_modes) {
-		if (mode == vk::PresentModeKHR::eMailbox) {
+		if (mode == vk::PresentModeKHR::eImmediate) {
 			present_mode = mode;
 			break;
 		}
-		if (mode == vk::PresentModeKHR::eImmediate && present_mode == vk::PresentModeKHR::eFifo) {
+		if (mode == vk::PresentModeKHR::eMailbox && present_mode == vk::PresentModeKHR::eFifo) {
 			present_mode = mode;
 		}
 	}

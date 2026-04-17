@@ -8,10 +8,13 @@ import :gpu_pipeline;
 import :gpu_image;
 import :gpu_descriptor;
 import :gpu_device;
+import :gpu_context;
 import :shader_layout;
 import :descriptor_heap;
 import :resource_handle;
 import :shader;
+import :vulkan_enums;
+import :shader_registry;
 import gse.assert;
 import gse.utility;
 import gse.log;
@@ -19,8 +22,8 @@ import gse.log;
 export namespace gse::gpu {
 	class descriptor_writer final : public non_copyable {
 	public:
-		descriptor_writer(device& dev, resource::handle<shader> s, descriptor_region& region);
-		descriptor_writer(device& dev, resource::handle<shader> s);
+		descriptor_writer(context& ctx, resource::handle<shader> s, descriptor_region& region);
+		descriptor_writer(context& ctx, resource::handle<shader> s);
 		descriptor_writer(descriptor_writer&&) noexcept = default;
 		auto operator=(descriptor_writer&&) noexcept -> descriptor_writer& = default;
 
@@ -42,7 +45,8 @@ export namespace gse::gpu {
 
 		auto find_binding_index(std::string_view name) const -> std::uint32_t;
 
-		device* m_device;
+		const vulkan::shader_cache_entry* m_cache_entry = nullptr;
+		vk::raii::Device* m_logical_device = nullptr;
 		resource::handle<shader> m_shader;
 		descriptor_region* m_region = nullptr;
 		mode m_mode = mode::persistent;
@@ -58,20 +62,12 @@ export namespace gse::gpu {
 }
 
 namespace {
-	auto to_vk_layout(const gse::gpu::image_layout l) -> vk::ImageLayout {
-		switch (l) {
-			case gse::gpu::image_layout::general:          return vk::ImageLayout::eGeneral;
-			case gse::gpu::image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
-			default:                                       return vk::ImageLayout::eUndefined;
-		}
-	}
-
 	auto build_push_writer(
-		gse::gpu::device& dev,
+		gse::gpu::context& ctx,
 		const gse::shader& s
 	) -> gse::vulkan::descriptor_writer {
-		const auto& cache = dev.shader_cache(s);
-		auto& heap = dev.descriptor_heap();
+		const auto& cache = ctx.shader_registry().cache(s);
+		auto& heap = ctx.device_ref().descriptor_heap();
 		const auto& props = heap.props();
 
 		const auto push_idx = static_cast<std::uint32_t>(gse::gpu::descriptor_set_type::push);
@@ -111,7 +107,7 @@ namespace {
 			bindings[idx] = {
 				.offset = heap.binding_offset(set_layout, idx),
 				.descriptor_size = descriptor_size_for(b.desc.type),
-				.type = gse::vulkan::to_vk_descriptor_type(b.desc.type)
+				.type = gse::vulkan::to_vk(b.desc.type)
 			};
 		}
 
@@ -119,9 +115,9 @@ namespace {
 	}
 }
 
-gse::gpu::descriptor_writer::descriptor_writer(device& dev, resource::handle<shader> s, descriptor_region& region) : m_device(&dev), m_shader(std::move(s)), m_region(&region) {}
+gse::gpu::descriptor_writer::descriptor_writer(context& ctx, resource::handle<shader> s, descriptor_region& region) : m_cache_entry(&ctx.shader_registry().cache(*s)), m_logical_device(&ctx.device_ref().logical_device()), m_shader(std::move(s)), m_region(&region) {}
 
-gse::gpu::descriptor_writer::descriptor_writer(device& dev, resource::handle<shader> s) : m_device(&dev), m_shader(std::move(s)), m_mode(mode::push), m_push_writer(build_push_writer(dev, *m_shader)) {}
+gse::gpu::descriptor_writer::descriptor_writer(context& ctx, resource::handle<shader> s) : m_cache_entry(&ctx.shader_registry().cache(*s)), m_logical_device(&ctx.device_ref().logical_device()), m_shader(std::move(s)), m_mode(mode::push), m_push_writer(build_push_writer(ctx, *m_shader)) {}
 
 auto gse::gpu::descriptor_writer::find_binding_index(const std::string_view name) const -> std::uint32_t {
 	for (const auto& [type, bindings] : m_shader->layout_data().sets | std::views::values) {
@@ -156,7 +152,7 @@ auto gse::gpu::descriptor_writer::image(const std::string_view name, const gpu::
 		m_image_infos[std::string(name)] = vk::DescriptorImageInfo{
 			.sampler = samp.native(),
 			.imageView = img.native().view,
-			.imageLayout = to_vk_layout(layout)
+			.imageLayout = vulkan::to_vk(layout)
 		};
 	}
 	else {
@@ -173,7 +169,7 @@ auto gse::gpu::descriptor_writer::image_array(const std::string_view name, const
 		vec.push_back({
 			.sampler = samp.native(),
 			.imageView = img->native().view,
-			.imageLayout = to_vk_layout(layout)
+			.imageLayout = vulkan::to_vk(layout)
 		});
 	}
 	return *this;
@@ -184,7 +180,7 @@ auto gse::gpu::descriptor_writer::storage_image(const std::string_view name, con
 		m_storage_image_infos[std::string(name)] = vk::DescriptorImageInfo{
 			.sampler = nullptr,
 			.imageView = img.native().view,
-			.imageLayout = to_vk_layout(layout)
+			.imageLayout = vulkan::to_vk(layout)
 		};
 	}
 	else {
@@ -202,7 +198,7 @@ auto gse::gpu::descriptor_writer::image_array(const std::string_view name, const
 	auto& vec = m_image_array_infos[std::string(name)];
 	vec.clear();
 	vec.reserve(images.size());
-	const auto vk_layout = to_vk_layout(layout);
+	const auto vk_layout = vulkan::to_vk(layout);
 	for (std::size_t i = 0; i < images.size(); ++i) {
 		vec.push_back({
 			.sampler = samplers[i]->native(),
@@ -216,7 +212,7 @@ auto gse::gpu::descriptor_writer::image_array(const std::string_view name, const
 auto gse::gpu::descriptor_writer::commit() -> void {
 	assert(m_region && *m_region, std::source_location::current(), "Cannot commit to null descriptor region");
 
-	const auto& cache = m_device->shader_cache(*m_shader);
+	const auto& cache = *m_cache_entry;
 	const auto& heap = *m_region->native().heap;
 	const auto& props = heap.props();
 
@@ -287,7 +283,7 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 
 		if (auto it_as = m_as_infos.find(name); it_as != m_as_infos.end()) {
 			const auto vk_as = reinterpret_cast<VkAccelerationStructureKHR>(it_as->second.value);
-			const vk::DeviceAddress as_addr = m_device->logical_device().getAccelerationStructureAddressKHR({
+			const vk::DeviceAddress as_addr = m_logical_device->getAccelerationStructureAddressKHR({
 				.accelerationStructure = vk_as
 			});
 			log::println(

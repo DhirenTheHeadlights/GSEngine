@@ -36,7 +36,7 @@ export namespace gse {
 		);
 
 		auto load(
-			gpu::resource_manager& context
+			const gpu::context& context
 		) -> void;
 
 		auto unload(
@@ -52,7 +52,7 @@ export namespace gse {
 		) const -> const image::data&;
 	private:
 		auto create_vulkan_resources(
-			gpu::resource_manager& context,
+			gpu::context& context,
 			profile texture_profile
 		) -> void;
 
@@ -69,7 +69,7 @@ gse::texture::texture(const std::string_view name, const vec4f& color, const vec
 
 gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const vec2u size, const std::uint32_t channels, const profile texture_profile) : identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
 
-auto gse::texture::load(gpu::resource_manager& context) -> void {
+auto gse::texture::load(const gpu::context& context) -> void {
 	if (!m_image_data.path.empty()) {
 		std::ifstream in_file(m_image_data.path, std::ios::binary);
 		assert(
@@ -94,7 +94,7 @@ auto gse::texture::load(gpu::resource_manager& context) -> void {
 		m_profile = texture_profile;
 	}
 
-	context.queue_gpu_command<texture>(this, [](gpu::resource_manager& ctx, texture& self) {
+	context.queue_gpu_command<texture>(this, [](gpu::context& ctx, texture& self) {
 		self.create_vulkan_resources(ctx, self.m_profile);
 	});
 }
@@ -117,7 +117,7 @@ auto gse::texture::image_data() const -> const image::data& {
 	return m_image_data;
 }
 
-auto gse::texture::create_vulkan_resources(gpu::resource_manager& context, const profile texture_profile) -> void {
+auto gse::texture::create_vulkan_resources(gpu::context& context, const profile texture_profile) -> void {
 	const auto width = m_image_data.size.x();
 	const auto height = m_image_data.size.y();
 	const auto channels = m_image_data.channels;
@@ -137,18 +137,18 @@ auto gse::texture::create_vulkan_resources(gpu::resource_manager& context, const
 			? gpu::image_format::r8_unorm
 			: (use_linear ? gpu::image_format::r8g8b8_unorm : gpu::image_format::r8g8b8_srgb);
 
-	m_image = gpu::create_image(context.device_ref(), {
+	m_image = gpu::create_image(context, {
 		.size = { width, height },
 		.format = gpu_format,
 		.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst
 	});
 
-	gpu::upload_image_2d(context.device_ref(), m_image, m_image_data.pixels.data(), data_size);
+	gpu::upload_image_2d(context, m_image, m_image_data.pixels.data(), data_size);
 
-	const auto clamp = gpu::sampler_address_mode::clamp_to_edge;
-	const auto repeat = gpu::sampler_address_mode::repeat;
-	const auto linear = gpu::sampler_filter::linear;
-	const auto nearest = gpu::sampler_filter::nearest;
+	constexpr auto clamp = gpu::sampler_address_mode::clamp_to_edge;
+	constexpr auto repeat = gpu::sampler_address_mode::repeat;
+	constexpr auto linear = gpu::sampler_filter::linear;
+	constexpr auto nearest = gpu::sampler_filter::nearest;
 
 	gpu::sampler_desc desc;
 	desc.max_lod = 1.0f;
@@ -173,6 +173,7 @@ auto gse::texture::create_vulkan_resources(gpu::resource_manager& context, const
 		break;
 	}
 	m_sampler = gpu::create_sampler(context.device_ref(), desc);
+
 
 	m_image_data.pixels.clear();
 	m_image_data.pixels.shrink_to_fit();

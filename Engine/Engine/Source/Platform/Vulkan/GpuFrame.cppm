@@ -3,9 +3,13 @@ export module gse.platform:gpu_frame;
 import std;
 
 import :vulkan_runtime;
+import :vulkan_uploader;
+import :vulkan_enums;
 import :gpu_device;
 import :gpu_swapchain;
 import :gpu_compute;
+import :gpu_image;
+import :gpu_types;
 import :window;
 
 import gse.assert;
@@ -31,7 +35,12 @@ export namespace gse::gpu {
 			swap_chain& sc
 		) -> std::unique_ptr<frame>;
 
-		frame(vulkan::sync_config&& sync, vulkan::frame_context_config&& frame_ctx, device& dev, swap_chain& sc);
+		frame(
+			vulkan::sync_config&& sync,
+			vulkan::frame_context_config&& frame_ctx,
+			device& dev,
+			swap_chain& sc
+		);
 
 		[[nodiscard]] auto current_frame(
 		) const -> std::uint32_t;
@@ -57,14 +66,30 @@ export namespace gse::gpu {
 			vulkan::sync_config&& sync
 		) -> void;
 
-		auto add_wait_semaphore(
-			compute_semaphore_state state
+		auto add_wait_semaphore(const compute_semaphore_state& state
+		) -> void;
+
+		auto add_transient_work(
+			auto&& commands
+		) -> void;
+
+		auto transition_image_layout(
+			image& img,
+			image_layout target
 		) -> void;
 
 	private:
-		auto recreate_resources(
-			window& win
+		auto recreate_resources(const window& win
 		) -> void;
+
+		auto cleanup_finished(
+			std::uint32_t frame_index
+		) -> void;
+
+		static auto create_sync_objects(
+			const vulkan::device_config& device_data,
+			const vulkan::swap_chain_config& swap_chain_data
+		) -> vulkan::sync_config;
 
 		vulkan::sync_config m_sync;
 		vulkan::frame_context_config m_frame_context;
@@ -73,11 +98,8 @@ export namespace gse::gpu {
 		device* m_device;
 		swap_chain* m_swapchain;
 		std::vector<compute_semaphore_state> m_extra_waits;
+		std::vector<std::vector<vulkan::transient_gpu_work>> m_graveyard;
 	};
-}
-
-namespace gse::vulkan {
-	auto create_sync_objects(const device_config& device_data, const swap_chain_config& swap_chain_data) -> sync_config;
 }
 
 auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<frame> {
@@ -87,7 +109,9 @@ auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<fra
 }
 
 gse::gpu::frame::frame(vulkan::sync_config&& sync, vulkan::frame_context_config&& frame_ctx, device& dev, swap_chain& sc)
-	: m_sync(std::move(sync)), m_frame_context(std::move(frame_ctx)), m_device(&dev), m_swapchain(&sc) {}
+	: m_sync(std::move(sync)), m_frame_context(std::move(frame_ctx)), m_device(&dev), m_swapchain(&sc) {
+	m_graveyard.resize(vulkan::max_frames_in_flight);
+}
 
 auto gse::gpu::frame::current_frame() const -> std::uint32_t {
 	return m_current_frame;
@@ -109,7 +133,7 @@ auto gse::gpu::frame::set_sync(vulkan::sync_config&& sync) -> void {
 	m_sync = std::move(sync);
 }
 
-auto gse::gpu::frame::recreate_resources(window& win) -> void {
+auto gse::gpu::frame::recreate_resources(const window& win) -> void {
 	m_device->wait_idle();
 	m_swapchain->recreate(win.viewport());
 	m_sync = create_sync_objects(m_device->device_config(), m_swapchain->config());
@@ -139,9 +163,9 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
 	}
 
 	try {
-		m_device->cleanup_finished_frame_resources(m_current_frame);
+		cleanup_finished(m_current_frame);
 	} catch (const vk::DeviceLostError&) {
-		m_device->report_device_lost(std::format("cleanup_finished_frame_resources (frame {})", m_current_frame));
+		m_device->report_device_lost(std::format("cleanup_finished (frame {})", m_current_frame));
 		return std::unexpected(frame_status::device_lost);
 	}
 
@@ -173,9 +197,11 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
 		return std::unexpected(frame_status::swapchain_out_of_date);
 	}
 
-	assert(result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR,
+	assert(
+		result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR,
 		std::source_location::current(),
-		"Failed to acquire swap chain image!");
+		"Failed to acquire swap chain image!"
+	);
 
 	device.resetFences(*m_sync.in_flight_fences[m_current_frame]);
 
@@ -189,7 +215,6 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
 	m_frame_context.command_buffer.begin(cmd_begin_info);
 
 	m_frame_in_progress = true;
-	m_device->set_current_transient_frame(m_current_frame);
 
 	return frame_token{
 		.frame_index = m_current_frame,
@@ -197,15 +222,13 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
 	};
 }
 
-auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state state) -> void {
+auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state& state) -> void {
 	if (state.semaphore && state.value > 0) {
 		m_extra_waits.push_back(state);
 	}
 }
 
 auto gse::gpu::frame::end(window& win) -> void {
-	const auto& device = m_device->device_config().device;
-
 	trace::scope(find_or_generate_id("end_frame::cmd_end"), [&] {
 		m_frame_context.command_buffer.end();
 	});
@@ -218,10 +241,10 @@ auto gse::gpu::frame::end(window& win) -> void {
 		.deviceIndex = 0
 	});
 
-	for (const auto& [sem, val, dst_stage] : m_extra_waits) {
+	for (const auto& [semaphore, value, dst_stage] : m_extra_waits) {
 		wait_infos.push_back({
-			.semaphore = sem,
-			.value = val,
+			.semaphore = **semaphore,
+			.value = value,
 			.stageMask = dst_stage,
 			.deviceIndex = 0
 		});
@@ -301,36 +324,124 @@ auto gse::gpu::frame::end(window& win) -> void {
 	m_frame_in_progress = false;
 }
 
-namespace gse::vulkan {
-	auto create_sync_objects(const device_config& device_data, const swap_chain_config& swap_chain_data) -> sync_config {
-		std::vector<vk::raii::Semaphore> image_available;
-		std::vector<vk::raii::Semaphore> render_finished;
-		std::vector<vk::raii::Fence> in_flight_fences;
+auto gse::gpu::frame::add_transient_work(auto&& commands) -> void {
+	const auto& vk_device = m_device->logical_device();
 
-		const auto swap_chain_image_count = swap_chain_data.images.size();
-		image_available.reserve(swap_chain_image_count);
-		render_finished.reserve(swap_chain_image_count);
+	const vk::CommandBufferAllocateInfo alloc_info{
+		.commandPool = *m_device->command_config().pool,
+		.level = vk::CommandBufferLevel::ePrimary,
+		.commandBufferCount = 1
+	};
 
-		in_flight_fences.reserve(max_frames_in_flight);
+	auto buffers = vk_device.allocateCommandBuffers(alloc_info);
+	vk::raii::CommandBuffer command_buffer = std::move(buffers[0]);
 
-		constexpr vk::FenceCreateInfo fence_ci{
-			.flags = vk::FenceCreateFlagBits::eSignaled
-		};
+	constexpr vk::CommandBufferBeginInfo begin_info{
+		.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+	};
 
-		for (std::size_t i = 0; i < swap_chain_image_count; ++i) {
-			constexpr vk::SemaphoreCreateInfo bin_sem_ci{};
-			image_available.emplace_back(device_data.device, bin_sem_ci);
-			render_finished.emplace_back(device_data.device, bin_sem_ci);
-		}
+	command_buffer.begin(begin_info);
 
-		for (std::size_t i = 0; i < max_frames_in_flight; ++i) {
-			in_flight_fences.emplace_back(device_data.device, fence_ci);
-		}
-
-		return sync_config(
-			std::move(image_available),
-			std::move(render_finished),
-			std::move(in_flight_fences)
-		);
+	std::vector<vulkan::buffer_resource> transient_buffers;
+	if constexpr (std::is_void_v<std::invoke_result_t<decltype(commands), vk::raii::CommandBuffer&>>) {
+		std::invoke(std::forward<decltype(commands)>(commands), command_buffer);
+	} else {
+		transient_buffers = std::invoke(std::forward<decltype(commands)>(commands), command_buffer);
 	}
+
+	command_buffer.end();
+
+	vk::raii::Fence fence = vk_device.createFence({});
+
+	const vk::SubmitInfo submit_info{
+		.commandBufferCount = 1,
+		.pCommandBuffers = &*command_buffer
+	};
+
+	try {
+		m_device->queue_config().graphics.submit(submit_info, *fence);
+	} catch (const vk::DeviceLostError&) {
+		m_device->report_device_lost("transient graphics submission");
+		throw;
+	}
+
+	m_graveyard[m_current_frame].push_back({
+		.command_buffer = std::move(command_buffer),
+		.fence = std::move(fence),
+		.transient_buffers = std::move(transient_buffers)
+	});
+}
+
+auto gse::gpu::frame::cleanup_finished(const std::uint32_t frame_index) -> void {
+	for (auto& work : m_graveyard[frame_index]) {
+		if (*work.fence) {
+			try {
+				(void)m_device->logical_device().waitForFences(
+					*work.fence,
+					vk::True,
+					std::numeric_limits<std::uint64_t>::max()
+				);
+			} catch (const vk::DeviceLostError&) {
+				m_device->report_device_lost("transient fence wait");
+				throw;
+			}
+		}
+	}
+	m_graveyard[frame_index].clear();
+}
+
+auto gse::gpu::frame::transition_image_layout(image& img, const image_layout target) -> void {
+	const bool is_depth = img.format() == image_format::d32_sfloat;
+	const auto aspect = is_depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
+	const auto target_vk = vulkan::to_vk(target);
+	const auto dst_stage = is_depth
+		? (vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests)
+		: vk::PipelineStageFlagBits2::eAllCommands;
+	const auto dst_access = is_depth
+		? (vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead)
+		: vk::AccessFlagBits2::eShaderRead;
+
+	auto& resource = img.native();
+	add_transient_work([&resource, target_vk, aspect, dst_stage, dst_access](const vk::raii::CommandBuffer& cmd) {
+		vulkan::uploader::transition_image_layout(
+			*cmd, resource,
+			target_vk, aspect,
+			vk::PipelineStageFlagBits2::eTopOfPipe, {},
+			dst_stage, dst_access
+		);
+	});
+
+	img.set_layout(target);
+}
+
+auto gse::gpu::frame::create_sync_objects(const vulkan::device_config& device_data, const vulkan::swap_chain_config& swap_chain_data) -> vulkan::sync_config {
+	std::vector<vk::raii::Semaphore> image_available;
+	std::vector<vk::raii::Semaphore> render_finished;
+	std::vector<vk::raii::Fence> in_flight_fences;
+
+	const auto swap_chain_image_count = swap_chain_data.images.size();
+	image_available.reserve(swap_chain_image_count);
+	render_finished.reserve(swap_chain_image_count);
+
+	in_flight_fences.reserve(vulkan::max_frames_in_flight);
+
+	constexpr vk::FenceCreateInfo fence_ci{
+		.flags = vk::FenceCreateFlagBits::eSignaled
+	};
+
+	for (std::size_t i = 0; i < swap_chain_image_count; ++i) {
+		constexpr vk::SemaphoreCreateInfo bin_sem_ci{};
+		image_available.emplace_back(device_data.device, bin_sem_ci);
+		render_finished.emplace_back(device_data.device, bin_sem_ci);
+	}
+
+	for (std::size_t i = 0; i < vulkan::max_frames_in_flight; ++i) {
+		in_flight_fences.emplace_back(device_data.device, fence_ci);
+	}
+
+	return vulkan::sync_config(
+		std::move(image_available),
+		std::move(render_finished),
+		std::move(in_flight_fences)
+	);
 }

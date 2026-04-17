@@ -26,6 +26,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     GpuBody body_i = body_data[i];
 
     bool i_locked = (body_i.flags & FLAG_LOCKED) != 0;
+    bool i_inactive = i_locked || body_i.sleep_counter >= SLEEP_THRESHOLD;
 
     float margin = pc.speculative_margin;
     float3 min_a = body_i.aabb_min.xyz;
@@ -47,10 +48,12 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
                     uint next = grid_data[entry_ptr + 1];
 
                     if (j > i && j < pc.body_count) {
-                        bool j_locked = (body_data[j].flags & FLAG_LOCKED) != 0;
-                        if (!(i_locked && j_locked)) {
-                            float3 min_b = body_data[j].aabb_min.xyz;
-                            float3 max_b = body_data[j].aabb_max.xyz;
+                        GpuBody body_j = body_data[j];
+                        bool j_locked = (body_j.flags & FLAG_LOCKED) != 0;
+                        bool j_inactive = j_locked || body_j.sleep_counter >= SLEEP_THRESHOLD;
+                        if (!(i_inactive && j_inactive)) {
+                            float3 min_b = body_j.aabb_min.xyz;
+                            float3 max_b = body_j.aabb_max.xyz;
 
                             bool overlap =
                                 min_a.x - margin <= max_b.x && max_a.x + margin >= min_b.x &&

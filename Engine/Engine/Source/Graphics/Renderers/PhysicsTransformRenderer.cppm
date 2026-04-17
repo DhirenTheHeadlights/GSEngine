@@ -19,8 +19,6 @@ export namespace gse::renderer::physics_transform {
 
 		struct frame_data {
 			per_frame_resource<gpu::descriptor_region> descriptors;
-			per_frame_resource<gpu::buffer> staging_buffers;
-			std::size_t staging_size = 0;
 
 			per_frame_resource<gpu::buffer> mapping_buffers;
 			std::size_t mapping_buffer_size = 0;
@@ -49,10 +47,10 @@ auto gse::renderer::physics_transform::system::initialize(const init_context& ph
 
 	assert(r.shader_handle->is_compute(), std::source_location::current(), "Physics instance transform shader is not loaded as a compute shader");
 
-	r.pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *r.shader_handle, "push_constants");
+	r.pipeline = gpu::create_compute_pipeline(ctx, *r.shader_handle, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		fd.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.shader_handle);
+		fd.descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
 	}
 
 	r.initialized = true;
@@ -61,7 +59,7 @@ auto gse::renderer::physics_transform::system::initialize(const init_context& ph
 auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const resources& r, frame_data& fd) -> async::task<> {
 	co_await ctx.after<geometry_collector::state>();
 
-	const auto& gpu = ctx.get<gpu::context>();
+	auto& gpu = ctx.get<gpu::context>();
 
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
 
@@ -111,25 +109,14 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 		co_return;
 	}
 
-	gpu.frame().add_wait_semaphore(info.semaphore);
-
-	const auto required_size = gc_r->instance_buffer[frame_index].size();
-	if (fd.staging_size < required_size) {
-		for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-			fd.staging_buffers[i] = gpu::create_buffer(gpu.device_ref(), {
-				.size = required_size,
-				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
-			});
-		}
-		fd.staging_size = required_size;
+	if (!info.semaphore.has_signaled()) {
+		co_return;
 	}
 
-	auto& staging = fd.staging_buffers[frame_index];
-
-	gpu::descriptor_writer(gpu.device_ref(), r.shader_handle, fd.descriptors[frame_index])
+	gpu::descriptor_writer(gpu, r.shader_handle, fd.descriptors[frame_index])
 		.buffer("body_data", snapshot, 0, info.body_count * info.body_stride)
 		.buffer("mapping_data", fd.mapping_buffers[frame_index], 0, fd.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry))
-		.buffer("instance_data", staging, 0, staging.size())
+		.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())
 		.commit();
 
 	auto pc = r.shader_handle->cache_push_block("push_constants");
@@ -137,7 +124,6 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 	pc.set("body_count", info.body_count);
 
 	const std::uint32_t workgroups = (fd.cached_mapping_count + 63) / 64;
-	const auto copy_size = required_size;
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(fd.mapping_buffers[frame_index]);
@@ -145,21 +131,14 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 
 	pass.reads(
 			gpu::storage_read(snapshot, gpu::pipeline_stage::compute_shader),
-			gpu::storage_read(fd.mapping_buffers[frame_index], gpu::pipeline_stage::compute_shader),
-			gpu::transfer_read(gc_r->instance_buffer[frame_index])
+			gpu::storage_read(fd.mapping_buffers[frame_index], gpu::pipeline_stage::compute_shader)
 		)
-		.writes(gpu::transfer_write(gc_r->instance_buffer[frame_index]))
+		.writes(gpu::storage_write(gc_r->instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
 		.after<geometry_collector::state>()
-		.record([&r, &fd, &staging, gc_r, frame_index, workgroups, copy_size, pc = std::move(pc)](const gpu::recording_context& rec) {
-			rec.copy_buffer(gc_r->instance_buffer[frame_index], staging, copy_size);
-			rec.barrier(gpu::barrier_scope::transfer_to_compute);
-
+		.record([&r, &fd, frame_index, workgroups, pc = std::move(pc)](const gpu::recording_context& rec) {
 			rec.bind(r.pipeline);
 			rec.bind_descriptors(r.pipeline, fd.descriptors[frame_index]);
 			rec.push(r.pipeline, pc);
 			rec.dispatch(workgroups, 1, 1);
-			rec.barrier(gpu::barrier_scope::compute_to_transfer);
-
-			rec.copy_buffer(staging, gc_r->instance_buffer[frame_index], copy_size);
 		});
 }

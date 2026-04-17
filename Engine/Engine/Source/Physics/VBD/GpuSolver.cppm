@@ -12,17 +12,27 @@ import :vbd_constraints;
 import :vbd_solver;	
 
 export namespace gse::vbd {
-	constexpr std::uint32_t max_bodies = 500;
-	constexpr std::uint32_t max_contacts = 2000;
+	constexpr std::uint32_t max_bodies = 2048;
+	constexpr std::uint32_t max_contacts = 16384;
 	constexpr std::uint32_t max_motors = 16;
 	constexpr std::uint32_t max_joints = 128;
 	constexpr std::uint32_t max_colors = 32;
-	constexpr std::uint32_t max_collision_pairs = 8192;
+	constexpr std::uint32_t max_collision_pairs = 16384;
 	constexpr std::uint32_t workgroup_size = 64;
 	constexpr std::uint32_t collision_state_header_uints = 8;
 
 	constexpr std::uint32_t solve_state_float4s_per_body = 11;
 	constexpr std::uint32_t collision_state_uints = collision_state_header_uints;
+
+	namespace timing_slot {
+		constexpr std::uint32_t begin = 0;
+		constexpr std::uint32_t after_collision = 2;
+		constexpr std::uint32_t after_predict = 3;
+		constexpr std::uint32_t after_solve = 4;
+		constexpr std::uint32_t after_velocity = 5;
+		constexpr std::uint32_t after_finalize = 6;
+		constexpr std::uint32_t end = 1;
+	}
 	constexpr std::uint32_t grid_table_size = 4096;
 
 	struct buffer_layout {
@@ -331,24 +341,24 @@ export namespace gse::vbd {
 
 		std::uint32_t m_warm_start_count = 0;
 
-		linear_vector<std::byte> m_upload_body_data;
-		linear_vector<std::byte> m_upload_motor_data;
-		linear_vector<std::byte> m_upload_warm_start_data;
-		linear_vector<std::byte> m_upload_joint_data;
-		linear_vector<std::uint32_t> m_upload_motor_map;
-		linear_vector<std::uint32_t> m_upload_collision_state;
-		linear_vector<std::uint8_t> m_upload_authoritative_bodies;
+		std::vector<std::byte> m_upload_body_data;
+		std::vector<std::byte> m_upload_motor_data;
+		std::vector<std::byte> m_upload_warm_start_data;
+		std::vector<std::byte> m_upload_joint_data;
+		std::vector<std::uint32_t> m_upload_motor_map;
+		std::vector<std::uint32_t> m_upload_collision_state;
+		std::vector<std::uint8_t> m_upload_authoritative_bodies;
 
-		linear_vector<std::byte> m_staged_contact_data;
-		linear_vector<std::byte> m_staged_joint_data;
+		std::vector<std::byte> m_staged_contact_data;
+		std::vector<std::byte> m_staged_joint_data;
 		std::uint32_t m_staged_body_count = 0;
 		std::uint32_t m_staged_contact_count = 0;
 		std::uint32_t m_staged_joint_count = 0;
 		std::uint32_t m_staged_color_count = max_colors;
 		bool m_staged_valid = false;
 
-		linear_vector<std::byte> m_readback_staging;
-		linear_vector<std::byte> m_latest_gpu_body_data;
+		std::vector<std::byte> m_readback_staging;
+		std::vector<std::byte> m_latest_gpu_body_data;
 		std::uint32_t m_latest_gpu_body_count = 0;
 	};
 }
@@ -1211,20 +1221,20 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	ctx.instantly_load(m_compute.prepare_contact_indirect);
 	ctx.instantly_load(m_compute.freeze_jacobians);
 
-	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.predict, "vbd_push_constants");
-	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.solve_color, "vbd_push_constants");
-	m_compute.update_lambda_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.update_lambda, "vbd_push_constants");
-	m_compute.derive_velocities_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.derive_velocities, "vbd_push_constants");
-	m_compute.finalize_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.finalize, "vbd_push_constants");
-	m_compute.collision_reset_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_reset, "vbd_push_constants");
-	m_compute.collision_broad_phase_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_broad_phase, "vbd_push_constants");
-	m_compute.collision_narrow_phase_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_narrow_phase, "vbd_push_constants");
-	m_compute.collision_grid_build_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_grid_build, "vbd_push_constants");
-	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.collision_build_adjacency, "vbd_push_constants");
-	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.update_joint_lambda, "vbd_push_constants");
-	m_compute.prepare_indirect_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.prepare_indirect, "vbd_push_constants");
-	m_compute.prepare_contact_indirect_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.prepare_contact_indirect, "vbd_push_constants");
-	m_compute.freeze_jacobians_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *m_compute.freeze_jacobians, "vbd_push_constants");
+	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.predict, "vbd_push_constants");
+	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.solve_color, "vbd_push_constants");
+	m_compute.update_lambda_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.update_lambda, "vbd_push_constants");
+	m_compute.derive_velocities_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.derive_velocities, "vbd_push_constants");
+	m_compute.finalize_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.finalize, "vbd_push_constants");
+	m_compute.collision_reset_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_reset, "vbd_push_constants");
+	m_compute.collision_broad_phase_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_broad_phase, "vbd_push_constants");
+	m_compute.collision_narrow_phase_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_narrow_phase, "vbd_push_constants");
+	m_compute.collision_grid_build_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_grid_build, "vbd_push_constants");
+	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_build_adjacency, "vbd_push_constants");
+	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.update_joint_lambda, "vbd_push_constants");
+	m_compute.prepare_indirect_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.prepare_indirect, "vbd_push_constants");
+	m_compute.prepare_contact_indirect_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.prepare_contact_indirect, "vbd_push_constants");
+	m_compute.freeze_jacobians_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.freeze_jacobians, "vbd_push_constants");
 
 	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
 		const auto block = sh->uniform_block(name);
@@ -1247,9 +1257,9 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 
 	for (auto& f : m_frames) {
 		f.queue = gpu::create_compute_queue(ctx.device_ref());
-		f.descriptors = gpu::allocate_descriptors(ctx.device_ref(), *m_compute.predict);
+		f.descriptors = gpu::allocate_descriptors(ctx, *m_compute.predict);
 
-		gpu::descriptor_writer(ctx.device_ref(), m_compute.predict, f.descriptors)
+		gpu::descriptor_writer(ctx, m_compute.predict, f.descriptors)
 			.buffer("body_data", f.body_buffer)
 			.buffer("contact_data", f.contact_buffer)
 			.buffer("motor_data", f.motor_buffer)
@@ -1283,6 +1293,20 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 	auto& f = m_frames[m_dispatch_slot];
 
 	m_compute.solve_ms = f.queue.read_timing();
+
+	auto ingest_stage = [&](const std::string_view tag, const std::uint32_t start_slot, const std::uint32_t end_slot) {
+		const float ms = f.queue.read_timing(start_slot, end_slot);
+		if (ms > 0.f) {
+			profile::ingest_gpu_sample(find_or_generate_id(tag), milliseconds(ms));
+		}
+	};
+
+	ingest_stage("gpu:vbd_collision",  timing_slot::begin,           timing_slot::after_collision);
+	ingest_stage("gpu:vbd_predict",    timing_slot::after_collision, timing_slot::after_predict);
+	ingest_stage("gpu:vbd_solve",      timing_slot::after_predict,   timing_slot::after_solve);
+	ingest_stage("gpu:vbd_velocity",   timing_slot::after_solve,     timing_slot::after_velocity);
+	ingest_stage("gpu:vbd_finalize",   timing_slot::after_velocity,  timing_slot::after_finalize);
+
 	f.queue.begin();
 
 	constexpr std::array init_scopes = { gpu::barrier_scope::host_to_compute, gpu::barrier_scope::transfer_to_transfer };
@@ -1371,6 +1395,8 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 		f.queue.dispatch(1, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
+		f.queue.mark_timing(timing_slot::after_collision);
+
 		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
@@ -1378,6 +1404,8 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 		bind_and_push(m_compute.freeze_jacobians, m_compute.freeze_jacobians_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+
+		f.queue.mark_timing(timing_slot::after_predict);
 
 		for (std::uint32_t iterations = 0; iterations < num_iterations; ++iterations) {
 			bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, solve_alpha, substep_warm_start_count);
@@ -1433,6 +1461,8 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 			}
 		}
 
+		f.queue.mark_timing(timing_slot::after_solve);
+
 		bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, num_iterations, solve_alpha, substep_warm_start_count);
 		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
@@ -1483,9 +1513,13 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 			f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 		}
 
+		f.queue.mark_timing(timing_slot::after_velocity);
+
 		bind_and_push(m_compute.finalize, m_compute.finalize_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+
+		f.queue.mark_timing(timing_slot::after_finalize);
 	}
 
 	f.queue.end_timing();

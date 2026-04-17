@@ -166,14 +166,14 @@ auto gse::renderer::physics_debug::system::initialize(const init_context& phase,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
 
-		gpu::descriptor_writer(ctx.device_ref(), r.shader_handle, r.descriptors[i])
+		gpu::descriptor_writer(ctx, r.shader_handle, r.descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
 
-	r.pipeline = gpu::create_graphics_pipeline(ctx.device_ref(), *r.shader_handle, {
+	r.pipeline = gpu::create_graphics_pipeline(ctx, *r.shader_handle, {
 		.rasterization = {
 			.polygon = gpu::polygon_mode::line,
 			.cull = gpu::cull_mode::none

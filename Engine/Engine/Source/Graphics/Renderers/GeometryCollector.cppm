@@ -147,16 +147,9 @@ export namespace gse::renderer::geometry_collector {
 		projection_matrix proj;
 	};
 
-	struct render_cache {
-		std::optional<render_data> data;
-		std::size_t last_render_count = 0;
-		bool had_body_map = false;
-	};
-
 	struct state {
 		resource::handle<skeleton> current_skeleton;
 		std::uint32_t current_joint_count = 0;
-		render_cache cache;
 	};
 
 	auto filter_render_queue(
@@ -172,6 +165,12 @@ export namespace gse::renderer::geometry_collector {
 
 			std::uint32_t instance_stride = 0;
 			std::unordered_map<std::string, std::uint32_t> instance_offsets;
+
+			std::uint32_t instance_model_matrix_offset = 0;
+			std::uint32_t instance_normal_matrix_offset = 0;
+			std::uint32_t instance_skin_offset_offset = 0;
+			std::uint32_t instance_joint_count_offset = 0;
+			std::uint32_t instance_material_index_offset = 0;
 
 			std::uint32_t joint_stride = 0;
 			std::unordered_map<std::string, std::uint32_t> joint_offsets;
@@ -250,6 +249,12 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 		r.instance_offsets[name] = member.offset;
 	}
 
+	r.instance_model_matrix_offset   = r.instance_offsets.at("model_matrix");
+	r.instance_normal_matrix_offset  = r.instance_offsets.at("normal_matrix");
+	r.instance_skin_offset_offset    = r.instance_offsets.at("skin_offset");
+	r.instance_joint_count_offset    = r.instance_offsets.at("joint_count");
+	r.instance_material_index_offset = r.instance_offsets.at("material_index");
+
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
 			.size = camera_ubo.size,
@@ -327,22 +332,6 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			return;
 		}
 
-		const auto render_count = render.size();
-		const bool entity_set_changed = render_count != s.cache.last_render_count;
-		s.cache.last_render_count = render_count;
-
-		const bool body_map_available = !body_index_map.empty();
-		const bool body_map_changed = body_map_available != s.cache.had_body_map;
-		s.cache.had_body_map = body_map_available;
-
-		if (!entity_set_changed && !body_map_changed && s.cache.data.has_value()) {
-			auto cached = *s.cache.data;
-			cached.view = view_matrix;
-			cached.proj = proj_matrix;
-			channels.push(std::move(cached));
-			return;
-		}
-
 		render_data data;
 		data.view = view_matrix;
 		data.proj = proj_matrix;
@@ -354,21 +343,56 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 		std::uint32_t skinned_instance_count = 0;
 
+		out.reserve(render.size());
+
 		trace::scope(find_or_generate_id("geom_collect::collect"), [&] {
-			for (auto& component : render) {
+			const auto render_size = render.size();
+
+			motion.prime();
+			collision.prime();
+
+			struct component_lookup {
+				const physics::motion_component* mc = nullptr;
+				const physics::collision_component* cc = nullptr;
+			};
+			std::vector<component_lookup> lookups(render_size);
+
+			task::parallel_invoke_range(0, render_size, [&](std::size_t i) {
+				auto& component = render[i];
 				if (!component.render) {
-					continue;
+					return;
 				}
 
 				const auto* mc = motion.find(component.owner_id());
 				const auto* cc = collision.find(component.owner_id());
+				if (mc == nullptr || cc == nullptr) {
+					return;
+				}
+
+				lookups[i] = { mc, cc };
+
+				for (auto& model_handle : component.model_instances) {
+					if (!model_handle.handle().valid()) {
+						continue;
+					}
+					model_handle.sync_structure();
+					model_handle.sync_transform(*mc, *cc);
+				}
+			});
+
+			for (std::size_t i = 0; i < render_size; ++i) {
+				auto& component = render[i];
+				if (!component.render) {
+					continue;
+				}
+
+				const auto* mc = lookups[i].mc;
+				const auto* cc = lookups[i].cc;
 
 				for (auto& model_handle : component.model_instances) {
 					if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
 						continue;
 					}
-
-					model_handle.update(*mc, *cc);
 					for (const auto& entry : model_handle.render_queue_entries()) {
 						out.push_back({
 							.entry = entry,
@@ -384,7 +408,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 						continue;
 					}
 
-					if (anim_comp != nullptr && !anim_comp->local_pose.empty()) { 
+					if (anim_comp != nullptr && !anim_comp->local_pose.empty()) {
 						const std::uint32_t skin_offset = static_cast<std::uint32_t>(local_pose_staging.size());
 
 						local_pose_staging.insert(local_pose_staging.end(), anim_comp->local_pose.begin(), anim_comp->local_pose.end());
@@ -462,11 +486,11 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			instance_staging.resize(offset_value + r.instance_stride);
 			std::byte* offset = instance_staging.data() + offset_value;
 
-			memcpy(offset + r.instance_offsets.at("model_matrix"), model_matrix);
-			memcpy(offset + r.instance_offsets.at("normal_matrix"), normal_matrix);
-			memcpy(offset + r.instance_offsets.at("skin_offset"), skin_offset);
-			memcpy(offset + r.instance_offsets.at("joint_count"), joint_count);
-			memcpy(offset + r.instance_offsets.at("material_index"), mat_idx);
+			memcpy(offset + r.instance_model_matrix_offset,   model_matrix);
+			memcpy(offset + r.instance_normal_matrix_offset,  normal_matrix);
+			memcpy(offset + r.instance_skin_offset_offset,    skin_offset);
+			memcpy(offset + r.instance_joint_count_offset,    joint_count);
+			memcpy(offset + r.instance_material_index_offset, mat_idx);
 		};
 
 		std::uint32_t global_instance_offset = 0;
@@ -497,20 +521,18 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
 
 			for (std::size_t i = batch_begin; i < batch_end; ++i) {
-				const auto& entry = out[i].entry;
-				const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, entry.model_matrix);
+				const auto& [entry, owner] = out[i];
 
-				world_aabb_min = vec3<length>(
-					std::min(world_aabb_min.x(), inst_min.x()),
-					std::min(world_aabb_min.y(), inst_min.y()),
-					std::min(world_aabb_min.z(), inst_min.z())
-				);
-
-				world_aabb_max = vec3<length>(
-					std::max(world_aabb_max.x(), inst_max.x()),
-					std::max(world_aabb_max.y(), inst_max.y()),
-					std::max(world_aabb_max.z(), inst_max.z())
-				);
+				if (const auto* cc = collision.find(owner); cc != nullptr) {
+					const auto& inst_aabb = cc->bounding_box.aabb();
+					world_aabb_min = gse::min(world_aabb_min, inst_aabb.min);
+					world_aabb_max = gse::max(world_aabb_max, inst_aabb.max);
+				}
+				else {
+					const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, entry.model_matrix);
+					world_aabb_min = gse::min(world_aabb_min, inst_min);
+					world_aabb_max = gse::max(world_aabb_max, inst_max);
+				}
 			}
 
 			normal_batches.push_back({
@@ -611,9 +633,6 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 		data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
 
-		if (!data.normal_batches.empty() || !data.skinned_batches.empty()) {
-			s.cache.data = data;
-		}
 		channels.push(std::move(data));
 	});
 }

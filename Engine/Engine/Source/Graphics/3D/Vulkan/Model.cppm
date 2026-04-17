@@ -26,18 +26,14 @@ export namespace gse {
 	public:
 		explicit model_instance(const resource::handle<model>& model_handle) : m_model_handle(model_handle) {}
 
-		auto update(const physics::motion_component& mc, const physics::collision_component& cc) -> void;
+		auto sync_structure() -> void;
+		auto sync_transform(const physics::motion_component& mc, const physics::collision_component& cc) -> void;
 
 		auto render_queue_entries() const -> std::span<const render_queue_entry>;
 		auto handle() const -> const resource::handle<model>&;
 	private:
 		std::vector<render_queue_entry> m_render_queue_entries;
 		resource::handle<model> m_model_handle;
-
-		vec3<position> m_position;
-		quat m_rotation;
-		vec3<displacement> m_scale = { meters(1.f), meters(1.f), meters(1.f) };
-		bool m_is_dirty = true;
 		std::size_t m_cached_mesh_count = 0;
 	};
 
@@ -46,7 +42,7 @@ export namespace gse {
 		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
-		auto load(gpu::resource_manager& context) -> void;
+		auto load(gpu::context& context) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;
@@ -67,7 +63,7 @@ gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : 
 	}
 }
 
-auto gse::model::load(gpu::resource_manager& context) -> void {
+auto gse::model::load(gpu::context& context) -> void {
 	if (!m_baked_model_path.empty()) {
 		m_meshes.clear();
 
@@ -124,7 +120,7 @@ auto gse::model::load(gpu::resource_manager& context) -> void {
 
 	context.queue_gpu_command<model>(
 		this,
-		[](gpu::resource_manager& ctx, model& self) {
+		[](gpu::context& ctx, model& self) {
 			for (auto& mesh : self.m_meshes) {
 				mesh.initialize(ctx);
 			}
@@ -150,57 +146,55 @@ auto gse::model::center_of_mass() const -> vec3<length> {
 	return m_center_of_mass;
 }
 
-auto gse::model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc) -> void {
-	m_position = mc.current_position;
-	m_rotation = mc.orientation;
-	m_scale = cc.bounding_box.size();
-	m_is_dirty = true;
-
+auto gse::model_instance::sync_structure() -> void {
 	if (!m_model_handle.valid()) {
 		m_render_queue_entries.clear();
 		m_cached_mesh_count = 0;
+		return;
 	}
-	else {
-		const auto* resolved = m_model_handle.resolve();
-		const std::size_t mesh_count = resolved ? resolved->meshes().size() : 0;
 
-		if (mesh_count == 0) {
-			m_render_queue_entries.clear();
-			m_cached_mesh_count = 0;
-		}
-		else {
-			if (m_render_queue_entries.size() != mesh_count || m_cached_mesh_count != mesh_count) {
-				m_render_queue_entries.clear();
-				m_render_queue_entries.reserve(mesh_count);
+	const auto* resolved = m_model_handle.resolve();
+	const std::size_t mesh_count = resolved ? resolved->meshes().size() : 0;
 
-				for (std::size_t i = 0; i < mesh_count; ++i) {
-					m_render_queue_entries.emplace_back(
-						render_queue_entry{
-							.model = m_model_handle,
-							.index = i,
-							.model_matrix = mat4f(1.0f),
-							.normal_matrix = mat4f(1.0f),
-							.color = vec3f(1.0f)
-						}
-					);
-				}
+	if (mesh_count == 0) {
+		m_render_queue_entries.clear();
+		m_cached_mesh_count = 0;
+		return;
+	}
 
-				m_cached_mesh_count = mesh_count;
-				m_is_dirty = true;
+	if (m_cached_mesh_count == mesh_count && m_render_queue_entries.size() == mesh_count) {
+		return;
+	}
+
+	m_render_queue_entries.clear();
+	m_render_queue_entries.reserve(mesh_count);
+
+	for (std::size_t i = 0; i < mesh_count; ++i) {
+		m_render_queue_entries.emplace_back(
+			render_queue_entry{
+				.model = m_model_handle,
+				.index = i,
+				.model_matrix = mat4f(1.0f),
+				.normal_matrix = mat4f(1.0f),
+				.color = vec3f(1.0f)
 			}
-		}
+		);
 	}
 
-	if (!m_is_dirty || m_render_queue_entries.empty() || !m_model_handle.valid()) {
+	m_cached_mesh_count = mesh_count;
+}
+
+auto gse::model_instance::sync_transform(const physics::motion_component& mc, const physics::collision_component& cc) -> void {
+	if (m_render_queue_entries.empty() || !m_model_handle.valid()) {
 		return;
 	}
 
 	const auto* mdl = m_model_handle.resolve();
 	const vec3 center_of_mass = mdl->center_of_mass();
 
-	const mat4f scale_mat             = scale(mat4f(1.0f), m_scale);
-	const mat4f rot_mat               = m_rotation;
-	const mat4f trans_mat             = translate(mat4f(1.0f), m_position);
+	const mat4f scale_mat             = scale(mat4f(1.0f), cc.bounding_box.size());
+	const mat4f rot_mat               = mc.orientation;
+	const mat4f trans_mat             = translate(mat4f(1.0f), mc.current_position);
 	const mat4f pivot_correction_mat  = translate(mat4f(1.0f), -center_of_mass);
 	const mat4f final_model_matrix    = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
 	const mat4f normal_matrix         = final_model_matrix.inverse().transpose();
@@ -209,8 +203,6 @@ auto gse::model_instance::update(const physics::motion_component& mc, const phys
 		entry.model_matrix  = final_model_matrix;
 		entry.normal_matrix = normal_matrix;
 	}
-
-	m_is_dirty = false;
 }
 
 auto gse::model_instance::render_queue_entries() const -> std::span<const render_queue_entry> {

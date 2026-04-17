@@ -54,6 +54,12 @@ export namespace gse {
 			std::atomic<bool> completed{ false };
 		};
 
+		struct state_slot {
+			std::atomic<bool> ready{ false };
+			std::mutex waiter_lock;
+			std::vector<std::coroutine_handle<>> waiters;
+		};
+
 		auto build_edges(
 		) const -> void;
 
@@ -62,11 +68,14 @@ export namespace gse {
 			task::group& work_group
 		) -> void;
 
+		auto get_or_create_slot(
+			std::type_index state_type
+		) -> state_slot*;
+
 		linear_vector<std::unique_ptr<graph_node>> m_nodes;
 
-		flat_map<std::type_index, bool> m_state_ready;
-		flat_map<std::type_index, std::vector<std::coroutine_handle<>>> m_state_waiters;
-		std::mutex m_state_mutex;
+		flat_map<std::type_index, std::unique_ptr<state_slot>> m_states;
+		std::shared_mutex m_states_mutex;
 	};
 }
 
@@ -160,23 +169,40 @@ auto gse::task_graph::execute() -> void {
 
 auto gse::task_graph::clear() -> void {
 	m_nodes.clear();
-	{
-		std::lock_guard lock(m_state_mutex);
-		m_state_ready.clear();
-		m_state_waiters.clear();
+	std::shared_lock lock(m_states_mutex);
+	for (auto& slot : std::views::values(m_states)) {
+		slot->ready.store(false, std::memory_order_relaxed);
+		std::lock_guard waiter_lock(slot->waiter_lock);
+		slot->waiters.clear();
 	}
 }
 
+auto gse::task_graph::get_or_create_slot(const std::type_index state_type) -> state_slot* {
+	{
+		std::shared_lock lock(m_states_mutex);
+		if (const auto it = m_states.find(state_type); it != m_states.end()) {
+			return it->second.get();
+		}
+	}
+
+	std::unique_lock lock(m_states_mutex);
+	if (const auto it = m_states.find(state_type); it != m_states.end()) {
+		return it->second.get();
+	}
+	auto slot = std::make_unique<state_slot>();
+	auto* raw = slot.get();
+	m_states.emplace(state_type, std::move(slot));
+	return raw;
+}
+
 auto gse::task_graph::notify_state_ready(const std::type_index state_type) -> void {
+	auto* slot = get_or_create_slot(state_type);
+	slot->ready.store(true, std::memory_order_release);
+
 	std::vector<std::coroutine_handle<>> handles;
 	{
-		std::lock_guard lock(m_state_mutex);
-		m_state_ready[state_type] = true;
-
-		if (const auto it = m_state_waiters.find(state_type); it != m_state_waiters.end()) {
-			handles = std::move(it->second);
-			it->second.clear();
-		}
+		std::lock_guard lock(slot->waiter_lock);
+		handles = std::move(slot->waiters);
 	}
 
 	for (auto h : handles) {
@@ -185,16 +211,13 @@ auto gse::task_graph::notify_state_ready(const std::type_index state_type) -> vo
 }
 
 auto gse::task_graph::wait_state_ready(const std::type_index state_type) -> async::task<> {
-	{
-		std::lock_guard lock(m_state_mutex);
-		if (m_state_ready.contains(state_type) && m_state_ready[state_type]) {
-			co_return;
-		}
+	auto* slot = get_or_create_slot(state_type);
+	if (slot->ready.load(std::memory_order_acquire)) {
+		co_return;
 	}
 
 	struct state_awaiter {
-		task_graph& graph;
-		std::type_index type;
+		state_slot* slot;
 
 		static auto await_ready(
 		) noexcept -> bool {
@@ -206,12 +229,12 @@ auto gse::task_graph::wait_state_ready(const std::type_index state_type) -> asyn
 		) const noexcept -> void {
 			bool ready_now = false;
 			{
-				std::lock_guard lock(graph.m_state_mutex);
-				if (graph.m_state_ready.contains(type) && graph.m_state_ready[type]) {
+				std::lock_guard lock(slot->waiter_lock);
+				if (slot->ready.load(std::memory_order_acquire)) {
 					ready_now = true;
 				}
 				else {
-					graph.m_state_waiters[type].push_back(h);
+					slot->waiters.push_back(h);
 				}
 			}
 
@@ -224,5 +247,5 @@ auto gse::task_graph::wait_state_ready(const std::type_index state_type) -> asyn
 		) noexcept -> void {}
 	};
 
-	co_await state_awaiter{ *this, state_type };
+	co_await state_awaiter{ slot };
 }

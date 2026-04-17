@@ -10,8 +10,11 @@ import :gpu_descriptor;
 import :gpu_descriptor_writer;
 import :gpu_compute;
 import :gpu_device;
+import :gpu_context;
 import :shader;
 import :render_graph;
+import :vulkan_enums;
+import :shader_registry;
 
 import gse.assert;
 import :vulkan_allocator;
@@ -35,19 +38,19 @@ export namespace gse::gpu {
 	) -> buffer;
 
 	auto create_graphics_pipeline(
-		device& dev,
+		context& ctx,
 		const shader& s,
 		const graphics_pipeline_desc& desc = {}
 	) -> pipeline;
 
 	auto create_compute_pipeline(
-		device& dev,
+		context& ctx,
 		const shader& s,
 		const std::string& push_constant_block = {}
 	) -> pipeline;
 
 	auto create_image(
-		device& dev,
+		context& ctx,
 		const image_desc& desc
 	) -> image;
 
@@ -57,18 +60,18 @@ export namespace gse::gpu {
 	) -> sampler;
 
 	auto allocate_descriptors(
-		device& dev,
+		context& ctx,
 		const shader& s
 	) -> descriptor_region;
 
 	auto create_descriptor_writer(
-		device& dev,
+		context& ctx,
 		resource::handle<shader> s,
 		descriptor_region& region
 	) -> descriptor_writer;
 
 	auto create_push_writer(
-		device& dev,
+		context& ctx,
 		resource::handle<shader> s
 	) -> descriptor_writer;
 
@@ -80,7 +83,7 @@ export namespace gse::gpu {
 	};
 
 	auto upload_to_buffers(
-		device& dev,
+		context& ctx,
 		std::span<const buffer_upload> uploads
 	) -> void;
 
@@ -89,14 +92,14 @@ export namespace gse::gpu {
 	) -> compute_queue;
 
 	auto upload_image_2d(
-		device& dev,
+		context& ctx,
 		image& img,
 		const void* pixel_data,
 		std::size_t data_size
 	) -> void;
 
 	auto upload_image_layers(
-		device& dev,
+		context& ctx,
 		image& img,
 		const std::vector<const void*>& face_data,
 		std::size_t bytes_per_face
@@ -104,143 +107,8 @@ export namespace gse::gpu {
 
 }
 
-namespace {
-	auto to_vk(gse::gpu::buffer_usage usage) -> vk::BufferUsageFlags {
-		using enum gse::gpu::buffer_flag;
-		vk::BufferUsageFlags flags;
-		if (usage.test(uniform))      flags |= vk::BufferUsageFlagBits::eUniformBuffer;
-		if (usage.test(storage))      flags |= vk::BufferUsageFlagBits::eStorageBuffer;
-		if (usage.test(indirect))     flags |= vk::BufferUsageFlagBits::eIndirectBuffer;
-		if (usage.test(transfer_dst)) flags |= vk::BufferUsageFlagBits::eTransferDst;
-		if (usage.test(vertex))       flags |= vk::BufferUsageFlagBits::eVertexBuffer;
-		if (usage.test(index))        flags |= vk::BufferUsageFlagBits::eIndexBuffer;
-		if (usage.test(transfer_src)) flags |= vk::BufferUsageFlagBits::eTransferSrc;
-		if (usage.test(acceleration_structure_storage)) {
-			flags |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR
-			       | vk::BufferUsageFlagBits::eShaderDeviceAddress;
-		}
-		if (usage.test(acceleration_structure_build_input)) {
-			flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
-			       | vk::BufferUsageFlagBits::eShaderDeviceAddress;
-		}
-		if (usage.test(uniform) || usage.test(storage) || usage.test(indirect)) {
-			flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
-		}
-		return flags;
-	}
-
-	auto to_vk(gse::gpu::cull_mode mode) -> vk::CullModeFlags {
-		switch (mode) {
-			case gse::gpu::cull_mode::none:  return vk::CullModeFlagBits::eNone;
-			case gse::gpu::cull_mode::front: return vk::CullModeFlagBits::eFront;
-			case gse::gpu::cull_mode::back:  return vk::CullModeFlagBits::eBack;
-		}
-		return vk::CullModeFlagBits::eNone;
-	}
-
-	auto to_vk(gse::gpu::compare_op op) -> vk::CompareOp {
-		switch (op) {
-			case gse::gpu::compare_op::never:              return vk::CompareOp::eNever;
-			case gse::gpu::compare_op::less:               return vk::CompareOp::eLess;
-			case gse::gpu::compare_op::equal:              return vk::CompareOp::eEqual;
-			case gse::gpu::compare_op::less_or_equal:      return vk::CompareOp::eLessOrEqual;
-			case gse::gpu::compare_op::greater:            return vk::CompareOp::eGreater;
-			case gse::gpu::compare_op::not_equal:          return vk::CompareOp::eNotEqual;
-			case gse::gpu::compare_op::greater_or_equal:   return vk::CompareOp::eGreaterOrEqual;
-			case gse::gpu::compare_op::always:             return vk::CompareOp::eAlways;
-		}
-		return vk::CompareOp::eAlways;
-	}
-
-	auto to_vk(gse::gpu::polygon_mode mode) -> vk::PolygonMode {
-		switch (mode) {
-			case gse::gpu::polygon_mode::fill:  return vk::PolygonMode::eFill;
-			case gse::gpu::polygon_mode::line:  return vk::PolygonMode::eLine;
-			case gse::gpu::polygon_mode::point: return vk::PolygonMode::ePoint;
-		}
-		return vk::PolygonMode::eFill;
-	}
-
-	auto to_vk(gse::gpu::topology t) -> vk::PrimitiveTopology {
-		switch (t) {
-			case gse::gpu::topology::triangle_list: return vk::PrimitiveTopology::eTriangleList;
-			case gse::gpu::topology::line_list:     return vk::PrimitiveTopology::eLineList;
-			case gse::gpu::topology::point_list:    return vk::PrimitiveTopology::ePointList;
-		}
-		return vk::PrimitiveTopology::eTriangleList;
-	}
-
-	auto to_vk(gse::gpu::sampler_filter f) -> vk::Filter {
-		switch (f) {
-			case gse::gpu::sampler_filter::nearest: return vk::Filter::eNearest;
-			case gse::gpu::sampler_filter::linear:  return vk::Filter::eLinear;
-		}
-		return vk::Filter::eLinear;
-	}
-
-	auto to_vk(gse::gpu::sampler_address_mode m) -> vk::SamplerAddressMode {
-		switch (m) {
-			case gse::gpu::sampler_address_mode::repeat:          return vk::SamplerAddressMode::eRepeat;
-			case gse::gpu::sampler_address_mode::clamp_to_edge:   return vk::SamplerAddressMode::eClampToEdge;
-			case gse::gpu::sampler_address_mode::clamp_to_border: return vk::SamplerAddressMode::eClampToBorder;
-			case gse::gpu::sampler_address_mode::mirrored_repeat: return vk::SamplerAddressMode::eMirroredRepeat;
-		}
-		return vk::SamplerAddressMode::eRepeat;
-	}
-
-	auto to_vk(gse::gpu::border_color c) -> vk::BorderColor {
-		switch (c) {
-			case gse::gpu::border_color::float_opaque_white:       return vk::BorderColor::eFloatOpaqueWhite;
-			case gse::gpu::border_color::float_opaque_black:       return vk::BorderColor::eFloatOpaqueBlack;
-			case gse::gpu::border_color::float_transparent_black:  return vk::BorderColor::eFloatTransparentBlack;
-		}
-		return vk::BorderColor::eFloatOpaqueWhite;
-	}
-
-	auto to_vk(gse::gpu::image_layout l) -> vk::ImageLayout {
-		switch (l) {
-			case gse::gpu::image_layout::general:          return vk::ImageLayout::eGeneral;
-			case gse::gpu::image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
-			default:                                       return vk::ImageLayout::eUndefined;
-		}
-	}
-
-	auto make_blend_attachment(gse::gpu::blend_preset preset) -> vk::PipelineColorBlendAttachmentState {
-		switch (preset) {
-			case gse::gpu::blend_preset::none:
-				return {
-					.blendEnable = vk::False,
-					.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-				};
-			case gse::gpu::blend_preset::alpha:
-				return {
-					.blendEnable = vk::True,
-					.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-					.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-					.colorBlendOp = vk::BlendOp::eAdd,
-					.srcAlphaBlendFactor = vk::BlendFactor::eOne,
-					.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-					.alphaBlendOp = vk::BlendOp::eAdd,
-					.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-				};
-			case gse::gpu::blend_preset::alpha_premultiplied:
-				return {
-					.blendEnable = vk::True,
-					.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-					.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-					.colorBlendOp = vk::BlendOp::eAdd,
-					.srcAlphaBlendFactor = vk::BlendFactor::eOne,
-					.dstAlphaBlendFactor = vk::BlendFactor::eZero,
-					.alphaBlendOp = vk::BlendOp::eAdd,
-					.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-				};
-		}
-		return {};
-	}
-}
-
 auto gse::gpu::create_buffer(device& dev, const buffer_desc& desc) -> buffer {
-	auto vk_usage = to_vk(desc.usage);
+	auto vk_usage = vulkan::to_vk(desc.usage);
 	auto resource = dev.allocator().create_buffer({
 		.size = static_cast<vk::DeviceSize>(desc.size),
 		.usage = vk_usage
@@ -248,24 +116,9 @@ auto gse::gpu::create_buffer(device& dev, const buffer_desc& desc) -> buffer {
 	return buffer(std::move(resource));
 }
 
-auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
-	auto to_vk_format = [](image_format f) -> vk::Format {
-		switch (f) {
-			case image_format::d32_sfloat:       return vk::Format::eD32Sfloat;
-			case image_format::r8g8b8a8_srgb:    return vk::Format::eR8G8B8A8Srgb;
-			case image_format::r8g8b8a8_unorm:   return vk::Format::eR8G8B8A8Unorm;
-			case image_format::r8g8b8_srgb:      return vk::Format::eR8G8B8Srgb;
-			case image_format::r8g8b8_unorm:     return vk::Format::eR8G8B8Unorm;
-			case image_format::r8_unorm:          return vk::Format::eR8Unorm;
-			case image_format::b10g11r11_ufloat:      return vk::Format::eB10G11R11UfloatPack32;
-			case image_format::r8g8_snorm:            return vk::Format::eR8G8Snorm;
-			case image_format::r8g8_unorm:            return vk::Format::eR8G8Unorm;
-			case image_format::r16g16b16a16_sfloat:   return vk::Format::eR16G16B16A16Sfloat;
-		}
-		return vk::Format::eD32Sfloat;
-	};
-
-	const auto vk_format = to_vk_format(desc.format);
+auto gse::gpu::create_image(context& ctx, const image_desc& desc) -> image {
+	auto& dev = ctx.device_ref();
+	const auto vk_format = vulkan::to_vk(desc.format);
 	const bool is_depth = desc.format == image_format::d32_sfloat;
 	const bool is_cube = desc.view == image_view_type::cube;
 	const std::uint32_t layers = is_cube ? 6u : 1u;
@@ -306,19 +159,11 @@ auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
 	);
 
 	if (desc.ready_layout != image_layout::undefined) {
-		auto to_vk_layout = [](image_layout l) -> vk::ImageLayout {
-			switch (l) {
-				case image_layout::general:          return vk::ImageLayout::eGeneral;
-				case image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
-				default:                             return vk::ImageLayout::eUndefined;
-			}
-		};
-
-		const auto target = to_vk_layout(desc.ready_layout);
+		const auto target = vulkan::to_vk(desc.ready_layout);
 		const auto aspect = is_depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
 		const auto img = resource.image;
 
-		dev.add_transient_work([img, target, aspect, layers, is_depth](const auto& cmd) {
+		ctx.frame().add_transient_work([img, target, aspect, layers, is_depth](const auto& cmd) {
 			const auto dst_stage = is_depth
 				? (vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests)
 				: vk::PipelineStageFlagBits2::eAllCommands;
@@ -374,9 +219,10 @@ auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
 	return image(std::move(resource), desc.format, desc.size, std::move(layer_views));
 }
 
-auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const graphics_pipeline_desc& desc) -> pipeline {
+auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const graphics_pipeline_desc& desc) -> pipeline {
+	auto& dev = ctx.device_ref();
 	auto& vk_device = dev.logical_device();
-	const auto& cache = dev.shader_cache(s);
+	const auto& cache = ctx.shader_registry().cache(s);
 
 	const auto& layouts = cache.layout_handles;
 
@@ -385,7 +231,7 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 	if (has_push) {
 		const auto pb = s.push_block(desc.push_constant_block);
 		pc_range = vk::PushConstantRange{
-			vulkan::to_vk_stage_flags(pb.stage_flags),
+			vulkan::to_vk(pb.stage_flags),
 			0,
 			pb.size
 		};
@@ -401,8 +247,8 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 	const vk::PipelineRasterizationStateCreateInfo rasterizer{
 		.depthClampEnable = vk::False,
 		.rasterizerDiscardEnable = vk::False,
-		.polygonMode = to_vk(desc.rasterization.polygon),
-		.cullMode = to_vk(desc.rasterization.cull),
+		.polygonMode = vulkan::to_vk(desc.rasterization.polygon),
+		.cullMode = vulkan::to_vk(desc.rasterization.cull),
 		.frontFace = vk::FrontFace::eCounterClockwise,
 		.depthBiasEnable = desc.rasterization.depth_bias ? vk::True : vk::False,
 		.depthBiasConstantFactor = desc.rasterization.depth_bias_constant,
@@ -414,7 +260,7 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 	const vk::PipelineDepthStencilStateCreateInfo depth_stencil{
 		.depthTestEnable = desc.depth.test ? vk::True : vk::False,
 		.depthWriteEnable = desc.depth.write ? vk::True : vk::False,
-		.depthCompareOp = to_vk(desc.depth.compare),
+		.depthCompareOp = vulkan::to_vk(desc.depth.compare),
 		.depthBoundsTestEnable = vk::False,
 		.stencilTestEnable = vk::False,
 		.minDepthBounds = 0.0f,
@@ -431,7 +277,7 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 	};
 
 	const vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-		.topology = to_vk(desc.topology),
+		.topology = vulkan::to_vk(desc.topology),
 		.primitiveRestartEnable = vk::False
 	};
 
@@ -469,7 +315,7 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 		.depthAttachmentFormat = vk_depth_format
 	};
 
-	const auto blend_attachment = make_blend_attachment(desc.blend);
+	const auto blend_attachment = vulkan::to_vk(desc.blend);
 	const vk::PipelineColorBlendStateCreateInfo color_blending{
 		.logicOpEnable = vk::False,
 		.logicOp = vk::LogicOp::eCopy,
@@ -534,7 +380,7 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 		vk_attrs.push_back({
 			.location = a.location,
 			.binding = a.binding,
-			.format = vulkan::to_vk_format(a.format),
+			.format = vulkan::to_vk(a.format),
 			.offset = a.offset
 		});
 	}
@@ -566,9 +412,9 @@ auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const grap
 	return pipeline(std::move(handle), std::move(pipeline_layout), bind_point::graphics);
 }
 
-auto gse::gpu::create_compute_pipeline(device& dev, const shader& s, const std::string& push_constant_block) -> pipeline {
-	auto& vk_device = dev.logical_device();
-	const auto& cache = dev.shader_cache(s);
+auto gse::gpu::create_compute_pipeline(context& ctx, const shader& s, const std::string& push_constant_block) -> pipeline {
+	auto& vk_device = ctx.device_ref().logical_device();
+	const auto& cache = ctx.shader_registry().cache(s);
 
 	const auto& layouts = cache.layout_handles;
 
@@ -577,7 +423,7 @@ auto gse::gpu::create_compute_pipeline(device& dev, const shader& s, const std::
 	if (has_push) {
 		const auto pb = s.push_block(push_constant_block);
 		pc_range = vk::PushConstantRange{
-			vulkan::to_vk_stage_flags(pb.stage_flags),
+			vulkan::to_vk(pb.stage_flags),
 			0,
 			pb.size
 		};
@@ -609,46 +455,46 @@ auto gse::gpu::create_sampler(device& dev, const sampler_desc& desc) -> sampler 
 	auto& vk_device = dev.logical_device();
 
 	const vk::SamplerCreateInfo info{
-		.magFilter = to_vk(desc.mag),
-		.minFilter = to_vk(desc.min),
+		.magFilter = vulkan::to_vk(desc.mag),
+		.minFilter = vulkan::to_vk(desc.min),
 		.mipmapMode = desc.min == sampler_filter::nearest ? vk::SamplerMipmapMode::eNearest : vk::SamplerMipmapMode::eLinear,
-		.addressModeU = to_vk(desc.address_u),
-		.addressModeV = to_vk(desc.address_v),
-		.addressModeW = to_vk(desc.address_w),
+		.addressModeU = vulkan::to_vk(desc.address_u),
+		.addressModeV = vulkan::to_vk(desc.address_v),
+		.addressModeW = vulkan::to_vk(desc.address_w),
 		.mipLodBias = 0.0f,
 		.anisotropyEnable = desc.max_anisotropy > 0.0f ? vk::True : vk::False,
 		.maxAnisotropy = desc.max_anisotropy,
 		.compareEnable = desc.compare_enable ? vk::True : vk::False,
-		.compareOp = to_vk(desc.compare),
+		.compareOp = vulkan::to_vk(desc.compare),
 		.minLod = desc.min_lod,
 		.maxLod = desc.max_lod,
-		.borderColor = to_vk(desc.border),
+		.borderColor = vulkan::to_vk(desc.border),
 		.unnormalizedCoordinates = vk::False
 	};
 
 	return sampler(vk_device.createSampler(info));
 }
 
-auto gse::gpu::allocate_descriptors(device& dev, const shader& s) -> descriptor_region {
-	const auto& cache = dev.shader_cache(s);
+auto gse::gpu::allocate_descriptors(context& ctx, const shader& s) -> descriptor_region {
+	const auto& cache = ctx.shader_registry().cache(s);
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
 	assert(persistent_idx < cache.layout_handles.size(), std::source_location::current(), "Shader has no persistent descriptor set to allocate");
 
-	auto& heap = dev.descriptor_heap();
+	auto& heap = ctx.device_ref().descriptor_heap();
 	const auto set_layout = cache.layout_handles[persistent_idx];
 	const auto size = heap.layout_size(set_layout);
 	return descriptor_region(heap.allocate(size));
 }
 
-auto gse::gpu::create_descriptor_writer(device& dev, resource::handle<shader> s, descriptor_region& region) -> descriptor_writer {
-	return descriptor_writer(dev, std::move(s), region);
+auto gse::gpu::create_descriptor_writer(context& ctx, resource::handle<shader> s, descriptor_region& region) -> descriptor_writer {
+	return descriptor_writer(ctx, std::move(s), region);
 }
 
-auto gse::gpu::create_push_writer(device& dev, resource::handle<shader> s) -> descriptor_writer {
-	return descriptor_writer(dev, std::move(s));
+auto gse::gpu::create_push_writer(context& ctx, resource::handle<shader> s) -> descriptor_writer {
+	return descriptor_writer(ctx, std::move(s));
 }
 
-auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_upload> uploads) -> void {
+auto gse::gpu::upload_to_buffers(context& ctx, const std::span<const buffer_upload> uploads) -> void {
 	if (uploads.empty()) return;
 
 	struct upload_entry {
@@ -670,7 +516,8 @@ auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_uploa
 		});
 	}
 
-	dev.add_transient_work([&dev, entries = std::move(entries)](const auto& cmd) {
+	auto& dev = ctx.device_ref();
+	ctx.frame().add_transient_work([&dev, entries = std::move(entries)](const auto& cmd) {
 		std::vector<vulkan::buffer_resource> transient;
 		transient.reserve(entries.size());
 
@@ -688,18 +535,119 @@ auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_uploa
 	});
 }
 
-auto gse::gpu::upload_image_2d(device& dev, image& img, const void* pixel_data, const std::size_t data_size) -> void {
-	vulkan::uploader::upload_image_2d(dev, img.native(), img.extent(), pixel_data, data_size, vk::ImageLayout::eShaderReadOnlyOptimal);
+auto gse::gpu::upload_image_2d(context& ctx, image& img, const void* pixel_data, const std::size_t data_size) -> void {
+	const auto extent = img.extent();
+	auto& resource = img.native();
+	auto& dev = ctx.device_ref();
+
+	ctx.frame().add_transient_work([&dev, &resource, extent, pixel_data, data_size](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
+		auto staging = dev.allocator().create_buffer(
+			vk::BufferCreateInfo{
+				.size = data_size,
+				.usage = vk::BufferUsageFlagBits::eTransferSrc
+			},
+			pixel_data
+		);
+
+		vulkan::uploader::transition_image_layout(
+			*cmd, resource,
+			vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor,
+			vk::PipelineStageFlagBits2::eTopOfPipe, {},
+			vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite
+		);
+
+		const vk::BufferImageCopy region{
+			.bufferOffset = 0,
+			.imageSubresource = {
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.mipLevel = 0,
+				.baseArrayLayer = 0,
+				.layerCount = 1
+			},
+			.imageExtent = { extent.x(), extent.y(), 1 }
+		};
+
+		cmd.copyBufferToImage(staging.buffer, resource.image, vk::ImageLayout::eTransferDstOptimal, region);
+
+		vulkan::uploader::transition_image_layout(
+			*cmd, resource,
+			vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor,
+			vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+			vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead
+		);
+
+		std::vector<vulkan::buffer_resource> buffers;
+		buffers.push_back(std::move(staging));
+		return buffers;
+	});
+
 	img.set_layout(image_layout::shader_read_only);
 }
 
-auto gse::gpu::upload_image_layers(device& dev, image& img, const std::vector<const void*>& face_data, const std::size_t bytes_per_face) -> void {
-	vulkan::uploader::upload_image_layers(dev, img.native(), img.extent(), face_data, bytes_per_face, vk::ImageLayout::eShaderReadOnlyOptimal);
+auto gse::gpu::upload_image_layers(context& ctx, image& img, const std::vector<const void*>& face_data, const std::size_t bytes_per_face) -> void {
+	const auto extent = img.extent();
+	auto& resource = img.native();
+	auto& dev = ctx.device_ref();
+	const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
+	const std::size_t total_size = layer_count * bytes_per_face;
+
+	ctx.frame().add_transient_work([&dev, &resource, &face_data, extent, layer_count, total_size, bytes_per_face](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
+		auto staging = dev.allocator().create_buffer(
+			vk::BufferCreateInfo{
+				.size = total_size,
+				.usage = vk::BufferUsageFlagBits::eTransferSrc
+			}
+		);
+
+		const auto mapped = staging.allocation.mapped();
+		for (std::size_t i = 0; i < layer_count; ++i) {
+			gse::memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
+		}
+
+		vulkan::uploader::transition_image_layout(
+			*cmd, resource,
+			vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor,
+			vk::PipelineStageFlagBits2::eTopOfPipe, {},
+			vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+			1, layer_count
+		);
+
+		std::vector<vk::BufferImageCopy> regions;
+		regions.reserve(layer_count);
+		for (std::uint32_t i = 0; i < layer_count; ++i) {
+			regions.emplace_back(vk::BufferImageCopy{
+				.bufferOffset = i * bytes_per_face,
+				.imageSubresource = {
+					.aspectMask = vk::ImageAspectFlagBits::eColor,
+					.mipLevel = 0,
+					.baseArrayLayer = i,
+					.layerCount = 1
+				},
+				.imageExtent = { extent.x(), extent.y(), 1 }
+			});
+		}
+
+		cmd.copyBufferToImage(staging.buffer, resource.image, vk::ImageLayout::eTransferDstOptimal, regions);
+
+		vulkan::uploader::transition_image_layout(
+			*cmd, resource,
+			vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor,
+			vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+			vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead,
+			1, layer_count
+		);
+
+		std::vector<vulkan::buffer_resource> buffers;
+		buffers.push_back(std::move(staging));
+		return buffers;
+	});
+
 	img.set_layout(image_layout::shader_read_only);
 }
+
 
 auto gse::gpu::create_compute_queue(device& dev) -> compute_queue {
-	auto& vk_device = dev.logical_device();
+	const auto& vk_device = dev.logical_device();
 
 	auto pool = vk_device.createCommandPool({
 		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -716,7 +664,7 @@ auto gse::gpu::create_compute_queue(device& dev) -> compute_queue {
 		.flags = vk::FenceCreateFlagBits::eSignaled
 	});
 
-	const vk::SemaphoreTypeCreateInfo timeline_type{
+	constexpr vk::SemaphoreTypeCreateInfo timeline_type{
 		.semaphoreType = vk::SemaphoreType::eTimeline,
 		.initialValue = 0
 	};
@@ -726,10 +674,10 @@ auto gse::gpu::create_compute_queue(device& dev) -> compute_queue {
 
 	auto query_pool = vk_device.createQueryPool({
 		.queryType = vk::QueryType::eTimestamp,
-		.queryCount = 4
+		.queryCount = compute_queue::timing_slot_count
 	});
 
-	static_cast<vk::Device>(*vk_device).resetQueryPool(*query_pool, 0, 4);
+	query_pool.reset(0, compute_queue::timing_slot_count);
 
 	const float timestamp_period = dev.physical_device().getProperties().limits.timestampPeriod;
 

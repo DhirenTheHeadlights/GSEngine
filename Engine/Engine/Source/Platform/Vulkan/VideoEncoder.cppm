@@ -23,6 +23,12 @@ export namespace gse::gpu {
 		vk::ExtensionProperties std_header_version{};
 	};
 
+	struct encoded_unit {
+		std::vector<std::byte> bytes;
+		time pts{};
+		bool keyframe = false;
+	};
+
 	class video_encoder final : public non_copyable {
 	public:
 		video_encoder() = default;
@@ -55,17 +61,34 @@ export namespace gse::gpu {
 			std::uint32_t frame_slot
 		) -> void;
 
+		[[nodiscard]] auto read_bitstream(
+			std::uint32_t frame_slot
+		) -> std::optional<encoded_unit>;
+
+		[[nodiscard]] auto stream_header(
+		) const -> std::span<const std::byte>;
+
+		[[nodiscard]] auto codec(
+		) const -> video_codec;
+
+		[[nodiscard]] auto extent(
+		) const -> vec2u;
+
 		explicit operator bool() const;
 	private:
 		struct per_frame {
 			vk::raii::CommandPool pool = nullptr;
 			vk::raii::CommandBuffer cmd = nullptr;
 			vk::raii::Fence fence = nullptr;
+			vk::raii::QueryPool query_pool = nullptr;
 			vulkan::buffer_resource bitstream;
 			vk::Image nv12_image = nullptr;
 			vk::raii::ImageView nv12_view = nullptr;
 			vk::DeviceMemory nv12_memory = nullptr;
+			time last_pts{};
+			bool last_was_keyframe = false;
 			bool submitted = false;
+			bool has_output = false;
 		};
 
 		struct dpb_slot {
@@ -79,6 +102,8 @@ export namespace gse::gpu {
 		std::vector<vk::DeviceMemory> m_session_memory;
 		per_frame_resource<per_frame> m_slots;
 		per_frame_resource<dpb_slot> m_dpb;
+		std::vector<std::byte> m_stream_header;
+		clock m_clock;
 		video_codec m_codec = video_codec::h265;
 		vec2u m_extent{};
 		std::uint64_t m_frame_number = 0;
@@ -279,6 +304,12 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 		memory = mem;
 	}
 
+	const auto feedback_flags = vk::VideoEncodeFeedbackFlagBitsKHR::eBitstreamBufferOffset | vk::VideoEncodeFeedbackFlagBitsKHR::eBitstreamBytesWritten;
+	vk::QueryPoolVideoEncodeFeedbackCreateInfoKHR feedback_info{
+		.pNext = &chain.profile,
+		.encodeFeedbackFlags = feedback_flags
+	};
+
 	for (auto& slot : enc.m_slots) {
 		slot.pool = vk_dev.createCommandPool({
 			.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -296,7 +327,14 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 			.flags = vk::FenceCreateFlagBits::eSignaled
 		});
 
+		slot.query_pool = vk_dev.createQueryPool({
+			.pNext = &feedback_info,
+			.queryType = vk::QueryType::eVideoEncodeFeedbackKHR,
+			.queryCount = 1
+		});
+
 		slot.bitstream = dev.allocator().create_buffer({
+			.pNext = &profile_list,
 			.size = bitstream_buffer_size,
 			.usage = vk::BufferUsageFlagBits::eVideoEncodeDstKHR
 		}, nullptr, "encode_bitstream");
@@ -306,6 +344,8 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 		slot.nv12_view = std::move(v);
 		slot.nv12_memory = mem;
 	}
+
+	enc.m_clock = {};
 
 	const auto codec_name = probe_caps.codec == video_codec::av1 ? "AV1" : "H.265";
 	log::println(log::category::vulkan, "Video encoder created: {} {}x{}", codec_name, extent.x(), extent.y());
@@ -437,6 +477,8 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 
 	std::array ref_slots = { setup_ref };
 
+	slot.cmd.resetQueryPool(*slot.query_pool, 0, 1);
+
 	slot.cmd.beginVideoCodingKHR({
 		.videoSession = *m_session,
 		.videoSessionParameters = *m_params,
@@ -449,6 +491,8 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 			.flags = vk::VideoCodingControlFlagBitsKHR::eReset
 		});
 	}
+
+	slot.cmd.beginQuery(*slot.query_pool, 0, {});
 
 	if (m_codec == video_codec::h265) {
 		static vk::video::EncodeH265PictureInfo std_pic_info{};
@@ -495,8 +539,13 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 		});
 	}
 
+	slot.cmd.endQuery(*slot.query_pool, 0);
+
 	slot.cmd.endVideoCodingKHR({});
 	slot.cmd.end();
+
+	slot.last_pts = m_clock.elapsed();
+	slot.last_was_keyframe = is_keyframe;
 
 	auto submit_info = vk::CommandBufferSubmitInfo{
 		.commandBuffer = *slot.cmd
@@ -508,8 +557,74 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 		.pCommandBufferInfos = &submit_info
 	}, *slot.fence);
 	slot.submitted = true;
+	slot.has_output = true;
 
 	m_frame_number++;
+}
+
+auto gse::gpu::video_encoder::read_bitstream(const std::uint32_t frame_slot) -> std::optional<encoded_unit> {
+	auto& slot = m_slots[frame_slot];
+	if (!slot.has_output) {
+		return std::nullopt;
+	}
+
+	const auto& vk_dev = m_device->logical_device();
+
+	struct feedback_result {
+		std::uint32_t offset;
+		std::uint32_t bytes_written;
+	} feedback{};
+
+	const auto result = (*vk_dev).getQueryPoolResults(
+		*slot.query_pool,
+		0,
+		1,
+		sizeof(feedback),
+		&feedback,
+		sizeof(feedback),
+		{}
+	);
+
+	if (result != vk::Result::eSuccess) {
+		if (result != vk::Result::eNotReady) {
+			log::println(
+				log::level::warning,
+				log::category::vulkan,
+				"Video encode feedback query failed: result={}",
+				static_cast<int>(result)
+			);
+		}
+		slot.has_output = false;
+		return std::nullopt;
+	}
+
+	if (feedback.bytes_written == 0) {
+		slot.has_output = false;
+		return std::nullopt;
+	}
+
+	encoded_unit unit;
+	unit.bytes.resize(feedback.bytes_written);
+	unit.pts = slot.last_pts;
+	unit.keyframe = slot.last_was_keyframe;
+
+	const auto* src = slot.bitstream.allocation.mapped() + feedback.offset;
+	gse::memcpy(unit.bytes.data(), src, feedback.bytes_written);
+
+	slot.has_output = false;
+	return unit;
+}
+
+auto gse::gpu::video_encoder::stream_header() const -> std::span<const std::byte> {
+	return m_stream_header;
+}
+
+auto gse::gpu::video_encoder::codec() const -> video_codec {
+	return m_codec;
+}
+
+auto gse::gpu::video_encoder::extent() const -> vec2u {
+	return m_extent;
 }
 
 auto gse::gpu::video_encoder::wait(const std::uint32_t frame_slot) -> void {
@@ -518,8 +633,22 @@ auto gse::gpu::video_encoder::wait(const std::uint32_t frame_slot) -> void {
 		return;
 	}
 
+	constexpr std::uint64_t timeout_ns = 500'000'000;
+
 	const auto& vk_dev = m_device->logical_device();
-	std::ignore = vk_dev.waitForFences(*slot.fence, vk::True, std::numeric_limits<std::uint64_t>::max());
+	const auto result = vk_dev.waitForFences(*slot.fence, vk::True, timeout_ns);
+	if (result != vk::Result::eSuccess) {
+		log::println(
+			log::level::warning,
+			log::category::vulkan,
+			"Video encode fence wait timed out on slot {} (result={})",
+			frame_slot,
+			static_cast<int>(result)
+		);
+		slot.has_output = false;
+		slot.submitted = false;
+		return;
+	}
 	vk_dev.resetFences(*slot.fence);
 	slot.submitted = false;
 }
