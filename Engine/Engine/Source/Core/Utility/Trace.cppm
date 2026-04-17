@@ -258,9 +258,6 @@ namespace gse::trace {
 	double_buffer<frame_storage> frames;
 	std::unordered_map<std::uint64_t, span_info> global_open_spans;
 
-	std::unordered_set<std::uint64_t> open_parents;
-	std::mutex open_m;
-
 	std::shared_mutex hidden_ids_mutex;
 	std::unordered_set<uuid> hidden_ids;
 
@@ -327,11 +324,6 @@ auto gse::trace::begin_block(const id id, std::uint64_t parent) -> std::uint64_t
 	const auto tid = make_tid();
 	const auto eid = allocate_span_eid();
 
-	{
-		std::scoped_lock lk(open_m);
-		open_parents.insert(eid);
-	}
-
 	emit({
 		.type = event_type::begin,
 		.id = id.number(),
@@ -350,11 +342,6 @@ auto gse::trace::end_block(const id id, const std::uint64_t eid, const std::uint
 	}
 
 	ensure_tls_registered();
-
-	{
-		std::scoped_lock lk(open_m);
-		open_parents.erase(eid);
-	}
 
 	emit({
 		.type = event_type::end,
@@ -394,11 +381,6 @@ auto gse::trace::scope(const id id, F&& f, std::uint64_t parent) -> void {
 
 	const auto eid = allocate_span_eid();
 
-	{
-		std::scoped_lock lk(open_m);
-		open_parents.insert(eid);
-	}
-
 	emit({
 		.type = event_type::begin,
 		.id = id.number(),
@@ -411,11 +393,6 @@ auto gse::trace::scope(const id id, F&& f, std::uint64_t parent) -> void {
 	tls.stack.push_back(eid);
 
 	auto guard = make_scope_exit([eid, parent, tid, uid = id.number(), need_push_parent] {
-		{
-			std::scoped_lock lk(open_m);
-			open_parents.erase(eid);
-		}
-
 		if (!tls.stack.empty() && tls.stack.back() == eid) {
 			emit({
 				.type = event_type::end,
@@ -714,21 +691,7 @@ auto gse::trace::emit(const event& e) -> void {
 }
 
 auto gse::trace::current_parent_eid() -> std::uint64_t {
-	while (!tls.stack.empty()) {
-		const auto top = tls.stack.back();
-
-		if (top == 0) {
-			return 0;
-		}
-
-		std::scoped_lock lk(open_m);
-		if (open_parents.contains(top)) {
-			return top;
-		}
-		tls.stack.pop_back();
-	}
-
-	return 0;
+	return tls.stack.empty() ? 0 : tls.stack.back();
 }
 
 auto gse::trace::build_tree(frame_storage& fs) -> void {

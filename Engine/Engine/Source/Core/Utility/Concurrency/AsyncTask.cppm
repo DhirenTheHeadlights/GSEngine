@@ -170,8 +170,8 @@ namespace gse::async {
 	struct when_all_state {
 		std::atomic<int> remaining;
 		std::coroutine_handle<> continuation;
+		std::atomic<bool> has_exception{ false };
 		std::exception_ptr first_exception;
-		std::mutex exception_mutex;
 	};
 
 	struct suspend_and_capture {
@@ -191,7 +191,7 @@ namespace gse::async {
 
 	auto when_all_helper(
 		task<> child,
-		std::shared_ptr<when_all_state> state
+		when_all_state* state
 	) -> task<>;
 
 	auto when_all_impl(
@@ -337,13 +337,13 @@ auto gse::async::suspend_and_capture::await_resume() noexcept -> void {
 	
 }
 
-auto gse::async::when_all_helper(task<> child, const std::shared_ptr<when_all_state> state) -> task<> {
+auto gse::async::when_all_helper(task<> child, when_all_state* state) -> task<> {
 	try {
 		co_await child;
 	}
 	catch (...) {
-		std::lock_guard lock(state->exception_mutex);
-		if (!state->first_exception) {
+		bool expected = false;
+		if (state->has_exception.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
 			state->first_exception = std::current_exception();
 		}
 	}
@@ -363,19 +363,19 @@ auto gse::async::when_all_impl(std::vector<task<>> tasks) -> task<> {
 		co_return;
 	}
 
-	const auto state = std::make_shared<when_all_state>();
-	state->remaining.store(static_cast<int>(tasks.size()), std::memory_order_relaxed);
+	when_all_state state;
+	state.remaining.store(static_cast<int>(tasks.size()), std::memory_order_relaxed);
 
 	std::vector<task<>> helpers;
 	helpers.reserve(tasks.size());
 	for (auto& t : tasks) {
-		helpers.push_back(when_all_helper(std::move(t), state));
+		helpers.push_back(when_all_helper(std::move(t), &state));
 	}
 
-	co_await suspend_and_capture{ state->continuation, helpers };
+	co_await suspend_and_capture{ state.continuation, helpers };
 
-	if (state->first_exception) {
-		std::rethrow_exception(state->first_exception);
+	if (state.has_exception.load(std::memory_order_acquire)) {
+		std::rethrow_exception(state.first_exception);
 	}
 }
 

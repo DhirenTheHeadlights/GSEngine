@@ -162,16 +162,15 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 					rec.commit(meshlet_writer.native_writer(), r.meshlet_pipeline, 1);
 
 					const std::uint32_t meshlet_count = mesh.meshlet_count();
-					for (std::uint32_t inst = 0; inst < batch.instance_count; ++inst) {
-						auto pc = r.meshlet_shader->cache_push_block("push_constants");
-						pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
-						pc.set("meshlet_count", meshlet_count);
-						pc.set("instance_index", batch.first_instance + inst);
-						rec.push(r.meshlet_pipeline, pc);
+					const std::uint32_t task_groups = (meshlet_count + 31) / 32;
 
-						const std::uint32_t task_groups = (meshlet_count + 31) / 32;
-						rec.draw_mesh_tasks(task_groups, 1, 1);
-					}
+					auto pc = r.meshlet_shader->cache_push_block("push_constants");
+					pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
+					pc.set("meshlet_count", meshlet_count);
+					pc.set("first_instance", batch.first_instance);
+					rec.push(r.meshlet_pipeline, pc);
+
+					rec.draw_mesh_tasks(task_groups, batch.instance_count, 1);
 				}
 			}
 

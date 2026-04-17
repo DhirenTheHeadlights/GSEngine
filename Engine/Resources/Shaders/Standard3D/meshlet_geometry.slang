@@ -6,7 +6,7 @@ import meshlet_common;
 cbuffer PushConstants {
     uint meshlet_offset;
     uint meshlet_count;
-    uint instance_index;
+    uint first_instance;
     int num_lights;
     uint2 screen_size;
     int shadow_quality;
@@ -19,8 +19,9 @@ groupshared MeshletPayload s_payload;
 [Layout(LayoutKind::Forward3D)]
 [shader("amplification")]
 [numthreads(32, 1, 1)]
-void as_main(uint gtid : SV_GroupThreadID, uint gid : SV_GroupID) {
-    uint meshlet_idx = gid * 32 + gtid;
+void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
+    uint meshlet_idx = gid.x * 32 + gtid;
+    uint instance_index = first_instance + gid.y;
     bool visible = false;
 
     if (meshlet_idx < meshlet_count) {
@@ -75,6 +76,7 @@ struct MeshOutput {
     float3 view_pos     : TEXCOORD2;
     float3 view_normal  : TEXCOORD3;
     float2 tex_coord    : TEXCOORD4;
+    nointerpolation uint instance_idx : TEXCOORD5;
 };
 
 [Layout(LayoutKind::Forward3D)]
@@ -107,6 +109,7 @@ void ms_main(
         mo.view_pos = mv.view_pos;
         mo.view_normal = mv.view_normal;
         mo.tex_coord = mv.tex_coord;
+        mo.instance_idx = p.instance_idx;
         out_verts[gtid] = mo;
     }
 
@@ -392,7 +395,7 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
     float3 pos_vs = input.view_pos;
     float3 pos_world = input.world_pos;
 
-    InstanceData inst = instanceData[instance_index];
+    InstanceData inst = instanceData[input.instance_idx];
     MaterialData mat = material_palette[inst.material_index];
     float3 base_color = tex_sample * mat.base_color;
     float3 F0 = lerp(float3(0.04), base_color, mat.metallic);

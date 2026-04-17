@@ -24,6 +24,7 @@ export import :gpu_descriptor;
 export import :gpu_descriptor_writer;
 export import :gpu_compute;
 export import :gpu_device;
+export import :gpu_command_pools;
 export import :gpu_swapchain;
 export import :gpu_frame;
 export import :gpu_context;

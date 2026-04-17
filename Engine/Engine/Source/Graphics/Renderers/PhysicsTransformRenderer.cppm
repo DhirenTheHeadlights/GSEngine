@@ -64,30 +64,27 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 	const auto& gpu = ctx.get<gpu::context>();
 
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
+
 	if (solver_infos.empty()) {
-		log::println(log::level::debug, "PT bail: solver_infos empty");
 		co_return;
 	}
+
 	if (!solver_infos[0].snapshot || solver_infos[0].semaphore.value == 0 || solver_infos[0].body_count == 0) {
-		log::println(log::level::debug, "PT bail: snapshot={} sem={} bodies={}", solver_infos[0].snapshot != nullptr, solver_infos[0].semaphore.value, solver_infos[0].body_count);
 		co_return;
 	}
+
 	const auto& info = solver_infos[0];
 	const auto& snapshot = *info.snapshot;
 
 	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
 	if (!gc_r) {
-		log::println(log::level::debug, "PT bail: gc_r null");
 		co_return;
 	}
 
 	const auto frame_index = gpu.graph().current_frame();
 
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
-	log::println(log::level::debug, "PT: render_items={} mapping_count={} cached_mappings={}",
-		render_items.size(),
-		render_items.empty() ? 0u : render_items[0].physics_mapping_count,
-		fd.cached_mapping_count);
+
 	if (!render_items.empty() && render_items[0].physics_mapping_count > 0) {
 		const auto& data = render_items[0];
 		const auto required = data.physics_mapping_count * sizeof(geometry_collector::physics_mapping_entry);

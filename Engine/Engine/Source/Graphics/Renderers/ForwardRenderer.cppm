@@ -416,21 +416,20 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 					ctx.commit(meshlet_writer.native_writer(), r.pipeline, 1);
 
 					const std::uint32_t ml_count = mesh.meshlet_count();
-					for (std::uint32_t inst = 0; inst < batch.instance_count; ++inst) {
-						auto pc = r.shader_handle->cache_push_block("push_constants");
-						pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
-						pc.set("meshlet_count", ml_count);
-						pc.set("instance_index", batch.first_instance + inst);
-						pc.set("num_lights", num_lights_i);
-						pc.set("screen_size", ext);
-						pc.set("shadow_quality", shadow_quality_i);
-						pc.set("ao_quality", ao_quality_i);
-						pc.set("reflection_quality", reflection_quality_i);
-						ctx.push(r.pipeline, pc);
+					const std::uint32_t task_groups = (ml_count + 31) / 32;
 
-						const std::uint32_t task_groups = (ml_count + 31) / 32;
-						ctx.draw_mesh_tasks(task_groups, 1, 1);
-					}
+					auto pc = r.shader_handle->cache_push_block("push_constants");
+					pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
+					pc.set("meshlet_count", ml_count);
+					pc.set("first_instance", batch.first_instance);
+					pc.set("num_lights", num_lights_i);
+					pc.set("screen_size", ext);
+					pc.set("shadow_quality", shadow_quality_i);
+					pc.set("ao_quality", ao_quality_i);
+					pc.set("reflection_quality", reflection_quality_i);
+					ctx.push(r.pipeline, pc);
+
+					ctx.draw_mesh_tasks(task_groups, batch.instance_count, 1);
 				}
 			}
 

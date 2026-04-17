@@ -64,8 +64,9 @@ export namespace gse::vulkan {
         vk::raii::CommandPool pool;
         std::vector<vk::raii::CommandBuffer> buffers;
         std::unique_ptr<std::recursive_mutex> pool_mutex;
-        command_config(vk::raii::CommandPool&& pool, std::vector<vk::raii::CommandBuffer>&& buffers)
-            : pool(std::move(pool)), buffers(std::move(buffers)), pool_mutex(std::make_unique<std::recursive_mutex>()) {
+        std::uint32_t graphics_family = 0;
+        command_config(vk::raii::CommandPool&& pool, std::vector<vk::raii::CommandBuffer>&& buffers, std::uint32_t graphics_family)
+            : pool(std::move(pool)), buffers(std::move(buffers)), pool_mutex(std::make_unique<std::recursive_mutex>()), graphics_family(graphics_family) {
         }
         command_config(command_config&&) = default;
         auto operator=(command_config&&) -> command_config & = default;

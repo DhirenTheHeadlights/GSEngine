@@ -216,29 +216,45 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 	const auto frame_time = fps > 0 ? milliseconds(1000.0 / static_cast<double>(fps)) : sample_time{};
 	const auto frames = frame_count.load(std::memory_order_relaxed);
 
-	const auto write_section = [&out, frame_time, frames](const std::string_view title, const std::vector<entry>& rows) {
+	struct row_view {
+		const entry* e;
+		sample_time per_frame;
+		double calls_per_frame;
+	};
+
+	const auto build_rows = [frames](const std::vector<entry>& src) {
+		std::vector<row_view> out;
+		out.reserve(src.size());
+		for (const auto& e : src) {
+			const double calls = frames > 0 ? static_cast<double>(e.sample_count) / static_cast<double>(frames) : 0.0;
+			out.push_back({ &e, e.ema * calls, calls });
+		}
+		std::ranges::sort(out, [](const row_view& a, const row_view& b) { return a.per_frame > b.per_frame; });
+		return out;
+	};
+
+	const auto write_section = [&out, frame_time](const std::string_view title, const std::vector<row_view>& rows) {
 		out << "--- " << title << " ---\n";
 		out << std::format(
-			"{:<48} {:>13} {:>13} {:>13} {:>7} {:>8} {:>14} {:>9}\n",
-			"tag", "avg", "peak", "last", "% top", "% frame", "total", "calls/f"
+			"{:<48} {:>13} {:>13} {:>13} {:>13} {:>7} {:>8} {:>14} {:>9}\n",
+			"tag", "per/f", "avg", "peak", "last", "% top", "% frame", "total", "calls/f"
 		);
-		out << std::string(48 + 13 + 13 + 13 + 7 + 8 + 14 + 9 + 7, '-') << '\n';
+		out << std::string(48 + 13 * 4 + 7 + 8 + 14 + 9 + 8, '-') << '\n';
 
-		const auto top = rows.empty() ? sample_time{} : rows.front().ema;
+		const auto top = rows.empty() ? sample_time{} : rows.front().per_frame;
 
-		for (const auto& [e_id, ema, last, peak, sample_count, thread_id, pooled] : rows) {
-			const double pct_top = top > sample_time{} ? (ema / top) * 100.0 : 0.0;
-			const double calls_per_frame = frames > 0 ? static_cast<double>(sample_count) / static_cast<double>(frames) : 0.0;
-			const auto per_frame_time = ema * calls_per_frame;
-			const double pct_frame = frame_time > sample_time{} ? (per_frame_time / frame_time) * 100.0 : 0.0;
-			const auto total = ema * static_cast<double>(sample_count);
+		for (const auto& [e, per_frame, calls_per_frame] : rows) {
+			const double pct_top = top > sample_time{} ? (per_frame / top) * 100.0 : 0.0;
+			const double pct_frame = frame_time > sample_time{} ? (per_frame / frame_time) * 100.0 : 0.0;
+			const auto total = e->ema * static_cast<double>(e->sample_count);
 
 			out << std::format(
-				"{:<48} {:>10.2f} {:>10.2f} {:>10.2f} {:>6.1f}% {:>7.1f}% {:>11.2f} {:>9.2f}\n",
-				e_id.tag(),
-				gse::in<microseconds>(ema),
-				gse::in<microseconds>(peak),
-				gse::in<microseconds>(last),
+				"{:<48} {:>10.2f} {:>10.2f} {:>10.2f} {:>10.2f} {:>6.1f}% {:>7.1f}% {:>11.2f} {:>9.2f}\n",
+				e->id.tag(),
+				gse::in<microseconds>(per_frame),
+				gse::in<microseconds>(e->ema),
+				gse::in<microseconds>(e->peak),
+				gse::in<microseconds>(e->last),
 				pct_top,
 				pct_frame,
 				gse::in<milliseconds>(total),
@@ -248,43 +264,40 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 		out << '\n';
 	};
 
-	std::vector<entry> main_rows;
-	std::vector<entry> worker_rows;
-	std::vector<entry> gpu_rows;
+	std::vector<entry> main_src;
+	std::vector<entry> worker_src;
+	std::vector<entry> gpu_src;
 	{
 		std::shared_lock lk(state_mutex);
-		main_rows.reserve(cpu_entries.size());
-		worker_rows.reserve(cpu_entries.size());
+		main_src.reserve(cpu_entries.size());
+		worker_src.reserve(cpu_entries.size());
 		for (const auto& e : cpu_entries | std::views::values) {
-			(e.pooled ? worker_rows : main_rows).push_back(e);
+			(e.pooled ? worker_src : main_src).push_back(e);
 		}
-		gpu_rows.reserve(gpu_entries.size());
+		gpu_src.reserve(gpu_entries.size());
 		for (const auto& e : gpu_entries | std::views::values) {
-			gpu_rows.push_back(e);
+			gpu_src.push_back(e);
 		}
 	}
 
-	const auto sort_by_ema = [](std::vector<entry>& v) {
-		std::ranges::sort(v, [](const entry& a, const entry& b) { return a.ema > b.ema; });
-	};
-	sort_by_ema(main_rows);
-	sort_by_ema(worker_rows);
-	sort_by_ema(gpu_rows);
+	const auto main_rows = build_rows(main_src);
+	const auto worker_rows = build_rows(worker_src);
+	const auto gpu_rows = build_rows(gpu_src);
 
-	const auto cpu_root_ms = main_rows.empty() ? sample_time{} : main_rows.front().ema;
-	const auto gpu_root_ms = gpu_rows.empty() ? sample_time{} : gpu_rows.front().ema;
+	const auto cpu_top = main_rows.empty() ? sample_time{} : main_rows.front().per_frame;
+	const auto gpu_top = gpu_rows.empty() ? sample_time{} : gpu_rows.front().per_frame;
 
 	out << std::format("=== Profile dump ({}) ===\n", system_clock::timestamp_filename());
 	out << std::format(
 		"frame: {:.2f} ({} fps)    main-thread top: {:.2f}    GPU top: {:.2f}    {} frames profiled    EMA alpha: {:.3f}\n",
 		gse::in<milliseconds>(frame_time),
 		fps,
-		gse::in<milliseconds>(cpu_root_ms),
-		gse::in<milliseconds>(gpu_root_ms),
+		gse::in<milliseconds>(cpu_top),
+		gse::in<milliseconds>(gpu_top),
 		frames,
 		alpha()
 	);
-	out << "% top = relative to slowest entry in section.  % frame = (avg * calls/f) / frame_time.  Worker rows can sum > 100% (parallel).\n\n";
+	out << "sorted by per/f = avg * calls/f (real per-frame cost).  % top = per/f relative to top row.  % frame = per/f / frame_time.  Worker rows can sum > 100% (parallel).\n\n";
 
 	write_section("CPU - Main Thread (sequential, blocks the frame)", main_rows);
 	write_section("CPU - Workers (parallel; sums can exceed 100%)", worker_rows);
