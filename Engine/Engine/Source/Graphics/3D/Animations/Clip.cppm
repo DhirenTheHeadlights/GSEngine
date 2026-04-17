@@ -35,7 +35,7 @@ export namespace gse {
         );
 
         auto load(
-            gpu::resource_manager& ctx
+            gpu::context& ctx
         ) -> void;
 
         auto unload(
@@ -68,7 +68,7 @@ gse::clip_asset::clip_asset(params p)
       m_tracks(std::move(p.tracks)) {
 }
 
-auto gse::clip_asset::load(gpu::resource_manager& ctx) -> void {
+auto gse::clip_asset::load(gpu::context& ctx) -> void {
     (void)ctx;
 
     if (m_baked_path.empty() || !exists(m_baked_path)) {

@@ -962,6 +962,8 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         uint ci;
         InterlockedAdd(collision_state[0], 1, ci);
         if (ci >= MAX_CONTACTS) {
+            uint unused;
+            InterlockedAdd(collision_state[0], -1, unused);
             return;
         }
 

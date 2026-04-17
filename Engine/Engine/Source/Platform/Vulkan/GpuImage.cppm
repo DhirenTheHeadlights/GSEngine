@@ -4,6 +4,7 @@ import std;
 
 import :gpu_types;
 import :vulkan_allocator;
+import :vulkan_enums;
 
 import gse.utility;
 import gse.math;
@@ -53,14 +54,6 @@ namespace {
 			default:                                     return gse::gpu::image_layout::undefined;
 		}
 	}
-
-	auto to_vk_layout(gse::gpu::image_layout l) -> vk::ImageLayout {
-		switch (l) {
-			case gse::gpu::image_layout::general:          return vk::ImageLayout::eGeneral;
-			case gse::gpu::image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
-			default:                                       return vk::ImageLayout::eUndefined;
-		}
-	}
 }
 
 gse::gpu::image::image(vulkan::image_resource&& resource, image_format fmt, vec2u extent, std::vector<vk::raii::ImageView>&& layer_views)
@@ -75,7 +68,7 @@ auto gse::gpu::image::layout(this const image& self) -> image_layout {
 }
 
 auto gse::gpu::image::set_layout(image_layout l) -> void {
-	m_resource.current_layout = to_vk_layout(l);
+	m_resource.current_layout = vulkan::to_vk(l);
 }
 
 gse::gpu::image::operator bool() const {

@@ -25,7 +25,7 @@ export namespace gse {
         );
 
         auto load(
-            gpu::resource_manager& ctx
+            gpu::context& ctx
         ) -> void;
 
         auto unload(
@@ -54,7 +54,7 @@ gse::skeleton::skeleton(const params& p)
     : identifiable(p.name), m_joints(p.joints) {
 }
 
-auto gse::skeleton::load(gpu::resource_manager& ctx) -> void {
+auto gse::skeleton::load(gpu::context& ctx) -> void {
     (void)ctx;
 
     if (m_baked_path.empty() || !exists(m_baked_path)) {

@@ -17,6 +17,5 @@ export namespace gse::vulkan {
         vk::DeviceSize acceleration_structure_descriptor_size = 0;
         bool push_descriptors_supported = false;
         bool bufferless_push_descriptors = false;
-        bool supported = false;
     };
 }

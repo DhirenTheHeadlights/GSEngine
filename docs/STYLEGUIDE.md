@@ -121,6 +121,33 @@ Long `if` conditions are not wrapped — keep them on one line even if they are 
 
 ---
 
+## Multi-line Argument Lists
+
+A call or statement is either fully on one line, or fully wrapped with each argument on its own line. Never mix — no partial wrapping where some arguments are on the opening line and the rest on a continuation line.
+
+```cpp
+// correct — one line
+log::println(log::category::vulkan, "Video encoder created: {} {}x{}", name, w, h);
+
+// correct — fully wrapped, one arg per line
+log::println(
+    log::level::warning,
+    log::category::vulkan,
+    "Video encode feedback query failed: result={} status={} bytes={}",
+    static_cast<int>(result),
+    feedback.status,
+    feedback.bytes_written
+);
+
+// wrong — one arg on opening line, continuation holds the rest
+log::println(log::level::warning, log::category::vulkan, "Video encode feedback query failed: result={} status={} bytes={}",
+    static_cast<int>(result), feedback.status, feedback.bytes_written);
+```
+
+This applies to every kind of multi-line statement — function calls, aggregate initializers, template argument lists, nested expressions. If it won't fit on one line, split it so each argument stands on its own.
+
+---
+
 ## File Organization
 
 Each file should have one `export namespace` block containing all declarations, followed by all definitions outside it. Never reopen or add a second `export namespace` block to interleave declarations and definitions.

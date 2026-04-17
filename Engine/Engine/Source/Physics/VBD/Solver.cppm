@@ -50,6 +50,9 @@ export namespace gse::vbd {
 
 	class solver {
 	public:
+		solver(
+		);
+
 		auto configure(
 			const solver_config& cfg
 		) -> void;
@@ -88,10 +91,8 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto body_states(
-		) -> linear_vector<body_state>&;
-
-		auto body_states(
-		) const -> std::span<const body_state>;
+			this auto&& self
+		) -> decltype(auto);
 
 		auto graph(
 			this auto&& self
@@ -131,22 +132,22 @@ export namespace gse::vbd {
 			time_squared h_squared
 		) -> void;
 
-		static constexpr std::uint32_t max_solver_bodies = 500;
+		static constexpr std::uint32_t max_solver_bodies = 2048;
 
 		solver_config m_config;
 		constraint_graph m_graph;
-		linear_vector<body_state> m_bodies{ max_solver_bodies };
-		linear_vector<body_solve_state> m_solve_state{ max_solver_bodies };
+		std::vector<body_state> m_bodies;
+		std::vector<body_solve_state> m_solve_state;
 
 		static constexpr std::uint32_t no_motor = std::numeric_limits<std::uint32_t>::max();
-		linear_vector<std::uint32_t> m_body_motor_index{ max_solver_bodies };
-		linear_vector<bool> m_body_in_color_group{ max_solver_bodies };
+		std::vector<std::uint32_t> m_body_motor_index;
+		std::vector<bool> m_body_in_color_group;
 
-		linear_vector<vec3<velocity>> m_prev_velocity{ max_solver_bodies };
-		linear_vector<float> m_accel_weight{ max_solver_bodies };
+		std::vector<vec3<velocity>> m_prev_velocity;
+		std::vector<float> m_accel_weight;
 
-		static constexpr std::uint32_t max_contacts = 2000;
-		linear_vector<frozen_contact_jacobian> m_frozen_jacobians{ max_contacts };
+		static constexpr std::uint32_t max_contacts = 16384;
+		std::vector<frozen_contact_jacobian> m_frozen_jacobians;
 	};
 }
 
@@ -175,6 +176,16 @@ namespace gse::vbd {
 		const vec3<lever_arm>& r_bw,
 		const vec3f& dir
 	) -> mass;
+}
+
+gse::vbd::solver::solver() {
+	m_bodies.reserve(max_solver_bodies);
+	m_solve_state.reserve(max_solver_bodies);
+	m_body_motor_index.reserve(max_solver_bodies);
+	m_body_in_color_group.reserve(max_solver_bodies);
+	m_prev_velocity.reserve(max_solver_bodies);
+	m_accel_weight.reserve(max_solver_bodies);
+	m_frozen_jacobians.reserve(max_contacts);
 }
 
 auto gse::vbd::solver::configure(const solver_config& cfg) -> void {
@@ -818,12 +829,8 @@ auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache&
 	bodies.assign(m_bodies.begin(), m_bodies.end());
 }
 
-auto gse::vbd::solver::body_states() -> linear_vector<body_state>& {
-	return m_bodies;
-}
-
-auto gse::vbd::solver::body_states() const -> std::span<const body_state> {
-	return m_bodies;
+auto gse::vbd::solver::body_states(this auto&& self) -> decltype(auto) {
+	return std::span(self.m_bodies);
 }
 
 auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, const frozen_contact_jacobian& frozen, const std::uint32_t body_idx, const time_squared h_squared, const float alpha) -> void {

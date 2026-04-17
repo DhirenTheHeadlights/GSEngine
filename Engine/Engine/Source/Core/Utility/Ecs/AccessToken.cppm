@@ -72,6 +72,9 @@ export namespace gse {
 			id owner
 		) const -> const_pointer;
 
+		auto prime(
+		) const -> void;
+
 	private:
 		auto build_lookup(
 		) -> void;
@@ -145,6 +148,11 @@ auto gse::access<T, M>::find(const id owner) const -> const_pointer {
 		return it->second;
 	}
 	return nullptr;
+}
+
+template <gse::is_component T, gse::access_mode M>
+auto gse::access<T, M>::prime() const -> void {
+	const_cast<access*>(this)->build_lookup();
 }
 
 template <gse::is_component T, gse::access_mode M>

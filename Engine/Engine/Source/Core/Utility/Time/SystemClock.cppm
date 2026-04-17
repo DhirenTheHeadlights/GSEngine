@@ -33,7 +33,7 @@ namespace gse::system_clock {
 	internal_time frame_rate_update_time{};
 
 	constexpr internal_time fps_report_interval = seconds(1.0);
-	constexpr internal_time const_update_time = milliseconds(10.0);
+	constexpr internal_time const_update_time = milliseconds(16.6667);
 
 	std::uint32_t frame_count = 0;
 	std::uint32_t frame_rate_count = 0;

@@ -9,6 +9,7 @@ import std;
 import :gpu_types;
 import :gpu_buffer;
 import :gpu_device;
+import :gpu_context;
 import :gpu_factory;
 import :vulkan_allocator;
 import :render_graph;
@@ -97,7 +98,7 @@ export namespace gse::gpu {
 	};
 
 	auto build_blas(
-		device& dev, 
+		context& ctx,
 		const blas_geometry_desc& desc
 	) -> blas;
 
@@ -164,7 +165,8 @@ auto gse::gpu::acceleration_structure_scratch_alignment(device& dev) -> vk::Devi
 	return std::max<vk::DeviceSize>(as_props.minAccelerationStructureScratchOffsetAlignment, 1);
 }
 
-auto gse::gpu::build_blas(device& dev, const blas_geometry_desc& desc) -> blas {
+auto gse::gpu::build_blas(context& ctx, const blas_geometry_desc& desc) -> blas {
+	auto& dev = ctx.device_ref();
 	const auto& vk_device = dev.logical_device();
 
 	const vk::DeviceAddress vertex_addr = vk_device.getBufferAddress({
@@ -228,7 +230,7 @@ auto gse::gpu::build_blas(device& dev, const blas_geometry_desc& desc) -> blas {
 	const vk::DeviceSize scratch_size = sizes.buildScratchSize;
 	const vk::DeviceSize scratch_alignment = acceleration_structure_scratch_alignment(dev);
 
-	dev.add_transient_work([&dev, &geometry, &build_info, prim_count, scratch_size, scratch_alignment](const vk::raii::CommandBuffer& cmd) {
+	ctx.frame().add_transient_work([&dev, &geometry, &build_info, prim_count, scratch_size, scratch_alignment](const vk::raii::CommandBuffer& cmd) {
 		auto scratch = dev.allocator().create_buffer({
 			.size  = scratch_size + scratch_alignment,
 			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress

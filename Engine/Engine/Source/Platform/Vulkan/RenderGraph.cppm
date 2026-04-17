@@ -473,7 +473,8 @@ export namespace gse::vulkan {
 		) const -> vk::ImageView;
 
 		[[nodiscard]] auto depth_image(
-		) const -> const gpu::image&;
+			this auto& self
+		) -> auto&;
 
 		[[nodiscard]] auto frame_in_progress(
 		) const -> bool;
@@ -1248,8 +1249,8 @@ auto gse::vulkan::render_graph::depth_image_view() const -> vk::ImageView {
 	return m_swapchain->depth_image().native().view;
 }
 
-auto gse::vulkan::render_graph::depth_image() const -> const gpu::image& {
-	return m_swapchain->depth_image();
+auto gse::vulkan::render_graph::depth_image(this auto& self) -> auto& {
+	return self.m_swapchain->depth_image();
 }
 
 auto gse::vulkan::render_graph::frame_in_progress() const -> bool {

@@ -248,9 +248,9 @@ namespace gse::internal {
 
         template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
             requires has_same_dimensions<Dimensions, Dim2> &&
-                same_unit_family_v<QuantityTagType, Tag2> &&
-                (is_generic_tag_v<Tag2> || is_generic_tag_v<QuantityTagType> || semantic_kind_v<QuantityTagType> == semantic_kind_v<Tag2>)
-        explicit(!is_generic_tag_v<Tag2> && is_generic_tag_v<QuantityTagType>)
+                same_unit_family_v<QuantityTagType, Tag2>
+        explicit(!is_generic_tag_v<Tag2> &&
+            (is_generic_tag_v<QuantityTagType> || semantic_kind_v<QuantityTagType> != semantic_kind_v<Tag2>))
         constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>& other)
             : m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {}
 

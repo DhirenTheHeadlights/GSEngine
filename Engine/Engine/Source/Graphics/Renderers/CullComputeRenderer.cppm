@@ -59,7 +59,7 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 
 	const auto* gc_r = phase.try_resources_of<geometry_collector::system::resources>();
 
-	r.pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *r.shader_handle, "push_constants");
+	r.pipeline = gpu::create_compute_pipeline(ctx, *r.shader_handle, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
@@ -76,8 +76,8 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.normal_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.shader_handle);
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *r.shader_handle);
+		r.normal_descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
@@ -87,12 +87,12 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 				.buffer("batches", r.batch_info_buffer[i]);
 		};
 
-		gpu::descriptor_writer normal_writer(ctx.device_ref(), r.shader_handle, r.normal_descriptors[i]);
+		gpu::descriptor_writer normal_writer(ctx, r.shader_handle, r.normal_descriptors[i]);
 		write_shared(normal_writer)
 			.buffer("indirectCommands", gc_r->normal_indirect_commands_buffer[i])
 			.commit();
 
-		gpu::descriptor_writer skinned_writer(ctx.device_ref(), r.shader_handle, r.skinned_descriptors[i]);
+		gpu::descriptor_writer skinned_writer(ctx, r.shader_handle, r.skinned_descriptors[i]);
 		write_shared(skinned_writer)
 			.buffer("indirectCommands", gc_r->skinned_indirect_commands_buffer[i])
 			.commit();

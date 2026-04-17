@@ -7,6 +7,8 @@ import :descriptor_buffer_types;
 import :gpu_image;
 
 export namespace gse::vulkan {
+	constexpr std::uint32_t max_frames_in_flight = 2;
+
 	struct instance_config {
         vk::raii::Context context;
         vk::raii::Instance instance;

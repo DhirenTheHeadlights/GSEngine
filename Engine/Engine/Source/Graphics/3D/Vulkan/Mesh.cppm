@@ -60,7 +60,7 @@ export namespace gse {
         explicit mesh(mesh_data&& data);
         mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {}) : m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(mat) {}
 
-        auto initialize(gpu::resource_manager& ctx) -> void;
+        auto initialize(gpu::context& ctx) -> void;
 
         auto center_of_mass() const -> vec3<displacement>;
         auto material() const -> const gse::material&;
@@ -110,7 +110,7 @@ auto gse::meshlet_gpu_data::bind(gpu::descriptor_writer& writer) const -> void {
         .buffer("meshletBounds", bounds);
 }
 
-auto gse::mesh::initialize(gpu::resource_manager& ctx) -> void {
+auto gse::mesh::initialize(gpu::context& ctx) -> void {
     if (m_vertices.empty() || m_indices.empty()) return;
 
     if (m_meshlets.descriptors.empty()) {
@@ -158,7 +158,7 @@ auto gse::mesh::initialize(gpu::resource_manager& ctx) -> void {
         uploads.push_back({ &m_meshlet_gpu->bounds, m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
     }
 
-    gpu::upload_to_buffers(ctx.device_ref(), uploads);
+    gpu::upload_to_buffers(ctx, uploads);
 }
 
 auto gse::mesh::center_of_mass() const -> vec3<displacement> {

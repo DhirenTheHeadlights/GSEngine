@@ -37,6 +37,7 @@ export namespace gs {
 			build_high_speed_impact_target();
 			build_box_grid();
 			build_spring_tests();
+			build_wrecking_ball_pendulum();
 
 			build("Bouncy Sphere")
 				.with<gse::sphere>({
@@ -328,6 +329,69 @@ export namespace gs {
 					.damping = 0.5f,
 				});
 				prev_id = link_id;
+			}
+		}
+
+		auto build_wrecking_ball_pendulum() const -> void {
+			constexpr float anchor_x = -10.f;
+			constexpr float anchor_y = 14.f;
+			constexpr float anchor_z = 28.f;
+			constexpr float rope_length = 10.f;
+			constexpr float ball_radius = 1.5f;
+
+			const auto anchor_id = build("Wrecking Ball Anchor")
+				.with<gse::box>({
+					.initial_position = gse::vec3<gse::position>(anchor_x, anchor_y, anchor_z),
+					.size = gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
+				})
+				.with_init([](hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				})
+				.identify();
+
+			const auto ball_id = build("Wrecking Ball")
+				.with<gse::sphere>({
+					.initial_position = gse::vec3<gse::position>(anchor_x + rope_length, anchor_y, anchor_z),
+					.radius = gse::meters(ball_radius),
+					.sectors = 32,
+					.stacks = 24
+				})
+				.with_init([](hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.mass = gse::kilograms(2000.f);
+					});
+				})
+				.identify();
+
+			gse::physics::join(anchor_id, ball_id, gse::physics::distance_joint{
+				.target = gse::meters(rope_length)
+			});
+
+			constexpr int grid_x = 10;
+			constexpr int grid_y = 10;
+			constexpr int grid_z = 10;
+			constexpr float cube_size = 0.3f;
+			constexpr float spacing = cube_size * 1.05f;
+			constexpr float stack_base_x = anchor_x - (grid_x * spacing) * 0.5f;
+			constexpr float stack_base_z = anchor_z - (grid_z * spacing) * 0.5f;
+
+			for (int layer = 0; layer < grid_y; ++layer) {
+				for (int ix = 0; ix < grid_x; ++ix) {
+					for (int iz = 0; iz < grid_z; ++iz) {
+						const float x = stack_base_x + static_cast<float>(ix) * spacing + spacing * 0.5f;
+						const float y = cube_size * 0.5f + static_cast<float>(layer) * spacing;
+						const float z = stack_base_z + static_cast<float>(iz) * spacing + spacing * 0.5f;
+						build(std::format("Tiny Cube L{}R{}C{}", layer, ix, iz))
+							.with<gse::box>({
+								.initial_position = gse::vec3<gse::position>(x, y, z),
+								.size = gse::vec3(gse::meters(cube_size)),
+								.mass = gse::kilograms(0.1f)
+							});
+					}
+				}
 			}
 		}
 

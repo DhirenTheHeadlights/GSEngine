@@ -16,7 +16,6 @@ export namespace gse::renderer::rt_shadow {
 
 	struct state {
 		per_frame_resource<const gpu::tlas*> tlas_ptrs{};
-		bool initialized = false;
 
 		[[nodiscard]] auto tlas(
 			const std::uint32_t frame_index
@@ -55,12 +54,6 @@ export namespace gse::renderer::rt_shadow {
 auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
-	if (!ctx.device_ref().ray_tracing_enabled()) {
-		log::println(log::level::warning, log::category::render, "RT shadow: ray tracing not supported, skipping");
-		return;
-	}
-
-	s.initialized = true;
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
@@ -72,18 +65,14 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, fra
 	fd.tlas_update_shader = ctx.get<shader>("Shaders/Compute/tlas_transform_update");
 	ctx.instantly_load(fd.tlas_update_shader);
 
-	fd.tlas_update_pipeline = gpu::create_compute_pipeline(ctx.device_ref(), *fd.tlas_update_shader, "push_constants");
+	fd.tlas_update_pipeline = gpu::create_compute_pipeline(ctx, *fd.tlas_update_shader, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(ctx.device_ref(), *fd.tlas_update_shader);
+		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(ctx, *fd.tlas_update_shader);
 	}
 }
 
 auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd, const state& s) -> async::task<> {
-	if (!s.initialized) {
-		co_return;
-	}
-
 	co_await ctx.after<geometry_collector::state>();
 
 	auto& gpu = ctx.get<gpu::context>();
@@ -112,7 +101,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 				continue;
 			}
 
-			fd.blas_cache[mesh_ptr] = gpu::build_blas(gpu.device_ref(), {
+			fd.blas_cache[mesh_ptr] = gpu::build_blas(gpu, {
 				.vertex_buffer = &m.vertex_gpu_buffer(),
 				.vertex_count = vertex_count,
 				.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
@@ -195,7 +184,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 
 		auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instances_buffer();
 
-		gpu::descriptor_writer(gpu.device_ref(), fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
+		gpu::descriptor_writer(gpu, fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
 			.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())
 			.buffer("index_mapping", fd.mapping_buffers[frame_index], 0, mapping_bytes)
 			.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)

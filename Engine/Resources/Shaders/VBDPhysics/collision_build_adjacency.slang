@@ -7,8 +7,6 @@ ConstantBuffer<vbd_push_constants> pc;
 
 static const uint WG_SIZE = 64;
 
-groupshared uint gs_neighbor[MAX_CONTACT_ADJACENCY];
-groupshared uint gs_joint_neighbor[MAX_JOINT_ADJACENCY];
 groupshared uint gs_body_flags[MAX_BODIES];
 groupshared uint gs_body_color[MAX_BODIES];
 groupshared uint gs_color_group_count[MAX_COLORS];
@@ -64,7 +62,6 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
             uint off_a = contact_offsets[c.body_a] + slot_a;
             if (off_a < MAX_CONTACT_ADJACENCY) {
                 contact_adjacency[off_a] = ci;
-                gs_neighbor[off_a] = c.body_b;
             }
 
             uint slot_b;
@@ -72,7 +69,6 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
             uint off_b = contact_offsets[c.body_b] + slot_b;
             if (off_b < MAX_CONTACT_ADJACENCY) {
                 contact_adjacency[off_b] = ci;
-                gs_neighbor[off_b] = c.body_a;
             }
         }
     }
@@ -117,7 +113,6 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
             uint off_a = joint_offsets[j.body_a] + slot_a;
             if (off_a < MAX_JOINT_ADJACENCY) {
                 joint_adjacency[off_a] = ji;
-                gs_joint_neighbor[off_a] = j.body_b;
             }
 
             uint slot_b;
@@ -125,7 +120,6 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
             uint off_b = joint_offsets[j.body_b] + slot_b;
             if (off_b < MAX_JOINT_ADJACENCY) {
                 joint_adjacency[off_b] = ji;
-                gs_joint_neighbor[off_b] = j.body_a;
             }
         }
     }
@@ -213,7 +207,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
             for (uint k = 0; k < cc; k++) {
                 uint idx = off + k;
                 if (idx >= MAX_CONTACT_ADJACENCY) break;
-                uint other = gs_neighbor[idx];
+                uint ci = contact_adjacency[idx];
+                if (ci >= num_contacts) continue;
+                GpuContact c = contact_data[ci];
+                uint other = (c.body_a == bi) ? c.body_b : c.body_a;
                 if (other < body_count && gs_body_color[other] < MAX_COLORS) {
                     neighbor_colors |= (1u << gs_body_color[other]);
                 }
@@ -223,7 +220,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
             for (uint k = 0; k < jc; k++) {
                 uint idx = j_off + k;
                 if (idx >= MAX_JOINT_ADJACENCY) break;
-                uint other = gs_joint_neighbor[idx];
+                uint ji = joint_adjacency[idx];
+                if (ji >= num_joints) continue;
+                GpuJoint j = joint_data[ji];
+                uint other = (j.body_a == bi) ? j.body_b : j.body_a;
                 if (other < body_count && gs_body_color[other] < MAX_COLORS) {
                     neighbor_colors |= (1u << gs_body_color[other]);
                 }

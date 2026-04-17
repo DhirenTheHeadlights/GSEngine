@@ -4,6 +4,7 @@ import std;
 import tomlplusplus;
 
 import gse.log;
+import gse.math;
 import :id;
 import :concepts;
 import :phase_context;
@@ -64,7 +65,18 @@ export namespace gse::save {
 
         std::vector<std::pair<std::string, int>> enum_options;
         bool requires_restart = false;
+
+        std::function<std::unique_ptr<property_base>(state*, const register_property&)> factory;
     };
+
+    template <internal::is_quantity Q>
+    [[nodiscard]] auto make_property_registration(
+        std::string category,
+        std::string name,
+        std::string description,
+        Q& ref,
+        bool requires_restart = false
+    ) -> register_property;
 
     enum class constraint_type {
         none,
@@ -655,7 +667,17 @@ auto gse::save::property<T, Constraint>::reset_to_default() -> void {
 
 template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::write_toml(toml::table& table, const std::string_view key) const -> void {
-    if constexpr (std::is_same_v<T, bool>) {
+    if constexpr (internal::is_quantity<T>) {
+        using underlying = typename T::value_type;
+        const underlying v = m_ref.template as<typename T::default_unit>();
+        if constexpr (std::is_integral_v<underlying>) {
+            table.insert(key, static_cast<std::int64_t>(v));
+        }
+        else {
+            table.insert(key, static_cast<double>(v));
+        }
+    }
+    else if constexpr (std::is_same_v<T, bool>) {
         table.insert(key, m_ref);
     }
     else if constexpr (std::is_same_v<T, float>) {
@@ -674,7 +696,28 @@ auto gse::save::property<T, Constraint>::write_toml(toml::table& table, const st
 
 template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::read_toml(const toml::node& node) -> bool {
-    if constexpr (std::is_same_v<T, bool>) {
+    if constexpr (internal::is_quantity<T>) {
+        using underlying = typename T::value_type;
+        using default_unit = typename T::default_unit;
+        if constexpr (std::is_integral_v<underlying>) {
+            if (!node.is_integer()) {
+                return false;
+            }
+            set(T::template from<default_unit>(static_cast<underlying>(node.value_or<std::int64_t>(0))));
+        }
+        else {
+            if (node.is_floating_point()) {
+                set(T::template from<default_unit>(static_cast<underlying>(node.value_or(0.0))));
+            }
+            else if (node.is_integer()) {
+                set(T::template from<default_unit>(static_cast<underlying>(node.value_or<std::int64_t>(0))));
+            }
+            else {
+                return false;
+            }
+        }
+    }
+    else if constexpr (std::is_same_v<T, bool>) {
         if (!node.is_boolean()) return false;
         set(node.value_or(false));
     }
@@ -746,7 +789,10 @@ auto gse::save::property<T, Constraint>::set_bool(const bool value) -> void {
 
 template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::as_float() const -> float {
-    if constexpr (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
+    if constexpr (internal::is_quantity<T>) {
+        return static_cast<float>(m_ref.template as<typename T::default_unit>());
+    }
+    else if constexpr (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
         return static_cast<float>(m_ref);
     }
     return 0.f;
@@ -754,7 +800,11 @@ auto gse::save::property<T, Constraint>::as_float() const -> float {
 
 template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::set_float(const float value) -> void {
-    if constexpr (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
+    if constexpr (internal::is_quantity<T>) {
+        using underlying = typename T::value_type;
+        set(T::template from<typename T::default_unit>(static_cast<underlying>(value)));
+    }
+    else if constexpr (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
         set(static_cast<T>(value));
     }
 }
@@ -1034,7 +1084,10 @@ auto gse::save::state::process_registration(const save::register_property& reg) 
 
     std::unique_ptr<property_base> prop;
 
-    if (reg.type == typeid(bool)) {
+    if (reg.factory) {
+        prop = reg.factory(this, reg);
+    }
+    else if (reg.type == typeid(bool)) {
         auto* ref = static_cast<bool*>(reg.ref);
         prop = std::make_unique<property<bool>>(
             this, reg.category, reg.name, reg.description, *ref, *ref, no_constraint{}, reg.requires_restart
@@ -1086,6 +1139,24 @@ auto gse::save::state::process_registration(const save::register_property& reg) 
 template <typename T>
 auto gse::save::state::bind(const std::string_view category, const std::string_view name, T& ref) -> property_builder<T> {
     return property_builder<T>(*this, category, name, ref);
+}
+
+template <gse::internal::is_quantity Q>
+auto gse::save::make_property_registration(std::string category, std::string name, std::string description, Q& ref, const bool requires_restart) -> register_property {
+    register_property reg;
+    reg.category = std::move(category);
+    reg.name = std::move(name);
+    reg.description = std::move(description);
+    reg.ref = static_cast<void*>(&ref);
+    reg.type = typeid(Q);
+    reg.requires_restart = requires_restart;
+    reg.factory = [](state* s, const register_property& r) -> std::unique_ptr<property_base> {
+        Q& typed_ref = *static_cast<Q*>(r.ref);
+        return std::make_unique<property<Q>>(
+            s, r.category, r.name, r.description, typed_ref, typed_ref, no_constraint{}, r.requires_restart
+        );
+    };
+    return reg;
 }
 
 auto gse::save::state::register_property(std::unique_ptr<property_base> prop) -> property_base* {
