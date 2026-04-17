@@ -206,7 +206,9 @@ auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state state) ->
 auto gse::gpu::frame::end(window& win) -> void {
 	const auto& device = m_device->device_config().device;
 
-	m_frame_context.command_buffer.end();
+	trace::scope(find_or_generate_id("end_frame::cmd_end"), [&] {
+		m_frame_context.command_buffer.end();
+	});
 
 	std::vector<vk::SemaphoreSubmitInfo> wait_infos;
 	wait_infos.push_back({
@@ -248,15 +250,17 @@ auto gse::gpu::frame::end(window& win) -> void {
 		.pSignalSemaphoreInfos = &signal_info
 	};
 
-	try {
-		m_device->queue_config().graphics.submit2(
-			submit_info2,
-			*m_sync.in_flight_fences[m_current_frame]
-		);
-	} catch (const vk::DeviceLostError&) {
-		m_device->report_device_lost(std::format("submit2 (frame {}, image {})", m_current_frame, m_frame_context.image_index));
-		throw;
-	}
+	trace::scope(find_or_generate_id("end_frame::submit"), [&] {
+		try {
+			m_device->queue_config().graphics.submit2(
+				submit_info2,
+				*m_sync.in_flight_fences[m_current_frame]
+			);
+		} catch (const vk::DeviceLostError&) {
+			m_device->report_device_lost(std::format("submit2 (frame {}, image {})", m_current_frame, m_frame_context.image_index));
+			throw;
+		}
+	});
 
 	const vk::Semaphore render_finished_handle = *m_sync.render_finished_semaphores[m_frame_context.image_index];
 
@@ -269,16 +273,18 @@ auto gse::gpu::frame::end(window& win) -> void {
 	};
 
 	vk::Result present_result;
-	try {
-		present_result = m_device->queue_config().present.presentKHR(present_info);
-	}
-	catch (const vk::OutOfDateKHRError&) {
-		present_result = vk::Result::eErrorOutOfDateKHR;
-	}
-	catch (const vk::DeviceLostError&) {
-		m_device->report_device_lost(std::format("presentKHR (frame {}, image {})", m_current_frame, m_frame_context.image_index));
-		throw;
-	}
+	trace::scope(find_or_generate_id("end_frame::present"), [&] {
+		try {
+			present_result = m_device->queue_config().present.presentKHR(present_info);
+		}
+		catch (const vk::OutOfDateKHRError&) {
+			present_result = vk::Result::eErrorOutOfDateKHR;
+		}
+		catch (const vk::DeviceLostError&) {
+			m_device->report_device_lost(std::format("presentKHR (frame {}, image {})", m_current_frame, m_frame_context.image_index));
+			throw;
+		}
+	});
 
 	if (present_result == vk::Result::eErrorOutOfDateKHR || present_result == vk::Result::eSuboptimalKHR) {
 		recreate_resources(win);

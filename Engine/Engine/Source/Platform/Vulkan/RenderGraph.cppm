@@ -1355,239 +1355,299 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 	std::vector<std::size_t> sorted;
 
-	gse::trace::scope(gse::find_or_generate_id("graph::plan"), [&]() {
-	std::unordered_map<std::type_index, std::size_t> type_to_index;
-	for (std::size_t i = 0; i < passes.size(); ++i) {
-		type_to_index[passes[i].pass_type] = i;
-	}
-
-	std::vector<std::vector<std::size_t>> adj(passes.size());
-	std::vector<std::size_t> in_degree(passes.size(), 0);
-
-	auto add_edge = [&](const std::size_t from, const std::size_t to) {
-		for (const auto n : adj[from]) {
-			if (n == to) return;
+	gse::trace::scope(gse::find_or_generate_id("graph::plan"), [&] {
+		std::unordered_map<std::type_index, std::size_t> type_to_index;
+		for (std::size_t i = 0; i < passes.size(); ++i) {
+			type_to_index[passes[i].pass_type] = i;
 		}
-		adj[from].push_back(to);
-		++in_degree[to];
-	};
 
-	for (std::size_t i = 0; i < passes.size(); ++i) {
-		for (const auto& dep : passes[i].after_passes) {
-			if (auto it = type_to_index.find(dep); it != type_to_index.end()) {
-				add_edge(it->second, i);
+		std::vector<std::vector<std::size_t>> adj(passes.size());
+		std::vector<std::size_t> in_degree(passes.size(), 0);
+
+		auto add_edge = [&](const std::size_t from, const std::size_t to) {
+			for (const auto n : adj[from]) {
+				if (n == to) return;
 			}
-		}
-	}
+			adj[from].push_back(to);
+			++in_degree[to];
+		};
 
-	for (std::size_t i = 0; i < passes.size(); ++i) {
-		for (std::size_t j = i + 1; j < passes.size(); ++j) {
-			bool i_writes_j_reads = false;
-			bool j_writes_i_reads = false;
-
-			for (const auto& w : passes[i].writes) {
-				for (const auto& r : passes[j].reads) {
-					if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) i_writes_j_reads = true;
+		for (std::size_t i = 0; i < passes.size(); ++i) {
+			for (const auto& dep : passes[i].after_passes) {
+				if (auto it = type_to_index.find(dep); it != type_to_index.end()) {
+					add_edge(it->second, i);
 				}
 			}
-			for (const auto& w : passes[j].writes) {
-				for (const auto& r : passes[i].reads) {
-					if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) j_writes_i_reads = true;
+		}
+
+		for (std::size_t i = 0; i < passes.size(); ++i) {
+			for (std::size_t j = i + 1; j < passes.size(); ++j) {
+				bool i_writes_j_reads = false;
+				bool j_writes_i_reads = false;
+
+				for (const auto& w : passes[i].writes) {
+					for (const auto& r : passes[j].reads) {
+						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) i_writes_j_reads = true;
+					}
+				}
+				for (const auto& w : passes[j].writes) {
+					for (const auto& r : passes[i].reads) {
+						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) j_writes_i_reads = true;
+					}
+				}
+
+				if (i_writes_j_reads && j_writes_i_reads) {
+					add_edge(i, j);
+				} else if (i_writes_j_reads) {
+					add_edge(i, j);
+				} else if (j_writes_i_reads) {
+					add_edge(j, i);
 				}
 			}
+		}
 
-			if (i_writes_j_reads && j_writes_i_reads) {
-				add_edge(i, j);
-			} else if (i_writes_j_reads) {
-				add_edge(i, j);
-			} else if (j_writes_i_reads) {
-				add_edge(j, i);
+		sorted.reserve(passes.size());
+
+		std::queue<std::size_t> queue;
+		for (std::size_t i = 0; i < passes.size(); ++i) {
+			if (in_degree[i] == 0) queue.push(i);
+		}
+
+		while (!queue.empty()) {
+			auto front = queue.front();
+			queue.pop();
+			sorted.push_back(front);
+			for (auto next : adj[front]) {
+				if (--in_degree[next] == 0) queue.push(next);
 			}
 		}
-	}
-
-	sorted.reserve(passes.size());
-
-	std::queue<std::size_t> queue;
-	for (std::size_t i = 0; i < passes.size(); ++i) {
-		if (in_degree[i] == 0) queue.push(i);
-	}
-
-	while (!queue.empty()) {
-		auto front = queue.front();
-		queue.pop();
-		sorted.push_back(front);
-		for (auto next : adj[front]) {
-			if (--in_degree[next] == 0) queue.push(next);
-		}
-	}
 	});
 
-	recording_context ctx(command);
+	auto& worker_pools = m_device->worker_command_pools();
+	worker_pools.reset_frame(m_frame->current_frame());
+	const auto color_format = m_swapchain->format();
 
-	m_device->descriptor_heap().bind_buffer(command);
-
-	gse::trace::scope(gse::find_or_generate_id("graph::record"), [&] {
+	std::vector<std::size_t> pass_to_serial(passes.size());
 	for (std::size_t si = 0; si < sorted.size(); ++si) {
-		auto& pass = passes[sorted[si]];
+		pass_to_serial[sorted[si]] = si;
+	}
 
-		std::vector<vk::MemoryBarrier2> barriers;
+	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
 
-		if (!pass.tracked_buffers.empty()) {
-			vk::PipelineStageFlags2 tracked_stage{};
-			vk::AccessFlags2 tracked_access{};
-			bool has_unmatched_tracked_buffer = false;
+	gse::trace::scope(gse::find_or_generate_id("graph::record_parallel"), [&] {
+		task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
+			auto& pass = passes[pi];
+			const bool is_graphics_pass = pass.color_output || pass.depth_output;
+			const std::size_t si = pass_to_serial[pi];
+			const bool profile_pass = timestamps_enabled && si < max_profiled_passes;
+			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
 
-			for (const auto* tracked : pass.tracked_buffers) {
-				bool matched = false;
-				for (const auto& [resource, stage, access] : pass.reads) {
-					if (resource.ptr == tracked && resource.type == resource_type::buffer) {
-						tracked_stage |= stage;
-						tracked_access |= access;
-						matched = true;
-					}
-				}
-				if (!matched) {
-					has_unmatched_tracked_buffer = true;
-				}
-			}
+			const auto worker_idx = task::current_worker();
+			assert(worker_idx.has_value(), std::source_location::current(), "graph::record_parallel: thread has no arena slot");
+			const auto frame_idx = m_frame->current_frame();
+			const auto secondary = worker_pools.acquire_secondary(*worker_idx, frame_idx);
 
-			if (has_unmatched_tracked_buffer || tracked_stage == vk::PipelineStageFlags2{}) {
-				tracked_stage |= pass.tracked_stage;
-				tracked_access |= vk::AccessFlagBits2::eShaderStorageRead
-					| vk::AccessFlagBits2::eUniformRead
-					| vk::AccessFlagBits2::eTransferRead
-					| vk::AccessFlagBits2::eIndirectCommandRead
-					| vk::AccessFlagBits2::eVertexAttributeRead
-					| vk::AccessFlagBits2::eIndexRead;
-			}
-
-			barriers.push_back({
-				.srcStageMask = vk::PipelineStageFlagBits2::eHost,
-				.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
-				.dstStageMask = tracked_stage,
-				.dstAccessMask = tracked_access
-			});
-		}
-
-		for (std::size_t pi = 0; pi < si; ++pi) {
-			for (const auto& prev = passes[sorted[pi]]; const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
-				if (!prev_resource.ptr) continue;
-				for (const auto& [read_resource, read_stage, read_access] : pass.reads) {
-					if (read_resource.ptr && prev_resource.ptr == read_resource.ptr) {
-						barriers.push_back({
-							.srcStageMask = prev_stage,
-							.srcAccessMask = prev_access,
-							.dstStageMask = read_stage,
-							.dstAccessMask = read_access
-						});
-					}
-				}
-				for (const auto& [cur_resource, cur_stage, cur_access] : pass.writes) {
-					if (cur_resource.ptr && prev_resource.ptr == cur_resource.ptr) {
-						barriers.push_back({
-							.srcStageMask = prev_stage,
-							.srcAccessMask = prev_access,
-							.dstStageMask = cur_stage,
-							.dstAccessMask = cur_access
-						});
-					}
-				}
-			}
-		}
-
-		if (!barriers.empty()) {
-			const vk::DependencyInfo dep{
-				.memoryBarrierCount = static_cast<std::uint32_t>(barriers.size()),
-				.pMemoryBarriers = barriers.data()
+			const std::array<vk::Format, 1> color_formats{ color_format };
+			const vk::CommandBufferInheritanceRenderingInfo rendering_inherit{
+				.viewMask = 0,
+				.colorAttachmentCount = pass.color_output ? 1u : 0u,
+				.pColorAttachmentFormats = pass.color_output ? color_formats.data() : nullptr,
+				.depthAttachmentFormat = pass.depth_output ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
+				.stencilAttachmentFormat = vk::Format::eUndefined,
+				.rasterizationSamples = vk::SampleCountFlagBits::e1,
 			};
-			command.pipelineBarrier2(dep);
-		}
 
-		const bool profile_pass = timestamps_enabled && slot.pass_count < max_profiled_passes;
-		const std::uint32_t pass_index = slot.pass_count;
-		const bool is_graphics_pass = pass.color_output || pass.depth_output;
-		const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
-
-		if (profile_pass) {
-			command.writeTimestamp2(vk::PipelineStageFlagBits2::eNone, *slot.timestamp_pool, 1 + pass_index * 2);
-			slot.pass_types.push_back(pass.pass_type);
-			++slot.pass_count;
-			if (issue_stats) {
-				command.beginQuery(*slot.stats_pool, pass_index, {});
-				slot.stats_issued = true;
+			vk::CommandBufferInheritanceInfo inherit{};
+			vk::CommandBufferUsageFlags begin_flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+			if (is_graphics_pass) {
+				inherit.pNext = &rendering_inherit;
+				begin_flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
 			}
-		}
+			if (issue_stats) {
+				inherit.pipelineStatistics =
+					vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices
+					| vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives
+					| vk::QueryPipelineStatisticFlagBits::eClippingInvocations
+					| vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations;
+			}
 
-		if (is_graphics_pass) {
-			std::vector<vk::RenderingAttachmentInfo> color_attachments;
-			std::optional<vk::RenderingAttachmentInfo> depth_att;
+			secondary.begin({
+				.flags = begin_flags,
+				.pInheritanceInfo = &inherit
+			});
+			m_device->descriptor_heap().bind_buffer(secondary);
+			recording_context secondary_ctx(secondary);
+			pass.record_fn(secondary_ctx);
+			secondary.end();
 
-			if (pass.color_output) {
-				const auto& co = *pass.color_output;
-				auto vk_load = vk::AttachmentLoadOp::eDontCare;
-				vk::ClearValue clear_val{};
+			pass_secondaries[pi] = secondary;
+		});
+	});
 
-				if (co.op == load_op::clear_color) {
-					vk_load = vk::AttachmentLoadOp::eClear;
-					clear_val.color = vk::ClearColorValue{
-						.float32 = std::array{ co.clear_value.r, co.clear_value.g, co.clear_value.b, co.clear_value.a }
-					};
-				} else if (co.op == load_op::load) {
-					vk_load = vk::AttachmentLoadOp::eLoad;
+	gse::trace::scope(gse::find_or_generate_id("graph::record_replay"), [&] {
+		for (std::size_t si = 0; si < sorted.size(); ++si) {
+			auto& pass = passes[sorted[si]];
+
+			std::vector<vk::MemoryBarrier2> barriers;
+
+			if (!pass.tracked_buffers.empty()) {
+				vk::PipelineStageFlags2 tracked_stage{};
+				vk::AccessFlags2 tracked_access{};
+				bool has_unmatched_tracked_buffer = false;
+
+				for (const auto* tracked : pass.tracked_buffers) {
+					bool matched = false;
+					for (const auto& [resource, stage, access] : pass.reads) {
+						if (resource.ptr == tracked && resource.type == resource_type::buffer) {
+							tracked_stage |= stage;
+							tracked_access |= access;
+							matched = true;
+						}
+					}
+					if (!matched) {
+						has_unmatched_tracked_buffer = true;
+					}
 				}
 
-				color_attachments.push_back({
-					.imageView = m_swapchain->image_view(image_index),
-					.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-					.loadOp = vk_load,
-					.storeOp = vk::AttachmentStoreOp::eStore,
-					.clearValue = clear_val
+				if (has_unmatched_tracked_buffer || tracked_stage == vk::PipelineStageFlags2{}) {
+					tracked_stage |= pass.tracked_stage;
+					tracked_access |= vk::AccessFlagBits2::eShaderStorageRead
+						| vk::AccessFlagBits2::eUniformRead
+						| vk::AccessFlagBits2::eTransferRead
+						| vk::AccessFlagBits2::eIndirectCommandRead
+						| vk::AccessFlagBits2::eVertexAttributeRead
+						| vk::AccessFlagBits2::eIndexRead;
+				}
+
+				barriers.push_back({
+					.srcStageMask = vk::PipelineStageFlagBits2::eHost,
+					.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+					.dstStageMask = tracked_stage,
+					.dstAccessMask = tracked_access
 				});
 			}
 
-			if (pass.depth_output) {
-				const auto& [op, clear_value] = *pass.depth_output;
-				auto vk_load = vk::AttachmentLoadOp::eDontCare;
-				vk::ClearValue clear_val{};
+			for (std::size_t pi = 0; pi < si; ++pi) {
+				for (const auto& prev = passes[sorted[pi]]; const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
+					if (!prev_resource.ptr) continue;
+					for (const auto& [read_resource, read_stage, read_access] : pass.reads) {
+						if (read_resource.ptr && prev_resource.ptr == read_resource.ptr) {
+							barriers.push_back({
+								.srcStageMask = prev_stage,
+								.srcAccessMask = prev_access,
+								.dstStageMask = read_stage,
+								.dstAccessMask = read_access
+							});
+						}
+					}
+					for (const auto& [cur_resource, cur_stage, cur_access] : pass.writes) {
+						if (cur_resource.ptr && prev_resource.ptr == cur_resource.ptr) {
+							barriers.push_back({
+								.srcStageMask = prev_stage,
+								.srcAccessMask = prev_access,
+								.dstStageMask = cur_stage,
+								.dstAccessMask = cur_access
+							});
+						}
+					}
+				}
+			}
 
-				if (op == load_op::clear_depth) {
-					vk_load = vk::AttachmentLoadOp::eClear;
-					clear_val.depthStencil = vk::ClearDepthStencilValue{ .depth = clear_value.depth };
-				} else if (op == load_op::load) {
-					vk_load = vk::AttachmentLoadOp::eLoad;
+			if (!barriers.empty()) {
+				const vk::DependencyInfo dep{
+					.memoryBarrierCount = static_cast<std::uint32_t>(barriers.size()),
+					.pMemoryBarriers = barriers.data()
+				};
+				command.pipelineBarrier2(dep);
+			}
+
+			const bool profile_pass = timestamps_enabled && slot.pass_count < max_profiled_passes;
+			const std::uint32_t pass_index = slot.pass_count;
+			const bool is_graphics_pass = pass.color_output || pass.depth_output;
+			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
+
+			if (profile_pass) {
+				command.writeTimestamp2(vk::PipelineStageFlagBits2::eNone, *slot.timestamp_pool, 1 + pass_index * 2);
+				slot.pass_types.push_back(pass.pass_type);
+				++slot.pass_count;
+				if (issue_stats) {
+					command.beginQuery(*slot.stats_pool, pass_index, {});
+					slot.stats_issued = true;
+				}
+			}
+
+			const auto secondary = pass_secondaries[sorted[si]];
+
+			if (is_graphics_pass) {
+				std::vector<vk::RenderingAttachmentInfo> color_attachments;
+				std::optional<vk::RenderingAttachmentInfo> depth_att;
+
+				if (pass.color_output) {
+					const auto& co = *pass.color_output;
+					auto vk_load = vk::AttachmentLoadOp::eDontCare;
+					vk::ClearValue clear_val{};
+
+					if (co.op == load_op::clear_color) {
+						vk_load = vk::AttachmentLoadOp::eClear;
+						clear_val.color = vk::ClearColorValue{
+							.float32 = std::array{ co.clear_value.r, co.clear_value.g, co.clear_value.b, co.clear_value.a }
+						};
+					} else if (co.op == load_op::load) {
+						vk_load = vk::AttachmentLoadOp::eLoad;
+					}
+
+					color_attachments.push_back({
+						.imageView = m_swapchain->image_view(image_index),
+						.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+						.loadOp = vk_load,
+						.storeOp = vk::AttachmentStoreOp::eStore,
+						.clearValue = clear_val
+					});
 				}
 
-				depth_att = vk::RenderingAttachmentInfo{
-					.imageView = m_swapchain->depth_image().native().view,
-					.imageLayout = vk::ImageLayout::eGeneral,
-					.loadOp = vk_load,
-					.storeOp = vk::AttachmentStoreOp::eStore,
-					.clearValue = clear_val
+				if (pass.depth_output) {
+					const auto& [op, clear_value] = *pass.depth_output;
+					auto vk_load = vk::AttachmentLoadOp::eDontCare;
+					vk::ClearValue clear_val{};
+
+					if (op == load_op::clear_depth) {
+						vk_load = vk::AttachmentLoadOp::eClear;
+						clear_val.depthStencil = vk::ClearDepthStencilValue{ .depth = clear_value.depth };
+					} else if (op == load_op::load) {
+						vk_load = vk::AttachmentLoadOp::eLoad;
+					}
+
+					depth_att = vk::RenderingAttachmentInfo{
+						.imageView = m_swapchain->depth_image().native().view,
+						.imageLayout = vk::ImageLayout::eGeneral,
+						.loadOp = vk_load,
+						.storeOp = vk::AttachmentStoreOp::eStore,
+						.clearValue = clear_val
+					};
+				}
+
+				const vk::RenderingInfo ri{
+					.flags = vk::RenderingFlagBits::eContentsSecondaryCommandBuffers,
+					.renderArea = { { 0, 0 }, vk_extent },
+					.layerCount = 1,
+					.colorAttachmentCount = static_cast<std::uint32_t>(color_attachments.size()),
+					.pColorAttachments = color_attachments.empty() ? nullptr : color_attachments.data(),
+					.pDepthAttachment = depth_att ? &*depth_att : nullptr
 				};
+				command.beginRendering(ri);
+				command.executeCommands(secondary);
+				command.endRendering();
+			} else {
+				command.executeCommands(secondary);
 			}
 
-			const vk::RenderingInfo ri{
-				.renderArea = { { 0, 0 }, vk_extent },
-				.layerCount = 1,
-				.colorAttachmentCount = static_cast<std::uint32_t>(color_attachments.size()),
-				.pColorAttachments = color_attachments.empty() ? nullptr : color_attachments.data(),
-				.pDepthAttachment = depth_att ? &*depth_att : nullptr
-			};
-			command.beginRendering(ri);
-			pass.record_fn(ctx);
-			command.endRendering();
-		} else {
-			pass.record_fn(ctx);
-		}
-
-		if (profile_pass) {
-			if (issue_stats) {
-				command.endQuery(*slot.stats_pool, pass_index);
+			if (profile_pass) {
+				if (issue_stats) {
+					command.endQuery(*slot.stats_pool, pass_index);
+				}
+				command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 2 + pass_index * 2);
 			}
-			command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 2 + pass_index * 2);
 		}
-	}
 	});
 
 	if (timestamps_enabled && slot.pass_count > 0) {

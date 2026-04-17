@@ -128,7 +128,7 @@ export namespace gse::vulkan {
 		bool m_transient_initialized = false;
 		vk::DeviceSize m_persistent_end = 0;
 		vk::DeviceSize m_transient_slice_size = 0;
-		std::array<vk::DeviceSize, 2> m_transient_offsets = {};
+		std::array<std::atomic<vk::DeviceSize>, 2> m_transient_offsets = {};
 		std::array<vk::DeviceSize, 2> m_transient_bases = {};
 	};
 
@@ -365,14 +365,14 @@ auto gse::vulkan::descriptor_heap::begin_frame(const std::uint32_t frame_index) 
 	if (!m_transient_initialized) {
 		init_transient_zone();
 	}
-	m_transient_offsets[frame_index] = m_transient_bases[frame_index];
+	m_transient_offsets[frame_index].store(m_transient_bases[frame_index], std::memory_order_relaxed);
 }
 
 auto gse::vulkan::descriptor_heap::allocate_transient(std::uint32_t frame_index, const vk::DeviceSize size) -> descriptor_region {
 	assert(m_transient_initialized, std::source_location::current(), "begin_frame must be called before allocate_transient");
 
 	const auto aligned_size = align_up(size);
-	const auto offset = m_transient_offsets[frame_index];
+	const auto offset = m_transient_offsets[frame_index].fetch_add(aligned_size, std::memory_order_relaxed);
 	const auto slice_end = m_transient_bases[frame_index] + m_transient_slice_size;
 
 	assert(
@@ -381,8 +381,6 @@ auto gse::vulkan::descriptor_heap::allocate_transient(std::uint32_t frame_index,
 		"Transient descriptor heap slice exhausted for frame {}: requested {} at {}, slice ends at {}",
 		frame_index, aligned_size, offset, slice_end
 	);
-
-	m_transient_offsets[frame_index] = offset + aligned_size;
 
 	return {
 		.offset = offset,
@@ -399,7 +397,7 @@ auto gse::vulkan::descriptor_heap::init_transient_zone() -> void {
 
 	for (std::uint32_t i = 0; i < frames; ++i) {
 		m_transient_bases[i] = m_persistent_end + i * m_transient_slice_size;
-		m_transient_offsets[i] = m_transient_bases[i];
+		m_transient_offsets[i].store(m_transient_bases[i], std::memory_order_relaxed);
 	}
 
 	m_transient_initialized = true;

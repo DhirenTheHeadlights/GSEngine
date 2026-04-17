@@ -71,6 +71,16 @@ export namespace gse::task {
 		F&& fn
 	) -> std::invoke_result_t<F&>;
 
+	auto in_arena(
+		std::function<void()> fn
+	) -> void;
+
+	auto parallel_invoke_range(
+		std::size_t first,
+		std::size_t last,
+		std::function<void(std::size_t)> func
+	) -> void;
+
 	class group : non_copyable, non_movable {
 	public:
 		explicit group(
@@ -117,8 +127,6 @@ namespace gse::task {
 	std::size_t chunk_size = 256;
 	std::size_t coalesce_threshold = 64;
 
-	thread_local std::optional<std::size_t> local_worker_id = std::nullopt;
-
 	struct parent {
 		std::uint64_t forced_eid = 0;
 	};
@@ -128,9 +136,6 @@ namespace gse::task {
 		id id,
 		parent parent
 	) -> void;
-
-	auto current_worker_id(
-	) noexcept -> std::optional<std::size_t>;
 
 	auto likely_idle(
 	) noexcept -> bool;
@@ -151,13 +156,21 @@ gse::task::group::~group() noexcept {
 }
 
 auto gse::task::group::wait() -> void {
-	m_tbb_group.wait();
+	const bool already_in_arena = tbb::this_task_arena::current_thread_index() != tbb::task_arena::not_initialized;
+	if (arena && !already_in_arena) {
+		arena->execute([this] {
+			m_tbb_group.wait();
+		});
+	}
+	else {
+		m_tbb_group.wait();
+	}
 }
 
 auto gse::task::group::post(job j, const id id) -> void {
 	const std::uint64_t parent_eid = m_parent_eid;
 
-	m_tbb_group.run([j = std::move(j), id, parent_eid] {
+	auto body = [j = std::move(j), id, parent_eid] {
 		try {
 			trace::scope(id, [&] {
 				j();
@@ -169,7 +182,17 @@ auto gse::task::group::post(job j, const id id) -> void {
 		catch (...) {
 			log::println(log::level::error, log::category::task, "Exception in task");
 		}
-	});
+	};
+
+	const bool already_in_arena = tbb::this_task_arena::current_thread_index() != tbb::task_arena::not_initialized;
+	if (arena && !already_in_arena) {
+		arena->execute([this, body = std::move(body)] {
+			m_tbb_group.run(body);
+		});
+	}
+	else {
+		m_tbb_group.run(std::move(body));
+	}
 }
 
 template <typename F>
@@ -320,15 +343,11 @@ auto gse::task::thread_count() -> size_t {
 }
 
 auto gse::task::current_worker() noexcept -> std::optional<std::size_t> {
-	const auto n = thread_count();
-	if (n == 0) return 0;
-
-	if (const auto id = current_worker_id(); id.has_value()) {
-		return *id % n;
+	const auto idx = tbb::this_task_arena::current_thread_index();
+	if (idx == tbb::task_arena::not_initialized) {
+		return std::nullopt;
 	}
-
-	const auto h = std::hash<std::thread::id>{}(std::this_thread::get_id());
-	return h % n;
+	return static_cast<std::size_t>(idx);
 }
 
 auto gse::task::wait_idle() -> void {
@@ -348,6 +367,33 @@ auto gse::task::wait_idle() -> void {
 template <typename F>
 auto gse::task::isolate(F&& fn) -> std::invoke_result_t<F&> {
 	return tbb::this_task_arena::isolate(std::forward<F>(fn));
+}
+
+auto gse::task::in_arena(std::function<void()> fn) -> void {
+	const bool already_in_arena = tbb::this_task_arena::current_thread_index() != tbb::task_arena::not_initialized;
+	if (arena && !already_in_arena) {
+		arena->execute(fn);
+	}
+	else {
+		fn();
+	}
+}
+
+auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t last, std::function<void(std::size_t)> func) -> void {
+	if (last <= first) {
+		return;
+	}
+
+	in_arena([&] {
+		tbb::parallel_for(
+			tbb::blocked_range<std::size_t>(first, last, 1),
+			[&](const tbb::blocked_range<std::size_t>& r) {
+				for (std::size_t i = r.begin(); i != r.end(); ++i) {
+					func(i);
+				}
+			}
+		);
+	});
 }
 
 auto gse::task::enqueue(job j, id id, parent parent) -> void {
@@ -378,10 +424,6 @@ auto gse::task::enqueue(job j, id id, parent parent) -> void {
 			log::println(log::level::error, log::category::task, "Exception in task");
 		}
 	});
-}
-
-auto gse::task::current_worker_id() noexcept -> std::optional<std::size_t> {
-	return local_worker_id;
 }
 
 auto gse::task::likely_idle() noexcept -> bool {

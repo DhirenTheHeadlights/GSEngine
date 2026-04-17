@@ -18,15 +18,16 @@ cbuffer CameraUBO {
 cbuffer PushConstants {
     uint meshlet_offset;
     uint meshlet_count;
-    uint instance_index;
+    uint first_instance;
 };
 
 groupshared MeshletPayload s_payload;
 
 [shader("amplification")]
 [numthreads(32, 1, 1)]
-void as_main(uint gtid : SV_GroupThreadID, uint gid : SV_GroupID) {
-    uint meshlet_idx = gid * 32 + gtid;
+void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
+    uint meshlet_idx = gid.x * 32 + gtid;
+    uint instance_index = first_instance + gid.y;
     bool visible = false;
 
     if (meshlet_idx < meshlet_count) {

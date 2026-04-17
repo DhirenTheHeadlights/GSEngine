@@ -216,7 +216,9 @@ auto gse::engine::render() -> void {
 	if (frame_ok && m_render_ctx) {
 		trace::scope(find_or_generate_id("render::end_frame"), [&] {
 			m_render_ctx->end_frame();
-			m_render_ctx->finalize_reloads();
+			trace::scope(find_or_generate_id("end_frame::finalize_reloads"), [&] {
+				m_render_ctx->finalize_reloads();
+			});
 		});
 	}
 }

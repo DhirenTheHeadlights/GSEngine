@@ -7,6 +7,7 @@ import :vulkan_runtime;
 import :vulkan_allocator;
 import :descriptor_heap;
 import :descriptor_buffer_types;
+import :gpu_command_pools;
 import :gpu_types;
 import :gpu_image;
 import :shader;
@@ -563,7 +564,7 @@ namespace gse::vulkan {
 			device_data.device.setDebugUtilsObjectNameEXT(name_info);
 		}
 
-		return command_config(std::move(pool), std::move(buffers));
+		return command_config(std::move(pool), std::move(buffers), graphics_family.value());
 	}
 
 	auto to_vk_stage_flags(const gpu::stage_flags flags) -> vk::ShaderStageFlags {
@@ -687,6 +688,9 @@ export namespace gse::gpu {
 		[[nodiscard]] auto command_config(
 		) -> vulkan::command_config&;
 
+		[[nodiscard]] auto worker_command_pools(
+		) -> vulkan::worker_command_pools&;
+
 		[[nodiscard]] auto descriptor_buffer_props(
 		) const -> const vulkan::descriptor_buffer_properties&;
 
@@ -716,6 +720,7 @@ export namespace gse::gpu {
 			std::unique_ptr<vulkan::allocator>&& alloc,
 			vulkan::queue_config&& queue,
 			vulkan::command_config&& command,
+			vulkan::worker_command_pools&& worker_pools,
 			std::unique_ptr<vulkan::descriptor_heap>&& desc_heap,
 			vulkan::descriptor_buffer_properties&& desc_buf_props,
 			vk::Format surface_format,
@@ -729,6 +734,7 @@ export namespace gse::gpu {
 		std::unique_ptr<vulkan::allocator> m_allocator;
 		vulkan::queue_config m_queue;
 		vulkan::command_config m_command;
+		vulkan::worker_command_pools m_worker_pools;
 		std::unique_ptr<vulkan::descriptor_heap> m_descriptor_heap;
 		vulkan::descriptor_buffer_properties m_descriptor_buffer_props;
 		vk::Format m_surface_format;
@@ -754,6 +760,12 @@ auto gse::gpu::device::create(
 	auto alloc = std::make_unique<vulkan::allocator>(dev_config.device, dev_config.physical_device, save);
 	auto command = vulkan::create_command_objects(dev_config, instance_data);
 
+	auto worker_pools = vulkan::worker_command_pools::create(
+		dev_config,
+		command.graphics_family,
+		task::thread_count()
+	);
+
 	auto desc_heap = desc_buf_props.supported
 		? std::make_unique<vulkan::descriptor_heap>(dev_config.device, dev_config.physical_device, desc_buf_props)
 		: nullptr;
@@ -774,6 +786,7 @@ auto gse::gpu::device::create(
 		std::move(alloc),
 		std::move(queue),
 		std::move(command),
+		std::move(worker_pools),
 		std::move(desc_heap),
 		std::move(desc_buf_props),
 		surface_format,
@@ -789,6 +802,7 @@ gse::gpu::device::device(
 	std::unique_ptr<vulkan::allocator>&& alloc,
 	vulkan::queue_config&& queue,
 	vulkan::command_config&& command,
+	vulkan::worker_command_pools&& worker_pools,
 	std::unique_ptr<vulkan::descriptor_heap>&& desc_heap,
 	vulkan::descriptor_buffer_properties&& desc_buf_props,
 	const vk::Format surface_format,
@@ -801,6 +815,7 @@ gse::gpu::device::device(
 	  m_allocator(std::move(alloc)),
 	  m_queue(std::move(queue)),
 	  m_command(std::move(command)),
+	  m_worker_pools(std::move(worker_pools)),
 	  m_descriptor_heap(std::move(desc_heap)),
 	  m_descriptor_buffer_props(std::move(desc_buf_props)),
 	  m_surface_format(surface_format),
@@ -1009,6 +1024,10 @@ auto gse::gpu::device::queue_config() -> vulkan::queue_config& {
 
 auto gse::gpu::device::command_config() -> vulkan::command_config& {
 	return m_command;
+}
+
+auto gse::gpu::device::worker_command_pools() -> vulkan::worker_command_pools& {
+	return m_worker_pools;
 }
 
 auto gse::gpu::device::descriptor_buffer_props() const -> const vulkan::descriptor_buffer_properties& {
