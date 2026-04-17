@@ -192,15 +192,21 @@ auto gse::model_instance::sync_transform(const physics::motion_component& mc, co
 	const auto* mdl = m_model_handle.resolve();
 	const vec3 center_of_mass = mdl->center_of_mass();
 
-	const mat4f scale_mat             = scale(mat4f(1.0f), cc.bounding_box.size());
-	const mat4f rot_mat               = mc.orientation;
-	const mat4f trans_mat             = translate(mat4f(1.0f), mc.current_position);
-	const mat4f pivot_correction_mat  = translate(mat4f(1.0f), -center_of_mass);
-	const mat4f final_model_matrix    = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
-	const mat4f normal_matrix         = final_model_matrix.inverse().transpose();
+	const auto box_size = cc.bounding_box.size();
+	const mat4f scale_mat = scale(mat4f(1.0f), box_size);
+	const mat4f rot_mat = mc.orientation;
+	const mat4f trans_mat = translate(mat4f(1.0f), mc.current_position);
+	const mat4f pivot_correction_mat = translate(mat4f(1.0f), -center_of_mass);
+	const mat4f final_model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
+	const vec3f inv_scale{
+		1.0f / std::max(std::abs(box_size.x().as<meters>()), 1e-6f),
+		1.0f / std::max(std::abs(box_size.y().as<meters>()), 1e-6f),
+		1.0f / std::max(std::abs(box_size.z().as<meters>()), 1e-6f)
+	};
+	const mat4f normal_matrix = scale(rot_mat, inv_scale);
 
 	for (auto& entry : m_render_queue_entries) {
-		entry.model_matrix  = final_model_matrix;
+		entry.model_matrix = final_model_matrix;
 		entry.normal_matrix = normal_matrix;
 	}
 }

@@ -124,7 +124,8 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 	index_mapping.reserve(data.render_queue.size());
 
 	std::uint32_t render_queue_idx = 0;
-	for (const auto& [entry, owner] : data.render_queue) {
+	for (const auto& queue_entry : data.render_queue) {
+		const auto& entry = queue_entry.entry;
 		const auto* mdl = entry.model.resolve();
 		if (!mdl || entry.index >= mdl->meshes().size()) {
 			++render_queue_idx;

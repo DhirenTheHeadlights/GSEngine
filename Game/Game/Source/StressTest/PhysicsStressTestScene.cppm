@@ -393,6 +393,71 @@ export namespace gs {
 					}
 				}
 			}
+
+			build_continuous_agitator(
+				"Cube Bed Sweeper X",
+				gse::vec3<gse::position>(anchor_x, 1.4f, anchor_z),
+				gse::vec3<gse::length>(0.35f, 2.2f, 4.0f),
+				gse::vec3f(1.f, 0.f, 0.f),
+				gse::meters(2.4f),
+				gse::radians_per_second(1.4f),
+				gse::radians(0.f)
+			);
+
+			build_continuous_agitator(
+				"Cube Bed Sweeper Z",
+				gse::vec3<gse::position>(anchor_x, 2.7f, anchor_z),
+				gse::vec3<gse::length>(4.0f, 2.2f, 0.35f),
+				gse::vec3f(0.f, 0.f, 1.f),
+				gse::meters(2.4f),
+				gse::radians_per_second(1.1f),
+				gse::radians(1.5708f)
+			);
+
+			build_continuous_agitator(
+				"Cube Bed Upper Sweeper X",
+				gse::vec3<gse::position>(anchor_x, 4.0f, anchor_z),
+				gse::vec3<gse::length>(0.3f, 1.8f, 4.0f),
+				gse::vec3f(1.f, 0.f, 0.f),
+				gse::meters(2.0f),
+				gse::radians_per_second(1.8f),
+				gse::radians(3.1416f)
+			);
+		}
+
+		auto build_continuous_agitator(const std::string& name, const gse::vec3<gse::position>& base_position, const gse::vec3<gse::length>& size, const gse::vec3f& axis, const gse::length travel, const gse::angular_velocity angular_speed, const gse::angle initial_phase) const -> void {
+			build(name)
+				.with<gse::box>({
+					.initial_position = base_position,
+					.size = size,
+					.mass = gse::kilograms(10000.f)
+				})
+				.with_init([](hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				})
+				.with_update([base_position, axis, travel, angular_speed, phase = initial_phase](hook<gse::entity>& h) mutable {
+					phase += angular_speed * gse::system_clock::dt();
+					const float phase_value = phase.as<gse::radians>();
+					const gse::length offset = travel * std::sin(phase_value);
+					const float sweep_speed = travel.as<gse::meters>() * angular_speed.as<gse::radians_per_second>() * std::cos(phase_value);
+					const gse::velocity sweep_velocity = gse::meters_per_second(sweep_speed);
+
+					auto& mc = h.component_write<gse::physics::motion_component>();
+					mc.current_position = {
+						base_position.x() + offset * axis.x(),
+						base_position.y() + offset * axis.y(),
+						base_position.z() + offset * axis.z()
+					};
+					mc.current_velocity = {
+						sweep_velocity * axis.x(),
+						sweep_velocity * axis.y(),
+						sweep_velocity * axis.z()
+					};
+					mc.sleeping = false;
+				});
 		}
 
 		auto build_box_grid() const -> void {
