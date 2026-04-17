@@ -21,17 +21,16 @@ export namespace gse::gpu {
 		}
 
 		auto flush() -> void {
-			for (auto& entry : m_pending) {
-				const int slot = m_registered[entry.type];
-				if (m_spread <= 1 || (m_frame_counter % m_spread) == (slot % m_spread)) {
-					entry.work();
+			for (auto& [type, work] : m_pending) {
+				if (const int slot = m_registered[type]; m_spread <= 1 || (m_frame_counter % m_spread) == (slot % m_spread)) {
+					work();
 				}
 			}
 			m_pending.clear();
 			++m_frame_counter;
 		}
 
-		auto report_frame_time(time_t<float> fence_wait) -> void {
+		auto report_frame_time(const time fence_wait) -> void {
 			const float ms = fence_wait.as<milliseconds>();
 
 			m_history[m_history_index % m_history_size] = ms;

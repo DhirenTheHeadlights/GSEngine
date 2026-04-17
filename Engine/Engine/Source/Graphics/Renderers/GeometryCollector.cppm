@@ -121,8 +121,13 @@ export namespace gse::renderer::geometry_collector {
 	};
 
 	struct owned_render_queue_entry {
+		static constexpr std::uint32_t invalid_body_index = std::numeric_limits<std::uint32_t>::max();
+
 		render_queue_entry entry;
 		id owner;
+		vec3<position> world_aabb_min;
+		vec3<position> world_aabb_max;
+		std::uint32_t body_index = invalid_body_index;
 	};
 
 	struct render_data {
@@ -204,13 +209,13 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 	std::vector<render_queue_entry> result;
 	result.reserve(data.render_queue.size());
 
-	for (const auto& [entry, owner] : data.render_queue) {
+	for (const auto& queue_entry : data.render_queue) {
 		const bool excluded = std::ranges::any_of(exclude_ids, [&](const id& ex) {
-			return ex == owner;
+			return ex == queue_entry.owner;
 		});
 
 		if (!excluded) {
-			result.push_back(entry);
+			result.push_back(queue_entry.entry);
 		}
 	}
 
@@ -351,6 +356,16 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			motion.prime();
 			collision.prime();
 
+			bool motion_order_matches = render_size == motion.size();
+			for (std::size_t i = 0; motion_order_matches && i < render_size; ++i) {
+				motion_order_matches = render[i].owner_id() == motion[i].owner_id();
+			}
+
+			bool collision_order_matches = render_size == collision.size();
+			for (std::size_t i = 0; collision_order_matches && i < render_size; ++i) {
+				collision_order_matches = render[i].owner_id() == collision[i].owner_id();
+			}
+
 			struct component_lookup {
 				const physics::motion_component* mc = nullptr;
 				const physics::collision_component* cc = nullptr;
@@ -363,8 +378,9 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 					return;
 				}
 
-				const auto* mc = motion.find(component.owner_id());
-				const auto* cc = collision.find(component.owner_id());
+				const auto eid = component.owner_id();
+				const auto* mc = motion_order_matches ? std::addressof(motion[i]) : motion.find(eid);
+				const auto* cc = collision_order_matches ? std::addressof(collision[i]) : collision.find(eid);
 				if (mc == nullptr || cc == nullptr) {
 					return;
 				}
@@ -388,23 +404,36 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 				const auto* mc = lookups[i].mc;
 				const auto* cc = lookups[i].cc;
+				if (mc == nullptr || cc == nullptr) {
+					continue;
+				}
+
+				const auto eid = component.owner_id();
+				const auto& world_aabb = cc->bounding_box.aabb();
+				std::uint32_t body_index = owned_render_queue_entry::invalid_body_index;
+				if (const auto it = body_index_map.find(eid); it != body_index_map.end()) {
+					body_index = it->second;
+				}
 
 				for (auto& model_handle : component.model_instances) {
-					if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+					if (!model_handle.handle().valid()) {
 						continue;
 					}
 					for (const auto& entry : model_handle.render_queue_entries()) {
 						out.push_back({
 							.entry = entry,
-							.owner = component.owner_id()
+							.owner = eid,
+							.world_aabb_min = world_aabb.min,
+							.world_aabb_max = world_aabb.max,
+							.body_index = body_index
 						});
 					}
 				}
 
-				const auto* anim_comp = anim.find(component.owner_id());
+				const auto* anim_comp = anim.find(eid);
 
 				for (auto& skinned_model_handle : component.skinned_model_instances) {
-					if (!skinned_model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+					if (!skinned_model_handle.handle().valid()) {
 						continue;
 					}
 
@@ -513,7 +542,6 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			}
 
 			const auto& mesh = key.model_ptr->meshes()[key.mesh_index];
-			const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
 			const auto instance_count = static_cast<std::uint32_t>(batch_end - batch_begin);
 			const auto mat_idx = material_index(&mesh.material());
 
@@ -521,18 +549,9 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
 
 			for (std::size_t i = batch_begin; i < batch_end; ++i) {
-				const auto& [entry, owner] = out[i];
-
-				if (const auto* cc = collision.find(owner); cc != nullptr) {
-					const auto& inst_aabb = cc->bounding_box.aabb();
-					world_aabb_min = gse::min(world_aabb_min, inst_aabb.min);
-					world_aabb_max = gse::max(world_aabb_max, inst_aabb.max);
-				}
-				else {
-					const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, entry.model_matrix);
-					world_aabb_min = gse::min(world_aabb_min, inst_min);
-					world_aabb_max = gse::max(world_aabb_max, inst_max);
-				}
+				const auto& queue_entry = out[i];
+				world_aabb_min = gse::min(world_aabb_min, queue_entry.world_aabb_min);
+				world_aabb_max = gse::max(world_aabb_max, queue_entry.world_aabb_max);
 			}
 
 			normal_batches.push_back({
@@ -546,14 +565,15 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			const vec3 center_of_mass = key.model_ptr->center_of_mass();
 
 			for (std::size_t i = batch_begin; i < batch_end; ++i) {
-				const auto& [entry, owner] = out[i];
+				const auto& queue_entry = out[i];
+				const auto& entry = queue_entry.entry;
 				const auto instance_index = global_instance_offset++;
 
 				write_instance(entry.model_matrix, entry.normal_matrix, 0, 0, mat_idx);
 
-				if (const auto it = body_index_map.find(owner); it != body_index_map.end()) {
+				if (queue_entry.body_index != owned_render_queue_entry::invalid_body_index) {
 					data.physics_mappings.push_back({
-						.body_index = it->second,
+						.body_index = queue_entry.body_index,
 						.instance_index = instance_index,
 						.center_of_mass = center_of_mass
 					});
