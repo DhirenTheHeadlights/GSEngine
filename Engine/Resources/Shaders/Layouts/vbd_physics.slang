@@ -26,3 +26,4 @@ public struct DispatchArgs {
 };
 public[[vk::binding(17, 0)]] RWStructuredBuffer<DispatchArgs> indirect_args;
 public[[vk::binding(18, 0)]] RWStructuredBuffer<FrozenJacobian> frozen_jacobians;
+public[[vk::binding(19, 0)]] RWStructuredBuffer<float4> solve_deltas;

@@ -88,6 +88,13 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         return;
     }
 
+    float3 linear_velocity = body.velocity.xyz;
+    float lin_speed = length(linear_velocity);
+    if (lin_speed > 15.0) {
+        linear_velocity *= (15.0 / lin_speed);
+        body.velocity = float4(linear_velocity, 0);
+    }
+
     float3 angular_velocity = body.angular_velocity.xyz;
     float ang_speed = length(angular_velocity);
     if (ang_speed > 50.0) {

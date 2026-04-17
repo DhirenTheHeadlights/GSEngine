@@ -37,7 +37,7 @@ export namespace gs {
 			build_high_speed_impact_target();
 			build_box_grid();
 			build_spring_tests();
-			build_wrecking_ball_pendulum();
+			build_tumbler();
 
 			build("Bouncy Sphere")
 				.with<gse::sphere>({
@@ -332,132 +332,98 @@ export namespace gs {
 			}
 		}
 
-		auto build_wrecking_ball_pendulum() const -> void {
-			constexpr float anchor_x = -10.f;
-			constexpr float anchor_y = 14.f;
-			constexpr float anchor_z = 28.f;
-			constexpr float rope_length = 10.f;
-			constexpr float ball_radius = 1.5f;
+		auto build_tumbler() const -> void {
+			constexpr float cx = 0.f;
+			constexpr float cy = 10.f;
+			constexpr float cz = 24.f;
+			const gse::vec3<gse::position> center(cx, cy, cz);
+			constexpr auto rotation_axis = gse::axis_z;
+			const gse::angular_velocity angular_speed = gse::radians_per_second(0.6f);
 
-			const auto anchor_id = build("Wrecking Ball Anchor")
-				.with<gse::box>({
-					.initial_position = gse::vec3<gse::position>(anchor_x, anchor_y, anchor_z),
-					.size = gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
-				})
-				.with_init([](hook<gse::entity>& h) {
-					h.configure_when_present([](gse::physics::motion_component& mc) {
-						mc.affected_by_gravity = false;
-						mc.position_locked = true;
+			constexpr float interior_half = 3.5f;
+			constexpr float length_half = 6.0f;
+			constexpr float thickness = 0.3f;
+			constexpr float outer_half = interior_half + thickness;
+			constexpr float wall_offset = interior_half + thickness * 0.5f;
+			constexpr float side_wall_length = (length_half + thickness) * 2.f;
+
+			struct wall_def {
+				std::string_view suffix;
+				gse::vec3<gse::length> local_offset;
+				gse::vec3<gse::length> size;
+			};
+
+			const std::array walls = {
+				wall_def{ "Bottom", gse::vec3<gse::length>(0.f, -wall_offset, 0.f), gse::vec3<gse::length>(outer_half * 2.f, thickness, side_wall_length) },
+				wall_def{ "Top",    gse::vec3<gse::length>(0.f,  wall_offset, 0.f), gse::vec3<gse::length>(outer_half * 2.f, thickness, side_wall_length) },
+				wall_def{ "Left",   gse::vec3<gse::length>(-wall_offset, 0.f, 0.f), gse::vec3<gse::length>(thickness, outer_half * 2.f, side_wall_length) },
+				wall_def{ "Right",  gse::vec3<gse::length>( wall_offset, 0.f, 0.f), gse::vec3<gse::length>(thickness, outer_half * 2.f, side_wall_length) },
+				wall_def{ "Front",  gse::vec3<gse::length>(0.f, 0.f,  length_half + thickness * 0.5f), gse::vec3<gse::length>(outer_half * 2.f, outer_half * 2.f, thickness) },
+				wall_def{ "Back",   gse::vec3<gse::length>(0.f, 0.f, -(length_half + thickness * 0.5f)), gse::vec3<gse::length>(outer_half * 2.f, outer_half * 2.f, thickness) }
+			};
+
+			for (const auto& wall : walls) {
+				build(std::format("Tumbler Wall {}", wall.suffix))
+					.with<gse::box>({
+						.initial_position = center + wall.local_offset,
+						.size = wall.size,
+						.mass = gse::kilograms(10000.f)
+					})
+					.with_init([](hook<gse::entity>& h) {
+						h.configure_when_present([](gse::physics::motion_component& mc) {
+							mc.affected_by_gravity = false;
+							mc.position_locked = true;
+							mc.update_orientation = true;
+						});
+					})
+					.with_update([center, rotation_axis, angular_speed, local_offset = wall.local_offset, phase = gse::radians(0.f), accumulator = gse::seconds(0.f)](hook<gse::entity>& h) mutable {
+						constexpr auto physics_step = gse::seconds(1.f / 60.f);
+						accumulator += gse::system_clock::dt();
+						while (accumulator >= physics_step) {
+							accumulator -= physics_step;
+							phase += angular_speed * physics_step;
+						}
+						const gse::quat world_rot(rotation_axis, phase);
+						const auto world_offset = gse::rotate_vector(world_rot, local_offset);
+						const gse::vec3<gse::angular_velocity> ang_vel(
+							rotation_axis.x() * angular_speed,
+							rotation_axis.y() * angular_speed,
+							rotation_axis.z() * angular_speed
+						);
+						const auto lin_vel = cross(ang_vel, world_offset) / gse::rad;
+
+						auto& mc = h.component_write<gse::physics::motion_component>();
+						mc.current_position = center + world_offset;
+						mc.orientation = world_rot;
+						mc.current_velocity = lin_vel;
+						mc.angular_velocity = ang_vel;
+						mc.sleeping = false;
 					});
-				})
-				.identify();
+			}
 
-			const auto ball_id = build("Wrecking Ball")
-				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::position>(anchor_x + rope_length, anchor_y, anchor_z),
-					.radius = gse::meters(ball_radius),
-					.sectors = 32,
-					.stacks = 24
-				})
-				.with_init([](hook<gse::entity>& h) {
-					h.configure_when_present([](gse::physics::motion_component& mc) {
-						mc.mass = gse::kilograms(2000.f);
-					});
-				})
-				.identify();
+			constexpr int nx = 8;
+			constexpr int ny = 8;
+			constexpr int nz = 15;
+			constexpr float content_size = 0.5f;
+			constexpr float radial_span = interior_half - content_size;
+			constexpr float axial_span = length_half - content_size;
 
-			gse::physics::join(anchor_id, ball_id, gse::physics::distance_joint{
-				.target = gse::meters(rope_length)
-			});
-
-			constexpr int grid_x = 10;
-			constexpr int grid_y = 10;
-			constexpr int grid_z = 10;
-			constexpr float cube_size = 0.3f;
-			constexpr float spacing = cube_size * 1.05f;
-			constexpr float stack_base_x = anchor_x - (grid_x * spacing) * 0.5f;
-			constexpr float stack_base_z = anchor_z - (grid_z * spacing) * 0.5f;
-
-			for (int layer = 0; layer < grid_y; ++layer) {
-				for (int ix = 0; ix < grid_x; ++ix) {
-					for (int iz = 0; iz < grid_z; ++iz) {
-						const float x = stack_base_x + static_cast<float>(ix) * spacing + spacing * 0.5f;
-						const float y = cube_size * 0.5f + static_cast<float>(layer) * spacing;
-						const float z = stack_base_z + static_cast<float>(iz) * spacing + spacing * 0.5f;
-						build(std::format("Tiny Cube L{}R{}C{}", layer, ix, iz))
+			int content_id = 0;
+			for (int ix = 0; ix < nx; ++ix) {
+				for (int iy = 0; iy < ny; ++iy) {
+					for (int iz = 0; iz < nz; ++iz) {
+						const float fx = -radial_span + (static_cast<float>(ix) + 0.5f) * (radial_span * 2.f / nx);
+						const float fy = -radial_span + (static_cast<float>(iy) + 0.5f) * (radial_span * 2.f / ny);
+						const float fz = -axial_span + (static_cast<float>(iz) + 0.5f) * (axial_span * 2.f / nz);
+						build(std::format("Tumbler Cube {}", content_id++))
 							.with<gse::box>({
-								.initial_position = gse::vec3<gse::position>(x, y, z),
-								.size = gse::vec3(gse::meters(cube_size)),
-								.mass = gse::kilograms(0.1f)
+								.initial_position = gse::vec3<gse::position>(cx + fx, cy + fy, cz + fz),
+								.size = gse::vec3(gse::meters(content_size)),
+								.mass = gse::kilograms(1.f)
 							});
 					}
 				}
 			}
-
-			build_continuous_agitator(
-				"Cube Bed Sweeper X",
-				gse::vec3<gse::position>(anchor_x, 1.4f, anchor_z),
-				gse::vec3<gse::length>(0.35f, 2.2f, 4.0f),
-				gse::vec3f(1.f, 0.f, 0.f),
-				gse::meters(2.4f),
-				gse::radians_per_second(1.4f),
-				gse::radians(0.f)
-			);
-
-			build_continuous_agitator(
-				"Cube Bed Sweeper Z",
-				gse::vec3<gse::position>(anchor_x, 2.7f, anchor_z),
-				gse::vec3<gse::length>(4.0f, 2.2f, 0.35f),
-				gse::vec3f(0.f, 0.f, 1.f),
-				gse::meters(2.4f),
-				gse::radians_per_second(1.1f),
-				gse::radians(1.5708f)
-			);
-
-			build_continuous_agitator(
-				"Cube Bed Upper Sweeper X",
-				gse::vec3<gse::position>(anchor_x, 4.0f, anchor_z),
-				gse::vec3<gse::length>(0.3f, 1.8f, 4.0f),
-				gse::vec3f(1.f, 0.f, 0.f),
-				gse::meters(2.0f),
-				gse::radians_per_second(1.8f),
-				gse::radians(3.1416f)
-			);
-		}
-
-		auto build_continuous_agitator(const std::string& name, const gse::vec3<gse::position>& base_position, const gse::vec3<gse::length>& size, const gse::vec3f& axis, const gse::length travel, const gse::angular_velocity angular_speed, const gse::angle initial_phase) const -> void {
-			build(name)
-				.with<gse::box>({
-					.initial_position = base_position,
-					.size = size,
-					.mass = gse::kilograms(10000.f)
-				})
-				.with_init([](hook<gse::entity>& h) {
-					h.configure_when_present([](gse::physics::motion_component& mc) {
-						mc.affected_by_gravity = false;
-						mc.position_locked = true;
-					});
-				})
-				.with_update([base_position, axis, travel, angular_speed, phase = initial_phase](hook<gse::entity>& h) mutable {
-					phase += angular_speed * gse::system_clock::dt();
-					const float phase_value = phase.as<gse::radians>();
-					const gse::length offset = travel * std::sin(phase_value);
-					const float sweep_speed = travel.as<gse::meters>() * angular_speed.as<gse::radians_per_second>() * std::cos(phase_value);
-					const gse::velocity sweep_velocity = gse::meters_per_second(sweep_speed);
-
-					auto& mc = h.component_write<gse::physics::motion_component>();
-					mc.current_position = {
-						base_position.x() + offset * axis.x(),
-						base_position.y() + offset * axis.y(),
-						base_position.z() + offset * axis.z()
-					};
-					mc.current_velocity = {
-						sweep_velocity * axis.x(),
-						sweep_velocity * axis.y(),
-						sweep_velocity * axis.z()
-					};
-					mc.sleeping = false;
-				});
 		}
 
 		auto build_box_grid() const -> void {

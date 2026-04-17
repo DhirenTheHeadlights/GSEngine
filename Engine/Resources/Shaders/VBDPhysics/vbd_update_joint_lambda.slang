@@ -9,6 +9,8 @@ ConstantBuffer<vbd_push_constants> pc;
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
+    if (collision_state[CONVERGED_FLAG_INDEX] != 0) return;
+
     uint ji = dispatch_id.x;
     if (ji >= pc.joint_count) return;
 
@@ -37,6 +39,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             penalty_cap = min(1.0 / max(j.compliance * pc.h_squared, 1e-10), pc.penalty_max);
         }
         j.pos_penalty.x = min(j.pos_penalty.x + pc.beta * abs(c), penalty_cap);
+        InterlockedMax(collision_state[CONVERGENCE_MAX_DELTA_INDEX], asuint(abs(c)));
     }
     else if (j.type == JOINT_TYPE_FIXED || j.type == JOINT_TYPE_HINGE) {
         float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
@@ -44,6 +47,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             float c = dot(dirs[k], d) - j.pos_c0[k];
             j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
             j.pos_penalty[k] = min(j.pos_penalty[k] + pc.beta * abs(c), pc.penalty_max);
+            InterlockedMax(collision_state[CONVERGENCE_MAX_DELTA_INDEX], asuint(abs(c)));
         }
 
         float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
@@ -103,6 +107,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             float c = dot(perps[k], d) - j.pos_c0[k];
             j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
             j.pos_penalty[k] = min(j.pos_penalty[k] + pc.beta * abs(c), pc.penalty_max);
+            InterlockedMax(collision_state[CONVERGENCE_MAX_DELTA_INDEX], asuint(abs(c)));
         }
 
         float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));

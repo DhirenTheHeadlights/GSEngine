@@ -9,9 +9,17 @@ static const uint WG_SIZE = 64;
 
 groupshared uint gs_body_flags[MAX_BODIES];
 groupshared uint gs_body_color[MAX_BODIES];
+groupshared uint gs_body_color_next[MAX_BODIES];
 groupshared uint gs_color_group_count[MAX_COLORS];
 groupshared uint gs_color_group_bodies[MAX_BODIES];
 groupshared uint gs_max_used_color;
+groupshared uint gs_pending_count;
+
+uint body_priority(uint bi) {
+    uint state = bi * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
 
 [Layout(LayoutKind::VBDPhysics)]
 [shader("compute")]
@@ -185,6 +193,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
 
     for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
         gs_body_color[bi] = 0xFFFFFFFF;
+        gs_body_color_next[bi] = 0xFFFFFFFF;
     }
     for (uint c = tid; c < MAX_COLORS; c += WG_SIZE) {
         gs_color_group_count[c] = 0;
@@ -194,15 +203,34 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
     }
     GroupMemoryBarrierWithGroupSync();
 
-    if (tid == 0) {
-        for (uint bi = 0; bi < body_count; bi++) {
-            if ((gs_body_flags[bi] & FLAG_LOCKED) != 0) continue;
+    for (uint round = 0; round < 32; round++) {
+        if (tid == 0) {
+            gs_pending_count = 0;
+        }
+        GroupMemoryBarrierWithGroupSync();
+
+        for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
+            uint current = gs_body_color[bi];
+            if (current != 0xFFFFFFFF) {
+                gs_body_color_next[bi] = current;
+                continue;
+            }
+            if ((gs_body_flags[bi] & FLAG_LOCKED) != 0) {
+                gs_body_color_next[bi] = 0xFFFFFFFF;
+                continue;
+            }
 
             uint cc = contact_counts[bi];
             uint jc = joint_counts[bi];
-            if (cc == 0 && jc == 0) continue;
+            if (cc == 0 && jc == 0) {
+                gs_body_color_next[bi] = 0xFFFFFFFF;
+                continue;
+            }
 
+            uint my_priority = body_priority(bi);
+            bool blocked = false;
             uint neighbor_colors = 0;
+
             uint off = contact_offsets[bi];
             for (uint k = 0; k < cc; k++) {
                 uint idx = off + k;
@@ -211,8 +239,17 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
                 if (ci >= num_contacts) continue;
                 GpuContact c = contact_data[ci];
                 uint other = (c.body_a == bi) ? c.body_b : c.body_a;
-                if (other < body_count && gs_body_color[other] < MAX_COLORS) {
-                    neighbor_colors |= (1u << gs_body_color[other]);
+                if (other < body_count) {
+                    uint other_color = gs_body_color[other];
+                    if (other_color == 0xFFFFFFFF) {
+                        uint other_priority = body_priority(other);
+                        if (other_priority > my_priority ||
+                            (other_priority == my_priority && other < bi)) {
+                            blocked = true;
+                        }
+                    } else if (other_color < MAX_COLORS) {
+                        neighbor_colors |= (1u << other_color);
+                    }
                 }
             }
 
@@ -224,9 +261,25 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
                 if (ji >= num_joints) continue;
                 GpuJoint j = joint_data[ji];
                 uint other = (j.body_a == bi) ? j.body_b : j.body_a;
-                if (other < body_count && gs_body_color[other] < MAX_COLORS) {
-                    neighbor_colors |= (1u << gs_body_color[other]);
+                if (other < body_count) {
+                    uint other_color = gs_body_color[other];
+                    if (other_color == 0xFFFFFFFF) {
+                        uint other_priority = body_priority(other);
+                        if (other_priority > my_priority ||
+                            (other_priority == my_priority && other < bi)) {
+                            blocked = true;
+                        }
+                    } else if (other_color < MAX_COLORS) {
+                        neighbor_colors |= (1u << other_color);
+                    }
                 }
+            }
+
+            if (blocked) {
+                uint dummy;
+                InterlockedAdd(gs_pending_count, 1u, dummy);
+                gs_body_color_next[bi] = 0xFFFFFFFF;
+                continue;
             }
 
             uint chosen = 0;
@@ -234,11 +287,21 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
                 chosen++;
             }
 
-            if (chosen < MAX_COLORS) {
-                gs_body_color[bi] = chosen;
-            }
+            gs_body_color_next[bi] = (chosen < MAX_COLORS) ? chosen : 0xFFFFFFFF;
         }
 
+        GroupMemoryBarrierWithGroupSync();
+
+        for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
+            gs_body_color[bi] = gs_body_color_next[bi];
+        }
+
+        GroupMemoryBarrierWithGroupSync();
+
+        if (gs_pending_count == 0) break;
+    }
+
+    if (tid == 0) {
         uint max_contact_color = 0;
         for (uint bi = 0; bi < body_count; bi++) {
             if (gs_body_color[bi] < MAX_COLORS && gs_body_color[bi] + 1 > max_contact_color) {
@@ -321,6 +384,13 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
         }
         for (uint i = 0; i < idx; i++) {
             color_data[MAX_COLORS * 2 + i] = gs_color_group_bodies[i];
+        }
+
+        for (uint c = 0; c < MAX_COLORS; c++) {
+            uint count = (c < max_used_color) ? gs_color_group_count[c] : 0u;
+            indirect_args[2 + c].x = (count + 63) / 64;
+            indirect_args[2 + c].y = 1;
+            indirect_args[2 + c].z = 1;
         }
     }
 }

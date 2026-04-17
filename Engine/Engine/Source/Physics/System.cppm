@@ -92,8 +92,11 @@ export namespace gse::physics {
 		bool update_phys = true;
 		bool use_gpu_solver = false;
 		bool gpu_buffers_created = false;
-		int solver_iterations = 10;
+		int solver_iterations = 15;
 		bool compare_solvers = false;
+		bool use_jacobi = false;
+		float jacobi_omega = 0.67f;
+		int physics_substeps = 2;
 		gpu_solver_stats gpu_stats;
 		std::vector<joint_definition> joints;
 	};
@@ -529,7 +532,37 @@ auto gse::physics::system::initialize(const init_context& phase, update_data& ud
 		.ref = &s.solver_iterations,
 		.type = typeid(int),
 		.range_min = 1,
-		.range_max = 20,
+		.range_max = 40,
+		.range_step = 1
+	});
+
+	phase.channels.push<save::register_property>({
+		.category = "Physics",
+		.name = "Use Jacobi Solver",
+		.description = "Use Jacobi instead of Gauss-Seidel (needs more iterations)",
+		.ref = &s.use_jacobi,
+		.type = typeid(bool)
+	});
+
+	phase.channels.push<save::register_property>({
+		.category = "Physics",
+		.name = "Jacobi Omega",
+		.description = "Under-relaxation factor for Jacobi (lower = more stable, slower convergence)",
+		.ref = &s.jacobi_omega,
+		.type = typeid(float),
+		.range_min = 0.1f,
+		.range_max = 1.0f,
+		.range_step = 0.01f
+	});
+
+	phase.channels.push<save::register_property>({
+		.category = "Physics",
+		.name = "Physics Substeps",
+		.description = "Subdivide each 60Hz physics tick into N mini-steps (higher = stabler against fast kinematic boundaries)",
+		.ref = &s.physics_substeps,
+		.type = typeid(int),
+		.range_min = 1,
+		.range_max = 8,
 		.range_step = 1
 	});
 
@@ -569,8 +602,13 @@ auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s
 		return;
 	}
 
-	if (auto cfg = ud.vbd_solver.config(); cfg.iterations != static_cast<std::uint32_t>(s.solver_iterations)) {
+	if (auto cfg = ud.vbd_solver.config();
+		cfg.iterations != static_cast<std::uint32_t>(s.solver_iterations) ||
+		cfg.use_jacobi != s.use_jacobi ||
+		cfg.jacobi_omega != s.jacobi_omega) {
 		cfg.iterations = static_cast<std::uint32_t>(s.solver_iterations);
+		cfg.use_jacobi = s.use_jacobi;
+		cfg.jacobi_omega = s.jacobi_omega;
 		ud.vbd_solver.configure(cfg);
 	}
 
@@ -1253,7 +1291,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 			.authoritative_body_indices = jumped_body_indices,
 			.solver_cfg = ud.vbd_solver.config(),
 			.dt = dt * static_cast<float>(steps),
-			.steps = steps,
+			.steps = steps * std::max(s.physics_substeps, 1),
 			.entity_ids = entity_ids,
 			.joint_count = static_cast<std::uint32_t>(gpu_joints.size())
 		});
@@ -1324,6 +1362,8 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 
 auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision) -> void {
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
+	const int substeps = std::max(s.physics_substeps, 1);
+	const auto sub_dt = const_update_time / static_cast<float>(substeps);
 
 	flat_map<id, std::uint32_t> id_to_body_index;
 	std::vector<motion_component*> motion_ptrs;
@@ -1342,7 +1382,8 @@ auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s
 
 	const auto objects = collect_collision_objects(motion, collision);
 
-	for (int step = 0; step < steps; ++step) {
+	const int total_substeps = steps * substeps;
+	for (int step = 0; step < total_substeps; ++step) {
 		std::vector<vbd::body_state> bodies;
 		bodies.reserve(motion.size());
 
@@ -1452,7 +1493,7 @@ auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s
 			});
 		}
 
-		ud.vbd_solver.solve(const_update_time);
+		ud.vbd_solver.solve(sub_dt);
 
 		{
 			std::uint32_t ji = 0;
