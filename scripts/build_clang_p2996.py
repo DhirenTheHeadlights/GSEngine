@@ -56,7 +56,6 @@ def configure(src, build, link_jobs):
         "-DLLVM_ENABLE_PROJECTS=clang;lld",
         "-DLLVM_TARGETS_TO_BUILD=X86",
         "-DLLVM_ENABLE_ASSERTIONS=OFF",
-        "-DLLVM_USE_CRT_RELEASE=MT",
     ]
     if link_jobs is not None:
         cmake_args.append(f"-DLLVM_PARALLEL_LINK_JOBS={link_jobs}")
@@ -64,7 +63,12 @@ def configure(src, build, link_jobs):
 
 
 def build_targets(build):
-    run(["cmake", "--build", str(build), "--target", "clang", "clang-cl", "lld-link"])
+    run([
+        "cmake", "--build", str(build),
+        "--target",
+        "clang", "lld",
+        "llvm-ar", "llvm-lib", "llvm-rc", "clang-scan-deps",
+    ])
 
 
 def stage(build, dist):
