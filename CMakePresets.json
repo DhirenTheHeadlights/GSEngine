@@ -43,6 +43,45 @@
       "displayName": "x64 RelWithDebInfo",
       "inherits": "x64-base",
       "binaryDir": "${sourceDir}/out/build/x64-RelWithDebInfo"
+    },
+    {
+      "name": "x64-clang-p2996-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "CMAKE_C_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang-cl.exe",
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest"
+      },
+      "environment": {
+        "PATH": "$env{CLANG_P2996_ROOT}/bin;$penv{PATH}"
+      },
+      "vendor": {
+        "microsoft.com/VisualStudioSettings/CMake/1.0": {
+          "inheritEnvironments": [ "msvc_x64_x64" ]
+        }
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "$env{CLANG_P2996_ROOT}",
+        "rhs": ""
+      }
+    },
+    {
+      "name": "x64-clang-p2996-Debug",
+      "displayName": "x64 clang-p2996 Debug",
+      "inherits": "x64-clang-p2996-base",
+      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-Debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "x64-clang-p2996-Release",
+      "displayName": "x64 clang-p2996 Release",
+      "inherits": "x64-clang-p2996-base",
+      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-Release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ],
   "buildPresets": [
@@ -60,6 +99,14 @@
       "name": "x64-RelWithDebInfo",
       "configurePreset": "x64-RelWithDebInfo",
       "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "x64-clang-p2996-Debug",
+      "configurePreset": "x64-clang-p2996-Debug"
+    },
+    {
+      "name": "x64-clang-p2996-Release",
+      "configurePreset": "x64-clang-p2996-Release"
     }
   ],
   "testPresets": []

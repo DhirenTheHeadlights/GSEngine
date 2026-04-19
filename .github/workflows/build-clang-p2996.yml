@@ -1,0 +1,96 @@
+name: build-clang-p2996
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. clang-p2996-v1)"
+        required: true
+      sha:
+        description: "clang-p2996 commit SHA to pin (leave blank for branch tip)"
+        required: false
+      branch:
+        description: "Source branch"
+        required: false
+        default: "p2996"
+      draft:
+        description: "Create release as draft"
+        required: false
+        default: "true"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja
+        shell: pwsh
+        run: choco install ninja -y --no-progress
+
+      - name: Free runner disk space
+        shell: pwsh
+        run: |
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
+            "$env:AGENT_TOOLSDIRECTORY\Ruby" , `
+            "$env:AGENT_TOOLSDIRECTORY\Go" , `
+            "$env:AGENT_TOOLSDIRECTORY\PyPy" , `
+            "$env:AGENT_TOOLSDIRECTORY\CodeQL"
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
+
+      - name: Build clang-p2996
+        shell: pwsh
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: "4"
+        run: |
+          $script_args = @("scripts/build_clang_p2996.py", "--branch", "${{ inputs.branch }}", "--link-jobs", "1")
+          if ("${{ inputs.sha }}") {
+            $script_args += @("--sha", "${{ inputs.sha }}")
+          }
+          python @script_args
+
+      - name: Compute artifact SHA256
+        id: hash
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 dist/clang-p2996-windows-x64.zip).Hash.ToLower()
+          Write-Output "sha256=$hash" >> $env:GITHUB_OUTPUT
+          Write-Output "SHA256: $hash"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-p2996-windows-x64
+          path: dist/clang-p2996-windows-x64.zip
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          draft: ${{ inputs.draft == 'true' }}
+          files: dist/clang-p2996-windows-x64.zip
+          body: |
+            Prebuilt `clang-p2996` toolchain for Windows x64.
+
+            - Branch: `${{ inputs.branch }}`
+            - SHA input: `${{ inputs.sha || 'branch tip' }}`
+            - SHA256: `${{ steps.hash.outputs.sha256 }}`
+
+            ## Install
+
+            ```
+            python scripts/install_clang_p2996.py --tag ${{ inputs.tag }} --sha256 ${{ steps.hash.outputs.sha256 }} --persist
+            ```
