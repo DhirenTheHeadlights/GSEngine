@@ -12,7 +12,7 @@ Install the following tools and ensure they are on your system `PATH`:
 - A compiler with C++20 module support
 - Vulkan SDK
 
-The `setup.py` script can bootstrap third‑party packages through vcpkg on Windows; vcpkg will look for:
+The `setup.py` script bootstraps third‑party packages through vcpkg on Windows. It installs:
 
 - [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)
 - [GLFW3](https://www.glfw.org/)
@@ -25,10 +25,45 @@ The `setup.py` script can bootstrap third‑party packages through vcpkg on Wind
 
 ## Quick Start
 
-1. Clone this repository.
-2. Configure with CMake to generate build files.
-3. Build the solution in your IDE or via the generated build scripts.
-4. Launch the editor to explore the sample scenes or integrate your own modules.
+```
+git clone <repo>
+python bootstrap.py --persist
+cmake --preset x64-Release
+cmake --build --preset x64-Release
+```
+
+`bootstrap.py` runs `setup.py` (vcpkg + dependencies) and then downloads the prebuilt `clang-p2996` toolchain. Skip a step with `--skip-deps` or `--skip-clang`. Pass `--skip-clang` if you only need the MSVC presets.
+
+## clang-p2996 Toolchain
+
+MSVC's module implementation is unreliable on this codebase, so we build with a prebuilt fork of Clang that also includes preview support for [P2996 reflection](https://github.com/bloomberg/clang-p2996).
+
+### As a teammate — just install
+
+```
+python scripts/install_clang_p2996.py --persist
+```
+
+This downloads the latest release zip to `%LOCALAPPDATA%\clang-p2996\<tag>` and sets `CLANG_P2996_ROOT`. Then use the `x64-clang-p2996-Debug` / `x64-clang-p2996-Release` CMake presets — they're hidden unless `CLANG_P2996_ROOT` is set, so they only appear once the install step has run.
+
+Pin a specific tag with `--tag clang-p2996-v1` and verify the artifact with `--sha256 <hash>` (both are printed in the GitHub release notes).
+
+### As a maintainer — cut a new release
+
+The `build-clang-p2996` GitHub Actions workflow does the full build + release upload. Trigger it manually from the Actions tab with:
+
+- `tag` — e.g. `clang-p2996-v2`
+- `sha` — clang-p2996 commit SHA to pin (leave blank for branch tip, but **pinning is strongly recommended**)
+
+The workflow produces a Windows x64 zip, computes its SHA256, and creates a draft release. Publish it after a sanity check, then bump `DEFAULT_TAG` in `scripts/install_clang_p2996.py` so `bootstrap.py` picks up the new release by default.
+
+To build locally instead of on CI (e.g. on your dev box — ~5x faster than a free GH runner), run from an **x64 Native Tools Command Prompt**:
+
+```
+python scripts/build_clang_p2996.py --sha <commit>
+```
+
+Expect 30–90 minutes and ~30 GB of disk.
 
 ## Code Style
 

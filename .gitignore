@@ -9,6 +9,10 @@ Makefile
 /Folder.DotSettings.user
 *.DotSettings
 /Resharper/
+__pycache__/
+*.pyc
+/dist/
+/external/clang-p2996/
 *.ini
 /vc140.pdb
 /Engine/External/vcpkg
