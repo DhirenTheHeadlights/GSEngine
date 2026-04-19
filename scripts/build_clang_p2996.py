@@ -56,6 +56,7 @@ def configure(src, build, link_jobs):
         "-DLLVM_ENABLE_PROJECTS=clang;lld",
         "-DLLVM_TARGETS_TO_BUILD=X86",
         "-DLLVM_ENABLE_ASSERTIONS=OFF",
+        "-DLLVM_ENABLE_DIA_SDK=OFF",
     ]
     if link_jobs is not None:
         cmake_args.append(f"-DLLVM_PARALLEL_LINK_JOBS={link_jobs}")
