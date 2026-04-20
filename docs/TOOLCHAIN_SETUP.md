@@ -61,22 +61,19 @@ _LIBCPP_END_UNVERSIONED_NAMESPACE_STD
 
 If you rebuild libc++ from scratch without applying the source patch first, the shipped copy ends up regenerated and broken.
 
-## 3. The MSVC C-headers-only shim
+## 3. Why there's no MSVC-STL shim (and why we don't need one)
 
-Problem: vcpkg port builds (and our own compile) inherit `INCLUDE` from vcvars, which puts MSVC's STL on the include path. That means `#include <vector>` could resolve to MSVC's `<vector>` instead of libc++'s — which conflicts with `import std;` and produces ambiguous redefinitions (especially via TBB headers).
+Naive expectation: vcvars puts `${VCToolsInstallDir}/include` on `INCLUDE`, which contains MSVC's `<vector>`, `<functional>`, etc. A `#include <vector>` in third-party code could resolve to MSVC's instead of libc++'s, colliding with `import std;`.
 
-Solution (in the root `CMakeLists.txt`, **before** `project()`):
+In practice this doesn't happen, because of how clang's include search is ordered when §4's flags are applied:
 
-1. Make a shim directory `${CMAKE_BINARY_DIR}/msvc-c-shim/include/`.
-2. Copy only `*.h` files from `${VCToolsInstallDir}/include/` into the shim. This keeps C headers like `<stddef.h>`, `<stdint.h>` but drops the extensionless C++ STL files.
-3. Override `INCLUDE` env:
-   ```cmake
-   set(ENV{INCLUDE} "${_gse_msvc_c_shim};${_gse_ucrt_inc}/ucrt;${_gse_winsdk_inc}/um;${_gse_winsdk_inc}/shared;${_gse_winsdk_inc}/winrt;${_gse_winsdk_inc}/cppwinrt")
-   set(ENV{EXTERNAL_INCLUDE} "")
-   ```
-4. vcpkg has to inherit this — the custom triplet declares `VCPKG_ENV_PASSTHROUGH PATH INCLUDE LIB LIBPATH CLANG_P2996_ROOT`.
+- `-nostdinc++` suppresses clang's default C++ include paths.
+- `-Xclang -cxx-isystem -Xclang <libcxx>` prepends libc++ to the C++-only search chain, which is consulted *before* the regular system-include chain.
+- `INCLUDE` (vcvars) is injected into the regular system-include chain — behind the C++-only chain.
 
-Without the shim, TBB's MSVC-STL-tainted headers bleed in and you get redefinition errors.
+Net: libc++ wins every `#include <vector>` lookup, and MSVC's STL headers in VCTools/include are invisible to C++ TUs. C headers (`<stddef.h>`, `<intrin.h>`, etc.) resolve to VCTools/include because libc++ has no `.h` counterparts to shadow them — exactly what we want.
+
+An earlier version of this doc described a shim that copied only `*.h` files from VCTools/include into `${CMAKE_BINARY_DIR}/msvc-c-shim/include/` and overrode `INCLUDE` to use the shim. It was removed after the build was verified to work without it. If you ever see MSVC STL redefinition errors reappear (e.g., after a toolchain bump or a new TBB version), the shim is the escape hatch — reintroduce the copy + `INCLUDE` override before `project()`.
 
 ## 4. The libc++ include flag quirks
 
@@ -106,10 +103,14 @@ For the **vcpkg chainload toolchain** (clang-cl builds dep ports), the equivalen
 string(APPEND CMAKE_CXX_FLAGS_INIT " -D__GCC_DESTRUCTIVE_SIZE=64 -D__GCC_CONSTRUCTIVE_SIZE=64")
 string(APPEND CMAKE_CXX_FLAGS_INIT " -Xclang --dependent-lib=ucrt")
 string(APPEND CMAKE_C_FLAGS_INIT   " -Xclang --dependent-lib=ucrt")
+string(APPEND CMAKE_CXX_FLAGS_INIT " -freflection-latest")
 ```
 
 - `__GCC_DESTRUCTIVE_SIZE` / `__GCC_CONSTRUCTIVE_SIZE` — libc++ needs these, but clang on MSVC target doesn't define them automatically. Without them, anything referencing `std::hardware_destructive_interference_size` (TBB headers, our own concurrency code) fails to compile.
 - `--dependent-lib=ucrt` — ensures ucrt is linked into every TU. Required so libc++'s C runtime calls resolve.
+- `-freflection-latest` — enables the full P2996 reflection feature set (superset of `-freflection`): `^^` operator, `std::meta::info`, `template for`, `[[= value]]` annotations, `define_aggregate`, splicers. Without it the parser rejects `^^T` as a syntax error. Not applied to the vcpkg chainload toolchain — third-party deps don't use reflection, so they compile without it.
+
+**Note on `std::meta` and `import std;`:** Bloomberg's `std.cppm` `#include`s `<meta>` in the global module fragment but ships no `std/meta.inc`, so `import std;` does **not** re-export `std::meta::*` names. In any TU that uses reflection, add `#include <meta>` alongside `import std;`. The names aren't exported from the module, so there's no collision.
 
 ## 6. `import std` integration
 
@@ -153,7 +154,7 @@ set(VCPKG_ENV_PASSTHROUGH PATH INCLUDE LIB LIBPATH CLANG_P2996_ROOT)
 set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/../toolchains/clang-libcxx.cmake")
 ```
 
-`VCPKG_ENV_PASSTHROUGH INCLUDE` is the critical bit — without it, vcpkg resets INCLUDE and our MSVC-C shim doesn't apply inside port builds.
+`VCPKG_ENV_PASSTHROUGH INCLUDE` is what lets vcpkg port builds inherit the vcvars `INCLUDE` (WinSDK, UCRT, VCTools) — without it, vcpkg resets `INCLUDE` and ports can't find the Windows headers.
 
 `vcpkg-overlays/toolchains/clang-libcxx.cmake` is the matching toolchain file — uses `clang-cl` with the `/clang:`-prefixed flags and links `c++.lib`.
 
@@ -235,4 +236,4 @@ After bootstrap, configure with the `x64-clang-p2996-libcxx-Debug` or `x64-clang
 2. Check `CLANG_P2996_ROOT` is set and points at `dist/clang-p2996/`.
 3. Check `dist/clang-p2996/share/libc++/v1/std.cppm` exists. If not, libc++ module install failed — re-run `build_libcxx_p2996.py`.
 4. Check `dist/clang-p2996/include/c++/v1/__new/new_handler.h` has the `get_new_handler` declaration inside `_LIBCPP_ABI_VCRUNTIME`.
-5. Wipe `out/build/` and reconfigure. The INCLUDE override and C-shim are generated at configure time — stale build dirs can have the wrong paths baked in.
+5. Wipe `out/build/` and reconfigure. Stale build dirs can have the wrong paths baked into module BMIs or the compile_commands database.
