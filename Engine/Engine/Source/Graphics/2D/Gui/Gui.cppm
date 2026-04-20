@@ -20,6 +20,10 @@ import :settings_panel;
 import :styles;
 import :builder;
 
+export namespace gse::gui {
+	struct system_state;
+}
+
 namespace gse::gui {
 	struct frame_state {
 		style sty{};
@@ -27,7 +31,7 @@ namespace gse::gui {
 	};
 
 	auto handle_idle_state(
-		struct system_state& s,
+		system_state& s,
 		const input::state& input_state,
 		vec2f mouse_position,
 		bool mouse_held,
@@ -197,8 +201,8 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 	s.menus = load(config::resource_path / s.file_path, s.menus);
 
 	std::vector<std::pair<std::string, int>> font_options;
-	for (auto [i, font] : s.available_fonts | std::views::enumerate) {
-		font_options.emplace_back(font, static_cast<int>(i));
+	for (std::size_t i = 0; i < s.available_fonts.size(); ++i) {
+		font_options.emplace_back(s.available_fonts[i], static_cast<int>(i));
 	}
 
 	phase.channels.push(save::register_property{
@@ -691,7 +695,7 @@ auto gse::gui::process_menu(system::resources& r, system_state& s, const input::
 
 	const auto it = std::ranges::find(current_menu.tab_contents, name);
 	const bool is_active_tab = (it != current_menu.tab_contents.end()) &&
-		(std::distance(current_menu.tab_contents.begin(), it) == static_cast<ptrdiff_t>(current_menu.active_tab_index));
+		(std::distance(current_menu.tab_contents.begin(), it) == static_cast<std::ptrdiff_t>(current_menu.active_tab_index));
 
 	if (!is_active_tab) {
 		end_menu(r, s);
@@ -989,7 +993,7 @@ auto gse::gui::draw_tab_bar(system_state& s, const input::state& input_state, me
 		const bool is_hovered = tab_rect.contains(mouse_pos);
 
 		if (is_hovered && mouse_clicked && !is_active) {
-			current_menu.active_tab_index = static_cast<uint32_t>(i);
+			current_menu.active_tab_index = static_cast<std::uint32_t>(i);
 		}
 
 		vec4f tab_color;
@@ -1340,7 +1344,7 @@ auto gse::gui::handle_dragging_state(system_state& s, const states::dragging& cu
 									std::make_move_iterator(m->tab_contents.end())
 								);
 								m->tab_contents.clear();
-								parent->active_tab_index = static_cast<uint32_t>(parent->tab_contents.size() - 1);
+								parent->active_tab_index = static_cast<std::uint32_t>(parent->tab_contents.size() - 1);
 								s.menus.remove(current.menu_id);
 							}
 						} else {

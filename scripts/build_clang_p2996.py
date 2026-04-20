@@ -104,7 +104,7 @@ def sha256_of(path):
 
 def main():
     parser = argparse.ArgumentParser(description="Build and package bloomberg/clang-p2996 for distribution")
-    parser.add_argument("--src", type=Path, default=Path("external") / "clang-p2996")
+    parser.add_argument("--src", type=Path, default=Path("External") / "clang-p2996")
     parser.add_argument("--build", type=Path, default=Path("build") / "clang-p2996")
     parser.add_argument("--dist", type=Path, default=Path("dist") / "clang-p2996")
     parser.add_argument("--out", type=Path, default=Path("dist") / "clang-p2996-windows-x64.zip")

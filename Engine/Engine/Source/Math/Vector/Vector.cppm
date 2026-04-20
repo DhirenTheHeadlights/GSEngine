@@ -1,3 +1,7 @@
+module;
+
+#include <format>
+
 export module gse.math:vector;
 
 import std;
@@ -571,7 +575,7 @@ export namespace gse {
 	constexpr auto axis_z = to_axis_v<float>(axis::z);
 }
 
-export template <gse::internal::is_vec_element T, std::size_t N, typename CharT>
+template <gse::internal::is_vec_element T, std::size_t N, typename CharT>
 struct std::formatter<gse::vec<T, N>, CharT> {
 	std::formatter<T, CharT> elem_;
 

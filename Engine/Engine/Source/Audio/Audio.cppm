@@ -1,5 +1,6 @@
 module;
 
+
 #define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio.h>
 
@@ -53,7 +54,7 @@ export namespace gse {
 	};
 }
 
-export template<>
+template<>
 struct gse::asset_compiler<gse::audio_clip> {
 	static auto source_extensions() -> std::vector<std::string> {
 		return { ".wav", ".mp3", ".ogg", ".flac" };

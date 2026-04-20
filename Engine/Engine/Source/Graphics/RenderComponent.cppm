@@ -67,11 +67,26 @@ export namespace gse {
                 skinned_model_instances.emplace_back(networked_data().skinned_models[i]);
             }
         }
-
-        auto on_registry(
-            registry* reg
-        ) -> void override;
     };
+}
+
+export namespace gse::render_init {
+    struct state {
+        std::unordered_set<id> pending;
+    };
+
+    struct system {
+        static auto update(
+            const update_context& ctx,
+            state& s
+        ) -> void;
+    };
+}
+
+namespace gse::render_init {
+    auto try_wire(
+        render_component& rc
+    ) -> bool;
 }
 
 gse::render_component::render_component(const id owner_id, const params& p) : component(owner_id) {
@@ -107,52 +122,67 @@ gse::render_component::render_component(const id owner_id, const params& p) : co
     has_calculated_com = p.has_calculated_com;
 }
 
-auto gse::render_component::on_registry(registry* reg) -> void {
-    auto owner_id = this->owner_id();
+auto gse::render_init::try_wire(render_component& rc) -> bool {
+    if (rc.has_calculated_com) {
+        return true;
+    }
 
-    reg->add_deferred_action(owner_id, [owner_id](registry& r) -> bool {
-        if (auto* rc = r.try_linked_object_write<render_component>(owner_id)) {
-            for (std::size_t i = 0; i < rc->networked_data().model_count; ++i) {
-                if (!rc->networked_data().models[i].valid()) return false;
-            }
+    for (std::size_t i = 0; i < rc.networked_data().model_count; ++i) {
+        if (!rc.networked_data().models[i].valid()) {
+            return false;
+        }
+    }
 
-            for (std::size_t i = 0; i < rc->networked_data().skinned_model_count; ++i) {
-                if (!rc->networked_data().skinned_models[i].valid()) return false;
-            }
+    for (std::size_t i = 0; i < rc.networked_data().skinned_model_count; ++i) {
+        if (!rc.networked_data().skinned_models[i].valid()) {
+            return false;
+        }
+    }
 
-            if (rc->model_instances.size() != rc->networked_data().model_count) {
-                rc->model_instances.clear();
-                rc->model_instances.reserve(rc->networked_data().model_count);
-                for (std::size_t i = 0; i < rc->networked_data().model_count; ++i) {
-                    rc->model_instances.emplace_back(rc->networked_data().models[i]);
-                }
-            }
+    if (rc.model_instances.size() != rc.networked_data().model_count) {
+        rc.model_instances.clear();
+        rc.model_instances.reserve(rc.networked_data().model_count);
+        for (std::size_t i = 0; i < rc.networked_data().model_count; ++i) {
+            rc.model_instances.emplace_back(rc.networked_data().models[i]);
+        }
+    }
 
-            if (rc->skinned_model_instances.size() != rc->networked_data().skinned_model_count) {
-                rc->skinned_model_instances.clear();
-                rc->skinned_model_instances.reserve(rc->networked_data().skinned_model_count);
-                for (std::size_t i = 0; i < rc->networked_data().skinned_model_count; ++i) {
-                    rc->skinned_model_instances.emplace_back(rc->networked_data().skinned_models[i]);
-                }
-            }
+    if (rc.skinned_model_instances.size() != rc.networked_data().skinned_model_count) {
+        rc.skinned_model_instances.clear();
+        rc.skinned_model_instances.reserve(rc.networked_data().skinned_model_count);
+        for (std::size_t i = 0; i < rc.networked_data().skinned_model_count; ++i) {
+            rc.skinned_model_instances.emplace_back(rc.networked_data().skinned_models[i]);
+        }
+    }
 
-            vec3<length> sum;
-            std::size_t count = 0;
+    vec3<length> sum;
+    std::size_t count = 0;
 
-            for (std::size_t i = 0; i < rc->networked_data().model_count; ++i) {
-                sum += rc->networked_data().models[i]->center_of_mass();
-                ++count;
-            }
+    for (std::size_t i = 0; i < rc.networked_data().model_count; ++i) {
+        sum += rc.networked_data().models[i]->center_of_mass();
+        ++count;
+    }
 
-            for (std::size_t i = 0; i < rc->networked_data().skinned_model_count; ++i) {
-                sum += rc->networked_data().skinned_models[i]->center_of_mass();
-                ++count;
-            }
+    for (std::size_t i = 0; i < rc.networked_data().skinned_model_count; ++i) {
+        sum += rc.networked_data().skinned_models[i]->center_of_mass();
+        ++count;
+    }
 
-            rc->center_of_mass = (count == 0) ? vec3<length>{} : sum / static_cast<float>(count);
-            rc->has_calculated_com = true;
+    rc.center_of_mass = (count == 0) ? vec3<length>{} : sum / static_cast<float>(count);
+    rc.has_calculated_com = true;
+    return true;
+}
+
+auto gse::render_init::system::update(const update_context& ctx, state& s) -> void {
+    for (const auto& owner : ctx.reg.drain_component_adds<render_component>()) {
+        s.pending.insert(owner);
+    }
+
+    std::erase_if(s.pending, [&ctx](const id owner) {
+        auto* rc = ctx.reg.try_component<render_component>(owner);
+        if (!rc) {
             return true;
         }
-        return false;
+        return try_wire(*rc);
     });
 }

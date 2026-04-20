@@ -6,10 +6,9 @@ module;
 #include <iostream>
 #include <unordered_map>
 #include <vector>
+#include <freetype/freetype.h>
 
 export module gse.graphics:font;
-
-import <freetype/freetype.h>;
 
 import :texture;
 

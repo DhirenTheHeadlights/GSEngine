@@ -78,7 +78,7 @@ export namespace gse::gui::ids {
 }
 
 namespace gse::gui::ids {
-	thread_local std::vector<std::uint64_t> id_stack;
+	inline thread_local std::vector<std::uint64_t> id_stack;
 	constexpr auto root_seed = 0xD00DCAFE12345678ull;
 
 	auto mix_64(

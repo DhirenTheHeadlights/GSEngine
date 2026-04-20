@@ -1,5 +1,6 @@
 module;
 
+
 #include <GLFW/glfw3.h>
 
 export module gse.platform:input;

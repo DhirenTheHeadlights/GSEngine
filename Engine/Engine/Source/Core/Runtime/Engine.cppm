@@ -86,6 +86,11 @@ export namespace gse {
 		auto defer(
 			F&& action
 		) -> void;
+
+		template <typename S, typename State, typename... Args>
+		auto add_system(
+			Args&&... args
+		) -> State&;
 	private:
 		flags<engine_flag> m_flags;
 		scheduler m_scheduler;
@@ -125,6 +130,7 @@ auto gse::engine::initialize() -> void {
 
 		m_scheduler.add_system<physics::system, physics::state>(reg);
 		m_scheduler.add_system<camera::system, camera::state>(reg);
+		m_scheduler.add_system<render_init::system, render_init::state>(reg);
 		m_scheduler.add_system<renderer::system, renderer::state>(reg);
 		m_scheduler.add_system<renderer::rt_shadow::system, renderer::rt_shadow::state>(reg);
 		m_scheduler.add_system<renderer::geometry_collector::system, renderer::geometry_collector::state>(reg);
@@ -303,6 +309,11 @@ auto gse::engine::hook_world(Args&&... args) -> T& {
 template <typename T, typename ... Args>
 auto gse::engine::add_scene(Args... args) -> scene* {
 	return m_world.add<T>(std::forward<Args>(args)...);
+}
+
+template <typename S, typename State, typename... Args>
+auto gse::engine::add_system(Args&&... args) -> State& {
+	return m_scheduler.add_system<S, State>(m_world.registry(), std::forward<Args>(args)...);
 }
 
 template <typename F>

@@ -1,5 +1,6 @@
 module;
 
+
 #include <msdfgen.h>
 #include <freetype/freetype.h>
 #include "ext/import-font.h"
@@ -15,7 +16,7 @@ import gse.utility;
 
 import :font;
 
-export template<>
+template<>
 struct gse::asset_compiler<gse::font> {
     static auto source_extensions() -> std::vector<std::string> {
         return { ".ttf", ".otf" };

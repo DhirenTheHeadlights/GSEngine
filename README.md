@@ -1,77 +1,69 @@
 # GSEngine
 
-GSEngine is a modular game engine written in modern C++20. It aims to provide a lightweight core that can be extended to fit a wide variety of projects. Originally created for a 3D shooter, the architecture is flexible enough to support many genres. Peruse the [wiki](https://github.com/DhirenTheHeadlights/GSEngine/wiki) to get started with GSEngine.
+GSEngine is a modular game engine written in modern C++ with C++26 reflection. Originally created for a 3D shooter, the architecture is flexible enough to support many genres. Peruse the [wiki](https://github.com/DhirenTheHeadlights/GSEngine/wiki) to get started with GSEngine.
 
-## Prerequisites
+Targets Windows only (clang + libc++ + Vulkan).
 
-Install the following tools and ensure they are on your system `PATH`:
+## System Prerequisites
 
-- CMake 3.26 or higher
-- Git 2.45 or higher
-- Python 3.11.9 or higher
-- A compiler with C++20 module support
-- Vulkan SDK
+The bootstrap script handles the toolchain (clang-p2996, libc++, vcpkg deps) but you need these on your system first:
 
-The `setup.py` script bootstraps third‑party packages through vcpkg on Windows. It installs:
+| Tool                       | Version  | winget command                          |
+|----------------------------|----------|-----------------------------------------|
+| Python                     | 3.11+    | `winget install Python.Python.3.13`     |
+| Git                        | 2.45+    | `winget install Git.Git`                |
+| CMake                      | 4.0+     | `winget install Kitware.CMake`          |
+| Ninja                      | 1.11+    | `winget install Ninja-build.Ninja`      |
+| Visual Studio Build Tools  | 2022/2026| `winget install Microsoft.VisualStudio.2022.BuildTools` (with **C++ workload + Windows 11 SDK**) |
+| Vulkan SDK                 | 1.4+     | <https://vulkan.lunarg.com/sdk/home>    |
 
-- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)
-- [GLFW3](https://www.glfw.org/)
-- [STB](https://github.com/nothings/stb)
-- [miniaudio](https://github.com/mackron/miniaudio)
-- [msdfgen](https://github.com/Chlumsky/msdfgen)
-- [freetype](https://github.com/freetype/freetype)
-- [toml++](https://marzer.github.io/tomlplusplus/)
-- [tbb](https://github.com/uxlfoundation/oneTBB)
+Visual Studio Build Tools are required even though we use clang — they provide the Windows CRT (`vcruntime`/`ucrt`), the Windows SDK headers/libs, `link.exe`/`mt.exe`, and the `vcvars64.bat` environment that clang needs to find them.
 
 ## Quick Start
 
 ```
 git clone <repo>
 python bootstrap.py --persist
-cmake --preset x64-Release
-cmake --build --preset x64-Release
+cmake --preset x64-clang-p2996-libcxx-Release
+cmake --build --preset x64-clang-p2996-libcxx-Release
 ```
 
-`bootstrap.py` runs `setup.py` (vcpkg + dependencies) and then downloads the prebuilt `clang-p2996` toolchain. Skip a step with `--skip-deps` or `--skip-clang`. Pass `--skip-clang` if you only need the MSVC presets.
+`bootstrap.py` runs:
+1. `git submodule update --init --recursive` (fetches vcpkg)
+2. `scripts/install_clang_p2996.py` (downloads prebuilt clang-p2996 to `%LOCALAPPDATA%\clang-p2996\<tag>` and sets `CLANG_P2996_ROOT`)
+3. `scripts/build_libcxx_p2996.py` (clones the libc++ source and builds it against MSVC ABI, installing into the same clang dir)
+
+vcpkg's manifest mode (`vcpkg.json`) auto-installs dependencies when CMake configures.
+
+Skip flags: `--skip-submodules`, `--skip-clang`, `--skip-libcxx`. Re-running is idempotent — clang and libc++ are skipped if already installed.
+
+Run all of this from an **x64 Native Tools Command Prompt** (or **Developer PowerShell for VS**) so vcvars is loaded.
+
+## Dependencies (vcpkg manifest)
+
+Listed in `vcpkg.json` and auto-installed at configure time:
+
+- [GLFW3](https://www.glfw.org/) — windowing/input
+- [STB](https://github.com/nothings/stb) — image loading
+- [miniaudio](https://github.com/mackron/miniaudio) — audio
+- [shader-slang](https://github.com/shader-slang/slang) — shader compiler
+- [oneTBB](https://github.com/uxlfoundation/oneTBB) — task parallelism
+- [toml++](https://marzer.github.io/tomlplusplus/) — config files
+- [freetype](https://github.com/freetype/freetype) — font rasterization
+- [msdfgen](https://github.com/Chlumsky/msdfgen) — multi-channel SDF font generation
 
 ## clang-p2996 Toolchain
 
-MSVC's module implementation is unreliable on this codebase, so we build with a prebuilt fork of Clang that also includes preview support for [P2996 reflection](https://github.com/bloomberg/clang-p2996).
+This project is built with a fork of Clang that includes preview support for [P2996 reflection](https://github.com/bloomberg/clang-p2996). `bootstrap.py` downloads the prebuilt artifact; `scripts/install_clang_p2996.py` is the same script run standalone.
 
-### As a teammate — just install
+Pin a specific tag with `--clang-tag clang-p2996-v1`.
 
-```
-python scripts/install_clang_p2996.py --persist
-```
-
-This downloads the latest release zip to `%LOCALAPPDATA%\clang-p2996\<tag>` and sets `CLANG_P2996_ROOT`. Then use the `x64-clang-p2996-Debug` / `x64-clang-p2996-Release` CMake presets — they're hidden unless `CLANG_P2996_ROOT` is set, so they only appear once the install step has run.
-
-Pin a specific tag with `--tag clang-p2996-v1` and verify the artifact with `--sha256 <hash>` (both are printed in the GitHub release notes).
-
-### As a maintainer — cut a new release
-
-The `build-clang-p2996` GitHub Actions workflow does the full build + release upload. Trigger it manually from the Actions tab with:
-
-- `tag` — e.g. `clang-p2996-v2`
-- `sha` — clang-p2996 commit SHA to pin (leave blank for branch tip, but **pinning is strongly recommended**)
-
-The workflow produces a Windows x64 zip, computes its SHA256, and creates a draft release. Publish it after a sanity check, then bump `DEFAULT_TAG` in `scripts/install_clang_p2996.py` so `bootstrap.py` picks up the new release by default.
-
-To build locally instead of on CI (e.g. on your dev box — ~5x faster than a free GH runner), run from an **x64 Native Tools Command Prompt**:
+To build the clang toolchain locally run from an **x64 Native Tools Command Prompt**:
 
 ```
 python scripts/build_clang_p2996.py --sha <commit>
 ```
 
-Expect 30–90 minutes and ~30 GB of disk.
-
 ## Code Style
 
 This project follows the standard library's coding conventions. The main branch is protected, so all contributions are made through pull requests.
-
-For Visual Studio users, ReSharper C++ can apply the repository style automatically:
-
-1. Go to `Extensions` → `ReSharper` → `Manage Options`.
-2. Highlight `Solution "" Personal`.
-3. Use the drop‑down `Copy to` and select `style_guide`.
-4. Select all options and press `OK`.

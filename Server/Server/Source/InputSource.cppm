@@ -29,7 +29,7 @@ export namespace gse {
 			auto* reg = &sc->registry();
 
 			for (const auto& cd : *m_clients | std::views::values) {
-				auto* pc = reg->try_linked_object_read<player_controller>(cd.controller_id);
+				auto* pc = reg->try_component<player_controller>(cd.controller_id);
 				if (!pc) {
 					continue;
 				}

@@ -1,3 +1,7 @@
+module;
+
+#include <vulkan/vulkan_core.h>
+
 export module gse.platform:gpu_descriptor_writer;
 
 import std;

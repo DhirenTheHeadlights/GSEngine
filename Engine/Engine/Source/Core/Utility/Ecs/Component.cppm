@@ -6,34 +6,28 @@ import :id;
 
 export namespace gse {
 	struct no_data {};
-	class registry;
+	struct component_tag {};
 
 	template <typename Data = no_data, typename NetworkedData = no_data>
-	struct component : identifiable_owned, Data {
+	struct component : identifiable_owned, Data, component_tag {
 		using params = Data;
 		using network_data_t = NetworkedData;
 
 		component() = default;
 
 		explicit component(
-			const id owner_id,
+			id owner_id,
 			const params& p = {}
 		);
 
 		explicit component(
-			const id owner_id,
+			id owner_id,
 			const network_data_t& nd
 		) requires (!std::same_as<params, network_data_t>);
 
 		explicit component(
 			const network_data_t& nd
 		);
-
-		virtual ~component() = default;
-
-		virtual auto on_registry(
-			registry* reg
-		) -> void;
 
 		template <typename Self>
 		auto networked_data(
@@ -55,11 +49,6 @@ template <typename Data, typename NetworkedData>
 gse::component<Data, NetworkedData>::component(const network_data_t& nd) {
 	static_assert(std::is_trivially_copyable_v<network_data_t>);
 	*reinterpret_cast<network_data_t*>(static_cast<Data*>(this)) = nd;
-}
-
-template <typename Data, typename NetworkedData>
-auto gse::component<Data, NetworkedData>::on_registry(registry* reg) -> void {
-	(void)reg;
 }
 
 template <typename Data, typename NetworkedData>

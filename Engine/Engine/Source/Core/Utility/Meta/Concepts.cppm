@@ -3,14 +3,11 @@ export module gse.utility:concepts;
 import std;
 
 import :hook;
-import :entity;
+import :component;
 
 export namespace gse {
 	template <typename T>
-	concept is_entity_hook = std::derived_from<T, hook<entity>>;
-
-	template <typename T>
-	concept is_component = !is_entity_hook<T>;
+	concept is_component = std::derived_from<T, component_tag>;
 
 	template <typename T>
 	concept has_params = requires { typename T::params; };

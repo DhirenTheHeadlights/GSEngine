@@ -1,11 +1,13 @@
+module;
+
+#include <format>
+
 export module gse.utility:id;
 
 import std;
 
 import gse.assert;
 import gse.math;
-
-import :n_buffer;
 
 namespace gse {
 	using uuid = std::uint64_t;
@@ -255,10 +257,8 @@ auto gse::identifiable_owned::swap_parent(const identifiable& new_parent) -> voi
 }
 
 export namespace gse {
-	struct entity;
-
 	template <typename T>
-	concept is_identifiable = std::derived_from<T, identifiable> || std::same_as<T, entity>;
+	concept is_identifiable = std::derived_from<T, identifiable>;
 
 	template <typename T, typename PrimaryIdType = id>
 	class id_mapped_collection {
@@ -401,7 +401,7 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::transfer_from(id_mapped_collec
     m_map   = std::move(other.m_map);
 }
 
-export template <>
+template <>
 struct std::hash<gse::id> {
 	auto operator()(const gse::id& id) const noexcept -> std::size_t {
 		return std::hash<gse::uuid>{}(id.number());
@@ -564,173 +564,3 @@ auto gse::number(const std::string_view tag) -> uuid {
 	return it->second;
 }
 
-export namespace gse {
-	template <typename T, typename IdType>
-	class double_buffered_id_mapped_queue {
-	public:
-		using id_type = IdType;
-		using value_type = T;
-
-		struct reader {
-			double_buffered_id_mapped_queue* parent;
-
-			auto objects(
-			) -> std::span<const T>;
-
-			auto try_get(
-				const id_type& id
-			) const -> const T*;
-
-			auto emplace_from_writer(
-				const id_type& id
-			) -> const T*;
-		};
-
-		struct writer {
-			double_buffered_id_mapped_queue* parent;
-
-			template <typename... Args>
-			auto emplace_queued(
-				const id_type& id,
-				Args&&... args
-			) -> T*;
-
-			auto activate(
-				const id_type& owner
-			) -> bool;
-
-			auto remove(
-				const id_type& id
-			) -> void;
-
-			auto objects(
-			) -> std::span<T>;
-
-			auto try_get(
-				const id_type& id
-			) -> T*;
-
-			auto reader(
-			) -> reader;
-		};
-
-		auto bind(
-			std::size_t read,
-			std::size_t write
-		) -> std::pair<reader, writer>;
-
-		auto flip(
-		) -> void;
-
-		auto clear(
-		) noexcept -> void;
-	private:
-		struct slot {
-			id_mapped_collection<T, IdType> active;
-			id_mapped_collection<T, IdType> queued;
-
-			auto clone_from(
-				const slot& other
-			) -> void;
-		};
-
-		double_buffer<slot> m_slots;
-	};
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::objects() -> std::span<const T> {
-	return parent->m_slots.read().active.items();
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::try_get(const id_type& id) const -> const T* {
-	return parent->m_slots.read().active.try_get(id);
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::emplace_from_writer(const id_type& id) -> const T* {
-	auto& read_slot = const_cast<slot&>(parent->m_slots.read());
-	auto& write_slot = parent->m_slots.write();
-
-	if (auto* existing = read_slot.active.try_get(id)) {
-		return existing;
-	}
-
-	if (const auto* src = write_slot.active.try_get(id)) {
-		return read_slot.active.add(id, T(*src));
-	}
-
-	return nullptr;
-}
-
-template <typename T, typename IdType>
-template <typename... Args>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::emplace_queued(const id_type& id, Args&&... args) -> T* {
-	return parent->m_slots.write().queued.add(id, T(id, std::forward<Args>(args)...));
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::activate(const id_type& owner) -> bool {
-	if (auto obj = parent->m_slots.write().queued.pop(owner)) {
-		parent->m_slots.write().active.add(owner, std::move(*obj));
-		return true;
-	}
-	return false;
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::remove(const id_type& id) -> void {
-	for (auto& slot : parent->m_slots.buffer()) {
-		slot.active.remove(id);
-		slot.queued.remove(id);
-	}
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::objects() -> std::span<T> {
-	return parent->m_slots.write().active.items();
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::try_get(const id_type& id) -> T* {
-	if (auto* p = parent->m_slots.write().active.try_get(id)) {
-		return p;
-	}
-	return parent->m_slots.write().queued.try_get(id);
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::reader() -> double_buffered_id_mapped_queue::reader {
-	return { parent };
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::bind(const std::size_t read, const std::size_t write) -> std::pair<reader, writer> {
-	assert(read < 2 && write < 2 && read != write, std::source_location::current(), "Read and write indices must be 0 or 1 and different");
-
-	return {
-		{ this },
-		{ this }
-	};
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::flip() -> void {
-	m_slots.flip();
-	m_slots.write().clone_from(m_slots.read());
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::clear() noexcept -> void {
-	for (auto& slot : m_slots.buffer()) {
-		slot.active.clear();
-		slot.queued.clear();
-	}
-}
-
-template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::slot::clone_from(const slot& other) -> void {
-	active = other.active;
-	queued.clear();
-}

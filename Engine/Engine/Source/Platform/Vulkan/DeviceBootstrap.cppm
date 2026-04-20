@@ -1,3 +1,7 @@
+module;
+
+#include <vulkan/vulkan_core.h>
+
 export module gse.platform:device_bootstrap;
 
 import std;
@@ -13,10 +17,6 @@ import :window;
 import gse.assert;
 import gse.log;
 import gse.utility;
-
-export namespace vk::detail {
-	DispatchLoaderDynamic defaultDispatchLoaderDynamic;
-}
 
 export namespace gse::vulkan {
 	struct bootstrap_result {

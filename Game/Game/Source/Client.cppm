@@ -3,6 +3,9 @@ export module gs:client;
 import std;
 import gse;
 
+import :player;
+import :tumbler;
+
 export namespace gs {
     class client final : public gse::hook<gse::engine> {
     public:
@@ -20,6 +23,10 @@ export namespace gs {
 }
 
 auto gs::client::initialize() -> void {
+	gse::add_system<gs::player::system, gs::player::state>();
+	gse::add_system<gs::tumbler::system, gs::tumbler::state>();
+	gse::add_system<gse::free_camera::system, gse::free_camera::state>();
+
 	gse::network::clear_discovery_providers();
     std::vector seed{
 	    gse::network::discovery_result{
@@ -114,7 +121,8 @@ auto gs::client::update() -> void {
 			.content = std::format("Found: {}", list.size())
 		});
 
-        for (auto [idx, s] : list | std::views::enumerate) {
+        for (std::size_t idx = 0; idx < list.size(); ++idx) {
+            const auto& s = list[idx];
             const bool picked = (m_selected == static_cast<int>(idx));
             if (ui.draw<gse::gui::selectable>({
 				.text = std::format("{}  {}:{}  {}/{}  v{}", s.name, s.addr.ip, s.addr.port, s.players, s.max_players, s.build),

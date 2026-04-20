@@ -227,7 +227,9 @@ auto gse::shader::load(const auto&) -> void {
 	}
 
 	if (!m_vertex_input.attributes.empty()) {
-		std::ranges::sort(m_vertex_input.attributes, {}, &gpu::vertex_attribute_desc::location);
+		std::ranges::sort(m_vertex_input.attributes, [](const auto& a, const auto& b) {
+			return a.location < b.location;
+		});
 
 		auto format_size = [](const gpu::vertex_format fmt) -> std::uint32_t {
 			switch (fmt) {

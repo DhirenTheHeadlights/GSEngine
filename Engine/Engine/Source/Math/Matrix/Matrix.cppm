@@ -1,3 +1,7 @@
+module;
+
+#include <format>
+
 export module gse.math:matrix;
 
 import std;
@@ -623,7 +627,7 @@ export namespace gse {
 	using mat4d = mat4<double>;
 }
 
-export template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows, typename CharT>
+template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows, typename CharT>
 struct std::formatter<gse::mat<Element, Cols, Rows>, CharT> {
 	using VT = gse::internal::vec_storage_type_t<Element>;
 	std::formatter<gse::vec<VT, Cols>, CharT> vec_formatter;

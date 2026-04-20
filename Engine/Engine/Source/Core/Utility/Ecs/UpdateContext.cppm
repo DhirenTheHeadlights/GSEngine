@@ -8,7 +8,6 @@ import :registry;
 import :phase_context;
 import :task_graph;
 import :lambda_traits;
-import :mpsc_ring_buffer;
 import :channel_base;
 import :id;
 import :concepts;
@@ -18,7 +17,7 @@ export namespace gse {
 		id work_id;
 		std::vector<std::type_index> reads;
 		std::vector<std::type_index> writes;
-		std::move_only_function<void()> execute;
+		gse::move_only_function<void()> execute;
 	};
 
 	struct update_context : phase_gpu_access {
@@ -30,7 +29,6 @@ export namespace gse {
 		task_graph& graph;
 		std::vector<scheduled_work>& work;
 		std::mutex& work_mutex;
-		mpsc_ring_buffer<std::move_only_function<void()>, 64>& deferred_ops;
 
 		template <is_component T>
 		auto read(
@@ -95,7 +93,6 @@ namespace gse {
 		F& func,
 		std::index_sequence<Is...>
 	) -> void;
-
 }
 
 template <typename AccessArg>
@@ -165,7 +162,9 @@ auto gse::update_context::schedule(F&& action, std::source_location loc) -> void
 	if constexpr (traits::arity == 1 && std::is_same_v<std::tuple_element_t<0, arg_tuple>, registry&>) {
 		work.push_back({
 			.work_id = work_id,
-			.execute = [&r = reg, a = std::forward<F>(action)]() mutable { a(r); }
+			.execute = [&r = reg, a = std::forward<F>(action)]() mutable {
+				a(r);
+			}
 		});
 	}
 	else {
@@ -182,24 +181,14 @@ auto gse::update_context::schedule(F&& action, std::source_location loc) -> void
 
 template <gse::is_component T, typename... Args>
 auto gse::update_context::defer_add(const id entity, Args&&... args) -> void {
-	deferred_ops.push(std::move_only_function<void()>([this, entity, ...args = std::forward<Args>(args)]() mutable {
-		reg.ensure_exists(entity);
-		if (!reg.active(entity)) {
-			reg.ensure_active(entity);
-		}
-		reg.add_component<T>(entity, std::forward<Args>(args)...);
-	}));
+	reg.defer_add_component<T>(entity, std::forward<Args>(args)...);
 }
 
 template <gse::is_component T>
 auto gse::update_context::defer_remove(const id entity) -> void {
-	deferred_ops.push(std::move_only_function<void()>([this, entity] {
-		reg.remove_link<T>(entity);
-	}));
+	reg.defer_remove_component<T>(entity);
 }
 
 auto gse::update_context::defer_activate(const id entity) -> void {
-	deferred_ops.push(std::move_only_function<void()>([this, entity] {
-		reg.ensure_active(entity);
-	}));
+	reg.defer_activate(entity);
 }

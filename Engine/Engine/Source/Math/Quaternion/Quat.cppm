@@ -1,3 +1,7 @@
+module;
+
+#include <format>
+
 export module gse.math:quat;
 
 import std;
@@ -44,7 +48,7 @@ namespace gse {
 	export using quatd = quaternion<double>;
 }
 
-export template <gse::internal::is_arithmetic T, typename CharT>
+template <gse::internal::is_arithmetic T, typename CharT>
 struct std::formatter<gse::quaternion<T>, CharT> {
     std::formatter<gse::vec<T, 4>, CharT> vec_formatter;
 

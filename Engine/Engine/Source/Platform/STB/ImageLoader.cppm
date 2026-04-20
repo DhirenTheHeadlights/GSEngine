@@ -1,5 +1,6 @@
 module;
 
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -22,13 +23,7 @@ export namespace gse::image {
 		std::vector<std::byte> pixels;
 
 		auto size_bytes() const -> std::size_t {
-			const auto combined = size.x() * size.y() * channels;
-			assert(
-                combined <= std::numeric_limits<std::size_t>::max(), 
-                std::source_location::current(),
-                "Image size exceeds maximum size_t value."
-            );
-			return combined;
+			return size.x() * size.y() * channels;
 		}
 	};
 

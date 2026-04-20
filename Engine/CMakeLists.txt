@@ -1,27 +1,17 @@
 cmake_minimum_required(VERSION 3.30)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine LANGUAGES CXX)
 
-# Local toml++ with MSVC C++20 modules fix (depth_counter_scope destructor called twice bug)
-set(TOMLPLUSPLUS_BUILD_MODULES ON CACHE BOOL "" FORCE)
-# Workaround for MSVC module compatibility - VS 2026 still has the noexcept(noexcept(...)) bug
-add_compile_definitions(TOML_DISABLE_NOEXCEPT_NOEXCEPT=1)
-add_subdirectory(External/tomlplusplus)
-
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
+list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
 
 add_library(Engine)
 
 target_sources(Engine
-    PRIVATE
-        ${ENGINE_MODULES}
-)
-
-target_sources(Engine
-    PRIVATE
+    PUBLIC
         FILE_SET gse_modules TYPE CXX_MODULES
         BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine" "${CMAKE_CURRENT_BINARY_DIR}/Engine"
         FILES ${ENGINE_MODULES}
@@ -41,15 +31,26 @@ find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(TBB CONFIG REQUIRED)
 find_package(Vulkan)
+find_package(tomlplusplus CONFIG REQUIRED)
 
-add_library(VulkanModule STATIC)
+add_library(TomlplusplusModule STATIC)
+target_sources(TomlplusplusModule PUBLIC
+    FILE_SET CXX_MODULES
+    BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Modules"
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/Modules/Tomlplusplus.cppm")
+target_compile_features(TomlplusplusModule PUBLIC cxx_std_26)
+target_link_libraries(TomlplusplusModule PUBLIC tomlplusplus::tomlplusplus)
+
+target_sources(Engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Modules/MathShims.cpp")
+
+add_library(VulkanModule STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Modules/VulkanDispatch.cpp")
 target_sources(VulkanModule PUBLIC
     FILE_SET CXX_MODULES
     BASE_DIRS ${Vulkan_INCLUDE_DIR}
     FILES
         ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
         ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm)
-target_compile_features(VulkanModule PUBLIC cxx_std_23)
+target_compile_features(VulkanModule PUBLIC cxx_std_26)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
 target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
 
@@ -96,7 +97,7 @@ target_link_libraries(Engine PUBLIC
     glfw
     Freetype::Freetype
     msdfgen::msdfgen
-    tomlplusplus_modules
+    TomlplusplusModule
     VulkanModule
     TBB::tbb
 )
@@ -110,16 +111,3 @@ configure_file(
     @ONLY
 )
 
-if (MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-
-    add_compile_options(/arch:AVX2)
-    add_compile_options(/MP)
-    add_compile_options(/Zm500)
-
-    set(EXTERNAL_TARGETS VulkanModule tomlplusplus_modules)
-    foreach(target ${EXTERNAL_TARGETS})
-        set_property(TARGET ${target} PROPERTY FOLDER "External")
-    endforeach()
-endif()

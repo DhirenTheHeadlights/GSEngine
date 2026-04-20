@@ -10,7 +10,7 @@ import :id;
 
 export namespace gse {
 	struct frame_context : phase_gpu_access {
-		const registry& reg;
+		registry& reg;
 		const state_snapshot_provider& snapshots;
 		const channel_reader_provider& channel_reader;
 		channel_writer& channels;

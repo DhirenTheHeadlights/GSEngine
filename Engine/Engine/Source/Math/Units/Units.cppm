@@ -330,6 +330,8 @@ export namespace gse {
     struct internal::quantity_traits<time_tag> {
         template <typename T, auto U = nanoseconds>
         using type = time_t<T, U>;
+
+        static constexpr auto units = std::tuple{ nanoseconds, microseconds, milliseconds, seconds, minutes, hours };
     };
 }
 

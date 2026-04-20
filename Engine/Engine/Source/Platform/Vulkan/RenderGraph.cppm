@@ -361,7 +361,7 @@ export namespace gse::vulkan {
 		bool enabled = true;
 		std::optional<color_output_info> color_output;
 		std::optional<depth_output_info> depth_output;
-		std::move_only_function<void(recording_context&)> record_fn;
+		gse::move_only_function<void(recording_context&)> record_fn;
 	};
 
 	class pass_builder {
@@ -411,7 +411,7 @@ export namespace gse::vulkan {
 		) -> pass_builder&;
 
 		auto record(
-			std::move_only_function<void(recording_context&)> fn
+			gse::move_only_function<void(recording_context&)> fn
 		) -> void;
 
 	private:
@@ -512,7 +512,7 @@ export namespace gse::vulkan {
 		gpu::frame* m_frame;
 		std::vector<render_pass_data> m_passes;
 		std::mutex m_pass_mutex;
-		per_frame_resource<gpu_profile_slot> m_profile_slots;
+		per_frame_resource<gpu_profile_slot> m_profile_slots{ gpu_profile_slot{}, gpu_profile_slot{} };
 		std::atomic<bool> m_gpu_timestamps_enabled{ true };
 		std::atomic<bool> m_gpu_pipeline_stats_enabled{ false };
 		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
@@ -1077,7 +1077,7 @@ auto gse::vulkan::pass_builder::depth_output_load() -> pass_builder& {
 	return *this;
 }
 
-auto gse::vulkan::pass_builder::record(std::move_only_function<void(recording_context&)> fn) -> void {
+auto gse::vulkan::pass_builder::record(gse::move_only_function<void(recording_context&)> fn) -> void {
 	if (m_pass.color_output) {
 		m_pass.writes.push_back({
 			{

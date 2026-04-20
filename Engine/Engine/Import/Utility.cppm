@@ -2,6 +2,8 @@ export module gse.utility;
 
 export import gse.config;
 
+import std;
+
 export import :access_token;
 export import :archive;
 export import :async_task;
@@ -15,15 +17,12 @@ export import :static_vector;
 export import :channel_base;
 export import :channel_promise;
 export import :clock;
-export import :behavior_hook;
 export import :component;
 export import :concepts;
 export import :default_scene_hook;
 export import :n_buffer;
 export import :per_frame_resource;
-export import :entity;
 export import :flags;
-export import :entity_hook;
 export import :frame_sync;
 export import :hook;
 export import :hookable;
@@ -31,12 +30,14 @@ export import :interval_timer;
 export import :id;
 export import :lambda_traits;
 export import :misc;
+export import :move_only_function;
 export import :mpsc_ring_buffer;
 export import :non_copyable;
 export import :percentage;
 export import :profile_aggregator;
 export import :registry;
 export import :scene_hook;
+export import :scene_hook_impl;
 export import :scene;
 export import :scheduler;
 export import :scope_exit;
@@ -59,6 +60,12 @@ export namespace gse {
 	template <typename T>
 	concept is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
+	template <typename T>
+	concept contiguous_byte_source = requires(const T& c) {
+		std::ranges::data(c);
+		std::ranges::size(c);
+	};
+
 	auto scope(
 		const std::function<void()>& in_scope
 	) -> void;
@@ -69,7 +76,7 @@ export namespace gse {
 		const Src&... src
 	) -> void requires (!std::is_pointer_v<Src> && ...);
 
-	template <std::ranges::contiguous_range Container>
+	template <contiguous_byte_source Container>
 	auto memcpy(
 		std::byte* dest,
 		const Container& src
@@ -104,9 +111,9 @@ auto gse::memcpy(std::byte* dest, const Src&... src) -> void requires (!std::is_
 	((std::memcpy(out, std::addressof(src), sizeof(Src)), out += sizeof(Src)), ...);
 }
 
-template <std::ranges::contiguous_range Container>
+template <gse::contiguous_byte_source Container>
 auto gse::memcpy(std::byte* dest, const Container& src) -> void {
-	using value_type = std::ranges::range_value_t<Container>;
+	using value_type = std::remove_cvref_t<decltype(*std::ranges::data(src))>;
 	const std::size_t byte_size = std::ranges::size(src) * sizeof(value_type);
 	std::memcpy(dest, std::ranges::data(src), byte_size);
 }

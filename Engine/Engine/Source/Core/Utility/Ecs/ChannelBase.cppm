@@ -2,9 +2,10 @@ export module gse.utility:channel_base;
 
 import std;
 
+import gse.assert;
+
 import :n_buffer;
 import :frame_sync;
-import :per_frame_resource;
 import :non_copyable;
 
 export namespace gse {
@@ -101,17 +102,6 @@ export namespace gse {
 			const std::vector<T>& data
 		);
 
-		~channel_read_guard(
-		) override;
-
-		channel_read_guard(
-			channel_read_guard&& other
-		) noexcept;
-
-		auto operator=(
-			channel_read_guard&&
-		) -> channel_read_guard& = delete;
-
 		auto operator[](
 			std::size_t i
 		) const -> const T&;
@@ -132,8 +122,6 @@ export namespace gse {
 		) const -> const T&;
 	private:
 		const std::vector<T>* m_data;
-		const std::uint32_t* m_previous_expected = nullptr;
-		bool m_owns_scope = false;
 	};
 }
 
@@ -204,27 +192,7 @@ auto gse::channel<T>::flip() -> void {
 }
 
 template <typename T>
-gse::channel_read_guard<T>::channel_read_guard(const std::vector<T>& data) : m_data(&data) {
-	if constexpr (requires { data[0].frame_index; }) {
-		if (!data.empty()) {
-			m_previous_expected = expected_frame_index;
-			expected_frame_index = &data[0].frame_index;
-			m_owns_scope = true;
-		}
-	}
-}
-
-template <typename T>
-gse::channel_read_guard<T>::~channel_read_guard() {
-	if (m_owns_scope) {
-		expected_frame_index = m_previous_expected;
-	}
-}
-
-template <typename T>
-gse::channel_read_guard<T>::channel_read_guard(channel_read_guard&& other) noexcept : m_data(other.m_data), m_previous_expected(other.m_previous_expected), m_owns_scope(other.m_owns_scope) {
-	other.m_owns_scope = false;
-}
+gse::channel_read_guard<T>::channel_read_guard(const std::vector<T>& data) : m_data(&data) {}
 
 template <typename T>
 auto gse::channel_read_guard<T>::operator[](const std::size_t i) const -> const T& {

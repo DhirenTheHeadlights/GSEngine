@@ -10,25 +10,31 @@ export namespace gse::gui {
 	template <typename W>
 	concept widget = requires {
 		typename W::result;
-		{ W::draw(
-			std::declval<draw_context&>(),
-			std::declval<id&>(),
-			std::declval<id&>(),
-			std::declval<id&>()
-		) } -> std::same_as<typename W::result>;
+		requires std::is_same_v<
+			decltype(W::draw(
+				std::declval<draw_context&>(),
+				std::declval<id&>(),
+				std::declval<id&>(),
+				std::declval<id&>()
+			)),
+			typename W::result
+		>;
 	};
 
 	template <typename W>
 	concept parameterized_widget = requires {
 		typename W::params;
 		typename W::result;
-		{ W::draw(
-			std::declval<draw_context&>(),
-			std::declval<typename W::params>(),
-			std::declval<id&>(),
-			std::declval<id&>(),
-			std::declval<id&>()
-		) } -> std::same_as<typename W::result>;
+		requires std::is_same_v<
+			decltype(W::draw(
+				std::declval<draw_context&>(),
+				std::declval<typename W::params>(),
+				std::declval<id&>(),
+				std::declval<id&>(),
+				std::declval<id&>()
+			)),
+			typename W::result
+		>;
 	};
 
 	struct builder {

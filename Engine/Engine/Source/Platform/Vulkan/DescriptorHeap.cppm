@@ -1,5 +1,3 @@
-module;
-
 export module gse.platform:descriptor_heap;
 
 import std;
