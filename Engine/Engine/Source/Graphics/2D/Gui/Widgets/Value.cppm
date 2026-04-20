@@ -24,13 +24,6 @@ export namespace gse::gui::draw {
         T value
     ) -> void;
 
-    template <auto Unit, is_quantity T>
-    auto value(
-        const draw_context& ctx,
-        const std::string& name,
-        unit_display<Unit, T> ud
-    ) -> void;
-
     template <typename T, int N, auto Unit = typename T::default_unit{}>
     auto vec(
         const draw_context& ctx,
@@ -43,13 +36,6 @@ export namespace gse::gui::draw {
         const draw_context& ctx,
         const std::string& name,
         gse::vec<T, N> v
-    ) -> void;
-
-    template <auto Unit, typename T, int N>
-    auto vec(
-        const draw_context& ctx,
-        const std::string& name,
-        unit_display<Unit, gse::vec<T, N>> ud
     ) -> void;
 }
 
@@ -105,8 +91,8 @@ auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T v
 template <typename T, int N, auto Unit>
 auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, const gse::vec<T, N>& v) -> void {
     std::array<std::string, N> values;
-    for (const auto& [i, elem] : v | std::views::enumerate) {
-        values[i] = std::format("{:.2f}", elem.template as<Unit>());
+    for (std::size_t i = 0; i < N; ++i) {
+        values[i] = std::format("{:.2f}", v[i].template as<Unit>());
     }
     value_row<N>(ctx, name, values);
 }
@@ -115,20 +101,10 @@ template <typename T, int N>
 auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, gse::vec<T, N> v) -> void {
     std::array<std::string, N> values;
 
-    for (const auto& [i, elem] : v | std::views::enumerate) {
-        values[i] = std::format("{:.2f}", elem);
+    for (std::size_t i = 0; i < N; ++i) {
+        values[i] = std::format("{:.2f}", v[i]);
     }
     value_row<N>(ctx, name, values);
-}
-
-template <auto Unit, gse::is_quantity T>
-auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, unit_display<Unit, T> ud) -> void {
-    value<T, Unit>(ctx, name, ud.value);
-}
-
-template <auto Unit, typename T, int N>
-auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, unit_display<Unit, gse::vec<T, N>> ud) -> void {
-    vec<T, N, Unit>(ctx, name, ud.value);
 }
 
 auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value, const ui_rect& rect) -> void {

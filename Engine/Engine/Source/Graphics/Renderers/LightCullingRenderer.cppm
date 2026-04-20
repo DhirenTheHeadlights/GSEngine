@@ -194,9 +194,9 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 	const std::array screen_size_arr = { extent.x(), extent.y() };
 	r.shader_handle->set_uniform("CullingParams.screen_size", screen_size_arr, params_alloc);
 
-	const auto dir_chunk = ctx.reg.linked_objects_read<directional_light_component>();
-	const auto spot_chunk = ctx.reg.linked_objects_read<spot_light_component>();
-	const auto point_chunk = ctx.reg.linked_objects_read<point_light_component>();
+	const auto dir_chunk = ctx.reg.components<directional_light_component>();
+	const auto spot_chunk = ctx.reg.components<spot_light_component>();
+	const auto point_chunk = ctx.reg.components<point_light_component>();
 
 	const auto& light_alloc = r.light_buffers[frame_index];
 	const auto light_block = r.shader_handle->uniform_block("lights");

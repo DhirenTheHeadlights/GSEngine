@@ -1009,19 +1009,14 @@ auto gse::narrow_phase_collision::closest_point_on_segment(const vec3<position>&
 	if (magnitude(ab) < meters(1e-8f)) return a;
 	const auto ap = p - a;
 
-	float numer{};
-	float denom{};
-	simd::dot(ap.as_storage_span(), ab.as_storage_span(), numer);
-	simd::dot(ab.as_storage_span(), ab.as_storage_span(), denom);
+	const auto numer = dot(ap, ab);
+	const auto denom = dot(ab, ab);
 
-	const float t = std::clamp(numer / denom, 0.f, 1.f);
+	const float t = std::clamp<float>(numer / denom, 0.f, 1.f);
 	return a + ab * t;
 }
 
-auto gse::narrow_phase_collision::segment_segment_closest_params(
-	const vec3<position>& p1, const vec3<position>& q1,
-	const vec3<position>& p2, const vec3<position>& q2
-) -> std::pair<float, float> {
+auto gse::narrow_phase_collision::segment_segment_closest_params(const vec3<position>& p1, const vec3<position>& q1,const vec3<position>& p2, const vec3<position>& q2) -> std::pair<float, float> {
 	const auto d1 = q1 - p1;
 	const auto d2 = q2 - p2;
 	const auto r = p1 - p2;
@@ -1039,23 +1034,23 @@ auto gse::narrow_phase_collision::segment_segment_closest_params(
 	float s, t;
 	if (a <= eps) {
 		s = 0.f;
-		t = std::clamp(f / e, 0.f, 1.f);
+		t = std::clamp<float>(f / e, 0.f, 1.f);
 	} else {
 		const auto c = dot(d1, r);
 		if (e <= eps) {
 			t = 0.f;
-			s = std::clamp(-c / a, 0.f, 1.f);
+			s = std::clamp<float>(-c / a, 0.f, 1.f);
 		} else {
 			const auto b_val = dot(d1, d2);
 			const auto denom = a * e - b_val * b_val;
-			s = (denom > eps * eps) ? std::clamp((b_val * f - c * e) / denom, 0.f, 1.f) : 0.f;
+			s = (denom > eps * eps) ? std::clamp<float>((b_val * f - c * e) / denom, 0.f, 1.f) : 0.f;
 			t = (b_val * s + f) / e;
 			if (t < 0.f) {
 				t = 0.f;
-				s = std::clamp(-c / a, 0.f, 1.f);
+				s = std::clamp<float>(-c / a, 0.f, 1.f);
 			} else if (t > 1.f) {
 				t = 1.f;
-				s = std::clamp((b_val - c) / a, 0.f, 1.f);
+				s = std::clamp<float>((b_val - c) / a, 0.f, 1.f);
 			}
 		}
 	}
@@ -1393,7 +1388,7 @@ auto gse::narrow_phase_collision::box_capsule_manifold(
 	float t_param = 0.5f;
 	if (const auto seg_diff = seg_end - seg_start; magnitude(seg_diff) > meters(1e-6f)) {
 		const auto p = seg_pt - seg_start;
-		t_param = std::clamp(dot(p, seg_diff) / dot(seg_diff, seg_diff), 0.f, 1.f);
+		t_param = std::clamp<float>(dot(p, seg_diff) / dot(seg_diff, seg_diff), 0.f, 1.f);
 	}
 
 	auto [cap_type, cap_index] = classify_capsule_feature(t_param);
@@ -1430,7 +1425,7 @@ auto gse::narrow_phase_collision::sphere_capsule_manifold(
 	float t_param = 0.5f;
 	if (const auto seg_diff = seg_end - seg_start; magnitude(seg_diff) > meters(1e-6f)) {
 		const auto p = closest_on_seg - seg_start;
-		t_param = std::clamp(dot(p, seg_diff) / dot(seg_diff, seg_diff), 0.f, 1.f);
+		t_param = std::clamp<float>(dot(p, seg_diff) / dot(seg_diff, seg_diff), 0.f, 1.f);
 	}
 
 	auto [cap_type, cap_index] = classify_capsule_feature(t_param);

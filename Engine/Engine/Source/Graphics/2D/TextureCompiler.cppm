@@ -9,7 +9,7 @@ import gse.utility;
 
 import :texture;
 
-export template<>
+template<>
 struct gse::asset_compiler<gse::texture> {
     static auto source_extensions() -> std::vector<std::string> {
         return { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };

@@ -3,13 +3,14 @@ export module gse.platform:frame_scheduler;
 import std;
 
 import gse.math;
+import gse.utility;
 import gse.log;
 
 export namespace gse::gpu {
 	class frame_scheduler {
 	public:
 		template <typename State>
-		auto submit(std::move_only_function<void()> work) -> void {
+		auto submit(gse::move_only_function<void()> work) -> void {
 			m_pending.push_back({
 				.type = std::type_index(typeid(State)),
 				.work = std::move(work)
@@ -82,7 +83,7 @@ export namespace gse::gpu {
 	private:
 		struct pending_entry {
 			std::type_index type = typeid(void);
-			std::move_only_function<void()> work;
+			gse::move_only_function<void()> work;
 		};
 
 		std::vector<pending_entry> m_pending;

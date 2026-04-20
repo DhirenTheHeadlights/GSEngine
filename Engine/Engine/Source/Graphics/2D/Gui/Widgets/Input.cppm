@@ -41,7 +41,7 @@ namespace gse::gui::draw {
 		double rpt_next_ms = 0.0;
 	};
 
-	std::unordered_map<uint64_t, input_state> global_input_state;
+	std::unordered_map<std::uint64_t, input_state> global_input_state;
 }
 
 auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std::string& buffer, id& hot_widget_id, id& focus_widget_id) -> void {

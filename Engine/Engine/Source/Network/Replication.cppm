@@ -42,7 +42,7 @@ export namespace gse::network {
 template <typename T>
 auto gse::network::broadcast_component_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers) -> void {
     for (const auto& eid : reg.drain_component_adds<T>()) {
-        if (auto* c = reg.try_linked_object_read<T>(eid)) {
+        if (auto* c = reg.try_component<T>(eid)) {
             component_upsert<T> m{
             	.owner_id = eid,
             	.data = c->networked_data()
@@ -55,7 +55,7 @@ auto gse::network::broadcast_component_deltas(auto& send_fn, registry& reg, cons
     }
 
     for (const auto& eid : reg.drain_component_updates<T>()) {
-        if (auto* c = reg.try_linked_object_read<T>(eid)) {
+        if (auto* c = reg.try_component<T>(eid)) {
             component_upsert<T> m{ .owner_id = eid, .data = c->networked_data() };
             for (const auto& addr : peers | std::views::keys) {
                 send_fn(m, addr);
@@ -91,7 +91,7 @@ template <typename T>
 auto gse::network::snapshot_components_to(auto& send_fn, registry& reg, const address& addr) -> void {
     std::size_t count = 0;
 
-    for (const auto& c : reg.linked_objects_write<T>()) {
+    for (const auto& c : reg.components<T>()) {
         component_upsert<T> m{
             .owner_id = c.owner_id(),
             .data = c.networked_data()

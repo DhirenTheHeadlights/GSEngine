@@ -1,5 +1,6 @@
 module;
 
+
 #include <iostream>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -83,7 +84,7 @@ export namespace gse::network {
 		struct resources {
 			std::unique_ptr<client> client_ptr;
 			std::vector<std::shared_ptr<discovery_provider>> providers;
-			std::vector<std::move_only_function<void(registry&)>> deferred;
+			std::vector<gse::move_only_function<void(registry&)>> deferred;
 		};
 
 		static auto initialize(
@@ -215,7 +216,7 @@ auto gse::network::system::update(update_context& ctx, resources& r, system_stat
 									reg.ensure_active(entity);
 									return false;
 								}
-								if (auto* c = reg.try_linked_object_write<T>(entity)) {
+								if (auto* c = reg.try_component<T>(entity)) {
 									c->networked_data() = data;
 									return true;
 								}
@@ -233,7 +234,7 @@ auto gse::network::system::update(update_context& ctx, resources& r, system_stat
 									reg.ensure_active(entity);
 									return false;
 								}
-								if (auto* c = reg.try_linked_object_write<T>(entity)) {
+								if (auto* c = reg.try_component<T>(entity)) {
 									c->networked_data() = data;
 									return true;
 								}
@@ -255,7 +256,7 @@ auto gse::network::system::update(update_context& ctx, resources& r, system_stat
 									reg.remove(entity);
 								}
 							} else {
-								reg.remove_link<T>(entity);
+								reg.remove_component<T>(entity);
 							}
 							return true;
 						});

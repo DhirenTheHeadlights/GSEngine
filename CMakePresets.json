@@ -7,53 +7,18 @@
   },
   "configurePresets": [
     {
-      "name": "x64-base",
-      "hidden": true,
-      "generator": "Visual Studio 18 2026",
-      "architecture": {
-        "value": "x64",
-        "strategy": "set"
-      },
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows"
-      },
-      "vendor": {
-        "microsoft.com/VisualStudioSettings/CMake/1.0": {
-          "inheritEnvironments": [ "msvc_x64_x64" ],
-          "enableClangTidyCodeAnalysis": true,
-          "clangTidyChecks": ""
-        }
-      }
-    },
-    {
-      "name": "x64-Debug",
-      "displayName": "x64 Debug",
-      "inherits": "x64-base",
-      "binaryDir": "${sourceDir}/out/build/x64-Debug"
-    },
-    {
-      "name": "x64-Release",
-      "displayName": "x64 Release",
-      "inherits": "x64-base",
-      "binaryDir": "${sourceDir}/out/build/x64-Release"
-    },
-    {
-      "name": "x64-RelWithDebInfo",
-      "displayName": "x64 RelWithDebInfo",
-      "inherits": "x64-base",
-      "binaryDir": "${sourceDir}/out/build/x64-RelWithDebInfo"
-    },
-    {
-      "name": "x64-clang-p2996-base",
+      "name": "x64-clang-p2996-libcxx-base",
       "hidden": true,
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows",
-        "CMAKE_C_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang-cl.exe",
-        "CMAKE_CXX_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang-cl.exe",
-        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest"
+        "VCPKG_TARGET_TRIPLET": "x64-windows-clang-libcxx",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
+        "CMAKE_C_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang.exe",
+        "CMAKE_CXX_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang.exe",
+        "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "$env{CLANG_P2996_ROOT}/bin/clang-scan-deps.exe",
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2",
+        "CMAKE_CXX_MODULE_STD": "ON"
       },
       "environment": {
         "PATH": "$env{CLANG_P2996_ROOT}/bin;$penv{PATH}"
@@ -70,43 +35,28 @@
       }
     },
     {
-      "name": "x64-clang-p2996-Debug",
-      "displayName": "x64 clang-p2996 Debug",
-      "inherits": "x64-clang-p2996-base",
-      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-Debug",
+      "name": "x64-clang-p2996-libcxx-Debug",
+      "displayName": "x64 clang-p2996 libc++ Debug",
+      "inherits": "x64-clang-p2996-libcxx-base",
+      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Debug",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
     },
     {
-      "name": "x64-clang-p2996-Release",
-      "displayName": "x64 clang-p2996 Release",
-      "inherits": "x64-clang-p2996-base",
-      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-Release",
+      "name": "x64-clang-p2996-libcxx-Release",
+      "displayName": "x64 clang-p2996 libc++ Release",
+      "inherits": "x64-clang-p2996-libcxx-base",
+      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Release",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ],
   "buildPresets": [
     {
-      "name": "x64-Debug",
-      "configurePreset": "x64-Debug",
-      "configuration": "Debug"
+      "name": "x64-clang-p2996-libcxx-Debug",
+      "configurePreset": "x64-clang-p2996-libcxx-Debug"
     },
     {
-      "name": "x64-Release",
-      "configurePreset": "x64-Release",
-      "configuration": "Release"
-    },
-    {
-      "name": "x64-RelWithDebInfo",
-      "configurePreset": "x64-RelWithDebInfo",
-      "configuration": "RelWithDebInfo"
-    },
-    {
-      "name": "x64-clang-p2996-Debug",
-      "configurePreset": "x64-clang-p2996-Debug"
-    },
-    {
-      "name": "x64-clang-p2996-Release",
-      "configurePreset": "x64-clang-p2996-Release"
+      "name": "x64-clang-p2996-libcxx-Release",
+      "configurePreset": "x64-clang-p2996-libcxx-Release"
     }
   ],
   "testPresets": []

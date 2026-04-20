@@ -7,7 +7,7 @@ import gse.log;
 
 import :skeleton;
 
-export template<>
+template<>
 struct gse::asset_compiler<gse::skeleton> {
     static auto source_extensions() -> std::vector<std::string> {
         return { ".gskel" };

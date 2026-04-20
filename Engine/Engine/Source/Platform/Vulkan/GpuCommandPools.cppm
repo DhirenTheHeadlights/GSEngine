@@ -65,7 +65,7 @@ auto gse::vulkan::worker_command_pools::create(const device_config& device_data,
 	pools.reserve(worker_count);
 
 	for (std::size_t w = 0; w < worker_count; ++w) {
-		per_frame_resource<pool_slot> frames;
+		per_frame_resource<pool_slot> frames{ pool_slot{}, pool_slot{} };
 		for (std::size_t f = 0; f < per_frame_resource<pool_slot>::frames_in_flight; ++f) {
 			auto& slot = frames[f];
 			slot.pool = device_data.device.createCommandPool({

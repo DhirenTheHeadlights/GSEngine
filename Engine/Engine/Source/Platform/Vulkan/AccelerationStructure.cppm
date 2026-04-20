@@ -1,5 +1,6 @@
 module;
 
+
 #include <vulkan/vulkan_hpp_macros.hpp>
 
 export module gse.platform:acceleration_structure;
@@ -419,7 +420,7 @@ auto gse::gpu::rebuild_tlas(device& dev, tlas& t, const std::span<const accelera
 gse::gpu::blas::blas(buffer&& storage, vk::raii::AccelerationStructureKHR&& handle, const vk::DeviceAddress addr) : m_storage(std::move(storage)), m_handle(std::move(handle)), m_device_address(addr) {}
 
 auto gse::gpu::blas::native_handle(this const blas& self) -> acceleration_structure_handle {
-	return { reinterpret_cast<std::uint64_t>(static_cast<VkAccelerationStructureKHR>(*self.m_handle)) };
+	return { std::bit_cast<std::uint64_t>(*self.m_handle) };
 }
 
 auto gse::gpu::blas::device_address(this const blas& self) -> std::uint64_t {
@@ -433,7 +434,7 @@ gse::gpu::blas::operator bool() const {
 gse::gpu::tlas::tlas(buffer&& storage, buffer&& scratch, buffer&& instance_buffer, vk::raii::AccelerationStructureKHR&& handle) : m_storage(std::move(storage)), m_scratch(std::move(scratch)), m_instance_buffer(std::move(instance_buffer)), m_handle(std::move(handle)) {}
 
 auto gse::gpu::tlas::native_handle(this const tlas& self) -> acceleration_structure_handle {
-	return { reinterpret_cast<std::uint64_t>(static_cast<VkAccelerationStructureKHR>(*self.m_handle)) };
+	return { std::bit_cast<std::uint64_t>(*self.m_handle) };
 }
 
 auto gse::gpu::tlas::instances_buffer(this tlas& self) -> buffer& {

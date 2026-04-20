@@ -1,3 +1,7 @@
+module;
+
+#include <format>
+
 
 export module gse.math:quant;
 
@@ -62,7 +66,7 @@ template <typename QuantityTagType, gse::internal::is_ratio ConversionRatio, gse
 template <typename T>
 constexpr auto gse::internal::unit<QuantityTagType, ConversionRatio, UnitName>::operator()(T value) const noexcept {
     using quantity_template = quantity_traits<QuantityTagType>;
-    return typename quantity_template::template type<T>::template from<unit>(value);
+    return quantity_template::template type<T>::template from<unit>(value);
 }
 
 namespace gse::internal {
@@ -350,22 +354,99 @@ constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::converted_value(A va
     }
 }
 
+namespace gse::internal {
+    template <typename Units, typename Fn>
+    constexpr auto dispatch_named_unit(const Units& units, std::string_view name, Fn&& fn) -> bool {
+        return std::apply([&](const auto&... u) {
+            bool found = false;
+            auto try_match = [&](const auto& unit_const) {
+                if (!found && name == std::string_view(std::remove_cvref_t<decltype(unit_const)>::unit_name)) {
+                    fn(unit_const);
+                    found = true;
+                }
+            };
+            (try_match(u), ...);
+            return found;
+        }, units);
+    }
+
+    template <typename Tag>
+    concept has_unit_list = requires {
+        quantity_traits<Tag>::units;
+    };
+}
+
 template <typename A, typename Dim, typename Tag, typename Unit, typename CharT>
 struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
     std::formatter<A, CharT> value_fmt;
+    std::basic_string_view<CharT> unit_override;
 
     template <class ParseContext>
     constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator {
-        return value_fmt.parse(ctx);
+        auto begin = ctx.begin();
+        auto end = ctx.end();
+
+        auto value_spec_end = begin;
+        while (value_spec_end != end && *value_spec_end != ':' && *value_spec_end != '}') {
+            ++value_spec_end;
+        }
+
+        std::basic_string_view<CharT> value_spec(begin, value_spec_end);
+        std::basic_format_parse_context<CharT> sub(value_spec);
+        value_fmt.parse(sub);
+
+        if (value_spec_end != end && *value_spec_end == ':') {
+            auto unit_start = value_spec_end + 1;
+            auto unit_end = unit_start;
+            while (unit_end != end) {
+                const auto c = *unit_end;
+                const bool is_alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+                if (!is_alpha && c != '^' && c != '_' && c != '/') {
+                    break;
+                }
+                ++unit_end;
+            }
+            unit_override = std::basic_string_view<CharT>(unit_start, unit_end);
+            return unit_end;
+        }
+        return value_spec_end;
     }
 
     template <typename FormatContext>
     auto format(const gse::internal::quantity<A, Dim, Tag, Unit>& q, FormatContext& ctx) const {
-        auto it = value_fmt.format(q.template as<typename gse::internal::quantity<A, Dim, Tag, Unit>::default_unit>(), ctx);
-        if constexpr (!std::same_as<Unit, gse::internal::no_default_unit>) {
-            it = std::ranges::copy(std::string_view{ " " }, it).out;
-            it = std::ranges::copy(std::string_view{ Unit::unit_name }, it).out;
+        auto it = ctx.out();
+
+        auto format_default = [&] {
+            it = value_fmt.format(q.template as<Unit>(), ctx);
+            if constexpr (!std::same_as<Unit, gse::internal::no_default_unit>) {
+                it = std::ranges::copy(std::string_view{ " " }, it).out;
+                it = std::ranges::copy(std::string_view{ Unit::unit_name }, it).out;
+            }
+        };
+
+        if (unit_override.empty()) {
+            format_default();
+            return it;
         }
+
+        bool dispatched = false;
+        if constexpr (gse::internal::has_unit_list<Tag>) {
+            dispatched = gse::internal::dispatch_named_unit(
+                gse::internal::quantity_traits<Tag>::units,
+                unit_override,
+                [&](auto unit_const) {
+                    using U = std::remove_cvref_t<decltype(unit_const)>;
+                    it = value_fmt.format(q.template as<U>(), ctx);
+                    it = std::ranges::copy(std::string_view{ " " }, it).out;
+                    it = std::ranges::copy(std::string_view{ U::unit_name }, it).out;
+                }
+            );
+        }
+
+        if (!dispatched) {
+            format_default();
+        }
+
         return it;
     }
 };
@@ -570,17 +651,17 @@ template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 constexpr auto gse::internal::operator*(const Q1& lhs, const Q2& rhs) {
 	using result_v = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
 	using result_d = decltype(typename Q1::dimension() * typename Q2::dimension());
-	return generic_quantity<result_v, result_d>(lhs.template as<Q1::default_unit>() * rhs.template as<Q2::default_unit>());
+	return generic_quantity<result_v, result_d>(lhs.template as<typename Q1::default_unit>() * rhs.template as<typename Q2::default_unit>());
 }
 
 template <gse::internal::is_quantity Q, gse::internal::is_arithmetic S>
 constexpr auto gse::internal::operator*(const Q& lhs, const S& rhs) -> Q {
-	return Q(lhs.template as<Q::default_unit>() * static_cast<Q::value_type>(rhs));
+	return Q(lhs.template as<typename Q::default_unit>() * static_cast<typename Q::value_type>(rhs));
 }
 
 template <gse::internal::is_arithmetic S, gse::internal::is_quantity Q>
 constexpr auto gse::internal::operator*(const S& lhs, const Q& rhs) -> Q {
-	return Q(static_cast<Q::value_type>(lhs) * rhs.template as<Q::default_unit>());
+	return Q(static_cast<typename Q::value_type>(lhs) * rhs.template as<typename Q::default_unit>());
 }
 
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
@@ -624,13 +705,13 @@ constexpr auto gse::internal::operator-=(Q1& lhs, const Q2& rhs) -> Q1& {
 
 template <gse::internal::is_quantity Q, gse::internal::is_arithmetic S>
 constexpr auto gse::internal::operator*=(Q& lhs, const S& rhs) -> Q& {
-	lhs.set<typename Q::default_unit>(lhs.template as<typename Q::default_unit>() * rhs);
+	lhs.template set<typename Q::default_unit>(lhs.template as<typename Q::default_unit>() * rhs);
 	return lhs;
 }
 
 template <gse::internal::is_quantity Q, gse::internal::is_arithmetic S>
 constexpr auto gse::internal::operator/=(Q& lhs, const S& rhs) -> Q& {
-	lhs.set<typename Q::default_unit>(lhs.template as<typename Q::default_unit>() / rhs);
+	lhs.template set<typename Q::default_unit>(lhs.template as<typename Q::default_unit>() / rhs);
 	return lhs;
 }
 

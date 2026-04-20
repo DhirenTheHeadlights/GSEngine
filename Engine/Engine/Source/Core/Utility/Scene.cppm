@@ -13,6 +13,7 @@ export namespace gse {
 	class scene final : public hookable<scene> {
 	public:
 		using player_factory_fn = std::function<gse::id(scene&, std::optional<gse::id>)>;
+		using init_fn = gse::move_only_function<void(gse::id, registry&)>;
 
 		explicit scene(
 			registry& registry,
@@ -46,10 +47,16 @@ export namespace gse {
 
 		auto player_factory(
 		) const -> const player_factory_fn&;
+
+		auto push_init(
+			gse::id entity_id,
+			init_fn fn
+		) -> void;
 	private:
 		gse::registry& m_registry;
 		std::vector<gse::id> m_entities;
 		std::vector<gse::id> m_queue;
+		std::vector<std::pair<gse::id, init_fn>> m_pending_inits;
 		player_factory_fn m_player_factory;
 
 		friend class default_scene;
@@ -104,4 +111,8 @@ auto gse::scene::set_player_factory(player_factory_fn factory) -> void {
 
 auto gse::scene::player_factory() const -> const player_factory_fn& {
 	return m_player_factory;
+}
+
+auto gse::scene::push_init(const gse::id entity_id, init_fn fn) -> void {
+	m_pending_inits.emplace_back(entity_id, std::move(fn));
 }

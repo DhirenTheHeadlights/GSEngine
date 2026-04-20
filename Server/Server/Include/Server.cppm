@@ -325,7 +325,7 @@ auto gse::server::update() -> void {
 			if (auto client_it = m_clients.find(pkt.from); client_it != m_clients.end()) {
 				std::println("Client [{}:{}] reconnecting", pkt.from.ip, pkt.from.port);
 				if (auto* scene = m_owner->current_scene()) {
-					if (auto* pc = scene->registry().try_linked_object_write<player_controller>(client_it->second.controller_id)) {
+					if (auto* pc = scene->registry().try_component<player_controller>(client_it->second.controller_id)) {
 						if (pc->controlled_entity_id.exists()) {
 							scene->registry().remove(pc->controlled_entity_id);
 						}
@@ -454,7 +454,7 @@ auto gse::server::update() -> void {
 	if (auto* sc = m_owner->current_scene()) {
 		for (const auto& [scene_id, condition] : m_owner->triggers()) {
 			for (const auto& cd : m_clients | std::views::values) {
-				auto* pc = sc->registry().try_linked_object_read<player_controller>(cd.controller_id);
+				auto* pc = sc->registry().try_component<player_controller>(cd.controller_id);
 				const auto controlled_id = pc ? pc->controlled_entity_id : id{};
 
 				evaluation_context ctx{
@@ -488,9 +488,9 @@ auto gse::server::update() -> void {
 		if (++s_frame_counter % 120 == 0) {
 			if (auto* sc = m_owner->current_scene()) {
 				for (const auto& [addr, cd] : m_clients) {
-					auto* pc = sc->registry().try_linked_object_read<player_controller>(cd.controller_id);
+					auto* pc = sc->registry().try_component<player_controller>(cd.controller_id);
 					if (!pc || !pc->controlled_entity_id.exists()) continue;
-					const auto* mc = sc->registry().try_linked_object_read<physics::motion_component>(pc->controlled_entity_id);
+					const auto* mc = sc->registry().try_component<physics::motion_component>(pc->controlled_entity_id);
 					if (!mc) continue;
 					const auto pos = mc->current_position;
 					std::println("[{}:{}] pos=({:.2f}, {:.2f}, {:.2f})",

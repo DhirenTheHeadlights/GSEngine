@@ -1,13 +1,8 @@
-﻿export module gse.assert;
+module;
 
-#ifdef _MSC_VER
-#define _CRT_SECURE_NO_WARNINGS
-#endif
+#include <Windows.h>
 
-#ifdef _WIN32
-#define NOMINMAX
-import <Windows.h>;
-#endif
+export module gse.assert;
 
 import std;
 

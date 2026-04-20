@@ -100,8 +100,8 @@ export namespace gse::gpu {
 		vk::raii::VideoSessionKHR m_session = nullptr;
 		vk::raii::VideoSessionParametersKHR m_params = nullptr;
 		std::vector<vk::DeviceMemory> m_session_memory;
-		per_frame_resource<per_frame> m_slots;
-		per_frame_resource<dpb_slot> m_dpb;
+		per_frame_resource<per_frame> m_slots{ per_frame{}, per_frame{} };
+		per_frame_resource<dpb_slot> m_dpb{ dpb_slot{}, dpb_slot{} };
 		std::vector<std::byte> m_stream_header;
 		clock m_clock;
 		video_codec m_codec = video_codec::h265;

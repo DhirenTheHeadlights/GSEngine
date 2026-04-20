@@ -1,5 +1,6 @@
 module;
 
+
 #include <intrin.h> 
 
 export module gse.math:simd;
@@ -152,27 +153,34 @@ export namespace gse::simd::support {
 	}();
 
 	template <typename T, int N>
-	concept simd = requires {
-		requires
-		(is_int32<T>
-		&& ((N == 4 && sse2)
-		|| (N == 8 && avx2)))
+	concept simd =
+		(is_int32<T> && (N == 4 || N == 8))
+		|| (is_float<T> && (N == 4 || N == 8))
+		|| (is_double<T> && (N == 2 || N == 4));
 
-		|| (is_float
-		&& ((N == 4 && sse)
-		|| (N == 8 && avx)))
-
-		|| (is_double
-		&& ((N == 2 && sse)
-		|| (N == 4 && avx)));
-	};
+	template <typename T, int N>
+	auto simd_cpu_supported() noexcept -> bool {
+		if constexpr (is_int32<T>) {
+			if constexpr (N == 4) return sse2;
+			else if constexpr (N == 8) return avx2;
+		}
+		else if constexpr (is_float<T>) {
+			if constexpr (N == 4) return sse;
+			else if constexpr (N == 8) return avx;
+		}
+		else if constexpr (is_double<T>) {
+			if constexpr (N == 2) return sse;
+			else if constexpr (N == 4) return avx;
+		}
+		return false;
+	}
 }
 
 auto gse::simd::add(const span auto& lhs, const span auto& rhs, span auto result) -> void {
 	using type = std::remove_cvref_t<decltype(lhs[0] + rhs[0])>;
 	constexpr size_t size = std::decay_t<decltype(lhs)>::extent;
 
-	if (!support::simd<type, size>) {
+	if (!support::simd<type, size> || !support::simd_cpu_supported<type, size>()) {
 		for (size_t i = 0; i < size; ++i)
 			result[i] = lhs[i] + rhs[i];
 		return;
@@ -190,7 +198,7 @@ auto gse::simd::sub(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0] - rhs[0])>;
 	constexpr size_t size = std::decay_t<decltype(lhs)>::extent;
 
-	if (!support::simd<type, size>) {
+	if (!support::simd<type, size> || !support::simd_cpu_supported<type, size>()) {
 		for (size_t i = 0; i < size; ++i)
 			result[i] = lhs[i] - rhs[i];
 		return;
@@ -208,7 +216,7 @@ auto gse::simd::mul(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0] * rhs[0])>;
 	constexpr size_t size = std::decay_t<decltype(lhs)>::extent;
 
-	if (!support::simd<type, size>) {
+	if (!support::simd<type, size> || !support::simd_cpu_supported<type, size>()) {
 		for (size_t i = 0; i < size; ++i)
 			result[i] = lhs[i] * rhs[i];
 		return;
@@ -226,7 +234,7 @@ auto gse::simd::div(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0] / rhs[0])>;
 	constexpr size_t size = std::decay_t<decltype(lhs)>::extent;
 
-	if (!support::simd<type, size>) {
+	if (!support::simd<type, size> || !support::simd_cpu_supported<type, size>()) {
 		for (size_t i = 0; i < size; ++i)
 			result[i] = lhs[i] / rhs[i];
 		return;
@@ -263,7 +271,7 @@ auto gse::simd::abs(const span auto& v, span auto result) -> void {
 	using type = std::remove_cvref_t<decltype(v[0])>;
 	constexpr size_t size = std::decay_t<decltype(v)>::extent;
 
-	if (!support::simd<type, size>) {
+	if (!support::simd<type, size> || !support::simd_cpu_supported<type, size>()) {
 		for (size_t i = 0; i < size; ++i)
 			result[i] = std::abs(v[i]);
 		return;
@@ -281,7 +289,7 @@ auto gse::simd::min(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr size_t size = std::decay_t<decltype(lhs)>::extent;
 
-	if (!support::simd<type, size>) {
+	if (!support::simd<type, size> || !support::simd_cpu_supported<type, size>()) {
 		for (size_t i = 0; i < size; ++i)
 			result[i] = std::min(lhs[i], rhs[i]);
 		return;
@@ -299,7 +307,7 @@ auto gse::simd::max(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr size_t size = std::decay_t<decltype(lhs)>::extent;
 
-	if (!support::simd<type, size>) {
+	if (!support::simd<type, size> || !support::simd_cpu_supported<type, size>()) {
 		for (size_t i = 0; i < size; ++i)
 			result[i] = std::max(lhs[i], rhs[i]);
 		return;
@@ -317,7 +325,7 @@ auto gse::simd::clamp(const span auto& v, const span auto& min_v, const span aut
 	using type = std::remove_cvref_t<decltype(v[0])>;
 	constexpr size_t size = std::decay_t<decltype(v)>::extent;
 
-	if (!support::simd<type, size>) {
+	if (!support::simd<type, size> || !support::simd_cpu_supported<type, size>()) {
 		for (size_t i = 0; i < size; ++i)
 			result[i] = std::clamp(v[i], min_v[i], max_v[i]);
 		return;
@@ -600,18 +608,8 @@ auto gse::simd::mul_d(const double* lhs, const double* rhs, double* result, cons
 }
 
 auto gse::simd::div_i(const int* lhs, const int* rhs, int* result, const int size) -> void {
-	if (support::avx2 && size == 8) {
-		const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs));
-		const __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs));
-		const __m256i c = _mm256_div_epi32(a, b);
-		_mm256_storeu_si256(reinterpret_cast<__m256i*>(result), c);
-	}
-	else if (support::sse2 && size == 4) {
-		const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs));
-		const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs));
-		const __m128i c = _mm_div_epi32(a, b);
-		_mm_storeu_si128(reinterpret_cast<__m128i*>(result), c);
-	}
+	for (int i = 0; i < size; ++i)
+		result[i] = lhs[i] / rhs[i];
 }
 
 auto gse::simd::div_f(const float* lhs, const float* rhs, float* result, const int size) -> void {
@@ -780,18 +778,8 @@ auto gse::simd::mul_d(const double* lhs, const double rhs, double* result, const
 }
 
 auto gse::simd::div_i(const int* lhs, const int rhs, int* result, const int size) -> void {
-	if (support::avx2 && size == 8) {
-		const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs));
-		const __m256i b = _mm256_set1_epi32(rhs);
-		const __m256i c = _mm256_div_epi32(a, b);
-		_mm256_storeu_si256(reinterpret_cast<__m256i*>(result), c);
-	}
-	else if (support::sse2 && size == 4) {
-		const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs));
-		const __m128i b = _mm_set1_epi32(rhs);
-		const __m128i c = _mm_div_epi32(a, b);
-		_mm_storeu_si128(reinterpret_cast<__m128i*>(result), c);
-	}
+	for (int i = 0; i < size; ++i)
+		result[i] = lhs[i] / rhs;
 }
 
 auto gse::simd::div_f(const float* lhs, const float rhs, float* result, const int size) -> void {

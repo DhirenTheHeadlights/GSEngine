@@ -1,4 +1,4 @@
-﻿export module gse.graphics:tree_widget;
+export module gse.graphics:tree_widget;
 
 import std;
 

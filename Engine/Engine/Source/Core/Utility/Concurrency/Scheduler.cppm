@@ -8,7 +8,6 @@ import :frame_context;
 import :task_graph;
 import :async_task;
 import :frame_arena;
-import :mpsc_ring_buffer;
 import :system_node;
 import :registry;
 import :task;
@@ -88,7 +87,7 @@ export namespace gse {
 		) -> void;
 
 		auto push_deferred(
-			std::move_only_function<void()> fn
+			gse::move_only_function<void()> fn
 		) -> void;
 
 		template <typename State, typename F>
@@ -113,13 +112,13 @@ export namespace gse {
 		std::unordered_map<std::type_index, system_node_base*> m_resources_index;
 		std::unordered_map<std::type_index, std::unique_ptr<channel_base>> m_channels;
 		mutable std::mutex m_channels_mutex;
-		std::vector<std::move_only_function<void()>> m_deferred;
+		std::vector<gse::move_only_function<void()>> m_deferred;
 		std::mutex m_deferred_mutex;
 		registry* m_registry = nullptr;
 		void* m_gpu_ctx = nullptr;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
-		mpsc_ring_buffer<std::move_only_function<void()>, 64> m_update_deferred_ops;
+		bool m_initialized = false;
 
 		auto snapshot_all_channels(
 		) -> void;
@@ -136,7 +135,7 @@ export namespace gse {
 
 namespace gse {
 	auto wrap_work(
-		std::move_only_function<void()> fn
+		gse::move_only_function<void()> fn
 	) -> async::task<>;
 
 	class frame_snapshot_provider final : public state_snapshot_provider {
@@ -154,7 +153,7 @@ namespace gse {
 	};
 }
 
-auto gse::wrap_work(std::move_only_function<void()> fn) -> async::task<> {
+auto gse::wrap_work(gse::move_only_function<void()> fn) -> async::task<> {
 	fn();
 	co_return;
 }
@@ -186,6 +185,18 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 	}
 
 	m_nodes.push_back(std::move(ptr));
+
+	if (m_initialized) {
+		auto writer = make_channel_writer();
+		init_context phase{
+			.reg = *m_registry,
+			.snapshots = *this,
+			.resource_provider = *this,
+			.channels = writer
+		};
+		phase.gpu_ctx = m_gpu_ctx;
+		raw->initialize(phase);
+	}
 
 	return raw->state();
 }
@@ -274,15 +285,17 @@ auto gse::scheduler::initialize() -> void {
 	for (const auto& n : m_nodes) {
 		n->initialize(phase);
 	}
+
+	m_initialized = true;
 }
 
-auto gse::scheduler::push_deferred(std::move_only_function<void()> fn) -> void {
+auto gse::scheduler::push_deferred(gse::move_only_function<void()> fn) -> void {
 	std::lock_guard lock(m_deferred_mutex);
 	m_deferred.push_back(std::move(fn));
 }
 
 auto gse::scheduler::drain_deferred() -> void {
-	std::vector<std::move_only_function<void()>> batch;
+	std::vector<gse::move_only_function<void()>> batch;
 	{
 		std::lock_guard lock(m_deferred_mutex);
 		batch.swap(m_deferred);
@@ -305,6 +318,9 @@ auto gse::scheduler::defer(F&& fn) -> void {
 auto gse::scheduler::update() -> void {
 	drain_deferred();
 	run_graph_update();
+	if (m_registry) {
+		m_registry->sync();
+	}
 	snapshot_all_states();
 }
 
@@ -321,8 +337,7 @@ auto gse::scheduler::run_graph_update() -> void {
 		.resources = *this,
 		.graph = m_update_graph,
 		.work = collected_work,
-		.work_mutex = collected_work_mutex,
-		.deferred_ops = m_update_deferred_ops
+		.work_mutex = collected_work_mutex
 	};
 	u_ctx.gpu_ctx = m_gpu_ctx;
 
@@ -347,11 +362,6 @@ auto gse::scheduler::run_graph_update() -> void {
 		}
 		m_update_graph.execute();
 		m_update_graph.clear();
-	}
-
-	std::move_only_function<void()> op;
-	while (m_update_deferred_ops.pop(op)) {
-		op();
 	}
 }
 
@@ -417,6 +427,7 @@ auto gse::scheduler::clear() -> void {
 	m_state_index.clear();
 	m_resources_index.clear();
 	m_channels.clear();
+	m_initialized = false;
 }
 
 auto gse::scheduler::snapshot_all_channels() -> void {

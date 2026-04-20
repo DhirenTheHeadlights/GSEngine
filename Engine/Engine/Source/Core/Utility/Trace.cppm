@@ -212,7 +212,7 @@ namespace gse::trace {
 		bool registered = false;
 	};
 
-	thread_local int tls_pause_depth = 0;
+	inline thread_local int tls_pause_depth = 0;
 
 	std::atomic trace_enabled = true;
 	std::atomic finalize_paused_flag = false;
@@ -222,7 +222,7 @@ namespace gse::trace {
 
 	config global_config;
 
-	thread_local thread_buffer tls;
+	inline thread_local thread_buffer tls;
 
 	std::mutex tid_map_mutex;
 	std::unordered_map<std::thread::id, std::uint32_t> tid_map;

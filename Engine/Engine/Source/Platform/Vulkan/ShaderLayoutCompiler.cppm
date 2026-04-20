@@ -1,5 +1,6 @@
 module;
 
+
 #include <cstdio>
 #include <slang-com-ptr.h>
 #include <slang.h>
@@ -71,7 +72,7 @@ namespace gse::layout_compile {
     }
 }
 
-export template<>
+template<>
 struct gse::asset_compiler<gse::shader_layout> {
     static auto source_extensions() -> std::vector<std::string> {
         return { ".slang" };

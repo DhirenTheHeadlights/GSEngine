@@ -1,5 +1,7 @@
 module;
 
+
+#include <new>
 #include <oneapi/tbb.h>
 
 export module gse.utility:task;
@@ -9,6 +11,7 @@ import std;
 import :scope_exit;
 import :lambda_traits;
 import :id;
+import :move_only_function;
 import :trace;
 
 import gse.log;
@@ -18,7 +21,7 @@ export namespace gse {
 }
 
 namespace gse::task {
-	using parallel_for_fn = std::move_only_function<void(std::size_t)>;
+	using parallel_for_fn = gse::move_only_function<void(std::size_t)>;
 
 	auto parallel_for_impl(
 		std::size_t first,
@@ -110,6 +113,44 @@ export namespace gse::task {
 		std::uint64_t m_parent_eid = 0;
 		tbb::task_group m_tbb_group;
 	};
+
+	template <typename T>
+	class concurrent_queue {
+	public:
+		auto push(
+			T value
+		) -> void;
+
+		auto try_pop(
+			T& out
+		) -> bool;
+
+		auto drain(
+		) -> std::vector<T>;
+
+	private:
+		tbb::concurrent_queue<T> m_queue;
+	};
+}
+
+template <typename T>
+auto gse::task::concurrent_queue<T>::push(T value) -> void {
+	m_queue.push(std::move(value));
+}
+
+template <typename T>
+auto gse::task::concurrent_queue<T>::try_pop(T& out) -> bool {
+	return m_queue.try_pop(out);
+}
+
+template <typename T>
+auto gse::task::concurrent_queue<T>::drain() -> std::vector<T> {
+	std::vector<T> result;
+	T value;
+	while (m_queue.try_pop(value)) {
+		result.push_back(std::move(value));
+	}
+	return result;
 }
 
 namespace gse::task {

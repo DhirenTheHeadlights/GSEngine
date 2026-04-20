@@ -69,17 +69,31 @@ linear_vector(
 linear_vector(const linear_vector&) = delete;
 ```
 
-Prefer `non_copyable` / `non_movable` base classes over writing deleted copy/move declarations by hand. Always declare a destructor in the derived class to suppress virtual destructor warnings from the base:
+Prefer `non_copyable` / `non_movable` base classes over writing deleted copy/move declarations by hand. Always declare a destructor in the derived class to suppress virtual destructor warnings from the base. **A user-declared destructor implicitly deletes the move operations**, so when inheriting from `non_copyable` you must also re-declare the move ops as defaulted, otherwise the type silently becomes immovable and standard containers (`std::vector`, `std::pair`, etc.) will refuse to hold it:
 
 ```cpp
 // correct
 class my_type : public non_copyable {
 public:
     ~my_type();
-    // custom move ops if needed
+
+    my_type(
+        my_type&&
+    ) noexcept = default;
+
+    auto operator=(
+        my_type&&
+    ) noexcept -> my_type& = default;
 };
 
-// wrong
+// wrong — user-declared destructor kills the implicit move ops; instances
+// can't be stored in vector or moved out of pair
+class my_type : public non_copyable {
+public:
+    ~my_type();
+};
+
+// wrong — re-implementing what non_copyable already provides
 class my_type {
 public:
     my_type(const my_type&) = delete;
@@ -201,6 +215,38 @@ namespace gse::detail {
 namespace {
     struct my_impl_helper { ... };
 }
+```
+
+---
+
+## `inline` on Functions
+
+Do not mark functions `inline` in module interface or implementation units. In modules, function definitions attached to the module have implicit module linkage — ODR is handled per-module, not via the `inline` mechanism the preprocessor header model needed. Writing `inline` is redundant and signals "I don't know why this is here."
+
+```cpp
+// correct
+auto simd_cpu_supported() noexcept -> bool {
+    return sse2;
+}
+
+// wrong — inline is meaningless here
+inline auto simd_cpu_supported() noexcept -> bool {
+    return sse2;
+}
+```
+
+The only legitimate use of `inline` inside a module is `inline namespace` (for versioning), which is a different feature sharing the keyword.
+
+**Namespace-scope variables are different.** A non-`inline` namespace-scope variable in a module interface (especially `thread_local` ones) gets emitted by every TU that imports the module, producing duplicate-symbol errors at link time. Always mark namespace-scope variables `inline` — `inline thread_local foo bar;` for TLS, `inline foo bar;` for plain globals. This is the variable-deduplication mechanism, not the function-linkage one — different semantics, same keyword.
+
+```cpp
+// correct — single definition shared across importers
+inline thread_local thread_buffer tls;
+inline std::atomic<bool> trace_enabled = true;
+
+// wrong — every TU that imports this module emits its own copy
+thread_local thread_buffer tls;
+std::atomic<bool> trace_enabled = true;
 ```
 
 ---

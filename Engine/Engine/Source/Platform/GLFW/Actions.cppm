@@ -253,9 +253,9 @@ export namespace gse::actions {
 		angle m_camera_yaw{};
 	};
 
-	thread_local angle g_context_camera_yaw{};
-	thread_local bool g_context_camera_yaw_set = false;
-	thread_local std::unordered_map<id, angle> g_entity_camera_yaw;
+	inline thread_local angle g_context_camera_yaw{};
+	inline thread_local bool g_context_camera_yaw_set = false;
+	inline thread_local std::unordered_map<id, angle> g_entity_camera_yaw;
 
 	auto set_context_camera_yaw(const angle yaw) -> void {
 		g_context_camera_yaw = yaw;

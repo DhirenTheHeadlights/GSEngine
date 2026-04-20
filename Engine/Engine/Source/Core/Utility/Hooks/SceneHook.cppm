@@ -4,61 +4,100 @@ import std;
 
 import :id;
 import :misc;
+import :lambda_traits;
 
 import :hook;
 import :registry;
 import :concepts;
-import :behavior_hook;
 
 export namespace gse {
 	class scene;
-}
 
-export template <>
-class gse::hook<gse::scene> : public identifiable_owned {
-public:
-	class builder {
+	class scene_init_context {
 	public:
-		builder(
+		scene_init_context(
 			id entity_id,
 			registry* reg
 		);
 
+		auto id(
+		) const -> gse::id;
+
+		template <is_component T> requires has_params<T>
+		auto add_component(
+			const T::params& p
+		) -> T*;
+
+		template <is_component T> requires (!has_params<T>)
+		auto add_component(
+		) -> T*;
+
 		template <typename T>
-			requires (is_entity_hook<T> || is_component<T>) && has_params<T>
+		auto remove(
+		) -> void;
+
+		template <typename T>
+		auto component_read(
+		) -> const T&;
+
+		template <typename T>
+		auto component_write(
+		) -> T&;
+
+		template <typename T>
+		auto try_component_read(
+		) -> const T*;
+
+		template <typename T>
+		auto try_component_write(
+		) -> T*;
+	private:
+		gse::id m_entity_id;
+		registry* m_registry = nullptr;
+	};
+}
+
+template <>
+class gse::hook<gse::scene> : public identifiable_owned {
+public:
+	class builder {
+	public:
+		using init_fn = gse::move_only_function<void(id, registry&)>;
+
+		builder(
+			id entity_id,
+			scene* owner,
+			registry* reg
+		);
+
+		template <is_component T> requires has_params<T>
 		auto with(
 			const T::params& p
 		) -> builder&;
 
-		template <typename T>
-			requires (is_entity_hook<T> || is_component<T>) && !has_params<T>
+		template <is_component T> requires (!has_params<T>)
 		auto with(
 		) -> builder&;
 
-		auto with_init(
-			behavior_hook::behavior_func func
+		auto initialize(
+			gse::move_only_function<void(scene_init_context&)> fn
 		) -> builder&;
 
-		auto with_update(
-			behavior_hook::behavior_func func
-		) -> builder&;
-
-		auto with_render(
-			behavior_hook::behavior_func func
-		) -> builder&;
-
-		auto with_shutdown(
-			behavior_hook::behavior_func func
+		template <typename Func>
+		auto configure(
+			Func&& fn
 		) -> builder&;
 
 		auto identify(
 		) const -> id;
 	private:
-		id m_entity_id;
-		registry* m_registry = nullptr;
+		auto push_init(
+			init_fn fn
+		) -> void;
 
-		auto ensure_behavior_hook(
-		) const -> behavior_hook*;
+		id m_entity_id;
+		scene* m_scene = nullptr;
+		registry* m_registry = nullptr;
 	};
 
 	hook(
@@ -87,64 +126,77 @@ protected:
 	scene* m_owner = nullptr;
 };
 
+gse::scene_init_context::scene_init_context(const gse::id entity_id, registry* reg) : m_entity_id(entity_id), m_registry(reg) {}
+
+auto gse::scene_init_context::id() const -> gse::id {
+	return m_entity_id;
+}
+
+template <gse::is_component T> requires gse::has_params<T>
+auto gse::scene_init_context::add_component(const typename T::params& p) -> T* {
+	return m_registry->add_component<T>(m_entity_id, p);
+}
+
+template <gse::is_component T> requires (!gse::has_params<T>)
+auto gse::scene_init_context::add_component() -> T* {
+	return m_registry->add_component<T>(m_entity_id);
+}
+
+template <typename T>
+auto gse::scene_init_context::remove() -> void {
+	m_registry->remove_component<T>(m_entity_id);
+}
+
+template <typename T>
+auto gse::scene_init_context::component_read() -> const T& {
+	return m_registry->component<T>(m_entity_id);
+}
+
+template <typename T>
+auto gse::scene_init_context::component_write() -> T& {
+	return m_registry->component<T>(m_entity_id);
+}
+
+template <typename T>
+auto gse::scene_init_context::try_component_read() -> const T* {
+	return m_registry->try_component<T>(m_entity_id);
+}
+
+template <typename T>
+auto gse::scene_init_context::try_component_write() -> T* {
+	return m_registry->try_component<T>(m_entity_id);
+}
+
 auto gse::hook<gse::scene>::initialize() -> void {}
 auto gse::hook<gse::scene>::update() -> void {}
 auto gse::hook<gse::scene>::render() -> void {}
 auto gse::hook<gse::scene>::shutdown() -> void {}
 
-gse::hook<gse::scene>::builder::builder(const id entity_id, registry* reg) : m_entity_id(entity_id), m_registry(reg) {}
+gse::hook<gse::scene>::builder::builder(const id entity_id, scene* owner, registry* reg) : m_entity_id(entity_id), m_scene(owner), m_registry(reg) {}
 
-template <typename T>
-	requires (gse::is_entity_hook<T> || gse::is_component<T>) && gse::has_params<T>
+template <gse::is_component T> requires gse::has_params<T>
 auto gse::hook<gse::scene>::builder::with(const typename T::params& p) -> builder& {
-	if constexpr (is_entity_hook<T>) {
-		m_registry->add_hook<T>(m_entity_id, p);
-	}
-	else {
-		m_registry->add_component<T>(m_entity_id, p);
-	}
+	m_registry->add_component<T>(m_entity_id, p);
 	return *this;
 }
 
-template <typename T>
-	requires (gse::is_entity_hook<T> || gse::is_component<T>) && !gse::has_params<T>
+template <gse::is_component T> requires (!gse::has_params<T>)
 auto gse::hook<gse::scene>::builder::with() -> builder& {
-	if constexpr (is_entity_hook<T>) {
-		m_registry->add_hook<T>(m_entity_id);
-	}
-	else {
-		m_registry->add_component<T>(m_entity_id);
-	}
+	m_registry->add_component<T>(m_entity_id);
 	return *this;
 }
 
-auto gse::hook<gse::scene>::builder::with_init(behavior_hook::behavior_func func) -> builder& {
-	ensure_behavior_hook()->on_init(std::move(func));
-	return *this;
-}
-
-auto gse::hook<gse::scene>::builder::with_update(behavior_hook::behavior_func func) -> builder& {
-	ensure_behavior_hook()->on_update(std::move(func));
-	return *this;
-}
-
-auto gse::hook<gse::scene>::builder::with_render(behavior_hook::behavior_func func) -> builder& {
-	ensure_behavior_hook()->on_render(std::move(func));
-	return *this;
-}
-
-auto gse::hook<gse::scene>::builder::with_shutdown(behavior_hook::behavior_func func) -> builder& {
-	ensure_behavior_hook()->on_shutdown(std::move(func));
+template <typename Func>
+auto gse::hook<gse::scene>::builder::configure(Func&& fn) -> builder& {
+	using c = std::remove_reference_t<first_arg_t<Func>>;
+	push_init([fn = std::forward<Func>(fn)](const id self, registry& reg) mutable {
+		if (auto* component = reg.try_component<c>(self)) {
+			fn(*component);
+		}
+	});
 	return *this;
 }
 
 auto gse::hook<gse::scene>::builder::identify() const -> id {
 	return m_entity_id;
-}
-
-auto gse::hook<gse::scene>::builder::ensure_behavior_hook() const -> behavior_hook* {
-	if (auto* hook = m_registry->try_linked_object_write<behavior_hook>(m_entity_id)) {
-		return hook;
-	}
-	return m_registry->add_hook<behavior_hook>(m_entity_id);
 }

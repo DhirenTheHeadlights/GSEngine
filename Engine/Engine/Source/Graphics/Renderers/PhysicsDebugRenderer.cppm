@@ -363,8 +363,8 @@ auto gse::renderer::physics_debug::system::update(const update_context& ctx, con
 	}
 
 	constexpr std::size_t max_shape_debug_vertices = 256;
-	const auto motion_components = ctx.reg.linked_objects_read<physics::motion_component>();
-	const auto collision_components = ctx.reg.linked_objects_read<physics::collision_component>();
+	const auto motion_components = ctx.reg.components<physics::motion_component>();
+	const auto collision_components = ctx.reg.components<physics::collision_component>();
 
 	std::vector<debug_vertex> vertices;
 	vertices.reserve(collision_components.size() * max_shape_debug_vertices);
@@ -385,7 +385,7 @@ auto gse::renderer::physics_debug::system::update(const update_context& ctx, con
 			continue;
 		}
 
-		const auto* mc = ctx.reg.try_linked_object_read<physics::motion_component>(coll.owner_id());
+		const auto* mc = ctx.reg.try_component<physics::motion_component>(coll.owner_id());
 		build_shape_lines_for_collider(coll, mc, vertices);
 
 		if (mc) {

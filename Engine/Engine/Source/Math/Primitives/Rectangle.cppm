@@ -1,3 +1,7 @@
+module;
+
+#include <format>
+
 export module gse.math:rectangle;
 
 import std;
@@ -67,12 +71,12 @@ constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& si
     const auto bottom_left  = T{ top_left.x(), top_left.y() - size.y() };
     const auto top_right    = T{ top_left.x() + size.x(), top_left.y() };
 
-    return gse::rect_t(min_max_params{ .min = bottom_left, .max = top_right });
+    return rect_t<T>(min_max_params{ .min = bottom_left, .max = top_right });
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::bounding_box(const rect_t& a, const rect_t& b) -> rect_t {
-	return gse::rect_t(min_max_params{
+	return gse::rect_t<T>(min_max_params{
 		.min = T{ std::min(a.m_min.x(), b.m_min.x()), std::min(a.m_min.y(), b.m_min.y()) },
 		.max = T{ std::max(a.m_max.x(), b.m_max.x()), std::max(a.m_max.y(), b.m_max.y()) }
 	});

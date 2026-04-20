@@ -320,7 +320,7 @@ export namespace gse::vbd {
 			bool first_submit = true;
 		};
 
-		per_frame_resource<per_frame_data> m_frames;
+		per_frame_resource<per_frame_data> m_frames{ per_frame_data{}, per_frame_data{} };
 		std::uint32_t m_dispatch_slot = 0;
 
 		bool m_buffers_created = false;

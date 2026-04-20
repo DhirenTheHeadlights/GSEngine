@@ -8,68 +8,102 @@ import gse.graphics;
 import gse.physics;
 import gse.platform;
 
-export namespace gse {
-	class free_camera final : public hook<entity> {
-	public:
-		struct params {
-			vec3<position> initial_position = vec3<position>(0.f, 0.f, 5.f);
-			int priority = 10;
-		};
-
-		explicit free_camera(const params& p)
-			: m_initial_position(p.initial_position)
-			, m_priority(p.priority) {}
-
-		auto initialize() -> void override {
-			add_component<camera::follow_component>({
-				.offset = vec3<length>(meters(0.f)),
-				.priority = m_priority,
-				.blend_in_duration = milliseconds(300),
-				.active = true,
-				.use_entity_position = false,
-				.position = m_initial_position
-			});
-
-			actions::bind_button_channel<"FreeCamera_Move_Forward">(owner_id(), key::w, m_forward);
-			actions::bind_button_channel<"FreeCamera_Move_Left">(owner_id(), key::a, m_left);
-			actions::bind_button_channel<"FreeCamera_Move_Backward">(owner_id(), key::s, m_back);
-			actions::bind_button_channel<"FreeCamera_Move_Right">(owner_id(), key::d, m_right);
-			actions::bind_button_channel<"FreeCamera_Move_Up">(owner_id(), key::space, m_up);
-			actions::bind_button_channel<"FreeCamera_Move_Down">(owner_id(), key::left_control, m_down);
-
-			actions::bind_axis2_channel(
-				owner_id(),
-				actions::pending_axis2_info{
-					.left = m_left.handle(),
-					.right = m_right.handle(),
-					.back = m_back.handle(),
-					.fwd = m_forward.handle(),
-					.scale = 1.f
-				},
-				m_move_axis_channel,
-				find_or_generate_id("FreeCamera_Move")
-			);
-		}
-
-		auto update() -> void override {
-			auto& cam_follow = component_write<camera::follow_component>();
-
-			const auto v = m_move_axis_channel.value;
-			const float lift = (m_up.held ? 1.f : 0.f) - (m_down.held ? 1.f : 0.f);
-
-			const auto direction = camera_direction_relative_to_origin({ v.x(), lift, v.y() }, owner_id());
-			cam_follow.position += direction * meters_per_second(100.f) * system_clock::dt();
-		}
-	private:
-		vec3<position> m_initial_position;
-		int m_priority;
-
-		actions::button_channel m_forward;
-		actions::button_channel m_left;
-		actions::button_channel m_back;
-		actions::button_channel m_right;
-		actions::button_channel m_up;
-		actions::button_channel m_down;
-		actions::axis2_channel m_move_axis_channel;
+export namespace gse::free_camera {
+	struct component_data {
+		vec3<position> initial_position = vec3<position>(0.f, 0.f, 5.f);
+		int priority = 10;
+		velocity speed = meters_per_second(100.f);
 	};
+
+	using component = component<component_data>;
+
+	struct bindings {
+		actions::button_channel forward;
+		actions::button_channel left;
+		actions::button_channel back;
+		actions::button_channel right;
+		actions::button_channel up;
+		actions::button_channel down;
+		actions::axis2_channel move;
+	};
+
+	struct state : non_copyable {
+		~state() override = default;
+
+		std::unordered_map<id, std::unique_ptr<bindings>> bindings_by_owner;
+	};
+
+	struct system {
+		static auto update(
+			update_context& ctx,
+			state& s
+		) -> void;
+	};
+}
+
+auto gse::free_camera::system::update(update_context& ctx, state& s) -> void {
+	auto cameras = ctx.reg.acquire_write<component>();
+
+	for (auto& c : cameras) {
+		const auto owner_id = c.owner_id();
+		auto& slot = s.bindings_by_owner[owner_id];
+		if (slot) {
+			continue;
+		}
+
+		slot = std::make_unique<bindings>();
+		auto& b = *slot;
+
+		actions::bind_button_channel<"FreeCamera_Move_Forward">(owner_id, key::w, b.forward);
+		actions::bind_button_channel<"FreeCamera_Move_Left">(owner_id, key::a, b.left);
+		actions::bind_button_channel<"FreeCamera_Move_Backward">(owner_id, key::s, b.back);
+		actions::bind_button_channel<"FreeCamera_Move_Right">(owner_id, key::d, b.right);
+		actions::bind_button_channel<"FreeCamera_Move_Up">(owner_id, key::space, b.up);
+		actions::bind_button_channel<"FreeCamera_Move_Down">(owner_id, key::left_control, b.down);
+
+		actions::bind_axis2_channel(
+			owner_id,
+			actions::pending_axis2_info{
+				.left = b.left.handle(),
+				.right = b.right.handle(),
+				.back = b.back.handle(),
+				.fwd = b.forward.handle(),
+				.scale = 1.f,
+			},
+			b.move,
+			find_or_generate_id("FreeCamera_Move")
+		);
+
+		ctx.defer_add<camera::follow_component>(owner_id, camera::follow_component_data{
+			.offset = vec3<length>(meters(0.f)),
+			.priority = c.priority,
+			.blend_in_duration = milliseconds(300),
+			.active = true,
+			.use_entity_position = false,
+			.position = c.initial_position,
+		});
+	}
+
+	for (auto& c : cameras) {
+		const auto owner_id = c.owner_id();
+		const auto& b = *s.bindings_by_owner[owner_id];
+
+		auto* cam_follow = ctx.reg.try_component<camera::follow_component>(owner_id);
+		if (!cam_follow) {
+			continue;
+		}
+
+		const auto v = b.move.value;
+		const float lift = (b.up.held ? 1.f : 0.f) - (b.down.held ? 1.f : 0.f);
+
+		const auto direction = camera_direction_relative_to_origin(
+			{ v.x(), lift, v.y() },
+			owner_id
+		);
+		cam_follow->position += direction * c.speed * system_clock::dt();
+	}
+
+	std::erase_if(s.bindings_by_owner, [&ctx](const auto& entry) {
+		return !ctx.reg.try_component<component>(entry.first);
+	});
 }

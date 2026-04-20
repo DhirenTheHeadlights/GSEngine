@@ -188,13 +188,13 @@ auto gse::gpu::swap_chain::create_swap_chain_resources(const vec2i framebuffer_s
 	log::println(log::category::vulkan, "Present mode: {}", mode_name(present_mode));
 
 	vk::Extent2D extent;
-	if (details.capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+	if (details.capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
 		extent = details.capabilities.currentExtent;
 	}
 	else {
 		vk::Extent2D actual_extent = {
-			static_cast<uint32_t>(framebuffer_size.x()),
-			static_cast<uint32_t>(framebuffer_size.y())
+			static_cast<std::uint32_t>(framebuffer_size.x()),
+			static_cast<std::uint32_t>(framebuffer_size.y())
 		};
 
 		extent.width = std::clamp(

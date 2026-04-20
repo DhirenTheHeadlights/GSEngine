@@ -1,5 +1,7 @@
 module;
 
+
+#include <new>
 #include <tbb/concurrent_queue.h>
 
 export module gse.utility:frame_sync;

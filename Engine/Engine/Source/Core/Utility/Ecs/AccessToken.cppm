@@ -14,13 +14,20 @@ export namespace gse {
 	public:
 		using value_type = std::conditional_t<M == access_mode::read, const T, T>;
 		using pointer = value_type*;
-		using const_pointer = const value_type*;
 		using reference = value_type&;
-		using const_reference = const value_type&;
 		using span_type = std::span<value_type>;
+		using lookup_fn = pointer (*)(void* ctx, id);
+
+		~access(
+		) override = default;
+
+		access(
+		) = default;
 
 		explicit access(
-			span_type span
+			span_type span,
+			lookup_fn fn = nullptr,
+			void* ctx = nullptr
 		);
 
 		access(
@@ -30,9 +37,6 @@ export namespace gse {
 		auto operator=(
 			access&&
 		) noexcept -> access& = default;
-
-		~access(
-		) override = default;
 
 		template <typename Self>
 		auto begin(
@@ -54,7 +58,7 @@ export namespace gse {
 		) -> pointer;
 
 		auto data(
-		) const -> const_pointer;
+		) const -> pointer;
 
 		auto operator[](
 			std::size_t i
@@ -62,25 +66,16 @@ export namespace gse {
 
 		auto operator[](
 			std::size_t i
-		) const -> const_reference;
+		) const -> reference;
 
 		auto find(
 			id owner
-		) -> pointer;
-
-		auto find(
-			id owner
-		) const -> const_pointer;
-
-		auto prime(
-		) const -> void;
+		) const -> pointer;
 
 	private:
-		auto build_lookup(
-		) -> void;
-
 		span_type m_span;
-		mutable std::optional<std::unordered_map<id, pointer>> m_lookup;
+		lookup_fn m_lookup = nullptr;
+		void* m_lookup_ctx = nullptr;
 	};
 
 	template <is_component T> using read  = access<T, access_mode::read>;
@@ -88,7 +83,7 @@ export namespace gse {
 }
 
 template <gse::is_component T, gse::access_mode M>
-gse::access<T, M>::access(span_type span) : m_span(span) {}
+gse::access<T, M>::access(span_type span, lookup_fn fn, void* ctx) : m_span(span), m_lookup(fn), m_lookup_ctx(ctx) {}
 
 template <gse::is_component T, gse::access_mode M>
 template <typename Self>
@@ -118,7 +113,7 @@ auto gse::access<T, M>::data() -> pointer {
 }
 
 template <gse::is_component T, gse::access_mode M>
-auto gse::access<T, M>::data() const -> const_pointer {
+auto gse::access<T, M>::data() const -> pointer {
 	return m_span.data();
 }
 
@@ -128,41 +123,14 @@ auto gse::access<T, M>::operator[](const std::size_t i) -> reference {
 }
 
 template <gse::is_component T, gse::access_mode M>
-auto gse::access<T, M>::operator[](const std::size_t i) const -> const_reference {
+auto gse::access<T, M>::operator[](const std::size_t i) const -> reference {
 	return m_span[i];
 }
 
 template <gse::is_component T, gse::access_mode M>
-auto gse::access<T, M>::find(const id owner) -> pointer {
-	build_lookup();
-	if (const auto it = m_lookup->find(owner); it != m_lookup->end()) {
-		return it->second;
+auto gse::access<T, M>::find(const id owner) const -> pointer {
+	if (!m_lookup) {
+		return nullptr;
 	}
-	return nullptr;
-}
-
-template <gse::is_component T, gse::access_mode M>
-auto gse::access<T, M>::find(const id owner) const -> const_pointer {
-	const_cast<access*>(this)->build_lookup();
-	if (const auto it = m_lookup->find(owner); it != m_lookup->end()) {
-		return it->second;
-	}
-	return nullptr;
-}
-
-template <gse::is_component T, gse::access_mode M>
-auto gse::access<T, M>::prime() const -> void {
-	const_cast<access*>(this)->build_lookup();
-}
-
-template <gse::is_component T, gse::access_mode M>
-auto gse::access<T, M>::build_lookup() -> void {
-	if (m_lookup) {
-		return;
-	}
-	m_lookup.emplace();
-	m_lookup->reserve(m_span.size());
-	for (auto& item : m_span) {
-		(*m_lookup)[item.owner_id()] = std::addressof(item);
-	}
+	return m_lookup(m_lookup_ctx, owner);
 }

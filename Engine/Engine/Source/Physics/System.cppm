@@ -1002,6 +1002,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 				max_joint_limit_penalty_err
 			);
 
+#if 0
 			if (max_pos_err > meters(1e-4f)) {
 				const auto& cb = cpu[worst_pos_idx];
 				const auto& gb = gpu[worst_pos_idx];
@@ -1017,6 +1018,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 					gb.body_angular_velocity
 				);
 			}
+#endif
 
 			if (worst_cpu_contact && worst_gpu_contact) {
 				log::println(

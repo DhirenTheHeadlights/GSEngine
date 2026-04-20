@@ -3,73 +3,41 @@ export module gs:arena;
 import std;
 import gse;
 
-namespace gs::arena {
-	class wall final : public gse::hook<gse::entity> {
-	public:
-		using params = gse::box::params;
+import :entity_builders;
 
-		explicit wall(const params& p) : m_size(p.size), m_initial_position(p.initial_position) {}
+export namespace gs::arena {
+	auto create(
+		const gse::hook<gse::scene>* scene
+	) -> void;
+}
 
-		auto initialize() -> void override {
-			add_hook<gse::box>({
-				.initial_position = m_initial_position,
-				.size = m_size
-			});
+auto gs::arena::create(const gse::hook<gse::scene>* scene) -> void {
+	constexpr auto arena_position = gse::vec3<gse::position>(0.f, 0.f, 0.f);
 
-			configure_when_present([](gse::physics::motion_component& mc) {
-				mc.affected_by_gravity = false;
-				mc.position_locked = true;
-			});
-		}
+	constexpr gse::length arena_size = gse::meters(100.f);
+	constexpr gse::length wall_thickness = gse::meters(10.f);
 
-		auto update() -> void override {
-			component_write<gse::physics::motion_component>().current_position = m_initial_position;
-		}
-	private:
-		gse::vec3<gse::length> m_size;
-		gse::vec3<gse::position> m_initial_position;
-	};
+	build_static_box(scene, "Front Wall",
+		arena_position + gse::vec3<gse::length>(0.f, 0.f, arena_size / 2.f),
+		gse::vec3<gse::length>(arena_size, arena_size, wall_thickness));
 
-	export auto create(const gse::hook<gse::scene>* scene) -> void {
-		constexpr auto arena_position = gse::vec3<gse::position>(0.f, 0.f, 0.f);
+	build_static_box(scene, "Top Wall",
+		arena_position + gse::vec3<gse::length>(0.f, arena_size / 2.f, 0.f),
+		gse::vec3<gse::length>(arena_size, wall_thickness, arena_size));
 
-		constexpr gse::length arena_size = gse::meters(100.f);
-		constexpr gse::length wall_thickness = gse::meters(10.f);
+	build_static_box(scene, "Bottom Wall",
+		arena_position + gse::vec3<gse::length>(0.f, -arena_size / 2.f, 0.f),
+		gse::vec3<gse::length>(arena_size, wall_thickness, arena_size));
 
-		scene->build("Front Wall")
-			.with<wall>({
-				.initial_position = arena_position + gse::vec3<gse::length>(0.f, 0.f, arena_size / 2.f),
-				.size = gse::vec3<gse::length>(arena_size, arena_size, wall_thickness)
-			});
+	build_static_box(scene, "Left Wall",
+		arena_position + gse::vec3<gse::length>(-arena_size / 2.f, 0.f, 0.f),
+		gse::vec3<gse::length>(wall_thickness, arena_size, arena_size));
 
-		scene->build("Top Wall")
-			.with<wall>({
-				.initial_position = arena_position + gse::vec3<gse::length>(0.f, arena_size / 2.f, 0.f),
-				.size = gse::vec3<gse::length>(arena_size, wall_thickness, arena_size)
-			});
+	build_static_box(scene, "Right Wall",
+		arena_position + gse::vec3<gse::length>(arena_size / 2.f, 0.f, 0.f),
+		gse::vec3<gse::length>(wall_thickness, arena_size, arena_size));
 
-		scene->build("Bottom Wall")
-			.with<wall>({
-				.initial_position = arena_position + gse::vec3<gse::length>(0.f, -arena_size / 2.f, 0.f),
-				.size = gse::vec3<gse::length>(arena_size, wall_thickness, arena_size)
-			});
-
-		scene->build("Left Wall")
-			.with<wall>({
-				.initial_position = arena_position + gse::vec3<gse::length>(-arena_size / 2.f, 0.f, 0.f),
-				.size = gse::vec3<gse::length>(wall_thickness, arena_size, arena_size)
-			});
-
-		scene->build("Right Wall")
-			.with<wall>({
-				.initial_position = arena_position + gse::vec3<gse::length>(arena_size / 2.f, 0.f, 0.f),
-				.size = gse::vec3<gse::length>(wall_thickness, arena_size, arena_size)
-			});
-
-		scene->build("Back Wall")
-			.with<wall>({
-				.initial_position = arena_position + gse::vec3<gse::length>(0.f, 0.f, -arena_size / 2.f),
-				.size = gse::vec3<gse::length>(arena_size, arena_size, wall_thickness)
-			});
-	}
+	build_static_box(scene, "Back Wall",
+		arena_position + gse::vec3<gse::length>(0.f, 0.f, -arena_size / 2.f),
+		gse::vec3<gse::length>(arena_size, arena_size, wall_thickness));
 }

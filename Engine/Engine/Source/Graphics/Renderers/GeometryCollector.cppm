@@ -353,9 +353,6 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 		trace::scope(find_or_generate_id("geom_collect::collect"), [&] {
 			const auto render_size = render.size();
 
-			motion.prime();
-			collision.prime();
-
 			bool motion_order_matches = render_size == motion.size();
 			for (std::size_t i = 0; motion_order_matches && i < render_size; ++i) {
 				motion_order_matches = render[i].owner_id() == motion[i].owner_id();

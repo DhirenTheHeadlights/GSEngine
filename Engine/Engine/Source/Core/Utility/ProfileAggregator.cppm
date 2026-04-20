@@ -1,3 +1,7 @@
+module;
+
+#include <format>
+
 export module gse.utility:profile_aggregator;
 
 import std;
@@ -249,15 +253,15 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 			const auto total = e->ema * static_cast<double>(e->sample_count);
 
 			out << std::format(
-				"{:<48} {:>10.2f} {:>10.2f} {:>10.2f} {:>10.2f} {:>6.1f}% {:>7.1f}% {:>11.2f} {:>9.2f}\n",
+				"{:<48} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>6.1f}% {:>7.1f}% {:>11.2f:ms} {:>9.2f}\n",
 				e->id.tag(),
-				gse::in<microseconds>(per_frame),
-				gse::in<microseconds>(e->ema),
-				gse::in<microseconds>(e->peak),
-				gse::in<microseconds>(e->last),
+				per_frame,
+				e->ema,
+				e->peak,
+				e->last,
 				pct_top,
 				pct_frame,
-				gse::in<milliseconds>(total),
+				total,
 				calls_per_frame
 			);
 		}
@@ -289,11 +293,11 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 
 	out << std::format("=== Profile dump ({}) ===\n", system_clock::timestamp_filename());
 	out << std::format(
-		"frame: {:.2f} ({} fps)    main-thread top: {:.2f}    GPU top: {:.2f}    {} frames profiled    EMA alpha: {:.3f}\n",
-		gse::in<milliseconds>(frame_time),
+		"frame: {:.2f:ms} ({} fps)    main-thread top: {:.2f:ms}    GPU top: {:.2f:ms}    {} frames profiled    EMA alpha: {:.3f}\n",
+		frame_time,
 		fps,
-		gse::in<milliseconds>(cpu_top),
-		gse::in<milliseconds>(gpu_top),
+		cpu_top,
+		gpu_top,
 		frames,
 		alpha()
 	);

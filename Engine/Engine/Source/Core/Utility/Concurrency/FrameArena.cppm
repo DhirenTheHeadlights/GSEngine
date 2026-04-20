@@ -49,7 +49,7 @@ namespace gse::frame_arena {
 		}
 	};
 
-	thread_local thread_pool pool;
+	inline thread_local thread_pool pool;
 
 	auto bucket_index(
 		std::size_t size

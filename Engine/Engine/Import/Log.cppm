@@ -117,19 +117,10 @@ namespace gse::log {
         using namespace std::chrono;
 
         const auto now = system_clock::now();
-
-        try {
-            const auto local_time = zoned_time{ current_zone(), now }.get_local_time();
-            const auto local_ms = floor<milliseconds>(local_time);
-            const auto local_seconds = floor<seconds>(local_ms);
-            const auto millis = duration_cast<milliseconds>(local_ms - local_seconds);
-            return std::format("{:%Y-%m-%d %H:%M:%S}.{:03}", local_seconds, millis.count());
-        } catch (const std::runtime_error&) {
-            const auto utc_ms = floor<milliseconds>(now);
-            const auto utc_seconds = floor<seconds>(utc_ms);
-            const auto millis = duration_cast<milliseconds>(utc_ms - utc_seconds);
-            return std::format("{:%Y-%m-%d %H:%M:%S}.{:03}Z", utc_seconds, millis.count());
-        }
+        const auto utc_ms = floor<milliseconds>(now);
+        const auto utc_seconds = floor<seconds>(utc_ms);
+        const auto millis = duration_cast<milliseconds>(utc_ms - utc_seconds);
+        return std::format("{:%Y-%m-%d %H:%M:%S}.{:03}Z", utc_seconds, millis.count());
     }
 
     auto current_thread_tag(

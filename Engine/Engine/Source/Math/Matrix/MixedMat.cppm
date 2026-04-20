@@ -18,10 +18,11 @@ export namespace gse {
 
 	template <typename ColSpec, typename RowSpec, typename T = float>
 	class mixed_mat : public mat<T, ColSpec::size, ColSpec::size> {
-		using base = mat<T, ColSpec::size, ColSpec::size>;
 		static constexpr std::size_t N = ColSpec::size;
 		static_assert(ColSpec::size == RowSpec::size);
 	public:
+		using base = mat<T, ColSpec::size, ColSpec::size>;
+
 		template <std::size_t Col>
 		using col_t = ColSpec::template type<Col>;
 

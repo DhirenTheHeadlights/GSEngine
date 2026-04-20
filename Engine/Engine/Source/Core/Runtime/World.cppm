@@ -235,7 +235,7 @@ export namespace gse {
 						}
 					}
 
-					if (our_controller.exists() && !reg.try_linked_object_write<player_controller>(our_controller)) {
+					if (our_controller.exists() && !reg.try_component<player_controller>(our_controller)) {
 						if (reg.exists(current_local)) {
 							reg.remove(current_local);
 						}
@@ -246,7 +246,7 @@ export namespace gse {
 				}
 			}
 
-			for (auto& pc : reg.linked_objects_write<player_controller>()) {
+			for (auto& pc : reg.components<player_controller>()) {
 				const auto controller_id = pc.owner_id();
 
 				if (is_server) {

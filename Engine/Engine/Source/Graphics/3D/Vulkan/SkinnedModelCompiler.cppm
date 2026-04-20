@@ -7,7 +7,7 @@ import gse.log;
 
 import :skinned_model;
 
-export template<>
+template<>
 struct gse::asset_compiler<gse::skinned_model> {
     static auto source_extensions() -> std::vector<std::string> {
         return { ".gsmdl" };
