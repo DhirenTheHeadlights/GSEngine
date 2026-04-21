@@ -17,6 +17,7 @@ KEEP_BINARIES = {
     "llvm-rc.exe",
     "llvm-lib.exe",
     "clang-scan-deps.exe",
+    "clangd.exe",
 }
 
 
@@ -53,7 +54,7 @@ def configure(src, build, link_jobs):
         "cmake", "-S", str(src / "llvm"), "-B", str(build),
         "-G", "Ninja",
         "-DCMAKE_BUILD_TYPE=Release",
-        "-DLLVM_ENABLE_PROJECTS=clang;lld",
+        "-DLLVM_ENABLE_PROJECTS=clang;lld;clang-tools-extra",
         "-DLLVM_TARGETS_TO_BUILD=X86",
         "-DLLVM_ENABLE_ASSERTIONS=OFF",
         "-DLLVM_ENABLE_DIA_SDK=OFF",
@@ -69,6 +70,7 @@ def build_targets(build):
         "--target",
         "clang", "lld",
         "llvm-ar", "llvm-lib", "llvm-rc", "clang-scan-deps",
+        "clangd",
     ])
 
 

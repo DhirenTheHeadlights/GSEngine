@@ -1,0 +1,11 @@
+CompileFlags:
+  Add:
+    - -std=c++2c
+    - -freflection-latest
+
+Index:
+  Background: Build
+  StandardLibrary: Yes
+
+Diagnostics:
+  UnusedIncludes: None

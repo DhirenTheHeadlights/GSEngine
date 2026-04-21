@@ -1,0 +1,17 @@
+{
+  "clangd.path": "${env:CLANG_P2996_ROOT}/bin/clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--header-insertion=never",
+    "--clang-tidy=false",
+    "--completion-style=detailed",
+    "--pch-storage=memory",
+    "-j=8"
+  ],
+  "clangd.checkUpdates": false,
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "files.associations": {
+    "*.cppm": "cpp",
+    "*.ixx": "cpp"
+  }
+}
