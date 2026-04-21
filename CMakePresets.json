@@ -53,7 +53,8 @@
         "VCPKG_TARGET_TRIPLET": "x64-windows",
         "CMAKE_C_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang-cl.exe",
         "CMAKE_CXX_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang-cl.exe",
-        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest"
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "environment": {
         "PATH": "$env{CLANG_P2996_ROOT}/bin;$penv{PATH}"
