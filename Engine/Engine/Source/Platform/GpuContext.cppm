@@ -128,9 +128,6 @@ export namespace gse::gpu {
 		auto end_frame(
 		) -> void;
 
-		auto wait_idle(
-		) -> void;
-
 		[[nodiscard]] auto gpu_queue_size(
 		) const -> std::size_t;
 
@@ -411,10 +408,6 @@ auto gse::gpu::context::begin_frame() -> std::expected<frame_token, frame_status
 
 auto gse::gpu::context::end_frame() -> void {
 	m_frame->end(m_window);
-}
-
-auto gse::gpu::context::wait_idle() -> void {
-	m_device->wait_idle();
 }
 
 auto gse::gpu::context::gpu_queue_size() const -> std::size_t {

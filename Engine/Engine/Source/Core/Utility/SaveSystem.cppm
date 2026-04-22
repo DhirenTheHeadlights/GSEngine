@@ -1,13 +1,13 @@
 export module gse.utility:save_system;
 
 import std;
-import tomlplusplus;
 
 import gse.log;
 import gse.math;
 import :id;
 import :concepts;
 import :phase_context;
+import :toml;
 import :update_context;
 
 export namespace gse::save {
@@ -115,7 +115,7 @@ export namespace gse::save {
         ) const -> void = 0;
 
         virtual auto read_toml(
-            const toml::node& node
+            const toml::value& node
         ) -> bool = 0;
 
         [[nodiscard]] virtual auto as_void_ptr(
@@ -223,7 +223,7 @@ export namespace gse::save {
         ) const -> void override;
 
         auto read_toml(
-            const toml::node& node
+            const toml::value& node
         ) -> bool override;
 
         [[nodiscard]] auto as_void_ptr(
@@ -667,50 +667,51 @@ auto gse::save::property<T, Constraint>::reset_to_default() -> void {
 
 template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::write_toml(toml::table& table, const std::string_view key) const -> void {
+    const std::string k(key);
     if constexpr (internal::is_quantity<T>) {
         using underlying = typename T::value_type;
         const underlying v = m_ref.template as<typename T::default_unit>();
         if constexpr (std::is_integral_v<underlying>) {
-            table.insert(key, static_cast<std::int64_t>(v));
+            table.emplace(k, toml::value{ .data = static_cast<std::int64_t>(v) });
         }
         else {
-            table.insert(key, static_cast<double>(v));
+            table.emplace(k, toml::value{ .data = static_cast<double>(v) });
         }
     }
     else if constexpr (std::is_same_v<T, bool>) {
-        table.insert(key, m_ref);
+        table.emplace(k, toml::value{ .data = m_ref });
     }
     else if constexpr (std::is_same_v<T, float>) {
-        table.insert(key, static_cast<double>(m_ref));
+        table.emplace(k, toml::value{ .data = static_cast<double>(m_ref) });
     }
     else if constexpr (std::is_same_v<T, int>) {
-        table.insert(key, static_cast<std::int64_t>(m_ref));
+        table.emplace(k, toml::value{ .data = static_cast<std::int64_t>(m_ref) });
     }
     else if constexpr (std::is_same_v<T, std::string>) {
-        table.insert(key, m_ref);
+        table.emplace(k, toml::value{ .data = m_ref });
     }
     else if constexpr (std::is_enum_v<T>) {
-        table.insert(key, static_cast<std::int64_t>(m_ref));
+        table.emplace(k, toml::value{ .data = static_cast<std::int64_t>(m_ref) });
     }
 }
 
 template <typename T, typename Constraint>
-auto gse::save::property<T, Constraint>::read_toml(const toml::node& node) -> bool {
+auto gse::save::property<T, Constraint>::read_toml(const toml::value& node) -> bool {
     if constexpr (internal::is_quantity<T>) {
         using underlying = typename T::value_type;
         using default_unit = typename T::default_unit;
         if constexpr (std::is_integral_v<underlying>) {
-            if (!node.is_integer()) {
+            if (!node.is_int()) {
                 return false;
             }
-            set(T::template from<default_unit>(static_cast<underlying>(node.value_or<std::int64_t>(0))));
+            set(T::template from<default_unit>(static_cast<underlying>(node.as_int())));
         }
         else {
-            if (node.is_floating_point()) {
-                set(T::template from<default_unit>(static_cast<underlying>(node.value_or(0.0))));
+            if (node.is_double()) {
+                set(T::template from<default_unit>(static_cast<underlying>(node.as_double())));
             }
-            else if (node.is_integer()) {
-                set(T::template from<default_unit>(static_cast<underlying>(node.value_or<std::int64_t>(0))));
+            else if (node.is_int()) {
+                set(T::template from<default_unit>(static_cast<underlying>(node.as_int())));
             }
             else {
                 return false;
@@ -718,31 +719,31 @@ auto gse::save::property<T, Constraint>::read_toml(const toml::node& node) -> bo
         }
     }
     else if constexpr (std::is_same_v<T, bool>) {
-        if (!node.is_boolean()) return false;
-        set(node.value_or(false));
+        if (!node.is_bool()) return false;
+        set(node.as_bool());
     }
     else if constexpr (std::is_same_v<T, float>) {
-        if (node.is_floating_point()) {
-            set(static_cast<float>(node.value_or(0.0)));
+        if (node.is_double()) {
+            set(static_cast<float>(node.as_double()));
         }
-        else if (node.is_integer()) {
-            set(static_cast<float>(node.value_or<std::int64_t>(0)));
+        else if (node.is_int()) {
+            set(static_cast<float>(node.as_int()));
         }
         else {
             return false;
         }
     }
     else if constexpr (std::is_same_v<T, int>) {
-        if (!node.is_integer()) return false;
-        set(static_cast<int>(node.value_or<std::int64_t>(0)));
+        if (!node.is_int()) return false;
+        set(static_cast<int>(node.as_int()));
     }
     else if constexpr (std::is_same_v<T, std::string>) {
         if (!node.is_string()) return false;
-        set(node.value_or<std::string>(""));
+        set(node.as_string());
     }
     else if constexpr (std::is_enum_v<T>) {
-        if (!node.is_integer()) return false;
-        set(static_cast<T>(node.value_or<std::int64_t>(0)));
+        if (!node.is_int()) return false;
+        set(static_cast<T>(node.as_int()));
     }
     else {
         return false;
@@ -1127,9 +1128,10 @@ auto gse::save::state::process_registration(const save::register_property& reg) 
     if (prop) {
         auto* registered = register_property(std::move(prop));
 
-        if (const auto* cat_table = m_loaded_toml[reg.category].as_table()) {
-            if (const auto* node = cat_table->get(reg.name)) {
-                registered->read_toml(*node);
+        if (const auto cat_it = m_loaded_toml.find(reg.category); cat_it != m_loaded_toml.end() && cat_it->second.is_table()) {
+            const auto& cat_table = cat_it->second.as_table();
+            if (const auto val_it = cat_table.find(reg.name); val_it != cat_table.end()) {
+                registered->read_toml(val_it->second);
                 registered->mark_clean();
             }
         }
@@ -1229,11 +1231,8 @@ auto gse::save::state::save_to_file(const std::filesystem::path& path) -> bool {
     for (const auto& prop : m_properties) {
         std::string category(prop->category());
 
-        if (!root.contains(category)) {
-            root.insert(category, toml::table{});
-        }
-
-        prop->write_toml(*root[category].as_table(), prop->name());
+        auto [it, _] = root.try_emplace(category, toml::value{ .data = toml::table{} });
+        prop->write_toml(it->second.as_table(), prop->name());
     }
 
     for (const auto& [category, map_data] : m_int_maps) {
@@ -1241,16 +1240,12 @@ auto gse::save::state::save_to_file(const std::filesystem::path& path) -> bool {
 
         toml::table map_table;
         for (const auto& [key, value] : map_data) {
-            map_table.insert(key, static_cast<std::int64_t>(value));
+            map_table.emplace(key, toml::value{ .data = static_cast<std::int64_t>(value) });
         }
-        root.insert(category, std::move(map_table));
+        root.insert_or_assign(category, toml::value{ .data = std::move(map_table) });
     }
 
-    std::ostringstream oss;
-    oss << root;
-    std::string content = oss.str();
-
-    std::ranges::replace(content, '\'', '"');
+    const std::string content = toml::emit(toml::value{ .data = std::move(root) });
 
     std::ofstream file(path);
     if (!file) {
@@ -1275,33 +1270,35 @@ auto gse::save::state::load_from_file(const std::filesystem::path& path) -> bool
 
     std::ostringstream oss;
     oss << file.rdbuf();
-    std::string content = oss.str();
+    const std::string content = oss.str();
 
-    try {
-        m_loaded_toml = toml::parse(content, path.string());
-    } catch (const toml::parse_error& err) {
-        log::println(log::level::warning, log::category::save_system, "TOML parse error in {}: {}", path.string(), err.what());
+    auto parsed = toml::parse(content, path.string());
+    if (!parsed) {
+        log::println(log::level::warning, log::category::save_system, "TOML parse error in {} at {}:{}: {}", path.string(), parsed.error().line, parsed.error().column, parsed.error().message);
         return false;
     }
+    if (!parsed->is_table()) {
+        return false;
+    }
+    m_loaded_toml = std::move(parsed->as_table());
 
     for (const auto& [category, cat_node] : m_loaded_toml) {
-        const auto* cat_table = cat_node.as_table();
-        if (!cat_table) continue;
+        if (!cat_node.is_table()) continue;
+        const auto& cat_table = cat_node.as_table();
 
-        std::string cat_str(category.str());
         std::map<std::string, int> int_map_entries;
 
-        for (const auto& [name, value_node] : *cat_table) {
-	        if (auto* prop = find(cat_str, name.str())) {
+        for (const auto& [name, value_node] : cat_table) {
+            if (auto* prop = find(category, name)) {
                 prop->read_toml(value_node);
             }
-            else if (value_node.is_integer()) {
-                int_map_entries[std::string(name.str())] = static_cast<int>(value_node.value_or<std::int64_t>(0));
+            else if (value_node.is_int()) {
+                int_map_entries[name] = static_cast<int>(value_node.as_int());
             }
         }
 
         if (!int_map_entries.empty()) {
-            m_int_maps[cat_str] = std::move(int_map_entries);
+            m_int_maps[category] = std::move(int_map_entries);
         }
     }
 
@@ -1392,39 +1389,40 @@ auto gse::save::read_setting_early(const std::filesystem::path& path, const std:
 
     std::ostringstream oss;
     oss << file.rdbuf();
-    std::string content = oss.str();
+    const std::string content = oss.str();
 
-    std::ranges::replace(content, '\'', '"');
-
-    toml::table root;
-    try {
-        root = toml::parse(content, path.string());
-    } catch (const toml::parse_error& err) {
-        log::println(log::level::warning, log::category::save_system, "TOML parse error (early read) in {}: {}", path.string(), err.what());
+    auto parsed = toml::parse(content, path.string());
+    if (!parsed) {
+        log::println(log::level::warning, log::category::save_system, "TOML parse error (early read) in {} at {}:{}: {}", path.string(), parsed.error().line, parsed.error().column, parsed.error().message);
+        return std::nullopt;
+    }
+    if (!parsed->is_table()) {
         return std::nullopt;
     }
 
-    const auto* cat_table = root[category].as_table();
-    if (!cat_table) {
+    const auto& root = parsed->as_table();
+    const auto cat_it = root.find(std::string(category));
+    if (cat_it == root.end() || !cat_it->second.is_table()) {
         return std::nullopt;
     }
-
-    const auto* value_node = cat_table->get(name);
-    if (!value_node) {
+    const auto& cat_table = cat_it->second.as_table();
+    const auto val_it = cat_table.find(std::string(name));
+    if (val_it == cat_table.end()) {
         return std::nullopt;
     }
+    const auto& v = val_it->second;
 
-    if (value_node->is_boolean()) {
-        return value_node->value_or(false) ? "true" : "false";
+    if (v.is_bool()) {
+        return v.as_bool() ? "true" : "false";
     }
-    if (value_node->is_integer()) {
-	    return std::to_string(value_node->value_or<std::int64_t>(0));
+    if (v.is_int()) {
+        return std::to_string(v.as_int());
     }
-    if (value_node->is_floating_point()) {
-	    return std::to_string(value_node->value_or(0.0));
+    if (v.is_double()) {
+        return std::to_string(v.as_double());
     }
-    if (value_node->is_string()) {
-	    return value_node->value_or<std::string>("");
+    if (v.is_string()) {
+        return v.as_string();
     }
 
     return std::nullopt;
@@ -1442,26 +1440,25 @@ auto gse::save::read_bool_setting_early(const std::filesystem::path& path, const
 
     std::ostringstream oss;
     oss << file.rdbuf();
-    std::string content = oss.str();
+    const std::string content = oss.str();
 
-    toml::table root;
-    try {
-        root = toml::parse(content, path.string());
-    } catch (const toml::parse_error& err) {
+    auto parsed = toml::parse(content, path.string());
+    if (!parsed || !parsed->is_table()) {
         return default_value;
     }
 
-    const auto* cat_table = root[category].as_table();
-    if (!cat_table) {
+    const auto& root = parsed->as_table();
+    const auto cat_it = root.find(std::string(category));
+    if (cat_it == root.end() || !cat_it->second.is_table()) {
+        return default_value;
+    }
+    const auto& cat_table = cat_it->second.as_table();
+    const auto val_it = cat_table.find(std::string(name));
+    if (val_it == cat_table.end()) {
         return default_value;
     }
 
-    const auto* value_node = cat_table->get(name);
-    if (!value_node) {
-        return default_value;
-    }
-
-    return value_node->value_or(default_value);
+    return val_it->second.value_or(default_value);
 }
 
 template <typename T>

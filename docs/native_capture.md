@@ -233,7 +233,7 @@ Renderer:
   - Per-frame staging buffers via `per_frame_resource<pending_screenshot>`
   - F9 detection via `input::system_state::key_pressed()`
   - GPU swapchain→staging copy as render graph pass (`.after<ui::state>()`)
-  - Async PNG write on TBB worker thread with BGRA→RGBA swizzle + alpha forced to 0xFF (swapchain compositeAlpha is eOpaque, alpha channel is meaningless)
+  - Async PNG write on task pool worker thread with BGRA→RGBA swizzle + alpha forced to 0xFF (swapchain compositeAlpha is eOpaque, alpha channel is meaningless)
   - `write_in_progress` atomic guard prevents overlapping writes
 
 Registration:

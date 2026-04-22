@@ -1,7 +1,6 @@
 export module gse.graphics:save;
 
 import std;
-import tomlplusplus;
 
 import gse.assert;
 import gse.log;
@@ -65,35 +64,32 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
     for (const auto& menu : menus.items()) {
         toml::table menu_table;
 
-        menu_table.insert("tag", std::string(menu.id().tag()));
-        menu_table.insert("owner", menu.owner_id().exists() ? std::string(menu.owner_id().tag()) : "");
-        menu_table.insert("rect", toml::array{
-            static_cast<double>(menu.rect.left()),
-            static_cast<double>(menu.rect.top()),
-            static_cast<double>(menu.rect.width()),
-            static_cast<double>(menu.rect.height())
-        });
-        menu_table.insert("docked_to", dock_to_string(menu.docked_to));
-        menu_table.insert("dock_split_ratio", static_cast<double>(menu.dock_split_ratio));
-        menu_table.insert("active_tab", static_cast<std::int64_t>(menu.active_tab_index));
+        menu_table.emplace("tag", toml::value{ .data = std::string(menu.id().tag()) });
+        menu_table.emplace("owner", toml::value{ .data = menu.owner_id().exists() ? std::string(menu.owner_id().tag()) : std::string{} });
+        menu_table.emplace("rect", toml::value{ .data = toml::array{
+            toml::value{ .data = static_cast<double>(menu.rect.left()) },
+            toml::value{ .data = static_cast<double>(menu.rect.top()) },
+            toml::value{ .data = static_cast<double>(menu.rect.width()) },
+            toml::value{ .data = static_cast<double>(menu.rect.height()) },
+        }});
+        menu_table.emplace("docked_to", toml::value{ .data = std::string(dock_to_string(menu.docked_to)) });
+        menu_table.emplace("dock_split_ratio", toml::value{ .data = static_cast<double>(menu.dock_split_ratio) });
+        menu_table.emplace("active_tab", toml::value{ .data = static_cast<std::int64_t>(menu.active_tab_index) });
 
         toml::array tabs;
+        tabs.reserve(menu.tab_contents.size());
         for (const auto& tab : menu.tab_contents) {
-            tabs.push_back(tab);
+            tabs.push_back(toml::value{ .data = tab });
         }
-        menu_table.insert("tabs", std::move(tabs));
+        menu_table.emplace("tabs", toml::value{ .data = std::move(tabs) });
 
-        menu_array.push_back(std::move(menu_table));
+        menu_array.push_back(toml::value{ .data = std::move(menu_table) });
     }
 
     toml::table root;
-    root.insert("menu", std::move(menu_array));
+    root.emplace("menu", toml::value{ .data = std::move(menu_array) });
 
-    std::ostringstream oss;
-    oss << root;
-    std::string content = oss.str();
-
-    std::ranges::replace(content, '\'', '"');
+    const std::string content = toml::emit(toml::value{ .data = std::move(root) });
 
     std::ofstream file(file_path);
     file << content;
@@ -113,70 +109,72 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 
     std::ostringstream oss;
     oss << file.rdbuf();
-    std::string content = oss.str();
+    const std::string content = oss.str();
 
-    std::ranges::replace(content, '\'', '"');
-
-    toml::table root;
-    try {
-        root = toml::parse(content, file_path.string());
-    } catch (const toml::parse_error& err) {
-        log::println(log::level::warning, log::category::save_system, "TOML parse error in {}: {}", file_path.string(), err.what());
+    auto parsed = toml::parse(content, file_path.string());
+    if (!parsed) {
+        log::println(log::level::warning, log::category::save_system, "TOML parse error in {} at {}:{}: {}", file_path.string(), parsed.error().line, parsed.error().column, parsed.error().message);
+        return default_menus;
+    }
+    if (!parsed->is_table()) {
         return default_menus;
     }
 
-    const auto* menu_array = root["menu"].as_array();
-    if (!menu_array) {
+    const auto& root = parsed->as_table();
+    const auto menu_it = root.find("menu");
+    if (menu_it == root.end() || !menu_it->second.is_array()) {
         return default_menus;
     }
 
     std::vector<loaded_menu_data> loaded_data_vec;
 
-    for (const auto& item : *menu_array) {
-        const auto* tbl = item.as_table();
-        if (!tbl) continue;
+    for (const auto& item : menu_it->second.as_array()) {
+        if (!item.is_table()) {
+            continue;
+        }
+        const auto& tbl = item.as_table();
 
         loaded_menu_data data;
 
-        if (const auto* tag_node = tbl->get("tag")) {
-            data.tag = tag_node->value_or<std::string>("");
+        if (const auto it = tbl.find("tag"); it != tbl.end()) {
+            data.tag = it->second.value_or<std::string>("");
         }
 
-        if (const auto* owner_node = tbl->get("owner")) {
-            data.owner_tag = owner_node->value_or<std::string>("");
+        if (const auto it = tbl.find("owner"); it != tbl.end()) {
+            data.owner_tag = it->second.value_or<std::string>("");
         }
 
-        if (const auto* docked_node = tbl->get("docked_to")) {
-            data.docked_to = location_from_string(docked_node->value_or<std::string>("none"));
+        if (const auto it = tbl.find("docked_to"); it != tbl.end()) {
+            data.docked_to = location_from_string(it->second.value_or<std::string>("none"));
         }
 
-        if (const auto* ratio_node = tbl->get("dock_split_ratio")) {
-            data.dock_split_ratio = static_cast<float>(ratio_node->value_or(0.5));
+        if (const auto it = tbl.find("dock_split_ratio"); it != tbl.end()) {
+            data.dock_split_ratio = it->second.value_or<float>(0.5f);
         }
 
-        if (const auto* tab_node = tbl->get("active_tab")) {
-            data.active_tab_index = static_cast<std::uint32_t>(tab_node->value_or<std::int64_t>(0));
+        if (const auto it = tbl.find("active_tab"); it != tbl.end()) {
+            data.active_tab_index = it->second.value_or<std::uint32_t>(0);
         }
 
-        if (const auto* rect_arr = tbl->get("rect"); rect_arr && rect_arr->is_array()) {
-            const auto& arr = *rect_arr->as_array();
+        if (const auto it = tbl.find("rect"); it != tbl.end() && it->second.is_array()) {
+            const auto& arr = it->second.as_array();
             if (arr.size() == 4) {
                 vec2f pos{
-                    static_cast<float>(arr[0].value_or(0.0)),
-                    static_cast<float>(arr[1].value_or(0.0))
+                    arr[0].value_or<float>(0.f),
+                    arr[1].value_or<float>(0.f),
                 };
                 vec2f size{
-                    static_cast<float>(arr[2].value_or(0.0)),
-                    static_cast<float>(arr[3].value_or(0.0))
+                    arr[2].value_or<float>(0.f),
+                    arr[3].value_or<float>(0.f),
                 };
                 data.rect = ui_rect::from_position_size(pos, size);
             }
         }
 
-        if (const auto* tabs_node = tbl->get("tabs"); tabs_node && tabs_node->is_array()) {
-            for (const auto& tab : *tabs_node->as_array()) {
-                if (auto val = tab.value<std::string>()) {
-                    data.tab_tags.push_back(*val);
+        if (const auto it = tbl.find("tabs"); it != tbl.end() && it->second.is_array()) {
+            for (const auto& tab : it->second.as_array()) {
+                if (tab.is_string()) {
+                    data.tab_tags.push_back(tab.as_string());
                 }
             }
         }

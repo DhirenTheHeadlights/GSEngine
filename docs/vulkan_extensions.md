@@ -3,8 +3,8 @@ Vulkan Extensions — Intel(R) Arc(TM) 140V GPU (8GB)
 
 Generated: 2026-04-17
 Vulkan Instance Version: 1.4.341
-API Version: 1.4.333
-Driver Version: 101.8424
+API Version: 1.4.340
+Driver Version: 101.8629
 Driver: Intel Corporation (DRIVER_ID_INTEL_PROPRIETARY_WINDOWS)
 
 Instance Extensions (13)

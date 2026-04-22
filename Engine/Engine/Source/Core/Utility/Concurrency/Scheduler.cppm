@@ -316,53 +316,69 @@ auto gse::scheduler::defer(F&& fn) -> void {
 }
 
 auto gse::scheduler::update() -> void {
-	drain_deferred();
-	run_graph_update();
-	if (m_registry) {
-		m_registry->sync();
-	}
-	snapshot_all_states();
+	trace::scope(find_or_generate_id("scheduler::update"), [&] {
+		trace::scope(find_or_generate_id("scheduler::drain_deferred"), [&] {
+			drain_deferred();
+		});
+		run_graph_update();
+		if (m_registry) {
+			trace::scope(find_or_generate_id("scheduler::registry_sync"), [&] {
+				m_registry->sync();
+			});
+		}
+		trace::scope(find_or_generate_id("scheduler::snapshot_states"), [&] {
+			snapshot_all_states();
+		});
+	});
 }
 
 auto gse::scheduler::run_graph_update() -> void {
-	auto writer = make_channel_writer();
-	std::vector<scheduled_work> collected_work;
-	std::mutex collected_work_mutex;
+	trace::scope(find_or_generate_id("scheduler::run_graph_update"), [&] {
+		auto writer = make_channel_writer();
+		std::vector<scheduled_work> collected_work;
+		std::mutex collected_work_mutex;
 
-	update_context u_ctx{
-		.reg = *m_registry,
-		.snapshots = *this,
-		.channels = writer,
-		.channel_reader = *this,
-		.resources = *this,
-		.graph = m_update_graph,
-		.work = collected_work,
-		.work_mutex = collected_work_mutex
-	};
-	u_ctx.gpu_ctx = m_gpu_ctx;
+		update_context u_ctx{
+			.reg = *m_registry,
+			.snapshots = *this,
+			.channels = writer,
+			.channel_reader = *this,
+			.resources = *this,
+			.graph = m_update_graph,
+			.work = collected_work,
+			.work_mutex = collected_work_mutex
+		};
+		u_ctx.gpu_ctx = m_gpu_ctx;
 
-	{
-		task::group group(find_or_generate_id("scheduler::parallel_updates"));
-		for (const auto& node : m_nodes) {
-			group.post([&, node = node.get()] {
-				node->graph_update(u_ctx);
-			}, node->trace_id());
+		{
+			task::group group(find_or_generate_id("scheduler::parallel_updates"));
+			for (const auto& node : m_nodes) {
+				group.post([&, node = node.get()] {
+					node->graph_update(u_ctx);
+				}, node->trace_id());
+			}
+			group.wait();
 		}
-		group.wait();
-	}
 
-	if (!collected_work.empty()) {
-		for (auto& item : collected_work) {
-			m_update_graph.submit(
-				item.work_id,
-				wrap_work(std::move(item.execute)),
-				std::move(item.reads),
-				std::move(item.writes)
-			);
+		if (!collected_work.empty()) {
+			trace::scope(find_or_generate_id("scheduler::update_submit"), [&] {
+				for (auto& item : collected_work) {
+					m_update_graph.submit(
+						item.work_id,
+						wrap_work(std::move(item.execute)),
+						std::move(item.reads),
+						std::move(item.writes)
+					);
+				}
+			});
+			trace::scope(find_or_generate_id("scheduler::update_graph_execute"), [&] {
+				m_update_graph.execute();
+			});
+			trace::scope(find_or_generate_id("scheduler::update_graph_clear"), [&] {
+				m_update_graph.clear();
+			});
 		}
-		m_update_graph.execute();
-		m_update_graph.clear();
-	}
+	});
 }
 
 auto gse::scheduler::snapshot_all_states() -> void {
@@ -372,31 +388,39 @@ auto gse::scheduler::snapshot_all_states() -> void {
 }
 
 auto gse::scheduler::run_graph_frame() -> void {
-	frame_snapshot_provider frame_snapshots(m_state_index);
-	auto writer = make_channel_writer();
+	trace::scope(find_or_generate_id("scheduler::run_graph_frame"), [&] {
+		frame_snapshot_provider frame_snapshots(m_state_index);
+		auto writer = make_channel_writer();
 
-	frame_context f_ctx{
-		.reg = *m_registry,
-		.snapshots = frame_snapshots,
-		.channel_reader = *this,
-		.channels = writer,
-		.resources = *this,
-		.graph = m_frame_graph
-	};
-	f_ctx.gpu_ctx = m_gpu_ctx;
+		frame_context f_ctx{
+			.reg = *m_registry,
+			.snapshots = frame_snapshots,
+			.channel_reader = *this,
+			.channels = writer,
+			.resources = *this,
+			.graph = m_frame_graph
+		};
+		f_ctx.gpu_ctx = m_gpu_ctx;
 
-	std::vector<async::task<>> tasks;
-	for (const auto& node : m_nodes) {
-		if (!node->has_frame()) {
-			continue;
+		std::vector<async::task<>> tasks;
+		trace::scope(find_or_generate_id("scheduler::collect_frame_tasks"), [&] {
+			for (const auto& node : m_nodes) {
+				if (!node->has_frame()) {
+					continue;
+				}
+				tasks.push_back(node->graph_frame(f_ctx));
+			}
+		});
+
+		if (!tasks.empty()) {
+			trace::scope(find_or_generate_id("scheduler::frame_sync_wait"), [&] {
+				async::sync_wait(async::when_all(std::move(tasks)));
+			});
+			trace::scope(find_or_generate_id("scheduler::frame_graph_clear"), [&] {
+				m_frame_graph.clear();
+			});
 		}
-		tasks.push_back(node->graph_frame(f_ctx));
-	}
-
-	if (!tasks.empty()) {
-		async::sync_wait(async::when_all(std::move(tasks)));
-		m_frame_graph.clear();
-	}
+	});
 }
 
 auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in_frame) -> void {
@@ -404,11 +428,15 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 		return;
 	}
 
-	run_graph_frame();
+	trace::scope(find_or_generate_id("scheduler::render"), [&] {
+		run_graph_frame();
 
-	if (in_frame) {
-		in_frame();
-	}
+		if (in_frame) {
+			trace::scope(find_or_generate_id("scheduler::in_frame_callback"), [&] {
+				in_frame();
+			});
+		}
+	});
 }
 
 auto gse::scheduler::shutdown() -> void {
@@ -417,8 +445,8 @@ auto gse::scheduler::shutdown() -> void {
 	};
 	phase.gpu_ctx = m_gpu_ctx;
 
-	for (const auto& node : m_nodes | std::views::reverse) {
-		node->shutdown(phase);
+	for (auto it = m_nodes.rbegin(); it != m_nodes.rend(); ++it) {
+		(*it)->shutdown(phase);
 	}
 }
 

@@ -1,6 +1,7 @@
 module;
 
 #include <format>
+#include <meta>
 
 
 export module gse.math:quant;
@@ -23,12 +24,96 @@ namespace gse::internal {
         relative
     };
 
+    template <
+        std::meta::info Dim,
+        std::meta::info DefaultUnit,
+        std::meta::info Parent,
+        std::meta::info UnitFamily,
+        std::meta::info Relative,
+        quantity_semantic_kind Kind
+    >
+    struct quantity_spec {};
+
+    template <
+        std::meta::info Dim,
+        std::meta::info DefaultUnit,
+        std::meta::info Parent,
+        std::meta::info UnitFamily,
+        std::meta::info Relative,
+        quantity_semantic_kind Kind
+    >
+    inline constexpr quantity_spec<Dim, DefaultUnit, Parent, UnitFamily, Relative, Kind> quantity_spec_v{};
+
+    template <typename Tag>
+    consteval auto quantity_spec_type_of() -> std::meta::info {
+        for (auto ann : std::meta::annotations_of(^^Tag)) {
+            auto t = std::meta::type_of(ann);
+            if (std::meta::has_template_arguments(t) &&
+                std::meta::template_of(t) == ^^quantity_spec) {
+                return t;
+            }
+        }
+        return std::meta::info{};
+    }
+
+    template <typename Tag>
+    consteval auto has_quantity_spec() -> bool {
+        for (auto ann : std::meta::annotations_of(^^Tag)) {
+            auto t = std::meta::type_of(ann);
+            if (std::meta::has_template_arguments(t) &&
+                std::meta::template_of(t) == ^^quantity_spec) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    template <typename Tag>
+    consteval auto resolve_parent_tag() -> std::meta::info {
+        if constexpr (has_quantity_spec<Tag>()) {
+            return std::meta::extract<std::meta::info>(
+                std::meta::template_arguments_of(quantity_spec_type_of<Tag>())[2]
+            );
+        }
+        return ^^no_parent_quantity_tag;
+    }
+
+    template <typename Tag>
+    consteval auto resolve_unit_family_tag() -> std::meta::info {
+        if constexpr (has_quantity_spec<Tag>()) {
+            return std::meta::extract<std::meta::info>(
+                std::meta::template_arguments_of(quantity_spec_type_of<Tag>())[3]
+            );
+        }
+        return ^^Tag;
+    }
+
+    template <typename Tag>
+    consteval auto resolve_relative_tag() -> std::meta::info {
+        if constexpr (has_quantity_spec<Tag>()) {
+            return std::meta::extract<std::meta::info>(
+                std::meta::template_arguments_of(quantity_spec_type_of<Tag>())[4]
+            );
+        }
+        return ^^Tag;
+    }
+
+    template <typename Tag>
+    consteval auto resolve_semantic_kind() -> quantity_semantic_kind {
+        if constexpr (has_quantity_spec<Tag>()) {
+            return std::meta::extract<quantity_semantic_kind>(
+                std::meta::template_arguments_of(quantity_spec_type_of<Tag>())[5]
+            );
+        }
+        return quantity_semantic_kind::measurement;
+    }
+
     template <typename Tag>
     struct quantity_tag_traits {
-        using parent_tag = no_parent_quantity_tag;
-        using unit_tag = Tag;
-        using relative_tag = Tag;
-        static constexpr quantity_semantic_kind semantic_kind = quantity_semantic_kind::measurement;
+        using parent_tag = [: resolve_parent_tag<Tag>() :];
+        using unit_tag = [: resolve_unit_family_tag<Tag>() :];
+        using relative_tag = [: resolve_relative_tag<Tag>() :];
+        static constexpr quantity_semantic_kind semantic_kind = resolve_semantic_kind<Tag>();
     };
 
     template <size_t N>
@@ -371,8 +456,11 @@ namespace gse::internal {
     }
 
     template <typename Tag>
+    struct quantity_units {};
+
+    template <typename Tag>
     concept has_unit_list = requires {
-        quantity_traits<Tag>::units;
+        quantity_units<Tag>::units;
     };
 }
 
@@ -432,7 +520,7 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
         bool dispatched = false;
         if constexpr (gse::internal::has_unit_list<Tag>) {
             dispatched = gse::internal::dispatch_named_unit(
-                gse::internal::quantity_traits<Tag>::units,
+                gse::internal::quantity_units<Tag>::units,
                 unit_override,
                 [&](auto unit_const) {
                     using U = std::remove_cvref_t<decltype(unit_const)>;
@@ -471,6 +559,29 @@ export namespace gse::internal {
 
     template <typename T, is_dimension Dim>
     using generic_quantity = quantity<T, Dim, generic_quantity_tag, no_default_unit>;
+
+    template <typename Tag>
+        requires (has_quantity_spec<Tag>())
+    struct quantity_traits<Tag> {
+        static constexpr auto spec_type = quantity_spec_type_of<Tag>();
+        static constexpr auto dim_info = std::meta::extract<std::meta::info>(
+            std::meta::template_arguments_of(spec_type)[0]
+        );
+        static constexpr auto default_unit_info = std::meta::extract<std::meta::info>(
+            std::meta::template_arguments_of(spec_type)[1]
+        );
+
+        template <
+            typename T,
+            auto U = [: default_unit_info :]
+        >
+        using type = quantity<
+            T,
+            typename [: dim_info :],
+            Tag,
+            decltype(U)
+        >;
+    };
 
     template <bool IsGeneric, typename Tag, typename ValueType, typename Dim>
     struct lazy_quantity_for_tag {

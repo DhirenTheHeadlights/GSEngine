@@ -89,7 +89,6 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 	const auto& data = render_items[0];
 	const auto frame_index = gpu.graph().current_frame();
 
-	bool any_new_blas = false;
 	for (const auto& batch : data.normal_batches) {
 		const auto& m = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
@@ -108,13 +107,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 				.index_buffer = &m.index_gpu_buffer(),
 				.index_count = index_count
 			});
-
-			any_new_blas = true;
 		}
-	}
-
-	if (any_new_blas) {
-		gpu.device_ref().wait_idle();
 	}
 
 	auto& instances = fd.instances[frame_index];

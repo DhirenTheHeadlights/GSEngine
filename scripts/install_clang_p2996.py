@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 RELEASE_URL = "https://github.com/DhirenTheHeadlights/GSEngine/releases/download/{tag}/clang-p2996-windows-x64.zip"
-DEFAULT_TAG = "clang-p2996-v0"
+DEFAULT_TAG = "clang-p2996-v1"
 INSTALL_ROOT = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "clang-p2996"
 ENV_VAR = "CLANG_P2996_ROOT"
 

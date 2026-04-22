@@ -1,0 +1,14 @@
+CompileFlags:
+  Add:
+    - -std=c++2c
+    - -freflection-latest
+    - -stdlib=libc++
+    - --target=x86_64-pc-windows-msvc
+    - -mavx2
+
+Index:
+  Background: Build
+  StandardLibrary: Yes
+
+Diagnostics:
+  UnusedIncludes: None

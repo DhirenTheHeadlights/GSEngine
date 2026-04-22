@@ -47,7 +47,7 @@ Listed in `vcpkg.json` and auto-installed at configure time:
 - [STB](https://github.com/nothings/stb) — image loading
 - [miniaudio](https://github.com/mackron/miniaudio) — audio
 - [shader-slang](https://github.com/shader-slang/slang) — shader compiler
-- [oneTBB](https://github.com/uxlfoundation/oneTBB) — task parallelism
+- [concurrentqueue](https://github.com/cameron314/concurrentqueue) — lock-free MPMC queue used by the task scheduler
 - [toml++](https://marzer.github.io/tomlplusplus/) — config files
 - [freetype](https://github.com/freetype/freetype) — font rasterization
 - [msdfgen](https://github.com/Chlumsky/msdfgen) — multi-channel SDF font generation
