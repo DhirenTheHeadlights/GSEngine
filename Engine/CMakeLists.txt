@@ -29,17 +29,8 @@ find_package(Stb REQUIRED)
 find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
-find_package(TBB CONFIG REQUIRED)
+find_package(concurrentqueue CONFIG REQUIRED)
 find_package(Vulkan)
-find_package(tomlplusplus CONFIG REQUIRED)
-
-add_library(TomlplusplusModule STATIC)
-target_sources(TomlplusplusModule PUBLIC
-    FILE_SET CXX_MODULES
-    BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Modules"
-    FILES "${CMAKE_CURRENT_SOURCE_DIR}/Modules/Tomlplusplus.cppm")
-target_compile_features(TomlplusplusModule PUBLIC cxx_std_26)
-target_link_libraries(TomlplusplusModule PUBLIC tomlplusplus::tomlplusplus)
 
 target_sources(Engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Modules/MathShims.cpp")
 
@@ -97,9 +88,8 @@ target_link_libraries(Engine PUBLIC
     glfw
     Freetype::Freetype
     msdfgen::msdfgen
-    TomlplusplusModule
     VulkanModule
-    TBB::tbb
+    concurrentqueue::concurrentqueue
 )
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")

@@ -36,3 +36,23 @@ if(AFTERMATH_DLL)
     )
 endif()
 
+if(VCPKG_BUILD_TYPE STREQUAL "release" OR VCPKG_TARGET_TRIPLET MATCHES "-release$")
+    add_custom_command(TARGET GoonSquad POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin"
+            "$<TARGET_FILE_DIR:GoonSquad>"
+    )
+endif()
+
+if(CMAKE_CXX_FLAGS MATCHES "fsanitize=address" OR CMAKE_CXX_FLAGS_INIT MATCHES "fsanitize=address")
+    file(GLOB _asan_dll "$ENV{CLANG_P2996_ROOT}/lib/clang/*/lib/x86_64-pc-windows-msvc/clang_rt.asan_dynamic.dll")
+    if(_asan_dll)
+        list(GET _asan_dll 0 _asan_dll)
+        add_custom_command(TARGET GoonSquad POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_asan_dll}" "$<TARGET_FILE_DIR:GoonSquad>"
+        )
+    else()
+        message(WARNING "ASAN build requested but clang_rt.asan_dynamic.dll not found under $ENV{CLANG_P2996_ROOT}/lib/clang/*/lib/x86_64-pc-windows-msvc/. Run bootstrap.py to build compiler-rt.")
+    endif()
+endif()
+

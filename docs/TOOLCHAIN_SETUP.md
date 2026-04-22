@@ -1,6 +1,6 @@
 # Toolchain Setup — clang-p2996 + libc++ + MSVC ABI on Windows
 
-This repo targets Windows only but does **not** use the MSVC compiler or MSVC STL. We use clang-p2996 (Bloomberg's C++26 reflection fork of clang) with libc++ built against the MSVC ABI (`vcruntime`). Every vcpkg dep is rebuilt against this toolchain via a custom triplet.
+This repo targets Windows only. The **engine** uses clang-p2996 (Bloomberg's C++26 reflection fork of clang) with libc++ built against the MSVC ABI (`vcruntime`). **vcpkg deps** are built with stock MSVC (`x64-windows` triplet) — vcruntime ABI lets MSVC-compiled libs link cleanly into the clang+libc++ engine. This mixed-triplet approach sidesteps the libc++-vcruntime-ABI header gaps that otherwise bite when compiling third-party C++ under clang on Windows.
 
 If you need to set this up on a new machine, the short version is:
 
@@ -8,7 +8,7 @@ If you need to set this up on a new machine, the short version is:
 python bootstrap.py
 ```
 
-This installs clang-p2996, builds libc++ against vcruntime, and leaves you ready to configure. What follows is *why* the bootstrap does what it does, and the landmines you'd hit if you tried to set it up by hand.
+This installs clang-p2996, builds libc++ against vcruntime, builds compiler-rt (ASAN runtime), and leaves you ready to configure. What follows is *why* the bootstrap does what it does, and the landmines you'd hit if you tried to set it up by hand.
 
 ---
 
@@ -30,6 +30,25 @@ clang-p2996 ships with libc++ headers but no libc++ library built against the MS
 - Compile libc++ with **clang-cl, NOT clang.exe**. When CMake detects clang-cl it sets `MSVC=TRUE`, which flips libcxx's `if(MSVC)` branch that wires up the correct ABI lib links. Use `clang.exe` and you'll get unresolved `__ExceptionPtr*` symbols at link time.
 
 This is all baked into `scripts/build_libcxx_p2996.py`. It installs alongside the clang-p2996 tree so paths stay stable.
+
+## 1a. Why we build compiler-rt ourselves
+
+The clang-p2996 prebuilt doesn't ship a Windows compiler-rt runtime — no `clang_rt.asan_*.lib` or `.dll`. Without it, `-fsanitize=address` link fails with missing `clang_rt.asan_dynamic.lib`. We build ASAN runtime from the same `External/clang-p2996/compiler-rt/` source tree via the LLVM `runtimes/` subdir:
+
+- `LLVM_ENABLE_RUNTIMES=compiler-rt` — use the runtimes build driver (not a full LLVM rebuild).
+- `COMPILER_RT_SANITIZERS_TO_BUILD=asan` — only ASAN; skip MSAN/TSAN/fuzzer/XRay/profile/memprof/orc/crt/gwp-asan.
+- `COMPILER_RT_BUILD_BUILTINS=OFF` — the prebuilt clang already has its builtins; rebuilding them would require extra MSVC-target dance.
+- `COMPILER_RT_DEFAULT_TARGET_ONLY=ON` — only the host (x86_64-pc-windows-msvc), no cross-compilation variants.
+- Built with clang-cl against the MSVC runtime (`-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL`), same shape as the libc++ build.
+
+Install layout matches what clang expects:
+- `$CLANG_P2996_ROOT/lib/clang/<ver>/lib/x86_64-pc-windows-msvc/clang_rt.asan_dynamic.lib`
+- `$CLANG_P2996_ROOT/lib/clang/<ver>/lib/x86_64-pc-windows-msvc/clang_rt.asan_dynamic_runtime_thunk.lib`
+- `$CLANG_P2996_ROOT/lib/clang/<ver>/lib/x86_64-pc-windows-msvc/clang_rt.asan_dynamic-x86_64.dll`
+
+Baked into `scripts/build_compiler_rt_p2996.py`; chained after the libc++ build in `bootstrap.py`. The Game/CMakeLists.txt post-build step copies the DLL next to `GoonSquad.exe` when building with the `-asan` preset.
+
+Historical note: earlier we tried to drop MSVC 14.50's ASAN libs from `VC\Tools\MSVC\...\lib\x64\` into the clang runtime path as a quick fix. That works at the ABI level (same compiler-rt sources) but pins the toolchain to a specific VS version. Building compiler-rt from the clang-p2996 source keeps the runtime locked to the clang version, which is the only guarantee worth having.
 
 ## 2. The libc++ header patch (`__new/new_handler.h`)
 
@@ -63,7 +82,7 @@ If you rebuild libc++ from scratch without applying the source patch first, the 
 
 ## 3. Why there's no MSVC-STL shim (and why we don't need one)
 
-Naive expectation: vcvars puts `${VCToolsInstallDir}/include` on `INCLUDE`, which contains MSVC's `<vector>`, `<functional>`, etc. A `#include <vector>` in third-party code could resolve to MSVC's instead of libc++'s, colliding with `import std;`.
+Naive expectation: vcvars puts `${VCToolsInstallDir}/include` on `INCLUDE`, which contains MSVC's `<vector>`, `<functional>`, etc. A `#include <vector>` in engine code could resolve to MSVC's instead of libc++'s, colliding with `import std;`.
 
 In practice this doesn't happen, because of how clang's include search is ordered when §4's flags are applied:
 
@@ -71,9 +90,9 @@ In practice this doesn't happen, because of how clang's include search is ordere
 - `-Xclang -cxx-isystem -Xclang <libcxx>` prepends libc++ to the C++-only search chain, which is consulted *before* the regular system-include chain.
 - `INCLUDE` (vcvars) is injected into the regular system-include chain — behind the C++-only chain.
 
-Net: libc++ wins every `#include <vector>` lookup, and MSVC's STL headers in VCTools/include are invisible to C++ TUs. C headers (`<stddef.h>`, `<intrin.h>`, etc.) resolve to VCTools/include because libc++ has no `.h` counterparts to shadow them — exactly what we want.
+Net: libc++ wins every `#include <vector>` lookup in engine code, and MSVC's STL headers in VCTools/include are invisible to C++ TUs compiled with clang. C headers (`<stddef.h>`, `<intrin.h>`, etc.) resolve to VCTools/include because libc++ has no `.h` counterparts to shadow them — exactly what we want.
 
-An earlier version of this doc described a shim that copied only `*.h` files from VCTools/include into `${CMAKE_BINARY_DIR}/msvc-c-shim/include/` and overrode `INCLUDE` to use the shim. It was removed after the build was verified to work without it. If you ever see MSVC STL redefinition errors reappear (e.g., after a toolchain bump or a new TBB version), the shim is the escape hatch — reintroduce the copy + `INCLUDE` override before `project()`.
+vcpkg deps compile with MSVC cl.exe and use MSVC STL unchanged; they never see libc++. vcruntime ABI makes the resulting `.lib`/`.dll` artifacts link-compatible with the clang+libc++ engine.
 
 ## 4. The libc++ include flag quirks
 
@@ -91,11 +110,7 @@ string(APPEND CMAKE_CXX_FLAGS_INIT " -nostdinc++ -Xclang -cxx-isystem -Xclang \"
 
 `-nostdinc++` prevents clang from auto-adding its own libc++ include, then `-Xclang -cxx-isystem -Xclang <path>` injects ours first in the C++-include search. `-cxx-isystem` (not `-isystem`) is important so the C include path stays unchanged.
 
-For the **vcpkg chainload toolchain** (clang-cl builds dep ports), the equivalent is:
-
-```cmake
-/clang:-nostdinc++ /clang:-cxx-isystem /clang:"<libcxx>"
-```
+vcpkg deps don't need these — they build with MSVC cl.exe + MSVC STL and are self-contained.
 
 ## 5. Required defines and flags
 
@@ -106,7 +121,7 @@ string(APPEND CMAKE_C_FLAGS_INIT   " -Xclang --dependent-lib=ucrt")
 string(APPEND CMAKE_CXX_FLAGS_INIT " -freflection-latest")
 ```
 
-- `__GCC_DESTRUCTIVE_SIZE` / `__GCC_CONSTRUCTIVE_SIZE` — libc++ needs these, but clang on MSVC target doesn't define them automatically. Without them, anything referencing `std::hardware_destructive_interference_size` (TBB headers, our own concurrency code) fails to compile.
+- `__GCC_DESTRUCTIVE_SIZE` / `__GCC_CONSTRUCTIVE_SIZE` — libc++ needs these, but clang on MSVC target doesn't define them automatically. Without them, anything referencing `std::hardware_destructive_interference_size` in our own concurrency code fails to compile.
 - `--dependent-lib=ucrt` — ensures ucrt is linked into every TU. Required so libc++'s C runtime calls resolve.
 - `-freflection-latest` — enables the full P2996 reflection feature set (superset of `-freflection`): `^^` operator, `std::meta::info`, `template for`, `[[= value]]` annotations, `define_aggregate`, splicers. Without it the parser rejects `^^T` as a syntax error. Not applied to the vcpkg chainload toolchain — third-party deps don't use reflection, so they compile without it.
 
@@ -141,28 +156,31 @@ add_library(__CMAKE::CXX26 ALIAS __cmake_libcxx_std)
 
 `CXX_MODULE_STD 0` on this target is what stops CMake from trying to synthesize a different `import std` module for it — we're providing the implementation.
 
-## 7. vcpkg custom triplet + chainload
+## 7. vcpkg triplets
 
-`vcpkg-overlays/triplets/x64-windows-clang-libcxx.cmake` pins dynamic CRT + chainloads our toolchain file:
+Two triplets are in play depending on preset:
 
-```cmake
-set(VCPKG_TARGET_ARCHITECTURE x64)
-set(VCPKG_CRT_LINKAGE dynamic)
-set(VCPKG_LIBRARY_LINKAGE dynamic)
-set(VCPKG_CMAKE_SYSTEM_NAME "")
-set(VCPKG_ENV_PASSTHROUGH PATH INCLUDE LIB LIBPATH CLANG_P2996_ROOT)
-set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/../toolchains/clang-libcxx.cmake")
-```
+- **`x64-windows`** (stock, default) — used by `x64-clang-p2996-libcxx-Debug` and `x64-clang-p2996-libcxx-Release`. Deps build with MSVC cl.exe and MSVC STL, shipping both Debug (`/MDd`, `msvcrtd`) and Release (`/MD`, `msvcrt`) variants. The Debug variant matches the engine's debug CRT for normal development.
+- **`x64-windows-release`** (overlay, custom) — used by `x64-clang-p2996-libcxx-Debug-asan` only. Defined in `vcpkg-overlays/triplets/x64-windows-release.cmake`:
+  ```cmake
+  set(VCPKG_TARGET_ARCHITECTURE x64)
+  set(VCPKG_CRT_LINKAGE dynamic)
+  set(VCPKG_LIBRARY_LINKAGE dynamic)
+  set(VCPKG_BUILD_TYPE release)
+  ```
+  Forces deps to build **release-only**, so the whole process links `msvcrt.dll` (not `msvcrtd.dll`). Required because MSVC's `/fsanitize=address` — and clang's, for the same reason — is incompatible with the Debug CRT: `ucrtbased.dll`'s `recalloc_dbg` / `_initterm_e` allocate through a separate debug-heap-tracking path that ASAN's `realloc` interceptor can't see, triggering bad-free reports during DLL init.
 
-`VCPKG_ENV_PASSTHROUGH INCLUDE` is what lets vcpkg port builds inherit the vcvars `INCLUDE` (WinSDK, UCRT, VCTools) — without it, vcpkg resets `INCLUDE` and ports can't find the Windows headers.
+When switching between Debug and Debug+ASAN, vcpkg will rebuild deps once under the other triplet and then binary-cache them.
 
-`vcpkg-overlays/toolchains/clang-libcxx.cmake` is the matching toolchain file — uses `clang-cl` with the `/clang:`-prefixed flags and links `c++.lib`.
+Historical note: an earlier iteration attempted a custom `x64-windows-clang-libcxx` triplet that chainloaded clang-cl + libc++ for dep builds (full STL swap). That exposed latent libc++-vcruntime-ABI bugs (e.g., `std::get_new_handler` missing from UCRT's `<new.h>` while declared-only in MSVC STL's `<new>`), requiring libc++ header patches and forced `msvcprt.lib` linkage. That path is still abandoned — the current `x64-windows-release` overlay is a narrower change (only flips CRT flavor, keeps MSVC STL for deps). The libc++ `__new/new_handler.h` patch in `build_libcxx_p2996.py` is kept in place so the engine can safely call `std::get_new_handler()` if needed.
+
+### Latent mixed-CRT heap corruption
+
+A subtle side effect of the default setup is worth documenting: libc++ is built with `MultiThreadedDLL` (release CRT per `build_libcxx_p2996.py`), vcpkg deps under `x64-windows` link `msvcrtd` in Debug, and the engine itself linked `msvcrtd`. In the same process three heap wrappers coexist — release ucrt under libc++, debug ucrt under deps/engine — with different block-header layouts. Allocations crossing libc++↔dep boundaries could produce a free/realloc with a header the runtime doesn't recognize, yielding random heap corruption that only surfaced when a `std::vector` grew and tried to free the old buffer. The `x64-windows-release` ASAN preset eliminates this (everything on release CRT). The default Debug preset still mixes CRT flavors; if you see unexplained heap corruption, switching to the ASAN preset may resolve it without finding a code bug.
 
 ## 8. vcpkg manifest quirks
 
-`vcpkg.json` is standard manifest mode. Two non-obvious entries:
-
-- `"tbb"` with `"default-features": false` — hwloc's `lstopo` fails to build under clang-cl because it uses `-mwindows` (gcc-ism), which clang-cl doesn't accept. Disabling default features skips hwloc.
+`vcpkg.json` is standard manifest mode. No unusual flags — all entries use default features.
 
 ## 9. The `hypotf` / `ldexpf` shim (`Engine/Modules/MathShims.cpp`)
 
@@ -226,7 +244,7 @@ Projection-via-lambda (`, {}, [](auto const& x) { return x.member; }`) may have 
 4. `python scripts/build_libcxx_p2996.py` — builds libc++ with `LIBCXX_CXX_ABI=vcruntime`, `LIBCXX_INSTALL_MODULES=ON`, using clang-cl. Installs into `dist/clang-p2996/`.
 5. Patches the installed `dist/clang-p2996/include/c++/v1/__new/new_handler.h` (same patch, in case it got overwritten by install).
 
-After bootstrap, configure with the `x64-clang-p2996-libcxx-Debug` or `x64-clang-p2996-libcxx-Release` CMake preset. vcpkg rebuilds deps against the custom triplet the first time.
+After bootstrap, configure with the `x64-clang-p2996-libcxx-Debug` or `x64-clang-p2996-libcxx-Release` CMake preset. vcpkg builds deps under the stock `x64-windows` triplet the first time (or restores from binary cache).
 
 ---
 

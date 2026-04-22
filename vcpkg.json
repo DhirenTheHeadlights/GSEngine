@@ -6,11 +6,7 @@
     "stb",
     "miniaudio",
     "shader-slang",
-    {
-      "name": "tbb",
-      "default-features": false
-    },
-    "tomlplusplus",
+    "concurrentqueue",
     {
       "name": "freetype",
       "default-features": false

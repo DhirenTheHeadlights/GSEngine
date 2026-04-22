@@ -12,13 +12,13 @@
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-clang-libcxx",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
         "CMAKE_C_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang.exe",
         "CMAKE_CXX_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang.exe",
         "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "$env{CLANG_P2996_ROOT}/bin/clang-scan-deps.exe",
         "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2",
-        "CMAKE_CXX_MODULE_STD": "ON"
+        "CMAKE_CXX_MODULE_STD": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "environment": {
         "PATH": "$env{CLANG_P2996_ROOT}/bin;$penv{PATH}"
@@ -47,6 +47,22 @@
       "inherits": "x64-clang-p2996-libcxx-base",
       "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Release",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "x64-clang-p2996-libcxx-Debug-asan",
+      "displayName": "x64 clang-p2996 libc++ Debug + ASAN",
+      "inherits": "x64-clang-p2996-libcxx-base",
+      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Debug-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2 -fsanitize=address -fno-omit-frame-pointer -g",
+        "CMAKE_C_FLAGS_INIT": "--target=x86_64-pc-windows-msvc -fsanitize=address -fno-omit-frame-pointer -g",
+        "CMAKE_EXE_LINKER_FLAGS_INIT": "-fsanitize=address",
+        "CMAKE_SHARED_LINKER_FLAGS_INIT": "-fsanitize=address"
+      }
     }
   ],
   "buildPresets": [
@@ -57,6 +73,10 @@
     {
       "name": "x64-clang-p2996-libcxx-Release",
       "configurePreset": "x64-clang-p2996-libcxx-Release"
+    },
+    {
+      "name": "x64-clang-p2996-libcxx-Debug-asan",
+      "configurePreset": "x64-clang-p2996-libcxx-Debug-asan"
     }
   ],
   "testPresets": []

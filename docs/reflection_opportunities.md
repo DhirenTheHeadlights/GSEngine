@@ -722,16 +722,15 @@ Reflect over the struct to build: TOML reader/writer, ImGui renderer, dirty trac
 
 **Risk:** high churn. SaveSystem has many clients; plan for a parallel migration per category.
 
-**Dependency note — can we drop tomlplusplus?**
+**Dependency note — tomlplusplus was dropped.**
 
-Reflection replaces the *glue* between structs and tomlplusplus, not tomlplusplus itself. Text parsing and emitting are not things reflection can do — something still has to turn `"AO Quality" = 2` into structured data. Scope of tomlplusplus usage today:
+Originally this section recommended keeping tomlplusplus. That recommendation was overturned: during the clang-p2996 / libc++ migration, tomlplusplus's precompiled `.lib` (MSVC-STL-mangled template instantiations on `std::string_view` / `std::string`) produced unresolvable link symbols against the engine's libc++-mangled call sites. Fixing via triplet gymnastics wasn't worth it; replacing the library was.
 
-- 26 `toml::*` calls across `Save.cppm` and `SaveSystem.cppm`
-- 2 data files totalling 100 lines (`settings.toml` 66, `gui_layout.toml` 34)
-- Only basic TOML features used: section headers, strings, ints, floats, bools, flat arrays, arrays of tables
-- Existing integration already has a quote-substitution hack at `Save.cppm:96,118`
+The replacement lives at `Engine/Engine/Source/Core/Utility/Toml.cppm` (`gse.utility:toml` partition): a ~620-line hand-rolled module exposing `gse::toml::value`, `parse()` returning `std::expected<value, parse_error>`, `emit()`, and reflection-based `to_toml<T>` / `from_toml<T>` that walk `nonstatic_data_members_of`. Handles the TOML subset the engine actually used (section headers, `[[array]]`, bare + quoted keys, scalars, inline arrays). Quote-substitution hack at the old `Save.cppm:96,118` is gone.
 
-After this refactor, the tomlplusplus surface area in engine code shrinks to ~5 call sites (`toml::parse`, `toml::table`, `operator<<`, `toml::parse_error`). At that point, dropping the dep is a ~150-LoC hand-rolled parser project — feasible but not driven by reflection capability. **Recommendation: keep tomlplusplus.** Revisit only if compile time or binary size becomes a motivating concern.
+The same ABI-mismatch pattern that killed toml++ also hit TBB's `concurrent_bounded_queue<std::function<void()>>` (`std::function` layout differs between libc++ and MSVC STL → heap corruption inside TBB's compiled runtime). After surveying remaining TBB usage, the whole dep was dropped: the queue was swapped for moodycamel's header-only `concurrentqueue`, and `parallel_for` / `task_arena` were rolled into an in-engine thread pool (`Engine/Engine/Source/Core/Utility/Concurrency/Task.cppm`). TBB is no longer linked; `vcpkg.json` and `Engine/CMakeLists.txt` reflect this.
+
+**Rule of thumb for future deps:** prebuilt `.lib` with templated surface that takes user STL types by value/reference = danger. Everything else interop's fine via vcruntime ABI.
 
 ### C3. Physics shape-type dispatch
 

@@ -2,7 +2,7 @@ module;
 
 
 #include <new>
-#include <tbb/concurrent_queue.h>
+#include <moodycamel/concurrentqueue.h>
 
 export module gse.utility:frame_sync;
 
@@ -27,24 +27,24 @@ export namespace gse::frame_sync {
 }
 
 namespace gse::frame_sync {
-	tbb::concurrent_bounded_queue<callback> begin_pending;
-	tbb::concurrent_bounded_queue<callback> end_pending;
+	inline moodycamel::ConcurrentQueue<callback> begin_pending;
+	inline moodycamel::ConcurrentQueue<callback> end_pending;
 
-	std::vector<callback> begin_list;
-	std::vector<callback> end_list;
+	inline std::vector<callback> begin_list;
+	inline std::vector<callback> end_list;
 
 	auto drain(
-		tbb::concurrent_bounded_queue<callback>& q,
+		moodycamel::ConcurrentQueue<callback>& q,
 		std::vector<callback>& out
 	) -> void;
 }
 
 auto gse::frame_sync::on_begin(callback cb) {
-	begin_pending.push(std::move(cb));
+	begin_pending.enqueue(std::move(cb));
 }
 
 auto gse::frame_sync::on_end(callback cb) {
-	end_pending.push(std::move(cb));
+	end_pending.enqueue(std::move(cb));
 }
 
 auto gse::frame_sync::begin() -> void {
@@ -61,9 +61,9 @@ auto gse::frame_sync::end() -> void {
 	}
 }
 
-auto gse::frame_sync::drain(tbb::concurrent_bounded_queue<callback>& q, std::vector<callback>& out) -> void {
+auto gse::frame_sync::drain(moodycamel::ConcurrentQueue<callback>& q, std::vector<callback>& out) -> void {
 	callback cb;
-	while (q.try_pop(cb)) {
+	while (q.try_dequeue(cb)) {
 		out.push_back(std::move(cb));
 	}
 }

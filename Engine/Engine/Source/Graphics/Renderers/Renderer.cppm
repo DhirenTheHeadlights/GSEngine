@@ -244,6 +244,5 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> void 
 auto gse::renderer::system::shutdown(const shutdown_context& phase) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
-	ctx.wait_idle();
 	ctx.shutdown();
 }

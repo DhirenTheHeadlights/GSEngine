@@ -50,6 +50,7 @@ export import :task;
 export import :task_graph;
 export import :timed_lock;
 export import :timer;
+export import :toml;
 export import :trace;
 export import :variant_match;
 export import :file_watcher;

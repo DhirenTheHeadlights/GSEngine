@@ -20,7 +20,7 @@ namespace gse {
 	concept resource_context = requires(C& ctx, const C& cctx, std::type_index ti, id rid) {
 		{ cctx.gpu_queue_size() } -> std::convertible_to<std::size_t>;
 		{ ctx.mark_pending_for_finalization(ti, rid) } -> std::same_as<void>;
-		{ ctx.wait_idle() } -> std::same_as<void>;
+		{ ctx.device_ref().wait_idle() } -> std::same_as<void>;
 		{ ctx.process_gpu_queue() } -> std::same_as<void>;
 	};
 }
@@ -287,7 +287,7 @@ auto gse::resource::loader<R, C>::finalize_reloads() -> void {
 		return;
 	}
 
-	m_context.wait_idle();
+	m_context.device_ref().wait_idle();
 
 	for (const id rid : reloads_to_process) {
 		resource_slot<R>* s;
@@ -313,7 +313,7 @@ auto gse::resource::loader<R, C>::finalize_reloads() -> void {
 
 		if (queued_gpu_work) {
 			m_context.process_gpu_queue();
-			m_context.wait_idle();
+			m_context.device_ref().wait_idle();
 		}
 
 		if (s->resource.read()) {
@@ -408,7 +408,7 @@ auto gse::resource::loader<R, C>::instantly_load(id resource_id) -> void {
 
 	if (work_was_queued) {
 		m_context.process_gpu_queue();
-		m_context.wait_idle();
+		m_context.device_ref().wait_idle();
 	}
 }
 

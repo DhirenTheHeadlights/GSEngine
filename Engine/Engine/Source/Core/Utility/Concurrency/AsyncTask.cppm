@@ -427,12 +427,17 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 	};
 
 	auto w = wrapper();
-	w.start();
-	done.acquire();
-
-	while (!w.done()) {
-		std::this_thread::yield();
-	}
+	trace::scope(find_or_generate_id("sync_wait::start"), [&] {
+		w.start();
+	});
+	trace::scope(find_or_generate_id("sync_wait::acquire"), [&] {
+		done.acquire();
+	});
+	trace::scope(find_or_generate_id("sync_wait::final_yield"), [&] {
+		while (!w.done()) {
+			std::this_thread::yield();
+		}
+	});
 
 	if (has_exception) {
 		std::rethrow_exception(ep);

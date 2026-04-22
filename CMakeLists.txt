@@ -25,6 +25,7 @@ set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444" CAC
 string(APPEND CMAKE_CXX_FLAGS_INIT " -nostdinc++ -Xclang -cxx-isystem -Xclang \"${_gse_libcxx_inc}\"")
 string(APPEND CMAKE_CXX_FLAGS_INIT " -D__GCC_DESTRUCTIVE_SIZE=64 -D__GCC_CONSTRUCTIVE_SIZE=64")
 string(APPEND CMAKE_CXX_FLAGS_INIT " -Xclang --dependent-lib=ucrt")
+string(APPEND CMAKE_CXX_FLAGS_INIT " -D_STATIC_INLINE_UCRT_FUNCTIONS=0")
 string(APPEND CMAKE_CXX_FLAGS_INIT " -freflection-latest")
 string(APPEND CMAKE_C_FLAGS_INIT   " -Xclang --dependent-lib=ucrt")
 string(APPEND CMAKE_EXE_LINKER_FLAGS_INIT    " \"${_gse_libcxx_lib}\"")
@@ -51,8 +52,12 @@ target_sources(__cmake_libcxx_std
             "${_gse_libcxx_modules_dir}/std.cppm"
             "${_gse_libcxx_modules_dir}/std.compat.cppm"
 )
-add_library(__CMAKE::CXX23 ALIAS __cmake_libcxx_std)
-add_library(__CMAKE::CXX26 ALIAS __cmake_libcxx_std)
+if(NOT TARGET __CMAKE::CXX23)
+    add_library(__CMAKE::CXX23 ALIAS __cmake_libcxx_std)
+endif()
+if(NOT TARGET __CMAKE::CXX26)
+    add_library(__CMAKE::CXX26 ALIAS __cmake_libcxx_std)
+endif()
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
