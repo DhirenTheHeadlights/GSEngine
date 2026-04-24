@@ -4,8 +4,12 @@ import std;
 
 import :bounding_box;
 
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::physics {
 	enum class shape_type : std::uint8_t { box, sphere, capsule };
 

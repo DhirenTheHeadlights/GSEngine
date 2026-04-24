@@ -5,7 +5,7 @@ import std;
 import :socket;
 
 import gse.math;
-import gse.utility;
+import gse.time;
 
 export namespace gse::network {
 	struct pending_reliable_message {

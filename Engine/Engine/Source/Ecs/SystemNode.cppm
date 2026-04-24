@@ -1,0 +1,657 @@
+export module gse.ecs:system_node;
+
+import std;
+
+import gse.core;
+import gse.concurrency;
+import gse.diag;
+
+import :phase_context;
+import :update_context;
+import :frame_context;
+
+export namespace gse {
+	class system_node_base {
+	public:
+		virtual ~system_node_base() = default;
+
+		virtual auto initialize(
+			init_context&
+		) -> void = 0;
+
+		virtual auto shutdown(
+			shutdown_context&
+		) -> void = 0;
+
+		virtual auto graph_update(
+			update_context&
+		) -> void = 0;
+
+		virtual auto graph_frame(
+			frame_context&
+		) -> async::task<> = 0;
+
+		virtual auto has_frame(
+		) const -> bool = 0;
+
+		virtual auto snapshot_state(
+		) -> void = 0;
+
+		virtual auto state_ptr(
+		) -> void* = 0;
+
+		virtual auto state_ptr(
+		) const -> const void* = 0;
+
+		virtual auto state_snapshot_ptr(
+		) const -> const void* = 0;
+
+		virtual auto resources_ptr(
+		) -> void* = 0;
+
+		virtual auto resources_ptr(
+		) const -> const void* = 0;
+
+		virtual auto state_type(
+		) const -> std::type_index = 0;
+
+		virtual auto resources_type(
+		) const -> std::type_index = 0;
+
+		virtual auto trace_id(
+		) const -> id = 0;
+	};
+
+	template <typename S>
+	concept has_resources = requires { typename S::resources; };
+
+	template <typename S>
+	concept has_update_data = requires { typename S::update_data; };
+
+	template <typename S>
+	concept has_frame_data = requires { typename S::frame_data; };
+
+	template <typename S>
+	concept names_initialize = requires { &S::initialize; };
+
+	template <typename S>
+	concept names_update = requires { &S::update; };
+
+	template <typename S>
+	concept names_shutdown = requires { &S::shutdown; };
+
+	template <typename S>
+	concept names_frame = requires { &S::frame; };
+
+	template <typename S, bool = has_resources<S>>
+	struct resource_storage {};
+
+	template <typename S>
+	struct resource_storage<S, true> {
+		typename S::resources value;
+	};
+
+	template <typename S, bool = has_update_data<S>>
+	struct update_data_storage {};
+
+	template <typename S>
+	struct update_data_storage<S, true> {
+		typename S::update_data value;
+	};
+
+	template <typename S, bool = has_frame_data<S>>
+	struct frame_data_storage {};
+
+	template <typename S>
+	struct frame_data_storage<S, true> {
+		typename S::frame_data value;
+	};
+
+	template <typename State, bool = std::is_copy_assignable_v<State>>
+	struct snapshot_storage {};
+
+	template <typename State>
+	struct snapshot_storage<State, true> {
+		State value{};
+	};
+
+	template <typename S, typename State>
+	class system_node final : public system_node_base, non_copyable {
+	public:
+		~system_node() override = default;
+
+		template <typename... Args>
+		explicit system_node(
+			Args&&... args
+		);
+
+		auto initialize(
+			init_context& phase
+		) -> void override;
+
+		auto shutdown(
+			shutdown_context& phase
+		) -> void override;
+
+		auto graph_update(
+			update_context& ctx
+		) -> void override;
+
+		auto graph_frame(
+			frame_context& ctx
+		) -> async::task<> override;
+
+		auto has_frame(
+		) const -> bool override;
+
+		auto snapshot_state(
+		) -> void override;
+
+		auto state_ptr(
+		) -> void* override;
+
+		auto state_ptr(
+		) const -> const void* override;
+
+		auto state_snapshot_ptr(
+		) const -> const void* override;
+
+		auto resources_ptr(
+		) -> void* override;
+
+		auto resources_ptr(
+		) const -> const void* override;
+
+		auto state_type(
+		) const -> std::type_index override;
+
+		auto resources_type(
+		) const -> std::type_index override;
+
+		auto state(
+			this auto& self
+		) -> auto&;
+
+		auto trace_id(
+		) const -> id override;
+
+	private:
+		[[no_unique_address]] resource_storage<S> m_resources;
+		[[no_unique_address]] update_data_storage<S> m_update_data;
+		[[no_unique_address]] frame_data_storage<S> m_frame_data;
+		State m_state;
+		[[no_unique_address]] snapshot_storage<State> m_snapshot;
+	};
+}
+
+namespace gse {
+	template <typename S, typename State>
+	auto dispatch_initialize(
+		init_context& phase,
+		resource_storage<S>& resources,
+		update_data_storage<S>& update_data,
+		frame_data_storage<S>& frame_data,
+		State& state
+	) -> void;
+
+	template <typename S, typename State>
+	auto dispatch_update(
+		update_context& ctx,
+		resource_storage<S>& resources,
+		update_data_storage<S>& update_data,
+		frame_data_storage<S>& frame_data,
+		State& state
+	) -> void;
+
+	template <typename S, typename State>
+	auto dispatch_frame(
+		frame_context& ctx,
+		resource_storage<S>& resources,
+		frame_data_storage<S>& frame_data,
+		const State& state
+	) -> async::task<>;
+
+	template <typename S, typename State>
+	auto dispatch_has_frame(
+	) -> bool;
+}
+
+template <typename S, typename State>
+auto gse::dispatch_initialize(init_context& phase, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, State& state) -> void {
+	if constexpr (has_resources<S> && has_update_data<S> && has_frame_data<S>) {
+		auto& r = resources.value;
+		auto& u = update_data.value;
+		auto& f = frame_data.value;
+		if constexpr (requires { S::initialize(phase, r, u, f, state); }) {
+			S::initialize(phase, r, u, f, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, r, u, f); }) {
+			S::initialize(phase, r, u, f);
+			return;
+		}
+	}
+	if constexpr (has_resources<S> && has_frame_data<S>) {
+		auto& r = resources.value;
+		auto& f = frame_data.value;
+		if constexpr (requires { S::initialize(phase, r, f, state); }) {
+			S::initialize(phase, r, f, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, r, f); }) {
+			S::initialize(phase, r, f);
+			return;
+		}
+	}
+	if constexpr (has_resources<S> && has_update_data<S>) {
+		auto& r = resources.value;
+		auto& u = update_data.value;
+		if constexpr (requires { S::initialize(phase, r, u, state); }) {
+			S::initialize(phase, r, u, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, r, u); }) {
+			S::initialize(phase, r, u);
+			return;
+		}
+	}
+	if constexpr (has_resources<S>) {
+		auto& r = resources.value;
+		if constexpr (requires { S::initialize(phase, r, state); }) {
+			S::initialize(phase, r, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, r); }) {
+			S::initialize(phase, r);
+			return;
+		}
+	}
+	if constexpr (has_update_data<S> && has_frame_data<S>) {
+		auto& u = update_data.value;
+		auto& f = frame_data.value;
+		if constexpr (requires { S::initialize(phase, u, f, state); }) {
+			S::initialize(phase, u, f, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, u, f); }) {
+			S::initialize(phase, u, f);
+			return;
+		}
+	}
+	if constexpr (has_update_data<S>) {
+		auto& u = update_data.value;
+		if constexpr (requires { S::initialize(phase, u, state); }) {
+			S::initialize(phase, u, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, u); }) {
+			S::initialize(phase, u);
+			return;
+		}
+	}
+	if constexpr (has_frame_data<S>) {
+		auto& f = frame_data.value;
+		if constexpr (requires { S::initialize(phase, f, state); }) {
+			S::initialize(phase, f, state);
+			return;
+		}
+		if constexpr (requires { S::initialize(phase, f); }) {
+			S::initialize(phase, f);
+			return;
+		}
+	}
+	if constexpr (requires { S::initialize(phase, state); }) {
+		S::initialize(phase, state);
+		return;
+	}
+	if constexpr (requires { S::initialize(phase); }) {
+		S::initialize(phase);
+		return;
+	}
+	if constexpr (names_initialize<S>) {
+		assert(false, std::source_location::current(), "System '{}' declares initialize but no overload matched the dispatcher", typeid(S).name());
+	}
+}
+
+template <typename S, typename State>
+auto gse::dispatch_update(update_context& ctx, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, State& state) -> void {
+	if constexpr (has_resources<S> && has_update_data<S> && has_frame_data<S>) {
+		auto& r = resources.value;
+		auto& u = update_data.value;
+		auto& f = frame_data.value;
+		if constexpr (requires { S::update(ctx, r, u, f, state); }) {
+			S::update(ctx, r, u, f, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, r, u, f); }) {
+			S::update(ctx, r, u, f);
+			return;
+		}
+	}
+	if constexpr (has_resources<S> && has_frame_data<S>) {
+		auto& r = resources.value;
+		auto& f = frame_data.value;
+		if constexpr (requires { S::update(ctx, r, f, state); }) {
+			S::update(ctx, r, f, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, r, f); }) {
+			S::update(ctx, r, f);
+			return;
+		}
+	}
+	if constexpr (has_resources<S> && has_update_data<S>) {
+		auto& r = resources.value;
+		auto& u = update_data.value;
+		if constexpr (requires { S::update(ctx, r, u, state); }) {
+			S::update(ctx, r, u, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, r, u); }) {
+			S::update(ctx, r, u);
+			return;
+		}
+	}
+	if constexpr (has_resources<S>) {
+		auto& r = resources.value;
+		if constexpr (requires { S::update(ctx, r, state); }) {
+			S::update(ctx, r, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, r); }) {
+			S::update(ctx, r);
+			return;
+		}
+		const auto& rc = std::as_const(resources.value);
+		if constexpr (requires { S::update(ctx, rc, state); }) {
+			S::update(ctx, rc, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, rc); }) {
+			S::update(ctx, rc);
+			return;
+		}
+	}
+	if constexpr (has_update_data<S> && has_frame_data<S>) {
+		auto& u = update_data.value;
+		auto& f = frame_data.value;
+		if constexpr (requires { S::update(ctx, u, f, state); }) {
+			S::update(ctx, u, f, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, u, f); }) {
+			S::update(ctx, u, f);
+			return;
+		}
+	}
+	if constexpr (has_update_data<S>) {
+		auto& u = update_data.value;
+		if constexpr (requires { S::update(ctx, u, state); }) {
+			S::update(ctx, u, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, u); }) {
+			S::update(ctx, u);
+			return;
+		}
+	}
+	if constexpr (has_frame_data<S>) {
+		auto& f = frame_data.value;
+		if constexpr (requires { S::update(ctx, f, state); }) {
+			S::update(ctx, f, state);
+			return;
+		}
+		if constexpr (requires { S::update(ctx, f); }) {
+			S::update(ctx, f);
+			return;
+		}
+	}
+	if constexpr (requires { S::update(ctx, state); }) {
+		S::update(ctx, state);
+		return;
+	}
+	if constexpr (requires { S::update(ctx); }) {
+		S::update(ctx);
+		return;
+	}
+	if constexpr (names_update<S>) {
+		assert(false, std::source_location::current(), "System '{}' declares update but no overload matched the dispatcher", typeid(S).name());
+	}
+}
+
+template <typename S, typename State>
+auto gse::dispatch_frame(frame_context& ctx, resource_storage<S>& resources, frame_data_storage<S>& frame_data, const State& state) -> async::task<> {
+	if constexpr (has_resources<S> && has_frame_data<S>) {
+		const auto& r = std::as_const(resources.value);
+		auto& f = frame_data.value;
+		if constexpr (requires { S::frame(ctx, r, f, state); }) {
+			co_await S::frame(ctx, r, f, state);
+			co_return;
+		}
+		if constexpr (requires { S::frame(ctx, r, f); }) {
+			co_await S::frame(ctx, r, f);
+			co_return;
+		}
+	}
+	if constexpr (has_resources<S>) {
+		const auto& r = std::as_const(resources.value);
+		if constexpr (requires { S::frame(ctx, r, state); }) {
+			co_await S::frame(ctx, r, state);
+			co_return;
+		}
+		if constexpr (requires { S::frame(ctx, r); }) {
+			co_await S::frame(ctx, r);
+			co_return;
+		}
+	}
+	if constexpr (has_frame_data<S>) {
+		auto& f = frame_data.value;
+		if constexpr (requires { S::frame(ctx, f, state); }) {
+			co_await S::frame(ctx, f, state);
+			co_return;
+		}
+		if constexpr (requires { S::frame(ctx, f); }) {
+			co_await S::frame(ctx, f);
+			co_return;
+		}
+	}
+	if constexpr (requires { S::frame(ctx, state); }) {
+		co_await S::frame(ctx, state);
+		co_return;
+	}
+	if constexpr (requires { S::frame(ctx); }) {
+		co_await S::frame(ctx);
+		co_return;
+	}
+	if constexpr (names_frame<S>) {
+		assert(false, std::source_location::current(), "System '{}' declares frame but no overload matched the dispatcher", typeid(S).name());
+	}
+	co_return;
+}
+
+template <typename S, typename State>
+auto gse::dispatch_has_frame() -> bool {
+	if constexpr (has_resources<S> && has_frame_data<S>) {
+		if constexpr (requires(frame_context& c, const typename S::resources& r, typename S::frame_data& fd, const State& s) { S::frame(c, r, fd, s); }) {
+			return true;
+		}
+		if constexpr (requires(frame_context& c, const typename S::resources& r, typename S::frame_data& fd) { S::frame(c, r, fd); }) {
+			return true;
+		}
+	}
+	if constexpr (has_resources<S>) {
+		if constexpr (requires(frame_context& c, const typename S::resources& r, const State& s) { S::frame(c, r, s); }) {
+			return true;
+		}
+		if constexpr (requires(frame_context& c, const typename S::resources& r) { S::frame(c, r); }) {
+			return true;
+		}
+	}
+	if constexpr (has_frame_data<S>) {
+		if constexpr (requires(frame_context& c, typename S::frame_data& fd, const State& s) { S::frame(c, fd, s); }) {
+			return true;
+		}
+		if constexpr (requires(frame_context& c, typename S::frame_data& fd) { S::frame(c, fd); }) {
+			return true;
+		}
+	}
+	if constexpr (requires(frame_context& c, const State& s) { S::frame(c, s); }) {
+		return true;
+	}
+	if constexpr (requires(frame_context& c) { S::frame(c); }) {
+		return true;
+	}
+	return false;
+}
+
+template <typename S, typename State>
+template <typename... Args>
+gse::system_node<S, State>::system_node(Args&&... args) : m_state(std::forward<Args>(args)...) {}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::initialize(init_context& phase) -> void {
+	dispatch_initialize<S>(phase, m_resources, m_update_data, m_frame_data, m_state);
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::trace_id() const -> id {
+	static const auto cached = [] {
+		std::string_view raw = typeid(S).name();
+		for (std::string_view prefix : {"struct ", "class "}) {
+			if (raw.starts_with(prefix)) {
+				raw.remove_prefix(prefix.size());
+				break;
+			}
+		}
+		const auto last = raw.rfind("::");
+		if (last != std::string_view::npos && last > 0) {
+			const auto prev = raw.rfind("::", last - 1);
+			raw = (prev != std::string_view::npos) ? raw.substr(prev + 2) : raw.substr(last + 2);
+		}
+		return find_or_generate_id(raw);
+	}();
+	return cached;
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::shutdown(shutdown_context& phase) -> void {
+	if constexpr (has_resources<S>) {
+		if constexpr (requires { S::shutdown(phase, m_resources.value, m_state); }) {
+			S::shutdown(phase, m_resources.value, m_state);
+			return;
+		}
+	}
+	if constexpr (requires { S::shutdown(phase, m_state); }) {
+		S::shutdown(phase, m_state);
+		return;
+	}
+	if constexpr (requires { S::shutdown(phase); }) {
+		S::shutdown(phase);
+		return;
+	}
+	if constexpr (names_shutdown<S>) {
+		assert(false, std::source_location::current(), "System '{}' declares shutdown but no overload matched the dispatcher", typeid(S).name());
+	}
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::graph_update(update_context& ctx) -> void {
+	dispatch_update<S>(ctx, m_resources, m_update_data, m_frame_data, m_state);
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::graph_frame(frame_context& ctx) -> async::task<> {
+	static const auto wall_id = [] {
+		std::string_view raw = typeid(S).name();
+		for (std::string_view prefix : {"struct ", "class "}) {
+			if (raw.starts_with(prefix)) {
+				raw.remove_prefix(prefix.size());
+				break;
+			}
+		}
+		const auto last = raw.rfind("::");
+		if (last != std::string_view::npos && last > 0) {
+			const auto prev = raw.rfind("::", last - 1);
+			raw = (prev != std::string_view::npos) ? raw.substr(prev + 2) : raw.substr(last + 2);
+		}
+		return find_or_generate_id(std::format("frame_wall:{}", raw));
+	}();
+
+	const auto eid = trace::begin_block(wall_id, 0);
+	auto guard = make_scope_exit([eid] { trace::end_block(wall_id, eid, 0); });
+
+	if constexpr (std::is_trivially_copyable_v<State>) {
+		co_await dispatch_frame<S>(ctx, m_resources, m_frame_data, m_snapshot.value);
+	} else {
+		co_await dispatch_frame<S>(ctx, m_resources, m_frame_data, m_state);
+	}
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::has_frame() const -> bool {
+	return dispatch_has_frame<S, State>();
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::snapshot_state() -> void {
+	if constexpr (std::is_copy_assignable_v<State>) {
+		m_snapshot.value = m_state;
+	}
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::state_snapshot_ptr() const -> const void* {
+	if constexpr (std::is_copy_assignable_v<State>) {
+		return &m_snapshot.value;
+	} else {
+		assert(false, std::source_location::current(),
+			"Attempted to read snapshot of non-copyable state '{}'. "
+			"Either make the state copyable or avoid try_state_of<T>() for this type.",
+			typeid(State).name());
+		return nullptr;
+	}
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::state_ptr() -> void* {
+	return &m_state;
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::state_ptr() const -> const void* {
+	return &m_state;
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::resources_ptr() -> void* {
+	if constexpr (has_resources<S>) {
+		return &m_resources.value;
+	}
+	return nullptr;
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::resources_ptr() const -> const void* {
+	if constexpr (has_resources<S>) {
+		return &m_resources.value;
+	}
+	return nullptr;
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::state_type() const -> std::type_index {
+	return std::type_index(typeid(State));
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::resources_type() const -> std::type_index {
+	if constexpr (has_resources<S>) {
+		return std::type_index(typeid(typename S::resources));
+	}
+	return std::type_index(typeid(void));
+}
+
+template <typename S, typename State>
+auto gse::system_node<S, State>::state(this auto& self) -> auto& {
+	return self.m_state;
+}

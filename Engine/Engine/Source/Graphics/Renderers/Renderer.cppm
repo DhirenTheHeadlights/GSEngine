@@ -17,12 +17,31 @@ import :clip_compiler;
 import :skinned_model_compiler;
 import :camera_system;
 
+import :capture_renderer;
+import :cull_compute_renderer;
+import :depth_prepass_renderer;
+import :forward_renderer;
+import :geometry_collector;
+import :light_culling_renderer;
+import :physics_debug_renderer;
+import :physics_transform_renderer;
+import :rt_shadow_renderer;
+import :skin_compute_renderer;
+import :ui_renderer;
+
 import gse.log;
-import gse.utility;
-import gse.platform;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 import gse.audio;
 import gse.math;
-import gse.utility;
+import gse.save;
 
 export namespace gse::renderer {
 	struct state {
@@ -162,7 +181,19 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 
 	ctx.compile();
 
-	phase.channels.push(save::register_property{
+	phase.sched.add_system<rt_shadow::system, rt_shadow::state>(phase.reg);
+	phase.sched.add_system<geometry_collector::system, geometry_collector::state>(phase.reg);
+	phase.sched.add_system<skin_compute::system, skin_compute::state>(phase.reg);
+	phase.sched.add_system<physics_transform::system, physics_transform::state>(phase.reg);
+	phase.sched.add_system<cull_compute::system, cull_compute::state>(phase.reg);
+	phase.sched.add_system<depth_prepass::system, depth_prepass::state>(phase.reg);
+	phase.sched.add_system<light_culling::system, light_culling::state>(phase.reg);
+	phase.sched.add_system<forward::system, forward::state>(phase.reg);
+	phase.sched.add_system<physics_debug::system, physics_debug::state>(phase.reg);
+	phase.sched.add_system<ui::system, ui::state>(phase.reg);
+	phase.sched.add_system<capture::system, capture::state>(phase.reg);
+
+	phase.channels.push<save::register_property>({
 		.category = "Graphics",
 		.name = "Hot Reload",
 		.description = "Automatically reload assets when source files change",
@@ -170,7 +201,7 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 		.type = typeid(bool)
 	});
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "Profiling",
 		.name = "GPU Timestamps",
 		.description = "Measure per-pass GPU time via timestamp queries",
@@ -178,7 +209,7 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 		.type = typeid(bool)
 	});
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "Profiling",
 		.name = "GPU Pipeline Stats",
 		.description = "Record draw/primitive/invocation counts per graphics pass",
@@ -186,7 +217,7 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 		.type = typeid(bool)
 	});
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "Profiling",
 		.name = "Rolling Averages",
 		.description = "Aggregate CPU and GPU samples into rolling EMAs",
@@ -195,7 +226,7 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 	});
 
 	const id dump_profile_id = generate_id("Dump Profile");
-	phase.channels.push(actions::add_action_request{
+	phase.channels.push<actions::add_action_request>({
 		.name = "Dump Profile",
 		.default_key = key::f11,
 		.action_id = dump_profile_id
@@ -227,7 +258,7 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> void 
 	gpu.process_resource_queue();
 	gpu.window().update(gpu.ui_focus());
 
-	ctx.channels.push(camera::ui_focus_update{ .focus = gpu.ui_focus() });
+	ctx.channels.push<camera::ui_focus_update>({ .focus = gpu.ui_focus() });
 
 	const auto window_size = gpu.window().viewport();
 	const auto new_viewport = vec2f(
@@ -236,7 +267,7 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> void 
 	);
 
 	if (new_viewport.x() != s.last_viewport.x() || new_viewport.y() != s.last_viewport.y()) {
-		ctx.channels.push(camera::viewport_update{ .size = new_viewport });
+		ctx.channels.push<camera::viewport_update>({ .size = new_viewport });
 		s.last_viewport = new_viewport;
 	}
 }

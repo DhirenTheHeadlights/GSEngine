@@ -2,8 +2,12 @@ export module gse.graphics:ids;
 
 import std;
 
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::gui::ids {
 	auto current_seed(
 	) -> std::uint64_t;

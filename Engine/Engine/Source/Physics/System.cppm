@@ -2,11 +2,18 @@ export module gse.physics:system;
 
 import std;
 
-import gse.utility;
+import gse.core;
+import gse.containers;
+import gse.concurrency;
+import gse.ecs;
+import gse.time;
+import gse.diag;
+import gse.save;
 import gse.log;
 
 import gse.math;
-import gse.platform;
+import gse.meta;
+import gse.gpu;
 
 import :narrow_phase_collision;
 import :motion_component;
@@ -255,10 +262,7 @@ auto gse::physics::remove_joint(state& s, const joint_handle handle) -> void {
 }
 
 auto gse::physics::contact_compare_key_hash::operator()(const contact_compare_key& key) const noexcept -> std::size_t {
-	std::size_t seed = std::hash<std::uint32_t>{}(key.body_a);
-	seed ^= std::hash<std::uint32_t>{}(key.body_b) + 0x9e3779b9u + (seed << 6) + (seed >> 2);
-	seed ^= std::hash<std::uint64_t>{}(key.feature_key) + 0x9e3779b9u + (seed << 6) + (seed >> 2);
-	return seed;
+	return gse::hash_combine(key);
 }
 
 auto gse::physics::collect_collision_objects(write<motion_component>& motion, write<collision_component>& collision) -> std::vector<collision_pair> {

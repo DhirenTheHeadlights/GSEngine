@@ -2,10 +2,19 @@ export module gse.graphics:capture_renderer;
 
 import std;
 
-import gse.platform;
-import gse.utility;
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import gse.math;
 import gse.log;
+import gse.save;
+
 import :ui_renderer;
 import :capture_ring;
 import :mp4_muxer;
@@ -73,7 +82,7 @@ export namespace gse::renderer::capture {
 auto gse::renderer::capture::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
 		const id action_id = generate_id(name);
-		phase.channels.push(actions::add_action_request{
+		phase.channels.push<actions::add_action_request>({
 			.name = std::string(name),
 			.default_key = default_key,
 			.action_id = action_id
@@ -86,12 +95,12 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
 
 	auto& ctx = phase.get<gpu::context>();
 
-	if (!ctx.device_ref().video_encode_enabled()) {
+	if (!ctx.device().video_encode_enabled()) {
 		log::println(log::category::render, "Video encode not available, capture limited to screenshots");
 		return;
 	}
 
-	const auto caps = gpu::video_encoder::probe(ctx.device_ref());
+	const auto caps = gpu::video_encoder::probe(ctx.device());
 	if (!caps.available) {
 		log::println(log::category::render, "Video encode probe failed, capture limited to screenshots");
 		return;
@@ -105,7 +114,7 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
 
 	r.convert_pipeline = gpu::create_compute_pipeline(ctx, *r.convert_shader, "push_constants");
 
-	r.capture_sampler = gpu::create_sampler(ctx.device_ref(), {
+	r.capture_sampler = gpu::create_sampler(ctx, {
 		.min = gpu::sampler_filter::nearest,
 		.mag = gpu::sampler_filter::nearest,
 		.address_u = gpu::sampler_address_mode::clamp_to_edge,
@@ -141,7 +150,7 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
 			.commit();
 	}
 
-	fd.encoder = gpu::video_encoder::create(ctx.device_ref(), ext, caps);
+	fd.encoder = gpu::video_encoder::create(ctx.device(), ext, caps);
 
 	phase.channels.push(save::make_property_registration(
 		"Graphics",
@@ -163,10 +172,10 @@ auto gse::renderer::capture::system::update(const update_context& ctx, state& s)
 	const auto& action_state = sys->current_state();
 
 	if (s.screenshot_action.pressed(action_state, *sys)) {
-		ctx.channels.push(screenshot_request{});
+		ctx.channels.push<screenshot_request>({});
 	}
 	if (s.save_clip_action.pressed(action_state, *sys)) {
-		ctx.channels.push(save_clip_request{});
+		ctx.channels.push<save_clip_request>({});
 	}
 }
 
@@ -279,7 +288,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
 		const auto ext = gpu_ctx->graph().extent();
 
 		if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging || staging.size() < needed) {
-			staging = gpu::create_buffer(gpu_ctx->device_ref(), {
+			staging = gpu::create_buffer(*gpu_ctx, {
 				.size = needed,
 				.usage = gpu::buffer_flag::transfer_dst
 			});
@@ -308,8 +317,8 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
 
 		gpu_ctx->graph().add_pass<pending_screenshot>()
 			.after<ui::state>()
-			.record([&swapchain = gpu_ctx->swapchain(), &frame = gpu_ctx->frame(), &rgba = r.rgba_captures[frame_index]](const gpu::recording_context& rec) {
-				rec.blit_swapchain_to_image(swapchain, frame, rgba);
+			.record([&swapchain = gpu_ctx->swapchain(), &frame = gpu_ctx->frame(), &rgba = r.rgba_captures[frame_index], rgba_extent = r.rgba_captures[frame_index].extent()](const gpu::recording_context& rec) {
+				rec.blit_swapchain_to_image(swapchain, frame, rgba, rgba_extent);
 			});
 
 		auto pc = r.convert_shader->cache_push_block("push_constants");

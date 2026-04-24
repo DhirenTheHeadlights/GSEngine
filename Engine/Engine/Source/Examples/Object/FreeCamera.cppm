@@ -3,10 +3,17 @@ export module gse.examples:free_camera;
 import std;
 
 import gse.runtime;
-import gse.utility;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import gse.graphics;
 import gse.physics;
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 
 export namespace gse::free_camera {
 	struct component_data {

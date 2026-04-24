@@ -5,9 +5,17 @@ import std;
 import :texture;
 import :font;
 
-import gse.platform;
-import gse.utility;
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import gse.math;
+import gse.log;
 
 export namespace gse::renderer {
 	struct sprite_command {
@@ -257,12 +265,12 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
 	for (auto& [vertex_buffer, index_buffer] : r.gpu_frames) {
-		vertex_buffer = gpu::create_buffer(ctx.device_ref(), {
+		vertex_buffer = gpu::create_buffer(ctx, {
 			.size = vertex_buffer_size,
 			.usage = gpu::buffer_flag::vertex
 		});
 
-		index_buffer = gpu::create_buffer(ctx.device_ref(), {
+		index_buffer = gpu::create_buffer(ctx, {
 			.size = index_buffer_size,
 			.usage = gpu::buffer_flag::index
 		});
@@ -442,19 +450,16 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, fr
 	auto text_pc = r.text_shader->cache_push_block("push_constants");
 	text_pc.set("projection", projection);
 
-	auto sprite_writer = gpu::create_push_writer(gpu, r.sprite_shader);
-	auto text_writer = gpu::create_push_writer(gpu, r.text_shader);
-
 	auto pass = gpu.graph().add_pass<ui::state>();
 	pass.track(vertex_buffer);
 	pass.track(index_buffer);
 
 	const vec2u ext_size{ width, height };
+	const auto& bindless_region = gpu.bindless_textures().region();
 
 	pass.color_output_load()
-		.record([&r, &batches, frame_index, ext_size, window_size,
+		.record([&r, &batches, ext_size, window_size, &bindless_region,
 			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
-			sprite_writer = std::move(sprite_writer), text_writer = std::move(text_writer),
 			&vertex_buffer, &index_buffer](const gpu::recording_context& rec) mutable {
 
 			rec.bind_vertex(vertex_buffer);
@@ -474,34 +479,39 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, fr
 				if (first_batch || type != bound_type) {
 					if (type == command_type::sprite) {
 						rec.bind(r.sprite_pipeline);
-						rec.push(r.sprite_pipeline, sprite_pc);
+						rec.bind_descriptors(r.sprite_pipeline, bindless_region, 2);
 					} else {
 						rec.bind(r.text_pipeline);
-						rec.push(r.text_pipeline, text_pc);
+						rec.bind_descriptors(r.text_pipeline, bindless_region, 2);
 					}
 					bound_type = type;
 					first_batch = false;
 				}
 
-				bool has_descriptor = false;
+				std::uint32_t tex_idx = 0;
+				bool has_texture = false;
 				if (type == command_type::sprite) {
-					if (texture.valid()) {
-						sprite_writer.begin(frame_index);
-						sprite_writer.image("spriteTexture", texture->gpu_image(), texture->gpu_sampler(), gpu::image_layout::shader_read_only);
-						rec.commit(sprite_writer.native_writer(), r.sprite_pipeline, 1);
-						has_descriptor = true;
+					if (texture.valid() && texture->bindless_slot()) {
+						tex_idx = texture->bindless_slot().index;
+						has_texture = true;
 					}
 				} else {
-					if (font.valid()) {
-						text_writer.begin(frame_index);
-						text_writer.image("spriteTexture", font->texture()->gpu_image(), font->texture()->gpu_sampler(), gpu::image_layout::shader_read_only);
-						rec.commit(text_writer.native_writer(), r.text_pipeline, 1);
-						has_descriptor = true;
+					if (font.valid() && font->texture()->bindless_slot()) {
+						tex_idx = font->texture()->bindless_slot().index;
+						has_texture = true;
 					}
 				}
 
-				if (!has_descriptor) {
+				if (!has_texture) {
 					continue;
+				}
+
+				if (type == command_type::sprite) {
+					sprite_pc.set("tex_idx", tex_idx);
+					rec.push(r.sprite_pipeline, sprite_pc);
+				} else {
+					text_pc.set("tex_idx", tex_idx);
+					rec.push(r.text_pipeline, text_pc);
 				}
 
 				if (clip_rect) {

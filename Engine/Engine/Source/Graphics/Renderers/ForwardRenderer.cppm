@@ -13,8 +13,17 @@ import :spot_light;
 import :directional_light;
 
 import gse.math;
-import gse.utility;
-import gse.platform;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.save;
+
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;
 	constexpr std::size_t max_materials = 1024;
@@ -90,7 +99,7 @@ export namespace gse::renderer::forward {
 auto gse::renderer::forward::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "Graphics",
 		.name = "Shadow Quality",
 		.description = "Off: no shadows | Hard: 1 ray, 50m range | Low: 1 ray, distance-adaptive, 100m | Medium: 2 rays near/1 far, 200m | High: 4 rays near/2 mid/1 far, 500m",
@@ -99,7 +108,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 		.enum_options = { { "Off", 0 }, { "Hard", 1 }, { "Low", 2 }, { "Medium", 3 }, { "High", 4 } }
 	});
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "Graphics",
 		.name = "AO Quality",
 		.description = "Off: no AO | Low: 1 ray, 5m | Medium: 2 rays, 10m | High: 4 rays, 20m | Ultra: 8 rays, 30m",
@@ -108,7 +117,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 		.enum_options = { { "Off", 0 }, { "Low", 1 }, { "Medium", 2 }, { "High", 3 }, { "Ultra", 4 } }
 	});
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "Graphics",
 		.name = "Reflection Quality",
 		.description = "Off: no reflections | Low: mirror only (roughness<0.1), 100m | Medium: glossy (roughness<0.3), 200m | High: 2 rays glossy (roughness<0.5), 500m",
@@ -129,17 +138,17 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	fd.material_staging.reserve(material_buffer_size);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
+		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.light_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.light_buffers[i] = gpu::create_buffer(ctx, {
 			.size = light_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.material_palette_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.material_palette_buffers[i] = gpu::create_buffer(ctx, {
 			.size = material_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
@@ -361,8 +370,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const int ao_quality_i = static_cast<int>(s.ao_quality);
 	const int reflection_quality_i = static_cast<int>(s.reflection_quality);
 
-	auto meshlet_writer = gpu::create_push_writer(gpu, r.shader_handle);
-	auto skinned_writer = gpu::create_push_writer(gpu, r.skinned_shader);
+	auto meshlet_writer = gpu::descriptor_writer(gpu, r.shader_handle);
+	auto skinned_writer = gpu::descriptor_writer(gpu, r.skinned_shader);
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);

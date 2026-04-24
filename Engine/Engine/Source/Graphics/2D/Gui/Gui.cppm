@@ -2,9 +2,17 @@ export module gse.graphics:gui;
 
 import std;
 
-import gse.platform;
-import gse.utility;
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import gse.math;
+import gse.save;
 
 import :types;
 import :layout;
@@ -205,7 +213,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 		font_options.emplace_back(s.available_fonts[i], static_cast<int>(i));
 	}
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "UI",
 		.name = "Theme",
 		.description = "UI color theme",
@@ -219,7 +227,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 		}
 	});
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "UI",
 		.name = "Scale",
 		.description = "UI scale multiplier",
@@ -227,7 +235,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 		.type = typeid(float)
 	});
 
-	phase.channels.push(save::register_property{
+	phase.channels.push<save::register_property>({
 		.category = "UI",
 		.name = "Font",
 		.description = "UI font",
@@ -496,10 +504,10 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 			ctx.channels.push(std::move(req));
 		},
 		.request_save = [&ctx] {
-			ctx.channels.push(save::save_request{});
+			ctx.channels.push<save::save_request>({});
 		},
 		.request_restart = [&ctx] {
-			ctx.channels.push(save::restart_request{});
+			ctx.channels.push<save::restart_request>({});
 		},
 		.tooltip = &s.tooltip,
 		.input_layers = &s.input_layers_data,
@@ -507,7 +515,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 			return actions_state ? actions_state->all_bindings() : std::vector<actions::action_binding_info>{};
 		},
 		.rebind = [&ctx](std::string_view name, key k) {
-			ctx.channels.push(actions::rebind_request{
+			ctx.channels.push<actions::rebind_request>({
 				.action_name = std::string(name),
 				.new_key = k
 			});

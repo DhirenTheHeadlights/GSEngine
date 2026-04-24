@@ -3,9 +3,18 @@ export module gse.graphics:texture;
 import std;
 
 import gse.assert;
-import gse.utility;
+import gse.core;
+import gse.containers;
+import gse.config;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import gse.math;
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.log;
 
 export namespace gse {
 	class texture : public identifiable {
@@ -50,6 +59,9 @@ export namespace gse {
 
 		auto image_data(
 		) const -> const image::data&;
+
+		[[nodiscard]] auto bindless_slot(
+		) const -> gpu::bindless_texture_slot;
 	private:
 		auto create_vulkan_resources(
 			gpu::context& context,
@@ -58,6 +70,7 @@ export namespace gse {
 
 		gpu::image m_image;
 		gpu::sampler m_sampler;
+		gpu::bindless_texture_slot m_bindless_slot;
 		image::data m_image_data;
 		profile m_profile = profile::generic_repeat;
 	};
@@ -117,6 +130,10 @@ auto gse::texture::image_data() const -> const image::data& {
 	return m_image_data;
 }
 
+auto gse::texture::bindless_slot() const -> gpu::bindless_texture_slot {
+	return m_bindless_slot;
+}
+
 auto gse::texture::create_vulkan_resources(gpu::context& context, const profile texture_profile) -> void {
 	const auto width = m_image_data.size.x();
 	const auto height = m_image_data.size.y();
@@ -172,8 +189,10 @@ auto gse::texture::create_vulkan_resources(gpu::context& context, const profile 
 		desc.address_u = clamp; desc.address_v = clamp; desc.address_w = clamp;
 		break;
 	}
-	m_sampler = gpu::create_sampler(context.device_ref(), desc);
+	m_sampler = gpu::create_sampler(context, desc);
 
+	m_bindless_slot = context.bindless_textures().allocate(m_image.native(), m_sampler.native());
+	log::println(log::category::render, "Texture '{}' -> bindless slot {} (format={}, size={}x{}, profile={})", id(), m_bindless_slot.index, static_cast<int>(gpu_format), width, height, static_cast<int>(texture_profile));
 
 	m_image_data.pixels.clear();
 	m_image_data.pixels.shrink_to_fit();

@@ -7,8 +7,15 @@ import :spot_light;
 import :directional_light;
 import :camera_system;
 import :depth_prepass_renderer;
-import gse.platform;
-import gse.utility;
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::renderer::light_culling {
 	constexpr std::uint32_t tile_size = 16;
 	constexpr std::uint32_t max_lights_per_tile = 64;
@@ -96,12 +103,12 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(system::resources& r, st
 	const auto params_block = r.shader_handle->uniform_block("CullingParams");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		r.light_index_list_buffers[i] = gpu::create_buffer(r.ctx->device_ref(), {
+		r.light_index_list_buffers[i] = gpu::create_buffer(*r.ctx, {
 			.size = index_list_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.tile_light_table_buffers[i] = gpu::create_buffer(r.ctx->device_ref(), {
+		r.tile_light_table_buffers[i] = gpu::create_buffer(*r.ctx, {
 			.size = tile_table_size,
 			.usage = gpu::buffer_flag::storage
 		});
@@ -134,18 +141,18 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 	fd.light_staging.reserve(light_block.size * max_lights);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		r.culling_params_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.culling_params_buffers[i] = gpu::create_buffer(ctx, {
 			.size = params_block.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.light_buffers[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.light_buffers[i] = gpu::create_buffer(ctx, {
 			.size = light_block.size * max_lights,
 			.usage = gpu::buffer_flag::storage
 		});
 	}
 
-	r.depth_sampler = gpu::create_sampler(ctx.device_ref(), {
+	r.depth_sampler = gpu::create_sampler(ctx, {
 		.min = gpu::sampler_filter::nearest,
 		.mag = gpu::sampler_filter::nearest,
 		.address_u = gpu::sampler_address_mode::clamp_to_edge,

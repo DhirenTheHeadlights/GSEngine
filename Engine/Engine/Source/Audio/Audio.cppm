@@ -12,9 +12,13 @@ import std;
 
 import gse.assert;
 import gse.log;
-import gse.utility;
+import gse.core;
+import gse.config;
+import gse.concurrency;
+import gse.assets;
+import gse.ecs;
 import gse.math;
-import gse.platform;
+import gse.gpu;
 
 export namespace gse {
 	class audio_clip : public identifiable {

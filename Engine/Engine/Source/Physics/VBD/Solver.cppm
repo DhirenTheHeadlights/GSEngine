@@ -3,7 +3,7 @@ export module gse.physics:vbd_solver;
 import std;
 
 import gse.math;
-import gse.utility;
+import gse.containers;
 import :vbd_constraints;
 import :vbd_constraint_graph;
 import :vbd_contact_cache;

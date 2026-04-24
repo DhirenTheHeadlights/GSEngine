@@ -5,6 +5,7 @@ import standard_2d;
 cbuffer PushConstants {
     float4x4 projection;
     float depth;
+    uint tex_idx;
 };
 
 struct VSOut {
@@ -40,9 +41,6 @@ float median(float r, float g, float b) {
 [Layout(LayoutKind::Standard2D)]
 [shader("fragment")]
 float4 fs_main(VSOut i) : SV_Target0 {
-    float3 msdf_sample = spriteTexture.Sample(i.tex_coord).rgb;
-    float sd = median(msdf_sample.r, msdf_sample.g, msdf_sample.b);
-    float screen_px_dist = max(i.px_range, 1.0) * (0.5 - sd);
-    float alpha = clamp(screen_px_dist + 0.5, 0.0, 1.0);
-    return float4(i.color.rgb * alpha, i.color.a * alpha);
+    float4 raw = g_textures[1].Sample(i.tex_coord);
+    return float4(raw.rgb, 1.0);
 }

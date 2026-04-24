@@ -3,9 +3,15 @@ export module gse.graphics:skin_compute_renderer;
 import std;
 
 import :geometry_collector;
-import gse.platform;
-import gse.utility;
-
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::renderer::skin_compute {
 	struct state {};
 

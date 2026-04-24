@@ -1,7 +1,11 @@
 export module gse.graphics:separator_widget;
 
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import :types;
 import :styles;
 import :builder;

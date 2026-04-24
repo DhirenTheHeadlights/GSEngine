@@ -4,8 +4,12 @@ import std;
 
 import gse.physics;
 import gse.math;
-import gse.utility;
-import gse.platform;
+import gse.core;
+import gse.containers;
+import gse.concurrency;
+import gse.ecs;
+import gse.save;
+import gse.gpu;
 
 import :camera_system;
 import gse.log;
@@ -138,7 +142,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(system::frame_data& fd
 		max_verts *= 2;
 	}
 
-	vertex_buffer = gpu::create_buffer(ctx.device_ref(), {
+	vertex_buffer = gpu::create_buffer(ctx, {
 		.size = max_verts * sizeof(debug_vertex),
 		.usage = gpu::buffer_flag::vertex
 	});
@@ -161,7 +165,7 @@ auto gse::renderer::physics_debug::system::initialize(const init_context& phase,
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
+		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});

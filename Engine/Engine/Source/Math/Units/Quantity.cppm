@@ -1,8 +1,6 @@
 module;
 
-#include <format>
 #include <meta>
-
 
 export module gse.math:quant;
 
@@ -24,97 +22,122 @@ namespace gse::internal {
         relative
     };
 
-    template <
-        std::meta::info Dim,
-        std::meta::info DefaultUnit,
-        std::meta::info Parent,
-        std::meta::info UnitFamily,
-        std::meta::info Relative,
-        quantity_semantic_kind Kind
-    >
-    struct quantity_spec {};
+    template <std::meta::info Dim, quantity_semantic_kind Kind>
+    struct quantity_root_spec {};
 
-    template <
-        std::meta::info Dim,
-        std::meta::info DefaultUnit,
-        std::meta::info Parent,
-        std::meta::info UnitFamily,
-        std::meta::info Relative,
-        quantity_semantic_kind Kind
-    >
-    inline constexpr quantity_spec<Dim, DefaultUnit, Parent, UnitFamily, Relative, Kind> quantity_spec_v{};
+    template <std::meta::info Dim, quantity_semantic_kind Kind>
+    inline constexpr quantity_root_spec<Dim, Kind> quantity_root{};
 
-    template <typename Tag>
-    consteval auto quantity_spec_type_of() -> std::meta::info {
-        for (auto ann : std::meta::annotations_of(^^Tag)) {
-            auto t = std::meta::type_of(ann);
-            if (std::meta::has_template_arguments(t) &&
-                std::meta::template_of(t) == ^^quantity_spec) {
-                return t;
-            }
-        }
-        return std::meta::info{};
-    }
+    struct default_unit_marker {};
 
-    template <typename Tag>
-    consteval auto has_quantity_spec() -> bool {
-        for (auto ann : std::meta::annotations_of(^^Tag)) {
-            auto t = std::meta::type_of(ann);
-            if (std::meta::has_template_arguments(t) &&
-                std::meta::template_of(t) == ^^quantity_spec) {
-                return true;
-            }
-        }
-        return false;
-    }
+    constexpr default_unit_marker default_unit{};
 
-    template <typename Tag>
-    consteval auto resolve_parent_tag() -> std::meta::info {
-        if constexpr (has_quantity_spec<Tag>()) {
-            return std::meta::extract<std::meta::info>(
-                std::meta::template_arguments_of(quantity_spec_type_of<Tag>())[2]
-            );
-        }
-        return ^^no_parent_quantity_tag;
-    }
+    template <std::meta::info Parent, quantity_semantic_kind Kind>
+    struct quantity_child_spec {};
 
-    template <typename Tag>
-    consteval auto resolve_unit_family_tag() -> std::meta::info {
-        if constexpr (has_quantity_spec<Tag>()) {
-            return std::meta::extract<std::meta::info>(
-                std::meta::template_arguments_of(quantity_spec_type_of<Tag>())[3]
-            );
-        }
-        return ^^Tag;
-    }
+    template <std::meta::info Parent, quantity_semantic_kind Kind>
+    inline constexpr quantity_child_spec<Parent, Kind> quantity_child{};
 
-    template <typename Tag>
-    consteval auto resolve_relative_tag() -> std::meta::info {
-        if constexpr (has_quantity_spec<Tag>()) {
-            return std::meta::extract<std::meta::info>(
-                std::meta::template_arguments_of(quantity_spec_type_of<Tag>())[4]
-            );
-        }
-        return ^^Tag;
-    }
+    template <std::meta::info Parent>
+    struct quantity_sub_root_spec {};
+
+    template <std::meta::info Parent>
+    inline constexpr quantity_sub_root_spec<Parent> quantity_sub_root{};
+
+    template <std::meta::info Parent, std::meta::info RelativeTag>
+    struct quantity_absolute_spec {};
+
+    template <std::meta::info Parent, std::meta::info RelativeTag>
+    inline constexpr quantity_absolute_spec<Parent, RelativeTag> quantity_absolute{};
+
+    enum class spec_kind {
+        none,
+        root,
+        child,
+        sub_root,
+        absolute
+    };
+
+    consteval auto quantity_spec_type_of(
+        std::meta::info tag_info
+    ) -> std::meta::info;
+
+    consteval auto has_quantity_spec(
+        std::meta::info tag_info
+    ) -> bool;
+
+    consteval auto classify_spec(
+        std::meta::info spec_t
+    ) -> spec_kind;
+
+    consteval auto resolve_dim_info(
+        std::meta::info tag_info
+    ) -> std::meta::info;
+
+    consteval auto resolve_default_unit_info(
+        std::meta::info tag_info
+    ) -> std::meta::info;
+
+    consteval auto find_default_unit_in_namespace(
+        std::meta::info ns_info,
+        std::meta::info tag_info
+    ) -> std::meta::info;
+
+    consteval auto collect_unit_infos_for_tag(
+        std::meta::info tag_info
+    ) -> std::vector<std::meta::info>;
 
     template <typename Tag>
-    consteval auto resolve_semantic_kind() -> quantity_semantic_kind {
-        if constexpr (has_quantity_spec<Tag>()) {
-            return std::meta::extract<quantity_semantic_kind>(
-                std::meta::template_arguments_of(quantity_spec_type_of<Tag>())[5]
-            );
-        }
-        return quantity_semantic_kind::measurement;
-    }
+    consteval auto units_count_for_tag(
+    ) -> std::size_t;
+
+    template <typename Tag, std::size_t N>
+    consteval auto units_array_for_tag(
+    ) -> std::array<std::meta::info, N>;
+
+    consteval auto find_root_tag_by_dim(
+        std::meta::info ns_info,
+        std::meta::info dim_info
+    ) -> std::meta::info;
+
+    consteval auto resolve_parent_tag(
+        std::meta::info tag_info
+    ) -> std::meta::info;
+
+    consteval auto resolve_unit_family_tag(
+        std::meta::info tag_info
+    ) -> std::meta::info;
+
+    consteval auto resolve_relative_tag(
+        std::meta::info tag_info
+    ) -> std::meta::info;
+
+    consteval auto resolve_semantic_kind(
+        std::meta::info tag_info
+    ) -> quantity_semantic_kind;
 
     template <typename Tag>
     struct quantity_tag_traits {
-        using parent_tag = [: resolve_parent_tag<Tag>() :];
-        using unit_tag = [: resolve_unit_family_tag<Tag>() :];
-        using relative_tag = [: resolve_relative_tag<Tag>() :];
-        static constexpr quantity_semantic_kind semantic_kind = resolve_semantic_kind<Tag>();
+        using parent_tag = [: resolve_parent_tag(^^Tag) :];
+        using unit_tag = [: resolve_unit_family_tag(^^Tag) :];
+        using relative_tag = [: resolve_relative_tag(^^Tag) :];
+        static constexpr quantity_semantic_kind semantic_kind = resolve_semantic_kind(^^Tag);
     };
+
+    template <typename D>
+    struct tag_recovery {
+        static constexpr auto info = find_root_tag_by_dim(^^gse, ^^D);
+        static constexpr bool found = (info != std::meta::info{});
+    };
+
+    template <typename D>
+        requires (tag_recovery<D>::found)
+    struct tag_recovery_type {
+        using tag = [: tag_recovery<D>::info :];
+    };
+
+    template <typename Tag, typename T = float, auto U = ([: resolve_default_unit_info(^^Tag) :])>
+    using quantity_t = typename quantity_traits<Tag>::template type<T, U>;
 
     template <size_t N>
     struct fixed_string {
@@ -135,6 +158,142 @@ namespace gse::internal {
     }
 }
 
+consteval auto gse::internal::quantity_spec_type_of(std::meta::info tag_info) -> std::meta::info {
+    for (auto ann : std::meta::annotations_of(tag_info)) {
+        auto t = std::meta::type_of(ann);
+        if (!std::meta::has_template_arguments(t)) {
+            continue;
+        }
+        auto tmpl = std::meta::template_of(t);
+        if (tmpl == ^^quantity_root_spec ||
+            tmpl == ^^quantity_child_spec ||
+            tmpl == ^^quantity_sub_root_spec ||
+            tmpl == ^^quantity_absolute_spec) {
+            return t;
+        }
+    }
+    return std::meta::info{};
+}
+
+consteval auto gse::internal::has_quantity_spec(std::meta::info tag_info) -> bool {
+    return quantity_spec_type_of(tag_info) != std::meta::info{};
+}
+
+consteval auto gse::internal::classify_spec(std::meta::info spec_t) -> spec_kind {
+    if (spec_t == std::meta::info{}) {
+        return spec_kind::none;
+    }
+    auto tmpl = std::meta::template_of(spec_t);
+    if (tmpl == ^^quantity_root_spec) {
+        return spec_kind::root;
+    }
+    if (tmpl == ^^quantity_child_spec) {
+        return spec_kind::child;
+    }
+    if (tmpl == ^^quantity_sub_root_spec) {
+        return spec_kind::sub_root;
+    }
+    if (tmpl == ^^quantity_absolute_spec) {
+        return spec_kind::absolute;
+    }
+    return spec_kind::none;
+}
+
+consteval auto gse::internal::resolve_dim_info(std::meta::info tag_info) -> std::meta::info {
+    auto spec_t = quantity_spec_type_of(tag_info);
+    auto kind = classify_spec(spec_t);
+    if (kind == spec_kind::root) {
+        return std::meta::extract<std::meta::info>(
+            std::meta::template_arguments_of(spec_t)[0]
+        );
+    }
+    if (kind == spec_kind::child || kind == spec_kind::sub_root || kind == spec_kind::absolute) {
+        auto parent_info = std::meta::extract<std::meta::info>(
+            std::meta::template_arguments_of(spec_t)[0]
+        );
+        return resolve_dim_info(parent_info);
+    }
+    return std::meta::info{};
+}
+
+consteval auto gse::internal::resolve_default_unit_info(std::meta::info tag_info) -> std::meta::info {
+    auto spec_t = quantity_spec_type_of(tag_info);
+    auto kind = classify_spec(spec_t);
+    if (kind == spec_kind::root) {
+        return find_default_unit_in_namespace(std::meta::parent_of(tag_info), tag_info);
+    }
+    if (kind == spec_kind::child || kind == spec_kind::sub_root || kind == spec_kind::absolute) {
+        auto parent_info = std::meta::extract<std::meta::info>(
+            std::meta::template_arguments_of(spec_t)[0]
+        );
+        return resolve_default_unit_info(parent_info);
+    }
+    return std::meta::info{};
+}
+
+consteval auto gse::internal::resolve_parent_tag(std::meta::info tag_info) -> std::meta::info {
+    auto spec_t = quantity_spec_type_of(tag_info);
+    auto kind = classify_spec(spec_t);
+    if (kind == spec_kind::child || kind == spec_kind::sub_root || kind == spec_kind::absolute) {
+        return std::meta::extract<std::meta::info>(
+            std::meta::template_arguments_of(spec_t)[0]
+        );
+    }
+    return ^^no_parent_quantity_tag;
+}
+
+consteval auto gse::internal::resolve_unit_family_tag(std::meta::info tag_info) -> std::meta::info {
+    auto spec_t = quantity_spec_type_of(tag_info);
+    auto kind = classify_spec(spec_t);
+    if (kind == spec_kind::root) {
+        return tag_info;
+    }
+    if (kind == spec_kind::child || kind == spec_kind::sub_root || kind == spec_kind::absolute) {
+        auto parent_info = std::meta::extract<std::meta::info>(
+            std::meta::template_arguments_of(spec_t)[0]
+        );
+        return resolve_unit_family_tag(parent_info);
+    }
+    return tag_info;
+}
+
+consteval auto gse::internal::resolve_relative_tag(std::meta::info tag_info) -> std::meta::info {
+    auto spec_t = quantity_spec_type_of(tag_info);
+    auto kind = classify_spec(spec_t);
+    if (kind == spec_kind::root || kind == spec_kind::sub_root) {
+        return tag_info;
+    }
+    if (kind == spec_kind::child) {
+        auto parent_info = std::meta::extract<std::meta::info>(
+            std::meta::template_arguments_of(spec_t)[0]
+        );
+        return resolve_relative_tag(parent_info);
+    }
+    if (kind == spec_kind::absolute) {
+        return std::meta::extract<std::meta::info>(
+            std::meta::template_arguments_of(spec_t)[1]
+        );
+    }
+    return tag_info;
+}
+
+consteval auto gse::internal::resolve_semantic_kind(std::meta::info tag_info) -> quantity_semantic_kind {
+    auto spec_t = quantity_spec_type_of(tag_info);
+    auto kind = classify_spec(spec_t);
+    if (kind == spec_kind::root || kind == spec_kind::child) {
+        return std::meta::extract<quantity_semantic_kind>(
+            std::meta::template_arguments_of(spec_t)[1]
+        );
+    }
+    if (kind == spec_kind::sub_root) {
+        return quantity_semantic_kind::relative;
+    }
+    if (kind == spec_kind::absolute) {
+        return quantity_semantic_kind::absolute;
+    }
+    return quantity_semantic_kind::measurement;
+}
+
 namespace gse::internal {
     export template <typename QuantityTagType, is_ratio ConversionRatio, fixed_string UnitName>
     struct unit {
@@ -152,6 +311,97 @@ template <typename T>
 constexpr auto gse::internal::unit<QuantityTagType, ConversionRatio, UnitName>::operator()(T value) const noexcept {
     using quantity_template = quantity_traits<QuantityTagType>;
     return quantity_template::template type<T>::template from<unit>(value);
+}
+
+consteval auto gse::internal::find_default_unit_in_namespace(std::meta::info ns_info, std::meta::info tag_info) -> std::meta::info {
+    for (auto member : std::meta::members_of(ns_info, std::meta::access_context::unchecked())) {
+        if (!std::meta::is_variable(member)) {
+            continue;
+        }
+        auto t = std::meta::type_of(member);
+        if (!std::meta::has_template_arguments(t)) {
+            continue;
+        }
+        if (std::meta::template_of(t) != ^^unit) {
+            continue;
+        }
+        auto args = std::meta::template_arguments_of(t);
+        if (args[0] != tag_info) {
+            continue;
+        }
+        for (auto ann : std::meta::annotations_of(member)) {
+            if (std::meta::type_of(ann) == ^^default_unit_marker) {
+                return member;
+            }
+        }
+    }
+    return std::meta::info{};
+}
+
+consteval auto gse::internal::collect_unit_infos_for_tag(std::meta::info tag_info) -> std::vector<std::meta::info> {
+    std::vector<std::meta::info> result;
+    auto ns_info = std::meta::parent_of(tag_info);
+    for (auto member : std::meta::members_of(ns_info, std::meta::access_context::unchecked())) {
+        if (!std::meta::is_variable(member)) {
+            continue;
+        }
+        auto t = std::meta::type_of(member);
+        if (!std::meta::has_template_arguments(t)) {
+            continue;
+        }
+        if (std::meta::template_of(t) != ^^unit) {
+            continue;
+        }
+        auto args = std::meta::template_arguments_of(t);
+        if (args[0] != tag_info) {
+            continue;
+        }
+        result.push_back(member);
+    }
+    return result;
+}
+
+template <typename Tag>
+consteval auto gse::internal::units_count_for_tag() -> std::size_t {
+    return collect_unit_infos_for_tag(^^Tag).size();
+}
+
+template <typename Tag, std::size_t N>
+consteval auto gse::internal::units_array_for_tag() -> std::array<std::meta::info, N> {
+    std::array<std::meta::info, N> result{};
+    auto v = collect_unit_infos_for_tag(^^Tag);
+    for (std::size_t i = 0; i < N; ++i) {
+        result[i] = v[i];
+    }
+    return result;
+}
+
+consteval auto gse::internal::find_root_tag_by_dim(std::meta::info ns_info, std::meta::info dim_info) -> std::meta::info {
+    std::meta::info match{};
+    int count = 0;
+    for (auto member : std::meta::members_of(ns_info, std::meta::access_context::unchecked())) {
+        if (!std::meta::is_type(member)) {
+            continue;
+        }
+        if (!has_quantity_spec(member)) {
+            continue;
+        }
+        auto member_spec = quantity_spec_type_of(member);
+        auto kind = classify_spec(member_spec);
+        if (kind != spec_kind::root) {
+            continue;
+        }
+        auto member_dim = resolve_dim_info(member);
+        if (member_dim != dim_info) {
+            continue;
+        }
+        match = member;
+        ++count;
+    }
+    if (count != 1) {
+        return std::meta::info{};
+    }
+    return match;
 }
 
 namespace gse::internal {
@@ -456,7 +706,12 @@ namespace gse::internal {
     }
 
     template <typename Tag>
-    struct quantity_units {};
+    struct quantity_units {
+        static constexpr auto units = []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
+            constexpr auto infos = units_array_for_tag<Tag, units_count_for_tag<Tag>()>();
+            return std::tuple{ [: infos[Is] :]... };
+        }(std::make_index_sequence<units_count_for_tag<Tag>()>{});
+    };
 
     template <typename Tag>
     concept has_unit_list = requires {
@@ -561,15 +816,10 @@ export namespace gse::internal {
     using generic_quantity = quantity<T, Dim, generic_quantity_tag, no_default_unit>;
 
     template <typename Tag>
-        requires (has_quantity_spec<Tag>())
+        requires (has_quantity_spec(^^Tag))
     struct quantity_traits<Tag> {
-        static constexpr auto spec_type = quantity_spec_type_of<Tag>();
-        static constexpr auto dim_info = std::meta::extract<std::meta::info>(
-            std::meta::template_arguments_of(spec_type)[0]
-        );
-        static constexpr auto default_unit_info = std::meta::extract<std::meta::info>(
-            std::meta::template_arguments_of(spec_type)[1]
-        );
+        static constexpr auto dim_info = resolve_dim_info(^^Tag);
+        static constexpr auto default_unit_info = resolve_default_unit_info(^^Tag);
 
         template <
             typename T,
@@ -762,7 +1012,14 @@ template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 constexpr auto gse::internal::operator*(const Q1& lhs, const Q2& rhs) {
 	using result_v = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
 	using result_d = decltype(typename Q1::dimension() * typename Q2::dimension());
-	return generic_quantity<result_v, result_d>(lhs.template as<typename Q1::default_unit>() * rhs.template as<typename Q2::default_unit>());
+	if constexpr (tag_recovery<result_d>::found) {
+		using found_tag = typename tag_recovery_type<result_d>::tag;
+		using result_t = typename quantity_traits<found_tag>::template type<result_v>;
+		return result_t(lhs.template as<typename Q1::default_unit>() * rhs.template as<typename Q2::default_unit>());
+	}
+	else {
+		return generic_quantity<result_v, result_d>(lhs.template as<typename Q1::default_unit>() * rhs.template as<typename Q2::default_unit>());
+	}
 }
 
 template <gse::internal::is_quantity Q, gse::internal::is_arithmetic S>
@@ -785,7 +1042,14 @@ template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 constexpr auto gse::internal::operator/(const Q1& lhs, const Q2& rhs) {
 	using result_v = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
 	using result_d = decltype(typename Q1::dimension() / typename Q2::dimension());
-	return generic_quantity<result_v, result_d>(lhs.template as<typename Q1::default_unit>() / rhs.template as<typename Q2::default_unit>());
+	if constexpr (tag_recovery<result_d>::found) {
+		using found_tag = typename tag_recovery_type<result_d>::tag;
+		using result_t = typename quantity_traits<found_tag>::template type<result_v>;
+		return result_t(lhs.template as<typename Q1::default_unit>() / rhs.template as<typename Q2::default_unit>());
+	}
+	else {
+		return generic_quantity<result_v, result_d>(lhs.template as<typename Q1::default_unit>() / rhs.template as<typename Q2::default_unit>());
+	}
 }
 
 template <gse::internal::is_quantity Q, gse::internal::is_arithmetic S>

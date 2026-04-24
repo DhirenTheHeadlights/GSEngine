@@ -2,7 +2,9 @@ export module gse.graphics:menu_bar;
 
 import std;
 
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 import gse.math;
 
 import :types;

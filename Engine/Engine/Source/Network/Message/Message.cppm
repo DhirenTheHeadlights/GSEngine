@@ -1,6 +1,7 @@
 export module gse.network:message;
 
 import std;
+import gse.meta;
 
 import :bitstream;
 

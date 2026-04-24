@@ -6,8 +6,15 @@ import gse.assert;
 import gse.network;
 import gse.physics;
 import gse.graphics;
-import gse.utility;
-import gse.platform;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 import gse.runtime;
 
 template <>

@@ -5,8 +5,12 @@ import std;
 import gse.assert;
 import gse.log;
 import gse.math;
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::network {
 	class bitstream {
 	public:

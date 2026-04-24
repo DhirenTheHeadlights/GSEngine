@@ -4,7 +4,9 @@ import std;
 
 import gse.log;
 import gse.math;
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 
 import :socket;
 import :remote_peer;

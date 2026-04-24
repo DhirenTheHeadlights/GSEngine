@@ -5,10 +5,16 @@ import std;
 import :geometry_collector;
 import :skin_compute_renderer;
 import :camera_system;
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 import gse.math;
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::renderer::cull_compute {
 	struct state {
 		bool enabled = true;
@@ -63,13 +69,13 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
-		r.frustum_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.frustum_buffer[i] = gpu::create_buffer(ctx, {
 			.size = frustum_size,
 			.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
 		});
 
 		const std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * r.batch_stride;
-		r.batch_info_buffer[i] = gpu::create_buffer(ctx.device_ref(), {
+		r.batch_info_buffer[i] = gpu::create_buffer(ctx, {
 			.size = batch_info_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});

@@ -7,9 +7,15 @@ import :bitstream;
 
 import gse.physics;
 import gse.graphics;
-import gse.platform;
-import gse.utility;
-
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::network {
 	consteval auto stable_code(
 		std::string_view s

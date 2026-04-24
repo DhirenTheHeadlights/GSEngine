@@ -3,8 +3,12 @@ export module gse.graphics:point_light;
 import std;
 
 import gse.math;
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse {
 	struct point_light_data {
 		vec3f color;

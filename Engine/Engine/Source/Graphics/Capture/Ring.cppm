@@ -3,7 +3,9 @@ export module gse.graphics:capture_ring;
 import std;
 
 import gse.math;
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 
 export namespace gse::renderer::capture {
     class ring {

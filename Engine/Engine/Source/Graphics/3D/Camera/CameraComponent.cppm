@@ -3,8 +3,12 @@ export module gse.graphics:camera_component;
 import std;
 
 import gse.math;
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::camera {
 	struct follow_component_data {
 		vec3<length> offset{};

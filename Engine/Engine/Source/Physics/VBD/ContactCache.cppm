@@ -3,6 +3,7 @@ export module gse.physics:vbd_contact_cache;
 import std;
 
 import gse.math;
+import gse.meta;
 import :contact_manifold;
 
 export namespace gse::vbd {
@@ -66,18 +67,7 @@ export namespace gse::vbd {
 }
 
 auto gse::vbd::contact_cache::cache_key_hash::operator()(const cache_key& k) const noexcept -> std::size_t {
-	std::size_t h = 0;
-	h ^= std::hash<std::uint32_t>{}(k.body_a) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	h ^= std::hash<std::uint32_t>{}(k.body_b) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	h ^= std::hash<std::uint8_t>{}(static_cast<std::uint8_t>(k.feature.type_a)) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	h ^= std::hash<std::uint8_t>{}(static_cast<std::uint8_t>(k.feature.type_b)) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	h ^= std::hash<std::uint8_t>{}(k.feature.index_a) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	h ^= std::hash<std::uint8_t>{}(k.feature.index_b) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	h ^= std::hash<std::uint8_t>{}(k.feature.side_a0) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	h ^= std::hash<std::uint8_t>{}(k.feature.side_a1) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	h ^= std::hash<std::uint8_t>{}(k.feature.side_b0) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	h ^= std::hash<std::uint8_t>{}(k.feature.side_b1) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	return h;
+	return gse::hash_combine(k);
 }
 
 auto gse::vbd::contact_cache::lookup(const std::uint32_t body_a, const std::uint32_t body_b, const feature_id& fid) const -> std::optional<cached_lambda> {
