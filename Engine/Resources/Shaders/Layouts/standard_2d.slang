@@ -1,1 +1,1 @@
-[[vk::binding(0, 1)]] Sampler2D spriteTexture;
+[[vk::binding(0, 2)]] public Sampler2D g_textures[];

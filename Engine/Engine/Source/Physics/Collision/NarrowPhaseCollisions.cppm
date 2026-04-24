@@ -7,8 +7,12 @@ import :collision_component;
 import :contact_manifold;
 
 import gse.math;
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::narrow_phase_collision {
 	struct sat_result {
 		vec3f normal;

@@ -3,10 +3,15 @@ export module gse.graphics:input_layers;
 import std;
 
 import gse.math;
-import gse.platform;
-import gse.utility;
-
-
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 namespace gse::gui {
 	using ui_rect = rect_t<vec2f>;
 }

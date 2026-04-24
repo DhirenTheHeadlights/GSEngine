@@ -2,8 +2,12 @@ export module gse.graphics:animation_bindings;
 
 import std;
 
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import :controller_component;
 import :animation_dsl;
 

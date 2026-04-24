@@ -9,11 +9,17 @@ export module gse.graphics:font_compiler;
 
 import std;
 
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 import gse.assert;
 import gse.log;
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import :font;
 
 template<>

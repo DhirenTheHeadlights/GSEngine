@@ -3,8 +3,15 @@ export module gse.graphics:physics_transform_renderer;
 import std;
 
 import :geometry_collector;
-import gse.platform;
-import gse.utility;
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import gse.physics;
 
 export namespace gse::renderer::physics_transform {
@@ -91,7 +98,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 
 		if (fd.mapping_buffer_size < required) {
 			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				fd.mapping_buffers[i] = gpu::create_buffer(gpu.device_ref(), {
+				fd.mapping_buffers[i] = gpu::create_buffer(gpu, {
 					.size = required,
 					.usage = gpu::buffer_flag::storage,
 					.data = data.physics_mappings.data()

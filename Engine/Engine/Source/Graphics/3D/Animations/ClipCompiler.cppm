@@ -2,7 +2,9 @@ export module gse.graphics:clip_compiler;
 
 import std;
 
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 import gse.log;
 
 import :clip;

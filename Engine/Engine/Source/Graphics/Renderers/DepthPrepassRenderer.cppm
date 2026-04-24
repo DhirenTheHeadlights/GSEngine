@@ -7,9 +7,15 @@ import :cull_compute_renderer;
 import :physics_transform_renderer;
 import :camera_system;
 
-import gse.platform;
-import gse.utility;
-
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 export namespace gse::renderer::depth_prepass {
 	struct state {};
 
@@ -48,7 +54,7 @@ auto gse::renderer::depth_prepass::system::initialize(const init_context& phase,
 
 	const auto meshlet_camera_ubo = r.meshlet_shader->uniform_block("CameraUBO");
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx.device_ref(), {
+		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
 			.size = meshlet_camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
@@ -124,8 +130,8 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 	const auto ext_w = ext.x();
 	const auto ext_h = ext.y();
 
-	auto meshlet_writer = gpu::create_push_writer(gpu, r.meshlet_shader);
-	auto skinned_writer = gpu::create_push_writer(gpu, r.skinned_shader);
+	auto meshlet_writer = gpu::descriptor_writer(gpu, r.meshlet_shader);
+	auto skinned_writer = gpu::descriptor_writer(gpu, r.skinned_shader);
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);

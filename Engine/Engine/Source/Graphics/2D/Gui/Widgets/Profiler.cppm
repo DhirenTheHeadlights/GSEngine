@@ -2,8 +2,15 @@ export module gse.graphics:profiler_widget;
 
 import std;
 
-import gse.platform;
-import gse.utility;
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import gse.math;
 
 import :types;
@@ -202,12 +209,12 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	static std::vector<trace::node> gpu_children_buf;
 	gpu_children_buf.clear();
 	for (const auto& e : profile::top_n(32, true)) {
-		gpu_children_buf.push_back(trace::node{ .id = e.id.number() });
+		gpu_children_buf.push_back(trace::node{ .id = e.id });
 	}
 
 	if (!gpu_children_buf.empty()) {
 		sorted_roots_buf.push_back(trace::node{
-			.id = gpu_root_id.number(),
+			.id = gpu_root_id,
 			.children_first = gpu_children_buf.data(),
 			.children_count = gpu_children_buf.size()
 		});
@@ -219,7 +226,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 			auto& vec = children_sort_cache[&n];
 			if (vec.empty()) {
 				flatten_hidden(flatten_hidden, { n.children_first, n.children_count }, vec);
-				if (generate_temp_id(n.id) != gpu_root_id) {
+				if (n.id != gpu_root_id) {
 					std::ranges::sort(vec, [](const trace::node& a, const trace::node& b) {
 						return (a.stop - a.start) > (b.stop - b.start);
 					});
@@ -228,10 +235,10 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 			return vec;
 		},
 		.label = [](const trace::node& n) -> std::string_view {
-			return tag(n.id);
+			return n.id.tag();
 		},
 		.key = [](const trace::node& n) -> std::uint64_t {
-			return n.id;
+			return n.id.number();
 		},
 		.is_leaf = [](const trace::node& n) -> bool {
 			return n.children_count == 0;
@@ -277,7 +284,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 				draw_col("", draw_x_frame, w_frame);
 			}
 
-			const auto node_id = generate_temp_id(n.id);
+			const auto node_id = n.id;
 			const auto gpu_agg = profile::lookup_gpu(node_id);
 			const auto cpu_agg = gpu_agg ? std::nullopt : profile::lookup_cpu(node_id);
 			if (const auto& agg = gpu_agg ? gpu_agg : cpu_agg) {

@@ -2,10 +2,16 @@ export module gse.graphics:slider_widget;
 
 import std;
 
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 import gse.math;
-import gse.utility;
-
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import :types;
 import :ids;
 import :styles;

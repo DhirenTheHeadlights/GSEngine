@@ -4,7 +4,9 @@ import std;
 
 import :material;
 
-import gse.platform;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 import gse.math;
 import gse.assert;
 
@@ -66,12 +68,12 @@ auto gse::skinned_mesh::initialize(gpu::context& ctx) -> void {
     const std::size_t vertex_buffer_size = sizeof(skinned_vertex) * m_vertices.size();
     const std::size_t index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-    m_vertex_buffer = gpu::create_buffer(ctx.device_ref(), {
+    m_vertex_buffer = gpu::create_buffer(ctx, {
         .size = vertex_buffer_size,
         .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst
     });
 
-    m_index_buffer = gpu::create_buffer(ctx.device_ref(), {
+    m_index_buffer = gpu::create_buffer(ctx, {
         .size = index_buffer_size,
         .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
     });

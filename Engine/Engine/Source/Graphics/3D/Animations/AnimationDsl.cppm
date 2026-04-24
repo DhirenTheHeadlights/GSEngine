@@ -2,7 +2,12 @@ export module gse.graphics:animation_dsl;
 
 import std;
 
-import gse.utility;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
 import gse.math;
 
 export namespace gse::animation {
