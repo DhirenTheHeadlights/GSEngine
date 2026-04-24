@@ -38,12 +38,16 @@ export namespace gs::player {
 		static auto update(
 			gse::update_context& ctx,
 			state& s
-		) -> void;
+		) -> gse::async::task<>;
 	};
 }
 
-auto gs::player::system::update(gse::update_context& ctx, state& s) -> void {
-	auto players = ctx.reg.acquire_write<component>();
+auto gs::player::system::update(gse::update_context& ctx, state& s) -> gse::async::task<> {
+	auto [players, motions, follows] = co_await ctx.acquire<
+		gse::write<component>,
+		gse::write<gse::physics::motion_component>,
+		gse::write<gse::camera::follow_component>
+	>();
 
 	for (auto& p : players) {
 		const auto owner_id = p.owner_id();
@@ -128,7 +132,7 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> void {
 		const auto owner_id = p.owner_id();
 		const auto& b = *s.bindings_by_owner[owner_id];
 
-		auto* motion = ctx.reg.try_component<gse::physics::motion_component>(owner_id);
+		auto* motion = motions.find(owner_id);
 		if (!motion) {
 			continue;
 		}
@@ -168,12 +172,14 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> void {
 			}
 		}
 
-		if (auto* cam_follow = ctx.reg.try_component<gse::camera::follow_component>(owner_id)) {
+		if (auto* cam_follow = follows.find(owner_id)) {
 			cam_follow->position = motion->current_position;
 		}
 	}
 
-	std::erase_if(s.bindings_by_owner, [&ctx](const auto& entry) {
-		return !ctx.reg.try_component<component>(entry.first);
+	std::erase_if(s.bindings_by_owner, [&players](const auto& entry) {
+		return !players.find(entry.first);
 	});
+
+	co_return;
 }

@@ -51,6 +51,42 @@ export namespace gse::trace {
 		std::uint64_t key
 	) -> void;
 
+	auto allocate_async_key(
+	) -> std::uint64_t;
+
+	class scope_guard {
+	public:
+		explicit scope_guard(
+			id id
+		);
+
+		~scope_guard(
+		);
+
+		scope_guard(
+			const scope_guard&
+		) = delete;
+
+		scope_guard(
+			scope_guard&&
+		) = delete;
+
+		auto operator=(
+			const scope_guard&
+		) -> scope_guard& = delete;
+
+		auto operator=(
+			scope_guard&&
+		) -> scope_guard& = delete;
+
+	private:
+		id m_id;
+		std::uint32_t m_tid = 0;
+		std::uint64_t m_parent = 0;
+		std::uint64_t m_eid = 0;
+		bool m_pushed_parent = false;
+	};
+
 	auto mark(
 		id id
 	) -> void;
@@ -221,6 +257,7 @@ namespace gse::trace {
 	std::atomic finalize_paused_flag = false;
 
 	std::atomic<std::uint64_t> next_eid{ 1024 };
+	std::atomic<std::uint64_t> next_async_key{ 1 };
 	std::atomic<std::uint32_t> next_tid{ 0 };
 
 	config global_config;
@@ -953,4 +990,65 @@ auto gse::trace::make_loc_id(const std::source_location& loc) -> id {
 
 auto gse::trace::allocate_span_eid() -> std::uint64_t {
 	return next_eid.fetch_add(1, std::memory_order_relaxed);
+}
+
+auto gse::trace::allocate_async_key() -> std::uint64_t {
+	return next_async_key.fetch_add(1, std::memory_order_relaxed);
+}
+
+gse::trace::scope_guard::scope_guard(const id id) : m_id(id) {
+	if (paused()) {
+		return;
+	}
+
+	ensure_tls_registered();
+
+	std::uint64_t parent = current_parent_eid();
+	if (parent != 0 && parent < 1024) {
+		parent = 0;
+	}
+
+	m_tid = make_tid();
+	m_pushed_parent = parent != 0 && (tls.stack.empty() || tls.stack.back() != parent);
+	if (m_pushed_parent) {
+		tls.stack.push_back(parent);
+	}
+
+	m_parent = parent;
+	m_eid = allocate_span_eid();
+
+	emit({
+		.type = event_type::begin,
+		.id = id,
+		.eid = m_eid,
+		.parent_eid = m_parent,
+		.tid = m_tid,
+		.ts = system_clock::now<tick_step>()
+	});
+
+	tls.stack.push_back(m_eid);
+}
+
+gse::trace::scope_guard::~scope_guard() {
+	if (m_eid == 0) {
+		return;
+	}
+
+	if (tls.stack.empty() || tls.stack.back() != m_eid) {
+		return;
+	}
+
+	emit({
+		.type = event_type::end,
+		.id = m_id,
+		.eid = m_eid,
+		.parent_eid = m_parent,
+		.tid = m_tid,
+		.ts = system_clock::now<tick_step>()
+	});
+
+	tls.stack.pop_back();
+	if (m_pushed_parent && !tls.stack.empty() && tls.stack.back() == m_parent) {
+		tls.stack.pop_back();
+	}
 }

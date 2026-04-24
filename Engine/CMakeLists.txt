@@ -8,6 +8,9 @@ project(Engine LANGUAGES CXX)
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
 
+file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/Modules/*.cpp")
+list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Modules/VulkanDispatch.cpp")
+
 add_library(Engine)
 
 target_sources(Engine
@@ -16,6 +19,8 @@ target_sources(Engine
         BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine" "${CMAKE_CURRENT_BINARY_DIR}/Engine"
         FILES ${ENGINE_MODULES}
 )
+
+target_sources(Engine PRIVATE ${ENGINE_IMPLS})
 
 target_sources(Engine
     PUBLIC
@@ -31,8 +36,6 @@ find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(concurrentqueue CONFIG REQUIRED)
 find_package(Vulkan)
-
-target_sources(Engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Modules/MathShims.cpp")
 
 add_library(VulkanModule STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Modules/VulkanDispatch.cpp")
 target_sources(VulkanModule PUBLIC
@@ -77,12 +80,6 @@ else()
     target_include_directories(Engine PRIVATE "${SLANG_INCLUDE_DIR}")
     target_link_libraries(Engine PUBLIC "${SLANG_LIBRARY}")
 endif()
-
-set(AFTERMATH_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/External/aftermath")
-target_include_directories(Engine PRIVATE "${AFTERMATH_SDK_DIR}/include")
-target_link_libraries(Engine PRIVATE "${AFTERMATH_SDK_DIR}/lib/x64/GFSDK_Aftermath_Lib.x64.lib")
-
-set(AFTERMATH_DLL "${AFTERMATH_SDK_DIR}/lib/x64/GFSDK_Aftermath_Lib.x64.dll" CACHE FILEPATH "" FORCE)
 
 target_link_libraries(Engine PUBLIC
     glfw

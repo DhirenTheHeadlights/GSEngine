@@ -110,7 +110,7 @@ export namespace gse::renderer {
 		};
 
 		static auto initialize(const init_context& phase, resources& r, state& s) -> void;
-		static auto update(const update_context& ctx, state& s) -> void;
+		static auto update(const update_context& ctx, state& s) -> async::task<>;
 		static auto shutdown(const shutdown_context& phase) -> void;
 	};
 }
@@ -234,7 +234,7 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 	s.dump_profile_action = actions::handle(dump_profile_id);
 }
 
-auto gse::renderer::system::update(const update_context& ctx, state& s) -> void {
+auto gse::renderer::system::update(const update_context& ctx, state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
 
 	if (s.hot_reload_enabled != gpu.hot_reload_enabled()) {
@@ -270,6 +270,8 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> void 
 		ctx.channels.push<camera::viewport_update>({ .size = new_viewport });
 		s.last_viewport = new_viewport;
 	}
+
+	co_return;
 }
 
 auto gse::renderer::system::shutdown(const shutdown_context& phase) -> void {

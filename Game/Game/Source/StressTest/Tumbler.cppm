@@ -20,18 +20,21 @@ export namespace gs::tumbler {
 	struct system {
 		static auto update(
 			gse::update_context& ctx
-		) -> void;
+		) -> gse::async::task<>;
 	};
 }
 
-auto gs::tumbler::system::update(gse::update_context& ctx) -> void {
-	auto tumblers = ctx.reg.acquire_write<component>();
+auto gs::tumbler::system::update(gse::update_context& ctx) -> gse::async::task<> {
+	auto [tumblers, motions] = co_await ctx.acquire<
+		gse::write<component>,
+		gse::write<gse::physics::motion_component>
+	>();
 
 	constexpr auto physics_step = gse::seconds(1.f / 60.f);
 
 	for (auto& t : tumblers) {
 		const auto owner_id = t.owner_id();
-		auto* motion = ctx.reg.try_component<gse::physics::motion_component>(owner_id);
+		auto* motion = motions.find(owner_id);
 		if (!motion) {
 			continue;
 		}
@@ -57,4 +60,6 @@ auto gs::tumbler::system::update(gse::update_context& ctx) -> void {
 		motion->angular_velocity = ang_vel;
 		motion->sleeping = false;
 	}
+
+	co_return;
 }

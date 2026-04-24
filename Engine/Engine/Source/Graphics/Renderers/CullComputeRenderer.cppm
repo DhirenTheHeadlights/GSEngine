@@ -41,7 +41,8 @@ export namespace gse::renderer::cull_compute {
 		static auto frame(
 			frame_context& ctx,
 			const resources& r,
-			const state& s
+			const state& s,
+			const geometry_collector::state& gc_s
 		) -> async::task<>;
 	};
 }
@@ -105,8 +106,7 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 	}
 }
 
-auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resources& r, const state& s) -> async::task<> {
-	co_await ctx.after<geometry_collector::state>();
+auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
 
 	auto& gpu = ctx.get<gpu::context>();
 

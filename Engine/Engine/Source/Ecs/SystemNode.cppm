@@ -1,3 +1,7 @@
+module;
+
+#include <meta>
+
 export module gse.ecs:system_node;
 
 import std;
@@ -7,13 +11,15 @@ import gse.concurrency;
 import gse.diag;
 
 import :phase_context;
+import :task_context;
 import :update_context;
 import :frame_context;
 
 export namespace gse {
 	class system_node_base {
 	public:
-		virtual ~system_node_base() = default;
+		virtual ~system_node_base(
+		) = default;
 
 		virtual auto initialize(
 			init_context&
@@ -25,7 +31,7 @@ export namespace gse {
 
 		virtual auto graph_update(
 			update_context&
-		) -> void = 0;
+		) -> async::task<> = 0;
 
 		virtual auto graph_frame(
 			frame_context&
@@ -83,6 +89,10 @@ export namespace gse {
 	template <typename S>
 	concept names_frame = requires { &S::frame; };
 
+	template <typename S, typename State>
+	auto extract_state_deps(
+	) -> std::vector<std::type_index>;
+
 	template <typename S, bool = has_resources<S>>
 	struct resource_storage {};
 
@@ -118,7 +128,8 @@ export namespace gse {
 	template <typename S, typename State>
 	class system_node final : public system_node_base, non_copyable {
 	public:
-		~system_node() override = default;
+		~system_node(
+		) override = default;
 
 		template <typename... Args>
 		explicit system_node(
@@ -135,7 +146,7 @@ export namespace gse {
 
 		auto graph_update(
 			update_context& ctx
-		) -> void override;
+		) -> async::task<> override;
 
 		auto graph_frame(
 			frame_context& ctx
@@ -201,7 +212,7 @@ namespace gse {
 		update_data_storage<S>& update_data,
 		frame_data_storage<S>& frame_data,
 		State& state
-	) -> void;
+	) -> async::task<>;
 
 	template <typename S, typename State>
 	auto dispatch_frame(
@@ -216,292 +227,265 @@ namespace gse {
 	) -> bool;
 }
 
+namespace gse {
+	template <typename U, typename S, bool = has_resources<S>>
+	struct matches_resources_t : std::false_type {};
+
+	template <typename U, typename S>
+	struct matches_resources_t<U, S, true> : std::bool_constant<std::is_same_v<U, typename S::resources>> {};
+
+	template <typename U, typename S>
+	constexpr bool matches_resources_v = matches_resources_t<U, S>::value;
+
+	template <typename U, typename S, bool = has_update_data<S>>
+	struct matches_update_data_t : std::false_type {};
+
+	template <typename U, typename S>
+	struct matches_update_data_t<U, S, true> : std::bool_constant<std::is_same_v<U, typename S::update_data>> {};
+
+	template <typename U, typename S>
+	constexpr bool matches_update_data_v = matches_update_data_t<U, S>::value;
+
+	template <typename U, typename S, bool = has_frame_data<S>>
+	struct matches_frame_data_t : std::false_type {};
+
+	template <typename U, typename S>
+	struct matches_frame_data_t<U, S, true> : std::bool_constant<std::is_same_v<U, typename S::frame_data>> {};
+
+	template <typename U, typename S>
+	constexpr bool matches_frame_data_v = matches_frame_data_t<U, S>::value;
+
+	template <typename Arg, typename S, typename State>
+	constexpr bool is_state_dep_v = [] consteval {
+		using U = std::remove_cvref_t<Arg>;
+		if constexpr (std::is_same_v<U, update_context>) return false;
+		else if constexpr (std::is_same_v<U, frame_context>) return false;
+		else if constexpr (std::is_same_v<U, State>) return false;
+		else if constexpr (matches_resources_v<U, S>) return false;
+		else if constexpr (matches_update_data_v<U, S>) return false;
+		else if constexpr (matches_frame_data_v<U, S>) return false;
+		else return true;
+	}();
+
+	template <auto MemberFn>
+	constexpr std::size_t arity_of = std::meta::parameters_of(MemberFn).size();
+
+	template <auto MemberFn, std::size_t I>
+	using arg_type_of = typename [: std::meta::type_of(std::meta::parameters_of(MemberFn)[I]) :];
+}
+
 template <typename S, typename State>
-auto gse::dispatch_initialize(init_context& phase, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, State& state) -> void {
-	if constexpr (has_resources<S> && has_update_data<S> && has_frame_data<S>) {
-		auto& r = resources.value;
-		auto& u = update_data.value;
-		auto& f = frame_data.value;
-		if constexpr (requires { S::initialize(phase, r, u, f, state); }) {
-			S::initialize(phase, r, u, f, state);
-			return;
-		}
-		if constexpr (requires { S::initialize(phase, r, u, f); }) {
-			S::initialize(phase, r, u, f);
-			return;
+auto gse::extract_state_deps() -> std::vector<std::type_index> {
+	std::vector<std::type_index> result;
+	if constexpr (names_update<S>) {
+		template for (constexpr auto p : std::define_static_array(std::meta::parameters_of(^^S::update))) {
+			using P = typename [: std::meta::type_of(p) :];
+			if constexpr (is_state_dep_v<P, S, State>) {
+				result.push_back(std::type_index(typeid(std::remove_cvref_t<P>)));
+			}
 		}
 	}
-	if constexpr (has_resources<S> && has_frame_data<S>) {
-		auto& r = resources.value;
-		auto& f = frame_data.value;
-		if constexpr (requires { S::initialize(phase, r, f, state); }) {
-			S::initialize(phase, r, f, state);
-			return;
-		}
-		if constexpr (requires { S::initialize(phase, r, f); }) {
-			S::initialize(phase, r, f);
-			return;
+	if constexpr (names_frame<S>) {
+		template for (constexpr auto p : std::define_static_array(std::meta::parameters_of(^^S::frame))) {
+			using P = typename [: std::meta::type_of(p) :];
+			if constexpr (is_state_dep_v<P, S, State>) {
+				result.push_back(std::type_index(typeid(std::remove_cvref_t<P>)));
+			}
 		}
 	}
-	if constexpr (has_resources<S> && has_update_data<S>) {
-		auto& r = resources.value;
-		auto& u = update_data.value;
-		if constexpr (requires { S::initialize(phase, r, u, state); }) {
-			S::initialize(phase, r, u, state);
-			return;
+	return result;
+}
+
+namespace gse {
+	template <typename Arg, typename S, typename State>
+	auto resolve_initialize_arg(
+		init_context& phase,
+		resource_storage<S>& resources,
+		update_data_storage<S>& update_data,
+		frame_data_storage<S>& frame_data,
+		State& state
+	) -> decltype(auto) {
+		using U = std::remove_cvref_t<Arg>;
+		if constexpr (std::is_same_v<U, init_context>) {
+			return (phase);
 		}
-		if constexpr (requires { S::initialize(phase, r, u); }) {
-			S::initialize(phase, r, u);
-			return;
+		else if constexpr (matches_resources_v<U, S>) {
+			return (resources.value);
 		}
-	}
-	if constexpr (has_resources<S>) {
-		auto& r = resources.value;
-		if constexpr (requires { S::initialize(phase, r, state); }) {
-			S::initialize(phase, r, state);
-			return;
+		else if constexpr (matches_update_data_v<U, S>) {
+			return (update_data.value);
 		}
-		if constexpr (requires { S::initialize(phase, r); }) {
-			S::initialize(phase, r);
-			return;
+		else if constexpr (matches_frame_data_v<U, S>) {
+			return (frame_data.value);
 		}
-	}
-	if constexpr (has_update_data<S> && has_frame_data<S>) {
-		auto& u = update_data.value;
-		auto& f = frame_data.value;
-		if constexpr (requires { S::initialize(phase, u, f, state); }) {
-			S::initialize(phase, u, f, state);
-			return;
-		}
-		if constexpr (requires { S::initialize(phase, u, f); }) {
-			S::initialize(phase, u, f);
-			return;
+		else if constexpr (std::is_same_v<U, State>) {
+			return (state);
 		}
 	}
-	if constexpr (has_update_data<S>) {
-		auto& u = update_data.value;
-		if constexpr (requires { S::initialize(phase, u, state); }) {
-			S::initialize(phase, u, state);
-			return;
-		}
-		if constexpr (requires { S::initialize(phase, u); }) {
-			S::initialize(phase, u);
-			return;
-		}
-	}
-	if constexpr (has_frame_data<S>) {
-		auto& f = frame_data.value;
-		if constexpr (requires { S::initialize(phase, f, state); }) {
-			S::initialize(phase, f, state);
-			return;
-		}
-		if constexpr (requires { S::initialize(phase, f); }) {
-			S::initialize(phase, f);
-			return;
-		}
-	}
-	if constexpr (requires { S::initialize(phase, state); }) {
-		S::initialize(phase, state);
-		return;
-	}
-	if constexpr (requires { S::initialize(phase); }) {
-		S::initialize(phase);
-		return;
-	}
-	if constexpr (names_initialize<S>) {
-		assert(false, std::source_location::current(), "System '{}' declares initialize but no overload matched the dispatcher", typeid(S).name());
+
+	template <typename S, typename State, std::size_t... Is>
+	auto invoke_initialize_impl(
+		init_context& phase,
+		resource_storage<S>& resources,
+		update_data_storage<S>& update_data,
+		frame_data_storage<S>& frame_data,
+		State& state,
+		std::index_sequence<Is...>
+	) -> void {
+		S::initialize(
+			resolve_initialize_arg<arg_type_of<^^S::initialize, Is>, S, State>(
+				phase, resources, update_data, frame_data, state
+			)...
+		);
 	}
 }
 
 template <typename S, typename State>
-auto gse::dispatch_update(update_context& ctx, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, State& state) -> void {
-	if constexpr (has_resources<S> && has_update_data<S> && has_frame_data<S>) {
-		auto& r = resources.value;
-		auto& u = update_data.value;
-		auto& f = frame_data.value;
-		if constexpr (requires { S::update(ctx, r, u, f, state); }) {
-			S::update(ctx, r, u, f, state);
-			return;
+auto gse::dispatch_initialize(init_context& phase, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, State& state) -> void {
+	if constexpr (names_initialize<S>) {
+		invoke_initialize_impl<S, State>(
+			phase, resources, update_data, frame_data, state,
+			std::make_index_sequence<arity_of<^^S::initialize>>{}
+		);
+	}
+}
+
+namespace gse {
+	template <typename Arg, typename S, typename State>
+	auto resolve_update_arg(
+		update_context& ctx,
+		resource_storage<S>& resources,
+		update_data_storage<S>& update_data,
+		frame_data_storage<S>& frame_data,
+		State& state
+	) -> decltype(auto) {
+		using U = std::remove_cvref_t<Arg>;
+		if constexpr (std::is_same_v<U, update_context>) {
+			return (ctx);
 		}
-		if constexpr (requires { S::update(ctx, r, u, f); }) {
-			S::update(ctx, r, u, f);
-			return;
+		else if constexpr (matches_resources_v<U, S>) {
+			return (resources.value);
+		}
+		else if constexpr (matches_update_data_v<U, S>) {
+			return (update_data.value);
+		}
+		else if constexpr (matches_frame_data_v<U, S>) {
+			return (frame_data.value);
+		}
+		else if constexpr (std::is_same_v<U, State>) {
+			return (state);
+		}
+		else {
+			return ctx.template state_of<U>();
 		}
 	}
-	if constexpr (has_resources<S> && has_frame_data<S>) {
-		auto& r = resources.value;
-		auto& f = frame_data.value;
-		if constexpr (requires { S::update(ctx, r, f, state); }) {
-			S::update(ctx, r, f, state);
-			return;
+
+	template <typename Arg, typename S, typename State>
+	auto resolve_frame_arg(
+		frame_context& ctx,
+		resource_storage<S>& resources,
+		frame_data_storage<S>& frame_data,
+		const State& state
+	) -> decltype(auto) {
+		using U = std::remove_cvref_t<Arg>;
+		if constexpr (std::is_same_v<U, frame_context>) {
+			return (ctx);
 		}
-		if constexpr (requires { S::update(ctx, r, f); }) {
-			S::update(ctx, r, f);
-			return;
+		else if constexpr (matches_resources_v<U, S>) {
+			return (resources.value);
 		}
-	}
-	if constexpr (has_resources<S> && has_update_data<S>) {
-		auto& r = resources.value;
-		auto& u = update_data.value;
-		if constexpr (requires { S::update(ctx, r, u, state); }) {
-			S::update(ctx, r, u, state);
-			return;
+		else if constexpr (matches_frame_data_v<U, S>) {
+			return (frame_data.value);
 		}
-		if constexpr (requires { S::update(ctx, r, u); }) {
-			S::update(ctx, r, u);
-			return;
+		else if constexpr (std::is_same_v<U, State>) {
+			return (state);
 		}
-	}
-	if constexpr (has_resources<S>) {
-		auto& r = resources.value;
-		if constexpr (requires { S::update(ctx, r, state); }) {
-			S::update(ctx, r, state);
-			return;
-		}
-		if constexpr (requires { S::update(ctx, r); }) {
-			S::update(ctx, r);
-			return;
-		}
-		const auto& rc = std::as_const(resources.value);
-		if constexpr (requires { S::update(ctx, rc, state); }) {
-			S::update(ctx, rc, state);
-			return;
-		}
-		if constexpr (requires { S::update(ctx, rc); }) {
-			S::update(ctx, rc);
-			return;
+		else {
+			return ctx.template state_of<U>();
 		}
 	}
-	if constexpr (has_update_data<S> && has_frame_data<S>) {
-		auto& u = update_data.value;
-		auto& f = frame_data.value;
-		if constexpr (requires { S::update(ctx, u, f, state); }) {
-			S::update(ctx, u, f, state);
-			return;
-		}
-		if constexpr (requires { S::update(ctx, u, f); }) {
-			S::update(ctx, u, f);
-			return;
-		}
-	}
-	if constexpr (has_update_data<S>) {
-		auto& u = update_data.value;
-		if constexpr (requires { S::update(ctx, u, state); }) {
-			S::update(ctx, u, state);
-			return;
-		}
-		if constexpr (requires { S::update(ctx, u); }) {
-			S::update(ctx, u);
-			return;
+
+	template <typename S, typename State, std::size_t I = 0>
+	auto await_update_deps(update_context& ctx) -> async::task<> {
+		if constexpr (I < arity_of<^^S::update>) {
+			using Arg = arg_type_of<^^S::update, I>;
+			if constexpr (is_state_dep_v<Arg, S, State>) {
+				co_await ctx.template after<std::remove_cvref_t<Arg>>();
+			}
+			co_await await_update_deps<S, State, I + 1>(ctx);
 		}
 	}
-	if constexpr (has_frame_data<S>) {
-		auto& f = frame_data.value;
-		if constexpr (requires { S::update(ctx, f, state); }) {
-			S::update(ctx, f, state);
-			return;
+
+	template <typename S, typename State, std::size_t I = 0>
+	auto await_frame_deps(frame_context& ctx) -> async::task<> {
+		if constexpr (I < arity_of<^^S::frame>) {
+			using Arg = arg_type_of<^^S::frame, I>;
+			if constexpr (is_state_dep_v<Arg, S, State>) {
+				co_await ctx.template after<std::remove_cvref_t<Arg>>();
+			}
+			co_await await_frame_deps<S, State, I + 1>(ctx);
 		}
-		if constexpr (requires { S::update(ctx, f); }) {
-			S::update(ctx, f);
-			return;
-		}
 	}
-	if constexpr (requires { S::update(ctx, state); }) {
-		S::update(ctx, state);
-		return;
+
+	template <typename S, typename State, std::size_t... Is>
+	auto invoke_update_impl(
+		update_context& ctx,
+		resource_storage<S>& resources,
+		update_data_storage<S>& update_data,
+		frame_data_storage<S>& frame_data,
+		State& state,
+		std::index_sequence<Is...>
+	) -> async::task<> {
+		co_await S::update(
+			resolve_update_arg<arg_type_of<^^S::update, Is>, S, State>(
+				ctx, resources, update_data, frame_data, state
+			)...
+		);
 	}
-	if constexpr (requires { S::update(ctx); }) {
-		S::update(ctx);
-		return;
+
+	template <typename S, typename State, std::size_t... Is>
+	auto invoke_frame_impl(
+		frame_context& ctx,
+		resource_storage<S>& resources,
+		frame_data_storage<S>& frame_data,
+		const State& state,
+		std::index_sequence<Is...>
+	) -> async::task<> {
+		co_await S::frame(
+			resolve_frame_arg<arg_type_of<^^S::frame, Is>, S, State>(
+				ctx, resources, frame_data, state
+			)...
+		);
 	}
+}
+
+template <typename S, typename State>
+auto gse::dispatch_update(update_context& ctx, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, State& state) -> async::task<> {
 	if constexpr (names_update<S>) {
-		assert(false, std::source_location::current(), "System '{}' declares update but no overload matched the dispatcher", typeid(S).name());
+		co_await await_update_deps<S, State>(ctx);
+		co_await invoke_update_impl<S, State>(
+			ctx, resources, update_data, frame_data, state,
+			std::make_index_sequence<arity_of<^^S::update>>{}
+		);
 	}
+	co_return;
 }
 
 template <typename S, typename State>
 auto gse::dispatch_frame(frame_context& ctx, resource_storage<S>& resources, frame_data_storage<S>& frame_data, const State& state) -> async::task<> {
-	if constexpr (has_resources<S> && has_frame_data<S>) {
-		const auto& r = std::as_const(resources.value);
-		auto& f = frame_data.value;
-		if constexpr (requires { S::frame(ctx, r, f, state); }) {
-			co_await S::frame(ctx, r, f, state);
-			co_return;
-		}
-		if constexpr (requires { S::frame(ctx, r, f); }) {
-			co_await S::frame(ctx, r, f);
-			co_return;
-		}
-	}
-	if constexpr (has_resources<S>) {
-		const auto& r = std::as_const(resources.value);
-		if constexpr (requires { S::frame(ctx, r, state); }) {
-			co_await S::frame(ctx, r, state);
-			co_return;
-		}
-		if constexpr (requires { S::frame(ctx, r); }) {
-			co_await S::frame(ctx, r);
-			co_return;
-		}
-	}
-	if constexpr (has_frame_data<S>) {
-		auto& f = frame_data.value;
-		if constexpr (requires { S::frame(ctx, f, state); }) {
-			co_await S::frame(ctx, f, state);
-			co_return;
-		}
-		if constexpr (requires { S::frame(ctx, f); }) {
-			co_await S::frame(ctx, f);
-			co_return;
-		}
-	}
-	if constexpr (requires { S::frame(ctx, state); }) {
-		co_await S::frame(ctx, state);
-		co_return;
-	}
-	if constexpr (requires { S::frame(ctx); }) {
-		co_await S::frame(ctx);
-		co_return;
-	}
 	if constexpr (names_frame<S>) {
-		assert(false, std::source_location::current(), "System '{}' declares frame but no overload matched the dispatcher", typeid(S).name());
+		co_await await_frame_deps<S, State>(ctx);
+		co_await invoke_frame_impl<S, State>(
+			ctx, resources, frame_data, state,
+			std::make_index_sequence<arity_of<^^S::frame>>{}
+		);
 	}
 	co_return;
 }
 
 template <typename S, typename State>
 auto gse::dispatch_has_frame() -> bool {
-	if constexpr (has_resources<S> && has_frame_data<S>) {
-		if constexpr (requires(frame_context& c, const typename S::resources& r, typename S::frame_data& fd, const State& s) { S::frame(c, r, fd, s); }) {
-			return true;
-		}
-		if constexpr (requires(frame_context& c, const typename S::resources& r, typename S::frame_data& fd) { S::frame(c, r, fd); }) {
-			return true;
-		}
-	}
-	if constexpr (has_resources<S>) {
-		if constexpr (requires(frame_context& c, const typename S::resources& r, const State& s) { S::frame(c, r, s); }) {
-			return true;
-		}
-		if constexpr (requires(frame_context& c, const typename S::resources& r) { S::frame(c, r); }) {
-			return true;
-		}
-	}
-	if constexpr (has_frame_data<S>) {
-		if constexpr (requires(frame_context& c, typename S::frame_data& fd, const State& s) { S::frame(c, fd, s); }) {
-			return true;
-		}
-		if constexpr (requires(frame_context& c, typename S::frame_data& fd) { S::frame(c, fd); }) {
-			return true;
-		}
-	}
-	if constexpr (requires(frame_context& c, const State& s) { S::frame(c, s); }) {
-		return true;
-	}
-	if constexpr (requires(frame_context& c) { S::frame(c); }) {
-		return true;
-	}
-	return false;
+	return names_frame<S>;
 }
 
 template <typename S, typename State>
@@ -555,8 +539,10 @@ auto gse::system_node<S, State>::shutdown(shutdown_context& phase) -> void {
 }
 
 template <typename S, typename State>
-auto gse::system_node<S, State>::graph_update(update_context& ctx) -> void {
-	dispatch_update<S>(ctx, m_resources, m_update_data, m_frame_data, m_state);
+auto gse::system_node<S, State>::graph_update(update_context& ctx) -> async::task<> {
+	co_await dispatch_update<S>(ctx, m_resources, m_update_data, m_frame_data, m_state);
+	ctx.notify_ready<State>();
+	co_return;
 }
 
 template <typename S, typename State>

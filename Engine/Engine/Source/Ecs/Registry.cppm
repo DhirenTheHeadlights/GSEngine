@@ -14,7 +14,8 @@ export namespace gse {
 
 	class component_storage_base {
 	public:
-		virtual ~component_storage_base() = default;
+		virtual ~component_storage_base(
+		) = default;
 
 		virtual auto activate_pending(
 			id owner
@@ -79,7 +80,8 @@ export namespace gse {
 
 	class registry final : public non_copyable {
 	public:
-		~registry() override = default;
+		~registry(
+		) override = default;
 
 		auto create(
 			std::string_view name
@@ -139,10 +141,12 @@ export namespace gse {
 
 		template <is_component T>
 		auto acquire_read(
+			async::rw_mutex* mutex = nullptr
 		) -> read<T>;
 
 		template <is_component T>
 		auto acquire_write(
+			async::rw_mutex* mutex = nullptr
 		) -> write<T>;
 
 		template <is_component T, typename... Args>
@@ -438,27 +442,27 @@ auto gse::registry::try_component(this registry& self, const id owner) -> declty
 }
 
 template <gse::is_component T>
-auto gse::registry::acquire_read() -> read<T> {
+auto gse::registry::acquire_read(async::rw_mutex* mutex) -> read<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
-		return read<T>{};
+		return read<T>({}, nullptr, nullptr, mutex);
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> const T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
 	};
-	return read<T>(s->items(), lookup, s);
+	return read<T>(s->items(), lookup, s, mutex);
 }
 
 template <gse::is_component T>
-auto gse::registry::acquire_write() -> write<T> {
+auto gse::registry::acquire_write(async::rw_mutex* mutex) -> write<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
-		return write<T>{};
+		return write<T>({}, nullptr, nullptr, mutex);
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
 	};
-	return write<T>(s->items(), lookup, s);
+	return write<T>(s->items(), lookup, s, mutex);
 }
 
 template <gse::is_component T, typename... Args>
@@ -541,7 +545,8 @@ auto gse::registry::sync() -> void {
 		m_deferred_actions.push_back(std::move(incoming));
 	}
 
-	std::erase_if(m_deferred_actions, [this](auto& pair) {
-		return pair.second(*this);
+	std::erase_if(m_deferred_actions, [this](auto& entry) {
+		auto& [owner, action] = entry;
+		return action(*this);
 	});
 }

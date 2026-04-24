@@ -82,9 +82,9 @@ export namespace gse::render_init {
 
     struct system {
         static auto update(
-            const update_context& ctx,
+            update_context& ctx,
             state& s
-        ) -> void;
+        ) -> async::task<>;
     };
 }
 
@@ -178,16 +178,20 @@ auto gse::render_init::try_wire(render_component& rc) -> bool {
     return true;
 }
 
-auto gse::render_init::system::update(const update_context& ctx, state& s) -> void {
-    for (const auto& owner : ctx.reg.drain_component_adds<render_component>()) {
+auto gse::render_init::system::update(update_context& ctx, state& s) -> async::task<> {
+    for (const auto& owner : ctx.drain_component_adds<render_component>()) {
         s.pending.insert(owner);
     }
 
-    std::erase_if(s.pending, [&ctx](const id owner) {
-        auto* rc = ctx.reg.try_component<render_component>(owner);
+    auto [rcs] = co_await ctx.acquire<write<render_component>>();
+
+    std::erase_if(s.pending, [&rcs](const id owner) {
+        auto* rc = rcs.find(owner);
         if (!rc) {
             return true;
         }
         return try_wire(*rc);
     });
+
+    co_return;
 }

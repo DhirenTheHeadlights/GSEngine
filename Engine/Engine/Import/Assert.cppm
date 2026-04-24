@@ -1,20 +1,14 @@
-module;
-
-#include <Windows.h>
-
 export module gse.assert;
 
 import std;
 
-import gse.log;
-
 export namespace gse {
-	template <typename... Args>
+    template <typename... Args>
     auto assert(
-	    bool condition,
+        bool condition,
         std::source_location loc,
-		std::string_view fmt,
-	    Args&&... args
+        std::string_view fmt,
+        Args&&... args
     ) -> void;
 }
 
@@ -30,9 +24,11 @@ namespace gse {
 
 template <class... Args>
 auto gse::assert(const bool condition, const std::source_location loc, const std::string_view fmt, Args&&... args) -> void {
-    if (condition) return;
+    if (condition) {
+        return;
+    }
 
-	const std::string comment = std::vformat(fmt, std::make_format_args(args...));
+    const std::string comment = std::vformat(fmt, std::make_format_args(args...));
     const std::string message = std::format(
         "[Assertion Failure]\n"
         "File: {}\n"
@@ -46,43 +42,4 @@ auto gse::assert(const bool condition, const std::source_location loc, const std
     );
 
     assert_func_internal(message);
-}
-
-auto gse::assert_func_production(const std::string_view message) noexcept -> void {
-#ifdef _WIN32
-    MessageBoxA(nullptr, message.data(), "GSEngine",
-        MB_TASKMODAL | MB_ICONHAND | MB_OK | MB_SETFOREGROUND);
-#endif
-    std::terminate();
-}
-
-auto gse::assert_func_internal(std::string_view message) noexcept -> void {
-    log::println(
-        log::level::error,
-        log::category::general,
-        "{}", message
-    );
-
-#ifdef _WIN32
-    const int action = MessageBoxA(
-        nullptr,
-        message.data(),
-        "Internal Assert",
-        MB_TASKMODAL | MB_ICONHAND | MB_ABORTRETRYIGNORE | MB_SETFOREGROUND
-    );
-
-    switch (action) {
-    case IDABORT:
-        std::terminate();
-    case IDRETRY:
-        __debugbreak();
-        break;
-    case IDIGNORE:
-        break;
-    default:
-        std::terminate();
-    }
-#else
-    std::terminate();
-#endif
 }

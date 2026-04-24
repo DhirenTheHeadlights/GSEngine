@@ -1,7 +1,6 @@
 export module gse.gpu;
 
 export import :gpu_types;
-export import :vulkan_reflect;
 export import :gpu_sync;
 export import :gpu_buffer;
 export import :gpu_pipeline;

@@ -72,7 +72,8 @@ export namespace gse::renderer::light_culling {
 			frame_context& ctx,
 			const resources& r,
 			frame_data& fd,
-			const state& s
+			const state& s,
+			const geometry_collector::state& gc_s
 		) -> async::task<>;
 	};
 }
@@ -171,8 +172,7 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 	});
 }
 
-auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
-	co_await ctx.after<geometry_collector::state>();
+auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
 
 	auto& gpu = ctx.get<gpu::context>();
 	auto& graph = gpu.graph();
@@ -201,9 +201,9 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 	const std::array screen_size_arr = { extent.x(), extent.y() };
 	r.shader_handle->set_uniform("CullingParams.screen_size", screen_size_arr, params_alloc);
 
-	const auto dir_chunk = ctx.reg.components<directional_light_component>();
-	const auto spot_chunk = ctx.reg.components<spot_light_component>();
-	const auto point_chunk = ctx.reg.components<point_light_component>();
+	const auto dir_chunk = ctx.components<directional_light_component>();
+	const auto spot_chunk = ctx.components<spot_light_component>();
+	const auto point_chunk = ctx.components<point_light_component>();
 
 	const auto& light_alloc = r.light_buffers[frame_index];
 	const auto light_block = r.shader_handle->uniform_block("lights");

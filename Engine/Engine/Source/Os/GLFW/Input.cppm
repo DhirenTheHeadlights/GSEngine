@@ -102,7 +102,7 @@ export namespace gse::input {
 		static auto update(
 			update_context& ctx,
 			system_state& s
-		) -> void;
+		) -> async::task<>;
 	};
 }
 
@@ -168,7 +168,7 @@ auto gse::input::system_state::to_mouse_button(const int glfw_button) -> std::op
 	return std::nullopt;
 }
 
-auto gse::input::system::update(update_context& ctx, system_state& s) -> void {
+auto gse::input::system::update(update_context& ctx, system_state& s) -> async::task<> {
 	std::vector<event> events_to_process;
 
 	{
@@ -215,4 +215,6 @@ auto gse::input::system::update(update_context& ctx, system_state& s) -> void {
 	}
 
 	s.states.flip();
+
+	co_return;
 }

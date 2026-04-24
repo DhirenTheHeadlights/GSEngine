@@ -4,6 +4,7 @@ import std;
 
 import :skinned_mesh;
 
+import gse.config;
 import gse.core;
 import gse.containers;
 import gse.time;

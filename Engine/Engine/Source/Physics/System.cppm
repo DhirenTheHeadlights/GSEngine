@@ -168,7 +168,7 @@ export namespace gse::physics {
 			update_context& ctx,
 			update_data& ud,
 			state& s
-		) -> void;
+		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
@@ -593,7 +593,7 @@ auto gse::physics::system::initialize(const init_context& phase, update_data& ud
 	}
 }
 
-auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s) -> void {
+auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s) -> async::task<> {
 	if (const auto& readbacks = ctx.read_channel<gpu_readback_result>(); !readbacks.empty()) {
 		auto completed = readbacks[0];
 		ud.completed_readback = std::move(completed);
@@ -603,7 +603,7 @@ auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s
 	}
 
 	if (!s.update_phys) {
-		return;
+		co_return;
 	}
 
 	if (auto cfg = ud.vbd_solver.config();
@@ -639,16 +639,14 @@ auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s
 		steps = max_physics_steps;
 	}
 
+	auto [motion, collision] = co_await ctx.acquire<write<motion_component>, write<collision_component>>();
+
 	if (s.use_gpu_solver) {
-		ctx.schedule([steps, &ud, &s, const_update_time, &channels = ctx.channels](write<motion_component> motion, write<collision_component> collision) {
-			update_vbd_gpu(steps, ud, s, motion, collision, const_update_time, channels);
-		});
-		return;
+		update_vbd_gpu(steps, ud, s, motion, collision, const_update_time, ctx.channels);
+		co_return;
 	}
 
-	ctx.schedule([steps, &ud, &s](write<motion_component> motion, write<collision_component> collision) {
-		update_vbd(steps, ud, s, motion, collision);
-	});
+	update_vbd(steps, ud, s, motion, collision);
 }
 
 auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, const time_t<float, seconds> dt, channel_writer& channels) -> void {

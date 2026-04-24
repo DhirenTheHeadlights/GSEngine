@@ -53,7 +53,8 @@ export namespace gse::renderer::rt_shadow {
 		static auto frame(
 			frame_context& ctx,
 			frame_data& fd,
-			const state& s
+			const state& s,
+			const geometry_collector::state& gc_s
 		) -> async::task<>;
 	};
 }
@@ -79,8 +80,7 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, fra
 	}
 }
 
-auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd, const state& s) -> async::task<> {
-	co_await ctx.after<geometry_collector::state>();
+auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
 
 	auto& gpu = ctx.get<gpu::context>();
 

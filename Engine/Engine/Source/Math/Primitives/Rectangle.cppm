@@ -1,7 +1,3 @@
-module;
-
-#include <format>
-
 export module gse.math:rectangle;
 
 import std;

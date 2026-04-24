@@ -100,6 +100,11 @@ export namespace gse::gpu {
 			vk::Image image = nullptr;
 			vk::raii::ImageView view = nullptr;
 			vk::DeviceMemory memory = nullptr;
+			bool active = false;
+			vk::video::AV1FrameType av1_frame_type = vk::video::AV1FrameType::eKey;
+			std::uint8_t av1_order_hint = 0;
+			vk::video::H265PictureType h265_pic_type = vk::video::H265PictureType::eIdr;
+			std::int32_t h265_poc = 0;
 		};
 
 		vk::raii::VideoSessionKHR m_session = nullptr;
@@ -302,11 +307,11 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 		});
 	}
 
-	for (auto& [image, view, memory] : enc.m_dpb) {
-		auto [img, v, mem] = create_nv12_image(vk_dev, physical, extent, vk::ImageUsageFlagBits::eVideoDecodeDpbKHR | vk::ImageUsageFlagBits::eVideoEncodeDpbKHR, profile_list);
-		image = img;
-		view = std::move(v);
-		memory = mem;
+	for (auto& entry : enc.m_dpb) {
+		auto [img, v, mem] = create_nv12_image(vk_dev, physical, extent, vk::ImageUsageFlagBits::eVideoEncodeDpbKHR, profile_list);
+		entry.image = img;
+		entry.view = std::move(v);
+		entry.memory = mem;
 	}
 
 	const auto feedback_flags = vk::VideoEncodeFeedbackFlagBitsKHR::eBitstreamBufferOffset | vk::VideoEncodeFeedbackFlagBitsKHR::eBitstreamBytesWritten;
@@ -328,9 +333,7 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 		});
 		slot.cmd = std::move(bufs[0]);
 
-		slot.fence = vk_dev.createFence({
-			.flags = vk::FenceCreateFlagBits::eSignaled
-		});
+		slot.fence = vk_dev.createFence({});
 
 		slot.query_pool = vk_dev.createQueryPool({
 			.pNext = &feedback_info,
@@ -408,8 +411,8 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 			.subresourceRange = color_subresource_range
 		},
 		vk::ImageMemoryBarrier2{
-			.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-			.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+			.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+			.srcAccessMask = vk::AccessFlagBits2::eNone,
 			.dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
 			.dstAccessMask = vk::AccessFlagBits2::eTransferRead,
 			.oldLayout = vk::ImageLayout::eGeneral,
@@ -418,8 +421,8 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 			.subresourceRange = color_subresource_range
 		},
 		vk::ImageMemoryBarrier2{
-			.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-			.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+			.srcStageMask = vk::PipelineStageFlagBits2::eNone,
+			.srcAccessMask = vk::AccessFlagBits2::eNone,
 			.dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
 			.dstAccessMask = vk::AccessFlagBits2::eTransferRead,
 			.oldLayout = vk::ImageLayout::eGeneral,
@@ -445,23 +448,49 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 		.extent = { m_extent.x() / 2, m_extent.y() / 2, 1 }
 	});
 
-	const vk::ImageMemoryBarrier2 to_encode{
-		.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-		.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
-		.dstAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR,
-		.oldLayout = vk::ImageLayout::eTransferDstOptimal,
-		.newLayout = vk::ImageLayout::eVideoEncodeSrcKHR,
-		.image = slot.nv12_image,
-		.subresourceRange = color_subresource_range
+	const std::array post_copy_barriers = {
+		vk::ImageMemoryBarrier2{
+			.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+			.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+			.dstStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
+			.dstAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR,
+			.oldLayout = vk::ImageLayout::eTransferDstOptimal,
+			.newLayout = vk::ImageLayout::eVideoEncodeSrcKHR,
+			.image = slot.nv12_image,
+			.subresourceRange = color_subresource_range
+		},
+		vk::ImageMemoryBarrier2{
+			.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+			.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+			.dstStageMask = vk::PipelineStageFlagBits2::eNone,
+			.dstAccessMask = vk::AccessFlagBits2::eNone,
+			.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+			.newLayout = vk::ImageLayout::eGeneral,
+			.image = y_plane.native().image,
+			.subresourceRange = color_subresource_range
+		},
+		vk::ImageMemoryBarrier2{
+			.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+			.srcAccessMask = vk::AccessFlagBits2::eTransferRead,
+			.dstStageMask = vk::PipelineStageFlagBits2::eNone,
+			.dstAccessMask = vk::AccessFlagBits2::eNone,
+			.oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+			.newLayout = vk::ImageLayout::eGeneral,
+			.image = uv_plane.native().image,
+			.subresourceRange = color_subresource_range
+		}
 	};
 	slot.cmd.pipelineBarrier2({
-		.imageMemoryBarrierCount = 1,
-		.pImageMemoryBarriers = &to_encode
+		.imageMemoryBarrierCount = static_cast<std::uint32_t>(post_copy_barriers.size()),
+		.pImageMemoryBarriers = post_copy_barriers.data()
 	});
 
 	const bool is_keyframe = (m_frame_number % m_gop_size) == 0;
 	const auto dpb_index = static_cast<std::uint32_t>(m_frame_number % 2);
+	const auto ref_index = dpb_index ^ 1u;
+	auto& target_dpb = m_dpb[dpb_index];
+	auto& ref_dpb = m_dpb[ref_index];
+	const bool use_reference = !is_keyframe && ref_dpb.active;
 
 	vk::VideoPictureResourceInfoKHR src_picture{
 		.codedExtent = { m_extent.x(), m_extent.y() },
@@ -472,26 +501,99 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 	vk::VideoPictureResourceInfoKHR dpb_picture{
 		.codedExtent = { m_extent.x(), m_extent.y() },
 		.baseArrayLayer = 0,
-		.imageViewBinding = *m_dpb[dpb_index].view
+		.imageViewBinding = *target_dpb.view
 	};
 
+	vk::VideoPictureResourceInfoKHR ref_picture{
+		.codedExtent = { m_extent.x(), m_extent.y() },
+		.baseArrayLayer = 0,
+		.imageViewBinding = *ref_dpb.view
+	};
+
+	const vk::video::EncodeAV1ReferenceInfo setup_av1_std{
+		.frame_type = is_keyframe ? vk::video::AV1FrameType::eKey : vk::video::AV1FrameType::eInter,
+		.OrderHint = static_cast<std::uint8_t>(m_frame_number & 0xFF)
+	};
+	const vk::VideoEncodeAV1DpbSlotInfoKHR setup_av1_dpb{
+		.pStdReferenceInfo = setup_av1_std
+	};
+	const vk::video::EncodeAV1ReferenceInfo ref_av1_std{
+		.frame_type = ref_dpb.av1_frame_type,
+		.OrderHint = ref_dpb.av1_order_hint
+	};
+	const vk::VideoEncodeAV1DpbSlotInfoKHR ref_av1_dpb{
+		.pStdReferenceInfo = ref_av1_std
+	};
+
+	const vk::video::EncodeH265ReferenceInfo setup_h265_std{
+		.pic_type = is_keyframe ? vk::video::H265PictureType::eIdr : vk::video::H265PictureType::eP,
+		.PicOrderCntVal = static_cast<std::int32_t>(m_frame_number & 0xFF)
+	};
+	const vk::VideoEncodeH265DpbSlotInfoKHR setup_h265_dpb{
+		.pStdReferenceInfo = setup_h265_std
+	};
+	const vk::video::EncodeH265ReferenceInfo ref_h265_std{
+		.pic_type = ref_dpb.h265_pic_type,
+		.PicOrderCntVal = ref_dpb.h265_poc
+	};
+	const vk::VideoEncodeH265DpbSlotInfoKHR ref_h265_dpb{
+		.pStdReferenceInfo = ref_h265_std
+	};
+
+	const void* setup_dpb_pnext = m_codec == video_codec::av1 ? static_cast<const void*>(&setup_av1_dpb) : &setup_h265_dpb;
+	const void* ref_dpb_pnext = !use_reference
+		? nullptr
+		: (m_codec == video_codec::av1 ? static_cast<const void*>(&ref_av1_dpb) : &ref_h265_dpb);
+
 	vk::VideoReferenceSlotInfoKHR setup_ref{
+		.pNext = setup_dpb_pnext,
 		.slotIndex = static_cast<std::int32_t>(dpb_index),
 		.pPictureResource = &dpb_picture
 	};
 
-	std::array ref_slots = { setup_ref };
+	std::vector<vk::VideoReferenceSlotInfoKHR> begin_ref_slots;
+	if (!is_keyframe) {
+		if (use_reference) {
+			begin_ref_slots.push_back({
+				.pNext = ref_dpb_pnext,
+				.slotIndex = static_cast<std::int32_t>(ref_index),
+				.pPictureResource = &ref_picture
+			});
+		}
+		if (target_dpb.active) {
+			begin_ref_slots.push_back({
+				.slotIndex = static_cast<std::int32_t>(dpb_index),
+				.pPictureResource = nullptr
+			});
+		}
+	}
+	begin_ref_slots.push_back({
+		.pNext = setup_dpb_pnext,
+		.slotIndex = -1,
+		.pPictureResource = &dpb_picture
+	});
 
 	slot.cmd.resetQueryPool(*slot.query_pool, 0, 1);
+
+	const vk::MemoryBarrier2 encode_sync{
+		.srcStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
+		.srcAccessMask = vk::AccessFlagBits2::eVideoEncodeWriteKHR,
+		.dstStageMask = vk::PipelineStageFlagBits2::eVideoEncodeKHR,
+		.dstAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR | vk::AccessFlagBits2::eVideoEncodeWriteKHR
+	};
+	slot.cmd.pipelineBarrier2({
+		.memoryBarrierCount = 1,
+		.pMemoryBarriers = &encode_sync
+	});
 
 	slot.cmd.beginVideoCodingKHR({
 		.videoSession = *m_session,
 		.videoSessionParameters = *m_params,
-		.referenceSlotCount = static_cast<std::uint32_t>(ref_slots.size()),
-		.pReferenceSlots = ref_slots.data()
+		.referenceSlotCount = static_cast<std::uint32_t>(begin_ref_slots.size()),
+		.pReferenceSlots = begin_ref_slots.data()
 	});
 
-	if (m_frame_number == 0) {
+	if (is_keyframe) {
 		slot.cmd.controlVideoCodingKHR({
 			.flags = vk::VideoCodingControlFlagBitsKHR::eReset
 		});
@@ -500,20 +602,53 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 	slot.cmd.beginQuery(*slot.query_pool, 0, {});
 
 	if (m_codec == video_codec::h265) {
-		static vk::video::EncodeH265PictureInfo std_pic_info{};
-		std_pic_info.pic_type = is_keyframe ? vk::video::H265PictureType::eIdr : vk::video::H265PictureType::eP;
-		std_pic_info.PicOrderCntVal = static_cast<std::int32_t>(m_frame_number & 0xFF);
+		vk::video::EncodeH265ReferenceListsInfo ref_lists{};
+		for (auto& r : ref_lists.RefPicList0) {
+			r = 0xFF;
+		}
+		for (auto& r : ref_lists.RefPicList1) {
+			r = 0xFF;
+		}
+		if (use_reference) {
+			ref_lists.RefPicList0[0] = static_cast<std::uint8_t>(ref_index);
+		}
 
-		static vk::video::EncodeH265SliceSegmentHeader slice_header{};
+		const vk::video::H265ShortTermRefPicSet strps{
+			.used_by_curr_pic_s0_flag = use_reference ? std::uint16_t{0x1} : std::uint16_t{0},
+			.num_negative_pics = use_reference ? std::uint8_t{1} : std::uint8_t{0}
+		};
 
-		static vk::VideoEncodeH265NaluSliceSegmentInfoKHR nalu{
+		const vk::video::EncodeH265PictureInfo std_pic_info{
+			.flags = {
+				.is_reference = 1,
+				.IrapPicFlag = is_keyframe ? 1u : 0u,
+				.short_term_ref_pic_set_sps_flag = 0
+			},
+			.pic_type = is_keyframe ? vk::video::H265PictureType::eIdr : vk::video::H265PictureType::eP,
+			.PicOrderCntVal = static_cast<std::int32_t>(m_frame_number & 0xFF),
+			.pRefLists = &ref_lists,
+			.pShortTermRefPicSet = &strps
+		};
+
+		const vk::video::EncodeH265SliceSegmentHeader slice_header{
+			.flags = { .first_slice_segment_in_pic_flag = 1 },
+			.slice_type = is_keyframe ? vk::video::H265SliceType::eI : vk::video::H265SliceType::eP
+		};
+
+		const vk::VideoEncodeH265NaluSliceSegmentInfoKHR nalu{
 			.pStdSliceSegmentHeader = slice_header
 		};
 
-		static vk::VideoEncodeH265PictureInfoKHR h265_pic{
+		const vk::VideoEncodeH265PictureInfoKHR h265_pic{
 			.naluSliceSegmentEntryCount = 1,
 			.pNaluSliceSegmentEntries = &nalu,
 			.pStdPictureInfo = std_pic_info
+		};
+
+		const vk::VideoReferenceSlotInfoKHR encode_ref_slot{
+			.pNext = &ref_h265_dpb,
+			.slotIndex = static_cast<std::int32_t>(ref_index),
+			.pPictureResource = &ref_picture
 		};
 
 		slot.cmd.encodeVideoKHR({
@@ -522,16 +657,42 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 			.dstBufferOffset = 0,
 			.dstBufferRange = bitstream_buffer_size,
 			.srcPictureResource = src_picture,
-			.pSetupReferenceSlot = &setup_ref
+			.pSetupReferenceSlot = &setup_ref,
+			.referenceSlotCount = use_reference ? 1u : 0u,
+			.pReferenceSlots = use_reference ? &encode_ref_slot : nullptr
 		});
 	}
 	else {
-		static vk::video::EncodeAV1PictureInfo std_pic_info{};
-		std_pic_info.frame_type = is_keyframe ? vk::video::AV1FrameType::eKey : vk::video::AV1FrameType::eInter;
-		std_pic_info.primary_ref_frame = is_keyframe ? 7 : 0;
+		vk::video::EncodeAV1PictureInfo std_pic_info{
+			.frame_type = is_keyframe ? vk::video::AV1FrameType::eKey : vk::video::AV1FrameType::eInter,
+			.order_hint = static_cast<std::uint8_t>(m_frame_number & 0xFF),
+			.primary_ref_frame = use_reference ? std::uint8_t{0} : std::uint8_t{7},
+			.refresh_frame_flags = 0xFF
+		};
+		for (auto& idx : std_pic_info.ref_frame_idx) {
+			idx = -1;
+		}
 
-		static vk::VideoEncodeAV1PictureInfoKHR av1_pic{
+		vk::VideoEncodeAV1PictureInfoKHR av1_pic{
+			.predictionMode = use_reference
+				? vk::VideoEncodeAV1PredictionModeKHR::eSingleReference
+				: vk::VideoEncodeAV1PredictionModeKHR::eIntraOnly,
+			.rateControlGroup = is_keyframe
+				? vk::VideoEncodeAV1RateControlGroupKHR::eIntra
+				: vk::VideoEncodeAV1RateControlGroupKHR::ePredictive,
 			.pStdPictureInfo = std_pic_info
+		};
+		for (auto& idx : av1_pic.referenceNameSlotIndices) {
+			idx = -1;
+		}
+		if (use_reference) {
+			av1_pic.referenceNameSlotIndices[0] = static_cast<std::int32_t>(ref_index);
+		}
+
+		const vk::VideoReferenceSlotInfoKHR encode_ref_slot{
+			.pNext = &ref_av1_dpb,
+			.slotIndex = static_cast<std::int32_t>(ref_index),
+			.pPictureResource = &ref_picture
 		};
 
 		slot.cmd.encodeVideoKHR({
@@ -540,7 +701,9 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 			.dstBufferOffset = 0,
 			.dstBufferRange = bitstream_buffer_size,
 			.srcPictureResource = src_picture,
-			.pSetupReferenceSlot = &setup_ref
+			.pSetupReferenceSlot = &setup_ref,
+			.referenceSlotCount = use_reference ? 1u : 0u,
+			.pReferenceSlots = use_reference ? &encode_ref_slot : nullptr
 		});
 	}
 
@@ -563,6 +726,21 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 	}, *slot.fence);
 	slot.submitted = true;
 	slot.has_output = true;
+
+	if (is_keyframe) {
+		for (auto& dpb : m_dpb) {
+			dpb.active = false;
+		}
+	}
+	target_dpb.active = true;
+	if (m_codec == video_codec::av1) {
+		target_dpb.av1_frame_type = setup_av1_std.frame_type;
+		target_dpb.av1_order_hint = setup_av1_std.OrderHint;
+	}
+	else {
+		target_dpb.h265_pic_type = setup_h265_std.pic_type;
+		target_dpb.h265_poc = setup_h265_std.PicOrderCntVal;
+	}
 
 	m_frame_number++;
 }
@@ -744,5 +922,11 @@ auto gse::gpu::find_memory_type(const vk::raii::PhysicalDevice& physical_device,
 			return i;
 		}
 	}
+	for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+		if (type_bits & (1u << i)) {
+			return i;
+		}
+	}
+	log::println(log::level::error, log::category::vulkan, "find_memory_type: no memory type matches bits 0x{:x}", type_bits);
 	return 0;
 }

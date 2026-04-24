@@ -447,8 +447,9 @@ export namespace gse::actions {
 
 		static auto update(
 			update_context& ctx,
-			system_state& s
-		) -> void;
+			system_state& s,
+			const input::system_state& input_s
+		) -> async::task<>;
 	};
 }
 
@@ -683,7 +684,7 @@ auto gse::actions::system::initialize(init_context& phase, system_state& s) -> v
 	s.finalize_bindings();
 }
 
-auto gse::actions::system::update(update_context& ctx, system_state& s) -> void {
+auto gse::actions::system::update(update_context& ctx, system_state& s, const input::system_state& input_s) -> async::task<> {
 	for (const auto& [category, data] : ctx.read_channel<save::int_map_loaded>()) {
 		if (category == "Controls") {
 			s.rebinds = data;
@@ -720,11 +721,7 @@ auto gse::actions::system::update(update_context& ctx, system_state& s) -> void 
 		ctx.channels.push<save::int_map_sync>({ "ActionDefaults", s.action_defaults });
 	}
 
-	const auto* input_state = ctx.try_state_of<input::system_state>();
-	if (!input_state) {
-		return;
-	}
-	const auto& in = input_state->current_state();
+	const auto& in = input_s.current_state();
 
 	auto& action_state = s.current_input_state;
 	action_state.begin_frame();
@@ -782,6 +779,8 @@ auto gse::actions::system::update(update_context& ctx, system_state& s) -> void 
 			ctx.channels.push<axis2_channel>({ id, val });
 		}
 	}
+
+	co_return;
 }
 
 auto gse::actions::system_state::current_state() const -> const state& {

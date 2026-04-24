@@ -16,11 +16,12 @@ Format per item: **summary** → why it's there → unblock condition → files 
 
 ## 2. `CMAKE_EXPERIMENTAL_CXX_IMPORT_STD` UUID dance
 
-- **What:** Top-level `CMakeLists.txt` sets `CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444"` to unlock `import std`.
-- **Why:** CMake 3.30–4.2 gate `import std` behind a version-specific UUID.
-- **Unblock when:** CMake ≥ 4.3 is the minimum we care about (both standalone and VS-bundled).
-- **Files to touch:** delete the `set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD …)` line in `CMakeLists.txt`; bump `cmake_minimum_required` to 4.3.
-- **Verify:** `cmake --version` ≥ 4.3 and VS-bundled CMake (`Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe`) ≥ 4.3.
+- **What:** Top-level `CMakeLists.txt` sets `CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b"` (CMake 4.3 UUID) to unlock `import std`.
+- **Why:** `import std` is still an experimental feature gated by a version-specific UUID. Every CMake release changes the UUID.
+- **Unblock when:** CMake ships `import std` as non-experimental (no UUID needed). Track `cmake-cxxmodules.7.rst` — when the "experimental" note in the "Standard Library Modules" section disappears, the gate is gone.
+- **Files to touch:** delete the `set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD …)` line in `CMakeLists.txt`. Also update this doc and `docs/TOOLCHAIN_SETUP.md` §6.
+- **Bump procedure when upgrading CMake:** run `powershell -Command "$b=[IO.File]::ReadAllBytes('C:\Program Files\CMake\bin\cmake.exe'); $s=[Text.Encoding]::ASCII.GetString($b); [regex]::Match($s,'CxxImportStd[\x00-\xFF]{0,50}').Value"` and grab the UUID that follows `CxxImportStd`. Replace the value in `CMakeLists.txt`.
+- **Verify:** configure succeeds without "Experimental `import std` support not enabled" error.
 
 ## 3. libc++ `__new/new_handler.h` patch (vcruntime ABI)
 

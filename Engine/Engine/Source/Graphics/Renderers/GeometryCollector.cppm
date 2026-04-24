@@ -207,7 +207,7 @@ export namespace gse::renderer::geometry_collector {
 		};
 
 		static auto initialize(init_context& phase, resources& r, state& s) -> void;
-		static auto update(update_context& ctx, const resources& r, state& s) -> void;
+		static auto update(update_context& ctx, const resources& r, state& s) -> async::task<>;
 		static auto frame(frame_context& ctx, const resources& r, const state& s) -> async::task<>;
 	};
 }
@@ -322,7 +322,7 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 	});
 }
 
-auto gse::renderer::geometry_collector::system::update(update_context& ctx, const resources& r, state& s) -> void {
+auto gse::renderer::geometry_collector::system::update(update_context& ctx, const resources& r, state& s) -> async::task<> {
 	const auto* cam_state = ctx.try_state_of<camera::state>();
 	const view_matrix view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
 	const projection_matrix proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
@@ -334,14 +334,16 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 		}
 	}
 
-	ctx.schedule([&s, &r, &channels = ctx.channels, view_matrix, proj_matrix, body_index_map = std::move(body_index_map)](
-		write<render_component> render,
-		read<physics::motion_component> motion,
-		read<physics::collision_component> collision,
-		read<animation_component> anim
-	) {
+	auto [render, motion, collision, anim] = co_await ctx.acquire<
+		write<render_component>,
+		read<physics::motion_component>,
+		read<physics::collision_component>,
+		read<animation_component>
+	>();
+
+	{
 		if (render.empty()) {
-			return;
+			co_return;
 		}
 
 		render_data data;
@@ -657,8 +659,8 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 		data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
 
-		channels.push(std::move(data));
-	});
+		ctx.channels.push(std::move(data));
+	}
 }
 
 auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, const resources& r, const state& s) -> async::task<> {

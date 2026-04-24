@@ -8,6 +8,7 @@ import gse.time;
 import gse.diag;
 
 import :phase_context;
+import :task_context;
 import :update_context;
 import :frame_context;
 import :system_node;
@@ -16,7 +17,8 @@ import :registry;
 export namespace gse {
 	class scheduler final : public state_snapshot_provider, public channel_reader_provider, public resources_provider, public system_provider {
 	public:
-		scheduler() = default;
+		scheduler(
+		) = default;
 
 		auto set_gpu_context(
 			void* ctx
@@ -90,8 +92,12 @@ export namespace gse {
 		auto defer(
 			F&& fn
 		) -> void;
+
 	private:
 		auto drain_deferred(
+		) -> void;
+
+		auto check_state_dep_cycles(
 		) -> void;
 
 		auto run_graph_update(
@@ -105,6 +111,7 @@ export namespace gse {
 
 		std::vector<std::unique_ptr<system_node_base>> m_nodes;
 		std::unordered_map<std::type_index, system_node_base*> m_state_index;
+		std::unordered_map<std::type_index, std::vector<std::type_index>> m_state_deps;
 		std::unordered_map<std::type_index, system_node_base*> m_resources_index;
 		std::unordered_map<std::type_index, std::unique_ptr<channel_base>> m_channels;
 		mutable std::mutex m_channels_mutex;
@@ -114,6 +121,7 @@ export namespace gse {
 		void* m_gpu_ctx = nullptr;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
+		async::rw_mutex_registry m_access_mutexes;
 		bool m_initialized = false;
 
 		auto snapshot_all_channels(
@@ -130,10 +138,6 @@ export namespace gse {
 }
 
 namespace gse {
-	auto wrap_work(
-		gse::move_only_function<void()> fn
-	) -> async::task<>;
-
 	class frame_snapshot_provider final : public state_snapshot_provider {
 	public:
 		explicit frame_snapshot_provider(
@@ -149,13 +153,7 @@ namespace gse {
 	};
 }
 
-auto gse::wrap_work(gse::move_only_function<void()> fn) -> async::task<> {
-	fn();
-	co_return;
-}
-
-gse::frame_snapshot_provider::frame_snapshot_provider(const std::unordered_map<std::type_index, system_node_base*>& index)
-	: m_index(index) {}
+gse::frame_snapshot_provider::frame_snapshot_provider(const std::unordered_map<std::type_index, system_node_base*>& index) : m_index(index) {}
 
 auto gse::frame_snapshot_provider::snapshot_ptr(const std::type_index type) const -> const void* {
 	const auto it = m_index.find(type);
@@ -174,7 +172,9 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 	auto ptr = std::make_unique<system_node<S, State>>(std::forward<Args>(args)...);
 	auto* raw = ptr.get();
 
-	m_state_index.emplace(std::type_index(typeid(State)), raw);
+	const auto state_idx = std::type_index(typeid(State));
+	m_state_index.emplace(state_idx, raw);
+	m_state_deps.emplace(state_idx, extract_state_deps<S, State>());
 
 	if constexpr (has_resources<S>) {
 		m_resources_index.emplace(std::type_index(typeid(typename S::resources)), raw);
@@ -265,6 +265,8 @@ auto gse::scheduler::set_gpu_context(void* ctx) -> void {
 }
 
 auto gse::scheduler::initialize() -> void {
+	check_state_dep_cycles();
+
 	frame_sync::on_begin([this] {
 		snapshot_all_channels();
 	});
@@ -280,8 +282,8 @@ auto gse::scheduler::initialize() -> void {
 	};
 	phase.gpu_ctx = m_gpu_ctx;
 
-	for (std::size_t i = 0; i < m_nodes.size(); ++i) {
-		m_nodes[i]->initialize(phase);
+	for (auto& node : m_nodes) {
+		node->initialize(phase);
 	}
 
 	m_initialized = true;
@@ -290,6 +292,64 @@ auto gse::scheduler::initialize() -> void {
 auto gse::scheduler::push_deferred(gse::move_only_function<void()> fn) -> void {
 	std::lock_guard lock(m_deferred_mutex);
 	m_deferred.push_back(std::move(fn));
+}
+
+auto gse::scheduler::check_state_dep_cycles() -> void {
+	enum class color : std::uint8_t { white, gray, black };
+	std::unordered_map<std::type_index, color> colors;
+	for (const auto& [state_idx, _] : m_state_deps) {
+		colors[state_idx] = color::white;
+	}
+
+	std::vector<std::type_index> stack;
+
+	auto format_cycle = [&](const std::type_index from) -> std::string {
+		const auto cycle_start = std::ranges::find(stack, from);
+		std::string out;
+		for (auto it = cycle_start; it != stack.end(); ++it) {
+			if (!out.empty()) {
+				out += " -> ";
+			}
+			out += it->name();
+		}
+		out += " -> ";
+		out += from.name();
+		return out;
+	};
+
+	auto visit = [&](const std::type_index node, auto& self) -> void {
+		colors[node] = color::gray;
+		stack.push_back(node);
+
+		if (const auto it = m_state_deps.find(node); it != m_state_deps.end()) {
+			for (const auto& dep : it->second) {
+				if (!colors.contains(dep)) {
+					continue;
+				}
+				if (colors[dep] == color::gray) {
+					assert(
+						false,
+						std::source_location::current(),
+						"state_deps cycle detected: {}",
+						format_cycle(dep)
+					);
+					continue;
+				}
+				if (colors[dep] == color::white) {
+					self(dep, self);
+				}
+			}
+		}
+
+		stack.pop_back();
+		colors[node] = color::black;
+	};
+
+	for (const auto& [state_idx, _] : m_state_deps) {
+		if (colors[state_idx] == color::white) {
+			visit(state_idx, visit);
+		}
+	}
 }
 
 auto gse::scheduler::drain_deferred() -> void {
@@ -333,49 +393,26 @@ auto gse::scheduler::update() -> void {
 auto gse::scheduler::run_graph_update() -> void {
 	trace::scope(find_or_generate_id("scheduler::run_graph_update"), [&] {
 		auto writer = make_channel_writer();
-		std::vector<scheduled_work> collected_work;
-		std::mutex collected_work_mutex;
 
-		update_context u_ctx{
-			.reg = *m_registry,
-			.snapshots = *this,
-			.channels = writer,
-			.channel_reader = *this,
-			.resources = *this,
-			.graph = m_update_graph,
-			.work = collected_work,
-			.work_mutex = collected_work_mutex
-		};
-		u_ctx.gpu_ctx = m_gpu_ctx;
+		update_context u_ctx(
+			m_gpu_ctx,
+			*this,
+			writer,
+			*this,
+			*this,
+			m_update_graph,
+			*m_registry,
+			m_access_mutexes
+		);
 
-		{
-			task::group group(find_or_generate_id("scheduler::parallel_updates"));
-			for (const auto& node : m_nodes) {
-				group.post([&, node = node.get()] {
-					node->graph_update(u_ctx);
-				}, node->trace_id());
-			}
-			group.wait();
+		std::vector<async::task<>> tasks;
+		tasks.reserve(m_nodes.size());
+		for (const auto& node : m_nodes) {
+			tasks.push_back(node->graph_update(u_ctx));
 		}
-
-		if (!collected_work.empty()) {
-			trace::scope(find_or_generate_id("scheduler::update_submit"), [&] {
-				for (auto& item : collected_work) {
-					m_update_graph.submit(
-						item.work_id,
-						wrap_work(std::move(item.execute)),
-						std::move(item.reads),
-						std::move(item.writes)
-					);
-				}
-			});
-			trace::scope(find_or_generate_id("scheduler::update_graph_execute"), [&] {
-				m_update_graph.execute();
-			});
-			trace::scope(find_or_generate_id("scheduler::update_graph_clear"), [&] {
-				m_update_graph.clear();
-			});
-		}
+		trace::scope(find_or_generate_id("scheduler::update_sync_wait"), [&] {
+			async::sync_wait(async::when_all(std::move(tasks)));
+		});
 	});
 }
 
@@ -390,15 +427,15 @@ auto gse::scheduler::run_graph_frame() -> void {
 		frame_snapshot_provider frame_snapshots(m_state_index);
 		auto writer = make_channel_writer();
 
-		frame_context f_ctx{
-			.reg = *m_registry,
-			.snapshots = frame_snapshots,
-			.channel_reader = *this,
-			.channels = writer,
-			.resources = *this,
-			.graph = m_frame_graph
-		};
-		f_ctx.gpu_ctx = m_gpu_ctx;
+		frame_context f_ctx(
+			m_gpu_ctx,
+			frame_snapshots,
+			writer,
+			*this,
+			*this,
+			m_frame_graph,
+			*m_registry
+		);
 
 		std::vector<async::task<>> tasks;
 		trace::scope(find_or_generate_id("scheduler::collect_frame_tasks"), [&] {
@@ -443,8 +480,8 @@ auto gse::scheduler::shutdown() -> void {
 	};
 	phase.gpu_ctx = m_gpu_ctx;
 
-	for (auto it = m_nodes.rbegin(); it != m_nodes.rend(); ++it) {
-		(*it)->shutdown(phase);
+	for (auto& node : m_nodes | std::views::reverse) {
+		node->shutdown(phase);
 	}
 }
 

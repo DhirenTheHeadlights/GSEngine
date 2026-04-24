@@ -3,65 +3,69 @@ export module gse.ecs:update_context;
 import std;
 
 import gse.core;
-import gse.meta;
 import gse.concurrency;
 
 import :access_token;
 import :component;
 import :phase_context;
 import :registry;
+import :task_context;
 import :traits;
 
 export namespace gse {
-	struct scheduled_work {
-		id work_id;
-		std::vector<std::type_index> reads;
-		std::vector<std::type_index> writes;
-		gse::move_only_function<void()> execute;
-	};
+	class update_context : public task_context {
+	public:
+		update_context(
+			void* gpu_ctx,
+			const state_snapshot_provider& snapshots,
+			channel_writer& channels,
+			const channel_reader_provider& channel_reader,
+			const resources_provider& resources,
+			task_graph& graph,
+			registry& reg,
+			async::rw_mutex_registry& access_mutexes
+		);
 
-	struct update_context : phase_gpu_access {
-		registry& reg;
-		const state_snapshot_provider& snapshots;
-		channel_writer& channels;
-		const channel_reader_provider& channel_reader;
-		const resources_provider& resources;
-		task_graph& graph;
-		std::vector<scheduled_work>& work;
-		std::mutex& work_mutex;
-
-		template <is_component T>
-		auto read(
-		) -> gse::read<T>;
+		template <typename... Accesses>
+		auto acquire(
+		) -> async::task<std::tuple<Accesses...>>;
 
 		template <is_component T>
-		auto write(
-		) -> gse::write<T>;
+		auto try_component(
+			id owner
+		) const -> const T*;
 
-		template <typename State>
-		auto state_of(
-		) const -> const State&;
+		template <is_component T>
+		auto components(
+		) const -> std::span<const T>;
 
-		template <typename State>
-		auto try_state_of(
-		) const -> const State*;
+		template <is_component T>
+		auto drain_component_adds(
+		) -> std::vector<id>;
 
-		template <typename T>
-		auto read_channel(
-		) const -> channel_read_guard<T>;
+		template <is_component T>
+		auto drain_component_updates(
+		) -> std::vector<id>;
 
-		template <typename Resources>
-		auto resources_of(
-		) const -> const Resources&;
+		template <is_component T>
+		auto drain_component_removes(
+		) -> std::vector<id>;
 
-		template <typename Resources>
-		auto try_resources_of(
-		) const -> const Resources*;
+		auto ensure_exists(
+			id owner
+		) -> void;
 
-		template <typename F>
-		auto schedule(
-			F&& action,
-			std::source_location loc = std::source_location::current()
+		auto active(
+			id owner
+		) const -> bool;
+
+		auto ensure_active(
+			id owner
+		) -> void;
+
+		auto add_deferred_action(
+			id owner,
+			registry::deferred_action action
 		) -> void;
 
 		template <is_component T, typename... Args>
@@ -78,117 +82,138 @@ export namespace gse {
 		auto defer_activate(
 			id entity
 		) -> void;
+
+	private:
+		registry& m_reg;
+		async::rw_mutex_registry& m_access_mutexes;
 	};
 }
 
 namespace gse {
-	template <typename AccessArg>
-	auto acquire_access_token(
-		registry& reg
-	) -> AccessArg;
+	template <typename Access>
+	auto acquire_lock_for(
+		async::rw_mutex_registry& registry
+	) -> async::task<>;
 
-	template <typename ArgTuple, typename F, std::size_t... Is>
-	auto invoke_with_access_tokens(
+	template <typename Access>
+	auto make_locked_handle(
 		registry& reg,
-		F& func,
-		std::index_sequence<Is...>
-	) -> void;
+		async::rw_mutex_registry& mutex_registry
+	) -> Access;
 }
 
-template <typename AccessArg>
-auto gse::acquire_access_token(registry& reg) -> AccessArg {
-	using element_t = access_element_t<AccessArg>;
-	if constexpr (is_read_access_v<AccessArg>) {
-		return reg.acquire_read<element_t>();
+gse::update_context::update_context(
+	void* gpu_ctx,
+	const state_snapshot_provider& snapshots,
+	channel_writer& channels,
+	const channel_reader_provider& channel_reader,
+	const resources_provider& resources,
+	task_graph& graph,
+	registry& reg,
+	async::rw_mutex_registry& access_mutexes
+) : task_context{ gpu_ctx, snapshots, channels, channel_reader, resources, graph },
+	m_reg(reg),
+	m_access_mutexes(access_mutexes) {}
+
+template <typename Access>
+auto gse::acquire_lock_for(async::rw_mutex_registry& registry) -> async::task<> {
+	using element_t = access_element_t<Access>;
+	auto& mutex = registry.mutex_for(std::type_index(typeid(element_t)));
+	if constexpr (is_read_access_v<Access>) {
+		co_await mutex.lock_shared();
 	}
 	else {
-		return reg.acquire_write<element_t>();
+		co_await mutex.lock_exclusive();
 	}
 }
 
-template <typename ArgTuple, typename F, std::size_t... Is>
-auto gse::invoke_with_access_tokens(registry& reg, F& func, std::index_sequence<Is...>) -> void {
-	func(acquire_access_token<std::tuple_element_t<Is, ArgTuple>>(reg)...);
+template <typename Access>
+auto gse::make_locked_handle(registry& reg, async::rw_mutex_registry& mutex_registry) -> Access {
+	using element_t = access_element_t<Access>;
+	auto& mutex = mutex_registry.mutex_for(std::type_index(typeid(element_t)));
+	if constexpr (is_read_access_v<Access>) {
+		return reg.template acquire_read<element_t>(&mutex);
+	}
+	else {
+		return reg.template acquire_write<element_t>(&mutex);
+	}
+}
+
+template <typename... Accesses>
+auto gse::update_context::acquire() -> async::task<std::tuple<Accesses...>> {
+	constexpr std::size_t count = sizeof...(Accesses);
+
+	const std::array<std::type_index, count> type_indices = {
+		std::type_index(typeid(access_element_t<Accesses>))...
+	};
+
+	std::array<std::size_t, count> order;
+	std::iota(order.begin(), order.end(), std::size_t{ 0 });
+	std::ranges::sort(order, [&](const std::size_t a, const std::size_t b) {
+		return type_indices[a] < type_indices[b];
+	});
+
+	using lock_fn = async::task<>(*)(async::rw_mutex_registry&);
+	constexpr std::array<lock_fn, count> fns = { &acquire_lock_for<Accesses>... };
+
+	for (std::size_t i = 0; i < count; ++i) {
+		co_await fns[order[i]](m_access_mutexes);
+	}
+
+	co_return std::tuple<Accesses...>{ make_locked_handle<Accesses>(m_reg, m_access_mutexes)... };
 }
 
 template <gse::is_component T>
-auto gse::update_context::read() -> gse::read<T> {
-	return reg.acquire_read<T>();
+auto gse::update_context::try_component(const id owner) const -> const T* {
+	return m_reg.try_component<T>(owner);
 }
 
 template <gse::is_component T>
-auto gse::update_context::write() -> gse::write<T> {
-	return reg.acquire_write<T>();
+auto gse::update_context::components() const -> std::span<const T> {
+	return m_reg.components<T>();
 }
 
-template <typename State>
-auto gse::update_context::state_of() const -> const State& {
-	return snapshots.state_of<State>();
+template <gse::is_component T>
+auto gse::update_context::drain_component_adds() -> std::vector<id> {
+	return m_reg.drain_component_adds<T>();
 }
 
-template <typename State>
-auto gse::update_context::try_state_of() const -> const State* {
-	return snapshots.try_state_of<State>();
+template <gse::is_component T>
+auto gse::update_context::drain_component_updates() -> std::vector<id> {
+	return m_reg.drain_component_updates<T>();
 }
 
-template <typename T>
-auto gse::update_context::read_channel() const -> channel_read_guard<T> {
-	return channel_read_guard<T>(channel_reader.read<T>());
+template <gse::is_component T>
+auto gse::update_context::drain_component_removes() -> std::vector<id> {
+	return m_reg.drain_component_removes<T>();
 }
 
-template <typename Resources>
-auto gse::update_context::resources_of() const -> const Resources& {
-	return resources.resources_of<Resources>();
+auto gse::update_context::ensure_exists(const id owner) -> void {
+	m_reg.ensure_exists(owner);
 }
 
-template <typename Resources>
-auto gse::update_context::try_resources_of() const -> const Resources* {
-	return resources.try_resources_of<Resources>();
+auto gse::update_context::active(const id owner) const -> bool {
+	return m_reg.active(owner);
 }
 
-template <typename F>
-auto gse::update_context::schedule(F&& action, std::source_location loc) -> void {
-	using traits = lambda_traits<std::decay_t<F>>;
-	using arg_tuple = typename traits::arg_tuple;
+auto gse::update_context::ensure_active(const id owner) -> void {
+	m_reg.ensure_active(owner);
+}
 
-	static const id work_id = [loc] {
-		const std::string_view full = loc.file_name();
-		const auto sep = full.find_last_of("/\\");
-		const std::string_view filename = sep == std::string_view::npos ? full : full.substr(sep + 1);
-		return find_or_generate_id(std::format("schedule_work[{}:{}]", filename, loc.line()));
-	}();
-
-	std::lock_guard lock(work_mutex);
-	if constexpr (traits::arity == 1 && std::is_same_v<std::tuple_element_t<0, arg_tuple>, registry&>) {
-		work.push_back({
-			.work_id = work_id,
-			.execute = [&r = reg, a = std::forward<F>(action)]() mutable {
-				a(r);
-			}
-		});
-	}
-	else {
-		work.push_back({
-			.work_id = work_id,
-			.reads = system_reads<F>(),
-			.writes = system_writes<F>(),
-			.execute = [&r = reg, a = std::forward<F>(action)]() mutable {
-				invoke_with_access_tokens<arg_tuple>(r, a, std::make_index_sequence<traits::arity>{});
-			}
-		});
-	}
+auto gse::update_context::add_deferred_action(const id owner, registry::deferred_action action) -> void {
+	m_reg.add_deferred_action(owner, std::move(action));
 }
 
 template <gse::is_component T, typename... Args>
 auto gse::update_context::defer_add(const id entity, Args&&... args) -> void {
-	reg.defer_add_component<T>(entity, std::forward<Args>(args)...);
+	m_reg.defer_add_component<T>(entity, std::forward<Args>(args)...);
 }
 
 template <gse::is_component T>
 auto gse::update_context::defer_remove(const id entity) -> void {
-	reg.defer_remove_component<T>(entity);
+	m_reg.defer_remove_component<T>(entity);
 }
 
 auto gse::update_context::defer_activate(const id entity) -> void {
-	reg.defer_activate(entity);
+	m_reg.defer_activate(entity);
 }
