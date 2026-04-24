@@ -3,11 +3,14 @@ export module gse.ecs:access_token;
 import std;
 
 import gse.core;
+import gse.concurrency;
 
 import :component;
 
 export namespace gse {
 	enum class access_mode { read, write };
+
+	class registry;
 
 	template <is_component T, access_mode M = access_mode::read>
 	class access : non_copyable {
@@ -19,24 +22,18 @@ export namespace gse {
 		using lookup_fn = pointer (*)(void* ctx, id);
 
 		~access(
-		) override = default;
+		) override;
 
 		access(
-		) = default;
-
-		explicit access(
-			span_type span,
-			lookup_fn fn = nullptr,
-			void* ctx = nullptr
-		);
+		) = delete;
 
 		access(
-			access&&
-		) noexcept = default;
+			access&& other
+		) noexcept;
 
 		auto operator=(
-			access&&
-		) noexcept -> access& = default;
+			access&& other
+		) noexcept -> access&;
 
 		template <typename Self>
 		auto begin(
@@ -73,17 +70,70 @@ export namespace gse {
 		) const -> pointer;
 
 	private:
+		friend class registry;
+
+		explicit access(
+			span_type span,
+			lookup_fn fn = nullptr,
+			void* ctx = nullptr,
+			async::rw_mutex* mutex = nullptr
+		);
+
 		span_type m_span;
 		lookup_fn m_lookup = nullptr;
 		void* m_lookup_ctx = nullptr;
+		async::rw_mutex* m_mutex = nullptr;
 	};
 
-	template <is_component T> using read  = access<T, access_mode::read>;
-	template <is_component T> using write = access<T, access_mode::write>;
+	template <is_component T>
+	using read = access<T, access_mode::read>;
+
+	template <is_component T>
+	using write = access<T, access_mode::write>;
 }
 
 template <gse::is_component T, gse::access_mode M>
-gse::access<T, M>::access(span_type span, lookup_fn fn, void* ctx) : m_span(span), m_lookup(fn), m_lookup_ctx(ctx) {}
+gse::access<T, M>::access(const span_type span, const lookup_fn fn, void* ctx, async::rw_mutex* mutex)
+	: m_span(span), m_lookup(fn), m_lookup_ctx(ctx), m_mutex(mutex) {}
+
+template <gse::is_component T, gse::access_mode M>
+gse::access<T, M>::access(access&& other) noexcept
+	: m_span(other.m_span),
+	  m_lookup(other.m_lookup),
+	  m_lookup_ctx(other.m_lookup_ctx),
+	  m_mutex(std::exchange(other.m_mutex, nullptr)) {}
+
+template <gse::is_component T, gse::access_mode M>
+auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {
+	if (this != &other) {
+		if (m_mutex) {
+			if constexpr (M == access_mode::read) {
+				m_mutex->unlock_shared();
+			}
+			else {
+				m_mutex->unlock_exclusive();
+			}
+		}
+		m_span = other.m_span;
+		m_lookup = other.m_lookup;
+		m_lookup_ctx = other.m_lookup_ctx;
+		m_mutex = std::exchange(other.m_mutex, nullptr);
+	}
+	return *this;
+}
+
+template <gse::is_component T, gse::access_mode M>
+gse::access<T, M>::~access() {
+	if (!m_mutex) {
+		return;
+	}
+	if constexpr (M == access_mode::read) {
+		m_mutex->unlock_shared();
+	}
+	else {
+		m_mutex->unlock_exclusive();
+	}
+}
 
 template <gse::is_component T, gse::access_mode M>
 template <typename Self>

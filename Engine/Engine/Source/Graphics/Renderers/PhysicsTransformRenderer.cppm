@@ -41,7 +41,8 @@ export namespace gse::renderer::physics_transform {
 		static auto frame(
 			frame_context& ctx,
 			const resources& r,
-			frame_data& fd
+			frame_data& fd,
+			const geometry_collector::state& gc_s
 		) -> async::task<>;
 	};
 }
@@ -63,8 +64,7 @@ auto gse::renderer::physics_transform::system::initialize(const init_context& ph
 	r.initialized = true;
 }
 
-auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const resources& r, frame_data& fd) -> async::task<> {
-	co_await ctx.after<geometry_collector::state>();
+auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const geometry_collector::state& gc_s) -> async::task<> {
 
 	auto& gpu = ctx.get<gpu::context>();
 

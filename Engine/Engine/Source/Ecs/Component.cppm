@@ -19,7 +19,8 @@ export namespace gse {
 		using params = Data;
 		using network_data_t = NetworkedData;
 
-		component() = default;
+		component(
+		) = default;
 
 		explicit component(
 			id owner_id,

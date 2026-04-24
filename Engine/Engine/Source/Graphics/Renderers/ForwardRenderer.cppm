@@ -91,7 +91,8 @@ export namespace gse::renderer::forward {
 			frame_context& ctx,
 			const resources& r,
 			frame_data& fd,
-			const state& s
+			const state& s,
+			const geometry_collector::state& gc_s
 		) -> async::task<>;
 	};
 }
@@ -233,8 +234,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	ctx.instantly_load(r.blank_texture);
 }
 
-auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
-	co_await ctx.after<geometry_collector::state>();
+auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
 
 	auto& gpu = ctx.get<gpu::context>();
 
@@ -259,9 +259,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	r.shader_handle->set_uniform("CameraUBO.proj", proj, cam_alloc);
 	r.shader_handle->set_uniform("CameraUBO.inv_view", view.inverse(), cam_alloc);
 
-	auto dir_chunk = ctx.reg.components<directional_light_component>();
-	auto spot_chunk = ctx.reg.components<spot_light_component>();
-	auto point_chunk = ctx.reg.components<point_light_component>();
+	auto dir_chunk = ctx.components<directional_light_component>();
+	auto spot_chunk = ctx.components<spot_light_component>();
+	auto point_chunk = ctx.components<point_light_component>();
 
 	const auto& light_alloc = r.light_buffers[frame_index];
 	const auto light_block = r.shader_handle->uniform_block("lights_ssbo");

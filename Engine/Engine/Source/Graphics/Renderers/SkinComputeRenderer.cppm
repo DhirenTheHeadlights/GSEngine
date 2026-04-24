@@ -30,7 +30,8 @@ export namespace gse::renderer::skin_compute {
 		static auto frame(
 			frame_context& ctx,
 			const resources& r,
-			const state& s
+			const state& s,
+			const geometry_collector::state& gc_s
 		) -> async::task<>;
 	};
 }
@@ -61,8 +62,7 @@ auto gse::renderer::skin_compute::system::initialize(const init_context& phase, 
 	}
 }
 
-auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resources& r, const state& s) -> async::task<> {
-	co_await ctx.after<geometry_collector::state>();
+auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
 
 	const auto& gpu = ctx.get<gpu::context>();
 
@@ -74,16 +74,11 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resour
 	const auto& data = render_items.front();
 	const auto frame_index = gpu.graph().current_frame();
 
-	const auto* gc = ctx.try_state_of<geometry_collector::state>();
-	if (!gc) {
-		co_return;
-	}
-
 	auto skin_pc = r.shader_handle->cache_push_block("push_constants");
-	skin_pc.set("joint_count", gc->current_joint_count);
+	skin_pc.set("joint_count", gc_s.current_joint_count);
 	skin_pc.set("instance_count", data.pending_compute_instance_count);
-	skin_pc.set("local_pose_stride", gc->current_joint_count);
-	skin_pc.set("skin_stride", gc->current_joint_count);
+	skin_pc.set("local_pose_stride", gc_s.current_joint_count);
+	skin_pc.set("skin_stride", gc_s.current_joint_count);
 
 	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
 	if (!gc_r) {

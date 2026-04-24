@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 4.0)
+cmake_minimum_required(VERSION 4.3)
 
 if(NOT DEFINED ENV{CLANG_P2996_ROOT} OR "$ENV{CLANG_P2996_ROOT}" STREQUAL "")
     message(FATAL_ERROR "CLANG_P2996_ROOT is not set - run scripts/install_clang_p2996.py")
@@ -20,7 +20,11 @@ set(CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS
     "${_gse_clang_root}/bin/clang-scan-deps.exe"
     CACHE FILEPATH "")
 
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444" CACHE STRING "" FORCE)
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b" CACHE STRING "" FORCE)
+
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 string(APPEND CMAKE_CXX_FLAGS_INIT " -nostdinc++ -Xclang -cxx-isystem -Xclang \"${_gse_libcxx_inc}\"")
 string(APPEND CMAKE_CXX_FLAGS_INIT " -D__GCC_DESTRUCTIVE_SIZE=64 -D__GCC_CONSTRUCTIVE_SIZE=64")
@@ -58,9 +62,6 @@ endif()
 if(NOT TARGET __CMAKE::CXX26)
     add_library(__CMAKE::CXX26 ALIAS __cmake_libcxx_std)
 endif()
-
-set(CMAKE_CXX_STANDARD 26)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(Engine)
 add_subdirectory(Game)

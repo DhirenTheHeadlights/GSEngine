@@ -4,6 +4,7 @@ import std;
 
 import :material;
 
+import gse.assert;
 import gse.os;
 import gse.assets;
 import gse.gpu;

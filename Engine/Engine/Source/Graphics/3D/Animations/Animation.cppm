@@ -144,7 +144,7 @@ export namespace gse::animation {
 		static auto update(
 			update_context& ctx,
 			state& s
-		) -> void;
+		) -> async::task<>;
 	};
 }
 
@@ -152,19 +152,21 @@ auto gse::animation::system::initialize(init_context&, state& s) -> void {
 	s.last_tick = system_clock::now();
 }
 
-auto gse::animation::system::update(update_context& ctx, state& s) -> void {
+auto gse::animation::system::update(update_context& ctx, state& s) -> async::task<> {
 	const auto* renderer_res = ctx.try_resources_of<renderer::system::resources>();
 	if (!renderer_res) {
-		return;
+		co_return;
 	}
 
 	const time dt = system_clock::dt();
 
-	ctx.schedule([&s, renderer_res, dt](
-		write<animation_component> animations,
-		write<controller_component> controllers,
-		write<clip_component> clips
-	) {
+	auto [animations, controllers, clips] = co_await ctx.acquire<
+		write<animation_component>,
+		write<controller_component>,
+		write<clip_component>
+	>();
+
+	{
 		s.jobs.clear();
 		s.controller_jobs.clear();
 		s.pose_cache.clear();
@@ -285,7 +287,7 @@ auto gse::animation::system::update(update_context& ctx, state& s) -> void {
 				process_controller_job(s.controller_jobs[i], *renderer_res, dt);
 			});
 		}
-	});
+	}
 }
 
 auto gse::animation::wrap_time(const time t, const time length) -> time {

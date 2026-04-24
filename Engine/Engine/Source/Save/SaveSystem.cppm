@@ -5,6 +5,7 @@ import std;
 import gse.log;
 import gse.math;
 import gse.core;
+import gse.concurrency;
 import gse.ecs;
 import gse.toml;
 
@@ -519,8 +520,9 @@ export namespace gse::save {
         static auto update(
             update_context& ctx,
             state& s
-        ) -> void {
+        ) -> async::task<> {
             s.do_update(ctx);
+            co_return;
         }
 
         static auto shutdown(

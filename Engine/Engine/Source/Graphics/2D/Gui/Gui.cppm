@@ -3,6 +3,7 @@ export module gse.graphics:gui;
 import std;
 
 import gse.os;
+import gse.config;
 import gse.assets;
 import gse.gpu;
 import gse.core;
@@ -121,7 +122,7 @@ export namespace gse::gui {
 		};
 
 		static auto initialize(init_context& phase, resources& r, system_state& s) -> void;
-		static auto update(update_context& ctx, resources& r, system_state& s) -> void;
+		static auto update(update_context& ctx, resources& r, system_state& s) -> async::task<>;
 		static auto shutdown(shutdown_context& phase, resources& r, system_state& s) -> void;
 
 		static auto save(system_state& s) -> void;
@@ -164,6 +165,7 @@ export namespace gse::gui {
 		render_layer input_layer_render = render_layer::content;
 		input_layer input_layers_data;
 		std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
+		std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
 
 		auto scroll_for(const std::uint64_t key) -> scroll_state& {
 			return widget_scrolls[key];
@@ -318,7 +320,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 	s.previous_viewport_size = vec2f(ctx.window().viewport());
 }
 
-auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s) -> void {
+auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
 	const auto current_viewport_size = vec2f(gpu.window().viewport());
 
@@ -416,7 +418,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 	const auto* input_state = ctx.try_state_of<input::system_state>();
 	if (!input_state) {
 		s.fstate = {};
-		return;
+		co_return;
 	}
 
 	const vec2f mouse_position = input_state->current_state().mouse_position();
@@ -449,7 +451,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 
 	if (!s.fstate.active) {
 		s.fstate = {};
-		return;
+		co_return;
 	}
 
 	const input::state& input_st = input_state->current_state();
@@ -675,6 +677,8 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 	}
 
 	s.fstate = {};
+
+	co_return;
 }
 
 auto gse::gui::system::shutdown(shutdown_context&, resources& r, system_state& s) -> void {
@@ -742,6 +746,7 @@ auto gse::gui::process_menu(system::resources& r, system_state& s, const input::
 		.layout_cursor = layout_cursor,
 		.sprites = s.sprite_commands,
 		.texts = s.text_commands,
+		.widget_anim_colors = s.widget_anim_colors,
 		.input_layer = s.input_layer_render,
 		.tooltip = &s.tooltip
 	};

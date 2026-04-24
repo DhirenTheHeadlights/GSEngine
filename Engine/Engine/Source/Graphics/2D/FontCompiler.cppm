@@ -10,6 +10,7 @@ export module gse.graphics:font_compiler;
 import std;
 
 import gse.os;
+import gse.config;
 import gse.assets;
 import gse.gpu;
 import gse.assert;

@@ -5,79 +5,55 @@ import std;
 import gse.core;
 import gse.concurrency;
 
+import :component;
 import :phase_context;
 import :registry;
+import :task_context;
 
 export namespace gse {
-	struct frame_context : phase_gpu_access {
-		registry& reg;
-		const state_snapshot_provider& snapshots;
-		const channel_reader_provider& channel_reader;
-		channel_writer& channels;
-		const resources_provider& resources;
-		task_graph& graph;
+	class frame_context : public task_context {
+	public:
+		frame_context(
+			void* gpu_ctx,
+			const state_snapshot_provider& snapshots,
+			channel_writer& channels,
+			const channel_reader_provider& channel_reader,
+			const resources_provider& resources,
+			task_graph& graph,
+			registry& reg
+		);
 
-		template <typename State>
-		auto state_of(
-		) const -> const State&;
+		template <is_component T>
+		auto try_component(
+			id owner
+		) const -> const T*;
 
-		template <typename State>
-		auto try_state_of(
-		) const -> const State*;
+		template <is_component T>
+		auto components(
+		) const -> std::span<const T>;
 
-		template <typename T>
-		auto read_channel(
-		) const -> channel_read_guard<T>;
-
-		template <typename Resources>
-		auto resources_of(
-		) const -> const Resources&;
-
-		template <typename Resources>
-		auto try_resources_of(
-		) const -> const Resources*;
-
-		template <typename State>
-		auto after(
-		) -> async::task<>;
-
-		template <typename State>
-		auto notify_ready(
-		) -> void;
+	private:
+		registry& m_reg;
 	};
 }
 
-template <typename State>
-auto gse::frame_context::state_of() const -> const State& {
-	return snapshots.state_of<State>();
+gse::frame_context::frame_context(
+	void* gpu_ctx,
+	const state_snapshot_provider& snapshots,
+	channel_writer& channels,
+	const channel_reader_provider& channel_reader,
+	const resources_provider& resources,
+	task_graph& graph,
+	registry& reg
+) : task_context{ gpu_ctx, snapshots, channels, channel_reader, resources, graph },
+	m_reg(reg) {}
+
+template <gse::is_component T>
+auto gse::frame_context::try_component(const id owner) const -> const T* {
+	return m_reg.try_component<T>(owner);
 }
 
-template <typename State>
-auto gse::frame_context::try_state_of() const -> const State* {
-	return snapshots.try_state_of<State>();
-}
-
-template <typename T>
-auto gse::frame_context::read_channel() const -> channel_read_guard<T> {
-	return channel_read_guard<T>(channel_reader.read<T>());
-}
-
-template <typename Resources>
-auto gse::frame_context::resources_of() const -> const Resources& {
-	return resources.resources_of<Resources>();
-}
-
-template <typename Resources>
-auto gse::frame_context::try_resources_of() const -> const Resources* {
-	return resources.try_resources_of<Resources>();
-}
-
-template <typename State>
-auto gse::frame_context::after() -> async::task<> {
-	return graph.wait_state_ready(std::type_index(typeid(State)));
-}
-
-template <typename State>
-auto gse::frame_context::notify_ready() -> void {
-	graph.notify_state_ready(std::type_index(typeid(State)));
+template <gse::is_component T>
+auto gse::frame_context::components() const -> std::span<const T> {
+	return m_reg.components<T>();
 }

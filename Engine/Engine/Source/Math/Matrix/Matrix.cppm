@@ -1,7 +1,3 @@
-module;
-
-#include <format>
-
 export module gse.math:matrix;
 
 import std;

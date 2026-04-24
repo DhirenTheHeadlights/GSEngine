@@ -44,12 +44,15 @@ export namespace gse::free_camera {
 		static auto update(
 			update_context& ctx,
 			state& s
-		) -> void;
+		) -> async::task<>;
 	};
 }
 
-auto gse::free_camera::system::update(update_context& ctx, state& s) -> void {
-	auto cameras = ctx.reg.acquire_write<component>();
+auto gse::free_camera::system::update(update_context& ctx, state& s) -> async::task<> {
+	auto [cameras, follows] = co_await ctx.acquire<
+		write<component>,
+		write<camera::follow_component>
+	>();
 
 	for (auto& c : cameras) {
 		const auto owner_id = c.owner_id();
@@ -95,7 +98,7 @@ auto gse::free_camera::system::update(update_context& ctx, state& s) -> void {
 		const auto owner_id = c.owner_id();
 		const auto& b = *s.bindings_by_owner[owner_id];
 
-		auto* cam_follow = ctx.reg.try_component<camera::follow_component>(owner_id);
+		auto* cam_follow = follows.find(owner_id);
 		if (!cam_follow) {
 			continue;
 		}
@@ -110,7 +113,9 @@ auto gse::free_camera::system::update(update_context& ctx, state& s) -> void {
 		cam_follow->position += direction * c.speed * system_clock::dt();
 	}
 
-	std::erase_if(s.bindings_by_owner, [&ctx](const auto& entry) {
-		return !ctx.reg.try_component<component>(entry.first);
+	std::erase_if(s.bindings_by_owner, [&cameras](const auto& entry) {
+		return !cameras.find(entry.first);
 	});
+
+	co_return;
 }

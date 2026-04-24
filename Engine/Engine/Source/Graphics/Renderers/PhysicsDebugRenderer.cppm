@@ -103,10 +103,10 @@ export namespace gse::renderer::physics_debug {
 		) -> void;
 
 		static auto update(
-			const update_context& ctx,
+			update_context& ctx,
 			const resources& r,
 			state& s
-		) -> void;
+		) -> async::task<>;
 
 		static auto frame(const frame_context& ctx,
 			const resources& r,
@@ -361,20 +361,22 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 	}
 }
 
-auto gse::renderer::physics_debug::system::update(const update_context& ctx, const resources& r, state& s) -> void {
+auto gse::renderer::physics_debug::system::update(update_context& ctx, const resources& r, state& s) -> async::task<> {
 	if (!s.enabled) {
-		return;
+		co_return;
 	}
 
 	constexpr std::size_t max_shape_debug_vertices = 256;
-	const auto motion_components = ctx.reg.components<physics::motion_component>();
-	const auto collision_components = ctx.reg.components<physics::collision_component>();
+	auto [motions, collisions] = co_await ctx.acquire<
+		read<physics::motion_component>,
+		read<physics::collision_component>
+	>();
 
 	std::vector<debug_vertex> vertices;
-	vertices.reserve(collision_components.size() * max_shape_debug_vertices);
+	vertices.reserve(collisions.size() * max_shape_debug_vertices);
 	debug_stats stats;
 
-	for (const auto& mc : motion_components) {
+	for (const auto& mc : motions) {
 		stats.body_count++;
 		if (mc.sleeping) stats.sleeping_count++;
 
@@ -384,12 +386,12 @@ auto gse::renderer::physics_debug::system::update(const update_context& ctx, con
 		if (ang > stats.max_angular_speed) stats.max_angular_speed = ang;
 	}
 
-	for (const auto& coll : collision_components) {
+	for (const auto& coll : collisions) {
 		if (!coll.resolve_collisions) {
 			continue;
 		}
 
-		const auto* mc = ctx.reg.try_component<physics::motion_component>(coll.owner_id());
+		const auto* mc = motions.find(coll.owner_id());
 		build_shape_lines_for_collider(coll, mc, vertices);
 
 		if (mc) {
@@ -414,6 +416,8 @@ auto gse::renderer::physics_debug::system::update(const update_context& ctx, con
 
 	s.latest_stats = stats;
 	ctx.channels.push(render_data{ std::move(vertices), stats });
+
+	co_return;
 }
 
 auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {

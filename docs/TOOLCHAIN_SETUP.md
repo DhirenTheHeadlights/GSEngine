@@ -129,13 +129,21 @@ string(APPEND CMAKE_CXX_FLAGS_INIT " -freflection-latest")
 
 ## 6. `import std` integration
 
-CMake gates `import std` behind an experimental flag:
+CMake gates `import std` behind an experimental flag that changes UUID per CMake version:
 
 ```cmake
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444" CACHE STRING "" FORCE)
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b" CACHE STRING "" FORCE)
 ```
 
-The UUID changes per CMake version. If you bump CMake, grep for `EXPERIMENTAL_CXX_IMPORT_STD` in the CMake source to find the new one.
+The UUID above is for CMake 4.3. When you bump CMake, extract the new UUID with:
+
+```powershell
+$b=[IO.File]::ReadAllBytes('C:\Program Files\CMake\bin\cmake.exe')
+$s=[Text.Encoding]::ASCII.GetString($b)
+[regex]::Match($s,'CxxImportStd[\x00-\xFF]{0,50}').Value
+```
+
+The UUID follows the literal string `CxxImportStd` in the binary.
 
 We then ship our own `__CMAKE::CXX26` alias target pointing at our libc++ `std.cppm` / `std.compat.cppm`:
 

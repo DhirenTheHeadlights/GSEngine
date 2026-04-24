@@ -15,8 +15,6 @@ export import gse.meta;
 export import gse.network;
 export import gse.physics;
 export import gse.os;
-import gse.assets;
-import gse.gpu;
 export import gse.runtime;
 export import gse.save;
 export import gse.scene;

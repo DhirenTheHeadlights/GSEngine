@@ -14,7 +14,8 @@ export namespace gse {
 
 	class system_provider {
 	public:
-		virtual ~system_provider() = default;
+		virtual ~system_provider(
+		) = default;
 
 		virtual auto system_ptr(
 			std::type_index idx
@@ -32,7 +33,8 @@ export namespace gse {
 
 	class state_snapshot_provider {
 	public:
-		virtual ~state_snapshot_provider() = default;
+		virtual ~state_snapshot_provider(
+		) = default;
 
 		virtual auto snapshot_ptr(
 			std::type_index type
@@ -71,7 +73,8 @@ export namespace gse {
 
 	class channel_reader_provider {
 	public:
-		virtual ~channel_reader_provider() = default;
+		virtual ~channel_reader_provider(
+		) = default;
 
 		virtual auto channel_snapshot_ptr(
 			std::type_index type
@@ -84,7 +87,8 @@ export namespace gse {
 
 	class resources_provider {
 	public:
-		virtual ~resources_provider() = default;
+		virtual ~resources_provider(
+		) = default;
 
 		virtual auto resources_ptr(
 			std::type_index type
