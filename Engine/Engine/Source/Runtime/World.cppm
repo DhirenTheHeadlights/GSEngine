@@ -401,7 +401,7 @@ auto gse::world::state_of() -> State& {
 		"world has no system_provider bound."
 	);
 
-	auto* p = m_provider->system_ptr(std::type_index(typeid(State)));
+	auto* p = m_provider->system_ptr(id_of<State>());
 	assert(
 		p != nullptr,
 		std::source_location::current(),

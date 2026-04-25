@@ -22,7 +22,7 @@ namespace gse {
 	};
 
 	template <typename C>
-	concept resource_context = requires(C& ctx, const C& cctx, std::type_index ti, id rid) {
+	concept resource_context = requires(C& ctx, const C& cctx, id ti, id rid) {
 		{ cctx.gpu_queue_size() } -> std::convertible_to<std::size_t>;
 		{ ctx.mark_pending_for_finalization(ti, rid) } -> std::same_as<void>;
 		{ ctx.wait_idle() } -> std::same_as<void>;
@@ -227,13 +227,13 @@ auto gse::resource::loader<R, C>::update_state(id resource_id, state new_state) 
 
 template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
 auto gse::resource::loader<R, C>::mark_for_gpu_finalization(id resource_id) -> void {
-	m_context.mark_pending_for_finalization(typeid(R), resource_id);
+	m_context.mark_pending_for_finalization(id_of<R>(), resource_id);
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
 auto gse::resource::loader<R, C>::finalize_state(id resource_id, size_t queue_size_before) -> void {
 	if (m_context.gpu_queue_size() > queue_size_before) {
-		m_context.mark_pending_for_finalization(typeid(R), resource_id);
+		m_context.mark_pending_for_finalization(id_of<R>(), resource_id);
 	}
 	else {
 		update_state(resource_id, state::loaded);

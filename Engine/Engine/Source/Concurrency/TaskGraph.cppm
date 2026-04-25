@@ -24,8 +24,8 @@ export namespace gse {
 		auto submit(
 			id name,
 			async::task<> coroutine,
-			std::vector<std::type_index> reads = {},
-			std::vector<std::type_index> writes = {}
+			std::vector<id> reads = {},
+			std::vector<id> writes = {}
 		) -> node_id;
 
 		auto execute(
@@ -35,19 +35,19 @@ export namespace gse {
 		) -> void;
 
 		auto notify_state_ready(
-			std::type_index state_type
+			id state_type
 		) -> void;
 
 		auto wait_state_ready(
-			std::type_index state_type
+			id state_type
 		) -> async::task<>;
 
 	private:
 		struct graph_node {
 			id name;
 			async::task<> coroutine;
-			std::vector<std::type_index> reads;
-			std::vector<std::type_index> writes;
+			std::vector<id> reads;
+			std::vector<id> writes;
 			std::vector<node_id> dependents;
 			std::atomic<std::size_t> in_degree{ 0 };
 			std::atomic<bool> completed{ false };
@@ -68,19 +68,19 @@ export namespace gse {
 		) -> void;
 
 		auto get_or_create_slot(
-			std::type_index state_type
+			id state_type
 		) -> state_slot*;
 
 		linear_vector<std::unique_ptr<graph_node>> m_nodes;
 
-		flat_map<std::type_index, std::unique_ptr<state_slot>> m_states;
+		flat_map<id, std::unique_ptr<state_slot>> m_states;
 		std::shared_mutex m_states_mutex;
 	};
 }
 
 gse::task_graph::task_graph(const std::size_t node_capacity) : m_nodes(node_capacity) {}
 
-auto gse::task_graph::submit(const id name, async::task<> coroutine, std::vector<std::type_index> reads, std::vector<std::type_index> writes) -> node_id {
+auto gse::task_graph::submit(const id name, async::task<> coroutine, std::vector<id> reads, std::vector<id> writes) -> node_id {
 	const auto idx = m_nodes.size();
 	auto node = std::make_unique<graph_node>();
 	node->name = name;
@@ -149,7 +149,7 @@ auto gse::task_graph::execute() -> void {
 
 	build_edges();
 
-	task::group work_group(find_or_generate_id("task_graph::execute"));
+	task::group work_group(trace_id<"task_graph::execute">());
 
 	std::vector<graph_node*> initially_ready;
 	initially_ready.reserve(m_nodes.size());
@@ -176,7 +176,7 @@ auto gse::task_graph::clear() -> void {
 	}
 }
 
-auto gse::task_graph::get_or_create_slot(const std::type_index state_type) -> state_slot* {
+auto gse::task_graph::get_or_create_slot(const id state_type) -> state_slot* {
 	{
 		std::shared_lock lock(m_states_mutex);
 		if (const auto it = m_states.find(state_type); it != m_states.end()) {
@@ -194,7 +194,7 @@ auto gse::task_graph::get_or_create_slot(const std::type_index state_type) -> st
 	return raw;
 }
 
-auto gse::task_graph::notify_state_ready(const std::type_index state_type) -> void {
+auto gse::task_graph::notify_state_ready(const id state_type) -> void {
 	auto* slot = get_or_create_slot(state_type);
 	slot->ready.store(true, std::memory_order_release);
 
@@ -209,7 +209,7 @@ auto gse::task_graph::notify_state_ready(const std::type_index state_type) -> vo
 	}
 }
 
-auto gse::task_graph::wait_state_ready(const std::type_index state_type) -> async::task<> {
+auto gse::task_graph::wait_state_ready(const id state_type) -> async::task<> {
 	auto* slot = get_or_create_slot(state_type);
 	if (slot->ready.load(std::memory_order_acquire)) {
 		co_return;

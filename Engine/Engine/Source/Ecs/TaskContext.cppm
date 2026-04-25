@@ -73,14 +73,14 @@ auto gse::task_context::try_resources_of() const -> const Resources* {
 
 template <typename State>
 auto gse::task_context::after() -> async::task<> {
-	static const id tid = find_or_generate_id(std::format("after<{}>", typeid(State).name()));
+	static const id tid = find_or_generate_id(std::format("after<{}>", type_tag<State>()));
 	const auto key = trace::allocate_async_key();
 	trace::begin_async(tid, key);
-	co_await graph.wait_state_ready(std::type_index(typeid(State)));
+	co_await graph.wait_state_ready(id_of<State>());
 	trace::end_async(tid, key);
 }
 
 template <typename State>
 auto gse::task_context::notify_ready() -> void {
-	graph.notify_state_ready(std::type_index(typeid(State)));
+	graph.notify_state_ready(id_of<State>());
 }

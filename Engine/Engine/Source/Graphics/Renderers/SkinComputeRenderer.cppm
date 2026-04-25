@@ -12,6 +12,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
 export namespace gse::renderer::skin_compute {
 	struct state {};
 
@@ -63,7 +64,6 @@ auto gse::renderer::skin_compute::system::initialize(const init_context& phase, 
 }
 
 auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
-
 	const auto& gpu = ctx.get<gpu::context>();
 
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
@@ -72,6 +72,15 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resour
 	}
 
 	const auto& data = render_items.front();
+	if (data.pending_compute_instance_count == 0) {
+		co_return;
+	}
+
+	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
+	if (!gc_r) {
+		co_return;
+	}
+
 	const auto frame_index = gpu.graph().current_frame();
 
 	auto skin_pc = r.shader_handle->cache_push_block("push_constants");
@@ -80,22 +89,14 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resour
 	skin_pc.set("local_pose_stride", gc_s.current_joint_count);
 	skin_pc.set("skin_stride", gc_s.current_joint_count);
 
-	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
-	if (!gc_r) {
-		co_return;
-	}
-
 	auto pass = gpu.graph().add_pass<state>();
-	pass.when(data.pending_compute_instance_count > 0);
-
 	pass.track(gc_r->skeleton_buffer);
 	pass.track(gc_r->local_pose_buffer[frame_index]);
+	pass.writes(gpu::storage_write(gc_r->skin_buffer[frame_index], gpu::pipeline_stage::compute_shader));
 
-	pass.writes(gpu::storage_write(gc_r->skin_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-		.record([&r, frame_index, instance_count = data.pending_compute_instance_count, skin_pc = std::move(skin_pc)](const gpu::recording_context& rec) {
-			rec.bind(r.pipeline);
-			rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
-			rec.push(r.pipeline, skin_pc);
-			rec.dispatch(instance_count, 1, 1);
-		});
+	auto& rec = co_await pass.record();
+	rec.bind(r.pipeline);
+	rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
+	rec.push(r.pipeline, skin_pc);
+	rec.dispatch(data.pending_compute_instance_count, 1, 1);
 }

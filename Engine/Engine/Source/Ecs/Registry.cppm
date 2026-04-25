@@ -208,7 +208,7 @@ export namespace gse {
 		std::unordered_set<id> m_active;
 		std::unordered_set<id> m_inactive;
 
-		std::unordered_map<std::type_index, std::unique_ptr<component_storage_base>> m_storages;
+		std::unordered_map<id, std::unique_ptr<component_storage_base>> m_storages;
 
 		task::concurrent_queue<std::function<void(registry&)>> m_pending_ops;
 
@@ -371,7 +371,7 @@ auto gse::registry::active(const id owner) const -> bool {
 
 template <gse::is_component T>
 auto gse::registry::storage() -> component_storage<T>& {
-	const auto type_idx = std::type_index(typeid(T));
+	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
 	if (it != m_storages.end()) {
 		return static_cast<component_storage<T>&>(*it->second);
@@ -385,7 +385,7 @@ auto gse::registry::storage() -> component_storage<T>& {
 
 template <gse::is_component T>
 auto gse::registry::try_storage(this registry& self) -> component_storage<T>* {
-	const auto type_idx = std::type_index(typeid(T));
+	const auto type_idx = id_of<T>();
 	const auto it = self.m_storages.find(type_idx);
 	if (it == self.m_storages.end()) {
 		return nullptr;
@@ -408,7 +408,7 @@ auto gse::registry::add_component(const id owner, Args&&... args) -> T* {
 
 template <gse::is_component T>
 auto gse::registry::remove_component(const id owner) -> void {
-	const auto type_idx = std::type_index(typeid(T));
+	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
 	if (it == m_storages.end()) {
 		return;
@@ -429,7 +429,7 @@ auto gse::registry::component(this registry& self, const id owner) -> decltype(a
 		ptr != nullptr,
 		std::source_location::current(),
 		"Component of type {} with id {} not found.",
-		typeid(T).name(),
+		type_tag<T>(),
 		owner
 	);
 	return *ptr;
@@ -498,7 +498,7 @@ auto gse::registry::add_deferred_action(const id owner, deferred_action action) 
 
 template <gse::is_component T>
 auto gse::registry::mark_component_updated(const id owner) -> void {
-	const auto type_idx = std::type_index(typeid(T));
+	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
 	if (it == m_storages.end()) {
 		return;
@@ -508,7 +508,7 @@ auto gse::registry::mark_component_updated(const id owner) -> void {
 
 template <gse::is_component T>
 auto gse::registry::drain_component_adds() -> std::vector<id> {
-	const auto type_idx = std::type_index(typeid(T));
+	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
 	if (it == m_storages.end()) {
 		return {};
@@ -518,7 +518,7 @@ auto gse::registry::drain_component_adds() -> std::vector<id> {
 
 template <gse::is_component T>
 auto gse::registry::drain_component_updates() -> std::vector<id> {
-	const auto type_idx = std::type_index(typeid(T));
+	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
 	if (it == m_storages.end()) {
 		return {};
@@ -528,7 +528,7 @@ auto gse::registry::drain_component_updates() -> std::vector<id> {
 
 template <gse::is_component T>
 auto gse::registry::drain_component_removes() -> std::vector<id> {
-	const auto type_idx = std::type_index(typeid(T));
+	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
 	if (it == m_storages.end()) {
 		return {};

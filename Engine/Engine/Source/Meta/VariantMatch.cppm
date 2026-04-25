@@ -1,8 +1,10 @@
+module;
+
+#include <meta>
+
 export module gse.meta:variant_match;
 
 import std;
-
-import :lambda_traits;
 
 export namespace gse {
     template <class Variant>
@@ -139,14 +141,14 @@ auto gse::variant<Variant>::otherwise(F&& f) && -> void {
 template <class Variant>
 template <class F>
 auto gse::variant<Variant>::if_is(F&& f) & -> variant& {
-    using t = first_arg_t<F>;
+    using t = std::remove_cvref_t<typename [: std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]) :]>;
     return this->if_is<t>(std::forward<F>(f));
 }
 
 template <class Variant>
 template <class F>
 auto gse::variant<Variant>::else_if_is(F&& f) & -> variant& {
-    using t = first_arg_t<F>;
+    using t = std::remove_cvref_t<typename [: std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]) :]>;
     return this->else_if_is<t>(std::forward<F>(f));
 }
 

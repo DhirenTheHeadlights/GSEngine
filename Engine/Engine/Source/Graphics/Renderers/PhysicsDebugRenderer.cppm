@@ -378,12 +378,18 @@ auto gse::renderer::physics_debug::system::update(update_context& ctx, const res
 
 	for (const auto& mc : motions) {
 		stats.body_count++;
-		if (mc.sleeping) stats.sleeping_count++;
+		if (mc.sleeping) {
+			stats.sleeping_count++;
+		}
 
 		const auto lin = magnitude(mc.current_velocity);
 		const auto ang = magnitude(mc.angular_velocity);
-		if (lin > stats.max_linear_speed) stats.max_linear_speed = lin;
-		if (ang > stats.max_angular_speed) stats.max_angular_speed = ang;
+		if (lin > stats.max_linear_speed) {
+			stats.max_linear_speed = lin;
+		}
+		if (ang > stats.max_angular_speed) {
+			stats.max_angular_speed = ang;
+		}
 	}
 
 	for (const auto& coll : collisions) {
@@ -400,8 +406,9 @@ auto gse::renderer::physics_debug::system::update(update_context& ctx, const res
 
 		if (coll.collision_information.colliding) {
 			stats.colliding_pairs++;
-			if (coll.collision_information.penetration > stats.max_penetration)
+			if (coll.collision_information.penetration > stats.max_penetration) {
 				stats.max_penetration = coll.collision_information.penetration;
+			}
 		}
 	}
 
@@ -461,14 +468,13 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);
+	pass.color_output_load();
 
-	pass.color_output_load()
-		.record([&r, frame_index, ext, vertex_count, &vertex_buffer](const gpu::recording_context& rec) {
-			rec.bind(r.pipeline);
-			rec.set_viewport(ext);
-			rec.set_scissor(ext);
-			rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
-			rec.bind_vertex(vertex_buffer);
-			rec.draw(vertex_count);
-		});
+	auto& rec = co_await pass.record();
+	rec.bind(r.pipeline);
+	rec.set_viewport(ext);
+	rec.set_scissor(ext);
+	rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
+	rec.bind_vertex(vertex_buffer);
+	rec.draw(vertex_count);
 }

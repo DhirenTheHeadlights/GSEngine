@@ -175,36 +175,6 @@ export namespace gse {
         const shader& s,
         std::string_view block_name
     ) -> bool;
-
-    template<archive Ar>
-    auto serialize(Ar& ar, shader::uniform_member& m) -> void {
-        ar & m.name & m.offset & m.size & m.array_size;
-    }
-
-    template<archive Ar>
-    auto serialize(Ar& ar, struct shader::uniform_block& b) -> void {
-        ar & b.name & b.binding & b.set & b.size & b.members & b.stage_flags;
-    }
-
-    template<archive Ar>
-    auto serialize(Ar& ar, shader::binding& b) -> void {
-        ar & b.name & b.desc.binding & b.desc.type & b.desc.count & b.desc.stages & b.member;
-    }
-
-    template<archive Ar>
-    auto serialize(Ar& ar, shader::set& s) -> void {
-        ar & s.type & s.bindings;
-    }
-
-    template<archive Ar>
-    auto serialize(Ar& ar, shader::layout& l) -> void {
-        ar & l.sets;
-    }
-
-    template<archive Ar>
-    auto serialize(Ar& ar, gpu::vertex_attribute_desc& attr) -> void {
-        ar & attr.location & attr.binding & attr.format & attr.offset;
-    }
 }
 
 gse::shader::shader(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path) {

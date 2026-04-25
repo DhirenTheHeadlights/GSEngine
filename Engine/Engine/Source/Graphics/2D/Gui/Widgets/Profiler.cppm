@@ -204,7 +204,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	flatten_hidden(flatten_hidden, roots, sorted_roots_buf);
 	std::ranges::sort(sorted_roots_buf, sort_by_duration);
 
-	static const id gpu_root_id = find_or_generate_id("GPU");
+	static const id gpu_root_id = trace_id<"GPU">();
 
 	static std::vector<trace::node> gpu_children_buf;
 	gpu_children_buf.clear();

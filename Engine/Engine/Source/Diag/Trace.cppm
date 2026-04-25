@@ -337,12 +337,12 @@ auto gse::trace::start(const config& cfg) -> void {
 	frames = frame_storage{};
 	global_open_spans.clear();
 
-	mark_hidden(find_or_generate_id("task_graph::execute"));
-	mark_hidden(find_or_generate_id("task.start.reentrant"));
-	mark_hidden(find_or_generate_id("task.start.body"));
+	mark_hidden(trace_id<"task_graph::execute">());
+	mark_hidden(trace_id<"task.start.reentrant">());
+	mark_hidden(trace_id<"task.start.body">());
 
-	mark_pool_root(find_or_generate_id("task_graph::execute"));
-	mark_pool_root(find_or_generate_id("scheduler::parallel_updates"));
+	mark_pool_root(trace_id<"task_graph::execute">());
+	mark_pool_root(trace_id<"scheduler::parallel_updates">());
 
 	register_virtual_thread(gpu_virtual_tid, "GPU");
 	register_virtual_thread(gpu_stats_virtual_tid, "GPU Stats");

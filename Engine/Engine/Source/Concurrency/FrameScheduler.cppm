@@ -12,13 +12,15 @@ export namespace gse::concurrency {
 	public:
 		template <typename State>
 		auto submit(move_only_function<void()> work) -> void {
+			constexpr id type_id = id_of<State>();
+
 			m_pending.push_back({
-				.type = std::type_index(typeid(State)),
-				.work = std::move(work)
+				.type = type_id,
+				.work = std::move(work),
 			});
 
-			if (!m_registered.contains(std::type_index(typeid(State)))) {
-				m_registered[std::type_index(typeid(State))] = static_cast<int>(m_registered.size());
+			if (!m_registered.contains(type_id)) {
+				m_registered[type_id] = static_cast<int>(m_registered.size());
 			}
 		}
 
@@ -83,12 +85,12 @@ export namespace gse::concurrency {
 
 	private:
 		struct pending_entry {
-			std::type_index type = typeid(void);
+			id type;
 			gse::move_only_function<void()> work;
 		};
 
 		std::vector<pending_entry> m_pending;
-		std::unordered_map<std::type_index, int> m_registered;
+		std::unordered_map<id, int> m_registered;
 
 		std::uint64_t m_frame_counter = 0;
 		int m_spread = 1;

@@ -44,7 +44,7 @@ export namespace gse {
 		explicit operator value_type&() = delete;
 		explicit operator const value_type&() const = delete;
 	private:
-		storage_type m_resources;
+		storage_type m_resources{};
 	};
 }
 

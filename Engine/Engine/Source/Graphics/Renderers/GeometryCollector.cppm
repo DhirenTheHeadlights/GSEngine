@@ -359,7 +359,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 		out.reserve(render.size());
 
-		trace::scope(find_or_generate_id("geom_collect::collect"), [&] {
+		trace::scope(trace_id<"geom_collect::collect">(), [&] {
 			const auto render_size = render.size();
 
 			bool motion_order_matches = render_size == motion.size();
@@ -464,7 +464,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 			}
 		});
 
-		trace::scope(find_or_generate_id("geom_collect::sort"), [&] {
+		trace::scope(trace_id<"geom_collect::sort">(), [&] {
 			std::ranges::sort(
 				out,
 				[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
@@ -530,7 +530,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 		std::uint32_t global_instance_offset = 0;
 
-		trace::scope(find_or_generate_id("geom_collect::batch_normal"), [&] {
+		trace::scope(trace_id<"geom_collect::batch_normal">(), [&] {
 		std::size_t batch_begin = 0;
 		while (batch_begin < out.size()) {
 			const auto& first = out[batch_begin].entry;
@@ -590,7 +590,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 		}
 		});
 
-		trace::scope(find_or_generate_id("geom_collect::batch_skinned"), [&] {
+		trace::scope(trace_id<"geom_collect::batch_skinned">(), [&] {
 		std::size_t batch_begin = 0;
 		while (batch_begin < skinned_out.size()) {
 			const auto& first = skinned_out[batch_begin];

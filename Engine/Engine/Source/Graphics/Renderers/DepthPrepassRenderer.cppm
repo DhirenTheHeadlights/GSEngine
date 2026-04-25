@@ -127,8 +127,6 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 	r.skinned_shader->set_uniform("CameraUBO.proj", proj, cam_alloc);
 
 	const auto ext = gpu.graph().extent();
-	const auto ext_w = ext.x();
-	const auto ext_h = ext.y();
 
 	auto meshlet_writer = gpu::descriptor_writer(gpu, r.meshlet_shader);
 	auto skinned_writer = gpu::descriptor_writer(gpu, r.skinned_shader);
@@ -144,69 +142,69 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 			gpu::storage_read(gc_r->skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
 			gpu::indirect_read(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
-		.depth_output(gpu::depth_clear{ 1.0f })
-		.record([&r, gc_r, &data, frame_index, ext_w, ext_h, meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](const gpu::recording_context& rec) mutable {
-			const vec2u ext_size{ ext_w, ext_h };
-			rec.set_viewport(ext_size);
-			rec.set_scissor(ext_size);
+		.depth_output(gpu::depth_clear{ 1.0f });
 
-			if (!data.normal_batches.empty()) {
-				rec.bind(r.meshlet_pipeline);
-				rec.bind_descriptors(r.meshlet_pipeline, r.meshlet_descriptors[frame_index]);
+	auto& rec = co_await pass.record();
 
-				const auto& instance_buf = gc_r->instance_buffer[frame_index];
+	rec.set_viewport(ext);
+	rec.set_scissor(ext);
 
-				for (const auto& batch : data.normal_batches) {
-					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
-					if (!mesh.has_meshlets()) {
-						continue;
-					}
+	if (!data.normal_batches.empty()) {
+		rec.bind(r.meshlet_pipeline);
+		rec.bind_descriptors(r.meshlet_pipeline, r.meshlet_descriptors[frame_index]);
 
-					meshlet_writer.begin(frame_index);
-					mesh.meshlet_gpu().bind(meshlet_writer);
-					meshlet_writer.buffer("instanceData", instance_buf);
-					rec.commit(meshlet_writer.native_writer(), r.meshlet_pipeline, 1);
+		const auto& instance_buf = gc_r->instance_buffer[frame_index];
 
-					const std::uint32_t meshlet_count = mesh.meshlet_count();
-					const std::uint32_t task_groups = (meshlet_count + 31) / 32;
-
-					auto pc = r.meshlet_shader->cache_push_block("push_constants");
-					pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
-					pc.set("meshlet_count", meshlet_count);
-					pc.set("first_instance", batch.first_instance);
-					rec.push(r.meshlet_pipeline, pc);
-
-					rec.draw_mesh_tasks(task_groups, batch.instance_count, 1);
-				}
+		for (const auto& batch : data.normal_batches) {
+			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+			if (!mesh.has_meshlets()) {
+				continue;
 			}
 
-			if (!data.skinned_batches.empty()) {
-				rec.bind(r.skinned_pipeline);
-				rec.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
+			meshlet_writer.begin(frame_index);
+			mesh.meshlet_gpu().bind(meshlet_writer);
+			meshlet_writer.buffer("instanceData", instance_buf);
+			rec.commit(meshlet_writer.native_writer(), r.meshlet_pipeline, 1);
 
-				const auto& skin_buf = gc_r->skin_buffer[frame_index];
-				const auto& instance_buf = gc_r->instance_buffer[frame_index];
+			const std::uint32_t meshlet_count = mesh.meshlet_count();
+			const std::uint32_t task_groups = (meshlet_count + 31) / 32;
 
-				skinned_writer.begin(frame_index);
-				skinned_writer
-					.buffer("skinMatrices", skin_buf)
-					.buffer("instanceData", instance_buf);
-				rec.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
+			auto pc = r.meshlet_shader->cache_push_block("push_constants");
+			pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
+			pc.set("meshlet_count", meshlet_count);
+			pc.set("first_instance", batch.first_instance);
+			rec.push(r.meshlet_pipeline, pc);
 
-				for (std::size_t i = 0; i < data.skinned_batches.size(); ++i) {
-					const auto& batch = data.skinned_batches[i];
-					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+			rec.draw_mesh_tasks(task_groups, batch.instance_count, 1);
+		}
+	}
 
-					rec.bind_vertex(mesh.vertex_gpu_buffer());
-					rec.bind_index(mesh.index_gpu_buffer());
+	if (!data.skinned_batches.empty()) {
+		rec.bind(r.skinned_pipeline);
+		rec.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
 
-					rec.draw_indirect(
-						gc_r->skinned_indirect_commands_buffer[frame_index],
-						i * sizeof(gpu::draw_indexed_indirect_command),
-						1,
-						0
-					);
-				}
-			}
-		});
+		const auto& skin_buf = gc_r->skin_buffer[frame_index];
+		const auto& instance_buf = gc_r->instance_buffer[frame_index];
+
+		skinned_writer.begin(frame_index);
+		skinned_writer
+			.buffer("skinMatrices", skin_buf)
+			.buffer("instanceData", instance_buf);
+		rec.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
+
+		for (std::size_t i = 0; i < data.skinned_batches.size(); ++i) {
+			const auto& batch = data.skinned_batches[i];
+			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+
+			rec.bind_vertex(mesh.vertex_gpu_buffer());
+			rec.bind_index(mesh.index_gpu_buffer());
+
+			rec.draw_indirect(
+				gc_r->skinned_indirect_commands_buffer[frame_index],
+				i * sizeof(gpu::draw_indexed_indirect_command),
+				1,
+				0
+			);
+		}
+	}
 }

@@ -58,11 +58,6 @@ export namespace gse {
 		virtual auto resources_ptr(
 		) const -> const void* = 0;
 
-		virtual auto state_type(
-		) const -> std::type_index = 0;
-
-		virtual auto resources_type(
-		) const -> std::type_index = 0;
 
 		virtual auto trace_id(
 		) const -> id = 0;
@@ -91,7 +86,7 @@ export namespace gse {
 
 	template <typename S, typename State>
 	auto extract_state_deps(
-	) -> std::vector<std::type_index>;
+	) -> std::vector<id>;
 
 	template <typename S, bool = has_resources<S>>
 	struct resource_storage {};
@@ -173,11 +168,7 @@ export namespace gse {
 		auto resources_ptr(
 		) const -> const void* override;
 
-		auto state_type(
-		) const -> std::type_index override;
 
-		auto resources_type(
-		) const -> std::type_index override;
 
 		auto state(
 			this auto& self
@@ -275,13 +266,13 @@ namespace gse {
 }
 
 template <typename S, typename State>
-auto gse::extract_state_deps() -> std::vector<std::type_index> {
-	std::vector<std::type_index> result;
+auto gse::extract_state_deps() -> std::vector<id> {
+	std::vector<id> result;
 	if constexpr (names_update<S>) {
 		template for (constexpr auto p : std::define_static_array(std::meta::parameters_of(^^S::update))) {
 			using P = typename [: std::meta::type_of(p) :];
 			if constexpr (is_state_dep_v<P, S, State>) {
-				result.push_back(std::type_index(typeid(std::remove_cvref_t<P>)));
+				result.push_back(id_of<std::remove_cvref_t<P>>());
 			}
 		}
 	}
@@ -289,7 +280,7 @@ auto gse::extract_state_deps() -> std::vector<std::type_index> {
 		template for (constexpr auto p : std::define_static_array(std::meta::parameters_of(^^S::frame))) {
 			using P = typename [: std::meta::type_of(p) :];
 			if constexpr (is_state_dep_v<P, S, State>) {
-				result.push_back(std::type_index(typeid(std::remove_cvref_t<P>)));
+				result.push_back(id_of<std::remove_cvref_t<P>>());
 			}
 		}
 	}
@@ -499,22 +490,7 @@ auto gse::system_node<S, State>::initialize(init_context& phase) -> void {
 
 template <typename S, typename State>
 auto gse::system_node<S, State>::trace_id() const -> id {
-	static const auto cached = [] {
-		std::string_view raw = typeid(S).name();
-		for (std::string_view prefix : {"struct ", "class "}) {
-			if (raw.starts_with(prefix)) {
-				raw.remove_prefix(prefix.size());
-				break;
-			}
-		}
-		const auto last = raw.rfind("::");
-		if (last != std::string_view::npos && last > 0) {
-			const auto prev = raw.rfind("::", last - 1);
-			raw = (prev != std::string_view::npos) ? raw.substr(prev + 2) : raw.substr(last + 2);
-		}
-		return find_or_generate_id(raw);
-	}();
-	return cached;
+	return gse::trace_id<S>();
 }
 
 template <typename S, typename State>
@@ -534,7 +510,7 @@ auto gse::system_node<S, State>::shutdown(shutdown_context& phase) -> void {
 		return;
 	}
 	if constexpr (names_shutdown<S>) {
-		assert(false, std::source_location::current(), "System '{}' declares shutdown but no overload matched the dispatcher", typeid(S).name());
+		assert(false, std::source_location::current(), "System '{}' declares shutdown but no overload matched the dispatcher", type_tag<S>());
 	}
 }
 
@@ -547,24 +523,12 @@ auto gse::system_node<S, State>::graph_update(update_context& ctx) -> async::tas
 
 template <typename S, typename State>
 auto gse::system_node<S, State>::graph_frame(frame_context& ctx) -> async::task<> {
-	static const auto wall_id = [] {
-		std::string_view raw = typeid(S).name();
-		for (std::string_view prefix : {"struct ", "class "}) {
-			if (raw.starts_with(prefix)) {
-				raw.remove_prefix(prefix.size());
-				break;
-			}
-		}
-		const auto last = raw.rfind("::");
-		if (last != std::string_view::npos && last > 0) {
-			const auto prev = raw.rfind("::", last - 1);
-			raw = (prev != std::string_view::npos) ? raw.substr(prev + 2) : raw.substr(last + 2);
-		}
-		return find_or_generate_id(std::format("frame_wall:{}", raw));
-	}();
+	static const auto wall_id = find_or_generate_id(std::format("frame_wall:{}", type_tag<S>()));
 
 	const auto eid = trace::begin_block(wall_id, 0);
-	auto guard = make_scope_exit([eid] { trace::end_block(wall_id, eid, 0); });
+	auto guard = make_scope_exit([eid] {
+		trace::end_block(wall_id, eid, 0);
+	});
 
 	if constexpr (std::is_trivially_copyable_v<State>) {
 		co_await dispatch_frame<S>(ctx, m_resources, m_frame_data, m_snapshot.value);
@@ -593,7 +557,7 @@ auto gse::system_node<S, State>::state_snapshot_ptr() const -> const void* {
 		assert(false, std::source_location::current(),
 			"Attempted to read snapshot of non-copyable state '{}'. "
 			"Either make the state copyable or avoid try_state_of<T>() for this type.",
-			typeid(State).name());
+			type_tag<State>());
 		return nullptr;
 	}
 }
@@ -622,19 +586,6 @@ auto gse::system_node<S, State>::resources_ptr() const -> const void* {
 		return &m_resources.value;
 	}
 	return nullptr;
-}
-
-template <typename S, typename State>
-auto gse::system_node<S, State>::state_type() const -> std::type_index {
-	return std::type_index(typeid(State));
-}
-
-template <typename S, typename State>
-auto gse::system_node<S, State>::resources_type() const -> std::type_index {
-	if constexpr (has_resources<S>) {
-		return std::type_index(typeid(typename S::resources));
-	}
-	return std::type_index(typeid(void));
 }
 
 template <typename S, typename State>

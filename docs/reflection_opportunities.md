@@ -27,7 +27,7 @@ Reflection features relied on throughout:
 | **S** | [Unit system declarations](#s1-unit-system-quantity-declarations) | ~600 | low | Yes — tag recovery after arithmetic |
 | **A** | [Vulkan enum `to_vk` family](#a1-vulkan-enum-to_vk-converters) | ~140 | trivial | No |
 | **A** | [Generic `hash_combine`](#a2-generic-reflected-hash_combine) | ~30 now + future | trivial | No |
-| **A** | [Reflected Archive serialization](#a3-reflected-binary-archive) | scales with components | low | Prevents future drift |
+| ~~A~~ | ~~[Reflected Archive serialization](#a3-reflected-binary-archive)~~ done | scales with components | low | Prevents future drift |
 | **B** | [`_net` / `_data` struct projection](#b1-networkedlocal-struct-projection) | N × component fields | low | Yes — single source of truth |
 | **B** | [Vulkan bitfield flag converters](#b2-vulkan-bitfield-flag-converters) | ~30 | trivial | No |
 | **B** | [Theme palette](#b3-gui-theme-palette) | ~40 | trivial | No |
@@ -38,7 +38,7 @@ Reflection features relied on throughout:
 | **C** | [`SaveSystem::property_base`](#c2-savesystem-property_base-hierarchy) | hundreds | high churn | Yes — compile-time settings |
 | **C** | [Shape-type dispatch](#c3-physics-shape-type-dispatch) | ~25 per site | low | No |
 | **C** | [Audio request dispatch](#c4-audio-request-loop-fusion) | ~40 | low | No |
-| **A** | [Network message system](#a4-network-message-ceremony) | ~150 + 4 files future | low | Yes — eliminates ID-collision bug class |
+| ~~A~~ | ~~[Network message system](#a4-network-message-ceremony)~~ done | ~150 + 4 files future | low | Yes — eliminates ID-collision bug class |
 | **A** | [Push-constant binding](#a5-shader-push-constant-binding) | ~120 runtime lookups eliminated | low | Yes — compile-time binding + C++↔Slang single source |
 | **C** | [Network component registry](#c5-network-component-registry) | ~50 | low | Yes — can't register in one place |
 | **C** | [`ActionsApi` channel overloads](#c6-actionsapi-channel-overloads) | ~15 | low | No |

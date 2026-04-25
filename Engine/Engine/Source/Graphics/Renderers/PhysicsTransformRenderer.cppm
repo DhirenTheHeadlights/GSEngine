@@ -65,7 +65,6 @@ auto gse::renderer::physics_transform::system::initialize(const init_context& ph
 }
 
 auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const geometry_collector::state& gc_s) -> async::task<> {
-
 	auto& gpu = ctx.get<gpu::context>();
 
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
@@ -141,11 +140,11 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 			gpu::storage_read(fd.mapping_buffers[frame_index], gpu::pipeline_stage::compute_shader)
 		)
 		.writes(gpu::storage_write(gc_r->instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-		.after<geometry_collector::state>()
-		.record([&r, &fd, frame_index, workgroups, pc = std::move(pc)](const gpu::recording_context& rec) {
-			rec.bind(r.pipeline);
-			rec.bind_descriptors(r.pipeline, fd.descriptors[frame_index]);
-			rec.push(r.pipeline, pc);
-			rec.dispatch(workgroups, 1, 1);
-		});
+		.after<geometry_collector::state>();
+
+	auto& rec = co_await pass.record();
+	rec.bind(r.pipeline);
+	rec.bind_descriptors(r.pipeline, fd.descriptors[frame_index]);
+	rec.push(r.pipeline, pc);
+	rec.dispatch(workgroups, 1, 1);
 }

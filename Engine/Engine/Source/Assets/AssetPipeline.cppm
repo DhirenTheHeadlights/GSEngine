@@ -40,7 +40,7 @@ export namespace gse {
             std::lock_guard lock(m_mutex);
 
             compiler_entry entry{
-                .type = typeid(Resource),
+                .type = id_of<Resource>(),
                 .extensions = asset_compiler<Resource>::source_extensions(),
                 .source_dir = asset_compiler<Resource>::source_directory(),
                 .baked_dir = asset_compiler<Resource>::baked_directory(),
@@ -87,7 +87,7 @@ export namespace gse {
 
     private:
         struct compiler_entry {
-            std::type_index type;
+            id type;
             std::vector<std::string> extensions;
             std::string source_dir;
             std::string baked_dir;
@@ -139,7 +139,7 @@ auto gse::asset_pipeline::register_type(resource::loader<Resource, Context>* loa
     std::lock_guard lock(m_mutex);
 
     compiler_entry entry{
-        .type = typeid(Resource),
+        .type = id_of<Resource>(),
         .extensions = asset_compiler<Resource>::source_extensions(),
         .source_dir = asset_compiler<Resource>::source_directory(),
         .baked_dir = asset_compiler<Resource>::baked_directory(),
@@ -240,7 +240,7 @@ template <typename Resource>
     requires gse::has_asset_compiler<Resource>
 auto gse::asset_pipeline::compile() const -> compile_result {
     compile_result result;
-    const auto target_type = std::type_index(typeid(Resource));
+    const auto target_type = id_of<Resource>();
 
     for (const auto& compiler : m_compilers) {
         if (compiler.type != target_type) {

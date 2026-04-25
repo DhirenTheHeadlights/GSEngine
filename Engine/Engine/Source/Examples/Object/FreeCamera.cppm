@@ -81,7 +81,7 @@ auto gse::free_camera::system::update(update_context& ctx, state& s) -> async::t
 				.scale = 1.f,
 			},
 			b.move,
-			find_or_generate_id("FreeCamera_Move")
+			trace_id<"FreeCamera_Move">()
 		);
 
 		ctx.defer_add<camera::follow_component>(owner_id, camera::follow_component_data{

@@ -1,3 +1,7 @@
+module;
+
+#include <meta>
+
 export module gse.runtime:core_api;
 
 import std;
@@ -16,7 +20,6 @@ import gse.gpu;
 import gse.physics;
 import gse.network;
 import gse.log;
-import gse.meta;
 
 import :engine;
 import :world;
@@ -114,7 +117,7 @@ auto gse::channel_add(T&& request) -> channel_future<typename std::decay_t<T>::r
 
 template <typename F>
 auto gse::defer(F&& fn) -> void {
-    engine_instance->defer<first_arg_t<F>>(std::forward<F>(fn));
+    engine_instance->defer<typename [: std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]) :]>(std::forward<F>(fn));
 }
 
 template <typename S, typename State, typename... Args>
@@ -140,14 +143,14 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
     trace::finalize_frame();
 
     task::start([&] {
-        const auto loop_id = find_or_generate_id("frame::loop");
-        const auto poll_id = find_or_generate_id("frame::poll_events");
-        const auto sync_begin_id = find_or_generate_id("frame::sync_begin");
-        const auto sync_end_id = find_or_generate_id("frame::sync_end");
-        const auto finalize_id = find_or_generate_id("frame::finalize_trace");
-        const auto ingest_id = find_or_generate_id("frame::ingest_profile");
-        const auto update_id = find_or_generate_id("engine::update");
-        const auto render_id = find_or_generate_id("engine::render");
+        const auto loop_id = trace_id<"frame::loop">();
+        const auto poll_id = trace_id<"frame::poll_events">();
+        const auto sync_begin_id = trace_id<"frame::sync_begin">();
+        const auto sync_end_id = trace_id<"frame::sync_end">();
+        const auto finalize_id = trace_id<"frame::finalize_trace">();
+        const auto ingest_id = trace_id<"frame::ingest_profile">();
+        const auto update_id = trace_id<"engine::update">();
+        const auto render_id = trace_id<"engine::render">();
 
         while (!should_shutdown.load(std::memory_order_acquire)) {
             trace::scope(loop_id, [&] {

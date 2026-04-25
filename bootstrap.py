@@ -9,6 +9,16 @@ DEFAULT_CLANG_TAG = "clang-p2996-v1"
 CLANG_INSTALL_ROOT = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "clang-p2996"
 
 
+def resolve_clang_root(tag):
+    env_root = os.environ.get("CLANG_P2996_ROOT")
+    if env_root:
+        candidate = Path(env_root)
+        if (candidate / "bin" / "clang-cl.exe").exists():
+            return candidate
+        print(f"warning: CLANG_P2996_ROOT={candidate} has no bin/clang-cl.exe, falling back to default")
+    return CLANG_INSTALL_ROOT / tag
+
+
 def run(cmd, cwd=None, env=None):
     display = " ".join(str(c) for c in cmd)
     print(f"$ {display}")
@@ -58,7 +68,7 @@ def main():
         if args.update_vcpkg:
             update_vcpkg()
 
-    clang_root = CLANG_INSTALL_ROOT / args.clang_tag
+    clang_root = resolve_clang_root(args.clang_tag)
 
     if not args.skip_clang:
         clang_args = ["--tag", args.clang_tag]

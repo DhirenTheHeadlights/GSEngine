@@ -280,7 +280,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	};
 
 	for (const auto& comp : dir_chunk) {
-		if (light_count >= max_lights) break;
+		if (light_count >= max_lights) {
+			break;
+		}
 		int type = 0;
 		write(light_count, "light_type", type);
 		write(light_count, "direction", view.transform_direction(comp.direction));
@@ -293,7 +295,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	}
 
 	for (const auto& comp : spot_chunk) {
-		if (light_count >= max_lights) break;
+		if (light_count >= max_lights) {
+			break;
+		}
 		int type = 2;
 		const float cut_off_cos = gse::cos(comp.cut_off);
 		const float outer_cut_off_cos = gse::cos(comp.outer_cut_off);
@@ -315,7 +319,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	}
 
 	for (const auto& comp : point_chunk) {
-		if (light_count >= max_lights) break;
+		if (light_count >= max_lights) {
+			break;
+		}
 		int type = 1;
 		write(light_count, "light_type", type);
 		write(light_count, "position", view.transform_point(comp.position));
@@ -330,7 +336,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 		++light_count;
 	}
 
-	gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
+	if (light_count > 0) {
+		gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
+	}
 
 	const auto& material_alloc = r.material_palette_buffers[frame_index];
 	const auto material_block = r.shader_handle->uniform_block("material_palette");
@@ -346,7 +354,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 		};
 
 		for (const auto& [mat_ptr, idx] : data.material_palette_map) {
-			if (idx >= max_materials) continue;
+			if (idx >= max_materials) {
+				continue;
+			}
 			mat_write(idx, "base_color", mat_ptr->base_color);
 			mat_write(idx, "roughness", mat_ptr->roughness);
 			mat_write(idx, "metallic", mat_ptr->metallic);
@@ -389,91 +399,91 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 			gpu::indirect_read(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.color_output(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f })
-		.depth_output_load()
-		.record([&r, &normal_batches, &skinned_batches, ext, gc_r, frame_index, num_lights_i, shadow_quality_i, ao_quality_i, reflection_quality_i, meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](const gpu::recording_context& ctx) mutable {
-			ctx.set_viewport(ext);
-			ctx.set_scissor(ext);
+		.depth_output_load();
 
-			if (!normal_batches.empty()) {
-				const auto& instance_buf = gc_r->instance_buffer[frame_index];
+	auto& rec = co_await pass.record();
+	rec.set_viewport(ext);
+	rec.set_scissor(ext);
 
-				bool pipeline_bound = false;
+	if (!normal_batches.empty()) {
+		const auto& instance_buf = gc_r->instance_buffer[frame_index];
 
-				for (std::size_t i = 0; i < normal_batches.size(); ++i) {
-					const auto& batch = normal_batches[i];
-					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+		bool pipeline_bound = false;
 
-					if (!mesh.has_meshlets()) {
-						continue;
-					}
+		for (std::size_t i = 0; i < normal_batches.size(); ++i) {
+			const auto& batch = normal_batches[i];
+			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-					const bool has_texture = mesh.material().diffuse_texture.valid();
-					const auto& tex_img  = has_texture ? mesh.material().diffuse_texture->gpu_image()  : r.blank_texture->gpu_image();
-					const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : r.blank_texture->gpu_sampler();
-
-					if (!pipeline_bound) {
-						ctx.bind(r.pipeline);
-						ctx.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
-						pipeline_bound = true;
-					}
-
-					meshlet_writer.begin(frame_index);
-					mesh.meshlet_gpu().bind(meshlet_writer);
-					meshlet_writer
-						.buffer("instanceData", instance_buf)
-						.image("diffuseSampler", tex_img, tex_samp, gpu::image_layout::shader_read_only);
-					ctx.commit(meshlet_writer.native_writer(), r.pipeline, 1);
-
-					const std::uint32_t ml_count = mesh.meshlet_count();
-					const std::uint32_t task_groups = (ml_count + 31) / 32;
-
-					auto pc = r.shader_handle->cache_push_block("push_constants");
-					pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
-					pc.set("meshlet_count", ml_count);
-					pc.set("first_instance", batch.first_instance);
-					pc.set("num_lights", num_lights_i);
-					pc.set("screen_size", ext);
-					pc.set("shadow_quality", shadow_quality_i);
-					pc.set("ao_quality", ao_quality_i);
-					pc.set("reflection_quality", reflection_quality_i);
-					ctx.push(r.pipeline, pc);
-
-					ctx.draw_mesh_tasks(task_groups, batch.instance_count, 1);
-				}
+			if (!mesh.has_meshlets()) {
+				continue;
 			}
 
-			if (!skinned_batches.empty()) {
-				ctx.bind(r.skinned_pipeline);
-				ctx.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
+			const bool has_texture = mesh.material().diffuse_texture.valid();
+			const auto& tex_img = has_texture ? mesh.material().diffuse_texture->gpu_image() : r.blank_texture->gpu_image();
+			const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : r.blank_texture->gpu_sampler();
 
-				const auto& skin_buf = gc_r->skin_buffer[frame_index];
-				const auto& instance_buf = gc_r->instance_buffer[frame_index];
-
-				for (std::size_t i = 0; i < skinned_batches.size(); ++i) {
-					const auto& batch = skinned_batches[i];
-					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
-
-					const bool has_texture = mesh.material().diffuse_texture.valid();
-					const auto& tex_img = has_texture ? mesh.material().diffuse_texture->gpu_image()  : r.blank_texture->gpu_image();
-					const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : r.blank_texture->gpu_sampler();
-
-					skinned_writer.begin(frame_index);
-					skinned_writer
-						.image("diffuseSampler", tex_img, tex_samp, gpu::image_layout::shader_read_only)
-						.buffer("skinMatrices", skin_buf)
-						.buffer("instanceData", instance_buf);
-					ctx.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
-
-					ctx.bind_vertex(mesh.vertex_gpu_buffer());
-					ctx.bind_index(mesh.index_gpu_buffer());
-
-					ctx.draw_indirect(
-						gc_r->skinned_indirect_commands_buffer[frame_index],
-						i * sizeof(gpu::draw_indexed_indirect_command),
-						1,
-						0
-					);
-				}
+			if (!pipeline_bound) {
+				rec.bind(r.pipeline);
+				rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
+				pipeline_bound = true;
 			}
-		});
+
+			meshlet_writer.begin(frame_index);
+			mesh.meshlet_gpu().bind(meshlet_writer);
+			meshlet_writer
+				.buffer("instanceData", instance_buf)
+				.image("diffuseSampler", tex_img, tex_samp, gpu::image_layout::shader_read_only);
+			rec.commit(meshlet_writer.native_writer(), r.pipeline, 1);
+
+			const std::uint32_t ml_count = mesh.meshlet_count();
+			const std::uint32_t task_groups = (ml_count + 31) / 32;
+
+			auto pc = r.shader_handle->cache_push_block("push_constants");
+			pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
+			pc.set("meshlet_count", ml_count);
+			pc.set("first_instance", batch.first_instance);
+			pc.set("num_lights", num_lights_i);
+			pc.set("screen_size", ext);
+			pc.set("shadow_quality", shadow_quality_i);
+			pc.set("ao_quality", ao_quality_i);
+			pc.set("reflection_quality", reflection_quality_i);
+			rec.push(r.pipeline, pc);
+
+			rec.draw_mesh_tasks(task_groups, batch.instance_count, 1);
+		}
+	}
+
+	if (!skinned_batches.empty()) {
+		rec.bind(r.skinned_pipeline);
+		rec.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
+
+		const auto& skin_buf = gc_r->skin_buffer[frame_index];
+		const auto& instance_buf = gc_r->instance_buffer[frame_index];
+
+		for (std::size_t i = 0; i < skinned_batches.size(); ++i) {
+			const auto& batch = skinned_batches[i];
+			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+
+			const bool has_texture = mesh.material().diffuse_texture.valid();
+			const auto& tex_img = has_texture ? mesh.material().diffuse_texture->gpu_image() : r.blank_texture->gpu_image();
+			const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : r.blank_texture->gpu_sampler();
+
+			skinned_writer.begin(frame_index);
+			skinned_writer
+				.image("diffuseSampler", tex_img, tex_samp, gpu::image_layout::shader_read_only)
+				.buffer("skinMatrices", skin_buf)
+				.buffer("instanceData", instance_buf);
+			rec.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
+
+			rec.bind_vertex(mesh.vertex_gpu_buffer());
+			rec.bind_index(mesh.index_gpu_buffer());
+
+			rec.draw_indirect(
+				gc_r->skinned_indirect_commands_buffer[frame_index],
+				i * sizeof(gpu::draw_indexed_indirect_command),
+				1,
+				0
+			);
+		}
+	}
 }

@@ -3,8 +3,8 @@ export module gs:second_test_scene;
 import std;
 import gse;
 
-import :player;
-import :entity_builders;
+// import :player;
+// import :entity_builders;
 
 export namespace gs {
 	class second_test_scene final : public gse::hook<gse::scene> {
@@ -16,33 +16,39 @@ export namespace gs {
 }
 
 auto gs::second_test_scene::initialize() -> void {
-	const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
-	build_static_box(this, "Floor", floor_pos, gse::vec3<gse::length>(20.f, 1.f, 20.f));
-
-	for (int i = 0; i < 5; ++i) {
-		build_box(this, std::format("Stack Box {}", i + 1),
-			gse::vec3<gse::position>(5.f, 0.5f + static_cast<float>(i) * 1.0f, 5.f),
-			gse::vec3<gse::length>(gse::meters(1.f)),
-			gse::kilograms(200.f));
-	}
-
-	build_sphere(this, "Sphere",
-		gse::vec3<gse::position>(-3.f, 5.f, 5.f),
-		gse::meters(1.f));
-
-	build("Player")
-		.with<gs::player::component>({
-			.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f),
-		});
-
-	build("Scene Camera")
-		.with<gse::free_camera::component>({
-			.initial_position = gse::vec3<gse::position>(15.f, 8.f, 15.f),
-		});
-
-	build_sphere_light(this, "Test Light",
-		gse::vec3<gse::position>(10.f, 15.f, 10.f),
-		gse::meters(0.5f),
-		12,
-		8);
+	// TODO: clang-p2996 ICE on the original body of this function.
+	// See ICE at SceneHook.cppm:178 -> Registry.cppm:397 -> Registry.cppm:373.
+	// Other scenes with identical patterns (SkyboxScene, SphereCollisionTestScene,
+	// PhysicsJointTestScene, PhysicsStressTestScene) all compile, so this is
+	// specific to this TU. Restore once the upstream bug is fixed.
+	//
+	// const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
+	// build_static_box(this, "Floor", floor_pos, gse::vec3<gse::length>(20.f, 1.f, 20.f));
+	//
+	// for (int i = 0; i < 5; ++i) {
+	// 	build_box(this, std::format("Stack Box {}", i + 1),
+	// 		gse::vec3<gse::position>(5.f, 0.5f + static_cast<float>(i) * 1.0f, 5.f),
+	// 		gse::vec3<gse::length>(1.f, 1.f, 1.f),
+	// 		gse::kilograms(200.f));
+	// }
+	//
+	// build_sphere(this, "Sphere",
+	// 	gse::vec3<gse::position>(-3.f, 5.f, 5.f),
+	// 	gse::meters(1.f));
+	//
+	// build("Player")
+	// 	.with<gs::player::component>({
+	// 		.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f),
+	// 	});
+	//
+	// build("Scene Camera")
+	// 	.with<gse::free_camera::component>({
+	// 		.initial_position = gse::vec3<gse::position>(15.f, 8.f, 15.f),
+	// 	});
+	//
+	// build_sphere_light(this, "Test Light",
+	// 	gse::vec3<gse::position>(10.f, 15.f, 10.f),
+	// 	gse::meters(0.5f),
+	// 	12,
+	// 	8);
 }

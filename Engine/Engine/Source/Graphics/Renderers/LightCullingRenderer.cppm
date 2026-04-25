@@ -222,7 +222,9 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 	};
 
 	for (const auto& comp : dir_chunk) {
-		if (light_count >= max_lights) break;
+		if (light_count >= max_lights) {
+			break;
+		}
 		int type = 0;
 		write(light_count, "light_type", type);
 		write(light_count, "direction", view.transform_direction(comp.direction));
@@ -235,7 +237,9 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 	}
 
 	for (const auto& comp : spot_chunk) {
-		if (light_count >= max_lights) break;
+		if (light_count >= max_lights) {
+			break;
+		}
 		int type = 2;
 		const float cut_off_cos = gse::cos(comp.cut_off);
 		const float outer_cut_off_cos = gse::cos(comp.outer_cut_off);
@@ -257,7 +261,9 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 	}
 
 	for (const auto& comp : point_chunk) {
-		if (light_count >= max_lights) break;
+		if (light_count >= max_lights) {
+			break;
+		}
 		int type = 1;
 		write(light_count, "light_type", type);
 		write(light_count, "position", view.transform_point(comp.position));
@@ -272,7 +278,9 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 		++light_count;
 	}
 
-	gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
+	if (light_count > 0) {
+		gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
+	}
 
 	const std::uint32_t num_lights = static_cast<std::uint32_t>(light_count);
 	r.shader_handle->set_uniform("CullingParams.num_lights", num_lights, params_alloc);
@@ -289,10 +297,10 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 		.writes(
 			gpu::storage_write(r.tile_light_table_buffers[frame_index], gpu::pipeline_stage::compute_shader),
 			gpu::storage_write(r.light_index_list_buffers[frame_index], gpu::pipeline_stage::compute_shader)
-		)
-		.record([&r, frame_index, tiles](const gpu::recording_context& rec) {
-			rec.bind(r.pipeline);
-			rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
-			rec.dispatch(tiles.x(), tiles.y(), 1);
-		});
+		);
+
+	auto& rec = co_await pass.record();
+	rec.bind(r.pipeline);
+	rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
+	rec.dispatch(tiles.x(), tiles.y(), 1);
 }

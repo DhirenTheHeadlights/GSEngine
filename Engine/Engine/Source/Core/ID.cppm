@@ -1,3 +1,7 @@
+module;
+
+#include <meta>
+
 export module gse.core:id;
 
 import std;
@@ -12,6 +16,45 @@ namespace gse {
 export namespace gse {
 	class id;
 
+	template <std::size_t N>
+	struct fixed_string {
+		char data[N]{};
+
+		consteval fixed_string(
+			const char (&s)[N]
+		);
+
+		consteval operator std::string_view(
+		) const;
+	};
+
+	template <std::size_t N>
+	fixed_string(const char (&)[N]) -> fixed_string<N>;
+
+	consteval auto stable_id(
+		std::string_view tag
+	) -> uuid;
+
+	template <typename T>
+	consteval auto id_of(
+	) -> id;
+
+	template <fixed_string Tag>
+	consteval auto id_of(
+	) -> id;
+
+	template <typename T>
+	auto trace_id(
+	) -> id;
+
+	template <fixed_string Tag>
+	auto trace_id(
+	) -> id;
+
+	template <typename T>
+	consteval auto type_tag(
+	) -> std::string_view;
+
 	auto generate_id(
 		std::string_view tag
 	) -> id;
@@ -20,7 +63,7 @@ export namespace gse {
 		std::uint64_t number
 	) -> id;
 
-	auto generate_temp_id(
+	constexpr auto generate_temp_id(
 		uuid number
 	) -> id;
 
@@ -78,19 +121,19 @@ export namespace gse {
 			id other
 		) const -> std::strong_ordering;
 
-		auto number(
+		constexpr auto number(
 		) const -> uuid;
 
 		auto tag(
 		) const -> std::string_view;
 
-		auto exists(
+		constexpr auto exists(
 		) const -> bool;
 
 		auto reset(
 		) -> void;
 	private:
-		explicit id(
+		explicit constexpr id(
 			uuid id
 		);
 
@@ -98,7 +141,7 @@ export namespace gse {
 
 		friend auto generate_id(std::string_view tag) -> id;
 		friend auto generate_id(std::uint64_t number) -> id;
-		friend auto generate_temp_id(uuid number) -> id;
+		friend constexpr auto generate_temp_id(uuid number) -> id;
 	};
 }
 
@@ -128,7 +171,7 @@ auto gse::id::operator<=>(const id other) const -> std::strong_ordering {
 	return m_number <=> other.m_number;
 }
 
-auto gse::id::number() const -> uuid {
+constexpr auto gse::id::number() const -> uuid {
 	return m_number;
 }
 
@@ -136,7 +179,7 @@ auto gse::id::tag() const -> std::string_view {
 	return gse::tag(m_number);
 }
 
-auto gse::id::exists() const -> bool {
+constexpr auto gse::id::exists() const -> bool {
 	return m_number != std::numeric_limits<uuid>::max();
 }
 
@@ -144,7 +187,7 @@ auto gse::id::reset() -> void {
 	this->m_number = std::numeric_limits<uuid>::max();
 }
 
-gse::id::id(const uuid id) : m_number(id) {}
+constexpr gse::id::id(const uuid id) : m_number(id) {}
 
 export namespace gse {
 	class identifiable {
@@ -476,7 +519,7 @@ auto gse::generate_id(const std::uint64_t number) -> id {
 	return new_id;
 }
 
-auto gse::generate_temp_id(const uuid number) -> id {
+constexpr auto gse::generate_temp_id(const uuid number) -> id {
 	return id(number);
 }
 
@@ -558,5 +601,51 @@ auto gse::number(const std::string_view tag) -> uuid {
 	const auto it = registry.tag_to_uuid.find(tag);
 	assert(it != registry.tag_to_uuid.end(), std::source_location::current(), "Tag '{}' not found", tag);
 	return it->second;
+}
+
+template <std::size_t N>
+consteval gse::fixed_string<N>::fixed_string(const char (&s)[N]) {
+	std::ranges::copy(s, data);
+}
+
+template <std::size_t N>
+consteval gse::fixed_string<N>::operator std::string_view() const {
+	return { data, N - 1 };
+}
+
+consteval auto gse::stable_id(const std::string_view tag) -> uuid {
+	uuid h = 0xcbf29ce484222325ull;
+	for (const unsigned char c : tag) {
+		h ^= c;
+		h *= 1099511628211ull;
+	}
+	return h;
+}
+
+template <typename T>
+consteval auto gse::id_of() -> id {
+	return generate_temp_id(stable_id(std::meta::display_string_of(^^T)));
+}
+
+template <gse::fixed_string Tag>
+consteval auto gse::id_of() -> id {
+	return generate_temp_id(stable_id(Tag));
+}
+
+template <typename T>
+auto gse::trace_id() -> id {
+	static const id cached = find_or_generate_id(std::meta::display_string_of(^^T));
+	return cached;
+}
+
+template <gse::fixed_string Tag>
+auto gse::trace_id() -> id {
+	static const id cached = find_or_generate_id(std::string_view(Tag));
+	return cached;
+}
+
+template <typename T>
+consteval auto gse::type_tag() -> std::string_view {
+	return std::meta::display_string_of(^^T);
 }
 

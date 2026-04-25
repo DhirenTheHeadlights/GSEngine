@@ -18,15 +18,15 @@ export namespace gse {
 		) = default;
 
 		virtual auto system_ptr(
-			std::type_index idx
+			id idx
 		) -> void* = 0;
 
 		virtual auto system_ptr(
-			std::type_index idx
+			id idx
 		) const -> const void* = 0;
 
 		virtual auto ensure_channel(
-			std::type_index idx,
+			id idx,
 			channel_factory_fn factory
 		) -> channel_base& = 0;
 	};
@@ -37,7 +37,7 @@ export namespace gse {
 		) = default;
 
 		virtual auto snapshot_ptr(
-			std::type_index type
+			id type
 		) const -> const void* = 0;
 
 		template <typename State>
@@ -51,7 +51,7 @@ export namespace gse {
 
 	class channel_writer {
 	public:
-		using push_fn = std::function<void(std::type_index, std::any, channel_factory_fn)>;
+		using push_fn = std::function<void(id, std::any, channel_factory_fn)>;
 
 		explicit channel_writer(
 			push_fn fn
@@ -77,7 +77,7 @@ export namespace gse {
 		) = default;
 
 		virtual auto channel_snapshot_ptr(
-			std::type_index type
+			id type
 		) const -> const void* = 0;
 
 		template <typename T>
@@ -91,7 +91,7 @@ export namespace gse {
 		) = default;
 
 		virtual auto resources_ptr(
-			std::type_index type
+			id type
 		) const -> const void* = 0;
 
 		template <typename Resources>
@@ -157,13 +157,13 @@ export namespace gse {
 
 template <typename State>
 auto gse::state_snapshot_provider::state_of() const -> const State& {
-	const auto* ptr = snapshot_ptr(std::type_index(typeid(State)));
+	const auto* ptr = snapshot_ptr(id_of<State>());
 	return *static_cast<const State*>(ptr);
 }
 
 template <typename State>
 auto gse::state_snapshot_provider::try_state_of() const -> const State* {
-	const auto* ptr = snapshot_ptr(std::type_index(typeid(State)));
+	const auto* ptr = snapshot_ptr(id_of<State>());
 	return static_cast<const State*>(ptr);
 }
 
@@ -172,7 +172,7 @@ gse::channel_writer::channel_writer(push_fn fn) : m_push(std::move(fn)) {}
 template <typename T>
 auto gse::channel_writer::push(T item) -> void {
 	m_push(
-		std::type_index(typeid(T)),
+		id_of<T>(),
 		std::any(std::move(item)),
 		+[]() -> std::unique_ptr<channel_base> {
 			return std::make_unique<typed_channel<T>>();
@@ -185,7 +185,7 @@ auto gse::channel_writer::push(T item) -> channel_future<typename T::result_type
 	auto [future, promise] = make_promise<typename T::result_type>();
 	item.promise = std::move(promise);
 	m_push(
-		std::type_index(typeid(T)),
+		id_of<T>(),
 		std::any(std::move(item)),
 		+[]() -> std::unique_ptr<channel_base> {
 			return std::make_unique<typed_channel<T>>();
@@ -196,7 +196,7 @@ auto gse::channel_writer::push(T item) -> channel_future<typename T::result_type
 
 template <typename T>
 auto gse::channel_reader_provider::read() const -> const std::vector<T>& {
-	const auto* ptr = channel_snapshot_ptr(std::type_index(typeid(T)));
+	const auto* ptr = channel_snapshot_ptr(id_of<T>());
 	if (!ptr) {
 		static const std::vector<T> empty;
 		return empty;
@@ -236,13 +236,13 @@ auto gse::init_context::try_resources_of() const -> const Resources* {
 
 template <typename Resources>
 auto gse::resources_provider::resources_of() const -> const Resources& {
-	const auto* ptr = resources_ptr(std::type_index(typeid(Resources)));
+	const auto* ptr = resources_ptr(id_of<Resources>());
 	return *static_cast<const Resources*>(ptr);
 }
 
 template <typename Resources>
 auto gse::resources_provider::try_resources_of() const -> const Resources* {
-	const auto* ptr = resources_ptr(std::type_index(typeid(Resources)));
+	const auto* ptr = resources_ptr(id_of<Resources>());
 	return static_cast<const Resources*>(ptr);
 }
 

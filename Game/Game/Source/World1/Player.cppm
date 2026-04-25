@@ -76,7 +76,7 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> gse::asyn
 				.scale = 1.f,
 			},
 			b.move,
-			gse::find_or_generate_id("Player_Move")
+			gse::trace_id<"Player_Move">()
 		);
 
 		gse::actions::bind_button_channel<"Toggle_Jetpack">(owner_id, gse::key::j, b.jetpack_toggle);
@@ -98,7 +98,7 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> gse::asyn
 				.scale = 1.f,
 			},
 			b.jetpack_move,
-			gse::find_or_generate_id("Jetpack_Move")
+			gse::trace_id<"Jetpack_Move">()
 		);
 
 		const gse::length height = gse::feet(6.0f);

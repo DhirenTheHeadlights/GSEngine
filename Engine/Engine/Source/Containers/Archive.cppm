@@ -1,3 +1,7 @@
+module;
+
+#include <meta>
+
 export module gse.containers:archive;
 
 import std;
@@ -7,10 +11,19 @@ import :static_vector;
 
 export namespace gse {
 
+    struct archive_skip {};
+
     template <typename T>
     struct raw_blob {
         std::vector<T>& data;
     };
+
+    template <typename A, typename T>
+    concept has_user_serialize = requires (A& a, T& v) { serialize(a, v); };
+
+    consteval auto is_archive_skipped(
+        std::meta::info member
+    ) -> bool;
 
     struct binary_writer {
         static constexpr bool is_writing = true;
@@ -134,6 +147,15 @@ export namespace gse {
     concept archive = std::same_as<T, binary_writer> || std::same_as<T, binary_reader>;
 }
 
+consteval auto gse::is_archive_skipped(const std::meta::info member) -> bool {
+    return std::ranges::any_of(
+        std::define_static_array(std::meta::annotations_of(member)),
+        [](std::meta::info ann) {
+            return std::meta::type_of(ann) == ^^archive_skip;
+        }
+    );
+}
+
 gse::binary_writer::binary_writer(std::ofstream& stream) : m_stream(stream) {}
 
 gse::binary_writer::binary_writer(std::ofstream& stream, const std::uint32_t magic, const std::uint32_t version) : m_stream(stream) {
@@ -205,7 +227,16 @@ auto gse::binary_writer::operator&(const raw_blob<T>& blob) -> binary_writer& {
 
 template <typename T> requires (!std::is_trivially_copyable_v<T>)
 auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
-    serialize(*this, const_cast<T&>(value));
+    if constexpr (has_user_serialize<binary_writer, T>) {
+        serialize(*this, const_cast<T&>(value));
+    }
+    else {
+        template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+            if constexpr (!is_archive_skipped(m)) {
+                *this & value.[:m:];
+            }
+        }
+    }
     return *this;
 }
 
@@ -304,6 +335,15 @@ auto gse::binary_reader::operator&(const raw_blob<T>& blob) -> binary_reader& {
 
 template <typename T> requires (!std::is_trivially_copyable_v<T>)
 auto gse::binary_reader::operator&(T& value) -> binary_reader& {
-    serialize(*this, value);
+    if constexpr (has_user_serialize<binary_reader, T>) {
+        serialize(*this, value);
+    }
+    else {
+        template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+            if constexpr (!is_archive_skipped(m)) {
+                *this & value.[:m:];
+            }
+        }
+    }
     return *this;
 }
