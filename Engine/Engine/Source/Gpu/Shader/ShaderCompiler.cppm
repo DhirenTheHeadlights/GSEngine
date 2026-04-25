@@ -853,14 +853,8 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
     binary_writer ar(out, 0x47534852, 1);
 
     const std::uint8_t shader_type = is_compute ? static_cast<std::uint8_t>(1) : is_mesh_pipeline ? static_cast<std::uint8_t>(2) : static_cast<std::uint8_t>(0);
-    ar & shader_type;
-    ar & shader_layout_name;
-    ar & reflected_vertex_input.attributes;
-
-    shader::layout layout_data;
-    layout_data.sets = std::move(reflected_sets);
-    ar & layout_data;
-
+    ar & shader_type & shader_layout_name & reflected_vertex_input.attributes;
+    ar & shader::layout{ .sets = std::move(reflected_sets) };
     ar & reflected_pcs;
 
     auto write_spirv = [&](const std::uint32_t entry_point_index) -> bool {

@@ -1,3 +1,7 @@
+module;
+
+#include <meta>
+
 export module gse.gpu:render_graph;
 
 import std;
@@ -24,6 +28,7 @@ export namespace gse::vulkan {
 	class render_graph;
 	class pass_builder;
 	class recording_context;
+	class record_awaitable;
 
 	using color_clear = gpu::color_clear;
 	using depth_clear = gpu::depth_clear;
@@ -46,7 +51,6 @@ export namespace gse::vulkan {
 		load_op op = load_op::clear_depth;
 		depth_clear clear_value;
 	};
-
 
 	enum class resource_type : std::uint8_t {
 		buffer,
@@ -96,41 +100,7 @@ export namespace gse::vulkan {
 		const image_resource& img,
 		vk::PipelineStageFlags2 stage
 	) -> resource_usage;
-}
 
-export namespace gse::gpu {
-	using recording_context = vulkan::recording_context;
-
-	auto storage_read(
-		const vulkan::buffer_resource& buf,
-		pipeline_stage stage
-	) -> vulkan::resource_usage;
-
-	auto storage_write(
-		const vulkan::buffer_resource& buf,
-		pipeline_stage stage
-	) -> vulkan::resource_usage;
-
-	auto transfer_read(
-		const vulkan::buffer_resource& buf
-	) -> vulkan::resource_usage;
-
-	auto transfer_write(
-		const vulkan::buffer_resource& buf
-	) -> vulkan::resource_usage;
-
-	auto sampled(
-		const vulkan::image_resource& img,
-		pipeline_stage stage
-	) -> vulkan::resource_usage;
-
-	auto indirect_read(
-		const vulkan::buffer_resource& buf,
-		pipeline_stage stage
-	) -> vulkan::resource_usage;
-}
-
-export namespace gse::vulkan {
 	class recording_context {
 	public:
 		auto bind_pipeline(
@@ -283,7 +253,8 @@ export namespace gse::vulkan {
 			vec2u extent
 		) const -> void;
 
-		auto commit(const descriptor_writer& writer,
+		auto commit(
+			const descriptor_writer& writer,
 			const pipeline_handle& p,
 			std::uint32_t set_index = 0
 		) const -> void;
@@ -346,27 +317,36 @@ export namespace gse::vulkan {
 	private:
 		friend class render_graph;
 		vk::CommandBuffer m_cmd;
-		explicit recording_context(vk::CommandBuffer cmd);
+		explicit recording_context(
+			vk::CommandBuffer cmd
+		);
 	};
 
 	struct render_pass_data {
-		std::type_index pass_type = typeid(void);
+		id pass_type{};
 		std::vector<resource_usage> reads;
 		std::vector<resource_usage> writes;
 		std::vector<const buffer_resource*> tracked_buffers;
 		vk::PipelineStageFlags2 tracked_stage = vk::PipelineStageFlagBits2::eAllCommands;
-		std::vector<std::type_index> after_passes;
-		bool enabled = true;
+		std::vector<id> after_passes;
 		std::optional<color_output_info> color_output;
 		std::optional<depth_output_info> depth_output;
-		gse::move_only_function<void(recording_context&)> record_fn;
+		std::coroutine_handle<> record_handle;
+		recording_context** record_ctx_slot = nullptr;
 	};
 
 	class pass_builder {
 	public:
-		pass_builder(pass_builder&&) = default;
-		auto operator=(pass_builder&&) -> pass_builder& = default;
-		~pass_builder();
+		pass_builder(
+			pass_builder&&
+		) = default;
+
+		auto operator=(
+			pass_builder&&
+		) -> pass_builder& = default;
+
+		~pass_builder(
+		);
 
 		auto track(
 			const buffer_resource& buf
@@ -386,10 +366,6 @@ export namespace gse::vulkan {
 		auto after(
 		) -> pass_builder&;
 
-		auto when(
-			bool condition
-		) -> pass_builder&;
-
 		auto color_output(
 			const color_clear& clear_value
 		) -> pass_builder&;
@@ -404,16 +380,15 @@ export namespace gse::vulkan {
 		auto depth_output_load(
 		) -> pass_builder&;
 
-		auto record(
-			gse::move_only_function<void(recording_context&)> fn
-		) -> void;
+		[[nodiscard]] auto record(
+		) -> record_awaitable;
 
 	private:
 		friend class render_graph;
 		friend struct gpu_buffer_handle;
 		explicit pass_builder(
 			render_graph& graph,
-			std::type_index pass_type
+			id pass_type
 		);
 
 		auto submit(
@@ -426,6 +401,44 @@ export namespace gse::vulkan {
 		render_graph* m_graph;
 		render_pass_data m_pass;
 		bool m_submitted = false;
+	};
+
+	class record_awaitable : non_copyable {
+	public:
+		~record_awaitable(
+		) override;
+
+		record_awaitable(
+			record_awaitable&&
+		) noexcept = default;
+
+		auto operator=(
+			record_awaitable&&
+		) noexcept -> record_awaitable& = default;
+
+		auto await_ready(
+		) const noexcept -> bool;
+
+		auto await_suspend(
+			std::coroutine_handle<> h
+		) noexcept -> void;
+
+		auto await_resume(
+		) noexcept -> recording_context&;
+
+	private:
+		friend class pass_builder;
+
+		record_awaitable(
+			render_graph& graph,
+			render_pass_data pass
+		);
+
+		render_graph* m_graph = nullptr;
+		render_pass_data m_pass;
+		recording_context* m_ctx = nullptr;
+		id m_trace_id{};
+		std::uint64_t m_trace_key = 0;
 	};
 
 	class render_graph {
@@ -475,13 +488,14 @@ export namespace gse::vulkan {
 
 	private:
 		friend class pass_builder;
+		friend class record_awaitable;
 
 		static constexpr std::uint32_t max_profiled_passes = 128;
 
 		struct gpu_profile_slot {
 			vk::raii::QueryPool timestamp_pool = nullptr;
 			vk::raii::QueryPool stats_pool = nullptr;
-			static_vector<std::type_index, max_profiled_passes> pass_types;
+			static_vector<id, max_profiled_passes> pass_types;
 			std::uint32_t pass_count = 0;
 			bool stats_issued = false;
 			time_t<std::uint64_t> cpu_ref{};
@@ -512,6 +526,38 @@ export namespace gse::vulkan {
 		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
 		std::uint64_t m_frames_submitted = 0;
 	};
+}
+
+export namespace gse::gpu {
+	using recording_context = vulkan::recording_context;
+
+	auto storage_read(
+		const vulkan::buffer_resource& buf,
+		pipeline_stage stage
+	) -> vulkan::resource_usage;
+
+	auto storage_write(
+		const vulkan::buffer_resource& buf,
+		pipeline_stage stage
+	) -> vulkan::resource_usage;
+
+	auto transfer_read(
+		const vulkan::buffer_resource& buf
+	) -> vulkan::resource_usage;
+
+	auto transfer_write(
+		const vulkan::buffer_resource& buf
+	) -> vulkan::resource_usage;
+
+	auto sampled(
+		const vulkan::image_resource& img,
+		pipeline_stage stage
+	) -> vulkan::resource_usage;
+
+	auto indirect_read(
+		const vulkan::buffer_resource& buf,
+		pipeline_stage stage
+	) -> vulkan::resource_usage;
 }
 
 namespace gse::vulkan {
@@ -970,7 +1016,28 @@ namespace {
 	const char swapchain_sentinel = 0;
 }
 
-gse::vulkan::pass_builder::pass_builder(render_graph& graph, const std::type_index pass_type)
+namespace gse::vulkan {
+	template <typename T>
+	consteval auto pass_tag_string(
+	) -> std::string_view;
+
+	template <typename T>
+	auto pass_id(
+	) -> id;
+}
+
+template <typename T>
+consteval auto gse::vulkan::pass_tag_string() -> std::string_view {
+	return std::meta::identifier_of(std::meta::parent_of(^^T));
+}
+
+template <typename T>
+auto gse::vulkan::pass_id() -> id {
+	static const id cached = find_or_generate_id(std::format("gpu:{}", pass_tag_string<T>()));
+	return cached;
+}
+
+gse::vulkan::pass_builder::pass_builder(render_graph& graph, const id pass_type)
 	: m_graph(std::addressof(graph)), m_pass{ .pass_type = pass_type } {}
 
 gse::vulkan::pass_builder::~pass_builder() {
@@ -984,7 +1051,9 @@ auto gse::vulkan::pass_builder::track(const buffer_resource& buf) -> pass_builde
 
 auto gse::vulkan::pass_builder::add_tracked(const buffer_resource* buf) -> void {
 	for (const auto* existing : m_pass.tracked_buffers) {
-		if (existing == buf) return;
+		if (existing == buf) {
+			return;
+		}
 	}
 	m_pass.tracked_buffers.push_back(buf);
 }
@@ -1003,12 +1072,7 @@ auto gse::vulkan::pass_builder::writes(Args&&... args) -> pass_builder& {
 
 template <typename T>
 auto gse::vulkan::pass_builder::after() -> pass_builder& {
-	m_pass.after_passes.push_back(std::type_index(typeid(T)));
-	return *this;
-}
-
-auto gse::vulkan::pass_builder::when(const bool condition) -> pass_builder& {
-	m_pass.enabled = condition;
+	m_pass.after_passes.push_back(pass_id<T>());
 	return *this;
 }
 
@@ -1061,11 +1125,11 @@ auto gse::vulkan::pass_builder::depth_output_load() -> pass_builder& {
 	return *this;
 }
 
-auto gse::vulkan::pass_builder::record(gse::move_only_function<void(recording_context&)> fn) -> void {
+auto gse::vulkan::pass_builder::record() -> record_awaitable {
 	if (m_pass.color_output) {
 		m_pass.writes.push_back({
 			{
-				.ptr = &swapchain_sentinel, 
+				.ptr = &swapchain_sentinel,
 				.type = resource_type::image
 			},
 			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -1073,9 +1137,32 @@ auto gse::vulkan::pass_builder::record(gse::move_only_function<void(recording_co
 		});
 	}
 
-	m_pass.record_fn = std::move(fn);
 	m_submitted = true;
-	submit();
+	return record_awaitable(*m_graph, std::move(m_pass));
+}
+
+gse::vulkan::record_awaitable::record_awaitable(render_graph& graph, render_pass_data pass)
+	: m_graph(std::addressof(graph)), m_pass(std::move(pass)) {}
+
+gse::vulkan::record_awaitable::~record_awaitable() {}
+
+auto gse::vulkan::record_awaitable::await_ready() const noexcept -> bool {
+	return false;
+}
+
+auto gse::vulkan::record_awaitable::await_suspend(const std::coroutine_handle<> h) noexcept -> void {
+	m_trace_id = find_or_generate_id(std::format("record<{}>", m_pass.pass_type.tag()));
+	m_trace_key = trace::allocate_async_key();
+	trace::begin_async(m_trace_id, m_trace_key);
+
+	m_pass.record_handle = h;
+	m_pass.record_ctx_slot = std::addressof(m_ctx);
+	m_graph->submit_pass(std::move(m_pass));
+}
+
+auto gse::vulkan::record_awaitable::await_resume() noexcept -> recording_context& {
+	trace::end_async(m_trace_id, m_trace_key);
+	return *m_ctx;
 }
 
 auto gse::vulkan::pass_builder::submit() -> void {
@@ -1138,32 +1225,10 @@ auto gse::vulkan::render_graph::read_profile_slot(gpu_profile_slot& slot) -> voi
 	const auto gpu_ref = static_cast<double>(timestamps[0]) * period;
 	const auto offset = time_t<double>(slot.cpu_ref) - gpu_ref;
 
-	const auto pass_tag = [](const std::type_index& ti) -> std::string {
-		std::string_view raw = ti.name();
-		for (const std::string_view prefix : { "struct ", "class " }) {
-			if (raw.starts_with(prefix)) {
-				raw.remove_prefix(prefix.size());
-			}
-		}
-		if (constexpr std::string_view ns = "gse::renderer::"; raw.starts_with(ns)) {
-			raw.remove_prefix(ns.size());
-		}
-
-		const auto bracket = raw.find('[');
-		std::string_view name = bracket == std::string_view::npos ? raw : raw.substr(0, bracket);
-		const std::string_view module_suffix = bracket == std::string_view::npos ? "" : raw.substr(bracket);
-
-		if (constexpr std::string_view tail = "::state"; name.ends_with(tail)) {
-			name.remove_suffix(tail.size());
-		}
-
-		return std::format("gpu:{}{}", name, module_suffix);
-	};
-
 	for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
 		const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
 		const auto end = static_cast<double>(timestamps[2 + i * 2]) * period + offset;
-		const auto gpu_id = find_or_generate_id(pass_tag(slot.pass_types[i]));
+		const auto gpu_id = slot.pass_types[i];
 		const std::uint64_t key = (slot.frame_counter << 16) | i;
 
 		trace::begin_async_at(gpu_id, key, trace::gpu_virtual_tid, time_t<std::uint64_t>(start));
@@ -1188,7 +1253,7 @@ auto gse::vulkan::render_graph::read_profile_slot(gpu_profile_slot& slot) -> voi
 			};
 			for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
 				const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
-				const auto pass_name = pass_tag(slot.pass_types[i]);
+				const auto pass_name = std::string(slot.pass_types[i].tag());
 				for (std::uint32_t s = 0; s < stats_per_pass; ++s) {
 					const auto stat_id = find_or_generate_id(pass_name + labels[s]);
 					trace::counter_at(stat_id, static_cast<double>(stats[i * stats_per_pass + s]), trace::gpu_stats_virtual_tid, time_t<std::uint64_t>(start));
@@ -1202,14 +1267,12 @@ auto gse::vulkan::render_graph::read_profile_slot(gpu_profile_slot& slot) -> voi
 
 template <typename PassType>
 auto gse::vulkan::render_graph::add_pass() -> pass_builder {
-	return pass_builder(*this, std::type_index(typeid(PassType)));
+	return pass_builder(*this, pass_id<PassType>());
 }
 
 auto gse::vulkan::render_graph::submit_pass(render_pass_data pass) -> void {
-	if (pass.enabled) {
-		std::lock_guard lock(m_pass_mutex);
-		m_passes.push_back(std::move(pass));
-	}
+	std::lock_guard lock(m_pass_mutex);
+	m_passes.push_back(std::move(pass));
 }
 
 auto gse::vulkan::render_graph::clear() -> void {
@@ -1340,8 +1403,8 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 	std::vector<std::size_t> sorted;
 
-	gse::trace::scope(gse::find_or_generate_id("graph::plan"), [&] {
-		std::unordered_map<std::type_index, std::size_t> type_to_index;
+	gse::trace::scope(gse::trace_id<"graph::plan">(), [&] {
+		std::unordered_map<id, std::size_t> type_to_index;
 		for (std::size_t i = 0; i < passes.size(); ++i) {
 			type_to_index[passes[i].pass_type] = i;
 		}
@@ -1351,7 +1414,9 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 		auto add_edge = [&](const std::size_t from, const std::size_t to) {
 			for (const auto n : adj[from]) {
-				if (n == to) return;
+				if (n == to) {
+					return;
+				}
 			}
 			adj[from].push_back(to);
 			++in_degree[to];
@@ -1372,20 +1437,26 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 				for (const auto& w : passes[i].writes) {
 					for (const auto& r : passes[j].reads) {
-						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) i_writes_j_reads = true;
+						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
+							i_writes_j_reads = true;
+						}
 					}
 				}
 				for (const auto& w : passes[j].writes) {
 					for (const auto& r : passes[i].reads) {
-						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) j_writes_i_reads = true;
+						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
+							j_writes_i_reads = true;
+						}
 					}
 				}
 
 				if (i_writes_j_reads && j_writes_i_reads) {
 					add_edge(i, j);
-				} else if (i_writes_j_reads) {
+				}
+				else if (i_writes_j_reads) {
 					add_edge(i, j);
-				} else if (j_writes_i_reads) {
+				}
+				else if (j_writes_i_reads) {
 					add_edge(j, i);
 				}
 			}
@@ -1395,7 +1466,9 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 		std::queue<std::size_t> queue;
 		for (std::size_t i = 0; i < passes.size(); ++i) {
-			if (in_degree[i] == 0) queue.push(i);
+			if (in_degree[i] == 0) {
+				queue.push(i);
+			}
 		}
 
 		while (!queue.empty()) {
@@ -1403,7 +1476,9 @@ auto gse::vulkan::render_graph::execute() -> void {
 			queue.pop();
 			sorted.push_back(front);
 			for (auto next : adj[front]) {
-				if (--in_degree[next] == 0) queue.push(next);
+				if (--in_degree[next] == 0) {
+					queue.push(next);
+				}
 			}
 		}
 	});
@@ -1419,7 +1494,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
 
-	gse::trace::scope(gse::find_or_generate_id("graph::record_parallel"), [&] {
+	gse::trace::scope(gse::trace_id<"graph::record_parallel">(), [&] {
 		task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
 			auto& pass = passes[pi];
 			const bool is_graphics_pass = pass.color_output || pass.depth_output;
@@ -1462,14 +1537,15 @@ auto gse::vulkan::render_graph::execute() -> void {
 			});
 			m_device->descriptor_heap().bind_buffer(secondary);
 			recording_context secondary_ctx(secondary);
-			pass.record_fn(secondary_ctx);
+			*pass.record_ctx_slot = std::addressof(secondary_ctx);
+			pass.record_handle.resume();
 			secondary.end();
 
 			pass_secondaries[pi] = secondary;
 		});
 	});
 
-	gse::trace::scope(gse::find_or_generate_id("graph::record_replay"), [&] {
+	gse::trace::scope(gse::trace_id<"graph::record_replay">(), [&] {
 		for (std::size_t si = 0; si < sorted.size(); ++si) {
 			auto& pass = passes[sorted[si]];
 
@@ -1514,7 +1590,9 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 			for (std::size_t pi = 0; pi < si; ++pi) {
 				for (const auto& prev = passes[sorted[pi]]; const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
-					if (!prev_resource.ptr) continue;
+					if (!prev_resource.ptr) {
+						continue;
+					}
 					for (const auto& [read_resource, read_stage, read_access] : pass.reads) {
 						if (read_resource.ptr && prev_resource.ptr == read_resource.ptr) {
 							barriers.push_back({
@@ -1577,7 +1655,8 @@ auto gse::vulkan::render_graph::execute() -> void {
 						clear_val.color = vk::ClearColorValue{
 							.float32 = std::array{ co.clear_value.r, co.clear_value.g, co.clear_value.b, co.clear_value.a }
 						};
-					} else if (co.op == load_op::load) {
+					}
+					else if (co.op == load_op::load) {
 						vk_load = vk::AttachmentLoadOp::eLoad;
 					}
 
@@ -1598,7 +1677,8 @@ auto gse::vulkan::render_graph::execute() -> void {
 					if (op == load_op::clear_depth) {
 						vk_load = vk::AttachmentLoadOp::eClear;
 						clear_val.depthStencil = vk::ClearDepthStencilValue{ .depth = clear_value.depth };
-					} else if (op == load_op::load) {
+					}
+					else if (op == load_op::load) {
 						vk_load = vk::AttachmentLoadOp::eLoad;
 					}
 
@@ -1622,7 +1702,8 @@ auto gse::vulkan::render_graph::execute() -> void {
 				command.beginRendering(ri);
 				command.executeCommands(secondary);
 				command.endRendering();
-			} else {
+			}
+			else {
 				command.executeCommands(secondary);
 			}
 

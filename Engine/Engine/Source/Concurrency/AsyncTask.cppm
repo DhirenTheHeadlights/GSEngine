@@ -29,6 +29,7 @@ export namespace gse::async {
 	struct promise_base {
 		std::coroutine_handle<> m_continuation{ std::noop_coroutine() };
 		std::exception_ptr m_exception;
+		std::atomic<bool> m_started{ false };
 
 		static auto initial_suspend(
 		) noexcept -> std::suspend_always;
@@ -121,7 +122,7 @@ export namespace gse::async {
 
 			auto await_suspend(
 				std::coroutine_handle<> caller
-			) noexcept -> handle_type;
+			) noexcept -> std::coroutine_handle<>;
 
 			auto await_resume(
 			) -> T;
@@ -221,7 +222,15 @@ auto gse::async::promise_base::final_suspend() noexcept -> final_awaiter {
 }
 
 auto gse::async::promise_base::unhandled_exception() -> void {
-	m_exception = std::current_exception();
+	try {
+		throw;
+	}
+	catch (const std::exception& e) {
+		log::println(log::level::error, log::category::task, "Coroutine exception: {}", e.what());
+	}
+	catch (...) {
+		log::println(log::level::error, log::category::task, "Coroutine exception (unknown type)");
+	}
 }
 
 auto gse::async::promise_base::operator new(const std::size_t size) -> void* {
@@ -293,6 +302,9 @@ auto gse::async::task<T>::operator=(task&& other) noexcept -> task& {
 
 template <typename T>
 auto gse::async::task<T>::start() -> void {
+	if (m_handle.promise().m_started.exchange(true, std::memory_order_acq_rel)) {
+		return;
+	}
 	m_handle.resume();
 }
 
@@ -307,8 +319,11 @@ auto gse::async::task<T>::awaiter::await_ready() const noexcept -> bool {
 }
 
 template <typename T>
-auto gse::async::task<T>::awaiter::await_suspend(std::coroutine_handle<> caller) noexcept -> handle_type {
+auto gse::async::task<T>::awaiter::await_suspend(std::coroutine_handle<> caller) noexcept -> std::coroutine_handle<> {
 	m_handle.promise().m_continuation = caller;
+	if (m_handle.promise().m_started.exchange(true, std::memory_order_acq_rel)) {
+		return std::noop_coroutine();
+	}
 	return m_handle;
 }
 
@@ -427,13 +442,13 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 	};
 
 	auto w = wrapper();
-	trace::scope(find_or_generate_id("sync_wait::start"), [&] {
+	trace::scope(trace_id<"sync_wait::start">(), [&] {
 		w.start();
 	});
-	trace::scope(find_or_generate_id("sync_wait::acquire"), [&] {
+	trace::scope(trace_id<"sync_wait::acquire">(), [&] {
 		done.acquire();
 	});
-	trace::scope(find_or_generate_id("sync_wait::final_yield"), [&] {
+	trace::scope(trace_id<"sync_wait::final_yield">(), [&] {
 		while (!w.done()) {
 			std::this_thread::yield();
 		}

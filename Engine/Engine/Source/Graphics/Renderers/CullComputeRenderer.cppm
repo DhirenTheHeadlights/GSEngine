@@ -107,7 +107,6 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 }
 
 auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
-
 	auto& gpu = ctx.get<gpu::context>();
 
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
@@ -116,8 +115,6 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 	}
 
 	const auto& data = render_items[0];
-	const auto frame_index = gpu.graph().current_frame();
-
 	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
 	if (!gc_r) {
 		co_return;
@@ -125,8 +122,13 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 
 	const auto& normal_batches = data.normal_batches;
 	const auto& skinned_batches = data.skinned_batches;
+	if (normal_batches.empty() && skinned_batches.empty()) {
+		co_return;
+	}
 
-	if (const std::size_t total_batch_count = normal_batches.size() + skinned_batches.size(); total_batch_count > 0 && s.enabled) {
+	const auto frame_index = gpu.graph().current_frame();
+
+	if (s.enabled) {
 		const auto* cam_state = ctx.try_state_of<camera::state>();
 		const auto view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
 		const auto proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
@@ -155,55 +157,51 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 		}
 	}
 
-	auto& graph = gpu.graph();
+	auto pass = gpu.graph().add_pass<state>();
+
+	if (!normal_batches.empty()) {
+		pass.track(gc_r->normal_indirect_commands_buffer[frame_index]);
+	}
+	if (!skinned_batches.empty()) {
+		pass.track(gc_r->skinned_indirect_commands_buffer[frame_index]);
+	}
 
 	if (s.enabled) {
+		pass.track(r.frustum_buffer[frame_index]);
+		pass.track(r.batch_info_buffer[frame_index]);
+		pass.after<skin_compute::state>();
+
 		if (!normal_batches.empty()) {
-			auto cull_pc = r.shader_handle->cache_push_block("push_constants");
-			cull_pc.set("batch_offset", 0u);
-
-			auto normal_pass = graph.add_pass<state>();
-			normal_pass.track(r.frustum_buffer[frame_index]);
-			normal_pass.track(r.batch_info_buffer[frame_index]);
-
-			normal_pass
-				.writes(gpu::storage_write(gc_r->normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-				.record([&r, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), cull_pc = std::move(cull_pc)](const gpu::recording_context& rec) {
-					rec.bind(r.pipeline);
-					rec.bind_descriptors(r.pipeline, r.normal_descriptors[frame_index]);
-					rec.push(r.pipeline, cull_pc);
-					rec.dispatch(batch_count, 1, 1);
-				});
-		}
-
-		if (!skinned_batches.empty()) {
-			auto cull_pc = r.shader_handle->cache_push_block("push_constants");
-			cull_pc.set("batch_offset", static_cast<std::uint32_t>(normal_batches.size()));
-
-			auto skinned_pass = graph.add_pass<state>();
-			skinned_pass.track(r.frustum_buffer[frame_index]);
-			skinned_pass.track(r.batch_info_buffer[frame_index]);
-
-			skinned_pass
-				.after<skin_compute::state>()
-				.writes(gpu::storage_write(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-				.record([&r, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), cull_pc = std::move(cull_pc)](const gpu::recording_context& rec) {
-					rec.bind(r.pipeline);
-					rec.bind_descriptors(r.pipeline, r.skinned_descriptors[frame_index]);
-					rec.push(r.pipeline, cull_pc);
-					rec.dispatch(batch_count, 1, 1);
-				});
-		}
-	} else {
-		if (!normal_batches.empty()) {
-			auto normal_upload = graph.add_pass<state>();
-			normal_upload.track(gc_r->normal_indirect_commands_buffer[frame_index]);
-			normal_upload.record([](gpu::recording_context&) {});
+			pass.writes(gpu::storage_write(gc_r->normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader));
 		}
 		if (!skinned_batches.empty()) {
-			auto skinned_upload = graph.add_pass<state>();
-			skinned_upload.track(gc_r->skinned_indirect_commands_buffer[frame_index]);
-			skinned_upload.record([](gpu::recording_context&) {});
+			pass.writes(gpu::storage_write(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader));
 		}
+	}
+
+	auto& rec = co_await pass.record();
+
+	if (!s.enabled) {
+		co_return;
+	}
+
+	rec.bind(r.pipeline);
+
+	if (!normal_batches.empty()) {
+		auto normal_pc = r.shader_handle->cache_push_block("push_constants");
+		normal_pc.set("batch_offset", 0u);
+
+		rec.bind_descriptors(r.pipeline, r.normal_descriptors[frame_index]);
+		rec.push(r.pipeline, normal_pc);
+		rec.dispatch(static_cast<std::uint32_t>(normal_batches.size()), 1, 1);
+	}
+
+	if (!skinned_batches.empty()) {
+		auto skinned_pc = r.shader_handle->cache_push_block("push_constants");
+		skinned_pc.set("batch_offset", static_cast<std::uint32_t>(normal_batches.size()));
+
+		rec.bind_descriptors(r.pipeline, r.skinned_descriptors[frame_index]);
+		rec.push(r.pipeline, skinned_pc);
+		rec.dispatch(static_cast<std::uint32_t>(skinned_batches.size()), 1, 1);
 	}
 }

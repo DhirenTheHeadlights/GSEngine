@@ -9,6 +9,7 @@ export import :descriptors;
 export import :bindless;
 export import :gpu_compute;
 export import :gpu_context;
+export import :gpu_push_constants;
 export import :shader;
 export import :shader_compiler;
 export import :render_graph;

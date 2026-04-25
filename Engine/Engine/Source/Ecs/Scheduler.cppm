@@ -3,6 +3,7 @@ export module gse.ecs:scheduler;
 import std;
 
 import gse.assert;
+import gse.core;
 import gse.concurrency;
 import gse.time;
 import gse.diag;
@@ -25,11 +26,11 @@ export namespace gse {
 		) -> void;
 
 		auto system_ptr(
-			std::type_index idx
+			id idx
 		) -> void* override;
 
 		auto system_ptr(
-			std::type_index idx
+			id idx
 		) const -> const void* override;
 
 		template <typename S, typename State, typename... Args>
@@ -47,19 +48,19 @@ export namespace gse {
 		) const -> bool;
 
 		auto snapshot_ptr(
-			std::type_index type
+			id type
 		) const -> const void* override;
 
 		auto channel_snapshot_ptr(
-			std::type_index type
+			id type
 		) const -> const void* override;
 
 		auto resources_ptr(
-			std::type_index type
+			id type
 		) const -> const void* override;
 
 		auto ensure_channel(
-			std::type_index idx,
+			id idx,
 			channel_factory_fn factory
 		) -> channel_base& override;
 
@@ -103,17 +104,14 @@ export namespace gse {
 		auto run_graph_update(
 		) -> void;
 
-		auto run_graph_frame(
-		) -> void;
-
 		auto snapshot_all_states(
 		) -> void;
 
 		std::vector<std::unique_ptr<system_node_base>> m_nodes;
-		std::unordered_map<std::type_index, system_node_base*> m_state_index;
-		std::unordered_map<std::type_index, std::vector<std::type_index>> m_state_deps;
-		std::unordered_map<std::type_index, system_node_base*> m_resources_index;
-		std::unordered_map<std::type_index, std::unique_ptr<channel_base>> m_channels;
+		std::unordered_map<id, system_node_base*> m_state_index;
+		std::unordered_map<id, std::vector<id>> m_state_deps;
+		std::unordered_map<id, system_node_base*> m_resources_index;
+		std::unordered_map<id, std::unique_ptr<channel_base>> m_channels;
 		mutable std::mutex m_channels_mutex;
 		std::vector<gse::move_only_function<void()>> m_deferred;
 		std::mutex m_deferred_mutex;
@@ -128,7 +126,7 @@ export namespace gse {
 		) -> void;
 
 		auto ensure_channel_internal(
-			std::type_index idx,
+			id idx,
 			channel_factory_fn factory
 		) -> channel_base&;
 
@@ -141,21 +139,21 @@ namespace gse {
 	class frame_snapshot_provider final : public state_snapshot_provider {
 	public:
 		explicit frame_snapshot_provider(
-			const std::unordered_map<std::type_index, system_node_base*>& index
+			const std::unordered_map<id, system_node_base*>& index
 		);
 
 		auto snapshot_ptr(
-			std::type_index type
+			id type
 		) const -> const void* override;
 
 	private:
-		const std::unordered_map<std::type_index, system_node_base*>& m_index;
+		const std::unordered_map<id, system_node_base*>& m_index;
 	};
 }
 
-gse::frame_snapshot_provider::frame_snapshot_provider(const std::unordered_map<std::type_index, system_node_base*>& index) : m_index(index) {}
+gse::frame_snapshot_provider::frame_snapshot_provider(const std::unordered_map<id, system_node_base*>& index) : m_index(index) {}
 
-auto gse::frame_snapshot_provider::snapshot_ptr(const std::type_index type) const -> const void* {
+auto gse::frame_snapshot_provider::snapshot_ptr(const id type) const -> const void* {
 	const auto it = m_index.find(type);
 	if (it == m_index.end()) {
 		return nullptr;
@@ -172,12 +170,14 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 	auto ptr = std::make_unique<system_node<S, State>>(std::forward<Args>(args)...);
 	auto* raw = ptr.get();
 
-	const auto state_idx = std::type_index(typeid(State));
+	const auto state_idx = id_of<State>();
+	find_or_generate_id(type_tag<State>());
 	m_state_index.emplace(state_idx, raw);
 	m_state_deps.emplace(state_idx, extract_state_deps<S, State>());
 
 	if constexpr (has_resources<S>) {
-		m_resources_index.emplace(std::type_index(typeid(typename S::resources)), raw);
+		find_or_generate_id(type_tag<typename S::resources>());
+		m_resources_index.emplace(id_of<typename S::resources>(), raw);
 	}
 
 	m_nodes.push_back(std::move(ptr));
@@ -200,17 +200,17 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 
 template <typename State>
 auto gse::scheduler::state() const -> const State& {
-	const auto it = m_state_index.find(std::type_index(typeid(State)));
+	const auto it = m_state_index.find(id_of<State>());
 	assert(it != m_state_index.end(), std::source_location::current(), "state not found");
 	return *static_cast<const State*>(it->second->state_ptr());
 }
 
 template <typename State>
 auto gse::scheduler::has() const -> bool {
-	return m_state_index.contains(std::type_index(typeid(State)));
+	return m_state_index.contains(id_of<State>());
 }
 
-auto gse::scheduler::snapshot_ptr(const std::type_index type) const -> const void* {
+auto gse::scheduler::snapshot_ptr(const id type) const -> const void* {
 	const auto it = m_state_index.find(type);
 	if (it == m_state_index.end()) {
 		return nullptr;
@@ -218,7 +218,7 @@ auto gse::scheduler::snapshot_ptr(const std::type_index type) const -> const voi
 	return it->second->state_ptr();
 }
 
-auto gse::scheduler::resources_ptr(const std::type_index type) const -> const void* {
+auto gse::scheduler::resources_ptr(const id type) const -> const void* {
 	const auto it = m_resources_index.find(type);
 	if (it == m_resources_index.end()) {
 		return nullptr;
@@ -226,7 +226,7 @@ auto gse::scheduler::resources_ptr(const std::type_index type) const -> const vo
 	return it->second->resources_ptr();
 }
 
-auto gse::scheduler::system_ptr(const std::type_index idx) -> void* {
+auto gse::scheduler::system_ptr(const id idx) -> void* {
 	const auto it = m_state_index.find(idx);
 	if (it == m_state_index.end()) {
 		return nullptr;
@@ -234,7 +234,7 @@ auto gse::scheduler::system_ptr(const std::type_index idx) -> void* {
 	return it->second->state_ptr();
 }
 
-auto gse::scheduler::system_ptr(const std::type_index idx) const -> const void* {
+auto gse::scheduler::system_ptr(const id idx) const -> const void* {
 	const auto it = m_state_index.find(idx);
 	if (it == m_state_index.end()) {
 		return nullptr;
@@ -242,7 +242,7 @@ auto gse::scheduler::system_ptr(const std::type_index idx) const -> const void* 
 	return it->second->state_ptr();
 }
 
-auto gse::scheduler::channel_snapshot_ptr(const std::type_index type) const -> const void* {
+auto gse::scheduler::channel_snapshot_ptr(const id type) const -> const void* {
 	std::lock_guard lock(m_channels_mutex);
 	const auto it = m_channels.find(type);
 	if (it == m_channels.end()) {
@@ -253,7 +253,7 @@ auto gse::scheduler::channel_snapshot_ptr(const std::type_index type) const -> c
 
 template <typename T>
 auto gse::scheduler::channel() -> gse::channel<T>& {
-	auto& base = ensure_channel_internal(std::type_index(typeid(T)), +[]() -> std::unique_ptr<channel_base> {
+	auto& base = ensure_channel_internal(id_of<T>(), +[]() -> std::unique_ptr<channel_base> {
 		return std::make_unique<typed_channel<T>>();
 	});
 
@@ -282,8 +282,8 @@ auto gse::scheduler::initialize() -> void {
 	};
 	phase.gpu_ctx = m_gpu_ctx;
 
-	for (auto& node : m_nodes) {
-		node->initialize(phase);
+	for (std::size_t i = 0; i < m_nodes.size(); ++i) {
+		m_nodes[i]->initialize(phase);
 	}
 
 	m_initialized = true;
@@ -296,28 +296,28 @@ auto gse::scheduler::push_deferred(gse::move_only_function<void()> fn) -> void {
 
 auto gse::scheduler::check_state_dep_cycles() -> void {
 	enum class color : std::uint8_t { white, gray, black };
-	std::unordered_map<std::type_index, color> colors;
+	std::unordered_map<id, color> colors;
 	for (const auto& [state_idx, _] : m_state_deps) {
 		colors[state_idx] = color::white;
 	}
 
-	std::vector<std::type_index> stack;
+	std::vector<id> stack;
 
-	auto format_cycle = [&](const std::type_index from) -> std::string {
+	auto format_cycle = [&](const id from) -> std::string {
 		const auto cycle_start = std::ranges::find(stack, from);
 		std::string out;
 		for (auto it = cycle_start; it != stack.end(); ++it) {
 			if (!out.empty()) {
 				out += " -> ";
 			}
-			out += it->name();
+			out += it->tag();
 		}
 		out += " -> ";
-		out += from.name();
+		out += from.tag();
 		return out;
 	};
 
-	auto visit = [&](const std::type_index node, auto& self) -> void {
+	auto visit = [&](const id node, auto& self) -> void {
 		colors[node] = color::gray;
 		stack.push_back(node);
 
@@ -365,33 +365,34 @@ auto gse::scheduler::drain_deferred() -> void {
 
 template <typename State, typename F>
 auto gse::scheduler::defer(F&& fn) -> void {
+	using state_t = std::remove_cvref_t<State>;
 	push_deferred([this, f = std::forward<F>(fn)]() mutable {
-		auto* ptr = system_ptr(std::type_index(typeid(State)));
+		auto* ptr = system_ptr(id_of<state_t>());
 		if (ptr) {
-			f(*static_cast<State*>(ptr));
+			f(*static_cast<state_t*>(ptr));
 		}
 	});
 }
 
 auto gse::scheduler::update() -> void {
-	trace::scope(find_or_generate_id("scheduler::update"), [&] {
-		trace::scope(find_or_generate_id("scheduler::drain_deferred"), [&] {
+	trace::scope(trace_id<"scheduler::update">(), [&] {
+		trace::scope(trace_id<"scheduler::drain_deferred">(), [&] {
 			drain_deferred();
 		});
 		run_graph_update();
 		if (m_registry) {
-			trace::scope(find_or_generate_id("scheduler::registry_sync"), [&] {
+			trace::scope(trace_id<"scheduler::registry_sync">(), [&] {
 				m_registry->sync();
 			});
 		}
-		trace::scope(find_or_generate_id("scheduler::snapshot_states"), [&] {
+		trace::scope(trace_id<"scheduler::snapshot_states">(), [&] {
 			snapshot_all_states();
 		});
 	});
 }
 
 auto gse::scheduler::run_graph_update() -> void {
-	trace::scope(find_or_generate_id("scheduler::run_graph_update"), [&] {
+	trace::scope(trace_id<"scheduler::run_graph_update">(), [&] {
 		auto writer = make_channel_writer();
 
 		update_context u_ctx(
@@ -410,7 +411,7 @@ auto gse::scheduler::run_graph_update() -> void {
 		for (const auto& node : m_nodes) {
 			tasks.push_back(node->graph_update(u_ctx));
 		}
-		trace::scope(find_or_generate_id("scheduler::update_sync_wait"), [&] {
+		trace::scope(trace_id<"scheduler::update_sync_wait">(), [&] {
 			async::sync_wait(async::when_all(std::move(tasks)));
 		});
 	});
@@ -422,8 +423,12 @@ auto gse::scheduler::snapshot_all_states() -> void {
 	}
 }
 
-auto gse::scheduler::run_graph_frame() -> void {
-	trace::scope(find_or_generate_id("scheduler::run_graph_frame"), [&] {
+auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in_frame) -> void {
+	if (!frame_ok) {
+		return;
+	}
+
+	trace::scope(trace_id<"scheduler::render">(), [&] {
 		frame_snapshot_provider frame_snapshots(m_state_index);
 		auto writer = make_channel_writer();
 
@@ -438,7 +443,7 @@ auto gse::scheduler::run_graph_frame() -> void {
 		);
 
 		std::vector<async::task<>> tasks;
-		trace::scope(find_or_generate_id("scheduler::collect_frame_tasks"), [&] {
+		trace::scope(trace_id<"scheduler::collect_frame_tasks">(), [&] {
 			for (const auto& node : m_nodes) {
 				if (!node->has_frame()) {
 					continue;
@@ -448,27 +453,29 @@ auto gse::scheduler::run_graph_frame() -> void {
 		});
 
 		if (!tasks.empty()) {
-			trace::scope(find_or_generate_id("scheduler::frame_sync_wait"), [&] {
-				async::sync_wait(async::when_all(std::move(tasks)));
-			});
-			trace::scope(find_or_generate_id("scheduler::frame_graph_clear"), [&] {
-				m_frame_graph.clear();
+			trace::scope(trace_id<"scheduler::start_frame_tasks">(), [&] {
+				task::group group(trace_id<"scheduler::start_frame_tasks">());
+				for (auto& t : tasks) {
+					group.post([t_ptr = std::addressof(t)] {
+						t_ptr->start();
+					});
+				}
+				group.wait();
 			});
 		}
-	});
-}
-
-auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in_frame) -> void {
-	if (!frame_ok) {
-		return;
-	}
-
-	trace::scope(find_or_generate_id("scheduler::render"), [&] {
-		run_graph_frame();
 
 		if (in_frame) {
-			trace::scope(find_or_generate_id("scheduler::in_frame_callback"), [&] {
+			trace::scope(trace_id<"scheduler::in_frame_callback">(), [&] {
 				in_frame();
+			});
+		}
+
+		if (!tasks.empty()) {
+			trace::scope(trace_id<"scheduler::frame_sync_wait">(), [&] {
+				async::sync_wait(async::when_all(std::move(tasks)));
+			});
+			trace::scope(trace_id<"scheduler::frame_graph_clear">(), [&] {
+				m_frame_graph.clear();
 			});
 		}
 	});
@@ -480,8 +487,8 @@ auto gse::scheduler::shutdown() -> void {
 	};
 	phase.gpu_ctx = m_gpu_ctx;
 
-	for (auto& node : m_nodes | std::views::reverse) {
-		node->shutdown(phase);
+	for (auto it = m_nodes.rbegin(); it != m_nodes.rend(); ++it) {
+		(*it)->shutdown(phase);
 	}
 }
 
@@ -500,7 +507,7 @@ auto gse::scheduler::snapshot_all_channels() -> void {
 	}
 }
 
-auto gse::scheduler::ensure_channel_internal(const std::type_index idx, const channel_factory_fn factory) -> channel_base& {
+auto gse::scheduler::ensure_channel_internal(const id idx, const channel_factory_fn factory) -> channel_base& {
 	std::lock_guard lock(m_channels_mutex);
 	auto it = m_channels.find(idx);
 
@@ -511,12 +518,12 @@ auto gse::scheduler::ensure_channel_internal(const std::type_index idx, const ch
 	return *it->second;
 }
 
-auto gse::scheduler::ensure_channel(const std::type_index idx, const channel_factory_fn factory) -> channel_base& {
+auto gse::scheduler::ensure_channel(const id idx, const channel_factory_fn factory) -> channel_base& {
 	return ensure_channel_internal(idx, factory);
 }
 
 auto gse::scheduler::make_channel_writer() -> channel_writer {
-	return channel_writer([this](const std::type_index type, std::any item, const channel_factory_fn factory) {
+	return channel_writer([this](const id type, std::any item, const channel_factory_fn factory) {
 		std::lock_guard lock(m_channels_mutex);
 		auto it = m_channels.find(type);
 		if (it == m_channels.end()) {

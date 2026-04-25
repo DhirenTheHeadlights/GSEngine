@@ -140,7 +140,7 @@ auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state& state) -
 }
 
 auto gse::gpu::frame::end(window& win) -> void {
-    trace::scope(find_or_generate_id("end_frame::cmd_end"), [&] {
+    trace::scope(trace_id<"end_frame::cmd_end">(), [&] {
         m_frame_context.command_buffer.end();
     });
 
@@ -184,7 +184,7 @@ auto gse::gpu::frame::end(window& win) -> void {
         .pSignalSemaphoreInfos = &signal_info,
     };
 
-    trace::scope(find_or_generate_id("end_frame::submit"), [&] {
+    trace::scope(trace_id<"end_frame::submit">(), [&] {
         try {
             m_device->queue_config().graphics.submit2(
                 submit_info2,
@@ -207,7 +207,7 @@ auto gse::gpu::frame::end(window& win) -> void {
     };
 
     vk::Result present_result;
-    trace::scope(find_or_generate_id("end_frame::present"), [&] {
+    trace::scope(trace_id<"end_frame::present">(), [&] {
         try {
             present_result = m_device->queue_config().present.presentKHR(present_info);
         }

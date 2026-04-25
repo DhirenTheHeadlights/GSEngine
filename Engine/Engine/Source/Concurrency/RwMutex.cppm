@@ -2,6 +2,8 @@ export module gse.concurrency:rw_mutex;
 
 import std;
 
+import gse.core;
+
 import :task;
 
 export namespace gse::async {
@@ -76,11 +78,11 @@ export namespace gse::async {
 	class rw_mutex_registry {
 	public:
 		auto mutex_for(
-			std::type_index type
+			id type
 		) -> rw_mutex&;
 
 	private:
-		std::unordered_map<std::type_index, std::unique_ptr<rw_mutex>> m_mutexes;
+		std::unordered_map<id, std::unique_ptr<rw_mutex>> m_mutexes;
 		std::shared_mutex m_map_mutex;
 	};
 }
@@ -176,7 +178,7 @@ auto gse::async::rw_mutex::unlock_exclusive() -> void {
 	}
 }
 
-auto gse::async::rw_mutex_registry::mutex_for(const std::type_index type) -> rw_mutex& {
+auto gse::async::rw_mutex_registry::mutex_for(const id type) -> rw_mutex& {
 	{
 		std::shared_lock lock(m_map_mutex);
 		if (const auto it = m_mutexes.find(type); it != m_mutexes.end()) {

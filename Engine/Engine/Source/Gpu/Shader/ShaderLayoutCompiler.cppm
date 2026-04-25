@@ -168,7 +168,7 @@ struct gse::asset_compiler<gse::shader_layout> {
             return false;
         }
 
-        std::map<std::uint32_t, std::vector<shader_layout_binding>> sets_map;
+        std::map<std::uint32_t, shader_layout_set> sets_map;
 
         auto* globals_vl = layout->getGlobalParamsVarLayout();
         if (!globals_vl) {
@@ -226,15 +226,16 @@ struct gse::asset_compiler<gse::shader_layout> {
                     .stageFlags = all_stages,
                 };
 
-                auto& set_bindings = sets_map[set_idx];
-                bool exists = std::ranges::any_of(set_bindings, [&](const shader_layout_binding& b) {
+                auto& set = sets_map[set_idx];
+                set.set_index = set_idx;
+                const bool exists = std::ranges::any_of(set.bindings, [&](const shader_layout_binding& b) {
                     return b.layout_binding.binding == binding;
                 });
 
                 if (!exists) {
-                    set_bindings.push_back({
+                    set.bindings.push_back({
                         .name = var->getName(),
-                        .layout_binding = layout_binding
+                        .layout_binding = layout_binding,
                     });
                 }
             }
@@ -246,15 +247,14 @@ struct gse::asset_compiler<gse::shader_layout> {
             return false;
         }
 
-        binary_writer ar(out, 0x474C4159, 1);
-        ar & layout_name;
-
-        const auto set_count = static_cast<std::uint32_t>(sets_map.size());
-        ar & set_count;
-
-        for (const auto& [set_idx, bindings] : sets_map) {
-            ar & set_idx & bindings;
+        std::vector<shader_layout_set> sets;
+        sets.reserve(sets_map.size());
+        for (auto& set : std::views::values(sets_map)) {
+            sets.push_back(std::move(set));
         }
+
+        binary_writer ar(out, 0x474C4159, 1);
+        ar & layout_name & sets;
 
         log::println(log::category::assets, "Layout compiled: {}", destination.filename().string());
         return true;

@@ -316,79 +316,77 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, fr
     const vec2u ext_size{ width, height };
     const auto& bindless_region = gpu.bindless_textures().region();
 
-    pass.color_output_load()
-        .record([&r, &batches, ext_size, window_size, &bindless_region,
-            sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
-            &vertex_buffer, &index_buffer](const gpu::recording_context& rec) mutable {
+    pass.color_output_load();
 
-            rec.bind_vertex(vertex_buffer);
-            rec.bind_index(index_buffer);
+    auto& rec = co_await pass.record();
 
-            rec.set_viewport(ext_size);
-            rec.set_scissor(ext_size);
+    rec.bind_vertex(vertex_buffer);
+    rec.bind_index(index_buffer);
 
-            auto bound_type = command_type::sprite;
-            bool first_batch = true;
+    rec.set_viewport(ext_size);
+    rec.set_scissor(ext_size);
 
-            for (const auto& [type, index_offset, index_count, clip_rect, texture, font] : batches) {
-                if (index_count == 0) {
-                    continue;
-                }
+    auto bound_type = command_type::sprite;
+    bool first_batch = true;
 
-                if (first_batch || type != bound_type) {
-                    if (type == command_type::sprite) {
-                        rec.bind(r.sprite_pipeline);
-                        rec.bind_descriptors(r.sprite_pipeline, bindless_region, 2);
-                    } else {
-                        rec.bind(r.text_pipeline);
-                        rec.bind_descriptors(r.text_pipeline, bindless_region, 2);
-                    }
-                    bound_type = type;
-                    first_batch = false;
-                }
+    for (const auto& [type, index_offset, index_count, clip_rect, texture, font] : batches) {
+        if (index_count == 0) {
+            continue;
+        }
 
-                std::uint32_t tex_idx = 0;
-                bool has_texture = false;
-                if (type == command_type::sprite) {
-                    if (texture.valid() && texture->bindless_slot()) {
-                        tex_idx = texture->bindless_slot().index;
-                        has_texture = true;
-                    }
-                } else {
-                    if (font.valid() && font->texture()->bindless_slot()) {
-                        tex_idx = font->texture()->bindless_slot().index;
-                        has_texture = true;
-                    }
-                }
-
-                if (!has_texture) {
-                    continue;
-                }
-
-                if (type == command_type::sprite) {
-                    sprite_pc.set("tex_idx", tex_idx);
-                    rec.push(r.sprite_pipeline, sprite_pc);
-                } else {
-                    text_pc.set("tex_idx", tex_idx);
-                    rec.push(r.text_pipeline, text_pc);
-                }
-
-                if (clip_rect) {
-                    const float left = std::max(0.0f, clip_rect->left());
-                    const float right = std::min(window_size.x(), clip_rect->right());
-                    const float bottom = std::max(0.0f, clip_rect->bottom());
-                    const float top = std::min(window_size.y(), clip_rect->top());
-                    rec.set_scissor(
-                        static_cast<std::int32_t>(left),
-                        static_cast<std::int32_t>(window_size.y() - top),
-                        static_cast<std::uint32_t>(std::max(0.0f, right - left)),
-                        static_cast<std::uint32_t>(std::max(0.0f, top - bottom))
-                    );
-                } else {
-                    rec.set_scissor(ext_size);
-                }
-
-                rec.draw_indexed(index_count, 1, index_offset, 0, 0);
+        if (first_batch || type != bound_type) {
+            if (type == command_type::sprite) {
+                rec.bind(r.sprite_pipeline);
+                rec.bind_descriptors(r.sprite_pipeline, bindless_region, 2);
+            } else {
+                rec.bind(r.text_pipeline);
+                rec.bind_descriptors(r.text_pipeline, bindless_region, 2);
             }
-        });
+            bound_type = type;
+            first_batch = false;
+        }
+
+        std::uint32_t tex_idx = 0;
+        bool has_texture = false;
+        if (type == command_type::sprite) {
+            if (texture.valid() && texture->bindless_slot()) {
+                tex_idx = texture->bindless_slot().index;
+                has_texture = true;
+            }
+        } else {
+            if (font.valid() && font->texture()->bindless_slot()) {
+                tex_idx = font->texture()->bindless_slot().index;
+                has_texture = true;
+            }
+        }
+
+        if (!has_texture) {
+            continue;
+        }
+
+        if (type == command_type::sprite) {
+            sprite_pc.set("tex_idx", tex_idx);
+            rec.push(r.sprite_pipeline, sprite_pc);
+        } else {
+            text_pc.set("tex_idx", tex_idx);
+            rec.push(r.text_pipeline, text_pc);
+        }
+
+        if (clip_rect) {
+            const float left = std::max(0.0f, clip_rect->left());
+            const float right = std::min(window_size.x(), clip_rect->right());
+            const float bottom = std::max(0.0f, clip_rect->bottom());
+            const float top = std::min(window_size.y(), clip_rect->top());
+            rec.set_scissor(
+                static_cast<std::int32_t>(left),
+                static_cast<std::int32_t>(window_size.y() - top),
+                static_cast<std::uint32_t>(std::max(0.0f, right - left)),
+                static_cast<std::uint32_t>(std::max(0.0f, top - bottom))
+            );
+        } else {
+            rec.set_scissor(ext_size);
+        }
+
+        rec.draw_indexed(index_count, 1, index_offset, 0, 0);
+    }
 }

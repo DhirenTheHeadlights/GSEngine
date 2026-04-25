@@ -140,7 +140,7 @@ export namespace gse::gpu {
 		) const -> std::size_t;
 
 		auto mark_pending_for_finalization(
-			const std::type_index& resource_type,
+			id resource_type,
 			id resource_id
 		) const -> void;
 
@@ -218,7 +218,7 @@ export namespace gse::gpu {
 
 	private:
 		auto loader(
-			const std::type_index& type_index
+			id type_index
 		) const -> resource::loader_base*;
 
 		gse::window m_window;
@@ -231,10 +231,10 @@ export namespace gse::gpu {
 		concurrency::frame_scheduler m_scheduler;
 
 		asset_pipeline m_pipeline{ config::resource_path, config::baked_resource_path };
-		std::unordered_map<std::type_index, std::unique_ptr<resource::loader_base>> m_resource_loaders;
+		std::unordered_map<id, std::unique_ptr<resource::loader_base>> m_resource_loaders;
 
 		mutable std::vector<command> m_command_queue;
-		mutable std::vector<std::pair<std::type_index, id>> m_pending_gpu_resources;
+		mutable std::vector<std::pair<id, id>> m_pending_gpu_resources;
 		mutable std::recursive_mutex m_mutex;
 
 		bool m_ui_focus = false;
@@ -288,17 +288,17 @@ gse::gpu::context::~context() {
 
 template <typename T>
 auto gse::gpu::context::add_loader() -> resource::loader<T, context>* {
-	const auto type_index = std::type_index(typeid(T));
+	const auto type_id = id_of<T>();
 	assert(
-		!m_resource_loaders.contains(type_index),
+		!m_resource_loaders.contains(type_id),
 		std::source_location::current(),
 		"Resource loader for type {} already exists.",
-		type_index.name()
+		type_tag<T>()
 	);
 
 	auto new_loader = std::make_unique<resource::loader<T, context>>(*this);
 	auto* loader_ptr = new_loader.get();
-	m_resource_loaders[type_index] = std::move(new_loader);
+	m_resource_loaders[type_id] = std::move(new_loader);
 
 	if constexpr (has_asset_compiler<T>) {
 		m_pipeline.register_type<T, context>(loader_ptr);
@@ -360,7 +360,7 @@ auto gse::gpu::context::process_resource_queue() -> void {
 
 auto gse::gpu::context::process_gpu_queue() -> void {
 	std::vector<command> commands_to_run;
-	std::vector<std::pair<std::type_index, id>> resources_to_finalize;
+	std::vector<std::pair<id, id>> resources_to_finalize;
 
 	{
 		std::lock_guard lock(m_mutex);
@@ -425,14 +425,13 @@ auto gse::gpu::context::resource_state(const id id) const -> resource::state {
 
 template <typename T>
 auto gse::gpu::context::loader(this auto&& self) -> decltype(auto) {
-	const auto type_index = std::type_index(typeid(T));
-	auto* base_loader = self.loader(type_index);
+	auto* base_loader = self.loader(id_of<T>());
 	return static_cast<resource::loader<T, context>*>(base_loader);
 }
 
-auto gse::gpu::context::loader(const std::type_index& type_index) const -> resource::loader_base* {
-	assert(m_resource_loaders.contains(type_index), std::source_location::current(), "Resource loader for type {} does not exist.", type_index.name());
-	return m_resource_loaders.at(type_index).get();
+auto gse::gpu::context::loader(const id type_id) const -> resource::loader_base* {
+	assert(m_resource_loaders.contains(type_id), std::source_location::current(), "Resource loader for id {} does not exist.", type_id.number());
+	return m_resource_loaders.at(type_id).get();
 }
 
 auto gse::gpu::context::begin_frame() -> std::expected<frame_token, frame_status> {
@@ -455,7 +454,7 @@ auto gse::gpu::context::gpu_queue_size() const -> std::size_t {
 	return m_command_queue.size();
 }
 
-auto gse::gpu::context::mark_pending_for_finalization(const std::type_index& resource_type, const id resource_id) const -> void {
+auto gse::gpu::context::mark_pending_for_finalization(id resource_type, const id resource_id) const -> void {
 	std::lock_guard lock(m_mutex);
 	m_pending_gpu_resources.emplace_back(resource_type, resource_id);
 }

@@ -249,36 +249,37 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
         co_return;
     }
 
-    if (fd.screenshot_requested) {
-        gpu_ctx->graph().add_pass<pending_screenshot>()
-            .after<ui::state>()
-            .record([&swapchain = gpu_ctx->swapchain(), &frame = gpu_ctx->frame(), &staging](const gpu::recording_context& rec) {
-                rec.capture_swapchain(swapchain, frame, staging);
-            });
+    const bool do_screenshot = fd.screenshot_requested;
+    const bool do_encode = r.encode_active;
 
-        fd.screenshots[frame_index].pending = true;
+    if (!do_screenshot && !do_encode) {
+        co_return;
+    }
+
+    const auto ext = gpu_ctx->graph().extent();
+
+    gpu::cached_push_constants convert_pc;
+    if (do_encode) {
+        convert_pc = r.convert_shader->cache_push_block("push_constants");
+        convert_pc.set("extent", ext);
+    }
+
+    auto pass = gpu_ctx->graph().add_pass<state>();
+    pass.after<ui::state>();
+
+    auto& rec = co_await pass.record();
+
+    if (do_screenshot) {
+        rec.capture_swapchain(gpu_ctx->swapchain(), gpu_ctx->frame(), staging);
+        pending = true;
         fd.screenshot_requested = false;
     }
 
-    if (r.encode_active) {
-        const auto ext = gpu_ctx->graph().extent();
-
-        gpu_ctx->graph().add_pass<pending_screenshot>()
-            .after<ui::state>()
-            .record([&swapchain = gpu_ctx->swapchain(), &frame = gpu_ctx->frame(), &rgba = r.rgba_captures[frame_index], rgba_extent = r.rgba_captures[frame_index].extent()](const gpu::recording_context& rec) {
-                rec.blit_swapchain_to_image(swapchain, frame, rgba, rgba_extent);
-            });
-
-        auto pc = r.convert_shader->cache_push_block("push_constants");
-        pc.set("extent", ext);
-
-        gpu_ctx->graph().add_pass<state>()
-            .after<pending_screenshot>()
-            .record([&r, frame_index, ext, pc = std::move(pc)](const gpu::recording_context& rec) {
-                rec.bind(r.convert_pipeline);
-                rec.bind_descriptors(r.convert_pipeline, r.convert_descriptors[frame_index]);
-                rec.push(r.convert_pipeline, pc);
-                rec.dispatch((ext.x() + 15) / 16, (ext.y() + 15) / 16, 1);
-            });
+    if (do_encode) {
+        rec.blit_swapchain_to_image(gpu_ctx->swapchain(), gpu_ctx->frame(), r.rgba_captures[frame_index], r.rgba_captures[frame_index].extent());
+        rec.bind(r.convert_pipeline);
+        rec.bind_descriptors(r.convert_pipeline, r.convert_descriptors[frame_index]);
+        rec.push(r.convert_pipeline, convert_pc);
+        rec.dispatch((ext.x() + 15) / 16, (ext.y() + 15) / 16, 1);
     }
 }

@@ -1,5 +1,23 @@
 # Coroutine Scheduler Unification
 
+## Status
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 1 — Update tier coroutine conversion | DONE | `graph_update` returns `async::task<>`; scheduler uses `sync_wait(when_all(...))` (`Scheduler.cppm:408-415`); `task_context::after<>` / `notify_ready<>` live in `TaskContext.cppm:74-86`. |
+| 2 — `task_context` base | DONE | `TaskContext.cppm` extracted; both `update_context` and `frame_context` inherit. |
+| 3 — Coroutine-signature component acquisition | DONE | `update_context::acquire<>` with deterministic type-index lock ordering (`UpdateContext.cppm:142-164`). `scheduled_work` / `schedule` / `update_context::read` / `update_context::write` all deleted. |
+| 4 — Coroutine trace hooks | DONE | `task_context::after` wraps `begin_async`/`end_async`; `update_context::acquire` wraps the same; `record_awaitable::await_suspend`/`await_resume` emit `record<PassType>` async spans. `trace::scope_guard` available for user sub-spans. |
+| 5 — Render record coroutine | DONE | `pass.record()` returns `record_awaitable`; `pass_builder::record(lambda)` and `record_pass_data::record_fn` deleted. `pass_builder::when()` removed (one user migrated to early `co_return`). All eight renderers migrated. `cull_compute::system` now submits a single merged pass (normal + skinned dispatches share the secondary). `scheduler::render` was refactored to start frame coroutines, run `in_frame` (which resumes them via `graph.execute()`), then `sync_wait`. |
+| 6.1 — Private `m_reg` behind safe wrappers | DONE | `update_context::m_reg` and `frame_context::m_reg` are private; `acquire_read`/`acquire_write` reachable only through scheduler-constructed contexts. |
+| 6.2 — Signature-declared state dependencies | DONE | `extract_state_deps` / `await_update_deps` / `resolve_update_arg` use C++26 reflection (`SystemNode.cppm:277-444`). Forgetting the await is impossible. |
+| 6.3 — Fused `co_await ctx.state<T>()` | TODO | Bare `state_of<T>()` still on `task_context`; no fused after-then-read primitive. |
+| 6.4 — `access_token`-gated `read`/`write` constructors | PARTIAL | `access` constructor is private with `friend class registry`; module name `access_token` exists. **Missing:** the actual `access_token` tag class; `registry::acquire_read`/`acquire_write` are still public-via-registry. |
+| 6.5 — Cycle detection on dependency graph | DONE | `scheduler::check_state_dep_cycles` runs at `initialize()` (`Scheduler.cppm:267-353`). |
+| 6.6 — Move-only pass-scoped `recording_context` | TODO | Phase 5 unblocks this. `recording_context` is still returned by reference from `record_awaitable::await_resume` and lives on the worker stack inside `render_graph::execute`. |
+
+**Next step:** Phase 6.6 (move-only pass-scoped `recording_context`). With Phase 5 in place, the `record_awaitable` already owns the suspension/resume handshake — moving the `recording_context` lifetime onto the awaitable's frame (returned by value, destructor closes the secondary) is now mechanical. After 6.6, focus shifts to 6.3 / 6.4 to lock down the remaining sharp edges.
+
 ## Overview
 
 Unify the update and frame tiers onto a single coroutine-based execution model, eliminate the lambda-based scheduling APIs, and fix an input-loss race in the process. The update tier currently uses `graph_update() -> void` dispatched in parallel via `task::group`, with no cross-system ordering primitive. The frame tier already uses `graph_frame() -> async::task<>` with `co_await ctx.after<State>()` for dependency ordering. This refactor brings the update tier up to the same model, then goes further — replacing `ctx.schedule(lambda)` with coroutine-signature acquisition and `pass.record(lambda)` with `co_await pass.record()`.

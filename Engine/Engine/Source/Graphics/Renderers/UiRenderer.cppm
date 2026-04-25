@@ -72,9 +72,9 @@ namespace gse::renderer::ui {
     export constexpr std::size_t frames_in_flight = 2;
 
     struct gpu_frame_data {
-        linear_vector<vertex>        vertices{ max_vertices };
+        linear_vector<vertex> vertices{ max_vertices };
         linear_vector<std::uint32_t> indices{ max_indices };
-        linear_vector<draw_batch>    batches{ 512 };
+        linear_vector<draw_batch> batches{ 512 };
     };
 
     struct unified_command {

@@ -65,18 +65,6 @@ export namespace gse {
     };
 }
 
-export namespace gse {
-    template<archive Ar>
-    auto serialize(Ar& ar, shader_layout_binding& b) -> void {
-        ar & b.name & b.layout_binding;
-    }
-
-    template<archive Ar>
-    auto serialize(Ar& ar, shader_layout_set& s) -> void {
-        ar & s.set_index & s.bindings;
-    }
-}
-
 gse::shader_layout::shader_layout(const std::filesystem::path& path)
     : identifiable(path, config::baked_resource_path)
     , m_name(path.stem().string())

@@ -17,10 +17,6 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 export namespace gse::network {
-	consteval auto stable_code(
-		std::string_view s
-	) -> std::uint16_t;
-
 	template <typename T>
 	consteval auto component_name(
 	) -> std::string_view;
@@ -114,14 +110,6 @@ export namespace gse::network {
 	auto for_each_networked_component(
 		F&& f
 	) -> void;
-}
-
-consteval auto gse::network::stable_code(std::string_view s) -> std::uint16_t {
-	std::uint32_t h = 0x811C9DC5u;
-	for (const unsigned char c : s) {
-		h ^= c; h *= 16777619u;
-	}
-	return static_cast<std::uint16_t>((h ^ (h >> 16)) & 0xFFFF);
 }
 
 template <>

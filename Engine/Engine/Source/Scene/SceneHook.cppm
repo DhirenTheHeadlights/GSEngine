@@ -1,9 +1,12 @@
+module;
+
+#include <meta>
+
 export module gse.scene:scene_hook;
 
 import std;
 
 import gse.core;
-import gse.meta;
 import gse.ecs;
 import gse.hooks;
 
@@ -185,7 +188,7 @@ auto gse::hook<gse::scene>::builder::with() -> builder& {
 
 template <typename Func>
 auto gse::hook<gse::scene>::builder::configure(Func&& fn) -> builder& {
-	using c = std::remove_reference_t<first_arg_t<Func>>;
+	using c = std::remove_cvref_t<typename [: std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<Func>::operator())[0]) :]>;
 	push_init([fn = std::forward<Func>(fn)](const id self, registry& reg) mutable {
 		if (auto* component = reg.try_component<c>(self)) {
 			fn(*component);
