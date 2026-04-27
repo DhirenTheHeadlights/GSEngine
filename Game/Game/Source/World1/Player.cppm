@@ -104,7 +104,7 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> gse::asyn
 		const gse::length height = gse::feet(6.0f);
 		const gse::length width = gse::feet(3.0f);
 
-		ctx.defer_add<gse::physics::motion_component>(owner_id, gse::physics::motion_component_data{
+		ctx.add_component<gse::physics::motion_component>(owner_id, {
 			.current_position = p.initial_position,
 			.mass = gse::pounds(180.f),
 			.update_orientation = false,
@@ -112,14 +112,14 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> gse::asyn
 			.velocity_drive_active = true,
 		});
 
-		ctx.defer_add<gse::physics::collision_component>(owner_id, gse::physics::collision_component_data{
+		ctx.add_component<gse::physics::collision_component>(owner_id, {
 			.bounding_box = {
 				p.initial_position,
 				{ width, height, width },
 			},
 		});
 
-		ctx.defer_add<gse::camera::follow_component>(owner_id, gse::camera::follow_component_data{
+		ctx.add_component<gse::camera::follow_component>(owner_id, {
 			.offset = gse::vec3<gse::length>(gse::meters(0.f)),
 			.priority = 50,
 			.blend_in_duration = gse::milliseconds(300),

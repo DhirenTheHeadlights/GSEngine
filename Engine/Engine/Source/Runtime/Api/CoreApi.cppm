@@ -1,6 +1,7 @@
 export module gse.runtime:core_api;
 
 import std;
+import gse.std_meta;
 
 import gse.core;
 import gse.containers;

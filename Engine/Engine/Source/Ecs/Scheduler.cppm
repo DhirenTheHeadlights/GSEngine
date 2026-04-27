@@ -9,7 +9,7 @@ import gse.time;
 import gse.diag;
 
 import :phase_context;
-import :task_context;
+import :registries;
 import :update_context;
 import :frame_context;
 import :system_node;
@@ -24,35 +24,6 @@ export namespace gse {
 		auto set_gpu_context(
 			void* ctx
 		) -> void;
-
-		auto system_ptr(
-			id idx
-		) -> void*;
-
-		auto system_ptr(
-			id idx
-		) const -> const void*;
-
-		auto snapshot_ptr(
-			id type
-		) const -> const void*;
-
-		auto frame_snapshot_ptr(
-			id type
-		) const -> const void*;
-
-		auto channel_snapshot_ptr(
-			id type
-		) const -> const void*;
-
-		auto resources_ptr(
-			id type
-		) const -> const void*;
-
-		auto ensure_channel(
-			id idx,
-			channel_factory_fn factory
-		) -> channel_base&;
 
 		auto initialize(
 		) -> void;
@@ -82,13 +53,23 @@ export namespace gse {
 		) -> State&;
 
 		template <typename State>
-		auto state() const -> const State&;
+		auto state(
+			this auto& self
+		) -> auto&;
+
+		template <typename State>
+		auto try_state_of(
+			this auto& self
+		) -> auto*;
 
 		template <typename State>
 		auto has() const -> bool;
 
+		template <typename Resources>
+		auto resources_of() const -> const Resources&;
+
 		template <typename T>
-		auto channel() -> channel<T>&;
+		auto channel() -> gse::channel<T>&;
 
 		template <typename State, typename F>
 		auto defer(
@@ -96,14 +77,6 @@ export namespace gse {
 		) -> void;
 
 	private:
-		auto ensure_channel_internal(
-			id idx,
-			channel_factory_fn factory
-		) -> channel_base&;
-
-		auto make_channel_writer(
-		) -> channel_writer;
-
 		auto drain_deferred(
 		) -> void;
 
@@ -116,15 +89,11 @@ export namespace gse {
 		auto snapshot_all_states(
 		) -> void;
 
-		auto snapshot_all_channels(
-		) -> void;
-
 		std::vector<std::unique_ptr<system_node_base>> m_nodes;
-		std::unordered_map<id, system_node_base*> m_state_index;
+		state_registry m_states;
 		std::unordered_map<id, std::vector<id>> m_state_deps;
-		std::unordered_map<id, system_node_base*> m_resources_index;
-		std::unordered_map<id, std::unique_ptr<channel_base>> m_channels;
-		mutable std::mutex m_channels_mutex;
+		resource_registry m_resources_store;
+		channel_registry m_channels_store;
 		std::vector<gse::move_only_function<void()>> m_deferred;
 		std::mutex m_deferred_mutex;
 		registry* m_registry = nullptr;
@@ -137,23 +106,37 @@ export namespace gse {
 }
 
 template <typename State>
-auto gse::scheduler::state() const -> const State& {
-	const auto it = m_state_index.find(id_of<State>());
-	assert(it != m_state_index.end(), std::source_location::current(), "state not found");
-	return *static_cast<const State*>(it->second->state_ptr());
+auto gse::scheduler::state(this auto& self) -> auto& {
+	auto* p = self.m_states.state_ptr(id_of<State>());
+	assert(p != nullptr, std::source_location::current(), "state not found");
+	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
+	return *static_cast<state_t*>(p);
+}
+
+template <typename State>
+auto gse::scheduler::try_state_of(this auto& self) -> auto* {
+	auto* p = self.m_states.state_ptr(id_of<State>());
+	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
+	return static_cast<state_t*>(p);
 }
 
 template <typename State>
 auto gse::scheduler::has() const -> bool {
-	return m_state_index.contains(id_of<State>());
+	return m_states.contains(id_of<State>());
+}
+
+template <typename Resources>
+auto gse::scheduler::resources_of() const -> const Resources& {
+	const auto* ptr = m_resources_store.resources_ptr(id_of<Resources>());
+	assert(ptr != nullptr, std::source_location::current(), "resources not found");
+	return *static_cast<const Resources*>(ptr);
 }
 
 template <typename T>
 auto gse::scheduler::channel() -> gse::channel<T>& {
-	auto& base = ensure_channel_internal(id_of<T>(), +[]() -> std::unique_ptr<channel_base> {
+	auto& base = m_channels_store.ensure(id_of<T>(), +[]() -> std::unique_ptr<channel_base> {
 		return std::make_unique<typed_channel<T>>();
 	});
-
 	return static_cast<typed_channel<T>&>(base).data;
 }
 
@@ -161,7 +144,7 @@ template <typename State, typename F>
 auto gse::scheduler::defer(F&& fn) -> void {
 	using state_t = std::remove_cvref_t<State>;
 	push_deferred([this, f = std::forward<F>(fn)]() mutable {
-		auto* ptr = system_ptr(id_of<state_t>());
+		auto* ptr = m_states.state_ptr(id_of<state_t>());
 		if (ptr) {
 			f(*static_cast<state_t*>(ptr));
 		}
@@ -179,24 +162,27 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 
 	const auto state_idx = id_of<State>();
 	find_or_generate_id(type_tag<State>());
-	m_state_index.emplace(state_idx, raw);
+	m_states.register_state(state_idx, raw->state_ptr(), raw->state_snapshot_ptr());
 	m_state_deps.emplace(state_idx, extract_state_deps<S, State>());
 
 	if constexpr (has_resources<S>) {
 		find_or_generate_id(type_tag<typename S::resources>());
-		m_resources_index.emplace(id_of<typename S::resources>(), raw);
+		m_resources_store.register_resource(id_of<typename S::resources>(), raw->resources_ptr());
 	}
 
 	m_nodes.push_back(std::move(ptr));
 
 	if (m_initialized) {
-		auto writer = make_channel_writer();
+		auto writer = m_channels_store.make_writer();
 		init_context phase{
+			.gpu_ctx = m_gpu_ctx,
 			.reg = *m_registry,
 			.sched = *this,
-			.channels = writer
+			.states = m_states,
+			.resources_store = m_resources_store,
+			.channels_store = m_channels_store,
+			.channels = writer,
 		};
-		phase.gpu_ctx = m_gpu_ctx;
 		raw->initialize(phase);
 	}
 

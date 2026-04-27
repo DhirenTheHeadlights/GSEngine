@@ -1,6 +1,7 @@
 export module gse.meta:variant_match;
 
 import std;
+import gse.std_meta;
 
 export namespace gse {
     template <class Variant>

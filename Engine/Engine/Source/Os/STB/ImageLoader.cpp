@@ -1,3 +1,7 @@
+module;
+
+#include <cstdio>
+
 module gse.os;
 
 import std;
@@ -65,8 +69,8 @@ auto gse::image::data::size_bytes() const -> std::size_t {
 }
 
 auto gse::image::detect_format(const std::filesystem::path& path) -> image_format {
-	std::FILE* f = std::fopen(path.string().c_str(), "rb");
-	if (!f) {
+	std::FILE* f = nullptr;
+	if (fopen_s(&f, path.string().c_str(), "rb") != 0) {
 		return image_format::unknown;
 	}
 	unsigned char header[8] = {};
@@ -83,8 +87,8 @@ auto gse::image::detect_format(const std::filesystem::path& path) -> image_forma
 
 auto gse::image::read_png_file(const std::filesystem::path& path, const bool force_rgba) -> read_result {
 	read_result out;
-	std::FILE* fp = std::fopen(path.string().c_str(), "rb");
-	if (!fp) {
+	std::FILE* fp = nullptr;
+	if (fopen_s(&fp, path.string().c_str(), "rb") != 0) {
 		return out;
 	}
 
@@ -174,8 +178,8 @@ void gse::image::jpeg_error_exit(j_common_ptr cinfo) {
 
 auto gse::image::read_jpeg_file(const std::filesystem::path& path, const bool force_rgba) -> read_result {
 	read_result out;
-	std::FILE* fp = std::fopen(path.string().c_str(), "rb");
-	if (!fp) {
+	std::FILE* fp = nullptr;
+	if (fopen_s(&fp, path.string().c_str(), "rb") != 0) {
 		return out;
 	}
 
@@ -261,8 +265,8 @@ auto gse::image::write_png_file(
 	const std::uint32_t channels,
 	const void* pixels
 ) -> bool {
-	std::FILE* fp = std::fopen(path.string().c_str(), "wb");
-	if (!fp) {
+	std::FILE* fp = nullptr;
+	if (fopen_s(&fp, path.string().c_str(), "wb") != 0) {
 		return false;
 	}
 

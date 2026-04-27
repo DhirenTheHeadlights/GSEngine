@@ -12,7 +12,7 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
+
 export namespace gse::gpu {
 	struct push_constant_member {
 		std::uint32_t offset = 0;

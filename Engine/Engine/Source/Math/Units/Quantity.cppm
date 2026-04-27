@@ -1,6 +1,7 @@
 export module gse.math:quant;
 
 import std;
+import gse.std_meta;
 
 import gse.assert;
 
@@ -696,16 +697,13 @@ export namespace gse::internal {
     template <typename Tag>
         requires (has_quantity_spec(^^Tag))
     struct quantity_traits<Tag> {
-        static constexpr auto dim_info = resolve_dim_info(^^Tag);
-        static constexpr auto default_unit_info = resolve_default_unit_info(^^Tag);
-
         template <
             typename T,
-            auto U = [: default_unit_info :]
+            auto U = ([: resolve_default_unit_info(^^Tag) :])
         >
         using type = quantity<
             T,
-            typename [: dim_info :],
+            typename [: resolve_dim_info(^^Tag) :],
             Tag,
             decltype(U)
         >;
@@ -1026,7 +1024,9 @@ export namespace gse {
     template <internal::is_quantity Q1, internal::is_quantity Q2>
         requires internal::has_same_dimension_as<Q1, Q2>
     auto hypot(const Q1& a, const Q2& b) -> Q1 {
-        return Q1(std::hypot(a.template as<typename Q1::default_unit>(), b.template as<typename Q1::default_unit>()));
+        const auto av = a.template as<typename Q1::default_unit>();
+        const auto bv = b.template as<typename Q1::default_unit>();
+        return Q1(std::sqrt(av * av + bv * bv));
     }
 
     template <internal::is_quantity Q>

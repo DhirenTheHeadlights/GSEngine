@@ -11,7 +11,7 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
+
 export namespace gse::vulkan {
 	class worker_command_pools : public non_copyable {
 	public:

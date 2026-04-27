@@ -1,6 +1,7 @@
 export module gse.ecs:system_node;
 
 import std;
+import gse.std_meta;
 
 import gse.core;
 import gse.concurrency;
@@ -550,10 +551,6 @@ auto gse::system_node<S, State>::state_snapshot_ptr() const -> const void* {
 	if constexpr (std::is_copy_assignable_v<State>) {
 		return &m_snapshot.value;
 	} else {
-		assert(false, std::source_location::current(),
-			"Attempted to read snapshot of non-copyable state '{}'. "
-			"Either make the state copyable or avoid try_state_of<T>() for this type.",
-			type_tag<State>());
 		return nullptr;
 	}
 }

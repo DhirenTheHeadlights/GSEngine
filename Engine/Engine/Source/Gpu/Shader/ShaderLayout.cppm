@@ -10,7 +10,6 @@ import gse.config;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 import gse.assert;
 
 export namespace gse {

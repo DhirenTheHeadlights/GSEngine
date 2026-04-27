@@ -9,6 +9,7 @@ import gse.diag;
 import :access_token;
 import :component;
 import :phase_context;
+import :registries;
 import :registry;
 import :task_context;
 import :traits;
@@ -18,7 +19,9 @@ export namespace gse {
 	public:
 		update_context(
 			void* gpu_ctx,
-			scheduler& sched,
+			state_registry& states,
+			resource_registry& resources_store,
+			channel_registry& channels_store,
 			channel_writer& channels,
 			task_graph& graph,
 			registry& reg,
@@ -70,10 +73,21 @@ export namespace gse {
 			id owner
 		) -> void;
 
-		template <is_component T, typename... Args>
+		template <is_component T> requires has_params<T>
 		auto add_component(
 			id owner,
-			Args&&... args
+			const typename T::params& p
+		) -> T*;
+
+		template <is_component T> requires (!std::same_as<typename T::params, typename T::network_data_t>)
+		auto add_component(
+			id owner,
+			const typename T::network_data_t& nd
+		) -> T*;
+
+		template <is_component T>
+		auto add_component(
+			id owner
 		) -> T*;
 
 		template <is_component T>
@@ -110,12 +124,14 @@ namespace gse {
 
 gse::update_context::update_context(
 	void* gpu_ctx,
-	scheduler& sched,
+	state_registry& states,
+	resource_registry& resources_store,
+	channel_registry& channels_store,
 	channel_writer& channels,
 	task_graph& graph,
 	registry& reg,
 	async::rw_mutex_registry& access_mutexes
-) : task_context{ gpu_ctx, sched, channels, graph, true },
+) : task_context{ gpu_ctx, states, resources_store, channels_store, channels, graph, true },
 	m_reg(reg),
 	m_access_mutexes(access_mutexes) {}
 
@@ -243,9 +259,19 @@ auto gse::update_context::remove(const id owner) -> void {
 	m_reg.remove(owner);
 }
 
-template <gse::is_component T, typename... Args>
-auto gse::update_context::add_component(const id owner, Args&&... args) -> T* {
-	return m_reg.add_component<T>(owner, std::forward<Args>(args)...);
+template <gse::is_component T> requires gse::has_params<T>
+auto gse::update_context::add_component(const id owner, const typename T::params& p) -> T* {
+	return m_reg.add_component<T>(owner, p);
+}
+
+template <gse::is_component T> requires (!std::same_as<typename T::params, typename T::network_data_t>)
+auto gse::update_context::add_component(const id owner, const typename T::network_data_t& nd) -> T* {
+	return m_reg.add_component<T>(owner, nd);
+}
+
+template <gse::is_component T>
+auto gse::update_context::add_component(const id owner) -> T* {
+	return m_reg.add_component<T>(owner);
 }
 
 template <gse::is_component T>

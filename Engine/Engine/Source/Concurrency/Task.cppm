@@ -1,6 +1,7 @@
 export module gse.concurrency:task;
 
 import std;
+import gse.std_meta;
 
 import gse.core;
 import gse.diag;

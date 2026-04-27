@@ -55,7 +55,3 @@ export namespace gse::image {
 		const void* pixels
 	) -> bool;
 }
-
-auto gse::image::data::size_bytes() const -> std::size_t {
-	return size.x() * size.y() * channels;
-}
