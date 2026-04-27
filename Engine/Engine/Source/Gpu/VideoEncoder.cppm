@@ -1,13 +1,11 @@
 export module gse.gpu:video_encoder;
 
 import std;
+import vulkan;
 
-import :gpu_types;
-import :gpu_buffer;
-import :gpu_image;
-import :gpu_device;
-import :vulkan_runtime;
-import :vulkan_allocator;
+import gse.gpu.context;
+import gse.gpu.device;
+import gse.gpu.vulkan;
 
 import gse.core;
 import gse.containers;

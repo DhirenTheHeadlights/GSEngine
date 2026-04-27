@@ -1,4 +1,4 @@
-module gse.gpu;
+module gse.gpu.vulkan;
 
 import std;
 import vulkan;
@@ -18,7 +18,7 @@ auto gse::vulkan::allocator::pool_key::operator==(const pool_key& other) const -
 
 auto gse::vulkan::allocator::pool_key_hash::operator()(const pool_key& key) const noexcept -> std::size_t {
     const auto memory_hash = std::hash<std::uint32_t>()(key.memory_type_index);
-    const auto props_hash = std::hash<vk::MemoryPropertyFlags>()(key.properties);
+    const auto props_hash = std::hash<vk::MemoryPropertyFlags::MaskType>()(static_cast<vk::MemoryPropertyFlags::MaskType>(key.properties));
     const auto address_hash = std::hash<bool>()(key.device_address);
     return memory_hash ^ (props_hash << 1) ^ (address_hash << 2);
 }

@@ -1,21 +1,18 @@
-module;
-
-#include <moodycamel/concurrentqueue.h>
-
 export module gse.time:frame_sync;
 
 import std;
+import gse.moodycamel;
 
 export namespace gse::frame_sync {
 	using callback = std::function<void()>;
 
 	auto on_begin(
 		callback cb
-	);
+	) -> void;
 
 	auto on_end(
 		callback cb
-	);
+	) -> void;
 
 	auto begin(
 	) -> void;
@@ -37,11 +34,11 @@ namespace gse::frame_sync {
 	) -> void;
 }
 
-auto gse::frame_sync::on_begin(callback cb) {
+auto gse::frame_sync::on_begin(callback cb) -> void {
 	begin_pending.enqueue(std::move(cb));
 }
 
-auto gse::frame_sync::on_end(callback cb) {
+auto gse::frame_sync::on_end(callback cb) -> void {
 	end_pending.enqueue(std::move(cb));
 }
 

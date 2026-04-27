@@ -1,7 +1,3 @@
-module;
-
-#include <meta>
-
 export module gse.scene:scene_hook;
 
 import std;

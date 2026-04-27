@@ -1,13 +1,13 @@
-module gse.gpu;
+module gse.gpu.device;
 
 import std;
 
 import :gpu_frame;
-import :vulkan_runtime;
+import gse.gpu.vulkan;
 import :gpu_device;
 import :gpu_swapchain;
 import :gpu_sync;
-import :gpu_types;
+import gse.gpu.types;
 
 import gse.os;
 import gse.assert;
@@ -140,9 +140,10 @@ auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state& state) -
 }
 
 auto gse::gpu::frame::end(window& win) -> void {
-    trace::scope(trace_id<"end_frame::cmd_end">(), [&] {
+    {
+    	trace::scope_guard sg{trace_id<"end_frame::cmd_end">()};
         m_frame_context.command_buffer.end();
-    });
+    }
 
     std::vector<vk::SemaphoreSubmitInfo> wait_infos;
     wait_infos.push_back({
@@ -184,7 +185,8 @@ auto gse::gpu::frame::end(window& win) -> void {
         .pSignalSemaphoreInfos = &signal_info,
     };
 
-    trace::scope(trace_id<"end_frame::submit">(), [&] {
+    {
+    	trace::scope_guard sg{trace_id<"end_frame::submit">()};
         try {
             m_device->queue_config().graphics.submit2(
                 submit_info2,
@@ -194,7 +196,7 @@ auto gse::gpu::frame::end(window& win) -> void {
             m_device->report_device_lost(std::format("submit2 (frame {}, image {})", m_current_frame, m_frame_context.image_index));
             throw;
         }
-    });
+    }
 
     const vk::Semaphore render_finished_handle = *m_sync.render_finished_semaphores[m_frame_context.image_index];
 
@@ -207,7 +209,8 @@ auto gse::gpu::frame::end(window& win) -> void {
     };
 
     vk::Result present_result;
-    trace::scope(trace_id<"end_frame::present">(), [&] {
+    {
+    	trace::scope_guard sg{trace_id<"end_frame::present">()};
         try {
             present_result = m_device->queue_config().present.presentKHR(present_info);
         }
@@ -218,7 +221,7 @@ auto gse::gpu::frame::end(window& win) -> void {
             m_device->report_device_lost(std::format("presentKHR (frame {}, image {})", m_current_frame, m_frame_context.image_index));
             throw;
         }
-    });
+    }
 
     if (present_result == vk::Result::eErrorOutOfDateKHR || present_result == vk::Result::eSuboptimalKHR) {
         recreate_resources(win);

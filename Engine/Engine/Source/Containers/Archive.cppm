@@ -1,7 +1,3 @@
-module;
-
-#include <meta>
-
 export module gse.containers:archive;
 
 import std;

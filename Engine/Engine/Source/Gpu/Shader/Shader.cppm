@@ -1,14 +1,10 @@
-module;
-
-#include <meta>
-
-export module gse.gpu:shader;
+export module gse.gpu.shader:shader;
 
 import std;
-
-import :gpu_types;
-import :vulkan_allocator;
 import :gpu_push_constants;
+
+import gse.gpu.types;
+import gse.gpu.vulkan;
 
 import gse.assert;
 import gse.core;

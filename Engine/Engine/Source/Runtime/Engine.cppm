@@ -92,11 +92,6 @@ export namespace gse {
 		auto direct(
 		) -> director;
 
-		template <typename F>
-		auto defer(
-			F&& action
-		) -> void;
-
 		template <typename S, typename State, typename... Args>
 		auto add_system(
 			Args&&... args
@@ -154,15 +149,3 @@ auto gse::engine::add_system(Args&&... args) -> State& {
 	return m_scheduler.add_system<S, State>(m_world.registry(), std::forward<Args>(args)...);
 }
 
-template <typename F>
-auto gse::engine::defer(F&& action) -> void {
-	if (const auto* scene = current_scene()) {
-		scene->registry().add_deferred_action(
-			{},
-			[action = std::forward<F>(action)](registry& reg) {
-				action(reg);
-				return true;
-			}
-		);
-	}
-}

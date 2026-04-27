@@ -1,8 +1,3 @@
-module;
-
-#include <moodycamel/concurrentqueue.h>
-#include <meta>
-
 export module gse.concurrency:task;
 
 import std;
@@ -10,6 +5,7 @@ import std;
 import gse.core;
 import gse.diag;
 import gse.log;
+import gse.moodycamel;
 
 export namespace gse {
 	using job = std::function<void()>;
@@ -34,7 +30,7 @@ export namespace gse::task {
 
 	template <typename F>
 	auto start(
-		F&& fn = [] {},
+		F&& fn,
 		std::size_t worker_count = std::thread::hardware_concurrency()
 	) -> std::invoke_result_t<F&>;
 
@@ -134,26 +130,36 @@ export namespace gse::task {
 		) -> std::vector<T>;
 
 	private:
-		moodycamel::ConcurrentQueue<T> m_queue;
+		mutable std::mutex m_mutex;
+		std::queue<T> m_queue;
 	};
 }
 
 template <typename T>
 auto gse::task::concurrent_queue<T>::push(T value) -> void {
-	m_queue.enqueue(std::move(value));
+	const std::scoped_lock lock(m_mutex);
+	m_queue.push(std::move(value));
 }
 
 template <typename T>
 auto gse::task::concurrent_queue<T>::try_pop(T& out) -> bool {
-	return m_queue.try_dequeue(out);
+	const std::scoped_lock lock(m_mutex);
+	if (m_queue.empty()) {
+		return false;
+	}
+	out = std::move(m_queue.front());
+	m_queue.pop();
+	return true;
 }
 
 template <typename T>
 auto gse::task::concurrent_queue<T>::drain() -> std::vector<T> {
+	const std::scoped_lock lock(m_mutex);
 	std::vector<T> result;
-	T value;
-	while (m_queue.try_dequeue(value)) {
-		result.push_back(std::move(value));
+	result.reserve(m_queue.size());
+	while (!m_queue.empty()) {
+		result.push_back(std::move(m_queue.front()));
+		m_queue.pop();
 	}
 	return result;
 }
@@ -261,16 +267,18 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 
 	if (started.load(std::memory_order_acquire)) {
 		if constexpr (std::is_void_v<std::invoke_result_t<F&>>) {
-			trace::scope(generate_id("task.start.reentrant"), [&] {
+			{
+				trace::scope_guard sg{generate_id("task.start.reentrant")};
 				fn();
-			});
+			}
 			return;
 		}
 		else {
 			std::invoke_result_t<F&> r{};
-			trace::scope(generate_id("task.start.reentrant"), [&] {
+			{
+				trace::scope_guard sg{generate_id("task.start.reentrant")};
 				r = fn();
-			});
+			}
 			return r;
 		}
 	}
@@ -302,17 +310,19 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 	});
 
 	if constexpr (std::is_void_v<std::invoke_result_t<F&>>) {
-		trace::scope(generate_id("task.start.body"), [&] {
+		{
+			trace::scope_guard sg{generate_id("task.start.body")};
 			fn();
-		});
+		}
 		return;
 	}
 	else {
 		using r = std::invoke_result_t<F&>;
 		r ret{};
-		trace::scope(generate_id("task.start.body"), [&] {
+		{
+			trace::scope_guard sg{generate_id("task.start.body")};
 			ret = fn();
-		});
+		}
 		return ret;
 	}
 }
@@ -336,12 +346,14 @@ auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t las
 
 	const std::size_t n = last - first;
 
-	trace::scope(id, [&] {
+	{
+		trace::scope_guard sg{id};
 		if (n <= coalesce_threshold) {
 			for (std::size_t i = first; i < last; ++i) {
-				trace::scope(id, [&] {
+				{
+					trace::scope_guard sg{id};
 					func(i);
-				});
+				}
 			}
 			return;
 		}
@@ -353,17 +365,19 @@ auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t las
 		for (std::size_t chunk_start = first; chunk_start < last; chunk_start += chunk) {
 			const std::size_t chunk_stop = std::min(chunk_start + chunk, last);
 			g.post([chunk_start, chunk_stop, id, &func] {
-				trace::scope(id, [&] {
+				{
+					trace::scope_guard sg{id};
 					for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
-						trace::scope(id, [&] {
+						{
+							trace::scope_guard sg{id};
 							func(i);
-						});
+						}
 					}
-				});
+				}
 			}, id);
 		}
 		g.wait();
-	});
+	}
 }
 
 template <typename F>
@@ -453,9 +467,10 @@ auto gse::task::run_job(job_entry& entry) -> void {
 	}
 
 	try {
-		trace::scope(entry.trace_id, [&] {
+		{
+			trace::scope_guard sg{entry.trace_id, entry.parent_eid};
 			entry.fn();
-		}, entry.parent_eid);
+		}
 	}
 	catch (const std::exception& e) {
 		log::println(log::level::error, log::category::task, "Exception in task: {}", e.what());
@@ -581,3 +596,4 @@ auto gse::task::compute_chunk_size(const std::size_t n, const std::size_t worker
 	}
 	return std::max<std::size_t>(1, (n + target_chunks - 1) / target_chunks);
 }
+

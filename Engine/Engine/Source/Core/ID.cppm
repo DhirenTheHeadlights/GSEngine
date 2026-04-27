@@ -1,7 +1,3 @@
-module;
-
-#include <meta>
-
 export module gse.core:id;
 
 import std;
@@ -245,7 +241,7 @@ auto gse::identifiable::relative_stem(const std::filesystem::path& path, const s
 		result += it->string();
 	}
 
-	if (const size_t dot_pos = result.find_last_of('.'); dot_pos != std::string::npos) {
+	if (const std::size_t dot_pos = result.find_last_of('.'); dot_pos != std::string::npos) {
 		result = result.substr(0, dot_pos);
 	}
 
@@ -332,7 +328,7 @@ export namespace gse {
 		) const -> bool;
 
 		auto size(
-		) const -> size_t;
+		) const -> std::size_t;
 
 		auto clear(
 		) noexcept -> void;
@@ -343,7 +339,7 @@ export namespace gse {
 	private:
 		std::vector<T> m_items;
 		std::vector<PrimaryIdType> m_ids;
-		std::unordered_map<PrimaryIdType, size_t> m_map;
+		std::unordered_map<PrimaryIdType, std::size_t> m_map;
 	};
 }
 
@@ -366,9 +362,9 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::remove(const PrimaryIdType& id
 		return;
 	}
 
-	const size_t index_to_remove = it->second;
+	const std::size_t index_to_remove = it->second;
 
-	if (const size_t last_index = m_items.size() - 1; index_to_remove != last_index) {
+	if (const std::size_t last_index = m_items.size() - 1; index_to_remove != last_index) {
 		const PrimaryIdType& last_id = m_ids.back();
 		m_items[index_to_remove] = std::move(m_items.back());
 		m_ids[index_to_remove] = std::move(m_ids.back());
@@ -387,7 +383,7 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::pop(const PrimaryIdType& id) -
 		return std::nullopt;
 	}
 
-	const size_t index_to_pop = it->second;
+	const std::size_t index_to_pop = it->second;
 	T popped_object = std::move(m_items[index_to_pop]);
 
 	remove(id);
@@ -422,7 +418,7 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::contains(const PrimaryIdType& 
 }
 
 template <typename T, typename PrimaryIdType>
-auto gse::id_mapped_collection<T, PrimaryIdType>::size() const -> size_t {
+auto gse::id_mapped_collection<T, PrimaryIdType>::size() const -> std::size_t {
 	return m_items.size();
 }
 

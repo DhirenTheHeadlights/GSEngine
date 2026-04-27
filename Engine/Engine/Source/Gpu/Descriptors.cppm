@@ -1,21 +1,13 @@
-module;
-
-#include <vulkan/vulkan_core.h>
-
 export module gse.gpu:descriptors;
 
 import std;
+import vulkan;
 
-import :gpu_types;
-import :vulkan_allocator;
-import :vulkan_reflect;
-import :vulkan_handles;
-import :descriptor_heap;
-import :gpu_context;
-import :gpu_pipeline;
-import :shader;
-import :shader_layout;
-import :shader_registry;
+import gse.gpu.types;
+import gse.gpu.vulkan;
+import gse.gpu.context;
+import gse.gpu.pipeline;
+import gse.gpu.shader;
 import gse.assets;
 
 import gse.assert;
@@ -375,7 +367,7 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 		}
 
 		if (auto it_as = m_as_infos.find(name); it_as != m_as_infos.end()) {
-			const auto vk_as = reinterpret_cast<VkAccelerationStructureKHR>(it_as->second.value);
+			const auto vk_as = std::bit_cast<vk::AccelerationStructureKHR>(it_as->second.value);
 			const vk::DeviceAddress as_addr = m_logical_device->getAccelerationStructureAddressKHR({
 				.accelerationStructure = vk_as
 			});

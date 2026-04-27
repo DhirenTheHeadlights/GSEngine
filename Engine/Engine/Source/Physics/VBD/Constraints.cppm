@@ -54,6 +54,28 @@ export namespace gse::vbd {
 	enum class joint_type : std::uint8_t { distance, fixed, hinge, slider };
 
 	struct joint_constraint {
+		joint_constraint(
+		) = default;
+
+		~joint_constraint(
+		) = default;
+
+		joint_constraint(
+			joint_constraint&&
+		) noexcept = default;
+
+		auto operator=(
+			joint_constraint&&
+		) noexcept -> joint_constraint& = default;
+
+		joint_constraint(
+			const joint_constraint&
+		) = default;
+
+		auto operator=(
+			const joint_constraint&
+		) -> joint_constraint& = default;
+
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
 		joint_type type = joint_type::distance;

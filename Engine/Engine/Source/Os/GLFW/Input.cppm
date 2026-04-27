@@ -1,11 +1,7 @@
-module;
-
-
-#include <GLFW/glfw3.h>
-
 export module gse.os:input;
 
 import std;
+import gse.glfw;
 
 import gse.math;
 import gse.meta;
@@ -113,10 +109,10 @@ auto gse::input::system_state::push_event(event&& e) -> void {
 
 auto gse::input::system_state::key_callback(const int key, const int action) -> void {
 	if (const auto gse_key = to_key(key)) {
-		if (action == GLFW_PRESS) {
+		if (action == glfw::press) {
 			push_event(key_pressed{ .key_code = *gse_key });
 		}
-		else if (action == GLFW_RELEASE) {
+		else if (action == glfw::release) {
 			push_event(key_released{ .key_code = *gse_key });
 		}
 	}
@@ -124,10 +120,10 @@ auto gse::input::system_state::key_callback(const int key, const int action) -> 
 
 auto gse::input::system_state::mouse_button_callback(const int button, const int action, const double x_pos, const double y_pos) -> void {
 	if (const auto gse_button = to_mouse_button(button)) {
-		if (action == GLFW_PRESS) {
+		if (action == glfw::press) {
 			push_event(mouse_button_pressed{ *gse_button, x_pos, y_pos });
 		}
-		else if (action == GLFW_RELEASE) {
+		else if (action == glfw::release) {
 			push_event(mouse_button_released{ *gse_button, x_pos, y_pos });
 		}
 	}
@@ -155,14 +151,14 @@ auto gse::input::system_state::current_state() const -> const state& {
 }
 
 auto gse::input::system_state::to_key(const int glfw_key) -> std::optional<key> {
-	if (glfw_key >= GLFW_KEY_SPACE && glfw_key <= GLFW_KEY_LAST) {
+	if (glfw_key >= glfw::key_space && glfw_key <= glfw::key_last) {
 		return static_cast<key>(glfw_key);
 	}
 	return std::nullopt;
 }
 
 auto gse::input::system_state::to_mouse_button(const int glfw_button) -> std::optional<mouse_button> {
-	if (glfw_button >= GLFW_MOUSE_BUTTON_1 && glfw_button <= GLFW_MOUSE_BUTTON_LAST) {
+	if (glfw_button >= glfw::mouse_button_1 && glfw_button <= glfw::mouse_button_last) {
 		return static_cast<mouse_button>(glfw_button);
 	}
 	return std::nullopt;

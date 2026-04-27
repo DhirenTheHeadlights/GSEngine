@@ -1,17 +1,8 @@
-module;
-
-
-#include <cstdio>
-#include <slang-com-ptr.h>
-#include <slang.h>
-
-#undef assert
-
-export module gse.gpu:shader_layout_compiler;
+export module gse.gpu.shader:shader_layout_compiler;
 
 import std;
 
-import :vulkan_allocator;
+import gse.gpu.vulkan;
 import gse.assert;
 import gse.log;
 import gse.core;
@@ -21,6 +12,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.assets;
+import gse.slang;
 import :shader_layout;
 
 namespace gse::layout_compile {
@@ -48,29 +40,29 @@ namespace gse::layout_compile {
 
         const slang::BindingType bt = tl->getBindingRangeType(range_index);
         const SlangBindingTypeIntegral bt_bits = static_cast<SlangBindingTypeIntegral>(bt);
-        const auto base_bt = static_cast<SlangBindingType>(bt_bits & SLANG_BINDING_TYPE_BASE_MASK);
-        const bool is_mutable = (bt_bits & SLANG_BINDING_TYPE_MUTABLE_FLAG) != 0;
+        const auto base_bt = static_cast<SlangBindingType>(bt_bits & slang_binding_type_base_mask);
+        const bool is_mutable = (bt_bits & slang_binding_type_mutable_flag) != 0;
 
         slang::TypeLayoutReflection* leaf_layout = tl->getBindingRangeLeafTypeLayout(range_index);
         slang::TypeReflection* leaf_type = leaf_layout ? leaf_layout->getType() : nullptr;
-        const auto access = leaf_type ? leaf_type->getResourceAccess() : SLANG_RESOURCE_ACCESS_READ;
-        const auto shape = leaf_type ? static_cast<SlangResourceShape>(leaf_type->getResourceShape() & SLANG_RESOURCE_BASE_SHAPE_MASK) : static_cast<SlangResourceShape>(0);
+        const auto access = leaf_type ? leaf_type->getResourceAccess() : slang_resource_access_read;
+        const auto shape = leaf_type ? static_cast<SlangResourceShape>(leaf_type->getResourceShape() & slang_resource_base_shape_mask) : static_cast<SlangResourceShape>(0);
 
         switch (base_bt) {
-            case SLANG_BINDING_TYPE_COMBINED_TEXTURE_SAMPLER: return vk::DescriptorType::eCombinedImageSampler;
-            case SLANG_BINDING_TYPE_TEXTURE:
-                if (shape == SLANG_TEXTURE_BUFFER) {
-                    return (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) ? vk::DescriptorType::eStorageTexelBuffer : vk::DescriptorType::eUniformTexelBuffer;
+            case slang_binding_type_combined_texture_sampler: return vk::DescriptorType::eCombinedImageSampler;
+            case slang_binding_type_texture:
+                if (shape == slang_texture_buffer) {
+                    return (is_mutable || access != slang_resource_access_read) ? vk::DescriptorType::eStorageTexelBuffer : vk::DescriptorType::eUniformTexelBuffer;
                 }
-                return (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) ? vk::DescriptorType::eStorageImage : vk::DescriptorType::eSampledImage;
-            case SLANG_BINDING_TYPE_SAMPLER: return vk::DescriptorType::eSampler;
-            case SLANG_BINDING_TYPE_TYPED_BUFFER:
-                return (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) ? vk::DescriptorType::eStorageTexelBuffer : vk::DescriptorType::eUniformTexelBuffer;
-            case SLANG_BINDING_TYPE_RAW_BUFFER: return vk::DescriptorType::eStorageBuffer;
-            case SLANG_BINDING_TYPE_CONSTANT_BUFFER:
-            case SLANG_BINDING_TYPE_PARAMETER_BLOCK: return vk::DescriptorType::eUniformBuffer;
-            case SLANG_BINDING_TYPE_INPUT_RENDER_TARGET: return vk::DescriptorType::eSampledImage;
-            case SLANG_BINDING_TYPE_RAY_TRACING_ACCELERATION_STRUCTURE: return vk::DescriptorType::eAccelerationStructureKHR;
+                return (is_mutable || access != slang_resource_access_read) ? vk::DescriptorType::eStorageImage : vk::DescriptorType::eSampledImage;
+            case slang_binding_type_sampler: return vk::DescriptorType::eSampler;
+            case slang_binding_type_typed_buffer:
+                return (is_mutable || access != slang_resource_access_read) ? vk::DescriptorType::eStorageTexelBuffer : vk::DescriptorType::eUniformTexelBuffer;
+            case slang_binding_type_raw_buffer: return vk::DescriptorType::eStorageBuffer;
+            case slang_binding_type_constant_buffer:
+            case slang_binding_type_parameter_block: return vk::DescriptorType::eUniformBuffer;
+            case slang_binding_type_input_render_target: return vk::DescriptorType::eSampledImage;
+            case slang_binding_type_ray_tracing_acceleration_structure: return vk::DescriptorType::eAccelerationStructureKHR;
             default: return vk::DescriptorType::eStorageBuffer;
         }
     }
@@ -104,7 +96,7 @@ struct gse::asset_compiler<gse::shader_layout> {
         const auto shader_root = config::resource_path / "Shaders";
 
         Slang::ComPtr<slang::IGlobalSession> global_session;
-        if (SLANG_FAILED(createGlobalSession(global_session.writeRef())) || !global_session) {
+        if (slang_failed(createGlobalSession(global_session.writeRef())) || !global_session) {
             log::println(log::level::error, log::category::assets, "Failed to create Slang global session");
             return false;
         }
@@ -112,7 +104,7 @@ struct gse::asset_compiler<gse::shader_layout> {
         Slang::ComPtr<slang::ISession> session;
         {
             slang::TargetDesc target{
-                .format = SLANG_SPIRV,
+                .format = slang_spirv,
                 .profile = global_session->findProfile("spirv_1_5")
             };
 
@@ -130,12 +122,12 @@ struct gse::asset_compiler<gse::shader_layout> {
             slang::SessionDesc sdesc{
                 .targets = &target,
                 .targetCount = 1,
-                .defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
+                .defaultMatrixLayoutMode = slang_matrix_layout_column_major,
                 .searchPaths = sp_c_strs.data(),
                 .searchPathCount = static_cast<SlangInt>(sp_c_strs.size()),
             };
 
-            if (SLANG_FAILED(global_session->createSession(sdesc, session.writeRef())) || !session) {
+            if (slang_failed(global_session->createSession(sdesc, session.writeRef())) || !session) {
                 log::println(log::level::error, log::category::assets, "Failed to create Slang session");
                 return false;
             }
@@ -153,12 +145,12 @@ struct gse::asset_compiler<gse::shader_layout> {
 
         slang::IComponentType* parts[] = { mod.get() };
         Slang::ComPtr<slang::IComponentType> composed;
-        if (SLANG_FAILED(session->createCompositeComponentType(parts, 1, composed.writeRef(), diags.writeRef()))) {
+        if (slang_failed(session->createCompositeComponentType(parts, 1, composed.writeRef(), diags.writeRef()))) {
             return false;
         }
 
         Slang::ComPtr<slang::IComponentType> program;
-        if (SLANG_FAILED(composed->link(program.writeRef(), diags.writeRef()))) {
+        if (slang_failed(composed->link(program.writeRef(), diags.writeRef()))) {
             log_diagnostics(diags.get());
             return false;
         }

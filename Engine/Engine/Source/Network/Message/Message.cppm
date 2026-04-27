@@ -1,7 +1,3 @@
-module;
-
-#include <meta>
-
 export module gse.network:message;
 
 import std;
@@ -20,20 +16,20 @@ export namespace gse::network {
 	) -> std::uint16_t;
 
 	template <typename T>
-		requires (is_network_message<T>())
+		requires (gse::network::is_network_message<T>())
 	constexpr auto message_id(
 		std::type_identity<T>
 	) -> std::uint16_t;
 
 	template <typename T>
-		requires (is_network_message<T>())
+		requires (gse::network::is_network_message<T>())
 	auto encode(
 		bitstream& s,
 		const T& msg
 	) -> void;
 
 	template <typename T>
-		requires (is_network_message<T>())
+		requires (gse::network::is_network_message<T>())
 	auto decode(
 		bitstream& s,
 		std::type_identity<T>
@@ -153,7 +149,7 @@ consteval auto gse::network::is_network_message() -> bool {
 	return std::ranges::any_of(
 		std::define_static_array(std::meta::annotations_of(^^T)),
 		[](std::meta::info ann) {
-			return std::meta::type_of(ann) == ^^network_message;
+			return std::meta::remove_const(std::meta::type_of(std::meta::constant_of(ann))) == ^^network_message;
 		}
 	);
 }
@@ -168,13 +164,13 @@ consteval auto gse::network::stable_code(std::string_view s) -> std::uint16_t {
 }
 
 template <typename T>
-	requires (is_network_message<T>())
+	requires (gse::network::is_network_message<T>())
 constexpr auto gse::network::message_id(std::type_identity<T>) -> std::uint16_t {
 	return stable_code(std::meta::display_string_of(^^T));
 }
 
 template <typename T>
-	requires (is_network_message<T>())
+	requires (gse::network::is_network_message<T>())
 auto gse::network::encode(bitstream& s, const T& msg) -> void {
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		s.write(msg.[:m:]);
@@ -182,7 +178,7 @@ auto gse::network::encode(bitstream& s, const T& msg) -> void {
 }
 
 template <typename T>
-	requires (is_network_message<T>())
+	requires (gse::network::is_network_message<T>())
 auto gse::network::decode(bitstream& s, std::type_identity<T>) -> T {
 	T msg{};
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {

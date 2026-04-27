@@ -1,19 +1,13 @@
-module;
-
-#include <meta>
-
-export module gse.gpu:render_graph;
+export module gse.gpu.device:render_graph;
 
 import std;
 
-import :gpu_types;
-import :vulkan_allocator;
-import :vulkan_handles;
+import gse.gpu.types;
+import gse.gpu.vulkan;
+import gse.gpu.shader;
 import :gpu_device;
 import :gpu_swapchain;
 import :gpu_frame;
-import :descriptor_heap;
-import :gpu_push_constants;
 
 import gse.assert;
 import gse.core;
@@ -1403,7 +1397,8 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 	std::vector<std::size_t> sorted;
 
-	gse::trace::scope(gse::trace_id<"graph::plan">(), [&] {
+	{
+		trace::scope_guard sg{gse::trace_id<"graph::plan">()};
 		std::unordered_map<id, std::size_t> type_to_index;
 		for (std::size_t i = 0; i < passes.size(); ++i) {
 			type_to_index[passes[i].pass_type] = i;
@@ -1481,7 +1476,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 				}
 			}
 		}
-	});
+	}
 
 	auto& worker_pools = m_device->worker_command_pools();
 	worker_pools.reset_frame(m_frame->current_frame());
@@ -1494,7 +1489,8 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
 
-	gse::trace::scope(gse::trace_id<"graph::record_parallel">(), [&] {
+	{
+		trace::scope_guard sg{gse::trace_id<"graph::record_parallel">()};
 		task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
 			auto& pass = passes[pi];
 			const bool is_graphics_pass = pass.color_output || pass.depth_output;
@@ -1543,9 +1539,10 @@ auto gse::vulkan::render_graph::execute() -> void {
 
 			pass_secondaries[pi] = secondary;
 		});
-	});
+	}
 
-	gse::trace::scope(gse::trace_id<"graph::record_replay">(), [&] {
+	{
+		trace::scope_guard sg{gse::trace_id<"graph::record_replay">()};
 		for (std::size_t si = 0; si < sorted.size(); ++si) {
 			auto& pass = passes[sorted[si]];
 
@@ -1714,7 +1711,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 				command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 2 + pass_index * 2);
 			}
 		}
-	});
+	}
 
 	if (timestamps_enabled && slot.pass_count > 0) {
 		slot.results_valid = true;

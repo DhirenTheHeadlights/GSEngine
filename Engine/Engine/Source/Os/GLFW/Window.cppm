@@ -1,11 +1,8 @@
-module;
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
 export module gse.os:window;
 
 import std;
+import vulkan;
+import gse.glfw;
 
 import :input;
 
@@ -80,8 +77,8 @@ export namespace gse {
 		) -> bool;
 
 		auto create_vulkan_surface(
-			VkInstance instance
-		) const -> VkSurfaceKHR;
+			vk::Instance instance
+		) const -> vk::SurfaceKHR;
 
 		auto set_mouse_visible(
 			bool visible
@@ -152,9 +149,9 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 	assert(glfwInit(), std::source_location::current(), "Error initializing GLFW");
 	assert(glfwVulkanSupported(), std::source_location::current(), "Vulkan not supported");
 
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-	glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_TRUE);
+	glfwWindowHint(glfw::client_api, glfw::no_api);
+	glfwWindowHint(glfw::resizable, glfw::true_);
+	glfwWindowHint(glfw::focus_on_show, glfw::true_);
 
 	m_window = glfwCreateWindow(1920, 1080, title.c_str(), nullptr, nullptr);
 	assert(m_window, std::source_location::current(), "Failed to create GLFW window!");
@@ -229,13 +226,13 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 			auto* self = static_cast<window*>(glfwGetWindowUserPointer(w));
 			if (!self) return;
 
-			self->m_focused = (focused == GLFW_TRUE);
+			self->m_focused = (focused == glfw::true_);
 			if (self->m_focused) {
-				const int cursor_mode = self->mouse_visible() ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED;
-				glfwSetInputMode(w, GLFW_CURSOR, cursor_mode);
+				const int cursor_mode = self->mouse_visible() ? glfw::cursor_normal : glfw::cursor_disabled;
+				glfwSetInputMode(w, glfw::cursor, cursor_mode);
 			}
 			else {
-				glfwSetInputMode(w, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+				glfwSetInputMode(w, glfw::cursor, glfw::cursor_normal);
 				self->m_input.clear_events();
 			}
 		}
@@ -250,8 +247,8 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 		}
 	);
 
-	const int cursor_mode = m_mouse_visible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED;
-	glfwSetInputMode(m_window, GLFW_CURSOR, cursor_mode);
+	const int cursor_mode = m_mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
+	glfwSetInputMode(m_window, glfw::cursor, cursor_mode);
 
 	save_state.bind("Window", "Fullscreen", m_fullscreen)
 		.description("Run in fullscreen mode")
@@ -314,7 +311,7 @@ auto gse::window::update(const bool ui_focus) -> void {
 	}
 
 	{
-		const int cursor_mode = m_mouse_visible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED;
+		const int cursor_mode = m_mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
 		std::lock_guard lock(m_pending_mutex);
 		m_pending.cursor_mode_request = cursor_mode;
 	}
@@ -365,10 +362,9 @@ auto gse::window::frame_buffer_resized() -> bool {
 	return false;
 }
 
-auto gse::window::create_vulkan_surface(const VkInstance instance) const -> VkSurfaceKHR {
-	VkSurfaceKHR surface = nullptr;
-	const VkResult result = glfwCreateWindowSurface(instance, m_window, nullptr, &surface);
-	assert(result == VK_SUCCESS, std::source_location::current(), "Failed to create window surface for Vulkan!");
+auto gse::window::create_vulkan_surface(const vk::Instance instance) const -> vk::SurfaceKHR {
+	const auto surface = glfw::create_window_surface(instance, m_window);
+	assert(surface, std::source_location::current(), "Failed to create window surface for Vulkan!");
 	return surface;
 }
 
@@ -401,15 +397,15 @@ auto gse::window::process_pending_operations() -> void {
 	}
 
 	if (cursor_mode_req.has_value()) {
-		const int current_mode = glfwGetInputMode(m_window, GLFW_CURSOR);
+		const int current_mode = glfwGetInputMode(m_window, glfw::cursor);
 		const int new_mode = *cursor_mode_req;
 
-		if (current_mode == GLFW_CURSOR_DISABLED && new_mode == GLFW_CURSOR_NORMAL) {
+		if (current_mode == glfw::cursor_disabled && new_mode == glfw::cursor_normal) {
 			const auto dims = viewport();
 			glfwSetCursorPos(m_window, dims.x() / 2.0, dims.y() / 2.0);
 		}
 
-		glfwSetInputMode(m_window, GLFW_CURSOR, new_mode);
+		glfwSetInputMode(m_window, glfw::cursor, new_mode);
 	}
 
 	if (move_to_monitor_req.has_value()) {

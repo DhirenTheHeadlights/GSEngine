@@ -1,4 +1,4 @@
-export module gse.gpu:device_bootstrap;
+export module gse.gpu.vulkan:device_bootstrap;
 
 import std;
 import vulkan;

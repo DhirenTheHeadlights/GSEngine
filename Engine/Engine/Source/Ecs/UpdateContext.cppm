@@ -18,10 +18,8 @@ export namespace gse {
 	public:
 		update_context(
 			void* gpu_ctx,
-			const state_snapshot_provider& snapshots,
+			scheduler& sched,
 			channel_writer& channels,
-			const channel_reader_provider& channel_reader,
-			const resources_provider& resources,
 			task_graph& graph,
 			registry& reg,
 			async::rw_mutex_registry& access_mutexes
@@ -56,6 +54,10 @@ export namespace gse {
 			id owner
 		) -> void;
 
+		auto exists(
+			id owner
+		) const -> bool;
+
 		auto active(
 			id owner
 		) const -> bool;
@@ -64,24 +66,19 @@ export namespace gse {
 			id owner
 		) -> void;
 
-		auto add_deferred_action(
-			id owner,
-			registry::deferred_action action
+		auto remove(
+			id owner
 		) -> void;
 
 		template <is_component T, typename... Args>
-		auto defer_add(
-			id entity,
+		auto add_component(
+			id owner,
 			Args&&... args
-		) -> void;
+		) -> T*;
 
 		template <is_component T>
-		auto defer_remove(
-			id entity
-		) -> void;
-
-		auto defer_activate(
-			id entity
+		auto remove_component(
+			id owner
 		) -> void;
 
 	private:
@@ -113,14 +110,12 @@ namespace gse {
 
 gse::update_context::update_context(
 	void* gpu_ctx,
-	const state_snapshot_provider& snapshots,
+	scheduler& sched,
 	channel_writer& channels,
-	const channel_reader_provider& channel_reader,
-	const resources_provider& resources,
 	task_graph& graph,
 	registry& reg,
 	async::rw_mutex_registry& access_mutexes
-) : task_context{ gpu_ctx, snapshots, channels, channel_reader, resources, graph },
+) : task_context{ gpu_ctx, sched, channels, graph, true },
 	m_reg(reg),
 	m_access_mutexes(access_mutexes) {}
 
@@ -232,6 +227,10 @@ auto gse::update_context::ensure_exists(const id owner) -> void {
 	m_reg.ensure_exists(owner);
 }
 
+auto gse::update_context::exists(const id owner) const -> bool {
+	return m_reg.exists(owner);
+}
+
 auto gse::update_context::active(const id owner) const -> bool {
 	return m_reg.active(owner);
 }
@@ -240,20 +239,16 @@ auto gse::update_context::ensure_active(const id owner) -> void {
 	m_reg.ensure_active(owner);
 }
 
-auto gse::update_context::add_deferred_action(const id owner, registry::deferred_action action) -> void {
-	m_reg.add_deferred_action(owner, std::move(action));
+auto gse::update_context::remove(const id owner) -> void {
+	m_reg.remove(owner);
 }
 
 template <gse::is_component T, typename... Args>
-auto gse::update_context::defer_add(const id entity, Args&&... args) -> void {
-	m_reg.defer_add_component<T>(entity, std::forward<Args>(args)...);
+auto gse::update_context::add_component(const id owner, Args&&... args) -> T* {
+	return m_reg.add_component<T>(owner, std::forward<Args>(args)...);
 }
 
 template <gse::is_component T>
-auto gse::update_context::defer_remove(const id entity) -> void {
-	m_reg.defer_remove_component<T>(entity);
-}
-
-auto gse::update_context::defer_activate(const id entity) -> void {
-	m_reg.defer_activate(entity);
+auto gse::update_context::remove_component(const id owner) -> void {
+	m_reg.remove_component<T>(owner);
 }

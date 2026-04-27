@@ -430,15 +430,13 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 	}
 
 	if (ud.completed_readback) {
-		trace::scope(
-			trace_id<"vbd_gpu::readback">(),
-			[&] {
+		{
+			trace::scope_guard sg{trace_id<"vbd_gpu::readback">()};
 				auto completed = std::move(*ud.completed_readback);
 				ud.completed_readback.reset();
 
-				trace::scope(
-					trace_id<"vbd_gpu::readback_bodies">(),
-					[&] {
+				{
+					trace::scope_guard sg{trace_id<"vbd_gpu::readback_bodies">()};
 						const auto body_count = completed.entity_ids.size();
 						bool motion_order_matches = body_count == motion.size();
 						for (std::size_t i = 0; motion_order_matches && i < body_count; ++i) {
@@ -485,12 +483,10 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 								}
 							}
 						}
-					}
-				);
+				}
 
-				trace::scope(
-					trace_id<"vbd_gpu::readback_contacts">(),
-					[&] {
+				{
+					trace::scope_guard sg{trace_id<"vbd_gpu::readback_contacts">()};
 						const auto& cfg = ud.vbd_solver.config();
 						ud.gpu_prev.warm_start_contacts.clear();
 						ud.gpu_prev.warm_start_contacts.reserve(completed.gpu_contacts.size());
@@ -560,12 +556,10 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 								cc_b->collision_information.collision_points.push_back(midpoint);
 							}
 						}
-					}
-				);
+				}
 
-				trace::scope(
-					trace_id<"vbd_gpu::readback_sort">(),
-					[&] {
+				{
+					trace::scope_guard sg{trace_id<"vbd_gpu::readback_sort">()};
 						std::ranges::sort(
 							ud.gpu_prev.warm_start_contacts,
 							[](const vbd::warm_start_entry& a, const vbd::warm_start_entry& b) {
@@ -578,12 +572,10 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 								return a.feature_key < b.feature_key;
 							}
 						);
-					}
-				);
+				}
 
-				trace::scope(
-					trace_id<"vbd_gpu::readback_joints">(),
-					[&] {
+				{
+					trace::scope_guard sg{trace_id<"vbd_gpu::readback_joints">()};
 						std::uint32_t ji = 0;
 						for (auto& jd : s.joints) {
 							if (ji >= completed.gpu_joint_readback.size()) {
@@ -598,8 +590,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 							jd.limit_penalty = sj.limit_penalty;
 							++ji;
 						}
-					}
-				);
+				}
 
 		if (ud.comparison_pending.has_value()) {
 			const auto& cpu = ud.comparison_pending->cpu_result;
@@ -815,9 +806,8 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 			ud.comparison_pending.reset();
 		}
 
-				trace::scope(
-					trace_id<"vbd_gpu::readback_cache">(),
-					[&] {
+				{
+					trace::scope_guard sg{trace_id<"vbd_gpu::readback_cache">()};
 						ud.gpu_prev.result_bodies.assign(
 							completed.gpu_result_bodies.begin(),
 							completed.gpu_result_bodies.end()
@@ -826,9 +816,8 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 							completed.entity_ids.begin(),
 							completed.entity_ids.end()
 						);
-					}
-				);
-		});
+				}
+		}
 	}
 
 	if (steps <= 0) {
@@ -836,7 +825,8 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 	}
 
 	std::vector<id> launched_entities;
-	trace::scope(trace_id<"vbd_gpu::impulses">(), [&] {
+	{
+		trace::scope_guard sg{trace_id<"vbd_gpu::impulses">()};
 		launched_entities.reserve(motion.size());
 
 		for (motion_component& mc : motion) {
@@ -850,7 +840,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 				mc.pending_impulse = {};
 			}
 		}
-	});
+	}
 
 	flat_map<id, std::uint32_t> id_to_body_index;
 	std::vector<vbd::body_state> bodies;
@@ -863,7 +853,8 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 
 	std::vector<std::pair<id, std::uint32_t>> id_to_body_index_staging;
 
-	trace::scope(trace_id<"vbd_gpu::build_bodies">(), [&] {
+	{
+		trace::scope_guard sg{trace_id<"vbd_gpu::build_bodies">()};
 		const auto body_count = motion.size();
 		bodies.resize(body_count);
 		entity_ids.resize(body_count);
@@ -943,14 +934,13 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 		});
 
 		id_to_body_index.assign_unsorted(std::move(id_to_body_index_staging));
-	});
+	}
 
 	std::vector<std::uint32_t> jumped_body_indices;
 	std::vector<vbd::collision_body_data> collision_data;
 
-	trace::scope(
-		trace_id<"vbd_gpu::build_collision">(),
-		[&] {
+	{
+		trace::scope_guard sg{trace_id<"vbd_gpu::build_collision">()};
 			jumped_body_indices.reserve(launched_entities.size());
 			for (const auto eid : launched_entities) {
 				if (const auto it = id_to_body_index.find(eid); it != id_to_body_index.end()) {
@@ -988,11 +978,11 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 					};
 				}
 			);
-		}
-	);
+	}
 
 	std::vector<vbd::velocity_motor_constraint> motors;
-	trace::scope(trace_id<"vbd_gpu::build_motors">(), [&] {
+	{
+		trace::scope_guard sg{trace_id<"vbd_gpu::build_motors">()};
 		for (motion_component& mc : motion) {
 			if (!mc.velocity_drive_active) {
 				continue;
@@ -1017,10 +1007,11 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 				.horizontal_only = true,
 			});
 		}
-	});
+	}
 
 	std::vector<vbd::joint_constraint> gpu_joints;
-	trace::scope(trace_id<"vbd_gpu::build_joints">(), [&] {
+	{
+		trace::scope_guard sg{trace_id<"vbd_gpu::build_joints">()};
 		gpu_joints.reserve(s.joints.size());
 		for (auto& jd : s.joints) {
 			const auto it_a = id_to_body_index.find(jd.entity_a);
@@ -1057,9 +1048,10 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 				.limit_penalty = jd.limit_penalty,
 			});
 		}
-	});
+	}
 
-	trace::scope(trace_id<"vbd_gpu::upload">(), [&] {
+	{
+		trace::scope_guard sg{trace_id<"vbd_gpu::upload">()};
 		channels.push<gpu_upload_payload>({
 			.bodies = bodies,
 			.collision_data = collision_data,
@@ -1081,10 +1073,11 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 			body_map.entries.emplace_back(eid, idx);
 		}
 		channels.push(std::move(body_map));
-	});
+	}
 
 	if (s.compare_solvers && ud.comparison_timer.tick()) {
-		trace::scope(trace_id<"vbd_gpu::compare">(), [&] {
+		{
+			trace::scope_guard sg{trace_id<"vbd_gpu::compare">()};
 		if (steps != 1) {
 			log::println("SOLVER COMPARE: skipped for {} fixed steps; single-step captures are the only apples-to-apples parity check right now", steps);
 		}
@@ -1135,7 +1128,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 				.cpu_joints = cpu_ref.graph().joint_constraints() | std::views::all | std::ranges::to<std::vector>(),
 			};
 		}
-		});
+		}
 	}
 }
 

@@ -1,8 +1,4 @@
-module;
-
-#include <vulkan/vulkan_core.h>
-
-module gse.gpu;
+module gse.gpu.vulkan;
 
 import std;
 import vulkan;
@@ -198,7 +194,7 @@ auto gse::vulkan::create_instance(const std::span<const char* const> required_ex
 
     const vk::ValidationFeaturesEXT features{
         .pNext = &debug_create_info,
-        .enabledValidationFeatureCount = static_cast<uint32_t>(std::size(enables)),
+        .enabledValidationFeatureCount = static_cast<std::uint32_t>(std::size(enables)),
         .pEnabledValidationFeatures = enables,
         .disabledValidationFeatureCount = 0,
         .pDisabledValidationFeatures = nullptr,
@@ -208,9 +204,9 @@ auto gse::vulkan::create_instance(const std::span<const char* const> required_ex
         .pNext = enable_validation ? static_cast<const void*>(&features) : nullptr,
         .flags = {},
         .pApplicationInfo = &app_info,
-        .enabledLayerCount = static_cast<uint32_t>(validation_layers.size()),
+        .enabledLayerCount = static_cast<std::uint32_t>(validation_layers.size()),
         .ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data(),
-        .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+        .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
         .ppEnabledExtensionNames = extensions.data(),
     };
 
@@ -556,7 +552,7 @@ auto gse::vulkan::create_command_objects(const device_config& device_data, const
     constexpr auto pool_name = "Primary Command Pool";
     const vk::DebugUtilsObjectNameInfoEXT pool_name_info{
         .objectType = vk::ObjectType::eCommandPool,
-        .objectHandle = reinterpret_cast<std::uint64_t>(static_cast<VkCommandPool>(*pool)),
+        .objectHandle = std::bit_cast<std::uint64_t>(*pool),
         .pObjectName = pool_name,
     };
     device_data.device.setDebugUtilsObjectNameEXT(pool_name_info);
@@ -575,7 +571,7 @@ auto gse::vulkan::create_command_objects(const device_config& device_data, const
         const std::string name = "Primary Command Buffer " + std::to_string(i);
         const vk::DebugUtilsObjectNameInfoEXT name_info{
             .objectType = vk::ObjectType::eCommandBuffer,
-            .objectHandle = reinterpret_cast<std::uint64_t>(static_cast<VkCommandBuffer>(*buffers[i])),
+            .objectHandle = std::bit_cast<std::uint64_t>(*buffers[i]),
             .pObjectName = name.c_str(),
         };
         device_data.device.setDebugUtilsObjectNameEXT(name_info);

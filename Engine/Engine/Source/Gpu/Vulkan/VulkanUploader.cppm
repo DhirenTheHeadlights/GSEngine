@@ -1,4 +1,4 @@
-export module gse.gpu:vulkan_uploader;
+export module gse.gpu.vulkan:vulkan_uploader;
 
 import std;
 
