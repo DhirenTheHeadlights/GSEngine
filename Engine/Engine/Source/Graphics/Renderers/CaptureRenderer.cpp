@@ -34,7 +34,7 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
     s.save_clip_action = register_action("Save Clip", key::f10);
 
     auto& ctx = phase.get<gpu::context>();
-    auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+    auto& assets = phase.assets<gpu::context>();
 
     if (!ctx.device().video_encode_enabled()) {
         log::println(log::category::render, "Video encode not available, capture limited to screenshots");
@@ -53,7 +53,7 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
     r.convert_shader = assets.get<shader>("Shaders/Compute/rgba_to_nv12");
     assets.instantly_load(r.convert_shader);
 
-    r.convert_pipeline = gpu::create_compute_pipeline(ctx, *r.convert_shader, "push_constants");
+    r.convert_pipeline = gpu::create_compute_pipeline(ctx, r.convert_shader, "push_constants");
 
     r.capture_sampler = gpu::create_sampler(ctx, {
         .min = gpu::sampler_filter::nearest,
@@ -84,7 +84,7 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
             .ready_layout = gpu::image_layout::general
         });
 
-        r.convert_descriptors[i] = gpu::allocate_descriptors(ctx, *r.convert_shader);
+        r.convert_descriptors[i] = gpu::allocate_descriptors(ctx, r.convert_shader);
 
         gpu::descriptor_writer(ctx, r.convert_shader, r.convert_descriptors[i])
             .image("input_rgba", r.rgba_captures[i], r.capture_sampler, gpu::image_layout::shader_read_only)
@@ -261,7 +261,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
 
     gpu::cached_push_constants convert_pc;
     if (do_encode) {
-        convert_pc = r.convert_shader->cache_push_block("push_constants");
+        convert_pc = gpu::cache_push_block(r.convert_shader, "push_constants");
         convert_pc.set("extent", ext);
     }
 

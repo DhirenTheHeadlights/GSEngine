@@ -248,7 +248,7 @@ auto gse::renderer::geometry_collector::system::resources::upload_skeleton_data(
 
 auto gse::renderer::geometry_collector::system::initialize(init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 	r.ctx = &ctx;
 
 	r.shader_handle = assets.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
@@ -679,8 +679,8 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, const 
 	const auto frame_index = r.ctx->graph().current_frame();
 
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
-	r.shader_handle->set_uniform("CameraUBO.view", data.view, cam_alloc);
-	r.shader_handle->set_uniform("CameraUBO.proj", data.proj, cam_alloc);
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.view", data.view);
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.proj", data.proj);
 
 	if (!data.instance_staging.empty()) {
 		gse::memcpy(r.instance_buffer[frame_index].mapped(), data.instance_staging);

@@ -8,17 +8,15 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 import gse.assert;
 
 import :resource_handle;
 
 namespace gse {
-	template<typename Resource, typename Context>
-	concept is_resource =
-		requires(Resource res, Context & ctx) {
-			{ res.load(ctx) } -> std::same_as<void>;
-			{ res.unload() } -> std::same_as<void>;
+	template <typename Resource, typename Context>
+	concept is_resource = requires(Resource res, Context& ctx) {
+		{ res.load(ctx) } -> std::same_as<void>;
+		{ res.unload() } -> std::same_as<void>;
 	};
 
 	template <typename C>
@@ -35,10 +33,17 @@ export namespace gse::resource {
 
 	class gpu_work_token final : public non_copyable {
 	public:
-		gpu_work_token(loader_base* loader, id resource_id, std::size_t queue_size_before);
-		~gpu_work_token() override;
+		gpu_work_token(
+			loader_base* loader,
+			id resource_id,
+			std::size_t queue_size_before
+		);
 
-		auto queue_size_before() const -> std::size_t;
+		~gpu_work_token(
+		) override;
+
+		auto queue_size_before(
+		) const -> std::size_t;
 	private:
 		loader_base* m_loader;
 		id m_id;
@@ -47,8 +52,14 @@ export namespace gse::resource {
 
 	class reload_token final : public non_copyable {
 	public:
-		reload_token(loader_base* loader, id resource_id, std::size_t queue_size_before);
-		~reload_token() override;
+		reload_token(
+			loader_base* loader,
+			id resource_id,
+			std::size_t queue_size_before
+		);
+
+		~reload_token(
+		) override;
 	private:
 		loader_base* m_loader;
 		id m_id;
@@ -57,49 +68,119 @@ export namespace gse::resource {
 
 	class loader_base {
 	public:
-		virtual ~loader_base() = default;
-		virtual auto flush() -> void = 0;
-		virtual auto update_state(id resource_id, state new_state) -> void = 0;
-		virtual auto mark_for_gpu_finalization(id resource_id) -> void = 0;
-		virtual auto finalize_state(id resource_id, std::size_t queue_size_before) -> void = 0;
-		virtual auto queue_reload_by_path(const std::filesystem::path& baked_path) -> void = 0;
-		virtual auto queue_by_path(const std::filesystem::path& baked_path) -> void = 0;
-		virtual auto finalize_reloads() -> void = 0;
+		virtual ~loader_base(
+		) = default;
+
+		virtual auto flush(
+		) -> void = 0;
+
+		virtual auto update_state(
+			id resource_id,
+			state new_state
+		) -> void = 0;
+
+		virtual auto mark_for_gpu_finalization(
+			id resource_id
+		) -> void = 0;
+
+		virtual auto finalize_state(
+			id resource_id,
+			std::size_t queue_size_before
+		) -> void = 0;
+
+		virtual auto queue_reload_by_path(
+			const std::filesystem::path& baked_path
+		) -> void = 0;
+
+		virtual auto queue_by_path(
+			const std::filesystem::path& baked_path
+		) -> void = 0;
+
+		virtual auto finalize_reloads(
+		) -> void = 0;
 	};
 
 	template <typename Resource, typename RenderingContext>
 		requires gse::is_resource<Resource, RenderingContext> && gse::resource_context<RenderingContext>
 	class loader final : public loader_base, public non_copyable {
 	public:
-		explicit loader(RenderingContext& context) : m_context(context) {}
-		~loader() override = default;
+		explicit loader(
+			RenderingContext& context
+		);
 
-		auto flush() -> void override;
+		~loader(
+		) override = default;
 
-		auto update_state(id resource_id, state new_state) -> void override;
-		auto mark_for_gpu_finalization(id resource_id) -> void override;
-		auto finalize_state(id resource_id, std::size_t queue_size_before) -> void override;
+		auto flush(
+		) -> void override;
 
-		auto queue_reload(id resource_id) -> void;
-		auto queue_reload_by_path(const std::filesystem::path& baked_path) -> void override;
-		auto queue_by_path(const std::filesystem::path& baked_path) -> void override;
-		auto finalize_reloads() -> void override;
+		auto update_state(
+			id resource_id,
+			state new_state
+		) -> void override;
 
-		auto set_pre_load_fn(std::function<void(const std::filesystem::path&)> fn) -> void { m_pre_load_fn = std::move(fn); }
+		auto mark_for_gpu_finalization(
+			id resource_id
+		) -> void override;
 
-		auto get(id id) const -> handle<Resource>;
-		auto get(const std::string& filename_no_ext) const -> handle<Resource>;
-		auto try_get(id id) const -> handle<Resource>;
-		auto try_get(const std::string& filename_no_ext) const -> handle<Resource>;
-		auto instantly_load(id resource_id) -> void;
+		auto finalize_state(
+			id resource_id,
+			std::size_t queue_size_before
+		) -> void override;
 
-		[[nodiscard]] auto state_of(id resource_id) const -> state;
+		auto queue_reload(
+			id resource_id
+		) -> void;
+
+		auto queue_reload_by_path(
+			const std::filesystem::path& baked_path
+		) -> void override;
+
+		auto queue_by_path(
+			const std::filesystem::path& baked_path
+		) -> void override;
+
+		auto finalize_reloads(
+		) -> void override;
+
+		auto set_pre_load_fn(
+			std::function<void(const std::filesystem::path&)> fn
+		) -> void;
+
+		auto get(
+			id id
+		) const -> handle<Resource>;
+
+		auto get(
+			const std::string& filename_no_ext
+		) const -> handle<Resource>;
+
+		auto try_get(
+			id id
+		) const -> handle<Resource>;
+
+		auto try_get(
+			const std::string& filename_no_ext
+		) const -> handle<Resource>;
+
+		auto instantly_load(
+			id resource_id
+		) -> void;
+
+		[[nodiscard]] auto state_of(
+			id resource_id
+		) const -> state;
 
 		template <typename... Args>
 			requires std::constructible_from<Resource, std::string, Args...>
-		auto queue(const std::string& name, Args&&... args) -> handle<Resource>;
+		auto queue(
+			const std::string& name,
+			Args&&... args
+		) -> handle<Resource>;
 
-		auto add(Resource&& resource) -> handle<Resource>;
+		auto add(
+			Resource&& resource
+		) -> handle<Resource>;
 	private:
 		RenderingContext& m_context;
 		id_mapped_collection<std::unique_ptr<resource_slot<Resource>>> m_resources;
@@ -112,7 +193,10 @@ export namespace gse::resource {
 
 		std::function<void(const std::filesystem::path&)> m_pre_load_fn;
 
-		auto slot_ptr(this auto&& self, id id) -> resource_slot<Resource>*;
+		auto slot_ptr(
+			this auto&& self,
+			id id
+		) -> resource_slot<Resource>*;
 	};
 }
 
@@ -146,8 +230,19 @@ gse::resource::reload_token::~reload_token() {
 	m_loader->finalize_state(m_id, m_queue_size_before);
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::state_of(id resource_id) const -> state {
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+gse::resource::loader<R, C>::loader(C& context) : m_context(context) {}
+
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::set_pre_load_fn(std::function<void(const std::filesystem::path&)> fn) -> void {
+	m_pre_load_fn = std::move(fn);
+}
+
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::state_of(const id resource_id) const -> state {
 	std::lock_guard lock(m_mutex);
 	if (const auto* s = slot_ptr(resource_id)) {
 		return s->current_state.load(std::memory_order_acquire);
@@ -155,15 +250,17 @@ auto gse::resource::loader<R, C>::state_of(id resource_id) const -> state {
 	return state::unloaded;
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::slot_ptr(this auto&& self, id id) -> resource_slot<R>* {
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::slot_ptr(this auto&& self, const id id) -> resource_slot<R>* {
 	if (auto* uptr = self.m_resources.try_get(id)) {
 		return uptr->get();
 	}
 	return nullptr;
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
 auto gse::resource::loader<R, C>::flush() -> void {
 	std::vector<id> ids_to_load;
 
@@ -200,7 +297,8 @@ auto gse::resource::loader<R, C>::flush() -> void {
 					}
 					resource_ptr = s->resource.read().get();
 					path = s->path;
-				} else {
+				}
+				else {
 					update_state(rid, state::failed);
 					return;
 				}
@@ -217,21 +315,24 @@ auto gse::resource::loader<R, C>::flush() -> void {
 	m_load_group.post_range(jobs.begin(), jobs.end(), generate_id("resource.load"));
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::update_state(id resource_id, state new_state) -> void {
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::update_state(const id resource_id, const state new_state) -> void {
 	std::lock_guard lock(m_mutex);
 	if (auto* s = slot_ptr(resource_id)) {
 		s->current_state.store(new_state, std::memory_order_release);
 	}
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::mark_for_gpu_finalization(id resource_id) -> void {
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::mark_for_gpu_finalization(const id resource_id) -> void {
 	m_context.mark_pending_for_finalization(id_of<R>(), resource_id);
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::finalize_state(id resource_id, std::size_t queue_size_before) -> void {
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::finalize_state(const id resource_id, const std::size_t queue_size_before) -> void {
 	if (m_context.gpu_queue_size() > queue_size_before) {
 		m_context.mark_pending_for_finalization(id_of<R>(), resource_id);
 	}
@@ -240,8 +341,9 @@ auto gse::resource::loader<R, C>::finalize_state(id resource_id, std::size_t que
 	}
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::queue_reload(id resource_id) -> void {
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::queue_reload(const id resource_id) -> void {
 	std::lock_guard lock(m_reload_mutex);
 
 	if (std::ranges::find(m_pending_reloads, resource_id) != m_pending_reloads.end()) {
@@ -251,7 +353,8 @@ auto gse::resource::loader<R, C>::queue_reload(id resource_id) -> void {
 	m_pending_reloads.push_back(resource_id);
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
 auto gse::resource::loader<R, C>::queue_reload_by_path(const std::filesystem::path& baked_path) -> void {
 	std::lock_guard lock(m_mutex);
 
@@ -263,7 +366,8 @@ auto gse::resource::loader<R, C>::queue_reload_by_path(const std::filesystem::pa
 	queue_reload(it->second);
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
 auto gse::resource::loader<R, C>::queue_by_path(const std::filesystem::path& baked_path) -> void {
 	std::lock_guard lock(m_mutex);
 
@@ -280,7 +384,8 @@ auto gse::resource::loader<R, C>::queue_by_path(const std::filesystem::path& bak
 	}
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
 auto gse::resource::loader<R, C>::finalize_reloads() -> void {
 	std::vector<id> reloads_to_process;
 	{
@@ -335,15 +440,17 @@ auto gse::resource::loader<R, C>::finalize_reloads() -> void {
 	}
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::get(id id) const -> handle<R> {
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::get(const id id) const -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	const auto* s = slot_ptr(id);
 	assert(s, std::source_location::current(), "Resource with ID {} not found in this loader.", id);
 	return handle<R>(id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
 auto gse::resource::loader<R, C>::get(const std::string& filename_no_ext) const -> handle<R> {
 	const auto resource_id = gse::find(filename_no_ext);
 	std::lock_guard lock(m_mutex);
@@ -352,8 +459,9 @@ auto gse::resource::loader<R, C>::get(const std::string& filename_no_ext) const 
 	return handle<R>(resource_id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::try_get(id id) const -> handle<R> {
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::try_get(const id id) const -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	const auto* s = slot_ptr(id);
 	if (!s) {
@@ -362,7 +470,8 @@ auto gse::resource::loader<R, C>::try_get(id id) const -> handle<R> {
 	return handle<R>(id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
 auto gse::resource::loader<R, C>::try_get(const std::string& filename_no_ext) const -> handle<R> {
 	if (!gse::exists(filename_no_ext)) {
 		return handle<R>{};
@@ -376,15 +485,17 @@ auto gse::resource::loader<R, C>::try_get(const std::string& filename_no_ext) co
 	return handle<R>(resource_id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::instantly_load(id resource_id) -> void {
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+auto gse::resource::loader<R, C>::instantly_load(const id resource_id) -> void {
 	resource_slot<R>* s;
 	{
 		std::lock_guard lock(m_mutex);
 		s = slot_ptr(resource_id);
 		assert(s, std::source_location::current(), "invalid id");
-		if (s->current_state == state::loaded)
+		if (s->current_state == state::loaded) {
 			return;
+		}
 	}
 
 	while (s->current_state.load(std::memory_order_acquire) == state::loading) {
@@ -417,8 +528,10 @@ auto gse::resource::loader<R, C>::instantly_load(id resource_id) -> void {
 	}
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-template <typename... Args> requires std::constructible_from<R, std::string, Args...>
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
+template <typename... Args>
+	requires std::constructible_from<R, std::string, Args...>
 auto gse::resource::loader<R, C>::queue(const std::string& name, Args&&... args) -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	if (exists(name)) {
@@ -437,7 +550,8 @@ auto gse::resource::loader<R, C>::queue(const std::string& name, Args&&... args)
 	return handle<R>(resource_id, slot_raw, 0);
 }
 
-template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
+template <typename R, typename C>
+	requires gse::is_resource<R, C> && gse::resource_context<C>
 auto gse::resource::loader<R, C>::add(R&& resource) -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	const auto id = resource.id();

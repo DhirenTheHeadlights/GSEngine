@@ -151,7 +151,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(system::frame_data& fd
 
 auto gse::renderer::physics_debug::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 
 	phase.channels.push(save::register_property{
 		.category = "Graphics",
@@ -172,14 +172,14 @@ auto gse::renderer::physics_debug::system::initialize(const init_context& phase,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
 
 		gpu::descriptor_writer(ctx, r.shader_handle, r.descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
 
-	r.pipeline = gpu::create_graphics_pipeline(ctx, *r.shader_handle, {
+	r.pipeline = gpu::create_graphics_pipeline(ctx, r.shader_handle, {
 		.rasterization = {
 			.polygon = gpu::polygon_mode::line,
 			.cull = gpu::cull_mode::none
@@ -462,8 +462,8 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 	const auto view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
 	const auto proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
-	r.shader_handle->set_uniform("CameraUBO.view", view_matrix, r.ubo_allocations.at("CameraUBO")[frame_index]);
-	r.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, r.ubo_allocations.at("CameraUBO")[frame_index]);
+	r.shader_handle->set_uniform(r.ubo_allocations.at("CameraUBO")[frame_index].bytes(), "CameraUBO.view", view_matrix);
+	r.shader_handle->set_uniform(r.ubo_allocations.at("CameraUBO")[frame_index].bytes(), "CameraUBO.proj", proj_matrix);
 
 	const auto ext = gpu.graph().extent();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());

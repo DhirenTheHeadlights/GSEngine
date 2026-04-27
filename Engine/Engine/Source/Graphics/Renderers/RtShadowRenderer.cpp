@@ -19,7 +19,7 @@ import gse.log;
 
 auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 
 	log::println(log::category::render, "RT shadow: initialized");
 
@@ -32,10 +32,10 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, fra
 	fd.tlas_update_shader = assets.get<shader>("Shaders/Compute/tlas_transform_update");
 	assets.instantly_load(fd.tlas_update_shader);
 
-	fd.tlas_update_pipeline = gpu::create_compute_pipeline(ctx, *fd.tlas_update_shader, "push_constants");
+	fd.tlas_update_pipeline = gpu::create_compute_pipeline(ctx, fd.tlas_update_shader, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(ctx, *fd.tlas_update_shader);
+		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(ctx, fd.tlas_update_shader);
 	}
 }
 
@@ -155,7 +155,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 			.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)
 			.commit();
 
-		pc = fd.tlas_update_shader->cache_push_block("push_constants");
+		pc = gpu::cache_push_block(fd.tlas_update_shader, "push_constants");
 		pc.set("count", instance_count);
 		pc.set("instance_stride", gc_r->instance_stride);
 		pc.set("model_matrix_offset", gc_r->instance_offsets.at("model_matrix"));

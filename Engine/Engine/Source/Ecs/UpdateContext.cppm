@@ -19,7 +19,7 @@ export namespace gse {
 	public:
 		update_context(
 			void* gpu_ctx,
-			void* assets,
+			void* assets_ptr,
 			state_registry& states,
 			resource_registry& resources_store,
 			channel_registry& channels_store,
@@ -125,7 +125,7 @@ namespace gse {
 
 gse::update_context::update_context(
 	void* gpu_ctx,
-	void* assets,
+	void* assets_ptr,
 	state_registry& states,
 	resource_registry& resources_store,
 	channel_registry& channels_store,
@@ -133,7 +133,7 @@ gse::update_context::update_context(
 	task_graph& graph,
 	registry& reg,
 	async::rw_mutex_registry& access_mutexes
-) : task_context{ gpu_ctx, assets, states, resources_store, channels_store, channels, graph, true },
+) : task_context{ gpu_ctx, assets_ptr, states, resources_store, channels_store, channels, graph, true },
 	m_reg(reg),
 	m_access_mutexes(access_mutexes) {}
 

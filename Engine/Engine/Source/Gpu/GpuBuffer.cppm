@@ -25,6 +25,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto mapped(this const buffer& self) -> std::byte* { return self.m_resource.allocation.mapped(); }
 		[[nodiscard]] auto size(this const buffer& self) -> std::size_t { return self.m_resource.size; }
+		[[nodiscard]] auto bytes(this const buffer& self) -> std::span<std::byte> { return { self.m_resource.allocation.mapped(), self.m_resource.size }; }
 		[[nodiscard]] auto native(this auto&& self) -> auto&& { return std::forward_like<decltype(self)>(self.m_resource); }
 
 		operator const vulkan::buffer_resource&(

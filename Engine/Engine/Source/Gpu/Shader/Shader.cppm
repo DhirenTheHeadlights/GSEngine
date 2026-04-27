@@ -1,12 +1,11 @@
 export module gse.gpu:shader;
 
 import std;
-import vulkan;
 import gse.std_meta;
 
 import :types;
-import :vulkan_reflect;
 
+import gse.assets;
 import gse.assert;
 import gse.core;
 import gse.containers;
@@ -15,50 +14,6 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.log;
-
-export namespace gse::gpu {
-	struct push_constant_member {
-		std::uint32_t offset = 0;
-		std::uint32_t size = 0;
-	};
-
-	class cached_push_constants {
-	public:
-		std::unordered_map<std::string, push_constant_member> members;
-		std::vector<std::byte> data;
-		stage_flags stage_flags{};
-
-		template <typename T>
-		auto set(
-			std::string_view name,
-			const T& value
-		) -> void;
-
-		auto replay(
-			vk::CommandBuffer cmd,
-			vk::PipelineLayout layout
-		) const -> void;
-	};
-}
-
-template <typename T>
-auto gse::gpu::cached_push_constants::set(const std::string_view name, const T& value) -> void {
-	const auto it = members.find(std::string(name));
-	assert(it != members.end(), std::source_location::current(), "Push constant member '{}' not found", name);
-	assert(sizeof(T) <= it->second.size, std::source_location::current(), "Push constant member '{}' size mismatch", name);
-	gse::memcpy(data.data() + it->second.offset, value);
-}
-
-auto gse::gpu::cached_push_constants::replay(const vk::CommandBuffer cmd, const vk::PipelineLayout layout) const -> void {
-	const vk::PushConstantsInfoKHR info{
-		.layout = layout,
-		.stageFlags = vulkan::to_vk(stage_flags),
-		.offset = 0,
-		.size = static_cast<std::uint32_t>(data.size()),
-		.pValues = data.data()
-	};
-	cmd.pushConstants2KHR(info);
-}
 
 namespace gse {
 	export class shader final : public identifiable, non_copyable {
@@ -136,35 +91,31 @@ namespace gse {
 
 		template <typename T>
 		auto set_uniform(
+			std::span<std::byte> dst,
 			std::string_view full_name,
-			const T& value,
-			const vulkan::buffer_resource& buf
+			const T& value
 		) const -> void;
 
 		auto set_uniform_block(
+			std::span<std::byte> dst,
 			std::string_view block_name,
-			const std::unordered_map<std::string, std::span<const std::byte>>& data,
-			const vulkan::buffer_resource& buf
+			const std::unordered_map<std::string, std::span<const std::byte>>& data
 		) const -> void;
 
 		auto set_ssbo_element(
+			std::span<std::byte> dst,
 			std::string_view block_name,
 			std::uint32_t index,
 			std::string_view member_name,
-			std::span<const std::byte> bytes,
-			const vulkan::buffer_resource& buf
+			std::span<const std::byte> bytes
 		) const -> void;
 
 		auto set_ssbo_struct(
+			std::span<std::byte> dst,
 			std::string_view block_name,
 			std::uint32_t index,
-			std::span<const std::byte> element_bytes,
-			const vulkan::buffer_resource& buf
+			std::span<const std::byte> element_bytes
 		) const -> void;
-
-		auto cache_push_block(
-			std::string_view block_name
-		) const -> gpu::cached_push_constants;
 
 		[[nodiscard]] auto spirv(
 			gpu::shader_stage stage
@@ -212,7 +163,7 @@ namespace gse {
 export namespace gse {
     template <typename T>
     auto verify_uniform_block(
-        const shader& s,
+        const resource::handle<shader>& s,
         std::string_view block_name
     ) -> bool;
 }
@@ -329,26 +280,6 @@ auto gse::shader::push_block(const std::string_view name) const -> struct unifor
 	return *it;
 }
 
-auto gse::shader::cache_push_block(const std::string_view block_name) const -> gpu::cached_push_constants {
-	const auto it = std::ranges::find_if(m_push_constants, [&](const struct uniform_block& b) {
-		return b.name == block_name;
-	});
-
-	assert(it != m_push_constants.end(), std::source_location::current(), "Push constant block '{}' not found", block_name);
-	std::unordered_map<std::string, gpu::push_constant_member> members;
-	for (const auto& [name, member] : it->members) {
-		members[name] = {
-			.offset = member.offset, 
-			.size = member.size
-		};
-	}
-	return {
-		.members = std::move(members),
-		.data = std::vector(it->size, std::byte{ 0 }),
-		.stage_flags = it->stage_flags,
-	};
-}
-
 auto gse::shader::uniform_block(const std::string_view name) const -> class uniform_block {
 	const auto* block = find_block(name);
 	assert(block, std::source_location::current(), "Uniform block '{}' not found in shader", name);
@@ -388,7 +319,7 @@ auto gse::shader::find_block(const std::string_view name) const -> const struct 
 }
 
 template <typename T>
-auto gse::shader::set_uniform(const std::string_view full_name, const T& value, const vulkan::buffer_resource& buf) const -> void {
+auto gse::shader::set_uniform(const std::span<std::byte> dst, const std::string_view full_name, const T& value) const -> void {
 	const auto dot_pos = full_name.find('.');
 	assert(dot_pos != std::string_view::npos, std::source_location::current(), "Uniform name '{}' must be in the format 'Block.member'", full_name);
 
@@ -403,19 +334,14 @@ auto gse::shader::set_uniform(const std::string_view full_name, const T& value, 
 
 	const auto& mem_info = mem_it->second;
 	assert(sizeof(T) <= mem_info.size, std::source_location::current(), "Value size {} exceeds member '{}' size {}", sizeof(T), member_name, mem_info.size);
+	assert(mem_info.offset + sizeof(T) <= dst.size(), std::source_location::current(), "Write to '{}.{}' exceeds destination span", block_name, member_name);
 
-	auto* mapped = buf.allocation.mapped();
-	assert(mapped, std::source_location::current(), "Attempted to set uniform '{}.{}' but memory is not mapped", block_name, member_name);
-
-	gse::memcpy(mapped + mem_info.offset, value);
+	gse::memcpy(dst.data() + mem_info.offset, value);
 }
 
-auto gse::shader::set_uniform_block(const std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& data, const vulkan::buffer_resource& buf) const -> void {
+auto gse::shader::set_uniform_block(const std::span<std::byte> dst, const std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& data) const -> void {
 	const auto* block = find_block(block_name);
 	assert(block, std::source_location::current(), "Uniform block '{}' not found", block_name);
-
-	auto* mapped = buf.allocation.mapped();
-	assert(mapped, std::source_location::current(), "Attempted to set uniform block but memory is not mapped");
 
 	for (const auto& [name, bytes] : data) {
 		auto member_it = block->members.find(name);
@@ -423,18 +349,16 @@ auto gse::shader::set_uniform_block(const std::string_view block_name, const std
 
 		const auto& member_info = member_it->second;
 		assert(bytes.size() <= member_info.size, std::source_location::current(), "Data size {} > member size {} for '{}.{}'", bytes.size(), member_info.size, block_name, name);
+		assert(member_info.offset + bytes.size() <= dst.size(), std::source_location::current(), "Write to '{}.{}' exceeds destination span", block_name, name);
 
-		gse::memcpy(mapped + member_info.offset, bytes);
+		gse::memcpy(dst.data() + member_info.offset, bytes);
 	}
 }
 
-auto gse::shader::set_ssbo_element(const std::string_view block_name, const std::uint32_t index, const std::string_view member_name, const std::span<const std::byte> bytes, const vulkan::buffer_resource& buf) const -> void {
+auto gse::shader::set_ssbo_element(const std::span<std::byte> dst, const std::string_view block_name, const std::uint32_t index, const std::string_view member_name, const std::span<const std::byte> bytes) const -> void {
 	const auto* block = find_block(block_name);
 	assert(block, std::source_location::current(), "SSBO '{}' not found", block_name);
 	assert(block->size > 0, std::source_location::current(), "SSBO '{}' has zero element stride", block_name);
-
-	auto* mapped = buf.allocation.mapped();
-	assert(mapped, std::source_location::current(), "Attempted to set SSBO but memory is not mapped");
 
 	const auto mit = block->members.find(std::string(member_name));
 	assert(mit != block->members.end(), std::source_location::current(), "Member '{}' not found in SSBO '{}'", member_name, block_name);
@@ -442,19 +366,22 @@ auto gse::shader::set_ssbo_element(const std::string_view block_name, const std:
 	const auto& m_info = mit->second;
 	assert(bytes.size() <= m_info.size, std::source_location::current(), "Bytes size {} > member '{}' size {} in SSBO '{}'", bytes.size(), member_name, m_info.size, block_name);
 
-	gse::memcpy(mapped + index * block->size + m_info.offset, bytes);
+	const auto offset = index * block->size + m_info.offset;
+	assert(offset + bytes.size() <= dst.size(), std::source_location::current(), "Write to SSBO '{}'[{}] exceeds destination span", block_name, index);
+
+	gse::memcpy(dst.data() + offset, bytes);
 }
 
-auto gse::shader::set_ssbo_struct(const std::string_view block_name, const std::uint32_t index, const std::span<const std::byte> element_bytes, const vulkan::buffer_resource& buf) const -> void {
+auto gse::shader::set_ssbo_struct(const std::span<std::byte> dst, const std::string_view block_name, const std::uint32_t index, const std::span<const std::byte> element_bytes) const -> void {
 	const auto* block = find_block(block_name);
 	assert(block, std::source_location::current(), "SSBO '{}' not found", block_name);
 	assert(block->size > 0, std::source_location::current(), "SSBO '{}' has zero element stride", block_name);
-
-	auto* mapped = buf.allocation.mapped();
-	assert(mapped, std::source_location::current(), "Attempted to set SSBO but memory is not mapped");
 	assert(element_bytes.size() == block->size, std::source_location::current(), "Element bytes {} != stride {} for SSBO '{}'", element_bytes.size(), block->size, block_name);
 
-	gse::memcpy(mapped + index * block->size, element_bytes);
+	const auto offset = index * block->size;
+	assert(offset + element_bytes.size() <= dst.size(), std::source_location::current(), "Write to SSBO '{}'[{}] exceeds destination span", block_name, index);
+
+	gse::memcpy(dst.data() + offset, element_bytes);
 }
 
 auto gse::shader::spirv(const gpu::shader_stage stage) const -> std::span<const std::uint32_t> {
@@ -489,8 +416,8 @@ auto gse::shader::shader_info() const -> const info& {
 }
 
 template <typename T>
-auto gse::verify_uniform_block(const shader& s, const std::string_view block_name) -> bool {
-	const auto block = s.uniform_block(block_name);
+auto gse::verify_uniform_block(const resource::handle<shader>& s, const std::string_view block_name) -> bool {
+	const auto block = s->uniform_block(block_name);
 	bool ok = true;
 
 	template for (constexpr auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {

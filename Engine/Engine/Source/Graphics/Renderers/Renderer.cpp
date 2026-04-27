@@ -49,7 +49,7 @@ auto gse::renderer::system::resources::context_ref() const -> const gpu::context
 
 auto gse::renderer::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 	r.ctx = &ctx;
 	r.assets = &assets;
 
@@ -116,7 +116,7 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 
 auto gse::renderer::system::update(const update_context& ctx, state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(ctx.assets);
+	auto& assets = ctx.assets<gpu::context>();
 
 	if (s.hot_reload_enabled != assets.hot_reload_enabled()) {
 		if (s.hot_reload_enabled) {
@@ -157,7 +157,7 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> async
 
 auto gse::renderer::system::shutdown(const shutdown_context& phase) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	if (auto* assets = static_cast<asset_registry<gpu::context>*>(phase.assets_ptr)) {
+	if (auto* assets = phase.try_assets<gpu::context>()) {
 		assets->shutdown();
 	}
 	ctx.shutdown();

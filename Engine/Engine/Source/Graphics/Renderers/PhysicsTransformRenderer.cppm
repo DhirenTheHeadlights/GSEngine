@@ -49,17 +49,17 @@ export namespace gse::renderer::physics_transform {
 
 auto gse::renderer::physics_transform::system::initialize(const init_context& phase, resources& r, frame_data& fd) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 
 	r.shader_handle = assets.get<shader>("Shaders/Compute/physics_instance_transform");
 	assets.instantly_load(r.shader_handle);
 
 	assert(r.shader_handle->is_compute(), std::source_location::current(), "Physics instance transform shader is not loaded as a compute shader");
 
-	r.pipeline = gpu::create_compute_pipeline(ctx, *r.shader_handle, "push_constants");
+	r.pipeline = gpu::create_compute_pipeline(ctx, r.shader_handle, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		fd.descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
+		fd.descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
 	}
 
 	r.initialized = true;
@@ -126,7 +126,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 		.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())
 		.commit();
 
-	auto pc = r.shader_handle->cache_push_block("push_constants");
+	auto pc = gpu::cache_push_block(r.shader_handle, "push_constants");
 	pc.set("mapping_count", fd.cached_mapping_count);
 	pc.set("body_count", info.body_count);
 
