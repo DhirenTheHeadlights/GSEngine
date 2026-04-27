@@ -1,4 +1,4 @@
-export module gse.gpu:gpu_sync;
+export module gse.gpu.device:gpu_sync;
 
 import std;
 import vulkan;

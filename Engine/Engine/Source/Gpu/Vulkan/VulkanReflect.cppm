@@ -1,9 +1,9 @@
-export module gse.gpu:vulkan_reflect;
+export module gse.gpu.vulkan:vulkan_reflect;
 
 import std;
 import vulkan;
 
-import :gpu_types;
+import gse.gpu.types;
 
 export namespace gse::vulkan {
 	auto to_vk(

@@ -47,7 +47,7 @@ export namespace gse {
 	class world final : public hookable<world> {
 	public:
 		explicit world(
-			system_provider& provider,
+			scheduler& sched,
 			std::string_view name = "Unnamed World"
 		);
 
@@ -119,7 +119,7 @@ export namespace gse {
 			const trigger& new_trigger
 		) -> void;
 
-		system_provider* m_provider = nullptr;
+		scheduler* m_scheduler = nullptr;
 
 		gse::registry m_registry;
 		std::unordered_map<gse::id, std::unique_ptr<gse::scene>> m_scenes;
@@ -323,9 +323,9 @@ auto gse::director::when(const trigger& trigger) -> director& {
 	return *this;
 }
 
-gse::world::world(system_provider& provider, const std::string_view name)
+gse::world::world(scheduler& sched, const std::string_view name)
 	: hookable(name),
-	  m_provider(std::addressof(provider)) {
+	  m_scheduler(std::addressof(sched)) {
 	struct default_world : hook<world> {
 		using hook::hook;
 
@@ -396,12 +396,12 @@ gse::world::world(system_provider& provider, const std::string_view name)
 template <typename State>
 auto gse::world::state_of() -> State& {
 	assert(
-		m_provider != nullptr,
+		m_scheduler != nullptr,
 		std::source_location::current(),
-		"world has no system_provider bound."
+		"world has no scheduler bound."
 	);
 
-	auto* p = m_provider->system_ptr(id_of<State>());
+	auto* p = m_scheduler->system_ptr(id_of<State>());
 	assert(
 		p != nullptr,
 		std::source_location::current(),

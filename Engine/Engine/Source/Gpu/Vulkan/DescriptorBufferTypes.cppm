@@ -1,6 +1,6 @@
 module;
 
-export module gse.gpu:descriptor_buffer_types;
+export module gse.gpu.vulkan:descriptor_buffer_types;
 
 export import vulkan;
 

@@ -15,10 +15,8 @@ export namespace gse {
 	public:
 		frame_context(
 			void* gpu_ctx,
-			const state_snapshot_provider& snapshots,
+			scheduler& sched,
 			channel_writer& channels,
-			const channel_reader_provider& channel_reader,
-			const resources_provider& resources,
 			task_graph& graph,
 			registry& reg
 		);
@@ -39,13 +37,11 @@ export namespace gse {
 
 gse::frame_context::frame_context(
 	void* gpu_ctx,
-	const state_snapshot_provider& snapshots,
+	scheduler& sched,
 	channel_writer& channels,
-	const channel_reader_provider& channel_reader,
-	const resources_provider& resources,
 	task_graph& graph,
 	registry& reg
-) : task_context{ gpu_ctx, snapshots, channels, channel_reader, resources, graph },
+) : task_context{ gpu_ctx, sched, channels, graph, false },
 	m_reg(reg) {}
 
 template <gse::is_component T>

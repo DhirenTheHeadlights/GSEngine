@@ -10,11 +10,10 @@ import :phase_context;
 
 export namespace gse {
 	struct task_context : phase_gpu_access {
-		const state_snapshot_provider& snapshots;
+		scheduler& sched;
 		channel_writer& channels;
-		const channel_reader_provider& channel_reader;
-		const resources_provider& resources;
 		task_graph& graph;
+		bool live_state = true;
 
 		template <typename State>
 		auto state_of(
@@ -44,43 +43,4 @@ export namespace gse {
 		auto notify_ready(
 		) -> void;
 	};
-}
-
-template <typename State>
-auto gse::task_context::state_of() const -> const State& {
-	return snapshots.state_of<State>();
-}
-
-template <typename State>
-auto gse::task_context::try_state_of() const -> const State* {
-	return snapshots.try_state_of<State>();
-}
-
-template <typename T>
-auto gse::task_context::read_channel() const -> channel_read_guard<T> {
-	return channel_read_guard<T>(channel_reader.read<T>());
-}
-
-template <typename Resources>
-auto gse::task_context::resources_of() const -> const Resources& {
-	return resources.resources_of<Resources>();
-}
-
-template <typename Resources>
-auto gse::task_context::try_resources_of() const -> const Resources* {
-	return resources.try_resources_of<Resources>();
-}
-
-template <typename State>
-auto gse::task_context::after() -> async::task<> {
-	static const id tid = find_or_generate_id(std::format("after<{}>", type_tag<State>()));
-	const auto key = trace::allocate_async_key();
-	trace::begin_async(tid, key);
-	co_await graph.wait_state_ready(id_of<State>());
-	trace::end_async(tid, key);
-}
-
-template <typename State>
-auto gse::task_context::notify_ready() -> void {
-	graph.notify_state_ready(id_of<State>());
 }

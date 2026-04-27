@@ -1,7 +1,3 @@
-module;
-
-#include <meta>
-
 export module gse.meta:variant_match;
 
 import std;

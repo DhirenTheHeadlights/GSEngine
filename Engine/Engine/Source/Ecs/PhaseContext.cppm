@@ -12,50 +12,31 @@ import :registry;
 export namespace gse {
 	class scheduler;
 
-	class system_provider {
-	public:
-		virtual ~system_provider(
-		) = default;
-
-		virtual auto system_ptr(
-			id idx
-		) -> void* = 0;
-
-		virtual auto system_ptr(
-			id idx
-		) const -> const void* = 0;
-
-		virtual auto ensure_channel(
-			id idx,
-			channel_factory_fn factory
-		) -> channel_base& = 0;
-	};
-
-	class state_snapshot_provider {
-	public:
-		virtual ~state_snapshot_provider(
-		) = default;
-
-		virtual auto snapshot_ptr(
-			id type
-		) const -> const void* = 0;
-
-		template <typename State>
-		auto state_of(
-		) const -> const State&;
-
-		template <typename State>
-		auto try_state_of(
-		) const -> const State*;
-	};
-
 	class channel_writer {
 	public:
-		using push_fn = std::function<void(id, std::any, channel_factory_fn)>;
-
+		template <typename F>
 		explicit channel_writer(
-			push_fn fn
+			F&& fn
 		);
+
+		channel_writer(
+			channel_writer&&
+		) noexcept;
+
+		auto operator=(
+			channel_writer&&
+		) noexcept -> channel_writer&;
+
+		~channel_writer(
+		);
+
+		channel_writer(
+			const channel_writer&
+		) = delete;
+
+		auto operator=(
+			const channel_writer&
+		) -> channel_writer& = delete;
 
 		template <typename T>
 		auto push(
@@ -68,39 +49,15 @@ export namespace gse {
 		) -> channel_future<typename T::result_type>;
 
 	private:
-		push_fn m_push;
-	};
+		auto invoke_push(
+			id idx,
+			std::any value,
+			channel_factory_fn factory
+		) -> void;
 
-	class channel_reader_provider {
-	public:
-		virtual ~channel_reader_provider(
-		) = default;
-
-		virtual auto channel_snapshot_ptr(
-			id type
-		) const -> const void* = 0;
-
-		template <typename T>
-		auto read(
-		) const -> const std::vector<T>&;
-	};
-
-	class resources_provider {
-	public:
-		virtual ~resources_provider(
-		) = default;
-
-		virtual auto resources_ptr(
-			id type
-		) const -> const void* = 0;
-
-		template <typename Resources>
-		auto resources_of(
-		) const -> const Resources&;
-
-		template <typename Resources>
-		auto try_resources_of(
-		) const -> const Resources*;
+		void* m_ctx = nullptr;
+		void(*m_invoke)(void*, id, std::any, channel_factory_fn) = nullptr;
+		void(*m_destroy)(void*) noexcept = nullptr;
 	};
 
 	struct phase_gpu_access {
@@ -118,8 +75,6 @@ export namespace gse {
 	struct init_context : phase_gpu_access {
 		registry& reg;
 		scheduler& sched;
-		const state_snapshot_provider& snapshots;
-		const resources_provider& resource_provider;
 		channel_writer& channels;
 
 		template <typename State>
@@ -152,26 +107,23 @@ export namespace gse {
 	concept has_shutdown = requires(shutdown_context& p, State& s) {
 		{ S::shutdown(p, s) } -> std::same_as<void>;
 	};
-
 }
 
-template <typename State>
-auto gse::state_snapshot_provider::state_of() const -> const State& {
-	const auto* ptr = snapshot_ptr(id_of<State>());
-	return *static_cast<const State*>(ptr);
+template <typename F>
+gse::channel_writer::channel_writer(F&& fn) {
+	using closure = std::decay_t<F>;
+	m_ctx = new closure(std::forward<F>(fn));
+	m_invoke = +[](void* p, id idx, std::any value, channel_factory_fn factory) {
+		(*static_cast<closure*>(p))(idx, std::move(value), std::move(factory));
+	};
+	m_destroy = +[](void* p) noexcept {
+		delete static_cast<closure*>(p);
+	};
 }
-
-template <typename State>
-auto gse::state_snapshot_provider::try_state_of() const -> const State* {
-	const auto* ptr = snapshot_ptr(id_of<State>());
-	return static_cast<const State*>(ptr);
-}
-
-gse::channel_writer::channel_writer(push_fn fn) : m_push(std::move(fn)) {}
 
 template <typename T>
 auto gse::channel_writer::push(T item) -> void {
-	m_push(
+	invoke_push(
 		id_of<T>(),
 		std::any(std::move(item)),
 		+[]() -> std::unique_ptr<channel_base> {
@@ -184,7 +136,7 @@ template <gse::promiseable T>
 auto gse::channel_writer::push(T item) -> channel_future<typename T::result_type> {
 	auto [future, promise] = make_promise<typename T::result_type>();
 	item.promise = std::move(promise);
-	m_push(
+	invoke_push(
 		id_of<T>(),
 		std::any(std::move(item)),
 		+[]() -> std::unique_ptr<channel_base> {
@@ -192,16 +144,6 @@ auto gse::channel_writer::push(T item) -> channel_future<typename T::result_type
 		}
 	);
 	return future;
-}
-
-template <typename T>
-auto gse::channel_reader_provider::read() const -> const std::vector<T>& {
-	const auto* ptr = channel_snapshot_ptr(id_of<T>());
-	if (!ptr) {
-		static const std::vector<T> empty;
-		return empty;
-	}
-	return *static_cast<const std::vector<T>*>(ptr);
 }
 
 template <typename T>
@@ -214,35 +156,34 @@ auto gse::phase_gpu_access::try_get() const -> T* {
 	return static_cast<T*>(gpu_ctx);
 }
 
-template <typename State>
-auto gse::init_context::state_of() const -> const State& {
-	return snapshots.state_of<State>();
+gse::channel_writer::channel_writer(channel_writer&& other) noexcept
+	: m_ctx(other.m_ctx), m_invoke(other.m_invoke), m_destroy(other.m_destroy) {
+	other.m_ctx = nullptr;
+	other.m_invoke = nullptr;
+	other.m_destroy = nullptr;
 }
 
-template <typename State>
-auto gse::init_context::try_state_of() const -> const State* {
-	return snapshots.try_state_of<State>();
+auto gse::channel_writer::operator=(channel_writer&& other) noexcept -> channel_writer& {
+	if (this != &other) {
+		if (m_destroy && m_ctx) {
+			m_destroy(m_ctx);
+		}
+		m_ctx = other.m_ctx;
+		m_invoke = other.m_invoke;
+		m_destroy = other.m_destroy;
+		other.m_ctx = nullptr;
+		other.m_invoke = nullptr;
+		other.m_destroy = nullptr;
+	}
+	return *this;
 }
 
-template <typename Resources>
-auto gse::init_context::resources_of() const -> const Resources& {
-	return resource_provider.resources_of<Resources>();
+gse::channel_writer::~channel_writer() {
+	if (m_destroy && m_ctx) {
+		m_destroy(m_ctx);
+	}
 }
 
-template <typename Resources>
-auto gse::init_context::try_resources_of() const -> const Resources* {
-	return resource_provider.try_resources_of<Resources>();
+auto gse::channel_writer::invoke_push(const id idx, std::any value, channel_factory_fn factory) -> void {
+	m_invoke(m_ctx, idx, std::move(value), std::move(factory));
 }
-
-template <typename Resources>
-auto gse::resources_provider::resources_of() const -> const Resources& {
-	const auto* ptr = resources_ptr(id_of<Resources>());
-	return *static_cast<const Resources*>(ptr);
-}
-
-template <typename Resources>
-auto gse::resources_provider::try_resources_of() const -> const Resources* {
-	const auto* ptr = resources_ptr(id_of<Resources>());
-	return static_cast<const Resources*>(ptr);
-}
-

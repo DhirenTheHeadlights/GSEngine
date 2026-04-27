@@ -1,8 +1,8 @@
-export module gse.gpu:vulkan_handles;
+export module gse.gpu.vulkan:vulkan_handles;
 
 import vulkan;
 
-import :gpu_types;
+import gse.gpu.types;
 
 export namespace gse::vulkan {
 	struct pipeline_handle {

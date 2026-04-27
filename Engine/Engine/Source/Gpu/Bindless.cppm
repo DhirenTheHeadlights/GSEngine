@@ -1,12 +1,10 @@
-export module gse.gpu:bindless;
+export module gse.gpu.context:bindless;
 
 import std;
 import vulkan;
 
-import :gpu_types;
-import :vulkan_allocator;
-import :vulkan_runtime;
-import :descriptor_heap;
+import gse.gpu.types;
+import gse.gpu.vulkan;
 
 import gse.assert;
 import gse.log;

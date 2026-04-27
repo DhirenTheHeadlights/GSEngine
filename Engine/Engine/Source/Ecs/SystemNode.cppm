@@ -1,7 +1,3 @@
-module;
-
-#include <meta>
-
 export module gse.ecs:system_node;
 
 import std;

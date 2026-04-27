@@ -149,32 +149,6 @@ export namespace gse {
 			async::rw_mutex* mutex = nullptr
 		) -> write<T>;
 
-		template <is_component T, typename... Args>
-		auto defer_add_component(
-			id owner,
-			Args&&... args
-		) -> void;
-
-		template <is_component T>
-		auto defer_remove_component(
-			id owner
-		) -> void;
-
-		auto defer_activate(
-			id owner
-		) -> void;
-
-		auto defer_remove(
-			id owner
-		) -> void;
-
-		using deferred_action = std::function<bool(registry&)>;
-
-		auto add_deferred_action(
-			id owner,
-			deferred_action action
-		) -> void;
-
 		template <is_component T>
 		auto mark_component_updated(
 			id owner
@@ -192,9 +166,6 @@ export namespace gse {
 		auto drain_component_removes(
 		) -> std::vector<id>;
 
-		auto sync(
-		) -> void;
-
 	private:
 		template <is_component T>
 		auto storage(
@@ -209,11 +180,6 @@ export namespace gse {
 		std::unordered_set<id> m_inactive;
 
 		std::unordered_map<id, std::unique_ptr<component_storage_base>> m_storages;
-
-		task::concurrent_queue<std::function<void(registry&)>> m_pending_ops;
-
-		std::vector<std::pair<id, deferred_action>> m_deferred_actions;
-		task::concurrent_queue<std::pair<id, deferred_action>> m_pending_deferred_actions;
 	};
 }
 
@@ -465,37 +431,6 @@ auto gse::registry::acquire_write(async::rw_mutex* mutex) -> write<T> {
 	return write<T>(s->items(), lookup, s, mutex);
 }
 
-template <gse::is_component T, typename... Args>
-auto gse::registry::defer_add_component(const id owner, Args&&... args) -> void {
-	m_pending_ops.push([owner, ...args = std::forward<Args>(args)](registry& r) mutable {
-		r.ensure_exists(owner);
-		r.add_component<T>(owner, std::move(args)...);
-	});
-}
-
-template <gse::is_component T>
-auto gse::registry::defer_remove_component(const id owner) -> void {
-	m_pending_ops.push([owner](registry& r) {
-		r.remove_component<T>(owner);
-	});
-}
-
-auto gse::registry::defer_activate(const id owner) -> void {
-	m_pending_ops.push([owner](registry& r) {
-		r.ensure_active(owner);
-	});
-}
-
-auto gse::registry::defer_remove(const id owner) -> void {
-	m_pending_ops.push([owner](registry& r) {
-		r.remove(owner);
-	});
-}
-
-auto gse::registry::add_deferred_action(const id owner, deferred_action action) -> void {
-	m_pending_deferred_actions.push({ owner, std::move(action) });
-}
-
 template <gse::is_component T>
 auto gse::registry::mark_component_updated(const id owner) -> void {
 	const auto type_idx = id_of<T>();
@@ -536,17 +471,3 @@ auto gse::registry::drain_component_removes() -> std::vector<id> {
 	return static_cast<component_storage<T>&>(*it->second).drain_removed();
 }
 
-auto gse::registry::sync() -> void {
-	for (auto& op : m_pending_ops.drain()) {
-		op(*this);
-	}
-
-	for (auto& incoming : m_pending_deferred_actions.drain()) {
-		m_deferred_actions.push_back(std::move(incoming));
-	}
-
-	std::erase_if(m_deferred_actions, [this](auto& entry) {
-		auto& [owner, action] = entry;
-		return action(*this);
-	});
-}

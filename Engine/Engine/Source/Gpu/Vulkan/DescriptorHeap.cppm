@@ -1,10 +1,10 @@
-export module gse.gpu:descriptor_heap;
+export module gse.gpu.vulkan:descriptor_heap;
 
 import std;
 
 import :vulkan_allocator;
 import :descriptor_buffer_types;
-import :gpu_types;
+import gse.gpu.types;
 
 import gse.assert;
 import gse.log;

@@ -1,13 +1,11 @@
-export module gse.gpu:gpu_buffer;
+export module gse.gpu.resources:gpu_buffer;
 
 import std;
 
-import :gpu_types;
-import :vulkan_allocator;
-import :vulkan_reflect;
-import :gpu_device;
-import :gpu_context;
-import :gpu_frame;
+import gse.gpu.types;
+import gse.gpu.vulkan;
+import gse.gpu.device;
+import gse.gpu.context;
 
 import gse.core;
 import gse.containers;

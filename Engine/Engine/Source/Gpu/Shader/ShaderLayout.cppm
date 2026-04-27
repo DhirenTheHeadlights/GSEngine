@@ -1,8 +1,8 @@
-export module gse.gpu:shader_layout;
+export module gse.gpu.shader:shader_layout;
 
 import std;
 
-import :vulkan_allocator;
+import gse.gpu.vulkan;
 
 import gse.core;
 import gse.containers;

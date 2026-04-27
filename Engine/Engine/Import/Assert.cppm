@@ -2,6 +2,8 @@ export module gse.assert;
 
 import std;
 
+import gse.log;
+
 export namespace gse {
     template <typename... Args>
     auto assert(
@@ -42,4 +44,17 @@ auto gse::assert(const bool condition, const std::source_location loc, const std
     );
 
     assert_func_internal(message);
+}
+
+auto gse::assert_func_production(const std::string_view message) noexcept -> void {
+    std::terminate();
+}
+
+auto gse::assert_func_internal(const std::string_view message) noexcept -> void {
+    log::println(
+        log::level::error,
+        log::category::general,
+        "{}",
+        message
+    );
 }

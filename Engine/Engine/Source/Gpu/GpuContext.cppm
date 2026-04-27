@@ -1,21 +1,17 @@
-export module gse.gpu:gpu_context;
+export module gse.gpu.context:gpu_context;
 
 import std;
 import vulkan;
 
-import :shader_layout_compiler;
-import :render_graph;
-import :gpu_device;
-import :gpu_swapchain;
-import :gpu_frame;
-import :gpu_types;
-import :shader_registry;
-import :vulkan_reflect;
-import :vulkan_uploader;
+import gse.gpu.shader;
+import gse.gpu.device;
+import gse.gpu.types;
+import gse.gpu.vulkan;
 import :bindless;
 
 import gse.os;
 import gse.assets;
+import gse.config;
 
 import gse.log;
 import gse.core;

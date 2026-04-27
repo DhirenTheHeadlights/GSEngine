@@ -1,4 +1,4 @@
-export module gse.gpu:gpu_types;
+export module gse.gpu.types;
 
 import std;
 import vulkan;

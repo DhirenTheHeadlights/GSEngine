@@ -1,4 +1,4 @@
-export module gse.gpu:gpu_command_pools;
+export module gse.gpu.vulkan:gpu_command_pools;
 
 import std;
 import vulkan;

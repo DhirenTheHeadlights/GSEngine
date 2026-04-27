@@ -115,38 +115,16 @@ auto gse::network::system::update(update_context& ctx, resources& r, system_stat
                         }
 
                         r.deferred.push_back([entity = m.owner_id, data = std::move(fixed_data)](update_context& ctx) {
-                            ctx.ensure_exists(entity);
-                            ctx.add_deferred_action(entity, [entity, data](registry& reg) -> bool {
-                                if (!reg.active(entity)) {
-                                    reg.ensure_active(entity);
-                                    return false;
-                                }
-                                if (auto* c = reg.try_component<T>(entity)) {
-                                    c->networked_data() = data;
-                                    return true;
-                                }
-                                auto* c = reg.add_component<T>(entity, data);
-                                c->networked_data() = data;
-                                return true;
-                            });
+                            ctx.ensure_active(entity);
+                            auto* c = ctx.add_component<T>(entity, data);
+                            c->networked_data() = data;
                         });
                     }
                     else {
                         r.deferred.push_back([entity = m.owner_id, data = m.data](update_context& ctx) {
-                            ctx.ensure_exists(entity);
-                            ctx.add_deferred_action(entity, [entity, data](registry& reg) -> bool {
-                                if (!reg.active(entity)) {
-                                    reg.ensure_active(entity);
-                                    return false;
-                                }
-                                if (auto* c = reg.try_component<T>(entity)) {
-                                    c->networked_data() = data;
-                                    return true;
-                                }
-                                auto* c = reg.add_component<T>(entity, data);
-                                c->networked_data() = data;
-                                return true;
-                            });
+                            ctx.ensure_active(entity);
+                            auto* c = ctx.add_component<T>(entity, data);
+                            c->networked_data() = data;
                         });
                     }
                 },
@@ -155,16 +133,14 @@ auto gse::network::system::update(update_context& ctx, resources& r, system_stat
                         return;
                     }
                     r.deferred.push_back([entity = m.owner_id](update_context& ctx) {
-                        ctx.add_deferred_action(entity, [entity](registry& reg) -> bool {
-                            if constexpr (std::is_same_v<T, player_controller>) {
-                                if (reg.exists(entity)) {
-                                    reg.remove(entity);
-                                }
-                            } else {
-                                reg.remove_component<T>(entity);
+                        if constexpr (std::is_same_v<T, player_controller>) {
+                            if (ctx.exists(entity)) {
+                                ctx.remove(entity);
                             }
-                            return true;
-                        });
+                        }
+                        else {
+                            ctx.remove_component<T>(entity);
+                        }
                     });
                 }
             );

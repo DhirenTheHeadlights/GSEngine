@@ -8,8 +8,8 @@ project(Engine LANGUAGES CXX)
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
 
-file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/Modules/*.cpp")
-list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Modules/VulkanDispatch.cpp")
+file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp")
+list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
 
 add_library(Engine)
 
@@ -30,14 +30,15 @@ target_sources(Engine
 )
 
 find_package(glfw3 CONFIG REQUIRED)
-find_package(Stb REQUIRED)
+find_package(PNG REQUIRED)
+find_package(JPEG REQUIRED)
 find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(concurrentqueue CONFIG REQUIRED)
 find_package(Vulkan)
 
-add_library(VulkanModule STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Modules/VulkanDispatch.cpp")
+add_library(VulkanModule STATIC)
 target_sources(VulkanModule PUBLIC
     FILE_SET CXX_MODULES
     BASE_DIRS ${Vulkan_INCLUDE_DIR}
@@ -47,6 +48,9 @@ target_sources(VulkanModule PUBLIC
 target_compile_features(VulkanModule PUBLIC cxx_std_26)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
 target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
+
+add_library(MiniaudioImpl STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
+target_include_directories(MiniaudioImpl PRIVATE ${miniaudio_INCLUDE_DIR})
 
 set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
 
@@ -70,8 +74,8 @@ endif()
 
 target_include_directories(Engine
     PUBLIC
-        ${Stb_INCLUDE_DIR}
         ${miniaudio_INCLUDE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/External
 )
 
 if(HAVE_SLANG_PACKAGE)
@@ -86,6 +90,9 @@ target_link_libraries(Engine PUBLIC
     Freetype::Freetype
     msdfgen::msdfgen
     VulkanModule
+    PNG::PNG
+    JPEG::JPEG
+    MiniaudioImpl
     concurrentqueue::concurrentqueue
 )
 

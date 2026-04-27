@@ -1,13 +1,4 @@
-module;
-
-
-#include <cstdio>
-#include <slang-com-ptr.h>
-#include <slang.h>
-
-#undef assert
-
-export module gse.gpu:shader_compiler;
+export module gse.gpu.shader:shader_compiler;
 
 import std;
 
@@ -20,6 +11,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.assets;
+import gse.slang;
 import :shader;
 
 namespace gse::shader_compile {
@@ -154,24 +146,24 @@ auto gse::shader_compile::to_descriptor_type(slang::TypeLayoutReflection* tl, co
 
     const slang::BindingType bt = tl->getBindingRangeType(range_index);
     const SlangBindingTypeIntegral bt_bits = static_cast<SlangBindingTypeIntegral>(bt);
-    const auto base_bt = static_cast<SlangBindingType>(bt_bits & SLANG_BINDING_TYPE_BASE_MASK);
-    const bool is_mutable = (bt_bits & SLANG_BINDING_TYPE_MUTABLE_FLAG) != 0;
+    const auto base_bt = static_cast<SlangBindingType>(bt_bits & slang_binding_type_base_mask);
+    const bool is_mutable = (bt_bits & slang_binding_type_mutable_flag) != 0;
 
     slang::TypeLayoutReflection* leaf_layout = tl->getBindingRangeLeafTypeLayout(range_index);
     slang::TypeReflection* leaf_type = leaf_layout ? leaf_layout->getType() : nullptr;
-    const auto access = leaf_type ? leaf_type->getResourceAccess() : SLANG_RESOURCE_ACCESS_READ;
+    const auto access = leaf_type ? leaf_type->getResourceAccess() : slang_resource_access_read;
 
     switch (base_bt) {
-        case SLANG_BINDING_TYPE_COMBINED_TEXTURE_SAMPLER: return gpu::descriptor_type::combined_image_sampler;
-        case SLANG_BINDING_TYPE_TEXTURE:
-            return (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) ? gpu::descriptor_type::storage_image : gpu::descriptor_type::sampled_image;
-        case SLANG_BINDING_TYPE_SAMPLER: return gpu::descriptor_type::sampler;
-        case SLANG_BINDING_TYPE_RAW_BUFFER: return gpu::descriptor_type::storage_buffer;
-        case SLANG_BINDING_TYPE_TYPED_BUFFER: return gpu::descriptor_type::storage_buffer;
-        case SLANG_BINDING_TYPE_CONSTANT_BUFFER:
-        case SLANG_BINDING_TYPE_PARAMETER_BLOCK: return gpu::descriptor_type::uniform_buffer;
-        case SLANG_BINDING_TYPE_INPUT_RENDER_TARGET: return gpu::descriptor_type::sampled_image;
-        case SLANG_BINDING_TYPE_RAY_TRACING_ACCELERATION_STRUCTURE: return gpu::descriptor_type::acceleration_structure;
+        case slang_binding_type_combined_texture_sampler: return gpu::descriptor_type::combined_image_sampler;
+        case slang_binding_type_texture:
+            return (is_mutable || access != slang_resource_access_read) ? gpu::descriptor_type::storage_image : gpu::descriptor_type::sampled_image;
+        case slang_binding_type_sampler: return gpu::descriptor_type::sampler;
+        case slang_binding_type_raw_buffer: return gpu::descriptor_type::storage_buffer;
+        case slang_binding_type_typed_buffer: return gpu::descriptor_type::storage_buffer;
+        case slang_binding_type_constant_buffer:
+        case slang_binding_type_parameter_block: return gpu::descriptor_type::uniform_buffer;
+        case slang_binding_type_input_render_target: return gpu::descriptor_type::sampled_image;
+        case slang_binding_type_ray_tracing_acceleration_structure: return gpu::descriptor_type::acceleration_structure;
         default: return gpu::descriptor_type::storage_buffer;
     }
 }
@@ -268,11 +260,11 @@ auto gse::shader_compile::extract_struct_layout(slang::VariableLayoutReflection*
 auto gse::shader_compile::to_stage_flags(const SlangStage slang_stage) -> gpu::stage_flags {
     using enum gpu::stage_flag;
     switch (slang_stage) {
-        case SLANG_STAGE_VERTEX: return vertex;
-        case SLANG_STAGE_FRAGMENT: return fragment;
-        case SLANG_STAGE_COMPUTE: return compute;
-        case SLANG_STAGE_AMPLIFICATION: return task;
-        case SLANG_STAGE_MESH: return mesh;
+        case slang_stage_vertex: return vertex;
+        case slang_stage_fragment: return fragment;
+        case slang_stage_compute: return compute;
+        case slang_stage_amplification: return task;
+        case slang_stage_mesh: return mesh;
         default: return {};
     }
 }
@@ -352,7 +344,7 @@ auto gse::shader_compile::reflect_descriptor_sets(
                 const bool is_structured =
                     type_layout->getKind() == kind::ShaderStorageBuffer ||
                     (type_layout->getKind() == kind::Resource &&
-                        (type_layout->getType()->getResourceShape() & SLANG_RESOURCE_BASE_SHAPE_MASK) == SLANG_STRUCTURED_BUFFER);
+                        (type_layout->getType()->getResourceShape() & slang_resource_base_shape_mask) == SLANG_STRUCTURED_BUFFER);
 
                 if (!is_structured) {
                     return std::nullopt;
@@ -467,7 +459,7 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
     const auto shader_root = config::resource_path / "Shaders";
 
     Slang::ComPtr<slang::IGlobalSession> global_session;
-    if (SLANG_FAILED(createGlobalSession(global_session.writeRef())) || !global_session) {
+    if (slang_failed(createGlobalSession(global_session.writeRef())) || !global_session) {
         log::println(log::level::error, log::category::assets, "Failed to create Slang global session");
         return false;
     }
@@ -475,7 +467,7 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
     Slang::ComPtr<slang::ISession> session;
     {
         slang::TargetDesc target{
-            .format = SLANG_SPIRV,
+            .format = slang_spirv,
             .profile = global_session->findProfile("spirv_1_5"),
             .forceGLSLScalarBufferLayout = true,
         };
@@ -498,12 +490,12 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
         slang::SessionDesc sdesc{
             .targets = &target,
             .targetCount = 1,
-            .defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
+            .defaultMatrixLayoutMode = slang_matrix_layout_column_major,
             .searchPaths = sp_c_strs.data(),
             .searchPathCount = static_cast<SlangInt>(sp_c_strs.size()),
         };
 
-        if (SLANG_FAILED(global_session->createSession(sdesc, session.writeRef())) || !session) {
+        if (slang_failed(global_session->createSession(sdesc, session.writeRef())) || !session) {
             log::println(log::level::error, log::category::assets, "Failed to create Slang session");
             return false;
         }
@@ -555,23 +547,23 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
     Slang::ComPtr<slang::IComponentType> composed;
     if (is_compute) {
         slang::IComponentType* parts[] = { cs_ep.get() };
-        if (SLANG_FAILED(session->createCompositeComponentType(parts, 1, composed.writeRef(), diags.writeRef()))) {
+        if (slang_failed(session->createCompositeComponentType(parts, 1, composed.writeRef(), diags.writeRef()))) {
             return false;
         }
     } else if (is_mesh_pipeline) {
         slang::IComponentType* parts[] = { as_ep.get(), ms_ep.get(), fs_ep.get() };
-        if (SLANG_FAILED(session->createCompositeComponentType(parts, 3, composed.writeRef(), diags.writeRef()))) {
+        if (slang_failed(session->createCompositeComponentType(parts, 3, composed.writeRef(), diags.writeRef()))) {
             return false;
         }
     } else {
         slang::IComponentType* parts[] = { vs_ep.get(), fs_ep.get() };
-        if (SLANG_FAILED(session->createCompositeComponentType(parts, 2, composed.writeRef(), diags.writeRef()))) {
+        if (slang_failed(session->createCompositeComponentType(parts, 2, composed.writeRef(), diags.writeRef()))) {
             return false;
         }
     }
 
     Slang::ComPtr<slang::IComponentType> program;
-    if (SLANG_FAILED(composed->link(program.writeRef(), diags.writeRef()))) {
+    if (slang_failed(composed->link(program.writeRef(), diags.writeRef()))) {
         log_diagnostics(diags.get());
         return false;
     }
@@ -600,7 +592,7 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
             return "";
         }
         int v = 0;
-        if (SLANG_SUCCEEDED(attr->getArgumentValueInt(0, &v))) {
+        if (slang_succeeded(attr->getArgumentValueInt(0, &v))) {
             return map_layout_kind(v);
         }
         return "";
@@ -662,13 +654,13 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
         if (auto* var = vl->getVariable()) {
             if (auto* a = var->findUserAttributeByName(gsess, "vk::location")) {
                 int v = 0;
-                if (SLANG_SUCCEEDED(a->getArgumentValueInt(0, &v)) && v >= 0) {
+                if (slang_succeeded(a->getArgumentValueInt(0, &v)) && v >= 0) {
                     return static_cast<std::uint32_t>(v);
                 }
             }
             if (auto* a = var->findUserAttributeByName(gsess, "location")) {
                 int v = 0;
-                if (SLANG_SUCCEEDED(a->getArgumentValueInt(0, &v)) && v >= 0) {
+                if (slang_succeeded(a->getArgumentValueInt(0, &v)) && v >= 0) {
                     return static_cast<std::uint32_t>(v);
                 }
             }
@@ -690,7 +682,7 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
 
     for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
         auto* ep = layout->getEntryPointByIndex(epi);
-        if (!ep || ep->getStage() != SLANG_STAGE_VERTEX) {
+        if (!ep || ep->getStage() != slang_stage_vertex) {
             continue;
         }
 
@@ -860,7 +852,7 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
     auto write_spirv = [&](const std::uint32_t entry_point_index) -> bool {
         Slang::ComPtr<ISlangBlob> blob;
         Slang::ComPtr<ISlangBlob> gen_diags;
-        if (SLANG_FAILED(program->getEntryPointCode(entry_point_index, 0, blob.writeRef(), gen_diags.writeRef())) || !blob) {
+        if (slang_failed(program->getEntryPointCode(entry_point_index, 0, blob.writeRef(), gen_diags.writeRef())) || !blob) {
             return false;
         }
         const auto byte_size = blob->getBufferSize();

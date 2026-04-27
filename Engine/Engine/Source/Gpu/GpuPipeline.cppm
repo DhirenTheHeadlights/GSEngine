@@ -1,15 +1,13 @@
-export module gse.gpu:gpu_pipeline;
+export module gse.gpu.pipeline;
 
 import std;
 import vulkan;
 
-import :gpu_types;
-import :vulkan_handles;
-import :vulkan_reflect;
-import :gpu_device;
-import :gpu_context;
-import :shader;
-import :shader_registry;
+import gse.gpu.types;
+import gse.gpu.vulkan;
+import gse.gpu.device;
+import gse.gpu.context;
+import gse.gpu.shader;
 
 import gse.core;
 import gse.containers;

@@ -1,7 +1,3 @@
-module;
-
-#include <meta>
-
 export module gse.runtime:core_api;
 
 import std;
@@ -153,40 +149,49 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
         const auto render_id = trace_id<"engine::render">();
 
         while (!should_shutdown.load(std::memory_order_acquire)) {
-            trace::scope(loop_id, [&] {
+            {
+            	trace::scope_guard sg{loop_id};
                 if (engine_flags.test(engine_flag::create_window)) {
-                    trace::scope(poll_id, [&] {
+                    {
+                    	trace::scope_guard sg{poll_id};
                         window::poll_events();
-                    });
+                    }
                 }
 
-                trace::scope(sync_begin_id, [&] {
+                {
+                	trace::scope_guard sg{sync_begin_id};
                     frame_sync::begin();
-                });
+                }
 
-                trace::scope(engine_instance->id(), [&] {
-                    trace::scope(update_id, [&] {
+                {
+                	trace::scope_guard sg{engine_instance->id()};
+                    {
+                    	trace::scope_guard sg{update_id};
                         engine_instance->update();
-                    });
+                    }
 
                     if (engine_flags.test(engine_flag::render)) {
-                        trace::scope(render_id, [&] {
+                        {
+                        	trace::scope_guard sg{render_id};
                             engine_instance->render();
-                        });
+                        }
                     }
-                });
+                }
 
-                trace::scope(sync_end_id, [&] {
+                {
+                	trace::scope_guard sg{sync_end_id};
                     frame_sync::end();
-                });
-            });
+                }
+            }
 
-            trace::scope(finalize_id, [&] {
+            {
+            	trace::scope_guard sg{finalize_id};
                 trace::finalize_frame();
-            });
-            trace::scope(ingest_id, [&] {
+            }
+            {
+            	trace::scope_guard sg{ingest_id};
                 profile::ingest_frame();
-            });
+            }
         }
 
         task::wait_idle();

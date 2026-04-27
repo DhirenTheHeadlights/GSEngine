@@ -38,7 +38,7 @@ export namespace gse::resource {
 		gpu_work_token(loader_base* loader, id resource_id, std::size_t queue_size_before);
 		~gpu_work_token() override;
 
-		auto queue_size_before() const -> size_t;
+		auto queue_size_before() const -> std::size_t;
 	private:
 		loader_base* m_loader;
 		id m_id;
@@ -61,7 +61,7 @@ export namespace gse::resource {
 		virtual auto flush() -> void = 0;
 		virtual auto update_state(id resource_id, state new_state) -> void = 0;
 		virtual auto mark_for_gpu_finalization(id resource_id) -> void = 0;
-		virtual auto finalize_state(id resource_id, size_t queue_size_before) -> void = 0;
+		virtual auto finalize_state(id resource_id, std::size_t queue_size_before) -> void = 0;
 		virtual auto queue_reload_by_path(const std::filesystem::path& baked_path) -> void = 0;
 		virtual auto queue_by_path(const std::filesystem::path& baked_path) -> void = 0;
 		virtual auto finalize_reloads() -> void = 0;
@@ -78,7 +78,7 @@ export namespace gse::resource {
 
 		auto update_state(id resource_id, state new_state) -> void override;
 		auto mark_for_gpu_finalization(id resource_id) -> void override;
-		auto finalize_state(id resource_id, size_t queue_size_before) -> void override;
+		auto finalize_state(id resource_id, std::size_t queue_size_before) -> void override;
 
 		auto queue_reload(id resource_id) -> void;
 		auto queue_reload_by_path(const std::filesystem::path& baked_path) -> void override;
@@ -129,7 +129,7 @@ gse::resource::gpu_work_token::~gpu_work_token() {
 	m_loader->finalize_state(m_id, m_queue_size_before);
 }
 
-auto gse::resource::gpu_work_token::queue_size_before() const -> size_t {
+auto gse::resource::gpu_work_token::queue_size_before() const -> std::size_t {
 	return m_queue_size_before;
 }
 
@@ -231,7 +231,7 @@ auto gse::resource::loader<R, C>::mark_for_gpu_finalization(id resource_id) -> v
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::finalize_state(id resource_id, size_t queue_size_before) -> void {
+auto gse::resource::loader<R, C>::finalize_state(id resource_id, std::size_t queue_size_before) -> void {
 	if (m_context.gpu_queue_size() > queue_size_before) {
 		m_context.mark_pending_for_finalization(id_of<R>(), resource_id);
 	}

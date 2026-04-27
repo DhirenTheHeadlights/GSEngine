@@ -1,4 +1,4 @@
-export module gse.gpu:vulkan_runtime;
+export module gse.gpu.vulkan:vulkan_runtime;
 
 import std;
 

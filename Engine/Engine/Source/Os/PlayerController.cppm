@@ -8,6 +8,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
 export namespace gse {
 	struct player_controller_net {
 		id controlled_entity_id;

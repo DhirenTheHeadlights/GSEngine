@@ -73,12 +73,37 @@
         "CMAKE_EXE_LINKER_FLAGS_INIT": "-fsanitize=address",
         "CMAKE_SHARED_LINKER_FLAGS_INIT": "-fsanitize=address"
       }
+    },
+    {
+      "name": "linux-gcc-trunk-Debug",
+      "displayName": "Linux GCC trunk Debug (WSL)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/linux-gcc-trunk-Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux",
+        "CMAKE_C_COMPILER":   "$env{HOME}/gcc-trunk/bin/gcc",
+        "CMAKE_CXX_COMPILER": "$env{HOME}/gcc-trunk/bin/g++",
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++26 -freflection -mavx2 -Wno-changes-meaning",
+        "CMAKE_CXX_MODULE_STD": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      },
+      "environment": {
+        "VULKAN_SDK": "$env{HOME}/vulkan-sdk/1.4.341.1/x86_64",
+        "PATH": "$env{HOME}/vulkan-sdk/1.4.341.1/x86_64/bin:$penv{PATH}",
+        "LD_LIBRARY_PATH": "$env{HOME}/vulkan-sdk/1.4.341.1/x86_64/lib:$penv{LD_LIBRARY_PATH}"
+      }
     }
   ],
   "buildPresets": [
     {
       "name": "x64-clang-p2996-libcxx-Debug",
       "configurePreset": "x64-clang-p2996-libcxx-Debug"
+    },
+    {
+      "name": "linux-gcc-trunk-Debug",
+      "configurePreset": "linux-gcc-trunk-Debug"
     },
     {
       "name": "x64-clang-p2996-libcxx-Release",

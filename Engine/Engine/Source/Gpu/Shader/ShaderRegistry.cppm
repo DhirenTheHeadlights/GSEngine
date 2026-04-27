@@ -1,12 +1,12 @@
-export module gse.gpu:shader_registry;
+export module gse.gpu.shader:shader_registry;
 
 import std;
 import vulkan;
 
-import :gpu_types;
+import gse.gpu.types;
 import :shader;
 import :shader_layout;
-import :vulkan_reflect;
+import gse.gpu.vulkan;
 
 import gse.log;
 import gse.core;

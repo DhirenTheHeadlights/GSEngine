@@ -1,15 +1,12 @@
-export module gse.gpu:gpu_compute;
+export module gse.gpu.resources:gpu_compute;
 
 import std;
 
-import :gpu_types;
-import :vulkan_allocator;
-import :vulkan_handles;
-import :descriptor_heap;
-import :gpu_push_constants;
-import :gpu_sync;
-import :gpu_device;
-import :gpu_context;
+import gse.gpu.types;
+import gse.gpu.vulkan;
+import gse.gpu.shader;
+import gse.gpu.device;
+import gse.gpu.context;
 
 import gse.assert;
 import gse.core;

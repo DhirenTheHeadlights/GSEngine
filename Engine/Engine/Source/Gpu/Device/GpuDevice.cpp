@@ -1,17 +1,11 @@
-module gse.gpu;
+module gse.gpu.device;
 
 import std;
 import vulkan;
 
 import :gpu_device;
-import :vulkan_runtime;
-import :vulkan_allocator;
-import :descriptor_heap;
-import :descriptor_buffer_types;
-import :gpu_command_pools;
-import :gpu_types;
-import :vulkan_reflect;
-import :device_bootstrap;
+import gse.gpu.vulkan;
+import gse.gpu.types;
 
 import gse.os;
 import gse.log;

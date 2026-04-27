@@ -3,7 +3,8 @@
   "version-string": "0.1.0",
   "dependencies": [
     "glfw3",
-    "stb",
+    "libpng",
+    "libjpeg-turbo",
     "miniaudio",
     "shader-slang",
     "concurrentqueue",

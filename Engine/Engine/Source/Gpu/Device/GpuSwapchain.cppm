@@ -1,9 +1,8 @@
-export module gse.gpu:gpu_swapchain;
+export module gse.gpu.device:gpu_swapchain;
 
 import std;
 
-import :vulkan_runtime;
-import :vulkan_allocator;
+import gse.gpu.vulkan;
 import :gpu_device;
 
 import gse.core;
@@ -13,6 +12,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.log;
 
 export namespace gse::gpu {
 	class swap_chain final : public non_copyable {

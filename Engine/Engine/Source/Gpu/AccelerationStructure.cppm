@@ -1,18 +1,13 @@
-module;
-
-
-#include <vulkan/vulkan_hpp_macros.hpp>
-
 export module gse.gpu:acceleration_structure;
 
 import std;
+import vulkan;
 
-import :gpu_types;
+import gse.gpu.types;
 import :gpu_buffer;
-import :gpu_device;
-import :gpu_context;
-import :vulkan_allocator;
-import :render_graph;
+import gse.gpu.device;
+import gse.gpu.context;
+import gse.gpu.vulkan;
 
 import gse.core;
 import gse.containers;

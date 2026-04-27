@@ -1,10 +1,10 @@
-export module gse.gpu:gpu_push_constants;
+export module gse.gpu.shader:gpu_push_constants;
 
 import std;
 import vulkan;
 
-import :gpu_types;
-import :vulkan_reflect;
+import gse.gpu.types;
+import gse.gpu.vulkan;
 
 import gse.assert;
 import gse.core;

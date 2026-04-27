@@ -90,15 +90,17 @@ auto gse::engine::render() -> void {
 	bool frame_ok = false;
 
 	if (m_render_ctx) {
-		trace::scope(trace_id<"render::process_gpu_queue">(), [&] {
+		{
+			trace::scope_guard sg{trace_id<"render::process_gpu_queue">()};
 			m_render_ctx->process_gpu_queue();
-		});
+		}
 
 		const clock fence_timer;
 		std::expected<gpu::frame_token, gpu::frame_status> result;
-		trace::scope(trace_id<"render::begin_frame">(), [&] {
+		{
+			trace::scope_guard sg{trace_id<"render::begin_frame">()};
 			result = m_render_ctx->begin_frame();
-		});
+		}
 		const auto fence_wait = fence_timer.elapsed();
 
 		m_render_ctx->scheduler().report_frame_time(fence_wait);
@@ -111,35 +113,42 @@ auto gse::engine::render() -> void {
 	}
 
 	m_scheduler.render(frame_ok, [this] {
-		trace::scope(trace_id<"render::in_frame">(), [&] {
+		{
+			trace::scope_guard sg{trace_id<"render::in_frame">()};
 			if (m_render_ctx) {
-				trace::scope(trace_id<"render::scheduler_flush">(), [&] {
+				{
+					trace::scope_guard sg{trace_id<"render::scheduler_flush">()};
 					m_render_ctx->scheduler().flush();
-				});
-				trace::scope(trace_id<"render::graph_execute">(), [&] {
+				}
+				{
+					trace::scope_guard sg{trace_id<"render::graph_execute">()};
 					m_render_ctx->graph().execute();
-				});
+				}
 			}
 
-			trace::scope(trace_id<"render::hooks">(), [&] {
+			{
+				trace::scope_guard sg{trace_id<"render::hooks">()};
 				for (const auto& h : m_hooks) {
 					h->render();
 				}
-			});
+			}
 
-			trace::scope(trace_id<"render::world_render">(), [&] {
+			{
+				trace::scope_guard sg{trace_id<"render::world_render">()};
 				m_world.render();
-			});
-		});
+			}
+		}
 	});
 
 	if (frame_ok && m_render_ctx) {
-		trace::scope(trace_id<"render::end_frame">(), [&] {
+		{
+			trace::scope_guard sg{trace_id<"render::end_frame">()};
 			m_render_ctx->end_frame();
-			trace::scope(trace_id<"end_frame::finalize_reloads">(), [&] {
+			{
+				trace::scope_guard sg{trace_id<"end_frame::finalize_reloads">()};
 				m_render_ctx->finalize_reloads();
-			});
-		});
+			}
+		}
 	}
 }
 
