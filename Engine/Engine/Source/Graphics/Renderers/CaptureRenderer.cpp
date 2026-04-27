@@ -34,6 +34,7 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
     s.save_clip_action = register_action("Save Clip", key::f10);
 
     auto& ctx = phase.get<gpu::context>();
+    auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 
     if (!ctx.device().video_encode_enabled()) {
         log::println(log::category::render, "Video encode not available, capture limited to screenshots");
@@ -49,8 +50,8 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
     const auto ext = ctx.graph().extent();
     const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
-    r.convert_shader = ctx.get<shader>("Shaders/Compute/rgba_to_nv12");
-    ctx.instantly_load(r.convert_shader);
+    r.convert_shader = assets.get<shader>("Shaders/Compute/rgba_to_nv12");
+    assets.instantly_load(r.convert_shader);
 
     r.convert_pipeline = gpu::create_compute_pipeline(ctx, *r.convert_shader, "push_constants");
 

@@ -49,9 +49,10 @@ export namespace gse::renderer::cull_compute {
 
 auto gse::renderer::cull_compute::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 
-	r.shader_handle = ctx.get<shader>("Shaders/Compute/cull_instances");
-	ctx.instantly_load(r.shader_handle);
+	r.shader_handle = assets.get<shader>("Shaders/Compute/cull_instances");
+	assets.instantly_load(r.shader_handle);
 
 	if (!r.shader_handle.valid() || !r.shader_handle->is_compute()) {
 		s.enabled = false;

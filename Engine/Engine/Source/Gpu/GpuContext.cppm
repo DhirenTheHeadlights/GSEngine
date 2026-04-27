@@ -144,8 +144,20 @@ export namespace gse::gpu {
 		auto wait_idle(
 		) const -> void;
 
+		auto set_asset_registry(
+			void* registry
+		) -> void;
+
+		template <typename Self>
+		[[nodiscard]] auto asset_registry_ptr(
+			this Self&& self
+		) -> void* {
+			return self.m_asset_registry;
+		}
+
 	private:
 		gse::window m_window;
+		void* m_asset_registry = nullptr;
 		std::unique_ptr<gpu::device> m_device;
 		std::unique_ptr<gpu::shader_registry> m_shader_registry;
 		std::unique_ptr<swap_chain> m_swapchain;
@@ -334,4 +346,8 @@ auto gse::gpu::context::bindless_textures(this auto& self) -> auto& {
 
 auto gse::gpu::context::wait_idle() const -> void {
 	m_device->wait_idle();
+}
+
+auto gse::gpu::context::set_asset_registry(void* registry) -> void {
+	m_asset_registry = registry;
 }

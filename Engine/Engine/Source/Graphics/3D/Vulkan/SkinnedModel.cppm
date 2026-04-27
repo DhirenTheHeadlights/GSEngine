@@ -130,15 +130,15 @@ auto gse::skinned_model::load(gpu::context& context) -> void {
 
 					if (!albedo_file.empty()) {
 						auto stem = std::filesystem::path(albedo_file).stem().string();
-						mat.diffuse_texture = context.get<texture>(texture_dir + "/" + stem);
+						mat.diffuse_texture = static_cast<asset_registry<gpu::context>*>(context.asset_registry_ptr())->get<texture>(texture_dir + "/" + stem);
 					}
 					if (!normal_file.empty()) {
 						auto stem = std::filesystem::path(normal_file).stem().string();
-						mat.normal_texture = context.get<texture>(texture_dir + "/" + stem);
+						mat.normal_texture = static_cast<asset_registry<gpu::context>*>(context.asset_registry_ptr())->get<texture>(texture_dir + "/" + stem);
 					}
 					if (!rm_file.empty()) {
 						auto stem = std::filesystem::path(rm_file).stem().string();
-						mat.specular_texture = context.get<texture>(texture_dir + "/" + stem);
+						mat.specular_texture = static_cast<asset_registry<gpu::context>*>(context.asset_registry_ptr())->get<texture>(texture_dir + "/" + stem);
 					}
 				}
 				else {

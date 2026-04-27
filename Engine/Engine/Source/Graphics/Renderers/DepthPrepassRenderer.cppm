@@ -49,9 +49,10 @@ export namespace gse::renderer::depth_prepass {
 
 auto gse::renderer::depth_prepass::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 
-	r.meshlet_shader = ctx.get<shader>("Shaders/Standard3D/meshlet_depth_only");
-	ctx.instantly_load(r.meshlet_shader);
+	r.meshlet_shader = assets.get<shader>("Shaders/Standard3D/meshlet_depth_only");
+	assets.instantly_load(r.meshlet_shader);
 
 	const auto meshlet_camera_ubo = r.meshlet_shader->uniform_block("CameraUBO");
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
@@ -76,8 +77,8 @@ auto gse::renderer::depth_prepass::system::initialize(const init_context& phase,
 			.commit();
 	}
 
-	r.skinned_shader = ctx.get<shader>("Shaders/Standard3D/skinned_depth_only");
-	ctx.instantly_load(r.skinned_shader);
+	r.skinned_shader = assets.get<shader>("Shaders/Standard3D/skinned_depth_only");
+	assets.instantly_load(r.skinned_shader);
 
 	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx, *r.skinned_shader, {
 		.depth = { .test = true, .write = true, .compare = gpu::compare_op::less },

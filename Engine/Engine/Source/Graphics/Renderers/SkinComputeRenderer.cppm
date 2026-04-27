@@ -39,9 +39,10 @@ export namespace gse::renderer::skin_compute {
 
 auto gse::renderer::skin_compute::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 
-	r.shader_handle = ctx.get<shader>("Shaders/Compute/skin_compute");
-	ctx.instantly_load(r.shader_handle);
+	r.shader_handle = assets.get<shader>("Shaders/Compute/skin_compute");
+	assets.instantly_load(r.shader_handle);
 
 	assert(r.shader_handle->is_compute(), std::source_location::current(), "Skin compute shader is not loaded as a compute shader");
 

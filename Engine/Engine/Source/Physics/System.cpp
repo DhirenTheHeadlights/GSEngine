@@ -23,6 +23,7 @@ import gse.log;
 import gse.math;
 import gse.meta;
 import gse.gpu;
+import gse.assets;
 
 auto gse::physics::create_joint(state& s, const joint_definition& def) -> joint_handle {
 	const auto handle = static_cast<joint_handle>(s.joints.size());
@@ -363,7 +364,8 @@ auto gse::physics::system::initialize(const init_context& phase, update_data& ud
 
 	if (phase.try_get<gpu::context>()) {
 		auto& ctx = phase.get<gpu::context>();
-		fd.gpu_solver.initialize_compute(ctx);
+		auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+		fd.gpu_solver.initialize_compute(ctx, assets);
 		s.gpu_buffers_created = fd.gpu_solver.buffers_created();
 	}
 }

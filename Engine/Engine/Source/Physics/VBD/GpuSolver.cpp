@@ -904,40 +904,40 @@ auto gse::vbd::gpu_solver::body_layout() const -> const buffer_layout& {
 	return m_body_layout;
 }
 
-auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
-	m_compute.predict = ctx.get<shader>("Shaders/VBDPhysics/vbd_predict");
-	m_compute.solve_color = ctx.get<shader>("Shaders/VBDPhysics/vbd_solve_color");
-	m_compute.update_lambda = ctx.get<shader>("Shaders/VBDPhysics/vbd_update_lambda");
-	m_compute.derive_velocities = ctx.get<shader>("Shaders/VBDPhysics/vbd_derive_velocities");
-	m_compute.finalize = ctx.get<shader>("Shaders/VBDPhysics/vbd_finalize");
-	m_compute.collision_reset = ctx.get<shader>("Shaders/VBDPhysics/collision_reset");
-	m_compute.collision_broad_phase = ctx.get<shader>("Shaders/VBDPhysics/collision_broad_phase");
-	m_compute.collision_narrow_phase = ctx.get<shader>("Shaders/VBDPhysics/collision_narrow_phase");
-	m_compute.collision_build_adjacency = ctx.get<shader>("Shaders/VBDPhysics/collision_build_adjacency");
-	m_compute.collision_grid_build = ctx.get<shader>("Shaders/VBDPhysics/collision_grid_build");
-	m_compute.update_joint_lambda = ctx.get<shader>("Shaders/VBDPhysics/vbd_update_joint_lambda");
-	m_compute.prepare_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_indirect");
-	m_compute.prepare_contact_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_contact_indirect");
-	m_compute.prepare_color_indirect = ctx.get<shader>("Shaders/VBDPhysics/vbd_prepare_color_indirect");
-	m_compute.freeze_jacobians = ctx.get<shader>("Shaders/VBDPhysics/vbd_freeze_jacobians");
-	m_compute.apply_jacobi = ctx.get<shader>("Shaders/VBDPhysics/vbd_apply_jacobi");
+auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx, asset_registry<gpu::context>& assets) -> void {
+	m_compute.predict = assets.get<shader>("Shaders/VBDPhysics/vbd_predict");
+	m_compute.solve_color = assets.get<shader>("Shaders/VBDPhysics/vbd_solve_color");
+	m_compute.update_lambda = assets.get<shader>("Shaders/VBDPhysics/vbd_update_lambda");
+	m_compute.derive_velocities = assets.get<shader>("Shaders/VBDPhysics/vbd_derive_velocities");
+	m_compute.finalize = assets.get<shader>("Shaders/VBDPhysics/vbd_finalize");
+	m_compute.collision_reset = assets.get<shader>("Shaders/VBDPhysics/collision_reset");
+	m_compute.collision_broad_phase = assets.get<shader>("Shaders/VBDPhysics/collision_broad_phase");
+	m_compute.collision_narrow_phase = assets.get<shader>("Shaders/VBDPhysics/collision_narrow_phase");
+	m_compute.collision_build_adjacency = assets.get<shader>("Shaders/VBDPhysics/collision_build_adjacency");
+	m_compute.collision_grid_build = assets.get<shader>("Shaders/VBDPhysics/collision_grid_build");
+	m_compute.update_joint_lambda = assets.get<shader>("Shaders/VBDPhysics/vbd_update_joint_lambda");
+	m_compute.prepare_indirect = assets.get<shader>("Shaders/VBDPhysics/vbd_prepare_indirect");
+	m_compute.prepare_contact_indirect = assets.get<shader>("Shaders/VBDPhysics/vbd_prepare_contact_indirect");
+	m_compute.prepare_color_indirect = assets.get<shader>("Shaders/VBDPhysics/vbd_prepare_color_indirect");
+	m_compute.freeze_jacobians = assets.get<shader>("Shaders/VBDPhysics/vbd_freeze_jacobians");
+	m_compute.apply_jacobi = assets.get<shader>("Shaders/VBDPhysics/vbd_apply_jacobi");
 
-	ctx.instantly_load(m_compute.predict);
-	ctx.instantly_load(m_compute.solve_color);
-	ctx.instantly_load(m_compute.update_lambda);
-	ctx.instantly_load(m_compute.derive_velocities);
-	ctx.instantly_load(m_compute.finalize);
-	ctx.instantly_load(m_compute.collision_reset);
-	ctx.instantly_load(m_compute.collision_broad_phase);
-	ctx.instantly_load(m_compute.collision_narrow_phase);
-	ctx.instantly_load(m_compute.collision_build_adjacency);
-	ctx.instantly_load(m_compute.collision_grid_build);
-	ctx.instantly_load(m_compute.update_joint_lambda);
-	ctx.instantly_load(m_compute.prepare_indirect);
-	ctx.instantly_load(m_compute.prepare_contact_indirect);
-	ctx.instantly_load(m_compute.prepare_color_indirect);
-	ctx.instantly_load(m_compute.freeze_jacobians);
-	ctx.instantly_load(m_compute.apply_jacobi);
+	assets.instantly_load(m_compute.predict);
+	assets.instantly_load(m_compute.solve_color);
+	assets.instantly_load(m_compute.update_lambda);
+	assets.instantly_load(m_compute.derive_velocities);
+	assets.instantly_load(m_compute.finalize);
+	assets.instantly_load(m_compute.collision_reset);
+	assets.instantly_load(m_compute.collision_broad_phase);
+	assets.instantly_load(m_compute.collision_narrow_phase);
+	assets.instantly_load(m_compute.collision_build_adjacency);
+	assets.instantly_load(m_compute.collision_grid_build);
+	assets.instantly_load(m_compute.update_joint_lambda);
+	assets.instantly_load(m_compute.prepare_indirect);
+	assets.instantly_load(m_compute.prepare_contact_indirect);
+	assets.instantly_load(m_compute.prepare_color_indirect);
+	assets.instantly_load(m_compute.freeze_jacobians);
+	assets.instantly_load(m_compute.apply_jacobi);
 
 	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.predict, "vbd_push_constants");
 	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.solve_color, "vbd_push_constants");

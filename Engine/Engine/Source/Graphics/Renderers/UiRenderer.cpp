@@ -97,9 +97,10 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 
 auto gse::renderer::ui::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
     auto& ctx = phase.get<gpu::context>();
+    auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 
-    r.sprite_shader = ctx.get<shader>("Shaders/Standard2D/sprite");
-    ctx.instantly_load(r.sprite_shader);
+    r.sprite_shader = assets.get<shader>("Shaders/Standard2D/sprite");
+    assets.instantly_load(r.sprite_shader);
 
     r.sprite_pipeline = gpu::create_graphics_pipeline(ctx, *r.sprite_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },
@@ -109,8 +110,8 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
         .push_constant_block = "push_constants",
     });
 
-    r.text_shader = ctx.get<shader>("Shaders/Standard2D/msdf");
-    ctx.instantly_load(r.text_shader);
+    r.text_shader = assets.get<shader>("Shaders/Standard2D/msdf");
+    assets.instantly_load(r.text_shader);
 
     r.text_pipeline = gpu::create_graphics_pipeline(ctx, *r.text_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },

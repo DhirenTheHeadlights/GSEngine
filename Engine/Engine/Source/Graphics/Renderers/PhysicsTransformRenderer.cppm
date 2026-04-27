@@ -49,9 +49,10 @@ export namespace gse::renderer::physics_transform {
 
 auto gse::renderer::physics_transform::system::initialize(const init_context& phase, resources& r, frame_data& fd) -> void {
 	auto& ctx = phase.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 
-	r.shader_handle = ctx.get<shader>("Shaders/Compute/physics_instance_transform");
-	ctx.instantly_load(r.shader_handle);
+	r.shader_handle = assets.get<shader>("Shaders/Compute/physics_instance_transform");
+	assets.instantly_load(r.shader_handle);
 
 	assert(r.shader_handle->is_compute(), std::source_location::current(), "Physics instance transform shader is not loaded as a compute shader");
 

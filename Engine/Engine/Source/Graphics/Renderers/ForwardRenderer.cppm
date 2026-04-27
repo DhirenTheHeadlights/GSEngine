@@ -99,6 +99,7 @@ export namespace gse::renderer::forward {
 
 auto gse::renderer::forward::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 
 	phase.channels.push<save::register_property>({
 		.category = "Graphics",
@@ -127,8 +128,8 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 		.enum_options = { { "Off", 0 }, { "Low", 1 }, { "Medium", 2 }, { "High", 3 } }
 	});
 
-	r.shader_handle = ctx.get<shader>("Shaders/Standard3D/meshlet_geometry");
-	ctx.instantly_load(r.shader_handle);
+	r.shader_handle = assets.get<shader>("Shaders/Standard3D/meshlet_geometry");
+	assets.instantly_load(r.shader_handle);
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 	const auto light_block = r.shader_handle->uniform_block("lights_ssbo");
@@ -210,8 +211,8 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	});
 
 
-	r.skinned_shader = ctx.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
-	ctx.instantly_load(r.skinned_shader);
+	r.skinned_shader = assets.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
+	assets.instantly_load(r.skinned_shader);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *r.skinned_shader);
@@ -230,8 +231,8 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	});
 
 
-	r.blank_texture = ctx.queue<texture>("blank", vec4f(1, 1, 1, 1));
-	ctx.instantly_load(r.blank_texture);
+	r.blank_texture = assets.queue<texture>("blank", vec4f(1, 1, 1, 1));
+	assets.instantly_load(r.blank_texture);
 }
 
 auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
