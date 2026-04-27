@@ -19,6 +19,7 @@ import gse.log;
 
 auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 
 	log::println(log::category::render, "RT shadow: initialized");
 
@@ -28,8 +29,8 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, fra
 		fd.instances[i].reserve(max_instances);
 	}
 
-	fd.tlas_update_shader = ctx.get<shader>("Shaders/Compute/tlas_transform_update");
-	ctx.instantly_load(fd.tlas_update_shader);
+	fd.tlas_update_shader = assets.get<shader>("Shaders/Compute/tlas_transform_update");
+	assets.instantly_load(fd.tlas_update_shader);
 
 	fd.tlas_update_pipeline = gpu::create_compute_pipeline(ctx, *fd.tlas_update_shader, "push_constants");
 

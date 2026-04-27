@@ -99,7 +99,8 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto initialize_compute(
-			gpu::context& ctx
+			gpu::context& ctx,
+			asset_registry<gpu::context>& assets
 		) -> void;
 
 		auto dispatch_compute(

@@ -248,10 +248,11 @@ auto gse::renderer::geometry_collector::system::resources::upload_skeleton_data(
 
 auto gse::renderer::geometry_collector::system::initialize(init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 	r.ctx = &ctx;
 
-	r.shader_handle = ctx.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
-	ctx.instantly_load(r.shader_handle);
+	r.shader_handle = assets.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
+	assets.instantly_load(r.shader_handle);
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 
@@ -307,8 +308,8 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 		});
 	}
 
-	auto skin_compute = ctx.get<shader>("Shaders/Compute/skin_compute");
-	ctx.instantly_load(skin_compute);
+	auto skin_compute = assets.get<shader>("Shaders/Compute/skin_compute");
+	assets.instantly_load(skin_compute);
 
 	const auto joint_block = skin_compute->uniform_block("skeletonData");
 	r.joint_stride = joint_block.size;

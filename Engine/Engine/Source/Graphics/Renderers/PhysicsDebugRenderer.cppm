@@ -10,6 +10,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.save;
 import gse.gpu;
+import gse.assets;
 
 import :camera_system;
 import gse.log;
@@ -150,6 +151,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(system::frame_data& fd
 
 auto gse::renderer::physics_debug::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 
 	phase.channels.push(save::register_property{
 		.category = "Graphics",
@@ -159,8 +161,8 @@ auto gse::renderer::physics_debug::system::initialize(const init_context& phase,
 		.type = typeid(bool)
 	});
 
-	r.shader_handle = ctx.get<shader>("Shaders/Standard3D/physics_debug");
-	ctx.instantly_load(r.shader_handle);
+	r.shader_handle = assets.get<shader>("Shaders/Standard3D/physics_debug");
+	assets.instantly_load(r.shader_handle);
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 

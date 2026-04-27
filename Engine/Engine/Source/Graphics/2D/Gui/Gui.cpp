@@ -32,7 +32,8 @@ import gse.save;
 
 auto gse::gui::system::initialize(init_context& phase, resources&, system_state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	s.available_fonts = ctx.enumerate_resources("Fonts", ".gfont");
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	s.available_fonts = asset_registry<gpu::context>::enumerate_resources("Fonts", ".gfont");
 
 	if (s.available_fonts.empty()) {
 		s.available_fonts.push_back("default");
@@ -42,8 +43,8 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 		s.font_index = 0;
 	}
 
-	s.gui_font = ctx.get<font>("Fonts/" + s.available_fonts[s.font_index]);
-	s.blank_texture = ctx.queue<texture>("blank", vec4f(1, 1, 1, 1));
+	s.gui_font = assets.get<font>("Fonts/" + s.available_fonts[s.font_index]);
+	s.blank_texture = assets.queue<texture>("blank", vec4f(1, 1, 1, 1));
 	s.menus = load(config::resource_path / s.file_path, s.menus);
 
 	std::vector<std::pair<std::string, int>> font_options;
@@ -158,6 +159,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 
 auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(ctx.assets);
 	const auto current_viewport_size = vec2f(gpu.window().viewport());
 
 	if (s.previous_viewport_size.x() > 0.f && s.previous_viewport_size.y() > 0.f) {
@@ -247,7 +249,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 
 	for (const auto& changed : ctx.read_channel<save::property_changed>()) {
 		if (changed.category == "UI" && changed.name == "Font") {
-			reload_font(s, gpu);
+			reload_font(s, assets);
 		}
 	}
 
@@ -458,7 +460,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 	s.tooltip.pending_widget_id.reset();
 
 	if (gpu.ui_focus()) {
-		cursor::render_to(gpu, s.sprite_commands, input_st.mouse_position());
+		cursor::render_to(assets, s.sprite_commands, input_st.mouse_position());
 	}
 
 	s.visible_menu_ids_last_frame.clear();
@@ -692,9 +694,9 @@ auto gse::gui::apply_scale(system_state& s, style sty, const float viewport_heig
 	return sty;
 }
 
-auto gse::gui::reload_font(system_state& s, const gpu::context& ctx) -> void {
+auto gse::gui::reload_font(system_state& s, const asset_registry<gpu::context>& assets) -> void {
 	if (s.font_index >= 0 && s.font_index < static_cast<int>(s.available_fonts.size())) {
-		s.gui_font = ctx.get<font>("Fonts/" + s.available_fonts[s.font_index]);
+		s.gui_font = assets.get<font>("Fonts/" + s.available_fonts[s.font_index]);
 	}
 }
 
