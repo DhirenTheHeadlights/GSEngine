@@ -25,6 +25,10 @@ export namespace gse {
 			void* ctx
 		) -> void;
 
+		auto set_asset_registry(
+			void* reg
+		) -> void;
+
 		auto initialize(
 		) -> void;
 
@@ -98,6 +102,7 @@ export namespace gse {
 		std::mutex m_deferred_mutex;
 		registry* m_registry = nullptr;
 		void* m_gpu_ctx = nullptr;
+		void* m_asset_registry = nullptr;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
 		async::rw_mutex_registry m_access_mutexes;
@@ -176,6 +181,7 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 		auto writer = m_channels_store.make_writer();
 		init_context phase{
 			.gpu_ctx = m_gpu_ctx,
+			.assets_ptr = m_asset_registry,
 			.reg = *m_registry,
 			.sched = *this,
 			.states = m_states,

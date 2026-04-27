@@ -12,6 +12,10 @@ auto gse::scheduler::set_gpu_context(void* ctx) -> void {
 	m_gpu_ctx = ctx;
 }
 
+auto gse::scheduler::set_asset_registry(void* reg) -> void {
+	m_asset_registry = reg;
+}
+
 auto gse::scheduler::push_deferred(gse::move_only_function<void()> fn) -> void {
 	std::lock_guard lock(m_deferred_mutex);
 	m_deferred.push_back(std::move(fn));
@@ -102,6 +106,7 @@ auto gse::scheduler::initialize() -> void {
 	auto writer = m_channels_store.make_writer();
 	init_context phase{
 		.gpu_ctx = m_gpu_ctx,
+		.assets_ptr = m_asset_registry,
 		.reg = *m_registry,
 		.sched = *this,
 		.states = m_states,
@@ -123,6 +128,7 @@ auto gse::scheduler::run_graph_update() -> void {
 
 	update_context u_ctx(
 		m_gpu_ctx,
+		m_asset_registry,
 		m_states,
 		m_resources_store,
 		m_channels_store,
@@ -166,6 +172,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 
 	frame_context f_ctx(
 		m_gpu_ctx,
+		m_asset_registry,
 		m_states,
 		m_resources_store,
 		m_channels_store,
@@ -216,6 +223,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 auto gse::scheduler::shutdown() -> void {
 	shutdown_context phase{
 		.gpu_ctx = m_gpu_ctx,
+		.assets_ptr = m_asset_registry,
 		.reg = *m_registry,
 	};
 

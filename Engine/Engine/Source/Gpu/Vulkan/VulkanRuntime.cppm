@@ -1,9 +1,9 @@
-export module gse.gpu.vulkan:vulkan_runtime;
+export module gse.gpu:vulkan_runtime;
 
 import std;
+import vulkan;
 
 import :vulkan_allocator;
-import :descriptor_buffer_types;
 
 export namespace gse::vulkan {
 	constexpr std::uint32_t max_frames_in_flight = 2;

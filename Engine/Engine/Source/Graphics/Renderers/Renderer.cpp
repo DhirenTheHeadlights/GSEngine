@@ -49,17 +49,17 @@ auto gse::renderer::system::resources::context_ref() const -> const gpu::context
 
 auto gse::renderer::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
 	r.ctx = &ctx;
+	r.assets = &assets;
 
-	ctx.add_loader<texture>();
-	ctx.add_loader<model>();
-	ctx.add_loader<skinned_model>();
-	ctx.add_loader<font>();
-	ctx.add_loader<skeleton>();
-	ctx.add_loader<clip_asset>();
-	ctx.add_loader<audio_clip>();
-
-	ctx.compile();
+	assets.add_loader<texture>();
+	assets.add_loader<model>();
+	assets.add_loader<skinned_model>();
+	assets.add_loader<font>();
+	assets.add_loader<skeleton>();
+	assets.add_loader<clip_asset>();
+	assets.add_loader<audio_clip>();
 
 	phase.sched.add_system<rt_shadow::system, rt_shadow::state>(phase.reg);
 	phase.sched.add_system<geometry_collector::system, geometry_collector::state>(phase.reg);
@@ -116,12 +116,13 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 
 auto gse::renderer::system::update(const update_context& ctx, state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
+	auto& assets = *static_cast<asset_registry<gpu::context>*>(ctx.assets);
 
-	if (s.hot_reload_enabled != gpu.hot_reload_enabled()) {
+	if (s.hot_reload_enabled != assets.hot_reload_enabled()) {
 		if (s.hot_reload_enabled) {
-			gpu.enable_hot_reload();
+			assets.enable_hot_reload();
 		} else {
-			gpu.disable_hot_reload();
+			assets.disable_hot_reload();
 		}
 	}
 
@@ -134,8 +135,8 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> async
 		log::println(log::category::render, "Profile dumped");
 	}
 
-	gpu.poll_assets();
-	gpu.process_resource_queue();
+	assets.poll_assets();
+	assets.process_resource_queue();
 	gpu.window().update(gpu.ui_focus());
 
 	ctx.channels.push<camera::ui_focus_update>({ .focus = gpu.ui_focus() });
@@ -156,6 +157,8 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> async
 
 auto gse::renderer::system::shutdown(const shutdown_context& phase) -> void {
 	auto& ctx = phase.get<gpu::context>();
-
+	if (auto* assets = static_cast<asset_registry<gpu::context>*>(phase.assets_ptr)) {
+		assets->shutdown();
+	}
 	ctx.shutdown();
 }

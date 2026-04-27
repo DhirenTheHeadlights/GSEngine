@@ -1,13 +1,13 @@
-export module gse.gpu.device:gpu_frame;
+export module gse.gpu:frame;
 
 import std;
+import vulkan;
 
-import gse.gpu.vulkan;
-import :gpu_device;
-import :gpu_swapchain;
-import :gpu_sync;
-import gse.gpu.types;
-
+import :vulkan_runtime;
+import :vulkan_allocator;
+import :device;
+import :swap_chain;
+import :types;
 import gse.os;
 import gse.core;
 

@@ -1,9 +1,12 @@
-export module gse.gpu.device:gpu_swapchain;
+export module gse.gpu:swap_chain;
 
 import std;
+import vulkan;
 
-import gse.gpu.vulkan;
-import :gpu_device;
+import :vulkan_runtime;
+import :vulkan_allocator;
+import :device_bootstrap;
+import :device;
 
 import gse.core;
 import gse.containers;

@@ -1,12 +1,9 @@
-export module gse.gpu:video_encoder;
+export module gse.graphics.video;
 
 import std;
 import vulkan;
 
-import gse.gpu.context;
-import gse.gpu.device;
-import gse.gpu.resources;
-import gse.gpu.vulkan;
+import gse.gpu;
 
 import gse.core;
 import gse.containers;

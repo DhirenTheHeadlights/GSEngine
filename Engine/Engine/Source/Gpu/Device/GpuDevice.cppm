@@ -1,10 +1,14 @@
-export module gse.gpu.device:gpu_device;
+export module gse.gpu:device;
 
 import std;
 import vulkan;
 
-import gse.gpu.vulkan;
-import gse.gpu.types;
+import :vulkan_allocator;
+import :vulkan_runtime;
+import :command_pools;
+import :descriptor_heap;
+import :device_bootstrap;
+import :types;
 
 import gse.os;
 import gse.core;
@@ -71,7 +75,7 @@ export namespace gse::gpu {
         ) -> vulkan::worker_command_pools&;
 
         [[nodiscard]] auto descriptor_buffer_props(
-        ) const -> const vulkan::descriptor_buffer_properties&;
+        ) const -> const gpu::descriptor_buffer_properties&;
 
         [[nodiscard]] auto video_encode_enabled(
         ) const -> bool;
@@ -87,8 +91,8 @@ export namespace gse::gpu {
         vulkan::queue_config m_queue;
         vulkan::command_config m_command;
         vulkan::worker_command_pools m_worker_pools;
-        std::unique_ptr<vulkan::descriptor_heap> m_descriptor_heap;
-        vulkan::descriptor_buffer_properties m_descriptor_buffer_props;
+        std::unique_ptr<gpu::descriptor_heap> m_descriptor_heap;
+        gpu::descriptor_buffer_properties m_descriptor_buffer_props;
         vk::Format m_surface_format;
         std::atomic<bool> m_device_lost_reported = false;
         bool m_video_encode_enabled = false;

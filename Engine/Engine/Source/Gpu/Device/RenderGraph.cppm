@@ -1,14 +1,19 @@
-export module gse.gpu.device:render_graph;
+export module gse.gpu:render_graph;
 
 import std;
+import vulkan;
 import gse.std_meta;
 
-import gse.gpu.types;
-import gse.gpu.vulkan;
-import gse.gpu.shader;
-import :gpu_device;
-import :gpu_swapchain;
-import :gpu_frame;
+import :types;
+import :vulkan_allocator;
+import :vulkan_runtime;
+import :vulkan_reflect;
+import :vulkan_uploader;
+import :descriptor_heap;
+import :shader;
+import :device;
+import :swap_chain;
+import :frame;
 
 import gse.assert;
 import gse.core;
@@ -524,6 +529,15 @@ export namespace gse::vulkan {
 
 export namespace gse::gpu {
 	using recording_context = vulkan::recording_context;
+	using render_graph = vulkan::render_graph;
+	using pass_builder = vulkan::pass_builder;
+	using record_awaitable = vulkan::record_awaitable;
+	using load_op = vulkan::load_op;
+	using color_output_info = vulkan::color_output_info;
+	using depth_output_info = vulkan::depth_output_info;
+	using resource_type = vulkan::resource_type;
+	using resource_ref = vulkan::resource_ref;
+	using resource_usage = vulkan::resource_usage;
 
 	auto storage_read(
 		const vulkan::buffer_resource& buf,

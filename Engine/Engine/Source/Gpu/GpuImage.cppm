@@ -1,11 +1,15 @@
-export module gse.gpu.resources:gpu_image;
+export module gse.gpu:image;
 
 import std;
+import vulkan;
 
-import gse.gpu.types;
-import gse.gpu.vulkan;
-import gse.gpu.device;
-import gse.gpu.context;
+import :types;
+import :vulkan_allocator;
+import :vulkan_reflect;
+import :vulkan_uploader;
+import :device;
+import :frame;
+import :context;
 
 import gse.assert;
 import gse.core;

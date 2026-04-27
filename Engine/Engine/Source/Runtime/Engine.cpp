@@ -49,9 +49,11 @@ auto gse::engine::initialize() -> void {
 		);
 
 		auto& ctx = *m_render_ctx.get();
-		ctx.add_loader<shader>();
-		ctx.compile();
+		m_assets = std::make_unique<asset_registry<gpu::context>>(ctx);
+		m_assets->add_loader<shader>();
+		m_assets->compile<shader_layout>();
 		m_scheduler.set_gpu_context(&ctx);
+		m_scheduler.set_asset_registry(m_assets.get());
 
 		m_scheduler.add_system<physics::system, physics::state>(reg);
 		m_scheduler.add_system<camera::system, camera::state>(reg);
@@ -144,9 +146,9 @@ auto gse::engine::render() -> void {
 		{
 			trace::scope_guard sg{trace_id<"render::end_frame">()};
 			m_render_ctx->end_frame();
-			{
+			if (m_assets) {
 				trace::scope_guard sg{trace_id<"end_frame::finalize_reloads">()};
-				m_render_ctx->finalize_reloads();
+				m_assets->finalize_reloads();
 			}
 		}
 	}

@@ -1,4 +1,4 @@
-export module gse.gpu.vulkan:device_bootstrap;
+export module gse.gpu:device_bootstrap;
 
 import std;
 import vulkan;
@@ -6,8 +6,7 @@ import vulkan;
 import :vulkan_runtime;
 import :vulkan_allocator;
 import :descriptor_heap;
-import :descriptor_buffer_types;
-import :gpu_command_pools;
+import :command_pools;
 
 import gse.os;
 import gse.save;
@@ -20,8 +19,8 @@ export namespace gse::vulkan {
         queue_config queue;
         command_config command;
         worker_command_pools worker_pools;
-        std::unique_ptr<descriptor_heap> desc_heap;
-        descriptor_buffer_properties desc_buf_props;
+        std::unique_ptr<gse::gpu::descriptor_heap> desc_heap;
+        gse::gpu::descriptor_buffer_properties desc_buf_props;
         vk::Format surface_format;
         bool video_encode_enabled = false;
     };

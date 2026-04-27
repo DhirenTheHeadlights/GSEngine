@@ -1,12 +1,16 @@
-export module gse.gpu.resources:gpu_compute;
+export module gse.gpu:compute;
 
 import std;
+import vulkan;
 
-import gse.gpu.types;
-import gse.gpu.vulkan;
-import gse.gpu.shader;
-import gse.gpu.device;
-import gse.gpu.context;
+import :types;
+import :vulkan_allocator;
+import :vulkan_reflect;
+import :descriptor_heap;
+import :shader;
+import :device;
+import :pipeline;
+import :context;
 
 import gse.assert;
 import gse.core;
@@ -35,7 +39,7 @@ export namespace gse::gpu {
 			vk::raii::QueryPool&& query_pool,
 			const vk::raii::Queue* queue,
 			const vk::raii::Device* device,
-			vulkan::descriptor_heap* heap,
+			descriptor_heap* heap,
 			float timestamp_period
 		);
 		compute_queue(compute_queue&&) noexcept = default;
@@ -50,12 +54,12 @@ export namespace gse::gpu {
 		) const -> compute_semaphore_state;
 
 		auto bind_pipeline(
-			const vulkan::pipeline_handle& p
+			const pipeline_handle& p
 		) const -> void;
 
 		auto bind_descriptors(
-			const vulkan::pipeline_handle& p,
-			const vulkan::descriptor_region& region
+			const pipeline_handle& p,
+			const descriptor_region& region
 		) const -> void;
 
 		auto dispatch(
@@ -82,7 +86,7 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto push(
-			const vulkan::pipeline_handle& p,
+			const pipeline_handle& p,
 			const cached_push_constants& cache
 		) const -> void;
 
@@ -120,7 +124,7 @@ export namespace gse::gpu {
 		vk::raii::QueryPool m_query_pool = nullptr;
 		const vk::raii::Queue* m_queue = nullptr;
 		const vk::raii::Device* m_device = nullptr;
-		vulkan::descriptor_heap* m_descriptor_heap = nullptr;
+		descriptor_heap* m_descriptor_heap = nullptr;
 		float m_timestamp_period = 0.0f;
 		std::uint32_t m_frame_count = 0;
 	};
@@ -196,7 +200,7 @@ gse::gpu::compute_queue::compute_queue(
 	vk::raii::QueryPool&& query_pool,
 	const vk::raii::Queue* queue,
 	const vk::raii::Device* device,
-	vulkan::descriptor_heap* heap,
+	descriptor_heap* heap,
 	const float timestamp_period
 ) : m_pool(std::move(pool)),
     m_cmd(std::move(cmd)),
@@ -268,11 +272,11 @@ auto gse::gpu::compute_queue::semaphore_state() const -> compute_semaphore_state
 	};
 }
 
-auto gse::gpu::compute_queue::bind_pipeline(const vulkan::pipeline_handle& p) const -> void {
+auto gse::gpu::compute_queue::bind_pipeline(const pipeline_handle& p) const -> void {
 	m_cmd.bindPipeline(vk::PipelineBindPoint::eCompute, p.pipeline);
 }
 
-auto gse::gpu::compute_queue::bind_descriptors(const vulkan::pipeline_handle& p, const vulkan::descriptor_region& region) const -> void {
+auto gse::gpu::compute_queue::bind_descriptors(const pipeline_handle& p, const descriptor_region& region) const -> void {
 	region.heap->bind(*m_cmd, vk::PipelineBindPoint::eCompute, p.layout, 0, region);
 }
 
@@ -315,7 +319,7 @@ auto gse::gpu::compute_queue::copy_buffer(const buffer_copy& copy) const -> void
 	);
 }
 
-auto gse::gpu::compute_queue::push(const vulkan::pipeline_handle& p, const cached_push_constants& cache) const -> void {
+auto gse::gpu::compute_queue::push(const pipeline_handle& p, const cached_push_constants& cache) const -> void {
 	cache.replay(*m_cmd, p.layout);
 }
 

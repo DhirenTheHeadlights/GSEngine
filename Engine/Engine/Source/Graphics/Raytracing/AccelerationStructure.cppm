@@ -1,13 +1,9 @@
-export module gse.gpu:acceleration_structure;
+export module gse.graphics.raytracing;
 
 import std;
 import vulkan;
 
-import gse.gpu.types;
-import gse.gpu.resources;
-import gse.gpu.device;
-import gse.gpu.context;
-import gse.gpu.vulkan;
+import gse.gpu;
 
 import gse.core;
 import gse.containers;

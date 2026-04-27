@@ -1,4 +1,4 @@
-export module gse.gpu.vulkan:vulkan_allocator;
+export module gse.gpu:vulkan_allocator;
 
 import std;
 import vulkan;
