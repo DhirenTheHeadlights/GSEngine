@@ -10,6 +10,8 @@ import :device;
 import :context;
 import :shader;
 
+import gse.assets;
+import gse.assert;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -21,6 +23,29 @@ export namespace gse::gpu {
 		vk::Pipeline pipeline = nullptr;
 		vk::PipelineLayout layout = nullptr;
 		bind_point point = bind_point::graphics;
+	};
+
+	struct push_constant_member {
+		std::uint32_t offset = 0;
+		std::uint32_t size = 0;
+	};
+
+	class cached_push_constants {
+	public:
+		std::unordered_map<std::string, push_constant_member> members;
+		std::vector<std::byte> data;
+		stage_flags stage_flags{};
+
+		template <typename T>
+		auto set(
+			std::string_view name,
+			const T& value
+		) -> void;
+
+		auto replay(
+			vk::CommandBuffer cmd,
+			vk::PipelineLayout layout
+		) const -> void;
 	};
 
 	class pipeline final : public non_copyable {
@@ -74,13 +99,13 @@ export namespace gse::gpu {
 
 	auto create_graphics_pipeline(
 		context& ctx,
-		const shader& s,
+		const resource::handle<shader>& s,
 		const graphics_pipeline_desc& desc = {}
 	) -> pipeline;
 
 	auto create_compute_pipeline(
 		context& ctx,
-		const shader& s,
+		const resource::handle<shader>& s,
 		std::string_view push_constant_block = {}
 	) -> pipeline;
 
@@ -88,6 +113,51 @@ export namespace gse::gpu {
 		context& ctx,
 		const sampler_desc& desc = {}
 	) -> sampler;
+
+	auto cache_push_block(
+		const resource::handle<shader>& s,
+		std::string_view block_name
+	) -> cached_push_constants;
+}
+
+template <typename T>
+auto gse::gpu::cached_push_constants::set(const std::string_view name, const T& value) -> void {
+	const auto it = members.find(std::string(name));
+	assert(it != members.end(), std::source_location::current(), "Push constant member '{}' not found", name);
+	assert(sizeof(T) <= it->second.size, std::source_location::current(), "Push constant member '{}' size mismatch", name);
+	gse::memcpy(data.data() + it->second.offset, value);
+}
+
+auto gse::gpu::cached_push_constants::replay(const vk::CommandBuffer cmd, const vk::PipelineLayout layout) const -> void {
+	const vk::PushConstantsInfoKHR info{
+		.layout = layout,
+		.stageFlags = vulkan::to_vk(stage_flags),
+		.offset = 0,
+		.size = static_cast<std::uint32_t>(data.size()),
+		.pValues = data.data()
+	};
+	cmd.pushConstants2KHR(info);
+}
+
+auto gse::gpu::cache_push_block(const resource::handle<shader>& s, const std::string_view block_name) -> cached_push_constants {
+	const auto blocks = s->push_constants();
+	const auto it = std::ranges::find_if(blocks, [&](const shader::uniform_block& b) {
+		return b.name == block_name;
+	});
+
+	assert(it != blocks.end(), std::source_location::current(), "Push constant block '{}' not found", block_name);
+	std::unordered_map<std::string, push_constant_member> members;
+	for (const auto& [name, member] : it->members) {
+		members[name] = {
+			.offset = member.offset,
+			.size = member.size
+		};
+	}
+	return {
+		.members = std::move(members),
+		.data = std::vector(it->size, std::byte{ 0 }),
+		.stage_flags = it->stage_flags,
+	};
 }
 
 gse::gpu::pipeline::pipeline(
@@ -117,7 +187,7 @@ gse::gpu::sampler::operator bool() const {
 	return *m_sampler != nullptr;
 }
 
-auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const graphics_pipeline_desc& desc) -> pipeline {
+auto gse::gpu::create_graphics_pipeline(context& ctx, const resource::handle<shader>& s, const graphics_pipeline_desc& desc) -> pipeline {
 	auto& dev = ctx.device();
 	auto& vk_device = dev.logical_device();
 	const auto& cache = ctx.shader_registry().cache(s);
@@ -131,7 +201,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 	const bool has_push = !desc.push_constant_block.empty();
 	vk::PushConstantRange pc_range;
 	if (has_push) {
-		const auto pb = s.push_block(desc.push_constant_block);
+		const auto pb = s->push_block(desc.push_constant_block);
 		pc_range = vk::PushConstantRange{
 			vulkan::to_vk(pb.stage_flags),
 			0,
@@ -264,7 +334,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 		};
 	};
 
-	if (s.is_mesh_shader()) {
+	if (s->is_mesh_shader()) {
 		const std::array stages = {
 			make_stage(gpu::shader_stage::task, vk::ShaderStageFlagBits::eTaskEXT),
 			make_stage(gpu::shader_stage::mesh, vk::ShaderStageFlagBits::eMeshEXT),
@@ -296,7 +366,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 		make_stage(gpu::shader_stage::fragment, vk::ShaderStageFlagBits::eFragment),
 	};
 
-	const auto& vi = s.vertex_input_data();
+	const auto& vi = s->vertex_input_data();
 	std::vector<vk::VertexInputBindingDescription> vk_bindings;
 	vk_bindings.reserve(vi.bindings.size());
 	for (const auto& b : vi.bindings) {
@@ -345,7 +415,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 	return pipeline(std::move(handle), std::move(pipeline_layout), bind_point::graphics);
 }
 
-auto gse::gpu::create_compute_pipeline(context& ctx, const shader& s, const std::string_view push_constant_block) -> pipeline {
+auto gse::gpu::create_compute_pipeline(context& ctx, const resource::handle<shader>& s, const std::string_view push_constant_block) -> pipeline {
 	auto& vk_device = ctx.logical_device();
 	const auto& cache = ctx.shader_registry().cache(s);
 
@@ -358,7 +428,7 @@ auto gse::gpu::create_compute_pipeline(context& ctx, const shader& s, const std:
 	const bool has_push = !push_constant_block.empty();
 	vk::PushConstantRange pc_range;
 	if (has_push) {
-		const auto pb = s.push_block(push_constant_block);
+		const auto pb = s->push_block(push_constant_block);
 		pc_range = vk::PushConstantRange{
 			vulkan::to_vk(pb.stage_flags),
 			0,

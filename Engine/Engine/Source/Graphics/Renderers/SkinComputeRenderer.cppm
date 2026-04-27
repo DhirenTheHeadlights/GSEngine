@@ -39,7 +39,7 @@ export namespace gse::renderer::skin_compute {
 
 auto gse::renderer::skin_compute::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 
 	r.shader_handle = assets.get<shader>("Shaders/Compute/skin_compute");
 	assets.instantly_load(r.shader_handle);
@@ -48,13 +48,13 @@ auto gse::renderer::skin_compute::system::initialize(const init_context& phase, 
 
 	const auto* gc = phase.try_resources_of<geometry_collector::system::resources>();
 
-	r.pipeline = gpu::create_compute_pipeline(ctx, *r.shader_handle, "push_constants");
+	r.pipeline = gpu::create_compute_pipeline(ctx, r.shader_handle, "push_constants");
 
 	constexpr std::size_t skin_buffer_size = geometry_collector::system::resources::max_skin_matrices * sizeof(mat4f);
 	constexpr std::size_t local_pose_size = geometry_collector::system::resources::max_skin_matrices * sizeof(mat4f);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
 
 		gpu::descriptor_writer(ctx, r.shader_handle, r.descriptors[i])
 			.buffer("skeletonData", gc->skeleton_buffer, 0, geometry_collector::system::resources::max_joints * gc->joint_stride)
@@ -84,7 +84,7 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resour
 
 	const auto frame_index = gpu.graph().current_frame();
 
-	auto skin_pc = r.shader_handle->cache_push_block("push_constants");
+	auto skin_pc = gpu::cache_push_block(r.shader_handle, "push_constants");
 	skin_pc.set("joint_count", gc_s.current_joint_count);
 	skin_pc.set("instance_count", data.pending_compute_instance_count);
 	skin_pc.set("local_pose_stride", gc_s.current_joint_count);

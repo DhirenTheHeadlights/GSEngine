@@ -99,7 +99,7 @@ export namespace gse::renderer::forward {
 
 auto gse::renderer::forward::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 
 	phase.channels.push<save::register_property>({
 		.category = "Graphics",
@@ -155,7 +155,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
 
 		gpu::descriptor_writer(ctx, r.shader_handle, r.descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
@@ -201,7 +201,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 		}
 	});
 
-	r.pipeline = gpu::create_graphics_pipeline(ctx, *r.shader_handle, {
+	r.pipeline = gpu::create_graphics_pipeline(ctx, r.shader_handle, {
 		.depth = { 
 			.test = true, 
 			.write = false, 
@@ -215,14 +215,14 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	assets.instantly_load(r.skinned_shader);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *r.skinned_shader);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, r.skinned_shader);
 
 		gpu::descriptor_writer(ctx, r.skinned_shader, r.skinned_descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
 
-	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx, *r.skinned_shader, {
+	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx, r.skinned_shader, {
 		.depth = { 
 			.test = true, 
 			.write = false, 
@@ -256,9 +256,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
 
-	r.shader_handle->set_uniform("CameraUBO.view", view, cam_alloc);
-	r.shader_handle->set_uniform("CameraUBO.proj", proj, cam_alloc);
-	r.shader_handle->set_uniform("CameraUBO.inv_view", view.inverse(), cam_alloc);
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.view", view);
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.proj", proj);
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.inv_view", view.inverse());
 
 	auto dir_chunk = ctx.components<directional_light_component>();
 	auto spot_chunk = ctx.components<spot_light_component>();
@@ -439,7 +439,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 			const std::uint32_t ml_count = mesh.meshlet_count();
 			const std::uint32_t task_groups = (ml_count + 31) / 32;
 
-			auto pc = r.shader_handle->cache_push_block("push_constants");
+			auto pc = gpu::cache_push_block(r.shader_handle, "push_constants");
 			pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
 			pc.set("meshlet_count", ml_count);
 			pc.set("first_instance", batch.first_instance);

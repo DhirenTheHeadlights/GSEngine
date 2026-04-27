@@ -148,12 +148,11 @@ export namespace gse::gpu {
 			void* registry
 		) -> void;
 
-		template <typename Self>
-		[[nodiscard]] auto asset_registry_ptr(
-			this Self&& self
-		) -> void* {
-			return self.m_asset_registry;
-		}
+		[[nodiscard]] auto assets(
+		) -> asset_registry<context>&;
+
+		[[nodiscard]] auto try_assets(
+		) -> asset_registry<context>*;
 
 	private:
 		gse::window m_window;
@@ -350,4 +349,12 @@ auto gse::gpu::context::wait_idle() const -> void {
 
 auto gse::gpu::context::set_asset_registry(void* registry) -> void {
 	m_asset_registry = registry;
+}
+
+auto gse::gpu::context::assets() -> asset_registry<context>& {
+	return *static_cast<asset_registry<context>*>(m_asset_registry);
+}
+
+auto gse::gpu::context::try_assets() -> asset_registry<context>* {
+	return static_cast<asset_registry<context>*>(m_asset_registry);
 }

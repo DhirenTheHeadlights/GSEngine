@@ -24,7 +24,7 @@ import gse.diag;
 export namespace gse::gpu {
 	auto allocate_descriptors(
 		context& ctx,
-		const shader& s
+		const resource::handle<shader>& s
 	) -> descriptor_region;
 
 	class descriptor_writer final : public non_copyable {
@@ -109,7 +109,7 @@ export namespace gse::gpu {
 	};
 }
 
-auto gse::gpu::allocate_descriptors(context& ctx, const shader& s) -> descriptor_region {
+auto gse::gpu::allocate_descriptors(context& ctx, const resource::handle<shader>& s) -> descriptor_region {
 	const auto& cache = ctx.shader_registry().cache(s);
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
 	assert(persistent_idx < cache.layout_handles.size(), std::source_location::current(), "Shader has no persistent descriptor set to allocate");
@@ -123,14 +123,14 @@ auto gse::gpu::allocate_descriptors(context& ctx, const shader& s) -> descriptor
 namespace {
 	auto build_push_writer(
 		gse::gpu::context& ctx,
-		const gse::shader& s
+		const gse::resource::handle<gse::shader>& s
 	) -> gse::gpu::descriptor_set_writer {
 		const auto& cache = ctx.shader_registry().cache(s);
 		auto& heap = ctx.descriptor_heap();
 		const auto& props = heap.props();
 
 		const auto push_idx = static_cast<std::uint32_t>(gse::gpu::descriptor_set_type::push);
-		const auto& layout_data = s.layout_data();
+		const auto& layout_data = s->layout_data();
 
 		auto set_it = layout_data.sets.find(gse::gpu::descriptor_set_type::push);
 		if (set_it == layout_data.sets.end()) {
@@ -174,9 +174,9 @@ namespace {
 	}
 }
 
-gse::gpu::descriptor_writer::descriptor_writer(context& ctx, resource::handle<shader> s, descriptor_region& region) : m_cache_entry(&ctx.shader_registry().cache(*s)), m_logical_device(&ctx.logical_device()), m_shader(std::move(s)), m_region(&region) {}
+gse::gpu::descriptor_writer::descriptor_writer(context& ctx, resource::handle<shader> s, descriptor_region& region) : m_cache_entry(&ctx.shader_registry().cache(s)), m_logical_device(&ctx.logical_device()), m_shader(std::move(s)), m_region(&region) {}
 
-gse::gpu::descriptor_writer::descriptor_writer(context& ctx, resource::handle<shader> s) : m_cache_entry(&ctx.shader_registry().cache(*s)), m_logical_device(&ctx.logical_device()), m_shader(std::move(s)), m_mode(mode::push), m_push_writer(build_push_writer(ctx, *m_shader)) {}
+gse::gpu::descriptor_writer::descriptor_writer(context& ctx, resource::handle<shader> s) : m_cache_entry(&ctx.shader_registry().cache(s)), m_logical_device(&ctx.logical_device()), m_shader(std::move(s)), m_mode(mode::push), m_push_writer(build_push_writer(ctx, m_shader)) {}
 
 auto gse::gpu::descriptor_writer::find_binding_index(const std::string_view name) const -> std::uint32_t {
 	for (const auto& [type, bindings] : m_shader->layout_data().sets | std::views::values) {

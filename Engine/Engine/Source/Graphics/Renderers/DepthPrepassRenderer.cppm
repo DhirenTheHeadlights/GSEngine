@@ -49,7 +49,7 @@ export namespace gse::renderer::depth_prepass {
 
 auto gse::renderer::depth_prepass::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 
 	r.meshlet_shader = assets.get<shader>("Shaders/Standard3D/meshlet_depth_only");
 	assets.instantly_load(r.meshlet_shader);
@@ -62,7 +62,7 @@ auto gse::renderer::depth_prepass::system::initialize(const init_context& phase,
 		});
 	}
 
-	r.meshlet_pipeline = gpu::create_graphics_pipeline(ctx, *r.meshlet_shader, {
+	r.meshlet_pipeline = gpu::create_graphics_pipeline(ctx, r.meshlet_shader, {
 		.depth = { .test = true, .write = true, .compare = gpu::compare_op::less },
 		.color = gpu::color_format::none,
 		.push_constant_block = "push_constants"
@@ -70,7 +70,7 @@ auto gse::renderer::depth_prepass::system::initialize(const init_context& phase,
 
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.meshlet_descriptors[i] = gpu::allocate_descriptors(ctx, *r.meshlet_shader);
+		r.meshlet_descriptors[i] = gpu::allocate_descriptors(ctx, r.meshlet_shader);
 
 		gpu::descriptor_writer(ctx, r.meshlet_shader, r.meshlet_descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, meshlet_camera_ubo.size)
@@ -80,7 +80,7 @@ auto gse::renderer::depth_prepass::system::initialize(const init_context& phase,
 	r.skinned_shader = assets.get<shader>("Shaders/Standard3D/skinned_depth_only");
 	assets.instantly_load(r.skinned_shader);
 
-	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx, *r.skinned_shader, {
+	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx, r.skinned_shader, {
 		.depth = { .test = true, .write = true, .compare = gpu::compare_op::less },
 		.color = gpu::color_format::none
 	});
@@ -88,7 +88,7 @@ auto gse::renderer::depth_prepass::system::initialize(const init_context& phase,
 
 	const auto skinned_camera_ubo = r.skinned_shader->uniform_block("CameraUBO");
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *r.skinned_shader);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, r.skinned_shader);
 
 		gpu::descriptor_writer(ctx, r.skinned_shader, r.skinned_descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, skinned_camera_ubo.size)
@@ -122,10 +122,10 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
-	r.meshlet_shader->set_uniform("CameraUBO.view", view, cam_alloc);
-	r.meshlet_shader->set_uniform("CameraUBO.proj", proj, cam_alloc);
-	r.skinned_shader->set_uniform("CameraUBO.view", view, cam_alloc);
-	r.skinned_shader->set_uniform("CameraUBO.proj", proj, cam_alloc);
+	r.meshlet_shader->set_uniform(cam_alloc.bytes(), "CameraUBO.view", view);
+	r.meshlet_shader->set_uniform(cam_alloc.bytes(), "CameraUBO.proj", proj);
+	r.skinned_shader->set_uniform(cam_alloc.bytes(), "CameraUBO.view", view);
+	r.skinned_shader->set_uniform(cam_alloc.bytes(), "CameraUBO.proj", proj);
 
 	const auto ext = gpu.graph().extent();
 
@@ -170,7 +170,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
 			const std::uint32_t task_groups = (meshlet_count + 31) / 32;
 
-			auto pc = r.meshlet_shader->cache_push_block("push_constants");
+			auto pc = gpu::cache_push_block(r.meshlet_shader, "push_constants");
 			pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
 			pc.set("meshlet_count", meshlet_count);
 			pc.set("first_instance", batch.first_instance);

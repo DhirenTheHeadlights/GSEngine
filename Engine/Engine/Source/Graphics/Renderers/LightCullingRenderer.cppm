@@ -127,7 +127,7 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(system::resources& r, st
 
 auto gse::renderer::light_culling::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 	r.ctx = &ctx;
 
 	r.shader_handle = assets.get<shader>("Shaders/Compute/light_culling");
@@ -135,7 +135,7 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 	assert(r.shader_handle->is_compute(), std::source_location::current(), "Shader for light culling system must be a compute shader");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
 	}
 
 	const auto params_block = r.shader_handle->uniform_block("CullingParams");
@@ -164,7 +164,7 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 		.max_lod = 1.0f
 	});
 
-	r.pipeline = gpu::create_compute_pipeline(ctx, *r.shader_handle);
+	r.pipeline = gpu::create_compute_pipeline(ctx, r.shader_handle);
 
 	rebuild_tile_buffers(r, s);
 
@@ -195,12 +195,12 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 	const auto inv_proj = proj.inverse();
 
 	const auto& params_alloc = r.culling_params_buffers[frame_index];
-	r.shader_handle->set_uniform("CullingParams.projection", proj, params_alloc);
-	r.shader_handle->set_uniform("CullingParams.inv_proj", inv_proj, params_alloc);
+	r.shader_handle->set_uniform(params_alloc.bytes(), "CullingParams.projection", proj);
+	r.shader_handle->set_uniform(params_alloc.bytes(), "CullingParams.inv_proj", inv_proj);
 
 	const auto extent = graph.extent();
 	const std::array screen_size_arr = { extent.x(), extent.y() };
-	r.shader_handle->set_uniform("CullingParams.screen_size", screen_size_arr, params_alloc);
+	r.shader_handle->set_uniform(params_alloc.bytes(), "CullingParams.screen_size", screen_size_arr);
 
 	const auto dir_chunk = ctx.components<directional_light_component>();
 	const auto spot_chunk = ctx.components<spot_light_component>();
@@ -284,7 +284,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 	}
 
 	const std::uint32_t num_lights = static_cast<std::uint32_t>(light_count);
-	r.shader_handle->set_uniform("CullingParams.num_lights", num_lights, params_alloc);
+	r.shader_handle->set_uniform(params_alloc.bytes(), "CullingParams.num_lights", num_lights);
 
 	const auto tiles = s.tile_count();
 

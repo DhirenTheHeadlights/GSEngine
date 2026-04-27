@@ -49,7 +49,7 @@ export namespace gse::renderer::cull_compute {
 
 auto gse::renderer::cull_compute::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 
 	r.shader_handle = assets.get<shader>("Shaders/Compute/cull_instances");
 	assets.instantly_load(r.shader_handle);
@@ -67,7 +67,7 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 
 	const auto* gc_r = phase.try_resources_of<geometry_collector::system::resources>();
 
-	r.pipeline = gpu::create_compute_pipeline(ctx, *r.shader_handle, "push_constants");
+	r.pipeline = gpu::create_compute_pipeline(ctx, r.shader_handle, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
@@ -84,8 +84,8 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.normal_descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *r.shader_handle);
+		r.normal_descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
@@ -189,7 +189,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 	rec.bind(r.pipeline);
 
 	if (!normal_batches.empty()) {
-		auto normal_pc = r.shader_handle->cache_push_block("push_constants");
+		auto normal_pc = gpu::cache_push_block(r.shader_handle, "push_constants");
 		normal_pc.set("batch_offset", 0u);
 
 		rec.bind_descriptors(r.pipeline, r.normal_descriptors[frame_index]);
@@ -198,7 +198,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 	}
 
 	if (!skinned_batches.empty()) {
-		auto skinned_pc = r.shader_handle->cache_push_block("push_constants");
+		auto skinned_pc = gpu::cache_push_block(r.shader_handle, "push_constants");
 		skinned_pc.set("batch_offset", static_cast<std::uint32_t>(normal_batches.size()));
 
 		rec.bind_descriptors(r.pipeline, r.skinned_descriptors[frame_index]);

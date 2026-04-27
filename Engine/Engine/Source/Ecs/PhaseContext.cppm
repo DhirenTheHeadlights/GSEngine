@@ -6,6 +6,7 @@ import gse.assert;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
+import gse.assets;
 
 import :component;
 import :registries;
@@ -31,6 +32,14 @@ export namespace gse {
 		template <typename T>
 		auto try_get(
 		) const -> T*;
+
+		template <typename Context>
+		auto assets(
+		) const -> asset_registry<Context>&;
+
+		template <typename Context>
+		auto try_assets(
+		) const -> asset_registry<Context>*;
 
 		template <typename State>
 		auto state_of(
@@ -61,6 +70,14 @@ export namespace gse {
 		template <typename T>
 		auto try_get(
 		) const -> T*;
+
+		template <typename Context>
+		auto assets(
+		) const -> asset_registry<Context>&;
+
+		template <typename Context>
+		auto try_assets(
+		) const -> asset_registry<Context>*;
 	};
 
 	template <typename S, typename State>
@@ -116,4 +133,24 @@ auto gse::shutdown_context::get() const -> T& {
 template <typename T>
 auto gse::shutdown_context::try_get() const -> T* {
 	return static_cast<T*>(gpu_ctx);
+}
+
+template <typename Context>
+auto gse::init_context::assets() const -> asset_registry<Context>& {
+	return *static_cast<asset_registry<Context>*>(assets_ptr);
+}
+
+template <typename Context>
+auto gse::init_context::try_assets() const -> asset_registry<Context>* {
+	return static_cast<asset_registry<Context>*>(assets_ptr);
+}
+
+template <typename Context>
+auto gse::shutdown_context::assets() const -> asset_registry<Context>& {
+	return *static_cast<asset_registry<Context>*>(assets_ptr);
+}
+
+template <typename Context>
+auto gse::shutdown_context::try_assets() const -> asset_registry<Context>* {
+	return static_cast<asset_registry<Context>*>(assets_ptr);
 }

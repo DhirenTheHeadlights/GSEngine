@@ -32,7 +32,7 @@ import gse.save;
 
 auto gse::gui::system::initialize(init_context& phase, resources&, system_state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+	auto& assets = phase.assets<gpu::context>();
 	s.available_fonts = asset_registry<gpu::context>::enumerate_resources("Fonts", ".gfont");
 
 	if (s.available_fonts.empty()) {
@@ -159,7 +159,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 
 auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
-	auto& assets = *static_cast<asset_registry<gpu::context>*>(ctx.assets);
+	auto& assets = ctx.assets<gpu::context>();
 	const auto current_viewport_size = vec2f(gpu.window().viewport());
 
 	if (s.previous_viewport_size.x() > 0.f && s.previous_viewport_size.y() > 0.f) {

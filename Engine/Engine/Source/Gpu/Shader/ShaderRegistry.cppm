@@ -8,6 +8,7 @@ import :shader;
 import :shader_layout;
 import :vulkan_reflect;
 
+import gse.assets;
 import gse.log;
 import gse.core;
 import gse.containers;
@@ -38,7 +39,7 @@ export namespace gse::gpu {
 		) -> void;
 
 		[[nodiscard]] auto cache(
-			const shader& s
+			const resource::handle<shader>& s
 		) -> const vulkan::shader_cache_entry&;
 	private:
 		vk::raii::Device* m_device;
@@ -67,7 +68,7 @@ auto gse::gpu::shader_registry::load_layouts(const std::filesystem::path& layout
 	}
 }
 
-auto gse::gpu::shader_registry::cache(const shader& s) -> const vulkan::shader_cache_entry& {
+auto gse::gpu::shader_registry::cache(const resource::handle<shader>& s) -> const vulkan::shader_cache_entry& {
 	if (const auto it = m_cache.find(s.id()); it != m_cache.end()) {
 		return it->second;
 	}
@@ -75,7 +76,7 @@ auto gse::gpu::shader_registry::cache(const shader& s) -> const vulkan::shader_c
 	vulkan::shader_cache_entry entry;
 
 	auto create_module = [&](const shader_stage stage) -> vk::raii::ShaderModule {
-		const auto spirv = s.spirv(stage);
+		const auto spirv = s->spirv(stage);
 		if (spirv.empty()) return nullptr;
 
 		return m_device->createShaderModule({
@@ -84,9 +85,9 @@ auto gse::gpu::shader_registry::cache(const shader& s) -> const vulkan::shader_c
 		});
 	};
 
-	if (s.is_compute()) {
+	if (s->is_compute()) {
 		entry.modules.emplace(shader_stage::compute, create_module(shader_stage::compute));
-	} else if (s.is_mesh_shader()) {
+	} else if (s->is_mesh_shader()) {
 		entry.modules.emplace(shader_stage::task, create_module(shader_stage::task));
 		entry.modules.emplace(shader_stage::mesh, create_module(shader_stage::mesh));
 		entry.modules.emplace(shader_stage::fragment, create_module(shader_stage::fragment));
@@ -95,8 +96,8 @@ auto gse::gpu::shader_registry::cache(const shader& s) -> const vulkan::shader_c
 		entry.modules.emplace(shader_stage::fragment, create_module(shader_stage::fragment));
 	}
 
-	const auto& layout_name = s.layout_name();
-	const auto& [sets] = s.layout_data();
+	const auto& layout_name = s->layout_name();
+	const auto& [sets] = s->layout_data();
 
 	const shader_layout* external_layout = nullptr;
 	if (!layout_name.empty()) {

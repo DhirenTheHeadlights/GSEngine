@@ -97,12 +97,12 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 
 auto gse::renderer::ui::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
     auto& ctx = phase.get<gpu::context>();
-    auto& assets = *static_cast<asset_registry<gpu::context>*>(phase.assets_ptr);
+    auto& assets = phase.assets<gpu::context>();
 
     r.sprite_shader = assets.get<shader>("Shaders/Standard2D/sprite");
     assets.instantly_load(r.sprite_shader);
 
-    r.sprite_pipeline = gpu::create_graphics_pipeline(ctx, *r.sprite_shader, {
+    r.sprite_pipeline = gpu::create_graphics_pipeline(ctx, r.sprite_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },
         .depth = { .test = false, .write = false },
         .blend = gpu::blend_preset::alpha_premultiplied,
@@ -113,7 +113,7 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
     r.text_shader = assets.get<shader>("Shaders/Standard2D/msdf");
     assets.instantly_load(r.text_shader);
 
-    r.text_pipeline = gpu::create_graphics_pipeline(ctx, *r.text_shader, {
+    r.text_pipeline = gpu::create_graphics_pipeline(ctx, r.text_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },
         .depth = { .test = false, .write = false },
         .blend = gpu::blend_preset::alpha_premultiplied,
@@ -304,10 +304,10 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, fr
         meters(1.0f)
     );
 
-    auto sprite_pc = r.sprite_shader->cache_push_block("push_constants");
+    auto sprite_pc = gpu::cache_push_block(r.sprite_shader, "push_constants");
     sprite_pc.set("projection", projection);
 
-    auto text_pc = r.text_shader->cache_push_block("push_constants");
+    auto text_pc = gpu::cache_push_block(r.text_shader, "push_constants");
     text_pc.set("projection", projection);
 
     auto pass = gpu.graph().add_pass<ui::state>();

@@ -6,6 +6,7 @@ import gse.assert;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
+import gse.assets;
 
 import :phase_context;
 import :registries;
@@ -13,7 +14,7 @@ import :registries;
 export namespace gse {
 	struct task_context {
 		void* gpu_ctx = nullptr;
-		void* assets = nullptr;
+		void* assets_ptr = nullptr;
 		state_registry& states;
 		resource_registry& resources_store;
 		channel_registry& channels_store;
@@ -28,6 +29,14 @@ export namespace gse {
 		template <typename T>
 		auto try_get(
 		) const -> T*;
+
+		template <typename Context>
+		auto assets(
+		) const -> asset_registry<Context>&;
+
+		template <typename Context>
+		auto try_assets(
+		) const -> asset_registry<Context>*;
 
 		template <typename State>
 		auto state_of(
@@ -67,6 +76,16 @@ auto gse::task_context::get() const -> T& {
 template <typename T>
 auto gse::task_context::try_get() const -> T* {
 	return static_cast<T*>(gpu_ctx);
+}
+
+template <typename Context>
+auto gse::task_context::assets() const -> asset_registry<Context>& {
+	return *static_cast<asset_registry<Context>*>(assets_ptr);
+}
+
+template <typename Context>
+auto gse::task_context::try_assets() const -> asset_registry<Context>* {
+	return static_cast<asset_registry<Context>*>(assets_ptr);
 }
 
 template <typename State>

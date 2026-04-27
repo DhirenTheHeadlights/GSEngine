@@ -23,7 +23,16 @@ export namespace gse {
 			Context& context
 		);
 
-		~asset_registry() override;
+		~asset_registry(
+		) override;
+
+		asset_registry(
+			asset_registry&&
+		) noexcept = default;
+
+		auto operator=(
+			asset_registry&&
+		) noexcept -> asset_registry& = default;
 
 		template <typename T>
 		auto add_loader(
@@ -97,9 +106,6 @@ export namespace gse {
 		auto finalize_reloads(
 		) -> void;
 
-		auto register_compiler_only_for_layouts(
-		) -> void;
-
 		[[nodiscard]] static auto enumerate_resources(
 			const std::string& baked_dir,
 			const std::string& baked_ext
@@ -107,7 +113,6 @@ export namespace gse {
 
 		auto shutdown(
 		) -> void;
-
 	private:
 		auto loader(
 			id type_index
@@ -120,8 +125,7 @@ export namespace gse {
 }
 
 template <typename C>
-gse::asset_registry<C>::asset_registry(C& context)
-	: m_context(&context) {}
+gse::asset_registry<C>::asset_registry(C& context) : m_context(&context) {}
 
 template <typename C>
 gse::asset_registry<C>::~asset_registry() = default;
@@ -150,7 +154,7 @@ auto gse::asset_registry<C>::add_loader() -> resource::loader<T, C>* {
 
 template <typename C>
 template <typename T>
-auto gse::asset_registry<C>::get(id id) const -> resource::handle<T> {
+auto gse::asset_registry<C>::get(const id id) const -> resource::handle<T> {
 	return loader<T>()->get(id);
 }
 
@@ -162,7 +166,7 @@ auto gse::asset_registry<C>::get(const std::string& filename) const -> resource:
 
 template <typename C>
 template <typename T>
-auto gse::asset_registry<C>::try_get(id id) const -> resource::handle<T> {
+auto gse::asset_registry<C>::try_get(const id id) const -> resource::handle<T> {
 	return loader<T>()->try_get(id);
 }
 
@@ -192,7 +196,7 @@ auto gse::asset_registry<C>::add(T&& resource) -> resource::handle<T> {
 
 template <typename C>
 auto gse::asset_registry<C>::process_resource_queue() -> void {
-	for (const auto& l : m_resource_loaders | std::views::values) {
+	for (const auto& l : std::views::values(m_resource_loaders)) {
 		l->flush();
 	}
 }
@@ -207,7 +211,9 @@ auto gse::asset_registry<C>::compile() -> void {
 			result.failure_count > 0 ? log::level::warning : log::level::info,
 			log::category::assets,
 			"Compiled {} assets ({} skipped, {} failed)",
-			result.success_count, result.skipped_count, result.failure_count
+			result.success_count,
+			result.skipped_count,
+			result.failure_count
 		);
 	}
 }
@@ -236,7 +242,7 @@ auto gse::asset_registry<C>::hot_reload_enabled() const -> bool {
 
 template <typename C>
 auto gse::asset_registry<C>::finalize_reloads() -> void {
-	for (const auto& l : m_resource_loaders | std::views::values) {
+	for (const auto& l : std::views::values(m_resource_loaders)) {
 		l->finalize_reloads();
 	}
 }
@@ -288,7 +294,7 @@ auto gse::asset_registry<C>::enumerate_resources(const std::string& baked_dir, c
 
 template <typename C>
 auto gse::asset_registry<C>::shutdown() -> void {
-	for (auto& l : m_resource_loaders | std::views::values) {
+	for (auto& l : std::views::values(m_resource_loaders)) {
 		l.reset();
 	}
 	m_resource_loaders.clear();

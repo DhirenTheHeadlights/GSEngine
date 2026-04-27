@@ -939,22 +939,22 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx, asset_registry<
 	assets.instantly_load(m_compute.freeze_jacobians);
 	assets.instantly_load(m_compute.apply_jacobi);
 
-	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.predict, "vbd_push_constants");
-	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.solve_color, "vbd_push_constants");
-	m_compute.update_lambda_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.update_lambda, "vbd_push_constants");
-	m_compute.derive_velocities_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.derive_velocities, "vbd_push_constants");
-	m_compute.finalize_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.finalize, "vbd_push_constants");
-	m_compute.collision_reset_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_reset, "vbd_push_constants");
-	m_compute.collision_broad_phase_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_broad_phase, "vbd_push_constants");
-	m_compute.collision_narrow_phase_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_narrow_phase, "vbd_push_constants");
-	m_compute.collision_grid_build_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_grid_build, "vbd_push_constants");
-	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_build_adjacency, "vbd_push_constants");
-	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.update_joint_lambda, "vbd_push_constants");
-	m_compute.prepare_indirect_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.prepare_indirect, "vbd_push_constants");
-	m_compute.prepare_contact_indirect_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.prepare_contact_indirect, "vbd_push_constants");
-	m_compute.prepare_color_indirect_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.prepare_color_indirect, "vbd_push_constants");
-	m_compute.freeze_jacobians_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.freeze_jacobians, "vbd_push_constants");
-	m_compute.apply_jacobi_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.apply_jacobi, "vbd_push_constants");
+	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx, m_compute.predict, "vbd_push_constants");
+	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx, m_compute.solve_color, "vbd_push_constants");
+	m_compute.update_lambda_pipeline = gpu::create_compute_pipeline(ctx, m_compute.update_lambda, "vbd_push_constants");
+	m_compute.derive_velocities_pipeline = gpu::create_compute_pipeline(ctx, m_compute.derive_velocities, "vbd_push_constants");
+	m_compute.finalize_pipeline = gpu::create_compute_pipeline(ctx, m_compute.finalize, "vbd_push_constants");
+	m_compute.collision_reset_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_reset, "vbd_push_constants");
+	m_compute.collision_broad_phase_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_broad_phase, "vbd_push_constants");
+	m_compute.collision_narrow_phase_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_narrow_phase, "vbd_push_constants");
+	m_compute.collision_grid_build_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_grid_build, "vbd_push_constants");
+	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_build_adjacency, "vbd_push_constants");
+	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx, m_compute.update_joint_lambda, "vbd_push_constants");
+	m_compute.prepare_indirect_pipeline = gpu::create_compute_pipeline(ctx, m_compute.prepare_indirect, "vbd_push_constants");
+	m_compute.prepare_contact_indirect_pipeline = gpu::create_compute_pipeline(ctx, m_compute.prepare_contact_indirect, "vbd_push_constants");
+	m_compute.prepare_color_indirect_pipeline = gpu::create_compute_pipeline(ctx, m_compute.prepare_color_indirect, "vbd_push_constants");
+	m_compute.freeze_jacobians_pipeline = gpu::create_compute_pipeline(ctx, m_compute.freeze_jacobians, "vbd_push_constants");
+	m_compute.apply_jacobi_pipeline = gpu::create_compute_pipeline(ctx, m_compute.apply_jacobi, "vbd_push_constants");
 
 	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
 		const auto block = sh->uniform_block(name);
@@ -977,7 +977,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx, asset_registry<
 
 	for (auto& f : m_frames) {
 		f.queue = gpu::create_compute_queue(ctx);
-		f.descriptors = gpu::allocate_descriptors(ctx, *m_compute.predict);
+		f.descriptors = gpu::allocate_descriptors(ctx, m_compute.predict);
 
 		gpu::descriptor_writer(ctx, m_compute.predict, f.descriptors)
 			.buffer("body_data", f.body_buffer)
@@ -1047,7 +1047,7 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 	auto bind_and_push = [&](const resource::handle<shader>& sh, const gpu::pipeline& pipeline, const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
 		f.queue.bind_pipeline(pipeline);
 		f.queue.bind_descriptors(pipeline, f.descriptors);
-		auto pc = sh->cache_push_block("vbd_push_constants");
+		auto pc = gpu::cache_push_block(sh, "vbd_push_constants");
 		pc.set("body_count", m_body_count);
 		pc.set("contact_count", max_contacts);
 		pc.set("motor_count", m_motor_count);
@@ -1132,7 +1132,7 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 
 		for (std::uint32_t iterations = 0; iterations < num_iterations; ++iterations) {
 			bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, solve_alpha, substep_warm_start_count);
-			auto color_pc = m_compute.solve_color->cache_push_block("vbd_push_constants");
+			auto color_pc = gpu::cache_push_block(m_compute.solve_color, "vbd_push_constants");
 			color_pc.set("body_count", m_body_count);
 			color_pc.set("contact_count", max_contacts);
 			color_pc.set("motor_count", m_motor_count);
@@ -1206,7 +1206,7 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 			f.queue.dispatch(1, 1, 1);
 			f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
 
-			auto color_pc = m_compute.solve_color->cache_push_block("vbd_push_constants");
+			auto color_pc = gpu::cache_push_block(m_compute.solve_color, "vbd_push_constants");
 			color_pc.set("body_count", m_body_count);
 			color_pc.set("contact_count", max_contacts);
 			color_pc.set("motor_count", m_motor_count);
