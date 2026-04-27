@@ -4,7 +4,7 @@ import std;
 import vulkan;
 
 import gse.gpu.types;
-import :gpu_buffer;
+import gse.gpu.resources;
 import gse.gpu.device;
 import gse.gpu.context;
 import gse.gpu.vulkan;
@@ -14,7 +14,6 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 import gse.math;
 import gse.log;
 

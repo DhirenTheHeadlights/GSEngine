@@ -84,7 +84,7 @@ auto gse::free_camera::system::update(update_context& ctx, state& s) -> async::t
 			trace_id<"FreeCamera_Move">()
 		);
 
-		ctx.defer_add<camera::follow_component>(owner_id, camera::follow_component_data{
+		ctx.add_component<camera::follow_component>(owner_id, {
 			.offset = vec3<length>(meters(0.f)),
 			.priority = c.priority,
 			.blend_in_duration = milliseconds(300),

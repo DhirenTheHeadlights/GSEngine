@@ -1,6 +1,7 @@
 export module gse.scene:scene_hook;
 
 import std;
+import gse.std_meta;
 
 import gse.core;
 import gse.ecs;

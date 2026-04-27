@@ -14,7 +14,6 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 
 export namespace gse::vulkan {
 	struct shader_cache_entry {

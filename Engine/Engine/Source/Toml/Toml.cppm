@@ -1,6 +1,7 @@
 export module gse.toml:toml;
 
 import std;
+import gse.std_meta;
 
 export namespace gse::toml {
     struct value;

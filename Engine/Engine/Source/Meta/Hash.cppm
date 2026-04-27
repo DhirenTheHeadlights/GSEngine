@@ -1,6 +1,7 @@
 export module gse.meta:hash;
 
 import std;
+import gse.std_meta;
 
 export namespace gse {
     template <typename T>

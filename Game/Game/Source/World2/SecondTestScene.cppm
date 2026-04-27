@@ -18,7 +18,7 @@ export namespace gs {
 auto gs::second_test_scene::initialize() -> void {
 	// TODO: clang-p2996 ICE on the original body of this function.
 	// See ICE at SceneHook.cppm:178 -> Registry.cppm:397 -> Registry.cppm:373.
-	// Other scenes with identical patterns (SkyboxScene, SphereCollisionTestScene,
+	// Other scenes with identical patterns (SkyboxScene,
 	// PhysicsJointTestScene, PhysicsStressTestScene) all compile, so this is
 	// specific to this TU. Restore once the upstream bug is fixed.
 	//

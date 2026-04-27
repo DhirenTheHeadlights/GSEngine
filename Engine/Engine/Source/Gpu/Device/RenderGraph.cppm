@@ -1,6 +1,7 @@
 export module gse.gpu.device:render_graph;
 
 import std;
+import gse.std_meta;
 
 import gse.gpu.types;
 import gse.gpu.vulkan;
@@ -15,7 +16,6 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 import gse.math;
 
 export namespace gse::vulkan {

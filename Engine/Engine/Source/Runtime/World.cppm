@@ -401,14 +401,7 @@ auto gse::world::state_of() -> State& {
 		"world has no scheduler bound."
 	);
 
-	auto* p = m_scheduler->system_ptr(id_of<State>());
-	assert(
-		p != nullptr,
-		std::source_location::current(),
-		"requested state is not registered."
-	);
-
-	return *static_cast<State*>(p);
+	return m_scheduler->state<State>();
 }
 
 auto gse::world::direct() -> director {

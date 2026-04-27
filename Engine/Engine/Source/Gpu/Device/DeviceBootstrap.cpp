@@ -1,3 +1,10 @@
+module;
+
+#include <vulkan/vulkan.hpp>
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
+#undef assert
+
 module gse.gpu.vulkan;
 
 import std;

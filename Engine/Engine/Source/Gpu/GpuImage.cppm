@@ -13,7 +13,6 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 import gse.math;
 
 export namespace gse::gpu {

@@ -7,6 +7,7 @@ import gse.concurrency;
 
 import :component;
 import :phase_context;
+import :registries;
 import :registry;
 import :task_context;
 
@@ -15,7 +16,9 @@ export namespace gse {
 	public:
 		frame_context(
 			void* gpu_ctx,
-			scheduler& sched,
+			state_registry& states,
+			resource_registry& resources_store,
+			channel_registry& channels_store,
 			channel_writer& channels,
 			task_graph& graph,
 			registry& reg
@@ -37,11 +40,13 @@ export namespace gse {
 
 gse::frame_context::frame_context(
 	void* gpu_ctx,
-	scheduler& sched,
+	state_registry& states,
+	resource_registry& resources_store,
+	channel_registry& channels_store,
 	channel_writer& channels,
 	task_graph& graph,
 	registry& reg
-) : task_context{ gpu_ctx, sched, channels, graph, false },
+) : task_context{ gpu_ctx, states, resources_store, channels_store, channels, graph, false },
 	m_reg(reg) {}
 
 template <gse::is_component T>

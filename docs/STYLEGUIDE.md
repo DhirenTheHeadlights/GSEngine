@@ -1,4 +1,4 @@
-# GoonSquad Style Guide
+# GSE Style Guide
 
 ## Naming
 - STL style (snake_case for everything)

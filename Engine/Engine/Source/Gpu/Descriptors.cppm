@@ -17,7 +17,6 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 
 export namespace gse::gpu {
 	class descriptor_region final : public non_copyable {

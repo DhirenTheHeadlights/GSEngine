@@ -1,6 +1,7 @@
 export module gse.gpu.shader:shader;
 
 import std;
+import gse.std_meta;
 import :gpu_push_constants;
 
 import gse.gpu.types;
@@ -13,7 +14,6 @@ import gse.config;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 import gse.log;
 
 namespace gse {

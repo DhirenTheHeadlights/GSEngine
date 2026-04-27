@@ -11,7 +11,7 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
+
 export namespace gse::vulkan::uploader {
     auto transition_image_layout(
 	    vk::CommandBuffer cmd,

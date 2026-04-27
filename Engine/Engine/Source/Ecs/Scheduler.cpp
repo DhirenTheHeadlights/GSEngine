@@ -12,79 +12,6 @@ auto gse::scheduler::set_gpu_context(void* ctx) -> void {
 	m_gpu_ctx = ctx;
 }
 
-auto gse::scheduler::system_ptr(const id idx) -> void* {
-	const auto it = m_state_index.find(idx);
-	if (it == m_state_index.end()) {
-		return nullptr;
-	}
-	return it->second->state_ptr();
-}
-
-auto gse::scheduler::system_ptr(const id idx) const -> const void* {
-	const auto it = m_state_index.find(idx);
-	if (it == m_state_index.end()) {
-		return nullptr;
-	}
-	return it->second->state_ptr();
-}
-
-auto gse::scheduler::snapshot_ptr(const id type) const -> const void* {
-	const auto it = m_state_index.find(type);
-	if (it == m_state_index.end()) {
-		return nullptr;
-	}
-	return it->second->state_ptr();
-}
-
-auto gse::scheduler::frame_snapshot_ptr(const id type) const -> const void* {
-	const auto it = m_state_index.find(type);
-	if (it == m_state_index.end()) {
-		return nullptr;
-	}
-	return it->second->state_snapshot_ptr();
-}
-
-auto gse::scheduler::channel_snapshot_ptr(const id type) const -> const void* {
-	std::lock_guard lock(m_channels_mutex);
-	const auto it = m_channels.find(type);
-	if (it == m_channels.end()) {
-		return nullptr;
-	}
-	return it->second->snapshot_data();
-}
-
-auto gse::scheduler::resources_ptr(const id type) const -> const void* {
-	const auto it = m_resources_index.find(type);
-	if (it == m_resources_index.end()) {
-		return nullptr;
-	}
-	return it->second->resources_ptr();
-}
-
-auto gse::scheduler::ensure_channel(const id idx, const channel_factory_fn factory) -> channel_base& {
-	return ensure_channel_internal(idx, factory);
-}
-
-auto gse::scheduler::ensure_channel_internal(const id idx, const channel_factory_fn factory) -> channel_base& {
-	std::lock_guard lock(m_channels_mutex);
-	auto it = m_channels.find(idx);
-	if (it == m_channels.end()) {
-		it = m_channels.emplace(idx, factory()).first;
-	}
-	return *it->second;
-}
-
-auto gse::scheduler::make_channel_writer() -> channel_writer {
-	return channel_writer([this](const id type, std::any item, const channel_factory_fn factory) {
-		std::lock_guard lock(m_channels_mutex);
-		auto it = m_channels.find(type);
-		if (it == m_channels.end()) {
-			it = m_channels.emplace(type, factory()).first;
-		}
-		it->second->push_any(std::move(item));
-	});
-}
-
 auto gse::scheduler::push_deferred(gse::move_only_function<void()> fn) -> void {
 	std::lock_guard lock(m_deferred_mutex);
 	m_deferred.push_back(std::move(fn));
@@ -104,13 +31,6 @@ auto gse::scheduler::drain_deferred() -> void {
 auto gse::scheduler::snapshot_all_states() -> void {
 	for (const auto& node : m_nodes) {
 		node->snapshot_state();
-	}
-}
-
-auto gse::scheduler::snapshot_all_channels() -> void {
-	std::lock_guard lock(m_channels_mutex);
-	for (const auto& ch_ptr : m_channels | std::views::values) {
-		ch_ptr->take_snapshot();
 	}
 }
 
@@ -176,16 +96,19 @@ auto gse::scheduler::initialize() -> void {
 	check_state_dep_cycles();
 
 	frame_sync::on_begin([this] {
-		snapshot_all_channels();
+		m_channels_store.take_snapshot_all();
 	});
 
-	auto writer = make_channel_writer();
+	auto writer = m_channels_store.make_writer();
 	init_context phase{
+		.gpu_ctx = m_gpu_ctx,
 		.reg = *m_registry,
 		.sched = *this,
-		.channels = writer
+		.states = m_states,
+		.resources_store = m_resources_store,
+		.channels_store = m_channels_store,
+		.channels = writer,
 	};
-	phase.gpu_ctx = m_gpu_ctx;
 
 	for (std::size_t i = 0; i < m_nodes.size(); ++i) {
 		m_nodes[i]->initialize(phase);
@@ -196,11 +119,13 @@ auto gse::scheduler::initialize() -> void {
 
 auto gse::scheduler::run_graph_update() -> void {
 	trace::scope_guard sg{ trace_id<"scheduler::run_graph_update">() };
-	auto writer = make_channel_writer();
+	auto writer = m_channels_store.make_writer();
 
 	update_context u_ctx(
 		m_gpu_ctx,
-		*this,
+		m_states,
+		m_resources_store,
+		m_channels_store,
 		writer,
 		m_update_graph,
 		*m_registry,
@@ -237,11 +162,13 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	}
 
 	trace::scope_guard sg{ trace_id<"scheduler::render">() };
-	auto writer = make_channel_writer();
+	auto writer = m_channels_store.make_writer();
 
 	frame_context f_ctx(
 		m_gpu_ctx,
-		*this,
+		m_states,
+		m_resources_store,
+		m_channels_store,
 		writer,
 		m_frame_graph,
 		*m_registry
@@ -288,9 +215,9 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 
 auto gse::scheduler::shutdown() -> void {
 	shutdown_context phase{
-		.reg = *m_registry
+		.gpu_ctx = m_gpu_ctx,
+		.reg = *m_registry,
 	};
-	phase.gpu_ctx = m_gpu_ctx;
 
 	for (auto it = m_nodes.rbegin(); it != m_nodes.rend(); ++it) {
 		(*it)->shutdown(phase);
@@ -299,8 +226,9 @@ auto gse::scheduler::shutdown() -> void {
 
 auto gse::scheduler::clear() -> void {
 	m_nodes.clear();
-	m_state_index.clear();
-	m_resources_index.clear();
-	m_channels.clear();
+	m_states.clear();
+	m_resources_store.clear();
+	m_channels_store.clear();
+	m_state_deps.clear();
 	m_initialized = false;
 }
