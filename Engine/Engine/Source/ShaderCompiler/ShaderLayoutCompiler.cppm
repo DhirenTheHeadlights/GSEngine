@@ -1,8 +1,7 @@
-export module gse.gpu.shader:shader_layout_compiler;
+export module gse.shader_compiler:layout_compiler;
 
 import std;
 
-import gse.gpu.vulkan;
 import gse.assert;
 import gse.log;
 import gse.core;
@@ -12,7 +11,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.assets;
 import gse.slang;
-import :shader_layout;
+import gse.gpu;
 
 namespace gse::layout_compile {
     auto log_diagnostics(slang::IBlob* diagnostics) -> void {

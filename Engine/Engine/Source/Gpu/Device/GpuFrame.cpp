@@ -1,13 +1,13 @@
-module gse.gpu.device;
+module gse.gpu;
 
 import std;
 
-import :gpu_frame;
-import gse.gpu.vulkan;
-import :gpu_device;
-import :gpu_swapchain;
-import :gpu_sync;
-import gse.gpu.types;
+import :frame;
+import :vulkan_runtime;
+import :vulkan_allocator;
+import :device;
+import :swap_chain;
+import :types;
 
 import gse.os;
 import gse.assert;

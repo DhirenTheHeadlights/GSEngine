@@ -5,7 +5,7 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 #undef assert
 
-module gse.gpu.vulkan;
+module gse.gpu;
 
 import std;
 import vulkan;
@@ -14,8 +14,7 @@ import :device_bootstrap;
 import :vulkan_runtime;
 import :vulkan_allocator;
 import :descriptor_heap;
-import :descriptor_buffer_types;
-import :gpu_command_pools;
+import :command_pools;
 
 import gse.os;
 import gse.assert;
@@ -31,12 +30,12 @@ namespace gse::vulkan {
         device_config device;
         queue_config queue;
         bool video_encode_enabled = false;
-        descriptor_buffer_properties desc_buf_props;
+        gpu::descriptor_buffer_properties desc_buf_props;
     };
 
     auto query_descriptor_buffer_properties(
         const vk::raii::PhysicalDevice& physical_device
-    ) -> descriptor_buffer_properties;
+    ) -> gpu::descriptor_buffer_properties;
 
     auto create_instance(
         std::span<const char* const> required_extensions
@@ -83,7 +82,7 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
     return indices;
 }
 
-auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device) -> descriptor_buffer_properties {
+auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device) -> gpu::descriptor_buffer_properties {
     const auto props = physical_device.getProperties2<
         vk::PhysicalDeviceProperties2,
         vk::PhysicalDeviceDescriptorBufferPropertiesEXT
@@ -612,7 +611,7 @@ auto gse::vulkan::bootstrap_device(const window& win, save::state& save) -> boot
         task::thread_count()
     );
 
-    auto desc_heap = std::make_unique<descriptor_heap>(dev_config.device, dev_config.physical_device, desc_buf_props);
+    auto desc_heap = std::make_unique<gpu::descriptor_heap>(dev_config.device, dev_config.physical_device, desc_buf_props);
 
     const auto surface_format = pick_surface_format(dev_config.physical_device, instance_data.surface);
 

@@ -1,4 +1,4 @@
-export module gse.gpu.shader:shader_compiler;
+export module gse.shader_compiler:compiler;
 
 import std;
 
@@ -11,7 +11,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.assets;
 import gse.slang;
-import :shader;
+import gse.gpu;
 
 namespace gse::shader_compile {
     auto log_diagnostics(

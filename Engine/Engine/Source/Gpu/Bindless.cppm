@@ -1,10 +1,11 @@
-export module gse.gpu.context:bindless;
+export module gse.gpu:bindless;
 
 import std;
 import vulkan;
 
-import gse.gpu.types;
-import gse.gpu.vulkan;
+import :types;
+import :vulkan_runtime;
+import :descriptor_heap;
 
 import gse.assert;
 import gse.log;
@@ -25,7 +26,7 @@ export namespace gse::gpu {
 	public:
 		bindless_texture_set(
 			const vk::raii::Device& device,
-			vulkan::descriptor_heap& heap,
+			descriptor_heap& heap,
 			std::uint32_t capacity = 4096
 		);
 
@@ -56,7 +57,7 @@ export namespace gse::gpu {
 		) const -> vk::DescriptorSetLayout;
 
 		[[nodiscard]] auto region(
-		) const -> const vulkan::descriptor_region&;
+		) const -> const descriptor_region&;
 
 		[[nodiscard]] auto capacity(
 		) const -> std::uint32_t;
@@ -64,8 +65,8 @@ export namespace gse::gpu {
 	private:
 		vk::raii::DescriptorSetLayout m_layout = nullptr;
 		vk::raii::Sampler m_null_sampler = nullptr;
-		vulkan::descriptor_region m_region;
-		vulkan::descriptor_heap* m_heap = nullptr;
+		descriptor_region m_region;
+		descriptor_heap* m_heap = nullptr;
 		vk::DeviceSize m_descriptor_size = 0;
 		vk::DeviceSize m_binding_offset = 0;
 		std::uint32_t m_capacity = 0;
@@ -81,7 +82,7 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::bindless_texture_set::bindless_texture_set(const vk::raii::Device& device, vulkan::descriptor_heap& heap, const std::uint32_t capacity)
+gse::gpu::bindless_texture_set::bindless_texture_set(const vk::raii::Device& device, descriptor_heap& heap, const std::uint32_t capacity)
 	: m_heap(&heap), m_capacity(capacity) {
 	const vk::DescriptorSetLayoutBinding binding{
 		.binding = 0,
@@ -213,7 +214,7 @@ auto gse::gpu::bindless_texture_set::layout() const -> vk::DescriptorSetLayout {
 	return *m_layout;
 }
 
-auto gse::gpu::bindless_texture_set::region() const -> const vulkan::descriptor_region& {
+auto gse::gpu::bindless_texture_set::region() const -> const descriptor_region& {
 	return m_region;
 }
 

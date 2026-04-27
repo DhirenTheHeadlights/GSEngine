@@ -16,6 +16,7 @@ export namespace gse {
 	public:
 		frame_context(
 			void* gpu_ctx,
+			void* assets,
 			state_registry& states,
 			resource_registry& resources_store,
 			channel_registry& channels_store,
@@ -40,13 +41,14 @@ export namespace gse {
 
 gse::frame_context::frame_context(
 	void* gpu_ctx,
+	void* assets,
 	state_registry& states,
 	resource_registry& resources_store,
 	channel_registry& channels_store,
 	channel_writer& channels,
 	task_graph& graph,
 	registry& reg
-) : task_context{ gpu_ctx, states, resources_store, channels_store, channels, graph, false },
+) : task_context{ gpu_ctx, assets, states, resources_store, channels_store, channels, graph, false },
 	m_reg(reg) {}
 
 template <gse::is_component T>

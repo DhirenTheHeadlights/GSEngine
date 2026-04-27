@@ -1,13 +1,14 @@
-export module gse.gpu.pipeline;
+export module gse.gpu:pipeline;
 
 import std;
 import vulkan;
 
-import gse.gpu.types;
-import gse.gpu.vulkan;
-import gse.gpu.device;
-import gse.gpu.context;
-import gse.gpu.shader;
+import :types;
+import :vulkan_reflect;
+import :descriptor_heap;
+import :device;
+import :context;
+import :shader;
 
 import gse.core;
 import gse.containers;
@@ -16,6 +17,12 @@ import gse.concurrency;
 import gse.diag;
 
 export namespace gse::gpu {
+	struct pipeline_handle {
+		vk::Pipeline pipeline = nullptr;
+		vk::PipelineLayout layout = nullptr;
+		bind_point point = bind_point::graphics;
+	};
+
 	class pipeline final : public non_copyable {
 	public:
 		pipeline() = default;
@@ -31,7 +38,7 @@ export namespace gse::gpu {
 		[[nodiscard]] auto native_layout(this const pipeline& self) -> vk::PipelineLayout { return *self.m_layout; }
 		[[nodiscard]] auto point(this const pipeline& self) -> bind_point { return self.m_point; }
 
-		operator vulkan::pipeline_handle(
+		operator pipeline_handle(
 		) const;
 
 		explicit operator bool() const;
@@ -39,20 +46,6 @@ export namespace gse::gpu {
 		vk::raii::Pipeline m_handle = nullptr;
 		vk::raii::PipelineLayout m_layout = nullptr;
 		bind_point m_point = bind_point::graphics;
-	};
-
-	class descriptor_set final : public non_copyable {
-	public:
-		descriptor_set() = default;
-		descriptor_set(vk::raii::DescriptorSet&& set);
-		descriptor_set(descriptor_set&&) noexcept = default;
-		auto operator=(descriptor_set&&) noexcept -> descriptor_set& = default;
-
-		[[nodiscard]] auto native(this const descriptor_set& self) -> vk::DescriptorSet { return *self.m_set; }
-
-		explicit operator bool() const;
-	private:
-		vk::raii::DescriptorSet m_set = nullptr;
 	};
 
 	class sampler final : public non_copyable {
@@ -105,7 +98,7 @@ gse::gpu::pipeline::pipeline(
     m_layout(std::move(layout)),
     m_point(point) {}
 
-gse::gpu::pipeline::operator vulkan::pipeline_handle() const {
+gse::gpu::pipeline::operator pipeline_handle() const {
 	return {
 		.pipeline = *m_handle,
 		.layout = *m_layout,
@@ -115,13 +108,6 @@ gse::gpu::pipeline::operator vulkan::pipeline_handle() const {
 
 gse::gpu::pipeline::operator bool() const {
 	return *m_handle != nullptr;
-}
-
-gse::gpu::descriptor_set::descriptor_set(vk::raii::DescriptorSet&& set)
-	: m_set(std::move(set)) {}
-
-gse::gpu::descriptor_set::operator bool() const {
-	return *m_set != nullptr;
 }
 
 gse::gpu::sampler::sampler(vk::raii::Sampler&& s)

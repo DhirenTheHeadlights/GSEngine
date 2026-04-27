@@ -1,11 +1,14 @@
-module gse.gpu.device;
+module gse.gpu;
 
 import std;
 import vulkan;
 
-import :gpu_device;
-import gse.gpu.vulkan;
-import gse.gpu.types;
+import :device;
+import :vulkan_runtime;
+import :command_pools;
+import :descriptor_heap;
+import :device_bootstrap;
+import :types;
 
 import gse.os;
 import gse.log;
@@ -150,7 +153,7 @@ auto gse::gpu::device::worker_command_pools() -> vulkan::worker_command_pools& {
     return m_worker_pools;
 }
 
-auto gse::gpu::device::descriptor_buffer_props() const -> const vulkan::descriptor_buffer_properties& {
+auto gse::gpu::device::descriptor_buffer_props() const -> const gpu::descriptor_buffer_properties& {
     return m_descriptor_buffer_props;
 }
 

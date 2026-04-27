@@ -1,4 +1,4 @@
-module gse.gpu.vulkan;
+module gse.gpu;
 
 import std;
 import vulkan;

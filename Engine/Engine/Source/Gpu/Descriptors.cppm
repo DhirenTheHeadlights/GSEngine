@@ -3,11 +3,14 @@ export module gse.gpu:descriptors;
 import std;
 import vulkan;
 
-import gse.gpu.types;
-import gse.gpu.vulkan;
-import gse.gpu.context;
-import gse.gpu.pipeline;
-import gse.gpu.shader;
+import :types;
+import :vulkan_allocator;
+import :vulkan_reflect;
+import :descriptor_heap;
+import :context;
+import :pipeline;
+import :shader;
+import :shader_registry;
 import gse.assets;
 
 import gse.assert;
@@ -19,23 +22,6 @@ import gse.concurrency;
 import gse.diag;
 
 export namespace gse::gpu {
-	class descriptor_region final : public non_copyable {
-	public:
-		descriptor_region() = default;
-		descriptor_region(vulkan::descriptor_region&& region);
-		descriptor_region(descriptor_region&&) noexcept = default;
-		auto operator=(descriptor_region&&) noexcept -> descriptor_region& = default;
-
-		[[nodiscard]] auto native(this auto&& self) -> auto&& { return std::forward_like<decltype(self)>(self.m_region); }
-
-		operator const vulkan::descriptor_region&(
-		) const;
-
-		explicit operator bool() const;
-	private:
-		vulkan::descriptor_region m_region;
-	};
-
 	auto allocate_descriptors(
 		context& ctx,
 		const shader& s
@@ -119,19 +105,8 @@ export namespace gse::gpu {
 		std::unordered_map<std::string, vk::DescriptorImageInfo> m_storage_image_infos;
 		std::unordered_map<std::string, acceleration_structure_handle> m_as_infos;
 
-		vulkan::descriptor_writer m_push_writer;
+		descriptor_set_writer m_push_writer;
 	};
-}
-
-gse::gpu::descriptor_region::descriptor_region(vulkan::descriptor_region&& region)
-	: m_region(region) {}
-
-gse::gpu::descriptor_region::operator const vulkan::descriptor_region&() const {
-	return m_region;
-}
-
-gse::gpu::descriptor_region::operator bool() const {
-	return m_region;
 }
 
 auto gse::gpu::allocate_descriptors(context& ctx, const shader& s) -> descriptor_region {
@@ -142,14 +117,14 @@ auto gse::gpu::allocate_descriptors(context& ctx, const shader& s) -> descriptor
 	auto& heap = ctx.descriptor_heap();
 	const auto set_layout = cache.layout_handles[persistent_idx];
 	const auto size = heap.layout_size(set_layout);
-	return descriptor_region(heap.allocate(size));
+	return heap.allocate(size);
 }
 
 namespace {
 	auto build_push_writer(
 		gse::gpu::context& ctx,
 		const gse::shader& s
-	) -> gse::vulkan::descriptor_writer {
+	) -> gse::gpu::descriptor_set_writer {
 		const auto& cache = ctx.shader_registry().cache(s);
 		auto& heap = ctx.descriptor_heap();
 		const auto& props = heap.props();
@@ -184,7 +159,7 @@ namespace {
 			max_binding = std::max(max_binding, b.desc.binding);
 		}
 
-		std::vector<gse::vulkan::descriptor_binding_info> bindings(max_binding + 1);
+		std::vector<gse::gpu::descriptor_binding_info> bindings(max_binding + 1);
 
 		for (const auto& b : set_data.bindings) {
 			const auto idx = b.desc.binding;
@@ -195,7 +170,7 @@ namespace {
 			};
 		}
 
-		return gse::vulkan::descriptor_writer(heap, set_layout, total_size, std::move(bindings));
+		return gse::gpu::descriptor_set_writer(heap, set_layout, total_size, std::move(bindings));
 	}
 }
 
@@ -297,12 +272,12 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 	assert(m_region && *m_region, std::source_location::current(), "Cannot commit to null descriptor region");
 
 	const auto& cache = *m_cache_entry;
-	const auto& heap = *m_region->native().heap;
+	const auto& heap = *m_region->heap;
 	const auto& props = heap.props();
 
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
 	const auto set_layout = cache.layout_handles[persistent_idx];
-	const auto& region = m_region->native();
+	const auto& region = *m_region;
 
 	auto write_binding = [&](const std::string& name, std::uint32_t binding, bool is_uniform, std::uint32_t count) {
 		const auto boff = heap.binding_offset(set_layout, binding);

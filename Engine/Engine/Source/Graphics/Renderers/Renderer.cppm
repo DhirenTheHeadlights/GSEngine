@@ -56,6 +56,7 @@ export namespace gse::renderer {
 	struct system {
 		struct resources {
 			gpu::context* ctx = nullptr;
+			asset_registry<gpu::context>* assets = nullptr;
 
 			auto set_ui_focus(
 				bool focus
@@ -117,40 +118,40 @@ export namespace gse::renderer {
 
 template <typename Resource>
 auto gse::renderer::system::resources::get(const id& resource_id) const -> resource::handle<Resource> {
-	return ctx->get<Resource>(resource_id);
+	return assets->get<Resource>(resource_id);
 }
 
 template <typename Resource>
 auto gse::renderer::system::resources::get(const std::string& filename) const -> resource::handle<Resource> {
-	return ctx->get<Resource>(filename);
+	return assets->get<Resource>(filename);
 }
 
 template <typename Resource>
 auto gse::renderer::system::resources::try_get(const id& resource_id) const -> resource::handle<Resource> {
-	return ctx->try_get<Resource>(resource_id);
+	return assets->try_get<Resource>(resource_id);
 }
 
 template <typename Resource>
 auto gse::renderer::system::resources::try_get(const std::string& filename) const -> resource::handle<Resource> {
-	return ctx->try_get<Resource>(filename);
+	return assets->try_get<Resource>(filename);
 }
 
 template <typename Resource, typename... Args>
 auto gse::renderer::system::resources::queue(const std::string& name, Args&&... args) const -> resource::handle<Resource> {
-	return ctx->queue<Resource>(name, std::forward<Args>(args)...);
+	return assets->queue<Resource>(name, std::forward<Args>(args)...);
 }
 
 template <typename Resource>
 auto gse::renderer::system::resources::instantly_load(const id& resource_id) const -> resource::handle<Resource> {
-	return ctx->instantly_load<Resource>(resource_id);
+	return assets->instantly_load<Resource>(resource_id);
 }
 
 template <typename Resource>
 auto gse::renderer::system::resources::add(Resource&& resource) const -> void {
-	ctx->add<Resource>(std::forward<Resource>(resource));
+	assets->add<Resource>(std::forward<Resource>(resource));
 }
 
 template <typename Resource>
 auto gse::renderer::system::resources::resource_state(const id& resource_id) const -> resource::state {
-	return ctx->resource_state<Resource>(resource_id);
+	return assets->resource_state<Resource>(resource_id);
 }

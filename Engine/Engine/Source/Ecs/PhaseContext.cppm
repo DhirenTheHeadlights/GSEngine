@@ -16,6 +16,7 @@ export namespace gse {
 
 	struct init_context {
 		void* gpu_ctx = nullptr;
+		void* assets_ptr = nullptr;
 		registry& reg;
 		scheduler& sched;
 		state_registry& states;
@@ -50,6 +51,7 @@ export namespace gse {
 
 	struct shutdown_context {
 		void* gpu_ctx = nullptr;
+		void* assets_ptr = nullptr;
 		registry& reg;
 
 		template <typename T>

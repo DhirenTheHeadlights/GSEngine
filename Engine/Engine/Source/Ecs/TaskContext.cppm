@@ -13,6 +13,7 @@ import :registries;
 export namespace gse {
 	struct task_context {
 		void* gpu_ctx = nullptr;
+		void* assets = nullptr;
 		state_registry& states;
 		resource_registry& resources_store;
 		channel_registry& channels_store;

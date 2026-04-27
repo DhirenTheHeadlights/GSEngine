@@ -1,16 +1,22 @@
-export module gse.gpu.context:gpu_context;
+export module gse.gpu:context;
 
 import std;
 import vulkan;
 
-import gse.gpu.shader;
-import gse.gpu.device;
-import gse.gpu.types;
-import gse.gpu.vulkan;
+import :types;
+import :vulkan_runtime;
+import :vulkan_uploader;
+import :vulkan_reflect;
+import :descriptor_heap;
+import :shader;
+import :shader_registry;
+import :device;
+import :swap_chain;
+import :frame;
+import :render_graph;
 import :bindless;
 
 import gse.os;
-import gse.assets;
 import gse.config;
 
 import gse.log;
@@ -45,85 +51,14 @@ export namespace gse::gpu {
 
 		using command = std::function<void(context&)>;
 
-		template <typename T>
-		auto add_loader(
-		) -> resource::loader<T, context>*;
-
-		template <typename T>
-		auto get(
-			id id
-		) const -> resource::handle<T>;
-
-		template <typename T>
-		auto get(
-			const std::string& filename
-		) const -> resource::handle<T>;
-
-		template <typename T>
-		auto try_get(
-			id id
-		) const -> resource::handle<T>;
-
-		template <typename T>
-		auto try_get(
-			const std::string& filename
-		) const -> resource::handle<T>;
-
-		template <typename T, typename... Args>
-		auto queue(
-			const std::string& name,
-			Args&&... args
-		) -> resource::handle<T>;
-
 		template <typename Resource, typename Fn>
 		auto queue_gpu_command(
 			Resource* resource,
 			Fn&& work
 		) const -> void;
 
-		template <typename T>
-		auto instantly_load(
-			const resource::handle<T>& handle
-		) -> void;
-
-		template <typename T>
-		auto add(
-			T&& resource
-		) -> resource::handle<T>;
-
-		auto process_resource_queue(
-		) -> void;
-
 		auto process_gpu_queue(
 		) -> void;
-
-		auto compile(
-		) -> void;
-
-		auto poll_assets(
-		) -> void;
-
-		auto enable_hot_reload(
-		) -> void;
-
-		auto disable_hot_reload(
-		) -> void;
-
-		[[nodiscard]] auto hot_reload_enabled(
-		) const -> bool;
-
-		auto finalize_reloads(
-		) -> void;
-
-		template <typename T>
-		[[nodiscard]] auto resource_state(
-			id id
-		) const -> resource::state;
-
-		template <typename T>
-		[[nodiscard]] auto loader(
-			this auto&& self
-		) -> decltype(auto);
 
 		auto begin_frame(
 		) -> std::expected<frame_token, frame_status>;
@@ -138,6 +73,9 @@ export namespace gse::gpu {
 			id resource_type,
 			id resource_id
 		) const -> void;
+
+		auto take_pending_finalizations(
+		) const -> std::vector<std::pair<id, id>>;
 
 		[[nodiscard]] auto descriptor_heap(
 			this auto& self
@@ -159,7 +97,7 @@ export namespace gse::gpu {
 		) const -> const gse::window&;
 
 		[[nodiscard]] auto graph(
-		) const -> vulkan::render_graph&;
+		) const -> render_graph&;
 
 		auto set_ui_focus(
 			bool focus
@@ -206,27 +144,15 @@ export namespace gse::gpu {
 		auto wait_idle(
 		) const -> void;
 
-		[[nodiscard]] static auto enumerate_resources(
-			const std::string& baked_dir,
-			const std::string& baked_ext
-		) -> std::vector<std::string>;
-
 	private:
-		auto loader(
-			id type_index
-		) const -> resource::loader_base*;
-
 		gse::window m_window;
 		std::unique_ptr<gpu::device> m_device;
 		std::unique_ptr<gpu::shader_registry> m_shader_registry;
 		std::unique_ptr<swap_chain> m_swapchain;
 		std::unique_ptr<gpu::frame> m_frame;
-		std::unique_ptr<vulkan::render_graph> m_render_graph;
+		std::unique_ptr<render_graph> m_render_graph;
 		std::unique_ptr<bindless_texture_set> m_bindless_textures;
 		concurrency::frame_scheduler m_scheduler;
-
-		asset_pipeline m_pipeline{ config::resource_path, config::baked_resource_path };
-		std::unordered_map<id, std::unique_ptr<resource::loader_base>> m_resource_loaders;
 
 		mutable std::vector<command> m_command_queue;
 		mutable std::vector<std::pair<id, id>> m_pending_gpu_resources;
@@ -244,7 +170,7 @@ gse::gpu::context::context(const std::string& window_title, input::system_state&
 	, m_swapchain(swap_chain::create(m_window.viewport(), *m_device))
 	, m_frame(frame::create(*m_device, *m_swapchain))
 {
-	m_render_graph = std::make_unique<vulkan::render_graph>(*m_device, *m_swapchain, *m_frame);
+	m_render_graph = std::make_unique<render_graph>(*m_device, *m_swapchain, *m_frame);
 	m_bindless_textures = std::make_unique<bindless_texture_set>(m_device->logical_device(), m_device->descriptor_heap());
 
 	save.bind("Graphics", "Validation Layers", m_validation_layers_enabled)
@@ -281,52 +207,6 @@ gse::gpu::context::~context() {
 	m_device.reset();
 }
 
-template <typename T>
-auto gse::gpu::context::add_loader() -> resource::loader<T, context>* {
-	const auto type_id = id_of<T>();
-	assert(
-		!m_resource_loaders.contains(type_id),
-		std::source_location::current(),
-		"Resource loader for type {} already exists.",
-		type_tag<T>()
-	);
-
-	auto new_loader = std::make_unique<resource::loader<T, context>>(*this);
-	auto* loader_ptr = new_loader.get();
-	m_resource_loaders[type_id] = std::move(new_loader);
-
-	if constexpr (has_asset_compiler<T>) {
-		m_pipeline.register_type<T, context>(loader_ptr);
-	}
-
-	return loader_ptr;
-}
-
-template <typename T>
-auto gse::gpu::context::get(id id) const -> resource::handle<T> {
-	return loader<T>()->get(id);
-}
-
-template <typename T>
-auto gse::gpu::context::get(const std::string& filename) const -> resource::handle<T> {
-	return loader<T>()->get(filename);
-}
-
-template <typename T>
-auto gse::gpu::context::try_get(id id) const -> resource::handle<T> {
-	return loader<T>()->try_get(id);
-}
-
-template <typename T>
-auto gse::gpu::context::try_get(const std::string& filename) const -> resource::handle<T> {
-	return loader<T>()->try_get(filename);
-}
-
-template <typename T, typename... Args>
-auto gse::gpu::context::queue(const std::string& name, Args&&... args) -> resource::handle<T> {
-	return loader<T>()->queue(name, std::forward<Args>(args)...);
-}
-
 template <typename Resource, typename Fn>
 auto gse::gpu::context::queue_gpu_command(Resource* resource, Fn&& work) const -> void {
 	command final_command = [resource, work_lambda = std::forward<Fn>(work)](context& ctx) {
@@ -337,30 +217,12 @@ auto gse::gpu::context::queue_gpu_command(Resource* resource, Fn&& work) const -
 	m_command_queue.push_back(std::move(final_command));
 }
 
-template <typename T>
-auto gse::gpu::context::instantly_load(const resource::handle<T>& handle) -> void {
-	loader<T>()->instantly_load(handle.id());
-}
-
-template <typename T>
-auto gse::gpu::context::add(T&& resource) -> resource::handle<T> {
-	return loader<T>()->add(std::forward<T>(resource));
-}
-
-auto gse::gpu::context::process_resource_queue() -> void {
-	for (const auto& l : m_resource_loaders | std::views::values) {
-		l->flush();
-	}
-}
-
 auto gse::gpu::context::process_gpu_queue() -> void {
 	std::vector<command> commands_to_run;
-	std::vector<std::pair<id, id>> resources_to_finalize;
 
 	{
 		std::lock_guard lock(m_mutex);
 		commands_to_run.swap(m_command_queue);
-		resources_to_finalize.swap(m_pending_gpu_resources);
 	}
 
 	for (auto& cmd : commands_to_run) {
@@ -368,65 +230,6 @@ auto gse::gpu::context::process_gpu_queue() -> void {
 			cmd(*this);
 		}
 	}
-
-	for (const auto& [type, resource_id] : resources_to_finalize) {
-		loader(type)->update_state(resource_id, resource::state::loaded);
-	}
-}
-
-auto gse::gpu::context::compile() -> void {
-	m_pipeline.register_compiler_only<shader_layout>();
-
-	if (const auto result = m_pipeline.compile_all(); result.success_count > 0 || result.failure_count > 0) {
-		log::println(
-			result.failure_count > 0 ? log::level::warning : log::level::info,
-			log::category::assets,
-			"Compiled {} assets ({} skipped, {} failed)",
-			result.success_count, result.skipped_count, result.failure_count
-		);
-	}
-
-	m_shader_registry->load_layouts(config::baked_resource_path / "Layouts");
-}
-
-auto gse::gpu::context::poll_assets() -> void {
-	m_pipeline.poll();
-}
-
-auto gse::gpu::context::enable_hot_reload() -> void {
-	m_pipeline.enable_hot_reload();
-	log::println(log::category::assets, "Hot reload enabled");
-}
-
-auto gse::gpu::context::disable_hot_reload() -> void {
-	m_pipeline.disable_hot_reload();
-	log::println(log::category::assets, "Hot reload disabled");
-}
-
-auto gse::gpu::context::hot_reload_enabled() const -> bool {
-	return m_pipeline.hot_reload_enabled();
-}
-
-auto gse::gpu::context::finalize_reloads() -> void {
-	for (const auto& l : m_resource_loaders | std::views::values) {
-		l->finalize_reloads();
-	}
-}
-
-template <typename T>
-auto gse::gpu::context::resource_state(const id id) const -> resource::state {
-	return loader<T>()->state_of(id);
-}
-
-template <typename T>
-auto gse::gpu::context::loader(this auto&& self) -> decltype(auto) {
-	auto* base_loader = self.loader(id_of<T>());
-	return static_cast<resource::loader<T, context>*>(base_loader);
-}
-
-auto gse::gpu::context::loader(const id type_id) const -> resource::loader_base* {
-	assert(m_resource_loaders.contains(type_id), std::source_location::current(), "Resource loader for id {} does not exist.", type_id.number());
-	return m_resource_loaders.at(type_id).get();
 }
 
 auto gse::gpu::context::begin_frame() -> std::expected<frame_token, frame_status> {
@@ -454,6 +257,13 @@ auto gse::gpu::context::mark_pending_for_finalization(id resource_type, const id
 	m_pending_gpu_resources.emplace_back(resource_type, resource_id);
 }
 
+auto gse::gpu::context::take_pending_finalizations() const -> std::vector<std::pair<id, id>> {
+	std::lock_guard lock(m_mutex);
+	std::vector<std::pair<id, id>> result;
+	result.swap(m_pending_gpu_resources);
+	return result;
+}
+
 auto gse::gpu::context::add_transient_work(auto&& commands) -> void {
 	m_frame->add_transient_work(std::forward<decltype(commands)>(commands));
 }
@@ -466,7 +276,7 @@ auto gse::gpu::context::on_swap_chain_recreate(swap_chain_recreate_callback call
 	m_swapchain->on_recreate(std::move(callback));
 }
 
-auto gse::gpu::context::graph() const -> vulkan::render_graph& {
+auto gse::gpu::context::graph() const -> render_graph& {
 	return *m_render_graph;
 }
 
@@ -491,10 +301,6 @@ auto gse::gpu::context::shutdown() -> void {
 
 	m_window.shutdown();
 	m_device->wait_idle();
-	for (auto& l : m_resource_loaders | std::views::values) {
-		l.reset();
-	}
-	m_resource_loaders.clear();
 	m_swapchain->clear_depth_image();
 }
 
@@ -528,29 +334,4 @@ auto gse::gpu::context::bindless_textures(this auto& self) -> auto& {
 
 auto gse::gpu::context::wait_idle() const -> void {
 	m_device->wait_idle();
-}
-
-auto gse::gpu::context::enumerate_resources(const std::string& baked_dir, const std::string& baked_ext) -> std::vector<std::string> {
-	std::vector<std::string> result;
-
-	const auto dir_path = config::baked_resource_path / baked_dir;
-
-	if (!std::filesystem::exists(dir_path)) {
-		return result;
-	}
-
-	for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
-		if (!entry.is_regular_file()) {
-			continue;
-		}
-
-		if (entry.path().extension().string() != baked_ext) {
-			continue;
-		}
-
-		result.push_back(entry.path().stem().string());
-	}
-
-	std::ranges::sort(result);
-	return result;
 }

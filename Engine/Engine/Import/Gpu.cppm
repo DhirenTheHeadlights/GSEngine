@@ -1,13 +1,24 @@
 export module gse.gpu;
 
-export import gse.gpu.types;
-export import gse.gpu.vulkan;
-export import gse.gpu.shader;
-export import gse.gpu.device;
-export import gse.gpu.context;
-export import gse.gpu.resources;
-export import gse.gpu.pipeline;
-
+export import :types;
+export import :vulkan_allocator;
+export import :vulkan_runtime;
+export import :vulkan_reflect;
+export import :vulkan_uploader;
+export import :command_pools;
+export import :descriptor_heap;
+export import :device_bootstrap;
+export import :device;
+export import :swap_chain;
+export import :frame;
+export import :render_graph;
+export import :shader;
+export import :shader_layout;
+export import :shader_registry;
+export import :buffer;
+export import :image;
+export import :compute;
+export import :pipeline;
 export import :descriptors;
-export import :acceleration_structure;
-export import :video_encoder;
+export import :bindless;
+export import :context;
