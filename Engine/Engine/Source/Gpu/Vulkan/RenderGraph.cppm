@@ -477,7 +477,7 @@ auto gse::vulkan::recording_context::copy_buffer(const buffer_resource& src, con
 	m_cmd.copy_buffer(src.handle(), dst.handle(), gpu::buffer_copy_region{
 		.src_offset = src_offset,
 		.dst_offset = dst_offset,
-		.size = size,
+		.size = size
 	});
 }
 
@@ -557,7 +557,6 @@ auto gse::vulkan::recording_context::build_acceleration_structure(
 auto gse::vulkan::recording_context::pipeline_barrier(const gpu::dependency_info& dep) const -> void {
 	m_cmd.pipeline_barrier(dep);
 }
-
 
 auto gse::vulkan::recording_context::capture_swapchain(
 	const gpu::swap_chain& swapchain,
@@ -678,9 +677,12 @@ auto gse::vulkan::recording_context::blit_swapchain_to_image(const gpu::swap_cha
 		},
 	};
 	m_cmd.blit_image(
-		src_image, gpu::image_layout::transfer_src,
-		dst.handle(), gpu::image_layout::transfer_dst,
-		gpu_region, gpu::sampler_filter::nearest
+		src_image,
+		gpu::image_layout::transfer_src,
+		dst.handle(),
+		gpu::image_layout::transfer_dst,
+		gpu_region,
+		gpu::sampler_filter::nearest
 	);
 
 	const gpu::image_barrier src_back{
@@ -833,23 +835,26 @@ auto gse::vulkan::recording_context::commit(const gpu::descriptor_set_writer& wr
 	);
 }
 
+namespace gse::vulkan {
+	auto pipeline_stage_to_flags(
+		gpu::pipeline_stage s
+	) -> gpu::pipeline_stage_flags;
+}
 
-namespace {
-	auto pipeline_stage_to_flags(const gse::gpu::pipeline_stage s) -> gse::gpu::pipeline_stage_flags {
-		switch (s) {
-			case gse::gpu::pipeline_stage::vertex_shader:
-				return gse::gpu::pipeline_stage_flag::vertex_shader;
-			case gse::gpu::pipeline_stage::fragment_shader:
-				return gse::gpu::pipeline_stage_flag::fragment_shader;
-			case gse::gpu::pipeline_stage::compute_shader:
-				return gse::gpu::pipeline_stage_flag::compute_shader;
-			case gse::gpu::pipeline_stage::draw_indirect:
-				return gse::gpu::pipeline_stage_flag::draw_indirect;
-			case gse::gpu::pipeline_stage::late_fragment_tests:
-				return gse::gpu::pipeline_stage_flag::late_fragment_tests;
-		}
-		return {};
+auto gse::vulkan::pipeline_stage_to_flags(const gpu::pipeline_stage s) -> gpu::pipeline_stage_flags {
+	switch (s) {
+		case gpu::pipeline_stage::vertex_shader:
+			return gpu::pipeline_stage_flag::vertex_shader;
+		case gpu::pipeline_stage::fragment_shader:
+			return gpu::pipeline_stage_flag::fragment_shader;
+		case gpu::pipeline_stage::compute_shader:
+			return gpu::pipeline_stage_flag::compute_shader;
+		case gpu::pipeline_stage::draw_indirect:
+			return gpu::pipeline_stage_flag::draw_indirect;
+		case gpu::pipeline_stage::late_fragment_tests:
+			return gpu::pipeline_stage_flag::late_fragment_tests;
 	}
+	return {};
 }
 
 auto gse::vulkan::sampled(const image_resource& img, const gpu::pipeline_stage_flags stage) -> resource_usage {
@@ -899,11 +904,11 @@ auto gse::vulkan::attachment(const image_resource& img, const gpu::pipeline_stag
 }
 
 auto gse::gpu::storage_read(const vulkan::basic_buffer<vulkan::device>& buf, const pipeline_stage stage) -> vulkan::resource_usage {
-	return vulkan::storage_read(buf, pipeline_stage_to_flags(stage));
+	return vulkan::storage_read(buf, vulkan::pipeline_stage_to_flags(stage));
 }
 
 auto gse::gpu::storage_write(const vulkan::basic_buffer<vulkan::device>& buf, const pipeline_stage stage) -> vulkan::resource_usage {
-	return vulkan::storage(buf, pipeline_stage_to_flags(stage));
+	return vulkan::storage(buf, vulkan::pipeline_stage_to_flags(stage));
 }
 
 auto gse::gpu::transfer_read(const vulkan::basic_buffer<vulkan::device>& buf) -> vulkan::resource_usage {
@@ -915,18 +920,16 @@ auto gse::gpu::transfer_write(const vulkan::basic_buffer<vulkan::device>& buf) -
 }
 
 auto gse::gpu::sampled(const vulkan::basic_image<vulkan::device>& img, const pipeline_stage stage) -> vulkan::resource_usage {
-	return vulkan::sampled(img, pipeline_stage_to_flags(stage));
+	return vulkan::sampled(img, vulkan::pipeline_stage_to_flags(stage));
 }
 
 auto gse::gpu::indirect_read(const vulkan::basic_buffer<vulkan::device>& buf, const pipeline_stage stage) -> vulkan::resource_usage {
-	return vulkan::indirect_read(buf, pipeline_stage_to_flags(stage));
-}
-
-namespace {
-	const char swapchain_sentinel = 0;
+	return vulkan::indirect_read(buf, vulkan::pipeline_stage_to_flags(stage));
 }
 
 namespace gse::vulkan {
+	const char swapchain_sentinel = 0;
+
 	template <typename T>
 	consteval auto pass_tag_string(
 	) -> std::string_view;
@@ -1002,7 +1005,7 @@ auto gse::vulkan::pass_builder::color_output_load() -> pass_builder& {
 	};
 	m_pass.reads.push_back({
 		{
-			.ptr = &swapchain_sentinel, 
+			.ptr = &swapchain_sentinel,
 			.type = resource_type::image
 		},
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -1530,17 +1533,17 @@ auto gse::vulkan::render_graph::execute() -> void {
 				std::optional<vk::RenderingAttachmentInfo> depth_att;
 
 				if (pass.color_output) {
-					const auto& co = *pass.color_output;
+					const auto& [is_swapchain, custom_target, op, clear_value] = *pass.color_output;
 					auto vk_load = vk::AttachmentLoadOp::eDontCare;
 					vk::ClearValue clear_val{};
 
-					if (co.op == load_op::clear_color) {
+					if (op == load_op::clear_color) {
 						vk_load = vk::AttachmentLoadOp::eClear;
 						clear_val.color = vk::ClearColorValue{
-							.float32 = std::array{ co.clear_value.r, co.clear_value.g, co.clear_value.b, co.clear_value.a }
+							.float32 = std::array{ clear_value.r, clear_value.g, clear_value.b, clear_value.a }
 						};
 					}
-					else if (co.op == load_op::load) {
+					else if (op == load_op::load) {
 						vk_load = vk::AttachmentLoadOp::eLoad;
 					}
 

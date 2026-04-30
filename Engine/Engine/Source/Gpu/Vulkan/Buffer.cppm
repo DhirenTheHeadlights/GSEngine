@@ -69,7 +69,13 @@ gse::vulkan::basic_buffer<Device>::basic_buffer(const gpu::handle<basic_buffer<d
 
 template <typename Device>
 auto gse::vulkan::basic_buffer<Device>::create(Device& dev, const gpu::buffer_desc& desc) -> basic_buffer {
-	return dev.create_buffer(gpu::buffer_create_info{ .size = desc.size, .usage = desc.usage }, desc.data);
+	return dev.create_buffer(
+		gpu::buffer_create_info{
+			.size = desc.size,
+			.usage = desc.usage,
+		},
+		desc.data
+	);
 }
 
 template <typename Device>

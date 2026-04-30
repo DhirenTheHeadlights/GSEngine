@@ -33,7 +33,6 @@ export namespace gse::vulkan {
         ) const -> gpu::handle<semaphore>;
 
         [[nodiscard]] auto read(
-            const device& device
         ) const -> std::uint64_t;
 
         auto wait_until(
@@ -68,8 +67,8 @@ auto gse::vulkan::queue_timeline::handle() const -> gpu::handle<semaphore> {
     return std::bit_cast<gpu::handle<semaphore>>(*m_semaphore);
 }
 
-auto gse::vulkan::queue_timeline::read(const device& device) const -> std::uint64_t {
-    return device.raii_device().getSemaphoreCounterValue(*m_semaphore);
+auto gse::vulkan::queue_timeline::read() const -> std::uint64_t {
+    return m_semaphore.getCounterValue();
 }
 
 auto gse::vulkan::queue_timeline::wait_until(const device& device, const std::uint64_t value) const -> void {

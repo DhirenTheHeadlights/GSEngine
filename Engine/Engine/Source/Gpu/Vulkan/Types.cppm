@@ -238,7 +238,7 @@ export namespace gse::gpu {
 		std::uint32_t index_count;
 		std::uint32_t instance_count;
 		std::uint32_t first_index;
-		std::int32_t  vertex_offset;
+		std::int32_t vertex_offset;
 		std::uint32_t first_instance;
 	};
 
@@ -719,6 +719,83 @@ export namespace gse::vulkan {
 	consteval auto snake_to_camel(
 		std::string_view snake
 	) -> std::string;
+
+	template <typename E>
+		requires (enum_has_vk_annotation<E>())
+	auto to_vk(
+		E e
+	) -> vk_type_of<E>;
+
+	template <typename FlagEnum>
+		requires (bitflag_enum_has_vk_annotation<FlagEnum>())
+	auto to_vk(
+		gse::flags<FlagEnum> fls
+	) -> vk::Flags<vk_flag_bit_type_of<FlagEnum>>;
+
+	template <typename Dst, typename Src>
+	auto reflect_struct_to_vk(
+		const Src& src
+	) -> Dst;
+
+	auto to_vk(
+		const gpu::surface_format& sf
+	) -> vk::SurfaceFormatKHR;
+
+	auto to_vk(
+		const gpu::viewport& v
+	) -> vk::Viewport;
+
+	auto to_vk(
+		const gpu::push_constant_range& pcr
+	) -> vk::PushConstantRange;
+
+	auto to_vk(
+		const gpu::buffer_copy_region& r
+	) -> vk::BufferCopy;
+
+	auto to_vk(
+		const gpu::image_subresource_layers& s
+	) -> vk::ImageSubresourceLayers;
+
+	auto to_vk(
+		const gpu::buffer_image_copy_region& r
+	) -> vk::BufferImageCopy;
+
+	auto to_vk(
+		const gpu::image_copy_region& r
+	) -> vk::ImageCopy;
+
+	auto to_vk(
+		const gpu::image_blit_region& r
+	) -> vk::ImageBlit;
+
+	auto to_vk(
+		const gpu::acceleration_structure_build_range_info& r
+	) -> vk::AccelerationStructureBuildRangeInfoKHR;
+
+	auto from_vk(
+		vk::Result r
+	) -> gpu::result;
+
+	auto from_vk(
+		vk::PresentModeKHR mode
+	) -> gpu::present_mode;
+
+	auto from_vk(
+		vk::ColorSpaceKHR cs
+	) -> gpu::color_space;
+
+	auto from_vk(
+		vk::Format f
+	) -> gpu::image_format;
+
+	auto from_vk(
+		const vk::SurfaceFormatKHR& sf
+	) -> gpu::surface_format;
+
+	auto from_vk(
+		const vk::SurfaceCapabilitiesKHR& caps
+	) -> gpu::surface_capabilities;
 }
 
 consteval auto gse::vulkan::first_annotation_of_type(const std::meta::info enumerator, const std::meta::info vk_type) -> std::meta::info {
@@ -814,85 +891,6 @@ auto gse::vulkan::reflect_from_vk(const Vk v, const E fallback) -> E {
 		}
 	}
 	return fallback;
-}
-
-export namespace gse::vulkan {
-	template <typename E>
-		requires (enum_has_vk_annotation<E>())
-	auto to_vk(
-		E e
-	) -> vk_type_of<E>;
-
-	template <typename FlagEnum>
-		requires (bitflag_enum_has_vk_annotation<FlagEnum>())
-	auto to_vk(
-		gse::flags<FlagEnum> fls
-	) -> vk::Flags<vk_flag_bit_type_of<FlagEnum>>;
-
-	template <typename Dst, typename Src>
-	auto reflect_struct_to_vk(
-		const Src& src
-	) -> Dst;
-
-	auto to_vk(
-		const gpu::surface_format& sf
-	) -> vk::SurfaceFormatKHR;
-
-	auto to_vk(
-		const gpu::viewport& v
-	) -> vk::Viewport;
-
-	auto to_vk(
-		const gpu::push_constant_range& pcr
-	) -> vk::PushConstantRange;
-
-	auto to_vk(
-		const gpu::buffer_copy_region& r
-	) -> vk::BufferCopy;
-
-	auto to_vk(
-		const gpu::image_subresource_layers& s
-	) -> vk::ImageSubresourceLayers;
-
-	auto to_vk(
-		const gpu::buffer_image_copy_region& r
-	) -> vk::BufferImageCopy;
-
-	auto to_vk(
-		const gpu::image_copy_region& r
-	) -> vk::ImageCopy;
-
-	auto to_vk(
-		const gpu::image_blit_region& r
-	) -> vk::ImageBlit;
-
-	auto to_vk(
-		const gpu::acceleration_structure_build_range_info& r
-	) -> vk::AccelerationStructureBuildRangeInfoKHR;
-
-	auto from_vk(
-		vk::Result r
-	) -> gpu::result;
-
-	auto from_vk(
-		vk::PresentModeKHR mode
-	) -> gpu::present_mode;
-
-	auto from_vk(
-		vk::ColorSpaceKHR cs
-	) -> gpu::color_space;
-
-	auto from_vk(
-		vk::Format f
-	) -> gpu::image_format;
-
-	auto from_vk(
-		const vk::SurfaceFormatKHR& sf
-	) -> gpu::surface_format;
-
-	auto from_vk(
-		const vk::SurfaceCapabilitiesKHR& caps
-	) -> gpu::surface_capabilities;
 }
 
 template <typename E>

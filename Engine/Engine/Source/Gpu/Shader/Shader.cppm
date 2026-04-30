@@ -12,8 +12,8 @@ import gse.containers;
 import gse.config;
 import gse.log;
 
-namespace gse {
-	export class shader final : public identifiable, non_copyable {
+export namespace gse {
+	class shader final : public identifiable, non_copyable {
 	public:
 		struct info {
 			std::string name;
@@ -21,7 +21,7 @@ namespace gse {
 		};
 
 		struct vertex_input {
-			static_vector<gpu::vertex_binding_desc, 4>   bindings;
+			static_vector<gpu::vertex_binding_desc, 4> bindings;
 			static_vector<gpu::vertex_attribute_desc, 16> attributes;
 		};
 
@@ -155,14 +155,12 @@ namespace gse {
 			std::string_view name
 		) const -> const struct uniform_block*;
 	};
-}
 
-export namespace gse {
-    template <typename T>
-    auto verify_uniform_block(
-        const resource::handle<shader>& s,
-        std::string_view block_name
-    ) -> bool;
+	template <typename T>
+	auto verify_uniform_block(
+		const resource::handle<shader>& s,
+		std::string_view block_name
+	) -> bool;
 }
 
 gse::shader::shader(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path) {
@@ -175,10 +173,14 @@ gse::shader::shader(const std::filesystem::path& path) : identifiable(path, conf
 auto gse::shader::load(const auto&) -> void {
 	std::ifstream in(m_info.path, std::ios::binary);
 	assert(in.is_open(), std::source_location::current(), "Failed to open gshader asset: {}", m_info.path.string());
-	if (!in.is_open()) return;
+	if (!in.is_open()) {
+		return;
+	}
 
 	binary_reader ar(in, 0x47534852, 1, m_info.path.string());
-	if (!ar.valid()) return;
+	if (!ar.valid()) {
+		return;
+	}
 
 	std::uint8_t shader_type = 0;
 	ar & shader_type;
@@ -210,16 +212,20 @@ auto gse::shader::load(const auto&) -> void {
 			switch (fmt) {
 				case gpu::vertex_format::r32_sfloat:
 				case gpu::vertex_format::r32_sint:
-				case gpu::vertex_format::r32_uint:            return 4;
+				case gpu::vertex_format::r32_uint:
+					return 4;
 				case gpu::vertex_format::r32g32_sfloat:
 				case gpu::vertex_format::r32g32_sint:
-				case gpu::vertex_format::r32g32_uint:         return 8;
+				case gpu::vertex_format::r32g32_uint:
+					return 8;
 				case gpu::vertex_format::r32g32b32_sfloat:
 				case gpu::vertex_format::r32g32b32_sint:
-				case gpu::vertex_format::r32g32b32_uint:      return 12;
+				case gpu::vertex_format::r32g32b32_uint:
+					return 12;
 				case gpu::vertex_format::r32g32b32a32_sfloat:
 				case gpu::vertex_format::r32g32b32a32_sint:
-				case gpu::vertex_format::r32g32b32a32_uint:   return 16;
+				case gpu::vertex_format::r32g32b32a32_uint:
+					return 16;
 			}
 			return 0;
 		};
@@ -272,7 +278,9 @@ auto gse::shader::required_bindings() const -> std::vector<std::string> {
 }
 
 auto gse::shader::push_block(const std::string_view name) const -> struct uniform_block {
-	const auto it = std::ranges::find_if(m_push_constants, [&](auto& b) { return b.name == name; });
+	const auto it = std::ranges::find_if(m_push_constants, [&](auto& b) {
+		return b.name == name;
+	});
 	assert(it != m_push_constants.end(), std::source_location::current(), "Push constant block '{}' not found", name);
 	return *it;
 }
@@ -298,7 +306,9 @@ auto gse::shader::uniform_blocks() const -> std::vector<struct uniform_block> {
 auto gse::shader::find_binding(const std::string_view name) const -> const binding* {
 	for (const auto& [type, bindings] : m_layout.sets | std::views::values) {
 		for (const auto& b : bindings) {
-			if (b.name == name) return &b;
+			if (b.name == name) {
+				return &b;
+			}
 		}
 	}
 	return nullptr;
@@ -383,11 +393,16 @@ auto gse::shader::set_ssbo_struct(const std::span<std::byte> dst, const std::str
 
 auto gse::shader::spirv(const gpu::shader_stage stage) const -> std::span<const std::uint32_t> {
 	switch (stage) {
-		case gpu::shader_stage::vertex:   return m_vert_spirv;
-		case gpu::shader_stage::fragment: return m_frag_spirv;
-		case gpu::shader_stage::compute:  return m_compute_spirv;
-		case gpu::shader_stage::task:     return m_task_spirv;
-		case gpu::shader_stage::mesh:     return m_mesh_spirv;
+		case gpu::shader_stage::vertex:
+			return m_vert_spirv;
+		case gpu::shader_stage::fragment:
+			return m_frag_spirv;
+		case gpu::shader_stage::compute:
+			return m_compute_spirv;
+		case gpu::shader_stage::task:
+			return m_task_spirv;
+		case gpu::shader_stage::mesh:
+			return m_mesh_spirv;
 	}
 	return {};
 }

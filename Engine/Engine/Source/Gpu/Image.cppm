@@ -22,66 +22,84 @@ import gse.math;
 export namespace gse::gpu {
 	auto transition_image_to(
 		gpu::device& dev,
-		image& img,
+		vulkan::image& img,
 		image_layout target
 	) -> void;
 
 	auto upload_image_2d(
 		gpu::device& dev,
-		image& img,
+		vulkan::image& img,
 		const void* pixel_data,
 		std::size_t data_size
 	) -> void;
 
 	auto upload_image_layers(
 		gpu::device& dev,
-		image& img,
+		vulkan::image& img,
 		const std::vector<const void*>& face_data,
 		std::size_t bytes_per_face
 	) -> void;
 }
 
-namespace {
+namespace gse {
 	auto transition_image_async(
-		gse::gpu::device& dev,
-		gse::gpu::handle<gse::gpu::image> img,
-		gse::gpu::image_layout target_layout,
-		gse::gpu::image_aspect_flag aspect,
+		gpu::device& dev,
+		gpu::handle<vulkan::image> img,
+		gpu::image_layout target_layout,
+		gpu::image_aspect_flag aspect,
 		std::uint32_t layers,
 		bool is_depth
-	) -> gse::async::task<> {
-		auto cmd = co_await begin_transient(dev, gse::gpu::queue_id::graphics);
+	) -> async::task<>;
 
-		const auto dst_stages = is_depth
-			? (gse::gpu::pipeline_stage_flag::early_fragment_tests | gse::gpu::pipeline_stage_flag::late_fragment_tests)
-			: gse::gpu::pipeline_stage_flags{ gse::gpu::pipeline_stage_flag::all_commands };
-		const auto dst_access = is_depth
-			? (gse::gpu::access_flag::depth_stencil_attachment_write | gse::gpu::access_flag::depth_stencil_attachment_read)
-			: gse::gpu::access_flags{ gse::gpu::access_flag::shader_read };
+	auto upload_image_2d_async(
+		gpu::device& dev,
+		vulkan::image& resource,
+		const void* pixel_data,
+		std::size_t data_size,
+		vec2u extent
+	) -> async::task<>;
 
-		const gse::gpu::image_barrier barrier{
-			.src_stages = gse::gpu::pipeline_stage_flag::top_of_pipe,
-			.src_access = {},
-			.dst_stages = dst_stages,
-			.dst_access = dst_access,
-			.old_layout = gse::gpu::image_layout::undefined,
-			.new_layout = target_layout,
-			.image = img,
-			.aspects = aspect,
-			.base_mip_level = 0,
-			.level_count = 1,
-			.base_array_layer = 0,
-			.layer_count = layers,
-		};
-
-		const gse::gpu::dependency_info dep{ .image_barriers = std::span(&barrier, 1) };
-		gse::vulkan::commands(cmd.handle()).pipeline_barrier(dep);
-
-		co_await submit(dev, std::move(cmd), gse::gpu::queue_id::graphics);
-	}
+	auto upload_image_layers_async(
+		gpu::device& dev,
+		vulkan::image& resource,
+		std::vector<const void*> face_data,
+		std::size_t bytes_per_face,
+		vec2u extent
+	) -> async::task<>;
 }
 
-auto gse::gpu::transition_image_to(gpu::device& dev, image& img, const image_layout target_layout) -> void {
+auto gse::transition_image_async(gpu::device& dev, gpu::handle<vulkan::image> img, gpu::image_layout target_layout, gpu::image_aspect_flag aspect, std::uint32_t layers, bool is_depth) -> async::task<> {
+	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics);
+
+	const auto dst_stages = is_depth
+		? (gpu::pipeline_stage_flag::early_fragment_tests | gpu::pipeline_stage_flag::late_fragment_tests)
+		: gpu::pipeline_stage_flags{ gpu::pipeline_stage_flag::all_commands };
+	const auto dst_access = is_depth
+		? (gpu::access_flag::depth_stencil_attachment_write | gpu::access_flag::depth_stencil_attachment_read)
+		: gpu::access_flags{ gpu::access_flag::shader_read };
+
+	const gpu::image_barrier barrier{
+		.src_stages = gpu::pipeline_stage_flag::top_of_pipe,
+		.src_access = {},
+		.dst_stages = dst_stages,
+		.dst_access = dst_access,
+		.old_layout = gpu::image_layout::undefined,
+		.new_layout = target_layout,
+		.image = img,
+		.aspects = aspect,
+		.base_mip_level = 0,
+		.level_count = 1,
+		.base_array_layer = 0,
+		.layer_count = layers,
+	};
+
+	const gpu::dependency_info dep{ .image_barriers = std::span(&barrier, 1) };
+	vulkan::commands(cmd.handle()).pipeline_barrier(dep);
+
+	co_await submit(dev, std::move(cmd), gpu::queue_id::graphics);
+}
+
+auto gse::gpu::transition_image_to(gpu::device& dev, vulkan::image& img, const image_layout target_layout) -> void {
 	if (target_layout == image_layout::undefined) {
 		return;
 	}
@@ -96,152 +114,138 @@ auto gse::gpu::transition_image_to(gpu::device& dev, image& img, const image_lay
 	img.set_layout(target_layout);
 }
 
-namespace {
-	auto upload_image_2d_async(
-		gse::gpu::device& dev,
-		gse::gpu::image& resource,
-		const void* pixel_data,
-		std::size_t data_size,
-		gse::vec2u extent
-	) -> gse::async::task<> {
-		auto staging = dev.allocator().create_buffer(
-			gse::gpu::buffer_create_info{
-				.size = data_size,
-				.usage = gse::gpu::buffer_flag::transfer_src,
-			},
-			pixel_data
-		);
+auto gse::upload_image_2d_async(gpu::device& dev, vulkan::image& resource, const void* pixel_data, std::size_t data_size, vec2u extent) -> async::task<> {
+	auto staging = dev.allocator().create_buffer(
+		gpu::buffer_create_info{
+			.size = data_size,
+			.usage = gpu::buffer_flag::transfer_src,
+		},
+		pixel_data
+	);
 
-		auto cmd = co_await begin_transient(dev, gse::gpu::queue_id::graphics);
+	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics);
 
-		gse::vulkan::transition_image_layout(
-			resource,
-			cmd.handle(),
-			gse::gpu::image_layout::transfer_dst,
-			gse::gpu::image_aspect_flag::color,
-			gse::gpu::pipeline_stage_flag::top_of_pipe,
-			{},
-			gse::gpu::pipeline_stage_flag::transfer,
-			gse::gpu::access_flag::transfer_write
-		);
+	vulkan::transition_image_layout(
+		resource,
+		cmd.handle(),
+		gpu::image_layout::transfer_dst,
+		gpu::image_aspect_flag::color,
+		gpu::pipeline_stage_flag::top_of_pipe,
+		{},
+		gpu::pipeline_stage_flag::transfer,
+		gpu::access_flag::transfer_write
+	);
 
-		const gse::gpu::buffer_image_copy_region region{
-			.buffer_offset = 0,
-			.image_subresource = {
-				.aspects = gse::gpu::image_aspect_flag::color,
-				.mip_level = 0,
-				.base_array_layer = 0,
-				.layer_count = 1,
-			},
-			.image_extent = gse::vec3u{ extent.x(), extent.y(), 1 },
-		};
+	const gpu::buffer_image_copy_region region{
+		.buffer_offset = 0,
+		.image_subresource = {
+			.aspects = gpu::image_aspect_flag::color,
+			.mip_level = 0,
+			.base_array_layer = 0,
+			.layer_count = 1,
+		},
+		.image_extent = vec3u{ extent.x(), extent.y(), 1 },
+	};
 
-		gse::vulkan::commands(cmd.handle()).copy_buffer_to_image(
-			staging.handle(),
-			resource.handle(),
-			gse::gpu::image_layout::transfer_dst,
-			std::span(&region, 1)
-		);
+	vulkan::commands(cmd.handle()).copy_buffer_to_image(
+		staging.handle(),
+		resource.handle(),
+		gpu::image_layout::transfer_dst,
+		std::span(&region, 1)
+	);
 
-		gse::vulkan::transition_image_layout(
-			resource,
-			cmd.handle(),
-			gse::gpu::image_layout::shader_read_only,
-			gse::gpu::image_aspect_flag::color,
-			gse::gpu::pipeline_stage_flag::transfer,
-			gse::gpu::access_flag::transfer_write,
-			gse::gpu::pipeline_stage_flag::fragment_shader,
-			gse::gpu::access_flag::shader_read
-		);
+	vulkan::transition_image_layout(
+		resource,
+		cmd.handle(),
+		gpu::image_layout::shader_read_only,
+		gpu::image_aspect_flag::color,
+		gpu::pipeline_stage_flag::transfer,
+		gpu::access_flag::transfer_write,
+		gpu::pipeline_stage_flag::fragment_shader,
+		gpu::access_flag::shader_read
+	);
 
-		co_await submit(dev, std::move(cmd), gse::gpu::queue_id::graphics)
-			.retain(std::move(staging));
-	}
-
-	auto upload_image_layers_async(
-		gse::gpu::device& dev,
-		gse::gpu::image& resource,
-		std::vector<const void*> face_data,
-		std::size_t bytes_per_face,
-		gse::vec2u extent
-	) -> gse::async::task<> {
-		const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
-		const std::size_t total_size = layer_count * bytes_per_face;
-
-		auto staging = dev.allocator().create_buffer(
-			gse::gpu::buffer_create_info{
-				.size = total_size,
-				.usage = gse::gpu::buffer_flag::transfer_src,
-			}
-		);
-
-		const auto mapped = staging.mapped();
-		for (std::size_t i = 0; i < layer_count; ++i) {
-			gse::memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
-		}
-
-		auto cmd = co_await begin_transient(dev, gse::gpu::queue_id::graphics);
-
-		gse::vulkan::transition_image_layout(
-			resource,
-			cmd.handle(),
-			gse::gpu::image_layout::transfer_dst,
-			gse::gpu::image_aspect_flag::color,
-			gse::gpu::pipeline_stage_flag::top_of_pipe,
-			{},
-			gse::gpu::pipeline_stage_flag::transfer,
-			gse::gpu::access_flag::transfer_write,
-			1,
-			layer_count
-		);
-
-		std::vector<gse::gpu::buffer_image_copy_region> regions;
-		regions.reserve(layer_count);
-		for (std::uint32_t i = 0; i < layer_count; ++i) {
-			regions.emplace_back(gse::gpu::buffer_image_copy_region{
-				.buffer_offset = i * bytes_per_face,
-				.image_subresource = {
-					.aspects = gse::gpu::image_aspect_flag::color,
-					.mip_level = 0,
-					.base_array_layer = i,
-					.layer_count = 1,
-				},
-				.image_extent = gse::vec3u{ extent.x(), extent.y(), 1 },
-			});
-		}
-
-		gse::vulkan::commands(cmd.handle()).copy_buffer_to_image(
-			staging.handle(),
-			resource.handle(),
-			gse::gpu::image_layout::transfer_dst,
-			regions
-		);
-
-		gse::vulkan::transition_image_layout(
-			resource,
-			cmd.handle(),
-			gse::gpu::image_layout::shader_read_only,
-			gse::gpu::image_aspect_flag::color,
-			gse::gpu::pipeline_stage_flag::transfer,
-			gse::gpu::access_flag::transfer_write,
-			gse::gpu::pipeline_stage_flag::fragment_shader,
-			gse::gpu::access_flag::shader_read,
-			1,
-			layer_count
-		);
-
-		co_await submit(dev, std::move(cmd), gse::gpu::queue_id::graphics)
-			.retain(std::move(staging));
-	}
+	co_await submit(dev, std::move(cmd), gpu::queue_id::graphics)
+		.retain(std::move(staging));
 }
 
-auto gse::gpu::upload_image_2d(gpu::device& dev, image& img, const void* pixel_data, const std::size_t data_size) -> void {
+auto gse::upload_image_layers_async(gpu::device& dev, vulkan::image& resource, std::vector<const void*> face_data, std::size_t bytes_per_face, vec2u extent) -> async::task<> {
+	const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
+	const std::size_t total_size = layer_count * bytes_per_face;
+
+	auto staging = dev.allocator().create_buffer(
+		gpu::buffer_create_info{
+			.size = total_size,
+			.usage = gpu::buffer_flag::transfer_src,
+		}
+	);
+
+	const auto mapped = staging.mapped();
+	for (std::size_t i = 0; i < layer_count; ++i) {
+		memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
+	}
+
+	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics);
+
+	vulkan::transition_image_layout(
+		resource,
+		cmd.handle(),
+		gpu::image_layout::transfer_dst,
+		gpu::image_aspect_flag::color,
+		gpu::pipeline_stage_flag::top_of_pipe,
+		{},
+		gpu::pipeline_stage_flag::transfer,
+		gpu::access_flag::transfer_write,
+		1,
+		layer_count
+	);
+
+	std::vector<gpu::buffer_image_copy_region> regions;
+	regions.reserve(layer_count);
+	for (std::uint32_t i = 0; i < layer_count; ++i) {
+		regions.emplace_back(gpu::buffer_image_copy_region{
+			.buffer_offset = i * bytes_per_face,
+			.image_subresource = {
+				.aspects = gpu::image_aspect_flag::color,
+				.mip_level = 0,
+				.base_array_layer = i,
+				.layer_count = 1,
+			},
+			.image_extent = vec3u{ extent.x(), extent.y(), 1 },
+		});
+	}
+
+	vulkan::commands(cmd.handle()).copy_buffer_to_image(
+		staging.handle(),
+		resource.handle(),
+		gpu::image_layout::transfer_dst,
+		regions
+	);
+
+	vulkan::transition_image_layout(
+		resource,
+		cmd.handle(),
+		gpu::image_layout::shader_read_only,
+		gpu::image_aspect_flag::color,
+		gpu::pipeline_stage_flag::transfer,
+		gpu::access_flag::transfer_write,
+		gpu::pipeline_stage_flag::fragment_shader,
+		gpu::access_flag::shader_read,
+		1,
+		layer_count
+	);
+
+	co_await submit(dev, std::move(cmd), gpu::queue_id::graphics)
+		.retain(std::move(staging));
+}
+
+auto gse::gpu::upload_image_2d(gpu::device& dev, vulkan::image& img, const void* pixel_data, const std::size_t data_size) -> void {
 	const auto extent3 = img.extent();
 	dispatch(dev, upload_image_2d_async(dev, img, pixel_data, data_size, vec2u{ extent3.x(), extent3.y() }));
 	img.set_layout(image_layout::shader_read_only);
 }
 
-auto gse::gpu::upload_image_layers(gpu::device& dev, image& img, const std::vector<const void*>& face_data, const std::size_t bytes_per_face) -> void {
+auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const std::vector<const void*>& face_data, const std::size_t bytes_per_face) -> void {
 	const auto extent3 = img.extent();
 	dispatch(dev, upload_image_layers_async(dev, img, face_data, bytes_per_face, vec2u{ extent3.x(), extent3.y() }));
 	img.set_layout(image_layout::shader_read_only);

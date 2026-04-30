@@ -18,8 +18,7 @@ export namespace gse::gpu {
 			const handle&
 		) const = default;
 
-		explicit constexpr operator bool(
-		) const {
+		explicit constexpr operator bool() const {
 			return value != 0;
 		}
 	};

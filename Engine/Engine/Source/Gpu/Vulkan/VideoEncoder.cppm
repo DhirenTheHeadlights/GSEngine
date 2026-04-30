@@ -719,13 +719,13 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 	slot.last_pts = m_clock.elapsed();
 	slot.last_was_keyframe = is_keyframe;
 
-	const gpu::command_buffer_submit_info cmd_submit{
-		.command_buffer = std::bit_cast<gpu::handle<command_buffer>>(*slot.cmd),
+	const command_buffer_submit_info cmd_submit{
+		.command_buffer = std::bit_cast<handle<command_buffer>>(*slot.cmd),
 	};
-	const gpu::submit_info submit{
+	const submit_info submit{
 		.command_buffers = std::span(&cmd_submit, 1),
 	};
-	m_device->vulkan_queue().submit_video_encode(submit, std::bit_cast<gpu::handle<fence>>(*slot.fence));
+	m_device->vulkan_queue().submit_video_encode(submit, std::bit_cast<handle<fence>>(*slot.fence));
 	slot.submitted = true;
 	slot.has_output = true;
 
@@ -850,7 +850,7 @@ constexpr auto gse::gpu::vk_enum(const From v) -> To {
 auto gse::gpu::build_profile(profile_chain& chain, const video_codec codec) -> void {
 	chain = {};
 
-	chain.usage = vk::VideoEncodeUsageInfoKHR{
+	chain.usage = {
 		.videoUsageHints = vk::VideoEncodeUsageFlagBitsKHR::eRecording,
 		.videoContentHints = vk::VideoEncodeContentFlagBitsKHR::eRendered,
 		.tuningMode = vk::VideoEncodeTuningModeKHR::eLowLatency

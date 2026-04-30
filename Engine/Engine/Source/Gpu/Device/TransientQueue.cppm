@@ -8,6 +8,7 @@ import :vulkan_device;
 import :vulkan_queue_timeline;
 import :vulkan_transient_command_buffer;
 import :vulkan_transient_command_pool;
+import :vulkan_semaphore;
 
 import gse.core;
 
@@ -45,7 +46,7 @@ export namespace gse::gpu {
         ) const -> bool;
 
         [[nodiscard]] auto timeline_handle(
-        ) const -> handle<semaphore>;
+        ) const -> handle<vulkan::semaphore>;
 
         [[nodiscard]] auto allocate_primary(
             const vulkan::device& device
@@ -112,7 +113,7 @@ auto gse::gpu::transient_queue::reached(const std::uint64_t value) const -> bool
     return m_progress >= value;
 }
 
-auto gse::gpu::transient_queue::timeline_handle() const -> handle<semaphore> {
+auto gse::gpu::transient_queue::timeline_handle() const -> handle<vulkan::semaphore> {
     return m_timeline.handle();
 }
 
@@ -121,11 +122,14 @@ auto gse::gpu::transient_queue::allocate_primary(const vulkan::device& device) -
 }
 
 auto gse::gpu::transient_queue::park(const std::uint64_t value, std::coroutine_handle<> handle) -> void {
-    m_waiters.push_back({ .m_value = value, .m_handle = handle });
+    m_waiters.push_back({
+        .m_value = value,
+        .m_handle = handle,
+    });
 }
 
 auto gse::gpu::transient_queue::poll(const vulkan::device& device) -> std::uint64_t {
-    m_progress = m_timeline.read(device);
+    m_progress = m_timeline.read();
 
     std::vector<std::coroutine_handle<>> ready;
     std::erase_if(m_waiters, [&](const waiter& w) {

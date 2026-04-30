@@ -6,6 +6,7 @@ import vulkan;
 import :handles;
 import :types;
 import :vulkan_device;
+import :vulkan_descriptor_set_layout;
 
 import gse.core;
 

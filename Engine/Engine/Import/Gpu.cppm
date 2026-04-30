@@ -41,6 +41,7 @@ export import :shader;
 export import :shader_layout;
 export import :shader_registry;
 export import :context;
+export import :acceleration_structure;
 export import :buffer;
 export import :image;
 export import :compute;

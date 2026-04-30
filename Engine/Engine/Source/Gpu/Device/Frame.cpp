@@ -23,7 +23,7 @@ auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<fra
     return std::make_unique<frame>(std::move(sync), 0, dev.vulkan_command().frame_command_buffer(0), dev, sc);
 }
 
-gse::gpu::frame::frame(vulkan::sync&& sync, const std::uint32_t image_index, const gpu::handle<vulkan::command_buffer> command_buffer, device& dev, swap_chain& sc)
+gse::gpu::frame::frame(vulkan::sync&& sync, const std::uint32_t image_index, const handle<vulkan::command_buffer> command_buffer, device& dev, swap_chain& sc)
     : m_sync(std::move(sync)), m_image_index(image_index), m_command_buffer(command_buffer), m_device(&dev), m_swapchain(&sc) {}
 
 auto gse::gpu::frame::current_frame() const -> std::uint32_t {
@@ -34,7 +34,7 @@ auto gse::gpu::frame::image_index() const -> std::uint32_t {
     return m_image_index;
 }
 
-auto gse::gpu::frame::command_buffer() const -> gpu::handle<vulkan::command_buffer> {
+auto gse::gpu::frame::command_buffer() const -> handle<vulkan::command_buffer> {
     return m_command_buffer;
 }
 
@@ -65,7 +65,7 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
 
     try {
         const auto fence_result = vulkan::wait_for_fence(dev, m_sync.in_flight_fence(m_current_frame));
-        assert(fence_result == gpu::result::success, std::source_location::current(), "Failed to wait for in-flight fence!");
+        assert(fence_result == result::success, std::source_location::current(), "Failed to wait for in-flight fence!");
     } catch (const vk::DeviceLostError&) {
         m_device->report_device_lost(std::format("begin_frame waitForFences (frame {})", m_current_frame));
         return std::unexpected(frame_status::device_lost);
@@ -83,7 +83,7 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
         return std::unexpected(frame_status::swapchain_out_of_date);
     }
 
-    gpu::result acquire_status = gpu::result::error_unknown;
+    result acquire_status = result::error_unknown;
     std::uint32_t acquired_image_index = 0;
     try {
         const auto acquired = vulkan::acquire_next_image(
@@ -94,19 +94,19 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
         acquire_status = acquired.result;
         acquired_image_index = acquired.image_index;
     } catch (const vk::OutOfDateKHRError&) {
-        acquire_status = gpu::result::error_out_of_date_khr;
+        acquire_status = result::error_out_of_date_khr;
     } catch (const vk::DeviceLostError&) {
         m_device->report_device_lost(std::format("acquireNextImage2KHR (frame {})", m_current_frame));
         return std::unexpected(frame_status::device_lost);
     }
 
-    if (acquire_status == gpu::result::error_out_of_date_khr) {
+    if (acquire_status == result::error_out_of_date_khr) {
         recreate_resources(win);
         return std::unexpected(frame_status::swapchain_out_of_date);
     }
 
     assert(
-        acquire_status == gpu::result::success || acquire_status == gpu::result::suboptimal_khr,
+        acquire_status == result::success || acquire_status == result::suboptimal_khr,
         std::source_location::current(),
         "Failed to acquire swap chain image!"
     );
@@ -143,33 +143,33 @@ auto gse::gpu::frame::end(window& win) -> void {
         vulkan::commands{ m_command_buffer }.end();
     }
 
-    std::vector<gpu::semaphore_submit_info> wait_infos;
+    std::vector<semaphore_submit_info> wait_infos;
     wait_infos.push_back({
         .semaphore = m_sync.image_available(m_current_frame),
         .value = 0,
-        .stages = gpu::pipeline_stage_flag::top_of_pipe,
+        .stages = pipeline_stage_flag::top_of_pipe,
     });
 
     for (const auto& wait : m_extra_waits) {
         wait_infos.push_back({
-            .semaphore = std::bit_cast<gpu::handle<semaphore>>(**wait.raii_semaphore()),
+            .semaphore = std::bit_cast<handle<semaphore>>(**wait.raii_semaphore()),
             .value = wait.value(),
-            .stages = gpu::pipeline_stage_flag::all_commands,
+            .stages = pipeline_stage_flag::all_commands,
         });
     }
     m_extra_waits.clear();
 
-    const gpu::command_buffer_submit_info cmd_info{
+    const command_buffer_submit_info cmd_info{
         .command_buffer = m_command_buffer,
     };
 
-    const gpu::semaphore_submit_info signal_info{
+    const semaphore_submit_info signal_info{
         .semaphore = m_sync.render_finished(m_image_index),
         .value = 0,
-        .stages = gpu::pipeline_stage_flag::bottom_of_pipe,
+        .stages = pipeline_stage_flag::bottom_of_pipe,
     };
 
-    const gpu::submit_info submit{
+    const submit_info submit{
         .wait_semaphores = wait_infos,
         .command_buffers = std::span(&cmd_info, 1),
         .signal_semaphores = std::span(&signal_info, 1),
@@ -188,23 +188,23 @@ auto gse::gpu::frame::end(window& win) -> void {
         }
     }
 
-    const gpu::handle<semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
-    const gpu::handle<swap_chain> swapchain_handle = m_swapchain->config().swap_chain_handle();
+    const handle<semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
+    const handle<swap_chain> swapchain_handle = m_swapchain->config().swap_chain_handle();
 
-    const gpu::present_info present_info{
+    const present_info present_info{
         .wait_semaphores = std::span(&render_finished_handle, 1),
         .swapchains = std::span(&swapchain_handle, 1),
         .image_indices = std::span(&m_image_index, 1),
     };
 
-    gpu::result present_result;
+    result present_result;
     {
     	trace::scope_guard sg{trace_id<"end_frame::present">()};
         try {
             present_result = m_device->vulkan_queue().present(present_info);
         }
         catch (const vk::OutOfDateKHRError&) {
-            present_result = gpu::result::error_out_of_date_khr;
+            present_result = result::error_out_of_date_khr;
         }
         catch (const vk::DeviceLostError&) {
             m_device->report_device_lost(std::format("presentKHR (frame {}, image {})", m_current_frame, m_image_index));
@@ -212,12 +212,12 @@ auto gse::gpu::frame::end(window& win) -> void {
         }
     }
 
-    if (present_result == gpu::result::error_out_of_date_khr || present_result == gpu::result::suboptimal_khr) {
+    if (present_result == result::error_out_of_date_khr || present_result == result::suboptimal_khr) {
         recreate_resources(win);
     }
     else {
         assert(
-            present_result == gpu::result::success,
+            present_result == result::success,
             std::source_location::current(),
             "Failed to present swap chain image!"
         );

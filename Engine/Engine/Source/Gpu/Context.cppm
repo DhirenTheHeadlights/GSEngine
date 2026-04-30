@@ -128,7 +128,7 @@ export namespace gse::gpu {
 		) -> auto&;
 
 		[[nodiscard]] auto device_handle(
-		) const -> gpu::handle<device>;
+		) const -> handle<device>;
 
 		[[nodiscard]] auto bindless_textures(
 			this auto& self
@@ -168,13 +168,7 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save)
-	: m_window(window_title, input, save)
-	, m_device(device::create(m_window, save))
-	, m_shader_registry(std::make_unique<gpu::shader_registry>(*m_device))
-	, m_swapchain(swap_chain::create(m_window.viewport(), *m_device))
-	, m_frame(frame::create(*m_device, *m_swapchain))
-{
+gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_device(device::create(m_window, save)), m_shader_registry(std::make_unique<shader_registry>(*m_device)), m_swapchain(swap_chain::create(m_window.viewport(), *m_device)), m_frame(frame::create(*m_device, *m_swapchain)) {
 	m_render_graph = std::make_unique<vulkan::render_graph>(*m_device, *m_swapchain, *m_frame);
 	m_bindless_textures = std::make_unique<bindless_texture_set>(m_device->vulkan_device(), m_device->descriptor_heap());
 
@@ -184,16 +178,16 @@ gse::gpu::context::context(const std::string& window_title, input::system_state&
 		.restart_required()
 		.commit();
 
-	m_device->transient().recorder().pre_frame([graph = m_render_graph.get()](gpu::handle<command_buffer> cmd) {
+	m_device->transient().recorder().pre_frame([graph = m_render_graph.get()](handle<command_buffer> cmd) {
 		vulkan::transition_image_layout(
 			graph->depth_image(),
 			cmd,
 			image_layout::general,
-			gpu::image_aspect_flag::depth,
-			gpu::pipeline_stage_flag::top_of_pipe,
+			image_aspect_flag::depth,
+			pipeline_stage_flag::top_of_pipe,
 			{},
-			gpu::pipeline_stage_flag::early_fragment_tests | gpu::pipeline_stage_flag::late_fragment_tests,
-			gpu::access_flag::depth_stencil_attachment_write | gpu::access_flag::depth_stencil_attachment_read
+			pipeline_stage_flag::early_fragment_tests | pipeline_stage_flag::late_fragment_tests,
+			access_flag::depth_stencil_attachment_write | access_flag::depth_stencil_attachment_read
 		);
 	});
 }
@@ -291,7 +285,9 @@ auto gse::gpu::context::ui_focus() const -> bool {
 }
 
 auto gse::gpu::context::shutdown() -> void {
-	if (!m_device) return;
+	if (!m_device) {
+		return;
+	}
 
 	m_window.shutdown();
 	m_device->wait_idle();
@@ -318,7 +314,7 @@ auto gse::gpu::context::allocator(this auto& self) -> auto& {
 	return self.m_device->allocator();
 }
 
-auto gse::gpu::context::device_handle() const -> gpu::handle<device> {
+auto gse::gpu::context::device_handle() const -> handle<device> {
 	return m_device->vulkan_device().device_handle();
 }
 

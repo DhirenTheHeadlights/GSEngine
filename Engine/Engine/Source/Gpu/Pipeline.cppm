@@ -147,8 +147,8 @@ auto gse::gpu::create_graphics_pipeline(gpu::device& dev, gpu::shader_registry& 
 	const bool has_color = desc.color != color_format::none;
 	const bool is_mesh = s->is_mesh_shader();
 
-	std::vector<gpu::shader_stage_create_info> stages;
-	auto make_stage = [&](gpu::shader_stage stage, gpu::stage_flag flag) -> gpu::shader_stage_create_info {
+	std::vector<shader_stage_create_info> stages;
+	auto make_stage = [&](shader_stage stage, stage_flag flag) -> shader_stage_create_info {
 		return {
 			.stage = flag,
 			.module_handle = cache.modules.at(stage).handle().value,
@@ -157,16 +157,16 @@ auto gse::gpu::create_graphics_pipeline(gpu::device& dev, gpu::shader_registry& 
 	};
 
 	if (is_mesh) {
-		stages.push_back(make_stage(gpu::shader_stage::task, gpu::stage_flag::task));
-		stages.push_back(make_stage(gpu::shader_stage::mesh, gpu::stage_flag::mesh));
-		stages.push_back(make_stage(gpu::shader_stage::fragment, gpu::stage_flag::fragment));
+		stages.push_back(make_stage(shader_stage::task, stage_flag::task));
+		stages.push_back(make_stage(shader_stage::mesh, stage_flag::mesh));
+		stages.push_back(make_stage(shader_stage::fragment, stage_flag::fragment));
 	} else {
-		stages.push_back(make_stage(gpu::shader_stage::vertex, gpu::stage_flag::vertex));
-		stages.push_back(make_stage(gpu::shader_stage::fragment, gpu::stage_flag::fragment));
+		stages.push_back(make_stage(shader_stage::vertex, stage_flag::vertex));
+		stages.push_back(make_stage(shader_stage::fragment, stage_flag::fragment));
 	}
 
-	std::span<const gpu::vertex_binding_desc> vertex_bindings;
-	std::span<const gpu::vertex_attribute_desc> vertex_attributes;
+	std::span<const vertex_binding_desc> vertex_bindings;
+	std::span<const vertex_attribute_desc> vertex_attributes;
 	if (!is_mesh) {
 		const auto& vi = s->vertex_input_data();
 		vertex_bindings = vi.bindings;
@@ -211,9 +211,9 @@ auto gse::gpu::create_compute_pipeline(gpu::device& dev, gpu::shader_registry& r
 		};
 	}
 
-	const gpu::shader_stage_create_info compute_stage{
-		.stage = gpu::stage_flag::compute,
-		.module_handle = cache.modules.at(gpu::shader_stage::compute).handle().value,
+	const shader_stage_create_info compute_stage{
+		.stage = stage_flag::compute,
+		.module_handle = cache.modules.at(shader_stage::compute).handle().value,
 		.entry_point = "main",
 	};
 

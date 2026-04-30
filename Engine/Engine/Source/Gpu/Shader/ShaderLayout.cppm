@@ -6,6 +6,7 @@ import :handles;
 import :types;
 import :descriptor_heap;
 import :device;
+import :vulkan_descriptor_set_layout;
 
 import gse.assert;
 import gse.assets;
@@ -44,10 +45,10 @@ export namespace gse {
 
 		[[nodiscard]] auto layout_handle(
 			std::uint32_t set_index
-		) const -> gpu::handle<descriptor_set_layout>;
+		) const -> gpu::handle<vulkan::descriptor_set_layout>;
 
 		[[nodiscard]] auto layout_handles(
-		) const -> std::vector<gpu::handle<descriptor_set_layout>>;
+		) const -> std::vector<gpu::handle<vulkan::descriptor_set_layout>>;
 
 		[[nodiscard]] auto layout_size(
 			std::uint32_t set_index
@@ -62,7 +63,7 @@ export namespace gse {
 		std::string m_name;
 		std::filesystem::path m_path;
 		std::vector<shader_layout_set> m_sets;
-		std::vector<gpu::descriptor_set_layout> m_layouts;
+		std::vector<vulkan::descriptor_set_layout> m_layouts;
 		gpu::device* m_device = nullptr;
 	};
 }
@@ -102,12 +103,12 @@ auto gse::shader_layout::load(gpu::device& device) -> void {
 		for (const auto& b : bindings) {
 			descs.push_back(b.desc);
 		}
-		m_layouts[set_index] = gpu::descriptor_set_layout::create(device.vulkan_device(), descs);
+		m_layouts[set_index] = vulkan::descriptor_set_layout::create(device.vulkan_device(), descs);
 	}
 
 	for (std::uint32_t i = 0; i <= max_set; ++i) {
 		if (!m_layouts[i]) {
-			m_layouts[i] = gpu::descriptor_set_layout::create(device.vulkan_device(), {});
+			m_layouts[i] = vulkan::descriptor_set_layout::create(device.vulkan_device(), {});
 		}
 	}
 }
@@ -126,19 +127,21 @@ auto gse::shader_layout::sets() const -> std::span<const shader_layout_set> {
 	return m_sets;
 }
 
-auto gse::shader_layout::layout_handle(const std::uint32_t set_index) const -> gpu::handle<descriptor_set_layout> {
+auto gse::shader_layout::layout_handle(const std::uint32_t set_index) const -> gpu::handle<vulkan::descriptor_set_layout> {
 	assert(
 		set_index < m_layouts.size() && m_layouts[set_index],
-		std::source_location::current(), "Layout set {} not found", set_index
+		std::source_location::current(),
+		"Layout set {} not found",
+		set_index
 	);
 	return m_layouts[set_index].handle();
 }
 
-auto gse::shader_layout::layout_handles() const -> std::vector<gpu::handle<descriptor_set_layout>> {
-	std::vector<gpu::handle<descriptor_set_layout>> result;
+auto gse::shader_layout::layout_handles() const -> std::vector<gpu::handle<vulkan::descriptor_set_layout>> {
+	std::vector<gpu::handle<vulkan::descriptor_set_layout>> result;
 	result.reserve(m_layouts.size());
 	for (const auto& layout : m_layouts) {
-		result.push_back(layout ? layout.handle() : gpu::handle<descriptor_set_layout>{ 0 });
+		result.push_back(layout ? layout.handle() : gpu::handle<vulkan::descriptor_set_layout>{ 0 });
 	}
 	return result;
 }
@@ -146,7 +149,9 @@ auto gse::shader_layout::layout_handles() const -> std::vector<gpu::handle<descr
 auto gse::shader_layout::layout_size(const std::uint32_t set_index) const -> gpu::device_size {
 	assert(
 		m_device != nullptr && set_index < m_layouts.size() && m_layouts[set_index],
-		std::source_location::current(), "Layout set {} not found", set_index
+		std::source_location::current(),
+		"Layout set {} not found",
+		set_index
 	);
 	return m_device->descriptor_heap().layout_size(m_layouts[set_index].handle());
 }
@@ -154,7 +159,9 @@ auto gse::shader_layout::layout_size(const std::uint32_t set_index) const -> gpu
 auto gse::shader_layout::binding_offset(const std::uint32_t set_index, const std::uint32_t binding) const -> gpu::device_size {
 	assert(
 		m_device != nullptr && set_index < m_layouts.size() && m_layouts[set_index],
-		std::source_location::current(), "Layout set {} not found", set_index
+		std::source_location::current(),
+		"Layout set {} not found",
+		set_index
 	);
 	return m_device->descriptor_heap().binding_offset(m_layouts[set_index].handle(), binding);
 }

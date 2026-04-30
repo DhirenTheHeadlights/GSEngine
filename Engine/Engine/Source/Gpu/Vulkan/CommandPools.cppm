@@ -18,7 +18,7 @@ export namespace gse::vulkan {
 	class command : public non_copyable {
 	public:
 		~command(
-		) = default;
+		) override = default;
 
 		command(
 			command&&

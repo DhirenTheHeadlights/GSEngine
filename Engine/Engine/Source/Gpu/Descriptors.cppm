@@ -133,65 +133,67 @@ auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& 
 	return heap.allocate(size);
 }
 
-namespace {
+namespace gse {
 	auto build_push_writer(
-		gse::gpu::shader_registry& registry,
-		gse::gpu::descriptor_heap& heap,
-		const gse::resource::handle<gse::shader>& s
-	) -> gse::gpu::descriptor_set_writer {
-		const auto& cache = registry.cache(s);
-		const auto& props = heap.props();
+		gpu::shader_registry& registry,
+		gpu::descriptor_heap& heap,
+		const resource::handle<gpu::shader>& s
+	) -> gpu::descriptor_set_writer;
+}
 
-		const auto push_idx = static_cast<std::uint32_t>(gse::gpu::descriptor_set_type::push);
-		const auto& layout_data = s->layout_data();
+auto gse::build_push_writer(gpu::shader_registry& registry, gpu::descriptor_heap& heap, const resource::handle<gpu::shader>& s) -> gpu::descriptor_set_writer {
+	const auto& cache = registry.cache(s);
+	const auto& props = heap.props();
 
-		auto set_it = layout_data.sets.find(gse::gpu::descriptor_set_type::push);
-		if (set_it == layout_data.sets.end()) {
-			return {};
-		}
+	const auto push_idx = static_cast<std::uint32_t>(gpu::descriptor_set_type::push);
+	const auto& layout_data = s->layout_data();
 
-		const auto& set_data = set_it->second;
-		const auto set_layout = cache.layout_handles[push_idx];
-		const auto total_size = heap.layout_size(set_layout);
-
-		auto descriptor_size_for = [&](gse::gpu::descriptor_type dt) -> gse::gpu::device_size {
-			switch (dt) {
-				case gse::gpu::descriptor_type::uniform_buffer:
-					return props.uniform_buffer_descriptor_size;
-				case gse::gpu::descriptor_type::storage_buffer:
-					return props.storage_buffer_descriptor_size;
-				case gse::gpu::descriptor_type::combined_image_sampler:
-					return props.combined_image_sampler_descriptor_size;
-				case gse::gpu::descriptor_type::sampled_image:
-					return props.sampled_image_descriptor_size;
-				case gse::gpu::descriptor_type::storage_image:
-					return props.storage_image_descriptor_size;
-				case gse::gpu::descriptor_type::sampler:
-					return props.sampler_descriptor_size;
-				case gse::gpu::descriptor_type::acceleration_structure:
-					return props.acceleration_structure_descriptor_size;
-			}
-			return props.storage_buffer_descriptor_size;
-		};
-
-		std::uint32_t max_binding = 0;
-		for (const auto& b : set_data.bindings) {
-			max_binding = std::max(max_binding, b.desc.binding);
-		}
-
-		std::vector<gse::gpu::descriptor_binding_info> bindings(max_binding + 1);
-
-		for (const auto& b : set_data.bindings) {
-			const auto idx = b.desc.binding;
-			bindings[idx] = {
-				.offset = heap.binding_offset(set_layout, idx),
-				.descriptor_size = descriptor_size_for(b.desc.type),
-				.type = b.desc.type,
-			};
-		}
-
-		return gse::gpu::descriptor_set_writer(heap, set_layout, total_size, std::move(bindings));
+	auto set_it = layout_data.sets.find(gpu::descriptor_set_type::push);
+	if (set_it == layout_data.sets.end()) {
+		return {};
 	}
+
+	const auto& set_data = set_it->second;
+	const auto set_layout = cache.layout_handles[push_idx];
+	const auto total_size = heap.layout_size(set_layout);
+
+	auto descriptor_size_for = [&](gpu::descriptor_type dt) -> gpu::device_size {
+		switch (dt) {
+			case gpu::descriptor_type::uniform_buffer:
+				return props.uniform_buffer_descriptor_size;
+			case gpu::descriptor_type::storage_buffer:
+				return props.storage_buffer_descriptor_size;
+			case gpu::descriptor_type::combined_image_sampler:
+				return props.combined_image_sampler_descriptor_size;
+			case gpu::descriptor_type::sampled_image:
+				return props.sampled_image_descriptor_size;
+			case gpu::descriptor_type::storage_image:
+				return props.storage_image_descriptor_size;
+			case gpu::descriptor_type::sampler:
+				return props.sampler_descriptor_size;
+			case gpu::descriptor_type::acceleration_structure:
+				return props.acceleration_structure_descriptor_size;
+		}
+		return props.storage_buffer_descriptor_size;
+	};
+
+	std::uint32_t max_binding = 0;
+	for (const auto& b : set_data.bindings) {
+		max_binding = std::max(max_binding, b.desc.binding);
+	}
+
+	std::vector<gpu::descriptor_binding_info> bindings(max_binding + 1);
+
+	for (const auto& b : set_data.bindings) {
+		const auto idx = b.desc.binding;
+		bindings[idx] = {
+			.offset = heap.binding_offset(set_layout, idx),
+			.descriptor_size = descriptor_size_for(b.desc.type),
+			.type = b.desc.type,
+		};
+	}
+
+	return gpu::descriptor_set_writer(heap, set_layout, total_size, std::move(bindings));
 }
 
 gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<device> dev, resource::handle<shader> s, descriptor_region& region) : m_cache_entry(&registry.cache(s)), m_device(dev), m_shader(std::move(s)), m_region(&region) {}
@@ -201,7 +203,9 @@ gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const 
 auto gse::gpu::descriptor_writer::find_binding_index(const std::string_view name) const -> std::uint32_t {
 	for (const auto& [type, bindings] : m_shader->layout_data().sets | std::views::values) {
 		for (const auto& b : bindings) {
-			if (b.name == name) return b.desc.binding;
+			if (b.name == name) {
+				return b.desc.binding;
+			}
 		}
 	}
 	assert(false, std::source_location::current(), "Binding '{}' not found in shader", name);

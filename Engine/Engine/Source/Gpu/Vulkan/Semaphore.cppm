@@ -52,7 +52,6 @@ export namespace gse::vulkan {
 		) const -> bool;
 
 		[[nodiscard]] auto value(
-			const device& dev
 		) const -> std::uint64_t;
 
 		[[nodiscard]] auto kind(
@@ -115,9 +114,9 @@ auto gse::vulkan::semaphore::wait(const device& dev, const std::uint64_t value, 
 	return dev.raii_device().waitSemaphores(info, timeout_ns) == vk::Result::eSuccess;
 }
 
-auto gse::vulkan::semaphore::value(const device& dev) const -> std::uint64_t {
+auto gse::vulkan::semaphore::value() const -> std::uint64_t {
 	assert(m_kind == gpu::semaphore_kind::timeline, std::source_location::current(), "value() requires a timeline semaphore");
-	return dev.raii_device().getSemaphoreCounterValue(*m_semaphore);
+	return m_semaphore.getCounterValue();
 }
 
 auto gse::vulkan::semaphore::kind() const -> gpu::semaphore_kind {

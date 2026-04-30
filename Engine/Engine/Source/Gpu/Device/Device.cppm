@@ -74,7 +74,7 @@ export namespace gse::gpu {
 		) -> transient_executor&;
 
 		[[nodiscard]] auto descriptor_buffer_props(
-		) const -> const gpu::descriptor_buffer_properties&;
+		) const -> const descriptor_buffer_properties&;
 
 		[[nodiscard]] auto video_encode_enabled(
 		) const -> bool;
@@ -88,7 +88,7 @@ export namespace gse::gpu {
 			vulkan::worker_command_pools&& worker_pools,
 			transient_executor&& transient,
 			std::unique_ptr<gpu::descriptor_heap> descriptor_heap,
-			gpu::descriptor_buffer_properties desc_buf_props,
+			descriptor_buffer_properties desc_buf_props,
 			image_format surface_format,
 			bool video_encode_enabled
 		);
@@ -100,7 +100,7 @@ export namespace gse::gpu {
 		vulkan::worker_command_pools m_worker_pools;
 		transient_executor m_transient;
 		std::unique_ptr<gpu::descriptor_heap> m_descriptor_heap;
-		gpu::descriptor_buffer_properties m_descriptor_buffer_props;
+		descriptor_buffer_properties m_descriptor_buffer_props;
 		image_format m_surface_format;
 		std::atomic<bool> m_device_lost_reported = false;
 		bool m_video_encode_enabled = false;

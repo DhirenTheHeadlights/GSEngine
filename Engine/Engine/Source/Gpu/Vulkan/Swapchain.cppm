@@ -296,8 +296,8 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instanc
 
 	swap_chain_details details(vk_capabilities, std::move(vk_formats), std::move(vk_present_modes));
 
-	auto swap_chain = device_data.raii_device().createSwapchainKHR(create_info);
-	auto images = swap_chain.getImages();
+	auto vk_swap_chain = device_data.raii_device().createSwapchainKHR(create_info);
+	auto images = vk_swap_chain.getImages();
 	auto format = surface_format.format;
 
 	auto depth_image = device_data.create_image(
@@ -347,7 +347,7 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instanc
 	}
 
 	return swap_chain(
-		std::move(swap_chain),
+		std::move(vk_swap_chain),
 		surface_format,
 		present_mode,
 		extent,
@@ -383,12 +383,12 @@ auto gse::vulkan::swap_chain::image_count() const -> std::uint32_t {
 	return static_cast<std::uint32_t>(m_images.size());
 }
 
-auto gse::vulkan::swap_chain::image(const std::uint32_t index) const -> gpu::handle<image> {
-	return std::bit_cast<gpu::handle<image>>(m_images[index]);
+auto gse::vulkan::swap_chain::image(const std::uint32_t index) const -> gpu::handle<vulkan::image> {
+	return std::bit_cast<gpu::handle<vulkan::image>>(m_images[index]);
 }
 
-auto gse::vulkan::swap_chain::image_view(const std::uint32_t index) const -> gpu::handle<image_view> {
-	return std::bit_cast<gpu::handle<image_view>>(*m_image_views[index]);
+auto gse::vulkan::swap_chain::image_view(const std::uint32_t index) const -> gpu::handle<vulkan::image_view> {
+	return std::bit_cast<gpu::handle<vulkan::image_view>>(*m_image_views[index]);
 }
 
 auto gse::vulkan::swap_chain::depth(this auto&& self) -> auto& {

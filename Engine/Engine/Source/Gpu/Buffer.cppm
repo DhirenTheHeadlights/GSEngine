@@ -20,13 +20,13 @@ import gse.diag;
 export namespace gse::gpu {
 	struct descriptor_buffer_binding {
 		std::uint32_t binding = 0;
-		const buffer* buf = nullptr;
+		const vulkan::buffer* buf = nullptr;
 		std::size_t offset = 0;
 		std::size_t range = 0;
 	};
 
 	struct buffer_upload {
-		const buffer* dst = nullptr;
+		const vulkan::buffer* dst = nullptr;
 		const void* data = nullptr;
 		std::size_t size = 0;
 		std::size_t dst_offset = 0;
@@ -38,47 +38,49 @@ export namespace gse::gpu {
 	) -> void;
 }
 
-namespace {
+namespace gse {
 	struct upload_entry {
-		gse::gpu::handle<gse::gpu::buffer> dst;
+		gpu::handle<vulkan::buffer> dst;
 		const void* data;
-		gse::gpu::device_size size;
-		gse::gpu::device_size offset;
+		gpu::device_size size;
+		gpu::device_size offset;
 	};
 
 	auto upload_to_buffers_async(
-		gse::gpu::device& dev,
+		gpu::device& dev,
 		std::vector<upload_entry> entries
-	) -> gse::async::task<> {
-		std::vector<gse::gpu::buffer> stagings;
-		stagings.reserve(entries.size());
-		for (const auto& e : entries) {
-			stagings.push_back(dev.allocator().create_buffer(
-				gse::gpu::buffer_create_info{
-					.size = e.size,
-					.usage = gse::gpu::buffer_flag::transfer_src,
-				},
-				e.data
-			));
-		}
+	) -> async::task<>;
+}
 
-		auto cmd = co_await begin_transient(dev, gse::gpu::queue_id::graphics);
-
-		for (std::size_t i = 0; i < entries.size(); ++i) {
-			gse::vulkan::commands(cmd.handle()).copy_buffer(
-				stagings[i].handle(),
-				entries[i].dst,
-				gse::gpu::buffer_copy_region{
-					.src_offset = 0,
-					.dst_offset = entries[i].offset,
-					.size = entries[i].size,
-				}
-			);
-		}
-
-		co_await submit(dev, std::move(cmd), gse::gpu::queue_id::graphics)
-			.retain(std::move(stagings));
+auto gse::upload_to_buffers_async(gpu::device& dev, std::vector<upload_entry> entries) -> async::task<> {
+	std::vector<vulkan::buffer> stagings;
+	stagings.reserve(entries.size());
+	for (const auto& e : entries) {
+		stagings.push_back(dev.allocator().create_buffer(
+			gpu::buffer_create_info{
+				.size = e.size,
+				.usage = gpu::buffer_flag::transfer_src,
+			},
+			e.data
+		));
 	}
+
+	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics);
+
+	for (std::size_t i = 0; i < entries.size(); ++i) {
+		vulkan::commands(cmd.handle()).copy_buffer(
+			stagings[i].handle(),
+			entries[i].dst,
+			gpu::buffer_copy_region{
+				.src_offset = 0,
+				.dst_offset = entries[i].offset,
+				.size = entries[i].size,
+			}
+		);
+	}
+
+	co_await submit(dev, std::move(cmd), gpu::queue_id::graphics)
+		.retain(std::move(stagings));
 }
 
 auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_upload> uploads) -> void {

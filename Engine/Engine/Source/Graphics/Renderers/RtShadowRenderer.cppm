@@ -35,7 +35,7 @@ export namespace gse::renderer::rt_shadow {
 		struct frame_data {
 			std::unordered_map<const mesh*, gpu::blas> blas_cache;
 			per_frame_resource<gpu::tlas> tlas_per_frame;
-			per_frame_resource<linear_vector<gpu::acceleration_structure_instance>> instances;
+			per_frame_resource<linear_vector<gpu::tlas_instance_desc>> instances;
 
 			resource::handle<shader> tlas_update_shader;
 			gpu::pipeline tlas_update_pipeline;

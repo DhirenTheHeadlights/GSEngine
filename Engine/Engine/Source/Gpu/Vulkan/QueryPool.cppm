@@ -38,13 +38,11 @@ export namespace gse::vulkan {
 		) -> query_pool;
 
 		auto reset(
-			const device& dev,
 			std::uint32_t first = 0,
 			std::uint32_t count = ~0u
 		) -> void;
 
 		[[nodiscard]] auto results(
-			const device& dev,
 			std::span<std::uint64_t> out,
 			std::uint32_t first
 		) const -> bool;
@@ -86,26 +84,25 @@ auto gse::vulkan::query_pool::create(const device& dev, const gpu::query_kind ki
 	return query_pool(dev.raii_device().createQueryPool(info), kind, count);
 }
 
-auto gse::vulkan::query_pool::reset(const device& dev, const std::uint32_t first, std::uint32_t count) -> void {
+auto gse::vulkan::query_pool::reset(const std::uint32_t first, std::uint32_t count) -> void {
 	if (count == ~0u) {
 		count = m_count - first;
 	}
-	dev.raii_device().resetQueryPool(*m_pool, first, count);
+	m_pool.reset(first, count);
 }
 
-auto gse::vulkan::query_pool::results(const device& dev, const std::span<std::uint64_t> out, const std::uint32_t first) const -> bool {
-	const auto result = dev.raii_device().getQueryPoolResults<std::uint64_t>(
-		*m_pool,
+auto gse::vulkan::query_pool::results(const std::span<std::uint64_t> out, const std::uint32_t first) const -> bool {
+	const auto result = m_pool.getResults<std::uint64_t>(
 		first,
 		static_cast<std::uint32_t>(out.size()),
 		out.size_bytes(),
 		sizeof(std::uint64_t),
 		vk::QueryResultFlagBits::e64
 	);
-	if (result.first != vk::Result::eSuccess) {
+	if (result.result != vk::Result::eSuccess) {
 		return false;
 	}
-	std::ranges::copy(result.second, out.begin());
+	std::ranges::copy(result.value, out.begin());
 	return true;
 }
 

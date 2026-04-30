@@ -5,7 +5,9 @@ import vulkan;
 
 import :handles;
 import :types;
+import :vulkan_descriptor_set_layout;
 import :vulkan_device;
+import :vulkan_pipeline_layout;
 
 import gse.core;
 
@@ -258,7 +260,7 @@ auto gse::vulkan::pipeline::create_graphics(const device& dev, const graphics_pi
 	vk_stages.reserve(info.stages.size());
 	for (const auto& s : info.stages) {
 		vk_stages.push_back({
-			.stage = to_vk(gpu::stage_flags{ s.stage }),
+			.stage = to_vk(s.stage),
 			.module = std::bit_cast<vk::ShaderModule>(s.module_handle),
 			.pName = s.entry_point.c_str(),
 		});
@@ -306,7 +308,7 @@ auto gse::vulkan::pipeline::create_compute(const device& dev, const compute_pipe
 	});
 
 	const vk::PipelineShaderStageCreateInfo vk_stage{
-		.stage = to_vk(gpu::stage_flags{ info.stage.stage }),
+		.stage = to_vk(info.stage.stage),
 		.module = std::bit_cast<vk::ShaderModule>(info.stage.module_handle),
 		.pName = info.stage.entry_point.c_str(),
 	};
