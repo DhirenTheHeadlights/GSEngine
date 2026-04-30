@@ -57,7 +57,7 @@ auto gse::gpu::device::create(const window& win, save::state& save) -> std::uniq
 	));
 }
 
-gse::gpu::device::device(vulkan::instance&& instance, vulkan::device&& device, vulkan::queue&& queue, vulkan::command&& command, vulkan::worker_command_pools&& worker_pools, transient_executor&& transient, std::unique_ptr<gpu::descriptor_heap> descriptor_heap, gpu::descriptor_buffer_properties desc_buf_props, image_format surface_format, bool video_encode_enabled)
+gse::gpu::device::device(vulkan::instance&& instance, vulkan::device&& device, vulkan::queue&& queue, vulkan::command&& command, vulkan::worker_command_pools&& worker_pools, transient_executor&& transient, std::unique_ptr<gpu::descriptor_heap> descriptor_heap, descriptor_buffer_properties desc_buf_props, image_format surface_format, bool video_encode_enabled)
 	: m_instance(std::move(instance)),
 	  m_device_config(std::move(device)),
 	  m_queue(std::move(queue)),
@@ -109,7 +109,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		return;
 	}
 
-	gpu::device_fault_counts counts{};
+	device_fault_counts counts{};
 	if (const auto result = m_device_config.query_fault_counts(counts); result != gpu::result::success) {
 		log::println(log::level::warning, log::category::vulkan, "Failed to query device fault counts: {}", static_cast<int>(result));
 		return;
@@ -119,7 +119,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		counts.vendor_binary_size = 0;
 	}
 
-	gpu::device_fault_info fault_info{};
+	device_fault_info fault_info{};
 	if (const auto result = m_device_config.query_fault_info(counts, fault_info); result != gpu::result::success) {
 		log::println(log::level::warning, log::category::vulkan, "Failed to query device fault info: {}", static_cast<int>(result));
 		return;
@@ -179,7 +179,7 @@ auto gse::gpu::device::transient() -> transient_executor& {
 	return m_transient;
 }
 
-auto gse::gpu::device::descriptor_buffer_props() const -> const gpu::descriptor_buffer_properties& {
+auto gse::gpu::device::descriptor_buffer_props() const -> const descriptor_buffer_properties& {
 	return m_descriptor_buffer_props;
 }
 

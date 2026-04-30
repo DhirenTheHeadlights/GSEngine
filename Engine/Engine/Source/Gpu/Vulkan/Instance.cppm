@@ -6,17 +6,14 @@ import vulkan;
 import :handles;
 
 import gse.core;
+import gse.os;
 import gse.save;
-
-export namespace gse {
-	class window;
-}
 
 export namespace gse::vulkan {
 	class instance : public non_copyable {
 	public:
 		~instance(
-		) = default;
+		) override = default;
 
 		instance(
 			instance&&

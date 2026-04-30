@@ -6,7 +6,10 @@ import vulkan;
 import :types;
 import :descriptor_heap;
 
+import :vulkan_descriptor_set_layout;
 import :vulkan_device;
+import :vulkan_image;
+import :vulkan_sampler;
 import :vulkan_sync;
 import gse.assert;
 import gse.log;
@@ -42,8 +45,8 @@ export namespace gse::gpu {
 		) noexcept -> bindless_texture_set& = default;
 
 		auto allocate(
-			gpu::handle<image_view> view,
-			gpu::handle<sampler> samp
+			handle<vulkan::image_view> view,
+			handle<vulkan::sampler> samp
 		) -> bindless_texture_slot;
 
 		auto release(
@@ -55,7 +58,7 @@ export namespace gse::gpu {
 		) -> void;
 
 		[[nodiscard]] auto layout_handle(
-		) const -> gpu::handle<descriptor_set_layout>;
+		) const -> handle<vulkan::descriptor_set_layout>;
 
 		[[nodiscard]] auto region(
 		) const -> const descriptor_region&;
@@ -68,8 +71,8 @@ export namespace gse::gpu {
 		vk::raii::Sampler m_null_sampler = nullptr;
 		descriptor_region m_region;
 		descriptor_heap* m_heap = nullptr;
-		gpu::device_size m_descriptor_size = 0;
-		gpu::device_size m_binding_offset = 0;
+		device_size m_descriptor_size = 0;
+		device_size m_binding_offset = 0;
 		std::uint32_t m_capacity = 0;
 
 		std::vector<std::uint32_t> m_free_list;
@@ -118,7 +121,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 		.addressModeW = vk::SamplerAddressMode::eClampToEdge
 	});
 
-	const auto layout_handle = std::bit_cast<gpu::handle<descriptor_set_layout>>(*m_layout);
+	const auto layout_handle = std::bit_cast<handle<vulkan::descriptor_set_layout>>(*m_layout);
 	m_descriptor_size = heap.props().combined_image_sampler_descriptor_size;
 	m_binding_offset = heap.binding_offset(layout_handle, 0);
 	const auto layout_size = heap.layout_size(layout_handle);
@@ -127,7 +130,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 	const descriptor_get_info null_get{
 		.type = descriptor_type::combined_image_sampler,
 		.image = {
-			.sampler = std::bit_cast<gpu::handle<sampler>>(*m_null_sampler),
+			.sampler = std::bit_cast<handle<vulkan::sampler>>(*m_null_sampler),
 			.image_view = 0,
 			.layout = image_layout::undefined,
 		},
@@ -154,7 +157,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 
 gse::gpu::bindless_texture_set::~bindless_texture_set() = default;
 
-auto gse::gpu::bindless_texture_set::allocate(const gpu::handle<image_view> view, const gpu::handle<sampler> samp) -> bindless_texture_slot {
+auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> view, const handle<vulkan::sampler> samp) -> bindless_texture_slot {
 	assert(!m_free_list.empty(), std::source_location::current(), "Bindless texture set exhausted (capacity {})", m_capacity);
 
 	const auto slot = m_free_list.back();
@@ -175,8 +178,8 @@ auto gse::gpu::bindless_texture_set::allocate(const gpu::handle<image_view> view
 		log::category::vulkan,
 		"Bindless allocate: slot {}, view 0x{:x}, sampler 0x{:x}, write_offset {}",
 		slot,
-		view,
-		samp,
+		view.value,
+		samp.value,
 		m_region.offset + m_binding_offset + slot * m_descriptor_size
 	);
 
@@ -205,8 +208,8 @@ auto gse::gpu::bindless_texture_set::begin_frame(const std::uint32_t frame_index
 	});
 }
 
-auto gse::gpu::bindless_texture_set::layout_handle() const -> gpu::handle<descriptor_set_layout> {
-	return std::bit_cast<gpu::handle<descriptor_set_layout>>(*m_layout);
+auto gse::gpu::bindless_texture_set::layout_handle() const -> handle<vulkan::descriptor_set_layout> {
+	return std::bit_cast<handle<vulkan::descriptor_set_layout>>(*m_layout);
 }
 
 auto gse::gpu::bindless_texture_set::region() const -> const descriptor_region& {

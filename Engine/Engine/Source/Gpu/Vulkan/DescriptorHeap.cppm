@@ -3,6 +3,9 @@ export module gse.gpu:descriptor_heap;
 import std;
 import vulkan;
 
+import :vulkan_buffer;
+import :vulkan_commands;
+import :vulkan_descriptor_set_layout;
 import :vulkan_device;
 import :vulkan_image;
 import :vulkan_sampler;
@@ -33,7 +36,9 @@ export namespace gse::gpu {
 		gpu::device_size size = 0;
 		descriptor_heap* heap = nullptr;
 
-		operator bool() const { return heap != nullptr; }
+		operator bool() const {
+			return heap != nullptr;
+		}
 	};
 
 	class descriptor_heap : non_copyable, non_movable {
@@ -80,36 +85,36 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto bind(
-			gpu::handle<command_buffer> cmd,
+			gpu::handle<vulkan::command_buffer> cmd,
 			bind_point point,
-			gpu::handle<pipeline_layout> layout,
+			gpu::handle<vulkan::pipeline_layout> layout,
 			std::uint32_t first_set,
 			const descriptor_region& region
 		) const -> void;
 
 		auto bind_buffer(
-			gpu::handle<command_buffer> cmd
+			gpu::handle<vulkan::command_buffer> cmd
 		) const -> void;
 
 		auto set_offset(
-			gpu::handle<command_buffer> cmd,
+			gpu::handle<vulkan::command_buffer> cmd,
 			bind_point point,
-			gpu::handle<pipeline_layout> layout,
+			gpu::handle<vulkan::pipeline_layout> layout,
 			std::uint32_t first_set,
 			const descriptor_region& region
 		) const -> void;
 
 		[[nodiscard]] auto layout_size(
-			gpu::handle<descriptor_set_layout> layout
+			gpu::handle<vulkan::descriptor_set_layout> layout
 		) const -> gpu::device_size;
 
 		[[nodiscard]] auto binding_offset(
-			gpu::handle<descriptor_set_layout> layout,
+			gpu::handle<vulkan::descriptor_set_layout> layout,
 			std::uint32_t binding
 		) const -> gpu::device_size;
 
 		[[nodiscard]] auto buffer_address(
-			gpu::handle<buffer> buffer
+			gpu::handle<vulkan::buffer> buffer
 		) const -> device_address;
 
 		[[nodiscard]] auto props(
@@ -154,7 +159,7 @@ export namespace gse::gpu {
 
 		descriptor_set_writer(
 			descriptor_heap& heap,
-			gpu::handle<descriptor_set_layout> layout,
+			gpu::handle<vulkan::descriptor_set_layout> layout,
 			gpu::device_size layout_size,
 			std::vector<descriptor_binding_info> bindings
 		);
@@ -165,28 +170,28 @@ export namespace gse::gpu {
 
 		auto buffer(
 			std::uint32_t binding,
-			gpu::handle<buffer> buf,
+			gpu::handle<vulkan::buffer> buf,
 			gpu::device_size offset,
 			gpu::device_size range
 		) -> descriptor_set_writer&;
 
 		auto image(
 			std::uint32_t binding,
-			gpu::handle<image_view> view,
-			gpu::handle<sampler> sampler,
+			gpu::handle<vulkan::image_view> view,
+			gpu::handle<vulkan::sampler> sampler,
 			image_layout layout = image_layout::general
 		) -> descriptor_set_writer&;
 
 		auto storage_image(
 			std::uint32_t binding,
-			gpu::handle<image_view> view,
+			gpu::handle<vulkan::image_view> view,
 			image_layout layout = image_layout::general
 		) -> descriptor_set_writer&;
 
 		auto commit(
-			gpu::handle<command_buffer> cmd,
+			gpu::handle<vulkan::command_buffer> cmd,
 			bind_point point,
-			gpu::handle<pipeline_layout> layout,
+			gpu::handle<vulkan::pipeline_layout> layout,
 			std::uint32_t set_index
 		) const -> void;
 
@@ -198,49 +203,51 @@ export namespace gse::gpu {
 	};
 }
 
-namespace {
+namespace gse::gpu {
 	auto build_vk_get_info(
-		const gse::gpu::descriptor_get_info& info,
+		const descriptor_get_info& info,
 		vk::DescriptorAddressInfoEXT& addr,
 		vk::DescriptorImageInfo& img
-	) -> vk::DescriptorGetInfoEXT {
-		addr = vk::DescriptorAddressInfoEXT{
-			.address = info.buffer.address,
-			.range = info.buffer.range,
-			.format = vk::Format::eUndefined,
-		};
-		img = vk::DescriptorImageInfo{
-			.sampler = std::bit_cast<vk::Sampler>(info.image.sampler),
-			.imageView = std::bit_cast<vk::ImageView>(info.image.image_view),
-			.imageLayout = gse::vulkan::to_vk(info.image.layout),
-		};
+	) -> vk::DescriptorGetInfoEXT;
+}
 
-		vk::DescriptorGetInfoEXT vk_info{ .type = gse::vulkan::to_vk(info.type) };
-		switch (info.type) {
-			case gse::gpu::descriptor_type::uniform_buffer:
-				vk_info.data.pUniformBuffer = &addr;
-				break;
-			case gse::gpu::descriptor_type::storage_buffer:
-				vk_info.data.pStorageBuffer = &addr;
-				break;
-			case gse::gpu::descriptor_type::combined_image_sampler:
-				vk_info.data.pCombinedImageSampler = &img;
-				break;
-			case gse::gpu::descriptor_type::sampled_image:
-				vk_info.data.pSampledImage = &img;
-				break;
-			case gse::gpu::descriptor_type::storage_image:
-				vk_info.data.pStorageImage = &img;
-				break;
-			case gse::gpu::descriptor_type::sampler:
-				vk_info.data.pSampler = &img;
-				break;
-			case gse::gpu::descriptor_type::acceleration_structure:
-				vk_info.data.accelerationStructure = info.acceleration_structure;
-				break;
-		}
-		return vk_info;
+auto gse::gpu::build_vk_get_info(const descriptor_get_info& info, vk::DescriptorAddressInfoEXT& addr, vk::DescriptorImageInfo& img) -> vk::DescriptorGetInfoEXT {
+	addr = vk::DescriptorAddressInfoEXT{
+		.address = info.buffer.address,
+		.range = info.buffer.range,
+		.format = vk::Format::eUndefined,
+	};
+	img = vk::DescriptorImageInfo{
+		.sampler = std::bit_cast<vk::Sampler>(info.image.sampler),
+		.imageView = std::bit_cast<vk::ImageView>(info.image.image_view),
+		.imageLayout = vulkan::to_vk(info.image.layout),
+	};
+
+	vk::DescriptorGetInfoEXT vk_info{ .type = vulkan::to_vk(info.type) };
+	switch (info.type) {
+		case descriptor_type::uniform_buffer:
+			vk_info.data.pUniformBuffer = &addr;
+			break;
+		case descriptor_type::storage_buffer:
+			vk_info.data.pStorageBuffer = &addr;
+			break;
+		case descriptor_type::combined_image_sampler:
+			vk_info.data.pCombinedImageSampler = &img;
+			break;
+		case descriptor_type::sampled_image:
+			vk_info.data.pSampledImage = &img;
+			break;
+		case descriptor_type::storage_image:
+			vk_info.data.pStorageImage = &img;
+			break;
+		case descriptor_type::sampler:
+			vk_info.data.pSampler = &img.sampler;
+			break;
+		case descriptor_type::acceleration_structure:
+			vk_info.data.accelerationStructure = info.acceleration_structure;
+			break;
 	}
+	return vk_info;
 }
 
 gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const descriptor_buffer_properties& props, gpu::device_size capacity) : m_device(*dev.raii_device()), m_capacity(capacity), m_props(props) {
@@ -360,11 +367,11 @@ auto gse::gpu::descriptor_heap::write_descriptor(const descriptor_region& region
 	write_bytes(region, binding_offset, scratch.data(), descriptor_size);
 }
 
-auto gse::gpu::descriptor_heap::bind(const gpu::handle<command_buffer> cmd, const bind_point point, const gpu::handle<pipeline_layout> layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
+auto gse::gpu::descriptor_heap::bind(const gpu::handle<vulkan::command_buffer> cmd, const bind_point point, const gpu::handle<vulkan::pipeline_layout> layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
 	set_offset(cmd, point, layout, first_set, region);
 }
 
-auto gse::gpu::descriptor_heap::bind_buffer(const gpu::handle<command_buffer> cmd) const -> void {
+auto gse::gpu::descriptor_heap::bind_buffer(const gpu::handle<vulkan::command_buffer> cmd) const -> void {
 	const vk::DescriptorBufferBindingInfoEXT binding{
 		.address = m_address,
 		.usage = vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT
@@ -373,7 +380,7 @@ auto gse::gpu::descriptor_heap::bind_buffer(const gpu::handle<command_buffer> cm
 	std::bit_cast<vk::CommandBuffer>(cmd).bindDescriptorBuffersEXT(1, &binding);
 }
 
-auto gse::gpu::descriptor_heap::set_offset(const gpu::handle<command_buffer> cmd, const bind_point point, const gpu::handle<pipeline_layout> layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
+auto gse::gpu::descriptor_heap::set_offset(const gpu::handle<vulkan::command_buffer> cmd, const bind_point point, const gpu::handle<vulkan::pipeline_layout> layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
 	constexpr std::uint32_t buffer_index = 0;
 	std::bit_cast<vk::CommandBuffer>(cmd).setDescriptorBufferOffsetsEXT(
 		vulkan::to_vk(point),
@@ -385,15 +392,15 @@ auto gse::gpu::descriptor_heap::set_offset(const gpu::handle<command_buffer> cmd
 	);
 }
 
-auto gse::gpu::descriptor_heap::layout_size(const gpu::handle<descriptor_set_layout> layout) const -> gpu::device_size {
+auto gse::gpu::descriptor_heap::layout_size(const gpu::handle<vulkan::descriptor_set_layout> layout) const -> gpu::device_size {
 	return m_device.getDescriptorSetLayoutSizeEXT(std::bit_cast<vk::DescriptorSetLayout>(layout));
 }
 
-auto gse::gpu::descriptor_heap::binding_offset(const gpu::handle<descriptor_set_layout> layout, const std::uint32_t binding) const -> gpu::device_size {
+auto gse::gpu::descriptor_heap::binding_offset(const gpu::handle<vulkan::descriptor_set_layout> layout, const std::uint32_t binding) const -> gpu::device_size {
 	return m_device.getDescriptorSetLayoutBindingOffsetEXT(std::bit_cast<vk::DescriptorSetLayout>(layout), binding);
 }
 
-auto gse::gpu::descriptor_heap::buffer_address(const gpu::handle<buffer> buffer) const -> device_address {
+auto gse::gpu::descriptor_heap::buffer_address(const gpu::handle<vulkan::buffer> buffer) const -> device_address {
 	return m_device.getBufferAddress({ .buffer = std::bit_cast<vk::Buffer>(buffer) });
 }
 
@@ -458,7 +465,7 @@ auto gse::gpu::descriptor_heap::align_up(const gpu::device_size value) const -> 
 
 gse::gpu::descriptor_set_writer::descriptor_set_writer(
 	descriptor_heap& heap,
-	gpu::handle<descriptor_set_layout> layout,
+	gpu::handle<vulkan::descriptor_set_layout> layout,
 	const gpu::device_size layout_size,
 	std::vector<descriptor_binding_info> bindings
 ) : m_heap(&heap), m_layout_size(layout_size), m_bindings(std::move(bindings)) {}
@@ -470,7 +477,7 @@ auto gse::gpu::descriptor_set_writer::begin(const std::uint32_t frame_index) -> 
 
 auto gse::gpu::descriptor_set_writer::buffer(
 	std::uint32_t binding,
-	const gpu::handle<buffer> buf,
+	const gpu::handle<vulkan::buffer> buf,
 	const gpu::device_size offset,
 	const gpu::device_size range
 ) -> descriptor_set_writer& {
@@ -496,8 +503,8 @@ auto gse::gpu::descriptor_set_writer::buffer(
 
 auto gse::gpu::descriptor_set_writer::image(
 	std::uint32_t binding,
-	const gpu::handle<image_view> view,
-	const gpu::handle<sampler> sampler,
+	const gpu::handle<vulkan::image_view> view,
+	const gpu::handle<vulkan::sampler> sampler,
 	const image_layout layout
 ) -> descriptor_set_writer& {
 	assert(binding < m_bindings.size(), std::source_location::current(),
@@ -520,7 +527,7 @@ auto gse::gpu::descriptor_set_writer::image(
 
 auto gse::gpu::descriptor_set_writer::storage_image(
 	const std::uint32_t binding,
-	const gpu::handle<image_view> view,
+	const gpu::handle<vulkan::image_view> view,
 	const image_layout layout
 ) -> descriptor_set_writer& {
 	assert(binding < m_bindings.size(), std::source_location::current(),
@@ -542,9 +549,9 @@ auto gse::gpu::descriptor_set_writer::storage_image(
 }
 
 auto gse::gpu::descriptor_set_writer::commit(
-	const gpu::handle<command_buffer> cmd,
+	const gpu::handle<vulkan::command_buffer> cmd,
 	const bind_point point,
-	const gpu::handle<pipeline_layout> layout,
+	const gpu::handle<vulkan::pipeline_layout> layout,
 	const std::uint32_t set_index
 ) const -> void {
 	assert(m_current_region, std::source_location::current(), "Cannot commit without begin()");

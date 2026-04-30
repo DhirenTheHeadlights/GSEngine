@@ -129,7 +129,7 @@ export namespace gse::vulkan {
 	};
 }
 
-namespace {
+namespace gse::vulkan {
 	struct submit_scratch {
 		std::vector<vk::SemaphoreSubmitInfo> waits;
 		std::vector<vk::SemaphoreSubmitInfo> signals;
@@ -137,43 +137,9 @@ namespace {
 	};
 
 	auto build_vk_submit_info(
-		const gse::gpu::submit_info& info,
+		const gpu::submit_info& info,
 		submit_scratch& scratch
-	) -> vk::SubmitInfo2 {
-		scratch.waits.reserve(info.wait_semaphores.size());
-		for (const auto& w : info.wait_semaphores) {
-			scratch.waits.push_back(vk::SemaphoreSubmitInfo{
-				.semaphore = std::bit_cast<vk::Semaphore>(w.semaphore),
-				.value = w.value,
-				.stageMask = gse::vulkan::to_vk(w.stages),
-				.deviceIndex = 0,
-			});
-		}
-		scratch.signals.reserve(info.signal_semaphores.size());
-		for (const auto& s : info.signal_semaphores) {
-			scratch.signals.push_back(vk::SemaphoreSubmitInfo{
-				.semaphore = std::bit_cast<vk::Semaphore>(s.semaphore),
-				.value = s.value,
-				.stageMask = gse::vulkan::to_vk(s.stages),
-				.deviceIndex = 0,
-			});
-		}
-		scratch.cmds.reserve(info.command_buffers.size());
-		for (const auto& c : info.command_buffers) {
-			scratch.cmds.push_back(vk::CommandBufferSubmitInfo{
-				.commandBuffer = std::bit_cast<vk::CommandBuffer>(c.command_buffer),
-				.deviceMask = 1,
-			});
-		}
-		return vk::SubmitInfo2{
-			.waitSemaphoreInfoCount = static_cast<std::uint32_t>(scratch.waits.size()),
-			.pWaitSemaphoreInfos = scratch.waits.data(),
-			.commandBufferInfoCount = static_cast<std::uint32_t>(scratch.cmds.size()),
-			.pCommandBufferInfos = scratch.cmds.data(),
-			.signalSemaphoreInfoCount = static_cast<std::uint32_t>(scratch.signals.size()),
-			.pSignalSemaphoreInfos = scratch.signals.data(),
-		};
-	}
+	) -> vk::SubmitInfo2;
 
 	struct present_scratch {
 		std::vector<vk::Semaphore> waits;
@@ -181,25 +147,63 @@ namespace {
 	};
 
 	auto build_vk_present_info(
-		const gse::gpu::present_info& info,
+		const gpu::present_info& info,
 		present_scratch& scratch
-	) -> vk::PresentInfoKHR {
-		scratch.waits.reserve(info.wait_semaphores.size());
-		for (const auto h : info.wait_semaphores) {
-			scratch.waits.push_back(std::bit_cast<vk::Semaphore>(h));
-		}
-		scratch.swapchains.reserve(info.swapchains.size());
-		for (const auto h : info.swapchains) {
-			scratch.swapchains.push_back(std::bit_cast<vk::SwapchainKHR>(h));
-		}
-		return vk::PresentInfoKHR{
-			.waitSemaphoreCount = static_cast<std::uint32_t>(scratch.waits.size()),
-			.pWaitSemaphores = scratch.waits.data(),
-			.swapchainCount = static_cast<std::uint32_t>(scratch.swapchains.size()),
-			.pSwapchains = scratch.swapchains.data(),
-			.pImageIndices = info.image_indices.data(),
-		};
+	) -> vk::PresentInfoKHR;
+}
+
+auto gse::vulkan::build_vk_submit_info(const gpu::submit_info& info, submit_scratch& scratch) -> vk::SubmitInfo2 {
+	scratch.waits.reserve(info.wait_semaphores.size());
+	for (const auto& w : info.wait_semaphores) {
+		scratch.waits.push_back(vk::SemaphoreSubmitInfo{
+			.semaphore = std::bit_cast<vk::Semaphore>(w.semaphore),
+			.value = w.value,
+			.stageMask = to_vk(w.stages),
+			.deviceIndex = 0,
+		});
 	}
+	scratch.signals.reserve(info.signal_semaphores.size());
+	for (const auto& s : info.signal_semaphores) {
+		scratch.signals.push_back(vk::SemaphoreSubmitInfo{
+			.semaphore = std::bit_cast<vk::Semaphore>(s.semaphore),
+			.value = s.value,
+			.stageMask = to_vk(s.stages),
+			.deviceIndex = 0,
+		});
+	}
+	scratch.cmds.reserve(info.command_buffers.size());
+	for (const auto& c : info.command_buffers) {
+		scratch.cmds.push_back(vk::CommandBufferSubmitInfo{
+			.commandBuffer = std::bit_cast<vk::CommandBuffer>(c.command_buffer),
+			.deviceMask = 1,
+		});
+	}
+	return vk::SubmitInfo2{
+		.waitSemaphoreInfoCount = static_cast<std::uint32_t>(scratch.waits.size()),
+		.pWaitSemaphoreInfos = scratch.waits.data(),
+		.commandBufferInfoCount = static_cast<std::uint32_t>(scratch.cmds.size()),
+		.pCommandBufferInfos = scratch.cmds.data(),
+		.signalSemaphoreInfoCount = static_cast<std::uint32_t>(scratch.signals.size()),
+		.pSignalSemaphoreInfos = scratch.signals.data(),
+	};
+}
+
+auto gse::vulkan::build_vk_present_info(const gpu::present_info& info, present_scratch& scratch) -> vk::PresentInfoKHR {
+	scratch.waits.reserve(info.wait_semaphores.size());
+	for (const auto h : info.wait_semaphores) {
+		scratch.waits.push_back(std::bit_cast<vk::Semaphore>(h));
+	}
+	scratch.swapchains.reserve(info.swapchains.size());
+	for (const auto h : info.swapchains) {
+		scratch.swapchains.push_back(std::bit_cast<vk::SwapchainKHR>(h));
+	}
+	return vk::PresentInfoKHR{
+		.waitSemaphoreCount = static_cast<std::uint32_t>(scratch.waits.size()),
+		.pWaitSemaphores = scratch.waits.data(),
+		.swapchainCount = static_cast<std::uint32_t>(scratch.swapchains.size()),
+		.pSwapchains = scratch.swapchains.data(),
+		.pImageIndices = info.image_indices.data(),
+	};
 }
 
 auto gse::vulkan::queue_family::complete() const -> bool {

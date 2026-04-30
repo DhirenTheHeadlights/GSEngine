@@ -25,7 +25,7 @@ export namespace gse::gpu {
         frame(
             vulkan::sync&& sync,
             std::uint32_t image_index,
-            gpu::handle<vulkan::command_buffer> command_buffer,
+            handle<vulkan::command_buffer> command_buffer,
             device& dev,
             swap_chain& sc
         );
@@ -37,7 +37,7 @@ export namespace gse::gpu {
         ) const -> std::uint32_t;
 
         [[nodiscard]] auto command_buffer(
-        ) const -> gpu::handle<vulkan::command_buffer>;
+        ) const -> handle<vulkan::command_buffer>;
 
         [[nodiscard]] auto frame_in_progress(
         ) const -> bool;
@@ -70,7 +70,7 @@ export namespace gse::gpu {
 
         vulkan::sync m_sync;
         std::uint32_t m_image_index = 0;
-        gpu::handle<vulkan::command_buffer> m_command_buffer{};
+        handle<vulkan::command_buffer> m_command_buffer{};
         std::uint32_t m_current_frame = 0;
         bool m_frame_in_progress = false;
         device* m_device;

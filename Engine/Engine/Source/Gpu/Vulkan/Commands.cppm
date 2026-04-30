@@ -278,62 +278,12 @@ auto gse::vulkan::commands::reset() const -> void {
     raw().reset();
 }
 
-namespace {
-    auto build_vk_attachment(const gse::gpu::rendering_attachment_info& att, const bool is_depth) -> vk::RenderingAttachmentInfo {
-        vk::ClearValue clear{};
-        if (is_depth) {
-            clear.depthStencil = vk::ClearDepthStencilValue{ att.depth_clear_value.depth, 0 };
-        } else {
-            clear.color = vk::ClearColorValue{ std::array{
-                att.color_clear_value.r,
-                att.color_clear_value.g,
-                att.color_clear_value.b,
-                att.color_clear_value.a,
-            } };
-        }
-        return vk::RenderingAttachmentInfo{
-            .imageView = std::bit_cast<vk::ImageView>(att.image_view),
-            .imageLayout = gse::vulkan::to_vk(att.layout),
-            .loadOp = gse::vulkan::to_vk(att.load),
-            .storeOp = gse::vulkan::to_vk(att.store),
-            .clearValue = clear,
-        };
-    }
-
+namespace gse::vulkan {
     struct rendering_scratch {
         std::vector<vk::RenderingAttachmentInfo> color;
         std::optional<vk::RenderingAttachmentInfo> depth;
         std::optional<vk::RenderingAttachmentInfo> stencil;
     };
-
-    auto build_vk_rendering_info(
-        const gse::gpu::rendering_info& info,
-        rendering_scratch& scratch
-    ) -> vk::RenderingInfo {
-        scratch.color.reserve(info.color_attachments.size());
-        for (const auto& a : info.color_attachments) {
-            scratch.color.push_back(build_vk_attachment(a, false));
-        }
-        if (info.depth_attachment) {
-            scratch.depth = build_vk_attachment(*info.depth_attachment, true);
-        }
-        if (info.stencil_attachment) {
-            scratch.stencil = build_vk_attachment(*info.stencil_attachment, true);
-        }
-        const auto min = info.render_area.min();
-        const auto size = info.render_area.size();
-        return vk::RenderingInfo{
-            .renderArea = vk::Rect2D{
-                .offset = vk::Offset2D{ min.x(), min.y() },
-                .extent = vk::Extent2D{ static_cast<std::uint32_t>(size.x()), static_cast<std::uint32_t>(size.y()) },
-            },
-            .layerCount = info.layer_count,
-            .colorAttachmentCount = static_cast<std::uint32_t>(scratch.color.size()),
-            .pColorAttachments = scratch.color.data(),
-            .pDepthAttachment = scratch.depth ? &*scratch.depth : nullptr,
-            .pStencilAttachment = scratch.stencil ? &*scratch.stencil : nullptr,
-        };
-    }
 
     struct dependency_scratch {
         std::vector<vk::MemoryBarrier2> memory;
@@ -341,63 +291,122 @@ namespace {
         std::vector<vk::ImageMemoryBarrier2> image;
     };
 
+    auto build_vk_attachment(
+        const gpu::rendering_attachment_info& att,
+        bool is_depth
+    ) -> vk::RenderingAttachmentInfo;
+
+    auto build_vk_rendering_info(
+        const gpu::rendering_info& info,
+        rendering_scratch& scratch
+    ) -> vk::RenderingInfo;
+
     auto build_vk_dependency_info(
-        const gse::gpu::dependency_info& dep,
+        const gpu::dependency_info& dep,
         dependency_scratch& scratch
-    ) -> vk::DependencyInfo {
-        scratch.memory.reserve(dep.memory_barriers.size());
-        for (const auto& b : dep.memory_barriers) {
-            scratch.memory.push_back(vk::MemoryBarrier2{
-                .srcStageMask = gse::vulkan::to_vk(b.src_stages),
-                .srcAccessMask = gse::vulkan::to_vk(b.src_access),
-                .dstStageMask = gse::vulkan::to_vk(b.dst_stages),
-                .dstAccessMask = gse::vulkan::to_vk(b.dst_access),
-            });
-        }
-        scratch.buffer.reserve(dep.buffer_barriers.size());
-        for (const auto& b : dep.buffer_barriers) {
-            scratch.buffer.push_back(vk::BufferMemoryBarrier2{
-                .srcStageMask = gse::vulkan::to_vk(b.src_stages),
-                .srcAccessMask = gse::vulkan::to_vk(b.src_access),
-                .dstStageMask = gse::vulkan::to_vk(b.dst_stages),
-                .dstAccessMask = gse::vulkan::to_vk(b.dst_access),
-                .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-                .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                .buffer = std::bit_cast<vk::Buffer>(b.buffer),
-                .offset = b.offset,
-                .size = b.size == 0 ? vk::WholeSize : b.size,
-            });
-        }
-        scratch.image.reserve(dep.image_barriers.size());
-        for (const auto& b : dep.image_barriers) {
-            scratch.image.push_back(vk::ImageMemoryBarrier2{
-                .srcStageMask = gse::vulkan::to_vk(b.src_stages),
-                .srcAccessMask = gse::vulkan::to_vk(b.src_access),
-                .dstStageMask = gse::vulkan::to_vk(b.dst_stages),
-                .dstAccessMask = gse::vulkan::to_vk(b.dst_access),
-                .oldLayout = gse::vulkan::to_vk(b.old_layout),
-                .newLayout = gse::vulkan::to_vk(b.new_layout),
-                .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-                .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                .image = std::bit_cast<vk::Image>(b.image),
-                .subresourceRange = vk::ImageSubresourceRange{
-                    .aspectMask = gse::vulkan::to_vk(b.aspects),
-                    .baseMipLevel = b.base_mip_level,
-                    .levelCount = b.level_count,
-                    .baseArrayLayer = b.base_array_layer,
-                    .layerCount = b.layer_count,
-                },
-            });
-        }
-        return vk::DependencyInfo{
-            .memoryBarrierCount = static_cast<std::uint32_t>(scratch.memory.size()),
-            .pMemoryBarriers = scratch.memory.data(),
-            .bufferMemoryBarrierCount = static_cast<std::uint32_t>(scratch.buffer.size()),
-            .pBufferMemoryBarriers = scratch.buffer.data(),
-            .imageMemoryBarrierCount = static_cast<std::uint32_t>(scratch.image.size()),
-            .pImageMemoryBarriers = scratch.image.data(),
-        };
+    ) -> vk::DependencyInfo;
+}
+
+auto gse::vulkan::build_vk_attachment(const gpu::rendering_attachment_info& att, const bool is_depth) -> vk::RenderingAttachmentInfo {
+    vk::ClearValue clear{};
+    if (is_depth) {
+        clear.depthStencil = vk::ClearDepthStencilValue{ att.depth_clear_value.depth, 0 };
+    } else {
+        clear.color = vk::ClearColorValue{ std::array{
+            att.color_clear_value.r,
+            att.color_clear_value.g,
+            att.color_clear_value.b,
+            att.color_clear_value.a,
+        } };
     }
+    return vk::RenderingAttachmentInfo{
+        .imageView = std::bit_cast<vk::ImageView>(att.image_view),
+        .imageLayout = to_vk(att.layout),
+        .loadOp = to_vk(att.load),
+        .storeOp = to_vk(att.store),
+        .clearValue = clear,
+    };
+}
+
+auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rendering_scratch& scratch) -> vk::RenderingInfo {
+    scratch.color.reserve(info.color_attachments.size());
+    for (const auto& a : info.color_attachments) {
+        scratch.color.push_back(build_vk_attachment(a, false));
+    }
+    if (info.depth_attachment) {
+        scratch.depth = build_vk_attachment(*info.depth_attachment, true);
+    }
+    if (info.stencil_attachment) {
+        scratch.stencil = build_vk_attachment(*info.stencil_attachment, true);
+    }
+    const auto min = info.render_area.min();
+    const auto size = info.render_area.size();
+    return vk::RenderingInfo{
+        .renderArea = vk::Rect2D{
+            .offset = vk::Offset2D{ min.x(), min.y() },
+            .extent = vk::Extent2D{ static_cast<std::uint32_t>(size.x()), static_cast<std::uint32_t>(size.y()) },
+        },
+        .layerCount = info.layer_count,
+        .colorAttachmentCount = static_cast<std::uint32_t>(scratch.color.size()),
+        .pColorAttachments = scratch.color.data(),
+        .pDepthAttachment = scratch.depth ? &*scratch.depth : nullptr,
+        .pStencilAttachment = scratch.stencil ? &*scratch.stencil : nullptr,
+    };
+}
+
+auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, dependency_scratch& scratch) -> vk::DependencyInfo {
+    scratch.memory.reserve(dep.memory_barriers.size());
+    for (const auto& b : dep.memory_barriers) {
+        scratch.memory.push_back(vk::MemoryBarrier2{
+            .srcStageMask = to_vk(b.src_stages),
+            .srcAccessMask = to_vk(b.src_access),
+            .dstStageMask = to_vk(b.dst_stages),
+            .dstAccessMask = to_vk(b.dst_access),
+        });
+    }
+    scratch.buffer.reserve(dep.buffer_barriers.size());
+    for (const auto& b : dep.buffer_barriers) {
+        scratch.buffer.push_back(vk::BufferMemoryBarrier2{
+            .srcStageMask = to_vk(b.src_stages),
+            .srcAccessMask = to_vk(b.src_access),
+            .dstStageMask = to_vk(b.dst_stages),
+            .dstAccessMask = to_vk(b.dst_access),
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .buffer = std::bit_cast<vk::Buffer>(b.buffer),
+            .offset = b.offset,
+            .size = b.size == 0 ? vk::WholeSize : b.size,
+        });
+    }
+    scratch.image.reserve(dep.image_barriers.size());
+    for (const auto& b : dep.image_barriers) {
+        scratch.image.push_back(vk::ImageMemoryBarrier2{
+            .srcStageMask = to_vk(b.src_stages),
+            .srcAccessMask = to_vk(b.src_access),
+            .dstStageMask = to_vk(b.dst_stages),
+            .dstAccessMask = to_vk(b.dst_access),
+            .oldLayout = to_vk(b.old_layout),
+            .newLayout = to_vk(b.new_layout),
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = std::bit_cast<vk::Image>(b.image),
+            .subresourceRange = vk::ImageSubresourceRange{
+                .aspectMask = to_vk(b.aspects),
+                .baseMipLevel = b.base_mip_level,
+                .levelCount = b.level_count,
+                .baseArrayLayer = b.base_array_layer,
+                .layerCount = b.layer_count,
+            },
+        });
+    }
+    return vk::DependencyInfo{
+        .memoryBarrierCount = static_cast<std::uint32_t>(scratch.memory.size()),
+        .pMemoryBarriers = scratch.memory.data(),
+        .bufferMemoryBarrierCount = static_cast<std::uint32_t>(scratch.buffer.size()),
+        .pBufferMemoryBarriers = scratch.buffer.data(),
+        .imageMemoryBarrierCount = static_cast<std::uint32_t>(scratch.image.size()),
+        .pImageMemoryBarriers = scratch.image.data(),
+    };
 }
 
 auto gse::vulkan::commands::begin_rendering(const gpu::rendering_info& info) const -> void {

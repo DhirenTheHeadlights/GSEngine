@@ -40,7 +40,6 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, fra
 }
 
 auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
-
 	auto& gpu = ctx.get<gpu::context>();
 
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
@@ -147,7 +146,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 
 		gse::memcpy(fd.mapping_buffers[frame_index].mapped(), index_mapping.data(), mapping_bytes);
 
-		auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instances_buffer();
+		auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instance_buffer();
 
 		gpu::descriptor_writer(gpu, fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
 			.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())

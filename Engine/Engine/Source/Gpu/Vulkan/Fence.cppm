@@ -38,7 +38,6 @@ export namespace gse::vulkan {
 		) -> void;
 
 		[[nodiscard]] auto signaled(
-			const device& dev
 		) const -> bool;
 
 		[[nodiscard]] auto handle(
@@ -75,8 +74,8 @@ auto gse::vulkan::fence::reset(const device& dev) -> void {
 	dev.raii_device().resetFences(*m_fence);
 }
 
-auto gse::vulkan::fence::signaled(const device& dev) const -> bool {
-	return dev.raii_device().getFenceStatus(*m_fence) == vk::Result::eSuccess;
+auto gse::vulkan::fence::signaled() const -> bool {
+	return m_fence.getStatus() == vk::Result::eSuccess;
 }
 
 auto gse::vulkan::fence::handle(this const fence& self) -> gpu::handle<fence> {

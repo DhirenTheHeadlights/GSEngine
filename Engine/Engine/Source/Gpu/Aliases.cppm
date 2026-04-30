@@ -1,5 +1,6 @@
 export module gse.gpu:aliases;
 
+import :vulkan_acceleration_structure;
 import :vulkan_buffer;
 import :vulkan_image;
 import :vulkan_sampler;
@@ -14,6 +15,8 @@ import :vulkan_shader_module;
 import :vulkan_device;
 
 export namespace gse::gpu {
+	using blas = vulkan::blas;
+	using tlas = vulkan::tlas;
 	using buffer = vulkan::buffer;
 	using image = vulkan::image;
 	using sampler = vulkan::sampler;

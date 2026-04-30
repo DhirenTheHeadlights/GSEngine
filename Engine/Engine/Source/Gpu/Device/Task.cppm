@@ -103,15 +103,15 @@ auto gse::gpu::submission::await_suspend(std::coroutine_handle<> caller) -> bool
 
     m_value = m_queue->reserve_value();
 
-    const gpu::semaphore_submit_info signal{
+    const semaphore_submit_info signal{
         .semaphore = m_queue->timeline_handle(),
         .value = m_value,
-        .stages = gpu::pipeline_stage_flag::all_commands,
+        .stages = pipeline_stage_flag::all_commands,
     };
-    const gpu::command_buffer_submit_info cmd_info{
+    const command_buffer_submit_info cmd_info{
         .command_buffer = m_cmd.handle(),
     };
-    const gpu::submit_info info{
+    const submit_info info{
         .command_buffers = std::span(&cmd_info, 1),
         .signal_semaphores = std::span(&signal, 1),
     };
