@@ -3,6 +3,7 @@ export module gse.gpu:swap_chain;
 import std;
 
 import :vulkan_device;
+import :vulkan_image;
 import :vulkan_instance;
 import :vulkan_swapchain;
 import :device;
@@ -53,11 +54,11 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto image(
 			std::uint32_t index
-		) const -> handle<image>;
+		) const -> handle<vulkan::image>;
 
 		[[nodiscard]] auto image_view(
 			std::uint32_t index
-		) const -> handle<image_view>;
+		) const -> handle<vulkan::image_view>;
 
 		[[nodiscard]] auto format(
 		) const -> image_format;
@@ -91,7 +92,7 @@ gse::gpu::swap_chain::swap_chain(vulkan::swap_chain&& config, device& dev)
 	: m_config(std::move(config)), m_device(&dev) {}
 
 auto gse::gpu::swap_chain::extent() const -> vec2u {
-	return { m_config.extent().width, m_config.extent().height };
+	return m_config.extent();
 }
 
 auto gse::gpu::swap_chain::depth_image(this auto& self) -> auto& {
@@ -122,11 +123,11 @@ auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size) -> void {
 	m_config = vulkan::swap_chain::create(framebuffer_size, m_device->vulkan_instance(), m_device->vulkan_device());
 }
 
-auto gse::gpu::swap_chain::image(const std::uint32_t index) const -> handle<image> {
+auto gse::gpu::swap_chain::image(const std::uint32_t index) const -> handle<vulkan::image> {
 	return m_config.image(index);
 }
 
-auto gse::gpu::swap_chain::image_view(const std::uint32_t index) const -> handle<image_view> {
+auto gse::gpu::swap_chain::image_view(const std::uint32_t index) const -> handle<vulkan::image_view> {
 	return m_config.image_view(index);
 }
 
