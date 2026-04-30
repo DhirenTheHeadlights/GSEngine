@@ -1,6 +1,6 @@
 module;
 
-#include "moodycamel/concurrentqueue.h"
+#include "concurrentqueue.h"
 
 export module gse.moodycamel;
 

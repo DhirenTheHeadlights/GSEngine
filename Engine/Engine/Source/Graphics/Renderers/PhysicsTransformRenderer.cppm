@@ -56,10 +56,10 @@ auto gse::renderer::physics_transform::system::initialize(const init_context& ph
 
 	assert(r.shader_handle->is_compute(), std::source_location::current(), "Physics instance transform shader is not loaded as a compute shader");
 
-	r.pipeline = gpu::create_compute_pipeline(ctx, r.shader_handle, "push_constants");
+	r.pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.shader_handle, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		fd.descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
+		fd.descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.shader_handle);
 	}
 
 	r.initialized = true;
@@ -98,7 +98,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 
 		if (fd.mapping_buffer_size < required) {
 			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				fd.mapping_buffers[i] = gpu::create_buffer(gpu, {
+				fd.mapping_buffers[i] = gpu.create_buffer({
 					.size = required,
 					.usage = gpu::buffer_flag::storage,
 					.data = data.physics_mappings.data()

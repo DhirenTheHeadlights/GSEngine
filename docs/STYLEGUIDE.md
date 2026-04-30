@@ -409,6 +409,24 @@ defer<state>([handle](state& s) {
 
 ---
 
+## Returning Contiguous Sequences
+
+When a getter exposes a contiguous sequence (vector, array, etc.) that callers only need to iterate or index, return `std::span<const T>` rather than `const std::vector<T>&` (or any other concrete container reference). The span gives callers the same iteration / indexing surface, decouples them from the storage choice, and lets the implementation switch between `std::vector`, `std::array`, a fixed buffer, etc. without breaking the public API.
+
+```cpp
+// correct
+[[nodiscard]] auto formats(
+) const -> std::span<const vk::SurfaceFormatKHR>;
+
+// wrong — locks the API to a specific container
+[[nodiscard]] auto formats(
+) const -> const std::vector<vk::SurfaceFormatKHR>&;
+```
+
+Use a concrete container reference only when the caller genuinely needs container-specific operations (e.g. `.reserve()`, `.emplace_back()`, `.size()` returning the container's exact size_type) — and consider whether the API should expose those at all. If the caller just iterates or indexes, return a span.
+
+---
+
 ## Ranges and Views
 
 Prefer `std::ranges` algorithms over raw loops where applicable. Use `std::views` (e.g. `std::views::keys`, `std::views::values`) when iterating over only the keys or values of a map instead of iterating the full pair:

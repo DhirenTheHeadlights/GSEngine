@@ -143,7 +143,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(system::frame_data& fd
 		max_verts *= 2;
 	}
 
-	vertex_buffer = gpu::create_buffer(ctx, {
+	vertex_buffer = gpu::buffer::create(ctx.allocator(), {
 		.size = max_verts * sizeof(debug_vertex),
 		.usage = gpu::buffer_flag::vertex
 	});
@@ -167,19 +167,19 @@ auto gse::renderer::physics_debug::system::initialize(const init_context& phase,
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
+		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(ctx.allocator(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.shader_handle);
 
-		gpu::descriptor_writer(ctx, r.shader_handle, r.descriptors[i])
+		gpu::descriptor_writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
 
-	r.pipeline = gpu::create_graphics_pipeline(ctx, r.shader_handle, {
+	r.pipeline = gpu::create_graphics_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.shader_handle, {
 		.rasterization = {
 			.polygon = gpu::polygon_mode::line,
 			.cull = gpu::cull_mode::none

@@ -1,12 +1,12 @@
 export module gse.gpu:shader_registry;
 
 import std;
-import vulkan;
 
+import :handles;
 import :types;
+import :device;
 import :shader;
 import :shader_layout;
-import :vulkan_reflect;
 
 import gse.assets;
 import gse.log;
@@ -16,20 +16,18 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 
-export namespace gse::vulkan {
+export namespace gse::gpu {
 	struct shader_cache_entry {
-		std::unordered_map<gpu::shader_stage, vk::raii::ShaderModule> modules;
-		std::vector<vk::raii::DescriptorSetLayout> owned_layouts;
-		std::vector<vk::DescriptorSetLayout> layout_handles;
+		std::unordered_map<shader_stage, shader_module> modules;
+		std::vector<descriptor_set_layout> owned_layouts;
+		std::vector<handle<descriptor_set_layout>> layout_handles;
 		const shader_layout* external_layout = nullptr;
 	};
-}
 
-export namespace gse::gpu {
 	class shader_registry final : public non_copyable {
 	public:
 		explicit shader_registry(
-			vk::raii::Device& logical
+			device& dev
 		);
 
 		~shader_registry() override;
@@ -40,24 +38,31 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto cache(
 			const resource::handle<shader>& s
-		) -> const vulkan::shader_cache_entry&;
+		) -> const shader_cache_entry&;
+
 	private:
-		vk::raii::Device* m_device;
-		std::unordered_map<id, vulkan::shader_cache_entry> m_cache;
+		device* m_device;
+		std::unordered_map<id, shader_cache_entry> m_cache;
 		std::unordered_map<std::string, std::unique_ptr<shader_layout>> m_layouts;
 	};
 }
 
-gse::gpu::shader_registry::shader_registry(vk::raii::Device& logical) : m_device(&logical) {}
+gse::gpu::shader_registry::shader_registry(device& dev) : m_device(&dev) {}
 
-gse::gpu::shader_registry::~shader_registry() {};
+gse::gpu::shader_registry::~shader_registry() {}
 
 auto gse::gpu::shader_registry::load_layouts(const std::filesystem::path& layouts_dir) -> void {
-	if (!m_layouts.empty()) return;
-	if (!std::filesystem::exists(layouts_dir)) return;
+	if (!m_layouts.empty()) {
+		return;
+	}
+	if (!std::filesystem::exists(layouts_dir)) {
+		return;
+	}
 
 	for (const auto& entry : std::filesystem::directory_iterator(layouts_dir)) {
-		if (!entry.is_regular_file() || entry.path().extension() != ".glayout") continue;
+		if (!entry.is_regular_file() || entry.path().extension() != ".glayout") {
+			continue;
+		}
 
 		auto layout = std::make_unique<shader_layout>(entry.path());
 		layout->load(*m_device);
@@ -68,30 +73,30 @@ auto gse::gpu::shader_registry::load_layouts(const std::filesystem::path& layout
 	}
 }
 
-auto gse::gpu::shader_registry::cache(const resource::handle<shader>& s) -> const vulkan::shader_cache_entry& {
+auto gse::gpu::shader_registry::cache(const resource::handle<shader>& s) -> const shader_cache_entry& {
 	if (const auto it = m_cache.find(s.id()); it != m_cache.end()) {
 		return it->second;
 	}
 
-	vulkan::shader_cache_entry entry;
+	shader_cache_entry entry;
 
-	auto create_module = [&](const shader_stage stage) -> vk::raii::ShaderModule {
+	auto create_module = [&](const shader_stage stage) -> shader_module {
 		const auto spirv = s->spirv(stage);
-		if (spirv.empty()) return nullptr;
-
-		return m_device->createShaderModule({
-			.codeSize = spirv.size_bytes(),
-			.pCode = spirv.data()
-		});
+		if (spirv.empty()) {
+			return {};
+		}
+		return shader_module::create(m_device->vulkan_device(), spirv);
 	};
 
 	if (s->is_compute()) {
 		entry.modules.emplace(shader_stage::compute, create_module(shader_stage::compute));
-	} else if (s->is_mesh_shader()) {
+	}
+	else if (s->is_mesh_shader()) {
 		entry.modules.emplace(shader_stage::task, create_module(shader_stage::task));
 		entry.modules.emplace(shader_stage::mesh, create_module(shader_stage::mesh));
 		entry.modules.emplace(shader_stage::fragment, create_module(shader_stage::fragment));
-	} else {
+	}
+	else {
 		entry.modules.emplace(shader_stage::vertex, create_module(shader_stage::vertex));
 		entry.modules.emplace(shader_stage::fragment, create_module(shader_stage::fragment));
 	}
@@ -107,62 +112,40 @@ auto gse::gpu::shader_registry::cache(const resource::handle<shader>& s) -> cons
 	}
 
 	if (external_layout) {
-		entry.layout_handles = external_layout->vk_layouts();
+		entry.layout_handles = external_layout->layout_handles();
 		entry.external_layout = external_layout;
 		auto [result_it, inserted] = m_cache.emplace(s.id(), std::move(entry));
 		return result_it->second;
 	}
 
-	std::uint32_t max_set_index = static_cast<std::uint32_t>(gpu::descriptor_set_type::bind_less);
-	for (const auto& type : sets | std::views::keys) {
+	std::uint32_t max_set_index = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
+	for (const auto& type : std::views::keys(sets)) {
 		max_set_index = std::max(max_set_index, static_cast<std::uint32_t>(type));
 	}
 
-	entry.owned_layouts.reserve(max_set_index + 1);
-	while (entry.owned_layouts.size() <= max_set_index) {
-		entry.owned_layouts.emplace_back(nullptr);
-	}
+	entry.owned_layouts.resize(max_set_index + 1);
 
 	for (const auto& [type, set_data] : sets) {
 		const auto set_idx = static_cast<std::uint32_t>(type);
 
-		std::vector<vk::DescriptorSetLayoutBinding> raw_bindings;
-		raw_bindings.reserve(set_data.bindings.size());
-
+		std::vector<descriptor_binding_desc> descs;
+		descs.reserve(set_data.bindings.size());
 		for (const auto& b : set_data.bindings) {
-			const auto vk_descriptor_type = vulkan::to_vk(b.desc.type);
-			raw_bindings.push_back({
-				.binding = b.desc.binding,
-				.descriptorType = vk_descriptor_type,
-				.descriptorCount = b.desc.count,
-				.stageFlags = vulkan::to_vk(b.desc.stages),
-				.pImmutableSamplers = nullptr
-			});
+			descs.push_back(b.desc);
 		}
 
-		vk::DescriptorSetLayoutCreateInfo ci{
-			.flags = vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
-			.bindingCount = static_cast<std::uint32_t>(raw_bindings.size()),
-			.pBindings = raw_bindings.data()
-		};
-
-		entry.owned_layouts[set_idx] = m_device->createDescriptorSetLayout(ci);
+		entry.owned_layouts[set_idx] = descriptor_set_layout::create(*m_device, descs);
 	}
 
 	for (std::uint32_t i = 0; i <= max_set_index; ++i) {
-		if (!*entry.owned_layouts[i]) {
-			vk::DescriptorSetLayoutCreateInfo ci{
-				.flags = vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
-				.bindingCount = 0,
-				.pBindings = nullptr
-			};
-			entry.owned_layouts[i] = m_device->createDescriptorSetLayout(ci);
+		if (!entry.owned_layouts[i]) {
+			entry.owned_layouts[i] = descriptor_set_layout::create(*m_device, {});
 		}
 	}
 
 	entry.layout_handles.reserve(entry.owned_layouts.size());
 	for (const auto& l : entry.owned_layouts) {
-		entry.layout_handles.push_back(*l);
+		entry.layout_handles.push_back(l.handle());
 	}
 
 	auto [result_it, inserted] = m_cache.emplace(s.id(), std::move(entry));

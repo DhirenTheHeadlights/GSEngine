@@ -1,7 +1,6 @@
 export module gse.shader_compiler:layout_compiler;
 
 import std;
-import vulkan;
 
 import gse.assert;
 import gse.log;
@@ -19,10 +18,10 @@ namespace gse::layout_compile {
 		slang::IBlob* diagnostics
 	) -> void;
 
-	auto to_vk_descriptor_type(
+	auto to_descriptor_type(
 		slang::TypeLayoutReflection* tl,
 		int range_index
-	) -> vk::DescriptorType;
+	) -> gpu::descriptor_type;
 }
 
 template <>
@@ -66,12 +65,12 @@ auto gse::layout_compile::log_diagnostics(slang::IBlob* diagnostics) -> void {
 	log::println(log::level::error, log::category::assets, "{}", message);
 }
 
-auto gse::layout_compile::to_vk_descriptor_type(slang::TypeLayoutReflection* tl, const int range_index) -> vk::DescriptorType {
+auto gse::layout_compile::to_descriptor_type(slang::TypeLayoutReflection* tl, const int range_index) -> gpu::descriptor_type {
 	if (tl == nullptr) {
-		return vk::DescriptorType::eStorageBuffer;
+		return gpu::descriptor_type::storage_buffer;
 	}
 	if (const int range_count = tl->getBindingRangeCount(); range_index < 0 || range_index >= range_count) {
-		return vk::DescriptorType::eStorageBuffer;
+		return gpu::descriptor_type::storage_buffer;
 	}
 
 	const slang::BindingType bt = tl->getBindingRangeType(range_index);
@@ -86,27 +85,27 @@ auto gse::layout_compile::to_vk_descriptor_type(slang::TypeLayoutReflection* tl,
 
 	switch (base_bt) {
 		case slang_binding_type_combined_texture_sampler:
-			return vk::DescriptorType::eCombinedImageSampler;
+			return gpu::descriptor_type::combined_image_sampler;
 		case slang_binding_type_texture:
 			if (shape == slang_texture_buffer) {
-				return (is_mutable || access != slang_resource_access_read) ? vk::DescriptorType::eStorageTexelBuffer : vk::DescriptorType::eUniformTexelBuffer;
+				return (is_mutable || access != slang_resource_access_read) ? gpu::descriptor_type::storage_buffer : gpu::descriptor_type::storage_buffer;
 			}
-			return (is_mutable || access != slang_resource_access_read) ? vk::DescriptorType::eStorageImage : vk::DescriptorType::eSampledImage;
+			return (is_mutable || access != slang_resource_access_read) ? gpu::descriptor_type::storage_image : gpu::descriptor_type::sampled_image;
 		case slang_binding_type_sampler:
-			return vk::DescriptorType::eSampler;
+			return gpu::descriptor_type::sampler;
 		case slang_binding_type_typed_buffer:
-			return (is_mutable || access != slang_resource_access_read) ? vk::DescriptorType::eStorageTexelBuffer : vk::DescriptorType::eUniformTexelBuffer;
+			return gpu::descriptor_type::storage_buffer;
 		case slang_binding_type_raw_buffer:
-			return vk::DescriptorType::eStorageBuffer;
+			return gpu::descriptor_type::storage_buffer;
 		case slang_binding_type_constant_buffer:
 		case slang_binding_type_parameter_block:
-			return vk::DescriptorType::eUniformBuffer;
+			return gpu::descriptor_type::uniform_buffer;
 		case slang_binding_type_input_render_target:
-			return vk::DescriptorType::eSampledImage;
+			return gpu::descriptor_type::sampled_image;
 		case slang_binding_type_ray_tracing_acceleration_structure:
-			return vk::DescriptorType::eAccelerationStructureKHR;
+			return gpu::descriptor_type::acceleration_structure;
 		default:
-			return vk::DescriptorType::eStorageBuffer;
+			return gpu::descriptor_type::storage_buffer;
 	}
 }
 
@@ -240,7 +239,12 @@ auto gse::asset_compiler<gse::shader_layout>::compile_one(const std::filesystem:
 	}
 
 	const int field_count = element_tl->getFieldCount();
-	vk::ShaderStageFlags all_stages = vk::ShaderStageFlagBits::eAll;
+	const gpu::stage_flags all_stages =
+		gpu::stage_flag::vertex
+		| gpu::stage_flag::fragment
+		| gpu::stage_flag::compute
+		| gpu::stage_flag::task
+		| gpu::stage_flag::mesh;
 
 	for (int i = 0; i < field_count; ++i) {
 		auto* var = element_tl->getFieldByIndex(i);
@@ -251,23 +255,23 @@ auto gse::asset_compiler<gse::shader_layout>::compile_one(const std::filesystem:
 			const auto binding = static_cast<std::uint32_t>(var->getOffset(slang::ParameterCategory::DescriptorTableSlot));
 			const auto set_idx = container_space + static_cast<std::uint32_t>(var->getBindingSpace(slang::ParameterCategory::DescriptorTableSlot));
 
-			vk::DescriptorSetLayoutBinding layout_binding{
+			gpu::descriptor_binding_desc desc{
 				.binding = binding,
-				.descriptorType = to_vk_descriptor_type(tl, range_index),
-				.descriptorCount = tl->getKind() == slang::TypeReflection::Kind::Array ? static_cast<std::uint32_t>(tl->getElementCount()) : 1u,
-				.stageFlags = all_stages,
+				.type = to_descriptor_type(tl, range_index),
+				.count = tl->getKind() == slang::TypeReflection::Kind::Array ? static_cast<std::uint32_t>(tl->getElementCount()) : 1u,
+				.stages = all_stages,
 			};
 
 			auto& set = sets_map[set_idx];
 			set.set_index = set_idx;
 			const bool exists = std::ranges::any_of(set.bindings, [&](const shader_layout_binding& b) {
-				return b.layout_binding.binding == binding;
+				return b.desc.binding == binding;
 			});
 
 			if (!exists) {
 				set.bindings.push_back({
 					.name = var->getName(),
-					.layout_binding = layout_binding,
+					.desc = desc,
 				});
 			}
 		}
@@ -285,7 +289,7 @@ auto gse::asset_compiler<gse::shader_layout>::compile_one(const std::filesystem:
 		sets.push_back(std::move(set));
 	}
 
-	binary_writer ar(out, 0x474C4159, 1);
+	binary_writer ar(out, 0x474C4159, 2);
 	ar & layout_name & sets;
 
 	log::println(log::category::assets, "Layout compiled: {}", destination.filename().string());

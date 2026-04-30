@@ -102,7 +102,7 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
     r.sprite_shader = assets.get<shader>("Shaders/Standard2D/sprite");
     assets.instantly_load(r.sprite_shader);
 
-    r.sprite_pipeline = gpu::create_graphics_pipeline(ctx, r.sprite_shader, {
+    r.sprite_pipeline = gpu::create_graphics_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.sprite_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },
         .depth = { .test = false, .write = false },
         .blend = gpu::blend_preset::alpha_premultiplied,
@@ -113,7 +113,7 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
     r.text_shader = assets.get<shader>("Shaders/Standard2D/msdf");
     assets.instantly_load(r.text_shader);
 
-    r.text_pipeline = gpu::create_graphics_pipeline(ctx, r.text_shader, {
+    r.text_pipeline = gpu::create_graphics_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.text_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },
         .depth = { .test = false, .write = false },
         .blend = gpu::blend_preset::alpha_premultiplied,
@@ -125,12 +125,12 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
     constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
     for (auto& [vertex_buffer, index_buffer] : r.gpu_frames) {
-        vertex_buffer = gpu::create_buffer(ctx, {
+        vertex_buffer = gpu::buffer::create(ctx.allocator(), {
             .size = vertex_buffer_size,
             .usage = gpu::buffer_flag::vertex,
         });
 
-        index_buffer = gpu::create_buffer(ctx, {
+        index_buffer = gpu::buffer::create(ctx.allocator(), {
             .size = index_buffer_size,
             .usage = gpu::buffer_flag::index,
         });

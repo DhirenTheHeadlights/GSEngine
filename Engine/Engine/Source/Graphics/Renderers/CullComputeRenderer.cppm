@@ -67,25 +67,25 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 
 	const auto* gc_r = phase.try_resources_of<geometry_collector::system::resources>();
 
-	r.pipeline = gpu::create_compute_pipeline(ctx, r.shader_handle, "push_constants");
+	r.pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.shader_handle, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
-		r.frustum_buffer[i] = gpu::create_buffer(ctx, {
+		r.frustum_buffer[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = frustum_size,
 			.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
 		});
 
 		const std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * r.batch_stride;
-		r.batch_info_buffer[i] = gpu::create_buffer(ctx, {
+		r.batch_info_buffer[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = batch_info_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.normal_descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
+		r.normal_descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.shader_handle);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.shader_handle);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {

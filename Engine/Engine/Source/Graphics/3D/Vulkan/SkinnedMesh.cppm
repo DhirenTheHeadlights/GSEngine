@@ -68,17 +68,17 @@ auto gse::skinned_mesh::initialize(gpu::context& ctx) -> void {
     const std::size_t vertex_buffer_size = sizeof(skinned_vertex) * m_vertices.size();
     const std::size_t index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-    m_vertex_buffer = gpu::create_buffer(ctx, {
+    m_vertex_buffer = gpu::buffer::create(ctx.allocator(), {
         .size = vertex_buffer_size,
         .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst
     });
 
-    m_index_buffer = gpu::create_buffer(ctx, {
+    m_index_buffer = gpu::buffer::create(ctx.allocator(), {
         .size = index_buffer_size,
         .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
     });
 
-    gpu::upload_to_buffers(ctx, std::array{
+    gpu::upload_to_buffers(ctx.device(), std::array{
         gpu::buffer_upload{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
         gpu::buffer_upload{ &m_index_buffer, m_indices.data(), index_buffer_size }
     });

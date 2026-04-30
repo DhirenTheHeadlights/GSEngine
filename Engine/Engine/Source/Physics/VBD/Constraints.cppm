@@ -58,8 +58,8 @@ export namespace gse::vbd {
 		std::uint32_t body_b = 0;
 		joint_type type = joint_type::distance;
 
-		vec3<lever_arm> local_anchor_a;
-		vec3<lever_arm> local_anchor_b;
+		vec3<lever_arm> local_anchor_a = {};
+		vec3<lever_arm> local_anchor_b = {};
 		vec3f local_axis_a = { 0.f, 1.f, 0.f };
 		vec3f local_axis_b = { 0.f, 1.f, 0.f };
 
@@ -69,19 +69,19 @@ export namespace gse::vbd {
 		angle limit_lower = radians(-std::numbers::pi_v<float>);
 		angle limit_upper = radians(std::numbers::pi_v<float>);
 		bool limits_enabled = false;
-		quat rest_orientation;
+		quat rest_orientation = {};
 
-		vec3<force> pos_lambda;
-		vec3<stiffness> pos_penalty;
+		vec3<force> pos_lambda = {};
+		vec3<stiffness> pos_penalty = {};
 
-		vec3<torque> ang_lambda;
+		vec3<torque> ang_lambda = {};
 		vec3<angular_stiffness> ang_penalty;
 
 		torque limit_lambda = {};
 		angular_stiffness limit_penalty = {};
 
-		vec3<gap> pos_c0;
-		vec3<angle> ang_c0;
+		vec3<gap> pos_c0 = {};
+		vec3<angle> ang_c0 = {};
 		angle limit_c0 = {};
 	};
 

@@ -269,40 +269,40 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 	r.instance_material_index_offset = r.instance_offsets.at("material_index");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
+		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(ctx.allocator(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
 		constexpr std::size_t skin_buffer_size = resources::max_skin_matrices * sizeof(mat4f);
-		r.skin_buffer[i] = gpu::create_buffer(ctx, {
+		r.skin_buffer[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = skin_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 		const std::size_t instance_buffer_size = resources::max_instances * 2 * r.instance_stride;
-		r.instance_buffer[i] = gpu::create_buffer(ctx, {
+		r.instance_buffer[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = instance_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
 		});
 
 		constexpr std::size_t indirect_buffer_size = render_data::max_batches * sizeof(gpu::draw_indexed_indirect_command);
-		r.normal_indirect_commands_buffer[i] = gpu::create_buffer(ctx, {
+		r.normal_indirect_commands_buffer[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = indirect_buffer_size,
 			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
-		r.skinned_indirect_commands_buffer[i] = gpu::create_buffer(ctx, {
+		r.skinned_indirect_commands_buffer[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = indirect_buffer_size,
 			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 
 		constexpr std::size_t local_pose_size = resources::max_skin_matrices * sizeof(mat4f);
-		r.local_pose_buffer[i] = gpu::create_buffer(ctx, {
+		r.local_pose_buffer[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = local_pose_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 
 		constexpr std::size_t mapping_buffer_size = resources::max_instances * sizeof(physics_mapping_entry);
-		r.physics_mapping_buffer[i] = gpu::create_buffer(ctx, {
+		r.physics_mapping_buffer[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = mapping_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
@@ -317,7 +317,7 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 		r.joint_offsets[name] = member.offset;
 	}
 
-	r.skeleton_buffer = gpu::create_buffer(ctx, {
+	r.skeleton_buffer = gpu::buffer::create(ctx.allocator(), {
 		.size = resources::max_joints * r.joint_stride,
 		.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 	});

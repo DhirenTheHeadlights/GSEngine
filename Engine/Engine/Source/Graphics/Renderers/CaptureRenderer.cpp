@@ -53,9 +53,9 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
     r.convert_shader = assets.get<shader>("Shaders/Compute/rgba_to_nv12");
     assets.instantly_load(r.convert_shader);
 
-    r.convert_pipeline = gpu::create_compute_pipeline(ctx, r.convert_shader, "push_constants");
+    r.convert_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.convert_shader, "push_constants");
 
-    r.capture_sampler = gpu::create_sampler(ctx, {
+    r.capture_sampler = gpu::sampler::create(ctx.allocator(), {
         .min = gpu::sampler_filter::nearest,
         .mag = gpu::sampler_filter::nearest,
         .address_u = gpu::sampler_address_mode::clamp_to_edge,
@@ -64,29 +64,29 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
     });
 
     for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-        r.rgba_captures[i] = gpu::create_image(ctx, {
+        r.rgba_captures[i] = gpu::image::create(ctx.allocator(), {
             .size = ext,
             .format = gpu::image_format::r8g8b8a8_srgb,
             .usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
         });
 
-        r.y_planes[i] = gpu::create_image(ctx, {
+        r.y_planes[i] = gpu::image::create(ctx.allocator(), {
             .size = ext,
             .format = gpu::image_format::r8_unorm,
             .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-            .ready_layout = gpu::image_layout::general
         });
+        gpu::transition_image_to(ctx.device(), r.y_planes[i], gpu::image_layout::general);
 
-        r.uv_planes[i] = gpu::create_image(ctx, {
+        r.uv_planes[i] = gpu::image::create(ctx.allocator(), {
             .size = half_ext,
             .format = gpu::image_format::r8g8_unorm,
             .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-            .ready_layout = gpu::image_layout::general
         });
+        gpu::transition_image_to(ctx.device(), r.uv_planes[i], gpu::image_layout::general);
 
-        r.convert_descriptors[i] = gpu::allocate_descriptors(ctx, r.convert_shader);
+        r.convert_descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.convert_shader);
 
-        gpu::descriptor_writer(ctx, r.convert_shader, r.convert_descriptors[i])
+        gpu::descriptor_writer(ctx.shader_registry(), ctx.device_handle(), r.convert_shader, r.convert_descriptors[i])
             .image("input_rgba", r.rgba_captures[i], r.capture_sampler, gpu::image_layout::shader_read_only)
             .storage_image("output_y", r.y_planes[i])
             .storage_image("output_uv", r.uv_planes[i])
@@ -235,7 +235,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
         const auto ext = gpu_ctx->graph().extent();
 
         if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging || staging.size() < needed) {
-            staging = gpu::create_buffer(*gpu_ctx, {
+            staging = gpu::buffer::create(gpu_ctx->allocator(), {
                 .size = needed,
                 .usage = gpu::buffer_flag::transfer_dst,
             });
