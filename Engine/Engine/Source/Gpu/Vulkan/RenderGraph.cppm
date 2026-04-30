@@ -6,8 +6,10 @@ import gse.std_meta;
 
 import :types;
 import :pipeline;
+import :vulkan_buffer;
 import :vulkan_device;
 import :vulkan_commands;
+import :vulkan_image;
 import :descriptor_heap;
 import :shader;
 import :device;
@@ -37,7 +39,7 @@ export namespace gse::vulkan {
 
 	struct color_output_info {
 		bool is_swapchain = false;
-		const image_resource* custom_target = nullptr;
+		const image* custom_target = nullptr;
 		load_op op = load_op::clear_color;
 		gpu::color_clear clear_value;
 	};
@@ -64,35 +66,35 @@ export namespace gse::vulkan {
 	};
 
 	auto sampled(
-		const image_resource& img,
+		const image& img,
 		gpu::pipeline_stage_flags stage
 	) -> resource_usage;
 
 	auto storage(
-		const buffer_resource& buf,
+		const buffer& buf,
 		gpu::pipeline_stage_flags stage
 	) -> resource_usage;
 
 	auto storage_read(
-		const buffer_resource& buf,
+		const buffer& buf,
 		gpu::pipeline_stage_flags stage
 	) -> resource_usage;
 
 	auto transfer_read(
-		const buffer_resource& buf
+		const buffer& buf
 	) -> resource_usage;
 
 	auto transfer_write(
-		const buffer_resource& buf
+		const buffer& buf
 	) -> resource_usage;
 
 	auto indirect_read(
-		const buffer_resource& buf,
+		const buffer& buf,
 		gpu::pipeline_stage_flags stage
 	) -> resource_usage;
 
 	auto attachment(
-		const image_resource& img,
+		const image& img,
 		gpu::pipeline_stage_flags stage
 	) -> resource_usage;
 
@@ -150,7 +152,7 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto draw_indirect(
-			const buffer_resource& buf,
+			const buffer& buf,
 			std::size_t offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
@@ -167,12 +169,12 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto bind_vertex(
-			const buffer_resource& buf,
+			const buffer& buf,
 			std::size_t offset = 0
 		) const -> void;
 
 		auto bind_index(
-			const buffer_resource& buf,
+			const buffer& buf,
 			gpu::index_type type = gpu::index_type::uint32,
 			std::size_t offset = 0
 		) const -> void;
@@ -192,8 +194,8 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto copy_buffer(
-			const buffer_resource& src,
-			const buffer_resource& dst,
+			const buffer& src,
+			const buffer& dst,
 			std::size_t size,
 			std::size_t src_offset = 0,
 			std::size_t dst_offset = 0
@@ -215,19 +217,19 @@ export namespace gse::vulkan {
 		auto capture_swapchain(
 			const gpu::swap_chain& swapchain,
 			const gpu::frame& frame,
-			const buffer_resource& dst
+			const buffer& dst
 		) const -> void;
 
 		auto blit_swapchain_to_image(
 			const gpu::swap_chain& swapchain,
 			const gpu::frame& frame,
-			const image_resource& dst,
+			const image& dst,
 			vec2u dst_extent
 		) const -> void;
 
 		auto begin_rendering(
 			vec2u extent,
-			const image_resource* depth = nullptr,
+			const image* depth = nullptr,
 			gpu::image_layout depth_layout = gpu::image_layout::general,
 			bool clear_depth = true,
 			float clear_depth_value = 1.0f
@@ -245,7 +247,7 @@ export namespace gse::vulkan {
 		id pass_type{};
 		std::vector<resource_usage> reads;
 		std::vector<resource_usage> writes;
-		std::vector<const buffer_resource*> tracked_buffers;
+		std::vector<const buffer*> tracked_buffers;
 		gpu::pipeline_stage_flags tracked_stage = gpu::pipeline_stage_flag::all_commands;
 		std::vector<id> after_passes;
 		std::optional<color_output_info> color_output;
@@ -268,7 +270,7 @@ export namespace gse::vulkan {
 		);
 
 		auto track(
-			const buffer_resource& buf
+			const buffer& buf
 		) -> pass_builder&;
 
 		template <typename... Args>
@@ -314,7 +316,7 @@ export namespace gse::vulkan {
 		) -> void;
 
 		auto add_tracked(
-			const buffer_resource* buf
+			const buffer* buf
 		) -> void;
 
 		render_graph* m_graph;
@@ -473,7 +475,7 @@ export namespace gse::gpu {
 
 gse::vulkan::recording_context::recording_context(const commands cmd) : m_cmd(cmd) {}
 
-auto gse::vulkan::recording_context::copy_buffer(const buffer_resource& src, const buffer_resource& dst, const std::size_t size, const std::size_t src_offset, const std::size_t dst_offset) const -> void {
+auto gse::vulkan::recording_context::copy_buffer(const buffer& src, const buffer& dst, const std::size_t size, const std::size_t src_offset, const std::size_t dst_offset) const -> void {
 	m_cmd.copy_buffer(src.handle(), dst.handle(), gpu::buffer_copy_region{
 		.src_offset = src_offset,
 		.dst_offset = dst_offset,
@@ -561,13 +563,11 @@ auto gse::vulkan::recording_context::pipeline_barrier(const gpu::dependency_info
 auto gse::vulkan::recording_context::capture_swapchain(
 	const gpu::swap_chain& swapchain,
 	const gpu::frame& frame,
-	const buffer_resource& dst
+	const buffer& dst
 ) const -> void {
-	const auto image = std::bit_cast<vk::Image>(swapchain.image(frame.image_index()));
 	const auto ext = swapchain.extent();
 	const auto dst_buffer = dst.handle();
-
-	const auto gpu_image = std::bit_cast<gpu::handle<image>>(image);
+	const auto gpu_image = swapchain.image(frame.image_index());
 
 	const gpu::image_barrier to_transfer{
 		.src_stages = gpu::pipeline_stage_flag::color_attachment_output,
@@ -617,7 +617,7 @@ auto gse::vulkan::recording_context::capture_swapchain(
 	m_cmd.pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&back_to_color, 1) });
 }
 
-auto gse::vulkan::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const image_resource& dst, const vec2u dst_extent) const -> void {
+auto gse::vulkan::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const image& dst, const vec2u dst_extent) const -> void {
 	const auto src_image = swapchain.image(frame.image_index());
 	const auto src_ext = swapchain.extent();
 
@@ -759,10 +759,10 @@ auto gse::vulkan::recording_context::end_rendering() const -> void {
 }
 
 auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::cached_push_constants& cache) const -> void {
-	cache.replay(std::bit_cast<vk::CommandBuffer>(m_cmd.native()), p.layout());
+	cache.replay(m_cmd.native(), p.layout());
 }
 
-auto gse::vulkan::recording_context::draw_indirect(const buffer_resource& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+auto gse::vulkan::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
 	m_cmd.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
 }
 
@@ -775,13 +775,13 @@ auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, co
 	region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_index, region);
 }
 
-auto gse::vulkan::recording_context::bind_vertex(const buffer_resource& buf, const std::size_t offset) const -> void {
+auto gse::vulkan::recording_context::bind_vertex(const buffer& buf, const std::size_t offset) const -> void {
 	const gpu::handle<buffer> buffers[]{ buf.handle() };
 	const gpu::device_size offsets[]{ offset };
 	m_cmd.bind_vertex_buffers(0, std::span<const gpu::handle<buffer>>(buffers), std::span<const gpu::device_size>(offsets));
 }
 
-auto gse::vulkan::recording_context::bind_index(const buffer_resource& buf, const gpu::index_type type, const std::size_t offset) const -> void {
+auto gse::vulkan::recording_context::bind_index(const buffer& buf, const gpu::index_type type, const std::size_t offset) const -> void {
 	m_cmd.bind_index_buffer_2(buf.handle(), offset, vk::WholeSize, type);
 }
 
@@ -804,7 +804,7 @@ auto gse::vulkan::recording_context::set_scissor(const vec2u extent) const -> vo
 	m_cmd.set_scissor(sc);
 }
 
-auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const image_resource* depth, const gpu::image_layout depth_layout, const bool clear_depth, const float clear_depth_value) const -> void {
+auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const image* depth, const gpu::image_layout depth_layout, const bool clear_depth, const float clear_depth_value) const -> void {
 	std::optional<vk::RenderingAttachmentInfo> depth_att;
 	if (depth) {
 		depth_att = vk::RenderingAttachmentInfo{
@@ -857,19 +857,19 @@ auto gse::vulkan::pipeline_stage_to_flags(const gpu::pipeline_stage s) -> gpu::p
 	return {};
 }
 
-auto gse::vulkan::sampled(const image_resource& img, const gpu::pipeline_stage_flags stage) -> resource_usage {
+auto gse::vulkan::sampled(const image& img, const gpu::pipeline_stage_flags stage) -> resource_usage {
 	return { { .ptr = std::addressof(img), .type = resource_type::image }, stage, gpu::access_flag::shader_sampled_read };
 }
 
-auto gse::vulkan::storage(const buffer_resource& buf, const gpu::pipeline_stage_flags stage) -> resource_usage {
+auto gse::vulkan::storage(const buffer& buf, const gpu::pipeline_stage_flags stage) -> resource_usage {
 	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, gpu::access_flag::shader_storage_read | gpu::access_flag::shader_storage_write };
 }
 
-auto gse::vulkan::storage_read(const buffer_resource& buf, const gpu::pipeline_stage_flags stage) -> resource_usage {
+auto gse::vulkan::storage_read(const buffer& buf, const gpu::pipeline_stage_flags stage) -> resource_usage {
 	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, gpu::access_flag::shader_storage_read };
 }
 
-auto gse::vulkan::transfer_read(const buffer_resource& buf) -> resource_usage {
+auto gse::vulkan::transfer_read(const buffer& buf) -> resource_usage {
 	return {
 		{
 			.ptr = std::addressof(buf),
@@ -880,7 +880,7 @@ auto gse::vulkan::transfer_read(const buffer_resource& buf) -> resource_usage {
 	};
 }
 
-auto gse::vulkan::transfer_write(const buffer_resource& buf) -> resource_usage {
+auto gse::vulkan::transfer_write(const buffer& buf) -> resource_usage {
 	return {
 		{
 			.ptr = std::addressof(buf),
@@ -891,11 +891,11 @@ auto gse::vulkan::transfer_write(const buffer_resource& buf) -> resource_usage {
 	};
 }
 
-auto gse::vulkan::indirect_read(const buffer_resource& buf, const gpu::pipeline_stage_flags stage) -> resource_usage {
+auto gse::vulkan::indirect_read(const buffer& buf, const gpu::pipeline_stage_flags stage) -> resource_usage {
 	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, gpu::access_flag::indirect_command_read };
 }
 
-auto gse::vulkan::attachment(const image_resource& img, const gpu::pipeline_stage_flags stage) -> resource_usage {
+auto gse::vulkan::attachment(const image& img, const gpu::pipeline_stage_flags stage) -> resource_usage {
 	const bool is_depth = stage.test(gpu::pipeline_stage_flag::late_fragment_tests) || stage.test(gpu::pipeline_stage_flag::early_fragment_tests);
 	const auto access = is_depth
 		? gpu::access_flags{ gpu::access_flag::depth_stencil_attachment_write }
@@ -957,12 +957,12 @@ gse::vulkan::pass_builder::~pass_builder() {
 	assert(m_submitted, std::source_location::current(), "pass_builder destroyed without calling record()");
 }
 
-auto gse::vulkan::pass_builder::track(const buffer_resource& buf) -> pass_builder& {
+auto gse::vulkan::pass_builder::track(const buffer& buf) -> pass_builder& {
 	add_tracked(std::addressof(buf));
 	return *this;
 }
 
-auto gse::vulkan::pass_builder::add_tracked(const buffer_resource* buf) -> void {
+auto gse::vulkan::pass_builder::add_tracked(const buffer* buf) -> void {
 	for (const auto* existing : m_pass.tracked_buffers) {
 		if (existing == buf) {
 			return;
@@ -1004,12 +1004,12 @@ auto gse::vulkan::pass_builder::color_output_load() -> pass_builder& {
 		.op = load_op::load
 	};
 	m_pass.reads.push_back({
-		{
+		.resource = {
 			.ptr = &swapchain_sentinel,
 			.type = resource_type::image
 		},
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentRead
+		.stage = gpu::pipeline_stage_flag::color_attachment_output,
+		.access = gpu::access_flag::color_attachment_read
 	});
 	return *this;
 }
@@ -1019,7 +1019,7 @@ auto gse::vulkan::pass_builder::depth_output(const gpu::depth_clear& clear_value
 		.op = load_op::clear_depth,
 		.clear_value = clear_value
 	};
-	m_pass.writes.push_back(attachment(m_graph->m_swapchain->depth_image(), vk::PipelineStageFlagBits2::eLateFragmentTests));
+	m_pass.writes.push_back(attachment(m_graph->m_swapchain->depth_image(), gpu::pipeline_stage_flag::late_fragment_tests));
 	return *this;
 }
 
@@ -1028,12 +1028,12 @@ auto gse::vulkan::pass_builder::depth_output_load() -> pass_builder& {
 		.op = load_op::load
 	};
 	m_pass.reads.push_back({
-		{
+		.resource = {
 			.ptr = std::addressof(m_graph->m_swapchain->depth_image()),
 			.type = resource_type::image
 		},
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests,
-		vk::AccessFlagBits2::eDepthStencilAttachmentRead
+		.stage = gpu::pipeline_stage_flag::early_fragment_tests,
+		.access = gpu::access_flag::depth_stencil_attachment_read
 	});
 	return *this;
 }
@@ -1041,12 +1041,12 @@ auto gse::vulkan::pass_builder::depth_output_load() -> pass_builder& {
 auto gse::vulkan::pass_builder::record() -> record_awaitable {
 	if (m_pass.color_output) {
 		m_pass.writes.push_back({
-			{
+			.resource = {
 				.ptr = &swapchain_sentinel,
 				.type = resource_type::image
 			},
-			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead
+			.stage = gpu::pipeline_stage_flag::color_attachment_output,
+			.access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read
 		});
 	}
 
@@ -1252,7 +1252,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 		.layer_count = 1,
 	};
 
-	vulkan::commands(std::bit_cast<gpu::handle<command_buffer>>(*command)).pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&begin_barrier, 1) });
+	vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&begin_barrier, 1) });
 
 	slot.pass_types.clear();
 	slot.pass_count = 0;
@@ -1285,7 +1285,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 			.base_array_layer = 0,
 			.layer_count = 1,
 		};
-		vulkan::commands(std::bit_cast<gpu::handle<command_buffer>>(*command)).pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
+		vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
 		return;
 	}
 
@@ -1397,7 +1397,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 			const auto frame_idx = m_frame->current_frame();
 			const auto secondary = worker_pools.acquire_secondary(*worker_idx, frame_idx);
 
-			const std::array<vk::Format, 1> color_formats{ color_format };
+			const std::array<vk::Format, 1> color_formats{ to_vk(color_format) };
 			const vk::CommandBufferInheritanceRenderingInfo rendering_inherit{
 				.viewMask = 0,
 				.colorAttachmentCount = pass.color_output ? 1u : 0u,
@@ -1425,8 +1425,8 @@ auto gse::vulkan::render_graph::execute() -> void {
 				.flags = begin_flags,
 				.pInheritanceInfo = &inherit
 			});
-			m_device->descriptor_heap().bind_buffer(std::bit_cast<gpu::handle<command_buffer>>(*secondary));
-			recording_context secondary_ctx(secondary);
+			m_device->descriptor_heap().bind_buffer(std::bit_cast<gpu::handle<command_buffer>>(secondary));
+			recording_context secondary_ctx(commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) });
 			*pass.record_ctx_slot = std::addressof(secondary_ctx);
 			pass.record_handle.resume();
 			secondary.end();
@@ -1508,7 +1508,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 			}
 
 			if (!barriers.empty()) {
-				vulkan::commands(std::bit_cast<gpu::handle<command_buffer>>(*command)).pipeline_barrier(gpu::dependency_info{ .memory_barriers = barriers });
+				vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{ .memory_barriers = barriers });
 			}
 
 			const bool profile_pass = timestamps_enabled && slot.pass_count < max_profiled_passes;
@@ -1533,7 +1533,9 @@ auto gse::vulkan::render_graph::execute() -> void {
 				std::optional<vk::RenderingAttachmentInfo> depth_att;
 
 				if (pass.color_output) {
-					const auto& [is_swapchain, custom_target, op, clear_value] = *pass.color_output;
+					const auto& info = *pass.color_output;
+					const auto op = info.op;
+					const auto& clear_value = info.clear_value;
 					auto vk_load = vk::AttachmentLoadOp::eDontCare;
 					vk::ClearValue clear_val{};
 
@@ -1570,7 +1572,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 					}
 
 					depth_att = vk::RenderingAttachmentInfo{
-						.imageView = std::bit_cast<vk::ImageView>(m_swapchain->depth_image().view),
+						.imageView = std::bit_cast<vk::ImageView>(m_swapchain->depth_image().view()),
 						.imageLayout = vk::ImageLayout::eGeneral,
 						.loadOp = vk_load,
 						.storeOp = vk::AttachmentStoreOp::eStore,
@@ -1622,6 +1624,6 @@ auto gse::vulkan::render_graph::execute() -> void {
 		.layer_count = 1,
 	};
 
-	vulkan::commands(std::bit_cast<gpu::handle<command_buffer>>(*command)).pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
+	vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
 }
 

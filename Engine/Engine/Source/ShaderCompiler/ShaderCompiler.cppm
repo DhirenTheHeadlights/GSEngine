@@ -10,6 +10,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.assets;
+import gse.config;
 import gse.slang;
 import gse.gpu;
 

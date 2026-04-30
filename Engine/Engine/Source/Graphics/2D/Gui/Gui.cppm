@@ -15,6 +15,7 @@ import gse.ecs;
 import gse.math;
 import gse.save;
 
+import :settings_panel;
 import :types;
 import :layout;
 import :font;
@@ -25,7 +26,6 @@ import :save;
 import :ids;
 import :input_layers;
 import :menu_bar;
-import :settings_panel;
 import :styles;
 import :builder;
 

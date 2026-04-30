@@ -129,8 +129,8 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 
 	const auto ext = gpu.graph().extent();
 
-	auto meshlet_writer = gpu::descriptor_writer(gpu, r.meshlet_shader);
-	auto skinned_writer = gpu::descriptor_writer(gpu, r.skinned_shader);
+	auto meshlet_writer = gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), gpu.descriptor_heap(), r.meshlet_shader);
+	auto skinned_writer = gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), gpu.descriptor_heap(), r.skinned_shader);
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);

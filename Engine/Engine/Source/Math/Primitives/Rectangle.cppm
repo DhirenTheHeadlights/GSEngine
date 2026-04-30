@@ -46,7 +46,6 @@ export namespace gse {
         constexpr auto inset(const T& padding) const -> rect_t;
         constexpr auto intersection(const rect_t& other) const -> rect_t;
 
-        constexpr auto operator==(const rect_t& other) const -> bool = default;
     private:
         T m_min;
         T m_max;
@@ -163,7 +162,7 @@ constexpr auto gse::rect_t<T>::intersects(const rect_t& other) const -> bool {
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::inset(const T& padding) const -> rect_t {
-    return rect_t(min_max_params{ 
+    return rect_t(min_max_params{
         .min = m_min + padding,
     	.max = m_max - padding
     });

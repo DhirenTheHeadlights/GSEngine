@@ -74,7 +74,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 		co_return;
 	}
 
-	if (!solver_infos[0].snapshot || solver_infos[0].semaphore.value == 0 || solver_infos[0].body_count == 0) {
+	if (!solver_infos[0].snapshot || solver_infos[0].semaphore.value() == 0 || solver_infos[0].body_count == 0) {
 		co_return;
 	}
 
@@ -98,7 +98,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 
 		if (fd.mapping_buffer_size < required) {
 			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				fd.mapping_buffers[i] = gpu.create_buffer({
+				fd.mapping_buffers[i] = gpu::buffer::create(gpu.allocator(),{
 					.size = required,
 					.usage = gpu::buffer_flag::storage,
 					.data = data.physics_mappings.data()
@@ -120,7 +120,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 		co_return;
 	}
 
-	gpu::descriptor_writer(gpu, r.shader_handle, fd.descriptors[frame_index])
+	gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), r.shader_handle, fd.descriptors[frame_index])
 		.buffer("body_data", snapshot, 0, info.body_count * info.body_stride)
 		.buffer("mapping_data", fd.mapping_buffers[frame_index], 0, fd.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry))
 		.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())

@@ -252,7 +252,7 @@ auto gse::gpu::compute_queue::dispatch(const std::uint32_t x, const std::uint32_
 
 auto gse::gpu::compute_queue::dispatch_indirect(const vulkan::basic_buffer<vulkan::device>& buf, const std::size_t offset) const -> void {
 	const auto cmd = m_ctx.command_buffer_handle();
-	vulkan::commands(cmd).dispatch_indirect(buf.buffer, static_cast<device_size>(offset));
+	vulkan::commands(cmd).dispatch_indirect(buf.handle(), static_cast<device_size>(offset));
 }
 
 auto gse::gpu::compute_queue::barrier(const barrier_scope scope) const -> void {
@@ -276,8 +276,8 @@ auto gse::gpu::compute_queue::barriers(const std::span<const barrier_scope> scop
 auto gse::gpu::compute_queue::copy_buffer(const buffer_copy& copy) const -> void {
 	const auto cmd = m_ctx.command_buffer_handle();
 	vulkan::commands(cmd).copy_buffer(
-		copy.src.buffer,
-		copy.dst.buffer,
+		copy.src.handle(),
+		copy.dst.handle(),
 		buffer_copy_region{
 			.src_offset = copy.src_offset,
 			.dst_offset = copy.dst_offset,

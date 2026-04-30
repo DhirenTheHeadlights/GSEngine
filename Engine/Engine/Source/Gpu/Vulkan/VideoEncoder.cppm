@@ -3,10 +3,12 @@ export module gse.gpu:vulkan_video_encoder;
 import std;
 import vulkan;
 
+import :aliases;
 import :handles;
 import :types;
 import :vulkan_allocation;
 import :vulkan_buffer;
+import :vulkan_fence;
 import :vulkan_image;
 import :vulkan_device;
 import :vulkan_queues;

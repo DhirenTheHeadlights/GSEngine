@@ -2,16 +2,6 @@ module gse.gpu;
 
 import std;
 
-import :image;
-import :gpu_task;
-import :transient_api;
-import :types;
-import :vulkan_buffer;
-import :vulkan_commands;
-import :vulkan_device;
-import :vulkan_image;
-import :device;
-
 import gse.concurrency;
 import gse.math;
 

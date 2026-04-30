@@ -3,13 +3,6 @@ module gse.gpu;
 import std;
 import vulkan;
 
-import :handles;
-import :types;
-import :vulkan_descriptor_set_layout;
-import :vulkan_device;
-import :vulkan_pipeline;
-import :vulkan_pipeline_layout;
-
 gse::vulkan::pipeline::pipeline(vk::raii::Pipeline&& pipeline, vk::raii::PipelineLayout&& layout, vk::PipelineBindPoint bind_point)
 	: m_pipeline(std::move(pipeline)), m_layout(std::move(layout)), m_bind_point(bind_point) {}
 

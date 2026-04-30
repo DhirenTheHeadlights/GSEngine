@@ -251,7 +251,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 			auto to_fixed = [](const double v, char* buf, const std::size_t len, const int prec) -> std::string_view {
 				auto [p, ec] = std::to_chars(buf, buf + len, v, std::chars_format::fixed, prec);
-				return ec == std::errc{} ? std::string_view{ buf, static_cast<size_t>(p - buf) } : std::string_view{};
+				return ec == std::errc{} ? std::string_view{ buf, static_cast<std::size_t>(p - buf) } : std::string_view{};
 			};
 
 			char buf[32];

@@ -1,7 +1,3 @@
-module;
-
-#include <freetype/freetype.h>
-
 module gse.graphics;
 
 import std;
@@ -16,17 +12,38 @@ import gse.assets;
 import gse.assert;
 import gse.containers;
 import gse.config;
+import gse.freetype;
+
+gse::glyph::glyph(const info& i)
+    : m_ft_glyph_index(i.ft_glyph_index),
+      m_uv(i.uv),
+      m_size(i.size),
+      m_bearing(i.bearing),
+      m_x_advance(i.x_advance),
+      m_shape_size(i.shape_size) {}
+
+auto gse::glyph::ft_glyph_index() const -> float {
+    return m_ft_glyph_index;
+}
 
 auto gse::glyph::uv() const -> vec4f {
-    return { u0, v0, u1 - u0, v1 - v0 };
+    return m_uv;
 }
 
 auto gse::glyph::size() const -> vec2f {
-    return { width, height };
+    return m_size;
 }
 
 auto gse::glyph::bearing() const -> vec2f {
-    return { x_offset, y_offset };
+    return m_bearing;
+}
+
+auto gse::glyph::x_advance() const -> float {
+    return m_x_advance;
+}
+
+auto gse::glyph::shape_size() const -> vec2f {
+    return m_shape_size;
 }
 
 gse::font::font(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_path(path) {
@@ -107,15 +124,17 @@ auto gse::font::load(gpu::context& context) -> void {
     );
 
     m_kerning.clear();
-    auto valid_glyphs = m_glyphs | std::views::values
-        | std::views::filter([](const auto& g) { return g.ft_glyph_index != 0; });
-    for (const auto& ga : valid_glyphs) {
-        const auto prev = static_cast<std::uint32_t>(ga.ft_glyph_index);
-        for (const auto& gb : valid_glyphs) {
-            const auto next = static_cast<std::uint32_t>(gb.ft_glyph_index);
+    auto valid_glyphs = std::views::values(m_glyphs)
+        | std::views::filter([](const glyph& g) {
+            return g.ft_glyph_index() != 0;
+        });
+    for (const glyph& ga : valid_glyphs) {
+        const auto prev = static_cast<std::uint32_t>(ga.ft_glyph_index());
+        for (const glyph& gb : valid_glyphs) {
+            const auto next = static_cast<std::uint32_t>(gb.ft_glyph_index());
 
             FT_Vector kv{};
-            FT_Get_Kerning(m_face, prev, next, FT_KERNING_DEFAULT, &kv);
+            FT_Get_Kerning(m_face, prev, next, freetype_kerning_default, &kv);
             const float k = static_cast<float>(kv.x) / 64.0f;
             if (k != 0.0f) {
                 const std::uint64_t key = (static_cast<std::uint64_t>(prev) << 32) | next;
@@ -157,8 +176,8 @@ auto gse::font::text_layout(const std::string_view text, const vec2f start, cons
 
     float fallback_advance = m_glyph_cell_size * 0.5f * scale;
 
-    if (const auto it = m_glyphs.find(' '); it != m_glyphs.end() && std::isfinite(it->second.height)) {
-        fallback_advance = it->second.height * scale;
+    if (const auto it = m_glyphs.find(' '); it != m_glyphs.end() && std::isfinite(it->second.size().y())) {
+        fallback_advance = it->second.size().y() * scale;
     }
 
     positioned_glyphs.reserve(text.size());
@@ -180,45 +199,46 @@ auto gse::font::text_layout(const std::string_view text, const vec2f start, cons
 
         const glyph& g = it->second;
 
-        if (g.ft_glyph_index == 0) {
+        if (g.ft_glyph_index() == 0) {
             cursor.x() += fallback_advance;
             previous_glyph_index = 0;
             continue;
         }
 
         if (previous_glyph_index != 0) {
-            const auto next = static_cast<std::uint32_t>(g.ft_glyph_index);
+            const auto next = static_cast<std::uint32_t>(g.ft_glyph_index());
             const std::uint64_t key = (static_cast<std::uint64_t>(previous_glyph_index) << 32) | next;
             if (auto kerning_it = m_kerning.find(key); kerning_it != m_kerning.end()) {
                 cursor.x() += kerning_it->second * scale;
             }
         }
 
-        const float bx = std::isfinite(g.x_offset) ? g.x_offset : 0.0f;
-        const float by = std::isfinite(g.y_offset) ? g.y_offset : 0.0f;
+        const vec2f g_bearing = g.bearing();
+        const float bx = std::isfinite(g_bearing.x()) ? g_bearing.x() : 0.0f;
+        const float by = std::isfinite(g_bearing.y()) ? g_bearing.y() : 0.0f;
 
         vec2f quad_pos{
             cursor.x() + bx * scale,
             cursor.y() + by * scale
         };
 
-        const float gw = std::isfinite(g.width)  ? std::max(g.width,  0.0f) : 0.0f;
-        const float gh = std::isfinite(g.height) ? std::max(g.height, 0.0f) : 0.0f;
+        const vec2f g_size = g.size();
+        const float gw = std::isfinite(g_size.x()) ? std::max(g_size.x(), 0.0f) : 0.0f;
+        const float gh = std::isfinite(g_size.y()) ? std::max(g_size.y(), 0.0f) : 0.0f;
         vec2f quad_size{ gw * scale, gh * scale };
 
         const bool emit_rect = (quad_size.x() > 0.0f && quad_size.y() > 0.0f);
 
         vec4f full_cell_uv = g.uv();
-        if (!std::isfinite(full_cell_uv.x()) || !std::isfinite(full_cell_uv.y()) ||
-            !std::isfinite(full_cell_uv.z()) || !std::isfinite(full_cell_uv.w()) ||
-            full_cell_uv.z() <= 0.0f || full_cell_uv.w() <= 0.0f) {
+        if (isfinite(full_cell_uv) || full_cell_uv.z() <= 0.0f || full_cell_uv.w() <= 0.0f) {
             full_cell_uv = { 0.0f, 0.0f, 1.0f, 1.0f };
         }
 
         vec4f corrected_uv = full_cell_uv;
 
-        const double sw = g.shape_w;
-        const double sh = g.shape_h;
+        const vec2f shape = g.shape_size();
+        const double sw = shape.x();
+        const double sh = shape.y();
         const bool cell_ok =
             std::isfinite(static_cast<double>(m_glyph_cell_size)) && m_glyph_cell_size > 0.0f &&
             std::isfinite(static_cast<double>(m_padding)) && m_padding >= 0.0f &&
@@ -268,9 +288,9 @@ auto gse::font::text_layout(const std::string_view text, const vec2f start, cons
             });
         }
 
-        const float adv = std::isfinite(g.x_advance) ? (g.x_advance * scale) : fallback_advance;
+        const float adv = std::isfinite(g.x_advance()) ? (g.x_advance() * scale) : fallback_advance;
         cursor.x() += adv;
-        previous_glyph_index = static_cast<std::uint32_t>(g.ft_glyph_index);
+        previous_glyph_index = static_cast<std::uint32_t>(g.ft_glyph_index());
     }
 
     return positioned_glyphs;
@@ -295,18 +315,18 @@ auto gse::font::width(const std::string_view text, const float scale) const -> f
         }
 
         const glyph& current_glyph = it->second;
-        if (current_glyph.ft_glyph_index == 0) {
+        if (current_glyph.ft_glyph_index() == 0) {
             continue;
         }
 
         if (previous_glyph_index != 0) {
             FT_Vector kerning_vector;
-            FT_Get_Kerning(m_face, previous_glyph_index, static_cast<std::uint32_t>(current_glyph.ft_glyph_index), FT_KERNING_DEFAULT, &kerning_vector);
+            FT_Get_Kerning(m_face, previous_glyph_index, static_cast<std::uint32_t>(current_glyph.ft_glyph_index()), freetype_kerning_default, &kerning_vector);
             total_width += (static_cast<float>(kerning_vector.x) / 64.0f) * scale;
         }
 
-        total_width += current_glyph.x_advance * scale;
-        previous_glyph_index = static_cast<std::uint32_t>(current_glyph.ft_glyph_index);
+        total_width += current_glyph.x_advance() * scale;
+        previous_glyph_index = static_cast<std::uint32_t>(current_glyph.ft_glyph_index());
     }
 
     return total_width;

@@ -46,6 +46,13 @@ export namespace gse::vulkan {
 		[[nodiscard]] auto size_bytes(
 		) const -> gpu::device_size;
 
+		[[nodiscard]] auto size(
+		) const -> gpu::device_size;
+
+		[[nodiscard]] auto bytes(
+			this auto&& self
+		) -> std::span<std::byte>;
+
 		[[nodiscard]] auto mapped(
 		) const -> std::byte*;
 
@@ -53,6 +60,9 @@ export namespace gse::vulkan {
 			const void* data,
 			std::size_t size
 		) -> void;
+
+		explicit operator bool(
+		) const;
 
 	private:
 		gpu::handle<basic_buffer<device>> m_buffer;
@@ -119,8 +129,23 @@ auto gse::vulkan::basic_buffer<Device>::size_bytes() const -> gpu::device_size {
 }
 
 template <typename Device>
+auto gse::vulkan::basic_buffer<Device>::size() const -> gpu::device_size {
+	return m_size;
+}
+
+template <typename Device>
+auto gse::vulkan::basic_buffer<Device>::bytes(this auto&& self) -> std::span<std::byte> {
+	return std::span(self.m_allocation.mapped(), self.m_size);
+}
+
+template <typename Device>
 auto gse::vulkan::basic_buffer<Device>::mapped() const -> std::byte* {
 	return m_allocation.mapped();
+}
+
+template <typename Device>
+gse::vulkan::basic_buffer<Device>::operator bool() const {
+	return static_cast<bool>(m_buffer);
 }
 
 template <typename Device>

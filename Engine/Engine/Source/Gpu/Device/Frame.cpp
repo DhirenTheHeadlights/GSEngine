@@ -189,7 +189,7 @@ auto gse::gpu::frame::end(window& win) -> void {
     }
 
     const handle<semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
-    const handle<swap_chain> swapchain_handle = m_swapchain->config().swap_chain_handle();
+    const handle<vulkan::swap_chain> swapchain_handle = m_swapchain->config().swap_chain_handle();
 
     const present_info present_info{
         .wait_semaphores = std::span(&render_finished_handle, 1),

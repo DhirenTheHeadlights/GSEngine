@@ -176,7 +176,7 @@ auto gse::mesh::center_of_mass() const -> vec3<displacement> {
 
     assert(m_indices.size() % 3 == 0, std::source_location::current(), "m_indices count is not a multiple of 3. Ensure that each face is defined by exactly three m_indices.");
 
-    for (size_t i = 0; i < m_indices.size(); i += 3) {
+    for (std::size_t i = 0; i < m_indices.size(); i += 3) {
         const unsigned int idx0 = m_indices[i];
         const unsigned int idx1 = m_indices[i + 1];
         const unsigned int idx2 = m_indices[i + 2];

@@ -2,7 +2,9 @@ export module gse.gpu:descriptors;
 
 import std;
 
+import :aliases;
 import :types;
+import :vulkan_buffer;
 import :vulkan_device;
 import :vulkan_acceleration_structure;
 import :descriptor_heap;
@@ -29,13 +31,13 @@ export namespace gse::gpu {
 	public:
 		descriptor_writer(
 			shader_registry& registry,
-			handle<device> dev,
+			handle<vulkan::device> dev,
 			resource::handle<shader> s,
 			descriptor_region& region
 		);
 		descriptor_writer(
 			shader_registry& registry,
-			handle<device> dev,
+			handle<vulkan::device> dev,
 			descriptor_heap& heap,
 			resource::handle<shader> s
 		);
@@ -102,13 +104,13 @@ export namespace gse::gpu {
 		) const -> std::uint32_t;
 
 		struct stored_buffer_info {
-			handle<buffer> buf;
+			handle<vulkan::buffer> buf;
 			std::size_t offset = 0;
 			std::size_t range = 0;
 		};
 
 		const shader_cache_entry* m_cache_entry = nullptr;
-		handle<device> m_device;
+		handle<vulkan::device> m_device;
 		resource::handle<shader> m_shader;
 		descriptor_region* m_region = nullptr;
 		mode m_mode = mode::persistent;
@@ -137,11 +139,11 @@ namespace gse {
 	auto build_push_writer(
 		gpu::shader_registry& registry,
 		gpu::descriptor_heap& heap,
-		const resource::handle<gpu::shader>& s
+		const resource::handle<shader>& s
 	) -> gpu::descriptor_set_writer;
 }
 
-auto gse::build_push_writer(gpu::shader_registry& registry, gpu::descriptor_heap& heap, const resource::handle<gpu::shader>& s) -> gpu::descriptor_set_writer {
+auto gse::build_push_writer(gpu::shader_registry& registry, gpu::descriptor_heap& heap, const resource::handle<shader>& s) -> gpu::descriptor_set_writer {
 	const auto& cache = registry.cache(s);
 	const auto& props = heap.props();
 
@@ -196,9 +198,9 @@ auto gse::build_push_writer(gpu::shader_registry& registry, gpu::descriptor_heap
 	return gpu::descriptor_set_writer(heap, set_layout, total_size, std::move(bindings));
 }
 
-gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<device> dev, resource::handle<shader> s, descriptor_region& region) : m_cache_entry(&registry.cache(s)), m_device(dev), m_shader(std::move(s)), m_region(&region) {}
+gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<vulkan::device> dev, resource::handle<shader> s, descriptor_region& region) : m_cache_entry(&registry.cache(s)), m_device(dev), m_shader(std::move(s)), m_region(&region) {}
 
-gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<device> dev, descriptor_heap& heap, resource::handle<shader> s) : m_cache_entry(&registry.cache(s)), m_device(dev), m_shader(std::move(s)), m_mode(mode::push), m_push_writer(build_push_writer(registry, heap, m_shader)) {}
+gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<vulkan::device> dev, descriptor_heap& heap, resource::handle<shader> s) : m_cache_entry(&registry.cache(s)), m_device(dev), m_shader(std::move(s)), m_mode(mode::push), m_push_writer(build_push_writer(registry, heap, m_shader)) {}
 
 auto gse::gpu::descriptor_writer::find_binding_index(const std::string_view name) const -> std::uint32_t {
 	for (const auto& [type, bindings] : m_shader->layout_data().sets | std::views::values) {
