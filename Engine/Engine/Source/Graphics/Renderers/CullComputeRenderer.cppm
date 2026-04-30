@@ -95,12 +95,12 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 				.buffer("batches", r.batch_info_buffer[i]);
 		};
 
-		gpu::descriptor_writer normal_writer(ctx, r.shader_handle, r.normal_descriptors[i]);
+		gpu::descriptor_writer normal_writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.normal_descriptors[i]);
 		write_shared(normal_writer)
 			.buffer("indirectCommands", gc_r->normal_indirect_commands_buffer[i])
 			.commit();
 
-		gpu::descriptor_writer skinned_writer(ctx, r.shader_handle, r.skinned_descriptors[i]);
+		gpu::descriptor_writer skinned_writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.skinned_descriptors[i]);
 		write_shared(skinned_writer)
 			.buffer("indirectCommands", gc_r->skinned_indirect_commands_buffer[i])
 			.commit();

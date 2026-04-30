@@ -2,15 +2,6 @@ module gse.gpu;
 
 import std;
 
-import :buffer;
-import :gpu_task;
-import :transient_api;
-import :types;
-import :vulkan_buffer;
-import :vulkan_commands;
-import :vulkan_device;
-import :device;
-
 import gse.concurrency;
 
 auto gse::upload_to_buffers_async(gpu::device& dev, std::vector<upload_entry> entries) -> async::task<> {

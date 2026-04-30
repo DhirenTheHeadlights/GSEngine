@@ -4,6 +4,7 @@ import std;
 
 import :transient_executor;
 import :vulkan_command_pools;
+import :vulkan_compute_context;
 import :vulkan_device;
 import :vulkan_queues;
 import :vulkan_swapchain;

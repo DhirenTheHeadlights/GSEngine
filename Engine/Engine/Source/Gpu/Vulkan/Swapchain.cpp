@@ -3,16 +3,6 @@ module gse.gpu;
 import std;
 import vulkan;
 
-import :handles;
-import :types;
-import :vulkan_allocation;
-import :vulkan_buffer;
-import :vulkan_image;
-import :vulkan_device;
-import :vulkan_instance;
-import :vulkan_queues;
-import :vulkan_swapchain;
-
 import gse.log;
 import gse.math;
 

@@ -260,10 +260,6 @@ auto gse::gui::scroll::is_visible(const ui_rect& item_rect, const scroll_context
 	return item_top >= ctx.visible_rect.bottom() && item_bottom <= ctx.visible_rect.top();
 }
 
-namespace {
-	std::unordered_map<std::uint64_t, gse::gui::scroll_state> g_scroll_states;
-}
-
 export auto gse::gui::scroll_area(
 	builder& b,
 	const std::string_view scroll_id,
@@ -271,6 +267,8 @@ export auto gse::gui::scroll_area(
 	const std::function<void(builder&)>& content,
 	const scroll_config& cfg
 ) -> void {
+	static std::unordered_map<std::uint64_t, scroll_state> g_scroll_states;
+
 	if (!b.ctx.current_menu) {
 		return;
 	}

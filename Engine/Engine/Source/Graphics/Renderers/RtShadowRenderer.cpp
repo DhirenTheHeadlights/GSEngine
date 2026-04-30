@@ -148,7 +148,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 
 		auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instance_buffer();
 
-		gpu::descriptor_writer(gpu, fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
+		gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
 			.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())
 			.buffer("index_mapping", fd.mapping_buffers[frame_index], 0, mapping_bytes)
 			.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)

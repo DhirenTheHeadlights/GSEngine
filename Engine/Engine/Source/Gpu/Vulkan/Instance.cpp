@@ -1,10 +1,3 @@
-module;
-
-#include <vulkan/vulkan.hpp>
-VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-
-#undef assert
-
 module gse.gpu;
 
 import std;
@@ -146,5 +139,5 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		}
 	}
 
-	return instance(std::move(context), std::move(instance), std::move(debug_messenger));
+	return gse::vulkan::instance(std::move(context), std::move(instance), std::move(debug_messenger));
 }

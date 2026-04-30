@@ -1,10 +1,3 @@
-module;
-
-
-#include <msdfgen.h>
-#include <freetype/freetype.h>
-#include "ext/import-font.h"
-
 export module gse.graphics:font_compiler;
 
 import std;
@@ -21,6 +14,8 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.freetype;
+import gse.msdfgen;
 import :font;
 
 template<>
@@ -115,22 +110,26 @@ struct gse::asset_compiler<gse::font> {
                 }
             }
 
-            FT_Load_Char(ft_face, c, FT_LOAD_DEFAULT);
+            FT_Load_Char(ft_face, c, freetype_load_default);
             const FT_GlyphSlot ft_glyph = ft_face->glyph;
-            glyphs[static_cast<char>(c)] = {
+            const float u0 = (glyph_index % atlas_cols * glyph_cell_size) / atlas_width;
+            const float v0 = (glyph_index / atlas_cols * glyph_cell_size) / atlas_height;
+            const float u1 = (glyph_index % atlas_cols * glyph_cell_size + glyph_cell_size) / atlas_width;
+            const float v1 = (glyph_index / atlas_cols * glyph_cell_size + glyph_cell_size) / atlas_height;
+            glyphs[static_cast<char>(c)] = glyph(glyph::info{
                 .ft_glyph_index = static_cast<float>(ft_glyph->glyph_index),
-                .u0 = (glyph_index % atlas_cols * glyph_cell_size) / atlas_width,
-                .v0 = (glyph_index / atlas_cols * glyph_cell_size) / atlas_height,
-                .u1 = (glyph_index % atlas_cols * glyph_cell_size + glyph_cell_size) / atlas_width,
-                .v1 = (glyph_index / atlas_cols * glyph_cell_size + glyph_cell_size) / atlas_height,
-                .width = (static_cast<float>(ft_glyph->metrics.width) / 64.0f) / pixel_size,
-                .height = (static_cast<float>(ft_glyph->metrics.height) / 64.0f) / pixel_size,
-                .x_offset = (static_cast<float>(ft_glyph->metrics.horiBearingX) / 64.0f) / pixel_size,
-                .y_offset = (static_cast<float>(ft_glyph->metrics.horiBearingY) / 64.0f) / pixel_size,
+                .uv = vec4f{ u0, v0, u1 - u0, v1 - v0 },
+                .size = vec2f{
+                    (static_cast<float>(ft_glyph->metrics.width) / 64.0f) / pixel_size,
+                    (static_cast<float>(ft_glyph->metrics.height) / 64.0f) / pixel_size,
+                },
+                .bearing = vec2f{
+                    (static_cast<float>(ft_glyph->metrics.horiBearingX) / 64.0f) / pixel_size,
+                    (static_cast<float>(ft_glyph->metrics.horiBearingY) / 64.0f) / pixel_size,
+                },
                 .x_advance = (static_cast<float>(ft_glyph->advance.x) / 64.0f) / pixel_size,
-                .shape_w = static_cast<float>(shape_w),
-                .shape_h = static_cast<float>(shape_h)
-            };
+                .shape_size = vec2f{ static_cast<float>(shape_w), static_cast<float>(shape_h) },
+            });
         }
 
         destroyFont(font_handle);
@@ -148,12 +147,12 @@ struct gse::asset_compiler<gse::font> {
         const std::string relative_src_str = source.lexically_relative(config::resource_path).string();
 
         constexpr std::uint32_t channels = 4;
-        std::vector<std::byte> rgba_data(static_cast<size_t>(atlas_width) * atlas_height * channels);
+        std::vector<std::byte> rgba_data(static_cast<std::size_t>(atlas_width) * atlas_height * channels);
         for (int i = 0; i < atlas_width * atlas_height; ++i) {
-            rgba_data[static_cast<size_t>(i) * 4 + 0] = static_cast<std::byte>(atlas_data[static_cast<size_t>(i) * 3 + 0]);
-            rgba_data[static_cast<size_t>(i) * 4 + 1] = static_cast<std::byte>(atlas_data[static_cast<size_t>(i) * 3 + 1]);
-            rgba_data[static_cast<size_t>(i) * 4 + 2] = static_cast<std::byte>(atlas_data[static_cast<size_t>(i) * 3 + 2]);
-            rgba_data[static_cast<size_t>(i) * 4 + 3] = static_cast<std::byte>(255);
+            rgba_data[static_cast<std::size_t>(i) * 4 + 0] = static_cast<std::byte>(atlas_data[static_cast<std::size_t>(i) * 3 + 0]);
+            rgba_data[static_cast<std::size_t>(i) * 4 + 1] = static_cast<std::byte>(atlas_data[static_cast<std::size_t>(i) * 3 + 1]);
+            rgba_data[static_cast<std::size_t>(i) * 4 + 2] = static_cast<std::byte>(atlas_data[static_cast<std::size_t>(i) * 3 + 2]);
+            rgba_data[static_cast<std::size_t>(i) * 4 + 3] = static_cast<std::byte>(255);
         }
 
         const std::uint32_t u_atlas_width = atlas_width, u_atlas_height = atlas_height;

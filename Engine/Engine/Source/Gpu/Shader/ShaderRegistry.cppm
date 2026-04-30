@@ -2,11 +2,14 @@ export module gse.gpu:shader_registry;
 
 import std;
 
+import :aliases;
 import :handles;
 import :types;
 import :device;
 import :shader;
 import :shader_layout;
+import :vulkan_descriptor_set_layout;
+import :vulkan_shader_module;
 
 import gse.assets;
 import gse.log;
@@ -134,12 +137,12 @@ auto gse::gpu::shader_registry::cache(const resource::handle<shader>& s) -> cons
 			descs.push_back(b.desc);
 		}
 
-		entry.owned_layouts[set_idx] = descriptor_set_layout::create(*m_device, descs);
+		entry.owned_layouts[set_idx] = descriptor_set_layout::create(m_device->vulkan_device(), descs);
 	}
 
 	for (std::uint32_t i = 0; i <= max_set_index; ++i) {
 		if (!entry.owned_layouts[i]) {
-			entry.owned_layouts[i] = descriptor_set_layout::create(*m_device, {});
+			entry.owned_layouts[i] = descriptor_set_layout::create(m_device->vulkan_device(), {});
 		}
 	}
 

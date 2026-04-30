@@ -36,6 +36,11 @@ namespace gse {
 	class bounding_box {
 	public:
 		bounding_box() = default;
+		~bounding_box() = default;
+		bounding_box(const bounding_box&) = default;
+		bounding_box(bounding_box&&) noexcept = default;
+		auto operator=(const bounding_box&) -> bounding_box& = default;
+		auto operator=(bounding_box&&) noexcept -> bounding_box& = default;
 
 		bounding_box(
 			const vec3<position>& center,

@@ -3,12 +3,6 @@ module gse.gpu;
 import std;
 import vulkan;
 
-import :vulkan_device;
-import :vulkan_instance;
-import :vulkan_queues;
-import :vulkan_commands;
-import :types;
-
 import gse.assert;
 import gse.core;
 import gse.log;
@@ -592,7 +586,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		assert(false, std::source_location::current(), "Buffer created with data, but the allocated memory is not mappable.");
 	}
 
-	return basic_buffer<device>(std::bit_cast<gpu::handle<buffer>>(buffer), std::move(alloc), actual_buffer_info.size);
+	return basic_buffer<device>(std::bit_cast<gpu::handle<vulkan::buffer>>(buffer), std::move(alloc), actual_buffer_info.size);
 }
 
 auto gse::vulkan::device::create_buffer(const gpu::buffer_create_info& buffer_info, const void* data, const std::string_view tag, const std::source_location& loc) -> basic_buffer<device> {
@@ -651,8 +645,8 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 	}
 
 	return basic_image<device>(
-		std::bit_cast<gpu::handle<image>>(image),
-		std::bit_cast<gpu::handle<image_view>>(view),
+		std::bit_cast<gpu::handle<vulkan::image>>(image),
+		std::bit_cast<gpu::handle<vulkan::image_view>>(view),
 		static_cast<gpu::image_format_value>(info.format),
 		reflect_from_vk<gpu::image_layout>(info.initialLayout, gpu::image_layout::undefined),
 		vec3u{ info.extent.width, info.extent.height, info.extent.depth },
@@ -711,7 +705,7 @@ auto gse::vulkan::device::destroy_image_view(const gpu::handle<image_view> view)
 	(*m_device).destroyImageView(std::bit_cast<vk::ImageView>(view), nullptr);
 }
 
-auto gse::vulkan::device::free_allocation(const allocation& alloc) -> void {
+auto gse::vulkan::device::free_allocation(const basic_allocation<device>& alloc) -> void {
 	std::lock_guard lock(m_mutex);
 
 	if (!alloc.owner()) {
@@ -869,7 +863,7 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 		}
 
 		return basic_allocation<device>{
-			std::bit_cast<device_memory_handle>(best_block->memory),
+			std::bit_cast<std::uint64_t>(best_block->memory),
 			requirements.size,
 			best_aligned_offset,
 			best_block->mapped ? static_cast<char*>(best_block->mapped) + best_aligned_offset : nullptr,
@@ -928,7 +922,7 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 	}
 
 	return basic_allocation<device>{
-		std::bit_cast<device_memory_handle>(new_block.memory),
+		std::bit_cast<std::uint64_t>(new_block.memory),
 		requirements.size,
 		aligned_offset,
 		new_block.mapped ? static_cast<char*>(new_block.mapped) + aligned_offset : nullptr,

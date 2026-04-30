@@ -169,7 +169,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		gpu::descriptor_writer writer(ctx, r.shader_handle, r.descriptors[i]);
+		gpu::descriptor_writer writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.descriptors[i]);
 
 		if (rt_state) {
 			writer.acceleration_structure("tlas", rt_state->tlas(fi).native_handle());
@@ -186,7 +186,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	ctx.on_swap_chain_recreate([&r, lc_r, rt_state, &ctx]() {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
-			gpu::descriptor_writer writer(ctx, r.shader_handle, r.descriptors[i]);
+			gpu::descriptor_writer writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.descriptors[i]);
 
 			if (rt_state) {
 				writer.acceleration_structure("tlas", rt_state->tlas(fi).native_handle());
@@ -381,8 +381,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const int ao_quality_i = static_cast<int>(s.ao_quality);
 	const int reflection_quality_i = static_cast<int>(s.reflection_quality);
 
-	auto meshlet_writer = gpu::descriptor_writer(gpu, r.shader_handle);
-	auto skinned_writer = gpu::descriptor_writer(gpu, r.skinned_shader);
+	auto meshlet_writer = gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), gpu.descriptor_heap(), r.shader_handle);
+	auto skinned_writer = gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), gpu.descriptor_heap(), r.skinned_shader);
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);
