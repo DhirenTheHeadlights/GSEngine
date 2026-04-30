@@ -10,9 +10,6 @@ import gse.assert;
 import gse.core;
 import gse.containers;
 import gse.config;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
 import gse.log;
 
 namespace gse {
@@ -479,3 +476,4 @@ auto gse::verify_uniform_block(const resource::handle<shader>& s, const std::str
 	assert(ok, std::source_location::current(), "Uniform block layout mismatch for '{}'", block_name);
 	return ok;
 }
+

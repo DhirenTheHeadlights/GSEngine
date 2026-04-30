@@ -152,189 +152,151 @@ auto gse::gpu::to_vk_instance(const acceleration_structure_instance& inst) -> vk
 }
 
 auto gse::gpu::acceleration_structure_scratch_alignment(device& dev) -> vk::DeviceSize {
-	const auto props = dev.physical_device().getProperties2<
-		vk::PhysicalDeviceProperties2,
-		vk::PhysicalDeviceAccelerationStructurePropertiesKHR
-	>();
-	const auto& as_props = props.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
-	return std::max<vk::DeviceSize>(as_props.minAccelerationStructureScratchOffsetAlignment, 1);
+	return vulkan::scratch_offset_alignment(dev.vulkan_device());
+}
+
+namespace {
+	auto build_blas_async(
+		gse::gpu::device& dev,
+		gse::gpu::acceleration_structure_handle as_handle,
+		gse::gpu::acceleration_structure_geometry geometry,
+		std::uint32_t prim_count,
+		gse::gpu::device_size scratch_size,
+		gse::gpu::device_size scratch_alignment
+	) -> gse::async::task<> {
+		const auto& dev_cfg = dev.vulkan_device();
+
+		auto scratch = dev_cfg.create_buffer(gse::gpu::buffer_create_info{
+			.size = scratch_size + scratch_alignment,
+			.usage = gse::gpu::buffer_flag::storage,
+		}, nullptr);
+
+		const auto scratch_addr = gse::vulkan::buffer_device_address(dev_cfg, scratch.handle());
+		const gse::gpu::device_address aligned_scratch = (scratch_addr + scratch_alignment - 1) & ~(scratch_alignment - 1);
+
+		auto cmd = co_await begin_transient(dev, gse::gpu::queue_id::graphics);
+
+		const gse::gpu::acceleration_structure_build_geometry_info build_info{
+			.type = gse::gpu::acceleration_structure_type::bottom_level,
+			.flags = gse::gpu::build_acceleration_structure_flag::prefer_fast_build,
+			.mode = gse::gpu::build_acceleration_structure_mode::build,
+			.dst = as_handle,
+			.geometries = std::span(&geometry, 1),
+			.scratch_address = aligned_scratch,
+		};
+
+		const gse::gpu::acceleration_structure_build_range_info range{
+			.primitive_count = prim_count,
+		};
+		const gse::gpu::acceleration_structure_build_range_info* range_ptr = &range;
+
+		const auto cmd_handle = cmd.handle();
+		gse::vulkan::commands(cmd_handle).build_acceleration_structures(build_info, std::span(&range_ptr, 1));
+
+		const gse::gpu::memory_barrier barrier{
+			.src_stages = gse::gpu::pipeline_stage_flag::acceleration_structure_build,
+			.src_access = gse::gpu::access_flag::acceleration_structure_write,
+			.dst_stages = gse::gpu::pipeline_stage_flag::acceleration_structure_build,
+			.dst_access = gse::gpu::access_flag::acceleration_structure_read,
+		};
+		gse::vulkan::commands(cmd_handle).pipeline_barrier(gse::gpu::dependency_info{ .memory_barriers = std::span(&barrier, 1) });
+
+		co_await submit(dev, std::move(cmd), gse::gpu::queue_id::graphics)
+			.retain(std::move(scratch));
+	}
 }
 
 auto gse::gpu::build_blas(context& ctx, const blas_geometry_desc& desc) -> blas {
 	auto& dev = ctx.device();
-	const auto& vk_device = dev.logical_device();
+	const auto& dev_cfg = dev.vulkan_device();
 
-	const vk::DeviceAddress vertex_addr = vk_device.getBufferAddress({
-		.buffer = desc.vertex_buffer->native().buffer 
-	});
+	const auto vertex_addr = vulkan::buffer_device_address(dev_cfg, desc.vertex_buffer->handle());
+	const auto index_addr = vulkan::buffer_device_address(dev_cfg, desc.index_buffer->handle());
 
-	const vk::DeviceAddress index_addr  = vk_device.getBufferAddress({ 
-		.buffer = desc.index_buffer->native().buffer
-	});
-
-	const vk::AccelerationStructureGeometryTrianglesDataKHR triangles{
-		.vertexFormat = vk::Format::eR32G32B32Sfloat,
-		.vertexData = { 
-			.deviceAddress = vertex_addr
+	const gpu::acceleration_structure_geometry geometry{
+		.type = gpu::acceleration_structure_geometry_type::triangles,
+		.triangles = {
+			.vertex_format = gpu::vertex_format::r32g32b32_sfloat,
+			.vertex_data = vertex_addr,
+			.vertex_stride = desc.vertex_stride,
+			.max_vertex = desc.vertex_count - 1,
+			.index_type = gpu::index_type::uint32,
+			.index_data = index_addr,
 		},
-		.vertexStride = desc.vertex_stride,
-		.maxVertex = desc.vertex_count - 1,
-		.indexType = vk::IndexType::eUint32,
-		.indexData = { 
-			.deviceAddress = index_addr
-		}
-	};
-
-	const vk::AccelerationStructureGeometryKHR geometry{
-		.geometryType = vk::GeometryTypeKHR::eTriangles,
-		.geometry = { 
-			.triangles = triangles 
-		},
-		.flags = vk::GeometryFlagBitsKHR::eOpaque
+		.flags = gpu::geometry_flag::opaque,
 	};
 
 	const std::uint32_t prim_count = desc.index_count / 3;
-
-	vk::AccelerationStructureBuildGeometryInfoKHR build_info{
-		.type = vk::AccelerationStructureTypeKHR::eBottomLevel,
-		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild,
-		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
-		.geometryCount = 1,
-		.pGeometries = &geometry
-	};
-
-	const auto sizes = vk_device.getAccelerationStructureBuildSizesKHR(
-		vk::AccelerationStructureBuildTypeKHR::eDevice,
-		build_info,
-		prim_count
-	);
+	const auto sizes = vulkan::query_blas_build_sizes(dev_cfg, geometry, prim_count);
 
 	auto storage_buf = create_buffer(ctx, {
-		.size = sizes.accelerationStructureSize,
-		.usage = buffer_flag::acceleration_structure_storage
+		.size = sizes.acceleration_structure_size,
+		.usage = buffer_flag::acceleration_structure_storage,
 	});
 
-	auto as = vk_device.createAccelerationStructureKHR({
-		.buffer = storage_buf.native().buffer,
-		.size = sizes.accelerationStructureSize,
-		.type = vk::AccelerationStructureTypeKHR::eBottomLevel
-	});
+	auto as = vulkan::create_acceleration_structure(
+		dev_cfg,
+		storage_buf.handle(),
+		sizes.acceleration_structure_size,
+		gpu::acceleration_structure_type::bottom_level
+	);
 
-	build_info.dstAccelerationStructure = *as;
+	const auto as_handle = gpu::acceleration_structure_handle{ .value = std::bit_cast<std::uint64_t>(*as) };
 
-	const vk::DeviceSize scratch_size = sizes.buildScratchSize;
-	const vk::DeviceSize scratch_alignment = acceleration_structure_scratch_alignment(dev);
+	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);
 
-	ctx.frame().add_transient_work([&dev, &geometry, &build_info, prim_count, scratch_size, scratch_alignment](const vk::raii::CommandBuffer& cmd) {
-		auto scratch = dev.allocator().create_buffer({
-			.size  = scratch_size + scratch_alignment,
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress
-		}, nullptr);
+	dispatch(dev, build_blas_async(dev, as_handle, geometry, prim_count, sizes.build_scratch_size, scratch_alignment));
 
-		build_info.pGeometries = &geometry;
-		const auto scratch_addr = dev.logical_device().getBufferAddress({
-			.buffer = scratch.buffer
-		});
-		build_info.scratchData.deviceAddress = (scratch_addr + scratch_alignment - 1) & ~(scratch_alignment - 1);
-
-		const vk::AccelerationStructureBuildRangeInfoKHR range{ 
-			.primitiveCount = prim_count
-		};
-		const vk::AccelerationStructureBuildRangeInfoKHR* range_ptr = &range;
-
-		cmd.buildAccelerationStructuresKHR(build_info, range_ptr);
-
-		constexpr vk::MemoryBarrier2 barrier{
-			.srcStageMask  = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
-			.srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
-			.dstStageMask  = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
-			.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR
-		};
-		const vk::DependencyInfo dep{ 
-			.memoryBarrierCount = 1, 
-			.pMemoryBarriers = &barrier
-		};
-		cmd.pipelineBarrier2(dep);
-
-		std::vector<vulkan::buffer_resource> transient_buffers;
-		transient_buffers.push_back(std::move(scratch));
-		return transient_buffers;
-	});
-
-	const vk::DeviceAddress device_address = vk_device.getAccelerationStructureAddressKHR({ 
-		.accelerationStructure = *as 
-	});
+	const auto device_address = vulkan::acceleration_structure_address(dev_cfg, as);
 
 	return blas{
 		std::move(storage_buf),
 		std::move(as),
-		device_address
+		device_address,
 	};
 }
 
 auto gse::gpu::build_tlas(context& ctx, const std::uint32_t max_instances) -> tlas {
 	auto& dev = ctx.device();
-	const auto& vk_device = ctx.logical_device();
+	const auto& dev_cfg = dev.vulkan_device();
 
-	constexpr vk::AccelerationStructureGeometryInstancesDataKHR instances_data{
-		.arrayOfPointers = vk::False
-	};
-
-	constexpr vk::AccelerationStructureGeometryKHR geometry{
-		.geometryType = vk::GeometryTypeKHR::eInstances,
-		.geometry = { 
-			.instances = instances_data 
-		}
-	};
-
-	const vk::AccelerationStructureBuildGeometryInfoKHR build_info{
-		.type = vk::AccelerationStructureTypeKHR::eTopLevel,
-		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild | vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
-		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
-		.geometryCount = 1,
-		.pGeometries = &geometry
-	};
-
-	const auto sizes = vk_device.getAccelerationStructureBuildSizesKHR(
-		vk::AccelerationStructureBuildTypeKHR::eDevice,
-		build_info,
-		max_instances
-	);
+	const auto sizes = vulkan::query_tlas_build_sizes(dev_cfg, max_instances);
 
 	auto storage_buf = create_buffer(ctx, {
-		.size = sizes.accelerationStructureSize,
-		.usage = buffer_flag::acceleration_structure_storage
+		.size = sizes.acceleration_structure_size,
+		.usage = buffer_flag::acceleration_structure_storage,
 	});
 
-	const vk::DeviceSize scratch_alignment = acceleration_structure_scratch_alignment(dev);
-	auto scratch_buf = buffer(ctx.allocator().create_buffer({
-		.size = std::max(sizes.buildScratchSize, sizes.updateScratchSize) + scratch_alignment,
-		.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress
+	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);
+	auto scratch_buf = buffer(ctx.allocator().create_buffer(gpu::buffer_create_info{
+		.size = std::max(sizes.build_scratch_size, sizes.update_scratch_size) + scratch_alignment,
+		.usage = gpu::buffer_flag::storage,
 	}));
 
-	const vk::DeviceSize instance_buf_size = max_instances * sizeof(vk::AccelerationStructureInstanceKHR);
-	auto instance_buf = ctx.allocator().create_buffer({
+	const gpu::device_size instance_buf_size = max_instances * sizeof(vk::AccelerationStructureInstanceKHR);
+	auto instance_buf = ctx.allocator().create_buffer(gpu::buffer_create_info{
 		.size = instance_buf_size,
-		.usage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer
+		.usage = gpu::buffer_flag::acceleration_structure_build_input | gpu::buffer_flag::storage,
 	});
 
-	auto as = vk_device.createAccelerationStructureKHR({
-		.buffer = storage_buf.native().buffer,
-		.size = sizes.accelerationStructureSize,
-		.type = vk::AccelerationStructureTypeKHR::eTopLevel
-	});
+	auto as = vulkan::create_acceleration_structure(
+		dev_cfg,
+		storage_buf.handle(),
+		sizes.acceleration_structure_size,
+		gpu::acceleration_structure_type::top_level
+	);
 
 	return tlas{
 		std::move(storage_buf),
 		std::move(scratch_buf),
 		buffer(std::move(instance_buf)),
-		std::move(as)
+		std::move(as),
 	};
 }
 
 auto gse::gpu::rebuild_tlas(context& ctx, tlas& t, const std::span<const acceleration_structure_instance> instances, vulkan::recording_context& rec) -> void {
 	auto& dev = ctx.device();
-	const auto& vk_device = ctx.logical_device();
+	const auto& dev_cfg = dev.vulkan_device();
 
 	std::vector<vk::AccelerationStructureInstanceKHR> vk_instances;
 	vk_instances.reserve(instances.size());
@@ -346,71 +308,50 @@ auto gse::gpu::rebuild_tlas(context& ctx, tlas& t, const std::span<const acceler
 		std::memcpy(mapped, vk_instances.data(), vk_instances.size() * sizeof(vk::AccelerationStructureInstanceKHR));
 	}
 
-	const vk::DeviceAddress instance_addr = vk_device.getBufferAddress({
-		.buffer = t.m_instance_buffer.native().buffer
-	});
+	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.m_instance_buffer.handle());
+	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);
+	const auto scratch_raw = vulkan::buffer_device_address(dev_cfg, t.m_scratch.handle());
+	const gpu::device_address scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
-	const vk::DeviceSize scratch_alignment = acceleration_structure_scratch_alignment(dev);
-	const vk::DeviceAddress scratch_raw = vk_device.getBufferAddress({
-		.buffer = t.m_scratch.native().buffer
-	});
-	const vk::DeviceAddress scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
+	const gpu::memory_barrier host_write_barrier{
+		.src_stages = gpu::pipeline_stage_flag::host,
+		.src_access = gpu::access_flag::host_write,
+		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
+		.dst_access = gpu::access_flag::acceleration_structure_read,
+	};
+	rec.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&host_write_barrier, 1) });
 
-	constexpr vk::MemoryBarrier2 host_write_barrier{
-		.srcStageMask = vk::PipelineStageFlagBits2::eHost,
-		.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
-		.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR
-	};
-	const vk::DependencyInfo host_dep{
-		.memoryBarrierCount = 1,
-		.pMemoryBarriers = &host_write_barrier
-	};
-	rec.pipeline_barrier(host_dep);
-
-	const vk::AccelerationStructureGeometryInstancesDataKHR instances_data{
-		.arrayOfPointers = vk::False,
-		.data = { 
-			.deviceAddress = instance_addr
-		}
-	};
-	const vk::AccelerationStructureGeometryKHR geometry{
-		.geometryType = vk::GeometryTypeKHR::eInstances,
-		.geometry = {
-			.instances = instances_data
-		}
+	const gpu::acceleration_structure_geometry geometry{
+		.type = gpu::acceleration_structure_geometry_type::instances,
+		.instances = {
+			.array_of_pointers = false,
+			.data = instance_addr,
+		},
 	};
 
-	const vk::AccelerationStructureBuildGeometryInfoKHR build_info{
-		.type = vk::AccelerationStructureTypeKHR::eTopLevel,
-		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild | vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
-		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
-		.dstAccelerationStructure = *t.m_handle,
-		.geometryCount = 1,
-		.pGeometries = &geometry,
-		.scratchData = {
-			.deviceAddress = scratch_addr
-		}
+	const gpu::acceleration_structure_build_geometry_info build_info{
+		.type = gpu::acceleration_structure_type::top_level,
+		.flags = gpu::build_acceleration_structure_flag::prefer_fast_build | gpu::build_acceleration_structure_flag::allow_update,
+		.mode = gpu::build_acceleration_structure_mode::build,
+		.dst = gpu::acceleration_structure_handle{ .value = std::bit_cast<std::uint64_t>(*t.m_handle) },
+		.geometries = std::span(&geometry, 1),
+		.scratch_address = scratch_addr,
 	};
 
-	const vk::AccelerationStructureBuildRangeInfoKHR range{
-		.primitiveCount = static_cast<std::uint32_t>(vk_instances.size())
+	const gpu::acceleration_structure_build_range_info range{
+		.primitive_count = static_cast<std::uint32_t>(vk_instances.size()),
 	};
-	const vk::AccelerationStructureBuildRangeInfoKHR* range_ptr = &range;
+	const gpu::acceleration_structure_build_range_info* range_ptr = &range;
 
 	rec.build_acceleration_structure(build_info, { &range_ptr, 1 });
 
-	constexpr vk::MemoryBarrier2 barrier{
-		.srcStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
-		.srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
-		.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR | vk::PipelineStageFlagBits2::eFragmentShader,
-		.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR
+	const gpu::memory_barrier barrier{
+		.src_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
+		.src_access = gpu::access_flag::acceleration_structure_write,
+		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build | gpu::pipeline_stage_flag::fragment_shader,
+		.dst_access = gpu::access_flag::acceleration_structure_read | gpu::access_flag::acceleration_structure_write,
 	};
-	const vk::DependencyInfo dep{
-		.memoryBarrierCount = 1,
-		.pMemoryBarriers = &barrier
-	};
-	rec.pipeline_barrier(dep);
+	rec.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&barrier, 1) });
 }
 
 gse::gpu::blas::blas(buffer&& storage, vk::raii::AccelerationStructureKHR&& handle, const vk::DeviceAddress addr) : m_storage(std::move(storage)), m_handle(std::move(handle)), m_device_address(addr) {}
@@ -454,72 +395,50 @@ auto gse::gpu::write_tlas_instances(tlas& t, const std::span<const acceleration_
 }
 
 auto gse::gpu::build_tlas_in_place(context& ctx, tlas& t, const std::uint32_t instance_count, vulkan::recording_context& rec) -> void {
-	auto& dev = ctx.device();
-	const auto& vk_device = ctx.logical_device();
+	const auto& dev_cfg = ctx.device().device();
 
-	const vk::DeviceAddress instance_addr = vk_device.getBufferAddress({
-		.buffer = t.m_instance_buffer.native().buffer
-	});
+	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.m_instance_buffer.handle());
+	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);
+	const auto scratch_raw = vulkan::buffer_device_address(dev_cfg, t.m_scratch.handle());
+	const gpu::device_address scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
-	const vk::DeviceSize scratch_alignment = acceleration_structure_scratch_alignment(dev);
-	const vk::DeviceAddress scratch_raw = vk_device.getBufferAddress({
-		.buffer = t.m_scratch.native().buffer
-	});
-	const vk::DeviceAddress scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
-
-	constexpr vk::MemoryBarrier2 pre_barrier{
-		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-		.srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
-		.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR
+	const gpu::memory_barrier pre_barrier{
+		.src_stages = gpu::pipeline_stage_flag::compute_shader,
+		.src_access = gpu::access_flag::shader_write,
+		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
+		.dst_access = gpu::access_flag::acceleration_structure_read,
 	};
-	const vk::DependencyInfo pre_dep{
-		.memoryBarrierCount = 1,
-		.pMemoryBarriers = &pre_barrier
-	};
-	rec.pipeline_barrier(pre_dep);
+	rec.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&pre_barrier, 1) });
 
-	const vk::AccelerationStructureGeometryInstancesDataKHR instances_data{
-		.arrayOfPointers = vk::False,
-		.data = {
-			.deviceAddress = instance_addr
-		}
-	};
-	const vk::AccelerationStructureGeometryKHR geometry{
-		.geometryType = vk::GeometryTypeKHR::eInstances,
-		.geometry = {
-			.instances = instances_data
-		}
+	const gpu::acceleration_structure_geometry geometry{
+		.type = gpu::acceleration_structure_geometry_type::instances,
+		.instances = {
+			.array_of_pointers = false,
+			.data = instance_addr,
+		},
 	};
 
-	const vk::AccelerationStructureBuildGeometryInfoKHR build_info{
-		.type = vk::AccelerationStructureTypeKHR::eTopLevel,
-		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild | vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
-		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
-		.dstAccelerationStructure = *t.m_handle,
-		.geometryCount = 1,
-		.pGeometries = &geometry,
-		.scratchData = {
-			.deviceAddress = scratch_addr
-		}
+	const gpu::acceleration_structure_build_geometry_info build_info{
+		.type = gpu::acceleration_structure_type::top_level,
+		.flags = gpu::build_acceleration_structure_flag::prefer_fast_build | gpu::build_acceleration_structure_flag::allow_update,
+		.mode = gpu::build_acceleration_structure_mode::build,
+		.dst = gpu::acceleration_structure_handle{ .value = std::bit_cast<std::uint64_t>(*t.m_handle) },
+		.geometries = std::span(&geometry, 1),
+		.scratch_address = scratch_addr,
 	};
 
-	const vk::AccelerationStructureBuildRangeInfoKHR range{
-		.primitiveCount = instance_count
+	const gpu::acceleration_structure_build_range_info range{
+		.primitive_count = instance_count,
 	};
-	const vk::AccelerationStructureBuildRangeInfoKHR* range_ptr = &range;
+	const gpu::acceleration_structure_build_range_info* range_ptr = &range;
 
 	rec.build_acceleration_structure(build_info, { &range_ptr, 1 });
 
-	constexpr vk::MemoryBarrier2 post_barrier{
-		.srcStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
-		.srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
-		.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR | vk::PipelineStageFlagBits2::eFragmentShader,
-		.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR
+	const gpu::memory_barrier post_barrier{
+		.src_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
+		.src_access = gpu::access_flag::acceleration_structure_write,
+		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build | gpu::pipeline_stage_flag::fragment_shader,
+		.dst_access = gpu::access_flag::acceleration_structure_read | gpu::access_flag::acceleration_structure_write,
 	};
-	const vk::DependencyInfo post_dep{
-		.memoryBarrierCount = 1,
-		.pMemoryBarriers = &post_barrier
-	};
-	rec.pipeline_barrier(post_dep);
+	rec.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&post_barrier, 1) });
 }

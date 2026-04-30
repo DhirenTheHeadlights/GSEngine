@@ -96,110 +96,110 @@ auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
 		max_joints * m_joint_layout.stride;
 
 	for (auto& f : m_frames) {
-		f.body_buffer = gpu::create_buffer(ctx, {
+		f.body_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_bodies * m_body_layout.stride,
 			.usage = storage_src_dst
 		});
 
-		f.contact_buffer = gpu::create_buffer(ctx, {
+		f.contact_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_contacts * m_contact_layout.stride,
 			.usage = storage_src
 		});
 
-		f.motor_buffer = gpu::create_buffer(ctx, {
+		f.motor_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_motors * m_motor_layout.stride,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		f.color_buffer = gpu::create_buffer(ctx, {
+		f.color_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = color_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		f.contact_offsets_buffer = gpu::create_buffer(ctx, {
+		f.contact_offsets_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_bodies * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage
 		});
-		f.contact_counts_buffer = gpu::create_buffer(ctx, {
+		f.contact_counts_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_bodies * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage
 		});
-		f.contact_adjacency_buffer = gpu::create_buffer(ctx, {
+		f.contact_adjacency_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_contacts * 2 * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage
 		});
-		f.motor_map_buffer = gpu::create_buffer(ctx, {
+		f.motor_map_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_bodies * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage
 		});
-		f.joint_offsets_buffer = gpu::create_buffer(ctx, {
+		f.joint_offsets_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_bodies * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage
 		});
-		f.joint_counts_buffer = gpu::create_buffer(ctx, {
+		f.joint_counts_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_bodies * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage
 		});
-		f.joint_adjacency_buffer = gpu::create_buffer(ctx, {
+		f.joint_adjacency_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_joints * 2 * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage
 		});
 
-		f.solve_state_buffer = gpu::create_buffer(ctx, {
+		f.solve_state_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_bodies * solve_state_float4s_per_body * sizeof(float) * 4,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		f.collision_pair_buffer = gpu::create_buffer(ctx, {
+		f.collision_pair_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = collision_pair_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		f.collision_state_buffer = gpu::create_buffer(ctx, {
+		f.collision_state_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = collision_state_size,
 			.usage = storage_src
 		});
 
-		f.warm_start_buffer = gpu::create_buffer(ctx, {
+		f.warm_start_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = std::max<std::size_t>(warm_start_size, 16),
 			.usage = gpu::buffer_flag::storage
 		});
 
-		f.joint_buffer = gpu::create_buffer(ctx, {
+		f.joint_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = std::max<std::size_t>(joint_buffer_size, 16),
 			.usage = storage_src
 		});
 
 		constexpr std::size_t grid_buffer_size = (1 + grid_table_size + max_bodies * 8 * 2) * sizeof(std::uint32_t);
-		f.grid_buffer = gpu::create_buffer(ctx, {
+		f.grid_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = grid_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		f.readback_buffer = gpu::create_buffer(ctx, {
+		f.readback_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = readback_size,
 			.usage = storage_dst
 		});
 		std::memset(f.readback_buffer.mapped(), 0, f.readback_buffer.size());
 
-		f.physics_snapshot_buffer = gpu::create_buffer(ctx, {
+		f.physics_snapshot_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_bodies * m_body_layout.stride,
 			.usage = storage_dst
 		});
 		std::memset(f.physics_snapshot_buffer.mapped(), 0, f.physics_snapshot_buffer.size());
 
-		f.indirect_dispatch_buffer = gpu::create_buffer(ctx, {
+		f.indirect_dispatch_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = (2 + max_colors) * 3 * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::indirect
 		});
 		std::memset(f.indirect_dispatch_buffer.mapped(), 0, f.indirect_dispatch_buffer.size());
 
-		f.frozen_jacobian_buffer = gpu::create_buffer(ctx, {
+		f.frozen_jacobian_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_contacts * m_frozen_jacobian_layout.stride,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		f.solve_deltas_buffer = gpu::create_buffer(ctx, {
+		f.solve_deltas_buffer = gpu::buffer::create(ctx.allocator(), {
 			.size = max_bodies * 2 * sizeof(float) * 4,
 			.usage = gpu::buffer_flag::storage
 		});
@@ -939,22 +939,22 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx, asset_registry<
 	assets.instantly_load(m_compute.freeze_jacobians);
 	assets.instantly_load(m_compute.apply_jacobi);
 
-	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx, m_compute.predict, "vbd_push_constants");
-	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx, m_compute.solve_color, "vbd_push_constants");
-	m_compute.update_lambda_pipeline = gpu::create_compute_pipeline(ctx, m_compute.update_lambda, "vbd_push_constants");
-	m_compute.derive_velocities_pipeline = gpu::create_compute_pipeline(ctx, m_compute.derive_velocities, "vbd_push_constants");
-	m_compute.finalize_pipeline = gpu::create_compute_pipeline(ctx, m_compute.finalize, "vbd_push_constants");
-	m_compute.collision_reset_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_reset, "vbd_push_constants");
-	m_compute.collision_broad_phase_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_broad_phase, "vbd_push_constants");
-	m_compute.collision_narrow_phase_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_narrow_phase, "vbd_push_constants");
-	m_compute.collision_grid_build_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_grid_build, "vbd_push_constants");
-	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx, m_compute.collision_build_adjacency, "vbd_push_constants");
-	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx, m_compute.update_joint_lambda, "vbd_push_constants");
-	m_compute.prepare_indirect_pipeline = gpu::create_compute_pipeline(ctx, m_compute.prepare_indirect, "vbd_push_constants");
-	m_compute.prepare_contact_indirect_pipeline = gpu::create_compute_pipeline(ctx, m_compute.prepare_contact_indirect, "vbd_push_constants");
-	m_compute.prepare_color_indirect_pipeline = gpu::create_compute_pipeline(ctx, m_compute.prepare_color_indirect, "vbd_push_constants");
-	m_compute.freeze_jacobians_pipeline = gpu::create_compute_pipeline(ctx, m_compute.freeze_jacobians, "vbd_push_constants");
-	m_compute.apply_jacobi_pipeline = gpu::create_compute_pipeline(ctx, m_compute.apply_jacobi, "vbd_push_constants");
+	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.predict, "vbd_push_constants");
+	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.solve_color, "vbd_push_constants");
+	m_compute.update_lambda_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.update_lambda, "vbd_push_constants");
+	m_compute.derive_velocities_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.derive_velocities, "vbd_push_constants");
+	m_compute.finalize_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.finalize, "vbd_push_constants");
+	m_compute.collision_reset_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.collision_reset, "vbd_push_constants");
+	m_compute.collision_broad_phase_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.collision_broad_phase, "vbd_push_constants");
+	m_compute.collision_narrow_phase_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.collision_narrow_phase, "vbd_push_constants");
+	m_compute.collision_grid_build_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.collision_grid_build, "vbd_push_constants");
+	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.collision_build_adjacency, "vbd_push_constants");
+	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.update_joint_lambda, "vbd_push_constants");
+	m_compute.prepare_indirect_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.prepare_indirect, "vbd_push_constants");
+	m_compute.prepare_contact_indirect_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.prepare_contact_indirect, "vbd_push_constants");
+	m_compute.prepare_color_indirect_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.prepare_color_indirect, "vbd_push_constants");
+	m_compute.freeze_jacobians_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.freeze_jacobians, "vbd_push_constants");
+	m_compute.apply_jacobi_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), m_compute.apply_jacobi, "vbd_push_constants");
 
 	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
 		const auto block = sh->uniform_block(name);
@@ -976,10 +976,10 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx, asset_registry<
 	create_buffers(ctx);
 
 	for (auto& f : m_frames) {
-		f.queue = gpu::create_compute_queue(ctx);
-		f.descriptors = gpu::allocate_descriptors(ctx, m_compute.predict);
+		f.queue = gpu::compute_queue::create(ctx.device());
+		f.descriptors = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), m_compute.predict);
 
-		gpu::descriptor_writer(ctx, m_compute.predict, f.descriptors)
+		gpu::descriptor_writer(ctx.shader_registry(), ctx.device_handle(), m_compute.predict, f.descriptors)
 			.buffer("body_data", f.body_buffer)
 			.buffer("contact_data", f.contact_buffer)
 			.buffer("motor_data", f.motor_buffer)

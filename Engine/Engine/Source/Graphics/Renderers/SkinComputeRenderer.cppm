@@ -48,15 +48,15 @@ auto gse::renderer::skin_compute::system::initialize(const init_context& phase, 
 
 	const auto* gc = phase.try_resources_of<geometry_collector::system::resources>();
 
-	r.pipeline = gpu::create_compute_pipeline(ctx, r.shader_handle, "push_constants");
+	r.pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.shader_handle, "push_constants");
 
 	constexpr std::size_t skin_buffer_size = geometry_collector::system::resources::max_skin_matrices * sizeof(mat4f);
 	constexpr std::size_t local_pose_size = geometry_collector::system::resources::max_skin_matrices * sizeof(mat4f);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.shader_handle);
 
-		gpu::descriptor_writer(ctx, r.shader_handle, r.descriptors[i])
+		gpu::descriptor_writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.descriptors[i])
 			.buffer("skeletonData", gc->skeleton_buffer, 0, geometry_collector::system::resources::max_joints * gc->joint_stride)
 			.buffer("localPoses", gc->local_pose_buffer[i], 0, local_pose_size)
 			.buffer("skinMatrices", gc->skin_buffer[i], 0, skin_buffer_size)

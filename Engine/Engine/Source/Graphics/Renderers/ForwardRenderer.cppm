@@ -140,24 +140,24 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	fd.material_staging.reserve(material_buffer_size);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
+		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(ctx.allocator(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.light_buffers[i] = gpu::create_buffer(ctx, {
+		r.light_buffers[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = light_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.material_palette_buffers[i] = gpu::create_buffer(ctx, {
+		r.material_palette_buffers[i] = gpu::buffer::create(ctx.allocator(), {
 			.size = material_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(ctx, r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.shader_handle);
 
-		gpu::descriptor_writer(ctx, r.shader_handle, r.descriptors[i])
+		gpu::descriptor_writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.buffer("lights_ssbo", r.light_buffers[i], 0, light_buffer_size)
 			.buffer("material_palette", r.material_palette_buffers[i], 0, material_buffer_size)
@@ -201,7 +201,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 		}
 	});
 
-	r.pipeline = gpu::create_graphics_pipeline(ctx, r.shader_handle, {
+	r.pipeline = gpu::create_graphics_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.shader_handle, {
 		.depth = { 
 			.test = true, 
 			.write = false, 
@@ -215,14 +215,14 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	assets.instantly_load(r.skinned_shader);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, r.skinned_shader);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.skinned_shader);
 
-		gpu::descriptor_writer(ctx, r.skinned_shader, r.skinned_descriptors[i])
+		gpu::descriptor_writer(ctx.shader_registry(), ctx.device_handle(), r.skinned_shader, r.skinned_descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
 
-	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx, r.skinned_shader, {
+	r.skinned_pipeline = gpu::create_graphics_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.skinned_shader, {
 		.depth = { 
 			.test = true, 
 			.write = false, 
