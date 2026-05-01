@@ -154,9 +154,9 @@ auto gse::network::bitstream::write_bytes(const std::byte* data, const std::size
 
 template <gse::is_trivially_copyable T>
 auto gse::network::bitstream::read() -> T {
-	T data{};
-	read(std::as_writable_bytes(std::span{ &data, 1 }));
-	return data;
+	std::array<std::byte, sizeof(T)> buf{};
+	read(std::span<std::byte>(buf));
+	return std::bit_cast<T>(buf);
 }
 
 auto gse::network::bitstream::read(std::span<std::byte> data) -> void {

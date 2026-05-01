@@ -14,13 +14,14 @@ export namespace gse::physics {
 	enum class shape_type : std::uint8_t { box, sphere, capsule };
 
 	struct collision_component_data {
-		bounding_box bounding_box;
-		collision_information collision_information;
+		bounding_box bounding_box{ vec3<position>{}, vec3<displacement>{} };
 		shape_type shape = shape_type::box;
 		length shape_radius = {};
 		length shape_half_height = {};
 		bool resolve_collisions = true;
 	};
 
-	using collision_component = component<collision_component_data, bounding_box>;
+	using collision_component = component<collision_component_data, bounding_box_state>;
+
+	using collision_result_component = component<collision_information>;
 }

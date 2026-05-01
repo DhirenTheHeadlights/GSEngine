@@ -53,7 +53,7 @@ namespace gse::renderer::physics_debug {
 	) -> void;
 
 	auto build_contact_debug_for_collider(
-		const physics::collision_component& coll,
+		const collision_information& info,
 		const physics::motion_component& mc,
 		std::vector<debug_vertex>& out_vertices
 	) -> void;

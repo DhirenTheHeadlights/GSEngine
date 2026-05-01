@@ -22,9 +22,10 @@ auto gse::renderer::physics_debug::system::update(update_context& ctx, const res
 	}
 
 	constexpr std::size_t max_shape_debug_vertices = 256;
-	auto [motions, collisions] = co_await ctx.acquire<
+	auto [motions, collisions, results] = co_await ctx.acquire<
 		read<physics::motion_component>,
-		read<physics::collision_component>
+		read<physics::collision_component>,
+		read<physics::collision_result_component>
 	>();
 
 	std::vector<debug_vertex> vertices;
@@ -53,16 +54,17 @@ auto gse::renderer::physics_debug::system::update(update_context& ctx, const res
 		}
 
 		const auto* mc = motions.find(coll.owner_id());
+		const auto* res = results.find(coll.owner_id());
 		build_shape_lines_for_collider(coll, mc, vertices);
 
-		if (mc) {
-			build_contact_debug_for_collider(coll, *mc, vertices);
+		if (mc && res) {
+			build_contact_debug_for_collider(*res, *mc, vertices);
 		}
 
-		if (coll.collision_information.colliding) {
+		if (res && res->colliding) {
 			stats.colliding_pairs++;
-			if (coll.collision_information.penetration > stats.max_penetration) {
-				stats.max_penetration = coll.collision_information.penetration;
+			if (res->penetration > stats.max_penetration) {
+				stats.max_penetration = res->penetration;
 			}
 		}
 	}
@@ -334,8 +336,8 @@ auto gse::renderer::physics_debug::build_shape_lines_for_collider(const physics:
 	}
 }
 
-auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physics::collision_component& coll, const physics::motion_component& mc, std::vector<debug_vertex>& out_vertices) -> void {
-	const auto& [colliding, collision_normal, penetration, collision_points] = coll.collision_information;
+auto gse::renderer::physics_debug::build_contact_debug_for_collider(const collision_information& info, const physics::motion_component& mc, std::vector<debug_vertex>& out_vertices) -> void {
+	const auto& [colliding, collision_normal, penetration, collision_points] = info;
 	if (!colliding || mc.position_locked) {
 		return;
 	}
