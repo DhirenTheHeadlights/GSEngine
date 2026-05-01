@@ -57,7 +57,7 @@ export namespace gse::network {
     struct key_hash {
         auto operator()(
             const address& a
-        ) const noexcept -> size_t;
+        ) const noexcept -> std::size_t;
     };
 
     struct key_eq {

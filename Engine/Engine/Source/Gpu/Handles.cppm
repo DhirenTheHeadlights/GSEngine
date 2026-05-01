@@ -6,8 +6,6 @@ import gse.meta;
 export namespace gse::gpu {
 	template <typename T>
 	struct handle {
-		using gse_reflectable_t = void;
-
 		std::uint64_t value = 0;
 
 		constexpr auto operator==(

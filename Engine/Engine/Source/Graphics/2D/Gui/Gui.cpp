@@ -52,7 +52,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 		font_options.emplace_back(s.available_fonts[i], static_cast<int>(i));
 	}
 
-	phase.channels.push<save::register_property>({
+	phase.channels.push<gse::save::register_property>({
 		.category = "UI",
 		.name = "Theme",
 		.description = "UI color theme",
@@ -66,7 +66,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 		}
 	});
 
-	phase.channels.push<save::register_property>({
+	phase.channels.push<gse::save::register_property>({
 		.category = "UI",
 		.name = "Scale",
 		.description = "UI scale multiplier",
@@ -74,7 +74,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 		.type = typeid(float)
 	});
 
-	phase.channels.push<save::register_property>({
+	phase.channels.push<gse::save::register_property>({
 		.category = "UI",
 		.name = "Font",
 		.description = "UI font",
@@ -247,7 +247,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 		m.chrome_drawn_this_frame = false;
 	}
 
-	for (const auto& changed : ctx.read_channel<save::property_changed>()) {
+	for (const auto& changed : ctx.read_channel<gse::save::property_changed>()) {
 		if (changed.category == "UI" && changed.name == "Font") {
 			reload_font(s, assets);
 		}
@@ -330,7 +330,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 
 	const ui_rect settings_rect = settings_panel::default_panel_rect(s.fstate.sty, viewport_size);
 
-	const auto* save_state = ctx.try_state_of<save::state>();
+	const auto* save_state = ctx.try_state_of<gse::save::state>();
 	const auto* actions_state = ctx.try_state_of<actions::system_state>();
 
 	const settings_panel::context sp_ctx{
@@ -340,14 +340,14 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 		.sprites = s.sprite_commands,
 		.texts = s.text_commands,
 		.input = input_st,
-		.publish_update = [&ctx](save::update_request req) {
+		.publish_update = [&ctx](gse::save::update_request req) {
 			ctx.channels.push(std::move(req));
 		},
 		.request_save = [&ctx] {
-			ctx.channels.push<save::save_request>({});
+			ctx.channels.push<gse::save::save_request>({});
 		},
 		.request_restart = [&ctx] {
-			ctx.channels.push<save::restart_request>({});
+			ctx.channels.push<gse::save::restart_request>({});
 		},
 		.tooltip = &s.tooltip,
 		.input_layers = &s.input_layers_data,
