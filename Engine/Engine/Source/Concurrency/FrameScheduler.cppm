@@ -3,6 +3,7 @@ export module gse.concurrency:frame_scheduler;
 import std;
 
 import gse.core;
+import gse.meta;
 import gse.time;
 import gse.log;
 import gse.math;

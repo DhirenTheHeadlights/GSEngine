@@ -242,7 +242,9 @@ auto gse::renderer::ui::system::update(const update_context& ctx, const resource
 
         if (cmd.type != current_type) {
             needs_flush = true;
-        } else if (cmd.clip_rect != current_clip) {
+        } else if (cmd.clip_rect.has_value() != current_clip.has_value()) {
+            needs_flush = true;
+        } else if (cmd.clip_rect.has_value() && (cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())) {
             needs_flush = true;
         } else if (cmd.type == command_type::sprite && cmd.texture.id() != current_texture.id()) {
             needs_flush = true;

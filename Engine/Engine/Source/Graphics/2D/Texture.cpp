@@ -95,13 +95,13 @@ auto gse::texture::create_vulkan_resources(gpu::context& context, const profile 
             ? gpu::image_format::r8_unorm
             : (use_linear ? gpu::image_format::r8g8b8_unorm : gpu::image_format::r8g8b8_srgb);
 
-    m_image = context.create_image({
+    m_image = gpu::image::create(context.device().vulkan_device(), {
         .size = { width, height },
         .format = gpu_format,
         .usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
     });
 
-    context.upload_image_2d(m_image, m_image_data.pixels.data(), data_size);
+    gpu::upload_image_2d(context.device(), m_image, m_image_data.pixels.data(), data_size);
 
     constexpr auto clamp = gpu::sampler_address_mode::clamp_to_edge;
     constexpr auto repeat = gpu::sampler_address_mode::repeat;
@@ -142,7 +142,7 @@ auto gse::texture::create_vulkan_resources(gpu::context& context, const profile 
             desc.address_w = clamp;
             break;
     }
-    m_sampler = context.create_sampler(desc);
+    m_sampler = gpu::sampler::create(context.device().vulkan_device(), desc);
 
     m_bindless_slot = context.bindless_textures().allocate(m_image.view(), m_sampler.native());
     log::println(log::category::render, "Texture '{}' -> bindless slot {} (format={}, size={}x{}, profile={})", id(), m_bindless_slot.index, static_cast<int>(gpu_format), width, height, static_cast<int>(texture_profile));
