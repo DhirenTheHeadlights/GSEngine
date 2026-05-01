@@ -1215,3 +1215,4 @@ auto gse::settings_panel::draw_restart_popup(state& panel_state, const context& 
             }
         }
     }
+}

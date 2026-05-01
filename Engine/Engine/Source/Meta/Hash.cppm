@@ -5,9 +5,6 @@ import gse.std_meta;
 
 export namespace gse {
     template <typename T>
-    concept reflectable = requires { typename T::gse_reflectable_t; };
-
-    template <typename T>
     auto hash_combine(
         const T& value
     ) -> std::size_t;
@@ -31,30 +28,9 @@ auto gse::hash_combine(const T& value) -> std::size_t {
 }
 
 export template <typename T>
-    requires (gse::reflectable<T>)
+    requires (std::is_class_v<T> && !std::is_polymorphic_v<T>)
 struct std::hash<T> {
     auto operator()(const T& value) const noexcept -> std::size_t {
         return gse::hash_combine(value);
-    }
-};
-
-export template <typename T>
-    requires (gse::reflectable<T>)
-struct std::formatter<T> {
-    constexpr auto parse(auto& ctx) {
-        return ctx.begin();
-    }
-
-    auto format(const T& value, auto& ctx) const {
-        auto out = std::format_to(ctx.out(), "{{");
-        bool first = true;
-        template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-            if (!first) {
-                out = std::format_to(out, ", ");
-            }
-            first = false;
-            out = std::format_to(out, "{}={}", std::meta::identifier_of(m), value.[:m:]);
-        }
-        return std::format_to(out, "}}");
     }
 };

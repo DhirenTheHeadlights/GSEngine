@@ -136,7 +136,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 		const auto mapping_bytes = instance_count * sizeof(std::uint32_t);
 		if (fd.mapping_buffer_capacity < mapping_bytes) {
 			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				fd.mapping_buffers[i] = gpu.create_buffer({
+				fd.mapping_buffers[i] = gpu::buffer::create(gpu.allocator(), {
 					.size = mapping_bytes,
 					.usage = gpu::buffer_flag::storage
 				});

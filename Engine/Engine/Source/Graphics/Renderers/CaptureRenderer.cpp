@@ -277,7 +277,8 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
     }
 
     if (do_encode) {
-        rec.blit_swapchain_to_image(gpu_ctx->swapchain(), gpu_ctx->frame(), r.rgba_captures[frame_index], r.rgba_captures[frame_index].extent());
+        const auto capture_extent = r.rgba_captures[frame_index].extent();
+        rec.blit_swapchain_to_image(gpu_ctx->swapchain(), gpu_ctx->frame(), r.rgba_captures[frame_index], vec2u{ capture_extent.x(), capture_extent.y() });
         rec.bind(r.convert_pipeline);
         rec.bind_descriptors(r.convert_pipeline, r.convert_descriptors[frame_index]);
         rec.push(r.convert_pipeline, convert_pc);
