@@ -16,7 +16,6 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.log;
-import gse.hooks;
 import gse.scene;
 import gse.save;
 import gse.config;
@@ -29,37 +28,49 @@ export namespace gse {
 		render = 1 << 1,
 	};
 
-	class engine : public hookable<engine> {
+	class engine : public identifiable {
 	public:
-		explicit engine(const std::string& name, flags<engine_flag> engine_flags);
+		engine(
+			const std::string& name,
+			flags<engine_flag> engine_flags
+		);
 
-		auto initialize() -> void override;
-		auto update() -> void override;
-		auto render() -> void override;
-		auto shutdown() -> void override;
+		auto initialize(
+		) -> void;
+
+		auto update(
+		) -> void;
+
+		auto render(
+		) -> void;
+
+		auto shutdown(
+		) -> void;
 
 		template <typename State>
-		auto state_of() -> const State&;
+		auto state_of(
+		) -> const State&;
 
 		template <typename State>
-		auto try_state_of() -> const State*;
+		auto try_state_of(
+		) -> const State*;
 
 		template <typename State>
-		auto has_state() const -> bool;
+		auto has_state(
+		) const -> bool;
 
 		template <typename Resources>
-		auto resources_of() const -> const Resources&;
+		auto resources_of(
+		) const -> const Resources&;
 
 		template <typename T>
-		auto channel() -> channel<T>&;
+		auto channel(
+		) -> channel<T>&;
 
 		template <typename State, typename F>
-		auto defer(F&& fn) -> void;
-
-		template <typename T, class ... Args>
-		auto hook_world(
-			Args&&... args
-		) -> T&;
+		auto defer(
+			F&& fn
+		) -> void;
 
 		auto set_networked(
 			bool networked
@@ -73,9 +84,13 @@ export namespace gse {
 			gse::id controller_id
 		) -> void;
 
-		template <typename T, typename... Args>
+		auto set_input_sampler(
+			input_sampler_fn fn
+		) -> void;
+
 		auto add_scene(
-			Args... args
+			std::string_view name,
+			scene::setup_fn setup = {}
 		) -> scene*;
 
 		auto activate_scene(
@@ -91,6 +106,9 @@ export namespace gse {
 
 		auto direct(
 		) -> director;
+
+		auto triggers(
+		) const -> std::span<const trigger>;
 
 		template <typename S, typename State, typename... Args>
 		auto add_system(
@@ -135,18 +153,11 @@ auto gse::engine::defer(F&& fn) -> void {
 	m_scheduler.defer<State>(std::forward<F>(fn));
 }
 
-template <typename T, typename... Args>
-auto gse::engine::hook_world(Args&&... args) -> T& {
-	return m_world.add_hook<T>(std::forward<Args>(args)...);
-}
-
-template <typename T, typename ... Args>
-auto gse::engine::add_scene(Args... args) -> scene* {
-	return m_world.add<T>(std::forward<Args>(args)...);
+auto gse::engine::add_scene(std::string_view name, scene::setup_fn setup) -> scene* {
+	return m_world.add(name, std::move(setup));
 }
 
 template <typename S, typename State, typename... Args>
 auto gse::engine::add_system(Args&&... args) -> State& {
 	return m_scheduler.add_system<S, State>(m_world.registry(), std::forward<Args>(args)...);
 }
-

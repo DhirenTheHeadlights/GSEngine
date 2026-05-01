@@ -1,27 +1,21 @@
 export module gs:skybox_scene;
 
-import :player;
-
 import std;
 import gse;
 
+import :player;
+
 export namespace gs {
-	class skybox_scene final : public gse::hook<gse::scene> {
-	public:
-		using hook::hook;
-
-		auto initialize() -> void override;
-
-		auto render(
-		) -> void override;
-	};
+	auto skybox_scene_setup(
+		gse::scene& s
+	) -> void;
 }
 
-auto gs::skybox_scene::initialize() -> void {
+auto gs::skybox_scene_setup(gse::scene& s) -> void {
 	const auto skybox_position = gse::vec3<gse::position>(0.f, 0.f, 0.f);
 	const auto skybox_size = gse::vec3<gse::length>(20000.f, 20000.f, 20000.f);
 
-	build("Skybox")
+	s.build("Skybox")
 		.with<gse::physics::motion_component>({
 			.current_position = skybox_position,
 			.mass = gse::kilograms(1000.f),
@@ -56,7 +50,7 @@ auto gs::skybox_scene::initialize() -> void {
 	const auto floor_position = gse::vec3<gse::position>(0.f, -500.f, 0.f);
 	const auto floor_size = gse::vec3<gse::length>(20000.f, 10.f, 20000.f);
 
-	build("Skybox Floor")
+	s.build("Skybox Floor")
 		.with<gse::physics::motion_component>({
 			.current_position = floor_position,
 			.mass = gse::kilograms(1000.f),
@@ -82,10 +76,8 @@ auto gs::skybox_scene::initialize() -> void {
 			cc.resolve_collisions = false;
 		});
 
-	build("Player")
+	s.build("Player")
 		.with<gs::player::component>({
 			.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f),
 		});
 }
-
-auto gs::skybox_scene::render() -> void {}

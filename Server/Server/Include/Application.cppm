@@ -7,71 +7,115 @@ import std;
 import gse;
 
 export namespace gse {
-	class server_app : public hook<engine> {
-	public:
-		using hook::hook;
-
-		auto initialize() -> void override;
-		auto update() -> void override;
-
-	private:
-		server* m_server = nullptr;
-		std::uint32_t m_tick_count = 0;
-		interval_timer<> m_timer{ seconds(5.f) };
+	struct server_state {
+		std::optional<server> srv;
 	};
+
+	struct server_system {
+		static auto initialize(
+			init_context& phase,
+			server_state& s
+		) -> void;
+
+		static auto update(
+			update_context& ctx,
+			server_state& s
+		) -> async::task<>;
+	};
+
+	struct server_app_state {
+		std::uint32_t tick_count = 0;
+		interval_timer<> timer{ seconds(5.f) };
+	};
+
+	struct server_app_system {
+		static auto initialize(
+			init_context& phase,
+			server_app_state& s
+		) -> void;
+
+		static auto update(
+			update_context& ctx,
+			server_app_state& s,
+			const server_state& srv
+		) -> async::task<>;
+	};
+
+	auto server_app_setup(
+		engine& e
+	) -> void;
 }
 
-auto gse::server_app::initialize() -> void {
-	set_ui_focus(true);
-	m_owner->set_networked(true);
+auto gse::server_system::initialize(init_context&, server_state&) -> void {}
 
-	m_server = &m_owner->hook_world<server>(9000);
-	m_owner->hook_world<networked_world<server_input_source>>(
-		server_input_source{
-			&m_server->clients()
-		}
-	);
-	m_owner->hook_world<player_controller_hook>();
+auto gse::server_system::update(update_context&, server_state& s) -> async::task<> {
+	if (s.srv) {
+		s.srv->update();
+	}
+	co_return;
 }
 
-auto gse::server_app::update() -> void {
-	if (m_timer.tick()) {
-		++m_tick_count;
+auto gse::server_app_system::initialize(init_context&, server_app_state&) -> void {}
+
+auto gse::server_app_system::update(update_context&, server_app_state& s, const server_state& srv) -> async::task<> {
+	if (s.timer.tick()) {
+		++s.tick_count;
 	}
 
 	if (keyboard::pressed(key::escape)) {
-		gse::shutdown();
+		shutdown();
 	}
 
 	gui::panel("Server Control", [&](gui::builder& ui) {
 		ui.draw<gui::text>({
-			.content = "This is a simple server application."
+			.content = "This is a simple server application.",
 		});
+
+		if (!srv.srv) {
+			return;
+		}
+
 		ui.draw<gui::value<std::uint32_t>>({
 			.name = "Peers",
-			.val = static_cast<std::uint32_t>(m_server->peers().size())
+			.val = static_cast<std::uint32_t>(srv.srv->peers().size()),
 		});
 		ui.draw<gui::value<std::uint32_t>>({
 			.name = "Clients",
-			.val = static_cast<std::uint32_t>(m_server->clients().size())
+			.val = static_cast<std::uint32_t>(srv.srv->clients().size()),
 		});
-		if (const auto h = m_server->host_entity()) {
+		if (const auto h = srv.srv->host_entity()) {
 			ui.draw<gui::text>({
-				.content = std::format("Host entity: {}", *h)
-			});
-		} else {
-			ui.draw<gui::text>({
-				.content = "Host entity: <none>"
+				.content = std::format("Host entity: {}", *h),
 			});
 		}
-		for (const auto& [ip, port] : m_server->peers() | std::views::keys) {
+		else {
 			ui.draw<gui::text>({
-				.content = std::format("Peer: {}:{}", ip, port)
+				.content = "Host entity: <none>",
+			});
+		}
+		for (const auto& [ip, port] : srv.srv->peers() | std::views::keys) {
+			ui.draw<gui::text>({
+				.content = std::format("Peer: {}:{}", ip, port),
 			});
 		}
 		ui.draw<gui::value<std::uint32_t>>({
 			.name = "Ticks",
-			.val = m_tick_count
+			.val = s.tick_count,
 		});
 	});
+
+	co_return;
+}
+
+auto gse::server_app_setup(engine& e) -> void {
+	set_ui_focus(true);
+	set_networked(true);
+
+	auto& srv_state = e.add_system<server_system, server_state>();
+	srv_state.srv.emplace(9000);
+	srv_state.srv->initialize();
+
+	set_input_sampler(make_server_input_sampler(&srv_state.srv->clients()));
+
+	e.add_system<server_app_system, server_app_state>();
 }

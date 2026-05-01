@@ -6,74 +6,47 @@ import gse;
 import :server;
 
 export namespace gse {
-	class server_input_source {
-	public:
-		explicit server_input_source(
-			const std::unordered_map<network::address, client_data>* clients
-		) : m_clients(clients) {}
+	auto make_server_input_sampler(
+		const std::unordered_map<network::address, client_data>* clients
+	) -> input_sampler_fn;
+}
 
-		template <typename Fn>
-		auto for_each_context(
-			world& w,
-			Fn&& fn
-		) const -> void {
-			if (!m_clients) {
-				return;
-			}
-
-			auto* sc = w.current_scene();
-			if (!sc) {
-				return;
-			}
-
-			auto* reg = &sc->registry();
-
-			for (const auto& cd : *m_clients | std::views::values) {
-				auto* pc = reg->try_component<player_controller>(cd.controller_id);
-				if (!pc) {
-					continue;
-				}
-
-				const auto controlled_id = pc->controlled_entity_id;
-				if (!controlled_id.exists()) {
-					continue;
-				}
-
-				actions::state const& s = cd.latest_input;
-
-				evaluation_context ctx{
-					.client_id = controlled_id,
-					.input = &s,
-					.registry = reg
-				};
-
-				
-				actions::set_entity_camera_yaw(controlled_id, s.camera_yaw());
-
-				actions::set_context_camera_yaw(s.camera_yaw());
-				fn(ctx);
-				actions::clear_context_camera_yaw();
-			}
+auto gse::make_server_input_sampler(const std::unordered_map<network::address, client_data>* clients) -> input_sampler_fn {
+	return [clients](world& w, std::function<void(const evaluation_context&)> fn) {
+		if (!clients) {
+			return;
 		}
 
-		auto state_for(
-			id owner
-		) const -> const actions::state& {
-			static actions::state empty;
-
-			if (!m_clients) {
-				return empty;
-			}
-
-			for (const auto& cd : *m_clients | std::views::values) {
-				if (cd.controller_id == owner) {
-					return cd.latest_input;
-				}
-			}
-
-			return empty;
+		auto* sc = w.current_scene();
+		if (!sc) {
+			return;
 		}
-	private:
-		const std::unordered_map<network::address, client_data>* m_clients{};
+
+		auto* reg = &sc->registry();
+
+		for (const auto& cd : *clients | std::views::values) {
+			auto* pc = reg->try_component<player_controller>(cd.controller_id);
+			if (!pc) {
+				continue;
+			}
+
+			const auto controlled_id = pc->controlled_entity_id;
+			if (!controlled_id.exists()) {
+				continue;
+			}
+
+			const actions::state& s = cd.latest_input;
+
+			evaluation_context ctx{
+				.client_id = controlled_id,
+				.input = &s,
+				.registry = reg,
+			};
+
+			actions::set_entity_camera_yaw(controlled_id, s.camera_yaw());
+			actions::set_context_camera_yaw(s.camera_yaw());
+			fn(ctx);
+			actions::clear_context_camera_yaw();
+		}
 	};
 }

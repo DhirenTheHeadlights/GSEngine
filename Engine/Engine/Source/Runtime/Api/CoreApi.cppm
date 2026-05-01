@@ -61,6 +61,44 @@ export namespace gse {
     auto add_system(
         Args&&... args
     ) -> State&;
+
+    auto set_networked(
+        bool networked
+    ) -> void;
+
+    auto set_authoritative(
+        bool authoritative
+    ) -> void;
+
+    auto set_local_controller_id(
+        id controller_id
+    ) -> void;
+
+    auto set_input_sampler(
+        input_sampler_fn fn
+    ) -> void;
+
+    auto add_scene(
+        std::string_view name,
+        scene::setup_fn setup = {}
+    ) -> scene*;
+
+    auto activate_scene(
+        id scene_id
+    ) -> void;
+
+    auto deactivate_scene(
+        id scene_id
+    ) -> void;
+
+    auto current_scene(
+    ) -> scene*;
+
+    auto direct(
+    ) -> director;
+
+    auto triggers(
+    ) -> std::span<const trigger>;
 }
 
 namespace gse {
@@ -69,13 +107,16 @@ namespace gse {
 }
 
 export namespace gse {
-    template <typename... Hooks>
+    using app_setup_fn = std::function<void(engine&)>;
+
     auto start(
+        app_setup_fn setup,
         flags<engine_flag> engine_flags = flags<engine_flag>{ engine_flag::create_window } | engine_flag::render,
         const engine_config& config = {}
     ) -> void;
 
-    auto shutdown() -> void;
+    auto shutdown(
+    ) -> void;
 }
 
 template <typename State>
@@ -122,12 +163,49 @@ auto gse::add_system(Args&&... args) -> State& {
     return engine_instance->add_system<S, State>(std::forward<Args>(args)...);
 }
 
-template <typename... Hooks>
-auto gse::start(const flags<engine_flag> engine_flags, const engine_config& config) -> void {
+auto gse::set_networked(const bool networked) -> void {
+    engine_instance->set_networked(networked);
+}
+
+auto gse::set_authoritative(const bool authoritative) -> void {
+    engine_instance->set_authoritative(authoritative);
+}
+
+auto gse::set_local_controller_id(const id controller_id) -> void {
+    engine_instance->set_local_controller_id(controller_id);
+}
+
+auto gse::set_input_sampler(input_sampler_fn fn) -> void {
+    engine_instance->set_input_sampler(std::move(fn));
+}
+
+auto gse::add_scene(const std::string_view name, scene::setup_fn setup) -> scene* {
+    return engine_instance->add_scene(name, std::move(setup));
+}
+
+auto gse::activate_scene(const id scene_id) -> void {
+    engine_instance->activate_scene(scene_id);
+}
+
+auto gse::deactivate_scene(const id scene_id) -> void {
+    engine_instance->deactivate_scene(scene_id);
+}
+
+auto gse::current_scene() -> scene* {
+    return engine_instance->current_scene();
+}
+
+auto gse::direct() -> director {
+    return engine_instance->direct();
+}
+
+auto gse::triggers() -> std::span<const trigger> {
+    return engine_instance->triggers();
+}
+
+auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const engine_config& config) -> void {
     engine_instance = std::make_unique<engine>(config.title, engine_flags);
 	log::println(log::level::info, "Starting GSEngine...");
-
-    (engine_instance->add_hook<Hooks>(), ...);
 
     auto cleanup = make_scope_exit([] {
         if (engine_instance) {
@@ -137,6 +215,10 @@ auto gse::start(const flags<engine_flag> engine_flags, const engine_config& conf
     });
 
     engine_instance->initialize();
+
+    if (setup) {
+        setup(*engine_instance);
+    }
     trace::finalize_frame();
 
     task::start([&] {

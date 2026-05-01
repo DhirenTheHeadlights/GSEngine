@@ -20,13 +20,11 @@ import gse.assets;
 import gse.gpu;
 import gse.shader_compiler;
 import gse.log;
-import gse.hooks;
 import gse.scene;
 import gse.save;
 import gse.config;
 
-gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags)
-	: hookable(name), m_flags(engine_flags), m_world(m_scheduler, "World") {}
+gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags) : identifiable(name), m_flags(engine_flags), m_world(m_scheduler, "World") {}
 
 auto gse::engine::initialize() -> void {
 	trace::start({
@@ -70,12 +68,6 @@ auto gse::engine::initialize() -> void {
 	}
 
 	m_scheduler.initialize();
-
-	for (const auto& h : m_hooks) {
-		h->initialize();
-	}
-
-	m_world.initialize();
 }
 
 auto gse::engine::update() -> void {
@@ -84,10 +76,6 @@ auto gse::engine::update() -> void {
 	m_scheduler.update();
 
 	m_world.update();
-
-	for (const auto& h : m_hooks) {
-		h->update();
-	}
 }
 
 auto gse::engine::render() -> void {
@@ -136,13 +124,6 @@ auto gse::engine::render() -> void {
 			}
 
 			{
-				trace::scope_guard sg{trace_id<"render::hooks">()};
-				for (const auto& h : m_hooks) {
-					h->render();
-				}
-			}
-
-			{
 				trace::scope_guard sg{trace_id<"render::world_render">()};
 				m_world.render();
 			}
@@ -167,10 +148,6 @@ auto gse::engine::shutdown() -> void {
 	m_scheduler.shutdown();
 	m_world.shutdown();
 
-	for (const auto& h : m_hooks) {
-		h->shutdown();
-	}
-
 	m_scheduler.clear();
 }
 
@@ -184,6 +161,10 @@ auto gse::engine::set_authoritative(const bool authoritative) -> void {
 
 auto gse::engine::set_local_controller_id(const gse::id controller_id) -> void {
 	m_world.set_local_controller_id(controller_id);
+}
+
+auto gse::engine::set_input_sampler(input_sampler_fn fn) -> void {
+	m_world.set_input_sampler(std::move(fn));
 }
 
 auto gse::engine::activate_scene(const gse::id scene_id) -> void {
@@ -201,4 +182,8 @@ auto gse::engine::current_scene() -> scene* {
 
 auto gse::engine::direct() -> director {
 	return m_world.direct();
+}
+
+auto gse::engine::triggers() const -> std::span<const trigger> {
+	return m_world.triggers();
 }

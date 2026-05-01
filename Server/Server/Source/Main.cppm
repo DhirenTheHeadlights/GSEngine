@@ -4,5 +4,8 @@ import gse.server;
 import gs;
 
 auto main() -> int {
-	gse::start<gse::server_app, gs::world_loader>({});
+	gse::start([](gse::engine& e) {
+		gse::server_app_setup(e);
+		gs::world_loader_setup(e);
+	}, {});
 }
