@@ -65,6 +65,14 @@ export namespace gse {
 		template <typename State>
 		auto notify_ready(
 		) -> void;
+
+		auto after_id(
+			id state_id
+		) -> async::task<>;
+
+		auto notify_ready_by_id(
+			id state_id
+		) -> void;
 	};
 }
 
@@ -135,4 +143,12 @@ auto gse::task_context::after() -> async::task<> {
 template <typename State>
 auto gse::task_context::notify_ready() -> void {
 	graph.notify_state_ready(id_of<State>());
+}
+
+auto gse::task_context::after_id(const id state_id) -> async::task<> {
+	co_await graph.wait_state_ready(state_id);
+}
+
+auto gse::task_context::notify_ready_by_id(const id state_id) -> void {
+	graph.notify_state_ready(state_id);
 }

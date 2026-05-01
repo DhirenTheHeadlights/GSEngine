@@ -44,7 +44,9 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 	}
 
 	s.gui_font = assets.get<font>("Fonts/" + s.available_fonts[s.font_index]);
+	assets.instantly_load(s.gui_font);
 	s.blank_texture = assets.queue<texture>("blank", vec4f(1, 1, 1, 1));
+	assets.instantly_load(s.blank_texture);
 	s.menus = load(config::resource_path / s.file_path, s.menus);
 
 	std::vector<std::pair<std::string, int>> font_options;

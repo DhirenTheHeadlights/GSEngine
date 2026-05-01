@@ -48,6 +48,11 @@ auto gse::renderer::skin_compute::system::initialize(const init_context& phase, 
 
 	const auto* gc = phase.try_resources_of<geometry_collector::system::resources>();
 
+	assert(gc != nullptr, std::source_location::current(),
+		"skin_compute::initialize: geometry_collector resources not registered");
+	assert(static_cast<bool>(gc->skeleton_buffer), std::source_location::current(),
+		"skin_compute::initialize: gc->skeleton_buffer is null - geometry_collector::initialize did not run before skin_compute::initialize");
+
 	r.pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.shader_handle, "push_constants");
 
 	constexpr std::size_t skin_buffer_size = geometry_collector::system::resources::max_skin_matrices * sizeof(mat4f);

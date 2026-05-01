@@ -87,8 +87,14 @@ export namespace gse {
 		auto process_resource_queue(
 		) -> void;
 
+		auto finalize_pending_loads(
+		) -> void;
+
 		template <typename ShaderLayout>
 		auto compile(
+		) -> void;
+
+		auto compile_all(
 		) -> void;
 
 		auto poll_assets(
@@ -202,10 +208,34 @@ auto gse::asset_registry<C>::process_resource_queue() -> void {
 }
 
 template <typename C>
+auto gse::asset_registry<C>::finalize_pending_loads() -> void {
+	const auto pending = m_context->take_pending_finalizations();
+	for (const auto& [type_id, resource_id] : pending) {
+		if (const auto it = m_resource_loaders.find(type_id); it != m_resource_loaders.end()) {
+			it->second->update_state(resource_id, resource::state::loaded);
+		}
+	}
+}
+
+template <typename C>
 template <typename ShaderLayout>
 auto gse::asset_registry<C>::compile() -> void {
 	m_pipeline.template register_compiler_only<ShaderLayout>();
 
+	if (const auto result = m_pipeline.compile_all(); result.success_count > 0 || result.failure_count > 0) {
+		log::println(
+			result.failure_count > 0 ? log::level::warning : log::level::info,
+			log::category::assets,
+			"Compiled {} assets ({} skipped, {} failed)",
+			result.success_count,
+			result.skipped_count,
+			result.failure_count
+		);
+	}
+}
+
+template <typename C>
+auto gse::asset_registry<C>::compile_all() -> void {
 	if (const auto result = m_pipeline.compile_all(); result.success_count > 0 || result.failure_count > 0) {
 		log::println(
 			result.failure_count > 0 ? log::level::warning : log::level::info,

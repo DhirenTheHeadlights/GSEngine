@@ -18,6 +18,7 @@ import gse.physics;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.shader_compiler;
 import gse.log;
 import gse.hooks;
 import gse.scene;
@@ -96,6 +97,11 @@ auto gse::engine::render() -> void {
 		{
 			trace::scope_guard sg{trace_id<"render::process_gpu_queue">()};
 			m_render_ctx->process_gpu_queue();
+		}
+
+		if (m_assets) {
+			trace::scope_guard sg{trace_id<"render::finalize_pending_loads">()};
+			m_assets->finalize_pending_loads();
 		}
 
 		const clock fence_timer;

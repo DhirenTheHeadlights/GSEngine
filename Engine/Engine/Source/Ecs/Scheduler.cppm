@@ -13,6 +13,7 @@ import :registries;
 import :update_context;
 import :frame_context;
 import :system_node;
+import :system_dispatch;
 import :registry;
 
 export namespace gse {
@@ -93,7 +94,7 @@ export namespace gse {
 		auto snapshot_all_states(
 		) -> void;
 
-		std::vector<std::unique_ptr<system_node_base>> m_nodes;
+		std::vector<system_node> m_nodes;
 		state_registry m_states;
 		std::unordered_map<id, std::vector<id>> m_state_deps;
 		resource_registry m_resources_store;
@@ -162,20 +163,23 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 		m_registry = &reg;
 	}
 
-	auto ptr = std::make_unique<system_node<S, State>>(std::forward<Args>(args)...);
-	auto* raw = ptr.get();
+	auto node = make_system_node<S, State>(std::forward<Args>(args)...);
+	auto* state_ref = static_cast<State*>(node.state_ptr);
 
 	const auto state_idx = id_of<State>();
 	find_or_generate_id(type_tag<State>());
-	m_states.register_state(state_idx, raw->state_ptr(), raw->state_snapshot_ptr());
-	m_state_deps.emplace(state_idx, extract_state_deps<S, State>());
+	m_states.register_state(state_idx, node.state_ptr, node.state_snapshot_ptr);
+
+	auto combined_deps = node.update_state_deps;
+	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
+	m_state_deps.emplace(state_idx, std::move(combined_deps));
 
 	if constexpr (has_resources<S>) {
 		find_or_generate_id(type_tag<typename S::resources>());
-		m_resources_store.register_resource(id_of<typename S::resources>(), raw->resources_ptr());
+		m_resources_store.register_resource(id_of<typename S::resources>(), node.resources_ptr);
 	}
 
-	m_nodes.push_back(std::move(ptr));
+	m_nodes.push_back(std::move(node));
 
 	if (m_initialized) {
 		auto writer = m_channels_store.make_writer();
@@ -189,8 +193,8 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 			.channels_store = m_channels_store,
 			.channels = writer,
 		};
-		raw->initialize(phase);
+		m_nodes.back().invoke_initialize_fn(phase, m_nodes.back().data.get());
 	}
 
-	return raw->state();
+	return *state_ref;
 }

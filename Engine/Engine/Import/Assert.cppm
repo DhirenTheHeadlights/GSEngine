@@ -57,4 +57,5 @@ auto gse::assert_func_internal(const std::string_view message) noexcept -> void 
         "{}",
         message
     );
+    std::terminate();
 }

@@ -61,6 +61,8 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 	assets.add_loader<clip_asset>();
 	assets.add_loader<audio_clip>();
 
+	assets.compile_all();
+
 	phase.sched.add_system<rt_shadow::system, rt_shadow::state>(phase.reg);
 	phase.sched.add_system<geometry_collector::system, geometry_collector::state>(phase.reg);
 	phase.sched.add_system<skin_compute::system, skin_compute::state>(phase.reg);

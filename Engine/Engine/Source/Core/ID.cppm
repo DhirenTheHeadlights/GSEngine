@@ -152,7 +152,10 @@ struct std::formatter<gse::id> {
 		if (!value.exists()) {
 			return std::format_to(ctx.out(), "[invalid]");
 		}
-		return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
+		if (gse::exists(value.number())) {
+			return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
+		}
+		return std::format_to(ctx.out(), "[{}]", value.number());
 	}
 };
 
@@ -614,7 +617,7 @@ consteval auto gse::stable_id(const std::string_view tag) -> uuid {
 
 template <typename T>
 consteval auto gse::id_of() -> id {
-	return generate_temp_id(stable_id(std::meta::display_string_of(^^T)));
+	return generate_temp_id(stable_id(type_tag<T>()));
 }
 
 template <gse::fixed_string Tag>
@@ -624,7 +627,7 @@ consteval auto gse::id_of() -> id {
 
 template <typename T>
 auto gse::trace_id() -> id {
-	static const id cached = find_or_generate_id(std::meta::display_string_of(^^T));
+	static const id cached = find_or_generate_id(type_tag<T>());
 	return cached;
 }
 
@@ -636,6 +639,34 @@ auto gse::trace_id() -> id {
 
 template <typename T>
 consteval auto gse::type_tag() -> std::string_view {
-	return std::meta::display_string_of(^^T);
+	auto walk = [](this auto self, std::meta::info entity) -> std::string {
+		if (!std::meta::has_identifier(entity)) {
+			return {};
+		}
+		std::string parent_name = self(std::meta::parent_of(entity));
+		std::string my_name = std::string(std::meta::identifier_of(entity));
+		if (std::meta::has_template_arguments(entity)) {
+			my_name += "<";
+			bool first = true;
+			for (auto arg : std::meta::template_arguments_of(entity)) {
+				if (!first) {
+					my_name += ", ";
+				}
+				first = false;
+				if (std::meta::is_type(arg)) {
+					my_name += self(arg);
+				}
+				else {
+					my_name += std::meta::display_string_of(arg);
+				}
+			}
+			my_name += ">";
+		}
+		if (parent_name.empty()) {
+			return my_name;
+		}
+		return parent_name + "::" + my_name;
+	};
+	return std::define_static_string(walk(^^T));
 }
 

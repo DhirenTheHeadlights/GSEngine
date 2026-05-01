@@ -33,9 +33,41 @@ auto gse::scheduler::drain_deferred() -> void {
 }
 
 auto gse::scheduler::snapshot_all_states() -> void {
-	for (const auto& node : m_nodes) {
-		node->snapshot_state();
+	for (auto& node : m_nodes) {
+		node.invoke_snapshot_fn(node.data.get());
 	}
+}
+
+namespace gse {
+	auto run_node_update(
+		update_context& ctx,
+		system_node& node
+	) -> async::task<>;
+
+	auto run_node_frame(
+		frame_context& ctx,
+		system_node& node
+	) -> async::task<>;
+}
+
+auto gse::run_node_update(update_context& ctx, system_node& node) -> async::task<> {
+	for (const id& dep : node.update_state_deps) {
+		co_await ctx.after_id(dep);
+	}
+	co_await node.invoke_update_fn(ctx, node.data.get());
+	ctx.notify_ready_by_id(node.state_id);
+}
+
+auto gse::run_node_frame(frame_context& ctx, system_node& node) -> async::task<> {
+	const auto eid = trace::begin_block(node.frame_wall_id, 0);
+	auto guard = make_scope_exit([fwid = node.frame_wall_id, eid] {
+		trace::end_block(fwid, eid, 0);
+	});
+
+	for (const id& dep : node.frame_state_deps) {
+		co_await ctx.after_id(dep);
+	}
+	co_await node.invoke_frame_fn(ctx, node.data.get());
 }
 
 auto gse::scheduler::check_state_dep_cycles() -> void {
@@ -116,7 +148,7 @@ auto gse::scheduler::initialize() -> void {
 	};
 
 	for (std::size_t i = 0; i < m_nodes.size(); ++i) {
-		m_nodes[i]->initialize(phase);
+		m_nodes[i].invoke_initialize_fn(phase, m_nodes[i].data.get());
 	}
 
 	m_initialized = true;
@@ -140,8 +172,8 @@ auto gse::scheduler::run_graph_update() -> void {
 
 	std::vector<async::task<>> tasks;
 	tasks.reserve(m_nodes.size());
-	for (const auto& node : m_nodes) {
-		tasks.push_back(node->graph_update(u_ctx));
+	for (auto& node : m_nodes) {
+		tasks.push_back(run_node_update(u_ctx, node));
 	}
 	{
 		trace::scope_guard sg2{ trace_id<"scheduler::update_sync_wait">() };
@@ -184,11 +216,11 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	std::vector<async::task<>> tasks;
 	{
 		trace::scope_guard sg2{ trace_id<"scheduler::collect_frame_tasks">() };
-		for (const auto& node : m_nodes) {
-			if (!node->has_frame()) {
+		for (auto& node : m_nodes) {
+			if (!node.has_frame) {
 				continue;
 			}
-			tasks.push_back(node->graph_frame(f_ctx));
+			tasks.push_back(run_node_frame(f_ctx, node));
 		}
 	}
 
@@ -228,7 +260,7 @@ auto gse::scheduler::shutdown() -> void {
 	};
 
 	for (auto it = m_nodes.rbegin(); it != m_nodes.rend(); ++it) {
-		(*it)->shutdown(phase);
+		it->invoke_shutdown_fn(phase, it->data.get());
 	}
 }
 
