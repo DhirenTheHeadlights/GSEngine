@@ -6,6 +6,7 @@ import gse.core;
 import gse.containers;
 import gse.time;
 import gse.math;
+import gse.meta;
 
 export namespace gse::trace {
 	struct config {

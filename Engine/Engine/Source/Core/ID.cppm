@@ -437,13 +437,6 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::transfer_from(id_mapped_collec
     m_map   = std::move(other.m_map);
 }
 
-template <>
-struct std::hash<gse::id> {
-	auto operator()(const gse::id& id) const noexcept -> std::size_t {
-		return std::hash<gse::uuid>{}(id.number());
-	}
-};
-
 namespace gse {
 	struct transparent_hash {
 		using is_transparent = void;

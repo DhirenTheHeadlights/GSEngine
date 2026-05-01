@@ -4,6 +4,7 @@ import std;
 
 import gse.config;
 import gse.math;
+import gse.meta;
 import gse.core;
 import gse.containers;
 import gse.time;

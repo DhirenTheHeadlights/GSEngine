@@ -20,7 +20,8 @@ __pycache__/
 
 # External dependencies (fetched locally)
 /External/
-/Engine/External/
+/Engine/External/*
+!/Engine/External/concurrentqueue.h
 
 # Generated resources / configs
 /resources

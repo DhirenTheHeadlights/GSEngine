@@ -17,15 +17,6 @@ import gse.assets;
 import gse.gpu;
 import gse.runtime;
 
-template <>
-struct std::hash<gse::network::address> {
-	auto operator()(const gse::network::address& addr) const noexcept -> std::size_t {
-		const std::size_t h1 = std::hash<std::string>{}(addr.ip);
-		const std::size_t h2 = std::hash<std::uint16_t>{}(addr.port);
-		return h1 ^ (h2 << 1);
-	}
-};
-
 export namespace gse {
 	struct client_data {
 		id controller_id;

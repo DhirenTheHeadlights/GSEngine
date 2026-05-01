@@ -73,6 +73,19 @@ export namespace gse::internal {
 		(sizeof...(Args) > 0) &&
 		(vec_arg_traits<T, N, Args>::valid && ...) &&
 		((vec_arg_traits<T, N, Args>::count + ...) == N);
+
+	template <typename T, typename Storage, typename U>
+	constexpr auto vec_append_arg(Storage& data, std::size_t& idx, U&& arg) -> void {
+		using a = std::remove_reference_t<U>;
+		if constexpr (is_vec_like<a>) {
+			for (std::size_t i = 0; i < a::extent; ++i) {
+				data[idx++] = static_cast<T>(arg[i]);
+			}
+		}
+		else {
+			data[idx++] = static_cast<T>(std::forward<U>(arg));
+		}
+	}
 }
 
 export namespace gse::internal {
@@ -296,20 +309,7 @@ template <typename... Args>
 constexpr gse::vec<T, N>::vec(Args&&... args)
 	requires gse::internal::vec_ctor_compatible<T, N, Args...> {
 	std::size_t idx = 0;
-
-	auto append = [this, &idx]<typename T0>(T0&& arg) {
-		using a = std::remove_reference_t<T0>;
-		if constexpr (gse::internal::is_vec_like<a>) {
-			for (std::size_t i = 0; i < a::extent; ++i) {
-				this->data[idx++] = static_cast<T>(arg[i]);
-			}
-		}
-		else {
-			this->data[idx++] = static_cast<T>(std::forward<T0>(arg));
-		}
-	};
-
-	(append(std::forward<Args>(args)), ...);
+	(gse::internal::vec_append_arg<T>(this->data, idx, std::forward<Args>(args)), ...);
 }
 
 template <gse::internal::is_vec_element T, std::size_t N>
