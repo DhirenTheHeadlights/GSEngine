@@ -6,6 +6,7 @@ import gse.assert;
 import gse.log;
 import gse.core;
 import gse.containers;
+import gse.config;
 import gse.time;
 import gse.concurrency;
 import gse.diag;

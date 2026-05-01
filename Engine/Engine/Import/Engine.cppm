@@ -11,6 +11,7 @@ export import gse.examples;
 export import gse.fs;
 export import gse.graphics;
 export import gse.hooks;
+export import gse.log;
 export import gse.meta;
 export import gse.network;
 export import gse.physics;

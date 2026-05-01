@@ -39,7 +39,12 @@
       "displayName": "x64 clang-p2996 libc++ Debug",
       "inherits": "x64-clang-p2996-libcxx-base",
       "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Debug",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets"
+      }
     },
     {
       "name": "x64-clang-p2996-libcxx-Release",
@@ -50,12 +55,25 @@
     },
     {
       "name": "x64-clang-p2996-libcxx-Release-trace",
-      "displayName": "x64 clang-p2996 libc++ Release + ftime-trace",
+      "displayName": "x64 clang-p2996 libc++ Release + ftime-trace + stats",
       "inherits": "x64-clang-p2996-libcxx-base",
       "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Release-trace",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2 -ftime-trace"
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2 -ftime-trace -Xclang -print-stats"
+      }
+    },
+    {
+      "name": "x64-clang-p2996-libcxx-Debug-trace",
+      "displayName": "x64 clang-p2996 libc++ Debug + ftime-trace + stats",
+      "inherits": "x64-clang-p2996-libcxx-base",
+      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Debug-trace",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2 -ftime-trace -Xclang -print-stats"
       }
     },
     {
@@ -112,6 +130,10 @@
     {
       "name": "x64-clang-p2996-libcxx-Release-trace",
       "configurePreset": "x64-clang-p2996-libcxx-Release-trace"
+    },
+    {
+      "name": "x64-clang-p2996-libcxx-Debug-trace",
+      "configurePreset": "x64-clang-p2996-libcxx-Debug-trace"
     },
     {
       "name": "x64-clang-p2996-libcxx-Debug-asan",

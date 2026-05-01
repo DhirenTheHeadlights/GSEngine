@@ -167,7 +167,7 @@ consteval auto gse::network::stable_code(std::string_view s) -> std::uint16_t {
 template <typename T>
 	requires (gse::network::is_network_message<T>())
 constexpr auto gse::network::message_id(std::type_identity<T>) -> std::uint16_t {
-	return stable_code(std::meta::display_string_of(^^T));
+	return stable_code(type_tag<T>());
 }
 
 template <typename T>
