@@ -210,7 +210,8 @@ namespace gse::physics {
 		vbd::contact_cache& contact_cache,
 		const std::vector<collision_pair>& objects,
 		const flat_map<id, std::uint32_t>& id_to_body_index,
-		bool update_scene_state
+		bool update_scene_state,
+		write<collision_result_component>* results
 	) -> void;
 
 	auto pack_feature(
@@ -235,7 +236,8 @@ namespace gse::physics {
 		system::update_data& ud,
 		state& s,
 		write<motion_component>& motion,
-		write<collision_component>& collision
+		write<collision_component>& collision,
+		write<collision_result_component>& results
 	) -> void;
 
 	auto update_vbd_gpu(
@@ -244,6 +246,7 @@ namespace gse::physics {
 		state& s,
 		write<motion_component>& motion,
 		write<collision_component>& collision,
+		write<collision_result_component>& results,
 		time_t<float, seconds> dt,
 		channel_writer& channels
 	) -> void;

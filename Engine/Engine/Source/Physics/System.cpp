@@ -56,7 +56,7 @@ auto gse::physics::collect_collision_objects(write<motion_component>& motion, wr
 	return objects;
 }
 
-auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, const std::vector<collision_pair>& objects, const flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state) -> void {
+auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, const std::vector<collision_pair>& objects, const flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state, write<collision_result_component>* results) -> void {
 	for (std::size_t i = 0; i < objects.size(); ++i) {
 		for (std::size_t j = i + 1; j < objects.size(); ++j) {
 			auto& [collision_a, motion_a] = objects[i];
@@ -120,13 +120,18 @@ auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contac
 					motion_a->airborne = false;
 				}
 
-				collision_a->collision_information.colliding = true;
-				collision_a->collision_information.collision_normal = sat.normal;
-				collision_a->collision_information.penetration = -sat.separation;
-
-				collision_b->collision_information.colliding = true;
-				collision_b->collision_information.collision_normal = -sat.normal;
-				collision_b->collision_information.penetration = -sat.separation;
+				if (results) {
+					if (auto* res_a = results->find(collision_a->owner_id())) {
+						res_a->colliding = true;
+						res_a->collision_normal = sat.normal;
+						res_a->penetration = -sat.separation;
+					}
+					if (auto* res_b = results->find(collision_b->owner_id())) {
+						res_b->colliding = true;
+						res_b->collision_normal = -sat.normal;
+						res_b->penetration = -sat.separation;
+					}
+				}
 			}
 
 			const auto& cfg = solver.config();
@@ -212,8 +217,10 @@ auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contac
 					.feature = feature
 				});
 
-				if (update_scene_state) {
-					collision_a->collision_information.collision_points.push_back(position_on_a);
+				if (update_scene_state && results) {
+					if (auto* res_a = results->find(collision_a->owner_id())) {
+						res_a->collision_points.push_back(position_on_a);
+					}
 				}
 			}
 		}
@@ -371,6 +378,10 @@ auto gse::physics::system::initialize(const init_context& phase, update_data& ud
 }
 
 auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s) -> async::task<> {
+	for (const auto owner : ctx.drain_component_adds<collision_component>()) {
+		ctx.add_component<collision_result_component>(owner);
+	}
+
 	if (const auto& readbacks = ctx.read_channel<gpu_readback_result>(); !readbacks.empty()) {
 		auto completed = readbacks[0];
 		ud.completed_readback = std::move(completed);
@@ -416,17 +427,17 @@ auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s
 		steps = max_physics_steps;
 	}
 
-	auto [motion, collision] = co_await ctx.acquire<write<motion_component>, write<collision_component>>();
+	auto [motion, collision, results] = co_await ctx.acquire<write<motion_component>, write<collision_component>, write<collision_result_component>>();
 
 	if (s.use_gpu_solver) {
-		update_vbd_gpu(steps, ud, s, motion, collision, const_update_time, ctx.channels);
+		update_vbd_gpu(steps, ud, s, motion, collision, results, const_update_time, ctx.channels);
 		co_return;
 	}
 
-	update_vbd(steps, ud, s, motion, collision);
+	update_vbd(steps, ud, s, motion, collision, results);
 }
 
-auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, const time_t<float, seconds> dt, channel_writer& channels) -> void {
+auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results, const time_t<float, seconds> dt, channel_writer& channels) -> void {
 	if (!s.gpu_buffers_created) {
 		return;
 	}
@@ -477,11 +488,12 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 							if (cc) {
 								cc->bounding_box.update(mc->current_position, mc->orientation);
 								if (cc->resolve_collisions) {
-									auto& info = cc->collision_information;
-									info.colliding = false;
-									info.collision_normal = {};
-									info.penetration = {};
-									info.collision_points.clear();
+									if (auto* info = results.find(eid)) {
+										info->colliding = false;
+										info->collision_normal = {};
+										info->penetration = {};
+										info->collision_points.clear();
+									}
 								}
 							}
 						}
@@ -545,17 +557,17 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 							const auto contact_point_b = bs_b.position + world_r_b;
 							const auto midpoint = contact_point_a + (contact_point_b - contact_point_a) * 0.5f;
 
-							if (auto* cc_a = collision.find(eid_a)) {
-								cc_a->collision_information.colliding = true;
-								cc_a->collision_information.collision_normal = normal;
-								cc_a->collision_information.penetration = -c.c0[0];
-								cc_a->collision_information.collision_points.push_back(midpoint);
+							if (auto* res_a = results.find(eid_a)) {
+								res_a->colliding = true;
+								res_a->collision_normal = normal;
+								res_a->penetration = -c.c0[0];
+								res_a->collision_points.push_back(midpoint);
 							}
-							if (auto* cc_b = collision.find(eid_b)) {
-								cc_b->collision_information.colliding = true;
-								cc_b->collision_information.collision_normal = -normal;
-								cc_b->collision_information.penetration = -c.c0[0];
-								cc_b->collision_information.collision_points.push_back(midpoint);
+							if (auto* res_b = results.find(eid_b)) {
+								res_b->colliding = true;
+								res_b->collision_normal = -normal;
+								res_b->penetration = -c.c0[0];
+								res_b->collision_points.push_back(midpoint);
 							}
 						}
 				}
@@ -1110,7 +1122,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 			cpu_ref.seed_previous_velocities(ref_prev_velocities);
 
 			const auto objects = collect_collision_objects(motion, collision);
-			add_scene_contacts_to_solver(cpu_ref, ref_cache, objects, id_to_body_index, false);
+			add_scene_contacts_to_solver(cpu_ref, ref_cache, objects, id_to_body_index, false, nullptr);
 
 			for (const auto& m : motors) {
 				cpu_ref.add_motor_constraint(m);
@@ -1134,7 +1146,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 	}
 }
 
-auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision) -> void {
+auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results) -> void {
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 	const int substeps = std::max(s.physics_substeps, 1);
 	const auto sub_dt = const_update_time / static_cast<float>(substeps);
@@ -1189,21 +1201,15 @@ auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s
 			mc.airborne = true;
 		}
 
-		for (collision_component& cc : collision) {
-			if (!cc.resolve_collisions) {
-				continue;
-			}
-
-			cc.collision_information = {
-				.colliding = false,
-				.collision_normal = {},
-				.penetration = {},
-				.collision_points = {}
-			};
+		for (collision_result_component& res : results) {
+			res.colliding = false;
+			res.collision_normal = {};
+			res.penetration = {};
+			res.collision_points.clear();
 		}
 
 		ud.vbd_solver.begin_frame(bodies, ud.contact_cache);
-		add_scene_contacts_to_solver(ud.vbd_solver, ud.contact_cache, objects, id_to_body_index, true);
+		add_scene_contacts_to_solver(ud.vbd_solver, ud.contact_cache, objects, id_to_body_index, true, &results);
 
 		for (motion_component& mc : motion) {
 			if (!mc.velocity_drive_active) {

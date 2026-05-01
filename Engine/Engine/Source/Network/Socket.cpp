@@ -71,7 +71,7 @@ namespace gse::network {
 
 	auto make_sockaddr(const address& a) -> ::sockaddr_in {
 		::sockaddr_in result{
-			.sin_family = AF_INET,
+			.sin_family = static_cast<decltype(::sockaddr_in::sin_family)>(sockets::af_inet),
 			.sin_port = ::htons(a.port),
 			.sin_addr = {},
 		};

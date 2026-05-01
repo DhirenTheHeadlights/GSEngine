@@ -5,6 +5,14 @@ import std;
 import gse.math;
 
 export namespace gse {
+	struct bounding_box_state {
+		vec3<position> center;
+		vec3<displacement> base_size;
+		vec3<displacement> scaled_size;
+		quat orientation;
+		float scale = 1.0f;
+	};
+
 	struct collision_information {
 		bool colliding = false;
 		vec3f collision_normal;
@@ -35,13 +43,6 @@ namespace gse {
 
 	class bounding_box {
 	public:
-		bounding_box() = default;
-		~bounding_box() = default;
-		bounding_box(const bounding_box&) = default;
-		bounding_box(bounding_box&&) noexcept = default;
-		auto operator=(const bounding_box&) -> bounding_box& = default;
-		auto operator=(bounding_box&&) noexcept -> bounding_box& = default;
-
 		bounding_box(
 			const vec3<position>& center,
 			const vec3<displacement>& size,
@@ -94,11 +95,7 @@ namespace gse {
 		auto recalculate_aabb(
 		) const -> void;
 
-		vec3<position> m_center;
-		vec3<displacement> m_base_size;
-		vec3<displacement> m_scaled_size;
-		quat m_orientation;
-		float m_scale = 1.0f;
+		bounding_box_state m_state;
 
 		mutable gse::aabb m_aabb;
 		mutable bool m_is_aabb_dirty = true;
@@ -115,17 +112,18 @@ auto gse::collision_information::axis() const -> gse::axis {
 	return axis::z;
 }
 
-gse::bounding_box::bounding_box(const vec3<position>& center, const vec3<displacement>& size, const std::uint32_t scale) : m_center(center), m_base_size(size), m_scaled_size(size), m_scale(scale) {}
+gse::bounding_box::bounding_box(const vec3<position>& center, const vec3<displacement>& size, const std::uint32_t scale)
+	: m_state{ .center = center, .base_size = size, .scaled_size = size, .orientation = {}, .scale = static_cast<float>(scale) } {}
 
 auto gse::bounding_box::update(const vec3<position>& new_position, const quat& new_orientation) -> void {
-	m_center = new_position;
-	m_orientation = new_orientation;
+	m_state.center = new_position;
+	m_state.orientation = new_orientation;
 	m_is_aabb_dirty = true;
 }
 
 auto gse::bounding_box::set_scale(const float scale) -> void {
-	m_scale = scale;
-	m_scaled_size = m_base_size * m_scale;
+	m_state.scale = scale;
+	m_state.scaled_size = m_state.base_size * m_state.scale;
 	m_is_aabb_dirty = true;
 }
 
@@ -137,29 +135,29 @@ auto gse::bounding_box::aabb() const -> const gse::aabb& {
 }
 
 auto gse::bounding_box::obb() const -> gse::obb {
-	const auto rotation_matrix = mat3_cast(m_orientation);
+	const auto rotation_matrix = mat3_cast(m_state.orientation);
 	return {
-		.center = m_center,
-		.size = m_scaled_size,
-		.orientation = m_orientation,
+		.center = m_state.center,
+		.size = m_state.scaled_size,
+		.orientation = m_state.orientation,
 		.axes = { rotation_matrix[0], rotation_matrix[1], rotation_matrix[2] }
 	};
 }
 
 auto gse::bounding_box::center() const -> vec3<position> {
-	return m_center;
+	return m_state.center;
 }
 
 auto gse::bounding_box::size() const -> vec3<displacement> {
-	return m_scaled_size;
+	return m_state.scaled_size;
 }
 
 auto gse::bounding_box::half_extents() const -> vec3<displacement> {
-	return m_scaled_size / 2.0f;
+	return m_state.scaled_size / 2.0f;
 }
 
 auto gse::bounding_box::scale() const -> float {
-	return m_scale;
+	return m_state.scale;
 }
 
 auto gse::bounding_box::face_normals() const -> std::array<vec3f, 6> {
@@ -207,7 +205,7 @@ auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<position>> {
 		const auto x = (i & 1 ? 1 : -1) * half_size.x();
 		const auto y = (i & 2 ? 1 : -1) * half_size.y();
 		const auto z = (i & 4 ? 1 : -1) * half_size.z();
-		corners[i] = m_center + (obb_data.axes[0] * x + obb_data.axes[1] * y + obb_data.axes[2] * z);
+		corners[i] = m_state.center + (obb_data.axes[0] * x + obb_data.axes[1] * y + obb_data.axes[2] * z);
 	}
 	return corners;
 }
@@ -226,8 +224,8 @@ auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const -> 
 }
 
 auto gse::bounding_box::recalculate_aabb() const -> void {
-	const auto rotation = mat3_cast(m_orientation);
-	const auto half_size = m_scaled_size / 2.0f;
+	const auto rotation = mat3_cast(m_state.orientation);
+	const auto half_size = m_state.scaled_size / 2.0f;
 
 	const auto extent =
 		gse::abs(rotation[0]) * half_size.x() +
@@ -235,8 +233,8 @@ auto gse::bounding_box::recalculate_aabb() const -> void {
 		gse::abs(rotation[2]) * half_size.z();
 
 	m_aabb = {
-		.max = m_center + extent,
-		.min = m_center - extent
+		.max = m_state.center + extent,
+		.min = m_state.center - extent
 	};
 	m_is_aabb_dirty = false;
 }
