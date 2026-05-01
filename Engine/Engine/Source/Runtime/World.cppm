@@ -14,7 +14,6 @@ import gse.assets;
 import gse.gpu;
 import gse.physics;
 import gse.graphics;
-import gse.hooks;
 import gse.scene;
 
 export namespace gse {
@@ -44,19 +43,41 @@ export namespace gse {
 		world* m_world = nullptr;
 	};
 
-	class world final : public hookable<world> {
+	class world;
+
+	using input_sampler_fn = std::function<void(world&, std::function<void(const evaluation_context&)>)>;
+
+	auto local_input_sampler(
+		world& w,
+		std::function<void(const evaluation_context&)> fn
+	) -> void;
+
+	class world final : public identifiable {
 	public:
 		explicit world(
 			scheduler& sched,
 			std::string_view name = "Unnamed World"
 		);
 
+		auto update(
+		) -> void;
+
+		auto render(
+		) -> void;
+
+		auto shutdown(
+		) -> void;
+
+		auto set_input_sampler(
+			input_sampler_fn fn
+		) -> void;
+
 		auto direct(
 		) -> director;
 
-		template <typename... Hooks, typename... Args>
 		auto add(
-			Args&&... args
+			std::string_view name,
+			scene::setup_fn setup = {}
 		) -> scene*;
 
 		auto activate(
@@ -79,7 +100,7 @@ export namespace gse {
 		) -> void;
 
 		auto triggers(
-		) -> const std::vector<trigger>&;
+		) const -> std::span<const trigger>;
 
 		auto networked(
 		) const -> bool;
@@ -113,7 +134,7 @@ export namespace gse {
 		) -> State&;
 	private:
 		friend class director;
-		friend struct local_input_source;
+		friend auto world_update_player_controllers(world& w) -> void;
 
 		auto add_trigger(
 			const trigger& new_trigger
@@ -130,189 +151,11 @@ export namespace gse {
 		std::optional<gse::id> m_client_id = std::nullopt;
 		gse::id m_local_controlled_entity{};
 		gse::id m_local_controller_id{};
-	};
 
-	template <typename InputSource>
-	class networked_world final : public hook<world> {
-	public:
-		using hook::hook;
-
-		explicit networked_world(
-			world* owner,
-			InputSource source
-		) : hook(owner), m_source(std::move(source)) {}
-
-		auto update(
-		) -> void override {
-			if (!m_owner->networked()) {
-				return;
-			}
-
-			auto& a = m_owner->state_of<actions::system_state>();
-
-			m_source.for_each_context(
-				*m_owner,
-				[&](const evaluation_context& ctx) {
-					if (!ctx.input || !ctx.client_id) {
-						return;
-					}
-
-					a.sample_for_entity(*ctx.input, *ctx.client_id);
-				}
-			);
-
-			if (auto* active = m_owner->current_scene()) {
-				active->update();
-			}
-		}
-
-		auto render(
-		) -> void override {
-			if (!m_owner->networked()) {
-				return;
-			}
-
-			if (auto* active = m_owner->current_scene()) {
-				active->render();
-			}
-		}
-	private:
-		InputSource m_source;
-	};
-
-	struct local_input_source {
-		template <typename Fn>
-		static auto for_each_context(
-			world& w,
-			Fn&& fn
-		) -> void {
-			const auto local_id = w.local_controlled_entity();
-			if (!local_id.exists()) {
-				return;
-			}
-
-			const auto& a = w.state_of<actions::system_state>();
-
-			evaluation_context ctx{
-				.client_id = local_id,
-				.input = std::addressof(a.current_state()),
-				.registry = &w.m_registry
-			};
-
-			fn(ctx);
-		}
-	};
-
-	class player_controller_hook : public hook<world> {
-	public:
-		using hook::hook;
-
-		auto update(
-		) -> void override {
-			auto* current = m_owner->current_scene();
-			if (!current) {
-				return;
-			}
-
-			const auto& factory = current->player_factory();
-			if (!factory) {
-				return;
-			}
-
-			auto& reg = current->registry();
-
-			if (!m_owner->networked()) {
-				if (!m_local_player_created) {
-					const auto player_id = factory(*current, std::nullopt);
-					m_owner->set_local_controlled_entity(player_id);
-					m_local_player_created = true;
-				}
-				return;
-			}
-
-			const bool is_server = m_owner->authoritative();
-
-			if (!is_server) {
-				const auto current_local = m_owner->local_controlled_entity();
-				if (current_local.exists()) {
-
-					id our_controller{};
-					for (const auto& [ctrl_id, local_id] : m_controller_to_local_player) {
-						if (local_id == current_local) {
-							our_controller = ctrl_id;
-							break;
-						}
-					}
-
-					if (our_controller.exists() && !reg.try_component<player_controller>(our_controller)) {
-						if (reg.exists(current_local)) {
-							reg.remove(current_local);
-						}
-						m_owner->set_local_controlled_entity({});
-						m_processed.erase(our_controller);
-						m_controller_to_local_player.erase(our_controller);
-					}
-				}
-			}
-
-			for (auto& pc : reg.components<player_controller>()) {
-				const auto controller_id = pc.owner_id();
-
-				if (is_server) {
-					if (pc.controlled_entity_id.exists()) {
-						continue;
-					}
-
-					const auto player_id = factory(*current, std::nullopt);
-					pc.controlled_entity_id = player_id;
-					reg.mark_component_updated<player_controller>(controller_id);
-				}
-				else {
-					if (!pc.controlled_entity_id.exists()) {
-						continue;
-					}
-
-					if (m_processed.contains(controller_id)) {
-						continue;
-					}
-
-					const auto our_controller = m_owner->local_controller_id();
-					if (!our_controller.exists() || controller_id != our_controller) {
-						m_processed.insert(controller_id);
-						continue;
-					}
-
-					const auto current_local = m_owner->local_controlled_entity();
-					if (current_local.exists() && reg.exists(current_local)) {
-						m_processed.insert(controller_id);
-						continue;
-					}
-
-					if (current_local.exists()) {
-						for (auto it = m_controller_to_local_player.begin(); it != m_controller_to_local_player.end(); ) {
-							if (it->second == current_local) {
-								m_processed.erase(it->first);
-								it = m_controller_to_local_player.erase(it);
-							} else {
-								++it;
-							}
-						}
-						if (reg.exists(current_local)) {
-							reg.remove(current_local);
-						}
-					}
-
-					const auto local_player_id = factory(*current, pc.controlled_entity_id);
-					m_owner->set_local_controlled_entity(local_player_id);
-					m_processed.insert(controller_id);
-					m_controller_to_local_player[controller_id] = local_player_id;
-				}
-			}
-		}
-	private:
-		std::unordered_set<id> m_processed;
-		std::unordered_map<id, id> m_controller_to_local_player;
-		bool m_local_player_created = false;
+		input_sampler_fn m_input_sampler;
+		std::unordered_set<gse::id> m_pc_processed;
+		std::unordered_map<gse::id, gse::id> m_pc_controller_to_local_player;
+		bool m_pc_local_player_created = false;
 	};
 }
 
@@ -323,74 +166,192 @@ auto gse::director::when(const trigger& trigger) -> director& {
 	return *this;
 }
 
-gse::world::world(scheduler& sched, const std::string_view name)
-	: hookable(name),
-	  m_scheduler(std::addressof(sched)) {
-	struct default_world : hook<world> {
-		using hook::hook;
+auto gse::local_input_sampler(world& w, std::function<void(const evaluation_context&)> fn) -> void {
+	const auto local_id = w.local_controlled_entity();
+	if (!local_id.exists()) {
+		return;
+	}
 
-		auto update() -> void override {
-			if (m_owner->m_networked) {
-				return;
+	const auto& a = w.state_of<actions::system_state>();
+
+	evaluation_context ctx{
+		.client_id = local_id,
+		.input = std::addressof(a.current_state()),
+		.registry = &w.registry(),
+	};
+
+	fn(ctx);
+}
+
+gse::world::world(scheduler& sched, const std::string_view name) : identifiable(std::string(name)), m_scheduler(std::addressof(sched)) {}
+
+auto gse::world::set_input_sampler(input_sampler_fn fn) -> void {
+	m_input_sampler = std::move(fn);
+}
+
+namespace gse {
+	auto world_update_player_controllers(world& w) -> void {
+		auto* current = w.current_scene();
+		if (!current) {
+			return;
+		}
+
+		const auto& factory = current->player_factory();
+		if (!factory) {
+			return;
+		}
+
+		auto& reg = current->registry();
+		auto& processed = w.m_pc_processed;
+		auto& controller_to_local_player = w.m_pc_controller_to_local_player;
+
+		if (!w.networked()) {
+			if (!w.m_pc_local_player_created) {
+				const auto player_id = factory(*current, std::nullopt);
+				w.set_local_controlled_entity(player_id);
+				w.m_pc_local_player_created = true;
 			}
+			return;
+		}
 
-			const auto& a = m_owner->state_of<actions::system_state>();
-			const auto& s = a.current_state();
+		const bool is_server = w.authoritative();
 
-			a.sample_all_channels(s);
-
-			for (const auto& [scene_id, condition] : m_owner->m_triggers) {
-				const evaluation_context ctx{
-					.client_id = m_owner->m_client_id,
-					.input = std::addressof(s),
-					.registry = &m_owner->m_registry
-				};
-
-				if (condition(ctx) && scene_id != m_owner->m_active_scene) {
-					if (m_owner->m_active_scene.has_value()) {
-						if (auto* old_scene = m_owner->scene(m_owner->m_active_scene.value())) {
-							old_scene->set_active(false);
-							old_scene->shutdown();
-						}
-					}
-
-					if (auto* new_scene = m_owner->scene(scene_id)) {
-						new_scene->add_hook<default_scene>();
-						new_scene->initialize();
-						new_scene->set_active(true);
-						m_owner->m_active_scene = new_scene->id();
+		if (!is_server) {
+			const auto current_local = w.local_controlled_entity();
+			if (current_local.exists()) {
+				id our_controller{};
+				for (const auto& [ctrl_id, local_id] : controller_to_local_player) {
+					if (local_id == current_local) {
+						our_controller = ctrl_id;
 						break;
 					}
 				}
-			}
 
-			if (m_owner->m_active_scene.has_value()) {
-				if (auto* active_scene = m_owner->scene(m_owner->m_active_scene.value())) {
-					active_scene->update();
+				if (our_controller.exists() && !reg.try_component<player_controller>(our_controller)) {
+					if (reg.exists(current_local)) {
+						reg.remove(current_local);
+					}
+					w.set_local_controlled_entity({});
+					processed.erase(our_controller);
+					controller_to_local_player.erase(our_controller);
 				}
 			}
 		}
 
-		auto render() -> void override {
-			for (const auto& scene : m_owner->m_scenes | std::views::values) {
-				if (scene->active()) {
-					scene->render();
+		for (auto& pc : reg.components<player_controller>()) {
+			const auto controller_id = pc.owner_id();
+
+			if (is_server) {
+				if (pc.controlled_entity_id.exists()) {
+					continue;
+				}
+
+				const auto player_id = factory(*current, std::nullopt);
+				pc.controlled_entity_id = player_id;
+				reg.mark_component_updated<player_controller>(controller_id);
+			}
+			else {
+				if (!pc.controlled_entity_id.exists()) {
+					continue;
+				}
+
+				if (processed.contains(controller_id)) {
+					continue;
+				}
+
+				const auto our_controller = w.local_controller_id();
+				if (!our_controller.exists() || controller_id != our_controller) {
+					processed.insert(controller_id);
+					continue;
+				}
+
+				const auto current_local = w.local_controlled_entity();
+				if (current_local.exists() && reg.exists(current_local)) {
+					processed.insert(controller_id);
+					continue;
+				}
+
+				if (current_local.exists()) {
+					for (auto it = controller_to_local_player.begin(); it != controller_to_local_player.end(); ) {
+						if (it->second == current_local) {
+							processed.erase(it->first);
+							it = controller_to_local_player.erase(it);
+						}
+						else {
+							++it;
+						}
+					}
+					if (reg.exists(current_local)) {
+						reg.remove(current_local);
+					}
+				}
+
+				const auto local_player_id = factory(*current, pc.controlled_entity_id);
+				w.set_local_controlled_entity(local_player_id);
+				processed.insert(controller_id);
+				controller_to_local_player[controller_id] = local_player_id;
+			}
+		}
+	}
+}
+
+auto gse::world::update() -> void {
+	if (m_networked) {
+		auto& a = state_of<actions::system_state>();
+
+		if (m_input_sampler) {
+			m_input_sampler(*this, [&](const evaluation_context& ctx) {
+				if (!ctx.input || !ctx.client_id) {
+					return;
+				}
+				a.sample_for_entity(*ctx.input, *ctx.client_id);
+			});
+		}
+	}
+	else {
+		const auto& a = state_of<actions::system_state>();
+		const auto& s = a.current_state();
+
+		a.sample_all_channels(s);
+
+		for (const auto& [scene_id, condition] : m_triggers) {
+			const evaluation_context ctx{
+				.client_id = m_client_id,
+				.input = std::addressof(s),
+				.registry = &m_registry,
+			};
+
+			if (condition(ctx) && scene_id != m_active_scene) {
+				if (m_active_scene.has_value()) {
+					if (auto* old_scene = scene(m_active_scene.value())) {
+						old_scene->set_active(false);
+					}
+				}
+
+				if (auto* new_scene = scene(scene_id)) {
+					new_scene->set_active(true);
+					m_active_scene = new_scene->id();
+					break;
 				}
 			}
 		}
+	}
 
-		auto shutdown() -> void override {
-			for (const auto& scene : m_owner->m_scenes | std::views::values) {
-				if (scene->active()) {
-					scene->shutdown();
-				}
-			}
-			m_owner->m_scenes.clear();
-			m_owner->m_active_scene.reset();
+	world_update_player_controllers(*this);
+}
+
+auto gse::world::render() -> void {}
+
+auto gse::world::shutdown() -> void {
+	for (const auto& scene : m_scenes | std::views::values) {
+		if (scene->active()) {
+			scene->set_active(false);
 		}
-	};
+	}
+	m_scenes.clear();
+	m_active_scene.reset();
 
-	add_hook<default_world>();
+
 }
 
 template <typename State>
@@ -412,10 +373,11 @@ auto gse::world::direct() -> director {
 	return director(this);
 }
 
-template <typename... Hooks, typename... Args>
-auto gse::world::add(Args&&... args) -> gse::scene* {
-	auto new_scene = std::make_unique<gse::scene>(m_registry, std::forward<Args>(args)...);
-	(new_scene->template add_hook<Hooks>(), ...);
+auto gse::world::add(std::string_view name, scene::setup_fn setup) -> gse::scene* {
+	auto new_scene = std::make_unique<gse::scene>(m_registry, name);
+	if (setup) {
+		new_scene->set_setup(std::move(setup));
+	}
 
 	auto* scene_ptr = new_scene.get();
 	m_scenes[scene_ptr->id()] = std::move(new_scene);
@@ -432,15 +394,10 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 	if (m_active_scene.has_value() && m_active_scene.value() == scene_id) {
 		if (auto* old_scene = scene(m_active_scene.value())) {
 			old_scene->set_active(false);
-			old_scene->shutdown();
 		}
 	}
 
 	if (auto* new_scene = scene(scene_id)) {
-		auto& a = state_of<actions::system_state>();
-
-		new_scene->add_hook<default_scene>();
-		new_scene->initialize();
 		new_scene->set_active(true);
 		m_active_scene = new_scene->id();
 	}
@@ -460,7 +417,9 @@ auto gse::world::deactivate(const gse::id& scene_id) -> void {
 	);
 
 	if (m_active_scene.has_value()) {
-		scene(m_active_scene.value())->shutdown();
+		if (auto* old_scene = scene(m_active_scene.value())) {
+			old_scene->set_active(false);
+		}
 	}
 
 	m_active_scene = std::nullopt;
@@ -484,7 +443,7 @@ auto gse::world::set_networked(const bool is_networked) -> void {
 	m_networked = is_networked;
 }
 
-auto gse::world::triggers() -> const std::vector<trigger>& {
+auto gse::world::triggers() const -> std::span<const trigger> {
 	return m_triggers;
 }
 

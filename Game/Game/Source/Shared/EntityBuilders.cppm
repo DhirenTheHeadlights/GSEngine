@@ -5,7 +5,7 @@ import gse;
 
 export namespace gs {
 	auto build_box(
-		const gse::hook<gse::scene>* scene,
+		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
 		const gse::vec3<gse::length>& size,
@@ -13,19 +13,19 @@ export namespace gs {
 		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f),
 		float roughness = 0.5f,
 		float metallic = 0.0f
-	) -> gse::hook<gse::scene>::builder;
+	) -> gse::scene::builder;
 
 	auto build_sphere(
-		const gse::hook<gse::scene>* scene,
+		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
 		gse::length radius,
 		int sectors = 24,
 		int stacks = 16
-	) -> gse::hook<gse::scene>::builder;
+	) -> gse::scene::builder;
 
 	auto build_sphere_light(
-		const gse::hook<gse::scene>* scene,
+		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
 		gse::length radius,
@@ -34,15 +34,15 @@ export namespace gs {
 	) -> void;
 
 	auto build_static_box(
-		const gse::hook<gse::scene>* scene,
+		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
 		const gse::vec3<gse::length>& size,
 		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
-	) -> gse::hook<gse::scene>::builder;
+	) -> gse::scene::builder;
 }
 
-auto gs::build_box(const gse::hook<gse::scene>* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> gse::hook<gse::scene>::builder {
+auto gs::build_box(gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> gse::scene::builder {
 	const gse::inertia box_inertia = m * gse::dot(size, size) / 18.f;
 	const gse::material mat{
 		.base_color = gse::vec3f(gse::random_value(0.3f, 1.0f), gse::random_value(0.3f, 1.0f), gse::random_value(0.3f, 1.0f)),
@@ -61,11 +61,13 @@ auto gs::build_box(const gse::hook<gse::scene>* scene, const std::string& name, 
 			.bounding_box = { position, size },
 		})
 		.with<gse::render_component>({
-			.models = { gse::procedural_model::box(mat, size) },
+			.models = {
+				gse::procedural_model::box(mat, size),
+			},
 		});
 }
 
-auto gs::build_sphere(const gse::hook<gse::scene>* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> gse::hook<gse::scene>::builder {
+auto gs::build_sphere(gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> gse::scene::builder {
 	const gse::vec3<gse::length> size(radius * 2.f, radius * 2.f, radius * 2.f);
 
 	return scene->build(name)
@@ -81,7 +83,9 @@ auto gs::build_sphere(const gse::hook<gse::scene>* scene, const std::string& nam
 		.with<gse::render_component>({
 			.models = {
 				gse::procedural_model::sphere(
-					gse::material{ .diffuse_texture = gse::get<gse::texture>("Textures/Textures/sun") },
+					gse::material{
+						.diffuse_texture = gse::get<gse::texture>("Textures/Textures/sun"),
+					},
 					sectors,
 					stacks
 				),
@@ -89,7 +93,7 @@ auto gs::build_sphere(const gse::hook<gse::scene>* scene, const std::string& nam
 		});
 }
 
-auto gs::build_sphere_light(const gse::hook<gse::scene>* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> void {
+auto gs::build_sphere_light(gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> void {
 	build_sphere(scene, name, position, radius, sectors, stacks)
 		.with<gse::point_light_component>({
 			.color = gse::vec3f(1.f),
@@ -106,7 +110,7 @@ auto gs::build_sphere_light(const gse::hook<gse::scene>* scene, const std::strin
 		});
 }
 
-auto gs::build_static_box(const gse::hook<gse::scene>* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> gse::hook<gse::scene>::builder {
+auto gs::build_static_box(gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> gse::scene::builder {
 	const gse::mass wall_mass = gse::kilograms(1000.f);
 	const gse::inertia wall_inertia = wall_mass * gse::dot(size, size) / 18.f;
 

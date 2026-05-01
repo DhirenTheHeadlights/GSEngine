@@ -10,8 +10,6 @@ import :access_token;
 import :component;
 
 export namespace gse {
-	class registry;
-
 	class component_storage_base {
 	public:
 		virtual ~component_storage_base(

@@ -1,5 +1,7 @@
 export module gs:world_loader;
+
 import gse;
+
 import :main_test_scene;
 import :skybox_scene;
 import :second_test_scene;
@@ -7,56 +9,59 @@ import :physics_stress_test_scene;
 import :physics_joint_test_scene;
 
 export namespace gs {
-	class world_loader final : public gse::hook<gse::engine> {
-	public:
-		using hook::hook;
-		
-		auto initialize() -> void override {
-			m_default_scene_key = gse::actions::add<"Load Default Scene">(gse::key::f1);
-			m_skybox_scene_key = gse::actions::add<"Load Skybox Scene">(gse::key::f2);
-			m_second_test_scene_key = gse::actions::add<"Load Second Test Scene">(gse::key::f3);
-			m_stress_test_scene_key = gse::actions::add<"Load Stress Test Scene">(gse::key::f5);
-			m_joint_test_scene_key = gse::actions::add<"Load Joint Test Scene">(gse::key::f6);
+	auto world_loader_setup(
+		gse::engine& e
+	) -> void;
+}
 
-			m_owner->direct()
-				.when({
-					.scene_id = m_owner->add_scene<main_test_scene>("Default Scene")->id(),
-					.condition = [&](const gse::evaluation_context& ctx) {
-						return gse::actions::pressed(m_default_scene_key, *ctx.input);
-					}
-				})
-				.when({
-					.scene_id = m_owner->add_scene<skybox_scene>("Skybox Scene")->id(),
-					.condition = [&](const gse::evaluation_context& ctx) {
-						return gse::actions::pressed(m_skybox_scene_key, *ctx.input);
-					}
-				})
-				.when({
-					.scene_id = m_owner->add_scene<second_test_scene>("Second Test Scene")->id(),
-					.condition = [&](const gse::evaluation_context& ctx) {
-						return gse::actions::pressed(m_second_test_scene_key, *ctx.input);
-					}
-				})
-				.when({
-					.scene_id = m_owner->add_scene<physics_stress_test_scene>("Physics Stress Test")->id(),
-					.condition = [&](const gse::evaluation_context& ctx) {
-						return gse::actions::pressed(m_stress_test_scene_key, *ctx.input);
-					}
-				})
-				.when({
-					.scene_id = m_owner->add_scene<physics_joint_test_scene>("Physics Joint Test")->id(),
-					.condition = [&](const gse::evaluation_context& ctx) {
-						return gse::actions::pressed(m_joint_test_scene_key, *ctx.input);
-					}
-				});
-		}
-
-	private:
-		gse::actions::handle m_default_scene_key;
-		gse::actions::handle m_skybox_scene_key;
-		gse::actions::handle m_second_test_scene_key;
-		gse::actions::handle m_animation_test_scene_key;
-		gse::actions::handle m_stress_test_scene_key;
-		gse::actions::handle m_joint_test_scene_key;
+namespace gs {
+	struct scene_keys {
+		gse::actions::handle default_scene;
+		gse::actions::handle skybox_scene;
+		gse::actions::handle second_test_scene;
+		gse::actions::handle stress_test_scene;
+		gse::actions::handle joint_test_scene;
 	};
+
+	inline scene_keys g_scene_keys;
+}
+
+auto gs::world_loader_setup(gse::engine& e) -> void {
+	g_scene_keys.default_scene = gse::actions::add<"Load Default Scene">(gse::key::f1);
+	g_scene_keys.skybox_scene = gse::actions::add<"Load Skybox Scene">(gse::key::f2);
+	g_scene_keys.second_test_scene = gse::actions::add<"Load Second Test Scene">(gse::key::f3);
+	g_scene_keys.stress_test_scene = gse::actions::add<"Load Stress Test Scene">(gse::key::f5);
+	g_scene_keys.joint_test_scene = gse::actions::add<"Load Joint Test Scene">(gse::key::f6);
+
+	e.direct()
+		.when({
+			.scene_id = e.add_scene("Default Scene", &main_test_scene_setup)->id(),
+			.condition = [](const gse::evaluation_context& ctx) {
+				return gse::actions::pressed(g_scene_keys.default_scene, *ctx.input);
+			},
+		})
+		.when({
+			.scene_id = e.add_scene("Skybox Scene", &skybox_scene_setup)->id(),
+			.condition = [](const gse::evaluation_context& ctx) {
+				return gse::actions::pressed(g_scene_keys.skybox_scene, *ctx.input);
+			},
+		})
+		.when({
+			.scene_id = e.add_scene("Second Test Scene", &second_test_scene_setup)->id(),
+			.condition = [](const gse::evaluation_context& ctx) {
+				return gse::actions::pressed(g_scene_keys.second_test_scene, *ctx.input);
+			},
+		})
+		.when({
+			.scene_id = e.add_scene("Physics Stress Test", &physics_stress_test_scene_setup)->id(),
+			.condition = [](const gse::evaluation_context& ctx) {
+				return gse::actions::pressed(g_scene_keys.stress_test_scene, *ctx.input);
+			},
+		})
+		.when({
+			.scene_id = e.add_scene("Physics Joint Test", &physics_joint_test_scene_setup)->id(),
+			.condition = [](const gse::evaluation_context& ctx) {
+				return gse::actions::pressed(g_scene_keys.joint_test_scene, *ctx.input);
+			},
+		});
 }

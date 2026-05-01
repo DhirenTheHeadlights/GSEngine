@@ -112,8 +112,13 @@ auto gse::collision_information::axis() const -> gse::axis {
 	return axis::z;
 }
 
-gse::bounding_box::bounding_box(const vec3<position>& center, const vec3<displacement>& size, const std::uint32_t scale)
-	: m_state{ .center = center, .base_size = size, .scaled_size = size, .orientation = {}, .scale = static_cast<float>(scale) } {}
+gse::bounding_box::bounding_box(const vec3<position>& center, const vec3<displacement>& size, const std::uint32_t scale) : m_state{
+	.center = center,
+	.base_size = size,
+	.scaled_size = size,
+	.orientation = {},
+	.scale = static_cast<float>(scale),
+} {}
 
 auto gse::bounding_box::update(const vec3<position>& new_position, const quat& new_orientation) -> void {
 	m_state.center = new_position;
@@ -140,7 +145,11 @@ auto gse::bounding_box::obb() const -> gse::obb {
 		.center = m_state.center,
 		.size = m_state.scaled_size,
 		.orientation = m_state.orientation,
-		.axes = { rotation_matrix[0], rotation_matrix[1], rotation_matrix[2] }
+		.axes = {
+			rotation_matrix[0],
+			rotation_matrix[1],
+			rotation_matrix[2],
+		},
 	};
 }
 
@@ -234,7 +243,7 @@ auto gse::bounding_box::recalculate_aabb() const -> void {
 
 	m_aabb = {
 		.max = m_state.center + extent,
-		.min = m_state.center - extent
+		.min = m_state.center - extent,
 	};
 	m_is_aabb_dirty = false;
 }
