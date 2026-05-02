@@ -13,6 +13,13 @@ namespace gse::detail {
 export namespace gse::input {
 	class state {
 	public:
+		state() noexcept = default;
+		~state() noexcept = default;
+		state(const state&) = default;
+		state(state&&) noexcept = default;
+		auto operator=(const state&) -> state& = default;
+		auto operator=(state&&) noexcept -> state& = default;
+
 		auto key_pressed(
 			key key
 		) const -> bool;

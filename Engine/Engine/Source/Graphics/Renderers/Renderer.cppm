@@ -112,7 +112,7 @@ export namespace gse::renderer {
 
 		static auto initialize(const init_context& phase, resources& r, state& s) -> void;
 		static auto update(const update_context& ctx, state& s) -> async::task<>;
-		static auto shutdown(const shutdown_context& phase) -> void;
+		static auto shutdown(shutdown_context& phase) -> void;
 	};
 }
 
