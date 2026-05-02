@@ -30,6 +30,11 @@ import gse.ecs;
 import gse.math;
 import gse.save;
 
+gse::gui::system_state::system_state() = default;
+gse::gui::system_state::~system_state() = default;
+gse::gui::system_state::system_state(system_state&&) noexcept = default;
+auto gse::gui::system_state::operator=(system_state&&) noexcept -> system_state& = default;
+
 auto gse::gui::system::initialize(init_context& phase, resources&, system_state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();

@@ -52,10 +52,14 @@ namespace gse::gui::dock {
         ui_rect rect;
         ui_rect target;
         location dock_location = location::none;
+
+        ~area() noexcept = default;
     };
 
     struct space {
         std::array<area, 5> areas;
+
+        ~space() noexcept = default;
     };
 }
 

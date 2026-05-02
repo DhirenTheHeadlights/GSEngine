@@ -157,7 +157,7 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> async
 	co_return;
 }
 
-auto gse::renderer::system::shutdown(const shutdown_context& phase) -> void {
+auto gse::renderer::system::shutdown(shutdown_context& phase) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	if (auto* assets = phase.try_assets()) {
 		assets->shutdown();

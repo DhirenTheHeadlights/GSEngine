@@ -385,24 +385,41 @@ auto gse::invoke_initialize_for(init_context& phase, void* data_ptr) -> void {
 	}(std::make_index_sequence<arity_of<^^S::initialize>>{});
 }
 
+namespace gse::detail {
+	template <typename S, typename State>
+	concept shutdown_takes_resources_state = has_resources<S> && requires(shutdown_context& p, typename S::resources& r, State& s) {
+		S::shutdown(p, r, s);
+	};
+
+	template <typename S, typename State>
+	concept shutdown_takes_state = requires(shutdown_context& p, State& s) {
+		S::shutdown(p, s);
+	};
+
+	template <typename S>
+	concept shutdown_takes_phase_only = requires(shutdown_context& p) {
+		S::shutdown(p);
+	};
+}
+
 template <typename S, typename State>
 auto gse::invoke_shutdown_for(shutdown_context& phase, void* data_ptr) -> void {
 	auto& d = *static_cast<system_node_data<S, State>*>(data_ptr);
-	if constexpr (has_resources<S>) {
-		if constexpr (requires { S::shutdown(phase, d.resources.value, d.state); }) {
-			S::shutdown(phase, d.resources.value, d.state);
-			return;
-		}
+	if constexpr (detail::shutdown_takes_resources_state<S, State>) {
+		S::shutdown(phase, d.resources.value, d.state);
+		return;
 	}
-	if constexpr (requires { S::shutdown(phase, d.state); }) {
+	else if constexpr (detail::shutdown_takes_state<S, State>) {
 		S::shutdown(phase, d.state);
 		return;
 	}
-	if constexpr (requires { S::shutdown(phase); }) {
+	else if constexpr (detail::shutdown_takes_phase_only<S>) {
 		S::shutdown(phase);
 		return;
 	}
-	static_assert(!names_shutdown<S>, "System declares shutdown but no overload matched the dispatcher");
+	else {
+		static_assert(!names_shutdown<S>, "System declares shutdown but no overload matched the dispatcher");
+	}
 }
 
 template <typename S, typename State>
