@@ -371,7 +371,7 @@ auto gse::physics::system::initialize(const init_context& phase, update_data& ud
 
 	if (phase.try_get<gpu::context>()) {
 		auto& ctx = phase.get<gpu::context>();
-		auto& assets = phase.assets<gpu::context>();
+		auto& assets = phase.assets();
 		fd.gpu_solver.initialize_compute(ctx, assets);
 		s.gpu_buffers_created = fd.gpu_solver.buffers_created();
 	}

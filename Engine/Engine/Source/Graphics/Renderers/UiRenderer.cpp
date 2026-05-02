@@ -97,7 +97,7 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 
 auto gse::renderer::ui::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
     auto& ctx = phase.get<gpu::context>();
-    auto& assets = phase.assets<gpu::context>();
+    auto& assets = phase.assets();
 
     r.sprite_shader = assets.get<shader>("Shaders/Standard2D/sprite");
     assets.instantly_load(r.sprite_shader);

@@ -33,13 +33,11 @@ export namespace gse {
 		auto try_get(
 		) const -> T*;
 
-		template <typename Context>
 		auto assets(
-		) const -> asset_registry<Context>&;
+		) const -> asset::registry&;
 
-		template <typename Context>
 		auto try_assets(
-		) const -> asset_registry<Context>*;
+		) const -> asset::registry*;
 
 		template <typename State>
 		auto state_of(
@@ -71,13 +69,11 @@ export namespace gse {
 		auto try_get(
 		) const -> T*;
 
-		template <typename Context>
 		auto assets(
-		) const -> asset_registry<Context>&;
+		) const -> asset::registry&;
 
-		template <typename Context>
 		auto try_assets(
-		) const -> asset_registry<Context>*;
+		) const -> asset::registry*;
 	};
 
 	template <typename S, typename State>
@@ -135,22 +131,18 @@ auto gse::shutdown_context::try_get() const -> T* {
 	return static_cast<T*>(gpu_ctx);
 }
 
-template <typename Context>
-auto gse::init_context::assets() const -> asset_registry<Context>& {
-	return *static_cast<asset_registry<Context>*>(assets_ptr);
+inline auto gse::init_context::assets() const -> asset::registry& {
+	return *static_cast<asset::registry*>(assets_ptr);
 }
 
-template <typename Context>
-auto gse::init_context::try_assets() const -> asset_registry<Context>* {
-	return static_cast<asset_registry<Context>*>(assets_ptr);
+inline auto gse::init_context::try_assets() const -> asset::registry* {
+	return static_cast<asset::registry*>(assets_ptr);
 }
 
-template <typename Context>
-auto gse::shutdown_context::assets() const -> asset_registry<Context>& {
-	return *static_cast<asset_registry<Context>*>(assets_ptr);
+inline auto gse::shutdown_context::assets() const -> asset::registry& {
+	return *static_cast<asset::registry*>(assets_ptr);
 }
 
-template <typename Context>
-auto gse::shutdown_context::try_assets() const -> asset_registry<Context>* {
-	return static_cast<asset_registry<Context>*>(assets_ptr);
+inline auto gse::shutdown_context::try_assets() const -> asset::registry* {
+	return static_cast<asset::registry*>(assets_ptr);
 }

@@ -111,7 +111,7 @@ namespace gse::gui {
 
 	auto reload_font(
 		system_state& s,
-		const asset_registry<gpu::context>& assets
+		const asset::registry& assets
 	) -> void;
 }
 

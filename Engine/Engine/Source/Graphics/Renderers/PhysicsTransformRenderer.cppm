@@ -49,7 +49,7 @@ export namespace gse::renderer::physics_transform {
 
 auto gse::renderer::physics_transform::system::initialize(const init_context& phase, resources& r, frame_data& fd) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
+	auto& assets = phase.assets();
 
 	r.shader_handle = assets.get<shader>("Shaders/Compute/physics_instance_transform");
 	assets.instantly_load(r.shader_handle);

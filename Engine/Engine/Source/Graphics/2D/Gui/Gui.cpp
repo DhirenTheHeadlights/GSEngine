@@ -32,8 +32,8 @@ import gse.save;
 
 auto gse::gui::system::initialize(init_context& phase, resources&, system_state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
-	s.available_fonts = asset_registry<gpu::context>::enumerate_resources("Fonts", ".gfont");
+	auto& assets = phase.assets();
+	s.available_fonts = asset::registry::enumerate_resources("Fonts", ".gfont");
 
 	if (s.available_fonts.empty()) {
 		s.available_fonts.push_back("default");
@@ -161,7 +161,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 
 auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
-	auto& assets = ctx.assets<gpu::context>();
+	auto& assets = ctx.assets();
 	const auto current_viewport_size = vec2f(gpu.window().viewport());
 
 	if (s.previous_viewport_size.x() > 0.f && s.previous_viewport_size.y() > 0.f) {
@@ -696,7 +696,7 @@ auto gse::gui::apply_scale(system_state& s, style sty, const float viewport_heig
 	return sty;
 }
 
-auto gse::gui::reload_font(system_state& s, const asset_registry<gpu::context>& assets) -> void {
+auto gse::gui::reload_font(system_state& s, const asset::registry& assets) -> void {
 	if (s.font_index >= 0 && s.font_index < static_cast<int>(s.available_fonts.size())) {
 		s.gui_font = assets.get<font>("Fonts/" + s.available_fonts[s.font_index]);
 	}

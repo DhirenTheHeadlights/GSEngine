@@ -48,16 +48,12 @@ export namespace gse {
 		auto operator co_await(
 		) noexcept -> awaiter;
 
-	private:
-		std::shared_ptr<promise_state<T>> m_state;
-
 		explicit channel_future(
 			std::shared_ptr<promise_state<T>> state
 		);
 
-		template <typename U>
-		friend auto make_promise(
-		) -> std::pair<channel_future<U>, channel_promise<U>>;
+	private:
+		std::shared_ptr<promise_state<T>> m_state;
 	};
 
 	template <typename T>
@@ -65,6 +61,10 @@ export namespace gse {
 	public:
 		channel_promise(
 		) = default;
+
+		explicit channel_promise(
+			std::shared_ptr<promise_state<T>> state
+		);
 
 		auto fulfill(
 			T value
@@ -75,14 +75,6 @@ export namespace gse {
 
 	private:
 		std::shared_ptr<promise_state<T>> m_state;
-
-		explicit channel_promise(
-			std::shared_ptr<promise_state<T>> state
-		);
-
-		template <typename U>
-		friend auto make_promise(
-		) -> std::pair<channel_future<U>, channel_promise<U>>;
 	};
 
 	template <typename T>

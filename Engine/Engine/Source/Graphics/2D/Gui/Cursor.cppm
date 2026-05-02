@@ -31,7 +31,7 @@ export namespace gse::cursor {
 	) -> void;
 
 	auto render_to(
-		const asset_registry<gpu::context>& assets,
+		const asset::registry& assets,
 		std::vector<renderer::sprite_command>& commands, vec2f mouse_pos
 	) -> void;
 }
@@ -62,7 +62,7 @@ auto gse::cursor::set_style(const style new_style) -> void {
 	current_style = new_style;
 }
 
-auto gse::cursor::render_to(const asset_registry<gpu::context>& assets, std::vector<renderer::sprite_command>& commands, const vec2f mouse_pos) -> void {
+auto gse::cursor::render_to(const asset::registry& assets, std::vector<renderer::sprite_command>& commands, const vec2f mouse_pos) -> void {
 	const resource::handle<texture> blank_texture = assets.get<texture>(find("blank"));
 	constexpr vec4f color = { 1.f, 1.f, 1.f, 1.f };
 	constexpr float length = 22.f;

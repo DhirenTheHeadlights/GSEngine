@@ -160,7 +160,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(system::frame_data& fd
 
 auto gse::renderer::physics_debug::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
+	auto& assets = phase.assets();
 
 	phase.channels.push(save::register_property{
 		.category = "Graphics",

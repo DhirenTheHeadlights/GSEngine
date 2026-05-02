@@ -49,7 +49,7 @@ export namespace gse::renderer::depth_prepass {
 
 auto gse::renderer::depth_prepass::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
+	auto& assets = phase.assets();
 
 	r.meshlet_shader = assets.get<shader>("Shaders/Standard3D/meshlet_depth_only");
 	assets.instantly_load(r.meshlet_shader);

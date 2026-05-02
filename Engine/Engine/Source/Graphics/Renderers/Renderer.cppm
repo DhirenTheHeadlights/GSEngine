@@ -56,7 +56,7 @@ export namespace gse::renderer {
 	struct system {
 		struct resources {
 			gpu::context* ctx = nullptr;
-			asset_registry<gpu::context>* assets = nullptr;
+			asset::registry* assets = nullptr;
 
 			auto set_ui_focus(
 				bool focus

@@ -127,7 +127,7 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(system::resources& r, st
 
 auto gse::renderer::light_culling::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
+	auto& assets = phase.assets();
 	r.ctx = &ctx;
 
 	r.shader_handle = assets.get<shader>("Shaders/Compute/light_culling");
