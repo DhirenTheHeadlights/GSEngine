@@ -25,7 +25,7 @@ export namespace gse {
 
 	struct trigger {
 		id scene_id;
-		std::function<bool(const evaluation_context&)> condition;
+		bool (*condition)(const evaluation_context&) = nullptr;
 	};
 
 	class world;

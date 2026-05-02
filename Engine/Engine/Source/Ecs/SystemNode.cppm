@@ -237,17 +237,19 @@ namespace gse {
 		void* data_ptr
 	) -> void;
 
-	template <typename S, typename State>
-	auto noop_update_for(
-		update_context& ctx,
-		void* data_ptr
-	) -> async::task<>;
+	struct noop_dispatchers {
+		template <typename S, typename State>
+		static auto noop_update_for(
+			update_context& ctx,
+			void* data_ptr
+		) -> async::task<>;
 
-	template <typename S, typename State>
-	auto noop_frame_for(
-		frame_context& ctx,
-		void* data_ptr
-	) -> async::task<>;
+		template <typename S, typename State>
+		static auto noop_frame_for(
+			frame_context& ctx,
+			void* data_ptr
+		) -> async::task<>;
+	};
 
 	auto noop_snapshot(
 		void* data_ptr
@@ -334,12 +336,12 @@ auto gse::noop_initialize(init_context&, void*) -> void {}
 auto gse::noop_shutdown(shutdown_context&, void*) -> void {}
 
 template <typename S, typename State>
-auto gse::noop_update_for(update_context&, void*) -> async::task<> {
+auto gse::noop_dispatchers::noop_update_for(update_context&, void*) -> async::task<> {
 	co_return;
 }
 
 template <typename S, typename State>
-auto gse::noop_frame_for(frame_context&, void*) -> async::task<> {
+auto gse::noop_dispatchers::noop_frame_for(frame_context&, void*) -> async::task<> {
 	co_return;
 }
 
@@ -488,13 +490,13 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 		node.invoke_update_fn = &invoke_update_for<S, State>;
 	}
 	else {
-		node.invoke_update_fn = &noop_update_for<S, State>;
+		node.invoke_update_fn = &noop_dispatchers::noop_update_for<S, State>;
 	}
 	if constexpr (names_frame<S>) {
 		node.invoke_frame_fn = &invoke_frame_for<S, State>;
 	}
 	else {
-		node.invoke_frame_fn = &noop_frame_for<S, State>;
+		node.invoke_frame_fn = &noop_dispatchers::noop_frame_for<S, State>;
 	}
 	if constexpr (std::is_copy_assignable_v<State>) {
 		node.invoke_snapshot_fn = &invoke_snapshot_for<S, State>;

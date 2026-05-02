@@ -16,7 +16,7 @@ import gse.ecs;
 import gse.math;
 
 gse::render_component::render_component(const id owner_id, const params& p) : component(owner_id) {
-    const auto n = static_cast<std::size_t>(std::min<std::size_t>(p.models.size(), render_component_net::max_models));
+    const auto n = static_cast<std::size_t>(std::min<std::size_t>(p.models.size(), render_component_data::max_models));
 
     for (std::size_t i = 0; i < n; ++i) {
         networked_data().models[i] = p.models[i];
@@ -31,7 +31,7 @@ gse::render_component::render_component(const id owner_id, const params& p) : co
         model_instances.emplace_back(networked_data().models[i]);
     }
 
-    const auto sn = static_cast<std::size_t>(std::min<std::size_t>(p.skinned_models.size(), render_component_net::max_models));
+    const auto sn = static_cast<std::size_t>(std::min<std::size_t>(p.skinned_models.size(), render_component_data::max_models));
 
     for (std::size_t i = 0; i < sn; ++i) {
         networked_data().skinned_models[i] = p.skinned_models[i];

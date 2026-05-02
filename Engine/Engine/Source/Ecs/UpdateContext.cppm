@@ -103,10 +103,12 @@ export namespace gse {
 }
 
 namespace gse {
-	template <typename Access>
-	auto acquire_lock_for(
-		async::rw_mutex_registry& registry
-	) -> async::task<>;
+	struct acquire_helpers {
+		template <typename Access>
+		static auto acquire_lock_for(
+			async::rw_mutex_registry& registry
+		) -> async::task<>;
+	};
 
 	template <typename Access>
 	auto make_locked_handle(
@@ -138,7 +140,7 @@ gse::update_context::update_context(
 	m_access_mutexes(access_mutexes) {}
 
 template <typename Access>
-auto gse::acquire_lock_for(async::rw_mutex_registry& registry) -> async::task<> {
+auto gse::acquire_helpers::acquire_lock_for(async::rw_mutex_registry& registry) -> async::task<> {
 	using element_t = access_element_t<Access>;
 	auto& mutex = registry.mutex_for(id_of<element_t>());
 	if constexpr (is_read_access_v<Access>) {
@@ -201,7 +203,7 @@ auto gse::update_context::acquire() -> async::task<std::tuple<Accesses...>> {
 	});
 
 	using lock_fn = async::task<>(*)(async::rw_mutex_registry&);
-	constexpr std::array<lock_fn, count> fns = { &acquire_lock_for<Accesses>... };
+	constexpr std::array<lock_fn, count> fns = { &acquire_helpers::acquire_lock_for<Accesses>... };
 
 	static const id tid = acquire_trace_id<Accesses...>();
 	const auto key = trace::allocate_async_key();

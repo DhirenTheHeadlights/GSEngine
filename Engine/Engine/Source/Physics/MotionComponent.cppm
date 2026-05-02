@@ -9,38 +9,25 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.meta;
 
 export namespace gse::physics {
-    struct motion_component_net {
-        vec3<current_position> current_position;
-        vec3<velocity> current_velocity;
-
-        mass mass = kilograms(1.f);
-
-        quat orientation = quat(1.f, 0.f, 0.f, 0.f);
-        vec3<angular_velocity> angular_velocity;
-        inertia moment_of_inertia = kilograms_meters_squared(1.f);
-
-        bool affected_by_gravity = true;
-        bool airborne = true;
-        bool position_locked = false;
-    };
-
     struct motion_component_data {
-        vec3<current_position> current_position;
-        vec3<velocity> current_velocity;
+        [[= networked]] vec3<current_position> current_position;
+        [[= networked]] vec3<velocity> current_velocity;
 
-        mass mass = kilograms(1.f);
+        [[= networked]] mass mass = kilograms(1.f);
 
-        quat orientation = quat(1.f, 0.f, 0.f, 0.f);
-        vec3<angular_velocity> angular_velocity;
-        inertia moment_of_inertia = kilograms_meters_squared(163.f);
+        [[= networked]] quat orientation = quat(1.f, 0.f, 0.f, 0.f);
+        [[= networked]] vec3<angular_velocity> angular_velocity;
+        [[= networked]] inertia moment_of_inertia = kilograms_meters_squared(163.f);
 
         float restitution = 0.3f;
 
-        bool affected_by_gravity = true;
-        bool airborne = true;
-        bool position_locked = false;
+        [[= networked]] bool affected_by_gravity = true;
+        [[= networked]] bool airborne = true;
+        [[= networked]] bool position_locked = false;
+
         bool sleeping = false;
         bool update_orientation = true;
 
@@ -49,6 +36,8 @@ export namespace gse::physics {
 
         vec3<impulse> pending_impulse;
     };
+
+    using motion_component_net = project_by_annotation<motion_component_data, networked_tag>;
 
     struct motion_component : component<motion_component_data, motion_component_net> {
         using component::component;

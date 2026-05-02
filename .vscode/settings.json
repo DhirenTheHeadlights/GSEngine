@@ -14,5 +14,13 @@
     "*.cppm": "cpp",
     "*.ixx": "cpp"
   },
-  "cmake.environmentSetupScript": "${workspaceFolder}/scripts/vsdev_env.bat"
+  "cmake.environmentSetupScript": "${workspaceFolder}/scripts/vsdev_env.bat",
+  "cmake.debugConfig": {
+    "environment": [
+      {
+        "name": "VK_LAYER_PATH",
+        "value": "${env:VULKAN_SDK}/share/vulkan/explicit_layer.d:${env:VULKAN_SDK}/etc/vulkan/explicit_layer.d"
+      }
+    ]
+  }
 }
