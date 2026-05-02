@@ -16,21 +16,10 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.std_meta;
 export namespace gse::network {
 	template <typename T>
 	consteval auto component_name(
-	) -> std::string_view;
-
-	template <>
-	consteval auto component_name<physics::motion_component>(
-	) -> std::string_view;
-
-	template <>
-	consteval auto component_name<physics::collision_component>(
-	) -> std::string_view;
-
-	template <>
-	consteval auto component_name<render_component>(
 	) -> std::string_view;
 
 	template <typename T>
@@ -112,35 +101,9 @@ export namespace gse::network {
 	) -> void;
 }
 
-template <>
-consteval auto gse::network::component_name<gse::physics::motion_component>() -> std::string_view {
-	return "gse.physics.motion_component";
-}
-
-template <>
-consteval auto gse::network::component_name<gse::physics::collision_component>() -> std::string_view {
-	return "gse.physics.collision_component";
-}
-
-template <>
-consteval auto gse::network::component_name<gse::player_controller>() -> std::string_view {
-	return "gse.player_controller";
-}
-
-template <>
-consteval auto gse::network::component_name<gse::render_component>() -> std::string_view {
-	return "gse.render_component";
-}
-
-namespace gse::network {
-	template <typename T> struct always_false : std::false_type {
-	};
-}
-
-template <typename C>
+template <typename T>
 consteval auto gse::network::component_name() -> std::string_view {
-	static_assert(always_false<C>::value, "component_name<C> not specialized for this component type");
-	return {};
+	return std::meta::display_string_of(^^T);
 }
 
 template <typename T>

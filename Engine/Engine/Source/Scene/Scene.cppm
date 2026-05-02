@@ -57,7 +57,7 @@ export namespace gse {
 	public:
 		using player_factory_fn = std::function<gse::id(scene&, std::optional<gse::id>)>;
 		using init_fn = gse::move_only_function<void(gse::id, registry&)>;
-		using setup_fn = std::function<void(scene&)>;
+		using setup_fn = void(*)(scene&);
 
 		class builder {
 		public:

@@ -46,6 +46,10 @@ export namespace std::meta {
 	using ::std::meta::reflect_function;
 	using ::std::meta::extract;
 
+	using ::std::meta::data_member_spec;
+	using ::std::meta::data_member_options;
+	using ::std::meta::define_aggregate;
+
 	using ::std::meta::offset_of;
 	using ::std::meta::extent;
 

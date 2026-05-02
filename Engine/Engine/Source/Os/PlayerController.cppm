@@ -8,16 +8,15 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.meta;
 
 export namespace gse {
-	struct player_controller_net {
-		id controlled_entity_id;
-	};
-
 	struct player_controller_data {
-		id controlled_entity_id;
+		[[= networked]] id controlled_entity_id;
 		bool local_only_flag = false;
 	};
+
+	using player_controller_net = project_by_annotation<player_controller_data, networked_tag>;
 
 	struct player_controller : component<player_controller_data, player_controller_net> {
 		player_controller() = default;

@@ -30,6 +30,15 @@ target_link_libraries(GoonSquadLib PRIVATE Engine)
 add_executable(GoonSquad "${MAIN_CPP}")
 target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    get_filename_component(_gcc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(_gcc_root "${_gcc_bin_dir}" DIRECTORY)
+    set_target_properties(GoonSquad PROPERTIES
+        BUILD_RPATH "${_gcc_root}/lib64"
+        INSTALL_RPATH "${_gcc_root}/lib64"
+    )
+endif()
+
 if(VCPKG_BUILD_TYPE STREQUAL "release" OR VCPKG_TARGET_TRIPLET MATCHES "-release$")
     add_custom_command(TARGET GoonSquad POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

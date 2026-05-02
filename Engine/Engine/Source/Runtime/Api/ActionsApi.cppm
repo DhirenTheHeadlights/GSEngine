@@ -15,6 +15,13 @@ import gse.gpu;
 
 import :core_api;
 
+namespace gse::actions {
+	auto add_by_name(
+		std::string_view tag,
+		key default_key
+	) -> handle;
+}
+
 export namespace gse::actions {
 	template <fixed_string Tag>
 	auto add(
@@ -129,17 +136,21 @@ export namespace gse::actions {
 	) -> bool;
 }
 
-template <gse::actions::fixed_string Tag>
-auto gse::actions::add(const key default_key) -> handle {
-	const id action_id = generate_id(Tag.view());
+auto gse::actions::add_by_name(const std::string_view tag, const key default_key) -> handle {
+	const id action_id = generate_id(tag);
 
 	channel_add(add_action_request{
-		.name = std::string(Tag.view()),
+		.name = std::string(tag),
 		.default_key = default_key,
 		.action_id = action_id
-		});
+	});
 
 	return handle(action_id);
+}
+
+template <gse::actions::fixed_string Tag>
+auto gse::actions::add(const key default_key) -> handle {
+	return add_by_name(Tag.view(), default_key);
 }
 
 auto gse::actions::bind_axis2(const pending_axis2_info& info) -> id {

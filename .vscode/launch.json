@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug GoonSquad",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "cwd": "${workspaceFolder}",
+      "args": [],
+      "stopAtEntry": false,
+      "MIMode": "gdb",
+      "environment": [
+        {
+          "name": "VK_LAYER_PATH",
+          "value": "${env:VULKAN_SDK}/share/vulkan/explicit_layer.d:${env:VULKAN_SDK}/etc/vulkan/explicit_layer.d"
+        },
+        {
+          "name": "LD_LIBRARY_PATH",
+          "value": "${env:VULKAN_SDK}/lib:${env:LD_LIBRARY_PATH}"
+        }
+      ],
+      "setupCommands": [
+        { "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    }
+  ]
+}

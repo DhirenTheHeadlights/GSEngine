@@ -165,11 +165,35 @@ namespace gse::gui::states {
 }
 
 namespace gse::gui {
-    using state = std::variant<
-        states::idle,
-        states::dragging,
-        states::resizing,
-        states::resizing_divider,
-        states::pending_drag
-    >;
+    struct state {
+        using value_type = std::variant<
+            states::idle,
+            states::dragging,
+            states::resizing,
+            states::resizing_divider,
+            states::pending_drag
+        >;
+
+        value_type v;
+
+        state() noexcept = default;
+        ~state() noexcept = default;
+        state(const state&) = default;
+        state(state&&) noexcept = default;
+        auto operator=(const state&) -> state& = default;
+        auto operator=(state&&) noexcept -> state& = default;
+
+        template <typename T>
+            requires (!std::same_as<std::remove_cvref_t<T>, state>)
+                     && std::constructible_from<value_type, T&&>
+        state(T&& x) : v(std::forward<T>(x)) {}
+
+        template <typename T>
+            requires (!std::same_as<std::remove_cvref_t<T>, state>)
+                     && std::assignable_from<value_type&, T&&>
+        auto operator=(T&& x) -> state& {
+            v = std::forward<T>(x);
+            return *this;
+        }
+    };
 }

@@ -24,12 +24,26 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		true
 	);
 
+	vk::detail::defaultDispatchLoaderDynamic.init();
+
 	std::vector<const char*> validation_layers;
 	if (enable_validation) {
-		validation_layers.push_back("VK_LAYER_KHRONOS_validation");
+		constexpr auto layer_name = "VK_LAYER_KHRONOS_validation";
+		const auto available = vk::enumerateInstanceLayerProperties();
+		const bool layer_present = std::ranges::any_of(available, [&](const vk::LayerProperties& p) {
+			return std::string_view(p.layerName) == layer_name;
+		});
+		if (layer_present) {
+			validation_layers.push_back(layer_name);
+		} else {
+			log::println(
+				log::category::vulkan,
+				"Validation layer '{}' requested but not available on this system; continuing without it. "
+				"Install vulkan-validationlayers or set VK_LAYER_PATH to the SDK's explicit_layer.d directory.",
+				layer_name
+			);
+		}
 	}
-
-	vk::detail::defaultDispatchLoaderDynamic.init();
 
 	const std::uint32_t highest_supported_version = vk::enumerateInstanceVersion();
 	const vk::ApplicationInfo app_info{

@@ -13,31 +13,26 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.meta;
 
 export namespace gse {
-    struct render_component_net {
-        static constexpr std::size_t max_models = 16;
-        std::array<resource::handle<model>, max_models> models{};
-        std::uint32_t model_count = 0;
-        std::array<resource::handle<skinned_model>, max_models> skinned_models{};
-        std::uint32_t skinned_model_count = 0;
-        bool render = true;
-        bool render_bounding_boxes = true;
-    };
-
     struct render_component_data {
-        std::array<resource::handle<model>, render_component_net::max_models> models{};
-        std::uint32_t model_count = 0;
-        std::array<resource::handle<skinned_model>, render_component_net::max_models> skinned_models{};
-        std::uint32_t skinned_model_count = 0;
-        bool render = true;
-        bool render_bounding_boxes = true;
+        static constexpr std::size_t max_models = 16;
+
+        [[= networked]] std::array<resource::handle<model>, max_models> models{};
+        [[= networked]] std::uint32_t model_count = 0;
+        [[= networked]] std::array<resource::handle<skinned_model>, max_models> skinned_models{};
+        [[= networked]] std::uint32_t skinned_model_count = 0;
+        [[= networked]] bool render = true;
+        [[= networked]] bool render_bounding_boxes = true;
 
         std::vector<model_instance> model_instances;
         std::vector<skinned_model_instance> skinned_model_instances;
         vec3<length> center_of_mass;
         bool has_calculated_com = false;
     };
+
+    using render_component_net = project_by_annotation<render_component_data, networked_tag>;
 
     struct render_component final : component<render_component_data, render_component_net> {
         struct params {

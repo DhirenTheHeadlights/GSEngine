@@ -129,11 +129,6 @@ export namespace gse::gui {
 	};
 
 	struct system_state {
-		system_state();
-		~system_state();
-		system_state(system_state&&) noexcept;
-		auto operator=(system_state&&) noexcept -> system_state&;
-
 		id_mapped_collection<menu> menus;
 		menu* current_menu = nullptr;
 
