@@ -34,7 +34,7 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
     s.save_clip_action = register_action("Save Clip", key::f10);
 
     auto& ctx = phase.get<gpu::context>();
-    auto& assets = phase.assets<gpu::context>();
+    auto& assets = phase.assets();
 
     if (!ctx.device().video_encode_enabled()) {
         log::println(log::category::render, "Video encode not available, capture limited to screenshots");

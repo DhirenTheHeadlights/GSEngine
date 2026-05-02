@@ -100,9 +100,46 @@ export namespace gse::resource {
 		) -> void = 0;
 	};
 
+	template <typename Resource>
+	class loader_t : public loader_base {
+	public:
+		virtual auto get(
+			id id
+		) const -> handle<Resource> = 0;
+
+		virtual auto get(
+			const std::string& filename_no_ext
+		) const -> handle<Resource> = 0;
+
+		virtual auto try_get(
+			id id
+		) const -> handle<Resource> = 0;
+
+		virtual auto try_get(
+			const std::string& filename_no_ext
+		) const -> handle<Resource> = 0;
+
+		virtual auto instantly_load(
+			id resource_id
+		) -> void = 0;
+
+		[[nodiscard]] virtual auto state_of(
+			id resource_id
+		) const -> state = 0;
+
+		virtual auto add(
+			std::unique_ptr<Resource> resource
+		) -> handle<Resource> = 0;
+
+		virtual auto enqueue(
+			const std::string& name,
+			std::unique_ptr<Resource> resource
+		) -> handle<Resource> = 0;
+	};
+
 	template <typename Resource, typename RenderingContext>
 		requires gse::is_resource<Resource, RenderingContext> && gse::resource_context<RenderingContext>
-	class loader final : public loader_base, public non_copyable {
+	class loader final : public loader_t<Resource>, public non_copyable {
 	public:
 		explicit loader(
 			RenderingContext& context
@@ -149,38 +186,36 @@ export namespace gse::resource {
 
 		auto get(
 			id id
-		) const -> handle<Resource>;
+		) const -> handle<Resource> override;
 
 		auto get(
 			const std::string& filename_no_ext
-		) const -> handle<Resource>;
+		) const -> handle<Resource> override;
 
 		auto try_get(
 			id id
-		) const -> handle<Resource>;
+		) const -> handle<Resource> override;
 
 		auto try_get(
 			const std::string& filename_no_ext
-		) const -> handle<Resource>;
+		) const -> handle<Resource> override;
 
 		auto instantly_load(
 			id resource_id
-		) -> void;
+		) -> void override;
 
 		[[nodiscard]] auto state_of(
 			id resource_id
-		) const -> state;
-
-		template <typename... Args>
-			requires std::constructible_from<Resource, std::string, Args...>
-		auto queue(
-			const std::string& name,
-			Args&&... args
-		) -> handle<Resource>;
+		) const -> state override;
 
 		auto add(
-			Resource&& resource
-		) -> handle<Resource>;
+			std::unique_ptr<Resource> resource
+		) -> handle<Resource> override;
+
+		auto enqueue(
+			const std::string& name,
+			std::unique_ptr<Resource> resource
+		) -> handle<Resource> override;
 	private:
 		RenderingContext& m_context;
 		id_mapped_collection<std::unique_ptr<resource_slot<Resource>>> m_resources;
@@ -530,9 +565,7 @@ auto gse::resource::loader<R, C>::instantly_load(const id resource_id) -> void {
 
 template <typename R, typename C>
 	requires gse::is_resource<R, C> && gse::resource_context<C>
-template <typename... Args>
-	requires std::constructible_from<R, std::string, Args...>
-auto gse::resource::loader<R, C>::queue(const std::string& name, Args&&... args) -> handle<R> {
+auto gse::resource::loader<R, C>::enqueue(const std::string& name, std::unique_ptr<R> resource) -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	if (exists(name)) {
 		if (const auto resource_id = gse::find(name); m_resources.contains(resource_id)) {
@@ -541,10 +574,9 @@ auto gse::resource::loader<R, C>::queue(const std::string& name, Args&&... args)
 		}
 	}
 
-	auto temp_resource = std::make_unique<R>(name, std::forward<Args>(args)...);
-	const auto resource_id = temp_resource->id();
+	const auto resource_id = resource->id();
 
-	auto slot = std::make_unique<resource_slot<R>>(std::move(temp_resource), state::queued, "");
+	auto slot = std::make_unique<resource_slot<R>>(std::move(resource), state::queued, "");
 	auto* slot_raw = slot.get();
 	m_resources.add(resource_id, std::move(slot));
 	return handle<R>(resource_id, slot_raw, 0);
@@ -552,13 +584,12 @@ auto gse::resource::loader<R, C>::queue(const std::string& name, Args&&... args)
 
 template <typename R, typename C>
 	requires gse::is_resource<R, C> && gse::resource_context<C>
-auto gse::resource::loader<R, C>::add(R&& resource) -> handle<R> {
+auto gse::resource::loader<R, C>::add(std::unique_ptr<R> resource) -> handle<R> {
 	std::lock_guard lock(m_mutex);
-	const auto id = resource.id();
+	const auto id = resource->id();
 	assert(!m_resources.contains(id), std::source_location::current(), "Resource with ID {} already exists.", id);
 
-	auto resource_ptr = std::make_unique<R>(std::move(resource));
-	auto slot = std::make_unique<resource_slot<R>>(std::move(resource_ptr), state::loaded, "");
+	auto slot = std::make_unique<resource_slot<R>>(std::move(resource), state::loaded, "");
 	auto* slot_raw = slot.get();
 	m_resources.add(id, std::move(slot));
 

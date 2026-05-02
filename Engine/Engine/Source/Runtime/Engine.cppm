@@ -119,7 +119,7 @@ export namespace gse {
 		scheduler m_scheduler;
 		world m_world;
 		std::unique_ptr<gpu::context> m_render_ctx;
-		std::unique_ptr<asset_registry<gpu::context>> m_assets;
+		std::unique_ptr<asset::registry> m_assets;
 	};
 }
 

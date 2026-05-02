@@ -49,7 +49,7 @@ export namespace gse::renderer::cull_compute {
 
 auto gse::renderer::cull_compute::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
+	auto& assets = phase.assets();
 
 	r.shader_handle = assets.get<shader>("Shaders/Compute/cull_instances");
 	assets.instantly_load(r.shader_handle);

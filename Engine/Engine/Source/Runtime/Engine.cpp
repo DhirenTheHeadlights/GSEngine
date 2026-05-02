@@ -48,9 +48,9 @@ auto gse::engine::initialize() -> void {
 		);
 
 		auto& ctx = *m_render_ctx.get();
-		m_assets = std::make_unique<asset_registry<gpu::context>>(ctx);
+		m_assets = std::make_unique<asset::registry>(ctx);
 		ctx.set_asset_registry(m_assets.get());
-		m_assets->add_loader<shader>();
+		m_assets->add_loader<shader>(ctx);
 		m_assets->compile<shader_layout>();
 		m_scheduler.set_gpu_context(&ctx);
 		m_scheduler.set_asset_registry(m_assets.get());

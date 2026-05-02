@@ -99,7 +99,7 @@ export namespace gse::renderer::forward {
 
 auto gse::renderer::forward::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
+	auto& assets = phase.assets();
 
 	phase.channels.push<save::register_property>({
 		.category = "Graphics",

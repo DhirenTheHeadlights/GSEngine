@@ -63,7 +63,7 @@ auto gse::renderer::geometry_collector::system::resources::upload_skeleton_data(
 
 auto gse::renderer::geometry_collector::system::initialize(init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
+	auto& assets = phase.assets();
 	r.ctx = &ctx;
 
 	r.shader_handle = assets.get<shader>("Shaders/Standard3D/skinned_geometry_pass");

@@ -904,7 +904,7 @@ auto gse::vbd::gpu_solver::body_layout() const -> const buffer_layout& {
 	return m_body_layout;
 }
 
-auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx, asset_registry<gpu::context>& assets) -> void {
+auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx, asset::registry& assets) -> void {
 	m_compute.predict = assets.get<shader>("Shaders/VBDPhysics/vbd_predict");
 	m_compute.solve_color = assets.get<shader>("Shaders/VBDPhysics/vbd_solve_color");
 	m_compute.update_lambda = assets.get<shader>("Shaders/VBDPhysics/vbd_update_lambda");

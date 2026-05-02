@@ -49,17 +49,17 @@ auto gse::renderer::system::resources::context_ref() const -> const gpu::context
 
 auto gse::renderer::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
+	auto& assets = phase.assets();
 	r.ctx = &ctx;
 	r.assets = &assets;
 
-	assets.add_loader<texture>();
-	assets.add_loader<model>();
-	assets.add_loader<skinned_model>();
-	assets.add_loader<font>();
-	assets.add_loader<skeleton>();
-	assets.add_loader<clip_asset>();
-	assets.add_loader<audio_clip>();
+	assets.add_loader<texture>(ctx);
+	assets.add_loader<model>(ctx);
+	assets.add_loader<skinned_model>(ctx);
+	assets.add_loader<font>(ctx);
+	assets.add_loader<skeleton>(ctx);
+	assets.add_loader<clip_asset>(ctx);
+	assets.add_loader<audio_clip>(ctx);
 
 	assets.compile_all();
 
@@ -118,7 +118,7 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 
 auto gse::renderer::system::update(const update_context& ctx, state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
-	auto& assets = ctx.assets<gpu::context>();
+	auto& assets = ctx.assets();
 
 	if (s.hot_reload_enabled != assets.hot_reload_enabled()) {
 		if (s.hot_reload_enabled) {
@@ -159,7 +159,7 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> async
 
 auto gse::renderer::system::shutdown(const shutdown_context& phase) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	if (auto* assets = phase.try_assets<gpu::context>()) {
+	if (auto* assets = phase.try_assets()) {
 		assets->shutdown();
 	}
 	ctx.shutdown();

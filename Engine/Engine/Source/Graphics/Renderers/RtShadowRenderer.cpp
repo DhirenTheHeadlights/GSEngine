@@ -19,7 +19,7 @@ import gse.log;
 
 auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, frame_data& fd, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets<gpu::context>();
+	auto& assets = phase.assets();
 
 	log::println(log::category::render, "RT shadow: initialized");
 

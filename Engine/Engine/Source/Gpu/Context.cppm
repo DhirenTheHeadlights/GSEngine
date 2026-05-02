@@ -23,6 +23,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.save;
+import gse.assets;
 
 
 export namespace gse {
@@ -38,7 +39,7 @@ export namespace gse {
 }
 
 export namespace gse::gpu {
-	class context final : public non_copyable {
+	class context final : public non_copyable, public asset::context {
 	public:
 		explicit context(
 			const std::string& window_title,
@@ -73,7 +74,7 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto take_pending_finalizations(
-		) const -> std::vector<std::pair<id, id>>;
+		) -> std::vector<std::pair<id, id>> override;
 
 		[[nodiscard]] auto descriptor_heap(
 			this auto& self
@@ -142,10 +143,10 @@ export namespace gse::gpu {
 		) -> void;
 
 		[[nodiscard]] auto assets(
-		) -> asset_registry<context>&;
+		) -> asset::registry&;
 
 		[[nodiscard]] auto try_assets(
-		) -> asset_registry<context>*;
+		) -> asset::registry*;
 
 
 	private:
@@ -249,7 +250,7 @@ auto gse::gpu::context::mark_pending_for_finalization(id resource_type, const id
 	m_pending_gpu_resources.emplace_back(resource_type, resource_id);
 }
 
-auto gse::gpu::context::take_pending_finalizations() const -> std::vector<std::pair<id, id>> {
+auto gse::gpu::context::take_pending_finalizations() -> std::vector<std::pair<id, id>> {
 	std::lock_guard lock(m_mutex);
 	std::vector<std::pair<id, id>> result;
 	result.swap(m_pending_gpu_resources);
@@ -330,10 +331,10 @@ auto gse::gpu::context::set_asset_registry(void* registry) -> void {
 	m_asset_registry = registry;
 }
 
-auto gse::gpu::context::assets() -> asset_registry<context>& {
-	return *static_cast<asset_registry<context>*>(m_asset_registry);
+auto gse::gpu::context::assets() -> asset::registry& {
+	return *static_cast<asset::registry*>(m_asset_registry);
 }
 
-auto gse::gpu::context::try_assets() -> asset_registry<context>* {
-	return static_cast<asset_registry<context>*>(m_asset_registry);
+auto gse::gpu::context::try_assets() -> asset::registry* {
+	return static_cast<asset::registry*>(m_asset_registry);
 }
