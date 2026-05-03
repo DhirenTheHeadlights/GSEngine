@@ -22,11 +22,6 @@ target_sources(Engine
 
 target_sources(Engine PRIVATE ${ENGINE_IMPLS})
 
-set_source_files_properties(
-    "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Ecs/SystemNode.cppm"
-    PROPERTIES COMPILE_OPTIONS "-g0"
-)
-
 target_sources(Engine
     PUBLIC
         FILE_SET gse_modules_public TYPE CXX_MODULES

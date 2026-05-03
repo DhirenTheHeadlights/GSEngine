@@ -463,24 +463,14 @@ auto gse::gpu::descriptor_heap::align_up(const gpu::device_size value) const -> 
 	return (value + alignment - 1) & ~(alignment - 1);
 }
 
-gse::gpu::descriptor_set_writer::descriptor_set_writer(
-	descriptor_heap& heap,
-	gpu::handle<vulkan::descriptor_set_layout> layout,
-	const gpu::device_size layout_size,
-	std::vector<descriptor_binding_info> bindings
-) : m_heap(&heap), m_layout_size(layout_size), m_bindings(std::move(bindings)) {}
+gse::gpu::descriptor_set_writer::descriptor_set_writer(descriptor_heap& heap, gpu::handle<vulkan::descriptor_set_layout> layout, const gpu::device_size layout_size, std::vector<descriptor_binding_info> bindings) : m_heap(&heap), m_layout_size(layout_size), m_bindings(std::move(bindings)) {}
 
 auto gse::gpu::descriptor_set_writer::begin(const std::uint32_t frame_index) -> descriptor_region {
 	m_current_region = m_heap->allocate_transient(frame_index, m_layout_size);
 	return m_current_region;
 }
 
-auto gse::gpu::descriptor_set_writer::buffer(
-	std::uint32_t binding,
-	const gpu::handle<vulkan::buffer> buf,
-	const gpu::device_size offset,
-	const gpu::device_size range
-) -> descriptor_set_writer& {
+auto gse::gpu::descriptor_set_writer::buffer(std::uint32_t binding, const gpu::handle<vulkan::buffer> buf, const gpu::device_size offset, const gpu::device_size range) -> descriptor_set_writer& {
 	assert(binding < m_bindings.size(), std::source_location::current(),
 		"Binding {} out of range (max {})", binding, m_bindings.size());
 
@@ -501,12 +491,7 @@ auto gse::gpu::descriptor_set_writer::buffer(
 	return *this;
 }
 
-auto gse::gpu::descriptor_set_writer::image(
-	std::uint32_t binding,
-	const gpu::handle<vulkan::image_view> view,
-	const gpu::handle<vulkan::sampler> sampler,
-	const image_layout layout
-) -> descriptor_set_writer& {
+auto gse::gpu::descriptor_set_writer::image(std::uint32_t binding, const gpu::handle<vulkan::image_view> view, const gpu::handle<vulkan::sampler> sampler, const image_layout layout) -> descriptor_set_writer& {
 	assert(binding < m_bindings.size(), std::source_location::current(),
 		"Binding {} out of range (max {})", binding, m_bindings.size());
 
@@ -525,11 +510,7 @@ auto gse::gpu::descriptor_set_writer::image(
 	return *this;
 }
 
-auto gse::gpu::descriptor_set_writer::storage_image(
-	const std::uint32_t binding,
-	const gpu::handle<vulkan::image_view> view,
-	const image_layout layout
-) -> descriptor_set_writer& {
+auto gse::gpu::descriptor_set_writer::storage_image(const std::uint32_t binding, const gpu::handle<vulkan::image_view> view, const image_layout layout) -> descriptor_set_writer& {
 	assert(binding < m_bindings.size(), std::source_location::current(),
 		"Binding {} out of range (max {})", binding, m_bindings.size());
 
@@ -538,7 +519,7 @@ auto gse::gpu::descriptor_set_writer::storage_image(
 	const descriptor_get_info get_info{
 		.type = descriptor_type::storage_image,
 		.image = {
-			.sampler = 0,
+			.sampler = {},
 			.image_view = view,
 			.layout = layout,
 		},
@@ -548,12 +529,7 @@ auto gse::gpu::descriptor_set_writer::storage_image(
 	return *this;
 }
 
-auto gse::gpu::descriptor_set_writer::commit(
-	const gpu::handle<vulkan::command_buffer> cmd,
-	const bind_point point,
-	const gpu::handle<vulkan::pipeline_layout> layout,
-	const std::uint32_t set_index
-) const -> void {
+auto gse::gpu::descriptor_set_writer::commit(const gpu::handle<vulkan::command_buffer> cmd, const bind_point point, const gpu::handle<vulkan::pipeline_layout> layout, const std::uint32_t set_index) const -> void {
 	assert(m_current_region, std::source_location::current(), "Cannot commit without begin()");
 	m_current_region.heap->set_offset(cmd, point, layout, set_index, m_current_region);
 }

@@ -30,39 +30,102 @@ Punch list of places where the codebase ships a hand-written / duplicated / less
 
 ---
 
-## Vulkan enum → vk enum mapping (`Engine/Engine/Source/Gpu/Vulkan/VulkanReflect.cppm`)
+## Vulkan enum/struct → vk mapping — clang-p2996 ICE workaround (`Engine/Engine/Source/Gpu/Vulkan/Types.cppm`)
 
-**Location:** `gse::vulkan::to_vk(E)` for 11 scalar enums in `GpuTypes.cppm`: `cull_mode`, `compare_op`, `polygon_mode`, `topology`, `sampler_filter`, `sampler_address_mode`, `border_color`, `image_layout`, `image_format`, `vertex_format`, `descriptor_type`.
+**Status:** Working with reflection, via a workaround pattern. Resolved 2026-05-01.
 
-**Ideal:** One reflected function template reads the `[[= vk::X]]` annotation from each enumerator and returns the matching vk value. Adding a new enum = annotate enumerators, no mapping code.
+**Location:** `gse::vulkan::to_vk(...)` / `from_vk(...)` / `reflect_struct_to_vk(...)` templates at the bottom of `Vulkan/Types.cppm`. Covers ~22 scalar enums (`cull_mode`, `compare_op`, `polygon_mode`, `topology`, `sampler_filter`, `sampler_address_mode`, `border_color`, `image_format`, `vertex_format`, `image_view_type`, `image_layout`, `index_type`, `bind_point`, `descriptor_type`, `stage_flag`, `load_op`, `store_op`, `image_type`, `sample_count`, `acceleration_structure_type`, `build_acceleration_structure_mode`, `query_kind` — last one in `Vulkan/QueryPool.cppm`), ~10 bitflag enums (`buffer_usage`, `stage_flags`, `image_usage`, `image_aspect_flags`, `access_flags`, `pipeline_stage_flags`, `memory_property_flags`, `image_create_flags`, `geometry_flags`, `build_acceleration_structure_flags`), 4 struct conversions (`surface_format`, `viewport`, `buffer_copy_region`, `acceleration_structure_build_range_info`), and 4 reverse `from_vk` lookups (`vk::Result`, `vk::PresentModeKHR`, `vk::ColorSpaceKHR`, `vk::Format`). Total cost ~50 lines of generic machinery + per-enum annotations.
+
+**The bug we hit:** clang-p2996 (Bloomberg fork, as of 2026-04-23) rejects three patterns when they appear directly inside a *templated* function body:
+- `std::meta::extract<Vk>(first_annotation_of_type(loop_var, ^^Vk))` → "expressions of consteval-only type are only allowed in constant-evaluated contexts" (the `^^Vk` argument).
+- `[: std::meta::type_of(member) :]` where `member` came from a `template for` → "splice operand must be a constant expression".
+- `out.[: dst_member :] = ...` where `dst_member` was bound inside a lambda inside the `template for` body → "reflection not usable in a splice expression".
+
+The common cause is that `template for` loop variables, while `constexpr`, don't always propagate as constant expressions through nested calls/lambdas inside template bodies. Worked fine in non-template contexts.
+
+**Workaround (the shipped form):** push every reflective splice and `extract` call out of the template function body and into free `consteval` helpers that take `std::meta::info` arguments. The template body only does runtime lookup against a static table built by those helpers.
+
+```cpp
+// 1. Scalar: pre-build the {enum, vk} table at consteval time (no template-for, no splices).
+template <typename E, typename Vk>
+consteval auto build_to_vk_table() {
+    std::array<std::pair<E, Vk>, enumerator_count<E>()> result{};
+    auto enums = std::meta::enumerators_of(^^E);
+    for (std::size_t i = 0; i < enums.size(); ++i) {
+        result[i].first = std::meta::extract<E>(enums[i]);
+        for (auto ann : std::meta::annotations_of(enums[i])) {
+            if (std::meta::type_of(ann) == ^^Vk) {
+                result[i].second = std::meta::extract<Vk>(ann);
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+template <typename E>
+constexpr auto to_vk(E e) -> vk_type_of<E> {
+    constexpr auto table = build_to_vk_table<E, vk_type_of<E>>();
+    for (const auto& [k, v] : table) {
+        if (k == e) return v;
+    }
+    std::unreachable();
+}
+
+// 2. Bitflag: same idea but table sized by total annotation count, not enumerator count.
+//    Multiple annotations per enumerator (e.g. `eShaderDeviceAddress` co-annotated with
+//    `eUniformBuffer`/`eStorageBuffer`/`eIndirectBuffer`) get separate table rows.
+
+// 3. Struct walker: keep `template for` over member infos in the template, but pull the
+//    type-comparison and member-matching logic into free consteval helpers so the only
+//    splices in the template body are field accesses on the loop's `constexpr auto` infos.
+consteval auto match_dst_member(std::meta::info src, std::meta::info dst_type) -> std::meta::info;
+consteval auto types_match(std::meta::info src, std::meta::info dst) -> bool;
+
+template <typename Dst, typename Src>
+constexpr auto reflect_struct_to_vk(const Src& src) -> Dst {
+    Dst out{};
+    template for (constexpr auto src_member : std::define_static_array(
+            std::meta::nonstatic_data_members_of(^^Src, std::meta::access_context::unchecked()))) {
+        constexpr auto dst_member = match_dst_member(src_member, ^^Dst);
+        if constexpr (types_match(src_member, dst_member)) {
+            out.[: dst_member :] = src.[: src_member :];
+        } else {
+            out.[: dst_member :] = to_vk(src.[: src_member :]);
+        }
+    }
+    return out;
+}
+```
+
+**Why this dodges the bug:** the consteval helpers (`build_to_vk_table`, `match_dst_member`, `types_match`) take plain `std::meta::info` arguments and return values. Inside them, `^^Vk` etc. are normal uses of types from their own template parameters, not propagated through a `template for` loop variable. The template function body never has to do an `extract` or `type_of` call on a `template for` variable — it only does cheap runtime lookup against the pre-built table or boolean output of `types_match`.
+
+**Caveats/gotchas if you touch this:**
+- `to_vk<E>` and `reflect_struct_to_vk` must be `constexpr` (not just `auto`), otherwise `static_assert` validation in tests stops working. The codebase doesn't currently `static_assert` them but the validation tests in `tmp/p2996-reflect/` do.
+- `vk_type_of<E>` is a template alias that splices the result of a `consteval auto vk_type_for<E>()` helper — direct splicing of `type_of(annotations_of(...)[0])` in the alias triggered a different ICE; routing through a named consteval call is fine.
+- Bitflag annotation count is computed by a separate consteval `annotation_count<E, Vk>()` because it's not the same as `enumerator_count<E>()` — multiple annotations per enumerator inflate the row count.
+
+**The fully-reflective "ideal" (which still doesn't compile):**
 
 ```cpp
 template <typename Vk, typename E>
-    requires std::is_enum_v<E>
 auto reflect_to_vk(E e) -> Vk {
     template for (constexpr auto v : std::define_static_array(std::meta::enumerators_of(^^E))) {
         if ([:v:] == e) {
-            return [: std::define_static_array(std::meta::annotations_of(v, ^^Vk))[0] :];
+            return std::meta::extract<Vk>(first_annotation_of_type(v, ^^Vk));
         }
     }
     std::unreachable();
 }
 ```
 
-**Shipped:** Hand-written `switch` per enum in `VulkanReflect.cppm` (~200 lines). The `[[= vk::X]]` annotations are preserved on the enumerators in `GpuTypes.cppm` as future-proof documentation — they compile fine, they're just not consumed by any code.
+This is what upstream `155d7af0` shipped and what blew up. Once clang-p2996 fixes the constant-expression propagation through `template for` + nested consteval calls, you can collapse the two layers (`build_to_vk_table` + `to_vk`) into the single template above. Same flip applies to the bitflag and struct variants.
 
-**Blocker:** clang-p2996 (Bloomberg fork, commit `9ffb96e3ce362289008e14ad2a79a249f58aa90a` in `clang-p2996-v2`, as of 2026-04-23) crashes during "instantiating function definition" for any template function body that extracts annotation values from an enumerator info. Tried: `[:anns[0]:]` splice, `std::meta::extract<Vk>(ann)`, `template for` loop var, `index_sequence` pack expansion, per-enumerator helper templates. All either segfault or produce "reflection not usable in a splice expression."
+**Validate the fix:** standalone reproducers live at `tmp/p2996-reflect/` (workaround_a/b/c/d/e). When the toolchain catches up, port them to inline `template for` + direct extract; if all three patterns compile and the static_asserts hold, you can collapse the helpers.
 
-**Validate the fix:** Compile the snippet above against a single-file test enum. If `static_assert(reflect_to_vk<int>(E::a) == 1)` holds, the blocker is gone.
+**Flip cost:** ~30 minutes when the toolchain catches up. The annotations on enumerators are unchanged; only the implementation of `to_vk` / `from_vk` / `reflect_struct_to_vk` collapses.
 
-```cpp
-enum class E : int { a [[= 1]], b [[= 2]] };
-static_assert(reflect_to_vk<int>(E::a) == 1);
-```
-
-**Flip cost:** ~30 minutes. Replace `VulkanReflect.cppm`'s switches with one ~15-line reflected template + one-liner per-enum wrapper. Annotations already in place on enumerators. Call sites unchanged.
-
-**See also:** `memory/project_clang_p2996_bugs.md` bug #14 for the full pattern catalog.
+**See also:** `memory/project_clang_p2996_bugs.md` bug #14 for the full pattern catalog. Bugs #8 and #9 cover the bitflag/struct variants. The companion entries below for blend-preset and unit-system are unrelated to this one — that workaround unblocked enum/bitflag/struct reflection but didn't touch annotation-of-non-structural-type or namespace-injection.
 
 ---
 

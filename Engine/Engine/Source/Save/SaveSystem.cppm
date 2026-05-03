@@ -554,6 +554,32 @@ export namespace gse::save {
 
 }
 
+namespace gse::save {
+    [[nodiscard]] auto read_file_to_string(
+        const std::filesystem::path& path
+    ) -> std::optional<std::string>;
+}
+
+auto gse::save::read_file_to_string(const std::filesystem::path& path) -> std::optional<std::string> {
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        return std::nullopt;
+    }
+
+    std::string content(static_cast<std::size_t>(size), '\0');
+    if (size > 0) {
+        file.read(content.data(), static_cast<std::streamsize>(size));
+        content.resize(static_cast<std::size_t>(file.gcount()));
+    }
+    return content;
+}
+
 auto gse::save::property_base::as_bool() const -> bool {
 	return false;
 }
@@ -1263,16 +1289,12 @@ auto gse::save::state::load_from_file(const std::filesystem::path& path) -> bool
         return false;
     }
 
-    std::ifstream file(path);
-    if (!file) {
+    const auto content = read_file_to_string(path);
+    if (!content) {
         return false;
     }
 
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    const std::string content = oss.str();
-
-    auto parsed = toml::parse(content, path.string());
+    auto parsed = toml::parse(*content, path.string());
     if (!parsed) {
         log::println(log::level::warning, log::category::save_system, "TOML parse error in {} at {}:{}: {}", path.string(), parsed.error().line, parsed.error().column, parsed.error().message);
         return false;
@@ -1382,16 +1404,12 @@ auto gse::save::read_setting_early(const std::filesystem::path& path, const std:
         return std::nullopt;
     }
 
-    std::ifstream file(path);
-    if (!file) {
+    const auto content = read_file_to_string(path);
+    if (!content) {
         return std::nullopt;
     }
 
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    const std::string content = oss.str();
-
-    auto parsed = toml::parse(content, path.string());
+    auto parsed = toml::parse(*content, path.string());
     if (!parsed) {
         log::println(log::level::warning, log::category::save_system, "TOML parse error (early read) in {} at {}:{}: {}", path.string(), parsed.error().line, parsed.error().column, parsed.error().message);
         return std::nullopt;
@@ -1433,16 +1451,12 @@ auto gse::save::read_bool_setting_early(const std::filesystem::path& path, const
         return default_value;
     }
 
-    std::ifstream file(path);
-    if (!file) {
+    const auto content = read_file_to_string(path);
+    if (!content) {
         return default_value;
     }
 
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    const std::string content = oss.str();
-
-    auto parsed = toml::parse(content, path.string());
+    auto parsed = toml::parse(*content, path.string());
     if (!parsed || !parsed->is_table()) {
         return default_value;
     }
@@ -1482,17 +1496,19 @@ auto gse::save::state::read(const std::string_view category, const std::string_v
         return *value_str;
     }
     else if constexpr (std::is_enum_v<T>) {
-        std::istringstream iss(*value_str);
         std::underlying_type_t<T> int_val{};
-        if (iss >> int_val) {
+        const auto* first = value_str->data();
+        const auto* last = first + value_str->size();
+        if (std::from_chars(first, last, int_val).ec == std::errc{}) {
             return static_cast<T>(int_val);
         }
         return default_value;
     }
     else {
-        std::istringstream iss(*value_str);
         T result{};
-        if (iss >> result) {
+        const auto* first = value_str->data();
+        const auto* last = first + value_str->size();
+        if (std::from_chars(first, last, result).ec == std::errc{}) {
             return result;
         }
         return default_value;

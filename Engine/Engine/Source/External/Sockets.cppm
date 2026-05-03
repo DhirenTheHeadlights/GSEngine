@@ -19,6 +19,18 @@ module;
 export module gse.sockets;
 
 export {
+	using ::sockaddr;
+	using ::sockaddr_in;
+	using ::in_addr;
+	using ::socklen_t;
+
+	using ::socket;
+	using ::bind;
+	using ::getsockname;
+	using ::setsockopt;
+	using ::sendto;
+	using ::recvfrom;
+
 #ifdef _WIN32
 	using ::SOCKET;
 	using ::WSADATA;
@@ -33,21 +45,11 @@ export {
 	using ::ioctlsocket;
 	using ::WSAPoll;
 #else
-	using ::sockaddr;
-	using ::sockaddr_in;
-	using ::in_addr;
-	using ::socklen_t;
 	using ::pollfd;
 	using ::ssize_t;
 
-	using ::socket;
 	using ::close;
 	using ::fcntl;
-	using ::bind;
-	using ::getsockname;
-	using ::setsockopt;
-	using ::sendto;
-	using ::recvfrom;
 	using ::poll;
 #endif
 

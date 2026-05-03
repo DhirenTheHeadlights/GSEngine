@@ -277,7 +277,7 @@ auto gse::gpu::descriptor_writer::image_array(const std::string_view name, const
 auto gse::gpu::descriptor_writer::storage_image(const std::string_view name, const vulkan::basic_image<vulkan::device>& img, const image_layout layout) -> descriptor_writer& {
 	if (m_mode == mode::persistent) {
 		m_storage_image_infos[std::string(name)] = descriptor_image_info{
-			.sampler = 0,
+			.sampler = {},
 			.image_view = img.view(),
 			.layout = layout,
 		};

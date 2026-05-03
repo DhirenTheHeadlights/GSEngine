@@ -13,6 +13,7 @@ import :registries;
 import :update_context;
 import :frame_context;
 import :system_node;
+import :system_dispatch;
 import :registry;
 
 export namespace gse {

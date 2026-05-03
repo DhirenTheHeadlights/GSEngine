@@ -641,7 +641,7 @@ template <typename T>
 consteval auto gse::type_tag() -> std::string_view {
 	auto walk = [](this auto self, std::meta::info entity) -> std::string {
 		if (!std::meta::has_identifier(entity)) {
-			return {};
+			return std::string(std::meta::display_string_of(entity));
 		}
 		std::string parent_name = self(std::meta::parent_of(entity));
 		std::string my_name = std::string(std::meta::identifier_of(entity));
@@ -667,6 +667,6 @@ consteval auto gse::type_tag() -> std::string_view {
 		}
 		return parent_name + "::" + my_name;
 	};
-	return std::define_static_string(walk(^^T));
+	return std::define_static_string(walk(std::meta::dealias(^^T)));
 }
 

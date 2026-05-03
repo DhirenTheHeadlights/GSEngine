@@ -25,6 +25,7 @@ export namespace gse::vulkan {
 		gpu::image_format color_format = gpu::image_format::r8g8b8a8_unorm;
 		gpu::image_format depth_format = gpu::image_format::d32_sfloat;
 		bool has_color = false;
+		bool has_depth = false;
 		bool is_mesh_pipeline = false;
 	};
 
