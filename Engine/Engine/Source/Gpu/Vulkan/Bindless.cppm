@@ -131,7 +131,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 		.type = descriptor_type::combined_image_sampler,
 		.image = {
 			.sampler = std::bit_cast<handle<vulkan::sampler>>(*m_null_sampler),
-			.image_view = 0,
+			.image_view = {},
 			.layout = image_layout::undefined,
 		},
 	};

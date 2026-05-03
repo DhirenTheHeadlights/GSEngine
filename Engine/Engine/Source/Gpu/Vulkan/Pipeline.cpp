@@ -102,7 +102,7 @@ auto gse::vulkan::pipeline::create_graphics(const device& dev, const graphics_pi
 	const vk::PipelineRenderingCreateInfoKHR rendering_info{
 		.colorAttachmentCount = info.has_color ? 1u : 0u,
 		.pColorAttachmentFormats = info.has_color ? &vk_color_format : nullptr,
-		.depthAttachmentFormat = vk_depth_format
+		.depthAttachmentFormat = info.has_depth ? vk_depth_format : vk::Format::eUndefined
 	};
 
 	const auto blend_attachment = [&]() -> vk::PipelineColorBlendAttachmentState {

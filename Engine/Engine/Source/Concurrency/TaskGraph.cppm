@@ -205,7 +205,7 @@ auto gse::task_graph::notify_state_ready(const id state_type) -> void {
 	}
 
 	for (auto h : handles) {
-		task::post([h] { h.resume(); });
+		h.resume();
 	}
 }
 
@@ -238,7 +238,7 @@ auto gse::task_graph::wait_state_ready(const id state_type) -> async::task<> {
 			}
 
 			if (ready_now) {
-				task::post([h] { h.resume(); });
+				h.resume();
 			}
 		}
 

@@ -648,7 +648,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 		std::bit_cast<gpu::handle<vulkan::image>>(image),
 		std::bit_cast<gpu::handle<vulkan::image_view>>(view),
 		static_cast<gpu::image_format_value>(info.format),
-		reflect_from_vk<gpu::image_layout>(info.initialLayout, gpu::image_layout::undefined),
+		from_vk(info.initialLayout),
 		vec3u{ info.extent.width, info.extent.height, info.extent.depth },
 		std::move(alloc));
 }

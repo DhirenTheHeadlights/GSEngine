@@ -2,7 +2,6 @@ export module gse.gpu:types;
 
 import std;
 import vulkan;
-import gse.std_meta;
 
 import :handles;
 
@@ -676,66 +675,141 @@ export namespace gse::gpu {
 }
 
 export namespace gse::vulkan {
-	consteval auto first_annotation_of_type(
-		std::meta::info enumerator,
-		std::meta::info vk_type
-	) -> std::meta::info;
-
-	template <typename E>
-	consteval auto first_annotated_enumerator(
-	) -> std::meta::info;
-
-	template <typename E>
-	consteval auto enum_has_vk_annotation(
-	) -> bool;
-
-	template <typename E>
-	consteval auto bitflag_enum_has_vk_annotation(
-	) -> bool;
-
-	template <typename Vk, typename E>
-		requires std::is_enum_v<E>
-	auto reflect_to_vk(
-		E e
-	) -> Vk;
-
-	template <typename E, typename Vk>
-		requires std::is_enum_v<E>
-	auto reflect_from_vk(
-		Vk v,
-		E fallback = E{}
-	) -> E;
-
-	template <typename E>
-	using vk_type_of = [: std::meta::type_of(std::meta::annotations_of(std::meta::enumerators_of(^^E)[0])[0]) :];
-
-	template <typename E>
-	using vk_flag_bit_type_of = [: std::meta::type_of(std::meta::annotations_of(first_annotated_enumerator<E>())[0]) :];
-
-	template <typename FlagEnum>
-	consteval auto collect_flag_annotations(
-	) -> std::vector<std::pair<FlagEnum, vk_flag_bit_type_of<FlagEnum>>>;
-
-	consteval auto snake_to_camel(
-		std::string_view snake
-	) -> std::string;
-
-	template <typename E>
-		requires (enum_has_vk_annotation<E>())
 	auto to_vk(
-		E e
-	) -> vk_type_of<E>;
+		gpu::cull_mode m
+	) -> vk::CullModeFlagBits;
 
-	template <typename FlagEnum>
-		requires (bitflag_enum_has_vk_annotation<FlagEnum>())
 	auto to_vk(
-		gse::flags<FlagEnum> fls
-	) -> vk::Flags<vk_flag_bit_type_of<FlagEnum>>;
+		gpu::compare_op op
+	) -> vk::CompareOp;
 
-	template <typename Dst, typename Src>
-	auto reflect_struct_to_vk(
-		const Src& src
-	) -> Dst;
+	auto to_vk(
+		gpu::polygon_mode m
+	) -> vk::PolygonMode;
+
+	auto to_vk(
+		gpu::topology t
+	) -> vk::PrimitiveTopology;
+
+	auto to_vk(
+		gpu::sampler_filter f
+	) -> vk::Filter;
+
+	auto to_vk(
+		gpu::sampler_address_mode m
+	) -> vk::SamplerAddressMode;
+
+	auto to_vk(
+		gpu::border_color c
+	) -> vk::BorderColor;
+
+	auto to_vk(
+		gpu::image_format f
+	) -> vk::Format;
+
+	auto to_vk(
+		gpu::image_view_type t
+	) -> vk::ImageViewType;
+
+	auto to_vk(
+		gpu::image_layout l
+	) -> vk::ImageLayout;
+
+	auto to_vk(
+		gpu::index_type t
+	) -> vk::IndexType;
+
+	auto to_vk(
+		gpu::bind_point p
+	) -> vk::PipelineBindPoint;
+
+	auto to_vk(
+		gpu::descriptor_type t
+	) -> vk::DescriptorType;
+
+	auto to_vk(
+		gpu::vertex_format f
+	) -> vk::Format;
+
+	auto to_vk(
+		gpu::acceleration_structure_type t
+	) -> vk::AccelerationStructureTypeKHR;
+
+	auto to_vk(
+		gpu::build_acceleration_structure_mode m
+	) -> vk::BuildAccelerationStructureModeKHR;
+
+	auto to_vk(
+		gpu::result r
+	) -> vk::Result;
+
+	auto to_vk(
+		gpu::present_mode m
+	) -> vk::PresentModeKHR;
+
+	auto to_vk(
+		gpu::color_space c
+	) -> vk::ColorSpaceKHR;
+
+	auto to_vk(
+		gpu::load_op op
+	) -> vk::AttachmentLoadOp;
+
+	auto to_vk(
+		gpu::store_op op
+	) -> vk::AttachmentStoreOp;
+
+	auto to_vk(
+		gpu::image_type t
+	) -> vk::ImageType;
+
+	auto to_vk(
+		gpu::sample_count c
+	) -> vk::SampleCountFlagBits;
+
+	auto to_vk(
+		gpu::stage_flag s
+	) -> vk::ShaderStageFlagBits;
+
+	auto to_vk(
+		gpu::buffer_usage fls
+	) -> vk::BufferUsageFlags;
+
+	auto to_vk(
+		gpu::image_usage fls
+	) -> vk::ImageUsageFlags;
+
+	auto to_vk(
+		gpu::stage_flags fls
+	) -> vk::ShaderStageFlags;
+
+	auto to_vk(
+		gpu::build_acceleration_structure_flags fls
+	) -> vk::BuildAccelerationStructureFlagsKHR;
+
+	auto to_vk(
+		gpu::geometry_flags fls
+	) -> vk::GeometryFlagsKHR;
+
+	auto to_vk(
+		gpu::image_aspect_flags fls
+	) -> vk::ImageAspectFlags;
+
+	auto to_vk(
+		gpu::access_flags fls
+	) -> vk::AccessFlags2;
+
+	auto to_vk(
+		gpu::pipeline_stage_flags fls
+	) -> vk::PipelineStageFlags2;
+
+	auto to_vk(
+		gpu::memory_property_flags fls
+	) -> vk::MemoryPropertyFlags;
+
+	auto to_vk(
+		gpu::image_create_flags fls
+	) -> vk::ImageCreateFlags;
 
 	auto to_vk(
 		const gpu::surface_format& sf
@@ -790,6 +864,10 @@ export namespace gse::vulkan {
 	) -> gpu::image_format;
 
 	auto from_vk(
+		vk::ImageLayout l
+	) -> gpu::image_layout;
+
+	auto from_vk(
 		const vk::SurfaceFormatKHR& sf
 	) -> gpu::surface_format;
 
@@ -798,151 +876,704 @@ export namespace gse::vulkan {
 	) -> gpu::surface_capabilities;
 }
 
-consteval auto gse::vulkan::first_annotation_of_type(const std::meta::info enumerator, const std::meta::info vk_type) -> std::meta::info {
-	for (std::meta::info ann : std::meta::annotations_of(enumerator)) {
-		if (std::meta::type_of(ann) == vk_type) {
-			return ann;
-		}
-	}
-	return {};
-}
-
-template <typename E>
-consteval auto gse::vulkan::enum_has_vk_annotation() -> bool {
-	if constexpr (std::is_enum_v<E>) {
-		auto enums = std::meta::enumerators_of(^^E);
-		if (enums.empty()) {
-			return false;
-		}
-		return !std::meta::annotations_of(enums[0]).empty();
-	}
-	return false;
-}
-
-template <typename E>
-consteval auto gse::vulkan::first_annotated_enumerator() -> std::meta::info {
-	if constexpr (std::is_enum_v<E>) {
-		for (auto e : std::meta::enumerators_of(^^E)) {
-			if (!std::meta::annotations_of(e).empty()) {
-				return e;
-			}
-		}
-	}
-	return {};
-}
-
-template <typename E>
-consteval auto gse::vulkan::bitflag_enum_has_vk_annotation() -> bool {
-	if constexpr (std::is_enum_v<E>) {
-		for (auto e : std::meta::enumerators_of(^^E)) {
-			if (!std::meta::annotations_of(e).empty()) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
-template <typename FlagEnum>
-consteval auto gse::vulkan::collect_flag_annotations() -> std::vector<std::pair<FlagEnum, vk_flag_bit_type_of<FlagEnum>>> {
-	using vk_bits = vk_flag_bit_type_of<FlagEnum>;
-	std::vector<std::pair<FlagEnum, vk_bits>> result;
-	for (auto e : std::meta::enumerators_of(^^FlagEnum)) {
-		for (auto a : std::meta::annotations_of(e)) {
-			result.emplace_back(std::meta::extract<FlagEnum>(e), std::meta::extract<vk_bits>(a));
-		}
-	}
-	return result;
-}
-
-consteval auto gse::vulkan::snake_to_camel(const std::string_view snake) -> std::string {
-	std::string result;
-	bool capitalize = false;
-	for (char c : snake) {
-		if (c == '_') {
-			capitalize = true;
-		} else if (capitalize) {
-			result += static_cast<char>(c - 'a' + 'A');
-			capitalize = false;
-		} else {
-			result += c;
-		}
-	}
-	return result;
-}
-
-template <typename Vk, typename E>
-	requires std::is_enum_v<E>
-auto gse::vulkan::reflect_to_vk(const E e) -> Vk {
-	template for (constexpr auto v : std::define_static_array(std::meta::enumerators_of(^^E))) {
-		if ([:v:] == e) {
-			return std::meta::extract<Vk>(first_annotation_of_type(v, ^^Vk));
-		}
+auto gse::vulkan::to_vk(const gpu::cull_mode m) -> vk::CullModeFlagBits {
+	switch (m) {
+		case gpu::cull_mode::none:
+			return vk::CullModeFlagBits::eNone;
+		case gpu::cull_mode::front:
+			return vk::CullModeFlagBits::eFront;
+		case gpu::cull_mode::back:
+			return vk::CullModeFlagBits::eBack;
 	}
 	std::unreachable();
 }
 
-template <typename E, typename Vk>
-	requires std::is_enum_v<E>
-auto gse::vulkan::reflect_from_vk(const Vk v, const E fallback) -> E {
-	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
-		if (std::meta::extract<Vk>(first_annotation_of_type(e, ^^Vk)) == v) {
-			return [:e:];
-		}
+auto gse::vulkan::to_vk(const gpu::compare_op op) -> vk::CompareOp {
+	switch (op) {
+		case gpu::compare_op::never:
+			return vk::CompareOp::eNever;
+		case gpu::compare_op::less:
+			return vk::CompareOp::eLess;
+		case gpu::compare_op::equal:
+			return vk::CompareOp::eEqual;
+		case gpu::compare_op::less_or_equal:
+			return vk::CompareOp::eLessOrEqual;
+		case gpu::compare_op::greater:
+			return vk::CompareOp::eGreater;
+		case gpu::compare_op::not_equal:
+			return vk::CompareOp::eNotEqual;
+		case gpu::compare_op::greater_or_equal:
+			return vk::CompareOp::eGreaterOrEqual;
+		case gpu::compare_op::always:
+			return vk::CompareOp::eAlways;
 	}
-	return fallback;
+	std::unreachable();
 }
 
-template <typename E>
-	requires (gse::vulkan::enum_has_vk_annotation<E>())
-auto gse::vulkan::to_vk(const E e) -> vk_type_of<E> {
-	return reflect_to_vk<vk_type_of<E>>(e);
+auto gse::vulkan::to_vk(const gpu::polygon_mode m) -> vk::PolygonMode {
+	switch (m) {
+		case gpu::polygon_mode::fill:
+			return vk::PolygonMode::eFill;
+		case gpu::polygon_mode::line:
+			return vk::PolygonMode::eLine;
+		case gpu::polygon_mode::point:
+			return vk::PolygonMode::ePoint;
+	}
+	std::unreachable();
 }
 
-template <typename FlagEnum>
-	requires (gse::vulkan::bitflag_enum_has_vk_annotation<FlagEnum>())
-auto gse::vulkan::to_vk(const gse::flags<FlagEnum> fls) -> vk::Flags<vk_flag_bit_type_of<FlagEnum>> {
-	using vk_bits = vk_flag_bit_type_of<FlagEnum>;
-	vk::Flags<vk_bits> result{};
-	constexpr auto pairs = std::define_static_array(collect_flag_annotations<FlagEnum>());
-	for (const auto& [bit, vk_value] : pairs) {
-		if (fls.test(bit)) {
-			result |= vk_value;
-		}
+auto gse::vulkan::to_vk(const gpu::topology t) -> vk::PrimitiveTopology {
+	switch (t) {
+		case gpu::topology::triangle_list:
+			return vk::PrimitiveTopology::eTriangleList;
+		case gpu::topology::line_list:
+			return vk::PrimitiveTopology::eLineList;
+		case gpu::topology::point_list:
+			return vk::PrimitiveTopology::ePointList;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::sampler_filter f) -> vk::Filter {
+	switch (f) {
+		case gpu::sampler_filter::nearest:
+			return vk::Filter::eNearest;
+		case gpu::sampler_filter::linear:
+			return vk::Filter::eLinear;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::sampler_address_mode m) -> vk::SamplerAddressMode {
+	switch (m) {
+		case gpu::sampler_address_mode::repeat:
+			return vk::SamplerAddressMode::eRepeat;
+		case gpu::sampler_address_mode::clamp_to_edge:
+			return vk::SamplerAddressMode::eClampToEdge;
+		case gpu::sampler_address_mode::clamp_to_border:
+			return vk::SamplerAddressMode::eClampToBorder;
+		case gpu::sampler_address_mode::mirrored_repeat:
+			return vk::SamplerAddressMode::eMirroredRepeat;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::border_color c) -> vk::BorderColor {
+	switch (c) {
+		case gpu::border_color::float_opaque_white:
+			return vk::BorderColor::eFloatOpaqueWhite;
+		case gpu::border_color::float_opaque_black:
+			return vk::BorderColor::eFloatOpaqueBlack;
+		case gpu::border_color::float_transparent_black:
+			return vk::BorderColor::eFloatTransparentBlack;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::image_format f) -> vk::Format {
+	switch (f) {
+		case gpu::image_format::d32_sfloat:
+			return vk::Format::eD32Sfloat;
+		case gpu::image_format::r8g8b8a8_srgb:
+			return vk::Format::eR8G8B8A8Srgb;
+		case gpu::image_format::r8g8b8a8_unorm:
+			return vk::Format::eR8G8B8A8Unorm;
+		case gpu::image_format::b8g8r8a8_srgb:
+			return vk::Format::eB8G8R8A8Srgb;
+		case gpu::image_format::b8g8r8a8_unorm:
+			return vk::Format::eB8G8R8A8Unorm;
+		case gpu::image_format::r8g8b8_srgb:
+			return vk::Format::eR8G8B8Srgb;
+		case gpu::image_format::r8g8b8_unorm:
+			return vk::Format::eR8G8B8Unorm;
+		case gpu::image_format::r8_unorm:
+			return vk::Format::eR8Unorm;
+		case gpu::image_format::b10g11r11_ufloat:
+			return vk::Format::eB10G11R11UfloatPack32;
+		case gpu::image_format::r8g8_snorm:
+			return vk::Format::eR8G8Snorm;
+		case gpu::image_format::r8g8_unorm:
+			return vk::Format::eR8G8Unorm;
+		case gpu::image_format::r16g16b16a16_sfloat:
+			return vk::Format::eR16G16B16A16Sfloat;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::image_view_type t) -> vk::ImageViewType {
+	switch (t) {
+		case gpu::image_view_type::e2d:
+			return vk::ImageViewType::e2D;
+		case gpu::image_view_type::cube:
+			return vk::ImageViewType::eCube;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::image_layout l) -> vk::ImageLayout {
+	switch (l) {
+		case gpu::image_layout::undefined:
+			return vk::ImageLayout::eUndefined;
+		case gpu::image_layout::general:
+			return vk::ImageLayout::eGeneral;
+		case gpu::image_layout::shader_read_only:
+			return vk::ImageLayout::eShaderReadOnlyOptimal;
+		case gpu::image_layout::color_attachment:
+			return vk::ImageLayout::eColorAttachmentOptimal;
+		case gpu::image_layout::depth_stencil_attachment:
+			return vk::ImageLayout::eDepthStencilAttachmentOptimal;
+		case gpu::image_layout::depth_attachment:
+			return vk::ImageLayout::eDepthAttachmentOptimal;
+		case gpu::image_layout::transfer_src:
+			return vk::ImageLayout::eTransferSrcOptimal;
+		case gpu::image_layout::transfer_dst:
+			return vk::ImageLayout::eTransferDstOptimal;
+		case gpu::image_layout::present_src:
+			return vk::ImageLayout::ePresentSrcKHR;
+		case gpu::image_layout::video_encode_src:
+			return vk::ImageLayout::eVideoEncodeSrcKHR;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::index_type t) -> vk::IndexType {
+	switch (t) {
+		case gpu::index_type::uint16:
+			return vk::IndexType::eUint16;
+		case gpu::index_type::uint32:
+			return vk::IndexType::eUint32;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::bind_point p) -> vk::PipelineBindPoint {
+	switch (p) {
+		case gpu::bind_point::graphics:
+			return vk::PipelineBindPoint::eGraphics;
+		case gpu::bind_point::compute:
+			return vk::PipelineBindPoint::eCompute;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::descriptor_type t) -> vk::DescriptorType {
+	switch (t) {
+		case gpu::descriptor_type::uniform_buffer:
+			return vk::DescriptorType::eUniformBuffer;
+		case gpu::descriptor_type::storage_buffer:
+			return vk::DescriptorType::eStorageBuffer;
+		case gpu::descriptor_type::combined_image_sampler:
+			return vk::DescriptorType::eCombinedImageSampler;
+		case gpu::descriptor_type::sampled_image:
+			return vk::DescriptorType::eSampledImage;
+		case gpu::descriptor_type::storage_image:
+			return vk::DescriptorType::eStorageImage;
+		case gpu::descriptor_type::sampler:
+			return vk::DescriptorType::eSampler;
+		case gpu::descriptor_type::acceleration_structure:
+			return vk::DescriptorType::eAccelerationStructureKHR;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::vertex_format f) -> vk::Format {
+	switch (f) {
+		case gpu::vertex_format::r32_sfloat:
+			return vk::Format::eR32Sfloat;
+		case gpu::vertex_format::r32g32_sfloat:
+			return vk::Format::eR32G32Sfloat;
+		case gpu::vertex_format::r32g32b32_sfloat:
+			return vk::Format::eR32G32B32Sfloat;
+		case gpu::vertex_format::r32g32b32a32_sfloat:
+			return vk::Format::eR32G32B32A32Sfloat;
+		case gpu::vertex_format::r32_sint:
+			return vk::Format::eR32Sint;
+		case gpu::vertex_format::r32g32_sint:
+			return vk::Format::eR32G32Sint;
+		case gpu::vertex_format::r32g32b32_sint:
+			return vk::Format::eR32G32B32Sint;
+		case gpu::vertex_format::r32g32b32a32_sint:
+			return vk::Format::eR32G32B32A32Sint;
+		case gpu::vertex_format::r32_uint:
+			return vk::Format::eR32Uint;
+		case gpu::vertex_format::r32g32_uint:
+			return vk::Format::eR32G32Uint;
+		case gpu::vertex_format::r32g32b32_uint:
+			return vk::Format::eR32G32B32Uint;
+		case gpu::vertex_format::r32g32b32a32_uint:
+			return vk::Format::eR32G32B32A32Uint;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::acceleration_structure_type t) -> vk::AccelerationStructureTypeKHR {
+	switch (t) {
+		case gpu::acceleration_structure_type::top_level:
+			return vk::AccelerationStructureTypeKHR::eTopLevel;
+		case gpu::acceleration_structure_type::bottom_level:
+			return vk::AccelerationStructureTypeKHR::eBottomLevel;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::build_acceleration_structure_mode m) -> vk::BuildAccelerationStructureModeKHR {
+	switch (m) {
+		case gpu::build_acceleration_structure_mode::build:
+			return vk::BuildAccelerationStructureModeKHR::eBuild;
+		case gpu::build_acceleration_structure_mode::update:
+			return vk::BuildAccelerationStructureModeKHR::eUpdate;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::result r) -> vk::Result {
+	switch (r) {
+		case gpu::result::success:
+			return vk::Result::eSuccess;
+		case gpu::result::not_ready:
+			return vk::Result::eNotReady;
+		case gpu::result::timeout:
+			return vk::Result::eTimeout;
+		case gpu::result::event_set:
+			return vk::Result::eEventSet;
+		case gpu::result::event_reset:
+			return vk::Result::eEventReset;
+		case gpu::result::incomplete:
+			return vk::Result::eIncomplete;
+		case gpu::result::suboptimal_khr:
+			return vk::Result::eSuboptimalKHR;
+		case gpu::result::error_out_of_host_memory:
+			return vk::Result::eErrorOutOfHostMemory;
+		case gpu::result::error_out_of_device_memory:
+			return vk::Result::eErrorOutOfDeviceMemory;
+		case gpu::result::error_device_lost:
+			return vk::Result::eErrorDeviceLost;
+		case gpu::result::error_out_of_date_khr:
+			return vk::Result::eErrorOutOfDateKHR;
+		case gpu::result::error_surface_lost_khr:
+			return vk::Result::eErrorSurfaceLostKHR;
+		case gpu::result::error_unknown:
+			return vk::Result::eErrorUnknown;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::present_mode m) -> vk::PresentModeKHR {
+	switch (m) {
+		case gpu::present_mode::immediate:
+			return vk::PresentModeKHR::eImmediate;
+		case gpu::present_mode::mailbox:
+			return vk::PresentModeKHR::eMailbox;
+		case gpu::present_mode::fifo:
+			return vk::PresentModeKHR::eFifo;
+		case gpu::present_mode::fifo_relaxed:
+			return vk::PresentModeKHR::eFifoRelaxed;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::color_space c) -> vk::ColorSpaceKHR {
+	switch (c) {
+		case gpu::color_space::srgb_nonlinear:
+			return vk::ColorSpaceKHR::eSrgbNonlinear;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::load_op op) -> vk::AttachmentLoadOp {
+	switch (op) {
+		case gpu::load_op::load:
+			return vk::AttachmentLoadOp::eLoad;
+		case gpu::load_op::clear:
+			return vk::AttachmentLoadOp::eClear;
+		case gpu::load_op::dont_care:
+			return vk::AttachmentLoadOp::eDontCare;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::store_op op) -> vk::AttachmentStoreOp {
+	switch (op) {
+		case gpu::store_op::store:
+			return vk::AttachmentStoreOp::eStore;
+		case gpu::store_op::dont_care:
+			return vk::AttachmentStoreOp::eDontCare;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::image_type t) -> vk::ImageType {
+	switch (t) {
+		case gpu::image_type::e1d:
+			return vk::ImageType::e1D;
+		case gpu::image_type::e2d:
+			return vk::ImageType::e2D;
+		case gpu::image_type::e3d:
+			return vk::ImageType::e3D;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::sample_count c) -> vk::SampleCountFlagBits {
+	switch (c) {
+		case gpu::sample_count::e1:
+			return vk::SampleCountFlagBits::e1;
+		case gpu::sample_count::e2:
+			return vk::SampleCountFlagBits::e2;
+		case gpu::sample_count::e4:
+			return vk::SampleCountFlagBits::e4;
+		case gpu::sample_count::e8:
+			return vk::SampleCountFlagBits::e8;
+		case gpu::sample_count::e16:
+			return vk::SampleCountFlagBits::e16;
+		case gpu::sample_count::e32:
+			return vk::SampleCountFlagBits::e32;
+		case gpu::sample_count::e64:
+			return vk::SampleCountFlagBits::e64;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::stage_flag s) -> vk::ShaderStageFlagBits {
+	switch (s) {
+		case gpu::stage_flag::vertex:
+			return vk::ShaderStageFlagBits::eVertex;
+		case gpu::stage_flag::fragment:
+			return vk::ShaderStageFlagBits::eFragment;
+		case gpu::stage_flag::compute:
+			return vk::ShaderStageFlagBits::eCompute;
+		case gpu::stage_flag::task:
+			return vk::ShaderStageFlagBits::eTaskEXT;
+		case gpu::stage_flag::mesh:
+			return vk::ShaderStageFlagBits::eMeshEXT;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::buffer_usage fls) -> vk::BufferUsageFlags {
+	vk::BufferUsageFlags result{};
+	if (fls.test(gpu::buffer_flag::uniform)) {
+		result |= vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	}
+	if (fls.test(gpu::buffer_flag::storage)) {
+		result |= vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	}
+	if (fls.test(gpu::buffer_flag::indirect)) {
+		result |= vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	}
+	if (fls.test(gpu::buffer_flag::transfer_dst)) {
+		result |= vk::BufferUsageFlagBits::eTransferDst;
+	}
+	if (fls.test(gpu::buffer_flag::vertex)) {
+		result |= vk::BufferUsageFlagBits::eVertexBuffer;
+	}
+	if (fls.test(gpu::buffer_flag::index)) {
+		result |= vk::BufferUsageFlagBits::eIndexBuffer;
+	}
+	if (fls.test(gpu::buffer_flag::transfer_src)) {
+		result |= vk::BufferUsageFlagBits::eTransferSrc;
+	}
+	if (fls.test(gpu::buffer_flag::acceleration_structure_storage)) {
+		result |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	}
+	if (fls.test(gpu::buffer_flag::acceleration_structure_build_input)) {
+		result |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	}
 	return result;
 }
 
-template <typename Dst, typename Src>
-auto gse::vulkan::reflect_struct_to_vk(const Src& src) -> Dst {
-	Dst out{};
-	template for (constexpr auto src_member : std::define_static_array(std::meta::nonstatic_data_members_of(^^Src, std::meta::access_context::unchecked()))) {
-		constexpr auto dst_member = []() consteval {
-			auto camel = snake_to_camel(std::meta::identifier_of(src_member));
-			for (auto m : std::meta::nonstatic_data_members_of(^^Dst, std::meta::access_context::unchecked())) {
-				if (std::meta::identifier_of(m) == camel) {
-					return m;
-				}
-			}
-			return std::meta::info{};
-		}();
-		using src_type = [: std::meta::type_of(src_member) :];
-		using dst_type = [: std::meta::type_of(dst_member) :];
-		if constexpr (std::is_same_v<src_type, dst_type>) {
-			out.[: dst_member :] = src.[: src_member :];
-		} else {
-			out.[: dst_member :] = to_vk(src.[: src_member :]);
-		}
+auto gse::vulkan::to_vk(const gpu::image_usage fls) -> vk::ImageUsageFlags {
+	vk::ImageUsageFlags result{};
+	if (fls.test(gpu::image_flag::sampled)) {
+		result |= vk::ImageUsageFlagBits::eSampled;
 	}
-	return out;
+	if (fls.test(gpu::image_flag::depth_attachment)) {
+		result |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
+	}
+	if (fls.test(gpu::image_flag::color_attachment)) {
+		result |= vk::ImageUsageFlagBits::eColorAttachment;
+	}
+	if (fls.test(gpu::image_flag::transfer_dst)) {
+		result |= vk::ImageUsageFlagBits::eTransferDst;
+	}
+	if (fls.test(gpu::image_flag::storage)) {
+		result |= vk::ImageUsageFlagBits::eStorage;
+	}
+	if (fls.test(gpu::image_flag::transfer_src)) {
+		result |= vk::ImageUsageFlagBits::eTransferSrc;
+	}
+	return result;
+}
+
+auto gse::vulkan::to_vk(const gpu::stage_flags fls) -> vk::ShaderStageFlags {
+	vk::ShaderStageFlags result{};
+	if (fls.test(gpu::stage_flag::vertex)) {
+		result |= vk::ShaderStageFlagBits::eVertex;
+	}
+	if (fls.test(gpu::stage_flag::fragment)) {
+		result |= vk::ShaderStageFlagBits::eFragment;
+	}
+	if (fls.test(gpu::stage_flag::compute)) {
+		result |= vk::ShaderStageFlagBits::eCompute;
+	}
+	if (fls.test(gpu::stage_flag::task)) {
+		result |= vk::ShaderStageFlagBits::eTaskEXT;
+	}
+	if (fls.test(gpu::stage_flag::mesh)) {
+		result |= vk::ShaderStageFlagBits::eMeshEXT;
+	}
+	return result;
+}
+
+auto gse::vulkan::to_vk(const gpu::build_acceleration_structure_flags fls) -> vk::BuildAccelerationStructureFlagsKHR {
+	vk::BuildAccelerationStructureFlagsKHR result{};
+	if (fls.test(gpu::build_acceleration_structure_flag::allow_update)) {
+		result |= vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate;
+	}
+	if (fls.test(gpu::build_acceleration_structure_flag::allow_compaction)) {
+		result |= vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction;
+	}
+	if (fls.test(gpu::build_acceleration_structure_flag::prefer_fast_trace)) {
+		result |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+	}
+	if (fls.test(gpu::build_acceleration_structure_flag::prefer_fast_build)) {
+		result |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
+	}
+	if (fls.test(gpu::build_acceleration_structure_flag::low_memory)) {
+		result |= vk::BuildAccelerationStructureFlagBitsKHR::eLowMemory;
+	}
+	return result;
+}
+
+auto gse::vulkan::to_vk(const gpu::geometry_flags fls) -> vk::GeometryFlagsKHR {
+	vk::GeometryFlagsKHR result{};
+	if (fls.test(gpu::geometry_flag::opaque)) {
+		result |= vk::GeometryFlagBitsKHR::eOpaque;
+	}
+	if (fls.test(gpu::geometry_flag::no_duplicate_any_hit_invocation)) {
+		result |= vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation;
+	}
+	return result;
+}
+
+auto gse::vulkan::to_vk(const gpu::image_aspect_flags fls) -> vk::ImageAspectFlags {
+	vk::ImageAspectFlags result{};
+	if (fls.test(gpu::image_aspect_flag::color)) {
+		result |= vk::ImageAspectFlagBits::eColor;
+	}
+	if (fls.test(gpu::image_aspect_flag::depth)) {
+		result |= vk::ImageAspectFlagBits::eDepth;
+	}
+	if (fls.test(gpu::image_aspect_flag::stencil)) {
+		result |= vk::ImageAspectFlagBits::eStencil;
+	}
+	return result;
+}
+
+auto gse::vulkan::to_vk(const gpu::access_flags fls) -> vk::AccessFlags2 {
+	vk::AccessFlags2 result{};
+	if (fls.test(gpu::access_flag::indirect_command_read)) {
+		result |= vk::AccessFlagBits2::eIndirectCommandRead;
+	}
+	if (fls.test(gpu::access_flag::index_read)) {
+		result |= vk::AccessFlagBits2::eIndexRead;
+	}
+	if (fls.test(gpu::access_flag::vertex_attribute_read)) {
+		result |= vk::AccessFlagBits2::eVertexAttributeRead;
+	}
+	if (fls.test(gpu::access_flag::uniform_read)) {
+		result |= vk::AccessFlagBits2::eUniformRead;
+	}
+	if (fls.test(gpu::access_flag::input_attachment_read)) {
+		result |= vk::AccessFlagBits2::eInputAttachmentRead;
+	}
+	if (fls.test(gpu::access_flag::shader_read)) {
+		result |= vk::AccessFlagBits2::eShaderRead;
+	}
+	if (fls.test(gpu::access_flag::shader_write)) {
+		result |= vk::AccessFlagBits2::eShaderWrite;
+	}
+	if (fls.test(gpu::access_flag::color_attachment_read)) {
+		result |= vk::AccessFlagBits2::eColorAttachmentRead;
+	}
+	if (fls.test(gpu::access_flag::color_attachment_write)) {
+		result |= vk::AccessFlagBits2::eColorAttachmentWrite;
+	}
+	if (fls.test(gpu::access_flag::depth_stencil_attachment_read)) {
+		result |= vk::AccessFlagBits2::eDepthStencilAttachmentRead;
+	}
+	if (fls.test(gpu::access_flag::depth_stencil_attachment_write)) {
+		result |= vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
+	}
+	if (fls.test(gpu::access_flag::transfer_read)) {
+		result |= vk::AccessFlagBits2::eTransferRead;
+	}
+	if (fls.test(gpu::access_flag::transfer_write)) {
+		result |= vk::AccessFlagBits2::eTransferWrite;
+	}
+	if (fls.test(gpu::access_flag::host_read)) {
+		result |= vk::AccessFlagBits2::eHostRead;
+	}
+	if (fls.test(gpu::access_flag::host_write)) {
+		result |= vk::AccessFlagBits2::eHostWrite;
+	}
+	if (fls.test(gpu::access_flag::memory_read)) {
+		result |= vk::AccessFlagBits2::eMemoryRead;
+	}
+	if (fls.test(gpu::access_flag::memory_write)) {
+		result |= vk::AccessFlagBits2::eMemoryWrite;
+	}
+	if (fls.test(gpu::access_flag::shader_sampled_read)) {
+		result |= vk::AccessFlagBits2::eShaderSampledRead;
+	}
+	if (fls.test(gpu::access_flag::shader_storage_read)) {
+		result |= vk::AccessFlagBits2::eShaderStorageRead;
+	}
+	if (fls.test(gpu::access_flag::shader_storage_write)) {
+		result |= vk::AccessFlagBits2::eShaderStorageWrite;
+	}
+	if (fls.test(gpu::access_flag::acceleration_structure_read)) {
+		result |= vk::AccessFlagBits2::eAccelerationStructureReadKHR;
+	}
+	if (fls.test(gpu::access_flag::acceleration_structure_write)) {
+		result |= vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
+	}
+	return result;
+}
+
+auto gse::vulkan::to_vk(const gpu::pipeline_stage_flags fls) -> vk::PipelineStageFlags2 {
+	vk::PipelineStageFlags2 result{};
+	if (fls.test(gpu::pipeline_stage_flag::top_of_pipe)) {
+		result |= vk::PipelineStageFlagBits2::eTopOfPipe;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::draw_indirect)) {
+		result |= vk::PipelineStageFlagBits2::eDrawIndirect;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::vertex_input)) {
+		result |= vk::PipelineStageFlagBits2::eVertexInput;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::vertex_shader)) {
+		result |= vk::PipelineStageFlagBits2::eVertexShader;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::tessellation_control)) {
+		result |= vk::PipelineStageFlagBits2::eTessellationControlShader;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::tessellation_evaluation)) {
+		result |= vk::PipelineStageFlagBits2::eTessellationEvaluationShader;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::geometry_shader)) {
+		result |= vk::PipelineStageFlagBits2::eGeometryShader;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::fragment_shader)) {
+		result |= vk::PipelineStageFlagBits2::eFragmentShader;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::early_fragment_tests)) {
+		result |= vk::PipelineStageFlagBits2::eEarlyFragmentTests;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::late_fragment_tests)) {
+		result |= vk::PipelineStageFlagBits2::eLateFragmentTests;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::color_attachment_output)) {
+		result |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::compute_shader)) {
+		result |= vk::PipelineStageFlagBits2::eComputeShader;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::transfer)) {
+		result |= vk::PipelineStageFlagBits2::eAllTransfer;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::bottom_of_pipe)) {
+		result |= vk::PipelineStageFlagBits2::eBottomOfPipe;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::host)) {
+		result |= vk::PipelineStageFlagBits2::eHost;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::all_graphics)) {
+		result |= vk::PipelineStageFlagBits2::eAllGraphics;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::all_commands)) {
+		result |= vk::PipelineStageFlagBits2::eAllCommands;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::copy)) {
+		result |= vk::PipelineStageFlagBits2::eCopy;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::resolve)) {
+		result |= vk::PipelineStageFlagBits2::eResolve;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::blit)) {
+		result |= vk::PipelineStageFlagBits2::eBlit;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::clear)) {
+		result |= vk::PipelineStageFlagBits2::eClear;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::index_input)) {
+		result |= vk::PipelineStageFlagBits2::eIndexInput;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::vertex_attribute_input)) {
+		result |= vk::PipelineStageFlagBits2::eVertexAttributeInput;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::pre_rasterization_shaders)) {
+		result |= vk::PipelineStageFlagBits2::ePreRasterizationShaders;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::mesh_shader)) {
+		result |= vk::PipelineStageFlagBits2::eMeshShaderEXT;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::task_shader)) {
+		result |= vk::PipelineStageFlagBits2::eTaskShaderEXT;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::acceleration_structure_build)) {
+		result |= vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
+	}
+	if (fls.test(gpu::pipeline_stage_flag::ray_tracing_shader)) {
+		result |= vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
+	}
+	return result;
+}
+
+auto gse::vulkan::to_vk(const gpu::memory_property_flags fls) -> vk::MemoryPropertyFlags {
+	vk::MemoryPropertyFlags result{};
+	if (fls.test(gpu::memory_property_flag::device_local)) {
+		result |= vk::MemoryPropertyFlagBits::eDeviceLocal;
+	}
+	if (fls.test(gpu::memory_property_flag::host_visible)) {
+		result |= vk::MemoryPropertyFlagBits::eHostVisible;
+	}
+	if (fls.test(gpu::memory_property_flag::host_coherent)) {
+		result |= vk::MemoryPropertyFlagBits::eHostCoherent;
+	}
+	if (fls.test(gpu::memory_property_flag::host_cached)) {
+		result |= vk::MemoryPropertyFlagBits::eHostCached;
+	}
+	if (fls.test(gpu::memory_property_flag::lazily_allocated)) {
+		result |= vk::MemoryPropertyFlagBits::eLazilyAllocated;
+	}
+	return result;
+}
+
+auto gse::vulkan::to_vk(const gpu::image_create_flags fls) -> vk::ImageCreateFlags {
+	vk::ImageCreateFlags result{};
+	if (fls.test(gpu::image_create_flag::cube_compatible)) {
+		result |= vk::ImageCreateFlagBits::eCubeCompatible;
+	}
+	return result;
 }
 
 auto gse::vulkan::to_vk(const gpu::surface_format& sf) -> vk::SurfaceFormatKHR {
-	return reflect_struct_to_vk<vk::SurfaceFormatKHR>(sf);
+	return {
+		.format = to_vk(sf.format),
+		.colorSpace = to_vk(sf.color_space),
+	};
 }
 
 auto gse::vulkan::to_vk(const gpu::viewport& v) -> vk::Viewport {
-	return reflect_struct_to_vk<vk::Viewport>(v);
+	return {
+		.x = v.x,
+		.y = v.y,
+		.width = v.width,
+		.height = v.height,
+		.minDepth = v.min_depth,
+		.maxDepth = v.max_depth,
+	};
 }
 
 auto gse::vulkan::to_vk(const gpu::push_constant_range& pcr) -> vk::PushConstantRange {
@@ -954,7 +1585,11 @@ auto gse::vulkan::to_vk(const gpu::push_constant_range& pcr) -> vk::PushConstant
 }
 
 auto gse::vulkan::to_vk(const gpu::buffer_copy_region& r) -> vk::BufferCopy {
-	return reflect_struct_to_vk<vk::BufferCopy>(r);
+	return {
+		.srcOffset = r.src_offset,
+		.dstOffset = r.dst_offset,
+		.size = r.size,
+	};
 }
 
 auto gse::vulkan::to_vk(const gpu::image_subresource_layers& s) -> vk::ImageSubresourceLayers {
@@ -1000,23 +1635,125 @@ auto gse::vulkan::to_vk(const gpu::image_blit_region& r) -> vk::ImageBlit {
 }
 
 auto gse::vulkan::to_vk(const gpu::acceleration_structure_build_range_info& r) -> vk::AccelerationStructureBuildRangeInfoKHR {
-	return reflect_struct_to_vk<vk::AccelerationStructureBuildRangeInfoKHR>(r);
+	return {
+		.primitiveCount = r.primitive_count,
+		.primitiveOffset = r.primitive_offset,
+		.firstVertex = r.first_vertex,
+		.transformOffset = r.transform_offset,
+	};
 }
 
 auto gse::vulkan::from_vk(const vk::Result r) -> gpu::result {
-	return reflect_from_vk<gpu::result>(r, gpu::result::error_unknown);
+	switch (r) {
+		case vk::Result::eSuccess:
+			return gpu::result::success;
+		case vk::Result::eNotReady:
+			return gpu::result::not_ready;
+		case vk::Result::eTimeout:
+			return gpu::result::timeout;
+		case vk::Result::eEventSet:
+			return gpu::result::event_set;
+		case vk::Result::eEventReset:
+			return gpu::result::event_reset;
+		case vk::Result::eIncomplete:
+			return gpu::result::incomplete;
+		case vk::Result::eSuboptimalKHR:
+			return gpu::result::suboptimal_khr;
+		case vk::Result::eErrorOutOfHostMemory:
+			return gpu::result::error_out_of_host_memory;
+		case vk::Result::eErrorOutOfDeviceMemory:
+			return gpu::result::error_out_of_device_memory;
+		case vk::Result::eErrorDeviceLost:
+			return gpu::result::error_device_lost;
+		case vk::Result::eErrorOutOfDateKHR:
+			return gpu::result::error_out_of_date_khr;
+		case vk::Result::eErrorSurfaceLostKHR:
+			return gpu::result::error_surface_lost_khr;
+		default:
+			return gpu::result::error_unknown;
+	}
 }
 
 auto gse::vulkan::from_vk(const vk::PresentModeKHR mode) -> gpu::present_mode {
-	return reflect_from_vk<gpu::present_mode>(mode, gpu::present_mode::fifo);
+	switch (mode) {
+		case vk::PresentModeKHR::eImmediate:
+			return gpu::present_mode::immediate;
+		case vk::PresentModeKHR::eMailbox:
+			return gpu::present_mode::mailbox;
+		case vk::PresentModeKHR::eFifo:
+			return gpu::present_mode::fifo;
+		case vk::PresentModeKHR::eFifoRelaxed:
+			return gpu::present_mode::fifo_relaxed;
+		default:
+			return gpu::present_mode::fifo;
+	}
 }
 
 auto gse::vulkan::from_vk(const vk::ColorSpaceKHR cs) -> gpu::color_space {
-	return reflect_from_vk<gpu::color_space>(cs, gpu::color_space::srgb_nonlinear);
+	switch (cs) {
+		case vk::ColorSpaceKHR::eSrgbNonlinear:
+			return gpu::color_space::srgb_nonlinear;
+		default:
+			return gpu::color_space::srgb_nonlinear;
+	}
 }
 
 auto gse::vulkan::from_vk(const vk::Format f) -> gpu::image_format {
-	return reflect_from_vk<gpu::image_format>(f, gpu::image_format::r8g8b8a8_unorm);
+	switch (f) {
+		case vk::Format::eD32Sfloat:
+			return gpu::image_format::d32_sfloat;
+		case vk::Format::eR8G8B8A8Srgb:
+			return gpu::image_format::r8g8b8a8_srgb;
+		case vk::Format::eR8G8B8A8Unorm:
+			return gpu::image_format::r8g8b8a8_unorm;
+		case vk::Format::eB8G8R8A8Srgb:
+			return gpu::image_format::b8g8r8a8_srgb;
+		case vk::Format::eB8G8R8A8Unorm:
+			return gpu::image_format::b8g8r8a8_unorm;
+		case vk::Format::eR8G8B8Srgb:
+			return gpu::image_format::r8g8b8_srgb;
+		case vk::Format::eR8G8B8Unorm:
+			return gpu::image_format::r8g8b8_unorm;
+		case vk::Format::eR8Unorm:
+			return gpu::image_format::r8_unorm;
+		case vk::Format::eB10G11R11UfloatPack32:
+			return gpu::image_format::b10g11r11_ufloat;
+		case vk::Format::eR8G8Snorm:
+			return gpu::image_format::r8g8_snorm;
+		case vk::Format::eR8G8Unorm:
+			return gpu::image_format::r8g8_unorm;
+		case vk::Format::eR16G16B16A16Sfloat:
+			return gpu::image_format::r16g16b16a16_sfloat;
+		default:
+			return gpu::image_format::r8g8b8a8_unorm;
+	}
+}
+
+auto gse::vulkan::from_vk(const vk::ImageLayout l) -> gpu::image_layout {
+	switch (l) {
+		case vk::ImageLayout::eUndefined:
+			return gpu::image_layout::undefined;
+		case vk::ImageLayout::eGeneral:
+			return gpu::image_layout::general;
+		case vk::ImageLayout::eShaderReadOnlyOptimal:
+			return gpu::image_layout::shader_read_only;
+		case vk::ImageLayout::eColorAttachmentOptimal:
+			return gpu::image_layout::color_attachment;
+		case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+			return gpu::image_layout::depth_stencil_attachment;
+		case vk::ImageLayout::eDepthAttachmentOptimal:
+			return gpu::image_layout::depth_attachment;
+		case vk::ImageLayout::eTransferSrcOptimal:
+			return gpu::image_layout::transfer_src;
+		case vk::ImageLayout::eTransferDstOptimal:
+			return gpu::image_layout::transfer_dst;
+		case vk::ImageLayout::ePresentSrcKHR:
+			return gpu::image_layout::present_src;
+		case vk::ImageLayout::eVideoEncodeSrcKHR:
+			return gpu::image_layout::video_encode_src;
+		default:
+			return gpu::image_layout::undefined;
+	}
 }
 
 auto gse::vulkan::from_vk(const vk::SurfaceFormatKHR& sf) -> gpu::surface_format {

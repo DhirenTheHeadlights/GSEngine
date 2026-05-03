@@ -140,11 +140,8 @@ auto gse::gpu::create_graphics_pipeline(gpu::device& dev, gpu::shader_registry& 
 		color_format_value = dev.surface_format();
 	}
 
-	const image_format depth_format_value = desc.depth_fmt == depth_format::d32_sfloat
-		? image_format::d32_sfloat
-		: image_format::d32_sfloat;
-
 	const bool has_color = desc.color != color_format::none;
+	const bool has_depth = desc.depth_fmt != depth_format::none;
 	const bool is_mesh = s->is_mesh_shader();
 
 	std::vector<shader_stage_create_info> stages;
@@ -184,8 +181,9 @@ auto gse::gpu::create_graphics_pipeline(gpu::device& dev, gpu::shader_registry& 
 		.blend = desc.blend,
 		.topology = desc.topology,
 		.color_format = color_format_value,
-		.depth_format = depth_format_value,
+		.depth_format = image_format::d32_sfloat,
 		.has_color = has_color,
+		.has_depth = has_depth,
 		.is_mesh_pipeline = is_mesh,
 	};
 

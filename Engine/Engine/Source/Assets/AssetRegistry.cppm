@@ -33,14 +33,6 @@ export namespace gse::asset {
 		~registry(
 		) override = default;
 
-		registry(
-			registry&&
-		) noexcept = default;
-
-		auto operator=(
-			registry&&
-		) noexcept -> registry& = default;
-
 		template <typename T, typename Ctx>
 		auto add_loader(
 			Ctx& ctx
@@ -137,7 +129,7 @@ export namespace gse::asset {
 	};
 }
 
-inline gse::asset::registry::registry(asset::context& ctx) : m_context(&ctx) {}
+gse::asset::registry::registry(asset::context& ctx) : m_context(&ctx) {}
 
 template <typename T, typename Ctx>
 auto gse::asset::registry::add_loader(Ctx& ctx) -> resource::loader<T, Ctx>* {

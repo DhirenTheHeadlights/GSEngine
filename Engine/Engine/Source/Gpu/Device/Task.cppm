@@ -63,7 +63,7 @@ export namespace gse::gpu {
         transient_queue* m_queue;
         frame_resource_bin* m_bin;
         vulkan::transient_command_buffer m_cmd;
-        std::vector<std::move_only_function<void()>> m_pending_retains;
+        std::vector<move_only_function<void()>> m_pending_retains;
         std::uint64_t m_value = 0;
         bool m_submitted = false;
     };

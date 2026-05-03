@@ -17,6 +17,10 @@ export namespace gse::gpu {
 }
 
 export namespace gse::vulkan {
+	auto to_vk(
+		gpu::query_kind kind
+	) -> vk::QueryType;
+
 	class query_pool final : public non_copyable {
 	public:
 		query_pool() = default;
@@ -71,6 +75,18 @@ export namespace gse::vulkan {
 		gpu::query_kind m_kind = gpu::query_kind::timestamp;
 		std::uint32_t m_count = 0;
 	};
+}
+
+auto gse::vulkan::to_vk(const gpu::query_kind kind) -> vk::QueryType {
+	switch (kind) {
+		case gpu::query_kind::timestamp:
+			return vk::QueryType::eTimestamp;
+		case gpu::query_kind::occlusion:
+			return vk::QueryType::eOcclusion;
+		case gpu::query_kind::pipeline_statistics:
+			return vk::QueryType::ePipelineStatistics;
+	}
+	std::unreachable();
 }
 
 gse::vulkan::query_pool::query_pool(vk::raii::QueryPool&& pool, const gpu::query_kind kind, const std::uint32_t count)

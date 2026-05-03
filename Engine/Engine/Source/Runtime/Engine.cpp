@@ -72,9 +72,7 @@ auto gse::engine::initialize() -> void {
 
 auto gse::engine::update() -> void {
 	system_clock::update();
-
 	m_scheduler.update();
-
 	m_world.update();
 }
 

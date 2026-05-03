@@ -102,7 +102,7 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 
 	const vk::DebugUtilsMessengerCreateInfoEXT debug_create_info{
 		.flags = {},
-		.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose,
+		.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo | vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose,
 		.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
 		.pfnUserCallback = debug_callback,
 	};
@@ -110,6 +110,7 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	constexpr vk::ValidationFeatureEnableEXT enables[] = {
 		vk::ValidationFeatureEnableEXT::eBestPractices,
 		vk::ValidationFeatureEnableEXT::eSynchronizationValidation,
+		vk::ValidationFeatureEnableEXT::eDebugPrintf,
 	};
 
 	const vk::ValidationFeaturesEXT features{
