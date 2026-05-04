@@ -103,17 +103,13 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
 }
 
 auto gse::renderer::capture::system::update(const update_context& ctx, state& s) -> async::task<> {
-    const auto* sys = ctx.try_state_of<actions::system_state>();
-    if (!sys) {
-        co_return;
-    }
+    const auto& sys = co_await ctx.state_of<actions::system::state>();
+    const auto& action_state = actions::system::current_state(sys);
 
-    const auto& action_state = sys->current_state();
-
-    if (s.screenshot_action.pressed(action_state, *sys)) {
+    if (actions::system::pressed(action_state, sys, s.screenshot_action)) {
         ctx.channels.push<screenshot_request>({});
     }
-    if (s.save_clip_action.pressed(action_state, *sys)) {
+    if (actions::system::pressed(action_state, sys, s.save_clip_action)) {
         ctx.channels.push<save_clip_request>({});
     }
 
@@ -262,7 +258,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
     }
 
     auto pass = gpu_ctx->graph().add_pass<state>();
-    pass.after<ui::state>();
+    pass.after<ui::system::state>();
 
     auto& rec = co_await pass.record();
 

@@ -51,31 +51,31 @@ export namespace gse {
 }
 
 auto gse::camera_view() -> view_matrix {
-	if (!has_state<camera::state>()) {
+	if (!has_state<camera::system::state>()) {
 		return {};
 	}
-	return state_of<camera::state>().view_matrix;
+	return state_of<camera::system::state>().view_matrix;
 }
 
 auto gse::camera_projection() -> projection_matrix {
-	if (!has_state<camera::state>()) {
+	if (!has_state<camera::system::state>()) {
 		return {};
 	}
-	return state_of<camera::state>().projection_matrix;
+	return state_of<camera::system::state>().projection_matrix;
 }
 
 auto gse::camera_position() -> vec3<position> {
-	if (!has_state<camera::state>()) {
+	if (!has_state<camera::system::state>()) {
 		return vec3<position>(0.f, 0.f, 0.f);
 	}
-	return state_of<camera::state>().position();
+	return camera::system::position(state_of<camera::system::state>());
 }
 
 auto gse::camera_orientation() -> quat {
-	if (!has_state<camera::state>()) {
+	if (!has_state<camera::system::state>()) {
 		return quat(1.f, 0.f, 0.f, 0.f);
 	}
-	return state_of<camera::state>().orientation();
+	return camera::system::orientation(state_of<camera::system::state>());
 }
 
 auto gse::camera_yaw() -> angle {
@@ -94,8 +94,8 @@ auto gse::direction_from_angle(const vec3f& direction, const angle yaw) -> vec3f
 }
 
 auto gse::camera_direction_relative_to_origin(const vec3f& direction, const id entity_id) -> vec3f {
-	if (has_state<camera::state>()) {
-		return state_of<camera::state>().direction_relative_to_origin(direction);
+	if (has_state<camera::system::state>()) {
+		return camera::system::direction_relative_to_origin(state_of<camera::system::state>(), direction);
 	}
 	if (const auto entity_yaw = actions::entity_camera_yaw(entity_id)) {
 		return direction_from_angle(direction, *entity_yaw);
@@ -107,10 +107,10 @@ auto gse::camera_direction_relative_to_origin(const vec3f& direction, const id e
 }
 
 auto gse::active_camera_entity() -> id {
-	if (!has_state<camera::state>()) {
+	if (!has_state<camera::system::state>()) {
 		return {};
 	}
-	return state_of<camera::state>().active_controller_entity;
+	return state_of<camera::system::state>().active_controller_entity;
 }
 
 auto gse::set_camera_viewport(const vec2f& viewport) -> void {

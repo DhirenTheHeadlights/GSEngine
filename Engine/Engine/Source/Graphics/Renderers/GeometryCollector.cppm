@@ -159,17 +159,17 @@ export namespace gse::renderer::geometry_collector {
 		projection_matrix proj;
 	};
 
-	struct state {
-		resource::handle<skeleton> current_skeleton;
-		std::uint32_t current_joint_count = 0;
-	};
-
 	auto filter_render_queue(
 		const render_data& data,
 		std::span<const id> exclude_ids
 	) -> std::vector<render_queue_entry>;
 
 	struct system {
+		struct state {
+			resource::handle<skeleton> current_skeleton;
+			std::uint32_t current_joint_count = 0;
+		};
+
 		struct resources {
 			gpu::context* ctx = nullptr;
 
@@ -202,13 +202,12 @@ export namespace gse::renderer::geometry_collector {
 			resource::handle<shader> shader_handle;
 
 			per_frame_resource<gpu::buffer> physics_mapping_buffer;
-
-			auto upload_skeleton_data(const skeleton& skel) const -> void;
 		};
 
 		static auto initialize(init_context& phase, resources& r, state& s) -> void;
 		static auto update(update_context& ctx, const resources& r, state& s) -> async::task<>;
 		static auto frame(frame_context& ctx, const resources& r, const state& s) -> async::task<>;
+		static auto upload_skeleton_data(const resources& r, const skeleton& skel) -> void;
 	};
 }
 

@@ -31,13 +31,13 @@ auto gse::engine::initialize() -> void {
 	});
 
 	auto& reg = m_world.registry();
-	auto& save = m_scheduler.add_system<save::system, save::state>(reg);
-	save::set_auto_save(save, true, config::resource_path / "Misc/settings.ini");
-	save::on_restart(save, [] { app::restart(); });
+	auto& save = m_scheduler.add_system<save::system>(reg);
+	save::system::set_auto_save(save, true, config::resource_path / "Misc/settings.ini");
+	save::system::on_restart(save, [] { app::restart(); });
 
-	auto& input = m_scheduler.add_system<input::system, input::system_state>(reg);
-	m_scheduler.add_system<actions::system, actions::system_state>(reg);
-	m_scheduler.add_system<network::system, network::system_state>(reg);
+	auto& input = m_scheduler.add_system<input::system>(reg);
+	m_scheduler.add_system<actions::system>(reg);
+	m_scheduler.add_system<network::system>(reg);
 
 	if (m_flags.test(engine_flag::render)) {
 		m_render_ctx = std::make_unique<gpu::context>(
@@ -54,46 +54,66 @@ auto gse::engine::initialize() -> void {
 		m_scheduler.set_gpu_context(&ctx);
 		m_scheduler.set_asset_registry(m_assets.get());
 
-		m_scheduler.add_system<physics::system, physics::state>(reg);
-		m_scheduler.add_system<camera::system, camera::state>(reg);
-		m_scheduler.add_system<render_init::system, render_init::state>(reg);
-		m_scheduler.add_system<renderer::system, renderer::state>(reg);
-		m_scheduler.add_system<gui::system, gui::system_state>(reg);
-		m_scheduler.add_system<animation::system, animation::state>(reg);
-		m_scheduler.add_system<audio::system, audio::state>(reg);
+		m_scheduler.add_system<physics::system>(reg);
+		m_scheduler.add_system<camera::system>(reg);
+		m_scheduler.add_system<render_init::system>(reg);
+		m_scheduler.add_system<renderer::system>(reg);
+		m_scheduler.add_system<gui::system>(reg);
+		m_scheduler.add_system<animation::system>(reg);
+		m_scheduler.add_system<audio::system>(reg);
 	}
 	else {
-		m_scheduler.add_system<physics::system, physics::state>(reg);
+		m_scheduler.add_system<physics::system>(reg);
 	}
 
 	m_scheduler.initialize();
 }
 
 auto gse::engine::update() -> void {
+	static std::uint64_t s_frame = 0;
+	const auto fid = ++s_frame;
+	log::println(log::category::runtime, "[freeze-trace] update enter frame={}", fid);
+
 	system_clock::update();
+
+	log::println(log::category::runtime, "[freeze-trace] update: scheduler.update enter (frame={})", fid);
 	m_scheduler.update();
+	log::println(log::category::runtime, "[freeze-trace] update: scheduler.update exit (frame={})", fid);
+
+	log::println(log::category::runtime, "[freeze-trace] update: world.update enter (frame={})", fid);
 	m_world.update();
+	log::println(log::category::runtime, "[freeze-trace] update: world.update exit (frame={})", fid);
 }
 
 auto gse::engine::render() -> void {
+	static std::uint64_t s_frame = 0;
+	const auto fid = ++s_frame;
+	log::println(log::category::runtime, "[freeze-trace] render enter frame={}", fid);
+
 	bool frame_ok = false;
 
 	if (m_render_ctx) {
 		{
 			trace::scope_guard sg{trace_id<"render::process_gpu_queue">()};
+			log::println(log::category::runtime, "[freeze-trace] render: process_gpu_queue enter (frame={})", fid);
 			m_render_ctx->process_gpu_queue();
+			log::println(log::category::runtime, "[freeze-trace] render: process_gpu_queue exit (frame={})", fid);
 		}
 
 		if (m_assets) {
 			trace::scope_guard sg{trace_id<"render::finalize_pending_loads">()};
+			log::println(log::category::runtime, "[freeze-trace] render: finalize_pending_loads enter (frame={})", fid);
 			m_assets->finalize_pending_loads();
+			log::println(log::category::runtime, "[freeze-trace] render: finalize_pending_loads exit (frame={})", fid);
 		}
 
 		const clock fence_timer;
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{
 			trace::scope_guard sg{trace_id<"render::begin_frame">()};
+			log::println(log::category::runtime, "[freeze-trace] render: begin_frame enter (frame={})", fid);
 			result = m_render_ctx->begin_frame();
+			log::println(log::category::runtime, "[freeze-trace] render: begin_frame exit (frame={}, ok={})", fid, result.has_value());
 		}
 		const auto fence_wait = fence_timer.elapsed();
 
@@ -106,37 +126,51 @@ auto gse::engine::render() -> void {
 		}
 	}
 
-	m_scheduler.render(frame_ok, [this] {
+	log::println(log::category::runtime, "[freeze-trace] render: scheduler.render enter (frame={}, ok={})", fid, frame_ok);
+	m_scheduler.render(frame_ok, [this, fid] {
 		{
 			trace::scope_guard sg{trace_id<"render::in_frame">()};
 			if (m_render_ctx) {
 				{
 					trace::scope_guard sg{trace_id<"render::scheduler_flush">()};
+					log::println(log::category::runtime, "[freeze-trace] render: gpu_scheduler.flush enter (frame={})", fid);
 					m_render_ctx->scheduler().flush();
+					log::println(log::category::runtime, "[freeze-trace] render: gpu_scheduler.flush exit (frame={})", fid);
 				}
 				{
 					trace::scope_guard sg{trace_id<"render::graph_execute">()};
+					log::println(log::category::runtime, "[freeze-trace] render: graph.execute enter (frame={})", fid);
 					m_render_ctx->graph().execute();
+					log::println(log::category::runtime, "[freeze-trace] render: graph.execute exit (frame={})", fid);
 				}
 			}
 
 			{
 				trace::scope_guard sg{trace_id<"render::world_render">()};
+				log::println(log::category::runtime, "[freeze-trace] render: world.render enter (frame={})", fid);
 				m_world.render();
+				log::println(log::category::runtime, "[freeze-trace] render: world.render exit (frame={})", fid);
 			}
 		}
 	});
+	log::println(log::category::runtime, "[freeze-trace] render: scheduler.render exit (frame={})", fid);
 
 	if (frame_ok && m_render_ctx) {
 		{
 			trace::scope_guard sg{trace_id<"render::end_frame">()};
+			log::println(log::category::runtime, "[freeze-trace] render: end_frame enter (frame={})", fid);
 			m_render_ctx->end_frame();
+			log::println(log::category::runtime, "[freeze-trace] render: end_frame exit (frame={})", fid);
 			if (m_assets) {
 				trace::scope_guard sg{trace_id<"end_frame::finalize_reloads">()};
+				log::println(log::category::runtime, "[freeze-trace] render: finalize_reloads enter (frame={})", fid);
 				m_assets->finalize_reloads();
+				log::println(log::category::runtime, "[freeze-trace] render: finalize_reloads exit (frame={})", fid);
 			}
 		}
 	}
+
+	log::println(log::category::runtime, "[freeze-trace] render exit frame={}", fid);
 }
 
 auto gse::engine::shutdown() -> void {

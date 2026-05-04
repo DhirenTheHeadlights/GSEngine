@@ -66,11 +66,11 @@ export namespace gse::renderer::forward {
 		reflection_quality_level reflection_quality = reflection_quality_level::medium;
 	};
 
-	struct state {
-		settings settings;
-	};
-
 	struct system {
+		struct state {
+			forward::settings settings;
+		};
+
 		struct resources {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
@@ -105,18 +105,18 @@ export namespace gse::renderer::forward {
 			const resources& r,
 			frame_data& fd,
 			const state& s,
-			const geometry_collector::state& gc_s
+			const geometry_collector::system::state& gc_s
 		) -> async::task<>;
 	};
 }
 
 auto gse::renderer::forward::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
-	phase.sched.ensure_system<geometry_collector::system, geometry_collector::state>(phase.reg);
-	phase.sched.ensure_system<skin_compute::system, skin_compute::state>(phase.reg);
-	phase.sched.ensure_system<cull_compute::system, cull_compute::state>(phase.reg);
-	phase.sched.ensure_system<depth_prepass::system, depth_prepass::state>(phase.reg);
-	phase.sched.ensure_system<light_culling::system, light_culling::state>(phase.reg);
-	phase.sched.ensure_system<rt_shadow::system, rt_shadow::state>(phase.reg);
+	phase.sched.ensure_system<geometry_collector::system>(phase.reg);
+	phase.sched.ensure_system<skin_compute::system>(phase.reg);
+	phase.sched.ensure_system<cull_compute::system>(phase.reg);
+	phase.sched.ensure_system<depth_prepass::system>(phase.reg);
+	phase.sched.ensure_system<light_culling::system>(phase.reg);
+	phase.sched.ensure_system<rt_shadow::system>(phase.reg);
 
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
@@ -159,7 +159,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 			.commit();
 	}
 
-	const auto* rt_state = phase.try_state_of<rt_shadow::state>();
+	const auto* rt_state = phase.try_state_of<rt_shadow::system::state>();
 	const auto* lc_r = phase.try_resources_of<light_culling::system::resources>();
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
@@ -167,12 +167,12 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 		gpu::descriptor_writer writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.descriptors[i]);
 
 		if (rt_state) {
-			writer.acceleration_structure("tlas", rt_state->tlas(fi).handle());
+			writer.acceleration_structure("tlas", (*rt_state->tlas_ptrs[fi]).handle());
 		}
 
 		if (lc_r) {
-			writer.buffer("light_index_list", lc_r->light_index_list(fi))
-				.buffer("tile_light_table", lc_r->tile_light_table(fi));
+			writer.buffer("light_index_list", lc_r->light_index_list_buffers[fi])
+				.buffer("tile_light_table", lc_r->tile_light_table_buffers[fi]);
 		}
 
 		writer.commit();
@@ -184,12 +184,12 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 			gpu::descriptor_writer writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.descriptors[i]);
 
 			if (rt_state) {
-				writer.acceleration_structure("tlas", rt_state->tlas(fi).handle());
+				writer.acceleration_structure("tlas", (*rt_state->tlas_ptrs[fi]).handle());
 			}
 
 			if (lc_r) {
-				writer.buffer("light_index_list", lc_r->light_index_list(fi))
-					.buffer("tile_light_table", lc_r->tile_light_table(fi));
+				writer.buffer("light_index_list", lc_r->light_index_list_buffers[fi])
+					.buffer("tile_light_table", lc_r->tile_light_table_buffers[fi]);
 			}
 
 			writer.commit();
@@ -230,7 +230,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, resou
 	assets.instantly_load(r.blank_texture);
 }
 
-auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
+auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s, const geometry_collector::system::state& gc_s) -> async::task<> {
 
 	auto& gpu = ctx.get<gpu::context>();
 
@@ -252,9 +252,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const auto& data = render_items[0];
 	const auto frame_index = gpu.graph().current_frame();
 
-	const auto* cam_state = ctx.try_state_of<camera::state>();
-	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
-	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
+	const auto& cam_state = co_await ctx.state_of<camera::system::state>();
+	const auto view = cam_state.view_matrix;
+	const auto proj = cam_state.projection_matrix;
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
 
 	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.view", view);
@@ -370,11 +370,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	const auto& normal_batches = data.normal_batches;
 	const auto& skinned_batches = data.skinned_batches;
 
-	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
-	const auto* lc_r = ctx.try_resources_of<light_culling::system::resources>();
-	if (!gc_r || !lc_r) {
-		co_return;
-	}
+	const auto& gc_r = co_await ctx.resources_of<geometry_collector::system::resources>();
+	const auto& lc_r = co_await ctx.resources_of<light_culling::system::resources>();
 
 	const auto ext = gpu.graph().extent();
 	const int num_lights_i = static_cast<int>(light_count);
@@ -389,16 +386,16 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);
 	pass.track(r.light_buffers[frame_index]);
 	pass.track(r.material_palette_buffers[frame_index]);
-	pass.track(gc_r->instance_buffer[frame_index]);
+	pass.track(gc_r.instance_buffer[frame_index]);
 
-	pass.after<rt_shadow::state>()
-		.after<light_culling::state>()
-		.after<depth_prepass::state>()
+	pass.after<rt_shadow::system::state>()
+		.after<light_culling::system::state>()
+		.after<depth_prepass::system::state>()
 		.reads(
-			gpu::storage_read(lc_r->tile_light_table_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
-			gpu::storage_read(lc_r->light_index_list_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
-			gpu::storage_read(gc_r->skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
-			gpu::indirect_read(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
+			gpu::storage_read(lc_r.tile_light_table_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
+			gpu::storage_read(lc_r.light_index_list_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
+			gpu::storage_read(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
+			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.color_output(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f })
 		.depth_output_load();
@@ -408,7 +405,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 	rec.set_scissor(ext);
 
 	if (!normal_batches.empty()) {
-		const auto& instance_buf = gc_r->instance_buffer[frame_index];
+		const auto& instance_buf = gc_r.instance_buffer[frame_index];
 
 		bool pipeline_bound = false;
 
@@ -459,8 +456,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 		rec.bind(r.skinned_pipeline);
 		rec.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
 
-		const auto& skin_buf = gc_r->skin_buffer[frame_index];
-		const auto& instance_buf = gc_r->instance_buffer[frame_index];
+		const auto& skin_buf = gc_r.skin_buffer[frame_index];
+		const auto& instance_buf = gc_r.instance_buffer[frame_index];
 
 		for (std::size_t i = 0; i < skinned_batches.size(); ++i) {
 			const auto& batch = skinned_batches[i];
@@ -481,7 +478,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 			rec.bind_index(mesh.index_gpu_buffer());
 
 			rec.draw_indirect(
-				gc_r->skinned_indirect_commands_buffer[frame_index],
+				gc_r.skinned_indirect_commands_buffer[frame_index],
 				i * sizeof(gpu::draw_indexed_indirect_command),
 				1,
 				0

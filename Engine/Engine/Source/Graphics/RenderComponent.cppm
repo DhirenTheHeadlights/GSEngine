@@ -57,20 +57,19 @@ export namespace gse {
 }
 
 export namespace gse::render_init {
-    struct state {
-        std::unordered_set<id> pending;
-    };
-
     struct system {
+        struct state {
+            std::unordered_set<id> pending;
+        };
+
         static auto update(
             update_context& ctx,
             state& s
         ) -> async::task<>;
-    };
-}
 
-namespace gse::render_init {
-    auto try_wire(
-        render_component& rc
-    ) -> bool;
+    private:
+        static auto try_wire(
+            render_component& rc
+        ) -> bool;
+    };
 }

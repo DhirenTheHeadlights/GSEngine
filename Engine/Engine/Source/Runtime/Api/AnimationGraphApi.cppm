@@ -41,7 +41,7 @@ export namespace gse::animation {
 
 auto gse::animation::create_graph(const animation_graph& graph) -> id {
 	const auto graph_id = generate_id(graph.name);
-	defer([graph_id, graph](state& s) {
+	defer([graph_id, graph](system::state& s) {
 		s.graphs.emplace(graph_id, graph);
 	});
 	return graph_id;

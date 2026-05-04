@@ -26,12 +26,12 @@ export namespace gse::renderer::capture {
     struct screenshot_request {};
     struct save_clip_request {};
 
-    struct state {
-        actions::handle screenshot_action;
-        actions::handle save_clip_action;
-    };
-
     struct system {
+        struct state {
+            actions::handle screenshot_action;
+            actions::handle save_clip_action;
+        };
+
         struct resources {
             gpu::pipeline convert_pipeline;
             resource::handle<shader> convert_shader;

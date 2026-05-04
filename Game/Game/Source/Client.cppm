@@ -7,32 +7,32 @@ import :player;
 import :tumbler;
 
 export namespace gs {
-	struct client_state {
-		std::uint32_t ping_seq = 0;
-		int selected = -1;
-		gse::clock refresh_clock;
-		gse::interval_timer<> server_info_timer{ gse::seconds(10.f) };
-		std::uint8_t connected_players = 0;
-		std::uint8_t connected_max_players = 0;
-	};
-
 	struct client_system {
+		struct state {
+			std::uint32_t ping_seq = 0;
+			int selected = -1;
+			gse::clock refresh_clock;
+			gse::interval_timer<> server_info_timer{ gse::seconds(10.f) };
+			std::uint8_t connected_players = 0;
+			std::uint8_t connected_max_players = 0;
+		};
+
 		static auto initialize(
 			gse::init_context& phase,
-			client_state& s
+			state& s
 		) -> void;
 
 		static auto update(
 			gse::update_context& ctx,
-			client_state& s
+			state& s
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::client_system::initialize(gse::init_context&, client_state&) -> void {
-	gse::add_system<gs::player::system, gs::player::state>();
-	gse::add_system<gs::tumbler::system, gs::tumbler::state>();
-	gse::add_system<gse::free_camera::system, gse::free_camera::state>();
+auto gs::client_system::initialize(gse::init_context&, state&) -> void {
+	gse::add_system<gs::player::system>();
+	gse::add_system<gs::tumbler::system>();
+	gse::add_system<gse::free_camera::system>();
 
 	gse::set_input_sampler(&gse::local_input_sampler);
 
@@ -65,7 +65,7 @@ auto gs::client_system::initialize(gse::init_context&, client_state&) -> void {
 	gse::network::refresh_servers(gse::milliseconds(200));
 }
 
-auto gs::client_system::update(gse::update_context&, client_state& s) -> gse::async::task<> {
+auto gs::client_system::update(gse::update_context&, state& s) -> gse::async::task<> {
 	gse::network::drain([&](const gse::network::inbox_message& m) {
 		gse::match(m)
 			.if_is([&](const gse::network::connection_accepted& msg) {

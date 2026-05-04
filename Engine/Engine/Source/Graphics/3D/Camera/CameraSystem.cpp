@@ -17,7 +17,21 @@ import :camera_data;
 import :camera_component;
 import :camera_system;
 
-auto gse::camera::interpolate_target(const target& from, const target& to, const float t) -> target {
+auto gse::camera::system::position(const state& s) -> vec3<gse::position> {
+	return s.current.position;
+}
+
+auto gse::camera::system::orientation(const state& s) -> quat {
+	return s.current.orientation;
+}
+
+auto gse::camera::system::direction_relative_to_origin(const state& s, const vec3f& direction) -> vec3f {
+	const auto u = s.current.orientation.imaginary_part();
+	const auto t = 2.f * cross(u, direction);
+	return direction + s.current.orientation.s() * t + cross(u, t);
+}
+
+auto gse::camera::system::interpolate_target(const target& from, const target& to, const float t) -> target {
 	return {
 		.position = lerp(from.position, to.position, t),
 		.orientation = slerp(from.orientation, to.orientation, t),
@@ -27,13 +41,13 @@ auto gse::camera::interpolate_target(const target& from, const target& to, const
 	};
 }
 
-auto gse::camera::compute_view_matrix(const target& t) -> view_matrix {
+auto gse::camera::system::compute_view_matrix(const target& t) -> view_matrix {
 	const auto rotation = mat4f(conjugate(t.orientation));
-	const mat4f translation = translate(mat4f(1.0f), -(t.position - vec3<position>{}));
+	const mat4f translation = translate(mat4f(1.0f), -(t.position - vec3<gse::position>{}));
 	return spatial_matrix(rotation * translation);
 }
 
-auto gse::camera::compute_projection_matrix(const target& t, const vec2f& viewport) -> projection_matrix {
+auto gse::camera::system::compute_projection_matrix(const target& t, const vec2f& viewport) -> projection_matrix {
 	const float aspect_ratio = viewport.x() / viewport.y();
 	return perspective(t.fov, aspect_ratio, t.near_plane, t.far_plane);
 }
@@ -56,13 +70,12 @@ auto gse::camera::system::update(update_context& ctx, state& s) -> async::task<>
 	}
 
 	if (!s.ui_focus) {
-		if (const auto* input_state = ctx.try_state_of<input::system_state>()) {
-			const auto delta = input_state->current_state().mouse_delta();
-			const auto transformed_offset = delta * s.mouse_sensitivity;
-			s.yaw -= degrees(transformed_offset.x());
-			s.pitch -= degrees(transformed_offset.y());
-			s.pitch = std::clamp(s.pitch, degrees(-89.0f), degrees(89.0f));
-		}
+		const auto& input_state = co_await ctx.state_of<input::system::state>();
+		const auto delta = input::system::current_state(input_state).mouse_delta();
+		const auto transformed_offset = delta * s.mouse_sensitivity;
+		s.yaw -= degrees(transformed_offset.x());
+		s.pitch -= degrees(transformed_offset.y());
+		s.pitch = std::clamp(s.pitch, degrees(-89.0f), degrees(89.0f));
 	}
 
 	const quat yaw_rotation = quat({ 0.f, 1.f, 0.f }, s.yaw);

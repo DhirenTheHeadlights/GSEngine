@@ -17,9 +17,9 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 export namespace gse::renderer::depth_prepass {
-	struct state {};
-
 	struct system {
+		struct state {};
+
 		struct resources {
 			gpu::pipeline meshlet_pipeline;
 			per_frame_resource<gpu::descriptor_region> meshlet_descriptors;
@@ -42,14 +42,14 @@ export namespace gse::renderer::depth_prepass {
 			frame_context& ctx,
 			const resources& r,
 			const state& s,
-			const geometry_collector::state& gc_s
+			const geometry_collector::system::state& gc_s
 		) -> async::task<>;
 	};
 }
 
 auto gse::renderer::depth_prepass::system::initialize(const init_context& phase, resources& r, state& s) -> void {
-	phase.sched.ensure_system<cull_compute::system, cull_compute::state>(phase.reg);
-	phase.sched.ensure_system<physics_transform::system, physics_transform::state>(phase.reg);
+	phase.sched.ensure_system<cull_compute::system>(phase.reg);
+	phase.sched.ensure_system<physics_transform::system>(phase.reg);
 
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
@@ -99,7 +99,7 @@ auto gse::renderer::depth_prepass::system::initialize(const init_context& phase,
 	}
 }
 
-auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
+auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::system::state& gc_s) -> async::task<> {
 
 	auto& gpu = ctx.get<gpu::context>();
 
@@ -115,14 +115,10 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 	const auto& data = render_items[0];
 	const auto frame_index = gpu.graph().current_frame();
 
-	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
-	if (!gc_r) {
-		co_return;
-	}
-
-	const auto* cam_state = ctx.try_state_of<camera::state>();
-	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
-	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
+	const auto& gc_r = co_await ctx.resources_of<geometry_collector::system::resources>();
+	const auto& cam_state = co_await ctx.state_of<camera::system::state>();
+	const auto view = cam_state.view_matrix;
+	const auto proj = cam_state.projection_matrix;
 
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
 	r.meshlet_shader->set_uniform(cam_alloc.bytes(), "CameraUBO.view", view);
@@ -137,14 +133,14 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);
-	pass.track(gc_r->instance_buffer[frame_index]);
+	pass.track(gc_r.instance_buffer[frame_index]);
 
-	pass.after<cull_compute::state>()
-		.after<physics_transform::state>()
+	pass.after<cull_compute::system::state>()
+		.after<physics_transform::system::state>()
 		.reads(
-			gpu::storage_read(gc_r->instance_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
-			gpu::storage_read(gc_r->skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
-			gpu::indirect_read(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
+			gpu::storage_read(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
+			gpu::storage_read(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
+			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.depth_output(gpu::depth_clear{ 1.0f });
 
@@ -157,7 +153,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 		rec.bind(r.meshlet_pipeline);
 		rec.bind_descriptors(r.meshlet_pipeline, r.meshlet_descriptors[frame_index]);
 
-		const auto& instance_buf = gc_r->instance_buffer[frame_index];
+		const auto& instance_buf = gc_r.instance_buffer[frame_index];
 
 		for (const auto& batch : data.normal_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
@@ -187,8 +183,8 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 		rec.bind(r.skinned_pipeline);
 		rec.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
 
-		const auto& skin_buf = gc_r->skin_buffer[frame_index];
-		const auto& instance_buf = gc_r->instance_buffer[frame_index];
+		const auto& skin_buf = gc_r.skin_buffer[frame_index];
+		const auto& instance_buf = gc_r.instance_buffer[frame_index];
 
 		skinned_writer.begin(frame_index);
 		skinned_writer
@@ -204,7 +200,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const resou
 			rec.bind_index(mesh.index_gpu_buffer());
 
 			rec.draw_indirect(
-				gc_r->skinned_indirect_commands_buffer[frame_index],
+				gc_r.skinned_indirect_commands_buffer[frame_index],
 				i * sizeof(gpu::draw_indexed_indirect_command),
 				1,
 				0

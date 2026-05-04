@@ -16,23 +16,17 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
 export namespace gse::renderer::light_culling {
 	constexpr std::uint32_t tile_size = 16;
 	constexpr std::uint32_t max_lights_per_tile = 64;
 	constexpr std::size_t max_lights = 1024;
 
-	struct state {
-		vec2u current_extent{};
-
-		auto tile_count() const -> vec2u {
-			return {
-				(current_extent.x() + tile_size - 1) / tile_size,
-				(current_extent.y() + tile_size - 1) / tile_size
-			};
-		}
-	};
-
 	struct system {
+		struct state {
+			vec2u current_extent{};
+		};
+
 		struct resources {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
@@ -47,14 +41,6 @@ export namespace gse::renderer::light_culling {
 			gpu::sampler depth_sampler;
 
 			gpu::context* ctx = nullptr;
-
-			auto light_index_list(const std::uint32_t frame) const -> const gpu::buffer& {
-				return light_index_list_buffers[frame];
-			}
-
-			auto tile_light_table(const std::uint32_t frame) const -> const gpu::buffer& {
-				return tile_light_table_buffers[frame];
-			}
 		};
 
 		struct frame_data {
@@ -73,17 +59,33 @@ export namespace gse::renderer::light_culling {
 			const resources& r,
 			frame_data& fd,
 			const state& s,
-			const geometry_collector::state& gc_s
+			const geometry_collector::system::state& gc_s
 		) -> async::task<>;
+
+	private:
+		static auto tile_count(
+			const state& s
+		) -> vec2u;
+
+		static auto update_depth_descriptor(
+			resources& r
+		) -> void;
+
+		static auto rebuild_tile_buffers(
+			resources& r,
+			state& s
+		) -> void;
 	};
 }
 
-namespace gse::renderer::light_culling {
-	auto update_depth_descriptor(system::resources& r) -> void;
-	auto rebuild_tile_buffers(system::resources& r, state& s) -> void;
+auto gse::renderer::light_culling::system::tile_count(const state& s) -> vec2u {
+	return {
+		(s.current_extent.x() + tile_size - 1) / tile_size,
+		(s.current_extent.y() + tile_size - 1) / tile_size
+	};
 }
 
-auto gse::renderer::light_culling::update_depth_descriptor(system::resources& r) -> void {
+auto gse::renderer::light_culling::system::update_depth_descriptor(resources& r) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		gpu::descriptor_writer(r.ctx->shader_registry(), r.ctx->device_handle(), r.shader_handle, r.descriptors[i])
 			.image("g_depth", r.ctx->graph().depth_image(), r.depth_sampler, gpu::image_layout::general)
@@ -91,11 +93,11 @@ auto gse::renderer::light_culling::update_depth_descriptor(system::resources& r)
 	}
 }
 
-auto gse::renderer::light_culling::rebuild_tile_buffers(system::resources& r, state& s) -> void {
+auto gse::renderer::light_culling::system::rebuild_tile_buffers(resources& r, state& s) -> void {
 	const auto ext = r.ctx->graph().extent();
 	s.current_extent = ext;
 
-	const auto tiles = s.tile_count();
+	const auto tiles = tile_count(s);
 	const std::uint32_t total_tiles = tiles.x() * tiles.y();
 	const std::uint32_t index_list_size = total_tiles * max_lights_per_tile * sizeof(std::uint32_t);
 	const std::uint32_t tile_table_size = total_tiles * 2 * sizeof(std::uint32_t);
@@ -126,7 +128,7 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(system::resources& r, st
 }
 
 auto gse::renderer::light_culling::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
-	phase.sched.ensure_system<depth_prepass::system, depth_prepass::state>(phase.reg);
+	phase.sched.ensure_system<depth_prepass::system>(phase.reg);
 
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
@@ -175,7 +177,7 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 	});
 }
 
-auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
+auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s, const geometry_collector::system::state& gc_s) -> async::task<> {
 
 	auto& gpu = ctx.get<gpu::context>();
 	auto& graph = gpu.graph();
@@ -191,9 +193,9 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 
 	const auto frame_index = graph.current_frame();
 
-	const auto* cam_state = ctx.try_state_of<camera::state>();
-	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
-	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
+	const auto& cam_state = co_await ctx.state_of<camera::system::state>();
+	const auto proj = cam_state.projection_matrix;
+	const auto view = cam_state.view_matrix;
 	const auto inv_proj = proj.inverse();
 
 	const auto& params_alloc = r.culling_params_buffers[frame_index];
@@ -288,10 +290,10 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const resou
 	const std::uint32_t num_lights = static_cast<std::uint32_t>(light_count);
 	r.shader_handle->set_uniform(params_alloc.bytes(), "CullingParams.num_lights", num_lights);
 
-	const auto tiles = s.tile_count();
+	const auto tiles = tile_count(s);
 
 	auto pass = graph.add_pass<state>();
-	pass.after<depth_prepass::state>();
+	pass.after<depth_prepass::system::state>();
 
 	pass.track(r.culling_params_buffers[frame_index]);
 	pass.track(r.light_buffers[frame_index]);

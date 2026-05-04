@@ -116,38 +116,17 @@ export namespace gse::audio {
         percentage<float> vol;
     };
 
-    struct state {
-        std::unique_ptr<audio_engine> engine;
-        bool engine_initialized = false;
-        percentage<float> master_vol = percentage<float>::one();
+    class system {
+    public:
+        struct state {
+            void* engine = nullptr;
+            bool engine_initialized = false;
+            percentage<float> master_vol = percentage<float>::one();
+        };
 
-        state();
-        ~state();
-
-        state(
-            state&& other
-        ) noexcept;
-
-        auto operator=(
-            state&& other
-        ) noexcept -> state&;
-    };
-
-    struct system {
         struct resources {
-            std::vector<std::unique_ptr<voice_slot>> voices;
+            std::vector<voice_slot*> voices;
             std::vector<std::uint32_t> free_list;
-
-            resources();
-            ~resources();
-
-            resources(
-                resources&& other
-            ) noexcept;
-
-            auto operator=(
-                resources&& other
-            ) noexcept -> resources&;
         };
 
         static auto initialize(
@@ -167,22 +146,23 @@ export namespace gse::audio {
             resources& r,
             state& s
         ) -> void;
+
+    private:
+        static auto allocate_voice(
+            resources& r,
+            state& s,
+            const audio_clip& clip,
+            bool loop
+        ) -> voice_handle;
+
+        static auto release_voice(
+            resources& r,
+            voice_handle handle
+        ) -> void;
+
+        static auto valid_voice(
+            const resources& r,
+            voice_handle handle
+        ) -> bool;
     };
-
-    auto allocate_voice(
-        system::resources& r,
-        state& s,
-        const audio_clip& clip,
-        bool loop
-    ) -> voice_handle;
-
-    auto release_voice(
-        system::resources& r,
-        voice_handle handle
-    ) -> void;
-
-    auto valid_voice(
-        const system::resources& r,
-        voice_handle handle
-    ) -> bool;
 }

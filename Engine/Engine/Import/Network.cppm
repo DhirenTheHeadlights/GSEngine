@@ -67,13 +67,13 @@ export namespace gse::network {
         ) const noexcept -> bool;
     };
 
-    struct system_state {
-        client::state connection_state = client::state::disconnected;
-        std::vector<discovery_result> available_servers;
-        std::vector<inbox_message> user_inbox;
-    };
-
     struct system {
+        struct state {
+            client::state connection_state = client::state::disconnected;
+            std::vector<discovery_result> available_servers;
+            std::vector<inbox_message> user_inbox;
+        };
+
         struct resources {
             std::unique_ptr<client> client_ptr;
             std::vector<std::shared_ptr<discovery_provider>> providers;
@@ -83,19 +83,19 @@ export namespace gse::network {
         static auto initialize(
             init_context& phase,
             resources& r,
-            system_state& s
+            state& s
         ) -> void;
 
         static auto update(
             update_context& ctx,
             resources& r,
-            system_state& s
+            state& s
         ) -> async::task<>;
 
         static auto shutdown(
             shutdown_context& phase,
             resources& r,
-            system_state& s
+            state& s
         ) -> void;
     };
 }

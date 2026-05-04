@@ -65,7 +65,7 @@ gse::render_component::render_component(const id owner_id, const network_data_t&
     }
 }
 
-auto gse::render_init::try_wire(render_component& rc) -> bool {
+auto gse::render_init::system::try_wire(render_component& rc) -> bool {
     if (rc.has_calculated_com) {
         return true;
     }

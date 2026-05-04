@@ -73,98 +73,136 @@ namespace gse::detail {
 }
 
 export namespace gse::input {
-	class system_state {
-	public:
-		std::vector<event> queue;
-		std::mutex mutex;
-		double_buffer<state> states;
-
-		auto key_callback(int key, int action) -> void;
-		auto mouse_button_callback(int button, int action, double x_pos, double y_pos) -> void;
-		auto mouse_pos_callback(double x_pos, double y_pos) -> void;
-		auto mouse_scroll_callback(double x_offset, double y_offset) -> void;
-		auto text_callback(unsigned int codepoint) -> void;
-		auto clear_events() -> void;
-		auto current_state() const -> const state&;
-
-	private:
-		auto push_event(event&& e) -> void;
-
-		static auto to_key(int glfw_key) -> std::optional<key>;
-		static auto to_mouse_button(int glfw_button) -> std::optional<mouse_button>;
-	};
-
 	struct system {
+		struct state {
+			std::vector<event> queue;
+			std::mutex mutex;
+			double_buffer<input::state> states;
+		};
+
 		static auto update(
 			update_context& ctx,
-			system_state& s
+			state& s
 		) -> async::task<>;
+
+		static auto key_callback(
+			state& s,
+			int key,
+			int action
+		) -> void;
+
+		static auto mouse_button_callback(
+			state& s,
+			int button,
+			int action,
+			double x_pos,
+			double y_pos
+		) -> void;
+
+		static auto mouse_pos_callback(
+			state& s,
+			double x_pos,
+			double y_pos
+		) -> void;
+
+		static auto mouse_scroll_callback(
+			state& s,
+			double x_offset,
+			double y_offset
+		) -> void;
+
+		static auto text_callback(
+			state& s,
+			unsigned int codepoint
+		) -> void;
+
+		static auto clear_events(
+			state& s
+		) -> void;
+
+		static auto current_state(
+			const state& s
+		) -> const input::state&;
+
+	private:
+		static auto push_event(
+			state& s,
+			event&& e
+		) -> void;
+
+		static auto to_key(
+			int glfw_key
+		) -> std::optional<key>;
+
+		static auto to_mouse_button(
+			int glfw_button
+		) -> std::optional<mouse_button>;
 	};
 }
 
-auto gse::input::system_state::push_event(event&& e) -> void {
-	std::scoped_lock lock(mutex);
-	queue.emplace_back(std::move(e));
+auto gse::input::system::push_event(state& s, event&& e) -> void {
+	std::scoped_lock lock(s.mutex);
+	s.queue.emplace_back(std::move(e));
 }
 
-auto gse::input::system_state::key_callback(const int key, const int action) -> void {
+auto gse::input::system::key_callback(state& s, const int key, const int action) -> void {
 	if (const auto gse_key = to_key(key)) {
 		if (action == glfw::press) {
-			push_event(key_pressed{ .key_code = *gse_key });
+			push_event(s, key_pressed{ .key_code = *gse_key });
 		}
 		else if (action == glfw::release) {
-			push_event(key_released{ .key_code = *gse_key });
+			push_event(s, key_released{ .key_code = *gse_key });
 		}
 	}
 }
 
-auto gse::input::system_state::mouse_button_callback(const int button, const int action, const double x_pos, const double y_pos) -> void {
+auto gse::input::system::mouse_button_callback(state& s, const int button, const int action, const double x_pos, const double y_pos) -> void {
 	if (const auto gse_button = to_mouse_button(button)) {
 		if (action == glfw::press) {
-			push_event(mouse_button_pressed{ *gse_button, x_pos, y_pos });
+			push_event(s, mouse_button_pressed{ *gse_button, x_pos, y_pos });
 		}
 		else if (action == glfw::release) {
-			push_event(mouse_button_released{ *gse_button, x_pos, y_pos });
+			push_event(s, mouse_button_released{ *gse_button, x_pos, y_pos });
 		}
 	}
 }
 
-auto gse::input::system_state::mouse_pos_callback(const double x_pos, const double y_pos) -> void {
-	push_event(mouse_moved{ x_pos, y_pos });
+auto gse::input::system::mouse_pos_callback(state& s, const double x_pos, const double y_pos) -> void {
+	push_event(s, mouse_moved{ x_pos, y_pos });
 }
 
-auto gse::input::system_state::mouse_scroll_callback(const double x_offset, const double y_offset) -> void {
-	push_event(mouse_scrolled{ x_offset, y_offset });
+auto gse::input::system::mouse_scroll_callback(state& s, const double x_offset, const double y_offset) -> void {
+	push_event(s, mouse_scrolled{ x_offset, y_offset });
 }
 
-auto gse::input::system_state::text_callback(const unsigned int codepoint) -> void {
-	push_event(text_entered{ codepoint });
+auto gse::input::system::text_callback(state& s, const unsigned int codepoint) -> void {
+	push_event(s, text_entered{ codepoint });
 }
 
-auto gse::input::system_state::clear_events() -> void {
-	std::scoped_lock lock(mutex);
-	queue.clear();
+auto gse::input::system::clear_events(state& s) -> void {
+	std::scoped_lock lock(s.mutex);
+	s.queue.clear();
 }
 
-auto gse::input::system_state::current_state() const -> const state& {
-	return states.read();
+auto gse::input::system::current_state(const state& s) -> const input::state& {
+	return s.states.read();
 }
 
-auto gse::input::system_state::to_key(const int glfw_key) -> std::optional<key> {
+auto gse::input::system::to_key(const int glfw_key) -> std::optional<key> {
 	if (glfw_key >= glfw::key_space && glfw_key <= glfw::key_last) {
 		return static_cast<key>(glfw_key);
 	}
 	return std::nullopt;
 }
 
-auto gse::input::system_state::to_mouse_button(const int glfw_button) -> std::optional<mouse_button> {
+auto gse::input::system::to_mouse_button(const int glfw_button) -> std::optional<mouse_button> {
 	if (glfw_button >= glfw::mouse_button_1 && glfw_button <= glfw::mouse_button_last) {
 		return static_cast<mouse_button>(glfw_button);
 	}
 	return std::nullopt;
 }
 
-auto gse::input::system::update(update_context& ctx, system_state& s) -> async::task<> {
+auto gse::input::system::update(update_context& ctx, state& s) -> async::task<> {
 	std::vector<event> events_to_process;
 
 	{

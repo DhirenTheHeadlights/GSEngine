@@ -81,7 +81,7 @@ export namespace gse::vulkan {
 
         [[nodiscard]] static auto create(
             const instance& instance_data,
-            save::state& save
+            save::system::state& save
         ) -> device_creation_result;
 
         [[nodiscard]] auto physical_device(
@@ -174,7 +174,7 @@ export namespace gse::vulkan {
         device(
             vk::raii::PhysicalDevice&& physical_device,
             vk::raii::Device&& device,
-            save::state& save_state,
+            save::system::state& save_state,
             bool device_fault_enabled,
             bool device_fault_vendor_binary_enabled
         );

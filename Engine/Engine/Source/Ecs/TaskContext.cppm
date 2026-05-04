@@ -37,24 +37,16 @@ export namespace gse {
 		) const -> asset::registry*;
 
 		template <typename State>
-		auto state_of(
-		) const -> const State&;
-
-		template <typename State>
-		auto try_state_of(
-		) const -> const State*;
+		[[nodiscard]] auto state_of(
+		) const -> async::task<const State&>;
 
 		template <typename T>
 		auto read_channel(
 		) const -> channel_read_guard<T>;
 
 		template <typename Resources>
-		auto resources_of(
-		) const -> const Resources&;
-
-		template <typename Resources>
-		auto try_resources_of(
-		) const -> const Resources*;
+		[[nodiscard]] auto resources_of(
+		) const -> async::task<const Resources&>;
 
 		template <typename State>
 		auto after(
@@ -93,20 +85,13 @@ inline auto gse::task_context::try_assets() const -> asset::registry* {
 }
 
 template <typename State>
-auto gse::task_context::state_of() const -> const State& {
+auto gse::task_context::state_of() const -> async::task<const State&> {
+	co_await graph.wait_state_ready(id_of<State>());
 	const auto* p = live_state
 		? states.state_ptr(id_of<State>())
 		: states.state_snapshot_ptr(id_of<State>());
 	assert(p != nullptr, "state not found");
-	return *static_cast<const State*>(p);
-}
-
-template <typename State>
-auto gse::task_context::try_state_of() const -> const State* {
-	const auto* p = live_state
-		? states.state_ptr(id_of<State>())
-		: states.state_snapshot_ptr(id_of<State>());
-	return static_cast<const State*>(p);
+	co_return *static_cast<const State*>(p);
 }
 
 template <typename T>
@@ -120,15 +105,11 @@ auto gse::task_context::read_channel() const -> channel_read_guard<T> {
 }
 
 template <typename Resources>
-auto gse::task_context::resources_of() const -> const Resources& {
+auto gse::task_context::resources_of() const -> async::task<const Resources&> {
+	co_await graph.wait_state_ready(id_of<Resources>());
 	const auto* p = resources_store.resources_ptr(id_of<Resources>());
 	assert(p != nullptr, "resources not found");
-	return *static_cast<const Resources*>(p);
-}
-
-template <typename Resources>
-auto gse::task_context::try_resources_of() const -> const Resources* {
-	return static_cast<const Resources*>(resources_store.resources_ptr(id_of<Resources>()));
+	co_return *static_cast<const Resources*>(p);
 }
 
 template <typename State>

@@ -65,6 +65,21 @@ export namespace gse::async {
 		) -> T;
 	};
 
+	template <typename T>
+	struct value_promise<T&> : promise_base {
+		T* m_result = nullptr;
+
+		auto get_return_object(
+		) -> task<T&>;
+
+		auto return_value(
+			T& value
+		) -> void;
+
+		auto result(
+		) -> T&;
+	};
+
 	struct void_promise : promise_base {
 		auto get_return_object(
 		) -> task<>;
@@ -188,6 +203,24 @@ auto gse::async::value_promise<T>::result() -> T {
 		std::rethrow_exception(m_exception);
 	}
 	return std::move(*m_result);
+}
+
+template <typename T>
+auto gse::async::value_promise<T&>::get_return_object() -> task<T&> {
+	return task<T&>{ std::coroutine_handle<value_promise<T&>>::from_promise(*this) };
+}
+
+template <typename T>
+auto gse::async::value_promise<T&>::return_value(T& value) -> void {
+	m_result = std::addressof(value);
+}
+
+template <typename T>
+auto gse::async::value_promise<T&>::result() -> T& {
+	if (m_exception) {
+		std::rethrow_exception(m_exception);
+	}
+	return *m_result;
 }
 
 template <typename T>

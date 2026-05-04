@@ -36,18 +36,6 @@ import gse.audio;
 import gse.math;
 import gse.save;
 
-auto gse::renderer::system::resources::set_ui_focus(const bool focus) const -> void {
-	ctx->set_ui_focus(focus);
-}
-
-auto gse::renderer::system::resources::context_ref() -> gpu::context& {
-	return *ctx;
-}
-
-auto gse::renderer::system::resources::context_ref() const -> const gpu::context& {
-	return *ctx;
-}
-
 auto gse::renderer::system::initialize(const init_context& phase, resources& r, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
@@ -64,10 +52,10 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 
 	assets.compile_all();
 
-	phase.sched.add_system<forward::system, forward::state>(phase.reg);
-	phase.sched.add_system<physics_debug::system, physics_debug::state>(phase.reg);
-	phase.sched.add_system<ui::system, ui::state>(phase.reg);
-	phase.sched.add_system<capture::system, capture::state>(phase.reg);
+	phase.sched.add_system<forward::system>(phase.reg);
+	phase.sched.add_system<physics_debug::system>(phase.reg);
+	phase.sched.add_system<ui::system>(phase.reg);
+	phase.sched.add_system<capture::system>(phase.reg);
 
 	gse::settings::install(phase, "Graphics", s.settings);
 
@@ -96,7 +84,8 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> async
 	gpu.graph().set_gpu_pipeline_stats_enabled(s.settings.gpu_pipeline_stats_enabled);
 	profile::set_enabled(s.settings.profile_aggregator_enabled);
 
-	if (const auto* sys = ctx.try_state_of<actions::system_state>(); sys && s.dump_profile_action.pressed(sys->current_state(), *sys)) {
+	const auto& sys = co_await ctx.state_of<actions::system::state>();
+	if (actions::system::pressed(actions::system::current_state(sys), sys, s.dump_profile_action)) {
 		profile::dump();
 		log::println(log::category::render, "Profile dumped");
 	}

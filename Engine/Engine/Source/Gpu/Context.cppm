@@ -44,8 +44,8 @@ export namespace gse::gpu {
 	public:
 		explicit context(
 			const std::string& window_title,
-			input::system_state& input,
-			save::state& save
+			input::system::state& input,
+			save::system::state& save
 		);
 		~context() override;
 
@@ -172,11 +172,11 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_device(gse::gpu::device::create(m_window, save)), m_shader_registry(std::make_unique<gse::gpu::shader_registry>(*m_device)), m_swapchain(gse::gpu::swap_chain::create(m_window.viewport(), *m_device)), m_frame(gse::gpu::frame::create(*m_device, *m_swapchain)) {
+gse::gpu::context::context(const std::string& window_title, input::system::state& input, save::system::state& save) : m_window(window_title, input, save), m_device(gse::gpu::device::create(m_window, save)), m_shader_registry(std::make_unique<gse::gpu::shader_registry>(*m_device)), m_swapchain(gse::gpu::swap_chain::create(m_window.viewport(), *m_device)), m_frame(gse::gpu::frame::create(*m_device, *m_swapchain)) {
 	m_render_graph = std::make_unique<vulkan::render_graph>(*m_device, *m_swapchain, *m_frame);
 	m_bindless_textures = std::make_unique<bindless_texture_set>(m_device->vulkan_device(), m_device->descriptor_heap());
 
-	save::register_struct(save, "Graphics", *this);
+	save::system::register_struct(save, "Graphics", *this);
 
 	m_device->transient().recorder().pre_frame([graph = m_render_graph.get()](handle<command_buffer> cmd) {
 		vulkan::transition_image_layout(

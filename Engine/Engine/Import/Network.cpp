@@ -22,13 +22,13 @@ auto gse::network::key_eq::operator()(const address& a, const address& b) const 
     return a.ip == b.ip && a.port == b.port;
 }
 
-auto gse::network::system::initialize(init_context&, resources&, system_state&) -> void {}
+auto gse::network::system::initialize(init_context&, resources&, state&) -> void {}
 
-auto gse::network::system::shutdown(shutdown_context&, resources& r, system_state&) -> void {
+auto gse::network::system::shutdown(shutdown_context&, resources& r, state&) -> void {
     r.client_ptr.reset();
 }
 
-auto gse::network::system::update(update_context& ctx, resources& r, system_state& s) -> async::task<> {
+auto gse::network::system::update(update_context& ctx, resources& r, state& s) -> async::task<> {
     for (const auto& req : ctx.read_channel<connect_request>()) {
         if (!r.client_ptr) {
             const address bind = req.options.local_bind.value_or(address{
@@ -88,11 +88,11 @@ auto gse::network::system::update(update_context& ctx, resources& r, system_stat
         req.action(*r.client_ptr);
     }
 
-    const auto* renderer_res = ctx.try_resources_of<renderer::system::resources>();
-
     s.user_inbox.clear();
 
-    r.client_ptr->drain([&r, &s, renderer_res](inbox_message& msg) {
+    auto* assets = ctx.try_assets();
+
+    r.client_ptr->drain([&r, &s, assets](inbox_message& msg) {
         if (auto* rep = std::get_if<replication_message>(&msg)) {
             const std::span data(rep->payload);
             bitstream stream(data);
@@ -104,15 +104,15 @@ auto gse::network::system::update(update_context& ctx, resources& r, system_stat
                     if constexpr (std::is_same_v<T, render_component>) {
                         auto fixed_data = m.data;
 
-                        if (renderer_res) {
+                        if (assets) {
                             for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
                                 const auto res_id = fixed_data.models[i].id();
-                                fixed_data.models[i] = renderer_res->try_get<model>(res_id);
+                                fixed_data.models[i] = assets->try_get<model>(res_id);
                             }
 
                             for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
                                 const auto res_id = fixed_data.skinned_models[i].id();
-                                fixed_data.skinned_models[i] = renderer_res->try_get<skinned_model>(res_id);
+                                fixed_data.skinned_models[i] = assets->try_get<skinned_model>(res_id);
                             }
                         }
 
@@ -161,18 +161,14 @@ auto gse::network::system::update(update_context& ctx, resources& r, system_stat
     s.connection_state = r.client_ptr->current_state();
 
     if (s.connection_state == client::state::connected) {
-        if (const auto* actions_state = ctx.try_state_of<actions::system_state>()) {
-            angle yaw;
-            if (const auto* cam_state = ctx.try_state_of<camera::state>()) {
-                yaw = cam_state->yaw;
-            }
-            r.client_ptr->push_input(
-                actions_state->current_state(),
-                actions_state->axis1_ids(),
-                actions_state->axis2_ids(),
-                yaw
-            );
-        }
+        const auto& actions_state = co_await ctx.state_of<actions::system::state>();
+        const auto& cam_state = co_await ctx.state_of<camera::system::state>();
+        r.client_ptr->push_input(
+            actions::system::current_state(actions_state),
+            actions::system::axis1_ids(actions_state),
+            actions::system::axis2_ids(actions_state),
+            cam_state.yaw
+        );
     }
 
     co_return;

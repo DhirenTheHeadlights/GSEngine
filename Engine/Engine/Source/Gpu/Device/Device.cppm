@@ -22,7 +22,7 @@ export namespace gse::gpu {
 	public:
 		[[nodiscard]] static auto create(
 			const window& win,
-			save::state& save
+			save::system::state& save
 		) -> std::unique_ptr<device>;
 
 		~device() override;

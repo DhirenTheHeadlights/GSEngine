@@ -17,7 +17,7 @@ import gse.math;
 import gse.log;
 
 auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, frame_data& fd, state& s) -> void {
-	phase.sched.ensure_system<geometry_collector::system, geometry_collector::state>(phase.reg);
+	phase.sched.ensure_system<geometry_collector::system>(phase.reg);
 
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
@@ -40,7 +40,7 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, fra
 	}
 }
 
-auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
+auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd, const state& s, const geometry_collector::system::state& gc_s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
 
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
@@ -124,60 +124,50 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 
 	const auto instance_count = static_cast<std::uint32_t>(instances.size());
 
-	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
+	const auto& gc_r = co_await ctx.resources_of<geometry_collector::system::resources>();
 
 	gpu::write_tlas_instances(fd.tlas_per_frame[frame_index], instances.span());
 
 	auto pass = gpu.graph().add_pass<state>();
 
-	std::uint32_t workgroups = 0;
-	gpu::cached_push_constants pc;
-
-	if (gc_r) {
-		const auto mapping_bytes = instance_count * sizeof(std::uint32_t);
-		if (fd.mapping_buffer_capacity < mapping_bytes) {
-			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				fd.mapping_buffers[i] = gpu::buffer::create(gpu.allocator(), {
-					.size = mapping_bytes,
-					.usage = gpu::buffer_flag::storage
-				});
-			}
-			fd.mapping_buffer_capacity = mapping_bytes;
+	const auto mapping_bytes = instance_count * sizeof(std::uint32_t);
+	if (fd.mapping_buffer_capacity < mapping_bytes) {
+		for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+			fd.mapping_buffers[i] = gpu::buffer::create(gpu.allocator(), {
+				.size = mapping_bytes,
+				.usage = gpu::buffer_flag::storage
+			});
 		}
-
-		gse::memcpy(fd.mapping_buffers[frame_index].mapped(), index_mapping.data(), mapping_bytes);
-
-		auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instance_buffer();
-
-		gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
-			.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())
-			.buffer("index_mapping", fd.mapping_buffers[frame_index], 0, mapping_bytes)
-			.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)
-			.commit();
-
-		pc = gpu::cache_push_block(fd.tlas_update_shader, "push_constants");
-		pc.set("count", instance_count);
-		pc.set("instance_stride", gc_r->instance_stride);
-		pc.set("model_matrix_offset", gc_r->instance_offsets.at("model_matrix"));
-
-		workgroups = (instance_count + 63) / 64;
-
-		pass.track(gc_r->instance_buffer[frame_index]);
-		pass.reads(gpu::storage_read(gc_r->instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-			.after<geometry_collector::state>();
+		fd.mapping_buffer_capacity = mapping_bytes;
 	}
+
+	gse::memcpy(fd.mapping_buffers[frame_index].mapped(), index_mapping.data(), mapping_bytes);
+
+	auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instance_buffer();
+
+	gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
+		.buffer("instance_data", gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
+		.buffer("index_mapping", fd.mapping_buffers[frame_index], 0, mapping_bytes)
+		.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)
+		.commit();
+
+	auto pc = gpu::cache_push_block(fd.tlas_update_shader, "push_constants");
+	pc.set("count", instance_count);
+	pc.set("instance_stride", gc_r.instance_stride);
+	pc.set("model_matrix_offset", gc_r.instance_offsets.at("model_matrix"));
+
+	const std::uint32_t workgroups = (instance_count + 63) / 64;
+
+	pass.track(gc_r.instance_buffer[frame_index]);
+	pass.reads(gpu::storage_read(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
+		.after<geometry_collector::system::state>();
 
 	auto& rec = co_await pass.record();
 
-	if (gc_r) {
-		rec.barrier(gpu::barrier_scope::transfer_to_compute);
-		rec.bind(fd.tlas_update_pipeline);
-		rec.bind_descriptors(fd.tlas_update_pipeline, fd.tlas_update_descriptors[frame_index]);
-		rec.push(fd.tlas_update_pipeline, pc);
-		rec.dispatch(workgroups, 1, 1);
-		gpu::build_tlas_in_place(gpu, fd.tlas_per_frame[frame_index], instance_count, rec);
-	}
-	else {
-		gpu::rebuild_tlas(gpu, fd.tlas_per_frame[frame_index], fd.instances[frame_index].span(), rec);
-	}
+	rec.barrier(gpu::barrier_scope::transfer_to_compute);
+	rec.bind(fd.tlas_update_pipeline);
+	rec.bind_descriptors(fd.tlas_update_pipeline, fd.tlas_update_descriptors[frame_index]);
+	rec.push(fd.tlas_update_pipeline, pc);
+	rec.dispatch(workgroups, 1, 1);
+	gpu::build_tlas_in_place(gpu, fd.tlas_per_frame[frame_index], instance_count, rec);
 }

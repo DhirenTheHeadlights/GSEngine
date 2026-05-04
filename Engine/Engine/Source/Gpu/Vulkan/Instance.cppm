@@ -25,7 +25,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] static auto create(
 			std::span<const char* const> required_extensions,
-			save::state& save
+			save::system::state& save
 		) -> instance;
 
 		auto set_surface(

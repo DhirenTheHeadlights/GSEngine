@@ -254,7 +254,7 @@ auto gse::settings::register_panel(panel_state& ps, const std::string_view categ
 
 template <typename T>
 auto gse::settings::install(const init_context& phase, const std::string_view category, T& obj) -> void {
-    save::register_struct(phase, category, obj);
+    save::system::register_struct(phase, category, obj);
     register_panel(phase, category, obj);
 }
 

@@ -16,11 +16,11 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 export namespace gse::renderer::cull_compute {
-	struct state {
-		bool enabled = true;
-	};
-
 	struct system {
+		struct state {
+			bool enabled = true;
+		};
+
 		struct resources {
 			resource::handle<shader> shader_handle;
 			gpu::pipeline pipeline;
@@ -42,14 +42,14 @@ export namespace gse::renderer::cull_compute {
 			frame_context& ctx,
 			const resources& r,
 			const state& s,
-			const geometry_collector::state& gc_s
+			const geometry_collector::system::state& gc_s
 		) -> async::task<>;
 	};
 }
 
 auto gse::renderer::cull_compute::system::initialize(const init_context& phase, resources& r, state& s) -> void {
-	phase.sched.ensure_system<geometry_collector::system, geometry_collector::state>(phase.reg);
-	phase.sched.ensure_system<skin_compute::system, skin_compute::state>(phase.reg);
+	phase.sched.ensure_system<geometry_collector::system>(phase.reg);
+	phase.sched.ensure_system<skin_compute::system>(phase.reg);
 
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
@@ -110,7 +110,7 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 	}
 }
 
-auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
+auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::system::state& gc_s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
 
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
@@ -119,10 +119,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 	}
 
 	const auto& data = render_items[0];
-	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
-	if (!gc_r) {
-		co_return;
-	}
+	const auto& gc_r = co_await ctx.resources_of<geometry_collector::system::resources>();
 
 	const auto& normal_batches = data.normal_batches;
 	const auto& skinned_batches = data.skinned_batches;
@@ -133,9 +130,9 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 	const auto frame_index = gpu.graph().current_frame();
 
 	if (s.enabled) {
-		const auto* cam_state = ctx.try_state_of<camera::state>();
-		const auto view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
-		const auto proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
+		const auto& cam_state = co_await ctx.state_of<camera::system::state>();
+		const auto view_matrix = cam_state.view_matrix;
+		const auto proj_matrix = cam_state.projection_matrix;
 		const auto view_proj = proj_matrix * view_matrix;
 		const auto frustum = extract_frustum_planes(view_proj);
 
@@ -164,22 +161,22 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resour
 	auto pass = gpu.graph().add_pass<state>();
 
 	if (!normal_batches.empty()) {
-		pass.track(gc_r->normal_indirect_commands_buffer[frame_index]);
+		pass.track(gc_r.normal_indirect_commands_buffer[frame_index]);
 	}
 	if (!skinned_batches.empty()) {
-		pass.track(gc_r->skinned_indirect_commands_buffer[frame_index]);
+		pass.track(gc_r.skinned_indirect_commands_buffer[frame_index]);
 	}
 
 	if (s.enabled) {
 		pass.track(r.frustum_buffer[frame_index]);
 		pass.track(r.batch_info_buffer[frame_index]);
-		pass.after<skin_compute::state>();
+		pass.after<skin_compute::system::state>();
 
 		if (!normal_batches.empty()) {
-			pass.writes(gpu::storage_write(gc_r->normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader));
+			pass.writes(gpu::storage_write(gc_r.normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader));
 		}
 		if (!skinned_batches.empty()) {
-			pass.writes(gpu::storage_write(gc_r->skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader));
+			pass.writes(gpu::storage_write(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader));
 		}
 	}
 

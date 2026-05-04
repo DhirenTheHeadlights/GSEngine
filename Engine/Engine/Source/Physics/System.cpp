@@ -26,23 +26,23 @@ import gse.gpu;
 import gse.assets;
 import gse.graphics;
 
-auto gse::physics::create_joint(state& s, const joint_definition& def) -> joint_handle {
+auto gse::physics::system::create_joint(state& s, const joint_definition& def) -> joint_handle {
 	const auto handle = static_cast<joint_handle>(s.joints.size());
 	s.joints.push_back(def);
 	return handle;
 }
 
-auto gse::physics::remove_joint(state& s, const joint_handle handle) -> void {
+auto gse::physics::system::remove_joint(state& s, const joint_handle handle) -> void {
 	if (handle < s.joints.size()) {
 		s.joints.erase(s.joints.begin() + handle);
 	}
 }
 
-auto gse::physics::contact_compare_key_hash::operator()(const contact_compare_key& key) const noexcept -> std::size_t {
+auto gse::physics::system::contact_compare_key_hash::operator()(const contact_compare_key& key) const noexcept -> std::size_t {
 	return gse::hash_combine(key);
 }
 
-auto gse::physics::collect_collision_objects(write<motion_component>& motion, write<collision_component>& collision) -> std::vector<collision_pair> {
+auto gse::physics::system::collect_collision_objects(write<motion_component>& motion, write<collision_component>& collision) -> std::vector<collision_pair> {
 	std::vector<collision_pair> objects;
 	objects.reserve(collision.size());
 	for (collision_component& cc : collision) {
@@ -57,7 +57,7 @@ auto gse::physics::collect_collision_objects(write<motion_component>& motion, wr
 	return objects;
 }
 
-auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, const std::vector<collision_pair>& objects, const flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state, write<collision_result_component>* results) -> void {
+auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, const std::vector<collision_pair>& objects, const flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state, write<collision_result_component>* results) -> void {
 	for (std::size_t i = 0; i < objects.size(); ++i) {
 		for (std::size_t j = i + 1; j < objects.size(); ++j) {
 			auto& [collision_a, motion_a] = objects[i];
@@ -228,7 +228,7 @@ auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contac
 	}
 }
 
-auto gse::physics::pack_feature(const feature_id& feature) -> std::uint64_t {
+auto gse::physics::system::pack_feature(const feature_id& feature) -> std::uint64_t {
 	return
 		(static_cast<std::uint64_t>(static_cast<std::uint8_t>(feature.type_a)) << 56) |
 		(static_cast<std::uint64_t>(feature.index_a) << 48) |
@@ -240,7 +240,7 @@ auto gse::physics::pack_feature(const feature_id& feature) -> std::uint64_t {
 		static_cast<std::uint64_t>(feature.side_b1);
 }
 
-auto gse::physics::unpack_feature(const std::uint64_t packed) -> feature_id {
+auto gse::physics::system::unpack_feature(const std::uint64_t packed) -> feature_id {
 	return {
 		.type_a = static_cast<feature_type>((packed >> 56) & 0xFF),
 		.type_b = static_cast<feature_type>((packed >> 24) & 0xFF),
@@ -253,7 +253,7 @@ auto gse::physics::unpack_feature(const std::uint64_t packed) -> feature_id {
 	};
 }
 
-auto gse::physics::build_contact_cache_from_warm_start(const std::span<const vbd::warm_start_entry> warm_start_contacts) -> vbd::contact_cache {
+auto gse::physics::system::build_contact_cache_from_warm_start(const std::span<const vbd::warm_start_entry> warm_start_contacts) -> vbd::contact_cache {
 	vbd::contact_cache cache;
 	for (const auto& c : warm_start_contacts) {
 		cache.store(c.body_a, c.body_b, unpack_feature(c.feature_key), vbd::cached_lambda{
@@ -271,7 +271,7 @@ auto gse::physics::build_contact_cache_from_warm_start(const std::span<const vbd
 	return cache;
 }
 
-auto gse::physics::invalidate_warm_start_entries(std::vector<vbd::warm_start_entry>& warm_start_contacts, const std::span<const std::uint32_t> body_indices) -> void {
+auto gse::physics::system::invalidate_warm_start_entries(std::vector<vbd::warm_start_entry>& warm_start_contacts, const std::span<const std::uint32_t> body_indices) -> void {
 	if (body_indices.empty()) {
 		return;
 	}
@@ -375,7 +375,7 @@ auto gse::physics::system::update(update_context& ctx, update_data& ud, state& s
 	update_vbd(steps, ud, s, motion, collision, results);
 }
 
-auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results, const time_t<float, seconds> dt, channel_writer& channels) -> void {
+auto gse::physics::system::update_vbd_gpu(const int steps, update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results, const time_t<float, seconds> dt, channel_writer& channels) -> void {
 	if (!s.gpu_buffers_created) {
 		return;
 	}
@@ -1084,7 +1084,7 @@ auto gse::physics::update_vbd_gpu(const int steps, system::update_data& ud, stat
 	}
 }
 
-auto gse::physics::update_vbd(const int steps, system::update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results) -> void {
+auto gse::physics::system::update_vbd(const int steps, update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results) -> void {
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 	const int substeps = std::max(s.settings.physics_substeps, 1);
 	const auto sub_dt = const_update_time / static_cast<float>(substeps);

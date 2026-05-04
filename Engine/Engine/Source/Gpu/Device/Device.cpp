@@ -17,7 +17,7 @@ import gse.log;
 import gse.save;
 import gse.concurrency;
 
-auto gse::gpu::device::create(const window& win, save::state& save) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(const window& win, save::system::state& save) -> std::unique_ptr<device> {
 	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), save);
 	vulkan::create_surface(win, instance);
 

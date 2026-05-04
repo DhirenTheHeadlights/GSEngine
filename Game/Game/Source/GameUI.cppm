@@ -4,21 +4,21 @@ import std;
 import gse;
 
 export namespace gs {
-	struct client_ui_state {
-		bool show_cross_hair = false;
-		std::string buff;
-		float slider_f = 0.f;
-	};
-
 	struct client_ui_system {
+		struct state {
+			bool show_cross_hair = false;
+			std::string buff;
+			float slider_f = 0.f;
+		};
+
 		static auto update(
 			gse::update_context& ctx,
-			client_ui_state& s
+			state& s
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::client_ui_system::update(gse::update_context& ctx, client_ui_state& s) -> gse::async::task<> {
+auto gs::client_ui_system::update(gse::update_context& ctx, state& s) -> gse::async::task<> {
 	if (gse::keyboard::pressed(gse::key::escape)) {
 		gse::shutdown();
 	}
@@ -55,20 +55,20 @@ auto gs::client_ui_system::update(gse::update_context& ctx, client_ui_state& s) 
 		ui.draw<gse::gui::profiler>();
 	});
 
-	if (const auto* pds = ctx.try_state_of<gse::renderer::physics_debug::state>()) {
-		if (pds->settings.enabled) {
-			const auto& [
-				body_count,
-				sleeping_count,
-				contact_count,
-				motor_count,
-				colliding_pairs,
-				solve_time,
-				max_linear_speed,
-				max_angular_speed,
-				max_penetration,
-				gpu_solver_active
-			] = pds->latest_stats;
+	const auto& pds = co_await ctx.state_of<gse::renderer::physics_debug::system::state>();
+	if (pds.settings.enabled) {
+		const auto& [
+			body_count,
+			sleeping_count,
+			contact_count,
+			motor_count,
+			colliding_pairs,
+			solve_time,
+			max_linear_speed,
+			max_angular_speed,
+			max_penetration,
+			gpu_solver_active
+		] = pds.latest_stats;
 
 			gse::gui::panel("Physics Debug", [&](gse::gui::builder& ui) {
 				ui.draw<gse::gui::value<std::uint32_t>>({
@@ -110,7 +110,6 @@ auto gs::client_ui_system::update(gse::update_context& ctx, client_ui_state& s) 
 					});
 				}
 			});
-		}
 	}
 
 	gse::set_ui_focus(s.show_cross_hair);

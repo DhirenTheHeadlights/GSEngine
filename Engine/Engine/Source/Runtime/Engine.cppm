@@ -110,15 +110,15 @@ export namespace gse {
 		auto triggers(
 		) const -> std::span<const trigger>;
 
-		template <typename S, typename State, typename... Args>
+		template <typename S, typename... Args>
 		auto add_system(
 			Args&&... args
-		) -> State&;
+		) -> typename S::state&;
 
-		template <typename S, typename State, typename... Args>
+		template <typename S, typename... Args>
 		auto ensure_system(
 			Args&&... args
-		) -> State&;
+		) -> typename S::state&;
 	private:
 		flags<engine_flag> m_flags;
 		scheduler m_scheduler;
@@ -162,12 +162,12 @@ auto gse::engine::add_scene(std::string_view name, scene::setup_fn setup) -> sce
 	return m_world.add(name, std::move(setup));
 }
 
-template <typename S, typename State, typename... Args>
-auto gse::engine::add_system(Args&&... args) -> State& {
-	return m_scheduler.add_system<S, State>(m_world.registry(), std::forward<Args>(args)...);
+template <typename S, typename... Args>
+auto gse::engine::add_system(Args&&... args) -> typename S::state& {
+	return m_scheduler.add_system<S>(m_world.registry(), std::forward<Args>(args)...);
 }
 
-template <typename S, typename State, typename... Args>
-auto gse::engine::ensure_system(Args&&... args) -> State& {
-	return m_scheduler.ensure_system<S, State>(m_world.registry(), std::forward<Args>(args)...);
+template <typename S, typename... Args>
+auto gse::engine::ensure_system(Args&&... args) -> typename S::state& {
+	return m_scheduler.ensure_system<S>(m_world.registry(), std::forward<Args>(args)...);
 }
