@@ -178,15 +178,15 @@ template <gse::actions::fixed_string Tag>
 auto gse::actions::bind_button_channel(const id owner_id, const key default_key, button_channel& channel) -> void {
 	auto h = add<Tag>(default_key);
 	channel.action_id = h.id();
-	defer([owner_id, &channel](system_state& s) {
-		s.register_channel(owner_id, channel);
+	defer([owner_id, &channel](system::state& s) {
+		system::register_channel(s, owner_id, channel);
 	});
 }
 
 auto gse::actions::bind_axis2_channel(const id owner_id, const pending_axis2_info& info, axis2_channel& channel, const id axis_id) -> void {
 	channel.axis_id = axis_id;
-	defer([owner_id, &channel](system_state& s) {
-		s.register_channel(owner_id, channel);
+	defer([owner_id, &channel](system::state& s) {
+		system::register_channel(s, owner_id, channel);
 	});
 
 	channel_add(bind_axis2_request{
@@ -196,116 +196,116 @@ auto gse::actions::bind_axis2_channel(const id owner_id, const pending_axis2_inf
 }
 
 auto gse::actions::register_channel(const id owner_id, button_channel& channel) -> void {
-	defer([owner_id, &channel](system_state& s) {
-		s.register_channel(owner_id, channel);
+	defer([owner_id, &channel](system::state& s) {
+		system::register_channel(s, owner_id, channel);
 	});
 }
 
 auto gse::actions::register_channel(const id owner_id, axis1_channel& channel) -> void {
-	defer([owner_id, &channel](system_state& s) {
-		s.register_channel(owner_id, channel);
+	defer([owner_id, &channel](system::state& s) {
+		system::register_channel(s, owner_id, channel);
 	});
 }
 
 auto gse::actions::register_channel(const id owner_id, axis2_channel& channel) -> void {
-	defer([owner_id, &channel](system_state& s) {
-		s.register_channel(owner_id, channel);
+	defer([owner_id, &channel](system::state& s) {
+		system::register_channel(s, owner_id, channel);
 	});
 }
 
 auto gse::actions::sample_for_entity(const state& s, const id owner_id) -> void {
-	defer([&s, owner_id](system_state& sys) {
-		sys.sample_for_entity(s, owner_id);
+	defer([&s, owner_id](system::state& sys) {
+		system::sample_for_entity(sys, s, owner_id);
 	});
 }
 
 auto gse::actions::sample_all_channels(const state& s) -> void {
-	defer([&s](system_state& sys) {
-		sys.sample_all_channels(s);
+	defer([&s](system::state& sys) {
+		system::sample_all_channels(sys, s);
 	});
 }
 
 auto gse::actions::current_state() -> const state& {
-	return state_of<system_state>().current_state();
+	return system::current_state(state_of<system::state>());
 }
 
 auto gse::actions::axis1_ids() -> std::span<const std::uint16_t> {
-	return state_of<system_state>().axis1_ids();
+	return system::axis1_ids(state_of<system::state>());
 }
 
 auto gse::actions::axis2_ids() -> std::span<const std::uint16_t> {
-	return state_of<system_state>().axis2_ids();
+	return system::axis2_ids(state_of<system::state>());
 }
 
 auto gse::actions::held(const id action_id) -> bool {
-	auto& sys = state_of<system_state>();
-	if (const auto* desc = sys.description(action_id)) {
-		return sys.current_state().held(desc->bit_index());
+	const auto& sys = state_of<system::state>();
+	if (const auto* desc = system::description(sys, action_id)) {
+		return system::current_state(sys).held(desc->bit_index());
 	}
 	return false;
 }
 
 auto gse::actions::pressed(const id action_id) -> bool {
-	auto& sys = state_of<system_state>();
-	if (const auto* desc = sys.description(action_id)) {
-		return sys.current_state().pressed(desc->bit_index());
+	const auto& sys = state_of<system::state>();
+	if (const auto* desc = system::description(sys, action_id)) {
+		return system::current_state(sys).pressed(desc->bit_index());
 	}
 	return false;
 }
 
 auto gse::actions::released(const id action_id) -> bool {
-	auto& sys = state_of<system_state>();
-	if (const auto* desc = sys.description(action_id)) {
-		return sys.current_state().released(desc->bit_index());
+	const auto& sys = state_of<system::state>();
+	if (const auto* desc = system::description(sys, action_id)) {
+		return system::current_state(sys).released(desc->bit_index());
 	}
 	return false;
 }
 
 auto gse::actions::pressed_mask() -> const mask& {
-	return state_of<system_state>().current_state().pressed_mask();
+	return system::current_state(state_of<system::state>()).pressed_mask();
 }
 
 auto gse::actions::released_mask() -> const mask& {
-	return state_of<system_state>().current_state().released_mask();
+	return system::current_state(state_of<system::state>()).released_mask();
 }
 
 auto gse::actions::axis1(const id axis_id) -> float {
-	return state_of<system_state>().current_state().axis1(static_cast<std::uint16_t>(axis_id.number()));
+	return system::current_state(state_of<system::state>()).axis1(static_cast<std::uint16_t>(axis_id.number()));
 }
 
 auto gse::actions::axis2(const id axis_id) -> axis {
-	return state_of<system_state>().current_state().axis2_v(static_cast<std::uint16_t>(axis_id.number()));
+	return system::current_state(state_of<system::state>()).axis2_v(static_cast<std::uint16_t>(axis_id.number()));
 }
 
 auto gse::actions::held(const state& s, const id action_id) -> bool {
-	if (const auto* desc = state_of<system_state>().description(action_id)) {
+	if (const auto* desc = system::description(state_of<system::state>(), action_id)) {
 		return s.held(desc->bit_index());
 	}
 	return false;
 }
 
 auto gse::actions::pressed(const state& s, const id action_id) -> bool {
-	if (const auto* desc = state_of<system_state>().description(action_id)) {
+	if (const auto* desc = system::description(state_of<system::state>(), action_id)) {
 		return s.pressed(desc->bit_index());
 	}
 	return false;
 }
 
 auto gse::actions::released(const state& s, const id action_id) -> bool {
-	if (const auto* desc = state_of<system_state>().description(action_id)) {
+	if (const auto* desc = system::description(state_of<system::state>(), action_id)) {
 		return s.released(desc->bit_index());
 	}
 	return false;
 }
 
 auto gse::actions::held(const handle& h, const state& s) -> bool {
-	return h.held(s, state_of<system_state>());
+	return system::held(s, state_of<system::state>(), h);
 }
 
 auto gse::actions::pressed(const handle& h, const state& s) -> bool {
-	return h.pressed(s, state_of<system_state>());
+	return system::pressed(s, state_of<system::state>(), h);
 }
 
 auto gse::actions::released(const handle& h, const state& s) -> bool {
-	return h.released(s, state_of<system_state>());
+	return system::released(s, state_of<system::state>(), h);
 }

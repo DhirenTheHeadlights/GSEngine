@@ -21,43 +21,6 @@ namespace gse::renderer::physics_debug {
 		vec3<position> position;
 		vec3f color;
 	};
-
-	auto add_line(
-		const vec3<position>& a,
-		const vec3<position>& b,
-		const vec3f& color,
-		std::vector<debug_vertex>& out_vertices
-	) -> void;
-
-	auto build_obb_lines_for_collider(
-		const physics::collision_component& coll,
-		const physics::motion_component* mc,
-		std::vector<debug_vertex>& out_vertices
-	) -> void;
-
-	auto build_sphere_lines_for_collider(
-		const physics::collision_component& coll,
-		const physics::motion_component* mc,
-		std::vector<debug_vertex>& out_vertices
-	) -> void;
-
-	auto build_capsule_lines_for_collider(
-		const physics::collision_component& coll,
-		const physics::motion_component* mc,
-		std::vector<debug_vertex>& out_vertices
-	) -> void;
-
-	auto build_shape_lines_for_collider(
-		const physics::collision_component& coll,
-		const physics::motion_component* mc,
-		std::vector<debug_vertex>& out_vertices
-	) -> void;
-
-	auto build_contact_debug_for_collider(
-		const collision_information& info,
-		const physics::motion_component& mc,
-		std::vector<debug_vertex>& out_vertices
-	) -> void;
 }
 
 export namespace gse::renderer::physics_debug {
@@ -84,12 +47,12 @@ export namespace gse::renderer::physics_debug {
 		bool enabled = true;
 	};
 
-	struct state {
-		settings settings;
-		debug_stats latest_stats;
-	};
-
 	struct system {
+		struct state {
+			physics_debug::settings settings;
+			debug_stats latest_stats;
+		};
+
 		struct resources {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
@@ -120,15 +83,51 @@ export namespace gse::renderer::physics_debug {
 			frame_data& fd,
 			const state& s
 		) -> async::task<>;
-	};
-}
 
-namespace gse::renderer::physics_debug {
-	auto ensure_vertex_capacity(
-		system::frame_data& fd,
-		gpu::context& ctx,
-		std::size_t frame_index,
-		std::size_t required_vertex_count
-	) -> void;
+	private:
+		static auto add_line(
+			const vec3<position>& a,
+			const vec3<position>& b,
+			const vec3f& color,
+			std::vector<debug_vertex>& out_vertices
+		) -> void;
+
+		static auto build_obb_lines_for_collider(
+			const physics::collision_component& coll,
+			const physics::motion_component* mc,
+			std::vector<debug_vertex>& out_vertices
+		) -> void;
+
+		static auto build_sphere_lines_for_collider(
+			const physics::collision_component& coll,
+			const physics::motion_component* mc,
+			std::vector<debug_vertex>& out_vertices
+		) -> void;
+
+		static auto build_capsule_lines_for_collider(
+			const physics::collision_component& coll,
+			const physics::motion_component* mc,
+			std::vector<debug_vertex>& out_vertices
+		) -> void;
+
+		static auto build_shape_lines_for_collider(
+			const physics::collision_component& coll,
+			const physics::motion_component* mc,
+			std::vector<debug_vertex>& out_vertices
+		) -> void;
+
+		static auto build_contact_debug_for_collider(
+			const collision_information& info,
+			const physics::motion_component& mc,
+			std::vector<debug_vertex>& out_vertices
+		) -> void;
+
+		static auto ensure_vertex_capacity(
+			frame_data& fd,
+			gpu::context& ctx,
+			std::size_t frame_index,
+			std::size_t required_vertex_count
+		) -> void;
+	};
 }
 

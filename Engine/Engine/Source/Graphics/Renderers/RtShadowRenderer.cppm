@@ -20,17 +20,11 @@ import gse.log;
 export namespace gse::renderer::rt_shadow {
 	constexpr std::uint32_t max_instances = 4096;
 
-	struct state {
-		per_frame_resource<const gpu::tlas*> tlas_ptrs{};
-
-		[[nodiscard]] auto tlas(
-			const std::uint32_t frame_index
-		) const -> const gpu::tlas& {
-			return *tlas_ptrs[frame_index];
-		}
-	};
-
 	struct system {
+		struct state {
+			per_frame_resource<const gpu::tlas*> tlas_ptrs{};
+		};
+
 		struct frame_data {
 			std::unordered_map<const mesh*, gpu::blas> blas_cache;
 			per_frame_resource<gpu::tlas> tlas_per_frame;
@@ -53,7 +47,7 @@ export namespace gse::renderer::rt_shadow {
 			frame_context& ctx,
 			frame_data& fd,
 			const state& s,
-			const geometry_collector::state& gc_s
+			const geometry_collector::system::state& gc_s
 		) -> async::task<>;
 	};
 }

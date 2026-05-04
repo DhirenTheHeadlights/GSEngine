@@ -66,8 +66,8 @@ export namespace gse::physics {
 }
 
 auto gse::physics::join(const id a, const id b, const fixed_joint& config) -> void {
-	defer([a, b, config](state& s) {
-		create_joint(s, joint_definition{
+	defer([a, b, config](system::state& s) {
+		system::create_joint(s, joint_definition{
 			.entity_a = a,
 			.entity_b = b,
 			.type = vbd::joint_type::fixed,
@@ -78,8 +78,8 @@ auto gse::physics::join(const id a, const id b, const fixed_joint& config) -> vo
 }
 
 auto gse::physics::join(const id a, const id b, const distance_joint& config) -> void {
-	defer([a, b, config](state& s) {
-		create_joint(s, joint_definition{
+	defer([a, b, config](system::state& s) {
+		system::create_joint(s, joint_definition{
 			.entity_a = a,
 			.entity_b = b,
 			.type = vbd::joint_type::distance,
@@ -89,8 +89,8 @@ auto gse::physics::join(const id a, const id b, const distance_joint& config) ->
 }
 
 auto gse::physics::join(const id a, const id b, const hinge_joint& config) -> void {
-	defer([a, b, config](state& s) {
-		create_joint(s, joint_definition{
+	defer([a, b, config](system::state& s) {
+		system::create_joint(s, joint_definition{
 			.entity_a = a,
 			.entity_b = b,
 			.type = vbd::joint_type::hinge,
@@ -106,8 +106,8 @@ auto gse::physics::join(const id a, const id b, const hinge_joint& config) -> vo
 }
 
 auto gse::physics::join(const id a, const id b, const slider_joint& config) -> void {
-	defer([a, b, config](state& s) {
-		create_joint(s, joint_definition{
+	defer([a, b, config](system::state& s) {
+		system::create_joint(s, joint_definition{
 			.entity_a = a,
 			.entity_b = b,
 			.type = vbd::joint_type::slider,
@@ -118,8 +118,8 @@ auto gse::physics::join(const id a, const id b, const slider_joint& config) -> v
 }
 
 auto gse::physics::join(const id a, const id b, const spring_joint& config) -> void {
-	defer([a, b, config](state& s) {
-		create_joint(s, joint_definition{
+	defer([a, b, config](system::state& s) {
+		system::create_joint(s, joint_definition{
 			.entity_a = a,
 			.entity_b = b,
 			.type = vbd::joint_type::distance,

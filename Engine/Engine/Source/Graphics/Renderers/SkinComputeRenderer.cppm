@@ -14,9 +14,9 @@ import gse.diag;
 import gse.ecs;
 
 export namespace gse::renderer::skin_compute {
-	struct state {};
-
 	struct system {
+		struct state {};
+
 		struct resources {
 			resource::handle<shader> shader_handle;
 			gpu::pipeline pipeline;
@@ -32,13 +32,13 @@ export namespace gse::renderer::skin_compute {
 			frame_context& ctx,
 			const resources& r,
 			const state& s,
-			const geometry_collector::state& gc_s
+			const geometry_collector::system::state& gc_s
 		) -> async::task<>;
 	};
 }
 
 auto gse::renderer::skin_compute::system::initialize(const init_context& phase, resources& r, state& s) -> void {
-	phase.sched.ensure_system<geometry_collector::system, geometry_collector::state>(phase.reg);
+	phase.sched.ensure_system<geometry_collector::system>(phase.reg);
 
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
@@ -50,10 +50,8 @@ auto gse::renderer::skin_compute::system::initialize(const init_context& phase, 
 
 	const auto* gc = phase.try_resources_of<geometry_collector::system::resources>();
 
-	assert(gc != nullptr,
-		"skin_compute::initialize: geometry_collector resources not registered");
-	assert(static_cast<bool>(gc->skeleton_buffer),
-		"skin_compute::initialize: gc->skeleton_buffer is null - geometry_collector::initialize did not run before skin_compute::initialize");
+	assert(gc != nullptr, "skin_compute::initialize: geometry_collector resources not registered");
+	assert(static_cast<bool>(gc->skeleton_buffer), "skin_compute::initialize: gc->skeleton_buffer is null - geometry_collector::initialize did not run before skin_compute::initialize");
 
 	r.pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.shader_handle, "push_constants");
 
@@ -71,7 +69,7 @@ auto gse::renderer::skin_compute::system::initialize(const init_context& phase, 
 	}
 }
 
-auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::state& gc_s) -> async::task<> {
+auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resources& r, const state& s, const geometry_collector::system::state& gc_s) -> async::task<> {
 	const auto& gpu = ctx.get<gpu::context>();
 
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
@@ -84,10 +82,7 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resour
 		co_return;
 	}
 
-	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
-	if (!gc_r) {
-		co_return;
-	}
+	const auto& gc_r = co_await ctx.resources_of<geometry_collector::system::resources>();
 
 	const auto frame_index = gpu.graph().current_frame();
 
@@ -98,9 +93,9 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const resour
 	skin_pc.set("skin_stride", gc_s.current_joint_count);
 
 	auto pass = gpu.graph().add_pass<state>();
-	pass.track(gc_r->skeleton_buffer);
-	pass.track(gc_r->local_pose_buffer[frame_index]);
-	pass.writes(gpu::storage_write(gc_r->skin_buffer[frame_index], gpu::pipeline_stage::compute_shader));
+	pass.track(gc_r.skeleton_buffer);
+	pass.track(gc_r.local_pose_buffer[frame_index]);
+	pass.writes(gpu::storage_write(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::compute_shader));
 
 	auto& rec = co_await pass.record();
 	rec.bind(r.pipeline);

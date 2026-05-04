@@ -36,48 +36,19 @@ export namespace gse::save {
     struct save_request {};
     struct restart_request {};
 
-    struct state {
-        std::vector<persisted> entries;
-        std::filesystem::path auto_save_path;
-        bool auto_save = false;
-        std::function<void()> on_restart;
-        std::unordered_map<
-            std::string,
-            std::unordered_map<std::string, std::string>
-        > loaded;
-    };
+    class system {
+    public:
+        struct state {
+            std::vector<persisted> entries;
+            std::filesystem::path auto_save_path;
+            bool auto_save = false;
+            std::function<void()> on_restart;
+            std::unordered_map<
+                std::string,
+                std::unordered_map<std::string, std::string>
+            > loaded;
+        };
 
-    auto add(
-        state& s,
-        persisted entry
-    ) -> void;
-
-    auto save_to_file(
-        const state& s,
-        const std::filesystem::path& path
-    ) -> bool;
-
-    auto load_from_file(
-        state& s,
-        const std::filesystem::path& path
-    ) -> bool;
-
-    auto save(
-        const state& s
-    ) -> bool;
-
-    auto set_auto_save(
-        state& s,
-        bool enabled,
-        std::filesystem::path path = {}
-    ) -> void;
-
-    auto on_restart(
-        state& s,
-        std::function<void()> fn
-    ) -> void;
-
-    struct system {
         static auto initialize(
             init_context& phase,
             state& s
@@ -92,82 +63,111 @@ export namespace gse::save {
             shutdown_context& phase,
             state& s
         ) -> void;
+
+        template <typename T>
+        static auto register_struct(
+            const init_context& phase,
+            std::string_view category,
+            T& obj
+        ) -> void;
+
+        template <typename T>
+        static auto register_struct(
+            update_context& ctx,
+            std::string_view category,
+            T& obj
+        ) -> void;
+
+        template <typename T>
+        static auto register_struct(
+            state& s,
+            std::string_view category,
+            T& obj
+        ) -> void;
+
+        static auto set_auto_save(
+            state& s,
+            bool enabled,
+            std::filesystem::path path = {}
+        ) -> void;
+
+        static auto on_restart(
+            state& s,
+            std::function<void()> fn
+        ) -> void;
+
+        template <typename T>
+        [[nodiscard]] static auto read_one(
+            const std::filesystem::path& path,
+            std::string_view category,
+            std::string_view name,
+            T fallback = T{}
+        ) -> T;
+
+    private:
+        using doc = std::unordered_map<
+            std::string,
+            std::unordered_map<std::string, std::string>
+        >;
+
+        static auto read_file(
+            const std::filesystem::path& path
+        ) -> std::expected<std::string, std::error_code>;
+
+        static auto trim(
+            std::string_view s
+        ) -> std::string_view;
+
+        static auto parse(
+            std::string_view text
+        ) -> doc;
+
+        static auto emit(
+            const doc& d
+        ) -> std::string;
+
+        static auto add(
+            state& s,
+            persisted entry
+        ) -> void;
+
+        static auto save_to_file(
+            const state& s,
+            const std::filesystem::path& path
+        ) -> bool;
+
+        static auto load_from_file(
+            state& s,
+            const std::filesystem::path& path
+        ) -> bool;
+
+        static auto save(
+            const state& s
+        ) -> bool;
+
+        template <typename T>
+        static auto write_struct_thunk(
+            doc& d,
+            std::string_view category,
+            const void* obj
+        ) -> void;
+
+        template <typename T>
+        static auto read_struct_thunk(
+            const doc& d,
+            std::string_view category,
+            void* obj
+        ) -> void;
+
+        template <typename T>
+        static auto make_persisted(
+            std::string_view category,
+            T& obj
+        ) -> persisted;
     };
-
-    template <typename T>
-    auto write_struct_thunk(
-        std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
-        std::string_view category,
-        const void* obj
-    ) -> void;
-
-    template <typename T>
-    auto read_struct_thunk(
-        const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
-        std::string_view category,
-        void* obj
-    ) -> void;
-
-    template <typename T>
-    auto make_persisted(
-        std::string_view category,
-        T& obj
-    ) -> persisted;
-
-    template <typename T>
-    auto register_struct(
-        const init_context& phase,
-        std::string_view category,
-        T& obj
-    ) -> void;
-
-    template <typename T>
-    auto register_struct(
-        update_context& ctx,
-        std::string_view category,
-        T& obj
-    ) -> void;
-
-    template <typename T>
-    auto register_struct(
-        state& s,
-        std::string_view category,
-        T& obj
-    ) -> void;
-
-    template <typename T>
-    [[nodiscard]] auto read_one(
-        const std::filesystem::path& path,
-        std::string_view category,
-        std::string_view name,
-        T fallback = T{}
-    ) -> T;
 }
 
-namespace gse::save::ini {
-    using doc = std::unordered_map<
-        std::string,
-        std::unordered_map<std::string, std::string>
-    >;
-
-    auto read_file(
-        const std::filesystem::path& path
-    ) -> std::expected<std::string, std::error_code>;
-
-    auto trim(
-        std::string_view s
-    ) -> std::string_view;
-
-    auto parse(
-        std::string_view text
-    ) -> doc;
-
-    auto emit(
-        const doc& d
-    ) -> std::string;
-}
-
-auto gse::save::ini::read_file(const std::filesystem::path& path) -> std::expected<std::string, std::error_code> {
+auto gse::save::system::read_file(const std::filesystem::path& path) -> std::expected<std::string, std::error_code> {
     std::error_code ec;
     const auto size = std::filesystem::file_size(path, ec);
     if (ec) {
@@ -187,7 +187,7 @@ auto gse::save::ini::read_file(const std::filesystem::path& path) -> std::expect
     return content;
 }
 
-auto gse::save::ini::trim(const std::string_view s) -> std::string_view {
+auto gse::save::system::trim(const std::string_view s) -> std::string_view {
     std::size_t start = 0;
     while (start < s.size() && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r')) {
         ++start;
@@ -199,7 +199,7 @@ auto gse::save::ini::trim(const std::string_view s) -> std::string_view {
     return s.substr(start, end - start);
 }
 
-auto gse::save::ini::parse(const std::string_view text) -> doc {
+auto gse::save::system::parse(const std::string_view text) -> doc {
     doc result;
     std::string current_section;
 
@@ -239,7 +239,7 @@ auto gse::save::ini::parse(const std::string_view text) -> doc {
     return result;
 }
 
-auto gse::save::ini::emit(const doc& d) -> std::string {
+auto gse::save::system::emit(const doc& d) -> std::string {
     std::string out;
     bool first = true;
     for (const auto& [section, entries] : d) {
@@ -261,23 +261,23 @@ auto gse::save::ini::emit(const doc& d) -> std::string {
 }
 
 template <typename T>
-auto gse::save::write_struct_thunk(ini::doc& doc, const std::string_view category, const void* obj) -> void {
+auto gse::save::system::write_struct_thunk(doc& d, const std::string_view category, const void* obj) -> void {
     const auto& typed = *static_cast<const T*>(obj);
     template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
         if constexpr (has_annotation<settings::describe>(m)) {
             constexpr std::string_view name = meta::member_name(m);
             std::string value;
             std::format_to(std::back_inserter(value), "{}", typed.[:m:]);
-            doc[std::string(category)][std::string(name)] = std::move(value);
+            d[std::string(category)][std::string(name)] = std::move(value);
         }
     }
 }
 
 template <typename T>
-auto gse::save::read_struct_thunk(const ini::doc& doc, const std::string_view category, void* obj) -> void {
+auto gse::save::system::read_struct_thunk(const doc& d, const std::string_view category, void* obj) -> void {
     auto& typed = *static_cast<T*>(obj);
-    const auto cat_it = doc.find(std::string(category));
-    if (cat_it == doc.end()) {
+    const auto cat_it = d.find(std::string(category));
+    if (cat_it == d.end()) {
         return;
     }
     template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
@@ -291,7 +291,7 @@ auto gse::save::read_struct_thunk(const ini::doc& doc, const std::string_view ca
 }
 
 template <typename T>
-auto gse::save::make_persisted(const std::string_view category, T& obj) -> persisted {
+auto gse::save::system::make_persisted(const std::string_view category, T& obj) -> persisted {
     return persisted{
         .category = std::string(category),
         .obj = &obj,
@@ -301,21 +301,21 @@ auto gse::save::make_persisted(const std::string_view category, T& obj) -> persi
 }
 
 template <typename T>
-auto gse::save::register_struct(const init_context& phase, const std::string_view category, T& obj) -> void {
+auto gse::save::system::register_struct(const init_context& phase, const std::string_view category, T& obj) -> void {
     phase.channels.push<register_request>({ .entry = make_persisted(category, obj) });
 }
 
 template <typename T>
-auto gse::save::register_struct(update_context& ctx, const std::string_view category, T& obj) -> void {
+auto gse::save::system::register_struct(update_context& ctx, const std::string_view category, T& obj) -> void {
     ctx.channels.push<register_request>({ .entry = make_persisted(category, obj) });
 }
 
 template <typename T>
-auto gse::save::register_struct(state& s, const std::string_view category, T& obj) -> void {
+auto gse::save::system::register_struct(state& s, const std::string_view category, T& obj) -> void {
     add(s, make_persisted(category, obj));
 }
 
-auto gse::save::add(state& s, persisted entry) -> void {
+auto gse::save::system::add(state& s, persisted entry) -> void {
     if (entry.read) {
         entry.read(s.loaded, entry.category, entry.obj);
     }
@@ -332,8 +332,8 @@ auto gse::save::add(state& s, persisted entry) -> void {
     s.entries.push_back(std::move(entry));
 }
 
-auto gse::save::save_to_file(const state& s, const std::filesystem::path& path) -> bool {
-    ini::doc d;
+auto gse::save::system::save_to_file(const state& s, const std::filesystem::path& path) -> bool {
+    doc d;
     for (const auto& entry : s.entries) {
         if (entry.write && entry.obj) {
             entry.write(d, entry.category, entry.obj);
@@ -344,23 +344,23 @@ auto gse::save::save_to_file(const state& s, const std::filesystem::path& path) 
     if (!file) {
         return false;
     }
-    file << ini::emit(d);
+    file << emit(d);
     return true;
 }
 
-auto gse::save::load_from_file(state& s, const std::filesystem::path& path) -> bool {
+auto gse::save::system::load_from_file(state& s, const std::filesystem::path& path) -> bool {
     if (!std::filesystem::exists(path)) {
         log::println(log::level::warning, log::category::save_system, "Settings file does not exist: {}", path.string());
         return false;
     }
 
-    const auto content = ini::read_file(path);
+    const auto content = read_file(path);
     if (!content) {
         log::println(log::level::warning, log::category::save_system, "Failed to read {}: {}", path.string(), content.error().message());
         return false;
     }
 
-    s.loaded = ini::parse(*content);
+    s.loaded = parse(*content);
 
     for (const auto& entry : s.entries) {
         if (entry.read && entry.obj) {
@@ -370,21 +370,21 @@ auto gse::save::load_from_file(state& s, const std::filesystem::path& path) -> b
     return true;
 }
 
-auto gse::save::save(const state& s) -> bool {
+auto gse::save::system::save(const state& s) -> bool {
     if (s.auto_save_path.empty()) {
         return false;
     }
     return save_to_file(s, s.auto_save_path);
 }
 
-auto gse::save::set_auto_save(state& s, const bool enabled, std::filesystem::path path) -> void {
+auto gse::save::system::set_auto_save(state& s, const bool enabled, std::filesystem::path path) -> void {
     s.auto_save = enabled;
     if (!path.empty()) {
         s.auto_save_path = std::move(path);
     }
 }
 
-auto gse::save::on_restart(state& s, std::function<void()> fn) -> void {
+auto gse::save::system::on_restart(state& s, std::function<void()> fn) -> void {
     s.on_restart = std::move(fn);
 }
 
@@ -423,15 +423,15 @@ auto gse::save::system::shutdown(shutdown_context&, state& s) -> void {
 }
 
 template <typename T>
-auto gse::save::read_one(const std::filesystem::path& path, const std::string_view category, const std::string_view name, T fallback) -> T {
+auto gse::save::system::read_one(const std::filesystem::path& path, const std::string_view category, const std::string_view name, T fallback) -> T {
     if (!std::filesystem::exists(path)) {
         return fallback;
     }
-    const auto content = ini::read_file(path);
+    const auto content = read_file(path);
     if (!content) {
         return fallback;
     }
-    const auto d = ini::parse(*content);
+    const auto d = parse(*content);
     const auto cat_it = d.find(std::string(category));
     if (cat_it == d.end()) {
         return fallback;

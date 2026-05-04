@@ -52,63 +52,57 @@ export namespace gse {
 	) -> void;
 }
 
-namespace gse {
-	auto renderer_resources() -> const renderer::system::resources& {
-		return resources_of<renderer::system::resources>();
-	}
-}
-
 template <typename Resource>
 auto gse::get(const id& id) -> resource::handle<Resource> {
-	if (!has_state<renderer::state>()) {
+	if (!has_state<renderer::system::state>()) {
 		return {};
 	}
-	return renderer_resources().get<Resource>(id);
+	return resources_of<renderer::system::resources>().assets->get<Resource>(id);
 }
 
 template <typename Resource>
 auto gse::get(const std::string& filename) -> resource::handle<Resource> {
-	if (!has_state<renderer::state>()) {
+	if (!has_state<renderer::system::state>()) {
 		return {};
 	}
-	return renderer_resources().get<Resource>(filename);
+	return resources_of<renderer::system::resources>().assets->get<Resource>(filename);
 }
 
 template <typename Resource, typename... Args>
 auto gse::queue(const std::string& name, Args&&... args) -> resource::handle<Resource> {
-	if (!has_state<renderer::state>()) {
+	if (!has_state<renderer::system::state>()) {
 		return {};
 	}
-	return renderer_resources().queue<Resource>(name, std::forward<Args>(args)...);
+	return resources_of<renderer::system::resources>().assets->queue<Resource>(name, std::forward<Args>(args)...);
 }
 
 template <typename Resource>
 auto gse::instantly_load(const id& id) -> resource::handle<Resource> {
-	if (!has_state<renderer::state>()) {
+	if (!has_state<renderer::system::state>()) {
 		return {};
 	}
-	return renderer_resources().instantly_load<Resource>(id);
+	return resources_of<renderer::system::resources>().assets->instantly_load<Resource>(id);
 }
 
 template <typename Resource>
 auto gse::add(Resource&& resource) -> void {
-	if (!has_state<renderer::state>()) {
+	if (!has_state<renderer::system::state>()) {
 		return;
 	}
-	renderer_resources().add<Resource>(std::forward<Resource>(resource));
+	resources_of<renderer::system::resources>().assets->add<Resource>(std::forward<Resource>(resource));
 }
 
 template <typename Resource>
 auto gse::resource_state(const id& id) -> resource::state {
-	if (!has_state<renderer::state>()) {
+	if (!has_state<renderer::system::state>()) {
 		return resource::state::unloaded;
 	}
-	return renderer_resources().resource_state<Resource>(id);
+	return resources_of<renderer::system::resources>().assets->resource_state<Resource>(id);
 }
 
 auto gse::set_ui_focus(const bool focus) -> void {
-	if (!has_state<renderer::state>()) {
+	if (!has_state<renderer::system::state>()) {
 		return;
 	}
-	renderer_resources().set_ui_focus(focus);
+	resources_of<renderer::system::resources>().ctx->set_ui_focus(focus);
 }

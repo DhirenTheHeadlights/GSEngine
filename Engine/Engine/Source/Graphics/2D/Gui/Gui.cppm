@@ -30,179 +30,173 @@ import :menu_bar;
 import :styles;
 import :builder;
 
-export namespace gse::gui {
-	struct system_state;
-}
-
 namespace gse::gui {
 	struct frame_state {
 		style sty{};
 		bool active = false;
 	};
-
-	auto handle_idle_state(
-		system_state& s,
-		const input::state& input_state,
-		vec2f mouse_position,
-		bool mouse_held,
-		const style& style
-	) -> state;
-
-	auto handle_dragging_state(
-		system_state& s,
-		const states::dragging& current,
-		const window& window,
-		vec2f mouse_position,
-		bool mouse_held,
-		const gpu::context& ctx
-	) -> state;
-
-	auto handle_resizing_state(
-		system_state& s,
-		const states::resizing& current,
-		vec2f mouse_position,
-		bool mouse_held,
-		const style& style,
-		const gpu::context& ctx
-	) -> state;
-
-	auto handle_resizing_divider_state(
-		system_state& s,
-		const states::resizing_divider& current,
-		vec2f mouse_position,
-		bool mouse_held,
-		const style& style
-	) -> state;
-
-	auto handle_pending_drag_state(
-		system_state& s,
-		const states::pending_drag& current,
-		vec2f mouse_position,
-		bool mouse_held
-	) -> state;
-
-	auto draw_menu_chrome(
-		system_state& s,
-		const input::state& input_state,
-		menu& current_menu,
-		render_layer layer
-	) -> void;
-
-	auto draw_tab_bar(
-		system_state& s,
-		const input::state& input_state,
-		menu& current_menu,
-		const ui_rect& title_bar_rect,
-		render_layer layer
-	) -> void;
-
-	auto usable_screen_rect(
-		system_state& s,
-		const gpu::context& ctx
-	) -> ui_rect;
-
-	auto calculate_display_rect(
-		system_state& s,
-		const menu& m
-	) -> ui_rect;
-
-	auto apply_scale(
-		system_state& s,
-		style sty,
-		float viewport_height
-	) -> style;
-
-	auto reload_font(
-		system_state& s,
-		const asset::registry& assets
-	) -> void;
 }
 
 export namespace gse::gui {
-	struct system {
+	class system {
+	public:
+		struct state {
+			id_mapped_collection<menu> menus;
+			menu* current_menu = nullptr;
+
+			resource::handle<font> gui_font;
+			resource::handle<texture> blank_texture;
+
+			std::optional<dock::space> active_dock_space;
+			gui::state current_state;
+
+			std::filesystem::path file_path = "Misc/gui_layout.ini";
+			clock save_clock;
+
+			id hot_widget_id;
+			id active_widget_id;
+			id focus_widget_id;
+
+			frame_state fstate{};
+			draw_context* context = nullptr;
+
+			menu_bar::state menu_bar_state;
+			settings::panel_state settings_state;
+
+			struct settings {
+				[[=gse::settings::describe{}]]
+				theme current_theme = theme::dark;
+
+				[[=gse::settings::describe{}, =gse::settings::range<0.5f, 2.0f>{}]]
+				float ui_scale = 1.0f;
+
+				[[=gse::settings::describe{}]]
+				gse::settings::choice<int> font;
+			} settings;
+
+			int last_font_index = 0;
+
+			std::vector<renderer::sprite_command> sprite_commands;
+			std::vector<renderer::text_command> text_commands;
+
+			std::vector<id> visible_menu_ids_last_frame;
+			vec2f previous_viewport_size;
+
+			tooltip_state tooltip;
+			render_layer input_layer_render = render_layer::content;
+			input_layer input_layers_data;
+			std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
+			std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
+
+			static constexpr time update_interval = seconds(30.f);
+		};
+
 		struct resources {
 			std::unique_ptr<ids::scope> current_scope;
 		};
 
-		static auto initialize(init_context& phase, resources& r, system_state& s) -> void;
-		static auto update(update_context& ctx, resources& r, system_state& s) -> async::task<>;
-		static auto shutdown(shutdown_context& phase, resources& r, system_state& s) -> void;
+		static auto initialize(init_context& phase, resources& r, state& s) -> void;
+		static auto update(update_context& ctx, resources& r, state& s) -> async::task<>;
+		static auto shutdown(shutdown_context& phase, resources& r, state& s) -> void;
 
-		static auto save(system_state& s) -> void;
+		static auto save(state& s) -> void;
+
+	private:
+		static auto handle_idle_state(
+			state& s,
+			const input::state& input_state,
+			vec2f mouse_position,
+			bool mouse_held,
+			const style& style
+		) -> gui::state;
+
+		static auto handle_dragging_state(
+			state& s,
+			const states::dragging& current,
+			const window& window,
+			vec2f mouse_position,
+			bool mouse_held,
+			const gpu::context& ctx
+		) -> gui::state;
+
+		static auto handle_resizing_state(
+			state& s,
+			const states::resizing& current,
+			vec2f mouse_position,
+			bool mouse_held,
+			const style& style,
+			const gpu::context& ctx
+		) -> gui::state;
+
+		static auto handle_resizing_divider_state(
+			state& s,
+			const states::resizing_divider& current,
+			vec2f mouse_position,
+			bool mouse_held,
+			const style& style
+		) -> gui::state;
+
+		static auto handle_pending_drag_state(
+			state& s,
+			const states::pending_drag& current,
+			vec2f mouse_position,
+			bool mouse_held
+		) -> gui::state;
+
+		static auto draw_menu_chrome(
+			state& s,
+			const input::state& input_state,
+			menu& current_menu,
+			render_layer layer
+		) -> void;
+
+		static auto draw_tab_bar(
+			state& s,
+			const input::state& input_state,
+			menu& current_menu,
+			const ui_rect& title_bar_rect,
+			render_layer layer
+		) -> void;
+
+		static auto usable_screen_rect(
+			state& s,
+			const gpu::context& ctx
+		) -> ui_rect;
+
+		static auto calculate_display_rect(
+			state& s,
+			const menu& m
+		) -> ui_rect;
+
+		static auto apply_scale(
+			state& s,
+			style sty,
+			float viewport_height
+		) -> style;
+
+		static auto reload_font(
+			state& s,
+			const asset::registry& assets
+		) -> void;
+
+		static auto begin_menu(
+			resources& r,
+			state& s,
+			const std::string& name
+		) -> bool;
+
+		static auto end_menu(
+			resources& r,
+			state& s
+		) -> void;
+
+		static auto process_menu(
+			resources& r,
+			state& s,
+			const input::state& input_state,
+			const std::string& name,
+			render_layer layer,
+			const std::function<void(builder&)>& build
+		) -> void;
 	};
-
-	struct system_state {
-		id_mapped_collection<menu> menus;
-		menu* current_menu = nullptr;
-
-		resource::handle<font> gui_font;
-		resource::handle<texture> blank_texture;
-
-		std::optional<dock::space> active_dock_space;
-		state current_state;
-
-		std::filesystem::path file_path = "Misc/gui_layout.ini";
-		clock save_clock;
-
-		id hot_widget_id;
-		id active_widget_id;
-		id focus_widget_id;
-
-		frame_state fstate{};
-		draw_context* context = nullptr;
-
-		menu_bar::state menu_bar_state;
-		settings::panel_state settings_state;
-
-		struct settings {
-			[[=gse::settings::describe{}]]
-			theme current_theme = theme::dark;
-
-			[[=gse::settings::describe{}, =gse::settings::range<0.5f, 2.0f>{}]]
-			float ui_scale = 1.0f;
-
-			[[=gse::settings::describe{}]]
-			gse::settings::choice<int> font;
-		} settings;
-
-		int last_font_index = 0;
-
-		std::vector<renderer::sprite_command> sprite_commands;
-		std::vector<renderer::text_command> text_commands;
-
-		std::vector<id> visible_menu_ids_last_frame;
-		vec2f previous_viewport_size;
-
-		tooltip_state tooltip;
-		render_layer input_layer_render = render_layer::content;
-		input_layer input_layers_data;
-		std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
-		std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
-
-		auto scroll_for(const std::uint64_t key) -> scroll_state& {
-			return widget_scrolls[key];
-		}
-
-		static constexpr time update_interval = seconds(30.f);
-	};
-
-	auto begin_menu(
-		system::resources& r,
-		system_state& s,
-		const std::string& name
-	) -> bool;
-
-	auto end_menu(
-		system::resources& r,
-		system_state& s
-	) -> void;
-
-	auto process_menu(
-		system::resources& r,
-		system_state& s,
-		const input::state& input_state,
-		const std::string& name,
-		render_layer layer,
-		const std::function<void(builder&)>& build
-	) -> void;
 }

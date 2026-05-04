@@ -30,7 +30,7 @@ import gse.ecs;
 import gse.math;
 import gse.save;
 
-auto gse::gui::system::initialize(init_context& phase, resources&, system_state& s) -> void {
+auto gse::gui::system::initialize(init_context& phase, resources&, state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
 	s.settings.font.options = asset::registry::enumerate_resources("Fonts", ".gfont");
@@ -127,7 +127,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, system_state&
 	s.previous_viewport_size = vec2f(ctx.window().viewport());
 }
 
-auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s) -> async::task<> {
+auto gse::gui::system::update(update_context& ctx, resources& r, state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
 	auto& assets = ctx.assets();
 	const auto current_viewport_size = vec2f(gpu.window().viewport());
@@ -222,18 +222,14 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 		s.last_font_index = s.settings.font.value;
 	}
 
-	const auto* input_state = ctx.try_state_of<gse::input::system_state>();
-	if (!input_state) {
-		s.fstate = {};
-		co_return;
-	}
+	const auto& input_state = co_await ctx.state_of<gse::input::system::state>();
 
-	const vec2f mouse_position = input_state->current_state().mouse_position();
-	const bool mouse_held = input_state->current_state().mouse_button_held(mouse_button::button_1);
+	const vec2f mouse_position = gse::input::system::current_state(input_state).mouse_position();
+	const bool mouse_held = gse::input::system::current_state(input_state).mouse_button_held(mouse_button::button_1);
 
 	match(s.current_state.v)
 		.if_is([&](const states::idle&) {
-			s.current_state = handle_idle_state(s, input_state->current_state(), mouse_position, mouse_held, frame_sty);
+			s.current_state = handle_idle_state(s, gse::input::system::current_state(input_state), mouse_position, mouse_held, frame_sty);
 		})
 		.else_if_is([&](const states::dragging& st) {
 			s.current_state = handle_dragging_state(s, st, gpu.window(), mouse_position, mouse_held, gpu);
@@ -251,7 +247,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 			s.current_state = states::idle{};
 		});
 
-	if (s.save_clock.elapsed() > system_state::update_interval) {
+	if (s.save_clock.elapsed() > state::update_interval) {
 		gui::save(s.menus, config::resource_path / s.file_path);
 		s.save_clock.reset();
 	}
@@ -261,7 +257,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 		co_return;
 	}
 
-	const gse::input::state& input_st = input_state->current_state();
+	const gse::input::state& input_st = gse::input::system::current_state(input_state);
 	const auto viewport_size = vec2f(gpu.window().viewport());
 
 	if (s.active_dock_space) {
@@ -441,15 +437,15 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 	co_return;
 }
 
-auto gse::gui::system::shutdown(shutdown_context&, resources& r, system_state& s) -> void {
+auto gse::gui::system::shutdown(shutdown_context&, resources& r, state& s) -> void {
 	gui::save(s.menus, config::resource_path / s.file_path);
 }
 
-auto gse::gui::system::save(system_state& s) -> void {
+auto gse::gui::system::save(state& s) -> void {
 	gui::save(s.menus, config::resource_path / s.file_path);
 }
 
-auto gse::gui::process_menu(system::resources& r, system_state& s, const gse::input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
+auto gse::gui::system::process_menu(system::resources& r, state& s, const gse::input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
 	if (!s.fstate.active) {
 		return;
 	}
@@ -530,7 +526,7 @@ auto gse::gui::process_menu(system::resources& r, system_state& s, const gse::in
 	end_menu(r, s);
 }
 
-auto gse::gui::begin_menu(system::resources& r, system_state& s, const std::string& name) -> bool {
+auto gse::gui::system::begin_menu(system::resources& r, state& s, const std::string& name) -> bool {
 	for (menu& m : s.menus.items()) {
 		if (const auto it = std::ranges::find(m.tab_contents, name); it != m.tab_contents.end()) {
 			s.current_menu = &m;
@@ -573,12 +569,12 @@ auto gse::gui::begin_menu(system::resources& r, system_state& s, const std::stri
 	return false;
 }
 
-auto gse::gui::end_menu(system::resources& r, system_state& s) -> void {
+auto gse::gui::system::end_menu(system::resources& r, state& s) -> void {
 	r.current_scope.reset();
 	s.current_menu = nullptr;
 }
 
-auto gse::gui::usable_screen_rect(system_state& s, const gpu::context& ctx) -> ui_rect {
+auto gse::gui::system::usable_screen_rect(state& s, const gpu::context& ctx) -> ui_rect {
 	const auto viewport_size = vec2f(ctx.window().viewport());
 	const style sty = apply_scale(s, style::from_theme(s.settings.current_theme), viewport_size.y());
 	const float usable_height = viewport_size.y() - menu_bar::height(sty);
@@ -588,7 +584,7 @@ auto gse::gui::usable_screen_rect(system_state& s, const gpu::context& ctx) -> u
 	);
 }
 
-auto gse::gui::calculate_display_rect(system_state& s, const menu& m) -> ui_rect {
+auto gse::gui::system::calculate_display_rect(state& s, const menu& m) -> ui_rect {
 	ui_rect display_rect = m.rect;
 
 	for (const menu& child : s.menus.items()) {
@@ -600,7 +596,7 @@ auto gse::gui::calculate_display_rect(system_state& s, const menu& m) -> ui_rect
 	return display_rect;
 }
 
-auto gse::gui::apply_scale(system_state& s, style sty, const float viewport_height) -> style {
+auto gse::gui::system::apply_scale(state& s, style sty, const float viewport_height) -> style {
 	constexpr float reference_height = 1080.f;
 	const float base_scale = viewport_height / reference_height;
 	const float final_scale = base_scale * s.settings.ui_scale;
@@ -619,13 +615,13 @@ auto gse::gui::apply_scale(system_state& s, style sty, const float viewport_heig
 	return sty;
 }
 
-auto gse::gui::reload_font(system_state& s, const asset::registry& assets) -> void {
+auto gse::gui::system::reload_font(state& s, const asset::registry& assets) -> void {
 	if (s.settings.font.value >= 0 && s.settings.font.value < static_cast<int>(s.settings.font.options.size())) {
 		s.gui_font = assets.get<font>("Fonts/" + s.settings.font.options[s.settings.font.value]);
 	}
 }
 
-auto gse::gui::draw_menu_chrome(system_state& s, const gse::input::state& input_state, menu& current_menu, const render_layer layer) -> void {
+auto gse::gui::system::draw_menu_chrome(state& s, const gse::input::state& input_state, menu& current_menu, const render_layer layer) -> void {
 	const style& sty = s.fstate.sty;
 
 	const ui_rect display_rect = calculate_display_rect(s, current_menu);
@@ -703,7 +699,7 @@ auto gse::gui::draw_menu_chrome(system_state& s, const gse::input::state& input_
 	}
 }
 
-auto gse::gui::draw_tab_bar(system_state& s, const gse::input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect, const render_layer layer) -> void {
+auto gse::gui::system::draw_tab_bar(state& s, const gse::input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect, const render_layer layer) -> void {
 	const style& sty = s.fstate.sty;
 	const vec2f mouse_pos = input_state.mouse_position();
 	const bool mouse_clicked = input_state.mouse_button_pressed(mouse_button::button_1);
@@ -833,7 +829,7 @@ auto gse::gui::draw_tab_bar(system_state& s, const gse::input::state& input_stat
 	}
 }
 
-auto gse::gui::handle_idle_state(system_state& s, const gse::input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> state {
+auto gse::gui::system::handle_idle_state(state& s, const gse::input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	struct interaction_candidate {
 		std::variant<states::resizing, states::dragging, states::resizing_divider, states::pending_drag> future_state;
 		cursor::style cursor;
@@ -1083,7 +1079,7 @@ auto gse::gui::handle_idle_state(system_state& s, const gse::input::state& input
 				}
 			}
 
-			return std::visit([](auto&& arg) -> state { return arg; }, hot_item->future_state);
+			return std::visit([](auto&& arg) -> gui::state { return arg; }, hot_item->future_state);
 		}
 	} else {
 		set_style(cursor::style::arrow);
@@ -1092,7 +1088,7 @@ auto gse::gui::handle_idle_state(system_state& s, const gse::input::state& input
 	return states::idle{};
 }
 
-auto gse::gui::handle_dragging_state(system_state& s, const states::dragging& current, const window& window, const vec2f mouse_position, const bool mouse_held, const gpu::context& ctx) -> state {
+auto gse::gui::system::handle_dragging_state(state& s, const states::dragging& current, const window& window, const vec2f mouse_position, const bool mouse_held, const gpu::context& ctx) -> gui::state {
 	menu* m = s.menus.try_get(current.menu_id);
 	if (!m) {
 		set_style(cursor::style::arrow);
@@ -1214,7 +1210,7 @@ auto gse::gui::handle_dragging_state(system_state& s, const states::dragging& cu
 	return current;
 }
 
-auto gse::gui::handle_resizing_state(system_state& s, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const gpu::context& ctx) -> state {
+auto gse::gui::system::handle_resizing_state(state& s, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const gpu::context& ctx) -> gui::state {
 	if (!mouse_held) {
 		s.active_dock_space.reset();
 		set_style(cursor::style::arrow);
@@ -1431,7 +1427,7 @@ auto gse::gui::handle_resizing_state(system_state& s, const states::resizing& cu
 	return current;
 }
 
-auto gse::gui::handle_resizing_divider_state(system_state& s, const states::resizing_divider& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> state {
+auto gse::gui::system::handle_resizing_divider_state(state& s, const states::resizing_divider& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	menu* parent = s.menus.try_get(current.parent_id);
 	menu* child = s.menus.try_get(current.child_id);
 
@@ -1547,7 +1543,7 @@ auto gse::gui::handle_resizing_divider_state(system_state& s, const states::resi
 	return current;
 }
 
-auto gse::gui::handle_pending_drag_state(system_state& s, const states::pending_drag& current, const vec2f mouse_position, const bool mouse_held) -> state {
+auto gse::gui::system::handle_pending_drag_state(state& s, const states::pending_drag& current, const vec2f mouse_position, const bool mouse_held) -> gui::state {
 	if (!mouse_held) {
 		return states::idle{};
 	}

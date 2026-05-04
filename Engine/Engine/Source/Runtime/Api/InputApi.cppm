@@ -38,37 +38,37 @@ export namespace gse::mouse {
 }
 
 auto gse::keyboard::pressed(const key k) -> bool {
-	return state_of<input::system_state>().current_state().key_pressed(k);
+	return input::system::current_state(state_of<input::system::state>()).key_pressed(k);
 }
 
 auto gse::keyboard::held(const key k) -> bool {
-	return state_of<input::system_state>().current_state().key_held(k);
+	return input::system::current_state(state_of<input::system::state>()).key_held(k);
 }
 
 auto gse::keyboard::released(const key k) -> bool {
-	return state_of<input::system_state>().current_state().key_released(k);
+	return input::system::current_state(state_of<input::system::state>()).key_released(k);
 }
 
 auto gse::keyboard::text_entered() -> const std::string& {
-	return state_of<input::system_state>().current_state().text_entered();
+	return input::system::current_state(state_of<input::system::state>()).text_entered();
 }
 
 auto gse::mouse::pressed(const mouse_button button) -> bool {
-	return state_of<input::system_state>().current_state().mouse_button_pressed(button);
+	return input::system::current_state(state_of<input::system::state>()).mouse_button_pressed(button);
 }
 
 auto gse::mouse::held(const mouse_button button) -> bool {
-	return state_of<input::system_state>().current_state().mouse_button_held(button);
+	return input::system::current_state(state_of<input::system::state>()).mouse_button_held(button);
 }
 
 auto gse::mouse::released(const mouse_button button) -> bool {
-	return state_of<input::system_state>().current_state().mouse_button_released(button);
+	return input::system::current_state(state_of<input::system::state>()).mouse_button_released(button);
 }
 
 auto gse::mouse::position() -> vec2f {
-	return state_of<input::system_state>().current_state().mouse_position();
+	return input::system::current_state(state_of<input::system::state>()).mouse_position();
 }
 
 auto gse::mouse::delta() -> vec2f {
-	return state_of<input::system_state>().current_state().mouse_delta();
+	return input::system::current_state(state_of<input::system::state>()).mouse_delta();
 }

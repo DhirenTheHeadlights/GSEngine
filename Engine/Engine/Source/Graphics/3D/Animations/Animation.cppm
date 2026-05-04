@@ -54,15 +54,15 @@ export namespace gse::animation {
 		}
 	};
 
-	struct state {
-		time last_tick{};
-		std::vector<anim_job> jobs;
-		std::vector<controller_job> controller_jobs;
-		std::unordered_map<pose_cache_key, std::size_t, pose_cache_key_hash> pose_cache;
-		std::unordered_map<id, animation_graph> graphs;
-	};
-
 	struct system {
+		struct state {
+			time last_tick{};
+			std::vector<anim_job> jobs;
+			std::vector<controller_job> controller_jobs;
+			std::unordered_map<pose_cache_key, std::size_t, pose_cache_key_hash> pose_cache;
+			std::unordered_map<id, animation_graph> graphs;
+		};
+
 		static auto initialize(
 			init_context& phase,
 			state& s
@@ -72,5 +72,76 @@ export namespace gse::animation {
 			update_context& ctx,
 			state& s
 		) -> async::task<>;
+
+	private:
+		static auto wrap_time(
+			time t,
+			time length
+		) -> time;
+
+		static auto lerp_mat4(
+			const mat4f& a,
+			const mat4f& b,
+			float t
+		) -> mat4f;
+
+		static auto sample_track(
+			const joint_track& track,
+			time t,
+			mat4f& out
+		) -> bool;
+
+		static auto ensure_pose_buffers(
+			animation_component& anim,
+			std::size_t joint_count
+		) -> void;
+
+		static auto build_local_pose(
+			animation_component& anim,
+			const skeleton& skeleton,
+			const clip_asset& clip,
+			time t
+		) -> void;
+
+		static auto build_global_and_skins(
+			animation_component& anim,
+			const skeleton& skeleton
+		) -> void;
+
+		static auto sample_clip_to_pose(
+			std::vector<mat4f>& pose,
+			const skeleton& skel,
+			const clip_asset& clip,
+			time t
+		) -> void;
+
+		static auto blend_poses(
+			std::vector<mat4f>& out,
+			const std::vector<mat4f>& from,
+			const std::vector<mat4f>& to,
+			float alpha
+		) -> void;
+
+		static auto evaluate_condition(
+			const transition_condition& condition,
+			const std::unordered_map<std::string, animation_parameter>& params
+		) -> bool;
+
+		static auto evaluate_transition(
+			const animation_transition& transition,
+			const std::unordered_map<std::string, animation_parameter>& params,
+			time state_time,
+			time clip_length
+		) -> bool;
+
+		static auto clear_triggers(
+			std::unordered_map<std::string, animation_parameter>& params
+		) -> void;
+
+		static auto process_controller_job(
+			const controller_job& job,
+			const renderer::system::resources& renderer_res,
+			time dt
+		) -> void;
 	};
 }

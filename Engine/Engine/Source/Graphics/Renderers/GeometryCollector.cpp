@@ -44,20 +44,20 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 	return result;
 }
 
-auto gse::renderer::geometry_collector::system::resources::upload_skeleton_data(const skeleton& skel) const -> void {
+auto gse::renderer::geometry_collector::system::upload_skeleton_data(const resources& r, const skeleton& skel) -> void {
 	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 	const auto joints = skel.joints();
 
-	std::byte* buffer = skeleton_buffer.mapped();
+	std::byte* buffer = r.skeleton_buffer.mapped();
 
 	for (std::size_t i = 0; i < joint_count; ++i) {
-		std::byte* offset = buffer + (i * joint_stride);
+		std::byte* offset = buffer + (i * r.joint_stride);
 
 		const mat4f inverse_bind = joints[i].inverse_bind();
 		const std::uint32_t parent_index = joints[i].parent_index();
 
-		gse::memcpy(offset + joint_offsets.at("inverse_bind"), inverse_bind);
-		gse::memcpy(offset + joint_offsets.at("parent_index"), parent_index);
+		gse::memcpy(offset + r.joint_offsets.at("inverse_bind"), inverse_bind);
+		gse::memcpy(offset + r.joint_offsets.at("parent_index"), parent_index);
 	}
 }
 
@@ -139,9 +139,9 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 }
 
 auto gse::renderer::geometry_collector::system::update(update_context& ctx, const resources& r, state& s) -> async::task<> {
-	const auto* cam_state = ctx.try_state_of<camera::state>();
-	const view_matrix view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
-	const projection_matrix proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
+	const auto& cam_state = co_await ctx.state_of<camera::system::state>();
+	const view_matrix view_matrix = cam_state.view_matrix;
+	const projection_matrix proj_matrix = cam_state.projection_matrix;
 
 	std::unordered_map<id, std::uint32_t> body_index_map;
 	for (const auto& [entries] : ctx.read_channel<physics::gpu_body_index_map>()) {
@@ -268,7 +268,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 						if (anim_comp->skeleton && (!s.current_skeleton.valid() || s.current_skeleton != anim_comp->skeleton)) {
 							s.current_skeleton = anim_comp->skeleton;
 							s.current_joint_count = static_cast<std::uint32_t>(anim_comp->skeleton->joint_count());
-							r.upload_skeleton_data(*anim_comp->skeleton);
+							upload_skeleton_data(r, *anim_comp->skeleton);
 						}
 
 						++skinned_instance_count;

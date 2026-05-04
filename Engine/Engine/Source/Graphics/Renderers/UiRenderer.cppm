@@ -115,9 +115,9 @@ export namespace gse::renderer::ui {
         gpu::buffer index_buffer;
     };
 
-    struct state {};
-
     struct system {
+        struct state {};
+
         struct resources {
             gpu::pipeline sprite_pipeline;
             resource::handle<shader> sprite_shader;
@@ -152,3 +152,4 @@ export namespace gse::renderer::ui {
         ) -> async::task<>;
     };
 }
+

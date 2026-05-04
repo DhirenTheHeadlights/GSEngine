@@ -313,7 +313,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, fr
     auto text_pc = gpu::cache_push_block(r.text_shader, "push_constants");
     text_pc.set("projection", projection);
 
-    auto pass = gpu.graph().add_pass<ui::state>();
+    auto pass = gpu.graph().add_pass<ui::system::state>();
     pass.track(vertex_buffer);
     pass.track(index_buffer);
 

@@ -34,13 +34,11 @@ export namespace gse::free_camera {
 		actions::axis2_channel move;
 	};
 
-	struct state : non_copyable {
-		~state() override = default;
-
-		std::unordered_map<id, std::unique_ptr<bindings>> bindings_by_owner;
-	};
-
 	struct system {
+		struct state {
+			std::unordered_map<id, std::unique_ptr<bindings>> bindings_by_owner;
+		};
+
 		static auto update(
 			update_context& ctx,
 			state& s

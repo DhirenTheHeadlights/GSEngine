@@ -57,15 +57,15 @@ export namespace gse {
         F&& fn
     ) -> void;
 
-    template <typename S, typename State, typename... Args>
+    template <typename S, typename... Args>
     auto add_system(
         Args&&... args
-    ) -> State&;
+    ) -> typename S::state&;
 
-    template <typename S, typename State, typename... Args>
+    template <typename S, typename... Args>
     auto ensure_system(
         Args&&... args
-    ) -> State&;
+    ) -> typename S::state&;
 
     auto set_networked(
         bool networked
@@ -163,14 +163,14 @@ auto gse::defer(F&& fn) -> void {
     engine_instance->defer<typename [: std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]) :]>(std::forward<F>(fn));
 }
 
-template <typename S, typename State, typename... Args>
-auto gse::add_system(Args&&... args) -> State& {
-    return engine_instance->add_system<S, State>(std::forward<Args>(args)...);
+template <typename S, typename... Args>
+auto gse::add_system(Args&&... args) -> typename S::state& {
+    return engine_instance->add_system<S>(std::forward<Args>(args)...);
 }
 
-template <typename S, typename State, typename... Args>
-auto gse::ensure_system(Args&&... args) -> State& {
-    return engine_instance->ensure_system<S, State>(std::forward<Args>(args)...);
+template <typename S, typename... Args>
+auto gse::ensure_system(Args&&... args) -> typename S::state& {
+    return engine_instance->ensure_system<S>(std::forward<Args>(args)...);
 }
 
 auto gse::set_networked(const bool networked) -> void {

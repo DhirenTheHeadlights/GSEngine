@@ -96,10 +96,7 @@ auto gse::animation::system::initialize(init_context&, state& s) -> void {
 }
 
 auto gse::animation::system::update(update_context& ctx, state& s) -> async::task<> {
-	const auto* renderer_res = ctx.try_resources_of<renderer::system::resources>();
-	if (!renderer_res) {
-		co_return;
-	}
+	const auto& renderer_res = co_await ctx.resources_of<renderer::system::resources>();
 
 	const time dt = system_clock::dt();
 
@@ -116,7 +113,7 @@ auto gse::animation::system::update(update_context& ctx, state& s) -> async::tas
 
 		for (auto& anim : animations) {
 			if (const auto& [skeleton_id] = anim.networked_data(); !anim.skeleton && skeleton_id.exists()) {
-				anim.skeleton = renderer_res->get<skeleton>(skeleton_id);
+				anim.skeleton = renderer_res.assets->get<skeleton>(skeleton_id);
 			}
 
 			if (!anim.skeleton) {
@@ -146,7 +143,7 @@ auto gse::animation::system::update(update_context& ctx, state& s) -> async::tas
 			}
 			const auto& [clip_id, scale, loop] = clip_c->networked_data();
 			if (!clip_c->clip && clip_id.exists()) {
-				clip_c->clip = renderer_res->get<clip_asset>(clip_id);
+				clip_c->clip = renderer_res.assets->get<clip_asset>(clip_id);
 			}
 
 			if (!clip_c->clip) {
@@ -227,13 +224,13 @@ auto gse::animation::system::update(update_context& ctx, state& s) -> async::tas
 
 		if (!s.controller_jobs.empty()) {
 			task::parallel_for(0uz, s.controller_jobs.size(), [&](const std::size_t i) {
-				process_controller_job(s.controller_jobs[i], *renderer_res, dt);
+				process_controller_job(s.controller_jobs[i], renderer_res, dt);
 			});
 		}
 	}
 }
 
-auto gse::animation::wrap_time(const time t, const time length) -> time {
+auto gse::animation::system::wrap_time(const time t, const time length) -> time {
 	if (length <= seconds(0.f)) {
 		return seconds(0.f);
 	}
@@ -243,7 +240,7 @@ auto gse::animation::wrap_time(const time t, const time length) -> time {
 	return length * wrapped;
 }
 
-auto gse::animation::lerp_mat4(const mat4f& a, const mat4f& b, const float t) -> mat4f {
+auto gse::animation::system::lerp_mat4(const mat4f& a, const mat4f& b, const float t) -> mat4f {
 	if constexpr (requires { a + (b - a) * t; }) {
 		return a + (b - a) * t;
 	}
@@ -252,7 +249,7 @@ auto gse::animation::lerp_mat4(const mat4f& a, const mat4f& b, const float t) ->
 	}
 }
 
-auto gse::animation::sample_track(const joint_track& track, const time t, mat4f& out) -> bool {
+auto gse::animation::system::sample_track(const joint_track& track, const time t, mat4f& out) -> bool {
 	const auto key_count = track.keys.size();
 	if (key_count == 0) {
 		return false;
@@ -299,7 +296,7 @@ auto gse::animation::sample_track(const joint_track& track, const time t, mat4f&
 	return true;
 }
 
-auto gse::animation::ensure_pose_buffers(animation_component& anim, const std::size_t joint_count) -> void {
+auto gse::animation::system::ensure_pose_buffers(animation_component& anim, const std::size_t joint_count) -> void {
 	if (anim.local_pose.size() != joint_count) {
 		anim.local_pose.resize(joint_count);
 		anim.global_pose.resize(joint_count);
@@ -307,7 +304,7 @@ auto gse::animation::ensure_pose_buffers(animation_component& anim, const std::s
 	}
 }
 
-auto gse::animation::build_local_pose(animation_component& anim, const skeleton& skeleton, const clip_asset& clip, const time t) -> void {
+auto gse::animation::system::build_local_pose(animation_component& anim, const skeleton& skeleton, const clip_asset& clip, const time t) -> void {
 	const auto joint_count = static_cast<std::size_t>(skeleton.joint_count());
 	const auto joints = skeleton.joints();
 
@@ -323,7 +320,7 @@ auto gse::animation::build_local_pose(animation_component& anim, const skeleton&
 	}
 }
 
-auto gse::animation::build_global_and_skins(animation_component& anim, const skeleton& skeleton) -> void {
+auto gse::animation::system::build_global_and_skins(animation_component& anim, const skeleton& skeleton) -> void {
 	const auto joint_count = static_cast<std::size_t>(skeleton.joint_count());
 	const auto joints = skeleton.joints();
 	constexpr auto invalid = std::numeric_limits<std::uint16_t>::max();
@@ -342,7 +339,7 @@ auto gse::animation::build_global_and_skins(animation_component& anim, const ske
 	}
 }
 
-auto gse::animation::sample_clip_to_pose(std::vector<mat4f>& pose, const skeleton& skel, const clip_asset& clip, const time t) -> void {
+auto gse::animation::system::sample_clip_to_pose(std::vector<mat4f>& pose, const skeleton& skel, const clip_asset& clip, const time t) -> void {
 	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 	const auto joints = skel.joints();
 
@@ -362,7 +359,7 @@ auto gse::animation::sample_clip_to_pose(std::vector<mat4f>& pose, const skeleto
 	}
 }
 
-auto gse::animation::blend_poses(std::vector<mat4f>& out, const std::vector<mat4f>& from, const std::vector<mat4f>& to, const float alpha) -> void {
+auto gse::animation::system::blend_poses(std::vector<mat4f>& out, const std::vector<mat4f>& from, const std::vector<mat4f>& to, const float alpha) -> void {
 	const auto count = std::min(from.size(), to.size());
 	if (out.size() != count) {
 		out.resize(count);
@@ -373,7 +370,7 @@ auto gse::animation::blend_poses(std::vector<mat4f>& out, const std::vector<mat4
 	}
 }
 
-auto gse::animation::evaluate_condition(const transition_condition& condition, const std::unordered_map<std::string, animation_parameter>& params) -> bool {
+auto gse::animation::system::evaluate_condition(const transition_condition& condition, const std::unordered_map<std::string, animation_parameter>& params) -> bool {
 	const auto it = params.find(condition.parameter_name);
 	if (it == params.end()) {
 		return false;
@@ -410,7 +407,7 @@ auto gse::animation::evaluate_condition(const transition_condition& condition, c
 	return false;
 }
 
-auto gse::animation::evaluate_transition(const animation_transition& transition, const std::unordered_map<std::string, animation_parameter>& params, const time state_time, const time clip_length) -> bool {
+auto gse::animation::system::evaluate_transition(const animation_transition& transition, const std::unordered_map<std::string, animation_parameter>& params, const time state_time, const time clip_length) -> bool {
 	if (transition.has_exit_time && clip_length > time{}) {
 		if (const float normalized = state_time / clip_length; normalized < transition.exit_time_normalized) {
 			return false;
@@ -426,7 +423,7 @@ auto gse::animation::evaluate_transition(const animation_transition& transition,
 	return true;
 }
 
-auto gse::animation::clear_triggers(std::unordered_map<std::string, animation_parameter>& params) -> void {
+auto gse::animation::system::clear_triggers(std::unordered_map<std::string, animation_parameter>& params) -> void {
 	for (auto& [value, is_trigger] : params | std::views::values) {
 		if (is_trigger) {
 			value = false;
@@ -434,7 +431,7 @@ auto gse::animation::clear_triggers(std::unordered_map<std::string, animation_pa
 	}
 }
 
-auto gse::animation::process_controller_job(const controller_job& job, const renderer::system::resources& renderer_res, const time dt) -> void {
+auto gse::animation::system::process_controller_job(const controller_job& job, const renderer::system::resources& renderer_res, const time dt) -> void {
 	auto& anim = *job.anim;
 	auto& ctrl = *job.ctrl;
 	const auto& skel = *job.skel;
@@ -450,7 +447,7 @@ auto gse::animation::process_controller_job(const controller_job& job, const ren
 		return;
 	}
 
-	const auto current_clip_handle = renderer_res.get<clip_asset>(current_state->clip_id);
+	const auto current_clip_handle = renderer_res.assets->get<clip_asset>(current_state->clip_id);
 	if (!current_clip_handle) {
 		return;
 	}
@@ -474,8 +471,8 @@ auto gse::animation::process_controller_job(const controller_job& job, const ren
 		const auto* to_state = graph.find_state(ctrl.blend.to_state);
 
 		if (from_state && to_state) {
-			const auto from_clip_handle = renderer_res.get<clip_asset>(from_state->clip_id);
-			const auto to_clip_handle = renderer_res.get<clip_asset>(to_state->clip_id);
+			const auto from_clip_handle = renderer_res.assets->get<clip_asset>(from_state->clip_id);
+			const auto to_clip_handle = renderer_res.assets->get<clip_asset>(to_state->clip_id);
 
 			if (from_clip_handle && to_clip_handle) {
 				ctrl.blend.from_time += dt * from_state->speed;

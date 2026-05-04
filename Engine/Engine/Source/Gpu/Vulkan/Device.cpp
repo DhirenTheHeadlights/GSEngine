@@ -129,7 +129,7 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 	return *this;
 }
 
-auto gse::vulkan::device::create(const instance& instance_data, save::state& save) -> device_creation_result {
+auto gse::vulkan::device::create(const instance& instance_data, save::system::state& save) -> device_creation_result {
 	const auto devices = instance_data.enumerate_physical_devices();
 	assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
 
@@ -187,10 +187,7 @@ auto gse::vulkan::device::create(const instance& instance_data, save::state& sav
 		supports_extension(vk::KHRAccelerationStructureExtensionName) &&
 		supports_extension(vk::KHRRayQueryExtensionName);
 
-	const bool video_encode_extensions_available =
-		families.video_encode_family.has_value() &&
-		supports_extension(vk::KHRVideoQueueExtensionName) &&
-		supports_extension(vk::KHRVideoEncodeQueueExtensionName);
+	const bool video_encode_extensions_available = false;
 
 	const auto feature_chain = physical_device.getFeatures2<
 		vk::PhysicalDeviceFeatures2,
@@ -752,12 +749,12 @@ auto gse::vulkan::device::free_allocation(const basic_allocation<device>& alloc)
 	}
 }
 
-gse::vulkan::device::device(vk::raii::PhysicalDevice&& physical_device, vk::raii::Device&& device, save::state& save_state, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled)
+gse::vulkan::device::device(vk::raii::PhysicalDevice&& physical_device, vk::raii::Device&& device, save::system::state& save_state, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled)
 	: m_physical_device(std::move(physical_device)),
 	m_device(std::move(device)),
 	m_fault_enabled(device_fault_enabled),
 	m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled) {
-	save::register_struct(save_state, "Vulkan", *this);
+	save::system::register_struct(save_state, "Vulkan", *this);
 }
 
 auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<basic_allocation<device>, std::string> {

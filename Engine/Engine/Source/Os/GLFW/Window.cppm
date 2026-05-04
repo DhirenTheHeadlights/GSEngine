@@ -47,8 +47,8 @@ export namespace gse {
 	public:
 		explicit window(
 			const std::string& title,
-			input::system_state& input_state,
-			save::state& save_state
+			input::system::state& input_state,
+			save::system::state& save_state
 		);
 
 		~window() override;
@@ -100,8 +100,8 @@ export namespace gse {
 		) -> std::vector<resolution_info>;
 	private:
 		GLFWwindow* m_window = nullptr;
-		input::system_state& m_input;
-		save::state& m_save;
+		input::system::state& m_input;
+		save::system::state& m_save;
 
 		[[=gse::settings::describe{}]]
 		bool m_fullscreen = false;
@@ -151,7 +151,7 @@ export namespace gse {
 	};
 }
 
-gse::window::window(const std::string& title, input::system_state& input_state, save::state& save_state) : m_input(input_state), m_save(save_state) {
+gse::window::window(const std::string& title, input::system::state& input_state, save::system::state& save_state) : m_input(input_state), m_save(save_state) {
 	assert(glfwInit(), "Error initializing GLFW");
 	assert(glfwVulkanSupported(), "Vulkan not supported");
 
@@ -167,8 +167,8 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 	glfwSetKeyCallback(
 		m_window,
 		[](GLFWwindow* w, const int key, int, const int action, int) {
-			if (const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
-				self->m_input.key_callback(key, action);
+			if (auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
+				input::system::key_callback(self->m_input, key, action);
 			}
 		}
 	);
@@ -176,10 +176,10 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 	glfwSetMouseButtonCallback(
 		m_window,
 		[](GLFWwindow* w, const int button, const int action, int) {
-			if (const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
+			if (auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
 				double x, y;
 				glfwGetCursorPos(w, &x, &y);
-				self->m_input.mouse_button_callback(button, action, x, y);
+				input::system::mouse_button_callback(self->m_input, button, action, x, y);
 			}
 		}
 	);
@@ -200,10 +200,10 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 				}
 
 				const double inverted_y = static_cast<double>(dims.y()) - clamped_y;
-				self->m_input.mouse_pos_callback(clamped_x, inverted_y);
+				input::system::mouse_pos_callback(self->m_input, clamped_x, inverted_y);
 			}
 			else {
-				self->m_input.mouse_pos_callback(xpos, ypos);
+				input::system::mouse_pos_callback(self->m_input, xpos, ypos);
 			}
 		}
 	);
@@ -211,8 +211,8 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 	glfwSetScrollCallback(
 		m_window,
 		[](GLFWwindow* w, const double xoffset, const double yoffset) {
-			if (const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
-				self->m_input.mouse_scroll_callback(xoffset, yoffset);
+			if (auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
+				input::system::mouse_scroll_callback(self->m_input, xoffset, yoffset);
 			}
 		}
 	);
@@ -220,8 +220,8 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 	glfwSetCharCallback(
 		m_window,
 		[](GLFWwindow* w, const unsigned int codepoint) {
-			if (const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
-				self->m_input.text_callback(codepoint);
+			if (auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
+				input::system::text_callback(self->m_input, codepoint);
 			}
 		}
 	);
@@ -239,7 +239,7 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 			}
 			else {
 				glfwSetInputMode(w, glfw::cursor, glfw::cursor_normal);
-				self->m_input.clear_events();
+				input::system::clear_events(self->m_input);
 			}
 		}
 	);
@@ -256,7 +256,7 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 	const int cursor_mode = m_mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
 	glfwSetInputMode(m_window, glfw::cursor, cursor_mode);
 
-	save::register_struct(save_state, "Window", *this);
+	save::system::register_struct(save_state, "Window", *this);
 
 	refresh_monitor_settings();
 	m_last_monitor_index = m_monitor.value;

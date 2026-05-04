@@ -28,13 +28,11 @@ export namespace gs::player {
 		gse::actions::axis2_channel jetpack_move;
 	};
 
-	struct state : gse::non_copyable {
-		~state() override = default;
-
-		std::unordered_map<gse::id, std::unique_ptr<bindings>> bindings_by_owner;
-	};
-
 	struct system {
+		struct state {
+			std::unordered_map<gse::id, std::unique_ptr<bindings>> bindings_by_owner;
+		};
+
 		static auto update(
 			gse::update_context& ctx,
 			state& s

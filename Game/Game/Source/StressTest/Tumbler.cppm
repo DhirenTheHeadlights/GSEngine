@@ -15,9 +15,9 @@ export namespace gs::tumbler {
 
 	using component = gse::component<component_data>;
 
-	struct state {};
-
 	struct system {
+		struct state {};
+
 		static auto update(
 			gse::update_context& ctx
 		) -> gse::async::task<>;

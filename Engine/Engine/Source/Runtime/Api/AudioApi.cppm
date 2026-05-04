@@ -52,7 +52,7 @@ export namespace gse::audio {
 }
 
 auto gse::audio::play(const std::string& clip_name, const bool loop) -> channel_future<voice_handle> {
-	const auto clip = resources_of<renderer::system::resources>().get<audio_clip>(clip_name);
+	const auto clip = resources_of<renderer::system::resources>().assets->get<audio_clip>(clip_name);
 	return channel_add<play_request>({
 		.clip = clip.resolve(),
 		.loop = loop
@@ -98,5 +98,5 @@ auto gse::audio::set_master_volume(const percentage<float> vol) -> void {
 }
 
 auto gse::audio::master_volume() -> percentage<float> {
-	return state_of<state>().master_vol;
+	return state_of<system::state>().master_vol;
 }

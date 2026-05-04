@@ -118,24 +118,15 @@ export namespace gse::physics {
 		int physics_substeps = 2;
 	};
 
-	struct state {
-		settings settings;
-		bool gpu_buffers_created = false;
-		gpu_solver_stats gpu_stats;
-		std::vector<joint_definition> joints;
-	};
+	class system {
+	public:
+		struct state {
+			physics::settings settings;
+			bool gpu_buffers_created = false;
+			gpu_solver_stats gpu_stats;
+			std::vector<joint_definition> joints;
+		};
 
-	auto create_joint(
-		state& s,
-		const joint_definition& def
-	) -> joint_handle;
-
-	auto remove_joint(
-		state& s,
-		joint_handle handle
-	) -> void;
-
-	struct system {
 		struct update_data {
 			time_t<float, seconds> accumulator{};
 			clock tick_clock;
@@ -192,79 +183,88 @@ export namespace gse::physics {
 			frame_data& fd,
 			const state& s
 		) -> async::task<>;
+
+		static auto create_joint(
+			state& s,
+			const joint_definition& def
+		) -> joint_handle;
+
+		static auto remove_joint(
+			state& s,
+			joint_handle handle
+		) -> void;
+
+	private:
+		struct collision_pair {
+			collision_component* collision;
+			motion_component* motion;
+		};
+
+		struct contact_compare_key {
+			std::uint32_t body_a = 0;
+			std::uint32_t body_b = 0;
+			std::uint64_t feature_key = 0;
+
+			auto operator==(
+				const contact_compare_key&
+			) const -> bool = default;
+		};
+
+		struct contact_compare_key_hash {
+			auto operator()(
+				const contact_compare_key& key
+			) const noexcept -> std::size_t;
+		};
+
+		static auto collect_collision_objects(
+			write<motion_component>& motion,
+			write<collision_component>& collision
+		) -> std::vector<collision_pair>;
+
+		static auto add_scene_contacts_to_solver(
+			vbd::solver& solver,
+			vbd::contact_cache& contact_cache,
+			const std::vector<collision_pair>& objects,
+			const flat_map<id, std::uint32_t>& id_to_body_index,
+			bool update_scene_state,
+			write<collision_result_component>* results
+		) -> void;
+
+		static auto pack_feature(
+			const feature_id& feature
+		) -> std::uint64_t;
+
+		static auto unpack_feature(
+			std::uint64_t packed
+		) -> feature_id;
+
+		static auto build_contact_cache_from_warm_start(
+			const std::span<const vbd::warm_start_entry> warm_start_contacts
+		) -> vbd::contact_cache;
+
+		static auto invalidate_warm_start_entries(
+			std::vector<vbd::warm_start_entry>& warm_start_contacts,
+			const std::span<const std::uint32_t> body_indices
+		) -> void;
+
+		static auto update_vbd(
+			int steps,
+			update_data& ud,
+			state& s,
+			write<motion_component>& motion,
+			write<collision_component>& collision,
+			write<collision_result_component>& results
+		) -> void;
+
+		static auto update_vbd_gpu(
+			int steps,
+			update_data& ud,
+			state& s,
+			write<motion_component>& motion,
+			write<collision_component>& collision,
+			write<collision_result_component>& results,
+			time_t<float, seconds> dt,
+			channel_writer& channels
+		) -> void;
 	};
-}
-
-namespace gse::physics {
-	struct collision_pair {
-		collision_component* collision;
-		motion_component* motion;
-	};
-
-	struct contact_compare_key {
-		std::uint32_t body_a = 0;
-		std::uint32_t body_b = 0;
-		std::uint64_t feature_key = 0;
-
-		auto operator==(
-			const contact_compare_key&
-		) const -> bool = default;
-	};
-
-	struct contact_compare_key_hash {
-		auto operator()(
-			const contact_compare_key& key
-		) const noexcept -> std::size_t;
-	};
-
-	auto collect_collision_objects(
-		write<motion_component>& motion,
-		write<collision_component>& collision
-	) -> std::vector<collision_pair>;
-
-	auto add_scene_contacts_to_solver(
-		vbd::solver& solver,
-		vbd::contact_cache& contact_cache,
-		const std::vector<collision_pair>& objects,
-		const flat_map<id, std::uint32_t>& id_to_body_index,
-		bool update_scene_state,
-		write<collision_result_component>* results
-	) -> void;
-
-	auto pack_feature(
-		const feature_id& feature
-	) -> std::uint64_t;
-
-	auto unpack_feature(
-		std::uint64_t packed
-	) -> feature_id;
-
-	auto build_contact_cache_from_warm_start(
-		const std::span<const vbd::warm_start_entry> warm_start_contacts
-	) -> vbd::contact_cache;
-
-	auto invalidate_warm_start_entries(
-		std::vector<vbd::warm_start_entry>& warm_start_contacts,
-		const std::span<const std::uint32_t> body_indices
-	) -> void;
-
-	auto update_vbd(
-		int steps,
-		system::update_data& ud,
-		state& s,
-		write<motion_component>& motion,
-		write<collision_component>& collision,
-		write<collision_result_component>& results
-	) -> void;
-
-	auto update_vbd_gpu(
-		int steps,
-		system::update_data& ud,
-		state& s,
-		write<motion_component>& motion,
-		write<collision_component>& collision,
-		write<collision_result_component>& results,
-		time_t<float, seconds> dt,
-		channel_writer& channels
-	) -> void;
 }

@@ -11,6 +11,9 @@ import :frame_context;
 
 export namespace gse {
 	template <typename S>
+	concept names_state = requires { typename S::state; };
+
+	template <typename S>
 	concept has_resources = requires { typename S::resources; };
 
 	template <typename S>
@@ -65,11 +68,12 @@ export namespace gse {
 		bool initialized = false;
 
 		id state_id;
+		id resources_id;
 		id frame_wall_id;
 		id trace_id;
 	};
 
-	template <typename S, typename State, typename... Args>
+	template <typename S, typename... Args>
 	auto make_system_node(
 		Args&&... args
 	) -> system_node;

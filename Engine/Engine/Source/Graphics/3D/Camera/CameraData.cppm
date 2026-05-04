@@ -7,6 +7,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
 export namespace gse::camera {
 	struct target {
 		vec3<position> position{};
@@ -23,50 +24,4 @@ export namespace gse::camera {
 		time blend_duration = milliseconds(300);
 		bool continuous = true;
 	};
-
-	struct state {
-		target current{};
-		target blend_from{};
-		target blend_to{};
-		time blend_elapsed{};
-		time blend_duration{};
-		bool blending = false;
-
-		id active_controller_entity{};
-		int active_priority = -1;
-
-		angle yaw = degrees(-90.0f);
-		angle pitch = degrees(0.0f);
-		float mouse_sensitivity = 0.1f;
-
-		gse::view_matrix view_matrix{};
-		gse::projection_matrix projection_matrix{};
-
-		vec2f viewport{ 1920.f, 1080.f };
-		bool ui_focus = false;
-
-		auto position(
-		) const -> vec3<position>;
-
-		auto orientation(
-		) const -> quat;
-
-		auto direction_relative_to_origin(
-			const vec3f& direction
-		) const -> vec3f;
-	};
-}
-
-auto gse::camera::state::position() const -> vec3<gse::position> {
-	return current.position;
-}
-
-auto gse::camera::state::orientation() const -> quat {
-	return current.orientation;
-}
-
-auto gse::camera::state::direction_relative_to_origin(const vec3f& direction) const -> vec3f {
-	const auto u = current.orientation.imaginary_part();
-	const auto t = 2.f * cross(u, direction);
-	return direction + current.orientation.s() * t + cross(u, t);
 }

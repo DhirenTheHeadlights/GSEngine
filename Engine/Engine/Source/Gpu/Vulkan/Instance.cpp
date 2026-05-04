@@ -16,8 +16,8 @@ auto gse::vulkan::create_surface(const window& win, instance& instance) -> void 
 	instance.set_surface(vk::raii::SurfaceKHR(instance.raii_instance(), raw_surface));
 }
 
-auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, save::state& save) -> instance {
-	const bool enable_validation = save::read_one<bool>(
+auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, save::system::state& save) -> instance {
+	const bool enable_validation = save::system::read_one<bool>(
 		config::resource_path / "Misc/settings.ini",
 		"Graphics",
 		"validation_layers_enabled",

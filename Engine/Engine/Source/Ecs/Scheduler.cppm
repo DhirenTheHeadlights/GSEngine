@@ -51,17 +51,17 @@ export namespace gse {
 			gse::move_only_function<void()> fn
 		) -> void;
 
-		template <typename S, typename State, typename... Args>
+		template <typename S, typename... Args>
 		auto add_system(
 			registry& reg,
 			Args&&... args
-		) -> State&;
+		) -> typename S::state&;
 
-		template <typename S, typename State, typename... Args>
+		template <typename S, typename... Args>
 		auto ensure_system(
 			registry& reg,
 			Args&&... args
-		) -> State&;
+		) -> typename S::state&;
 
 		template <typename State>
 		auto state(
@@ -92,6 +92,9 @@ export namespace gse {
 		) -> void;
 
 		auto check_state_dep_cycles(
+		) -> void;
+
+		auto check_closed_dep_graph(
 		) -> void;
 
 		auto run_graph_update(
@@ -163,25 +166,27 @@ auto gse::scheduler::defer(F&& fn) -> void {
 	});
 }
 
-template <typename S, typename State, typename... Args>
-auto gse::scheduler::ensure_system(registry& reg, Args&&... args) -> State& {
-	if (auto* existing = try_state_of<State>()) {
+template <typename S, typename... Args>
+auto gse::scheduler::ensure_system(registry& reg, Args&&... args) -> typename S::state& {
+	using state_t = typename S::state;
+	if (auto* existing = try_state_of<state_t>()) {
 		return *existing;
 	}
-	return add_system<S, State>(reg, std::forward<Args>(args)...);
+	return add_system<S>(reg, std::forward<Args>(args)...);
 }
 
-template <typename S, typename State, typename... Args>
-auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
+template <typename S, typename... Args>
+auto gse::scheduler::add_system(registry& reg, Args&&... args) -> typename S::state& {
+	using state_t = typename S::state;
 	if (m_registry == nullptr) {
 		m_registry = &reg;
 	}
 
-	auto node = make_system_node<S, State>(std::forward<Args>(args)...);
-	auto* state_ref = static_cast<State*>(node.state_ptr);
+	auto node = make_system_node<S>(std::forward<Args>(args)...);
+	auto* state_ref = static_cast<state_t*>(node.state_ptr);
 
-	const auto state_idx = id_of<State>();
-	(void)trace_id<State>();
+	const auto state_idx = id_of<state_t>();
+	(void)trace_id<state_t>();
 	m_states.register_state(state_idx, node.state_ptr, node.state_snapshot_ptr);
 
 	auto combined_deps = node.update_state_deps;

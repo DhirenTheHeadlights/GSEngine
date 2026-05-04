@@ -34,6 +34,10 @@ export namespace gse {
 		auto components(
 		) const -> std::span<const T>;
 
+		template <typename State>
+		[[nodiscard]] auto state_of(
+		) const -> async::task<const State&>;
+
 	private:
 		registry& m_reg;
 	};
@@ -59,4 +63,17 @@ auto gse::frame_context::try_component(const id owner) const -> const T* {
 template <gse::is_component T>
 auto gse::frame_context::components() const -> std::span<const T> {
 	return m_reg.components<T>();
+}
+
+template <typename State>
+auto gse::frame_context::state_of() const -> async::task<const State&> {
+	static_assert(
+		std::is_trivially_copyable_v<State>,
+		"frame_context state reads require S to be trivially-copyable so a "
+		"per-frame snapshot exists. Make S POD-trivial (move dynamic members "
+		"into the system's resources / frame_data), or stop reading it from "
+		"frame() — frame() runs concurrently with the next frame's update(), "
+		"so a non-snapshot read is a data race."
+	);
+	return task_context::state_of<State>();
 }

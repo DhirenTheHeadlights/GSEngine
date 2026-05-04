@@ -71,7 +71,7 @@ auto gse::network::refresh_servers(const time_t<std::uint32_t> timeout) -> void 
 }
 
 auto gse::network::servers() -> std::span<const discovery_result> {
-	return state_of<system_state>().available_servers;
+	return state_of<system::state>().available_servers;
 }
 
 auto gse::network::connect(const connection_options& options) -> channel_future<bool> {
@@ -96,11 +96,11 @@ auto gse::network::disconnect() -> void {
 }
 
 auto gse::network::connection_state() -> client::state {
-	return state_of<system_state>().connection_state;
+	return state_of<system::state>().connection_state;
 }
 
 auto gse::network::drain(const std::function<void(const inbox_message&)>& handler) -> void {
-	for (auto& msg : state_of<system_state>().user_inbox) {
+	for (auto& msg : state_of<system::state>().user_inbox) {
 		handler(msg);
 	}
 }

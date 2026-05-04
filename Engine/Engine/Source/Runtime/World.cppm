@@ -173,11 +173,11 @@ auto gse::local_input_sampler(world& w, std::function<void(const evaluation_cont
 		return;
 	}
 
-	const auto& a = w.state_of<actions::system_state>();
+	const auto& a = w.state_of<actions::system::state>();
 
 	evaluation_context ctx{
 		.client_id = local_id,
-		.input = std::addressof(a.current_state()),
+		.input = std::addressof(actions::system::current_state(a)),
 		.registry = &w.registry(),
 	};
 
@@ -298,22 +298,22 @@ namespace gse {
 
 auto gse::world::update() -> void {
 	if (m_networked) {
-		auto& a = state_of<actions::system_state>();
+		const auto& a = state_of<actions::system::state>();
 
 		if (m_input_sampler) {
 			m_input_sampler(*this, [&](const evaluation_context& ctx) {
 				if (!ctx.input || !ctx.client_id) {
 					return;
 				}
-				a.sample_for_entity(*ctx.input, *ctx.client_id);
+				actions::system::sample_for_entity(a, *ctx.input, *ctx.client_id);
 			});
 		}
 	}
 	else {
-		const auto& a = state_of<actions::system_state>();
-		const auto& s = a.current_state();
+		const auto& a = state_of<actions::system::state>();
+		const auto& s = actions::system::current_state(a);
 
-		a.sample_all_channels(s);
+		actions::system::sample_all_channels(a, s);
 
 		for (const auto& [scene_id, condition] : m_triggers) {
 			const evaluation_context ctx{

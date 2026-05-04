@@ -15,9 +15,9 @@ import gse.ecs;
 import gse.physics;
 
 export namespace gse::renderer::physics_transform {
-	struct state {};
-
 	struct system {
+		struct state {};
+
 		struct resources {
 			resource::handle<shader> shader_handle;
 			gpu::pipeline pipeline;
@@ -42,13 +42,13 @@ export namespace gse::renderer::physics_transform {
 			frame_context& ctx,
 			const resources& r,
 			frame_data& fd,
-			const geometry_collector::state& gc_s
+			const geometry_collector::system::state& gc_s
 		) -> async::task<>;
 	};
 }
 
 auto gse::renderer::physics_transform::system::initialize(const init_context& phase, resources& r, frame_data& fd) -> void {
-	phase.sched.ensure_system<geometry_collector::system, geometry_collector::state>(phase.reg);
+	phase.sched.ensure_system<geometry_collector::system>(phase.reg);
 
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
@@ -67,7 +67,7 @@ auto gse::renderer::physics_transform::system::initialize(const init_context& ph
 	r.initialized = true;
 }
 
-auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const geometry_collector::state& gc_s) -> async::task<> {
+auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const geometry_collector::system::state& gc_s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
 
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
@@ -83,10 +83,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 	const auto& info = solver_infos[0];
 	const auto& snapshot = *info.snapshot;
 
-	const auto* gc_r = ctx.try_resources_of<geometry_collector::system::resources>();
-	if (!gc_r) {
-		co_return;
-	}
+	const auto& gc_r = co_await ctx.resources_of<geometry_collector::system::resources>();
 
 	const auto frame_index = gpu.graph().current_frame();
 
@@ -125,7 +122,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 	gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), r.shader_handle, fd.descriptors[frame_index])
 		.buffer("body_data", snapshot, 0, info.body_count * info.body_stride)
 		.buffer("mapping_data", fd.mapping_buffers[frame_index], 0, fd.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry))
-		.buffer("instance_data", gc_r->instance_buffer[frame_index], 0, gc_r->instance_buffer[frame_index].size())
+		.buffer("instance_data", gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
 		.commit();
 
 	auto pc = gpu::cache_push_block(r.shader_handle, "push_constants");
@@ -136,14 +133,14 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const r
 
 	auto pass = gpu.graph().add_pass<state>();
 	pass.track(fd.mapping_buffers[frame_index]);
-	pass.track(gc_r->instance_buffer[frame_index]);
+	pass.track(gc_r.instance_buffer[frame_index]);
 
 	pass.reads(
 			gpu::storage_read(snapshot, gpu::pipeline_stage::compute_shader),
 			gpu::storage_read(fd.mapping_buffers[frame_index], gpu::pipeline_stage::compute_shader)
 		)
-		.writes(gpu::storage_write(gc_r->instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-		.after<geometry_collector::state>();
+		.writes(gpu::storage_write(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
+		.after<geometry_collector::system::state>();
 
 	auto& rec = co_await pass.record();
 	rec.bind(r.pipeline);
