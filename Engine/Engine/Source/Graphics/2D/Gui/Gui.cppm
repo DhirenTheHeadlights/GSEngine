@@ -13,9 +13,10 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.meta;
 import gse.save;
 
-import :settings_panel;
+import :settings;
 import :types;
 import :layout;
 import :font;
@@ -83,14 +84,16 @@ namespace gse::gui {
 	auto draw_menu_chrome(
 		system_state& s,
 		const input::state& input_state,
-		menu& current_menu
+		menu& current_menu,
+		render_layer layer
 	) -> void;
 
 	auto draw_tab_bar(
 		system_state& s,
 		const input::state& input_state,
 		menu& current_menu,
-		const ui_rect& title_bar_rect
+		const ui_rect& title_bar_rect,
+		render_layer layer
 	) -> void;
 
 	auto usable_screen_rect(
@@ -138,7 +141,7 @@ export namespace gse::gui {
 		std::optional<dock::space> active_dock_space;
 		state current_state;
 
-		std::filesystem::path file_path = "Misc/gui_layout.toml";
+		std::filesystem::path file_path = "Misc/gui_layout.ini";
 		clock save_clock;
 
 		id hot_widget_id;
@@ -149,11 +152,20 @@ export namespace gse::gui {
 		draw_context* context = nullptr;
 
 		menu_bar::state menu_bar_state;
-		settings_panel::state settings_panel_state;
-		theme current_theme = theme::dark;
-		float ui_scale = 1.0f;
-		int font_index = 0;
-		std::vector<std::string> available_fonts;
+		settings::panel_state settings_state;
+
+		struct settings {
+			[[=gse::settings::describe{}]]
+			theme current_theme = theme::dark;
+
+			[[=gse::settings::describe{}, =gse::settings::range<0.5f, 2.0f>{}]]
+			float ui_scale = 1.0f;
+
+			[[=gse::settings::describe{}]]
+			gse::settings::choice<int> font;
+		} settings;
+
+		int last_font_index = 0;
 
 		std::vector<renderer::sprite_command> sprite_commands;
 		std::vector<renderer::text_command> text_commands;
@@ -190,6 +202,7 @@ export namespace gse::gui {
 		system_state& s,
 		const input::state& input_state,
 		const std::string& name,
+		render_layer layer,
 		const std::function<void(builder&)>& build
 	) -> void;
 }

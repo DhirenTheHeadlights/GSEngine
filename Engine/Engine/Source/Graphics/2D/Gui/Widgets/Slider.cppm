@@ -197,7 +197,7 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 
     bool range_is_zero = false;
     if constexpr (internal::is_quantity<decltype(range)>) {
-        if (range.template as<decltype(range)::default_unit>() == typename decltype(range)::value_type{ 0 }) {
+        if (range.template as<typename decltype(range)::default_unit>() == typename decltype(range)::value_type{ 0 }) {
             range_is_zero = true;
         }
     } else {
@@ -225,8 +225,10 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
     std::string value_str;
     if constexpr (internal::is_quantity<T>) {
         value_str = std::format("{:.2f}", value.template as<typename T::default_unit>());
-    } else {
+    } else if constexpr (std::is_floating_point_v<T>) {
         value_str = std::format("{:.2f}", value);
+    } else {
+        value_str = std::format("{}", value);
     }
     const float text_width = ctx.font->width(value_str, ctx.style.font_size);
     const vec2f value_text_pos = {

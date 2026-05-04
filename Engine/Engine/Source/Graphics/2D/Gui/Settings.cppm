@@ -1,0 +1,289 @@
+export module gse.graphics:settings;
+
+import std;
+
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.math;
+import gse.meta;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
+import gse.save;
+
+import :types;
+import :builder;
+import :toggle_widget;
+import :slider_widget;
+import :dropdown_widget;
+import :section_widget;
+
+export namespace gse::settings {
+    struct panel_state;
+
+    using draw_thunk = void(*)(
+        gui::builder& b,
+        panel_state& ps,
+        std::string_view category,
+        void* obj
+    );
+
+    struct panel_entry {
+        std::string category;
+        void* obj = nullptr;
+        draw_thunk draw = nullptr;
+    };
+
+    struct register_request {
+        panel_entry entry;
+    };
+
+    struct panel_state {
+        std::vector<panel_entry> entries;
+        std::unordered_map<std::string, gui::dropdown_state> dropdowns;
+    };
+
+    using custom_draw_fn = void(*)(
+        gui::builder& b,
+        panel_state& ps,
+        std::string_view label,
+        void* field
+    );
+
+    struct draw_with {
+        custom_draw_fn fn;
+    };
+
+    auto add(
+        panel_state& ps,
+        panel_entry entry
+    ) -> void;
+
+    auto pump(
+        panel_state& ps,
+        update_context& ctx
+    ) -> void;
+
+    auto panel(
+        gui::builder& b,
+        panel_state& ps,
+        std::string_view category_filter = ""
+    ) -> void;
+
+    template <typename T>
+    auto draw_struct_thunk(
+        gui::builder& b,
+        panel_state& ps,
+        std::string_view category,
+        void* obj
+    ) -> void;
+
+    template <typename T>
+    auto make_panel_entry(
+        std::string_view category,
+        T& obj
+    ) -> panel_entry;
+
+    template <typename T>
+    auto register_panel(
+        const init_context& phase,
+        std::string_view category,
+        T& obj
+    ) -> void;
+
+    template <typename T>
+    auto register_panel(
+        update_context& ctx,
+        std::string_view category,
+        T& obj
+    ) -> void;
+
+    template <typename T>
+    auto register_panel(
+        panel_state& ps,
+        std::string_view category,
+        T& obj
+    ) -> void;
+
+    template <typename T>
+    auto install(
+        const init_context& phase,
+        std::string_view category,
+        T& obj
+    ) -> void;
+}
+
+namespace gse::settings {
+    template <typename E>
+    auto draw_enum_dropdown(
+        gui::builder& b,
+        panel_state& ps,
+        std::string_view key,
+        std::string_view label,
+        E& ref
+    ) -> void;
+}
+
+template <typename E>
+auto gse::settings::draw_enum_dropdown(gui::builder& b, panel_state& ps, const std::string_view key, const std::string_view label, E& ref) -> void {
+    static const std::vector<std::string> options = [] {
+        std::vector<std::string> v;
+        template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
+            v.emplace_back(std::meta::identifier_of(e));
+        }
+        return v;
+    }();
+
+    static const std::vector<E> values = [] {
+        std::vector<E> v;
+        template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
+            v.push_back([:e:]);
+        }
+        return v;
+    }();
+
+    auto& dd_state = ps.dropdowns[std::string(key)];
+
+    std::size_t idx = 0;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (values[i] == ref) {
+            idx = i;
+            break;
+        }
+    }
+
+    const auto r = b.draw<gui::dropdown>({
+        .name = label,
+        .current_index = idx,
+        .options = options,
+        .state = dd_state,
+    });
+
+    if (r.changed && idx < values.size()) {
+        ref = values[idx];
+    }
+}
+
+template <typename T>
+auto gse::settings::draw_struct_thunk(gui::builder& b, panel_state& ps, const std::string_view category, void* obj) -> void {
+    auto& typed = *static_cast<T*>(obj);
+
+    b.draw<gui::section>({ .title = category });
+
+    template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+        if constexpr (has_annotation<settings::describe>(m)) {
+            using F = [:std::meta::type_of(m):];
+            constexpr std::string_view label = meta::member_name(m);
+            auto& ref = typed.[:m:];
+
+            if constexpr (has_annotation<draw_with>(m)) {
+                constexpr auto dw = annotation_of<draw_with, m>();
+                dw.fn(b, ps, label, &ref);
+            }
+            else if constexpr (std::same_as<F, bool>) {
+                b.draw<gui::toggle>({ .name = label, .value = ref });
+            }
+            else if constexpr (settings::is_choice_v<F>) {
+                const std::string key = std::string(category) + "::" + std::string(label);
+                auto& dd_state = ps.dropdowns[key];
+                std::size_t idx = static_cast<std::size_t>(ref.value);
+                const auto r = b.draw<gui::dropdown>({
+                    .name = label,
+                    .current_index = idx,
+                    .options = ref.options,
+                    .state = dd_state,
+                });
+                if (r.changed) {
+                    ref.value = static_cast<typename F::value_type>(idx);
+                }
+            }
+            else if constexpr (std::is_enum_v<F>) {
+                const std::string key = std::string(category) + "::" + std::string(label);
+                draw_enum_dropdown<F>(b, ps, key, label, ref);
+            }
+            else if constexpr (constexpr auto range_t = meta::find_range(m); range_t != std::meta::info{}) {
+                using R = [: range_t :];
+                if constexpr (gse::internal::is_quantity<F>) {
+                    b.draw<gui::quantity_slider<F, typename F::default_unit{}>>({
+                        .name = label,
+                        .value = ref,
+                        .min = R::min,
+                        .max = R::max,
+                    });
+                }
+                else {
+                    b.draw<gui::slider<F>>({
+                        .name = label,
+                        .value = ref,
+                        .min = static_cast<F>(R::min),
+                        .max = static_cast<F>(R::max),
+                    });
+                }
+            }
+        }
+    }
+}
+
+template <typename T>
+auto gse::settings::make_panel_entry(const std::string_view category, T& obj) -> panel_entry {
+    return panel_entry{
+        .category = std::string(category),
+        .obj = &obj,
+        .draw = &draw_struct_thunk<T>,
+    };
+}
+
+template <typename T>
+auto gse::settings::register_panel(const init_context& phase, const std::string_view category, T& obj) -> void {
+    phase.channels.push<register_request>({ .entry = make_panel_entry(category, obj) });
+}
+
+template <typename T>
+auto gse::settings::register_panel(update_context& ctx, const std::string_view category, T& obj) -> void {
+    ctx.channels.push<register_request>({ .entry = make_panel_entry(category, obj) });
+}
+
+template <typename T>
+auto gse::settings::register_panel(panel_state& ps, const std::string_view category, T& obj) -> void {
+    add(ps, make_panel_entry(category, obj));
+}
+
+template <typename T>
+auto gse::settings::install(const init_context& phase, const std::string_view category, T& obj) -> void {
+    save::register_struct(phase, category, obj);
+    register_panel(phase, category, obj);
+}
+
+auto gse::settings::add(panel_state& ps, panel_entry entry) -> void {
+    const auto match = std::ranges::find_if(ps.entries, [&](const panel_entry& existing) {
+        return existing.category == entry.category && existing.obj == entry.obj;
+    });
+
+    if (match != ps.entries.end()) {
+        *match = std::move(entry);
+        return;
+    }
+
+    ps.entries.push_back(std::move(entry));
+}
+
+auto gse::settings::pump(panel_state& ps, update_context& ctx) -> void {
+    for (auto& req : ctx.read_channel<register_request>()) {
+        add(ps, std::move(req.entry));
+    }
+}
+
+auto gse::settings::panel(gui::builder& b, panel_state& ps, const std::string_view category_filter) -> void {
+    for (const auto& entry : ps.entries) {
+        if (!category_filter.empty() && entry.category != category_filter) {
+            continue;
+        }
+        if (entry.draw) {
+            entry.draw(b, ps, entry.category, entry.obj);
+        }
+    }
+}

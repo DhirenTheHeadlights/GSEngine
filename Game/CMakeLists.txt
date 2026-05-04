@@ -39,6 +39,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     )
 endif()
 
+gse_copy_libcxx_runtime(GoonSquad)
+
 if(VCPKG_BUILD_TYPE STREQUAL "release" OR VCPKG_TARGET_TRIPLET MATCHES "-release$")
     add_custom_command(TARGET GoonSquad POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

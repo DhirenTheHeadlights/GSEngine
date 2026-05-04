@@ -96,7 +96,7 @@ namespace gse::network {
 gse::network::udp_socket::udp_socket() {
 	ensure_initialized();
 	const native_socket s = ::socket(sockets::af_inet, sockets::sock_dgram, sockets::ipproto_udp);
-	assert(s != sockets::invalid_socket, std::source_location::current(), "Failed to create socket.");
+	assert(s != sockets::invalid_socket, "Failed to create socket.");
 	m_handle = from_native(s);
 }
 

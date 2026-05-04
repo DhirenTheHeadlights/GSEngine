@@ -222,7 +222,6 @@ template <typename T>
 auto gse::channel_read_guard<T>::front() const -> const T& {
 	assert(
 		!m_data->empty(),
-		std::source_location::current(),
 		"Attempted to access front of empty channel read guard"
 	);
 	return (*m_data)[0];

@@ -4,6 +4,7 @@ import std;
 
 import :handles;
 import :gpu_task;
+import :sync_token;
 import :transient_api;
 import :types;
 import :vulkan_device;
@@ -35,7 +36,7 @@ export namespace gse::gpu {
 	auto upload_to_buffers(
 		gpu::device& dev,
 		std::span<const buffer_upload> uploads
-	) -> void;
+	) -> sync_token;
 }
 
 namespace gse {
@@ -49,5 +50,5 @@ namespace gse {
 	auto upload_to_buffers_async(
 		gpu::device& dev,
 		std::vector<upload_entry> entries
-	) -> async::task<>;
+	) -> async::task<gpu::sync_token>;
 }

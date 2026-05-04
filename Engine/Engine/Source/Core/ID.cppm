@@ -2,6 +2,7 @@ export module gse.core:id;
 
 import std;
 import gse.std_meta;
+import gse.meta;
 
 import gse.assert;
 import gse.math;
@@ -477,7 +478,6 @@ auto gse::generate_id(const std::string_view tag) -> id {
 		if (const auto it = registry.uuid_to_tag.find(stable_id); it != registry.uuid_to_tag.end()) {
 			assert(
 				it->second == tag,
-				std::source_location::current(),
 				"ID collision for tag {} vs existing tag {}",
 				tag,
 				it->second
@@ -500,7 +500,7 @@ auto gse::generate_id(const std::uint64_t number) -> id {
 	const auto& [mutex, registry] = id_registry();
 	std::lock_guard lock(mutex);
 
-	assert(!registry.by_uuid.contains(number), std::source_location::current(), "ID number {} already exists", number);
+	assert(!registry.by_uuid.contains(number), "ID number {} already exists", number);
 
 	const id new_id(number);
 	auto tag = std::to_string(number);
@@ -518,13 +518,13 @@ constexpr auto gse::generate_temp_id(const uuid number) -> id {
 
 auto gse::find(const uuid number) -> id {
 	const auto found_id = try_find(number);
-	assert(found_id.has_value(), std::source_location::current(), "ID {} not found", number);
+	assert(found_id.has_value(), "ID {} not found", number);
 	return *found_id;
 }
 
 auto gse::find(const std::string_view tag) -> id {
 	const auto found_id = try_find(tag);
-	assert(found_id.has_value(), std::source_location::current(), "ID {} not found", tag);
+	assert(found_id.has_value(), "ID {} not found", tag);
 	return *found_id;
 }
 
@@ -584,7 +584,7 @@ auto gse::tag(uuid number) -> std::string_view {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
 	const auto it = registry.uuid_to_tag.find(number);
-	assert(it != registry.uuid_to_tag.end(), std::source_location::current(), "Tag for id {} not found", number);
+	assert(it != registry.uuid_to_tag.end(), "Tag for id {} not found", number);
 	return it->second;
 }
 
@@ -592,7 +592,7 @@ auto gse::number(const std::string_view tag) -> uuid {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
 	const auto it = registry.tag_to_uuid.find(tag);
-	assert(it != registry.tag_to_uuid.end(), std::source_location::current(), "Tag '{}' not found", tag);
+	assert(it != registry.tag_to_uuid.end(), "Tag '{}' not found", tag);
 	return it->second;
 }
 
@@ -639,34 +639,6 @@ auto gse::trace_id() -> id {
 
 template <typename T>
 consteval auto gse::type_tag() -> std::string_view {
-	auto walk = [](this auto self, std::meta::info entity) -> std::string {
-		if (!std::meta::has_identifier(entity)) {
-			return std::string(std::meta::display_string_of(entity));
-		}
-		std::string parent_name = self(std::meta::parent_of(entity));
-		std::string my_name = std::string(std::meta::identifier_of(entity));
-		if (std::meta::has_template_arguments(entity)) {
-			my_name += "<";
-			bool first = true;
-			for (auto arg : std::meta::template_arguments_of(entity)) {
-				if (!first) {
-					my_name += ", ";
-				}
-				first = false;
-				if (std::meta::is_type(arg)) {
-					my_name += self(arg);
-				}
-				else {
-					my_name += std::meta::display_string_of(arg);
-				}
-			}
-			my_name += ">";
-		}
-		if (parent_name.empty()) {
-			return my_name;
-		}
-		return parent_name + "::" + my_name;
-	};
-	return std::define_static_string(walk(std::meta::dealias(^^T)));
+	return gse::meta::qualified_name<T>();
 }
 

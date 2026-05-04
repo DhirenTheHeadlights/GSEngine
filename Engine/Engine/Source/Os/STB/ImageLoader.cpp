@@ -336,7 +336,7 @@ auto gse::image::write_png_file(
 
 auto gse::image::load(const std::filesystem::path& path) -> data {
 	auto result = load_any(path, true);
-	assert(result.ok, std::source_location::current(), "Failed to load image: {}", path.string());
+	assert(result.ok, "Failed to load image: {}", path.string());
 
 	return {
 		.path = path,
@@ -378,7 +378,6 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 	const auto required = faces[0].size;
 	assert(
 		required.x() == required.y(),
-		std::source_location::current(),
 		"Cube face must be square: {}",
 		paths[0].string()
 	);
@@ -387,7 +386,6 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 		faces[i] = load(paths[i]);
 		assert(
 			faces[i].size == required,
-			std::source_location::current(),
 			"All cube faces must match size {}: {}",
 			required,
 			paths[i].string()
@@ -399,7 +397,7 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 
 auto gse::image::load_raw(const std::filesystem::path& path) -> data {
 	auto result = load_any(path, false);
-	assert(result.ok, std::source_location::current(), "Failed to load image: {}", path.string());
+	assert(result.ok, "Failed to load image: {}", path.string());
 
 	return {
 		.path = path,

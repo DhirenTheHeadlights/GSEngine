@@ -14,6 +14,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.log;
 
 gse::render_component::render_component(const id owner_id, const params& p) : component(owner_id) {
     const auto n = static_cast<std::size_t>(std::min<std::size_t>(p.models.size(), render_component_data::max_models));
@@ -70,13 +71,21 @@ auto gse::render_init::try_wire(render_component& rc) -> bool {
     }
 
     for (std::size_t i = 0; i < rc.networked_data().model_count; ++i) {
-        if (!rc.networked_data().models[i].valid()) {
+        const auto& h = rc.networked_data().models[i];
+        if (!h.valid()) {
+            return false;
+        }
+        if (!h->uploads_ready()) {
             return false;
         }
     }
 
     for (std::size_t i = 0; i < rc.networked_data().skinned_model_count; ++i) {
-        if (!rc.networked_data().skinned_models[i].valid()) {
+        const auto& h = rc.networked_data().skinned_models[i];
+        if (!h.valid()) {
+            return false;
+        }
+        if (!h->uploads_ready()) {
             return false;
         }
     }

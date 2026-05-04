@@ -42,13 +42,25 @@ import gse.gpu;
 import gse.audio;
 import gse.math;
 import gse.save;
+import gse.meta;
 
 export namespace gse::renderer {
-	struct state {
+	struct settings {
+		[[=gse::settings::describe{}]]
 		bool hot_reload_enabled = false;
+
+		[[=gse::settings::describe{}]]
 		bool gpu_timestamps_enabled = true;
+
+		[[=gse::settings::describe{}]]
 		bool gpu_pipeline_stats_enabled = false;
+
+		[[=gse::settings::describe{}]]
 		bool profile_aggregator_enabled = true;
+	};
+
+	struct state {
+		settings settings;
 		actions::handle dump_profile_action;
 		vec2f last_viewport{ 1920.f, 1080.f };
 	};

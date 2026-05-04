@@ -128,7 +128,7 @@ export namespace gse::gpu {
 auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const resource::handle<shader>& s) -> descriptor_region {
 	const auto& cache = registry.cache(s);
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
-	assert(persistent_idx < cache.layout_handles.size(), std::source_location::current(), "Shader has no persistent descriptor set to allocate");
+	assert(persistent_idx < cache.layout_handles.size(), "Shader has no persistent descriptor set to allocate");
 
 	const auto set_layout = cache.layout_handles[persistent_idx];
 	const auto size = heap.layout_size(set_layout);
@@ -210,7 +210,7 @@ auto gse::gpu::descriptor_writer::find_binding_index(const std::string_view name
 			}
 		}
 	}
-	assert(false, std::source_location::current(), "Binding '{}' not found in shader", name);
+	assert(false, "Binding '{}' not found in shader", name);
 	return 0;
 }
 
@@ -294,7 +294,7 @@ auto gse::gpu::descriptor_writer::acceleration_structure(const std::string_view 
 }
 
 auto gse::gpu::descriptor_writer::commit() -> void {
-	assert(m_region && *m_region, std::source_location::current(), "Cannot commit to null descriptor region");
+	assert(m_region && *m_region, "Cannot commit to null descriptor region");
 
 	const auto& cache = *m_cache_entry;
 	const auto& heap = *m_region->heap;

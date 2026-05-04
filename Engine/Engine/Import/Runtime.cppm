@@ -1,6 +1,7 @@
 export module gse.runtime;
 
 export import :engine;
+export import :scene;
 
 export import :core_api;
 export import :actions_api;

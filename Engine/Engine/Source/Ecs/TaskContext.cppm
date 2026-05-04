@@ -97,7 +97,7 @@ auto gse::task_context::state_of() const -> const State& {
 	const auto* p = live_state
 		? states.state_ptr(id_of<State>())
 		: states.state_snapshot_ptr(id_of<State>());
-	assert(p != nullptr, std::source_location::current(), "state not found");
+	assert(p != nullptr, "state not found");
 	return *static_cast<const State*>(p);
 }
 
@@ -115,14 +115,14 @@ auto gse::task_context::read_channel() const -> channel_read_guard<T> {
 		return std::make_unique<typed_channel<T>>();
 	});
 	const auto* ptr = channels_store.snapshot_data(id_of<T>());
-	assert(ptr != nullptr, std::source_location::current(), "channel snapshot not found");
+	assert(ptr != nullptr, "channel snapshot not found");
 	return channel_read_guard<T>(*static_cast<const std::vector<T>*>(ptr));
 }
 
 template <typename Resources>
 auto gse::task_context::resources_of() const -> const Resources& {
 	const auto* p = resources_store.resources_ptr(id_of<Resources>());
-	assert(p != nullptr, std::source_location::current(), "resources not found");
+	assert(p != nullptr, "resources not found");
 	return *static_cast<const Resources*>(p);
 }
 

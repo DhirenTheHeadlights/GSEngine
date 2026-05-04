@@ -56,7 +56,7 @@ auto gs::client_ui_system::update(gse::update_context& ctx, client_ui_state& s) 
 	});
 
 	if (const auto* pds = ctx.try_state_of<gse::renderer::physics_debug::state>()) {
-		if (pds->enabled) {
+		if (pds->settings.enabled) {
 			const auto& [
 				body_count,
 				sleeping_count,

@@ -14,7 +14,8 @@ import gse.assets;
 import gse.gpu;
 import gse.physics;
 import gse.graphics;
-import gse.scene;
+
+import :scene;
 
 export namespace gse {
 	struct evaluation_context {
@@ -358,7 +359,6 @@ template <typename State>
 auto gse::world::state_of() -> State& {
 	assert(
 		m_scheduler != nullptr,
-		std::source_location::current(),
 		"world has no scheduler bound."
 	);
 
@@ -387,7 +387,6 @@ auto gse::world::add(std::string_view name, scene::setup_fn setup) -> gse::scene
 auto gse::world::activate(const gse::id& scene_id) -> void {
 	assert(
 		m_networked,
-		std::source_location::current(),
 		"Cannot force activate scene in a non-networked world."
 	);
 
@@ -406,13 +405,11 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 auto gse::world::deactivate(const gse::id& scene_id) -> void {
 	assert(
 		scene_id == m_active_scene,
-		std::source_location::current(),
 		"Can only force deactivate the currently active scene."
 	);
 
 	assert(
 		m_networked,
-		std::source_location::current(),
 		"Cannot force deactivate a scene in a non-networked world"
 	);
 

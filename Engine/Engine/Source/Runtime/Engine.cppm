@@ -16,10 +16,10 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.log;
-import gse.scene;
 import gse.save;
 import gse.config;
 
+import :scene;
 import :world;
 
 export namespace gse {
@@ -114,6 +114,11 @@ export namespace gse {
 		auto add_system(
 			Args&&... args
 		) -> State&;
+
+		template <typename S, typename State, typename... Args>
+		auto ensure_system(
+			Args&&... args
+		) -> State&;
 	private:
 		flags<engine_flag> m_flags;
 		scheduler m_scheduler;
@@ -160,4 +165,9 @@ auto gse::engine::add_scene(std::string_view name, scene::setup_fn setup) -> sce
 template <typename S, typename State, typename... Args>
 auto gse::engine::add_system(Args&&... args) -> State& {
 	return m_scheduler.add_system<S, State>(m_world.registry(), std::forward<Args>(args)...);
+}
+
+template <typename S, typename State, typename... Args>
+auto gse::engine::ensure_system(Args&&... args) -> State& {
+	return m_scheduler.ensure_system<S, State>(m_world.registry(), std::forward<Args>(args)...);
 }

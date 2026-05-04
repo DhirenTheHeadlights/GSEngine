@@ -136,7 +136,6 @@ auto gse::asset::registry::add_loader(Ctx& ctx) -> resource::loader<T, Ctx>* {
 	const auto type_id = id_of<T>();
 	assert(
 		!m_resource_loaders.contains(type_id),
-		std::source_location::current(),
 		"Resource loader for type {} already exists.",
 		type_tag<T>()
 	);
@@ -198,7 +197,7 @@ auto gse::asset::registry::loader_for() const -> resource::loader_t<T>* {
 }
 
 inline auto gse::asset::registry::loader_base_for(const id type_id) const -> resource::loader_base* {
-	assert(m_resource_loaders.contains(type_id), std::source_location::current(), "Resource loader for id {} does not exist.", type_id.number());
+	assert(m_resource_loaders.contains(type_id), "Resource loader for id {} does not exist.", type_id.number());
 	return m_resource_loaders.at(type_id).get();
 }
 

@@ -233,7 +233,6 @@ auto gse::vulkan::worker_command_pools::reset_frame(const std::uint32_t frame_in
 auto gse::vulkan::worker_command_pools::acquire_secondary(const std::size_t worker_index, const std::uint32_t frame_index) -> vk::CommandBuffer {
 	assert(
 		worker_index < m_pools.size(),
-		std::source_location::current(),
 		"Worker index {} out of bounds (worker_count: {})",
 		worker_index,
 		m_pools.size()
@@ -243,7 +242,6 @@ auto gse::vulkan::worker_command_pools::acquire_secondary(const std::size_t work
 
 	assert(
 		slot.used < slot.secondaries.size(),
-		std::source_location::current(),
 		"Worker command pool exhausted (worker: {}, frame: {}, capacity: {})",
 		worker_index,
 		frame_index,

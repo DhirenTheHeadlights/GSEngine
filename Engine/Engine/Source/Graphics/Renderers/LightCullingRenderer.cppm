@@ -126,13 +126,15 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(system::resources& r, st
 }
 
 auto gse::renderer::light_culling::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
+	phase.sched.ensure_system<depth_prepass::system, depth_prepass::state>(phase.reg);
+
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
 	r.ctx = &ctx;
 
 	r.shader_handle = assets.get<shader>("Shaders/Compute/light_culling");
 	assets.instantly_load(r.shader_handle);
-	assert(r.shader_handle->is_compute(), std::source_location::current(), "Shader for light culling system must be a compute shader");
+	assert(r.shader_handle->is_compute(), "Shader for light culling system must be a compute shader");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		r.descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.shader_handle);

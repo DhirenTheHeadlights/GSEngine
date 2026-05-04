@@ -3,7 +3,6 @@ export module gse.graphics:rt_shadow_renderer;
 import std;
 
 import :geometry_collector;
-import :physics_transform_renderer;
 import :mesh;
 
 import gse.os;

@@ -50,7 +50,7 @@ export import :scroll_widget;
 export import :section_widget;
 export import :selectable_widget;
 export import :separator_widget;
-export import :settings_panel;
+export import :settings;
 export import :skeleton;
 export import :skeleton_compiler;
 export import :skin_compute_renderer;

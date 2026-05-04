@@ -21,6 +21,7 @@ import :physics_transform_renderer;
 import :rt_shadow_renderer;
 import :skin_compute_renderer;
 import :ui_renderer;
+import :settings;
 
 import gse.log;
 import gse.core;
@@ -63,49 +64,12 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 
 	assets.compile_all();
 
-	phase.sched.add_system<rt_shadow::system, rt_shadow::state>(phase.reg);
-	phase.sched.add_system<geometry_collector::system, geometry_collector::state>(phase.reg);
-	phase.sched.add_system<skin_compute::system, skin_compute::state>(phase.reg);
-	phase.sched.add_system<physics_transform::system, physics_transform::state>(phase.reg);
-	phase.sched.add_system<cull_compute::system, cull_compute::state>(phase.reg);
-	phase.sched.add_system<depth_prepass::system, depth_prepass::state>(phase.reg);
-	phase.sched.add_system<light_culling::system, light_culling::state>(phase.reg);
 	phase.sched.add_system<forward::system, forward::state>(phase.reg);
 	phase.sched.add_system<physics_debug::system, physics_debug::state>(phase.reg);
 	phase.sched.add_system<ui::system, ui::state>(phase.reg);
 	phase.sched.add_system<capture::system, capture::state>(phase.reg);
 
-	phase.channels.push<save::register_property>({
-		.category = "Graphics",
-		.name = "Hot Reload",
-		.description = "Automatically reload assets when source files change",
-		.ref = &s.hot_reload_enabled,
-		.type = typeid(bool)
-	});
-
-	phase.channels.push<save::register_property>({
-		.category = "Profiling",
-		.name = "GPU Timestamps",
-		.description = "Measure per-pass GPU time via timestamp queries",
-		.ref = &s.gpu_timestamps_enabled,
-		.type = typeid(bool)
-	});
-
-	phase.channels.push<save::register_property>({
-		.category = "Profiling",
-		.name = "GPU Pipeline Stats",
-		.description = "Record draw/primitive/invocation counts per graphics pass",
-		.ref = &s.gpu_pipeline_stats_enabled,
-		.type = typeid(bool)
-	});
-
-	phase.channels.push<save::register_property>({
-		.category = "Profiling",
-		.name = "Rolling Averages",
-		.description = "Aggregate CPU and GPU samples into rolling EMAs",
-		.ref = &s.profile_aggregator_enabled,
-		.type = typeid(bool)
-	});
+	gse::settings::install(phase, "Graphics", s.settings);
 
 	const id dump_profile_id = generate_id("Dump Profile");
 	phase.channels.push<actions::add_action_request>({
@@ -120,17 +84,17 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> async
 	auto& gpu = ctx.get<gpu::context>();
 	auto& assets = ctx.assets();
 
-	if (s.hot_reload_enabled != assets.hot_reload_enabled()) {
-		if (s.hot_reload_enabled) {
+	if (s.settings.hot_reload_enabled != assets.hot_reload_enabled()) {
+		if (s.settings.hot_reload_enabled) {
 			assets.enable_hot_reload();
 		} else {
 			assets.disable_hot_reload();
 		}
 	}
 
-	gpu.graph().set_gpu_timestamps_enabled(s.gpu_timestamps_enabled);
-	gpu.graph().set_gpu_pipeline_stats_enabled(s.gpu_pipeline_stats_enabled);
-	profile::set_enabled(s.profile_aggregator_enabled);
+	gpu.graph().set_gpu_timestamps_enabled(s.settings.gpu_timestamps_enabled);
+	gpu.graph().set_gpu_pipeline_stats_enabled(s.settings.gpu_pipeline_stats_enabled);
+	profile::set_enabled(s.settings.profile_aggregator_enabled);
 
 	if (const auto* sys = ctx.try_state_of<actions::system_state>(); sys && s.dump_profile_action.pressed(sys->current_state(), *sys)) {
 		profile::dump();

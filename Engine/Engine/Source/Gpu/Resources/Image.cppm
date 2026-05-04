@@ -4,6 +4,7 @@ import std;
 
 import :handles;
 import :gpu_task;
+import :sync_token;
 import :transient_api;
 import :types;
 import :vulkan_device;
@@ -24,21 +25,21 @@ export namespace gse::gpu {
 		gpu::device& dev,
 		vulkan::image& img,
 		image_layout target
-	) -> void;
+	) -> sync_token;
 
 	auto upload_image_2d(
 		gpu::device& dev,
 		vulkan::image& img,
 		const void* pixel_data,
 		std::size_t data_size
-	) -> void;
+	) -> sync_token;
 
 	auto upload_image_layers(
 		gpu::device& dev,
 		vulkan::image& img,
 		const std::vector<const void*>& face_data,
 		std::size_t bytes_per_face
-	) -> void;
+	) -> sync_token;
 }
 
 namespace gse {
@@ -49,7 +50,7 @@ namespace gse {
 		gpu::image_aspect_flag aspect,
 		std::uint32_t layers,
 		bool is_depth
-	) -> async::task<>;
+	) -> async::task<gpu::sync_token>;
 
 	auto upload_image_2d_async(
 		gpu::device& dev,
@@ -57,7 +58,7 @@ namespace gse {
 		const void* pixel_data,
 		std::size_t data_size,
 		vec2u extent
-	) -> async::task<>;
+	) -> async::task<gpu::sync_token>;
 
 	auto upload_image_layers_async(
 		gpu::device& dev,
@@ -65,5 +66,5 @@ namespace gse {
 		std::vector<const void*> face_data,
 		std::size_t bytes_per_face,
 		vec2u extent
-	) -> async::task<>;
+	) -> async::task<gpu::sync_token>;
 }

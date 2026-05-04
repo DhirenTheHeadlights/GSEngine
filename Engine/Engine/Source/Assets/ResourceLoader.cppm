@@ -480,7 +480,7 @@ template <typename R, typename C>
 auto gse::resource::loader<R, C>::get(const id id) const -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	const auto* s = slot_ptr(id);
-	assert(s, std::source_location::current(), "Resource with ID {} not found in this loader.", id);
+	assert(s, "Resource with ID {} not found in this loader.", id);
 	return handle<R>(id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
 }
 
@@ -490,7 +490,7 @@ auto gse::resource::loader<R, C>::get(const std::string& filename_no_ext) const 
 	const auto resource_id = gse::find(filename_no_ext);
 	std::lock_guard lock(m_mutex);
 	const auto* s = slot_ptr(resource_id);
-	assert(s, std::source_location::current(), "Resource with ID {} not found in this loader.", resource_id);
+	assert(s, "Resource with ID {} not found in this loader.", resource_id);
 	return handle<R>(resource_id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
 }
 
@@ -527,7 +527,7 @@ auto gse::resource::loader<R, C>::instantly_load(const id resource_id) -> void {
 	{
 		std::lock_guard lock(m_mutex);
 		s = slot_ptr(resource_id);
-		assert(s, std::source_location::current(), "invalid id");
+		assert(s, "invalid id");
 		if (s->current_state == state::loaded) {
 			return;
 		}
@@ -587,7 +587,7 @@ template <typename R, typename C>
 auto gse::resource::loader<R, C>::add(std::unique_ptr<R> resource) -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	const auto id = resource->id();
-	assert(!m_resources.contains(id), std::source_location::current(), "Resource with ID {} already exists.", id);
+	assert(!m_resources.contains(id), "Resource with ID {} already exists.", id);
 
 	auto slot = std::make_unique<resource_slot<R>>(std::move(resource), state::loaded, "");
 	auto* slot_raw = slot.get();

@@ -77,12 +77,7 @@ auto gse::file_watcher::watch(const std::filesystem::path& path, callback on_cha
     });
 }
 
-auto gse::file_watcher::watch_directory(
-    const std::filesystem::path& directory,
-    callback on_change,
-    std::span<const std::string> extensions,
-    const bool recursive
-) -> void {
+auto gse::file_watcher::watch_directory(const std::filesystem::path& directory, callback on_change, std::span<const std::string> extensions, const bool recursive) -> void {
     std::lock_guard lock(m_mutex);
 
     if (!std::filesystem::exists(directory) || !std::filesystem::is_directory(directory)) {

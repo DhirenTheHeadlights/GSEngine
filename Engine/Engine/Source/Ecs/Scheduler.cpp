@@ -105,7 +105,6 @@ auto gse::scheduler::check_state_dep_cycles() -> void {
 				if (colors[dep] == color::gray) {
 					assert(
 						false,
-						std::source_location::current(),
 						"state_deps cycle detected: {}",
 						format_cycle(dep)
 					);
@@ -129,11 +128,11 @@ auto gse::scheduler::check_state_dep_cycles() -> void {
 }
 
 auto gse::scheduler::initialize() -> void {
-	check_state_dep_cycles();
-
 	frame_sync::on_begin([this] {
 		m_channels_store.take_snapshot_all();
 	});
+
+	m_initialized = true;
 
 	auto writer = m_channels_store.make_writer();
 	init_context phase{
@@ -148,10 +147,14 @@ auto gse::scheduler::initialize() -> void {
 	};
 
 	for (std::size_t i = 0; i < m_nodes.size(); ++i) {
+		if (m_nodes[i].initialized) {
+			continue;
+		}
 		m_nodes[i].invoke_initialize_fn(phase, m_nodes[i].data.get());
+		m_nodes[i].initialized = true;
 	}
 
-	m_initialized = true;
+	check_state_dep_cycles();
 }
 
 auto gse::scheduler::run_graph_update() -> void {

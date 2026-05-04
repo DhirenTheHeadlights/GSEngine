@@ -17,10 +17,10 @@ auto gse::vulkan::create_surface(const window& win, instance& instance) -> void 
 }
 
 auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, save::state& save) -> instance {
-	const bool enable_validation = save::read_bool_setting_early(
-		config::resource_path / "Misc/settings.toml",
+	const bool enable_validation = save::read_one<bool>(
+		config::resource_path / "Misc/settings.ini",
 		"Graphics",
-		"Validation Layers",
+		"validation_layers_enabled",
 		true
 	);
 

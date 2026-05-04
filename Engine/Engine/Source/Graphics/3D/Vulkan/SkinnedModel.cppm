@@ -60,6 +60,9 @@ export namespace gse {
 
 		auto meshes() const -> std::span<const skinned_mesh>;
 		auto center_of_mass() const -> vec3<length>;
+
+		auto uploads_ready(
+		) const -> bool;
 	private:
 		friend class skinned_model_instance;
 
@@ -204,6 +207,12 @@ auto gse::skinned_model::meshes() const -> std::span<const skinned_mesh> {
 
 auto gse::skinned_model::center_of_mass() const -> vec3<length> {
 	return m_center_of_mass;
+}
+
+auto gse::skinned_model::uploads_ready() const -> bool {
+	return std::ranges::all_of(m_meshes, [](const skinned_mesh& m) {
+		return m.upload_token().ready() && m.material().textures_ready();
+	});
 }
 
 auto gse::skinned_model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc, const std::uint32_t skin_offset, const std::uint32_t joint_count) -> void {

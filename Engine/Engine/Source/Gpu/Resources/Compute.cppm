@@ -301,7 +301,7 @@ auto gse::gpu::compute_queue::end_timing() const -> void {
 }
 
 auto gse::gpu::compute_queue::mark_timing(const std::uint32_t slot) const -> void {
-	assert(slot < timing_slot_count, std::source_location::current(), "mark_timing slot out of range");
+	assert(slot < timing_slot_count, "mark_timing slot out of range");
 	const auto cmd = m_ctx.command_buffer_handle();
 	vulkan::commands(cmd).write_timestamp(pipeline_stage_flag::compute_shader, m_ctx.query_pool_handle(), slot);
 }
@@ -314,7 +314,7 @@ auto gse::gpu::compute_queue::read_timing(const std::uint32_t start_slot, const 
 	if (m_frame_count < 2) {
 		return 0.0f;
 	}
-	assert(start_slot < timing_slot_count && end_slot < timing_slot_count, std::source_location::current(), "read_timing slot out of range");
+	assert(start_slot < timing_slot_count && end_slot < timing_slot_count, "read_timing slot out of range");
 	if (const auto results = m_ctx.read_timestamps(start_slot, end_slot); results) {
 		const auto [start_ts, end_ts] = *results;
 		return static_cast<float>(end_ts - start_ts) * m_timestamp_period * 1e-6f;

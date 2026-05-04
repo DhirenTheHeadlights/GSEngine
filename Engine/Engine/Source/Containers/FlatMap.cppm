@@ -114,7 +114,7 @@ template <typename Key, typename Value, typename Compare>
 template <typename Self>
 auto gse::flat_map<Key, Value, Compare>::at(this Self& self, const Key& key) -> decltype(auto) {
     auto it = self.lower(key);
-    assert(it != self.m_data.end() && it->first == key, std::source_location::current(), "flat_map::at: key not found");
+    assert(it != self.m_data.end() && it->first == key, "flat_map::at: key not found");
     return (it->second);
 }
 

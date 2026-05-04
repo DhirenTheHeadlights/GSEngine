@@ -55,6 +55,9 @@ export namespace gse {
 
 		auto meshes() const -> std::span<const mesh>;
 		auto center_of_mass() const -> vec3<length>;
+
+		auto uploads_ready(
+		) const -> bool;
 	private:
 		friend class model_instance;
 
@@ -76,7 +79,7 @@ auto gse::model::load(gpu::context& context) -> void {
 		m_meshes.clear();
 
 		std::ifstream in_file(m_baked_model_path, std::ios::binary);
-		assert(in_file.is_open(), std::source_location::current(), "Failed to open baked model file for reading.");
+		assert(in_file.is_open(), "Failed to open baked model file for reading.");
 		if (!in_file.is_open()) return;
 
 		binary_reader ar(in_file, 0x474D444C, 4, m_baked_model_path.string());
@@ -152,6 +155,12 @@ auto gse::model::meshes() const -> std::span<const mesh> {
 
 auto gse::model::center_of_mass() const -> vec3<length> {
 	return m_center_of_mass;
+}
+
+auto gse::model::uploads_ready() const -> bool {
+	return std::ranges::all_of(m_meshes, [](const mesh& m) {
+		return m.upload_token().ready() && m.material().textures_ready();
+	});
 }
 
 auto gse::model_instance::sync_structure() -> void {

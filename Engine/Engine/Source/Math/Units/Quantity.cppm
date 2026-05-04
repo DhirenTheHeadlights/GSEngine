@@ -4,6 +4,7 @@ import std;
 import gse.std_meta;
 
 import gse.assert;
+import gse.meta;
 
 import :dimension;
 
@@ -536,13 +537,16 @@ namespace gse::internal {
         constexpr auto operator==(const quantity<T2, Dim2, Tag2, Unit2>& other) const -> bool {
             return ((*this <=> other) == 0);
         }
+        // Public only because clang p2996 requires structural types for NTTP, and
+        // structural types must have all non-static data members public. Once that
+        // constraint relaxes, move this back to `protected`. Do not assign directly.
+        ArithmeticType m_val = static_cast<ArithmeticType>(0);
+
     protected:
         template <is_unit UnitType>
         constexpr auto converted_value(
             ArithmeticType value
         ) const -> ArithmeticType;
-
-        ArithmeticType m_val = static_cast<ArithmeticType>(0);
     };
 }
 
@@ -672,6 +676,32 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
         return it;
     }
 };
+
+export template <typename A, typename Dim, typename Tag, typename Unit>
+struct gse::parser<gse::internal::quantity<A, Dim, Tag, Unit>> {
+    static auto parse(std::string_view raw, gse::internal::quantity<A, Dim, Tag, Unit>& out) -> bool {
+        A tmp{};
+        if (!gse::parse(raw, tmp)) {
+            return false;
+        }
+        out = gse::internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(tmp);
+        return true;
+    }
+};
+
+export template <typename A, typename Dim, typename Tag, typename Unit>
+struct gse::scalar<gse::internal::quantity<A, Dim, Tag, Unit>> {
+    using type = A;
+
+    static auto get(const gse::internal::quantity<A, Dim, Tag, Unit>& v) -> A {
+        return v.template as<Unit>();
+    }
+
+    static auto from(A v) -> gse::internal::quantity<A, Dim, Tag, Unit> {
+        return gse::internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(v);
+    }
+};
+
 
 export namespace gse::internal {
     template <typename Q>

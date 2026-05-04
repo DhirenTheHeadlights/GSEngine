@@ -279,7 +279,6 @@ gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const desc
 
 	assert(
 		memory_type_index != std::numeric_limits<std::uint32_t>::max(),
-		std::source_location::current(),
 		"No suitable memory type for descriptor heap"
 	);
 
@@ -326,7 +325,6 @@ auto gse::gpu::descriptor_heap::allocate(const gpu::device_size size) -> descrip
 
 	assert(
 		aligned_offset + aligned_size <= m_capacity,
-		std::source_location::current(),
 		"Descriptor heap exhausted: requested {} bytes at offset {}, capacity {}",
 		aligned_size, aligned_offset, m_capacity
 	);
@@ -345,7 +343,6 @@ auto gse::gpu::descriptor_heap::allocate(const gpu::device_size size) -> descrip
 auto gse::gpu::descriptor_heap::write_bytes(const descriptor_region& region, const gpu::device_size offset_within_region, const void* data, const gpu::device_size data_size) const -> void {
 	assert(
 		offset_within_region + data_size <= region.size,
-		std::source_location::current(),
 		"Write exceeds descriptor region bounds"
 	);
 
@@ -420,7 +417,7 @@ auto gse::gpu::descriptor_heap::begin_frame(const std::uint32_t frame_index) -> 
 }
 
 auto gse::gpu::descriptor_heap::allocate_transient(std::uint32_t frame_index, const gpu::device_size size) -> descriptor_region {
-	assert(m_transient_initialized, std::source_location::current(), "begin_frame must be called before allocate_transient");
+	assert(m_transient_initialized, "begin_frame must be called before allocate_transient");
 
 	const auto aligned_size = align_up(size);
 	const auto offset = m_transient_offsets[frame_index].fetch_add(aligned_size, std::memory_order_relaxed);
@@ -428,7 +425,6 @@ auto gse::gpu::descriptor_heap::allocate_transient(std::uint32_t frame_index, co
 
 	assert(
 		offset + aligned_size <= slice_end,
-		std::source_location::current(),
 		"Transient descriptor heap slice exhausted for frame {}: requested {} at {}, slice ends at {}",
 		frame_index, aligned_size, offset, slice_end
 	);
@@ -471,7 +467,7 @@ auto gse::gpu::descriptor_set_writer::begin(const std::uint32_t frame_index) -> 
 }
 
 auto gse::gpu::descriptor_set_writer::buffer(std::uint32_t binding, const gpu::handle<vulkan::buffer> buf, const gpu::device_size offset, const gpu::device_size range) -> descriptor_set_writer& {
-	assert(binding < m_bindings.size(), std::source_location::current(),
+	assert(binding < m_bindings.size(),
 		"Binding {} out of range (max {})", binding, m_bindings.size());
 
 	const auto& [binding_offset, descriptor_size, type] = m_bindings[binding];
@@ -492,7 +488,7 @@ auto gse::gpu::descriptor_set_writer::buffer(std::uint32_t binding, const gpu::h
 }
 
 auto gse::gpu::descriptor_set_writer::image(std::uint32_t binding, const gpu::handle<vulkan::image_view> view, const gpu::handle<vulkan::sampler> sampler, const image_layout layout) -> descriptor_set_writer& {
-	assert(binding < m_bindings.size(), std::source_location::current(),
+	assert(binding < m_bindings.size(),
 		"Binding {} out of range (max {})", binding, m_bindings.size());
 
 	const auto& info = m_bindings[binding];
@@ -511,7 +507,7 @@ auto gse::gpu::descriptor_set_writer::image(std::uint32_t binding, const gpu::ha
 }
 
 auto gse::gpu::descriptor_set_writer::storage_image(const std::uint32_t binding, const gpu::handle<vulkan::image_view> view, const image_layout layout) -> descriptor_set_writer& {
-	assert(binding < m_bindings.size(), std::source_location::current(),
+	assert(binding < m_bindings.size(),
 		"Binding {} out of range (max {})", binding, m_bindings.size());
 
 	const auto& info = m_bindings[binding];
@@ -530,6 +526,6 @@ auto gse::gpu::descriptor_set_writer::storage_image(const std::uint32_t binding,
 }
 
 auto gse::gpu::descriptor_set_writer::commit(const gpu::handle<vulkan::command_buffer> cmd, const bind_point point, const gpu::handle<vulkan::pipeline_layout> layout, const std::uint32_t set_index) const -> void {
-	assert(m_current_region, std::source_location::current(), "Cannot commit without begin()");
+	assert(m_current_region, "Cannot commit without begin()");
 	m_current_region.heap->set_offset(cmd, point, layout, set_index, m_current_region);
 }

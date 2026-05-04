@@ -131,7 +131,7 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 
 auto gse::vulkan::device::create(const instance& instance_data, save::state& save) -> device_creation_result {
 	const auto devices = instance_data.enumerate_physical_devices();
-	assert(!devices.empty(), std::source_location::current(), "No Vulkan-compatible GPUs found!");
+	assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
 
 	vk::raii::PhysicalDevice physical_device = nullptr;
 
@@ -204,20 +204,17 @@ auto gse::vulkan::device::create(const instance& instance_data, save::state& sav
 	const auto& mesh_shader_query = feature_chain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
 	assert(
 		mesh_shader_query.meshShader && mesh_shader_query.taskShader,
-		std::source_location::current(),
 		"Mesh shaders are required but not supported by this GPU"
 	);
 	const auto& as_query = feature_chain.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
 	const auto& rq_query = feature_chain.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
 	assert(
 		rt_extensions_available && as_query.accelerationStructure && rq_query.rayQuery,
-		std::source_location::current(),
 		"Ray tracing (acceleration structure + ray query) is required but not supported by this GPU"
 	);
 	const auto& desc_buf_query = feature_chain.get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>();
 	assert(
 		desc_buf_query.descriptorBuffer,
-		std::source_location::current(),
 		"Descriptor buffer is required but not supported by this GPU"
 	);
 	const bool descriptor_buffer_push_descriptors_supported = desc_buf_query.descriptorBufferPushDescriptors;
@@ -561,7 +558,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		}
 	}
 
-	assert(success, std::source_location::current(), "Failed to allocate memory for buffer after trying all preferences.");
+	assert(success, "Failed to allocate memory for buffer after trying all preferences.");
 
 	(*m_device).bindBufferMemory(buffer, std::bit_cast<vk::DeviceMemory>(alloc.memory()), alloc.offset());
 
@@ -583,7 +580,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		gse::memcpy(alloc.mapped(), data, actual_buffer_info.size);
 	}
 	else if (data && !alloc.mapped()) {
-		assert(false, std::source_location::current(), "Buffer created with data, but the allocated memory is not mappable.");
+		assert(false, "Buffer created with data, but the allocated memory is not mappable.");
 	}
 
 	return basic_buffer<device>(std::bit_cast<gpu::handle<vulkan::buffer>>(buffer), std::move(alloc), actual_buffer_info.size);
@@ -606,7 +603,6 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 	if (!expected_alloc) {
 		assert(
 			false,
-			std::source_location::current(),
 			"Failed to allocate memory for image with size {} and usage {} after trying all preferences.",
 			requirements.size,
 			to_string(info.usage)
@@ -624,7 +620,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 	vk::ImageView view;
 
 	if (view_info != vk::ImageViewCreateInfo{}) {
-		assert(!view_info.image, std::source_location::current(), "Image view info must not have an image set yet!");
+		assert(!view_info.image, "Image view info must not have an image set yet!");
 		vk::ImageViewCreateInfo actual_view_info = view_info;
 		actual_view_info.image = image;
 		view = (*m_device).createImageView(actual_view_info, nullptr);
@@ -716,7 +712,6 @@ auto gse::vulkan::device::free_allocation(const basic_allocation<device>& alloc)
 		const auto& [creation_location, tag, allocation_id] = alloc.debug_info();
 		assert(
 			!m_cleaned_up,
-			std::source_location::current(),
 			"Allocation freed after allocator cleanup! Tag: '{}', Created at: {}:{}:{}",
 			tag,
 			creation_location.file_name(),
@@ -762,15 +757,7 @@ gse::vulkan::device::device(vk::raii::PhysicalDevice&& physical_device, vk::raii
 	m_device(std::move(device)),
 	m_fault_enabled(device_fault_enabled),
 	m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled) {
-	save_state.bind("Vulkan", "Track Allocations", m_tracking_enabled)
-		.description("Track Vulkan memory allocations for debugging destruction order issues")
-		.default_value(false)
-		.commit();
-
-	save_state.bind("Vulkan", "Name Resources", m_name_resources)
-		.description("Assign debug names to Vulkan buffers to improve validation output")
-		.default_value(false)
-		.commit();
+	save::register_struct(save_state, "Vulkan", *this);
 }
 
 auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<basic_allocation<device>, std::string> {
@@ -779,7 +766,6 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 	if (m_tracking_enabled) {
 		assert(
 			!m_cleaned_up,
-			std::source_location::current(),
 			"Attempted to allocate after allocator cleanup! This indicates a resource lifetime issue."
 		);
 	}
@@ -976,7 +962,6 @@ auto gse::vulkan::device::clean_up() -> void {
 
 		assert(
 			false,
-			std::source_location::current(),
 			"Device cleanup called with {} leaked sub-allocations - destroy resources before the device!",
 			leaked_sub_allocations
 		);
@@ -1011,6 +996,7 @@ auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usa
 
 	if (usage & vk::BufferUsageFlagBits::eUniformBuffer) {
 		return {
+			mpf::eHostVisible | mpf::eHostCoherent | mpf::eDeviceLocal,
 			mpf::eHostVisible | mpf::eHostCoherent,
 			mpf::eHostVisible,
 		};
@@ -1018,6 +1004,7 @@ auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usa
 
 	if (usage & vk::BufferUsageFlagBits::eStorageBuffer) {
 		return {
+			mpf::eHostVisible | mpf::eHostCoherent | mpf::eDeviceLocal,
 			mpf::eHostVisible | mpf::eHostCoherent,
 			mpf::eDeviceLocal,
 		};

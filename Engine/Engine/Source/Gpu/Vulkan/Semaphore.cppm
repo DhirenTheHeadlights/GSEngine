@@ -95,7 +95,7 @@ auto gse::vulkan::semaphore::create_timeline(const device& dev, const std::uint6
 }
 
 auto gse::vulkan::semaphore::signal(const device& dev, const std::uint64_t value) -> void {
-	assert(m_kind == gpu::semaphore_kind::timeline, std::source_location::current(), "signal() requires a timeline semaphore");
+	assert(m_kind == gpu::semaphore_kind::timeline, "signal() requires a timeline semaphore");
 	const vk::SemaphoreSignalInfo info{
 		.semaphore = *m_semaphore,
 		.value = value,
@@ -104,7 +104,7 @@ auto gse::vulkan::semaphore::signal(const device& dev, const std::uint64_t value
 }
 
 auto gse::vulkan::semaphore::wait(const device& dev, const std::uint64_t value, const std::uint64_t timeout_ns) const -> bool {
-	assert(m_kind == gpu::semaphore_kind::timeline, std::source_location::current(), "wait() requires a timeline semaphore");
+	assert(m_kind == gpu::semaphore_kind::timeline, "wait() requires a timeline semaphore");
 	const vk::Semaphore raw = *m_semaphore;
 	const vk::SemaphoreWaitInfo info{
 		.semaphoreCount = 1,
@@ -115,7 +115,7 @@ auto gse::vulkan::semaphore::wait(const device& dev, const std::uint64_t value, 
 }
 
 auto gse::vulkan::semaphore::value() const -> std::uint64_t {
-	assert(m_kind == gpu::semaphore_kind::timeline, std::source_location::current(), "value() requires a timeline semaphore");
+	assert(m_kind == gpu::semaphore_kind::timeline, "value() requires a timeline semaphore");
 	return m_semaphore.getCounterValue();
 }
 

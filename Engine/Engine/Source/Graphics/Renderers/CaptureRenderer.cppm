@@ -9,6 +9,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.math;
 import gse.time;
+import gse.meta;
 
 import :ui_renderer;
 import :capture_ring;
@@ -49,6 +50,8 @@ export namespace gse::renderer::capture {
             std::unique_ptr<std::atomic<bool>> clip_save_in_progress = std::make_unique<std::atomic<bool>>(false);
             gpu::video_encoder encoder;
             ring clip_ring;
+
+            [[=gse::settings::describe{}, =gse::settings::range<seconds(5.f), seconds(120.f)>{}]]
             time ring_budget = seconds(30.f);
             bool first_ring_push_logged = false;
         };

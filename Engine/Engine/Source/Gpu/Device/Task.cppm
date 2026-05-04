@@ -4,6 +4,7 @@ import std;
 
 import :frame_resource_bin;
 import :handles;
+import :sync_token;
 import :transient_queue;
 import :types;
 import :vulkan_device;
@@ -47,6 +48,9 @@ export namespace gse::gpu {
             T&& resource
         ) && -> submission&&;
 
+        auto submit_sync(
+        ) -> sync_token;
+
         auto await_ready(
         ) noexcept -> bool;
 
@@ -55,7 +59,7 @@ export namespace gse::gpu {
         ) -> bool;
 
         auto await_resume(
-        ) noexcept -> void;
+        ) noexcept -> sync_token;
 
     private:
         const vulkan::device* m_device;
@@ -94,13 +98,12 @@ auto gse::gpu::submission::retain(T&& resource) && -> submission&& {
     return std::move(*this);
 }
 
-auto gse::gpu::submission::await_ready() noexcept -> bool {
-    return false;
-}
+auto gse::gpu::submission::submit_sync() -> sync_token {
+    if (m_submitted) {
+        return sync_token{ m_queue, m_value };
+    }
 
-auto gse::gpu::submission::await_suspend(std::coroutine_handle<> caller) -> bool {
     m_cmd.end();
-
     m_value = m_queue->reserve_value();
 
     const semaphore_submit_info signal{
@@ -131,6 +134,16 @@ auto gse::gpu::submission::await_suspend(std::coroutine_handle<> caller) -> bool
 
     m_bin->retain(m_queue->id(), m_value, std::move(m_cmd));
 
+    return sync_token{ m_queue, m_value };
+}
+
+auto gse::gpu::submission::await_ready() noexcept -> bool {
+    return false;
+}
+
+auto gse::gpu::submission::await_suspend(std::coroutine_handle<> caller) -> bool {
+    submit_sync();
+
     if (m_queue->reached(m_value)) {
         return false;
     }
@@ -139,5 +152,6 @@ auto gse::gpu::submission::await_suspend(std::coroutine_handle<> caller) -> bool
     return true;
 }
 
-auto gse::gpu::submission::await_resume() noexcept -> void {
+auto gse::gpu::submission::await_resume() noexcept -> sync_token {
+    return sync_token{ m_queue, m_value };
 }

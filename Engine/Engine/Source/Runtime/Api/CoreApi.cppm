@@ -62,6 +62,11 @@ export namespace gse {
         Args&&... args
     ) -> State&;
 
+    template <typename S, typename State, typename... Args>
+    auto ensure_system(
+        Args&&... args
+    ) -> State&;
+
     auto set_networked(
         bool networked
     ) -> void;
@@ -161,6 +166,11 @@ auto gse::defer(F&& fn) -> void {
 template <typename S, typename State, typename... Args>
 auto gse::add_system(Args&&... args) -> State& {
     return engine_instance->add_system<S, State>(std::forward<Args>(args)...);
+}
+
+template <typename S, typename State, typename... Args>
+auto gse::ensure_system(Args&&... args) -> State& {
+    return engine_instance->ensure_system<S, State>(std::forward<Args>(args)...);
 }
 
 auto gse::set_networked(const bool networked) -> void {

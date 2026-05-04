@@ -61,6 +61,7 @@ export namespace gse::gui {
 	struct menu_content {
 		std::string menu;
 		int priority = 0;
+		render_layer layer = render_layer::content;
 		std::function<void(builder&)> build;
 	};
 }

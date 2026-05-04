@@ -24,5 +24,21 @@ export namespace gse {
 		resource::handle<texture> diffuse_texture;
 		resource::handle<texture> normal_texture;
 		resource::handle<texture> specular_texture;
+
+		[[nodiscard]] auto textures_ready(
+		) const -> bool;
 	};
+}
+
+auto gse::material::textures_ready() const -> bool {
+	const auto check = [](const resource::handle<texture>& h) {
+		if (!h.id().exists()) {
+			return true;
+		}
+		if (!h.valid()) {
+			return false;
+		}
+		return h->upload_token().ready();
+	};
+	return check(diffuse_texture) && check(normal_texture) && check(specular_texture);
 }

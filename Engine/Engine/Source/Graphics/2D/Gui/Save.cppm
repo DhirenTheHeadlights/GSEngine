@@ -10,7 +10,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
-import gse.toml;
+
 import :types;
 import :styles;
 
@@ -37,26 +37,179 @@ export namespace gse::gui {
 }
 
 namespace gse::gui {
-    auto dock_to_string(const dock::location location) -> std::string_view {
-        switch (location) {
-            case dock::location::none:   return "none";
-            case dock::location::center: return "center";
-            case dock::location::left:   return "left";
-            case dock::location::right:  return "right";
-            case dock::location::top:    return "top";
-            case dock::location::bottom: return "bottom";
-            default:                               return "none";
+    auto dock_to_string(
+        dock::location location
+    ) -> std::string_view;
+
+    auto location_from_string(
+        std::string_view str
+    ) -> dock::location;
+
+    auto join(
+        std::span<const std::string> parts,
+        char sep
+    ) -> std::string;
+
+    auto split(
+        std::string_view text,
+        char sep
+    ) -> std::vector<std::string>;
+
+    auto trim(
+        std::string_view s
+    ) -> std::string_view;
+
+    auto parse_layout(
+        std::string_view text
+    ) -> std::vector<loaded_menu_data>;
+}
+
+auto gse::gui::dock_to_string(const dock::location location) -> std::string_view {
+    switch (location) {
+        case dock::location::none:   return "none";
+        case dock::location::center: return "center";
+        case dock::location::left:   return "left";
+        case dock::location::right:  return "right";
+        case dock::location::top:    return "top";
+        case dock::location::bottom: return "bottom";
+        default:                     return "none";
+    }
+}
+
+auto gse::gui::location_from_string(const std::string_view str) -> dock::location {
+    if (str == "left") {
+        return dock::location::left;
+    }
+    if (str == "right") {
+        return dock::location::right;
+    }
+    if (str == "top") {
+        return dock::location::top;
+    }
+    if (str == "bottom") {
+        return dock::location::bottom;
+    }
+    if (str == "center") {
+        return dock::location::center;
+    }
+    return dock::location::none;
+}
+
+auto gse::gui::join(const std::span<const std::string> parts, const char sep) -> std::string {
+    std::string out;
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        if (i > 0) {
+            out.push_back(sep);
+        }
+        out.append(parts[i]);
+    }
+    return out;
+}
+
+auto gse::gui::split(const std::string_view text, const char sep) -> std::vector<std::string> {
+    std::vector<std::string> out;
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const std::size_t end = text.find(sep, start);
+        const auto piece = end == std::string_view::npos
+            ? text.substr(start)
+            : text.substr(start, end - start);
+        if (!piece.empty()) {
+            out.emplace_back(piece);
+        }
+        if (end == std::string_view::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    return out;
+}
+
+auto gse::gui::trim(const std::string_view s) -> std::string_view {
+    std::size_t start = 0;
+    while (start < s.size() && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r')) {
+        ++start;
+    }
+    std::size_t end = s.size();
+    while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t' || s[end - 1] == '\r')) {
+        --end;
+    }
+    return s.substr(start, end - start);
+}
+
+auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_menu_data> {
+    std::vector<loaded_menu_data> result;
+    std::optional<loaded_menu_data> current;
+
+    auto flush = [&] {
+        if (current) {
+            result.push_back(std::move(*current));
+            current.reset();
+        }
+    };
+
+    std::size_t pos = 0;
+    while (pos < text.size()) {
+        const std::size_t line_end = text.find('\n', pos);
+        const std::string_view line_raw = text.substr(
+            pos,
+            line_end == std::string_view::npos ? text.size() - pos : line_end - pos
+        );
+        pos = line_end == std::string_view::npos ? text.size() : line_end + 1;
+
+        const auto line = trim(line_raw);
+        if (line.empty() || line.front() == '#') {
+            continue;
+        }
+
+        if (line.front() == '[' && line.back() == ']') {
+            flush();
+            current.emplace();
+            continue;
+        }
+
+        if (!current) {
+            continue;
+        }
+
+        const std::size_t eq = line.find('=');
+        if (eq == std::string_view::npos) {
+            continue;
+        }
+
+        const auto key = trim(line.substr(0, eq));
+        const auto value = trim(line.substr(eq + 1));
+
+        if (key == "tag") {
+            current->tag = std::string(value);
+        }
+        else if (key == "owner") {
+            current->owner_tag = std::string(value);
+        }
+        else if (key == "docked_to") {
+            current->docked_to = location_from_string(value);
+        }
+        else if (key == "dock_split_ratio") {
+            current->dock_split_ratio = std::stof(std::string(value));
+        }
+        else if (key == "active_tab") {
+            current->active_tab_index = static_cast<std::uint32_t>(std::stoul(std::string(value)));
+        }
+        else if (key == "rect") {
+            const auto parts = split(value, ',');
+            if (parts.size() == 4) {
+                const vec2f p{ std::stof(parts[0]), std::stof(parts[1]) };
+                const vec2f sz{ std::stof(parts[2]), std::stof(parts[3]) };
+                current->rect = ui_rect::from_position_size(p, sz);
+            }
+        }
+        else if (key == "tabs") {
+            current->tab_tags = split(value, ',');
         }
     }
 
-    auto location_from_string(const std::string_view str) -> dock::location {
-        if (str == "left")   return dock::location::left;
-        if (str == "right")  return dock::location::right;
-        if (str == "top")    return dock::location::top;
-        if (str == "bottom") return dock::location::bottom;
-        if (str == "center") return dock::location::center;
-        return dock::location::none;
-    }
+    flush();
+    return result;
 }
 
 auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path) -> void {
@@ -64,40 +217,31 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
         std::filesystem::create_directories(parent_dir);
     }
 
-    toml::array menu_array;
-
+    std::string out;
+    std::size_t i = 0;
     for (const auto& menu : menus.items()) {
-        toml::table menu_table;
-
-        menu_table.emplace("tag", toml::value{ .data = std::string(menu.id().tag()) });
-        menu_table.emplace("owner", toml::value{ .data = menu.owner_id().exists() ? std::string(menu.owner_id().tag()) : std::string{} });
-        menu_table.emplace("rect", toml::value{ .data = toml::array{
-            toml::value{ .data = static_cast<double>(menu.rect.left()) },
-            toml::value{ .data = static_cast<double>(menu.rect.top()) },
-            toml::value{ .data = static_cast<double>(menu.rect.width()) },
-            toml::value{ .data = static_cast<double>(menu.rect.height()) },
-        }});
-        menu_table.emplace("docked_to", toml::value{ .data = std::string(dock_to_string(menu.docked_to)) });
-        menu_table.emplace("dock_split_ratio", toml::value{ .data = static_cast<double>(menu.dock_split_ratio) });
-        menu_table.emplace("active_tab", toml::value{ .data = static_cast<std::int64_t>(menu.active_tab_index) });
-
-        toml::array tabs;
-        tabs.reserve(menu.tab_contents.size());
-        for (const auto& tab : menu.tab_contents) {
-            tabs.push_back(toml::value{ .data = tab });
+        if (i > 0) {
+            out.push_back('\n');
         }
-        menu_table.emplace("tabs", toml::value{ .data = std::move(tabs) });
-
-        menu_array.push_back(toml::value{ .data = std::move(menu_table) });
+        out.append(std::format("[menu {}]\n", i));
+        out.append(std::format("tag = {}\n", std::string(menu.id().tag())));
+        out.append(std::format("owner = {}\n", menu.owner_id().exists() ? std::string(menu.owner_id().tag()) : std::string{}));
+        out.append(std::format(
+            "rect = {},{},{},{}\n",
+            menu.rect.left(),
+            menu.rect.top(),
+            menu.rect.width(),
+            menu.rect.height()
+        ));
+        out.append(std::format("docked_to = {}\n", dock_to_string(menu.docked_to)));
+        out.append(std::format("dock_split_ratio = {}\n", menu.dock_split_ratio));
+        out.append(std::format("active_tab = {}\n", menu.active_tab_index));
+        out.append(std::format("tabs = {}\n", join(menu.tab_contents, ',')));
+        ++i;
     }
 
-    toml::table root;
-    root.emplace("menu", toml::value{ .data = std::move(menu_array) });
-
-    const std::string content = toml::emit(toml::value{ .data = std::move(root) });
-
     std::ofstream file(file_path);
-    file << content;
+    file << out;
 }
 
 auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
@@ -116,76 +260,7 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
     oss << file.rdbuf();
     const std::string content = oss.str();
 
-    auto parsed = toml::parse(content, file_path.string());
-    if (!parsed) {
-        log::println(log::level::warning, log::category::save_system, "TOML parse error in {} at {}:{}: {}", file_path.string(), parsed.error().line, parsed.error().column, parsed.error().message);
-        return default_menus;
-    }
-    if (!parsed->is_table()) {
-        return default_menus;
-    }
-
-    const auto& root = parsed->as_table();
-    const auto menu_it = root.find("menu");
-    if (menu_it == root.end() || !menu_it->second.is_array()) {
-        return default_menus;
-    }
-
-    std::vector<loaded_menu_data> loaded_data_vec;
-
-    for (const auto& item : menu_it->second.as_array()) {
-        if (!item.is_table()) {
-            continue;
-        }
-        const auto& tbl = item.as_table();
-
-        loaded_menu_data data;
-
-        if (const auto it = tbl.find("tag"); it != tbl.end()) {
-            data.tag = it->second.value_or<std::string>("");
-        }
-
-        if (const auto it = tbl.find("owner"); it != tbl.end()) {
-            data.owner_tag = it->second.value_or<std::string>("");
-        }
-
-        if (const auto it = tbl.find("docked_to"); it != tbl.end()) {
-            data.docked_to = location_from_string(it->second.value_or<std::string>("none"));
-        }
-
-        if (const auto it = tbl.find("dock_split_ratio"); it != tbl.end()) {
-            data.dock_split_ratio = it->second.value_or<float>(0.5f);
-        }
-
-        if (const auto it = tbl.find("active_tab"); it != tbl.end()) {
-            data.active_tab_index = it->second.value_or<std::uint32_t>(0);
-        }
-
-        if (const auto it = tbl.find("rect"); it != tbl.end() && it->second.is_array()) {
-            const auto& arr = it->second.as_array();
-            if (arr.size() == 4) {
-                vec2f pos{
-                    arr[0].value_or<float>(0.f),
-                    arr[1].value_or<float>(0.f),
-                };
-                vec2f size{
-                    arr[2].value_or<float>(0.f),
-                    arr[3].value_or<float>(0.f),
-                };
-                data.rect = ui_rect::from_position_size(pos, size);
-            }
-        }
-
-        if (const auto it = tbl.find("tabs"); it != tbl.end() && it->second.is_array()) {
-            for (const auto& tab : it->second.as_array()) {
-                if (tab.is_string()) {
-                    data.tab_tags.push_back(tab.as_string());
-                }
-            }
-        }
-
-        loaded_data_vec.push_back(std::move(data));
-    }
+    auto loaded_data_vec = parse_layout(content);
 
     if (loaded_data_vec.empty()) {
         return default_menus;

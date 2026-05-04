@@ -48,6 +48,9 @@ export namespace gse::renderer::depth_prepass {
 }
 
 auto gse::renderer::depth_prepass::system::initialize(const init_context& phase, resources& r, state& s) -> void {
+	phase.sched.ensure_system<cull_compute::system, cull_compute::state>(phase.reg);
+	phase.sched.ensure_system<physics_transform::system, physics_transform::state>(phase.reg);
+
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
 

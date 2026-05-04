@@ -32,7 +32,6 @@ template <typename T>
 gse::interval_timer<T>::interval_timer(const time_t<T> interval) : m_interval(interval) {
 	assert(
 		m_interval >= time_t<T>(0),
-		std::source_location::current(),
 		"Interval must be non-negative"
 	);
 }
@@ -41,7 +40,6 @@ template <typename T>
 auto gse::interval_timer<T>::tick(const time_t<T> dt) -> bool {
 	assert(
 		dt >= time_t<T>(0),
-		std::source_location::current(),
 		"Delta time must be non-negative"
 	);
 
