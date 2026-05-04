@@ -65,7 +65,7 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
 
     try {
         const auto fence_result = vulkan::wait_for_fence(dev, m_sync.in_flight_fence(m_current_frame));
-        assert(fence_result == result::success, std::source_location::current(), "Failed to wait for in-flight fence!");
+        assert(fence_result == result::success, "Failed to wait for in-flight fence!");
     } catch (const vk::DeviceLostError&) {
         m_device->report_device_lost(std::format("begin_frame waitForFences (frame {})", m_current_frame));
         return std::unexpected(frame_status::device_lost);
@@ -107,7 +107,6 @@ auto gse::gpu::frame::begin(window& win) -> std::expected<frame_token, frame_sta
 
     assert(
         acquire_status == result::success || acquire_status == result::suboptimal_khr,
-        std::source_location::current(),
         "Failed to acquire swap chain image!"
     );
 
@@ -218,7 +217,6 @@ auto gse::gpu::frame::end(window& win) -> void {
     else {
         assert(
             present_result == result::success,
-            std::source_location::current(),
             "Failed to present swap chain image!"
         );
     }

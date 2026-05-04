@@ -38,19 +38,21 @@ export namespace gse::renderer::skin_compute {
 }
 
 auto gse::renderer::skin_compute::system::initialize(const init_context& phase, resources& r, state& s) -> void {
+	phase.sched.ensure_system<geometry_collector::system, geometry_collector::state>(phase.reg);
+
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
 
 	r.shader_handle = assets.get<shader>("Shaders/Compute/skin_compute");
 	assets.instantly_load(r.shader_handle);
 
-	assert(r.shader_handle->is_compute(), std::source_location::current(), "Skin compute shader is not loaded as a compute shader");
+	assert(r.shader_handle->is_compute(), "Skin compute shader is not loaded as a compute shader");
 
 	const auto* gc = phase.try_resources_of<geometry_collector::system::resources>();
 
-	assert(gc != nullptr, std::source_location::current(),
+	assert(gc != nullptr,
 		"skin_compute::initialize: geometry_collector resources not registered");
-	assert(static_cast<bool>(gc->skeleton_buffer), std::source_location::current(),
+	assert(static_cast<bool>(gc->skeleton_buffer),
 		"skin_compute::initialize: gc->skeleton_buffer is null - geometry_collector::initialize did not run before skin_compute::initialize");
 
 	r.pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.shader_handle, "push_constants");

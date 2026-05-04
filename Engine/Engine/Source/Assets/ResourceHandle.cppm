@@ -179,14 +179,14 @@ auto gse::resource::handle<T>::is_current() const -> bool {
 template <typename T>
 auto gse::resource::handle<T>::operator->() const -> T* {
 	T* r = resolve();
-	assert(r, std::source_location::current(), "Attempting to access an unloaded or invalid resource with ID: {}", owner_id());
+	assert(r, "Attempting to access an unloaded or invalid resource with ID: {}", owner_id());
 	return r;
 }
 
 template <typename T>
 auto gse::resource::handle<T>::operator*() const -> T& {
 	T* r = resolve();
-	assert(r, std::source_location::current(), "Attempting to dereference an unloaded or invalid resource with ID: {}", owner_id());
+	assert(r, "Attempting to dereference an unloaded or invalid resource with ID: {}", owner_id());
 	return *r;
 }
 

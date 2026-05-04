@@ -40,6 +40,9 @@ export namespace gse {
         auto material() const -> const gse::material&;
         auto indices() const -> const std::vector<std::uint32_t>&;
         auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
+
+        auto upload_token(
+        ) const -> const gpu::sync_token&;
     private:
         gpu::buffer m_vertex_buffer;
         gpu::buffer m_index_buffer;
@@ -47,6 +50,7 @@ export namespace gse {
         std::vector<skinned_vertex> m_vertices;
         std::vector<std::uint32_t> m_indices;
         gse::material m_material;
+        gpu::sync_token m_upload_token;
     };
 }
 
@@ -78,10 +82,14 @@ auto gse::skinned_mesh::initialize(gpu::context& ctx) -> void {
         .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
     });
 
-    gpu::upload_to_buffers(ctx.device(), std::array{
+    m_upload_token = gpu::upload_to_buffers(ctx.device(), std::array{
         gpu::buffer_upload{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
         gpu::buffer_upload{ &m_index_buffer, m_indices.data(), index_buffer_size }
     });
+}
+
+auto gse::skinned_mesh::upload_token() const -> const gpu::sync_token& {
+    return m_upload_token;
 }
 
 auto gse::skinned_mesh::center_of_mass() const -> vec3<displacement> {
@@ -94,14 +102,14 @@ auto gse::skinned_mesh::center_of_mass() const -> vec3<displacement> {
     volume_d total_volume{};
     decltype(vec3_ld{} * volume_d{}) moment{};
 
-    assert(m_indices.size() % 3 == 0, std::source_location::current(), "m_indices count is not a multiple of 3.");
+    assert(m_indices.size() % 3 == 0, "m_indices count is not a multiple of 3.");
 
     for (std::size_t i = 0; i < m_indices.size(); i += 3) {
         const unsigned int idx0 = m_indices[i];
         const unsigned int idx1 = m_indices[i + 1];
         const unsigned int idx2 = m_indices[i + 2];
 
-        assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), std::source_location::current(), "Index out of range.");
+        assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), "Index out of range.");
 
         const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
         const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
@@ -118,7 +126,7 @@ auto gse::skinned_mesh::center_of_mass() const -> vec3<displacement> {
         moment += tetra_com * volume;
     }
 
-    assert(total_volume != volume_d{}, std::source_location::current(), "Total volume is zero.");
+    assert(total_volume != volume_d{}, "Total volume is zero.");
 
     return vec3<displacement>(moment / total_volume);
 }

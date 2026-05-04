@@ -13,7 +13,7 @@ import :save;
 import :ids;
 import :input_layers;
 import :menu_bar;
-import :settings_panel;
+import :settings;
 import :styles;
 import :builder;
 
@@ -33,57 +33,25 @@ import gse.save;
 auto gse::gui::system::initialize(init_context& phase, resources&, system_state& s) -> void {
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
-	s.available_fonts = asset::registry::enumerate_resources("Fonts", ".gfont");
+	s.settings.font.options = asset::registry::enumerate_resources("Fonts", ".gfont");
 
-	if (s.available_fonts.empty()) {
-		s.available_fonts.push_back("default");
+	if (s.settings.font.options.empty()) {
+		s.settings.font.options.push_back("default");
 	}
 
-	if (s.font_index < 0 || s.font_index >= static_cast<int>(s.available_fonts.size())) {
-		s.font_index = 0;
+	if (s.settings.font.value < 0 || s.settings.font.value >= static_cast<int>(s.settings.font.options.size())) {
+		s.settings.font.value = 0;
 	}
 
-	s.gui_font = assets.get<font>("Fonts/" + s.available_fonts[s.font_index]);
+	s.gui_font = assets.get<font>("Fonts/" + s.settings.font.options[s.settings.font.value]);
 	assets.instantly_load(s.gui_font);
 	s.blank_texture = assets.queue<texture>("blank", vec4f(1, 1, 1, 1));
 	assets.instantly_load(s.blank_texture);
 	s.menus = load(config::resource_path / s.file_path, s.menus);
 
-	std::vector<std::pair<std::string, int>> font_options;
-	for (std::size_t i = 0; i < s.available_fonts.size(); ++i) {
-		font_options.emplace_back(s.available_fonts[i], static_cast<int>(i));
-	}
+	gse::settings::install(phase, "UI", s.settings);
 
-	phase.channels.push<gse::save::register_property>({
-		.category = "UI",
-		.name = "Theme",
-		.description = "UI color theme",
-		.ref = reinterpret_cast<int*>(&s.current_theme),
-		.type = typeid(int),
-		.enum_options = {
-			{"Dark", static_cast<int>(theme::dark)},
-			{"Darker", static_cast<int>(theme::darker)},
-			{"Light", static_cast<int>(theme::light)},
-			{"High Contrast", static_cast<int>(theme::high_contrast)}
-		}
-	});
-
-	phase.channels.push<gse::save::register_property>({
-		.category = "UI",
-		.name = "Scale",
-		.description = "UI scale multiplier",
-		.ref = &s.ui_scale,
-		.type = typeid(float)
-	});
-
-	phase.channels.push<gse::save::register_property>({
-		.category = "UI",
-		.name = "Font",
-		.description = "UI font",
-		.ref = &s.font_index,
-		.type = typeid(int),
-		.enum_options = std::move(font_options)
-	});
+	s.last_font_index = s.settings.font.value;
 
 	auto calculate_group_bounds = [&s](const id root_id) -> ui_rect {
 		const menu* root = s.menus.try_get(root_id);
@@ -169,8 +137,8 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 			(current_viewport_size.x() != s.previous_viewport_size.x() ||
 			 current_viewport_size.y() != s.previous_viewport_size.y())) {
 
-			const style old_sty = apply_scale(s, style::from_theme(s.current_theme), s.previous_viewport_size.y());
-			const style new_sty = apply_scale(s, style::from_theme(s.current_theme), current_viewport_size.y());
+			const style old_sty = apply_scale(s, style::from_theme(s.settings.current_theme), s.previous_viewport_size.y());
+			const style new_sty = apply_scale(s, style::from_theme(s.settings.current_theme), current_viewport_size.y());
 
 			const float old_menu_bar_h = menu_bar::height(old_sty);
 			const float new_menu_bar_h = menu_bar::height(new_sty);
@@ -231,7 +199,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 	s.text_commands.clear();
 	s.input_layers_data.begin_frame();
 
-	const style frame_sty = apply_scale(s, style::from_theme(s.current_theme), current_viewport_size.y());
+	const style frame_sty = apply_scale(s, style::from_theme(s.settings.current_theme), current_viewport_size.y());
 
 	s.fstate = {
 		.sty = frame_sty,
@@ -249,10 +217,9 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 		m.chrome_drawn_this_frame = false;
 	}
 
-	for (const auto& changed : ctx.read_channel<gse::save::property_changed>()) {
-		if (changed.category == "UI" && changed.name == "Font") {
-			reload_font(s, assets);
-		}
+	if (s.settings.font.value != s.last_font_index) {
+		reload_font(s, assets);
+		s.last_font_index = s.settings.font.value;
 	}
 
 	const auto* input_state = ctx.try_state_of<gse::input::system_state>();
@@ -330,67 +297,20 @@ auto gse::gui::system::update(update_context& ctx, resources& r, system_state& s
 	};
 	menu_bar::update(s.menu_bar_state, mb_ctx, input_st, viewport_size);
 
-	const ui_rect settings_rect = settings_panel::default_panel_rect(s.fstate.sty, viewport_size);
+	settings::pump(s.settings_state, ctx);
 
-	const auto* save_state = ctx.try_state_of<gse::save::state>();
-	const auto* actions_state = ctx.try_state_of<actions::system_state>();
-
-	const settings_panel::context sp_ctx{
-		.font = s.gui_font,
-		.blank_texture = s.blank_texture,
-		.style = s.fstate.sty,
-		.sprites = s.sprite_commands,
-		.texts = s.text_commands,
-		.input = input_st,
-		.publish_update = [&ctx](gse::save::update_request req) {
-			ctx.channels.push(std::move(req));
-		},
-		.request_save = [&ctx] {
-			ctx.channels.push<gse::save::save_request>({});
-		},
-		.request_restart = [&ctx] {
-			ctx.channels.push<gse::save::restart_request>({});
-		},
-		.tooltip = &s.tooltip,
-		.input_layers = &s.input_layers_data,
-		.all_bindings = [actions_state]() -> std::vector<actions::action_binding_info> {
-			return actions_state ? actions_state->all_bindings() : std::vector<actions::action_binding_info>{};
-		},
-		.rebind = [&ctx](std::string_view name, key k) {
-			ctx.channels.push<actions::rebind_request>({
-				.action_name = std::string(name),
-				.new_key = k
-			});
-		},
-		.pressed_key = [&input_st]() -> key {
-			for (auto i : std::views::iota(32, 97)) {
-				if (input_st.key_pressed(static_cast<key>(i))) {
-					return static_cast<key>(i);
-				}
-			}
-			for (auto i : std::views::iota(256, 349)) {
-				if (input_st.key_pressed(static_cast<key>(i))) {
-					return static_cast<key>(i);
-				}
-			}
-			return key{};
-		}
-	};
-
-	if (save_state && settings_panel::update(s.settings_panel_state, sp_ctx, settings_rect, s.menu_bar_state.settings_open, *save_state)) {
-		s.menu_bar_state.settings_open = false;
-	}
-
-	if (s.menu_bar_state.settings_open && input_st.mouse_button_pressed(mouse_button::button_1)) {
-		const vec2f mouse_pos = input_st.mouse_position();
-
-		if (const ui_rect bar_rect = menu_bar::bar_rect(s.fstate.sty, viewport_size); !settings_rect.contains(mouse_pos) && !bar_rect.contains(mouse_pos)) {
-			s.menu_bar_state.settings_open = false;
-		}
+	if (s.menu_bar_state.settings_open) {
+		ctx.channels.push<menu_content>({
+			.menu = "Settings",
+			.layer = render_layer::popup,
+			.build = [&s](builder& b) {
+				settings::panel(b, s.settings_state);
+			},
+		});
 	}
 
 	for (const auto& content : ctx.read_channel<menu_content>()) {
-		process_menu(r, s, input_st, content.menu, content.build);
+		process_menu(r, s, input_st, content.menu, content.layer, content.build);
 	}
 
 	if (s.tooltip.pending_widget_id.exists()) {
@@ -529,7 +449,7 @@ auto gse::gui::system::save(system_state& s) -> void {
 	gui::save(s.menus, config::resource_path / s.file_path);
 }
 
-auto gse::gui::process_menu(system::resources& r, system_state& s, const gse::input::state& input_state, const std::string& name, const std::function<void(builder&)>& build) -> void {
+auto gse::gui::process_menu(system::resources& r, system_state& s, const gse::input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
 	if (!s.fstate.active) {
 		return;
 	}
@@ -541,7 +461,7 @@ auto gse::gui::process_menu(system::resources& r, system_state& s, const gse::in
 	menu& current_menu = *s.current_menu;
 
 	if (!current_menu.chrome_drawn_this_frame) {
-		draw_menu_chrome(s, input_state, current_menu);
+		draw_menu_chrome(s, input_state, current_menu, layer);
 		current_menu.chrome_drawn_this_frame = true;
 	}
 
@@ -569,6 +489,7 @@ auto gse::gui::process_menu(system::resources& r, system_state& s, const gse::in
 		.rect = body_rect,
 		.color = sty.color_menu_body,
 		.texture = s.blank_texture,
+		.layer = layer,
 		.corner_radius = menu_radius
 	});
 
@@ -587,8 +508,10 @@ auto gse::gui::process_menu(system::resources& r, system_state& s, const gse::in
 		.sprites = s.sprite_commands,
 		.texts = s.text_commands,
 		.widget_anim_colors = s.widget_anim_colors,
+		.current_layer = layer,
 		.input_layer = s.input_layer_render,
-		.tooltip = &s.tooltip
+		.tooltip = &s.tooltip,
+		.body_clip_rect = body_rect
 	};
 
 	s.hot_widget_id = {};
@@ -657,7 +580,7 @@ auto gse::gui::end_menu(system::resources& r, system_state& s) -> void {
 
 auto gse::gui::usable_screen_rect(system_state& s, const gpu::context& ctx) -> ui_rect {
 	const auto viewport_size = vec2f(ctx.window().viewport());
-	const style sty = apply_scale(s, style::from_theme(s.current_theme), viewport_size.y());
+	const style sty = apply_scale(s, style::from_theme(s.settings.current_theme), viewport_size.y());
 	const float usable_height = viewport_size.y() - menu_bar::height(sty);
 	return ui_rect::from_position_size(
 		{ 0.f, usable_height },
@@ -680,7 +603,7 @@ auto gse::gui::calculate_display_rect(system_state& s, const menu& m) -> ui_rect
 auto gse::gui::apply_scale(system_state& s, style sty, const float viewport_height) -> style {
 	constexpr float reference_height = 1080.f;
 	const float base_scale = viewport_height / reference_height;
-	const float final_scale = base_scale * s.ui_scale;
+	const float final_scale = base_scale * s.settings.ui_scale;
 
 	sty.padding *= final_scale;
 	sty.title_bar_height *= final_scale;
@@ -697,12 +620,12 @@ auto gse::gui::apply_scale(system_state& s, style sty, const float viewport_heig
 }
 
 auto gse::gui::reload_font(system_state& s, const asset::registry& assets) -> void {
-	if (s.font_index >= 0 && s.font_index < static_cast<int>(s.available_fonts.size())) {
-		s.gui_font = assets.get<font>("Fonts/" + s.available_fonts[s.font_index]);
+	if (s.settings.font.value >= 0 && s.settings.font.value < static_cast<int>(s.settings.font.options.size())) {
+		s.gui_font = assets.get<font>("Fonts/" + s.settings.font.options[s.settings.font.value]);
 	}
 }
 
-auto gse::gui::draw_menu_chrome(system_state& s, const gse::input::state& input_state, menu& current_menu) -> void {
+auto gse::gui::draw_menu_chrome(system_state& s, const gse::input::state& input_state, menu& current_menu, const render_layer layer) -> void {
 	const style& sty = s.fstate.sty;
 
 	const ui_rect display_rect = calculate_display_rect(s, current_menu);
@@ -729,6 +652,7 @@ auto gse::gui::draw_menu_chrome(system_state& s, const gse::input::state& input_
 			.rect = shadow_rect,
 			.color = sty.color_shadow,
 			.texture = s.blank_texture,
+			.layer = layer,
 			.corner_radius = menu_radius + 2.f
 		});
 	}
@@ -739,6 +663,7 @@ auto gse::gui::draw_menu_chrome(system_state& s, const gse::input::state& input_
 			.rect = border_rect,
 			.color = sty.color_border,
 			.texture = s.blank_texture,
+			.layer = layer,
 			.corner_radius = menu_radius + 1.f
 		});
 	}
@@ -747,16 +672,18 @@ auto gse::gui::draw_menu_chrome(system_state& s, const gse::input::state& input_
 		.rect = body_rect,
 		.color = sty.color_menu_body,
 		.texture = s.blank_texture,
+		.layer = layer,
 		.corner_radius = menu_radius
 	});
 
 	if (current_menu.tab_contents.size() > 1) {
-		draw_tab_bar(s, input_state, current_menu, title_bar_rect);
+		draw_tab_bar(s, input_state, current_menu, title_bar_rect, layer);
 	} else {
 		s.sprite_commands.push_back({
 			.rect = title_bar_rect,
 			.color = sty.color_title_bar,
 			.texture = s.blank_texture,
+			.layer = layer,
 			.corner_radius = menu_radius
 		});
 
@@ -769,13 +696,14 @@ auto gse::gui::draw_menu_chrome(system_state& s, const gse::input::state& input_
 					title_bar_rect.center().y() + sty.font_size * 0.35f
 				},
 				.scale = sty.font_size,
-				.clip_rect = title_bar_rect
+				.clip_rect = title_bar_rect,
+				.layer = layer
 			});
 		}
 	}
 }
 
-auto gse::gui::draw_tab_bar(system_state& s, const gse::input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect) -> void {
+auto gse::gui::draw_tab_bar(system_state& s, const gse::input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect, const render_layer layer) -> void {
 	const style& sty = s.fstate.sty;
 	const vec2f mouse_pos = input_state.mouse_position();
 	const bool mouse_clicked = input_state.mouse_button_pressed(mouse_button::button_1);
@@ -783,7 +711,8 @@ auto gse::gui::draw_tab_bar(system_state& s, const gse::input::state& input_stat
 	s.sprite_commands.push_back({
 		.rect = title_bar_rect,
 		.color = sty.color_title_bar,
-		.texture = s.blank_texture
+		.texture = s.blank_texture,
+		.layer = layer
 	});
 
 	const std::size_t tab_count = current_menu.tab_contents.size();
@@ -866,7 +795,8 @@ auto gse::gui::draw_tab_bar(system_state& s, const gse::input::state& input_stat
 		s.sprite_commands.push_back({
 			.rect = tab_rect,
 			.color = tab_color,
-			.texture = s.blank_texture
+			.texture = s.blank_texture,
+			.layer = layer
 		});
 
 		if (is_active) {
@@ -877,7 +807,8 @@ auto gse::gui::draw_tab_bar(system_state& s, const gse::input::state& input_stat
 			s.sprite_commands.push_back({
 				.rect = connector,
 				.color = sty.color_menu_body,
-				.texture = s.blank_texture
+				.texture = s.blank_texture,
+				.layer = layer
 			});
 		}
 
@@ -893,7 +824,8 @@ auto gse::gui::draw_tab_bar(system_state& s, const gse::input::state& input_stat
 					tab_rect.center().y() + sty.font_size * 0.35f
 				},
 				.scale = sty.font_size,
-				.clip_rect = tab_rect
+				.clip_rect = tab_rect,
+				.layer = layer
 			});
 		}
 
@@ -932,19 +864,19 @@ auto gse::gui::handle_idle_state(system_state& s, const gse::input::state& input
 		}, resize_handle::bottom_right, cursor::style::resize_se },
 		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
-			return std::abs(p.x() - r.left()) < t;
+			return std::abs(p.x() - r.left()) < t && p.y() <= r.top() + t && p.y() >= r.bottom() - t;
 		}, resize_handle::left, cursor::style::resize_w },
 		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
-			return std::abs(p.x() - r.right()) < t;
+			return std::abs(p.x() - r.right()) < t && p.y() <= r.top() + t && p.y() >= r.bottom() - t;
 		}, resize_handle::right, cursor::style::resize_e },
 		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
-			return std::abs(p.y() - r.top()) < t;
+			return std::abs(p.y() - r.top()) < t && p.x() >= r.left() - t && p.x() <= r.right() + t;
 		}, resize_handle::top, cursor::style::resize_n },
 		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
-			return std::abs(p.y() - r.bottom()) < t;
+			return std::abs(p.y() - r.bottom()) < t && p.x() >= r.left() - t && p.x() <= r.right() + t;
 		}, resize_handle::bottom, cursor::style::resize_s },
 	}};
 

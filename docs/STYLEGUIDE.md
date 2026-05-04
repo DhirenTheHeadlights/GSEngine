@@ -3,6 +3,29 @@
 ## Naming
 - STL style (snake_case for everything)
 - Private member variables prefixed with `m_`
+- Do not prefix functions with `get_`. The verb is implied — a function that returns a value is already a getter. Use the noun (`name()`, `value()`), `_of` for projections (`type_of(x)`, `annotation_of<A>(m)`), or a verb that describes the action (`fetch_`, `compute_`, `find_`) when the work is non-trivial:
+
+```cpp
+// correct
+auto name(
+) const -> std::string_view;
+
+auto type_of(
+    const node& n
+) -> type;
+
+auto annotation_of(
+    std::meta::info member
+) -> Anno;
+
+// wrong
+auto get_name(
+) const -> std::string_view;
+
+auto get_type(
+    const node& n
+) -> type;
+```
 
 ## Comments
 Do not add comments. Code should be self-documenting.

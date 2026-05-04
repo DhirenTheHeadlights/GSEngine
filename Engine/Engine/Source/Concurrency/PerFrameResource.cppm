@@ -57,7 +57,6 @@ template <typename T, std::size_t N>
 auto gse::per_frame_resource<T, N>::operator[](this auto&& self, const std::size_t frame_index) -> decltype(auto) {
 	assert(
 		frame_index < frames_in_flight,
-		std::source_location::current(),
 		"Frame index {} out of bounds (max: {})",
 		frame_index,
 		frames_in_flight - 1

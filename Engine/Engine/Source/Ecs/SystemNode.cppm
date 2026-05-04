@@ -62,6 +62,7 @@ export namespace gse {
 		void* resources_ptr = nullptr;
 
 		bool has_frame = false;
+		bool initialized = false;
 
 		id state_id;
 		id frame_wall_id;

@@ -4,7 +4,6 @@ import std;
 
 import :rt_shadow_renderer;
 import :geometry_collector;
-import :physics_transform_renderer;
 import :mesh;
 
 import gse.os;
@@ -18,6 +17,8 @@ import gse.math;
 import gse.log;
 
 auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, frame_data& fd, state& s) -> void {
+	phase.sched.ensure_system<geometry_collector::system, geometry_collector::state>(phase.reg);
+
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
 

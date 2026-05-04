@@ -281,7 +281,7 @@ template <typename T, std::size_t N>
 auto gse::binary_reader::operator&(static_vector<T, N>& vec) -> binary_reader& {
     std::uint32_t count = 0;
     *this & count;
-    gse::assert(count <= N, std::source_location::current(), "static_vector deserialization: count {} exceeds capacity {}", count, N);
+    gse::assert(count <= N, "static_vector deserialization: count {} exceeds capacity {}", count, N);
     vec.clear();
     for (std::uint32_t i = 0; i < count; ++i) {
         T val{};

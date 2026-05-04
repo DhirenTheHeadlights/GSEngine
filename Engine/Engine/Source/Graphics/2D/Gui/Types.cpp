@@ -22,14 +22,34 @@ gse::gui::menu::menu(std::string_view tag, const menu_data& data)
 }
 
 auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const -> void {
-    cmd.layer = current_layer;
-    cmd.z_order = current_z_order;
+    if (static_cast<std::uint8_t>(cmd.layer) < static_cast<std::uint8_t>(current_layer)) {
+        cmd.layer = current_layer;
+    }
+    if (cmd.z_order == 0) {
+        cmd.z_order = current_z_order;
+    }
+    if (body_clip_rect.has_value() &&
+        static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
+        cmd.clip_rect = cmd.clip_rect.has_value()
+            ? cmd.clip_rect->intersection(*body_clip_rect)
+            : *body_clip_rect;
+    }
     sprites.push_back(std::move(cmd));
 }
 
 auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> void {
-    cmd.layer = current_layer;
-    cmd.z_order = current_z_order;
+    if (static_cast<std::uint8_t>(cmd.layer) < static_cast<std::uint8_t>(current_layer)) {
+        cmd.layer = current_layer;
+    }
+    if (cmd.z_order == 0) {
+        cmd.z_order = current_z_order;
+    }
+    if (body_clip_rect.has_value() &&
+        static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
+        cmd.clip_rect = cmd.clip_rect.has_value()
+            ? cmd.clip_rect->intersection(*body_clip_rect)
+            : *body_clip_rect;
+    }
     texts.push_back(std::move(cmd));
 }
 

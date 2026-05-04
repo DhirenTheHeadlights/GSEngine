@@ -287,7 +287,6 @@ auto gse::registry::create(const std::string_view name) -> id {
 auto gse::registry::activate(const id owner) -> void {
 	assert(
 		m_inactive.contains(owner),
-		std::source_location::current(),
 		"Cannot activate entity with id {}: it is not inactive.",
 		owner
 	);
@@ -361,7 +360,6 @@ template <gse::is_component T, typename... Args>
 auto gse::registry::add_component(const id owner, Args&&... args) -> T* {
 	assert(
 		exists(owner),
-		std::source_location::current(),
 		"Cannot add component to entity with id {}: it does not exist.",
 		owner
 	);
@@ -391,7 +389,6 @@ auto gse::registry::component(this registry& self, const id owner) -> decltype(a
 	auto* ptr = self.try_component<T>(owner);
 	assert(
 		ptr != nullptr,
-		std::source_location::current(),
 		"Component of type {} with id {} not found.",
 		type_tag<T>(),
 		owner

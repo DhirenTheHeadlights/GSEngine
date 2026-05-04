@@ -144,83 +144,38 @@ Once textures are bindless, buffers are the next. A typical modern renderer patt
 
 This is the goal. Layer 1+2 are prerequisites.
 
-### Layer 4 — Reflection-powered ergonomics (P2996 specific)
+### Layer 4 — Reflection-powered ergonomics (owned by content_pipeline_refactor.md)
 
-This is the "what does reflection buy us" layer. Lives on top of Layer 1, not instead of it.
+The reflection layer this plan originally specified has migrated to
+`content_pipeline_refactor.md` track S, where it covers every shader and not
+just bindless. When S1 + S2 land, bindless gets the following for free:
 
-#### 4a. `slang_mirror<T>` — generate Slang structs from C++
+- **Struct codegen (was 4a `slang_mirror<T>`).** Subsumed by S1. Same
+  `template for` over `nonstatic_data_members_of`, broader scope (every GPU
+  struct, not just bindless-buffer payloads). See
+  [content_pipeline_refactor.md S1](content_pipeline_refactor.md#s1--struct-codegen).
+- **Typed bindless handles (was 4b).** Subsumed by S2. `bindless<material_data>`
+  is just a tagged `u32` emitted to Slang as `uint`; push-constant packing is
+  S2's compile-time `pc.set(struct)` reflecting members against a layout offset
+  table. See
+  [content_pipeline_refactor.md S2c](content_pipeline_refactor.md#s2c-c-side-plumbing).
+- **Layout cross-check (was 4d).** Subsumed by S1d's
+  `static_assert(sizeof(T) == slang_scalar_size<T>())` canary. Scalar layout
+  (`VK_EXT_scalar_block_layout`) means C++ and Slang agree byte-for-byte, so
+  the std140/std430 padding logic the original 4c sketched is moot.
+- **Bindless buffer declaration (was 4c, declaration half).** S2 declares
+  `StructuredBuffer<T>` at a binding slot via `[[= ssbo_readonly]]` on an
+  annotated C++ struct.
 
-Declare once:
+What stays here:
 
-```cpp
-struct material_gpu {
-    vec3f albedo;
-    float roughness;
-    float metallic;
-    std::uint32_t normal_map_idx;
-    std::uint32_t mra_map_idx;
-};
-
-// At build time, reflection emits:
-//   struct MaterialGpu { float3 albedo; float roughness; float metallic;
-//                        uint normal_map_idx; uint mra_map_idx; };
-// into a generated .slang file alongside the shader.
-```
-
-One source of truth for layout. Adding/removing fields in C++ automatically updates Slang.
-Eliminates the #1 source of "mysterious rendering corruption" bugs in bindless systems.
-
-This is a `consteval` code generator that iterates `std::meta::data_members_of(^T)`,
-emits Slang syntax, and writes the `.slang` include. Runs as part of the shader build
-step; output checked in or regenerated.
-
-#### 4b. Typed bindless handles
-
-```cpp
-template <typename T>
-struct bindless {
-    std::uint32_t index = invalid_index;
-    explicit operator bool() const { return index != invalid_index; }
-};
-
-// Distinct types:
-bindless<texture>      tex_slot;
-bindless<material_gpu> mat_slot;
-bindless<light_gpu>    light_slot;
-
-// Can't accidentally pass a material index where a texture is expected.
-```
-
-Push-constant packing uses reflection to serialize struct → bytes, so the shader-side
-receives `push_constants { bindless<texture> albedo; bindless<material_gpu> mat; }`
-and the CPU binding matches automatically.
-
-#### 4c. Automatic descriptor-write for struct arrays
-
-A `bindless_buffer<T>` template:
-
-```cpp
-template <typename T>
-class bindless_buffer {
-public:
-    auto add(const T& value) -> bindless<T>;       // uploads + returns slot
-    auto update(bindless<T> slot, const T& value) -> void;
-    auto free(bindless<T> slot) -> void;
-};
-```
-
-Internal impl reflects on `T` to:
-- Compute GPU layout (scalar/std140/std430 padding)
-- Generate per-field memcpy or gpu::memcpy calls
-- Static-assert that `sizeof(T)` matches the reflected layout
-
-#### 4d. Compile-time layout cross-check
-
-At build time, reflect on every C++ struct used in bindless buffers, emit a `static_assert`
-that `sizeof(T)` and per-field offsets match what Slang computes. Layout drift surfaces at
-compile time, not as rendering artifacts.
-
-#### 4e. Resource lifetime (RAII)
+- **Slot allocator for buffer-flavoured bindless resources (was 4c, runtime
+  half).** The buffer analogue of `bindless_texture_set` — `add/update/free`
+  over a free-list — is the same Layer 1b template specialized for
+  `StructuredBuffer<T>`. The *declaration* is S2, the *allocator* is Layer 1.
+- **RAII handle (was 4e).** The content pipeline refactor doesn't own resource
+  lifetime. A move-only `bindless_texture_handle` that calls `release()` on
+  destruction stays a Layer 1 concern.
 
 ```cpp
 class bindless_texture_handle {
@@ -231,9 +186,6 @@ public:
     // move-only
 };
 ```
-
-Reflection doesn't strictly need to be involved, but the ergonomics of "reflect on a
-resource type, generate the appropriate RAII wrapper" matches what clang-p2996 enables.
 
 ## Execution order
 
@@ -270,31 +222,34 @@ Goal: everywhere a renderer binds a texture, it uses bindless instead.
 
 Exit criterion: no renderer calls `writer.image()` for texture binding in hot paths.
 
-### Phase 3 — reflection-powered ergonomics
+### Phase 3 — reflection-powered ergonomics (mostly external)
 
-Goal: CPU/GPU layout sync becomes a compile-time concern.
+Owned by `content_pipeline_refactor.md` track S. Once S1 + S2 land, the
+remaining bindless-side work is a renaming pass, not a phase:
 
-9. **`slang_mirror<T>` code generator.** `consteval` function that emits Slang struct text
-   for a given C++ type. Hook into the Slang build step (the `.slang.in` → `.slang`
-   generation, or a pre-compile step).
-10. **Typed `bindless<T>` handle.** Replace raw `u32 tex_idx` with `bindless<texture>` etc.
-    Shader side: same u32; C++ side: type-safe.
-11. **`bindless_buffer<T>`.** Template over POD types. First user: material palette in
-    ForwardRenderer. Remove `material_palette_buffers` hand-managed by the renderer.
-12. **Compile-time layout assertions.** `static_assert(gpu::layout<T>::matches_slang<T>)`
-    wherever a bindless_buffer is instantiated. Layout drift becomes a compile error.
+9. **Retype push fields.** Replace raw `u32 tex_idx` push-constant fields with
+   `bindless<texture>` etc. Shader side stays `uint`; C++ side becomes
+   type-safe. Mechanical follow-up to S2.
+10. **Drop hand-managed buffers in favour of S2-declared SSBOs.** First user:
+    `material_palette_buffers` in ForwardRenderer. The buffer's *declaration*
+    moves to an annotated C++ struct + `[[= ssbo_readonly]]` (S2); the
+    *allocator* (slot management, free list) is the buffer-flavoured analogue
+    of `bindless_texture_set` from Layer 1b.
 
-Exit criterion: adding a new material type means adding a C++ struct and one line, not
-N lines across renderer + shader.
+Exit criterion: adding a new material type means adding a C++ struct and one
+line, not N lines across renderer + shader. (Achieved largely by S1+S2; this
+plan only enforces it on the bindless renderers.)
 
 ### Phase 4 — GPU-driven rendering (the actual payoff)
 
 Goal: one `drawIndexedIndirect` covers everything.
 
-13. **Instance buffer bindless.** `StructuredBuffer<InstanceData>` at bindless index.
-14. **Compute-driven culling writes draw streams with material/texture indices packed.**
-15. **Renderer becomes a pass that binds three things (bindless set, indirect buffer,
+11. **Instance buffer bindless.** `StructuredBuffer<InstanceData>` at bindless index.
+12. **Compute-driven culling writes draw streams with material/texture indices packed.**
+13. **Renderer becomes a pass that binds three things (bindless set, indirect buffer,
     pipeline) and issues one draw.**
+
+Independent of track S; can run in parallel.
 
 ## What to leave alone
 
@@ -311,9 +266,10 @@ Goal: one `drawIndexedIndirect` covers everything.
 - **Driver / validation layer maturity around `UpdateAfterBind` + `descriptor_buffer`
   extension.** Both are mature separately; less testing together. Expect to hit at
   least one validation warning in Phase 1 that clarifies a layout flag requirement.
-- **Bindless slot lifetime.** First slice uses explicit `release()`. RAII wrapper comes
-  in Phase 3. For hot-reloaded textures: reuse the same slot (update-after-bind makes
-  this legal) — requires the texture loader to know its bindless slot. TBD in Phase 2.
+- **Bindless slot lifetime.** First slice uses explicit `release()`. The RAII wrapper
+  (former 4e) lands alongside Layer 1b. For hot-reloaded textures: reuse the same slot
+  (update-after-bind makes this legal) — requires the texture loader to know its
+  bindless slot. TBD in Phase 2.
 - **Capacity sizing.** 4096 sampled images = 4096 × descriptor_size bytes in the
   persistent region. At 64 bytes/descriptor that's 256 KB — fine. Larger capacities
   (16K+) should work but verify against `maxDescriptorSetUpdateAfterBindSampledImages`.

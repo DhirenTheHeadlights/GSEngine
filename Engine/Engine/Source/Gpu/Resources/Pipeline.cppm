@@ -80,8 +80,8 @@ export namespace gse::gpu {
 template <typename T>
 auto gse::gpu::cached_push_constants::set(const std::string_view name, const T& value) -> void {
 	const auto it = members.find(std::string(name));
-	assert(it != members.end(), std::source_location::current(), "Push constant member '{}' not found", name);
-	assert(sizeof(T) <= it->second.size, std::source_location::current(), "Push constant member '{}' size mismatch", name);
+	assert(it != members.end(), "Push constant member '{}' not found", name);
+	assert(sizeof(T) <= it->second.size, "Push constant member '{}' size mismatch", name);
 	gse::memcpy(data.data() + it->second.offset, value);
 }
 
@@ -101,7 +101,7 @@ auto gse::gpu::cache_push_block(const resource::handle<shader>& s, const std::st
 		return b.name == block_name;
 	});
 
-	assert(it != blocks.end(), std::source_location::current(), "Push constant block '{}' not found", block_name);
+	assert(it != blocks.end(), "Push constant block '{}' not found", block_name);
 	std::unordered_map<std::string, push_constant_member> members;
 	for (const auto& [name, member] : it->members) {
 		members[name] = {

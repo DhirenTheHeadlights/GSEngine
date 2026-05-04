@@ -61,6 +61,11 @@ export namespace gse::gpu {
             const vulkan::device& device
         ) -> std::uint64_t;
 
+        auto wait_until(
+            const vulkan::device& device,
+            std::uint64_t value
+        ) -> void;
+
         auto wait_idle(
             const vulkan::device& device
         ) -> void;
@@ -83,6 +88,7 @@ export namespace gse::gpu {
         std::uint64_t m_next_value = 0;
         std::uint64_t m_progress = 0;
         std::vector<waiter> m_waiters;
+        std::unique_ptr<std::mutex> m_mutex = std::make_unique<std::mutex>();
     };
 }
 
@@ -102,14 +108,17 @@ auto gse::gpu::transient_queue::id() const -> queue_id {
 }
 
 auto gse::gpu::transient_queue::reserve_value() -> std::uint64_t {
+    std::lock_guard lock(*m_mutex);
     return ++m_next_value;
 }
 
 auto gse::gpu::transient_queue::progress() const -> std::uint64_t {
+    std::lock_guard lock(*m_mutex);
     return m_progress;
 }
 
 auto gse::gpu::transient_queue::reached(const std::uint64_t value) const -> bool {
+    std::lock_guard lock(*m_mutex);
     return m_progress >= value;
 }
 
@@ -122,6 +131,7 @@ auto gse::gpu::transient_queue::allocate_primary(const vulkan::device& device) -
 }
 
 auto gse::gpu::transient_queue::park(const std::uint64_t value, std::coroutine_handle<> handle) -> void {
+    std::lock_guard lock(*m_mutex);
     m_waiters.push_back({
         .m_value = value,
         .m_handle = handle,
@@ -129,37 +139,64 @@ auto gse::gpu::transient_queue::park(const std::uint64_t value, std::coroutine_h
 }
 
 auto gse::gpu::transient_queue::poll(const vulkan::device& device) -> std::uint64_t {
-    m_progress = m_timeline.read();
+    const auto reached_value = m_timeline.read();
 
     std::vector<std::coroutine_handle<>> ready;
-    std::erase_if(m_waiters, [&](const waiter& w) {
-        if (w.m_value <= m_progress) {
-            ready.push_back(w.m_handle);
-            return true;
-        }
-        return false;
-    });
+    {
+        std::lock_guard lock(*m_mutex);
+        m_progress = reached_value;
+        std::erase_if(m_waiters, [&](const waiter& w) {
+            if (w.m_value <= m_progress) {
+                ready.push_back(w.m_handle);
+                return true;
+            }
+            return false;
+        });
+    }
 
     for (auto handle : ready) {
         handle.resume();
     }
 
-    return m_progress;
+    return reached_value;
+}
+
+auto gse::gpu::transient_queue::wait_until(const vulkan::device& device, const std::uint64_t value) -> void {
+    {
+        std::lock_guard lock(*m_mutex);
+        if (m_progress >= value) {
+            return;
+        }
+    }
+    m_timeline.wait_until(device, value);
+
+    std::vector<std::coroutine_handle<>> ready;
+    {
+        std::lock_guard lock(*m_mutex);
+        if (value > m_progress) {
+            m_progress = value;
+        }
+        std::erase_if(m_waiters, [&](const waiter& w) {
+            if (w.m_value <= m_progress) {
+                ready.push_back(w.m_handle);
+                return true;
+            }
+            return false;
+        });
+    }
+    for (auto handle : ready) {
+        handle.resume();
+    }
 }
 
 auto gse::gpu::transient_queue::wait_idle(const vulkan::device& device) -> void {
-    if (m_next_value == 0) {
-        return;
+    std::uint64_t target;
+    {
+        std::lock_guard lock(*m_mutex);
+        if (m_next_value == 0) {
+            return;
+        }
+        target = m_next_value;
     }
-    m_timeline.wait_until(device, m_next_value);
-    m_progress = m_next_value;
-
-    std::vector<std::coroutine_handle<>> ready;
-    for (const auto& w : m_waiters) {
-        ready.push_back(w.m_handle);
-    }
-    m_waiters.clear();
-    for (auto handle : ready) {
-        handle.resume();
-    }
+    wait_until(device, target);
 }

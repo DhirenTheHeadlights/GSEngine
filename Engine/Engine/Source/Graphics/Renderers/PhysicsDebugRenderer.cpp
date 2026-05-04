@@ -15,9 +15,10 @@ import gse.log;
 
 import :physics_debug_renderer;
 import :camera_system;
+import :settings;
 
 auto gse::renderer::physics_debug::system::update(update_context& ctx, const resources& r, state& s) -> async::task<> {
-	if (!s.enabled) {
+	if (!s.settings.enabled) {
 		co_return;
 	}
 
@@ -70,7 +71,7 @@ auto gse::renderer::physics_debug::system::update(update_context& ctx, const res
 	}
 
 	if (const auto* ps = ctx.try_state_of<physics::state>()) {
-		if (ps->use_gpu_solver && ps->gpu_stats.active) {
+		if (ps->settings.use_gpu_solver && ps->gpu_stats.active) {
 			stats.gpu_solver_active = true;
 			stats.contact_count = ps->gpu_stats.contact_count;
 			stats.motor_count = ps->gpu_stats.motor_count;
@@ -87,7 +88,7 @@ auto gse::renderer::physics_debug::system::update(update_context& ctx, const res
 auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
 	auto& gpu = ctx.get<gpu::context>();
 
-	if (!s.enabled) {
+	if (!s.settings.enabled) {
 		co_return;
 	}
 
@@ -162,13 +163,7 @@ auto gse::renderer::physics_debug::system::initialize(const init_context& phase,
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
 
-	phase.channels.push(save::register_property{
-		.category = "Graphics",
-		.name = "Physics Debug Renderer Enabled",
-		.description = "Enable or disable outlines on collision boxes & visible impulse vectors",
-		.ref = &s.enabled,
-		.type = typeid(bool)
-	});
+	gse::settings::install(phase, "Graphics", s.settings);
 
 	r.shader_handle = assets.get<shader>("Shaders/Standard3D/physics_debug");
 	assets.instantly_load(r.shader_handle);

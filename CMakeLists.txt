@@ -74,6 +74,26 @@ if(CMAKE_HOST_WIN32)
     endif()
 endif()
 
+function(gse_copy_libcxx_runtime target)
+    if(NOT CMAKE_HOST_WIN32)
+        return()
+    endif()
+    file(GLOB _libcxx_runtime_dlls
+        "${_gse_clang_root}/bin/c++.dll"
+        "${_gse_clang_root}/bin/c++abi.dll"
+        "${_gse_clang_root}/bin/libc++.dll"
+        "${_gse_clang_root}/bin/libc++abi.dll"
+        "${_gse_clang_root}/bin/unwind.dll"
+        "${_gse_clang_root}/bin/libunwind.dll"
+    )
+    foreach(_dll IN LISTS _libcxx_runtime_dlls)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_dll}" "$<TARGET_FILE_DIR:${target}>"
+            VERBATIM
+        )
+    endforeach()
+endfunction()
+
 add_subdirectory(Engine)
 add_subdirectory(Game)
 add_subdirectory(Server)

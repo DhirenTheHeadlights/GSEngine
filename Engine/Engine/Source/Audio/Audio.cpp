@@ -81,7 +81,6 @@ auto gse::audio_clip::load(gpu::context&) -> void {
 	std::ifstream file(m_path, std::ios::binary | std::ios::ate);
 	assert(
 		file.is_open(),
-		std::source_location::current(),
 		"Failed to open baked audio file: {}",
 		m_path.string()
 	);
@@ -150,10 +149,10 @@ auto gse::audio::allocate_voice(system::resources& r, state& s, const audio_clip
 
 	const ma_decoder_config cfg = ma_decoder_config_init(ma_format_value_f32, 0, 0);
 	auto result = ma_decoder_init_memory(clip.data().data(), clip.data().size(), &cfg, &decoder);
-	assert(result == ma_result_success, std::source_location::current(), "Failed to init audio decoder");
+	assert(result == ma_result_success, "Failed to init audio decoder");
 
 	result = ma_sound_init_from_data_source(&s.engine->inner, &decoder, 0, nullptr, &sound);
-	assert(result == ma_result_success, std::source_location::current(), "Failed to init audio sound");
+	assert(result == ma_result_success, "Failed to init audio sound");
 
 	ma_sound_set_looping(&sound, loop ? ma_bool_true : ma_bool_false);
 	ma_sound_start(&sound);
@@ -185,7 +184,7 @@ auto gse::audio::valid_voice(const system::resources& r, const voice_handle hand
 auto gse::audio::system::initialize(const init_context&, resources&, state& s) -> void {
 	const ma_engine_config cfg = ma_engine_config_init();
 	const auto result = ma_engine_init(&cfg, &s.engine->inner);
-	assert(result == ma_result_success, std::source_location::current(), "Failed to initialize audio engine");
+	assert(result == ma_result_success, "Failed to initialize audio engine");
 	s.engine_initialized = true;
 	ma_engine_set_volume(&s.engine->inner, s.master_vol.value(percentage<float>::bound::zero_to_one));
 }

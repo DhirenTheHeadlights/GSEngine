@@ -3,6 +3,7 @@ module gse.runtime;
 import std;
 
 import :engine;
+import :scene;
 import :world;
 
 import gse.core;
@@ -18,9 +19,7 @@ import gse.physics;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.shader_compiler;
 import gse.log;
-import gse.scene;
 import gse.save;
 import gse.config;
 
@@ -33,8 +32,8 @@ auto gse::engine::initialize() -> void {
 
 	auto& reg = m_world.registry();
 	auto& save = m_scheduler.add_system<save::system, save::state>(reg);
-	save.set_auto_save(true, config::resource_path / "Misc/settings.toml");
-	save.on_restart([] { app::restart(); });
+	save::set_auto_save(save, true, config::resource_path / "Misc/settings.ini");
+	save::on_restart(save, [] { app::restart(); });
 
 	auto& input = m_scheduler.add_system<input::system, input::system_state>(reg);
 	m_scheduler.add_system<actions::system, actions::system_state>(reg);

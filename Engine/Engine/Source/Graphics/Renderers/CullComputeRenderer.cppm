@@ -48,6 +48,9 @@ export namespace gse::renderer::cull_compute {
 }
 
 auto gse::renderer::cull_compute::system::initialize(const init_context& phase, resources& r, state& s) -> void {
+	phase.sched.ensure_system<geometry_collector::system, geometry_collector::state>(phase.reg);
+	phase.sched.ensure_system<skin_compute::system, skin_compute::state>(phase.reg);
+
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
 

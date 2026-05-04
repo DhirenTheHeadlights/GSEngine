@@ -18,6 +18,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.save;
+import gse.meta;
 import gse.log;
 
 export namespace gse::vulkan {
@@ -235,7 +236,11 @@ export namespace gse::vulkan {
         std::atomic<std::uint32_t> m_live_allocation_count = 0;
         std::atomic<std::uint64_t> m_next_allocation_id = 1;
         bool m_cleaned_up = false;
+
+        [[=gse::settings::describe{}]]
         bool m_tracking_enabled = false;
+
+        [[=gse::settings::describe{}]]
         bool m_name_resources = false;
         std::unordered_map<std::uint64_t, allocation_debug_info> m_live_allocations;
     };

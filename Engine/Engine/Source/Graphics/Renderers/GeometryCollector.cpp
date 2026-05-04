@@ -279,6 +279,7 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 					}
 				}
 			}
+
 		}
 
 		{

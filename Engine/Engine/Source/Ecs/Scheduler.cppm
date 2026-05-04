@@ -57,6 +57,12 @@ export namespace gse {
 			Args&&... args
 		) -> State&;
 
+		template <typename S, typename State, typename... Args>
+		auto ensure_system(
+			registry& reg,
+			Args&&... args
+		) -> State&;
+
 		template <typename State>
 		auto state(
 			this auto& self
@@ -114,7 +120,7 @@ export namespace gse {
 template <typename State>
 auto gse::scheduler::state(this auto& self) -> auto& {
 	auto* p = self.m_states.state_ptr(id_of<State>());
-	assert(p != nullptr, std::source_location::current(), "state not found");
+	assert(p != nullptr, "state not found");
 	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
 	return *static_cast<state_t*>(p);
 }
@@ -134,7 +140,7 @@ auto gse::scheduler::has() const -> bool {
 template <typename Resources>
 auto gse::scheduler::resources_of() const -> const Resources& {
 	const auto* ptr = m_resources_store.resources_ptr(id_of<Resources>());
-	assert(ptr != nullptr, std::source_location::current(), "resources not found");
+	assert(ptr != nullptr, "resources not found");
 	return *static_cast<const Resources*>(ptr);
 }
 
@@ -158,6 +164,14 @@ auto gse::scheduler::defer(F&& fn) -> void {
 }
 
 template <typename S, typename State, typename... Args>
+auto gse::scheduler::ensure_system(registry& reg, Args&&... args) -> State& {
+	if (auto* existing = try_state_of<State>()) {
+		return *existing;
+	}
+	return add_system<S, State>(reg, std::forward<Args>(args)...);
+}
+
+template <typename S, typename State, typename... Args>
 auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 	if (m_registry == nullptr) {
 		m_registry = &reg;
@@ -167,7 +181,7 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 	auto* state_ref = static_cast<State*>(node.state_ptr);
 
 	const auto state_idx = id_of<State>();
-	find_or_generate_id(type_tag<State>());
+	(void)trace_id<State>();
 	m_states.register_state(state_idx, node.state_ptr, node.state_snapshot_ptr);
 
 	auto combined_deps = node.update_state_deps;
@@ -175,7 +189,7 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 	m_state_deps.emplace(state_idx, std::move(combined_deps));
 
 	if constexpr (has_resources<S>) {
-		find_or_generate_id(type_tag<typename S::resources>());
+		(void)trace_id<typename S::resources>();
 		m_resources_store.register_resource(id_of<typename S::resources>(), node.resources_ptr);
 	}
 
@@ -194,6 +208,7 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 			.channels = writer,
 		};
 		m_nodes.back().invoke_initialize_fn(phase, m_nodes.back().data.get());
+		m_nodes.back().initialized = true;
 	}
 
 	return *state_ref;

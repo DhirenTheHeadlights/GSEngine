@@ -24,7 +24,6 @@ auto gse::texture::load(const gpu::context& context) -> void {
         std::ifstream in_file(m_image_data.path, std::ios::binary);
         assert(
             in_file.is_open(),
-            std::source_location::current(),
             "Failed to open baked texture file: {}",
             m_image_data.path.string()
         );
@@ -75,6 +74,10 @@ auto gse::texture::bindless_slot() const -> gpu::bindless_texture_slot {
     return m_bindless_slot;
 }
 
+auto gse::texture::upload_token() const -> const gpu::sync_token& {
+    return m_upload_token;
+}
+
 auto gse::texture::create_vulkan_resources(gpu::context& context, const profile texture_profile) -> void {
     const auto width = m_image_data.size.x();
     const auto height = m_image_data.size.y();
@@ -83,7 +86,6 @@ auto gse::texture::create_vulkan_resources(gpu::context& context, const profile 
 
     assert(
         data_size > 0 && !m_image_data.pixels.empty(),
-        std::source_location::current(),
         "Texture '{}' has no pixel data. Ensure the texture is loaded correctly.",
         id()
     );
@@ -101,7 +103,7 @@ auto gse::texture::create_vulkan_resources(gpu::context& context, const profile 
         .usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
     });
 
-    gpu::upload_image_2d(context.device(), m_image, m_image_data.pixels.data(), data_size);
+    m_upload_token = gpu::upload_image_2d(context.device(), m_image, m_image_data.pixels.data(), data_size);
 
     constexpr auto clamp = gpu::sampler_address_mode::clamp_to_edge;
     constexpr auto repeat = gpu::sampler_address_mode::repeat;

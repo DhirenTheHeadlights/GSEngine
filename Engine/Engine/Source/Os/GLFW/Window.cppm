@@ -15,6 +15,8 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.save;
+import gse.meta;
+
 export namespace gse {
 	struct monitor_info {
 		std::string name;
@@ -101,18 +103,22 @@ export namespace gse {
 		input::system_state& m_input;
 		save::state& m_save;
 
+		[[=gse::settings::describe{}]]
 		bool m_fullscreen = false;
 		bool m_current_fullscreen = false;
+
+		[[=gse::settings::describe{}]]
 		bool m_mouse_visible = false;
 		bool m_focused = true;
 		bool m_frame_buffer_resized = false;
 		bool m_ui_focus = false;
 
-		int m_monitor_index = 0;
-		int m_resolution_index = 0;
+		[[=gse::settings::describe{}]]
+		settings::choice<int> m_monitor;
+
+		[[=gse::settings::describe{}]]
+		settings::choice<int> m_resolution;
 		int m_last_monitor_index = 0;
-		std::vector<std::string> m_cached_monitor_names;
-		std::vector<std::string> m_cached_resolution_names;
 
 		struct pending_state {
 			std::optional<bool> fullscreen_request;
@@ -146,15 +152,15 @@ export namespace gse {
 }
 
 gse::window::window(const std::string& title, input::system_state& input_state, save::state& save_state) : m_input(input_state), m_save(save_state) {
-	assert(glfwInit(), std::source_location::current(), "Error initializing GLFW");
-	assert(glfwVulkanSupported(), std::source_location::current(), "Vulkan not supported");
+	assert(glfwInit(), "Error initializing GLFW");
+	assert(glfwVulkanSupported(), "Vulkan not supported");
 
 	glfwWindowHint(glfw::client_api, glfw::no_api);
 	glfwWindowHint(glfw::resizable, glfw::true_);
 	glfwWindowHint(glfw::focus_on_show, glfw::true_);
 
 	m_window = glfwCreateWindow(1920, 1080, title.c_str(), nullptr, nullptr);
-	assert(m_window, std::source_location::current(), "Failed to create GLFW window!");
+	assert(m_window, "Failed to create GLFW window!");
 
 	glfwSetWindowUserPointer(m_window, this);
 
@@ -250,18 +256,10 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 	const int cursor_mode = m_mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
 	glfwSetInputMode(m_window, glfw::cursor, cursor_mode);
 
-	save_state.bind("Window", "Fullscreen", m_fullscreen)
-		.description("Run in fullscreen mode")
-		.default_value(false)
-		.commit();
-
-	save_state.bind("Window", "Mouse Visible", m_mouse_visible)
-		.description("Show mouse cursor")
-		.default_value(false)
-		.commit();
+	save::register_struct(save_state, "Window", *this);
 
 	refresh_monitor_settings();
-	m_last_monitor_index = m_monitor_index;
+	m_last_monitor_index = m_monitor.value;
 	refresh_resolution_settings();
 
 	glfwFocusWindow(m_window);
@@ -280,21 +278,20 @@ gse::window::~window() {
 
 	assert(
 		!m_window,
-		std::source_location::current(),
 		"Shutdown not called before destructing window!"
 	);
 }
 
 auto gse::window::update(const bool ui_focus) -> void {
-	if (m_monitor_index != m_last_monitor_index) {
+	if (m_monitor.value != m_last_monitor_index) {
 		const int old_monitor = m_last_monitor_index;
-		m_last_monitor_index = m_monitor_index;
-		m_resolution_index = 0;
+		m_last_monitor_index = m_monitor.value;
+		m_resolution.value = 0;
 		refresh_resolution_settings();
 
-		if (!m_current_fullscreen && old_monitor != m_monitor_index) {
+		if (!m_current_fullscreen && old_monitor != m_monitor.value) {
 			std::lock_guard lock(m_pending_mutex);
-			m_pending.move_to_monitor_request = m_monitor_index;
+			m_pending.move_to_monitor_request = m_monitor.value;
 		}
 	}
 
@@ -329,7 +326,7 @@ auto gse::window::poll_events() -> void {\
 }
 
 auto gse::window::shutdown() -> void {
-	assert(m_window, std::source_location::current(), "Window already shutdown!");
+	assert(m_window, "Window already shutdown!");
 	glfwDestroyWindow(m_window);
 	m_window = nullptr;
 }
@@ -364,7 +361,7 @@ auto gse::window::frame_buffer_resized() -> bool {
 
 auto gse::window::create_vulkan_surface(const vk::Instance instance) const -> vk::SurfaceKHR {
 	const auto surface = glfw::create_window_surface(instance, m_window);
-	assert(surface, std::source_location::current(), "Failed to create window surface for Vulkan!");
+	assert(surface, "Failed to create window surface for Vulkan!");
 	return surface;
 }
 
@@ -443,18 +440,17 @@ auto gse::window::process_pending_operations() -> void {
 
 		assert(
 			monitor_count > 0,
-			std::source_location::current(),
 			"Failed to get monitors!"
 		);
 
-		const int selected_monitor = std::clamp(m_monitor_index, 0, monitor_count - 1);
+		const int selected_monitor = std::clamp(m_monitor.value, 0, monitor_count - 1);
 		GLFWmonitor* target_monitor = monitors[selected_monitor];
 
 		int target_width;
 		int target_height;
 		int target_refresh;
 
-		if (m_resolution_index == 0) {
+		if (m_resolution.value == 0) {
 			const GLFWvidmode* native_mode = glfwGetVideoMode(target_monitor);
 			target_width = native_mode->width;
 			target_height = native_mode->height;
@@ -463,7 +459,7 @@ auto gse::window::process_pending_operations() -> void {
 		else {
 			const auto resolutions = enumerate_resolutions(selected_monitor);
 
-			if (const int res_idx = m_resolution_index - 1; res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())) {
+			if (const int res_idx = m_resolution.value - 1; res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())) {
 				target_width = resolutions[res_idx].width;
 				target_height = resolutions[res_idx].height;
 				target_refresh = resolutions[res_idx].refresh_rate;
@@ -570,46 +566,28 @@ auto gse::window::enumerate_resolutions(const int monitor_index) -> std::vector<
 auto gse::window::refresh_monitor_settings() -> void {
 	const auto monitors = enumerate_monitors();
 
-	m_cached_monitor_names.clear();
-	std::vector<std::pair<std::string, int>> monitor_options;
+	m_monitor.options.clear();
 
-	for (int i = 0; i < static_cast<int>(monitors.size()); ++i) {
-		auto label = std::format("{}: {}x{}", monitors[i].name, monitors[i].width, monitors[i].height);
-		m_cached_monitor_names.push_back(label);
-		monitor_options.emplace_back(std::move(label), i);
+	for (const auto& monitor : monitors) {
+		m_monitor.options.push_back(std::format("{}: {}x{}", monitor.name, monitor.width, monitor.height));
 	}
 
-	if (m_monitor_index < 0 || m_monitor_index >= static_cast<int>(monitors.size())) {
-		m_monitor_index = 0;
+	if (m_monitor.value < 0 || m_monitor.value >= static_cast<int>(monitors.size())) {
+		m_monitor.value = 0;
 	}
-
-	m_save.bind("Window", "Monitor", m_monitor_index)
-		.description("Display monitor")
-		.options(std::move(monitor_options))
-		.commit();
 }
 
 auto gse::window::refresh_resolution_settings() -> void {
-	const auto resolutions = enumerate_resolutions(m_monitor_index);
+	const auto resolutions = enumerate_resolutions(m_monitor.value);
 
-	m_cached_resolution_names.clear();
-	std::vector<std::pair<std::string, int>> resolution_options;
+	m_resolution.options.clear();
+	m_resolution.options.emplace_back("Native");
 
-	resolution_options.emplace_back("Native", 0);
-	m_cached_resolution_names.push_back("Native");
-
-	for (int i = 0; i < static_cast<int>(resolutions.size()); ++i) {
-		auto label = std::format("{}", resolutions[i]);
-		m_cached_resolution_names.push_back(label);
-		resolution_options.emplace_back(std::move(label), i + 1);
+	for (const auto& resolution : resolutions) {
+		m_resolution.options.push_back(std::format("{}", resolution));
 	}
 
-	if (m_resolution_index < 0 || m_resolution_index >= static_cast<int>(resolution_options.size())) {
-		m_resolution_index = 0;
+	if (m_resolution.value < 0 || m_resolution.value >= static_cast<int>(m_resolution.options.size())) {
+		m_resolution.value = 0;
 	}
-
-	m_save.bind("Window", "Resolution", m_resolution_index)
-		.description("Fullscreen resolution (0 = Native)")
-		.options(std::move(resolution_options))
-		.commit();
 }

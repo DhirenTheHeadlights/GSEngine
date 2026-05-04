@@ -155,14 +155,14 @@ auto gse::linear_vector<T>::operator=(linear_vector&& other) noexcept -> linear_
 
 template <typename T>
 auto gse::linear_vector<T>::push_back(const T& value) -> reference {
-    assert(m_size < m_capacity, std::source_location::current(), "linear_vector overflow (capacity: {})", m_capacity);
+    assert(m_size < m_capacity, "linear_vector overflow (capacity: {})", m_capacity);
     new (m_data + m_size) T(value);
     return m_data[m_size++];
 }
 
 template <typename T>
 auto gse::linear_vector<T>::push_back(T&& value) -> reference {
-    assert(m_size < m_capacity, std::source_location::current(), "linear_vector overflow (capacity: {})", m_capacity);
+    assert(m_size < m_capacity, "linear_vector overflow (capacity: {})", m_capacity);
     new (m_data + m_size) T(std::move(value));
     return m_data[m_size++];
 }
@@ -170,7 +170,7 @@ auto gse::linear_vector<T>::push_back(T&& value) -> reference {
 template <typename T>
 template <typename... Args>
 auto gse::linear_vector<T>::emplace_back(Args&&... args) -> reference {
-    assert(m_size < m_capacity, std::source_location::current(), "linear_vector overflow (capacity: {})", m_capacity);
+    assert(m_size < m_capacity, "linear_vector overflow (capacity: {})", m_capacity);
     new (m_data + m_size) T(std::forward<Args>(args)...);
     return m_data[m_size++];
 }
@@ -199,7 +199,7 @@ auto gse::linear_vector<T>::reserve(const size_type new_capacity) -> void {
 
 template <typename T>
 auto gse::linear_vector<T>::resize(const size_type n) -> void {
-    assert(n <= m_capacity, std::source_location::current(), "linear_vector::resize exceeded capacity ({})", m_capacity);
+    assert(n <= m_capacity, "linear_vector::resize exceeded capacity ({})", m_capacity);
     if (n > m_size) {
         if constexpr (!std::is_trivially_constructible_v<T>) {
             for (size_type i = m_size; i < n; ++i) {
@@ -219,7 +219,7 @@ auto gse::linear_vector<T>::resize(const size_type n) -> void {
 
 template <typename T>
 auto gse::linear_vector<T>::resize(const size_type n, const T& val) -> void {
-    assert(n <= m_capacity, std::source_location::current(), "linear_vector::resize exceeded capacity ({})", m_capacity);
+    assert(n <= m_capacity, "linear_vector::resize exceeded capacity ({})", m_capacity);
     if (n > m_size) {
         for (size_type i = m_size; i < n; ++i) {
             new (m_data + i) T(val);
@@ -237,7 +237,7 @@ auto gse::linear_vector<T>::resize(const size_type n, const T& val) -> void {
 
 template <typename T>
 auto gse::linear_vector<T>::assign(const size_type n, const T& val) -> void {
-    assert(n <= m_capacity, std::source_location::current(), "linear_vector::assign exceeded capacity ({})", m_capacity);
+    assert(n <= m_capacity, "linear_vector::assign exceeded capacity ({})", m_capacity);
     clear();
     for (size_type i = 0; i < n; ++i) {
         new (m_data + i) T(val);
@@ -250,7 +250,7 @@ template <std::input_iterator InputIt>
 auto gse::linear_vector<T>::assign(InputIt first, const InputIt last) -> void {
     clear();
     for (; first != last; ++first) {
-        assert(m_size < m_capacity, std::source_location::current(), "linear_vector::assign exceeded capacity ({})", m_capacity);
+        assert(m_size < m_capacity, "linear_vector::assign exceeded capacity ({})", m_capacity);
         new (m_data + m_size) T(*first);
         ++m_size;
     }
@@ -258,7 +258,7 @@ auto gse::linear_vector<T>::assign(InputIt first, const InputIt last) -> void {
 
 template <typename T>
 auto gse::linear_vector<T>::pop_back() -> void {
-    assert(m_size > 0, std::source_location::current(), "linear_vector::pop_back on empty vector");
+    assert(m_size > 0, "linear_vector::pop_back on empty vector");
     if constexpr (!std::is_trivially_destructible_v<T>) {
         m_data[m_size - 1].~T();
     }

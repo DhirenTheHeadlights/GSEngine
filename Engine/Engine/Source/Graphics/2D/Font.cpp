@@ -49,7 +49,6 @@ auto gse::glyph::shape_size() const -> vec2f {
 gse::font::font(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_path(path) {
     assert(
         exists(path),
-        std::source_location::current(),
         "Font file '{}' does not exist.", path.string()
     );
 }
@@ -66,7 +65,7 @@ gse::font::~font() {
 auto gse::font::load(gpu::context& context) -> void {
     std::ifstream in_file(m_baked_path, std::ios::binary);
     assert(
-        in_file.is_open(), std::source_location::current(),
+        in_file.is_open(),
         "Failed to open baked font file: {}",
         m_baked_path.string()
     );
@@ -102,7 +101,6 @@ auto gse::font::load(gpu::context& context) -> void {
 
     assert(
         FT_Init_FreeType(&m_ft) == 0,
-        std::source_location::current(),
         "Failed to initialize FreeType."
     );
 
@@ -113,13 +111,11 @@ auto gse::font::load(gpu::context& context) -> void {
             0,
             &m_face
         ) == 0,
-        std::source_location::current(),
         "Failed to load source font face for kerning."
     );
 
     assert(
         FT_Set_Pixel_Sizes(m_face, 0, 64) == 0,
-        std::source_location::current(),
         "Failed to set font pixel size for kerning."
     );
 
@@ -230,7 +226,7 @@ auto gse::font::text_layout(const std::string_view text, const vec2f start, cons
         const bool emit_rect = (quad_size.x() > 0.0f && quad_size.y() > 0.0f);
 
         vec4f full_cell_uv = g.uv();
-        if (isfinite(full_cell_uv) || full_cell_uv.z() <= 0.0f || full_cell_uv.w() <= 0.0f) {
+        if (!isfinite(full_cell_uv) || full_cell_uv.z() <= 0.0f || full_cell_uv.w() <= 0.0f) {
             full_cell_uv = { 0.0f, 0.0f, 1.0f, 1.0f };
         }
 

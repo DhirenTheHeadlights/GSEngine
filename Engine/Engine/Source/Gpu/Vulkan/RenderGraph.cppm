@@ -771,7 +771,7 @@ auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) const -> void 
 }
 
 auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) const -> void {
-	assert(region, std::source_location::current(), "Cannot bind null descriptor region");
+	assert(region, "Cannot bind null descriptor region");
 	region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_index, region);
 }
 
@@ -954,7 +954,7 @@ gse::vulkan::pass_builder::pass_builder(render_graph& graph, const id pass_type)
 	: m_graph(std::addressof(graph)), m_pass{ .pass_type = pass_type } {}
 
 gse::vulkan::pass_builder::~pass_builder() {
-	assert(m_submitted, std::source_location::current(), "pass_builder destroyed without calling record()");
+	assert(m_submitted, "pass_builder destroyed without calling record()");
 }
 
 auto gse::vulkan::pass_builder::track(const buffer& buf) -> pass_builder& {
@@ -1393,7 +1393,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
 
 			const auto worker_idx = task::current_worker();
-			assert(worker_idx.has_value(), std::source_location::current(), "graph::record_parallel: thread has no arena slot");
+			assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
 			const auto frame_idx = m_frame->current_frame();
 			const auto secondary = worker_pools.acquire_secondary(*worker_idx, frame_idx);
 
@@ -1456,6 +1456,13 @@ auto gse::vulkan::render_graph::execute() -> void {
 							matched = true;
 						}
 					}
+					for (const auto& [resource, stage, access] : pass.writes) {
+						if (resource.ptr == tracked && resource.type == resource_type::buffer) {
+							tracked_stage |= stage;
+							tracked_access |= access;
+							matched = true;
+						}
+					}
 					if (!matched) {
 						has_unmatched_tracked_buffer = true;
 					}
@@ -1464,6 +1471,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 				if (has_unmatched_tracked_buffer || !tracked_stage) {
 					tracked_stage |= pass.tracked_stage;
 					tracked_access |= gpu::access_flag::shader_storage_read
+						| gpu::access_flag::shader_storage_write
 						| gpu::access_flag::uniform_read
 						| gpu::access_flag::transfer_read
 						| gpu::access_flag::indirect_command_read

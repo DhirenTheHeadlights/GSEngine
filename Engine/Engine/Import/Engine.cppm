@@ -17,6 +17,4 @@ export import gse.physics;
 export import gse.os;
 export import gse.runtime;
 export import gse.save;
-export import gse.scene;
 export import gse.time;
-export import gse.toml;

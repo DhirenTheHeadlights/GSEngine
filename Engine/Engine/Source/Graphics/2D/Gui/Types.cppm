@@ -109,6 +109,7 @@ export namespace gse::gui {
 
         render_layer input_layer = render_layer::content;
         tooltip_state* tooltip = nullptr;
+        std::optional<ui_rect> body_clip_rect;
 
         auto queue_sprite(
             renderer::sprite_command cmd

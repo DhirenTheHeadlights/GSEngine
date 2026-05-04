@@ -6,6 +6,7 @@ import :capture_renderer;
 import :ui_renderer;
 import :capture_ring;
 import :mp4_muxer;
+import :settings;
 
 import gse.os;
 import gse.assets;
@@ -95,12 +96,7 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
 
     fd.encoder = gpu::video_encoder::create(ctx.device(), ext, caps);
 
-    phase.channels.push(save::make_property_registration(
-        "Graphics",
-        "Clip Ring Buffer Length",
-        "How many seconds of gameplay to hold in the clip ring buffer.",
-        fd.ring_budget
-    ));
+    gse::settings::install(phase, "Graphics", fd);
     fd.clip_ring.set_budget(fd.ring_budget);
 
     r.encode_active = true;

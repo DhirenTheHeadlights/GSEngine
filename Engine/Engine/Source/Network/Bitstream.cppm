@@ -115,7 +115,6 @@ auto gse::network::bitstream::write(const std::span<const std::byte> data) -> vo
 
 	assert(
 		ok,
-		std::source_location::current(),
 		"Bitstream overflow id=0x{:04X} need={} have={} head_bits={}", m_cur_msg_id, bits, remaining_bits(), m_head_bits
 	);
 
@@ -223,7 +222,6 @@ auto gse::network::bitstream::seek(const std::size_t bit_pos) -> void {
 	const bool ok = (bit_pos <= capacity_bits());
 	assert(
 		ok,
-		std::source_location::current(),
 		"Bitstream seek out of range"
 	);
 	if (!ok) {

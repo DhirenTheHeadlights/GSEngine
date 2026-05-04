@@ -76,6 +76,9 @@ export namespace gse {
         auto has_meshlets() const -> bool { return m_meshlet_gpu.has_value(); }
         auto meshlet_count() const -> std::uint32_t { return m_meshlet_gpu->count; }
         auto meshlet_gpu(this const mesh& self) -> const meshlet_gpu_data& { return *self.m_meshlet_gpu; }
+
+        auto upload_token(
+        ) const -> const gpu::sync_token&;
     private:
         gpu::buffer m_vertex_buffer;
         gpu::buffer m_index_buffer;
@@ -85,6 +88,7 @@ export namespace gse {
         std::vector<std::uint32_t> m_indices;
         gse::material m_material;
         meshlet_data m_meshlets;
+        gpu::sync_token m_upload_token;
     };
 
     auto generate_bounding_box_mesh(
@@ -161,7 +165,11 @@ auto gse::mesh::initialize(gpu::context& ctx) -> void {
         uploads.push_back({ &m_meshlet_gpu->bounds, m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
     }
 
-    gpu::upload_to_buffers(ctx.device(), uploads);
+    m_upload_token = gpu::upload_to_buffers(ctx.device(), uploads);
+}
+
+auto gse::mesh::upload_token() const -> const gpu::sync_token& {
+    return m_upload_token;
 }
 
 auto gse::mesh::center_of_mass() const -> vec3<displacement> {
@@ -174,14 +182,14 @@ auto gse::mesh::center_of_mass() const -> vec3<displacement> {
     volume_d total_volume{};
     decltype(vec3_ld{} * volume_d{}) moment{};
 
-    assert(m_indices.size() % 3 == 0, std::source_location::current(), "m_indices count is not a multiple of 3. Ensure that each face is defined by exactly three m_indices.");
+    assert(m_indices.size() % 3 == 0, "m_indices count is not a multiple of 3. Ensure that each face is defined by exactly three m_indices.");
 
     for (std::size_t i = 0; i < m_indices.size(); i += 3) {
         const unsigned int idx0 = m_indices[i];
         const unsigned int idx1 = m_indices[i + 1];
         const unsigned int idx2 = m_indices[i + 2];
 
-        assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), std::source_location::current(), "Index out of range while accessing m_vertices.");
+        assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), "Index out of range while accessing m_vertices.");
 
         const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
         const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
@@ -198,7 +206,7 @@ auto gse::mesh::center_of_mass() const -> vec3<displacement> {
         moment += tetra_com * volume;
     }
 
-    assert(total_volume != volume_d{}, std::source_location::current(), "Total volume is zero. Check if the mesh is closed and correctly oriented.");
+    assert(total_volume != volume_d{}, "Total volume is zero. Check if the mesh is closed and correctly oriented.");
 
     return vec3<displacement>(moment / total_volume);
 }

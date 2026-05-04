@@ -23,6 +23,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.save;
+import gse.meta;
 import gse.assets;
 
 
@@ -165,6 +166,8 @@ export namespace gse::gpu {
 		mutable std::recursive_mutex m_mutex;
 
 		bool m_ui_focus = false;
+
+		[[=gse::settings::describe{}, =settings::restart_required{}]]
 		bool m_validation_layers_enabled = false;
 	};
 }
@@ -173,11 +176,7 @@ gse::gpu::context::context(const std::string& window_title, input::system_state&
 	m_render_graph = std::make_unique<vulkan::render_graph>(*m_device, *m_swapchain, *m_frame);
 	m_bindless_textures = std::make_unique<bindless_texture_set>(m_device->vulkan_device(), m_device->descriptor_heap());
 
-	save.bind("Graphics", "Validation Layers", m_validation_layers_enabled)
-		.description("Enable Vulkan validation layers for debugging (impacts performance significantly)")
-		.default_value(false)
-		.restart_required()
-		.commit();
+	save::register_struct(save, "Graphics", *this);
 
 	m_device->transient().recorder().pre_frame([graph = m_render_graph.get()](handle<command_buffer> cmd) {
 		vulkan::transition_image_layout(

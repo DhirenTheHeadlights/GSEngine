@@ -95,15 +95,32 @@ export namespace gse::physics {
 		std::uint32_t position_offset = 0;
 	};
 
-	struct state {
+	struct settings {
+		[[=gse::settings::describe{}]]
 		bool update_phys = true;
+
+		[[=gse::settings::describe{}]]
 		bool use_gpu_solver = false;
-		bool gpu_buffers_created = false;
+
+		[[=gse::settings::describe{}, =gse::settings::range<1, 40>{}]]
 		int solver_iterations = 15;
+
+		[[=gse::settings::describe{}]]
 		bool compare_solvers = false;
+
+		[[=gse::settings::describe{}]]
 		bool use_jacobi = false;
+
+		[[=gse::settings::describe{}, =gse::settings::range<0.1f, 1.0f>{}]]
 		float jacobi_omega = 0.67f;
+
+		[[=gse::settings::describe{}, =gse::settings::range<1, 8>{}]]
 		int physics_substeps = 2;
+	};
+
+	struct state {
+		settings settings;
+		bool gpu_buffers_created = false;
 		gpu_solver_stats gpu_stats;
 		std::vector<joint_definition> joints;
 	};

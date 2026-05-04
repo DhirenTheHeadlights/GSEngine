@@ -150,8 +150,8 @@ gse::vulkan::basic_buffer<Device>::operator bool() const {
 
 template <typename Device>
 auto gse::vulkan::basic_buffer<Device>::upload(const void* data, const std::size_t bytes) -> void {
-	assert(m_allocation.mapped(), std::source_location::current(), "Buffer for uploading must be persistently mapped");
-	assert(bytes <= m_size, std::source_location::current(), "Upload size exceeds buffer size");
+	assert(m_allocation.mapped(), "Buffer for uploading must be persistently mapped");
+	assert(bytes <= m_size, "Upload size exceeds buffer size");
 
 	gse::memcpy(m_allocation.mapped(), data, bytes);
 }

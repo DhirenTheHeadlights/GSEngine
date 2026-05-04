@@ -158,7 +158,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 gse::gpu::bindless_texture_set::~bindless_texture_set() = default;
 
 auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> view, const handle<vulkan::sampler> samp) -> bindless_texture_slot {
-	assert(!m_free_list.empty(), std::source_location::current(), "Bindless texture set exhausted (capacity {})", m_capacity);
+	assert(!m_free_list.empty(), "Bindless texture set exhausted (capacity {})", m_capacity);
 
 	const auto slot = m_free_list.back();
 	m_free_list.pop_back();

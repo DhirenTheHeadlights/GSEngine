@@ -135,7 +135,7 @@ auto gse::slot_map<T>::get(this Self& self, const handle h) -> decltype(auto) {
 template <typename T>
 template <typename Self>
 auto gse::slot_map<T>::operator[](this Self& self, const handle h) -> decltype(auto) {
-    gse::assert(self.is_valid(h), std::source_location::current(), "slot_map: invalid or stale handle");
+    gse::assert(self.is_valid(h), "slot_map: invalid or stale handle");
     return self.m_data[self.m_indices[h.index].data_index];
 }
 

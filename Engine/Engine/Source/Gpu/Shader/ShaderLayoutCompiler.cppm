@@ -1,4 +1,4 @@
-export module gse.shader_compiler:layout_compiler;
+export module gse.gpu:shader_layout_compiler;
 
 import std;
 
@@ -13,7 +13,9 @@ import gse.diag;
 import gse.assets;
 import gse.config;
 import gse.slang;
-import gse.gpu;
+
+import :types;
+import :shader_layout;
 
 namespace gse::layout_compile {
 	auto log_diagnostics(

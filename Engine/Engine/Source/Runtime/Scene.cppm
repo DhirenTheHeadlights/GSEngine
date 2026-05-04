@@ -1,4 +1,4 @@
-export module gse.scene:scene;
+export module gse.runtime:scene;
 
 import std;
 import gse.std_meta;
@@ -212,7 +212,7 @@ auto gse::scene::add_entity(const std::string& name) -> gse::id {
 }
 
 auto gse::scene::remove_entity(const gse::id& id) -> void {
-	assert(m_registry.exists(id), std::source_location::current(), "Cannot remove entity with id {}: it does not exist.", id);
+	assert(m_registry.exists(id), "Cannot remove entity with id {}: it does not exist.", id);
 
 	m_registry.remove(id);
 	std::erase(m_entities, id);

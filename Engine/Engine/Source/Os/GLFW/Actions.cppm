@@ -10,7 +10,6 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import gse.assert;
-import gse.save;
 
 import :input;
 import :keys;
@@ -670,30 +669,11 @@ auto gse::actions::state::camera_yaw() const -> angle {
 	return m_camera_yaw;
 }
 
-auto gse::actions::system::initialize(init_context& phase, system_state& s) -> void {
-	phase.channels.push<save::bind_int_map_request>({
-		.category = "Controls",
-		.initial_data = s.rebinds
-	});
-
-	phase.channels.push<save::bind_int_map_request>({
-		.category = "ActionDefaults",
-		.initial_data = s.action_defaults
-	});
-
+auto gse::actions::system::initialize(init_context&, system_state& s) -> void {
 	s.finalize_bindings();
 }
 
 auto gse::actions::system::update(update_context& ctx, system_state& s, const input::system_state& input_s) -> async::task<> {
-	for (const auto& [category, data] : ctx.read_channel<save::int_map_loaded>()) {
-		if (category == "Controls") {
-			s.rebinds = data;
-		}
-		else if (category == "ActionDefaults") {
-			s.action_defaults = data;
-		}
-	}
-
 	bool config_changed = false;
 
 	for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
@@ -717,8 +697,6 @@ auto gse::actions::system::update(update_context& ctx, system_state& s, const in
 
 	if (config_changed) {
 		s.finalize_bindings();
-		ctx.channels.push<save::int_map_sync>({ "Controls", s.rebinds });
-		ctx.channels.push<save::int_map_sync>({ "ActionDefaults", s.action_defaults });
 	}
 
 	const auto& in = input_s.current_state();

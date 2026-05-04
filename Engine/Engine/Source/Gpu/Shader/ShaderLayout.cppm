@@ -77,7 +77,7 @@ auto gse::shader_layout::load(gpu::device& device) -> void {
 	m_device = &device;
 
 	std::ifstream in(m_path, std::ios::binary);
-	assert(in.is_open(), std::source_location::current(), "Failed to open layout file: {}", m_path.string());
+	assert(in.is_open(), "Failed to open layout file: {}", m_path.string());
 	if (!in.is_open()) {
 		return;
 	}
@@ -130,7 +130,6 @@ auto gse::shader_layout::sets() const -> std::span<const shader_layout_set> {
 auto gse::shader_layout::layout_handle(const std::uint32_t set_index) const -> gpu::handle<vulkan::descriptor_set_layout> {
 	assert(
 		set_index < m_layouts.size() && m_layouts[set_index],
-		std::source_location::current(),
 		"Layout set {} not found",
 		set_index
 	);
@@ -149,7 +148,6 @@ auto gse::shader_layout::layout_handles() const -> std::vector<gpu::handle<vulka
 auto gse::shader_layout::layout_size(const std::uint32_t set_index) const -> gpu::device_size {
 	assert(
 		m_device != nullptr && set_index < m_layouts.size() && m_layouts[set_index],
-		std::source_location::current(),
 		"Layout set {} not found",
 		set_index
 	);
@@ -159,7 +157,6 @@ auto gse::shader_layout::layout_size(const std::uint32_t set_index) const -> gpu
 auto gse::shader_layout::binding_offset(const std::uint32_t set_index, const std::uint32_t binding) const -> gpu::device_size {
 	assert(
 		m_device != nullptr && set_index < m_layouts.size() && m_layouts[set_index],
-		std::source_location::current(),
 		"Layout set {} not found",
 		set_index
 	);

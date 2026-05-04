@@ -9,6 +9,7 @@ import gse.containers;
 import gse.concurrency;
 import gse.ecs;
 import gse.save;
+import gse.meta;
 import gse.gpu;
 import gse.assets;
 
@@ -78,8 +79,13 @@ export namespace gse::renderer::physics_debug {
 		debug_stats stats;
 	};
 
-	struct state {
+	struct settings {
+		[[=gse::settings::describe{}]]
 		bool enabled = true;
+	};
+
+	struct state {
+		settings settings;
 		debug_stats latest_stats;
 	};
 

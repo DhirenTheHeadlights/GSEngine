@@ -172,7 +172,7 @@ gse::shader::shader(const std::filesystem::path& path) : identifiable(path, conf
 
 auto gse::shader::load(const auto&) -> void {
 	std::ifstream in(m_info.path, std::ios::binary);
-	assert(in.is_open(), std::source_location::current(), "Failed to open gshader asset: {}", m_info.path.string());
+	assert(in.is_open(), "Failed to open gshader asset: {}", m_info.path.string());
 	if (!in.is_open()) {
 		return;
 	}
@@ -281,13 +281,13 @@ auto gse::shader::push_block(const std::string_view name) const -> struct unifor
 	const auto it = std::ranges::find_if(m_push_constants, [&](auto& b) {
 		return b.name == name;
 	});
-	assert(it != m_push_constants.end(), std::source_location::current(), "Push constant block '{}' not found", name);
+	assert(it != m_push_constants.end(), "Push constant block '{}' not found", name);
 	return *it;
 }
 
 auto gse::shader::uniform_block(const std::string_view name) const -> class uniform_block {
 	const auto* block = find_block(name);
-	assert(block, std::source_location::current(), "Uniform block '{}' not found in shader", name);
+	assert(block, "Uniform block '{}' not found in shader", name);
 	return *block;
 }
 
@@ -328,35 +328,35 @@ auto gse::shader::find_block(const std::string_view name) const -> const struct 
 template <typename T>
 auto gse::shader::set_uniform(const std::span<std::byte> dst, const std::string_view full_name, const T& value) const -> void {
 	const auto dot_pos = full_name.find('.');
-	assert(dot_pos != std::string_view::npos, std::source_location::current(), "Uniform name '{}' must be in the format 'Block.member'", full_name);
+	assert(dot_pos != std::string_view::npos, "Uniform name '{}' must be in the format 'Block.member'", full_name);
 
 	const auto block_name = full_name.substr(0, dot_pos);
 	const auto member_name = full_name.substr(dot_pos + 1);
 
 	const auto* block = find_block(block_name);
-	assert(block, std::source_location::current(), "Uniform block '{}' not found", block_name);
+	assert(block, "Uniform block '{}' not found", block_name);
 
 	const auto mem_it = block->members.find(std::string(member_name));
-	assert(mem_it != block->members.end(), std::source_location::current(), "Member '{}' not found in block '{}'", member_name, block_name);
+	assert(mem_it != block->members.end(), "Member '{}' not found in block '{}'", member_name, block_name);
 
 	const auto& mem_info = mem_it->second;
-	assert(sizeof(T) <= mem_info.size, std::source_location::current(), "Value size {} exceeds member '{}' size {}", sizeof(T), member_name, mem_info.size);
-	assert(mem_info.offset + sizeof(T) <= dst.size(), std::source_location::current(), "Write to '{}.{}' exceeds destination span", block_name, member_name);
+	assert(sizeof(T) <= mem_info.size, "Value size {} exceeds member '{}' size {}", sizeof(T), member_name, mem_info.size);
+	assert(mem_info.offset + sizeof(T) <= dst.size(), "Write to '{}.{}' exceeds destination span", block_name, member_name);
 
 	gse::memcpy(dst.data() + mem_info.offset, value);
 }
 
 auto gse::shader::set_uniform_block(const std::span<std::byte> dst, const std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& data) const -> void {
 	const auto* block = find_block(block_name);
-	assert(block, std::source_location::current(), "Uniform block '{}' not found", block_name);
+	assert(block, "Uniform block '{}' not found", block_name);
 
 	for (const auto& [name, bytes] : data) {
 		auto member_it = block->members.find(name);
-		assert(member_it != block->members.end(), std::source_location::current(), "Uniform member '{}' not found in block '{}'", name, block_name);
+		assert(member_it != block->members.end(), "Uniform member '{}' not found in block '{}'", name, block_name);
 
 		const auto& member_info = member_it->second;
-		assert(bytes.size() <= member_info.size, std::source_location::current(), "Data size {} > member size {} for '{}.{}'", bytes.size(), member_info.size, block_name, name);
-		assert(member_info.offset + bytes.size() <= dst.size(), std::source_location::current(), "Write to '{}.{}' exceeds destination span", block_name, name);
+		assert(bytes.size() <= member_info.size, "Data size {} > member size {} for '{}.{}'", bytes.size(), member_info.size, block_name, name);
+		assert(member_info.offset + bytes.size() <= dst.size(), "Write to '{}.{}' exceeds destination span", block_name, name);
 
 		gse::memcpy(dst.data() + member_info.offset, bytes);
 	}
@@ -364,29 +364,29 @@ auto gse::shader::set_uniform_block(const std::span<std::byte> dst, const std::s
 
 auto gse::shader::set_ssbo_element(const std::span<std::byte> dst, const std::string_view block_name, const std::uint32_t index, const std::string_view member_name, const std::span<const std::byte> bytes) const -> void {
 	const auto* block = find_block(block_name);
-	assert(block, std::source_location::current(), "SSBO '{}' not found", block_name);
-	assert(block->size > 0, std::source_location::current(), "SSBO '{}' has zero element stride", block_name);
+	assert(block, "SSBO '{}' not found", block_name);
+	assert(block->size > 0, "SSBO '{}' has zero element stride", block_name);
 
 	const auto mit = block->members.find(std::string(member_name));
-	assert(mit != block->members.end(), std::source_location::current(), "Member '{}' not found in SSBO '{}'", member_name, block_name);
+	assert(mit != block->members.end(), "Member '{}' not found in SSBO '{}'", member_name, block_name);
 
 	const auto& m_info = mit->second;
-	assert(bytes.size() <= m_info.size, std::source_location::current(), "Bytes size {} > member '{}' size {} in SSBO '{}'", bytes.size(), member_name, m_info.size, block_name);
+	assert(bytes.size() <= m_info.size, "Bytes size {} > member '{}' size {} in SSBO '{}'", bytes.size(), member_name, m_info.size, block_name);
 
 	const auto offset = index * block->size + m_info.offset;
-	assert(offset + bytes.size() <= dst.size(), std::source_location::current(), "Write to SSBO '{}'[{}] exceeds destination span", block_name, index);
+	assert(offset + bytes.size() <= dst.size(), "Write to SSBO '{}'[{}] exceeds destination span", block_name, index);
 
 	gse::memcpy(dst.data() + offset, bytes);
 }
 
 auto gse::shader::set_ssbo_struct(const std::span<std::byte> dst, const std::string_view block_name, const std::uint32_t index, const std::span<const std::byte> element_bytes) const -> void {
 	const auto* block = find_block(block_name);
-	assert(block, std::source_location::current(), "SSBO '{}' not found", block_name);
-	assert(block->size > 0, std::source_location::current(), "SSBO '{}' has zero element stride", block_name);
-	assert(element_bytes.size() == block->size, std::source_location::current(), "Element bytes {} != stride {} for SSBO '{}'", element_bytes.size(), block->size, block_name);
+	assert(block, "SSBO '{}' not found", block_name);
+	assert(block->size > 0, "SSBO '{}' has zero element stride", block_name);
+	assert(element_bytes.size() == block->size, "Element bytes {} != stride {} for SSBO '{}'", element_bytes.size(), block->size, block_name);
 
 	const auto offset = index * block->size;
-	assert(offset + element_bytes.size() <= dst.size(), std::source_location::current(), "Write to SSBO '{}'[{}] exceeds destination span", block_name, index);
+	assert(offset + element_bytes.size() <= dst.size(), "Write to SSBO '{}'[{}] exceeds destination span", block_name, index);
 
 	gse::memcpy(dst.data() + offset, element_bytes);
 }
@@ -488,7 +488,7 @@ auto gse::verify_uniform_block(const resource::handle<shader>& s, const std::str
 		);
 	}
 
-	assert(ok, std::source_location::current(), "Uniform block layout mismatch for '{}'", block_name);
+	assert(ok, "Uniform block layout mismatch for '{}'", block_name);
 	return ok;
 }
 

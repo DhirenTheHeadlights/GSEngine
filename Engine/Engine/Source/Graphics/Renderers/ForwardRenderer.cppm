@@ -6,11 +6,14 @@ import :geometry_collector;
 import :depth_prepass_renderer;
 import :rt_shadow_renderer;
 import :light_culling_renderer;
+import :skin_compute_renderer;
+import :cull_compute_renderer;
 import :camera_system;
 import :texture;
 import :point_light;
 import :spot_light;
 import :directional_light;
+import :settings;
 
 import gse.math;
 import gse.core;
@@ -23,6 +26,7 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.save;
+import gse.meta;
 
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;
@@ -51,10 +55,19 @@ export namespace gse::renderer::forward {
 		high = 3
 	};
 
-	struct state {
+	struct settings {
+		[[=gse::settings::describe{}]]
 		shadow_quality_level shadow_quality = shadow_quality_level::medium;
+
+		[[=gse::settings::describe{}]]
 		ao_quality_level ao_quality = ao_quality_level::medium;
+
+		[[=gse::settings::describe{}]]
 		reflection_quality_level reflection_quality = reflection_quality_level::medium;
+	};
+
+	struct state {
+		settings settings;
 	};
 
 	struct system {
@@ -98,35 +111,17 @@ export namespace gse::renderer::forward {
 }
 
 auto gse::renderer::forward::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
+	phase.sched.ensure_system<geometry_collector::system, geometry_collector::state>(phase.reg);
+	phase.sched.ensure_system<skin_compute::system, skin_compute::state>(phase.reg);
+	phase.sched.ensure_system<cull_compute::system, cull_compute::state>(phase.reg);
+	phase.sched.ensure_system<depth_prepass::system, depth_prepass::state>(phase.reg);
+	phase.sched.ensure_system<light_culling::system, light_culling::state>(phase.reg);
+	phase.sched.ensure_system<rt_shadow::system, rt_shadow::state>(phase.reg);
+
 	auto& ctx = phase.get<gpu::context>();
 	auto& assets = phase.assets();
 
-	phase.channels.push<save::register_property>({
-		.category = "Graphics",
-		.name = "Shadow Quality",
-		.description = "Off: no shadows | Hard: 1 ray, 50m range | Low: 1 ray, distance-adaptive, 100m | Medium: 2 rays near/1 far, 200m | High: 4 rays near/2 mid/1 far, 500m",
-		.ref = reinterpret_cast<void*>(&s.shadow_quality),
-		.type = typeid(int),
-		.enum_options = { { "Off", 0 }, { "Hard", 1 }, { "Low", 2 }, { "Medium", 3 }, { "High", 4 } }
-	});
-
-	phase.channels.push<save::register_property>({
-		.category = "Graphics",
-		.name = "AO Quality",
-		.description = "Off: no AO | Low: 1 ray, 5m | Medium: 2 rays, 10m | High: 4 rays, 20m | Ultra: 8 rays, 30m",
-		.ref = reinterpret_cast<void*>(&s.ao_quality),
-		.type = typeid(int),
-		.enum_options = { { "Off", 0 }, { "Low", 1 }, { "Medium", 2 }, { "High", 3 }, { "Ultra", 4 } }
-	});
-
-	phase.channels.push<save::register_property>({
-		.category = "Graphics",
-		.name = "Reflection Quality",
-		.description = "Off: no reflections | Low: mirror only (roughness<0.1), 100m | Medium: glossy (roughness<0.3), 200m | High: 2 rays glossy (roughness<0.5), 500m",
-		.ref = reinterpret_cast<void*>(&s.reflection_quality),
-		.type = typeid(int),
-		.enum_options = { { "Off", 0 }, { "Low", 1 }, { "Medium", 2 }, { "High", 3 } }
-	});
+	gse::settings::install(phase, "Graphics", s.settings);
 
 	r.shader_handle = assets.get<shader>("Shaders/Standard3D/meshlet_geometry");
 	assets.instantly_load(r.shader_handle);
@@ -239,17 +234,23 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 
 	auto& gpu = ctx.get<gpu::context>();
 
+	if (!gpu.graph().frame_in_progress()) {
+		co_return;
+	}
+
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
+		const auto ext = gpu.graph().extent();
+		auto pass = gpu.graph().add_pass<state>();
+		pass.color_output(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f });
+		auto& rec = co_await pass.record();
+		rec.set_viewport(ext);
+		rec.set_scissor(ext);
 		co_return;
 	}
 
 	const auto& data = render_items[0];
 	const auto frame_index = gpu.graph().current_frame();
-
-	if (!gpu.graph().frame_in_progress()) {
-		co_return;
-	}
 
 	const auto* cam_state = ctx.try_state_of<camera::state>();
 	const auto view = cam_state ? cam_state->view_matrix : view_matrix{};
@@ -377,9 +378,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const resources& 
 
 	const auto ext = gpu.graph().extent();
 	const int num_lights_i = static_cast<int>(light_count);
-	const int shadow_quality_i = static_cast<int>(s.shadow_quality);
-	const int ao_quality_i = static_cast<int>(s.ao_quality);
-	const int reflection_quality_i = static_cast<int>(s.reflection_quality);
+	const int shadow_quality_i = static_cast<int>(s.settings.shadow_quality);
+	const int ao_quality_i = static_cast<int>(s.settings.ao_quality);
+	const int reflection_quality_i = static_cast<int>(s.settings.reflection_quality);
 
 	auto meshlet_writer = gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), gpu.descriptor_heap(), r.shader_handle);
 	auto skinned_writer = gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), gpu.descriptor_heap(), r.skinned_shader);

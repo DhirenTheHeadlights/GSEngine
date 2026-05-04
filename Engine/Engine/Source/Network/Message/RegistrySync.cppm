@@ -17,6 +17,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.std_meta;
+import gse.meta;
 export namespace gse::network {
 	template <typename T>
 	consteval auto component_name(
@@ -103,7 +104,7 @@ export namespace gse::network {
 
 template <typename T>
 consteval auto gse::network::component_name() -> std::string_view {
-	return std::meta::display_string_of(^^T);
+	return gse::meta::qualified_name<T>();
 }
 
 template <typename T>

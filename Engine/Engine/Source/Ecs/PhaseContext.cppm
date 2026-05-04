@@ -100,7 +100,7 @@ auto gse::init_context::try_get() const -> T* {
 template <typename State>
 auto gse::init_context::state_of() const -> const State& {
 	const auto* p = states.state_ptr(id_of<State>());
-	assert(p != nullptr, std::source_location::current(), "state not found");
+	assert(p != nullptr, "state not found");
 	return *static_cast<const State*>(p);
 }
 
@@ -112,7 +112,7 @@ auto gse::init_context::try_state_of() const -> const State* {
 template <typename Resources>
 auto gse::init_context::resources_of() const -> const Resources& {
 	const auto* p = resources_store.resources_ptr(id_of<Resources>());
-	assert(p != nullptr, std::source_location::current(), "resources not found");
+	assert(p != nullptr, "resources not found");
 	return *static_cast<const Resources*>(p);
 }
 
