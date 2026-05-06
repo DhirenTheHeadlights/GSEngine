@@ -30,28 +30,27 @@ import gse.ecs;
 import gse.math;
 import gse.save;
 
-auto gse::gui::system::initialize(init_context& phase, resources&, state& s) -> void {
-	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets();
-	s.settings.font.options = asset::registry::enumerate_resources("Fonts", ".gfont");
+auto gse::gui::system::initialize(init_context& phase, const window::state& window_s, settings& cfg, resources&, state& s) -> void {
+	auto& assets = phase.sched.state<asset::registry::state>();
+	cfg.font.options = asset::registry::enumerate_resources("Fonts", ".gfont");
 
-	if (s.settings.font.options.empty()) {
-		s.settings.font.options.push_back("default");
+	if (cfg.font.options.empty()) {
+		cfg.font.options.push_back("default");
 	}
 
-	if (s.settings.font.value < 0 || s.settings.font.value >= static_cast<int>(s.settings.font.options.size())) {
-		s.settings.font.value = 0;
+	if (cfg.font.value < 0 || cfg.font.value >= static_cast<int>(cfg.font.options.size())) {
+		cfg.font.value = 0;
 	}
 
-	s.gui_font = assets.get<font>("Fonts/" + s.settings.font.options[s.settings.font.value]);
-	assets.instantly_load(s.gui_font);
-	s.blank_texture = assets.queue<texture>("blank", vec4f(1, 1, 1, 1));
-	assets.instantly_load(s.blank_texture);
+	s.gui_font = asset::registry::get<font>(assets, "Fonts/" + cfg.font.options[cfg.font.value]);
+	asset::registry::instantly_load(assets, s.gui_font);
+	s.blank_texture = asset::registry::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
+	asset::registry::instantly_load(assets, s.blank_texture);
 	s.menus = load(config::resource_path / s.file_path, s.menus);
 
-	gse::settings::install(phase, "UI", s.settings);
+	gse::settings::register_panel(phase, "UI", cfg);
 
-	s.last_font_index = s.settings.font.value;
+	s.last_font_index = cfg.font.value;
 
 	auto calculate_group_bounds = [&s](const id root_id) -> ui_rect {
 		const menu* root = s.menus.try_get(root_id);
@@ -74,7 +73,7 @@ auto gse::gui::system::initialize(init_context& phase, resources&, state& s) -> 
 		return bounds;
 	};
 
-	const ui_rect screen_rect = usable_screen_rect(s, ctx);
+	const ui_rect screen_rect = usable_screen_rect(s, cfg, window_s);
 
 	for (menu& m : s.menus.items()) {
 		if (!m.owner_id().exists()) {
@@ -124,21 +123,19 @@ auto gse::gui::system::initialize(init_context& phase, resources&, state& s) -> 
 		s.visible_menu_ids_last_frame.push_back(m.id());
 	}
 
-	s.previous_viewport_size = vec2f(ctx.window().viewport());
+	s.previous_viewport_size = vec2f(window::viewport(window_s));
 }
 
-auto gse::gui::system::update(update_context& ctx, resources& r, state& s) -> async::task<> {
-	auto& gpu = ctx.get<gpu::context>();
-	auto& assets = ctx.assets();
-	const auto current_viewport_size = vec2f(gpu.window().viewport());
+auto gse::gui::system::update(update_context& ctx, const window::state& window_s, const asset::registry::state& assets_s, const gse::input::system::state& input_state, const settings& cfg, resources& r, state& s) -> async::task<> {
+	const auto current_viewport_size = vec2f(window::viewport(window_s));
 
 	if (s.previous_viewport_size.x() > 0.f && s.previous_viewport_size.y() > 0.f) {
 		if (current_viewport_size.x() > 0.f && current_viewport_size.y() > 0.f &&
 			(current_viewport_size.x() != s.previous_viewport_size.x() ||
 			 current_viewport_size.y() != s.previous_viewport_size.y())) {
 
-			const style old_sty = apply_scale(s, style::from_theme(s.settings.current_theme), s.previous_viewport_size.y());
-			const style new_sty = apply_scale(s, style::from_theme(s.settings.current_theme), current_viewport_size.y());
+			const style old_sty = apply_scale(cfg, style::from_theme(cfg.current_theme), s.previous_viewport_size.y());
+			const style new_sty = apply_scale(cfg, style::from_theme(cfg.current_theme), current_viewport_size.y());
 
 			const float old_menu_bar_h = menu_bar::height(old_sty);
 			const float new_menu_bar_h = menu_bar::height(new_sty);
@@ -199,7 +196,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, state& s) -> as
 	s.text_commands.clear();
 	s.input_layers_data.begin_frame();
 
-	const style frame_sty = apply_scale(s, style::from_theme(s.settings.current_theme), current_viewport_size.y());
+	const style frame_sty = apply_scale(cfg, style::from_theme(cfg.current_theme), current_viewport_size.y());
 
 	s.fstate = {
 		.sty = frame_sty,
@@ -217,12 +214,10 @@ auto gse::gui::system::update(update_context& ctx, resources& r, state& s) -> as
 		m.chrome_drawn_this_frame = false;
 	}
 
-	if (s.settings.font.value != s.last_font_index) {
-		reload_font(s, assets);
-		s.last_font_index = s.settings.font.value;
+	if (cfg.font.value != s.last_font_index) {
+		reload_font(s, cfg, assets_s);
+		s.last_font_index = cfg.font.value;
 	}
-
-	const auto& input_state = co_await ctx.state_of<gse::input::system::state>();
 
 	const vec2f mouse_position = gse::input::system::current_state(input_state).mouse_position();
 	const bool mouse_held = gse::input::system::current_state(input_state).mouse_button_held(mouse_button::button_1);
@@ -232,10 +227,10 @@ auto gse::gui::system::update(update_context& ctx, resources& r, state& s) -> as
 			s.current_state = handle_idle_state(s, gse::input::system::current_state(input_state), mouse_position, mouse_held, frame_sty);
 		})
 		.else_if_is([&](const states::dragging& st) {
-			s.current_state = handle_dragging_state(s, st, gpu.window(), mouse_position, mouse_held, gpu);
+			s.current_state = handle_dragging_state(s, cfg, st, window_s, mouse_position, mouse_held);
 		})
 		.else_if_is([&](const states::resizing& st) {
-			s.current_state = handle_resizing_state(s, st, mouse_position, mouse_held, frame_sty, gpu);
+			s.current_state = handle_resizing_state(s, cfg, st, mouse_position, mouse_held, frame_sty, window_s);
 		})
 		.else_if_is([&](const states::resizing_divider& st) {
 			s.current_state = handle_resizing_divider_state(s, st, mouse_position, mouse_held, frame_sty);
@@ -258,7 +253,7 @@ auto gse::gui::system::update(update_context& ctx, resources& r, state& s) -> as
 	}
 
 	const gse::input::state& input_st = gse::input::system::current_state(input_state);
-	const auto viewport_size = vec2f(gpu.window().viewport());
+	const auto viewport_size = vec2f(window::viewport(window_s));
 
 	if (s.active_dock_space) {
 		const auto [areas] = s.active_dock_space.value();
@@ -293,14 +288,19 @@ auto gse::gui::system::update(update_context& ctx, resources& r, state& s) -> as
 	};
 	menu_bar::update(s.menu_bar_state, mb_ctx, input_st, viewport_size);
 
-	settings::pump(s.settings_state, ctx);
+	gse::settings::pump(s.settings_state, ctx);
 
 	if (s.menu_bar_state.settings_open) {
 		ctx.channels.push<menu_content>({
 			.menu = "Settings",
 			.layer = render_layer::popup,
-			.build = [&s](builder& b) {
-				settings::panel(b, s.settings_state);
+			.build = [&s, &ctx](builder& b) {
+				b.scroll_region(
+					{ .id = "settings.body" },
+					[&](builder& b) {
+						gse::settings::panel(b, s.settings_state, ctx.channels);
+					}
+				);
 			},
 		});
 	}
@@ -377,8 +377,8 @@ auto gse::gui::system::update(update_context& ctx, resources& r, state& s) -> as
 
 	s.tooltip.pending_widget_id.reset();
 
-	if (gpu.ui_focus()) {
-		cursor::render_to(assets, s.sprite_commands, input_st.mouse_position());
+	if (window_s.ui_focus) {
+		cursor::render_to(assets_s, s.sprite_commands, input_st.mouse_position());
 	}
 
 	s.visible_menu_ids_last_frame.clear();
@@ -425,11 +425,11 @@ auto gse::gui::system::update(update_context& ctx, resources& r, state& s) -> as
 	}
 
 	for (auto& cmd : final_sprites) {
-		ctx.channels.push(std::move(cmd));
+		ctx.channels.push<renderer::sprite_command>(std::move(cmd));
 	}
 
 	for (auto& cmd : final_texts) {
-		ctx.channels.push(std::move(cmd));
+		ctx.channels.push<renderer::text_command>(std::move(cmd));
 	}
 
 	s.fstate = {};
@@ -504,10 +504,11 @@ auto gse::gui::system::process_menu(system::resources& r, state& s, const gse::i
 		.sprites = s.sprite_commands,
 		.texts = s.text_commands,
 		.widget_anim_colors = s.widget_anim_colors,
+		.widget_scrolls = s.widget_scrolls,
 		.current_layer = layer,
 		.input_layer = s.input_layer_render,
 		.tooltip = &s.tooltip,
-		.body_clip_rect = body_rect
+		.clip_stack = { body_rect },
 	};
 
 	s.hot_widget_id = {};
@@ -574,9 +575,9 @@ auto gse::gui::system::end_menu(system::resources& r, state& s) -> void {
 	s.current_menu = nullptr;
 }
 
-auto gse::gui::system::usable_screen_rect(state& s, const gpu::context& ctx) -> ui_rect {
-	const auto viewport_size = vec2f(ctx.window().viewport());
-	const style sty = apply_scale(s, style::from_theme(s.settings.current_theme), viewport_size.y());
+auto gse::gui::system::usable_screen_rect(state& s, const settings& cfg, const window::state& window_s) -> ui_rect {
+	const auto viewport_size = vec2f(window::viewport(window_s));
+	const style sty = apply_scale(cfg, style::from_theme(cfg.current_theme), viewport_size.y());
 	const float usable_height = viewport_size.y() - menu_bar::height(sty);
 	return ui_rect::from_position_size(
 		{ 0.f, usable_height },
@@ -596,10 +597,10 @@ auto gse::gui::system::calculate_display_rect(state& s, const menu& m) -> ui_rec
 	return display_rect;
 }
 
-auto gse::gui::system::apply_scale(state& s, style sty, const float viewport_height) -> style {
+auto gse::gui::system::apply_scale(const settings& cfg, style sty, const float viewport_height) -> style {
 	constexpr float reference_height = 1080.f;
 	const float base_scale = viewport_height / reference_height;
-	const float final_scale = base_scale * s.settings.ui_scale;
+	const float final_scale = base_scale * cfg.ui_scale;
 
 	sty.padding *= final_scale;
 	sty.title_bar_height *= final_scale;
@@ -615,9 +616,9 @@ auto gse::gui::system::apply_scale(state& s, style sty, const float viewport_hei
 	return sty;
 }
 
-auto gse::gui::system::reload_font(state& s, const asset::registry& assets) -> void {
-	if (s.settings.font.value >= 0 && s.settings.font.value < static_cast<int>(s.settings.font.options.size())) {
-		s.gui_font = assets.get<font>("Fonts/" + s.settings.font.options[s.settings.font.value]);
+auto gse::gui::system::reload_font(state& s, const settings& cfg, const asset::registry::state& assets) -> void {
+	if (cfg.font.value >= 0 && cfg.font.value < static_cast<int>(cfg.font.options.size())) {
+		s.gui_font = asset::registry::get<font>(assets, "Fonts/" + cfg.font.options[cfg.font.value]);
 	}
 }
 
@@ -1088,7 +1089,7 @@ auto gse::gui::system::handle_idle_state(state& s, const gse::input::state& inpu
 	return states::idle{};
 }
 
-auto gse::gui::system::handle_dragging_state(state& s, const states::dragging& current, const window& window, const vec2f mouse_position, const bool mouse_held, const gpu::context& ctx) -> gui::state {
+auto gse::gui::system::handle_dragging_state(state& s, const settings& cfg, const states::dragging& current, const window::state& window_s, const vec2f mouse_position, const bool mouse_held) -> gui::state {
 	menu* m = s.menus.try_get(current.menu_id);
 	if (!m) {
 		set_style(cursor::style::arrow);
@@ -1133,7 +1134,7 @@ auto gse::gui::system::handle_dragging_state(state& s, const states::dragging& c
 							layout::update(s.menus, m->id());
 						}
 					} else {
-						const ui_rect screen_rect = usable_screen_rect(s, ctx);
+						const ui_rect screen_rect = usable_screen_rect(s, cfg, window_s);
 
 						if (area.dock_location == dock::location::center) {
 							m->rect = screen_rect;
@@ -1160,7 +1161,7 @@ auto gse::gui::system::handle_dragging_state(state& s, const states::dragging& c
 
 	set_style(cursor::style::omni_move);
 
-	const ui_rect screen_rect = usable_screen_rect(s, ctx);
+	const ui_rect screen_rect = usable_screen_rect(s, cfg, window_s);
 	const vec2f old_top_left = m->rect.top_left();
 	vec2f new_top_left = mouse_position + current.offset;
 
@@ -1210,7 +1211,7 @@ auto gse::gui::system::handle_dragging_state(state& s, const states::dragging& c
 	return current;
 }
 
-auto gse::gui::system::handle_resizing_state(state& s, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const gpu::context& ctx) -> gui::state {
+auto gse::gui::system::handle_resizing_state(state& s, const settings& cfg, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style, const window::state& window_s) -> gui::state {
 	if (!mouse_held) {
 		s.active_dock_space.reset();
 		set_style(cursor::style::arrow);
@@ -1398,7 +1399,7 @@ auto gse::gui::system::handle_resizing_state(state& s, const states::resizing& c
 	m->rect = ui_rect({ .min = min_corner, .max = max_corner });
 
 	if (!m->owner_id().exists()) {
-		const ui_rect screen_rect = usable_screen_rect(s, ctx);
+		const ui_rect screen_rect = usable_screen_rect(s, cfg, window_s);
 
 		switch (m->docked_to) {
 			case dock::location::left:

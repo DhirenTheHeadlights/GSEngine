@@ -13,7 +13,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
-import gse.save;
+import gse.settings;
 
 import :types;
 import :builder;
@@ -25,21 +25,11 @@ import :section_widget;
 export namespace gse::settings {
     struct panel_state;
 
-    using draw_thunk = void(*)(
-        gui::builder& b,
-        panel_state& ps,
-        std::string_view category,
-        void* obj
-    );
-
     struct panel_entry {
         std::string category;
-        void* obj = nullptr;
-        draw_thunk draw = nullptr;
-    };
-
-    struct register_request {
-        panel_entry entry;
+        id type_id;
+        void* settings_ptr = nullptr;
+        draw_settings_thunk draw = nullptr;
     };
 
     struct panel_state {
@@ -71,46 +61,21 @@ export namespace gse::settings {
     auto panel(
         gui::builder& b,
         panel_state& ps,
+        channel_writer& channels,
         std::string_view category_filter = ""
     ) -> void;
 
     template <typename T>
     auto draw_struct_thunk(
-        gui::builder& b,
-        panel_state& ps,
+        void* gui_builder,
+        void* panel_state,
         std::string_view category,
-        void* obj
-    ) -> void;
-
-    template <typename T>
-    auto make_panel_entry(
-        std::string_view category,
-        T& obj
-    ) -> panel_entry;
-
-    template <typename T>
-    auto register_panel(
-        const init_context& phase,
-        std::string_view category,
-        T& obj
+        void* settings_ptr,
+        void* channels_writer
     ) -> void;
 
     template <typename T>
     auto register_panel(
-        update_context& ctx,
-        std::string_view category,
-        T& obj
-    ) -> void;
-
-    template <typename T>
-    auto register_panel(
-        panel_state& ps,
-        std::string_view category,
-        T& obj
-    ) -> void;
-
-    template <typename T>
-    auto install(
         const init_context& phase,
         std::string_view category,
         T& obj
@@ -169,8 +134,13 @@ auto gse::settings::draw_enum_dropdown(gui::builder& b, panel_state& ps, const s
 }
 
 template <typename T>
-auto gse::settings::draw_struct_thunk(gui::builder& b, panel_state& ps, const std::string_view category, void* obj) -> void {
-    auto& typed = *static_cast<T*>(obj);
+auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, const std::string_view category, void* settings_ptr, void* channels_writer) -> void {
+    auto& b = *static_cast<gui::builder*>(gui_builder);
+    auto& ps = *static_cast<panel_state*>(panel_state_ptr);
+    auto& channels = *static_cast<channel_writer*>(channels_writer);
+    const auto& live = *static_cast<const T*>(settings_ptr);
+
+    T local = live;
 
     b.draw<gui::section>({ .title = category });
 
@@ -178,7 +148,7 @@ auto gse::settings::draw_struct_thunk(gui::builder& b, panel_state& ps, const st
         if constexpr (has_annotation<settings::describe>(m)) {
             using F = [:std::meta::type_of(m):];
             constexpr std::string_view label = meta::member_name(m);
-            auto& ref = typed.[:m:];
+            auto& ref = local.[:m:];
 
             if constexpr (has_annotation<draw_with>(m)) {
                 constexpr auto dw = annotation_of<draw_with, m>();
@@ -226,41 +196,45 @@ auto gse::settings::draw_struct_thunk(gui::builder& b, panel_state& ps, const st
             }
         }
     }
-}
 
-template <typename T>
-auto gse::settings::make_panel_entry(const std::string_view category, T& obj) -> panel_entry {
-    return panel_entry{
-        .category = std::string(category),
-        .obj = &obj,
-        .draw = &draw_struct_thunk<T>,
-    };
+    template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+        if constexpr (has_annotation<settings::describe>(m)) {
+            using F = [:std::meta::type_of(m):];
+            if constexpr (settings::is_choice_v<F>) {
+                if (local.[:m:].value != live.[:m:].value) {
+                    channels.push(settings::change_request<T>{
+                        .apply = [new_value = local.[:m:].value](T& cfg) {
+                            cfg.[:m:].value = new_value;
+                        }
+                    });
+                }
+            }
+            else if constexpr (requires (F a, F b) { a == b; }) {
+                if (local.[:m:] != live.[:m:]) {
+                    channels.push(settings::change_request<T>{
+                        .apply = [new_value = local.[:m:]](T& cfg) {
+                            cfg.[:m:] = new_value;
+                        }
+                    });
+                }
+            }
+        }
+    }
 }
 
 template <typename T>
 auto gse::settings::register_panel(const init_context& phase, const std::string_view category, T& obj) -> void {
-    phase.channels.push<register_request>({ .entry = make_panel_entry(category, obj) });
-}
-
-template <typename T>
-auto gse::settings::register_panel(update_context& ctx, const std::string_view category, T& obj) -> void {
-    ctx.channels.push<register_request>({ .entry = make_panel_entry(category, obj) });
-}
-
-template <typename T>
-auto gse::settings::register_panel(panel_state& ps, const std::string_view category, T& obj) -> void {
-    add(ps, make_panel_entry(category, obj));
-}
-
-template <typename T>
-auto gse::settings::install(const init_context& phase, const std::string_view category, T& obj) -> void {
-    save::system::register_struct(phase, category, obj);
-    register_panel(phase, category, obj);
+    phase.channels.push<register_panel_request>({
+        .category = std::string(category),
+        .type_id = id_of<T>(),
+        .settings_ptr = &obj,
+        .draw = &draw_struct_thunk<T>,
+    });
 }
 
 auto gse::settings::add(panel_state& ps, panel_entry entry) -> void {
     const auto match = std::ranges::find_if(ps.entries, [&](const panel_entry& existing) {
-        return existing.category == entry.category && existing.obj == entry.obj;
+        return existing.category == entry.category && existing.settings_ptr == entry.settings_ptr;
     });
 
     if (match != ps.entries.end()) {
@@ -272,18 +246,23 @@ auto gse::settings::add(panel_state& ps, panel_entry entry) -> void {
 }
 
 auto gse::settings::pump(panel_state& ps, update_context& ctx) -> void {
-    for (auto& req : ctx.read_channel<register_request>()) {
-        add(ps, std::move(req.entry));
+    for (auto& req : ctx.read_channel<register_panel_request>()) {
+        add(ps, panel_entry{
+            .category = req.category,
+            .type_id = req.type_id,
+            .settings_ptr = req.settings_ptr,
+            .draw = req.draw,
+        });
     }
 }
 
-auto gse::settings::panel(gui::builder& b, panel_state& ps, const std::string_view category_filter) -> void {
+auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& channels, const std::string_view category_filter) -> void {
     for (const auto& entry : ps.entries) {
         if (!category_filter.empty() && entry.category != category_filter) {
             continue;
         }
-        if (entry.draw) {
-            entry.draw(b, ps, entry.category, entry.obj);
+        if (entry.draw && entry.settings_ptr) {
+            entry.draw(&b, &ps, entry.category, entry.settings_ptr, &channels);
         }
     }
 }

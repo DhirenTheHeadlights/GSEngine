@@ -38,6 +38,7 @@ export import :device;
 export import :swap_chain;
 export import :frame;
 export import :render_graph;
+export import :render_pass;
 export import :shader;
 export import :shader_layout;
 export import :shader_compiler;

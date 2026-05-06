@@ -14,14 +14,13 @@ import :vulkan_swapchain;
 
 import gse.os;
 import gse.log;
-import gse.save;
 import gse.concurrency;
 
-auto gse::gpu::device::create(const window& win, save::system::state& save) -> std::unique_ptr<device> {
-	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), save);
+auto gse::gpu::device::create(const window::state& win, const bool validation_layers_enabled, vulkan::device::settings& device_cfg) -> std::unique_ptr<device> {
+	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), validation_layers_enabled);
 	vulkan::create_surface(win, instance);
 
-	auto creation = vulkan::device::create(instance, save);
+	auto creation = vulkan::device::create(instance, device_cfg);
 	auto command = vulkan::command::create(creation.device, creation.families.graphics_family.value());
 
 	auto worker_pools = vulkan::worker_command_pools::create(

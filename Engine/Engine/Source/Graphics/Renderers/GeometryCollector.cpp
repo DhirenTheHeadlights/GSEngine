@@ -61,13 +61,11 @@ auto gse::renderer::geometry_collector::system::upload_skeleton_data(const resou
 	}
 }
 
-auto gse::renderer::geometry_collector::system::initialize(init_context& phase, resources& r, state& s) -> void {
-	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets();
-	r.ctx = &ctx;
+auto gse::renderer::geometry_collector::system::initialize(init_context& phase, const gpu::context::state& gpu_s, resources& r, state& s) -> void {
+	auto& assets = phase.sched.state<asset::registry::state>();
 
-	r.shader_handle = assets.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
-	assets.instantly_load(r.shader_handle);
+	r.shader_handle = asset::registry::get<shader>(assets, "Shaders/Standard3D/skinned_geometry_pass");
+	asset::registry::instantly_load(assets, r.shader_handle);
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 
@@ -84,47 +82,47 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 	r.instance_material_index_offset = r.instance_offsets.at("material_index");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(ctx.allocator(), {
+		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
 		constexpr std::size_t skin_buffer_size = resources::max_skin_matrices * sizeof(mat4f);
-		r.skin_buffer[i] = gpu::buffer::create(ctx.allocator(), {
+		r.skin_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = skin_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 		const std::size_t instance_buffer_size = resources::max_instances * 2 * r.instance_stride;
-		r.instance_buffer[i] = gpu::buffer::create(ctx.allocator(), {
+		r.instance_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = instance_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
 		});
 
 		constexpr std::size_t indirect_buffer_size = render_data::max_batches * sizeof(gpu::draw_indexed_indirect_command);
-		r.normal_indirect_commands_buffer[i] = gpu::buffer::create(ctx.allocator(), {
+		r.normal_indirect_commands_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = indirect_buffer_size,
 			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
-		r.skinned_indirect_commands_buffer[i] = gpu::buffer::create(ctx.allocator(), {
+		r.skinned_indirect_commands_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = indirect_buffer_size,
 			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 
 		constexpr std::size_t local_pose_size = resources::max_skin_matrices * sizeof(mat4f);
-		r.local_pose_buffer[i] = gpu::buffer::create(ctx.allocator(), {
+		r.local_pose_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = local_pose_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 
 		constexpr std::size_t mapping_buffer_size = resources::max_instances * sizeof(physics_mapping_entry);
-		r.physics_mapping_buffer[i] = gpu::buffer::create(ctx.allocator(), {
+		r.physics_mapping_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = mapping_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 	}
 
-	auto skin_compute = assets.get<shader>("Shaders/Compute/skin_compute");
-	assets.instantly_load(skin_compute);
+	auto skin_compute = asset::registry::get<shader>(assets, "Shaders/Compute/skin_compute");
+	asset::registry::instantly_load(assets, skin_compute);
 
 	const auto joint_block = skin_compute->uniform_block("skeletonData");
 	r.joint_stride = joint_block.size;
@@ -132,14 +130,13 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 		r.joint_offsets[name] = member.offset;
 	}
 
-	r.skeleton_buffer = gpu::buffer::create(ctx.allocator(), {
+	r.skeleton_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
 		.size = resources::max_joints * r.joint_stride,
 		.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 	});
 }
 
-auto gse::renderer::geometry_collector::system::update(update_context& ctx, const resources& r, state& s) -> async::task<> {
-	const auto& cam_state = co_await ctx.state_of<camera::system::state>();
+auto gse::renderer::geometry_collector::system::update(update_context& ctx, const resources& r, state& s, const camera::system::state& cam_state) -> async::task<> {
 	const view_matrix view_matrix = cam_state.view_matrix;
 	const projection_matrix proj_matrix = cam_state.projection_matrix;
 
@@ -480,19 +477,18 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 
 		data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
 
-		ctx.channels.push(std::move(data));
+		ctx.channels.push<render_data>(std::move(data));
 	}
 }
 
-auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, const resources& r, const state& s) -> async::task<> {
+auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const resources& r, const state& s) -> async::task<> {
 	const auto& items = ctx.read_channel<render_data>();
 	if (items.empty()) {
-		ctx.notify_ready<state>();
 		co_return;
 	}
 
 	const auto& data = items[0];
-	const auto frame_index = r.ctx->graph().current_frame();
+	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
 	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.view", data.view);
@@ -555,7 +551,5 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, const 
 	} else if (!data.skin_staging.empty()) {
 		gse::memcpy(r.skin_buffer[frame_index].mapped(), data.skin_staging);
 	}
-
-	ctx.notify_ready<state>();
 }
 

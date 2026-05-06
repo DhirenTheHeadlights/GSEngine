@@ -6,7 +6,6 @@ import vulkan;
 import gse.assert;
 import gse.core;
 import gse.log;
-import gse.save;
 
 auto gse::vulkan::transition_image_layout(basic_image<device>& image_resource, const gpu::handle<command_buffer> cmd_handle, const gpu::image_layout new_layout, const gpu::image_aspect_flags aspects, const gpu::pipeline_stage_flags src_stages, const gpu::access_flags src_access, const gpu::pipeline_stage_flags dst_stages, const gpu::access_flags dst_access, const std::uint32_t mip_levels, const std::uint32_t layer_count) -> void {
 	const auto current = image_resource.layout();
@@ -107,8 +106,7 @@ gse::vulkan::device::device(device&& other) noexcept
 	m_live_allocation_count(other.m_live_allocation_count.load()),
 	m_next_allocation_id(other.m_next_allocation_id.load()),
 	m_cleaned_up(other.m_cleaned_up),
-	m_tracking_enabled(other.m_tracking_enabled),
-	m_name_resources(other.m_name_resources),
+	m_settings(other.m_settings),
 	m_live_allocations(std::move(other.m_live_allocations)) {}
 
 auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
@@ -122,14 +120,13 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 		m_live_allocation_count = other.m_live_allocation_count.load();
 		m_next_allocation_id = other.m_next_allocation_id.load();
 		m_cleaned_up = other.m_cleaned_up;
-		m_tracking_enabled = other.m_tracking_enabled;
-		m_name_resources = other.m_name_resources;
+		m_settings = other.m_settings;
 		m_live_allocations = std::move(other.m_live_allocations);
 	}
 	return *this;
 }
 
-auto gse::vulkan::device::create(const instance& instance_data, save::system::state& save) -> device_creation_result {
+auto gse::vulkan::device::create(const instance& instance_data, device::settings& cfg) -> device_creation_result {
 	const auto devices = instance_data.enumerate_physical_devices();
 	assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
 
@@ -409,7 +406,7 @@ auto gse::vulkan::device::create(const instance& instance_data, save::system::st
 		.device = device(
 			std::move(physical_device),
 			std::move(logical_device),
-			save,
+			cfg,
 			device_fault_supported,
 			device_fault_vendor_binary_supported
 		),
@@ -559,7 +556,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 
 	(*m_device).bindBufferMemory(buffer, std::bit_cast<vk::DeviceMemory>(alloc.memory()), alloc.offset());
 
-	if (m_name_resources) {
+	if ((m_settings && m_settings->name_resources)) {
 		const auto& debug_info = alloc.debug_info();
 		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().string();
 		const auto name = debug_info.tag.empty()
@@ -683,7 +680,7 @@ auto gse::vulkan::device::live_allocation_count() const -> std::uint32_t {
 }
 
 auto gse::vulkan::device::tracking_enabled() const -> bool {
-	return m_tracking_enabled;
+	return (m_settings && m_settings->tracking_enabled);
 }
 
 auto gse::vulkan::device::destroy_buffer(const gpu::handle<buffer> buffer) const -> void {
@@ -705,7 +702,7 @@ auto gse::vulkan::device::free_allocation(const basic_allocation<device>& alloc)
 		return;
 	}
 
-	if (m_tracking_enabled) {
+	if ((m_settings && m_settings->tracking_enabled)) {
 		const auto& [creation_location, tag, allocation_id] = alloc.debug_info();
 		assert(
 			!m_cleaned_up,
@@ -749,18 +746,18 @@ auto gse::vulkan::device::free_allocation(const basic_allocation<device>& alloc)
 	}
 }
 
-gse::vulkan::device::device(vk::raii::PhysicalDevice&& physical_device, vk::raii::Device&& device, save::system::state& save_state, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled)
+gse::vulkan::device::device(vk::raii::PhysicalDevice&& physical_device, vk::raii::Device&& device, device::settings& cfg, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled)
 	: m_physical_device(std::move(physical_device)),
 	m_device(std::move(device)),
 	m_fault_enabled(device_fault_enabled),
-	m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled) {
-	save::system::register_struct(save_state, "Vulkan", *this);
+	m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled),
+	m_settings(&cfg) {
 }
 
 auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<basic_allocation<device>, std::string> {
 	std::lock_guard lock(m_mutex);
 
-	if (m_tracking_enabled) {
+	if ((m_settings && m_settings->tracking_enabled)) {
 		assert(
 			!m_cleaned_up,
 			"Attempted to allocate after allocator cleanup! This indicates a resource lifetime issue."
@@ -839,7 +836,7 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 		allocation_debug_info debug_info;
 		debug_info.creation_location = loc;
 		debug_info.tag = tag;
-		if (m_tracking_enabled) {
+		if ((m_settings && m_settings->tracking_enabled)) {
 			debug_info.allocation_id = m_next_allocation_id++;
 			m_live_allocations[debug_info.allocation_id] = debug_info;
 			++m_live_allocation_count;
@@ -898,7 +895,7 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 	allocation_debug_info debug_info;
 	debug_info.creation_location = loc;
 	debug_info.tag = tag;
-	if (m_tracking_enabled) {
+	if ((m_settings && m_settings->tracking_enabled)) {
 		debug_info.allocation_id = m_next_allocation_id++;
 		m_live_allocations[debug_info.allocation_id] = debug_info;
 		++m_live_allocation_count;
@@ -939,7 +936,7 @@ auto gse::vulkan::device::clean_up() -> void {
 		log::println(log::level::error, log::category::vulkan_memory, "Resources are being destroyed after their memory is freed.");
 		log::println(log::level::error, log::category::vulkan_memory, "Destroy all vulkan::basic_image<vulkan::device> and vulkan::basic_buffer<vulkan::device> instances before the device.");
 
-		if (m_tracking_enabled && !m_live_allocations.empty()) {
+		if ((m_settings && m_settings->tracking_enabled) && !m_live_allocations.empty()) {
 			log::println(log::level::error, log::category::vulkan_memory, "Tracked allocations still alive:");
 			for (const auto& [id, debug] : m_live_allocations) {
 				log::println(
@@ -953,7 +950,7 @@ auto gse::vulkan::device::clean_up() -> void {
 					debug.creation_location.function_name()
 				);
 			}
-		} else if (!m_tracking_enabled) {
+		} else if (!(m_settings && m_settings->tracking_enabled)) {
 			log::println(log::level::warning, log::category::vulkan_memory, "Enable 'Vulkan.Track Allocations' for detailed allocation info.");
 		}
 

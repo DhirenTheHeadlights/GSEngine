@@ -6,6 +6,9 @@ import gse.core;
 import gse.math;
 import gse.concurrency;
 import gse.ecs;
+import gse.assets;
+import gse.os;
+import gse.graphics;
 
 export import :actions;
 export import :remote_peer;
@@ -88,8 +91,11 @@ export namespace gse::network {
 
         static auto update(
             update_context& ctx,
+            const asset::registry::state& assets_s,
             resources& r,
-            state& s
+            state& s,
+            const actions::system::state& actions_state,
+            const camera::system::state& cam_state
         ) -> async::task<>;
 
         static auto shutdown(

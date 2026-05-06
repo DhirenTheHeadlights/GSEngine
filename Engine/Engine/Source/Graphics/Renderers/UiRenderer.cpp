@@ -96,14 +96,13 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
     }
 }
 
-auto gse::renderer::ui::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
-    auto& ctx = phase.get<gpu::context>();
-    auto& assets = phase.assets();
+auto gse::renderer::ui::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, resources& r, frame_data& fd, state& s) -> void {
+    auto& assets = phase.sched.state<asset::registry::state>();
 
-    r.sprite_shader = assets.get<shader>("Shaders/Standard2D/sprite");
-    assets.instantly_load(r.sprite_shader);
+    r.sprite_shader = asset::registry::get<shader>(assets, "Shaders/Standard2D/sprite");
+    asset::registry::instantly_load(assets, r.sprite_shader);
 
-    r.sprite_pipeline = gpu::create_graphics_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.sprite_shader, {
+    r.sprite_pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.sprite_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },
         .depth = { .test = false, .write = false },
         .blend = gpu::blend_preset::alpha_premultiplied,
@@ -111,10 +110,10 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
         .push_constant_block = "push_constants",
     });
 
-    r.text_shader = assets.get<shader>("Shaders/Standard2D/msdf");
-    assets.instantly_load(r.text_shader);
+    r.text_shader = asset::registry::get<shader>(assets, "Shaders/Standard2D/msdf");
+    asset::registry::instantly_load(assets, r.text_shader);
 
-    r.text_pipeline = gpu::create_graphics_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.text_shader, {
+    r.text_pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.text_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },
         .depth = { .test = false, .write = false },
         .blend = gpu::blend_preset::alpha_premultiplied,
@@ -126,12 +125,12 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, resources&
     constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
     for (auto& [vertex_buffer, index_buffer] : r.gpu_frames) {
-        vertex_buffer = gpu::buffer::create(ctx.allocator(), {
+        vertex_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
             .size = vertex_buffer_size,
             .usage = gpu::buffer_flag::vertex,
         });
 
-        index_buffer = gpu::buffer::create(ctx.allocator(), {
+        index_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
             .size = index_buffer_size,
             .usage = gpu::buffer_flag::index,
         });
@@ -275,10 +274,8 @@ auto gse::renderer::ui::system::update(const update_context& ctx, const resource
     co_return;
 }
 
-auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
-    auto& gpu = ctx.get<gpu::context>();
-
-    if (!gpu.graph().frame_in_progress()) {
+auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const resources& r, frame_data& fd, const state& s) -> async::task<> {
+    if (!gpu_s.render_graph->frame_in_progress()) {
         co_return;
     }
 
@@ -287,13 +284,13 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, fr
     if (batches.empty()) {
         co_return;
     }
-    const auto frame_index = gpu.graph().current_frame();
+    const auto frame_index = gpu_s.render_graph->current_frame();
     auto& [vertex_buffer, index_buffer] = r.gpu_frames[frame_index];
 
     gse::memcpy(vertex_buffer.mapped(), vertices);
     gse::memcpy(index_buffer.mapped(), indices);
 
-    const auto ext = gpu.graph().extent();
+    const auto ext = gpu_s.render_graph->extent();
     const auto width = ext.x();
     const auto height = ext.y();
     const vec2f window_size = { static_cast<float>(width), static_cast<float>(height) };
@@ -313,16 +310,12 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const resources& r, fr
     auto text_pc = gpu::cache_push_block(r.text_shader, "push_constants");
     text_pc.set("projection", projection);
 
-    auto pass = gpu.graph().add_pass<ui::system::state>();
-    pass.track(vertex_buffer);
-    pass.track(index_buffer);
-
     const vec2u ext_size{ width, height };
-    const auto& bindless_region = gpu.bindless_textures().region();
+    const auto& bindless_region = gpu_s.bindless_textures->region();
 
-    pass.color_output_load();
-
-    auto& rec = co_await pass.record();
+    auto& rec = co_await gpu::pass<ui::system::state>(ctx)
+        .color(gpu::load_color())
+        .tracks(vertex_buffer, index_buffer);
 
     rec.bind_vertex(vertex_buffer);
     rec.bind_index(index_buffer);

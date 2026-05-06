@@ -21,103 +21,129 @@ import gse.assets;
 import gse.gpu;
 import gse.log;
 import gse.save;
+import gse.settings;
 import gse.config;
 
 gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags) : identifiable(name), m_flags(engine_flags), m_world(m_scheduler, "World") {}
 
-auto gse::engine::initialize() -> void {
+auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	trace::start({
 		.per_thread_event_cap = static_cast<std::size_t>(1e6)
 	});
 
-	auto& reg = m_world.registry();
-	auto& save = m_scheduler.add_system<save::system>(reg);
+	m_scheduler.set_registry(m_world.registry());
+
+	auto& save = m_scheduler.add_system<save::system>();
 	save::system::set_auto_save(save, true, config::resource_path / "Misc/settings.ini");
 	save::system::on_restart(save, [] { app::restart(); });
 
-	auto& input = m_scheduler.add_system<input::system>(reg);
-	m_scheduler.add_system<actions::system>(reg);
-	m_scheduler.add_system<network::system>(reg);
+	m_scheduler.add_system<input::system>();
+	m_scheduler.add_system<actions::system>();
+	m_scheduler.add_system<network::system>();
+	m_scheduler.add_system<asset::registry>();
 
 	if (m_flags.test(engine_flag::render)) {
-		m_render_ctx = std::make_unique<gpu::context>(
-			std::string(id().tag()),
-			input,
-			save
-		);
+		auto& window_state = m_scheduler.add_system<window>();
+		window_state.title = std::string(id().tag());
+		m_scheduler.add_system<gpu::context>();
 
-		auto& ctx = *m_render_ctx.get();
-		m_assets = std::make_unique<asset::registry>(ctx);
-		ctx.set_asset_registry(m_assets.get());
-		m_assets->add_loader<shader>(ctx);
-		m_assets->compile<shader_layout>();
-		m_scheduler.set_gpu_context(&ctx);
-		m_scheduler.set_asset_registry(m_assets.get());
+		m_scheduler.initialize();
 
-		m_scheduler.add_system<physics::system>(reg);
-		m_scheduler.add_system<camera::system>(reg);
-		m_scheduler.add_system<render_init::system>(reg);
-		m_scheduler.add_system<renderer::system>(reg);
-		m_scheduler.add_system<gui::system>(reg);
-		m_scheduler.add_system<animation::system>(reg);
-		m_scheduler.add_system<audio::system>(reg);
+		auto& gpu_state = m_scheduler.state<gpu::context::state>();
+		auto& asset_state = m_scheduler.state<asset::registry::state>();
+		auto& command_channel = m_scheduler.channel<gpu::command_request>();
+		auto& finalization_channel = m_scheduler.channel<gpu::pending_finalization>();
+
+		asset_state.async_submit = [&command_channel](std::function<void(void*)> work) {
+			command_channel.push(gpu::command_request{
+				.work = [work_lambda = std::move(work)](gpu::context::state& s) {
+					work_lambda(&s);
+				},
+			});
+		};
+		asset_state.sync_submit = [&gpu_state](std::function<void(void*)> work) {
+			work(&gpu_state);
+		};
+		asset_state.finalization_pusher = [&finalization_channel](const gse::id resource_type, const gse::id resource_id) {
+			finalization_channel.push(gpu::pending_finalization{
+				.resource_type = resource_type,
+				.resource_id = resource_id,
+			});
+		};
+		asset_state.gpu_waiter = [&gpu_state] {
+			gpu_state.device->wait_idle();
+		};
+
+		asset::registry::add_loader<shader>(asset_state);
+		asset::registry::add_loader<texture>(asset_state);
+		asset::registry::add_loader<model>(asset_state);
+		asset::registry::add_loader<skinned_model>(asset_state);
+		asset::registry::add_loader<font>(asset_state);
+		asset::registry::add_loader<skeleton>(asset_state);
+		asset::registry::add_loader<clip_asset>(asset_state);
+		asset::registry::add_loader<audio_clip>(asset_state);
+		asset::registry::compile<shader_layout>(asset_state);
+		asset::registry::compile_all(asset_state);
+
+		m_scheduler.add_system<physics::system>();
+		m_scheduler.add_system<camera::system>();
+		m_scheduler.add_system<render_init::system>();
+		m_scheduler.add_system<renderer::system>();
+		m_scheduler.add_system<gui::system>();
+		m_scheduler.add_system<animation::system>();
+		m_scheduler.add_system<audio::system>();
 	}
 	else {
-		m_scheduler.add_system<physics::system>(reg);
+		m_scheduler.initialize();
+
+		auto& asset_state = m_scheduler.state<asset::registry::state>();
+		asset::registry::add_loader<model>(asset_state);
+		asset::registry::add_loader<skinned_model>(asset_state);
+
+		m_scheduler.add_system<physics::system>();
 	}
 
 	m_scheduler.initialize();
+
+	if (app_setup) {
+		app_setup(*this);
+		m_scheduler.initialize();
+	}
 }
 
 auto gse::engine::update() -> void {
-	static std::uint64_t s_frame = 0;
-	const auto fid = ++s_frame;
-	log::println(log::category::runtime, "[freeze-trace] update enter frame={}", fid);
-
 	system_clock::update();
-
-	log::println(log::category::runtime, "[freeze-trace] update: scheduler.update enter (frame={})", fid);
 	m_scheduler.update();
-	log::println(log::category::runtime, "[freeze-trace] update: scheduler.update exit (frame={})", fid);
-
-	log::println(log::category::runtime, "[freeze-trace] update: world.update enter (frame={})", fid);
 	m_world.update();
-	log::println(log::category::runtime, "[freeze-trace] update: world.update exit (frame={})", fid);
 }
 
 auto gse::engine::render() -> void {
-	static std::uint64_t s_frame = 0;
-	const auto fid = ++s_frame;
-	log::println(log::category::runtime, "[freeze-trace] render enter frame={}", fid);
-
 	bool frame_ok = false;
+	auto* gpu_state = m_scheduler.try_state_of<gpu::context::state>();
+	auto* asset_state = m_scheduler.try_state_of<asset::registry::state>();
 
-	if (m_render_ctx) {
-		{
-			trace::scope_guard sg{trace_id<"render::process_gpu_queue">()};
-			log::println(log::category::runtime, "[freeze-trace] render: process_gpu_queue enter (frame={})", fid);
-			m_render_ctx->process_gpu_queue();
-			log::println(log::category::runtime, "[freeze-trace] render: process_gpu_queue exit (frame={})", fid);
-		}
-
-		if (m_assets) {
+	if (gpu_state) {
+		if (asset_state) {
 			trace::scope_guard sg{trace_id<"render::finalize_pending_loads">()};
-			log::println(log::category::runtime, "[freeze-trace] render: finalize_pending_loads enter (frame={})", fid);
-			m_assets->finalize_pending_loads();
-			log::println(log::category::runtime, "[freeze-trace] render: finalize_pending_loads exit (frame={})", fid);
+			const auto& finalizations = m_scheduler.channel<gpu::pending_finalization>().read_raw();
+			std::vector<std::pair<gse::id, gse::id>> snapshot;
+			snapshot.reserve(finalizations.size());
+			for (const auto& f : finalizations) {
+				snapshot.emplace_back(f.resource_type, f.resource_id);
+			}
+			asset::registry::apply_finalizations(*asset_state, snapshot);
 		}
 
+		auto& window_state = m_scheduler.state<window::state>();
 		const clock fence_timer;
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{
 			trace::scope_guard sg{trace_id<"render::begin_frame">()};
-			log::println(log::category::runtime, "[freeze-trace] render: begin_frame enter (frame={})", fid);
-			result = m_render_ctx->begin_frame();
-			log::println(log::category::runtime, "[freeze-trace] render: begin_frame exit (frame={}, ok={})", fid, result.has_value());
+			result = gpu::context::begin_frame(*gpu_state, window_state);
 		}
 		const auto fence_wait = fence_timer.elapsed();
 
-		m_render_ctx->scheduler().report_frame_time(fence_wait);
+		gpu_state->scheduler.report_frame_time(fence_wait);
 		frame_ok = result.has_value();
 
 		if (!result && result.error() == gpu::frame_status::device_lost) {
@@ -126,51 +152,41 @@ auto gse::engine::render() -> void {
 		}
 	}
 
-	log::println(log::category::runtime, "[freeze-trace] render: scheduler.render enter (frame={}, ok={})", fid, frame_ok);
-	m_scheduler.render(frame_ok, [this, fid] {
+	m_scheduler.render(frame_ok, [this, gpu_state] {
 		{
 			trace::scope_guard sg{trace_id<"render::in_frame">()};
-			if (m_render_ctx) {
+			if (gpu_state) {
 				{
 					trace::scope_guard sg{trace_id<"render::scheduler_flush">()};
-					log::println(log::category::runtime, "[freeze-trace] render: gpu_scheduler.flush enter (frame={})", fid);
-					m_render_ctx->scheduler().flush();
-					log::println(log::category::runtime, "[freeze-trace] render: gpu_scheduler.flush exit (frame={})", fid);
+					gpu_state->scheduler.flush();
 				}
 				{
 					trace::scope_guard sg{trace_id<"render::graph_execute">()};
-					log::println(log::category::runtime, "[freeze-trace] render: graph.execute enter (frame={})", fid);
-					m_render_ctx->graph().execute();
-					log::println(log::category::runtime, "[freeze-trace] render: graph.execute exit (frame={})", fid);
+					auto requests = m_scheduler.drain_channel<gpu::render_pass_request>();
+					gpu::context::execute_frame(*gpu_state, std::move(requests));
 				}
 			}
 
 			{
 				trace::scope_guard sg{trace_id<"render::world_render">()};
-				log::println(log::category::runtime, "[freeze-trace] render: world.render enter (frame={})", fid);
 				m_world.render();
-				log::println(log::category::runtime, "[freeze-trace] render: world.render exit (frame={})", fid);
 			}
 		}
 	});
-	log::println(log::category::runtime, "[freeze-trace] render: scheduler.render exit (frame={})", fid);
 
-	if (frame_ok && m_render_ctx) {
+	if (frame_ok && gpu_state) {
 		{
 			trace::scope_guard sg{trace_id<"render::end_frame">()};
-			log::println(log::category::runtime, "[freeze-trace] render: end_frame enter (frame={})", fid);
-			m_render_ctx->end_frame();
-			log::println(log::category::runtime, "[freeze-trace] render: end_frame exit (frame={})", fid);
-			if (m_assets) {
+			auto& window_state = m_scheduler.state<window::state>();
+			gpu::context::end_frame(*gpu_state, window_state);
+			if (asset_state) {
 				trace::scope_guard sg{trace_id<"end_frame::finalize_reloads">()};
-				log::println(log::category::runtime, "[freeze-trace] render: finalize_reloads enter (frame={})", fid);
-				m_assets->finalize_reloads();
-				log::println(log::category::runtime, "[freeze-trace] render: finalize_reloads exit (frame={})", fid);
+				for (const auto& l : std::views::values(asset_state->resource_loaders)) {
+					l->finalize_reloads();
+				}
 			}
 		}
 	}
-
-	log::println(log::category::runtime, "[freeze-trace] render exit frame={}", fid);
 }
 
 auto gse::engine::shutdown() -> void {

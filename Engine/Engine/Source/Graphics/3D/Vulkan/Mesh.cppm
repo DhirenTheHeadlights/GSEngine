@@ -63,7 +63,7 @@ export namespace gse {
         explicit mesh(mesh_data&& data);
         mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {}) : m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(mat) {}
 
-        auto initialize(gpu::context& ctx) -> void;
+        auto initialize(gpu::context::state& ctx) -> void;
 
         auto center_of_mass() const -> vec3<displacement>;
         auto material() const -> const gse::material&;
@@ -117,7 +117,7 @@ auto gse::meshlet_gpu_data::bind(gpu::descriptor_writer& writer) const -> void {
         .buffer("meshletBounds", bounds);
 }
 
-auto gse::mesh::initialize(gpu::context& ctx) -> void {
+auto gse::mesh::initialize(gpu::context::state& ctx) -> void {
     if (m_vertices.empty() || m_indices.empty()) return;
 
     if (m_meshlets.descriptors.empty()) {
@@ -129,12 +129,12 @@ auto gse::mesh::initialize(gpu::context& ctx) -> void {
 
     constexpr auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
 
-    m_vertex_buffer = gpu::buffer::create(ctx.allocator(), {
+    m_vertex_buffer = gpu::buffer::create(ctx.device->allocator(), {
         .size = vertex_buffer_size,
         .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst | gpu::buffer_flag::acceleration_structure_build_input
     });
 
-    m_index_buffer = gpu::buffer::create(ctx.allocator(), {
+    m_index_buffer = gpu::buffer::create(ctx.device->allocator(), {
         .size = index_buffer_size,
         .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst | gpu::buffer_flag::acceleration_structure_build_input
     });
@@ -150,11 +150,11 @@ auto gse::mesh::initialize(gpu::context& ctx) -> void {
         meshlet_gpu_data ml;
         ml.count = static_cast<std::uint32_t>(m_meshlets.descriptors.size());
 
-        ml.vertex_storage = gpu::buffer::create(ctx.allocator(), { .size = vertex_buffer_size, .usage = storage_dst });
-        ml.descriptors = gpu::buffer::create(ctx.allocator(), { .size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(), .usage = storage_dst });
-        ml.vertices = gpu::buffer::create(ctx.allocator(), { .size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(), .usage = storage_dst });
-        ml.triangles = gpu::buffer::create(ctx.allocator(), { .size = tri_size, .usage = storage_dst });
-        ml.bounds = gpu::buffer::create(ctx.allocator(), { .size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(), .usage = storage_dst });
+        ml.vertex_storage = gpu::buffer::create(ctx.device->allocator(), { .size = vertex_buffer_size, .usage = storage_dst });
+        ml.descriptors = gpu::buffer::create(ctx.device->allocator(), { .size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(), .usage = storage_dst });
+        ml.vertices = gpu::buffer::create(ctx.device->allocator(), { .size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(), .usage = storage_dst });
+        ml.triangles = gpu::buffer::create(ctx.device->allocator(), { .size = tri_size, .usage = storage_dst });
+        ml.bounds = gpu::buffer::create(ctx.device->allocator(), { .size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(), .usage = storage_dst });
 
         m_meshlet_gpu = std::move(ml);
 
@@ -165,7 +165,7 @@ auto gse::mesh::initialize(gpu::context& ctx) -> void {
         uploads.push_back({ &m_meshlet_gpu->bounds, m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
     }
 
-    m_upload_token = gpu::upload_to_buffers(ctx.device(), uploads);
+    m_upload_token = gpu::upload_to_buffers(*ctx.device, uploads);
 }
 
 auto gse::mesh::upload_token() const -> const gpu::sync_token& {

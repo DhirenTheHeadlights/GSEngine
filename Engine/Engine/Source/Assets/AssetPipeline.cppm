@@ -28,10 +28,10 @@ export namespace gse {
 			std::filesystem::path baked_root
 		);
 
-		template <typename Resource, typename Context>
+		template <typename Resource>
 			requires has_asset_compiler<Resource>
 		auto register_type(
-			resource::loader<Resource, Context>* loader
+			resource::loader_t<Resource>* loader
 		) -> void;
 
 		template <typename Resource>
@@ -106,9 +106,9 @@ export namespace gse {
 gse::asset_pipeline::asset_pipeline(std::filesystem::path resource_root, std::filesystem::path baked_root)
 	: m_resource_root(std::move(resource_root)), m_baked_root(std::move(baked_root)) {}
 
-template <typename Resource, typename Context>
+template <typename Resource>
 	requires gse::has_asset_compiler<Resource>
-auto gse::asset_pipeline::register_type(resource::loader<Resource, Context>* loader) -> void {
+auto gse::asset_pipeline::register_type(resource::loader_t<Resource>* loader) -> void {
 	std::lock_guard lock(m_mutex);
 
 	compiler_entry entry{

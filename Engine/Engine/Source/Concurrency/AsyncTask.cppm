@@ -126,6 +126,9 @@ export namespace gse::async {
 		auto start(
 		) -> void;
 
+		auto consume_start_handle(
+		) -> std::coroutine_handle<>;
+
 		auto done(
 		) const -> bool;
 
@@ -259,6 +262,14 @@ auto gse::async::task<T>::start() -> void {
 }
 
 template <typename T>
+auto gse::async::task<T>::consume_start_handle() -> std::coroutine_handle<> {
+	if (!m_handle || m_handle.promise().m_started.exchange(true, std::memory_order_acq_rel)) {
+		return std::noop_coroutine();
+	}
+	return m_handle;
+}
+
+template <typename T>
 auto gse::async::task<T>::done() const -> bool {
 	return !m_handle || m_handle.done();
 }
@@ -289,7 +300,7 @@ auto gse::async::task<T>::operator co_await() noexcept -> awaiter {
 
 template <typename T>
 auto gse::async::sync_wait(task<T>&& t) -> T {
-	std::binary_semaphore done{ 0 };
+	std::atomic<bool> done_flag{ false };
 	std::optional<T> result;
 	std::exception_ptr ep;
 
@@ -300,12 +311,17 @@ auto gse::async::sync_wait(task<T>&& t) -> T {
 		catch (...) {
 			ep = std::current_exception();
 		}
-		done.release();
+		done_flag.store(true, std::memory_order_release);
 	};
 
 	auto w = wrapper();
 	w.start();
-	done.acquire();
+
+	while (!done_flag.load(std::memory_order_acquire)) {
+		if (!gse::task::try_run_one()) {
+			std::this_thread::yield();
+		}
+	}
 
 	while (!w.done()) {
 		std::this_thread::yield();

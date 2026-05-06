@@ -21,8 +21,9 @@ export namespace gse::gpu {
 	class device final : public non_copyable {
 	public:
 		[[nodiscard]] static auto create(
-			const window& win,
-			save::system::state& save
+			const window::state& win,
+			bool validation_layers_enabled,
+			vulkan::device::settings& device_cfg
 		) -> std::unique_ptr<device>;
 
 		~device() override;

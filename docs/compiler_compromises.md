@@ -244,6 +244,42 @@ constexpr auto operator*(const Q1& lhs, const Q2& rhs) {
 
 ---
 
+## Render pass channel API forced into descriptor-literal form (`Engine/Engine/Source/Gpu/RenderPass.cppm`)
+
+**Location:** `gse::gpu::request_pass(const frame_context&, render_pass_descriptor)` — the public entry every renderer's `frame()` calls. Every renderer call site uses `co_await gpu::request_pass(ctx, { .pass_kind = trace_id<state>(), ... })`.
+
+**Ideal:** A fluent chained-builder DSL, the natural shape for this kind of submission API:
+
+```cpp
+auto& rec = co_await gpu::pass(ctx, trace_id<state>())
+    .color(gpu::clear_color({ 0.1f, 0.1f, 0.1f, 1.0f }))
+    .depth(gpu::load_depth())
+    .after<rt_shadow::system::state, light_culling::system::state>()
+    .reads(gpu::storage_read(buf, gpu::pipeline_stage::fragment_shader), ...)
+    .writes(gpu::storage_write(out, gpu::pipeline_stage::compute_shader))
+    .tracks(buf1, buf2);
+```
+
+OR the templated entry-point form `co_await gpu::request_pass<state>(ctx, { ... })` so the owner type isn't repeated as `trace_id<state>()` in the descriptor.
+
+**Shipped:** Non-template free function `request_pass(ctx, desc)` taking a designated-init `render_pass_descriptor` literal. Owner identity goes in via `desc.pass_kind = trace_id<owner_state>()`. All variadic helpers (`gpu::after<...>()`, `gpu::reads(...)`, `gpu::writes(...)`, `gpu::tracks(...)`) stay as free function templates returning vectors that get spliced into descriptor fields. The custom awaitable lives in `RenderPass.cpp` and is wrapped in `async::task<vulkan::recording_context&>` so cross-TU instantiation only ever sees `task<>`.
+
+**Original blocker:** clang-p2996 (Bloomberg fork, 2026-04-23) ICEs (`Exception Code: 0xC0000005`, `<eof> parser at end of file`) when **any user-defined awaitable type is constructed inside a function body that is cross-TU instantiated through `gse::scheduler::ensure_system<S>` reflection**. The ICE consistently fires inside `try_state_of<S::state>` instantiation. Three independent designs were tried and all crashed:
+
+1. **Templated entry `request_pass<Owner>(ctx, desc)` returning the awaitable directly.** ICE.
+2. **Templated entry `request_pass<Owner>(ctx, desc)` returning `async::task<recording_context&>` (Option A: type-erase the awaitable through one extra coroutine frame).** ICE — the entry function template itself is the trigger.
+3. **Non-template entry `pass(ctx, id)` returning a `pass_builder` with `operator co_await() &&` returning a custom awaiter.** ICE — `co_await pass_builder_rvalue` cross-TU is the trigger.
+
+**Status (this branch): structural blocker likely resolved — re-evaluate.** Diagnosis (full reproducer at `tmp/p2996-eof-ice/` + bisect at `docs/system_purity_refactor.md` Phase 8): the ICE chain has four ingredients, and ingredient #3 was renderer-body cross-TU coroutine elaboration. Fix: every renderer's `frame()` body now lives in a companion `.cpp` module-implementation unit, so caller TUs only see a forward declaration. Reflection on `^^S::frame` only needs the declaration; calls to `S::frame(...)` from `invoke_frame_for<S>` no longer require body elaboration in the caller TU. With ingredient #3 gone, a fresh awaitable inside `frame()` no longer crosses TU boundaries — which means designs (1), (2), and (3) above should compile cleanly now.
+
+**Validate the fix:** restore `template <typename Owner> auto request_pass(ctx, desc)` returning `async::task<recording_context&>` in `RenderPass.cppm`, switch one renderer call site (e.g. `CullComputeRenderer.cpp`) to `co_await gpu::request_pass<state>(ctx, { ... })`, full build. If it compiles, the chained builder DSL is also unblocked. The reproducer at `tmp/p2996-eof-ice/` reflects the original failing pattern; if it now compiles too (it's structurally the same as the renderer chain), confidence is high.
+
+**Flip cost:** ~30 min to a templated entry (`request_pass<Owner>(ctx, desc)`); ~2 hr to the chained builder DSL (new `pass_builder` class with `&&`-qualified setters + `operator co_await`, migrate 11 renderer call sites). Builder is the preferred target — removes the `.pass_kind = trace_id<state>(),` boilerplate at every call site and lets variadic helpers like `.after<X, Y>()` chain naturally.
+
+**See also:** `docs/system_purity_refactor.md` "Renderer body split" section for why the structural fix works. The reproducer chain (every awaitable cross-TU through `ensure_system<S>` ICEd except `async::task<>` itself) is the diagnostic clue if this regresses.
+
+---
+
 ## Adding a new entry
 
 Copy the template at the top. Keep the "validate the fix" reproducer as minimal as possible — ideally something that can be pasted into a single .cpp file with just `#include <meta>` and compiled standalone. The whole point is that future-you (or future-me) can run each one and see which ones flipped green on the latest toolchain without re-deriving the context.

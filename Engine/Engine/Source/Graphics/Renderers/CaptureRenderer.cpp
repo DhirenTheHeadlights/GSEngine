@@ -20,7 +20,7 @@ import gse.log;
 import gse.save;
 import gse.time;
 
-auto gse::renderer::capture::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
+auto gse::renderer::capture::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, settings& cfg, resources& r, frame_data& fd, state& s) -> void {
     const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
         const id action_id = generate_id(name);
         phase.channels.push<actions::add_action_request>({
@@ -34,29 +34,28 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
     s.screenshot_action = register_action("Screenshot", key::f9);
     s.save_clip_action = register_action("Save Clip", key::f10);
 
-    auto& ctx = phase.get<gpu::context>();
-    auto& assets = phase.assets();
+    auto& assets = phase.sched.state<asset::registry::state>();
 
-    if (!ctx.device().video_encode_enabled()) {
+    if (!gpu_s.device->video_encode_enabled()) {
         log::println(log::category::render, "Video encode not available, capture limited to screenshots");
         return;
     }
 
-    const auto caps = gpu::video_encoder::probe(ctx.device());
+    const auto caps = gpu::video_encoder::probe(*gpu_s.device);
     if (!caps.available) {
         log::println(log::category::render, "Video encode probe failed, capture limited to screenshots");
         return;
     }
 
-    const auto ext = ctx.graph().extent();
+    const auto ext = gpu_s.render_graph->extent();
     const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
-    r.convert_shader = assets.get<shader>("Shaders/Compute/rgba_to_nv12");
-    assets.instantly_load(r.convert_shader);
+    r.convert_shader = asset::registry::get<shader>(assets, "Shaders/Compute/rgba_to_nv12");
+    asset::registry::instantly_load(assets, r.convert_shader);
 
-    r.convert_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.convert_shader, "push_constants");
+    r.convert_pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.convert_shader, "push_constants");
 
-    r.capture_sampler = gpu::sampler::create(ctx.allocator(), {
+    r.capture_sampler = gpu::sampler::create(gpu_s.device->allocator(), {
         .min = gpu::sampler_filter::nearest,
         .mag = gpu::sampler_filter::nearest,
         .address_u = gpu::sampler_address_mode::clamp_to_edge,
@@ -65,45 +64,45 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, resou
     });
 
     for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-        r.rgba_captures[i] = gpu::image::create(ctx.allocator(), {
+        r.rgba_captures[i] = gpu::image::create(gpu_s.device->allocator(), {
             .size = ext,
             .format = gpu::image_format::r8g8b8a8_srgb,
             .usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
         });
 
-        r.y_planes[i] = gpu::image::create(ctx.allocator(), {
+        r.y_planes[i] = gpu::image::create(gpu_s.device->allocator(), {
             .size = ext,
             .format = gpu::image_format::r8_unorm,
             .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
         });
-        gpu::transition_image_to(ctx.device(), r.y_planes[i], gpu::image_layout::general);
+        gpu::transition_image_to(*gpu_s.device, r.y_planes[i], gpu::image_layout::general);
 
-        r.uv_planes[i] = gpu::image::create(ctx.allocator(), {
+        r.uv_planes[i] = gpu::image::create(gpu_s.device->allocator(), {
             .size = half_ext,
             .format = gpu::image_format::r8g8_unorm,
             .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
         });
-        gpu::transition_image_to(ctx.device(), r.uv_planes[i], gpu::image_layout::general);
+        gpu::transition_image_to(*gpu_s.device, r.uv_planes[i], gpu::image_layout::general);
 
-        r.convert_descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.convert_shader);
+        r.convert_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.convert_shader);
 
-        gpu::descriptor_writer(ctx.shader_registry(), ctx.device_handle(), r.convert_shader, r.convert_descriptors[i])
+        gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.convert_shader, r.convert_descriptors[i])
             .image("input_rgba", r.rgba_captures[i], r.capture_sampler, gpu::image_layout::shader_read_only)
             .storage_image("output_y", r.y_planes[i])
             .storage_image("output_uv", r.uv_planes[i])
             .commit();
     }
 
-    fd.encoder = gpu::video_encoder::create(ctx.device(), ext, caps);
+    fd.encoder = gpu::video_encoder::create(*gpu_s.device, ext, caps);
 
-    gse::settings::install(phase, "Graphics", fd);
-    fd.clip_ring.set_budget(fd.ring_budget);
+    gse::settings::register_panel(phase, "Graphics", cfg);
+    fd.clip_ring.set_budget(cfg.ring_budget);
+    fd.applied_ring_budget = cfg.ring_budget;
 
     r.encode_active = true;
 }
 
-auto gse::renderer::capture::system::update(const update_context& ctx, state& s) -> async::task<> {
-    const auto& sys = co_await ctx.state_of<actions::system::state>();
+auto gse::renderer::capture::system::update(const update_context& ctx, state& s, const actions::system::state& sys) -> async::task<> {
     const auto& action_state = actions::system::current_state(sys);
 
     if (actions::system::pressed(action_state, sys, s.screenshot_action)) {
@@ -116,13 +115,8 @@ auto gse::renderer::capture::system::update(const update_context& ctx, state& s)
     co_return;
 }
 
-auto gse::renderer::capture::system::frame(const frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
-    auto* gpu_ctx = ctx.try_get<gpu::context>();
-    if (!gpu_ctx) {
-        co_return;
-    }
-
-    const auto frame_index = gpu_ctx->graph().current_frame();
+auto gse::renderer::capture::system::frame(const frame_context& ctx, const gpu::context::state& gpu_s, const settings& cfg, const resources& r, frame_data& fd, const state& s) -> async::task<> {
+    const auto frame_index = gpu_s.render_graph->current_frame();
 
     auto& [staging, width, height, pending] = fd.screenshots[frame_index];
 
@@ -136,7 +130,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
         std::vector<std::byte> pixels(byte_count);
         gse::memcpy(pixels.data(), staging.mapped(), byte_count);
 
-        const bool needs_swizzle = gpu_ctx->swapchain().is_bgra();
+        const bool needs_swizzle = gpu_s.swapchain->is_bgra();
         const auto timestamp = system_clock::timestamp_filename();
 
         task::post([pixels = std::move(pixels), w, h, needs_swizzle, timestamp, write_flag = fd.write_in_progress.get()] mutable {
@@ -157,8 +151,9 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
         });
     }
 
-    if (fd.ring_budget != fd.clip_ring.budget()) {
-        fd.clip_ring.set_budget(fd.ring_budget);
+    if (cfg.ring_budget != fd.applied_ring_budget) {
+        fd.clip_ring.set_budget(cfg.ring_budget);
+        fd.applied_ring_budget = cfg.ring_budget;
     }
 
     if (r.encode_active && fd.encoder) {
@@ -224,10 +219,10 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
     }
 
     if (!ctx.read_channel<screenshot_request>().empty() && !fd.write_in_progress->load()) {
-        const auto ext = gpu_ctx->graph().extent();
+        const auto ext = gpu_s.render_graph->extent();
 
         if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging || staging.size() < needed) {
-            staging = gpu::buffer::create(gpu_ctx->allocator(), {
+            staging = gpu::buffer::create(gpu_s.device->allocator(), {
                 .size = needed,
                 .usage = gpu::buffer_flag::transfer_dst,
             });
@@ -238,7 +233,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
         fd.screenshot_requested = true;
     }
 
-    if (!gpu_ctx->graph().frame_in_progress()) {
+    if (!gpu_s.render_graph->frame_in_progress()) {
         co_return;
     }
 
@@ -249,7 +244,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
         co_return;
     }
 
-    const auto ext = gpu_ctx->graph().extent();
+    const auto ext = gpu_s.render_graph->extent();
 
     gpu::cached_push_constants convert_pc;
     if (do_encode) {
@@ -257,20 +252,18 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const resou
         convert_pc.set("extent", ext);
     }
 
-    auto pass = gpu_ctx->graph().add_pass<state>();
-    pass.after<ui::system::state>();
-
-    auto& rec = co_await pass.record();
+    auto& rec = co_await gpu::pass<state>(ctx)
+        .after<ui::system>();
 
     if (do_screenshot) {
-        rec.capture_swapchain(gpu_ctx->swapchain(), gpu_ctx->frame(), staging);
+        rec.capture_swapchain(*gpu_s.swapchain, *gpu_s.frame, staging);
         pending = true;
         fd.screenshot_requested = false;
     }
 
     if (do_encode) {
         const auto capture_extent = r.rgba_captures[frame_index].extent();
-        rec.blit_swapchain_to_image(gpu_ctx->swapchain(), gpu_ctx->frame(), r.rgba_captures[frame_index], vec2u{ capture_extent.x(), capture_extent.y() });
+        rec.blit_swapchain_to_image(*gpu_s.swapchain, *gpu_s.frame, r.rgba_captures[frame_index], vec2u{ capture_extent.x(), capture_extent.y() });
         rec.bind(r.convert_pipeline);
         rec.bind_descriptors(r.convert_pipeline, r.convert_descriptors[frame_index]);
         rec.push(r.convert_pipeline, convert_pc);

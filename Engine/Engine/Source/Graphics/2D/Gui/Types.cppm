@@ -36,6 +36,31 @@ export namespace gse::gui {
 
         static constexpr time show_delay = seconds(0.5f);
     };
+
+    struct scroll_state {
+        float offset = 0.f;
+        float velocity = 0.f;
+        float target_offset = 0.f;
+        float content_height = 0.f;
+        bool scrollbar_held = false;
+        bool scrollbar_hovered = false;
+        float scrollbar_grab_offset = 0.f;
+    };
+
+    struct scroll_config {
+        float scrollbar_width = 8.f;
+        float scrollbar_min_height = 20.f;
+        float scroll_speed = 40.f;
+        float smooth_factor = 0.15f;
+        bool auto_hide_scrollbar = true;
+        bool smooth_scrolling = true;
+    };
+
+    struct scroll_region_info {
+        std::string_view id;
+        vec2f size{ 0.f, 0.f };
+        scroll_config config{};
+    };
 }
 
 namespace gse::gui::dock {
@@ -103,13 +128,14 @@ export namespace gse::gui {
         std::vector<renderer::sprite_command>& sprites;
         std::vector<renderer::text_command>& texts;
         std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
+        std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
 
         render_layer current_layer = render_layer::content;
         std::uint32_t current_z_order = 0;
 
         render_layer input_layer = render_layer::content;
         tooltip_state* tooltip = nullptr;
-        std::optional<ui_rect> body_clip_rect;
+        std::vector<ui_rect> clip_stack;
 
         auto queue_sprite(
             renderer::sprite_command cmd
@@ -136,7 +162,57 @@ export namespace gse::gui {
             vec4f target,
             float speed = 10.f
         ) const -> vec4f;
+
+        [[nodiscard]] auto current_clip(
+        ) const -> std::optional<ui_rect>;
     };
+
+    struct scroll_handle : non_copyable {
+        scroll_handle(
+        ) noexcept = default;
+
+        scroll_handle(
+            draw_context& ctx,
+            scroll_state& state,
+            const ui_rect& visible_rect,
+            float saved_layout_y,
+            const scroll_config& config
+        ) noexcept;
+
+        scroll_handle(
+            scroll_handle&& other
+        ) noexcept;
+
+        auto operator=(
+            scroll_handle&& other
+        ) noexcept -> scroll_handle&;
+
+        ~scroll_handle(
+        ) noexcept;
+
+        [[nodiscard]] auto valid(
+        ) const -> bool;
+
+        [[nodiscard]] auto visible_rect(
+        ) const -> const ui_rect&;
+
+        [[nodiscard]] auto offset(
+        ) const -> float;
+
+    private:
+        draw_context* m_ctx = nullptr;
+        scroll_state* m_state = nullptr;
+        ui_rect m_visible_rect;
+        float m_saved_layout_y = 0.f;
+        float m_content_start_y = 0.f;
+        scroll_config m_config{};
+        bool m_active = false;
+    };
+
+    [[nodiscard]] auto scroll_region(
+        draw_context& ctx,
+        const scroll_region_info& info
+    ) -> scroll_handle;
 }
 
 namespace gse::gui::states {
@@ -177,21 +253,12 @@ namespace gse::gui {
 
         value_type v;
 
-        state() noexcept = default;
-        ~state() noexcept = default;
-        state(const state&) = default;
-        state(state&&) noexcept = default;
-        auto operator=(const state&) -> state& = default;
-        auto operator=(state&&) noexcept -> state& = default;
-
         template <typename T>
-            requires (!std::same_as<std::remove_cvref_t<T>, state>)
-                     && std::constructible_from<value_type, T&&>
+            requires (!std::same_as<std::remove_cvref_t<T>, state>) && std::constructible_from<value_type, T&&>
         state(T&& x) : v(std::forward<T>(x)) {}
 
         template <typename T>
-            requires (!std::same_as<std::remove_cvref_t<T>, state>)
-                     && std::assignable_from<value_type&, T&&>
+            requires (!std::same_as<std::remove_cvref_t<T>, state>) && std::assignable_from<value_type&, T&&>
         auto operator=(T&& x) -> state& {
             v = std::forward<T>(x);
             return *this;

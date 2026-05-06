@@ -6,6 +6,7 @@ import gse.core;
 import gse.concurrency;
 
 import :phase_context;
+import :registries;
 import :update_context;
 import :frame_context;
 
@@ -21,6 +22,9 @@ export namespace gse {
 
 	template <typename S>
 	concept has_frame_data = requires { typename S::frame_data; };
+
+	template <typename S>
+	concept has_settings = requires { typename S::settings; };
 
 	template <typename S>
 	concept names_initialize = requires { &S::initialize; };
@@ -56,19 +60,25 @@ export namespace gse {
 		auto (*invoke_update_fn)(update_context&, void*) -> async::task<> = nullptr;
 		auto (*invoke_frame_fn)(frame_context&, void*) -> async::task<> = nullptr;
 		void (*invoke_snapshot_fn)(void*) = nullptr;
+		void (*invoke_apply_settings_fn)(void*, channel_registry&, channel_writer&) = nullptr;
 
+		std::vector<id> init_state_deps;
 		std::vector<id> update_state_deps;
 		std::vector<id> frame_state_deps;
 
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;
 		void* resources_ptr = nullptr;
+		void* settings_ptr = nullptr;
+		const void* settings_snapshot_ptr = nullptr;
 
 		bool has_frame = false;
 		bool initialized = false;
 
 		id state_id;
 		id resources_id;
+		id settings_id;
+		id update_wall_id;
 		id frame_wall_id;
 		id trace_id;
 	};

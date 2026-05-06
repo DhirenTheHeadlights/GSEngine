@@ -171,8 +171,6 @@ export namespace gse::renderer::geometry_collector {
 		};
 
 		struct resources {
-			gpu::context* ctx = nullptr;
-
 			per_frame_resource<gpu::buffer> instance_buffer;
 
 			std::uint32_t instance_stride = 0;
@@ -204,10 +202,31 @@ export namespace gse::renderer::geometry_collector {
 			per_frame_resource<gpu::buffer> physics_mapping_buffer;
 		};
 
-		static auto initialize(init_context& phase, resources& r, state& s) -> void;
-		static auto update(update_context& ctx, const resources& r, state& s) -> async::task<>;
-		static auto frame(frame_context& ctx, const resources& r, const state& s) -> async::task<>;
-		static auto upload_skeleton_data(const resources& r, const skeleton& skel) -> void;
+		static auto initialize(
+			init_context& phase,
+			const gpu::context::state& gpu_s,
+			resources& r,
+			state& s
+		) -> void;
+
+		static auto update(
+			update_context& ctx,
+			const resources& r,
+			state& s,
+			const camera::system::state& cam_state
+		) -> async::task<>;
+
+		static auto frame(
+			frame_context& ctx,
+			const gpu::context::state& gpu_s,
+			const resources& r,
+			const state& s
+		) -> async::task<>;
+
+		static auto upload_skeleton_data(
+			const resources& r,
+			const skeleton& skel
+		) -> void;
 	};
 }
 

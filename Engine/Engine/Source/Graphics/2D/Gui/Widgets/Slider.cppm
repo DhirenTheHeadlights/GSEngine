@@ -262,16 +262,21 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 
     const float label_width = content_rect.width() * 0.4f;
 
+    const ui_rect label_rect = ui_rect::from_position_size(
+        row_rect.top_left(),
+        { label_width, widget_height }
+    );
+
     ctx.queue_text({
         .font = ctx.font,
         .text = name,
         .position = {
-            row_rect.left(),
-            row_rect.center().y() + ctx.style.font_size / 2.f
+            label_rect.left(),
+            label_rect.center().y() + ctx.style.font_size / 2.f
         },
         .scale = ctx.style.font_size,
         .color = ctx.style.color_text,
-        .clip_rect = row_rect
+        .clip_rect = label_rect
     });
 
     const float values_total_width = content_rect.width() - label_width;

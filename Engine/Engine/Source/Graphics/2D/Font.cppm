@@ -70,7 +70,7 @@ export namespace gse {
         ~font();
 
         auto load(
-            gpu::context& context
+            asset::load_ctx& ctx
         ) -> void;
 
         auto unload(

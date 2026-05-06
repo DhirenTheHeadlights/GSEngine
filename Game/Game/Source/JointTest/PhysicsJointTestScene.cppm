@@ -191,7 +191,7 @@ auto gs::physics_joint_test_scene_setup(gse::scene& s) -> void {
 
 	s.build("Player")
 		.with<gs::player::component>({
-			.initial_position = gse::vec3<gse::position>(0.f, 10.f, 0.f),
+			.initial_position = gse::vec3<gse::position>(0.f, 30.f, 40.f),
 		});
 
 	s.build("Scene Camera")

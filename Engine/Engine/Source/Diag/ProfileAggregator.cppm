@@ -22,6 +22,7 @@ export namespace gse::profile {
 		std::uint64_t sample_count = 0;
 		std::uint32_t thread_id = 0;
 		bool pooled = false;
+		flat_map<std::uint32_t, std::uint64_t> samples_by_tid;
 	};
 
 	auto ingest_frame(
@@ -89,34 +90,46 @@ namespace gse::profile {
 		flat_map<id, entry>& cpu_agg,
 		bool pooled
 	) -> void;
+
+	auto write_dag(
+		std::ofstream& out
+	) -> void;
+
+	auto write_thread_breakdown(
+		std::ofstream& out,
+		const std::vector<entry>& worker_src
+	) -> void;
 }
 
 auto gse::profile::update_entry(flat_map<id, entry>& map, const id id, const sample_time duration, const std::uint32_t thread_id, const bool pooled) -> void {
-	auto& [e_id, ema, last, peak, sample_count, e_thread, e_pooled] = map[id];
-	if (sample_count == 0) {
-		e_id = id;
-		ema = duration;
+	auto& e = map[id];
+	if (e.sample_count == 0) {
+		e.id = id;
+		e.ema = duration;
 	}
 	else {
 		const double a = ema_alpha.load(std::memory_order_relaxed);
-		ema = a * duration + (1.0 - a) * ema;
+		e.ema = a * duration + (1.0 - a) * e.ema;
 	}
-	last = duration;
-	if (duration > peak) {
-		peak = duration;
+	e.last = duration;
+	if (duration > e.peak) {
+		e.peak = duration;
 	}
-	e_thread = thread_id;
-	e_pooled = e_pooled || pooled;
-	++sample_count;
+	e.thread_id = thread_id;
+	e.pooled = e.pooled || pooled;
+	++e.sample_count;
+	++e.samples_by_tid[thread_id];
 }
 
 auto gse::profile::walk_node(const trace::node& n, flat_map<id, entry>& cpu_agg, const bool pooled) -> void {
+	const auto main_tid = main_thread_id.load(std::memory_order_relaxed);
+	const bool node_pooled = pooled || (main_tid != 0 && n.trace_id != main_tid);
+
 	if (!trace::is_hidden(n.id)) {
-		update_entry(cpu_agg, n.id, sample_time(n.self), n.trace_id, pooled);
+		update_entry(cpu_agg, n.id, sample_time(n.self), n.trace_id, node_pooled);
 	}
-	const bool child_pooled = pooled || trace::is_pool_root(n.id);
 	for (std::size_t i = 0; i < n.children_count; ++i) {
-		walk_node(n.children_first[i], cpu_agg, child_pooled);
+		walk_node(n.children_first[i], cpu_agg, node_pooled);
 	}
 }
 
@@ -235,12 +248,17 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 	};
 
 	const auto write_section = [&out, frame_time](const std::string_view title, const std::vector<row_view>& rows) {
+		std::size_t tag_width = std::string_view("tag").size();
+		for (const auto& [e, per_frame, calls_per_frame] : rows) {
+			tag_width = std::max(tag_width, e->id.tag().size());
+		}
+
 		out << "--- " << title << " ---\n";
 		out << std::format(
-			"{:<48} {:>13} {:>13} {:>13} {:>13} {:>7} {:>8} {:>14} {:>9}\n",
-			"tag", "per/f", "avg", "peak", "last", "% top", "% frame", "total", "calls/f"
+			"{:<{}} {:>13} {:>13} {:>13} {:>13} {:>7} {:>8} {:>14} {:>9}\n",
+			"tag", tag_width, "per/f", "avg", "peak", "last", "% top", "% frame", "total", "calls/f"
 		);
-		out << std::string(48 + 13 * 4 + 7 + 8 + 14 + 9 + 8, '-') << '\n';
+		out << std::string(tag_width + 13 * 4 + 7 + 8 + 14 + 9 + 8, '-') << '\n';
 
 		const auto top = rows.empty() ? sample_time{} : rows.front().per_frame;
 
@@ -250,8 +268,9 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 			const auto total = e->ema * static_cast<double>(e->sample_count);
 
 			out << std::format(
-				"{:<48} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>6.1f}% {:>7.1f}% {:>11.2f:ms} {:>9.2f}\n",
+				"{:<{}} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>6.1f}% {:>7.1f}% {:>11.2f:ms} {:>9.2f}\n",
 				e->id.tag(),
+				tag_width,
 				per_frame,
 				e->ema,
 				e->peak,
@@ -303,4 +322,169 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 	write_section("CPU - Main Thread (sequential, blocks the frame)", main_rows);
 	write_section("CPU - Workers (parallel; sums can exceed 100%)", worker_rows);
 	write_section("GPU (per-pass time)", gpu_rows);
+
+	write_thread_breakdown(out, worker_src);
+	write_dag(out);
+}
+
+auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<entry>& worker_src) -> void {
+	const auto frames = frame_count.load(std::memory_order_relaxed);
+	const auto main_tid = main_thread_id.load(std::memory_order_relaxed);
+
+	std::vector<const entry*> sorted;
+	sorted.reserve(worker_src.size());
+	for (const auto& e : worker_src) {
+		if (e.sample_count > 0) {
+			sorted.push_back(&e);
+		}
+	}
+	std::ranges::sort(sorted, [](const entry* a, const entry* b) {
+		return a->ema * static_cast<double>(a->sample_count) > b->ema * static_cast<double>(b->sample_count);
+	});
+
+	out << "--- Worker tag thread breakdown (where each tag actually ran) ---\n";
+	out << std::format("main tid = {}.  Counts shown are samples per frame on each thread.\n\n", main_tid);
+
+	std::size_t tag_width = std::string_view("tag").size();
+	for (const auto* e : sorted) {
+		tag_width = std::max(tag_width, e->id.tag().size());
+	}
+
+	out << std::format("{:<{}}  {:>10}  {:>10}  {:>40}\n", "tag", tag_width, "main/f", "worker/f", "per-tid /f (top 6)");
+	out << std::string(tag_width + 2 + 10 + 2 + 10 + 2 + 40, '-') << '\n';
+
+	const std::size_t max_to_show = std::min<std::size_t>(20, sorted.size());
+	for (std::size_t i = 0; i < max_to_show; ++i) {
+		const auto& e = *sorted[i];
+
+		double main_per_frame = 0.0;
+		double worker_per_frame = 0.0;
+		std::vector<std::pair<std::uint32_t, std::uint64_t>> tids;
+		tids.reserve(e.samples_by_tid.size());
+		for (const auto& [tid, count] : e.samples_by_tid) {
+			tids.emplace_back(tid, count);
+			const double per = frames > 0 ? static_cast<double>(count) / static_cast<double>(frames) : 0.0;
+			if (tid == main_tid) {
+				main_per_frame += per;
+			}
+			else {
+				worker_per_frame += per;
+			}
+		}
+		std::ranges::sort(tids, [](const auto& a, const auto& b) { return a.second > b.second; });
+
+		std::string tid_breakdown;
+		const std::size_t tid_show = std::min<std::size_t>(6, tids.size());
+		for (std::size_t j = 0; j < tid_show; ++j) {
+			const double per = frames > 0 ? static_cast<double>(tids[j].second) / static_cast<double>(frames) : 0.0;
+			if (j > 0) {
+				tid_breakdown += " ";
+			}
+			tid_breakdown += std::format("t{}:{:.2f}", tids[j].first, per);
+		}
+
+		out << std::format("{:<{}}  {:>10.2f}  {:>10.2f}  {:<40}\n",
+			e.id.tag(), tag_width, main_per_frame, worker_per_frame, tid_breakdown);
+	}
+	out << '\n';
+}
+
+auto gse::profile::write_dag(std::ofstream& out) -> void {
+	const auto [roots, storage] = trace::view();
+	if (roots.empty()) {
+		return;
+	}
+
+	auto tmin = roots.front().start;
+	auto tmax = roots.front().stop;
+	for (const auto& r : roots) {
+		if (r.start < tmin) {
+			tmin = r.start;
+		}
+		if (r.stop > tmax) {
+			tmax = r.stop;
+		}
+	}
+	if (tmax <= tmin) {
+		return;
+	}
+
+	const auto total_range = sample_time(tmax - tmin);
+	const double total_us = total_range.as<gse::microseconds>();
+
+	constexpr std::size_t bar_width = 80;
+	constexpr int max_depth = 12;
+	constexpr double min_us_to_show = 5.0;
+
+	const auto main_tid = main_thread_id.load(std::memory_order_relaxed);
+
+	std::function<std::size_t(const trace::node&, int)> max_label_width = [&](const trace::node& n, int depth) -> std::size_t {
+		if (depth > max_depth) {
+			return 0;
+		}
+		std::size_t w = static_cast<std::size_t>(depth) * 2 + n.id.tag().size();
+		for (std::size_t i = 0; i < n.children_count; ++i) {
+			w = std::max(w, max_label_width(n.children_first[i], depth + 1));
+		}
+		return w;
+	};
+
+	std::size_t name_width = 0;
+	for (const auto& r : roots) {
+		name_width = std::max(name_width, max_label_width(r, 0));
+	}
+
+	out << "--- Frame DAG (absolute timeline; bars at same column = parallel) ---\n";
+	out << std::format("total range: {:.2f:us} across {} columns ({:.2f} us per column).  '#' = main thread, '=' = worker.\n\n", total_range, bar_width, total_us / static_cast<double>(bar_width));
+
+	std::function<void(const trace::node&, int)> render = [&](const trace::node& n, int depth) {
+		if (depth > max_depth) {
+			return;
+		}
+		if (n.stop <= n.start) {
+			return;
+		}
+		const auto duration = sample_time(n.stop - n.start);
+		if (duration.as<gse::microseconds>() < min_us_to_show) {
+			return;
+		}
+
+		const double offset_us = sample_time(n.start - tmin).as<gse::microseconds>();
+		const double dur_us = duration.as<gse::microseconds>();
+
+		std::size_t col_start = static_cast<std::size_t>((offset_us / total_us) * static_cast<double>(bar_width));
+		std::size_t col_end = static_cast<std::size_t>(((offset_us + dur_us) / total_us) * static_cast<double>(bar_width));
+		col_start = std::min(col_start, bar_width - 1);
+		col_end = std::min(col_end, bar_width);
+		if (col_end <= col_start) {
+			col_end = col_start + 1;
+		}
+
+		const char fill = (main_tid != 0 && n.trace_id != main_tid) ? '=' : '#';
+		std::string bar(bar_width, ' ');
+		for (std::size_t i = col_start; i < col_end; ++i) {
+			bar[i] = fill;
+		}
+
+		const std::string indent(static_cast<std::size_t>(depth) * 2, ' ');
+		const auto label = std::format("{}{}", indent, n.id.tag());
+		out << std::format("|{}| {:>10.2f:us}  tid:{:<3}  {:<{}}\n", bar, duration, n.trace_id, label, name_width);
+
+		for (std::size_t i = 0; i < n.children_count; ++i) {
+			render(n.children_first[i], depth + 1);
+		}
+	};
+
+	std::vector<const trace::node*> sorted_roots;
+	sorted_roots.reserve(roots.size());
+	for (const auto& r : roots) {
+		sorted_roots.push_back(&r);
+	}
+	std::ranges::sort(sorted_roots, [](const trace::node* a, const trace::node* b) {
+		return a->start < b->start;
+	});
+
+	for (const auto* r : sorted_roots) {
+		render(*r, 0);
+	}
 }

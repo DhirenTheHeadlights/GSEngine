@@ -45,34 +45,42 @@ import gse.save;
 import gse.meta;
 
 export namespace gse::renderer {
-	struct settings {
-		[[=gse::settings::describe{}]]
-		bool hot_reload_enabled = false;
-
-		[[=gse::settings::describe{}]]
-		bool gpu_timestamps_enabled = true;
-
-		[[=gse::settings::describe{}]]
-		bool gpu_pipeline_stats_enabled = false;
-
-		[[=gse::settings::describe{}]]
-		bool profile_aggregator_enabled = true;
-	};
-
 	struct system {
+		struct settings {
+			static constexpr std::string_view category = "Graphics";
+
+			[[=gse::settings::describe{}]]
+			bool hot_reload_enabled = false;
+
+			[[=gse::settings::describe{}]]
+			bool gpu_timestamps_enabled = true;
+
+			[[=gse::settings::describe{}]]
+			bool gpu_pipeline_stats_enabled = false;
+
+			[[=gse::settings::describe{}]]
+			bool profile_aggregator_enabled = true;
+		};
+
 		struct state {
-			renderer::settings settings;
 			actions::handle dump_profile_action;
 			vec2f last_viewport{ 1920.f, 1080.f };
+			bool last_hot_reload_enabled = false;
 		};
 
-		struct resources {
-			gpu::context* ctx = nullptr;
-			asset::registry* assets = nullptr;
-		};
+		static auto initialize(
+			const init_context& phase,
+			settings& cfg,
+			state& s
+		) -> void;
 
-		static auto initialize(const init_context& phase, resources& r, state& s) -> void;
-		static auto update(const update_context& ctx, state& s) -> async::task<>;
-		static auto shutdown(shutdown_context& phase) -> void;
+		static auto update(
+			const update_context& ctx,
+			const gpu::context::state& gpu_s,
+			const window::state& window_s,
+			const settings& cfg,
+			state& s,
+			const actions::system::state& sys
+		) -> async::task<>;
 	};
 }

@@ -224,11 +224,7 @@ auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const
         }
     });
 
-    engine_instance->initialize();
-
-    if (setup) {
-        setup(*engine_instance);
-    }
+    engine_instance->initialize(setup);
     trace::finalize_frame();
 
     task::start([&] {

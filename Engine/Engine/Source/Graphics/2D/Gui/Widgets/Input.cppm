@@ -71,6 +71,12 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
     );
 
     const float label_width = content_rect.width() * 0.4f;
+
+    const ui_rect label_rect = ui_rect::from_position_size(
+        row_rect.top_left(),
+        { label_width, widget_height }
+    );
+
     const ui_rect box_rect = ui_rect::from_position_size(
         { row_rect.left() + label_width, row_rect.top() },
         { content_rect.width() - label_width, widget_height }
@@ -280,18 +286,16 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
         }
     }
 
-    const vec2f label_pos = {
-        row_rect.left(),
-        row_rect.center().y() + ctx.style.font_size / 2.f
-    };
-
     ctx.queue_text({
         .font = ctx.font,
         .text = name,
-        .position = label_pos,
+        .position = {
+            label_rect.left(),
+            label_rect.center().y() + ctx.style.font_size / 2.f
+        },
         .scale = ctx.style.font_size,
         .color = ctx.style.color_text,
-        .clip_rect = row_rect
+        .clip_rect = label_rect
     });
 
     ctx.queue_sprite({

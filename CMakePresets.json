@@ -54,6 +54,13 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "x64-clang-p2996-libcxx-RelWithDebInfo",
+      "displayName": "x64 clang-p2996 libc++ RelWithDebInfo",
+      "inherits": "x64-clang-p2996-libcxx-base",
+      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-RelWithDebInfo",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
       "name": "x64-clang-p2996-libcxx-Release-trace",
       "displayName": "x64 clang-p2996 libc++ Release + ftime-trace + stats",
       "inherits": "x64-clang-p2996-libcxx-base",
@@ -126,6 +133,10 @@
     {
       "name": "x64-clang-p2996-libcxx-Release",
       "configurePreset": "x64-clang-p2996-libcxx-Release"
+    },
+    {
+      "name": "x64-clang-p2996-libcxx-RelWithDebInfo",
+      "configurePreset": "x64-clang-p2996-libcxx-RelWithDebInfo"
     },
     {
       "name": "x64-clang-p2996-libcxx-Release-trace",

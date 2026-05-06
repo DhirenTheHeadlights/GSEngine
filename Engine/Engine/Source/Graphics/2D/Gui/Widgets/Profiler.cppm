@@ -18,7 +18,6 @@ import :ids;
 import :styles;
 import :text_widget;
 import :tree_widget;
-import :scroll_widget;
 import :cursor;
 import :builder;
 
@@ -139,37 +138,14 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 	ctx.layout_cursor.y() -= (row_h + (row_h * 0.15f) + pad);
 
-	const float tree_start_y = ctx.layout_cursor.y();
-	const float visible_height = tree_start_y - menu_content.bottom() - pad;
-
-	const ui_rect scroll_rect = ui_rect::from_position_size(
-		{ menu_content.left(), tree_start_y },
-		{ menu_content.width(), std::max(0.f, visible_height) }
-	);
-
-	const scroll_config profiler_scroll_config{
-		.scrollbar_width = 6.f,
-		.scrollbar_min_height = 20.f,
-		.scroll_speed = row_h * 2.f,
-		.smooth_factor = 0.2f,
-		.auto_hide_scrollbar = true,
-		.smooth_scrolling = true
-	};
-
-	static std::unordered_map<std::uint64_t, scroll_state> profiler_scrolls;
-	scroll_state& profiler_scroll = profiler_scrolls[ids::stable_key("gui.profiler")];
-	auto scroll_ctx = scroll::begin(profiler_scroll, scroll_rect, ctx.style, ctx.input, profiler_scroll_config);
-
 	static draw::tree_selection selection;
 	static draw::tree_options options{
 		.indent_per_level = 15.f,
 		.extra_right_padding = total_cols_w,
 		.toggle_on_row_click = true,
-		.multi_select = false
+		.multi_select = false,
 	};
 	options.extra_right_padding = total_cols_w;
-	options.scroll_offset = profiler_scroll.offset;
-	options.clip_rect = scroll_rect;
 
 	time_t<std::uint64_t> frame_start = roots[0].start;
 	time_t<std::uint64_t> frame_end = roots[0].stop;
@@ -298,24 +274,22 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	};
 
 	ids::scope tree_scope("gui.tree.profiler");
-	trace::set_finalize_paused(draw::tree(ctx, std::span<const trace::node>(sorted_roots_buf), ops, options, &selection, active));
 
-	const float tree_end_y = ctx.layout_cursor.y();
-	scroll::end(
-		profiler_scroll, scroll_ctx,
-		tree_end_y + profiler_scroll.offset,
-		ctx.style, ctx.input,
-		ctx.blank_texture, ctx.sprites, ctx.current_layer,
-		profiler_scroll_config
-	);
+	const scroll_region_info body_info{
+		.id = "gui.profiler.body",
+		.size = { 0.f, 0.f },
+		.config = {
+			.scrollbar_width = 6.f,
+			.scrollbar_min_height = 20.f,
+			.scroll_speed = row_h * 2.f,
+			.smooth_factor = 0.2f,
+			.auto_hide_scrollbar = true,
+			.smooth_scrolling = true,
+		},
+	};
 
-	const ui_rect header_cover = ui_rect::from_position_size(
-		{ menu_content.left(), header_y },
-		{ menu_content.width(), row_h }
-	);
-	ctx.queue_sprite({
-		.rect = header_cover,
-		.color = ctx.style.color_title_bar,
-		.texture = ctx.blank_texture
-	});
+	{
+		auto region = scroll_region(ctx, body_info);
+		trace::set_finalize_paused(draw::tree(ctx, std::span<const trace::node>(sorted_roots_buf), ops, options, &selection, active));
+	}
 }

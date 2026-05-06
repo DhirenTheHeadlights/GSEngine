@@ -11,6 +11,7 @@ import std;
 import gse.core;
 import gse.concurrency;
 import gse.ecs;
+import gse.assets;
 import gse.physics;
 import gse.graphics;
 
@@ -28,7 +29,7 @@ auto gse::network::system::shutdown(shutdown_context&, resources& r, state&) -> 
     r.client_ptr.reset();
 }
 
-auto gse::network::system::update(update_context& ctx, resources& r, state& s) -> async::task<> {
+auto gse::network::system::update(update_context& ctx, const asset::registry::state& assets_s, resources& r, state& s, const actions::system::state& actions_state, const camera::system::state& cam_state) -> async::task<> {
     for (const auto& req : ctx.read_channel<connect_request>()) {
         if (!r.client_ptr) {
             const address bind = req.options.local_bind.value_or(address{
@@ -90,9 +91,7 @@ auto gse::network::system::update(update_context& ctx, resources& r, state& s) -
 
     s.user_inbox.clear();
 
-    auto* assets = ctx.try_assets();
-
-    r.client_ptr->drain([&r, &s, assets](inbox_message& msg) {
+    r.client_ptr->drain([&r, &s, &assets_s](inbox_message& msg) {
         if (auto* rep = std::get_if<replication_message>(&msg)) {
             const std::span data(rep->payload);
             bitstream stream(data);
@@ -104,16 +103,14 @@ auto gse::network::system::update(update_context& ctx, resources& r, state& s) -
                     if constexpr (std::is_same_v<T, render_component>) {
                         auto fixed_data = m.data;
 
-                        if (assets) {
-                            for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
-                                const auto res_id = fixed_data.models[i].id();
-                                fixed_data.models[i] = assets->try_get<model>(res_id);
-                            }
+                        for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
+                            const auto res_id = fixed_data.models[i].id();
+                            fixed_data.models[i] = asset::registry::try_get<model>(assets_s, res_id);
+                        }
 
-                            for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
-                                const auto res_id = fixed_data.skinned_models[i].id();
-                                fixed_data.skinned_models[i] = assets->try_get<skinned_model>(res_id);
-                            }
+                        for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
+                            const auto res_id = fixed_data.skinned_models[i].id();
+                            fixed_data.skinned_models[i] = asset::registry::try_get<skinned_model>(assets_s, res_id);
                         }
 
                         r.deferred.push_back([entity = m.owner_id, data = std::move(fixed_data)](update_context& ctx) {
@@ -161,8 +158,6 @@ auto gse::network::system::update(update_context& ctx, resources& r, state& s) -
     s.connection_state = r.client_ptr->current_state();
 
     if (s.connection_state == client::state::connected) {
-        const auto& actions_state = co_await ctx.state_of<actions::system::state>();
-        const auto& cam_state = co_await ctx.state_of<camera::system::state>();
         r.client_ptr->push_input(
             actions::system::current_state(actions_state),
             actions::system::axis1_ids(actions_state),

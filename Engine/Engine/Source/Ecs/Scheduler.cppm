@@ -7,6 +7,7 @@ import gse.core;
 import gse.concurrency;
 import gse.time;
 import gse.diag;
+import gse.settings;
 
 import :phase_context;
 import :registries;
@@ -22,12 +23,8 @@ export namespace gse {
 		scheduler(
 		) = default;
 
-		auto set_gpu_context(
-			void* ctx
-		) -> void;
-
-		auto set_asset_registry(
-			void* reg
+		auto set_registry(
+			registry& reg
 		) -> void;
 
 		auto initialize(
@@ -53,15 +50,13 @@ export namespace gse {
 
 		template <typename S, typename... Args>
 		auto add_system(
-			registry& reg,
 			Args&&... args
-		) -> typename S::state&;
+		) -> state_of_t<S>&;
 
 		template <typename S, typename... Args>
 		auto ensure_system(
-			registry& reg,
 			Args&&... args
-		) -> typename S::state&;
+		) -> state_of_t<S>&;
 
 		template <typename State>
 		auto state(
@@ -82,6 +77,11 @@ export namespace gse {
 		template <typename T>
 		auto channel() -> gse::channel<T>&;
 
+		template <typename T>
+			requires is_same_frame_channel_v<T>
+		auto drain_channel(
+		) -> std::vector<T>;
+
 		template <typename State, typename F>
 		auto defer(
 			F&& fn
@@ -97,6 +97,9 @@ export namespace gse {
 		auto check_closed_dep_graph(
 		) -> void;
 
+		auto topo_sort_pending_inits(
+		) const -> std::vector<std::size_t>;
+
 		auto run_graph_update(
 		) -> void;
 
@@ -111,18 +114,17 @@ export namespace gse {
 		std::vector<gse::move_only_function<void()>> m_deferred;
 		std::mutex m_deferred_mutex;
 		registry* m_registry = nullptr;
-		void* m_gpu_ctx = nullptr;
-		void* m_asset_registry = nullptr;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
 		async::rw_mutex_registry m_access_mutexes;
 		bool m_initialized = false;
+		bool m_dep_graph_checked = false;
 	};
 }
 
 template <typename State>
 auto gse::scheduler::state(this auto& self) -> auto& {
-	auto* p = self.m_states.state_ptr(id_of<State>());
+	auto* p = self.m_states.state_ptr(compute_state_dep_id<State>());
 	assert(p != nullptr, "state not found");
 	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
 	return *static_cast<state_t*>(p);
@@ -130,14 +132,14 @@ auto gse::scheduler::state(this auto& self) -> auto& {
 
 template <typename State>
 auto gse::scheduler::try_state_of(this auto& self) -> auto* {
-	auto* p = self.m_states.state_ptr(id_of<State>());
+	auto* p = self.m_states.state_ptr(compute_state_dep_id<State>());
 	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
 	return static_cast<state_t*>(p);
 }
 
 template <typename State>
 auto gse::scheduler::has() const -> bool {
-	return m_states.contains(id_of<State>());
+	return m_states.contains(compute_state_dep_id<State>());
 }
 
 template <typename Resources>
@@ -155,11 +157,17 @@ auto gse::scheduler::channel() -> gse::channel<T>& {
 	return static_cast<typed_channel<T>&>(base).data;
 }
 
+template <typename T>
+	requires gse::is_same_frame_channel_v<T>
+auto gse::scheduler::drain_channel() -> std::vector<T> {
+	return m_channels_store.template drain<T>();
+}
+
 template <typename State, typename F>
 auto gse::scheduler::defer(F&& fn) -> void {
 	using state_t = std::remove_cvref_t<State>;
 	push_deferred([this, f = std::forward<F>(fn)]() mutable {
-		auto* ptr = m_states.state_ptr(id_of<state_t>());
+		auto* ptr = m_states.state_ptr(compute_state_dep_id<state_t>());
 		if (ptr) {
 			f(*static_cast<state_t*>(ptr));
 		}
@@ -167,54 +175,52 @@ auto gse::scheduler::defer(F&& fn) -> void {
 }
 
 template <typename S, typename... Args>
-auto gse::scheduler::ensure_system(registry& reg, Args&&... args) -> typename S::state& {
-	using state_t = typename S::state;
+auto gse::scheduler::ensure_system(Args&&... args) -> state_of_t<S>& {
+	using state_t = state_of_t<S>;
 	if (auto* existing = try_state_of<state_t>()) {
 		return *existing;
 	}
-	return add_system<S>(reg, std::forward<Args>(args)...);
+	return add_system<S>(std::forward<Args>(args)...);
 }
 
 template <typename S, typename... Args>
-auto gse::scheduler::add_system(registry& reg, Args&&... args) -> typename S::state& {
-	using state_t = typename S::state;
-	if (m_registry == nullptr) {
-		m_registry = &reg;
-	}
+auto gse::scheduler::add_system(Args&&... args) -> state_of_t<S>& {
+	using state_t = state_of_t<S>;
+	assert(m_registry != nullptr, "scheduler::set_registry must be called before add_system");
 
 	auto node = make_system_node<S>(std::forward<Args>(args)...);
 	auto* state_ref = static_cast<state_t*>(node.state_ptr);
 
-	const auto state_idx = id_of<state_t>();
-	(void)trace_id<state_t>();
-	m_states.register_state(state_idx, node.state_ptr, node.state_snapshot_ptr);
+	const auto canonical_idx = id_of<S>();
+	(void)trace_id<S>();
+	m_states.register_state(canonical_idx, node.state_ptr, node.state_snapshot_ptr);
 
 	auto combined_deps = node.update_state_deps;
 	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
-	m_state_deps.emplace(state_idx, std::move(combined_deps));
+	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
 
 	if constexpr (has_resources<S>) {
 		(void)trace_id<typename S::resources>();
 		m_resources_store.register_resource(id_of<typename S::resources>(), node.resources_ptr);
 	}
 
-	m_nodes.push_back(std::move(node));
+	if constexpr (has_settings<S>) {
+		using settings_t = typename S::settings;
+		(void)trace_id<settings_t>();
+		m_states.register_state(node.settings_id, node.settings_ptr, node.settings_snapshot_ptr);
 
-	if (m_initialized) {
 		auto writer = m_channels_store.make_writer();
-		init_context phase{
-			.gpu_ctx = m_gpu_ctx,
-			.assets_ptr = m_asset_registry,
-			.reg = *m_registry,
-			.sched = *this,
-			.states = m_states,
-			.resources_store = m_resources_store,
-			.channels_store = m_channels_store,
-			.channels = writer,
-		};
-		m_nodes.back().invoke_initialize_fn(phase, m_nodes.back().data.get());
-		m_nodes.back().initialized = true;
+		const std::string_view category = settings::category_of<settings_t>();
+		writer.push<settings::register_settings_type>({
+			.category = std::string(category),
+			.type_id = node.settings_id,
+			.settings_ptr = node.settings_ptr,
+			.write = &settings::write_settings_for<settings_t>,
+			.read = &settings::read_settings_for<settings_t>,
+		});
 	}
+
+	m_nodes.push_back(std::move(node));
 
 	return *state_ref;
 }

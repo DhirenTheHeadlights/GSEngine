@@ -17,7 +17,7 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.save;
+import gse.settings;
 import gse.meta;
 import gse.log;
 
@@ -68,6 +68,14 @@ export namespace gse::vulkan {
 
     class device : public non_copyable {
     public:
+        struct settings {
+            [[=gse::settings::describe{}]]
+            bool tracking_enabled = false;
+
+            [[=gse::settings::describe{}]]
+            bool name_resources = false;
+        };
+
         ~device(
         ) override;
 
@@ -81,7 +89,7 @@ export namespace gse::vulkan {
 
         [[nodiscard]] static auto create(
             const instance& instance_data,
-            save::system::state& save
+            settings& cfg
         ) -> device_creation_result;
 
         [[nodiscard]] auto physical_device(
@@ -174,7 +182,7 @@ export namespace gse::vulkan {
         device(
             vk::raii::PhysicalDevice&& physical_device,
             vk::raii::Device&& device,
-            save::system::state& save_state,
+            settings& cfg,
             bool device_fault_enabled,
             bool device_fault_vendor_binary_enabled
         );
@@ -237,11 +245,7 @@ export namespace gse::vulkan {
         std::atomic<std::uint64_t> m_next_allocation_id = 1;
         bool m_cleaned_up = false;
 
-        [[=gse::settings::describe{}]]
-        bool m_tracking_enabled = false;
-
-        [[=gse::settings::describe{}]]
-        bool m_name_resources = false;
+        settings* m_settings = nullptr;
         std::unordered_map<std::uint64_t, allocation_debug_info> m_live_allocations;
     };
 

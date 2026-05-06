@@ -62,7 +62,7 @@ gse::font::~font() {
     }
 }
 
-auto gse::font::load(gpu::context& context) -> void {
+auto gse::font::load(asset::load_ctx& ctx) -> void {
     std::ifstream in_file(m_baked_path, std::ios::binary);
     assert(
         in_file.is_open(),
@@ -95,7 +95,7 @@ auto gse::font::load(gpu::context& context) -> void {
         texture::profile::msdf
     );
 
-    m_texture->load(context);
+    m_texture->load(ctx);
 
     ar & m_glyphs;
 

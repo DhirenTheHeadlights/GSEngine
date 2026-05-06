@@ -14,7 +14,6 @@ import gse.ecs;
 import :types;
 import :ids;
 import :styles;
-import :scroll_widget;
 import :builder;
 
 export namespace gse::gui {

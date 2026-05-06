@@ -58,10 +58,10 @@ auto gse::camera::system::initialize(init_context&, state& s) -> void {
 	s.projection_matrix = compute_projection_matrix(s.current, s.viewport);
 }
 
-auto gse::camera::system::update(update_context& ctx, state& s) -> async::task<> {
+auto gse::camera::system::update(update_context& ctx, state& s, const input::system::state& input_state) -> async::task<> {
 	const time dt = system_clock::dt();
 
-	for (const auto& [focus] : ctx.read_channel<ui_focus_update>()) {
+	for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
 		s.ui_focus = focus;
 	}
 
@@ -70,7 +70,6 @@ auto gse::camera::system::update(update_context& ctx, state& s) -> async::task<>
 	}
 
 	if (!s.ui_focus) {
-		const auto& input_state = co_await ctx.state_of<input::system::state>();
 		const auto delta = input::system::current_state(input_state).mouse_delta();
 		const auto transformed_offset = delta * s.mouse_sensitivity;
 		s.yaw -= degrees(transformed_offset.x());

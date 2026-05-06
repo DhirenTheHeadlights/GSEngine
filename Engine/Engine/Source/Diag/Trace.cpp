@@ -16,12 +16,8 @@ auto gse::trace::start(const config& cfg) -> void {
 	frames = frame_storage{};
 	global_open_spans.clear();
 
-	mark_hidden(trace_id<"task_graph::execute">());
 	mark_hidden(trace_id<"task.start.reentrant">());
 	mark_hidden(trace_id<"task.start.body">());
-
-	mark_pool_root(trace_id<"task_graph::execute">());
-	mark_pool_root(trace_id<"scheduler::parallel_updates">());
 
 	register_virtual_thread(gpu_virtual_tid, "GPU");
 	register_virtual_thread(gpu_stats_virtual_tid, "GPU Stats");
@@ -214,16 +210,6 @@ auto gse::trace::mark_hidden(const id id) -> void {
 auto gse::trace::is_hidden(const id id) -> bool {
 	std::shared_lock lk(hidden_ids_mutex);
 	return hidden_ids.contains(id);
-}
-
-auto gse::trace::mark_pool_root(const id id) -> void {
-	std::unique_lock lk(pool_root_ids_mutex);
-	pool_root_ids.insert(id);
-}
-
-auto gse::trace::is_pool_root(const id id) -> bool {
-	std::shared_lock lk(pool_root_ids_mutex);
-	return pool_root_ids.contains(id);
 }
 
 auto gse::trace::current_eid() -> std::uint64_t {
