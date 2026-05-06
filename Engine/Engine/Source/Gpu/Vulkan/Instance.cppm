@@ -7,7 +7,6 @@ import :handles;
 
 import gse.core;
 import gse.os;
-import gse.save;
 
 export namespace gse::vulkan {
 	class instance : public non_copyable {
@@ -25,7 +24,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] static auto create(
 			std::span<const char* const> required_extensions,
-			save::system::state& save
+			bool enable_validation
 		) -> instance;
 
 		auto set_surface(
@@ -55,7 +54,7 @@ export namespace gse::vulkan {
 	};
 
 	auto create_surface(
-		const window& win,
+		const window::state& win,
 		instance& instance
 	) -> void;
 }

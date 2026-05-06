@@ -14,6 +14,7 @@ import gse.assets;
 import gse.gpu;
 import gse.physics;
 import gse.graphics;
+import gse.log;
 
 import :scene;
 
@@ -323,6 +324,7 @@ auto gse::world::update() -> void {
 			};
 
 			if (condition(ctx) && scene_id != m_active_scene) {
+				log::println("[world-debug] trigger fired for scene {}", scene_id.tag());
 				if (m_active_scene.has_value()) {
 					if (auto* old_scene = scene(m_active_scene.value())) {
 						old_scene->set_active(false);
@@ -332,6 +334,7 @@ auto gse::world::update() -> void {
 				if (auto* new_scene = scene(scene_id)) {
 					new_scene->set_active(true);
 					m_active_scene = new_scene->id();
+					log::println("[world-debug] activated scene {}", new_scene->id().tag());
 					break;
 				}
 			}

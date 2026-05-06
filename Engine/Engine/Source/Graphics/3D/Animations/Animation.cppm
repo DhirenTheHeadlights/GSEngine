@@ -9,6 +9,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.assets;
 
 import :animation_component;
 import :clip_component;
@@ -70,6 +71,7 @@ export namespace gse::animation {
 
 		static auto update(
 			update_context& ctx,
+			const asset::registry::state& assets_s,
 			state& s
 		) -> async::task<>;
 
@@ -140,7 +142,7 @@ export namespace gse::animation {
 
 		static auto process_controller_job(
 			const controller_job& job,
-			const renderer::system::resources& renderer_res,
+			const asset::registry::state& assets_s,
 			time dt
 		) -> void;
 	};

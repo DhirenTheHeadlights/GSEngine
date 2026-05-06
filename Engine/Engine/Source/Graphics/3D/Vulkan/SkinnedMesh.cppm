@@ -31,7 +31,7 @@ export namespace gse {
 
         skinned_mesh(skinned_mesh&& other) noexcept;
 
-        auto initialize(gpu::context& ctx) -> void;
+        auto initialize(gpu::context::state& ctx) -> void;
 
         auto vertex_gpu_buffer(this const skinned_mesh& self) -> const gpu::buffer& { return self.m_vertex_buffer; }
         auto index_gpu_buffer(this const skinned_mesh& self) -> const gpu::buffer& { return self.m_index_buffer; }
@@ -64,7 +64,7 @@ gse::skinned_mesh::skinned_mesh(skinned_mesh&& other) noexcept
     other.m_index_buffer = {};
 }
 
-auto gse::skinned_mesh::initialize(gpu::context& ctx) -> void {
+auto gse::skinned_mesh::initialize(gpu::context::state& ctx) -> void {
     if (m_vertices.empty() || m_indices.empty()) {
         return;
     }
@@ -72,17 +72,17 @@ auto gse::skinned_mesh::initialize(gpu::context& ctx) -> void {
     const std::size_t vertex_buffer_size = sizeof(skinned_vertex) * m_vertices.size();
     const std::size_t index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-    m_vertex_buffer = gpu::buffer::create(ctx.allocator(), {
+    m_vertex_buffer = gpu::buffer::create(ctx.device->allocator(), {
         .size = vertex_buffer_size,
         .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst
     });
 
-    m_index_buffer = gpu::buffer::create(ctx.allocator(), {
+    m_index_buffer = gpu::buffer::create(ctx.device->allocator(), {
         .size = index_buffer_size,
         .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
     });
 
-    m_upload_token = gpu::upload_to_buffers(ctx.device(), std::array{
+    m_upload_token = gpu::upload_to_buffers(*ctx.device, std::array{
         gpu::buffer_upload{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
         gpu::buffer_upload{ &m_index_buffer, m_indices.data(), index_buffer_size }
     });

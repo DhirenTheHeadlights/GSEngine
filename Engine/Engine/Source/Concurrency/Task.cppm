@@ -9,7 +9,7 @@ import gse.log;
 import gse.moodycamel;
 
 export namespace gse {
-	using job = std::function<void()>;
+	using job = move_only_function<void()>;
 }
 
 namespace gse::task {
@@ -63,6 +63,9 @@ export namespace gse::task {
 
 	auto wait_idle(
 	) -> void;
+
+	auto try_run_one(
+	) -> bool;
 
 	auto in_arena(
 		const std::function<void()>& fn
@@ -121,29 +124,32 @@ export namespace gse::task {
 	public:
 		auto push(
 			T value
-		) -> void;
+		) const -> void;
 
 		auto try_pop(
 			T& out
-		) -> bool;
+		) const -> bool;
 
 		auto drain(
-		) -> std::vector<T>;
+		) const -> std::vector<T>;
+
+		[[nodiscard]] auto size(
+		) const -> std::size_t;
 
 	private:
 		mutable std::mutex m_mutex;
-		std::queue<T> m_queue;
+		mutable std::queue<T> m_queue;
 	};
 }
 
 template <typename T>
-auto gse::task::concurrent_queue<T>::push(T value) -> void {
+auto gse::task::concurrent_queue<T>::push(T value) const -> void {
 	const std::scoped_lock lock(m_mutex);
 	m_queue.push(std::move(value));
 }
 
 template <typename T>
-auto gse::task::concurrent_queue<T>::try_pop(T& out) -> bool {
+auto gse::task::concurrent_queue<T>::try_pop(T& out) const -> bool {
 	const std::scoped_lock lock(m_mutex);
 	if (m_queue.empty()) {
 		return false;
@@ -154,7 +160,7 @@ auto gse::task::concurrent_queue<T>::try_pop(T& out) -> bool {
 }
 
 template <typename T>
-auto gse::task::concurrent_queue<T>::drain() -> std::vector<T> {
+auto gse::task::concurrent_queue<T>::drain() const -> std::vector<T> {
 	const std::scoped_lock lock(m_mutex);
 	std::vector<T> result;
 	result.reserve(m_queue.size());
@@ -163,6 +169,12 @@ auto gse::task::concurrent_queue<T>::drain() -> std::vector<T> {
 		m_queue.pop();
 	}
 	return result;
+}
+
+template <typename T>
+auto gse::task::concurrent_queue<T>::size() const -> std::size_t {
+	const std::scoped_lock lock(m_mutex);
+	return m_queue.size();
 }
 
 namespace gse::task {
@@ -189,6 +201,14 @@ namespace gse::task {
 	inline std::condition_variable idle_cv;
 
 	inline thread_local std::optional<std::size_t> t_worker_index;
+	inline thread_local std::optional<moodycamel::ProducerToken> t_producer_token;
+	inline thread_local std::optional<moodycamel::ConsumerToken> t_consumer_token;
+
+	auto producer_token(
+	) -> moodycamel::ProducerToken&;
+
+	auto consumer_token(
+	) -> moodycamel::ConsumerToken&;
 
 	inline constexpr std::size_t coalesce_threshold = 64;
 	inline constexpr std::size_t min_chunks_per_worker = 4;
@@ -247,7 +267,7 @@ gse::task::group::~group() noexcept {
 
 auto gse::task::group::wait() const -> void {
 	while (m_counter.load(std::memory_order_acquire) > 0) {
-		if (job_entry entry; submission_queue.try_dequeue(entry)) {
+		if (job_entry entry; submission_queue.try_dequeue(consumer_token(), entry)) {
 			run_job(entry);
 		}
 		else {
@@ -336,7 +356,7 @@ template <std::input_iterator It>
 auto gse::task::post_range(It first, It last, const id id) -> void {
 	const std::uint64_t parent_eid = trace::current_eid();
 	for (; first != last; ++first) {
-		submit_async(job(*first), id, parent_eid);
+		submit_async(std::move(*first), id, parent_eid);
 	}
 }
 
@@ -402,7 +422,7 @@ auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func
 template <std::input_iterator It>
 auto gse::task::group::post_range(It first, It last, const id id) -> void {
 	for (; first != last; ++first) {
-		this->post(job(*first), id);
+		this->post(std::move(*first), id);
 	}
 }
 
@@ -429,6 +449,28 @@ auto gse::task::wait_idle() -> void {
 	idle_cv.wait(lk, [] {
 		return likely_idle();
 	});
+}
+
+auto gse::task::try_run_one() -> bool {
+	if (job_entry entry; submission_queue.try_dequeue(consumer_token(), entry)) {
+		run_job(entry);
+		return true;
+	}
+	return false;
+}
+
+auto gse::task::producer_token() -> moodycamel::ProducerToken& {
+	if (!t_producer_token) {
+		t_producer_token.emplace(submission_queue);
+	}
+	return *t_producer_token;
+}
+
+auto gse::task::consumer_token() -> moodycamel::ConsumerToken& {
+	if (!t_consumer_token) {
+		t_consumer_token.emplace(submission_queue);
+	}
+	return *t_consumer_token;
 }
 
 auto gse::task::in_arena(const std::function<void()>& fn) -> void {
@@ -490,7 +532,7 @@ auto gse::task::worker_loop(const std::stop_token& st, std::size_t index) -> voi
 			return;
 		}
 
-		if (job_entry entry; submission_queue.try_dequeue(entry)) {
+		if (job_entry entry; submission_queue.try_dequeue(consumer_token(), entry)) {
 			run_job(entry);
 		}
 	}
@@ -503,7 +545,7 @@ auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t paren
 	trace::begin_async(trace_id, key);
 
 	job_entry entry{
-		.fn = move_only_function<void()>(std::move(j)),
+		.fn = std::move(j),
 		.trace_id = trace_id,
 		.parent_eid = parent_eid,
 		.async_key = key,
@@ -512,7 +554,7 @@ auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t paren
 		.gp = nullptr,
 	};
 
-	submission_queue.enqueue(std::move(entry));
+	submission_queue.enqueue(producer_token(), std::move(entry));
 	work_available.release();
 }
 
@@ -520,7 +562,7 @@ auto gse::task::submit_to_group(group& gp, job j, const id trace_id, const std::
 	gp.m_counter.fetch_add(1, std::memory_order_relaxed);
 
 	job_entry entry{
-		.fn = move_only_function<void()>(std::move(j)),
+		.fn = std::move(j),
 		.trace_id = trace_id,
 		.parent_eid = parent_eid,
 		.async_key = 0,
@@ -529,7 +571,7 @@ auto gse::task::submit_to_group(group& gp, job j, const id trace_id, const std::
 		.gp = &gp,
 	};
 
-	submission_queue.enqueue(std::move(entry));
+	submission_queue.enqueue(producer_token(), std::move(entry));
 	work_available.release();
 }
 

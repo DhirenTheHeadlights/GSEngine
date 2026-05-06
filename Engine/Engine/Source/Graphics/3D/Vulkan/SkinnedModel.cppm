@@ -55,7 +55,7 @@ export namespace gse {
 		explicit skinned_model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit skinned_model(std::string_view name, std::vector<skinned_mesh_data> meshes);
 
-		auto load(gpu::context& context) -> void;
+		auto load(asset::load_ctx& ctx) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const skinned_mesh>;
@@ -94,7 +94,7 @@ auto read_value(std::ifstream& file) -> T {
 	return v;
 }
 
-auto gse::skinned_model::load(gpu::context& context) -> void {
+auto gse::skinned_model::load(asset::load_ctx& ctx) -> void {
 	if (!m_baked_model_path.empty() && exists(m_baked_model_path)) {
 		m_meshes.clear();
 
@@ -133,15 +133,15 @@ auto gse::skinned_model::load(gpu::context& context) -> void {
 
 					if (!albedo_file.empty()) {
 						auto stem = std::filesystem::path(albedo_file).stem().string();
-						mat.diffuse_texture = context.assets().get<texture>(texture_dir + "/" + stem);
+						mat.diffuse_texture = asset::registry::get<texture>(ctx.assets, texture_dir + "/" + stem);
 					}
 					if (!normal_file.empty()) {
 						auto stem = std::filesystem::path(normal_file).stem().string();
-						mat.normal_texture = context.assets().get<texture>(texture_dir + "/" + stem);
+						mat.normal_texture = asset::registry::get<texture>(ctx.assets, texture_dir + "/" + stem);
 					}
 					if (!rm_file.empty()) {
 						auto stem = std::filesystem::path(rm_file).stem().string();
-						mat.specular_texture = context.assets().get<texture>(texture_dir + "/" + stem);
+						mat.specular_texture = asset::registry::get<texture>(ctx.assets, texture_dir + "/" + stem);
 					}
 				}
 				else {
@@ -181,11 +181,12 @@ auto gse::skinned_model::load(gpu::context& context) -> void {
 		}
 	}
 
-	context.queue_gpu_command<skinned_model>(
+	gpu::queue_gpu_command(
+		ctx,
 		this,
-		[](gpu::context& ctx, skinned_model& self) {
+		[](gpu::context::state& gpu_s, skinned_model& self) {
 			for (auto& mesh : self.m_meshes) {
-				mesh.initialize(ctx);
+				mesh.initialize(gpu_s);
 			}
 		}
 	);

@@ -42,14 +42,15 @@ export namespace gse::renderer::physics_debug {
 		debug_stats stats;
 	};
 
-	struct settings {
-		[[=gse::settings::describe{}]]
-		bool enabled = true;
-	};
-
 	struct system {
+		struct settings {
+			static constexpr std::string_view category = "Graphics";
+
+			[[=gse::settings::describe{}]]
+			bool enabled = true;
+		};
+
 		struct state {
-			physics_debug::settings settings;
 			debug_stats latest_stats;
 		};
 
@@ -67,6 +68,8 @@ export namespace gse::renderer::physics_debug {
 
 		static auto initialize(
 			const init_context& phase,
+			const gpu::context::state& gpu_s,
+			settings& cfg,
 			resources& r,
 			frame_data& fd,
 			state& s
@@ -74,14 +77,21 @@ export namespace gse::renderer::physics_debug {
 
 		static auto update(
 			update_context& ctx,
+			const settings& cfg,
 			const resources& r,
-			state& s
+			state& s,
+			const physics::system::state& ps,
+			const physics::system::settings& phys_cfg
 		) -> async::task<>;
 
-		static auto frame(const frame_context& ctx,
+		static auto frame(
+			const frame_context& ctx,
+			const gpu::context::state& gpu_s,
+			const settings& cfg,
 			const resources& r,
 			frame_data& fd,
-			const state& s
+			const state& s,
+			const camera::system::state& cam_state
 		) -> async::task<>;
 
 	private:
@@ -124,7 +134,7 @@ export namespace gse::renderer::physics_debug {
 
 		static auto ensure_vertex_capacity(
 			frame_data& fd,
-			gpu::context& ctx,
+			const gpu::context::state& gpu_s,
 			std::size_t frame_index,
 			std::size_t required_vertex_count
 		) -> void;

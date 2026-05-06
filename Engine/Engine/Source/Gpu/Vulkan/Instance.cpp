@@ -6,24 +6,15 @@ import vulkan;
 import :vulkan_instance;
 
 import gse.assert;
-import gse.config;
 import gse.log;
 import gse.os;
-import gse.save;
 
-auto gse::vulkan::create_surface(const window& win, instance& instance) -> void {
-	const auto raw_surface = win.create_vulkan_surface(*instance.raii_instance());
+auto gse::vulkan::create_surface(const window::state& win, instance& instance) -> void {
+	const auto raw_surface = window::create_vulkan_surface(win, *instance.raii_instance());
 	instance.set_surface(vk::raii::SurfaceKHR(instance.raii_instance(), raw_surface));
 }
 
-auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, save::system::state& save) -> instance {
-	const bool enable_validation = save::system::read_one<bool>(
-		config::resource_path / "Misc/settings.ini",
-		"Graphics",
-		"validation_layers_enabled",
-		true
-	);
-
+auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> instance {
 	vk::detail::defaultDispatchLoaderDynamic.init();
 
 	std::vector<const char*> validation_layers;

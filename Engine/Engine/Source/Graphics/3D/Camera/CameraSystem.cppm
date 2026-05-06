@@ -17,10 +17,6 @@ import :camera_data;
 import :camera_component;
 
 export namespace gse::camera {
-	struct ui_focus_update {
-		bool focus = false;
-	};
-
 	struct viewport_update {
 		vec2f size{ 1920.f, 1080.f };
 	};
@@ -58,7 +54,8 @@ export namespace gse::camera {
 
 		static auto update(
 			update_context& ctx,
-			state& s
+			state& s,
+			const input::system::state& input_state
 		) -> async::task<>;
 
 		static auto position(

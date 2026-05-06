@@ -6,7 +6,6 @@ import gse.assert;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
-import gse.assets;
 
 import :component;
 import :registries;
@@ -16,8 +15,6 @@ export namespace gse {
 	class scheduler;
 
 	struct init_context {
-		void* gpu_ctx = nullptr;
-		void* assets_ptr = nullptr;
 		registry& reg;
 		scheduler& sched;
 		state_registry& states;
@@ -26,123 +23,21 @@ export namespace gse {
 		channel_writer& channels;
 
 		template <typename T>
-		auto get(
-		) const -> T&;
-
-		template <typename T>
-		auto try_get(
-		) const -> T*;
-
-		auto assets(
-		) const -> asset::registry&;
-
-		auto try_assets(
-		) const -> asset::registry*;
-
-		template <typename State>
-		auto state_of(
-		) const -> const State&;
-
-		template <typename State>
-		auto try_state_of(
-		) const -> const State*;
-
-		template <typename Resources>
-		auto resources_of(
-		) const -> const Resources&;
-
-		template <typename Resources>
-		auto try_resources_of(
-		) const -> const Resources*;
+		auto read_channel(
+		) const -> channel_read_guard<T>;
 	};
 
 	struct shutdown_context {
-		void* gpu_ctx = nullptr;
-		void* assets_ptr = nullptr;
 		registry& reg;
-
-		template <typename T>
-		auto get(
-		) const -> T&;
-
-		template <typename T>
-		auto try_get(
-		) const -> T*;
-
-		auto assets(
-		) const -> asset::registry&;
-
-		auto try_assets(
-		) const -> asset::registry*;
-	};
-
-	template <typename S, typename State>
-	concept has_initialize = requires(init_context& p, State& s) {
-		{ S::initialize(p, s) } -> std::same_as<void>;
-	};
-
-	template <typename S, typename State>
-	concept has_shutdown = requires(shutdown_context& p, State& s) {
-		{ S::shutdown(p, s) } -> std::same_as<void>;
 	};
 }
 
 template <typename T>
-auto gse::init_context::get() const -> T& {
-	return *static_cast<T*>(gpu_ctx);
-}
-
-template <typename T>
-auto gse::init_context::try_get() const -> T* {
-	return static_cast<T*>(gpu_ctx);
-}
-
-template <typename State>
-auto gse::init_context::state_of() const -> const State& {
-	const auto* p = states.state_ptr(id_of<State>());
-	assert(p != nullptr, "state not found");
-	return *static_cast<const State*>(p);
-}
-
-template <typename State>
-auto gse::init_context::try_state_of() const -> const State* {
-	return static_cast<const State*>(states.state_ptr(id_of<State>()));
-}
-
-template <typename Resources>
-auto gse::init_context::resources_of() const -> const Resources& {
-	const auto* p = resources_store.resources_ptr(id_of<Resources>());
-	assert(p != nullptr, "resources not found");
-	return *static_cast<const Resources*>(p);
-}
-
-template <typename Resources>
-auto gse::init_context::try_resources_of() const -> const Resources* {
-	return static_cast<const Resources*>(resources_store.resources_ptr(id_of<Resources>()));
-}
-
-template <typename T>
-auto gse::shutdown_context::get() const -> T& {
-	return *static_cast<T*>(gpu_ctx);
-}
-
-template <typename T>
-auto gse::shutdown_context::try_get() const -> T* {
-	return static_cast<T*>(gpu_ctx);
-}
-
-inline auto gse::init_context::assets() const -> asset::registry& {
-	return *static_cast<asset::registry*>(assets_ptr);
-}
-
-inline auto gse::init_context::try_assets() const -> asset::registry* {
-	return static_cast<asset::registry*>(assets_ptr);
-}
-
-inline auto gse::shutdown_context::assets() const -> asset::registry& {
-	return *static_cast<asset::registry*>(assets_ptr);
-}
-
-inline auto gse::shutdown_context::try_assets() const -> asset::registry* {
-	return static_cast<asset::registry*>(assets_ptr);
+auto gse::init_context::read_channel() const -> channel_read_guard<T> {
+	channels_store.ensure(id_of<T>(), +[]() -> std::unique_ptr<channel_base> {
+		return std::make_unique<typed_channel<T>>();
+	});
+	const auto* ptr = channels_store.snapshot_data(id_of<T>());
+	assert(ptr != nullptr, "channel snapshot not found");
+	return channel_read_guard<T>(*static_cast<const std::vector<T>*>(ptr));
 }

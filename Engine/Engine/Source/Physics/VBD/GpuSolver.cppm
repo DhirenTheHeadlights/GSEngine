@@ -95,12 +95,12 @@ export namespace gse::vbd {
 		~gpu_solver();
 
 		auto create_buffers(
-			gpu::context& ctx
+			const gpu::context::state& ctx
 		) -> void;
 
 		auto initialize_compute(
-			gpu::context& ctx,
-			asset::registry& assets
+			const gpu::context::state& ctx,
+			asset::registry::state& assets
 		) -> void;
 
 		auto dispatch_compute(

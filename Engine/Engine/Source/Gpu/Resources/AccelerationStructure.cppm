@@ -38,17 +38,17 @@ export namespace gse::gpu {
 	};
 
 	auto build_blas(
-		context& ctx,
+		const context::state& ctx,
 		const blas_geometry_desc& desc
 	) -> vulkan::blas;
 
 	auto build_tlas(
-		context& ctx,
+		const context::state& ctx,
 		std::uint32_t max_instances
 	) -> vulkan::tlas;
 
 	auto rebuild_tlas(
-		context& ctx,
+		const context::state& ctx,
 		vulkan::tlas& t,
 		std::span<const tlas_instance_desc> instances,
 		vulkan::recording_context& rec
@@ -60,7 +60,7 @@ export namespace gse::gpu {
 	) -> void;
 
 	auto build_tlas_in_place(
-		context& ctx,
+		const context::state& ctx,
 		vulkan::tlas& t,
 		std::uint32_t instance_count,
 		vulkan::recording_context& rec

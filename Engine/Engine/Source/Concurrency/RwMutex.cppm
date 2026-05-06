@@ -3,6 +3,7 @@ export module gse.concurrency:rw_mutex;
 import std;
 
 import gse.core;
+import gse.diag;
 
 import :task;
 
@@ -29,6 +30,7 @@ export namespace gse::async {
 
 		struct shared_awaiter {
 			rw_mutex* m_mutex;
+			mutable std::uint64_t m_wait_key = 0;
 
 			auto await_ready(
 			) const noexcept -> bool;
@@ -43,6 +45,7 @@ export namespace gse::async {
 
 		struct exclusive_awaiter {
 			rw_mutex* m_mutex;
+			mutable std::uint64_t m_wait_key = 0;
 
 			auto await_ready(
 			) const noexcept -> bool;
@@ -103,10 +106,16 @@ auto gse::async::rw_mutex::shared_awaiter::await_suspend(const std::coroutine_ha
 		return false;
 	}
 	m_mutex->m_shared_waiters.push_back(h);
+	m_wait_key = trace::allocate_async_key();
+	trace::begin_async(trace_id<"rw_mutex::lock_shared_wait">(), m_wait_key);
 	return true;
 }
 
-auto gse::async::rw_mutex::shared_awaiter::await_resume() const noexcept -> void {}
+auto gse::async::rw_mutex::shared_awaiter::await_resume() const noexcept -> void {
+	if (m_wait_key != 0) {
+		trace::end_async(trace_id<"rw_mutex::lock_shared_wait">(), m_wait_key);
+	}
+}
 
 auto gse::async::rw_mutex::exclusive_awaiter::await_ready() const noexcept -> bool {
 	std::lock_guard lock(m_mutex->m_state);
@@ -124,10 +133,16 @@ auto gse::async::rw_mutex::exclusive_awaiter::await_suspend(const std::coroutine
 		return false;
 	}
 	m_mutex->m_exclusive_waiters.push_back(h);
+	m_wait_key = trace::allocate_async_key();
+	trace::begin_async(trace_id<"rw_mutex::lock_exclusive_wait">(), m_wait_key);
 	return true;
 }
 
-auto gse::async::rw_mutex::exclusive_awaiter::await_resume() const noexcept -> void {}
+auto gse::async::rw_mutex::exclusive_awaiter::await_resume() const noexcept -> void {
+	if (m_wait_key != 0) {
+		trace::end_async(trace_id<"rw_mutex::lock_exclusive_wait">(), m_wait_key);
+	}
+}
 
 auto gse::async::rw_mutex::lock_shared() -> shared_awaiter {
 	return { this };

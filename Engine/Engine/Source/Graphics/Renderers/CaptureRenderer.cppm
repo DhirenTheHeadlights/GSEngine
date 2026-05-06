@@ -27,6 +27,13 @@ export namespace gse::renderer::capture {
     struct save_clip_request {};
 
     struct system {
+        struct settings {
+            static constexpr std::string_view category = "Graphics";
+
+            [[=gse::settings::describe{}, =gse::settings::range<seconds(5.f), seconds(120.f)>{}]]
+            time ring_budget = seconds(30.f);
+        };
+
         struct state {
             actions::handle screenshot_action;
             actions::handle save_clip_action;
@@ -50,14 +57,14 @@ export namespace gse::renderer::capture {
             std::unique_ptr<std::atomic<bool>> clip_save_in_progress = std::make_unique<std::atomic<bool>>(false);
             gpu::video_encoder encoder;
             ring clip_ring;
-
-            [[=gse::settings::describe{}, =gse::settings::range<seconds(5.f), seconds(120.f)>{}]]
-            time ring_budget = seconds(30.f);
+            time applied_ring_budget = seconds(30.f);
             bool first_ring_push_logged = false;
         };
 
         static auto initialize(
             const init_context& phase,
+            const gpu::context::state& gpu_s,
+            settings& cfg,
             resources& r,
             frame_data& fd,
             state& s
@@ -65,11 +72,14 @@ export namespace gse::renderer::capture {
 
         static auto update(
             const update_context& ctx,
-            state& s
+            state& s,
+            const actions::system::state& sys
         ) -> async::task<>;
 
         static auto frame(
             const frame_context& ctx,
+            const gpu::context::state& gpu_s,
+            const settings& cfg,
             const resources& r,
             frame_data& fd,
             const state& s

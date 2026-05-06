@@ -7,6 +7,7 @@ import :font;
 import :texture;
 import :ui_renderer;
 import :styles;
+import :scroll_widget;
 
 import gse.math;
 import gse.core;
@@ -28,11 +29,12 @@ auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const ->
     if (cmd.z_order == 0) {
         cmd.z_order = current_z_order;
     }
-    if (body_clip_rect.has_value() &&
+    if (!clip_stack.empty() &&
         static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
+        const ui_rect& clip = clip_stack.back();
         cmd.clip_rect = cmd.clip_rect.has_value()
-            ? cmd.clip_rect->intersection(*body_clip_rect)
-            : *body_clip_rect;
+            ? cmd.clip_rect->intersection(clip)
+            : clip;
     }
     sprites.push_back(std::move(cmd));
 }
@@ -44,13 +46,21 @@ auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> voi
     if (cmd.z_order == 0) {
         cmd.z_order = current_z_order;
     }
-    if (body_clip_rect.has_value() &&
+    if (!clip_stack.empty() &&
         static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
+        const ui_rect& clip = clip_stack.back();
         cmd.clip_rect = cmd.clip_rect.has_value()
-            ? cmd.clip_rect->intersection(*body_clip_rect)
-            : *body_clip_rect;
+            ? cmd.clip_rect->intersection(clip)
+            : clip;
     }
     texts.push_back(std::move(cmd));
+}
+
+auto gse::gui::draw_context::current_clip() const -> std::optional<ui_rect> {
+    if (clip_stack.empty()) {
+        return std::nullopt;
+    }
+    return clip_stack.back();
 }
 
 auto gse::gui::draw_context::input_available() const -> bool {
@@ -96,4 +106,68 @@ auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f tar
     const float t = std::clamp(speed * dt, 0.f, 1.f);
     it->second = it->second + (target - it->second) * t;
     return it->second;
+}
+
+gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept
+    : m_ctx(&ctx)
+    , m_state(&state)
+    , m_visible_rect(visible_rect)
+    , m_saved_layout_y(saved_layout_y)
+    , m_content_start_y(visible_rect.top() + state.offset)
+    , m_config(config)
+    , m_active(true) {
+    ctx.layout_cursor.y() = m_content_start_y;
+    ctx.clip_stack.push_back(visible_rect);
+}
+
+gse::gui::scroll_handle::scroll_handle(scroll_handle&& other) noexcept
+    : m_ctx(other.m_ctx)
+    , m_state(other.m_state)
+    , m_visible_rect(other.m_visible_rect)
+    , m_saved_layout_y(other.m_saved_layout_y)
+    , m_content_start_y(other.m_content_start_y)
+    , m_config(other.m_config)
+    , m_active(other.m_active) {
+    other.m_active = false;
+}
+
+auto gse::gui::scroll_handle::operator=(scroll_handle&& other) noexcept -> scroll_handle& {
+    if (this == &other) {
+        return *this;
+    }
+    if (m_active) {
+        run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_config);
+        m_ctx->clip_stack.pop_back();
+        m_ctx->layout_cursor.y() = m_saved_layout_y - m_visible_rect.height() - m_ctx->style.padding;
+    }
+    m_ctx = other.m_ctx;
+    m_state = other.m_state;
+    m_visible_rect = other.m_visible_rect;
+    m_saved_layout_y = other.m_saved_layout_y;
+    m_content_start_y = other.m_content_start_y;
+    m_config = other.m_config;
+    m_active = other.m_active;
+    other.m_active = false;
+    return *this;
+}
+
+gse::gui::scroll_handle::~scroll_handle() noexcept {
+    if (!m_active) {
+        return;
+    }
+    run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_config);
+    m_ctx->clip_stack.pop_back();
+    m_ctx->layout_cursor.y() = m_saved_layout_y - m_visible_rect.height() - m_ctx->style.padding;
+}
+
+auto gse::gui::scroll_handle::valid() const -> bool {
+    return m_active;
+}
+
+auto gse::gui::scroll_handle::visible_rect() const -> const ui_rect& {
+    return m_visible_rect;
+}
+
+auto gse::gui::scroll_handle::offset() const -> float {
+    return m_state ? m_state->offset : 0.f;
 }

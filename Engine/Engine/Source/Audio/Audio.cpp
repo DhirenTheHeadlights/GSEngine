@@ -67,7 +67,7 @@ auto gse::asset_compiler<gse::audio_clip>::dependencies(const std::filesystem::p
 
 gse::audio_clip::audio_clip(const std::filesystem::path& filepath) : identifiable(filepath, config::baked_resource_path), m_path(filepath) {}
 
-auto gse::audio_clip::load(gpu::context&) -> void {
+auto gse::audio_clip::load(asset::load_ctx&) -> void {
 	std::ifstream file(m_path, std::ios::binary | std::ios::ate);
 	assert(
 		file.is_open(),

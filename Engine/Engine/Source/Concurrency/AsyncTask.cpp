@@ -26,7 +26,21 @@ namespace gse::async {
 
 		auto await_suspend(
 			std::coroutine_handle<> h
-		) const noexcept -> void;
+		) const noexcept -> std::coroutine_handle<>;
+
+		static auto await_resume(
+		) noexcept -> void;
+	};
+
+	struct symmetric_resume {
+		std::coroutine_handle<> handle;
+
+		static auto await_ready(
+		) noexcept -> bool;
+
+		auto await_suspend(
+			std::coroutine_handle<> h
+		) const noexcept -> std::coroutine_handle<>;
 
 		static auto await_resume(
 		) noexcept -> void;
@@ -92,14 +106,29 @@ auto gse::async::suspend_and_capture::await_ready() noexcept -> bool {
 	return false;
 }
 
-auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<> h) const noexcept -> void {
+auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<> h) const noexcept -> std::coroutine_handle<> {
 	target = h;
-	for (auto& helper : helpers) {
+	if (helpers.empty()) {
+		return std::noop_coroutine();
+	}
+	for (std::size_t i = 1; i < helpers.size(); ++i) {
+		auto& helper = helpers[i];
 		gse::task::post([&helper] { helper.start(); });
 	}
+	return helpers[0].consume_start_handle();
 }
 
 auto gse::async::suspend_and_capture::await_resume() noexcept -> void {}
+
+auto gse::async::symmetric_resume::await_ready() noexcept -> bool {
+	return false;
+}
+
+auto gse::async::symmetric_resume::await_suspend(std::coroutine_handle<>) const noexcept -> std::coroutine_handle<> {
+	return handle ? handle : std::noop_coroutine();
+}
+
+auto gse::async::symmetric_resume::await_resume() noexcept -> void {}
 
 auto gse::async::when_all_helper(task<> child, when_all_state* state) -> task<> {
 	try {
@@ -112,8 +141,7 @@ auto gse::async::when_all_helper(task<> child, when_all_state* state) -> task<> 
 		}
 	}
 	if (state->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-		auto h = state->continuation;
-		gse::task::post([h] { h.resume(); });
+		co_await symmetric_resume{ state->continuation };
 	}
 }
 
@@ -175,7 +203,7 @@ auto gse::async::when_all(std::vector<task<>> tasks) -> task<> {
 }
 
 auto gse::async::sync_wait(task<>&& t) -> void {
-	std::binary_semaphore done{ 0 };
+	std::atomic<bool> done_flag{ false };
 	bool has_exception = false;
 	std::exception_ptr ep;
 
@@ -187,7 +215,7 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 			has_exception = true;
 			ep = std::current_exception();
 		}
-		done.release();
+		done_flag.store(true, std::memory_order_release);
 	};
 
 	auto w = wrapper();
@@ -197,7 +225,11 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 	}
 	{
 		trace::scope_guard sg{ trace_id<"sync_wait::acquire">() };
-		done.acquire();
+		while (!done_flag.load(std::memory_order_acquire)) {
+			if (!gse::task::try_run_one()) {
+				std::this_thread::yield();
+			}
+		}
 	}
 	{
 		trace::scope_guard sg{ trace_id<"sync_wait::final_yield">() };

@@ -13,12 +13,14 @@ export namespace gs {
 
 		static auto update(
 			gse::update_context& ctx,
-			state& s
+			state& s,
+			const gse::renderer::physics_debug::system::state& pds,
+			const gse::renderer::physics_debug::system::settings& pd_cfg
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::client_ui_system::update(gse::update_context& ctx, state& s) -> gse::async::task<> {
+auto gs::client_ui_system::update(gse::update_context& ctx, state& s, const gse::renderer::physics_debug::system::state& pds, const gse::renderer::physics_debug::system::settings& pd_cfg) -> gse::async::task<> {
 	if (gse::keyboard::pressed(gse::key::escape)) {
 		gse::shutdown();
 	}
@@ -55,8 +57,7 @@ auto gs::client_ui_system::update(gse::update_context& ctx, state& s) -> gse::as
 		ui.draw<gse::gui::profiler>();
 	});
 
-	const auto& pds = co_await ctx.state_of<gse::renderer::physics_debug::system::state>();
-	if (pds.settings.enabled) {
+	if (pd_cfg.enabled) {
 		const auto& [
 			body_count,
 			sleeping_count,

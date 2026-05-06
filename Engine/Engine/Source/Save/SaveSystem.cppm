@@ -8,38 +8,16 @@ import gse.meta;
 import gse.core;
 import gse.concurrency;
 import gse.ecs;
+import gse.settings;
 
 export namespace gse::save {
-    using write_thunk = void(*)(
-        std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
-        std::string_view category,
-        const void* obj
-    );
-
-    using read_thunk = void(*)(
-        const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
-        std::string_view category,
-        void* obj
-    );
-
-    struct persisted {
-        std::string category;
-        void* obj = nullptr;
-        write_thunk write = nullptr;
-        read_thunk read = nullptr;
-    };
-
-    struct register_request {
-        persisted entry;
-    };
-
     struct save_request {};
     struct restart_request {};
 
     class system {
     public:
         struct state {
-            std::vector<persisted> entries;
+            std::vector<settings::register_settings_type> entries;
             std::filesystem::path auto_save_path;
             bool auto_save = false;
             std::function<void()> on_restart;
@@ -62,27 +40,6 @@ export namespace gse::save {
         static auto shutdown(
             shutdown_context& phase,
             state& s
-        ) -> void;
-
-        template <typename T>
-        static auto register_struct(
-            const init_context& phase,
-            std::string_view category,
-            T& obj
-        ) -> void;
-
-        template <typename T>
-        static auto register_struct(
-            update_context& ctx,
-            std::string_view category,
-            T& obj
-        ) -> void;
-
-        template <typename T>
-        static auto register_struct(
-            state& s,
-            std::string_view category,
-            T& obj
         ) -> void;
 
         static auto set_auto_save(
@@ -128,7 +85,7 @@ export namespace gse::save {
 
         static auto add(
             state& s,
-            persisted entry
+            settings::register_settings_type entry
         ) -> void;
 
         static auto save_to_file(
@@ -144,26 +101,6 @@ export namespace gse::save {
         static auto save(
             const state& s
         ) -> bool;
-
-        template <typename T>
-        static auto write_struct_thunk(
-            doc& d,
-            std::string_view category,
-            const void* obj
-        ) -> void;
-
-        template <typename T>
-        static auto read_struct_thunk(
-            const doc& d,
-            std::string_view category,
-            void* obj
-        ) -> void;
-
-        template <typename T>
-        static auto make_persisted(
-            std::string_view category,
-            T& obj
-        ) -> persisted;
     };
 }
 
@@ -260,68 +197,13 @@ auto gse::save::system::emit(const doc& d) -> std::string {
     return out;
 }
 
-template <typename T>
-auto gse::save::system::write_struct_thunk(doc& d, const std::string_view category, const void* obj) -> void {
-    const auto& typed = *static_cast<const T*>(obj);
-    template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-        if constexpr (has_annotation<settings::describe>(m)) {
-            constexpr std::string_view name = meta::member_name(m);
-            std::string value;
-            std::format_to(std::back_inserter(value), "{}", typed.[:m:]);
-            d[std::string(category)][std::string(name)] = std::move(value);
-        }
-    }
-}
-
-template <typename T>
-auto gse::save::system::read_struct_thunk(const doc& d, const std::string_view category, void* obj) -> void {
-    auto& typed = *static_cast<T*>(obj);
-    const auto cat_it = d.find(std::string(category));
-    if (cat_it == d.end()) {
-        return;
-    }
-    template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-        if constexpr (has_annotation<settings::describe>(m)) {
-            constexpr std::string_view name = meta::member_name(m);
-            if (const auto it = cat_it->second.find(std::string(name)); it != cat_it->second.end()) {
-                gse::parse(it->second, typed.[:m:]);
-            }
-        }
-    }
-}
-
-template <typename T>
-auto gse::save::system::make_persisted(const std::string_view category, T& obj) -> persisted {
-    return persisted{
-        .category = std::string(category),
-        .obj = &obj,
-        .write = &write_struct_thunk<T>,
-        .read = &read_struct_thunk<T>,
-    };
-}
-
-template <typename T>
-auto gse::save::system::register_struct(const init_context& phase, const std::string_view category, T& obj) -> void {
-    phase.channels.push<register_request>({ .entry = make_persisted(category, obj) });
-}
-
-template <typename T>
-auto gse::save::system::register_struct(update_context& ctx, const std::string_view category, T& obj) -> void {
-    ctx.channels.push<register_request>({ .entry = make_persisted(category, obj) });
-}
-
-template <typename T>
-auto gse::save::system::register_struct(state& s, const std::string_view category, T& obj) -> void {
-    add(s, make_persisted(category, obj));
-}
-
-auto gse::save::system::add(state& s, persisted entry) -> void {
-    if (entry.read) {
-        entry.read(s.loaded, entry.category, entry.obj);
+auto gse::save::system::add(state& s, settings::register_settings_type entry) -> void {
+    if (entry.read && entry.settings_ptr) {
+        entry.read(s.loaded, entry.category, entry.settings_ptr);
     }
 
-    const auto match = std::ranges::find_if(s.entries, [&](const persisted& existing) {
-        return existing.category == entry.category && existing.obj == entry.obj;
+    const auto match = std::ranges::find_if(s.entries, [&](const settings::register_settings_type& existing) {
+        return existing.category == entry.category && existing.settings_ptr == entry.settings_ptr;
     });
 
     if (match != s.entries.end()) {
@@ -335,8 +217,8 @@ auto gse::save::system::add(state& s, persisted entry) -> void {
 auto gse::save::system::save_to_file(const state& s, const std::filesystem::path& path) -> bool {
     doc d;
     for (const auto& entry : s.entries) {
-        if (entry.write && entry.obj) {
-            entry.write(d, entry.category, entry.obj);
+        if (entry.write && entry.settings_ptr) {
+            entry.write(d, entry.category, entry.settings_ptr);
         }
     }
 
@@ -363,8 +245,8 @@ auto gse::save::system::load_from_file(state& s, const std::filesystem::path& pa
     s.loaded = parse(*content);
 
     for (const auto& entry : s.entries) {
-        if (entry.read && entry.obj) {
-            entry.read(s.loaded, entry.category, entry.obj);
+        if (entry.read && entry.settings_ptr) {
+            entry.read(s.loaded, entry.category, entry.settings_ptr);
         }
     }
     return true;
@@ -388,17 +270,25 @@ auto gse::save::system::on_restart(state& s, std::function<void()> fn) -> void {
     s.on_restart = std::move(fn);
 }
 
-auto gse::save::system::initialize(init_context&, state& s) -> void {
+auto gse::save::system::initialize(init_context& phase, state& s) -> void {
     if (!s.auto_save_path.empty() && std::filesystem::exists(s.auto_save_path)) {
-        if (!load_from_file(s, s.auto_save_path)) {
-            log::println(log::level::warning, log::category::save_system, "Failed to load settings from {}", s.auto_save_path.string());
+        const auto content = read_file(s.auto_save_path);
+        if (content) {
+            s.loaded = parse(*content);
         }
+        else {
+            log::println(log::level::warning, log::category::save_system, "Failed to read {}: {}", s.auto_save_path.string(), content.error().message());
+        }
+    }
+
+    for (const auto& req : phase.read_channel<settings::register_settings_type>()) {
+        add(s, req);
     }
 }
 
 auto gse::save::system::update(update_context& ctx, state& s) -> async::task<> {
-    for (auto& req : ctx.read_channel<register_request>()) {
-        add(s, std::move(req.entry));
+    for (auto& req : ctx.read_channel<settings::register_settings_type>()) {
+        add(s, req);
     }
 
     if (!ctx.read_channel<save_request>().empty()) {

@@ -17,8 +17,8 @@ import :physics_debug_renderer;
 import :camera_system;
 import :settings;
 
-auto gse::renderer::physics_debug::system::update(update_context& ctx, const resources& r, state& s) -> async::task<> {
-	if (!s.settings.enabled) {
+auto gse::renderer::physics_debug::system::update(update_context& ctx, const settings& cfg, const resources& r, state& s, const physics::system::state& ps, const physics::system::settings& phys_cfg) -> async::task<> {
+	if (!cfg.enabled) {
 		co_return;
 	}
 
@@ -70,8 +70,7 @@ auto gse::renderer::physics_debug::system::update(update_context& ctx, const res
 		}
 	}
 
-	const auto& ps = co_await ctx.state_of<physics::system::state>();
-	if (ps.settings.use_gpu_solver && ps.gpu_stats.active) {
+	if (phys_cfg.use_gpu_solver && ps.gpu_stats.active) {
 		stats.gpu_solver_active = true;
 		stats.contact_count = ps.gpu_stats.contact_count;
 		stats.motor_count = ps.gpu_stats.motor_count;
@@ -79,19 +78,17 @@ auto gse::renderer::physics_debug::system::update(update_context& ctx, const res
 	}
 
 	s.latest_stats = stats;
-	ctx.channels.push(render_data{ std::move(vertices), stats });
+	ctx.channels.push<render_data>({ std::move(vertices), stats });
 
 	co_return;
 }
 
-auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const resources& r, frame_data& fd, const state& s) -> async::task<> {
-	auto& gpu = ctx.get<gpu::context>();
-
-	if (!s.settings.enabled) {
+auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const gpu::context::state& gpu_s, const settings& cfg, const resources& r, frame_data& fd, const state& s, const camera::system::state& cam_state) -> async::task<> {
+	if (!cfg.enabled) {
 		co_return;
 	}
 
-	if (!gpu.graph().frame_in_progress()) {
+	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
 
@@ -105,29 +102,27 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 		co_return;
 	}
 
-	const auto frame_index = gpu.graph().current_frame();
-	ensure_vertex_capacity(fd, gpu, frame_index, verts.size());
+	const auto frame_index = gpu_s.render_graph->current_frame();
+	ensure_vertex_capacity(fd, gpu_s, frame_index, verts.size());
 
 	auto& vertex_buffer = fd.vertex_buffers[frame_index];
 	if (auto* dst = vertex_buffer.mapped()) {
 		gse::memcpy(dst, verts);
 	}
 
-	const auto& cam_state = co_await ctx.state_of<camera::system::state>();
 	const auto view_matrix = cam_state.view_matrix;
 	const auto proj_matrix = cam_state.projection_matrix;
 
 	r.shader_handle->set_uniform(r.ubo_allocations.at("CameraUBO")[frame_index].bytes(), "CameraUBO.view", view_matrix);
 	r.shader_handle->set_uniform(r.ubo_allocations.at("CameraUBO")[frame_index].bytes(), "CameraUBO.proj", proj_matrix);
 
-	const auto ext = gpu.graph().extent();
+	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
 
-	auto pass = gpu.graph().add_pass<state>();
-	pass.track(r.ubo_allocations.at("CameraUBO")[frame_index]);
-	pass.color_output_load();
+	auto& rec = co_await gpu::pass<state>(ctx)
+		.color(gpu::load_color())
+		.tracks(r.ubo_allocations.at("CameraUBO")[frame_index]);
 
-	auto& rec = co_await pass.record();
 	rec.bind(r.pipeline);
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
@@ -135,7 +130,7 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 	rec.bind_vertex(vertex_buffer);
 	rec.draw(vertex_count);
 }
-auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd, gpu::context& ctx, const std::size_t frame_index, const std::size_t required_vertex_count) -> void {
+auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd, const gpu::context::state& gpu_s, const std::size_t frame_index, const std::size_t required_vertex_count) -> void {
 	auto& max_verts = fd.max_vertices[frame_index];
 	auto& vertex_buffer = fd.vertex_buffers[frame_index];
 
@@ -152,37 +147,36 @@ auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd
 		max_verts *= 2;
 	}
 
-	vertex_buffer = gpu::buffer::create(ctx.allocator(), {
+	vertex_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
 		.size = max_verts * sizeof(debug_vertex),
 		.usage = gpu::buffer_flag::vertex
 	});
 }
 
-auto gse::renderer::physics_debug::system::initialize(const init_context& phase, resources& r, frame_data& fd, state& s) -> void {
-	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets();
+auto gse::renderer::physics_debug::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, settings& cfg, resources& r, frame_data& fd, state& s) -> void {
+	auto& assets = phase.sched.state<asset::registry::state>();
 
-	gse::settings::install(phase, "Graphics", s.settings);
+	gse::settings::register_panel(phase, "Graphics", cfg);
 
-	r.shader_handle = assets.get<shader>("Shaders/Standard3D/physics_debug");
-	assets.instantly_load(r.shader_handle);
+	r.shader_handle = asset::registry::get<shader>(assets, "Shaders/Standard3D/physics_debug");
+	asset::registry::instantly_load(assets, r.shader_handle);
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(ctx.allocator(), {
+		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.shader_handle);
 
-		gpu::descriptor_writer(ctx.shader_registry(), ctx.device_handle(), r.shader_handle, r.descriptors[i])
+		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i])
 			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
 
-	r.pipeline = gpu::create_graphics_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), r.shader_handle, {
+	r.pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.shader_handle, {
 		.rasterization = {
 			.polygon = gpu::polygon_mode::line,
 			.cull = gpu::cull_mode::none

@@ -16,44 +16,39 @@ import gse.ecs;
 import gse.math;
 import gse.log;
 
-auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, frame_data& fd, state& s) -> void {
-	phase.sched.ensure_system<geometry_collector::system>(phase.reg);
-
-	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets();
+auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, frame_data& fd, state& s) -> void {
+	auto& assets = phase.sched.state<asset::registry::state>();
 
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
-		fd.tlas_per_frame[i] = gpu::build_tlas(ctx, max_instances);
+		fd.tlas_per_frame[i] = gpu::build_tlas(gpu_s, max_instances);
 		s.tlas_ptrs[i] = &fd.tlas_per_frame[i];
 		fd.instances[i].reserve(max_instances);
 	}
 
-	fd.tlas_update_shader = assets.get<shader>("Shaders/Compute/tlas_transform_update");
-	assets.instantly_load(fd.tlas_update_shader);
+	fd.tlas_update_shader = asset::registry::get<shader>(assets, "Shaders/Compute/tlas_transform_update");
+	asset::registry::instantly_load(assets, fd.tlas_update_shader);
 
-	fd.tlas_update_pipeline = gpu::create_compute_pipeline(ctx.device(), ctx.shader_registry(), ctx.bindless_textures(), fd.tlas_update_shader, "push_constants");
+	fd.tlas_update_pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, fd.tlas_update_shader, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(ctx.shader_registry(), ctx.descriptor_heap(), fd.tlas_update_shader);
+		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), fd.tlas_update_shader);
 	}
 }
 
-auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd, const state& s, const geometry_collector::system::state& gc_s) -> async::task<> {
-	auto& gpu = ctx.get<gpu::context>();
-
+auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, frame_data& fd, const state& s, const geometry_collector::system::state& gc_s, const geometry_collector::system::resources& gc_r) -> async::task<> {
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
 	}
 
-	if (!gpu.graph().frame_in_progress()) {
+	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
 
 	const auto& data = render_items[0];
-	const auto frame_index = gpu.graph().current_frame();
+	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	for (const auto& batch : data.normal_batches) {
 		const auto& m = batch.key.model_ptr->meshes()[batch.key.mesh_index];
@@ -66,7 +61,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 				continue;
 			}
 
-			fd.blas_cache[mesh_ptr] = gpu::build_blas(gpu, {
+			fd.blas_cache[mesh_ptr] = gpu::build_blas(gpu_s, {
 				.vertex_buffer = &m.vertex_gpu_buffer(),
 				.vertex_count = vertex_count,
 				.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
@@ -124,16 +119,12 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 
 	const auto instance_count = static_cast<std::uint32_t>(instances.size());
 
-	const auto& gc_r = co_await ctx.resources_of<geometry_collector::system::resources>();
-
 	gpu::write_tlas_instances(fd.tlas_per_frame[frame_index], instances.span());
-
-	auto pass = gpu.graph().add_pass<state>();
 
 	const auto mapping_bytes = instance_count * sizeof(std::uint32_t);
 	if (fd.mapping_buffer_capacity < mapping_bytes) {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-			fd.mapping_buffers[i] = gpu::buffer::create(gpu.allocator(), {
+			fd.mapping_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 				.size = mapping_bytes,
 				.usage = gpu::buffer_flag::storage
 			});
@@ -145,7 +136,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 
 	auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instance_buffer();
 
-	gpu::descriptor_writer(gpu.shader_registry(), gpu.device_handle(), fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
+	gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
 		.buffer("instance_data", gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
 		.buffer("index_mapping", fd.mapping_buffers[frame_index], 0, mapping_bytes)
 		.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)
@@ -158,16 +149,15 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, frame_data& fd,
 
 	const std::uint32_t workgroups = (instance_count + 63) / 64;
 
-	pass.track(gc_r.instance_buffer[frame_index]);
-	pass.reads(gpu::storage_read(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-		.after<geometry_collector::system::state>();
-
-	auto& rec = co_await pass.record();
+	auto& rec = co_await gpu::pass<state>(ctx)
+		.after<geometry_collector::system>()
+		.reads(gpu::storage_read(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
+		.tracks(gc_r.instance_buffer[frame_index]);
 
 	rec.barrier(gpu::barrier_scope::transfer_to_compute);
 	rec.bind(fd.tlas_update_pipeline);
 	rec.bind_descriptors(fd.tlas_update_pipeline, fd.tlas_update_descriptors[frame_index]);
 	rec.push(fd.tlas_update_pipeline, pc);
 	rec.dispatch(workgroups, 1, 1);
-	gpu::build_tlas_in_place(gpu, fd.tlas_per_frame[frame_index], instance_count, rec);
+	gpu::build_tlas_in_place(gpu_s, fd.tlas_per_frame[frame_index], instance_count, rec);
 }

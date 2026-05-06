@@ -36,28 +36,20 @@ import gse.audio;
 import gse.math;
 import gse.save;
 
-auto gse::renderer::system::initialize(const init_context& phase, resources& r, state& s) -> void {
-	auto& ctx = phase.get<gpu::context>();
-	auto& assets = phase.assets();
-	r.ctx = &ctx;
-	r.assets = &assets;
+auto gse::renderer::system::initialize(const init_context& phase, settings& cfg, state& s) -> void {
+	phase.sched.add_system<geometry_collector::system>();
+	phase.sched.add_system<skin_compute::system>();
+	phase.sched.add_system<cull_compute::system>();
+	phase.sched.add_system<physics_transform::system>();
+	phase.sched.add_system<depth_prepass::system>();
+	phase.sched.add_system<rt_shadow::system>();
+	phase.sched.add_system<light_culling::system>();
+	phase.sched.add_system<forward::system>();
+	phase.sched.add_system<physics_debug::system>();
+	phase.sched.add_system<ui::system>();
+	phase.sched.add_system<capture::system>();
 
-	assets.add_loader<texture>(ctx);
-	assets.add_loader<model>(ctx);
-	assets.add_loader<skinned_model>(ctx);
-	assets.add_loader<font>(ctx);
-	assets.add_loader<skeleton>(ctx);
-	assets.add_loader<clip_asset>(ctx);
-	assets.add_loader<audio_clip>(ctx);
-
-	assets.compile_all();
-
-	phase.sched.add_system<forward::system>(phase.reg);
-	phase.sched.add_system<physics_debug::system>(phase.reg);
-	phase.sched.add_system<ui::system>(phase.reg);
-	phase.sched.add_system<capture::system>(phase.reg);
-
-	gse::settings::install(phase, "Graphics", s.settings);
+	gse::settings::register_panel(phase, "Graphics", cfg);
 
 	const id dump_profile_id = generate_id("Dump Profile");
 	phase.channels.push<actions::add_action_request>({
@@ -68,35 +60,22 @@ auto gse::renderer::system::initialize(const init_context& phase, resources& r, 
 	s.dump_profile_action = actions::handle(dump_profile_id);
 }
 
-auto gse::renderer::system::update(const update_context& ctx, state& s) -> async::task<> {
-	auto& gpu = ctx.get<gpu::context>();
-	auto& assets = ctx.assets();
-
-	if (s.settings.hot_reload_enabled != assets.hot_reload_enabled()) {
-		if (s.settings.hot_reload_enabled) {
-			assets.enable_hot_reload();
-		} else {
-			assets.disable_hot_reload();
-		}
+auto gse::renderer::system::update(const update_context& ctx, const gpu::context::state& gpu_s, const window::state& window_s, const settings& cfg, state& s, const actions::system::state& sys) -> async::task<> {
+	if (cfg.hot_reload_enabled != s.last_hot_reload_enabled) {
+		ctx.channels.push<asset::hot_reload_request>({ .enabled = cfg.hot_reload_enabled });
+		s.last_hot_reload_enabled = cfg.hot_reload_enabled;
 	}
 
-	gpu.graph().set_gpu_timestamps_enabled(s.settings.gpu_timestamps_enabled);
-	gpu.graph().set_gpu_pipeline_stats_enabled(s.settings.gpu_pipeline_stats_enabled);
-	profile::set_enabled(s.settings.profile_aggregator_enabled);
+	gpu_s.render_graph->set_gpu_timestamps_enabled(cfg.gpu_timestamps_enabled);
+	gpu_s.render_graph->set_gpu_pipeline_stats_enabled(cfg.gpu_pipeline_stats_enabled);
+	profile::set_enabled(cfg.profile_aggregator_enabled);
 
-	const auto& sys = co_await ctx.state_of<actions::system::state>();
 	if (actions::system::pressed(actions::system::current_state(sys), sys, s.dump_profile_action)) {
 		profile::dump();
 		log::println(log::category::render, "Profile dumped");
 	}
 
-	assets.poll_assets();
-	assets.process_resource_queue();
-	gpu.window().update(gpu.ui_focus());
-
-	ctx.channels.push<camera::ui_focus_update>({ .focus = gpu.ui_focus() });
-
-	const auto window_size = gpu.window().viewport();
+	const auto window_size = window::viewport(window_s);
 	const auto new_viewport = vec2f(
 		static_cast<float>(window_size.x()),
 		static_cast<float>(window_size.y())
@@ -108,12 +87,4 @@ auto gse::renderer::system::update(const update_context& ctx, state& s) -> async
 	}
 
 	co_return;
-}
-
-auto gse::renderer::system::shutdown(shutdown_context& phase) -> void {
-	auto& ctx = phase.get<gpu::context>();
-	if (auto* assets = phase.try_assets()) {
-		assets->shutdown();
-	}
-	ctx.shutdown();
 }

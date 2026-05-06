@@ -69,6 +69,7 @@ export namespace gse {
 		virtual auto take_snapshot() -> void = 0;
 		virtual auto snapshot_data() const -> const void* = 0;
 		virtual auto push_any(std::any item) -> void = 0;
+		virtual auto flip() -> void = 0;
 	};
 
 	template <typename T>
@@ -89,6 +90,52 @@ export namespace gse {
 			if (auto* ptr = std::any_cast<T>(&item)) {
 				data.push(std::move(*ptr));
 			}
+		}
+
+		auto flip(
+		) -> void override {
+			data.flip();
+		}
+	};
+
+	template <typename T>
+	struct same_frame_channel_t : std::false_type {};
+
+	template <typename T>
+	constexpr bool is_same_frame_channel_v = same_frame_channel_t<T>::value;
+
+	template <typename T>
+	struct same_frame_typed_channel final : channel_base {
+		std::vector<T> data;
+		mutable std::mutex mutex;
+
+		auto take_snapshot(
+		) -> void override {}
+
+		auto snapshot_data(
+		) const -> const void* override {
+			return nullptr;
+		}
+
+		auto push_any(
+			std::any item
+		) -> void override {
+			if (auto* ptr = std::any_cast<T>(&item)) {
+				std::lock_guard lock(mutex);
+				data.push_back(std::move(*ptr));
+			}
+		}
+
+		auto flip(
+		) -> void override {
+			std::lock_guard lock(mutex);
+			data.clear();
+		}
+
+		auto drain(
+		) -> std::vector<T> {
+			std::lock_guard lock(mutex);
+			return std::exchange(data, {});
 		}
 	};
 

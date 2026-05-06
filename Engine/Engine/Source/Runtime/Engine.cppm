@@ -13,7 +13,6 @@ import gse.graphics;
 import gse.audio;
 import gse.physics;
 import gse.os;
-import gse.assets;
 import gse.gpu;
 import gse.log;
 import gse.save;
@@ -30,12 +29,15 @@ export namespace gse {
 
 	class engine : public identifiable {
 	public:
+		using setup_fn = std::function<void(engine&)>;
+
 		engine(
 			const std::string& name,
 			flags<engine_flag> engine_flags
 		);
 
 		auto initialize(
+			const setup_fn& app_setup = {}
 		) -> void;
 
 		auto update(
@@ -123,8 +125,6 @@ export namespace gse {
 		flags<engine_flag> m_flags;
 		scheduler m_scheduler;
 		world m_world;
-		std::unique_ptr<gpu::context> m_render_ctx;
-		std::unique_ptr<asset::registry> m_assets;
 	};
 }
 
@@ -164,10 +164,10 @@ auto gse::engine::add_scene(std::string_view name, scene::setup_fn setup) -> sce
 
 template <typename S, typename... Args>
 auto gse::engine::add_system(Args&&... args) -> typename S::state& {
-	return m_scheduler.add_system<S>(m_world.registry(), std::forward<Args>(args)...);
+	return m_scheduler.add_system<S>(std::forward<Args>(args)...);
 }
 
 template <typename S, typename... Args>
 auto gse::engine::ensure_system(Args&&... args) -> typename S::state& {
-	return m_scheduler.ensure_system<S>(m_world.registry(), std::forward<Args>(args)...);
+	return m_scheduler.ensure_system<S>(std::forward<Args>(args)...);
 }

@@ -25,8 +25,6 @@ export namespace gse::gui::draw {
         float extra_right_padding = 0.0f;
         bool toggle_on_row_click = true;
         bool multi_select = false;
-        std::optional<ui_rect> clip_rect = std::nullopt;
-        float scroll_offset = 0.f;
     };
 
     struct tree_selection {
@@ -167,10 +165,8 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
     const ui_rect context_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
     const float indent = std::max(0.f, opt.indent_per_level) * std::max(0, level);
 
-    const float adjusted_y = ctx.layout_cursor.y() + opt.scroll_offset;
-
     const ui_rect row_rect = ui_rect::from_position_size(
-        { context_rect.left() + indent, adjusted_y },
+        { context_rect.left() + indent, ctx.layout_cursor.y() },
         { context_rect.width() - indent, row_height }
     );
 
@@ -179,7 +175,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
     const bool leaf = tree_node_is_leaf(t, ops);
     bool is_open = open_set.contains(key);
 
-    const ui_rect effective_clip = opt.clip_rect.value_or(context_rect);
+    const ui_rect effective_clip = ctx.current_clip().value_or(context_rect);
     const bool row_visible = row_rect.top() >= effective_clip.bottom() - row_height &&
                               row_rect.bottom() <= effective_clip.top() + row_height;
 
@@ -235,7 +231,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
                 },
                 .scale = ctx.style.font_size,
                 .color = ctx.style.color_text,
-                .clip_rect = row_rect
+                .clip_rect = arrow_rect
             });
         }
 

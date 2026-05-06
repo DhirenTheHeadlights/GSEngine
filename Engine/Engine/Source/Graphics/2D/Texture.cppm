@@ -6,6 +6,7 @@ import gse.core;
 import gse.math;
 import gse.os;
 import gse.gpu;
+import gse.assets;
 
 export namespace gse {
     class texture : public identifiable {
@@ -36,7 +37,7 @@ export namespace gse {
         );
 
         auto load(
-            const gpu::context& context
+            asset::load_ctx& ctx
         ) -> void;
 
         auto unload(
@@ -59,7 +60,7 @@ export namespace gse {
 
     private:
         auto create_vulkan_resources(
-            gpu::context& context,
+            gpu::context::state& context,
             profile texture_profile
         ) -> void;
 

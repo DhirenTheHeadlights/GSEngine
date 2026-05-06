@@ -31,6 +31,7 @@ export namespace gs::player {
 	struct system {
 		struct state {
 			std::unordered_map<gse::id, std::unique_ptr<bindings>> bindings_by_owner;
+			gse::interval_timer<> debug_timer{ gse::seconds(0.5f) };
 		};
 
 		static auto update(
@@ -47,6 +48,11 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> gse::asyn
 		gse::write<gse::camera::follow_component>
 	>();
 
+	const bool debug_tick = s.debug_timer.tick();
+	if (debug_tick) {
+		gse::log::println("[player-debug] update entered, players.size()={}, bindings_by_owner={}", players.size(), s.bindings_by_owner.size());
+	}
+
 	for (auto& p : players) {
 		const auto owner_id = p.owner_id();
 		auto& slot = s.bindings_by_owner[owner_id];
@@ -56,6 +62,8 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> gse::asyn
 
 		slot = std::make_unique<bindings>();
 		auto& b = *slot;
+
+		gse::log::println("[player-debug] creating bindings for owner {}", owner_id.number());
 
 		const auto w = gse::actions::add<"Player_Move_Forward">(gse::key::w);
 		const auto a = gse::actions::add<"Player_Move_Left">(gse::key::a);
@@ -102,13 +110,20 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> gse::asyn
 		const gse::length height = gse::feet(6.0f);
 		const gse::length width = gse::feet(3.0f);
 
-		ctx.add_component<gse::physics::motion_component>(owner_id, {
+		auto* added_motion = ctx.add_component<gse::physics::motion_component>(owner_id, {
 			.current_position = p.initial_position,
 			.mass = gse::pounds(180.f),
-			.update_orientation = false,
 			.velocity_drive_target = {},
 			.velocity_drive_active = true,
 		});
+
+		gse::log::println(
+			"[player-debug] just-added motion: pos={} vel={} mass={} initial_position_param={}",
+			added_motion->current_position,
+			added_motion->current_velocity,
+			added_motion->mass,
+			p.initial_position
+		);
 
 		ctx.add_component<gse::physics::collision_component>(owner_id, {
 			.bounding_box = {
@@ -132,11 +147,27 @@ auto gs::player::system::update(gse::update_context& ctx, state& s) -> gse::asyn
 
 		auto* motion = motions.find(owner_id);
 		if (!motion) {
+			if (debug_tick) {
+				gse::log::println("[player-debug] owner {}: no motion component", owner_id.number());
+			}
 			continue;
 		}
 
 		const auto speed = b.shift.held ? p.sprint_speed : p.walk_speed;
 		const auto v = b.move.value;
+
+		if (debug_tick) {
+			gse::log::println(
+				"[player-debug] owner {} ptr=0x{:x} motion_count={}: pos={} vel={} airborne={} drive_target={}",
+				owner_id,
+				reinterpret_cast<std::uintptr_t>(motion),
+				motions.size(),
+				motion->current_position,
+				motion->current_velocity,
+				motion->airborne,
+				motion->velocity_drive_target
+			);
+		}
 
 		if (v.x() != 0.f || v.y() != 0.f) {
 			const auto dir = gse::camera_direction_relative_to_origin(

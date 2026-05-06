@@ -52,7 +52,8 @@ export namespace gse::audio {
 }
 
 auto gse::audio::play(const std::string& clip_name, const bool loop) -> channel_future<voice_handle> {
-	const auto clip = resources_of<renderer::system::resources>().assets->get<audio_clip>(clip_name);
+	const auto& assets = state_of<asset::registry::state>();
+	const auto clip = asset::registry::get<audio_clip>(assets, clip_name);
 	return channel_add<play_request>({
 		.clip = clip.resolve(),
 		.loop = loop

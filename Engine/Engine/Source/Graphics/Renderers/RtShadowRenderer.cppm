@@ -39,15 +39,18 @@ export namespace gse::renderer::rt_shadow {
 
 		static auto initialize(
 			const init_context& phase,
+			const gpu::context::state& gpu_s,
 			frame_data& fd,
 			state& s
 		) -> void;
 
 		static auto frame(
 			frame_context& ctx,
+			const gpu::context::state& gpu_s,
 			frame_data& fd,
 			const state& s,
-			const geometry_collector::system::state& gc_s
+			const geometry_collector::system::state& gc_s,
+			const geometry_collector::system::resources& gc_r
 		) -> async::task<>;
 	};
 }

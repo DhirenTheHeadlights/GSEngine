@@ -10,6 +10,7 @@ import gse.time;
 import gse.diag;
 import gse.save;
 import gse.log;
+import gse.gpu;
 
 import gse.math;
 import gse.meta;
@@ -95,33 +96,34 @@ export namespace gse::physics {
 		std::uint32_t position_offset = 0;
 	};
 
-	struct settings {
-		[[=gse::settings::describe{}]]
-		bool update_phys = true;
-
-		[[=gse::settings::describe{}]]
-		bool use_gpu_solver = false;
-
-		[[=gse::settings::describe{}, =gse::settings::range<1, 40>{}]]
-		int solver_iterations = 15;
-
-		[[=gse::settings::describe{}]]
-		bool compare_solvers = false;
-
-		[[=gse::settings::describe{}]]
-		bool use_jacobi = false;
-
-		[[=gse::settings::describe{}, =gse::settings::range<0.1f, 1.0f>{}]]
-		float jacobi_omega = 0.67f;
-
-		[[=gse::settings::describe{}, =gse::settings::range<1, 8>{}]]
-		int physics_substeps = 2;
-	};
-
 	class system {
 	public:
+		struct settings {
+			static constexpr std::string_view category = "Physics";
+
+			[[=gse::settings::describe{}]]
+			bool update_phys = true;
+
+			[[=gse::settings::describe{}]]
+			bool use_gpu_solver = false;
+
+			[[=gse::settings::describe{}, =gse::settings::range<1, 40>{}]]
+			int solver_iterations = 15;
+
+			[[=gse::settings::describe{}]]
+			bool compare_solvers = false;
+
+			[[=gse::settings::describe{}]]
+			bool use_jacobi = false;
+
+			[[=gse::settings::describe{}, =gse::settings::range<0.1f, 1.0f>{}]]
+			float jacobi_omega = 0.67f;
+
+			[[=gse::settings::describe{}, =gse::settings::range<1, 8>{}]]
+			int physics_substeps = 2;
+		};
+
 		struct state {
-			physics::settings settings;
 			bool gpu_buffers_created = false;
 			gpu_solver_stats gpu_stats;
 			std::vector<joint_definition> joints;
@@ -167,6 +169,8 @@ export namespace gse::physics {
 
 		static auto initialize(
 			const init_context& phase,
+			const gpu::context::state* gpu_s,
+			settings& cfg,
 			update_data& ud,
 			frame_data& fd,
 			state& s
@@ -174,12 +178,15 @@ export namespace gse::physics {
 
 		static auto update(
 			update_context& ctx,
+			const settings& cfg,
 			update_data& ud,
 			state& s
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
+			const gpu::context::state* gpu_s,
+			const settings& cfg,
 			frame_data& fd,
 			const state& s
 		) -> async::task<>;
@@ -249,6 +256,7 @@ export namespace gse::physics {
 
 		static auto update_vbd(
 			int steps,
+			const settings& cfg,
 			update_data& ud,
 			state& s,
 			write<motion_component>& motion,
@@ -258,6 +266,7 @@ export namespace gse::physics {
 
 		static auto update_vbd_gpu(
 			int steps,
+			const settings& cfg,
 			update_data& ud,
 			state& s,
 			write<motion_component>& motion,

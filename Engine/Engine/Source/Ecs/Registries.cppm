@@ -129,11 +129,19 @@ export namespace gse {
 		auto take_snapshot_all(
 		) -> void;
 
+		auto flip_all(
+		) -> void;
+
 		auto make_writer(
 		) -> channel_writer;
 
 		auto clear(
 		) -> void;
+
+		template <typename T>
+			requires is_same_frame_channel_v<T>
+		auto drain(
+		) -> std::vector<T>;
 
 	private:
 		std::unordered_map<id, std::unique_ptr<channel_base>> m_channels;
@@ -212,7 +220,12 @@ auto gse::channel_writer::push(T item) -> void {
 		id_of<T>(),
 		std::any(std::move(item)),
 		+[]() -> std::unique_ptr<channel_base> {
-			return std::make_unique<typed_channel<T>>();
+			if constexpr (is_same_frame_channel_v<T>) {
+				return std::make_unique<same_frame_typed_channel<T>>();
+			}
+			else {
+				return std::make_unique<typed_channel<T>>();
+			}
 		}
 	);
 }
@@ -229,6 +242,15 @@ auto gse::channel_writer::push(T item) -> channel_future<typename T::result_type
 		}
 	);
 	return future;
+}
+
+template <typename T>
+	requires gse::is_same_frame_channel_v<T>
+auto gse::channel_registry::drain() -> std::vector<T> {
+	auto& base = ensure(id_of<T>(), +[]() -> std::unique_ptr<channel_base> {
+		return std::make_unique<same_frame_typed_channel<T>>();
+	});
+	return static_cast<same_frame_typed_channel<T>&>(base).drain();
 }
 
 gse::channel_writer::channel_writer(channel_writer&& other) noexcept
@@ -295,6 +317,13 @@ auto gse::channel_registry::take_snapshot_all() -> void {
 	std::lock_guard lock(m_mutex);
 	for (const auto& ch : std::views::values(m_channels)) {
 		ch->take_snapshot();
+	}
+}
+
+auto gse::channel_registry::flip_all() -> void {
+	std::lock_guard lock(m_mutex);
+	for (const auto& ch : std::views::values(m_channels)) {
+		ch->flip();
 	}
 }
 

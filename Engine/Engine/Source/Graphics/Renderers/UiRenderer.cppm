@@ -132,6 +132,7 @@ export namespace gse::renderer::ui {
 
         static auto initialize(
             const init_context& phase,
+            const gpu::context::state& gpu_s,
             resources& r,
             frame_data& fd,
             state& s
@@ -146,6 +147,7 @@ export namespace gse::renderer::ui {
 
         static auto frame(
             frame_context& ctx,
+            const gpu::context::state& gpu_s,
             const resources& r,
             frame_data& fd,
             const state& s

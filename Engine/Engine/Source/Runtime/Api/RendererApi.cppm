@@ -54,55 +54,60 @@ export namespace gse {
 
 template <typename Resource>
 auto gse::get(const id& id) -> resource::handle<Resource> {
-	if (!has_state<renderer::system::state>()) {
+	auto* assets = const_cast<asset::registry::state*>(try_state_of<asset::registry::state>());
+	if (!assets) {
 		return {};
 	}
-	return resources_of<renderer::system::resources>().assets->get<Resource>(id);
+	return asset::registry::get<Resource>(*assets, id);
 }
 
 template <typename Resource>
 auto gse::get(const std::string& filename) -> resource::handle<Resource> {
-	if (!has_state<renderer::system::state>()) {
+	auto* assets = const_cast<asset::registry::state*>(try_state_of<asset::registry::state>());
+	if (!assets) {
 		return {};
 	}
-	return resources_of<renderer::system::resources>().assets->get<Resource>(filename);
+	return asset::registry::get<Resource>(*assets, filename);
 }
 
 template <typename Resource, typename... Args>
 auto gse::queue(const std::string& name, Args&&... args) -> resource::handle<Resource> {
-	if (!has_state<renderer::system::state>()) {
+	auto* assets = const_cast<asset::registry::state*>(try_state_of<asset::registry::state>());
+	if (!assets) {
 		return {};
 	}
-	return resources_of<renderer::system::resources>().assets->queue<Resource>(name, std::forward<Args>(args)...);
+	return asset::registry::queue<Resource>(*assets, name, std::forward<Args>(args)...);
 }
 
 template <typename Resource>
 auto gse::instantly_load(const id& id) -> resource::handle<Resource> {
-	if (!has_state<renderer::system::state>()) {
+	auto* assets = const_cast<asset::registry::state*>(try_state_of<asset::registry::state>());
+	if (!assets) {
 		return {};
 	}
-	return resources_of<renderer::system::resources>().assets->instantly_load<Resource>(id);
+	const auto handle = asset::registry::get<Resource>(*assets, id);
+	asset::registry::instantly_load(*assets, handle);
+	return handle;
 }
 
 template <typename Resource>
 auto gse::add(Resource&& resource) -> void {
-	if (!has_state<renderer::system::state>()) {
+	auto* assets = const_cast<asset::registry::state*>(try_state_of<asset::registry::state>());
+	if (!assets) {
 		return;
 	}
-	resources_of<renderer::system::resources>().assets->add<Resource>(std::forward<Resource>(resource));
+	asset::registry::add<Resource>(*assets, std::forward<Resource>(resource));
 }
 
 template <typename Resource>
 auto gse::resource_state(const id& id) -> resource::state {
-	if (!has_state<renderer::system::state>()) {
+	const auto* assets = try_state_of<asset::registry::state>();
+	if (!assets) {
 		return resource::state::unloaded;
 	}
-	return resources_of<renderer::system::resources>().assets->resource_state<Resource>(id);
+	return asset::registry::resource_state<Resource>(*assets, id);
 }
 
 auto gse::set_ui_focus(const bool focus) -> void {
-	if (!has_state<renderer::system::state>()) {
-		return;
-	}
-	resources_of<renderer::system::resources>().ctx->set_ui_focus(focus);
+	channel_add(ui_focus_request{ .focus = focus });
 }

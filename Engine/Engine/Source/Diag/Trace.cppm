@@ -134,14 +134,6 @@ export namespace gse::trace {
 		id id
 	) -> bool;
 
-	auto mark_pool_root(
-		id id
-	) -> void;
-
-	auto is_pool_root(
-		id id
-	) -> bool;
-
 	auto current_eid(
 	) -> std::uint64_t;
 
@@ -297,9 +289,6 @@ namespace gse::trace {
 
 	std::shared_mutex hidden_ids_mutex;
 	std::unordered_set<id> hidden_ids;
-
-	std::shared_mutex pool_root_ids_mutex;
-	std::unordered_set<id> pool_root_ids;
 
 	std::shared_mutex virtual_thread_mutex;
 	std::unordered_map<std::uint32_t, std::string> virtual_thread_names;

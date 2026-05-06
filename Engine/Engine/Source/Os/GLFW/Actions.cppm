@@ -10,6 +10,7 @@ import gse.diag;
 import gse.ecs;
 import gse.math;
 import gse.assert;
+import gse.log;
 
 import :input;
 import :keys;
@@ -360,6 +361,7 @@ export namespace gse::actions {
 			std::vector<std::uint16_t> axis2_ids_cache;
 			id_mapped_collection<resolved_axis2_keys> axis2_by_id;
 			std::vector<channel_binding> channel_bindings;
+			interval_timer<> debug_timer{ seconds(0.5f) };
 		};
 
 		static auto initialize(
@@ -748,6 +750,36 @@ auto gse::actions::system::update(update_context& ctx, state& s, const input::sy
 		const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
 		const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
 		action_state.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
+	}
+
+	if (s.debug_timer.tick()) {
+		log::println(
+			"[actions-debug] descriptions={} axis2_by_id={} channel_bindings={} key_to_action={} pending_keys={} pending_axis2={} w_held={} a_held={} s_held={} d_held={}",
+			s.descriptions.size(),
+			s.axis2_by_id.size(),
+			s.channel_bindings.size(),
+			s.resolved.key_to_action.size(),
+			s.pending_key_bindings.size(),
+			s.pending_axis2_reqs.size(),
+			in.key_held(key::w),
+			in.key_held(key::a),
+			in.key_held(key::s),
+			in.key_held(key::d)
+		);
+		for (const auto& [id, left, right, back, fwd, scale] : s.axis2_by_id.items()) {
+			const auto axis_id = static_cast<std::uint16_t>(id.number());
+			const auto val = action_state.axis2_v(axis_id);
+			log::println(
+				"[actions-debug]   axis2 id={} keys[L/R/B/F]={}/{}/{}/{} val=({:.2f},{:.2f}) axis_id_truncated={}",
+				id.number(),
+				static_cast<int>(left),
+				static_cast<int>(right),
+				static_cast<int>(back),
+				static_cast<int>(fwd),
+				val.x(), val.y(),
+				axis_id
+			);
+		}
 	}
 
 	for (const auto& desc : s.descriptions.items()) {

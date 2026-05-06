@@ -40,6 +40,19 @@ namespace gse::gui {
 export namespace gse::gui {
 	class system {
 	public:
+		struct settings {
+			static constexpr std::string_view category = "UI";
+
+			[[=gse::settings::describe{}]]
+			theme current_theme = theme::dark;
+
+			[[=gse::settings::describe{}, =gse::settings::range<0.5f, 2.0f>{}]]
+			float ui_scale = 1.0f;
+
+			[[=gse::settings::describe{}]]
+			gse::settings::choice<int> font;
+		};
+
 		struct state {
 			id_mapped_collection<menu> menus;
 			menu* current_menu = nullptr;
@@ -48,7 +61,7 @@ export namespace gse::gui {
 			resource::handle<texture> blank_texture;
 
 			std::optional<dock::space> active_dock_space;
-			gui::state current_state;
+			gui::state current_state{ states::idle{} };
 
 			std::filesystem::path file_path = "Misc/gui_layout.ini";
 			clock save_clock;
@@ -61,18 +74,7 @@ export namespace gse::gui {
 			draw_context* context = nullptr;
 
 			menu_bar::state menu_bar_state;
-			settings::panel_state settings_state;
-
-			struct settings {
-				[[=gse::settings::describe{}]]
-				theme current_theme = theme::dark;
-
-				[[=gse::settings::describe{}, =gse::settings::range<0.5f, 2.0f>{}]]
-				float ui_scale = 1.0f;
-
-				[[=gse::settings::describe{}]]
-				gse::settings::choice<int> font;
-			} settings;
+			gse::settings::panel_state settings_state;
 
 			int last_font_index = 0;
 
@@ -95,9 +97,29 @@ export namespace gse::gui {
 			std::unique_ptr<ids::scope> current_scope;
 		};
 
-		static auto initialize(init_context& phase, resources& r, state& s) -> void;
-		static auto update(update_context& ctx, resources& r, state& s) -> async::task<>;
-		static auto shutdown(shutdown_context& phase, resources& r, state& s) -> void;
+		static auto initialize(
+			init_context& phase,
+			const window::state& window_s,
+			settings& cfg,
+			resources& r,
+			state& s
+		) -> void;
+
+		static auto update(
+			update_context& ctx,
+			const window::state& window_s,
+			const asset::registry::state& assets_s,
+			const gse::input::system::state& input_state,
+			const settings& cfg,
+			resources& r,
+			state& s
+		) -> async::task<>;
+
+		static auto shutdown(
+			shutdown_context& phase,
+			resources& r,
+			state& s
+		) -> void;
 
 		static auto save(state& s) -> void;
 
@@ -112,20 +134,21 @@ export namespace gse::gui {
 
 		static auto handle_dragging_state(
 			state& s,
+			const settings& cfg,
 			const states::dragging& current,
-			const window& window,
+			const window::state& window_s,
 			vec2f mouse_position,
-			bool mouse_held,
-			const gpu::context& ctx
+			bool mouse_held
 		) -> gui::state;
 
 		static auto handle_resizing_state(
 			state& s,
+			const settings& cfg,
 			const states::resizing& current,
 			vec2f mouse_position,
 			bool mouse_held,
 			const style& style,
-			const gpu::context& ctx
+			const window::state& window_s
 		) -> gui::state;
 
 		static auto handle_resizing_divider_state(
@@ -160,7 +183,8 @@ export namespace gse::gui {
 
 		static auto usable_screen_rect(
 			state& s,
-			const gpu::context& ctx
+			const settings& cfg,
+			const window::state& window_s
 		) -> ui_rect;
 
 		static auto calculate_display_rect(
@@ -169,14 +193,15 @@ export namespace gse::gui {
 		) -> ui_rect;
 
 		static auto apply_scale(
-			state& s,
+			const settings& cfg,
 			style sty,
 			float viewport_height
 		) -> style;
 
 		static auto reload_font(
 			state& s,
-			const asset::registry& assets
+			const settings& cfg,
+			const asset::registry::state& assets
 		) -> void;
 
 		static auto begin_menu(
