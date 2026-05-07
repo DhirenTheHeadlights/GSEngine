@@ -12,13 +12,8 @@ export namespace gse {
 			std::optional<server> srv;
 		};
 
-		static auto initialize(
-			init_context& phase,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
+		static auto run(
+			run_context& ctx,
 			state& s
 		) -> async::task<>;
 	};
@@ -29,13 +24,8 @@ export namespace gse {
 			interval_timer<> timer{ seconds(5.f) };
 		};
 
-		static auto initialize(
-			init_context& phase,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
+		static auto run(
+			run_context& ctx,
 			state& s,
 			const server_system::state& srv
 		) -> async::task<>;
@@ -46,65 +36,65 @@ export namespace gse {
 	) -> void;
 }
 
-auto gse::server_system::initialize(init_context&, state&) -> void {}
-
-auto gse::server_system::update(update_context&, state& s) -> async::task<> {
-	if (s.srv) {
-		s.srv->update();
+auto gse::server_system::run(run_context& ctx, state& s) -> async::task<> {
+	while (true) {
+		if (s.srv) {
+			s.srv->update();
+		}
+		co_await ctx.next_tick();
 	}
-	co_return;
 }
 
-auto gse::server_app_system::initialize(init_context&, state&) -> void {}
+auto gse::server_app_system::run(run_context& ctx, state& s, const server_system::state& srv) -> async::task<> {
+	while (true) {
+		if (s.timer.tick()) {
+			++s.tick_count;
+		}
 
-auto gse::server_app_system::update(update_context&, state& s, const server_system::state& srv) -> async::task<> {
-	if (s.timer.tick()) {
-		++s.tick_count;
+		if (keyboard::pressed(key::escape)) {
+			shutdown();
+		}
+
+		gui::panel("Server Control", [&](gui::builder& ui) {
+			ui.draw<gui::text>({
+				.content = "This is a simple server application.",
+			});
+
+			if (!srv.srv) {
+				return;
+			}
+
+			ui.draw<gui::value<std::uint32_t>>({
+				.name = "Peers",
+				.val = static_cast<std::uint32_t>(srv.srv->peers().size()),
+			});
+			ui.draw<gui::value<std::uint32_t>>({
+				.name = "Clients",
+				.val = static_cast<std::uint32_t>(srv.srv->clients().size()),
+			});
+			if (const auto h = srv.srv->host_entity()) {
+				ui.draw<gui::text>({
+					.content = std::format("Host entity: {}", *h),
+				});
+			}
+			else {
+				ui.draw<gui::text>({
+					.content = "Host entity: <none>",
+				});
+			}
+			for (const auto& [ip, port] : srv.srv->peers() | std::views::keys) {
+				ui.draw<gui::text>({
+					.content = std::format("Peer: {}:{}", ip, port),
+				});
+			}
+			ui.draw<gui::value<std::uint32_t>>({
+				.name = "Ticks",
+				.val = s.tick_count,
+			});
+		});
+
+		co_await ctx.next_tick();
 	}
-
-	if (keyboard::pressed(key::escape)) {
-		shutdown();
-	}
-
-	gui::panel("Server Control", [&](gui::builder& ui) {
-		ui.draw<gui::text>({
-			.content = "This is a simple server application.",
-		});
-
-		if (!srv.srv) {
-			return;
-		}
-
-		ui.draw<gui::value<std::uint32_t>>({
-			.name = "Peers",
-			.val = static_cast<std::uint32_t>(srv.srv->peers().size()),
-		});
-		ui.draw<gui::value<std::uint32_t>>({
-			.name = "Clients",
-			.val = static_cast<std::uint32_t>(srv.srv->clients().size()),
-		});
-		if (const auto h = srv.srv->host_entity()) {
-			ui.draw<gui::text>({
-				.content = std::format("Host entity: {}", *h),
-			});
-		}
-		else {
-			ui.draw<gui::text>({
-				.content = "Host entity: <none>",
-			});
-		}
-		for (const auto& [ip, port] : srv.srv->peers() | std::views::keys) {
-			ui.draw<gui::text>({
-				.content = std::format("Peer: {}:{}", ip, port),
-			});
-		}
-		ui.draw<gui::value<std::uint32_t>>({
-			.name = "Ticks",
-			.val = s.tick_count,
-		});
-	});
-
-	co_return;
 }
 
 auto gse::server_app_setup(engine& e) -> void {

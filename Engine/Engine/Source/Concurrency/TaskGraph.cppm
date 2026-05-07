@@ -21,6 +21,10 @@ export namespace gse {
 			id state_type
 		) -> async::task<>;
 
+		auto is_state_ready(
+			id state_type
+		) -> bool;
+
 	private:
 		struct state_slot {
 			std::atomic<bool> ready{ false };
@@ -77,6 +81,11 @@ auto gse::task_graph::notify_state_ready(const id state_type) -> void {
 	for (auto h : handles) {
 		h.resume();
 	}
+}
+
+auto gse::task_graph::is_state_ready(const id state_type) -> bool {
+	auto* slot = get_or_create_slot(state_type);
+	return slot->ready.load(std::memory_order_acquire);
 }
 
 auto gse::task_graph::wait_state_ready(const id state_type) -> async::task<> {

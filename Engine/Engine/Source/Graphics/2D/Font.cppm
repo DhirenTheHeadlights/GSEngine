@@ -8,6 +8,7 @@ import gse.math;
 import gse.gpu;
 import gse.core;
 import gse.assets;
+import gse.containers;
 import gse.freetype;
 
 export namespace gse {
@@ -63,6 +64,24 @@ export namespace gse {
 
     class font : public identifiable {
     public:
+        struct [[
+            = asset_format::baked_ext<".gfont">{},
+            = asset_format::baked_dir<"Fonts">{},
+            = asset_format::source_dir<"Fonts">{},
+            = asset_format::source_exts<".ttf", ".otf">{},
+            = asset_format::magic<0x47464E54>{},
+            = asset_format::version<2>{}
+        ]] baked {
+            std::string source_path_relative;
+            float ascender = 0.0f;
+            float descender = 0.0f;
+            std::uint32_t atlas_width = 0;
+            std::uint32_t atlas_height = 0;
+            std::uint32_t channels = 0;
+            raw_blob_owned<std::byte> rgba;
+            std::unordered_map<char, glyph> glyphs;
+        };
+
         explicit font(
             const std::filesystem::path& path
         );

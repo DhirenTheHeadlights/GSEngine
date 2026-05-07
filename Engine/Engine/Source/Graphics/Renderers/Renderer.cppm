@@ -49,16 +49,16 @@ export namespace gse::renderer {
 		struct settings {
 			static constexpr std::string_view category = "Graphics";
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Watch shader sources on disk and reload pipelines when files change.">{}]]
 			bool hot_reload_enabled = false;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}]]
 			bool gpu_timestamps_enabled = true;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}]]
 			bool gpu_pipeline_stats_enabled = false;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Aggregate per-frame profiler samples into rolling averages for the HUD.">{}]]
 			bool profile_aggregator_enabled = true;
 		};
 
@@ -68,17 +68,11 @@ export namespace gse::renderer {
 			bool last_hot_reload_enabled = false;
 		};
 
-		static auto initialize(
-			const init_context& phase,
-			settings& cfg,
-			state& s
-		) -> void;
-
-		static auto update(
-			const update_context& ctx,
+		static auto run(
+			run_context& ctx,
 			const gpu::context::state& gpu_s,
 			const window::state& window_s,
-			const settings& cfg,
+			settings& cfg,
 			state& s,
 			const actions::system::state& sys
 		) -> async::task<>;

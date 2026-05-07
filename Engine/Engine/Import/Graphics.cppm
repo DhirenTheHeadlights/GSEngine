@@ -5,6 +5,7 @@ export import :animation_bindings;
 export import :animation_component;
 export import :animation_dsl;
 export import :animation_graph;
+export import :asset_types;
 export import :builder;
 export import :button_widget;
 export import :camera_component;

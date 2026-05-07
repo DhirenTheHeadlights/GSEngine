@@ -129,14 +129,8 @@ export namespace gse::audio {
             std::vector<std::uint32_t> free_list;
         };
 
-        static auto initialize(
-            const init_context& phase,
-            resources& r,
-            state& s
-        ) -> void;
-
-        static auto update(
-            update_context& ctx,
+        static auto run(
+            run_context& ctx,
             resources& r,
             state& s
         ) -> async::task<>;

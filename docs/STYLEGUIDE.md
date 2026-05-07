@@ -191,6 +191,32 @@ Each file should have one `export namespace` block containing all declarations, 
 
 When a file contains multiple sizeable class definitions, give each sizeable class its own file. Small related types (e.g. a group of phase structs, or a handful of POD structs) can share a file. A class is "sizeable" if its definition section would be long enough to make you scroll past other class declarations to reach it.
 
+No blank line directly inside the namespace braces. The first declaration sits flush against the opening `{`, and the closing `}` sits flush against the last declaration. The blank line goes *outside* the namespace (between the last import and the opening, or between the namespace block and the out-of-line definitions below it):
+
+```cpp
+// correct
+import gse.core;
+
+export namespace gse {
+    struct foo {};
+
+    auto bar(
+    ) -> int;
+}
+
+auto gse::bar() -> int { return 0; }
+
+// wrong
+export namespace gse {
+
+    struct foo {};
+
+    auto bar(
+    ) -> int;
+
+}
+```
+
 ---
 
 ## Alignment
@@ -260,7 +286,7 @@ inline auto simd_cpu_supported() noexcept -> bool {
 
 The only legitimate use of `inline` inside a module is `inline namespace` (for versioning), which is a different feature sharing the keyword.
 
-**Namespace-scope variables are different.** A non-`inline` namespace-scope variable in a module interface (especially `thread_local` ones) gets emitted by every TU that imports the module, producing duplicate-symbol errors at link time. Always mark namespace-scope variables `inline` — `inline thread_local foo bar;` for TLS, `inline foo bar;` for plain globals. This is the variable-deduplication mechanism, not the function-linkage one — different semantics, same keyword.
+**Non-`constexpr` namespace-scope variables are different.** A non-`inline` namespace-scope variable in a module interface (especially `thread_local` ones) gets emitted by every TU that imports the module, producing duplicate-symbol errors at link time. Mark these `inline` — `inline thread_local foo bar;` for TLS, `inline foo bar;` for plain globals. This is the variable-deduplication mechanism, not the function-linkage one — different semantics, same keyword.
 
 ```cpp
 // correct — single definition shared across importers
@@ -270,6 +296,62 @@ inline std::atomic<bool> trace_enabled = true;
 // wrong — every TU that imports this module emits its own copy
 thread_local thread_buffer tls;
 std::atomic<bool> trace_enabled = true;
+```
+
+**`constexpr` variables don't need `inline`.** Since C++17, namespace-scope `constexpr` variables are implicitly `inline`. Writing `inline constexpr` is redundant — plain `constexpr` is the form.
+
+```cpp
+// correct
+constexpr std::array<std::string_view, 5> exts = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
+
+// wrong — inline is implied by constexpr at namespace scope
+inline constexpr std::array<std::string_view, 5> exts = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
+```
+
+---
+
+## Concepts in Template Parameter Lists
+
+When constraining a template parameter on a single concept, put the concept in place of `typename`. Do not write a separate `requires` clause for that constraint:
+
+```cpp
+// correct — concept is the parameter introducer
+template <has_asset_format T>
+auto load_baked(
+    const std::filesystem::path& path,
+    T& out
+) -> bool;
+
+// wrong — extra requires clause for what is just a single concept
+template <typename T> requires has_asset_format<T>
+auto load_baked(
+    const std::filesystem::path& path,
+    T& out
+) -> bool;
+```
+
+Reserve `requires` clauses for constraints that genuinely don't fit the parameter slot — multi-parameter relationships, ad-hoc `requires { ... }` expressions, or boolean compositions of concepts.
+
+```cpp
+// correct — relationship between two parameters needs a requires clause
+template <typename T, typename U> requires std::convertible_to<T, U>
+auto coerce(
+    T&& v
+) -> U;
+```
+
+Apply the same rule to abbreviated function templates (`auto` parameters) — use the concept directly:
+
+```cpp
+// correct
+auto print_one(
+    std::integral auto v
+) -> void;
+
+// wrong
+auto print_one(
+    auto v
+) -> void requires std::integral<decltype(v)>;
 ```
 
 ---

@@ -202,16 +202,11 @@ export namespace gse::renderer::geometry_collector {
 			per_frame_resource<gpu::buffer> physics_mapping_buffer;
 		};
 
-		static auto initialize(
-			init_context& phase,
+		static auto run(
+			run_context& ctx,
 			const gpu::context::state& gpu_s,
+			const asset::state& assets_s,
 			resources& r,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
-			const resources& r,
 			state& s,
 			const camera::system::state& cam_state
 		) -> async::task<>;

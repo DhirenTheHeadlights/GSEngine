@@ -35,8 +35,8 @@ export namespace gse::input {
 			interval_timer<> debug_timer{ seconds(0.5f) };
 		};
 
-		static auto update(
-			update_context& ctx,
+		static auto run(
+			run_context& ctx,
 			state& s,
 			const window::state* win
 		) -> async::task<>;
@@ -51,58 +51,60 @@ auto gse::input::system::current_state(const state& s) -> const input::state& {
 	return s.states.read();
 }
 
-auto gse::input::system::update(update_context& ctx, state& s, const window::state* win) -> async::task<> {
-	const auto& tok = detail::token();
-	auto& persistent_state = s.states.write();
+auto gse::input::system::run(run_context& ctx, state& s, const window::state* win) -> async::task<> {
+	while (true) {
+		const auto& tok = detail::token();
+		auto& persistent_state = s.states.write();
 
-	persistent_state.copy_persistent_from(s.states.read());
-	persistent_state.begin_frame(tok);
+		persistent_state.copy_persistent_from(s.states.read());
+		persistent_state.begin_frame(tok);
 
-	std::vector<event> drained;
-	if (win) {
-		drained = win->input_events.drain();
+		std::vector<event> drained;
+		if (win) {
+			drained = win->input_events.drain();
+		}
+
+		if (s.debug_timer.tick()) {
+			log::println(
+				"[input-debug] window_state={} drained_events={} w_held_prev={} a_held_prev={} s_held_prev={} d_held_prev={}",
+				win != nullptr,
+				drained.size(),
+				s.states.read().key_held(key::w),
+				s.states.read().key_held(key::a),
+				s.states.read().key_held(key::s),
+				s.states.read().key_held(key::d)
+			);
+		}
+
+		for (const auto& evt : drained) {
+			match(evt)
+				.if_is([&](const key_pressed& arg) {
+					persistent_state.on_key_pressed(arg.key_code, tok);
+				})
+				.else_if_is([&](const key_released& arg) {
+					persistent_state.on_key_released(arg.key_code, tok);
+				})
+				.else_if_is([&](const mouse_button_pressed& arg) {
+					persistent_state.on_mouse_button_pressed(arg.button, tok);
+				})
+				.else_if_is([&](const mouse_button_released& arg) {
+					persistent_state.on_mouse_button_released(arg.button, tok);
+				})
+				.else_if_is([&](const mouse_moved& arg) {
+					persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
+				})
+				.else_if_is([&](const mouse_scrolled& arg) {
+					persistent_state.on_scroll(static_cast<float>(arg.x_offset), static_cast<float>(arg.y_offset), tok);
+				})
+				.else_if_is([&](const text_entered& arg) {
+					persistent_state.append_codepoint(arg.codepoint, tok);
+				});
+		}
+
+		persistent_state.end_frame(tok);
+
+		s.states.flip();
+
+		co_await ctx.next_tick();
 	}
-
-	if (s.debug_timer.tick()) {
-		log::println(
-			"[input-debug] window_state={} drained_events={} w_held_prev={} a_held_prev={} s_held_prev={} d_held_prev={}",
-			win != nullptr,
-			drained.size(),
-			s.states.read().key_held(key::w),
-			s.states.read().key_held(key::a),
-			s.states.read().key_held(key::s),
-			s.states.read().key_held(key::d)
-		);
-	}
-
-	for (const auto& evt : drained) {
-		match(evt)
-			.if_is([&](const key_pressed& arg) {
-				persistent_state.on_key_pressed(arg.key_code, tok);
-			})
-			.else_if_is([&](const key_released& arg) {
-				persistent_state.on_key_released(arg.key_code, tok);
-			})
-			.else_if_is([&](const mouse_button_pressed& arg) {
-				persistent_state.on_mouse_button_pressed(arg.button, tok);
-			})
-			.else_if_is([&](const mouse_button_released& arg) {
-				persistent_state.on_mouse_button_released(arg.button, tok);
-			})
-			.else_if_is([&](const mouse_moved& arg) {
-				persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
-			})
-			.else_if_is([&](const mouse_scrolled& arg) {
-				persistent_state.on_scroll(static_cast<float>(arg.x_offset), static_cast<float>(arg.y_offset), tok);
-			})
-			.else_if_is([&](const text_entered& arg) {
-				persistent_state.append_codepoint(arg.codepoint, tok);
-			});
-	}
-
-	persistent_state.end_frame(tok);
-
-	s.states.flip();
-
-	co_return;
 }

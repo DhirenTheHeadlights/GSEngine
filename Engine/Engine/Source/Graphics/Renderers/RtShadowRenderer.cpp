@@ -16,9 +16,7 @@ import gse.ecs;
 import gse.math;
 import gse.log;
 
-auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, frame_data& fd, state& s) -> void {
-	auto& assets = phase.sched.state<asset::registry::state>();
-
+auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, frame_data& fd, state& s) -> async::task<> {
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
@@ -27,14 +25,15 @@ auto gse::renderer::rt_shadow::system::initialize(const init_context& phase, con
 		fd.instances[i].reserve(max_instances);
 	}
 
-	fd.tlas_update_shader = asset::registry::get<shader>(assets, "Shaders/Compute/tlas_transform_update");
-	asset::registry::instantly_load(assets, fd.tlas_update_shader);
+	fd.tlas_update_shader = co_await asset::load<shader>(ctx, "Shaders/Compute/tlas_transform_update");
 
 	fd.tlas_update_pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, fd.tlas_update_shader, "push_constants");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), fd.tlas_update_shader);
 	}
+
+	co_return;
 }
 
 auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, frame_data& fd, const state& s, const geometry_collector::system::state& gc_s, const geometry_collector::system::resources& gc_r) -> async::task<> {

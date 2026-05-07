@@ -288,8 +288,8 @@ auto gse::physics::system::invalidate_warm_start_entries(std::vector<vbd::warm_s
 	}
 }
 
-auto gse::physics::system::initialize(const init_context& phase, const gpu::context::state* gpu_s, settings& cfg, update_data& ud, frame_data& fd, state& s) -> void {
-	gse::settings::register_panel(phase, "Physics", cfg);
+auto gse::physics::system::run(run_context& ctx, const gpu::context::state* gpu_s, const asset::state& assets_s, settings& cfg, update_data& ud, frame_data& fd, state& s) -> async::task<> {
+	gse::settings::register_panel(ctx, "Physics", cfg);
 
 	ud.vbd_solver.configure(vbd::solver_config{
 		.iterations = static_cast<std::uint32_t>(cfg.solver_iterations),
@@ -308,70 +308,74 @@ auto gse::physics::system::initialize(const init_context& phase, const gpu::cont
 	});
 
 	if (gpu_s) {
-		auto& assets = phase.sched.state<asset::registry::state>();
-		fd.gpu_solver.initialize_compute(*gpu_s, assets);
+		co_await fd.gpu_solver.initialize_compute(ctx, *gpu_s);
 		s.gpu_buffers_created = fd.gpu_solver.buffers_created();
 	}
-}
 
-auto gse::physics::system::update(update_context& ctx, const settings& cfg, update_data& ud, state& s) -> async::task<> {
-	for (const auto owner : ctx.drain_component_adds<collision_component>()) {
-		ctx.add_component<collision_result_component>(owner);
+	while (true) {
+		for (const auto owner : ctx.drain_component_adds<collision_component>()) {
+			ctx.add_component<collision_result_component>(owner);
+		}
+
+		if (const auto& readbacks = ctx.read_channel<gpu_readback_result>(); !readbacks.empty()) {
+			auto completed = readbacks[0];
+			ud.completed_readback = std::move(completed);
+		}
+		if (const auto& stats_channel = ctx.read_channel<gpu_solver_stats>(); !stats_channel.empty()) {
+			s.gpu_stats = stats_channel[0];
+		}
+
+		if (!cfg.update_phys) {
+			co_await ctx.next_tick();
+			continue;
+		}
+
+		if (auto solver_cfg = ud.vbd_solver.config();
+			solver_cfg.iterations != static_cast<std::uint32_t>(cfg.solver_iterations) ||
+			solver_cfg.use_jacobi != cfg.use_jacobi ||
+			solver_cfg.jacobi_omega != cfg.jacobi_omega) {
+			solver_cfg.iterations = static_cast<std::uint32_t>(cfg.solver_iterations);
+			solver_cfg.use_jacobi = cfg.use_jacobi;
+			solver_cfg.jacobi_omega = cfg.jacobi_omega;
+			ud.vbd_solver.configure(solver_cfg);
+		}
+
+		if (!ud.tick_clock_primed) {
+			ud.tick_clock.reset<float>();
+			ud.tick_clock_primed = true;
+		}
+
+		const time_t<float, seconds> elapsed = ud.tick_clock.reset<float>();
+		constexpr time_t<float, seconds> max_time_step = seconds(0.25f);
+		const time_t<float, seconds> frame_time = std::min(elapsed, max_time_step);
+		ud.accumulator += frame_time;
+
+		const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
+
+		int steps = 0;
+		while (ud.accumulator >= const_update_time) {
+			ud.accumulator -= const_update_time;
+			steps++;
+		}
+
+		if (constexpr int max_physics_steps = 4; steps > max_physics_steps) {
+			ud.accumulator = {};
+			steps = max_physics_steps;
+		}
+
+		{
+			auto [motion, collision, results] = co_await ctx.acquire<write<motion_component>, write<collision_component>, write<collision_result_component>>();
+
+			if (cfg.use_gpu_solver) {
+				update_vbd_gpu(steps, cfg, ud, s, motion, collision, results, const_update_time, ctx.channels);
+			}
+			else {
+				update_vbd(steps, cfg, ud, s, motion, collision, results);
+			}
+		}
+
+		co_await ctx.next_tick();
 	}
-
-	if (const auto& readbacks = ctx.read_channel<gpu_readback_result>(); !readbacks.empty()) {
-		auto completed = readbacks[0];
-		ud.completed_readback = std::move(completed);
-	}
-	if (const auto& stats_channel = ctx.read_channel<gpu_solver_stats>(); !stats_channel.empty()) {
-		s.gpu_stats = stats_channel[0];
-	}
-
-	if (!cfg.update_phys) {
-		co_return;
-	}
-
-	if (auto solver_cfg = ud.vbd_solver.config();
-		solver_cfg.iterations != static_cast<std::uint32_t>(cfg.solver_iterations) ||
-		solver_cfg.use_jacobi != cfg.use_jacobi ||
-		solver_cfg.jacobi_omega != cfg.jacobi_omega) {
-		solver_cfg.iterations = static_cast<std::uint32_t>(cfg.solver_iterations);
-		solver_cfg.use_jacobi = cfg.use_jacobi;
-		solver_cfg.jacobi_omega = cfg.jacobi_omega;
-		ud.vbd_solver.configure(solver_cfg);
-	}
-
-	if (!ud.tick_clock_primed) {
-		ud.tick_clock.reset<float>();
-		ud.tick_clock_primed = true;
-	}
-
-	const time_t<float, seconds> elapsed = ud.tick_clock.reset<float>();
-	constexpr time_t<float, seconds> max_time_step = seconds(0.25f);
-	const time_t<float, seconds> frame_time = std::min(elapsed, max_time_step);
-	ud.accumulator += frame_time;
-
-	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
-
-	int steps = 0;
-	while (ud.accumulator >= const_update_time) {
-		ud.accumulator -= const_update_time;
-		steps++;
-	}
-
-	if (constexpr int max_physics_steps = 4; steps > max_physics_steps) {
-		ud.accumulator = {};
-		steps = max_physics_steps;
-	}
-
-	auto [motion, collision, results] = co_await ctx.acquire<write<motion_component>, write<collision_component>, write<collision_result_component>>();
-
-	if (cfg.use_gpu_solver) {
-		update_vbd_gpu(steps, cfg, ud, s, motion, collision, results, const_update_time, ctx.channels);
-		co_return;
-	}
-
-	update_vbd(steps, cfg, ud, s, motion, collision, results);
 }
 
 auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, update_data& ud, state& s, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>& results, const time_t<float, seconds> dt, channel_writer& channels) -> void {
@@ -1115,12 +1119,17 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 			const auto sc_it = ud.sleep_counters.find(eid);
 			const auto sc = sc_it != ud.sleep_counters.end() ? sc_it->second : 0u;
 
-			if (magnitude(mc.current_position) > meters(500.f)) {
+			if (eid.number() == 3692324345213718176ull) {
 				log::println(
-					"[physics-debug] READ INPUT body {} pos={} vel={}",
+					"[physics-debug] READ INPUT body {} pos={} vel={} sizeof_mc={} pos_off={} vel_off={} mc_addr=0x{:x} id_of_motion={}",
 					eid,
 					mc.current_position,
-					mc.current_velocity
+					mc.current_velocity,
+					sizeof(motion_component),
+					static_cast<std::uintptr_t>(reinterpret_cast<const std::byte*>(&mc.current_position) - reinterpret_cast<const std::byte*>(&mc)),
+					static_cast<std::uintptr_t>(reinterpret_cast<const std::byte*>(&mc.current_velocity) - reinterpret_cast<const std::byte*>(&mc)),
+					reinterpret_cast<std::uintptr_t>(&mc),
+					id_of<motion_component>().number()
 				);
 			}
 
@@ -1250,7 +1259,7 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 			auto* mc = motion_ptrs[i];
 			const auto& bs = result_bodies[i];
 
-			if (magnitude(bs.position) > meters(500.f) || magnitude(bs.body_velocity) > meters_per_second(100.f)) {
+			if (mc->owner_id().number() == 3692324345213718176ull) {
 				log::println(
 					"[physics-debug] body {} idx={} writeback: pos={} vel={} ptr=0x{:x} motion_size={} result_size={}",
 					mc->owner_id(),

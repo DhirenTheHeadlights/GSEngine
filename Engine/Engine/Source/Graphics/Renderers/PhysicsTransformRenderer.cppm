@@ -30,12 +30,13 @@ export namespace gse::renderer::physics_transform {
 			std::uint32_t cached_mapping_count = 0;
 		};
 
-		static auto initialize(
-			const init_context& phase,
+		static auto run(
+			run_context& ctx,
 			const gpu::context::state& gpu_s,
+			const asset::state& assets_s,
 			resources& r,
 			frame_data& fd
-		) -> void;
+		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,

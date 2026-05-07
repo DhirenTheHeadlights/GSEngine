@@ -6,11 +6,11 @@ import gse.std_meta;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
-import gse.settings;
 
 import :phase_context;
 import :registries;
-import :update_context;
+import :run_context;
+import :settings;
 import :frame_context;
 import :system_node;
 
@@ -143,10 +143,7 @@ namespace gse {
 	template <typename Arg, typename S>
 	constexpr bool is_state_dep_v = [] consteval {
 		using U = dep_pointee_t<Arg>;
-		if constexpr (std::is_same_v<U, init_context>) {
-			return false;
-		}
-		else if constexpr (std::is_same_v<U, update_context>) {
+		if constexpr (std::is_same_v<U, run_context>) {
 			return false;
 		}
 		else if constexpr (std::is_same_v<U, frame_context>) {
@@ -189,18 +186,8 @@ namespace gse {
 	) -> const T&;
 
 	template <typename Arg, typename S>
-	auto resolve_initialize_arg(
-		init_context& phase,
-		resource_storage<S>& resources,
-		update_data_storage<S>& update_data,
-		frame_data_storage<S>& frame_data,
-		settings_storage<S>& settings,
-		state_of_t<S>& state
-	) -> decltype(auto);
-
-	template <typename Arg, typename S>
-	auto resolve_update_arg(
-		update_context& ctx,
+	auto resolve_run_arg(
+		run_context& ctx,
 		resource_storage<S>& resources,
 		update_data_storage<S>& update_data,
 		frame_data_storage<S>& frame_data,
@@ -218,20 +205,14 @@ namespace gse {
 	) -> decltype(auto);
 
 	template <typename S>
-	auto invoke_initialize_for(
-		init_context& phase,
-		void* data_ptr
-	) -> void;
-
-	template <typename S>
 	auto invoke_shutdown_for(
 		shutdown_context& phase,
 		void* data_ptr
 	) -> void;
 
 	template <typename S>
-	auto invoke_update_for(
-		update_context& ctx,
+	auto invoke_run_for(
+		run_context& ctx,
 		void* data_ptr
 	) -> async::task<>;
 
@@ -258,23 +239,12 @@ namespace gse {
 		void* data_ptr
 	) -> void;
 
-	auto noop_initialize(
-		init_context& phase,
-		void* data_ptr
-	) -> void;
-
 	auto noop_shutdown(
 		shutdown_context& phase,
 		void* data_ptr
 	) -> void;
 
 	struct noop_dispatchers {
-		template <typename S>
-		static auto noop_update_for(
-			update_context& ctx,
-			void* data_ptr
-		) -> async::task<>;
-
 		template <typename S>
 		static auto noop_frame_for(
 			frame_context& ctx,
@@ -291,11 +261,7 @@ namespace gse {
 	) -> void;
 
 	template <typename S>
-	auto extract_init_state_deps(
-	) -> std::vector<id>;
-
-	template <typename S>
-	auto extract_update_state_deps(
+	auto extract_run_state_deps(
 	) -> std::vector<id>;
 
 	template <typename S>
@@ -337,54 +303,6 @@ template <typename S>
 template <typename... Args>
 gse::system_node_data<S>::system_node_data(Args&&... args) : state(std::forward<Args>(args)...) {}
 
-template <typename Arg, typename S>
-auto gse::resolve_initialize_arg(init_context& phase, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, settings_storage<S>& settings, state_of_t<S>& state) -> decltype(auto) {
-	using U = std::remove_cvref_t<Arg>;
-	if constexpr (std::is_same_v<U, init_context>) {
-		return (phase);
-	}
-	else if constexpr (matches_resources_v<U, S>) {
-		return (resources.value);
-	}
-	else if constexpr (matches_update_data_v<U, S>) {
-		return (update_data.value);
-	}
-	else if constexpr (matches_frame_data_v<U, S>) {
-		return (frame_data.value);
-	}
-	else if constexpr (matches_settings_v<U, S>) {
-		return (settings.value);
-	}
-	else if constexpr (std::is_same_v<U, state_of_t<S>>) {
-		return (state);
-	}
-	else if constexpr (std::is_pointer_v<U>) {
-		using Pointee = dep_pointee_t<Arg>;
-		static_assert(
-			std::is_const_v<std::remove_pointer_t<U>>,
-			"cross-system state must be const; use channels for mutation"
-		);
-		constexpr id state_lookup_id = compute_state_dep_id<Pointee>();
-		if (const auto* p = phase.states.state_ptr(state_lookup_id)) {
-			return static_cast<const Pointee*>(p);
-		}
-		return static_cast<const Pointee*>(phase.resources_store.resources_ptr(id_of<Pointee>()));
-	}
-	else {
-		static_assert(
-			std::is_const_v<std::remove_reference_t<Arg>>,
-			"cross-system state must be const; use channels for mutation"
-		);
-		constexpr id state_lookup_id = compute_state_dep_id<U>();
-		if (const auto* p = phase.states.state_ptr(state_lookup_id)) {
-			return static_cast<const U&>(*static_cast<const U*>(p));
-		}
-		const auto* p = phase.resources_store.resources_ptr(id_of<U>());
-		assert(p != nullptr, "cross-system state or resources not found");
-		return static_cast<const U&>(*static_cast<const U*>(p));
-	}
-}
-
 template <typename T>
 auto gse::direct_state_ref(const task_context& ctx) -> const T& {
 	constexpr id state_lookup_id = compute_state_dep_id<T>();
@@ -413,9 +331,9 @@ auto gse::direct_resources_ref(const task_context& ctx) -> const T& {
 }
 
 template <typename Arg, typename S>
-auto gse::resolve_update_arg(update_context& ctx, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, settings_storage<S>& settings, state_of_t<S>& state) -> decltype(auto) {
+auto gse::resolve_run_arg(run_context& ctx, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, settings_storage<S>& settings, state_of_t<S>& state) -> decltype(auto) {
 	using U = std::remove_cvref_t<Arg>;
-	if constexpr (std::is_same_v<U, update_context>) {
+	if constexpr (std::is_same_v<U, run_context>) {
 		return (ctx);
 	}
 	else if constexpr (matches_resources_v<U, S>) {
@@ -501,14 +419,7 @@ auto gse::resolve_frame_arg(frame_context& ctx, resource_storage<S>& resources, 
 	}
 }
 
-auto gse::noop_initialize(init_context&, void*) -> void {}
-
 auto gse::noop_shutdown(shutdown_context&, void*) -> void {}
-
-template <typename S>
-auto gse::noop_dispatchers::noop_update_for(update_context&, void*) -> async::task<> {
-	co_return;
-}
 
 template <typename S>
 auto gse::noop_dispatchers::noop_frame_for(frame_context&, void*) -> async::task<> {
@@ -519,8 +430,9 @@ auto gse::noop_snapshot(void*) -> void {}
 
 template <typename T>
 consteval auto gse::compute_state_dep_id() -> id {
-	if constexpr (std::meta::is_class_member(^^T)) {
-		using parent_t = typename [: std::meta::parent_of(^^T) :];
+	constexpr auto entity = std::meta::dealias(^^T);
+	if constexpr (std::meta::is_class_member(entity)) {
+		using parent_t = typename [: std::meta::parent_of(entity) :];
 		if constexpr (requires { typename parent_t::state; }) {
 			if constexpr (std::is_same_v<typename parent_t::state, T>) {
 				return id_of<parent_t>();
@@ -578,25 +490,13 @@ auto gse::register_state_dep_tags() -> void {
 }
 
 template <typename S>
-auto gse::extract_init_state_deps() -> std::vector<id> {
-	if constexpr (!names_initialize<S>) {
+auto gse::extract_run_state_deps() -> std::vector<id> {
+	if constexpr (!names_run<S>) {
 		return {};
 	}
 	else {
-		register_state_dep_tags<^^S::initialize, S>();
-		constexpr auto deps = compute_state_dep_ids<^^S::initialize, S>();
-		return std::vector<id>(deps.begin(), deps.end());
-	}
-}
-
-template <typename S>
-auto gse::extract_update_state_deps() -> std::vector<id> {
-	if constexpr (!names_update<S>) {
-		return {};
-	}
-	else {
-		register_state_dep_tags<^^S::update, S>();
-		constexpr auto deps = compute_state_dep_ids<^^S::update, S>();
+		register_state_dep_tags<^^S::run, S>();
+		constexpr auto deps = compute_state_dep_ids<^^S::run, S>();
 		return std::vector<id>(deps.begin(), deps.end());
 	}
 }
@@ -611,18 +511,6 @@ auto gse::extract_frame_state_deps() -> std::vector<id> {
 		constexpr auto deps = compute_state_dep_ids<^^S::frame, S>();
 		return std::vector<id>(deps.begin(), deps.end());
 	}
-}
-
-template <typename S>
-auto gse::invoke_initialize_for(init_context& phase, void* data_ptr) -> void {
-	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
-	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		S::initialize(
-			resolve_initialize_arg<arg_type_of<^^S::initialize, Is>, S>(
-				phase, d.resources, d.update_data, d.frame_data, d.settings, d.state
-			)...
-		);
-	}(std::make_index_sequence<arity_of<^^S::initialize>>{});
 }
 
 template <typename S>
@@ -646,15 +534,15 @@ auto gse::invoke_shutdown_for(shutdown_context& phase, void* data_ptr) -> void {
 }
 
 template <typename S>
-auto gse::invoke_update_for(update_context& ctx, void* data_ptr) -> async::task<> {
+auto gse::invoke_run_for(run_context& ctx, void* data_ptr) -> async::task<> {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
 	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		return S::update(
-			resolve_update_arg<arg_type_of<^^S::update, Is>, S>(
+		return S::run(
+			resolve_run_arg<arg_type_of<^^S::run, Is>, S>(
 				ctx, d.resources, d.update_data, d.frame_data, d.settings, d.state
 			)...
 		);
-	}(std::make_index_sequence<arity_of<^^S::update>>{});
+	}(std::make_index_sequence<arity_of<^^S::run>>{});
 }
 
 template <typename S>
@@ -730,23 +618,16 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	system_node node;
 	node.data = std::unique_ptr<void, void(*)(void*)>(d, &data_delete_for<S>);
 
-	if constexpr (names_initialize<S>) {
-		node.invoke_initialize_fn = &invoke_initialize_for<S>;
-	}
-	else {
-		node.invoke_initialize_fn = &noop_initialize;
-	}
 	if constexpr (names_shutdown<S>) {
 		node.invoke_shutdown_fn = &invoke_shutdown_for<S>;
 	}
 	else {
 		node.invoke_shutdown_fn = &noop_shutdown;
 	}
-	if constexpr (names_update<S>) {
-		node.invoke_update_fn = &invoke_update_for<S>;
-	}
-	else {
-		node.invoke_update_fn = &noop_dispatchers::noop_update_for<S>;
+	if constexpr (names_run<S>) {
+		node.invoke_run_fn = &invoke_run_for<S>;
+		node.tick_event = std::make_unique<async::manual_event>();
+		node.tick_done_event = std::make_unique<async::manual_event>();
 	}
 	if constexpr (names_frame<S>) {
 		node.invoke_frame_fn = &invoke_frame_for<S>;
@@ -763,8 +644,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 		node.invoke_snapshot_fn = &noop_snapshot;
 	}
 
-	node.init_state_deps = extract_init_state_deps<S>();
-	node.update_state_deps = extract_update_state_deps<S>();
+	node.run_state_deps = extract_run_state_deps<S>();
 	node.frame_state_deps = extract_frame_state_deps<S>();
 
 	node.state_ptr = &d->state;

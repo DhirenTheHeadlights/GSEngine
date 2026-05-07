@@ -30,9 +30,8 @@ import gse.ecs;
 import gse.math;
 import gse.save;
 
-auto gse::gui::system::initialize(init_context& phase, const window::state& window_s, settings& cfg, resources&, state& s) -> void {
-	auto& assets = phase.sched.state<asset::registry::state>();
-	cfg.font.options = asset::registry::enumerate_resources("Fonts", ".gfont");
+auto gse::gui::system::init_body(run_context& ctx, const window::state& window_s, asset::state& assets, settings& cfg, state& s) -> async::task<> {
+	cfg.font.options = asset::enumerate_resources<font>();
 
 	if (cfg.font.options.empty()) {
 		cfg.font.options.push_back("default");
@@ -42,13 +41,14 @@ auto gse::gui::system::initialize(init_context& phase, const window::state& wind
 		cfg.font.value = 0;
 	}
 
-	s.gui_font = asset::registry::get<font>(assets, "Fonts/" + cfg.font.options[cfg.font.value]);
-	asset::registry::instantly_load(assets, s.gui_font);
-	s.blank_texture = asset::registry::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
-	asset::registry::instantly_load(assets, s.blank_texture);
+	s.gui_font = co_await asset::load<font>(ctx, "Fonts/" + cfg.font.options[cfg.font.value]);
+	s.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
+	while (asset::resource_state<texture>(assets, s.blank_texture.id()) != resource::state::loaded) {
+		co_await ctx.next_tick();
+	}
 	s.menus = load(config::resource_path / s.file_path, s.menus);
 
-	gse::settings::register_panel(phase, "UI", cfg);
+	gse::settings::register_panel(ctx, "UI", cfg);
 
 	s.last_font_index = cfg.font.value;
 
@@ -126,7 +126,16 @@ auto gse::gui::system::initialize(init_context& phase, const window::state& wind
 	s.previous_viewport_size = vec2f(window::viewport(window_s));
 }
 
-auto gse::gui::system::update(update_context& ctx, const window::state& window_s, const asset::registry::state& assets_s, const gse::input::system::state& input_state, const settings& cfg, resources& r, state& s) -> async::task<> {
+auto gse::gui::system::run(run_context& ctx, const window::state& window_s, const asset::state& assets_s, const gse::input::system::state& input_state, settings& cfg, resources& r, state& s) -> async::task<> {
+	co_await init_body(ctx, window_s, const_cast<asset::state&>(assets_s), cfg, s);
+
+	while (true) {
+		co_await update_body(ctx, window_s, assets_s, input_state, cfg, r, s);
+		co_await ctx.next_tick();
+	}
+}
+
+auto gse::gui::system::update_body(run_context& ctx, const window::state& window_s, const asset::state& assets_s, const gse::input::system::state& input_state, const settings& cfg, resources& r, state& s) -> async::task<> {
 	const auto current_viewport_size = vec2f(window::viewport(window_s));
 
 	if (s.previous_viewport_size.x() > 0.f && s.previous_viewport_size.y() > 0.f) {
@@ -616,9 +625,9 @@ auto gse::gui::system::apply_scale(const settings& cfg, style sty, const float v
 	return sty;
 }
 
-auto gse::gui::system::reload_font(state& s, const settings& cfg, const asset::registry::state& assets) -> void {
+auto gse::gui::system::reload_font(state& s, const settings& cfg, const asset::state& assets) -> void {
 	if (cfg.font.value >= 0 && cfg.font.value < static_cast<int>(cfg.font.options.size())) {
-		s.gui_font = asset::registry::get<font>(assets, "Fonts/" + cfg.font.options[cfg.font.value]);
+		s.gui_font = asset::get<font>(assets, "Fonts/" + cfg.font.options[cfg.font.value]);
 	}
 }
 

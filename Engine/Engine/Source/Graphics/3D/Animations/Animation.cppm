@@ -64,14 +64,9 @@ export namespace gse::animation {
 			std::unordered_map<id, animation_graph> graphs;
 		};
 
-		static auto initialize(
-			init_context& phase,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
-			const asset::registry::state& assets_s,
+		static auto run(
+			run_context& ctx,
+			const asset::state& assets_s,
 			state& s
 		) -> async::task<>;
 
@@ -142,7 +137,7 @@ export namespace gse::animation {
 
 		static auto process_controller_job(
 			const controller_job& job,
-			const asset::registry::state& assets_s,
+			const asset::state& assets_s,
 			time dt
 		) -> void;
 	};

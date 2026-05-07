@@ -119,4 +119,6 @@ export namespace std::meta {
 	using ::std::meta::is_conversion_function;
 	using ::std::meta::is_array_type;
 	using ::std::meta::is_same_type;
+
+	using ::std::define_static_string;
 }

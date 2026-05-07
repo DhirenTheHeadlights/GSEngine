@@ -33,13 +33,14 @@ export namespace gse::renderer::cull_compute {
 			std::unordered_map<std::string, std::uint32_t> batch_offsets;
 		};
 
-		static auto initialize(
-			const init_context& phase,
+		static auto run(
+			run_context& ctx,
 			const gpu::context::state& gpu_s,
+			const asset::state& assets_s,
 			const geometry_collector::system::resources& gc_r,
 			resources& r,
 			state& s
-		) -> void;
+		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,

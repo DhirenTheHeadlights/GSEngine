@@ -133,15 +133,15 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> void {
 
 					if (!albedo_file.empty()) {
 						auto stem = std::filesystem::path(albedo_file).stem().string();
-						mat.diffuse_texture = asset::registry::get<texture>(ctx.assets, texture_dir + "/" + stem);
+						mat.diffuse_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 					}
 					if (!normal_file.empty()) {
 						auto stem = std::filesystem::path(normal_file).stem().string();
-						mat.normal_texture = asset::registry::get<texture>(ctx.assets, texture_dir + "/" + stem);
+						mat.normal_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 					}
 					if (!rm_file.empty()) {
 						auto stem = std::filesystem::path(rm_file).stem().string();
-						mat.specular_texture = asset::registry::get<texture>(ctx.assets, texture_dir + "/" + stem);
+						mat.specular_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 					}
 				}
 				else {

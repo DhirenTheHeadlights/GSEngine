@@ -6,7 +6,6 @@ import :texture;
 
 import gse.assert;
 import gse.core;
-import gse.containers;
 import gse.config;
 import gse.math;
 import gse.os;
@@ -22,30 +21,15 @@ gse::texture::texture(const std::string_view name, const std::vector<std::byte>&
 
 auto gse::texture::load(asset::load_ctx& ctx) -> void {
     if (!m_image_data.path.empty()) {
-        std::ifstream in_file(m_image_data.path, std::ios::binary);
-        assert(
-            in_file.is_open(),
-            "Failed to open baked texture file: {}",
-            m_image_data.path.string()
-        );
-        if (!in_file.is_open()) {
+        texture::baked baked{};
+        if (!load_baked(m_image_data.path, baked)) {
             return;
         }
 
-        binary_reader ar(in_file, 0x47544558, 1, m_image_data.path.string());
-        if (!ar.valid()) {
-            return;
-        }
-
-        std::uint32_t width = 0, height = 0, channels = 0;
-        profile texture_profile{};
-        ar & width & height & channels & texture_profile;
-
-        ar & raw_blob(m_image_data.pixels);
-
-        m_image_data.size = { width, height };
-        m_image_data.channels = channels;
-        m_profile = texture_profile;
+        m_image_data.size = { baked.width, baked.height };
+        m_image_data.channels = baked.channels;
+        m_image_data.pixels = std::move(baked.pixels.storage);
+        m_profile = baked.profile;
     }
 
     gpu::queue_gpu_command(ctx, this, [](gpu::context::state& gpu_s, texture& self) {

@@ -185,7 +185,7 @@ auto gse::apply_fullscreen(window::state& s, const window::settings& cfg, const 
 	glfwSetWindowMonitor(s.handle, target_monitor, 0, 0, target_width, target_height, target_refresh);
 }
 
-auto gse::window::initialize(const init_context&, settings& cfg, state& s) -> void {
+auto gse::window::run(run_context& ctx, settings& cfg, state& s) -> async::task<> {
 	assert(glfwInit(), "Error initializing GLFW");
 	assert(glfwVulkanSupported(), "Vulkan not supported");
 
@@ -297,31 +297,31 @@ auto gse::window::initialize(const init_context&, settings& cfg, state& s) -> vo
 	refresh_resolution_settings(cfg);
 
 	glfwFocusWindow(s.handle);
-}
 
-auto gse::window::update(update_context& ctx, const settings& cfg, state& s) -> async::task<> {
-	for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
-		set_ui_focus(s, focus);
-	}
-
-	if (cfg.monitor.value != s.last_monitor_index) {
-		const int old_monitor = s.last_monitor_index;
-		s.last_monitor_index = cfg.monitor.value;
-
-		if (!s.current_fullscreen && old_monitor != cfg.monitor.value) {
-			move_window_to_monitor(s, cfg.monitor.value);
+	while (true) {
+		for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
+			set_ui_focus(s, focus);
 		}
-	}
 
-	if (s.focused) {
-		apply_cursor_mode(s, cfg);
+		if (cfg.monitor.value != s.last_monitor_index) {
+			const int old_monitor = s.last_monitor_index;
+			s.last_monitor_index = cfg.monitor.value;
 
-		if (s.current_fullscreen != cfg.fullscreen) {
-			apply_fullscreen(s, cfg, cfg.fullscreen);
+			if (!s.current_fullscreen && old_monitor != cfg.monitor.value) {
+				move_window_to_monitor(s, cfg.monitor.value);
+			}
 		}
-	}
 
-	co_return;
+		if (s.focused) {
+			apply_cursor_mode(s, cfg);
+
+			if (s.current_fullscreen != cfg.fullscreen) {
+				apply_fullscreen(s, cfg, cfg.fullscreen);
+			}
+		}
+
+		co_await ctx.next_tick();
+	}
 }
 
 auto gse::window::shutdown(shutdown_context&, state& s) -> void {

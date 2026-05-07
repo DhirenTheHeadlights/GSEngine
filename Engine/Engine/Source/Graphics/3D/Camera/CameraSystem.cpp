@@ -52,93 +52,97 @@ auto gse::camera::system::compute_projection_matrix(const target& t, const vec2f
 	return perspective(t.fov, aspect_ratio, t.near_plane, t.far_plane);
 }
 
-auto gse::camera::system::initialize(init_context&, state& s) -> void {
+auto gse::camera::system::run(run_context& ctx, state& s, const input::system::state& input_state) -> async::task<> {
 	s.current.orientation = identity<float>();
 	s.view_matrix = compute_view_matrix(s.current);
 	s.projection_matrix = compute_projection_matrix(s.current, s.viewport);
-}
 
-auto gse::camera::system::update(update_context& ctx, state& s, const input::system::state& input_state) -> async::task<> {
-	const time dt = system_clock::dt();
+	while (true) {
+		const time dt = system_clock::dt();
 
-	for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
-		s.ui_focus = focus;
-	}
-
-	for (const auto& [size] : ctx.read_channel<viewport_update>()) {
-		s.viewport = size;
-	}
-
-	if (!s.ui_focus) {
-		const auto delta = input::system::current_state(input_state).mouse_delta();
-		const auto transformed_offset = delta * s.mouse_sensitivity;
-		s.yaw -= degrees(transformed_offset.x());
-		s.pitch -= degrees(transformed_offset.y());
-		s.pitch = std::clamp(s.pitch, degrees(-89.0f), degrees(89.0f));
-	}
-
-	const quat yaw_rotation = quat({ 0.f, 1.f, 0.f }, s.yaw);
-	const quat pitch_rotation = quat({ 1.f, 0.f, 0.f }, s.pitch);
-	const quat new_orientation = normalize(yaw_rotation * pitch_rotation);
-
-	auto [cameras] = co_await ctx.acquire<read<follow_component>>();
-
-	int highest_priority = -1;
-	id best_controller{};
-	target best_target{};
-	time best_blend_duration = milliseconds(300);
-
-	for (const auto& cam : cameras) {
-		if (!cam.active) {
-			continue;
+		for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
+			s.ui_focus = focus;
 		}
 
-		if (cam.priority > highest_priority) {
-			highest_priority = cam.priority;
-			best_controller = cam.owner_id();
-			best_blend_duration = cam.blend_in_duration;
-
-			best_target.position = cam.position + cam.offset;
-			best_target.orientation = new_orientation;
-			best_target.fov = degrees(45.0f);
-			best_target.near_plane = meters(0.1f);
-			best_target.far_plane = meters(10000.0f);
+		for (const auto& [size] : ctx.read_channel<viewport_update>()) {
+			s.viewport = size;
 		}
-	}
 
-	if (best_controller.exists() && best_controller != s.active_controller_entity) {
-		if (s.active_controller_entity.exists()) {
-			s.blend_from = s.current;
-			s.blend_to = best_target;
-			s.blend_duration = best_blend_duration;
-			s.blend_elapsed = time{};
-			s.blending = true;
-		} else {
-			s.current = best_target;
+		if (!s.ui_focus) {
+			const auto delta = input::system::current_state(input_state).mouse_delta();
+			const auto transformed_offset = delta * s.mouse_sensitivity;
+			s.yaw -= degrees(transformed_offset.x());
+			s.pitch -= degrees(transformed_offset.y());
+			s.pitch = std::clamp(s.pitch, degrees(-89.0f), degrees(89.0f));
 		}
-		s.active_controller_entity = best_controller;
-		s.active_priority = highest_priority;
-	} else if (best_controller.exists()) {
+
+		const quat yaw_rotation = quat({ 0.f, 1.f, 0.f }, s.yaw);
+		const quat pitch_rotation = quat({ 1.f, 0.f, 0.f }, s.pitch);
+		const quat new_orientation = normalize(yaw_rotation * pitch_rotation);
+
+		int highest_priority = -1;
+		id best_controller{};
+		target best_target{};
+		time best_blend_duration = milliseconds(300);
+
+		{
+			auto [cameras] = co_await ctx.acquire<read<follow_component>>();
+
+			for (const auto& cam : cameras) {
+				if (!cam.active) {
+					continue;
+				}
+
+				if (cam.priority > highest_priority) {
+					highest_priority = cam.priority;
+					best_controller = cam.owner_id();
+					best_blend_duration = cam.blend_in_duration;
+
+					best_target.position = cam.position + cam.offset;
+					best_target.orientation = new_orientation;
+					best_target.fov = degrees(45.0f);
+					best_target.near_plane = meters(0.1f);
+					best_target.far_plane = meters(10000.0f);
+				}
+			}
+		}
+
+		if (best_controller.exists() && best_controller != s.active_controller_entity) {
+			if (s.active_controller_entity.exists()) {
+				s.blend_from = s.current;
+				s.blend_to = best_target;
+				s.blend_duration = best_blend_duration;
+				s.blend_elapsed = time{};
+				s.blending = true;
+			} else {
+				s.current = best_target;
+			}
+			s.active_controller_entity = best_controller;
+			s.active_priority = highest_priority;
+		} else if (best_controller.exists()) {
+			if (s.blending) {
+				s.blend_to = best_target;
+			} else {
+				s.current = best_target;
+			}
+		}
+
 		if (s.blending) {
-			s.blend_to = best_target;
-		} else {
-			s.current = best_target;
+			s.blend_elapsed += dt;
+			const float t = std::clamp(s.blend_elapsed / s.blend_duration, 0.f, 1.f);
+			s.current = interpolate_target(s.blend_from, s.blend_to, t);
+
+			if (t >= 1.0f) {
+				s.blending = false;
+				s.current = s.blend_to;
+			}
 		}
+
+		s.current.orientation = new_orientation;
+
+		s.view_matrix = compute_view_matrix(s.current);
+		s.projection_matrix = compute_projection_matrix(s.current, s.viewport);
+
+		co_await ctx.next_tick();
 	}
-
-	if (s.blending) {
-		s.blend_elapsed += dt;
-		const float t = std::clamp(s.blend_elapsed / s.blend_duration, 0.f, 1.f);
-		s.current = interpolate_target(s.blend_from, s.blend_to, t);
-
-		if (t >= 1.0f) {
-			s.blending = false;
-			s.current = s.blend_to;
-		}
-	}
-
-	s.current.orientation = new_orientation;
-
-	s.view_matrix = compute_view_matrix(s.current);
-	s.projection_matrix = compute_projection_matrix(s.current, s.viewport);
 }

@@ -33,11 +33,12 @@ export namespace gse::renderer::depth_prepass {
 			std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
 		};
 
-		static auto initialize(
-			const init_context& phase,
+		static auto run(
+			run_context& ctx,
 			const gpu::context::state& gpu_s,
+			const asset::state& assets_s,
 			resources& r
-		) -> void;
+		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,

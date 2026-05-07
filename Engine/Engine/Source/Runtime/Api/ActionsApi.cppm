@@ -9,6 +9,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.meta;
 import gse.os;
 import gse.assets;
 import gse.gpu;
@@ -148,9 +149,9 @@ auto gse::actions::add_by_name(const std::string_view tag, const key default_key
 	return handle(action_id);
 }
 
-template <gse::actions::fixed_string Tag>
+template <gse::fixed_string Tag>
 auto gse::actions::add(const key default_key) -> handle {
-	return add_by_name(Tag.view(), default_key);
+	return add_by_name(Tag, default_key);
 }
 
 auto gse::actions::bind_axis2(const pending_axis2_info& info) -> id {
@@ -174,7 +175,7 @@ auto gse::actions::bind_axis2(const pending_axis2_info& info) -> id {
 	return axis_id;
 }
 
-template <gse::actions::fixed_string Tag>
+template <gse::fixed_string Tag>
 auto gse::actions::bind_button_channel(const id owner_id, const key default_key, button_channel& channel) -> void {
 	auto h = add<Tag>(default_key);
 	channel.action_id = h.id();

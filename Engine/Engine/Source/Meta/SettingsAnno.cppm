@@ -4,10 +4,15 @@ import std;
 import gse.std_meta;
 
 import :annotations;
+import :fixed_string;
 import :parse;
 
 export namespace gse::settings {
-    struct describe {};
+    template <fixed_string V>
+    struct describe {
+        static constexpr std::string_view value = V;
+    };
+
     struct restart_required {};
     struct skip {};
 
@@ -67,6 +72,10 @@ export namespace gse::meta {
     consteval auto find_range(
         std::meta::info m
     ) -> std::meta::info;
+
+    consteval auto find_describe(
+        std::meta::info m
+    ) -> std::meta::info;
 }
 
 template <typename Anno>
@@ -97,6 +106,17 @@ consteval auto gse::meta::member_name(const std::meta::info m) -> std::string_vi
 
 consteval auto gse::meta::find_range(const std::meta::info m) -> std::meta::info {
     constexpr auto target = ^^settings::range;
+    for (auto ann : std::meta::annotations_of(m)) {
+        const auto t = std::meta::dealias(std::meta::type_of(ann));
+        if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == target) {
+            return t;
+        }
+    }
+    return std::meta::info{};
+}
+
+consteval auto gse::meta::find_describe(const std::meta::info m) -> std::meta::info {
+    constexpr auto target = ^^settings::describe;
     for (auto ann : std::meta::annotations_of(m)) {
         const auto t = std::meta::dealias(std::meta::type_of(ann));
         if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == target) {

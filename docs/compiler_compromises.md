@@ -280,6 +280,62 @@ OR the templated entry-point form `co_await gpu::request_pass<state>(ctx, { ... 
 
 ---
 
+## String payloads in annotations forced through `fixed_string` template arg (`Engine/Engine/Source/Meta/SettingsAnno.cppm`, `Engine/Engine/Source/Assets/AssetFormat.cppm`)
+
+**Location:** `gse::settings::describe<V>`, `gse::asset_format::baked_ext<V>`, `gse::asset_format::baked_dir<V>`, `gse::asset_format::source_dir<V>`, `gse::asset_format::source_exts<V...>`. Every annotation that wants to carry a string is a class template parameterized on `fixed_string`, with the payload stored as a `static constexpr std::string_view value`.
+
+**Ideal:** A plain non-template struct with a `std::string_view` (or `const char*`) member, populated via designated init at the annotation site:
+
+```cpp
+struct describe {
+    std::string_view text;
+};
+
+struct settings {
+    [[=describe{ .text = "Step the physics world each frame." }]]
+    bool update_phys = true;
+};
+```
+
+Then read it back with `annotation_of<describe, M>()` and use `.text`. Symmetric to how `range<Min, Max>` and the empty tag annotations work — no fixed_string ceremony, no template-of dispatch in the lookup helpers.
+
+**Shipped:** Template-on-`fixed_string` carrier, with the value re-exposed as a static member. Lookup helpers (`meta::find_describe`, `find_asset_format`) match by `template_of(type)` rather than `is_same_type` because every concrete annotation is a different type:
+
+```cpp
+template <fixed_string V>
+struct describe {
+    static constexpr std::string_view value = V;
+};
+
+struct settings {
+    [[=describe<"Step the physics world each frame.">{}]]
+    bool update_phys = true;
+};
+
+consteval auto find_describe(std::meta::info m) -> std::meta::info {
+    constexpr auto target = ^^settings::describe;
+    for (auto ann : std::meta::annotations_of(m)) {
+        const auto t = std::meta::dealias(std::meta::type_of(ann));
+        if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == target) {
+            return t;
+        }
+    }
+    return {};
+}
+```
+
+Callers retrieve the text via `[: find_describe(m) :]::value` inside a `template for` over members.
+
+**Blocker:** clang-p2996 (Bloomberg fork, as of 2026-05-06) rejects annotations whose type stores a `std::string_view` (or any pointer-bearing structural member) when the value is supplied as a string literal at the annotation site. Symptom is along the lines of "non-structural type used as annotation" / "annotation argument is not a constant of structural type", even though `std::string_view` is meant to be structural in P3380. The `fixed_string` template parameter sidesteps the issue because the payload becomes part of the *type identity* of the annotation rather than a runtime-style member value — there is no in-class storage to validate as structural.
+
+**Validate the fix:** Replace one annotation site (e.g. `[[=describe<"...">{}]]` on `physics::system::settings::update_phys`) with `[[=describe{"..."}]] ` against a non-template `struct describe { std::string_view text; };`. Update `find_describe` to compare `is_same_type(t, ^^describe)` and read `.text` via `annotation_of<describe, M>()`. If it compiles for both `describe` and the asset-format carriers (`baked_ext`, `source_dir`, etc.), flip the rest.
+
+**Flip cost:** ~30 minutes. Collapse the carrier templates to plain structs, drop the `find_describe` / `find_asset_format` template-of plumbing in favor of `is_same_type` matching, replace every annotation site with the designated-init form. Lookup callers stay structurally the same.
+
+**See also:** `Engine/Engine/Source/Meta/Annotations.cppm` for the existing `find_annotation<Anno>` helper that already uses `is_same_type` for tag-only annotations — that's the shape the post-flip describe/asset-format helpers collapse into.
+
+---
+
 ## Adding a new entry
 
 Copy the template at the top. Keep the "validate the fix" reproducer as minimal as possible — ideally something that can be pasted into a single .cpp file with just `#include <meta>` and compiled standalone. The whole point is that future-you (or future-me) can run each one and see which ones flipped green on the latest toolchain without re-deriving the context.

@@ -10,7 +10,6 @@ import gse.gpu;
 import gse.core;
 import gse.assets;
 import gse.assert;
-import gse.containers;
 import gse.config;
 import gse.freetype;
 
@@ -63,41 +62,26 @@ gse::font::~font() {
 }
 
 auto gse::font::load(asset::load_ctx& ctx) -> void {
-    std::ifstream in_file(m_baked_path, std::ios::binary);
-    assert(
-        in_file.is_open(),
-        "Failed to open baked font file: {}",
-        m_baked_path.string()
-    );
-
-    binary_reader ar(in_file, 0x47464E54, 2, m_baked_path.string());
-    if (!ar.valid()) {
+    font::baked baked{};
+    if (!load_baked(m_baked_path, baked)) {
         return;
     }
 
-    std::string relative_src_str;
-    ar & relative_src_str;
-    const auto source_font_path = config::resource_path / relative_src_str;
+    const auto source_font_path = config::resource_path / baked.source_path_relative;
 
-    ar & m_ascender & m_descender;
-
-    std::uint32_t atlas_width = 0, atlas_height = 0, channels = 0;
-    ar & atlas_width & atlas_height & channels;
-
-    std::vector<std::byte> atlas_pixel_data;
-    ar & raw_blob(atlas_pixel_data);
+    m_ascender = baked.ascender;
+    m_descender = baked.descender;
+    m_glyphs = std::move(baked.glyphs);
 
     m_texture = std::make_unique<gse::texture>(
         std::format("msdf_font_atlas_{}", m_baked_path.stem().string()),
-        atlas_pixel_data,
-        vec2u{ atlas_width, atlas_height },
-        channels,
+        baked.rgba.storage,
+        vec2u{ baked.atlas_width, baked.atlas_height },
+        baked.channels,
         texture::profile::msdf
     );
 
     m_texture->load(ctx);
-
-    ar & m_glyphs;
 
     assert(
         FT_Init_FreeType(&m_ft) == 0,

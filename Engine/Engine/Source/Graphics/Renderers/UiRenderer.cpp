@@ -96,11 +96,8 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
     }
 }
 
-auto gse::renderer::ui::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, resources& r, frame_data& fd, state& s) -> void {
-    auto& assets = phase.sched.state<asset::registry::state>();
-
-    r.sprite_shader = asset::registry::get<shader>(assets, "Shaders/Standard2D/sprite");
-    asset::registry::instantly_load(assets, r.sprite_shader);
+auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd, state& s) -> async::task<> {
+    r.sprite_shader = co_await asset::load<shader>(ctx, "Shaders/Standard2D/sprite");
 
     r.sprite_pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.sprite_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },
@@ -110,8 +107,7 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, const gpu:
         .push_constant_block = "push_constants",
     });
 
-    r.text_shader = asset::registry::get<shader>(assets, "Shaders/Standard2D/msdf");
-    asset::registry::instantly_load(assets, r.text_shader);
+    r.text_shader = co_await asset::load<shader>(ctx, "Shaders/Standard2D/msdf");
 
     r.text_pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.text_shader, {
         .rasterization = { .cull = gpu::cull_mode::none },
@@ -135,143 +131,144 @@ auto gse::renderer::ui::system::initialize(const init_context& phase, const gpu:
             .usage = gpu::buffer_flag::index,
         });
     }
-}
 
-auto gse::renderer::ui::system::update(const update_context& ctx, const resources& r, frame_data& fd, state& s) -> async::task<> {
-    const auto& sprite_commands = ctx.read_channel<sprite_command>();
-    const auto& text_commands = ctx.read_channel<text_command>();
+    while (true) {
+        const auto& sprite_commands = ctx.read_channel<sprite_command>();
+        const auto& text_commands = ctx.read_channel<text_command>();
 
-    if (sprite_commands.empty() && text_commands.empty()) {
-        co_return;
-    }
-
-    auto& [vertices, indices, batches] = fd.data.write();
-    vertices.clear();
-    indices.clear();
-    batches.clear();
-
-    std::vector<unified_command> unified;
-    unified.reserve(sprite_commands.size() + text_commands.size());
-
-    for (const auto& [rect, color, texture, uv_rect, clip_rect, rotation, layer, z_order, corner_radius] : sprite_commands) {
-        if (!texture.valid()) {
+        if (sprite_commands.empty() && text_commands.empty()) {
+            co_await ctx.next_tick();
             continue;
         }
 
-        unified.push_back({
-            .type = command_type::sprite,
-            .layer = layer,
-            .z_order = z_order,
-            .clip_rect = clip_rect,
-            .texture = texture,
-            .rect = rect,
-            .color = color,
-            .uv_rect = uv_rect,
-            .rotation = rotation,
-            .corner_radius = corner_radius,
-            .font = {},
-            .text = {},
-            .position = {},
-            .scale = 1.0f,
-        });
-    }
+        auto& [vertices, indices, batches] = fd.data.write();
+        vertices.clear();
+        indices.clear();
+        batches.clear();
 
-    for (const auto& [font, text, position, scale, color, clip_rect, layer, z_order] : text_commands) {
-        if (!font.valid() || text.empty()) {
-            continue;
-        }
+        std::vector<unified_command> unified;
+        unified.reserve(sprite_commands.size() + text_commands.size());
 
-        unified.push_back({
-            .type = command_type::text,
-            .layer = layer,
-            .z_order = z_order,
-            .clip_rect = clip_rect,
-            .texture = {},
-            .rect = {},
-            .color = color,
-            .uv_rect = {},
-            .rotation = {},
-            .font = font,
-            .text = text,
-            .position = position,
-            .scale = scale,
-        });
-    }
+        for (const auto& [rect, color, texture, uv_rect, clip_rect, rotation, layer, z_order, corner_radius] : sprite_commands) {
+            if (!texture.valid()) {
+                continue;
+            }
 
-    std::ranges::stable_sort(unified, [](const unified_command& a, const unified_command& b) {
-        if (a.layer != b.layer) {
-            return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
-        }
-
-        if (a.z_order != b.z_order) {
-            return a.z_order < b.z_order;
-        }
-
-        if (a.type != b.type) {
-            return a.type < b.type;
-        }
-
-        if (a.type == command_type::sprite) {
-            return a.texture.id().number() < b.texture.id().number();
-        }
-        return a.font.id().number() < b.font.id().number();
-    });
-
-    auto current_type = command_type::sprite;
-    resource::handle<texture> current_texture;
-    resource::handle<font> current_font;
-    std::optional<rect_t<vec2f>> current_clip;
-    std::uint32_t batch_index_start = 0;
-
-    auto flush_batch = [&] {
-        if (indices.size() > batch_index_start) {
-            batches.push_back({
-                .type = current_type,
-                .index_offset = batch_index_start,
-                .index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
-                .clip_rect = current_clip,
-                .texture = current_texture,
-                .font = current_font,
+            unified.push_back({
+                .type = command_type::sprite,
+                .layer = layer,
+                .z_order = z_order,
+                .clip_rect = clip_rect,
+                .texture = texture,
+                .rect = rect,
+                .color = color,
+                .uv_rect = uv_rect,
+                .rotation = rotation,
+                .corner_radius = corner_radius,
+                .font = {},
+                .text = {},
+                .position = {},
+                .scale = 1.0f,
             });
         }
-        batch_index_start = static_cast<std::uint32_t>(indices.size());
-    };
 
-    for (const auto& cmd : unified) {
-        bool needs_flush = false;
+        for (const auto& [font, text, position, scale, color, clip_rect, layer, z_order] : text_commands) {
+            if (!font.valid() || text.empty()) {
+                continue;
+            }
 
-        if (cmd.type != current_type) {
-            needs_flush = true;
-        } else if (cmd.clip_rect.has_value() != current_clip.has_value()) {
-            needs_flush = true;
-        } else if (cmd.clip_rect.has_value() && (cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())) {
-            needs_flush = true;
-        } else if (cmd.type == command_type::sprite && cmd.texture.id() != current_texture.id()) {
-            needs_flush = true;
-        } else if (cmd.type == command_type::text && cmd.font.id() != current_font.id()) {
-            needs_flush = true;
+            unified.push_back({
+                .type = command_type::text,
+                .layer = layer,
+                .z_order = z_order,
+                .clip_rect = clip_rect,
+                .texture = {},
+                .rect = {},
+                .color = color,
+                .uv_rect = {},
+                .rotation = {},
+                .font = font,
+                .text = text,
+                .position = position,
+                .scale = scale,
+            });
         }
 
-        if (needs_flush) {
-            flush_batch();
-            current_type = cmd.type;
-            current_clip = cmd.clip_rect;
-            current_texture = cmd.texture;
-            current_font = cmd.font;
+        std::ranges::stable_sort(unified, [](const unified_command& a, const unified_command& b) {
+            if (a.layer != b.layer) {
+                return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
+            }
+
+            if (a.z_order != b.z_order) {
+                return a.z_order < b.z_order;
+            }
+
+            if (a.type != b.type) {
+                return a.type < b.type;
+            }
+
+            if (a.type == command_type::sprite) {
+                return a.texture.id().number() < b.texture.id().number();
+            }
+            return a.font.id().number() < b.font.id().number();
+        });
+
+        auto current_type = command_type::sprite;
+        resource::handle<texture> current_texture;
+        resource::handle<font> current_font;
+        std::optional<rect_t<vec2f>> current_clip;
+        std::uint32_t batch_index_start = 0;
+
+        auto flush_batch = [&] {
+            if (indices.size() > batch_index_start) {
+                batches.push_back({
+                    .type = current_type,
+                    .index_offset = batch_index_start,
+                    .index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
+                    .clip_rect = current_clip,
+                    .texture = current_texture,
+                    .font = current_font,
+                });
+            }
+            batch_index_start = static_cast<std::uint32_t>(indices.size());
+        };
+
+        for (const auto& cmd : unified) {
+            bool needs_flush = false;
+
+            if (cmd.type != current_type) {
+                needs_flush = true;
+            } else if (cmd.clip_rect.has_value() != current_clip.has_value()) {
+                needs_flush = true;
+            } else if (cmd.clip_rect.has_value() && (cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())) {
+                needs_flush = true;
+            } else if (cmd.type == command_type::sprite && cmd.texture.id() != current_texture.id()) {
+                needs_flush = true;
+            } else if (cmd.type == command_type::text && cmd.font.id() != current_font.id()) {
+                needs_flush = true;
+            }
+
+            if (needs_flush) {
+                flush_batch();
+                current_type = cmd.type;
+                current_clip = cmd.clip_rect;
+                current_texture = cmd.texture;
+                current_font = cmd.font;
+            }
+
+            if (cmd.type == command_type::sprite) {
+                add_sprite_quad(vertices, indices, cmd);
+            } else {
+                add_text_quads(vertices, indices, cmd);
+            }
         }
 
-        if (cmd.type == command_type::sprite) {
-            add_sprite_quad(vertices, indices, cmd);
-        } else {
-            add_text_quads(vertices, indices, cmd);
-        }
+        flush_batch();
+
+        fd.data.publish();
+
+        co_await ctx.next_tick();
     }
-
-    flush_batch();
-
-    fd.data.publish();
-
-    co_return;
 }
 
 auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const resources& r, frame_data& fd, const state& s) -> async::task<> {

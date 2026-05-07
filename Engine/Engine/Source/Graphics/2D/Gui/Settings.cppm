@@ -13,7 +13,6 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
-import gse.settings;
 
 import :types;
 import :builder;
@@ -23,6 +22,21 @@ import :dropdown_widget;
 import :section_widget;
 
 export namespace gse::settings {
+    using draw_settings_thunk = void(*)(
+        void* gui_builder,
+        void* panel_state,
+        std::string_view category,
+        void* settings_ptr,
+        void* channel_writer
+    );
+
+    struct register_panel_request {
+        std::string category;
+        id type_id;
+        void* settings_ptr = nullptr;
+        draw_settings_thunk draw = nullptr;
+    };
+
     struct panel_state;
 
     struct panel_entry {
@@ -55,7 +69,7 @@ export namespace gse::settings {
 
     auto pump(
         panel_state& ps,
-        update_context& ctx
+        run_context& ctx
     ) -> void;
 
     auto panel(
@@ -76,7 +90,7 @@ export namespace gse::settings {
 
     template <typename T>
     auto register_panel(
-        const init_context& phase,
+        const task_context& ctx,
         std::string_view category,
         T& obj
     ) -> void;
@@ -145,7 +159,7 @@ auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, 
     b.draw<gui::section>({ .title = category });
 
     template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-        if constexpr (has_annotation<settings::describe>(m)) {
+        if constexpr (meta::find_describe(m) != std::meta::info{}) {
             using F = [:std::meta::type_of(m):];
             constexpr std::string_view label = meta::member_name(m);
             auto& ref = local.[:m:];
@@ -198,7 +212,7 @@ auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, 
     }
 
     template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-        if constexpr (has_annotation<settings::describe>(m)) {
+        if constexpr (meta::find_describe(m) != std::meta::info{}) {
             using F = [:std::meta::type_of(m):];
             if constexpr (settings::is_choice_v<F>) {
                 if (local.[:m:].value != live.[:m:].value) {
@@ -223,8 +237,8 @@ auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, 
 }
 
 template <typename T>
-auto gse::settings::register_panel(const init_context& phase, const std::string_view category, T& obj) -> void {
-    phase.channels.push<register_panel_request>({
+auto gse::settings::register_panel(const task_context& ctx, const std::string_view category, T& obj) -> void {
+    ctx.channels.push<register_panel_request>({
         .category = std::string(category),
         .type_id = id_of<T>(),
         .settings_ptr = &obj,
@@ -245,7 +259,7 @@ auto gse::settings::add(panel_state& ps, panel_entry entry) -> void {
     ps.entries.push_back(std::move(entry));
 }
 
-auto gse::settings::pump(panel_state& ps, update_context& ctx) -> void {
+auto gse::settings::pump(panel_state& ps, run_context& ctx) -> void {
     for (auto& req : ctx.read_channel<register_panel_request>()) {
         add(ps, panel_entry{
             .category = req.category,
