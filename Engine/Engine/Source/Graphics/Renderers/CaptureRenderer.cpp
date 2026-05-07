@@ -20,10 +20,10 @@ import gse.log;
 import gse.save;
 import gse.time;
 
-auto gse::renderer::capture::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, settings& cfg, resources& r, frame_data& fd, state& s) -> void {
+auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const actions::system::state& sys, settings& cfg, resources& r, frame_data& fd, state& s) -> async::task<> {
     const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
         const id action_id = generate_id(name);
-        phase.channels.push<actions::add_action_request>({
+        ctx.channels.push<actions::add_action_request>({
             .name = std::string(name),
             .default_key = default_key,
             .action_id = action_id,
@@ -34,85 +34,79 @@ auto gse::renderer::capture::system::initialize(const init_context& phase, const
     s.screenshot_action = register_action("Screenshot", key::f9);
     s.save_clip_action = register_action("Save Clip", key::f10);
 
-    auto& assets = phase.sched.state<asset::registry::state>();
-
     if (!gpu_s.device->video_encode_enabled()) {
         log::println(log::category::render, "Video encode not available, capture limited to screenshots");
-        return;
     }
-
-    const auto caps = gpu::video_encoder::probe(*gpu_s.device);
-    if (!caps.available) {
+    else if (const auto caps = gpu::video_encoder::probe(*gpu_s.device); !caps.available) {
         log::println(log::category::render, "Video encode probe failed, capture limited to screenshots");
-        return;
     }
+    else {
+        const auto ext = gpu_s.render_graph->extent();
+        const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
-    const auto ext = gpu_s.render_graph->extent();
-    const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
+        r.convert_shader = co_await asset::load<shader>(ctx, "Shaders/Compute/rgba_to_nv12");
 
-    r.convert_shader = asset::registry::get<shader>(assets, "Shaders/Compute/rgba_to_nv12");
-    asset::registry::instantly_load(assets, r.convert_shader);
+        r.convert_pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.convert_shader, "push_constants");
 
-    r.convert_pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.convert_shader, "push_constants");
-
-    r.capture_sampler = gpu::sampler::create(gpu_s.device->allocator(), {
-        .min = gpu::sampler_filter::nearest,
-        .mag = gpu::sampler_filter::nearest,
-        .address_u = gpu::sampler_address_mode::clamp_to_edge,
-        .address_v = gpu::sampler_address_mode::clamp_to_edge,
-        .address_w = gpu::sampler_address_mode::clamp_to_edge,
-    });
-
-    for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-        r.rgba_captures[i] = gpu::image::create(gpu_s.device->allocator(), {
-            .size = ext,
-            .format = gpu::image_format::r8g8b8a8_srgb,
-            .usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
+        r.capture_sampler = gpu::sampler::create(gpu_s.device->allocator(), {
+            .min = gpu::sampler_filter::nearest,
+            .mag = gpu::sampler_filter::nearest,
+            .address_u = gpu::sampler_address_mode::clamp_to_edge,
+            .address_v = gpu::sampler_address_mode::clamp_to_edge,
+            .address_w = gpu::sampler_address_mode::clamp_to_edge,
         });
 
-        r.y_planes[i] = gpu::image::create(gpu_s.device->allocator(), {
-            .size = ext,
-            .format = gpu::image_format::r8_unorm,
-            .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-        });
-        gpu::transition_image_to(*gpu_s.device, r.y_planes[i], gpu::image_layout::general);
+        for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
+            r.rgba_captures[i] = gpu::image::create(gpu_s.device->allocator(), {
+                .size = ext,
+                .format = gpu::image_format::r8g8b8a8_srgb,
+                .usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
+            });
 
-        r.uv_planes[i] = gpu::image::create(gpu_s.device->allocator(), {
-            .size = half_ext,
-            .format = gpu::image_format::r8g8_unorm,
-            .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-        });
-        gpu::transition_image_to(*gpu_s.device, r.uv_planes[i], gpu::image_layout::general);
+            r.y_planes[i] = gpu::image::create(gpu_s.device->allocator(), {
+                .size = ext,
+                .format = gpu::image_format::r8_unorm,
+                .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
+            });
+            gpu::transition_image_to(*gpu_s.device, r.y_planes[i], gpu::image_layout::general);
 
-        r.convert_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.convert_shader);
+            r.uv_planes[i] = gpu::image::create(gpu_s.device->allocator(), {
+                .size = half_ext,
+                .format = gpu::image_format::r8g8_unorm,
+                .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
+            });
+            gpu::transition_image_to(*gpu_s.device, r.uv_planes[i], gpu::image_layout::general);
 
-        gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.convert_shader, r.convert_descriptors[i])
-            .image("input_rgba", r.rgba_captures[i], r.capture_sampler, gpu::image_layout::shader_read_only)
-            .storage_image("output_y", r.y_planes[i])
-            .storage_image("output_uv", r.uv_planes[i])
-            .commit();
+            r.convert_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.convert_shader);
+
+            gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.convert_shader, r.convert_descriptors[i])
+                .image("input_rgba", r.rgba_captures[i], r.capture_sampler, gpu::image_layout::shader_read_only)
+                .storage_image("output_y", r.y_planes[i])
+                .storage_image("output_uv", r.uv_planes[i])
+                .commit();
+        }
+
+        fd.encoder = gpu::video_encoder::create(*gpu_s.device, ext, caps);
+
+        gse::settings::register_panel(ctx, "Graphics", cfg);
+        fd.clip_ring.set_budget(cfg.ring_budget);
+        fd.applied_ring_budget = cfg.ring_budget;
+
+        r.encode_active = true;
     }
 
-    fd.encoder = gpu::video_encoder::create(*gpu_s.device, ext, caps);
+    while (true) {
+        const auto& action_state = actions::system::current_state(sys);
 
-    gse::settings::register_panel(phase, "Graphics", cfg);
-    fd.clip_ring.set_budget(cfg.ring_budget);
-    fd.applied_ring_budget = cfg.ring_budget;
+        if (actions::system::pressed(action_state, sys, s.screenshot_action)) {
+            ctx.channels.push<screenshot_request>({});
+        }
+        if (actions::system::pressed(action_state, sys, s.save_clip_action)) {
+            ctx.channels.push<save_clip_request>({});
+        }
 
-    r.encode_active = true;
-}
-
-auto gse::renderer::capture::system::update(const update_context& ctx, state& s, const actions::system::state& sys) -> async::task<> {
-    const auto& action_state = actions::system::current_state(sys);
-
-    if (actions::system::pressed(action_state, sys, s.screenshot_action)) {
-        ctx.channels.push<screenshot_request>({});
+        co_await ctx.next_tick();
     }
-    if (actions::system::pressed(action_state, sys, s.save_clip_action)) {
-        ctx.channels.push<save_clip_request>({});
-    }
-
-    co_return;
 }
 
 auto gse::renderer::capture::system::frame(const frame_context& ctx, const gpu::context::state& gpu_s, const settings& cfg, const resources& r, frame_data& fd, const state& s) -> async::task<> {

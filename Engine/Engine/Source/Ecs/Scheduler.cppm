@@ -7,11 +7,11 @@ import gse.core;
 import gse.concurrency;
 import gse.time;
 import gse.diag;
-import gse.settings;
 
 import :phase_context;
 import :registries;
-import :update_context;
+import :run_context;
+import :settings;
 import :frame_context;
 import :system_node;
 import :system_dispatch;
@@ -27,10 +27,19 @@ export namespace gse {
 			registry& reg
 		) -> void;
 
+		auto set_settings_sink(
+			std::function<void(settings::register_settings_type)> fn
+		) -> void;
+
 		auto initialize(
 		) -> void;
 
 		auto update(
+		) -> void;
+
+		auto tick(
+			bool frame_ok,
+			const std::function<void()>& in_frame = {}
 		) -> void;
 
 		auto render(
@@ -97,10 +106,17 @@ export namespace gse {
 		auto check_closed_dep_graph(
 		) -> void;
 
-		auto topo_sort_pending_inits(
-		) const -> std::vector<std::size_t>;
+		auto run_unified_update(
+		) -> void;
 
-		auto run_graph_update(
+		auto advance_run_systems_during_init(
+		) -> void;
+
+		auto advance_one_run_system(
+			system_node& node
+		) -> async::task<>;
+
+		auto drain_hot_add_queue(
 		) -> void;
 
 		auto snapshot_all_states(
@@ -113,7 +129,10 @@ export namespace gse {
 		channel_registry m_channels_store;
 		std::vector<gse::move_only_function<void()>> m_deferred;
 		std::mutex m_deferred_mutex;
+		std::vector<system_node> m_hot_add_queue;
+		std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
+		std::function<void(settings::register_settings_type)> m_settings_sink;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
 		async::rw_mutex_registry m_access_mutexes;
@@ -195,7 +214,7 @@ auto gse::scheduler::add_system(Args&&... args) -> state_of_t<S>& {
 	(void)trace_id<S>();
 	m_states.register_state(canonical_idx, node.state_ptr, node.state_snapshot_ptr);
 
-	auto combined_deps = node.update_state_deps;
+	auto combined_deps = node.run_state_deps;
 	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
 	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
 
@@ -209,15 +228,16 @@ auto gse::scheduler::add_system(Args&&... args) -> state_of_t<S>& {
 		(void)trace_id<settings_t>();
 		m_states.register_state(node.settings_id, node.settings_ptr, node.settings_snapshot_ptr);
 
-		auto writer = m_channels_store.make_writer();
-		const std::string_view category = settings::category_of<settings_t>();
-		writer.push<settings::register_settings_type>({
-			.category = std::string(category),
-			.type_id = node.settings_id,
-			.settings_ptr = node.settings_ptr,
-			.write = &settings::write_settings_for<settings_t>,
-			.read = &settings::read_settings_for<settings_t>,
-		});
+		if (m_settings_sink) {
+			const std::string_view category = settings::category_of<settings_t>();
+			m_settings_sink({
+				.category = std::string(category),
+				.type_id = node.settings_id,
+				.settings_ptr = node.settings_ptr,
+				.write = &settings::write_settings_for<settings_t>,
+				.read = &settings::read_settings_for<settings_t>,
+			});
+		}
 	}
 
 	m_nodes.push_back(std::move(node));

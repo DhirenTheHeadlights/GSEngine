@@ -62,8 +62,8 @@ export namespace gse::render_init {
             std::unordered_set<id> pending;
         };
 
-        static auto update(
-            update_context& ctx,
+        static auto run(
+            run_context& ctx,
             state& s
         ) -> async::task<>;
 

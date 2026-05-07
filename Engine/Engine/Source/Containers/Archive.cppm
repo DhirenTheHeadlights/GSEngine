@@ -15,6 +15,11 @@ export namespace gse {
         std::vector<T>& data;
     };
 
+    template <typename T>
+    struct raw_blob_owned {
+        std::vector<T> storage;
+    };
+
     template <typename A, typename T>
     concept has_user_serialize = requires (A& a, T& v) { serialize(a, v); };
 
@@ -142,6 +147,18 @@ export namespace gse {
 
     template <typename T>
     concept archive = std::same_as<T, binary_writer> || std::same_as<T, binary_reader>;
+
+    template <typename T>
+    auto serialize(
+        binary_writer& ar,
+        raw_blob_owned<T>& v
+    ) -> void;
+
+    template <typename T>
+    auto serialize(
+        binary_reader& ar,
+        raw_blob_owned<T>& v
+    ) -> void;
 }
 
 consteval auto gse::is_archive_skipped(const std::meta::info member) -> bool {
@@ -343,4 +360,14 @@ auto gse::binary_reader::operator&(T& value) -> binary_reader& {
         }
     }
     return *this;
+}
+
+template <typename T>
+auto gse::serialize(binary_writer& ar, raw_blob_owned<T>& v) -> void {
+    ar & raw_blob<T>{ v.storage };
+}
+
+template <typename T>
+auto gse::serialize(binary_reader& ar, raw_blob_owned<T>& v) -> void {
+    ar & raw_blob<T>{ v.storage };
 }

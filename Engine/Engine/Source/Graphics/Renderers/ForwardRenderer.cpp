@@ -29,13 +29,12 @@ import gse.gpu;
 import gse.save;
 import gse.meta;
 
-auto gse::renderer::forward::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, const rt_shadow::system::state& rt_state, const light_culling::system::resources& lc_r, settings& cfg, resources& r, frame_data& fd) -> void {
-	auto& assets = phase.sched.state<asset::registry::state>();
+auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const rt_shadow::system::state& rt_state, const light_culling::system::resources& lc_r, settings& cfg, resources& r, frame_data& fd) -> async::task<> {
+	auto& assets = const_cast<asset::state&>(assets_s);
 
-	gse::settings::register_panel(phase, "Graphics", cfg);
+	gse::settings::register_panel(ctx, "Graphics", cfg);
 
-	r.shader_handle = asset::registry::get<shader>(assets, "Shaders/Standard3D/meshlet_geometry");
-	asset::registry::instantly_load(assets, r.shader_handle);
+	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/meshlet_geometry");
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 	const auto light_block = r.shader_handle->uniform_block("lights_ssbo");
@@ -104,8 +103,7 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, const
 	});
 
 
-	r.skinned_shader = asset::registry::get<shader>(assets, "Shaders/Standard3D/skinned_geometry_pass");
-	asset::registry::instantly_load(assets, r.skinned_shader);
+	r.skinned_shader = co_await asset::load<shader>(ctx, "Shaders/Standard3D/skinned_geometry_pass");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.skinned_shader);
@@ -124,8 +122,12 @@ auto gse::renderer::forward::system::initialize(const init_context& phase, const
 	});
 
 
-	r.blank_texture = asset::registry::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
-	asset::registry::instantly_load(assets, r.blank_texture);
+	r.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
+	while (asset::resource_state<texture>(assets, r.blank_texture.id()) != resource::state::loaded) {
+		co_await ctx.next_tick();
+	}
+
+	co_return;
 }
 
 auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const settings& cfg, const resources& r, frame_data& fd, const camera::system::state& cam_state, const geometry_collector::system::resources& gc_r, const light_culling::system::resources& lc_r) -> async::task<> {

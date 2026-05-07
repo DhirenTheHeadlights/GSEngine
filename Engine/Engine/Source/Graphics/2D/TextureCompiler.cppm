@@ -13,101 +13,63 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
 import :texture;
 
-template<>
-struct gse::asset_compiler<gse::texture> {
-    static auto source_extensions() -> std::vector<std::string> {
-        return { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
-    }
+export namespace gse {
 
-    static auto baked_extension() -> std::string {
-        return ".gtx";
-    }
+    auto bake(
+        const std::filesystem::path& src,
+        texture::baked& out
+    ) -> bool;
+}
 
-    static auto source_directory() -> std::string {
-        return "";
-    }
+namespace gse {
 
-    static auto baked_directory() -> std::string {
-        return "Textures";
-    }
+    auto read_texture_profile(
+        const std::filesystem::path& src
+    ) -> texture::profile;
+}
 
-    static auto compile_one(
-        const std::filesystem::path& source,
-        const std::filesystem::path& destination
-    ) -> bool {
-        auto image_data = image::load(source);
-        if (image_data.pixels.empty()) {
-            log::println(log::level::warning, log::category::assets, "Failed to load texture '{}', skipping", source.string());
-            return false;
-        }
-
-        auto texture_profile = texture::profile::generic_repeat;
-
-        if (const auto meta_path = source.parent_path() / (source.stem().string() + ".meta"); std::filesystem::exists(meta_path)) {
-            std::ifstream meta_file(meta_path);
-            if (std::string line; std::getline(meta_file, line) && line.starts_with("profile:")) {
-                std::string profile_str = line.substr(8);
-                profile_str.erase(0, profile_str.find_first_not_of(" \t\r\n"));
-                profile_str.erase(profile_str.find_last_not_of(" \t\r\n") + 1);
-
-                if (profile_str == "msdf") {
-                    texture_profile = texture::profile::msdf;
-                } else if (profile_str == "pixel_art") {
-                    texture_profile = texture::profile::pixel_art;
-                } else if (profile_str == "clamp_to_edge") {
-                    texture_profile = texture::profile::generic_clamp_to_edge;
-                }
-            }
-        }
-
-        std::filesystem::create_directories(destination.parent_path());
-        std::ofstream out_file(destination, std::ios::binary);
-        if (!out_file.is_open()) {
-            return false;
-        }
-
-        const std::uint32_t width = image_data.size.x();
-        const std::uint32_t height = image_data.size.y();
-        const std::uint32_t channels = image_data.channels;
-
-        binary_writer ar(out_file, 0x47544558, 1);
-        ar & width & height & channels & texture_profile;
-        ar & raw_blob(image_data.pixels);
-
-        log::println(log::category::assets, "Texture compiled: {}", destination.filename().string());
-        return true;
-    }
-
-    static auto needs_recompile(
-        const std::filesystem::path& source,
-        const std::filesystem::path& destination
-    ) -> bool {
-        if (!std::filesystem::exists(destination)) {
-            return true;
-        }
-
-        const auto dst_time = std::filesystem::last_write_time(destination);
-
-        if (std::filesystem::last_write_time(source) > dst_time) {
-            return true;
-        }
-
-        if (const auto meta_path = source.parent_path() / (source.stem().string() + ".meta"); std::filesystem::exists(meta_path) && std::filesystem::last_write_time(meta_path) > dst_time) {
-            return true;
-        }
-
+auto gse::bake(const std::filesystem::path& src, texture::baked& out) -> bool {
+    auto image_data = image::load(src);
+    if (image_data.pixels.empty()) {
+        log::println(log::level::warning, log::category::assets, "Failed to load texture '{}', skipping", src.string());
         return false;
     }
 
-    static auto dependencies(
-        const std::filesystem::path& source
-    ) -> std::vector<std::filesystem::path> {
-        std::vector<std::filesystem::path> deps;
-        if (const auto meta_path = source.parent_path() / (source.stem().string() + ".meta"); std::filesystem::exists(meta_path)) {
-            deps.push_back(meta_path);
-        }
-        return deps;
+    out.width = image_data.size.x();
+    out.height = image_data.size.y();
+    out.channels = image_data.channels;
+    out.profile = read_texture_profile(src);
+    out.pixels.storage = std::move(image_data.pixels);
+    return true;
+}
+
+auto gse::read_texture_profile(const std::filesystem::path& src) -> texture::profile {
+    const auto meta_path = src.parent_path() / (src.stem().string() + ".meta");
+    if (!std::filesystem::exists(meta_path)) {
+        return texture::profile::generic_repeat;
     }
-};
+
+    std::ifstream meta_file(meta_path);
+    std::string line;
+    if (!std::getline(meta_file, line) || !line.starts_with("profile:")) {
+        return texture::profile::generic_repeat;
+    }
+
+    std::string profile_str = line.substr(8);
+    profile_str.erase(0, profile_str.find_first_not_of(" \t\r\n"));
+    profile_str.erase(profile_str.find_last_not_of(" \t\r\n") + 1);
+
+    if (profile_str == "msdf") {
+        return texture::profile::msdf;
+    }
+    if (profile_str == "pixel_art") {
+        return texture::profile::pixel_art;
+    }
+    if (profile_str == "clamp_to_edge") {
+        return texture::profile::generic_clamp_to_edge;
+    }
+    return texture::profile::generic_repeat;
+}

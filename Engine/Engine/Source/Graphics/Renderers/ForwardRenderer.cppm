@@ -59,13 +59,13 @@ export namespace gse::renderer::forward {
 		struct settings {
 			static constexpr std::string_view category = "Graphics";
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Shadow map resolution and filtering quality. Off disables shadow rendering entirely.">{}]]
 			shadow_quality_level shadow_quality = shadow_quality_level::medium;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Screen-space ambient occlusion sample count and blur quality.">{}]]
 			ao_quality_level ao_quality = ao_quality_level::medium;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Screen-space and ray-traced reflection quality. Higher levels trace more rays per pixel.">{}]]
 			reflection_quality_level reflection_quality = reflection_quality_level::medium;
 		};
 
@@ -91,15 +91,16 @@ export namespace gse::renderer::forward {
 			linear_vector<std::byte> material_staging;
 		};
 
-		static auto initialize(
-			const init_context& phase,
+		static auto run(
+			run_context& ctx,
 			const gpu::context::state& gpu_s,
+			const asset::state& assets_s,
 			const rt_shadow::system::state& rt_state,
 			const light_culling::system::resources& lc_r,
 			settings& cfg,
 			resources& r,
 			frame_data& fd
-		) -> void;
+		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,

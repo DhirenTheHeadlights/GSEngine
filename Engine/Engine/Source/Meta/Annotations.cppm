@@ -46,6 +46,15 @@ export namespace gse {
 
     template <typename Source, typename Tag>
     using project_by_annotation = typename project_holder<Source, Tag>::type;
+
+    template <typename Schema>
+    consteval auto find_field_by_name(
+        std::string_view name
+    ) -> std::meta::info;
+
+    template <typename Schema, typename T>
+    consteval auto apply_annotations(
+    ) -> std::optional<Schema>;
 }
 
 template <typename Tag>
@@ -58,4 +67,38 @@ consteval auto gse::has_annotation(const std::meta::info member) -> bool {
         }
     }
     return false;
+}
+
+template <typename Schema>
+consteval auto gse::find_field_by_name(const std::string_view name) -> std::meta::info {
+    for (auto field : std::meta::nonstatic_data_members_of(^^Schema, std::meta::access_context::unchecked())) {
+        if (std::meta::identifier_of(field) == name) {
+            return field;
+        }
+    }
+    return std::meta::info{};
+}
+
+template <typename Schema, typename T>
+consteval auto gse::apply_annotations() -> std::optional<Schema> {
+    Schema out{};
+    bool any = false;
+
+    template for (constexpr auto ann : std::define_static_array(std::meta::annotations_of(^^T))) {
+        constexpr auto ann_type = std::meta::dealias(std::meta::type_of(ann));
+        constexpr auto key = std::meta::has_template_arguments(ann_type)
+            ? std::meta::template_of(ann_type)
+            : ann_type;
+        constexpr auto matched_field = find_field_by_name<Schema>(std::meta::identifier_of(key));
+
+        if constexpr (matched_field != std::meta::info{}) {
+            out.[: matched_field :] = [: ann_type :]::value;
+            any = true;
+        }
+    }
+
+    if (any) {
+        return out;
+    }
+    return std::nullopt;
 }

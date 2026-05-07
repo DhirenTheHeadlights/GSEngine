@@ -21,26 +21,6 @@ export namespace gse {
 }
 
 export namespace gse::actions {
-	template <std::size_t N>
-	struct fixed_string {
-		char v[N];
-
-		constexpr fixed_string(const char(&s)[N]) {
-			for (std::size_t i = 0; i < N; ++i) {
-				v[i] = s[i];
-			}
-		}
-
-		constexpr auto view() const -> std::string_view {
-			return { v, N - 1 };
-		}
-	};
-
-	template <std::size_t N>
-	fixed_string(const char(&)[N]) -> fixed_string<N>;
-}
-
-export namespace gse::actions {
 	class handle {
 	public:
 		handle() = default;
@@ -364,13 +344,8 @@ export namespace gse::actions {
 			interval_timer<> debug_timer{ seconds(0.5f) };
 		};
 
-		static auto initialize(
-			init_context& phase,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
+		static auto run(
+			run_context& ctx,
 			state& s,
 			const input::system::state& input_s
 		) -> async::task<>;
@@ -682,11 +657,10 @@ auto gse::actions::state::camera_yaw() const -> angle {
 	return m_camera_yaw;
 }
 
-auto gse::actions::system::initialize(init_context&, state& s) -> void {
+auto gse::actions::system::run(run_context& ctx, state& s, const input::system::state& input_s) -> async::task<> {
 	finalize_bindings(s);
-}
 
-auto gse::actions::system::update(update_context& ctx, state& s, const input::system::state& input_s) -> async::task<> {
+	while (true) {
 	bool config_changed = false;
 
 	for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
@@ -801,7 +775,8 @@ auto gse::actions::system::update(update_context& ctx, state& s, const input::sy
 		}
 	}
 
-	co_return;
+		co_await ctx.next_tick();
+	}
 }
 
 auto gse::actions::system::current_state(const state& s) -> const actions::state& {

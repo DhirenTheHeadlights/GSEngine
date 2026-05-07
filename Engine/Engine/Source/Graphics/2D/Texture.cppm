@@ -1,12 +1,14 @@
 export module gse.graphics:texture;
 
 import std;
+import gse.std_meta;
 
 import gse.core;
 import gse.math;
 import gse.os;
 import gse.gpu;
 import gse.assets;
+import gse.containers;
 
 export namespace gse {
     class texture : public identifiable {
@@ -16,6 +18,21 @@ export namespace gse {
             generic_clamp_to_edge,
             msdf,
             pixel_art
+        };
+
+        struct [[
+            = asset_format::baked_ext<".gtx">{},
+            = asset_format::baked_dir<"Textures">{},
+            = asset_format::source_exts<".png", ".jpg", ".jpeg", ".tga", ".bmp">{},
+            = asset_format::magic<0x47544558>{},
+            = asset_format::version<1>{},
+            = asset_format::meta_sidecar{}
+        ]] baked {
+            std::uint32_t width = 0;
+            std::uint32_t height = 0;
+            std::uint32_t channels = 0;
+            profile profile = profile::generic_repeat;
+            raw_blob_owned<std::byte> pixels;
         };
 
         texture(

@@ -61,11 +61,8 @@ auto gse::renderer::geometry_collector::system::upload_skeleton_data(const resou
 	}
 }
 
-auto gse::renderer::geometry_collector::system::initialize(init_context& phase, const gpu::context::state& gpu_s, resources& r, state& s) -> void {
-	auto& assets = phase.sched.state<asset::registry::state>();
-
-	r.shader_handle = asset::registry::get<shader>(assets, "Shaders/Standard3D/skinned_geometry_pass");
-	asset::registry::instantly_load(assets, r.shader_handle);
+auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, state& s, const camera::system::state& cam_state) -> async::task<> {
+	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/skinned_geometry_pass");
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 
@@ -121,8 +118,7 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 		});
 	}
 
-	auto skin_compute = asset::registry::get<shader>(assets, "Shaders/Compute/skin_compute");
-	asset::registry::instantly_load(assets, skin_compute);
+	auto skin_compute = co_await asset::load<shader>(ctx, "Shaders/Compute/skin_compute");
 
 	const auto joint_block = skin_compute->uniform_block("skeletonData");
 	r.joint_stride = joint_block.size;
@@ -134,30 +130,27 @@ auto gse::renderer::geometry_collector::system::initialize(init_context& phase, 
 		.size = resources::max_joints * r.joint_stride,
 		.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 	});
-}
 
-auto gse::renderer::geometry_collector::system::update(update_context& ctx, const resources& r, state& s, const camera::system::state& cam_state) -> async::task<> {
-	const view_matrix view_matrix = cam_state.view_matrix;
-	const projection_matrix proj_matrix = cam_state.projection_matrix;
+	while (true) {
+		const view_matrix view_matrix = cam_state.view_matrix;
+		const projection_matrix proj_matrix = cam_state.projection_matrix;
 
-	std::unordered_map<id, std::uint32_t> body_index_map;
-	for (const auto& [entries] : ctx.read_channel<physics::gpu_body_index_map>()) {
-		for (const auto& [eid, idx] : entries) {
-			body_index_map[eid] = idx;
+		std::unordered_map<id, std::uint32_t> body_index_map;
+		for (const auto& [entries] : ctx.read_channel<physics::gpu_body_index_map>()) {
+			for (const auto& [eid, idx] : entries) {
+				body_index_map[eid] = idx;
+			}
 		}
-	}
 
-	auto [render, motion, collision, anim] = co_await ctx.acquire<
-		write<render_component>,
-		read<physics::motion_component>,
-		read<physics::collision_component>,
-		read<animation_component>
-	>();
+		{
+			auto [render, motion, collision, anim] = co_await ctx.acquire<
+				write<render_component>,
+				read<physics::motion_component>,
+				read<physics::collision_component>,
+				read<animation_component>
+			>();
 
-	{
-		if (render.empty()) {
-			co_return;
-		}
+			if (!render.empty()) {
 
 		render_data data;
 		data.view = view_matrix;
@@ -478,6 +471,10 @@ auto gse::renderer::geometry_collector::system::update(update_context& ctx, cons
 		data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
 
 		ctx.channels.push<render_data>(std::move(data));
+			}
+		}
+
+		co_await ctx.next_tick();
 	}
 }
 

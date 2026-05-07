@@ -15,11 +15,8 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 
-auto gse::renderer::skin_compute::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, const geometry_collector::system::resources& gc, resources& r) -> void {
-	auto& assets = phase.sched.state<asset::registry::state>();
-
-	r.shader_handle = asset::registry::get<shader>(assets, "Shaders/Compute/skin_compute");
-	asset::registry::instantly_load(assets, r.shader_handle);
+auto gse::renderer::skin_compute::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const geometry_collector::system::resources& gc, resources& r) -> async::task<> {
+	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Compute/skin_compute");
 
 	assert(r.shader_handle->is_compute(), "Skin compute shader is not loaded as a compute shader");
 
@@ -39,6 +36,8 @@ auto gse::renderer::skin_compute::system::initialize(const init_context& phase, 
 			.buffer("skinMatrices", gc.skin_buffer[i], 0, skin_buffer_size)
 			.commit();
 	}
+
+	co_return;
 }
 
 auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const resources& r, const geometry_collector::system::state& gc_s, const geometry_collector::system::resources& gc_r) -> async::task<> {

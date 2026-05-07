@@ -99,9 +99,9 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto initialize_compute(
-			const gpu::context::state& ctx,
-			asset::registry::state& assets
-		) -> void;
+			run_context& ctx,
+			const gpu::context::state& gpu_s
+		) -> async::task<>;
 
 		auto dispatch_compute(
 		) -> void;

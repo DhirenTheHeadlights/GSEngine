@@ -46,7 +46,7 @@ export namespace gse::renderer::physics_debug {
 		struct settings {
 			static constexpr std::string_view category = "Graphics";
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}]]
 			bool enabled = true;
 		};
 
@@ -66,19 +66,13 @@ export namespace gse::renderer::physics_debug {
 			per_frame_resource<std::size_t> max_vertices;
 		};
 
-		static auto initialize(
-			const init_context& phase,
+		static auto run(
+			run_context& ctx,
 			const gpu::context::state& gpu_s,
+			const asset::state& assets_s,
 			settings& cfg,
 			resources& r,
 			frame_data& fd,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
-			const settings& cfg,
-			const resources& r,
 			state& s,
 			const physics::system::state& ps,
 			const physics::system::settings& phys_cfg

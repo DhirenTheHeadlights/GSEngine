@@ -43,13 +43,13 @@ export namespace gse::gui {
 		struct settings {
 			static constexpr std::string_view category = "UI";
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}]]
 			theme current_theme = theme::dark;
 
-			[[=gse::settings::describe{}, =gse::settings::range<0.5f, 2.0f>{}]]
+			[[=gse::settings::describe<"Multiplier on UI element sizes and font metrics. Useful for high-DPI displays.">{}, =gse::settings::range<0.5f, 2.0f>{}]]
 			float ui_scale = 1.0f;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Font used to render text in the UI.">{}]]
 			gse::settings::choice<int> font;
 		};
 
@@ -97,20 +97,12 @@ export namespace gse::gui {
 			std::unique_ptr<ids::scope> current_scope;
 		};
 
-		static auto initialize(
-			init_context& phase,
+		static auto run(
+			run_context& ctx,
 			const window::state& window_s,
-			settings& cfg,
-			resources& r,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
-			const window::state& window_s,
-			const asset::registry::state& assets_s,
+			const asset::state& assets_s,
 			const gse::input::system::state& input_state,
-			const settings& cfg,
+			settings& cfg,
 			resources& r,
 			state& s
 		) -> async::task<>;
@@ -124,6 +116,24 @@ export namespace gse::gui {
 		static auto save(state& s) -> void;
 
 	private:
+		static auto init_body(
+			run_context& ctx,
+			const window::state& window_s,
+			asset::state& assets,
+			settings& cfg,
+			state& s
+		) -> async::task<>;
+
+		static auto update_body(
+			run_context& ctx,
+			const window::state& window_s,
+			const asset::state& assets_s,
+			const gse::input::system::state& input_state,
+			const settings& cfg,
+			resources& r,
+			state& s
+		) -> async::task<>;
+
 		static auto handle_idle_state(
 			state& s,
 			const input::state& input_state,
@@ -201,7 +211,7 @@ export namespace gse::gui {
 		static auto reload_font(
 			state& s,
 			const settings& cfg,
-			const asset::registry::state& assets
+			const asset::state& assets
 		) -> void;
 
 		static auto begin_menu(

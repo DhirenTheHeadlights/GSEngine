@@ -18,48 +18,52 @@ export namespace gs::tumbler {
 	struct system {
 		struct state {};
 
-		static auto update(
-			gse::update_context& ctx
+		static auto run(
+			gse::run_context& ctx
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::tumbler::system::update(gse::update_context& ctx) -> gse::async::task<> {
-	auto [tumblers, motions] = co_await ctx.acquire<
-		gse::write<component>,
-		gse::write<gse::physics::motion_component>
-	>();
+auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
+	while (true) {
+		{
+			auto [tumblers, motions] = co_await ctx.acquire<
+				gse::write<component>,
+				gse::write<gse::physics::motion_component>
+			>();
 
-	constexpr auto physics_step = gse::seconds(1.f / 60.f);
+			constexpr auto physics_step = gse::seconds(1.f / 60.f);
 
-	for (auto& t : tumblers) {
-		const auto owner_id = t.owner_id();
-		auto* motion = motions.find(owner_id);
-		if (!motion) {
-			continue;
+			for (auto& t : tumblers) {
+				const auto owner_id = t.owner_id();
+				auto* motion = motions.find(owner_id);
+				if (!motion) {
+					continue;
+				}
+
+				t.accumulator += gse::system_clock::dt();
+				while (t.accumulator >= physics_step) {
+					t.accumulator -= physics_step;
+					t.phase += t.angular_speed * physics_step;
+				}
+
+				const gse::quat world_rot(t.axis, t.phase);
+				const auto world_offset = gse::rotate_vector(world_rot, t.local_offset);
+				const gse::vec3<gse::angular_velocity> ang_vel(
+					t.axis.x() * t.angular_speed,
+					t.axis.y() * t.angular_speed,
+					t.axis.z() * t.angular_speed
+				);
+				const auto lin_vel = cross(ang_vel, world_offset) / gse::rad;
+
+				motion->current_position = t.center + world_offset;
+				motion->orientation = world_rot;
+				motion->current_velocity = lin_vel;
+				motion->angular_velocity = ang_vel;
+				motion->sleeping = false;
+			}
 		}
 
-		t.accumulator += gse::system_clock::dt();
-		while (t.accumulator >= physics_step) {
-			t.accumulator -= physics_step;
-			t.phase += t.angular_speed * physics_step;
-		}
-
-		const gse::quat world_rot(t.axis, t.phase);
-		const auto world_offset = gse::rotate_vector(world_rot, t.local_offset);
-		const gse::vec3<gse::angular_velocity> ang_vel(
-			t.axis.x() * t.angular_speed,
-			t.axis.y() * t.angular_speed,
-			t.axis.z() * t.angular_speed
-		);
-		const auto lin_vel = cross(ang_vel, world_offset) / gse::rad;
-
-		motion->current_position = t.center + world_offset;
-		motion->orientation = world_rot;
-		motion->current_velocity = lin_vel;
-		motion->angular_velocity = ang_vel;
-		motion->sleeping = false;
+		co_await ctx.next_tick();
 	}
-
-	co_return;
 }

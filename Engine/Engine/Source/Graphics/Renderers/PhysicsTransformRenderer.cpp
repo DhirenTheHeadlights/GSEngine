@@ -16,11 +16,8 @@ import gse.diag;
 import gse.ecs;
 import gse.physics;
 
-auto gse::renderer::physics_transform::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, resources& r, frame_data& fd) -> void {
-	auto& assets = phase.sched.state<asset::registry::state>();
-
-	r.shader_handle = asset::registry::get<shader>(assets, "Shaders/Compute/physics_instance_transform");
-	asset::registry::instantly_load(assets, r.shader_handle);
+auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd) -> async::task<> {
+	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Compute/physics_instance_transform");
 
 	assert(r.shader_handle->is_compute(), "Physics instance transform shader is not loaded as a compute shader");
 
@@ -31,6 +28,8 @@ auto gse::renderer::physics_transform::system::initialize(const init_context& ph
 	}
 
 	r.initialized = true;
+
+	co_return;
 }
 
 auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const resources& r, frame_data& fd, const geometry_collector::system::resources& gc_r) -> async::task<> {

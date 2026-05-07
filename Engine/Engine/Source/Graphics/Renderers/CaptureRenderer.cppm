@@ -3,6 +3,7 @@ export module gse.graphics:capture_renderer;
 import std;
 
 import gse.os;
+import gse.assets;
 import gse.gpu;
 import gse.core;
 import gse.concurrency;
@@ -30,7 +31,7 @@ export namespace gse::renderer::capture {
         struct settings {
             static constexpr std::string_view category = "Graphics";
 
-            [[=gse::settings::describe{}, =gse::settings::range<seconds(5.f), seconds(120.f)>{}]]
+            [[=gse::settings::describe<"Length of the rolling capture ring buffer. Saving a clip writes the most recent N seconds of frames.">{}, =gse::settings::range<seconds(5.f), seconds(120.f)>{}]]
             time ring_budget = seconds(30.f);
         };
 
@@ -61,19 +62,15 @@ export namespace gse::renderer::capture {
             bool first_ring_push_logged = false;
         };
 
-        static auto initialize(
-            const init_context& phase,
+        static auto run(
+            run_context& ctx,
             const gpu::context::state& gpu_s,
+            const asset::state& assets_s,
+            const actions::system::state& sys,
             settings& cfg,
             resources& r,
             frame_data& fd,
             state& s
-        ) -> void;
-
-        static auto update(
-            const update_context& ctx,
-            state& s,
-            const actions::system::state& sys
         ) -> async::task<>;
 
         static auto frame(

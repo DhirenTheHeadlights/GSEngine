@@ -14,21 +14,6 @@ namespace gse {
 export namespace gse {
 	class id;
 
-	template <std::size_t N>
-	struct fixed_string {
-		char data[N]{};
-
-		consteval fixed_string(
-			const char (&s)[N]
-		);
-
-		consteval operator std::string_view(
-		) const;
-	};
-
-	template <std::size_t N>
-	fixed_string(const char (&)[N]) -> fixed_string<N>;
-
 	consteval auto stable_id(
 		std::string_view tag
 	) -> uuid;
@@ -594,16 +579,6 @@ auto gse::number(const std::string_view tag) -> uuid {
 	const auto it = registry.tag_to_uuid.find(tag);
 	assert(it != registry.tag_to_uuid.end(), "Tag '{}' not found", tag);
 	return it->second;
-}
-
-template <std::size_t N>
-consteval gse::fixed_string<N>::fixed_string(const char (&s)[N]) {
-	std::ranges::copy(s, data);
-}
-
-template <std::size_t N>
-consteval gse::fixed_string<N>::operator std::string_view() const {
-	return { data, N - 1 };
 }
 
 consteval auto gse::stable_id(const std::string_view tag) -> uuid {

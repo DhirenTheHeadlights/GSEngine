@@ -23,148 +23,149 @@ auto gse::network::key_eq::operator()(const address& a, const address& b) const 
     return a.ip == b.ip && a.port == b.port;
 }
 
-auto gse::network::system::initialize(init_context&, resources&, state&) -> void {}
-
 auto gse::network::system::shutdown(shutdown_context&, resources& r, state&) -> void {
     r.client_ptr.reset();
 }
 
-auto gse::network::system::update(update_context& ctx, const asset::registry::state& assets_s, resources& r, state& s, const actions::system::state& actions_state, const camera::system::state& cam_state) -> async::task<> {
-    for (const auto& req : ctx.read_channel<connect_request>()) {
-        if (!r.client_ptr) {
-            const address bind = req.options.local_bind.value_or(address{
-                .ip = "0.0.0.0",
-                .port = 0,
+auto gse::network::system::run(run_context& ctx, const asset::state& assets_s, resources& r, state& s, const actions::system::state& actions_state, const camera::system::state& cam_state) -> async::task<> {
+    while (true) {
+        for (const auto& req : ctx.read_channel<connect_request>()) {
+            if (!r.client_ptr) {
+                const address bind = req.options.local_bind.value_or(address{
+                    .ip = "0.0.0.0",
+                    .port = 0,
+                });
+                r.client_ptr = std::make_unique<client>(bind, req.options.addr);
+            }
+            req.promise.fulfill(r.client_ptr->connect(req.options.timeout, req.options.retry));
+        }
+
+        for (const auto& _ : ctx.read_channel<disconnect_request>()) {
+            r.client_ptr.reset();
+        }
+
+        for (const auto& req : ctx.read_channel<add_provider_request>()) {
+            r.providers.emplace_back(req.provider);
+        }
+
+        for (const auto& _ : ctx.read_channel<clear_providers_request>()) {
+            r.providers.clear();
+            s.available_servers.clear();
+        }
+
+        for (const auto& req : ctx.read_channel<refresh_servers_request>()) {
+            std::unordered_map<address, discovery_result, key_hash, key_eq> dedup;
+            for (const auto& p : r.providers) {
+                p->refresh(req.timeout);
+                for (const auto& result : p->results()) {
+                    if (auto it = dedup.find(result.addr); it == dedup.end()) {
+                        dedup.emplace(result.addr, result);
+                    }
+                    else if (result.build >= it->second.build) {
+                        it->second = result;
+                    }
+                }
+            }
+            s.available_servers.clear();
+            s.available_servers.reserve(dedup.size());
+            for (auto& v : dedup | std::views::values) {
+                s.available_servers.push_back(std::move(v));
+            }
+            std::ranges::sort(s.available_servers, [](const discovery_result& a, const discovery_result& b) {
+                if (a.name != b.name) {
+                    return a.name < b.name;
+                }
+                return a.addr.port < b.addr.port;
             });
-            r.client_ptr = std::make_unique<client>(bind, req.options.addr);
         }
-        req.promise.fulfill(r.client_ptr->connect(req.options.timeout, req.options.retry));
-    }
 
-    for (const auto& _ : ctx.read_channel<disconnect_request>()) {
-        r.client_ptr.reset();
-    }
-
-    for (const auto& req : ctx.read_channel<add_provider_request>()) {
-        r.providers.emplace_back(req.provider);
-    }
-
-    for (const auto& _ : ctx.read_channel<clear_providers_request>()) {
-        r.providers.clear();
-        s.available_servers.clear();
-    }
-
-    for (const auto& req : ctx.read_channel<refresh_servers_request>()) {
-        std::unordered_map<address, discovery_result, key_hash, key_eq> dedup;
-        for (const auto& p : r.providers) {
-            p->refresh(req.timeout);
-            for (const auto& result : p->results()) {
-                if (auto it = dedup.find(result.addr); it == dedup.end()) {
-                    dedup.emplace(result.addr, result);
-                }
-                else if (result.build >= it->second.build) {
-                    it->second = result;
-                }
-            }
+        if (!r.client_ptr) {
+            s.connection_state = client::state::disconnected;
+            co_await ctx.next_tick();
+            continue;
         }
-        s.available_servers.clear();
-        s.available_servers.reserve(dedup.size());
-        for (auto& v : dedup | std::views::values) {
-            s.available_servers.push_back(std::move(v));
+
+        for (const auto& req : ctx.read_channel<send_request>()) {
+            req.action(*r.client_ptr);
         }
-        std::ranges::sort(s.available_servers, [](const discovery_result& a, const discovery_result& b) {
-            if (a.name != b.name) {
-                return a.name < b.name;
-            }
-            return a.addr.port < b.addr.port;
-        });
-    }
 
-    if (!r.client_ptr) {
-        s.connection_state = client::state::disconnected;
-        co_return;
-    }
+        s.user_inbox.clear();
 
-    for (const auto& req : ctx.read_channel<send_request>()) {
-        req.action(*r.client_ptr);
-    }
+        r.client_ptr->drain([&r, &s, &assets_s](inbox_message& msg) {
+            if (auto* rep = std::get_if<replication_message>(&msg)) {
+                const std::span data(rep->payload);
+                bitstream stream(data);
 
-    s.user_inbox.clear();
+                match_and_apply_components(
+                    stream,
+                    rep->id,
+                    [&]<typename T>(const component_upsert<T>& m) {
+                        if constexpr (std::is_same_v<T, render_component>) {
+                            auto fixed_data = m.data;
 
-    r.client_ptr->drain([&r, &s, &assets_s](inbox_message& msg) {
-        if (auto* rep = std::get_if<replication_message>(&msg)) {
-            const std::span data(rep->payload);
-            bitstream stream(data);
-
-            match_and_apply_components(
-                stream,
-                rep->id,
-                [&]<typename T>(const component_upsert<T>& m) {
-                    if constexpr (std::is_same_v<T, render_component>) {
-                        auto fixed_data = m.data;
-
-                        for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
-                            const auto res_id = fixed_data.models[i].id();
-                            fixed_data.models[i] = asset::registry::try_get<model>(assets_s, res_id);
-                        }
-
-                        for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
-                            const auto res_id = fixed_data.skinned_models[i].id();
-                            fixed_data.skinned_models[i] = asset::registry::try_get<skinned_model>(assets_s, res_id);
-                        }
-
-                        r.deferred.push_back([entity = m.owner_id, data = std::move(fixed_data)](update_context& ctx) {
-                            ctx.ensure_active(entity);
-                            auto* c = ctx.add_component<T>(entity, data);
-                            c->networked_data() = data;
-                        });
-                    }
-                    else {
-                        r.deferred.push_back([entity = m.owner_id, data = m.data](update_context& ctx) {
-                            ctx.ensure_active(entity);
-                            auto* c = ctx.add_component<T>(entity, data);
-                            c->networked_data() = data;
-                        });
-                    }
-                },
-                [&]<typename T>(const component_remove<T>& m) {
-                    if (!m.owner_id.exists()) {
-                        return;
-                    }
-                    r.deferred.push_back([entity = m.owner_id](update_context& ctx) {
-                        if constexpr (std::is_same_v<T, player_controller>) {
-                            if (ctx.exists(entity)) {
-                                ctx.remove(entity);
+                            for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
+                                const auto res_id = fixed_data.models[i].id();
+                                fixed_data.models[i] = asset::try_get<model>(assets_s, res_id);
                             }
+
+                            for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
+                                const auto res_id = fixed_data.skinned_models[i].id();
+                                fixed_data.skinned_models[i] = asset::try_get<skinned_model>(assets_s, res_id);
+                            }
+
+                            r.deferred.push_back([entity = m.owner_id, data = std::move(fixed_data)](run_context& ctx) {
+                                ctx.ensure_active(entity);
+                                auto* c = ctx.add_component<T>(entity, data);
+                                c->networked_data() = data;
+                            });
                         }
                         else {
-                            ctx.remove_component<T>(entity);
+                            r.deferred.push_back([entity = m.owner_id, data = m.data](run_context& ctx) {
+                                ctx.ensure_active(entity);
+                                auto* c = ctx.add_component<T>(entity, data);
+                                c->networked_data() = data;
+                            });
                         }
-                    });
-                }
-            );
+                    },
+                    [&]<typename T>(const component_remove<T>& m) {
+                        if (!m.owner_id.exists()) {
+                            return;
+                        }
+                        r.deferred.push_back([entity = m.owner_id](run_context& ctx) {
+                            if constexpr (std::is_same_v<T, player_controller>) {
+                                if (ctx.exists(entity)) {
+                                    ctx.remove(entity);
+                                }
+                            }
+                            else {
+                                ctx.remove_component<T>(entity);
+                            }
+                        });
+                    }
+                );
 
-            return;
+                return;
+            }
+
+            s.user_inbox.emplace_back(msg);
+        });
+
+        for (auto& d : r.deferred) {
+            d(ctx);
+        }
+        r.deferred.clear();
+
+        s.connection_state = r.client_ptr->current_state();
+
+        if (s.connection_state == client::state::connected) {
+            r.client_ptr->push_input(
+                actions::system::current_state(actions_state),
+                actions::system::axis1_ids(actions_state),
+                actions::system::axis2_ids(actions_state),
+                cam_state.yaw
+            );
         }
 
-        s.user_inbox.emplace_back(msg);
-    });
-
-    for (auto& d : r.deferred) {
-        d(ctx);
+        co_await ctx.next_tick();
     }
-    r.deferred.clear();
-
-    s.connection_state = r.client_ptr->current_state();
-
-    if (s.connection_state == client::state::connected) {
-        r.client_ptr->push_input(
-            actions::system::current_state(actions_state),
-            actions::system::axis1_ids(actions_state),
-            actions::system::axis2_ids(actions_state),
-            cam_state.yaw
-        );
-    }
-
-    co_return;
 }

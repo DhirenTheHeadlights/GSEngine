@@ -24,7 +24,6 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.assets;
-import gse.settings;
 import gse.meta;
 
 export namespace gse {
@@ -44,10 +43,10 @@ export namespace gse::gpu {
 		struct settings {
 			static constexpr std::string_view category = "Graphics";
 
-			[[=gse::settings::describe{}, =gse::settings::restart_required{}]]
+			[[=gse::settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant overhead. Requires a restart.">{}, =gse::settings::restart_required{}]]
 			bool validation_layers_enabled = false;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Vulkan device tracking and naming options.">{}]]
 			vulkan::device::settings device;
 		};
 
@@ -63,14 +62,10 @@ export namespace gse::gpu {
 
 		using swap_chain_recreate_callback = std::function<void()>;
 
-		static auto initialize(
-			const init_context& phase,
+		static auto run(
+			run_context& ctx,
+			const window::state& window_s,
 			settings& cfg,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
 			state& s
 		) -> async::task<>;
 

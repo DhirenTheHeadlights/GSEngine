@@ -130,17 +130,11 @@ export namespace gse::renderer::ui {
             triple_buffer<gpu_frame_data> data;
         };
 
-        static auto initialize(
-            const init_context& phase,
+        static auto run(
+            run_context& ctx,
             const gpu::context::state& gpu_s,
+            const asset::state& assets_s,
             resources& r,
-            frame_data& fd,
-            state& s
-        ) -> void;
-
-        static auto update(
-            const update_context& ctx,
-            const resources& r,
             frame_data& fd,
             state& s
         ) -> async::task<>;

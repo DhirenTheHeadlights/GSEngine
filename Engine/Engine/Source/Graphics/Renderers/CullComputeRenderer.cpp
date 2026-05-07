@@ -18,15 +18,12 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 
-auto gse::renderer::cull_compute::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, const geometry_collector::system::resources& gc_r, resources& r, state& s) -> void {
-	auto& assets = phase.sched.state<asset::registry::state>();
-
-	r.shader_handle = asset::registry::get<shader>(assets, "Shaders/Compute/cull_instances");
-	asset::registry::instantly_load(assets, r.shader_handle);
+auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const geometry_collector::system::resources& gc_r, resources& r, state& s) -> async::task<> {
+	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Compute/cull_instances");
 
 	if (!r.shader_handle.valid() || !r.shader_handle->is_compute()) {
 		s.enabled = false;
-		return;
+		co_return;
 	}
 
 	const auto batch_block = r.shader_handle->uniform_block("batches");
@@ -73,6 +70,8 @@ auto gse::renderer::cull_compute::system::initialize(const init_context& phase, 
 			.buffer("indirectCommands", gc_r.skinned_indirect_commands_buffer[i])
 			.commit();
 	}
+
+	co_return;
 }
 
 auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resources& r) -> async::task<> {

@@ -45,13 +45,14 @@ export namespace gse::renderer::light_culling {
 			linear_vector<std::byte> light_staging;
 		};
 
-		static auto initialize(
-			const init_context& phase,
+		static auto run(
+			run_context& ctx,
 			const gpu::context::state& gpu_s,
+			const asset::state& assets_s,
 			resources& r,
 			frame_data& fd,
 			state& s
-		) -> void;
+		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,

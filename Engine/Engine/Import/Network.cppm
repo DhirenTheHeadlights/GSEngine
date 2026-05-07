@@ -80,18 +80,12 @@ export namespace gse::network {
         struct resources {
             std::unique_ptr<client> client_ptr;
             std::vector<std::shared_ptr<discovery_provider>> providers;
-            std::vector<gse::move_only_function<void(update_context&)>> deferred;
+            std::vector<gse::move_only_function<void(run_context&)>> deferred;
         };
 
-        static auto initialize(
-            init_context& phase,
-            resources& r,
-            state& s
-        ) -> void;
-
-        static auto update(
-            update_context& ctx,
-            const asset::registry::state& assets_s,
+        static auto run(
+            run_context& ctx,
+            const asset::state& assets_s,
             resources& r,
             state& s,
             const actions::system::state& actions_state,

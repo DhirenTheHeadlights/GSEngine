@@ -1,11 +1,10 @@
-export module gse.settings:channels;
+export module gse.ecs:settings;
 
 import std;
 import gse.std_meta;
 
 import gse.core;
 import gse.meta;
-import gse.log;
 
 export namespace gse::settings {
     template <typename T>
@@ -31,27 +30,12 @@ export namespace gse::settings {
         void* settings_ptr
     );
 
-    using draw_settings_thunk = void(*)(
-        void* gui_builder,
-        void* panel_state,
-        std::string_view category,
-        void* settings_ptr,
-        void* channel_writer
-    );
-
     struct register_settings_type {
         std::string category;
         id type_id;
         void* settings_ptr = nullptr;
         write_settings_thunk write = nullptr;
         read_settings_thunk read = nullptr;
-    };
-
-    struct register_panel_request {
-        std::string category;
-        id type_id;
-        void* settings_ptr = nullptr;
-        draw_settings_thunk draw = nullptr;
     };
 
     template <typename T>
@@ -102,7 +86,7 @@ export namespace gse::settings {
 template <typename T>
 auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, const T& value) -> void {
     template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-        if constexpr (has_annotation<settings::describe>(m)) {
+        if constexpr (meta::find_describe(m) != std::meta::info{}) {
             using F = [:std::meta::type_of(m):];
             constexpr std::string_view name = meta::member_name(m);
             const std::string key = prefix.empty()
@@ -128,7 +112,7 @@ auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::stri
         return;
     }
     template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-        if constexpr (has_annotation<settings::describe>(m)) {
+        if constexpr (meta::find_describe(m) != std::meta::info{}) {
             using F = [:std::meta::type_of(m):];
             constexpr std::string_view name = meta::member_name(m);
             const std::string key = prefix.empty()

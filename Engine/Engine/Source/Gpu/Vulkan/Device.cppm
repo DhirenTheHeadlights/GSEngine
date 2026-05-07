@@ -17,7 +17,6 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.settings;
 import gse.meta;
 import gse.log;
 
@@ -69,10 +68,10 @@ export namespace gse::vulkan {
     class device : public non_copyable {
     public:
         struct settings {
-            [[=gse::settings::describe{}]]
+            [[=gse::settings::describe<"Track GPU resource lifetimes for leak detection and faulting diagnostics.">{}]]
             bool tracking_enabled = false;
 
-            [[=gse::settings::describe{}]]
+            [[=gse::settings::describe<"Attach debug names to GPU resources so they appear by name in RenderDoc, NSight, and validation messages.">{}]]
             bool name_resources = false;
         };
 

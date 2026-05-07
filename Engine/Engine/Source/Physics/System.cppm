@@ -11,6 +11,7 @@ import gse.diag;
 import gse.save;
 import gse.log;
 import gse.gpu;
+import gse.assets;
 
 import gse.math;
 import gse.meta;
@@ -101,25 +102,25 @@ export namespace gse::physics {
 		struct settings {
 			static constexpr std::string_view category = "Physics";
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Step the physics world each frame.">{}]]
 			bool update_phys = true;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{}]]
 			bool use_gpu_solver = false;
 
-			[[=gse::settings::describe{}, =gse::settings::range<1, 40>{}]]
+			[[=gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce jitter at the cost of frame time.">{}, =gse::settings::range<1, 40>{}]]
 			int solver_iterations = 15;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Run the CPU and GPU solvers side by side to validate parity. Disable in shipping builds.">{}]]
 			bool compare_solvers = false;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{}]]
 			bool use_jacobi = false;
 
-			[[=gse::settings::describe{}, =gse::settings::range<0.1f, 1.0f>{}]]
+			[[=gse::settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; higher values converge faster.">{}, =gse::settings::range<0.1f, 1.0f>{}]]
 			float jacobi_omega = 0.67f;
 
-			[[=gse::settings::describe{}, =gse::settings::range<1, 8>{}]]
+			[[=gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for fast-moving bodies.">{}, =gse::settings::range<1, 8>{}]]
 			int physics_substeps = 2;
 		};
 
@@ -167,19 +168,13 @@ export namespace gse::physics {
 			std::optional<readback_frame> in_flight;
 		};
 
-		static auto initialize(
-			const init_context& phase,
+		static auto run(
+			run_context& ctx,
 			const gpu::context::state* gpu_s,
+			const asset::state& assets_s,
 			settings& cfg,
 			update_data& ud,
 			frame_data& fd,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
-			const settings& cfg,
-			update_data& ud,
 			state& s
 		) -> async::task<>;
 

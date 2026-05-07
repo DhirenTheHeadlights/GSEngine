@@ -47,13 +47,8 @@ export namespace gse::camera {
 			bool ui_focus = false;
 		};
 
-		static auto initialize(
-			init_context& phase,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
+		static auto run(
+			run_context& ctx,
 			state& s,
 			const input::system::state& input_state
 		) -> async::task<>;

@@ -76,13 +76,15 @@ export namespace gse {
 			span_type span,
 			lookup_fn fn = nullptr,
 			void* ctx = nullptr,
-			async::rw_mutex* mutex = nullptr
+			async::rw_mutex* mutex = nullptr,
+			std::atomic<int>* held_locks = nullptr
 		);
 
 		span_type m_span;
 		lookup_fn m_lookup = nullptr;
 		void* m_lookup_ctx = nullptr;
 		async::rw_mutex* m_mutex = nullptr;
+		std::atomic<int>* m_held_locks = nullptr;
 	};
 
 	template <is_component T>
@@ -93,15 +95,20 @@ export namespace gse {
 }
 
 template <gse::is_component T, gse::access_mode M>
-gse::access<T, M>::access(const span_type span, const lookup_fn fn, void* ctx, async::rw_mutex* mutex)
-	: m_span(span), m_lookup(fn), m_lookup_ctx(ctx), m_mutex(mutex) {}
+gse::access<T, M>::access(const span_type span, const lookup_fn fn, void* ctx, async::rw_mutex* mutex, std::atomic<int>* held_locks)
+	: m_span(span), m_lookup(fn), m_lookup_ctx(ctx), m_mutex(mutex), m_held_locks(held_locks) {
+	if (m_mutex && m_held_locks) {
+		m_held_locks->fetch_add(1, std::memory_order_acq_rel);
+	}
+}
 
 template <gse::is_component T, gse::access_mode M>
 gse::access<T, M>::access(access&& other) noexcept
 	: m_span(other.m_span),
 	  m_lookup(other.m_lookup),
 	  m_lookup_ctx(other.m_lookup_ctx),
-	  m_mutex(std::exchange(other.m_mutex, nullptr)) {}
+	  m_mutex(std::exchange(other.m_mutex, nullptr)),
+	  m_held_locks(std::exchange(other.m_held_locks, nullptr)) {}
 
 template <gse::is_component T, gse::access_mode M>
 auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {
@@ -113,11 +120,15 @@ auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {
 			else {
 				m_mutex->unlock_exclusive();
 			}
+			if (m_held_locks) {
+				m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
+			}
 		}
 		m_span = other.m_span;
 		m_lookup = other.m_lookup;
 		m_lookup_ctx = other.m_lookup_ctx;
 		m_mutex = std::exchange(other.m_mutex, nullptr);
+		m_held_locks = std::exchange(other.m_held_locks, nullptr);
 	}
 	return *this;
 }
@@ -132,6 +143,9 @@ gse::access<T, M>::~access() {
 	}
 	else {
 		m_mutex->unlock_exclusive();
+	}
+	if (m_held_locks) {
+		m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
 	}
 }
 

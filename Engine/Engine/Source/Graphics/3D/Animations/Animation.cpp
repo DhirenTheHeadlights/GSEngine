@@ -87,32 +87,31 @@ namespace gse::animation {
 
 	auto process_controller_job(
 		const controller_job& job,
-		const asset::registry::state& assets_s,
+		const asset::state& assets_s,
 		time dt
 	) -> void;
 }
 
-auto gse::animation::system::initialize(init_context&, state& s) -> void {
+auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s, state& s) -> async::task<> {
 	s.last_tick = system_clock::now();
-}
 
-auto gse::animation::system::update(update_context& ctx, const asset::registry::state& assets_s, state& s) -> async::task<> {
+	while (true) {
 	const time dt = system_clock::dt();
 
-	auto [animations, controllers, clips] = co_await ctx.acquire<
-		write<animation_component>,
-		write<controller_component>,
-		write<clip_component>
-	>();
-
 	{
+		auto [animations, controllers, clips] = co_await ctx.acquire<
+			write<animation_component>,
+			write<controller_component>,
+			write<clip_component>
+		>();
+
 		s.jobs.clear();
 		s.controller_jobs.clear();
 		s.pose_cache.clear();
 
 		for (auto& anim : animations) {
 			if (const auto& [skeleton_id] = anim.networked_data(); !anim.skeleton && skeleton_id.exists()) {
-				anim.skeleton = asset::registry::get<skeleton>(assets_s, skeleton_id);
+				anim.skeleton = asset::get<skeleton>(assets_s, skeleton_id);
 			}
 
 			if (!anim.skeleton) {
@@ -142,7 +141,7 @@ auto gse::animation::system::update(update_context& ctx, const asset::registry::
 			}
 			const auto& [clip_id, scale, loop] = clip_c->networked_data();
 			if (!clip_c->clip && clip_id.exists()) {
-				clip_c->clip = asset::registry::get<clip_asset>(assets_s, clip_id);
+				clip_c->clip = asset::get<clip_asset>(assets_s, clip_id);
 			}
 
 			if (!clip_c->clip) {
@@ -226,6 +225,9 @@ auto gse::animation::system::update(update_context& ctx, const asset::registry::
 				process_controller_job(s.controller_jobs[i], assets_s, dt);
 			});
 		}
+	}
+
+	co_await ctx.next_tick();
 	}
 }
 
@@ -430,7 +432,7 @@ auto gse::animation::system::clear_triggers(std::unordered_map<std::string, anim
 	}
 }
 
-auto gse::animation::system::process_controller_job(const controller_job& job, const asset::registry::state& assets_s, const time dt) -> void {
+auto gse::animation::system::process_controller_job(const controller_job& job, const asset::state& assets_s, const time dt) -> void {
 	auto& anim = *job.anim;
 	auto& ctrl = *job.ctrl;
 	const auto& skel = *job.skel;
@@ -446,7 +448,7 @@ auto gse::animation::system::process_controller_job(const controller_job& job, c
 		return;
 	}
 
-	const auto current_clip_handle = asset::registry::get<clip_asset>(assets_s, current_state->clip_id);
+	const auto current_clip_handle = asset::get<clip_asset>(assets_s, current_state->clip_id);
 	if (!current_clip_handle) {
 		return;
 	}
@@ -470,8 +472,8 @@ auto gse::animation::system::process_controller_job(const controller_job& job, c
 		const auto* to_state = graph.find_state(ctrl.blend.to_state);
 
 		if (from_state && to_state) {
-			const auto from_clip_handle = asset::registry::get<clip_asset>(assets_s, from_state->clip_id);
-			const auto to_clip_handle = asset::registry::get<clip_asset>(assets_s, to_state->clip_id);
+			const auto from_clip_handle = asset::get<clip_asset>(assets_s, from_state->clip_id);
+			const auto to_clip_handle = asset::get<clip_asset>(assets_s, to_state->clip_id);
 
 			if (from_clip_handle && to_clip_handle) {
 				ctrl.blend.from_time += dt * from_state->speed;

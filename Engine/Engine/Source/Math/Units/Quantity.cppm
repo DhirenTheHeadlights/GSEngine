@@ -20,17 +20,6 @@ namespace gse::internal {
         relative
     };
 
-    template <std::size_t N>
-    struct fixed_string {
-        char data[N]{};
-        constexpr fixed_string(const char(&str)[N]) {
-            std::copy_n(str, N, data);
-        }
-        constexpr operator std::string_view() const {
-            return { data, N - 1 };
-        }
-    };
-
     export template <typename QuantityTagType, is_ratio ConversionRatio, fixed_string UnitName>
     struct unit;
 
@@ -281,7 +270,7 @@ namespace gse::internal {
     };
 }
 
-template <typename QuantityTagType, gse::internal::is_ratio ConversionRatio, gse::internal::fixed_string UnitName>
+template <typename QuantityTagType, gse::internal::is_ratio ConversionRatio, gse::fixed_string UnitName>
 template <typename T>
 constexpr auto gse::internal::unit<QuantityTagType, ConversionRatio, UnitName>::operator()(T value) const noexcept {
     using quantity_template = quantity_traits<QuantityTagType>;

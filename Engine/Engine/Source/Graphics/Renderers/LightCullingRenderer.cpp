@@ -69,11 +69,8 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 	update_depth_descriptor(gpu_s, r);
 }
 
-auto gse::renderer::light_culling::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, resources& r, frame_data& fd, state& s) -> void {
-	auto& assets = phase.sched.state<asset::registry::state>();
-
-	r.shader_handle = asset::registry::get<shader>(assets, "Shaders/Compute/light_culling");
-	asset::registry::instantly_load(assets, r.shader_handle);
+auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd, state& s) -> async::task<> {
+	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Compute/light_culling");
 	assert(r.shader_handle->is_compute(), "Shader for light culling system must be a compute shader");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
@@ -113,6 +110,8 @@ auto gse::renderer::light_culling::system::initialize(const init_context& phase,
 	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &r, &s]() {
 		rebuild_tile_buffers(gpu_s, r, s);
 	});
+
+	co_return;
 }
 
 auto gse::renderer::light_culling::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const resources& r, frame_data& fd, const state& s, const camera::system::state& cam_state) -> async::task<> {

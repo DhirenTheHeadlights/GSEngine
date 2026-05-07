@@ -17,72 +17,6 @@ import :physics_debug_renderer;
 import :camera_system;
 import :settings;
 
-auto gse::renderer::physics_debug::system::update(update_context& ctx, const settings& cfg, const resources& r, state& s, const physics::system::state& ps, const physics::system::settings& phys_cfg) -> async::task<> {
-	if (!cfg.enabled) {
-		co_return;
-	}
-
-	constexpr std::size_t max_shape_debug_vertices = 256;
-	auto [motions, collisions, results] = co_await ctx.acquire<
-		read<physics::motion_component>,
-		read<physics::collision_component>,
-		read<physics::collision_result_component>
-	>();
-
-	std::vector<debug_vertex> vertices;
-	vertices.reserve(collisions.size() * max_shape_debug_vertices);
-	debug_stats stats;
-
-	for (const auto& mc : motions) {
-		stats.body_count++;
-		if (mc.sleeping) {
-			stats.sleeping_count++;
-		}
-
-		const auto lin = magnitude(mc.current_velocity);
-		const auto ang = magnitude(mc.angular_velocity);
-		if (lin > stats.max_linear_speed) {
-			stats.max_linear_speed = lin;
-		}
-		if (ang > stats.max_angular_speed) {
-			stats.max_angular_speed = ang;
-		}
-	}
-
-	for (const auto& coll : collisions) {
-		if (!coll.resolve_collisions) {
-			continue;
-		}
-
-		const auto* mc = motions.find(coll.owner_id());
-		const auto* res = results.find(coll.owner_id());
-		build_shape_lines_for_collider(coll, mc, vertices);
-
-		if (mc && res) {
-			build_contact_debug_for_collider(*res, *mc, vertices);
-		}
-
-		if (res && res->colliding) {
-			stats.colliding_pairs++;
-			if (res->penetration > stats.max_penetration) {
-				stats.max_penetration = res->penetration;
-			}
-		}
-	}
-
-	if (phys_cfg.use_gpu_solver && ps.gpu_stats.active) {
-		stats.gpu_solver_active = true;
-		stats.contact_count = ps.gpu_stats.contact_count;
-		stats.motor_count = ps.gpu_stats.motor_count;
-		stats.solve_time = ps.gpu_stats.solve_time;
-	}
-
-	s.latest_stats = stats;
-	ctx.channels.push<render_data>({ std::move(vertices), stats });
-
-	co_return;
-}
-
 auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const gpu::context::state& gpu_s, const settings& cfg, const resources& r, frame_data& fd, const state& s, const camera::system::state& cam_state) -> async::task<> {
 	if (!cfg.enabled) {
 		co_return;
@@ -153,13 +87,10 @@ auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd
 	});
 }
 
-auto gse::renderer::physics_debug::system::initialize(const init_context& phase, const gpu::context::state& gpu_s, settings& cfg, resources& r, frame_data& fd, state& s) -> void {
-	auto& assets = phase.sched.state<asset::registry::state>();
+auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, settings& cfg, resources& r, frame_data& fd, state& s, const physics::system::state& ps, const physics::system::settings& phys_cfg) -> async::task<> {
+	gse::settings::register_panel(ctx, "Graphics", cfg);
 
-	gse::settings::register_panel(phase, "Graphics", cfg);
-
-	r.shader_handle = asset::registry::get<shader>(assets, "Shaders/Standard3D/physics_debug");
-	asset::registry::instantly_load(assets, r.shader_handle);
+	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/physics_debug");
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
 
@@ -186,6 +117,75 @@ auto gse::renderer::physics_debug::system::initialize(const init_context& phase,
 		.depth_fmt = gpu::depth_format::none,
 		.topology = gpu::topology::line_list
 	});
+
+	while (true) {
+		if (!cfg.enabled) {
+			co_await ctx.next_tick();
+			continue;
+		}
+
+		{
+			constexpr std::size_t max_shape_debug_vertices = 256;
+			auto [motions, collisions, results] = co_await ctx.acquire<
+				read<physics::motion_component>,
+				read<physics::collision_component>,
+				read<physics::collision_result_component>
+			>();
+
+			std::vector<debug_vertex> vertices;
+			vertices.reserve(collisions.size() * max_shape_debug_vertices);
+			debug_stats stats;
+
+			for (const auto& mc : motions) {
+				stats.body_count++;
+				if (mc.sleeping) {
+					stats.sleeping_count++;
+				}
+
+				const auto lin = magnitude(mc.current_velocity);
+				const auto ang = magnitude(mc.angular_velocity);
+				if (lin > stats.max_linear_speed) {
+					stats.max_linear_speed = lin;
+				}
+				if (ang > stats.max_angular_speed) {
+					stats.max_angular_speed = ang;
+				}
+			}
+
+			for (const auto& coll : collisions) {
+				if (!coll.resolve_collisions) {
+					continue;
+				}
+
+				const auto* mc = motions.find(coll.owner_id());
+				const auto* res = results.find(coll.owner_id());
+				build_shape_lines_for_collider(coll, mc, vertices);
+
+				if (mc && res) {
+					build_contact_debug_for_collider(*res, *mc, vertices);
+				}
+
+				if (res && res->colliding) {
+					stats.colliding_pairs++;
+					if (res->penetration > stats.max_penetration) {
+						stats.max_penetration = res->penetration;
+					}
+				}
+			}
+
+			if (phys_cfg.use_gpu_solver && ps.gpu_stats.active) {
+				stats.gpu_solver_active = true;
+				stats.contact_count = ps.gpu_stats.contact_count;
+				stats.motor_count = ps.gpu_stats.motor_count;
+				stats.solve_time = ps.gpu_stats.solve_time;
+			}
+
+			s.latest_stats = stats;
+			ctx.channels.push<render_data>({ std::move(vertices), stats });
+		}
+
+		co_await ctx.next_tick();
+	}
 }
 
 auto gse::renderer::physics_debug::system::add_line(const vec3<position>& a, const vec3<position>& b, const vec3f& color, std::vector<debug_vertex>& out_vertices) -> void {

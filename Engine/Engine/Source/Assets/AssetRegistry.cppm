@@ -2,7 +2,6 @@ export module gse.assets:registry;
 
 import std;
 
-import :asset_pipeline;
 import :resource_loader;
 import :resource_handle;
 
@@ -10,11 +9,16 @@ import gse.assert;
 import gse.log;
 import gse.core;
 import gse.containers;
-import gse.config;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.fs;
+
+export namespace gse::resource {
+	template <typename Resource>
+	class loader;
+}
 
 export namespace gse::asset {
 	struct hot_reload_request {
@@ -22,21 +26,17 @@ export namespace gse::asset {
 	};
 
 	struct registry {
-		using gpu_submit_fn = std::function<void(std::function<void(void*)>)>;
-		using finalization_push_fn = std::function<void(id, id)>;
-		using gpu_wait_fn = std::function<void()>;
-
 		struct state {
-			asset_pipeline pipeline{ config::resource_path, config::baked_resource_path };
 			std::unordered_map<id, std::unique_ptr<resource::loader_base>> resource_loaders;
-			gpu_submit_fn async_submit;
-			gpu_submit_fn sync_submit;
-			finalization_push_fn finalization_pusher;
-			gpu_wait_fn gpu_waiter;
+			loader_runtime runtime;
+			file_watcher watcher;
+			std::function<void()> enable_hot_reload_fn;
+			std::function<void()> disable_hot_reload_fn;
+			bool hot_reload_enabled = false;
 		};
 
-		static auto update(
-			const update_context& ctx,
+		static auto run(
+			run_context& ctx,
 			state& s
 		) -> async::task<>;
 
@@ -44,104 +44,93 @@ export namespace gse::asset {
 			shutdown_context& phase,
 			state& s
 		) -> void;
-
-		static auto apply_finalizations(
-			state& s,
-			std::span<const std::pair<id, id>> finalizations
-		) -> void;
-
-		template <typename T>
-		static auto add_loader(
-			state& s
-		) -> resource::loader_t<T>*;
-
-		template <typename T>
-		static auto get(
-			const state& s,
-			id id
-		) -> resource::handle<T>;
-
-		template <typename T>
-		static auto get(
-			const state& s,
-			const std::string& filename
-		) -> resource::handle<T>;
-
-		template <typename T>
-		static auto try_get(
-			const state& s,
-			id id
-		) -> resource::handle<T>;
-
-		template <typename T>
-		static auto try_get(
-			const state& s,
-			const std::string& filename
-		) -> resource::handle<T>;
-
-		template <typename T, typename... Args>
-		static auto queue(
-			state& s,
-			const std::string& name,
-			Args&&... args
-		) -> resource::handle<T>;
-
-		template <typename T>
-		static auto instantly_load(
-			state& s,
-			const resource::handle<T>& handle
-		) -> void;
-
-		template <typename T>
-		static auto add(
-			state& s,
-			T&& resource
-		) -> resource::handle<T>;
-
-		template <typename T>
-		[[nodiscard]] static auto resource_state(
-			const state& s,
-			id id
-		) -> resource::state;
-
-		template <typename ShaderLayout>
-		static auto compile(
-			state& s
-		) -> void;
-
-		static auto compile_all(
-			state& s
-		) -> void;
-
-		[[nodiscard]] static auto enumerate_resources(
-			const std::string& baked_dir,
-			const std::string& baked_ext
-		) -> std::vector<std::string>;
-
-	private:
-		template <typename T>
-		static auto loader_for(
-			const state& s
-		) -> resource::loader_t<T>*;
-
-		static auto loader_base_for(
-			const state& s,
-			id type_index
-		) -> resource::loader_base*;
 	};
+
+	using state = registry::state;
+
+	auto apply_finalizations(
+		state& s,
+		std::span<const std::pair<id, id>> finalizations
+	) -> void;
+
+	template <typename T>
+	auto add_loader(
+		state& s
+	) -> resource::loader<T>*;
+
+	template <typename T>
+	auto get(
+		const state& s,
+		id resource_id
+	) -> resource::handle<T>;
+
+	template <typename T>
+	auto get(
+		const state& s,
+		const std::string& filename
+	) -> resource::handle<T>;
+
+	template <typename T>
+	auto try_get(
+		const state& s,
+		id resource_id
+	) -> resource::handle<T>;
+
+	template <typename T>
+	auto try_get(
+		const state& s,
+		const std::string& filename
+	) -> resource::handle<T>;
+
+	template <typename T, typename... Args>
+	auto queue(
+		state& s,
+		const std::string& name,
+		Args&&... args
+	) -> resource::handle<T>;
+
+	template <typename T>
+	auto add(
+		state& s,
+		T&& resource
+	) -> resource::handle<T>;
+
+	template <typename T>
+	[[nodiscard]] auto resource_state(
+		const state& s,
+		id resource_id
+	) -> resource::state;
 
 	struct load_ctx {
-		registry::state& assets;
+		state& assets;
 		std::function<void(std::function<void(void*)>)> submit_gpu_work;
 	};
+
+	template <typename T>
+	[[nodiscard]] auto load(
+		run_context& ctx,
+		std::string_view path
+	) -> async::task<resource::handle<T>>;
+}
+
+namespace gse::asset {
+	template <typename T>
+	auto loader_for(
+		const state& s
+	) -> resource::loader<T>*;
+
+	auto loader_base_for(
+		const state& s,
+		id type_index
+	) -> resource::loader_base*;
 }
 
 export namespace gse::resource {
 	template <typename Resource>
-	class loader final : public loader_t<Resource>, public non_copyable {
+	class loader final : public loader_base, public non_copyable {
 	public:
 		explicit loader(
-			asset::registry::state& s
+			asset::state& s
 		);
 
 		~loader(
@@ -161,53 +150,49 @@ export namespace gse::resource {
 
 		auto queue_reload_by_path(
 			const std::filesystem::path& baked_path
-		) -> void override;
+		) -> void;
 
 		auto queue_by_path(
 			const std::filesystem::path& baked_path
-		) -> void override;
+		) -> void;
 
 		auto finalize_reloads(
 		) -> void override;
 
 		auto set_pre_load_fn(
 			std::function<void(const std::filesystem::path&)> fn
-		) -> void override;
+		) -> void;
 
 		auto get(
 			id id
-		) const -> handle<Resource> override;
+		) const -> handle<Resource>;
 
 		auto get(
 			const std::string& filename_no_ext
-		) const -> handle<Resource> override;
+		) const -> handle<Resource>;
 
 		auto try_get(
 			id id
-		) const -> handle<Resource> override;
+		) const -> handle<Resource>;
 
 		auto try_get(
 			const std::string& filename_no_ext
-		) const -> handle<Resource> override;
-
-		auto instantly_load(
-			id resource_id
-		) -> void override;
+		) const -> handle<Resource>;
 
 		[[nodiscard]] auto state_of(
 			id resource_id
-		) const -> state override;
+		) const -> state;
 
 		auto add(
 			std::unique_ptr<Resource> resource
-		) -> handle<Resource> override;
+		) -> handle<Resource>;
 
 		auto enqueue(
 			const std::string& name,
 			std::unique_ptr<Resource> resource
-		) -> handle<Resource> override;
+		) -> handle<Resource>;
 	private:
-		asset::registry::state& m_state;
+		asset::state& m_state;
 		id_mapped_collection<std::unique_ptr<resource_slot<Resource>>> m_resources;
 		std::unordered_map<std::filesystem::path, id> m_path_to_id;
 		task::group m_load_group{ generate_id("resource.loader.load") };
@@ -225,28 +210,35 @@ export namespace gse::resource {
 	};
 }
 
-auto gse::asset::registry::update(const update_context& ctx, state& s) -> async::task<> {
-	for (const auto& req : ctx.read_channel<hot_reload_request>()) {
-		if (req.enabled == s.pipeline.hot_reload_enabled()) {
-			continue;
+auto gse::asset::registry::run(run_context& ctx, state& s) -> async::task<> {
+	while (true) {
+		for (const auto& req : ctx.read_channel<hot_reload_request>()) {
+			if (req.enabled == s.hot_reload_enabled) {
+				continue;
+			}
+			if (req.enabled) {
+				if (s.enable_hot_reload_fn) {
+					s.enable_hot_reload_fn();
+				}
+				log::println(log::category::assets, "Hot reload enabled");
+			}
+			else {
+				if (s.disable_hot_reload_fn) {
+					s.disable_hot_reload_fn();
+				}
+				log::println(log::category::assets, "Hot reload disabled");
+			}
+			s.hot_reload_enabled = req.enabled;
 		}
-		if (req.enabled) {
-			s.pipeline.enable_hot_reload();
-			log::println(log::category::assets, "Hot reload enabled");
-		}
-		else {
-			s.pipeline.disable_hot_reload();
-			log::println(log::category::assets, "Hot reload disabled");
+
+		s.watcher.poll();
+
+		co_await ctx.next_tick();
+
+		for (const auto& l : std::views::values(s.resource_loaders)) {
+			l->flush();
 		}
 	}
-
-	s.pipeline.poll();
-
-	for (const auto& l : std::views::values(s.resource_loaders)) {
-		l->flush();
-	}
-
-	co_return;
 }
 
 auto gse::asset::registry::shutdown(shutdown_context&, state& s) -> void {
@@ -256,7 +248,7 @@ auto gse::asset::registry::shutdown(shutdown_context&, state& s) -> void {
 	s.resource_loaders.clear();
 }
 
-auto gse::asset::registry::apply_finalizations(state& s, const std::span<const std::pair<id, id>> finalizations) -> void {
+auto gse::asset::apply_finalizations(state& s, const std::span<const std::pair<id, id>> finalizations) -> void {
 	for (const auto& [type_id, resource_id] : finalizations) {
 		if (const auto it = s.resource_loaders.find(type_id); it != s.resource_loaders.end()) {
 			it->second->update_state(resource_id, resource::state::loaded);
@@ -265,7 +257,7 @@ auto gse::asset::registry::apply_finalizations(state& s, const std::span<const s
 }
 
 template <typename T>
-auto gse::asset::registry::add_loader(state& s) -> resource::loader_t<T>* {
+auto gse::asset::add_loader(state& s) -> resource::loader<T>* {
 	const auto type_id = id_of<T>();
 	assert(
 		!s.resource_loaders.contains(type_id),
@@ -277,119 +269,70 @@ auto gse::asset::registry::add_loader(state& s) -> resource::loader_t<T>* {
 	auto* loader_ptr = new_loader.get();
 	s.resource_loaders[type_id] = std::move(new_loader);
 
-	if constexpr (has_asset_compiler<T>) {
-		s.pipeline.template register_type<T>(loader_ptr);
-	}
-
 	return loader_ptr;
 }
 
 template <typename T>
-auto gse::asset::registry::get(const state& s, const id id) -> resource::handle<T> {
-	return loader_for<T>(s)->get(id);
+auto gse::asset::get(const state& s, const id resource_id) -> resource::handle<T> {
+	return loader_for<T>(s)->get(resource_id);
 }
 
 template <typename T>
-auto gse::asset::registry::get(const state& s, const std::string& filename) -> resource::handle<T> {
+auto gse::asset::get(const state& s, const std::string& filename) -> resource::handle<T> {
 	return loader_for<T>(s)->get(filename);
 }
 
 template <typename T>
-auto gse::asset::registry::try_get(const state& s, const id id) -> resource::handle<T> {
-	return loader_for<T>(s)->try_get(id);
+auto gse::asset::try_get(const state& s, const id resource_id) -> resource::handle<T> {
+	return loader_for<T>(s)->try_get(resource_id);
 }
 
 template <typename T>
-auto gse::asset::registry::try_get(const state& s, const std::string& filename) -> resource::handle<T> {
+auto gse::asset::try_get(const state& s, const std::string& filename) -> resource::handle<T> {
 	return loader_for<T>(s)->try_get(filename);
 }
 
 template <typename T, typename... Args>
-auto gse::asset::registry::queue(state& s, const std::string& name, Args&&... args) -> resource::handle<T> {
+auto gse::asset::queue(state& s, const std::string& name, Args&&... args) -> resource::handle<T> {
 	return loader_for<T>(s)->enqueue(name, std::make_unique<T>(name, std::forward<Args>(args)...));
 }
 
 template <typename T>
-auto gse::asset::registry::instantly_load(state& s, const resource::handle<T>& handle) -> void {
-	loader_for<T>(s)->instantly_load(handle.id());
-}
-
-template <typename T>
-auto gse::asset::registry::add(state& s, T&& resource) -> resource::handle<T> {
+auto gse::asset::add(state& s, T&& resource) -> resource::handle<T> {
 	return loader_for<T>(s)->add(std::make_unique<T>(std::forward<T>(resource)));
 }
 
 template <typename T>
-auto gse::asset::registry::resource_state(const state& s, const id id) -> resource::state {
-	return loader_for<T>(s)->state_of(id);
+auto gse::asset::resource_state(const state& s, const id resource_id) -> resource::state {
+	return loader_for<T>(s)->state_of(resource_id);
 }
 
 template <typename T>
-auto gse::asset::registry::loader_for(const state& s) -> resource::loader_t<T>* {
-	return static_cast<resource::loader_t<T>*>(loader_base_for(s, id_of<T>()));
+auto gse::asset::loader_for(const state& s) -> resource::loader<T>* {
+	return static_cast<resource::loader<T>*>(loader_base_for(s, id_of<T>()));
 }
 
-auto gse::asset::registry::loader_base_for(const state& s, const id type_id) -> resource::loader_base* {
+auto gse::asset::loader_base_for(const state& s, const id type_id) -> resource::loader_base* {
 	assert(s.resource_loaders.contains(type_id), "Resource loader for id {} does not exist.", type_id.number());
 	return s.resource_loaders.at(type_id).get();
 }
 
-template <typename ShaderLayout>
-auto gse::asset::registry::compile(state& s) -> void {
-	s.pipeline.template register_compiler_only<ShaderLayout>();
+template <typename T>
+auto gse::asset::load(run_context& ctx, const std::string_view path) -> async::task<resource::handle<T>> {
+	auto* assets_ptr = static_cast<state*>(ctx.states.state_ptr(id_of<registry>()));
+	assert(assets_ptr != nullptr, "asset::load: asset::registry must be added before any system that calls asset::load");
+	auto& assets = *assets_ptr;
+	auto handle = get<T>(assets, std::string(path));
 
-	if (const auto result = s.pipeline.compile_all(); result.success_count > 0 || result.failure_count > 0) {
-		log::println(
-			result.failure_count > 0 ? log::level::warning : log::level::info,
-			log::category::assets,
-			"Compiled {} assets ({} skipped, {} failed)",
-			result.success_count,
-			result.skipped_count,
-			result.failure_count
-		);
-	}
-}
-
-auto gse::asset::registry::compile_all(state& s) -> void {
-	if (const auto result = s.pipeline.compile_all(); result.success_count > 0 || result.failure_count > 0) {
-		log::println(
-			result.failure_count > 0 ? log::level::warning : log::level::info,
-			log::category::assets,
-			"Compiled {} assets ({} skipped, {} failed)",
-			result.success_count,
-			result.skipped_count,
-			result.failure_count
-		);
-	}
-}
-
-auto gse::asset::registry::enumerate_resources(const std::string& baked_dir, const std::string& baked_ext) -> std::vector<std::string> {
-	std::vector<std::string> result;
-
-	const auto dir_path = config::baked_resource_path / baked_dir;
-
-	if (!std::filesystem::exists(dir_path)) {
-		return result;
+	while (resource_state<T>(assets, handle.id()) != resource::state::loaded) {
+		co_await ctx.yield_tick();
 	}
 
-	for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
-		if (!entry.is_regular_file()) {
-			continue;
-		}
-
-		if (entry.path().extension().string() != baked_ext) {
-			continue;
-		}
-
-		result.push_back(entry.path().stem().string());
-	}
-
-	std::ranges::sort(result);
-	return result;
+	co_return handle;
 }
 
 template <typename R>
-gse::resource::loader<R>::loader(asset::registry::state& s) : m_state(s) {}
+gse::resource::loader<R>::loader(asset::state& s) : m_state(s) {}
 
 template <typename R>
 auto gse::resource::loader<R>::set_pre_load_fn(std::function<void(const std::filesystem::path&)> fn) -> void {
@@ -464,8 +407,8 @@ auto gse::resource::loader<R>::flush() -> void {
 				.assets = m_state,
 				.submit_gpu_work = [this, &gpu_submissions](std::function<void(void*)> work) {
 					++gpu_submissions;
-					assert(static_cast<bool>(m_state.async_submit), "asset::registry async submitter not configured");
-					m_state.async_submit(std::move(work));
+					assert(static_cast<bool>(m_state.runtime.async_submit), "asset::registry async submitter not configured");
+					m_state.runtime.async_submit(std::move(work));
 				},
 			};
 
@@ -478,8 +421,8 @@ auto gse::resource::loader<R>::flush() -> void {
 			}
 
 			if (gpu_submissions > 0) {
-				assert(static_cast<bool>(m_state.finalization_pusher), "asset::registry finalization pusher not configured");
-				m_state.finalization_pusher(id_of<R>(), rid);
+				assert(static_cast<bool>(m_state.runtime.finalization_pusher), "asset::registry finalization pusher not configured");
+				m_state.runtime.finalization_pusher(id_of<R>(), rid);
 			}
 			else {
 				update_state(rid, state::loaded);
@@ -550,8 +493,8 @@ auto gse::resource::loader<R>::finalize_reloads() -> void {
 		return;
 	}
 
-	if (m_state.gpu_waiter) {
-		m_state.gpu_waiter();
+	if (m_state.runtime.gpu_waiter) {
+		m_state.runtime.gpu_waiter();
 	}
 
 	for (const id rid : reloads_to_process) {
@@ -578,14 +521,14 @@ auto gse::resource::loader<R>::finalize_reloads() -> void {
 			.assets = m_state,
 			.submit_gpu_work = [this, &gpu_submissions](std::function<void(void*)> work) {
 				++gpu_submissions;
-				assert(static_cast<bool>(m_state.sync_submit), "asset::registry sync submitter not configured");
-				m_state.sync_submit(std::move(work));
+				assert(static_cast<bool>(m_state.runtime.sync_submit), "asset::registry sync submitter not configured");
+				m_state.runtime.sync_submit(std::move(work));
 			},
 		};
 		new_resource->load(ctx);
 
-		if (gpu_submissions > 0 && m_state.gpu_waiter) {
-			m_state.gpu_waiter();
+		if (gpu_submissions > 0 && m_state.runtime.gpu_waiter) {
+			m_state.runtime.gpu_waiter();
 		}
 
 		if (s->resource.read()) {
@@ -641,62 +584,6 @@ auto gse::resource::loader<R>::try_get(const std::string& filename_no_ext) const
 		return handle<R>{};
 	}
 	return handle<R>(resource_id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
-}
-
-template <typename R>
-auto gse::resource::loader<R>::instantly_load(const id resource_id) -> void {
-	resource_slot<R>* s;
-	{
-		std::lock_guard lock(m_mutex);
-		s = slot_ptr(resource_id);
-		assert(s, "invalid id");
-		if (s->current_state == state::loaded) {
-			return;
-		}
-	}
-
-	while (s->current_state.load(std::memory_order_acquire) == state::loading) {
-		std::this_thread::yield();
-	}
-
-	if (s->current_state.load(std::memory_order_acquire) == state::loaded) {
-		return;
-	}
-
-	update_state(resource_id, state::loading);
-
-	if (m_pre_load_fn && !s->path.empty()) {
-		m_pre_load_fn(s->path);
-	}
-
-	if (!s->resource.read()) {
-		s->resource.write() = std::make_unique<R>(s->path);
-		s->resource.publish();
-	}
-
-	std::size_t gpu_submissions = 0;
-	asset::load_ctx ctx{
-		.assets = m_state,
-		.submit_gpu_work = [this, &gpu_submissions](std::function<void(void*)> work) {
-			++gpu_submissions;
-			assert(static_cast<bool>(m_state.sync_submit), "asset::registry sync submitter not configured");
-			m_state.sync_submit(std::move(work));
-		},
-	};
-
-	try {
-		const_cast<R*>(s->resource.read().get())->load(ctx);
-	}
-	catch (...) {
-		update_state(resource_id, state::failed);
-		throw;
-	}
-
-	if (gpu_submissions > 0 && m_state.gpu_waiter) {
-		m_state.gpu_waiter();
-	}
-
-	update_state(resource_id, state::loaded);
 }
 
 template <typename R>

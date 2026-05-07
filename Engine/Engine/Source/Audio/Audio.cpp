@@ -172,7 +172,7 @@ auto gse::audio::system::valid_voice(const resources& r, const voice_handle hand
 		&& r.voices[handle.index]->generation == handle.generation;
 }
 
-auto gse::audio::system::initialize(const init_context&, resources&, state& s) -> void {
+auto gse::audio::system::run(run_context& ctx, resources& r, state& s) -> async::task<> {
 	auto* eng = new audio_engine();
 	s.engine = eng;
 	const ma_engine_config cfg = ma_engine_config_init();
@@ -180,57 +180,57 @@ auto gse::audio::system::initialize(const init_context&, resources&, state& s) -
 	assert(result == ma_result_success, "Failed to initialize audio engine");
 	s.engine_initialized = true;
 	ma_engine_set_volume(&eng->inner, s.master_vol.value(percentage<float>::bound::zero_to_one));
-}
 
-auto gse::audio::system::update(update_context& ctx, resources& r, state& s) -> async::task<> {
-	for (const auto& req : ctx.read_channel<play_request>()) {
-		if (req.clip) {
-			const auto handle = allocate_voice(r, s, *req.clip, req.loop);
-			req.promise.fulfill(handle);
+	while (true) {
+		for (const auto& req : ctx.read_channel<play_request>()) {
+			if (req.clip) {
+				const auto handle = allocate_voice(r, s, *req.clip, req.loop);
+				req.promise.fulfill(handle);
+			}
 		}
-	}
 
-	for (const auto& req : ctx.read_channel<stop_request>()) {
-		release_voice(r, req.handle);
-	}
-
-	for (const auto& req : ctx.read_channel<pause_request>()) {
-		if (valid_voice(r, req.handle)) {
-			ma_sound_stop(&r.voices[req.handle.index]->sound);
+		for (const auto& req : ctx.read_channel<stop_request>()) {
+			release_voice(r, req.handle);
 		}
-	}
 
-	for (const auto& req : ctx.read_channel<resume_request>()) {
-		if (valid_voice(r, req.handle)) {
-			ma_sound_start(&r.voices[req.handle.index]->sound);
+		for (const auto& req : ctx.read_channel<pause_request>()) {
+			if (valid_voice(r, req.handle)) {
+				ma_sound_stop(&r.voices[req.handle.index]->sound);
+			}
 		}
-	}
 
-	for (const auto& req : ctx.read_channel<set_volume_request>()) {
-		if (valid_voice(r, req.handle)) {
-			ma_sound_set_volume(&r.voices[req.handle.index]->sound, req.vol.value(percentage<float>::bound::zero_to_one));
+		for (const auto& req : ctx.read_channel<resume_request>()) {
+			if (valid_voice(r, req.handle)) {
+				ma_sound_start(&r.voices[req.handle.index]->sound);
+			}
 		}
-	}
 
-	for (const auto& req : ctx.read_channel<set_master_volume_request>()) {
-		s.master_vol = req.vol;
-		if (s.engine_initialized) {
-			auto* eng = static_cast<audio_engine*>(s.engine);
-			ma_engine_set_volume(&eng->inner, req.vol.value(percentage<float>::bound::zero_to_one));
+		for (const auto& req : ctx.read_channel<set_volume_request>()) {
+			if (valid_voice(r, req.handle)) {
+				ma_sound_set_volume(&r.voices[req.handle.index]->sound, req.vol.value(percentage<float>::bound::zero_to_one));
+			}
 		}
-	}
 
-	for (std::uint32_t i = 0; i < r.voices.size(); ++i) {
-		auto& slot = *r.voices[i];
-		if (slot.active && ma_sound_at_end(&slot.sound)) {
-			ma_sound_uninit(&slot.sound);
-			ma_decoder_uninit(&slot.decoder);
-			slot.active = false;
-			r.free_list.push_back(i);
+		for (const auto& req : ctx.read_channel<set_master_volume_request>()) {
+			s.master_vol = req.vol;
+			if (s.engine_initialized) {
+				auto* engine_ptr = static_cast<audio_engine*>(s.engine);
+				ma_engine_set_volume(&engine_ptr->inner, req.vol.value(percentage<float>::bound::zero_to_one));
+			}
 		}
-	}
 
-	co_return;
+		for (std::uint32_t i = 0; i < r.voices.size(); ++i) {
+			auto& slot = *r.voices[i];
+			if (slot.active && ma_sound_at_end(&slot.sound)) {
+				ma_sound_uninit(&slot.sound);
+				ma_decoder_uninit(&slot.decoder);
+				slot.active = false;
+				r.free_list.push_back(i);
+			}
+		}
+
+		co_await ctx.next_tick();
+	}
 }
 
 auto gse::audio::system::shutdown(shutdown_context&, resources& r, state& s) -> void {

@@ -47,6 +47,30 @@ export namespace gse {
 
 	class model : public identifiable {
 	public:
+		struct material_baked {
+			vec3f base_color = vec3f(1.0f);
+			float roughness = 0.5f;
+			float metallic = 0.0f;
+			std::string albedo_file;
+			std::string normal_file;
+			std::string rm_file;
+		};
+
+		struct mesh_baked {
+			material_baked material;
+			raw_blob_owned<vertex> vertices;
+			raw_blob_owned<std::uint32_t> indices;
+		};
+
+		struct [[
+			= asset_format::baked_ext<".gmdl">{},
+			= asset_format::baked_dir<"Models">{},
+			= asset_format::magic<0x474D444C>{},
+			= asset_format::version<4>{}
+		]] baked {
+			std::vector<mesh_baked> meshes;
+		};
+
 		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
@@ -78,16 +102,10 @@ auto gse::model::load(asset::load_ctx& ctx) -> void {
 	if (!m_baked_model_path.empty()) {
 		m_meshes.clear();
 
-		std::ifstream in_file(m_baked_model_path, std::ios::binary);
-		assert(in_file.is_open(), "Failed to open baked model file for reading.");
-		if (!in_file.is_open()) return;
-
-		binary_reader ar(in_file, 0x474D444C, 4, m_baked_model_path.string());
-		if (!ar.valid()) return;
-
-		std::uint32_t mesh_count = 0;
-		ar & mesh_count;
-		m_meshes.reserve(mesh_count);
+		model::baked baked{};
+		if (!load_baked(m_baked_model_path, baked)) {
+			return;
+		}
 
 		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
 		auto texture_dir = model_relative.parent_path().string();
@@ -96,34 +114,29 @@ auto gse::model::load(asset::load_ctx& ctx) -> void {
 			texture_dir = "Textures/" + texture_dir.substr(7);
 		}
 
-		for (std::uint32_t i = 0; i < mesh_count; ++i) {
+		m_meshes.reserve(baked.meshes.size());
+		for (auto& mb : baked.meshes) {
 			gse::material mat;
-			ar & mat.base_color & mat.roughness & mat.metallic;
+			mat.base_color = mb.material.base_color;
+			mat.roughness = mb.material.roughness;
+			mat.metallic = mb.material.metallic;
 
-			std::string albedo_file, normal_file, rm_file;
-			ar & albedo_file & normal_file & rm_file;
-
-			if (!albedo_file.empty()) {
-				auto stem = std::filesystem::path(albedo_file).stem().string();
-				mat.diffuse_texture = asset::registry::get<texture>(ctx.assets, texture_dir + "/" + stem);
+			if (!mb.material.albedo_file.empty()) {
+				auto stem = std::filesystem::path(mb.material.albedo_file).stem().string();
+				mat.diffuse_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 			}
-			if (!normal_file.empty()) {
-				auto stem = std::filesystem::path(normal_file).stem().string();
-				mat.normal_texture = asset::registry::get<texture>(ctx.assets, texture_dir + "/" + stem);
+			if (!mb.material.normal_file.empty()) {
+				auto stem = std::filesystem::path(mb.material.normal_file).stem().string();
+				mat.normal_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 			}
-			if (!rm_file.empty()) {
-				auto stem = std::filesystem::path(rm_file).stem().string();
-				mat.specular_texture = asset::registry::get<texture>(ctx.assets, texture_dir + "/" + stem);
+			if (!mb.material.rm_file.empty()) {
+				auto stem = std::filesystem::path(mb.material.rm_file).stem().string();
+				mat.specular_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 			}
-
-			std::vector<vertex> vertices;
-			std::vector<std::uint32_t> indices;
-			ar & raw_blob(vertices);
-			ar & raw_blob(indices);
 
 			m_meshes.emplace_back(mesh_data{
-				.vertices = std::move(vertices),
-				.indices = std::move(indices),
+				.vertices = std::move(mb.vertices.storage),
+				.indices = std::move(mb.indices.storage),
 				.material = std::move(mat),
 			});
 		}

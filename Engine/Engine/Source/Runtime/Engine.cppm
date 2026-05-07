@@ -124,6 +124,7 @@ export namespace gse {
 	private:
 		flags<engine_flag> m_flags;
 		scheduler m_scheduler;
+		save::registry m_save;
 		world m_world;
 	};
 }

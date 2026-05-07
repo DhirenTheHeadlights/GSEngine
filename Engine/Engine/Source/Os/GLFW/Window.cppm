@@ -50,16 +50,16 @@ export namespace gse {
 		struct settings {
 			static constexpr std::string_view category = "Window";
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Run in fullscreen on the selected monitor. When off, the window uses its last windowed rect.">{}]]
 			bool fullscreen = false;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Show the system mouse cursor over the window.">{}]]
 			bool mouse_visible = false;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Monitor that hosts the window in fullscreen mode.">{}]]
 			gse::settings::choice<int> monitor;
 
-			[[=gse::settings::describe{}]]
+			[[=gse::settings::describe<"Resolution and refresh rate used when fullscreen.">{}]]
 			gse::settings::choice<int> resolution;
 		};
 
@@ -78,15 +78,9 @@ export namespace gse {
 			task::concurrent_queue<input::event> input_events;
 		};
 
-		static auto initialize(
-			const init_context& phase,
+		static auto run(
+			run_context& ctx,
 			settings& cfg,
-			state& s
-		) -> void;
-
-		static auto update(
-			update_context& ctx,
-			const settings& cfg,
 			state& s
 		) -> async::task<>;
 

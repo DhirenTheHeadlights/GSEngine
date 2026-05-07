@@ -20,12 +20,10 @@ import gse.ecs;
 import gse.assets;
 import gse.log;
 
-auto gse::gpu::context::initialize(const init_context& phase, settings& cfg, state& s) -> void {
-	auto& window_state = phase.sched.state<window::state>();
-
-	s.device = device::create(window_state, cfg.validation_layers_enabled, cfg.device);
+auto gse::gpu::context::run(run_context& ctx, const window::state& window_s, settings& cfg, state& s) -> async::task<> {
+	s.device = device::create(window_s, cfg.validation_layers_enabled, cfg.device);
 	s.shader_registry = std::make_unique<gpu::shader_registry>(*s.device);
-	s.swapchain = swap_chain::create(window::viewport(window_state), *s.device);
+	s.swapchain = swap_chain::create(window::viewport(window_s), *s.device);
 	s.frame = frame::create(*s.device, *s.swapchain);
 	s.render_graph = std::make_unique<vulkan::render_graph>(*s.device, *s.swapchain, *s.frame);
 	s.bindless_textures = std::make_unique<bindless_texture_set>(s.device->vulkan_device(), s.device->descriptor_heap());
@@ -42,16 +40,16 @@ auto gse::gpu::context::initialize(const init_context& phase, settings& cfg, sta
 			access_flag::depth_stencil_attachment_write | access_flag::depth_stencil_attachment_read
 		);
 	});
-}
 
-auto gse::gpu::context::update(update_context& ctx, state& s) -> async::task<> {
-	const auto requests = ctx.read_channel<command_request>();
-	for (const auto& req : requests) {
-		if (req.work) {
-			req.work(s);
+	while (true) {
+		const auto requests = ctx.read_channel<command_request>();
+		for (const auto& req : requests) {
+			if (req.work) {
+				req.work(s);
+			}
 		}
+		co_await ctx.next_tick();
 	}
-	co_return;
 }
 
 auto gse::gpu::context::shutdown(shutdown_context&, state& s) -> void {
