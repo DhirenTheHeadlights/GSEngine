@@ -126,6 +126,7 @@ namespace gse {
 
 	template <typename Access>
 	auto make_locked_handle(
+		access_token token,
 		registry& reg,
 		async::rw_mutex_registry& mutex_registry,
 		std::atomic<int>* held_locks
@@ -172,14 +173,14 @@ auto gse::acquire_helpers::acquire_lock_for(async::rw_mutex_registry& registry) 
 }
 
 template <typename Access>
-auto gse::make_locked_handle(registry& reg, async::rw_mutex_registry& mutex_registry, std::atomic<int>* held_locks) -> Access {
+auto gse::make_locked_handle(access_token token, registry& reg, async::rw_mutex_registry& mutex_registry, std::atomic<int>* held_locks) -> Access {
 	using element_t = access_element_t<Access>;
 	auto& mutex = mutex_registry.mutex_for(id_of<element_t>());
 	if constexpr (is_read_access_v<Access>) {
-		return reg.template acquire_read<element_t>(&mutex, held_locks);
+		return reg.template acquire_read<element_t>(std::move(token), &mutex, held_locks);
 	}
 	else {
-		return reg.template acquire_write<element_t>(&mutex, held_locks);
+		return reg.template acquire_write<element_t>(std::move(token), &mutex, held_locks);
 	}
 }
 
@@ -235,7 +236,7 @@ auto gse::run_context::acquire() -> async::task<std::tuple<Accesses...>> {
 
 	trace::end_async(tid, key);
 
-	co_return std::tuple<Accesses...>{ make_locked_handle<Accesses>(m_reg, m_access_mutexes, &m_held_locks)... };
+	co_return std::tuple<Accesses...>{ make_locked_handle<Accesses>(access_token{}, m_reg, m_access_mutexes, &m_held_locks)... };
 }
 
 auto gse::run_context::held_lock_count() const -> int {

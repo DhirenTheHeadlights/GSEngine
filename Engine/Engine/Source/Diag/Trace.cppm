@@ -122,6 +122,12 @@ export namespace gse::trace {
 		std::string_view name
 	) -> void;
 
+	auto register_main_thread(
+	) -> void;
+
+	auto main_tid(
+	) -> std::uint32_t;
+
 	auto make_loc_id(
 		const std::source_location& loc
 	) -> id;
@@ -251,6 +257,7 @@ namespace gse::trace {
 	std::atomic<std::uint64_t> next_eid{ 1024 };
 	std::atomic<std::uint64_t> next_async_key{ 1 };
 	std::atomic<std::uint32_t> next_tid{ 0 };
+	std::atomic<std::uint32_t> main_tid_value{ 0 };
 
 	config global_config;
 

@@ -574,6 +574,7 @@ auto gse::task::pool_start(const std::size_t worker_count) -> void {
 	}
 
 	t_worker_index = worker_count - 1;
+	trace::register_main_thread();
 }
 
 auto gse::task::pool_shutdown() -> void {
