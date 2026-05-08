@@ -48,8 +48,6 @@ auto gse::gui::system::init_body(run_context& ctx, const window::state& window_s
 	}
 	s.menus = load(config::resource_path / s.file_path, s.menus);
 
-	gse::settings::register_panel(ctx, "UI", cfg);
-
 	s.last_font_index = cfg.font.value;
 
 	auto calculate_group_bounds = [&s](const id root_id) -> ui_rect {
@@ -126,16 +124,16 @@ auto gse::gui::system::init_body(run_context& ctx, const window::state& window_s
 	s.previous_viewport_size = vec2f(window::viewport(window_s));
 }
 
-auto gse::gui::system::run(run_context& ctx, const window::state& window_s, const asset::state& assets_s, const gse::input::system::state& input_state, settings& cfg, resources& r, state& s) -> async::task<> {
+auto gse::gui::system::run(run_context& ctx, const window::state& window_s, const asset::state& assets_s, const gse::input::system::state& input_state, const save::registry& save_reg, settings& cfg, resources& r, state& s) -> async::task<> {
 	co_await init_body(ctx, window_s, const_cast<asset::state&>(assets_s), cfg, s);
 
 	while (true) {
-		co_await update_body(ctx, window_s, assets_s, input_state, cfg, r, s);
+		co_await update_body(ctx, window_s, assets_s, input_state, save_reg, cfg, r, s);
 		co_await ctx.next_tick();
 	}
 }
 
-auto gse::gui::system::update_body(run_context& ctx, const window::state& window_s, const asset::state& assets_s, const gse::input::system::state& input_state, const settings& cfg, resources& r, state& s) -> async::task<> {
+auto gse::gui::system::update_body(run_context& ctx, const window::state& window_s, const asset::state& assets_s, const gse::input::system::state& input_state, const save::registry& save_reg, const settings& cfg, resources& r, state& s) -> async::task<> {
 	const auto current_viewport_size = vec2f(window::viewport(window_s));
 
 	if (s.previous_viewport_size.x() > 0.f && s.previous_viewport_size.y() > 0.f) {
@@ -297,17 +295,15 @@ auto gse::gui::system::update_body(run_context& ctx, const window::state& window
 	};
 	menu_bar::update(s.menu_bar_state, mb_ctx, input_st, viewport_size);
 
-	gse::settings::pump(s.settings_state, ctx);
-
 	if (s.menu_bar_state.settings_open) {
 		ctx.channels.push<menu_content>({
 			.menu = "Settings",
 			.layer = render_layer::popup,
-			.build = [&s, &ctx](builder& b) {
+			.build = [&s, &ctx, &save_reg](builder& b) {
 				b.scroll_region(
 					{ .id = "settings.body" },
 					[&](builder& b) {
-						gse::settings::panel(b, s.settings_state, ctx.channels);
+						gse::settings::panel(b, s.settings_state, ctx.channels, save_reg);
 					}
 				);
 			},

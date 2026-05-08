@@ -178,6 +178,7 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	};
 	const bool device_fault_extension_supported = supports_extension(vk::EXTDeviceFaultExtensionName);
 	const bool robustness2_extension_supported = supports_extension(vk::EXTRobustness2ExtensionName);
+	const bool nested_cb_extension_supported = supports_extension(vk::EXTNestedCommandBufferExtensionName);
 
 	const bool rt_extensions_available =
 		supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
@@ -193,7 +194,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		vk::PhysicalDeviceFaultFeaturesEXT,
 		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
 		vk::PhysicalDeviceRayQueryFeaturesKHR,
-		vk::PhysicalDeviceRobustness2FeaturesEXT
+		vk::PhysicalDeviceRobustness2FeaturesEXT,
+		vk::PhysicalDeviceNestedCommandBufferFeaturesEXT
 	>();
 	const auto& mesh_shader_query = feature_chain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
 	assert(
@@ -217,6 +219,12 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	const bool device_fault_vendor_binary_supported = device_fault_supported && fault_query.deviceFaultVendorBinary;
 	const auto& robustness2_query = feature_chain.get<vk::PhysicalDeviceRobustness2FeaturesEXT>();
 	const bool robustness2_supported = robustness2_extension_supported && robustness2_query.robustBufferAccess2;
+	const auto& nested_cb_query = feature_chain.get<vk::PhysicalDeviceNestedCommandBufferFeaturesEXT>();
+	const bool nested_cb_supported =
+		nested_cb_extension_supported &&
+		nested_cb_query.nestedCommandBuffer &&
+		nested_cb_query.nestedCommandBufferRendering &&
+		nested_cb_query.nestedCommandBufferSimultaneousUse;
 
 	log::println(log::category::vulkan, "Mesh shader support detected");
 	log::println(log::category::vulkan, "Ray tracing support detected");
@@ -234,6 +242,12 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		log::println(log::category::vulkan, "Robustness2 support detected (robustBufferAccess2)");
 	} else {
 		log::println(log::level::warning, log::category::vulkan, "VK_EXT_robustness2 not supported");
+	}
+
+	if (nested_cb_supported) {
+		log::println(log::category::vulkan, "Nested command buffer support detected");
+	} else {
+		log::println(log::level::warning, log::category::vulkan, "VK_EXT_nested_command_buffer not supported");
 	}
 
 	vk::PhysicalDeviceMemoryPriorityFeaturesEXT memory_priority_features{
@@ -263,6 +277,9 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 
 	vk::PhysicalDeviceVulkan12Features vulkan12_features{
 		.pNext = &vulkan13_features,
+		.storageBuffer8BitAccess = vk::True,
+		.uniformAndStorageBuffer8BitAccess = vk::True,
+		.shaderInt8 = vk::True,
 		.shaderSampledImageArrayNonUniformIndexing = vk::True,
 		.descriptorBindingSampledImageUpdateAfterBind = vk::True,
 		.descriptorBindingStorageImageUpdateAfterBind = vk::True,
@@ -278,6 +295,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 
 	vk::PhysicalDeviceVulkan11Features vulkan11_features{
 		.pNext = &vulkan12_features,
+		.storageBuffer16BitAccess = vk::True,
+		.uniformAndStorageBuffer16BitAccess = vk::True,
 		.shaderDrawParameters = vk::True,
 	};
 
@@ -322,16 +341,27 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		.pNext = robustness2_supported ? static_cast<void*>(&robustness2_features) : post_fault_chain_head,
 	};
 
+	vk::PhysicalDeviceNestedCommandBufferFeaturesEXT nested_cb_features{
+		.pNext = &present_wait_features,
+		.nestedCommandBuffer = vk::True,
+		.nestedCommandBufferRendering = vk::True,
+		.nestedCommandBufferSimultaneousUse = vk::True,
+	};
+
+	void* post_nested_cb_chain_head = nested_cb_supported
+		? static_cast<void*>(&nested_cb_features)
+		: static_cast<void*>(&present_wait_features);
+
 	const bool av1_encode_supported = video_encode_extensions_available && supports_extension(vk::KHRVideoEncodeAv1ExtensionName);
 
 	vk::PhysicalDeviceVideoEncodeAV1FeaturesKHR av1_encode_features{
-		.pNext = &present_wait_features,
+		.pNext = post_nested_cb_chain_head,
 		.videoEncodeAV1 = vk::True,
 	};
 
 	void* post_video_chain_head = av1_encode_supported
 		? static_cast<void*>(&av1_encode_features)
-		: static_cast<void*>(&present_wait_features);
+		: post_nested_cb_chain_head;
 
 	vk::PhysicalDeviceFeatures2 features2{
 		.pNext = post_video_chain_head,
@@ -367,6 +397,10 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 
 	if (robustness2_supported) {
 		device_extensions.push_back(vk::EXTRobustness2ExtensionName);
+	}
+
+	if (nested_cb_supported) {
+		device_extensions.push_back(vk::EXTNestedCommandBufferExtensionName);
 	}
 
 	if (video_encode_extensions_available) {

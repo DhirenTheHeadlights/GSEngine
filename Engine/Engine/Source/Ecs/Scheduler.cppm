@@ -27,8 +27,8 @@ export namespace gse {
 			registry& reg
 		) -> void;
 
-		auto set_settings_sink(
-			std::function<void(settings::register_settings_type)> fn
+		auto set_advance_hook(
+			std::function<void(id system_id, std::string_view phase)> fn
 		) -> void;
 
 		auto initialize(
@@ -66,6 +66,11 @@ export namespace gse {
 		auto ensure_system(
 			Args&&... args
 		) -> state_of_t<S>&;
+
+		template <typename T>
+		auto register_external_resource(
+			T* ptr
+		) -> void;
 
 		template <typename State>
 		auto state(
@@ -125,6 +130,7 @@ export namespace gse {
 		std::vector<system_node> m_nodes;
 		state_registry m_states;
 		std::unordered_map<id, std::vector<id>> m_state_deps;
+		std::unordered_set<id> m_external_resources;
 		resource_registry m_resources_store;
 		channel_registry m_channels_store;
 		std::vector<gse::move_only_function<void()>> m_deferred;
@@ -132,7 +138,7 @@ export namespace gse {
 		std::vector<system_node> m_hot_add_queue;
 		std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
-		std::function<void(settings::register_settings_type)> m_settings_sink;
+		std::function<void(id, std::string_view)> m_advance_hook;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
 		async::rw_mutex_registry m_access_mutexes;
@@ -166,6 +172,14 @@ auto gse::scheduler::resources_of() const -> const Resources& {
 	const auto* ptr = m_resources_store.resources_ptr(id_of<Resources>());
 	assert(ptr != nullptr, "resources not found");
 	return *static_cast<const Resources*>(ptr);
+}
+
+template <typename T>
+auto gse::scheduler::register_external_resource(T* ptr) -> void {
+	const auto type_id = id_of<T>();
+	m_resources_store.register_resource(type_id, ptr);
+	m_external_resources.insert(type_id);
+	m_update_graph.notify_state_ready(type_id);
 }
 
 template <typename T>
@@ -227,17 +241,6 @@ auto gse::scheduler::add_system(Args&&... args) -> state_of_t<S>& {
 		using settings_t = typename S::settings;
 		(void)trace_id<settings_t>();
 		m_states.register_state(node.settings_id, node.settings_ptr, node.settings_snapshot_ptr);
-
-		if (m_settings_sink) {
-			const std::string_view category = settings::category_of<settings_t>();
-			m_settings_sink({
-				.category = std::string(category),
-				.type_id = node.settings_id,
-				.settings_ptr = node.settings_ptr,
-				.write = &settings::write_settings_for<settings_t>,
-				.read = &settings::read_settings_for<settings_t>,
-			});
-		}
 	}
 
 	m_nodes.push_back(std::move(node));

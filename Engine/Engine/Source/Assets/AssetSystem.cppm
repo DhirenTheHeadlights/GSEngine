@@ -6,6 +6,7 @@ import gse.core;
 import gse.config;
 import gse.log;
 import gse.containers;
+import gse.concurrency;
 import gse.fs;
 
 import :asset_format;

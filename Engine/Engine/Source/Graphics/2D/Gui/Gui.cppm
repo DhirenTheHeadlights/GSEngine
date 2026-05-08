@@ -102,6 +102,7 @@ export namespace gse::gui {
 			const window::state& window_s,
 			const asset::state& assets_s,
 			const gse::input::system::state& input_state,
+			const save::registry& save_reg,
 			settings& cfg,
 			resources& r,
 			state& s
@@ -129,6 +130,7 @@ export namespace gse::gui {
 			const window::state& window_s,
 			const asset::state& assets_s,
 			const gse::input::system::state& input_state,
+			const save::registry& save_reg,
 			const settings& cfg,
 			resources& r,
 			state& s

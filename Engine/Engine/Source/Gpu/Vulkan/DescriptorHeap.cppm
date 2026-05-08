@@ -96,14 +96,6 @@ export namespace gse::gpu {
 			gpu::handle<vulkan::command_buffer> cmd
 		) const -> void;
 
-		auto set_offset(
-			gpu::handle<vulkan::command_buffer> cmd,
-			bind_point point,
-			gpu::handle<vulkan::pipeline_layout> layout,
-			std::uint32_t first_set,
-			const descriptor_region& region
-		) const -> void;
-
 		[[nodiscard]] auto layout_size(
 			gpu::handle<vulkan::descriptor_set_layout> layout
 		) const -> gpu::device_size;
@@ -250,11 +242,14 @@ auto gse::gpu::build_vk_get_info(const descriptor_get_info& info, vk::Descriptor
 	return vk_info;
 }
 
-gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const descriptor_buffer_properties& props, gpu::device_size capacity) : m_device(*dev.raii_device()), m_capacity(capacity), m_props(props) {
-	const auto& physical_device = dev.physical_device();
-	vk::BufferUsageFlags descriptor_buffer_usage =
+namespace gse::gpu {
+	constexpr auto descriptor_buffer_usage =
 		vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT
 		| vk::BufferUsageFlagBits::eSamplerDescriptorBufferEXT;
+}
+
+gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const descriptor_buffer_properties& props, gpu::device_size capacity) : m_device(*dev.raii_device()), m_capacity(capacity), m_props(props) {
+	const auto& physical_device = dev.physical_device();
 
 	const vk::BufferCreateInfo buffer_info{
 		.size = capacity,
@@ -365,19 +360,6 @@ auto gse::gpu::descriptor_heap::write_descriptor(const descriptor_region& region
 }
 
 auto gse::gpu::descriptor_heap::bind(const gpu::handle<vulkan::command_buffer> cmd, const bind_point point, const gpu::handle<vulkan::pipeline_layout> layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
-	set_offset(cmd, point, layout, first_set, region);
-}
-
-auto gse::gpu::descriptor_heap::bind_buffer(const gpu::handle<vulkan::command_buffer> cmd) const -> void {
-	const vk::DescriptorBufferBindingInfoEXT binding{
-		.address = m_address,
-		.usage = vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT
-			| vk::BufferUsageFlagBits::eSamplerDescriptorBufferEXT
-	};
-	std::bit_cast<vk::CommandBuffer>(cmd).bindDescriptorBuffersEXT(1, &binding);
-}
-
-auto gse::gpu::descriptor_heap::set_offset(const gpu::handle<vulkan::command_buffer> cmd, const bind_point point, const gpu::handle<vulkan::pipeline_layout> layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
 	constexpr std::uint32_t buffer_index = 0;
 	std::bit_cast<vk::CommandBuffer>(cmd).setDescriptorBufferOffsetsEXT(
 		vulkan::to_vk(point),
@@ -387,6 +369,14 @@ auto gse::gpu::descriptor_heap::set_offset(const gpu::handle<vulkan::command_buf
 		&buffer_index,
 		&region.offset
 	);
+}
+
+auto gse::gpu::descriptor_heap::bind_buffer(const gpu::handle<vulkan::command_buffer> cmd) const -> void {
+	const vk::DescriptorBufferBindingInfoEXT binding{
+		.address = m_address,
+		.usage = descriptor_buffer_usage,
+	};
+	std::bit_cast<vk::CommandBuffer>(cmd).bindDescriptorBuffersEXT(1, &binding);
 }
 
 auto gse::gpu::descriptor_heap::layout_size(const gpu::handle<vulkan::descriptor_set_layout> layout) const -> gpu::device_size {
@@ -428,6 +418,8 @@ auto gse::gpu::descriptor_heap::allocate_transient(std::uint32_t frame_index, co
 		"Transient descriptor heap slice exhausted for frame {}: requested {} at {}, slice ends at {}",
 		frame_index, aligned_size, offset, slice_end
 	);
+
+	std::memset(static_cast<std::byte*>(m_mapped) + offset, 0, aligned_size);
 
 	return {
 		.offset = offset,
@@ -527,5 +519,5 @@ auto gse::gpu::descriptor_set_writer::storage_image(const std::uint32_t binding,
 
 auto gse::gpu::descriptor_set_writer::commit(const gpu::handle<vulkan::command_buffer> cmd, const bind_point point, const gpu::handle<vulkan::pipeline_layout> layout, const std::uint32_t set_index) const -> void {
 	assert(m_current_region, "Cannot commit without begin()");
-	m_current_region.heap->set_offset(cmd, point, layout, set_index, m_current_region);
+	m_current_region.heap->bind(cmd, point, layout, set_index, m_current_region);
 }

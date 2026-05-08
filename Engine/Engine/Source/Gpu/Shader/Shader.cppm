@@ -61,7 +61,7 @@ export namespace gse {
 
 		auto load(
 			const auto& context
-		) -> void;
+		) -> async::task<>;
 
 		auto unload(
 		) -> void;
@@ -170,16 +170,16 @@ gse::shader::shader(const std::filesystem::path& path) : identifiable(path, conf
 	};
 }
 
-auto gse::shader::load(const auto&) -> void {
+auto gse::shader::load(const auto&) -> async::task<> {
 	std::ifstream in(m_info.path, std::ios::binary);
 	assert(in.is_open(), "Failed to open gshader asset: {}", m_info.path.string());
 	if (!in.is_open()) {
-		return;
+		co_return;
 	}
 
 	binary_reader ar(in, 0x47534852, 1, m_info.path.string());
 	if (!ar.valid()) {
-		return;
+		co_return;
 	}
 
 	std::uint8_t shader_type = 0;

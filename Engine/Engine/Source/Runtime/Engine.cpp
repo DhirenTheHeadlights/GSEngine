@@ -34,63 +34,37 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 	m_save.set_auto_save(true, config::resource_path / "Misc/settings.ini");
 	m_save.set_on_restart([] { app::restart(); });
-	m_scheduler.set_settings_sink([this](settings::register_settings_type entry) {
-		m_save.add(std::move(entry));
-	});
+	m_scheduler.register_external_resource<save::registry>(&m_save);
 
-	m_scheduler.add_system<input::system>();
-	m_scheduler.add_system<actions::system>();
-	m_scheduler.add_system<network::system>();
-	m_scheduler.add_system<asset::registry>();
+	add_system<input::system>();
+	add_system<actions::system>();
+	add_system<network::system>();
+	add_system<asset::registry>();
 
 	if (m_flags.test(engine_flag::render)) {
-		auto& window_state = m_scheduler.add_system<window>();
+		auto& window_state = add_system<window>();
 		window_state.title = std::string(id().tag());
-		m_scheduler.add_system<gpu::context>();
-		m_scheduler.add_system<physics::system>();
-		m_scheduler.add_system<camera::system>();
-		m_scheduler.add_system<render_init::system>();
-		m_scheduler.add_system<renderer::system>();
-		m_scheduler.add_system<renderer::geometry_collector::system>();
-		m_scheduler.add_system<renderer::skin_compute::system>();
-		m_scheduler.add_system<renderer::cull_compute::system>();
-		m_scheduler.add_system<renderer::physics_transform::system>();
-		m_scheduler.add_system<renderer::depth_prepass::system>();
-		m_scheduler.add_system<renderer::rt_shadow::system>();
-		m_scheduler.add_system<renderer::light_culling::system>();
-		m_scheduler.add_system<renderer::forward::system>();
-		m_scheduler.add_system<renderer::physics_debug::system>();
-		m_scheduler.add_system<renderer::ui::system>();
-		m_scheduler.add_system<renderer::capture::system>();
-		m_scheduler.add_system<gui::system>();
-		m_scheduler.add_system<animation::system>();
-		m_scheduler.add_system<audio::system>();
+		add_system<gpu::context>();
+		add_system<physics::system>();
+		add_system<camera::system>();
+		add_system<render_init::system>();
+		add_system<renderer::system>();
+		add_system<renderer::geometry_collector::system>();
+		add_system<renderer::skin_compute::system>();
+		add_system<renderer::cull_compute::system>();
+		add_system<renderer::physics_transform::system>();
+		add_system<renderer::depth_prepass::system>();
+		add_system<renderer::rt_shadow::system>();
+		add_system<renderer::light_culling::system>();
+		add_system<renderer::forward::system>();
+		add_system<renderer::physics_debug::system>();
+		add_system<renderer::ui::system>();
+		add_system<renderer::capture::system>();
+		add_system<gui::system>();
+		add_system<animation::system>();
+		add_system<audio::system>();
 
 		auto& asset_state = m_scheduler.state<asset::state>();
-		auto& command_channel = m_scheduler.channel<gpu::command_request>();
-		auto& finalization_channel = m_scheduler.channel<gpu::pending_finalization>();
-
-		asset_state.runtime.async_submit = [&command_channel](std::function<void(void*)> work) {
-			command_channel.push(gpu::command_request{
-				.work = [work_lambda = std::move(work)](gpu::context::state& s) {
-					work_lambda(&s);
-				},
-			});
-		};
-		asset_state.runtime.sync_submit = [this](std::function<void(void*)> work) {
-			auto& gpu_state = m_scheduler.state<gpu::context::state>();
-			work(&gpu_state);
-		};
-		asset_state.runtime.finalization_pusher = [&finalization_channel](const gse::id resource_type, const gse::id resource_id) {
-			finalization_channel.push(gpu::pending_finalization{
-				.resource_type = resource_type,
-				.resource_id = resource_id,
-			});
-		};
-		asset_state.runtime.gpu_waiter = [this] {
-			auto& gpu_state = m_scheduler.state<gpu::context::state>();
-			gpu_state.device->wait_idle();
-		};
 
 		using game_assets = gse::assets::append<graphics::asset_types, audio_clip>;
 		gse::asset::system_for<game_assets> assets{ asset_state };
@@ -112,7 +86,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		asset::add_loader<model>(asset_state);
 		asset::add_loader<skinned_model>(asset_state);
 
-		m_scheduler.add_system<physics::system>();
+		add_system<physics::system>();
 	}
 
 	m_scheduler.initialize();
@@ -135,17 +109,6 @@ auto gse::engine::render() -> void {
 	auto* asset_state = m_scheduler.try_state_of<asset::state>();
 
 	if (gpu_state) {
-		if (asset_state) {
-			trace::scope_guard sg{trace_id<"render::finalize_pending_loads">()};
-			const auto& finalizations = m_scheduler.channel<gpu::pending_finalization>().read_raw();
-			std::vector<std::pair<gse::id, gse::id>> snapshot;
-			snapshot.reserve(finalizations.size());
-			for (const auto& f : finalizations) {
-				snapshot.emplace_back(f.resource_type, f.resource_id);
-			}
-			asset::apply_finalizations(*asset_state, snapshot);
-		}
-
 		auto& window_state = m_scheduler.state<window::state>();
 		const clock fence_timer;
 		std::expected<gpu::frame_token, gpu::frame_status> result;

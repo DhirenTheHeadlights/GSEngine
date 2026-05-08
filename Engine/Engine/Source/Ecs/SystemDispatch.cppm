@@ -14,7 +14,7 @@ import :settings;
 import :frame_context;
 import :system_node;
 
-namespace gse {
+export namespace gse {
 	template <typename S, bool = names_state<S>>
 	struct state_of_helper {
 		using type = S;
@@ -27,6 +27,9 @@ namespace gse {
 
 	template <typename S>
 	using state_of_t = typename state_of_helper<S>::type;
+}
+
+namespace gse {
 
 	template <typename S, bool = has_resources<S>>
 	struct resource_storage {};
@@ -139,6 +142,9 @@ namespace gse {
 
 	template <typename T>
 	using dep_pointee_t = std::remove_cv_t<std::remove_pointer_t<std::remove_cvref_t<T>>>;
+
+	template <typename T>
+	constexpr bool is_optional_dep_v = std::is_pointer_v<std::remove_cvref_t<T>>;
 
 	template <typename Arg, typename S>
 	constexpr bool is_state_dep_v = [] consteval {
@@ -447,6 +453,12 @@ consteval auto gse::compute_state_dep_count() -> std::size_t {
 	std::size_t count = 0;
 	for (auto p : std::meta::parameters_of(MemberFn)) {
 		auto t = std::meta::dealias(std::meta::type_of(p));
+		const bool is_optional = std::meta::extract<bool>(
+			std::meta::substitute(^^is_optional_dep_v, { t })
+		);
+		if (is_optional) {
+			continue;
+		}
 		const bool is_dep = std::meta::extract<bool>(
 			std::meta::substitute(^^is_state_dep_v, { t, ^^S })
 		);
@@ -463,6 +475,12 @@ consteval auto gse::compute_state_dep_ids() -> std::array<id, compute_state_dep_
 	std::size_t i = 0;
 	for (auto p : std::meta::parameters_of(MemberFn)) {
 		auto t = std::meta::dealias(std::meta::type_of(p));
+		const bool is_optional = std::meta::extract<bool>(
+			std::meta::substitute(^^is_optional_dep_v, { t })
+		);
+		if (is_optional) {
+			continue;
+		}
 		const bool is_dep = std::meta::extract<bool>(
 			std::meta::substitute(^^is_state_dep_v, { t, ^^S })
 		);

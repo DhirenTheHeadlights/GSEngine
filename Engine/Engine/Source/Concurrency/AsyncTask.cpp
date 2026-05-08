@@ -130,6 +130,20 @@ auto gse::async::symmetric_resume::await_suspend(std::coroutine_handle<>) const 
 
 auto gse::async::symmetric_resume::await_resume() noexcept -> void {}
 
+auto gse::async::yield_to_worker_t::await_ready() const noexcept -> bool {
+	return false;
+}
+
+auto gse::async::yield_to_worker_t::await_suspend(std::coroutine_handle<> h) const -> void {
+	gse::task::post([h] { h.resume(); });
+}
+
+auto gse::async::yield_to_worker_t::await_resume() const noexcept -> void {}
+
+auto gse::async::yield_to_worker() noexcept -> yield_to_worker_t {
+	return {};
+}
+
 auto gse::async::when_all_helper(task<> child, when_all_state* state) -> task<> {
 	try {
 		co_await child;

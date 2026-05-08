@@ -7,6 +7,7 @@ import :texture;
 import gse.assert;
 import gse.core;
 import gse.config;
+import gse.concurrency;
 import gse.math;
 import gse.os;
 import gse.gpu;
@@ -19,11 +20,11 @@ gse::texture::texture(const std::string_view name, const vec4f& color, const vec
 
 gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const vec2u size, const std::uint32_t channels, const profile texture_profile) : identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
 
-auto gse::texture::load(asset::load_ctx& ctx) -> void {
+auto gse::texture::load(asset::load_ctx& ctx) -> async::task<> {
     if (!m_image_data.path.empty()) {
         texture::baked baked{};
         if (!load_baked(m_image_data.path, baked)) {
-            return;
+            co_return;
         }
 
         m_image_data.size = { baked.width, baked.height };
@@ -32,9 +33,8 @@ auto gse::texture::load(asset::load_ctx& ctx) -> void {
         m_profile = baked.profile;
     }
 
-    gpu::queue_gpu_command(ctx, this, [](gpu::context::state& gpu_s, texture& self) {
-        self.create_vulkan_resources(gpu_s, self.m_profile);
-    });
+    auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
+    create_vulkan_resources(gpu_s, m_profile);
 }
 
 auto gse::texture::unload() -> void {

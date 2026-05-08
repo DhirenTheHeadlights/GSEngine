@@ -30,12 +30,21 @@ export namespace gse::settings {
         void* settings_ptr
     );
 
+    using draw_settings_thunk = void(*)(
+        void* gui_builder,
+        void* panel_state,
+        std::string_view category,
+        void* settings_ptr,
+        void* channel_writer
+    );
+
     struct register_settings_type {
         std::string category;
         id type_id;
         void* settings_ptr = nullptr;
         write_settings_thunk write = nullptr;
         read_settings_thunk read = nullptr;
+        draw_settings_thunk draw = nullptr;
     };
 
     template <typename T>

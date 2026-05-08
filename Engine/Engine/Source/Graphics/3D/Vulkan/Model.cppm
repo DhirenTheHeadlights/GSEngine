@@ -74,7 +74,7 @@ export namespace gse {
 		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
-		auto load(asset::load_ctx& ctx) -> void;
+		auto load(asset::load_ctx& ctx) -> async::task<>;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;
@@ -98,13 +98,13 @@ gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : 
 	}
 }
 
-auto gse::model::load(asset::load_ctx& ctx) -> void {
+auto gse::model::load(asset::load_ctx& ctx) -> async::task<> {
 	if (!m_baked_model_path.empty()) {
 		m_meshes.clear();
 
 		model::baked baked{};
 		if (!load_baked(m_baked_model_path, baked)) {
-			return;
+			co_return;
 		}
 
 		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
@@ -142,15 +142,10 @@ auto gse::model::load(asset::load_ctx& ctx) -> void {
 		}
 	}
 
-	gpu::queue_gpu_command(
-		ctx,
-		this,
-		[](gpu::context::state& gpu_s, model& self) {
-			for (auto& mesh : self.m_meshes) {
-				mesh.initialize(gpu_s);
-			}
-		}
-	);
+	auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
+	for (auto& mesh : m_meshes) {
+		mesh.initialize(gpu_s);
+	}
 
 	vec3<length> sum;
 	for (const auto& mesh : m_meshes) {

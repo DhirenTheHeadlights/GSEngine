@@ -40,6 +40,7 @@ export import :frame;
 export import :render_graph;
 export import :render_pass;
 export import :shader;
+export import :shader_codegen;
 export import :shader_layout;
 export import :shader_compiler;
 export import :shader_layout_compiler;

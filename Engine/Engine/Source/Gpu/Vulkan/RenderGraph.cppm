@@ -482,7 +482,7 @@ auto gse::vulkan::recording_context::capture_swapchain(
 		.src_stages = gpu::pipeline_stage_flag::transfer,
 		.src_access = gpu::access_flag::transfer_read,
 		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.dst_access = gpu::access_flag::color_attachment_write,
+		.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
 		.old_layout = gpu::image_layout::transfer_src,
 		.new_layout = gpu::image_layout::color_attachment,
 		.image = gpu_image,
@@ -567,7 +567,7 @@ auto gse::vulkan::recording_context::blit_swapchain_to_image(const gpu::swap_cha
 		.src_stages = gpu::pipeline_stage_flag::transfer,
 		.src_access = gpu::access_flag::transfer_read,
 		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.dst_access = gpu::access_flag::color_attachment_write,
+		.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
 		.old_layout = gpu::image_layout::transfer_src,
 		.new_layout = gpu::image_layout::color_attachment,
 		.image = src_image,
@@ -807,6 +807,14 @@ auto gse::gpu::indirect_read(const vulkan::basic_buffer<vulkan::device>& buf, co
 
 const char gse::vulkan::render_graph::swapchain_sentinel = 0;
 
+namespace gse::vulkan {
+	constexpr auto profile_stats_flags =
+		vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices
+		| vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives
+		| vk::QueryPipelineStatisticFlagBits::eClippingInvocations
+		| vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations;
+}
+
 gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 }
@@ -830,10 +838,7 @@ auto gse::vulkan::render_graph::ensure_profile_pools(gpu_profile_slot& slot) con
 		slot.stats_pool = m_device->vulkan_device().raii_device().createQueryPool({
 			.queryType = vk::QueryType::ePipelineStatistics,
 			.queryCount = max_profiled_passes,
-			.pipelineStatistics = vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices
-				| vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives
-				| vk::QueryPipelineStatisticFlagBits::eClippingInvocations
-				| vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations,
+			.pipelineStatistics = profile_stats_flags,
 		});
 	}
 }
@@ -973,25 +978,6 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 		command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 0);
 	}
 
-	if (passes.empty()) {
-		const gpu::image_barrier present_barrier{
-			.src_stages = gpu::pipeline_stage_flag::color_attachment_output,
-			.src_access = gpu::access_flag::color_attachment_write,
-			.dst_stages = gpu::pipeline_stage_flag::bottom_of_pipe,
-			.dst_access = {},
-			.old_layout = gpu::image_layout::color_attachment,
-			.new_layout = gpu::image_layout::present_src,
-			.image = std::bit_cast<gpu::handle<image>>(swap_image),
-			.aspects = gpu::image_aspect_flag::color,
-			.base_mip_level = 0,
-			.level_count = 1,
-			.base_array_layer = 0,
-			.layer_count = 1,
-		};
-		vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
-		return;
-	}
-
 	std::vector<std::size_t> sorted;
 
 	{
@@ -1042,10 +1028,7 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 					}
 				}
 
-				if (i_writes_j_reads && j_writes_i_reads) {
-					add_edge(i, j);
-				}
-				else if (i_writes_j_reads) {
+				if (i_writes_j_reads) {
 					add_edge(i, j);
 				}
 				else if (j_writes_i_reads) {
@@ -1117,11 +1100,7 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 				begin_flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
 			}
 			if (issue_stats) {
-				inherit.pipelineStatistics =
-					vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices
-					| vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives
-					| vk::QueryPipelineStatisticFlagBits::eClippingInvocations
-					| vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations;
+				inherit.pipelineStatistics = profile_stats_flags;
 			}
 
 			secondary.begin({

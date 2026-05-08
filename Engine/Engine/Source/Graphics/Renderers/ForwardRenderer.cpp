@@ -32,8 +32,6 @@ import gse.meta;
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const rt_shadow::system::state& rt_state, const light_culling::system::resources& lc_r, settings& cfg, resources& r, frame_data& fd) -> async::task<> {
 	auto& assets = const_cast<asset::state&>(assets_s);
 
-	gse::settings::register_panel(ctx, "Graphics", cfg);
-
 	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/meshlet_geometry");
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
@@ -306,9 +304,14 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 				continue;
 			}
 
-			const bool has_texture = mesh.material().diffuse_texture.valid();
-			const auto& tex_img = has_texture ? mesh.material().diffuse_texture->gpu_image() : r.blank_texture->gpu_image();
-			const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : r.blank_texture->gpu_sampler();
+			if (!mesh.upload_token().ready()) {
+				continue;
+			}
+
+			const auto& diffuse = mesh.material().diffuse_texture;
+			const bool has_texture = diffuse.valid() && diffuse->upload_token().ready();
+			const auto& tex_img = has_texture ? diffuse->gpu_image() : r.blank_texture->gpu_image();
+			const auto& tex_samp = has_texture ? diffuse->gpu_sampler() : r.blank_texture->gpu_sampler();
 
 			if (!pipeline_bound) {
 				rec.bind(r.pipeline);
@@ -323,15 +326,15 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 				.image("diffuseSampler", tex_img, tex_samp, gpu::image_layout::shader_read_only);
 			rec.commit(meshlet_writer.native_writer(), r.pipeline, 1);
 
-			const std::uint32_t ml_count = mesh.meshlet_count();
-			const std::uint32_t task_groups = (ml_count + 31) / 32;
+			const std::uint32_t meshlet_count = mesh.meshlet_count();
+			const std::uint32_t task_groups = (meshlet_count + 31) / 32;
 
 			auto pc = gpu::cache_push_block(r.shader_handle, "push_constants");
 			pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
-			pc.set("meshlet_count", ml_count);
+			pc.set("meshlet_count", meshlet_count);
 			pc.set("first_instance", batch.first_instance);
 			pc.set("num_lights", num_lights_i);
-			pc.set("screen_size", ext);
+			pc.set("screen_size", vec2u{ ext.x(), ext.y() });
 			pc.set("shadow_quality", shadow_quality_i);
 			pc.set("ao_quality", ao_quality_i);
 			pc.set("reflection_quality", reflection_quality_i);

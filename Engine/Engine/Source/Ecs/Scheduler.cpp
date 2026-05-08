@@ -12,8 +12,8 @@ auto gse::scheduler::set_registry(registry& reg) -> void {
 	m_registry = &reg;
 }
 
-auto gse::scheduler::set_settings_sink(std::function<void(settings::register_settings_type)> fn) -> void {
-	m_settings_sink = std::move(fn);
+auto gse::scheduler::set_advance_hook(std::function<void(id, std::string_view)> fn) -> void {
+	m_advance_hook = std::move(fn);
 }
 
 auto gse::scheduler::push_deferred(gse::move_only_function<void()> fn) -> void {
@@ -185,6 +185,7 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 			registered.insert(node.settings_id);
 		}
 	}
+	registered.insert(m_external_resources.begin(), m_external_resources.end());
 
 	std::vector<std::string> violations;
 
@@ -313,6 +314,10 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 		co_await m_update_graph.wait_state_ready(dep);
 	}
 
+	if (m_advance_hook) {
+		m_advance_hook(node.state_id, "before");
+	}
+
 	if (!node.run_launched) {
 		node.run_launched = true;
 		node.run_task = wrap_run_task(
@@ -325,6 +330,10 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 		node.tick_done_event->reset();
 		node.tick_event->set();
 		co_await node.tick_done_event->wait();
+	}
+
+	if (m_advance_hook) {
+		m_advance_hook(node.state_id, "after");
 	}
 
 	if (node.is_in_update_loop || node.run_task.done()) {
@@ -377,6 +386,9 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 		if (node.settings_id.exists()) {
 			m_frame_graph.notify_state_ready(node.settings_id);
 		}
+	}
+	for (const id& type_id : m_external_resources) {
+		m_frame_graph.notify_state_ready(type_id);
 	}
 
 	std::vector<async::task<>> tasks;
@@ -436,6 +448,7 @@ auto gse::scheduler::clear() -> void {
 	m_resources_store.clear();
 	m_channels_store.clear();
 	m_state_deps.clear();
+	m_external_resources.clear();
 	m_initialized = false;
 	m_dep_graph_checked = false;
 }

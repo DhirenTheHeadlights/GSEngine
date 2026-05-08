@@ -33,25 +33,25 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
     float sigma = float(blur_amount) * 0.5;
 
     uint w, h, levels;
-    inputTex0.GetDimensions(0, w, h, levels);
+    input_tex_0.GetDimensions(0, w, h, levels);
     float2 tex_offset = (1.0 / float2(w, h)) * blur_radius;
 
-    float3 result = inputTex0.Sample(input.tex_coords).rgb * gaussian_weight(0, sigma);
+    float3 result = input_tex_0.Sample(input.tex_coords).rgb * gaussian_weight(0, sigma);
     float total_weight = gaussian_weight(0, sigma);
 
     if (horizontal) {
         for (int i = 1; i < blur_amount; ++i) {
             float weight = gaussian_weight(i, sigma);
-            result += inputTex0.Sample(input.tex_coords + float2(tex_offset.x * i, 0.0)).rgb * weight;
-            result += inputTex0.Sample(input.tex_coords - float2(tex_offset.x * i, 0.0)).rgb * weight;
+            result += input_tex_0.Sample(input.tex_coords + float2(tex_offset.x * i, 0.0)).rgb * weight;
+            result += input_tex_0.Sample(input.tex_coords - float2(tex_offset.x * i, 0.0)).rgb * weight;
             total_weight += 2.0 * weight;
         }
     }
     else {
         for (int i = 1; i < blur_amount; ++i) {
             float weight = gaussian_weight(i, sigma);
-            result += inputTex0.Sample(input.tex_coords + float2(0.0, tex_offset.y * i)).rgb * weight;
-            result += inputTex0.Sample(input.tex_coords - float2(0.0, tex_offset.y * i)).rgb * weight;
+            result += input_tex_0.Sample(input.tex_coords + float2(0.0, tex_offset.y * i)).rgb * weight;
+            result += input_tex_0.Sample(input.tex_coords - float2(0.0, tex_offset.y * i)).rgb * weight;
             total_weight += 2.0 * weight;
         }
     }

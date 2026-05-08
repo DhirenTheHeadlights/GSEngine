@@ -366,24 +366,6 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
             rec.push(r.text_pipeline, text_pc);
         }
 
-        [[maybe_unused]] static std::atomic<int> diag_remaining{ 6 };
-        if (diag_remaining.fetch_sub(1) > 0) {
-            const auto resource_id = (type == command_type::sprite)
-                ? (texture.valid() ? texture.id() : id{})
-                : (font.valid() ? font.id() : id{});
-            const bool token_ready = (type == command_type::sprite)
-                ? (texture.valid() ? texture->upload_token().ready() : true)
-                : (font.valid() ? font->texture()->upload_token().ready() : true);
-            log::println(log::category::render,
-                "[UI-DIAG] type={} tex_idx={} resource={} token_ready={} index_count={} bindless_region_offset={}",
-                type == command_type::sprite ? "sprite" : "text",
-                tex_idx,
-                resource_id,
-                token_ready,
-                index_count,
-                bindless_region.offset);
-        }
-
         if (clip_rect) {
             const float left = std::max(0.0f, clip_rect->left());
             const float right = std::min(window_size.x(), clip_rect->right());

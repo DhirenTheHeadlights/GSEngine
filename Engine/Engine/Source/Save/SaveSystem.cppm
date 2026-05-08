@@ -40,6 +40,9 @@ export namespace gse::save {
 			settings::register_settings_type entry
 		) -> void;
 
+		auto entries(
+		) const -> std::span<const settings::register_settings_type>;
+
 		auto save_now(
 		) -> bool;
 
@@ -133,6 +136,10 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 	}
 
 	m_entries.push_back(std::move(entry));
+}
+
+auto gse::save::registry::entries() const -> std::span<const settings::register_settings_type> {
+	return m_entries;
 }
 
 auto gse::save::registry::save_now() -> bool {

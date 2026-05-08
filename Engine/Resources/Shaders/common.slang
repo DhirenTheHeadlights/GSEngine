@@ -1,36 +1,6 @@
+__exported import generated.forward;
+
 public static const int MAX_POINT_SHADOW_LIGHTS = 4;
-
-public enum class LightType {
-    Directional = 0,
-    Point       = 1,
-    Spot        = 2
-};
-
-public struct Light {
-    public LightType light_type;
-    public float3 position;
-    public float3 direction;
-    public float3 world_position;
-    public float3 world_direction;
-    public float3 color;
-    public float  intensity;
-    public float  constant;
-    public float  linear;
-    public float  quadratic;
-    public float  cut_off;
-    public float  outer_cut_off;
-    public float ambient_strength;
-    public float source_radius;
-};
-
-public struct MaterialData {
-    public float3 base_color;
-    public float roughness;
-    public float metallic;
-    public float _pad0;
-    public float _pad1;
-    public float _pad2;
-};
 
 public enum class LayoutKind : int {
     Deferred3D  = 0,

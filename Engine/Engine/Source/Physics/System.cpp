@@ -289,8 +289,6 @@ auto gse::physics::system::invalidate_warm_start_entries(std::vector<vbd::warm_s
 }
 
 auto gse::physics::system::run(run_context& ctx, const gpu::context::state* gpu_s, const asset::state& assets_s, settings& cfg, update_data& ud, frame_data& fd, state& s) -> async::task<> {
-	gse::settings::register_panel(ctx, "Physics", cfg);
-
 	ud.vbd_solver.configure(vbd::solver_config{
 		.iterations = static_cast<std::uint32_t>(cfg.solver_iterations),
 		.alpha = 0.99f,
@@ -1119,20 +1117,6 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 			const auto sc_it = ud.sleep_counters.find(eid);
 			const auto sc = sc_it != ud.sleep_counters.end() ? sc_it->second : 0u;
 
-			if (eid.number() == 3692324345213718176ull) {
-				log::println(
-					"[physics-debug] READ INPUT body {} pos={} vel={} sizeof_mc={} pos_off={} vel_off={} mc_addr=0x{:x} id_of_motion={}",
-					eid,
-					mc.current_position,
-					mc.current_velocity,
-					sizeof(motion_component),
-					static_cast<std::uintptr_t>(reinterpret_cast<const std::byte*>(&mc.current_position) - reinterpret_cast<const std::byte*>(&mc)),
-					static_cast<std::uintptr_t>(reinterpret_cast<const std::byte*>(&mc.current_velocity) - reinterpret_cast<const std::byte*>(&mc)),
-					reinterpret_cast<std::uintptr_t>(&mc),
-					id_of<motion_component>().number()
-				);
-			}
-
 			bodies.push_back({
 				.position = mc.current_position,
 				.predicted_position = mc.current_position,
@@ -1258,19 +1242,6 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 		for (std::size_t i = 0; i < motion_ptrs.size(); ++i) {
 			auto* mc = motion_ptrs[i];
 			const auto& bs = result_bodies[i];
-
-			if (mc->owner_id().number() == 3692324345213718176ull) {
-				log::println(
-					"[physics-debug] body {} idx={} writeback: pos={} vel={} ptr=0x{:x} motion_size={} result_size={}",
-					mc->owner_id(),
-					i,
-					bs.position,
-					bs.body_velocity,
-					reinterpret_cast<std::uintptr_t>(mc),
-					motion_ptrs.size(),
-					result_bodies.size()
-				);
-			}
 
 			mc->current_position = bs.position;
 			mc->current_velocity = bs.body_velocity;
