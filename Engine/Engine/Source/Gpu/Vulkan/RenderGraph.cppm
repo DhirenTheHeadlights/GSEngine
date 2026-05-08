@@ -232,12 +232,33 @@ export namespace gse::vulkan {
 			float clear_depth_value = 1.0f
 		) const -> void;
 
+		recording_context(
+			recording_context&& other
+		) noexcept;
+
+		auto operator=(
+			recording_context&& other
+		) noexcept -> recording_context&;
+
+		recording_context(
+			const recording_context&
+		) = delete;
+
+		auto operator=(
+			const recording_context&
+		) -> recording_context& = delete;
+
+		~recording_context();
+
 	private:
 		friend class render_graph;
 		vulkan::commands m_cmd;
 		explicit recording_context(
 			commands cmd
 		);
+
+		auto check_active(
+		) const -> void;
 	};
 
 	struct render_pass_data {
@@ -250,7 +271,7 @@ export namespace gse::vulkan {
 		std::optional<color_output_info> color_output;
 		std::optional<depth_output_info> depth_output;
 		std::coroutine_handle<> record_handle;
-		recording_context** record_ctx_slot = nullptr;
+		std::optional<recording_context>* record_ctx_slot = nullptr;
 	};
 
 	class render_graph {
@@ -351,9 +372,41 @@ export namespace gse::gpu {
 	) -> vulkan::resource_usage;
 }
 
-gse::vulkan::recording_context::recording_context(const commands cmd) : m_cmd(cmd) {}
+gse::vulkan::recording_context::recording_context(const commands cmd) : m_cmd(cmd) {
+	if (m_cmd) {
+		async::pass_recording_scope_push();
+	}
+}
+
+gse::vulkan::recording_context::recording_context(recording_context&& other) noexcept : m_cmd(other.m_cmd) {
+	other.m_cmd = commands{};
+}
+
+auto gse::vulkan::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
+	if (this != &other) {
+		if (m_cmd) {
+			m_cmd.end();
+			async::pass_recording_scope_pop();
+		}
+		m_cmd = other.m_cmd;
+		other.m_cmd = commands{};
+	}
+	return *this;
+}
+
+gse::vulkan::recording_context::~recording_context() {
+	if (m_cmd) {
+		m_cmd.end();
+		async::pass_recording_scope_pop();
+	}
+}
+
+auto gse::vulkan::recording_context::check_active() const -> void {
+	assert(async::pass_recording_scope_active() > 0, "recording_context method called outside an active pass; rec was captured by reference past its lifetime");
+}
 
 auto gse::vulkan::recording_context::copy_buffer(const buffer& src, const buffer& dst, const std::size_t size, const std::size_t src_offset, const std::size_t dst_offset) const -> void {
+	check_active();
 	m_cmd.copy_buffer(src.handle(), dst.handle(), gpu::buffer_copy_region{
 		.src_offset = src_offset,
 		.dst_offset = dst_offset,
@@ -362,6 +415,7 @@ auto gse::vulkan::recording_context::copy_buffer(const buffer& src, const buffer
 }
 
 auto gse::vulkan::recording_context::barrier(const gpu::barrier_scope scope) const -> void {
+	check_active();
 	using ps = gpu::pipeline_stage_flag;
 	using ac = gpu::access_flag;
 	gpu::memory_barrier mb;
@@ -431,10 +485,12 @@ auto gse::vulkan::recording_context::build_acceleration_structure(
 	const gpu::acceleration_structure_build_geometry_info& build_info,
 	const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos
 ) const -> void {
+	check_active();
 	m_cmd.build_acceleration_structures(build_info, range_infos);
 }
 
 auto gse::vulkan::recording_context::pipeline_barrier(const gpu::dependency_info& dep) const -> void {
+	check_active();
 	m_cmd.pipeline_barrier(dep);
 }
 
@@ -443,6 +499,7 @@ auto gse::vulkan::recording_context::capture_swapchain(
 	const gpu::frame& frame,
 	const buffer& dst
 ) const -> void {
+	check_active();
 	const auto ext = swapchain.extent();
 	const auto dst_buffer = dst.handle();
 	const auto gpu_image = swapchain.image(frame.image_index());
@@ -496,6 +553,7 @@ auto gse::vulkan::recording_context::capture_swapchain(
 }
 
 auto gse::vulkan::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const image& dst, const vec2u dst_extent) const -> void {
+	check_active();
 	const auto src_image = swapchain.image(frame.image_index());
 	const auto src_ext = swapchain.extent();
 
@@ -598,6 +656,7 @@ auto gse::vulkan::recording_context::blit_swapchain_to_image(const gpu::swap_cha
 }
 
 auto gse::vulkan::recording_context::set_viewport(const float x, const float y, const float width, const float height, const float min_depth, const float max_depth) const -> void {
+	check_active();
 	m_cmd.set_viewport(gpu::viewport{
 		.x = x,
 		.y = y,
@@ -609,6 +668,7 @@ auto gse::vulkan::recording_context::set_viewport(const float x, const float y, 
 }
 
 auto gse::vulkan::recording_context::set_scissor(const std::int32_t x, const std::int32_t y, const std::uint32_t width, const std::uint32_t height) const -> void {
+	check_active();
 	const gse::rect_t<vec2i> sc{ {
 		.min = vec2i{ x, y },
 		.max = vec2i{ x + static_cast<int>(width), y + static_cast<int>(height) },
@@ -617,53 +677,65 @@ auto gse::vulkan::recording_context::set_scissor(const std::int32_t x, const std
 }
 
 auto gse::vulkan::recording_context::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) const -> void {
+	check_active();
 	m_cmd.draw(vertex_count, instance_count, first_vertex, first_instance);
 }
 
 auto gse::vulkan::recording_context::draw_indexed(const std::uint32_t index_count, const std::uint32_t instance_count, const std::uint32_t first_index, const std::int32_t vertex_offset, const std::uint32_t first_instance) const -> void {
+	check_active();
 	m_cmd.draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance);
 }
 
 auto gse::vulkan::recording_context::draw_mesh_tasks(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
+	check_active();
 	m_cmd.draw_mesh_tasks(x, y, z);
 }
 
 auto gse::vulkan::recording_context::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
+	check_active();
 	m_cmd.dispatch(x, y, z);
 }
 
 auto gse::vulkan::recording_context::end_rendering() const -> void {
+	check_active();
 	m_cmd.end_rendering();
 }
 
 auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::cached_push_constants& cache) const -> void {
+	check_active();
 	cache.replay(m_cmd.native(), p.layout());
 }
 
 auto gse::vulkan::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+	check_active();
 	m_cmd.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
 }
 
 auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) const -> void {
+	check_active();
 	m_cmd.bind_pipeline(p.bind_point(), p.handle());
 }
 
 auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) const -> void {
+	check_active();
 	assert(region, "Cannot bind null descriptor region");
 	region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_index, region);
 }
 
 auto gse::vulkan::recording_context::bind_vertex(const buffer& buf, const std::size_t offset) const -> void {
+	check_active();
 	const gpu::handle<buffer> buffers[]{ buf.handle() };
 	const gpu::device_size offsets[]{ offset };
 	m_cmd.bind_vertex_buffers(0, std::span<const gpu::handle<buffer>>(buffers), std::span<const gpu::device_size>(offsets));
 }
 
 auto gse::vulkan::recording_context::bind_index(const buffer& buf, const gpu::index_type type, const std::size_t offset) const -> void {
+	check_active();
 	m_cmd.bind_index_buffer_2(buf.handle(), offset, vk::WholeSize, type);
 }
 
 auto gse::vulkan::recording_context::set_viewport(const vec2u extent) const -> void {
+	check_active();
 	m_cmd.set_viewport(gpu::viewport{
 		.x = 0.0f,
 		.y = 0.0f,
@@ -675,6 +747,7 @@ auto gse::vulkan::recording_context::set_viewport(const vec2u extent) const -> v
 }
 
 auto gse::vulkan::recording_context::set_scissor(const vec2u extent) const -> void {
+	check_active();
 	const gse::rect_t<vec2i> sc{ {
 		.min = vec2i{ 0, 0 },
 		.max = vec2i{ static_cast<int>(extent.x()), static_cast<int>(extent.y()) },
@@ -683,6 +756,7 @@ auto gse::vulkan::recording_context::set_scissor(const vec2u extent) const -> vo
 }
 
 auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const image* depth, const gpu::image_layout depth_layout, const bool clear_depth, const float clear_depth_value) const -> void {
+	check_active();
 	std::optional<vk::RenderingAttachmentInfo> depth_att;
 	if (depth) {
 		depth_att = vk::RenderingAttachmentInfo{
@@ -705,6 +779,7 @@ auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const i
 }
 
 auto gse::vulkan::recording_context::commit(const gpu::descriptor_set_writer& writer, const gpu::pipeline& p, const std::uint32_t set_index) const -> void {
+	check_active();
 	writer.commit(
 		m_cmd.native(),
 		p.bind_point(),
@@ -1108,10 +1183,8 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 				.pInheritanceInfo = &inherit
 			});
 			m_device->descriptor_heap().bind_buffer(std::bit_cast<gpu::handle<command_buffer>>(secondary));
-			recording_context secondary_ctx(commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) });
-			*pass.record_ctx_slot = std::addressof(secondary_ctx);
+			*pass.record_ctx_slot = recording_context{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) } };
 			pass.record_handle.resume();
-			secondary.end();
 
 			pass_secondaries[pi] = secondary;
 		});

@@ -35,7 +35,7 @@ export namespace gse::gpu {
 	struct render_pass_request {
 		render_pass_descriptor desc;
 		std::coroutine_handle<> record_handle;
-		vulkan::recording_context** record_ctx_slot = nullptr;
+		std::optional<vulkan::recording_context>* record_ctx_slot = nullptr;
 	};
 }
 
@@ -76,12 +76,12 @@ export namespace gse::gpu {
 		) noexcept -> void;
 
 		auto await_resume(
-		) noexcept -> vulkan::recording_context&;
+		) noexcept -> vulkan::recording_context;
 
 	private:
 		const frame_context* m_ctx;
 		render_pass_descriptor m_desc;
-		vulkan::recording_context* m_rec = nullptr;
+		std::optional<vulkan::recording_context> m_rec;
 		id m_trace_id{};
 		std::uint64_t m_trace_key = 0;
 	};

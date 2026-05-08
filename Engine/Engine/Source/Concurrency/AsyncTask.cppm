@@ -2,6 +2,7 @@ export module gse.concurrency:async_task;
 
 import std;
 
+import gse.assert;
 import gse.core;
 import gse.diag;
 import gse.log;
@@ -12,6 +13,15 @@ import :task;
 export namespace gse::async {
 	template <typename T = void>
 	class task;
+
+	auto pass_recording_scope_push(
+	) noexcept -> void;
+
+	auto pass_recording_scope_pop(
+	) noexcept -> void;
+
+	[[nodiscard]] auto pass_recording_scope_active(
+	) noexcept -> int;
 
 	struct final_awaiter {
 		static auto await_ready(
@@ -48,6 +58,11 @@ export namespace gse::async {
 			void* ptr,
 			std::size_t size
 		) -> void;
+
+		template <typename Awaitable>
+		decltype(auto) await_transform(
+			Awaitable&& aw
+		);
 	};
 
 	template <typename T>
@@ -203,6 +218,12 @@ export namespace gse::async {
 template <typename P>
 auto gse::async::final_awaiter::await_suspend(std::coroutine_handle<P> h) noexcept -> std::coroutine_handle<> {
 	return h.promise().m_continuation;
+}
+
+template <typename Awaitable>
+decltype(auto) gse::async::promise_base::await_transform(Awaitable&& aw) {
+	assert(pass_recording_scope_active() == 0, "co_await is forbidden while a recording_context is alive; co_await before or after the pass scope");
+	return std::forward<Awaitable>(aw);
 }
 
 template <typename T>

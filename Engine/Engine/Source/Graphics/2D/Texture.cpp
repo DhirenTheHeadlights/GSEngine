@@ -86,7 +86,7 @@ auto gse::texture::create_vulkan_resources(gpu::context::state& context, const p
         .size = { width, height },
         .format = gpu_format,
         .usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
-    });
+    }, std::format("texture:{}", id()));
 
     m_upload_token = gpu::upload_image_2d(*context.device, m_image, m_image_data.pixels.data(), data_size);
 
@@ -132,7 +132,6 @@ auto gse::texture::create_vulkan_resources(gpu::context::state& context, const p
     m_sampler = gpu::sampler::create(context.device->vulkan_device(), desc);
 
     m_bindless_slot = context.bindless_textures->allocate(m_image.view(), m_sampler.native());
-    log::println(log::category::render, "Texture '{}' -> bindless slot {} (format={}, size={}x{}, profile={})", id(), m_bindless_slot.index, static_cast<int>(gpu_format), width, height, static_cast<int>(texture_profile));
 
     m_image_data.pixels.clear();
     m_image_data.pixels.shrink_to_fit();

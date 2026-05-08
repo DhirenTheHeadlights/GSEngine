@@ -136,7 +136,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		const auto ext = gpu_s.render_graph->extent();
-		auto& rec = co_await gpu::pass<system>(ctx)
+		auto rec = co_await gpu::pass<system>(ctx)
 			.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }));
 		rec.set_viewport(ext);
 		rec.set_scissor(ext);
@@ -272,7 +272,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 	auto meshlet_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), r.shader_handle);
 	auto skinned_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), r.skinned_shader);
 
-	auto& rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<system>(ctx)
 		.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
 		.depth(gpu::load_depth())
 		.after<rt_shadow::system, light_culling::system, depth_prepass::system>()

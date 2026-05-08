@@ -32,7 +32,6 @@ export namespace gse::input {
 	struct system {
 		struct state {
 			double_buffer<input::state> states;
-			interval_timer<> debug_timer{ seconds(0.5f) };
 		};
 
 		static auto run(
@@ -62,18 +61,6 @@ auto gse::input::system::run(run_context& ctx, state& s, const window::state* wi
 		std::vector<event> drained;
 		if (win) {
 			drained = win->input_events.drain();
-		}
-
-		if (s.debug_timer.tick()) {
-			log::println(
-				"[input-debug] window_state={} drained_events={} w_held_prev={} a_held_prev={} s_held_prev={} d_held_prev={}",
-				win != nullptr,
-				drained.size(),
-				s.states.read().key_held(key::w),
-				s.states.read().key_held(key::a),
-				s.states.read().key_held(key::s),
-				s.states.read().key_held(key::d)
-			);
 		}
 
 		for (const auto& evt : drained) {

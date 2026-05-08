@@ -21,7 +21,9 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] static auto create(
 			Device& dev,
-			const gpu::image_desc& desc
+			const gpu::image_desc& desc,
+			std::string_view tag = "",
+			const std::source_location& loc = std::source_location::current()
 		) -> basic_image;
 
 		basic_image(
@@ -80,7 +82,7 @@ gse::vulkan::basic_image<Device>::basic_image(const gpu::handle<basic_image<devi
 	: m_image(image), m_view(view), m_format(format), m_current_layout(current_layout), m_extent(extent), m_allocation(std::move(allocation)) {}
 
 template <typename Device>
-auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc& desc) -> basic_image {
+auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc& desc, const std::string_view tag, const std::source_location& loc) -> basic_image {
 	const bool is_depth = desc.format == gpu::image_format::d32_sfloat;
 	const bool is_cube = desc.view == gpu::image_view_type::cube;
 	const std::uint32_t layers = is_cube ? 6u : 1u;
@@ -105,7 +107,7 @@ auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc
 		.layer_count = layers,
 	};
 
-	return dev.create_image(create_info, gpu::memory_property_flag::device_local, view_info);
+	return dev.create_image(create_info, gpu::memory_property_flag::device_local, view_info, nullptr, tag, loc);
 }
 
 template <typename Device>

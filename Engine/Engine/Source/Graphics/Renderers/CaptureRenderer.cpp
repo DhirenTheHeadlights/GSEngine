@@ -245,7 +245,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const gpu::
         convert_pc.set("extent", ext);
     }
 
-    auto& rec = co_await gpu::pass<state>(ctx)
+    auto rec = co_await gpu::pass<state>(ctx)
         .after<ui::system>();
 
     if (do_screenshot) {

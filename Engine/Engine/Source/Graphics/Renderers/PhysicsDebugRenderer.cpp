@@ -53,7 +53,7 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
 
-	auto& rec = co_await gpu::pass<state>(ctx)
+	auto rec = co_await gpu::pass<state>(ctx)
 		.color(gpu::load_color())
 		.tracks(r.ubo_allocations.at("CameraUBO")[frame_index]);
 

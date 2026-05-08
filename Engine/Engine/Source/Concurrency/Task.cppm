@@ -67,14 +67,10 @@ export namespace gse::task {
 	auto try_run_one(
 	) -> bool;
 
-	auto in_arena(
-		const std::function<void()>& fn
-	) -> void;
-
 	auto parallel_invoke_range(
 		std::size_t first,
 		std::size_t last,
-		std::function<void(std::size_t)> func,
+		move_only_function<void(std::size_t)> func,
 		id id = trace::make_loc_id(std::source_location::current())
 	) -> void;
 
@@ -473,23 +469,12 @@ auto gse::task::consumer_token() -> moodycamel::ConsumerToken& {
 	return *t_consumer_token;
 }
 
-auto gse::task::in_arena(const std::function<void()>& fn) -> void {
-	fn();
-}
-
-auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t last, std::function<void(std::size_t)> func, const id id) -> void {
+auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t last, move_only_function<void(std::size_t)> func, const id id) -> void {
 	if (last <= first) {
 		return;
 	}
 
-	parallel_for_impl(
-		first,
-		last,
-		parallel_for_fn([f = std::move(func)](std::size_t i) mutable {
-			f(i);
-		}),
-		id
-	);
+	parallel_for_impl(first, last, std::move(func), id);
 }
 
 auto gse::task::run_job(job_entry& entry) -> void {

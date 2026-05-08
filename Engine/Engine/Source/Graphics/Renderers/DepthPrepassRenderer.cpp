@@ -93,7 +93,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 	auto meshlet_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), r.meshlet_shader);
 	auto skinned_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), r.skinned_shader);
 
-	auto& rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<system>(ctx)
 		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
 		.after<cull_compute::system, physics_transform::system>()
 		.reads(

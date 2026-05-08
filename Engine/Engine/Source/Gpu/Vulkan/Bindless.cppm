@@ -174,15 +174,6 @@ auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> v
 
 	m_heap->write_descriptor(m_region, m_binding_offset + slot * m_descriptor_size, get_info, m_descriptor_size);
 
-	log::println(
-		log::category::vulkan,
-		"Bindless allocate: slot {}, view 0x{:x}, sampler 0x{:x}, write_offset {}",
-		slot,
-		view.value,
-		samp.value,
-		m_region.offset + m_binding_offset + slot * m_descriptor_size
-	);
-
 	return { .index = slot };
 }
 

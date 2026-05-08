@@ -1,6 +1,7 @@
 export module gse.core:move_only_function;
 
 import std;
+import gse.assert;
 
 export namespace gse {
     template <typename Sig>
@@ -40,12 +41,12 @@ export namespace gse {
             using D = std::decay_t<F>;
             if constexpr (fits_inline_v<D>) {
                 std::construct_at(reinterpret_cast<D*>(m_buffer), std::forward<F>(f));
-                m_vtable = &inline_vtable<D>;
+                m_vtable = &inline_vtable_of<D>();
             }
             else {
                 auto* heap = new D(std::forward<F>(f));
                 std::construct_at(reinterpret_cast<D**>(m_buffer), heap);
-                m_vtable = &heap_vtable<D>;
+                m_vtable = &heap_vtable_of<D>();
             }
         }
 
@@ -72,35 +73,59 @@ export namespace gse {
                                            && std::is_nothrow_move_constructible_v<F>;
 
         template <typename F>
-        inline static const vtable inline_vtable = {
-            .invoke = +[](void* p, Args... args) -> R {
-                return std::invoke(*static_cast<F*>(p), std::forward<Args>(args)...);
-            },
-            .move_init = +[](void* src, void* dst) noexcept {
-                std::construct_at(static_cast<F*>(dst), std::move(*static_cast<F*>(src)));
-                std::destroy_at(static_cast<F*>(src));
-            },
-            .destroy = +[](void* p) noexcept {
-                std::destroy_at(static_cast<F*>(p));
-            },
-        };
+        static auto inline_invoke(void* p, Args... args) -> R {
+            return std::invoke(*static_cast<F*>(p), std::forward<Args>(args)...);
+        }
 
         template <typename F>
-        inline static const vtable heap_vtable = {
-            .invoke = +[](void* p, Args... args) -> R {
-                return std::invoke(**static_cast<F**>(p), std::forward<Args>(args)...);
-            },
-            .move_init = +[](void* src, void* dst) noexcept {
-                *static_cast<F**>(dst) = *static_cast<F**>(src);
-                *static_cast<F**>(src) = nullptr;
-            },
-            .destroy = +[](void* p) noexcept {
-                delete *static_cast<F**>(p);
-            },
-        };
+        static auto inline_move_init(void* src, void* dst) noexcept -> void {
+            std::construct_at(static_cast<F*>(dst), std::move(*static_cast<F*>(src)));
+            std::destroy_at(static_cast<F*>(src));
+        }
 
-        alignas(buffer_align) std::byte m_buffer[buffer_size]{};
+        template <typename F>
+        static auto inline_destroy(void* p) noexcept -> void {
+            std::destroy_at(static_cast<F*>(p));
+        }
+
+        template <typename F>
+        static auto heap_invoke(void* p, Args... args) -> R {
+            return std::invoke(**static_cast<F**>(p), std::forward<Args>(args)...);
+        }
+
+        template <typename F>
+        static auto heap_move_init(void* src, void* dst) noexcept -> void {
+            *static_cast<F**>(dst) = *static_cast<F**>(src);
+            *static_cast<F**>(src) = nullptr;
+        }
+
+        template <typename F>
+        static auto heap_destroy(void* p) noexcept -> void {
+            delete *static_cast<F**>(p);
+        }
+
+        template <typename F>
+        static auto inline_vtable_of() -> const vtable& {
+            static const vtable v = {
+                .invoke = &inline_invoke<F>,
+                .move_init = &inline_move_init<F>,
+                .destroy = &inline_destroy<F>,
+            };
+            return v;
+        }
+
+        template <typename F>
+        static auto heap_vtable_of() -> const vtable& {
+            static const vtable v = {
+                .invoke = &heap_invoke<F>,
+                .move_init = &heap_move_init<F>,
+                .destroy = &heap_destroy<F>,
+            };
+            return v;
+        }
+
         const vtable* m_vtable = nullptr;
+        alignas(buffer_align) std::byte m_buffer[buffer_size]{};
     };
 }
 
@@ -146,5 +171,6 @@ gse::move_only_function<R(Args...)>::operator bool() const noexcept {
 
 template <typename R, typename... Args>
 auto gse::move_only_function<R(Args...)>::operator()(Args... args) -> R {
+    gse::assert(m_vtable != nullptr, "move_only_function invoked with null vtable (moved-from or default-constructed)");
     return m_vtable->invoke(m_buffer, std::forward<Args>(args)...);
 }

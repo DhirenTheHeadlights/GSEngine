@@ -75,6 +75,6 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 }
 
 auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const resources& r) -> async::task<> {
-	auto& rec = co_await gpu::pass<state>(ctx);
+	auto rec = co_await gpu::pass<state>(ctx);
 	rec.bind(r.pipeline);
 }

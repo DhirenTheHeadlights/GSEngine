@@ -39,12 +39,12 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	add_system<input::system>();
 	add_system<actions::system>();
 	add_system<network::system>();
-	add_system<asset::registry>();
 
 	if (m_flags.test(engine_flag::render)) {
 		auto& window_state = add_system<window>();
 		window_state.title = std::string(id().tag());
 		add_system<gpu::context>();
+		add_system<asset::registry>();
 		add_system<physics::system>();
 		add_system<camera::system>();
 		add_system<render_init::system>();
@@ -82,6 +82,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		}
 	}
 	else {
+		add_system<asset::registry>();
+
 		auto& asset_state = m_scheduler.state<asset::state>();
 		asset::add_loader<model>(asset_state);
 		asset::add_loader<skinned_model>(asset_state);
@@ -166,6 +168,9 @@ auto gse::engine::render() -> void {
 
 auto gse::engine::shutdown() -> void {
 	profile::dump();
+
+	m_save.save_now();
+	m_save.set_auto_save(false);
 
 	m_scheduler.shutdown();
 	m_world.shutdown();

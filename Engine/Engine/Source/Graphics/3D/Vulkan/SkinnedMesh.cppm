@@ -75,12 +75,12 @@ auto gse::skinned_mesh::initialize(gpu::context::state& ctx) -> void {
     m_vertex_buffer = gpu::buffer::create(ctx.device->allocator(), {
         .size = vertex_buffer_size,
         .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst
-    });
+    }, "skinned_mesh.vertex");
 
     m_index_buffer = gpu::buffer::create(ctx.device->allocator(), {
         .size = index_buffer_size,
         .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
-    });
+    }, "skinned_mesh.index");
 
     m_upload_token = gpu::upload_to_buffers(*ctx.device, std::array{
         gpu::buffer_upload{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },

@@ -93,7 +93,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const g
 
 	const std::uint32_t workgroups = (fd.cached_mapping_count + 63) / 64;
 
-	auto& rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<system>(ctx)
 		.after<geometry_collector::system>()
 		.reads(
 			gpu::storage_read(snapshot, gpu::pipeline_stage::compute_shader),

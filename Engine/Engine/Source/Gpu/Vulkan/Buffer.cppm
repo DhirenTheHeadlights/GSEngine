@@ -20,7 +20,9 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] static auto create(
 			Device& dev,
-			const gpu::buffer_desc& desc
+			const gpu::buffer_desc& desc,
+			std::string_view tag = "",
+			const std::source_location& loc = std::source_location::current()
 		) -> basic_buffer;
 
 		basic_buffer(
@@ -78,13 +80,15 @@ gse::vulkan::basic_buffer<Device>::basic_buffer(const gpu::handle<basic_buffer<d
 	: m_buffer(buffer), m_size(size), m_allocation(std::move(allocation)) {}
 
 template <typename Device>
-auto gse::vulkan::basic_buffer<Device>::create(Device& dev, const gpu::buffer_desc& desc) -> basic_buffer {
+auto gse::vulkan::basic_buffer<Device>::create(Device& dev, const gpu::buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> basic_buffer {
 	return dev.create_buffer(
 		gpu::buffer_create_info{
 			.size = desc.size,
 			.usage = desc.usage,
 		},
-		desc.data
+		desc.data,
+		tag,
+		loc
 	);
 }
 

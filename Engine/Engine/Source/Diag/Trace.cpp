@@ -6,6 +6,7 @@ import gse.core;
 import gse.containers;
 import gse.time;
 import gse.math;
+import gse.assert;
 
 auto gse::trace::start(const config& cfg) -> void {
 	global_config = cfg;
@@ -243,7 +244,7 @@ gse::trace::thread_pause::~thread_pause() {
 }
 
 auto gse::trace::paused() -> bool {
-	return true;
+	return !trace_enabled.load(std::memory_order_relaxed) || tls_pause_depth > 0;
 }
 
 auto gse::trace::set_enabled(const bool enable) -> void {
@@ -263,6 +264,8 @@ auto gse::trace::finalize_paused() -> bool {
 }
 
 auto gse::trace::scsp_events::push(const event& e) noexcept -> void {
+	gse::assert(m_events != nullptr, "trace push: m_events is null, tid_hash={}", std::hash<std::thread::id>{}(std::this_thread::get_id()));
+
 	const std::uint32_t w = m_w.load(std::memory_order_acquire);
 	const std::uint32_t next = (w + 1) & capacity_mask;
 
@@ -291,10 +294,18 @@ auto gse::trace::scsp_events::size() const noexcept -> std::size_t {
 	return (m_w.load(std::memory_order_acquire) - m_r) & capacity_mask;
 }
 
+auto gse::trace::scsp_events::ensure_storage() -> void {
+	if (!m_events) {
+		m_events = std::make_unique<event[]>(capacity);
+	}
+}
+
 auto gse::trace::ensure_tls_registered() -> void {
 	if (tls.registered) {
 		return;
 	}
+
+	tls.events.ensure_storage();
 
 	std::lock_guard lock(tls_registry_mutex);
 	tls_registry.push_back(&tls);
@@ -305,18 +316,7 @@ auto gse::trace::make_tid() -> std::uint32_t {
 	if (tls.tid != 0) {
 		return tls.tid;
 	}
-
-	std::lock_guard lock(tid_map_mutex);
-
-	if (const auto it = tid_map.find(std::this_thread::get_id()); it == tid_map.end()) {
-		const auto id = next_tid.fetch_add(1, std::memory_order::relaxed) + 1;
-		tls.tid = id;
-		tid_map.emplace(std::this_thread::get_id(), id);
-	}
-	else {
-		tls.tid = it->second;
-	}
-
+	tls.tid = next_tid.fetch_add(1, std::memory_order::relaxed) + 1;
 	return tls.tid;
 }
 
@@ -336,6 +336,108 @@ auto gse::trace::current_parent_eid() -> std::uint64_t {
 	return tls.stack.empty() ? 0 : tls.stack.back();
 }
 
+namespace gse::trace {
+	auto compute_self_time(frame_storage& fs, std::size_t i) -> void {
+		auto& n = fs.flat[i];
+
+		for (const auto c : n.children_idx) {
+			compute_self_time(fs, c);
+		}
+
+		const auto parent_begin = n.start;
+		const auto parent_end = n.end;
+		const auto parent_tot = parent_end - parent_begin;
+
+		if (n.children_idx.empty() || parent_tot <= decltype(parent_tot){}) {
+			n.self = parent_tot;
+			return;
+		}
+
+		const std::size_t segs_base = fs.segs_scratch.size();
+
+		for (const auto c : n.children_idx) {
+			const auto& ch = fs.flat[c];
+
+			auto a = std::max(ch.start, parent_begin);
+			auto b = std::min(ch.end, parent_end);
+
+			if (b > a) {
+				fs.segs_scratch.push_back({ a, b });
+			}
+		}
+
+		const std::size_t segs_count = fs.segs_scratch.size() - segs_base;
+
+		if (segs_count == 0) {
+			n.self = parent_tot;
+			return;
+		}
+
+		const auto segs_first = fs.segs_scratch.begin() + segs_base;
+		const auto segs_last = fs.segs_scratch.end();
+
+		std::sort(segs_first, segs_last, [](const frame_storage::seg& x, const frame_storage::seg& y) {
+			return x.a < y.a;
+		});
+
+		time_t<std::uint64_t> covered{};
+		frame_storage::seg cur = *segs_first;
+
+		for (auto it = segs_first + 1; it != segs_last; ++it) {
+			if (it->a <= cur.b) {
+				if (it->b > cur.b) {
+					cur.b = it->b;
+				}
+			} else {
+				covered += (cur.b - cur.a);
+				cur = *it;
+			}
+		}
+		covered += (cur.b - cur.a);
+
+		fs.segs_scratch.resize(segs_base);
+
+		n.self = (covered < parent_tot) ? (parent_tot - covered) : decltype(parent_tot){};
+	}
+
+	auto emplace_shallow_node(frame_storage& fs, std::size_t flat_i) -> std::size_t {
+		const auto& fn = fs.flat[flat_i];
+		fs.node_pool.push_back(node{
+			.id = fn.id,
+			.trace_id = fn.tid,
+			.start = fn.start,
+			.stop  = fn.end,
+			.self  = fn.self,
+			.children_first = nullptr,
+			.children_count = 0
+		});
+		return fs.node_pool.size() - 1;
+	}
+
+	auto build_subtree(frame_storage& fs, std::size_t node_idx, std::size_t flat_i) -> void {
+		const auto& fn = fs.flat[flat_i];
+
+		if (fn.children_idx.empty()) {
+			fs.node_pool[node_idx].children_first = nullptr;
+			fs.node_pool[node_idx].children_count = 0;
+			return;
+		}
+
+		const std::size_t start = fs.node_pool.size();
+
+		for (const std::size_t ci : fn.children_idx) {
+			emplace_shallow_node(fs, ci);
+		}
+
+		fs.node_pool[node_idx].children_first = fs.node_pool.data() + start;
+		fs.node_pool[node_idx].children_count = fn.children_idx.size();
+
+		for (std::size_t k = 0; k < fn.children_idx.size(); ++k) {
+			build_subtree(fs, start + k, fn.children_idx[k]);
+		}
+	}
+}
+
 auto gse::trace::build_tree(frame_storage& fs) -> void {
 	fs.merged.clear();
 
@@ -352,7 +454,9 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		return static_cast<int>(a.type) < static_cast<int>(b.type);
 	});
 
-	std::unordered_map<std::uint64_t, span_info> spans = global_open_spans;
+	auto& spans = fs.spans_scratch;
+	spans.clear();
+	spans.insert(global_open_spans.begin(), global_open_spans.end());
 
 	for (const auto& e : fs.merged) {
 		switch (e.type) {
@@ -381,13 +485,14 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	fs.flat.clear();
 	fs.flat.reserve(spans.size());
 
-	std::unordered_map<std::uint64_t, std::size_t> index_of;
+	auto& index_of = fs.index_of_scratch;
+	index_of.clear();
 	index_of.reserve(spans.size());
 
-	std::unordered_set<std::uint64_t> still_open;
+	global_open_spans.clear();
 	for (const auto& [eid, sp] : spans) {
 		if (sp.t1 == decltype(sp.t1){}) {
-			still_open.insert(eid);
+			global_open_spans.emplace(eid, sp);
 		}
 	}
 
@@ -409,88 +514,30 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		index_of.emplace(eid, i);
 	}
 
-	std::vector has_parent(fs.flat.size(), false);
+	auto& has_parent = fs.has_parent_scratch;
+	has_parent.assign(fs.flat.size(), 0);
+
 	for (const auto& [eid, sp] : spans) {
 		const auto child_i = index_of[eid];
-		if (sp.parent != 0 && index_of.contains(sp.parent)) {
-			const auto parent_i = index_of[sp.parent];
-			fs.flat[parent_i].children_idx.push_back(child_i);
-			has_parent[child_i] = true;
+		if (sp.parent != 0) {
+			if (auto it = index_of.find(sp.parent); it != index_of.end()) {
+				fs.flat[it->second].children_idx.push_back(child_i);
+				has_parent[child_i] = 1;
+			}
 		}
 	}
 
-	std::vector<std::size_t> roots_idx;
+	auto& roots_idx = fs.roots_idx_scratch;
+	roots_idx.clear();
 	roots_idx.reserve(fs.flat.size());
 
 	for (std::size_t i = 0; i < fs.flat.size(); ++i) {
 		if (!has_parent[i]) roots_idx.push_back(i);
 	}
 
-	std::function<void(std::size_t)> compute_self = [&](const std::size_t i) {
-		auto& n = fs.flat[i];
-
-		for (const auto c : n.children_idx) {
-			compute_self(c);
-		}
-
-		const auto parent_begin = n.start;
-		const auto parent_end = n.end;
-		const auto parent_tot = parent_end - parent_begin;
-
-		if (n.children_idx.empty() || parent_tot <= decltype(parent_tot){}) {
-			n.self = parent_tot;
-			return;
-		}
-
-		struct seg {
-			time_t<std::uint64_t> a;
-			time_t<std::uint64_t> b;
-		};
-
-		std::vector<seg> segs;
-		segs.reserve(n.children_idx.size());
-
-		for (const auto c : n.children_idx) {
-			const auto& ch = fs.flat[c];
-
-			auto a = std::max(ch.start, parent_begin);
-			auto b = std::min(ch.end, parent_end);
-
-			if (b > a) {
-				segs.push_back({ a, b });
-			}
-		}
-
-		if (segs.empty()) {
-			n.self = parent_tot;
-			return;
-		}
-
-		std::ranges::sort(segs, [](const seg& x, const seg& y) {
-			return x.a < y.a;
-		});
-
-		time_t<std::uint64_t> covered{};
-
-		seg cur = segs[0];
-
-		for (std::size_t k = 1; k < segs.size(); ++k) {
-			if (segs[k].a <= cur.b) {
-				if (segs[k].b > cur.b) {
-					cur.b = segs[k].b;
-				}
-			} else {
-				covered += (cur.b - cur.a);
-				cur = segs[k];
-			}
-		}
-		covered += (cur.b - cur.a);
-
-		n.self = (covered < parent_tot) ? (parent_tot - covered) : decltype(parent_tot){};
-	};
-
+	fs.segs_scratch.clear();
 	for (const auto r : roots_idx) {
-		compute_self(r);
+		compute_self_time(fs, r);
 	}
 
 	fs.node_pool.clear();
@@ -498,54 +545,10 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	fs.node_pool.reserve(fs.flat.size());
 	fs.roots.reserve(roots_idx.size());
 
-	auto emplace_shallow = [&](const std::size_t flat_i) -> std::size_t {
-		const auto& fn = fs.flat[flat_i];
-		fs.node_pool.push_back(gse::trace::node{
-			.id = fn.id,
-			.trace_id = fn.tid,
-			.start = fn.start,
-			.stop  = fn.end,
-			.self  = fn.self,
-			.children_first = nullptr,
-			.children_count = 0
-		});
-		return fs.node_pool.size() - 1;
-	};
-
-	std::function<void(std::size_t, std::size_t)> build_subtree = [&](const std::size_t node_idx, const std::size_t flat_i) {
-		const auto& fn = fs.flat[flat_i];
-
-		if (fn.children_idx.empty()) {
-			fs.node_pool[node_idx].children_first = nullptr;
-			fs.node_pool[node_idx].children_count = 0;
-			return;
-		}
-
-		const std::size_t start = fs.node_pool.size();
-
-		for (const std::size_t ci : fn.children_idx) {
-			emplace_shallow(ci);
-		}
-
-		fs.node_pool[node_idx].children_first = fs.node_pool.data() + start;
-		fs.node_pool[node_idx].children_count = fn.children_idx.size();
-
-		for (std::size_t k = 0; k < fn.children_idx.size(); ++k) {
-			build_subtree(start + k, fn.children_idx[k]);
-		}
-	};
-
 	for (const auto r : roots_idx) {
-		const std::size_t root_idx = emplace_shallow(r);
-		build_subtree(root_idx, r);
+		const std::size_t root_idx = emplace_shallow_node(fs, r);
+		build_subtree(fs, root_idx, r);
 		fs.roots.push_back(fs.node_pool[root_idx]);
-	}
-
-	global_open_spans.clear();
-	for (const auto eid : still_open) {
-		if (auto it = spans.find(eid); it != spans.end()) {
-			global_open_spans.emplace(eid, it->second);
-		}
 	}
 }
 
