@@ -139,12 +139,14 @@ export namespace gse {
 
 		template <is_component T>
 		auto acquire_read(
+			access_token,
 			async::rw_mutex* mutex = nullptr,
 			std::atomic<int>* held_locks = nullptr
 		) -> read<T>;
 
 		template <is_component T>
 		auto acquire_write(
+			access_token,
 			async::rw_mutex* mutex = nullptr,
 			std::atomic<int>* held_locks = nullptr
 		) -> write<T>;
@@ -405,7 +407,7 @@ auto gse::registry::try_component(this registry& self, const id owner) -> declty
 }
 
 template <gse::is_component T>
-auto gse::registry::acquire_read(async::rw_mutex* mutex, std::atomic<int>* held_locks) -> read<T> {
+auto gse::registry::acquire_read(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> read<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
 		return read<T>({}, nullptr, nullptr, mutex, held_locks);
@@ -417,7 +419,7 @@ auto gse::registry::acquire_read(async::rw_mutex* mutex, std::atomic<int>* held_
 }
 
 template <gse::is_component T>
-auto gse::registry::acquire_write(async::rw_mutex* mutex, std::atomic<int>* held_locks) -> write<T> {
+auto gse::registry::acquire_write(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> write<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
 		return write<T>({}, nullptr, nullptr, mutex, held_locks);

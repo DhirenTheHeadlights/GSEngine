@@ -11,6 +11,30 @@ export namespace gse {
 	enum class access_mode { read, write };
 
 	class registry;
+	class run_context;
+
+	class access_token {
+	public:
+		access_token(
+			access_token&&
+		) noexcept = default;
+
+		auto operator=(
+			access_token&&
+		) noexcept -> access_token& = default;
+
+		access_token(
+			const access_token&
+		) = delete;
+
+		auto operator=(
+			const access_token&
+		) -> access_token& = delete;
+
+	private:
+		friend class run_context;
+		access_token() = default;
+	};
 
 	template <is_component T, access_mode M = access_mode::read>
 	class access : non_copyable {

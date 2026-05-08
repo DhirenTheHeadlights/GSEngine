@@ -203,6 +203,15 @@ auto gse::trace::register_virtual_thread(const std::uint32_t tid, const std::str
 	virtual_thread_names[tid] = std::string(name);
 }
 
+auto gse::trace::register_main_thread() -> void {
+	ensure_tls_registered();
+	main_tid_value.store(make_tid(), std::memory_order_relaxed);
+}
+
+auto gse::trace::main_tid() -> std::uint32_t {
+	return main_tid_value.load(std::memory_order_relaxed);
+}
+
 auto gse::trace::mark_hidden(const id id) -> void {
 	std::unique_lock lk(hidden_ids_mutex);
 	hidden_ids.insert(id);

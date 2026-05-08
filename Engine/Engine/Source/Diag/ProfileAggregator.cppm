@@ -74,7 +74,6 @@ namespace gse::profile {
 	flat_map<id, entry> gpu_entries;
 	std::atomic ema_alpha{ 0.1 };
 	std::atomic is_enabled{ true };
-	std::atomic<std::uint32_t> main_thread_id{ 0 };
 	std::atomic<std::uint64_t> frame_count{ 0 };
 
 	auto update_entry(
@@ -122,7 +121,7 @@ auto gse::profile::update_entry(flat_map<id, entry>& map, const id id, const sam
 }
 
 auto gse::profile::walk_node(const trace::node& n, flat_map<id, entry>& cpu_agg, const bool pooled) -> void {
-	const auto main_tid = main_thread_id.load(std::memory_order_relaxed);
+	const auto main_tid = trace::main_tid();
 	const bool node_pooled = pooled || (main_tid != 0 && n.trace_id != main_tid);
 
 	if (!trace::is_hidden(n.id)) {
@@ -141,9 +140,6 @@ auto gse::profile::ingest_frame() -> void {
 	const auto [roots, storage] = trace::view();
 
 	std::unique_lock lk(state_mutex);
-	if (!roots.empty()) {
-		main_thread_id.store(roots.front().trace_id, std::memory_order_relaxed);
-	}
 	frame_count.fetch_add(1, std::memory_order_relaxed);
 	for (const auto& root : roots) {
 		walk_node(root, cpu_entries, false);
@@ -329,7 +325,7 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 
 auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<entry>& worker_src) -> void {
 	const auto frames = frame_count.load(std::memory_order_relaxed);
-	const auto main_tid = main_thread_id.load(std::memory_order_relaxed);
+	const auto main_tid = trace::main_tid();
 
 	std::vector<const entry*> sorted;
 	sorted.reserve(worker_src.size());
@@ -416,7 +412,7 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 	constexpr int max_depth = 12;
 	constexpr double min_us_to_show = 5.0;
 
-	const auto main_tid = main_thread_id.load(std::memory_order_relaxed);
+	const auto main_tid = trace::main_tid();
 
 	std::function<std::size_t(const trace::node&, int)> max_label_width = [&](const trace::node& n, int depth) -> std::size_t {
 		if (depth > max_depth) {
