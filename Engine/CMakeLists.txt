@@ -114,6 +114,8 @@ set(GENERATED_SHADER_FILES
 add_executable(ShaderCodegen "${CMAKE_CURRENT_SOURCE_DIR}/Tools/ShaderCodegen/Main.cpp")
 target_link_libraries(ShaderCodegen PRIVATE Engine)
 
+gse_copy_runtime_deps(ShaderCodegen)
+
 add_custom_command(
     OUTPUT ${GENERATED_SHADER_FILES}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${GENERATED_SHADER_DIR}"

@@ -226,7 +226,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const gpu::
 
 	const auto tiles = tile_count(s);
 
-	auto& rec = co_await gpu::pass<state>(ctx)
+	auto rec = co_await gpu::pass<state>(ctx)
 		.after<depth_prepass::system>()
 		.reads(gpu::sampled(graph.depth_image(), gpu::pipeline_stage::compute_shader))
 		.writes(

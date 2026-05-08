@@ -222,6 +222,9 @@ namespace gse::trace {
 
 		auto size(
 		) const noexcept -> std::size_t;
+
+		auto ensure_storage(
+		) -> void;
 	private:
 		static constexpr std::uint32_t capacity_pow_2 = 1u << 18;
 		static constexpr std::uint32_t capacity = capacity_pow_2;
@@ -230,7 +233,7 @@ namespace gse::trace {
 		alignas(64) std::atomic<std::uint32_t> m_w{ 0 };
 		alignas(64) std::uint32_t m_r{ 0 };
 
-		std::unique_ptr<event[]> m_events = std::make_unique<event[]>(capacity);
+		std::unique_ptr<event[]> m_events;
 	};
 
 	struct thread_buffer {
@@ -252,9 +255,6 @@ namespace gse::trace {
 	config global_config;
 
 	inline thread_local thread_buffer tls;
-
-	std::mutex tid_map_mutex;
-	std::unordered_map<std::thread::id, std::uint32_t> tid_map;
 
 	std::mutex tls_registry_mutex;
 	std::vector<thread_buffer*> tls_registry;
@@ -282,6 +282,18 @@ namespace gse::trace {
 		std::vector<flat_node> flat;
 		std::vector<node> node_pool;
 		std::vector<node> roots;
+
+		std::unordered_map<std::uint64_t, span_info> spans_scratch;
+		std::unordered_map<std::uint64_t, std::size_t> index_of_scratch;
+		std::vector<std::uint8_t> has_parent_scratch;
+		std::vector<std::size_t> roots_idx_scratch;
+
+		struct seg {
+			time_t<std::uint64_t> a;
+			time_t<std::uint64_t> b;
+		};
+
+		std::vector<seg> segs_scratch;
 	};
 
 	double_buffer<frame_storage> frames;

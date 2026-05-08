@@ -310,7 +310,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
     const vec2u ext_size{ width, height };
     const auto& bindless_region = gpu_s.bindless_textures->region();
 
-    auto& rec = co_await gpu::pass<ui::system::state>(ctx)
+    auto rec = co_await gpu::pass<ui::system::state>(ctx)
         .color(gpu::load_color())
         .tracks(vertex_buffer, index_buffer);
 

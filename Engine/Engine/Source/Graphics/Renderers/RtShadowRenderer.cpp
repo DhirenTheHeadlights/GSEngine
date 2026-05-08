@@ -148,7 +148,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, const gpu::cont
 
 	const std::uint32_t workgroups = (instance_count + 63) / 64;
 
-	auto& rec = co_await gpu::pass<state>(ctx)
+	auto rec = co_await gpu::pass<state>(ctx)
 		.after<geometry_collector::system>()
 		.reads(gpu::storage_read(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
 		.tracks(gc_r.instance_buffer[frame_index]);

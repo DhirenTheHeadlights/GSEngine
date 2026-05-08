@@ -45,6 +45,7 @@ export namespace gse::gpu {
 
 	private:
 		device* m_device;
+		std::mutex m_mutex;
 		std::unordered_map<id, shader_cache_entry> m_cache;
 		std::unordered_map<std::string, std::unique_ptr<shader_layout>> m_layouts;
 	};
@@ -77,6 +78,8 @@ auto gse::gpu::shader_registry::load_layouts(const std::filesystem::path& layout
 }
 
 auto gse::gpu::shader_registry::cache(const resource::handle<shader>& s) -> const shader_cache_entry& {
+	std::lock_guard lock(m_mutex);
+
 	if (const auto it = m_cache.find(s.id()); it != m_cache.end()) {
 		return it->second;
 	}

@@ -90,6 +90,22 @@ auto gse::async::promise_base::operator delete(void* ptr, const std::size_t size
 	frame_arena::deallocate(ptr, size);
 }
 
+namespace gse::async {
+	thread_local int t_pass_recording_active = 0;
+}
+
+auto gse::async::pass_recording_scope_push() noexcept -> void {
+	++t_pass_recording_active;
+}
+
+auto gse::async::pass_recording_scope_pop() noexcept -> void {
+	--t_pass_recording_active;
+}
+
+auto gse::async::pass_recording_scope_active() noexcept -> int {
+	return t_pass_recording_active;
+}
+
 auto gse::async::void_promise::get_return_object() -> task<> {
 	return task{ std::coroutine_handle<void_promise>::from_promise(*this) };
 }

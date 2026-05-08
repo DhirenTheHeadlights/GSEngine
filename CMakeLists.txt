@@ -94,6 +94,31 @@ function(gse_copy_libcxx_runtime target)
     endforeach()
 endfunction()
 
+function(gse_copy_runtime_deps target)
+    gse_copy_libcxx_runtime(${target})
+    if(NOT CMAKE_HOST_WIN32)
+        return()
+    endif()
+    if(VCPKG_BUILD_TYPE STREQUAL "release" OR VCPKG_TARGET_TRIPLET MATCHES "-release$")
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin"
+                "$<TARGET_FILE_DIR:${target}>"
+        )
+    endif()
+    if(CMAKE_CXX_FLAGS MATCHES "fsanitize=address" OR CMAKE_CXX_FLAGS_INIT MATCHES "fsanitize=address")
+        file(GLOB _gse_asan_dll "$ENV{CLANG_P2996_ROOT}/lib/clang/*/lib/x86_64-pc-windows-msvc/clang_rt.asan_dynamic.dll")
+        if(_gse_asan_dll)
+            list(GET _gse_asan_dll 0 _gse_asan_dll)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_gse_asan_dll}" "$<TARGET_FILE_DIR:${target}>"
+            )
+        else()
+            message(WARNING "ASAN build requested but clang_rt.asan_dynamic.dll not found under $ENV{CLANG_P2996_ROOT}/lib/clang/*/lib/x86_64-pc-windows-msvc/. Run bootstrap.py to build compiler-rt.")
+        endif()
+    endif()
+endfunction()
+
 add_subdirectory(Engine)
 add_subdirectory(Game)
 add_subdirectory(Server)

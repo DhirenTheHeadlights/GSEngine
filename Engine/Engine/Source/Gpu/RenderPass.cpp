@@ -31,9 +31,9 @@ auto gse::gpu::request_pass_awaitable::await_suspend(const std::coroutine_handle
 	});
 }
 
-auto gse::gpu::request_pass_awaitable::await_resume() noexcept -> vulkan::recording_context& {
+auto gse::gpu::request_pass_awaitable::await_resume() noexcept -> vulkan::recording_context {
 	trace::end_async(m_trace_id, m_trace_key);
-	return *m_rec;
+	return std::move(*m_rec);
 }
 
 gse::gpu::pass_builder::pass_builder(const frame_context& ctx, const id pass_kind) noexcept : m_ctx(std::addressof(ctx)) {

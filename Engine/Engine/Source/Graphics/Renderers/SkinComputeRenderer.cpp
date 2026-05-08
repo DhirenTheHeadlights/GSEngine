@@ -59,7 +59,7 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const gpu::c
 	skin_pc.set("local_pose_stride", gc_s.current_joint_count);
 	skin_pc.set("skin_stride", gc_s.current_joint_count);
 
-	auto& rec = co_await gpu::pass<system>(ctx)
+	auto rec = co_await gpu::pass<system>(ctx)
 		.writes(gpu::storage_write(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::compute_shader))
 		.tracks(gc_r.skeleton_buffer, gc_r.local_pose_buffer[frame_index]);
 
