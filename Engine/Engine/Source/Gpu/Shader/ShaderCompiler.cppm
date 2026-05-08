@@ -45,10 +45,7 @@ namespace gse::shader_compile {
 	) -> gpu::stage_flags;
 
 	auto reflect_descriptor_sets(
-		slang::ProgramLayout* program_layout,
-		const std::function<gpu::descriptor_type(slang::TypeLayoutReflection*, int)>& to_desc_type,
-		const std::function<std::unordered_map<std::string, shader::uniform_member>(slang::TypeLayoutReflection*, std::optional<slang::ParameterCategory>)>& reflect_mem,
-		const std::function<slang::TypeLayoutReflection*(slang::VariableLayoutReflection*)>& extract_struct
+		slang::ProgramLayout* program_layout
 	) -> shader::layout;
 }
 
@@ -307,10 +304,7 @@ auto gse::shader_compile::to_stage_flags(const SlangStage slang_stage) -> gpu::s
 }
 
 auto gse::shader_compile::reflect_descriptor_sets(
-	slang::ProgramLayout* program_layout,
-	const std::function<gpu::descriptor_type(slang::TypeLayoutReflection*, int)>& to_desc_type,
-	const std::function<std::unordered_map<std::string, shader::uniform_member>(slang::TypeLayoutReflection*, std::optional<slang::ParameterCategory>)>& reflect_mem,
-	const std::function<slang::TypeLayoutReflection*(slang::VariableLayoutReflection*)>& extract_struct
+	slang::ProgramLayout* program_layout
 ) -> shader::layout {
 	shader::layout result;
 	auto* globals_vl = program_layout->getGlobalParamsVarLayout();
@@ -367,7 +361,7 @@ auto gse::shader_compile::reflect_descriptor_sets(
 
 			gpu::descriptor_binding_desc desc{
 				.binding = binding_idx,
-				.type = to_desc_type(tl, range_index),
+				.type = to_descriptor_type(tl, range_index),
 				.count = tl->getKind() == slang::TypeReflection::Kind::Array ? static_cast<std::uint32_t>(tl->getElementCount()) : 1u,
 			};
 
@@ -416,7 +410,7 @@ auto gse::shader_compile::reflect_descriptor_sets(
 					}
 				}
 
-				auto members = reflect_mem(elem_tl, cat);
+				auto members = reflect_members(elem_tl, cat);
 
 				if (elem_stride == 0 && !members.empty()) {
 					std::uint32_t max_end = 0;
@@ -443,13 +437,13 @@ auto gse::shader_compile::reflect_descriptor_sets(
 			std::optional<struct shader::uniform_block> block_member;
 
 			if (tl->getKind() == kind::ConstantBuffer || tl->getKind() == kind::ParameterBlock) {
-				if (auto* struct_layout = extract_struct(var)) {
+				if (auto* struct_layout = extract_struct_layout(var)) {
 					struct shader::uniform_block block = {
 						.name = var->getName(),
 						.binding = binding_idx,
 						.set = set_idx,
 						.size = static_cast<std::uint32_t>(struct_layout->getSize(slang::ParameterCategory::Uniform)),
-						.members = reflect_mem(struct_layout, slang::ParameterCategory::Uniform),
+						.members = reflect_members(struct_layout, slang::ParameterCategory::Uniform),
 					};
 					if (block.size > 0 && !block.members.empty()) {
 						block_member = block;
@@ -822,7 +816,7 @@ auto gse::asset_compiler<gse::shader>::compile_one(const std::filesystem::path& 
 		return a.location < b.location;
 	});
 
-	auto [sets] = reflect_descriptor_sets(layout, to_descriptor_type, reflect_members, extract_struct_layout);
+	auto [sets] = reflect_descriptor_sets(layout);
 	gpu::stage_flags used_stages{};
 
 	for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {

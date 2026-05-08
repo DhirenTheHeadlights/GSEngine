@@ -243,7 +243,7 @@ gse::trace::thread_pause::~thread_pause() {
 }
 
 auto gse::trace::paused() -> bool {
-	return !trace_enabled.load(std::memory_order_relaxed) || tls_pause_depth > 0;
+	return true;
 }
 
 auto gse::trace::set_enabled(const bool enable) -> void {

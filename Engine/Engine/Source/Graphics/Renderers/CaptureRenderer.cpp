@@ -88,7 +88,6 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::s
 
         fd.encoder = gpu::video_encoder::create(*gpu_s.device, ext, caps);
 
-        gse::settings::register_panel(ctx, "Graphics", cfg);
         fd.clip_ring.set_budget(cfg.ring_budget);
         fd.applied_ring_budget = cfg.ring_budget;
 

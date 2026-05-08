@@ -23,7 +23,6 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
-import gse.assets;
 import gse.meta;
 
 export namespace gse {
@@ -103,27 +102,43 @@ export namespace gse::gpu {
 		) -> handle<vulkan::device>;
 	};
 
-	struct command_request {
-		std::function<void(context::state&)> work;
+	struct gpu_resume_request {
+		std::coroutine_handle<> handle;
+		context::state** out_state = nullptr;
 	};
 
-	struct pending_finalization {
-		id resource_type;
-		id resource_id;
+	struct on_gpu_awaitable {
+		channel_writer& channels;
+		context::state* state = nullptr;
+
+		auto await_ready(
+		) const noexcept -> bool;
+
+		auto await_suspend(
+			std::coroutine_handle<> h
+		) -> void;
+
+		auto await_resume(
+		) -> context::state&;
 	};
 
-	template <typename Resource, typename Fn>
-	auto queue_gpu_command(
-		asset::load_ctx& ctx,
-		Resource* resource,
-		Fn&& work
-	) -> void;
+	[[nodiscard]] auto on_gpu(
+		channel_writer& channels
+	) -> on_gpu_awaitable;
 }
 
-template <typename Resource, typename Fn>
-auto gse::gpu::queue_gpu_command(asset::load_ctx& ctx, Resource* resource, Fn&& work) -> void {
-	ctx.submit_gpu_work([resource, work_lambda = std::forward<Fn>(work)](void* state_ptr) {
-		auto& target = *static_cast<context::state*>(state_ptr);
-		work_lambda(target, *resource);
-	});
+auto gse::gpu::on_gpu_awaitable::await_ready() const noexcept -> bool {
+	return false;
+}
+
+auto gse::gpu::on_gpu_awaitable::await_suspend(std::coroutine_handle<> h) -> void {
+	channels.push<gpu_resume_request>({ .handle = h, .out_state = &state });
+}
+
+auto gse::gpu::on_gpu_awaitable::await_resume() -> context::state& {
+	return *state;
+}
+
+auto gse::gpu::on_gpu(channel_writer& channels) -> on_gpu_awaitable {
+	return { channels };
 }

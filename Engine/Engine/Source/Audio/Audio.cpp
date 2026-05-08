@@ -67,7 +67,7 @@ auto gse::asset_compiler<gse::audio_clip>::dependencies(const std::filesystem::p
 
 gse::audio_clip::audio_clip(const std::filesystem::path& filepath) : identifiable(filepath, config::baked_resource_path), m_path(filepath) {}
 
-auto gse::audio_clip::load(asset::load_ctx&) -> void {
+auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
 	std::ifstream file(m_path, std::ios::binary | std::ios::ate);
 	assert(
 		file.is_open(),
@@ -91,6 +91,7 @@ auto gse::audio_clip::load(asset::load_ctx&) -> void {
 		m_duration = (length > 0 && m_sample_rate > 0) ? seconds(static_cast<float>(length) / static_cast<float>(m_sample_rate)) : seconds(0.f);
 		ma_decoder_uninit(&decoder);
 	}
+	co_return;
 }
 
 auto gse::audio_clip::unload() -> void {
@@ -141,8 +142,7 @@ auto gse::audio::system::allocate_voice(resources& r, state& s, const audio_clip
 	auto result = ma_decoder_init_memory(clip.data().data(), clip.data().size(), &cfg, &decoder);
 	assert(result == ma_result_success, "Failed to init audio decoder");
 
-	auto* eng = static_cast<audio_engine*>(s.engine);
-	result = ma_sound_init_from_data_source(&eng->inner, &decoder, 0, nullptr, &sound);
+	result = ma_sound_init_from_data_source(&s.engine->inner, &decoder, 0, nullptr, &sound);
 	assert(result == ma_result_success, "Failed to init audio sound");
 
 	ma_sound_set_looping(&sound, loop ? ma_bool_true : ma_bool_false);
@@ -173,13 +173,12 @@ auto gse::audio::system::valid_voice(const resources& r, const voice_handle hand
 }
 
 auto gse::audio::system::run(run_context& ctx, resources& r, state& s) -> async::task<> {
-	auto* eng = new audio_engine();
-	s.engine = eng;
+	s.engine = new audio_engine();
 	const ma_engine_config cfg = ma_engine_config_init();
-	const auto result = ma_engine_init(&cfg, &eng->inner);
+	const auto result = ma_engine_init(&cfg, &s.engine->inner);
 	assert(result == ma_result_success, "Failed to initialize audio engine");
 	s.engine_initialized = true;
-	ma_engine_set_volume(&eng->inner, s.master_vol.value(percentage<float>::bound::zero_to_one));
+	ma_engine_set_volume(&s.engine->inner, s.master_vol.value(percentage<float>::bound::zero_to_one));
 
 	while (true) {
 		for (const auto& req : ctx.read_channel<play_request>()) {
@@ -214,8 +213,7 @@ auto gse::audio::system::run(run_context& ctx, resources& r, state& s) -> async:
 		for (const auto& req : ctx.read_channel<set_master_volume_request>()) {
 			s.master_vol = req.vol;
 			if (s.engine_initialized) {
-				auto* engine_ptr = static_cast<audio_engine*>(s.engine);
-				ma_engine_set_volume(&engine_ptr->inner, req.vol.value(percentage<float>::bound::zero_to_one));
+				ma_engine_set_volume(&s.engine->inner, req.vol.value(percentage<float>::bound::zero_to_one));
 			}
 		}
 
@@ -248,9 +246,8 @@ auto gse::audio::system::shutdown(shutdown_context&, resources& r, state& s) -> 
 	r.voices.clear();
 
 	if (s.engine_initialized) {
-		auto* eng = static_cast<audio_engine*>(s.engine);
-		ma_engine_uninit(&eng->inner);
-		delete eng;
+		ma_engine_uninit(&s.engine->inner);
+		delete s.engine;
 		s.engine = nullptr;
 		s.engine_initialized = false;
 	}

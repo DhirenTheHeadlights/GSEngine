@@ -28,11 +28,11 @@ export namespace gse::asset {
 	struct registry {
 		struct state {
 			std::unordered_map<id, std::unique_ptr<resource::loader_base>> resource_loaders;
-			loader_runtime runtime;
 			file_watcher watcher;
 			std::function<void()> enable_hot_reload_fn;
 			std::function<void()> disable_hot_reload_fn;
 			bool hot_reload_enabled = false;
+			channel_writer* channels = nullptr;
 		};
 
 		static auto run(
@@ -47,11 +47,6 @@ export namespace gse::asset {
 	};
 
 	using state = registry::state;
-
-	auto apply_finalizations(
-		state& s,
-		std::span<const std::pair<id, id>> finalizations
-	) -> void;
 
 	template <typename T>
 	auto add_loader(
@@ -103,7 +98,7 @@ export namespace gse::asset {
 
 	struct load_ctx {
 		state& assets;
-		std::function<void(std::function<void(void*)>)> submit_gpu_work;
+		channel_writer& channels;
 	};
 
 	template <typename T>
@@ -195,7 +190,7 @@ export namespace gse::resource {
 		asset::state& m_state;
 		id_mapped_collection<std::unique_ptr<resource_slot<Resource>>> m_resources;
 		std::unordered_map<std::filesystem::path, id> m_path_to_id;
-		task::group m_load_group{ generate_id("resource.loader.load") };
+		std::vector<async::task<>> m_in_flight;
 		mutable std::mutex m_mutex;
 
 		std::vector<id> m_pending_reloads;
@@ -207,10 +202,23 @@ export namespace gse::resource {
 			this auto&& self,
 			id id
 		) -> resource_slot<Resource>*;
+
+		auto launch_load(
+			id resource_id
+		) -> async::task<>;
+
+		auto launch_reload(
+			id resource_id
+		) -> async::task<>;
+
+		auto reap_done_tasks(
+		) -> void;
 	};
 }
 
 auto gse::asset::registry::run(run_context& ctx, state& s) -> async::task<> {
+	s.channels = &ctx.channels;
+
 	while (true) {
 		for (const auto& req : ctx.read_channel<hot_reload_request>()) {
 			if (req.enabled == s.hot_reload_enabled) {
@@ -242,18 +250,12 @@ auto gse::asset::registry::run(run_context& ctx, state& s) -> async::task<> {
 }
 
 auto gse::asset::registry::shutdown(shutdown_context&, state& s) -> void {
+	gse::task::wait_idle();
 	for (auto& l : std::views::values(s.resource_loaders)) {
 		l.reset();
 	}
 	s.resource_loaders.clear();
-}
-
-auto gse::asset::apply_finalizations(state& s, const std::span<const std::pair<id, id>> finalizations) -> void {
-	for (const auto& [type_id, resource_id] : finalizations) {
-		if (const auto it = s.resource_loaders.find(type_id); it != s.resource_loaders.end()) {
-			it->second->update_state(resource_id, resource::state::loaded);
-		}
-	}
+	s.channels = nullptr;
 }
 
 template <typename T>
@@ -357,9 +359,15 @@ auto gse::resource::loader<R>::slot_ptr(this auto&& self, const id id) -> resour
 }
 
 template <typename R>
-auto gse::resource::loader<R>::flush() -> void {
-	std::vector<id> ids_to_load;
+auto gse::resource::loader<R>::reap_done_tasks() -> void {
+	std::erase_if(m_in_flight, [](const async::task<>& t) { return t.done(); });
+}
 
+template <typename R>
+auto gse::resource::loader<R>::flush() -> void {
+	reap_done_tasks();
+
+	std::vector<id> ids_to_load;
 	{
 		std::lock_guard lock(m_mutex);
 		for (const auto& uptr : m_resources.items()) {
@@ -375,62 +383,51 @@ auto gse::resource::loader<R>::flush() -> void {
 		}
 	}
 
-	std::vector<gse::move_only_function<void()>> jobs;
-	jobs.reserve(ids_to_load.size());
-
 	for (const id rid : ids_to_load) {
-		jobs.emplace_back([this, rid] {
-			R* resource_ptr;
-			std::filesystem::path path;
-			{
-				std::lock_guard lock(m_mutex);
-				if (auto* s = slot_ptr(rid)) {
-					if (!s->resource.read()) {
-						s->resource.write() = std::make_unique<R>(s->path);
-						s->resource.publish();
-					}
-					resource_ptr = s->resource.read().get();
-					path = s->path;
-				}
-				else {
-					update_state(rid, state::failed);
-					return;
-				}
-			}
+		auto t = launch_load(rid);
+		t.start();
+		m_in_flight.push_back(std::move(t));
+	}
+}
 
-			if (m_pre_load_fn && !path.empty()) {
-				m_pre_load_fn(path);
-			}
+template <typename R>
+auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
+	co_await async::yield_to_worker();
 
-			std::size_t gpu_submissions = 0;
-			asset::load_ctx ctx{
-				.assets = m_state,
-				.submit_gpu_work = [this, &gpu_submissions](std::function<void(void*)> work) {
-					++gpu_submissions;
-					assert(static_cast<bool>(m_state.runtime.async_submit), "asset::registry async submitter not configured");
-					m_state.runtime.async_submit(std::move(work));
-				},
-			};
-
-			try {
-				resource_ptr->load(ctx);
+	R* resource_ptr;
+	std::filesystem::path path;
+	{
+		std::lock_guard lock(m_mutex);
+		if (auto* s = slot_ptr(rid)) {
+			if (!s->resource.read()) {
+				s->resource.write() = std::make_unique<R>(s->path);
+				s->resource.publish();
 			}
-			catch (...) {
-				update_state(rid, state::failed);
-				throw;
-			}
-
-			if (gpu_submissions > 0) {
-				assert(static_cast<bool>(m_state.runtime.finalization_pusher), "asset::registry finalization pusher not configured");
-				m_state.runtime.finalization_pusher(id_of<R>(), rid);
-			}
-			else {
-				update_state(rid, state::loaded);
-			}
-		});
+			resource_ptr = s->resource.read().get();
+			path = s->path;
+		}
+		else {
+			update_state(rid, state::failed);
+			co_return;
+		}
 	}
 
-	m_load_group.post_range(jobs.begin(), jobs.end(), generate_id("resource.load"));
+	if (m_pre_load_fn && !path.empty()) {
+		m_pre_load_fn(path);
+	}
+
+	assert(m_state.channels != nullptr, "asset::registry::run must run before flush()");
+	asset::load_ctx ctx{ .assets = m_state, .channels = *m_state.channels };
+
+	try {
+		co_await resource_ptr->load(ctx);
+	}
+	catch (...) {
+		update_state(rid, state::failed);
+		co_return;
+	}
+
+	update_state(rid, state::loaded);
 }
 
 template <typename R>
@@ -483,6 +480,8 @@ auto gse::resource::loader<R>::queue_by_path(const std::filesystem::path& baked_
 
 template <typename R>
 auto gse::resource::loader<R>::finalize_reloads() -> void {
+	reap_done_tasks();
+
 	std::vector<id> reloads_to_process;
 	{
 		std::lock_guard lock(m_reload_mutex);
@@ -491,10 +490,6 @@ auto gse::resource::loader<R>::finalize_reloads() -> void {
 
 	if (reloads_to_process.empty()) {
 		return;
-	}
-
-	if (m_state.runtime.gpu_waiter) {
-		m_state.runtime.gpu_waiter();
 	}
 
 	for (const id rid : reloads_to_process) {
@@ -514,35 +509,51 @@ auto gse::resource::loader<R>::finalize_reloads() -> void {
 
 		s->current_state.store(state::reloading, std::memory_order_release);
 
-		auto new_resource = std::make_unique<R>(s->path);
-
-		std::size_t gpu_submissions = 0;
-		asset::load_ctx ctx{
-			.assets = m_state,
-			.submit_gpu_work = [this, &gpu_submissions](std::function<void(void*)> work) {
-				++gpu_submissions;
-				assert(static_cast<bool>(m_state.runtime.sync_submit), "asset::registry sync submitter not configured");
-				m_state.runtime.sync_submit(std::move(work));
-			},
-		};
-		new_resource->load(ctx);
-
-		if (gpu_submissions > 0 && m_state.runtime.gpu_waiter) {
-			m_state.runtime.gpu_waiter();
-		}
-
-		if (s->resource.read()) {
-			auto* old_resource = const_cast<R*>(s->resource.read().get());
-			old_resource->unload();
-		}
-
-		s->resource.write() = std::move(new_resource);
-		s->resource.publish();
-		s->version.fetch_add(1, std::memory_order_release);
-		s->current_state.store(state::loaded, std::memory_order_release);
-
-		log::println(log::category::assets, "Hot reload reloaded resource: {}", s->path.filename().string());
+		auto t = launch_reload(rid);
+		t.start();
+		m_in_flight.push_back(std::move(t));
 	}
+}
+
+template <typename R>
+auto gse::resource::loader<R>::launch_reload(const id rid) -> async::task<> {
+	co_await async::yield_to_worker();
+
+	resource_slot<R>* s;
+	std::filesystem::path path;
+	{
+		std::lock_guard lock(m_mutex);
+		s = slot_ptr(rid);
+		if (!s) {
+			co_return;
+		}
+		path = s->path;
+	}
+
+	auto new_resource = std::make_unique<R>(path);
+
+	assert(m_state.channels != nullptr, "asset::registry::run must run before finalize_reloads()");
+	asset::load_ctx ctx{ .assets = m_state, .channels = *m_state.channels };
+
+	try {
+		co_await new_resource->load(ctx);
+	}
+	catch (...) {
+		s->current_state.store(state::failed, std::memory_order_release);
+		co_return;
+	}
+
+	if (s->resource.read()) {
+		auto* old_resource = const_cast<R*>(s->resource.read().get());
+		old_resource->unload();
+	}
+
+	s->resource.write() = std::move(new_resource);
+	s->resource.publish();
+	s->version.fetch_add(1, std::memory_order_release);
+	s->current_state.store(state::loaded, std::memory_order_release);
+
+	log::println(log::category::assets, "Hot reload reloaded resource: {}", path.filename().string());
 }
 
 template <typename R>

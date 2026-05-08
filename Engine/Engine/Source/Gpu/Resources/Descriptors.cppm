@@ -357,15 +357,6 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 
 		if (auto it_as = m_as_infos.find(name); it_as != m_as_infos.end()) {
 			const auto as_addr = vulkan::acceleration_structure_address_from_handle(m_device, it_as->second);
-			log::println(
-				log::category::vulkan,
-				"Descriptor AS write: binding='{}' handle={:#x} address={:#x} descriptor_offset={} descriptor_size={}",
-				name,
-				it_as->second.value,
-				as_addr,
-				boff,
-				props.acceleration_structure_descriptor_size
-			);
 			if (as_addr == 0) {
 				log::println(
 					log::level::warning, log::category::vulkan,

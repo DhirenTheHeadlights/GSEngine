@@ -10,6 +10,7 @@ import gse.gpu;
 import gse.core;
 import gse.assets;
 import gse.assert;
+import gse.concurrency;
 import gse.config;
 import gse.freetype;
 
@@ -61,10 +62,10 @@ gse::font::~font() {
     }
 }
 
-auto gse::font::load(asset::load_ctx& ctx) -> void {
+auto gse::font::load(asset::load_ctx& ctx) -> async::task<> {
     font::baked baked{};
     if (!load_baked(m_baked_path, baked)) {
-        return;
+        co_return;
     }
 
     const auto source_font_path = config::resource_path / baked.source_path_relative;
@@ -81,7 +82,7 @@ auto gse::font::load(asset::load_ctx& ctx) -> void {
         texture::profile::msdf
     );
 
-    m_texture->load(ctx);
+    co_await m_texture->load(ctx);
 
     assert(
         FT_Init_FreeType(&m_ft) == 0,

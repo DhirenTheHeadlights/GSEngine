@@ -55,7 +55,7 @@ export namespace gse {
 		explicit skinned_model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit skinned_model(std::string_view name, std::vector<skinned_mesh_data> meshes);
 
-		auto load(asset::load_ctx& ctx) -> void;
+		auto load(asset::load_ctx& ctx) -> async::task<>;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const skinned_mesh>;
@@ -94,7 +94,7 @@ auto read_value(std::ifstream& file) -> T {
 	return v;
 }
 
-auto gse::skinned_model::load(asset::load_ctx& ctx) -> void {
+auto gse::skinned_model::load(asset::load_ctx& ctx) -> async::task<> {
 	if (!m_baked_model_path.empty() && exists(m_baked_model_path)) {
 		m_meshes.clear();
 
@@ -109,7 +109,9 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> void {
 			char magic[4];
 			file.read(magic, 4);
 
-			if (std::memcmp(magic, "GSMD", 4) != 0) return;
+			if (std::memcmp(magic, "GSMD", 4) != 0) {
+				co_return;
+			}
 
 			const auto version = read_value<std::uint32_t>(file);
 			const auto mesh_count = read_value<std::uint32_t>(file);
@@ -181,15 +183,10 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> void {
 		}
 	}
 
-	gpu::queue_gpu_command(
-		ctx,
-		this,
-		[](gpu::context::state& gpu_s, skinned_model& self) {
-			for (auto& mesh : self.m_meshes) {
-				mesh.initialize(gpu_s);
-			}
-		}
-	);
+	auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
+	for (auto& mesh : m_meshes) {
+		mesh.initialize(gpu_s);
+	}
 
 	vec3<length> sum;
 	for (const auto& mesh : m_meshes) {

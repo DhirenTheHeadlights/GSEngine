@@ -20,18 +20,22 @@ export namespace gse::meta {
 template <typename T>
 consteval auto gse::meta::qualified_name() -> std::string_view {
 	auto walk = [](this auto self, std::meta::info entity) -> std::string {
-		if (!std::meta::has_identifier(entity)) {
+		const bool has_tmpl_args = std::meta::has_template_arguments(entity);
+
+		if (!has_tmpl_args && !std::meta::has_identifier(entity)) {
 			return std::string(std::meta::display_string_of(entity));
 		}
 
-		const auto parent = std::meta::has_template_arguments(entity)
+		const auto parent = has_tmpl_args
 			? std::meta::parent_of(std::meta::template_of(entity))
 			: std::meta::parent_of(entity);
 
 		std::string parent_name = self(parent);
-		std::string my_name = std::string(std::meta::identifier_of(entity));
+		std::string my_name = has_tmpl_args
+			? std::string(std::meta::identifier_of(std::meta::template_of(entity)))
+			: std::string(std::meta::identifier_of(entity));
 
-		if (std::meta::has_template_arguments(entity)) {
+		if (has_tmpl_args) {
 			my_name += "<";
 			bool first = true;
 			for (auto arg : std::meta::template_arguments_of(entity)) {

@@ -88,8 +88,6 @@ auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd
 }
 
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, settings& cfg, resources& r, frame_data& fd, state& s, const physics::system::state& ps, const physics::system::settings& phys_cfg) -> async::task<> {
-	gse::settings::register_panel(ctx, "Graphics", cfg);
-
 	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/physics_debug");
 
 	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");

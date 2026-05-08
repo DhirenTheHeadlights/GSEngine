@@ -17,7 +17,6 @@ import gse.core;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
-import gse.assets;
 import gse.log;
 
 auto gse::gpu::context::run(run_context& ctx, const window::state& window_s, settings& cfg, state& s) -> async::task<> {
@@ -42,10 +41,10 @@ auto gse::gpu::context::run(run_context& ctx, const window::state& window_s, set
 	});
 
 	while (true) {
-		const auto requests = ctx.read_channel<command_request>();
-		for (const auto& req : requests) {
-			if (req.work) {
-				req.work(s);
+		for (const auto& req : ctx.read_channel<gpu_resume_request>()) {
+			if (req.handle && req.out_state) {
+				*req.out_state = &s;
+				req.handle.resume();
 			}
 		}
 		co_await ctx.next_tick();

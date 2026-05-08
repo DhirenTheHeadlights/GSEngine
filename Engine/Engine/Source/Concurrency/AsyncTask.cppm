@@ -183,6 +183,21 @@ export namespace gse::async {
 	auto sync_wait(
 		task<T>&& t
 	) -> T;
+
+	struct yield_to_worker_t {
+		auto await_ready(
+		) const noexcept -> bool;
+
+		auto await_suspend(
+			std::coroutine_handle<> h
+		) const -> void;
+
+		auto await_resume(
+		) const noexcept -> void;
+	};
+
+	[[nodiscard]] auto yield_to_worker(
+	) noexcept -> yield_to_worker_t;
 }
 
 template <typename P>

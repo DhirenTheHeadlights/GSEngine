@@ -9,6 +9,7 @@ import gse.os;
 import gse.gpu;
 import gse.assets;
 import gse.containers;
+import gse.concurrency;
 
 export namespace gse {
     class texture : public identifiable {
@@ -55,7 +56,7 @@ export namespace gse {
 
         auto load(
             asset::load_ctx& ctx
-        ) -> void;
+        ) -> async::task<>;
 
         auto unload(
         ) -> void;

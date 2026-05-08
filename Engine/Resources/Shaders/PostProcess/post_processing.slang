@@ -30,10 +30,10 @@ VSOut vs_main(float2 in_position: POSITION, float2 in_tex_coords: TEXCOORD) {
 [Layout(LayoutKind::PostProcess)]
 [shader("fragment")]
 float4 fs_main(VSOut i) : SV_Target0 {
-    float3 result = inputTex0.Sample(i.tex_coords).rgb;
+    float3 result = input_tex_0.Sample(i.tex_coords).rgb;
 
     if (bloom) {
-        float3 bloom_color = inputTex1.Sample(i.tex_coords).rgb;
+        float3 bloom_color = input_tex_1.Sample(i.tex_coords).rgb;
         result += bloom_color;
     }
 

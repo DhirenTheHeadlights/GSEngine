@@ -90,7 +90,7 @@ export namespace gse {
 
         auto load(
             asset::load_ctx& ctx
-        ) -> void;
+        ) -> async::task<>;
 
         auto unload(
         ) -> void;

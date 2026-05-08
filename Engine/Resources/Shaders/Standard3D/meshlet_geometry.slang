@@ -331,7 +331,7 @@ float3 trace_reflection(float3 origin, float3 normal, float3 view_dir, float rou
 
         if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) {
             uint hit_mat_idx = q.CommittedInstanceID();
-            MaterialData hit_mat = material_palette[hit_mat_idx];
+            material_data hit_mat = material_palette[hit_mat_idx];
             reflection += hit_mat.base_color * 0.8;
         }
     }
@@ -396,7 +396,7 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
     float3 pos_world = input.world_pos;
 
     InstanceData inst = instanceData[input.instance_idx];
-    MaterialData mat = material_palette[inst.material_index];
+    material_data mat = material_palette[inst.material_index];
     float3 base_color = tex_sample * mat.base_color;
     float3 F0 = lerp(float3(0.04), base_color, mat.metallic);
 
@@ -424,36 +424,36 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
 
     for (uint t = 0; t < tile_count; ++t) {
         int i = (int)light_index_list[list_offset + t];
-        Light light = lights_ssbo[i];
+        light l = lights_ssbo[i];
 
-        float3 light_color = light.color;
-        float light_intensity = light.intensity;
-        float light_ambient = light.ambient_strength;
+        float3 light_color = l.color;
+        float light_intensity = l.intensity;
+        float light_ambient = l.ambient_strength;
 
         float3 L = float3(0, 0, 0);
         float attenuation = 1.0;
         float3 shadow_dir_world = float3(0, 0, 0);
         float shadow_t_max = 1000.0;
 
-        if (light.light_type == LightType::Directional) {
-            L = normalize(-light.direction);
-            shadow_dir_world = normalize(-light.world_direction);
+        if (l.light_type == light_type::directional) {
+            L = normalize(-l.direction);
+            shadow_dir_world = normalize(-l.world_direction);
         }
-        else if (light.light_type == LightType::Point) {
-            float3 Lvec = light.position - pos_vs;
+        else if (l.light_type == light_type::point) {
+            float3 Lvec = l.position - pos_vs;
             L = normalize(Lvec);
-            attenuation = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);
-            float3 to_light = light.world_position - pos_world;
+            attenuation = attenuation_point(l.position, pos_vs, l.constant, l.linear, l.quadratic);
+            float3 to_light = l.world_position - pos_world;
             float dist = length(to_light);
             shadow_dir_world = to_light / max(dist, 1e-4);
             shadow_t_max = dist - 1.0;
         }
-        else if (light.light_type == LightType::Spot) {
-            float3 Lvec = light.position - pos_vs;
+        else if (l.light_type == light_type::spot) {
+            float3 Lvec = l.position - pos_vs;
             L = normalize(Lvec);
-            attenuation = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);
-            attenuation *= spot_factor(Lvec, light.direction, light.cut_off, light.outer_cut_off);
-            float3 to_light = light.world_position - pos_world;
+            attenuation = attenuation_point(l.position, pos_vs, l.constant, l.linear, l.quadratic);
+            attenuation *= spot_factor(Lvec, l.direction, l.cut_off, l.outer_cut_off);
+            float3 to_light = l.world_position - pos_world;
             float dist = length(to_light);
             shadow_dir_world = to_light / max(dist, 1e-4);
             shadow_t_max = dist - 1.0;
@@ -462,7 +462,7 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
         float NdotL = max(dot(normal_vs, L), 0.0);
         float shadow = 1.0;
         if (scfg.max_samples > 0 && NdotL > 0.0) {
-            shadow = trace_shadow(pos_world, world_n, shadow_dir_world, shadow_t_max, light.source_radius, pixel, scfg, view_dist);
+            shadow = trace_shadow(pos_world, world_n, shadow_dir_world, shadow_t_max, l.source_radius, pixel, scfg, view_dist);
         }
 
         float3 F;

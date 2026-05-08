@@ -41,7 +41,7 @@ export namespace gse {
 
         auto load(
             asset::load_ctx& ctx
-        ) -> void;
+        ) -> async::task<>;
 
         auto unload(
         ) -> void;
@@ -73,22 +73,22 @@ gse::clip_asset::clip_asset(params p)
       m_tracks(std::move(p.tracks)) {
 }
 
-auto gse::clip_asset::load(asset::load_ctx& ctx) -> void {
+auto gse::clip_asset::load(asset::load_ctx& ctx) -> async::task<> {
     (void)ctx;
 
     if (m_baked_path.empty() || !exists(m_baked_path)) {
-        return;
+        co_return;
     }
 
     std::ifstream file(m_baked_path, std::ios::binary);
     if (!file) {
-        return;
+        co_return;
     }
 
     char magic[4];
     file.read(magic, 4);
     if (std::memcmp(magic, "GCLP", 4) != 0) {
-        return;
+        co_return;
     }
 
     std::uint32_t version;

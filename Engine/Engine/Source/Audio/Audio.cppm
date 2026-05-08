@@ -18,7 +18,7 @@ export namespace gse {
 
         auto load(
             asset::load_ctx& ctx
-        ) -> void;
+        ) -> async::task<>;
 
         auto unload(
         ) -> void;
@@ -119,7 +119,7 @@ export namespace gse::audio {
     class system {
     public:
         struct state {
-            void* engine = nullptr;
+            audio_engine* engine = nullptr;
             bool engine_initialized = false;
             percentage<float> master_vol = percentage<float>::one();
         };

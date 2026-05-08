@@ -13,7 +13,7 @@ cbuffer CullingParams {
     uint num_lights;
 };
 
-[[vk::binding(2, 0)]] StructuredBuffer<Light> lights;
+[[vk::binding(2, 0)]] StructuredBuffer<light> lights;
 
 [[vk::binding(3, 0)]] RWStructuredBuffer<uint> light_index_list;
 
@@ -75,12 +75,12 @@ bool sphere_inside_frustum(float3 center, float radius, frustum f, float z_near,
     return true;
 }
 
-float light_radius(Light light) {
-    float max_channel = max(light.color.r, max(light.color.g, light.color.b)) * light.intensity;
+float light_radius(light l) {
+    float max_channel = max(l.color.r, max(l.color.g, l.color.b)) * l.intensity;
     float threshold = 0.01;
-    float a = light.quadratic;
-    float b = light.linear;
-    float c = light.constant - max_channel / threshold;
+    float a = l.quadratic;
+    float b = l.linear;
+    float c = l.constant - max_channel / threshold;
 
     if (a < 1e-6) {
         if (b > 1e-6) return -c / b;
@@ -130,13 +130,13 @@ void cs_main(
     float z_far  = tile_depth_min == 0x7F7FFFFF ? 1e30 : asfloat(tile_depth_max);
 
     for (uint i = local_index; i < num_lights; i += TILE_SIZE * TILE_SIZE) {
-        Light light = lights[i];
+        light l = lights[i];
         bool visible;
-        if (light.light_type == LightType::Directional) {
+        if (l.light_type == light_type::directional) {
             visible = true;
         } else {
-            float radius = light_radius(light);
-            visible = sphere_inside_frustum(light.position, radius, tile_frustum, z_near, z_far);
+            float radius = light_radius(l);
+            visible = sphere_inside_frustum(l.position, radius, tile_frustum, z_near, z_far);
         }
         if (visible) {
             uint slot;

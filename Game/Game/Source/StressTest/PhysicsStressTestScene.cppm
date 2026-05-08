@@ -413,7 +413,7 @@ auto gs::physics_stress_test_scene_setup(gse::scene& s) -> void {
 	build_high_speed_impact_target(s);
 	build_box_grid(s);
 	build_spring_tests(s);
-	build_tumbler(s);
+	//build_tumbler(s);
 
 	build_sphere(
 		&s,

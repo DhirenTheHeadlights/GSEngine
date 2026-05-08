@@ -104,3 +104,23 @@ configure_file(
     ${CMAKE_CURRENT_BINARY_DIR}/Engine/Import/Config.cppm
     @ONLY
 )
+
+set(GENERATED_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/generated")
+set(GENERATED_SHADER_FILES
+    "${GENERATED_SHADER_DIR}/forward.slang"
+    "${GENERATED_SHADER_DIR}/post_process_layout.slang"
+)
+
+add_executable(ShaderCodegen "${CMAKE_CURRENT_SOURCE_DIR}/Tools/ShaderCodegen/Main.cpp")
+target_link_libraries(ShaderCodegen PRIVATE Engine)
+
+add_custom_command(
+    OUTPUT ${GENERATED_SHADER_FILES}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${GENERATED_SHADER_DIR}"
+    COMMAND $<TARGET_FILE:ShaderCodegen> "${GENERATED_SHADER_DIR}"
+    DEPENDS ShaderCodegen
+    COMMENT "Generating shader struct headers into ${GENERATED_SHADER_DIR}"
+    VERBATIM
+)
+
+add_custom_target(ShaderCodegenRun ALL DEPENDS ${GENERATED_SHADER_FILES})

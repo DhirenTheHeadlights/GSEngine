@@ -1,2 +1,1 @@
-public [[vk::binding(0, 0)]] Sampler2D inputTex0;
-public [[vk::binding(1, 0)]] Sampler2D inputTex1;
+__exported import generated.post_process_layout;
