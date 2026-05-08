@@ -1,7 +1,6 @@
 export module gse.server;
 
 import :server;
-import :input_source;
 
 import std;
 import gse;
@@ -10,11 +9,13 @@ export namespace gse {
 	struct server_system {
 		struct state {
 			std::optional<server> srv;
+			gse::world* world_ptr = nullptr;
 		};
 
 		static auto run(
 			run_context& ctx,
-			state& s
+			state& s,
+			const actions::system::state& actions_s
 		) -> async::task<>;
 	};
 
@@ -27,6 +28,7 @@ export namespace gse {
 		static auto run(
 			run_context& ctx,
 			state& s,
+			const input::system::state& input_s,
 			const server_system::state& srv
 		) -> async::task<>;
 	};
@@ -36,61 +38,64 @@ export namespace gse {
 	) -> void;
 }
 
-auto gse::server_system::run(run_context& ctx, state& s) -> async::task<> {
+auto gse::server_system::run(run_context& ctx, state& s, const actions::system::state& actions_s) -> async::task<> {
 	while (true) {
-		if (s.srv) {
-			s.srv->update();
+		if (s.srv && s.world_ptr) {
+			s.srv->update(*s.world_ptr, ctx.channels, actions_s);
 		}
 		co_await ctx.next_tick();
 	}
 }
 
-auto gse::server_app_system::run(run_context& ctx, state& s, const server_system::state& srv) -> async::task<> {
+auto gse::server_app_system::run(run_context& ctx, state& s, const input::system::state& input_s, const server_system::state& srv) -> async::task<> {
 	while (true) {
 		if (s.timer.tick()) {
 			++s.tick_count;
 		}
 
-		if (keyboard::pressed(key::escape)) {
+		if (input::system::current_state(input_s).key_pressed(key::escape)) {
 			shutdown();
 		}
 
-		gui::panel("Server Control", [&](gui::builder& ui) {
-			ui.draw<gui::text>({
-				.content = "This is a simple server application.",
-			});
+		ctx.channels.push<gui::menu_content>({
+			.menu = "Server Control",
+			.build = [&](gui::builder& ui) {
+				ui.draw<gui::text>({
+					.content = "This is a simple server application.",
+				});
 
-			if (!srv.srv) {
-				return;
-			}
+				if (!srv.srv) {
+					return;
+				}
 
-			ui.draw<gui::value<std::uint32_t>>({
-				.name = "Peers",
-				.val = static_cast<std::uint32_t>(srv.srv->peers().size()),
-			});
-			ui.draw<gui::value<std::uint32_t>>({
-				.name = "Clients",
-				.val = static_cast<std::uint32_t>(srv.srv->clients().size()),
-			});
-			if (const auto h = srv.srv->host_entity()) {
-				ui.draw<gui::text>({
-					.content = std::format("Host entity: {}", *h),
+				ui.draw<gui::value<std::uint32_t>>({
+					.name = "Peers",
+					.val = static_cast<std::uint32_t>(srv.srv->peers().size()),
 				});
-			}
-			else {
-				ui.draw<gui::text>({
-					.content = "Host entity: <none>",
+				ui.draw<gui::value<std::uint32_t>>({
+					.name = "Clients",
+					.val = static_cast<std::uint32_t>(srv.srv->clients().size()),
 				});
-			}
-			for (const auto& [ip, port] : srv.srv->peers() | std::views::keys) {
-				ui.draw<gui::text>({
-					.content = std::format("Peer: {}:{}", ip, port),
+				if (const auto h = srv.srv->host_entity()) {
+					ui.draw<gui::text>({
+						.content = std::format("Host entity: {}", *h),
+					});
+				}
+				else {
+					ui.draw<gui::text>({
+						.content = "Host entity: <none>",
+					});
+				}
+				for (const auto& [ip, port] : srv.srv->peers() | std::views::keys) {
+					ui.draw<gui::text>({
+						.content = std::format("Peer: {}:{}", ip, port),
+					});
+				}
+				ui.draw<gui::value<std::uint32_t>>({
+					.name = "Ticks",
+					.val = s.tick_count,
 				});
-			}
-			ui.draw<gui::value<std::uint32_t>>({
-				.name = "Ticks",
-				.val = s.tick_count,
-			});
+			},
 		});
 
 		co_await ctx.next_tick();
@@ -98,14 +103,14 @@ auto gse::server_app_system::run(run_context& ctx, state& s, const server_system
 }
 
 auto gse::server_app_setup(engine& e) -> void {
-	set_ui_focus(true);
-	set_networked(true);
+	auto channels = e.make_channel_writer();
+	channels.push<ui_focus_request>({ .focus = true });
+	e.world().set_networked(true);
 
 	auto& srv_state = e.add_system<server_system>();
 	srv_state.srv.emplace(9000);
 	srv_state.srv->initialize();
-
-	set_input_sampler(make_server_input_sampler(&srv_state.srv->clients()));
+	srv_state.world_ptr = &e.world();
 
 	e.add_system<server_app_system>();
 }

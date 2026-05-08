@@ -19,13 +19,13 @@ export namespace gs::player {
 	using component = gse::component<component_data>;
 
 	struct bindings {
-		gse::actions::button_channel shift;
-		gse::actions::button_channel jump;
-		gse::actions::button_channel jetpack_toggle;
-		gse::actions::button_channel jetpack_thrust;
-		gse::actions::button_channel jetpack_boost;
-		gse::actions::axis2_channel move;
-		gse::actions::axis2_channel jetpack_move;
+		gse::actions::handle shift;
+		gse::actions::handle jump;
+		gse::actions::handle jetpack_toggle;
+		gse::actions::handle jetpack_thrust;
+		gse::actions::handle jetpack_boost;
+		gse::id move_axis_id;
+		gse::id jetpack_move_axis_id;
 	};
 
 	struct system {
@@ -35,12 +35,14 @@ export namespace gs::player {
 
 		static auto run(
 			gse::run_context& ctx,
-			state& s
+			state& s,
+			const gse::actions::system::state& as,
+			const gse::camera::system::state& cam_s
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::player::system::run(gse::run_context& ctx, state& s) -> gse::async::task<> {
+auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions::system::state& as, const gse::camera::system::state& cam_s) -> gse::async::task<> {
 	while (true) {
 		{
 			auto [players, motions, follows] = co_await ctx.acquire<
@@ -59,15 +61,15 @@ auto gs::player::system::run(gse::run_context& ctx, state& s) -> gse::async::tas
 				slot = std::make_unique<bindings>();
 				auto& b = *slot;
 
-				const auto w = gse::actions::add<"Player_Move_Forward">(gse::key::w);
-				const auto a = gse::actions::add<"Player_Move_Left">(gse::key::a);
-				const auto s_key = gse::actions::add<"Player_Move_Backward">(gse::key::s);
-				const auto d = gse::actions::add<"Player_Move_Right">(gse::key::d);
+				const auto w = gse::actions::add<"Player_Move_Forward">(ctx.channels, gse::key::w);
+				const auto a = gse::actions::add<"Player_Move_Left">(ctx.channels, gse::key::a);
+				const auto s_key = gse::actions::add<"Player_Move_Backward">(ctx.channels, gse::key::s);
+				const auto d = gse::actions::add<"Player_Move_Right">(ctx.channels, gse::key::d);
 
-				gse::actions::bind_button_channel<"Player_Sprint">(owner_id, gse::key::left_shift, b.shift);
-				gse::actions::bind_button_channel<"Player_Jump">(owner_id, gse::key::space, b.jump);
-				gse::actions::bind_axis2_channel(
-					owner_id,
+				b.shift = gse::actions::add<"Player_Sprint">(ctx.channels, gse::key::left_shift);
+				b.jump = gse::actions::add<"Player_Jump">(ctx.channels, gse::key::space);
+				b.move_axis_id = gse::actions::bind_axis2(
+					ctx.channels,
 					gse::actions::pending_axis2_info{
 						.left = a,
 						.right = d,
@@ -75,21 +77,20 @@ auto gs::player::system::run(gse::run_context& ctx, state& s) -> gse::async::tas
 						.fwd = w,
 						.scale = 1.f,
 					},
-					b.move,
 					gse::trace_id<"Player_Move">()
 				);
 
-				gse::actions::bind_button_channel<"Toggle_Jetpack">(owner_id, gse::key::j, b.jetpack_toggle);
-				gse::actions::bind_button_channel<"Jetpack_Thrust">(owner_id, gse::key::space, b.jetpack_thrust);
-				gse::actions::bind_button_channel<"Jetpack_Boost">(owner_id, gse::key::left_shift, b.jetpack_boost);
+				b.jetpack_toggle = gse::actions::add<"Toggle_Jetpack">(ctx.channels, gse::key::j);
+				b.jetpack_thrust = gse::actions::add<"Jetpack_Thrust">(ctx.channels, gse::key::space);
+				b.jetpack_boost = gse::actions::add<"Jetpack_Boost">(ctx.channels, gse::key::left_shift);
 
-				const auto jw = gse::actions::add<"Jetpack_Move_Forward">(gse::key::w);
-				const auto ja = gse::actions::add<"Jetpack_Move_Left">(gse::key::a);
-				const auto js = gse::actions::add<"Jetpack_Move_Backward">(gse::key::s);
-				const auto jd = gse::actions::add<"Jetpack_Move_Right">(gse::key::d);
+				const auto jw = gse::actions::add<"Jetpack_Move_Forward">(ctx.channels, gse::key::w);
+				const auto ja = gse::actions::add<"Jetpack_Move_Left">(ctx.channels, gse::key::a);
+				const auto js = gse::actions::add<"Jetpack_Move_Backward">(ctx.channels, gse::key::s);
+				const auto jd = gse::actions::add<"Jetpack_Move_Right">(ctx.channels, gse::key::d);
 
-				gse::actions::bind_axis2_channel(
-					owner_id,
+				b.jetpack_move_axis_id = gse::actions::bind_axis2(
+					ctx.channels,
 					gse::actions::pending_axis2_info{
 						.left = ja,
 						.right = jd,
@@ -97,7 +98,6 @@ auto gs::player::system::run(gse::run_context& ctx, state& s) -> gse::async::tas
 						.fwd = jw,
 						.scale = 1.f,
 					},
-					b.jetpack_move,
 					gse::trace_id<"Jetpack_Move">()
 				);
 
@@ -127,6 +127,8 @@ auto gs::player::system::run(gse::run_context& ctx, state& s) -> gse::async::tas
 				});
 			}
 
+			const auto& cs = gse::actions::system::current_state(as);
+
 			for (auto& p : players) {
 				const auto owner_id = p.owner_id();
 				const auto& b = *s.bindings_by_owner[owner_id];
@@ -136,13 +138,14 @@ auto gs::player::system::run(gse::run_context& ctx, state& s) -> gse::async::tas
 					continue;
 				}
 
-				const auto speed = b.shift.held ? p.sprint_speed : p.walk_speed;
-				const auto v = b.move.value;
+				const bool shift_held = gse::actions::held(b.shift, cs, as);
+				const auto speed = shift_held ? p.sprint_speed : p.walk_speed;
+				const auto v = cs.axis2_v(static_cast<std::uint16_t>(b.move_axis_id.number()));
 
 				if (v.x() != 0.f || v.y() != 0.f) {
-					const auto dir = gse::camera_direction_relative_to_origin(
-						gse::vec3f(v.x(), 0.f, v.y()),
-						owner_id
+					const auto dir = gse::camera::system::direction_relative_to_origin(
+						cam_s,
+						gse::vec3f(v.x(), 0.f, v.y())
 					);
 					const auto horizontal = gse::vec3f(dir.x(), 0.f, dir.z());
 					const float len = gse::magnitude(horizontal);
@@ -154,16 +157,16 @@ auto gs::player::system::run(gse::run_context& ctx, state& s) -> gse::async::tas
 					motion->velocity_drive_target = {};
 				}
 
-				if (b.jump.pressed && !motion->airborne) {
+				if (gse::actions::pressed(b.jump, cs, as) && !motion->airborne) {
 					motion->pending_impulse.y() = p.jump_speed * motion->mass;
 				}
 
-				if (b.jetpack_toggle.pressed) {
+				if (gse::actions::pressed(b.jetpack_toggle, cs, as)) {
 					p.jetpack_enabled = !p.jetpack_enabled;
 				}
 
-				if (p.jetpack_enabled && b.jetpack_thrust.held) {
-					if (b.jetpack_boost.held && p.boost_fuel > 0) {
+				if (p.jetpack_enabled && gse::actions::held(b.jetpack_thrust, cs, as)) {
+					if (gse::actions::held(b.jetpack_boost, cs, as) && p.boost_fuel > 0) {
 						p.boost_fuel -= 1;
 					}
 					else {

@@ -7,11 +7,14 @@ import :player;
 
 export namespace gs {
 	auto skybox_scene_setup(
-		gse::scene& s
+		gse::scene& s,
+		gse::channel_writer& channels,
+		gse::asset::state& assets
 	) -> void;
 }
 
-auto gs::skybox_scene_setup(gse::scene& s) -> void {
+auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+	(void)channels;
 	const auto skybox_position = gse::vec3<gse::position>(0.f, 0.f, 0.f);
 	const auto skybox_size = gse::vec3<gse::length>(20000.f, 20000.f, 20000.f);
 
@@ -28,6 +31,7 @@ auto gs::skybox_scene_setup(gse::scene& s) -> void {
 		.with<gse::render_component>({
 			.models = {
 				gse::procedural_model::box(
+					assets,
 					gse::material{
 						.base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
 						.roughness = 0.5f,
@@ -63,6 +67,7 @@ auto gs::skybox_scene_setup(gse::scene& s) -> void {
 		.with<gse::render_component>({
 			.models = {
 				gse::procedural_model::box(
+					assets,
 					gse::material{
 						.base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
 						.roughness = 0.5f,

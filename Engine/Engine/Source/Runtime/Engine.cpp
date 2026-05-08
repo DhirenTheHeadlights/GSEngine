@@ -102,7 +102,29 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 auto gse::engine::update() -> void {
 	system_clock::update();
 	m_scheduler.update();
+	drain_lifecycle_channels();
 	m_world.update();
+}
+
+auto gse::engine::drain_lifecycle_channels() -> void {
+	for (const auto& r : m_scheduler.drain_channel<set_networked_request>()) {
+		m_world.set_networked(r.value);
+	}
+	for (const auto& r : m_scheduler.drain_channel<set_authoritative_request>()) {
+		m_world.set_authoritative(r.value);
+	}
+	for (const auto& r : m_scheduler.drain_channel<set_local_controller_id_request>()) {
+		m_world.set_local_controller_id(r.controller_id);
+	}
+	for (const auto& r : m_scheduler.drain_channel<activate_scene_request>()) {
+		m_world.activate(r.scene_id);
+	}
+	const auto deactivate_requests = m_scheduler.drain_channel<deactivate_active_scene_request>();
+	if (!deactivate_requests.empty()) {
+		if (auto* active = m_world.current_scene()) {
+			m_world.deactivate(active->id());
+		}
+	}
 }
 
 auto gse::engine::render() -> void {
@@ -130,25 +152,16 @@ auto gse::engine::render() -> void {
 	}
 
 	m_scheduler.render(frame_ok, [this, gpu_state] {
-		{
-			trace::scope_guard sg{trace_id<"render::in_frame">()};
-			if (gpu_state) {
-				{
-					trace::scope_guard sg{trace_id<"render::scheduler_flush">()};
-					gpu_state->scheduler.flush();
-				}
-				{
-					trace::scope_guard sg{trace_id<"render::graph_execute">()};
-					auto requests = m_scheduler.drain_channel<gpu::render_pass_request>();
-					gpu::context::execute_frame(*gpu_state, std::move(requests));
-				}
-			}
-
+		if (gpu_state) {
+			gpu_state->scheduler.flush();
 			{
-				trace::scope_guard sg{trace_id<"render::world_render">()};
-				m_world.render();
+				trace::scope_guard sg{trace_id<"render::graph_execute">()};
+				auto requests = m_scheduler.drain_channel<gpu::render_pass_request>();
+				gpu::context::execute_frame(*gpu_state, std::move(requests));
 			}
 		}
+
+		m_world.render();
 	});
 
 	if (frame_ok && gpu_state) {
@@ -178,33 +191,12 @@ auto gse::engine::shutdown() -> void {
 	m_scheduler.clear();
 }
 
-auto gse::engine::set_networked(const bool networked) -> void {
-	m_world.set_networked(networked);
+auto gse::engine::make_channel_writer() -> channel_writer {
+	return m_scheduler.make_channel_writer();
 }
 
-auto gse::engine::set_authoritative(const bool authoritative) -> void {
-	m_world.set_authoritative(authoritative);
-}
-
-auto gse::engine::set_local_controller_id(const gse::id controller_id) -> void {
-	m_world.set_local_controller_id(controller_id);
-}
-
-auto gse::engine::set_input_sampler(input_sampler_fn fn) -> void {
-	m_world.set_input_sampler(std::move(fn));
-}
-
-auto gse::engine::activate_scene(const gse::id scene_id) -> void {
-	m_world.activate(scene_id);
-	profile::reset();
-}
-
-auto gse::engine::deactivate_scene(const gse::id scene_id) -> void {
-	m_world.deactivate(scene_id);
-}
-
-auto gse::engine::current_scene() -> scene* {
-	return m_world.current_scene();
+auto gse::engine::world() -> gse::world& {
+	return m_world;
 }
 
 auto gse::engine::direct() -> director {

@@ -14,23 +14,28 @@ export namespace gs {
 		static auto run(
 			gse::run_context& ctx,
 			state& s,
+			const gse::input::system::state& input_s,
 			const gse::renderer::physics_debug::system::state& pds,
 			const gse::renderer::physics_debug::system::settings& pd_cfg
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::renderer::physics_debug::system::state& pds, const gse::renderer::physics_debug::system::settings& pd_cfg) -> gse::async::task<> {
+auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::input::system::state& input_s, const gse::renderer::physics_debug::system::state& pds, const gse::renderer::physics_debug::system::settings& pd_cfg) -> gse::async::task<> {
 	while (true) {
-		if (gse::keyboard::pressed(gse::key::escape)) {
+		const auto& input = gse::input::system::current_state(input_s);
+
+		if (input.key_pressed(gse::key::escape)) {
 			gse::shutdown();
 		}
 
-		if (gse::keyboard::pressed(gse::key::n) || gse::mouse::pressed(gse::mouse_button::button_3)) {
+		if (input.key_pressed(gse::key::n) || input.mouse_button_pressed(gse::mouse_button::button_3)) {
 			s.show_cross_hair = !s.show_cross_hair;
 		}
 
-		gse::gui::panel("Test", [&](gse::gui::builder& ui) {
+		ctx.channels.push<gse::gui::menu_content>({
+			.menu = "Test",
+			.build = [&](gse::gui::builder& ui) {
 			ui.draw<gse::gui::value<float>>({
 				.name = "FPS",
 				.val = static_cast<float>(gse::system_clock::fps()),
@@ -52,10 +57,14 @@ auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::rende
 				.min = 0.f,
 				.max = 10.f,
 			});
+			},
 		});
 
-		gse::gui::panel("Profiler", [](gse::gui::builder& ui) {
-			ui.draw<gse::gui::profiler>();
+		ctx.channels.push<gse::gui::menu_content>({
+			.menu = "Profiler",
+			.build = [](gse::gui::builder& ui) {
+				ui.draw<gse::gui::profiler>();
+			},
 		});
 
 		if (pd_cfg.enabled) {
@@ -72,7 +81,9 @@ auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::rende
 				gpu_solver_active
 			] = pds.latest_stats;
 
-				gse::gui::panel("Physics Debug", [&](gse::gui::builder& ui) {
+				ctx.channels.push<gse::gui::menu_content>({
+					.menu = "Physics Debug",
+					.build = [&](gse::gui::builder& ui) {
 					ui.draw<gse::gui::value<std::uint32_t>>({
 						.name = "Bodies",
 						.val = body_count,
@@ -111,10 +122,13 @@ auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::rende
 							.val = solve_time.as<gse::milliseconds>(),
 						});
 					}
+					},
 				});
 		}
 
-		gse::set_ui_focus(s.show_cross_hair);
+		ctx.channels.push<gse::ui_focus_request>({
+			.focus = s.show_cross_hair,
+		});
 
 		co_await ctx.next_tick();
 	}

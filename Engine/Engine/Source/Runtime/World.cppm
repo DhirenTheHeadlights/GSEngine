@@ -22,6 +22,7 @@ export namespace gse {
 	struct evaluation_context {
 		std::optional<id> client_id = std::nullopt;
 		const actions::state* input = nullptr;
+		const actions::system::state* actions_sys = nullptr;
 		registry* registry = nullptr;
 	};
 
@@ -45,15 +46,6 @@ export namespace gse {
 		world* m_world = nullptr;
 	};
 
-	class world;
-
-	using input_sampler_fn = std::function<void(world&, std::function<void(const evaluation_context&)>)>;
-
-	auto local_input_sampler(
-		world& w,
-		std::function<void(const evaluation_context&)> fn
-	) -> void;
-
 	class world final : public identifiable {
 	public:
 		explicit world(
@@ -68,10 +60,6 @@ export namespace gse {
 		) -> void;
 
 		auto shutdown(
-		) -> void;
-
-		auto set_input_sampler(
-			input_sampler_fn fn
 		) -> void;
 
 		auto direct(
@@ -154,7 +142,6 @@ export namespace gse {
 		gse::id m_local_controlled_entity{};
 		gse::id m_local_controller_id{};
 
-		input_sampler_fn m_input_sampler;
 		std::unordered_set<gse::id> m_pc_processed;
 		std::unordered_map<gse::id, gse::id> m_pc_controller_to_local_player;
 		bool m_pc_local_player_created = false;
@@ -168,28 +155,7 @@ auto gse::director::when(const trigger& trigger) -> director& {
 	return *this;
 }
 
-auto gse::local_input_sampler(world& w, std::function<void(const evaluation_context&)> fn) -> void {
-	const auto local_id = w.local_controlled_entity();
-	if (!local_id.exists()) {
-		return;
-	}
-
-	const auto& a = w.state_of<actions::system::state>();
-
-	evaluation_context ctx{
-		.client_id = local_id,
-		.input = std::addressof(actions::system::current_state(a)),
-		.registry = &w.registry(),
-	};
-
-	fn(ctx);
-}
-
 gse::world::world(scheduler& sched, const std::string_view name) : identifiable(std::string(name)), m_scheduler(std::addressof(sched)) {}
-
-auto gse::world::set_input_sampler(input_sampler_fn fn) -> void {
-	m_input_sampler = std::move(fn);
-}
 
 namespace gse {
 	auto world_update_player_controllers(world& w) -> void {
@@ -298,40 +264,29 @@ namespace gse {
 }
 
 auto gse::world::update() -> void {
-	if (m_networked) {
-		const auto& a = state_of<actions::system::state>();
-
-		if (m_input_sampler) {
-			m_input_sampler(*this, [&](const evaluation_context& ctx) {
-				if (!ctx.input || !ctx.client_id) {
-					return;
-				}
-				actions::system::sample_for_entity(a, *ctx.input, *ctx.client_id);
-			});
-		}
-	}
-	else {
+	if (!m_networked) {
 		const auto& a = state_of<actions::system::state>();
 		const auto& s = actions::system::current_state(a);
-
-		actions::system::sample_all_channels(a, s);
 
 		for (const auto& [scene_id, condition] : m_triggers) {
 			const evaluation_context ctx{
 				.client_id = m_client_id,
 				.input = std::addressof(s),
+				.actions_sys = &a,
 				.registry = &m_registry,
 			};
 
 			if (condition(ctx) && scene_id != m_active_scene) {
+				auto channels = m_scheduler->make_channel_writer();
+				auto& assets = m_scheduler->state<asset::state>();
 				if (m_active_scene.has_value()) {
 					if (auto* old_scene = scene(m_active_scene.value())) {
-						old_scene->set_active(false);
+						old_scene->set_active(false, channels, assets);
 					}
 				}
 
 				if (auto* new_scene = scene(scene_id)) {
-					new_scene->set_active(true);
+					new_scene->set_active(true, channels, assets);
 					m_active_scene = new_scene->id();
 					break;
 				}
@@ -345,15 +300,15 @@ auto gse::world::update() -> void {
 auto gse::world::render() -> void {}
 
 auto gse::world::shutdown() -> void {
+	auto channels = m_scheduler->make_channel_writer();
+	auto& assets = m_scheduler->state<asset::state>();
 	for (const auto& scene : m_scenes | std::views::values) {
 		if (scene->active()) {
-			scene->set_active(false);
+			scene->set_active(false, channels, assets);
 		}
 	}
 	m_scenes.clear();
 	m_active_scene.reset();
-
-
 }
 
 template <typename State>
@@ -391,14 +346,16 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 		"Cannot force activate scene in a non-networked world."
 	);
 
+	auto channels = m_scheduler->make_channel_writer();
+	auto& assets = m_scheduler->state<asset::state>();
 	if (m_active_scene.has_value() && m_active_scene.value() == scene_id) {
 		if (auto* old_scene = scene(m_active_scene.value())) {
-			old_scene->set_active(false);
+			old_scene->set_active(false, channels, assets);
 		}
 	}
 
 	if (auto* new_scene = scene(scene_id)) {
-		new_scene->set_active(true);
+		new_scene->set_active(true, channels, assets);
 		m_active_scene = new_scene->id();
 	}
 }
@@ -416,7 +373,9 @@ auto gse::world::deactivate(const gse::id& scene_id) -> void {
 
 	if (m_active_scene.has_value()) {
 		if (auto* old_scene = scene(m_active_scene.value())) {
-			old_scene->set_active(false);
+			auto channels = m_scheduler->make_channel_writer();
+			auto& assets = m_scheduler->state<asset::state>();
+			old_scene->set_active(false, channels, assets);
 		}
 	}
 

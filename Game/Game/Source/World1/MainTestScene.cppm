@@ -9,11 +9,14 @@ import :entity_builders;
 
 export namespace gs {
 	auto main_test_scene_setup(
-		gse::scene& s
+		gse::scene& s,
+		gse::channel_writer& channels,
+		gse::asset::state& assets
 	) -> void;
 }
 
-auto gs::main_test_scene_setup(gse::scene& s) -> void {
+auto gs::main_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+	(void)channels;
 	s.set_player_factory([next_id = 0u](gse::scene& sc, std::optional<gse::id> server_id) mutable -> gse::id {
 		gse::id player_id;
 		if (server_id) {
@@ -31,9 +34,10 @@ auto gs::main_test_scene_setup(gse::scene& s) -> void {
 		return player_id;
 	});
 
-	arena::create(&s);
+	arena::create(assets, &s);
 
 	build_box(
+		assets,
 		&s,
 		"Smaller Box",
 		gse::vec3<gse::position>(2.f, -40.f, 2.f),
@@ -41,6 +45,7 @@ auto gs::main_test_scene_setup(gse::scene& s) -> void {
 	);
 
 	build_box(
+		assets,
 		&s,
 		"Bigger Box",
 		gse::vec3<gse::position>(-2.f, -40.f, 2.f),
@@ -49,6 +54,7 @@ auto gs::main_test_scene_setup(gse::scene& s) -> void {
 	);
 
 	build_sphere_light(
+		assets,
 		&s,
 		"Center Sphere Light",
 		gse::vec3<gse::position>(0.f, -30.f, 0.f),
@@ -56,6 +62,7 @@ auto gs::main_test_scene_setup(gse::scene& s) -> void {
 	);
 
 	build_sphere(
+		assets,
 		&s,
 		"Second Sphere",
 		gse::vec3<gse::position>(0.f, 0.f, 20.f),

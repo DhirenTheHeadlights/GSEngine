@@ -6,6 +6,7 @@ import gse.std_meta;
 import gse.assert;
 import gse.core;
 import gse.ecs;
+import gse.assets;
 
 export namespace gse {
 	class scene;
@@ -57,7 +58,7 @@ export namespace gse {
 	public:
 		using player_factory_fn = std::function<gse::id(scene&, std::optional<gse::id>)>;
 		using init_fn = gse::move_only_function<void(gse::id, registry&)>;
-		using setup_fn = void(*)(scene&);
+		using setup_fn = void(*)(scene&, channel_writer&, asset::state&);
 
 		class builder {
 		public:
@@ -119,7 +120,9 @@ export namespace gse {
 		) -> void;
 
 		auto set_active(
-			bool is_active
+			bool is_active,
+			channel_writer& channels,
+			asset::state& assets
 		) -> void;
 
 		auto active(
@@ -227,10 +230,10 @@ auto gse::scene::set_setup(setup_fn setup) -> void {
 	m_setup = std::move(setup);
 }
 
-auto gse::scene::set_active(const bool is_active) -> void {
+auto gse::scene::set_active(const bool is_active, channel_writer& channels, asset::state& assets) -> void {
 	if (is_active && !m_is_active) {
 		if (m_setup) {
-			m_setup(*this);
+			m_setup(*this, channels, assets);
 		}
 
 		for (const auto& object_id : m_queue) {

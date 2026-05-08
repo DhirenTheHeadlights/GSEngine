@@ -32,6 +32,71 @@ auto gse::physics::system::create_joint(state& s, const joint_definition& def) -
 	return handle;
 }
 
+auto gse::physics::join(channel_writer& channels, const id a, const id b, const fixed_joint& config) -> void {
+	channels.push<joint_request>({
+		.def = {
+			.entity_a = a,
+			.entity_b = b,
+			.type = vbd::joint_type::fixed,
+			.local_anchor_a = config.anchor_a,
+			.local_anchor_b = config.anchor_b,
+		},
+	});
+}
+
+auto gse::physics::join(channel_writer& channels, const id a, const id b, const distance_joint& config) -> void {
+	channels.push<joint_request>({
+		.def = {
+			.entity_a = a,
+			.entity_b = b,
+			.type = vbd::joint_type::distance,
+			.target_distance = config.target,
+		},
+	});
+}
+
+auto gse::physics::join(channel_writer& channels, const id a, const id b, const hinge_joint& config) -> void {
+	channels.push<joint_request>({
+		.def = {
+			.entity_a = a,
+			.entity_b = b,
+			.type = vbd::joint_type::hinge,
+			.local_anchor_a = config.anchor_a,
+			.local_anchor_b = config.anchor_b,
+			.local_axis_a = config.axis,
+			.local_axis_b = config.axis,
+			.limit_lower = config.limits ? config.limits->first : radians(-std::numbers::pi_v<float>),
+			.limit_upper = config.limits ? config.limits->second : radians(std::numbers::pi_v<float>),
+			.limits_enabled = config.limits.has_value(),
+		},
+	});
+}
+
+auto gse::physics::join(channel_writer& channels, const id a, const id b, const slider_joint& config) -> void {
+	channels.push<joint_request>({
+		.def = {
+			.entity_a = a,
+			.entity_b = b,
+			.type = vbd::joint_type::slider,
+			.local_axis_a = config.axis,
+			.local_axis_b = config.axis,
+		},
+	});
+}
+
+auto gse::physics::join(channel_writer& channels, const id a, const id b, const spring_joint& config) -> void {
+	channels.push<joint_request>({
+		.def = {
+			.entity_a = a,
+			.entity_b = b,
+			.type = vbd::joint_type::distance,
+			.target_distance = config.target,
+			.compliance = config.compliance,
+			.damping = config.damping,
+		},
+	});
+}
+
 auto gse::physics::system::remove_joint(state& s, const joint_handle handle) -> void {
 	if (handle < s.joints.size()) {
 		s.joints.erase(s.joints.begin() + handle);
@@ -311,6 +376,10 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::state* gpu_
 	}
 
 	while (true) {
+		for (const auto& req : ctx.read_channel<joint_request>()) {
+			system::create_joint(s, req.def);
+		}
+
 		for (const auto owner : ctx.drain_component_adds<collision_component>()) {
 			ctx.add_component<collision_result_component>(owner);
 		}
@@ -384,392 +453,383 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 	if (ud.completed_readback) {
 		{
 			trace::scope_guard sg{trace_id<"vbd_gpu::readback">()};
-				auto completed = std::move(*ud.completed_readback);
-				ud.completed_readback.reset();
+			auto completed = std::move(*ud.completed_readback);
+			ud.completed_readback.reset();
 
-				{
-					trace::scope_guard sg{trace_id<"vbd_gpu::readback_bodies">()};
-						const auto body_count = completed.entity_ids.size();
-						bool motion_order_matches = body_count == motion.size();
-						for (std::size_t i = 0; motion_order_matches && i < body_count; ++i) {
-							motion_order_matches = completed.entity_ids[i] == motion[i].owner_id();
+			{
+				const auto body_count = completed.entity_ids.size();
+				bool motion_order_matches = body_count == motion.size();
+				for (std::size_t i = 0; motion_order_matches && i < body_count; ++i) {
+					motion_order_matches = completed.entity_ids[i] == motion[i].owner_id();
+				}
+
+				bool collision_order_matches = body_count == collision.size();
+				for (std::size_t i = 0; collision_order_matches && i < body_count; ++i) {
+					collision_order_matches = completed.entity_ids[i] == collision[i].owner_id();
+				}
+
+				for (std::size_t i = 0; i < body_count; ++i) {
+					const auto eid = completed.entity_ids[i];
+					auto* mc = motion_order_matches ? std::addressof(motion[i]) : motion.find(eid);
+					if (!mc) {
+						continue;
+					}
+
+					const auto& bs = completed.gpu_result_bodies[i];
+
+					if (!mc->position_locked) {
+						mc->current_position = bs.position;
+						mc->current_velocity = bs.body_velocity;
+						if (mc->update_orientation) {
+							mc->orientation = bs.orientation;
+							mc->angular_velocity = bs.body_angular_velocity;
 						}
 
-						bool collision_order_matches = body_count == collision.size();
-						for (std::size_t i = 0; collision_order_matches && i < body_count; ++i) {
-							collision_order_matches = completed.entity_ids[i] == collision[i].owner_id();
-						}
+						ud.sleep_counters[eid] = bs.sleep_counter;
+						mc->sleeping = bs.sleeping();
+					}
 
-						for (std::size_t i = 0; i < body_count; ++i) {
-							const auto eid = completed.entity_ids[i];
-							auto* mc = motion_order_matches ? std::addressof(motion[i]) : motion.find(eid);
-							if (!mc) {
-								continue;
-							}
+					mc->airborne = true;
 
-							const auto& bs = completed.gpu_result_bodies[i];
-
-							if (!mc->position_locked) {
-								mc->current_position = bs.position;
-								mc->current_velocity = bs.body_velocity;
-								if (mc->update_orientation) {
-									mc->orientation = bs.orientation;
-									mc->angular_velocity = bs.body_angular_velocity;
-								}
-
-								ud.sleep_counters[eid] = bs.sleep_counter;
-								mc->sleeping = bs.sleeping();
-							}
-
-							mc->airborne = true;
-
-							auto* cc = collision_order_matches ? std::addressof(collision[i]) : collision.find(eid);
-							if (cc) {
-								cc->bounding_box.update(mc->current_position, mc->orientation);
-								if (cc->resolve_collisions) {
-									if (auto* info = results.find(eid)) {
-										info->colliding = false;
-										info->collision_normal = {};
-										info->penetration = {};
-										info->collision_points.clear();
-									}
-								}
+					auto* cc = collision_order_matches ? std::addressof(collision[i]) : collision.find(eid);
+					if (cc) {
+						cc->bounding_box.update(mc->current_position, mc->orientation);
+						if (cc->resolve_collisions) {
+							if (auto* info = results.find(eid)) {
+								info->colliding = false;
+								info->collision_normal = {};
+								info->penetration = {};
+								info->collision_points.clear();
 							}
 						}
+					}
 				}
+			}
 
-				{
-					trace::scope_guard sg{trace_id<"vbd_gpu::readback_contacts">()};
-						const auto& cfg = ud.vbd_solver.config();
-						ud.gpu_prev.warm_start_contacts.clear();
-						ud.gpu_prev.warm_start_contacts.reserve(completed.gpu_contacts.size());
+			{
+				const auto& cfg = ud.vbd_solver.config();
+				ud.gpu_prev.warm_start_contacts.clear();
+				ud.gpu_prev.warm_start_contacts.reserve(completed.gpu_contacts.size());
 
-						for (const auto& c : completed.gpu_contacts) {
-							const force friction_bound = abs(c.lambda[0]) * c.friction_coeff;
-							const force tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
-							const length tangential_gap = hypot(c.c0[1], c.c0[2]);
-							const bool sticking =
-								c.lambda[0] < newtons(-1e-3f) &&
-								tangential_gap < cfg.stick_threshold &&
-								tangential_lambda < friction_bound;
+				for (const auto& c : completed.gpu_contacts) {
+					const force friction_bound = abs(c.lambda[0]) * c.friction_coeff;
+					const force tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
+					const length tangential_gap = hypot(c.c0[1], c.c0[2]);
+					const bool sticking =
+						c.lambda[0] < newtons(-1e-3f) &&
+						tangential_gap < cfg.stick_threshold &&
+						tangential_lambda < friction_bound;
 
-							ud.gpu_prev.warm_start_contacts.push_back({
-								.body_a = c.body_a,
-								.body_b = c.body_b,
-								.feature_key = c.feature_key,
-								.sticking = sticking,
-								.normal = c.normal,
-								.tangent_u = c.tangent_u,
-								.tangent_v = c.tangent_v,
-								.local_anchor_a = c.local_anchor_a,
-								.local_anchor_b = c.local_anchor_b,
-								.lambda = c.lambda,
-								.penalty = c.penalty,
-							});
+					ud.gpu_prev.warm_start_contacts.push_back({
+						.body_a = c.body_a,
+						.body_b = c.body_b,
+						.feature_key = c.feature_key,
+						.sticking = sticking,
+						.normal = c.normal,
+						.tangent_u = c.tangent_u,
+						.tangent_v = c.tangent_v,
+						.local_anchor_a = c.local_anchor_a,
+						.local_anchor_b = c.local_anchor_b,
+						.lambda = c.lambda,
+						.penalty = c.penalty,
+					});
 
-							const auto body_a = c.body_a;
-							const auto body_b = c.body_b;
-							if (body_a >= completed.entity_ids.size() || body_b >= completed.entity_ids.size()) {
-								continue;
-							}
+					const auto body_a = c.body_a;
+					const auto body_b = c.body_b;
+					if (body_a >= completed.entity_ids.size() || body_b >= completed.entity_ids.size()) {
+						continue;
+					}
 
-							const auto eid_a = completed.entity_ids[body_a];
-							const auto eid_b = completed.entity_ids[body_b];
-							const auto& normal = c.normal;
+					const auto eid_a = completed.entity_ids[body_a];
+					const auto eid_b = completed.entity_ids[body_b];
+					const auto& normal = c.normal;
 
-							if (auto* mc_b = motion.find(eid_b)) {
-								if (normal.y() < -0.7f) {
-									mc_b->airborne = false;
-								}
-							}
-							if (auto* mc_a = motion.find(eid_a)) {
-								if (normal.y() > 0.7f) {
-									mc_a->airborne = false;
-								}
-							}
-
-							const auto& bs_a = completed.gpu_result_bodies[body_a];
-							const auto& bs_b = completed.gpu_result_bodies[body_b];
-							const auto world_r_a = rotate_vector(bs_a.orientation, c.local_anchor_a);
-							const auto world_r_b = rotate_vector(bs_b.orientation, c.local_anchor_b);
-							const auto contact_point_a = bs_a.position + world_r_a;
-							const auto contact_point_b = bs_b.position + world_r_b;
-							const auto midpoint = contact_point_a + (contact_point_b - contact_point_a) * 0.5f;
-
-							if (auto* res_a = results.find(eid_a)) {
-								res_a->colliding = true;
-								res_a->collision_normal = normal;
-								res_a->penetration = -c.c0[0];
-								res_a->collision_points.push_back(midpoint);
-							}
-							if (auto* res_b = results.find(eid_b)) {
-								res_b->colliding = true;
-								res_b->collision_normal = -normal;
-								res_b->penetration = -c.c0[0];
-								res_b->collision_points.push_back(midpoint);
-							}
+					if (auto* mc_b = motion.find(eid_b)) {
+						if (normal.y() < -0.7f) {
+							mc_b->airborne = false;
 						}
-				}
-
-				{
-					trace::scope_guard sg{trace_id<"vbd_gpu::readback_sort">()};
-						std::ranges::sort(
-							ud.gpu_prev.warm_start_contacts,
-							[](const vbd::warm_start_entry& a, const vbd::warm_start_entry& b) {
-								if (a.body_a != b.body_a) {
-									return a.body_a < b.body_a;
-								}
-								if (a.body_b != b.body_b) {
-									return a.body_b < b.body_b;
-								}
-								return a.feature_key < b.feature_key;
-							}
-						);
-				}
-
-				{
-					trace::scope_guard sg{trace_id<"vbd_gpu::readback_joints">()};
-						std::uint32_t ji = 0;
-						for (auto& jd : s.joints) {
-							if (ji >= completed.gpu_joint_readback.size()) {
-								break;
-							}
-							const auto& sj = completed.gpu_joint_readback[ji];
-							jd.pos_lambda = sj.pos_lambda;
-							jd.pos_penalty = sj.pos_penalty;
-							jd.ang_lambda = sj.ang_lambda;
-							jd.ang_penalty = sj.ang_penalty;
-							jd.limit_lambda = sj.limit_lambda;
-							jd.limit_penalty = sj.limit_penalty;
-							++ji;
+					}
+					if (auto* mc_a = motion.find(eid_a)) {
+						if (normal.y() > 0.7f) {
+							mc_a->airborne = false;
 						}
-				}
+					}
 
-		if (ud.comparison_pending.has_value()) {
-			const auto& cpu = ud.comparison_pending->cpu_result;
-			const auto& gpu = completed.gpu_result_bodies;
-			const auto& cpu_contacts = ud.comparison_pending->cpu_contacts;
-			const auto& cpu_joints = ud.comparison_pending->cpu_joints;
-			const auto count = std::min(cpu.size(), gpu.size());
+					const auto& bs_a = completed.gpu_result_bodies[body_a];
+					const auto& bs_b = completed.gpu_result_bodies[body_b];
+					const auto world_r_a = rotate_vector(bs_a.orientation, c.local_anchor_a);
+					const auto world_r_b = rotate_vector(bs_b.orientation, c.local_anchor_b);
+					const auto contact_point_a = bs_a.position + world_r_a;
+					const auto contact_point_b = bs_b.position + world_r_b;
+					const auto midpoint = contact_point_a + (contact_point_b - contact_point_a) * 0.5f;
 
-			length max_pos_err{};
-			velocity max_vel_err{};
-			angular_velocity max_ang_err{};
-			std::uint32_t worst_pos_idx = 0;
-
-			for (std::uint32_t i = 0; i < count; ++i) {
-				if (cpu[i].locked) {
-					continue;
-				}
-				const auto pe = magnitude(gpu[i].position - cpu[i].position);
-				const auto ve = magnitude(gpu[i].body_velocity - cpu[i].body_velocity);
-				const auto ae = magnitude(gpu[i].body_angular_velocity - cpu[i].body_angular_velocity);
-				if (pe > max_pos_err) {
-					max_pos_err = pe;
-					worst_pos_idx = i;
-				}
-				if (ve > max_vel_err) {
-					max_vel_err = ve;
-				}
-				if (ae > max_ang_err) {
-					max_ang_err = ae;
+					if (auto* res_a = results.find(eid_a)) {
+						res_a->colliding = true;
+						res_a->collision_normal = normal;
+						res_a->penetration = -c.c0[0];
+						res_a->collision_points.push_back(midpoint);
+					}
+					if (auto* res_b = results.find(eid_b)) {
+						res_b->colliding = true;
+						res_b->collision_normal = -normal;
+						res_b->penetration = -c.c0[0];
+						res_b->collision_points.push_back(midpoint);
+					}
 				}
 			}
 
-			std::unordered_map<contact_compare_key, const vbd::contact_constraint*, contact_compare_key_hash> cpu_contact_map;
-			cpu_contact_map.reserve(cpu_contacts.size());
-			for (const auto& c : cpu_contacts) {
-				cpu_contact_map[contact_compare_key{
-					.body_a = c.body_a,
-					.body_b = c.body_b,
-					.feature_key = pack_feature(c.feature)
-				}] = std::addressof(c);
-			}
-
-			std::unordered_map<contact_compare_key, const vbd::contact_readback_entry*, contact_compare_key_hash> gpu_contact_map;
-			gpu_contact_map.reserve(completed.gpu_contacts.size());
-			for (const auto& c : completed.gpu_contacts) {
-				gpu_contact_map[contact_compare_key{
-					.body_a = c.body_a,
-					.body_b = c.body_b,
-					.feature_key = c.feature_key
-				}] = std::addressof(c);
-			}
-
-			std::uint32_t matched_contacts = 0;
-			std::uint32_t cpu_only_contacts = 0;
-			std::uint32_t gpu_only_contacts = 0;
-			force max_contact_lambda_err{};
-			stiffness max_contact_penalty_err{};
-			length max_contact_c0_err{};
-			contact_compare_key worst_contact_key{};
-			const vbd::contact_constraint* worst_cpu_contact = nullptr;
-			const vbd::contact_readback_entry* worst_gpu_contact = nullptr;
-
-			for (const auto& [key, cpu_contact] : cpu_contact_map) {
-				const auto it = gpu_contact_map.find(key);
-				if (it == gpu_contact_map.end()) {
-					++cpu_only_contacts;
-					continue;
+			std::ranges::sort(
+				ud.gpu_prev.warm_start_contacts,
+				[](const vbd::warm_start_entry& a, const vbd::warm_start_entry& b) {
+					if (a.body_a != b.body_a) {
+						return a.body_a < b.body_a;
+					}
+					if (a.body_b != b.body_b) {
+						return a.body_b < b.body_b;
+					}
+					return a.feature_key < b.feature_key;
 				}
-
-				++matched_contacts;
-				const auto* gpu_contact = it->second;
-				const force lambda_err = magnitude(cpu_contact->lambda - gpu_contact->lambda);
-				const stiffness penalty_err = magnitude(cpu_contact->penalty - gpu_contact->penalty);
-				const length c0_err = magnitude(cpu_contact->c0 - gpu_contact->c0);
-
-				if (lambda_err > max_contact_lambda_err) {
-					max_contact_lambda_err = lambda_err;
-					max_contact_penalty_err = penalty_err;
-					max_contact_c0_err = c0_err;
-					worst_contact_key = key;
-					worst_cpu_contact = cpu_contact;
-					worst_gpu_contact = gpu_contact;
-				}
-				else if (penalty_err > max_contact_penalty_err) {
-					max_contact_penalty_err = penalty_err;
-					max_contact_c0_err = c0_err;
-					worst_contact_key = key;
-					worst_cpu_contact = cpu_contact;
-					worst_gpu_contact = gpu_contact;
-				}
-			}
-
-			for (const auto& key : gpu_contact_map | std::views::keys) {
-				if (!cpu_contact_map.contains(key)) {
-					++gpu_only_contacts;
-				}
-			}
-
-			const auto joint_count = std::min(cpu_joints.size(), completed.gpu_joint_readback.size());
-			force max_joint_pos_lambda_err{};
-			stiffness max_joint_pos_penalty_err{};
-			torque max_joint_ang_lambda_err{};
-			angular_stiffness max_joint_ang_penalty_err{};
-			torque max_joint_limit_lambda_err{};
-			angular_stiffness max_joint_limit_penalty_err{};
-			std::uint32_t worst_joint_pos_idx = 0;
-			std::uint32_t worst_joint_ang_idx = 0;
-			std::uint32_t worst_joint_limit_idx = 0;
-
-			for (std::uint32_t i = 0; i < joint_count; ++i) {
-				const auto pos_lambda_err = magnitude(cpu_joints[i].pos_lambda - completed.gpu_joint_readback[i].pos_lambda);
-				const auto pos_penalty_err = magnitude(cpu_joints[i].pos_penalty - completed.gpu_joint_readback[i].pos_penalty);
-				const auto ang_lambda_err = magnitude(cpu_joints[i].ang_lambda - completed.gpu_joint_readback[i].ang_lambda);
-				const auto ang_penalty_err = magnitude(cpu_joints[i].ang_penalty - completed.gpu_joint_readback[i].ang_penalty);
-				const auto limit_lambda_err = abs(cpu_joints[i].limit_lambda - completed.gpu_joint_readback[i].limit_lambda);
-				const auto limit_penalty_err = abs(cpu_joints[i].limit_penalty - completed.gpu_joint_readback[i].limit_penalty);
-
-				if (pos_lambda_err > max_joint_pos_lambda_err) {
-					max_joint_pos_lambda_err = pos_lambda_err;
-					worst_joint_pos_idx = i;
-				}
-				if (pos_penalty_err > max_joint_pos_penalty_err) {
-					max_joint_pos_penalty_err = pos_penalty_err;
-					worst_joint_pos_idx = i;
-				}
-				if (ang_lambda_err > max_joint_ang_lambda_err) {
-					max_joint_ang_lambda_err = ang_lambda_err;
-					worst_joint_ang_idx = i;
-				}
-				if (ang_penalty_err > max_joint_ang_penalty_err) {
-					max_joint_ang_penalty_err = ang_penalty_err;
-					worst_joint_ang_idx = i;
-				}
-				if (limit_lambda_err > max_joint_limit_lambda_err) {
-					max_joint_limit_lambda_err = limit_lambda_err;
-					worst_joint_limit_idx = i;
-				}
-				if (limit_penalty_err > max_joint_limit_penalty_err) {
-					max_joint_limit_penalty_err = limit_penalty_err;
-					worst_joint_limit_idx = i;
-				}
-			}
-
-			log::println(
-				"SOLVER COMPARE: bodies={} max_pos_err={} (body {}), max_vel_err={}, max_ang_err={}, contacts cpu={} gpu={} matched={} cpu_only={} gpu_only={}, joints cpu={} gpu={}",
-				count,
-				max_pos_err,
-				worst_pos_idx,
-				max_vel_err,
-				max_ang_err,
-				cpu_contacts.size(),
-				completed.gpu_contacts.size(),
-				matched_contacts,
-				cpu_only_contacts,
-				gpu_only_contacts,
-				cpu_joints.size(),
-				completed.gpu_joint_readback.size()
 			);
 
-			log::println(
-				"  contact deltas: max_lambda_err={}, max_penalty_err={}, max_c0_err={}",
-				max_contact_lambda_err,
-				max_contact_penalty_err,
-				max_contact_c0_err
-			);
+			{
+				std::uint32_t ji = 0;
+				for (auto& jd : s.joints) {
+					if (ji >= completed.gpu_joint_readback.size()) {
+						break;
+					}
+					const auto& sj = completed.gpu_joint_readback[ji];
+					jd.pos_lambda = sj.pos_lambda;
+					jd.pos_penalty = sj.pos_penalty;
+					jd.ang_lambda = sj.ang_lambda;
+					jd.ang_penalty = sj.ang_penalty;
+					jd.limit_lambda = sj.limit_lambda;
+					jd.limit_penalty = sj.limit_penalty;
+					++ji;
+				}
+			}
 
-			log::println(
-				"  joint deltas: max_pos_lambda_err={} (joint {}), max_pos_penalty_err={}, max_ang_lambda_err={} (joint {}), max_ang_penalty_err={}, max_limit_lambda_err={} (joint {}), max_limit_penalty_err={}",
-				max_joint_pos_lambda_err,
-				worst_joint_pos_idx,
-				max_joint_pos_penalty_err,
-				max_joint_ang_lambda_err,
-				worst_joint_ang_idx,
-				max_joint_ang_penalty_err,
-				max_joint_limit_lambda_err,
-				worst_joint_limit_idx,
-				max_joint_limit_penalty_err
-			);
+			if (ud.comparison_pending.has_value()) {
+				const auto& cpu = ud.comparison_pending->cpu_result;
+				const auto& gpu = completed.gpu_result_bodies;
+				const auto& cpu_contacts = ud.comparison_pending->cpu_contacts;
+				const auto& cpu_joints = ud.comparison_pending->cpu_joints;
+				const auto count = std::min(cpu.size(), gpu.size());
 
-#if 0
-			if (max_pos_err > meters(1e-4f)) {
-				const auto& cb = cpu[worst_pos_idx];
-				const auto& gb = gpu[worst_pos_idx];
+				length max_pos_err{};
+				velocity max_vel_err{};
+				angular_velocity max_ang_err{};
+				std::uint32_t worst_pos_idx = 0;
+
+				for (std::uint32_t i = 0; i < count; ++i) {
+					if (cpu[i].locked) {
+						continue;
+					}
+					const auto pe = magnitude(gpu[i].position - cpu[i].position);
+					const auto ve = magnitude(gpu[i].body_velocity - cpu[i].body_velocity);
+					const auto ae = magnitude(gpu[i].body_angular_velocity - cpu[i].body_angular_velocity);
+					if (pe > max_pos_err) {
+						max_pos_err = pe;
+						worst_pos_idx = i;
+					}
+					if (ve > max_vel_err) {
+						max_vel_err = ve;
+					}
+					if (ae > max_ang_err) {
+						max_ang_err = ae;
+					}
+				}
+
+				std::unordered_map<contact_compare_key, const vbd::contact_constraint*, contact_compare_key_hash> cpu_contact_map;
+				cpu_contact_map.reserve(cpu_contacts.size());
+				for (const auto& c : cpu_contacts) {
+					cpu_contact_map[contact_compare_key{
+						.body_a = c.body_a,
+						.body_b = c.body_b,
+						.feature_key = pack_feature(c.feature)
+					}] = std::addressof(c);
+				}
+
+				std::unordered_map<contact_compare_key, const vbd::contact_readback_entry*, contact_compare_key_hash> gpu_contact_map;
+				gpu_contact_map.reserve(completed.gpu_contacts.size());
+				for (const auto& c : completed.gpu_contacts) {
+					gpu_contact_map[contact_compare_key{
+						.body_a = c.body_a,
+						.body_b = c.body_b,
+						.feature_key = c.feature_key
+					}] = std::addressof(c);
+				}
+
+				std::uint32_t matched_contacts = 0;
+				std::uint32_t cpu_only_contacts = 0;
+				std::uint32_t gpu_only_contacts = 0;
+				force max_contact_lambda_err{};
+				stiffness max_contact_penalty_err{};
+				length max_contact_c0_err{};
+				contact_compare_key worst_contact_key{};
+				const vbd::contact_constraint* worst_cpu_contact = nullptr;
+				const vbd::contact_readback_entry* worst_gpu_contact = nullptr;
+
+				for (const auto& [key, cpu_contact] : cpu_contact_map) {
+					const auto it = gpu_contact_map.find(key);
+					if (it == gpu_contact_map.end()) {
+						++cpu_only_contacts;
+						continue;
+					}
+
+					++matched_contacts;
+					const auto* gpu_contact = it->second;
+					const force lambda_err = magnitude(cpu_contact->lambda - gpu_contact->lambda);
+					const stiffness penalty_err = magnitude(cpu_contact->penalty - gpu_contact->penalty);
+					const length c0_err = magnitude(cpu_contact->c0 - gpu_contact->c0);
+
+					if (lambda_err > max_contact_lambda_err) {
+						max_contact_lambda_err = lambda_err;
+						max_contact_penalty_err = penalty_err;
+						max_contact_c0_err = c0_err;
+						worst_contact_key = key;
+						worst_cpu_contact = cpu_contact;
+						worst_gpu_contact = gpu_contact;
+					}
+					else if (penalty_err > max_contact_penalty_err) {
+						max_contact_penalty_err = penalty_err;
+						max_contact_c0_err = c0_err;
+						worst_contact_key = key;
+						worst_cpu_contact = cpu_contact;
+						worst_gpu_contact = gpu_contact;
+					}
+				}
+
+				for (const auto& key : gpu_contact_map | std::views::keys) {
+					if (!cpu_contact_map.contains(key)) {
+						++gpu_only_contacts;
+					}
+				}
+
+				const auto joint_count = std::min(cpu_joints.size(), completed.gpu_joint_readback.size());
+				force max_joint_pos_lambda_err{};
+				stiffness max_joint_pos_penalty_err{};
+				torque max_joint_ang_lambda_err{};
+				angular_stiffness max_joint_ang_penalty_err{};
+				torque max_joint_limit_lambda_err{};
+				angular_stiffness max_joint_limit_penalty_err{};
+				std::uint32_t worst_joint_pos_idx = 0;
+				std::uint32_t worst_joint_ang_idx = 0;
+				std::uint32_t worst_joint_limit_idx = 0;
+
+				for (std::uint32_t i = 0; i < joint_count; ++i) {
+					const auto pos_lambda_err = magnitude(cpu_joints[i].pos_lambda - completed.gpu_joint_readback[i].pos_lambda);
+					const auto pos_penalty_err = magnitude(cpu_joints[i].pos_penalty - completed.gpu_joint_readback[i].pos_penalty);
+					const auto ang_lambda_err = magnitude(cpu_joints[i].ang_lambda - completed.gpu_joint_readback[i].ang_lambda);
+					const auto ang_penalty_err = magnitude(cpu_joints[i].ang_penalty - completed.gpu_joint_readback[i].ang_penalty);
+					const auto limit_lambda_err = abs(cpu_joints[i].limit_lambda - completed.gpu_joint_readback[i].limit_lambda);
+					const auto limit_penalty_err = abs(cpu_joints[i].limit_penalty - completed.gpu_joint_readback[i].limit_penalty);
+
+					if (pos_lambda_err > max_joint_pos_lambda_err) {
+						max_joint_pos_lambda_err = pos_lambda_err;
+						worst_joint_pos_idx = i;
+					}
+					if (pos_penalty_err > max_joint_pos_penalty_err) {
+						max_joint_pos_penalty_err = pos_penalty_err;
+						worst_joint_pos_idx = i;
+					}
+					if (ang_lambda_err > max_joint_ang_lambda_err) {
+						max_joint_ang_lambda_err = ang_lambda_err;
+						worst_joint_ang_idx = i;
+					}
+					if (ang_penalty_err > max_joint_ang_penalty_err) {
+						max_joint_ang_penalty_err = ang_penalty_err;
+						worst_joint_ang_idx = i;
+					}
+					if (limit_lambda_err > max_joint_limit_lambda_err) {
+						max_joint_limit_lambda_err = limit_lambda_err;
+						worst_joint_limit_idx = i;
+					}
+					if (limit_penalty_err > max_joint_limit_penalty_err) {
+						max_joint_limit_penalty_err = limit_penalty_err;
+						worst_joint_limit_idx = i;
+					}
+				}
+
 				log::println(
-					"  worst body[{}] entity={}: cpu_pos={} gpu_pos={} cpu_vel={} gpu_vel={} cpu_ang={} gpu_ang={}",
+					"SOLVER COMPARE: bodies={} max_pos_err={} (body {}), max_vel_err={}, max_ang_err={}, contacts cpu={} gpu={} matched={} cpu_only={} gpu_only={}, joints cpu={} gpu={}",
+					count,
+					max_pos_err,
 					worst_pos_idx,
-					worst_pos_idx < completed.entity_ids.size() ? completed.entity_ids[worst_pos_idx] : id{},
-					cb.position,
-					gb.position,
-					cb.body_velocity,
-					gb.body_velocity,
-					cb.body_angular_velocity,
-					gb.body_angular_velocity
+					max_vel_err,
+					max_ang_err,
+					cpu_contacts.size(),
+					completed.gpu_contacts.size(),
+					matched_contacts,
+					cpu_only_contacts,
+					gpu_only_contacts,
+					cpu_joints.size(),
+					completed.gpu_joint_readback.size()
 				);
-			}
-#endif
 
-			if (worst_cpu_contact && worst_gpu_contact) {
 				log::println(
-					"  worst contact: bodies=({}, {}), feature={}, cpu_lambda={} gpu_lambda={} cpu_penalty={} gpu_penalty={} cpu_c0={} gpu_c0={}",
-					worst_contact_key.body_a,
-					worst_contact_key.body_b,
-					worst_contact_key.feature_key,
-					worst_cpu_contact->lambda,
-					worst_gpu_contact->lambda,
-					worst_cpu_contact->penalty,
-					worst_gpu_contact->penalty,
-					worst_cpu_contact->c0,
-					worst_gpu_contact->c0
+					"  contact deltas: max_lambda_err={}, max_penalty_err={}, max_c0_err={}",
+					max_contact_lambda_err,
+					max_contact_penalty_err,
+					max_contact_c0_err
 				);
+
+				log::println(
+					"  joint deltas: max_pos_lambda_err={} (joint {}), max_pos_penalty_err={}, max_ang_lambda_err={} (joint {}), max_ang_penalty_err={}, max_limit_lambda_err={} (joint {}), max_limit_penalty_err={}",
+					max_joint_pos_lambda_err,
+					worst_joint_pos_idx,
+					max_joint_pos_penalty_err,
+					max_joint_ang_lambda_err,
+					worst_joint_ang_idx,
+					max_joint_ang_penalty_err,
+					max_joint_limit_lambda_err,
+					worst_joint_limit_idx,
+					max_joint_limit_penalty_err
+				);
+
+	#if 0
+				if (max_pos_err > meters(1e-4f)) {
+					const auto& cb = cpu[worst_pos_idx];
+					const auto& gb = gpu[worst_pos_idx];
+					log::println(
+						"  worst body[{}] entity={}: cpu_pos={} gpu_pos={} cpu_vel={} gpu_vel={} cpu_ang={} gpu_ang={}",
+						worst_pos_idx,
+						worst_pos_idx < completed.entity_ids.size() ? completed.entity_ids[worst_pos_idx] : id{},
+						cb.position,
+						gb.position,
+						cb.body_velocity,
+						gb.body_velocity,
+						cb.body_angular_velocity,
+						gb.body_angular_velocity
+					);
+				}
+	#endif
+
+				if (worst_cpu_contact && worst_gpu_contact) {
+					log::println(
+						"  worst contact: bodies=({}, {}), feature={}, cpu_lambda={} gpu_lambda={} cpu_penalty={} gpu_penalty={} cpu_c0={} gpu_c0={}",
+						worst_contact_key.body_a,
+						worst_contact_key.body_b,
+						worst_contact_key.feature_key,
+						worst_cpu_contact->lambda,
+						worst_gpu_contact->lambda,
+						worst_cpu_contact->penalty,
+						worst_gpu_contact->penalty,
+						worst_cpu_contact->c0,
+						worst_gpu_contact->c0
+					);
+				}
+
+				ud.comparison_pending.reset();
 			}
 
-			ud.comparison_pending.reset();
-		}
-
-				{
-					trace::scope_guard sg{trace_id<"vbd_gpu::readback_cache">()};
-						ud.gpu_prev.result_bodies.assign(
-							completed.gpu_result_bodies.begin(),
-							completed.gpu_result_bodies.end()
-						);
-						ud.gpu_prev.result_entity_ids.assign(
-							completed.entity_ids.begin(),
-							completed.entity_ids.end()
-						);
-				}
+			ud.gpu_prev.result_bodies.assign(
+				completed.gpu_result_bodies.begin(),
+				completed.gpu_result_bodies.end()
+			);
+			ud.gpu_prev.result_entity_ids.assign(
+				completed.entity_ids.begin(),
+				completed.entity_ids.end()
+			);
 		}
 	}
 

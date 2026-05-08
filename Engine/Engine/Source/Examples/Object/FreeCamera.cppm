@@ -25,13 +25,13 @@ export namespace gse::free_camera {
 	using component = component<component_data>;
 
 	struct bindings {
-		actions::button_channel forward;
-		actions::button_channel left;
-		actions::button_channel back;
-		actions::button_channel right;
-		actions::button_channel up;
-		actions::button_channel down;
-		actions::axis2_channel move;
+		actions::handle forward;
+		actions::handle left;
+		actions::handle back;
+		actions::handle right;
+		actions::handle up;
+		actions::handle down;
+		id move_axis_id;
 	};
 
 	struct system {
@@ -41,12 +41,14 @@ export namespace gse::free_camera {
 
 		static auto run(
 			run_context& ctx,
-			state& s
+			state& s,
+			const actions::system::state& as,
+			const camera::system::state& cam_s
 		) -> async::task<>;
 	};
 }
 
-auto gse::free_camera::system::run(run_context& ctx, state& s) -> async::task<> {
+auto gse::free_camera::system::run(run_context& ctx, state& s, const actions::system::state& as, const camera::system::state& cam_s) -> async::task<> {
 	while (true) {
 		{
 			auto [cameras, follows] = co_await ctx.acquire<
@@ -64,23 +66,22 @@ auto gse::free_camera::system::run(run_context& ctx, state& s) -> async::task<> 
 				slot = std::make_unique<bindings>();
 				auto& b = *slot;
 
-				actions::bind_button_channel<"FreeCamera_Move_Forward">(owner_id, key::w, b.forward);
-				actions::bind_button_channel<"FreeCamera_Move_Left">(owner_id, key::a, b.left);
-				actions::bind_button_channel<"FreeCamera_Move_Backward">(owner_id, key::s, b.back);
-				actions::bind_button_channel<"FreeCamera_Move_Right">(owner_id, key::d, b.right);
-				actions::bind_button_channel<"FreeCamera_Move_Up">(owner_id, key::space, b.up);
-				actions::bind_button_channel<"FreeCamera_Move_Down">(owner_id, key::left_control, b.down);
+				b.forward = actions::add<"FreeCamera_Move_Forward">(ctx.channels, key::w);
+				b.left = actions::add<"FreeCamera_Move_Left">(ctx.channels, key::a);
+				b.back = actions::add<"FreeCamera_Move_Backward">(ctx.channels, key::s);
+				b.right = actions::add<"FreeCamera_Move_Right">(ctx.channels, key::d);
+				b.up = actions::add<"FreeCamera_Move_Up">(ctx.channels, key::space);
+				b.down = actions::add<"FreeCamera_Move_Down">(ctx.channels, key::left_control);
 
-				actions::bind_axis2_channel(
-					owner_id,
+				b.move_axis_id = actions::bind_axis2(
+					ctx.channels,
 					actions::pending_axis2_info{
-						.left = b.left.handle(),
-						.right = b.right.handle(),
-						.back = b.back.handle(),
-						.fwd = b.forward.handle(),
+						.left = b.left,
+						.right = b.right,
+						.back = b.back,
+						.fwd = b.forward,
 						.scale = 1.f,
 					},
-					b.move,
 					trace_id<"FreeCamera_Move">()
 				);
 
@@ -94,6 +95,8 @@ auto gse::free_camera::system::run(run_context& ctx, state& s) -> async::task<> 
 				});
 			}
 
+			const auto& cs = actions::system::current_state(as);
+
 			for (auto& c : cameras) {
 				const auto owner_id = c.owner_id();
 				const auto& b = *s.bindings_by_owner[owner_id];
@@ -103,13 +106,14 @@ auto gse::free_camera::system::run(run_context& ctx, state& s) -> async::task<> 
 					continue;
 				}
 
-				const auto v = b.move.value;
-				const float lift = (b.up.held ? 1.f : 0.f) - (b.down.held ? 1.f : 0.f);
+				const auto v = cs.axis2_v(static_cast<std::uint16_t>(b.move_axis_id.number()));
+				const float lift = (actions::held(b.up, cs, as) ? 1.f : 0.f) - (actions::held(b.down, cs, as) ? 1.f : 0.f);
 
-				const auto direction = camera_direction_relative_to_origin(
-					{ v.x(), lift, v.y() },
-					owner_id
+				const auto direction = camera::system::direction_relative_to_origin(
+					cam_s,
+					{ v.x(), lift, v.y() }
 				);
+				(void)owner_id;
 				cam_follow->position += direction * c.speed * system_clock::dt();
 			}
 
