@@ -40,7 +40,7 @@ export namespace gse::task {
 		id id = trace::make_loc_id(std::source_location::current())
 	) -> void;
 
-	template <std::input_iterator It>
+	template <std::forward_iterator It>
 	auto post_range(
 		It first,
 		It last,
@@ -348,12 +348,35 @@ auto gse::task::post(job j, const id id) -> void {
 	submit_async(std::move(j), id, trace::current_eid());
 }
 
-template <std::input_iterator It>
+template <std::forward_iterator It>
 auto gse::task::post_range(It first, It last, const id id) -> void {
-	const std::uint64_t parent_eid = trace::current_eid();
-	for (; first != last; ++first) {
-		submit_async(std::move(*first), id, parent_eid);
+	const std::size_t count = static_cast<std::size_t>(std::distance(first, last));
+	if (count == 0) {
+		return;
 	}
+
+	const std::uint64_t parent_eid = trace::current_eid();
+	in_flight.fetch_add(count, std::memory_order_relaxed);
+
+	std::vector<job_entry> entries;
+	entries.reserve(count);
+
+	for (auto it = first; it != last; ++it) {
+		const auto key = async_key_for(&*it);
+		trace::begin_async(id, key);
+		entries.push_back(job_entry{
+			.fn = std::move(*it),
+			.trace_id = id,
+			.parent_eid = parent_eid,
+			.async_key = key,
+			.async_trace = true,
+			.counts_in_flight = true,
+			.gp = nullptr,
+		});
+	}
+
+	submission_queue.enqueue_bulk(producer_token(), std::make_move_iterator(entries.begin()), count);
+	work_available.release(static_cast<std::ptrdiff_t>(count));
 }
 
 auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t last, parallel_for_fn func, const id id) -> void {
@@ -367,10 +390,7 @@ auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t las
 		trace::scope_guard sg{id};
 		if (n <= coalesce_threshold) {
 			for (std::size_t i = first; i < last; ++i) {
-				{
-					trace::scope_guard sg{id};
-					func(i);
-				}
+				func(i);
 			}
 			return;
 		}
@@ -381,15 +401,9 @@ auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t las
 		group g(id);
 		for (std::size_t chunk_start = first; chunk_start < last; chunk_start += chunk) {
 			const std::size_t chunk_stop = std::min(chunk_start + chunk, last);
-			g.post([chunk_start, chunk_stop, id, &func] {
-				{
-					trace::scope_guard sg{id};
-					for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
-						{
-							trace::scope_guard sg{id};
-							func(i);
-						}
-					}
+			g.post([chunk_start, chunk_stop, &func] {
+				for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
+					func(i);
 				}
 			}, id);
 		}

@@ -1,6 +1,7 @@
 export module gse;
 
 export import gse.assert;
+export import gse.assets;
 export import gse.audio;
 export import gse.concurrency;
 export import gse.containers;

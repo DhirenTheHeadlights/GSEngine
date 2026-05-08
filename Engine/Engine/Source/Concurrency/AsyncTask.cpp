@@ -127,9 +127,14 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 	if (helpers.empty()) {
 		return std::noop_coroutine();
 	}
-	for (std::size_t i = 1; i < helpers.size(); ++i) {
-		auto& helper = helpers[i];
-		gse::task::post([&helper] { helper.start(); });
+	if (helpers.size() > 1) {
+		std::vector<gse::job> jobs;
+		jobs.reserve(helpers.size() - 1);
+		for (std::size_t i = 1; i < helpers.size(); ++i) {
+			auto& helper = helpers[i];
+			jobs.emplace_back([&helper] { helper.start(); });
+		}
+		gse::task::post_range(jobs.begin(), jobs.end());
 	}
 	return helpers[0].consume_start_handle();
 }
@@ -249,10 +254,7 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 	};
 
 	auto w = wrapper();
-	{
-		trace::scope_guard sg{ trace_id<"sync_wait::start">() };
-		w.start();
-	}
+	w.start();
 	{
 		trace::scope_guard sg{ trace_id<"sync_wait::acquire">() };
 		while (!done_flag.load(std::memory_order_acquire)) {
@@ -261,11 +263,8 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 			}
 		}
 	}
-	{
-		trace::scope_guard sg{ trace_id<"sync_wait::final_yield">() };
-		while (!w.done()) {
-			std::this_thread::yield();
-		}
+	while (!w.done()) {
+		std::this_thread::yield();
 	}
 
 	if (has_exception) {

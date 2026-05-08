@@ -1144,51 +1144,48 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 
 	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
 
-	{
-		trace::scope_guard sg{gse::trace_id<"graph::record_parallel">()};
-		task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
-			auto& pass = passes[pi];
-			const bool is_graphics_pass = pass.color_output || pass.depth_output;
-			const std::size_t si = pass_to_serial[pi];
-			const bool profile_pass = timestamps_enabled && si < max_profiled_passes;
-			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
+	task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
+		auto& pass = passes[pi];
+		const bool is_graphics_pass = pass.color_output || pass.depth_output;
+		const std::size_t si = pass_to_serial[pi];
+		const bool profile_pass = timestamps_enabled && si < max_profiled_passes;
+		const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
 
-			const auto worker_idx = task::current_worker();
-			assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
-			const auto frame_idx = m_frame->current_frame();
-			const auto secondary = worker_pools.acquire_secondary(*worker_idx, frame_idx);
+		const auto worker_idx = task::current_worker();
+		assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
+		const auto frame_idx = m_frame->current_frame();
+		const auto secondary = worker_pools.acquire_secondary(*worker_idx, frame_idx);
 
-			const std::array<vk::Format, 1> color_formats{ to_vk(color_format) };
-			const vk::CommandBufferInheritanceRenderingInfo rendering_inherit{
-				.viewMask = 0,
-				.colorAttachmentCount = pass.color_output ? 1u : 0u,
-				.pColorAttachmentFormats = pass.color_output ? color_formats.data() : nullptr,
-				.depthAttachmentFormat = pass.depth_output ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
-				.stencilAttachmentFormat = vk::Format::eUndefined,
-				.rasterizationSamples = vk::SampleCountFlagBits::e1,
-			};
+		const std::array<vk::Format, 1> color_formats{ to_vk(color_format) };
+		const vk::CommandBufferInheritanceRenderingInfo rendering_inherit{
+			.viewMask = 0,
+			.colorAttachmentCount = pass.color_output ? 1u : 0u,
+			.pColorAttachmentFormats = pass.color_output ? color_formats.data() : nullptr,
+			.depthAttachmentFormat = pass.depth_output ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
+			.stencilAttachmentFormat = vk::Format::eUndefined,
+			.rasterizationSamples = vk::SampleCountFlagBits::e1,
+		};
 
-			vk::CommandBufferInheritanceInfo inherit{};
-			vk::CommandBufferUsageFlags begin_flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-			if (is_graphics_pass) {
-				inherit.pNext = &rendering_inherit;
-				begin_flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
-			}
-			if (issue_stats) {
-				inherit.pipelineStatistics = profile_stats_flags;
-			}
+		vk::CommandBufferInheritanceInfo inherit{};
+		vk::CommandBufferUsageFlags begin_flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+		if (is_graphics_pass) {
+			inherit.pNext = &rendering_inherit;
+			begin_flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
+		}
+		if (issue_stats) {
+			inherit.pipelineStatistics = profile_stats_flags;
+		}
 
-			secondary.begin({
-				.flags = begin_flags,
-				.pInheritanceInfo = &inherit
-			});
-			m_device->descriptor_heap().bind_buffer(std::bit_cast<gpu::handle<command_buffer>>(secondary));
-			*pass.record_ctx_slot = recording_context{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) } };
-			pass.record_handle.resume();
-
-			pass_secondaries[pi] = secondary;
+		secondary.begin({
+			.flags = begin_flags,
+			.pInheritanceInfo = &inherit
 		});
-	}
+		m_device->descriptor_heap().bind_buffer(std::bit_cast<gpu::handle<command_buffer>>(secondary));
+		*pass.record_ctx_slot = recording_context{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) } };
+		pass.record_handle.resume();
+
+		pass_secondaries[pi] = secondary;
+	});
 
 	{
 		trace::scope_guard sg{gse::trace_id<"graph::record_replay">()};

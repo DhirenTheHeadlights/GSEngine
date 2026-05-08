@@ -9,49 +9,61 @@ import :entity_builders;
 
 export namespace gs {
 	auto physics_stress_test_scene_setup(
-		gse::scene& s
+		gse::scene& s,
+		gse::channel_writer& channels,
+		gse::asset::state& assets
 	) -> void;
 }
 
 namespace gs {
 	auto build_inverted_mass_pyramid(
+		gse::asset::state& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_domino_chain(
+		gse::asset::state& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_funnel(
+		gse::asset::state& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_slope_friction_test(
+		gse::asset::state& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_high_speed_impact_target(
+		gse::asset::state& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_spring_tests(
-		gse::scene& s
+		gse::asset::state& assets,
+		gse::scene& s,
+		gse::channel_writer& channels
 	) -> void;
 
 	auto build_tumbler(
+		gse::asset::state& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_box_grid(
+		gse::asset::state& assets,
 		gse::scene& s
 	) -> void;
 }
 
-auto gs::build_inverted_mass_pyramid(gse::scene& s) -> void {
+auto gs::build_inverted_mass_pyramid(gse::asset::state& assets, gse::scene& s) -> void {
 	constexpr float x = -15.f;
 	constexpr float z = 0.f;
 
 	build_box(
+		assets,
 		&s,
 		"Pyramid Light Base",
 		gse::vec3<gse::position>(x, 0.5f, z),
@@ -60,6 +72,7 @@ auto gs::build_inverted_mass_pyramid(gse::scene& s) -> void {
 	);
 
 	build_box(
+		assets,
 		&s,
 		"Pyramid Mid",
 		gse::vec3<gse::position>(x, 1.5f, z),
@@ -68,6 +81,7 @@ auto gs::build_inverted_mass_pyramid(gse::scene& s) -> void {
 	);
 
 	build_box(
+		assets,
 		&s,
 		"Pyramid Heavy Top",
 		gse::vec3<gse::position>(x, 2.5f, z),
@@ -76,7 +90,7 @@ auto gs::build_inverted_mass_pyramid(gse::scene& s) -> void {
 	);
 }
 
-auto gs::build_domino_chain(gse::scene& s) -> void {
+auto gs::build_domino_chain(gse::asset::state& assets, gse::scene& s) -> void {
 	constexpr float z = -10.f;
 	constexpr float start_x = -8.f;
 	constexpr float spacing = 0.9f;
@@ -84,6 +98,7 @@ auto gs::build_domino_chain(gse::scene& s) -> void {
 	for (int i = 0; i < 12; ++i) {
 		const float x = start_x + static_cast<float>(i) * spacing;
 		build_box(
+			assets,
 			&s,
 			std::format("Domino {}", i + 1),
 			gse::vec3<gse::position>(x, (i == 0) ? 1.2f : 1.f, z),
@@ -94,7 +109,7 @@ auto gs::build_domino_chain(gse::scene& s) -> void {
 	}
 }
 
-auto gs::build_funnel(gse::scene& s) -> void {
+auto gs::build_funnel(gse::asset::state& assets, gse::scene& s) -> void {
 	constexpr float cx = 15.f;
 	constexpr float cz = 0.f;
 
@@ -111,6 +126,7 @@ auto gs::build_funnel(gse::scene& s) -> void {
 	const float mid_offset = (spread + half_opening) * 0.5f;
 
 	build_static_box(
+		assets,
 		&s,
 		"Funnel Left Wall",
 		gse::vec3<gse::position>(cx - mid_offset, wall_height * 0.5f, cz),
@@ -119,6 +135,7 @@ auto gs::build_funnel(gse::scene& s) -> void {
 	);
 
 	build_static_box(
+		assets,
 		&s,
 		"Funnel Right Wall",
 		gse::vec3<gse::position>(cx + mid_offset, wall_height * 0.5f, cz),
@@ -127,6 +144,7 @@ auto gs::build_funnel(gse::scene& s) -> void {
 	);
 
 	build_static_box(
+		assets,
 		&s,
 		"Funnel Back Wall",
 		gse::vec3<gse::position>(cx, wall_height * 0.5f, cz - half_len),
@@ -139,6 +157,7 @@ auto gs::build_funnel(gse::scene& s) -> void {
 			const float by = 0.5f + static_cast<float>(row) * 1.1f;
 			const float bz = cz - 3.f;
 			build_box(
+				assets,
 				&s,
 				std::format("Funnel Box r{}c{}", row, col),
 				gse::vec3<gse::position>(bx, by, bz),
@@ -149,7 +168,7 @@ auto gs::build_funnel(gse::scene& s) -> void {
 	}
 }
 
-auto gs::build_slope_friction_test(gse::scene& s) -> void {
+auto gs::build_slope_friction_test(gse::asset::state& assets, gse::scene& s) -> void {
 	constexpr float x = 0.f;
 	constexpr float z = 15.f;
 
@@ -165,9 +184,10 @@ auto gs::build_slope_friction_test(gse::scene& s) -> void {
 	const gse::quat ramp_tilt(gse::axis_z, gse::degrees(30.f));
 	const gse::vec3<gse::position> ramp_position(x, 2.f, z);
 
-	build_static_box(&s, "Ramp 30deg", ramp_position, ramp_size, ramp_tilt);
+	build_static_box(assets, &s, "Ramp 30deg", ramp_position, ramp_size, ramp_tilt);
 
 	build_box(
+		assets,
 		&s,
 		"Ramp Box Should Hold",
 		ramp_position + resting_offset_for(ramp_tilt),
@@ -179,9 +199,10 @@ auto gs::build_slope_friction_test(gse::scene& s) -> void {
 	const gse::quat steep_tilt(gse::axis_z, gse::degrees(45.f));
 	const gse::vec3<gse::position> steep_ramp_position(x + 12.f, 2.f, z);
 
-	build_static_box(&s, "Steep Ramp 45deg", steep_ramp_position, ramp_size, steep_tilt);
+	build_static_box(assets, &s, "Steep Ramp 45deg", steep_ramp_position, ramp_size, steep_tilt);
 
 	build_box(
+		assets,
 		&s,
 		"Steep Box Should Slide",
 		steep_ramp_position + resting_offset_for(steep_tilt),
@@ -191,7 +212,7 @@ auto gs::build_slope_friction_test(gse::scene& s) -> void {
 	);
 }
 
-auto gs::build_high_speed_impact_target(gse::scene& s) -> void {
+auto gs::build_high_speed_impact_target(gse::asset::state& assets, gse::scene& s) -> void {
 	constexpr float x = 0.f;
 	constexpr float z = -20.f;
 
@@ -200,6 +221,7 @@ auto gs::build_high_speed_impact_target(gse::scene& s) -> void {
 			const float bx = x - 1.1f + static_cast<float>(col) * 1.1f;
 			const float by = 0.5f + static_cast<float>(row) * 1.05f;
 			build_box(
+				assets,
 				&s,
 				std::format("Impact Wall r{}c{}", row, col),
 				gse::vec3<gse::position>(bx, by, z),
@@ -210,7 +232,7 @@ auto gs::build_high_speed_impact_target(gse::scene& s) -> void {
 	}
 }
 
-auto gs::build_spring_tests(gse::scene& s) -> void {
+auto gs::build_spring_tests(gse::asset::state& assets, gse::scene& s, gse::channel_writer& channels) -> void {
 	constexpr float x = -25.f;
 	constexpr float z = -20.f;
 
@@ -225,6 +247,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 		const float bx = x + static_cast<float>(i) * 5.f;
 
 		const auto anchor_id = build_static_box(
+			assets,
 			&s,
 			std::format("Spring {} Anchor", labels[i]),
 			gse::vec3<gse::position>(bx, 10.f, z),
@@ -232,6 +255,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 		).identify();
 
 		const auto bob_id = build_sphere(
+			assets,
 			&s,
 			std::format("Spring {} Bob", labels[i]),
 			gse::vec3<gse::position>(bx + 2.f, 10.f, z),
@@ -240,7 +264,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 			12
 		).identify();
 
-		gse::physics::join(anchor_id, bob_id, gse::physics::spring_joint{
+		gse::physics::join(channels, anchor_id, bob_id, gse::physics::spring_joint{
 			.target = gse::meters(4.f),
 			.compliance = compliances[i],
 			.damping = 0.3f,
@@ -248,6 +272,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 	}
 
 	const auto chain_anchor = build_static_box(
+		assets,
 		&s,
 		"Spring Chain Anchor",
 		gse::vec3<gse::position>(x + 18.f, 12.f, z),
@@ -258,6 +283,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 	for (int i = 0; i < 5; ++i) {
 		const float by = 12.f - static_cast<float>(i + 1) * 2.f;
 		const auto link_id = build_sphere(
+			assets,
 			&s,
 			std::format("Spring Chain Link {}", i),
 			gse::vec3<gse::position>(x + 18.f, by, z),
@@ -266,7 +292,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 			12
 		).identify();
 
-		gse::physics::join(prev_id, link_id, gse::physics::spring_joint{
+		gse::physics::join(channels, prev_id, link_id, gse::physics::spring_joint{
 			.target = gse::meters(1.5f),
 			.compliance = gse::per_kilograms(0.02f),
 			.damping = 0.5f,
@@ -275,7 +301,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 	}
 }
 
-auto gs::build_tumbler(gse::scene& s) -> void {
+auto gs::build_tumbler(gse::asset::state& assets, gse::scene& s) -> void {
 	constexpr float cx = 0.f;
 	constexpr float cy = 10.f;
 	constexpr float cz = 24.f;
@@ -331,6 +357,7 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 
 	for (const auto& wall : walls) {
 		build_box(
+			assets,
 			&s,
 			std::format("Tumbler Wall {}", wall.suffix),
 			center + wall.local_offset,
@@ -365,6 +392,7 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 				const float fy = -radial_span + (static_cast<float>(iy) + 0.5f) * (radial_span * 2.f / ny);
 				const float fz = -axial_span + (static_cast<float>(iz) + 0.5f) * (axial_span * 2.f / nz);
 				build_box(
+					assets,
 					&s,
 					std::format("Tumbler Cube {}", content_id++),
 					gse::vec3<gse::position>(cx + fx, cy + fy, cz + fz),
@@ -376,7 +404,7 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 	}
 }
 
-auto gs::build_box_grid(gse::scene& s) -> void {
+auto gs::build_box_grid(gse::asset::state& assets, gse::scene& s) -> void {
 	constexpr int grid_x = 6;
 	constexpr int grid_z = 6;
 	constexpr int layers = 3;
@@ -391,6 +419,7 @@ auto gs::build_box_grid(gse::scene& s) -> void {
 				const float y = 0.5f + static_cast<float>(layer) * 1.05f;
 				const float z = base_z + static_cast<float>(iz) * spacing;
 				build_box(
+					assets,
 					&s,
 					std::format("Grid L{}R{}C{}", layer, ix, iz),
 					gse::vec3<gse::position>(x, y, z),
@@ -402,20 +431,21 @@ auto gs::build_box_grid(gse::scene& s) -> void {
 	}
 }
 
-auto gs::physics_stress_test_scene_setup(gse::scene& s) -> void {
+auto gs::physics_stress_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
 	const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
-	build_static_box(&s, "Floor", floor_pos, gse::vec3<gse::length>(60.f, 1.f, 60.f));
+	build_static_box(assets, &s, "Floor", floor_pos, gse::vec3<gse::length>(60.f, 1.f, 60.f));
 
-	build_inverted_mass_pyramid(s);
-	build_domino_chain(s);
-	build_funnel(s);
-	build_slope_friction_test(s);
-	build_high_speed_impact_target(s);
-	build_box_grid(s);
-	build_spring_tests(s);
-	//build_tumbler(s);
+	build_inverted_mass_pyramid(assets, s);
+	build_domino_chain(assets, s);
+	build_funnel(assets, s);
+	build_slope_friction_test(assets, s);
+	build_high_speed_impact_target(assets, s);
+	build_box_grid(assets, s);
+	build_spring_tests(assets, s, channels);
+	//build_tumbler(assets, s);
 
 	build_sphere(
+		assets,
 		&s,
 		"Bouncy Sphere",
 		gse::vec3<gse::position>(-15.f, 8.f, 0.f),
@@ -433,6 +463,7 @@ auto gs::physics_stress_test_scene_setup(gse::scene& s) -> void {
 		});
 
 	build_sphere_light(
+		assets,
 		&s,
 		"Scene Light",
 		gse::vec3<gse::position>(0.f, 25.f, 0.f),

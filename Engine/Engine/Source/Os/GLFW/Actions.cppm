@@ -256,27 +256,6 @@ export namespace gse::actions {
 		g_entity_camera_yaw.erase(entity_id);
 	}
 
-	struct button_channel {
-		id action_id{};
-		bool held = false;
-		bool pressed = false;
-		bool released = false;
-
-		auto handle() const -> handle {
-			return actions::handle(action_id);
-		}
-	};
-
-	struct axis1_channel {
-		std::uint16_t axis_id{};
-		float value = 0.f;
-	};
-
-	struct axis2_channel {
-		id axis_id{};
-		axis value{};
-	};
-
 	struct action_binding_info {
 		std::string name;
 		key current_key;
@@ -323,11 +302,6 @@ export namespace gse::actions {
 		float scale = 1.f;
 	};
 
-	struct channel_binding {
-		id owner;
-		std::function<void(const state&)> sampler;
-	};
-
 	struct system {
 		struct state {
 			actions::state current_input_state;
@@ -340,7 +314,6 @@ export namespace gse::actions {
 			std::vector<std::uint16_t> axis1_ids_cache;
 			std::vector<std::uint16_t> axis2_ids_cache;
 			id_mapped_collection<resolved_axis2_keys> axis2_by_id;
-			std::vector<channel_binding> channel_bindings;
 		};
 
 		static auto run(
@@ -384,35 +357,6 @@ export namespace gse::actions {
 			id action_id
 		) -> const actions::description*;
 
-		static auto register_channel(
-			state& s,
-			id owner_id,
-			button_channel& channel
-		) -> void;
-
-		static auto register_channel(
-			state& s,
-			id owner_id,
-			axis1_channel& channel
-		) -> void;
-
-		static auto register_channel(
-			state& s,
-			id owner_id,
-			axis2_channel& channel
-		) -> void;
-
-		static auto sample_for_entity(
-			const state& s,
-			const actions::state& as,
-			id owner_id
-		) -> void;
-
-		static auto sample_all_channels(
-			const state& s,
-			const actions::state& as
-		) -> void;
-
 		static auto rebinds_map(
 			state& s
 		) -> std::map<std::string, int>&;
@@ -437,6 +381,42 @@ export namespace gse::actions {
 			id action_id
 		) -> actions::description&;
 	};
+
+	auto add_by_name(
+		channel_writer& channels,
+		std::string_view tag,
+		key default_key
+	) -> handle;
+
+	template <fixed_string Tag>
+	auto add(
+		channel_writer& channels,
+		key default_key
+	) -> handle;
+
+	auto bind_axis2(
+		channel_writer& channels,
+		const pending_axis2_info& info,
+		id axis_id
+	) -> id;
+
+	auto held(
+		const handle& h,
+		const actions::state& s,
+		const system::state& sys
+	) -> bool;
+
+	auto pressed(
+		const handle& h,
+		const actions::state& s,
+		const system::state& sys
+	) -> bool;
+
+	auto released(
+		const handle& h,
+		const actions::state& s,
+		const system::state& sys
+	) -> bool;
 }
 
 auto gse::actions::system::held(const actions::state& as, const state& s, const handle h) -> bool {
@@ -725,25 +705,6 @@ auto gse::actions::system::run(run_context& ctx, state& s, const input::system::
 		action_state.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
 	}
 
-	for (const auto& desc : s.descriptions.items()) {
-		if (const auto idx = desc.bit_index(); action_state.pressed(idx) || action_state.released(idx) || action_state.held(idx)) {
-			ctx.channels.push<button_channel>({ desc.id(), action_state.held(idx), action_state.pressed(idx), action_state.released(idx) });
-		}
-	}
-
-	for (const auto axis_id : s.axis1_ids_cache) {
-		if (const float val = action_state.axis1(axis_id); std::abs(val) > 0.001f) {
-			ctx.channels.push<axis1_channel>({ axis_id, val });
-		}
-	}
-
-	for (const auto& [id, left, right, back, fwd, scale] : s.axis2_by_id.items()) {
-		const auto axis_id = static_cast<std::uint16_t>(id.number());
-		if (const auto val = action_state.axis2_v(axis_id); val.x() > 0.001f || val.y() > 0.001f) {
-			ctx.channels.push<axis2_channel>({ id, val });
-		}
-	}
-
 		co_await ctx.next_tick();
 	}
 }
@@ -762,57 +723,6 @@ auto gse::actions::system::axis2_ids(const state& s) -> std::span<const std::uin
 
 auto gse::actions::system::description(const state& s, const id action_id) -> const actions::description* {
 	return s.descriptions.try_get(action_id);
-}
-
-auto gse::actions::system::register_channel(state& s, const id owner_id, button_channel& channel) -> void {
-	s.channel_bindings.push_back(channel_binding{
-		.owner = owner_id,
-		.sampler = [&s, &channel](const actions::state& as) {
-			if (const auto* desc = description(s, channel.action_id)) {
-				const auto idx = desc->bit_index();
-				channel.held = as.held(idx);
-				channel.pressed = as.pressed(idx);
-				channel.released = as.released(idx);
-			}
-			else {
-				channel.held = false;
-				channel.pressed = false;
-				channel.released = false;
-			}
-		}
-	});
-}
-
-auto gse::actions::system::register_channel(state& s, const id owner_id, axis1_channel& channel) -> void {
-	s.channel_bindings.push_back(channel_binding{
-		.owner = owner_id,
-		.sampler = [&channel](const actions::state& as) {
-			channel.value = as.axis1(channel.axis_id);
-		}
-	});
-}
-
-auto gse::actions::system::register_channel(state& s, const id owner_id, axis2_channel& channel) -> void {
-	s.channel_bindings.push_back(channel_binding{
-		.owner = owner_id,
-		.sampler = [&channel](const actions::state& as) {
-			channel.value = as.axis2_v(static_cast<std::uint16_t>(channel.axis_id.number()));
-		}
-	});
-}
-
-auto gse::actions::system::sample_for_entity(const state& s, const actions::state& as, const id owner_id) -> void {
-	for (const auto& [owner, sampler] : s.channel_bindings) {
-		if (owner == owner_id) {
-			sampler(as);
-		}
-	}
-}
-
-auto gse::actions::system::sample_all_channels(const state& s, const actions::state& as) -> void {
-	for (const auto& [owner, sampler] : s.channel_bindings) {
-		sampler(as);
-	}
 }
 
 auto gse::actions::system::finalize_bindings(state& s) -> void {
@@ -917,6 +827,43 @@ auto gse::actions::system::all_bindings(const state& s) -> std::vector<action_bi
 auto gse::actions::system::rebind(state& s, const std::string_view action_name, const key new_key) -> void {
 	s.rebinds[std::string(action_name)] = static_cast<int>(new_key);
 	finalize_bindings(s);
+}
+
+auto gse::actions::add_by_name(channel_writer& channels, const std::string_view tag, const key default_key) -> handle {
+	const id action_id = generate_id(tag);
+
+	channels.push<add_action_request>({
+		.name = std::string(tag),
+		.default_key = default_key,
+		.action_id = action_id,
+	});
+
+	return handle(action_id);
+}
+
+template <gse::fixed_string Tag>
+auto gse::actions::add(channel_writer& channels, const key default_key) -> handle {
+	return add_by_name(channels, Tag, default_key);
+}
+
+auto gse::actions::bind_axis2(channel_writer& channels, const pending_axis2_info& info, const id axis_id) -> id {
+	channels.push<bind_axis2_request>({
+		.info = info,
+		.axis_id = axis_id,
+	});
+	return axis_id;
+}
+
+auto gse::actions::held(const handle& h, const actions::state& s, const system::state& sys) -> bool {
+	return system::held(s, sys, h);
+}
+
+auto gse::actions::pressed(const handle& h, const actions::state& s, const system::state& sys) -> bool {
+	return system::pressed(s, sys, h);
+}
+
+auto gse::actions::released(const handle& h, const actions::state& s, const system::state& sys) -> bool {
+	return system::released(s, sys, h);
 }
 
 auto gse::key_to_string(const key k) -> std::string_view {

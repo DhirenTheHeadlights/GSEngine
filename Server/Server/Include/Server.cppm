@@ -48,6 +48,9 @@ export namespace gse {
 		) -> void;
 
 		auto update(
+			world& w,
+			channel_writer& channels,
+			const actions::system::state& actions_s
 		) -> void;
 
 		template <typename T>
@@ -236,9 +239,11 @@ auto gse::server::resend_reliable_messages() -> void {
 	}
 }
 
-auto gse::server::update() -> void {
-	if (!gse::current_scene()) {
-		gse::activate_scene(find("Default Scene"));
+auto gse::server::update(world& w, channel_writer& channels, const actions::system::state& actions_s) -> void {
+	if (!w.current_scene()) {
+		channels.push<activate_scene_request>({
+			.scene_id = find("Default Scene"),
+		});
 	}
 
 	constexpr std::size_t max_packets_per_update = 256;
@@ -287,11 +292,11 @@ auto gse::server::update() -> void {
 
 				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
 
-				if (auto* scene = gse::current_scene()) {
+				if (auto* scene = w.current_scene()) {
 					const auto controller_name = std::format("PlayerController_{}:{}", pkt.from.ip, pkt.from.port);
-					auto controller_id = scene->registry().create(controller_name);
-					scene->registry().add_component<player_controller>(controller_id, player_controller_data{});
-					scene->registry().activate(controller_id);
+					auto controller_id = w.registry().create(controller_name);
+					w.registry().add_component<player_controller>(controller_id, player_controller_data{});
+					w.registry().activate(controller_id);
 					m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
 
 					if (!m_host_entity.has_value()) {
@@ -300,11 +305,11 @@ auto gse::server::update() -> void {
 					}
 
 					send_reliable(network::connection_accepted{ .controller_id = controller_id }, pkt.from);
-					}
+				}
 				std::println("Client [{}:{}] connected ({}/{})",
 					pkt.from.ip, pkt.from.port, m_clients.size(), max_players);
 
-				if (const auto* active = gse::current_scene()) {
+				if (const auto* active = w.current_scene()) {
 					const network::notify_scene_change msg{
 						.scene_id = active->id()
 					};
@@ -320,23 +325,23 @@ auto gse::server::update() -> void {
 		if (network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
 			if (auto client_it = m_clients.find(pkt.from); client_it != m_clients.end()) {
 				std::println("Client [{}:{}] reconnecting", pkt.from.ip, pkt.from.port);
-				if (auto* scene = gse::current_scene()) {
-					if (auto* pc = scene->registry().try_component<player_controller>(client_it->second.controller_id)) {
+				if (w.current_scene()) {
+					if (auto* pc = w.registry().try_component<player_controller>(client_it->second.controller_id)) {
 						if (pc->controlled_entity_id.exists()) {
-							scene->registry().remove(pc->controlled_entity_id);
+							w.registry().remove(pc->controlled_entity_id);
 						}
 					}
-					scene->registry().remove(client_it->second.controller_id);
+					w.registry().remove(client_it->second.controller_id);
 				}
 				m_clients.erase(client_it);
 			}
 
 			id reconnect_controller_id{};
-			if (auto* scene = gse::current_scene()) {
+			if (w.current_scene()) {
 				const auto controller_name = std::format("PlayerController_{}:{}", pkt.from.ip, pkt.from.port);
-				auto controller_id = scene->registry().create(controller_name);
-				scene->registry().add_component<player_controller>(controller_id, player_controller_data{});
-				scene->registry().activate(controller_id);
+				auto controller_id = w.registry().create(controller_name);
+				w.registry().add_component<player_controller>(controller_id, player_controller_data{});
+				w.registry().activate(controller_id);
 				m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
 				reconnect_controller_id = controller_id;
 
@@ -347,7 +352,7 @@ auto gse::server::update() -> void {
 
 			send_reliable(network::connection_accepted{ .controller_id = reconnect_controller_id }, pkt.from);
 
-			if (const auto* active = gse::current_scene()) {
+			if (const auto* active = w.current_scene()) {
 				const network::notify_scene_change msg{
 					.scene_id = active->id()
 				};
@@ -447,16 +452,17 @@ auto gse::server::update() -> void {
 
 	std::optional<id> scene_requested_id;
 
-	if (auto* sc = gse::current_scene()) {
-		for (const auto& [scene_id, condition] : gse::triggers()) {
+	if (w.current_scene()) {
+		for (const auto& [scene_id, condition] : w.triggers()) {
 			for (const auto& cd : m_clients | std::views::values) {
-				auto* pc = sc->registry().try_component<player_controller>(cd.controller_id);
+				auto* pc = w.registry().try_component<player_controller>(cd.controller_id);
 				const auto controlled_id = pc ? pc->controlled_entity_id : id{};
 
 				evaluation_context ctx{
 					.client_id = controlled_id,
 					.input = &cd.latest_input,
-					.registry = &sc->registry()
+					.actions_sys = &actions_s,
+					.registry = &w.registry(),
 				};
 				if (condition(ctx)) {
 					scene_requested_id = scene_id;
@@ -466,27 +472,27 @@ auto gse::server::update() -> void {
 	}
 
 	if (scene_requested_id) {
-		gse::activate_scene(*scene_requested_id);
+		channels.push<activate_scene_request>({
+			.scene_id = *scene_requested_id,
+		});
 
-		if (const auto* active = gse::current_scene()) {
-			const network::notify_scene_change msg{
-				.scene_id = active->id()
-			};
+		const network::notify_scene_change msg{
+			.scene_id = *scene_requested_id,
+		};
 
-			for (const auto& addr : m_clients | std::views::keys) {
-				send_reliable(msg, addr);
-			}
+		for (const auto& addr : m_clients | std::views::keys) {
+			send_reliable(msg, addr);
 		}
 	}
 
 	{
 		static std::uint32_t s_frame_counter = 0;
 		if (++s_frame_counter % 120 == 0) {
-			if (auto* sc = gse::current_scene()) {
+			if (w.current_scene()) {
 				for (const auto& [addr, cd] : m_clients) {
-					auto* pc = sc->registry().try_component<player_controller>(cd.controller_id);
+					auto* pc = w.registry().try_component<player_controller>(cd.controller_id);
 					if (!pc || !pc->controlled_entity_id.exists()) continue;
-					const auto* mc = sc->registry().try_component<physics::motion_component>(pc->controlled_entity_id);
+					const auto* mc = w.registry().try_component<physics::motion_component>(pc->controlled_entity_id);
 					if (!mc) continue;
 					const auto pos = mc->current_position;
 					std::println("[{}:{}] pos=({:.2f}, {:.2f}, {:.2f})",
@@ -501,19 +507,19 @@ auto gse::server::update() -> void {
 
 	resend_reliable_messages();
 
-	if (auto* sc = gse::current_scene()) {
+	if (w.current_scene()) {
 		auto send_all = [this](const auto& msg, const network::address& to) {
 			this->send(msg, to);
 		};
 
 		if (!m_pending_snapshots.empty()) {
 			for (const auto& addr : m_pending_snapshots) {
-				network::replicate_snapshot_to(send_all, sc->registry(), addr);
+				network::replicate_snapshot_to(send_all, w.registry(), addr);
 			}
 			m_pending_snapshots.clear();
 		}
 
-		network::replicate_deltas(send_all, sc->registry(), m_peers);
+		network::replicate_deltas(send_all, w.registry(), m_peers);
 	}
 }
 

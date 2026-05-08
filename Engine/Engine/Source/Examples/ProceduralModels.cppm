@@ -11,18 +11,20 @@ import gse.gpu;
 
 export namespace gse::procedural_model {
     auto box(
+        asset::state& assets,
         const material& mat,
         const vec3<length>& size = vec3<length>(1.f, 1.f, 1.f)
     ) -> resource::handle<model>;
 
     auto sphere(
-        const material& mat, 
+        asset::state& assets,
+        const material& mat,
         std::uint32_t sectors,
         std::uint32_t stacks
     ) -> resource::handle<model>;
 }
 
-auto gse::procedural_model::box(const material& mat, const vec3<length>& size) -> resource::handle<model> {
+auto gse::procedural_model::box(asset::state& assets, const material& mat, const vec3<length>& size) -> resource::handle<model> {
     const float sx = size.x().as<meters>();
     const float sy = size.y().as<meters>();
     const float sz = size.z().as<meters>();
@@ -74,14 +76,14 @@ auto gse::procedural_model::box(const material& mat, const vec3<length>& size) -
         if (const auto it = cache.find(key); it != cache.end()) {
             return it->second;
         }
-        handle = queue<model>(key, std::move(data));
+        handle = asset::queue<model>(assets, key, std::move(data));
         cache.emplace(key, handle);
     }
 
     return handle;
 }
 
-auto gse::procedural_model::sphere(const material& mat, std::uint32_t sectors, std::uint32_t stacks) -> resource::handle<model> {
+auto gse::procedural_model::sphere(asset::state& assets, const material& mat, std::uint32_t sectors, std::uint32_t stacks) -> resource::handle<model> {
     sectors = std::max(3u, sectors);
     stacks = std::max(2u, stacks);
 
@@ -167,7 +169,7 @@ auto gse::procedural_model::sphere(const material& mat, std::uint32_t sectors, s
         std::lock_guard lk(cache_mutex);
         if (const auto it = cache.find(key); it != cache.end()) return it->second;
 
-        handle = queue<model>(key, std::move(data));
+        handle = asset::queue<model>(assets, key, std::move(data));
         cache.emplace(key, handle);
     }
 

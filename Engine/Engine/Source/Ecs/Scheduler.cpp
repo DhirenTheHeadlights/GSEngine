@@ -16,20 +16,8 @@ auto gse::scheduler::set_advance_hook(std::function<void(id, std::string_view)> 
 	m_advance_hook = std::move(fn);
 }
 
-auto gse::scheduler::push_deferred(gse::move_only_function<void()> fn) -> void {
-	std::lock_guard lock(m_deferred_mutex);
-	m_deferred.push_back(std::move(fn));
-}
-
-auto gse::scheduler::drain_deferred() -> void {
-	std::vector<gse::move_only_function<void()>> batch;
-	{
-		std::lock_guard lock(m_deferred_mutex);
-		batch.swap(m_deferred);
-	}
-	for (auto& fn : batch) {
-		fn();
-	}
+auto gse::scheduler::make_channel_writer() -> channel_writer {
+	return m_channels_store.make_writer();
 }
 
 auto gse::scheduler::snapshot_all_states() -> void {
@@ -147,7 +135,6 @@ auto gse::scheduler::initialize() -> void {
 }
 
 auto gse::scheduler::advance_run_systems_during_init() -> void {
-	trace::scope_guard sg{ trace_id<"scheduler::advance_run_systems_during_init">() };
 	while (true) {
 		std::vector<async::task<>> tasks;
 		tasks.reserve(m_nodes.size());
@@ -240,10 +227,7 @@ auto gse::scheduler::run_unified_update() -> void {
 		}
 		tasks.push_back(advance_one_run_system(node));
 	}
-	{
-		trace::scope_guard sg2{ trace_id<"scheduler::update_sync_wait">() };
-		async::sync_wait(async::when_all(std::move(tasks)));
-	}
+	async::sync_wait(async::when_all(std::move(tasks)));
 }
 
 auto gse::scheduler::update() -> void {
@@ -254,11 +238,6 @@ auto gse::scheduler::update() -> void {
 		m_dep_graph_checked = true;
 	}
 	{
-		trace::scope_guard sg2{ trace_id<"scheduler::drain_deferred">() };
-		drain_deferred();
-	}
-	{
-		trace::scope_guard sg2{ trace_id<"scheduler::apply_settings">() };
 		auto writer = m_channels_store.make_writer();
 		for (auto& node : m_nodes) {
 			if (node.invoke_apply_settings_fn) {
@@ -267,10 +246,7 @@ auto gse::scheduler::update() -> void {
 		}
 	}
 	run_unified_update();
-	{
-		trace::scope_guard sg2{ trace_id<"scheduler::snapshot_states">() };
-		snapshot_all_states();
-	}
+	snapshot_all_states();
 }
 
 auto gse::scheduler::tick(const bool frame_ok, const std::function<void()>& in_frame) -> void {
@@ -289,14 +265,36 @@ auto gse::scheduler::drain_hot_add_queue() -> void {
 		drained.swap(m_hot_add_queue);
 	}
 	for (auto& node : drained) {
-		m_nodes.push_back(std::move(node));
+		register_node(std::move(node));
 	}
+}
+
+auto gse::scheduler::register_node(system_node node) -> void* {
+	const auto canonical_idx = node.state_id;
+	auto* state_ptr = node.state_ptr;
+	m_states.register_state(canonical_idx, node.state_ptr, node.state_snapshot_ptr);
+
+	auto combined_deps = node.run_state_deps;
+	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
+	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
+
+	if (node.resources_id.exists()) {
+		m_resources_store.register_resource(node.resources_id, node.resources_ptr);
+	}
+
+	if (node.settings_id.exists()) {
+		m_states.register_state(node.settings_id, node.settings_ptr, node.settings_snapshot_ptr);
+	}
+
+	m_nodes.push_back(std::move(node));
+	return state_ptr;
 }
 
 auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> {
 	if (!node.tick_ctx) {
 		node.tick_writer = std::make_unique<channel_writer>(m_channels_store.make_writer());
 		node.tick_ctx = std::make_unique<run_context>(
+			*this,
 			m_states,
 			m_resources_store,
 			m_channels_store,
@@ -392,14 +390,11 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	}
 
 	std::vector<async::task<>> tasks;
-	{
-		trace::scope_guard sg2{ trace_id<"scheduler::collect_frame_tasks">() };
-		for (auto& node : m_nodes) {
-			if (!node.has_frame) {
-				continue;
-			}
-			tasks.push_back(run_node_frame(f_ctx, node));
+	for (auto& node : m_nodes) {
+		if (!node.has_frame) {
+			continue;
 		}
+		tasks.push_back(run_node_frame(f_ctx, node));
 	}
 
 	if (!tasks.empty()) {
@@ -414,19 +409,12 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	}
 
 	if (in_frame) {
-		trace::scope_guard sg2{ trace_id<"scheduler::in_frame_callback">() };
 		in_frame();
 	}
 
 	if (!tasks.empty()) {
-		{
-			trace::scope_guard sg2{ trace_id<"scheduler::frame_sync_wait">() };
-			async::sync_wait(async::when_all(std::move(tasks)));
-		}
-		{
-			trace::scope_guard sg2{ trace_id<"scheduler::frame_graph_clear">() };
-			m_frame_graph.clear();
-		}
+		async::sync_wait(async::when_all(std::move(tasks)));
+		m_frame_graph.clear();
 	}
 }
 

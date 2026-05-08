@@ -19,19 +19,18 @@ export namespace gs {
 
 		static auto run(
 			gse::run_context& ctx,
-			state& s
+			state& s,
+			const gse::network::system::state& net_s
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::client_system::run(gse::run_context& ctx, state& s) -> gse::async::task<> {
-	gse::add_system<gs::player::system>();
-	gse::add_system<gs::tumbler::system>();
-	gse::add_system<gse::free_camera::system>();
+auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network::system::state& net_s) -> gse::async::task<> {
+	ctx.add_system<gs::player::system>();
+	ctx.add_system<gs::tumbler::system>();
+	ctx.add_system<gse::free_camera::system>();
 
-	gse::set_input_sampler(&gse::local_input_sampler);
-
-	gse::network::clear_discovery_providers();
+	ctx.channels.push<gse::network::clear_providers_request>({});
 	std::vector seed{
 		gse::network::discovery_result{
 			.addr = gse::network::address{
@@ -56,42 +55,56 @@ auto gs::client_system::run(gse::run_context& ctx, state& s) -> gse::async::task
 			.build = 1,
 		},
 	};
-	gse::network::add_discovery_provider(std::make_shared<gse::network::wan_directory_provider>(std::move(seed)));
-	gse::network::refresh_servers(gse::milliseconds(200));
+	ctx.channels.push<gse::network::add_provider_request>({
+		.provider = std::make_shared<gse::network::wan_directory_provider>(std::move(seed)),
+	});
+	ctx.channels.push<gse::network::refresh_servers_request>({
+		.timeout = gse::milliseconds(200),
+	});
+
+	const auto send_message = [&](auto m) {
+		ctx.channels.push<gse::network::send_request>({
+			.action = [m = std::move(m)](gse::network::client& c) {
+				c.send(m);
+			},
+		});
+	};
 
 	while (true) {
-		gse::network::drain([&](const gse::network::inbox_message& m) {
+		for (const auto& m : net_s.user_inbox) {
 			gse::match(m)
 				.if_is([&](const gse::network::connection_accepted& msg) {
-					gse::set_networked(true);
-					gse::set_authoritative(false);
-					gse::set_local_controller_id(msg.controller_id);
-					if (const auto* scene = gse::current_scene()) {
-						gse::deactivate_scene(scene->id());
-					}
-					gse::network::send(gse::network::server_info_request{});
+					ctx.channels.push<gse::set_networked_request>({ .value = true });
+					ctx.channels.push<gse::set_authoritative_request>({ .value = false });
+					ctx.channels.push<gse::set_local_controller_id_request>({ .controller_id = msg.controller_id });
+					ctx.channels.push<gse::deactivate_active_scene_request>({});
+					send_message(gse::network::server_info_request{});
 				})
 				.else_if_is([&](const gse::network::notify_scene_change& msg) {
-					gse::activate_scene(msg.scene_id);
+					ctx.channels.push<gse::activate_scene_request>({ .scene_id = msg.scene_id });
 					std::println("Switched to scene: {}", msg.scene_id);
 				})
 				.else_if_is([&](const gse::network::server_info_response& msg) {
 					s.connected_players = msg.players;
 					s.connected_max_players = msg.max_players;
 				});
-		});
+		}
 
 		if (s.refresh_clock.elapsed<std::uint32_t>() > gse::seconds(1000u)) {
-			gse::network::refresh_servers(gse::milliseconds(150));
+			ctx.channels.push<gse::network::refresh_servers_request>({
+				.timeout = gse::milliseconds(150),
+			});
 			s.refresh_clock.reset();
 		}
 
-		if (gse::network::connection_state() == gse::network::client::state::connected && s.server_info_timer.tick()) {
-			gse::network::send(gse::network::server_info_request{});
+		if (net_s.connection_state == gse::network::client::state::connected && s.server_info_timer.tick()) {
+			send_message(gse::network::server_info_request{});
 		}
 
-		gse::gui::panel("Network", [&](gse::gui::builder& ui) {
-			switch (gse::network::connection_state()) {
+		ctx.channels.push<gse::gui::menu_content>({
+			.menu = "Network",
+			.build = [&](gse::gui::builder& ui) {
+			switch (net_s.connection_state) {
 				case gse::network::client::state::disconnected:
 					ui.draw<gse::gui::text>({
 						.content = "Status: Disconnected",
@@ -114,10 +127,12 @@ auto gs::client_system::run(gse::run_context& ctx, state& s) -> gse::async::task
 			if (ui.draw<gse::gui::button>({
 				.text = "Refresh",
 			})) {
-				gse::network::refresh_servers(gse::milliseconds(150));
+				ctx.channels.push<gse::network::refresh_servers_request>({
+					.timeout = gse::milliseconds(150),
+				});
 			}
 
-			const auto list = gse::network::servers();
+			const auto& list = net_s.available_servers;
 			ui.draw<gse::gui::text>({
 				.content = std::format("Found: {}", list.size()),
 			});
@@ -137,16 +152,24 @@ auto gs::client_system::run(gse::run_context& ctx, state& s) -> gse::async::task
 				.text = "Connect",
 			}) && s.selected >= 0 && s.selected < static_cast<int>(list.size())) {
 				const auto& pick = list[static_cast<std::size_t>(s.selected)];
-				gse::network::connect(pick, gse::network::address{ .ip = "0.0.0.0", .port = 0 }, gse::seconds(5), gse::seconds(1));
+				ctx.channels.push<gse::network::connect_request>({
+					.options = {
+						.addr = pick.addr,
+						.local_bind = gse::network::address{ .ip = "0.0.0.0", .port = 0 },
+						.timeout = gse::seconds(5),
+						.retry = gse::seconds(1),
+					},
+				});
 			}
 
 			if (ui.draw<gse::gui::button>({
 				.text = "Send Ping",
-			}) && gse::network::connection_state() == gse::network::client::state::connected) {
-				gse::network::send(gse::network::ping{
+			}) && net_s.connection_state == gse::network::client::state::connected) {
+				send_message(gse::network::ping{
 					.sequence = ++s.ping_seq,
 				});
 			}
+			},
 		});
 
 		co_await ctx.next_tick();

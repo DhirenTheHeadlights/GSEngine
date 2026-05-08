@@ -15,9 +15,12 @@ import :task_context;
 import :traits;
 
 export namespace gse {
+	class scheduler;
+
 	class run_context : public task_context {
 	public:
 		run_context(
+			scheduler& sched,
 			state_registry& states,
 			resource_registry& resources_store,
 			channel_registry& channels_store,
@@ -29,6 +32,11 @@ export namespace gse {
 			async::manual_event& tick_done_event,
 			bool& is_in_update_loop
 		);
+
+		template <typename S, typename... Args>
+		auto add_system(
+			Args&&... args
+		) -> void;
 
 		[[nodiscard]] auto next_tick(
 		) -> async::task<>;
@@ -107,6 +115,7 @@ export namespace gse {
 		) const -> int;
 
 	private:
+		scheduler& m_sched;
 		registry& m_reg;
 		async::rw_mutex_registry& m_access_mutexes;
 		std::atomic<int> m_held_locks{ 0 };
@@ -141,7 +150,7 @@ namespace gse {
 	) -> id;
 }
 
-gse::run_context::run_context(state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, registry& reg, async::rw_mutex_registry& access_mutexes, async::manual_event& tick_event, async::manual_event& tick_done_event, bool& is_in_update_loop) : task_context{ states, resources_store, channels_store, channels, graph, true }, m_reg(reg), m_access_mutexes(access_mutexes), m_tick_event(tick_event), m_tick_done_event(tick_done_event), m_is_in_update_loop(is_in_update_loop) {}
+gse::run_context::run_context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, registry& reg, async::rw_mutex_registry& access_mutexes, async::manual_event& tick_event, async::manual_event& tick_done_event, bool& is_in_update_loop) : task_context{ states, resources_store, channels_store, channels, graph, true }, m_sched(sched), m_reg(reg), m_access_mutexes(access_mutexes), m_tick_event(tick_event), m_tick_done_event(tick_done_event), m_is_in_update_loop(is_in_update_loop) {}
 
 auto gse::run_context::next_tick() -> async::task<> {
 	const int locks = held_lock_count();

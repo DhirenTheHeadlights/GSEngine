@@ -53,10 +53,6 @@ export namespace gse {
 		auto clear(
 		) -> void;
 
-		auto push_deferred(
-			gse::move_only_function<void()> fn
-		) -> void;
-
 		template <typename S, typename... Args>
 		auto add_system(
 			Args&&... args
@@ -66,6 +62,11 @@ export namespace gse {
 		auto ensure_system(
 			Args&&... args
 		) -> state_of_t<S>&;
+
+		template <typename S, typename... Args>
+		auto queue_add_system(
+			Args&&... args
+		) -> void;
 
 		template <typename T>
 		auto register_external_resource(
@@ -91,19 +92,18 @@ export namespace gse {
 		template <typename T>
 		auto channel() -> gse::channel<T>&;
 
+		auto make_channel_writer(
+		) -> channel_writer;
+
 		template <typename T>
 			requires is_same_frame_channel_v<T>
 		auto drain_channel(
 		) -> std::vector<T>;
 
-		template <typename State, typename F>
-		auto defer(
-			F&& fn
-		) -> void;
-
 	private:
-		auto drain_deferred(
-		) -> void;
+		auto register_node(
+			system_node node
+		) -> void*;
 
 		auto check_state_dep_cycles(
 		) -> void;
@@ -133,8 +133,6 @@ export namespace gse {
 		std::unordered_set<id> m_external_resources;
 		resource_registry m_resources_store;
 		channel_registry m_channels_store;
-		std::vector<gse::move_only_function<void()>> m_deferred;
-		std::mutex m_deferred_mutex;
 		std::vector<system_node> m_hot_add_queue;
 		std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
@@ -196,17 +194,6 @@ auto gse::scheduler::drain_channel() -> std::vector<T> {
 	return m_channels_store.template drain<T>();
 }
 
-template <typename State, typename F>
-auto gse::scheduler::defer(F&& fn) -> void {
-	using state_t = std::remove_cvref_t<State>;
-	push_deferred([this, f = std::forward<F>(fn)]() mutable {
-		auto* ptr = m_states.state_ptr(compute_state_dep_id<state_t>());
-		if (ptr) {
-			f(*static_cast<state_t*>(ptr));
-		}
-	});
-}
-
 template <typename S, typename... Args>
 auto gse::scheduler::ensure_system(Args&&... args) -> state_of_t<S>& {
 	using state_t = state_of_t<S>;
@@ -220,30 +207,32 @@ template <typename S, typename... Args>
 auto gse::scheduler::add_system(Args&&... args) -> state_of_t<S>& {
 	using state_t = state_of_t<S>;
 	assert(m_registry != nullptr, "scheduler::set_registry must be called before add_system");
-
-	auto node = make_system_node<S>(std::forward<Args>(args)...);
-	auto* state_ref = static_cast<state_t*>(node.state_ptr);
-
-	const auto canonical_idx = id_of<S>();
 	(void)trace_id<S>();
-	m_states.register_state(canonical_idx, node.state_ptr, node.state_snapshot_ptr);
-
-	auto combined_deps = node.run_state_deps;
-	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
-	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
-
 	if constexpr (has_resources<S>) {
 		(void)trace_id<typename S::resources>();
-		m_resources_store.register_resource(id_of<typename S::resources>(), node.resources_ptr);
 	}
-
 	if constexpr (has_settings<S>) {
-		using settings_t = typename S::settings;
-		(void)trace_id<settings_t>();
-		m_states.register_state(node.settings_id, node.settings_ptr, node.settings_snapshot_ptr);
+		(void)trace_id<typename S::settings>();
 	}
+	auto* state_ref = register_node(make_system_node<S>(std::forward<Args>(args)...));
+	return *static_cast<state_t*>(state_ref);
+}
 
-	m_nodes.push_back(std::move(node));
+template <typename S, typename... Args>
+auto gse::scheduler::queue_add_system(Args&&... args) -> void {
+	(void)trace_id<S>();
+	if constexpr (has_resources<S>) {
+		(void)trace_id<typename S::resources>();
+	}
+	if constexpr (has_settings<S>) {
+		(void)trace_id<typename S::settings>();
+	}
+	auto node = make_system_node<S>(std::forward<Args>(args)...);
+	std::lock_guard lock(m_hot_add_mutex);
+	m_hot_add_queue.push_back(std::move(node));
+}
 
-	return *state_ref;
+template <typename S, typename... Args>
+auto gse::run_context::add_system(Args&&... args) -> void {
+	m_sched.queue_add_system<S>(std::forward<Args>(args)...);
 }
