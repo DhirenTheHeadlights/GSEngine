@@ -34,7 +34,5 @@ export namespace gse {
 		std::unordered_map<std::string, animation_parameter> parameters;
 		std::vector<mat4f> blend_from_pose;
 		std::vector<mat4f> blend_to_pose;
-
-		id owner_id;
 	};
 }

@@ -50,6 +50,9 @@ export namespace gse {
 			this component_storage& self
 		) -> decltype(auto);
 
+		auto owners(
+		) const -> std::span<const id>;
+
 		auto mark_updated(
 			id owner
 		) -> void;
@@ -125,6 +128,11 @@ export namespace gse {
 		) -> decltype(auto);
 
 		template <typename T>
+		auto owner_ids(
+			this registry& self
+		) -> std::span<const id>;
+
+		template <typename T>
 		auto component(
 			this registry& self,
 			id owner
@@ -186,7 +194,6 @@ export namespace gse {
 
 template <typename T>
 auto gse::component_storage<T>::add(const id owner, const bool entity_active, T value) -> T* {
-	value.owner_id = owner;
 	if (entity_active) {
 		if (const auto it = m_index.find(owner); it != m_index.end()) {
 			return &m_data[it->second];
@@ -259,6 +266,11 @@ auto gse::component_storage<T>::try_get(this component_storage& self, const id o
 template <typename T>
 auto gse::component_storage<T>::items(this component_storage& self) -> decltype(auto) {
 	return std::span(self.m_data);
+}
+
+template <typename T>
+auto gse::component_storage<T>::owners() const -> std::span<const id> {
+	return m_owners;
 }
 
 template <typename T>
@@ -388,6 +400,12 @@ auto gse::registry::components(this registry& self) -> decltype(auto) {
 }
 
 template <typename T>
+auto gse::registry::owner_ids(this registry& self) -> std::span<const id> {
+	auto* s = self.try_storage<T>();
+	return s ? s->owners() : std::span<const id>{};
+}
+
+template <typename T>
 auto gse::registry::component(this registry& self, const id owner) -> decltype(auto) {
 	auto* ptr = self.try_component<T>(owner);
 	assert(
@@ -409,24 +427,24 @@ template <typename T>
 auto gse::registry::acquire_read(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> read<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
-		return read<T>({}, nullptr, nullptr, mutex, held_locks);
+		return read<T>({}, {}, nullptr, nullptr, mutex, held_locks);
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> const T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
 	};
-	return read<T>(s->items(), lookup, s, mutex, held_locks);
+	return read<T>(s->items(), s->owners(), lookup, s, mutex, held_locks);
 }
 
 template <typename T>
 auto gse::registry::acquire_write(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> write<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
-		return write<T>({}, nullptr, nullptr, mutex, held_locks);
+		return write<T>({}, {}, nullptr, nullptr, mutex, held_locks);
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
 	};
-	return write<T>(s->items(), lookup, s, mutex, held_locks);
+	return write<T>(s->items(), s->owners(), lookup, s, mutex, held_locks);
 }
 
 template <typename T>

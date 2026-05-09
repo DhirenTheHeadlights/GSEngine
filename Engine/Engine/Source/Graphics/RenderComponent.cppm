@@ -23,7 +23,5 @@ export namespace gse {
 
         std::vector<model_instance> model_instances;
         std::vector<skinned_model_instance> skinned_model_instances;
-
-        id owner_id;
     };
 }

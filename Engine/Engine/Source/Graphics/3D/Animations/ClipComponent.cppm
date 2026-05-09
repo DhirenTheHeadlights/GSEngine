@@ -20,7 +20,5 @@ export namespace gse {
 		resource::handle<clip_asset> clip;
 		time t;
 		bool playing = true;
-
-		id owner_id;
 	};
 }

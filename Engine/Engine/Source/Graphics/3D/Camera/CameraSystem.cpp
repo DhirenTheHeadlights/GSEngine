@@ -88,14 +88,16 @@ auto gse::camera::system::run(run_context& ctx, state& s, const input::system::s
 		{
 			auto [cameras] = co_await ctx.acquire<read<follow_component>>();
 
-			for (const auto& cam : cameras) {
+			const auto camera_ids = cameras.owner_ids();
+			for (std::size_t i = 0; i < cameras.size(); ++i) {
+				const auto& cam = cameras[i];
 				if (!cam.active) {
 					continue;
 				}
 
 				if (cam.priority > highest_priority) {
 					highest_priority = cam.priority;
-					best_controller = cam.owner_id;
+					best_controller = camera_ids[i];
 					best_blend_duration = cam.blend_in_duration;
 
 					best_target.position = cam.position + cam.offset;

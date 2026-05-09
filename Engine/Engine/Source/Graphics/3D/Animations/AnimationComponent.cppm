@@ -21,7 +21,5 @@ export namespace gse {
 		std::vector<mat4f> global_pose;
 		std::vector<mat4f> skins;
 		std::uint32_t skin_buffer_offset = 0;
-
-		id owner_id;
 	};
 }

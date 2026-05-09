@@ -14,8 +14,6 @@ export namespace gs::player {
 		int boost_fuel_max = 1000;
 		int boost_fuel = 1000;
 		bool jetpack_enabled = false;
-
-		gse::id owner_id;
 	};
 
 	struct bindings {
@@ -51,8 +49,10 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 				gse::write<gse::camera::follow_component>
 			>();
 
-			for (auto& p : players) {
-				const auto owner_id = p.owner_id;
+			const auto player_ids = players.owner_ids();
+			for (std::size_t i = 0; i < players.size(); ++i) {
+				auto& p = players[i];
+				const auto owner_id = player_ids[i];
 				auto& slot = s.bindings_by_owner[owner_id];
 				if (slot) {
 					continue;
@@ -129,8 +129,9 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 
 			const auto& cs = gse::actions::system::current_state(as);
 
-			for (auto& p : players) {
-				const auto owner_id = p.owner_id;
+			for (std::size_t i = 0; i < players.size(); ++i) {
+				auto& p = players[i];
+				const auto owner_id = player_ids[i];
 				const auto& b = *s.bindings_by_owner[owner_id];
 
 				auto* motion = motions.find(owner_id);

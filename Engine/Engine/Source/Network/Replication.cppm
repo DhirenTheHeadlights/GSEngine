@@ -166,8 +166,10 @@ auto gse::network::replicate_deltas(auto& send_fn, registry& reg, const std::uno
 
 template <typename T>
 auto gse::network::snapshot_components_to(auto& send_fn, registry& reg, const address& addr) -> void {
-    for (const auto& c : reg.components<T>()) {
-        send_fn(component_upsert<T>{ .owner_id = c.owner_id, .data = extract_networked(c) }, addr);
+    const auto components = reg.components<T>();
+    const auto ids = reg.owner_ids<T>();
+    for (std::size_t i = 0; i < components.size(); ++i) {
+        send_fn(component_upsert<T>{ .owner_id = ids[i], .data = extract_networked(components[i]) }, addr);
     }
 }
 

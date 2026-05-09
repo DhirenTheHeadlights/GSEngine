@@ -16,7 +16,5 @@ export namespace gse {
 		float quadratic = 0.032f;
 		float ambient_strength = 0.025f;
 		float source_radius = 0.5f;
-
-		id owner_id;
 	};
 }
