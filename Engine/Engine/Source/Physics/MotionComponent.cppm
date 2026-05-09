@@ -31,8 +31,6 @@ export namespace gse::physics {
         bool velocity_drive_active = false;
 
         vec3<impulse> pending_impulse;
-
-        id owner_id;
     };
 
     auto transformation_matrix(

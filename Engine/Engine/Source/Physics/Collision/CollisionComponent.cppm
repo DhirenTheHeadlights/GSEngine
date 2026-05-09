@@ -17,11 +17,7 @@ export namespace gse::physics {
 		[[= networked]] length shape_radius = {};
 		[[= networked]] length shape_half_height = {};
 		[[= networked]] bool resolve_collisions = true;
-
-		id owner_id;
 	};
 
-	struct collision_result_component : collision_information {
-		id owner_id;
-	};
+	struct collision_result_component : collision_information {};
 }

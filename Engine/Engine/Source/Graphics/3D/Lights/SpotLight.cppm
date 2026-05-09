@@ -20,7 +20,5 @@ export namespace gse {
 		angle outer_cut_off;
 		float ambient_strength = 0.025f;
 		float source_radius = 0.3f;
-
-		id owner_id;
 	};
 }

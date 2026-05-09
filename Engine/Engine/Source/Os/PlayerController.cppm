@@ -11,7 +11,5 @@ export namespace gse {
 		[[= networked]] id controlled_entity_id;
 
 		bool local_only_flag = false;
-
-		id owner_id;
 	};
 }

@@ -13,7 +13,5 @@ export namespace gse {
 		vec3f direction = { 0.0f, -1.0f, 0.0f };
 		float ambient_strength = 1.0f;
 		float source_radius = 0.02f;
-
-		id owner_id;
 	};
 }

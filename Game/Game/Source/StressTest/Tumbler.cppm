@@ -11,8 +11,6 @@ export namespace gs::tumbler {
 		gse::vec3<gse::length> local_offset;
 		gse::angle phase = gse::radians(0.f);
 		gse::time accumulator = gse::seconds(0.f);
-
-		gse::id owner_id;
 	};
 
 	struct system {
@@ -34,9 +32,10 @@ auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 
 			constexpr auto physics_step = gse::seconds(1.f / 60.f);
 
-			for (auto& t : tumblers) {
-				const auto owner_id = t.owner_id;
-				auto* motion = motions.find(owner_id);
+			const auto tumbler_ids = tumblers.owner_ids();
+			for (std::size_t i = 0; i < tumblers.size(); ++i) {
+				auto& t = tumblers[i];
+				auto* motion = motions.find(tumbler_ids[i]);
 				if (!motion) {
 					continue;
 				}

@@ -15,7 +15,5 @@ export namespace gse::camera {
 		bool active = true;
 		bool use_entity_position = true;
 		vec3<position> position{};
-
-		id owner_id;
 	};
 }

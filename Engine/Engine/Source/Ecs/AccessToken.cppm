@@ -91,11 +91,19 @@ export namespace gse {
 			id owner
 		) const -> pointer;
 
+		auto owner_ids(
+		) const -> std::span<const id>;
+
+		auto owner_id_at(
+			std::size_t i
+		) const -> id;
+
 	private:
 		friend class registry;
 
 		explicit access(
 			span_type span,
+			std::span<const id> owners,
 			lookup_fn fn = nullptr,
 			void* ctx = nullptr,
 			async::rw_mutex* mutex = nullptr,
@@ -103,6 +111,7 @@ export namespace gse {
 		);
 
 		span_type m_span;
+		std::span<const id> m_owners;
 		lookup_fn m_lookup = nullptr;
 		void* m_lookup_ctx = nullptr;
 		async::rw_mutex* m_mutex = nullptr;
@@ -117,8 +126,8 @@ export namespace gse {
 }
 
 template <typename T, gse::access_mode M>
-gse::access<T, M>::access(const span_type span, const lookup_fn fn, void* ctx, async::rw_mutex* mutex, std::atomic<int>* held_locks)
-	: m_span(span), m_lookup(fn), m_lookup_ctx(ctx), m_mutex(mutex), m_held_locks(held_locks) {
+gse::access<T, M>::access(const span_type span, const std::span<const id> owners, const lookup_fn fn, void* ctx, async::rw_mutex* mutex, std::atomic<int>* held_locks)
+	: m_span(span), m_owners(owners), m_lookup(fn), m_lookup_ctx(ctx), m_mutex(mutex), m_held_locks(held_locks) {
 	if (m_mutex && m_held_locks) {
 		m_held_locks->fetch_add(1, std::memory_order_acq_rel);
 	}
@@ -127,6 +136,7 @@ gse::access<T, M>::access(const span_type span, const lookup_fn fn, void* ctx, a
 template <typename T, gse::access_mode M>
 gse::access<T, M>::access(access&& other) noexcept
 	: m_span(other.m_span),
+	  m_owners(other.m_owners),
 	  m_lookup(other.m_lookup),
 	  m_lookup_ctx(other.m_lookup_ctx),
 	  m_mutex(std::exchange(other.m_mutex, nullptr)),
@@ -147,6 +157,7 @@ auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {
 			}
 		}
 		m_span = other.m_span;
+		m_owners = other.m_owners;
 		m_lookup = other.m_lookup;
 		m_lookup_ctx = other.m_lookup_ctx;
 		m_mutex = std::exchange(other.m_mutex, nullptr);
@@ -217,4 +228,14 @@ auto gse::access<T, M>::find(const id owner) const -> pointer {
 		return nullptr;
 	}
 	return m_lookup(m_lookup_ctx, owner);
+}
+
+template <typename T, gse::access_mode M>
+auto gse::access<T, M>::owner_ids() const -> std::span<const id> {
+	return m_owners;
+}
+
+template <typename T, gse::access_mode M>
+auto gse::access<T, M>::owner_id_at(const std::size_t i) const -> id {
+	return m_owners[i];
 }

@@ -109,7 +109,9 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 		s.controller_jobs.clear();
 		s.pose_cache.clear();
 
-		for (auto& anim : animations) {
+		const auto anim_ids = animations.owner_ids();
+		for (std::size_t i = 0; i < animations.size(); ++i) {
+			auto& anim = animations[i];
 			if (!anim.skeleton && anim.skeleton_id.exists()) {
 				anim.skeleton = asset::get<skeleton>(assets_s, anim.skeleton_id);
 			}
@@ -122,7 +124,8 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 			const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 			ensure_pose_buffers(anim, joint_count);
 
-			if (auto* ctrl_c = controllers.find(anim.owner_id)) {
+			const auto eid = anim_ids[i];
+			if (auto* ctrl_c = controllers.find(eid)) {
 				if (const auto graph_it = s.graphs.find(ctrl_c->graph_id); graph_it != s.graphs.end()) {
 					s.controller_jobs.push_back({
 						.anim = std::addressof(anim),
@@ -134,7 +137,7 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 				}
 			}
 
-			auto* clip_c = clips.find(anim.owner_id);
+			auto* clip_c = clips.find(eid);
 			if (clip_c == nullptr) {
 				continue;
 			}

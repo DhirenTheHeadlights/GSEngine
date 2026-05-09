@@ -168,16 +168,10 @@ auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu:
 		{
 			trace::scope_guard sg{trace_id<"geom_collect::collect">()};
 			const auto render_size = render.size();
+			const auto render_ids = render.owner_ids();
 
-			bool motion_order_matches = render_size == motion.size();
-			for (std::size_t i = 0; motion_order_matches && i < render_size; ++i) {
-				motion_order_matches = render[i].owner_id == motion[i].owner_id;
-			}
-
-			bool collision_order_matches = render_size == collision.size();
-			for (std::size_t i = 0; collision_order_matches && i < render_size; ++i) {
-				collision_order_matches = render[i].owner_id == collision[i].owner_id;
-			}
+			const bool motion_order_matches = render_size == motion.size() && std::ranges::equal(render_ids, motion.owner_ids());
+			const bool collision_order_matches = render_size == collision.size() && std::ranges::equal(render_ids, collision.owner_ids());
 
 			struct component_lookup {
 				const physics::motion_component* mc = nullptr;
@@ -191,7 +185,7 @@ auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu:
 					return;
 				}
 
-				const auto eid = component.owner_id;
+				const auto eid = render_ids[i];
 				const auto* mc = motion_order_matches ? std::addressof(motion[i]) : motion.find(eid);
 				const auto* cc = collision_order_matches ? std::addressof(collision[i]) : collision.find(eid);
 				if (mc == nullptr || cc == nullptr) {
@@ -236,7 +230,7 @@ auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu:
 					continue;
 				}
 
-				const auto eid = component.owner_id;
+				const auto eid = render_ids[i];
 				const auto& world_aabb = cc->bounding_box.aabb();
 				std::uint32_t body_index = owned_render_queue_entry::invalid_body_index;
 				if (const auto it = body_index_map.find(eid); it != body_index_map.end()) {

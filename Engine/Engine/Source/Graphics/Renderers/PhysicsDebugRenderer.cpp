@@ -150,13 +150,16 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 				}
 			}
 
-			for (const auto& coll : collisions) {
+			const auto collision_ids = collisions.owner_ids();
+			for (std::size_t i = 0; i < collisions.size(); ++i) {
+				const auto& coll = collisions[i];
 				if (!coll.resolve_collisions) {
 					continue;
 				}
 
-				const auto* mc = motions.find(coll.owner_id);
-				const auto* res = results.find(coll.owner_id);
+				const auto eid = collision_ids[i];
+				const auto* mc = motions.find(eid);
+				const auto* res = results.find(eid);
 				build_shape_lines_for_collider(coll, mc, vertices);
 
 				if (mc && res) {

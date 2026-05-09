@@ -20,8 +20,6 @@ export namespace gse::free_camera {
 		vec3<position> initial_position = vec3<position>(0.f, 0.f, 5.f);
 		int priority = 10;
 		velocity speed = meters_per_second(100.f);
-
-		id owner_id;
 	};
 
 	struct bindings {
@@ -56,8 +54,10 @@ auto gse::free_camera::system::run(run_context& ctx, state& s, const actions::sy
 				write<camera::follow_component>
 			>();
 
-			for (auto& c : cameras) {
-				const auto owner_id = c.owner_id;
+			const auto camera_ids = cameras.owner_ids();
+			for (std::size_t i = 0; i < cameras.size(); ++i) {
+				auto& c = cameras[i];
+				const auto owner_id = camera_ids[i];
 				auto& slot = s.bindings_by_owner[owner_id];
 				if (slot) {
 					continue;
@@ -97,8 +97,9 @@ auto gse::free_camera::system::run(run_context& ctx, state& s, const actions::sy
 
 			const auto& cs = actions::system::current_state(as);
 
-			for (auto& c : cameras) {
-				const auto owner_id = c.owner_id;
+			for (std::size_t i = 0; i < cameras.size(); ++i) {
+				auto& c = cameras[i];
+				const auto owner_id = camera_ids[i];
 				const auto& b = *s.bindings_by_owner[owner_id];
 
 				auto* cam_follow = follows.find(owner_id);

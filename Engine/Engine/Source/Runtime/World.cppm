@@ -206,8 +206,11 @@ namespace gse {
 			}
 		}
 
-		for (auto& pc : reg.components<player_controller>()) {
-			const auto controller_id = pc.owner_id;
+		const auto pc_components = reg.components<player_controller>();
+		const auto pc_ids = reg.owner_ids<player_controller>();
+		for (std::size_t i = 0; i < pc_components.size(); ++i) {
+			auto& pc = pc_components[i];
+			const auto controller_id = pc_ids[i];
 
 			if (is_server) {
 				if (pc.controlled_entity_id.exists()) {

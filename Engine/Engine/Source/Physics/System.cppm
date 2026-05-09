@@ -263,6 +263,7 @@ export namespace gse::physics {
 
 	private:
 		struct collision_pair {
+			id owner;
 			collision_component* collision;
 			motion_component* motion;
 		};
