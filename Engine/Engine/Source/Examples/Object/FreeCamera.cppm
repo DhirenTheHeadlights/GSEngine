@@ -16,13 +16,13 @@ import gse.assets;
 import gse.gpu;
 
 export namespace gse::free_camera {
-	struct component_data {
+	struct component {
 		vec3<position> initial_position = vec3<position>(0.f, 0.f, 5.f);
 		int priority = 10;
 		velocity speed = meters_per_second(100.f);
-	};
 
-	using component = component<component_data>;
+		id owner_id;
+	};
 
 	struct bindings {
 		actions::handle forward;
@@ -57,7 +57,7 @@ auto gse::free_camera::system::run(run_context& ctx, state& s, const actions::sy
 			>();
 
 			for (auto& c : cameras) {
-				const auto owner_id = c.owner_id();
+				const auto owner_id = c.owner_id;
 				auto& slot = s.bindings_by_owner[owner_id];
 				if (slot) {
 					continue;
@@ -98,7 +98,7 @@ auto gse::free_camera::system::run(run_context& ctx, state& s, const actions::sy
 			const auto& cs = actions::system::current_state(as);
 
 			for (auto& c : cameras) {
-				const auto owner_id = c.owner_id();
+				const auto owner_id = c.owner_id;
 				const auto& b = *s.bindings_by_owner[owner_id];
 
 				auto* cam_follow = follows.find(owner_id);

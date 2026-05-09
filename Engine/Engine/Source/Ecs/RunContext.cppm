@@ -48,24 +48,24 @@ export namespace gse {
 		auto acquire(
 		) -> async::task<std::tuple<Accesses...>>;
 
-		template <is_component T>
+		template <typename T>
 		auto try_component(
 			id owner
 		) const -> const T*;
 
-		template <is_component T>
+		template <typename T>
 		auto components(
 		) const -> std::span<const T>;
 
-		template <is_component T>
+		template <typename T>
 		auto drain_component_adds(
 		) -> std::vector<id>;
 
-		template <is_component T>
+		template <typename T>
 		auto drain_component_updates(
 		) -> std::vector<id>;
 
-		template <is_component T>
+		template <typename T>
 		auto drain_component_removes(
 		) -> std::vector<id>;
 
@@ -89,24 +89,13 @@ export namespace gse {
 			id owner
 		) -> void;
 
-		template <is_component T> requires has_params<T>
+		template <typename T>
 		auto add_component(
 			id owner,
-			const typename T::params& p
+			T value = T{}
 		) -> T*;
 
-		template <is_component T> requires (!std::same_as<typename T::params, typename T::network_data_t>)
-		auto add_component(
-			id owner,
-			const typename T::network_data_t& nd
-		) -> T*;
-
-		template <is_component T>
-		auto add_component(
-			id owner
-		) -> T*;
-
-		template <is_component T>
+		template <typename T>
 		auto remove_component(
 			id owner
 		) -> void;
@@ -252,27 +241,27 @@ auto gse::run_context::held_lock_count() const -> int {
 	return m_held_locks.load(std::memory_order_acquire);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::run_context::try_component(const id owner) const -> const T* {
 	return m_reg.try_component<T>(owner);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::run_context::components() const -> std::span<const T> {
 	return m_reg.components<T>();
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::run_context::drain_component_adds() -> std::vector<id> {
 	return m_reg.drain_component_adds<T>();
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::run_context::drain_component_updates() -> std::vector<id> {
 	return m_reg.drain_component_updates<T>();
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::run_context::drain_component_removes() -> std::vector<id> {
 	return m_reg.drain_component_removes<T>();
 }
@@ -297,22 +286,12 @@ auto gse::run_context::remove(const id owner) -> void {
 	m_reg.remove(owner);
 }
 
-template <gse::is_component T> requires gse::has_params<T>
-auto gse::run_context::add_component(const id owner, const typename T::params& p) -> T* {
-	return m_reg.add_component<T>(owner, p);
+template <typename T>
+auto gse::run_context::add_component(const id owner, T value) -> T* {
+	return m_reg.add_component<T>(owner, std::move(value));
 }
 
-template <gse::is_component T> requires (!std::same_as<typename T::params, typename T::network_data_t>)
-auto gse::run_context::add_component(const id owner, const typename T::network_data_t& nd) -> T* {
-	return m_reg.add_component<T>(owner, nd);
-}
-
-template <gse::is_component T>
-auto gse::run_context::add_component(const id owner) -> T* {
-	return m_reg.add_component<T>(owner);
-}
-
-template <gse::is_component T>
+template <typename T>
 auto gse::run_context::remove_component(const id owner) -> void {
 	m_reg.remove_component<T>(owner);
 }

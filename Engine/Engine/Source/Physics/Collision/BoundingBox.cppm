@@ -3,6 +3,7 @@ export module gse.physics:bounding_box;
 import std;
 
 import gse.math;
+import gse.meta;
 
 export namespace gse {
 	struct bounding_box_state {
@@ -43,6 +44,9 @@ namespace gse {
 
 	class bounding_box {
 	public:
+		bounding_box(
+		) = default;
+
 		bounding_box(
 			const vec3<position>& center,
 			const vec3<displacement>& size,
@@ -95,7 +99,7 @@ namespace gse {
 		auto recalculate_aabb(
 		) const -> void;
 
-		bounding_box_state m_state;
+		[[= networked]] bounding_box_state m_state;
 
 		mutable gse::aabb m_aabb;
 		mutable bool m_is_aabb_dirty = true;

@@ -23,12 +23,12 @@ export namespace gse {
 			registry& reg
 		);
 
-		template <is_component T>
+		template <typename T>
 		auto try_component(
 			id owner
 		) const -> const T*;
 
-		template <is_component T>
+		template <typename T>
 		auto components(
 		) const -> std::span<const T>;
 
@@ -47,12 +47,12 @@ gse::frame_context::frame_context(
 ) : task_context{ states, resources_store, channels_store, channels, graph, false },
 	m_reg(reg) {}
 
-template <gse::is_component T>
+template <typename T>
 auto gse::frame_context::try_component(const id owner) const -> const T* {
 	return m_reg.try_component<T>(owner);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::frame_context::components() const -> std::span<const T> {
 	return m_reg.components<T>();
 }

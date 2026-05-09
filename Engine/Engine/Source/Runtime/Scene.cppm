@@ -21,13 +21,9 @@ export namespace gse {
 		auto id(
 		) const -> gse::id;
 
-		template <is_component T> requires has_params<T>
+		template <typename T>
 		auto add_component(
-			const T::params& p
-		) -> T*;
-
-		template <is_component T> requires (!has_params<T>)
-		auto add_component(
+			T value = T{}
 		) -> T*;
 
 		template <typename T>
@@ -68,13 +64,9 @@ export namespace gse {
 				registry* reg
 			);
 
-			template <is_component T> requires has_params<T>
+			template <typename T>
 			auto with(
-				const T::params& p
-			) -> builder&;
-
-			template <is_component T> requires (!has_params<T>)
-			auto with(
+				T value = T{}
 			) -> builder&;
 
 			auto initialize(
@@ -163,14 +155,9 @@ auto gse::scene_init_context::id() const -> gse::id {
 	return m_entity_id;
 }
 
-template <gse::is_component T> requires gse::has_params<T>
-auto gse::scene_init_context::add_component(const typename T::params& p) -> T* {
-	return m_registry->add_component<T>(m_entity_id, p);
-}
-
-template <gse::is_component T> requires (!gse::has_params<T>)
-auto gse::scene_init_context::add_component() -> T* {
-	return m_registry->add_component<T>(m_entity_id);
+template <typename T>
+auto gse::scene_init_context::add_component(T value) -> T* {
+	return m_registry->add_component<T>(m_entity_id, std::move(value));
 }
 
 template <typename T>
@@ -282,15 +269,9 @@ auto gse::scene::push_init(const gse::id entity_id, init_fn fn) -> void {
 
 gse::scene::builder::builder(const gse::id entity_id, scene* owner, gse::registry* reg) : m_entity_id(entity_id), m_scene(owner), m_registry(reg) {}
 
-template <gse::is_component T> requires gse::has_params<T>
-auto gse::scene::builder::with(const typename T::params& p) -> builder& {
-	m_registry->add_component<T>(m_entity_id, p);
-	return *this;
-}
-
-template <gse::is_component T> requires (!gse::has_params<T>)
-auto gse::scene::builder::with() -> builder& {
-	m_registry->add_component<T>(m_entity_id);
+template <typename T>
+auto gse::scene::builder::with(T value) -> builder& {
+	m_registry->add_component<T>(m_entity_id, std::move(value));
 	return *this;
 }
 

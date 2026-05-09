@@ -207,7 +207,7 @@ namespace gse {
 		}
 
 		for (auto& pc : reg.components<player_controller>()) {
-			const auto controller_id = pc.owner_id();
+			const auto controller_id = pc.owner_id;
 
 			if (is_server) {
 				if (pc.controlled_entity_id.exists()) {

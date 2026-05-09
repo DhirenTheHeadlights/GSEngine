@@ -116,7 +116,7 @@ auto gse::physics::system::collect_collision_objects(write<motion_component>& mo
 		}
 		objects.push_back({
 			.collision = std::addressof(cc),
-			.motion = motion.find(cc.owner_id())
+			.motion = motion.find(cc.owner_id)
 		});
 	}
 	return objects;
@@ -169,8 +169,8 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 				continue;
 			}
 
-			const auto it_a = id_to_body_index.find(collision_a->owner_id());
-			const auto it_b = id_to_body_index.find(collision_b->owner_id());
+			const auto it_a = id_to_body_index.find(collision_a->owner_id);
+			const auto it_b = id_to_body_index.find(collision_b->owner_id);
 			if (it_a == id_to_body_index.end() || it_b == id_to_body_index.end()) {
 				continue;
 			}
@@ -187,12 +187,12 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 				}
 
 				if (results) {
-					if (auto* res_a = results->find(collision_a->owner_id())) {
+					if (auto* res_a = results->find(collision_a->owner_id)) {
 						res_a->colliding = true;
 						res_a->collision_normal = sat.normal;
 						res_a->penetration = -sat.separation;
 					}
-					if (auto* res_b = results->find(collision_b->owner_id())) {
+					if (auto* res_b = results->find(collision_b->owner_id)) {
 						res_b->colliding = true;
 						res_b->collision_normal = -sat.normal;
 						res_b->penetration = -sat.separation;
@@ -284,7 +284,7 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 				});
 
 				if (update_scene_state && results) {
-					if (auto* res_a = results->find(collision_a->owner_id())) {
+					if (auto* res_a = results->find(collision_a->owner_id)) {
 						res_a->collision_points.push_back(position_on_a);
 					}
 				}
@@ -460,12 +460,12 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 				const auto body_count = completed.entity_ids.size();
 				bool motion_order_matches = body_count == motion.size();
 				for (std::size_t i = 0; motion_order_matches && i < body_count; ++i) {
-					motion_order_matches = completed.entity_ids[i] == motion[i].owner_id();
+					motion_order_matches = completed.entity_ids[i] == motion[i].owner_id;
 				}
 
 				bool collision_order_matches = body_count == collision.size();
 				for (std::size_t i = 0; collision_order_matches && i < body_count; ++i) {
-					collision_order_matches = completed.entity_ids[i] == collision[i].owner_id();
+					collision_order_matches = completed.entity_ids[i] == collision[i].owner_id;
 				}
 
 				for (std::size_t i = 0; i < body_count; ++i) {
@@ -848,8 +848,8 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 			}
 			if (magnitude(mc.pending_impulse) > newton_seconds(1e-6f)) {
 				mc.current_velocity += mc.pending_impulse / mc.mass;
-				ud.sleep_counters[mc.owner_id()] = 0;
-				launched_entities.push_back(mc.owner_id());
+				ud.sleep_counters[mc.owner_id] = 0;
+				launched_entities.push_back(mc.owner_id);
 				mc.pending_impulse = {};
 			}
 		}
@@ -877,7 +877,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 		const auto prev_count = std::min(prev_result_entity_ids.size(), prev_result_bodies.size());
 		prev_order_matches = prev_count == body_count;
 		for (std::size_t i = 0; prev_order_matches && i < body_count; ++i) {
-			prev_order_matches = prev_result_entity_ids[i] == motion[i].owner_id();
+			prev_order_matches = prev_result_entity_ids[i] == motion[i].owner_id;
 		}
 		if (!prev_order_matches) {
 			std::vector<std::pair<id, vec3<velocity>>> prev_staging;
@@ -895,7 +895,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 
 		task::parallel_invoke_range(0, body_count, [&, dt](std::size_t i) {
 			motion_component& mc = motion[i];
-			const auto eid = mc.owner_id();
+			const auto eid = mc.owner_id;
 			id_to_body_index_staging[i] = { eid, static_cast<std::uint32_t>(i) };
 
 			const auto sc_it = sleep_counters_ref.find(eid);
@@ -937,7 +937,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 				.body_angular_velocity = mc.angular_velocity,
 				.motor_target = mc.current_position,
 				.mass_value = mc.mass,
-				.inv_inertia = mc.inv_inertial_tensor(),
+				.inv_inertia = inv_inertial_tensor(mc),
 				.locked = mc.position_locked,
 				.update_orientation = mc.update_orientation,
 				.affected_by_gravity = mc.affected_by_gravity,
@@ -977,7 +977,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 					if (!cc.resolve_collisions) {
 						return;
 					}
-					const auto it = id_to_body_index_ref.find(cc.owner_id());
+					const auto it = id_to_body_index_ref.find(cc.owner_id);
 					if (it == id_to_body_index_ref.end()) {
 						return;
 					}
@@ -1003,11 +1003,11 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 			if (mc.airborne) {
 				continue;
 			}
-			if (!id_to_body_index.contains(mc.owner_id())) {
+			if (!id_to_body_index.contains(mc.owner_id)) {
 				continue;
 			}
 
-			const auto idx = id_to_body_index[mc.owner_id()];
+			const auto idx = id_to_body_index[mc.owner_id];
 			if (bodies[idx].sleeping() && magnitude(mc.velocity_drive_target) > meters_per_second(.01f)) {
 				bodies[idx].sleep_counter = 0;
 			}
@@ -1159,7 +1159,7 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 		id_staging.reserve(motion.size());
 		std::uint32_t body_idx = 0;
 		for (motion_component& mc : motion) {
-			id_staging.emplace_back(mc.owner_id(), body_idx++);
+			id_staging.emplace_back(mc.owner_id, body_idx++);
 			motion_ptrs.push_back(std::addressof(mc));
 		}
 		id_to_body_index.assign_unsorted(std::move(id_staging));
@@ -1173,7 +1173,7 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 		bodies.reserve(motion.size());
 
 		for (motion_component& mc : motion) {
-			const auto eid = mc.owner_id();
+			const auto eid = mc.owner_id;
 			const auto sc_it = ud.sleep_counters.find(eid);
 			const auto sc = sc_it != ud.sleep_counters.end() ? sc_it->second : 0u;
 
@@ -1190,7 +1190,7 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 				.body_angular_velocity = mc.angular_velocity,
 				.motor_target = mc.current_position,
 				.mass_value = mc.mass,
-				.inv_inertia = mc.inv_inertial_tensor(),
+				.inv_inertia = inv_inertial_tensor(mc),
 				.locked = mc.position_locked,
 				.update_orientation = mc.update_orientation,
 				.affected_by_gravity = mc.affected_by_gravity,
@@ -1217,7 +1217,7 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 			if (mc.airborne) {
 				continue;
 			}
-			const auto it = id_to_body_index.find(mc.owner_id());
+			const auto it = id_to_body_index.find(mc.owner_id);
 			if (it == id_to_body_index.end()) {
 				continue;
 			}
@@ -1310,10 +1310,10 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 				mc->angular_velocity = bs.body_angular_velocity;
 			}
 
-			ud.sleep_counters[mc->owner_id()] = bs.sleep_counter;
+			ud.sleep_counters[mc->owner_id] = bs.sleep_counter;
 			mc->sleeping = bs.sleeping();
 
-			if (auto* cc = collision.find(mc->owner_id())) {
+			if (auto* cc = collision.find(mc->owner_id)) {
 				cc->bounding_box.update(mc->current_position, mc->orientation);
 			}
 		}

@@ -40,7 +40,7 @@ export namespace gse::network {
 	template <typename T>
 	struct component_upsert {
 		id owner_id;
-		T::network_data_t data;
+		network_data_t<T> data;
 	};
 
 	template <typename T>
@@ -119,21 +119,21 @@ consteval auto gse::network::component_code_remove() -> std::uint16_t {
 
 template <typename T>
 constexpr auto gse::network::message_id(std::type_identity<component_upsert<T>>) -> std::uint16_t {
-	static_assert(std::is_trivially_copyable_v<typename T::network_data_t>);
+	static_assert(std::is_trivially_copyable_v<network_data_t<T>>);
 	return message_tag<T>::upsert_id;
 }
 
 template <typename T>
 auto gse::network::encode(bitstream& s, const component_upsert<T>& m) -> void {
 	s.write(m.owner_id);
-	s.write(std::as_bytes(std::span{ &m.data, 1 }));
+	s.write(m.data);
 }
 
 template <typename T>
 auto gse::network::decode(bitstream& s, std::type_identity<component_upsert<T>>) -> component_upsert<T> {
 	return {
 		.owner_id = s.read<id>(),
-		.data = s.read<typename T::network_data_t>()
+		.data = s.read<network_data_t<T>>()
 	};
 }
 
@@ -169,9 +169,6 @@ auto gse::network::match_and_apply_components(bitstream& s, std::uint16_t id, au
 
 	auto handle = [&]<class Ti>(Ti) {
 		using c = Ti::type;
-		using p = c::network_data_t;
-		static_assert(std::is_trivially_copyable_v<p>);
-		
 		if (!handled) handled |= try_decode<component_upsert<c>>(s, id, on_upsert);
 		if (!handled) handled |= try_decode<component_remove<c>>(s, id, on_remove);
 	};

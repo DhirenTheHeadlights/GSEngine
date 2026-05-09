@@ -36,7 +36,7 @@ export namespace gse {
 		access_token() = default;
 	};
 
-	template <is_component T, access_mode M = access_mode::read>
+	template <typename T, access_mode M = access_mode::read>
 	class access : non_copyable {
 	public:
 		using value_type = std::conditional_t<M == access_mode::read, const T, T>;
@@ -59,14 +59,12 @@ export namespace gse {
 			access&& other
 		) noexcept -> access&;
 
-		template <typename Self>
 		auto begin(
-			this Self& self
+			this access& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		auto end(
-			this Self& self
+			this access& self
 		) -> decltype(auto);
 
 		auto size(
@@ -111,14 +109,14 @@ export namespace gse {
 		std::atomic<int>* m_held_locks = nullptr;
 	};
 
-	template <is_component T>
+	template <typename T>
 	using read = access<T, access_mode::read>;
 
-	template <is_component T>
+	template <typename T>
 	using write = access<T, access_mode::write>;
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 gse::access<T, M>::access(const span_type span, const lookup_fn fn, void* ctx, async::rw_mutex* mutex, std::atomic<int>* held_locks)
 	: m_span(span), m_lookup(fn), m_lookup_ctx(ctx), m_mutex(mutex), m_held_locks(held_locks) {
 	if (m_mutex && m_held_locks) {
@@ -126,7 +124,7 @@ gse::access<T, M>::access(const span_type span, const lookup_fn fn, void* ctx, a
 	}
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 gse::access<T, M>::access(access&& other) noexcept
 	: m_span(other.m_span),
 	  m_lookup(other.m_lookup),
@@ -134,7 +132,7 @@ gse::access<T, M>::access(access&& other) noexcept
 	  m_mutex(std::exchange(other.m_mutex, nullptr)),
 	  m_held_locks(std::exchange(other.m_held_locks, nullptr)) {}
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {
 	if (this != &other) {
 		if (m_mutex) {
@@ -157,7 +155,7 @@ auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {
 	return *this;
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 gse::access<T, M>::~access() {
 	if (!m_mutex) {
 		return;
@@ -173,49 +171,47 @@ gse::access<T, M>::~access() {
 	}
 }
 
-template <gse::is_component T, gse::access_mode M>
-template <typename Self>
-auto gse::access<T, M>::begin(this Self& self) -> decltype(auto) {
+template <typename T, gse::access_mode M>
+auto gse::access<T, M>::begin(this access& self) -> decltype(auto) {
 	return self.m_span.data();
 }
 
-template <gse::is_component T, gse::access_mode M>
-template <typename Self>
-auto gse::access<T, M>::end(this Self& self) -> decltype(auto) {
+template <typename T, gse::access_mode M>
+auto gse::access<T, M>::end(this access& self) -> decltype(auto) {
 	return self.m_span.data() + self.m_span.size();
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 auto gse::access<T, M>::size() const -> std::size_t {
 	return m_span.size();
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 auto gse::access<T, M>::empty() const -> bool {
 	return m_span.empty();
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 auto gse::access<T, M>::data() -> pointer {
 	return m_span.data();
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 auto gse::access<T, M>::data() const -> pointer {
 	return m_span.data();
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 auto gse::access<T, M>::operator[](const std::size_t i) -> reference {
 	return m_span[i];
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 auto gse::access<T, M>::operator[](const std::size_t i) const -> reference {
 	return m_span[i];
 }
 
-template <gse::is_component T, gse::access_mode M>
+template <typename T, gse::access_mode M>
 auto gse::access<T, M>::find(const id owner) const -> pointer {
 	if (!m_lookup) {
 		return nullptr;

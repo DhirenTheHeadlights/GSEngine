@@ -5,23 +5,23 @@ import std;
 import :bounding_box;
 
 import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
 import gse.ecs;
+import gse.meta;
+
 export namespace gse::physics {
 	enum class shape_type : std::uint8_t { box, sphere, capsule };
 
-	struct collision_component_data {
-		bounding_box bounding_box{ vec3<position>{}, vec3<displacement>{} };
-		shape_type shape = shape_type::box;
-		length shape_radius = {};
-		length shape_half_height = {};
-		bool resolve_collisions = true;
+	struct collision_component {
+		[[= networked]] bounding_box bounding_box;
+		[[= networked]] shape_type shape = shape_type::box;
+		[[= networked]] length shape_radius = {};
+		[[= networked]] length shape_half_height = {};
+		[[= networked]] bool resolve_collisions = true;
+
+		id owner_id;
 	};
 
-	using collision_component = component<collision_component_data, bounding_box_state>;
-
-	using collision_result_component = component<collision_information>;
+	struct collision_result_component : collision_information {
+		id owner_id;
+	};
 }
