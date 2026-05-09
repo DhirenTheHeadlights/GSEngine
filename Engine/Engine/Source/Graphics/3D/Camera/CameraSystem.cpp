@@ -95,7 +95,7 @@ auto gse::camera::system::run(run_context& ctx, state& s, const input::system::s
 
 				if (cam.priority > highest_priority) {
 					highest_priority = cam.priority;
-					best_controller = cam.owner_id();
+					best_controller = cam.owner_id;
 					best_blend_duration = cam.blend_in_duration;
 
 					best_target.position = cam.position + cam.offset;

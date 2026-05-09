@@ -3,12 +3,10 @@ export module gse.graphics:controller_component;
 import std;
 
 import gse.core;
-import gse.containers;
 import gse.time;
-import gse.concurrency;
-import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.meta;
 
 export namespace gse {
 	struct animation_parameter {
@@ -26,12 +24,8 @@ export namespace gse {
 		bool active = false;
 	};
 
-	struct controller_component_data {
-		id graph_id;
-	};
-
-	struct controller_component : component<controller_component_data, controller_component_data> {
-		controller_component(const id owner_id, const params& p) : component(owner_id, p) {}
+	struct controller_component {
+		[[= networked]] id graph_id;
 
 		std::string current_state;
 		time state_time{};
@@ -40,5 +34,7 @@ export namespace gse {
 		std::unordered_map<std::string, animation_parameter> parameters;
 		std::vector<mat4f> blend_from_pose;
 		std::vector<mat4f> blend_to_pose;
+
+		id owner_id;
 	};
 }

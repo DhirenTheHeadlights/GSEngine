@@ -24,14 +24,13 @@ export namespace gse {
 		) -> void = 0;
 	};
 
-	template <is_component T>
+	template <typename T>
 	class component_storage final : public component_storage_base {
 	public:
-		template <typename... Args>
 		auto add(
 			id owner,
 			bool entity_active,
-			Args&&... args
+			T value = T{}
 		) -> T*;
 
 		auto activate_pending(
@@ -109,71 +108,71 @@ export namespace gse {
 			id owner
 		) const -> bool;
 
-		template <is_component T, typename... Args>
+		template <typename T>
 		auto add_component(
 			id owner,
-			Args&&... args
+			T value = T{}
 		) -> T*;
 
-		template <is_component T>
+		template <typename T>
 		auto remove_component(
 			id owner
 		) -> void;
 
-		template <is_component T>
+		template <typename T>
 		auto components(
 			this registry& self
 		) -> decltype(auto);
 
-		template <is_component T>
+		template <typename T>
 		auto component(
 			this registry& self,
 			id owner
 		) -> decltype(auto);
 
-		template <is_component T>
+		template <typename T>
 		auto try_component(
 			this registry& self,
 			id owner
 		) -> decltype(auto);
 
-		template <is_component T>
+		template <typename T>
 		auto acquire_read(
 			access_token,
 			async::rw_mutex* mutex = nullptr,
 			std::atomic<int>* held_locks = nullptr
 		) -> read<T>;
 
-		template <is_component T>
+		template <typename T>
 		auto acquire_write(
 			access_token,
 			async::rw_mutex* mutex = nullptr,
 			std::atomic<int>* held_locks = nullptr
 		) -> write<T>;
 
-		template <is_component T>
+		template <typename T>
 		auto mark_component_updated(
 			id owner
 		) -> void;
 
-		template <is_component T>
+		template <typename T>
 		auto drain_component_adds(
 		) -> std::vector<id>;
 
-		template <is_component T>
+		template <typename T>
 		auto drain_component_updates(
 		) -> std::vector<id>;
 
-		template <is_component T>
+		template <typename T>
 		auto drain_component_removes(
 		) -> std::vector<id>;
 
 	private:
-		template <is_component T>
+		template <typename T>
 		auto storage(
 		) -> component_storage<T>&;
 
-		template <is_component T>
+		template <typename T>
 		auto try_storage(
 			this registry& self
 		) -> component_storage<T>*;
@@ -185,26 +184,26 @@ export namespace gse {
 	};
 }
 
-template <gse::is_component T>
-template <typename... Args>
-auto gse::component_storage<T>::add(const id owner, const bool entity_active, Args&&... args) -> T* {
+template <typename T>
+auto gse::component_storage<T>::add(const id owner, const bool entity_active, T value) -> T* {
+	value.owner_id = owner;
 	if (entity_active) {
 		if (const auto it = m_index.find(owner); it != m_index.end()) {
 			return &m_data[it->second];
 		}
 		const auto idx = static_cast<std::uint32_t>(m_data.size());
-		m_data.emplace_back(owner, std::forward<Args>(args)...);
+		m_data.push_back(std::move(value));
 		m_owners.push_back(owner);
 		m_index.emplace(owner, idx);
 		m_added_events.push(owner);
 		return &m_data.back();
 	}
 
-	const auto [it, inserted] = m_pending.try_emplace(owner, owner, std::forward<Args>(args)...);
+	const auto [it, inserted] = m_pending.try_emplace(owner, std::move(value));
 	return &it->second;
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::component_storage<T>::activate_pending(const id owner) -> bool {
 	const auto it = m_pending.find(owner);
 	if (it == m_pending.end()) {
@@ -225,7 +224,7 @@ auto gse::component_storage<T>::activate_pending(const id owner) -> bool {
 	return true;
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::component_storage<T>::remove_owner(const id owner) -> void {
 	if (const auto pit = m_pending.find(owner); pit != m_pending.end()) {
 		m_pending.erase(pit);
@@ -251,33 +250,33 @@ auto gse::component_storage<T>::remove_owner(const id owner) -> void {
 	m_removed_events.push(owner);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::component_storage<T>::try_get(this component_storage& self, const id owner) -> decltype(auto) {
 	const auto it = self.m_index.find(owner);
 	return it == self.m_index.end() ? nullptr : &self.m_data[it->second];
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::component_storage<T>::items(this component_storage& self) -> decltype(auto) {
 	return std::span(self.m_data);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::component_storage<T>::mark_updated(const id owner) -> void {
 	m_updated_events.push(owner);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::component_storage<T>::drain_added() -> std::vector<id> {
 	return m_added_events.drain();
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::component_storage<T>::drain_updated() -> std::vector<id> {
 	return m_updated_events.drain();
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::component_storage<T>::drain_removed() -> std::vector<id> {
 	return m_removed_events.drain();
 }
@@ -336,7 +335,7 @@ auto gse::registry::active(const id owner) const -> bool {
 	return m_active.contains(owner);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::storage() -> component_storage<T>& {
 	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
@@ -350,7 +349,7 @@ auto gse::registry::storage() -> component_storage<T>& {
 	return ref;
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::try_storage(this registry& self) -> component_storage<T>* {
 	const auto type_idx = id_of<T>();
 	const auto it = self.m_storages.find(type_idx);
@@ -360,8 +359,8 @@ auto gse::registry::try_storage(this registry& self) -> component_storage<T>* {
 	return static_cast<component_storage<T>*>(it->second.get());
 }
 
-template <gse::is_component T, typename... Args>
-auto gse::registry::add_component(const id owner, Args&&... args) -> T* {
+template <typename T>
+auto gse::registry::add_component(const id owner, T value) -> T* {
 	assert(
 		exists(owner),
 		"Cannot add component to entity with id {}: it does not exist.",
@@ -369,10 +368,10 @@ auto gse::registry::add_component(const id owner, Args&&... args) -> T* {
 	);
 
 	auto& s = storage<T>();
-	return s.add(owner, active(owner), std::forward<Args>(args)...);
+	return s.add(owner, active(owner), std::move(value));
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::remove_component(const id owner) -> void {
 	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
@@ -382,13 +381,13 @@ auto gse::registry::remove_component(const id owner) -> void {
 	it->second->remove_owner(owner);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::components(this registry& self) -> decltype(auto) {
 	auto* s = self.try_storage<T>();
 	return s ? s->items() : std::span<T>{};
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::component(this registry& self, const id owner) -> decltype(auto) {
 	auto* ptr = self.try_component<T>(owner);
 	assert(
@@ -400,13 +399,13 @@ auto gse::registry::component(this registry& self, const id owner) -> decltype(a
 	return *ptr;
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::try_component(this registry& self, const id owner) -> decltype(auto) {
 	auto* s = self.try_storage<T>();
 	return s ? s->try_get(owner) : nullptr;
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::acquire_read(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> read<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
@@ -418,7 +417,7 @@ auto gse::registry::acquire_read(access_token, async::rw_mutex* mutex, std::atom
 	return read<T>(s->items(), lookup, s, mutex, held_locks);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::acquire_write(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> write<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
@@ -430,7 +429,7 @@ auto gse::registry::acquire_write(access_token, async::rw_mutex* mutex, std::ato
 	return write<T>(s->items(), lookup, s, mutex, held_locks);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::mark_component_updated(const id owner) -> void {
 	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
@@ -440,7 +439,7 @@ auto gse::registry::mark_component_updated(const id owner) -> void {
 	static_cast<component_storage<T>&>(*it->second).mark_updated(owner);
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::drain_component_adds() -> std::vector<id> {
 	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
@@ -450,7 +449,7 @@ auto gse::registry::drain_component_adds() -> std::vector<id> {
 	return static_cast<component_storage<T>&>(*it->second).drain_added();
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::drain_component_updates() -> std::vector<id> {
 	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);
@@ -460,7 +459,7 @@ auto gse::registry::drain_component_updates() -> std::vector<id> {
 	return static_cast<component_storage<T>&>(*it->second).drain_updated();
 }
 
-template <gse::is_component T>
+template <typename T>
 auto gse::registry::drain_component_removes() -> std::vector<id> {
 	const auto type_idx = id_of<T>();
 	const auto it = m_storages.find(type_idx);

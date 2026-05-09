@@ -13,7 +13,7 @@ export namespace gse {
 		using element_type = void;
 	};
 
-	template <is_component T, access_mode M>
+	template <typename T, access_mode M>
 	struct access_traits<access<T, M>> {
 		static constexpr bool is_access = true;
 		static constexpr bool is_const_element = (M == access_mode::read);

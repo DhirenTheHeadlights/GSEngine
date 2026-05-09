@@ -40,6 +40,7 @@ auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::a
 					skybox_size
 				),
 			},
+			.model_count = 1,
 		})
 		.with<gse::directional_light_component>({
 			.color = gse::vec3f(1.f),
@@ -76,6 +77,7 @@ auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::a
 					floor_size
 				),
 			},
+			.model_count = 1,
 		})
 		.configure([](gse::physics::collision_component& cc) {
 			cc.resolve_collisions = false;

@@ -118,6 +118,12 @@ export namespace std::meta {
 	using ::std::meta::has_default_member_initializer;
 	using ::std::meta::is_conversion_function;
 	using ::std::meta::is_array_type;
+	using ::std::meta::is_pointer_type;
+	using ::std::meta::is_lvalue_reference_type;
+	using ::std::meta::is_rvalue_reference_type;
+	using ::std::meta::is_reference_type;
+	using ::std::meta::is_class_type;
+	using ::std::meta::is_union_type;
 	using ::std::meta::is_same_type;
 
 	using ::std::define_static_string;

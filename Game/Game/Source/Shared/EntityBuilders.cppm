@@ -68,6 +68,7 @@ auto gs::build_box(gse::asset::state& assets, gse::scene* scene, const std::stri
 			.models = {
 				gse::procedural_model::box(assets, mat, size),
 			},
+			.model_count = 1,
 		});
 }
 
@@ -95,6 +96,7 @@ auto gs::build_sphere(gse::asset::state& assets, gse::scene* scene, const std::s
 					stacks
 				),
 			},
+			.model_count = 1,
 		});
 }
 
@@ -143,5 +145,6 @@ auto gs::build_static_box(gse::asset::state& assets, gse::scene* scene, const st
 					size
 				),
 			},
+			.model_count = 1,
 		});
 }

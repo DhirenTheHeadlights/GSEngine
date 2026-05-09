@@ -4,28 +4,19 @@ import std;
 
 import gse.math;
 import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
 import gse.ecs;
+
 export namespace gse {
-	struct point_light_data {
+	struct point_light_component {
 		vec3f color;
 		float intensity = 1.0f;
 		vec3<position> position;
-		float constant = 1.0f; 
-		float linear = 0.09f; 
-		float quadratic = 0.032f; 
+		float constant = 1.0f;
+		float linear = 0.09f;
+		float quadratic = 0.032f;
 		float ambient_strength = 0.025f;
 		float source_radius = 0.5f;
-	};
 
-	struct point_light_component : component<point_light_data> {
-		point_light_component(const id owner_id, const point_light_data& data = {}) : component(owner_id, data) {}
-
-		auto debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void {
-
-		}
+		id owner_id;
 	};
 }

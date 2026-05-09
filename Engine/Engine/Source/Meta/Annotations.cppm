@@ -19,6 +19,12 @@ export namespace gse {
     ) -> bool;
 
     template <typename Source, typename Tag>
+    struct project_holder;
+
+    template <typename Source, typename Tag>
+    using project_by_annotation = typename project_holder<Source, Tag>::type;
+
+    template <typename Source, typename Tag>
     struct project_holder {
         struct type;
 
@@ -27,9 +33,25 @@ export namespace gse {
             const auto all = std::meta::nonstatic_data_members_of(^^Source, std::meta::access_context::unchecked());
             for (auto m : all) {
                 if (has_annotation<Tag>(m)) {
+                    auto m_type = std::meta::type_of(m);
+
+                    bool has_nested = false;
+                    if (std::meta::is_class_type(m_type) || std::meta::is_union_type(m_type)) {
+                        for (auto sm : std::meta::nonstatic_data_members_of(m_type, std::meta::access_context::unchecked())) {
+                            if (has_annotation<Tag>(sm)) {
+                                has_nested = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (has_nested) {
+                        m_type = std::meta::substitute(^^project_by_annotation, { m_type, ^^Tag });
+                    }
+
                     members.push_back(
                         std::meta::data_member_spec(
-                            std::meta::type_of(m),
+                            m_type,
                             {
                                 .name = std::meta::identifier_of(m),
                             }
@@ -37,15 +59,9 @@ export namespace gse {
                     );
                 }
             }
-            if (!all.empty() && members.empty()) {
-                throw "project_by_annotation: source has data members but none matched the annotation tag";
-            }
             std::meta::define_aggregate(^^type, members);
         }
     };
-
-    template <typename Source, typename Tag>
-    using project_by_annotation = typename project_holder<Source, Tag>::type;
 
     template <typename Schema>
     consteval auto find_field_by_name(

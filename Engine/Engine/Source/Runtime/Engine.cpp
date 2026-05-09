@@ -47,7 +47,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		add_system<asset::registry>();
 		add_system<physics::system>();
 		add_system<camera::system>();
-		add_system<render_init::system>();
 		add_system<renderer::system>();
 		add_system<renderer::geometry_collector::system>();
 		add_system<renderer::skin_compute::system>();

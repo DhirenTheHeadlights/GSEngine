@@ -171,12 +171,12 @@ auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu:
 
 			bool motion_order_matches = render_size == motion.size();
 			for (std::size_t i = 0; motion_order_matches && i < render_size; ++i) {
-				motion_order_matches = render[i].owner_id() == motion[i].owner_id();
+				motion_order_matches = render[i].owner_id == motion[i].owner_id;
 			}
 
 			bool collision_order_matches = render_size == collision.size();
 			for (std::size_t i = 0; collision_order_matches && i < render_size; ++i) {
-				collision_order_matches = render[i].owner_id() == collision[i].owner_id();
+				collision_order_matches = render[i].owner_id == collision[i].owner_id;
 			}
 
 			struct component_lookup {
@@ -191,7 +191,7 @@ auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu:
 					return;
 				}
 
-				const auto eid = component.owner_id();
+				const auto eid = component.owner_id;
 				const auto* mc = motion_order_matches ? std::addressof(motion[i]) : motion.find(eid);
 				const auto* cc = collision_order_matches ? std::addressof(collision[i]) : collision.find(eid);
 				if (mc == nullptr || cc == nullptr) {
@@ -199,6 +199,21 @@ auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu:
 				}
 
 				lookups[i] = { mc, cc };
+
+				if (component.model_instances.size() != component.model_count) {
+					component.model_instances.clear();
+					component.model_instances.reserve(component.model_count);
+					for (std::uint32_t j = 0; j < component.model_count; ++j) {
+						component.model_instances.emplace_back(component.models[j]);
+					}
+				}
+				if (component.skinned_model_instances.size() != component.skinned_model_count) {
+					component.skinned_model_instances.clear();
+					component.skinned_model_instances.reserve(component.skinned_model_count);
+					for (std::uint32_t j = 0; j < component.skinned_model_count; ++j) {
+						component.skinned_model_instances.emplace_back(component.skinned_models[j]);
+					}
+				}
 
 				for (auto& model_handle : component.model_instances) {
 					if (!model_handle.handle().valid()) {
@@ -221,7 +236,7 @@ auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu:
 					continue;
 				}
 
-				const auto eid = component.owner_id();
+				const auto eid = component.owner_id;
 				const auto& world_aabb = cc->bounding_box.aabb();
 				std::uint32_t body_index = owned_render_queue_entry::invalid_body_index;
 				if (const auto it = body_index_map.find(eid); it != body_index_map.end()) {

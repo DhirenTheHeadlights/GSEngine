@@ -295,7 +295,7 @@ auto gse::server::update(world& w, channel_writer& channels, const actions::syst
 				if (auto* scene = w.current_scene()) {
 					const auto controller_name = std::format("PlayerController_{}:{}", pkt.from.ip, pkt.from.port);
 					auto controller_id = w.registry().create(controller_name);
-					w.registry().add_component<player_controller>(controller_id, player_controller_data{});
+					w.registry().add_component<player_controller>(controller_id);
 					w.registry().activate(controller_id);
 					m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
 
@@ -340,7 +340,7 @@ auto gse::server::update(world& w, channel_writer& channels, const actions::syst
 			if (w.current_scene()) {
 				const auto controller_name = std::format("PlayerController_{}:{}", pkt.from.ip, pkt.from.port);
 				auto controller_id = w.registry().create(controller_name);
-				w.registry().add_component<player_controller>(controller_id, player_controller_data{});
+				w.registry().add_component<player_controller>(controller_id);
 				w.registry().activate(controller_id);
 				m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
 				reconnect_controller_id = controller_id;

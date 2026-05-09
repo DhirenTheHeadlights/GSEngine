@@ -6,26 +6,22 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
 import gse.ecs;
+import gse.math;
+import gse.meta;
 import :skeleton;
 import :clip;
 
 export namespace gse {
-	struct animation_component_data {
-		id skeleton_id;
-	};
-
-	struct animation_component : component<animation_component_data, animation_component_data> {
-		animation_component(const id owner_id, const params& p) : component(owner_id, p) {}
+	struct animation_component {
+		[[= networked]] id skeleton_id;
 
 		resource::handle<skeleton> skeleton;
 		std::vector<mat4f> local_pose;
 		std::vector<mat4f> global_pose;
 		std::vector<mat4f> skins;
 		std::uint32_t skin_buffer_offset = 0;
+
+		id owner_id;
 	};
 }

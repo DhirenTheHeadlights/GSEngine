@@ -155,8 +155,8 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 					continue;
 				}
 
-				const auto* mc = motions.find(coll.owner_id());
-				const auto* res = results.find(coll.owner_id());
+				const auto* mc = motions.find(coll.owner_id);
+				const auto* res = results.find(coll.owner_id);
 				build_shape_lines_for_collider(coll, mc, vertices);
 
 				if (mc && res) {

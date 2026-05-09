@@ -4,7 +4,7 @@ import std;
 import gse;
 
 export namespace gs::player {
-	struct component_data {
+	struct component {
 		gse::vec3<gse::position> initial_position;
 		gse::velocity walk_speed = gse::miles_per_hour(20.f);
 		gse::velocity sprint_speed = gse::miles_per_hour(40.f);
@@ -14,9 +14,9 @@ export namespace gs::player {
 		int boost_fuel_max = 1000;
 		int boost_fuel = 1000;
 		bool jetpack_enabled = false;
-	};
 
-	using component = gse::component<component_data>;
+		gse::id owner_id;
+	};
 
 	struct bindings {
 		gse::actions::handle shift;
@@ -52,7 +52,7 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 			>();
 
 			for (auto& p : players) {
-				const auto owner_id = p.owner_id();
+				const auto owner_id = p.owner_id;
 				auto& slot = s.bindings_by_owner[owner_id];
 				if (slot) {
 					continue;
@@ -130,7 +130,7 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 			const auto& cs = gse::actions::system::current_state(as);
 
 			for (auto& p : players) {
-				const auto owner_id = p.owner_id();
+				const auto owner_id = p.owner_id;
 				const auto& b = *s.bindings_by_owner[owner_id];
 
 				auto* motion = motions.find(owner_id);

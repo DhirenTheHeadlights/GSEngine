@@ -4,16 +4,16 @@ import std;
 import gse;
 
 export namespace gs::tumbler {
-	struct component_data {
+	struct component {
 		gse::vec3<gse::position> center;
 		gse::vec3f axis = gse::axis_z;
 		gse::angular_velocity angular_speed = gse::radians_per_second(0.6f);
 		gse::vec3<gse::length> local_offset;
 		gse::angle phase = gse::radians(0.f);
 		gse::time accumulator = gse::seconds(0.f);
-	};
 
-	using component = gse::component<component_data>;
+		gse::id owner_id;
+	};
 
 	struct system {
 		struct state {};
@@ -35,7 +35,7 @@ auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 			constexpr auto physics_step = gse::seconds(1.f / 60.f);
 
 			for (auto& t : tumblers) {
-				const auto owner_id = t.owner_id();
+				const auto owner_id = t.owner_id;
 				auto* motion = motions.find(owner_id);
 				if (!motion) {
 					continue;

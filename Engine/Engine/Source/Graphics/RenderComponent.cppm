@@ -7,16 +7,11 @@ import :model;
 import :skinned_model;
 
 import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
 import gse.ecs;
-import gse.math;
 import gse.meta;
 
 export namespace gse {
-    struct render_component_data {
+    struct render_component {
         static constexpr std::size_t max_models = 16;
 
         [[= networked]] std::array<resource::handle<model>, max_models> models{};
@@ -28,48 +23,7 @@ export namespace gse {
 
         std::vector<model_instance> model_instances;
         std::vector<skinned_model_instance> skinned_model_instances;
-        vec3<length> center_of_mass;
-        bool has_calculated_com = false;
-    };
 
-    using render_component_net = project_by_annotation<render_component_data, networked_tag>;
-
-    struct render_component final : component<render_component_data, render_component_net> {
-        struct params {
-            std::vector<resource::handle<model>> models;
-            std::vector<resource::handle<skinned_model>> skinned_models;
-            vec3<length> center_of_mass;
-            bool render = true;
-            bool render_bounding_boxes = true;
-            bool has_calculated_com = false;
-        };
-
-        render_component(
-            id owner_id,
-            const params& p
-        );
-
-        render_component(
-            id owner_id,
-            const network_data_t& nd
-        );
-    };
-}
-
-export namespace gse::render_init {
-    struct system {
-        struct state {
-            std::unordered_set<id> pending;
-        };
-
-        static auto run(
-            run_context& ctx,
-            state& s
-        ) -> async::task<>;
-
-    private:
-        static auto try_wire(
-            render_component& rc
-        ) -> bool;
+        id owner_id;
     };
 }

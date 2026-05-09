@@ -28,7 +28,7 @@ auto gs::main_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse
 		else {
 			player_id = sc.add_entity(std::format("Player_{}", next_id++));
 		}
-		sc.registry().add_component<gs::player::component>(player_id, gs::player::component_data{
+		sc.registry().add_component<gs::player::component>(player_id, gs::player::component{
 			.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f),
 		});
 		return player_id;

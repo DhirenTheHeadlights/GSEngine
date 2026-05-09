@@ -100,32 +100,12 @@ auto gse::network::system::run(run_context& ctx, const asset::state& assets_s, r
                     stream,
                     rep->id,
                     [&]<typename T>(const component_upsert<T>& m) {
-                        if constexpr (std::is_same_v<T, render_component>) {
-                            auto fixed_data = m.data;
-
-                            for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
-                                const auto res_id = fixed_data.models[i].id();
-                                fixed_data.models[i] = asset::try_get<model>(assets_s, res_id);
-                            }
-
-                            for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
-                                const auto res_id = fixed_data.skinned_models[i].id();
-                                fixed_data.skinned_models[i] = asset::try_get<skinned_model>(assets_s, res_id);
-                            }
-
-                            r.deferred.push_back([entity = m.owner_id, data = std::move(fixed_data)](run_context& ctx) {
-                                ctx.ensure_active(entity);
-                                auto* c = ctx.add_component<T>(entity, data);
-                                c->networked_data() = data;
-                            });
-                        }
-                        else {
-                            r.deferred.push_back([entity = m.owner_id, data = m.data](run_context& ctx) {
-                                ctx.ensure_active(entity);
-                                auto* c = ctx.add_component<T>(entity, data);
-                                c->networked_data() = data;
-                            });
-                        }
+                        r.deferred.push_back([entity = m.owner_id, data = m.data, &assets_s](run_context& ctx) {
+                            ctx.ensure_active(entity);
+                            auto* c = ctx.add_component<T>(entity);
+                            apply_networked(*c, data);
+                            on_network_received(*c, assets_s);
+                        });
                     },
                     [&]<typename T>(const component_remove<T>& m) {
                         if (!m.owner_id.exists()) {

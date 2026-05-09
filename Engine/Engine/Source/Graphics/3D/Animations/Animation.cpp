@@ -110,8 +110,8 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 		s.pose_cache.clear();
 
 		for (auto& anim : animations) {
-			if (const auto& [skeleton_id] = anim.networked_data(); !anim.skeleton && skeleton_id.exists()) {
-				anim.skeleton = asset::get<skeleton>(assets_s, skeleton_id);
+			if (!anim.skeleton && anim.skeleton_id.exists()) {
+				anim.skeleton = asset::get<skeleton>(assets_s, anim.skeleton_id);
 			}
 
 			if (!anim.skeleton) {
@@ -122,9 +122,8 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 			const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 			ensure_pose_buffers(anim, joint_count);
 
-			if (auto* ctrl_c = controllers.find(anim.owner_id())) {
-				const auto& [graph_id] = ctrl_c->networked_data();
-				if (const auto graph_it = s.graphs.find(graph_id); graph_it != s.graphs.end()) {
+			if (auto* ctrl_c = controllers.find(anim.owner_id)) {
+				if (const auto graph_it = s.graphs.find(ctrl_c->graph_id); graph_it != s.graphs.end()) {
 					s.controller_jobs.push_back({
 						.anim = std::addressof(anim),
 						.ctrl = ctrl_c,
@@ -135,13 +134,12 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 				}
 			}
 
-			auto* clip_c = clips.find(anim.owner_id());
+			auto* clip_c = clips.find(anim.owner_id);
 			if (clip_c == nullptr) {
 				continue;
 			}
-			const auto& [clip_id, scale, loop] = clip_c->networked_data();
-			if (!clip_c->clip && clip_id.exists()) {
-				clip_c->clip = asset::get<clip_asset>(assets_s, clip_id);
+			if (!clip_c->clip && clip_c->clip_id.exists()) {
+				clip_c->clip = asset::get<clip_asset>(assets_s, clip_c->clip_id);
 			}
 
 			if (!clip_c->clip) {
@@ -151,12 +149,12 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 			const auto& clip = *clip_c->clip;
 
 			if (clip_c->playing) {
-				clip_c->t += dt * scale;
+				clip_c->t += dt * clip_c->scale;
 			}
 
 			const time length = clip.length();
 			time sample_t = clip_c->t;
-			const bool should_loop = (loop && clip.loop());
+			const bool should_loop = (clip_c->loop && clip.loop());
 
 			if (should_loop) {
 				sample_t = wrap_time(sample_t, length);
@@ -172,7 +170,7 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 				.clip = clip_c,
 				.skel = std::addressof(skel),
 				.asset = std::addressof(clip),
-				.scale = scale,
+				.scale = clip_c->scale,
 				.loop = should_loop,
 				.sample_t = sample_t
 			});

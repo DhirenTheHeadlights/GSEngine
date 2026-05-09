@@ -4,15 +4,11 @@ import std;
 
 import gse.math;
 import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
 import gse.ecs;
 import :gui;
 
 export namespace gse {
-	struct spot_light_data {
+	struct spot_light_component {
 		vec3f color;
 		float intensity = 1.0f;
 		vec3<position> position;
@@ -24,13 +20,7 @@ export namespace gse {
 		angle outer_cut_off;
 		float ambient_strength = 0.025f;
 		float source_radius = 0.3f;
-	};
 
-	struct spot_light_component : component<spot_light_data> {
-		explicit spot_light_component(const id owner_id, const spot_light_data& data = {}) : component(owner_id, data) {}
-
-		auto debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void {
-			
-		}
+		id owner_id;
 	};
 }
