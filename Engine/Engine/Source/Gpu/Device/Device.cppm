@@ -54,6 +54,16 @@ export namespace gse::gpu {
 			std::string_view operation
 		) -> void;
 
+		struct pass_marker {
+			std::uint64_t frame_counter = 0;
+			std::uint32_t pass_index = 0;
+			id pass_type{};
+		};
+
+		auto record_pass_marker(
+			pass_marker marker
+		) -> void;
+
 		[[nodiscard]] auto vulkan_instance(
 			this auto& self
 		) -> auto&;
@@ -105,6 +115,10 @@ export namespace gse::gpu {
 		image_format m_surface_format;
 		std::atomic<bool> m_device_lost_reported = false;
 		bool m_video_encode_enabled = false;
+
+		static constexpr std::size_t pass_marker_ring_size = 128;
+		std::array<pass_marker, pass_marker_ring_size> m_pass_markers{};
+		std::atomic<std::uint64_t> m_pass_marker_seq{ 0 };
 	};
 }
 

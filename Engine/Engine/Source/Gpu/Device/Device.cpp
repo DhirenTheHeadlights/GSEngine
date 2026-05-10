@@ -96,12 +96,37 @@ auto gse::gpu::device::timestamp_period() const -> float {
 	return m_device_config.timestamp_period();
 }
 
+auto gse::gpu::device::record_pass_marker(const pass_marker marker) -> void {
+	const auto seq = m_pass_marker_seq.fetch_add(1, std::memory_order_relaxed);
+	m_pass_markers[seq % pass_marker_ring_size] = marker;
+}
+
 auto gse::gpu::device::report_device_lost(const std::string_view operation) -> void {
 	if (bool expected = false; !m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
 		return;
 	}
 
 	log::println(log::level::error, log::category::vulkan, "Vulkan device lost during {}", operation);
+
+	const auto total = m_pass_marker_seq.load(std::memory_order_relaxed);
+	if (total > 0) {
+		const auto count = std::min<std::uint64_t>(total, pass_marker_ring_size);
+		const auto first_seq = total - count;
+		log::println(log::level::error, log::category::vulkan, "Last {} GPU pass markers (oldest first):", count);
+		for (std::uint64_t i = 0; i < count; ++i) {
+			const auto seq = first_seq + i;
+			const auto& m = m_pass_markers[seq % pass_marker_ring_size];
+			log::println(
+				log::level::error,
+				log::category::vulkan,
+				"  seq={} frame={} pass_index={} pass_type={}",
+				seq,
+				m.frame_counter,
+				m.pass_index,
+				m.pass_type.tag()
+			);
+		}
+	}
 
 	if (!m_device_config.fault_enabled()) {
 		log::println(log::level::warning, log::category::vulkan, "VK_EXT_device_fault is unavailable on this device");

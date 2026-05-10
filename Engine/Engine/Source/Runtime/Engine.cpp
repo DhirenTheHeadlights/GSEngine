@@ -184,6 +184,10 @@ auto gse::engine::shutdown() -> void {
 	m_save.save_now();
 	m_save.set_auto_save(false);
 
+	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::state>()) {
+		gpu::context::wait_idle(*gpu_state);
+	}
+
 	m_scheduler.shutdown();
 	m_world.shutdown();
 

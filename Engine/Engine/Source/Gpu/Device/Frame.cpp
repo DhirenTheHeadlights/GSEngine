@@ -118,6 +118,18 @@ auto gse::gpu::frame::begin(window::state& win) -> std::expected<frame_token, fr
     cmd.reset();
     cmd.begin();
 
+    const image_barrier acquire_barrier{
+        .src_stages = pipeline_stage_flag::top_of_pipe,
+        .src_access = {},
+        .dst_stages = pipeline_stage_flag::color_attachment_output,
+        .dst_access = access_flag::color_attachment_write | access_flag::color_attachment_read,
+        .old_layout = image_layout::undefined,
+        .new_layout = image_layout::color_attachment,
+        .image = m_swapchain->image(m_image_index),
+        .aspects = image_aspect_flag::color,
+    };
+    cmd.pipeline_barrier(dependency_info{ .image_barriers = std::span(&acquire_barrier, 1) });
+
     m_device->transient().recorder().run_pre_frame(m_command_buffer);
 
     m_frame_in_progress = true;
@@ -137,9 +149,23 @@ auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state& state) -
 auto gse::gpu::frame::end(window::state& win) -> void {
     m_device->transient().recorder().run_post_frame(m_command_buffer);
 
+    const vulkan::commands cmd{ m_command_buffer };
+
+    const image_barrier present_barrier{
+        .src_stages = pipeline_stage_flag::color_attachment_output,
+        .src_access = access_flag::color_attachment_write,
+        .dst_stages = pipeline_stage_flag::bottom_of_pipe,
+        .dst_access = {},
+        .old_layout = image_layout::color_attachment,
+        .new_layout = image_layout::present_src,
+        .image = m_swapchain->image(m_image_index),
+        .aspects = image_aspect_flag::color,
+    };
+    cmd.pipeline_barrier(dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
+
     {
     	trace::scope_guard sg{trace_id<"end_frame::cmd_end">()};
-        vulkan::commands{ m_command_buffer }.end();
+        cmd.end();
     }
 
     std::vector<semaphore_submit_info> wait_infos;

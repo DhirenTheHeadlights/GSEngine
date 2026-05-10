@@ -263,12 +263,23 @@ gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const desc
 
 	std::uint32_t memory_type_index = std::numeric_limits<std::uint32_t>::max();
 	constexpr auto required_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+	constexpr auto preferred_flags = required_flags | vk::MemoryPropertyFlagBits::eDeviceLocal;
 
 	for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
 		if ((mem_reqs.memoryTypeBits & (1u << i))
-			&& (mem_props.memoryTypes[i].propertyFlags & required_flags) == required_flags) {
+			&& (mem_props.memoryTypes[i].propertyFlags & preferred_flags) == preferred_flags) {
 			memory_type_index = i;
 			break;
+		}
+	}
+
+	if (memory_type_index == std::numeric_limits<std::uint32_t>::max()) {
+		for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
+			if ((mem_reqs.memoryTypeBits & (1u << i))
+				&& (mem_props.memoryTypes[i].propertyFlags & required_flags) == required_flags) {
+				memory_type_index = i;
+				break;
+			}
 		}
 	}
 
@@ -276,6 +287,8 @@ gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const desc
 		memory_type_index != std::numeric_limits<std::uint32_t>::max(),
 		"No suitable memory type for descriptor heap"
 	);
+
+	const bool device_local = (mem_props.memoryTypes[memory_type_index].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal) == vk::MemoryPropertyFlagBits::eDeviceLocal;
 
 	const vk::MemoryAllocateFlagsInfo flags_info{
 		.flags = vk::MemoryAllocateFlagBits::eDeviceAddress
@@ -295,7 +308,7 @@ gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const desc
 	const vk::BufferDeviceAddressInfo addr_info{ .buffer = m_buffer };
 	m_address = m_device.getBufferAddress(addr_info);
 
-	log::println(log::category::vulkan_memory, "Descriptor heap created: {} KB, address 0x{:x}", capacity / 1024, m_address);
+	log::println(log::category::vulkan_memory, "Descriptor heap created: {} KB, address 0x{:x}, memory type {} ({})", capacity / 1024, m_address, memory_type_index, device_local ? "DEVICE_LOCAL+HOST_VISIBLE" : "HOST_VISIBLE only");
 }
 
 gse::gpu::descriptor_heap::~descriptor_heap() {
