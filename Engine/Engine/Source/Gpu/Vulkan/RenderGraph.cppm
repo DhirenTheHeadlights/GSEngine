@@ -1004,7 +1004,6 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 
 	const auto command = std::bit_cast<vk::CommandBuffer>(m_frame->command_buffer());
 	const auto image_index = m_frame->image_index();
-	const auto swap_image = m_swapchain->image(image_index);
 	const auto swap_extent = m_swapchain->extent();
 	const vk::Extent2D vk_extent{ swap_extent.x(), swap_extent.y() };
 
@@ -1019,23 +1018,6 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 	auto bump_frames = make_scope_exit([this] {
 		++m_frames_submitted;
 	});
-
-	const gpu::image_barrier begin_barrier{
-		.src_stages = gpu::pipeline_stage_flag::top_of_pipe,
-		.src_access = {},
-		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
-		.old_layout = gpu::image_layout::undefined,
-		.new_layout = gpu::image_layout::color_attachment,
-		.image = std::bit_cast<gpu::handle<image>>(swap_image),
-		.aspects = gpu::image_aspect_flag::color,
-		.base_mip_level = 0,
-		.level_count = 1,
-		.base_array_layer = 0,
-		.layer_count = 1,
-	};
-
-	vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&begin_barrier, 1) });
 
 	slot.pass_types.clear();
 	slot.pass_count = 0;
@@ -1276,6 +1258,12 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 			const bool is_graphics_pass = pass.color_output || pass.depth_output;
 			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
 
+			m_device->record_pass_marker({
+				.frame_counter = m_frames_submitted,
+				.pass_index = static_cast<std::uint32_t>(si),
+				.pass_type = pass.pass_type,
+			});
+
 			if (profile_pass) {
 				command.writeTimestamp2(vk::PipelineStageFlagBits2::eNone, *slot.timestamp_pool, 1 + pass_index * 2);
 				slot.pass_types.push_back(pass.pass_type);
@@ -1368,22 +1356,5 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 	if (timestamps_enabled && slot.pass_count > 0) {
 		slot.results_valid = true;
 	}
-
-	const gpu::image_barrier present_barrier{
-		.src_stages = gpu::pipeline_stage_flag::color_attachment_output,
-		.src_access = gpu::access_flag::color_attachment_write,
-		.dst_stages = gpu::pipeline_stage_flag::bottom_of_pipe,
-		.dst_access = {},
-		.old_layout = gpu::image_layout::color_attachment,
-		.new_layout = gpu::image_layout::present_src,
-		.image = std::bit_cast<gpu::handle<image>>(swap_image),
-		.aspects = gpu::image_aspect_flag::color,
-		.base_mip_level = 0,
-		.level_count = 1,
-		.base_array_layer = 0,
-		.layer_count = 1,
-	};
-
-	vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
 }
 

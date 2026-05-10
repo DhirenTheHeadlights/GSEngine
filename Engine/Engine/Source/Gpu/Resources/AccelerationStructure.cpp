@@ -119,13 +119,21 @@ auto gse::gpu::rebuild_tlas(const context::state& ctx, vulkan::tlas& t, const st
 	const auto scratch_raw = vulkan::buffer_device_address(dev_cfg, t.scratch_buffer().handle());
 	const device_address scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
-	const memory_barrier host_write_barrier{
-		.src_stages = pipeline_stage_flag::host,
-		.src_access = access_flag::host_write,
-		.dst_stages = pipeline_stage_flag::acceleration_structure_build,
-		.dst_access = access_flag::acceleration_structure_read,
+	const std::array pre_barriers{
+		memory_barrier{
+			.src_stages = pipeline_stage_flag::host,
+			.src_access = access_flag::host_write,
+			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
+			.dst_access = access_flag::acceleration_structure_read,
+		},
+		memory_barrier{
+			.src_stages = pipeline_stage_flag::acceleration_structure_build,
+			.src_access = access_flag::acceleration_structure_write,
+			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
+			.dst_access = access_flag::acceleration_structure_read,
+		},
 	};
-	rec.pipeline_barrier(dependency_info{ .memory_barriers = std::span(&host_write_barrier, 1) });
+	rec.pipeline_barrier(dependency_info{ .memory_barriers = pre_barriers });
 
 	const acceleration_structure_geometry geometry{
 		.type = acceleration_structure_geometry_type::instances,
@@ -180,13 +188,27 @@ auto gse::gpu::build_tlas_in_place(const context::state& ctx, vulkan::tlas& t, c
 	const auto scratch_raw = vulkan::buffer_device_address(dev_cfg, t.scratch_buffer().handle());
 	const device_address scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
-	const memory_barrier pre_barrier{
-		.src_stages = pipeline_stage_flag::compute_shader,
-		.src_access = access_flag::shader_write,
-		.dst_stages = pipeline_stage_flag::acceleration_structure_build,
-		.dst_access = access_flag::acceleration_structure_read,
+	const std::array pre_barriers{
+		memory_barrier{
+			.src_stages = pipeline_stage_flag::host,
+			.src_access = access_flag::host_write,
+			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
+			.dst_access = access_flag::acceleration_structure_read,
+		},
+		memory_barrier{
+			.src_stages = pipeline_stage_flag::compute_shader,
+			.src_access = access_flag::shader_write,
+			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
+			.dst_access = access_flag::acceleration_structure_read,
+		},
+		memory_barrier{
+			.src_stages = pipeline_stage_flag::acceleration_structure_build,
+			.src_access = access_flag::acceleration_structure_write,
+			.dst_stages = pipeline_stage_flag::acceleration_structure_build,
+			.dst_access = access_flag::acceleration_structure_read,
+		},
 	};
-	rec.pipeline_barrier(dependency_info{ .memory_barriers = std::span(&pre_barrier, 1) });
+	rec.pipeline_barrier(dependency_info{ .memory_barriers = pre_barriers });
 
 	const acceleration_structure_geometry geometry{
 		.type = acceleration_structure_geometry_type::instances,

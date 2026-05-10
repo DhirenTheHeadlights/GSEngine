@@ -80,7 +80,7 @@ struct DepthOutput {
 };
 
 [shader("mesh")]
-[numthreads(128, 1, 1)]
+[numthreads(32, 1, 1)]
 [outputtopology("triangle")]
 void ms_main(
     uint gtid : SV_GroupThreadID,
@@ -95,19 +95,19 @@ void ms_main(
 
     SetMeshOutputCounts(desc.vertex_count, desc.triangle_count);
 
-    if (gtid < desc.vertex_count) {
-        uint global_vertex_idx = meshletVertexIndices[desc.vertex_offset + gtid];
+    for (uint v_idx = gtid; v_idx < desc.vertex_count; v_idx += 32) {
+        uint global_vertex_idx = meshletVertexIndices[desc.vertex_offset + v_idx];
         Vertex v = vertices[global_vertex_idx];
 
         MeshVertexOutput mv = compute_mesh_vertex(v, inst, view, proj);
 
         DepthOutput o;
         o.clip_pos = mv.clip_pos;
-        out_verts[gtid] = o;
+        out_verts[v_idx] = o;
     }
 
-    if (gtid < desc.triangle_count) {
-        out_tris[gtid] = load_meshlet_triangle(meshletTriangles, desc.triangle_offset + gtid * 3);
+    for (uint t_idx = gtid; t_idx < desc.triangle_count; t_idx += 32) {
+        out_tris[t_idx] = load_meshlet_triangle(meshletTriangles, desc.triangle_offset + t_idx * 3);
     }
 }
 

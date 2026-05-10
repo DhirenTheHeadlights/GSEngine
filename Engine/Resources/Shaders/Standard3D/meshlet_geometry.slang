@@ -81,7 +81,7 @@ struct MeshOutput {
 
 [Layout(LayoutKind::Forward3D)]
 [shader("mesh")]
-[numthreads(128, 1, 1)]
+[numthreads(32, 1, 1)]
 [outputtopology("triangle")]
 void ms_main(
     uint gtid : SV_GroupThreadID,
@@ -96,8 +96,8 @@ void ms_main(
 
     SetMeshOutputCounts(desc.vertex_count, desc.triangle_count);
 
-    if (gtid < desc.vertex_count) {
-        uint global_vertex_idx = meshletVertexIndices[desc.vertex_offset + gtid];
+    for (uint v_idx = gtid; v_idx < desc.vertex_count; v_idx += 32) {
+        uint global_vertex_idx = meshletVertexIndices[desc.vertex_offset + v_idx];
         Vertex v = vertices[global_vertex_idx];
 
         MeshVertexOutput mv = compute_mesh_vertex(v, inst, view, proj);
@@ -110,11 +110,11 @@ void ms_main(
         mo.view_normal = mv.view_normal;
         mo.tex_coord = mv.tex_coord;
         mo.instance_idx = p.instance_idx;
-        out_verts[gtid] = mo;
+        out_verts[v_idx] = mo;
     }
 
-    if (gtid < desc.triangle_count) {
-        out_tris[gtid] = load_meshlet_triangle(meshletTriangles, desc.triangle_offset + gtid * 3);
+    for (uint t_idx = gtid; t_idx < desc.triangle_count; t_idx += 32) {
+        out_tris[t_idx] = load_meshlet_triangle(meshletTriangles, desc.triangle_offset + t_idx * 3);
     }
 }
 

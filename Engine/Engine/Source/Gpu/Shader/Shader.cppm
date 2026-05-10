@@ -236,6 +236,57 @@ auto gse::shader::load(const auto&) -> async::task<> {
 			stride += format_size(attr.format);
 		}
 
+		auto consumed_input_locations = [](std::span<const std::uint32_t> spv) -> std::unordered_set<std::uint32_t> {
+			std::unordered_set<std::uint32_t> result;
+			if (spv.size() < 5 || spv[0] != 0x07230203u) {
+				return result;
+			}
+
+			constexpr std::uint32_t op_decorate = 71;
+			constexpr std::uint32_t op_variable = 59;
+			constexpr std::uint32_t decoration_location = 30;
+			constexpr std::uint32_t storage_class_input = 1;
+
+			std::unordered_map<std::uint32_t, std::uint32_t> id_to_location;
+			std::unordered_set<std::uint32_t> input_var_ids;
+
+			std::size_t i = 5;
+			while (i < spv.size()) {
+				const std::uint32_t word = spv[i];
+				const std::uint32_t word_count = word >> 16;
+				const std::uint32_t opcode = word & 0xffffu;
+				if (word_count == 0 || i + word_count > spv.size()) {
+					break;
+				}
+
+				if (opcode == op_decorate && word_count >= 4 && spv[i + 2] == decoration_location) {
+					id_to_location[spv[i + 1]] = spv[i + 3];
+				} else if (opcode == op_variable && word_count >= 4 && spv[i + 3] == storage_class_input) {
+					input_var_ids.insert(spv[i + 2]);
+				}
+
+				i += word_count;
+			}
+
+			for (const auto var : input_var_ids) {
+				if (const auto it = id_to_location.find(var); it != id_to_location.end()) {
+					result.insert(it->second);
+				}
+			}
+			return result;
+		};
+
+		const auto consumed = consumed_input_locations(m_vert_spirv);
+		if (!consumed.empty()) {
+			static_vector<gpu::vertex_attribute_desc, 16> filtered;
+			for (const auto& attr : m_vertex_input.attributes) {
+				if (consumed.contains(attr.location)) {
+					filtered.push_back(attr);
+				}
+			}
+			m_vertex_input.attributes = std::move(filtered);
+		}
+
 		m_vertex_input.bindings.push_back({
 			.binding = 0,
 			.stride = stride,

@@ -107,6 +107,7 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 				ctx.add_component<gse::physics::motion_component>(owner_id, {
 					.current_position = p.initial_position,
 					.mass = gse::pounds(180.f),
+					.update_orientation = false,
 					.velocity_drive_target = {},
 					.velocity_drive_active = true,
 				});
