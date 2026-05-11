@@ -5,12 +5,25 @@ import std;
 import :message;
 
 export namespace gse::network {
-    struct [[= network_message{}]] input_frame_header {
+    struct axes1_pair {
+        std::uint16_t id;
+        float value;
+    };
+
+    struct axes2_pair {
+        std::uint16_t id;
+        float x, y;
+    };
+
+    struct [[= network_message{}]]
+    input_frame {
         std::uint32_t input_sequence = 0;
         std::uint32_t client_time_ms = 0;
-        std::uint16_t action_word_count = 0;
-        std::uint16_t axes1_count = 0;
-        std::uint16_t axes2_count = 0;
         float camera_yaw = 0.f;
+        std::vector<std::uint64_t> pressed;
+        std::vector<std::uint64_t> released;
+        std::vector<std::uint64_t> held;
+        std::vector<axes1_pair> axes1;
+        std::vector<axes2_pair> axes2;
     };
 }

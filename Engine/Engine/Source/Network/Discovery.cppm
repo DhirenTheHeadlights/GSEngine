@@ -15,6 +15,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
 export namespace gse::network {
     struct discovery_result {
         address addr;
@@ -33,7 +34,7 @@ export namespace gse::network {
         ) -> void = 0;
 
         virtual auto results(
-	    ) const -> std::span<const discovery_result> = 0;
+	    ) -> std::span<const discovery_result> = 0;
     };
 
     class wan_directory_provider : public discovery_provider {
@@ -49,7 +50,7 @@ export namespace gse::network {
         ) -> void override;
 
         auto results(
-        ) const -> std::span<const discovery_result> override;
+        ) -> std::span<const discovery_result> override;
 
         auto set_seed(
             std::vector<discovery_result> seed
@@ -60,11 +61,11 @@ export namespace gse::network {
         ) -> void;
 
         std::vector<discovery_result> m_seed;
-        mutable std::vector<discovery_result> m_published;  
-        std::vector<discovery_result> m_pending;            
-        mutable std::mutex m_mutex;
+        std::vector<discovery_result> m_published;
+        std::vector<discovery_result> m_pending;
+        std::mutex m_mutex;
         std::atomic<bool> m_querying{ false };
-        mutable std::atomic<bool> m_has_pending{ false };
+        std::atomic<bool> m_has_pending{ false };
         time_t<std::uint32_t> m_last_refresh{ seconds(0) };
     };
 }
@@ -108,7 +109,7 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
     }
 
     std::array<std::byte, 64> request_buffer;
-    bitstream request_stream(request_buffer);
+    write_bitstream request_stream(request_buffer);
     request_stream.write(packet_header{});
     write(request_stream, server_info_request{});
 
@@ -121,7 +122,7 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
         socket.send_data(request_pkt, server.addr);
     }
 
-    std::unordered_map<std::string, server_info_response> responses;
+    std::map<address, server_info_response> responses;
     clock timeout_clock;
     std::array<std::byte, 256> recv_buffer;
 
@@ -131,23 +132,20 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
         }
 
         while (const auto received = socket.receive_data(recv_buffer)) {
-            const std::string key = received->from.ip + ":" + std::to_string(received->from.port);
-
             const std::span data(recv_buffer.data(), received->bytes_read);
-            bitstream response_stream(data);
+            read_bitstream response_stream(data);
 
             (void)response_stream.read<packet_header>();
-            const auto msg_id = message_id(response_stream);
+            const auto msg_id = response_stream.read<std::uint64_t>();
 
             try_decode<server_info_response>(response_stream, msg_id, [&](const server_info_response& resp) {
-                responses[key] = resp;
+                responses[received->from] = resp;
             });
         }
     }
 
     for (auto& server : local_copy) {
-        const std::string key = server.addr.ip + ":" + std::to_string(server.addr.port);
-        if (const auto it = responses.find(key); it != responses.end()) {
+        if (const auto it = responses.find(server.addr); it != responses.end()) {
             server.players = it->second.players;
             server.max_players = it->second.max_players;
         }
@@ -160,10 +158,10 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
     m_has_pending.store(true, std::memory_order_release);
 }
 
-auto gse::network::wan_directory_provider::results() const -> std::span<const discovery_result> {
+auto gse::network::wan_directory_provider::results() -> std::span<const discovery_result> {
     if (m_has_pending.load(std::memory_order_acquire)) {
         std::lock_guard lock(m_mutex);
-        m_published = m_pending;
+        m_published = std::move(m_pending);
         m_has_pending.store(false, std::memory_order_release);
     }
     return m_published;

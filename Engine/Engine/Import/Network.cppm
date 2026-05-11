@@ -3,12 +3,14 @@ export module gse.network;
 import std;
 
 import gse.core;
+import gse.containers;
 import gse.math;
 import gse.concurrency;
 import gse.ecs;
 import gse.assets;
 import gse.os;
 import gse.graphics;
+import gse.physics;
 
 export import :actions;
 export import :remote_peer;
@@ -70,12 +72,23 @@ export namespace gse::network {
         ) const noexcept -> bool;
     };
 
+    struct state {
+        client::state connection_state = client::state::disconnected;
+        std::vector<discovery_result> available_servers;
+        std::uint8_t connected_players = 0;
+        std::uint8_t connected_max_players = 0;
+    };
+
+    using engine_components = type_pack<
+        physics::motion_component,
+        physics::collision_component,
+        render_component,
+        player_controller
+    >;
+
+    template <typename... Components>
     struct system {
-        struct state {
-            client::state connection_state = client::state::disconnected;
-            std::vector<discovery_result> available_servers;
-            std::vector<inbox_message> user_inbox;
-        };
+        using state = network::state;
 
         struct resources {
             std::unique_ptr<client> client_ptr;
@@ -98,4 +111,168 @@ export namespace gse::network {
             state& s
         ) -> void;
     };
+
+    template <typename Pack>
+    using system_for = typename Pack::template apply<system>;
+}
+
+template <typename... Components>
+auto gse::network::system<Components...>::shutdown(shutdown_context&, resources& r, state&) -> void {
+    r.client_ptr.reset();
+}
+
+template <typename... Components>
+auto gse::network::system<Components...>::run(run_context& ctx, const asset::state& assets_s, resources& r, state& s, const actions::system::state& actions_state, const camera::system::state& cam_state) -> async::task<> {
+    (ctx.template ensure_storage<Components>(), ...);
+
+    while (true) {
+        for (const auto& req : ctx.read_channel<connect_request>()) {
+            if (!r.client_ptr) {
+                const address bind = req.options.local_bind.value_or(address{
+                    .ip = "0.0.0.0",
+                    .port = 0,
+                });
+                r.client_ptr = std::make_unique<client>(bind, req.options.addr);
+            }
+            req.promise.fulfill(r.client_ptr->connect(req.options.timeout, req.options.retry));
+        }
+
+        for (const auto& _ : ctx.read_channel<disconnect_request>()) {
+            r.client_ptr.reset();
+        }
+
+        for (const auto& req : ctx.read_channel<add_provider_request>()) {
+            r.providers.emplace_back(req.provider);
+        }
+
+        for (const auto& _ : ctx.read_channel<clear_providers_request>()) {
+            r.providers.clear();
+            s.available_servers.clear();
+        }
+
+        for (const auto& req : ctx.read_channel<refresh_servers_request>()) {
+            std::unordered_map<address, discovery_result, key_hash, key_eq> dedup;
+            for (const auto& p : r.providers) {
+                p->refresh(req.timeout);
+                for (const auto& result : p->results()) {
+                    if (auto it = dedup.find(result.addr); it == dedup.end()) {
+                        dedup.emplace(result.addr, result);
+                    }
+                    else if (result.build >= it->second.build) {
+                        it->second = result;
+                    }
+                }
+            }
+            s.available_servers.clear();
+            s.available_servers.reserve(dedup.size());
+            for (auto& v : dedup | std::views::values) {
+                s.available_servers.push_back(std::move(v));
+            }
+            std::ranges::sort(s.available_servers, [](const discovery_result& a, const discovery_result& b) {
+                if (a.name != b.name) {
+                    return a.name < b.name;
+                }
+                return a.addr.port < b.addr.port;
+            });
+        }
+
+        if (!r.client_ptr) {
+            s.connection_state = client::state::disconnected;
+            co_await ctx.next_tick();
+            continue;
+        }
+
+        for (const auto& req : ctx.read_channel<send_request>()) {
+            req.action(*r.client_ptr);
+        }
+
+        r.client_ptr->drain([&ctx, &r, &s, &assets_s](raw_message& msg) {
+            read_bitstream stream(msg.payload);
+
+            const bool is_component = match_and_apply_components<type_pack<Components...>>(
+                stream,
+                msg.id,
+                [&]<typename T>(const component_upsert<T>& m) {
+                    r.deferred.push_back([entity = m.owner_id, data = m.data, &assets_s](run_context& ctx) {
+                        ctx.ensure_active(entity);
+                        auto* c = ctx.add_component<T>(entity);
+                        apply_networked(*c, data);
+                        asset::resolve_handles(*c, assets_s);
+                    });
+                },
+                [&]<typename T>(const component_remove<T>& m) {
+                    if (!m.owner_id.exists()) {
+                        return;
+                    }
+                    r.deferred.push_back([entity = m.owner_id](run_context& ctx) {
+                        if constexpr (std::is_same_v<T, player_controller>) {
+                            if (ctx.exists(entity)) {
+                                ctx.remove(entity);
+                            }
+                        }
+                        else {
+                            ctx.remove_component<T>(entity);
+                        }
+                    });
+                }
+            );
+
+            if (is_component) {
+                return;
+            }
+
+            try_decode<connection_accepted>(stream, msg.id, [&](const auto& m) {
+                ctx.channels.push<set_networked_request>({
+                    .value = true,
+                });
+                ctx.channels.push<set_authoritative_request>({
+                    .value = false,
+                });
+                ctx.channels.push<set_local_controller_id_request>({
+                    .controller_id = m.controller_id,
+                });
+                ctx.channels.push<deactivate_active_scene_request>({});
+                r.client_ptr->send(server_info_request{});
+                r.client_ptr->send(pong{
+                    .sequence = 0,
+                });
+            }) ||
+            try_decode<notify_scene_change>(stream, msg.id, [&](const auto& m) {
+                ctx.channels.push<activate_scene_request>({
+                    .scene_id = m.scene_id,
+                });
+                std::println("Switched to scene: {}", m.scene_id);
+                r.client_ptr->send(pong{
+                    .sequence = 0,
+                });
+            }) ||
+            try_decode<ping>(stream, msg.id, [&](const auto& m) {
+                r.client_ptr->send(pong{
+                    .sequence = m.sequence,
+                });
+            }) ||
+            try_decode<server_info_response>(stream, msg.id, [&](const auto& m) {
+                s.connected_players = m.players;
+                s.connected_max_players = m.max_players;
+            });
+        });
+
+        for (auto& d : r.deferred) {
+            d(ctx);
+        }
+        r.deferred.clear();
+
+        s.connection_state = r.client_ptr->current_state();
+
+        if (s.connection_state == client::state::connected) {
+            r.client_ptr->push_input(
+                actions::system::current_state(actions_state),
+                actions::system::axis1_ids(actions_state),
+                actions::system::axis2_ids(actions_state),
+                cam_state.yaw
+            );
+        }
+
+        co_await ctx.next_tick();
+    }
 }

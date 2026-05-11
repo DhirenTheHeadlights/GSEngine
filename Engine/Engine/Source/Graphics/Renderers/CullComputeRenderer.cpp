@@ -26,11 +26,7 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 		co_return;
 	}
 
-	const auto batch_block = r.shader_handle->uniform_block("batches");
-	r.batch_stride = batch_block.size;
-	for (const auto& [name, member] : batch_block.members) {
-		r.batch_offsets[name] = member.offset;
-	}
+	r.batch_layout = layout_of(r.shader_handle->uniform_block("batches"));
 
 	r.pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.shader_handle, "push_constants");
 
@@ -41,7 +37,7 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 			.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
 		});
 
-		const std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * r.batch_stride;
+		const std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * r.batch_layout.stride;
 		r.batch_info_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = batch_info_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst

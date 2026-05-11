@@ -78,6 +78,7 @@ export namespace gse {
 		async::task<> run_task;
 
 		id state_id;
+		id state_type_id;
 		id resources_id;
 		id settings_id;
 		id update_wall_id;

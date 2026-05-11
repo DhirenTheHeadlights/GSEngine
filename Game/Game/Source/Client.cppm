@@ -13,19 +13,17 @@ export namespace gs {
 			int selected = -1;
 			gse::clock refresh_clock;
 			gse::interval_timer<> server_info_timer{ gse::seconds(10.f) };
-			std::uint8_t connected_players = 0;
-			std::uint8_t connected_max_players = 0;
 		};
 
 		static auto run(
 			gse::run_context& ctx,
 			state& s,
-			const gse::network::system::state& net_s
+			const gse::network::state& net_s
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network::system::state& net_s) -> gse::async::task<> {
+auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network::state& net_s) -> gse::async::task<> {
 	ctx.add_system<gs::player::system>();
 	ctx.add_system<gs::tumbler::system>();
 	ctx.add_system<gse::free_camera::system>();
@@ -71,25 +69,6 @@ auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network:
 	};
 
 	while (true) {
-		for (const auto& m : net_s.user_inbox) {
-			gse::match(m)
-				.if_is([&](const gse::network::connection_accepted& msg) {
-					ctx.channels.push<gse::set_networked_request>({ .value = true });
-					ctx.channels.push<gse::set_authoritative_request>({ .value = false });
-					ctx.channels.push<gse::set_local_controller_id_request>({ .controller_id = msg.controller_id });
-					ctx.channels.push<gse::deactivate_active_scene_request>({});
-					send_message(gse::network::server_info_request{});
-				})
-				.else_if_is([&](const gse::network::notify_scene_change& msg) {
-					ctx.channels.push<gse::activate_scene_request>({ .scene_id = msg.scene_id });
-					std::println("Switched to scene: {}", msg.scene_id);
-				})
-				.else_if_is([&](const gse::network::server_info_response& msg) {
-					s.connected_players = msg.players;
-					s.connected_max_players = msg.max_players;
-				});
-		}
-
 		if (s.refresh_clock.elapsed<std::uint32_t>() > gse::seconds(1000u)) {
 			ctx.channels.push<gse::network::refresh_servers_request>({
 				.timeout = gse::milliseconds(150),
@@ -117,7 +96,7 @@ auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network:
 					break;
 				case gse::network::client::state::connected:
 					ui.draw<gse::gui::text>({
-						.content = std::format("Status: Connected ({}/{})", s.connected_players, s.connected_max_players),
+						.content = std::format("Status: Connected ({}/{})", net_s.connected_players, net_s.connected_max_players),
 					});
 					break;
 				default:

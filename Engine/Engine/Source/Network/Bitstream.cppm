@@ -11,54 +11,80 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
 export namespace gse::network {
+	struct read_mode {};
+	struct write_mode {};
+
+	template <typename Mode>
+	constexpr bool is_read_mode_v = std::is_same_v<Mode, read_mode>;
+
+	template <typename Mode>
 	class bitstream {
+		using byte_t = std::conditional_t<is_read_mode_v<Mode>, const std::byte, std::byte>;
+
 	public:
 		explicit bitstream(
-			std::span<std::byte> buffer
+			std::span<byte_t> buffer
 		);
 
-		static auto reader(
-			std::span<const std::byte> buffer
-		) -> bitstream;
+		template <is_trivially_copyable T>
+			requires is_read_mode_v<Mode>
+		auto read(
+		) -> T;
+
+		auto read(
+			std::span<std::byte> data
+		) -> void
+			requires is_read_mode_v<Mode>;
+
+		auto read_bytes(
+			std::byte* data,
+			std::size_t bytes
+		) -> void
+			requires is_read_mode_v<Mode>;
+
+		auto remaining_bytes(
+		) const -> std::size_t
+			requires is_read_mode_v<Mode>;
+
+		enum class read_result { ok, incomplete };
+
+		auto try_read(
+			std::span<std::byte> data
+		) -> read_result
+			requires is_read_mode_v<Mode>;
 
 		template <is_trivially_copyable T>
+			requires (!is_read_mode_v<Mode>)
 		auto write(
 			const T& data
 		) -> void;
 
 		auto write(
 			std::span<const std::byte> data
-		) -> void;
+		) -> void
+			requires (!is_read_mode_v<Mode>);
 
 		auto write_bytes(
 			const std::byte* data,
 			std::size_t bytes
-		) -> void;
-
-		template <is_trivially_copyable T>
-		auto read(
-		) -> T;
-
-		auto read(
-			std::span<std::byte> data
-		) -> void;
-
-		auto read_bytes(
-			std::byte* data,
-			std::size_t bytes
-		) -> void;
+		) -> void
+			requires (!is_read_mode_v<Mode>);
 
 		auto bytes_written(
-		) const -> std::size_t;
+		) const -> std::size_t
+			requires (!is_read_mode_v<Mode>);
+
+		auto reset(
+			std::span<std::byte> buffer
+		) -> void
+			requires (!is_read_mode_v<Mode>);
 
 		auto capacity_bits(
 		) const -> std::size_t;
 
 		auto remaining_bits(
-		) const -> std::size_t;
-
-		auto remaining_bytes(
 		) const -> std::size_t;
 
 		auto good(
@@ -71,51 +97,109 @@ export namespace gse::network {
 			std::size_t bit_pos
 		) -> void;
 
-		auto reset(
-			std::span<std::byte> buffer
-		) -> void;
-
-		auto set_current_message_id(
-			std::uint16_t id
-		) -> void;
-
-		auto current_message_id(
-		) const -> std::uint16_t;
-
-		enum class read_result { ok, incomplete };
-		auto try_read(
-			std::span<std::byte> data
-		) -> read_result;
 	private:
 		auto can_advance(
 			std::size_t bits
 		) const -> bool;
 
-		std::span<std::byte> m_buffer;
+		std::span<byte_t> m_buffer;
 		std::size_t m_head_bits = 0;
 		bool m_error = false;
-		std::uint16_t m_cur_msg_id = 0;
 	};
+
+	using read_bitstream = bitstream<read_mode>;
+	using write_bitstream = bitstream<write_mode>;
 }
 
-gse::network::bitstream::bitstream(const std::span<std::byte> buffer) : m_buffer(buffer) {}
+template <typename Mode>
+gse::network::bitstream<Mode>::bitstream(const std::span<byte_t> buffer) : m_buffer(buffer) {}
 
-auto gse::network::bitstream::reader(const std::span<const std::byte> buffer) -> bitstream {
-	return bitstream(std::span<std::byte>(const_cast<std::byte*>(buffer.data()), buffer.size_bytes()));
-}
-
+template <typename Mode>
 template <gse::is_trivially_copyable T>
-auto gse::network::bitstream::write(const T& data) -> void {
+	requires gse::network::is_read_mode_v<Mode>
+auto gse::network::bitstream<Mode>::read() -> T {
+	std::array<std::byte, sizeof(T)> buf{};
+	read(std::span<std::byte>(buf));
+	return std::bit_cast<T>(buf);
+}
+
+template <typename Mode>
+auto gse::network::bitstream<Mode>::read(std::span<std::byte> data) -> void
+	requires gse::network::is_read_mode_v<Mode>
+{
+	const std::size_t bits = data.size_bytes() * 8;
+	const bool ok = can_advance(bits);
+
+	if (!ok) {
+		log::println(log::level::warning, log::category::network, "Incomplete packet read: need {} bits, have {} bits available",
+			bits, m_buffer.size() * 8 - m_head_bits);
+		std::fill(data.begin(), data.end(), std::byte(0));
+		m_error = true;
+		return;
+	}
+
+	if ((m_head_bits % 8) == 0) {
+		const std::size_t byte_index = m_head_bits / 8;
+		gse::memcpy(data.data(), m_buffer.data() + byte_index, data.size_bytes());
+		m_head_bits += bits;
+		return;
+	}
+
+	std::ranges::fill(data, std::byte{ 0 });
+	for (auto& byte_out : data) {
+		for (int i = 0; i < 8; ++i) {
+			const auto byte_index = m_head_bits / 8;
+			if (const auto bit_index = m_head_bits % 8; (m_buffer[byte_index] & (std::byte{ 1 } << bit_index)) != std::byte{ 0 }) {
+				byte_out |= (std::byte{ 1 } << i);
+			}
+			++m_head_bits;
+		}
+	}
+}
+
+template <typename Mode>
+auto gse::network::bitstream<Mode>::read_bytes(std::byte* data, const std::size_t bytes) -> void
+	requires gse::network::is_read_mode_v<Mode>
+{
+	read(std::span(data, bytes));
+}
+
+template <typename Mode>
+auto gse::network::bitstream<Mode>::remaining_bytes() const -> std::size_t
+	requires gse::network::is_read_mode_v<Mode>
+{
+	return remaining_bits() / 8;
+}
+
+template <typename Mode>
+auto gse::network::bitstream<Mode>::try_read(std::span<std::byte> data) -> read_result
+	requires gse::network::is_read_mode_v<Mode>
+{
+	const std::size_t bits = data.size_bytes() * 8;
+	if (!can_advance(bits)) {
+		return read_result::incomplete;
+	}
+	read(data);
+	return read_result::ok;
+}
+
+template <typename Mode>
+template <gse::is_trivially_copyable T>
+	requires (!gse::network::is_read_mode_v<Mode>)
+auto gse::network::bitstream<Mode>::write(const T& data) -> void {
 	write(std::as_bytes(std::span{ &data, 1 }));
 }
 
-auto gse::network::bitstream::write(const std::span<const std::byte> data) -> void {
+template <typename Mode>
+auto gse::network::bitstream<Mode>::write(const std::span<const std::byte> data) -> void
+	requires (!gse::network::is_read_mode_v<Mode>)
+{
 	const std::size_t bits = data.size_bytes() * 8;
 	const bool ok = can_advance(bits);
 
 	assert(
 		ok,
-		"Bitstream overflow id=0x{:04X} need={} have={} head_bits={}", m_cur_msg_id, bits, remaining_bits(), m_head_bits
+		"write_bitstream overflow need={} have={} head_bits={}", bits, remaining_bits(), m_head_bits
 	);
 
 	if (!ok) {
@@ -147,82 +231,56 @@ auto gse::network::bitstream::write(const std::span<const std::byte> data) -> vo
 	}
 }
 
-auto gse::network::bitstream::write_bytes(const std::byte* data, const std::size_t bytes) -> void {
+template <typename Mode>
+auto gse::network::bitstream<Mode>::write_bytes(const std::byte* data, const std::size_t bytes) -> void
+	requires (!gse::network::is_read_mode_v<Mode>)
+{
 	write(std::span(data, bytes));
 }
 
-template <gse::is_trivially_copyable T>
-auto gse::network::bitstream::read() -> T {
-	std::array<std::byte, sizeof(T)> buf{};
-	read(std::span<std::byte>(buf));
-	return std::bit_cast<T>(buf);
-}
-
-auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
-	const std::size_t bits = data.size_bytes() * 8;
-	const bool ok = can_advance(bits);
-
-	if (!ok) {
-		log::println(log::level::warning, log::category::network, "Incomplete packet read: need {} bits, have {} bits available",
-			bits, m_buffer.size() * 8 - m_head_bits);
-		std::fill(data.begin(), data.end(), std::byte(0));
-		m_error = true;
-		return;
-	}
-
-	if ((m_head_bits % 8) == 0) {
-		const std::size_t byte_index = m_head_bits / 8;
-		gse::memcpy(data.data(), m_buffer.data() + byte_index, data.size_bytes());
-		m_head_bits += bits;
-		return;
-	}
-
-	std::ranges::fill(data, std::byte{ 0 });
-	for (auto& byte_out : data) {
-		for (int i = 0; i < 8; ++i) {
-			const auto byte_index = m_head_bits / 8;
-			if (const auto bit_index = m_head_bits % 8; (m_buffer[byte_index] & (std::byte{ 1 } << bit_index)) != std::byte{ 0 }) {
-				byte_out |= (std::byte{ 1 } << i);
-			}
-			++m_head_bits;
-		}
-	}
-}
-
-auto gse::network::bitstream::read_bytes(std::byte* data, const std::size_t bytes) -> void {
-	read(std::span(data, bytes));
-}
-
-auto gse::network::bitstream::bytes_written() const -> std::size_t {
+template <typename Mode>
+auto gse::network::bitstream<Mode>::bytes_written() const -> std::size_t
+	requires (!gse::network::is_read_mode_v<Mode>)
+{
 	return (m_head_bits + 7) / 8;
 }
 
-auto gse::network::bitstream::capacity_bits() const -> std::size_t {
+template <typename Mode>
+auto gse::network::bitstream<Mode>::reset(const std::span<std::byte> buffer) -> void
+	requires (!gse::network::is_read_mode_v<Mode>)
+{
+	m_buffer = buffer;
+	m_head_bits = 0;
+	m_error = false;
+}
+
+template <typename Mode>
+auto gse::network::bitstream<Mode>::capacity_bits() const -> std::size_t {
 	return m_buffer.size_bytes() * 8;
 }
 
-auto gse::network::bitstream::remaining_bits() const -> std::size_t {
+template <typename Mode>
+auto gse::network::bitstream<Mode>::remaining_bits() const -> std::size_t {
 	const std::size_t cap = capacity_bits();
 	return (m_head_bits >= cap) ? 0 : (cap - m_head_bits);
 }
 
-auto gse::network::bitstream::remaining_bytes() const -> std::size_t {
-	return remaining_bits() / 8;
-}
-
-auto gse::network::bitstream::good() const -> bool {
+template <typename Mode>
+auto gse::network::bitstream<Mode>::good() const -> bool {
 	return !m_error;
 }
 
-auto gse::network::bitstream::error() const -> bool {
+template <typename Mode>
+auto gse::network::bitstream<Mode>::error() const -> bool {
 	return m_error;
 }
 
-auto gse::network::bitstream::seek(const std::size_t bit_pos) -> void {
+template <typename Mode>
+auto gse::network::bitstream<Mode>::seek(const std::size_t bit_pos) -> void {
 	const bool ok = (bit_pos <= capacity_bits());
 	assert(
 		ok,
-		"Bitstream seek out of range"
+		"bitstream seek out of range"
 	);
 	if (!ok) {
 		m_error = true;
@@ -231,31 +289,8 @@ auto gse::network::bitstream::seek(const std::size_t bit_pos) -> void {
 	m_head_bits = bit_pos;
 }
 
-auto gse::network::bitstream::reset(const std::span<std::byte> buffer) -> void {
-	m_buffer = buffer;
-	m_head_bits = 0;
-	m_error = false;
-	m_cur_msg_id = 0;
-}
-
-auto gse::network::bitstream::set_current_message_id(const std::uint16_t id) -> void {
-	m_cur_msg_id = id;
-}
-
-auto gse::network::bitstream::current_message_id() const -> std::uint16_t {
-	return m_cur_msg_id;
-}
-
-auto gse::network::bitstream::can_advance(const std::size_t bits) const -> bool {
+template <typename Mode>
+auto gse::network::bitstream<Mode>::can_advance(const std::size_t bits) const -> bool {
 	const std::size_t cap = capacity_bits();
 	return bits <= (cap - std::min(m_head_bits, cap));
-}
-
-auto gse::network::bitstream::try_read(std::span<std::byte> data) -> read_result {
-	const std::size_t bits = data.size_bytes() * 8;
-	if (!can_advance(bits)) {
-		return read_result::incomplete;
-	}
-	read(data);
-	return read_result::ok;
 }

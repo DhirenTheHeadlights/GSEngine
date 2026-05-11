@@ -38,7 +38,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 	add_system<input::system>();
 	add_system<actions::system>();
-	add_system<network::system>();
 
 	if (m_flags.test(engine_flag::render)) {
 		auto& window_state = add_system<window>();

@@ -175,6 +175,10 @@ export namespace gse {
 		auto drain_component_removes(
 		) -> std::vector<id>;
 
+		template <typename T>
+		auto ensure_storage(
+		) -> void;
+
 	private:
 		template <typename T>
 		auto storage(
@@ -359,6 +363,11 @@ auto gse::registry::storage() -> component_storage<T>& {
 	auto& ref = *fresh;
 	m_storages.emplace(type_idx, std::move(fresh));
 	return ref;
+}
+
+template <typename T>
+auto gse::registry::ensure_storage() -> void {
+	(void)storage<T>();
 }
 
 template <typename T>

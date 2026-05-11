@@ -14,7 +14,6 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.physics;
 import gse.math;
 import gse.assert;
 import gse.log;
@@ -22,28 +21,18 @@ import gse.log;
 export namespace gse {
 	class model;
 
-	struct render_queue_entry {
-		resource::handle<model> model;
+	template <typename ModelType>
+	struct render_queue_entry_t {
+		resource::handle<ModelType> model;
 		std::size_t index;
 		mat4f model_matrix;
 		mat4f normal_matrix;
 		vec3f color;
+		std::uint32_t skin_offset = 0;
+		std::uint32_t joint_count = 0;
 	};
 
-	class model_instance {
-	public:
-		explicit model_instance(const resource::handle<model>& model_handle) : m_model_handle(model_handle) {}
-
-		auto sync_structure() -> void;
-		auto sync_transform(const physics::motion_component& mc, const physics::collision_component& cc) -> void;
-
-		auto render_queue_entries() const -> std::span<const render_queue_entry>;
-		auto handle() const -> const resource::handle<model>&;
-	private:
-		std::vector<render_queue_entry> m_render_queue_entries;
-		resource::handle<model> m_model_handle;
-		std::size_t m_cached_mesh_count = 0;
-	};
+	using render_queue_entry = render_queue_entry_t<model>;
 
 	class model : public identifiable {
 	public:
@@ -83,8 +72,6 @@ export namespace gse {
 		auto uploads_ready(
 		) const -> bool;
 	private:
-		friend class model_instance;
-
 		std::vector<mesh> m_meshes;
 		std::filesystem::path m_baked_model_path;
 		vec3<length> m_center_of_mass;
@@ -170,77 +157,4 @@ auto gse::model::uploads_ready() const -> bool {
 	return std::ranges::all_of(m_meshes, [](const mesh& m) {
 		return m.upload_token().ready() && m.material().textures_ready();
 	});
-}
-
-auto gse::model_instance::sync_structure() -> void {
-	if (!m_model_handle.valid()) {
-		m_render_queue_entries.clear();
-		m_cached_mesh_count = 0;
-		return;
-	}
-
-	const auto* resolved = m_model_handle.resolve();
-	const std::size_t mesh_count = resolved ? resolved->meshes().size() : 0;
-
-	if (mesh_count == 0) {
-		m_render_queue_entries.clear();
-		m_cached_mesh_count = 0;
-		return;
-	}
-
-	if (m_cached_mesh_count == mesh_count && m_render_queue_entries.size() == mesh_count) {
-		return;
-	}
-
-	m_render_queue_entries.clear();
-	m_render_queue_entries.reserve(mesh_count);
-
-	for (std::size_t i = 0; i < mesh_count; ++i) {
-		m_render_queue_entries.emplace_back(
-			render_queue_entry{
-				.model = m_model_handle,
-				.index = i,
-				.model_matrix = mat4f(1.0f),
-				.normal_matrix = mat4f(1.0f),
-				.color = vec3f(1.0f)
-			}
-		);
-	}
-
-	m_cached_mesh_count = mesh_count;
-}
-
-auto gse::model_instance::sync_transform(const physics::motion_component& mc, const physics::collision_component& cc) -> void {
-	if (m_render_queue_entries.empty() || !m_model_handle.valid()) {
-		return;
-	}
-
-	const auto* mdl = m_model_handle.resolve();
-	const vec3 center_of_mass = mdl->center_of_mass();
-
-	const auto box_size = cc.bounding_box.size();
-	const mat4f scale_mat = scale(mat4f(1.0f), box_size);
-	const mat4f rot_mat = mc.orientation;
-	const mat4f trans_mat = translate(mat4f(1.0f), mc.current_position);
-	const mat4f pivot_correction_mat = translate(mat4f(1.0f), -center_of_mass);
-	const mat4f final_model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
-	const vec3f inv_scale{
-		1.0f / std::max(std::abs(box_size.x().as<meters>()), 1e-6f),
-		1.0f / std::max(std::abs(box_size.y().as<meters>()), 1e-6f),
-		1.0f / std::max(std::abs(box_size.z().as<meters>()), 1e-6f)
-	};
-	const mat4f normal_matrix = scale(rot_mat, inv_scale);
-
-	for (auto& entry : m_render_queue_entries) {
-		entry.model_matrix = final_model_matrix;
-		entry.normal_matrix = normal_matrix;
-	}
-}
-
-auto gse::model_instance::render_queue_entries() const -> std::span<const render_queue_entry> {
-	return m_render_queue_entries;
-}
-
-auto gse::model_instance::handle() const -> const resource::handle<model>& {
-	return m_model_handle;
 }

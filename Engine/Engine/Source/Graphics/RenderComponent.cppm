@@ -20,8 +20,5 @@ export namespace gse {
         [[= networked]] std::uint32_t skinned_model_count = 0;
         [[= networked]] bool render = true;
         [[= networked]] bool render_bounding_boxes = true;
-
-        std::vector<model_instance> model_instances;
-        std::vector<skinned_model_instance> skinned_model_instances;
     };
 }
