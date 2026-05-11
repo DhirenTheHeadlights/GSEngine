@@ -3,6 +3,7 @@ export module gse.graphics:skinned_model;
 import std;
 
 import :skinned_mesh;
+import :model;
 
 import gse.config;
 import gse.core;
@@ -14,41 +15,13 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.physics;
 import gse.math;
 import gse.assert;
 
 export namespace gse {
 	class skinned_model;
 
-	struct skinned_render_queue_entry {
-		resource::handle<skinned_model> model;
-		std::size_t index;
-		mat4f model_matrix;
-		mat4f normal_matrix;
-		vec3f color;
-		std::uint32_t skin_offset;
-		std::uint32_t joint_count;
-	};
-
-	class skinned_model_instance {
-	public:
-		explicit skinned_model_instance(const resource::handle<skinned_model>& model_handle) : m_model_handle(model_handle) {}
-
-		auto update(const physics::motion_component& mc, const physics::collision_component& cc, std::uint32_t skin_offset, std::uint32_t joint_count) -> void;
-
-		auto render_queue_entries() const -> std::span<const skinned_render_queue_entry>;
-		auto handle() const -> const resource::handle<skinned_model>&;
-	private:
-		std::vector<skinned_render_queue_entry> m_render_queue_entries;
-		resource::handle<skinned_model> m_model_handle;
-
-		vec3<position> m_position;
-		quat m_rotation;
-		vec3<displacement> m_scale = { meters(1.f), meters(1.f), meters(1.f) };
-		bool m_is_dirty = true;
-		std::size_t m_cached_mesh_count = 0;
-	};
+	using skinned_render_queue_entry = render_queue_entry_t<skinned_model>;
 
 	class skinned_model : public identifiable {
 	public:
@@ -64,8 +37,6 @@ export namespace gse {
 		auto uploads_ready(
 		) const -> bool;
 	private:
-		friend class skinned_model_instance;
-
 		std::vector<skinned_mesh> m_meshes;
 		std::filesystem::path m_baked_model_path;
 		vec3<length> m_center_of_mass;
@@ -211,75 +182,4 @@ auto gse::skinned_model::uploads_ready() const -> bool {
 	return std::ranges::all_of(m_meshes, [](const skinned_mesh& m) {
 		return m.upload_token().ready() && m.material().textures_ready();
 	});
-}
-
-auto gse::skinned_model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc, const std::uint32_t skin_offset, const std::uint32_t joint_count) -> void {
-	m_position = mc.current_position;
-	m_rotation = mc.orientation;
-	m_scale = cc.bounding_box.size();
-	m_is_dirty = true;
-
-	if (!m_model_handle.valid()) {
-		m_render_queue_entries.clear();
-		m_cached_mesh_count = 0;
-	}
-	else {
-		const auto* resolved = m_model_handle.resolve();
-		const std::size_t mesh_count = resolved ? resolved->meshes().size() : 0;
-		
-		if (mesh_count == 0) {
-			m_render_queue_entries.clear();
-			m_cached_mesh_count = 0;
-		}
-		else {
-			if (m_render_queue_entries.size() != mesh_count || m_cached_mesh_count != mesh_count) {
-				m_render_queue_entries.clear();
-				m_render_queue_entries.reserve(mesh_count);
-
-				for (std::size_t i = 0; i < mesh_count; ++i) {
-					m_render_queue_entries.emplace_back(
-						skinned_render_queue_entry{
-							.model = m_model_handle,
-							.index = i,
-							.model_matrix = mat4f(1.0f),
-							.normal_matrix = mat4f(1.0f),
-							.color = vec3f(1.0f),
-							.skin_offset = skin_offset,
-							.joint_count = joint_count
-						}
-					);
-				}
-
-				m_cached_mesh_count = mesh_count;
-				m_is_dirty = true;
-			}
-		}
-	}
-
-	if (!m_is_dirty || m_render_queue_entries.empty() || !m_model_handle.valid()) {
-		return;
-	}
-
-	const mat4f scale_mat = scale(mat4f(1.0f), m_scale);
-	const mat4f rot_mat = m_rotation;
-	const mat4f trans_mat = translate(mat4f(1.0f), m_position);
-	const mat4f final_model_matrix = trans_mat * rot_mat * scale_mat;
-	const mat4f normal_matrix = final_model_matrix.inverse().transpose();
-
-	for (auto& entry : m_render_queue_entries) {
-		entry.model_matrix = final_model_matrix;
-		entry.normal_matrix = normal_matrix;
-		entry.skin_offset = skin_offset;
-		entry.joint_count = joint_count;
-	}
-
-	m_is_dirty = false;
-}
-
-auto gse::skinned_model_instance::render_queue_entries() const -> std::span<const skinned_render_queue_entry> {
-	return m_render_queue_entries;
-}
-
-auto gse::skinned_model_instance::handle() const -> const resource::handle<skinned_model>& {
-	return m_model_handle;
 }

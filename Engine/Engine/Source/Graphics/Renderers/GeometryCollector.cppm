@@ -28,6 +28,36 @@ import gse.physics;
 export namespace gse::renderer {
 	using frustum_planes = std::array<vec4f, 6>;
 
+	struct uniform_block_layout {
+		std::uint32_t stride = 0;
+		std::unordered_map<std::string, std::uint32_t> offsets;
+	};
+
+	auto layout_of(const struct shader::uniform_block& block) -> uniform_block_layout {
+		uniform_block_layout l;
+		l.stride = block.size;
+		for (const auto& [name, member] : block.members) {
+			l.offsets[name] = member.offset;
+		}
+		return l;
+	}
+
+	auto compute_render_transform(const physics::motion_component& mc, const physics::collision_component& cc, const vec3<length>& center_of_mass) -> std::pair<mat4f, mat4f> {
+		const auto box_size = cc.bounding_box.size();
+		const mat4f scale_mat = scale(mat4f(1.0f), box_size);
+		const mat4f rot_mat = mc.orientation;
+		const mat4f trans_mat = translate(mat4f(1.0f), mc.current_position);
+		const mat4f pivot_correction_mat = translate(mat4f(1.0f), -center_of_mass);
+		const mat4f model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
+		const vec3f inv_scale{
+			1.0f / std::max(std::abs(box_size.x().as<meters>()), 1e-6f),
+			1.0f / std::max(std::abs(box_size.y().as<meters>()), 1e-6f),
+			1.0f / std::max(std::abs(box_size.z().as<meters>()), 1e-6f)
+		};
+		const mat4f normal_matrix = scale(rot_mat, inv_scale);
+		return { model_matrix, normal_matrix };
+	}
+
 	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
 		const std::array corners = {
 			vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
@@ -85,39 +115,29 @@ export namespace gse::renderer {
 		return planes;
 	}
 
-	struct normal_batch_key {
-		const model* model_ptr;
+	template <typename ModelType>
+	struct batch_key {
+		const ModelType* model_ptr;
 		std::size_t mesh_index;
 
-		auto operator==(const normal_batch_key& other) const -> bool {
-			return model_ptr == other.model_ptr && mesh_index == other.mesh_index;
-		}
+		auto operator==(
+			const batch_key&
+		) const -> bool = default;
 	};
 
-	struct normal_instance_batch {
-		normal_batch_key key;
+	template <typename ModelType>
+	struct instance_batch {
+		batch_key<ModelType> key;
 		std::uint32_t first_instance;
 		std::uint32_t instance_count;
 		vec3<length> world_aabb_min;
 		vec3<length> world_aabb_max;
 	};
 
-	struct skinned_batch_key {
-		const skinned_model* model_ptr;
-		std::size_t mesh_index;
-
-		auto operator==(const skinned_batch_key& other) const -> bool {
-			return model_ptr == other.model_ptr && mesh_index == other.mesh_index;
-		}
-	};
-
-	struct skinned_instance_batch {
-		skinned_batch_key key;
-		std::uint32_t first_instance;
-		std::uint32_t instance_count;
-		vec3<length> world_aabb_min;
-		vec3<length> world_aabb_max;
-	};
+	using normal_batch_key = batch_key<model>;
+	using normal_instance_batch = instance_batch<model>;
+	using skinned_batch_key = batch_key<skinned_model>;
+	using skinned_instance_batch = instance_batch<skinned_model>;
 }
 
 export namespace gse::renderer::geometry_collector {
@@ -173,8 +193,7 @@ export namespace gse::renderer::geometry_collector {
 		struct resources {
 			per_frame_resource<gpu::buffer> instance_buffer;
 
-			std::uint32_t instance_stride = 0;
-			std::unordered_map<std::string, std::uint32_t> instance_offsets;
+			uniform_block_layout instance_layout;
 
 			std::uint32_t instance_model_matrix_offset = 0;
 			std::uint32_t instance_normal_matrix_offset = 0;
@@ -182,8 +201,7 @@ export namespace gse::renderer::geometry_collector {
 			std::uint32_t instance_joint_count_offset = 0;
 			std::uint32_t instance_material_index_offset = 0;
 
-			std::uint32_t joint_stride = 0;
-			std::unordered_map<std::string, std::uint32_t> joint_offsets;
+			uniform_block_layout joint_layout;
 
 			std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
 

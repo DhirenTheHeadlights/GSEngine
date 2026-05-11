@@ -100,6 +100,10 @@ export namespace gse {
 			id owner
 		) -> void;
 
+		template <typename T>
+		auto ensure_storage(
+		) -> void;
+
 		[[nodiscard]] auto held_lock_count(
 		) const -> int;
 
@@ -294,4 +298,9 @@ auto gse::run_context::add_component(const id owner, T value) -> T* {
 template <typename T>
 auto gse::run_context::remove_component(const id owner) -> void {
 	m_reg.remove_component<T>(owner);
+}
+
+template <typename T>
+auto gse::run_context::ensure_storage() -> void {
+	m_reg.ensure_storage<T>();
 }

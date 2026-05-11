@@ -31,7 +31,7 @@ auto gse::renderer::skin_compute::system::run(run_context& ctx, const gpu::conte
 		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.shader_handle);
 
 		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i])
-			.buffer("skeletonData", gc.skeleton_buffer, 0, geometry_collector::system::resources::max_joints * gc.joint_stride)
+			.buffer("skeletonData", gc.skeleton_buffer, 0, geometry_collector::system::resources::max_joints * gc.joint_layout.stride)
 			.buffer("localPoses", gc.local_pose_buffer[i], 0, local_pose_size)
 			.buffer("skinMatrices", gc.skin_buffer[i], 0, skin_buffer_size)
 			.commit();

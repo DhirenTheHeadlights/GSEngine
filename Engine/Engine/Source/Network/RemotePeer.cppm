@@ -15,10 +15,6 @@ export namespace gse::network {
 		std::uint32_t send_count = 1;
 	};
 
-	inline auto current_time_ms() -> std::uint64_t {
-		return system_clock::now<time_t<std::uint64_t, milliseconds>>().as<milliseconds>();
-	}
-
 	class remote_peer {
 	public:
 		explicit remote_peer(const address& addr);
@@ -45,12 +41,13 @@ export namespace gse::network {
 			std::uint32_t ack_bits
 		) -> void;
 
+		auto ingest_packet_sequence(
+			std::uint32_t sequence
+		) -> void;
+
 		auto messages_to_resend(
 			std::uint32_t retry_interval_ms
 		) -> std::vector<pending_reliable_message*>;
-
-		auto pending_reliable_count(
-		) const -> std::size_t;
 
 	private:
 		address m_address;
@@ -60,7 +57,6 @@ export namespace gse::network {
 		std::uint32_t m_remote_ack_bitfield = 0;
 
 		std::vector<pending_reliable_message> m_pending_reliable;
-		std::uint32_t m_last_processed_ack = 0;
 	};
 }
 
@@ -86,9 +82,27 @@ auto gse::network::remote_peer::queue_reliable(const std::uint32_t seq, const st
 	pending_reliable_message msg;
 	msg.sequence = seq;
 	msg.data.assign(data.begin(), data.end());
-	msg.sent_time_ms = current_time_ms();
+	msg.sent_time_ms = system_clock::now<time_t<std::uint64_t>>().as<milliseconds>();
 	msg.send_count = 1;
 	m_pending_reliable.push_back(std::move(msg));
+}
+
+auto gse::network::remote_peer::ingest_packet_sequence(const std::uint32_t sequence) -> void {
+	if (sequence > m_remote_ack_sequence) {
+		if (const std::uint32_t diff = sequence - m_remote_ack_sequence; diff < 32) {
+			m_remote_ack_bitfield <<= diff;
+			m_remote_ack_bitfield |= (1u << (diff - 1));
+		}
+		else {
+			m_remote_ack_bitfield = 0;
+		}
+		m_remote_ack_sequence = sequence;
+	}
+	else if (sequence < m_remote_ack_sequence) {
+		if (const std::uint32_t diff = m_remote_ack_sequence - sequence; diff < 32) {
+			m_remote_ack_bitfield |= (1u << (diff - 1));
+		}
+	}
 }
 
 auto gse::network::remote_peer::process_acks(const std::uint32_t ack, const std::uint32_t ack_bits) -> void {
@@ -108,23 +122,17 @@ auto gse::network::remote_peer::process_acks(const std::uint32_t ack, const std:
 		}
 		return false;
 	});
-
-	m_last_processed_ack = std::max(m_last_processed_ack, ack);
 }
 
 auto gse::network::remote_peer::messages_to_resend(const std::uint32_t retry_interval_ms) -> std::vector<pending_reliable_message*> {
 	std::vector<pending_reliable_message*> result;
-	const auto now = current_time_ms();
+	const auto now = system_clock::now<time_t<std::uint64_t>>().as<milliseconds>();
 
 	for (auto& msg : m_pending_reliable) {
-		if (now - msg.sent_time_ms >= retry_interval_ms) {
+		if (now - msg.sent_time_ms >= system_clock::now<time_t<std::uint64_t>>().as<milliseconds>()) {
 			result.push_back(&msg);
 		}
 	}
 
 	return result;
-}
-
-auto gse::network::remote_peer::pending_reliable_count() const -> std::size_t {
-	return m_pending_reliable.size();
 }

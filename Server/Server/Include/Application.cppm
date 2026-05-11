@@ -6,9 +6,10 @@ import std;
 import gse;
 
 export namespace gse {
+	template <typename... Components>
 	struct server_system {
 		struct state {
-			std::optional<server> srv;
+			std::optional<server<Components...>> srv;
 			gse::world* world_ptr = nullptr;
 		};
 
@@ -19,6 +20,10 @@ export namespace gse {
 		) -> async::task<>;
 	};
 
+	template <typename Pack>
+	using server_system_for = typename Pack::template apply<server_system>;
+
+	template <typename ServerSystem>
 	struct server_app_system {
 		struct state {
 			std::uint32_t tick_count = 0;
@@ -29,16 +34,18 @@ export namespace gse {
 			run_context& ctx,
 			state& s,
 			const input::system::state& input_s,
-			const server_system::state& srv
+			const typename ServerSystem::state& srv
 		) -> async::task<>;
 	};
 
+	template <typename ServerSystem>
 	auto server_app_setup(
 		engine& e
 	) -> void;
 }
 
-auto gse::server_system::run(run_context& ctx, state& s, const actions::system::state& actions_s) -> async::task<> {
+template <typename... Components>
+auto gse::server_system<Components...>::run(run_context& ctx, state& s, const actions::system::state& actions_s) -> async::task<> {
 	while (true) {
 		if (s.srv && s.world_ptr) {
 			s.srv->update(*s.world_ptr, ctx.channels, actions_s);
@@ -47,7 +54,8 @@ auto gse::server_system::run(run_context& ctx, state& s, const actions::system::
 	}
 }
 
-auto gse::server_app_system::run(run_context& ctx, state& s, const input::system::state& input_s, const server_system::state& srv) -> async::task<> {
+template <typename ServerSystem>
+auto gse::server_app_system<ServerSystem>::run(run_context& ctx, state& s, const input::system::state& input_s, const typename ServerSystem::state& srv) -> async::task<> {
 	while (true) {
 		if (s.timer.tick()) {
 			++s.tick_count;
@@ -102,15 +110,16 @@ auto gse::server_app_system::run(run_context& ctx, state& s, const input::system
 	}
 }
 
+template <typename ServerSystem>
 auto gse::server_app_setup(engine& e) -> void {
 	auto channels = e.make_channel_writer();
 	channels.push<ui_focus_request>({ .focus = true });
 	e.world().set_networked(true);
 
-	auto& srv_state = e.add_system<server_system>();
+	auto& srv_state = e.add_system<ServerSystem>();
 	srv_state.srv.emplace(9000);
 	srv_state.srv->initialize();
 	srv_state.world_ptr = &e.world();
 
-	e.add_system<server_app_system>();
+	e.add_system<server_app_system<ServerSystem>>();
 }

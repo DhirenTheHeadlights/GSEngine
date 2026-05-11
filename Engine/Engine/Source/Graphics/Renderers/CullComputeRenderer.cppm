@@ -29,8 +29,7 @@ export namespace gse::renderer::cull_compute {
 			per_frame_resource<gpu::descriptor_region> skinned_descriptors;
 			per_frame_resource<gpu::buffer> frustum_buffer;
 			per_frame_resource<gpu::buffer> batch_info_buffer;
-			std::uint32_t batch_stride = 0;
-			std::unordered_map<std::string, std::uint32_t> batch_offsets;
+			uniform_block_layout batch_layout;
 		};
 
 		static auto run(

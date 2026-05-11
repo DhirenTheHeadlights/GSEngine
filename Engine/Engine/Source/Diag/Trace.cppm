@@ -329,6 +329,22 @@ namespace gse::trace {
 		frame_storage& fs
 	) -> void;
 
+	auto compute_self_time(
+		frame_storage& fs,
+		std::size_t i
+	) -> void;
+
+	auto emplace_shallow_node(
+		frame_storage& fs,
+		std::size_t flat_i
+	) -> std::size_t;
+
+	auto build_subtree(
+		frame_storage& fs,
+		std::size_t node_idx,
+		std::size_t flat_i
+	) -> void;
+
 	auto allocate_span_eid(
 	) -> std::uint64_t;
 }

@@ -27,24 +27,6 @@ export namespace gse {
 		render = 1 << 1,
 	};
 
-	struct set_networked_request {
-		bool value = false;
-	};
-
-	struct set_authoritative_request {
-		bool value = true;
-	};
-
-	struct set_local_controller_id_request {
-		id controller_id;
-	};
-
-	struct activate_scene_request {
-		id scene_id;
-	};
-
-	struct deactivate_active_scene_request {};
-
 	class engine : public identifiable {
 	public:
 		using setup_fn = std::function<void(engine&)>;
@@ -97,23 +79,6 @@ export namespace gse {
 		save::registry m_save;
 		gse::world m_world;
 	};
-}
-
-namespace gse {
-	template <>
-	struct same_frame_channel_t<set_networked_request> : std::true_type {};
-
-	template <>
-	struct same_frame_channel_t<set_authoritative_request> : std::true_type {};
-
-	template <>
-	struct same_frame_channel_t<set_local_controller_id_request> : std::true_type {};
-
-	template <>
-	struct same_frame_channel_t<activate_scene_request> : std::true_type {};
-
-	template <>
-	struct same_frame_channel_t<deactivate_active_scene_request> : std::true_type {};
 }
 
 auto gse::engine::add_scene(std::string_view name, scene::setup_fn setup) -> scene* {

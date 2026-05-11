@@ -165,6 +165,9 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 	std::unordered_set<id> registered;
 	for (const auto& node : m_nodes) {
 		registered.insert(node.state_id);
+		if (node.state_type_id.exists()) {
+			registered.insert(node.state_type_id);
+		}
 		if (node.resources_id.exists()) {
 			registered.insert(node.resources_id);
 		}
@@ -273,6 +276,10 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 	const auto canonical_idx = node.state_id;
 	auto* state_ptr = node.state_ptr;
 	m_states.register_state(canonical_idx, node.state_ptr, node.state_snapshot_ptr);
+
+	if (node.state_type_id.exists() && node.state_type_id != canonical_idx) {
+		m_states.register_state(node.state_type_id, node.state_ptr, node.state_snapshot_ptr);
+	}
 
 	auto combined_deps = node.run_state_deps;
 	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());

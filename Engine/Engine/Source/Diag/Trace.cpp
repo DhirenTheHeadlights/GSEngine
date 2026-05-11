@@ -25,7 +25,9 @@ auto gse::trace::start(const config& cfg) -> void {
 }
 
 auto gse::trace::begin_block(const id id, std::uint64_t parent) -> std::uint64_t {
-	if (paused()) return 0;
+	if (paused()) {
+		return 0;
+	}
 
 	ensure_tls_registered();
 
@@ -345,105 +347,103 @@ auto gse::trace::current_parent_eid() -> std::uint64_t {
 	return tls.stack.empty() ? 0 : tls.stack.back();
 }
 
-namespace gse::trace {
-	auto compute_self_time(frame_storage& fs, std::size_t i) -> void {
-		auto& n = fs.flat[i];
+auto gse::trace::compute_self_time(frame_storage& fs, std::size_t i) -> void {
+	auto& n = fs.flat[i];
 
-		for (const auto c : n.children_idx) {
-			compute_self_time(fs, c);
-		}
-
-		const auto parent_begin = n.start;
-		const auto parent_end = n.end;
-		const auto parent_tot = parent_end - parent_begin;
-
-		if (n.children_idx.empty() || parent_tot <= decltype(parent_tot){}) {
-			n.self = parent_tot;
-			return;
-		}
-
-		const std::size_t segs_base = fs.segs_scratch.size();
-
-		for (const auto c : n.children_idx) {
-			const auto& ch = fs.flat[c];
-
-			auto a = std::max(ch.start, parent_begin);
-			auto b = std::min(ch.end, parent_end);
-
-			if (b > a) {
-				fs.segs_scratch.push_back({ a, b });
-			}
-		}
-
-		const std::size_t segs_count = fs.segs_scratch.size() - segs_base;
-
-		if (segs_count == 0) {
-			n.self = parent_tot;
-			return;
-		}
-
-		const auto segs_first = fs.segs_scratch.begin() + segs_base;
-		const auto segs_last = fs.segs_scratch.end();
-
-		std::sort(segs_first, segs_last, [](const frame_storage::seg& x, const frame_storage::seg& y) {
-			return x.a < y.a;
-		});
-
-		time_t<std::uint64_t> covered{};
-		frame_storage::seg cur = *segs_first;
-
-		for (auto it = segs_first + 1; it != segs_last; ++it) {
-			if (it->a <= cur.b) {
-				if (it->b > cur.b) {
-					cur.b = it->b;
-				}
-			} else {
-				covered += (cur.b - cur.a);
-				cur = *it;
-			}
-		}
-		covered += (cur.b - cur.a);
-
-		fs.segs_scratch.resize(segs_base);
-
-		n.self = (covered < parent_tot) ? (parent_tot - covered) : decltype(parent_tot){};
+	for (const auto c : n.children_idx) {
+		compute_self_time(fs, c);
 	}
 
-	auto emplace_shallow_node(frame_storage& fs, std::size_t flat_i) -> std::size_t {
-		const auto& fn = fs.flat[flat_i];
-		fs.node_pool.push_back(node{
-			.id = fn.id,
-			.trace_id = fn.tid,
-			.start = fn.start,
-			.stop  = fn.end,
-			.self  = fn.self,
-			.children_first = nullptr,
-			.children_count = 0
-		});
-		return fs.node_pool.size() - 1;
+	const auto parent_begin = n.start;
+	const auto parent_end = n.end;
+	const auto parent_tot = parent_end - parent_begin;
+
+	if (n.children_idx.empty() || parent_tot <= decltype(parent_tot){}) {
+		n.self = parent_tot;
+		return;
 	}
 
-	auto build_subtree(frame_storage& fs, std::size_t node_idx, std::size_t flat_i) -> void {
-		const auto& fn = fs.flat[flat_i];
+	const std::size_t segs_base = fs.segs_scratch.size();
 
-		if (fn.children_idx.empty()) {
-			fs.node_pool[node_idx].children_first = nullptr;
-			fs.node_pool[node_idx].children_count = 0;
-			return;
+	for (const auto c : n.children_idx) {
+		const auto& ch = fs.flat[c];
+
+		auto a = std::max(ch.start, parent_begin);
+		auto b = std::min(ch.end, parent_end);
+
+		if (b > a) {
+			fs.segs_scratch.push_back({ a, b });
 		}
+	}
 
-		const std::size_t start = fs.node_pool.size();
+	const std::size_t segs_count = fs.segs_scratch.size() - segs_base;
 
-		for (const std::size_t ci : fn.children_idx) {
-			emplace_shallow_node(fs, ci);
+	if (segs_count == 0) {
+		n.self = parent_tot;
+		return;
+	}
+
+	const auto segs_first = fs.segs_scratch.begin() + segs_base;
+	const auto segs_last = fs.segs_scratch.end();
+
+	std::ranges::sort(segs_first, segs_last, [](const frame_storage::seg& x, const frame_storage::seg& y) {
+		return x.a < y.a;
+	});
+
+	time_t<std::uint64_t> covered{};
+	frame_storage::seg cur = *segs_first;
+
+	for (auto it = segs_first + 1; it != segs_last; ++it) {
+		if (it->a <= cur.b) {
+			if (it->b > cur.b) {
+				cur.b = it->b;
+			}
+		} else {
+			covered += (cur.b - cur.a);
+			cur = *it;
 		}
+	}
+	covered += (cur.b - cur.a);
 
-		fs.node_pool[node_idx].children_first = fs.node_pool.data() + start;
-		fs.node_pool[node_idx].children_count = fn.children_idx.size();
+	fs.segs_scratch.resize(segs_base);
 
-		for (std::size_t k = 0; k < fn.children_idx.size(); ++k) {
-			build_subtree(fs, start + k, fn.children_idx[k]);
-		}
+	n.self = (covered < parent_tot) ? (parent_tot - covered) : decltype(parent_tot){};
+}
+
+auto gse::trace::emplace_shallow_node(frame_storage& fs, std::size_t flat_i) -> std::size_t {
+	const auto& fn = fs.flat[flat_i];
+	fs.node_pool.push_back(node{
+		.id = fn.id,
+		.trace_id = fn.tid,
+		.start = fn.start,
+		.stop  = fn.end,
+		.self  = fn.self,
+		.children_first = nullptr,
+		.children_count = 0
+	});
+	return fs.node_pool.size() - 1;
+}
+
+auto gse::trace::build_subtree(frame_storage& fs, std::size_t node_idx, std::size_t flat_i) -> void {
+	const auto& fn = fs.flat[flat_i];
+
+	if (fn.children_idx.empty()) {
+		fs.node_pool[node_idx].children_first = nullptr;
+		fs.node_pool[node_idx].children_count = 0;
+		return;
+	}
+
+	const std::size_t start = fs.node_pool.size();
+
+	for (const std::size_t ci : fn.children_idx) {
+		emplace_shallow_node(fs, ci);
+	}
+
+	fs.node_pool[node_idx].children_first = fs.node_pool.data() + start;
+	fs.node_pool[node_idx].children_count = fn.children_idx.size();
+
+	for (std::size_t k = 0; k < fn.children_idx.size(); ++k) {
+		build_subtree(fs, start + k, fn.children_idx[k]);
 	}
 }
 
@@ -453,13 +453,17 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	{
 		std::lock_guard lk(tls_registry_mutex);
 		for (auto* tb : tls_registry) {
-			if (!tb) continue;
+			if (!tb) {
+				continue;
+			}
 			tb->events.drain_to(fs.merged);
 		}
 	}
 
 	std::ranges::sort(fs.merged, [](const event& a, const event& b) {
-		if (a.ts != b.ts) return a.ts < b.ts;
+		if (a.ts != b.ts) {
+			return a.ts < b.ts;
+		}
 		return static_cast<int>(a.type) < static_cast<int>(b.type);
 	});
 
@@ -541,7 +545,9 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	roots_idx.reserve(fs.flat.size());
 
 	for (std::size_t i = 0; i < fs.flat.size(); ++i) {
-		if (!has_parent[i]) roots_idx.push_back(i);
+		if (!has_parent[i]) {
+			roots_idx.push_back(i);
+		}
 	}
 
 	fs.segs_scratch.clear();

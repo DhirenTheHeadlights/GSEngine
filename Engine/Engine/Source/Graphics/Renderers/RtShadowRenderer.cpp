@@ -143,8 +143,8 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, const gpu::cont
 
 	auto pc = gpu::cache_push_block(fd.tlas_update_shader, "push_constants");
 	pc.set("count", instance_count);
-	pc.set("instance_stride", gc_r.instance_stride);
-	pc.set("model_matrix_offset", gc_r.instance_offsets.at("model_matrix"));
+	pc.set("instance_stride", gc_r.instance_layout.stride);
+	pc.set("model_matrix_offset", gc_r.instance_layout.offsets.at("model_matrix"));
 
 	const std::uint32_t workgroups = (instance_count + 63) / 64;
 

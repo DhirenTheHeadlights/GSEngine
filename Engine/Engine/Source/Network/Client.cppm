@@ -28,20 +28,10 @@ import :input_frame;
 import :server_info;
 
 export namespace gse::network {
-	struct replication_message {
-		std::uint16_t id;
+	struct raw_message {
+		std::uint64_t id;
 		std::vector<std::byte> payload;
-		std::uint32_t sequence;
 	};
-
-	using inbox_message = std::variant<
-		connection_accepted,
-		ping,
-		pong,
-		notify_scene_change,
-		replication_message,
-		server_info_response
-	>;
 
 	class client {
 	public:
@@ -75,7 +65,7 @@ export namespace gse::network {
 		) -> void;
 
 		auto drain(
-			const std::function<void(inbox_message&)>& on_receive
+			const std::function<void(raw_message&)>& on_receive
 		) -> void;
 
 		auto push_input(
@@ -86,8 +76,6 @@ export namespace gse::network {
 		) -> void;
 
 	private:
-		auto send_ack(
-		) -> void;
 		udp_socket m_socket;
 		remote_peer m_server;
 		std::atomic<state> m_state = state::disconnected;
@@ -99,7 +87,7 @@ export namespace gse::network {
 		clock m_retry_clock;
 
 		std::mutex m_inbox_mutex;
-		std::vector<inbox_message> m_inbox;
+		std::vector<raw_message> m_inbox;
 
 		std::jthread m_thread;
 		std::atomic<bool> m_running{ false };
@@ -197,121 +185,64 @@ auto gse::network::client::tick() -> void {
 
 	std::array<std::byte, max_packet_size> buffer;
 	while (const auto received = m_socket.receive_data(buffer)) {
-		if (received->from.ip != m_server.addr().ip ||
-			received->from.port != m_server.addr().port) {
+		if (received->from.ip != m_server.addr().ip || received->from.port != m_server.addr().port) {
 			continue;
 		}
 
 		const std::span received_data(buffer.data(), received->bytes_read);
-		bitstream stream(received_data);
+		read_bitstream stream(received_data);
 
-		if (const auto header = stream.read<packet_header>(); header.sequence > m_server.remote_ack_sequence()) {
-			if (const std::uint32_t diff = header.sequence - m_server.remote_ack_sequence(); diff < 32) {
-				m_server.remote_ack_bitfield() <<= diff;
-				m_server.remote_ack_bitfield() |= (1 << (diff - 1));
-			}
-			else {
-				m_server.remote_ack_bitfield() = 0;
-			}
-			m_server.remote_ack_sequence() = header.sequence;
-		}
-		else if (header.sequence < m_server.remote_ack_sequence()) {
-			if (const std::uint32_t diff = m_server.remote_ack_sequence() - header.sequence; diff < 32) {
-				m_server.remote_ack_bitfield() |= (1 << (diff - 1));
-			}
+		const auto header = stream.read<packet_header>();
+		m_server.ingest_packet_sequence(header.sequence);
+
+		const auto id = stream.read<std::uint64_t>();
+
+		if (m_state.load(std::memory_order_relaxed) == state::connecting && id == message_id_v<connection_accepted>) {
+			log::println(log::category::network, "Client connected to {}:{}", m_server.addr().ip, m_server.addr().port);
+			m_state = state::connected;
 		}
 
-		const auto id = message_id(stream);
-		bool handled_internally = false;
+		const auto remaining = stream.remaining_bytes();
+		std::vector<std::byte> payload(remaining);
+		if (remaining > 0) {
+			stream.read_bytes(payload.data(), remaining);
+		}
 
-		match_message(stream, id)
-			.if_is<connection_accepted>([&](const connection_accepted& ca) {
-				log::println(log::category::network, "Client connected to {}:{}", m_server.addr().ip, m_server.addr().port);
-				m_state = state::connected;
-				send_ack();
-				{
-					std::lock_guard lk(m_inbox_mutex);
-					m_inbox.emplace_back(ca);
-				}
-				handled_internally = true;
-			})
-			.else_if_is<ping>([&](const ping& m) {
-				send(pong{ .sequence = m.sequence });
-				std::lock_guard lk(m_inbox_mutex);
-				m_inbox.emplace_back(m);
-				handled_internally = true;
-			})
-			.else_if_is<pong>([&](const pong& m) {
-				std::lock_guard lk(m_inbox_mutex);
-				m_inbox.emplace_back(m);
-				handled_internally = true;
-			})
-			.else_if_is<notify_scene_change>([&](const notify_scene_change& m) {
-				send_ack();
-				{
-					std::lock_guard lk(m_inbox_mutex);
-					m_inbox.emplace_back(m);
-				}
-				handled_internally = true;
-			})
-			.else_if_is<server_info_response>([&](const server_info_response& m) {
-				std::lock_guard lk(m_inbox_mutex);
-				m_inbox.emplace_back(m);
-				handled_internally = true;
-			});
+		std::lock_guard lk(m_inbox_mutex);
+		m_inbox.emplace_back(raw_message{
+			.id = id,
+			.payload = std::move(payload),
+		});
+	}
 
-			if (!handled_internally) {
-				std::vector<std::byte> payload;
+	if (current == state::connected && m_input_clock.elapsed<std::uint32_t>() > milliseconds(16u)) {
+		std::optional<input_snapshot> next;
 
-				if (const auto remaining = stream.remaining_bytes(); remaining > 0) {
-					payload.resize(remaining);
-					stream.read_bytes(payload.data(), remaining);
-					
-					std::lock_guard lk(m_inbox_mutex);
-					m_inbox.emplace_back(replication_message{
-						.id = id,
-						.payload = std::move(payload),
-						.sequence = m_server.remote_ack_sequence()
-					});
-				}
+		{
+			std::lock_guard lk(m_input_mutex);
+			if (m_next_input) {
+				next.emplace(std::move(*m_next_input));
+				m_next_input.reset();
 			}
 		}
 
-		if (current == state::connected) {
-		if (m_input_clock.elapsed<std::uint32_t>() > milliseconds(16u)) {
-			std::optional<input_snapshot> next;
+		if (next) {
+			m_last_input = std::move(*next);
+			m_has_last_input = true;
+		}
 
-			{
-				std::lock_guard lk(m_input_mutex);
-				if (m_next_input) {
-					next.emplace(std::move(*m_next_input));
-					m_next_input.reset();
-				}
-			}
+		if (m_has_last_input) {
+			send(extract_input_frame(
+				m_last_input.state,
+				m_last_input.axis1_ids,
+				m_last_input.axis2_ids,
+				++m_input_sequence,
+				m_last_input.camera_yaw
+			));
+			m_input_clock.reset();
 
-			if (next) {
-				m_last_input = std::move(*next);
-				m_has_last_input = true;
-			}
-
-			if (m_has_last_input) {
-				send_input_frame(
-					m_socket,
-					m_server,
-					buffer,
-					++m_input_sequence,
-					m_last_input.state,
-					m_last_input.axis1_ids,
-					m_last_input.axis2_ids,
-					m_last_input.camera_yaw
-				);
-				m_input_clock.reset();
-
-				// Clear transient pressed/released bits after first transmission
-				// to prevent re-sending stale key presses on retransmits
-				if (!next) {
-					m_last_input.state.begin_frame();
-				}
+			if (!next) {
+				m_last_input.state.begin_frame();
 			}
 		}
 	}
@@ -331,7 +262,7 @@ auto gse::network::client::send(const T& msg) -> void {
 		.ack_bits = m_server.remote_ack_bitfield()
 	};
 
-	bitstream stream(buffer);
+	write_bitstream stream(buffer);
 	stream.write(header);
 	write(stream, msg);
 	
@@ -343,11 +274,13 @@ auto gse::network::client::send(const T& msg) -> void {
 	(void)m_socket.send_data(pkt, m_server.addr());
 }
 
-auto gse::network::client::drain(const std::function<void(inbox_message&)>& on_receive) -> void {
-	std::vector<inbox_message> batch;
+auto gse::network::client::drain(const std::function<void(raw_message&)>& on_receive) -> void {
+	std::vector<raw_message> batch;
 	{
 		std::lock_guard lk(m_inbox_mutex);
-		if (m_inbox.empty()) return;
+		if (m_inbox.empty()) {
+			return;
+		}
 		batch.swap(m_inbox);
 	}
 	for (auto& m : batch) {
@@ -364,8 +297,4 @@ auto gse::network::client::push_input(const actions::state& s, std::span<const s
 
 	std::lock_guard lk(m_input_mutex);
 	m_next_input.emplace(std::move(snap));
-}
-
-auto gse::network::client::send_ack() -> void {
-	send(pong{ .sequence = 0 });
 }

@@ -38,6 +38,7 @@ export namespace gse {
 		std::array<std::byte, max_packet_size> buffer{};
 	};
 
+	template <typename... Components>
 	class server {
 	public:
 		explicit server(
@@ -56,7 +57,8 @@ export namespace gse {
 		template <typename T>
 		auto send(
 			const T& msg,
-			const network::address& to
+			const network::address& to,
+			bool reliable = false
 		) -> void;
 
 		template <typename T>
@@ -77,10 +79,10 @@ export namespace gse {
 		auto host_address(
 		) const -> std::optional<network::address>;
 	private:
-		static auto process_header(
-			network::bitstream& stream,
-			network::remote_peer& peer
-		) -> packet_header;
+		auto accept_connection(
+			world& w,
+			const network::address& addr
+		) -> void;
 
 		std::uint16_t m_port;
 		network::udp_socket m_socket;
@@ -100,9 +102,11 @@ export namespace gse {
 	};
 }
 
-gse::server::server(const std::uint16_t port) : m_port(port) {}
+template <typename... Components>
+gse::server<Components...>::server(const std::uint16_t port) : m_port(port) {}
 
-auto gse::server::initialize() -> void {
+template <typename... Components>
+auto gse::server<Components...>::initialize() -> void {
 	if (!m_socket.bind(network::address{
 		.ip = "0.0.0.0",
 		.port = m_port
@@ -145,36 +149,15 @@ auto gse::server::initialize() -> void {
 	});
 }
 
+template <typename... Components>
 template <typename T>
-auto gse::server::send(const T& msg, const network::address& to) -> void {
-	const auto it = m_peers.find(to);
-	if (it == m_peers.end()) {
-		return;
-	}
-
-	auto& peer = it->second;
-
-	std::array<std::byte, max_packet_size> buffer;
-	const packet_header header{
-		.sequence = ++peer.sequence(),
-		.ack = peer.remote_ack_sequence(),
-		.ack_bits = peer.remote_ack_bitfield()
-	};
-
-	network::bitstream stream(buffer);
-	stream.write(header);
-	network::write(stream, msg);
-
-	outgoing_packet pkt;
-	pkt.to = to;
-	pkt.size = stream.bytes_written();
-	std::memcpy(pkt.buffer.data(), buffer.data(), pkt.size);
-
-	m_outgoing.push(pkt);
+auto gse::server<Components...>::send_reliable(const T& msg, const network::address& to) -> void {
+	send(msg, to, true);
 }
 
+template <typename... Components>
 template <typename T>
-auto gse::server::send_reliable(const T& msg, const network::address& to) -> void {
+auto gse::server<Components...>::send(const T& msg, const network::address& to, const bool reliable) -> void {
 	const auto it = m_peers.find(to);
 	if (it == m_peers.end()) {
 		return;
@@ -189,13 +172,15 @@ auto gse::server::send_reliable(const T& msg, const network::address& to) -> voi
 		.ack_bits = peer.remote_ack_bitfield()
 	};
 
-	network::bitstream stream(buffer);
+	network::write_bitstream stream(buffer);
 	stream.write(header);
 	network::write(stream, msg);
 
 	const std::size_t size = stream.bytes_written();
 
-	peer.queue_reliable(header.sequence, std::span(buffer.data(), size));
+	if (reliable) {
+		peer.queue_reliable(header.sequence, std::span(buffer.data(), size));
+	}
 
 	outgoing_packet pkt;
 	pkt.to = to;
@@ -205,7 +190,8 @@ auto gse::server::send_reliable(const T& msg, const network::address& to) -> voi
 	m_outgoing.push(pkt);
 }
 
-auto gse::server::resend_reliable_messages() -> void {
+template <typename... Components>
+auto gse::server<Components...>::resend_reliable_messages() -> void {
 	for (auto& [addr, peer] : m_peers) {
 		auto to_resend = peer.messages_to_resend(reliable_retry_interval_ms);
 
@@ -218,7 +204,7 @@ auto gse::server::resend_reliable_messages() -> void {
 				.ack_bits = peer.remote_ack_bitfield()
 			};
 
-			network::bitstream stream(buffer);
+			network::write_bitstream stream(buffer);
 			stream.write(new_header);
 
 			constexpr std::size_t header_size = sizeof(packet_header);
@@ -239,7 +225,8 @@ auto gse::server::resend_reliable_messages() -> void {
 	}
 }
 
-auto gse::server::update(world& w, channel_writer& channels, const actions::system::state& actions_s) -> void {
+template <typename... Components>
+auto gse::server<Components...>::update(world& w, channel_writer& channels, const actions::system::state& actions_s) -> void {
 	if (!w.current_scene()) {
 		channels.push<activate_scene_request>({
 			.scene_id = find("Default Scene"),
@@ -255,16 +242,16 @@ auto gse::server::update(world& w, channel_writer& channels, const actions::syst
 		++processed_packets;
 
 		const std::span data(pkt.buffer.data(), pkt.size);
-		network::bitstream stream(data);
+		network::read_bitstream stream(data);
 
 		const auto it = m_peers.find(pkt.from);
 		const auto header = stream.read<packet_header>();
-		const auto mid = network::message_id(stream);
+		const auto mid = stream.read<std::uint64_t>();
 
 		if (it == m_peers.end()) {
 			if (network::try_decode<network::server_info_request>(stream, mid, [&](const auto&) {
 				std::array<std::byte, max_packet_size> buffer;
-				network::bitstream out_stream(buffer);
+				network::write_bitstream out_stream(buffer);
 
 				const packet_header header_out{};
 				out_stream.write(header_out);
@@ -291,32 +278,9 @@ auto gse::server::update(world& w, channel_writer& channels, const actions::syst
 				}
 
 				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
-
-				if (auto* scene = w.current_scene()) {
-					const auto controller_name = std::format("PlayerController_{}:{}", pkt.from.ip, pkt.from.port);
-					auto controller_id = w.registry().create(controller_name);
-					w.registry().add_component<player_controller>(controller_id);
-					w.registry().activate(controller_id);
-					m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
-
-					if (!m_host_entity.has_value()) {
-						m_host_entity = controller_id;
-						m_host_addr = pkt.from;
-					}
-
-					send_reliable(network::connection_accepted{ .controller_id = controller_id }, pkt.from);
-				}
+				accept_connection(w, pkt.from);
 				std::println("Client [{}:{}] connected ({}/{})",
 					pkt.from.ip, pkt.from.port, m_clients.size(), max_players);
-
-				if (const auto* active = w.current_scene()) {
-					const network::notify_scene_change msg{
-						.scene_id = active->id()
-					};
-					send_reliable(msg, pkt.from);
-				}
-
-				m_pending_snapshots.insert(pkt.from);
 			});
 
 			continue;
@@ -336,30 +300,7 @@ auto gse::server::update(world& w, channel_writer& channels, const actions::syst
 				m_clients.erase(client_it);
 			}
 
-			id reconnect_controller_id{};
-			if (w.current_scene()) {
-				const auto controller_name = std::format("PlayerController_{}:{}", pkt.from.ip, pkt.from.port);
-				auto controller_id = w.registry().create(controller_name);
-				w.registry().add_component<player_controller>(controller_id);
-				w.registry().activate(controller_id);
-				m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
-				reconnect_controller_id = controller_id;
-
-				if (m_host_addr == pkt.from) {
-					m_host_entity = controller_id;
-				}
-			}
-
-			send_reliable(network::connection_accepted{ .controller_id = reconnect_controller_id }, pkt.from);
-
-			if (const auto* active = w.current_scene()) {
-				const network::notify_scene_change msg{
-					.scene_id = active->id()
-				};
-				send_reliable(msg, pkt.from);
-			}
-
-			m_pending_snapshots.insert(pkt.from);
+			accept_connection(w, pkt.from);
 		})) {
 			continue;
 		}
@@ -367,87 +308,35 @@ auto gse::server::update(world& w, channel_writer& channels, const actions::syst
 		auto& peer = it->second;
 
 		peer.process_acks(header.ack, header.ack_bits);
+		peer.ingest_packet_sequence(header.sequence);
 
-		if (header.sequence > peer.remote_ack_sequence()) {
-			if (const std::uint32_t diff = header.sequence - peer.remote_ack_sequence(); diff < 32) {
-				peer.remote_ack_bitfield() <<= diff;
-				peer.remote_ack_bitfield() |= (1 << (diff - 1));
-			}
-			else {
-				peer.remote_ack_bitfield() = 1;
-			}
-			peer.remote_ack_sequence() = header.sequence;
-		}
-		else if (header.sequence < peer.remote_ack_sequence()) {
-			if (const std::uint32_t diff = peer.remote_ack_sequence() - header.sequence; diff < 32) {
-				peer.remote_ack_bitfield() |= (1 << (diff - 1));
-			}
-		}
-
-		network::match_message(stream, mid)
-			.if_is([&](const network::ping& m) {
-				send(network::pong{ .sequence = m.sequence }, pkt.from);
-			})
-			.else_if_is([&](const network::pong&) {
-			})
-			.else_if_is([&](const network::server_info_request&) {
-				send(network::server_info_response{
+		network::try_decode<network::ping>(stream, mid, [&](const auto& m) {
+			send(
+				network::pong{
+					.sequence = m.sequence,
+				},
+				pkt.from
+			);
+		}) ||
+		network::try_decode<network::server_info_request>(stream, mid, [&](const auto&) {
+			send(
+				network::server_info_response{
 					.players = static_cast<std::uint8_t>(m_clients.size()),
-					.max_players = 8
-				}, pkt.from);
-			})
-			.else_if_is([&](const network::input_frame_header& fh) {
-				const std::size_t wc = fh.action_word_count;
+					.max_players = 8,
+				},
+				pkt.from
+			);
+		}) ||
+		network::try_decode<network::input_frame>(stream, mid, [&](const auto& m) {
+			auto& cd = m_clients[pkt.from];
+			if (m.input_sequence <= cd.last_input_sequence) {
+				return;
+			}
 
-				std::vector<std::uint64_t> pressed(wc), released(wc), held(wc);
-
-				for (std::size_t i = 0; i < wc; ++i) {
-					pressed[i] = stream.read<std::uint64_t>();
-				}
-
-				for (std::size_t i = 0; i < wc; ++i) {
-					released[i] = stream.read<std::uint64_t>();
-				}
-
-				for (std::size_t i = 0; i < wc; ++i) {
-					held[i] = stream.read<std::uint64_t>();
-				}
-
-				std::vector<network::axes1_pair> a1(fh.axes1_count);
-				for (auto& p : a1) {
-					p = stream.read<network::axes1_pair>();
-				}
-
-				std::vector<network::axes2_pair> a2(fh.axes2_count);
-				for (auto& p : a2) {
-					p = stream.read<network::axes2_pair>();
-				}
-
-				auto& cd = m_clients[pkt.from];
-				if (fh.input_sequence <= cd.last_input_sequence) {
-					return;
-				}
-
-				cd.last_input_sequence = fh.input_sequence;
-				cd.camera_yaw = gse::radians(fh.camera_yaw);
-
-				cd.latest_input.begin_frame();
-				cd.latest_input.ensure_capacity(fh.action_word_count * 64);
-				cd.latest_input.load_state(pressed, released, held);
-
-
-				cd.latest_input.clear_all_axes();
-
-				for (auto& [idv, value] : a1) {
-					cd.latest_input.set_axis1(idv, value);
-				}
-
-				for (auto& [idv, x, y] : a2) {
-					cd.latest_input.set_axis2(idv, actions::axis{ x, y });
-				}
-
-				cd.latest_input.set_camera_yaw(cd.camera_yaw);
-			});
+			cd.last_input_sequence = m.input_sequence;
+			cd.camera_yaw = gse::radians(m.camera_yaw);
+			network::apply_input_frame(cd.latest_input, m);
+		});
 	}
 
 	std::optional<id> scene_requested_id;
@@ -485,26 +374,6 @@ auto gse::server::update(world& w, channel_writer& channels, const actions::syst
 		}
 	}
 
-	{
-		static std::uint32_t s_frame_counter = 0;
-		if (++s_frame_counter % 120 == 0) {
-			if (w.current_scene()) {
-				for (const auto& [addr, cd] : m_clients) {
-					auto* pc = w.registry().try_component<player_controller>(cd.controller_id);
-					if (!pc || !pc->controlled_entity_id.exists()) continue;
-					const auto* mc = w.registry().try_component<physics::motion_component>(pc->controlled_entity_id);
-					if (!mc) continue;
-					const auto pos = mc->current_position;
-					std::println("[{}:{}] pos=({:.2f}, {:.2f}, {:.2f})",
-						addr.ip, addr.port,
-						pos.x().as<decltype(meters)>(),
-						pos.y().as<decltype(meters)>(),
-						pos.z().as<decltype(meters)>());
-				}
-			}
-		}
-	}
-
 	resend_reliable_messages();
 
 	if (w.current_scene()) {
@@ -514,49 +383,71 @@ auto gse::server::update(world& w, channel_writer& channels, const actions::syst
 
 		if (!m_pending_snapshots.empty()) {
 			for (const auto& addr : m_pending_snapshots) {
-				network::replicate_snapshot_to(send_all, w.registry(), addr);
+				network::replicate_snapshot_to<type_pack<Components...>>(send_all, w.registry(), addr);
 			}
 			m_pending_snapshots.clear();
 		}
 
-		network::replicate_deltas(send_all, w.registry(), m_peers);
+		network::replicate_deltas<type_pack<Components...>>(send_all, w.registry(), m_peers);
 	}
 }
 
-auto gse::server::peers() const -> const std::unordered_map<network::address, network::remote_peer>& {
+template <typename... Components>
+auto gse::server<Components...>::peers() const -> const std::unordered_map<network::address, network::remote_peer>& {
 	return m_peers;
 }
 
-auto gse::server::clients() const -> const std::unordered_map<network::address, client_data>& {
+template <typename... Components>
+auto gse::server<Components...>::clients() const -> const std::unordered_map<network::address, client_data>& {
 	return m_clients;
 }
 
-auto gse::server::host_entity() const -> std::optional<id> {
+template <typename... Components>
+auto gse::server<Components...>::host_entity() const -> std::optional<id> {
 	return m_host_entity;
 }
 
-auto gse::server::host_address() const -> std::optional<network::address> {
+template <typename... Components>
+auto gse::server<Components...>::host_address() const -> std::optional<network::address> {
 	return m_host_addr;
 }
 
-auto gse::server::process_header(network::bitstream& stream, network::remote_peer& peer) -> packet_header {
-	const auto header = stream.read<packet_header>();
+template <typename... Components>
+auto gse::server<Components...>::accept_connection(world& w, const network::address& addr) -> void {
+	id controller_id{};
+	if (w.current_scene()) {
+		const auto controller_name = std::format("PlayerController_{}:{}", addr.ip, addr.port);
+		controller_id = w.registry().create(controller_name);
+		w.registry().add_component<player_controller>(controller_id);
+		w.registry().activate(controller_id);
+		m_clients.emplace(addr, client_data{
+			.controller_id = controller_id,
+		});
 
-	if (header.sequence > peer.remote_ack_sequence()) {
-		if (const std::uint32_t diff = header.sequence - peer.remote_ack_sequence(); diff < 32) {
-			peer.remote_ack_bitfield() <<= diff;
-			peer.remote_ack_bitfield() |= (1 << (diff - 1));
+		if (!m_host_entity.has_value()) {
+			m_host_entity = controller_id;
+			m_host_addr = addr;
 		}
-		else {
-			peer.remote_ack_bitfield() = 1;
-		}
-		peer.remote_ack_sequence() = header.sequence;
-	}
-	else if (header.sequence < peer.remote_ack_sequence()) {
-		if (const std::uint32_t diff = peer.remote_ack_sequence() - header.sequence; diff < 32) {
-			peer.remote_ack_bitfield() |= (1 << (diff - 1));
+		else if (m_host_addr == addr) {
+			m_host_entity = controller_id;
 		}
 	}
 
-	return header;
+	send_reliable(
+		network::connection_accepted{
+			.controller_id = controller_id,
+		},
+		addr
+	);
+
+	if (const auto* active = w.current_scene()) {
+		send_reliable(
+			network::notify_scene_change{
+				.scene_id = active->id(),
+			},
+			addr
+		);
+	}
+
+	m_pending_snapshots.insert(addr);
 }
