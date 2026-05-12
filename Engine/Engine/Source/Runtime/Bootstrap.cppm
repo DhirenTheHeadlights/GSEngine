@@ -48,10 +48,10 @@ auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const
 	engine e(config.title, engine_flags);
 	log::println(log::level::info, "Starting GSEngine...");
 
-	e.initialize(setup);
-	trace::finalize_frame();
-
 	task::start([&] {
+		e.initialize(setup);
+		trace::finalize_frame();
+
 		const auto loop_id = trace_id<"frame::loop">();
 		const auto poll_id = trace_id<"frame::poll_events">();
 		const auto sync_begin_id = trace_id<"frame::sync_begin">();
