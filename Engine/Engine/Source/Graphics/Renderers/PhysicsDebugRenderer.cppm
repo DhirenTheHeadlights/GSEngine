@@ -97,26 +97,26 @@ export namespace gse::renderer::physics_debug {
 		) -> void;
 
 		static auto build_obb_lines_for_collider(
-			const physics::collision_component& coll,
-			const physics::motion_component* mc,
+			const physics::transform_component& tc,
+			const physics::box_shape& shape,
 			std::vector<debug_vertex>& out_vertices
 		) -> void;
 
 		static auto build_sphere_lines_for_collider(
-			const physics::collision_component& coll,
-			const physics::motion_component* mc,
+			const physics::transform_component& tc,
+			const physics::sphere_shape& shape,
 			std::vector<debug_vertex>& out_vertices
 		) -> void;
 
 		static auto build_capsule_lines_for_collider(
-			const physics::collision_component& coll,
-			const physics::motion_component* mc,
+			const physics::transform_component& tc,
+			const physics::capsule_shape& shape,
 			std::vector<debug_vertex>& out_vertices
 		) -> void;
 
 		static auto build_shape_lines_for_collider(
 			const physics::collision_component& coll,
-			const physics::motion_component* mc,
+			const physics::transform_component* tc,
 			std::vector<debug_vertex>& out_vertices
 		) -> void;
 

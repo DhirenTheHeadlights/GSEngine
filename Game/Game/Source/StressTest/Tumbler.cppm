@@ -25,9 +25,11 @@ export namespace gs::tumbler {
 auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [tumblers, motions] = co_await ctx.acquire<
+			auto [tumblers, transforms, motions, statuses] = co_await ctx.acquire<
 				gse::write<component>,
-				gse::write<gse::physics::motion_component>
+				gse::write<gse::physics::transform_component>,
+				gse::write<gse::physics::motion_component>,
+				gse::write<gse::physics::motion_status_component>
 			>();
 
 			constexpr auto physics_step = gse::seconds(1.f / 60.f);
@@ -35,8 +37,10 @@ auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 			const auto tumbler_ids = tumblers.owner_ids();
 			for (std::size_t i = 0; i < tumblers.size(); ++i) {
 				auto& t = tumblers[i];
-				auto* motion = motions.find(tumbler_ids[i]);
-				if (!motion) {
+				const auto eid = tumbler_ids[i];
+				auto* motion = motions.find(eid);
+				auto* transform = transforms.find(eid);
+				if (!motion || !transform) {
 					continue;
 				}
 
@@ -55,11 +59,13 @@ auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 				);
 				const auto lin_vel = cross(ang_vel, world_offset) / gse::rad;
 
-				motion->current_position = t.center + world_offset;
-				motion->orientation = world_rot;
+				transform->position = t.center + world_offset;
+				transform->orientation = world_rot;
 				motion->current_velocity = lin_vel;
 				motion->angular_velocity = ang_vel;
-				motion->sleeping = false;
+				if (auto* status = statuses.find(eid)) {
+					status->sleeping = false;
+				}
 			}
 		}
 

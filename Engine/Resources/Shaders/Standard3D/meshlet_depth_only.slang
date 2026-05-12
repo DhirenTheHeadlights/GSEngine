@@ -35,13 +35,6 @@ void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
         MeshletBounds bounds = meshletBounds[global_idx];
         InstanceData inst = instanceData[instance_index];
 
-        if (gtid == 0) {
-            printf("as_main gid=(%u,%u) first_instance=%u meshlet_count=%u global_idx=%u instance_index=%u bounds.center=(%f,%f,%f) bounds.radius=%f model[0]=(%f,%f,%f,%f)\n",
-                gid.x, gid.y, first_instance, meshlet_count, global_idx, instance_index,
-                bounds.center.x, bounds.center.y, bounds.center.z, bounds.radius,
-                inst.model_matrix[0].x, inst.model_matrix[0].y, inst.model_matrix[0].z, inst.model_matrix[0].w);
-        }
-
         float3 world_center = mul(inst.model_matrix, float4(bounds.center, 1.0)).xyz;
 
         float3 scale_sq = float3(
@@ -99,11 +92,6 @@ void ms_main(
     uint meshlet_global_idx = p.meshlet_indices[group_id.x];
     MeshletDescriptor desc = meshlets[meshlet_global_idx];
     InstanceData inst = instanceData[p.instance_idx];
-
-    if (gtid == 0) {
-        printf("ms_main gid=%u meshlet_global_idx=%u instance_idx=%u vcount=%u tcount=%u\n",
-            group_id.x, meshlet_global_idx, p.instance_idx, desc.vertex_count, desc.triangle_count);
-    }
 
     SetMeshOutputCounts(desc.vertex_count, desc.triangle_count);
 

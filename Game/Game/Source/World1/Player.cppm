@@ -43,9 +43,12 @@ export namespace gs::player {
 auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions::system::state& as, const gse::camera::system::state& cam_s) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [players, motions, follows] = co_await ctx.acquire<
+			auto [players, transforms, motions, statuses, motors, follows] = co_await ctx.acquire<
 				gse::write<component>,
-				gse::write<gse::physics::motion_component>,
+				gse::read<gse::physics::transform_component>,
+				gse::read<gse::physics::motion_component>,
+				gse::read<gse::physics::motion_status_component>,
+				gse::write<gse::physics::motor_component>,
 				gse::write<gse::camera::follow_component>
 			>();
 
@@ -104,19 +107,21 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 				const gse::length height = gse::feet(6.0f);
 				const gse::length width = gse::feet(3.0f);
 
-				ctx.add_component<gse::physics::motion_component>(owner_id, {
-					.current_position = p.initial_position,
-					.mass = gse::pounds(180.f),
-					.update_orientation = false,
-					.velocity_drive_target = {},
-					.velocity_drive_active = true,
+				ctx.add_component<gse::physics::transform_component>(owner_id, {
+					.position = p.initial_position,
 				});
 
-				ctx.add_component<gse::physics::collision_component>(owner_id, {
-					.bounding_box = {
-						p.initial_position,
-						{ width, height, width },
+				ctx.add_component<gse::physics::motion_component>(owner_id, {
+					.body = gse::physics::dynamic_body{
+						.mass = gse::pounds(180.f),
+						.update_orientation = false,
 					},
+				});
+
+				ctx.add_component<gse::physics::motor_component>(owner_id, {});
+
+				ctx.add_component<gse::physics::collision_component>(owner_id, {
+					.shape = gse::physics::box_shape{ .size = { width, height, width } },
 				});
 
 				ctx.add_component<gse::camera::follow_component>(owner_id, {
@@ -135,8 +140,10 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 				const auto owner_id = player_ids[i];
 				const auto& b = *s.bindings_by_owner[owner_id];
 
-				auto* motion = motions.find(owner_id);
-				if (!motion) {
+				const auto* motion = motions.find(owner_id);
+				auto* motor = motors.find(owner_id);
+				const auto* status = statuses.find(owner_id);
+				if (!motor || !motion) {
 					continue;
 				}
 
@@ -151,16 +158,20 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 					);
 					const auto horizontal = gse::vec3f(dir.x(), 0.f, dir.z());
 					const float len = gse::magnitude(horizontal);
-					motion->velocity_drive_target = len > 1e-6f
+					motor->velocity_drive_target = len > 1e-6f
 						? speed * (horizontal / len)
 						: gse::vec3<gse::velocity>{};
 				}
 				else {
-					motion->velocity_drive_target = {};
+					motor->velocity_drive_target = {};
 				}
 
-				if (gse::actions::pressed(b.jump, cs, as) && !motion->airborne) {
-					motion->pending_impulse.y() = p.jump_speed * motion->mass;
+				const bool airborne = status ? status->airborne : true;
+				if (gse::actions::pressed(b.jump, cs, as) && !airborne) {
+					ctx.channels.push<gse::physics::impulse_request>({
+						.target = owner_id,
+						.impulse = gse::vec3<gse::impulse>(gse::newton_seconds(0.f), p.jump_speed * gse::physics::mass_of(*motion), gse::newton_seconds(0.f)),
+					});
 				}
 
 				if (gse::actions::pressed(b.jetpack_toggle, cs, as)) {
@@ -177,7 +188,9 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 				}
 
 				if (auto* cam_follow = follows.find(owner_id)) {
-					cam_follow->position = motion->current_position;
+					if (const auto* tc = transforms.find(owner_id)) {
+						cam_follow->position = tc->position;
+					}
 				}
 			}
 

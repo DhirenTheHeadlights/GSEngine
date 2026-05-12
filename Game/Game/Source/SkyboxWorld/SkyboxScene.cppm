@@ -19,14 +19,14 @@ auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::a
 	const auto skybox_size = gse::vec3<gse::length>(20000.f, 20000.f, 20000.f);
 
 	s.build("Skybox")
+		.with<gse::physics::transform_component>({
+			.position = skybox_position,
+		})
 		.with<gse::physics::motion_component>({
-			.current_position = skybox_position,
-			.mass = gse::kilograms(1000.f),
-			.affected_by_gravity = false,
-			.position_locked = true,
+			.body = gse::physics::static_body{},
 		})
 		.with<gse::physics::collision_component>({
-			.bounding_box = { skybox_position, skybox_size },
+			.shape = gse::physics::box_shape{ .size = skybox_size },
 		})
 		.with<gse::render_component>({
 			.models = {
@@ -56,14 +56,14 @@ auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::a
 	const auto floor_size = gse::vec3<gse::length>(20000.f, 10.f, 20000.f);
 
 	s.build("Skybox Floor")
+		.with<gse::physics::transform_component>({
+			.position = floor_position,
+		})
 		.with<gse::physics::motion_component>({
-			.current_position = floor_position,
-			.mass = gse::kilograms(1000.f),
-			.affected_by_gravity = false,
-			.position_locked = true,
+			.body = gse::physics::static_body{},
 		})
 		.with<gse::physics::collision_component>({
-			.bounding_box = { floor_position, floor_size },
+			.shape = gse::physics::box_shape{ .size = floor_size },
 		})
 		.with<gse::render_component>({
 			.models = {

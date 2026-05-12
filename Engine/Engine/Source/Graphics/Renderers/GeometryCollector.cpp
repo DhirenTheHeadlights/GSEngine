@@ -28,12 +28,6 @@ import gse.physics;
 
 
 namespace gse::renderer::geometry_collector {
-	struct component_lookup {
-		const physics::motion_component* mc = nullptr;
-		const physics::collision_component* cc = nullptr;
-		std::uint32_t static_entry_count = 0;
-	};
-
 	auto material_palette_index(
 		render_data& data,
 		const material* mat_ptr
@@ -67,16 +61,15 @@ namespace gse::renderer::geometry_collector {
 
 	auto collect_static(
 		write<render_component>& render,
-		read<physics::motion_component>& motion,
-		read<physics::collision_component>& collision,
+		read<physics::transform_component>& transform,
 		const std::unordered_map<id, std::uint32_t>& body_index_map,
 		std::vector<owned_render_queue_entry>& out
-	) -> std::vector<component_lookup>;
+	) -> void;
 
 	auto collect_skinned(
 		write<render_component>& render,
+		read<physics::transform_component>& transform,
 		read<animation_component>& anim,
-		std::span<const component_lookup> lookups,
 		const system::resources& r,
 		system::state& s,
 		std::vector<skinned_render_queue_entry>& skinned_out,
@@ -180,71 +173,36 @@ auto gse::renderer::geometry_collector::read_body_index_map(run_context& ctx) ->
 	return body_index_map;
 }
 
-auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::motion_component>& motion, read<physics::collision_component>& collision, const std::unordered_map<id, std::uint32_t>& body_index_map, std::vector<owned_render_queue_entry>& out) -> std::vector<component_lookup> {
+auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, const std::unordered_map<id, std::uint32_t>& body_index_map, std::vector<owned_render_queue_entry>& out) -> void {
 	const auto render_size = render.size();
 	const auto render_ids = render.owner_ids();
+	const bool transform_order_matches = render_size == transform.size() && std::ranges::equal(render_ids, transform.owner_ids());
 
-	const bool motion_order_matches = render_size == motion.size() && std::ranges::equal(render_ids, motion.owner_ids());
-	const bool collision_order_matches = render_size == collision.size() && std::ranges::equal(render_ids, collision.owner_ids());
-
-	std::vector<component_lookup> lookups(render_size);
-	std::atomic<std::size_t> total_static_count{0};
-
-	task::parallel_invoke_range(0, render_size, [&](std::size_t i) {
+	for (std::size_t i = 0; i < render_size; ++i) {
 		auto& component = render[i];
 		if (!component.render) {
-			return;
+			continue;
 		}
 
 		const auto eid = render_ids[i];
-		const auto* mc = motion_order_matches ? std::addressof(motion[i]) : motion.find(eid);
-		const auto* cc = collision_order_matches ? std::addressof(collision[i]) : collision.find(eid);
-		if (mc == nullptr || cc == nullptr) {
-			return;
+		const auto* tc = transform_order_matches ? std::addressof(transform[i]) : transform.find(eid);
+		if (tc == nullptr) {
+			continue;
 		}
 
-		std::uint32_t count = 0;
-		for (std::uint32_t j = 0; j < component.model_count; ++j) {
-			const auto* mdl = component.models[j].resolve();
-			if (mdl != nullptr) {
-				count += static_cast<std::uint32_t>(mdl->meshes().size());
-			}
-		}
-
-		lookups[i] = { mc, cc, count };
-		if (count > 0) {
-			total_static_count.fetch_add(count, std::memory_order_relaxed);
-		}
-	});
-
-	out.resize(total_static_count.load(std::memory_order_relaxed));
-	std::atomic<std::size_t> static_head{0};
-
-	task::parallel_invoke_range(0, render_size, [&](std::size_t i) {
-		const auto& lkp = lookups[i];
-		if (lkp.static_entry_count == 0) {
-			return;
-		}
-
-		auto& component = render[i];
-		const auto eid = render_ids[i];
-		const auto& world_aabb = lkp.cc->bounding_box.aabb();
 		std::uint32_t body_index = owned_render_queue_entry::invalid_body_index;
 		if (const auto it = body_index_map.find(eid); it != body_index_map.end()) {
 			body_index = it->second;
 		}
-
-		const std::size_t base = static_head.fetch_add(lkp.static_entry_count, std::memory_order_relaxed);
-		std::size_t k = 0;
 
 		for (std::uint32_t j = 0; j < component.model_count; ++j) {
 			const auto* mdl = component.models[j].resolve();
 			if (mdl == nullptr) {
 				continue;
 			}
-			const auto [model_matrix, normal_matrix] = compute_render_transform(*lkp.mc, *lkp.cc, mdl->center_of_mass());
+			const auto [model_matrix, normal_matrix] = compute_render_transform(*tc, mdl->center_of_mass());
 			for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
-				out[base + k++] = {
+				out.push_back({
 					.entry = {
 						.model = component.models[j],
 						.index = mi,
@@ -253,34 +211,31 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 						.color = vec3f(1.0f)
 					},
 					.owner = eid,
-					.world_aabb_min = world_aabb.min,
-					.world_aabb_max = world_aabb.max,
 					.body_index = body_index
-				};
+				});
 			}
 		}
-	});
-
-	return lookups;
+	}
 }
 
-auto gse::renderer::geometry_collector::collect_skinned(write<render_component>& render, read<animation_component>& anim, std::span<const component_lookup> lookups, const system::resources& r, system::state& s, std::vector<skinned_render_queue_entry>& skinned_out, std::vector<mat4f>& local_pose_staging) -> std::uint32_t {
+auto gse::renderer::geometry_collector::collect_skinned(write<render_component>& render, read<physics::transform_component>& transform, read<animation_component>& anim, const system::resources& r, system::state& s, std::vector<skinned_render_queue_entry>& skinned_out, std::vector<mat4f>& local_pose_staging) -> std::uint32_t {
 	const auto render_size = render.size();
 	const auto render_ids = render.owner_ids();
+	const bool transform_order_matches = render_size == transform.size() && std::ranges::equal(render_ids, transform.owner_ids());
 	std::uint32_t skinned_instance_count = 0;
 
 	for (std::size_t i = 0; i < render_size; ++i) {
-		const auto& lkp = lookups[i];
-		if (lkp.mc == nullptr || lkp.cc == nullptr) {
-			continue;
-		}
-
 		auto& component = render[i];
 		if (component.skinned_model_count == 0) {
 			continue;
 		}
 
 		const auto eid = render_ids[i];
+		const auto* tc = transform_order_matches ? std::addressof(transform[i]) : transform.find(eid);
+		if (tc == nullptr) {
+			continue;
+		}
+
 		const auto* anim_comp = anim.find(eid);
 		if (anim_comp == nullptr || anim_comp->local_pose.empty()) {
 			continue;
@@ -304,7 +259,7 @@ auto gse::renderer::geometry_collector::collect_skinned(write<render_component>&
 
 			++skinned_instance_count;
 
-			const auto [model_matrix, normal_matrix] = compute_render_transform(*lkp.mc, *lkp.cc, mdl->center_of_mass());
+			const auto [model_matrix, normal_matrix] = compute_render_transform(*tc, mdl->center_of_mass());
 			for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
 				skinned_out.push_back({
 					.model = handle,
@@ -366,10 +321,12 @@ auto gse::renderer::geometry_collector::build_normal_batches(const system::resou
 		[](const normal_batch_key& key) -> const mesh& {
 			return key.model_ptr->meshes()[key.mesh_index];
 		},
-		[](vec3<length>& mn, vec3<length>& mx, std::span<const owned_render_queue_entry> batch, const mesh&) {
+		[](vec3<length>& mn, vec3<length>& mx, std::span<const owned_render_queue_entry> batch, const mesh& m) {
+			const auto [local_min, local_max] = m.aabb();
 			for (const auto& q : batch) {
-				mn = gse::min(mn, q.world_aabb_min);
-				mx = gse::max(mx, q.world_aabb_max);
+				const auto [inst_min, inst_max] = transform_aabb(local_min, local_max, q.entry.model_matrix);
+				mn = vec3<length>(std::min(mn.x(), inst_min.x()), std::min(mn.y(), inst_min.y()), std::min(mn.z(), inst_min.z()));
+				mx = vec3<length>(std::max(mx.x(), inst_max.x()), std::max(mx.y(), inst_max.y()), std::max(mx.z(), inst_max.z()));
 			}
 		},
 		[&](const owned_render_queue_entry& q, const normal_batch_key& key, std::uint32_t mat_idx, std::uint32_t instance_index) {
@@ -483,10 +440,9 @@ auto gse::renderer::geometry_collector::tick(run_context& ctx, system::resources
 
 	auto body_index_map = read_body_index_map(ctx);
 
-	auto [render, motion, collision, anim] = co_await ctx.acquire<
+	auto [render, transform, anim] = co_await ctx.acquire<
 		write<render_component>,
-		read<physics::motion_component>,
-		read<physics::collision_component>,
+		read<physics::transform_component>,
 		read<animation_component>
 	>();
 
@@ -501,8 +457,8 @@ auto gse::renderer::geometry_collector::tick(run_context& ctx, system::resources
 	std::uint32_t skinned_instance_count = 0;
 	{
 		trace::scope_guard sg{trace_id<"geom_collect::collect">()};
-		const auto lookups = collect_static(render, motion, collision, body_index_map, data.render_queue);
-		skinned_instance_count = collect_skinned(render, anim, lookups, r, s, data.skinned_render_queue, data.local_pose_staging);
+		collect_static(render, transform, body_index_map, data.render_queue);
+		skinned_instance_count = collect_skinned(render, transform, anim, r, s, data.skinned_render_queue, data.local_pose_staging);
 	}
 
 	sort_queues(data.render_queue, data.skinned_render_queue);

@@ -55,14 +55,18 @@ auto gs::build_box(gse::asset::state& assets, gse::scene* scene, const std::stri
 	};
 
 	return scene->build(name)
-		.with<gse::physics::motion_component>({
-			.current_position = position,
-			.mass = m,
+		.with<gse::physics::transform_component>({
+			.position = position,
 			.orientation = orientation,
-			.moment_of_inertia = box_inertia,
+		})
+		.with<gse::physics::motion_component>({
+			.body = gse::physics::dynamic_body{
+				.mass = m,
+				.moment_of_inertia = box_inertia,
+			},
 		})
 		.with<gse::physics::collision_component>({
-			.bounding_box = { position, size },
+			.shape = gse::physics::box_shape{ .size = size },
 		})
 		.with<gse::render_component>({
 			.models = {
@@ -73,17 +77,20 @@ auto gs::build_box(gse::asset::state& assets, gse::scene* scene, const std::stri
 }
 
 auto gs::build_sphere(gse::asset::state& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> gse::scene::builder {
-	const gse::vec3<gse::length> size(radius * 2.f, radius * 2.f, radius * 2.f);
+	const float diameter = radius.as<gse::meters>() * 2.f;
 
 	return scene->build(name)
+		.with<gse::physics::transform_component>({
+			.position = position,
+			.scale = { diameter, diameter, diameter },
+		})
 		.with<gse::physics::motion_component>({
-			.current_position = position,
-			.mass = gse::kilograms(100.f),
+			.body = gse::physics::dynamic_body{
+				.mass = gse::kilograms(100.f),
+			},
 		})
 		.with<gse::physics::collision_component>({
-			.bounding_box = { position, size },
-			.shape = gse::physics::shape_type::sphere,
-			.shape_radius = radius,
+			.shape = gse::physics::sphere_shape{ .radius = radius },
 		})
 		.with<gse::render_component>({
 			.models = {
@@ -112,26 +119,21 @@ auto gs::build_sphere_light(gse::asset::state& assets, gse::scene* scene, const 
 			.ambient_strength = 0.025f,
 		})
 		.configure([](gse::physics::motion_component& mc) {
-			mc.affected_by_gravity = false;
-			mc.position_locked = true;
+			mc.body = gse::physics::static_body{};
 		});
 }
 
 auto gs::build_static_box(gse::asset::state& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> gse::scene::builder {
-	const gse::mass wall_mass = gse::kilograms(1000.f);
-	const gse::inertia wall_inertia = wall_mass * gse::dot(size, size) / 18.f;
-
 	return scene->build(name)
-		.with<gse::physics::motion_component>({
-			.current_position = position,
-			.mass = wall_mass,
+		.with<gse::physics::transform_component>({
+			.position = position,
 			.orientation = orientation,
-			.moment_of_inertia = wall_inertia,
-			.affected_by_gravity = false,
-			.position_locked = true,
+		})
+		.with<gse::physics::motion_component>({
+			.body = gse::physics::static_body{},
 		})
 		.with<gse::physics::collision_component>({
-			.bounding_box = { position, size },
+			.shape = gse::physics::box_shape{ .size = size },
 		})
 		.with<gse::render_component>({
 			.models = {

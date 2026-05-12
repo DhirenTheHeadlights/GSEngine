@@ -119,7 +119,9 @@ auto gs::build_hinge_door(gse::scene& s, gse::channel_writer& channels, gse::ass
 		gse::vec3<gse::length>(3.f, 3.5f, 0.2f),
 		gse::kilograms(40.f)
 	).configure([](gse::physics::motion_component& mc) {
-		mc.affected_by_gravity = false;
+		if (auto* d = std::get_if<gse::physics::dynamic_body>(&mc.body)) {
+			d->affected_by_gravity = false;
+		}
 	}).identify();
 
 	gse::physics::join(channels, frame_id, door_id, gse::physics::hinge_joint{
