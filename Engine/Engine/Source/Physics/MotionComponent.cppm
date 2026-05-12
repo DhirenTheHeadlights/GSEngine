@@ -12,45 +12,69 @@ import gse.math;
 import gse.meta;
 
 export namespace gse::physics {
-    struct motion_component {
-        [[= networked]] vec3<current_position> current_position;
-        [[= networked]] vec3<velocity> current_velocity;
+    struct dynamic_body {
         [[= networked]] mass mass = kilograms(1.f);
-        [[= networked]] quat orientation = quat(1.f, 0.f, 0.f, 0.f);
-        [[= networked]] vec3<angular_velocity> angular_velocity;
         [[= networked]] inertia moment_of_inertia = kilograms_meters_squared(163.f);
+        [[= networked]] float restitution = 0.3f;
         [[= networked]] bool affected_by_gravity = true;
-        [[= networked]] bool airborne = true;
-        [[= networked]] bool position_locked = false;
-
-        float restitution = 0.3f;
-        bool sleeping = false;
-        bool update_orientation = true;
-
-        vec3<velocity> velocity_drive_target;
-        bool velocity_drive_active = false;
-
-        vec3<impulse> pending_impulse;
+        [[= networked]] bool update_orientation = true;
     };
 
-    auto transformation_matrix(
+    struct kinematic_body {};
+
+    struct static_body {};
+
+    struct motion_component {
+        [[= networked]] vec3<velocity> current_velocity;
+        [[= networked]] vec3<angular_velocity> angular_velocity;
+        [[= networked]] std::variant<dynamic_body, kinematic_body, static_body> body = dynamic_body{};
+    };
+
+    struct impulse_request {
+        id target;
+        vec3<impulse> impulse;
+    };
+
+    auto is_dynamic(
         const motion_component& mc
-    ) -> mat4f;
+    ) -> bool;
+
+    auto is_locked(
+        const motion_component& mc
+    ) -> bool;
+
+    auto mass_of(
+        const motion_component& mc
+    ) -> mass;
 
     auto inv_inertial_tensor(
-        const motion_component& mc
+        const motion_component& mc,
+        const quat& orientation
     ) -> mat3<inverse_inertia>;
 }
 
-auto gse::physics::transformation_matrix(const motion_component& mc) -> mat4f {
-    const mat4f translation = translate(mat4f(1.0f), mc.current_position);
-    const auto rotation = mat4f(mat3_cast(mc.orientation));
-    return translation * rotation;
+auto gse::physics::is_dynamic(const motion_component& mc) -> bool {
+    return std::holds_alternative<dynamic_body>(mc.body);
 }
 
-auto gse::physics::inv_inertial_tensor(const motion_component& mc) -> mat3<inverse_inertia> {
-    const inverse_inertia inv_i = 1.f / mc.moment_of_inertia;
+auto gse::physics::is_locked(const motion_component& mc) -> bool {
+    return !std::holds_alternative<dynamic_body>(mc.body);
+}
+
+auto gse::physics::mass_of(const motion_component& mc) -> mass {
+    if (const auto* d = std::get_if<dynamic_body>(&mc.body)) {
+        return d->mass;
+    }
+    return kilograms(0.f);
+}
+
+auto gse::physics::inv_inertial_tensor(const motion_component& mc, const quat& orientation) -> mat3<inverse_inertia> {
+    const auto* d = std::get_if<dynamic_body>(&mc.body);
+    if (!d) {
+        return gse::identity<float, 3, 3>() * inverse_inertia{};
+    }
+    const inverse_inertia inv_i = 1.f / d->moment_of_inertia;
     const auto inv_i_body = gse::identity<float, 3, 3>() * inv_i;
-    const auto rotation = mat3_cast(mc.orientation);
+    const auto rotation = mat3_cast(orientation);
     return rotation * inv_i_body * rotation.transpose();
 }

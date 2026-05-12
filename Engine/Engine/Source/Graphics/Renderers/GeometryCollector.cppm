@@ -42,17 +42,16 @@ export namespace gse::renderer {
 		return l;
 	}
 
-	auto compute_render_transform(const physics::motion_component& mc, const physics::collision_component& cc, const vec3<length>& center_of_mass) -> std::pair<mat4f, mat4f> {
-		const auto box_size = cc.bounding_box.size();
-		const mat4f scale_mat = scale(mat4f(1.0f), box_size);
-		const mat4f rot_mat = mc.orientation;
-		const mat4f trans_mat = translate(mat4f(1.0f), mc.current_position);
+	auto compute_render_transform(const physics::transform_component& tc, const vec3<length>& center_of_mass) -> std::pair<mat4f, mat4f> {
+		const mat4f scale_mat = scale(mat4f(1.0f), tc.scale);
+		const mat4f rot_mat = mat4f(mat3_cast(tc.orientation));
+		const mat4f trans_mat = translate(mat4f(1.0f), tc.position);
 		const mat4f pivot_correction_mat = translate(mat4f(1.0f), -center_of_mass);
 		const mat4f model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
 		const vec3f inv_scale{
-			1.0f / std::max(std::abs(box_size.x().as<meters>()), 1e-6f),
-			1.0f / std::max(std::abs(box_size.y().as<meters>()), 1e-6f),
-			1.0f / std::max(std::abs(box_size.z().as<meters>()), 1e-6f)
+			1.0f / std::max(std::abs(tc.scale.x()), 1e-6f),
+			1.0f / std::max(std::abs(tc.scale.y()), 1e-6f),
+			1.0f / std::max(std::abs(tc.scale.z()), 1e-6f)
 		};
 		const mat4f normal_matrix = scale(rot_mat, inv_scale);
 		return { model_matrix, normal_matrix };
@@ -152,8 +151,6 @@ export namespace gse::renderer::geometry_collector {
 
 		render_queue_entry entry;
 		id owner;
-		vec3<position> world_aabb_min;
-		vec3<position> world_aabb_max;
 		std::uint32_t body_index = invalid_body_index;
 	};
 

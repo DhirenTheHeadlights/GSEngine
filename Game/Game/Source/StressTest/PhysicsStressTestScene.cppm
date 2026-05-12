@@ -371,9 +371,7 @@ auto gs::build_tumbler(gse::asset::state& assets, gse::scene& s) -> void {
 				.local_offset = wall.local_offset,
 			})
 			.configure([](gse::physics::motion_component& mc) {
-				mc.affected_by_gravity = false;
-				mc.position_locked = true;
-				mc.update_orientation = true;
+				mc.body = gse::physics::kinematic_body{};
 			});
 	}
 

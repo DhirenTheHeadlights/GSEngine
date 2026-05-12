@@ -126,8 +126,10 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 
 		{
 			constexpr std::size_t max_shape_debug_vertices = 256;
-			auto [motions, collisions, results] = co_await ctx.acquire<
+			auto [transforms, motions, statuses, collisions, results] = co_await ctx.acquire<
+				read<physics::transform_component>,
 				read<physics::motion_component>,
+				read<physics::motion_status_component>,
 				read<physics::collision_component>,
 				read<physics::collision_result_component>
 			>();
@@ -138,10 +140,6 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 
 			for (const auto& mc : motions) {
 				stats.body_count++;
-				if (mc.sleeping) {
-					stats.sleeping_count++;
-				}
-
 				const auto lin = magnitude(mc.current_velocity);
 				const auto ang = magnitude(mc.angular_velocity);
 				if (lin > stats.max_linear_speed) {
@@ -149,6 +147,12 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 				}
 				if (ang > stats.max_angular_speed) {
 					stats.max_angular_speed = ang;
+				}
+			}
+
+			for (const auto& st : statuses) {
+				if (st.sleeping) {
+					stats.sleeping_count++;
 				}
 			}
 
@@ -160,9 +164,10 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 				}
 
 				const auto eid = collision_ids[i];
+				const auto* tc = transforms.find(eid);
 				const auto* mc = motions.find(eid);
 				const auto* res = results.find(eid);
-				build_shape_lines_for_collider(coll, mc, vertices);
+				build_shape_lines_for_collider(coll, tc, vertices);
 
 				if (mc && res) {
 					build_contact_debug_for_collider(*res, *mc, vertices);
@@ -196,11 +201,8 @@ auto gse::renderer::physics_debug::system::add_line(const vec3<position>& a, con
 	out_vertices.push_back(debug_vertex{ b, color });
 }
 
-auto gse::renderer::physics_debug::system::build_obb_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
-	auto bb = coll.bounding_box;
-	if (mc) {
-		bb.update(mc->current_position, mc->orientation);
-	}
+auto gse::renderer::physics_debug::system::build_obb_lines_for_collider(const physics::transform_component& tc, const physics::box_shape& shape, std::vector<debug_vertex>& out_vertices) -> void {
+	const bounding_box bb(tc, shape);
 	std::array<vec3<position>, 8> corners;
 
 	const auto half = bb.half_extents();
@@ -228,15 +230,12 @@ auto gse::renderer::physics_debug::system::build_obb_lines_for_collider(const ph
 	}
 }
 
-auto gse::renderer::physics_debug::system::build_sphere_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
-	auto bb = coll.bounding_box;
-	if (mc) {
-		bb.update(mc->current_position, mc->orientation);
-	}
+auto gse::renderer::physics_debug::system::build_sphere_lines_for_collider(const physics::transform_component& tc, const physics::sphere_shape& shape, std::vector<debug_vertex>& out_vertices) -> void {
+	const bounding_box bb(tc);
 
 	const auto center = bb.center();
 	const auto axes = bb.obb().axes;
-	const auto radius = coll.shape_radius;
+	const auto radius = shape.radius;
 
 	constexpr vec3f color{ 0.0f, 1.0f, 0.0f };
 
@@ -257,16 +256,13 @@ auto gse::renderer::physics_debug::system::build_sphere_lines_for_collider(const
 	}
 }
 
-auto gse::renderer::physics_debug::system::build_capsule_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
-	auto bb = coll.bounding_box;
-	if (mc) {
-		bb.update(mc->current_position, mc->orientation);
-	}
+auto gse::renderer::physics_debug::system::build_capsule_lines_for_collider(const physics::transform_component& tc, const physics::capsule_shape& shape, std::vector<debug_vertex>& out_vertices) -> void {
+	const bounding_box bb(tc);
 
 	const auto center = bb.center();
 	const auto axes = bb.obb().axes;
-	const auto radius = coll.shape_radius;
-	const auto half_height = coll.shape_half_height;
+	const auto radius = shape.radius;
+	const auto half_height = shape.half_height;
 
 	const auto& cap_axis = axes[1];
 	const auto& u = axes[0];
@@ -313,23 +309,25 @@ auto gse::renderer::physics_debug::system::build_capsule_lines_for_collider(cons
 	}
 }
 
-auto gse::renderer::physics_debug::system::build_shape_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
-	switch (coll.shape) {
-	case physics::shape_type::sphere:
-		build_sphere_lines_for_collider(coll, mc, out_vertices);
-		break;
-	case physics::shape_type::capsule:
-		build_capsule_lines_for_collider(coll, mc, out_vertices);
-		break;
-	default:
-		build_obb_lines_for_collider(coll, mc, out_vertices);
-		break;
+auto gse::renderer::physics_debug::system::build_shape_lines_for_collider(const physics::collision_component& coll, const physics::transform_component* tc, std::vector<debug_vertex>& out_vertices) -> void {
+	if (!tc) {
+		return;
 	}
+	gse::match(coll.shape)
+		.if_is([&](const physics::box_shape& s) {
+			build_obb_lines_for_collider(*tc, s, out_vertices);
+		})
+		.else_if_is([&](const physics::sphere_shape& s) {
+			build_sphere_lines_for_collider(*tc, s, out_vertices);
+		})
+		.else_if_is([&](const physics::capsule_shape& s) {
+			build_capsule_lines_for_collider(*tc, s, out_vertices);
+		});
 }
 
 auto gse::renderer::physics_debug::system::build_contact_debug_for_collider(const collision_information& info, const physics::motion_component& mc, std::vector<debug_vertex>& out_vertices) -> void {
 	const auto& [colliding, collision_normal, penetration, collision_points] = info;
-	if (!colliding || mc.position_locked) {
+	if (!colliding || !physics::is_dynamic(mc)) {
 		return;
 	}
 

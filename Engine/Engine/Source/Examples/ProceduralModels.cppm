@@ -44,7 +44,9 @@ auto gse::procedural_model::box(asset::state& assets, const material& mat, const
     std::vector<vertex> v;
     v.reserve(24);
 
-    constexpr float h = 0.5f;
+    const auto hx = size.x() * 0.5f;
+    const auto hy = size.y() * 0.5f;
+    const auto hz = size.z() * 0.5f;
 
     auto push_face = [&](const vec3<length>& a, const vec3<length>& b, const vec3<length>& c, const vec3<length>& d, const vec3f n, float u_scale, float v_scale) {
         v.push_back({ a, n, { 0.0f, 0.0f } });
@@ -53,12 +55,12 @@ auto gse::procedural_model::box(asset::state& assets, const material& mat, const
         v.push_back({ d, n, { 0.0f, v_scale } });
     };
 
-    push_face({  h, -h, -h }, { -h, -h, -h }, { -h,  h, -h }, {  h,  h, -h }, {  0,  0, -1 }, sx, sy);
-    push_face({ -h, -h,  h }, {  h, -h,  h }, {  h,  h,  h }, { -h,  h,  h }, {  0,  0,  1 }, sx, sy);
-    push_face({ -h, -h, -h }, { -h, -h,  h }, { -h,  h,  h }, { -h,  h, -h }, { -1,  0,  0 }, sz, sy);
-    push_face({  h, -h,  h }, {  h, -h, -h }, {  h,  h, -h }, {  h,  h,  h }, {  1,  0,  0 }, sz, sy);
-    push_face({ -h,  h,  h }, {  h,  h,  h }, {  h,  h, -h }, { -h,  h, -h }, {  0,  1,  0 }, sx, sz);
-    push_face({ -h, -h, -h }, {  h, -h, -h }, {  h, -h,  h }, { -h, -h,  h }, {  0, -1,  0 }, sx, sz);
+    push_face({  hx, -hy, -hz }, { -hx, -hy, -hz }, { -hx,  hy, -hz }, {  hx,  hy, -hz }, {  0,  0, -1 }, sx, sy);
+    push_face({ -hx, -hy,  hz }, {  hx, -hy,  hz }, {  hx,  hy,  hz }, { -hx,  hy,  hz }, {  0,  0,  1 }, sx, sy);
+    push_face({ -hx, -hy, -hz }, { -hx, -hy,  hz }, { -hx,  hy,  hz }, { -hx,  hy, -hz }, { -1,  0,  0 }, sz, sy);
+    push_face({  hx, -hy,  hz }, {  hx, -hy, -hz }, {  hx,  hy, -hz }, {  hx,  hy,  hz }, {  1,  0,  0 }, sz, sy);
+    push_face({ -hx,  hy,  hz }, {  hx,  hy,  hz }, {  hx,  hy, -hz }, { -hx,  hy, -hz }, {  0,  1,  0 }, sx, sz);
+    push_face({ -hx, -hy, -hz }, {  hx, -hy, -hz }, {  hx, -hy,  hz }, { -hx, -hy,  hz }, {  0, -1,  0 }, sx, sz);
 
     std::vector<std::uint32_t> idx;
     idx.reserve(36);

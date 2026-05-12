@@ -1,18 +1,25 @@
-if(NOT DEFINED ENV{NSIGHT_AFTERMATH_SDK} OR "$ENV{NSIGHT_AFTERMATH_SDK}" STREQUAL "")
-    message(FATAL_ERROR
-        "Set the NSIGHT_AFTERMATH_SDK environment variable to the extracted "
-        "Nsight Aftermath SDK root (the directory containing 'include' and "
-        "'lib') before installing this port. Download the SDK from "
-        "https://developer.nvidia.com/nsight-aftermath.")
+set(SDK_ROOT "")
+if(DEFINED ENV{NSIGHT_AFTERMATH_SDK} AND NOT "$ENV{NSIGHT_AFTERMATH_SDK}" STREQUAL "")
+    file(TO_CMAKE_PATH "$ENV{NSIGHT_AFTERMATH_SDK}" SDK_ROOT)
+    if(NOT EXISTS "${SDK_ROOT}/include/GFSDK_Aftermath.h")
+        message(WARNING
+            "NSIGHT_AFTERMATH_SDK is set but does not point at a valid SDK root:\n"
+            "  Got:      ${SDK_ROOT}\n"
+            "  Expected: a directory containing include/GFSDK_Aftermath.h\n"
+            "Installing an empty stub; the engine will compile without Aftermath support.")
+        set(SDK_ROOT "")
+    endif()
 endif()
 
-file(TO_CMAKE_PATH "$ENV{NSIGHT_AFTERMATH_SDK}" SDK_ROOT)
-
-if(NOT EXISTS "${SDK_ROOT}/include/GFSDK_Aftermath.h")
-    message(FATAL_ERROR
-        "NSIGHT_AFTERMATH_SDK does not point at a valid Aftermath SDK root.\n"
-        "  Got:      ${SDK_ROOT}\n"
-        "  Expected: a directory containing include/GFSDK_Aftermath.h")
+if(SDK_ROOT STREQUAL "")
+    message(STATUS
+        "nsight-aftermath: NSIGHT_AFTERMATH_SDK not set; installing stub. "
+        "Set the env var to enable GPU crash dumps.")
+    file(MAKE_DIRECTORY "${CURRENT_PACKAGES_DIR}/share/${PORT}")
+    file(WRITE "${CURRENT_PACKAGES_DIR}/share/${PORT}/copyright"
+        "Stub package; the real NVIDIA Nsight Aftermath SDK is not installed.\n"
+        "Set the NSIGHT_AFTERMATH_SDK environment variable to enable.\n")
+    return()
 endif()
 
 file(GLOB AFTERMATH_HEADERS "${SDK_ROOT}/include/*.h")

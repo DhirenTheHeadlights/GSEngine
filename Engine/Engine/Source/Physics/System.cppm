@@ -19,7 +19,10 @@ import gse.gpu;
 
 import :narrow_phase_collision;
 import :motion_component;
+import :motion_status_component;
+import :motor_component;
 import :collision_component;
+import :transform_component;
 import :contact_manifold;
 import :vbd_constraints;
 import :vbd_contact_cache;
@@ -264,8 +267,6 @@ export namespace gse::physics {
 	private:
 		struct collision_pair {
 			id owner;
-			collision_component* collision;
-			motion_component* motion;
 		};
 
 		struct contact_compare_key {
@@ -285,7 +286,7 @@ export namespace gse::physics {
 		};
 
 		static auto collect_collision_objects(
-			write<motion_component>& motion,
+			write<transform_component>& transform,
 			write<collision_component>& collision
 		) -> std::vector<collision_pair>;
 
@@ -295,7 +296,11 @@ export namespace gse::physics {
 			const std::vector<collision_pair>& objects,
 			const flat_map<id, std::uint32_t>& id_to_body_index,
 			bool update_scene_state,
-			write<collision_result_component>* results
+			write<transform_component>& transform,
+			write<motion_component>& motion,
+			write<collision_component>& collision,
+			write<collision_result_component>* results,
+			write<motion_status_component>* status
 		) -> void;
 
 		static auto pack_feature(
@@ -320,9 +325,13 @@ export namespace gse::physics {
 			const settings& cfg,
 			update_data& ud,
 			state& s,
+			write<transform_component>& transform,
 			write<motion_component>& motion,
+			write<motion_status_component>& status,
+			read<motor_component>& motor,
 			write<collision_component>& collision,
-			write<collision_result_component>& results
+			write<collision_result_component>& results,
+			std::span<const impulse_request> impulses
 		) -> void;
 
 		static auto update_vbd_gpu(
@@ -330,9 +339,13 @@ export namespace gse::physics {
 			const settings& cfg,
 			update_data& ud,
 			state& s,
+			write<transform_component>& transform,
 			write<motion_component>& motion,
+			write<motion_status_component>& status,
+			read<motor_component>& motor,
 			write<collision_component>& collision,
 			write<collision_result_component>& results,
+			std::span<const impulse_request> impulses,
 			time_t<float, seconds> dt,
 			channel_writer& channels
 		) -> void;

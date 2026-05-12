@@ -5,6 +5,7 @@ import std;
 import :bounding_box;
 import :collision_component;
 import :contact_manifold;
+import :transform_component;
 
 import gse.math;
 import gse.core;
@@ -13,6 +14,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.meta;
 export namespace gse::narrow_phase_collision {
 	struct sat_result {
 		vec3f normal;
@@ -21,10 +23,8 @@ export namespace gse::narrow_phase_collision {
 	};
 
 	struct shape_data {
-		const bounding_box* bb = nullptr;
-		physics::shape_type type = physics::shape_type::box;
-		length radius = {};
-		length half_height = {};
+		const physics::transform_component* tc = nullptr;
+		const std::variant<physics::box_shape, physics::sphere_shape, physics::capsule_shape>* shape = nullptr;
 	};
 
 	auto sat_speculative(
@@ -1453,26 +1453,46 @@ auto gse::narrow_phase_collision::sphere_capsule_manifold(
 auto gse::narrow_phase_collision::speculative_test(
 	const shape_data& a, const shape_data& b, const length margin
 ) -> std::optional<sat_result> {
-	using st = physics::shape_type;
-	const bool swap = a.type > b.type;
-	const auto& [lo_bb, lo_type, lo_radius, lo_half_height] = swap ? b : a;
-	const auto& [hi_bb, hi_type, hi_radius, hi_half_height] = swap ? a : b;
+	const bool swap = a.shape->index() > b.shape->index();
+	const auto& lo = swap ? b : a;
+	const auto& hi = swap ? a : b;
 
 	std::optional<sat_result> result;
 
-	if (lo_type == st::box && hi_type == st::box) {
-		result = sat_speculative(*lo_bb, *hi_bb, margin);
-	} else if (lo_type == st::box && hi_type == st::sphere) {
-		result = box_sphere_speculative(*lo_bb, hi_bb->center(), hi_radius, margin);
-	} else if (lo_type == st::box && hi_type == st::capsule) {
-		result = box_capsule_speculative(*lo_bb, *hi_bb, hi_half_height, hi_radius, margin);
-	} else if (lo_type == st::sphere && hi_type == st::sphere) {
-		result = sphere_sphere_speculative(lo_bb->center(), lo_radius, hi_bb->center(), hi_radius, margin);
-	} else if (lo_type == st::sphere && hi_type == st::capsule) {
-		result = sphere_capsule_speculative(lo_bb->center(), lo_radius, *hi_bb, hi_half_height, hi_radius, margin);
-	} else if (lo_type == st::capsule && hi_type == st::capsule) {
-		result = capsule_capsule_speculative(*lo_bb, lo_half_height, lo_radius, *hi_bb, hi_half_height, hi_radius, margin);
-	}
+	gse::match(*lo.shape)
+		.if_is([&](const physics::box_shape& lo_box) {
+			const bounding_box lo_bb(*lo.tc, lo_box);
+			gse::match(*hi.shape)
+				.if_is([&](const physics::box_shape& hi_box) {
+					const bounding_box hi_bb(*hi.tc, hi_box);
+					result = sat_speculative(lo_bb, hi_bb, margin);
+				})
+				.else_if_is([&](const physics::sphere_shape& hi_sph) {
+					result = box_sphere_speculative(lo_bb, hi.tc->position, hi_sph.radius, margin);
+				})
+				.else_if_is([&](const physics::capsule_shape& hi_cap) {
+					const bounding_box hi_bb(*hi.tc);
+					result = box_capsule_speculative(lo_bb, hi_bb, hi_cap.half_height, hi_cap.radius, margin);
+				});
+		})
+		.else_if_is([&](const physics::sphere_shape& lo_sph) {
+			gse::match(*hi.shape)
+				.if_is([&](const physics::sphere_shape& hi_sph) {
+					result = sphere_sphere_speculative(lo.tc->position, lo_sph.radius, hi.tc->position, hi_sph.radius, margin);
+				})
+				.else_if_is([&](const physics::capsule_shape& hi_cap) {
+					const bounding_box hi_bb(*hi.tc);
+					result = sphere_capsule_speculative(lo.tc->position, lo_sph.radius, hi_bb, hi_cap.half_height, hi_cap.radius, margin);
+				});
+		})
+		.else_if_is([&](const physics::capsule_shape& lo_cap) {
+			const bounding_box lo_bb(*lo.tc);
+			gse::match(*hi.shape)
+				.if_is([&](const physics::capsule_shape& hi_cap) {
+					const bounding_box hi_bb(*hi.tc);
+					result = capsule_capsule_speculative(lo_bb, lo_cap.half_height, lo_cap.radius, hi_bb, hi_cap.half_height, hi_cap.radius, margin);
+				});
+		});
 
 	if (swap && result) {
 		result->normal = -result->normal;
@@ -1485,27 +1505,47 @@ auto gse::narrow_phase_collision::generate_shape_manifold(
 	const shape_data& a, const shape_data& b,
 	const vec3f& normal, const separation separation
 ) -> contact_manifold {
-	using st = physics::shape_type;
-	const bool swap = a.type > b.type;
-	const auto& [lo_bb, lo_type, lo_radius, lo_half_height] = swap ? b : a;
-	const auto& [hi_bb, hi_type, hi_radius, hi_half_height] = swap ? a : b;
+	const bool swap = a.shape->index() > b.shape->index();
+	const auto& lo = swap ? b : a;
+	const auto& hi = swap ? a : b;
 	const auto n = swap ? -normal : normal;
 
 	contact_manifold manifold;
 
-	if (lo_type == st::box && hi_type == st::box) {
-		manifold = generate_manifold(*lo_bb, *hi_bb, n, separation);
-	} else if (lo_type == st::box && hi_type == st::sphere) {
-		manifold = box_sphere_manifold(*lo_bb, hi_bb->center(), hi_radius, n, separation);
-	} else if (lo_type == st::box && hi_type == st::capsule) {
-		manifold = box_capsule_manifold(*lo_bb, *hi_bb, hi_half_height, hi_radius, n, separation);
-	} else if (lo_type == st::sphere && hi_type == st::sphere) {
-		manifold = sphere_sphere_manifold(lo_bb->center(), lo_radius, hi_bb->center(), hi_radius, n, separation);
-	} else if (lo_type == st::sphere && hi_type == st::capsule) {
-		manifold = sphere_capsule_manifold(lo_bb->center(), lo_radius, *hi_bb, hi_half_height, hi_radius, n, separation);
-	} else if (lo_type == st::capsule && hi_type == st::capsule) {
-		manifold = capsule_capsule_manifold(*lo_bb, lo_half_height, lo_radius, *hi_bb, hi_half_height, hi_radius, n, separation);
-	}
+	gse::match(*lo.shape)
+		.if_is([&](const physics::box_shape& lo_box) {
+			const bounding_box lo_bb(*lo.tc, lo_box);
+			gse::match(*hi.shape)
+				.if_is([&](const physics::box_shape& hi_box) {
+					const bounding_box hi_bb(*hi.tc, hi_box);
+					manifold = generate_manifold(lo_bb, hi_bb, n, separation);
+				})
+				.else_if_is([&](const physics::sphere_shape& hi_sph) {
+					manifold = box_sphere_manifold(lo_bb, hi.tc->position, hi_sph.radius, n, separation);
+				})
+				.else_if_is([&](const physics::capsule_shape& hi_cap) {
+					const bounding_box hi_bb(*hi.tc);
+					manifold = box_capsule_manifold(lo_bb, hi_bb, hi_cap.half_height, hi_cap.radius, n, separation);
+				});
+		})
+		.else_if_is([&](const physics::sphere_shape& lo_sph) {
+			gse::match(*hi.shape)
+				.if_is([&](const physics::sphere_shape& hi_sph) {
+					manifold = sphere_sphere_manifold(lo.tc->position, lo_sph.radius, hi.tc->position, hi_sph.radius, n, separation);
+				})
+				.else_if_is([&](const physics::capsule_shape& hi_cap) {
+					const bounding_box hi_bb(*hi.tc);
+					manifold = sphere_capsule_manifold(lo.tc->position, lo_sph.radius, hi_bb, hi_cap.half_height, hi_cap.radius, n, separation);
+				});
+		})
+		.else_if_is([&](const physics::capsule_shape& lo_cap) {
+			const bounding_box lo_bb(*lo.tc);
+			gse::match(*hi.shape)
+				.if_is([&](const physics::capsule_shape& hi_cap) {
+					const bounding_box hi_bb(*hi.tc);
+					manifold = capsule_capsule_manifold(lo_bb, lo_cap.half_height, lo_cap.radius, hi_bb, hi_cap.half_height, hi_cap.radius, n, separation);
+				});
+		});
 
 	if (swap) {
 		for (std::uint32_t i = 0; i < manifold.point_count; ++i) {

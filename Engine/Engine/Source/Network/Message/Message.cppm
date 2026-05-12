@@ -15,6 +15,15 @@ namespace gse::network {
 		&& is_trivially_copyable<std::ranges::range_value_t<T>>;
 
 	template <typename T>
+	struct is_variant : std::false_type {};
+
+	template <typename... Ts>
+	struct is_variant<std::variant<Ts...>> : std::true_type {};
+
+	template <typename T>
+	concept variant_field = is_variant<T>::value;
+
+	template <typename T>
 	auto encode_field(
 		write_bitstream& s,
 		const T& v
@@ -67,8 +76,17 @@ auto gse::network::encode_field(write_bitstream& s, const T& v) -> void {
 		s.write(static_cast<std::uint32_t>(v.size()));
 		s.write(std::as_bytes(std::span(v.data(), v.size())));
 	}
-	else {
+	else if constexpr (variant_field<T>) {
+		s.write(static_cast<std::uint8_t>(v.index()));
+		std::visit([&](const auto& alt) { encode_field(s, alt); }, v);
+	}
+	else if constexpr (std::is_trivially_copyable_v<T>) {
 		s.write(v);
+	}
+	else {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+			encode_field(s, v.[:m:]);
+		}
 	}
 }
 
@@ -80,8 +98,24 @@ auto gse::network::decode_field(read_bitstream& s) -> T {
 		s.read(std::as_writable_bytes(std::span(v.data(), v.size())));
 		return v;
 	}
-	else {
+	else if constexpr (variant_field<T>) {
+		const auto index = s.read<std::uint8_t>();
+		return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> T {
+			T out;
+			(void)((index == Is ? (out = decode_field<std::variant_alternative_t<Is, T>>(s), true) : false) || ...);
+			return out;
+		}(std::make_index_sequence<std::variant_size_v<T>>{});
+	}
+	else if constexpr (std::is_trivially_copyable_v<T>) {
 		return s.read<T>();
+	}
+	else {
+		T v{};
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+			using field_type = typename [: std::meta::type_of(m) :];
+			v.[:m:] = decode_field<field_type>(s);
+		}
+		return v;
 	}
 }
 
