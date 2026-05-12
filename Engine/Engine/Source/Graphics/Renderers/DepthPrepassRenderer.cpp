@@ -99,6 +99,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 		.reads(
 			gpu::storage_read(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
 			gpu::storage_read(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
+			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect),
 			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.tracks(r.ubo_allocations.at("CameraUBO")[frame_index], gc_r.instance_buffer[frame_index]);
@@ -112,7 +113,8 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 
 		const auto& instance_buf = gc_r.instance_buffer[frame_index];
 
-		for (const auto& batch : data.normal_batches) {
+		for (std::size_t i = 0; i < data.normal_batches.size(); ++i) {
+			const auto& batch = data.normal_batches[i];
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 			if (!mesh.has_meshlets()) {
 				continue;
@@ -124,7 +126,6 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 			rec.commit(meshlet_writer.native_writer(), r.meshlet_pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
-			const std::uint32_t task_groups = (meshlet_count + 31) / 32;
 
 			auto pc = gpu::cache_push_block(r.meshlet_shader, "push_constants");
 			pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
@@ -132,7 +133,12 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 			pc.set("first_instance", batch.first_instance);
 			rec.push(r.meshlet_pipeline, pc);
 
-			rec.draw_mesh_tasks(task_groups, batch.instance_count, 1);
+			rec.draw_mesh_tasks_indirect(
+				gc_r.normal_indirect_commands_buffer[frame_index],
+				i * sizeof(gpu::draw_mesh_tasks_indirect_command),
+				1,
+				sizeof(gpu::draw_mesh_tasks_indirect_command)
+			);
 		}
 	}
 

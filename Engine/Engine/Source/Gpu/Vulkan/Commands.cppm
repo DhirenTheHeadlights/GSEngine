@@ -233,6 +233,13 @@ export namespace gse::vulkan {
             std::uint32_t z
         ) const -> void;
 
+        auto draw_mesh_tasks_indirect(
+            gpu::handle<buffer> buffer,
+            gpu::device_size offset,
+            std::uint32_t draw_count,
+            std::uint32_t stride
+        ) const -> void;
+
         auto build_acceleration_structures(
             const gpu::acceleration_structure_build_geometry_info& build_info,
             std::span<const gpu::acceleration_structure_build_range_info* const> range_infos
@@ -546,6 +553,10 @@ auto gse::vulkan::commands::reset_query_pool(const gpu::handle<query_pool> query
 
 auto gse::vulkan::commands::draw_mesh_tasks(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
     raw().drawMeshTasksEXT(x, y, z);
+}
+
+auto gse::vulkan::commands::draw_mesh_tasks_indirect(const gpu::handle<buffer> buffer, const gpu::device_size offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+    raw().drawMeshTasksIndirectEXT(std::bit_cast<vk::Buffer>(buffer), offset, draw_count, stride);
 }
 
 auto gse::vulkan::commands::build_acceleration_structures(const gpu::acceleration_structure_build_geometry_info& build_info, const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos) const -> void {

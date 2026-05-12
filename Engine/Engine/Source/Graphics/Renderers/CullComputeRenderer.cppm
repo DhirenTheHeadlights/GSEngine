@@ -43,7 +43,10 @@ export namespace gse::renderer::cull_compute {
 
 		static auto frame(
 			frame_context& ctx,
-			const resources& r
+			const gpu::context::state& gpu_s,
+			const geometry_collector::system::resources& gc_r,
+			const resources& r,
+			const state& s
 		) -> async::task<>;
 	};
 }

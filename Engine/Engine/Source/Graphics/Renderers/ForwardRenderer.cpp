@@ -280,6 +280,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			gpu::storage_read(lc_r.tile_light_table_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
 			gpu::storage_read(lc_r.light_index_list_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
 			gpu::storage_read(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
+			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect),
 			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.tracks(
@@ -327,7 +328,6 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			rec.commit(meshlet_writer.native_writer(), r.pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
-			const std::uint32_t task_groups = (meshlet_count + 31) / 32;
 
 			auto pc = gpu::cache_push_block(r.shader_handle, "push_constants");
 			pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
@@ -340,7 +340,12 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			pc.set("reflection_quality", reflection_quality_i);
 			rec.push(r.pipeline, pc);
 
-			rec.draw_mesh_tasks(task_groups, batch.instance_count, 1);
+			rec.draw_mesh_tasks_indirect(
+				gc_r.normal_indirect_commands_buffer[frame_index],
+				i * sizeof(gpu::draw_mesh_tasks_indirect_command),
+				1,
+				sizeof(gpu::draw_mesh_tasks_indirect_command)
+			);
 		}
 	}
 

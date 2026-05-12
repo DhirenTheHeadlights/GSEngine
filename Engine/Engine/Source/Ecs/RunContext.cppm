@@ -119,12 +119,33 @@ export namespace gse {
 }
 
 namespace gse {
-	struct acquire_helpers {
-		template <typename Access>
-		static auto acquire_lock_for(
-			async::rw_mutex_registry& registry
-		) -> async::task<>;
-	};
+	using lock_fn = async::task<>(*)(async::rw_mutex_registry&, id);
+
+	auto acquire_shared(
+		async::rw_mutex_registry& mutexes,
+		id type
+	) -> async::task<>;
+
+	auto acquire_exclusive(
+		async::rw_mutex_registry& mutexes,
+		id type
+	) -> async::task<>;
+
+	auto acquire_locks_in_sorted_order(
+		async::rw_mutex_registry& mutexes,
+		std::span<const id> type_ids,
+		std::span<const lock_fn> fns,
+		id trace_id
+	) -> async::task<>;
+
+	auto make_acquire_trace_id(
+		std::span<const std::string> labels
+	) -> id;
+
+	auto format_access_label(
+		std::string_view tag,
+		std::string_view type_name
+	) -> std::string;
 
 	template <typename Access>
 	auto make_locked_handle(
@@ -162,16 +183,52 @@ auto gse::run_context::yield_tick() -> async::task<> {
 	m_tick_event.reset();
 }
 
-template <typename Access>
-auto gse::acquire_helpers::acquire_lock_for(async::rw_mutex_registry& registry) -> async::task<> {
-	using element_t = access_element_t<Access>;
-	auto& mutex = registry.mutex_for(id_of<element_t>());
-	if constexpr (is_read_access_v<Access>) {
-		co_await mutex.lock_shared();
+auto gse::acquire_shared(async::rw_mutex_registry& mutexes, const id type) -> async::task<> {
+	auto& mutex = mutexes.mutex_for(type);
+	co_await mutex.lock_shared();
+}
+
+auto gse::acquire_exclusive(async::rw_mutex_registry& mutexes, const id type) -> async::task<> {
+	auto& mutex = mutexes.mutex_for(type);
+	co_await mutex.lock_exclusive();
+}
+
+auto gse::acquire_locks_in_sorted_order(async::rw_mutex_registry& mutexes, const std::span<const id> type_ids, const std::span<const lock_fn> fns, const id trace_id) -> async::task<> {
+	constexpr std::size_t max_arity = 16;
+	const std::size_t count = type_ids.size();
+	assert(count <= max_arity, "acquire arity {} exceeds max {}", count, max_arity);
+
+	std::array<std::size_t, max_arity> order_buf{};
+	const std::span order(order_buf.data(), count);
+	std::iota(order.begin(), order.end(), std::size_t{ 0 });
+	std::ranges::sort(order, [type_ids](const std::size_t a, const std::size_t b) {
+		return type_ids[a] < type_ids[b];
+	});
+
+	const auto key = trace::allocate_async_key();
+	trace::begin_async(trace_id, key);
+	for (const std::size_t i : order) {
+		co_await fns[i](mutexes, type_ids[i]);
 	}
-	else {
-		co_await mutex.lock_exclusive();
+	trace::end_async(trace_id, key);
+}
+
+auto gse::format_access_label(const std::string_view tag, const std::string_view type_name) -> std::string {
+	return std::format("{}<{}>", tag, type_name);
+}
+
+auto gse::make_acquire_trace_id(const std::span<const std::string> labels) -> id {
+	std::string out = "acquire<";
+	bool first = true;
+	for (const auto& part : labels) {
+		if (!first) {
+			out += ", ";
+		}
+		out += part;
+		first = false;
 	}
+	out += ">";
+	return find_or_generate_id(out);
 }
 
 template <typename Access>
@@ -188,57 +245,33 @@ auto gse::make_locked_handle(access_token token, registry& reg, async::rw_mutex_
 
 template <typename Access>
 auto gse::access_trace_label() -> std::string {
-	const std::string_view tag = is_read_access_v<Access> ? "read" : "write";
-	return std::format("{}<{}>", tag, type_tag<access_element_t<Access>>());
+	return format_access_label(
+		is_read_access_v<Access> ? "read" : "write",
+		type_tag<access_element_t<Access>>()
+	);
 }
 
 template <typename... Accesses>
 auto gse::acquire_trace_id() -> id {
-	static const id cached = []{
-		std::string label = "acquire<";
-		bool first = true;
-		const auto append_label = [&](const std::string& part) {
-			if (!first) {
-				label += ", ";
-			}
-			label += part;
-			first = false;
-		};
-		(append_label(access_trace_label<Accesses>()), ...);
-		label += ">";
-		return find_or_generate_id(label);
-	}();
+	static const id cached = make_acquire_trace_id(
+		std::array<std::string, sizeof...(Accesses)>{ access_trace_label<Accesses>()... }
+	);
 	return cached;
 }
 
 template <typename... Accesses>
 auto gse::run_context::acquire() -> async::task<std::tuple<Accesses...>> {
-	constexpr std::size_t count = sizeof...(Accesses);
-
-	constexpr std::array<id, count> type_ids = {
+	constexpr std::array<id, sizeof...(Accesses)> type_ids = {
 		id_of<access_element_t<Accesses>>()...
 	};
-
-	std::array<std::size_t, count> order;
-	std::iota(order.begin(), order.end(), std::size_t{ 0 });
-	std::ranges::sort(order, [&](const std::size_t a, const std::size_t b) {
-		return type_ids[a] < type_ids[b];
-	});
-
-	using lock_fn = async::task<>(*)(async::rw_mutex_registry&);
-	constexpr std::array<lock_fn, count> fns = { &acquire_helpers::acquire_lock_for<Accesses>... };
-
+	constexpr std::array<lock_fn, sizeof...(Accesses)> fns = {
+		(is_read_access_v<Accesses> ? &acquire_shared : &acquire_exclusive)...
+	};
 	static const id tid = acquire_trace_id<Accesses...>();
-	const auto key = trace::allocate_async_key();
-	trace::begin_async(tid, key);
-
-	for (std::size_t i = 0; i < count; ++i) {
-		co_await fns[order[i]](m_access_mutexes);
-	}
-
-	trace::end_async(tid, key);
-
-	co_return std::tuple<Accesses...>{ make_locked_handle<Accesses>(access_token{}, m_reg, m_access_mutexes, &m_held_locks)... };
+	co_await acquire_locks_in_sorted_order(m_access_mutexes, type_ids, fns, tid);
+	co_return std::tuple<Accesses...>{
+		make_locked_handle<Accesses>(access_token{}, m_reg, m_access_mutexes, &m_held_locks)...
+	};
 }
 
 auto gse::run_context::held_lock_count() const -> int {
