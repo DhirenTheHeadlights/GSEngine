@@ -4,6 +4,7 @@ import std;
 
 import :aliases;
 import :transient_executor;
+import :vulkan_aftermath;
 import :vulkan_buffer;
 import :vulkan_command_pools;
 import :vulkan_device;
@@ -114,6 +115,7 @@ export namespace gse::gpu {
 
 	private:
 		device(
+			vulkan::aftermath&& aftermath_tracker,
 			vulkan::instance&& instance,
 			vulkan::device&& device,
 			vulkan::queue&& queue,
@@ -126,6 +128,7 @@ export namespace gse::gpu {
 			bool video_encode_enabled
 		);
 
+		vulkan::aftermath m_aftermath;
 		vulkan::instance m_instance;
 		vulkan::device m_device_config;
 		vulkan::queue m_queue;

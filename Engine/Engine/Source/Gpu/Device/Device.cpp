@@ -20,10 +20,12 @@ import gse.log;
 import gse.concurrency;
 
 auto gse::gpu::device::create(const window::state& win, const bool validation_layers_enabled, vulkan::device::settings& device_cfg) -> std::unique_ptr<device> {
+	auto aftermath_tracker = vulkan::aftermath::create({});
+
 	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), validation_layers_enabled);
 	vulkan::create_surface(win, instance);
 
-	auto creation = vulkan::device::create(instance, device_cfg);
+	auto creation = vulkan::device::create(instance, device_cfg, aftermath_tracker);
 	auto command = vulkan::command::create(creation.device, creation.families.graphics_family.value());
 
 	auto worker_pools = vulkan::worker_command_pools::create(
@@ -47,6 +49,7 @@ auto gse::gpu::device::create(const window::state& win, const bool validation_la
 	const auto surface_format = vulkan::pick_surface_format(creation.device, instance);
 
 	return std::unique_ptr<device>(new device(
+		std::move(aftermath_tracker),
 		std::move(instance),
 		std::move(creation.device),
 		std::move(creation.queue),
@@ -60,8 +63,9 @@ auto gse::gpu::device::create(const window::state& win, const bool validation_la
 	));
 }
 
-gse::gpu::device::device(vulkan::instance&& instance, vulkan::device&& device, vulkan::queue&& queue, vulkan::command&& command, vulkan::worker_command_pools&& worker_pools, transient_executor&& transient, std::unique_ptr<gpu::descriptor_heap> descriptor_heap, descriptor_buffer_properties desc_buf_props, image_format surface_format, bool video_encode_enabled)
-	: m_instance(std::move(instance)),
+gse::gpu::device::device(vulkan::aftermath&& aftermath_tracker, vulkan::instance&& instance, vulkan::device&& device, vulkan::queue&& queue, vulkan::command&& command, vulkan::worker_command_pools&& worker_pools, transient_executor&& transient, std::unique_ptr<gpu::descriptor_heap> descriptor_heap, descriptor_buffer_properties desc_buf_props, image_format surface_format, bool video_encode_enabled)
+	: m_aftermath(std::move(aftermath_tracker)),
+	  m_instance(std::move(instance)),
 	  m_device_config(std::move(device)),
 	  m_queue(std::move(queue)),
 	  m_command(std::move(command)),
@@ -161,6 +165,10 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	if (bool expected = false; !m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
 		return;
 	}
+
+	const auto aftermath_wait = make_scope_exit([this] {
+		m_aftermath.wait_for_crash_dump();
+	});
 
 	log::println(log::level::error, log::category::vulkan, "Vulkan device lost during {}", operation);
 

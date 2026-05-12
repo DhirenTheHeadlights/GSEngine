@@ -37,6 +37,7 @@ find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(concurrentqueue CONFIG REQUIRED)
 find_package(Vulkan)
+find_package(unofficial-nsight-aftermath CONFIG QUIET)
 
 add_library(VulkanModule STATIC)
 target_sources(VulkanModule PUBLIC
@@ -95,6 +96,14 @@ target_link_libraries(Engine PUBLIC
     MiniaudioImpl
     concurrentqueue::concurrentqueue
 )
+
+if(TARGET unofficial::nsight-aftermath::nsight-aftermath)
+    target_link_libraries(Engine PRIVATE unofficial::nsight-aftermath::nsight-aftermath)
+    target_compile_definitions(Engine PRIVATE GSE_HAVE_AFTERMATH=1)
+    message(STATUS "Nsight Aftermath SDK found; GPU crash dumps enabled")
+else()
+    message(STATUS "Nsight Aftermath SDK not found; GPU crash dumps disabled (enable with vcpkg feature 'aftermath' and NSIGHT_AFTERMATH_SDK env var)")
+endif()
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")

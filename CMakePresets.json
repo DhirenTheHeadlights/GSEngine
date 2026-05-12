@@ -13,6 +13,7 @@
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "VCPKG_OVERLAY_PORTS": "${sourceDir}/vcpkg-overlays/ports",
         "CMAKE_C_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang.exe",
         "CMAKE_CXX_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang.exe",
         "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "$env{CLANG_P2996_ROOT}/bin/clang-scan-deps.exe",
@@ -58,7 +59,12 @@
       "displayName": "x64 clang-p2996 libc++ RelWithDebInfo",
       "inherits": "x64-clang-p2996-libcxx-base",
       "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-RelWithDebInfo",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
+        "VCPKG_MANIFEST_FEATURES": "aftermath"
+      }
     },
     {
       "name": "x64-clang-p2996-libcxx-Release-trace",

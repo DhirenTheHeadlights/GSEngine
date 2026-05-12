@@ -126,7 +126,7 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 	return *this;
 }
 
-auto gse::vulkan::device::create(const instance& instance_data, device::settings& cfg) -> device_creation_result {
+auto gse::vulkan::device::create(const instance& instance_data, device::settings& cfg, aftermath& aftermath_tracker) -> device_creation_result {
 	const auto devices = instance_data.enumerate_physical_devices();
 	assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
 
@@ -371,8 +371,10 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		? static_cast<void*>(&av1_encode_features)
 		: post_nested_cb_chain_head;
 
+	void* post_aftermath_chain_head = aftermath_tracker.device_create_info_pnext(post_video_chain_head);
+
 	vk::PhysicalDeviceFeatures2 features2{
-		.pNext = post_video_chain_head,
+		.pNext = post_aftermath_chain_head,
 		.features = {
 			.robustBufferAccess = robustness2_supported ? vk::True : vk::False,
 			.drawIndirectFirstInstance = vk::True,
@@ -409,6 +411,12 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 
 	if (nested_cb_supported) {
 		device_extensions.push_back(vk::EXTNestedCommandBufferExtensionName);
+	}
+
+	for (const auto* aftermath_ext : aftermath_tracker.required_device_extensions()) {
+		if (supports_extension(aftermath_ext)) {
+			device_extensions.push_back(aftermath_ext);
+		}
 	}
 
 	if (video_encode_extensions_available) {

@@ -19,7 +19,7 @@ import gse.ecs;
 export namespace gse::renderer::cull_compute {
 	struct system {
 		struct state {
-			bool enabled = true;
+			bool enabled = false;
 		};
 
 		struct resources {

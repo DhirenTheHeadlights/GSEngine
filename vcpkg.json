@@ -17,5 +17,11 @@
       "default-features": false,
       "features": [ "extensions" ]
     }
-  ]
+  ],
+  "features": {
+    "aftermath": {
+      "description": "NVIDIA Nsight Aftermath GPU crash dump support. Requires NSIGHT_AFTERMATH_SDK env var pointing at an extracted Aftermath SDK.",
+      "dependencies": [ "nsight-aftermath" ]
+    }
+  }
 }
