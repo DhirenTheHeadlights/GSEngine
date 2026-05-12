@@ -28,7 +28,8 @@ export namespace gse::gpu {
         [[nodiscard]] static auto create(
             const vulkan::device& device,
             std::uint32_t graphics_family,
-            std::uint32_t compute_family
+            std::uint32_t compute_family,
+            std::size_t worker_count
         ) -> transient_executor;
 
         [[nodiscard]] auto recorder(
@@ -66,6 +67,7 @@ export namespace gse::gpu {
         transient_queue m_graphics;
         transient_queue m_compute;
         std::vector<async::task<>> m_detached;
+        std::unique_ptr<std::mutex> m_detached_mutex = std::make_unique<std::mutex>();
     };
 }
 
@@ -74,9 +76,9 @@ gse::gpu::transient_executor::transient_executor(transient_queue&& graphics, tra
 
 gse::gpu::transient_executor::~transient_executor() = default;
 
-auto gse::gpu::transient_executor::create(const vulkan::device& device, const std::uint32_t graphics_family, const std::uint32_t compute_family) -> transient_executor {
-    auto graphics = transient_queue::create(device, queue_id::graphics, graphics_family);
-    auto compute = transient_queue::create(device, queue_id::compute, compute_family);
+auto gse::gpu::transient_executor::create(const vulkan::device& device, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count) -> transient_executor {
+    auto graphics = transient_queue::create(device, queue_id::graphics, graphics_family, worker_count);
+    auto compute = transient_queue::create(device, queue_id::compute, compute_family, worker_count);
     return transient_executor(std::move(graphics), std::move(compute));
 }
 
@@ -101,6 +103,7 @@ auto gse::gpu::transient_executor::queue(const queue_id id) -> transient_queue& 
 }
 
 auto gse::gpu::transient_executor::detach(async::task<> task) -> void {
+    std::lock_guard lock(*m_detached_mutex);
     m_detached.push_back(std::move(task));
 }
 
@@ -121,15 +124,21 @@ auto gse::gpu::transient_executor::begin_frame(const vulkan::device& device) -> 
 
     m_bin.drain(progress);
 
-    std::erase_if(m_detached, [](const async::task<>& t) {
-        return t.done();
-    });
+    {
+        std::lock_guard lock(*m_detached_mutex);
+        std::erase_if(m_detached, [](const async::task<>& t) {
+            return t.done();
+        });
+    }
 }
 
 auto gse::gpu::transient_executor::wait_idle(const vulkan::device& device) -> void {
     m_graphics.wait_idle(device);
     m_compute.wait_idle(device);
-    m_detached.clear();
+    {
+        std::lock_guard lock(*m_detached_mutex);
+        m_detached.clear();
+    }
     m_bin.wait_idle_clear();
     m_recorder.clear();
 }

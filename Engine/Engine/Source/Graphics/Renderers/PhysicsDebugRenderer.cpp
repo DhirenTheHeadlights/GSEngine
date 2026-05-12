@@ -14,6 +14,7 @@ import gse.assets;
 import gse.log;
 
 import :physics_debug_renderer;
+import :forward_renderer;
 import :camera_system;
 import :settings;
 
@@ -55,6 +56,7 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 
 	auto rec = co_await gpu::pass<state>(ctx)
 		.color(gpu::load_color())
+		.after<forward::system>()
 		.tracks(r.ubo_allocations.at("CameraUBO")[frame_index]);
 
 	rec.bind(r.pipeline);

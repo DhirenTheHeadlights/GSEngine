@@ -80,5 +80,12 @@ namespace gse {
 		gpu::device_size scratch_size,
 		gpu::device_size scratch_alignment
 	) -> async::task<>;
+
+	auto build_tlas_initial_empty_async(
+		gpu::device& dev,
+		gpu::acceleration_structure_handle as_handle,
+		gpu::device_address instance_addr,
+		gpu::device_address scratch_addr
+	) -> async::task<>;
 }
 

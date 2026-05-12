@@ -189,6 +189,7 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 
 	const auto feature_chain = physical_device.getFeatures2<
 		vk::PhysicalDeviceFeatures2,
+		vk::PhysicalDeviceVulkan12Features,
 		vk::PhysicalDeviceMeshShaderFeaturesEXT,
 		vk::PhysicalDeviceDescriptorBufferFeaturesEXT,
 		vk::PhysicalDeviceFaultFeaturesEXT,
@@ -197,6 +198,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		vk::PhysicalDeviceRobustness2FeaturesEXT,
 		vk::PhysicalDeviceNestedCommandBufferFeaturesEXT
 	>();
+	const auto& vk12_query = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
+	const bool buffer_device_address_capture_replay_supported = vk12_query.bufferDeviceAddressCaptureReplay;
 	const auto& mesh_shader_query = feature_chain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
 	assert(
 		mesh_shader_query.meshShader && mesh_shader_query.taskShader,
@@ -214,6 +217,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		"Descriptor buffer is required but not supported by this GPU"
 	);
 	const bool descriptor_buffer_push_descriptors_supported = desc_buf_query.descriptorBufferPushDescriptors;
+	const bool descriptor_buffer_capture_replay_supported = desc_buf_query.descriptorBufferCaptureReplay;
+	const bool acceleration_structure_capture_replay_supported = as_query.accelerationStructureCaptureReplay;
 	const auto& fault_query = feature_chain.get<vk::PhysicalDeviceFaultFeaturesEXT>();
 	const bool device_fault_supported = device_fault_extension_supported && fault_query.deviceFault;
 	const bool device_fault_vendor_binary_supported = device_fault_supported && fault_query.deviceFaultVendorBinary;
@@ -291,6 +296,7 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		.hostQueryReset = vk::True,
 		.timelineSemaphore = vk::True,
 		.bufferDeviceAddress = vk::True,
+		.bufferDeviceAddressCaptureReplay = buffer_device_address_capture_replay_supported ? vk::True : vk::False,
 	};
 
 	vk::PhysicalDeviceVulkan11Features vulkan11_features{
@@ -309,12 +315,14 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	vk::PhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features{
 		.pNext = &mesh_shader_features,
 		.descriptorBuffer = vk::True,
+		.descriptorBufferCaptureReplay = descriptor_buffer_capture_replay_supported ? vk::True : vk::False,
 		.descriptorBufferPushDescriptors = descriptor_buffer_push_descriptors_supported ? vk::True : vk::False,
 	};
 
 	vk::PhysicalDeviceAccelerationStructureFeaturesKHR as_features{
 		.pNext = &descriptor_buffer_features,
 		.accelerationStructure = vk::True,
+		.accelerationStructureCaptureReplay = acceleration_structure_capture_replay_supported ? vk::True : vk::False,
 	};
 
 	vk::PhysicalDeviceRayQueryFeaturesKHR ray_query_features{

@@ -5,6 +5,7 @@ import std;
 import :ui_renderer;
 import :texture;
 import :font;
+import :forward_renderer;
 
 import gse.os;
 import gse.assets;
@@ -281,6 +282,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
     if (batches.empty()) {
         co_return;
     }
+
     const auto frame_index = gpu_s.render_graph->current_frame();
     auto& [vertex_buffer, index_buffer] = r.gpu_frames[frame_index];
 
@@ -308,10 +310,10 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
     text_pc.set("projection", projection);
 
     const vec2u ext_size{ width, height };
-    const auto& bindless_region = gpu_s.bindless_textures->region();
 
     auto rec = co_await gpu::pass<ui::system::state>(ctx)
         .color(gpu::load_color())
+        .after<forward::system>()
         .tracks(vertex_buffer, index_buffer);
 
     rec.bind_vertex(vertex_buffer);
@@ -331,10 +333,8 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
         if (first_batch || type != bound_type) {
             if (type == command_type::sprite) {
                 rec.bind(r.sprite_pipeline);
-                rec.bind_descriptors(r.sprite_pipeline, bindless_region, 2);
             } else {
                 rec.bind(r.text_pipeline);
-                rec.bind_descriptors(r.text_pipeline, bindless_region, 2);
             }
             bound_type = type;
             first_batch = false;

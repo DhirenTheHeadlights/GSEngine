@@ -41,6 +41,11 @@ export namespace gse::gpu {
 		}
 	};
 
+	struct auto_bind_entry {
+		std::uint32_t set_index = 0;
+		descriptor_region region;
+	};
+
 	class descriptor_heap : non_copyable, non_movable {
 	public:
 		descriptor_heap(

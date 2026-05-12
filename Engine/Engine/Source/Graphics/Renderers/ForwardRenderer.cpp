@@ -137,7 +137,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 	if (render_items.empty()) {
 		const auto ext = gpu_s.render_graph->extent();
 		auto rec = co_await gpu::pass<system>(ctx)
-			.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }));
+			.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
+			.depth(gpu::clear_depth(gpu::depth_clear{ .depth = 1.0f }));
 		rec.set_viewport(ext);
 		rec.set_scissor(ext);
 		co_return;

@@ -3,8 +3,8 @@ module gse.gpu;
 import std;
 import vulkan;
 
-gse::vulkan::pipeline::pipeline(vk::raii::Pipeline&& pipeline, vk::raii::PipelineLayout&& layout, vk::PipelineBindPoint bind_point)
-	: m_pipeline(std::move(pipeline)), m_layout(std::move(layout)), m_bind_point(bind_point) {}
+gse::vulkan::pipeline::pipeline(vk::raii::Pipeline&& pipeline, vk::raii::PipelineLayout&& layout, vk::PipelineBindPoint bind_point, std::vector<std::uint32_t> auto_bound_sets)
+	: m_pipeline(std::move(pipeline)), m_layout(std::move(layout)), m_bind_point(bind_point), m_auto_bound_sets(std::move(auto_bound_sets)) {}
 
 auto gse::vulkan::pipeline::handle(this const pipeline& self) -> gpu::handle<pipeline> {
 	return std::bit_cast<gpu::handle<pipeline>>(*self.m_pipeline);
@@ -16,6 +16,10 @@ auto gse::vulkan::pipeline::layout(this const pipeline& self) -> gpu::handle<pip
 
 auto gse::vulkan::pipeline::bind_point(this const pipeline& self) -> gpu::bind_point {
 	return self.m_bind_point == vk::PipelineBindPoint::eCompute ? gpu::bind_point::compute : gpu::bind_point::graphics;
+}
+
+auto gse::vulkan::pipeline::auto_bound_sets(this const pipeline& self) -> std::span<const std::uint32_t> {
+	return self.m_auto_bound_sets;
 }
 
 gse::vulkan::pipeline::operator bool() const {
@@ -200,7 +204,7 @@ auto gse::vulkan::pipeline::create_graphics(const device& dev, const graphics_pi
 		.layout = *layout
 	});
 
-	return pipeline(std::move(handle), std::move(layout), vk::PipelineBindPoint::eGraphics);
+	return pipeline(std::move(handle), std::move(layout), vk::PipelineBindPoint::eGraphics, std::vector(info.auto_bound_sets.begin(), info.auto_bound_sets.end()));
 }
 
 auto gse::vulkan::pipeline::create_compute(const device& dev, const compute_pipeline_create_info& info) -> pipeline {
@@ -236,5 +240,5 @@ auto gse::vulkan::pipeline::create_compute(const device& dev, const compute_pipe
 		.layout = *layout
 	});
 
-	return pipeline(std::move(handle), std::move(layout), vk::PipelineBindPoint::eCompute);
+	return pipeline(std::move(handle), std::move(layout), vk::PipelineBindPoint::eCompute, std::vector(info.auto_bound_sets.begin(), info.auto_bound_sets.end()));
 }

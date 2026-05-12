@@ -2,7 +2,9 @@ export module gse.gpu:device;
 
 import std;
 
+import :aliases;
 import :transient_executor;
+import :vulkan_buffer;
 import :vulkan_command_pools;
 import :vulkan_device;
 import :vulkan_instance;
@@ -60,8 +62,28 @@ export namespace gse::gpu {
 			id pass_type{};
 		};
 
-		auto record_pass_marker(
+		struct pass_marker_handle {
+			std::uint64_t seq = 0;
+		};
+
+		auto begin_pass_marker(
+			handle<command_buffer> cmd,
 			pass_marker marker
+		) -> pass_marker_handle;
+
+		auto checkpoint_pass_marker(
+			handle<command_buffer> cmd,
+			pass_marker_handle handle
+		) -> void;
+
+		auto post_renderpass_pass_marker(
+			handle<command_buffer> cmd,
+			pass_marker_handle handle
+		) -> void;
+
+		auto end_pass_marker(
+			handle<command_buffer> cmd,
+			pass_marker_handle handle
 		) -> void;
 
 		[[nodiscard]] auto vulkan_instance(
@@ -118,7 +140,10 @@ export namespace gse::gpu {
 
 		static constexpr std::size_t pass_marker_ring_size = 128;
 		std::array<pass_marker, pass_marker_ring_size> m_pass_markers{};
-		std::atomic<std::uint64_t> m_pass_marker_seq{ 0 };
+		std::atomic<std::uint64_t> m_pass_marker_seq{ 1 };
+
+		vulkan::buffer m_pass_checkpoint_buffer;
+		std::uint32_t* m_pass_checkpoint_slots = nullptr;
 	};
 }
 
