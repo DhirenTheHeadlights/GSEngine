@@ -14,6 +14,7 @@ import :shader;
 import :device;
 import :swap_chain;
 import :frame;
+import :bindless;
 
 import gse.assert;
 import gse.core;
@@ -260,8 +261,10 @@ export namespace gse::vulkan {
 	private:
 		friend class render_graph;
 		vulkan::commands m_cmd;
-		explicit recording_context(
-			commands cmd
+		std::span<const gpu::auto_bind_entry> m_auto_binds;
+		recording_context(
+			commands cmd,
+			std::span<const gpu::auto_bind_entry> auto_binds
 		);
 
 		auto check_active(
@@ -283,12 +286,11 @@ export namespace gse::vulkan {
 
 	class render_graph {
 	public:
-		static const char swapchain_sentinel;
-
 		explicit render_graph(
 			gpu::device& device,
 			gpu::swap_chain& swapchain,
-			gpu::frame& frame
+			gpu::frame& frame,
+			gpu::bindless_texture_set* bindless = nullptr
 		);
 
 		auto execute(
@@ -338,10 +340,19 @@ export namespace gse::vulkan {
 			gpu_profile_slot& slot
 		) -> void;
 
+		struct inheritance_storage {
+			std::vector<vk::CommandBufferInheritanceRenderingInfo> rendering_inherits;
+			std::vector<vk::CommandBufferInheritanceInfo> inherits;
+			std::array<vk::Format, 1> color_formats{};
+		};
+
 		gpu::device* m_device;
 		gpu::swap_chain* m_swapchain;
 		gpu::frame* m_frame;
+		gpu::bindless_texture_set* m_bindless = nullptr;
 		per_frame_resource<gpu_profile_slot> m_profile_slots{ gpu_profile_slot{}, gpu_profile_slot{} };
+		per_frame_resource<inheritance_storage> m_inheritance_storage{ inheritance_storage{}, inheritance_storage{} };
+		std::vector<gpu::auto_bind_entry> m_auto_binds;
 		std::atomic<bool> m_gpu_timestamps_enabled{ true };
 		std::atomic<bool> m_gpu_pipeline_stats_enabled{ false };
 		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
@@ -379,14 +390,15 @@ export namespace gse::gpu {
 	) -> vulkan::resource_usage;
 }
 
-gse::vulkan::recording_context::recording_context(const commands cmd) : m_cmd(cmd) {
+gse::vulkan::recording_context::recording_context(const commands cmd, const std::span<const gpu::auto_bind_entry> auto_binds) : m_cmd(cmd), m_auto_binds(auto_binds) {
 	if (m_cmd) {
 		async::pass_recording_scope_push();
 	}
 }
 
-gse::vulkan::recording_context::recording_context(recording_context&& other) noexcept : m_cmd(other.m_cmd) {
+gse::vulkan::recording_context::recording_context(recording_context&& other) noexcept : m_cmd(other.m_cmd), m_auto_binds(other.m_auto_binds) {
 	other.m_cmd = commands{};
+	other.m_auto_binds = {};
 }
 
 auto gse::vulkan::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
@@ -396,7 +408,9 @@ auto gse::vulkan::recording_context::operator=(recording_context&& other) noexce
 			async::pass_recording_scope_pop();
 		}
 		m_cmd = other.m_cmd;
+		m_auto_binds = other.m_auto_binds;
 		other.m_cmd = commands{};
+		other.m_auto_binds = {};
 	}
 	return *this;
 }
@@ -726,6 +740,14 @@ auto gse::vulkan::recording_context::draw_mesh_tasks_indirect(const buffer& buf,
 auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) const -> void {
 	check_active();
 	m_cmd.bind_pipeline(p.bind_point(), p.handle());
+	for (const auto set_idx : p.auto_bound_sets()) {
+		for (const auto& [auto_set_idx, region] : m_auto_binds) {
+			if (auto_set_idx == set_idx && region) {
+				region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_idx, region);
+				break;
+			}
+		}
+	}
 }
 
 auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) const -> void {
@@ -892,8 +914,6 @@ auto gse::gpu::indirect_read(const vulkan::basic_buffer<vulkan::device>& buf, co
 	return vulkan::indirect_read(buf, vulkan::pipeline_stage_to_flags(stage));
 }
 
-const char gse::vulkan::render_graph::swapchain_sentinel = 0;
-
 namespace gse::vulkan {
 	constexpr auto profile_stats_flags =
 		vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices
@@ -902,7 +922,7 @@ namespace gse::vulkan {
 		| vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations;
 }
 
-gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)) {
+gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame, gpu::bindless_texture_set* bindless) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_bindless(bindless) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 }
 
@@ -1014,7 +1034,13 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 		return;
 	}
 
-	const auto command = std::bit_cast<vk::CommandBuffer>(m_frame->command_buffer());
+	m_auto_binds.clear();
+	if (m_bindless) {
+		constexpr auto bindless_idx = static_cast<std::uint32_t>(gpu::descriptor_set_type::bind_less);
+		m_auto_binds.push_back({ .set_index = bindless_idx, .region = m_bindless->region() });
+	}
+
+	auto command = std::bit_cast<vk::CommandBuffer>(m_frame->command_buffer());
 	const auto image_index = m_frame->image_index();
 	const auto swap_extent = m_swapchain->extent();
 	const vk::Extent2D vk_extent{ swap_extent.x(), swap_extent.y() };
@@ -1138,6 +1164,11 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 
 	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
 
+	auto& inheritance = m_inheritance_storage[m_frame->current_frame()];
+	inheritance.color_formats = { to_vk(color_format) };
+	inheritance.rendering_inherits.assign(passes.size(), vk::CommandBufferInheritanceRenderingInfo{});
+	inheritance.inherits.assign(passes.size(), vk::CommandBufferInheritanceInfo{});
+
 	task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
 		auto& pass = passes[pi];
 		const bool is_graphics_pass = pass.color_output || pass.depth_output;
@@ -1150,20 +1181,19 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 		const auto frame_idx = m_frame->current_frame();
 		const auto secondary = worker_pools.acquire_secondary(*worker_idx, frame_idx);
 
-		const std::array<vk::Format, 1> color_formats{ to_vk(color_format) };
-		const vk::CommandBufferInheritanceRenderingInfo rendering_inherit{
+		inheritance.rendering_inherits[pi] = vk::CommandBufferInheritanceRenderingInfo{
 			.viewMask = 0,
 			.colorAttachmentCount = pass.color_output ? 1u : 0u,
-			.pColorAttachmentFormats = pass.color_output ? color_formats.data() : nullptr,
+			.pColorAttachmentFormats = pass.color_output ? inheritance.color_formats.data() : nullptr,
 			.depthAttachmentFormat = pass.depth_output ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
 			.stencilAttachmentFormat = vk::Format::eUndefined,
 			.rasterizationSamples = vk::SampleCountFlagBits::e1,
 		};
 
-		vk::CommandBufferInheritanceInfo inherit{};
+		auto& inherit = inheritance.inherits[pi];
 		vk::CommandBufferUsageFlags begin_flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 		if (is_graphics_pass) {
-			inherit.pNext = &rendering_inherit;
+			inherit.pNext = &inheritance.rendering_inherits[pi];
 			begin_flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
 		}
 		if (issue_stats) {
@@ -1175,7 +1205,7 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 			.pInheritanceInfo = &inherit
 		});
 		m_device->descriptor_heap().bind_buffer(std::bit_cast<gpu::handle<command_buffer>>(secondary));
-		*pass.record_ctx_slot = recording_context{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) } };
+		*pass.record_ctx_slot = recording_context{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) }, m_auto_binds };
 		pass.record_handle.resume();
 
 		pass_secondaries[pi] = secondary;
@@ -1183,64 +1213,64 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 
 	{
 		trace::scope_guard sg{gse::trace_id<"graph::record_replay">()};
-		for (std::size_t si = 0; si < sorted.size(); ++si) {
-			auto& pass = passes[sorted[si]];
 
-			std::vector<gpu::memory_barrier> barriers;
+		auto append_tracked_barriers = [](const render_pass_data& p, std::vector<gpu::memory_barrier>& out) {
+			if (p.tracked_buffers.empty()) {
+				return;
+			}
+			gpu::pipeline_stage_flags tracked_stage{};
+			gpu::access_flags tracked_access{};
+			bool has_unmatched_tracked_buffer = false;
 
-			if (!pass.tracked_buffers.empty()) {
-				gpu::pipeline_stage_flags tracked_stage{};
-				gpu::access_flags tracked_access{};
-				bool has_unmatched_tracked_buffer = false;
-
-				for (const auto* tracked : pass.tracked_buffers) {
-					bool matched = false;
-					for (const auto& [resource, stage, access] : pass.reads) {
-						if (resource.ptr == tracked && resource.type == resource_type::buffer) {
-							tracked_stage |= stage;
-							tracked_access |= access;
-							matched = true;
-						}
-					}
-					for (const auto& [resource, stage, access] : pass.writes) {
-						if (resource.ptr == tracked && resource.type == resource_type::buffer) {
-							tracked_stage |= stage;
-							tracked_access |= access;
-							matched = true;
-						}
-					}
-					if (!matched) {
-						has_unmatched_tracked_buffer = true;
+			for (const auto* tracked : p.tracked_buffers) {
+				bool matched = false;
+				for (const auto& [resource, stage, access] : p.reads) {
+					if (resource.ptr == tracked && resource.type == resource_type::buffer) {
+						tracked_stage |= stage;
+						tracked_access |= access;
+						matched = true;
 					}
 				}
-
-				if (has_unmatched_tracked_buffer || !tracked_stage) {
-					tracked_stage |= pass.tracked_stage;
-					tracked_access |= gpu::access_flag::shader_storage_read
-						| gpu::access_flag::shader_storage_write
-						| gpu::access_flag::uniform_read
-						| gpu::access_flag::transfer_read
-						| gpu::access_flag::indirect_command_read
-						| gpu::access_flag::vertex_attribute_read
-						| gpu::access_flag::index_read;
+				for (const auto& [resource, stage, access] : p.writes) {
+					if (resource.ptr == tracked && resource.type == resource_type::buffer) {
+						tracked_stage |= stage;
+						tracked_access |= access;
+						matched = true;
+					}
 				}
-
-				barriers.push_back({
-					.src_stages = gpu::pipeline_stage_flag::host,
-					.src_access = gpu::access_flag::host_write,
-					.dst_stages = tracked_stage,
-					.dst_access = tracked_access,
-				});
+				if (!matched) {
+					has_unmatched_tracked_buffer = true;
+				}
 			}
 
-			for (std::size_t pi = 0; pi < si; ++pi) {
+			if (has_unmatched_tracked_buffer || !tracked_stage) {
+				tracked_stage |= p.tracked_stage;
+				tracked_access |= gpu::access_flag::shader_storage_read
+					| gpu::access_flag::shader_storage_write
+					| gpu::access_flag::uniform_read
+					| gpu::access_flag::transfer_read
+					| gpu::access_flag::indirect_command_read
+					| gpu::access_flag::vertex_attribute_read
+					| gpu::access_flag::index_read;
+			}
+
+			out.push_back({
+				.src_stages = gpu::pipeline_stage_flag::host,
+				.src_access = gpu::access_flag::host_write,
+				.dst_stages = tracked_stage,
+				.dst_access = tracked_access,
+			});
+		};
+
+		auto append_prev_pass_barriers = [&](const render_pass_data& cur, std::size_t serial_index, std::vector<gpu::memory_barrier>& out) {
+			for (std::size_t pi = 0; pi < serial_index; ++pi) {
 				for (const auto& prev = passes[sorted[pi]]; const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
 					if (!prev_resource.ptr) {
 						continue;
 					}
-					for (const auto& [read_resource, read_stage, read_access] : pass.reads) {
+					for (const auto& [read_resource, read_stage, read_access] : cur.reads) {
 						if (read_resource.ptr && prev_resource.ptr == read_resource.ptr) {
-							barriers.push_back({
+							out.push_back({
 								.src_stages = prev_stage,
 								.src_access = prev_access,
 								.dst_stages = read_stage,
@@ -1248,9 +1278,9 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 							});
 						}
 					}
-					for (const auto& [cur_resource, cur_stage, cur_access] : pass.writes) {
+					for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
 						if (cur_resource.ptr && prev_resource.ptr == cur_resource.ptr) {
-							barriers.push_back({
+							out.push_back({
 								.src_stages = prev_stage,
 								.src_access = prev_access,
 								.dst_stages = cur_stage,
@@ -1260,21 +1290,62 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 					}
 				}
 			}
+		};
 
-			if (!barriers.empty()) {
-				vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{ .memory_barriers = barriers });
+		for (std::size_t si = 0; si < sorted.size(); ++si) {
+			const auto pass_idx = sorted[si];
+			auto& pass = passes[pass_idx];
+
+			std::vector<gpu::memory_barrier> barriers;
+
+			append_tracked_barriers(pass, barriers);
+			append_prev_pass_barriers(pass, si, barriers);
+
+			{
+				std::vector<gpu::memory_barrier> coalesced;
+				coalesced.reserve(barriers.size());
+				for (const auto& b : barriers) {
+					bool merged = false;
+					for (auto& o : coalesced) {
+						if (o.src_stages.bits() == b.src_stages.bits() && o.dst_stages.bits() == b.dst_stages.bits()) {
+							o.src_access |= b.src_access;
+							o.dst_access |= b.dst_access;
+							merged = true;
+							break;
+						}
+					}
+					if (!merged) {
+						coalesced.push_back(b);
+					}
+				}
+				barriers = std::move(coalesced);
 			}
+
+			std::vector<gpu::image_barrier> image_barriers;
 
 			const bool profile_pass = timestamps_enabled && slot.pass_count < max_profiled_passes;
 			const std::uint32_t pass_index = slot.pass_count;
 			const bool is_graphics_pass = pass.color_output || pass.depth_output;
 			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
 
-			m_device->record_pass_marker({
+			const auto marker_handle = m_device->begin_pass_marker(m_frame->command_buffer(), {
 				.frame_counter = m_frames_submitted,
 				.pass_index = static_cast<std::uint32_t>(si),
 				.pass_type = pass.pass_type,
 			});
+
+			if (!barriers.empty()) {
+				vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{
+					.memory_barriers = barriers,
+				});
+			}
+			if (!image_barriers.empty()) {
+				vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{
+					.image_barriers = image_barriers,
+				});
+			}
+
+			m_device->checkpoint_pass_marker(m_frame->command_buffer(), marker_handle);
 
 			if (profile_pass) {
 				command.writeTimestamp2(vk::PipelineStageFlagBits2::eNone, *slot.timestamp_pool, 1 + pass_index * 2);
@@ -1356,12 +1427,16 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 				command.executeCommands(secondary);
 			}
 
+			m_device->post_renderpass_pass_marker(m_frame->command_buffer(), marker_handle);
+
 			if (profile_pass) {
 				if (issue_stats) {
 					command.endQuery(*slot.stats_pool, pass_index);
 				}
 				command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 2 + pass_index * 2);
 			}
+
+			m_device->end_pass_marker(m_frame->command_buffer(), marker_handle);
 		}
 	}
 

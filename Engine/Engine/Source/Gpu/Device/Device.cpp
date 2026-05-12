@@ -2,11 +2,14 @@ module gse.gpu;
 
 import std;
 
+import :aliases;
 import :device;
 import :descriptor_heap;
 import :types;
 
+import :vulkan_buffer;
 import :vulkan_command_pools;
+import :vulkan_commands;
 import :vulkan_device;
 import :vulkan_instance;
 import :vulkan_queues;
@@ -32,7 +35,8 @@ auto gse::gpu::device::create(const window::state& win, const bool validation_la
 	auto transient = transient_executor::create(
 		creation.device,
 		creation.queue.graphics_family_index(),
-		creation.queue.compute_family_index()
+		creation.queue.compute_family_index(),
+		task::thread_count()
 	);
 
 	auto desc_heap = std::make_unique<gpu::descriptor_heap>(
@@ -66,7 +70,21 @@ gse::gpu::device::device(vulkan::instance&& instance, vulkan::device&& device, v
 	  m_descriptor_heap(std::move(descriptor_heap)),
 	  m_descriptor_buffer_props(std::move(desc_buf_props)),
 	  m_surface_format(surface_format),
-	  m_video_encode_enabled(video_encode_enabled) {}
+	  m_video_encode_enabled(video_encode_enabled) {
+	constexpr std::size_t slot_count = pass_marker_ring_size * 4;
+	constexpr std::size_t buffer_size = slot_count * sizeof(std::uint32_t);
+	const std::array<std::uint32_t, slot_count> zeros{};
+
+	m_pass_checkpoint_buffer = m_device_config.create_buffer(
+		gpu::buffer_create_info{
+			.size = buffer_size,
+			.usage = gpu::buffer_flag::transfer_dst,
+		},
+		zeros.data(),
+		"device.pass_checkpoint"
+	);
+	m_pass_checkpoint_slots = std::bit_cast<std::uint32_t*>(m_pass_checkpoint_buffer.mapped());
+}
 
 gse::gpu::device::~device() {
 	log::println(log::category::runtime, "Destroying Device");
@@ -96,9 +114,47 @@ auto gse::gpu::device::timestamp_period() const -> float {
 	return m_device_config.timestamp_period();
 }
 
-auto gse::gpu::device::record_pass_marker(const pass_marker marker) -> void {
+auto gse::gpu::device::begin_pass_marker(const handle<command_buffer> cmd, const pass_marker marker) -> pass_marker_handle {
 	const auto seq = m_pass_marker_seq.fetch_add(1, std::memory_order_relaxed);
 	m_pass_markers[seq % pass_marker_ring_size] = marker;
+
+	if (m_pass_checkpoint_buffer) {
+		const auto slot = seq % pass_marker_ring_size;
+		const auto offset = slot * 4 * sizeof(std::uint32_t);
+		vulkan::commands(cmd).fill_buffer(m_pass_checkpoint_buffer.handle(), offset, sizeof(std::uint32_t), static_cast<std::uint32_t>(seq));
+	}
+
+	return pass_marker_handle{ .seq = seq };
+}
+
+auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
+	if (!m_pass_checkpoint_buffer) {
+		return;
+	}
+
+	const auto slot = handle.seq % pass_marker_ring_size;
+	const auto offset = slot * 4 * sizeof(std::uint32_t) + sizeof(std::uint32_t);
+	vulkan::commands(cmd).fill_buffer(m_pass_checkpoint_buffer.handle(), offset, sizeof(std::uint32_t), static_cast<std::uint32_t>(handle.seq));
+}
+
+auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
+	if (!m_pass_checkpoint_buffer) {
+		return;
+	}
+
+	const auto slot = handle.seq % pass_marker_ring_size;
+	const auto offset = slot * 4 * sizeof(std::uint32_t) + 2 * sizeof(std::uint32_t);
+	vulkan::commands(cmd).fill_buffer(m_pass_checkpoint_buffer.handle(), offset, sizeof(std::uint32_t), static_cast<std::uint32_t>(handle.seq));
+}
+
+auto gse::gpu::device::end_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
+	if (!m_pass_checkpoint_buffer) {
+		return;
+	}
+
+	const auto slot = handle.seq % pass_marker_ring_size;
+	const auto offset = slot * 4 * sizeof(std::uint32_t) + 3 * sizeof(std::uint32_t);
+	vulkan::commands(cmd).fill_buffer(m_pass_checkpoint_buffer.handle(), offset, sizeof(std::uint32_t), static_cast<std::uint32_t>(handle.seq));
 }
 
 auto gse::gpu::device::report_device_lost(const std::string_view operation) -> void {
@@ -108,19 +164,81 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 
 	log::println(log::level::error, log::category::vulkan, "Vulkan device lost during {}", operation);
 
-	const auto total = m_pass_marker_seq.load(std::memory_order_relaxed);
+	const auto seq_next = m_pass_marker_seq.load(std::memory_order_relaxed);
+	const auto total = seq_next > 0 ? seq_next - 1 : 0;
 	if (total > 0) {
 		const auto count = std::min<std::uint64_t>(total, pass_marker_ring_size);
-		const auto first_seq = total - count;
-		log::println(log::level::error, log::category::vulkan, "Last {} GPU pass markers (oldest first):", count);
+		const auto first_seq = seq_next - count;
+		log::println(log::level::error, log::category::vulkan, "Last {} pass markers (oldest first, status from GPU checkpoint):", count);
+
+		std::uint64_t last_gpu_inflight = 0;
+		std::string_view last_gpu_inflight_phase = {};
+		bool any_gpu_inflight = false;
+
 		for (std::uint64_t i = 0; i < count; ++i) {
 			const auto seq = first_seq + i;
-			const auto& m = m_pass_markers[seq % pass_marker_ring_size];
+			const auto slot = seq % pass_marker_ring_size;
+			const auto& m = m_pass_markers[slot];
+
+			std::string_view status = "queued";
+			if (m_pass_checkpoint_slots) {
+				const auto begin_seq = m_pass_checkpoint_slots[slot * 4];
+				const auto post_barrier_seq = m_pass_checkpoint_slots[slot * 4 + 1];
+				const auto post_renderpass_seq = m_pass_checkpoint_slots[slot * 4 + 2];
+				const auto end_seq = m_pass_checkpoint_slots[slot * 4 + 3];
+				const auto seq_low = static_cast<std::uint32_t>(seq);
+
+				const bool begin_done = begin_seq == seq_low;
+				const bool post_barrier_done = post_barrier_seq == seq_low;
+				const bool post_renderpass_done = post_renderpass_seq == seq_low;
+				const bool end_done = end_seq == seq_low;
+
+				if (begin_done && post_barrier_done && post_renderpass_done && end_done) {
+					status = "completed";
+				}
+				else if (begin_done && post_barrier_done && post_renderpass_done) {
+					status = "HUNG in tail (renderpass done, end marker not written)";
+					last_gpu_inflight = std::max(last_gpu_inflight, seq);
+					last_gpu_inflight_phase = "tail";
+					any_gpu_inflight = true;
+				}
+				else if (begin_done && post_barrier_done) {
+					status = "HUNG in renderpass body (begin+barrier done, renderpass did not finish)";
+					last_gpu_inflight = std::max(last_gpu_inflight, seq);
+					last_gpu_inflight_phase = "renderpass body";
+					any_gpu_inflight = true;
+				}
+				else if (begin_done) {
+					status = "HUNG in inter-pass barrier (begin reached, no post-barrier)";
+					last_gpu_inflight = std::max(last_gpu_inflight, seq);
+					last_gpu_inflight_phase = "inter-pass barrier";
+					any_gpu_inflight = true;
+				}
+				else {
+					status = "not started (CPU recorded, GPU never entered)";
+				}
+			}
+
 			log::println(
 				log::level::error,
 				log::category::vulkan,
-				"  seq={} frame={} pass_index={} pass_type={}",
+				"  seq={} frame={} pass_index={} pass_type={} [{}]",
 				seq,
+				m.frame_counter,
+				m.pass_index,
+				m.pass_type.tag(),
+				status
+			);
+		}
+
+		if (any_gpu_inflight) {
+			const auto& m = m_pass_markers[last_gpu_inflight % pass_marker_ring_size];
+			log::println(
+				log::level::error,
+				log::category::vulkan,
+				"GPU hung in {} of: seq={} frame={} pass_index={} pass_type={}",
+				last_gpu_inflight_phase,
+				last_gpu_inflight,
 				m.frame_counter,
 				m.pass_index,
 				m.pass_type.tag()

@@ -11,11 +11,13 @@ import :vulkan_queues;
 import :vulkan_transient_command_buffer;
 
 import gse.concurrency;
+import gse.core;
 
 export namespace gse::gpu {
     [[nodiscard]] auto begin_transient(
         gpu::device& dev,
-        queue_id id
+        queue_id id,
+        std::string_view tag = "transient.untagged"
     ) -> begin_transient_awaiter;
 
     [[nodiscard]] auto submit(
@@ -30,16 +32,17 @@ export namespace gse::gpu {
     ) -> void;
 }
 
-auto gse::gpu::begin_transient(gpu::device& dev, const queue_id id) -> begin_transient_awaiter {
+auto gse::gpu::begin_transient(gpu::device& dev, const queue_id id, const std::string_view tag) -> begin_transient_awaiter {
     return begin_transient_awaiter{
-        .m_device = &dev.vulkan_device(),
+        .m_gpu_device = &dev,
         .m_queue = &dev.transient().queue(id),
+        .m_pass_marker = device::pass_marker{ .pass_type = find_or_generate_id(tag) },
     };
 }
 
 auto gse::gpu::submit(gpu::device& dev, vulkan::transient_command_buffer&& cmd, const queue_id id) -> submission {
     return submission(
-        dev.vulkan_device(),
+        dev,
         dev.vulkan_queue(),
         dev.transient().queue(id),
         dev.transient().bin(),

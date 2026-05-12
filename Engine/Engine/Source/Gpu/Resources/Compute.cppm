@@ -10,6 +10,7 @@ import :vulkan_compute_context;
 import :descriptor_heap;
 import :shader;
 import :device;
+import :bindless;
 
 import gse.assert;
 import gse.core;
@@ -33,6 +34,7 @@ export namespace gse::gpu {
 		) = default;
 
 		compute_queue(
+			gpu::device& dev,
 			vulkan::compute_context&& ctx,
 			descriptor_heap* heap,
 			float timestamp_period
@@ -53,7 +55,8 @@ export namespace gse::gpu {
 		) const -> bool;
 
 		auto begin(
-		) const -> void;
+			std::string_view tag = "compute_queue.dispatch"
+		) -> void;
 
 		auto submit(
 		) -> void;
@@ -125,15 +128,19 @@ export namespace gse::gpu {
 		) const;
 
 		[[nodiscard]] static auto create(
-			gpu::device& dev
+			gpu::device& dev,
+			bindless_texture_set* bindless = nullptr
 		) -> compute_queue;
 
 	private:
+		gpu::device* m_device = nullptr;
 		vulkan::compute_context m_ctx;
 		std::uint64_t m_timeline_value = 0;
 		descriptor_heap* m_descriptor_heap = nullptr;
 		float m_timestamp_period = 0.0f;
 		std::uint32_t m_frame_count = 0;
+		std::uint64_t m_marker_seq = std::numeric_limits<std::uint64_t>::max();
+		std::vector<auto_bind_entry> m_auto_binds;
 	};
 }
 
@@ -200,7 +207,7 @@ auto gse::barrier_scope_to_gpu(const gpu::barrier_scope scope) -> gpu::memory_ba
 	return {};
 }
 
-gse::gpu::compute_queue::compute_queue(vulkan::compute_context&& ctx, descriptor_heap* heap, const float timestamp_period) : m_ctx(std::move(ctx)), m_descriptor_heap(heap), m_timestamp_period(timestamp_period) {}
+gse::gpu::compute_queue::compute_queue(gpu::device& dev, vulkan::compute_context&& ctx, descriptor_heap* heap, const float timestamp_period) : m_device(&dev), m_ctx(std::move(ctx)), m_descriptor_heap(heap), m_timestamp_period(timestamp_period) {}
 
 auto gse::gpu::compute_queue::wait() const -> void {
 	m_ctx.wait_fence();
@@ -210,7 +217,7 @@ auto gse::gpu::compute_queue::is_complete() const -> bool {
 	return m_ctx.is_fence_signaled();
 }
 
-auto gse::gpu::compute_queue::begin() const -> void {
+auto gse::gpu::compute_queue::begin(const std::string_view tag) -> void {
 	const auto cmd = m_ctx.command_buffer_handle();
 	vulkan::commands(cmd).reset();
 	vulkan::commands(cmd).begin();
@@ -218,10 +225,22 @@ auto gse::gpu::compute_queue::begin() const -> void {
 	if (m_descriptor_heap) {
 		m_descriptor_heap->bind_buffer(cmd);
 	}
+	if (m_device) {
+		const auto handle = m_device->begin_pass_marker(cmd, device::pass_marker{ .pass_type = find_or_generate_id(tag) });
+		m_device->checkpoint_pass_marker(cmd, handle);
+		m_device->post_renderpass_pass_marker(cmd, handle);
+		m_marker_seq = handle.seq;
+	}
 }
 
 auto gse::gpu::compute_queue::submit() -> void {
 	const auto cmd = m_ctx.command_buffer_handle();
+
+	if (m_device && m_marker_seq != std::numeric_limits<std::uint64_t>::max()) {
+		m_device->end_pass_marker(cmd, device::pass_marker_handle{ .seq = m_marker_seq });
+		m_marker_seq = std::numeric_limits<std::uint64_t>::max();
+	}
+
 	vulkan::commands(cmd).end();
 
 	++m_timeline_value;
@@ -238,6 +257,14 @@ auto gse::gpu::compute_queue::semaphore_state() const -> compute_semaphore_state
 auto gse::gpu::compute_queue::bind_pipeline(const pipeline& p) const -> void {
 	const auto cmd = m_ctx.command_buffer_handle();
 	vulkan::commands(cmd).bind_pipeline(bind_point::compute, p.handle());
+	for (const auto set_idx : p.auto_bound_sets()) {
+		for (const auto& [auto_set_idx, region] : m_auto_binds) {
+			if (auto_set_idx == set_idx && region) {
+				region.heap->bind(cmd, bind_point::compute, p.layout(), set_idx, region);
+				break;
+			}
+		}
+	}
 }
 
 auto gse::gpu::compute_queue::bind_descriptors(const pipeline& p, const descriptor_region& region) const -> void {
@@ -330,16 +357,24 @@ gse::gpu::compute_queue::operator bool() const {
 	return static_cast<bool>(m_ctx);
 }
 
-auto gse::gpu::compute_queue::create(gpu::device& dev) -> compute_queue {
+auto gse::gpu::compute_queue::create(gpu::device& dev, bindless_texture_set* bindless) -> compute_queue {
 	auto ctx = vulkan::compute_context::create(
 		dev.vulkan_device(),
 		dev.vulkan_queue(),
 		compute_queue::timing_slot_count
 	);
 
-	return compute_queue(
+	auto q = compute_queue(
+		dev,
 		std::move(ctx),
 		&dev.descriptor_heap(),
 		dev.timestamp_period()
 	);
+
+	if (bindless) {
+		constexpr auto bindless_idx = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
+		q.m_auto_binds.push_back({ .set_index = bindless_idx, .region = bindless->region() });
+	}
+
+	return q;
 }

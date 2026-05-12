@@ -959,7 +959,7 @@ auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::conte
 	create_buffers(gpu_s);
 
 	for (auto& f : m_frames) {
-		f.queue = gpu::compute_queue::create(*gpu_s.device);
+		f.queue = gpu::compute_queue::create(*gpu_s.device, gpu_s.bindless_textures.get());
 		f.descriptors = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), m_compute.predict);
 
 		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), m_compute.predict, f.descriptors)
@@ -1011,7 +1011,7 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 	ingest_stage("gpu:vbd_velocity",   timing_slot::after_solve,     timing_slot::after_velocity);
 	ingest_stage("gpu:vbd_finalize",   timing_slot::after_velocity,  timing_slot::after_finalize);
 
-	f.queue.begin();
+	f.queue.begin("compute_queue.vbd_solver");
 
 	constexpr std::array init_scopes = { gpu::barrier_scope::host_to_compute, gpu::barrier_scope::transfer_to_transfer };
 	f.queue.barriers(init_scopes);

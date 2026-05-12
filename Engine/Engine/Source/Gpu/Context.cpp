@@ -24,8 +24,8 @@ auto gse::gpu::context::run(run_context& ctx, const window::state& window_s, set
 	s.shader_registry = std::make_unique<gpu::shader_registry>(*s.device);
 	s.swapchain = swap_chain::create(window::viewport(window_s), *s.device);
 	s.frame = frame::create(*s.device, *s.swapchain);
-	s.render_graph = std::make_unique<vulkan::render_graph>(*s.device, *s.swapchain, *s.frame);
 	s.bindless_textures = std::make_unique<bindless_texture_set>(s.device->vulkan_device(), s.device->descriptor_heap());
+	s.render_graph = std::make_unique<vulkan::render_graph>(*s.device, *s.swapchain, *s.frame, s.bindless_textures.get());
 
 	s.device->transient().recorder().pre_frame([graph = s.render_graph.get()](handle<command_buffer> cmd) {
 		vulkan::transition_image_layout(
@@ -150,24 +150,6 @@ auto gse::gpu::to_pass_data(render_pass_request req, const vulkan::render_graph&
 
 	if (req.desc.color) {
 		p.color_output = to_color_output_info(*req.desc.color);
-		p.writes.push_back({
-			.resource = {
-				.ptr = &vulkan::render_graph::swapchain_sentinel,
-				.type = vulkan::resource_type::image,
-			},
-			.stage = pipeline_stage_flag::color_attachment_output,
-			.access = access_flag::color_attachment_write | access_flag::color_attachment_read,
-		});
-		if (req.desc.color->op == load_op::load) {
-			p.reads.push_back({
-				.resource = {
-					.ptr = &vulkan::render_graph::swapchain_sentinel,
-					.type = vulkan::resource_type::image,
-				},
-				.stage = pipeline_stage_flag::color_attachment_output,
-				.access = access_flag::color_attachment_read,
-			});
-		}
 	}
 
 	if (req.desc.depth) {
