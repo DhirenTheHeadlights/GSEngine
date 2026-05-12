@@ -26,7 +26,7 @@ export namespace gse::gpu {
 		}
 	};
 
-	class bindless_texture_set final : public non_copyable {
+	class bindless_texture_set final : public non_copyable, non_movable {
 	public:
 		bindless_texture_set(
 			const vulkan::device& device,
@@ -35,14 +35,6 @@ export namespace gse::gpu {
 		);
 
 		~bindless_texture_set() override;
-
-		bindless_texture_set(
-			bindless_texture_set&&
-		) noexcept = default;
-
-		auto operator=(
-			bindless_texture_set&&
-		) noexcept -> bindless_texture_set& = default;
 
 		auto allocate(
 			handle<vulkan::image_view> view,
@@ -79,10 +71,12 @@ export namespace gse::gpu {
 
 		struct pending_release {
 			std::uint32_t slot = 0;
-			std::uint32_t retire_frame = 0;
+			std::uint64_t retire_after = 0;
 		};
 		std::vector<pending_release> m_pending_releases;
-		std::uint32_t m_current_frame = 0;
+		std::uint64_t m_frame_counter = 0;
+
+		std::mutex m_mutex;
 	};
 }
 
@@ -158,6 +152,8 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 gse::gpu::bindless_texture_set::~bindless_texture_set() = default;
 
 auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> view, const handle<vulkan::sampler> samp) -> bindless_texture_slot {
+	std::lock_guard lock(m_mutex);
+
 	assert(!m_free_list.empty(), "Bindless texture set exhausted (capacity {})", m_capacity);
 
 	const auto slot = m_free_list.back();
@@ -181,17 +177,19 @@ auto gse::gpu::bindless_texture_set::release(const bindless_texture_slot slot) -
 	if (!slot) {
 		return;
 	}
+	std::lock_guard lock(m_mutex);
 	m_pending_releases.push_back({
 		.slot = slot.index,
-		.retire_frame = m_current_frame + vulkan::max_frames_in_flight
+		.retire_after = m_frame_counter + vulkan::max_frames_in_flight,
 	});
 }
 
-auto gse::gpu::bindless_texture_set::begin_frame(const std::uint32_t frame_index) -> void {
-	m_current_frame = frame_index;
+auto gse::gpu::bindless_texture_set::begin_frame(const std::uint32_t) -> void {
+	std::lock_guard lock(m_mutex);
+	++m_frame_counter;
 
 	std::erase_if(m_pending_releases, [this](const pending_release& p) {
-		if (m_current_frame >= p.retire_frame) {
+		if (m_frame_counter >= p.retire_after) {
 			m_free_list.push_back(p.slot);
 			return true;
 		}

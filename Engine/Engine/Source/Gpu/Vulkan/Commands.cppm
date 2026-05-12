@@ -169,6 +169,13 @@ export namespace gse::vulkan {
             const gpu::buffer_copy_region& region
         ) const -> void;
 
+        auto fill_buffer(
+            gpu::handle<buffer> dst,
+            gpu::device_size offset,
+            gpu::device_size size,
+            std::uint32_t data
+        ) const -> void;
+
         auto copy_buffer_to_image(
             gpu::handle<buffer> src,
             gpu::handle<image> dst,
@@ -487,6 +494,10 @@ auto gse::vulkan::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const
 
 auto gse::vulkan::commands::copy_buffer(const gpu::handle<buffer> src, const gpu::handle<buffer> dst, const gpu::buffer_copy_region& region) const -> void {
     raw().copyBuffer(std::bit_cast<vk::Buffer>(src), std::bit_cast<vk::Buffer>(dst), to_vk(region));
+}
+
+auto gse::vulkan::commands::fill_buffer(const gpu::handle<buffer> dst, const gpu::device_size offset, const gpu::device_size size, const std::uint32_t data) const -> void {
+    raw().fillBuffer(std::bit_cast<vk::Buffer>(dst), offset, size, data);
 }
 
 auto gse::vulkan::commands::copy_buffer_to_image(const gpu::handle<buffer> src, const gpu::handle<image> dst, const gpu::image_layout dst_layout, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {

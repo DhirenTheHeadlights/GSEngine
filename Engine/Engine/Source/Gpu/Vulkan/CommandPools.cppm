@@ -133,7 +133,7 @@ auto gse::vulkan::command::create(const device& device_data, const std::uint32_t
 	log::println(log::category::vulkan, "Command Buffers Created Successfully!");
 
 	for (std::uint32_t i = 0; i < buffers.size(); ++i) {
-		const std::string name = "Primary Command Buffer " + std::to_string(i);
+		const std::string name = std::format("Primary Command Buffer frame={}", i);
 		const vk::DebugUtilsObjectNameInfoEXT name_info{
 			.objectType = vk::ObjectType::eCommandBuffer,
 			.objectHandle = std::bit_cast<std::uint64_t>(*buffers[i]),
