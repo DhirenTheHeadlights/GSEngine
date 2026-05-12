@@ -3,6 +3,7 @@ export module gse.gpu:vulkan_device;
 import std;
 import vulkan;
 
+import :vulkan_aftermath;
 import :vulkan_allocation;
 import :vulkan_buffer;
 import :vulkan_image;
@@ -88,7 +89,8 @@ export namespace gse::vulkan {
 
         [[nodiscard]] static auto create(
             const instance& instance_data,
-            settings& cfg
+            settings& cfg,
+            aftermath& aftermath_tracker
         ) -> device_creation_result;
 
         [[nodiscard]] auto physical_device(

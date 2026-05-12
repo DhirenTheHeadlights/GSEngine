@@ -343,6 +343,9 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 
 	if (node.is_in_update_loop || node.run_task.done()) {
 		m_update_graph.notify_state_ready(node.state_id);
+		if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
+			m_update_graph.notify_state_ready(node.state_type_id);
+		}
 		if (node.resources_id.exists()) {
 			m_update_graph.notify_state_ready(node.resources_id);
 		}
@@ -384,6 +387,9 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	for (auto& node : m_nodes) {
 		if (!node.has_frame) {
 			m_frame_graph.notify_state_ready(node.state_id);
+			if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
+				m_frame_graph.notify_state_ready(node.state_type_id);
+			}
 		}
 		if (node.resources_id.exists()) {
 			m_frame_graph.notify_state_ready(node.resources_id);
