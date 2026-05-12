@@ -241,6 +241,12 @@ export namespace gse::gpu {
 		std::uint32_t first_instance;
 	};
 
+	struct draw_mesh_tasks_indirect_command {
+		std::uint32_t group_count_x;
+		std::uint32_t group_count_y;
+		std::uint32_t group_count_z;
+	};
+
 	struct color_clear {
 		float r = 0.0f, g = 0.0f, b = 0.0f, a = 1.0f;
 	};

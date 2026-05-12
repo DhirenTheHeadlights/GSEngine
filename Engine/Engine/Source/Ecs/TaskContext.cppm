@@ -33,14 +33,31 @@ export namespace gse {
 	};
 }
 
+namespace gse {
+	auto ensure_and_snapshot_channel(
+		channel_registry& store,
+		id type,
+		channel_factory_fn factory
+	) -> const void*;
+}
+
 template <typename T>
 auto gse::task_context::read_channel() const -> channel_read_guard<T> {
-	channels_store.ensure(id_of<T>(), +[]() -> std::unique_ptr<channel_base> {
-		return std::make_unique<typed_channel<T>>();
-	});
-	const auto* ptr = channels_store.snapshot_data(id_of<T>());
-	assert(ptr != nullptr, "channel snapshot not found");
+	const auto* ptr = ensure_and_snapshot_channel(
+		channels_store,
+		id_of<T>(),
+		+[]() -> std::unique_ptr<channel_base> {
+			return std::make_unique<typed_channel<T>>();
+		}
+	);
 	return channel_read_guard<T>(*static_cast<const std::vector<T>*>(ptr));
+}
+
+auto gse::ensure_and_snapshot_channel(channel_registry& store, const id type, const channel_factory_fn factory) -> const void* {
+	store.ensure(type, factory);
+	const auto* ptr = store.snapshot_data(type);
+	assert(ptr != nullptr, "channel snapshot not found");
+	return ptr;
 }
 
 auto gse::task_context::after_id(const id state_id) -> async::task<> {

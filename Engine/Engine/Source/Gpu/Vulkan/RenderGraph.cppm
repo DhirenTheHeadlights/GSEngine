@@ -155,6 +155,13 @@ export namespace gse::vulkan {
 			std::uint32_t stride
 		) const -> void;
 
+		auto draw_mesh_tasks_indirect(
+			const buffer& buf,
+			std::size_t offset,
+			std::uint32_t draw_count,
+			std::uint32_t stride
+		) const -> void;
+
 		auto bind(
 			const gpu::pipeline& p
 		) const -> void;
@@ -709,6 +716,11 @@ auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::cac
 auto gse::vulkan::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
 	check_active();
 	m_cmd.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
+}
+
+auto gse::vulkan::recording_context::draw_mesh_tasks_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+	check_active();
+	m_cmd.draw_mesh_tasks_indirect(buf.handle(), offset, draw_count, stride);
 }
 
 auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) const -> void {

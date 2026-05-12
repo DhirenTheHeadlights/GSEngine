@@ -443,13 +443,14 @@ auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
 		});
 
-		constexpr std::size_t indirect_buffer_size = render_data::max_batches * sizeof(gpu::draw_indexed_indirect_command);
+		constexpr std::size_t normal_indirect_buffer_size = render_data::max_batches * sizeof(gpu::draw_mesh_tasks_indirect_command);
 		r.normal_indirect_commands_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = indirect_buffer_size,
+			.size = normal_indirect_buffer_size,
 			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
+		constexpr std::size_t skinned_indirect_buffer_size = render_data::max_batches * sizeof(gpu::draw_indexed_indirect_command);
 		r.skinned_indirect_commands_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = indirect_buffer_size,
+			.size = skinned_indirect_buffer_size,
 			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 
@@ -593,17 +594,16 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, const 
 	}
 
 	if (!data.normal_batches.empty()) {
-		static_vector<gpu::draw_indexed_indirect_command, render_data::max_batches> normal_indirect_commands;
+		static_vector<gpu::draw_mesh_tasks_indirect_command, render_data::max_batches> normal_indirect_commands;
 
 		for (const auto& batch : data.normal_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+			const std::uint32_t task_groups = (mesh.meshlet_count() + 31) / 32;
 
 			normal_indirect_commands.push_back({
-				.index_count = static_cast<std::uint32_t>(mesh.indices().size()),
-				.instance_count = batch.instance_count,
-				.first_index = 0,
-				.vertex_offset = 0,
-				.first_instance = batch.first_instance
+				.group_count_x = task_groups,
+				.group_count_y = batch.instance_count,
+				.group_count_z = 1
 			});
 		}
 
