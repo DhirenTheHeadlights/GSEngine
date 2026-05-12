@@ -27,12 +27,14 @@ export namespace gse::vulkan {
 		bool has_color = false;
 		bool has_depth = false;
 		bool is_mesh_pipeline = false;
+		std::span<const std::uint32_t> auto_bound_sets;
 	};
 
 	struct compute_pipeline_create_info {
 		gpu::shader_stage_create_info stage;
 		std::span<const gpu::handle<descriptor_set_layout>> set_layouts;
 		std::optional<gpu::push_constant_range> push_constant_range;
+		std::span<const std::uint32_t> auto_bound_sets;
 	};
 
 	class pipeline final : public non_copyable {
@@ -71,6 +73,10 @@ export namespace gse::vulkan {
 			this const pipeline& self
 		) -> gpu::bind_point;
 
+		[[nodiscard]] auto auto_bound_sets(
+			this const pipeline& self
+		) -> std::span<const std::uint32_t>;
+
 		explicit operator bool(
 		) const;
 
@@ -78,11 +84,13 @@ export namespace gse::vulkan {
 		pipeline(
 			vk::raii::Pipeline&& pipeline,
 			vk::raii::PipelineLayout&& layout,
-			vk::PipelineBindPoint bind_point
+			vk::PipelineBindPoint bind_point,
+			std::vector<std::uint32_t> auto_bound_sets
 		);
 
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_layout = nullptr;
 		vk::PipelineBindPoint m_bind_point = vk::PipelineBindPoint::eGraphics;
+		std::vector<std::uint32_t> m_auto_bound_sets;
 	};
 }

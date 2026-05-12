@@ -17,7 +17,7 @@ auto gse::upload_to_buffers_async(gpu::device& dev, std::vector<upload_entry> en
 		));
 	}
 
-	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics);
+	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics, "transient.buffer_upload");
 
 	for (std::size_t i = 0; i < entries.size(); ++i) {
 		vulkan::commands(cmd.handle()).copy_buffer(
@@ -52,7 +52,7 @@ auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_
 		));
 	}
 
-	auto cmd_awaiter = begin_transient(dev, queue_id::graphics);
+	auto cmd_awaiter = begin_transient(dev, queue_id::graphics, "transient.buffer_upload");
 	auto cmd = cmd_awaiter.await_resume();
 
 	for (std::size_t i = 0; i < uploads.size(); ++i) {

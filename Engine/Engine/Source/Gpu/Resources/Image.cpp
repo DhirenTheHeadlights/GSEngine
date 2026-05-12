@@ -6,7 +6,7 @@ import gse.concurrency;
 import gse.math;
 
 auto gse::transition_image_async(gpu::device& dev, gpu::handle<vulkan::image> img, gpu::image_layout target_layout, gpu::image_aspect_flag aspect, std::uint32_t layers, bool is_depth) -> async::task<gpu::sync_token> {
-	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics);
+	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics, "transient.image_transition");
 
 	const auto dst_stages = is_depth
 		? (gpu::pipeline_stage_flag::early_fragment_tests | gpu::pipeline_stage_flag::late_fragment_tests)
@@ -45,7 +45,7 @@ auto gse::gpu::transition_image_to(gpu::device& dev, vulkan::image& img, const i
 	const bool is_depth = fmt == image_format::d32_sfloat;
 	const auto aspect = is_depth ? image_aspect_flag::depth : image_aspect_flag::color;
 
-	auto cmd_awaiter = begin_transient(dev, queue_id::graphics);
+	auto cmd_awaiter = begin_transient(dev, queue_id::graphics, "transient.image_transition");
 	auto cmd = cmd_awaiter.await_resume();
 
 	const auto dst_stages = is_depth
@@ -88,7 +88,7 @@ auto gse::upload_image_2d_async(gpu::device& dev, vulkan::image& resource, const
 		pixel_data
 	);
 
-	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics);
+	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics, "transient.image_upload_2d");
 
 	vulkan::transition_image_layout(
 		resource,
@@ -150,7 +150,7 @@ auto gse::upload_image_layers_async(gpu::device& dev, vulkan::image& resource, s
 		memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
 	}
 
-	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics);
+	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics, "transient.image_upload_layers");
 
 	vulkan::transition_image_layout(
 		resource,
@@ -215,7 +215,7 @@ auto gse::gpu::upload_image_2d(gpu::device& dev, vulkan::image& img, const void*
 		pixel_data
 	);
 
-	auto cmd_awaiter = begin_transient(dev, queue_id::graphics);
+	auto cmd_awaiter = begin_transient(dev, queue_id::graphics, "transient.image_upload_2d");
 	auto cmd = cmd_awaiter.await_resume();
 
 	vulkan::transition_image_layout(
@@ -283,7 +283,7 @@ auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const s
 		memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
 	}
 
-	auto cmd_awaiter = begin_transient(dev, queue_id::graphics);
+	auto cmd_awaiter = begin_transient(dev, queue_id::graphics, "transient.image_upload_layers");
 	auto cmd = cmd_awaiter.await_resume();
 
 	vulkan::transition_image_layout(

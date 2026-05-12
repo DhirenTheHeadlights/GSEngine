@@ -20,11 +20,21 @@ import gse.diag;
 
 auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<frame> {
     auto sync = create_sync_objects(dev.vulkan_device(), sc.config());
-    return std::make_unique<frame>(std::move(sync), 0, dev.vulkan_command().frame_command_buffer(0), dev, sc);
+    return std::make_unique<frame>(
+        std::move(sync),
+        0,
+        dev.vulkan_command().frame_command_buffer(0),
+        dev,
+        sc
+    );
 }
 
 gse::gpu::frame::frame(vulkan::sync&& sync, const std::uint32_t image_index, const handle<vulkan::command_buffer> command_buffer, device& dev, swap_chain& sc)
-    : m_sync(std::move(sync)), m_image_index(image_index), m_command_buffer(command_buffer), m_device(&dev), m_swapchain(&sc) {}
+    : m_sync(std::move(sync)),
+      m_image_index(image_index),
+      m_command_buffer(command_buffer),
+      m_device(&dev),
+      m_swapchain(&sc) {}
 
 auto gse::gpu::frame::current_frame() const -> std::uint32_t {
     return m_current_frame;
@@ -114,9 +124,10 @@ auto gse::gpu::frame::begin(window::state& win) -> std::expected<frame_token, fr
 
     m_image_index = acquired_image_index;
     m_command_buffer = m_device->vulkan_command().frame_command_buffer(m_current_frame);
-    const vulkan::commands cmd{ m_command_buffer };
-    cmd.reset();
-    cmd.begin();
+
+    const vulkan::commands cmd_main{ m_command_buffer };
+    cmd_main.reset();
+    cmd_main.begin();
 
     const image_barrier acquire_barrier{
         .src_stages = pipeline_stage_flag::top_of_pipe,
@@ -128,7 +139,43 @@ auto gse::gpu::frame::begin(window::state& win) -> std::expected<frame_token, fr
         .image = m_swapchain->image(m_image_index),
         .aspects = image_aspect_flag::color,
     };
-    cmd.pipeline_barrier(dependency_info{ .image_barriers = std::span(&acquire_barrier, 1) });
+    cmd_main.pipeline_barrier(dependency_info{ .image_barriers = std::span(&acquire_barrier, 1) });
+
+    const std::array transient_visibility_barriers{
+        memory_barrier{
+            .src_stages = pipeline_stage_flag::acceleration_structure_build,
+            .src_access = access_flag::acceleration_structure_write,
+            .dst_stages = pipeline_stage_flag::acceleration_structure_build
+                | pipeline_stage_flag::vertex_shader
+                | pipeline_stage_flag::fragment_shader
+                | pipeline_stage_flag::mesh_shader
+                | pipeline_stage_flag::task_shader
+                | pipeline_stage_flag::compute_shader,
+            .dst_access = access_flag::acceleration_structure_read | access_flag::shader_read,
+        },
+        memory_barrier{
+            .src_stages = pipeline_stage_flag::copy | pipeline_stage_flag::transfer,
+            .src_access = access_flag::transfer_write,
+            .dst_stages = pipeline_stage_flag::vertex_input
+                | pipeline_stage_flag::index_input
+                | pipeline_stage_flag::vertex_attribute_input
+                | pipeline_stage_flag::draw_indirect
+                | pipeline_stage_flag::vertex_shader
+                | pipeline_stage_flag::fragment_shader
+                | pipeline_stage_flag::mesh_shader
+                | pipeline_stage_flag::task_shader
+                | pipeline_stage_flag::compute_shader
+                | pipeline_stage_flag::acceleration_structure_build,
+            .dst_access = access_flag::vertex_attribute_read
+                | access_flag::index_read
+                | access_flag::shader_read
+                | access_flag::shader_storage_read
+                | access_flag::uniform_read
+                | access_flag::indirect_command_read
+                | access_flag::shader_sampled_read,
+        },
+    };
+    cmd_main.pipeline_barrier(dependency_info{ .memory_barriers = transient_visibility_barriers });
 
     m_device->transient().recorder().run_pre_frame(m_command_buffer);
 
@@ -149,7 +196,7 @@ auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state& state) -
 auto gse::gpu::frame::end(window::state& win) -> void {
     m_device->transient().recorder().run_post_frame(m_command_buffer);
 
-    const vulkan::commands cmd{ m_command_buffer };
+    const vulkan::commands cmd_tail{ m_command_buffer };
 
     const image_barrier present_barrier{
         .src_stages = pipeline_stage_flag::color_attachment_output,
@@ -161,22 +208,22 @@ auto gse::gpu::frame::end(window::state& win) -> void {
         .image = m_swapchain->image(m_image_index),
         .aspects = image_aspect_flag::color,
     };
-    cmd.pipeline_barrier(dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
+    cmd_tail.pipeline_barrier(dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
 
     {
-    	trace::scope_guard sg{trace_id<"end_frame::cmd_end">()};
-        cmd.end();
+        trace::scope_guard sg{trace_id<"end_frame::cmd_end">()};
+        cmd_tail.end();
     }
 
-    std::vector<semaphore_submit_info> wait_infos;
-    wait_infos.push_back({
+    std::vector<semaphore_submit_info> main_waits;
+    main_waits.push_back({
         .semaphore = m_sync.image_available(m_current_frame),
         .value = 0,
         .stages = pipeline_stage_flag::top_of_pipe,
     });
 
     for (const auto& wait : m_extra_waits) {
-        wait_infos.push_back({
+        main_waits.push_back({
             .semaphore = std::bit_cast<handle<semaphore>>(**wait.raii_semaphore()),
             .value = wait.value(),
             .stages = pipeline_stage_flag::all_commands,
@@ -184,25 +231,23 @@ auto gse::gpu::frame::end(window::state& win) -> void {
     }
     m_extra_waits.clear();
 
-    const command_buffer_submit_info cmd_info{
-        .command_buffer = m_command_buffer,
-    };
-
-    const semaphore_submit_info signal_info{
+    const semaphore_submit_info render_finished_signal{
         .semaphore = m_sync.render_finished(m_image_index),
         .value = 0,
         .stages = pipeline_stage_flag::bottom_of_pipe,
     };
 
-    const submit_info submit{
-        .wait_semaphores = wait_infos,
-        .command_buffers = std::span(&cmd_info, 1),
-        .signal_semaphores = std::span(&signal_info, 1),
-    };
-
     {
-    	trace::scope_guard sg{trace_id<"end_frame::submit">()};
+        trace::scope_guard sg{trace_id<"end_frame::submit">()};
         try {
+            const command_buffer_submit_info cmd_info{
+                .command_buffer = m_command_buffer,
+            };
+            const submit_info submit{
+                .wait_semaphores = main_waits,
+                .command_buffers = std::span(&cmd_info, 1),
+                .signal_semaphores = std::span(&render_finished_signal, 1),
+            };
             m_device->vulkan_queue().submit_graphics(
                 submit,
                 m_sync.in_flight_fence(m_current_frame)

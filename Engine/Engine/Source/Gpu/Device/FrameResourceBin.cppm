@@ -72,6 +72,7 @@ export namespace gse::gpu {
         };
 
         std::vector<slot> m_slots;
+        std::unique_ptr<std::mutex> m_mutex = std::make_unique<std::mutex>();
     };
 }
 
@@ -79,6 +80,7 @@ gse::gpu::frame_resource_bin::~frame_resource_bin() = default;
 
 template <typename T>
 auto gse::gpu::frame_resource_bin::retain(const queue_id queue, const std::uint64_t until_value, T resource) -> void {
+    std::lock_guard lock(*m_mutex);
     m_slots.push_back({
         .m_queue = queue,
         .m_until_value = until_value,
@@ -96,15 +98,26 @@ auto gse::gpu::frame_resource_bin::drain(std::span<const queue_progress> progres
         return 0;
     };
 
-    std::erase_if(m_slots, [&](const slot& s) {
-        return s.m_until_value <= reached(s.m_queue);
-    });
+    std::vector<slot> retired;
+    {
+        std::lock_guard lock(*m_mutex);
+        for (auto it = m_slots.begin(); it != m_slots.end(); ) {
+            if (it->m_until_value <= reached(it->m_queue)) {
+                retired.push_back(std::move(*it));
+                it = m_slots.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 }
 
 auto gse::gpu::frame_resource_bin::wait_idle_clear() -> void {
+    std::lock_guard lock(*m_mutex);
     m_slots.clear();
 }
 
 auto gse::gpu::frame_resource_bin::pending_count() const -> std::size_t {
+    std::lock_guard lock(*m_mutex);
     return m_slots.size();
 }

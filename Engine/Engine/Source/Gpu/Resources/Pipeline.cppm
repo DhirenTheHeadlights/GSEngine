@@ -121,8 +121,11 @@ auto gse::gpu::create_graphics_pipeline(gpu::device& dev, gpu::shader_registry& 
 
 	auto layouts = cache.layout_handles;
 	constexpr auto bindless_idx = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
-	if (layouts.size() > bindless_idx) {
+	const bool has_bindless = layouts.size() > bindless_idx;
+	std::vector<std::uint32_t> auto_bound_sets;
+	if (has_bindless) {
 		layouts[bindless_idx] = bindless.layout_handle();
+		auto_bound_sets.push_back(bindless_idx);
 	}
 
 	std::optional<push_constant_range> push_range;
@@ -185,6 +188,7 @@ auto gse::gpu::create_graphics_pipeline(gpu::device& dev, gpu::shader_registry& 
 		.has_color = has_color,
 		.has_depth = has_depth,
 		.is_mesh_pipeline = is_mesh,
+		.auto_bound_sets = auto_bound_sets,
 	};
 
 	return vulkan::pipeline::create_graphics(dev.vulkan_device(), info);
@@ -195,8 +199,11 @@ auto gse::gpu::create_compute_pipeline(gpu::device& dev, gpu::shader_registry& r
 
 	auto layouts = cache.layout_handles;
 	constexpr auto bindless_idx = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
-	if (layouts.size() > bindless_idx) {
+	const bool has_bindless = layouts.size() > bindless_idx;
+	std::vector<std::uint32_t> auto_bound_sets;
+	if (has_bindless) {
 		layouts[bindless_idx] = bindless.layout_handle();
+		auto_bound_sets.push_back(bindless_idx);
 	}
 
 	std::optional<push_constant_range> push_range;
@@ -219,6 +226,7 @@ auto gse::gpu::create_compute_pipeline(gpu::device& dev, gpu::shader_registry& r
 		.stage = compute_stage,
 		.set_layouts = layouts,
 		.push_constant_range = push_range,
+		.auto_bound_sets = auto_bound_sets,
 	};
 
 	return vulkan::pipeline::create_compute(dev.vulkan_device(), info);
