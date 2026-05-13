@@ -66,9 +66,25 @@ auto main(const int argc, char** argv) -> int {
 	}
 
 	{
+		std::ofstream out(out_dir / "standard_2d_layout.slang");
+		emit_binding_pack(out, gse::shaders::standard_2d::shader_binding_types{});
+	}
+
+	{
 		std::ofstream out(out_dir / "standard_3d_layout.slang");
 		out << "__exported import generated.common_types;\n\n";
 		emit_binding_pack(out, gse::shaders::standard_3d::shader_binding_types{});
+	}
+
+	{
+		std::ofstream out(out_dir / "vbd_physics_types.slang");
+		emit_pack(out, gse::shaders::vbd_physics::shader_types{});
+	}
+
+	{
+		std::ofstream out(out_dir / "vbd_physics_layout.slang");
+		out << "__exported import generated.vbd_physics_types;\n\n";
+		emit_binding_pack(out, gse::shaders::vbd_physics::shader_binding_types{});
 	}
 
 	return 0;

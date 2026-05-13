@@ -23,7 +23,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         return;
     }
 
-    GpuBody body_i = body_data[i];
+    gpu_body body_i = body_data[i];
 
     bool i_locked = (body_i.flags & FLAG_LOCKED) != 0;
     bool i_inactive = i_locked || body_i.sleep_counter >= SLEEP_THRESHOLD;
@@ -48,7 +48,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
                     uint next = grid_data[entry_ptr + 1];
 
                     if (j > i && j < pc.body_count) {
-                        GpuBody body_j = body_data[j];
+                        gpu_body body_j = body_data[j];
                         bool j_locked = (body_j.flags & FLAG_LOCKED) != 0;
                         bool j_inactive = j_locked || body_j.sleep_counter >= SLEEP_THRESHOLD;
                         if (!(i_inactive && j_inactive)) {

@@ -223,7 +223,7 @@ auto gse::gpu::compute_queue::begin(const std::string_view tag) -> void {
 	vulkan::commands(cmd).begin();
 	vulkan::commands(cmd).reset_query_pool(m_ctx.query_pool_handle(), 0, timing_slot_count);
 	if (m_descriptor_heap) {
-		m_descriptor_heap->bind_buffer(cmd);
+		m_descriptor_heap->bind_descriptor_storage(cmd);
 	}
 	if (m_device) {
 		const auto handle = m_device->begin_pass_marker(cmd, device::pass_marker{ .pass_type = find_or_generate_id(tag) });

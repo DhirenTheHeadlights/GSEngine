@@ -12,7 +12,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint bi = dispatch_id.x;
     if (bi >= pc.body_count) return;
 
-    GpuBody body = body_data[bi];
+    gpu_body body = body_data[bi];
     bool locked = (body.flags & FLAG_LOCKED) != 0;
     bool sleeping = body.sleep_counter >= SLEEP_THRESHOLD;
     bool update_orient = (body.flags & FLAG_UPDATE_ORIENTATION) != 0;

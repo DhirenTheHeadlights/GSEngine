@@ -13,7 +13,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     if (bi >= pc.body_count) return;
     if (collision_state[CONVERGED_FLAG_INDEX] != 0) return;
 
-    GpuBody body = body_data[bi];
+    gpu_body body = body_data[bi];
     if ((body.flags & FLAG_LOCKED) != 0) return;
     if (body.sleep_counter >= SLEEP_THRESHOLD) return;
 

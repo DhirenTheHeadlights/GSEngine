@@ -18,8 +18,8 @@ static const uint SAT_AXIS_FACE = 0;
 static const uint SAT_AXIS_CROSS = 1;
 
 float contact_effective_mass(
-    GpuBody body_a,
-    GpuBody body_b,
+    gpu_body body_a,
+    gpu_body body_b,
     float3 rAW,
     float3 rBW,
     float3 dir
@@ -891,15 +891,15 @@ void record_narrow_phase_debug(
     collision_state[base + 7] = (contacts.reference_face & 0xFFu) | ((contacts.incident_face & 0xFFu) << 8);
 }
 
-bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint ws_count, out GpuWarmStart result) {
-    result = (GpuWarmStart)0;
+bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint ws_count, out gpu_warm_start result) {
+    result = (gpu_warm_start)0;
     if (ws_count == 0) return false;
 
     uint lo = 0;
     uint hi = ws_count;
     while (lo < hi) {
         uint mid = (lo + hi) / 2;
-        GpuWarmStart ws = warm_starts[mid];
+        gpu_warm_start ws = warm_starts[mid];
         if (ws.body_a < ba || (ws.body_a == ba && ws.body_b < bb) ||
             (ws.body_a == ba && ws.body_b == bb && feature_less(ws.feature_key_hi, ws.feature_key_lo, feature_hi, feature_lo))) {
             lo = mid + 1;
@@ -909,7 +909,7 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint 
     }
 
     if (lo < ws_count) {
-        GpuWarmStart ws = warm_starts[lo];
+        gpu_warm_start ws = warm_starts[lo];
         if (ws.body_a == ba && ws.body_b == bb && feature_equal(ws.feature_key_hi, ws.feature_key_lo, feature_hi, feature_lo)) {
             result = ws;
             return true;
@@ -931,8 +931,8 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint body_a_idx = collision_pairs[1 + pair_idx * 2];
     uint body_b_idx = collision_pairs[1 + pair_idx * 2 + 1];
 
-    GpuBody ba = body_data[body_a_idx];
-    GpuBody bb = body_data[body_b_idx];
+    gpu_body ba = body_data[body_a_idx];
+    gpu_body bb = body_data[body_b_idx];
 
     float3 center_a = ba.position.xyz;
     float3 center_b = bb.position.xyz;
@@ -979,7 +979,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         float3 local_r_a = rotate_vector(quat_conjugate(ba.orientation), world_r_a);
         float3 local_r_b = rotate_vector(quat_conjugate(bb.orientation), world_r_b);
 
-        GpuWarmStart cached_ws;
+        gpu_warm_start cached_ws;
         bool has_cached = warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, pc.warm_start_count, cached_ws);
         float3 current_d = world_anchor_a - world_anchor_b;
         float current_normal_gap = dot(constraint_normal, current_d) + pc.collision_margin;
@@ -1068,7 +1068,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             penalty.z = clamp(penalty.z * pc.gamma, row_floor_z, pc.penalty_max);
         }
 
-        GpuContact c;
+        gpu_contact c;
         c.body_a = body_a_idx;
         c.body_b = body_b_idx;
         c.feature_key_hi = feature_hi;

@@ -38,7 +38,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
     AllMemoryBarrierWithGroupSync();
 
     for (uint ci = tid; ci < num_contacts; ci += WG_SIZE) {
-        GpuContact c = contact_data[ci];
+        gpu_contact c = contact_data[ci];
         if (c.body_a < body_count && c.body_b < body_count) {
             uint dummy;
             InterlockedAdd(contact_counts[c.body_a], 1u, dummy);
@@ -63,7 +63,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
     AllMemoryBarrierWithGroupSync();
 
     for (uint ci = tid; ci < num_contacts; ci += WG_SIZE) {
-        GpuContact c = contact_data[ci];
+        gpu_contact c = contact_data[ci];
         if (c.body_a < body_count && c.body_b < body_count) {
             uint slot_a;
             InterlockedAdd(contact_counts[c.body_a], 1u, slot_a);
@@ -89,7 +89,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
     AllMemoryBarrierWithGroupSync();
 
     for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
-        GpuJoint j = joint_data[ji];
+        gpu_joint j = joint_data[ji];
         if (j.body_a < body_count && j.body_b < body_count) {
             uint dummy;
             InterlockedAdd(joint_counts[j.body_a], 1u, dummy);
@@ -114,7 +114,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
     AllMemoryBarrierWithGroupSync();
 
     for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
-        GpuJoint j = joint_data[ji];
+        gpu_joint j = joint_data[ji];
         if (j.body_a < body_count && j.body_b < body_count) {
             uint slot_a;
             InterlockedAdd(joint_counts[j.body_a], 1u, slot_a);
@@ -134,10 +134,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
     AllMemoryBarrierWithGroupSync();
 
     for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
-        GpuJoint j = joint_data[ji];
+        gpu_joint j = joint_data[ji];
         if (j.body_a >= body_count || j.body_b >= body_count) continue;
-        GpuBody ba = body_data[j.body_a];
-        GpuBody bb = body_data[j.body_b];
+        gpu_body ba = body_data[j.body_a];
+        gpu_body bb = body_data[j.body_b];
         float3 r_aw = rotate_vector(ba.orientation, j.local_anchor_a.xyz);
         float3 r_bw = rotate_vector(bb.orientation, j.local_anchor_b.xyz);
         float3 d = (ba.position.xyz + r_aw) - (bb.position.xyz + r_bw);
@@ -237,7 +237,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
                 if (idx >= MAX_CONTACT_ADJACENCY) break;
                 uint ci = contact_adjacency[idx];
                 if (ci >= num_contacts) continue;
-                GpuContact c = contact_data[ci];
+                gpu_contact c = contact_data[ci];
                 uint other = (c.body_a == bi) ? c.body_b : c.body_a;
                 if (other < body_count) {
                     uint other_color = gs_body_color[other];
@@ -259,7 +259,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV
                 if (idx >= MAX_JOINT_ADJACENCY) break;
                 uint ji = joint_adjacency[idx];
                 if (ji >= num_joints) continue;
-                GpuJoint j = joint_data[ji];
+                gpu_joint j = joint_data[ji];
                 uint other = (j.body_a == bi) ? j.body_b : j.body_a;
                 if (other < body_count) {
                     uint other_color = gs_body_color[other];

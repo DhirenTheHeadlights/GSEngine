@@ -9,6 +9,7 @@ export namespace gse::shaders {
 	struct shader_struct_tag {};
 	struct shader_enum_tag {};
 	struct sampler2d_tag {};
+	struct sampler2d_array_tag {};
 	struct ssbo_readonly_tag {};
 	struct ssbo_readwrite_tag {};
 	struct tlas_tag {};
@@ -17,6 +18,7 @@ export namespace gse::shaders {
 	constexpr shader_struct_tag shader_struct{};
 	constexpr shader_enum_tag shader_enum{};
 	constexpr sampler2d_tag sampler2d{};
+	constexpr sampler2d_array_tag sampler2d_array{};
 	constexpr ssbo_readonly_tag ssbo_readonly{};
 	constexpr ssbo_readwrite_tag ssbo_readwrite{};
 	constexpr tlas_tag tlas{};
@@ -186,6 +188,9 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	constexpr auto name = std::meta::identifier_of(^^T);
 	if constexpr (has_annotation<sampler2d_tag>(^^T)) {
 		return std::format("public [[vk::binding({}, {})]] Sampler2D {};\n", binding_t::slot, binding_t::set, name);
+	}
+	else if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
+		return std::format("public [[vk::binding({}, {})]] Sampler2D {}[];\n", binding_t::slot, binding_t::set, name);
 	}
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {
 		return std::format("public [[vk::binding({}, {})]] RaytracingAccelerationStructure {};\n", binding_t::slot, binding_t::set, name);
