@@ -48,8 +48,8 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 	const auto view_matrix = cam_state.view_matrix;
 	const auto proj_matrix = cam_state.projection_matrix;
 
-	r.shader_handle->set_uniform(r.ubo_allocations.at("CameraUBO")[frame_index].bytes(), "CameraUBO.view", view_matrix);
-	r.shader_handle->set_uniform(r.ubo_allocations.at("CameraUBO")[frame_index].bytes(), "CameraUBO.proj", proj_matrix);
+	r.shader_handle->set_uniform(r.ubo_allocations.at("camera_ubo")[frame_index].bytes(), "camera_ubo.view", view_matrix);
+	r.shader_handle->set_uniform(r.ubo_allocations.at("camera_ubo")[frame_index].bytes(), "camera_ubo.proj", proj_matrix);
 
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
@@ -57,7 +57,7 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 	auto rec = co_await gpu::pass<state>(ctx)
 		.color(gpu::load_color())
 		.after<forward::system>()
-		.tracks(r.ubo_allocations.at("CameraUBO")[frame_index]);
+		.tracks(r.ubo_allocations.at("camera_ubo")[frame_index]);
 
 	rec.bind(r.pipeline);
 	rec.set_viewport(ext);
@@ -92,10 +92,10 @@ auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, settings& cfg, resources& r, frame_data& fd, state& s, const physics::system::state& ps, const physics::system::settings& phys_cfg) -> async::task<> {
 	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/physics_debug");
 
-	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
+	const auto camera_ubo = r.shader_handle->uniform_block("camera_ubo");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(gpu_s.device->allocator(), {
+		r.ubo_allocations["camera_ubo"][i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_flag::uniform
 		});
@@ -103,7 +103,7 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.shader_handle);
 
 		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i])
-			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
+			.buffer("camera_ubo", r.ubo_allocations["camera_ubo"][i], 0, camera_ubo.size)
 			.commit();
 	}
 

@@ -149,15 +149,6 @@ auto gse::vulkan::aftermath::create(settings cfg) -> aftermath {
 		.flags = build_diagnostics_flags(tracker.m_state->cfg),
 	};
 
-	const auto* runtime_flag = std::getenv("GSE_AFTERMATH_ENABLE");
-	const bool runtime_opt_in = runtime_flag != nullptr
-		&& (std::string_view(runtime_flag) == "1" || std::string_view(runtime_flag) == "true");
-
-	if (!runtime_opt_in) {
-		log::println(log::category::vulkan, "Nsight Aftermath compiled in but disabled at runtime (set GSE_AFTERMATH_ENABLE=1 to enable)");
-		return tracker;
-	}
-
 #ifdef GSE_HAVE_AFTERMATH
 	const auto result = GFSDK_Aftermath_EnableGpuCrashDumps(
 		GFSDK_Aftermath_Version_API,

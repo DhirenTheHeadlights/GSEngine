@@ -1,31 +1,5 @@
-public struct Vertex {
-    public float3 position;
-    public float3 normal;
-    public float2 tex_coords;
-};
-
-public struct MeshletDescriptor {
-    public uint vertex_offset;
-    public uint triangle_offset;
-    public uint vertex_count;
-    public uint triangle_count;
-};
-
-public struct MeshletBounds {
-    public float3 center;
-    public float radius;
-    public float3 cone_axis;
-    public float cone_cutoff;
-};
-
-public struct InstanceData {
-    public float4x4 model_matrix;
-    public float4x4 normal_matrix;
-    public uint skin_offset;
-    public uint joint_count;
-    public uint material_index;
-    public uint _pad0;
-};
+__exported import generated.common_types;
+__exported import generated.forward_types;
 
 public struct MeshletPayload {
     public uint meshlet_indices[32];
@@ -66,7 +40,7 @@ public struct MeshVertexOutput {
     public float2 tex_coord;
 };
 
-public MeshVertexOutput compute_mesh_vertex(Vertex v, InstanceData inst, float4x4 view, float4x4 proj) {
+public MeshVertexOutput compute_mesh_vertex(vertex v, instance_data inst, float4x4 view, float4x4 proj) {
     MeshVertexOutput o;
 
     precise float4 world_pos = mul(inst.model_matrix, float4(v.position, 1.0));

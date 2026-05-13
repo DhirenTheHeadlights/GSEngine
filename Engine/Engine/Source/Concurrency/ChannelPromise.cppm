@@ -144,6 +144,7 @@ auto gse::channel_promise<T>::fulfill(T value) const -> void {
 	m_state->ready.store(true, std::memory_order_release);
 	if (m_state->continuation) {
 		task::post([h = m_state->continuation] {
+			if (!h) return;
 			h.resume();
 		});
 	}

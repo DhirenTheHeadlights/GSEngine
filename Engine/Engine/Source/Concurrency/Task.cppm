@@ -7,6 +7,7 @@ import gse.core;
 import gse.diag;
 import gse.log;
 import gse.moodycamel;
+import gse.stacktrace;
 
 export namespace gse {
 	using job = move_only_function<void()>;
@@ -362,6 +363,9 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 	entries.reserve(count);
 
 	for (auto it = first; it != last; ++it) {
+		if (!*it) {
+			log::println(log::level::error, log::category::task, "post_range: null job in input range (trace_id={})", id);
+		}
 		const auto key = async_key_for(&*it);
 		trace::begin_async(id, key);
 		entries.push_back(job_entry{
@@ -508,6 +512,11 @@ auto gse::task::run_job(job_entry& entry) -> void {
 		trace::end_async(entry.trace_id, entry.async_key);
 	}
 
+	if (!entry.fn.is_invocable()) {
+		log::println(log::level::error, log::category::task, "run_job: dequeued job_entry with non-invocable fn (trace_id={}, vtable={}, invoke={}, async_trace={}, counts_in_flight={}, has_group={})", entry.trace_id, entry.fn.vtable_address(), entry.fn.invoke_address(), entry.async_trace, entry.counts_in_flight, entry.gp != nullptr);
+		return;
+	}
+
 	try {
 		{
 			trace::scope_guard sg{entry.trace_id, entry.parent_eid};
@@ -515,10 +524,10 @@ auto gse::task::run_job(job_entry& entry) -> void {
 		}
 	}
 	catch (const std::exception& e) {
-		log::println(log::level::error, log::category::task, "Exception in task: {}", e.what());
+		log::println(log::level::error, log::category::task, "Exception in task (trace_id={}, type={}): {}\nStack:\n{}", entry.trace_id, typeid(e).name(), e.what(), capture_stacktrace(1));
 	}
 	catch (...) {
-		log::println(log::level::error, log::category::task, "Exception in task");
+		log::println(log::level::error, log::category::task, "Unknown exception in task (trace_id={})\nStack:\n{}", entry.trace_id, capture_stacktrace(1));
 	}
 }
 
@@ -538,6 +547,9 @@ auto gse::task::worker_loop(const std::stop_token& st, std::size_t index) -> voi
 }
 
 auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t parent_eid) -> void {
+	if (!j) {
+		log::println(log::level::error, log::category::task, "submit_async: null job submitted (trace_id={})", trace_id);
+	}
 	in_flight.fetch_add(1, std::memory_order_relaxed);
 
 	const auto key = async_key_for(&j);

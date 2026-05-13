@@ -11,6 +11,7 @@ import gse.ecs;
 import gse.os;
 import gse.gpu;
 import gse.log;
+import gse.stacktrace;
 
 import :engine;
 
@@ -43,6 +44,28 @@ auto gse::shutdown() -> void {
 }
 
 auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const engine_config& config) -> void {
+	install_crash_handlers();
+
+	std::set_terminate([] {
+		const auto stack = capture_stacktrace(1);
+		if (const auto ex = std::current_exception()) {
+			try {
+				std::rethrow_exception(ex);
+			}
+			catch (const std::exception& e) {
+				log::println(log::level::error, log::category::general, "std::terminate called via uncaught exception (type={}): {}\nStack:\n{}", typeid(e).name(), e.what(), stack);
+			}
+			catch (...) {
+				log::println(log::level::error, log::category::general, "std::terminate called via uncaught unknown exception\nStack:\n{}", stack);
+			}
+		}
+		else {
+			log::println(log::level::error, log::category::general, "std::terminate called with no current exception\nStack:\n{}", stack);
+		}
+		log::flush();
+		std::abort();
+	});
+
 	should_shutdown.store(false, std::memory_order_relaxed);
 
 	engine e(config.title, engine_flags);

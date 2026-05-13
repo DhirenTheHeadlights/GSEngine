@@ -28,9 +28,10 @@ export namespace gse {
 			task_graph& graph,
 			registry& reg,
 			async::rw_mutex_registry& access_mutexes,
-			async::manual_event& tick_event,
-			async::manual_event& tick_done_event,
-			bool& is_in_update_loop
+			async::manual_event& resume_event,
+			async::manual_event& paused_event,
+			bool& is_in_update_loop,
+			bool& settled
 		);
 
 		template <typename S, typename... Args>
@@ -112,9 +113,10 @@ export namespace gse {
 		registry& m_reg;
 		async::rw_mutex_registry& m_access_mutexes;
 		std::atomic<int> m_held_locks{ 0 };
-		async::manual_event& m_tick_event;
-		async::manual_event& m_tick_done_event;
+		async::manual_event& m_resume_event;
+		async::manual_event& m_paused_event;
 		bool& m_is_in_update_loop;
+		bool& m_settled;
 	};
 }
 
@@ -164,23 +166,24 @@ namespace gse {
 	) -> id;
 }
 
-gse::run_context::run_context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, registry& reg, async::rw_mutex_registry& access_mutexes, async::manual_event& tick_event, async::manual_event& tick_done_event, bool& is_in_update_loop) : task_context{ states, resources_store, channels_store, channels, graph, true }, m_sched(sched), m_reg(reg), m_access_mutexes(access_mutexes), m_tick_event(tick_event), m_tick_done_event(tick_done_event), m_is_in_update_loop(is_in_update_loop) {}
+gse::run_context::run_context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, registry& reg, async::rw_mutex_registry& access_mutexes, async::manual_event& resume_event, async::manual_event& paused_event, bool& is_in_update_loop, bool& settled) : task_context{ states, resources_store, channels_store, channels, graph, true }, m_sched(sched), m_reg(reg), m_access_mutexes(access_mutexes), m_resume_event(resume_event), m_paused_event(paused_event), m_is_in_update_loop(is_in_update_loop), m_settled(settled) {}
 
 auto gse::run_context::next_tick() -> async::task<> {
 	const int locks = held_lock_count();
 	assert(locks == 0, "system held {} component lock(s) across co_await ctx.next_tick(); scope your acquire<> so the locked handle is destroyed before next_tick", locks);
 	m_is_in_update_loop = true;
-	m_tick_done_event.set();
-	co_await m_tick_event.wait();
-	m_tick_event.reset();
+	m_settled = true;
+	m_paused_event.set();
+	co_await m_resume_event.wait();
+	m_resume_event.reset();
 }
 
 auto gse::run_context::yield_tick() -> async::task<> {
 	const int locks = held_lock_count();
 	assert(locks == 0, "system held {} component lock(s) across co_await ctx.yield_tick(); scope your acquire<> so the locked handle is destroyed before yield_tick", locks);
-	m_tick_done_event.set();
-	co_await m_tick_event.wait();
-	m_tick_event.reset();
+	m_paused_event.set();
+	co_await m_resume_event.wait();
+	m_resume_event.reset();
 }
 
 auto gse::acquire_shared(async::rw_mutex_registry& mutexes, const id type) -> async::task<> {

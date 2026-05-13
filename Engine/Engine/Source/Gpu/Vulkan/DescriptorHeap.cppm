@@ -57,7 +57,8 @@ export namespace gse::gpu {
 		~descriptor_heap() override;
 
 		auto allocate(
-			gpu::device_size size
+			gpu::device_size size,
+			const std::source_location& loc = std::source_location::current()
 		) -> descriptor_region;
 
 		auto begin_frame(
@@ -330,7 +331,7 @@ gse::gpu::descriptor_heap::~descriptor_heap() {
 	}
 }
 
-auto gse::gpu::descriptor_heap::allocate(const gpu::device_size size) -> descriptor_region {
+auto gse::gpu::descriptor_heap::allocate(const gpu::device_size size, const std::source_location& loc) -> descriptor_region {
 	std::lock_guard lock(m_alloc_mutex);
 
 	const auto aligned_offset = align_up(m_bump_offset);
@@ -341,6 +342,19 @@ auto gse::gpu::descriptor_heap::allocate(const gpu::device_size size) -> descrip
 		"Descriptor heap exhausted: requested {} bytes at offset {}, capacity {}",
 		aligned_size, aligned_offset, m_capacity
 	);
+
+	if (m_transient_initialized) {
+		log::println(
+			log::level::error, log::category::vulkan_memory,
+			"Persistent descriptor allocation after transient zone init: requested {} bytes at offset {}, persistent_end {} (will be clobbered by transient zone) from {}:{} in {}",
+			aligned_size, aligned_offset, m_persistent_end, loc.file_name(), loc.line(), loc.function_name()
+		);
+		assert(
+			aligned_offset + aligned_size <= m_persistent_end,
+			"Persistent descriptor allocation after transient zone init: requested {} bytes at offset {} would extend past persistent_end {} (caller {}:{} in {})",
+			aligned_size, aligned_offset, m_persistent_end, loc.file_name(), loc.line(), loc.function_name()
+		);
+	}
 
 	m_bump_offset = aligned_offset + aligned_size;
 
@@ -447,7 +461,10 @@ auto gse::gpu::descriptor_heap::allocate_transient(std::uint32_t frame_index, co
 }
 
 auto gse::gpu::descriptor_heap::init_transient_zone() -> void {
-	m_persistent_end = align_up(m_bump_offset);
+	constexpr gpu::device_size persistent_reserve = 256 * 1024;
+	const auto current_bump = align_up(m_bump_offset);
+	m_persistent_end = align_up(std::max<gpu::device_size>(current_bump, persistent_reserve));
+
 	const auto remaining = m_capacity - m_persistent_end;
 	constexpr std::uint32_t frames = 2;
 	m_transient_slice_size = (remaining / frames) & ~(m_props.offset_alignment - 1);
@@ -460,8 +477,8 @@ auto gse::gpu::descriptor_heap::init_transient_zone() -> void {
 	m_transient_initialized = true;
 
 	log::println(log::category::vulkan_memory,
-		"Descriptor heap transient zone: persistent={} bytes, {} slices x {} KB each",
-		m_persistent_end, frames, m_transient_slice_size / 1024);
+		"Descriptor heap transient zone: persistent={} bytes (used {}), {} slices x {} KB each",
+		m_persistent_end, current_bump, frames, m_transient_slice_size / 1024);
 }
 
 auto gse::gpu::descriptor_heap::align_up(const gpu::device_size value) const -> gpu::device_size {

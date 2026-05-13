@@ -165,7 +165,11 @@ auto gse::async::rw_mutex::unlock_shared() -> void {
 		}
 	}
 	for (const auto h : to_wake) {
-		task::post([h] { h.resume(); });
+		if (!h) continue;
+		task::post([h] {
+			if (!h) return;
+			h.resume();
+		});
 	}
 }
 
@@ -189,7 +193,11 @@ auto gse::async::rw_mutex::unlock_exclusive() -> void {
 		}
 	}
 	for (const auto h : to_wake) {
-		task::post([h] { h.resume(); });
+		if (!h) continue;
+		task::post([h] {
+			if (!h) return;
+			h.resume();
+		});
 	}
 }
 

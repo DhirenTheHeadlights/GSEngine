@@ -3,6 +3,7 @@ export module gse.assert;
 import std;
 
 import gse.log;
+import gse.stacktrace;
 
 export namespace gse {
     template <typename... Args>
@@ -70,11 +71,13 @@ auto gse::assert_format_message(const std::source_location loc, const std::strin
         "File: {}\n"
         "Line: {}\n"
         "Function: {}\n"
-        "Comment: {}\n",
+        "Comment: {}\n"
+        "Stack:\n{}",
         loc.file_name(),
         loc.line(),
         loc.function_name(),
-        comment
+        comment,
+        capture_stacktrace(2)
     );
 }
 
@@ -85,5 +88,6 @@ auto gse::assert_fail(const std::string_view message) noexcept -> void {
         "{}",
         message
     );
+    log::flush();
     std::terminate();
 }

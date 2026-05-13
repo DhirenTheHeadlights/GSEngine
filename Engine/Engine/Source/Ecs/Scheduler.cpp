@@ -7,6 +7,7 @@ import gse.core;
 import gse.concurrency;
 import gse.time;
 import gse.diag;
+import gse.log;
 
 auto gse::scheduler::set_registry(registry& reg) -> void {
 	m_registry = &reg;
@@ -32,15 +33,14 @@ namespace gse {
 		system_node& node
 	) -> async::task<>;
 
+	template <std::invocable OnComplete>
 	auto wrap_run_task(
 		async::task<> inner,
-		async::manual_event* done
-	) -> async::task<>;
-}
-
-auto gse::wrap_run_task(async::task<> inner, async::manual_event* done) -> async::task<> {
-	co_await std::move(inner);
-	done->set();
+		OnComplete on_complete
+	) -> async::task<> {
+		co_await std::move(inner);
+		on_complete();
+	}
 }
 
 auto gse::run_node_frame(frame_context& ctx, system_node& node) -> async::task<> {
@@ -309,9 +309,10 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 			m_update_graph,
 			*m_registry,
 			m_access_mutexes,
-			*node.tick_event,
-			*node.tick_done_event,
-			node.is_in_update_loop
+			*node.resume_event,
+			*node.paused_event,
+			node.is_in_update_loop,
+			node.settled
 		);
 	}
 
@@ -327,21 +328,24 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 		node.run_launched = true;
 		node.run_task = wrap_run_task(
 			node.invoke_run_fn(*node.tick_ctx, node.data.get()),
-			node.tick_done_event.get()
+			[&node] {
+				node.settled = true;
+				node.paused_event->set();
+			}
 		);
 		node.run_task.start();
 	}
 	else if (!node.run_task.done()) {
-		node.tick_done_event->reset();
-		node.tick_event->set();
-		co_await node.tick_done_event->wait();
+		node.paused_event->reset();
+		node.resume_event->set();
+		co_await node.paused_event->wait();
 	}
 
 	if (m_advance_hook) {
 		m_advance_hook(node.state_id, "after");
 	}
 
-	if (node.is_in_update_loop || node.run_task.done()) {
+	if (node.settled) {
 		m_update_graph.notify_state_ready(node.state_id);
 		if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
 			m_update_graph.notify_state_ready(node.state_type_id);
@@ -367,7 +371,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 		if (!node.run_launched) {
 			return;
 		}
-		if (!node.is_in_update_loop && !node.run_task.done()) {
+		if (!node.settled) {
 			return;
 		}
 	}

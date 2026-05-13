@@ -120,9 +120,13 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 				continue;
 			}
 
+			if (!mesh.upload_token().ready()) {
+				continue;
+			}
+
 			meshlet_writer.begin(frame_index);
 			mesh.meshlet_gpu().bind(meshlet_writer);
-			meshlet_writer.buffer("instanceData", instance_buf);
+			meshlet_writer.buffer("instance_data_buffer", instance_buf);
 			rec.commit(meshlet_writer.native_writer(), r.meshlet_pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();

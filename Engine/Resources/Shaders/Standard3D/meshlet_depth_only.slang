@@ -7,12 +7,12 @@ cbuffer CameraUBO {
     float4x4 proj;
 };
 
-[[vk::binding(0, 1)]] StructuredBuffer<Vertex> vertices;
-[[vk::binding(1, 1)]] StructuredBuffer<MeshletDescriptor> meshlets;
-[[vk::binding(2, 1)]] StructuredBuffer<uint> meshletVertexIndices;
-[[vk::binding(3, 1)]] ByteAddressBuffer meshletTriangles;
-[[vk::binding(4, 1)]] StructuredBuffer<MeshletBounds> meshletBounds;
-[[vk::binding(5, 1)]] StructuredBuffer<InstanceData> instanceData;
+[[vk::binding(0, 1)]] StructuredBuffer<vertex> vertices_buffer;
+[[vk::binding(1, 1)]] StructuredBuffer<meshlet_descriptor> meshlets_buffer;
+[[vk::binding(2, 1)]] StructuredBuffer<uint> meshlet_vertex_indices;
+[[vk::binding(3, 1)]] ByteAddressBuffer meshlet_triangles;
+[[vk::binding(4, 1)]] StructuredBuffer<meshlet_bounds> meshlet_bounds_buffer;
+[[vk::binding(5, 1)]] StructuredBuffer<instance_data> instance_data_buffer;
 
 [[vk::push_constant]]
 cbuffer PushConstants {
@@ -32,8 +32,8 @@ void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
 
     if (meshlet_idx < meshlet_count) {
         uint global_idx = meshlet_offset + meshlet_idx;
-        MeshletBounds bounds = meshletBounds[global_idx];
-        InstanceData inst = instanceData[instance_index];
+        meshlet_bounds bounds = meshlet_bounds_buffer[global_idx];
+        instance_data inst = instance_data_buffer[instance_index];
 
         float3 world_center = mul(inst.model_matrix, float4(bounds.center, 1.0)).xyz;
 
@@ -90,14 +90,14 @@ void ms_main(
     OutputIndices<uint3, 124> out_tris
 ) {
     uint meshlet_global_idx = p.meshlet_indices[group_id.x];
-    MeshletDescriptor desc = meshlets[meshlet_global_idx];
-    InstanceData inst = instanceData[p.instance_idx];
+    meshlet_descriptor desc = meshlets_buffer[meshlet_global_idx];
+    instance_data inst = instance_data_buffer[p.instance_idx];
 
     SetMeshOutputCounts(desc.vertex_count, desc.triangle_count);
 
     for (uint v_idx = gtid; v_idx < desc.vertex_count; v_idx += 32) {
-        uint global_vertex_idx = meshletVertexIndices[desc.vertex_offset + v_idx];
-        Vertex v = vertices[global_vertex_idx];
+        uint global_vertex_idx = meshlet_vertex_indices[desc.vertex_offset + v_idx];
+        vertex v = vertices_buffer[global_vertex_idx];
 
         MeshVertexOutput mv = compute_mesh_vertex(v, inst, view, proj);
 
@@ -107,7 +107,7 @@ void ms_main(
     }
 
     for (uint t_idx = gtid; t_idx < desc.triangle_count; t_idx += 32) {
-        out_tris[t_idx] = load_meshlet_triangle(meshletTriangles, desc.triangle_offset + t_idx * 3);
+        out_tris[t_idx] = load_meshlet_triangle(meshlet_triangles, desc.triangle_offset + t_idx * 3);
     }
 }
 

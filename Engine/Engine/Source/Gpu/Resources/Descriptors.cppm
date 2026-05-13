@@ -24,7 +24,8 @@ export namespace gse::gpu {
 	auto allocate_descriptors(
 		shader_registry& registry,
 		descriptor_heap& heap,
-		const resource::handle<shader>& s
+		const resource::handle<shader>& s,
+		const std::source_location& loc = std::source_location::current()
 	) -> descriptor_region;
 
 	class descriptor_writer final : public non_copyable {
@@ -125,14 +126,14 @@ export namespace gse::gpu {
 	};
 }
 
-auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const resource::handle<shader>& s) -> descriptor_region {
+auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const resource::handle<shader>& s, const std::source_location& loc) -> descriptor_region {
 	const auto& cache = registry.cache(s);
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
 	assert(persistent_idx < cache.layout_handles.size(), "Shader has no persistent descriptor set to allocate");
 
 	const auto set_layout = cache.layout_handles[persistent_idx];
 	const auto size = heap.layout_size(set_layout);
-	return heap.allocate(size);
+	return heap.allocate(size, loc);
 }
 
 namespace gse {

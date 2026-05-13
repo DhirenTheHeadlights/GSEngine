@@ -1,4 +1,4 @@
-__exported import generated.forward;
+__exported import generated.forward_types;
 
 public static const int MAX_POINT_SHADOW_LIGHTS = 4;
 
