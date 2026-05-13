@@ -374,16 +374,11 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 		}
 	};
 
-	if (cache.external_layout) {
-		for (const auto& [set_index, bindings] : cache.external_layout->sets()) {
-			if (set_index == persistent_idx) {
-				for (const auto& b : bindings) {
-					write_binding(
-						b.name,
-						b.desc.binding,
-						b.desc.type == descriptor_type::uniform_buffer,
-						b.desc.count
-					);
+	if (cache.family) {
+		for (const auto& fs : cache.family->sets) {
+			if (fs.type == descriptor_set_type::persistent) {
+				for (const auto& b : fs.bindings) {
+					write_binding(b.name, b.desc.binding, b.desc.type == descriptor_type::uniform_buffer, b.desc.count);
 				}
 				break;
 			}

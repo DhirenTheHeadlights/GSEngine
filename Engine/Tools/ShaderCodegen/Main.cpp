@@ -87,5 +87,18 @@ auto main(const int argc, char** argv) -> int {
 		emit_binding_pack(out, gse::shaders::vbd_physics::shader_binding_types{});
 	}
 
+	{
+		std::ofstream out(out_dir / "meshlet_depth_only_layout.slang");
+		out << "__exported import generated.common_types;\n";
+		out << "__exported import generated.forward_types;\n\n";
+		emit_binding_pack(out, gse::shaders::meshlet_depth_only::shader_binding_types{});
+	}
+
+	{
+		std::ofstream out(out_dir / "skinned_depth_only_layout.slang");
+		out << "__exported import generated.common_types;\n\n";
+		emit_binding_pack(out, gse::shaders::skinned_depth_only::shader_binding_types{});
+	}
+
 	return 0;
 }

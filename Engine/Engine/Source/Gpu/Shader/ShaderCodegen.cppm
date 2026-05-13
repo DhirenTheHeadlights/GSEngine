@@ -5,6 +5,8 @@ import gse.std_meta;
 import gse.math;
 import gse.meta;
 
+import :aliases;
+
 export namespace gse::shaders {
 	struct shader_struct_tag {};
 	struct shader_enum_tag {};
@@ -73,6 +75,29 @@ export namespace gse::shaders {
 	template <typename T>
 	consteval auto slang_scalar_size(
 	) -> std::size_t;
+
+	struct family_binding {
+		std::string name;
+		gpu::descriptor_binding_desc desc;
+	};
+
+	struct family_set {
+		gpu::descriptor_set_type type = gpu::descriptor_set_type::persistent;
+		std::vector<family_binding> bindings;
+	};
+
+	template <is_shader_binding T>
+	consteval auto descriptor_type_of(
+	) -> gpu::descriptor_type;
+
+	template <is_shader_binding T>
+	consteval auto descriptor_count_of(
+	) -> std::uint32_t;
+
+	template <typename Pack>
+	auto build_family_sets(
+		Pack pack
+	) -> std::vector<family_set>;
 }
 
 template <>
@@ -299,4 +324,76 @@ consteval auto gse::shaders::slang_scalar_size() -> std::size_t {
 	else {
 		static_assert(sizeof(T) == 0, "no slang scalar size for T");
 	}
+}
+
+template <gse::shaders::is_shader_binding T>
+consteval auto gse::shaders::descriptor_type_of() -> gpu::descriptor_type {
+	if constexpr (has_annotation<sampler2d_tag>(^^T) || has_annotation<sampler2d_array_tag>(^^T)) {
+		return gpu::descriptor_type::combined_image_sampler;
+	}
+	else if constexpr (has_annotation<tlas_tag>(^^T)) {
+		return gpu::descriptor_type::acceleration_structure;
+	}
+	else if constexpr (has_annotation<ssbo_readonly_tag>(^^T) || has_annotation<ssbo_readwrite_tag>(^^T) || has_annotation<byte_address_buffer_tag>(^^T)) {
+		return gpu::descriptor_type::storage_buffer;
+	}
+	else {
+		return gpu::descriptor_type::uniform_buffer;
+	}
+}
+
+template <gse::shaders::is_shader_binding T>
+consteval auto gse::shaders::descriptor_count_of() -> std::uint32_t {
+	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
+		return 0;
+	}
+	else {
+		return 1;
+	}
+}
+
+namespace gse::shaders {
+	template <is_shader_binding T>
+	auto append_family_binding(std::vector<family_set>& sets) -> void {
+		using binding_t = [: find_binding_type(^^T) :];
+		constexpr auto set_idx = binding_t::set;
+		constexpr auto slot_idx = binding_t::slot;
+		constexpr auto desc_type = descriptor_type_of<T>();
+		constexpr auto count = descriptor_count_of<T>();
+		constexpr auto name = std::meta::identifier_of(^^T);
+		constexpr auto set_type = static_cast<gpu::descriptor_set_type>(set_idx);
+		constexpr gpu::stage_flags all_stages =
+			gpu::stage_flag::vertex
+			| gpu::stage_flag::fragment
+			| gpu::stage_flag::compute
+			| gpu::stage_flag::task
+			| gpu::stage_flag::mesh;
+
+		auto it = std::ranges::find_if(sets, [&](const family_set& s) {
+			return s.type == set_type;
+		});
+		if (it == sets.end()) {
+			sets.push_back(family_set{ .type = set_type });
+			it = sets.end() - 1;
+		}
+		it->bindings.push_back(family_binding{
+			.name = std::string(name),
+			.desc = {
+				.binding = slot_idx,
+				.type = desc_type,
+				.count = count,
+				.stages = all_stages,
+			},
+		});
+	}
+}
+
+template <typename Pack>
+auto gse::shaders::build_family_sets(Pack) -> std::vector<family_set> {
+	std::vector<family_set> sets;
+	[&] <typename... Ts> (type_pack<Ts...>) {
+		(append_family_binding<Ts>(sets), ...);
+	}(Pack{});
+	std::ranges::sort(sets, {}, [](const family_set& s) { return static_cast<std::uint32_t>(s.type); });
+	return sets;
 }

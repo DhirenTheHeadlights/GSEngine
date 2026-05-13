@@ -7,7 +7,7 @@ import :handles;
 import :types;
 import :device;
 import :shader;
-import :shader_layout;
+import :shader_codegen;
 import :vulkan_descriptor_set_layout;
 import :vulkan_shader_module;
 
@@ -20,11 +20,17 @@ import gse.concurrency;
 import gse.diag;
 
 export namespace gse::gpu {
+	struct family_layout {
+		std::vector<shaders::family_set> sets;
+		std::vector<descriptor_set_layout> owned_layouts;
+		std::vector<handle<descriptor_set_layout>> layout_handles;
+	};
+
 	struct shader_cache_entry {
 		std::unordered_map<shader_stage, shader_module> modules;
 		std::vector<descriptor_set_layout> owned_layouts;
 		std::vector<handle<descriptor_set_layout>> layout_handles;
-		const shader_layout* external_layout = nullptr;
+		const family_layout* family = nullptr;
 	};
 
 	class shader_registry final : public non_copyable {
@@ -35,8 +41,9 @@ export namespace gse::gpu {
 
 		~shader_registry() override;
 
-		auto load_layouts(
-			const std::filesystem::path& layouts_dir
+		auto register_family(
+			std::string name,
+			std::vector<shaders::family_set> sets
 		) -> void;
 
 		[[nodiscard]] auto cache(
@@ -47,7 +54,7 @@ export namespace gse::gpu {
 		device* m_device;
 		std::mutex m_mutex;
 		std::unordered_map<id, shader_cache_entry> m_cache;
-		std::unordered_map<std::string, std::unique_ptr<shader_layout>> m_layouts;
+		std::unordered_map<std::string, std::unique_ptr<family_layout>> m_families;
 	};
 }
 
@@ -55,26 +62,40 @@ gse::gpu::shader_registry::shader_registry(device& dev) : m_device(&dev) {}
 
 gse::gpu::shader_registry::~shader_registry() {}
 
-auto gse::gpu::shader_registry::load_layouts(const std::filesystem::path& layouts_dir) -> void {
-	if (!m_layouts.empty()) {
-		return;
-	}
-	if (!std::filesystem::exists(layouts_dir)) {
-		return;
+auto gse::gpu::shader_registry::register_family(std::string name, std::vector<shaders::family_set> sets) -> void {
+	auto family = std::make_unique<family_layout>();
+	family->sets = std::move(sets);
+
+	std::uint32_t max_set_index = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
+	for (const auto& s : family->sets) {
+		max_set_index = std::max(max_set_index, static_cast<std::uint32_t>(s.type));
 	}
 
-	for (const auto& entry : std::filesystem::directory_iterator(layouts_dir)) {
-		if (!entry.is_regular_file() || entry.path().extension() != ".glayout") {
-			continue;
+	family->owned_layouts.resize(max_set_index + 1);
+
+	for (const auto& s : family->sets) {
+		const auto set_idx = static_cast<std::uint32_t>(s.type);
+		std::vector<descriptor_binding_desc> descs;
+		descs.reserve(s.bindings.size());
+		for (const auto& b : s.bindings) {
+			descs.push_back(b.desc);
 		}
-
-		auto layout = std::make_unique<shader_layout>(entry.path());
-		layout->load(*m_device);
-
-		const auto& name = layout->name();
-		log::println(log::category::assets, "Layout loaded: {}", name);
-		m_layouts[name] = std::move(layout);
+		family->owned_layouts[set_idx] = descriptor_set_layout::create(m_device->vulkan_device(), descs);
 	}
+
+	for (std::uint32_t i = 0; i <= max_set_index; ++i) {
+		if (!family->owned_layouts[i]) {
+			family->owned_layouts[i] = descriptor_set_layout::create(m_device->vulkan_device(), {});
+		}
+	}
+
+	family->layout_handles.reserve(family->owned_layouts.size());
+	for (const auto& l : family->owned_layouts) {
+		family->layout_handles.push_back(l.handle());
+	}
+
+	log::println(log::category::vulkan, "Shader family layout registered: {}", name);
+	m_families[std::move(name)] = std::move(family);
 }
 
 auto gse::gpu::shader_registry::cache(const resource::handle<shader>& s) -> const shader_cache_entry& {
@@ -108,21 +129,16 @@ auto gse::gpu::shader_registry::cache(const resource::handle<shader>& s) -> cons
 	}
 
 	const auto& layout_name = s->layout_name();
-	const auto& [sets] = s->layout_data();
-
-	const shader_layout* external_layout = nullptr;
 	if (!layout_name.empty()) {
-		if (const auto it = m_layouts.find(layout_name); it != m_layouts.end()) {
-			external_layout = it->second.get();
+		if (const auto it = m_families.find(layout_name); it != m_families.end()) {
+			entry.family = it->second.get();
+			entry.layout_handles = entry.family->layout_handles;
+			auto [result_it, inserted] = m_cache.emplace(s.id(), std::move(entry));
+			return result_it->second;
 		}
 	}
 
-	if (external_layout) {
-		entry.layout_handles = external_layout->layout_handles();
-		entry.external_layout = external_layout;
-		auto [result_it, inserted] = m_cache.emplace(s.id(), std::move(entry));
-		return result_it->second;
-	}
+	const auto& [sets] = s->layout_data();
 
 	std::uint32_t max_set_index = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
 	for (const auto& type : std::views::keys(sets)) {
@@ -133,13 +149,11 @@ auto gse::gpu::shader_registry::cache(const resource::handle<shader>& s) -> cons
 
 	for (const auto& [type, set_data] : sets) {
 		const auto set_idx = static_cast<std::uint32_t>(type);
-
 		std::vector<descriptor_binding_desc> descs;
 		descs.reserve(set_data.bindings.size());
 		for (const auto& b : set_data.bindings) {
 			descs.push_back(b.desc);
 		}
-
 		entry.owned_layouts[set_idx] = descriptor_set_layout::create(m_device->vulkan_device(), descs);
 	}
 

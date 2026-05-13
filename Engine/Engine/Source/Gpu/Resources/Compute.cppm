@@ -101,6 +101,12 @@ export namespace gse::gpu {
 			const cached_push_constants& cache
 		) const -> void;
 
+		template <typename T>
+		auto push(
+			const pipeline& p,
+			const typed_push_constants<T>& typed
+		) const -> void;
+
 		static constexpr std::uint32_t timing_slot_count = 32;
 
 		auto begin_timing(
@@ -315,6 +321,11 @@ auto gse::gpu::compute_queue::copy_buffer(const buffer_copy& copy) const -> void
 
 auto gse::gpu::compute_queue::push(const pipeline& p, const cached_push_constants& cache) const -> void {
 	cache.replay(m_ctx.command_buffer_handle(), p.layout());
+}
+
+template <typename T>
+auto gse::gpu::compute_queue::push(const pipeline& p, const typed_push_constants<T>& typed) const -> void {
+	typed.replay(m_ctx.command_buffer_handle(), p.layout());
 }
 
 auto gse::gpu::compute_queue::begin_timing() const -> void {

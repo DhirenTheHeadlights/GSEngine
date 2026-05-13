@@ -1,18 +1,6 @@
 import common;
 import meshlet_common;
-
-[[vk::binding(0, 0)]]
-cbuffer CameraUBO {
-    float4x4 view;
-    float4x4 proj;
-};
-
-[[vk::binding(0, 1)]] StructuredBuffer<vertex> vertices_buffer;
-[[vk::binding(1, 1)]] StructuredBuffer<meshlet_descriptor> meshlets_buffer;
-[[vk::binding(2, 1)]] StructuredBuffer<uint> meshlet_vertex_indices;
-[[vk::binding(3, 1)]] ByteAddressBuffer meshlet_triangles;
-[[vk::binding(4, 1)]] StructuredBuffer<meshlet_bounds> meshlet_bounds_buffer;
-[[vk::binding(5, 1)]] StructuredBuffer<instance_data> instance_data_buffer;
+__exported import generated.meshlet_depth_only_layout;
 
 [[vk::push_constant]]
 cbuffer PushConstants {
