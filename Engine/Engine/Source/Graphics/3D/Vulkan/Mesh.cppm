@@ -110,11 +110,11 @@ gse::mesh::mesh(mesh_data&& data)
 
 auto gse::meshlet_gpu_data::bind(gpu::descriptor_writer& writer) const -> void {
     writer
-        .buffer("vertices", vertex_storage)
-        .buffer("meshlets", descriptors)
-        .buffer("meshletVertexIndices", vertices)
-        .buffer("meshletTriangles", triangles)
-        .buffer("meshletBounds", bounds);
+        .buffer("vertices_buffer", vertex_storage)
+        .buffer("meshlets_buffer", descriptors)
+        .buffer("meshlet_vertex_indices", vertices)
+        .buffer("meshlet_triangles", triangles)
+        .buffer("meshlet_bounds_buffer", bounds);
 }
 
 auto gse::mesh::initialize(gpu::context::state& ctx) -> void {

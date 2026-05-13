@@ -53,6 +53,15 @@ export namespace gse {
         explicit operator bool(
         ) const noexcept;
 
+        [[nodiscard]] auto is_invocable(
+        ) const noexcept -> bool;
+
+        [[nodiscard]] auto vtable_address(
+        ) const noexcept -> const void*;
+
+        [[nodiscard]] auto invoke_address(
+        ) const noexcept -> const void*;
+
         auto operator()(
             Args... args
         ) -> R;
@@ -167,6 +176,21 @@ gse::move_only_function<R(Args...)>::move_only_function(std::nullptr_t) noexcept
 template <typename R, typename... Args>
 gse::move_only_function<R(Args...)>::operator bool() const noexcept {
     return m_vtable != nullptr;
+}
+
+template <typename R, typename... Args>
+auto gse::move_only_function<R(Args...)>::is_invocable() const noexcept -> bool {
+    return m_vtable != nullptr && m_vtable->invoke != nullptr;
+}
+
+template <typename R, typename... Args>
+auto gse::move_only_function<R(Args...)>::vtable_address() const noexcept -> const void* {
+    return m_vtable;
+}
+
+template <typename R, typename... Args>
+auto gse::move_only_function<R(Args...)>::invoke_address() const noexcept -> const void* {
+    return m_vtable ? reinterpret_cast<const void*>(m_vtable->invoke) : nullptr;
 }
 
 template <typename R, typename... Args>

@@ -644,8 +644,8 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	}
 	if constexpr (names_run<S>) {
 		node.invoke_run_fn = &invoke_run_for<S>;
-		node.tick_event = std::make_unique<async::manual_event>();
-		node.tick_done_event = std::make_unique<async::manual_event>();
+		node.resume_event = std::make_unique<async::manual_event>();
+		node.paused_event = std::make_unique<async::manual_event>();
 	}
 	if constexpr (names_frame<S>) {
 		node.invoke_frame_fn = &invoke_frame_for<S>;

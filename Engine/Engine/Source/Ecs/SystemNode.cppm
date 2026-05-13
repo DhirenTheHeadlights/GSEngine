@@ -70,9 +70,10 @@ export namespace gse {
 		bool has_frame = false;
 		bool is_in_update_loop = false;
 		bool run_launched = false;
+		bool settled = false;
 
-		std::unique_ptr<async::manual_event> tick_event;
-		std::unique_ptr<async::manual_event> tick_done_event;
+		std::unique_ptr<async::manual_event> resume_event;
+		std::unique_ptr<async::manual_event> paused_event;
 		std::unique_ptr<channel_writer> tick_writer;
 		std::unique_ptr<run_context> tick_ctx;
 		async::task<> run_task;

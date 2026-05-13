@@ -34,7 +34,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 
 	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/meshlet_geometry");
 
-	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
+	const auto camera_ubo = r.shader_handle->uniform_block("camera_ubo");
 	const auto light_block = r.shader_handle->uniform_block("lights_ssbo");
 	const auto light_buffer_size = light_block.size * max_lights;
 	const auto material_block = r.shader_handle->uniform_block("material_palette");
@@ -61,7 +61,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.shader_handle);
 
 		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i])
-			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
+			.buffer("camera_ubo", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.buffer("lights_ssbo", r.light_buffers[i], 0, light_buffer_size)
 			.buffer("material_palette", r.material_palette_buffers[i], 0, material_buffer_size)
 			.commit();
@@ -71,7 +71,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 		const auto fi = static_cast<std::uint32_t>(i);
 		gpu::descriptor_writer writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i]);
 
-		writer.acceleration_structure("tlas", (*rt_state.tlas_ptrs[fi]).handle());
+		writer.acceleration_structure("scene_tlas", (*rt_state.tlas_ptrs[fi]).handle());
 		writer.buffer("light_index_list", lc_r.light_index_list_buffers[fi])
 			.buffer("tile_light_table", lc_r.tile_light_table_buffers[fi]);
 
@@ -83,7 +83,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 			const auto fi = static_cast<std::uint32_t>(i);
 			gpu::descriptor_writer writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i]);
 
-			writer.acceleration_structure("tlas", (*rt_state.tlas_ptrs[fi]).handle());
+			writer.acceleration_structure("scene_tlas", (*rt_state.tlas_ptrs[fi]).handle());
 			writer.buffer("light_index_list", lc_r.light_index_list_buffers[fi])
 				.buffer("tile_light_table", lc_r.tile_light_table_buffers[fi]);
 
@@ -107,7 +107,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.skinned_shader);
 
 		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.skinned_shader, r.skinned_descriptors[i])
-			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
+			.buffer("camera_ubo", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
 			.commit();
 	}
 
@@ -151,9 +151,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 	const auto proj = cam_state.projection_matrix;
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
 
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.view", view);
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.proj", proj);
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.inv_view", view.inverse());
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.view", view);
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.proj", proj);
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.inv_view", view.inverse());
 
 	auto dir_chunk = ctx.components<directional_light_component>();
 	auto spot_chunk = ctx.components<spot_light_component>();
@@ -324,8 +324,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			meshlet_writer.begin(frame_index);
 			mesh.meshlet_gpu().bind(meshlet_writer);
 			meshlet_writer
-				.buffer("instanceData", instance_buf)
-				.image("diffuseSampler", tex_img, tex_samp, gpu::image_layout::shader_read_only);
+				.buffer("instance_data_buffer", instance_buf)
+				.image("diffuse_sampler", tex_img, tex_samp, gpu::image_layout::shader_read_only);
 			rec.commit(meshlet_writer.native_writer(), r.pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
@@ -367,9 +367,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 
 			skinned_writer.begin(frame_index);
 			skinned_writer
-				.image("diffuseSampler", tex_img, tex_samp, gpu::image_layout::shader_read_only)
-				.buffer("skinMatrices", skin_buf)
-				.buffer("instanceData", instance_buf);
+				.image("diffuse_sampler", tex_img, tex_samp, gpu::image_layout::shader_read_only)
+				.buffer("skin_matrices", skin_buf)
+				.buffer("instance_data_buffer", instance_buf);
 			rec.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
 
 			rec.bind_vertex(mesh.vertex_gpu_buffer());

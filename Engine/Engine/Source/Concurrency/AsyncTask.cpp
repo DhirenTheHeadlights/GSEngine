@@ -131,8 +131,15 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 		std::vector<gse::job> jobs;
 		jobs.reserve(helpers.size() - 1);
 		for (std::size_t i = 1; i < helpers.size(); ++i) {
-			auto& helper = helpers[i];
-			jobs.emplace_back([&helper] { helper.start(); });
+			const auto handle = helpers[i].consume_start_handle();
+			if (!handle) {
+				log::println(log::level::error, log::category::task, "when_all helper consume_start_handle returned empty handle (i={})", i);
+				continue;
+			}
+			jobs.emplace_back([handle] {
+				if (!handle) return;
+				handle.resume();
+			});
 		}
 		gse::task::post_range(jobs.begin(), jobs.end());
 	}
@@ -156,7 +163,14 @@ auto gse::async::yield_to_worker_t::await_ready() const noexcept -> bool {
 }
 
 auto gse::async::yield_to_worker_t::await_suspend(std::coroutine_handle<> h) const -> void {
-	gse::task::post([h] { h.resume(); });
+	if (!h) {
+		log::println(log::level::error, log::category::task, "yield_to_worker: empty handle from coroutine machinery");
+		return;
+	}
+	gse::task::post([h] {
+		if (!h) return;
+		h.resume();
+	});
 }
 
 auto gse::async::yield_to_worker_t::await_resume() const noexcept -> void {}

@@ -373,9 +373,9 @@ auto gse::renderer::geometry_collector::build_skinned_batches(const system::reso
 auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::context::state& gpu_s, system::resources& r) -> async::task<> {
 	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/skinned_geometry_pass");
 
-	const auto camera_ubo = r.shader_handle->uniform_block("CameraUBO");
+	const auto camera_ubo = r.shader_handle->uniform_block("camera_ubo");
 
-	r.instance_layout = layout_of(r.shader_handle->uniform_block("instanceData"));
+	r.instance_layout = layout_of(r.shader_handle->uniform_block("instance_data_buffer"));
 
 	r.instance_model_matrix_offset   = r.instance_layout.offsets.at("model_matrix");
 	r.instance_normal_matrix_offset  = r.instance_layout.offsets.at("normal_matrix");
@@ -534,8 +534,8 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, const 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.view", data.view);
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "CameraUBO.proj", data.proj);
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.view", data.view);
+	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.proj", data.proj);
 
 	if (!data.instance_staging.empty()) {
 		gse::memcpy(r.instance_buffer[frame_index].mapped(), data.instance_staging);

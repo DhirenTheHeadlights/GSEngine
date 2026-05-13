@@ -116,8 +116,11 @@ configure_file(
 
 set(GENERATED_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/generated")
 set(GENERATED_SHADER_FILES
-    "${GENERATED_SHADER_DIR}/forward.slang"
+    "${GENERATED_SHADER_DIR}/common_types.slang"
+    "${GENERATED_SHADER_DIR}/forward_types.slang"
+    "${GENERATED_SHADER_DIR}/forward_layout.slang"
     "${GENERATED_SHADER_DIR}/post_process_layout.slang"
+    "${GENERATED_SHADER_DIR}/standard_3d_layout.slang"
 )
 
 add_executable(ShaderCodegen "${CMAKE_CURRENT_SOURCE_DIR}/Tools/ShaderCodegen/Main.cpp")

@@ -26,8 +26,8 @@ void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
 
     if (meshlet_idx < meshlet_count) {
         uint global_idx = meshlet_offset + meshlet_idx;
-        MeshletBounds bounds = meshletBounds[global_idx];
-        InstanceData inst = instanceData[instance_index];
+        meshlet_bounds bounds = meshlet_bounds_buffer[global_idx];
+        instance_data inst = instance_data_buffer[instance_index];
 
         float3 world_center = mul(inst.model_matrix, float4(bounds.center, 1.0)).xyz;
 
@@ -91,14 +91,14 @@ void ms_main(
     OutputIndices<uint3, 124> out_tris
 ) {
     uint meshlet_global_idx = p.meshlet_indices[group_id.x];
-    MeshletDescriptor desc = meshlets[meshlet_global_idx];
-    InstanceData inst = instanceData[p.instance_idx];
+    meshlet_descriptor desc = meshlets_buffer[meshlet_global_idx];
+    instance_data inst = instance_data_buffer[p.instance_idx];
 
     SetMeshOutputCounts(desc.vertex_count, desc.triangle_count);
 
     for (uint v_idx = gtid; v_idx < desc.vertex_count; v_idx += 32) {
-        uint global_vertex_idx = meshletVertexIndices[desc.vertex_offset + v_idx];
-        Vertex v = vertices[global_vertex_idx];
+        uint global_vertex_idx = meshlet_vertex_indices[desc.vertex_offset + v_idx];
+        vertex v = vertices_buffer[global_vertex_idx];
 
         MeshVertexOutput mv = compute_mesh_vertex(v, inst, view, proj);
 
@@ -114,7 +114,7 @@ void ms_main(
     }
 
     for (uint t_idx = gtid; t_idx < desc.triangle_count; t_idx += 32) {
-        out_tris[t_idx] = load_meshlet_triangle(meshletTriangles, desc.triangle_offset + t_idx * 3);
+        out_tris[t_idx] = load_meshlet_triangle(meshlet_triangles, desc.triangle_offset + t_idx * 3);
     }
 }
 
@@ -185,7 +185,7 @@ float trace_shadow_ray(float3 origin, float3 direction, float t_max) {
     ray.Direction = direction;
     ray.TMin      = 0.0;
     ray.TMax      = t_max;
-    q.TraceRayInline(tlas, RAY_FLAG_NONE, 0xFF, ray);
+    q.TraceRayInline(scene_tlas, RAY_FLAG_NONE, 0xFF, ray);
     while (q.Proceed()) {}
     return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0 : 1.0;
 }
@@ -326,7 +326,7 @@ float3 trace_reflection(float3 origin, float3 normal, float3 view_dir, float rou
         ray.Direction = dir;
         ray.TMin = 0.0;
         ray.TMax = cfg.max_range;
-        q.TraceRayInline(tlas, RAY_FLAG_NONE, 0xFF, ray);
+        q.TraceRayInline(scene_tlas, RAY_FLAG_NONE, 0xFF, ray);
         while (q.Proceed()) {}
 
         if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) {
@@ -390,12 +390,12 @@ float trace_shadow(float3 origin, float3 normal, float3 direction, float t_max, 
 [Layout(LayoutKind::Forward3D)]
 [shader("fragment")]
 float4 fs_main(MeshOutput input) : SV_Target0 {
-    float3 tex_sample = diffuseSampler.Sample(input.tex_coord).rgb;
+    float3 tex_sample = diffuse_sampler.Sample(input.tex_coord).rgb;
     float3 normal_vs = normalize(input.view_normal);
     float3 pos_vs = input.view_pos;
     float3 pos_world = input.world_pos;
 
-    InstanceData inst = instanceData[input.instance_idx];
+    instance_data inst = instance_data_buffer[input.instance_idx];
     material_data mat = material_palette[inst.material_index];
     float3 base_color = tex_sample * mat.base_color;
     float3 F0 = lerp(float3(0.04), base_color, mat.metallic);

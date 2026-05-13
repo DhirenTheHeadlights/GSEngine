@@ -14,7 +14,7 @@ StructuredBuffer<GpuBody> body_data;
 StructuredBuffer<PhysicsMapping> mapping_data;
 
 [[vk::binding(2, 0)]]
-RWStructuredBuffer<InstanceData> instance_data;
+RWStructuredBuffer<instance_data> instance_data_buffer;
 
 struct push_constants {
     uint mapping_count;
@@ -63,6 +63,6 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     normal_matrix[2] = float4(normal_x.z, normal_y.z, normal_z.z, 0.0);
     normal_matrix[3] = float4(0.0, 0.0, 0.0, 1.0);
 
-    instance_data[m.instance_index].model_matrix = model_matrix;
-    instance_data[m.instance_index].normal_matrix = normal_matrix;
+    instance_data_buffer[m.instance_index].model_matrix = model_matrix;
+    instance_data_buffer[m.instance_index].normal_matrix = normal_matrix;
 }

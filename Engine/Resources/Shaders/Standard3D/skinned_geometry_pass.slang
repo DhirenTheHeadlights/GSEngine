@@ -21,15 +21,15 @@ VS_OUTPUT vs_main(
 ) {
     VS_OUTPUT o;
 
-    InstanceData inst = instanceData[base_instance + instance_id];
+    instance_data inst = instance_data_buffer[base_instance + instance_id];
 
     uint instance_skin_offset = inst.skin_offset;
 
     float4x4 skin_matrix =
-        skinMatrices[instance_skin_offset + in_bone_indices.x] * in_bone_weights.x +
-        skinMatrices[instance_skin_offset + in_bone_indices.y] * in_bone_weights.y +
-        skinMatrices[instance_skin_offset + in_bone_indices.z] * in_bone_weights.z +
-        skinMatrices[instance_skin_offset + in_bone_indices.w] * in_bone_weights.w;
+        skin_matrices[instance_skin_offset + in_bone_indices.x] * in_bone_weights.x +
+        skin_matrices[instance_skin_offset + in_bone_indices.y] * in_bone_weights.y +
+        skin_matrices[instance_skin_offset + in_bone_indices.z] * in_bone_weights.z +
+        skin_matrices[instance_skin_offset + in_bone_indices.w] * in_bone_weights.w;
 
     float4 skinned_pos = mul(skin_matrix, float4(in_position, 1.0));
     float3 skinned_normal = normalize(mul((float3x3)skin_matrix, in_normal));
@@ -71,7 +71,7 @@ struct FS_OUTPUT {
 FS_OUTPUT fs_main(VS_OUTPUT input) {
     FS_OUTPUT o;
 
-    float3 base_color = diffuseSampler.Sample(input.tex_coord).rgb;
+    float3 base_color = diffuse_sampler.Sample(input.tex_coord).rgb;
 
     o.out_albedo = base_color;
     o.out_normal = encode_octahedron(normalize(input.view_normal));
