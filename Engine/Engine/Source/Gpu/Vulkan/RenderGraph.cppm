@@ -149,6 +149,12 @@ export namespace gse::vulkan {
 			const gpu::cached_push_constants& cache
 		) const -> void;
 
+		template <typename T>
+		auto push(
+			const gpu::pipeline& p,
+			const gpu::typed_push_constants<T>& typed
+		) const -> void;
+
 		auto draw_indirect(
 			const buffer& buf,
 			std::size_t offset,
@@ -725,6 +731,12 @@ auto gse::vulkan::recording_context::end_rendering() const -> void {
 auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::cached_push_constants& cache) const -> void {
 	check_active();
 	cache.replay(m_cmd.native(), p.layout());
+}
+
+template <typename T>
+auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::typed_push_constants<T>& typed) const -> void {
+	check_active();
+	typed.replay(m_cmd.native(), p.layout());
 }
 
 auto gse::vulkan::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {

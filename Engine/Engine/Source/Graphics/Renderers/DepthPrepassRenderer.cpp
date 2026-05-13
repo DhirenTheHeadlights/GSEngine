@@ -23,7 +23,7 @@ import gse.math;
 auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r) -> async::task<> {
 	r.meshlet_shader = co_await asset::load<shader>(ctx, "Shaders/Standard3D/meshlet_depth_only");
 
-	const auto meshlet_camera_ubo = r.meshlet_shader->uniform_block("CameraUBO");
+	const auto meshlet_camera_ubo = r.meshlet_shader->uniform_block("camera_ubo");
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = meshlet_camera_ubo.size,
@@ -42,7 +42,7 @@ auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::cont
 		r.meshlet_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.meshlet_shader);
 
 		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.meshlet_shader, r.meshlet_descriptors[i])
-			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, meshlet_camera_ubo.size)
+			.buffer("camera_ubo", r.ubo_allocations["CameraUBO"][i], 0, meshlet_camera_ubo.size)
 			.commit();
 	}
 
@@ -54,12 +54,12 @@ auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::cont
 	});
 
 
-	const auto skinned_camera_ubo = r.skinned_shader->uniform_block("CameraUBO");
+	const auto skinned_camera_ubo = r.skinned_shader->uniform_block("camera_ubo");
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.skinned_shader);
 
 		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.skinned_shader, r.skinned_descriptors[i])
-			.buffer("CameraUBO", r.ubo_allocations["CameraUBO"][i], 0, skinned_camera_ubo.size)
+			.buffer("camera_ubo", r.ubo_allocations["CameraUBO"][i], 0, skinned_camera_ubo.size)
 			.commit();
 	}
 
@@ -83,10 +83,10 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 	const auto proj = cam_state.projection_matrix;
 
 	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
-	r.meshlet_shader->set_uniform(cam_alloc.bytes(), "CameraUBO.view", view);
-	r.meshlet_shader->set_uniform(cam_alloc.bytes(), "CameraUBO.proj", proj);
-	r.skinned_shader->set_uniform(cam_alloc.bytes(), "CameraUBO.view", view);
-	r.skinned_shader->set_uniform(cam_alloc.bytes(), "CameraUBO.proj", proj);
+	r.meshlet_shader->set_uniform(cam_alloc.bytes(), "camera_ubo.view", view);
+	r.meshlet_shader->set_uniform(cam_alloc.bytes(), "camera_ubo.proj", proj);
+	r.skinned_shader->set_uniform(cam_alloc.bytes(), "camera_ubo.view", view);
+	r.skinned_shader->set_uniform(cam_alloc.bytes(), "camera_ubo.proj", proj);
 
 	const auto ext = gpu_s.render_graph->extent();
 
@@ -155,8 +155,8 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 
 		skinned_writer.begin(frame_index);
 		skinned_writer
-			.buffer("skinMatrices", skin_buf)
-			.buffer("instanceData", instance_buf);
+			.buffer("skin_matrices", skin_buf)
+			.buffer("instance_data_buffer", instance_buf);
 		rec.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
 
 		for (std::size_t i = 0; i < data.skinned_batches.size(); ++i) {

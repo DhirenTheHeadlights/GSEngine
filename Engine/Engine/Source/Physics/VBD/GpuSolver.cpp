@@ -17,6 +17,7 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.log;
+import gse.shader;
 
 namespace gse::vbd {
 	class struct_writer {
@@ -1027,41 +1028,49 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 
 	f.queue.begin_timing();
 
-	auto bind_and_push = [&](const resource::handle<shader>& sh, const gpu::pipeline& pipeline, const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
+	auto make_pc = [&](const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
+		return gpu::typed_push_constants<shaders::vbd_physics::vbd_push_constants>{
+			.data = {
+				.body_count = m_body_count,
+				.contact_count = max_contacts,
+				.motor_count = m_motor_count,
+				.color_offset = color_offset,
+				.color_count = color_count,
+				.warm_start_count = warm_start_count,
+				.post_stabilize = cfg.post_stabilize ? 1u : 0u,
+				.joint_count = m_joint_count,
+				.h_squared = h_squared,
+				.dt = sub_dt,
+				.beta = cfg.beta,
+				.ang_beta = cfg.ang_beta,
+				.linear_damping = 0.0f,
+				.velocity_sleep_threshold = cfg.velocity_sleep_threshold,
+				.angular_sleep_threshold = cfg.angular_sleep_threshold,
+				.current_alpha = current_alpha,
+				.collision_margin = cfg.collision_margin,
+				.friction_coefficient = cfg.friction_coefficient,
+				.penalty_min = cfg.penalty_min,
+				.penalty_max = cfg.penalty_max,
+				.gamma = cfg.gamma,
+				.solver_alpha = cfg.alpha,
+				.speculative_margin = cfg.speculative_margin,
+				.stick_threshold = cfg.stick_threshold,
+				.substep = substep,
+				.iteration = iteration,
+				.convergence_threshold = cfg.convergence_threshold.linear,
+				.min_iterations = cfg.min_iterations,
+				.grid_cell_size = m_grid_cell_size,
+				.use_jacobi = cfg.use_jacobi ? 1u : 0u,
+				.jacobi_omega = cfg.jacobi_omega,
+			},
+			.stages = gpu::stage_flag::compute,
+		};
+	};
+
+	auto bind_and_push = [&](const gpu::pipeline& pipeline, const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
 		f.queue.bind_pipeline(pipeline);
 		f.queue.bind_descriptors(pipeline, f.descriptors);
-		auto pc = gpu::cache_push_block(sh, "vbd_push_constants");
-		pc.set("body_count", m_body_count);
-		pc.set("contact_count", max_contacts);
-		pc.set("motor_count", m_motor_count);
-		pc.set("color_offset", color_offset);
-		pc.set("color_count", color_count);
-		pc.set("warm_start_count", warm_start_count);
-		pc.set("post_stabilize", cfg.post_stabilize ? 1u : 0u);
-		pc.set("joint_count", m_joint_count);
-		pc.set("h_squared", h_squared);
-		pc.set("dt", sub_dt);
-		pc.set("beta", cfg.beta);
-		pc.set("ang_beta", cfg.ang_beta);
-		pc.set("linear_damping", 0.0f);
-		pc.set("velocity_sleep_threshold", cfg.velocity_sleep_threshold);
-		pc.set("angular_sleep_threshold", cfg.angular_sleep_threshold);
-		pc.set("current_alpha", current_alpha);
-		pc.set("collision_margin", cfg.collision_margin);
-		pc.set("friction_coefficient", cfg.friction_coefficient);
-		pc.set("penalty_min", cfg.penalty_min);
-		pc.set("penalty_max", cfg.penalty_max);
-		pc.set("gamma", cfg.gamma);
-		pc.set("solver_alpha", cfg.alpha);
-		pc.set("speculative_margin", cfg.speculative_margin);
-		pc.set("stick_threshold", cfg.stick_threshold);
-		pc.set("substep", substep);
-		pc.set("iteration", iteration);
-		pc.set("convergence_threshold", cfg.convergence_threshold.linear);
-		pc.set("min_iterations", cfg.min_iterations);
-		pc.set("grid_cell_size", m_grid_cell_size);
-		pc.set("use_jacobi", cfg.use_jacobi ? 1u : 0u);
-		pc.set("jacobi_omega", cfg.jacobi_omega);
+		const auto pc = make_pc(color_offset, color_count, substep, iteration, current_alpha, warm_start_count);
 		f.queue.push(pipeline, pc);
 	};
 
@@ -1073,92 +1082,61 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 	for (std::uint32_t sub = 0; sub < total; ++sub) {
 		const std::uint32_t substep_warm_start_count = (sub == 0) ? m_warm_start_count : 0u;
 
-		bind_and_push(m_compute.collision_reset, m_compute.collision_reset_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.collision_reset_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(ceil_div(std::max({m_body_count, max_contacts, grid_table_size}), workgroup_size), 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-		bind_and_push(m_compute.collision_grid_build, m_compute.collision_grid_build_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.collision_grid_build_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-		bind_and_push(m_compute.collision_broad_phase, m_compute.collision_broad_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.collision_broad_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-		bind_and_push(m_compute.prepare_indirect, m_compute.prepare_indirect_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.prepare_indirect_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(1, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
 
-		bind_and_push(m_compute.collision_narrow_phase, m_compute.collision_narrow_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.collision_narrow_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 0);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-		bind_and_push(m_compute.prepare_contact_indirect, m_compute.prepare_contact_indirect_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.prepare_contact_indirect_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(1, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
 
-		bind_and_push(m_compute.collision_build_adjacency, m_compute.collision_build_adjacency_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.collision_build_adjacency_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(1, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
 
 		f.queue.mark_timing(timing_slot::after_collision);
 
-		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.predict_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-		bind_and_push(m_compute.freeze_jacobians, m_compute.freeze_jacobians_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.freeze_jacobians_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		f.queue.mark_timing(timing_slot::after_predict);
 
 		for (std::uint32_t iterations = 0; iterations < num_iterations; ++iterations) {
-			bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, solve_alpha, substep_warm_start_count);
-			auto color_pc = gpu::cache_push_block(m_compute.solve_color, "vbd_push_constants");
-			color_pc.set("body_count", m_body_count);
-			color_pc.set("contact_count", max_contacts);
-			color_pc.set("motor_count", m_motor_count);
-			color_pc.set("color_offset", 0u);
-			color_pc.set("color_count", num_colors);
-			color_pc.set("warm_start_count", substep_warm_start_count);
-			color_pc.set("post_stabilize", cfg.post_stabilize ? 1u : 0u);
-			color_pc.set("joint_count", m_joint_count);
-			color_pc.set("h_squared", h_squared);
-			color_pc.set("dt", sub_dt);
-			color_pc.set("beta", cfg.beta);
-			color_pc.set("ang_beta", cfg.ang_beta);
-			color_pc.set("linear_damping", 0.0f);
-			color_pc.set("velocity_sleep_threshold", cfg.velocity_sleep_threshold);
-			color_pc.set("angular_sleep_threshold", cfg.angular_sleep_threshold);
-			color_pc.set("current_alpha", solve_alpha);
-			color_pc.set("collision_margin", cfg.collision_margin);
-			color_pc.set("friction_coefficient", cfg.friction_coefficient);
-			color_pc.set("penalty_min", cfg.penalty_min);
-			color_pc.set("penalty_max", cfg.penalty_max);
-			color_pc.set("gamma", cfg.gamma);
-			color_pc.set("solver_alpha", cfg.alpha);
-			color_pc.set("speculative_margin", cfg.speculative_margin);
-			color_pc.set("stick_threshold", cfg.stick_threshold);
-			color_pc.set("substep", sub);
-			color_pc.set("iteration", iterations);
-			color_pc.set("convergence_threshold", cfg.convergence_threshold.linear);
-			color_pc.set("min_iterations", cfg.min_iterations);
-			color_pc.set("grid_cell_size", m_grid_cell_size);
-			color_pc.set("use_jacobi", cfg.use_jacobi ? 1u : 0u);
-			color_pc.set("jacobi_omega", cfg.jacobi_omega);
+			bind_and_push(m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, solve_alpha, substep_warm_start_count);
+			auto color_pc = make_pc(0u, num_colors, sub, iterations, solve_alpha, substep_warm_start_count);
 
 			if (cfg.use_jacobi) {
 				f.queue.push(m_compute.solve_color_pipeline, color_pc);
 				f.queue.dispatch(body_workgroups, 1, 1);
 				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-				bind_and_push(m_compute.apply_jacobi, m_compute.apply_jacobi_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
+				bind_and_push(m_compute.apply_jacobi_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
 				f.queue.dispatch(body_workgroups, 1, 1);
 				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 			} else {
 				for (std::uint32_t color = 0; color < num_colors; ++color) {
-					color_pc.set("color_offset", color);
+					color_pc.data.color_offset = color;
 					f.queue.push(m_compute.solve_color_pipeline, color_pc);
 					f.queue.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
 					if (color + 1 < num_colors) {
@@ -1169,10 +1147,10 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 			}
 
-			bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
+			bind_and_push(m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
 			f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
 			if (m_joint_count > 0) {
-				bind_and_push(m_compute.update_joint_lambda, m_compute.update_joint_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
+				bind_and_push(m_compute.update_joint_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
 				f.queue.dispatch(ceil_div(m_joint_count, workgroup_size), 1, 1);
 			}
 			f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
@@ -1180,47 +1158,16 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 
 		f.queue.mark_timing(timing_slot::after_solve);
 
-		bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, num_iterations, solve_alpha, substep_warm_start_count);
+		bind_and_push(m_compute.derive_velocities_pipeline, 0u, 0u, sub, num_iterations, solve_alpha, substep_warm_start_count);
 		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		if (cfg.post_stabilize) {
-			bind_and_push(m_compute.prepare_color_indirect, m_compute.prepare_color_indirect_pipeline, 0u, 0u, sub, num_iterations, 0.f, substep_warm_start_count);
+			bind_and_push(m_compute.prepare_color_indirect_pipeline, 0u, 0u, sub, num_iterations, 0.f, substep_warm_start_count);
 			f.queue.dispatch(1, 1, 1);
 			f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
 
-			auto color_pc = gpu::cache_push_block(m_compute.solve_color, "vbd_push_constants");
-			color_pc.set("body_count", m_body_count);
-			color_pc.set("contact_count", max_contacts);
-			color_pc.set("motor_count", m_motor_count);
-			color_pc.set("color_offset", 0u);
-			color_pc.set("color_count", num_colors);
-			color_pc.set("warm_start_count", substep_warm_start_count);
-			color_pc.set("post_stabilize", cfg.post_stabilize ? 1u : 0u);
-			color_pc.set("joint_count", m_joint_count);
-			color_pc.set("h_squared", h_squared);
-			color_pc.set("dt", sub_dt);
-			color_pc.set("beta", cfg.beta);
-			color_pc.set("ang_beta", cfg.ang_beta);
-			color_pc.set("linear_damping", 0.0f);
-			color_pc.set("velocity_sleep_threshold", cfg.velocity_sleep_threshold);
-			color_pc.set("angular_sleep_threshold", cfg.angular_sleep_threshold);
-			color_pc.set("current_alpha", 0.f);
-			color_pc.set("collision_margin", cfg.collision_margin);
-			color_pc.set("friction_coefficient", cfg.friction_coefficient);
-			color_pc.set("penalty_min", cfg.penalty_min);
-			color_pc.set("penalty_max", cfg.penalty_max);
-			color_pc.set("gamma", cfg.gamma);
-			color_pc.set("solver_alpha", cfg.alpha);
-			color_pc.set("speculative_margin", cfg.speculative_margin);
-			color_pc.set("stick_threshold", cfg.stick_threshold);
-			color_pc.set("substep", sub);
-			color_pc.set("iteration", num_iterations);
-			color_pc.set("convergence_threshold", cfg.convergence_threshold.linear);
-			color_pc.set("min_iterations", cfg.min_iterations);
-			color_pc.set("grid_cell_size", m_grid_cell_size);
-			color_pc.set("use_jacobi", cfg.use_jacobi ? 1u : 0u);
-			color_pc.set("jacobi_omega", cfg.jacobi_omega);
+			auto color_pc = make_pc(0u, num_colors, sub, num_iterations, 0.f, substep_warm_start_count);
 
 			f.queue.bind_pipeline(m_compute.solve_color_pipeline);
 			f.queue.bind_descriptors(m_compute.solve_color_pipeline, f.descriptors);
@@ -1230,12 +1177,12 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 				f.queue.dispatch(body_workgroups, 1, 1);
 				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
-				bind_and_push(m_compute.apply_jacobi, m_compute.apply_jacobi_pipeline, 0u, 0u, sub, num_iterations, 0.f, substep_warm_start_count);
+				bind_and_push(m_compute.apply_jacobi_pipeline, 0u, 0u, sub, num_iterations, 0.f, substep_warm_start_count);
 				f.queue.dispatch(body_workgroups, 1, 1);
 				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 			} else {
 				for (std::uint32_t color = 0; color < num_colors; ++color) {
-					color_pc.set("color_offset", color);
+					color_pc.data.color_offset = color;
 					f.queue.push(m_compute.solve_color_pipeline, color_pc);
 					f.queue.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
 					if (color + 1 < num_colors) {
@@ -1248,7 +1195,7 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 
 		f.queue.mark_timing(timing_slot::after_velocity);
 
-		bind_and_push(m_compute.finalize, m_compute.finalize_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
+		bind_and_push(m_compute.finalize_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
 		f.queue.dispatch(body_workgroups, 1, 1);
 		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
 

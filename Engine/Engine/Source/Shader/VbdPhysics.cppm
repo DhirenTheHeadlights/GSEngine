@@ -8,27 +8,27 @@ import gse.math;
 
 export namespace gse::shaders::vbd_physics {
 	struct [[= shader_struct]] gpu_body {
-		vec4f position;
-		vec4f predicted_position;
+		vec4<position> position;
+		vec4<gse::position> predicted_position;
 		vec4f inertia_target;
-		vec4f old_position;
-		vec4f velocity;
-		vec4f predicted_velocity;
+		vec4<gse::position> old_position;
+		vec4<gse::velocity> velocity;
+		vec4<gse::velocity> predicted_velocity;
 		vec4f orientation;
 		vec4f predicted_orientation;
 		vec4f angular_inertia_target;
 		vec4f old_orientation;
-		vec4f angular_velocity;
-		vec4f predicted_angular_velocity;
-		vec4f motor_target;
-		float mass;
+		vec4<angular_velocity> angular_velocity;
+		vec4<gse::angular_velocity> predicted_angular_velocity;
+		vec4<gse::velocity> motor_target;
+		mass mass;
 		std::uint32_t flags;
 		std::uint32_t sleep_counter;
 		float accel_weight;
-		mat3f inertia;
-		vec4f half_extents;
-		vec4f aabb_min;
-		vec4f aabb_max;
+		mat3<inertia> inertia;
+		vec4<length> half_extents;
+		vec4<gse::position> aabb_min;
+		vec4<gse::position> aabb_max;
 	};
 
 	struct [[= shader_struct]] gpu_contact {
@@ -40,8 +40,8 @@ export namespace gse::shaders::vbd_physics {
 		vec4f normal;
 		vec4f tangent_u;
 		vec4f tangent_v;
-		vec4f r_a;
-		vec4f r_b;
+		vec4<lever_arm> r_a;
+		vec4<lever_arm> r_b;
 		vec4f c0_friction;
 		vec4f lambda;
 		vec4f penalty;
@@ -49,10 +49,10 @@ export namespace gse::shaders::vbd_physics {
 
 	struct [[= shader_struct]] gpu_motor {
 		std::uint32_t body_index;
-		float compliance;
-		float max_force;
+		linear_compliance compliance;
+		force max_force;
 		std::uint32_t horizontal_only;
-		vec4f target_velocity;
+		vec4<velocity> target_velocity;
 	};
 
 	struct [[= shader_struct]] gpu_warm_start {
@@ -64,8 +64,8 @@ export namespace gse::shaders::vbd_physics {
 		vec4f normal;
 		vec4f tangent_u;
 		vec4f tangent_v;
-		vec4f local_anchor_a;
-		vec4f local_anchor_b;
+		vec4<offset> local_anchor_a;
+		vec4<offset> local_anchor_b;
 		vec4f lambda;
 		vec4f penalty;
 	};
@@ -75,12 +75,12 @@ export namespace gse::shaders::vbd_physics {
 		std::uint32_t body_b;
 		std::uint32_t type;
 		std::uint32_t limits_enabled;
-		vec4f local_anchor_a;
-		vec4f local_anchor_b;
+		vec4<offset> local_anchor_a;
+		vec4<offset> local_anchor_b;
 		vec4f local_axis_a;
 		vec4f local_axis_b;
-		float target_distance;
-		float compliance;
+		length target_distance;
+		linear_compliance compliance;
 		float damping;
 		float pad0;
 		float limit_lower;
@@ -105,8 +105,8 @@ export namespace gse::shaders::vbd_physics {
 	};
 
 	struct [[= shader_struct]] frozen_jacobian {
-		vec4f world_r_a;
-		vec4f world_r_b;
+		vec4<lever_arm> world_r_a;
+		vec4<lever_arm> world_r_b;
 		mat3f j_ang_a;
 		mat3f j_ang_b;
 	};
@@ -117,6 +117,8 @@ export namespace gse::shaders::vbd_physics {
 		std::uint32_t z;
 	};
 
+	using time_step = gse::time_t<float, gse::seconds>;
+
 	struct [[= shader_struct]] vbd_push_constants {
 		std::uint32_t body_count;
 		std::uint32_t contact_count;
@@ -126,27 +128,27 @@ export namespace gse::shaders::vbd_physics {
 		std::uint32_t warm_start_count;
 		std::uint32_t post_stabilize;
 		std::uint32_t joint_count;
-		float h_squared;
-		float dt;
-		float beta;
-		float ang_beta;
+		time_squared h_squared;
+		time_step dt;
+		stiffness beta;
+		angular_stiffness ang_beta;
 		float linear_damping;
-		float velocity_sleep_threshold;
-		float angular_sleep_threshold;
+		velocity velocity_sleep_threshold;
+		angular_velocity angular_sleep_threshold;
 		float current_alpha;
-		float collision_margin;
+		gap collision_margin;
 		float friction_coefficient;
-		float penalty_min;
-		float penalty_max;
+		stiffness penalty_min;
+		stiffness penalty_max;
 		float gamma;
 		float solver_alpha;
-		float speculative_margin;
-		float stick_threshold;
+		gap speculative_margin;
+		gap stick_threshold;
 		std::uint32_t substep;
 		std::uint32_t iteration;
-		float convergence_threshold;
+		length convergence_threshold;
 		std::uint32_t min_iterations;
-		float grid_cell_size;
+		gap grid_cell_size;
 		std::uint32_t use_jacobi;
 		float jacobi_omega;
 	};

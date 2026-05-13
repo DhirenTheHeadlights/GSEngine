@@ -16,7 +16,6 @@ export namespace gse::graphics {
         font,
         model,
         shader,
-        shader_layout,
         skinned_model,
         skeleton,
         clip_asset
