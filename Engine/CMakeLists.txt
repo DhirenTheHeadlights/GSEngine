@@ -120,7 +120,10 @@ set(GENERATED_SHADER_FILES
     "${GENERATED_SHADER_DIR}/forward_types.slang"
     "${GENERATED_SHADER_DIR}/forward_layout.slang"
     "${GENERATED_SHADER_DIR}/post_process_layout.slang"
+    "${GENERATED_SHADER_DIR}/standard_2d_layout.slang"
     "${GENERATED_SHADER_DIR}/standard_3d_layout.slang"
+    "${GENERATED_SHADER_DIR}/vbd_physics_types.slang"
+    "${GENERATED_SHADER_DIR}/vbd_physics_layout.slang"
 )
 
 add_executable(ShaderCodegen "${CMAKE_CURRENT_SOURCE_DIR}/Tools/ShaderCodegen/Main.cpp")

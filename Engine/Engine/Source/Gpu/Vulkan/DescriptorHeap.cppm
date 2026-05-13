@@ -35,6 +35,7 @@ export namespace gse::gpu {
 		gpu::device_size offset = 0;
 		gpu::device_size size = 0;
 		descriptor_heap* heap = nullptr;
+		std::uint32_t buffer_index = 0;
 
 		operator bool() const {
 			return heap != nullptr;
@@ -48,10 +49,15 @@ export namespace gse::gpu {
 
 	class descriptor_heap : non_copyable, non_movable {
 	public:
+		static constexpr std::uint32_t frames_in_flight = 2;
+		static constexpr gpu::device_size default_persistent_capacity = 1 * 1024 * 1024;
+		static constexpr gpu::device_size default_transient_capacity_per_frame = 2 * 1024 * 1024;
+
 		descriptor_heap(
 			const vulkan::device& dev,
 			const descriptor_buffer_properties& props,
-			gpu::device_size capacity = 4 * 1024 * 1024
+			gpu::device_size persistent_capacity = default_persistent_capacity,
+			gpu::device_size transient_capacity_per_frame = default_transient_capacity_per_frame
 		);
 
 		~descriptor_heap() override;
@@ -98,7 +104,7 @@ export namespace gse::gpu {
 			const descriptor_region& region
 		) const -> void;
 
-		auto bind_buffer(
+		auto bind_descriptor_storage(
 			gpu::handle<vulkan::command_buffer> cmd
 		) const -> void;
 
@@ -117,32 +123,41 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto props(
 		) const -> const descriptor_buffer_properties&;
-
-		[[nodiscard]] auto address(
-		) const -> device_address;
 	private:
+		struct sub_buffer {
+			vk::Buffer buffer = nullptr;
+			vk::DeviceMemory memory = nullptr;
+			device_address address = 0;
+			void* mapped = nullptr;
+			gpu::device_size capacity = 0;
+		};
+
+		auto create_sub_buffer(
+			const vulkan::device& dev,
+			gpu::device_size capacity,
+			std::string_view tag
+		) -> sub_buffer;
+
+		auto destroy_sub_buffer(
+			sub_buffer& sb
+		) -> void;
+
 		auto align_up(
 			gpu::device_size value
 		) const -> gpu::device_size;
 
-		auto init_transient_zone(
-		) -> void;
-
 		vk::Device m_device;
-		vk::Buffer m_buffer = nullptr;
-		vk::DeviceMemory m_memory = nullptr;
-		device_address m_address = 0;
-		void* m_mapped = nullptr;
-		gpu::device_size m_capacity = 0;
-		gpu::device_size m_bump_offset = 0;
 		descriptor_buffer_properties m_props;
-		std::mutex m_alloc_mutex;
 
-		bool m_transient_initialized = false;
-		gpu::device_size m_persistent_end = 0;
+		sub_buffer m_persistent;
+		sub_buffer m_transient;
+
+		gpu::device_size m_persistent_offset = 0;
+		std::mutex m_persistent_mutex;
+
 		gpu::device_size m_transient_slice_size = 0;
-		std::array<std::atomic<gpu::device_size>, 2> m_transient_offsets = {};
-		std::array<gpu::device_size, 2> m_transient_bases = {};
+		std::array<gpu::device_size, frames_in_flight> m_transient_bases = {};
+		std::array<std::atomic<gpu::device_size>, frames_in_flight> m_transient_offsets = {};
 	};
 
 	struct descriptor_binding_info {
@@ -254,7 +269,7 @@ namespace gse::gpu {
 		| vk::BufferUsageFlagBits::eSamplerDescriptorBufferEXT;
 }
 
-gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const descriptor_buffer_properties& props, gpu::device_size capacity) : m_device(*dev.raii_device()), m_capacity(capacity), m_props(props) {
+auto gse::gpu::descriptor_heap::create_sub_buffer(const vulkan::device& dev, const gpu::device_size capacity, const std::string_view tag) -> sub_buffer {
 	const auto& physical_device = dev.physical_device();
 
 	const vk::BufferCreateInfo buffer_info{
@@ -262,9 +277,11 @@ gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const desc
 		.usage = descriptor_buffer_usage | vk::BufferUsageFlagBits::eShaderDeviceAddress
 	};
 
-	m_buffer = m_device.createBuffer(buffer_info, nullptr);
+	sub_buffer sb;
+	sb.capacity = capacity;
+	sb.buffer = m_device.createBuffer(buffer_info, nullptr);
 
-	const auto mem_reqs = m_device.getBufferMemoryRequirements(m_buffer);
+	const auto mem_reqs = m_device.getBufferMemoryRequirements(sb.buffer);
 	const auto mem_props = physical_device.getMemoryProperties();
 
 	std::uint32_t memory_type_index = std::numeric_limits<std::uint32_t>::max();
@@ -291,7 +308,8 @@ gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const desc
 
 	assert(
 		memory_type_index != std::numeric_limits<std::uint32_t>::max(),
-		"No suitable memory type for descriptor heap"
+		"No suitable memory type for descriptor heap sub-buffer '{}'",
+		tag
 	);
 
 	const bool device_local = (mem_props.memoryTypes[memory_type_index].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal) == vk::MemoryPropertyFlagBits::eDeviceLocal;
@@ -306,64 +324,106 @@ gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const desc
 		.memoryTypeIndex = memory_type_index
 	};
 
-	m_memory = m_device.allocateMemory(alloc_info, nullptr);
-	m_device.bindBufferMemory(m_buffer, m_memory, 0);
+	sb.memory = m_device.allocateMemory(alloc_info, nullptr);
+	m_device.bindBufferMemory(sb.buffer, sb.memory, 0);
+	sb.mapped = m_device.mapMemory(sb.memory, 0, capacity, {});
+	sb.address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = sb.buffer });
 
-	m_mapped = m_device.mapMemory(m_memory, 0, capacity, {});
+	log::println(log::category::vulkan_memory,
+		"Descriptor heap '{}' sub-buffer created: {} KB, address 0x{:x}, memory type {} ({})",
+		tag, capacity / 1024, sb.address, memory_type_index,
+		device_local ? "DEVICE_LOCAL+HOST_VISIBLE" : "HOST_VISIBLE only");
 
-	const vk::BufferDeviceAddressInfo addr_info{ .buffer = m_buffer };
-	m_address = m_device.getBufferAddress(addr_info);
+	return sb;
+}
 
-	log::println(log::category::vulkan_memory, "Descriptor heap created: {} KB, address 0x{:x}, memory type {} ({})", capacity / 1024, m_address, memory_type_index, device_local ? "DEVICE_LOCAL+HOST_VISIBLE" : "HOST_VISIBLE only");
+auto gse::gpu::descriptor_heap::destroy_sub_buffer(sub_buffer& sb) -> void {
+	if (sb.mapped) {
+		m_device.unmapMemory(sb.memory);
+		sb.mapped = nullptr;
+	}
+	if (sb.buffer) {
+		m_device.destroyBuffer(sb.buffer, nullptr);
+		sb.buffer = nullptr;
+	}
+	if (sb.memory) {
+		m_device.freeMemory(sb.memory, nullptr);
+		sb.memory = nullptr;
+	}
+}
+
+gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const descriptor_buffer_properties& props, const gpu::device_size persistent_capacity, const gpu::device_size transient_capacity_per_frame)
+	: m_device(*dev.raii_device()), m_props(props) {
+	m_persistent = create_sub_buffer(dev, persistent_capacity, "persistent");
+
+	const auto aligned_slice = transient_capacity_per_frame & ~(m_props.offset_alignment - 1);
+	const auto transient_total = aligned_slice * frames_in_flight;
+	m_transient = create_sub_buffer(dev, transient_total, "transient");
+
+	m_transient_slice_size = aligned_slice;
+	for (std::uint32_t i = 0; i < frames_in_flight; ++i) {
+		m_transient_bases[i] = i * aligned_slice;
+		m_transient_offsets[i].store(m_transient_bases[i], std::memory_order_relaxed);
+	}
 }
 
 gse::gpu::descriptor_heap::~descriptor_heap() {
-	if (m_device) {
-		if (m_mapped) {
-			m_device.unmapMemory(m_memory);
-		}
-		if (m_buffer) {
-			m_device.destroyBuffer(m_buffer, nullptr);
-		}
-		if (m_memory) {
-			m_device.freeMemory(m_memory, nullptr);
-		}
+	if (!m_device) {
+		return;
 	}
+	destroy_sub_buffer(m_persistent);
+	destroy_sub_buffer(m_transient);
 }
 
 auto gse::gpu::descriptor_heap::allocate(const gpu::device_size size, const std::source_location& loc) -> descriptor_region {
-	std::lock_guard lock(m_alloc_mutex);
+	std::lock_guard lock(m_persistent_mutex);
 
-	const auto aligned_offset = align_up(m_bump_offset);
+	const auto aligned_offset = align_up(m_persistent_offset);
 	const auto aligned_size = align_up(size);
 
 	assert(
-		aligned_offset + aligned_size <= m_capacity,
-		"Descriptor heap exhausted: requested {} bytes at offset {}, capacity {}",
-		aligned_size, aligned_offset, m_capacity
+		aligned_offset + aligned_size <= m_persistent.capacity,
+		"Persistent descriptor buffer exhausted: requested {} bytes at offset {}, capacity {} (caller {}:{} in {})",
+		aligned_size, aligned_offset, m_persistent.capacity, loc.file_name(), loc.line(), loc.function_name()
 	);
 
-	if (m_transient_initialized) {
-		log::println(
-			log::level::error, log::category::vulkan_memory,
-			"Persistent descriptor allocation after transient zone init: requested {} bytes at offset {}, persistent_end {} (will be clobbered by transient zone) from {}:{} in {}",
-			aligned_size, aligned_offset, m_persistent_end, loc.file_name(), loc.line(), loc.function_name()
-		);
-		assert(
-			aligned_offset + aligned_size <= m_persistent_end,
-			"Persistent descriptor allocation after transient zone init: requested {} bytes at offset {} would extend past persistent_end {} (caller {}:{} in {})",
-			aligned_size, aligned_offset, m_persistent_end, loc.file_name(), loc.line(), loc.function_name()
-		);
-	}
+	m_persistent_offset = aligned_offset + aligned_size;
 
-	m_bump_offset = aligned_offset + aligned_size;
-
-	std::memset(static_cast<std::byte*>(m_mapped) + aligned_offset, 0, aligned_size);
+	std::memset(static_cast<std::byte*>(m_persistent.mapped) + aligned_offset, 0, aligned_size);
 
 	return {
 		.offset = aligned_offset,
 		.size = aligned_size,
 		.heap = this,
+		.buffer_index = 0,
+	};
+}
+
+auto gse::gpu::descriptor_heap::begin_frame(const std::uint32_t frame_index) -> void {
+	assert(frame_index < frames_in_flight, "Frame index {} out of range", frame_index);
+	m_transient_offsets[frame_index].store(m_transient_bases[frame_index], std::memory_order_relaxed);
+}
+
+auto gse::gpu::descriptor_heap::allocate_transient(const std::uint32_t frame_index, const gpu::device_size size) -> descriptor_region {
+	assert(frame_index < frames_in_flight, "Frame index {} out of range", frame_index);
+
+	const auto aligned_size = align_up(size);
+	const auto offset = m_transient_offsets[frame_index].fetch_add(aligned_size, std::memory_order_relaxed);
+	const auto slice_end = m_transient_bases[frame_index] + m_transient_slice_size;
+
+	assert(
+		offset + aligned_size <= slice_end,
+		"Transient descriptor frame slice exhausted for frame {}: requested {} at {}, slice ends at {}",
+		frame_index, aligned_size, offset, slice_end
+	);
+
+	std::memset(static_cast<std::byte*>(m_transient.mapped) + offset, 0, aligned_size);
+
+	return {
+		.offset = offset,
+		.size = aligned_size,
+		.heap = this,
+		.buffer_index = 1,
 	};
 }
 
@@ -373,7 +433,8 @@ auto gse::gpu::descriptor_heap::write_bytes(const descriptor_region& region, con
 		"Write exceeds descriptor region bounds"
 	);
 
-	auto* dst = static_cast<std::byte*>(m_mapped) + region.offset + offset_within_region;
+	const auto* sb = region.buffer_index == 0 ? &m_persistent : &m_transient;
+	auto* dst = static_cast<std::byte*>(sb->mapped) + region.offset + offset_within_region;
 	std::memcpy(dst, data, data_size);
 }
 
@@ -392,23 +453,22 @@ auto gse::gpu::descriptor_heap::write_descriptor(const descriptor_region& region
 }
 
 auto gse::gpu::descriptor_heap::bind(const gpu::handle<vulkan::command_buffer> cmd, const bind_point point, const gpu::handle<vulkan::pipeline_layout> layout, const std::uint32_t first_set, const descriptor_region& region) const -> void {
-	constexpr std::uint32_t buffer_index = 0;
 	std::bit_cast<vk::CommandBuffer>(cmd).setDescriptorBufferOffsetsEXT(
 		vulkan::to_vk(point),
 		std::bit_cast<vk::PipelineLayout>(layout),
 		first_set,
 		1,
-		&buffer_index,
+		&region.buffer_index,
 		&region.offset
 	);
 }
 
-auto gse::gpu::descriptor_heap::bind_buffer(const gpu::handle<vulkan::command_buffer> cmd) const -> void {
-	const vk::DescriptorBufferBindingInfoEXT binding{
-		.address = m_address,
-		.usage = descriptor_buffer_usage,
+auto gse::gpu::descriptor_heap::bind_descriptor_storage(const gpu::handle<vulkan::command_buffer> cmd) const -> void {
+	const std::array<vk::DescriptorBufferBindingInfoEXT, 2> bindings = {
+		vk::DescriptorBufferBindingInfoEXT{ .address = m_persistent.address, .usage = descriptor_buffer_usage },
+		vk::DescriptorBufferBindingInfoEXT{ .address = m_transient.address,  .usage = descriptor_buffer_usage },
 	};
-	std::bit_cast<vk::CommandBuffer>(cmd).bindDescriptorBuffersEXT(1, &binding);
+	std::bit_cast<vk::CommandBuffer>(cmd).bindDescriptorBuffersEXT(static_cast<std::uint32_t>(bindings.size()), bindings.data());
 }
 
 auto gse::gpu::descriptor_heap::layout_size(const gpu::handle<vulkan::descriptor_set_layout> layout) const -> gpu::device_size {
@@ -425,60 +485,6 @@ auto gse::gpu::descriptor_heap::buffer_address(const gpu::handle<vulkan::buffer>
 
 auto gse::gpu::descriptor_heap::props() const -> const descriptor_buffer_properties& {
 	return m_props;
-}
-
-auto gse::gpu::descriptor_heap::address() const -> device_address {
-	return m_address;
-}
-
-auto gse::gpu::descriptor_heap::begin_frame(const std::uint32_t frame_index) -> void {
-	if (!m_transient_initialized) {
-		init_transient_zone();
-	}
-	m_transient_offsets[frame_index].store(m_transient_bases[frame_index], std::memory_order_relaxed);
-}
-
-auto gse::gpu::descriptor_heap::allocate_transient(std::uint32_t frame_index, const gpu::device_size size) -> descriptor_region {
-	assert(m_transient_initialized, "begin_frame must be called before allocate_transient");
-
-	const auto aligned_size = align_up(size);
-	const auto offset = m_transient_offsets[frame_index].fetch_add(aligned_size, std::memory_order_relaxed);
-	const auto slice_end = m_transient_bases[frame_index] + m_transient_slice_size;
-
-	assert(
-		offset + aligned_size <= slice_end,
-		"Transient descriptor heap slice exhausted for frame {}: requested {} at {}, slice ends at {}",
-		frame_index, aligned_size, offset, slice_end
-	);
-
-	std::memset(static_cast<std::byte*>(m_mapped) + offset, 0, aligned_size);
-
-	return {
-		.offset = offset,
-		.size = aligned_size,
-		.heap = this,
-	};
-}
-
-auto gse::gpu::descriptor_heap::init_transient_zone() -> void {
-	constexpr gpu::device_size persistent_reserve = 256 * 1024;
-	const auto current_bump = align_up(m_bump_offset);
-	m_persistent_end = align_up(std::max<gpu::device_size>(current_bump, persistent_reserve));
-
-	const auto remaining = m_capacity - m_persistent_end;
-	constexpr std::uint32_t frames = 2;
-	m_transient_slice_size = (remaining / frames) & ~(m_props.offset_alignment - 1);
-
-	for (std::uint32_t i = 0; i < frames; ++i) {
-		m_transient_bases[i] = m_persistent_end + i * m_transient_slice_size;
-		m_transient_offsets[i].store(m_transient_bases[i], std::memory_order_relaxed);
-	}
-
-	m_transient_initialized = true;
-
-	log::println(log::category::vulkan_memory,
-		"Descriptor heap transient zone: persistent={} bytes (used {}), {} slices x {} KB each",
-		m_persistent_end, current_bump, frames, m_transient_slice_size / 1024);
 }
 
 auto gse::gpu::descriptor_heap::align_up(const gpu::device_size value) const -> gpu::device_size {

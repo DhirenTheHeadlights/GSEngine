@@ -23,7 +23,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         return;
     }
 
-    GpuBody body = body_data[bi];
+    gpu_body body = body_data[bi];
 
     float cell_size = pc.grid_cell_size;
     int3 min_cell = world_to_cell(body.aabb_min.xyz - pc.speculative_margin, cell_size);

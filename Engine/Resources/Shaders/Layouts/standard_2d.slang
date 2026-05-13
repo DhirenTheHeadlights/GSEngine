@@ -1,1 +1,1 @@
-[[vk::binding(0, 2)]] public Sampler2D g_textures[];
+__exported import generated.standard_2d_layout;

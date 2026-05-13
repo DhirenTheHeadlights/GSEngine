@@ -1204,7 +1204,7 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 			.flags = begin_flags,
 			.pInheritanceInfo = &inherit
 		});
-		m_device->descriptor_heap().bind_buffer(std::bit_cast<gpu::handle<command_buffer>>(secondary));
+		m_device->descriptor_heap().bind_descriptor_storage(std::bit_cast<gpu::handle<command_buffer>>(secondary));
 		*pass.record_ctx_slot = recording_context{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) }, m_auto_binds };
 		pass.record_handle.resume();
 

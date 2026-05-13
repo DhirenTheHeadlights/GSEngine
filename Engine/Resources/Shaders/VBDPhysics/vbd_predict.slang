@@ -12,7 +12,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint bi = dispatch_id.x;
     if (bi >= pc.body_count) return;
 
-    GpuBody body = body_data[bi];
+    gpu_body body = body_data[bi];
     bool locked = (body.flags & FLAG_LOCKED) != 0;
     bool sleeping = body.sleep_counter >= SLEEP_THRESHOLD;
     bool update_orient = (body.flags & FLAG_UPDATE_ORIENTATION) != 0;
@@ -20,7 +20,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     if (pc.substep == 0) {
         for (uint mi = 0; mi < pc.motor_count; mi++) {
-            GpuMotor m = motor_data[mi];
+            gpu_motor m = motor_data[mi];
             if (m.body_index == bi && sleeping && length(m.target_velocity.xyz) > 0.01) {
                 body.sleep_counter = 0;
                 sleeping = false;
@@ -34,10 +34,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             for (uint k = 0; k < cc; k++) {
                 uint ci = safe_load_uint(contact_adjacency, co + k, MAX_CONTACT_ADJACENCY);
                 if (ci >= MAX_CONTACTS) continue;
-                GpuContact c = contact_data[ci];
+                gpu_contact c = contact_data[ci];
                 uint other = (c.body_a == bi) ? c.body_b : c.body_a;
                 if (other >= pc.body_count) continue;
-                GpuBody other_body = body_data[other];
+                gpu_body other_body = body_data[other];
                 bool other_locked = (other_body.flags & FLAG_LOCKED) != 0;
                 bool other_sleeping = other_body.sleep_counter >= SLEEP_THRESHOLD;
                 float other_speed = length(other_body.velocity.xyz);
@@ -55,10 +55,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
                 for (uint k = 0; k < jc; k++) {
                     uint ji = safe_load_uint(joint_adjacency, j_off + k, MAX_JOINT_ADJACENCY);
                     if (ji >= MAX_JOINTS) continue;
-                    GpuJoint jnt = joint_data[ji];
+                    gpu_joint jnt = joint_data[ji];
                     uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
                     if (other >= pc.body_count) continue;
-                    GpuBody other_body = body_data[other];
+                    gpu_body other_body = body_data[other];
                     bool other_locked = (other_body.flags & FLAG_LOCKED) != 0;
                     bool other_sleeping = other_body.sleep_counter >= SLEEP_THRESHOLD;
                     float other_speed = length(other_body.velocity.xyz);
@@ -131,7 +131,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     body.angular_inertia_target = body.predicted_orientation;
 
     for (uint mi = 0; mi < pc.motor_count; mi++) {
-        GpuMotor m = motor_data[mi];
+        gpu_motor m = motor_data[mi];
         if (m.body_index != bi) continue;
 
         float4 target = body.old_position + m.target_velocity * pc.dt;

@@ -8,7 +8,7 @@ struct PhysicsMapping {
 };
 
 [[vk::binding(0, 0)]]
-StructuredBuffer<GpuBody> body_data;
+StructuredBuffer<gpu_body> body_data;
 
 [[vk::binding(1, 0)]]
 StructuredBuffer<PhysicsMapping> mapping_data;
@@ -37,7 +37,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         return;
     }
 
-    GpuBody body = body_data[m.body_index];
+    gpu_body body = body_data[m.body_index];
 
     float3 scale = body.half_extents.xyz * 2.0;
     float3 axis_x = rotate_vector(body.orientation, float3(scale.x, 0.0, 0.0));

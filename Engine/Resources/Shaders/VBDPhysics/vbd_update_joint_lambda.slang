@@ -14,9 +14,9 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint ji = dispatch_id.x;
     if (ji >= pc.joint_count) return;
 
-    GpuJoint j = joint_data[ji];
-    GpuBody body_a = body_data[j.body_a];
-    GpuBody body_b = body_data[j.body_b];
+    gpu_joint j = joint_data[ji];
+    gpu_body body_a = body_data[j.body_a];
+    gpu_body body_b = body_data[j.body_b];
 
     bool a_locked = (body_a.flags & FLAG_LOCKED) != 0;
     bool b_locked = (body_b.flags & FLAG_LOCKED) != 0;

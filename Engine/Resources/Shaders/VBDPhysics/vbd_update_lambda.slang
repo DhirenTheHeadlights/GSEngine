@@ -20,9 +20,9 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         return;
     }
 
-    GpuContact c = contact_data[ci];
-    GpuBody body_a = body_data[c.body_a];
-    GpuBody body_b = body_data[c.body_b];
+    gpu_contact c = contact_data[ci];
+    gpu_body body_a = body_data[c.body_a];
+    gpu_body body_b = body_data[c.body_b];
 
     float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a.xyz);
     float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b.xyz);
