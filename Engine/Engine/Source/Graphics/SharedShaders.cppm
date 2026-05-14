@@ -81,6 +81,26 @@ export namespace gse::shaders::forward {
 	using shader_types = type_pack<light_type, material_data, light, vertex, meshlet_descriptor, meshlet_bounds>;
 }
 
+export namespace gse::shaders::meshlet {
+	struct [[= binding<1, 0>{}, = ssbo_readonly]] vertices_buffer {
+		using element = forward::vertex;
+	};
+
+	struct [[= binding<1, 1>{}, = ssbo_readonly]] meshlets_buffer {
+		using element = forward::meshlet_descriptor;
+	};
+
+	struct [[= binding<1, 2>{}, = ssbo_readonly]] meshlet_vertex_indices {
+		using element = std::uint32_t;
+	};
+
+	struct [[= binding<1, 3>{}, = byte_address_buffer]] meshlet_triangles {};
+
+	struct [[= binding<1, 4>{}, = ssbo_readonly]] meshlet_bounds_buffer {
+		using element = forward::meshlet_bounds;
+	};
+}
+
 export namespace gse::shaders::standard_3d {
 	struct [[= binding<0, 0>{}]] camera_ubo {
 		using element = common::camera_data;

@@ -128,7 +128,7 @@ export namespace gse::physics {
 		std::vector<float> accel_weights;
 		std::vector<vbd::velocity_motor_constraint> motors;
 		std::vector<vbd::joint_constraint> joints;
-		std::vector<vbd::warm_start_entry> warm_starts;
+		std::vector<vbd::gpu_warm_start> warm_starts;
 		std::vector<std::uint32_t> authoritative_body_indices;
 		vbd::solver_config solver_cfg;
 		time_t<float, seconds> dt{};
@@ -145,7 +145,7 @@ export namespace gse::physics {
 		std::vector<id> entity_ids;
 		std::vector<vbd::body_state> gpu_input_bodies;
 		std::vector<vbd::body_state> gpu_result_bodies;
-		std::vector<vbd::contact_readback_entry> gpu_contacts;
+		std::vector<vbd::gpu_contact> gpu_contacts;
 		std::vector<vbd::joint_constraint> gpu_joint_readback;
 		std::uint32_t gpu_joint_count = 0;
 	};
@@ -215,7 +215,7 @@ export namespace gse::physics {
 			struct gpu_prev_frame {
 				std::vector<vbd::body_state> result_bodies;
 				std::vector<id> result_entity_ids;
-				std::vector<vbd::warm_start_entry> warm_start_contacts;
+				std::vector<vbd::gpu_warm_start> warm_start_contacts;
 
 				gpu_prev_frame() {
 					result_bodies.reserve(vbd::max_bodies);
@@ -312,11 +312,11 @@ export namespace gse::physics {
 		) -> feature_id;
 
 		static auto build_contact_cache_from_warm_start(
-			const std::span<const vbd::warm_start_entry> warm_start_contacts
+			const std::span<const vbd::gpu_warm_start> warm_start_contacts
 		) -> vbd::contact_cache;
 
 		static auto invalidate_warm_start_entries(
-			std::vector<vbd::warm_start_entry>& warm_start_contacts,
+			std::vector<vbd::gpu_warm_start>& warm_start_contacts,
 			const std::span<const std::uint32_t> body_indices
 		) -> void;
 

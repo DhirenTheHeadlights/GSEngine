@@ -13,7 +13,6 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.log;
-import gse.std_meta;
 
 import :vbd_constraints;
 import :vbd_solver;
@@ -21,8 +20,8 @@ import :vbd_solver;
 export namespace gse::vbd {
 	struct [[= shaders::shader_struct]] gpu_body {
 		vec4<position> position;
-		vec4<gse::position> predicted_position;
-		vec4f inertia_target;
+		vec4<predicted_position> predicted_position;
+		vec4<target_position> inertia_target;
 		vec4<gse::position> old_position;
 		vec4<gse::velocity> velocity;
 		vec4<gse::velocity> predicted_velocity;
@@ -38,7 +37,7 @@ export namespace gse::vbd {
 		std::uint32_t sleep_counter;
 		float accel_weight;
 		mat3<inertia> inertia;
-		vec4<length> half_extents;
+		vec4<displacement> half_extents;
 		vec4<gse::position> aabb_min;
 		vec4<gse::position> aabb_max;
 	};
@@ -46,22 +45,22 @@ export namespace gse::vbd {
 	struct [[= shaders::shader_struct]] gpu_contact {
 		std::uint32_t body_a;
 		std::uint32_t body_b;
-		std::uint32_t feature_key_hi;
-		std::uint32_t feature_key_lo;
+		std::uint64_t feature_key;
 		std::uint32_t sticking;
 		vec4f normal;
 		vec4f tangent_u;
 		vec4f tangent_v;
-		vec4<lever_arm> r_a;
-		vec4<lever_arm> r_b;
-		vec4f c0_friction;
-		vec4f lambda;
-		vec4f penalty;
+		vec4<lever_arm> local_anchor_a;
+		vec4<lever_arm> local_anchor_b;
+		vec4<gap> c0;
+		float friction_coeff;
+		vec4<force> lambda;
+		vec4<stiffness> penalty;
 	};
 
 	struct [[= shaders::shader_struct]] gpu_motor {
 		std::uint32_t body_index;
-		linear_compliance compliance;
+		float compliance;
 		force max_force;
 		std::uint32_t horizontal_only;
 		vec4<velocity> target_velocity;
@@ -70,16 +69,16 @@ export namespace gse::vbd {
 	struct [[= shaders::shader_struct]] gpu_warm_start {
 		std::uint32_t body_a;
 		std::uint32_t body_b;
-		std::uint32_t feature_key_hi;
-		std::uint32_t feature_key_lo;
+		std::uint64_t feature_key;
 		std::uint32_t sticking;
 		vec4f normal;
 		vec4f tangent_u;
 		vec4f tangent_v;
-		vec4<offset> local_anchor_a;
-		vec4<offset> local_anchor_b;
-		vec4f lambda;
-		vec4f penalty;
+		vec4<lever_arm> local_anchor_a;
+		vec4<lever_arm> local_anchor_b;
+		vec4<force> lambda;
+		vec4<stiffness> penalty;
+		std::uint32_t pad_end;
 	};
 
 	struct [[= shaders::shader_struct]] gpu_joint {
@@ -87,30 +86,30 @@ export namespace gse::vbd {
 		std::uint32_t body_b;
 		std::uint32_t type;
 		std::uint32_t limits_enabled;
-		vec4<offset> local_anchor_a;
-		vec4<offset> local_anchor_b;
+		vec4<lever_arm> local_anchor_a;
+		vec4<lever_arm> local_anchor_b;
 		vec4f local_axis_a;
 		vec4f local_axis_b;
-		length target_distance;
+		displacement target_distance;
 		linear_compliance compliance;
 		float damping;
 		float pad0;
-		float limit_lower;
-		float limit_upper;
+		angle limit_lower;
+		angle limit_upper;
 		float pad1;
 		float pad2;
 		vec4f rest_orientation;
-		vec4f pos_lambda;
-		vec4f pos_penalty;
-		vec4f ang_lambda;
-		vec4f ang_penalty;
-		float limit_lambda;
-		float limit_penalty;
+		vec4<force> pos_lambda;
+		vec4<stiffness> pos_penalty;
+		vec4<torque> ang_lambda;
+		vec4<angular_stiffness> ang_penalty;
+		torque limit_lambda;
+		angular_stiffness limit_penalty;
 		float pad3;
 		float pad4;
-		vec4f pos_c0;
-		vec4f ang_c0;
-		float limit_c0;
+		vec4<gap> pos_c0;
+		vec4<angle> ang_c0;
+		angle limit_c0;
 		float pad5;
 		float pad6;
 		float pad7;
@@ -164,19 +163,6 @@ export namespace gse::vbd {
 	}
 	constexpr std::uint32_t grid_table_size = 4096;
 
-	struct buffer_layout {
-		std::uint32_t stride = 0;
-		flat_map<std::string, std::uint32_t> offsets;
-
-		auto operator[](const std::string& name) const -> std::uint32_t {
-			return offsets.at(name);
-		}
-	};
-
-	template <gse::shaders::is_shader_struct T>
-	auto vbd_layout_from(
-	) -> buffer_layout;
-
 	constexpr std::uint32_t flag_locked = 1u;
 	constexpr std::uint32_t flag_update_orientation = 2u;
 	constexpr std::uint32_t flag_affected_by_gravity = 4u;
@@ -185,36 +171,6 @@ export namespace gse::vbd {
 		vec3<displacement> half_extents;
 		vec3<position> aabb_min;
 		vec3<position> aabb_max;
-	};
-
-	struct warm_start_entry {
-		std::uint32_t body_a = 0;
-		std::uint32_t body_b = 0;
-		std::uint64_t feature_key = 0;
-		bool sticking = false;
-		vec3f normal;
-		vec3f tangent_u;
-		vec3f tangent_v;
-		vec3<lever_arm> local_anchor_a;
-		vec3<lever_arm> local_anchor_b;
-		vec3<force> lambda;
-		vec3<stiffness> penalty;
-	};
-
-	struct contact_readback_entry {
-		std::uint32_t body_a = 0;
-		std::uint32_t body_b = 0;
-		std::uint64_t feature_key = 0;
-		bool sticking = false;
-		vec3f normal;
-		vec3f tangent_u;
-		vec3f tangent_v;
-		vec3<lever_arm> local_anchor_a;
-		vec3<lever_arm> local_anchor_b;
-		vec3<gap> c0;
-		vec3<force> lambda;
-		vec3<stiffness> penalty;
-		float friction_coeff = 0.f;
 	};
 
 	class gpu_solver {
@@ -239,22 +195,13 @@ export namespace gse::vbd {
 		auto buffers_created(
 		) const -> bool;
 
-		auto body_stride(
-		) const -> std::uint32_t;
-
-		auto contact_stride(
-		) const -> std::uint32_t;
-
-		auto contact_lambda_offset(
-		) const -> std::uint32_t;
-
 		auto upload(
 			std::span<const body_state> bodies,
 			std::span<const collision_body_data> collision_data,
 			std::span<const float> accel_weights,
 			std::span<const velocity_motor_constraint> motors,
 			std::span<const joint_constraint> joints,
-			std::span<const warm_start_entry> prev_contacts,
+			std::span<const gpu_warm_start> prev_contacts,
 			std::span<const std::uint32_t> authoritative_body_indices,
 			const solver_config& solver_cfg,
 			time_step dt,
@@ -272,7 +219,7 @@ export namespace gse::vbd {
 
 		auto readback(
 			std::span<body_state> bodies,
-			std::vector<contact_readback_entry>& contacts_out,
+			std::vector<gpu_contact>& contacts_out,
 			std::span<joint_constraint> joints_out
 		) -> void;
 
@@ -321,9 +268,6 @@ export namespace gse::vbd {
 
 		auto compute_semaphore(
 		) const -> gpu::compute_semaphore_state;
-
-		auto body_layout(
-		) const -> const buffer_layout&;
 
 	private:
 		struct compute_shaders {
@@ -402,44 +346,21 @@ export namespace gse::vbd {
 		solver_config m_solver_cfg;
 		time_step m_dt{};
 
-		buffer_layout m_body_layout;
-		buffer_layout m_contact_layout;
-		buffer_layout m_motor_layout;
-		buffer_layout m_warm_start_layout;
-		buffer_layout m_joint_layout;
-		buffer_layout m_frozen_jacobian_layout;
-
 		std::uint32_t m_warm_start_count = 0;
 
-		std::vector<std::byte> m_upload_body_data;
-		std::vector<std::byte> m_upload_motor_data;
-		std::vector<std::byte> m_upload_warm_start_data;
-		std::vector<std::byte> m_upload_joint_data;
+		std::vector<gpu_motor> m_upload_motors;
+		std::vector<gpu_warm_start> m_upload_warm_starts;
+		std::vector<gpu_joint> m_upload_joints;
 		std::vector<std::uint32_t> m_upload_motor_map;
 		std::vector<std::uint32_t> m_upload_collision_state;
 		std::vector<std::uint8_t> m_upload_authoritative_bodies;
 
-		std::vector<std::byte> m_staged_contact_data;
-		std::vector<std::byte> m_staged_joint_data;
+		std::vector<gpu_contact> m_staged_contacts;
+		std::vector<gpu_joint> m_staged_joints;
+		std::vector<gpu_body> m_staged_bodies;
 		std::uint32_t m_staged_body_count = 0;
 		std::uint32_t m_staged_contact_count = 0;
 		std::uint32_t m_staged_joint_count = 0;
-		std::uint32_t m_staged_color_count = max_colors;
 		bool m_staged_valid = false;
-
-		std::vector<std::byte> m_readback_staging;
-		std::vector<std::byte> m_latest_gpu_body_data;
-		std::uint32_t m_latest_gpu_body_count = 0;
 	};
 }
-
-template <gse::shaders::is_shader_struct T>
-auto gse::vbd::vbd_layout_from() -> buffer_layout {
-	buffer_layout out;
-	out.stride = static_cast<std::uint32_t>(sizeof(T));
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-		out.offsets[std::string(std::meta::identifier_of(m))] = static_cast<std::uint32_t>(std::meta::offset_of(m).bytes);
-	}
-	return out;
-}
-

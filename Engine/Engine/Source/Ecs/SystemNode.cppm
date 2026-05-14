@@ -15,6 +15,9 @@ export namespace gse {
 	concept names_state = requires { typename S::state; };
 
 	template <typename S>
+	concept names_data = requires { typename S::data; };
+
+	template <typename S>
 	concept has_resources = requires { typename S::resources; };
 
 	template <typename S>

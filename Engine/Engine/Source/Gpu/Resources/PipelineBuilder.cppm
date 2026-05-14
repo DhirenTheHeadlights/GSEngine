@@ -17,6 +17,8 @@ import :vulkan_shader_module;
 import :vulkan_device;
 import :device;
 import :bindless;
+import :descriptor_heap;
+import :descriptors;
 import :shader_codegen;
 import :shader_markers;
 import :shader_registry;
@@ -43,6 +45,7 @@ export namespace gse::gpu {
 		std::string (*emit_push_constant_struct)() = nullptr;
 		std::string (*emit_types)() = nullptr;
 		std::string (*emit_bindings)() = nullptr;
+		std::vector<shaders::family_set> (*build_family_sets_fn)() = nullptr;
 	};
 
 	[[nodiscard]] auto build_compute_pipeline(
@@ -84,6 +87,7 @@ export namespace gse::gpu {
 		std::string (*emit_push_constant_struct)() = nullptr;
 		std::string (*emit_types)() = nullptr;
 		std::string (*emit_bindings)() = nullptr;
+		std::vector<shaders::family_set> (*build_family_sets_fn)() = nullptr;
 	};
 
 	[[nodiscard]] auto build_graphics_pipeline(
@@ -92,6 +96,42 @@ export namespace gse::gpu {
 		bindless_texture_set& bindless,
 		const graphics_entry_pod& pod
 	) -> pipeline;
+
+	[[nodiscard]] inline auto allocate_descriptors(
+		shader_registry& registry,
+		descriptor_heap& heap,
+		const compute_entry_pod& pod,
+		const std::source_location& loc = std::source_location::current()
+	) -> descriptor_region {
+		return allocate_descriptors(registry, heap, pod.layout_name, loc);
+	}
+
+	[[nodiscard]] inline auto allocate_descriptors(
+		shader_registry& registry,
+		descriptor_heap& heap,
+		const graphics_entry_pod& pod,
+		const std::source_location& loc = std::source_location::current()
+	) -> descriptor_region {
+		return allocate_descriptors(registry, heap, pod.layout_name, loc);
+	}
+
+	[[nodiscard]] inline auto make_push_writer(
+		shader_registry& registry,
+		handle<vulkan::device> dev,
+		descriptor_heap& heap,
+		const compute_entry_pod& pod
+	) -> descriptor_writer {
+		return descriptor_writer(registry, dev, heap, pod.layout_name);
+	}
+
+	[[nodiscard]] inline auto make_push_writer(
+		shader_registry& registry,
+		handle<vulkan::device> dev,
+		descriptor_heap& heap,
+		const graphics_entry_pod& pod
+	) -> descriptor_writer {
+		return descriptor_writer(registry, dev, heap, pod.layout_name);
+	}
 
 	template <fixed_string V>
 	struct body_path {
@@ -223,6 +263,11 @@ export namespace gse::gpu {
 							((out.append(shaders::emit_pack_bindings<Packs>())), ...);
 						}(Spec{});
 						return out;
+					};
+					e.build_family_sets_fn = +[]() -> std::vector<shaders::family_set> {
+						return [] <typename... Packs> (bindings<Packs...>) {
+							return shaders::build_combined_family_sets<Packs...>();
+						}(Spec{});
 					};
 				}
 				else if constexpr (is_types<Spec>::value) {
@@ -394,6 +439,11 @@ export namespace gse::gpu {
 							((out.append(shaders::emit_pack_bindings<Packs>())), ...);
 						}(Spec{});
 						return out;
+					};
+					e.build_family_sets_fn = +[]() -> std::vector<shaders::family_set> {
+						return [] <typename... Packs> (bindings<Packs...>) {
+							return shaders::build_combined_family_sets<Packs...>();
+						}(Spec{});
 					};
 				}
 				else if constexpr (is_types<Spec>::value) {
@@ -875,6 +925,9 @@ auto gse::gpu::build_compute_pipeline_impl(device& dev, shader_registry& registr
 }
 
 auto gse::gpu::build_compute_pipeline(device& dev, shader_registry& registry, bindless_texture_set& bindless, const compute_entry_pod& pod) -> pipeline {
+	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
+	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
+
 	shader_compile_inputs inputs;
 	inputs.body_path = std::string(pod.body_path);
 	inputs.layout_name = std::string(pod.layout_name);
@@ -1162,6 +1215,8 @@ auto gse::gpu::build_graphics_pipeline(device& dev, shader_registry& registry, b
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
 	assert(!pod.layout_name.empty(), "layout missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");
+	assert(pod.build_family_sets_fn, "bindings missing on graphics entry");
+	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
 
 	const auto body_source = load_body_file(pod.body_path);
 	const auto parsed = parse_body_file(body_source);

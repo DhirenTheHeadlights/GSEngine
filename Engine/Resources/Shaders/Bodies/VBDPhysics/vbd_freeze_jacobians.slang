@@ -9,8 +9,8 @@ if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) return;
 gpu_body a = body_data[c.body_a];
 gpu_body b = body_data[c.body_b];
 
-float3 r_aw = rotate_vector(a.predicted_orientation, c.r_a.xyz);
-float3 r_bw = rotate_vector(b.predicted_orientation, c.r_b.xyz);
+float3 r_aw = rotate_vector(a.predicted_orientation, c.local_anchor_a.xyz);
+float3 r_bw = rotate_vector(b.predicted_orientation, c.local_anchor_b.xyz);
 
 float3 dirs[3] = { c.normal.xyz, c.tangent_u.xyz, c.tangent_v.xyz };
 

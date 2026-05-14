@@ -75,8 +75,8 @@ auto gse::renderer::light_culling::system::tile_count(const state& s) -> vec2u {
 
 auto gse::renderer::light_culling::system::update_depth_descriptor(const gpu::context::state& gpu_s, resources& r) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("light_culling"), r.descriptors[i])
-			.image("g_depth", gpu_s.render_graph->depth_image(), r.depth_sampler, gpu::image_layout::general)
+		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.descriptors[i])
+			.image<g_depth>(gpu_s.render_graph->depth_image(), r.depth_sampler, gpu::image_layout::general)
 			.commit();
 	}
 }
@@ -101,11 +101,11 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 			.usage = gpu::buffer_flag::storage
 		});
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("light_culling"), r.descriptors[i])
-			.buffer("culling_params", r.culling_params_buffers[i], 0, sizeof(culling_params_data))
-			.buffer("lights", r.light_buffers[i], 0, sizeof(shaders::forward::light) * max_lights)
-			.buffer("light_index_list", r.light_index_list_buffers[i], 0, index_list_size)
-			.buffer("tile_light_table", r.tile_light_table_buffers[i], 0, tile_table_size)
+		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.descriptors[i])
+			.buffer<culling_params>(r.culling_params_buffers[i], 0, sizeof(culling_params_data))
+			.buffer<lights>(r.light_buffers[i], 0, sizeof(shaders::forward::light) * max_lights)
+			.buffer<light_index_list>(r.light_index_list_buffers[i], 0, index_list_size)
+			.buffer<tile_light_table>(r.tile_light_table_buffers[i], 0, tile_table_size)
 			.commit();
 	}
 
@@ -113,9 +113,10 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 }
 
 auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd, state& s) -> async::task<> {
-	gpu_s.shader_registry->register_family("light_culling", shaders::build_family_sets(shader_binding_types{}));
+	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("light_culling"));
+		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
@@ -139,8 +140,6 @@ auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::cont
 		.border = gpu::border_color::float_opaque_white,
 		.max_lod = 1.0f
 	});
-
-	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	rebuild_tile_buffers(gpu_s, r, s);
 

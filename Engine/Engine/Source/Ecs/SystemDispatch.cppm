@@ -15,13 +15,19 @@ import :frame_context;
 import :system_node;
 
 export namespace gse {
-	template <typename S, bool = names_state<S>>
+	template <typename S, bool = names_data<S>, bool = names_state<S>>
 	struct state_of_helper {
 		using type = S;
 	};
 
+	template <typename S, bool AnyState>
+	struct state_of_helper<S, true, AnyState> {
+		static_assert(!AnyState, "system declares both `data` and `state`; pick one");
+		using type = typename S::data;
+	};
+
 	template <typename S>
-	struct state_of_helper<S, true> {
+	struct state_of_helper<S, false, true> {
 		using type = typename S::state;
 	};
 
@@ -439,6 +445,11 @@ consteval auto gse::compute_state_dep_id() -> id {
 	constexpr auto entity = std::meta::dealias(^^T);
 	if constexpr (std::meta::is_class_member(entity)) {
 		using parent_t = typename [: std::meta::parent_of(entity) :];
+		if constexpr (requires { typename parent_t::data; }) {
+			if constexpr (std::is_same_v<typename parent_t::data, T>) {
+				return id_of<parent_t>();
+			}
+		}
 		if constexpr (requires { typename parent_t::state; }) {
 			if constexpr (std::is_same_v<typename parent_t::state, T>) {
 				return id_of<parent_t>();
@@ -683,7 +694,10 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	}
 	node.has_frame = names_frame<S>;
 	node.state_id = id_of<S>();
-	if constexpr (names_state<S>) {
+	if constexpr (names_data<S>) {
+		node.state_type_id = id_of<typename S::data>();
+	}
+	else if constexpr (names_state<S>) {
 		node.state_type_id = id_of<typename S::state>();
 	}
 	node.update_wall_id = find_or_generate_id(std::format("update_wall:{}", type_tag<S>()));

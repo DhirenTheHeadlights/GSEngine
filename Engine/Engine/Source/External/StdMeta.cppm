@@ -127,4 +127,7 @@ export namespace std::meta {
 	using ::std::meta::is_same_type;
 
 	using ::std::define_static_string;
+
+	template <info M>
+	constexpr std::uint32_t offset_of_v = static_cast<std::uint32_t>(offset_of(M).bytes);
 }

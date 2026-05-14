@@ -102,7 +102,7 @@ export namespace gse::vbd {
 
 		vec3<target_position> motor_target;
 
-		mass mass_value = kilograms(1.f);
+		mass mass = kilograms(1.f);
 		mat3<inverse_inertia> inv_inertia;
 
 		bool locked = false;
@@ -118,7 +118,7 @@ export namespace gse::vbd {
 
 auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
 	if (locked) return gse::inverse_mass{ 0.f };
-	return 1.f / mass_value;
+	return 1.f / mass;
 }
 
 auto gse::vbd::body_state::sleeping() const -> bool {

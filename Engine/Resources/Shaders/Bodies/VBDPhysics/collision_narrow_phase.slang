@@ -889,13 +889,15 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint 
     result = (gpu_warm_start)0;
     if (ws_count == 0) return false;
 
+    uint64_t feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
+
     uint lo = 0;
     uint hi = ws_count;
     while (lo < hi) {
         uint mid = (lo + hi) / 2;
         gpu_warm_start ws = warm_starts[mid];
         if (ws.body_a < ba || (ws.body_a == ba && ws.body_b < bb) ||
-            (ws.body_a == ba && ws.body_b == bb && feature_less(ws.feature_key_hi, ws.feature_key_lo, feature_hi, feature_lo))) {
+            (ws.body_a == ba && ws.body_b == bb && ws.feature_key < feature_key)) {
             lo = mid + 1;
         } else {
             hi = mid;
@@ -904,7 +906,7 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint 
 
     if (lo < ws_count) {
         gpu_warm_start ws = warm_starts[lo];
-        if (ws.body_a == ba && ws.body_b == bb && feature_equal(ws.feature_key_hi, ws.feature_key_lo, feature_hi, feature_lo)) {
+        if (ws.body_a == ba && ws.body_b == bb && ws.feature_key == feature_key) {
             result = ws;
             return true;
         }
@@ -1062,15 +1064,15 @@ for (int p = 0; p < contacts.count; p++) {
     gpu_contact c;
     c.body_a = body_a_idx;
     c.body_b = body_b_idx;
-    c.feature_key_hi = feature_hi;
-    c.feature_key_lo = feature_lo;
+    c.feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
     c.sticking = sticking ? 1u : 0u;
     c.normal = float4(constraint_normal, 0);
     c.tangent_u = float4(tangent_u, 0);
     c.tangent_v = float4(tangent_v, 0);
-    c.r_a = float4(local_r_a, 0);
-    c.r_b = float4(local_r_b, 0);
-    c.c0_friction = float4(C0, pc.friction_coefficient);
+    c.local_anchor_a = float4(local_r_a, 0);
+    c.local_anchor_b = float4(local_r_b, 0);
+    c.c0 = float4(C0, 0);
+    c.friction_coeff = pc.friction_coefficient;
     c.lambda = float4(lambda, 0);
     c.penalty = float4(penalty, 0);
 

@@ -50,7 +50,6 @@ namespace gse::renderer::skin_compute {
 }
 
 auto gse::renderer::skin_compute::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const geometry_collector::system::resources& gc, resources& r) -> async::task<> {
-	gpu_s.shader_registry->register_family("skin_compute", shaders::build_family_sets(shader_binding_types{}));
 	assert(static_cast<bool>(gc.skeleton_buffer), "skin_compute::initialize: gc.skeleton_buffer is null - geometry_collector::initialize did not run before skin_compute::initialize");
 
 	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
@@ -59,12 +58,12 @@ auto gse::renderer::skin_compute::system::run(run_context& ctx, const gpu::conte
 	constexpr std::size_t local_pose_size = geometry_collector::system::resources::max_skin_matrices * sizeof(mat4f);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("skin_compute"));
+		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("skin_compute"), r.descriptors[i])
-			.buffer("skeleton_data", gc.skeleton_buffer, 0, geometry_collector::system::resources::max_joints * sizeof(joint_data))
-			.buffer("local_poses", gc.local_pose_buffer[i], 0, local_pose_size)
-			.buffer("skin_matrices", gc.skin_buffer[i], 0, skin_buffer_size)
+		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.descriptors[i])
+			.buffer<skeleton_data>(gc.skeleton_buffer, 0, geometry_collector::system::resources::max_joints * sizeof(geometry_collector::joint_data))
+			.buffer<local_poses>(gc.local_pose_buffer[i], 0, local_pose_size)
+			.buffer<skin_matrices>(gc.skin_buffer[i], 0, skin_buffer_size)
 			.commit();
 	}
 
