@@ -1,7 +1,6 @@
 export module gse.gpu:shader_markers;
 
 import std;
-import gse.meta;
 
 export namespace gse::gpu {
 	struct dispatch_thread_id {
@@ -44,23 +43,6 @@ export namespace gse::gpu {
 	template <is_system_value T>
 	consteval auto default_sv_name(
 	) -> std::string_view;
-
-	template <fixed_string Path>
-	struct shader_fn {
-		static constexpr std::string_view body_path = Path;
-	};
-
-	template <std::uint32_t X, std::uint32_t Y = 1, std::uint32_t Z = 1>
-	struct numthreads {
-		static constexpr std::uint32_t x = X;
-		static constexpr std::uint32_t y = Y;
-		static constexpr std::uint32_t z = Z;
-	};
-
-	template <fixed_string Name>
-	struct shader_layout {
-		static constexpr std::string_view value = Name;
-	};
 }
 
 template <gse::gpu::is_system_value T>

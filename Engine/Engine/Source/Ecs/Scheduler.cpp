@@ -6,6 +6,7 @@ import gse.assert;
 import gse.core;
 import gse.concurrency;
 import gse.time;
+import gse.math;
 import gse.diag;
 import gse.log;
 
@@ -54,12 +55,6 @@ auto gse::run_node_frame(frame_context& ctx, system_node& node) -> async::task<>
 	}
 	co_await node.invoke_frame_fn(ctx, node.data.get());
 	ctx.notify_ready_by_id(node.state_id);
-	if (node.resources_id.exists()) {
-		ctx.notify_ready_by_id(node.resources_id);
-	}
-	if (node.settings_id.exists()) {
-		ctx.notify_ready_by_id(node.settings_id);
-	}
 }
 
 auto gse::scheduler::check_state_dep_cycles() -> void {
@@ -157,7 +152,7 @@ auto gse::scheduler::advance_run_systems_during_init() -> void {
 		if (tasks.empty()) {
 			break;
 		}
-		async::sync_wait(async::when_all(std::move(tasks)));
+		sync_wait_or_dump(std::move(tasks), wait_phase::init);
 	}
 }
 
@@ -165,15 +160,6 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 	std::unordered_set<id> registered;
 	for (const auto& node : m_nodes) {
 		registered.insert(node.state_id);
-		if (node.state_type_id.exists()) {
-			registered.insert(node.state_type_id);
-		}
-		if (node.resources_id.exists()) {
-			registered.insert(node.resources_id);
-		}
-		if (node.settings_id.exists()) {
-			registered.insert(node.settings_id);
-		}
 	}
 	registered.insert(m_external_resources.begin(), m_external_resources.end());
 
@@ -230,7 +216,7 @@ auto gse::scheduler::run_unified_update() -> void {
 		}
 		tasks.push_back(advance_one_run_system(node));
 	}
-	async::sync_wait(async::when_all(std::move(tasks)));
+	sync_wait_or_dump(std::move(tasks), wait_phase::update);
 }
 
 auto gse::scheduler::update() -> void {
@@ -277,21 +263,9 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 	auto* state_ptr = node.state_ptr;
 	m_states.register_state(canonical_idx, node.state_ptr, node.state_snapshot_ptr);
 
-	if (node.state_type_id.exists() && node.state_type_id != canonical_idx) {
-		m_states.register_state(node.state_type_id, node.state_ptr, node.state_snapshot_ptr);
-	}
-
 	auto combined_deps = node.run_state_deps;
 	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
 	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
-
-	if (node.resources_id.exists()) {
-		m_resources_store.register_resource(node.resources_id, node.resources_ptr);
-	}
-
-	if (node.settings_id.exists()) {
-		m_states.register_state(node.settings_id, node.settings_ptr, node.settings_snapshot_ptr);
-	}
 
 	m_nodes.push_back(std::move(node));
 	return state_ptr;
@@ -347,14 +321,135 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 
 	if (node.settled) {
 		m_update_graph.notify_state_ready(node.state_id);
-		if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
-			m_update_graph.notify_state_ready(node.state_type_id);
+	}
+}
+
+auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const wait_phase phase) -> void {
+	if (tasks.empty()) {
+		return;
+	}
+
+	const auto budget = [phase] {
+		if (phase == wait_phase::init) {
+			return milliseconds(2000.f);
 		}
-		if (node.resources_id.exists()) {
-			m_update_graph.notify_state_ready(node.resources_id);
+		if (phase == wait_phase::frame) {
+			return milliseconds(250.f);
 		}
-		if (node.settings_id.exists()) {
-			m_update_graph.notify_state_ready(node.settings_id);
+		return milliseconds(500.f);
+	}();
+
+	std::atomic<bool> done_flag{ false };
+	auto wrapper = [&]() -> async::task<> {
+		co_await async::when_all(std::move(tasks));
+		done_flag.store(true, std::memory_order_release);
+	};
+	auto w = wrapper();
+	w.start();
+
+	clock wait_clock;
+	auto next_dump_at = budget;
+	int dump_count = 0;
+
+	while (!done_flag.load(std::memory_order_acquire)) {
+		if (!task::try_run_one()) {
+			std::this_thread::yield();
+		}
+		const auto elapsed = wait_clock.elapsed<float>();
+		if (elapsed >= next_dump_at) {
+			++dump_count;
+			log_stall_state(phase, elapsed, dump_count);
+			log::flush();
+			next_dump_at = elapsed + budget;
+		}
+	}
+	while (!w.done()) {
+		std::this_thread::yield();
+	}
+}
+
+auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count) -> void {
+	constexpr std::array<std::string_view, 3> phase_names{ "init", "update", "frame" };
+	const auto phase_name = phase_names[static_cast<std::size_t>(phase)];
+
+	if (phase == wait_phase::frame) {
+		for (const auto& node : m_nodes) {
+			if (!node.has_frame) {
+				continue;
+			}
+			if (m_frame_graph.is_state_ready(node.state_id)) {
+				continue;
+			}
+			std::string missing;
+			for (const id& dep : node.frame_state_deps) {
+				if (!m_frame_graph.is_state_ready(dep)) {
+					if (!missing.empty()) {
+						missing += ", ";
+					}
+					missing += std::format("{}", dep);
+				}
+			}
+			if (missing.empty()) {
+				log::println(
+					log::level::error,
+					log::category::runtime,
+					"STALL [phase={} elapsed={::ms} dump=#{}] frame system {} stuck inside frame() (all deps ready)",
+					phase_name, elapsed, dump_count, node.trace_id
+				);
+			}
+			else {
+				log::println(
+					log::level::error,
+					log::category::runtime,
+					"STALL [phase={} elapsed={::ms} dump=#{}] frame system {} waiting on deps: {}",
+					phase_name, elapsed, dump_count, node.trace_id, missing
+				);
+			}
+		}
+		return;
+	}
+
+	for (const auto& node : m_nodes) {
+		if (!node.invoke_run_fn) {
+			continue;
+		}
+		if (node.settled) {
+			continue;
+		}
+		if (!node.run_launched) {
+			std::string missing;
+			for (const id& dep : node.run_state_deps) {
+				if (!m_update_graph.is_state_ready(dep)) {
+					if (!missing.empty()) {
+						missing += ", ";
+					}
+					missing += std::format("{}", dep);
+				}
+			}
+			if (missing.empty()) {
+				log::println(
+					log::level::error,
+					log::category::runtime,
+					"STALL [phase={} elapsed={::ms} dump=#{}] system {} not launched (deps appear ready, launch deferred)",
+					phase_name, elapsed, dump_count, node.trace_id
+				);
+			}
+			else {
+				log::println(
+					log::level::error,
+					log::category::runtime,
+					"STALL [phase={} elapsed={::ms} dump=#{}] system {} not launched, waiting on deps: {}",
+					phase_name, elapsed, dump_count, node.trace_id, missing
+				);
+			}
+		}
+		else {
+			log::println(
+				log::level::error,
+				log::category::runtime,
+				"STALL [phase={} elapsed={::ms} dump=#{}] system {} stuck inside run() (deps ready, paused_event never set)",
+				phase_name, elapsed, dump_count, node.trace_id
+			);
 		}
 	}
 }
@@ -391,15 +486,6 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	for (auto& node : m_nodes) {
 		if (!node.has_frame) {
 			m_frame_graph.notify_state_ready(node.state_id);
-			if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
-				m_frame_graph.notify_state_ready(node.state_type_id);
-			}
-		}
-		if (node.resources_id.exists()) {
-			m_frame_graph.notify_state_ready(node.resources_id);
-		}
-		if (node.settings_id.exists()) {
-			m_frame_graph.notify_state_ready(node.settings_id);
 		}
 	}
 	for (const id& type_id : m_external_resources) {
@@ -430,7 +516,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	}
 
 	if (!tasks.empty()) {
-		async::sync_wait(async::when_all(std::move(tasks)));
+		sync_wait_or_dump(std::move(tasks), wait_phase::frame);
 		m_frame_graph.clear();
 	}
 }

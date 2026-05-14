@@ -44,11 +44,11 @@ export namespace gse::gpu {
         ) const -> bool;
 
         auto begin(
-            window::state& win
+            window::data& win
         ) -> std::expected<frame_token, frame_status>;
 
         auto end(
-            window::state& win
+            window::data& win
         ) -> void;
 
         auto set_sync(
@@ -61,7 +61,7 @@ export namespace gse::gpu {
 
     private:
         auto recreate_resources(
-            const window::state& win
+            const window::data& win
         ) -> void;
 
         static auto create_sync_objects(

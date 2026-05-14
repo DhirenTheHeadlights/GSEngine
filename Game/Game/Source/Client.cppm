@@ -8,7 +8,7 @@ import :tumbler;
 
 export namespace gs {
 	struct client_system {
-		struct state {
+		struct data {
 			std::uint32_t ping_seq = 0;
 			int selected = -1;
 			gse::clock refresh_clock;
@@ -17,13 +17,13 @@ export namespace gs {
 
 		static auto run(
 			gse::run_context& ctx,
-			state& s,
-			const gse::network::state& net_s
+			data& d,
+			const gse::network::data& net_d
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network::state& net_s) -> gse::async::task<> {
+auto gs::client_system::run(gse::run_context& ctx, data& d, const gse::network::data& net_d) -> gse::async::task<> {
 	ctx.add_system<gs::player::system>();
 	ctx.add_system<gs::tumbler::system>();
 	ctx.add_system<gse::free_camera::system>();
@@ -69,21 +69,21 @@ auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network:
 	};
 
 	while (true) {
-		if (s.refresh_clock.elapsed<std::uint32_t>() > gse::seconds(1000u)) {
+		if (d.refresh_clock.elapsed<std::uint32_t>() > gse::seconds(1000u)) {
 			ctx.channels.push<gse::network::refresh_servers_request>({
 				.timeout = gse::milliseconds(150),
 			});
-			s.refresh_clock.reset();
+			d.refresh_clock.reset();
 		}
 
-		if (net_s.connection_state == gse::network::client::state::connected && s.server_info_timer.tick()) {
+		if (net_d.connection_state == gse::network::client::state::connected && d.server_info_timer.tick()) {
 			send_message(gse::network::server_info_request{});
 		}
 
 		ctx.channels.push<gse::gui::menu_content>({
 			.menu = "Network",
 			.build = [&](gse::gui::builder& ui) {
-			switch (net_s.connection_state) {
+			switch (net_d.connection_state) {
 				case gse::network::client::state::disconnected:
 					ui.draw<gse::gui::text>({
 						.content = "Status: Disconnected",
@@ -96,7 +96,7 @@ auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network:
 					break;
 				case gse::network::client::state::connected:
 					ui.draw<gse::gui::text>({
-						.content = std::format("Status: Connected ({}/{})", net_s.connected_players, net_s.connected_max_players),
+						.content = std::format("Status: Connected ({}/{})", net_d.connected_players, net_d.connected_max_players),
 					});
 					break;
 				default:
@@ -111,26 +111,26 @@ auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network:
 				});
 			}
 
-			const auto& list = net_s.available_servers;
+			const auto& list = net_d.available_servers;
 			ui.draw<gse::gui::text>({
 				.content = std::format("Found: {}", list.size()),
 			});
 
 			for (std::size_t idx = 0; idx < list.size(); ++idx) {
 				const auto& sv = list[idx];
-				const bool picked = (s.selected == static_cast<int>(idx));
+				const bool picked = (d.selected == static_cast<int>(idx));
 				if (ui.draw<gse::gui::selectable>({
 					.text = std::format("{}  {}:{}  {}/{}  v{}", sv.name, sv.addr.ip, sv.addr.port, sv.players, sv.max_players, sv.build),
 					.selected = picked,
 				})) {
-					s.selected = static_cast<int>(idx);
+					d.selected = static_cast<int>(idx);
 				}
 			}
 
 			if (ui.draw<gse::gui::button>({
 				.text = "Connect",
-			}) && s.selected >= 0 && s.selected < static_cast<int>(list.size())) {
-				const auto& pick = list[static_cast<std::size_t>(s.selected)];
+			}) && d.selected >= 0 && d.selected < static_cast<int>(list.size())) {
+				const auto& pick = list[static_cast<std::size_t>(d.selected)];
 				ctx.channels.push<gse::network::connect_request>({
 					.options = {
 						.addr = pick.addr,
@@ -143,9 +143,9 @@ auto gs::client_system::run(gse::run_context& ctx, state& s, const gse::network:
 
 			if (ui.draw<gse::gui::button>({
 				.text = "Send Ping",
-			}) && net_s.connection_state == gse::network::client::state::connected) {
+			}) && net_d.connection_state == gse::network::client::state::connected) {
 				send_message(gse::network::ping{
-					.sequence = ++s.ping_seq,
+					.sequence = ++d.ping_seq,
 				});
 			}
 			},

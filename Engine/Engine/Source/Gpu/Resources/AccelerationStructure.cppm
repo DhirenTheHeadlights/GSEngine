@@ -3,7 +3,6 @@ export module gse.gpu:acceleration_structure;
 import std;
 import vulkan;
 
-import :context;
 import :device;
 import :gpu_task;
 import :handles;
@@ -38,17 +37,17 @@ export namespace gse::gpu {
 	};
 
 	auto build_blas(
-		const context::state& ctx,
+		gpu::device& device,
 		const blas_geometry_desc& desc
 	) -> vulkan::blas;
 
 	auto build_tlas(
-		const context::state& ctx,
+		gpu::device& device,
 		std::uint32_t max_instances
 	) -> vulkan::tlas;
 
 	auto rebuild_tlas(
-		const context::state& ctx,
+		gpu::device& device,
 		vulkan::tlas& t,
 		std::span<const tlas_instance_desc> instances,
 		vulkan::recording_context& rec
@@ -60,7 +59,7 @@ export namespace gse::gpu {
 	) -> void;
 
 	auto build_tlas_in_place(
-		const context::state& ctx,
+		gpu::device& device,
 		vulkan::tlas& t,
 		std::uint32_t instance_count,
 		vulkan::recording_context& rec

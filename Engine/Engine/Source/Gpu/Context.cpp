@@ -19,15 +19,15 @@ import gse.diag;
 import gse.ecs;
 import gse.log;
 
-auto gse::gpu::context::run(run_context& ctx, const window::state& window_s, settings& cfg, state& s) -> async::task<> {
-	s.device = device::create(window_s, cfg.validation_layers_enabled, cfg.device);
-	s.shader_registry = std::make_unique<gpu::shader_registry>(*s.device);
-	s.swapchain = swap_chain::create(window::viewport(window_s), *s.device);
-	s.frame = frame::create(*s.device, *s.swapchain);
-	s.bindless_textures = std::make_unique<bindless_texture_set>(s.device->vulkan_device(), s.device->descriptor_heap());
-	s.render_graph = std::make_unique<vulkan::render_graph>(*s.device, *s.swapchain, *s.frame, s.bindless_textures.get());
+auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data& d) -> async::task<> {
+	d.device = device::create(window_s, d.validation_layers_enabled, d.device_settings);
+	d.shader_registry = std::make_unique<gpu::shader_registry>(*d.device);
+	d.swapchain = swap_chain::create(window::viewport(window_s), *d.device);
+	d.frame = frame::create(*d.device, *d.swapchain);
+	d.bindless_textures = std::make_unique<bindless_texture_set>(d.device->vulkan_device(), d.device->descriptor_heap());
+	d.render_graph = std::make_unique<vulkan::render_graph>(*d.device, *d.swapchain, *d.frame, d.bindless_textures.get());
 
-	s.device->transient().recorder().pre_frame([graph = s.render_graph.get()](handle<command_buffer> cmd) {
+	d.device->transient().recorder().pre_frame([graph = d.render_graph.get()](handle<command_buffer> cmd) {
 		vulkan::transition_image_layout(
 			graph->depth_image(),
 			cmd,
@@ -43,7 +43,7 @@ auto gse::gpu::context::run(run_context& ctx, const window::state& window_s, set
 	while (true) {
 		for (const auto& req : ctx.read_channel<gpu_resume_request>()) {
 			if (req.handle && req.out_state) {
-				*req.out_state = &s;
+				*req.out_state = &d;
 				req.handle.resume();
 			}
 		}
@@ -51,35 +51,35 @@ auto gse::gpu::context::run(run_context& ctx, const window::state& window_s, set
 	}
 }
 
-auto gse::gpu::context::shutdown(shutdown_context&, state& s) -> void {
-	if (!s.device) {
+auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
+	if (!d.device) {
 		return;
 	}
 
-	s.device->wait_idle();
-	s.swapchain->clear_depth_image();
+	d.device->wait_idle();
+	d.swapchain->clear_depth_image();
 
-	s.bindless_textures.reset();
-	s.render_graph.reset();
-	s.frame.reset();
-	s.swapchain.reset();
-	s.shader_registry.reset();
-	s.device.reset();
+	d.bindless_textures.reset();
+	d.render_graph.reset();
+	d.frame.reset();
+	d.swapchain.reset();
+	d.shader_registry.reset();
+	d.device.reset();
 }
 
-auto gse::gpu::context::begin_frame(state& s, window::state& window_s) -> std::expected<frame_token, frame_status> {
-	auto result = s.frame->begin(window_s);
+auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::expected<frame_token, frame_status> {
+	auto result = d.frame->begin(window_s);
 
 	if (result) {
-		s.device->descriptor_heap().begin_frame(result->frame_index);
-		s.bindless_textures->begin_frame(result->frame_index);
+		d.device->descriptor_heap().begin_frame(result->frame_index);
+		d.bindless_textures->begin_frame(result->frame_index);
 	}
 
 	return result;
 }
 
-auto gse::gpu::context::end_frame(state& s, window::state& window_s) -> void {
-	s.frame->end(window_s);
+auto gse::gpu::context::end_frame(data& d, window::data& window_s) -> void {
+	d.frame->end(window_s);
 }
 
 namespace gse::gpu {
@@ -172,23 +172,23 @@ auto gse::gpu::to_pass_data(render_pass_request req, const vulkan::render_graph&
 	return p;
 }
 
-auto gse::gpu::context::execute_frame(state& s, std::vector<render_pass_request> requests) -> void {
+auto gse::gpu::context::execute_frame(data& d, std::vector<render_pass_request> requests) -> void {
 	std::vector<vulkan::render_pass_data> passes;
 	passes.reserve(requests.size());
 	for (auto& req : requests) {
-		passes.push_back(to_pass_data(std::move(req), *s.render_graph));
+		passes.push_back(to_pass_data(std::move(req), *d.render_graph));
 	}
-	s.render_graph->execute(std::move(passes));
+	d.render_graph->execute(std::move(passes));
 }
 
-auto gse::gpu::context::on_swap_chain_recreate(const state& s, swap_chain_recreate_callback callback) -> void {
-	s.swapchain->on_recreate(std::move(callback));
+auto gse::gpu::context::on_swap_chain_recreate(const data& d, swap_chain_recreate_callback callback) -> void {
+	d.swapchain->on_recreate(std::move(callback));
 }
 
-auto gse::gpu::context::wait_idle(const state& s) -> void {
-	s.device->wait_idle();
+auto gse::gpu::context::wait_idle(const data& d) -> void {
+	d.device->wait_idle();
 }
 
-auto gse::gpu::context::device_handle(const state& s) -> handle<vulkan::device> {
-	return s.device->vulkan_device().device_handle();
+auto gse::gpu::context::device_handle(const gpu::device& device) -> handle<vulkan::device> {
+	return device.vulkan_device().device_handle();
 }

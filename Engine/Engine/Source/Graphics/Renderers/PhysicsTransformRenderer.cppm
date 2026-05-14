@@ -16,12 +16,10 @@ import gse.physics;
 
 export namespace gse::renderer::physics_transform {
 	struct system {
-		struct resources {
+		struct data {
 			gpu::pipeline pipeline;
 			bool initialized = false;
-		};
 
-		struct frame_data {
 			per_frame_resource<gpu::descriptor_region> descriptors;
 
 			per_frame_resource<gpu::buffer> mapping_buffers;
@@ -31,18 +29,16 @@ export namespace gse::renderer::physics_transform {
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const asset::state& assets_s,
-			resources& r,
-			frame_data& fd
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			data& d
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
-			const gpu::context::state& gpu_s,
-			const resources& r,
-			frame_data& fd,
-			const geometry_collector::system::resources& gc_r
+			shared_view<gpu::context> gpu_s,
+			data& d,
+			shared_view<geometry_collector::system> gc_r
 		) -> async::task<>;
 	};
 }

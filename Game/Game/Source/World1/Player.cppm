@@ -27,20 +27,20 @@ export namespace gs::player {
 	};
 
 	struct system {
-		struct state {
+		struct data {
 			std::unordered_map<gse::id, std::unique_ptr<bindings>> bindings_by_owner;
 		};
 
 		static auto run(
 			gse::run_context& ctx,
-			state& s,
-			const gse::actions::system::state& as,
-			const gse::camera::system::state& cam_s
+			data& d,
+			const gse::actions::system::data& as,
+			const gse::camera::system::data& cam_s
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions::system::state& as, const gse::camera::system::state& cam_s) -> gse::async::task<> {
+auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::camera::system::data& cam_s) -> gse::async::task<> {
 	while (true) {
 		{
 			auto [players, transforms, motions, statuses, motors, follows] = co_await ctx.acquire<
@@ -56,7 +56,7 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 			for (std::size_t i = 0; i < players.size(); ++i) {
 				auto& p = players[i];
 				const auto owner_id = player_ids[i];
-				auto& slot = s.bindings_by_owner[owner_id];
+				auto& slot = d.bindings_by_owner[owner_id];
 				if (slot) {
 					continue;
 				}
@@ -138,7 +138,7 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 			for (std::size_t i = 0; i < players.size(); ++i) {
 				auto& p = players[i];
 				const auto owner_id = player_ids[i];
-				const auto& b = *s.bindings_by_owner[owner_id];
+				const auto& b = *d.bindings_by_owner[owner_id];
 
 				const auto* motion = motions.find(owner_id);
 				auto* motor = motors.find(owner_id);
@@ -194,7 +194,7 @@ auto gs::player::system::run(gse::run_context& ctx, state& s, const gse::actions
 				}
 			}
 
-			std::erase_if(s.bindings_by_owner, [&players](const auto& entry) {
+			std::erase_if(d.bindings_by_owner, [&players](const auto& entry) {
 				return !players.find(entry.first);
 			});
 		}

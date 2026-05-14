@@ -174,47 +174,42 @@ export namespace gse::renderer::geometry_collector {
 	) -> std::vector<render_queue_entry>;
 
 	struct system {
-		struct state {
+		struct data {
 			resource::handle<skeleton> current_skeleton;
-			std::uint32_t current_joint_count = 0;
-		};
+			[[=gse::shared]] std::uint32_t current_joint_count = 0;
 
-		struct resources {
-			per_frame_resource<gpu::buffer> instance_buffer;
+			[[=gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
 			static constexpr std::size_t max_instances = 4096;
 			static constexpr std::size_t max_skin_matrices = 256 * 128;
 			static constexpr std::size_t max_joints = 256;
 
-			per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
-			per_frame_resource<gpu::buffer> skinned_indirect_commands_buffer;
-			gpu::buffer skeleton_buffer;
-			per_frame_resource<gpu::buffer> local_pose_buffer;
-			per_frame_resource<gpu::buffer> skin_buffer;
+			[[=gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+			[[=gse::shared]] per_frame_resource<gpu::buffer> skinned_indirect_commands_buffer;
+			[[=gse::shared]] gpu::buffer skeleton_buffer;
+			[[=gse::shared]] per_frame_resource<gpu::buffer> local_pose_buffer;
+			[[=gse::shared]] per_frame_resource<gpu::buffer> skin_buffer;
 
 			per_frame_resource<gpu::buffer> physics_mapping_buffer;
 		};
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const asset::state& assets_s,
-			resources& r,
-			state& s,
-			const camera::system::state& cam_state
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			data& d,
+			const camera::system::data& cam_state
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
-			const gpu::context::state& gpu_s,
-			const resources& r,
-			const state& s
+			shared_view<gpu::context> gpu_s,
+			const data& d
 		) -> async::task<>;
 
 		static auto upload_skeleton_data(
-			const resources& r,
+			const data& d,
 			const skeleton& skel
 		) -> void;
 	};
 }
-

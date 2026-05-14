@@ -21,11 +21,9 @@ export namespace gse::renderer::rt_shadow {
 	constexpr std::uint32_t max_instances = 4096;
 
 	struct system {
-		struct state {
+		struct data {
 			per_frame_resource<const gpu::tlas*> tlas_ptrs{};
-		};
 
-		struct frame_data {
 			std::unordered_map<const mesh*, gpu::blas> blas_cache;
 			per_frame_resource<gpu::tlas> tlas_per_frame;
 			per_frame_resource<linear_vector<gpu::tlas_instance_desc>> instances;
@@ -38,19 +36,16 @@ export namespace gse::renderer::rt_shadow {
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const asset::state& assets_s,
-			frame_data& fd,
-			state& s
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			data& d
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
-			const gpu::context::state& gpu_s,
-			frame_data& fd,
-			const state& s,
-			const geometry_collector::system::state& gc_s,
-			const geometry_collector::system::resources& gc_r
+			shared_view<gpu::context> gpu_s,
+			data& d,
+			shared_view<geometry_collector::system> gc_r
 		) -> async::task<>;
 	};
 }

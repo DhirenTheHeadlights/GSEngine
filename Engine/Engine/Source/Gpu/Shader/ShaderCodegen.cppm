@@ -197,6 +197,14 @@ struct gse::shaders::slang_type<gse::mat<T, Cols, Rows>> {
 	};
 };
 
+template <gse::shaders::has_slang_type T>
+struct gse::shaders::slang_type<gse::quat_t<T>> {
+	static constexpr std::string_view name{
+		vec_name_storage<T, 4>::value.data(),
+		vec_name_storage<T, 4>::value.size()
+	};
+};
+
 template <gse::shaders::is_shader_struct T>
 auto gse::shaders::emit_slang_struct() -> std::string {
 	std::string out = std::format("public struct {} {{\n", std::meta::identifier_of(^^T));

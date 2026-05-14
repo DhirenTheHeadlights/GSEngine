@@ -8,10 +8,12 @@ export namespace gse {
     struct networked_tag {};
     struct format_skip_tag {};
     struct theme_color_tag {};
+    struct shared_tag {};
 
     constexpr networked_tag networked{};
     constexpr format_skip_tag format_skip{};
     constexpr theme_color_tag theme_color{};
+    constexpr shared_tag shared{};
 
     template <typename Tag>
     consteval auto has_annotation(

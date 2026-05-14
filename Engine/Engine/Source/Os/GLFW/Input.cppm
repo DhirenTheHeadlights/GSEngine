@@ -30,32 +30,32 @@ namespace gse::detail {
 
 export namespace gse::input {
 	struct system {
-		struct state {
+		struct data {
 			double_buffer<input::state> states;
 		};
 
 		static auto run(
 			run_context& ctx,
-			state& s,
-			const window::state* win
+			data& d,
+			const window::data* win
 		) -> async::task<>;
 
 		static auto current_state(
-			const state& s
+			const data& d
 		) -> const input::state&;
 	};
 }
 
-auto gse::input::system::current_state(const state& s) -> const input::state& {
-	return s.states.read();
+auto gse::input::system::current_state(const data& d) -> const input::state& {
+	return d.states.read();
 }
 
-auto gse::input::system::run(run_context& ctx, state& s, const window::state* win) -> async::task<> {
+auto gse::input::system::run(run_context& ctx, data& d, const window::data* win) -> async::task<> {
 	while (true) {
 		const auto& tok = detail::token();
-		auto& persistent_state = s.states.write();
+		auto& persistent_state = d.states.write();
 
-		persistent_state.copy_persistent_from(s.states.read());
+		persistent_state.copy_persistent_from(d.states.read());
 		persistent_state.begin_frame(tok);
 
 		std::vector<event> drained;
@@ -90,7 +90,7 @@ auto gse::input::system::run(run_context& ctx, state& s, const window::state* wi
 
 		persistent_state.end_frame(tok);
 
-		s.states.flip();
+		d.states.flip();
 
 		co_await ctx.next_tick();
 	}

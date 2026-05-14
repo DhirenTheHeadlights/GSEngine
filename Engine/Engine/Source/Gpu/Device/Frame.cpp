@@ -56,7 +56,7 @@ auto gse::gpu::frame::set_sync(vulkan::sync&& sync) -> void {
     m_sync = std::move(sync);
 }
 
-auto gse::gpu::frame::recreate_resources(const window::state& win) -> void {
+auto gse::gpu::frame::recreate_resources(const window::data& win) -> void {
     m_device->wait_idle();
     m_swapchain->recreate(window::viewport(win));
     m_sync = create_sync_objects(m_device->vulkan_device(), m_swapchain->config());
@@ -64,7 +64,7 @@ auto gse::gpu::frame::recreate_resources(const window::state& win) -> void {
     m_device->wait_idle();
 }
 
-auto gse::gpu::frame::begin(window::state& win) -> std::expected<frame_token, frame_status> {
+auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, frame_status> {
     auto& dev = m_device->vulkan_device();
 
     m_frame_in_progress = false;
@@ -193,7 +193,7 @@ auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state& state) -
     }
 }
 
-auto gse::gpu::frame::end(window::state& win) -> void {
+auto gse::gpu::frame::end(window::data& win) -> void {
     m_device->transient().recorder().run_post_frame(m_command_buffer);
 
     const vulkan::commands cmd_tail{ m_command_buffer };

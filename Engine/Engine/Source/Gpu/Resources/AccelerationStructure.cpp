@@ -73,8 +73,8 @@ auto gse::to_vk_instance(const gpu::tlas_instance_desc& inst) -> vk::Acceleratio
 	};
 }
 
-auto gse::gpu::build_blas(const context::state& ctx, const blas_geometry_desc& desc) -> vulkan::blas {
-	auto& dev = *ctx.device;
+auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -> vulkan::blas {
+	auto& dev = device;
 	auto& dev_cfg = dev.vulkan_device();
 
 	const auto vertex_addr = vulkan::buffer_device_address(dev_cfg, desc.vertex_buffer->handle());
@@ -143,10 +143,10 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics);
 }
 
-auto gse::gpu::build_tlas(const context::state& ctx, const std::uint32_t max_instances) -> vulkan::tlas {
-	auto t = vulkan::tlas::create(ctx.device->vulkan_device(), max_instances);
+auto gse::gpu::build_tlas(gpu::device& device, const std::uint32_t max_instances) -> vulkan::tlas {
+	auto t = vulkan::tlas::create(device.vulkan_device(), max_instances);
 
-	auto& dev = *ctx.device;
+	auto& dev = device;
 	const auto& dev_cfg = dev.vulkan_device();
 
 	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());
@@ -159,8 +159,8 @@ auto gse::gpu::build_tlas(const context::state& ctx, const std::uint32_t max_ins
 	return t;
 }
 
-auto gse::gpu::rebuild_tlas(const context::state& ctx, vulkan::tlas& t, const std::span<const tlas_instance_desc> instances, vulkan::recording_context& rec) -> void {
-	auto& dev = *ctx.device;
+auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::span<const tlas_instance_desc> instances, vulkan::recording_context& rec) -> void {
+	auto& dev = device;
 	const auto& dev_cfg = dev.vulkan_device();
 
 	std::vector<vk::AccelerationStructureInstanceKHR> vk_instances;
@@ -239,8 +239,8 @@ auto gse::gpu::write_tlas_instances(vulkan::tlas& t, const std::span<const tlas_
 	}
 }
 
-auto gse::gpu::build_tlas_in_place(const context::state& ctx, vulkan::tlas& t, const std::uint32_t instance_count, vulkan::recording_context& rec) -> void {
-	const auto& dev_cfg = ctx.device->vulkan_device();
+auto gse::gpu::build_tlas_in_place(gpu::device& device, vulkan::tlas& t, const std::uint32_t instance_count, vulkan::recording_context& rec) -> void {
+	const auto& dev_cfg = device.vulkan_device();
 
 	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());
 	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);

@@ -14,7 +14,7 @@ export namespace gs::tumbler {
 	};
 
 	struct system {
-		struct state {};
+		struct data {};
 
 		static auto run(
 			gse::run_context& ctx

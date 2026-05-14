@@ -33,20 +33,20 @@ export namespace gse::free_camera {
 	};
 
 	struct system {
-		struct state {
+		struct data {
 			std::unordered_map<id, std::unique_ptr<bindings>> bindings_by_owner;
 		};
 
 		static auto run(
 			run_context& ctx,
-			state& s,
-			const actions::system::state& as,
-			const camera::system::state& cam_s
+			data& d,
+			const actions::system::data& as,
+			const camera::system::data& cam_s
 		) -> async::task<>;
 	};
 }
 
-auto gse::free_camera::system::run(run_context& ctx, state& s, const actions::system::state& as, const camera::system::state& cam_s) -> async::task<> {
+auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::system::data& as, const camera::system::data& cam_s) -> async::task<> {
 	while (true) {
 		{
 			auto [cameras, follows] = co_await ctx.acquire<
@@ -58,7 +58,7 @@ auto gse::free_camera::system::run(run_context& ctx, state& s, const actions::sy
 			for (std::size_t i = 0; i < cameras.size(); ++i) {
 				auto& c = cameras[i];
 				const auto owner_id = camera_ids[i];
-				auto& slot = s.bindings_by_owner[owner_id];
+				auto& slot = d.bindings_by_owner[owner_id];
 				if (slot) {
 					continue;
 				}
@@ -100,7 +100,7 @@ auto gse::free_camera::system::run(run_context& ctx, state& s, const actions::sy
 			for (std::size_t i = 0; i < cameras.size(); ++i) {
 				auto& c = cameras[i];
 				const auto owner_id = camera_ids[i];
-				const auto& b = *s.bindings_by_owner[owner_id];
+				const auto& b = *d.bindings_by_owner[owner_id];
 
 				auto* cam_follow = follows.find(owner_id);
 				if (!cam_follow) {
@@ -118,7 +118,7 @@ auto gse::free_camera::system::run(run_context& ctx, state& s, const actions::sy
 				cam_follow->position += direction * c.speed * system_clock::dt();
 			}
 
-			std::erase_if(s.bindings_by_owner, [&cameras](const auto& entry) {
+			std::erase_if(d.bindings_by_owner, [&cameras](const auto& entry) {
 				return !cameras.find(entry.first);
 			});
 		}

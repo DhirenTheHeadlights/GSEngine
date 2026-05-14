@@ -3,6 +3,7 @@ export module gse.physics:vbd_constraints;
 import std;
 
 import gse.math;
+import gse.gpu;
 import :contact_manifold;
 import :motion_component;
 
@@ -15,48 +16,50 @@ export namespace gse::vbd {
 		mat3<linear_angular_stiffness> hessian_xtheta = {};
 	};
 
-	struct contact_constraint {
+	enum class joint_type : std::uint32_t { distance, fixed, hinge, slider };
+
+	struct [[= shaders::shader_struct]] contact_constraint {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
+		std::uint64_t feature_key = 0;
+		std::uint32_t sticking = 0;
 
 		vec3f normal;
 		vec3f tangent_u;
 		vec3f tangent_v;
 
-		vec3<lever_arm> r_a;
-		vec3<lever_arm> r_b;
+		vec3<lever_arm> local_anchor_a;
+		vec3<lever_arm> local_anchor_b;
 
 		vec3<gap> c0;
+
+		float friction_coeff = 0.6f;
+		float restitution = 0.f;
+
+		stiffness penalty_floor = newtons_per_meter(1.f);
+		normal_speed approach_speed = {};
 
 		vec3<force> lambda;
 		vec3<stiffness> penalty;
 
-		stiffness penalty_floor = newtons_per_meter(1.f);
-		float friction_coeff = 0.6f;
-		float restitution = 0.f;
-		bool sticking = false;
-
-		normal_speed approach_speed = {};
-
-		feature_id feature;
+		std::uint32_t pad_end = 0;
 	};
 
-	struct velocity_motor_constraint {
+	struct [[= shaders::shader_struct]] velocity_motor_constraint {
 		std::uint32_t body_index = 0;
+		std::uint32_t horizontal_only = 0;
 
 		vec3<velocity> target_velocity;
 
 		float compliance = 0.01f;
 		force max_force = newtons(1000.f);
-		bool horizontal_only = false;
 	};
 
-	enum class joint_type : std::uint8_t { distance, fixed, hinge, slider };
-
-	struct joint_constraint {
+	struct [[= shaders::shader_struct]] joint_constraint {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
 		joint_type type = joint_type::distance;
+		std::uint32_t limits_enabled = 0;
 
 		vec3<lever_arm> local_anchor_a = {};
 		vec3<lever_arm> local_anchor_b = {};
@@ -68,7 +71,6 @@ export namespace gse::vbd {
 		float damping = 0.f;
 		angle limit_lower = radians(-std::numbers::pi_v<float>);
 		angle limit_upper = radians(std::numbers::pi_v<float>);
-		bool limits_enabled = false;
 		quat rest_orientation = {};
 
 		vec3<force> pos_lambda = {};
@@ -85,39 +87,53 @@ export namespace gse::vbd {
 		angle limit_c0 = {};
 	};
 
-	struct body_state {
+	struct [[= shaders::shader_struct]] body_state {
 		vec3<position> position;
 		vec3<predicted_position> predicted_position;
 		vec3<target_position> inertia_target;
-		vec3<gse::position> initial_position;
+		vec3<gse::position> old_position;
 
-		vec3<velocity> body_velocity;
+		vec3<velocity> velocity;
+		vec3<gse::velocity> predicted_velocity;
 
 		quat orientation;
 		quat predicted_orientation;
 		quat angular_inertia_target;
-		quat initial_orientation;
+		quat old_orientation;
 
-		vec3<angular_velocity> body_angular_velocity;
+		vec3<angular_velocity> angular_velocity;
+		vec3<gse::angular_velocity> predicted_angular_velocity;
 
 		vec3<target_position> motor_target;
 
 		mass mass = kilograms(1.f);
+		std::uint32_t locked = 0;
+		std::uint32_t update_orientation = 1;
+		std::uint32_t affected_by_gravity = 1;
+		std::uint32_t sleep_counter = 0;
+
+		float accel_weight = 0.f;
+		float restitution = 0.f;
 		mat3<inverse_inertia> inv_inertia;
 
-		bool locked = false;
-		bool update_orientation = true;
-		bool affected_by_gravity = true;
-
-		std::uint32_t sleep_counter = 0;
+		vec3<displacement> half_extents;
+		vec3<gse::position> aabb_min;
+		vec3<gse::position> aabb_max;
 
 		auto inverse_mass() const -> inverse_mass;
 		auto sleeping() const -> bool;
 	};
 }
 
+export template <>
+struct gse::shaders::slang_type<gse::vbd::joint_type> {
+	static constexpr std::string_view name = "uint";
+};
+
 auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
-	if (locked) return gse::inverse_mass{ 0.f };
+	if (locked) {
+		return gse::inverse_mass{ 0.f };
+	}
 	return 1.f / mass;
 }
 

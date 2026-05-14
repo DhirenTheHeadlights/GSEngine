@@ -10,9 +10,9 @@ if (ci >= actual_contact_count) {
     return;
 }
 
-gpu_contact c = contact_data[ci];
-gpu_body body_a = body_data[c.body_a];
-gpu_body body_b = body_data[c.body_b];
+contact_constraint c = contact_data[ci];
+body_state body_a = body_data[c.body_a];
+body_state body_b = body_data[c.body_b];
 
 float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.local_anchor_a.xyz);
 float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.local_anchor_b.xyz);
@@ -28,8 +28,8 @@ float3 Cn = float3(
 );
 float3 C = Cn - c.c0.xyz * pc.current_alpha;
 
-float4 lambda = c.lambda;
-float4 penalty = c.penalty;
+float3 lambda = c.lambda;
+float3 penalty = c.penalty;
 
 lambda.x = min(penalty.x * C.x + lambda.x, 0.0);
 

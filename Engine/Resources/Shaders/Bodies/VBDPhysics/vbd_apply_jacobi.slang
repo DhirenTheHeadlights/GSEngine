@@ -3,8 +3,8 @@ uint bi = dispatch_id.x;
 if (bi >= pc.body_count) return;
 if (collision_state[CONVERGED_FLAG_INDEX] != 0) return;
 
-gpu_body body = body_data[bi];
-if ((body.flags & FLAG_LOCKED) != 0) return;
+body_state body = body_data[bi];
+if (body.locked != 0) return;
 if (body.sleep_counter >= SLEEP_THRESHOLD) return;
 
 float3 delta_x = solve_deltas[bi * 2].xyz;

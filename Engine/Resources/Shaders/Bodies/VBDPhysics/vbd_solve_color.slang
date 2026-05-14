@@ -13,13 +13,13 @@ void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout
 }
 
 void accumulate_joint_for_body(
-    uint bi, gpu_joint j, bool update_orient,
+    uint bi, joint_constraint j, bool update_orient,
     inout float3 grad, inout mat3 hess,
     inout float3 ang_grad, inout mat3 ang_hess,
     inout mat3 hess_xt
 ) {
-    gpu_body body_a = body_data[j.body_a];
-    gpu_body body_b = body_data[j.body_b];
+    body_state body_a = body_data[j.body_a];
+    body_state body_b = body_data[j.body_b];
     bool is_a = (j.body_a == bi);
     float sign = is_a ? 1.0 : -1.0;
 
@@ -179,11 +179,11 @@ void accumulate_joint_for_body(
 }
 
 void solve_body(uint bi) {
-    gpu_body body = body_data[bi];
+    body_state body = body_data[bi];
 
-    bool locked = (body.flags & FLAG_LOCKED) != 0;
+    bool locked = body.locked != 0;
     bool sleeping = body.sleep_counter >= SLEEP_THRESHOLD;
-    bool update_orient = (body.flags & FLAG_UPDATE_ORIENTATION) != 0;
+    bool update_orient = body.update_orientation != 0;
 
     if (locked || sleeping) return;
 
@@ -208,7 +208,7 @@ void solve_body(uint bi) {
     bool motor_horizontal_only = false;
 
     if (has_motor) {
-        gpu_motor m = motor_data[motor_idx];
+        velocity_motor_constraint m = motor_data[motor_idx];
         float alpha = max(m.compliance, 1e-6);
         float iw = body.mass / pc.h_squared;
         motor_stiffness = iw / alpha;
@@ -230,13 +230,13 @@ void solve_body(uint bi) {
     for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
         uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, MAX_CONTACT_ADJACENCY);
         if (ci >= MAX_CONTACTS) continue;
-        gpu_contact c = contact_data[ci];
+        contact_constraint c = contact_data[ci];
 
         if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) continue;
 
         bool is_a = (c.body_a == bi);
         uint other_idx = is_a ? c.body_b : c.body_a;
-        gpu_body other = body_data[other_idx];
+        body_state other = body_data[other_idx];
 
         frozen_jacobian fj = frozen_jacobians[ci];
         float3 world_r_a = fj.world_r_a.xyz;
@@ -285,7 +285,7 @@ void solve_body(uint bi) {
 
         if (has_motor) {
             bool blocking_body =
-                ((other.flags & FLAG_LOCKED) != 0) ||
+                (other.locked != 0) ||
                 (other.mass >= body.mass);
             if (blocking_body) {
                 float normal_gap = dot(c.normal.xyz, d) + pc.collision_margin;
@@ -319,7 +319,7 @@ void solve_body(uint bi) {
     for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
         uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, MAX_JOINT_ADJACENCY);
         if (ji >= MAX_JOINTS) continue;
-        gpu_joint j = joint_data[ji];
+        joint_constraint j = joint_data[ji];
         if (j.body_a >= pc.body_count || j.body_b >= pc.body_count) continue;
         accumulate_joint_for_body(bi, j, update_orient, grad, hess, ang_grad, ang_hess, hess_xt);
         if (update_orient) has_cross_terms = true;
@@ -367,7 +367,7 @@ void solve_body(uint bi) {
         theta_diff = q_v * 2.0;
     }
 
-    mat3 i_mat = body.inertia;
+    mat3 i_mat = mat3_inverse(body.inv_inertia);
     float ang_scale = 1.0 / pc.h_squared;
 
     float3 g_ang = mat3_mul_vec(i_mat, theta_diff) * ang_scale + ang_grad;

@@ -54,7 +54,7 @@ export namespace gse::vulkan {
 	};
 
 	auto create_surface(
-		const window::state& win,
+		const window::data& win,
 		instance& instance
 	) -> void;
 }

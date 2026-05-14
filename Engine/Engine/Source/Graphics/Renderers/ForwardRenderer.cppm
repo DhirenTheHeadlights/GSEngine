@@ -56,7 +56,7 @@ export namespace gse::renderer::forward {
 	};
 
 	struct system {
-		struct settings {
+		struct data {
 			static constexpr std::string_view category = "Graphics";
 
 			[[=gse::settings::describe<"Shadow map resolution and filtering quality. Off disables shadow rendering entirely.">{}]]
@@ -67,9 +67,7 @@ export namespace gse::renderer::forward {
 
 			[[=gse::settings::describe<"Screen-space and ray-traced reflection quality. Higher levels trace more rays per pixel.">{}]]
 			reflection_quality_level reflection_quality = reflection_quality_level::medium;
-		};
 
-		struct resources {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 
@@ -81,33 +79,27 @@ export namespace gse::renderer::forward {
 			per_frame_resource<gpu::buffer> material_palette_buffers;
 
 			resource::handle<texture> blank_texture;
-		};
 
-		struct frame_data {
 			linear_vector<std::byte> light_staging;
 			linear_vector<std::byte> material_staging;
 		};
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const asset::state& assets_s,
-			const rt_shadow::system::state& rt_state,
-			const light_culling::system::resources& lc_r,
-			settings& cfg,
-			resources& r,
-			frame_data& fd
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			const rt_shadow::system::data& rt_state,
+			const light_culling::system::data& lc_r,
+			data& d
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
-			const gpu::context::state& gpu_s,
-			const settings& cfg,
-			const resources& r,
-			frame_data& fd,
-			const camera::system::state& cam_state,
-			const geometry_collector::system::resources& gc_r,
-			const light_culling::system::resources& lc_r
+			shared_view<gpu::context> gpu_s,
+			data& d,
+			shared_view<camera::system> cam_state,
+			shared_view<geometry_collector::system> gc_r,
+			shared_view<light_culling::system> lc_r
 		) -> async::task<>;
 	};
 }

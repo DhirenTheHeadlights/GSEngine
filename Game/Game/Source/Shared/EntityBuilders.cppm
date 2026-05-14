@@ -5,7 +5,7 @@ import gse;
 
 export namespace gs {
 	auto build_box(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
@@ -17,7 +17,7 @@ export namespace gs {
 	) -> gse::scene::builder;
 
 	auto build_sphere(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
@@ -27,7 +27,7 @@ export namespace gs {
 	) -> gse::scene::builder;
 
 	auto build_sphere_light(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
@@ -37,7 +37,7 @@ export namespace gs {
 	) -> void;
 
 	auto build_static_box(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
@@ -46,7 +46,7 @@ export namespace gs {
 	) -> gse::scene::builder;
 }
 
-auto gs::build_box(gse::asset::state& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> gse::scene::builder {
+auto gs::build_box(gse::asset::data& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> gse::scene::builder {
 	const gse::inertia box_inertia = m * gse::dot(size, size) / 18.f;
 	const gse::material mat{
 		.base_color = gse::vec3f(gse::random_value(0.3f, 1.0f), gse::random_value(0.3f, 1.0f), gse::random_value(0.3f, 1.0f)),
@@ -76,7 +76,7 @@ auto gs::build_box(gse::asset::state& assets, gse::scene* scene, const std::stri
 		});
 }
 
-auto gs::build_sphere(gse::asset::state& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> gse::scene::builder {
+auto gs::build_sphere(gse::asset::data& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> gse::scene::builder {
 	return scene->build(name)
 		.with<gse::physics::transform_component>({
 			.position = position,
@@ -105,7 +105,7 @@ auto gs::build_sphere(gse::asset::state& assets, gse::scene* scene, const std::s
 		});
 }
 
-auto gs::build_sphere_light(gse::asset::state& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> void {
+auto gs::build_sphere_light(gse::asset::data& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> void {
 	build_sphere(assets, scene, name, position, radius, sectors, stacks)
 		.with<gse::point_light_component>({
 			.color = gse::vec3f(1.f),
@@ -121,7 +121,7 @@ auto gs::build_sphere_light(gse::asset::state& assets, gse::scene* scene, const 
 		});
 }
 
-auto gs::build_static_box(gse::asset::state& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> gse::scene::builder {
+auto gs::build_static_box(gse::asset::data& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> gse::scene::builder {
 	return scene->build(name)
 		.with<gse::physics::transform_component>({
 			.position = position,

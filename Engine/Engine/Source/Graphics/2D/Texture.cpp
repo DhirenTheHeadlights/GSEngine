@@ -63,7 +63,7 @@ auto gse::texture::upload_token() const -> const gpu::sync_token& {
     return m_upload_token;
 }
 
-auto gse::texture::create_vulkan_resources(gpu::context::state& context, const profile texture_profile) -> void {
+auto gse::texture::create_vulkan_resources(gpu::context::data& context, const profile texture_profile) -> void {
     const auto width = m_image_data.size.x();
     const auto height = m_image_data.size.y();
     const auto channels = m_image_data.channels;

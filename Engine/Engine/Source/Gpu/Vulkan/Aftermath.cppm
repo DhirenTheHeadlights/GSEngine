@@ -18,7 +18,7 @@ export namespace gse::vulkan {
 			std::filesystem::path shader_directory;
 		};
 
-		struct state {
+		struct data {
 			settings cfg;
 			bool enabled = false;
 			vk::DeviceDiagnosticsConfigCreateInfoNV diag_config{};
@@ -63,6 +63,6 @@ export namespace gse::vulkan {
 		aftermath(
 		);
 
-		std::unique_ptr<state> m_state;
+		std::unique_ptr<data> m_state;
 	};
 }

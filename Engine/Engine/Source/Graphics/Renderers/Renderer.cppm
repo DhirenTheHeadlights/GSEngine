@@ -40,7 +40,7 @@ import gse.meta;
 
 export namespace gse::renderer {
 	struct system {
-		struct settings {
+		struct data {
 			static constexpr std::string_view category = "Graphics";
 
 			[[=gse::settings::describe<"Watch shader sources on disk and reload pipelines when files change.">{}]]
@@ -54,9 +54,7 @@ export namespace gse::renderer {
 
 			[[=gse::settings::describe<"Aggregate per-frame profiler samples into rolling averages for the HUD.">{}]]
 			bool profile_aggregator_enabled = true;
-		};
 
-		struct state {
 			actions::handle dump_profile_action;
 			vec2f last_viewport{ 1920.f, 1080.f };
 			bool last_hot_reload_enabled = false;
@@ -64,11 +62,10 @@ export namespace gse::renderer {
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const window::state& window_s,
-			settings& cfg,
-			state& s,
-			const actions::system::state& sys
+			const gpu::context::data& gpu_s,
+			const window::data& window_s,
+			data& d,
+			const actions::system::data& sys
 		) -> async::task<>;
 	};
 }

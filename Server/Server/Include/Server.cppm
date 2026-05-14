@@ -51,7 +51,7 @@ export namespace gse {
 		auto update(
 			world& w,
 			channel_writer& channels,
-			const actions::system::state& actions_s
+			const actions::system::data& actions_s
 		) -> void;
 
 		template <typename T>
@@ -226,7 +226,7 @@ auto gse::server<Components...>::resend_reliable_messages() -> void {
 }
 
 template <typename... Components>
-auto gse::server<Components...>::update(world& w, channel_writer& channels, const actions::system::state& actions_s) -> void {
+auto gse::server<Components...>::update(world& w, channel_writer& channels, const actions::system::data& actions_s) -> void {
 	if (!w.current_scene()) {
 		channels.push<activate_scene_request>({
 			.scene_id = find("Default Scene"),

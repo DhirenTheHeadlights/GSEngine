@@ -38,77 +38,74 @@ export namespace gse {
 
 export namespace gse::gpu {
 	struct context {
-		struct settings {
+		struct data {
 			static constexpr std::string_view category = "Graphics";
 
 			[[=gse::settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant overhead. Requires a restart.">{}, =gse::settings::restart_required{}]]
 			bool validation_layers_enabled = false;
 
 			[[=gse::settings::describe<"Vulkan device tracking and naming options.">{}]]
-			vulkan::device::settings device;
-		};
+			vulkan::device::settings device_settings;
 
-		struct state {
-			std::unique_ptr<gpu::device> device;
-			std::unique_ptr<gpu::shader_registry> shader_registry;
-			std::unique_ptr<swap_chain> swapchain;
-			std::unique_ptr<gpu::frame> frame;
-			std::unique_ptr<vulkan::render_graph> render_graph;
-			std::unique_ptr<bindless_texture_set> bindless_textures;
-			concurrency::frame_scheduler scheduler;
+			[[=gse::shared]] std::unique_ptr<gpu::device> device;
+			[[=gse::shared]] std::unique_ptr<gpu::shader_registry> shader_registry;
+			[[=gse::shared]] std::unique_ptr<swap_chain> swapchain;
+			[[=gse::shared]] std::unique_ptr<gpu::frame> frame;
+			[[=gse::shared]] std::unique_ptr<vulkan::render_graph> render_graph;
+			[[=gse::shared]] std::unique_ptr<bindless_texture_set> bindless_textures;
+			[[=gse::shared]] concurrency::frame_scheduler scheduler;
 		};
 
 		using swap_chain_recreate_callback = std::function<void()>;
 
 		static auto run(
 			run_context& ctx,
-			const window::state& window_s,
-			settings& cfg,
-			state& s
+			const window::data& window_s,
+			data& d
 		) -> async::task<>;
 
 		static auto shutdown(
 			shutdown_context& phase,
-			state& s
+			data& d
 		) -> void;
 
 		[[nodiscard]] static auto begin_frame(
-			state& s,
-			window::state& window_s
+			data& d,
+			window::data& window_s
 		) -> std::expected<frame_token, frame_status>;
 
 		static auto execute_frame(
-			state& s,
+			data& d,
 			std::vector<render_pass_request> requests
 		) -> void;
 
 		static auto end_frame(
-			state& s,
-			window::state& window_s
+			data& d,
+			window::data& window_s
 		) -> void;
 
 		static auto on_swap_chain_recreate(
-			const state& s,
+			const data& d,
 			swap_chain_recreate_callback callback
 		) -> void;
 
 		static auto wait_idle(
-			const state& s
+			const data& d
 		) -> void;
 
 		[[nodiscard]] static auto device_handle(
-			const state& s
+			const gpu::device& device
 		) -> handle<vulkan::device>;
 	};
 
 	struct gpu_resume_request {
 		std::coroutine_handle<> handle;
-		context::state** out_state = nullptr;
+		context::data** out_state = nullptr;
 	};
 
 	struct on_gpu_awaitable {
 		channel_writer& channels;
-		context::state* state = nullptr;
+		context::data* state = nullptr;
 
 		auto await_ready(
 		) const noexcept -> bool;
@@ -118,7 +115,7 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto await_resume(
-		) -> context::state&;
+		) -> context::data&;
 	};
 
 	[[nodiscard]] auto on_gpu(
@@ -134,7 +131,7 @@ auto gse::gpu::on_gpu_awaitable::await_suspend(std::coroutine_handle<> h) -> voi
 	channels.push<gpu_resume_request>({ .handle = h, .out_state = &state });
 }
 
-auto gse::gpu::on_gpu_awaitable::await_resume() -> context::state& {
+auto gse::gpu::on_gpu_awaitable::await_resume() -> context::data& {
 	return *state;
 }
 

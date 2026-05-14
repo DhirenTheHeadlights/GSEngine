@@ -59,40 +59,40 @@ namespace gse::renderer::cull_compute {
 	>;
 }
 
-auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const geometry_collector::system::resources& gc_r, resources& r, state& s) -> async::task<> {
-	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
+	d.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
-		r.frustum_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+		d.frustum_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = frustum_size,
 			.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
 		});
 
 		constexpr std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * sizeof(batch_info);
-		r.batch_info_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+		d.batch_info_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = batch_info_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.normal_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+		d.normal_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+		d.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		auto write_shared = [&](gpu::descriptor_writer& w) -> gpu::descriptor_writer& {
-			return w.buffer<frustum_ubo>(r.frustum_buffer[i], 0, sizeof(std::array<vec4f, 6>))
-				.buffer<batches>(r.batch_info_buffer[i]);
+			return w.buffer<frustum_ubo>(d.frustum_buffer[i], 0, sizeof(std::array<vec4f, 6>))
+				.buffer<batches>(d.batch_info_buffer[i]);
 		};
 
-		gpu::descriptor_writer normal_writer(gpu::context::device_handle(gpu_s), r.normal_descriptors[i]);
+		gpu::descriptor_writer normal_writer(gpu::context::device_handle(*gpu_s.device), d.normal_descriptors[i]);
 		write_shared(normal_writer)
 			.buffer<indirect_commands>(gc_r.normal_indirect_commands_buffer[i])
 			.commit();
 
-		gpu::descriptor_writer skinned_writer(gpu::context::device_handle(gpu_s), r.skinned_descriptors[i]);
+		gpu::descriptor_writer skinned_writer(gpu::context::device_handle(*gpu_s.device), d.skinned_descriptors[i]);
 		write_shared(skinned_writer)
 			.buffer<indirect_commands>(gc_r.skinned_indirect_commands_buffer[i])
 			.commit();
@@ -101,8 +101,8 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 	co_return;
 }
 
-auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const geometry_collector::system::resources& gc_r, const resources& r, const state& s) -> async::task<> {
-	if (!s.enabled) {
+auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, shared_view<geometry_collector::system> gc_r, const data& d) -> async::task<> {
+	if (!d.enabled) {
 		co_return;
 	}
 
@@ -127,7 +127,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const gpu::c
 
 	const view_projection_matrix view_proj = data.proj * data.view;
 	const auto planes = extract_frustum_planes(view_proj);
-	gse::memcpy(r.frustum_buffer[frame_index].mapped(), planes);
+	gse::memcpy(d.frustum_buffer[frame_index].mapped(), planes);
 
 	using batch_info = renderer::cull_compute::batch_info;
 	std::vector<batch_info> batch_staging(normal_count + skinned_count);
@@ -152,7 +152,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const gpu::c
 	}
 
 	if (!batch_staging.empty()) {
-		gse::memcpy(r.batch_info_buffer[frame_index].mapped(), batch_staging.data(), batch_staging.size() * sizeof(batch_info));
+		gse::memcpy(d.batch_info_buffer[frame_index].mapped(), batch_staging.data(), batch_staging.size() * sizeof(batch_info));
 	}
 
 	auto rec = co_await gpu::pass<system>(ctx)
@@ -160,12 +160,12 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const gpu::c
 			gpu::storage_write(gc_r.normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader),
 			gpu::storage_write(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader)
 		)
-		.tracks(r.frustum_buffer[frame_index], r.batch_info_buffer[frame_index]);
+		.tracks(d.frustum_buffer[frame_index], d.batch_info_buffer[frame_index]);
 
-	rec.bind(r.pipeline);
+	rec.bind(d.pipeline);
 
 	if (normal_count > 0) {
-		rec.bind_descriptors(r.pipeline, r.normal_descriptors[frame_index]);
+		rec.bind_descriptors(d.pipeline, d.normal_descriptors[frame_index]);
 		const gpu::typed_push_constants<push_constants> pc{
 			.data = {
 				.batch_offset = 0,
@@ -173,12 +173,12 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const gpu::c
 			},
 			.stages = gpu::stage_flag::compute,
 		};
-		rec.push(r.pipeline, pc);
+		rec.push(d.pipeline, pc);
 		rec.dispatch(normal_count, 1, 1);
 	}
 
 	if (skinned_count > 0) {
-		rec.bind_descriptors(r.pipeline, r.skinned_descriptors[frame_index]);
+		rec.bind_descriptors(d.pipeline, d.skinned_descriptors[frame_index]);
 		const gpu::typed_push_constants<push_constants> pc{
 			.data = {
 				.batch_offset = normal_count,
@@ -186,7 +186,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, const gpu::c
 			},
 			.stages = gpu::stage_flag::compute,
 		};
-		rec.push(r.pipeline, pc);
+		rec.push(d.pipeline, pc);
 		rec.dispatch(skinned_count, 1, 1);
 	}
 }

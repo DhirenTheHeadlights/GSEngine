@@ -64,7 +64,7 @@ export namespace gse {
         explicit mesh(mesh_data&& data);
         mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {}) : m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(mat) {}
 
-        auto initialize(gpu::context::state& ctx) -> void;
+        auto initialize(gpu::context::data& ctx) -> void;
 
         auto center_of_mass() const -> vec3<displacement>;
         auto material() const -> const gse::material&;
@@ -118,7 +118,7 @@ auto gse::meshlet_gpu_data::bind(gpu::descriptor_writer& writer) const -> void {
         .buffer<shaders::meshlet::meshlet_bounds_buffer>(bounds);
 }
 
-auto gse::mesh::initialize(gpu::context::state& ctx) -> void {
+auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
     if (m_vertices.empty() || m_indices.empty()) return;
 
     if (m_meshlets.descriptors.empty()) {

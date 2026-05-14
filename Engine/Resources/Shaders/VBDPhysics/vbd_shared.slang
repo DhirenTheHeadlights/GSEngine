@@ -1,6 +1,3 @@
-public static const uint FLAG_LOCKED = 1;
-public static const uint FLAG_UPDATE_ORIENTATION = 2;
-public static const uint FLAG_AFFECTED_BY_GRAVITY = 4;
 public static const uint SLEEP_THRESHOLD = 60;
 public static const uint MAX_BODIES = 2048;
 public static const uint MAX_CONTACTS = 16384;

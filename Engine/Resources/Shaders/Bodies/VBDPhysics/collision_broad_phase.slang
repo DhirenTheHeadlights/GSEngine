@@ -14,10 +14,9 @@ if (i >= pc.body_count) {
     return;
 }
 
-gpu_body body_i = body_data[i];
+body_state body_i = body_data[i];
 
-bool i_locked = (body_i.flags & FLAG_LOCKED) != 0;
-bool i_inactive = i_locked || body_i.sleep_counter >= SLEEP_THRESHOLD;
+bool i_locked = body_i.locked != 0;
 
 float margin = pc.speculative_margin;
 float3 min_a = body_i.aabb_min.xyz;
@@ -39,10 +38,9 @@ for (int cx = min_cell_i.x; cx <= max_cell_i.x; cx++) {
                 uint next = grid_data[entry_ptr + 1];
 
                 if (j > i && j < pc.body_count) {
-                    gpu_body body_j = body_data[j];
-                    bool j_locked = (body_j.flags & FLAG_LOCKED) != 0;
-                    bool j_inactive = j_locked || body_j.sleep_counter >= SLEEP_THRESHOLD;
-                    if (!(i_inactive && j_inactive)) {
+                    body_state body_j = body_data[j];
+                    bool j_locked = body_j.locked != 0;
+                    if (!(i_locked && j_locked)) {
                         float3 min_b = body_j.aabb_min.xyz;
                         float3 max_b = body_j.aabb_max.xyz;
 

@@ -46,7 +46,7 @@ export namespace gse::settings {
         std::string_view category_filter = ""
     ) -> void;
 
-    template <typename T>
+    template <typename S>
     auto draw_struct_thunk(
         void* gui_builder,
         void* panel_state,
@@ -107,54 +107,53 @@ auto gse::settings::draw_enum_dropdown(gui::builder& b, panel_state& ps, const s
     }
 }
 
-template <typename T>
+template <typename S>
 auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, const std::string_view category, void* settings_ptr, void* channels_writer) -> void {
+    using data_t = typename S::data;
     auto& b = *static_cast<gui::builder*>(gui_builder);
     auto& ps = *static_cast<panel_state*>(panel_state_ptr);
     auto& channels = *static_cast<channel_writer*>(channels_writer);
-    const auto& live = *static_cast<const T*>(settings_ptr);
-
-    T local = live;
+    const auto& live = *static_cast<const data_t*>(settings_ptr);
 
     b.draw<gui::section>({ .title = category });
 
-    template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+    template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked()))) {
         if constexpr (meta::find_describe(m) != std::meta::info{}) {
             using F = [:std::meta::type_of(m):];
             constexpr std::string_view label = meta::member_name(m);
-            auto& ref = local.[:m:];
+            F local_value = live.[:m:];
 
             if constexpr (has_annotation<draw_with>(m)) {
                 constexpr auto dw = annotation_of<draw_with, m>();
-                dw.fn(b, ps, label, &ref);
+                dw.fn(b, ps, label, &local_value);
             }
             else if constexpr (std::same_as<F, bool>) {
-                b.draw<gui::toggle>({ .name = label, .value = ref });
+                b.draw<gui::toggle>({ .name = label, .value = local_value });
             }
             else if constexpr (settings::is_choice_v<F>) {
                 const std::string key = std::string(category) + "::" + std::string(label);
                 auto& dd_state = ps.dropdowns[key];
-                std::size_t idx = static_cast<std::size_t>(ref.value);
+                std::size_t idx = static_cast<std::size_t>(local_value.value);
                 const auto r = b.draw<gui::dropdown>({
                     .name = label,
                     .current_index = idx,
-                    .options = ref.options,
+                    .options = local_value.options,
                     .state = dd_state,
                 });
                 if (r.changed) {
-                    ref.value = static_cast<typename F::value_type>(idx);
+                    local_value.value = static_cast<typename F::value_type>(idx);
                 }
             }
             else if constexpr (std::is_enum_v<F>) {
                 const std::string key = std::string(category) + "::" + std::string(label);
-                draw_enum_dropdown<F>(b, ps, key, label, ref);
+                draw_enum_dropdown<F>(b, ps, key, label, local_value);
             }
             else if constexpr (constexpr auto range_t = meta::find_range(m); range_t != std::meta::info{}) {
                 using R = [: range_t :];
                 if constexpr (gse::internal::is_quantity<F>) {
                     b.draw<gui::quantity_slider<F, typename F::default_unit{}>>({
                         .name = label,
-                        .value = ref,
+                        .value = local_value,
                         .min = R::min,
                         .max = R::max,
                     });
@@ -162,32 +161,27 @@ auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, 
                 else {
                     b.draw<gui::slider<F>>({
                         .name = label,
-                        .value = ref,
+                        .value = local_value,
                         .min = static_cast<F>(R::min),
                         .max = static_cast<F>(R::max),
                     });
                 }
             }
-        }
-    }
 
-    template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-        if constexpr (meta::find_describe(m) != std::meta::info{}) {
-            using F = [:std::meta::type_of(m):];
             if constexpr (settings::is_choice_v<F>) {
-                if (local.[:m:].value != live.[:m:].value) {
-                    channels.push(settings::change_request<T>{
-                        .apply = [new_value = local.[:m:].value](T& cfg) {
-                            cfg.[:m:].value = new_value;
+                if (local_value.value != live.[:m:].value) {
+                    channels.push<settings::change_request<S>>({
+                        .apply = [new_value = local_value.value](data_t& d) {
+                            d.[:m:].value = new_value;
                         }
                     });
                 }
             }
-            else if constexpr (requires (F a, F b) { a == b; }) {
-                if (local.[:m:] != live.[:m:]) {
-                    channels.push(settings::change_request<T>{
-                        .apply = [new_value = local.[:m:]](T& cfg) {
-                            cfg.[:m:] = new_value;
+            else if constexpr (requires (F a, F b_) { a == b_; }) {
+                if (local_value != live.[:m:]) {
+                    channels.push<settings::change_request<S>>({
+                        .apply = [new_value = local_value](data_t& d) {
+                            d.[:m:] = new_value;
                         }
                     });
                 }

@@ -11,11 +11,11 @@ export namespace gs {
 	auto main_test_scene_setup(
 		gse::scene& s,
 		gse::channel_writer& channels,
-		gse::asset::state& assets
+		gse::asset::data& assets
 	) -> void;
 }
 
-auto gs::main_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+auto gs::main_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
 	(void)channels;
 	s.set_player_factory([next_id = 0u](gse::scene& sc, std::optional<gse::id> server_id) mutable -> gse::id {
 		gse::id player_id;

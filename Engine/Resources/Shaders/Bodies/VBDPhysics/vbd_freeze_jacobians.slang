@@ -3,11 +3,11 @@ uint ci = dispatch_id.x;
 uint actual_count = collision_state[0];
 if (ci >= actual_count) return;
 
-gpu_contact c = contact_data[ci];
+contact_constraint c = contact_data[ci];
 if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) return;
 
-gpu_body a = body_data[c.body_a];
-gpu_body b = body_data[c.body_b];
+body_state a = body_data[c.body_a];
+body_state b = body_data[c.body_b];
 
 float3 r_aw = rotate_vector(a.predicted_orientation, c.local_anchor_a.xyz);
 float3 r_bw = rotate_vector(b.predicted_orientation, c.local_anchor_b.xyz);

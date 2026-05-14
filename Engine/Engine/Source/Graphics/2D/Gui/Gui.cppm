@@ -40,7 +40,7 @@ namespace gse::gui {
 export namespace gse::gui {
 	class system {
 	public:
-		struct settings {
+		struct data {
 			static constexpr std::string_view category = "UI";
 
 			[[=gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}]]
@@ -51,13 +51,11 @@ export namespace gse::gui {
 
 			[[=gse::settings::describe<"Font used to render text in the UI.">{}]]
 			gse::settings::choice<int> font;
-		};
 
-		struct state {
 			id_mapped_collection<menu> menus;
 			menu* current_menu = nullptr;
 
-			resource::handle<font> gui_font;
+			resource::handle<gse::font> gui_font;
 			resource::handle<texture> blank_texture;
 
 			std::optional<dock::space> active_dock_space;
@@ -90,54 +88,46 @@ export namespace gse::gui {
 			std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
 			std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
 
-			static constexpr time update_interval = seconds(30.f);
-		};
-
-		struct resources {
 			std::unique_ptr<ids::scope> current_scope;
+
+			static constexpr time update_interval = seconds(30.f);
 		};
 
 		static auto run(
 			run_context& ctx,
-			const window::state& window_s,
-			const asset::state& assets_s,
-			const gse::input::system::state& input_state,
+			const window::data& window_s,
+			const asset::data& assets_s,
+			const gse::input::system::data& input_state,
 			const save::registry& save_reg,
-			settings& cfg,
-			resources& r,
-			state& s
+			data& d
 		) -> async::task<>;
 
 		static auto shutdown(
 			shutdown_context& phase,
-			resources& r,
-			state& s
+			data& d
 		) -> void;
 
-		static auto save(state& s) -> void;
+		static auto save(data& d) -> void;
 
 	private:
 		static auto init_body(
 			run_context& ctx,
-			const window::state& window_s,
-			asset::state& assets,
-			settings& cfg,
-			state& s
+			const window::data& window_s,
+			asset::data& assets,
+			data& d
 		) -> async::task<>;
 
 		static auto update_body(
 			run_context& ctx,
-			const window::state& window_s,
-			const asset::state& assets_s,
-			const gse::input::system::state& input_state,
+			const window::data& window_s,
+			const asset::data& assets_s,
+			const gse::input::system::data& input_state,
 			const save::registry& save_reg,
-			const settings& cfg,
-			resources& r,
-			state& s
+			data& d
 		) -> async::task<>;
 
 		static auto handle_idle_state(
-			state& s,
+			data& d,
 			const input::state& input_state,
 			vec2f mouse_position,
 			bool mouse_held,
@@ -145,26 +135,24 @@ export namespace gse::gui {
 		) -> gui::state;
 
 		static auto handle_dragging_state(
-			state& s,
-			const settings& cfg,
+			data& d,
 			const states::dragging& current,
-			const window::state& window_s,
+			const window::data& window_s,
 			vec2f mouse_position,
 			bool mouse_held
 		) -> gui::state;
 
 		static auto handle_resizing_state(
-			state& s,
-			const settings& cfg,
+			data& d,
 			const states::resizing& current,
 			vec2f mouse_position,
 			bool mouse_held,
 			const style& style,
-			const window::state& window_s
+			const window::data& window_s
 		) -> gui::state;
 
 		static auto handle_resizing_divider_state(
-			state& s,
+			data& d,
 			const states::resizing_divider& current,
 			vec2f mouse_position,
 			bool mouse_held,
@@ -172,21 +160,21 @@ export namespace gse::gui {
 		) -> gui::state;
 
 		static auto handle_pending_drag_state(
-			state& s,
+			data& d,
 			const states::pending_drag& current,
 			vec2f mouse_position,
 			bool mouse_held
 		) -> gui::state;
 
 		static auto draw_menu_chrome(
-			state& s,
+			data& d,
 			const input::state& input_state,
 			menu& current_menu,
 			render_layer layer
 		) -> void;
 
 		static auto draw_tab_bar(
-			state& s,
+			data& d,
 			const input::state& input_state,
 			menu& current_menu,
 			const ui_rect& title_bar_rect,
@@ -194,42 +182,37 @@ export namespace gse::gui {
 		) -> void;
 
 		static auto usable_screen_rect(
-			state& s,
-			const settings& cfg,
-			const window::state& window_s
+			data& d,
+			const window::data& window_s
 		) -> ui_rect;
 
 		static auto calculate_display_rect(
-			state& s,
+			data& d,
 			const menu& m
 		) -> ui_rect;
 
 		static auto apply_scale(
-			const settings& cfg,
+			const data& d,
 			style sty,
 			float viewport_height
 		) -> style;
 
 		static auto reload_font(
-			state& s,
-			const settings& cfg,
-			const asset::state& assets
+			data& d,
+			const asset::data& assets
 		) -> void;
 
 		static auto begin_menu(
-			resources& r,
-			state& s,
+			data& d,
 			const std::string& name
 		) -> bool;
 
 		static auto end_menu(
-			resources& r,
-			state& s
+			data& d
 		) -> void;
 
 		static auto process_menu(
-			resources& r,
-			state& s,
+			data& d,
 			const input::state& input_state,
 			const std::string& name,
 			render_layer layer,

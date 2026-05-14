@@ -21,7 +21,7 @@ namespace gse::vulkan {
 		vk::NVDeviceDiagnosticsConfigExtensionName,
 	};
 
-	aftermath::state* active_state = nullptr;
+	aftermath::data* active_state = nullptr;
 
 	auto default_dump_directory(
 	) -> std::filesystem::path;
@@ -91,7 +91,7 @@ auto gse::vulkan::translate_result(const GFSDK_Aftermath_Result r) -> std::strin
 }
 
 extern "C" void GFSDK_AFTERMATH_CALL gse_aftermath_gpu_crash_dump_cb(const void* dump, const std::uint32_t size, void* user) {
-	auto* s = static_cast<gse::vulkan::aftermath::state*>(user);
+	auto* s = static_cast<gse::vulkan::aftermath::data*>(user);
 	if (s == nullptr) {
 		return;
 	}
@@ -103,7 +103,7 @@ extern "C" void GFSDK_AFTERMATH_CALL gse_aftermath_gpu_crash_dump_cb(const void*
 }
 
 extern "C" void GFSDK_AFTERMATH_CALL gse_aftermath_shader_debug_info_cb(const void* dump, const std::uint32_t size, void* user) {
-	auto* s = static_cast<gse::vulkan::aftermath::state*>(user);
+	auto* s = static_cast<gse::vulkan::aftermath::data*>(user);
 	if (s == nullptr) {
 		return;
 	}
@@ -119,7 +119,7 @@ extern "C" void GFSDK_AFTERMATH_CALL gse_aftermath_crash_dump_description_cb(PFN
 }
 #endif
 
-gse::vulkan::aftermath::aftermath() : m_state(std::make_unique<state>()) {}
+gse::vulkan::aftermath::aftermath() : m_state(std::make_unique<data>()) {}
 
 gse::vulkan::aftermath::~aftermath() {
 	if (!m_state || !m_state->enabled) {

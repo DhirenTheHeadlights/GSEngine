@@ -18,11 +18,9 @@ import gse.ecs;
 
 export namespace gse::renderer::cull_compute {
 	struct system {
-		struct state {
+		struct data {
 			bool enabled = true;
-		};
 
-		struct resources {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> normal_descriptors;
 			per_frame_resource<gpu::descriptor_region> skinned_descriptors;
@@ -32,19 +30,17 @@ export namespace gse::renderer::cull_compute {
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const asset::state& assets_s,
-			const geometry_collector::system::resources& gc_r,
-			resources& r,
-			state& s
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			const geometry_collector::system::data& gc_r,
+			data& d
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
-			const gpu::context::state& gpu_s,
-			const geometry_collector::system::resources& gc_r,
-			const resources& r,
-			const state& s
+			shared_view<gpu::context> gpu_s,
+			shared_view<geometry_collector::system> gc_r,
+			const data& d
 		) -> async::task<>;
 	};
 }

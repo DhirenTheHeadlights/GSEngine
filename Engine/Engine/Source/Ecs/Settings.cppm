@@ -7,15 +7,15 @@ import gse.core;
 import gse.meta;
 
 export namespace gse::settings {
-    template <typename T>
+    template <typename S>
     struct change_request {
-        std::function<void(T&)> apply;
+        std::function<void(typename S::data&)> apply;
     };
 
-    template <typename T>
+    template <typename S>
     struct changed {
-        T old_value;
-        T new_value;
+        typename S::data old_value;
+        typename S::data new_value;
     };
 
     using write_settings_thunk = void(*)(

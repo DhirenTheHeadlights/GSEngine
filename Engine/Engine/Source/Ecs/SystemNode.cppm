@@ -1,9 +1,11 @@
 export module gse.ecs:system_node;
 
 import std;
+import gse.std_meta;
 
 import gse.core;
 import gse.concurrency;
+import gse.meta;
 
 import :phase_context;
 import :registries;
@@ -12,22 +14,14 @@ import :frame_context;
 
 export namespace gse {
 	template <typename S>
-	concept names_state = requires { typename S::state; };
-
-	template <typename S>
 	concept names_data = requires { typename S::data; };
 
-	template <typename S>
-	concept has_resources = requires { typename S::resources; };
+	template <typename T>
+	consteval auto has_describe_fields(
+	) -> bool;
 
 	template <typename S>
-	concept has_update_data = requires { typename S::update_data; };
-
-	template <typename S>
-	concept has_frame_data = requires { typename S::frame_data; };
-
-	template <typename S>
-	concept has_settings = requires { typename S::settings; };
+	concept has_settings = names_data<S> && has_describe_fields<typename S::data>();
 
 	template <typename S>
 	concept names_run = requires { &S::run; };
@@ -66,9 +60,6 @@ export namespace gse {
 
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;
-		void* resources_ptr = nullptr;
-		void* settings_ptr = nullptr;
-		const void* settings_snapshot_ptr = nullptr;
 
 		bool has_frame = false;
 		bool is_in_update_loop = false;
@@ -82,9 +73,6 @@ export namespace gse {
 		async::task<> run_task;
 
 		id state_id;
-		id state_type_id;
-		id resources_id;
-		id settings_id;
 		id update_wall_id;
 		id frame_wall_id;
 		id trace_id;
@@ -94,4 +82,15 @@ export namespace gse {
 	auto make_system_node(
 		Args&&... args
 	) -> system_node;
+}
+
+template <typename T>
+consteval auto gse::has_describe_fields() -> bool {
+	bool found = false;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		if constexpr (meta::find_describe(m) != std::meta::info{}) {
+			found = true;
+		}
+	}
+	return found;
 }

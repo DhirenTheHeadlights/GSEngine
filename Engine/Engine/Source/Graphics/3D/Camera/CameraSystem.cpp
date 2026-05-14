@@ -17,18 +17,18 @@ import :camera_data;
 import :camera_component;
 import :camera_system;
 
-auto gse::camera::system::position(const state& s) -> vec3<gse::position> {
-	return s.current.position;
+auto gse::camera::system::position(const data& d) -> vec3<gse::position> {
+	return d.current.position;
 }
 
-auto gse::camera::system::orientation(const state& s) -> quat {
-	return s.current.orientation;
+auto gse::camera::system::orientation(const data& d) -> quat {
+	return d.current.orientation;
 }
 
-auto gse::camera::system::direction_relative_to_origin(const state& s, const vec3f& direction) -> vec3f {
-	const auto u = s.current.orientation.imaginary_part();
+auto gse::camera::system::direction_relative_to_origin(const data& d, const vec3f& direction) -> vec3f {
+	const auto u = d.current.orientation.imaginary_part();
 	const auto t = 2.f * cross(u, direction);
-	return direction + s.current.orientation.s() * t + cross(u, t);
+	return direction + d.current.orientation.s() * t + cross(u, t);
 }
 
 auto gse::camera::system::interpolate_target(const target& from, const target& to, const float t) -> target {
@@ -52,32 +52,32 @@ auto gse::camera::system::compute_projection_matrix(const target& t, const vec2f
 	return perspective(t.fov, aspect_ratio, t.near_plane, t.far_plane);
 }
 
-auto gse::camera::system::run(run_context& ctx, state& s, const input::system::state& input_state) -> async::task<> {
-	s.current.orientation = identity<float>();
-	s.view_matrix = compute_view_matrix(s.current);
-	s.projection_matrix = compute_projection_matrix(s.current, s.viewport);
+auto gse::camera::system::run(run_context& ctx, data& d, const input::system::data& input_state) -> async::task<> {
+	d.current.orientation = identity<float>();
+	d.view_matrix = compute_view_matrix(d.current);
+	d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
 
 	while (true) {
 		const time dt = system_clock::dt();
 
 		for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
-			s.ui_focus = focus;
+			d.ui_focus = focus;
 		}
 
 		for (const auto& [size] : ctx.read_channel<viewport_update>()) {
-			s.viewport = size;
+			d.viewport = size;
 		}
 
-		if (!s.ui_focus) {
+		if (!d.ui_focus) {
 			const auto delta = input::system::current_state(input_state).mouse_delta();
-			const auto transformed_offset = delta * s.mouse_sensitivity;
-			s.yaw -= degrees(transformed_offset.x());
-			s.pitch -= degrees(transformed_offset.y());
-			s.pitch = std::clamp(s.pitch, degrees(-89.0f), degrees(89.0f));
+			const auto transformed_offset = delta * d.mouse_sensitivity;
+			d.yaw -= degrees(transformed_offset.x());
+			d.pitch -= degrees(transformed_offset.y());
+			d.pitch = std::clamp(d.pitch, degrees(-89.0f), degrees(89.0f));
 		}
 
-		const quat yaw_rotation = quat({ 0.f, 1.f, 0.f }, s.yaw);
-		const quat pitch_rotation = quat({ 1.f, 0.f, 0.f }, s.pitch);
+		const quat yaw_rotation = quat({ 0.f, 1.f, 0.f }, d.yaw);
+		const quat pitch_rotation = quat({ 1.f, 0.f, 0.f }, d.pitch);
 		const quat new_orientation = normalize(yaw_rotation * pitch_rotation);
 
 		int highest_priority = -1;
@@ -109,41 +109,41 @@ auto gse::camera::system::run(run_context& ctx, state& s, const input::system::s
 			}
 		}
 
-		if (best_controller.exists() && best_controller != s.active_controller_entity) {
-			if (s.active_controller_entity.exists()) {
-				s.blend_from = s.current;
-				s.blend_to = best_target;
-				s.blend_duration = best_blend_duration;
-				s.blend_elapsed = time{};
-				s.blending = true;
+		if (best_controller.exists() && best_controller != d.active_controller_entity) {
+			if (d.active_controller_entity.exists()) {
+				d.blend_from = d.current;
+				d.blend_to = best_target;
+				d.blend_duration = best_blend_duration;
+				d.blend_elapsed = time{};
+				d.blending = true;
 			} else {
-				s.current = best_target;
+				d.current = best_target;
 			}
-			s.active_controller_entity = best_controller;
-			s.active_priority = highest_priority;
+			d.active_controller_entity = best_controller;
+			d.active_priority = highest_priority;
 		} else if (best_controller.exists()) {
-			if (s.blending) {
-				s.blend_to = best_target;
+			if (d.blending) {
+				d.blend_to = best_target;
 			} else {
-				s.current = best_target;
+				d.current = best_target;
 			}
 		}
 
-		if (s.blending) {
-			s.blend_elapsed += dt;
-			const float t = std::clamp(s.blend_elapsed / s.blend_duration, 0.f, 1.f);
-			s.current = interpolate_target(s.blend_from, s.blend_to, t);
+		if (d.blending) {
+			d.blend_elapsed += dt;
+			const float t = std::clamp(d.blend_elapsed / d.blend_duration, 0.f, 1.f);
+			d.current = interpolate_target(d.blend_from, d.blend_to, t);
 
 			if (t >= 1.0f) {
-				s.blending = false;
-				s.current = s.blend_to;
+				d.blending = false;
+				d.current = d.blend_to;
 			}
 		}
 
-		s.current.orientation = new_orientation;
+		d.current.orientation = new_orientation;
 
-		s.view_matrix = compute_view_matrix(s.current);
-		s.projection_matrix = compute_projection_matrix(s.current, s.viewport);
+		d.view_matrix = compute_view_matrix(d.current);
+		d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
 
 		co_await ctx.next_tick();
 	}

@@ -9,11 +9,11 @@ export namespace gs {
 	auto skybox_scene_setup(
 		gse::scene& s,
 		gse::channel_writer& channels,
-		gse::asset::state& assets
+		gse::asset::data& assets
 	) -> void;
 }
 
-auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
 	(void)channels;
 	const auto skybox_position = gse::vec3<gse::position>(0.f, 0.f, 0.f);
 	const auto skybox_size = gse::vec3<gse::length>(20000.f, 20000.f, 20000.f);

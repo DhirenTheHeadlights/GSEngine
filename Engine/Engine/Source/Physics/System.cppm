@@ -124,12 +124,9 @@ export namespace gse::physics {
 
 	struct gpu_upload_payload {
 		std::vector<vbd::body_state> bodies;
-		std::vector<vbd::collision_body_data> collision_data;
-		std::vector<float> accel_weights;
 		std::vector<vbd::velocity_motor_constraint> motors;
 		std::vector<vbd::joint_constraint> joints;
-		std::vector<vbd::gpu_warm_start> warm_starts;
-		std::vector<std::uint32_t> authoritative_body_indices;
+		std::vector<vbd::contact_constraint> warm_starts;
 		vbd::solver_config solver_cfg;
 		time_t<float, seconds> dt{};
 		int steps = 1;
@@ -145,7 +142,7 @@ export namespace gse::physics {
 		std::vector<id> entity_ids;
 		std::vector<vbd::body_state> gpu_input_bodies;
 		std::vector<vbd::body_state> gpu_result_bodies;
-		std::vector<vbd::gpu_contact> gpu_contacts;
+		std::vector<vbd::contact_constraint> gpu_contacts;
 		std::vector<vbd::joint_constraint> gpu_joint_readback;
 		std::uint32_t gpu_joint_count = 0;
 	};
@@ -167,7 +164,7 @@ export namespace gse::physics {
 
 	class system {
 	public:
-		struct settings {
+		struct data {
 			static constexpr std::string_view category = "Physics";
 
 			[[=gse::settings::describe<"Step the physics world each frame.">{}]]
@@ -190,15 +187,11 @@ export namespace gse::physics {
 
 			[[=gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for fast-moving bodies.">{}, =gse::settings::range<1, 8>{}]]
 			int physics_substeps = 2;
-		};
 
-		struct state {
 			bool gpu_buffers_created = false;
 			gpu_solver_stats gpu_stats;
 			std::vector<joint_definition> joints;
-		};
 
-		struct update_data {
 			time_t<float, seconds> accumulator{};
 			clock tick_clock;
 			bool tick_clock_primed = false;
@@ -215,7 +208,7 @@ export namespace gse::physics {
 			struct gpu_prev_frame {
 				std::vector<vbd::body_state> result_bodies;
 				std::vector<id> result_entity_ids;
-				std::vector<vbd::gpu_warm_start> warm_start_contacts;
+				std::vector<vbd::contact_constraint> warm_start_contacts;
 
 				gpu_prev_frame() {
 					result_bodies.reserve(vbd::max_bodies);
@@ -224,9 +217,7 @@ export namespace gse::physics {
 				}
 			} gpu_prev;
 			std::optional<gpu_readback_result> completed_readback;
-		};
 
-		struct frame_data {
 			vbd::gpu_solver gpu_solver;
 			struct readback_frame {
 				std::vector<id> entity_ids;
@@ -238,29 +229,24 @@ export namespace gse::physics {
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state* gpu_s,
-			const asset::state& assets_s,
-			settings& cfg,
-			update_data& ud,
-			frame_data& fd,
-			state& s
+			const gpu::context::data* gpu_s,
+			const asset::data& assets_s,
+			data& d
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
-			const gpu::context::state* gpu_s,
-			const settings& cfg,
-			frame_data& fd,
-			const state& s
+			const gpu::context::data* gpu_s,
+			data& d
 		) -> async::task<>;
 
 		static auto create_joint(
-			state& s,
+			data& d,
 			const joint_definition& def
 		) -> joint_handle;
 
 		static auto remove_joint(
-			state& s,
+			data& d,
 			joint_handle handle
 		) -> void;
 
@@ -303,28 +289,18 @@ export namespace gse::physics {
 			write<motion_status_component>* status
 		) -> void;
 
-		static auto pack_feature(
-			const feature_id& feature
-		) -> std::uint64_t;
-
-		static auto unpack_feature(
-			std::uint64_t packed
-		) -> feature_id;
-
 		static auto build_contact_cache_from_warm_start(
-			const std::span<const vbd::gpu_warm_start> warm_start_contacts
+			const std::span<const vbd::contact_constraint> warm_start_contacts
 		) -> vbd::contact_cache;
 
 		static auto invalidate_warm_start_entries(
-			std::vector<vbd::gpu_warm_start>& warm_start_contacts,
+			std::vector<vbd::contact_constraint>& warm_start_contacts,
 			const std::span<const std::uint32_t> body_indices
 		) -> void;
 
 		static auto update_vbd(
 			int steps,
-			const settings& cfg,
-			update_data& ud,
-			state& s,
+			data& d,
 			write<transform_component>& transform,
 			write<motion_component>& motion,
 			write<motion_status_component>& status,
@@ -336,9 +312,7 @@ export namespace gse::physics {
 
 		static auto update_vbd_gpu(
 			int steps,
-			const settings& cfg,
-			update_data& ud,
-			state& s,
+			data& d,
 			write<transform_component>& transform,
 			write<motion_component>& motion,
 			write<motion_status_component>& status,

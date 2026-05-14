@@ -15,25 +15,24 @@ import gse.ecs;
 
 export namespace gse::renderer::skin_compute {
 	struct system {
-		struct resources {
+		struct data {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 		};
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const asset::state& assets_s,
-			const geometry_collector::system::resources& gc,
-			resources& r
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			const geometry_collector::system::data& gc,
+			data& d
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
-			const gpu::context::state& gpu_s,
-			const resources& r,
-			const geometry_collector::system::state& gc_s,
-			const geometry_collector::system::resources& gc_r
+			shared_view<gpu::context> gpu_s,
+			const data& d,
+			shared_view<geometry_collector::system> gc_r
 		) -> async::task<>;
 	};
 }

@@ -7,12 +7,12 @@ import :entity_builders;
 
 export namespace gs::arena {
 	auto create(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene* scene
 	) -> void;
 }
 
-auto gs::arena::create(gse::asset::state& assets, gse::scene* scene) -> void {
+auto gs::arena::create(gse::asset::data& assets, gse::scene* scene) -> void {
 	constexpr auto arena_position = gse::vec3<gse::position>(0.f, 0.f, 0.f);
 
 	constexpr gse::length arena_size = gse::meters(100.f);

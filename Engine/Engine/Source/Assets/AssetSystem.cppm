@@ -48,7 +48,7 @@ export namespace gse::asset {
 
     template <typename T>
     auto setup_hot_reload_for(
-        state& s
+        data& d
     ) -> void;
 
     struct compile_result {
@@ -65,7 +65,7 @@ export namespace gse::asset {
     class system : public non_copyable {
     public:
         explicit system(
-            state& s
+            data& d
         );
 
         ~system() = default;
@@ -92,7 +92,7 @@ export namespace gse::asset {
         ) -> void;
 
     private:
-        state* m_state;
+        data* m_data;
     };
 
     template <typename Pack>
@@ -193,7 +193,7 @@ auto gse::asset::recompile_if_stale(const std::filesystem::path& baked_path) -> 
 }
 
 template <typename T>
-auto gse::asset::setup_hot_reload_for(state& s) -> void {
+auto gse::asset::setup_hot_reload_for(data& d) -> void {
     if constexpr (!has_compile_path<T>) {
         return;
     }
@@ -204,9 +204,9 @@ auto gse::asset::setup_hot_reload_for(state& s) -> void {
             return;
         }
         std::vector<std::string> exts(fmt.source_exts.begin(), fmt.source_exts.end());
-        s.watcher.watch_directory(
+        d.watcher.watch_directory(
             source_root,
-            [&s](const std::filesystem::path& changed_file) {
+            [&d](const std::filesystem::path& changed_file) {
                 constexpr auto fmt = format_of<typename T::baked>();
                 auto rel = std::filesystem::relative(changed_file, config::resource_path / fmt.source_dir);
                 rel.replace_extension(std::string(fmt.baked_ext));
@@ -214,7 +214,7 @@ auto gse::asset::setup_hot_reload_for(state& s) -> void {
                 if (bake_to_disk<T>(changed_file, dst)) {
                     log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().string());
                     if constexpr (loadable<T>) {
-                        if (auto it = s.resource_loaders.find(id_of<T>()); it != s.resource_loaders.end()) {
+                        if (auto it = d.resource_loaders.find(id_of<T>()); it != d.resource_loaders.end()) {
                             auto* loader = static_cast<resource::loader<T>*>(it->second.get());
                             loader->queue_reload_by_path(dst);
                         }
@@ -231,13 +231,13 @@ auto gse::asset::setup_hot_reload_for(state& s) -> void {
 }
 
 template <typename... Ts>
-gse::asset::system<Ts...>::system(state& s) : m_state(&s) {}
+gse::asset::system<Ts...>::system(data& d) : m_data(&d) {}
 
 template <typename... Ts>
 auto gse::asset::system<Ts...>::register_loaders() -> void {
     auto try_register = [this]<typename T>() {
         if constexpr (loadable<T>) {
-            auto* loader = add_loader<T>(*m_state);
+            auto* loader = add_loader<T>(*m_data);
             loader->set_pre_load_fn([](const std::filesystem::path& baked_path) {
                 recompile_if_stale<T>(baked_path);
             });
@@ -248,12 +248,12 @@ auto gse::asset::system<Ts...>::register_loaders() -> void {
 
 template <typename... Ts>
 auto gse::asset::system<Ts...>::install_hot_reload_fns() -> void {
-    auto* s = m_state;
-    s->enable_hot_reload_fn = [s] {
-        (setup_hot_reload_for<Ts>(*s), ...);
+    auto* d = m_data;
+    d->enable_hot_reload_fn = [d] {
+        (setup_hot_reload_for<Ts>(*d), ...);
     };
-    s->disable_hot_reload_fn = [s] {
-        s->watcher.clear();
+    d->disable_hot_reload_fn = [d] {
+        d->watcher.clear();
     };
 }
 
@@ -304,7 +304,7 @@ auto gse::asset::system<Ts...>::compile() -> compile_result {
                 if (!std::filesystem::exists(dst)) {
                     continue;
                 }
-                if (auto it = m_state->resource_loaders.find(id_of<T>()); it != m_state->resource_loaders.end()) {
+                if (auto it = m_data->resource_loaders.find(id_of<T>()); it != m_data->resource_loaders.end()) {
                     static_cast<resource::loader<T>*>(it->second.get())->queue_by_path(dst);
                 }
             }
