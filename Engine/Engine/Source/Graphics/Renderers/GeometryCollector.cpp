@@ -24,7 +24,9 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.shader;
 import gse.physics;
+import gse.meta;
 
 
 namespace gse::renderer::geometry_collector {
@@ -34,8 +36,7 @@ namespace gse::renderer::geometry_collector {
 	) -> std::uint32_t;
 
 	auto write_instance(
-		const system::resources& r,
-		std::vector<std::byte>& instance_staging,
+		std::vector<shaders::common::instance_data>& instance_staging,
 		const mat4f& model_matrix,
 		const mat4f& normal_matrix,
 		std::uint32_t skin_offset,
@@ -116,16 +117,15 @@ auto gse::renderer::geometry_collector::material_palette_index(render_data& data
 	return index;
 }
 
-auto gse::renderer::geometry_collector::write_instance(const system::resources& r, std::vector<std::byte>& instance_staging, const mat4f& model_matrix, const mat4f& normal_matrix, const std::uint32_t skin_offset, const std::uint32_t joint_count, const std::uint32_t mat_idx) -> void {
-	const auto offset_value = instance_staging.size();
-	instance_staging.resize(offset_value + r.instance_layout.stride);
-	std::byte* offset = instance_staging.data() + offset_value;
-
-	memcpy(offset + r.instance_model_matrix_offset,   model_matrix);
-	memcpy(offset + r.instance_normal_matrix_offset,  normal_matrix);
-	memcpy(offset + r.instance_skin_offset_offset,    skin_offset);
-	memcpy(offset + r.instance_joint_count_offset,    joint_count);
-	memcpy(offset + r.instance_material_index_offset, mat_idx);
+auto gse::renderer::geometry_collector::write_instance(std::vector<shaders::common::instance_data>& instance_staging, const mat4f& model_matrix, const mat4f& normal_matrix, const std::uint32_t skin_offset, const std::uint32_t joint_count, const std::uint32_t mat_idx) -> void {
+	instance_staging.push_back({
+		.model_matrix = model_matrix,
+		.normal_matrix = normal_matrix,
+		.skin_offset = skin_offset,
+		.joint_count = joint_count,
+		.material_index = mat_idx,
+		.pad0 = 0,
+	});
 }
 
 template <typename Items, typename Batches, typename KeyOf, typename GetMesh, typename AccumAabb, typename OnInstance>
@@ -331,7 +331,7 @@ auto gse::renderer::geometry_collector::build_normal_batches(const system::resou
 		},
 		[&](const owned_render_queue_entry& q, const normal_batch_key& key, std::uint32_t mat_idx, std::uint32_t instance_index) {
 			const auto& entry = q.entry;
-			write_instance(r, data.instance_staging, entry.model_matrix, entry.normal_matrix, 0, 0, mat_idx);
+			write_instance(data.instance_staging, entry.model_matrix, entry.normal_matrix, 0, 0, mat_idx);
 			if (q.body_index != owned_render_queue_entry::invalid_body_index) {
 				data.physics_mappings.push_back({
 					.body_index = q.body_index,
@@ -365,36 +365,20 @@ auto gse::renderer::geometry_collector::build_skinned_batches(const system::reso
 			}
 		},
 		[&](const skinned_render_queue_entry& s, const skinned_batch_key&, std::uint32_t mat_idx, std::uint32_t) {
-			write_instance(r, data.instance_staging, s.model_matrix, s.normal_matrix, s.skin_offset, s.joint_count, mat_idx);
+			write_instance(data.instance_staging, s.model_matrix, s.normal_matrix, s.skin_offset, s.joint_count, mat_idx);
 		}
 	);
 }
 
 auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::context::state& gpu_s, system::resources& r) -> async::task<> {
-	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/skinned_geometry_pass");
-
-	const auto camera_ubo = r.shader_handle->uniform_block("camera_ubo");
-
-	r.instance_layout = layout_of(r.shader_handle->uniform_block("instance_data_buffer"));
-
-	r.instance_model_matrix_offset   = r.instance_layout.offsets.at("model_matrix");
-	r.instance_normal_matrix_offset  = r.instance_layout.offsets.at("normal_matrix");
-	r.instance_skin_offset_offset    = r.instance_layout.offsets.at("skin_offset");
-	r.instance_joint_count_offset    = r.instance_layout.offsets.at("joint_count");
-	r.instance_material_index_offset = r.instance_layout.offsets.at("material_index");
-
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = camera_ubo.size,
-			.usage = gpu::buffer_flag::uniform
-		});
 
 		constexpr std::size_t skin_buffer_size = system::resources::max_skin_matrices * sizeof(mat4f);
 		r.skin_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = skin_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
-		const std::size_t instance_buffer_size = system::resources::max_instances * 2 * r.instance_layout.stride;
+		constexpr std::size_t instance_buffer_size = system::resources::max_instances * 2 * sizeof(shaders::common::instance_data);
 		r.instance_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = instance_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
@@ -424,14 +408,12 @@ auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::
 		});
 	}
 
-	auto skin_compute = co_await asset::load<shader>(ctx, "Shaders/Compute/skin_compute");
-
-	r.joint_layout = layout_of(skin_compute->uniform_block("skeletonData"));
-
 	r.skeleton_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
-		.size = system::resources::max_joints * r.joint_layout.stride,
+		.size = system::resources::max_joints * sizeof(shaders::skin_compute::joint_data),
 		.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 	});
+
+	co_return;
 }
 
 auto gse::renderer::geometry_collector::tick(run_context& ctx, system::resources& r, system::state& s, const camera::system::state& cam_state) -> async::task<> {
@@ -463,7 +445,7 @@ auto gse::renderer::geometry_collector::tick(run_context& ctx, system::resources
 
 	sort_queues(data.render_queue, data.skinned_render_queue);
 
-	data.instance_staging.reserve((data.render_queue.size() + data.skinned_render_queue.size()) * r.instance_layout.stride);
+	data.instance_staging.reserve(data.render_queue.size() + data.skinned_render_queue.size());
 	data.physics_mappings.reserve(data.render_queue.size());
 
 	std::uint32_t global_instance_offset = 0;
@@ -499,19 +481,17 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 }
 
 auto gse::renderer::geometry_collector::system::upload_skeleton_data(const resources& r, const skeleton& skel) -> void {
+	using joint_data = shaders::skin_compute::joint_data;
 	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 	const auto joints = skel.joints();
 
-	std::byte* buffer = r.skeleton_buffer.mapped();
+	auto* buffer = static_cast<joint_data*>(static_cast<void*>(r.skeleton_buffer.mapped()));
 
 	for (std::size_t i = 0; i < joint_count; ++i) {
-		std::byte* offset = buffer + (i * r.joint_layout.stride);
-
-		const mat4f inverse_bind = joints[i].inverse_bind();
-		const std::uint32_t parent_index = joints[i].parent_index();
-
-		gse::memcpy(offset + r.joint_layout.offsets.at("inverse_bind"), inverse_bind);
-		gse::memcpy(offset + r.joint_layout.offsets.at("parent_index"), parent_index);
+		buffer[i] = {
+			.inverse_bind = joints[i].inverse_bind(),
+			.parent_index = joints[i].parent_index(),
+		};
 	}
 }
 
@@ -532,10 +512,6 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, const 
 
 	const auto& data = items[0];
 	const auto frame_index = gpu_s.render_graph->current_frame();
-
-	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.view", data.view);
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.proj", data.proj);
 
 	if (!data.instance_staging.empty()) {
 		gse::memcpy(r.instance_buffer[frame_index].mapped(), data.instance_staging);

@@ -120,9 +120,7 @@ export namespace gse::renderer::ui {
 
         struct resources {
             gpu::pipeline sprite_pipeline;
-            resource::handle<shader> sprite_shader;
             gpu::pipeline text_pipeline;
-            resource::handle<shader> text_shader;
             std::array<frame_resources, frames_in_flight> gpu_frames;
         };
 

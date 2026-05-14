@@ -139,6 +139,10 @@ auto gse::resource::handle<T>::resolve() const -> T* {
 	if (!m_slot) {
 		return nullptr;
 	}
+	const auto current = m_slot->current_state.load(std::memory_order_acquire);
+	if (current != state::loaded && current != state::reloading) {
+		return nullptr;
+	}
 	m_version = m_slot->version.load(std::memory_order_acquire);
 	const auto& ptr = m_slot->resource.read();
 	return ptr ? ptr.get() : nullptr;

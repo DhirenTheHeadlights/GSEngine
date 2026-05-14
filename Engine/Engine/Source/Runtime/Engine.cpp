@@ -19,6 +19,7 @@ import gse.physics;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.shader;
 import gse.log;
 import gse.save;
 import gse.config;
@@ -42,7 +43,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	if (m_flags.test(engine_flag::render)) {
 		auto& window_state = add_system<window>();
 		window_state.title = std::string(id().tag());
-		add_system<gpu::context>();
+		auto& gpu_state = add_system<gpu::context>();
+		gpu_state.on_registry_created = &shaders::initialize_layouts;
 		add_system<asset::registry>();
 		add_system<physics::system>();
 		add_system<camera::system>();

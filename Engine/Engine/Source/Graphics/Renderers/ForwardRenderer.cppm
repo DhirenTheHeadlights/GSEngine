@@ -72,18 +72,15 @@ export namespace gse::renderer::forward {
 		struct resources {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
-			resource::handle<shader> shader_handle;
 
 			gpu::pipeline skinned_pipeline;
 			per_frame_resource<gpu::descriptor_region> skinned_descriptors;
-			resource::handle<shader> skinned_shader;
 
+			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 			per_frame_resource<gpu::buffer> light_buffers;
 			per_frame_resource<gpu::buffer> material_palette_buffers;
 
 			resource::handle<texture> blank_texture;
-
-			std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
 		};
 
 		struct frame_data {

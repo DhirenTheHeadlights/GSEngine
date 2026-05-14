@@ -18,6 +18,8 @@ import :forward_renderer;
 import :camera_system;
 import :settings;
 
+import gse.shader;
+
 auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const gpu::context::state& gpu_s, const settings& cfg, const resources& r, frame_data& fd, const state& s, const camera::system::state& cam_state) -> async::task<> {
 	if (!cfg.enabled) {
 		co_return;
@@ -48,8 +50,12 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 	const auto view_matrix = cam_state.view_matrix;
 	const auto proj_matrix = cam_state.projection_matrix;
 
-	r.shader_handle->set_uniform(r.ubo_allocations.at("camera_ubo")[frame_index].bytes(), "camera_ubo.view", view_matrix);
-	r.shader_handle->set_uniform(r.ubo_allocations.at("camera_ubo")[frame_index].bytes(), "camera_ubo.proj", proj_matrix);
+	const shaders::common::camera_data camera{
+		.view = view_matrix,
+		.proj = proj_matrix,
+		.inv_view = mat4f(1.0f),
+	};
+	gse::memcpy(r.camera_ubo_buffers[frame_index].mapped(), camera);
 
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
@@ -57,7 +63,7 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 	auto rec = co_await gpu::pass<state>(ctx)
 		.color(gpu::load_color())
 		.after<forward::system>()
-		.tracks(r.ubo_allocations.at("camera_ubo")[frame_index]);
+		.tracks(r.camera_ubo_buffers[frame_index]);
 
 	rec.bind(r.pipeline);
 	rec.set_viewport(ext);
@@ -90,33 +96,22 @@ auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd
 }
 
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, settings& cfg, resources& r, frame_data& fd, state& s, const physics::system::state& ps, const physics::system::settings& phys_cfg) -> async::task<> {
-	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/physics_debug");
-
-	const auto camera_ubo = r.shader_handle->uniform_block("camera_ubo");
+	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.ubo_allocations["camera_ubo"][i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = camera_ubo.size,
+		r.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+			.size = camera_ubo_size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("standard_3d"));
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i])
-			.buffer("camera_ubo", r.ubo_allocations["camera_ubo"][i], 0, camera_ubo.size)
+		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("standard_3d"), r.descriptors[i])
+			.buffer("camera_ubo", r.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 	}
 
-	r.pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.shader_handle, {
-		.rasterization = {
-			.polygon = gpu::polygon_mode::line,
-			.cull = gpu::cull_mode::none
-		},
-		.depth = { .test = false, .write = false },
-		.blend = gpu::blend_preset::alpha,
-		.depth_fmt = gpu::depth_format::none,
-		.topology = gpu::topology::line_list
-	});
+	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::physics_debug::entry::pod);
 
 	while (true) {
 		if (!cfg.enabled) {

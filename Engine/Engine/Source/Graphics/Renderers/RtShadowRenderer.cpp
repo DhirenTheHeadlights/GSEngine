@@ -9,6 +9,7 @@ import :mesh;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.shader;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -25,12 +26,10 @@ auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context:
 		fd.instances[i].reserve(max_instances);
 	}
 
-	fd.tlas_update_shader = co_await asset::load<shader>(ctx, "Shaders/Compute/tlas_transform_update");
-
-	fd.tlas_update_pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, fd.tlas_update_shader, "push_constants");
+	fd.tlas_update_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::tlas_transform_update::entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), fd.tlas_update_shader);
+		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("tlas_transform_update"));
 	}
 
 	co_return;
@@ -135,16 +134,20 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, const gpu::cont
 
 	auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instance_buffer();
 
-	gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), fd.tlas_update_shader, fd.tlas_update_descriptors[frame_index])
-		.buffer("instance_data", gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
+	gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("tlas_transform_update"), fd.tlas_update_descriptors[frame_index])
+		.buffer("source_instance_data", gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
 		.buffer("index_mapping", fd.mapping_buffers[frame_index], 0, mapping_bytes)
 		.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)
 		.commit();
 
-	auto pc = gpu::cache_push_block(fd.tlas_update_shader, "push_constants");
-	pc.set("count", instance_count);
-	pc.set("instance_stride", gc_r.instance_layout.stride);
-	pc.set("model_matrix_offset", gc_r.instance_layout.offsets.at("model_matrix"));
+	const gpu::typed_push_constants<shaders::tlas_transform_update::push_constants> pc{
+		.data = {
+			.count = instance_count,
+			.instance_stride = static_cast<std::uint32_t>(sizeof(shaders::common::instance_data)),
+			.model_matrix_offset = 0,
+		},
+		.stages = gpu::stage_flag::compute,
+	};
 
 	const std::uint32_t workgroups = (instance_count + 63) / 64;
 

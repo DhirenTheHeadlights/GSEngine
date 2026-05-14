@@ -1027,7 +1027,6 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 					const transform_component body_tc{
 						.position = bodies[it->second].position,
 						.orientation = bodies[it->second].orientation,
-						.scale = tc->scale,
 					};
 					const auto bb = std::visit([&](const auto& shape) { return gse::bounding_box(body_tc, shape); }, cc.shape);
 					const auto [max, min] = bb.aabb();

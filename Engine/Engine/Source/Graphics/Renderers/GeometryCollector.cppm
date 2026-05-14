@@ -24,36 +24,17 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.physics;
+import gse.shader;
 
 export namespace gse::renderer {
 	using frustum_planes = std::array<vec4f, 6>;
 
-	struct uniform_block_layout {
-		std::uint32_t stride = 0;
-		std::unordered_map<std::string, std::uint32_t> offsets;
-	};
-
-	auto layout_of(const struct shader::uniform_block& block) -> uniform_block_layout {
-		uniform_block_layout l;
-		l.stride = block.size;
-		for (const auto& [name, member] : block.members) {
-			l.offsets[name] = member.offset;
-		}
-		return l;
-	}
-
 	auto compute_render_transform(const physics::transform_component& tc, const vec3<length>& center_of_mass) -> std::pair<mat4f, mat4f> {
-		const mat4f scale_mat = scale(mat4f(1.0f), tc.scale);
 		const mat4f rot_mat = mat4f(mat3_cast(tc.orientation));
 		const mat4f trans_mat = translate(mat4f(1.0f), tc.position);
 		const mat4f pivot_correction_mat = translate(mat4f(1.0f), -center_of_mass);
-		const mat4f model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
-		const vec3f inv_scale{
-			1.0f / std::max(std::abs(tc.scale.x()), 1e-6f),
-			1.0f / std::max(std::abs(tc.scale.y()), 1e-6f),
-			1.0f / std::max(std::abs(tc.scale.z()), 1e-6f)
-		};
-		const mat4f normal_matrix = scale(rot_mat, inv_scale);
+		const mat4f model_matrix = trans_mat * rot_mat * pivot_correction_mat;
+		const mat4f normal_matrix = rot_mat;
 		return { model_matrix, normal_matrix };
 	}
 
@@ -162,7 +143,7 @@ export namespace gse::renderer::geometry_collector {
 		static_vector<normal_instance_batch, max_batches>  normal_batches;
 		static_vector<skinned_instance_batch, max_batches> skinned_batches;
 
-		std::vector<std::byte> instance_staging;
+		std::vector<shaders::common::instance_data> instance_staging;
 		std::vector<mat4f> skin_staging;
 		std::vector<mat4f> local_pose_staging;
 		std::uint32_t pending_compute_instance_count = 0;
@@ -190,18 +171,6 @@ export namespace gse::renderer::geometry_collector {
 		struct resources {
 			per_frame_resource<gpu::buffer> instance_buffer;
 
-			uniform_block_layout instance_layout;
-
-			std::uint32_t instance_model_matrix_offset = 0;
-			std::uint32_t instance_normal_matrix_offset = 0;
-			std::uint32_t instance_skin_offset_offset = 0;
-			std::uint32_t instance_joint_count_offset = 0;
-			std::uint32_t instance_material_index_offset = 0;
-
-			uniform_block_layout joint_layout;
-
-			std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
-
 			static constexpr std::size_t max_instances = 4096;
 			static constexpr std::size_t max_skin_matrices = 256 * 128;
 			static constexpr std::size_t max_joints = 256;
@@ -211,8 +180,6 @@ export namespace gse::renderer::geometry_collector {
 			gpu::buffer skeleton_buffer;
 			per_frame_resource<gpu::buffer> local_pose_buffer;
 			per_frame_resource<gpu::buffer> skin_buffer;
-
-			resource::handle<shader> shader_handle;
 
 			per_frame_resource<gpu::buffer> physics_mapping_buffer;
 		};

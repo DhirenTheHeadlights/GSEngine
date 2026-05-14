@@ -17,7 +17,6 @@ import gse.physics;
 export namespace gse::renderer::physics_transform {
 	struct system {
 		struct resources {
-			resource::handle<shader> shader_handle;
 			gpu::pipeline pipeline;
 			bool initialized = false;
 		};

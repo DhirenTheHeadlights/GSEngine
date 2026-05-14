@@ -240,8 +240,7 @@ export namespace gse::shaders::vbd_physics {
 		gpu_warm_start,
 		gpu_joint,
 		frozen_jacobian,
-		dispatch_args,
-		vbd_push_constants
+		dispatch_args
 	>;
 
 	using shader_binding_types = type_pack<

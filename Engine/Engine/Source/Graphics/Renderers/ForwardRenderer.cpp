@@ -28,23 +28,23 @@ import gse.assets;
 import gse.gpu;
 import gse.save;
 import gse.meta;
+import gse.shader;
 
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const rt_shadow::system::state& rt_state, const light_culling::system::resources& lc_r, settings& cfg, resources& r, frame_data& fd) -> async::task<> {
 	auto& assets = const_cast<asset::state&>(assets_s);
 
-	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Standard3D/meshlet_geometry");
+	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
+	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
+	constexpr std::size_t material_stride = sizeof(shaders::forward::material_data);
+	constexpr std::size_t light_buffer_size = light_stride * max_lights;
+	constexpr std::size_t material_buffer_size = material_stride * max_materials;
 
-	const auto camera_ubo = r.shader_handle->uniform_block("camera_ubo");
-	const auto light_block = r.shader_handle->uniform_block("lights_ssbo");
-	const auto light_buffer_size = light_block.size * max_lights;
-	const auto material_block = r.shader_handle->uniform_block("material_palette");
-	const auto material_buffer_size = material_block.size * max_materials;
 	fd.light_staging.reserve(light_buffer_size);
 	fd.material_staging.reserve(material_buffer_size);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = camera_ubo.size,
+		r.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+			.size = camera_ubo_size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
@@ -58,10 +58,10 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("forward_3d"));
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i])
-			.buffer("camera_ubo", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
+		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("forward_3d"), r.descriptors[i])
+			.buffer("camera_ubo", r.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.buffer("lights_ssbo", r.light_buffers[i], 0, light_buffer_size)
 			.buffer("material_palette", r.material_palette_buffers[i], 0, material_buffer_size)
 			.commit();
@@ -69,7 +69,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		gpu::descriptor_writer writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i]);
+		gpu::descriptor_writer writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("forward_3d"), r.descriptors[i]);
 
 		writer.acceleration_structure("scene_tlas", (*rt_state.tlas_ptrs[fi]).handle());
 		writer.buffer("light_index_list", lc_r.light_index_list_buffers[fi])
@@ -81,7 +81,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 	gpu::context::on_swap_chain_recreate(gpu_s, [&r, &lc_r, &rt_state, &gpu_s]() {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
-			gpu::descriptor_writer writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i]);
+			gpu::descriptor_writer writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("forward_3d"), r.descriptors[i]);
 
 			writer.acceleration_structure("scene_tlas", (*rt_state.tlas_ptrs[fi]).handle());
 			writer.buffer("light_index_list", lc_r.light_index_list_buffers[fi])
@@ -91,34 +91,17 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 		}
 	});
 
-	r.pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.shader_handle, {
-		.depth = {
-			.test = true,
-			.write = false,
-			.compare = gpu::compare_op::less_or_equal
-		},
-		.push_constant_block = "push_constants"
-	});
-
-
-	r.skinned_shader = co_await asset::load<shader>(ctx, "Shaders/Standard3D/skinned_geometry_pass");
+	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::forward::meshlet_entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.skinned_shader);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("standard_3d"));
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.skinned_shader, r.skinned_descriptors[i])
-			.buffer("camera_ubo", r.ubo_allocations["CameraUBO"][i], 0, camera_ubo.size)
+		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("standard_3d"), r.skinned_descriptors[i])
+			.buffer("camera_ubo", r.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 	}
 
-	r.skinned_pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.skinned_shader, {
-		.depth = {
-			.test = true,
-			.write = false,
-			.compare = gpu::compare_op::less_or_equal
-		}
-	});
-
+	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::standard_3d::skinned_geometry_entry::pod);
 
 	r.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
 	while (asset::resource_state<texture>(assets, r.blank_texture.id()) != resource::state::loaded) {
@@ -149,44 +132,40 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 
 	const auto view = cam_state.view_matrix;
 	const auto proj = cam_state.projection_matrix;
-	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
 
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.view", view);
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.proj", proj);
-	r.shader_handle->set_uniform(cam_alloc.bytes(), "camera_ubo.inv_view", view.inverse());
+	const shaders::common::camera_data camera{
+		.view = view,
+		.proj = proj,
+		.inv_view = view.inverse(),
+	};
+	gse::memcpy(r.camera_ubo_buffers[frame_index].mapped(), camera);
 
 	auto dir_chunk = ctx.components<directional_light_component>();
 	auto spot_chunk = ctx.components<spot_light_component>();
 	auto point_chunk = ctx.components<point_light_component>();
-
-	const auto& light_alloc = r.light_buffers[frame_index];
-	const auto light_block = r.shader_handle->uniform_block("lights_ssbo");
-	const auto stride = light_block.size;
 
 	const std::size_t total_lights = std::min(
 		dir_chunk.size() + spot_chunk.size() + point_chunk.size(),
 		max_lights
 	);
 	auto& staging = fd.light_staging;
-	staging.assign(total_lights * stride, std::byte{ 0 });
+	staging.assign(total_lights * sizeof(shaders::forward::light), std::byte{ 0 });
+	auto* staging_lights = reinterpret_cast<shaders::forward::light*>(staging.data());
 	std::size_t light_count = 0;
-
-	auto write = [&](const std::size_t index, const std::string_view member, const auto& v) {
-		gse::memcpy(staging.data() + index * stride + light_block.members.at(std::string(member)).offset, v);
-	};
 
 	for (const auto& comp : dir_chunk) {
 		if (light_count >= max_lights) {
 			break;
 		}
-		int type = 0;
-		write(light_count, "light_type", type);
-		write(light_count, "direction", view.transform_direction(comp.direction));
-		write(light_count, "world_direction", comp.direction);
-		write(light_count, "color", comp.color);
-		write(light_count, "intensity", comp.intensity);
-		write(light_count, "ambient_strength", comp.ambient_strength);
-		write(light_count, "source_radius", comp.source_radius);
+		staging_lights[light_count] = {
+			.light_type = shaders::forward::light_type::directional,
+			.direction = view.transform_direction(comp.direction),
+			.world_direction = comp.direction,
+			.color = comp.color,
+			.intensity = comp.intensity,
+			.ambient_strength = comp.ambient_strength,
+			.source_radius = comp.source_radius,
+		};
 		++light_count;
 	}
 
@@ -194,23 +173,24 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 		if (light_count >= max_lights) {
 			break;
 		}
-		int type = 2;
 		const float cut_off_cos = gse::cos(comp.cut_off);
 		const float outer_cut_off_cos = gse::cos(comp.outer_cut_off);
-		write(light_count, "light_type", type);
-		write(light_count, "position", view.transform_point(comp.position));
-		write(light_count, "direction", view.transform_direction(comp.direction));
-		write(light_count, "world_position", comp.position);
-		write(light_count, "world_direction", comp.direction);
-		write(light_count, "color", comp.color);
-		write(light_count, "intensity", comp.intensity);
-		write(light_count, "constant", comp.constant);
-		write(light_count, "linear", comp.linear);
-		write(light_count, "quadratic", comp.quadratic);
-		write(light_count, "cut_off", cut_off_cos);
-		write(light_count, "outer_cut_off", outer_cut_off_cos);
-		write(light_count, "ambient_strength", comp.ambient_strength);
-		write(light_count, "source_radius", comp.source_radius);
+		staging_lights[light_count] = {
+			.light_type = shaders::forward::light_type::spot,
+			.position = view.transform_point(comp.position),
+			.direction = view.transform_direction(comp.direction),
+			.world_position = comp.position,
+			.world_direction = comp.direction,
+			.color = comp.color,
+			.intensity = comp.intensity,
+			.constant = comp.constant,
+			.linear = comp.linear,
+			.quadratic = comp.quadratic,
+			.cut_off = cut_off_cos,
+			.outer_cut_off = outer_cut_off_cos,
+			.ambient_strength = comp.ambient_strength,
+			.source_radius = comp.source_radius,
+		};
 		++light_count;
 	}
 
@@ -218,47 +198,44 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 		if (light_count >= max_lights) {
 			break;
 		}
-		int type = 1;
-		write(light_count, "light_type", type);
-		write(light_count, "position", view.transform_point(comp.position));
-		write(light_count, "world_position", comp.position);
-		write(light_count, "color", comp.color);
-		write(light_count, "intensity", comp.intensity);
-		write(light_count, "constant", comp.constant);
-		write(light_count, "linear", comp.linear);
-		write(light_count, "quadratic", comp.quadratic);
-		write(light_count, "ambient_strength", comp.ambient_strength);
-		write(light_count, "source_radius", comp.source_radius);
+		staging_lights[light_count] = {
+			.light_type = shaders::forward::light_type::point,
+			.position = view.transform_point(comp.position),
+			.world_position = comp.position,
+			.color = comp.color,
+			.intensity = comp.intensity,
+			.constant = comp.constant,
+			.linear = comp.linear,
+			.quadratic = comp.quadratic,
+			.ambient_strength = comp.ambient_strength,
+			.source_radius = comp.source_radius,
+		};
 		++light_count;
 	}
 
 	if (light_count > 0) {
-		gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
+		gse::memcpy(r.light_buffers[frame_index].mapped(), staging.data(), light_count * sizeof(shaders::forward::light));
 	}
 
-	const auto& material_alloc = r.material_palette_buffers[frame_index];
-	const auto material_block = r.shader_handle->uniform_block("material_palette");
-	const auto mat_stride = material_block.size;
 	const auto material_count = std::min(data.material_palette_map.size(), max_materials);
 
 	if (material_count > 0) {
 		auto& mat_staging = fd.material_staging;
-		mat_staging.assign(material_count * mat_stride, std::byte{ 0 });
-
-		auto mat_write = [&](const std::size_t index, const std::string_view member, const auto& v) {
-			gse::memcpy(mat_staging.data() + index * mat_stride + material_block.members.at(std::string(member)).offset, v);
-		};
+		mat_staging.assign(material_count * sizeof(shaders::forward::material_data), std::byte{ 0 });
+		auto* staging_materials = reinterpret_cast<shaders::forward::material_data*>(mat_staging.data());
 
 		for (const auto& [mat_ptr, idx] : data.material_palette_map) {
 			if (idx >= max_materials) {
 				continue;
 			}
-			mat_write(idx, "base_color", mat_ptr->base_color);
-			mat_write(idx, "roughness", mat_ptr->roughness);
-			mat_write(idx, "metallic", mat_ptr->metallic);
+			staging_materials[idx] = {
+				.base_color = mat_ptr->base_color,
+				.roughness = mat_ptr->roughness,
+				.metallic = mat_ptr->metallic,
+			};
 		}
 
-		gse::memcpy(material_alloc.mapped(), mat_staging.data(), material_count * mat_stride);
+		gse::memcpy(r.material_palette_buffers[frame_index].mapped(), mat_staging.data(), material_count * sizeof(shaders::forward::material_data));
 	}
 
 	const auto& normal_batches = data.normal_batches;
@@ -270,8 +247,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 	const int ao_quality_i = static_cast<int>(cfg.ao_quality);
 	const int reflection_quality_i = static_cast<int>(cfg.reflection_quality);
 
-	auto meshlet_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), r.shader_handle);
-	auto skinned_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), r.skinned_shader);
+	auto meshlet_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), std::string_view("forward_3d"));
+	auto skinned_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), std::string_view("standard_3d"));
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
@@ -285,7 +262,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.tracks(
-			r.ubo_allocations.at("CameraUBO")[frame_index],
+			r.camera_ubo_buffers[frame_index],
 			r.light_buffers[frame_index],
 			r.material_palette_buffers[frame_index],
 			gc_r.instance_buffer[frame_index]
@@ -330,15 +307,19 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
 
-			auto pc = gpu::cache_push_block(r.shader_handle, "push_constants");
-			pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
-			pc.set("meshlet_count", meshlet_count);
-			pc.set("first_instance", batch.first_instance);
-			pc.set("num_lights", num_lights_i);
-			pc.set("screen_size", vec2u{ ext.x(), ext.y() });
-			pc.set("shadow_quality", shadow_quality_i);
-			pc.set("ao_quality", ao_quality_i);
-			pc.set("reflection_quality", reflection_quality_i);
+			const gpu::typed_push_constants<shaders::forward::push_constants> pc{
+				.data = {
+					.meshlet_offset = 0,
+					.meshlet_count = meshlet_count,
+					.first_instance = batch.first_instance,
+					.num_lights = num_lights_i,
+					.screen_size = vec2u{ ext.x(), ext.y() },
+					.shadow_quality = shadow_quality_i,
+					.ao_quality = ao_quality_i,
+					.reflection_quality = reflection_quality_i,
+				},
+				.stages = gpu::stage_flag::task | gpu::stage_flag::mesh | gpu::stage_flag::fragment,
+			};
 			rec.push(r.pipeline, pc);
 
 			rec.draw_mesh_tasks_indirect(

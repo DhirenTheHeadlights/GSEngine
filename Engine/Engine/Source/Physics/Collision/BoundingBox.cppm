@@ -123,9 +123,9 @@ gse::bounding_box::bounding_box(const physics::transform_component& tc, const ph
 	: m_center(tc.position),
 	  m_orientation(tc.orientation),
 	  m_half_extents(
-		  shape.size.x() * tc.scale.x() * 0.5f,
-		  shape.size.y() * tc.scale.y() * 0.5f,
-		  shape.size.z() * tc.scale.z() * 0.5f
+		  shape.size.x() * 0.5f,
+		  shape.size.y() * 0.5f,
+		  shape.size.z() * 0.5f
 	  ) {}
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::sphere_shape& shape)
