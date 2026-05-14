@@ -43,48 +43,35 @@ export namespace gse::renderer::physics_debug {
 	};
 
 	struct system {
-		struct settings {
+		struct data {
 			static constexpr std::string_view category = "Graphics";
 
 			[[=gse::settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}]]
 			bool enabled = true;
-		};
 
-		struct state {
 			debug_stats latest_stats;
-		};
 
-		struct resources {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
-		};
 
-		struct frame_data {
 			per_frame_resource<gpu::buffer> vertex_buffers;
 			per_frame_resource<std::size_t> max_vertices;
 		};
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const asset::state& assets_s,
-			settings& cfg,
-			resources& r,
-			frame_data& fd,
-			state& s,
-			const physics::system::state& ps,
-			const physics::system::settings& phys_cfg
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			data& d,
+			const physics::system::data& ps
 		) -> async::task<>;
 
 		static auto frame(
 			const frame_context& ctx,
-			const gpu::context::state& gpu_s,
-			const settings& cfg,
-			const resources& r,
-			frame_data& fd,
-			const state& s,
-			const camera::system::state& cam_state
+			shared_view<gpu::context> gpu_s,
+			data& d,
+			shared_view<camera::system> cam_state
 		) -> async::task<>;
 
 	private:
@@ -126,11 +113,10 @@ export namespace gse::renderer::physics_debug {
 		) -> void;
 
 		static auto ensure_vertex_capacity(
-			frame_data& fd,
-			const gpu::context::state& gpu_s,
+			data& d,
+			gpu::device& device,
 			std::size_t frame_index,
 			std::size_t required_vertex_count
 		) -> void;
 	};
 }
-

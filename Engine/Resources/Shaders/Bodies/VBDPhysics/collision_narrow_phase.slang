@@ -12,29 +12,29 @@ static const uint SAT_AXIS_FACE = 0;
 static const uint SAT_AXIS_CROSS = 1;
 
 float contact_effective_mass(
-    gpu_body body_a,
-    gpu_body body_b,
+    body_state body_a,
+    body_state body_b,
     float3 rAW,
     float3 rBW,
     float3 dir
 ) {
     float inv_mass_sum = 0.0;
 
-    if ((body_a.flags & FLAG_LOCKED) == 0 && body_a.mass > 1e-10) {
+    if (body_a.locked == 0 && body_a.mass > 1e-10) {
         inv_mass_sum += 1.0 / body_a.mass;
     }
-    if ((body_b.flags & FLAG_LOCKED) == 0 && body_b.mass > 1e-10) {
+    if (body_b.locked == 0 && body_b.mass > 1e-10) {
         inv_mass_sum += 1.0 / body_b.mass;
     }
 
-    if ((body_a.flags & FLAG_UPDATE_ORIENTATION) != 0 && (body_a.flags & FLAG_LOCKED) == 0) {
-        mat3 inv_i_a = mat3_inverse(body_a.inertia);
+    if (body_a.update_orientation != 0 && body_a.locked == 0) {
+        mat3 inv_i_a = body_a.inv_inertia;
         float3 ang_j_a = cross(rAW, dir);
         inv_mass_sum += dot(cross(mat3_mul_vec(inv_i_a, ang_j_a), rAW), dir);
     }
 
-    if ((body_b.flags & FLAG_UPDATE_ORIENTATION) != 0 && (body_b.flags & FLAG_LOCKED) == 0) {
-        mat3 inv_i_b = mat3_inverse(body_b.inertia);
+    if (body_b.update_orientation != 0 && body_b.locked == 0) {
+        mat3 inv_i_b = body_b.inv_inertia;
         float3 ang_j_b = cross(rBW, dir);
         inv_mass_sum += dot(cross(mat3_mul_vec(inv_i_b, ang_j_b), rBW), dir);
     }
@@ -885,8 +885,8 @@ void record_narrow_phase_debug(
     collision_state[base + 7] = (contacts.reference_face & 0xFFu) | ((contacts.incident_face & 0xFFu) << 8);
 }
 
-bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint ws_count, out gpu_warm_start result) {
-    result = (gpu_warm_start)0;
+bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint ws_count, out contact_constraint result) {
+    result = (contact_constraint)0;
     if (ws_count == 0) return false;
 
     uint64_t feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
@@ -895,7 +895,7 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint 
     uint hi = ws_count;
     while (lo < hi) {
         uint mid = (lo + hi) / 2;
-        gpu_warm_start ws = warm_starts[mid];
+        contact_constraint ws = warm_starts[mid];
         if (ws.body_a < ba || (ws.body_a == ba && ws.body_b < bb) ||
             (ws.body_a == ba && ws.body_b == bb && ws.feature_key < feature_key)) {
             lo = mid + 1;
@@ -905,7 +905,7 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint 
     }
 
     if (lo < ws_count) {
-        gpu_warm_start ws = warm_starts[lo];
+        contact_constraint ws = warm_starts[lo];
         if (ws.body_a == ba && ws.body_b == bb && ws.feature_key == feature_key) {
             result = ws;
             return true;
@@ -924,8 +924,8 @@ if (pair_idx >= pair_count) return;
 uint body_a_idx = collision_pairs[1 + pair_idx * 2];
 uint body_b_idx = collision_pairs[1 + pair_idx * 2 + 1];
 
-gpu_body ba = body_data[body_a_idx];
-gpu_body bb = body_data[body_b_idx];
+body_state ba = body_data[body_a_idx];
+body_state bb = body_data[body_b_idx];
 
 float3 center_a = ba.position.xyz;
 float3 center_b = bb.position.xyz;
@@ -972,7 +972,7 @@ for (int p = 0; p < contacts.count; p++) {
     float3 local_r_a = rotate_vector(quat_conjugate(ba.orientation), world_r_a);
     float3 local_r_b = rotate_vector(quat_conjugate(bb.orientation), world_r_b);
 
-    gpu_warm_start cached_ws;
+    contact_constraint cached_ws;
     bool has_cached = warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, pc.warm_start_count, cached_ws);
     float3 current_d = world_anchor_a - world_anchor_b;
     float current_normal_gap = dot(constraint_normal, current_d) + pc.collision_margin;
@@ -1030,7 +1030,7 @@ for (int p = 0; p < contacts.count; p++) {
         dot(tangent_v, d)
     );
 
-    float base_floor = pc.penalty_min;
+    float base_floor = has_cached ? max(cached_ws.penalty_floor, pc.penalty_min) : pc.penalty_min;
     bool active_normal =
         init_lambda.x < -1e-3 ||
         C0.x < -1e-4;
@@ -1061,20 +1061,30 @@ for (int p = 0; p < contacts.count; p++) {
         penalty.z = clamp(penalty.z * pc.gamma, row_floor_z, pc.penalty_max);
     }
 
-    gpu_contact c;
+    float3 va = ba.velocity + cross(ba.angular_velocity, rAW);
+    float3 vb = bb.velocity + cross(bb.angular_velocity, rBW);
+    float v_rel_n = dot(constraint_normal, va - vb);
+    float approach = (v_rel_n < 0.0) ? v_rel_n : 0.0;
+
+    float pair_restitution = max(ba.restitution, bb.restitution);
+
+    contact_constraint c;
     c.body_a = body_a_idx;
     c.body_b = body_b_idx;
     c.feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
     c.sticking = sticking ? 1u : 0u;
-    c.normal = float4(constraint_normal, 0);
-    c.tangent_u = float4(tangent_u, 0);
-    c.tangent_v = float4(tangent_v, 0);
-    c.local_anchor_a = float4(local_r_a, 0);
-    c.local_anchor_b = float4(local_r_b, 0);
-    c.c0 = float4(C0, 0);
+    c.normal = constraint_normal;
+    c.tangent_u = tangent_u;
+    c.tangent_v = tangent_v;
+    c.local_anchor_a = local_r_a;
+    c.local_anchor_b = local_r_b;
+    c.c0 = C0;
     c.friction_coeff = pc.friction_coefficient;
-    c.lambda = float4(lambda, 0);
-    c.penalty = float4(penalty, 0);
+    c.restitution = pair_restitution;
+    c.penalty_floor = pc.penalty_min;
+    c.approach_speed = approach;
+    c.lambda = lambda;
+    c.penalty = penalty;
 
     contact_data[ci] = c;
 }

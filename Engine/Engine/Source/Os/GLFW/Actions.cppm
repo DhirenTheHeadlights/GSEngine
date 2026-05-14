@@ -303,7 +303,7 @@ export namespace gse::actions {
 	};
 
 	struct system {
-		struct state {
+		struct data {
 			actions::state current_input_state;
 			id_mapped_collection<actions::description> descriptions;
 			std::vector<pending_key_binding> pending_key_bindings;
@@ -318,65 +318,65 @@ export namespace gse::actions {
 
 		static auto run(
 			run_context& ctx,
-			state& s,
-			const input::system::state& input_s
+			data& d,
+			const input::system::data& input_s
 		) -> async::task<>;
 
 		static auto held(
 			const actions::state& as,
-			const state& s,
+			const data& d,
 			handle h
 		) -> bool;
 
 		static auto pressed(
 			const actions::state& as,
-			const state& s,
+			const data& d,
 			handle h
 		) -> bool;
 
 		static auto released(
 			const actions::state& as,
-			const state& s,
+			const data& d,
 			handle h
 		) -> bool;
 
 		static auto current_state(
-			const state& s
+			const data& d
 		) -> const actions::state&;
 
 		static auto axis1_ids(
-			const state& s
+			const data& d
 		) -> std::span<const std::uint16_t>;
 
 		static auto axis2_ids(
-			const state& s
+			const data& d
 		) -> std::span<const std::uint16_t>;
 
 		static auto description(
-			const state& s,
+			const data& d,
 			id action_id
 		) -> const actions::description*;
 
 		static auto rebinds_map(
-			state& s
+			data& d
 		) -> std::map<std::string, int>&;
 
 		[[nodiscard]] static auto all_bindings(
-			const state& s
+			const data& d
 		) -> std::vector<action_binding_info>;
 
 		static auto rebind(
-			state& s,
+			data& d,
 			std::string_view action_name,
 			key new_key
 		) -> void;
 
 		static auto finalize_bindings(
-			state& s
+			data& d
 		) -> void;
 
 		static auto add_description(
-			state& s,
+			data& d,
 			std::string_view tag,
 			id action_id
 		) -> actions::description&;
@@ -403,38 +403,38 @@ export namespace gse::actions {
 	auto held(
 		const handle& h,
 		const actions::state& s,
-		const system::state& sys
+		const system::data& sys
 	) -> bool;
 
 	auto pressed(
 		const handle& h,
 		const actions::state& s,
-		const system::state& sys
+		const system::data& sys
 	) -> bool;
 
 	auto released(
 		const handle& h,
 		const actions::state& s,
-		const system::state& sys
+		const system::data& sys
 	) -> bool;
 }
 
-auto gse::actions::system::held(const actions::state& as, const state& s, const handle h) -> bool {
-	if (const auto* desc = description(s, h.id())) {
+auto gse::actions::system::held(const actions::state& as, const data& d, const handle h) -> bool {
+	if (const auto* desc = description(d, h.id())) {
 		return as.held(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::system::pressed(const actions::state& as, const state& s, const handle h) -> bool {
-	if (const auto* desc = description(s, h.id())) {
+auto gse::actions::system::pressed(const actions::state& as, const data& d, const handle h) -> bool {
+	if (const auto* desc = description(d, h.id())) {
 		return as.pressed(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::system::released(const actions::state& as, const state& s, const handle h) -> bool {
-	if (const auto* desc = description(s, h.id())) {
+auto gse::actions::system::released(const actions::state& as, const data& d, const handle h) -> bool {
+	if (const auto* desc = description(d, h.id())) {
 		return as.released(desc->bit_index());
 	}
 	return false;
@@ -636,21 +636,21 @@ auto gse::actions::state::camera_yaw() const -> angle {
 	return m_camera_yaw;
 }
 
-auto gse::actions::system::run(run_context& ctx, state& s, const input::system::state& input_s) -> async::task<> {
-	finalize_bindings(s);
+auto gse::actions::system::run(run_context& ctx, data& d, const input::system::data& input_s) -> async::task<> {
+	finalize_bindings(d);
 
 	while (true) {
 	bool config_changed = false;
 
 	for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
-		add_description(s, name, action_id);
-		s.pending_key_bindings.emplace_back(name, default_key, action_id);
-		s.action_defaults[name] = static_cast<int>(default_key);
+		add_description(d, name, action_id);
+		d.pending_key_bindings.emplace_back(name, default_key, action_id);
+		d.action_defaults[name] = static_cast<int>(default_key);
 		config_changed = true;
 	}
 
 	for (const auto& [info, axis_id] : ctx.read_channel<bind_axis2_request>()) {
-		s.pending_axis2_reqs.push_back({
+		d.pending_axis2_reqs.push_back({
 			info,
 			axis_id
 		});
@@ -658,23 +658,23 @@ auto gse::actions::system::run(run_context& ctx, state& s, const input::system::
 	}
 
 	for (const auto& [action_name, new_key] : ctx.read_channel<rebind_request>()) {
-		rebind(s, action_name, new_key);
+		rebind(d, action_name, new_key);
 	}
 
 	if (config_changed) {
-		finalize_bindings(s);
+		finalize_bindings(d);
 	}
 
 	const auto& in = input::system::current_state(input_s);
 
-	auto& action_state = s.current_input_state;
+	auto& action_state = d.current_input_state;
 	action_state.begin_frame();
 
-	const auto count = s.descriptions.size();
+	const auto count = d.descriptions.size();
 	action_state.ensure_capacity(count);
-	action_state.reset_axes(s.axis1_ids_cache, s.axis2_ids_cache);
+	action_state.reset_axes(d.axis1_ids_cache, d.axis2_ids_cache);
 
-	for (auto& [k, bit_index] : s.resolved.key_to_action) {
+	for (auto& [k, bit_index] : d.resolved.key_to_action) {
 		if (in.key_pressed(k)) {
 			action_state.set_pressed(bit_index, count);
 		}
@@ -684,7 +684,7 @@ auto gse::actions::system::run(run_context& ctx, state& s, const input::system::
 		action_state.set_held(bit_index, in.key_held(k), count);
 	}
 
-	for (auto& [mb, bit_index] : s.resolved.mouse_to_action) {
+	for (auto& [mb, bit_index] : d.resolved.mouse_to_action) {
 		if (in.mouse_button_pressed(mb)) {
 			action_state.set_pressed(bit_index, count);
 		}
@@ -694,12 +694,12 @@ auto gse::actions::system::run(run_context& ctx, state& s, const input::system::
 		action_state.set_held(bit_index, in.mouse_button_held(mb), count);
 	}
 
-	for (const auto& [neg, pos, axis, scale] : s.resolved.axes1_from_keys) {
+	for (const auto& [neg, pos, axis, scale] : d.resolved.axes1_from_keys) {
 		const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
 		action_state.set_axis1(axis, static_cast<float>(v) * scale);
 	}
 
-	for (const auto& [id, left, right, back, fwd, scale] : s.axis2_by_id.items()) {
+	for (const auto& [id, left, right, back, fwd, scale] : d.axis2_by_id.items()) {
 		const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
 		const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
 		action_state.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
@@ -709,42 +709,42 @@ auto gse::actions::system::run(run_context& ctx, state& s, const input::system::
 	}
 }
 
-auto gse::actions::system::current_state(const state& s) -> const actions::state& {
-	return s.current_input_state;
+auto gse::actions::system::current_state(const data& d) -> const actions::state& {
+	return d.current_input_state;
 }
 
-auto gse::actions::system::axis1_ids(const state& s) -> std::span<const std::uint16_t> {
-	return s.axis1_ids_cache;
+auto gse::actions::system::axis1_ids(const data& d) -> std::span<const std::uint16_t> {
+	return d.axis1_ids_cache;
 }
 
-auto gse::actions::system::axis2_ids(const state& s) -> std::span<const std::uint16_t> {
-	return s.axis2_ids_cache;
+auto gse::actions::system::axis2_ids(const data& d) -> std::span<const std::uint16_t> {
+	return d.axis2_ids_cache;
 }
 
-auto gse::actions::system::description(const state& s, const id action_id) -> const actions::description* {
-	return s.descriptions.try_get(action_id);
+auto gse::actions::system::description(const data& d, const id action_id) -> const actions::description* {
+	return d.descriptions.try_get(action_id);
 }
 
-auto gse::actions::system::finalize_bindings(state& s) -> void {
-	s.resolved = {};
+auto gse::actions::system::finalize_bindings(data& d) -> void {
+	d.resolved = {};
 
-	for (const auto& [name, def, action_id] : s.pending_key_bindings) {
-		const key k = (s.rebinds.contains(name) ? static_cast<key>(s.rebinds.at(name)) : def);
-		const auto* desc = s.descriptions.try_get(action_id);
+	for (const auto& [name, def, action_id] : d.pending_key_bindings) {
+		const key k = (d.rebinds.contains(name) ? static_cast<key>(d.rebinds.at(name)) : def);
+		const auto* desc = d.descriptions.try_get(action_id);
 		if (!desc) {
 			continue;
 		}
-		s.resolved.key_to_action.emplace_back(k, desc->bit_index());
+		d.resolved.key_to_action.emplace_back(k, desc->bit_index());
 	}
 
-	s.axis2_by_id.clear();
+	d.axis2_by_id.clear();
 	auto key_for_action = [&](const id action_id) -> key {
-		const auto* desc = s.descriptions.try_get(action_id);
+		const auto* desc = d.descriptions.try_get(action_id);
 		if (!desc) {
 			return key{};
 		}
 		const auto bit_index = desc->bit_index();
-		for (const auto& [k, idx] : s.resolved.key_to_action) {
+		for (const auto& [k, idx] : d.resolved.key_to_action) {
 			if (idx == bit_index) {
 				return k;
 			}
@@ -752,7 +752,7 @@ auto gse::actions::system::finalize_bindings(state& s) -> void {
 		return key{};
 	};
 
-	for (const auto& [info, id] : s.pending_axis2_reqs) {
+	for (const auto& [info, id] : d.pending_axis2_reqs) {
 		resolved_axis2_keys r{
 			.id = id,
 			.left = key_for_action(info.left.id()),
@@ -761,55 +761,55 @@ auto gse::actions::system::finalize_bindings(state& s) -> void {
 			.fwd = key_for_action(info.fwd.id()),
 			.scale = info.scale
 		};
-		s.axis2_by_id.add(r.id, std::move(r));
+		d.axis2_by_id.add(r.id, std::move(r));
 	}
 
-	s.axis1_ids_cache.clear();
-	for (const auto& k : s.resolved.axes1_from_keys) {
-		s.axis1_ids_cache.push_back(k.axis);
+	d.axis1_ids_cache.clear();
+	for (const auto& k : d.resolved.axes1_from_keys) {
+		d.axis1_ids_cache.push_back(k.axis);
 	}
-	std::ranges::sort(s.axis1_ids_cache);
-	s.axis1_ids_cache.erase(std::ranges::unique(s.axis1_ids_cache).begin(), s.axis1_ids_cache.end());
+	std::ranges::sort(d.axis1_ids_cache);
+	d.axis1_ids_cache.erase(std::ranges::unique(d.axis1_ids_cache).begin(), d.axis1_ids_cache.end());
 
-	s.axis2_ids_cache.clear();
-	for (const auto& [id, l, r, b, f, sc] : s.axis2_by_id.items()) {
-		s.axis2_ids_cache.push_back(static_cast<std::uint16_t>(id.number()));
+	d.axis2_ids_cache.clear();
+	for (const auto& [id, l, r, b, f, sc] : d.axis2_by_id.items()) {
+		d.axis2_ids_cache.push_back(static_cast<std::uint16_t>(id.number()));
 	}
-	std::ranges::sort(s.axis2_ids_cache);
-	s.axis2_ids_cache.erase(std::ranges::unique(s.axis2_ids_cache).begin(), s.axis2_ids_cache.end());
+	std::ranges::sort(d.axis2_ids_cache);
+	d.axis2_ids_cache.erase(std::ranges::unique(d.axis2_ids_cache).begin(), d.axis2_ids_cache.end());
 }
 
-auto gse::actions::system::add_description(state& s, const std::string_view tag, const id action_id) -> actions::description& {
-	if (const auto existing = s.descriptions.try_get(action_id)) {
+auto gse::actions::system::add_description(data& d, const std::string_view tag, const id action_id) -> actions::description& {
+	if (const auto existing = d.descriptions.try_get(action_id)) {
 		return *existing;
 	}
 
-	const auto bit_index = static_cast<std::uint16_t>(s.descriptions.size());
+	const auto bit_index = static_cast<std::uint16_t>(d.descriptions.size());
 	actions::description desc(std::string(tag), bit_index);
-	auto* desc_ptr = s.descriptions.add(action_id, std::move(desc));
+	auto* desc_ptr = d.descriptions.add(action_id, std::move(desc));
 
 	return *desc_ptr;
 }
 
-auto gse::actions::system::rebinds_map(state& s) -> std::map<std::string, int>& {
-	return s.rebinds;
+auto gse::actions::system::rebinds_map(data& d) -> std::map<std::string, int>& {
+	return d.rebinds;
 }
 
-auto gse::actions::system::all_bindings(const state& s) -> std::vector<action_binding_info> {
+auto gse::actions::system::all_bindings(const data& d) -> std::vector<action_binding_info> {
 	std::map<std::string, action_binding_info> merged;
 
-	for (const auto& [name, default_key] : s.action_defaults) {
+	for (const auto& [name, default_key] : d.action_defaults) {
 		const auto def = static_cast<key>(default_key);
 		key current = def;
-		if (const auto it = s.rebinds.find(name); it != s.rebinds.end()) {
+		if (const auto it = d.rebinds.find(name); it != d.rebinds.end()) {
 			current = static_cast<key>(it->second);
 		}
 		merged[name] = { name, current, def };
 	}
 
-	for (const auto& [name, def, action_id] : s.pending_key_bindings) {
+	for (const auto& [name, def, action_id] : d.pending_key_bindings) {
 		key current = def;
-		if (const auto it = s.rebinds.find(name); it != s.rebinds.end()) {
+		if (const auto it = d.rebinds.find(name); it != d.rebinds.end()) {
 			current = static_cast<key>(it->second);
 		}
 		merged[name] = { name, current, def };
@@ -824,9 +824,9 @@ auto gse::actions::system::all_bindings(const state& s) -> std::vector<action_bi
 	return result;
 }
 
-auto gse::actions::system::rebind(state& s, const std::string_view action_name, const key new_key) -> void {
-	s.rebinds[std::string(action_name)] = static_cast<int>(new_key);
-	finalize_bindings(s);
+auto gse::actions::system::rebind(data& d, const std::string_view action_name, const key new_key) -> void {
+	d.rebinds[std::string(action_name)] = static_cast<int>(new_key);
+	finalize_bindings(d);
 }
 
 auto gse::actions::add_by_name(channel_writer& channels, const std::string_view tag, const key default_key) -> handle {
@@ -854,15 +854,15 @@ auto gse::actions::bind_axis2(channel_writer& channels, const pending_axis2_info
 	return axis_id;
 }
 
-auto gse::actions::held(const handle& h, const actions::state& s, const system::state& sys) -> bool {
+auto gse::actions::held(const handle& h, const actions::state& s, const system::data& sys) -> bool {
 	return system::held(s, sys, h);
 }
 
-auto gse::actions::pressed(const handle& h, const actions::state& s, const system::state& sys) -> bool {
+auto gse::actions::pressed(const handle& h, const actions::state& s, const system::data& sys) -> bool {
 	return system::pressed(s, sys, h);
 }
 
-auto gse::actions::released(const handle& h, const actions::state& s, const system::state& sys) -> bool {
+auto gse::actions::released(const handle& h, const actions::state& s, const system::data& sys) -> bool {
 	return system::released(s, sys, h);
 }
 

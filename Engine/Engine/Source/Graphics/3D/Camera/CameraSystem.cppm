@@ -12,6 +12,7 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.meta;
 
 import :camera_data;
 import :camera_component;
@@ -25,7 +26,7 @@ export namespace gse::camera {
 export namespace gse::camera {
 	class system {
 	public:
-		struct state {
+		struct data {
 			target current{};
 			target blend_from{};
 			target blend_to{};
@@ -40,8 +41,8 @@ export namespace gse::camera {
 			angle pitch = degrees(0.0f);
 			float mouse_sensitivity = 0.1f;
 
-			gse::view_matrix view_matrix{};
-			gse::projection_matrix projection_matrix{};
+			[[=gse::shared]] gse::view_matrix view_matrix{};
+			[[=gse::shared]] gse::projection_matrix projection_matrix{};
 
 			vec2f viewport{ 1920.f, 1080.f };
 			bool ui_focus = false;
@@ -49,20 +50,20 @@ export namespace gse::camera {
 
 		static auto run(
 			run_context& ctx,
-			state& s,
-			const input::system::state& input_state
+			data& d,
+			const input::system::data& input_state
 		) -> async::task<>;
 
 		static auto position(
-			const state& s
+			const data& d
 		) -> vec3<gse::position>;
 
 		static auto orientation(
-			const state& s
+			const data& d
 		) -> quat;
 
 		static auto direction_relative_to_origin(
-			const state& s,
+			const data& d,
 			const vec3f& direction
 		) -> vec3f;
 

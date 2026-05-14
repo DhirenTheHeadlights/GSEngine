@@ -2,10 +2,10 @@
 uint bi = dispatch_id.x;
 if (bi >= pc.body_count) return;
 
-gpu_body body = body_data[bi];
-bool locked = (body.flags & FLAG_LOCKED) != 0;
+body_state body = body_data[bi];
+bool locked = body.locked != 0;
 bool sleeping = body.sleep_counter >= SLEEP_THRESHOLD;
-bool update_orient = (body.flags & FLAG_UPDATE_ORIENTATION) != 0;
+bool update_orient = body.update_orientation != 0;
 
 if (locked || sleeping) return;
 
@@ -14,8 +14,8 @@ bool bad_pp = isinf(body.predicted_position.x) || isinf(body.predicted_position.
 if (bad_pp) {
     body.predicted_position = body.old_position;
     body.predicted_orientation = body.old_orientation;
-    body.velocity = float4(0, 0, 0, 0);
-    body.angular_velocity = float4(0, 0, 0, 0);
+    body.velocity = float3(0, 0, 0);
+    body.angular_velocity = float3(0, 0, 0);
     body.position = body.old_position;
     body.orientation = body.old_orientation;
     body_data[bi] = body;
@@ -28,7 +28,7 @@ float q_len_sq = body.predicted_orientation.x * body.predicted_orientation.x
                + body.predicted_orientation.w * body.predicted_orientation.w;
 if (q_len_sq < 0.5 || isnan(q_len_sq)) {
     body.predicted_orientation = body.orientation;
-    body.angular_velocity = float4(0, 0, 0, 0);
+    body.angular_velocity = float3(0, 0, 0);
 }
 
 body.position = body.predicted_position;
@@ -48,8 +48,8 @@ if (dot(he, he) > 0.0) {
     aabb_he.y = abs(ax.y) * he.x + abs(ay.y) * he.y + abs(az.y) * he.z;
     aabb_he.z = abs(ax.z) * he.x + abs(ay.z) * he.y + abs(az.z) * he.z;
 
-    body.aabb_min = float4(body.position.xyz - aabb_he, 0);
-    body.aabb_max = float4(body.position.xyz + aabb_he, 0);
+    body.aabb_min = body.position.xyz - aabb_he;
+    body.aabb_max = body.position.xyz + aabb_he;
 }
 
 body_data[bi] = body;

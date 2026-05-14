@@ -6,6 +6,7 @@ import gse.assert;
 import gse.core;
 import gse.concurrency;
 import gse.time;
+import gse.math;
 import gse.diag;
 
 import :phase_context;
@@ -16,6 +17,14 @@ import :frame_context;
 import :system_node;
 import :system_dispatch;
 import :registry;
+
+namespace gse {
+	enum class wait_phase : std::uint8_t {
+		init,
+		update,
+		frame
+	};
+}
 
 export namespace gse {
 	class scheduler {
@@ -127,6 +136,17 @@ export namespace gse {
 		auto snapshot_all_states(
 		) -> void;
 
+		auto sync_wait_or_dump(
+			std::vector<async::task<>>&& tasks,
+			wait_phase phase
+		) -> void;
+
+		auto log_stall_state(
+			wait_phase phase,
+			time_t<float> elapsed,
+			int dump_count
+		) -> void;
+
 		std::vector<system_node> m_nodes;
 		state_registry m_states;
 		std::unordered_map<id, std::vector<id>> m_state_deps;
@@ -208,12 +228,6 @@ auto gse::scheduler::add_system(Args&&... args) -> state_of_t<S>& {
 	using state_t = state_of_t<S>;
 	assert(m_registry != nullptr, "scheduler::set_registry must be called before add_system");
 	(void)trace_id<S>();
-	if constexpr (has_resources<S>) {
-		(void)trace_id<typename S::resources>();
-	}
-	if constexpr (has_settings<S>) {
-		(void)trace_id<typename S::settings>();
-	}
 	auto* state_ref = register_node(make_system_node<S>(std::forward<Args>(args)...));
 	return *static_cast<state_t*>(state_ref);
 }
@@ -221,12 +235,6 @@ auto gse::scheduler::add_system(Args&&... args) -> state_of_t<S>& {
 template <typename S, typename... Args>
 auto gse::scheduler::queue_add_system(Args&&... args) -> void {
 	(void)trace_id<S>();
-	if constexpr (has_resources<S>) {
-		(void)trace_id<typename S::resources>();
-	}
-	if constexpr (has_settings<S>) {
-		(void)trace_id<typename S::settings>();
-	}
 	auto node = make_system_node<S>(std::forward<Args>(args)...);
 	std::lock_guard lock(m_hot_add_mutex);
 	m_hot_add_queue.push_back(std::move(node));

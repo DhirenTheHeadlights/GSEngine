@@ -21,7 +21,7 @@ import gse.math;
 
 export namespace gse::renderer::depth_prepass {
 	struct system {
-		struct resources {
+		struct data {
 			gpu::pipeline meshlet_pipeline;
 			per_frame_resource<gpu::descriptor_region> meshlet_descriptors;
 
@@ -33,17 +33,17 @@ export namespace gse::renderer::depth_prepass {
 
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const asset::state& assets_s,
-			resources& r
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			data& d
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
-			const gpu::context::state& gpu_s,
-			const resources& r,
-			const geometry_collector::system::resources& gc_r,
-			const camera::system::state& cam_state
+			shared_view<gpu::context> gpu_s,
+			const data& d,
+			shared_view<geometry_collector::system> gc_r,
+			shared_view<camera::system> cam_state
 		) -> async::task<>;
 	};
 }

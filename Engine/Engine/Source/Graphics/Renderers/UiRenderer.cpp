@@ -140,14 +140,14 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
     }
 }
 
-auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd, state& s) -> async::task<> {
-    r.sprite_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, sprite_entry::pod);
-    r.text_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, msdf_entry::pod);
+auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+    d.sprite_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, sprite_entry::pod);
+    d.text_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, msdf_entry::pod);
 
     constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
     constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
-    for (auto& [vertex_buffer, index_buffer] : r.gpu_frames) {
+    for (auto& [vertex_buffer, index_buffer] : d.gpu_frames) {
         vertex_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
             .size = vertex_buffer_size,
             .usage = gpu::buffer_flag::vertex,
@@ -168,7 +168,7 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::state&
             continue;
         }
 
-        auto& [vertices, indices, batches] = fd.data.write();
+        auto& [vertices, indices, batches] = d.buffered_frames.write();
         vertices.clear();
         indices.clear();
         batches.clear();
@@ -292,25 +292,25 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::state&
 
         flush_batch();
 
-        fd.data.publish();
+        d.buffered_frames.publish();
 
         co_await ctx.next_tick();
     }
 }
 
-auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const resources& r, frame_data& fd, const state& s) -> async::task<> {
+auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
     if (!gpu_s.render_graph->frame_in_progress()) {
         co_return;
     }
 
-    const auto& [vertices, indices, batches] = fd.data.read();
+    const auto& [vertices, indices, batches] = d.buffered_frames.read();
 
     if (batches.empty()) {
         co_return;
     }
 
     const auto frame_index = gpu_s.render_graph->current_frame();
-    auto& [vertex_buffer, index_buffer] = r.gpu_frames[frame_index];
+    auto& [vertex_buffer, index_buffer] = d.gpu_frames[frame_index];
 
     gse::memcpy(vertex_buffer.mapped(), vertices);
     gse::memcpy(index_buffer.mapped(), indices);
@@ -340,7 +340,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
 
     const vec2u ext_size{ width, height };
 
-    auto rec = co_await gpu::pass<ui::system::state>(ctx)
+    auto rec = co_await gpu::pass<ui::system>(ctx)
         .color(gpu::load_color())
         .after<forward::system>()
         .tracks(vertex_buffer, index_buffer);
@@ -361,9 +361,9 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
 
         if (first_batch || type != bound_type) {
             if (type == command_type::sprite) {
-                rec.bind(r.sprite_pipeline);
+                rec.bind(d.sprite_pipeline);
             } else {
-                rec.bind(r.text_pipeline);
+                rec.bind(d.text_pipeline);
             }
             bound_type = type;
             first_batch = false;
@@ -389,10 +389,10 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
 
         if (type == command_type::sprite) {
             sprite_pc.data.tex_idx = tex_idx;
-            rec.push(r.sprite_pipeline, sprite_pc);
+            rec.push(d.sprite_pipeline, sprite_pc);
         } else {
             text_pc.data.tex_idx = tex_idx;
-            rec.push(r.text_pipeline, text_pc);
+            rec.push(d.text_pipeline, text_pc);
         }
 
         if (clip_rect) {

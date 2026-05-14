@@ -87,13 +87,13 @@ namespace gse::animation {
 
 	auto process_controller_job(
 		const controller_job& job,
-		const asset::state& assets_s,
+		const asset::data& assets_s,
 		time dt
 	) -> void;
 }
 
-auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s, state& s) -> async::task<> {
-	s.last_tick = system_clock::now();
+auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, data& d) -> async::task<> {
+	d.last_tick = system_clock::now();
 
 	while (true) {
 	const time dt = system_clock::dt();
@@ -105,9 +105,9 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 			write<clip_component>
 		>();
 
-		s.jobs.clear();
-		s.controller_jobs.clear();
-		s.pose_cache.clear();
+		d.jobs.clear();
+		d.controller_jobs.clear();
+		d.pose_cache.clear();
 
 		const auto anim_ids = animations.owner_ids();
 		for (std::size_t i = 0; i < animations.size(); ++i) {
@@ -126,8 +126,8 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 
 			const auto eid = anim_ids[i];
 			if (auto* ctrl_c = controllers.find(eid)) {
-				if (const auto graph_it = s.graphs.find(ctrl_c->graph_id); graph_it != s.graphs.end()) {
-					s.controller_jobs.push_back({
+				if (const auto graph_it = d.graphs.find(ctrl_c->graph_id); graph_it != d.graphs.end()) {
+					d.controller_jobs.push_back({
 						.anim = std::addressof(anim),
 						.ctrl = ctrl_c,
 						.skel = std::addressof(skel),
@@ -168,7 +168,7 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 				clip_c->playing = false;
 			}
 
-			s.jobs.push_back({
+			d.jobs.push_back({
 				.anim = std::addressof(anim),
 				.clip = clip_c,
 				.skel = std::addressof(skel),
@@ -179,13 +179,13 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 			});
 		}
 
-		if (!s.jobs.empty()) {
-			std::vector<std::size_t> job_cache_index(s.jobs.size());
+		if (!d.jobs.empty()) {
+			std::vector<std::size_t> job_cache_index(d.jobs.size());
 			std::vector<std::size_t> unique_job_indices;
 
-			for (std::size_t i = 0; i < s.jobs.size(); ++i) {
+			for (std::size_t i = 0; i < d.jobs.size(); ++i) {
 				constexpr float time_bucket_size = 16'666'666.f;
-				const auto& job = s.jobs[i];
+				const auto& job = d.jobs[i];
 				const auto time_bucket = static_cast<std::int64_t>(job.sample_t / time{time_bucket_size});
 
 				const pose_cache_key key{
@@ -194,7 +194,7 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 					.time_bucket = time_bucket
 				};
 
-				const auto [it, inserted] = s.pose_cache.try_emplace(key, i);
+				const auto [it, inserted] = d.pose_cache.try_emplace(key, i);
 				job_cache_index[i] = it->second;
 
 				if (inserted) {
@@ -204,15 +204,15 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 
 			task::parallel_for(0uz, unique_job_indices.size(), [&](const std::size_t i) {
 				const auto job_idx = unique_job_indices[i];
-				const auto& job = s.jobs[job_idx];
+				const auto& job = d.jobs[job_idx];
 				build_local_pose(*job.anim, *job.skel, *job.asset, job.sample_t);
 				build_global_and_skins(*job.anim, *job.skel);
 			});
 
-			task::parallel_for(0uz, s.jobs.size(), [&](const std::size_t i) {
+			task::parallel_for(0uz, d.jobs.size(), [&](const std::size_t i) {
 				if (const auto source_idx = job_cache_index[i]; source_idx != i) {
-					const auto& source_anim = *s.jobs[source_idx].anim;
-					auto& dest_anim = *s.jobs[i].anim;
+					const auto& source_anim = *d.jobs[source_idx].anim;
+					auto& dest_anim = *d.jobs[i].anim;
 
 					std::ranges::copy(source_anim.local_pose, dest_anim.local_pose.begin());
 					std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
@@ -221,9 +221,9 @@ auto gse::animation::system::run(run_context& ctx, const asset::state& assets_s,
 			});
 		}
 
-		if (!s.controller_jobs.empty()) {
-			task::parallel_for(0uz, s.controller_jobs.size(), [&](const std::size_t i) {
-				process_controller_job(s.controller_jobs[i], assets_s, dt);
+		if (!d.controller_jobs.empty()) {
+			task::parallel_for(0uz, d.controller_jobs.size(), [&](const std::size_t i) {
+				process_controller_job(d.controller_jobs[i], assets_s, dt);
 			});
 		}
 	}
@@ -433,7 +433,7 @@ auto gse::animation::system::clear_triggers(std::unordered_map<std::string, anim
 	}
 }
 
-auto gse::animation::system::process_controller_job(const controller_job& job, const asset::state& assets_s, const time dt) -> void {
+auto gse::animation::system::process_controller_job(const controller_job& job, const asset::data& assets_s, const time dt) -> void {
 	auto& anim = *job.anim;
 	auto& ctrl = *job.ctrl;
 	const auto& skel = *job.skel;

@@ -14,7 +14,7 @@ if (bi >= pc.body_count) {
     return;
 }
 
-gpu_body body = body_data[bi];
+body_state body = body_data[bi];
 
 float cell_size = pc.grid_cell_size;
 int3 min_cell = world_to_cell(body.aabb_min.xyz - pc.speculative_margin, cell_size);

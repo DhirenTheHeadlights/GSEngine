@@ -10,7 +10,7 @@ export namespace gs {
 	auto physics_joint_test_scene_setup(
 		gse::scene& s,
 		gse::channel_writer& channels,
-		gse::asset::state& assets
+		gse::asset::data& assets
 	) -> void;
 }
 
@@ -18,35 +18,35 @@ namespace gs {
 	auto build_fixed_joint_test(
 		gse::scene& s,
 		gse::channel_writer& channels,
-		gse::asset::state& assets
+		gse::asset::data& assets
 	) -> void;
 
 	auto build_distance_pendulum(
 		gse::scene& s,
 		gse::channel_writer& channels,
-		gse::asset::state& assets
+		gse::asset::data& assets
 	) -> void;
 
 	auto build_hinge_door(
 		gse::scene& s,
 		gse::channel_writer& channels,
-		gse::asset::state& assets
+		gse::asset::data& assets
 	) -> void;
 
 	auto build_slider_elevator(
 		gse::scene& s,
 		gse::channel_writer& channels,
-		gse::asset::state& assets
+		gse::asset::data& assets
 	) -> void;
 
 	auto build_pendulum_chain(
 		gse::scene& s,
 		gse::channel_writer& channels,
-		gse::asset::state& assets
+		gse::asset::data& assets
 	) -> void;
 }
 
-auto gs::build_fixed_joint_test(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+auto gs::build_fixed_joint_test(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
 	constexpr float x = -20.f;
 	constexpr float z = 0.f;
 
@@ -73,7 +73,7 @@ auto gs::build_fixed_joint_test(gse::scene& s, gse::channel_writer& channels, gs
 	});
 }
 
-auto gs::build_distance_pendulum(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+auto gs::build_distance_pendulum(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
 	constexpr float x = -10.f;
 	constexpr float z = 0.f;
 
@@ -99,7 +99,7 @@ auto gs::build_distance_pendulum(gse::scene& s, gse::channel_writer& channels, g
 	});
 }
 
-auto gs::build_hinge_door(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+auto gs::build_hinge_door(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
 	constexpr float x = 0.f;
 	constexpr float z = 0.f;
 
@@ -132,7 +132,7 @@ auto gs::build_hinge_door(gse::scene& s, gse::channel_writer& channels, gse::ass
 	});
 }
 
-auto gs::build_slider_elevator(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+auto gs::build_slider_elevator(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
 	constexpr float x = 10.f;
 	constexpr float z = 0.f;
 
@@ -158,7 +158,7 @@ auto gs::build_slider_elevator(gse::scene& s, gse::channel_writer& channels, gse
 	});
 }
 
-auto gs::build_pendulum_chain(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+auto gs::build_pendulum_chain(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
 	constexpr float x = 20.f;
 	constexpr float z = 0.f;
 	constexpr int chain_length = 5;
@@ -196,7 +196,7 @@ auto gs::build_pendulum_chain(gse::scene& s, gse::channel_writer& channels, gse:
 	}
 }
 
-auto gs::physics_joint_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+auto gs::physics_joint_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
 	const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
 	build_static_box(assets, &s, "Floor", floor_pos, gse::vec3<gse::length>(80.f, 1.f, 80.f));
 

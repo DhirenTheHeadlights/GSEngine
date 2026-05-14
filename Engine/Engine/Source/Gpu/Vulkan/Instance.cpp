@@ -9,7 +9,7 @@ import gse.assert;
 import gse.log;
 import gse.os;
 
-auto gse::vulkan::create_surface(const window::state& win, instance& instance) -> void {
+auto gse::vulkan::create_surface(const window::data& win, instance& instance) -> void {
 	const auto raw_surface = window::create_vulkan_surface(win, *instance.raii_instance());
 	instance.set_surface(vk::raii::SurfaceKHR(instance.raii_instance(), raw_surface));
 }

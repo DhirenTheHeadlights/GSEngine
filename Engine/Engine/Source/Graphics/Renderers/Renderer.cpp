@@ -36,26 +36,26 @@ import gse.audio;
 import gse.math;
 import gse.save;
 
-auto gse::renderer::system::run(run_context& ctx, const gpu::context::state& gpu_s, const window::state& window_s, settings& cfg, state& s, const actions::system::state& sys) -> async::task<> {
+auto gse::renderer::system::run(run_context& ctx, const gpu::context::data& gpu_s, const window::data& window_s, data& d, const actions::system::data& sys) -> async::task<> {
 	const id dump_profile_id = generate_id("Dump Profile");
 	ctx.channels.push<actions::add_action_request>({
 		.name = "Dump Profile",
 		.default_key = key::f11,
 		.action_id = dump_profile_id
 	});
-	s.dump_profile_action = actions::handle(dump_profile_id);
+	d.dump_profile_action = actions::handle(dump_profile_id);
 
 	while (true) {
-		if (cfg.hot_reload_enabled != s.last_hot_reload_enabled) {
-			ctx.channels.push<asset::hot_reload_request>({ .enabled = cfg.hot_reload_enabled });
-			s.last_hot_reload_enabled = cfg.hot_reload_enabled;
+		if (d.hot_reload_enabled != d.last_hot_reload_enabled) {
+			ctx.channels.push<asset::hot_reload_request>({ .enabled = d.hot_reload_enabled });
+			d.last_hot_reload_enabled = d.hot_reload_enabled;
 		}
 
-		gpu_s.render_graph->set_gpu_timestamps_enabled(cfg.gpu_timestamps_enabled);
-		gpu_s.render_graph->set_gpu_pipeline_stats_enabled(cfg.gpu_pipeline_stats_enabled);
-		profile::set_enabled(cfg.profile_aggregator_enabled);
+		gpu_s.render_graph->set_gpu_timestamps_enabled(d.gpu_timestamps_enabled);
+		gpu_s.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_pipeline_stats_enabled);
+		profile::set_enabled(d.profile_aggregator_enabled);
 
-		if (actions::system::pressed(actions::system::current_state(sys), sys, s.dump_profile_action)) {
+		if (actions::system::pressed(actions::system::current_state(sys), sys, d.dump_profile_action)) {
 			profile::dump();
 			log::println(log::category::render, "Profile dumped");
 		}
@@ -66,9 +66,9 @@ auto gse::renderer::system::run(run_context& ctx, const gpu::context::state& gpu
 			static_cast<float>(window_size.y())
 		);
 
-		if (new_viewport.x() != s.last_viewport.x() || new_viewport.y() != s.last_viewport.y()) {
+		if (new_viewport.x() != d.last_viewport.x() || new_viewport.y() != d.last_viewport.y()) {
 			ctx.channels.push<camera::viewport_update>({ .size = new_viewport });
-			s.last_viewport = new_viewport;
+			d.last_viewport = new_viewport;
 		}
 
 		co_await ctx.next_tick();

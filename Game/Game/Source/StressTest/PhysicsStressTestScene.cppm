@@ -11,54 +11,54 @@ export namespace gs {
 	auto physics_stress_test_scene_setup(
 		gse::scene& s,
 		gse::channel_writer& channels,
-		gse::asset::state& assets
+		gse::asset::data& assets
 	) -> void;
 }
 
 namespace gs {
 	auto build_inverted_mass_pyramid(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_domino_chain(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_funnel(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_slope_friction_test(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_high_speed_impact_target(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_spring_tests(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene& s,
 		gse::channel_writer& channels
 	) -> void;
 
 	auto build_tumbler(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene& s
 	) -> void;
 
 	auto build_box_grid(
-		gse::asset::state& assets,
+		gse::asset::data& assets,
 		gse::scene& s
 	) -> void;
 }
 
-auto gs::build_inverted_mass_pyramid(gse::asset::state& assets, gse::scene& s) -> void {
+auto gs::build_inverted_mass_pyramid(gse::asset::data& assets, gse::scene& s) -> void {
 	constexpr float x = -15.f;
 	constexpr float z = 0.f;
 
@@ -90,7 +90,7 @@ auto gs::build_inverted_mass_pyramid(gse::asset::state& assets, gse::scene& s) -
 	);
 }
 
-auto gs::build_domino_chain(gse::asset::state& assets, gse::scene& s) -> void {
+auto gs::build_domino_chain(gse::asset::data& assets, gse::scene& s) -> void {
 	constexpr float z = -10.f;
 	constexpr float start_x = -8.f;
 	constexpr float spacing = 0.9f;
@@ -109,7 +109,7 @@ auto gs::build_domino_chain(gse::asset::state& assets, gse::scene& s) -> void {
 	}
 }
 
-auto gs::build_funnel(gse::asset::state& assets, gse::scene& s) -> void {
+auto gs::build_funnel(gse::asset::data& assets, gse::scene& s) -> void {
 	constexpr float cx = 15.f;
 	constexpr float cz = 0.f;
 
@@ -168,7 +168,7 @@ auto gs::build_funnel(gse::asset::state& assets, gse::scene& s) -> void {
 	}
 }
 
-auto gs::build_slope_friction_test(gse::asset::state& assets, gse::scene& s) -> void {
+auto gs::build_slope_friction_test(gse::asset::data& assets, gse::scene& s) -> void {
 	constexpr float x = 0.f;
 	constexpr float z = 15.f;
 
@@ -212,7 +212,7 @@ auto gs::build_slope_friction_test(gse::asset::state& assets, gse::scene& s) -> 
 	);
 }
 
-auto gs::build_high_speed_impact_target(gse::asset::state& assets, gse::scene& s) -> void {
+auto gs::build_high_speed_impact_target(gse::asset::data& assets, gse::scene& s) -> void {
 	constexpr float x = 0.f;
 	constexpr float z = -20.f;
 
@@ -232,7 +232,7 @@ auto gs::build_high_speed_impact_target(gse::asset::state& assets, gse::scene& s
 	}
 }
 
-auto gs::build_spring_tests(gse::asset::state& assets, gse::scene& s, gse::channel_writer& channels) -> void {
+auto gs::build_spring_tests(gse::asset::data& assets, gse::scene& s, gse::channel_writer& channels) -> void {
 	constexpr float x = -25.f;
 	constexpr float z = -20.f;
 
@@ -301,7 +301,7 @@ auto gs::build_spring_tests(gse::asset::state& assets, gse::scene& s, gse::chann
 	}
 }
 
-auto gs::build_tumbler(gse::asset::state& assets, gse::scene& s) -> void {
+auto gs::build_tumbler(gse::asset::data& assets, gse::scene& s) -> void {
 	constexpr float cx = 0.f;
 	constexpr float cy = 10.f;
 	constexpr float cz = 24.f;
@@ -402,7 +402,7 @@ auto gs::build_tumbler(gse::asset::state& assets, gse::scene& s) -> void {
 	}
 }
 
-auto gs::build_box_grid(gse::asset::state& assets, gse::scene& s) -> void {
+auto gs::build_box_grid(gse::asset::data& assets, gse::scene& s) -> void {
 	constexpr int grid_x = 6;
 	constexpr int grid_z = 6;
 	constexpr int layers = 3;
@@ -429,7 +429,7 @@ auto gs::build_box_grid(gse::asset::state& assets, gse::scene& s) -> void {
 	}
 }
 
-auto gs::physics_stress_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::state& assets) -> void {
+auto gs::physics_stress_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
 	const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
 	build_static_box(assets, &s, "Floor", floor_pos, gse::vec3<gse::length>(60.f, 1.f, 60.f));
 
@@ -440,7 +440,7 @@ auto gs::physics_stress_test_scene_setup(gse::scene& s, gse::channel_writer& cha
 	build_high_speed_impact_target(assets, s);
 	build_box_grid(assets, s);
 	build_spring_tests(assets, s, channels);
-	//build_tumbler(assets, s);
+	build_tumbler(assets, s);
 
 	build_sphere(
 		assets,

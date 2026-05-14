@@ -33,8 +33,8 @@ namespace gse::renderer::physics_debug {
 	>;
 }
 
-auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const gpu::context::state& gpu_s, const settings& cfg, const resources& r, frame_data& fd, const state& s, const camera::system::state& cam_state) -> async::task<> {
-	if (!cfg.enabled) {
+auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+	if (!d.enabled) {
 		co_return;
 	}
 
@@ -53,9 +53,9 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 	}
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
-	ensure_vertex_capacity(fd, gpu_s, frame_index, verts.size());
+	ensure_vertex_capacity(d, *gpu_s.device, frame_index, verts.size());
 
-	auto& vertex_buffer = fd.vertex_buffers[frame_index];
+	auto& vertex_buffer = d.vertex_buffers[frame_index];
 	if (auto* dst = vertex_buffer.mapped()) {
 		gse::memcpy(dst, verts);
 	}
@@ -68,26 +68,27 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const
 		.proj = proj_matrix,
 		.inv_view = mat4f(1.0f),
 	};
-	gse::memcpy(r.camera_ubo_buffers[frame_index].mapped(), camera);
+	gse::memcpy(d.camera_ubo_buffers[frame_index].mapped(), camera);
 
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
 
-	auto rec = co_await gpu::pass<state>(ctx)
+	auto rec = co_await gpu::pass<system>(ctx)
 		.color(gpu::load_color())
 		.after<forward::system>()
-		.tracks(r.camera_ubo_buffers[frame_index]);
+		.tracks(d.camera_ubo_buffers[frame_index]);
 
-	rec.bind(r.pipeline);
+	rec.bind(d.pipeline);
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
-	rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
+	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 	rec.bind_vertex(vertex_buffer);
 	rec.draw(vertex_count);
 }
-auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd, const gpu::context::state& gpu_s, const std::size_t frame_index, const std::size_t required_vertex_count) -> void {
-	auto& max_verts = fd.max_vertices[frame_index];
-	auto& vertex_buffer = fd.vertex_buffers[frame_index];
+
+auto gse::renderer::physics_debug::system::ensure_vertex_capacity(data& d, gpu::device& device, const std::size_t frame_index, const std::size_t required_vertex_count) -> void {
+	auto& max_verts = d.max_vertices[frame_index];
+	auto& vertex_buffer = d.vertex_buffers[frame_index];
 
 	if (required_vertex_count <= max_verts && vertex_buffer) {
 		return;
@@ -102,32 +103,32 @@ auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd
 		max_verts *= 2;
 	}
 
-	vertex_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
+	vertex_buffer = gpu::buffer::create(device.allocator(), {
 		.size = max_verts * sizeof(debug_vertex),
 		.usage = gpu::buffer_flag::vertex
 	});
 }
 
-auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, settings& cfg, resources& r, frame_data& fd, state& s, const physics::system::state& ps, const physics::system::settings& phys_cfg) -> async::task<> {
-	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const physics::system::data& ps) -> async::task<> {
+	d.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = camera_ubo_size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+		d.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 
-		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.descriptors[i])
-			.buffer<shaders::standard_3d::camera_ubo>(r.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i])
+			.buffer<shaders::standard_3d::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 	}
 
 	while (true) {
-		if (!cfg.enabled) {
+		if (!d.enabled) {
 			co_await ctx.next_tick();
 			continue;
 		}
@@ -189,14 +190,14 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 				}
 			}
 
-			if (phys_cfg.use_gpu_solver && ps.gpu_stats.active) {
+			if (ps.use_gpu_solver && ps.gpu_stats.active) {
 				stats.gpu_solver_active = true;
 				stats.contact_count = ps.gpu_stats.contact_count;
 				stats.motor_count = ps.gpu_stats.motor_count;
 				stats.solve_time = ps.gpu_stats.solve_time;
 			}
 
-			s.latest_stats = stats;
+			d.latest_stats = stats;
 			ctx.channels.push<render_data>({ std::move(vertices), stats });
 		}
 
@@ -368,4 +369,3 @@ auto gse::renderer::physics_debug::system::build_contact_debug_for_collider(cons
 		add_line(p, normal_end, normal_color, out_vertices);
 	}
 }
-

@@ -10,7 +10,7 @@ if (m.body_index >= pc.body_count) {
     return;
 }
 
-gpu_body body = body_data[m.body_index];
+body_state body = body_data[m.body_index];
 
 float3 axis_x = rotate_vector(body.orientation, float3(1.0, 0.0, 0.0));
 float3 axis_y = rotate_vector(body.orientation, float3(0.0, 1.0, 0.0));

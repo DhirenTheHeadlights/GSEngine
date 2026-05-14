@@ -2,15 +2,15 @@
 uint bi = dispatch_id.x;
 if (bi >= pc.body_count) return;
 
-gpu_body body = body_data[bi];
-bool locked = (body.flags & FLAG_LOCKED) != 0;
+body_state body = body_data[bi];
+bool locked = body.locked != 0;
 bool sleeping = body.sleep_counter >= SLEEP_THRESHOLD;
-bool update_orient = (body.flags & FLAG_UPDATE_ORIENTATION) != 0;
-bool gravity = (body.flags & FLAG_AFFECTED_BY_GRAVITY) != 0;
+bool update_orient = body.update_orientation != 0;
+bool gravity = body.affected_by_gravity != 0;
 
 if (pc.substep == 0) {
     for (uint mi = 0; mi < pc.motor_count; mi++) {
-        gpu_motor m = motor_data[mi];
+        velocity_motor_constraint m = motor_data[mi];
         if (m.body_index == bi && sleeping && length(m.target_velocity.xyz) > 0.01) {
             body.sleep_counter = 0;
             sleeping = false;
@@ -24,11 +24,11 @@ if (pc.substep == 0) {
         for (uint k = 0; k < cc; k++) {
             uint ci = safe_load_uint(contact_adjacency, co + k, MAX_CONTACT_ADJACENCY);
             if (ci >= MAX_CONTACTS) continue;
-            gpu_contact c = contact_data[ci];
+            contact_constraint c = contact_data[ci];
             uint other = (c.body_a == bi) ? c.body_b : c.body_a;
             if (other >= pc.body_count) continue;
-            gpu_body other_body = body_data[other];
-            bool other_locked = (other_body.flags & FLAG_LOCKED) != 0;
+            body_state other_body = body_data[other];
+            bool other_locked = other_body.locked != 0;
             bool other_sleeping = other_body.sleep_counter >= SLEEP_THRESHOLD;
             float other_speed = length(other_body.velocity.xyz);
 
@@ -45,11 +45,11 @@ if (pc.substep == 0) {
             for (uint k = 0; k < jc; k++) {
                 uint ji = safe_load_uint(joint_adjacency, j_off + k, MAX_JOINT_ADJACENCY);
                 if (ji >= MAX_JOINTS) continue;
-                gpu_joint jnt = joint_data[ji];
+                joint_constraint jnt = joint_data[ji];
                 uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
                 if (other >= pc.body_count) continue;
-                gpu_body other_body = body_data[other];
-                bool other_locked = (other_body.flags & FLAG_LOCKED) != 0;
+                body_state other_body = body_data[other];
+                bool other_locked = other_body.locked != 0;
                 bool other_sleeping = other_body.sleep_counter >= SLEEP_THRESHOLD;
                 float other_speed = length(other_body.velocity.xyz);
 
@@ -72,8 +72,8 @@ if (locked || sleeping) {
     body.predicted_orientation = body.orientation;
     body.angular_inertia_target = body.orientation;
     body.motor_target = body.position;
-    body.predicted_velocity = float4(0, 0, 0, 0);
-    body.predicted_angular_velocity = float4(0, 0, 0, 0);
+    body.predicted_velocity = float3(0, 0, 0);
+    body.predicted_angular_velocity = float3(0, 0, 0);
     body_data[bi] = body;
     return;
 }
@@ -82,17 +82,17 @@ float3 linear_velocity = body.velocity.xyz;
 float lin_speed = length(linear_velocity);
 if (lin_speed > 15.0) {
     linear_velocity *= (15.0 / lin_speed);
-    body.velocity = float4(linear_velocity, 0);
+    body.velocity = linear_velocity;
 }
 
 float3 angular_velocity = body.angular_velocity.xyz;
 float ang_speed = length(angular_velocity);
 if (ang_speed > 50.0) {
     angular_velocity *= (50.0 / ang_speed);
-    body.angular_velocity = float4(angular_velocity, 0);
+    body.angular_velocity = angular_velocity;
 }
 
-float4 gravity_step = gravity ? float4(0, -9.8 * pc.dt * pc.dt, 0, 0) : float4(0, 0, 0, 0);
+float3 gravity_step = gravity ? float3(0, -9.8 * pc.dt * pc.dt, 0) : float3(0, 0, 0);
 body.inertia_target = body.position + body.velocity * pc.dt + gravity_step;
 body.predicted_position = body.position + body.velocity * pc.dt + gravity_step * body.accel_weight;
 body.predicted_velocity = body.velocity;
@@ -115,16 +115,16 @@ if (update_orient) {
     }
 } else {
     body.predicted_orientation = body.orientation;
-    body.predicted_angular_velocity = float4(0, 0, 0, 0);
+    body.predicted_angular_velocity = float3(0, 0, 0);
 }
 
 body.angular_inertia_target = body.predicted_orientation;
 
 for (uint mi = 0; mi < pc.motor_count; mi++) {
-    gpu_motor m = motor_data[mi];
+    velocity_motor_constraint m = motor_data[mi];
     if (m.body_index != bi) continue;
 
-    float4 target = body.old_position + m.target_velocity * pc.dt;
+    float3 target = body.old_position + m.target_velocity * pc.dt;
     if (m.horizontal_only != 0) {
         body.motor_target.x = target.x;
         body.motor_target.z = target.z;

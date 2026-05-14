@@ -23,56 +23,47 @@ export namespace gse::renderer::light_culling {
 	constexpr std::size_t max_lights = 1024;
 
 	struct system {
-		struct state {
+		struct data {
 			vec2u current_extent{};
-		};
 
-		struct resources {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 
 			per_frame_resource<gpu::buffer> culling_params_buffers;
 			per_frame_resource<gpu::buffer> light_buffers;
-			per_frame_resource<gpu::buffer> light_index_list_buffers;
-			per_frame_resource<gpu::buffer> tile_light_table_buffers;
+			[[=gse::shared]] per_frame_resource<gpu::buffer> light_index_list_buffers;
+			[[=gse::shared]] per_frame_resource<gpu::buffer> tile_light_table_buffers;
 
 			gpu::sampler depth_sampler;
 		};
 
-		struct frame_data {};
-
 		static auto run(
 			run_context& ctx,
-			const gpu::context::state& gpu_s,
-			const asset::state& assets_s,
-			resources& r,
-			frame_data& fd,
-			state& s
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			data& d
 		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
-			const gpu::context::state& gpu_s,
-			const resources& r,
-			frame_data& fd,
-			const state& s,
-			const camera::system::state& cam_state
+			shared_view<gpu::context> gpu_s,
+			const data& d,
+			shared_view<camera::system> cam_state
 		) -> async::task<>;
 
 	private:
 		static auto tile_count(
-			const state& s
+			const data& d
 		) -> vec2u;
 
 		static auto update_depth_descriptor(
-			const gpu::context::state& gpu_s,
-			resources& r
+			const gpu::context::data& gpu_s,
+			data& d
 		) -> void;
 
 		static auto rebuild_tile_buffers(
-			const gpu::context::state& gpu_s,
-			resources& r,
-			state& s
+			const gpu::context::data& gpu_s,
+			data& d
 		) -> void;
 	};
 }

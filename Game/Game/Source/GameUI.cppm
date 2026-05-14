@@ -5,7 +5,7 @@ import gse;
 
 export namespace gs {
 	struct client_ui_system {
-		struct state {
+		struct data {
 			bool show_cross_hair = false;
 			std::string buff;
 			float slider_f = 0.f;
@@ -13,24 +13,23 @@ export namespace gs {
 
 		static auto run(
 			gse::run_context& ctx,
-			state& s,
-			const gse::input::system::state& input_s,
-			const gse::renderer::physics_debug::system::state& pds,
-			const gse::renderer::physics_debug::system::settings& pd_cfg
+			data& d,
+			const gse::input::system::data& input_d,
+			const gse::renderer::physics_debug::system::data& pd_d
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::input::system::state& input_s, const gse::renderer::physics_debug::system::state& pds, const gse::renderer::physics_debug::system::settings& pd_cfg) -> gse::async::task<> {
+auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::input::system::data& input_d, const gse::renderer::physics_debug::system::data& pd_d) -> gse::async::task<> {
 	while (true) {
-		const auto& input = gse::input::system::current_state(input_s);
+		const auto& input = gse::input::system::current_state(input_d);
 
 		if (input.key_pressed(gse::key::escape)) {
 			gse::shutdown();
 		}
 
 		if (input.key_pressed(gse::key::n) || input.mouse_button_pressed(gse::mouse_button::button_3)) {
-			s.show_cross_hair = !s.show_cross_hair;
+			d.show_cross_hair = !d.show_cross_hair;
 		}
 
 		ctx.channels.push<gse::gui::menu_content>({
@@ -49,11 +48,11 @@ auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::input
 			});
 			ui.draw<gse::gui::input>({
 				.name = "Input Test",
-				.buffer = s.buff,
+				.buffer = d.buff,
 			});
 			ui.draw<gse::gui::slider<float>>({
 				.name = "Slider Test",
-				.value = s.slider_f,
+				.value = d.slider_f,
 				.min = 0.f,
 				.max = 10.f,
 			});
@@ -67,7 +66,7 @@ auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::input
 			},
 		});
 
-		if (pd_cfg.enabled) {
+		if (pd_d.enabled) {
 			const auto& [
 				body_count,
 				sleeping_count,
@@ -79,7 +78,7 @@ auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::input
 				max_angular_speed,
 				max_penetration,
 				gpu_solver_active
-			] = pds.latest_stats;
+			] = pd_d.latest_stats;
 
 				ctx.channels.push<gse::gui::menu_content>({
 					.menu = "Physics Debug",
@@ -127,7 +126,7 @@ auto gs::client_ui_system::run(gse::run_context& ctx, state& s, const gse::input
 		}
 
 		ctx.channels.push<gse::ui_focus_request>({
-			.focus = s.show_cross_hair,
+			.focus = d.show_cross_hair,
 		});
 
 		co_await ctx.next_tick();

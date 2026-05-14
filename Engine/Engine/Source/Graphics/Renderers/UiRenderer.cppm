@@ -116,34 +116,25 @@ export namespace gse::renderer::ui {
     };
 
     struct system {
-        struct state {};
-
-        struct resources {
+        struct data {
             gpu::pipeline sprite_pipeline;
             gpu::pipeline text_pipeline;
             std::array<frame_resources, frames_in_flight> gpu_frames;
-        };
 
-        struct frame_data {
-            triple_buffer<gpu_frame_data> data;
+            triple_buffer<gpu_frame_data> buffered_frames;
         };
 
         static auto run(
             run_context& ctx,
-            const gpu::context::state& gpu_s,
-            const asset::state& assets_s,
-            resources& r,
-            frame_data& fd,
-            state& s
+            const gpu::context::data& gpu_s,
+            const asset::data& assets_s,
+            data& d
         ) -> async::task<>;
 
         static auto frame(
             frame_context& ctx,
-            const gpu::context::state& gpu_s,
-            const resources& r,
-            frame_data& fd,
-            const state& s
+            shared_view<gpu::context> gpu_s,
+            data& d
         ) -> async::task<>;
     };
 }
-

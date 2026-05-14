@@ -62,7 +62,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		add_system<animation::system>();
 		add_system<audio::system>();
 
-		auto& asset_state = m_scheduler.state<asset::state>();
+		auto& asset_state = m_scheduler.state<asset::data>();
 
 		using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
 		gse::asset::system_for<game_assets> assets{ asset_state };
@@ -82,7 +82,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	else {
 		add_system<asset::registry>();
 
-		auto& asset_state = m_scheduler.state<asset::state>();
+		auto& asset_state = m_scheduler.state<asset::data>();
 		asset::add_loader<model>(asset_state);
 		asset::add_loader<skinned_model>(asset_state);
 
@@ -127,11 +127,11 @@ auto gse::engine::drain_lifecycle_channels() -> void {
 
 auto gse::engine::render() -> void {
 	bool frame_ok = false;
-	auto* gpu_state = m_scheduler.try_state_of<gpu::context::state>();
-	auto* asset_state = m_scheduler.try_state_of<asset::state>();
+	auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>();
+	auto* asset_state = m_scheduler.try_state_of<asset::data>();
 
 	if (gpu_state) {
-		auto& window_state = m_scheduler.state<window::state>();
+		auto& window_state = m_scheduler.state<window::data>();
 		const clock fence_timer;
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{
@@ -165,7 +165,7 @@ auto gse::engine::render() -> void {
 	if (frame_ok && gpu_state) {
 		{
 			trace::scope_guard sg{trace_id<"render::end_frame">()};
-			auto& window_state = m_scheduler.state<window::state>();
+			auto& window_state = m_scheduler.state<window::data>();
 			gpu::context::end_frame(*gpu_state, window_state);
 			if (asset_state) {
 				trace::scope_guard sg{trace_id<"end_frame::finalize_reloads">()};
@@ -183,7 +183,7 @@ auto gse::engine::shutdown() -> void {
 	m_save.save_now();
 	m_save.set_auto_save(false);
 
-	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::state>()) {
+	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
 		gpu::context::wait_idle(*gpu_state);
 	}
 

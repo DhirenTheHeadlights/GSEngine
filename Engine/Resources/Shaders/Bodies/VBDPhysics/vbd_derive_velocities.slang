@@ -8,27 +8,17 @@ if (bi == 0) {
 
 if (bi >= pc.body_count) return;
 
-gpu_body body = body_data[bi];
-bool locked = (body.flags & FLAG_LOCKED) != 0;
+body_state body = body_data[bi];
+bool locked = body.locked != 0;
 bool sleeping = body.sleep_counter >= SLEEP_THRESHOLD;
-bool update_orient = (body.flags & FLAG_UPDATE_ORIENTATION) != 0;
+bool update_orient = body.update_orientation != 0;
 
-if (locked) {
-    body.velocity = float4(0, 0, 0, 0);
-    body.angular_velocity = float4(0, 0, 0, 0);
-    body_data[bi] = body;
-    return;
-}
-
-if (sleeping) {
-    body.velocity = float4(0, 0, 0, 0);
-    body.angular_velocity = float4(0, 0, 0, 0);
-    body_data[bi] = body;
+if (locked || sleeping) {
     return;
 }
 
 float3 new_vel = (body.predicted_position.xyz - body.old_position.xyz) / pc.dt;
-body.velocity = float4(new_vel, 0);
+body.velocity = new_vel;
 
 if (update_orient) {
     float4 delta_q = quat_mul(body.predicted_orientation, quat_conjugate(body.old_orientation));
@@ -49,9 +39,9 @@ if (update_orient) {
         ang_vel = q_v * (2.0 / pc.dt);
     }
 
-    body.angular_velocity = float4(ang_vel, 0);
+    body.angular_velocity = ang_vel;
 } else {
-    body.angular_velocity = float4(0, 0, 0, 0);
+    body.angular_velocity = float3(0, 0, 0);
 }
 
 float lin_speed = length(body.velocity.xyz);

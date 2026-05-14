@@ -19,7 +19,7 @@ import gse.os;
 import gse.log;
 import gse.concurrency;
 
-auto gse::gpu::device::create(const window::state& win, const bool validation_layers_enabled, vulkan::device::settings& device_cfg) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(const window::data& win, const bool validation_layers_enabled, vulkan::device::settings& device_cfg) -> std::unique_ptr<device> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
 	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), validation_layers_enabled);

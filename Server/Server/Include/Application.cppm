@@ -8,15 +8,15 @@ import gse;
 export namespace gse {
 	template <typename... Components>
 	struct server_system {
-		struct state {
+		struct data {
 			std::optional<server<Components...>> srv;
 			gse::world* world_ptr = nullptr;
 		};
 
 		static auto run(
 			run_context& ctx,
-			state& s,
-			const actions::system::state& actions_s
+			data& d,
+			const actions::system::data& actions_d
 		) -> async::task<>;
 	};
 
@@ -25,16 +25,16 @@ export namespace gse {
 
 	template <typename ServerSystem>
 	struct server_app_system {
-		struct state {
+		struct data {
 			std::uint32_t tick_count = 0;
 			interval_timer<> timer{ seconds(5.f) };
 		};
 
 		static auto run(
 			run_context& ctx,
-			state& s,
-			const input::system::state& input_s,
-			const typename ServerSystem::state& srv
+			data& d,
+			const input::system::data& input_d,
+			const typename ServerSystem::data& srv
 		) -> async::task<>;
 	};
 
@@ -45,23 +45,23 @@ export namespace gse {
 }
 
 template <typename... Components>
-auto gse::server_system<Components...>::run(run_context& ctx, state& s, const actions::system::state& actions_s) -> async::task<> {
+auto gse::server_system<Components...>::run(run_context& ctx, data& d, const actions::system::data& actions_d) -> async::task<> {
 	while (true) {
-		if (s.srv && s.world_ptr) {
-			s.srv->update(*s.world_ptr, ctx.channels, actions_s);
+		if (d.srv && d.world_ptr) {
+			d.srv->update(*d.world_ptr, ctx.channels, actions_d);
 		}
 		co_await ctx.next_tick();
 	}
 }
 
 template <typename ServerSystem>
-auto gse::server_app_system<ServerSystem>::run(run_context& ctx, state& s, const input::system::state& input_s, const typename ServerSystem::state& srv) -> async::task<> {
+auto gse::server_app_system<ServerSystem>::run(run_context& ctx, data& d, const input::system::data& input_d, const typename ServerSystem::data& srv) -> async::task<> {
 	while (true) {
-		if (s.timer.tick()) {
-			++s.tick_count;
+		if (d.timer.tick()) {
+			++d.tick_count;
 		}
 
-		if (input::system::current_state(input_s).key_pressed(key::escape)) {
+		if (input::system::current_state(input_d).key_pressed(key::escape)) {
 			shutdown();
 		}
 
@@ -101,7 +101,7 @@ auto gse::server_app_system<ServerSystem>::run(run_context& ctx, state& s, const
 				}
 				ui.draw<gui::value<std::uint32_t>>({
 					.name = "Ticks",
-					.val = s.tick_count,
+					.val = d.tick_count,
 				});
 			},
 		});
@@ -116,10 +116,10 @@ auto gse::server_app_setup(engine& e) -> void {
 	channels.push<ui_focus_request>({ .focus = true });
 	e.world().set_networked(true);
 
-	auto& srv_state = e.add_system<ServerSystem>();
-	srv_state.srv.emplace(9000);
-	srv_state.srv->initialize();
-	srv_state.world_ptr = &e.world();
+	auto& srv_data = e.add_system<ServerSystem>();
+	srv_data.srv.emplace(9000);
+	srv_data.srv->initialize();
+	srv_data.world_ptr = &e.world();
 
 	e.add_system<server_app_system<ServerSystem>>();
 }

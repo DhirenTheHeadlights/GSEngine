@@ -4,12 +4,12 @@ if (collision_state[CONVERGED_FLAG_INDEX] != 0) return;
 uint ji = dispatch_id.x;
 if (ji >= pc.joint_count) return;
 
-gpu_joint j = joint_data[ji];
-gpu_body body_a = body_data[j.body_a];
-gpu_body body_b = body_data[j.body_b];
+joint_constraint j = joint_data[ji];
+body_state body_a = body_data[j.body_a];
+body_state body_b = body_data[j.body_b];
 
-bool a_locked = (body_a.flags & FLAG_LOCKED) != 0;
-bool b_locked = (body_b.flags & FLAG_LOCKED) != 0;
+bool a_locked = body_a.locked != 0;
+bool b_locked = body_b.locked != 0;
 bool a_sleeping = body_a.sleep_counter >= SLEEP_THRESHOLD;
 bool b_sleeping = body_b.sleep_counter >= SLEEP_THRESHOLD;
 if ((a_locked || a_sleeping) && (b_locked || b_sleeping)) return;

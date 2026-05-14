@@ -47,7 +47,7 @@ struct std::formatter<gse::resolution_info> : std::formatter<std::string> {
 
 export namespace gse {
 	struct window {
-		struct settings {
+		struct data {
 			static constexpr std::string_view category = "Window";
 
 			[[=gse::settings::describe<"Run in fullscreen on the selected monitor. When off, the window uses its last windowed rect.">{}]]
@@ -61,9 +61,7 @@ export namespace gse {
 
 			[[=gse::settings::describe<"Resolution and refresh rate used when fullscreen.">{}]]
 			gse::settings::choice<int> resolution;
-		};
 
-		struct state {
 			GLFWwindow* handle = nullptr;
 			std::string title;
 
@@ -80,50 +78,49 @@ export namespace gse {
 
 		static auto run(
 			run_context& ctx,
-			settings& cfg,
-			state& s
+			data& d
 		) -> async::task<>;
 
 		static auto shutdown(
 			shutdown_context& phase,
-			state& s
+			data& d
 		) -> void;
 
 		static auto poll_events(
 		) -> void;
 
 		[[nodiscard]] static auto is_open(
-			const state& s
+			const data& d
 		) -> bool;
 
 		[[nodiscard]] static auto minimized(
-			const state& s
+			const data& d
 		) -> bool;
 
 		[[nodiscard]] static auto viewport(
-			const state& s
+			const data& d
 		) -> vec2i;
 
 		[[nodiscard]] static auto frame_buffer_resized(
-			state& s
+			data& d
 		) -> bool;
 
 		[[nodiscard]] static auto create_vulkan_surface(
-			const state& s,
+			const data& d,
 			vk::Instance instance
 		) -> vk::SurfaceKHR;
 
 		[[nodiscard]] static auto raw_handle(
-			const state& s
+			const data& d
 		) -> GLFWwindow*;
 
 		static auto set_ui_focus(
-			state& s,
+			data& d,
 			bool focus
 		) -> void;
 
 		[[nodiscard]] static auto ui_focus(
-			const state& s
+			const data& d
 		) -> bool;
 
 		[[nodiscard]] static auto vulkan_instance_extensions(

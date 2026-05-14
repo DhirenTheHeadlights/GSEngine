@@ -1,7 +1,7 @@
 
 static const uint WG_SIZE = 64;
 
-groupshared uint gs_body_flags[MAX_BODIES];
+groupshared uint gs_body_locked[MAX_BODIES];
 groupshared uint gs_body_color[MAX_BODIES];
 groupshared uint gs_body_color_next[MAX_BODIES];
 groupshared uint gs_color_group_count[MAX_COLORS];
@@ -24,12 +24,12 @@ uint num_joints = min(pc.joint_count, MAX_JOINTS);
 for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
     contact_offsets[bi] = 0;
     contact_counts[bi] = 0;
-    gs_body_flags[bi] = body_data[bi].flags;
+    gs_body_locked[bi] = body_data[bi].locked;
 }
 AllMemoryBarrierWithGroupSync();
 
 for (uint ci = tid; ci < num_contacts; ci += WG_SIZE) {
-    gpu_contact c = contact_data[ci];
+    contact_constraint c = contact_data[ci];
     if (c.body_a < body_count && c.body_b < body_count) {
         uint dummy;
         InterlockedAdd(contact_counts[c.body_a], 1u, dummy);
@@ -54,7 +54,7 @@ for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
 AllMemoryBarrierWithGroupSync();
 
 for (uint ci = tid; ci < num_contacts; ci += WG_SIZE) {
-    gpu_contact c = contact_data[ci];
+    contact_constraint c = contact_data[ci];
     if (c.body_a < body_count && c.body_b < body_count) {
         uint slot_a;
         InterlockedAdd(contact_counts[c.body_a], 1u, slot_a);
@@ -80,7 +80,7 @@ for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
 AllMemoryBarrierWithGroupSync();
 
 for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
-    gpu_joint j = joint_data[ji];
+    joint_constraint j = joint_data[ji];
     if (j.body_a < body_count && j.body_b < body_count) {
         uint dummy;
         InterlockedAdd(joint_counts[j.body_a], 1u, dummy);
@@ -105,7 +105,7 @@ for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
 AllMemoryBarrierWithGroupSync();
 
 for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
-    gpu_joint j = joint_data[ji];
+    joint_constraint j = joint_data[ji];
     if (j.body_a < body_count && j.body_b < body_count) {
         uint slot_a;
         InterlockedAdd(joint_counts[j.body_a], 1u, slot_a);
@@ -125,10 +125,10 @@ for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
 AllMemoryBarrierWithGroupSync();
 
 for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
-    gpu_joint j = joint_data[ji];
+    joint_constraint j = joint_data[ji];
     if (j.body_a >= body_count || j.body_b >= body_count) continue;
-    gpu_body ba = body_data[j.body_a];
-    gpu_body bb = body_data[j.body_b];
+    body_state ba = body_data[j.body_a];
+    body_state bb = body_data[j.body_b];
     float3 r_aw = rotate_vector(ba.orientation, j.local_anchor_a.xyz);
     float3 r_bw = rotate_vector(bb.orientation, j.local_anchor_b.xyz);
     float3 d = (ba.position.xyz + r_aw) - (bb.position.xyz + r_bw);
@@ -137,13 +137,13 @@ for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
         j.pos_c0.x = length(d) - j.target_distance;
     }
     else if (j.type == JOINT_TYPE_FIXED || j.type == JOINT_TYPE_HINGE) {
-        j.pos_c0 = float4(d.x, d.y, d.z, 0);
+        j.pos_c0 = d;
 
         float4 q_error = quat_mul(bb.orientation, quat_mul(quat_conjugate(ba.orientation), quat_conjugate(j.rest_orientation)));
         float3 theta = to_axis_angle(q_error);
 
         if (j.type == JOINT_TYPE_FIXED) {
-            j.ang_c0 = float4(theta, 0);
+            j.ang_c0 = theta;
         }
         else {
             float3 axis_a = rotate_vector(ba.orientation, j.local_axis_a.xyz);
@@ -175,7 +175,7 @@ for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
 
         float4 q_error = quat_mul(bb.orientation, quat_mul(quat_conjugate(ba.orientation), quat_conjugate(j.rest_orientation)));
         float3 theta = to_axis_angle(q_error);
-        j.ang_c0 = float4(theta, 0);
+        j.ang_c0 = theta;
     }
 
     joint_data[ji] = j;
@@ -206,7 +206,7 @@ for (uint round = 0; round < 32; round++) {
             gs_body_color_next[bi] = current;
             continue;
         }
-        if ((gs_body_flags[bi] & FLAG_LOCKED) != 0) {
+        if (gs_body_locked[bi] != 0) {
             gs_body_color_next[bi] = 0xFFFFFFFF;
             continue;
         }
@@ -228,7 +228,7 @@ for (uint round = 0; round < 32; round++) {
             if (idx >= MAX_CONTACT_ADJACENCY) break;
             uint ci = contact_adjacency[idx];
             if (ci >= num_contacts) continue;
-            gpu_contact c = contact_data[ci];
+            contact_constraint c = contact_data[ci];
             uint other = (c.body_a == bi) ? c.body_b : c.body_a;
             if (other < body_count) {
                 uint other_color = gs_body_color[other];
@@ -250,7 +250,7 @@ for (uint round = 0; round < 32; round++) {
             if (idx >= MAX_JOINT_ADJACENCY) break;
             uint ji = joint_adjacency[idx];
             if (ji >= num_joints) continue;
-            gpu_joint j = joint_data[ji];
+            joint_constraint j = joint_data[ji];
             uint other = (j.body_a == bi) ? j.body_b : j.body_a;
             if (other < body_count) {
                 uint other_color = gs_body_color[other];
@@ -304,7 +304,7 @@ if (tid == 0) {
     bool used_motor_only_color = false;
 
     for (uint bi = 0; bi < body_count; bi++) {
-        if ((gs_body_flags[bi] & FLAG_LOCKED) != 0) continue;
+        if (gs_body_locked[bi] != 0) continue;
 
         uint cc = contact_counts[bi];
         bool has_motor = motor_map[bi] != 0xFFFFFFFF;
@@ -323,7 +323,7 @@ if (tid == 0) {
             ? (motor_only_color + 1)
             : motor_only_color;
     for (uint bi = 0; bi < body_count; bi++) {
-        if ((gs_body_flags[bi] & FLAG_LOCKED) != 0) continue;
+        if (gs_body_locked[bi] != 0) continue;
 
         uint cc = contact_counts[bi];
         bool has_motor = motor_map[bi] != 0xFFFFFFFF;

@@ -13,22 +13,17 @@ import :run_context;
 import :settings;
 import :frame_context;
 import :system_node;
+import :shared_view;
 
 export namespace gse {
-	template <typename S, bool = names_data<S>, bool = names_state<S>>
+	template <typename S, bool = names_data<S>>
 	struct state_of_helper {
 		using type = S;
 	};
 
-	template <typename S, bool AnyState>
-	struct state_of_helper<S, true, AnyState> {
-		static_assert(!AnyState, "system declares both `data` and `state`; pick one");
-		using type = typename S::data;
-	};
-
 	template <typename S>
-	struct state_of_helper<S, false, true> {
-		using type = typename S::state;
+	struct state_of_helper<S, true> {
+		using type = typename S::data;
 	};
 
 	template <typename S>
@@ -36,47 +31,6 @@ export namespace gse {
 }
 
 namespace gse {
-
-	template <typename S, bool = has_resources<S>>
-	struct resource_storage {};
-
-	template <typename S>
-	struct resource_storage<S, true> {
-		typename S::resources value;
-	};
-
-	template <typename S, bool = has_update_data<S>>
-	struct update_data_storage {};
-
-	template <typename S>
-	struct update_data_storage<S, true> {
-		typename S::update_data value;
-	};
-
-	template <typename S, bool = has_frame_data<S>>
-	struct frame_data_storage {};
-
-	template <typename S>
-	struct frame_data_storage<S, true> {
-		typename S::frame_data value;
-	};
-
-	template <typename S, bool = has_settings<S>>
-	struct settings_storage {};
-
-	template <typename S>
-	struct settings_storage<S, true> {
-		typename S::settings value;
-	};
-
-	template <typename S, bool = has_settings<S>>
-	struct settings_is_trivial : std::false_type {};
-
-	template <typename S>
-	struct settings_is_trivial<S, true> : std::bool_constant<std::is_trivially_copyable_v<typename S::settings>> {};
-
-	template <typename S>
-	constexpr bool settings_is_trivial_v = settings_is_trivial<S>::value;
 
 	template <typename State, bool = std::is_trivially_copyable_v<State>>
 	struct snapshot_storage {};
@@ -86,14 +40,6 @@ namespace gse {
 		State value{};
 	};
 
-	template <typename S, bool = has_settings<S>>
-	struct settings_snapshot_storage {};
-
-	template <typename S>
-	struct settings_snapshot_storage<S, true> {
-		[[no_unique_address]] settings_storage<S> value;
-	};
-
 	template <typename S>
 	struct system_node_data {
 		template <typename... Args>
@@ -101,50 +47,9 @@ namespace gse {
 			Args&&... args
 		);
 
-		[[no_unique_address]] resource_storage<S> resources;
-		[[no_unique_address]] update_data_storage<S> update_data;
-		[[no_unique_address]] frame_data_storage<S> frame_data;
-		[[no_unique_address]] settings_storage<S> settings;
 		state_of_t<S> state;
 		[[no_unique_address]] snapshot_storage<state_of_t<S>> snapshot;
-		[[no_unique_address]] settings_snapshot_storage<S> settings_snapshot;
 	};
-
-	template <typename U, typename S, bool = has_resources<S>>
-	struct matches_resources_t : std::false_type {};
-
-	template <typename U, typename S>
-	struct matches_resources_t<U, S, true> : std::bool_constant<std::is_same_v<U, typename S::resources>> {};
-
-	template <typename U, typename S>
-	constexpr bool matches_resources_v = matches_resources_t<U, S>::value;
-
-	template <typename U, typename S, bool = has_update_data<S>>
-	struct matches_update_data_t : std::false_type {};
-
-	template <typename U, typename S>
-	struct matches_update_data_t<U, S, true> : std::bool_constant<std::is_same_v<U, typename S::update_data>> {};
-
-	template <typename U, typename S>
-	constexpr bool matches_update_data_v = matches_update_data_t<U, S>::value;
-
-	template <typename U, typename S, bool = has_frame_data<S>>
-	struct matches_frame_data_t : std::false_type {};
-
-	template <typename U, typename S>
-	struct matches_frame_data_t<U, S, true> : std::bool_constant<std::is_same_v<U, typename S::frame_data>> {};
-
-	template <typename U, typename S>
-	constexpr bool matches_frame_data_v = matches_frame_data_t<U, S>::value;
-
-	template <typename U, typename S, bool = has_settings<S>>
-	struct matches_settings_t : std::false_type {};
-
-	template <typename U, typename S>
-	struct matches_settings_t<U, S, true> : std::bool_constant<std::is_same_v<U, typename S::settings>> {};
-
-	template <typename U, typename S>
-	constexpr bool matches_settings_v = matches_settings_t<U, S>::value;
 
 	template <typename T>
 	using dep_pointee_t = std::remove_cv_t<std::remove_pointer_t<std::remove_cvref_t<T>>>;
@@ -164,16 +69,7 @@ namespace gse {
 		else if constexpr (std::is_same_v<U, state_of_t<S>>) {
 			return false;
 		}
-		else if constexpr (matches_resources_v<U, S>) {
-			return false;
-		}
-		else if constexpr (matches_update_data_v<U, S>) {
-			return false;
-		}
-		else if constexpr (matches_frame_data_v<U, S>) {
-			return false;
-		}
-		else if constexpr (matches_settings_v<U, S>) {
+		else if constexpr (is_shared_view_v<U>) {
 			return false;
 		}
 		else {
@@ -192,28 +88,16 @@ namespace gse {
 		const task_context& ctx
 	) -> const T&;
 
-	template <typename T>
-	auto direct_resources_ref(
-		const task_context& ctx
-	) -> const T&;
-
 	template <typename Arg, typename S>
 	auto resolve_run_arg(
 		run_context& ctx,
-		resource_storage<S>& resources,
-		update_data_storage<S>& update_data,
-		frame_data_storage<S>& frame_data,
-		settings_storage<S>& settings,
 		state_of_t<S>& state
 	) -> decltype(auto);
 
 	template <typename Arg, typename S>
 	auto resolve_frame_arg(
 		frame_context& ctx,
-		resource_storage<S>& resources,
-		frame_data_storage<S>& frame_data,
-		const settings_storage<S>& settings,
-		const state_of_t<S>& state
+		state_of_t<S>& state
 	) -> decltype(auto);
 
 	template <typename S>
@@ -296,11 +180,6 @@ namespace gse {
 	) -> std::array<id, compute_state_dep_count<MemberFn, S>()>;
 
 	template <typename S>
-	concept shutdown_takes_resources_state = has_resources<S> && requires(shutdown_context& p, typename S::resources& r, state_of_t<S>& s) {
-		S::shutdown(p, r, s);
-	};
-
-	template <typename S>
 	concept shutdown_takes_state = requires(shutdown_context& p, state_of_t<S>& s) {
 		S::shutdown(p, s);
 	};
@@ -331,37 +210,25 @@ auto gse::direct_state_ref(const task_context& ctx) -> const T& {
 	if (!p) {
 		p = ctx.resources_store.resources_ptr(id_of<T>());
 	}
-	assert(p != nullptr, "cross-system state or resources not found");
-	return *static_cast<const T*>(p);
-}
-
-template <typename T>
-auto gse::direct_resources_ref(const task_context& ctx) -> const T& {
-	const auto* p = ctx.resources_store.resources_ptr(id_of<T>());
-	assert(p != nullptr, "resources not found");
+	assert(p != nullptr, "cross-system state or external resource not found");
 	return *static_cast<const T*>(p);
 }
 
 template <typename Arg, typename S>
-auto gse::resolve_run_arg(run_context& ctx, resource_storage<S>& resources, update_data_storage<S>& update_data, frame_data_storage<S>& frame_data, settings_storage<S>& settings, state_of_t<S>& state) -> decltype(auto) {
+auto gse::resolve_run_arg(run_context& ctx, state_of_t<S>& state) -> decltype(auto) {
 	using U = std::remove_cvref_t<Arg>;
 	if constexpr (std::is_same_v<U, run_context>) {
 		return (ctx);
 	}
-	else if constexpr (matches_resources_v<U, S>) {
-		return (resources.value);
-	}
-	else if constexpr (matches_update_data_v<U, S>) {
-		return (update_data.value);
-	}
-	else if constexpr (matches_frame_data_v<U, S>) {
-		return (frame_data.value);
-	}
-	else if constexpr (matches_settings_v<U, S>) {
-		return (settings.value);
-	}
 	else if constexpr (std::is_same_v<U, state_of_t<S>>) {
 		return (state);
+	}
+	else if constexpr (is_shared_view_v<U>) {
+		using Target = shared_view_target_t<U>;
+		constexpr id lookup_id = id_of<Target>();
+		const void* p = ctx.states.state_ptr(lookup_id);
+		assert(p != nullptr, "shared_view target system not registered");
+		return make_shared_view<Target>(*static_cast<const typename Target::data*>(p));
 	}
 	else if constexpr (std::is_pointer_v<U>) {
 		using Pointee = dep_pointee_t<Arg>;
@@ -389,22 +256,23 @@ auto gse::resolve_run_arg(run_context& ctx, resource_storage<S>& resources, upda
 }
 
 template <typename Arg, typename S>
-auto gse::resolve_frame_arg(frame_context& ctx, resource_storage<S>& resources, frame_data_storage<S>& frame_data, const settings_storage<S>& settings, const state_of_t<S>& state) -> decltype(auto) {
+auto gse::resolve_frame_arg(frame_context& ctx, state_of_t<S>& state) -> decltype(auto) {
 	using U = std::remove_cvref_t<Arg>;
 	if constexpr (std::is_same_v<U, frame_context>) {
 		return (ctx);
 	}
-	else if constexpr (matches_resources_v<U, S>) {
-		return (resources.value);
-	}
-	else if constexpr (matches_frame_data_v<U, S>) {
-		return (frame_data.value);
-	}
-	else if constexpr (matches_settings_v<U, S>) {
-		return (settings.value);
-	}
 	else if constexpr (std::is_same_v<U, state_of_t<S>>) {
 		return (state);
+	}
+	else if constexpr (is_shared_view_v<U>) {
+		using Target = shared_view_target_t<U>;
+		constexpr id lookup_id = id_of<Target>();
+		const void* p = ctx.live_state ? ctx.states.state_ptr(lookup_id)
+		                                : (ctx.states.state_snapshot_ptr(lookup_id)
+		                                    ? ctx.states.state_snapshot_ptr(lookup_id)
+		                                    : ctx.states.state_ptr(lookup_id));
+		assert(p != nullptr, "shared_view target system not registered");
+		return make_shared_view<Target>(*static_cast<const typename Target::data*>(p));
 	}
 	else if constexpr (std::is_pointer_v<U>) {
 		using Pointee = dep_pointee_t<Arg>;
@@ -447,11 +315,6 @@ consteval auto gse::compute_state_dep_id() -> id {
 		using parent_t = typename [: std::meta::parent_of(entity) :];
 		if constexpr (requires { typename parent_t::data; }) {
 			if constexpr (std::is_same_v<typename parent_t::data, T>) {
-				return id_of<parent_t>();
-			}
-		}
-		if constexpr (requires { typename parent_t::state; }) {
-			if constexpr (std::is_same_v<typename parent_t::state, T>) {
 				return id_of<parent_t>();
 			}
 		}
@@ -545,11 +408,7 @@ auto gse::extract_frame_state_deps() -> std::vector<id> {
 template <typename S>
 auto gse::invoke_shutdown_for(shutdown_context& phase, void* data_ptr) -> void {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
-	if constexpr (shutdown_takes_resources_state<S>) {
-		S::shutdown(phase, d.resources.value, d.state);
-		return;
-	}
-	else if constexpr (shutdown_takes_state<S>) {
+	if constexpr (shutdown_takes_state<S>) {
 		S::shutdown(phase, d.state);
 		return;
 	}
@@ -568,7 +427,7 @@ auto gse::invoke_run_for(run_context& ctx, void* data_ptr) -> async::task<> {
 	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
 		return S::run(
 			resolve_run_arg<arg_type_of<^^S::run, Is>, S>(
-				ctx, d.resources, d.update_data, d.frame_data, d.settings, d.state
+				ctx, d.state
 			)...
 		);
 	}(std::make_index_sequence<arity_of<^^S::run>>{});
@@ -577,26 +436,10 @@ auto gse::invoke_run_for(run_context& ctx, void* data_ptr) -> async::task<> {
 template <typename S>
 auto gse::invoke_frame_for(frame_context& ctx, void* data_ptr) -> async::task<> {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
-	const state_of_t<S>& state_ref = [&]() -> const state_of_t<S>& {
-		if constexpr (std::is_trivially_copyable_v<state_of_t<S>>) {
-			return d.snapshot.value;
-		}
-		else {
-			return d.state;
-		}
-	}();
-	const settings_storage<S>& settings_ref = [&]() -> const settings_storage<S>& {
-		if constexpr (settings_is_trivial_v<S>) {
-			return d.settings_snapshot.value;
-		}
-		else {
-			return d.settings;
-		}
-	}();
 	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
 		return S::frame(
 			resolve_frame_arg<arg_type_of<^^S::frame, Is>, S>(
-				ctx, d.resources, d.frame_data, settings_ref, state_ref
+				ctx, d.state
 			)...
 		);
 	}(std::make_index_sequence<arity_of<^^S::frame>>{});
@@ -608,30 +451,32 @@ auto gse::invoke_snapshot_for(void* data_ptr) -> void {
 	if constexpr (std::is_trivially_copyable_v<state_of_t<S>>) {
 		d.snapshot.value = d.state;
 	}
-	if constexpr (settings_is_trivial_v<S>) {
-		d.settings_snapshot.value.value = d.settings.value;
-	}
 }
 
 template <typename S>
 auto gse::invoke_apply_settings_for(void* data_ptr, channel_registry& channels_store, channel_writer& channels) -> void {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
-	using T = typename S::settings;
-	channels_store.ensure(id_of<settings::change_request<T>>(), +[]() -> std::unique_ptr<channel_base> {
-		return std::make_unique<typed_channel<settings::change_request<T>>>();
+	using data_t = typename S::data;
+	channels_store.ensure(id_of<settings::change_request<S>>(), +[]() -> std::unique_ptr<channel_base> {
+		return std::make_unique<typed_channel<settings::change_request<S>>>();
 	});
-	const auto* snap = channels_store.snapshot_data(id_of<settings::change_request<T>>());
+	const auto* snap = channels_store.snapshot_data(id_of<settings::change_request<S>>());
 	if (!snap) {
 		return;
 	}
-	const auto& reqs = *static_cast<const std::vector<settings::change_request<T>>*>(snap);
+	const auto& reqs = *static_cast<const std::vector<settings::change_request<S>>*>(snap);
 	for (const auto& req : reqs) {
 		if (!req.apply) {
 			continue;
 		}
-		T old_value = d.settings.value;
-		req.apply(d.settings.value);
-		channels.push(settings::changed<T>{ .old_value = std::move(old_value), .new_value = d.settings.value });
+		if constexpr (std::is_trivially_copyable_v<data_t>) {
+			data_t old_value = d.state;
+			req.apply(d.state);
+			channels.push<settings::changed<S>>({ .old_value = std::move(old_value), .new_value = d.state });
+		}
+		else {
+			req.apply(d.state);
+		}
 	}
 }
 
@@ -665,8 +510,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 		node.invoke_frame_fn = &noop_dispatchers::noop_frame_for<S>;
 	}
 	constexpr bool has_state_snapshot = std::is_trivially_copyable_v<state_of_t<S>>;
-	constexpr bool has_settings_snapshot = settings_is_trivial_v<S>;
-	if constexpr (has_state_snapshot || has_settings_snapshot) {
+	if constexpr (has_state_snapshot) {
 		node.invoke_snapshot_fn = &invoke_snapshot_for<S>;
 	}
 	else {
@@ -680,26 +524,11 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	if constexpr (has_state_snapshot) {
 		node.state_snapshot_ptr = &d->snapshot.value;
 	}
-	if constexpr (has_resources<S>) {
-		node.resources_ptr = &d->resources.value;
-		node.resources_id = id_of<typename S::resources>();
-	}
 	if constexpr (has_settings<S>) {
-		node.settings_ptr = &d->settings.value;
-		node.settings_id = id_of<typename S::settings>();
 		node.invoke_apply_settings_fn = &invoke_apply_settings_for<S>;
-		if constexpr (has_settings_snapshot) {
-			node.settings_snapshot_ptr = &d->settings_snapshot.value.value;
-		}
 	}
 	node.has_frame = names_frame<S>;
 	node.state_id = id_of<S>();
-	if constexpr (names_data<S>) {
-		node.state_type_id = id_of<typename S::data>();
-	}
-	else if constexpr (names_state<S>) {
-		node.state_type_id = id_of<typename S::state>();
-	}
 	node.update_wall_id = find_or_generate_id(std::format("update_wall:{}", type_tag<S>()));
 	node.frame_wall_id = find_or_generate_id(std::format("frame_wall:{}", type_tag<S>()));
 	node.trace_id = trace_id<S>();

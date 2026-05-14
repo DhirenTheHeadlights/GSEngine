@@ -22,7 +22,7 @@ export namespace gse {
 	struct evaluation_context {
 		std::optional<id> client_id = std::nullopt;
 		const actions::state* input = nullptr;
-		const actions::system::state* actions_sys = nullptr;
+		const actions::system::data* actions_sys = nullptr;
 		registry* registry = nullptr;
 	};
 
@@ -268,7 +268,7 @@ namespace gse {
 
 auto gse::world::update() -> void {
 	if (!m_networked) {
-		const auto& a = state_of<actions::system::state>();
+		const auto& a = state_of<actions::system::data>();
 		const auto& s = actions::system::current_state(a);
 
 		for (const auto& [scene_id, condition] : m_triggers) {
@@ -281,7 +281,7 @@ auto gse::world::update() -> void {
 
 			if (condition(ctx) && scene_id != m_active_scene) {
 				auto channels = m_scheduler->make_channel_writer();
-				auto& assets = m_scheduler->state<asset::state>();
+				auto& assets = m_scheduler->state<asset::data>();
 				if (m_active_scene.has_value()) {
 					if (auto* old_scene = scene(m_active_scene.value())) {
 						old_scene->set_active(false, channels, assets);
@@ -304,7 +304,7 @@ auto gse::world::render() -> void {}
 
 auto gse::world::shutdown() -> void {
 	auto channels = m_scheduler->make_channel_writer();
-	auto& assets = m_scheduler->state<asset::state>();
+	auto& assets = m_scheduler->state<asset::data>();
 	for (const auto& scene : m_scenes | std::views::values) {
 		if (scene->active()) {
 			scene->set_active(false, channels, assets);
@@ -350,7 +350,7 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 	);
 
 	auto channels = m_scheduler->make_channel_writer();
-	auto& assets = m_scheduler->state<asset::state>();
+	auto& assets = m_scheduler->state<asset::data>();
 	if (m_active_scene.has_value() && m_active_scene.value() == scene_id) {
 		if (auto* old_scene = scene(m_active_scene.value())) {
 			old_scene->set_active(false, channels, assets);
@@ -377,7 +377,7 @@ auto gse::world::deactivate(const gse::id& scene_id) -> void {
 	if (m_active_scene.has_value()) {
 		if (auto* old_scene = scene(m_active_scene.value())) {
 			auto channels = m_scheduler->make_channel_writer();
-			auto& assets = m_scheduler->state<asset::state>();
+			auto& assets = m_scheduler->state<asset::data>();
 			old_scene->set_active(false, channels, assets);
 		}
 	}

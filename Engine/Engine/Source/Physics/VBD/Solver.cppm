@@ -8,6 +8,7 @@ import :vbd_constraints;
 import :vbd_constraint_graph;
 import :vbd_contact_cache;
 import :motion_component;
+import :contact_manifold;
 
 export namespace gse::vbd {
 	using time_step = time_t<float, seconds>;
@@ -248,8 +249,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	for (auto& c : m_graph.contact_constraints()) {
 		const auto& ba = m_bodies[c.body_a];
 		const auto& bb = m_bodies[c.body_b];
-		const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, c.r_a);
-		const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, c.r_b);
+		const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, c.local_anchor_a);
+		const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, c.local_anchor_b);
 		const vec3<position> p_a = ba.position + r_aw;
 		const vec3<position> p_b = bb.position + r_bw;
 		const vec3<displacement> d = p_a - p_b;
@@ -258,8 +259,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		c.c0[1] = dot(c.tangent_u, d);
 		c.c0[2] = dot(c.tangent_v, d);
 
-		const auto va = ba.body_velocity + cross(ba.body_angular_velocity, r_aw) / rad;
-		const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, r_bw) / rad;
+		const auto va = ba.velocity + cross(ba.angular_velocity, r_aw) / rad;
+		const auto vb = bb.velocity + cross(bb.angular_velocity, r_bw) / rad;
 		const velocity v_rel_n = dot(c.normal, va - vb);
 		c.approach_speed = (v_rel_n < normal_speed{}) ? normal_speed{ v_rel_n } : normal_speed{};
 	}
@@ -268,8 +269,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const auto& ba = m_bodies[c.body_a];
 		const auto& bb = m_bodies[c.body_b];
 
-		const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, c.r_a);
-		const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, c.r_b);
+		const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, c.local_anchor_a);
+		const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, c.local_anchor_b);
 
 		const stiffness base_floor = std::max(c.penalty_floor, m_config.penalty_min);
 		const bool active_normal = c.lambda[0] < newtons(-1e-3f) || c.c0[0] < meters(-1e-4f);
@@ -515,11 +516,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		auto& body = m_bodies[i];
 		if (body.locked || body.sleeping()) {
 			m_accel_weight[i] = 0.f;
-			m_prev_velocity[i] = body.body_velocity;
+			m_prev_velocity[i] = body.velocity;
 			continue;
 		}
 
-		const velocity delta_vy = body.body_velocity.y() - m_prev_velocity[i].y();
+		const velocity delta_vy = body.velocity.y() - m_prev_velocity[i].y();
 		const acceleration accel_y = delta_vy / dt;
 		float aw = std::clamp(-(accel_y / gravity_mag), 0.f, 1.f);
 		if (!std::isfinite(aw)) {
@@ -527,7 +528,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		}
 		m_accel_weight[i] = aw;
 
-		m_prev_velocity[i] = body.body_velocity;
+		m_prev_velocity[i] = body.velocity;
 	}
 
 	for (std::uint32_t i = 0; i < num_bodies; ++i) {
@@ -541,35 +542,35 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			continue;
 		}
 
-		body.body_velocity *= (1.f - m_config.linear_damping);
-		body.body_angular_velocity *= (1.f - m_config.angular_damping);
+		body.velocity *= (1.f - m_config.linear_damping);
+		body.angular_velocity *= (1.f - m_config.angular_damping);
 
 		constexpr velocity max_linear_speed = meters_per_second(15.f);
-		if (const auto v = magnitude(body.body_velocity); v > max_linear_speed) {
-			body.body_velocity *= (max_linear_speed / v);
+		if (const auto v = magnitude(body.velocity); v > max_linear_speed) {
+			body.velocity *= (max_linear_speed / v);
 		}
 
 		constexpr angular_velocity max_angular_speed = radians_per_second(50.f);
-		if (const auto w = magnitude(body.body_angular_velocity); w > max_angular_speed) {
-			body.body_angular_velocity *= (max_angular_speed / w);
+		if (const auto w = magnitude(body.angular_velocity); w > max_angular_speed) {
+			body.angular_velocity *= (max_angular_speed / w);
 		}
 
-		body.inertia_target = body.position + body.body_velocity * dt;
+		body.inertia_target = body.position + body.velocity * dt;
 		if (body.affected_by_gravity) {
 			body.inertia_target += gravity * dt * dt;
 		}
 
-		body.initial_position = body.position;
-		body.initial_orientation = body.orientation;
+		body.old_position = body.position;
+		body.old_orientation = body.orientation;
 
 		const float aw = m_accel_weight[i];
-		body.predicted_position = body.position + body.body_velocity * dt;
+		body.predicted_position = body.position + body.velocity * dt;
 		if (body.affected_by_gravity) {
 			body.predicted_position += gravity * dt * dt * aw;
 		}
 
 		if (body.update_orientation) {
-			const vec3<angle> aa = body.body_angular_velocity * dt;
+			const vec3<angle> aa = body.angular_velocity * dt;
 			if (magnitude(aa) > radians(1e-7f)) {
 				body.predicted_orientation = normalize(from_axis_angle_vector(aa) * body.orientation);
 			}
@@ -601,7 +602,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			}
 		}
 
-		const vec3<target_position> target = body.initial_position + motor.target_velocity * dt;
+		const vec3<target_position> target = body.old_position + motor.target_velocity * dt;
 		if (motor.horizontal_only) {
 			body.motor_target.x() = target.x();
 			body.motor_target.z() = target.z();
@@ -615,10 +616,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	for (const auto& c : m_graph.contact_constraints()) {
 		auto& a = m_bodies[c.body_a];
 		auto& b = m_bodies[c.body_b];
-		if (a.sleeping() && !b.locked && !b.sleeping() && magnitude(b.body_velocity) > wake_thresh) {
+		if (a.sleeping() && !b.locked && !b.sleeping() && magnitude(b.velocity) > wake_thresh) {
 			a.sleep_counter = 0;
 		}
-		if (b.sleeping() && !a.locked && !a.sleeping() && magnitude(a.body_velocity) > wake_thresh) {
+		if (b.sleeping() && !a.locked && !a.sleeping() && magnitude(a.velocity) > wake_thresh) {
 			b.sleep_counter = 0;
 		}
 	}
@@ -648,8 +649,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const auto& ba = m_bodies[c.body_a];
 		const auto& bb = m_bodies[c.body_b];
 
-		const vec3<lever_arm> r_aw = rotate_vector(ba.predicted_orientation, c.r_a);
-		const vec3<lever_arm> r_bw = rotate_vector(bb.predicted_orientation, c.r_b);
+		const vec3<lever_arm> r_aw = rotate_vector(ba.predicted_orientation, c.local_anchor_a);
+		const vec3<lever_arm> r_bw = rotate_vector(bb.predicted_orientation, c.local_anchor_b);
 		const std::array dirs = { c.normal, c.tangent_u, c.tangent_v };
 
 		m_frozen_jacobians[ci] = {
@@ -758,10 +759,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	for (auto& body : m_bodies) {
 		if (!body.locked && !body.sleeping() && body.mass > mass{}) {
-			body.body_velocity = (body.predicted_position - body.initial_position) / dt;
+			body.velocity = (body.predicted_position - body.old_position) / dt;
 
 			if (body.update_orientation) {
-				body.body_angular_velocity = difference_axis_angle(body.initial_orientation, body.predicted_orientation) / dt;
+				body.angular_velocity = difference_axis_angle(body.old_orientation, body.predicted_orientation) / dt;
 			}
 		}
 	}
@@ -780,11 +781,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		auto& ba = m_bodies[c.body_a];
 		auto& bb = m_bodies[c.body_b];
 
-		const vec3<lever_arm> rAW = rotate_vector(ba.orientation, c.r_a);
-		const vec3<lever_arm> rBW = rotate_vector(bb.orientation, c.r_b);
+		const vec3<lever_arm> rAW = rotate_vector(ba.orientation, c.local_anchor_a);
+		const vec3<lever_arm> rBW = rotate_vector(bb.orientation, c.local_anchor_b);
 
-		const auto va = ba.body_velocity + cross(ba.body_angular_velocity, rAW) / rad;
-		const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, rBW) / rad;
+		const auto va = ba.velocity + cross(ba.angular_velocity, rAW) / rad;
+		const auto vb = bb.velocity + cross(bb.angular_velocity, rBW) / rad;
 		const velocity v_rel_after = dot(c.normal, va - vb);
 
 		const float speed_ratio = std::clamp(
@@ -809,10 +810,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const auto impulse = c.normal * (dv / w_total);
 
 		if (!ba.locked) {
-			ba.body_velocity += impulse * w_a;
+			ba.velocity += impulse * w_a;
 		}
 		if (!bb.locked) {
-			bb.body_velocity -= impulse * w_b;
+			bb.velocity -= impulse * w_b;
 		}
 	}
 
@@ -828,8 +829,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			continue;
 		}
 
-		if (magnitude(body.body_velocity) < m_config.velocity_sleep_threshold &&
-			magnitude(body.body_angular_velocity) < m_config.angular_sleep_threshold) {
+		if (magnitude(body.velocity) < m_config.velocity_sleep_threshold &&
+			magnitude(body.angular_velocity) < m_config.angular_sleep_threshold) {
 			++body.sleep_counter;
 		}
 		else {
@@ -854,14 +855,14 @@ auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache&
 			tangential_gap < m_config.stick_threshold &&
 			tangential_lambda < friction_bound;
 
-		cache.store(c.body_a, c.body_b, c.feature, cached_lambda{
+		cache.store(c.body_a, c.body_b, unpack_feature(c.feature_key), cached_lambda{
 			.lambda = c.lambda,
 			.penalty = c.penalty,
 			.normal = c.normal,
 			.tangent_u = c.tangent_u,
 			.tangent_v = c.tangent_v,
-			.local_anchor_a = c.r_a,
-			.local_anchor_b = c.r_b,
+			.local_anchor_a = c.local_anchor_a,
+			.local_anchor_b = c.local_anchor_b,
 			.sticking = sticking,
 			.age = 0
 		});
@@ -963,8 +964,8 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 		const auto& body_a = m_bodies[c.body_a];
 		const auto& body_b = m_bodies[c.body_b];
 
-		const vec3<lever_arm> r_aw = rotate_vector(body_a.predicted_orientation, c.r_a);
-		const vec3<lever_arm> r_bw = rotate_vector(body_b.predicted_orientation, c.r_b);
+		const vec3<lever_arm> r_aw = rotate_vector(body_a.predicted_orientation, c.local_anchor_a);
+		const vec3<lever_arm> r_bw = rotate_vector(body_b.predicted_orientation, c.local_anchor_b);
 		const vec3<predicted_position> p_a = body_a.predicted_position + r_aw;
 		const vec3<predicted_position> p_b = body_b.predicted_position + r_bw;
 		const vec3<displacement> d = p_a - p_b;
@@ -1083,8 +1084,8 @@ auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
 		const auto& body_a = m_bodies[con.body_a];
 		const auto& body_b = m_bodies[con.body_b];
 
-		const vec3<lever_arm> rAW = rotate_vector(body_a.predicted_orientation, con.r_a);
-		const vec3<lever_arm> rBW = rotate_vector(body_b.predicted_orientation, con.r_b);
+		const vec3<lever_arm> rAW = rotate_vector(body_a.predicted_orientation, con.local_anchor_a);
+		const vec3<lever_arm> rBW = rotate_vector(body_b.predicted_orientation, con.local_anchor_b);
 		const vec3<predicted_position> pA = body_a.predicted_position + rAW;
 		const vec3<predicted_position> pB = body_b.predicted_position + rBW;
 		const vec3<displacement> d = pA - pB;
@@ -1141,8 +1142,8 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 		length c = (d_mag - constraint.target_distance) - constraint.pos_c0[0] * alpha;
 
 		if (constraint.damping > 0.f) {
-			const auto vel_a = body_a.body_velocity + cross(body_a.body_angular_velocity, r_aw) / rad;
-			const auto vel_b = body_b.body_velocity + cross(body_b.body_angular_velocity, r_bw) / rad;
+			const auto vel_a = body_a.velocity + cross(body_a.angular_velocity, r_aw) / rad;
+			const auto vel_b = body_b.velocity + cross(body_b.angular_velocity, r_bw) / rad;
 			const velocity v_rel = dot(d_hat, vel_a - vel_b);
 			c += v_rel * dt * constraint.damping;
 		}

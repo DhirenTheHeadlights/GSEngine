@@ -109,11 +109,11 @@ namespace gse::renderer::forward {
 	>;
 }
 
-auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const rt_shadow::system::state& rt_state, const light_culling::system::resources& lc_r, settings& cfg, resources& r, frame_data& fd) -> async::task<> {
-	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet_entry::pod);
-	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned_geometry_entry::pod);
+auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, data& d) -> async::task<> {
+	d.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet_entry::pod);
+	d.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned_geometry_entry::pod);
 
-	auto& assets = const_cast<asset::state&>(assets_s);
+	auto& assets = const_cast<asset::data&>(assets_s);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
@@ -121,37 +121,37 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 	constexpr std::size_t light_buffer_size = light_stride * max_lights;
 	constexpr std::size_t material_buffer_size = material_stride * max_materials;
 
-	fd.light_staging.reserve(light_buffer_size);
-	fd.material_staging.reserve(material_buffer_size);
+	d.light_staging.reserve(light_buffer_size);
+	d.material_staging.reserve(material_buffer_size);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = camera_ubo_size,
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.light_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+		d.light_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = light_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.material_palette_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+		d.material_palette_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = material_buffer_size,
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet_entry::pod);
+		d.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet_entry::pod);
 
-		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.descriptors[i])
-			.buffer<camera_ubo>(r.camera_ubo_buffers[i], 0, camera_ubo_size)
-			.buffer<lights_ssbo>(r.light_buffers[i], 0, light_buffer_size)
-			.buffer<material_palette>(r.material_palette_buffers[i], 0, material_buffer_size)
+		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i])
+			.buffer<camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
+			.buffer<lights_ssbo>(d.light_buffers[i], 0, light_buffer_size)
+			.buffer<material_palette>(d.material_palette_buffers[i], 0, material_buffer_size)
 			.commit();
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		gpu::descriptor_writer writer(gpu::context::device_handle(gpu_s), r.descriptors[i]);
+		gpu::descriptor_writer writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i]);
 
 		writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
 		writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
@@ -160,10 +160,10 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 		writer.commit();
 	}
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&r, &lc_r, &rt_state, &gpu_s]() {
+	gpu::context::on_swap_chain_recreate(gpu_s, [&d, &lc_r, &rt_state, &gpu_s]() {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
-			gpu::descriptor_writer writer(gpu::context::device_handle(gpu_s), r.descriptors[i]);
+			gpu::descriptor_writer writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i]);
 
 			writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
 			writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
@@ -174,22 +174,22 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 	});
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
+		d.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
 
-		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.skinned_descriptors[i])
-			.buffer<shaders::standard_3d::camera_ubo>(r.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.skinned_descriptors[i])
+			.buffer<shaders::standard_3d::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 	}
 
-	r.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
-	while (asset::resource_state<texture>(assets, r.blank_texture.id()) != resource::state::loaded) {
+	d.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
+	while (asset::resource_state<texture>(assets, d.blank_texture.id()) != resource::state::loaded) {
 		co_await ctx.next_tick();
 	}
 
 	co_return;
 }
 
-auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const settings& cfg, const resources& r, frame_data& fd, const camera::system::state& cam_state, const geometry_collector::system::resources& gc_r, const light_culling::system::resources& lc_r) -> async::task<> {
+auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<geometry_collector::system> gc_r, shared_view<light_culling::system> lc_r) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -216,7 +216,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 		.proj = proj,
 		.inv_view = view.inverse(),
 	};
-	gse::memcpy(r.camera_ubo_buffers[frame_index].mapped(), camera);
+	gse::memcpy(d.camera_ubo_buffers[frame_index].mapped(), camera);
 
 	auto dir_chunk = ctx.components<directional_light_component>();
 	auto spot_chunk = ctx.components<spot_light_component>();
@@ -226,7 +226,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 		dir_chunk.size() + spot_chunk.size() + point_chunk.size(),
 		max_lights
 	);
-	auto& staging = fd.light_staging;
+	auto& staging = d.light_staging;
 	staging.assign(total_lights * sizeof(shaders::forward::light), std::byte{ 0 });
 	auto* staging_lights = reinterpret_cast<shaders::forward::light*>(staging.data());
 	std::size_t light_count = 0;
@@ -292,13 +292,13 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 	}
 
 	if (light_count > 0) {
-		gse::memcpy(r.light_buffers[frame_index].mapped(), staging.data(), light_count * sizeof(shaders::forward::light));
+		gse::memcpy(d.light_buffers[frame_index].mapped(), staging.data(), light_count * sizeof(shaders::forward::light));
 	}
 
 	const auto material_count = std::min(data.material_palette_map.size(), max_materials);
 
 	if (material_count > 0) {
-		auto& mat_staging = fd.material_staging;
+		auto& mat_staging = d.material_staging;
 		mat_staging.assign(material_count * sizeof(shaders::forward::material_data), std::byte{ 0 });
 		auto* staging_materials = reinterpret_cast<shaders::forward::material_data*>(mat_staging.data());
 
@@ -313,7 +313,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			};
 		}
 
-		gse::memcpy(r.material_palette_buffers[frame_index].mapped(), mat_staging.data(), material_count * sizeof(shaders::forward::material_data));
+		gse::memcpy(d.material_palette_buffers[frame_index].mapped(), mat_staging.data(), material_count * sizeof(shaders::forward::material_data));
 	}
 
 	const auto& normal_batches = data.normal_batches;
@@ -321,12 +321,12 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 
 	const auto ext = gpu_s.render_graph->extent();
 	const int num_lights_i = static_cast<int>(light_count);
-	const int shadow_quality_i = static_cast<int>(cfg.shadow_quality);
-	const int ao_quality_i = static_cast<int>(cfg.ao_quality);
-	const int reflection_quality_i = static_cast<int>(cfg.reflection_quality);
+	const int shadow_quality_i = static_cast<int>(d.shadow_quality);
+	const int ao_quality_i = static_cast<int>(d.ao_quality);
+	const int reflection_quality_i = static_cast<int>(d.reflection_quality);
 
-	auto meshlet_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), meshlet_entry::pod);
-	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
+	auto meshlet_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), meshlet_entry::pod);
+	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
@@ -340,9 +340,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
 		.tracks(
-			r.camera_ubo_buffers[frame_index],
-			r.light_buffers[frame_index],
-			r.material_palette_buffers[frame_index],
+			d.camera_ubo_buffers[frame_index],
+			d.light_buffers[frame_index],
+			d.material_palette_buffers[frame_index],
 			gc_r.instance_buffer[frame_index]
 		);
 	rec.set_viewport(ext);
@@ -367,12 +367,12 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 
 			const auto& diffuse = mesh.material().diffuse_texture;
 			const bool has_texture = diffuse.valid() && diffuse->upload_token().ready();
-			const auto& tex_img = has_texture ? diffuse->gpu_image() : r.blank_texture->gpu_image();
-			const auto& tex_samp = has_texture ? diffuse->gpu_sampler() : r.blank_texture->gpu_sampler();
+			const auto& tex_img = has_texture ? diffuse->gpu_image() : d.blank_texture->gpu_image();
+			const auto& tex_samp = has_texture ? diffuse->gpu_sampler() : d.blank_texture->gpu_sampler();
 
 			if (!pipeline_bound) {
-				rec.bind(r.pipeline);
-				rec.bind_descriptors(r.pipeline, r.descriptors[frame_index]);
+				rec.bind(d.pipeline);
+				rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 				pipeline_bound = true;
 			}
 
@@ -381,7 +381,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			meshlet_writer
 				.buffer<instance_data_buffer>(instance_buf)
 				.image<diffuse_sampler>(tex_img, tex_samp, gpu::image_layout::shader_read_only);
-			rec.commit(meshlet_writer.native_writer(), r.pipeline, 1);
+			rec.commit(meshlet_writer.native_writer(), d.pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
 
@@ -398,7 +398,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 				},
 				.stages = gpu::stage_flag::task | gpu::stage_flag::mesh | gpu::stage_flag::fragment,
 			};
-			rec.push(r.pipeline, pc);
+			rec.push(d.pipeline, pc);
 
 			rec.draw_mesh_tasks_indirect(
 				gc_r.normal_indirect_commands_buffer[frame_index],
@@ -410,8 +410,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 	}
 
 	if (!skinned_batches.empty()) {
-		rec.bind(r.skinned_pipeline);
-		rec.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
+		rec.bind(d.skinned_pipeline);
+		rec.bind_descriptors(d.skinned_pipeline, d.skinned_descriptors[frame_index]);
 
 		const auto& skin_buf = gc_r.skin_buffer[frame_index];
 		const auto& instance_buf = gc_r.instance_buffer[frame_index];
@@ -421,15 +421,15 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
 			const bool has_texture = mesh.material().diffuse_texture.valid();
-			const auto& tex_img = has_texture ? mesh.material().diffuse_texture->gpu_image() : r.blank_texture->gpu_image();
-			const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : r.blank_texture->gpu_sampler();
+			const auto& tex_img = has_texture ? mesh.material().diffuse_texture->gpu_image() : d.blank_texture->gpu_image();
+			const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : d.blank_texture->gpu_sampler();
 
 			skinned_writer.begin(frame_index);
 			skinned_writer
 				.image<shaders::standard_3d::diffuse_sampler>(tex_img, tex_samp, gpu::image_layout::shader_read_only)
 				.buffer<shaders::standard_3d::skin_matrices>(skin_buf)
 				.buffer<shaders::standard_3d::instance_data_buffer>(instance_buf);
-			rec.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
+			rec.commit(skinned_writer.native_writer(), d.skinned_pipeline, 1);
 
 			rec.bind_vertex(mesh.vertex_gpu_buffer());
 			rec.bind_index(mesh.index_gpu_buffer());

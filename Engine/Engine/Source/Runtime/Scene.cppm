@@ -54,7 +54,7 @@ export namespace gse {
 	public:
 		using player_factory_fn = std::function<gse::id(scene&, std::optional<gse::id>)>;
 		using init_fn = gse::move_only_function<void(gse::id, registry&)>;
-		using setup_fn = void(*)(scene&, channel_writer&, asset::state&);
+		using setup_fn = void(*)(scene&, channel_writer&, asset::data&);
 
 		class builder {
 		public:
@@ -114,7 +114,7 @@ export namespace gse {
 		auto set_active(
 			bool is_active,
 			channel_writer& channels,
-			asset::state& assets
+			asset::data& assets
 		) -> void;
 
 		auto active(
@@ -217,7 +217,7 @@ auto gse::scene::set_setup(setup_fn setup) -> void {
 	m_setup = std::move(setup);
 }
 
-auto gse::scene::set_active(const bool is_active, channel_writer& channels, asset::state& assets) -> void {
+auto gse::scene::set_active(const bool is_active, channel_writer& channels, asset::data& assets) -> void {
 	if (is_active && !m_is_active) {
 		if (m_setup) {
 			m_setup(*this, channels, assets);

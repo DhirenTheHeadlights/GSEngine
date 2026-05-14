@@ -78,7 +78,7 @@ export namespace gse {
 
     private:
         auto create_vulkan_resources(
-            gpu::context::state& context,
+            gpu::context::data& context,
             profile texture_profile
         ) -> void;
 

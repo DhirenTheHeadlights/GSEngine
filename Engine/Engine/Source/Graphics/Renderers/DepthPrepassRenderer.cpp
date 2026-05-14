@@ -19,6 +19,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+
 namespace gse::renderer::depth_prepass::meshlet {
 	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
 		using element = shaders::common::camera_data;
@@ -90,37 +91,37 @@ namespace gse::renderer::depth_prepass::skinned {
 	>;
 }
 
-auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r) -> async::task<> {
-	r.meshlet_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet::entry::pod);
-	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned::entry::pod);
+auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+	d.meshlet_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet::entry::pod);
+	d.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned::entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		r.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = camera_ubo_size,
 			.usage = gpu::buffer_flag::uniform
 		});
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.meshlet_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet::entry::pod);
+		d.meshlet_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet::entry::pod);
 
-		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.meshlet_descriptors[i])
-			.buffer<meshlet::camera_ubo>(r.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.meshlet_descriptors[i])
+			.buffer<meshlet::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), skinned::entry::pod);
+		d.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), skinned::entry::pod);
 
-		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.skinned_descriptors[i])
-			.buffer<skinned::camera_ubo>(r.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.skinned_descriptors[i])
+			.buffer<skinned::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 	}
 
 	co_return;
 }
 
-auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::context::state& gpu_s, const resources& r, const geometry_collector::system::resources& gc_r, const camera::system::state& cam_state) -> async::task<> {
+auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<geometry_collector::system> gc_r, shared_view<camera::system> cam_state) -> async::task<> {
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
@@ -141,12 +142,12 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 		.proj = proj,
 		.inv_view = mat4f(1.0f),
 	};
-	gse::memcpy(r.camera_ubo_buffers[frame_index].mapped(), camera);
+	gse::memcpy(d.camera_ubo_buffers[frame_index].mapped(), camera);
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto meshlet_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), meshlet::entry::pod);
-	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), skinned::entry::pod);
+	auto meshlet_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), meshlet::entry::pod);
+	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), skinned::entry::pod);
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
@@ -157,14 +158,14 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect),
 			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
-		.tracks(r.camera_ubo_buffers[frame_index], gc_r.instance_buffer[frame_index]);
+		.tracks(d.camera_ubo_buffers[frame_index], gc_r.instance_buffer[frame_index]);
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
 	if (!data.normal_batches.empty()) {
-		rec.bind(r.meshlet_pipeline);
-		rec.bind_descriptors(r.meshlet_pipeline, r.meshlet_descriptors[frame_index]);
+		rec.bind(d.meshlet_pipeline);
+		rec.bind_descriptors(d.meshlet_pipeline, d.meshlet_descriptors[frame_index]);
 
 		const auto& instance_buf = gc_r.instance_buffer[frame_index];
 
@@ -182,7 +183,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 			meshlet_writer.begin(frame_index);
 			mesh.meshlet_gpu().bind(meshlet_writer);
 			meshlet_writer.buffer<meshlet::instance_data_buffer>(instance_buf);
-			rec.commit(meshlet_writer.native_writer(), r.meshlet_pipeline, 1);
+			rec.commit(meshlet_writer.native_writer(), d.meshlet_pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
 
@@ -194,7 +195,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 				},
 				.stages = gpu::stage_flag::task | gpu::stage_flag::mesh | gpu::stage_flag::fragment,
 			};
-			rec.push(r.meshlet_pipeline, pc);
+			rec.push(d.meshlet_pipeline, pc);
 
 			rec.draw_mesh_tasks_indirect(
 				gc_r.normal_indirect_commands_buffer[frame_index],
@@ -206,8 +207,8 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 	}
 
 	if (!data.skinned_batches.empty()) {
-		rec.bind(r.skinned_pipeline);
-		rec.bind_descriptors(r.skinned_pipeline, r.skinned_descriptors[frame_index]);
+		rec.bind(d.skinned_pipeline);
+		rec.bind_descriptors(d.skinned_pipeline, d.skinned_descriptors[frame_index]);
 
 		const auto& skin_buf = gc_r.skin_buffer[frame_index];
 		const auto& instance_buf = gc_r.instance_buffer[frame_index];
@@ -216,7 +217,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 		skinned_writer
 			.buffer<skinned::skin_matrices>(skin_buf)
 			.buffer<skinned::instance_data_buffer>(instance_buf);
-		rec.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
+		rec.commit(skinned_writer.native_writer(), d.skinned_pipeline, 1);
 
 		for (std::size_t i = 0; i < data.skinned_batches.size(); ++i) {
 			const auto& batch = data.skinned_batches[i];

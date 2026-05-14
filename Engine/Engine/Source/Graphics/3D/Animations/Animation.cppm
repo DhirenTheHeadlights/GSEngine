@@ -56,7 +56,7 @@ export namespace gse::animation {
 	};
 
 	struct system {
-		struct state {
+		struct data {
 			time last_tick{};
 			std::vector<anim_job> jobs;
 			std::vector<controller_job> controller_jobs;
@@ -66,8 +66,8 @@ export namespace gse::animation {
 
 		static auto run(
 			run_context& ctx,
-			const asset::state& assets_s,
-			state& s
+			const asset::data& assets_s,
+			data& d
 		) -> async::task<>;
 
 	private:
@@ -137,7 +137,7 @@ export namespace gse::animation {
 
 		static auto process_controller_job(
 			const controller_job& job,
-			const asset::state& assets_s,
+			const asset::data& assets_s,
 			time dt
 		) -> void;
 	};
