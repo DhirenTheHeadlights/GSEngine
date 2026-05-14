@@ -1,4 +1,3 @@
-import meshlet_common;
 
 groupshared MeshletPayload s_payload;
 

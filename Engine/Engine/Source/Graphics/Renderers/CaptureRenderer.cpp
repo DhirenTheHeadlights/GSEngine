@@ -11,7 +11,6 @@ import :settings;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.shader;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
@@ -21,7 +20,35 @@ import gse.log;
 import gse.save;
 import gse.time;
 
+namespace gse::renderer::capture {
+	struct [[= shaders::shader_struct]] push_constants {
+		vec2u extent;
+	};
+
+	struct [[= shaders::binding<0, 0>{}, = shaders::sampler2d]] input_rgba {};
+
+	struct [[= shaders::binding<0, 1>{}, = shaders::storage_image]] output_y {
+		using element = float;
+	};
+
+	struct [[= shaders::binding<0, 2>{}, = shaders::storage_image]] output_uv {
+		using element = vec2f;
+	};
+
+	using shader_binding_types = type_pack<input_rgba, output_y, output_uv>;
+
+	using entry = gpu::compute_entry<
+		gpu::body_path<"Compute/rgba_to_nv12">,
+		gpu::layout<"rgba_to_nv12">,
+		gpu::bindings<shader_binding_types>,
+		gpu::threads<16, 16, 1>,
+		gpu::push_constant<push_constants>,
+		gpu::system_values<gpu::dispatch_thread_id>
+	>;
+}
+
 auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const actions::system::state& sys, settings& cfg, resources& r, frame_data& fd, state& s) -> async::task<> {
+	gpu_s.shader_registry->register_family("rgba_to_nv12", shaders::build_family_sets(shader_binding_types{}));
     const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
         const id action_id = generate_id(name);
         ctx.channels.push<actions::add_action_request>({
@@ -45,7 +72,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::s
         const auto ext = gpu_s.render_graph->extent();
         const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
-        r.convert_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::rgba_to_nv12::entry::pod);
+        r.convert_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
         r.capture_sampler = gpu::sampler::create(gpu_s.device->allocator(), {
             .min = gpu::sampler_filter::nearest,
@@ -238,7 +265,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const gpu::
 
     const auto ext = gpu_s.render_graph->extent();
 
-    gpu::typed_push_constants<shaders::rgba_to_nv12::push_constants> convert_pc{
+    gpu::typed_push_constants<push_constants> convert_pc{
         .data = { .extent = ext },
         .stages = gpu::stage_flag::compute,
     };

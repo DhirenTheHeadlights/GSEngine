@@ -22,9 +22,6 @@ import gse.log;
 auto gse::gpu::context::run(run_context& ctx, const window::state& window_s, settings& cfg, state& s) -> async::task<> {
 	s.device = device::create(window_s, cfg.validation_layers_enabled, cfg.device);
 	s.shader_registry = std::make_unique<gpu::shader_registry>(*s.device);
-	if (s.on_registry_created) {
-		s.on_registry_created(*s.shader_registry);
-	}
 	s.swapchain = swap_chain::create(window::viewport(window_s), *s.device);
 	s.frame = frame::create(*s.device, *s.swapchain);
 	s.bindless_textures = std::make_unique<bindless_texture_set>(s.device->vulkan_device(), s.device->descriptor_heap());

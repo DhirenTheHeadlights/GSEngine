@@ -10,7 +10,6 @@ import gse.concurrency;
 import gse.fs;
 
 import :asset_format;
-import :asset_compiler;
 import :resource_handle;
 import :resource_loader;
 import :registry;
@@ -21,16 +20,22 @@ export namespace gse::asset {
         t.load(ctx);
     };
 
-    struct asset_paths {
-        std::string source_dir;
-        std::string baked_dir;
-        std::string baked_ext;
-        std::vector<std::string> source_exts;
+    template <typename T>
+    concept has_compile_path = requires { typename T::baked; } && has_asset_format<typename T::baked> && requires (const std::filesystem::path& src, typename T::baked& b) {
+        { bake(src, b) } -> std::convertible_to<bool>;
     };
 
-    template <typename T>
-    auto paths_of(
-    ) -> asset_paths;
+    template <has_compile_path T>
+    auto bake_to_disk(
+        const std::filesystem::path& src,
+        const std::filesystem::path& dst
+    ) -> bool;
+
+    template <has_compile_path T>
+    auto needs_recompile(
+        const std::filesystem::path& src,
+        const std::filesystem::path& dst
+    ) -> bool;
 
     template <typename T>
     auto enumerate_resources(
@@ -101,95 +106,112 @@ auto gse::asset::compile_result::operator+=(const compile_result& other) -> comp
     return *this;
 }
 
-template <typename T>
-auto gse::asset::paths_of() -> asset_paths {
-    asset_paths p;
-    if constexpr (requires { typename T::baked; }) {
-        constexpr auto fmt = format_of<typename T::baked>();
-        p.source_dir = std::string(fmt.source_dir);
-        p.baked_dir = std::string(fmt.baked_dir);
-        p.baked_ext = std::string(fmt.baked_ext);
-        p.source_exts.assign(fmt.source_exts.begin(), fmt.source_exts.end());
+template <gse::asset::has_compile_path T>
+auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::filesystem::path& dst) -> bool {
+    constexpr auto fmt = format_of<typename T::baked>();
+    typename T::baked b{};
+    if (!bake(src, b)) {
+        return false;
     }
-    else if constexpr (has_asset_compiler<T>) {
-        p.source_dir = asset_compiler<T>::source_directory();
-        p.baked_dir = asset_compiler<T>::baked_directory();
-        p.baked_ext = asset_compiler<T>::baked_extension();
-        p.source_exts = asset_compiler<T>::source_extensions();
+    std::filesystem::create_directories(dst.parent_path());
+    std::ofstream out(dst, std::ios::binary);
+    if (!out.is_open()) {
+        return false;
     }
-    return p;
+    binary_writer ar(out, fmt.magic, fmt.version);
+    ar & b;
+    log::println(log::category::assets, "Asset compiled: {}", dst.filename().string());
+    return true;
+}
+
+template <gse::asset::has_compile_path T>
+auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::filesystem::path& dst) -> bool {
+    if (!std::filesystem::exists(dst)) {
+        return true;
+    }
+    constexpr auto fmt = format_of<typename T::baked>();
+    const auto dst_time = std::filesystem::last_write_time(dst);
+    if (std::filesystem::last_write_time(src) > dst_time) {
+        return true;
+    }
+    if constexpr (fmt.meta_sidecar) {
+        const auto meta = src.parent_path() / (src.stem().string() + ".meta");
+        if (std::filesystem::exists(meta) && std::filesystem::last_write_time(meta) > dst_time) {
+            return true;
+        }
+    }
+    return false;
 }
 
 template <typename T>
 auto gse::asset::enumerate_resources() -> std::vector<std::string> {
-    const auto p = paths_of<T>();
     std::vector<std::string> result;
-
-    const auto dir_path = config::baked_resource_path / p.baked_dir;
-    if (!std::filesystem::exists(dir_path)) {
+    if constexpr (!requires { typename T::baked; }) {
         return result;
     }
+    else {
+        constexpr auto fmt = format_of<typename T::baked>();
+        const auto dir_path = config::baked_resource_path / fmt.baked_dir;
+        if (!std::filesystem::exists(dir_path)) {
+            return result;
+        }
 
-    for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
-        if (!entry.is_regular_file()) {
-            continue;
+        for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            if (entry.path().extension().string() != fmt.baked_ext) {
+                continue;
+            }
+            result.push_back(entry.path().stem().string());
         }
-        if (entry.path().extension().string() != p.baked_ext) {
-            continue;
-        }
-        result.push_back(entry.path().stem().string());
+
+        std::ranges::sort(result);
+        return result;
     }
-
-    std::ranges::sort(result);
-    return result;
 }
 
 template <typename T>
 auto gse::asset::recompile_if_stale(const std::filesystem::path& baked_path) -> bool {
-    if constexpr (!has_asset_compiler<T>) {
+    if constexpr (!has_compile_path<T>) {
         return false;
     }
     else {
-        const auto p = paths_of<T>();
-        auto rel = baked_path.lexically_relative(config::baked_resource_path / p.baked_dir);
+        constexpr auto fmt = format_of<typename T::baked>();
+        auto rel = baked_path.lexically_relative(config::baked_resource_path / fmt.baked_dir);
         auto src_rel = rel;
-        src_rel.replace_extension(p.source_exts.empty() ? "" : p.source_exts.front());
-        const auto src = config::resource_path / p.source_dir / src_rel;
+        src_rel.replace_extension(fmt.source_exts.empty() ? "" : std::string(fmt.source_exts.front()));
+        const auto src = config::resource_path / fmt.source_dir / src_rel;
         if (!std::filesystem::exists(src)) {
             return false;
         }
-        if (!asset_compiler<T>::needs_recompile(src, baked_path)) {
+        if (!needs_recompile<T>(src, baked_path)) {
             return true;
         }
-        if (!std::filesystem::exists(baked_path.parent_path())) {
-            std::filesystem::create_directories(baked_path.parent_path());
-        }
-        return asset_compiler<T>::compile_one(src, baked_path);
+        return bake_to_disk<T>(src, baked_path);
     }
 }
 
 template <typename T>
 auto gse::asset::setup_hot_reload_for(state& s) -> void {
-    if constexpr (!has_asset_compiler<T>) {
+    if constexpr (!has_compile_path<T>) {
         return;
     }
     else {
-        const auto p = paths_of<T>();
-        const auto source_root = config::resource_path / p.source_dir;
+        constexpr auto fmt = format_of<typename T::baked>();
+        const auto source_root = config::resource_path / fmt.source_dir;
         if (!std::filesystem::exists(source_root)) {
             return;
         }
+        std::vector<std::string> exts(fmt.source_exts.begin(), fmt.source_exts.end());
         s.watcher.watch_directory(
             source_root,
             [&s](const std::filesystem::path& changed_file) {
-                const auto p = paths_of<T>();
-                auto rel = std::filesystem::relative(changed_file, config::resource_path / p.source_dir);
-                rel.replace_extension(p.baked_ext);
-                const auto dst = config::baked_resource_path / p.baked_dir / rel;
-                if (!std::filesystem::exists(dst.parent_path())) {
-                    std::filesystem::create_directories(dst.parent_path());
-                }
-                if (asset_compiler<T>::compile_one(changed_file, dst)) {
+                constexpr auto fmt = format_of<typename T::baked>();
+                auto rel = std::filesystem::relative(changed_file, config::resource_path / fmt.source_dir);
+                rel.replace_extension(std::string(fmt.baked_ext));
+                const auto dst = config::baked_resource_path / fmt.baked_dir / rel;
+                if (bake_to_disk<T>(changed_file, dst)) {
                     log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().string());
                     if constexpr (loadable<T>) {
                         if (auto it = s.resource_loaders.find(id_of<T>()); it != s.resource_loaders.end()) {
@@ -202,7 +224,7 @@ auto gse::asset::setup_hot_reload_for(state& s) -> void {
                     log::println(log::level::warning, log::category::assets, "Hot reload failed to recompile: {}", changed_file.filename().string());
                 }
             },
-            p.source_exts,
+            exts,
             true
         );
     }
@@ -240,13 +262,13 @@ template <typename T>
 auto gse::asset::system<Ts...>::compile() -> compile_result {
     compile_result result{};
 
-    if constexpr (!has_asset_compiler<T>) {
+    if constexpr (!has_compile_path<T>) {
         return result;
     }
     else {
-        const auto p = paths_of<T>();
-        const auto source_root = config::resource_path / p.source_dir;
-        const auto baked_root = config::baked_resource_path / p.baked_dir;
+        constexpr auto fmt = format_of<typename T::baked>();
+        const auto source_root = config::resource_path / fmt.source_dir;
+        const auto baked_root = config::baked_resource_path / fmt.baked_dir;
 
         if (!std::filesystem::exists(source_root)) {
             return result;
@@ -259,28 +281,18 @@ auto gse::asset::system<Ts...>::compile() -> compile_result {
                 continue;
             }
             const auto ext = entry.path().extension().string();
-            if (std::ranges::find(p.source_exts, ext) == p.source_exts.end()) {
+            if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
                 continue;
             }
 
             auto rel = std::filesystem::relative(entry.path(), source_root);
-            rel.replace_extension(p.baked_ext);
+            rel.replace_extension(std::string(fmt.baked_ext));
             const auto dst = baked_root / rel;
 
-            bool needs_compile = asset_compiler<T>::needs_recompile(entry.path(), dst);
-            if (!needs_compile) {
-                for (const auto& dep : asset_compiler<T>::dependencies(entry.path())) {
-                    if (std::filesystem::exists(dep) && std::filesystem::last_write_time(dep) > std::filesystem::last_write_time(dst)) {
-                        needs_compile = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!needs_compile) {
+            if (!needs_recompile<T>(entry.path(), dst)) {
                 ++result.skipped_count;
             }
-            else if (asset_compiler<T>::compile_one(entry.path(), dst)) {
+            else if (bake_to_disk<T>(entry.path(), dst)) {
                 ++result.success_count;
             }
             else {

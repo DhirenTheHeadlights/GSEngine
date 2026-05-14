@@ -56,7 +56,6 @@ export namespace gse::gpu {
 			std::unique_ptr<vulkan::render_graph> render_graph;
 			std::unique_ptr<bindless_texture_set> bindless_textures;
 			concurrency::frame_scheduler scheduler;
-			std::function<void(class shader_registry&)> on_registry_created;
 		};
 
 		using swap_chain_recreate_callback = std::function<void()>;

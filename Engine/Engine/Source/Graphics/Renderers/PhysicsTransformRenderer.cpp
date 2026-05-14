@@ -8,7 +8,6 @@ import :geometry_collector;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.shader;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -17,8 +16,48 @@ import gse.diag;
 import gse.ecs;
 import gse.physics;
 
+namespace gse::renderer::physics_transform {
+	struct [[= shaders::shader_struct]] physics_mapping {
+		std::uint32_t body_index;
+		std::uint32_t instance_index;
+		vec3f center_of_mass;
+	};
+
+	struct [[= shaders::shader_struct]] push_constants {
+		std::uint32_t mapping_count;
+		std::uint32_t body_count;
+	};
+
+	struct [[= shaders::binding<0, 0>{}, = shaders::ssbo_readonly]] body_data {
+		using element = vbd::gpu_body;
+	};
+
+	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] mapping_data {
+		using element = physics_mapping;
+	};
+
+	struct [[= shaders::binding<0, 2>{}, = shaders::ssbo_readwrite]] instance_data_buffer {
+		using element = shaders::common::instance_data;
+	};
+
+	using shader_binding_types = type_pack<body_data, mapping_data, instance_data_buffer>;
+	using shader_types = type_pack<physics_mapping>;
+
+	using entry = gpu::compute_entry<
+		gpu::body_path<"Compute/physics_instance_transform">,
+		gpu::layout<"physics_instance_transform">,
+		gpu::types<shaders::common::shader_types, vbd::shader_types, shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::threads<64>,
+		gpu::push_constant<push_constants>,
+		gpu::system_values<gpu::dispatch_thread_id>
+	>;
+}
+
 auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd) -> async::task<> {
-	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::physics_instance_transform::entry::pod);
+	gpu_s.shader_registry->register_family("physics_instance_transform", shaders::build_family_sets(shader_binding_types{}));
+	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		fd.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("physics_instance_transform"));
@@ -84,7 +123,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const g
 		.buffer("instance_data_buffer", gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
 		.commit();
 
-	const gpu::typed_push_constants<shaders::physics_instance_transform::push_constants> pc{
+	const gpu::typed_push_constants<push_constants> pc{
 		.data = {
 			.mapping_count = fd.cached_mapping_count,
 			.body_count = info.body_count,

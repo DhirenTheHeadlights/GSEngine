@@ -1,4 +1,3 @@
-import vbd_shared;
 
 static const uint COLLISION_STATE_HEADER_UINTS = 8;
 static const uint NARROW_PHASE_DEBUG_RECORD_UINTS = 8;

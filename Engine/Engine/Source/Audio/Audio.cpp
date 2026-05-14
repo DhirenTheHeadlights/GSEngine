@@ -26,59 +26,27 @@ namespace gse::audio {
 	};
 }
 
-auto gse::asset_compiler<gse::audio_clip>::source_extensions() -> std::vector<std::string> {
-	return { ".wav", ".mp3", ".ogg", ".flac" };
-}
-
-auto gse::asset_compiler<gse::audio_clip>::baked_extension() -> std::string {
-	return ".gaud";
-}
-
-auto gse::asset_compiler<gse::audio_clip>::source_directory() -> std::string {
-	return "Audio";
-}
-
-auto gse::asset_compiler<gse::audio_clip>::baked_directory() -> std::string {
-	return "Audio";
-}
-
-auto gse::asset_compiler<gse::audio_clip>::compile_one(const std::filesystem::path& source, const std::filesystem::path& destination) -> bool {
-	std::filesystem::create_directories(destination.parent_path());
-	std::error_code ec;
-	std::filesystem::copy_file(source, destination, std::filesystem::copy_options::overwrite_existing, ec);
-	if (ec) {
-		log::println(log::level::warning, log::category::assets, "Failed to compile audio '{}': {}", source.string(), ec.message());
+auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool {
+	std::ifstream file(src, std::ios::binary | std::ios::ate);
+	if (!file.is_open()) {
+		log::println(log::level::warning, log::category::assets, "Failed to open audio source: {}", src.string());
 		return false;
 	}
-	log::println(log::category::assets, "Audio compiled: {}", destination.filename().string());
+	const auto size = file.tellg();
+	file.seekg(0);
+	out.bytes.storage.resize(size);
+	file.read(reinterpret_cast<char*>(out.bytes.storage.data()), size);
 	return true;
-}
-
-auto gse::asset_compiler<gse::audio_clip>::needs_recompile(const std::filesystem::path& source, const std::filesystem::path& destination) -> bool {
-	if (!std::filesystem::exists(destination)) {
-		return true;
-	}
-	return std::filesystem::last_write_time(source) > std::filesystem::last_write_time(destination);
-}
-
-auto gse::asset_compiler<gse::audio_clip>::dependencies(const std::filesystem::path&) -> std::vector<std::filesystem::path> {
-	return {};
 }
 
 gse::audio_clip::audio_clip(const std::filesystem::path& filepath) : identifiable(filepath, config::baked_resource_path), m_path(filepath) {}
 
 auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
-	std::ifstream file(m_path, std::ios::binary | std::ios::ate);
-	assert(
-		file.is_open(),
-		"Failed to open baked audio file: {}",
-		m_path.string()
-	);
-
-	const auto size = file.tellg();
-	file.seekg(0);
-	m_bytes.resize(size);
-	file.read(reinterpret_cast<char*>(m_bytes.data()), size);
+	baked b{};
+	if (!load_baked(m_path, b)) {
+		co_return;
+	}
+	m_bytes = std::move(b.bytes.storage);
 
 	const ma_decoder_config cfg = ma_decoder_config_init(ma_format_value_unknown, 0, 0);
 	ma_decoder decoder;

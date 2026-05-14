@@ -24,7 +24,18 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.physics;
-import gse.shader;
+
+import :shared_shaders;
+
+export namespace gse::renderer::geometry_collector {
+	struct [[= shaders::shader_struct]] joint_data {
+		mat4f inverse_bind;
+		std::uint32_t parent_index;
+		std::uint32_t pad0;
+		std::uint32_t pad1;
+		std::uint32_t pad2;
+	};
+}
 
 export namespace gse::renderer {
 	using frustum_planes = std::array<vec4f, 6>;

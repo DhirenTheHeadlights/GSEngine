@@ -38,6 +38,8 @@ export namespace gse::gpu {
 		std::uint32_t push_constant_size = 0;
 		std::array<compute_param_pod, 8> params{};
 		std::size_t param_count = 0;
+		std::array<std::string_view, 4> helper_paths{};
+		std::size_t helper_count = 0;
 		std::string (*emit_push_constant_struct)() = nullptr;
 		std::string (*emit_types)() = nullptr;
 		std::string (*emit_bindings)() = nullptr;
@@ -71,6 +73,8 @@ export namespace gse::gpu {
 		std::uint32_t push_constant_stages = 0;
 		std::array<graphics_stage_pod, 4> stages{};
 		std::size_t stage_count = 0;
+		std::array<std::string_view, 4> helper_paths{};
+		std::size_t helper_count = 0;
 		rasterization_state rasterization{};
 		depth_state depth{};
 		blend_preset blend = blend_preset::none;
@@ -117,6 +121,9 @@ export namespace gse::gpu {
 	template <typename... Packs>
 	struct types {};
 
+	template <fixed_string... Paths>
+	struct helpers {};
+
 	template <is_system_value... Ts>
 	struct system_values {};
 
@@ -161,6 +168,12 @@ export namespace gse::gpu {
 
 	template <typename... Packs>
 	struct is_types<types<Packs...>> : std::true_type {};
+
+	template <typename T>
+	struct is_helpers : std::false_type {};
+
+	template <fixed_string... Paths>
+	struct is_helpers<helpers<Paths...>> : std::true_type {};
 
 	template <typename... Specs>
 	struct compute_entry {
@@ -220,6 +233,11 @@ export namespace gse::gpu {
 						}(Spec{});
 						return out;
 					};
+				}
+				else if constexpr (is_helpers<Spec>::value) {
+					[&] <fixed_string... Paths> (helpers<Paths...>) consteval {
+						((e.helper_paths[e.helper_count++] = Paths), ...);
+					}(Spec{});
 				}
 				else {
 					static_assert(sizeof(Spec) == 0, "unknown compute_entry spec");
@@ -387,6 +405,11 @@ export namespace gse::gpu {
 						return out;
 					};
 				}
+				else if constexpr (is_helpers<Spec>::value) {
+					[&] <fixed_string... Paths> (helpers<Paths...>) consteval {
+						((e.helper_paths[e.helper_count++] = Paths), ...);
+					}(Spec{});
+				}
 				else {
 					static_assert(sizeof(Spec) == 0, "unknown graphics_entry spec");
 				}
@@ -412,6 +435,7 @@ namespace gse::gpu {
 		std::uint32_t threads_z = 1;
 		std::string layout_name;
 		std::string body_path;
+		std::vector<std::string> helper_paths;
 		std::uint32_t push_constant_size = 0;
 		std::string (*emit_push_constant_struct)() = nullptr;
 		std::string (*emit_types)() = nullptr;
@@ -442,6 +466,14 @@ namespace gse::gpu {
 
 	auto load_body_file(
 		std::string_view body_path
+	) -> std::string;
+
+	auto load_helper_file(
+		std::string_view helper_path
+	) -> std::string;
+
+	auto inline_helpers(
+		const std::vector<std::string>& helper_paths
 	) -> std::string;
 
 	auto build_compute_wrapper_source(
@@ -625,6 +657,27 @@ auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
 	return ss.str();
 }
 
+auto gse::gpu::load_helper_file(const std::string_view helper_path) -> std::string {
+	const auto full_path = config::resource_path / "Shaders" / (std::string(helper_path) + ".slang");
+	std::ifstream in(full_path, std::ios::binary);
+	assert(in.is_open(), "Failed to open shader helper: {}", full_path.string());
+
+	std::ostringstream ss;
+	ss << in.rdbuf();
+	return ss.str();
+}
+
+auto gse::gpu::inline_helpers(const std::vector<std::string>& helper_paths) -> std::string {
+	std::string out;
+	for (const auto& path : helper_paths) {
+		const auto source = load_helper_file(path);
+		const auto parsed = parse_body_file(source);
+		out.append(parsed.body);
+		out.push_back('\n');
+	}
+	return out;
+}
+
 auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs, const parsed_body& parsed) -> std::string {
 	std::string out;
 
@@ -646,6 +699,11 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 
 	if (inputs.emit_push_constant_struct) {
 		out.append(inputs.emit_push_constant_struct());
+		out.push_back('\n');
+	}
+
+	if (!inputs.helper_paths.empty()) {
+		out.append(inline_helpers(inputs.helper_paths));
 		out.push_back('\n');
 	}
 
@@ -827,6 +885,10 @@ auto gse::gpu::build_compute_pipeline(device& dev, shader_registry& registry, bi
 	inputs.emit_push_constant_struct = pod.emit_push_constant_struct;
 	inputs.emit_types = pod.emit_types;
 	inputs.emit_bindings = pod.emit_bindings;
+	inputs.helper_paths.reserve(pod.helper_count);
+	for (std::size_t i = 0; i < pod.helper_count; ++i) {
+		inputs.helper_paths.emplace_back(pod.helper_paths[i]);
+	}
 	inputs.params.reserve(pod.param_count);
 	for (std::size_t i = 0; i < pod.param_count; ++i) {
 		inputs.params.push_back({
@@ -860,6 +922,16 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 
 	if (pod.emit_push_constant_struct) {
 		out.append(pod.emit_push_constant_struct());
+		out.push_back('\n');
+	}
+
+	if (pod.helper_count > 0) {
+		std::vector<std::string> helper_paths;
+		helper_paths.reserve(pod.helper_count);
+		for (std::size_t i = 0; i < pod.helper_count; ++i) {
+			helper_paths.emplace_back(pod.helper_paths[i]);
+		}
+		out.append(inline_helpers(helper_paths));
 		out.push_back('\n');
 	}
 

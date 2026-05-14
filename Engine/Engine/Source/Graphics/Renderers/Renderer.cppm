@@ -9,12 +9,6 @@ import :model;
 import :skinned_model;
 import :skeleton;
 import :texture;
-
-import :texture_compiler;
-import :font_compiler;
-import :skeleton_compiler;
-import :clip_compiler;
-import :skinned_model_compiler;
 import :camera_system;
 
 import :capture_renderer;

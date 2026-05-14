@@ -5,6 +5,7 @@ import std;
 import gse.core;
 import gse.concurrency;
 import gse.assets;
+import gse.containers;
 import gse.ecs;
 import gse.math;
 import gse.gpu;
@@ -12,6 +13,17 @@ import gse.gpu;
 export namespace gse {
     class audio_clip : public identifiable {
     public:
+        struct [[
+            = asset_format::baked_ext<".gaud">{},
+            = asset_format::baked_dir<"Audio">{},
+            = asset_format::source_dir<"Audio">{},
+            = asset_format::source_exts<".wav", ".mp3", ".ogg", ".flac">{},
+            = asset_format::magic<0x47415544>{},
+            = asset_format::version<1>{}
+        ]] baked {
+            raw_blob_owned<std::byte> bytes;
+        };
+
         explicit audio_clip(
             const std::filesystem::path& filepath
         );
@@ -46,36 +58,12 @@ export namespace gse {
         std::uint64_t m_frame_count = 0;
         time_t<float, seconds> m_duration{};
     };
+
+    auto bake(
+        const std::filesystem::path& src,
+        audio_clip::baked& out
+    ) -> bool;
 }
-
-template<>
-struct gse::asset_compiler<gse::audio_clip> {
-    static auto source_extensions(
-    ) -> std::vector<std::string>;
-
-    static auto baked_extension(
-    ) -> std::string;
-
-    static auto source_directory(
-    ) -> std::string;
-
-    static auto baked_directory(
-    ) -> std::string;
-
-    static auto compile_one(
-        const std::filesystem::path& source,
-        const std::filesystem::path& destination
-    ) -> bool;
-
-    static auto needs_recompile(
-        const std::filesystem::path& source,
-        const std::filesystem::path& destination
-    ) -> bool;
-
-    static auto dependencies(
-        const std::filesystem::path&
-    ) -> std::vector<std::filesystem::path>;
-};
 
 export namespace gse {
     struct voice_handle {
@@ -85,6 +73,8 @@ export namespace gse {
 }
 
 export namespace gse::audio {
+    using asset_types = type_pack<audio_clip>;
+
     struct voice_slot;
     struct audio_engine;
 

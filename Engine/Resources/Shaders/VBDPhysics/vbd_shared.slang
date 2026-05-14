@@ -1,5 +1,3 @@
-__exported import generated.vbd_physics_types;
-
 public static const uint FLAG_LOCKED = 1;
 public static const uint FLAG_UPDATE_ORIENTATION = 2;
 public static const uint FLAG_AFFECTED_BY_GRAVITY = 4;

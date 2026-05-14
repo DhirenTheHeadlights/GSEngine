@@ -163,7 +163,6 @@ auto gse::variant<Variant>::else_if_is(F&& f) && -> variant&& {
     return std::move(*this);
 }
 
-
 template <typename ... Ts>
 auto gse::match(std::variant<Ts...>& v) -> variant<std::variant<Ts...>&> {
     return variant<std::variant<Ts...>&>(v);

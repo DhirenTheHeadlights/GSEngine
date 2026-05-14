@@ -35,7 +35,6 @@ import gse.gpu;
 import gse.audio;
 import gse.math;
 import gse.save;
-import gse.shader;
 
 auto gse::renderer::system::run(run_context& ctx, const gpu::context::state& gpu_s, const window::state& window_s, settings& cfg, state& s, const actions::system::state& sys) -> async::task<> {
 	const id dump_profile_id = generate_id("Dump Profile");

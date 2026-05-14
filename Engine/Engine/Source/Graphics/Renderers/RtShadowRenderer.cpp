@@ -9,7 +9,6 @@ import :mesh;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.shader;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
@@ -17,7 +16,35 @@ import gse.ecs;
 import gse.math;
 import gse.log;
 
+namespace gse::renderer::rt_shadow {
+	struct [[= shaders::shader_struct]] push_constants {
+		std::uint32_t count;
+		std::uint32_t instance_stride;
+		std::uint32_t model_matrix_offset;
+	};
+
+	struct [[= shaders::binding<0, 0>{}, = shaders::byte_address_buffer]] source_instance_data {};
+
+	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] index_mapping {
+		using element = std::uint32_t;
+	};
+
+	struct [[= shaders::binding<0, 2>{}, = shaders::rw_byte_address_buffer]] tlas_instances {};
+
+	using shader_binding_types = type_pack<source_instance_data, index_mapping, tlas_instances>;
+
+	using entry = gpu::compute_entry<
+		gpu::body_path<"Compute/tlas_transform_update">,
+		gpu::layout<"tlas_transform_update">,
+		gpu::bindings<shader_binding_types>,
+		gpu::threads<64>,
+		gpu::push_constant<push_constants>,
+		gpu::system_values<gpu::dispatch_thread_id>
+	>;
+}
+
 auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, frame_data& fd, state& s) -> async::task<> {
+	gpu_s.shader_registry->register_family("tlas_transform_update", shaders::build_family_sets(shader_binding_types{}));
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
@@ -26,7 +53,7 @@ auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context:
 		fd.instances[i].reserve(max_instances);
 	}
 
-	fd.tlas_update_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::tlas_transform_update::entry::pod);
+	fd.tlas_update_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("tlas_transform_update"));
@@ -140,7 +167,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, const gpu::cont
 		.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)
 		.commit();
 
-	const gpu::typed_push_constants<shaders::tlas_transform_update::push_constants> pc{
+	const gpu::typed_push_constants<push_constants> pc{
 		.data = {
 			.count = instance_count,
 			.instance_stride = static_cast<std::uint32_t>(sizeof(shaders::common::instance_data)),

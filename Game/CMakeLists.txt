@@ -29,7 +29,6 @@ target_link_libraries(GoonSquadLib PRIVATE Engine)
 
 add_executable(GoonSquad "${MAIN_CPP}")
 target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
-add_dependencies(GoonSquad ShaderCodegenRun)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     get_filename_component(_gcc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)

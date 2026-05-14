@@ -16,7 +16,49 @@ import gse.concurrency;
 import gse.ecs;
 import gse.math;
 import gse.log;
-import gse.shader;
+
+namespace gse::renderer::ui {
+    struct [[= shaders::binding<2, 0>{}, = shaders::sampler2d_array]] g_textures {};
+
+    using shader_binding_types = type_pack<g_textures>;
+
+    struct [[= shaders::shader_struct]] sprite_push_constants {
+        mat4f projection;
+        std::uint32_t tex_idx;
+    };
+
+    using sprite_entry = gpu::graphics_entry<
+        gpu::body_path<"Graphics/sprite">,
+        gpu::layout<"standard_2d">,
+        gpu::bindings<shader_binding_types>,
+        gpu::vertex_stage<"vs_main">,
+        gpu::fragment_stage<"fs_main">,
+        gpu::push_constant<sprite_push_constants>,
+        gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
+        gpu::depth<false, false>,
+        gpu::blend<gpu::blend_preset::alpha_premultiplied>,
+        gpu::depth_target<gpu::depth_format::none>
+    >;
+
+    struct [[= shaders::shader_struct]] msdf_push_constants {
+        mat4f projection;
+        float depth;
+        std::uint32_t tex_idx;
+    };
+
+    using msdf_entry = gpu::graphics_entry<
+        gpu::body_path<"Graphics/msdf">,
+        gpu::layout<"standard_2d">,
+        gpu::bindings<shader_binding_types>,
+        gpu::vertex_stage<"vs_main">,
+        gpu::fragment_stage<"fs_main">,
+        gpu::push_constant<msdf_push_constants>,
+        gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
+        gpu::depth<false, false>,
+        gpu::blend<gpu::blend_preset::alpha_premultiplied>,
+        gpu::depth_target<gpu::depth_format::none>
+    >;
+}
 
 auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
     if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
@@ -99,8 +141,10 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 }
 
 auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd, state& s) -> async::task<> {
-    r.sprite_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::sprite::entry::pod);
-    r.text_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::msdf::entry::pod);
+    gpu_s.shader_registry->register_family("standard_2d", shaders::build_family_sets(shader_binding_types{}));
+
+    r.sprite_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, sprite_entry::pod);
+    r.text_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, msdf_entry::pod);
 
     constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
     constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
@@ -287,11 +331,11 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
         meters(1.0f)
     );
 
-    gpu::typed_push_constants<shaders::sprite::push_constants> sprite_pc{
+    gpu::typed_push_constants<sprite_push_constants> sprite_pc{
         .data = { .projection = projection, .tex_idx = 0 },
         .stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
     };
-    gpu::typed_push_constants<shaders::msdf::push_constants> text_pc{
+    gpu::typed_push_constants<msdf_push_constants> text_pc{
         .data = { .projection = projection, .depth = 0.0f, .tex_idx = 0 },
         .stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
     };

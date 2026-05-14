@@ -31,6 +31,17 @@ export namespace gse {
             std::vector<joint_track> tracks;
         };
 
+        struct [[
+            = asset_format::baked_ext<".gclip">{},
+            = asset_format::baked_dir<"Clips">{},
+            = asset_format::source_dir<"Clips">{},
+            = asset_format::source_exts<".gclip">{},
+            = asset_format::magic<0x47434C50>{},
+            = asset_format::version<1>{}
+        ]] baked {
+            raw_blob_owned<std::byte> bytes;
+        };
+
         explicit clip_asset(
             const std::filesystem::path& path
         );
@@ -60,6 +71,11 @@ export namespace gse {
         std::vector<joint_track> m_tracks;
         std::filesystem::path m_baked_path;
     };
+
+    auto bake(
+        const std::filesystem::path& src,
+        clip_asset::baked& out
+    ) -> bool;
 }
 
 gse::clip_asset::clip_asset(const std::filesystem::path& path)
@@ -73,42 +89,61 @@ gse::clip_asset::clip_asset(params p)
       m_tracks(std::move(p.tracks)) {
 }
 
+auto gse::bake(const std::filesystem::path& src, clip_asset::baked& out) -> bool {
+    std::ifstream file(src, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        return false;
+    }
+    const auto size = file.tellg();
+    file.seekg(0);
+    out.bytes.storage.resize(size);
+    file.read(reinterpret_cast<char*>(out.bytes.storage.data()), size);
+    return true;
+}
+
 auto gse::clip_asset::load(asset::load_ctx& ctx) -> async::task<> {
     (void)ctx;
 
-    if (m_baked_path.empty() || !exists(m_baked_path)) {
+    if (m_baked_path.empty()) {
         co_return;
     }
 
-    std::ifstream file(m_baked_path, std::ios::binary);
-    if (!file) {
+    baked b{};
+    if (!load_baked(m_baked_path, b)) {
         co_return;
     }
+
+    const auto& bytes = b.bytes.storage;
+    std::size_t pos = 0;
+    auto read_into = [&](void* dst, const std::size_t n) {
+        std::memcpy(dst, bytes.data() + pos, n);
+        pos += n;
+    };
 
     char magic[4];
-    file.read(magic, 4);
+    read_into(magic, 4);
     if (std::memcmp(magic, "GCLP", 4) != 0) {
         co_return;
     }
 
     std::uint32_t version;
-    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+    read_into(&version, sizeof(version));
 
     std::uint32_t name_len;
-    file.read(reinterpret_cast<char*>(&name_len), sizeof(name_len));
+    read_into(&name_len, sizeof(name_len));
     std::string name(name_len, '\0');
-    file.read(name.data(), name_len);
+    read_into(name.data(), name_len);
 
     float length_seconds;
-    file.read(reinterpret_cast<char*>(&length_seconds), sizeof(length_seconds));
+    read_into(&length_seconds, sizeof(length_seconds));
     m_length = seconds(length_seconds);
 
     std::uint8_t loop_byte;
-    file.read(reinterpret_cast<char*>(&loop_byte), sizeof(loop_byte));
+    read_into(&loop_byte, sizeof(loop_byte));
     m_loop = loop_byte != 0;
 
     std::uint32_t track_count;
-    file.read(reinterpret_cast<char*>(&track_count), sizeof(track_count));
+    read_into(&track_count, sizeof(track_count));
 
     m_tracks.clear();
     m_tracks.reserve(track_count);
@@ -116,22 +151,22 @@ auto gse::clip_asset::load(asset::load_ctx& ctx) -> async::task<> {
     for (std::uint32_t t = 0; t < track_count; ++t) {
         joint_track track;
 
-        file.read(reinterpret_cast<char*>(&track.joint_index), sizeof(track.joint_index));
+        read_into(&track.joint_index, sizeof(track.joint_index));
 
         std::uint32_t key_count;
-        file.read(reinterpret_cast<char*>(&key_count), sizeof(key_count));
+        read_into(&key_count, sizeof(key_count));
 
         track.keys.reserve(key_count);
 
         for (std::uint32_t k = 0; k < key_count; ++k) {
             float key_time_seconds;
-            file.read(reinterpret_cast<char*>(&key_time_seconds), sizeof(key_time_seconds));
+            read_into(&key_time_seconds, sizeof(key_time_seconds));
 
             mat4f local_transform;
             for (int row = 0; row < 4; ++row) {
                 for (int col = 0; col < 4; ++col) {
                     float val;
-                    file.read(reinterpret_cast<char*>(&val), sizeof(val));
+                    read_into(&val, sizeof(val));
                     local_transform[col][row] = val;
                 }
             }

@@ -8,7 +8,6 @@ import :geometry_collector;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.shader;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -16,10 +15,45 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 
+namespace gse::renderer::skin_compute {
+	struct [[= shaders::shader_struct]] push_constants {
+		std::uint32_t joint_count;
+		std::uint32_t instance_count;
+		std::uint32_t local_pose_stride;
+		std::uint32_t skin_stride;
+	};
+
+	struct [[= shaders::binding<0, 0>{}, = shaders::ssbo_readonly]] skeleton_data {
+		using element = geometry_collector::joint_data;
+	};
+
+	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] local_poses {
+		using element = mat4f;
+	};
+
+	struct [[= shaders::binding<0, 2>{}, = shaders::ssbo_readwrite]] skin_matrices {
+		using element = mat4f;
+	};
+
+	using shader_binding_types = type_pack<skeleton_data, local_poses, skin_matrices>;
+	using shader_types = type_pack<geometry_collector::joint_data>;
+
+	using entry = gpu::compute_entry<
+		gpu::body_path<"Compute/skin_compute">,
+		gpu::layout<"skin_compute">,
+		gpu::types<shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::threads<64>,
+		gpu::push_constant<push_constants>,
+		gpu::system_values<gpu::group_id, gpu::group_thread_id>
+	>;
+}
+
 auto gse::renderer::skin_compute::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const geometry_collector::system::resources& gc, resources& r) -> async::task<> {
+	gpu_s.shader_registry->register_family("skin_compute", shaders::build_family_sets(shader_binding_types{}));
 	assert(static_cast<bool>(gc.skeleton_buffer), "skin_compute::initialize: gc.skeleton_buffer is null - geometry_collector::initialize did not run before skin_compute::initialize");
 
-	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::skin_compute::entry::pod);
+	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	constexpr std::size_t skin_buffer_size = geometry_collector::system::resources::max_skin_matrices * sizeof(mat4f);
 	constexpr std::size_t local_pose_size = geometry_collector::system::resources::max_skin_matrices * sizeof(mat4f);
@@ -28,7 +62,7 @@ auto gse::renderer::skin_compute::system::run(run_context& ctx, const gpu::conte
 		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("skin_compute"));
 
 		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("skin_compute"), r.descriptors[i])
-			.buffer("skeleton_data", gc.skeleton_buffer, 0, geometry_collector::system::resources::max_joints * sizeof(shaders::skin_compute::joint_data))
+			.buffer("skeleton_data", gc.skeleton_buffer, 0, geometry_collector::system::resources::max_joints * sizeof(joint_data))
 			.buffer("local_poses", gc.local_pose_buffer[i], 0, local_pose_size)
 			.buffer("skin_matrices", gc.skin_buffer[i], 0, skin_buffer_size)
 			.commit();
@@ -50,7 +84,7 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, const gpu::c
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	const gpu::typed_push_constants<shaders::skin_compute::push_constants> skin_pc{
+	const gpu::typed_push_constants<push_constants> skin_pc{
 		.data = {
 			.joint_count = gc_s.current_joint_count,
 			.instance_count = data.pending_compute_instance_count,

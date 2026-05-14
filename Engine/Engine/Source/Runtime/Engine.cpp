@@ -19,7 +19,6 @@ import gse.physics;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.shader;
 import gse.log;
 import gse.save;
 import gse.config;
@@ -43,8 +42,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	if (m_flags.test(engine_flag::render)) {
 		auto& window_state = add_system<window>();
 		window_state.title = std::string(id().tag());
-		auto& gpu_state = add_system<gpu::context>();
-		gpu_state.on_registry_created = &shaders::initialize_layouts;
+		add_system<gpu::context>();
 		add_system<asset::registry>();
 		add_system<physics::system>();
 		add_system<camera::system>();
@@ -66,7 +64,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 		auto& asset_state = m_scheduler.state<asset::state>();
 
-		using game_assets = gse::assets::append<graphics::asset_types, audio_clip>;
+		using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
 		gse::asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
 		assets.install_hot_reload_fns();

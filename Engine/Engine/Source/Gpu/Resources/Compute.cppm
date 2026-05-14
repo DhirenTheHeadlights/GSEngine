@@ -313,7 +313,6 @@ auto gse::gpu::compute_queue::copy_buffer(const buffer_copy& copy) const -> void
 	);
 }
 
-
 template <typename T>
 auto gse::gpu::compute_queue::push(const pipeline& p, const typed_push_constants<T>& typed) const -> void {
 	typed.replay(m_ctx.command_buffer_handle(), p.layout());

@@ -61,7 +61,6 @@ struct std::formatter<gse::quaternion<T>, CharT> {
     }
 };
 
-
 template <gse::internal::is_arithmetic T>
 constexpr gse::quaternion<T>::quaternion() : vec<T, 4>{ T(1), T(0), T(0), T(0) } {}
 

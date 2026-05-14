@@ -277,7 +277,6 @@ constexpr auto gse::internal::unit<QuantityTagType, ConversionRatio, UnitName>::
     return quantity_template::template type<T>::template from<unit>(value);
 }
 
-
 namespace gse::internal {
     export template <typename T>
     concept is_unit = requires {
@@ -690,7 +689,6 @@ struct gse::scalar<gse::internal::quantity<A, Dim, Tag, Unit>> {
         return gse::internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(v);
     }
 };
-
 
 export namespace gse::internal {
     template <typename Q>
