@@ -45,4 +45,24 @@ export namespace gse::shaders::meshlet_depth_only {
 		meshlet_bounds_buffer,
 		instance_data_buffer
 	>;
+
+	struct [[= shader_struct]] push_constants {
+		std::uint32_t meshlet_offset;
+		std::uint32_t meshlet_count;
+		std::uint32_t first_instance;
+	};
+
+	using entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/meshlet_depth_only">,
+		gpu::layout<"meshlet_depth_only">,
+		gpu::bindings<shader_binding_types>,
+		gpu::amplification_stage<"as_main">,
+		gpu::mesh_stage<"ms_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<push_constants>,
+		gpu::depth<true, true, gpu::compare_op::less>,
+		gpu::color_target<gpu::color_format::none>
+	>;
 }
+
+static_assert(sizeof(gse::shaders::meshlet_depth_only::push_constants) == gse::shaders::slang_scalar_size<gse::shaders::meshlet_depth_only::push_constants>());

@@ -16,6 +16,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.math;
 import gse.log;
+import gse.shader;
 
 auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
     if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
@@ -98,25 +99,8 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 }
 
 auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd, state& s) -> async::task<> {
-    r.sprite_shader = co_await asset::load<shader>(ctx, "Shaders/Standard2D/sprite");
-
-    r.sprite_pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.sprite_shader, {
-        .rasterization = { .cull = gpu::cull_mode::none },
-        .depth = { .test = false, .write = false },
-        .blend = gpu::blend_preset::alpha_premultiplied,
-        .depth_fmt = gpu::depth_format::none,
-        .push_constant_block = "push_constants",
-    });
-
-    r.text_shader = co_await asset::load<shader>(ctx, "Shaders/Standard2D/msdf");
-
-    r.text_pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.text_shader, {
-        .rasterization = { .cull = gpu::cull_mode::none },
-        .depth = { .test = false, .write = false },
-        .blend = gpu::blend_preset::alpha_premultiplied,
-        .depth_fmt = gpu::depth_format::none,
-        .push_constant_block = "push_constants",
-    });
+    r.sprite_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::sprite::entry::pod);
+    r.text_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::msdf::entry::pod);
 
     constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
     constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
@@ -303,11 +287,14 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
         meters(1.0f)
     );
 
-    auto sprite_pc = gpu::cache_push_block(r.sprite_shader, "push_constants");
-    sprite_pc.set("projection", projection);
-
-    auto text_pc = gpu::cache_push_block(r.text_shader, "push_constants");
-    text_pc.set("projection", projection);
+    gpu::typed_push_constants<shaders::sprite::push_constants> sprite_pc{
+        .data = { .projection = projection, .tex_idx = 0 },
+        .stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
+    };
+    gpu::typed_push_constants<shaders::msdf::push_constants> text_pc{
+        .data = { .projection = projection, .depth = 0.0f, .tex_idx = 0 },
+        .stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
+    };
 
     const vec2u ext_size{ width, height };
 
@@ -359,10 +346,10 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, const gpu::context::st
         }
 
         if (type == command_type::sprite) {
-            sprite_pc.set("tex_idx", tex_idx);
+            sprite_pc.data.tex_idx = tex_idx;
             rec.push(r.sprite_pipeline, sprite_pc);
         } else {
-            text_pc.set("tex_idx", tex_idx);
+            text_pc.data.tex_idx = tex_idx;
             rec.push(r.text_pipeline, text_pc);
         }
 

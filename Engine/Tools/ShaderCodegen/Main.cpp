@@ -18,20 +18,10 @@ auto emit_struct_only(std::ostream& out) -> void {
 	}
 }
 
-template <typename T>
-auto emit_binding(std::ostream& out) -> void {
-	out << gse::shaders::emit_slang_binding<T>();
-}
-
 template <typename... Ts>
 auto emit_pack(std::ostream& out, gse::type_pack<Ts...>) -> void {
 	(emit_enum_only<Ts>(out), ...);
 	(emit_struct_only<Ts>(out), ...);
-}
-
-template <typename... Ts>
-auto emit_binding_pack(std::ostream& out, gse::type_pack<Ts...>) -> void {
-	(emit_binding<Ts>(out), ...);
 }
 
 auto main(const int argc, char** argv) -> int {
@@ -54,50 +44,8 @@ auto main(const int argc, char** argv) -> int {
 	}
 
 	{
-		std::ofstream out(out_dir / "forward_layout.slang");
-		out << "__exported import generated.common_types;\n";
-		out << "__exported import generated.forward_types;\n\n";
-		emit_binding_pack(out, gse::shaders::forward::shader_binding_types{});
-	}
-
-	{
-		std::ofstream out(out_dir / "post_process_layout.slang");
-		emit_binding_pack(out, gse::shaders::post_process::shader_binding_types{});
-	}
-
-	{
-		std::ofstream out(out_dir / "standard_2d_layout.slang");
-		emit_binding_pack(out, gse::shaders::standard_2d::shader_binding_types{});
-	}
-
-	{
-		std::ofstream out(out_dir / "standard_3d_layout.slang");
-		out << "__exported import generated.common_types;\n\n";
-		emit_binding_pack(out, gse::shaders::standard_3d::shader_binding_types{});
-	}
-
-	{
 		std::ofstream out(out_dir / "vbd_physics_types.slang");
 		emit_pack(out, gse::shaders::vbd_physics::shader_types{});
-	}
-
-	{
-		std::ofstream out(out_dir / "vbd_physics_layout.slang");
-		out << "__exported import generated.vbd_physics_types;\n\n";
-		emit_binding_pack(out, gse::shaders::vbd_physics::shader_binding_types{});
-	}
-
-	{
-		std::ofstream out(out_dir / "meshlet_depth_only_layout.slang");
-		out << "__exported import generated.common_types;\n";
-		out << "__exported import generated.forward_types;\n\n";
-		emit_binding_pack(out, gse::shaders::meshlet_depth_only::shader_binding_types{});
-	}
-
-	{
-		std::ofstream out(out_dir / "skinned_depth_only_layout.slang");
-		out << "__exported import generated.common_types;\n\n";
-		emit_binding_pack(out, gse::shaders::skinned_depth_only::shader_binding_types{});
 	}
 
 	return 0;

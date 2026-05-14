@@ -13,6 +13,8 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.log;
+import gse.std_meta;
+import gse.shader;
 
 import :vbd_constraints;
 import :vbd_solver;
@@ -49,6 +51,10 @@ export namespace gse::vbd {
 			return offsets.at(name);
 		}
 	};
+
+	template <gse::shaders::is_shader_struct T>
+	auto vbd_layout_from(
+	) -> buffer_layout;
 
 	constexpr std::uint32_t flag_locked = 1u;
 	constexpr std::uint32_t flag_update_orientation = 2u;
@@ -200,23 +206,6 @@ export namespace gse::vbd {
 
 	private:
 		struct compute_shaders {
-			resource::handle<shader> predict;
-			resource::handle<shader> solve_color;
-			resource::handle<shader> update_lambda;
-			resource::handle<shader> derive_velocities;
-			resource::handle<shader> finalize;
-			resource::handle<shader> collision_reset;
-			resource::handle<shader> collision_broad_phase;
-			resource::handle<shader> collision_narrow_phase;
-			resource::handle<shader> collision_build_adjacency;
-			resource::handle<shader> collision_grid_build;
-			resource::handle<shader> update_joint_lambda;
-			resource::handle<shader> prepare_indirect;
-			resource::handle<shader> prepare_contact_indirect;
-			resource::handle<shader> prepare_color_indirect;
-			resource::handle<shader> freeze_jacobians;
-			resource::handle<shader> apply_jacobi;
-
 			gpu::pipeline predict_pipeline;
 			gpu::pipeline solve_color_pipeline;
 			gpu::pipeline update_lambda_pipeline;
@@ -321,4 +310,14 @@ export namespace gse::vbd {
 		std::vector<std::byte> m_latest_gpu_body_data;
 		std::uint32_t m_latest_gpu_body_count = 0;
 	};
+}
+
+template <gse::shaders::is_shader_struct T>
+auto gse::vbd::vbd_layout_from() -> buffer_layout {
+	buffer_layout out;
+	out.stride = static_cast<std::uint32_t>(sizeof(T));
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		out.offsets[std::string(std::meta::identifier_of(m))] = static_cast<std::uint32_t>(std::meta::offset_of(m).bytes);
+	}
+	return out;
 }

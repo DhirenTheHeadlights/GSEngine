@@ -10,7 +10,6 @@ import :vulkan_device;
 import :vulkan_commands;
 import :vulkan_image;
 import :descriptor_heap;
-import :shader;
 import :device;
 import :swap_chain;
 import :frame;
@@ -142,11 +141,6 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto end_rendering(
-		) const -> void;
-
-		auto push(
-			const gpu::pipeline& p,
-			const gpu::cached_push_constants& cache
 		) const -> void;
 
 		template <typename T>
@@ -726,11 +720,6 @@ auto gse::vulkan::recording_context::dispatch(const std::uint32_t x, const std::
 auto gse::vulkan::recording_context::end_rendering() const -> void {
 	check_active();
 	m_cmd.end_rendering();
-}
-
-auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const gpu::cached_push_constants& cache) const -> void {
-	check_active();
-	cache.replay(m_cmd.native(), p.layout());
 }
 
 template <typename T>

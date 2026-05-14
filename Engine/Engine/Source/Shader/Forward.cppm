@@ -26,10 +26,10 @@ export namespace gse::shaders::forward {
 
 	struct [[= shader_struct]] light {
 		light_type light_type;
-		vec3f position;
-		vec3f direction;
-		vec3f world_position;
-		vec3f world_direction;
+		vec3<gse::position> position;
+		vec3<gse::displacement> direction;
+		vec3<gse::position> world_position;
+		vec3<gse::displacement> world_direction;
 		vec3f color;
 		float intensity;
 		float constant;
@@ -123,7 +123,31 @@ export namespace gse::shaders::forward {
 		instance_data_buffer,
 		diffuse_sampler
 	>;
+
+	struct [[= shader_struct]] push_constants {
+		std::uint32_t meshlet_offset;
+		std::uint32_t meshlet_count;
+		std::uint32_t first_instance;
+		std::int32_t num_lights;
+		vec2u screen_size;
+		std::int32_t shadow_quality;
+		std::int32_t ao_quality;
+		std::int32_t reflection_quality;
+	};
+
+	using meshlet_entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/meshlet_geometry">,
+		gpu::layout<"forward_3d">,
+		gpu::bindings<shader_binding_types>,
+		gpu::amplification_stage<"as_main">,
+		gpu::mesh_stage<"ms_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<push_constants>,
+		gpu::depth<true, false, gpu::compare_op::less_or_equal>
+	>;
 }
+
+static_assert(sizeof(gse::shaders::forward::push_constants) == gse::shaders::slang_scalar_size<gse::shaders::forward::push_constants>());
 
 static_assert(sizeof(gse::shaders::forward::material_data) == gse::shaders::slang_scalar_size<gse::shaders::forward::material_data>());
 static_assert(sizeof(gse::shaders::forward::light) == gse::shaders::slang_scalar_size<gse::shaders::forward::light>());

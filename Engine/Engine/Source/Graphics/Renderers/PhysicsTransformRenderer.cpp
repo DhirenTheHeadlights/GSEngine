@@ -8,6 +8,7 @@ import :geometry_collector;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.shader;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -17,14 +18,10 @@ import gse.ecs;
 import gse.physics;
 
 auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd) -> async::task<> {
-	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Compute/physics_instance_transform");
-
-	assert(r.shader_handle->is_compute(), "Physics instance transform shader is not loaded as a compute shader");
-
-	r.pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.shader_handle, "push_constants");
+	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::physics_instance_transform::entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		fd.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.shader_handle);
+		fd.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("physics_instance_transform"));
 	}
 
 	r.initialized = true;
@@ -81,15 +78,19 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, const g
 		co_return;
 	}
 
-	gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, fd.descriptors[frame_index])
+	gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("physics_instance_transform"), fd.descriptors[frame_index])
 		.buffer("body_data", snapshot, 0, info.body_count * info.body_stride)
 		.buffer("mapping_data", fd.mapping_buffers[frame_index], 0, fd.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry))
-		.buffer("instance_data", gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
+		.buffer("instance_data_buffer", gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
 		.commit();
 
-	auto pc = gpu::cache_push_block(r.shader_handle, "push_constants");
-	pc.set("mapping_count", fd.cached_mapping_count);
-	pc.set("body_count", info.body_count);
+	const gpu::typed_push_constants<shaders::physics_instance_transform::push_constants> pc{
+		.data = {
+			.mapping_count = fd.cached_mapping_count,
+			.body_count = info.body_count,
+		},
+		.stages = gpu::stage_flag::compute,
+	};
 
 	const std::uint32_t workgroups = (fd.cached_mapping_count + 63) / 64;
 

@@ -19,6 +19,7 @@ export namespace gse::procedural_model {
     auto sphere(
         asset::state& assets,
         const material& mat,
+        length radius,
         std::uint32_t sectors,
         std::uint32_t stacks
     ) -> resource::handle<model>;
@@ -85,11 +86,12 @@ auto gse::procedural_model::box(asset::state& assets, const material& mat, const
     return handle;
 }
 
-auto gse::procedural_model::sphere(asset::state& assets, const material& mat, std::uint32_t sectors, std::uint32_t stacks) -> resource::handle<model> {
+auto gse::procedural_model::sphere(asset::state& assets, const material& mat, const length radius, std::uint32_t sectors, std::uint32_t stacks) -> resource::handle<model> {
     sectors = std::max(3u, sectors);
     stacks = std::max(2u, stacks);
 
-    const std::string key = std::format("proc/unit_sphere:{}x{}", sectors, stacks);
+    const float r = radius.as<meters>();
+    const std::string key = std::format("proc/sphere:{}:{}x{}", r, sectors, stacks);
 
     static std::mutex cache_mutex;
     static std::unordered_map<std::string, resource::handle<model>> cache;
@@ -111,7 +113,6 @@ auto gse::procedural_model::sphere(asset::state& assets, const material& mat, st
         const float cp = std::cos(phi);
 
         for (const auto j : std::views::iota(0u, sectors + 1)) {
-            constexpr float r = 0.5f;
             const float u = static_cast<float>(j) / static_cast<float>(sectors);
             const float theta = 2.f * std::numbers::pi_v<float> * u;
             const float st = std::sin(theta);

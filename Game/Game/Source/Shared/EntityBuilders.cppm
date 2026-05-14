@@ -77,12 +77,9 @@ auto gs::build_box(gse::asset::state& assets, gse::scene* scene, const std::stri
 }
 
 auto gs::build_sphere(gse::asset::state& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> gse::scene::builder {
-	const float diameter = radius.as<gse::meters>() * 2.f;
-
 	return scene->build(name)
 		.with<gse::physics::transform_component>({
 			.position = position,
-			.scale = { diameter, diameter, diameter },
 		})
 		.with<gse::physics::motion_component>({
 			.body = gse::physics::dynamic_body{
@@ -99,6 +96,7 @@ auto gs::build_sphere(gse::asset::state& assets, gse::scene* scene, const std::s
 					gse::material{
 						.diffuse_texture = gse::asset::get<gse::texture>(assets, "Textures/Textures/sun"),
 					},
+					radius,
 					sectors,
 					stacks
 				),

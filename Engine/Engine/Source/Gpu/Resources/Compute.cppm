@@ -8,7 +8,6 @@ import :vulkan_device;
 import :vulkan_commands;
 import :vulkan_compute_context;
 import :descriptor_heap;
-import :shader;
 import :device;
 import :bindless;
 
@@ -94,11 +93,6 @@ export namespace gse::gpu {
 
 		auto copy_buffer(
 			const buffer_copy& copy
-		) const -> void;
-
-		auto push(
-			const pipeline& p,
-			const cached_push_constants& cache
 		) const -> void;
 
 		template <typename T>
@@ -319,9 +313,6 @@ auto gse::gpu::compute_queue::copy_buffer(const buffer_copy& copy) const -> void
 	);
 }
 
-auto gse::gpu::compute_queue::push(const pipeline& p, const cached_push_constants& cache) const -> void {
-	cache.replay(m_ctx.command_buffer_handle(), p.layout());
-}
 
 template <typename T>
 auto gse::gpu::compute_queue::push(const pipeline& p, const typed_push_constants<T>& typed) const -> void {

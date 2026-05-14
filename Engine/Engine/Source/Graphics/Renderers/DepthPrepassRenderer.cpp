@@ -19,47 +19,32 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
+import gse.shader;
 
 auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r) -> async::task<> {
-	r.meshlet_shader = co_await asset::load<shader>(ctx, "Shaders/Standard3D/meshlet_depth_only");
+	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
-	const auto meshlet_camera_ubo = r.meshlet_shader->uniform_block("camera_ubo");
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		r.ubo_allocations["CameraUBO"][i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = meshlet_camera_ubo.size,
+		r.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
+			.size = camera_ubo_size,
 			.usage = gpu::buffer_flag::uniform
 		});
 	}
 
-	r.meshlet_pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.meshlet_shader, {
-		.depth = { .test = true, .write = true, .compare = gpu::compare_op::less },
-		.color = gpu::color_format::none,
-		.push_constant_block = "push_constants"
-	});
-
+	r.meshlet_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::meshlet_depth_only::entry::pod);
+	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::skinned_depth_only::entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.meshlet_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.meshlet_shader);
+		r.meshlet_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("meshlet_depth_only"));
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.meshlet_shader, r.meshlet_descriptors[i])
-			.buffer("camera_ubo", r.ubo_allocations["CameraUBO"][i], 0, meshlet_camera_ubo.size)
+		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("meshlet_depth_only"), r.meshlet_descriptors[i])
+			.buffer("camera_ubo", r.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
-	}
 
-	r.skinned_shader = co_await asset::load<shader>(ctx, "Shaders/Standard3D/skinned_depth_only");
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("skinned_depth_only"));
 
-	r.skinned_pipeline = gpu::create_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.skinned_shader, {
-		.depth = { .test = true, .write = true, .compare = gpu::compare_op::less },
-		.color = gpu::color_format::none
-	});
-
-
-	const auto skinned_camera_ubo = r.skinned_shader->uniform_block("camera_ubo");
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.skinned_shader);
-
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.skinned_shader, r.skinned_descriptors[i])
-			.buffer("camera_ubo", r.ubo_allocations["CameraUBO"][i], 0, skinned_camera_ubo.size)
+		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("skinned_depth_only"), r.skinned_descriptors[i])
+			.buffer("camera_ubo", r.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 	}
 
@@ -82,16 +67,17 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 	const auto view = cam_state.view_matrix;
 	const auto proj = cam_state.projection_matrix;
 
-	const auto& cam_alloc = r.ubo_allocations.at("CameraUBO")[frame_index];
-	r.meshlet_shader->set_uniform(cam_alloc.bytes(), "camera_ubo.view", view);
-	r.meshlet_shader->set_uniform(cam_alloc.bytes(), "camera_ubo.proj", proj);
-	r.skinned_shader->set_uniform(cam_alloc.bytes(), "camera_ubo.view", view);
-	r.skinned_shader->set_uniform(cam_alloc.bytes(), "camera_ubo.proj", proj);
+	const shaders::common::camera_data camera{
+		.view = view,
+		.proj = proj,
+		.inv_view = mat4f(1.0f),
+	};
+	gse::memcpy(r.camera_ubo_buffers[frame_index].mapped(), camera);
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	auto meshlet_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), r.meshlet_shader);
-	auto skinned_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), r.skinned_shader);
+	auto meshlet_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), std::string_view("meshlet_depth_only"));
+	auto skinned_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), std::string_view("skinned_depth_only"));
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
@@ -102,7 +88,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect),
 			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
 		)
-		.tracks(r.ubo_allocations.at("CameraUBO")[frame_index], gc_r.instance_buffer[frame_index]);
+		.tracks(r.camera_ubo_buffers[frame_index], gc_r.instance_buffer[frame_index]);
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
@@ -131,10 +117,14 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
 
-			auto pc = gpu::cache_push_block(r.meshlet_shader, "push_constants");
-			pc.set("meshlet_offset", static_cast<std::uint32_t>(0));
-			pc.set("meshlet_count", meshlet_count);
-			pc.set("first_instance", batch.first_instance);
+			const gpu::typed_push_constants<shaders::meshlet_depth_only::push_constants> pc{
+				.data = {
+					.meshlet_offset = 0,
+					.meshlet_count = meshlet_count,
+					.first_instance = batch.first_instance,
+				},
+				.stages = gpu::stage_flag::task | gpu::stage_flag::mesh | gpu::stage_flag::fragment,
+			};
 			rec.push(r.meshlet_pipeline, pc);
 
 			rec.draw_mesh_tasks_indirect(

@@ -57,8 +57,7 @@ export namespace gse::renderer::physics_debug {
 		struct resources {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
-			resource::handle<shader> shader_handle;
-			std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
+			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		};
 
 		struct frame_data {

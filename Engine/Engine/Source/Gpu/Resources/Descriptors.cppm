@@ -8,9 +8,7 @@ import :vulkan_buffer;
 import :vulkan_device;
 import :vulkan_acceleration_structure;
 import :descriptor_heap;
-import :shader;
 import :shader_registry;
-import gse.assets;
 
 import gse.assert;
 import gse.log;
@@ -24,7 +22,7 @@ export namespace gse::gpu {
 	auto allocate_descriptors(
 		shader_registry& registry,
 		descriptor_heap& heap,
-		const resource::handle<shader>& s,
+		std::string_view layout_name,
 		const std::source_location& loc = std::source_location::current()
 	) -> descriptor_region;
 
@@ -33,14 +31,14 @@ export namespace gse::gpu {
 		descriptor_writer(
 			shader_registry& registry,
 			handle<vulkan::device> dev,
-			resource::handle<shader> s,
+			std::string_view layout_name,
 			descriptor_region& region
 		);
 		descriptor_writer(
 			shader_registry& registry,
 			handle<vulkan::device> dev,
 			descriptor_heap& heap,
-			resource::handle<shader> s
+			std::string_view layout_name
 		);
 		descriptor_writer(descriptor_writer&&) noexcept = default;
 		auto operator=(descriptor_writer&&) noexcept -> descriptor_writer& = default;
@@ -110,9 +108,8 @@ export namespace gse::gpu {
 			std::size_t range = 0;
 		};
 
-		const shader_cache_entry* m_cache_entry = nullptr;
+		const family_layout* m_family = nullptr;
 		handle<vulkan::device> m_device;
-		resource::handle<shader> m_shader;
 		descriptor_region* m_region = nullptr;
 		mode m_mode = mode::persistent;
 
@@ -126,38 +123,45 @@ export namespace gse::gpu {
 	};
 }
 
-auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const resource::handle<shader>& s, const std::source_location& loc) -> descriptor_region {
-	const auto& cache = registry.cache(s);
+auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const std::string_view layout_name, const std::source_location& loc) -> descriptor_region {
+	const auto* family = registry.find_family(layout_name);
+	assert(family, "Shader family layout not registered: {}", layout_name);
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
-	assert(persistent_idx < cache.layout_handles.size(), "Shader has no persistent descriptor set to allocate");
+	assert(persistent_idx < family->layout_handles.size(), "Family has no persistent descriptor set to allocate");
 
-	const auto set_layout = cache.layout_handles[persistent_idx];
+	const auto set_layout = family->layout_handles[persistent_idx];
 	const auto size = heap.layout_size(set_layout);
 	return heap.allocate(size, loc);
 }
 
 namespace gse {
-	auto build_push_writer(
-		gpu::shader_registry& registry,
+	auto build_push_writer_from_family(
 		gpu::descriptor_heap& heap,
-		const resource::handle<shader>& s
+		const gpu::family_layout& family
 	) -> gpu::descriptor_set_writer;
 }
 
-auto gse::build_push_writer(gpu::shader_registry& registry, gpu::descriptor_heap& heap, const resource::handle<shader>& s) -> gpu::descriptor_set_writer {
-	const auto& cache = registry.cache(s);
+gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<vulkan::device> dev, const std::string_view layout_name, descriptor_region& region) : m_family(registry.find_family(layout_name)), m_device(dev), m_region(&region) {
+	assert(m_family, "Shader family layout not registered: {}", layout_name);
+}
+
+gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<vulkan::device> dev, descriptor_heap& heap, const std::string_view layout_name) : m_family(registry.find_family(layout_name)), m_device(dev), m_mode(mode::push) {
+	assert(m_family, "Shader family layout not registered: {}", layout_name);
+	m_push_writer = build_push_writer_from_family(heap, *m_family);
+}
+
+auto gse::build_push_writer_from_family(gpu::descriptor_heap& heap, const gpu::family_layout& family) -> gpu::descriptor_set_writer {
 	const auto& props = heap.props();
+	constexpr auto push_idx = static_cast<std::uint32_t>(gpu::descriptor_set_type::push);
 
-	const auto push_idx = static_cast<std::uint32_t>(gpu::descriptor_set_type::push);
-	const auto& layout_data = s->layout_data();
-
-	auto set_it = layout_data.sets.find(gpu::descriptor_set_type::push);
-	if (set_it == layout_data.sets.end()) {
+	auto set_it = std::ranges::find_if(family.sets, [](const auto& s) {
+		return s.type == gpu::descriptor_set_type::push;
+	});
+	if (set_it == family.sets.end() || family.layout_handles.size() <= push_idx) {
 		return {};
 	}
 
-	const auto& set_data = set_it->second;
-	const auto set_layout = cache.layout_handles[push_idx];
+	const auto set_layout = family.layout_handles[push_idx];
 	const auto total_size = heap.layout_size(set_layout);
 
 	auto descriptor_size_for = [&](gpu::descriptor_type dt) -> gpu::device_size {
@@ -181,13 +185,12 @@ auto gse::build_push_writer(gpu::shader_registry& registry, gpu::descriptor_heap
 	};
 
 	std::uint32_t max_binding = 0;
-	for (const auto& b : set_data.bindings) {
+	for (const auto& b : set_it->bindings) {
 		max_binding = std::max(max_binding, b.desc.binding);
 	}
 
 	std::vector<gpu::descriptor_binding_info> bindings(max_binding + 1);
-
-	for (const auto& b : set_data.bindings) {
+	for (const auto& b : set_it->bindings) {
 		const auto idx = b.desc.binding;
 		bindings[idx] = {
 			.offset = heap.binding_offset(set_layout, idx),
@@ -199,19 +202,15 @@ auto gse::build_push_writer(gpu::shader_registry& registry, gpu::descriptor_heap
 	return gpu::descriptor_set_writer(heap, set_layout, total_size, std::move(bindings));
 }
 
-gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<vulkan::device> dev, resource::handle<shader> s, descriptor_region& region) : m_cache_entry(&registry.cache(s)), m_device(dev), m_shader(std::move(s)), m_region(&region) {}
-
-gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<vulkan::device> dev, descriptor_heap& heap, resource::handle<shader> s) : m_cache_entry(&registry.cache(s)), m_device(dev), m_shader(std::move(s)), m_mode(mode::push), m_push_writer(build_push_writer(registry, heap, m_shader)) {}
-
 auto gse::gpu::descriptor_writer::find_binding_index(const std::string_view name) const -> std::uint32_t {
-	for (const auto& [type, bindings] : m_shader->layout_data().sets | std::views::values) {
-		for (const auto& b : bindings) {
+	for (const auto& fs : m_family->sets) {
+		for (const auto& b : fs.bindings) {
 			if (b.name == name) {
 				return b.desc.binding;
 			}
 		}
 	}
-	assert(false, "Binding '{}' not found in shader", name);
+	assert(false, "Binding '{}' not found in family", name);
 	return 0;
 }
 
@@ -297,12 +296,11 @@ auto gse::gpu::descriptor_writer::acceleration_structure(const std::string_view 
 auto gse::gpu::descriptor_writer::commit() -> void {
 	assert(m_region && *m_region, "Cannot commit to null descriptor region");
 
-	const auto& cache = *m_cache_entry;
 	const auto& heap = *m_region->heap;
 	const auto& props = heap.props();
 
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
-	const auto set_layout = cache.layout_handles[persistent_idx];
+	const auto set_layout = m_family->layout_handles[persistent_idx];
 	const auto& region = *m_region;
 
 	auto write_binding = [&](const std::string& name, std::uint32_t binding, bool is_uniform, std::uint32_t count) {
@@ -374,24 +372,12 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 		}
 	};
 
-	if (cache.family) {
-		for (const auto& fs : cache.family->sets) {
-			if (fs.type == descriptor_set_type::persistent) {
-				for (const auto& b : fs.bindings) {
-					write_binding(b.name, b.desc.binding, b.desc.type == descriptor_type::uniform_buffer, b.desc.count);
-				}
-				break;
+	for (const auto& fs : m_family->sets) {
+		if (fs.type == descriptor_set_type::persistent) {
+			for (const auto& b : fs.bindings) {
+				write_binding(b.name, b.desc.binding, b.desc.type == descriptor_type::uniform_buffer, b.desc.count);
 			}
-		}
-	}
-	else {
-		const auto& [sets] = m_shader->layout_data();
-		const auto set_it = sets.find(descriptor_set_type::persistent);
-		if (set_it == sets.end()) {
-			return;
-		}
-		for (const auto& b : set_it->second.bindings) {
-			write_binding(b.name, b.desc.binding, b.desc.type == descriptor_type::uniform_buffer, b.desc.count);
+			break;
 		}
 	}
 

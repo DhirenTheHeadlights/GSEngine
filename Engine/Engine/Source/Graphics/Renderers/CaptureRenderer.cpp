@@ -11,6 +11,7 @@ import :settings;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.shader;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
@@ -44,9 +45,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::s
         const auto ext = gpu_s.render_graph->extent();
         const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
-        r.convert_shader = co_await asset::load<shader>(ctx, "Shaders/Compute/rgba_to_nv12");
-
-        r.convert_pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.convert_shader, "push_constants");
+        r.convert_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::rgba_to_nv12::entry::pod);
 
         r.capture_sampler = gpu::sampler::create(gpu_s.device->allocator(), {
             .min = gpu::sampler_filter::nearest,
@@ -77,9 +76,9 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::s
             });
             gpu::transition_image_to(*gpu_s.device, r.uv_planes[i], gpu::image_layout::general);
 
-            r.convert_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.convert_shader);
+            r.convert_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("rgba_to_nv12"));
 
-            gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.convert_shader, r.convert_descriptors[i])
+            gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("rgba_to_nv12"), r.convert_descriptors[i])
                 .image("input_rgba", r.rgba_captures[i], r.capture_sampler, gpu::image_layout::shader_read_only)
                 .storage_image("output_y", r.y_planes[i])
                 .storage_image("output_uv", r.uv_planes[i])
@@ -239,11 +238,10 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, const gpu::
 
     const auto ext = gpu_s.render_graph->extent();
 
-    gpu::cached_push_constants convert_pc;
-    if (do_encode) {
-        convert_pc = gpu::cache_push_block(r.convert_shader, "push_constants");
-        convert_pc.set("extent", ext);
-    }
+    gpu::typed_push_constants<shaders::rgba_to_nv12::push_constants> convert_pc{
+        .data = { .extent = ext },
+        .stages = gpu::stage_flag::compute,
+    };
 
     auto rec = co_await gpu::pass<state>(ctx)
         .after<ui::system>();

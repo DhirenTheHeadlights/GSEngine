@@ -23,13 +23,11 @@ export namespace gse::renderer::cull_compute {
 		};
 
 		struct resources {
-			resource::handle<shader> shader_handle;
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> normal_descriptors;
 			per_frame_resource<gpu::descriptor_region> skinned_descriptors;
 			per_frame_resource<gpu::buffer> frustum_buffer;
 			per_frame_resource<gpu::buffer> batch_info_buffer;
-			uniform_block_layout batch_layout;
 		};
 
 		static auto run(

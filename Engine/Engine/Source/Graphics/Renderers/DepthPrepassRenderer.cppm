@@ -24,13 +24,11 @@ export namespace gse::renderer::depth_prepass {
 		struct resources {
 			gpu::pipeline meshlet_pipeline;
 			per_frame_resource<gpu::descriptor_region> meshlet_descriptors;
-			resource::handle<shader> meshlet_shader;
 
 			gpu::pipeline skinned_pipeline;
 			per_frame_resource<gpu::descriptor_region> skinned_descriptors;
-			resource::handle<shader> skinned_shader;
 
-			std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
+			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		};
 
 		static auto run(

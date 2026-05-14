@@ -13,6 +13,7 @@ import :depth_prepass_renderer;
 import gse.os;
 import gse.assets;
 import gse.gpu;
+import gse.shader;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -29,7 +30,7 @@ auto gse::renderer::light_culling::system::tile_count(const state& s) -> vec2u {
 
 auto gse::renderer::light_culling::system::update_depth_descriptor(const gpu::context::state& gpu_s, resources& r) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i])
+		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("light_culling"), r.descriptors[i])
 			.image("g_depth", gpu_s.render_graph->depth_image(), r.depth_sampler, gpu::image_layout::general)
 			.commit();
 	}
@@ -44,9 +45,6 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 	const std::uint32_t index_list_size = total_tiles * max_lights_per_tile * sizeof(std::uint32_t);
 	const std::uint32_t tile_table_size = total_tiles * 2 * sizeof(std::uint32_t);
 
-	const auto light_block = r.shader_handle->uniform_block("lights");
-	const auto params_block = r.shader_handle->uniform_block("CullingParams");
-
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		r.light_index_list_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = index_list_size,
@@ -58,9 +56,9 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 			.usage = gpu::buffer_flag::storage
 		});
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), r.shader_handle, r.descriptors[i])
-			.buffer("CullingParams", r.culling_params_buffers[i], 0, params_block.size)
-			.buffer("lights", r.light_buffers[i], 0, light_block.size * max_lights)
+		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("light_culling"), r.descriptors[i])
+			.buffer("culling_params", r.culling_params_buffers[i], 0, sizeof(shaders::light_culling::culling_params_data))
+			.buffer("lights", r.light_buffers[i], 0, sizeof(shaders::forward::light) * max_lights)
 			.buffer("light_index_list", r.light_index_list_buffers[i], 0, index_list_size)
 			.buffer("tile_light_table", r.tile_light_table_buffers[i], 0, tile_table_size)
 			.commit();
@@ -70,25 +68,18 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 }
 
 auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd, state& s) -> async::task<> {
-	r.shader_handle = co_await asset::load<shader>(ctx, "Shaders/Compute/light_culling");
-	assert(r.shader_handle->is_compute(), "Shader for light culling system must be a compute shader");
-
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), r.shader_handle);
+		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("light_culling"));
 	}
-
-	const auto params_block = r.shader_handle->uniform_block("CullingParams");
-	const auto light_block = r.shader_handle->uniform_block("lights");
-	fd.light_staging.reserve(light_block.size * max_lights);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		r.culling_params_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = params_block.size,
+			.size = sizeof(shaders::light_culling::culling_params_data),
 			.usage = gpu::buffer_flag::uniform
 		});
 
 		r.light_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = light_block.size * max_lights,
+			.size = sizeof(shaders::forward::light) * max_lights,
 			.usage = gpu::buffer_flag::storage
 		});
 	}
@@ -103,7 +94,7 @@ auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::cont
 		.max_lod = 1.0f
 	});
 
-	r.pipeline = gpu::create_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, r.shader_handle);
+	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::light_culling::entry::pod);
 
 	rebuild_tile_buffers(gpu_s, r, s);
 
@@ -131,47 +122,30 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const gpu::
 	const auto proj = cam_state.projection_matrix;
 	const auto view = cam_state.view_matrix;
 	const auto inv_proj = proj.inverse();
-
-	const auto& params_alloc = r.culling_params_buffers[frame_index];
-	r.shader_handle->set_uniform(params_alloc.bytes(), "CullingParams.projection", proj);
-	r.shader_handle->set_uniform(params_alloc.bytes(), "CullingParams.inv_proj", inv_proj);
-
 	const auto extent = graph.extent();
-	const std::array screen_size_arr = { extent.x(), extent.y() };
-	r.shader_handle->set_uniform(params_alloc.bytes(), "CullingParams.screen_size", screen_size_arr);
 
 	const auto dir_chunk = ctx.components<directional_light_component>();
 	const auto spot_chunk = ctx.components<spot_light_component>();
 	const auto point_chunk = ctx.components<point_light_component>();
 
 	const auto& light_alloc = r.light_buffers[frame_index];
-	const auto light_block = r.shader_handle->uniform_block("lights");
-	const auto stride = light_block.size;
 
-	const std::size_t total_lights = std::min(
-		dir_chunk.size() + spot_chunk.size() + point_chunk.size(),
-		max_lights
-	);
-	auto& staging = fd.light_staging;
-	staging.assign(total_lights * stride, std::byte{ 0 });
+	std::array<shaders::forward::light, max_lights> lights{};
 	std::size_t light_count = 0;
-
-	auto write = [&](const std::size_t index, const std::string_view member, const auto& v) {
-		gse::memcpy(staging.data() + index * stride + light_block.members.at(std::string(member)).offset, v);
-	};
 
 	for (const auto& comp : dir_chunk) {
 		if (light_count >= max_lights) {
 			break;
 		}
-		int type = 0;
-		write(light_count, "light_type", type);
-		write(light_count, "direction", view.transform_direction(comp.direction));
-		write(light_count, "world_direction", comp.direction);
-		write(light_count, "color", comp.color);
-		write(light_count, "intensity", comp.intensity);
-		write(light_count, "ambient_strength", comp.ambient_strength);
-		write(light_count, "source_radius", comp.source_radius);
+		lights[light_count] = {
+			.light_type = shaders::forward::light_type::directional,
+			.direction = view.transform_direction(comp.direction),
+			.world_direction = comp.direction,
+			.color = comp.color,
+			.intensity = comp.intensity,
+			.ambient_strength = comp.ambient_strength,
+			.source_radius = comp.source_radius,
+		};
 		++light_count;
 	}
 
@@ -179,23 +153,22 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const gpu::
 		if (light_count >= max_lights) {
 			break;
 		}
-		int type = 2;
-		const float cut_off_cos = gse::cos(comp.cut_off);
-		const float outer_cut_off_cos = gse::cos(comp.outer_cut_off);
-		write(light_count, "light_type", type);
-		write(light_count, "position", view.transform_point(comp.position));
-		write(light_count, "direction", view.transform_direction(comp.direction));
-		write(light_count, "world_position", comp.position);
-		write(light_count, "world_direction", comp.direction);
-		write(light_count, "color", comp.color);
-		write(light_count, "intensity", comp.intensity);
-		write(light_count, "constant", comp.constant);
-		write(light_count, "linear", comp.linear);
-		write(light_count, "quadratic", comp.quadratic);
-		write(light_count, "cut_off", cut_off_cos);
-		write(light_count, "outer_cut_off", outer_cut_off_cos);
-		write(light_count, "ambient_strength", comp.ambient_strength);
-		write(light_count, "source_radius", comp.source_radius);
+		lights[light_count] = {
+			.light_type = shaders::forward::light_type::spot,
+			.position = view.transform_point(comp.position),
+			.direction = view.transform_direction(comp.direction),
+			.world_position = comp.position,
+			.world_direction = comp.direction,
+			.color = comp.color,
+			.intensity = comp.intensity,
+			.constant = comp.constant,
+			.linear = comp.linear,
+			.quadratic = comp.quadratic,
+			.cut_off = gse::cos(comp.cut_off),
+			.outer_cut_off = gse::cos(comp.outer_cut_off),
+			.ambient_strength = comp.ambient_strength,
+			.source_radius = comp.source_radius,
+		};
 		++light_count;
 	}
 
@@ -203,26 +176,32 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const gpu::
 		if (light_count >= max_lights) {
 			break;
 		}
-		int type = 1;
-		write(light_count, "light_type", type);
-		write(light_count, "position", view.transform_point(comp.position));
-		write(light_count, "world_position", comp.position);
-		write(light_count, "color", comp.color);
-		write(light_count, "intensity", comp.intensity);
-		write(light_count, "constant", comp.constant);
-		write(light_count, "linear", comp.linear);
-		write(light_count, "quadratic", comp.quadratic);
-		write(light_count, "ambient_strength", comp.ambient_strength);
-		write(light_count, "source_radius", comp.source_radius);
+		lights[light_count] = {
+			.light_type = shaders::forward::light_type::point,
+			.position = view.transform_point(comp.position),
+			.world_position = comp.position,
+			.color = comp.color,
+			.intensity = comp.intensity,
+			.constant = comp.constant,
+			.linear = comp.linear,
+			.quadratic = comp.quadratic,
+			.ambient_strength = comp.ambient_strength,
+			.source_radius = comp.source_radius,
+		};
 		++light_count;
 	}
 
 	if (light_count > 0) {
-		gse::memcpy(light_alloc.mapped(), staging.data(), light_count * stride);
+		gse::memcpy(light_alloc.mapped(), lights.data(), light_count * sizeof(shaders::forward::light));
 	}
 
-	const std::uint32_t num_lights = static_cast<std::uint32_t>(light_count);
-	r.shader_handle->set_uniform(params_alloc.bytes(), "CullingParams.num_lights", num_lights);
+	const shaders::light_culling::culling_params_data params{
+		.projection = proj,
+		.inv_proj = inv_proj,
+		.screen_size = vec2u{ extent.x(), extent.y() },
+		.num_lights = static_cast<std::uint32_t>(light_count),
+	};
+	gse::memcpy(r.culling_params_buffers[frame_index].mapped(), &params, sizeof(params));
 
 	const auto tiles = tile_count(s);
 

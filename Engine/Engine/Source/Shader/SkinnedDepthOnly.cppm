@@ -26,4 +26,15 @@ export namespace gse::shaders::skinned_depth_only {
 		skin_matrices,
 		instance_data_buffer
 	>;
+
+	using entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/skinned_depth_only">,
+		gpu::layout<"skinned_depth_only">,
+		gpu::types<common::shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::depth<true, true, gpu::compare_op::less>,
+		gpu::color_target<gpu::color_format::none>
+	>;
 }

@@ -31,8 +31,6 @@ export namespace gse::renderer::light_culling {
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 
-			resource::handle<shader> shader_handle;
-
 			per_frame_resource<gpu::buffer> culling_params_buffers;
 			per_frame_resource<gpu::buffer> light_buffers;
 			per_frame_resource<gpu::buffer> light_index_list_buffers;
@@ -41,9 +39,7 @@ export namespace gse::renderer::light_culling {
 			gpu::sampler depth_sampler;
 		};
 
-		struct frame_data {
-			linear_vector<std::byte> light_staging;
-		};
+		struct frame_data {};
 
 		static auto run(
 			run_context& ctx,

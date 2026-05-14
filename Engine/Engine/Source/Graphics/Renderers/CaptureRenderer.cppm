@@ -42,7 +42,6 @@ export namespace gse::renderer::capture {
 
         struct resources {
             gpu::pipeline convert_pipeline;
-            resource::handle<shader> convert_shader;
             per_frame_resource<gpu::descriptor_region> convert_descriptors;
             per_frame_resource<gpu::image> rgba_captures;
             per_frame_resource<gpu::image> y_planes;
