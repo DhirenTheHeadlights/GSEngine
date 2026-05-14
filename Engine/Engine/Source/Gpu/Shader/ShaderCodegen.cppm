@@ -81,7 +81,6 @@ export namespace gse::shaders {
 	) -> std::size_t;
 
 	struct family_binding {
-		std::string name;
 		gpu::descriptor_binding_desc desc;
 	};
 
@@ -101,6 +100,10 @@ export namespace gse::shaders {
 	template <typename Pack>
 	auto build_family_sets(
 		Pack pack
+	) -> std::vector<family_set>;
+
+	template <typename... Packs>
+	auto build_combined_family_sets(
 	) -> std::vector<family_set>;
 
 	template <typename Pack>
@@ -125,6 +128,16 @@ struct gse::shaders::slang_type<std::int32_t> {
 template <>
 struct gse::shaders::slang_type<std::uint32_t> {
 	static constexpr std::string_view name = "uint";
+};
+
+template <>
+struct gse::shaders::slang_type<std::uint64_t> {
+	static constexpr std::string_view name = "uint64_t";
+};
+
+template <>
+struct gse::shaders::slang_type<std::int64_t> {
+	static constexpr std::string_view name = "int64_t";
 };
 
 template <gse::internal::is_quantity Q>
@@ -409,7 +422,6 @@ namespace gse::shaders {
 		constexpr auto slot_idx = binding_t::slot;
 		constexpr auto desc_type = descriptor_type_of<T>();
 		constexpr auto count = descriptor_count_of<T>();
-		constexpr auto name = std::meta::identifier_of(^^T);
 		constexpr auto set_type = static_cast<gpu::descriptor_set_type>(set_idx);
 		constexpr gpu::stage_flags all_stages =
 			gpu::stage_flag::vertex
@@ -426,7 +438,6 @@ namespace gse::shaders {
 			it = sets.end() - 1;
 		}
 		it->bindings.push_back(family_binding{
-			.name = std::string(name),
 			.desc = {
 				.binding = slot_idx,
 				.type = desc_type,
@@ -445,6 +456,29 @@ auto gse::shaders::build_family_sets(Pack) -> std::vector<family_set> {
 	}(Pack{});
 	std::ranges::sort(sets, {}, [](const family_set& s) { return static_cast<std::uint32_t>(s.type); });
 	return sets;
+}
+
+template <typename... Packs>
+auto gse::shaders::build_combined_family_sets() -> std::vector<family_set> {
+	std::vector<family_set> result;
+	auto merge_into = [&](std::vector<family_set> src) {
+		for (auto& s : src) {
+			auto it = std::ranges::find_if(result, [&](const family_set& d) {
+				return d.type == s.type;
+			});
+			if (it == result.end()) {
+				result.push_back(std::move(s));
+			}
+			else {
+				for (auto& b : s.bindings) {
+					it->bindings.push_back(std::move(b));
+				}
+			}
+		}
+	};
+	(merge_into(build_family_sets(Packs{})), ...);
+	std::ranges::sort(result, {}, [](const family_set& s) { return static_cast<std::uint32_t>(s.type); });
+	return result;
 }
 
 namespace gse::shaders {

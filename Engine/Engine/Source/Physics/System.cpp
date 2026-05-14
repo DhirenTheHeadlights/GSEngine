@@ -332,25 +332,25 @@ auto gse::physics::system::unpack_feature(const std::uint64_t packed) -> feature
 	};
 }
 
-auto gse::physics::system::build_contact_cache_from_warm_start(const std::span<const vbd::warm_start_entry> warm_start_contacts) -> vbd::contact_cache {
+auto gse::physics::system::build_contact_cache_from_warm_start(const std::span<const vbd::gpu_warm_start> warm_start_contacts) -> vbd::contact_cache {
 	vbd::contact_cache cache;
 	for (const auto& c : warm_start_contacts) {
 		cache.store(c.body_a, c.body_b, unpack_feature(c.feature_key), vbd::cached_lambda{
-			.lambda = c.lambda,
-			.penalty = c.penalty,
-			.normal = c.normal,
-			.tangent_u = c.tangent_u,
-			.tangent_v = c.tangent_v,
-			.local_anchor_a = c.local_anchor_a,
-			.local_anchor_b = c.local_anchor_b,
-			.sticking = c.sticking,
+			.lambda = vec3<force>{ c.lambda },
+			.penalty = vec3<stiffness>{ c.penalty },
+			.normal = vec3f{ c.normal },
+			.tangent_u = vec3f{ c.tangent_u },
+			.tangent_v = vec3f{ c.tangent_v },
+			.local_anchor_a = vec3<lever_arm>{ c.local_anchor_a },
+			.local_anchor_b = vec3<lever_arm>{ c.local_anchor_b },
+			.sticking = c.sticking != 0,
 			.age = 0
 		});
 	}
 	return cache;
 }
 
-auto gse::physics::system::invalidate_warm_start_entries(std::vector<vbd::warm_start_entry>& warm_start_contacts, const std::span<const std::uint32_t> body_indices) -> void {
+auto gse::physics::system::invalidate_warm_start_entries(std::vector<vbd::gpu_warm_start>& warm_start_contacts, const std::span<const std::uint32_t> body_indices) -> void {
 	if (body_indices.empty()) {
 		return;
 	}
@@ -551,7 +551,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 						.body_a = c.body_a,
 						.body_b = c.body_b,
 						.feature_key = c.feature_key,
-						.sticking = sticking,
+						.sticking = sticking ? 1u : 0u,
 						.normal = c.normal,
 						.tangent_u = c.tangent_u,
 						.tangent_v = c.tangent_v,
@@ -569,7 +569,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 
 					const auto eid_a = completed.entity_ids[body_a];
 					const auto eid_b = completed.entity_ids[body_b];
-					const auto& normal = c.normal;
+					const vec3f normal{ c.normal };
 
 					if (auto* st_b = status.find(eid_b)) {
 						if (normal.y() < -0.7f) {
@@ -584,8 +584,8 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 
 					const auto& bs_a = completed.gpu_result_bodies[body_a];
 					const auto& bs_b = completed.gpu_result_bodies[body_b];
-					const auto world_r_a = rotate_vector(bs_a.orientation, c.local_anchor_a);
-					const auto world_r_b = rotate_vector(bs_b.orientation, c.local_anchor_b);
+					const auto world_r_a = rotate_vector(bs_a.orientation, vec3<lever_arm>{ c.local_anchor_a });
+					const auto world_r_b = rotate_vector(bs_b.orientation, vec3<lever_arm>{ c.local_anchor_b });
 					const auto contact_point_a = bs_a.position + world_r_a;
 					const auto contact_point_b = bs_b.position + world_r_b;
 					const auto midpoint = contact_point_a + (contact_point_b - contact_point_a) * 0.5f;
@@ -607,7 +607,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 
 			std::ranges::sort(
 				ud.gpu_prev.warm_start_contacts,
-				[](const vbd::warm_start_entry& a, const vbd::warm_start_entry& b) {
+				[](const vbd::gpu_warm_start& a, const vbd::gpu_warm_start& b) {
 					if (a.body_a != b.body_a) {
 						return a.body_a < b.body_a;
 					}
@@ -676,7 +676,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 					}] = std::addressof(c);
 				}
 
-				std::unordered_map<contact_compare_key, const vbd::contact_readback_entry*, contact_compare_key_hash> gpu_contact_map;
+				std::unordered_map<contact_compare_key, const vbd::gpu_contact*, contact_compare_key_hash> gpu_contact_map;
 				gpu_contact_map.reserve(completed.gpu_contacts.size());
 				for (const auto& c : completed.gpu_contacts) {
 					gpu_contact_map[contact_compare_key{
@@ -694,7 +694,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 				length max_contact_c0_err{};
 				contact_compare_key worst_contact_key{};
 				const vbd::contact_constraint* worst_cpu_contact = nullptr;
-				const vbd::contact_readback_entry* worst_gpu_contact = nullptr;
+				const vbd::gpu_contact* worst_gpu_contact = nullptr;
 
 				for (const auto& [key, cpu_contact] : cpu_contact_map) {
 					const auto it = gpu_contact_map.find(key);
@@ -705,9 +705,9 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 
 					++matched_contacts;
 					const auto* gpu_contact = it->second;
-					const force lambda_err = magnitude(cpu_contact->lambda - gpu_contact->lambda);
-					const stiffness penalty_err = magnitude(cpu_contact->penalty - gpu_contact->penalty);
-					const length c0_err = magnitude(cpu_contact->c0 - gpu_contact->c0);
+					const force lambda_err = magnitude(cpu_contact->lambda - vec3<force>{ gpu_contact->lambda });
+					const stiffness penalty_err = magnitude(cpu_contact->penalty - vec3<stiffness>{ gpu_contact->penalty });
+					const length c0_err = magnitude(cpu_contact->c0 - vec3<gap>{ gpu_contact->c0 });
 
 					if (lambda_err > max_contact_lambda_err) {
 						max_contact_lambda_err = lambda_err;
@@ -971,7 +971,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, const settings& cfg, 
 				.initial_orientation = tc->orientation,
 				.body_angular_velocity = mc.angular_velocity,
 				.motor_target = tc->position,
-				.mass_value = dyn ? dyn->mass : kilograms(0.f),
+				.mass = dyn ? dyn->mass : kilograms(0.f),
 				.inv_inertia = inv_inertial_tensor(mc, tc->orientation),
 				.locked = locked,
 				.update_orientation = dyn && dyn->update_orientation,
@@ -1259,7 +1259,7 @@ auto gse::physics::system::update_vbd(const int steps, const settings& cfg, upda
 				.initial_orientation = tc->orientation,
 				.body_angular_velocity = mc.angular_velocity,
 				.motor_target = tc->position,
-				.mass_value = dyn ? dyn->mass : kilograms(0.f),
+				.mass = dyn ? dyn->mass : kilograms(0.f),
 				.inv_inertia = inv_inertial_tensor(mc, tc->orientation),
 				.locked = locked,
 				.update_orientation = dyn && dyn->update_orientation,
@@ -1430,7 +1430,7 @@ auto gse::physics::system::frame(frame_context& ctx, const gpu::context::state* 
 		}
 		else {
 			thread_local std::vector<vbd::body_state> discard_bodies;
-			thread_local std::vector<vbd::contact_readback_entry> discard_contacts;
+			thread_local std::vector<vbd::gpu_contact> discard_contacts;
 			thread_local std::vector<vbd::joint_constraint> discard_joints;
 			discard_bodies.clear();
 			discard_contacts.clear();
@@ -1475,13 +1475,12 @@ auto gse::physics::system::frame(frame_context& ctx, const gpu::context::state* 
 	});
 
 	const auto snap_slot = fd.gpu_solver.latest_snapshot_slot();
-	const auto& layout = fd.gpu_solver.body_layout();
 
 	ctx.channels.push<gpu_solver_frame_info>({
 		.snapshot = &fd.gpu_solver.snapshot_buffer(snap_slot),
 		.semaphore = fd.gpu_solver.compute_semaphore(),
 		.body_count = fd.gpu_solver.body_count(),
-		.body_stride = layout.stride,
-		.position_offset = layout["position"]
+		.body_stride = sizeof(vbd::gpu_body),
+		.position_offset = std::meta::offset_of_v<^^vbd::gpu_body::position>
 	});
 }

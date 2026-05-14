@@ -48,7 +48,6 @@ namespace gse::renderer::capture {
 }
 
 auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const actions::system::state& sys, settings& cfg, resources& r, frame_data& fd, state& s) -> async::task<> {
-	gpu_s.shader_registry->register_family("rgba_to_nv12", shaders::build_family_sets(shader_binding_types{}));
     const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
         const id action_id = generate_id(name);
         ctx.channels.push<actions::add_action_request>({
@@ -103,12 +102,12 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::s
             });
             gpu::transition_image_to(*gpu_s.device, r.uv_planes[i], gpu::image_layout::general);
 
-            r.convert_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("rgba_to_nv12"));
+            r.convert_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 
-            gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("rgba_to_nv12"), r.convert_descriptors[i])
-                .image("input_rgba", r.rgba_captures[i], r.capture_sampler, gpu::image_layout::shader_read_only)
-                .storage_image("output_y", r.y_planes[i])
-                .storage_image("output_uv", r.uv_planes[i])
+            gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.convert_descriptors[i])
+                .image<input_rgba>(r.rgba_captures[i], r.capture_sampler, gpu::image_layout::shader_read_only)
+                .storage_image<output_y>(r.y_planes[i])
+                .storage_image<output_uv>(r.uv_planes[i])
                 .commit();
         }
 

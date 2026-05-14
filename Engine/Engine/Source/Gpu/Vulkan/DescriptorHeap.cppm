@@ -30,12 +30,14 @@ export namespace gse::gpu {
 	};
 
 	class descriptor_heap;
+	struct family_layout;
 
 	struct descriptor_region {
 		gpu::device_size offset = 0;
 		gpu::device_size size = 0;
 		descriptor_heap* heap = nullptr;
 		std::uint32_t buffer_index = 0;
+		const family_layout* family = nullptr;
 
 		operator bool() const {
 			return heap != nullptr;

@@ -109,7 +109,8 @@ auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd
 }
 
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, settings& cfg, resources& r, frame_data& fd, state& s, const physics::system::state& ps, const physics::system::settings& phys_cfg) -> async::task<> {
-	gpu_s.shader_registry->register_family("standard_3d", shaders::build_family_sets(shaders::standard_3d::shader_binding_types{}));
+	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
@@ -118,14 +119,12 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 			.usage = gpu::buffer_flag::uniform
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("standard_3d"));
+		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("standard_3d"), r.descriptors[i])
-			.buffer("camera_ubo", r.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.descriptors[i])
+			.buffer<shaders::standard_3d::camera_ubo>(r.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 	}
-
-	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	while (true) {
 		if (!cfg.enabled) {

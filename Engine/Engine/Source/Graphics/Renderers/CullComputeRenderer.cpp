@@ -60,7 +60,6 @@ namespace gse::renderer::cull_compute {
 }
 
 auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const geometry_collector::system::resources& gc_r, resources& r, state& s) -> async::task<> {
-	gpu_s.shader_registry->register_family("cull_instances", shaders::build_family_sets(shader_binding_types{}));
 	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
@@ -78,24 +77,24 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.normal_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("cull_instances"));
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("cull_instances"));
+		r.normal_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		auto write_shared = [&](gpu::descriptor_writer& w) -> gpu::descriptor_writer& {
-			return w.buffer("frustum_ubo", r.frustum_buffer[i], 0, sizeof(std::array<vec4f, 6>))
-				.buffer("batches", r.batch_info_buffer[i]);
+			return w.buffer<frustum_ubo>(r.frustum_buffer[i], 0, sizeof(std::array<vec4f, 6>))
+				.buffer<batches>(r.batch_info_buffer[i]);
 		};
 
-		gpu::descriptor_writer normal_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("cull_instances"), r.normal_descriptors[i]);
+		gpu::descriptor_writer normal_writer(gpu::context::device_handle(gpu_s), r.normal_descriptors[i]);
 		write_shared(normal_writer)
-			.buffer("indirect_commands", gc_r.normal_indirect_commands_buffer[i])
+			.buffer<indirect_commands>(gc_r.normal_indirect_commands_buffer[i])
 			.commit();
 
-		gpu::descriptor_writer skinned_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("cull_instances"), r.skinned_descriptors[i]);
+		gpu::descriptor_writer skinned_writer(gpu::context::device_handle(gpu_s), r.skinned_descriptors[i]);
 		write_shared(skinned_writer)
-			.buffer("indirect_commands", gc_r.skinned_indirect_commands_buffer[i])
+			.buffer<indirect_commands>(gc_r.skinned_indirect_commands_buffer[i])
 			.commit();
 	}
 

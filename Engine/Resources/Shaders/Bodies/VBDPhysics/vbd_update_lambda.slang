@@ -14,8 +14,8 @@ gpu_contact c = contact_data[ci];
 gpu_body body_a = body_data[c.body_a];
 gpu_body body_b = body_data[c.body_b];
 
-float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a.xyz);
-float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b.xyz);
+float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.local_anchor_a.xyz);
+float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.local_anchor_b.xyz);
 
 float3 p_a = body_a.predicted_position.xyz + world_r_a;
 float3 p_b = body_b.predicted_position.xyz + world_r_b;
@@ -26,14 +26,14 @@ float3 Cn = float3(
     dot(c.tangent_u.xyz, d),
     dot(c.tangent_v.xyz, d)
 );
-float3 C = Cn - c.c0_friction.xyz * pc.current_alpha;
+float3 C = Cn - c.c0.xyz * pc.current_alpha;
 
 float4 lambda = c.lambda;
 float4 penalty = c.penalty;
 
 lambda.x = min(penalty.x * C.x + lambda.x, 0.0);
 
-float friction_bound = abs(lambda.x) * c.c0_friction.w;
+float friction_bound = abs(lambda.x) * c.friction_coeff;
 lambda.y = clamp(penalty.y * C.y + lambda.y, -friction_bound, friction_bound);
 lambda.z = clamp(penalty.z * C.z + lambda.z, -friction_bound, friction_bound);
 

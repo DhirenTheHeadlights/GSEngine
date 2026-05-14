@@ -44,7 +44,6 @@ namespace gse::renderer::rt_shadow {
 }
 
 auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, frame_data& fd, state& s) -> async::task<> {
-	gpu_s.shader_registry->register_family("tlas_transform_update", shaders::build_family_sets(shader_binding_types{}));
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
@@ -56,7 +55,7 @@ auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context:
 	fd.tlas_update_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("tlas_transform_update"));
+		fd.tlas_update_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 	}
 
 	co_return;
@@ -99,8 +98,8 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, const gpu::cont
 	auto& instances = fd.instances[frame_index];
 	instances.clear();
 
-	linear_vector<std::uint32_t> index_mapping;
-	index_mapping.reserve(data.render_queue.size());
+	linear_vector<std::uint32_t> mapping;
+	mapping.reserve(data.render_queue.size());
 
 	std::uint32_t render_queue_idx = 0;
 	for (const auto& queue_entry : data.render_queue) {
@@ -130,7 +129,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, const gpu::cont
 			.blas_address = it->second.device_address()
 		});
 
-		index_mapping.push_back(render_queue_idx);
+		mapping.push_back(render_queue_idx);
 		++render_queue_idx;
 
 		if (instances.size() >= max_instances) {
@@ -157,14 +156,14 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, const gpu::cont
 		fd.mapping_buffer_capacity = mapping_bytes;
 	}
 
-	gse::memcpy(fd.mapping_buffers[frame_index].mapped(), index_mapping.data(), mapping_bytes);
+	gse::memcpy(fd.mapping_buffers[frame_index].mapped(), mapping.data(), mapping_bytes);
 
 	auto& tlas_inst_buf = fd.tlas_per_frame[frame_index].instance_buffer();
 
-	gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("tlas_transform_update"), fd.tlas_update_descriptors[frame_index])
-		.buffer("source_instance_data", gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
-		.buffer("index_mapping", fd.mapping_buffers[frame_index], 0, mapping_bytes)
-		.buffer("tlas_instances", tlas_inst_buf, 0, instance_count * 64)
+	gpu::descriptor_writer(gpu::context::device_handle(gpu_s), fd.tlas_update_descriptors[frame_index])
+		.buffer<source_instance_data>(gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
+		.buffer<index_mapping>(fd.mapping_buffers[frame_index], 0, mapping_bytes)
+		.buffer<tlas_instances>(tlas_inst_buf, 0, instance_count * 64)
 		.commit();
 
 	const gpu::typed_push_constants<push_constants> pc{

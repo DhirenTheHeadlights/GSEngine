@@ -52,24 +52,6 @@ namespace gse::renderer::forward {
 		using element = shaders::forward::material_data;
 	};
 
-	struct [[= shaders::binding<1, 0>{}, = shaders::ssbo_readonly]] vertices_buffer {
-		using element = shaders::forward::vertex;
-	};
-
-	struct [[= shaders::binding<1, 1>{}, = shaders::ssbo_readonly]] meshlets_buffer {
-		using element = shaders::forward::meshlet_descriptor;
-	};
-
-	struct [[= shaders::binding<1, 2>{}, = shaders::ssbo_readonly]] meshlet_vertex_indices {
-		using element = std::uint32_t;
-	};
-
-	struct [[= shaders::binding<1, 3>{}, = shaders::byte_address_buffer]] meshlet_triangles {};
-
-	struct [[= shaders::binding<1, 4>{}, = shaders::ssbo_readonly]] meshlet_bounds_buffer {
-		using element = shaders::forward::meshlet_bounds;
-	};
-
 	struct [[= shaders::binding<1, 5>{}, = shaders::ssbo_readonly]] instance_data_buffer {
 		using element = shaders::common::instance_data;
 	};
@@ -83,11 +65,11 @@ namespace gse::renderer::forward {
 		light_index_list,
 		tile_light_table,
 		material_palette,
-		vertices_buffer,
-		meshlets_buffer,
-		meshlet_vertex_indices,
-		meshlet_triangles,
-		meshlet_bounds_buffer,
+		shaders::meshlet::vertices_buffer,
+		shaders::meshlet::meshlets_buffer,
+		shaders::meshlet::meshlet_vertex_indices,
+		shaders::meshlet::meshlet_triangles,
+		shaders::meshlet::meshlet_bounds_buffer,
 		instance_data_buffer,
 		diffuse_sampler
 	>;
@@ -128,8 +110,9 @@ namespace gse::renderer::forward {
 }
 
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const rt_shadow::system::state& rt_state, const light_culling::system::resources& lc_r, settings& cfg, resources& r, frame_data& fd) -> async::task<> {
-	gpu_s.shader_registry->register_family("forward_3d", shaders::build_family_sets(shader_binding_types{}));
-	gpu_s.shader_registry->register_family("standard_3d", shaders::build_family_sets(shaders::standard_3d::shader_binding_types{}));
+	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet_entry::pod);
+	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned_geometry_entry::pod);
+
 	auto& assets = const_cast<asset::state&>(assets_s);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -157,22 +140,22 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 			.usage = gpu::buffer_flag::storage
 		});
 
-		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("forward_3d"));
+		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet_entry::pod);
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("forward_3d"), r.descriptors[i])
-			.buffer("camera_ubo", r.camera_ubo_buffers[i], 0, camera_ubo_size)
-			.buffer("lights_ssbo", r.light_buffers[i], 0, light_buffer_size)
-			.buffer("material_palette", r.material_palette_buffers[i], 0, material_buffer_size)
+		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.descriptors[i])
+			.buffer<camera_ubo>(r.camera_ubo_buffers[i], 0, camera_ubo_size)
+			.buffer<lights_ssbo>(r.light_buffers[i], 0, light_buffer_size)
+			.buffer<material_palette>(r.material_palette_buffers[i], 0, material_buffer_size)
 			.commit();
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		gpu::descriptor_writer writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("forward_3d"), r.descriptors[i]);
+		gpu::descriptor_writer writer(gpu::context::device_handle(gpu_s), r.descriptors[i]);
 
-		writer.acceleration_structure("scene_tlas", (*rt_state.tlas_ptrs[fi]).handle());
-		writer.buffer("light_index_list", lc_r.light_index_list_buffers[fi])
-			.buffer("tile_light_table", lc_r.tile_light_table_buffers[fi]);
+		writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
+		writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
+			.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi]);
 
 		writer.commit();
 	}
@@ -180,27 +163,23 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 	gpu::context::on_swap_chain_recreate(gpu_s, [&r, &lc_r, &rt_state, &gpu_s]() {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
-			gpu::descriptor_writer writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("forward_3d"), r.descriptors[i]);
+			gpu::descriptor_writer writer(gpu::context::device_handle(gpu_s), r.descriptors[i]);
 
-			writer.acceleration_structure("scene_tlas", (*rt_state.tlas_ptrs[fi]).handle());
-			writer.buffer("light_index_list", lc_r.light_index_list_buffers[fi])
-				.buffer("tile_light_table", lc_r.tile_light_table_buffers[fi]);
+			writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
+			writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
+				.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi]);
 
 			writer.commit();
 		}
 	});
 
-	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet_entry::pod);
-
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("standard_3d"));
+		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
 
-		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("standard_3d"), r.skinned_descriptors[i])
-			.buffer("camera_ubo", r.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(gpu::context::device_handle(gpu_s), r.skinned_descriptors[i])
+			.buffer<shaders::standard_3d::camera_ubo>(r.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 	}
-
-	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned_geometry_entry::pod);
 
 	r.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
 	while (asset::resource_state<texture>(assets, r.blank_texture.id()) != resource::state::loaded) {
@@ -346,8 +325,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 	const int ao_quality_i = static_cast<int>(cfg.ao_quality);
 	const int reflection_quality_i = static_cast<int>(cfg.reflection_quality);
 
-	auto meshlet_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), std::string_view("forward_3d"));
-	auto skinned_writer = gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), std::string_view("standard_3d"));
+	auto meshlet_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), meshlet_entry::pod);
+	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
@@ -400,8 +379,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 			meshlet_writer.begin(frame_index);
 			mesh.meshlet_gpu().bind(meshlet_writer);
 			meshlet_writer
-				.buffer("instance_data_buffer", instance_buf)
-				.image("diffuse_sampler", tex_img, tex_samp, gpu::image_layout::shader_read_only);
+				.buffer<instance_data_buffer>(instance_buf)
+				.image<diffuse_sampler>(tex_img, tex_samp, gpu::image_layout::shader_read_only);
 			rec.commit(meshlet_writer.native_writer(), r.pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
@@ -447,9 +426,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 
 			skinned_writer.begin(frame_index);
 			skinned_writer
-				.image("diffuse_sampler", tex_img, tex_samp, gpu::image_layout::shader_read_only)
-				.buffer("skin_matrices", skin_buf)
-				.buffer("instance_data_buffer", instance_buf);
+				.image<shaders::standard_3d::diffuse_sampler>(tex_img, tex_samp, gpu::image_layout::shader_read_only)
+				.buffer<shaders::standard_3d::skin_matrices>(skin_buf)
+				.buffer<shaders::standard_3d::instance_data_buffer>(instance_buf);
 			rec.commit(skinned_writer.native_writer(), r.skinned_pipeline, 1);
 
 			rec.bind_vertex(mesh.vertex_gpu_buffer());

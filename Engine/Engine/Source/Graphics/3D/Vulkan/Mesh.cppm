@@ -3,6 +3,7 @@ export module gse.graphics:mesh;
 import std;
 
 import :material;
+import :shared_shaders;
 
 import gse.assert;
 import gse.os;
@@ -110,11 +111,11 @@ gse::mesh::mesh(mesh_data&& data)
 
 auto gse::meshlet_gpu_data::bind(gpu::descriptor_writer& writer) const -> void {
     writer
-        .buffer("vertices_buffer", vertex_storage)
-        .buffer("meshlets_buffer", descriptors)
-        .buffer("meshlet_vertex_indices", vertices)
-        .buffer("meshlet_triangles", triangles)
-        .buffer("meshlet_bounds_buffer", bounds);
+        .buffer<shaders::meshlet::vertices_buffer>(vertex_storage)
+        .buffer<shaders::meshlet::meshlets_buffer>(descriptors)
+        .buffer<shaders::meshlet::meshlet_vertex_indices>(vertices)
+        .buffer<shaders::meshlet::meshlet_triangles>(triangles)
+        .buffer<shaders::meshlet::meshlet_bounds_buffer>(bounds);
 }
 
 auto gse::mesh::initialize(gpu::context::state& ctx) -> void {

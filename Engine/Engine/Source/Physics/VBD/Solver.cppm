@@ -757,7 +757,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	}
 
 	for (auto& body : m_bodies) {
-		if (!body.locked && !body.sleeping() && body.mass_value > mass{}) {
+		if (!body.locked && !body.sleeping() && body.mass > mass{}) {
 			body.body_velocity = (body.predicted_position - body.initial_position) / dt;
 
 			if (body.update_orientation) {
@@ -798,8 +798,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			continue;
 		}
 
-		const inverse_mass w_a = ba.locked ? inverse_mass{} : 1.f / ba.mass_value;
-		const inverse_mass w_b = bb.locked ? inverse_mass{} : 1.f / bb.mass_value;
+		const inverse_mass w_a = ba.locked ? inverse_mass{} : 1.f / ba.mass;
+		const inverse_mass w_b = bb.locked ? inverse_mass{} : 1.f / bb.mass;
 		const inverse_mass w_total = w_a + w_b;
 
 		if (w_total <= inverse_mass{}) {
@@ -930,7 +930,7 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 	}
 
 	const float compliance = std::max(m.compliance, 1e-6f);
-	const stiffness motor_stiffness = body.mass_value / h_squared / compliance;
+	const stiffness motor_stiffness = body.mass / h_squared / compliance;
 
 	const vec3<displacement> diff = body.predicted_position - body.motor_target;
 
@@ -954,7 +954,7 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 
 		const bool blocking_body =
 			other_body.locked ||
-			other_body.mass_value >= body.mass_value;
+			other_body.mass >= body.mass;
 
 		if (!blocking_body) {
 			continue;
@@ -1003,7 +1003,7 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 		return {};
 	}
 
-	const stiffness inertia_weight = body.mass_value / h_squared;
+	const stiffness inertia_weight = body.mass / h_squared;
 
 	const vec3<force> g_lin = (body.predicted_position - body.inertia_target) * inertia_weight + m_solve_state[body_idx].gradient;
 

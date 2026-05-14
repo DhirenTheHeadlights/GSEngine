@@ -108,44 +108,38 @@ export namespace gse::audio {
 
     class system {
     public:
-        struct state {
+        struct data {
             audio_engine* engine = nullptr;
             bool engine_initialized = false;
             percentage<float> master_vol = percentage<float>::one();
-        };
-
-        struct resources {
             std::vector<voice_slot*> voices;
             std::vector<std::uint32_t> free_list;
         };
 
         static auto run(
             run_context& ctx,
-            resources& r,
-            state& s
+            data& d
         ) -> async::task<>;
 
         static auto shutdown(
             shutdown_context& phase,
-            resources& r,
-            state& s
+            data& d
         ) -> void;
 
     private:
         static auto allocate_voice(
-            resources& r,
-            state& s,
+            data& d,
             const audio_clip& clip,
             bool loop
         ) -> voice_handle;
 
         static auto release_voice(
-            resources& r,
+            data& d,
             voice_handle handle
         ) -> void;
 
         static auto valid_voice(
-            const resources& r,
+            const data& d,
             voice_handle handle
         ) -> bool;
     };

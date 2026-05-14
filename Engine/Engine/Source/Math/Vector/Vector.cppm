@@ -152,6 +152,9 @@ export namespace gse {
 		template <std::size_t M>
 		constexpr vec(const vec<T, M>& other) requires (M <= N);
 
+		template <std::size_t M>
+		constexpr explicit vec(const vec<T, M>& other) requires (M > N);
+
 		template <internal::is_vec_element T2>
 		constexpr vec(const vec<T2, N>& other);
 
@@ -320,6 +323,14 @@ constexpr gse::vec<T, N>::vec(const vec<T, M>& other) requires (M <= N) {
 	}
 	for (std::size_t i = M; i < N; ++i) {
 		this->data[i] = T{};
+	}
+}
+
+template <gse::internal::is_vec_element T, std::size_t N>
+template <std::size_t M>
+constexpr gse::vec<T, N>::vec(const vec<T, M>& other) requires (M > N) {
+	for (std::size_t i = 0; i < N; ++i) {
+		this->data[i] = other.data[i];
 	}
 }
 

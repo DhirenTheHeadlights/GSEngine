@@ -253,11 +253,11 @@ void solve_body(uint bi) {
             dot(c.tangent_u.xyz, d),
             dot(c.tangent_v.xyz, d)
         );
-        float3 C = Cn - c.c0_friction.xyz * pc.current_alpha;
+        float3 C = Cn - c.c0.xyz * pc.current_alpha;
 
         float3 force = float3(0, 0, 0);
         force.x = min(c.penalty.x * C.x + c.lambda.x, 0.0);
-        float friction_bound = abs(c.lambda.x) * c.c0_friction.w;
+        float friction_bound = abs(c.lambda.x) * c.friction_coeff;
         force.y = clamp(c.penalty.y * C.y + c.lambda.y, -friction_bound, friction_bound);
         force.z = clamp(c.penalty.z * C.z + c.lambda.z, -friction_bound, friction_bound);
 
