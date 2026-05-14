@@ -1,4 +1,3 @@
-import vbd_shared;
 
 int3 world_to_cell(float3 pos, float cell_size) {
     return int3(floor(pos / cell_size));

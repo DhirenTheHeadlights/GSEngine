@@ -429,7 +429,6 @@ constexpr auto gse::to_axis_angle(const quat_t<T>& q) -> vec3<angle_t<T>> {
 	return { radians(scale * x), radians(scale * y), radians(scale * z) };
 }
 
-
 template <typename T>
 constexpr auto gse::difference_axis_angle(const quat_t<T>& q_from, const quat_t<T>& q_to) -> vec3<angle_t<T>> {
 	const quat_t<T> delta_q = q_to * conjugate(q_from);

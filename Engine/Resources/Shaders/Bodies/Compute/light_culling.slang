@@ -1,4 +1,3 @@
-import generated.forward_types;
 
 static const uint TILE_SIZE = 16;
 static const uint MAX_LIGHTS_PER_TILE = 64;

@@ -13,13 +13,58 @@ import :depth_prepass_renderer;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.shader;
 import gse.core;
 import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
+namespace gse::renderer::light_culling {
+	struct [[= shaders::shader_struct]] culling_params_data {
+		mat4f projection;
+		mat4f inv_proj;
+		vec2u screen_size;
+		std::uint32_t num_lights;
+	};
+
+	struct [[= shaders::binding<0, 0>{}, = shaders::sampler2d]] g_depth {};
+
+	struct [[= shaders::binding<0, 1>{}]] culling_params {
+		using element = culling_params_data;
+	};
+
+	struct [[= shaders::binding<0, 2>{}, = shaders::ssbo_readonly]] lights {
+		using element = shaders::forward::light;
+	};
+
+	struct [[= shaders::binding<0, 3>{}, = shaders::ssbo_readwrite]] light_index_list {
+		using element = std::uint32_t;
+	};
+
+	struct [[= shaders::binding<0, 4>{}, = shaders::ssbo_readwrite]] tile_light_table {
+		using element = vec2u;
+	};
+
+	using shader_binding_types = type_pack<
+		g_depth,
+		culling_params,
+		lights,
+		light_index_list,
+		tile_light_table
+	>;
+
+	using shader_types = type_pack<culling_params_data>;
+
+	using entry = gpu::compute_entry<
+		gpu::body_path<"Compute/light_culling">,
+		gpu::layout<"light_culling">,
+		gpu::types<shaders::forward::shader_types, shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::threads<16, 16, 1>,
+		gpu::system_values<gpu::group_id, gpu::group_thread_id, gpu::group_index>
+	>;
+}
 
 auto gse::renderer::light_culling::system::tile_count(const state& s) -> vec2u {
 	return {
@@ -57,7 +102,7 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 		});
 
 		gpu::descriptor_writer(*gpu_s.shader_registry, gpu::context::device_handle(gpu_s), std::string_view("light_culling"), r.descriptors[i])
-			.buffer("culling_params", r.culling_params_buffers[i], 0, sizeof(shaders::light_culling::culling_params_data))
+			.buffer("culling_params", r.culling_params_buffers[i], 0, sizeof(culling_params_data))
 			.buffer("lights", r.light_buffers[i], 0, sizeof(shaders::forward::light) * max_lights)
 			.buffer("light_index_list", r.light_index_list_buffers[i], 0, index_list_size)
 			.buffer("tile_light_table", r.tile_light_table_buffers[i], 0, tile_table_size)
@@ -68,13 +113,14 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 }
 
 auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r, frame_data& fd, state& s) -> async::task<> {
+	gpu_s.shader_registry->register_family("light_culling", shaders::build_family_sets(shader_binding_types{}));
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		r.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("light_culling"));
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		r.culling_params_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = sizeof(shaders::light_culling::culling_params_data),
+			.size = sizeof(culling_params_data),
 			.usage = gpu::buffer_flag::uniform
 		});
 
@@ -94,7 +140,7 @@ auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::cont
 		.max_lod = 1.0f
 	});
 
-	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::light_culling::entry::pod);
+	r.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	rebuild_tile_buffers(gpu_s, r, s);
 
@@ -195,7 +241,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, const gpu::
 		gse::memcpy(light_alloc.mapped(), lights.data(), light_count * sizeof(shaders::forward::light));
 	}
 
-	const shaders::light_culling::culling_params_data params{
+	const culling_params_data params{
 		.projection = proj,
 		.inv_proj = inv_proj,
 		.screen_size = vec2u{ extent.x(), extent.y() },

@@ -1,6 +1,3 @@
-__exported import generated.common_types;
-__exported import generated.forward_types;
-
 public static const uint TILE_SIZE = 16;
 public static const uint MAX_LIGHTS_PER_TILE = 64;
 

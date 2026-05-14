@@ -114,25 +114,3 @@ configure_file(
     @ONLY
 )
 
-set(GENERATED_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/generated")
-set(GENERATED_SHADER_FILES
-    "${GENERATED_SHADER_DIR}/common_types.slang"
-    "${GENERATED_SHADER_DIR}/forward_types.slang"
-    "${GENERATED_SHADER_DIR}/vbd_physics_types.slang"
-)
-
-add_executable(ShaderCodegen "${CMAKE_CURRENT_SOURCE_DIR}/Tools/ShaderCodegen/Main.cpp")
-target_link_libraries(ShaderCodegen PRIVATE Engine)
-
-gse_copy_runtime_deps(ShaderCodegen)
-
-add_custom_command(
-    OUTPUT ${GENERATED_SHADER_FILES}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${GENERATED_SHADER_DIR}"
-    COMMAND $<TARGET_FILE:ShaderCodegen> "${GENERATED_SHADER_DIR}"
-    DEPENDS ShaderCodegen
-    COMMENT "Generating shader struct headers into ${GENERATED_SHADER_DIR}"
-    VERBATIM
-)
-
-add_custom_target(ShaderCodegenRun ALL DEPENDS ${GENERATED_SHADER_FILES})

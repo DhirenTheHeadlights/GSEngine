@@ -1,4 +1,3 @@
-import vbd_shared;
 
 uint bi = dispatch_id.x;
 

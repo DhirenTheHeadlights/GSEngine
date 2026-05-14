@@ -1,4 +1,3 @@
-import vbd_shared;
 
 uint color = dispatch_id.x;
 if (color >= MAX_COLORS) return;

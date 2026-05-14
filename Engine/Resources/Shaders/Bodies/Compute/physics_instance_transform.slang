@@ -1,5 +1,3 @@
-import vbd_shared;
-import meshlet_common;
 
 // entry:
 uint tid = dispatch_id.x;

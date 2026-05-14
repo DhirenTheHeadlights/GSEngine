@@ -1,4 +1,3 @@
-import vbd_shared;
 
 if (collision_state[CONVERGED_FLAG_INDEX] != 0) return;
 

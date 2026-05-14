@@ -17,7 +17,139 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 import gse.log;
-import gse.shader;
+
+namespace gse::vbd {
+	using time_step = time_t<float, gse::seconds>;
+
+	struct [[= shaders::shader_struct]] vbd_push_constants {
+		std::uint32_t body_count;
+		std::uint32_t contact_count;
+		std::uint32_t motor_count;
+		std::uint32_t color_offset;
+		std::uint32_t color_count;
+		std::uint32_t warm_start_count;
+		std::uint32_t post_stabilize;
+		std::uint32_t joint_count;
+		time_squared h_squared;
+		time_step dt;
+		stiffness beta;
+		angular_stiffness ang_beta;
+		float linear_damping;
+		velocity velocity_sleep_threshold;
+		angular_velocity angular_sleep_threshold;
+		float current_alpha;
+		gap collision_margin;
+		float friction_coefficient;
+		stiffness penalty_min;
+		stiffness penalty_max;
+		float gamma;
+		float solver_alpha;
+		gap speculative_margin;
+		gap stick_threshold;
+		std::uint32_t substep;
+		std::uint32_t iteration;
+		length convergence_threshold;
+		std::uint32_t min_iterations;
+		gap grid_cell_size;
+		std::uint32_t use_jacobi;
+		float jacobi_omega;
+	};
+
+	struct [[= shaders::binding<0, 0>{}, = shaders::ssbo_readwrite]] body_data            { using element = gpu_body; };
+	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readwrite]] contact_data         { using element = gpu_contact; };
+	struct [[= shaders::binding<0, 2>{}, = shaders::ssbo_readonly]]  motor_data           { using element = gpu_motor; };
+	struct [[= shaders::binding<0, 3>{}, = shaders::ssbo_readwrite]] color_data           { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 4>{}, = shaders::ssbo_readwrite]] contact_offsets      { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 5>{}, = shaders::ssbo_readwrite]] solve_state          { using element = vec4f; };
+	struct [[= shaders::binding<0, 6>{}, = shaders::ssbo_readwrite]] collision_pairs      { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 7>{}, = shaders::ssbo_readwrite]] collision_state      { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 8>{}, = shaders::ssbo_readonly]]  warm_starts          { using element = gpu_warm_start; };
+	struct [[= shaders::binding<0, 9>{}, = shaders::ssbo_readwrite]] joint_data           { using element = gpu_joint; };
+	struct [[= shaders::binding<0, 10>{}, = shaders::ssbo_readwrite]] contact_counts      { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 11>{}, = shaders::ssbo_readwrite]] contact_adjacency   { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 12>{}, = shaders::ssbo_readwrite]] motor_map           { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 13>{}, = shaders::ssbo_readwrite]] joint_offsets       { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 14>{}, = shaders::ssbo_readwrite]] joint_counts        { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 15>{}, = shaders::ssbo_readwrite]] joint_adjacency     { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 16>{}, = shaders::ssbo_readwrite]] grid_data           { using element = std::uint32_t; };
+	struct [[= shaders::binding<0, 17>{}, = shaders::ssbo_readwrite]] indirect_args       { using element = dispatch_args; };
+	struct [[= shaders::binding<0, 18>{}, = shaders::ssbo_readwrite]] frozen_jacobians    { using element = frozen_jacobian; };
+	struct [[= shaders::binding<0, 19>{}, = shaders::ssbo_readwrite]] solve_deltas        { using element = vec4f; };
+
+	using shader_binding_types = type_pack<
+		body_data, contact_data, motor_data, color_data, contact_offsets, solve_state,
+		collision_pairs, collision_state, warm_starts, joint_data, contact_counts,
+		contact_adjacency, motor_map, joint_offsets, joint_counts, joint_adjacency,
+		grid_data, indirect_args, frozen_jacobians, solve_deltas
+	>;
+
+	template <fixed_string BodyPath>
+	using vbd_compute = gpu::compute_entry<
+		gpu::body_path<BodyPath>,
+		gpu::layout<"vbd_physics">,
+		gpu::types<shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::threads<64>,
+		gpu::push_constant<vbd_push_constants>,
+		gpu::system_values<gpu::dispatch_thread_id>
+	>;
+
+	using predict_entry                    = vbd_compute<"VBDPhysics/vbd_predict">;
+	using solve_color_entry                = vbd_compute<"VBDPhysics/vbd_solve_color">;
+	using update_lambda_entry              = vbd_compute<"VBDPhysics/vbd_update_lambda">;
+	using derive_velocities_entry          = vbd_compute<"VBDPhysics/vbd_derive_velocities">;
+	using finalize_entry                   = vbd_compute<"VBDPhysics/vbd_finalize">;
+	using collision_reset_entry            = vbd_compute<"VBDPhysics/collision_reset">;
+	using collision_grid_build_entry       = vbd_compute<"VBDPhysics/collision_grid_build">;
+	using collision_broad_phase_entry      = vbd_compute<"VBDPhysics/collision_broad_phase">;
+	using collision_narrow_phase_entry     = vbd_compute<"VBDPhysics/collision_narrow_phase">;
+	using update_joint_lambda_entry        = vbd_compute<"VBDPhysics/vbd_update_joint_lambda">;
+	using freeze_jacobians_entry           = vbd_compute<"VBDPhysics/vbd_freeze_jacobians">;
+	using apply_jacobi_entry               = vbd_compute<"VBDPhysics/vbd_apply_jacobi">;
+
+	using collision_build_adjacency_entry = gpu::compute_entry<
+		gpu::body_path<"VBDPhysics/collision_build_adjacency">,
+		gpu::layout<"vbd_physics">,
+		gpu::types<shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::threads<64>,
+		gpu::push_constant<vbd_push_constants>,
+		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
+	>;
+
+	using prepare_indirect_entry = gpu::compute_entry<
+		gpu::body_path<"VBDPhysics/vbd_prepare_indirect">,
+		gpu::layout<"vbd_physics">,
+		gpu::types<shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::threads<1>,
+		gpu::push_constant<vbd_push_constants>
+	>;
+
+	using prepare_contact_indirect_entry = gpu::compute_entry<
+		gpu::body_path<"VBDPhysics/vbd_prepare_contact_indirect">,
+		gpu::layout<"vbd_physics">,
+		gpu::types<shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::threads<1>,
+		gpu::push_constant<vbd_push_constants>
+	>;
+
+	using prepare_color_indirect_entry = gpu::compute_entry<
+		gpu::body_path<"VBDPhysics/vbd_prepare_color_indirect">,
+		gpu::layout<"vbd_physics">,
+		gpu::types<shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::threads<16>,
+		gpu::push_constant<vbd_push_constants>,
+		gpu::system_values<gpu::dispatch_thread_id>
+	>;
+}
 
 namespace gse::vbd {
 	class struct_writer {
@@ -233,7 +365,6 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 		m_pending_dispatch = false;
 		return;
 	}
-
 
 	m_upload_authoritative_bodies.assign(m_body_count, 0);
 	for (const auto body_index : authoritative_body_indices) {
@@ -915,29 +1046,31 @@ auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::conte
 		co_await ctx.next_tick();
 	}
 
-	m_compute.predict_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::predict::pod);
-	m_compute.solve_color_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::solve_color::pod);
-	m_compute.update_lambda_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::update_lambda::pod);
-	m_compute.derive_velocities_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::derive_velocities::pod);
-	m_compute.finalize_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::finalize::pod);
-	m_compute.collision_reset_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::collision_reset::pod);
-	m_compute.collision_broad_phase_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::collision_broad_phase::pod);
-	m_compute.collision_narrow_phase_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::collision_narrow_phase::pod);
-	m_compute.collision_grid_build_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::collision_grid_build::pod);
-	m_compute.collision_build_adjacency_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::collision_build_adjacency::pod);
-	m_compute.update_joint_lambda_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::update_joint_lambda::pod);
-	m_compute.prepare_indirect_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::prepare_indirect::pod);
-	m_compute.prepare_contact_indirect_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::prepare_contact_indirect::pod);
-	m_compute.prepare_color_indirect_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::prepare_color_indirect::pod);
-	m_compute.freeze_jacobians_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::freeze_jacobians::pod);
-	m_compute.apply_jacobi_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::vbd::apply_jacobi::pod);
+	gpu_s.shader_registry->register_family("vbd_physics", shaders::build_family_sets(shader_binding_types{}));
 
-	m_body_layout = vbd_layout_from<shaders::vbd_physics::gpu_body>();
-	m_contact_layout = vbd_layout_from<shaders::vbd_physics::gpu_contact>();
-	m_motor_layout = vbd_layout_from<shaders::vbd_physics::gpu_motor>();
-	m_warm_start_layout = vbd_layout_from<shaders::vbd_physics::gpu_warm_start>();
-	m_joint_layout = vbd_layout_from<shaders::vbd_physics::gpu_joint>();
-	m_frozen_jacobian_layout = vbd_layout_from<shaders::vbd_physics::frozen_jacobian>();
+	m_compute.predict_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, predict_entry::pod);
+	m_compute.solve_color_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, solve_color_entry::pod);
+	m_compute.update_lambda_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, update_lambda_entry::pod);
+	m_compute.derive_velocities_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, derive_velocities_entry::pod);
+	m_compute.finalize_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, finalize_entry::pod);
+	m_compute.collision_reset_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, collision_reset_entry::pod);
+	m_compute.collision_broad_phase_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, collision_broad_phase_entry::pod);
+	m_compute.collision_narrow_phase_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, collision_narrow_phase_entry::pod);
+	m_compute.collision_grid_build_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, collision_grid_build_entry::pod);
+	m_compute.collision_build_adjacency_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, collision_build_adjacency_entry::pod);
+	m_compute.update_joint_lambda_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, update_joint_lambda_entry::pod);
+	m_compute.prepare_indirect_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, prepare_indirect_entry::pod);
+	m_compute.prepare_contact_indirect_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, prepare_contact_indirect_entry::pod);
+	m_compute.prepare_color_indirect_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, prepare_color_indirect_entry::pod);
+	m_compute.freeze_jacobians_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, freeze_jacobians_entry::pod);
+	m_compute.apply_jacobi_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, apply_jacobi_entry::pod);
+
+	m_body_layout = vbd_layout_from<gpu_body>();
+	m_contact_layout = vbd_layout_from<gpu_contact>();
+	m_motor_layout = vbd_layout_from<gpu_motor>();
+	m_warm_start_layout = vbd_layout_from<gpu_warm_start>();
+	m_joint_layout = vbd_layout_from<gpu_joint>();
+	m_frozen_jacobian_layout = vbd_layout_from<frozen_jacobian>();
 
 	create_buffers(gpu_s);
 
@@ -1012,7 +1145,7 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 	f.queue.begin_timing();
 
 	auto make_pc = [&](const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
-		return gpu::typed_push_constants<shaders::vbd_physics::vbd_push_constants>{
+		return gpu::typed_push_constants<vbd_push_constants>{
 			.data = {
 				.body_count = m_body_count,
 				.contact_count = max_contacts,

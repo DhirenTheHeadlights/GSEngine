@@ -24,10 +24,10 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.shader;
 import gse.physics;
 import gse.meta;
 
+import :shared_shaders;
 
 namespace gse::renderer::geometry_collector {
 	auto material_palette_index(
@@ -409,7 +409,7 @@ auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::
 	}
 
 	r.skeleton_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
-		.size = system::resources::max_joints * sizeof(shaders::skin_compute::joint_data),
+		.size = system::resources::max_joints * sizeof(geometry_collector::joint_data),
 		.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 	});
 
@@ -481,7 +481,7 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 }
 
 auto gse::renderer::geometry_collector::system::upload_skeleton_data(const resources& r, const skeleton& skel) -> void {
-	using joint_data = shaders::skin_compute::joint_data;
+	using joint_data = geometry_collector::joint_data;
 	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 	const auto joints = skel.joints();
 

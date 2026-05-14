@@ -28,9 +28,108 @@ import gse.assets;
 import gse.gpu;
 import gse.save;
 import gse.meta;
-import gse.shader;
+
+namespace gse::renderer::forward {
+	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
+		using element = shaders::common::camera_data;
+	};
+
+	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] lights_ssbo {
+		using element = shaders::forward::light;
+	};
+
+	struct [[= shaders::binding<0, 2>{}, = shaders::tlas]] scene_tlas {};
+
+	struct [[= shaders::binding<0, 3>{}, = shaders::ssbo_readonly]] light_index_list {
+		using element = std::uint32_t;
+	};
+
+	struct [[= shaders::binding<0, 4>{}, = shaders::ssbo_readonly]] tile_light_table {
+		using element = vec2u;
+	};
+
+	struct [[= shaders::binding<0, 5>{}, = shaders::ssbo_readonly]] material_palette {
+		using element = shaders::forward::material_data;
+	};
+
+	struct [[= shaders::binding<1, 0>{}, = shaders::ssbo_readonly]] vertices_buffer {
+		using element = shaders::forward::vertex;
+	};
+
+	struct [[= shaders::binding<1, 1>{}, = shaders::ssbo_readonly]] meshlets_buffer {
+		using element = shaders::forward::meshlet_descriptor;
+	};
+
+	struct [[= shaders::binding<1, 2>{}, = shaders::ssbo_readonly]] meshlet_vertex_indices {
+		using element = std::uint32_t;
+	};
+
+	struct [[= shaders::binding<1, 3>{}, = shaders::byte_address_buffer]] meshlet_triangles {};
+
+	struct [[= shaders::binding<1, 4>{}, = shaders::ssbo_readonly]] meshlet_bounds_buffer {
+		using element = shaders::forward::meshlet_bounds;
+	};
+
+	struct [[= shaders::binding<1, 5>{}, = shaders::ssbo_readonly]] instance_data_buffer {
+		using element = shaders::common::instance_data;
+	};
+
+	struct [[= shaders::binding<1, 6>{}, = shaders::sampler2d]] diffuse_sampler {};
+
+	using shader_binding_types = type_pack<
+		camera_ubo,
+		lights_ssbo,
+		scene_tlas,
+		light_index_list,
+		tile_light_table,
+		material_palette,
+		vertices_buffer,
+		meshlets_buffer,
+		meshlet_vertex_indices,
+		meshlet_triangles,
+		meshlet_bounds_buffer,
+		instance_data_buffer,
+		diffuse_sampler
+	>;
+
+	struct [[= shaders::shader_struct]] meshlet_push_constants {
+		std::uint32_t meshlet_offset;
+		std::uint32_t meshlet_count;
+		std::uint32_t first_instance;
+		std::int32_t num_lights;
+		vec2u screen_size;
+		std::int32_t shadow_quality;
+		std::int32_t ao_quality;
+		std::int32_t reflection_quality;
+	};
+
+	using meshlet_entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/meshlet_geometry">,
+		gpu::layout<"forward_3d">,
+		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"Standard3D/meshlet_common">,
+		gpu::amplification_stage<"as_main">,
+		gpu::mesh_stage<"ms_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<meshlet_push_constants>,
+		gpu::depth<true, false, gpu::compare_op::less_or_equal>
+	>;
+
+	using skinned_geometry_entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/skinned_geometry_pass">,
+		gpu::layout<"standard_3d">,
+		gpu::types<shaders::common::shader_types>,
+		gpu::bindings<shaders::standard_3d::shader_binding_types>,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::depth<true, false, gpu::compare_op::less_or_equal>
+	>;
+}
 
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, const rt_shadow::system::state& rt_state, const light_culling::system::resources& lc_r, settings& cfg, resources& r, frame_data& fd) -> async::task<> {
+	gpu_s.shader_registry->register_family("forward_3d", shaders::build_family_sets(shader_binding_types{}));
+	gpu_s.shader_registry->register_family("standard_3d", shaders::build_family_sets(shaders::standard_3d::shader_binding_types{}));
 	auto& assets = const_cast<asset::state&>(assets_s);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -91,7 +190,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 		}
 	});
 
-	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::forward::meshlet_entry::pod);
+	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet_entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		r.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("standard_3d"));
@@ -101,7 +200,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::s
 			.commit();
 	}
 
-	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::standard_3d::skinned_geometry_entry::pod);
+	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned_geometry_entry::pod);
 
 	r.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
 	while (asset::resource_state<texture>(assets, r.blank_texture.id()) != resource::state::loaded) {
@@ -307,7 +406,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, const gpu::contex
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
 
-			const gpu::typed_push_constants<shaders::forward::push_constants> pc{
+			const gpu::typed_push_constants<meshlet_push_constants> pc{
 				.data = {
 					.meshlet_offset = 0,
 					.meshlet_count = meshlet_count,

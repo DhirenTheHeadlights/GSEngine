@@ -1,4 +1,3 @@
-import vbd_shared;
 
 static const uint WG_SIZE = 64;
 

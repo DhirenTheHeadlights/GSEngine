@@ -18,7 +18,20 @@ import :forward_renderer;
 import :camera_system;
 import :settings;
 
-import gse.shader;
+namespace gse::renderer::physics_debug {
+	using entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/physics_debug">,
+		gpu::layout<"standard_3d">,
+		gpu::types<shaders::common::shader_types>,
+		gpu::bindings<shaders::standard_3d::shader_binding_types>,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::rasterization<gpu::polygon_mode::line, gpu::cull_mode::none>,
+		gpu::depth<false, false>,
+		gpu::blend<gpu::blend_preset::alpha>,
+		gpu::primitive_topology<gpu::topology::line_list>
+	>;
+}
 
 auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, const gpu::context::state& gpu_s, const settings& cfg, const resources& r, frame_data& fd, const state& s, const camera::system::state& cam_state) -> async::task<> {
 	if (!cfg.enabled) {
@@ -96,6 +109,7 @@ auto gse::renderer::physics_debug::system::ensure_vertex_capacity(frame_data& fd
 }
 
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, settings& cfg, resources& r, frame_data& fd, state& s, const physics::system::state& ps, const physics::system::settings& phys_cfg) -> async::task<> {
+	gpu_s.shader_registry->register_family("standard_3d", shaders::build_family_sets(shaders::standard_3d::shader_binding_types{}));
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
@@ -111,7 +125,7 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 			.commit();
 	}
 
-	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::physics_debug::entry::pod);
+	r.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	while (true) {
 		if (!cfg.enabled) {
@@ -355,5 +369,4 @@ auto gse::renderer::physics_debug::system::build_contact_debug_for_collider(cons
 		add_line(p, normal_end, normal_color, out_vertices);
 	}
 }
-
 

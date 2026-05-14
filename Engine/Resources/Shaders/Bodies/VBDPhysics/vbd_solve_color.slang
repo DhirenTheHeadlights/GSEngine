@@ -1,4 +1,3 @@
-import vbd_shared;
 
 void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout mat3 ang_hess) {
     float rd = dot(r, dir);

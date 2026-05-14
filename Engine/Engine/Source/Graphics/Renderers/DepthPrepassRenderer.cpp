@@ -19,9 +19,96 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
-import gse.shader;
+namespace gse::renderer::depth_prepass {
+	struct [[= shaders::binding<0, 0>{}]] meshlet_camera_ubo {
+		using element = shaders::common::camera_data;
+	};
+
+	struct [[= shaders::binding<1, 0>{}, = shaders::ssbo_readonly]] meshlet_vertices_buffer {
+		using element = shaders::forward::vertex;
+	};
+
+	struct [[= shaders::binding<1, 1>{}, = shaders::ssbo_readonly]] meshlet_meshlets_buffer {
+		using element = shaders::forward::meshlet_descriptor;
+	};
+
+	struct [[= shaders::binding<1, 2>{}, = shaders::ssbo_readonly]] meshlet_vertex_indices {
+		using element = std::uint32_t;
+	};
+
+	struct [[= shaders::binding<1, 3>{}, = shaders::byte_address_buffer]] meshlet_triangles {};
+
+	struct [[= shaders::binding<1, 4>{}, = shaders::ssbo_readonly]] meshlet_bounds_buffer {
+		using element = shaders::forward::meshlet_bounds;
+	};
+
+	struct [[= shaders::binding<1, 5>{}, = shaders::ssbo_readonly]] meshlet_instance_data_buffer {
+		using element = shaders::common::instance_data;
+	};
+
+	using meshlet_shader_binding_types = type_pack<
+		meshlet_camera_ubo,
+		meshlet_vertices_buffer,
+		meshlet_meshlets_buffer,
+		meshlet_vertex_indices,
+		meshlet_triangles,
+		meshlet_bounds_buffer,
+		meshlet_instance_data_buffer
+	>;
+
+	struct [[= shaders::shader_struct]] meshlet_push_constants {
+		std::uint32_t meshlet_offset;
+		std::uint32_t meshlet_count;
+		std::uint32_t first_instance;
+	};
+
+	using meshlet_entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/meshlet_depth_only">,
+		gpu::layout<"meshlet_depth_only">,
+		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
+		gpu::bindings<meshlet_shader_binding_types>,
+		gpu::helpers<"Standard3D/meshlet_common">,
+		gpu::amplification_stage<"as_main">,
+		gpu::mesh_stage<"ms_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<meshlet_push_constants>,
+		gpu::depth<true, true, gpu::compare_op::less>,
+		gpu::color_target<gpu::color_format::none>
+	>;
+
+	struct [[= shaders::binding<0, 0>{}]] skinned_camera_ubo {
+		using element = shaders::common::camera_data;
+	};
+
+	struct [[= shaders::binding<1, 0>{}, = shaders::ssbo_readonly]] skinned_skin_matrices {
+		using element = mat4f;
+	};
+
+	struct [[= shaders::binding<1, 1>{}, = shaders::ssbo_readonly]] skinned_instance_data_buffer {
+		using element = shaders::common::instance_data;
+	};
+
+	using skinned_shader_binding_types = type_pack<
+		skinned_camera_ubo,
+		skinned_skin_matrices,
+		skinned_instance_data_buffer
+	>;
+
+	using skinned_entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/skinned_depth_only">,
+		gpu::layout<"skinned_depth_only">,
+		gpu::types<shaders::common::shader_types>,
+		gpu::bindings<skinned_shader_binding_types>,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::depth<true, true, gpu::compare_op::less>,
+		gpu::color_target<gpu::color_format::none>
+	>;
+}
 
 auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::state& gpu_s, const asset::state& assets_s, resources& r) -> async::task<> {
+	gpu_s.shader_registry->register_family("meshlet_depth_only", shaders::build_family_sets(meshlet_shader_binding_types{}));
+	gpu_s.shader_registry->register_family("skinned_depth_only", shaders::build_family_sets(skinned_shader_binding_types{}));
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
@@ -31,8 +118,8 @@ auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::cont
 		});
 	}
 
-	r.meshlet_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::meshlet_depth_only::entry::pod);
-	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, shaders::skinned_depth_only::entry::pod);
+	r.meshlet_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet_entry::pod);
+	r.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned_entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		r.meshlet_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), std::string_view("meshlet_depth_only"));
@@ -117,7 +204,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, const gpu::
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
 
-			const gpu::typed_push_constants<shaders::meshlet_depth_only::push_constants> pc{
+			const gpu::typed_push_constants<meshlet_push_constants> pc{
 				.data = {
 					.meshlet_offset = 0,
 					.meshlet_count = meshlet_count,

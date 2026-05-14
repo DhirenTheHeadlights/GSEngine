@@ -14,10 +14,131 @@ import gse.assets;
 import gse.gpu;
 import gse.log;
 import gse.std_meta;
-import gse.shader;
 
 import :vbd_constraints;
 import :vbd_solver;
+
+export namespace gse::vbd {
+	struct [[= shaders::shader_struct]] gpu_body {
+		vec4<position> position;
+		vec4<gse::position> predicted_position;
+		vec4f inertia_target;
+		vec4<gse::position> old_position;
+		vec4<gse::velocity> velocity;
+		vec4<gse::velocity> predicted_velocity;
+		vec4f orientation;
+		vec4f predicted_orientation;
+		vec4f angular_inertia_target;
+		vec4f old_orientation;
+		vec4<angular_velocity> angular_velocity;
+		vec4<gse::angular_velocity> predicted_angular_velocity;
+		vec4<gse::velocity> motor_target;
+		mass mass;
+		std::uint32_t flags;
+		std::uint32_t sleep_counter;
+		float accel_weight;
+		mat3<inertia> inertia;
+		vec4<length> half_extents;
+		vec4<gse::position> aabb_min;
+		vec4<gse::position> aabb_max;
+	};
+
+	struct [[= shaders::shader_struct]] gpu_contact {
+		std::uint32_t body_a;
+		std::uint32_t body_b;
+		std::uint32_t feature_key_hi;
+		std::uint32_t feature_key_lo;
+		std::uint32_t sticking;
+		vec4f normal;
+		vec4f tangent_u;
+		vec4f tangent_v;
+		vec4<lever_arm> r_a;
+		vec4<lever_arm> r_b;
+		vec4f c0_friction;
+		vec4f lambda;
+		vec4f penalty;
+	};
+
+	struct [[= shaders::shader_struct]] gpu_motor {
+		std::uint32_t body_index;
+		linear_compliance compliance;
+		force max_force;
+		std::uint32_t horizontal_only;
+		vec4<velocity> target_velocity;
+	};
+
+	struct [[= shaders::shader_struct]] gpu_warm_start {
+		std::uint32_t body_a;
+		std::uint32_t body_b;
+		std::uint32_t feature_key_hi;
+		std::uint32_t feature_key_lo;
+		std::uint32_t sticking;
+		vec4f normal;
+		vec4f tangent_u;
+		vec4f tangent_v;
+		vec4<offset> local_anchor_a;
+		vec4<offset> local_anchor_b;
+		vec4f lambda;
+		vec4f penalty;
+	};
+
+	struct [[= shaders::shader_struct]] gpu_joint {
+		std::uint32_t body_a;
+		std::uint32_t body_b;
+		std::uint32_t type;
+		std::uint32_t limits_enabled;
+		vec4<offset> local_anchor_a;
+		vec4<offset> local_anchor_b;
+		vec4f local_axis_a;
+		vec4f local_axis_b;
+		length target_distance;
+		linear_compliance compliance;
+		float damping;
+		float pad0;
+		float limit_lower;
+		float limit_upper;
+		float pad1;
+		float pad2;
+		vec4f rest_orientation;
+		vec4f pos_lambda;
+		vec4f pos_penalty;
+		vec4f ang_lambda;
+		vec4f ang_penalty;
+		float limit_lambda;
+		float limit_penalty;
+		float pad3;
+		float pad4;
+		vec4f pos_c0;
+		vec4f ang_c0;
+		float limit_c0;
+		float pad5;
+		float pad6;
+		float pad7;
+	};
+
+	struct [[= shaders::shader_struct]] frozen_jacobian {
+		vec4<lever_arm> world_r_a;
+		vec4<lever_arm> world_r_b;
+		mat3f j_ang_a;
+		mat3f j_ang_b;
+	};
+
+	struct [[= shaders::shader_struct]] dispatch_args {
+		std::uint32_t x;
+		std::uint32_t y;
+		std::uint32_t z;
+	};
+
+	using shader_types = type_pack<
+		gpu_body,
+		gpu_contact,
+		gpu_motor,
+		gpu_warm_start,
+		gpu_joint,
+		frozen_jacobian,
+		dispatch_args
+	>;
+}
 
 export namespace gse::vbd {
 	constexpr std::uint32_t max_bodies = 2048;
@@ -321,3 +442,4 @@ auto gse::vbd::vbd_layout_from() -> buffer_layout {
 	}
 	return out;
 }
+

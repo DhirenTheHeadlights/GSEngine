@@ -1,4 +1,3 @@
-import vbd_shared;
 
 uint ci = dispatch_id.x;
 uint actual_count = collision_state[0];
