@@ -79,7 +79,9 @@ auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::exp
 }
 
 auto gse::gpu::context::end_frame(data& d, window::data& window_s) -> void {
-	d.frame->end(window_s);
+	auto compute_subs = d.render_graph->take_compute_submissions();
+	auto graphics_waits = d.render_graph->take_graphics_extra_waits();
+	d.frame->end(window_s, compute_subs, graphics_waits);
 }
 
 namespace gse::gpu {
@@ -140,6 +142,7 @@ auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> vulkan::depth_
 auto gse::gpu::to_pass_data(render_pass_request req, const vulkan::render_graph& graph) -> vulkan::render_pass_data {
 	vulkan::render_pass_data p{
 		.pass_type = req.desc.pass_kind,
+		.queue = req.desc.queue,
 		.reads = std::move(req.desc.reads),
 		.writes = std::move(req.desc.writes),
 		.tracked_buffers = std::move(req.desc.tracked_buffers),

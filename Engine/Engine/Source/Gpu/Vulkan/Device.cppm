@@ -116,6 +116,15 @@ export namespace gse::vulkan {
         [[nodiscard]] auto timestamp_period(
         ) const -> float;
 
+        [[nodiscard]] auto graphics_family(
+        ) const -> std::uint32_t;
+
+        [[nodiscard]] auto compute_family(
+        ) const -> std::uint32_t;
+
+        [[nodiscard]] auto families_distinct(
+        ) const -> bool;
+
         [[nodiscard]] auto query_fault_counts(
             gpu::device_fault_counts& counts
         ) const -> gpu::result;
@@ -185,7 +194,9 @@ export namespace gse::vulkan {
             vk::raii::Device&& device,
             settings& cfg,
             bool device_fault_enabled,
-            bool device_fault_vendor_binary_enabled
+            bool device_fault_vendor_binary_enabled,
+            std::uint32_t graphics_family,
+            std::uint32_t compute_family
         );
 
         auto allocate(
@@ -238,6 +249,8 @@ export namespace gse::vulkan {
         vk::raii::Device m_device;
         bool m_fault_enabled = false;
         bool m_vendor_binary_fault_enabled = false;
+        std::uint32_t m_graphics_family = 0;
+        std::uint32_t m_compute_family = 0;
 
         std::unordered_map<pool_key, pool, pool_key_hash> m_pools;
         std::mutex m_mutex;

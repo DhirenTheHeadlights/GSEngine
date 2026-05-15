@@ -23,16 +23,14 @@ auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<fra
     return std::make_unique<frame>(
         std::move(sync),
         0,
-        dev.vulkan_command().frame_command_buffer(0),
         dev,
         sc
     );
 }
 
-gse::gpu::frame::frame(vulkan::sync&& sync, const std::uint32_t image_index, const handle<vulkan::command_buffer> command_buffer, device& dev, swap_chain& sc)
+gse::gpu::frame::frame(vulkan::sync&& sync, const std::uint32_t image_index, device& dev, swap_chain& sc)
     : m_sync(std::move(sync)),
       m_image_index(image_index),
-      m_command_buffer(command_buffer),
       m_device(&dev),
       m_swapchain(&sc) {}
 
@@ -44,8 +42,8 @@ auto gse::gpu::frame::image_index() const -> std::uint32_t {
     return m_image_index;
 }
 
-auto gse::gpu::frame::command_buffer() const -> handle<vulkan::command_buffer> {
-    return m_command_buffer;
+auto gse::gpu::frame::command_buffer(const queue_type queue) const -> handle<vulkan::command_buffer> {
+    return queue == queue_type::compute ? m_compute_command_buffer : m_graphics_command_buffer;
 }
 
 auto gse::gpu::frame::frame_in_progress() const -> bool {
@@ -123,9 +121,10 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
     vulkan::reset_fence(dev, m_sync.in_flight_fence(m_current_frame));
 
     m_image_index = acquired_image_index;
-    m_command_buffer = m_device->vulkan_command().frame_command_buffer(m_current_frame);
+    m_graphics_command_buffer = m_device->vulkan_command().frame_command_buffer(queue_type::graphics, m_current_frame);
+    m_compute_command_buffer = m_device->vulkan_command().frame_command_buffer(queue_type::compute, m_current_frame);
 
-    const vulkan::commands cmd_main{ m_command_buffer };
+    const vulkan::commands cmd_main{ m_graphics_command_buffer };
     cmd_main.reset();
     cmd_main.begin();
 
@@ -177,7 +176,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
     };
     cmd_main.pipeline_barrier(dependency_info{ .memory_barriers = transient_visibility_barriers });
 
-    m_device->transient().recorder().run_pre_frame(m_command_buffer);
+    m_device->transient().recorder().run_pre_frame(m_graphics_command_buffer);
 
     m_frame_in_progress = true;
 
@@ -193,10 +192,10 @@ auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state& state) -
     }
 }
 
-auto gse::gpu::frame::end(window::data& win) -> void {
-    m_device->transient().recorder().run_post_frame(m_command_buffer);
+auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> compute_submissions, std::span<const semaphore_submit_info> extra_graphics_waits) -> void {
+    m_device->transient().recorder().run_post_frame(m_graphics_command_buffer);
 
-    const vulkan::commands cmd_tail{ m_command_buffer };
+    const vulkan::commands cmd_tail{ m_graphics_command_buffer };
 
     const image_barrier present_barrier{
         .src_stages = pipeline_stage_flag::color_attachment_output,
@@ -215,12 +214,36 @@ auto gse::gpu::frame::end(window::data& win) -> void {
         cmd_tail.end();
     }
 
+    {
+        trace::scope_guard sg{trace_id<"end_frame::submit_compute">()};
+        for (const auto& sub : compute_submissions) {
+            try {
+                const command_buffer_submit_info cmd_info{
+                    .command_buffer = sub.command_buffer,
+                };
+                const submit_info submit{
+                    .wait_semaphores = sub.waits,
+                    .command_buffers = std::span(&cmd_info, 1),
+                    .signal_semaphores = sub.signals,
+                };
+                m_device->vulkan_queue().submit_compute(submit, {});
+            } catch (const vk::DeviceLostError&) {
+                m_device->report_device_lost(std::format("submit_compute (frame {}, image {})", m_current_frame, m_image_index));
+                throw;
+            }
+        }
+    }
+
     std::vector<semaphore_submit_info> main_waits;
     main_waits.push_back({
         .semaphore = m_sync.image_available(m_current_frame),
         .value = 0,
         .stages = pipeline_stage_flag::top_of_pipe,
     });
+
+    for (const auto& w : extra_graphics_waits) {
+        main_waits.push_back(w);
+    }
 
     for (const auto& wait : m_extra_waits) {
         main_waits.push_back({
@@ -241,7 +264,7 @@ auto gse::gpu::frame::end(window::data& win) -> void {
         trace::scope_guard sg{trace_id<"end_frame::submit">()};
         try {
             const command_buffer_submit_info cmd_info{
-                .command_buffer = m_command_buffer,
+                .command_buffer = m_graphics_command_buffer,
             };
             const submit_info submit{
                 .wait_semaphores = main_waits,

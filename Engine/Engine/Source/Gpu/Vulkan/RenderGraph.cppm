@@ -9,6 +9,7 @@ import :vulkan_buffer;
 import :vulkan_device;
 import :vulkan_commands;
 import :vulkan_image;
+import :vulkan_semaphore;
 import :descriptor_heap;
 import :device;
 import :swap_chain;
@@ -138,6 +139,11 @@ export namespace gse::vulkan {
 			std::uint32_t x,
 			std::uint32_t y = 1,
 			std::uint32_t z = 1
+		) const -> void;
+
+		auto dispatch_indirect(
+			const buffer& buf,
+			std::size_t offset = 0
 		) const -> void;
 
 		auto end_rendering(
@@ -273,6 +279,7 @@ export namespace gse::vulkan {
 
 	struct render_pass_data {
 		id pass_type{};
+		gpu::queue_type queue = gpu::queue_type::graphics;
 		std::vector<resource_usage> reads;
 		std::vector<resource_usage> writes;
 		std::vector<const buffer*> tracked_buffers;
@@ -318,6 +325,12 @@ export namespace gse::vulkan {
 		[[nodiscard]] auto frame_in_progress(
 		) const -> bool;
 
+		[[nodiscard]] auto take_compute_submissions(
+		) -> std::vector<gpu::queue_submission>;
+
+		[[nodiscard]] auto take_graphics_extra_waits(
+		) -> std::vector<gpu::semaphore_submit_info>;
+
 	private:
 		static constexpr std::uint32_t max_profiled_passes = 128;
 
@@ -325,6 +338,7 @@ export namespace gse::vulkan {
 			vk::raii::QueryPool timestamp_pool = nullptr;
 			vk::raii::QueryPool stats_pool = nullptr;
 			static_vector<id, max_profiled_passes> pass_types;
+			static_vector<gpu::queue_type, max_profiled_passes> pass_queues;
 			std::uint32_t pass_count = 0;
 			bool stats_issued = false;
 			time_t<std::uint64_t> cpu_ref{};
@@ -333,7 +347,8 @@ export namespace gse::vulkan {
 		};
 
 		auto ensure_profile_pools(
-			gpu_profile_slot& slot
+			gpu_profile_slot& slot,
+			bool allow_stats
 		) const -> void;
 
 		auto read_profile_slot(
@@ -350,13 +365,20 @@ export namespace gse::vulkan {
 		gpu::swap_chain* m_swapchain;
 		gpu::frame* m_frame;
 		gpu::bindless_texture_set* m_bindless = nullptr;
-		per_frame_resource<gpu_profile_slot> m_profile_slots{ gpu_profile_slot{}, gpu_profile_slot{} };
+		std::array<per_frame_resource<gpu_profile_slot>, gpu::queue_type_count> m_profile_slots{
+			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
+			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
+		};
 		per_frame_resource<inheritance_storage> m_inheritance_storage{ inheritance_storage{}, inheritance_storage{} };
 		std::vector<gpu::auto_bind_entry> m_auto_binds;
 		std::atomic<bool> m_gpu_timestamps_enabled{ true };
 		std::atomic<bool> m_gpu_pipeline_stats_enabled{ false };
 		time_t<double> m_timestamp_period_per_tick = nanoseconds(1.0);
 		std::uint64_t m_frames_submitted = 0;
+		vulkan::semaphore m_compute_timeline;
+		std::uint64_t m_compute_signal_counter = 0;
+		std::vector<gpu::queue_submission> m_pending_compute_submissions;
+		std::vector<gpu::semaphore_submit_info> m_pending_graphics_extra_waits;
 	};
 }
 
@@ -717,6 +739,11 @@ auto gse::vulkan::recording_context::dispatch(const std::uint32_t x, const std::
 	m_cmd.dispatch(x, y, z);
 }
 
+auto gse::vulkan::recording_context::dispatch_indirect(const buffer& buf, const std::size_t offset) const -> void {
+	check_active();
+	m_cmd.dispatch_indirect(buf.handle(), static_cast<gpu::device_size>(offset));
+}
+
 auto gse::vulkan::recording_context::end_rendering() const -> void {
 	check_active();
 	m_cmd.end_rendering();
@@ -925,6 +952,15 @@ namespace gse::vulkan {
 
 gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame, gpu::bindless_texture_set* bindless) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_bindless(bindless) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
+	m_compute_timeline = vulkan::semaphore::create_timeline(device.vulkan_device(), 0);
+}
+
+auto gse::vulkan::render_graph::take_compute_submissions() -> std::vector<gpu::queue_submission> {
+	return std::move(m_pending_compute_submissions);
+}
+
+auto gse::vulkan::render_graph::take_graphics_extra_waits() -> std::vector<gpu::semaphore_submit_info> {
+	return std::move(m_pending_graphics_extra_waits);
 }
 
 auto gse::vulkan::render_graph::set_gpu_timestamps_enabled(const bool enabled) -> void {
@@ -935,14 +971,14 @@ auto gse::vulkan::render_graph::set_gpu_pipeline_stats_enabled(const bool enable
 	m_gpu_pipeline_stats_enabled.store(enabled, std::memory_order_relaxed);
 }
 
-auto gse::vulkan::render_graph::ensure_profile_pools(gpu_profile_slot& slot) const -> void {
+auto gse::vulkan::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
 	if (!*slot.timestamp_pool) {
 		slot.timestamp_pool = m_device->vulkan_device().raii_device().createQueryPool({
 			.queryType = vk::QueryType::eTimestamp,
 			.queryCount = max_profiled_passes * 2 + 1,
 		});
 	}
-	if (!*slot.stats_pool) {
+	if (allow_stats && !*slot.stats_pool) {
 		slot.stats_pool = m_device->vulkan_device().raii_device().createQueryPool({
 			.queryType = vk::QueryType::ePipelineStatistics,
 			.queryCount = max_profiled_passes,
@@ -978,10 +1014,14 @@ auto gse::vulkan::render_graph::read_profile_slot(gpu_profile_slot& slot) -> voi
 		const auto start = static_cast<double>(timestamps[1 + i * 2]) * period + offset;
 		const auto end = static_cast<double>(timestamps[2 + i * 2]) * period + offset;
 		const auto gpu_id = slot.pass_types[i];
-		const std::uint64_t key = (slot.frame_counter << 16) | i;
+		const auto queue = slot.pass_queues[i];
+		const std::uint64_t key = (slot.frame_counter << 16) | (static_cast<std::uint64_t>(queue) << 14) | i;
+		const auto tid = (queue == gpu::queue_type::compute)
+			? trace::gpu_compute_virtual_tid
+			: trace::gpu_virtual_tid;
 
-		trace::begin_async_at(gpu_id, key, trace::gpu_virtual_tid, time_t<std::uint64_t>(start));
-		trace::end_async_at(gpu_id, key, trace::gpu_virtual_tid, time_t<std::uint64_t>(end));
+		trace::begin_async_at(gpu_id, key, tid, time_t<std::uint64_t>(start));
+		trace::end_async_at(gpu_id, key, tid, time_t<std::uint64_t>(end));
 
 		profile::ingest_gpu_sample(gpu_id, end - start);
 	}
@@ -1031,6 +1071,9 @@ auto gse::vulkan::render_graph::frame_in_progress() const -> bool {
 }
 
 auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) -> void {
+	m_pending_compute_submissions.clear();
+	m_pending_graphics_extra_waits.clear();
+
 	if (!m_frame->frame_in_progress()) {
 		return;
 	}
@@ -1041,37 +1084,76 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 		m_auto_binds.push_back({ .set_index = bindless_idx, .region = m_bindless->region() });
 	}
 
-	auto command = std::bit_cast<vk::CommandBuffer>(m_frame->command_buffer());
+	const auto frame_idx = m_frame->current_frame();
+	const auto graphics_primary_handle = m_frame->command_buffer(gpu::queue_type::graphics);
+	const auto compute_primary_handle = m_frame->command_buffer(gpu::queue_type::compute);
+	const auto graphics_primary = std::bit_cast<vk::CommandBuffer>(graphics_primary_handle);
+	const auto compute_primary = std::bit_cast<vk::CommandBuffer>(compute_primary_handle);
+	const bool compute_distinct = m_device->vulkan_device().families_distinct();
+
 	const auto image_index = m_frame->image_index();
 	const auto swap_extent = m_swapchain->extent();
 	const vk::Extent2D vk_extent{ swap_extent.x(), swap_extent.y() };
 
-	auto& slot = m_profile_slots[m_frame->current_frame()];
+	auto& graphics_slot = m_profile_slots[static_cast<std::size_t>(gpu::queue_type::graphics)][frame_idx];
+	auto& compute_slot = m_profile_slots[static_cast<std::size_t>(gpu::queue_type::compute)][frame_idx];
 	const bool timestamps_enabled = m_gpu_timestamps_enabled.load(std::memory_order_relaxed);
 	const bool stats_enabled = m_gpu_pipeline_stats_enabled.load(std::memory_order_relaxed);
 
 	if (m_frames_submitted >= per_frame_resource<gpu_profile_slot>::frames_in_flight) {
-		read_profile_slot(slot);
+		read_profile_slot(graphics_slot);
+		read_profile_slot(compute_slot);
 	}
 
 	auto bump_frames = make_scope_exit([this] {
 		++m_frames_submitted;
 	});
 
-	slot.pass_types.clear();
-	slot.pass_count = 0;
-	slot.stats_issued = false;
-	slot.results_valid = false;
+	auto reset_slot = [](gpu_profile_slot& s) {
+		s.pass_types.clear();
+		s.pass_queues.clear();
+		s.pass_count = 0;
+		s.stats_issued = false;
+		s.results_valid = false;
+	};
+	reset_slot(graphics_slot);
+	reset_slot(compute_slot);
+
+	bool has_compute_work = false;
+	for (const auto& p : passes) {
+		if (p.queue == gpu::queue_type::compute && compute_distinct) {
+			has_compute_work = true;
+			break;
+		}
+	}
+
+	auto open_primary = [this](const gpu::handle<command_buffer> handle) {
+		const vulkan::commands cmd(handle);
+		cmd.reset();
+		cmd.begin();
+		m_device->descriptor_heap().bind_descriptor_storage(handle);
+	};
+
+	if (has_compute_work) {
+		open_primary(compute_primary_handle);
+	}
+
+	auto setup_timestamps = [&](gpu_profile_slot& s, vk::CommandBuffer cb, const bool with_stats) {
+		ensure_profile_pools(s, with_stats);
+		cb.resetQueryPool(*s.timestamp_pool, 0, max_profiled_passes * 2 + 1);
+		if (with_stats) {
+			cb.resetQueryPool(*s.stats_pool, 0, max_profiled_passes);
+		}
+		s.cpu_ref = system_clock::now<trace::tick_step>();
+		s.frame_counter = m_frames_submitted;
+		cb.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *s.timestamp_pool, 0);
+	};
 
 	if (timestamps_enabled) {
-		ensure_profile_pools(slot);
-		command.resetQueryPool(*slot.timestamp_pool, 0, max_profiled_passes * 2 + 1);
-		if (stats_enabled) {
-			command.resetQueryPool(*slot.stats_pool, 0, max_profiled_passes);
+		setup_timestamps(graphics_slot, graphics_primary, stats_enabled);
+		if (has_compute_work) {
+			setup_timestamps(compute_slot, compute_primary, false);
 		}
-		slot.cpu_ref = system_clock::now<trace::tick_step>();
-		slot.frame_counter = m_frames_submitted;
-		command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 0);
 	}
 
 	std::vector<std::size_t> sorted;
@@ -1154,8 +1236,39 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 		}
 	}
 
+	auto pass_queue = [&](const std::size_t pi) -> gpu::queue_type {
+		return (compute_distinct && passes[pi].queue == gpu::queue_type::compute)
+			? gpu::queue_type::compute
+			: gpu::queue_type::graphics;
+	};
+
+	bool graphics_waits_on_compute = false;
+	bool compute_waits_on_graphics = false;
+	for (std::size_t i = 0; i < passes.size() && (!graphics_waits_on_compute || !compute_waits_on_graphics); ++i) {
+		for (std::size_t j = 0; j < passes.size(); ++j) {
+			if (i == j) continue;
+			const auto qi = pass_queue(i);
+			const auto qj = pass_queue(j);
+			if (qi == qj) continue;
+			for (const auto& w : passes[i].writes) {
+				for (const auto& r : passes[j].reads) {
+					if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
+						if (qi == gpu::queue_type::compute && qj == gpu::queue_type::graphics) {
+							graphics_waits_on_compute = true;
+						}
+						else if (qi == gpu::queue_type::graphics && qj == gpu::queue_type::compute) {
+							compute_waits_on_graphics = true;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	assert(!compute_waits_on_graphics, "render_graph: graphics->compute cross-queue handoff not supported in one-shot-per-queue submission; split a submission or move the pass");
+
 	auto& worker_pools = m_device->worker_command_pools();
-	worker_pools.reset_frame(m_frame->current_frame());
+	worker_pools.reset_frame(frame_idx);
 	const auto color_format = m_swapchain->format();
 
 	std::vector<std::size_t> pass_to_serial(passes.size());
@@ -1165,13 +1278,14 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 
 	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
 
-	auto& inheritance = m_inheritance_storage[m_frame->current_frame()];
+	auto& inheritance = m_inheritance_storage[frame_idx];
 	inheritance.color_formats = { to_vk(color_format) };
 	inheritance.rendering_inherits.assign(passes.size(), vk::CommandBufferInheritanceRenderingInfo{});
 	inheritance.inherits.assign(passes.size(), vk::CommandBufferInheritanceInfo{});
 
 	task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
 		auto& pass = passes[pi];
+		const auto queue = pass_queue(pi);
 		const bool is_graphics_pass = pass.color_output || pass.depth_output;
 		const std::size_t si = pass_to_serial[pi];
 		const bool profile_pass = timestamps_enabled && si < max_profiled_passes;
@@ -1179,8 +1293,7 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 
 		const auto worker_idx = task::current_worker();
 		assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
-		const auto frame_idx = m_frame->current_frame();
-		const auto secondary = worker_pools.acquire_secondary(*worker_idx, frame_idx);
+		const auto secondary = worker_pools.acquire_secondary(queue, *worker_idx, frame_idx);
 
 		inheritance.rendering_inherits[pi] = vk::CommandBufferInheritanceRenderingInfo{
 			.viewMask = 0,
@@ -1263,9 +1376,14 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 			});
 		};
 
-		auto append_prev_pass_barriers = [&](const render_pass_data& cur, std::size_t serial_index, std::vector<gpu::memory_barrier>& out) {
+		auto append_prev_pass_barriers = [&](const render_pass_data& cur, const gpu::queue_type cur_queue, const std::size_t serial_index, std::vector<gpu::memory_barrier>& out) {
 			for (std::size_t pi = 0; pi < serial_index; ++pi) {
-				for (const auto& prev = passes[sorted[pi]]; const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
+				const auto& prev = passes[sorted[pi]];
+				const auto prev_queue = pass_queue(sorted[pi]);
+				if (prev_queue != cur_queue) {
+					continue;
+				}
+				for (const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
 					if (!prev_resource.ptr) {
 						continue;
 					}
@@ -1296,11 +1414,15 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 		for (std::size_t si = 0; si < sorted.size(); ++si) {
 			const auto pass_idx = sorted[si];
 			auto& pass = passes[pass_idx];
+			const auto queue = pass_queue(pass_idx);
+			const auto target_handle = (queue == gpu::queue_type::compute) ? compute_primary_handle : graphics_primary_handle;
+			const auto target_primary = (queue == gpu::queue_type::compute) ? compute_primary : graphics_primary;
+			auto& target_slot = (queue == gpu::queue_type::compute) ? compute_slot : graphics_slot;
 
 			std::vector<gpu::memory_barrier> barriers;
 
 			append_tracked_barriers(pass, barriers);
-			append_prev_pass_barriers(pass, si, barriers);
+			append_prev_pass_barriers(pass, queue, si, barriers);
 
 			{
 				std::vector<gpu::memory_barrier> coalesced;
@@ -1324,37 +1446,38 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 
 			std::vector<gpu::image_barrier> image_barriers;
 
-			const bool profile_pass = timestamps_enabled && slot.pass_count < max_profiled_passes;
-			const std::uint32_t pass_index = slot.pass_count;
+			const bool profile_pass = timestamps_enabled && target_slot.pass_count < max_profiled_passes;
+			const std::uint32_t pass_index = target_slot.pass_count;
 			const bool is_graphics_pass = pass.color_output || pass.depth_output;
-			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
+			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass && queue == gpu::queue_type::graphics;
 
-			const auto marker_handle = m_device->begin_pass_marker(m_frame->command_buffer(), {
+			const auto marker_handle = m_device->begin_pass_marker(target_handle, {
 				.frame_counter = m_frames_submitted,
 				.pass_index = static_cast<std::uint32_t>(si),
 				.pass_type = pass.pass_type,
 			});
 
 			if (!barriers.empty()) {
-				vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{
+				vulkan::commands(target_handle).pipeline_barrier(gpu::dependency_info{
 					.memory_barriers = barriers,
 				});
 			}
 			if (!image_barriers.empty()) {
-				vulkan::commands(m_frame->command_buffer()).pipeline_barrier(gpu::dependency_info{
+				vulkan::commands(target_handle).pipeline_barrier(gpu::dependency_info{
 					.image_barriers = image_barriers,
 				});
 			}
 
-			m_device->checkpoint_pass_marker(m_frame->command_buffer(), marker_handle);
+			m_device->checkpoint_pass_marker(target_handle, marker_handle);
 
 			if (profile_pass) {
-				command.writeTimestamp2(vk::PipelineStageFlagBits2::eNone, *slot.timestamp_pool, 1 + pass_index * 2);
-				slot.pass_types.push_back(pass.pass_type);
-				++slot.pass_count;
+				target_primary.writeTimestamp2(vk::PipelineStageFlagBits2::eNone, *target_slot.timestamp_pool, 1 + pass_index * 2);
+				target_slot.pass_types.push_back(pass.pass_type);
+				target_slot.pass_queues.push_back(queue);
+				++target_slot.pass_count;
 				if (issue_stats) {
-					command.beginQuery(*slot.stats_pool, pass_index, {});
-					slot.stats_issued = true;
+					target_primary.beginQuery(*target_slot.stats_pool, pass_index, {});
+					target_slot.stats_issued = true;
 				}
 			}
 
@@ -1420,29 +1543,55 @@ auto gse::vulkan::render_graph::execute(std::vector<render_pass_data> passes) ->
 					.pColorAttachments = color_attachments.empty() ? nullptr : color_attachments.data(),
 					.pDepthAttachment = depth_att ? &*depth_att : nullptr
 				};
-				command.beginRendering(ri);
-				command.executeCommands(secondary);
-				command.endRendering();
+				target_primary.beginRendering(ri);
+				target_primary.executeCommands(secondary);
+				target_primary.endRendering();
 			}
 			else {
-				command.executeCommands(secondary);
+				target_primary.executeCommands(secondary);
 			}
 
-			m_device->post_renderpass_pass_marker(m_frame->command_buffer(), marker_handle);
+			m_device->post_renderpass_pass_marker(target_handle, marker_handle);
 
 			if (profile_pass) {
 				if (issue_stats) {
-					command.endQuery(*slot.stats_pool, pass_index);
+					target_primary.endQuery(*target_slot.stats_pool, pass_index);
 				}
-				command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *slot.timestamp_pool, 2 + pass_index * 2);
+				target_primary.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *target_slot.timestamp_pool, 2 + pass_index * 2);
 			}
 
-			m_device->end_pass_marker(m_frame->command_buffer(), marker_handle);
+			m_device->end_pass_marker(target_handle, marker_handle);
 		}
 	}
 
-	if (timestamps_enabled && slot.pass_count > 0) {
-		slot.results_valid = true;
+	if (timestamps_enabled && graphics_slot.pass_count > 0) {
+		graphics_slot.results_valid = true;
+	}
+	if (timestamps_enabled && compute_slot.pass_count > 0) {
+		compute_slot.results_valid = true;
+	}
+
+	if (has_compute_work) {
+		vulkan::commands(compute_primary_handle).end();
+
+		const std::uint64_t signal_value = ++m_compute_signal_counter;
+
+		gpu::queue_submission sub;
+		sub.command_buffer = compute_primary_handle;
+		sub.signals.push_back({
+			.semaphore = m_compute_timeline.handle(),
+			.value = signal_value,
+			.stages = gpu::pipeline_stage_flag::compute_shader,
+		});
+		m_pending_compute_submissions.push_back(std::move(sub));
+
+		if (graphics_waits_on_compute) {
+			m_pending_graphics_extra_waits.push_back({
+				.semaphore = m_compute_timeline.handle(),
+				.value = signal_value,
+				.stages = gpu::pipeline_stage_flag::all_commands,
+			});
+		}
 	}
 }
 

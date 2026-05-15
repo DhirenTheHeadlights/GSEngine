@@ -253,6 +253,7 @@ export namespace gse::physics {
 	private:
 		struct collision_pair {
 			id owner;
+			aabb box;
 		};
 
 		struct contact_compare_key {
@@ -279,7 +280,7 @@ export namespace gse::physics {
 		static auto add_scene_contacts_to_solver(
 			vbd::solver& solver,
 			vbd::contact_cache& contact_cache,
-			const std::vector<collision_pair>& objects,
+			std::vector<collision_pair>& objects,
 			const flat_map<id, std::uint32_t>& id_to_body_index,
 			bool update_scene_state,
 			write<transform_component>& transform,

@@ -26,11 +26,16 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 	vulkan::create_surface(win, instance);
 
 	auto creation = vulkan::device::create(instance, device_cfg, aftermath_tracker);
-	auto command = vulkan::command::create(creation.device, creation.families.graphics_family.value());
+	auto command = vulkan::command::create(
+		creation.device,
+		creation.families.graphics_family.value(),
+		creation.families.compute_family.value()
+	);
 
 	auto worker_pools = vulkan::worker_command_pools::create(
 		creation.device,
 		command.graphics_family_index(),
+		command.compute_family_index(),
 		task::thread_count()
 	);
 

@@ -95,6 +95,7 @@ export namespace gse::trace {
 
 	constexpr std::uint32_t gpu_virtual_tid = 0xFFFFFFFFu;
 	constexpr std::uint32_t gpu_stats_virtual_tid = 0xFFFFFFFEu;
+	constexpr std::uint32_t gpu_compute_virtual_tid = 0xFFFFFFFDu;
 
 	auto begin_async_at(
 		id id,
@@ -121,6 +122,13 @@ export namespace gse::trace {
 		std::uint32_t tid,
 		std::string_view name
 	) -> void;
+
+	auto virtual_thread_name(
+		std::uint32_t tid
+	) -> std::optional<std::string>;
+
+	auto hidden_ids_snapshot(
+	) -> std::unordered_set<id>;
 
 	auto register_main_thread(
 	) -> void;
@@ -283,15 +291,18 @@ namespace gse::trace {
 			time_t<std::uint64_t> start = {};
 			time_t<std::uint64_t> end = {};
 			time_t<std::uint64_t> self = {};
-			std::vector<std::size_t> children_idx;
+			std::uint32_t children_first = 0;
+			std::uint32_t children_count = 0;
 		};
 
 		std::vector<flat_node> flat;
 		std::vector<node> node_pool;
 		std::vector<node> roots;
 
-		std::unordered_map<std::uint64_t, span_info> spans_scratch;
-		std::unordered_map<std::uint64_t, std::size_t> index_of_scratch;
+		std::vector<std::pair<std::uint64_t, span_info>> spans_scratch;
+		std::vector<std::uint32_t> parent_idx_scratch;
+		std::vector<std::uint32_t> child_counts_scratch;
+		std::vector<std::uint32_t> children_arena;
 		std::vector<std::uint8_t> has_parent_scratch;
 		std::vector<std::size_t> roots_idx_scratch;
 
@@ -304,7 +315,7 @@ namespace gse::trace {
 	};
 
 	double_buffer<frame_storage> frames;
-	std::unordered_map<std::uint64_t, span_info> global_open_spans;
+	std::vector<std::pair<std::uint64_t, span_info>> global_open_spans;
 
 	std::shared_mutex hidden_ids_mutex;
 	std::unordered_set<id> hidden_ids;

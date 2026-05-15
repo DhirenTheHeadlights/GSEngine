@@ -24,6 +24,7 @@ export namespace gse::gpu {
 
 	struct render_pass_descriptor {
 		id pass_kind{};
+		queue_type queue = queue_type::graphics;
 		std::optional<color_attachment> color;
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
@@ -92,6 +93,10 @@ export namespace gse::gpu {
 			const frame_context& ctx,
 			id pass_kind
 		) noexcept;
+
+		auto on(
+			queue_type queue
+		) && -> pass_builder&&;
 
 		auto color(
 			color_attachment value

@@ -22,6 +22,7 @@ auto gse::trace::start(const config& cfg) -> void {
 
 	register_virtual_thread(gpu_virtual_tid, "GPU");
 	register_virtual_thread(gpu_stats_virtual_tid, "GPU Stats");
+	register_virtual_thread(gpu_compute_virtual_tid, "GPU Compute");
 }
 
 auto gse::trace::begin_block(const id id, std::uint64_t parent) -> std::uint64_t {
@@ -205,6 +206,14 @@ auto gse::trace::register_virtual_thread(const std::uint32_t tid, const std::str
 	virtual_thread_names[tid] = std::string(name);
 }
 
+auto gse::trace::virtual_thread_name(const std::uint32_t tid) -> std::optional<std::string> {
+	std::shared_lock lk(virtual_thread_mutex);
+	if (const auto it = virtual_thread_names.find(tid); it != virtual_thread_names.end()) {
+		return it->second;
+	}
+	return std::nullopt;
+}
+
 auto gse::trace::register_main_thread() -> void {
 	ensure_tls_registered();
 	main_tid_value.store(make_tid(), std::memory_order_relaxed);
@@ -222,6 +231,11 @@ auto gse::trace::mark_hidden(const id id) -> void {
 auto gse::trace::is_hidden(const id id) -> bool {
 	std::shared_lock lk(hidden_ids_mutex);
 	return hidden_ids.contains(id);
+}
+
+auto gse::trace::hidden_ids_snapshot() -> std::unordered_set<id> {
+	std::shared_lock lk(hidden_ids_mutex);
+	return hidden_ids;
 }
 
 auto gse::trace::current_eid() -> std::uint64_t {
@@ -332,10 +346,6 @@ auto gse::trace::make_tid() -> std::uint32_t {
 }
 
 auto gse::trace::emit(const event& e) -> void {
-	if (paused()) {
-		return;
-	}
-
 	if (tls.events.size() >= global_config.per_thread_event_cap) {
 		return;
 	}
@@ -350,23 +360,26 @@ auto gse::trace::current_parent_eid() -> std::uint64_t {
 auto gse::trace::compute_self_time(frame_storage& fs, std::size_t i) -> void {
 	auto& n = fs.flat[i];
 
-	for (const auto c : n.children_idx) {
-		compute_self_time(fs, c);
+	const std::uint32_t child_first = n.children_first;
+	const std::uint32_t child_count = n.children_count;
+
+	for (std::uint32_t k = 0; k < child_count; ++k) {
+		compute_self_time(fs, fs.children_arena[child_first + k]);
 	}
 
 	const auto parent_begin = n.start;
 	const auto parent_end = n.end;
 	const auto parent_tot = parent_end - parent_begin;
 
-	if (n.children_idx.empty() || parent_tot <= decltype(parent_tot){}) {
+	if (child_count == 0 || parent_tot <= decltype(parent_tot){}) {
 		n.self = parent_tot;
 		return;
 	}
 
 	const std::size_t segs_base = fs.segs_scratch.size();
 
-	for (const auto c : n.children_idx) {
-		const auto& ch = fs.flat[c];
+	for (std::uint32_t k = 0; k < child_count; ++k) {
+		const auto& ch = fs.flat[fs.children_arena[child_first + k]];
 
 		auto a = std::max(ch.start, parent_begin);
 		auto b = std::min(ch.end, parent_end);
@@ -427,23 +440,25 @@ auto gse::trace::emplace_shallow_node(frame_storage& fs, std::size_t flat_i) -> 
 auto gse::trace::build_subtree(frame_storage& fs, std::size_t node_idx, std::size_t flat_i) -> void {
 	const auto& fn = fs.flat[flat_i];
 
-	if (fn.children_idx.empty()) {
+	if (fn.children_count == 0) {
 		fs.node_pool[node_idx].children_first = nullptr;
 		fs.node_pool[node_idx].children_count = 0;
 		return;
 	}
 
-	const std::size_t start = fs.node_pool.size();
+	const std::uint32_t arena_first = fn.children_first;
+	const std::uint32_t arena_count = fn.children_count;
+	const std::size_t pool_start = fs.node_pool.size();
 
-	for (const std::size_t ci : fn.children_idx) {
-		emplace_shallow_node(fs, ci);
+	for (std::uint32_t k = 0; k < arena_count; ++k) {
+		emplace_shallow_node(fs, fs.children_arena[arena_first + k]);
 	}
 
-	fs.node_pool[node_idx].children_first = fs.node_pool.data() + start;
-	fs.node_pool[node_idx].children_count = fn.children_idx.size();
+	fs.node_pool[node_idx].children_first = fs.node_pool.data() + pool_start;
+	fs.node_pool[node_idx].children_count = arena_count;
 
-	for (std::size_t k = 0; k < fn.children_idx.size(); ++k) {
-		build_subtree(fs, start + k, fn.children_idx[k]);
+	for (std::uint32_t k = 0; k < arena_count; ++k) {
+		build_subtree(fs, pool_start + k, fs.children_arena[arena_first + k]);
 	}
 }
 
@@ -469,83 +484,115 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 
 	auto& spans = fs.spans_scratch;
 	spans.clear();
-	spans.insert(global_open_spans.begin(), global_open_spans.end());
+	spans.reserve(global_open_spans.size() + fs.merged.size() / 2);
+
+	for (const auto& [eid, sp] : global_open_spans) {
+		spans.emplace_back(eid, sp);
+	}
 
 	for (const auto& e : fs.merged) {
-		switch (e.type) {
-			case event_type::begin:
-				spans.emplace(
-					e.eid,
-					span_info{
-						.id  = e.id,
-						.tid = static_cast<std::uint32_t>(e.tid),
-						.t0  = e.ts,
-						.t1  = {},
-						.parent = e.parent_eid
-					}
-				);
-				break;
-			case event_type::end:
-				if (auto it = spans.find(e.eid); it != spans.end()) {
-					it->second.t1 = e.ts;
+		if (e.type == event_type::begin) {
+			spans.emplace_back(
+				e.eid,
+				span_info{
+					.id  = e.id,
+					.tid = static_cast<std::uint32_t>(e.tid),
+					.t0  = e.ts,
+					.t1  = {},
+					.parent = e.parent_eid
 				}
-				break;
-			default:
-				break;
+			);
+		}
+	}
+
+	std::ranges::sort(spans, {}, &std::pair<std::uint64_t, span_info>::first);
+
+	for (const auto& e : fs.merged) {
+		if (e.type != event_type::end) {
+			continue;
+		}
+		const auto it = std::ranges::lower_bound(spans, e.eid, {}, &std::pair<std::uint64_t, span_info>::first);
+		if (it != spans.end() && it->first == e.eid) {
+			it->second.t1 = e.ts;
+		}
+	}
+
+	global_open_spans.clear();
+	for (const auto& [eid, sp] : spans) {
+		if (sp.t1 == decltype(sp.t1){}) {
+			global_open_spans.emplace_back(eid, sp);
 		}
 	}
 
 	fs.flat.clear();
 	fs.flat.reserve(spans.size());
 
-	auto& index_of = fs.index_of_scratch;
-	index_of.clear();
-	index_of.reserve(spans.size());
-
-	global_open_spans.clear();
-	for (const auto& [eid, sp] : spans) {
-		if (sp.t1 == decltype(sp.t1){}) {
-			global_open_spans.emplace(eid, sp);
-		}
-	}
-
 	for (auto& [eid, sp] : spans) {
 		if (sp.t1 < sp.t0) {
 			sp.t1 = sp.t0;
 		}
 
-		const std::size_t i = fs.flat.size();
 		fs.flat.push_back(frame_storage::flat_node{
 			.id = sp.id,
 			.tid = sp.tid,
 			.start = sp.t0,
 			.end = sp.t1,
 			.self = {},
-			.children_idx = {}
+			.children_first = 0,
+			.children_count = 0
 		});
-
-		index_of.emplace(eid, i);
 	}
 
-	auto& has_parent = fs.has_parent_scratch;
-	has_parent.assign(fs.flat.size(), 0);
+	constexpr auto no_parent = std::numeric_limits<std::uint32_t>::max();
 
-	for (const auto& [eid, sp] : spans) {
-		const auto child_i = index_of[eid];
-		if (sp.parent != 0) {
-			if (auto it = index_of.find(sp.parent); it != index_of.end()) {
-				fs.flat[it->second].children_idx.push_back(child_i);
-				has_parent[child_i] = 1;
-			}
+	auto& parent_idx = fs.parent_idx_scratch;
+	parent_idx.assign(spans.size(), no_parent);
+
+	for (std::size_t i = 0; i < spans.size(); ++i) {
+		const auto& sp = spans[i].second;
+		if (sp.parent == 0) {
+			continue;
 		}
+		const auto it = std::ranges::lower_bound(spans, sp.parent, {}, &std::pair<std::uint64_t, span_info>::first);
+		if (it != spans.end() && it->first == sp.parent) {
+			parent_idx[i] = static_cast<std::uint32_t>(it - spans.begin());
+		}
+	}
+
+	auto& child_counts = fs.child_counts_scratch;
+	child_counts.assign(fs.flat.size(), 0);
+
+	for (std::size_t i = 0; i < parent_idx.size(); ++i) {
+		if (parent_idx[i] != no_parent) {
+			++child_counts[parent_idx[i]];
+		}
+	}
+
+	std::uint32_t arena_offset = 0;
+	for (std::size_t i = 0; i < fs.flat.size(); ++i) {
+		fs.flat[i].children_first = arena_offset;
+		fs.flat[i].children_count = 0;
+		arena_offset += child_counts[i];
+	}
+
+	fs.children_arena.assign(arena_offset, 0);
+
+	for (std::size_t i = 0; i < parent_idx.size(); ++i) {
+		const std::uint32_t p = parent_idx[i];
+		if (p == no_parent) {
+			continue;
+		}
+		auto& parent_node = fs.flat[p];
+		fs.children_arena[parent_node.children_first + parent_node.children_count] = static_cast<std::uint32_t>(i);
+		++parent_node.children_count;
 	}
 
 	auto& roots_idx = fs.roots_idx_scratch;
 	roots_idx.clear();
 	roots_idx.reserve(fs.flat.size());
 
-	for (std::size_t i = 0; i < fs.flat.size(); ++i) {
-		if (!has_parent[i]) {
+	for (std::size_t i = 0; i < parent_idx.size(); ++i) {
+		if (parent_idx[i] == no_parent) {
 			roots_idx.push_back(i);
 		}
 	}
