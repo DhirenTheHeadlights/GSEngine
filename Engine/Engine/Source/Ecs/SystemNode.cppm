@@ -65,6 +65,7 @@ export namespace gse {
 		bool is_in_update_loop = false;
 		bool run_launched = false;
 		bool settled = false;
+		bool advance_in_flight = false;
 
 		std::unique_ptr<async::manual_event> resume_event;
 		std::unique_ptr<async::manual_event> paused_event;
@@ -73,6 +74,7 @@ export namespace gse {
 		async::task<> run_task;
 
 		id state_id;
+		id state_type_id;
 		id update_wall_id;
 		id frame_wall_id;
 		id trace_id;

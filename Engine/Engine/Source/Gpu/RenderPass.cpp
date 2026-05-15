@@ -40,6 +40,11 @@ gse::gpu::pass_builder::pass_builder(const frame_context& ctx, const id pass_kin
 	m_desc.pass_kind = pass_kind;
 }
 
+auto gse::gpu::pass_builder::on(const queue_type queue) && -> pass_builder&& {
+	m_desc.queue = queue;
+	return std::move(*this);
+}
+
 auto gse::gpu::pass_builder::color(color_attachment value) && -> pass_builder&& {
 	m_desc.color = value;
 	return std::move(*this);

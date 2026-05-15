@@ -6,8 +6,9 @@ import gse.std_meta;
 import gse.core;
 import gse.diag;
 import gse.log;
-import gse.moodycamel;
 import gse.stacktrace;
+
+import :work_stealing_queue;
 
 export namespace gse {
 	using job = move_only_function<void()>;
@@ -75,6 +76,14 @@ export namespace gse::task {
 		id id = trace::make_loc_id(std::source_location::current())
 	) -> void;
 
+	template <typename Fn>
+	auto coarse_parallel(
+		std::size_t n,
+		std::size_t min_chunk_items,
+		Fn&& fn,
+		id label = trace::make_loc_id(std::source_location::current())
+	) -> void;
+
 	class group : non_copyable, non_movable {
 	public:
 		explicit group(
@@ -114,6 +123,9 @@ export namespace gse::task {
 		std::uint64_t m_outer_parent = 0;
 		std::uint64_t m_parent_eid = 0;
 		std::atomic<std::size_t> m_counter{ 0 };
+		std::atomic<std::size_t> m_inflight_notifies{ 0 };
+		mutable std::mutex m_done_mutex;
+		mutable std::condition_variable m_done_cv;
 	};
 
 	template <typename T>
@@ -185,27 +197,27 @@ namespace gse::task {
 		group* gp = nullptr;
 	};
 
+	struct local_queue {
+		work_stealing_queue<job_entry> entries;
+		std::mutex remote_mtx;
+		std::deque<job_entry> remote_entries;
+	};
+
 	inline std::atomic started{ false };
 	inline std::atomic stopping{ false };
 	inline std::atomic<std::size_t> in_flight{ 0 };
 	inline std::atomic<std::size_t> worker_count_value{ 0 };
 
 	inline std::vector<std::jthread> workers;
-	inline moodycamel::ConcurrentQueue<job_entry> submission_queue;
+	inline std::vector<std::unique_ptr<local_queue>> per_worker_queues;
 	inline std::counting_semaphore work_available{ 0 };
+	inline std::atomic<std::size_t> external_post_rotation{ 0 };
 
 	inline std::mutex idle_mutex;
 	inline std::condition_variable idle_cv;
 
 	inline thread_local std::optional<std::size_t> t_worker_index;
-	inline thread_local std::optional<moodycamel::ProducerToken> t_producer_token;
-	inline thread_local std::optional<moodycamel::ConsumerToken> t_consumer_token;
-
-	auto producer_token(
-	) -> moodycamel::ProducerToken&;
-
-	auto consumer_token(
-	) -> moodycamel::ConsumerToken&;
+	inline thread_local bool t_is_main_thread = false;
 
 	inline constexpr std::size_t coalesce_threshold = 64;
 	inline constexpr std::size_t min_chunks_per_worker = 4;
@@ -250,6 +262,30 @@ namespace gse::task {
 		std::size_t n,
 		std::size_t workers
 	) -> std::size_t;
+
+	auto try_pop_local(
+		std::size_t worker_idx
+	) -> std::optional<job_entry>;
+
+	auto try_steal_from(
+		std::size_t victim_idx
+	) -> std::optional<job_entry>;
+
+	auto try_pop_or_steal(
+		std::optional<std::size_t> my_idx
+	) -> std::optional<job_entry>;
+
+	auto push_to_queue(
+		std::size_t target_idx,
+		job_entry&& entry
+	) -> void;
+
+	auto owns_queue(
+		std::size_t target_idx
+	) noexcept -> bool;
+
+	auto select_post_target(
+	) -> std::size_t;
 }
 
 gse::task::group::group(const id label) : m_label(label) {
@@ -259,13 +295,24 @@ gse::task::group::group(const id label) : m_label(label) {
 
 gse::task::group::~group() noexcept {
 	wait();
+	while (m_inflight_notifies.load(std::memory_order_acquire) > 0) {
+		std::this_thread::yield();
+	}
 	trace::end_block(m_label, m_parent_eid, m_outer_parent);
 }
 
 auto gse::task::group::wait() const -> void {
+	if (t_is_main_thread) {
+		std::unique_lock lk(m_done_mutex);
+		m_done_cv.wait(lk, [this] {
+			return m_counter.load(std::memory_order_acquire) == 0;
+		});
+		return;
+	}
+
 	while (m_counter.load(std::memory_order_acquire) > 0) {
-		if (job_entry entry; submission_queue.try_dequeue(consumer_token(), entry)) {
-			run_job(entry);
+		if (auto entry = try_pop_or_steal(t_worker_index)) {
+			run_job(*entry);
 		}
 		else {
 			std::this_thread::yield();
@@ -359,16 +406,13 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 	const std::uint64_t parent_eid = trace::current_eid();
 	in_flight.fetch_add(count, std::memory_order_relaxed);
 
-	std::vector<job_entry> entries;
-	entries.reserve(count);
-
 	for (auto it = first; it != last; ++it) {
 		if (!*it) {
 			log::println(log::level::error, log::category::task, "post_range: null job in input range (trace_id={})", id);
 		}
 		const auto key = async_key_for(&*it);
 		trace::begin_async(id, key);
-		entries.push_back(job_entry{
+		push_to_queue(select_post_target(), job_entry{
 			.fn = std::move(*it),
 			.trace_id = id,
 			.parent_eid = parent_eid,
@@ -379,7 +423,6 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 		});
 	}
 
-	submission_queue.enqueue_bulk(producer_token(), std::make_move_iterator(entries.begin()), count);
 	work_available.release(static_cast<std::ptrdiff_t>(count));
 }
 
@@ -433,6 +476,39 @@ auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func
 	);
 }
 
+template <typename Fn>
+auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk_items, Fn&& fn, const id label) -> void {
+	if (n == 0) {
+		return;
+	}
+	if (n <= min_chunk_items) {
+		for (std::size_t i = 0; i < n; ++i) {
+			fn(i);
+		}
+		return;
+	}
+	const auto workers = std::max<std::size_t>(1, thread_count());
+	const auto max_chunks = std::max<std::size_t>(1, n / min_chunk_items);
+	const auto chunk_count = std::min(workers * 2, max_chunks);
+	if (chunk_count <= 1) {
+		for (std::size_t i = 0; i < n; ++i) {
+			fn(i);
+		}
+		return;
+	}
+	const auto chunk = (n + chunk_count - 1) / chunk_count;
+
+	group g{ label };
+	for (std::size_t start = 0; start < n; start += chunk) {
+		const auto end = std::min(start + chunk, n);
+		g.post([start, end, &fn] {
+			for (std::size_t i = start; i < end; ++i) {
+				fn(i);
+			}
+		}, label);
+	}
+}
+
 template <std::input_iterator It>
 auto gse::task::group::post_range(It first, It last, const id id) -> void {
 	for (; first != last; ++first) {
@@ -466,25 +542,106 @@ auto gse::task::wait_idle() -> void {
 }
 
 auto gse::task::try_run_one() -> bool {
-	if (job_entry entry; submission_queue.try_dequeue(consumer_token(), entry)) {
-		run_job(entry);
+	if (auto entry = try_pop_or_steal(t_worker_index)) {
+		run_job(*entry);
 		return true;
 	}
 	return false;
 }
 
-auto gse::task::producer_token() -> moodycamel::ProducerToken& {
-	if (!t_producer_token) {
-		t_producer_token.emplace(submission_queue);
+auto gse::task::try_pop_local(const std::size_t worker_idx) -> std::optional<job_entry> {
+	if (worker_idx >= per_worker_queues.size()) {
+		return std::nullopt;
 	}
-	return *t_producer_token;
+	auto& q = *per_worker_queues[worker_idx];
+	job_entry entry;
+	if (q.entries.try_pop(entry)) {
+		return std::optional<job_entry>{ std::move(entry) };
+	}
+
+	std::unique_lock lk(q.remote_mtx, std::try_to_lock);
+	if (!lk.owns_lock() || q.remote_entries.empty()) {
+		return std::nullopt;
+	}
+	entry = std::move(q.remote_entries.back());
+	q.remote_entries.pop_back();
+	return std::optional<job_entry>{ std::move(entry) };
 }
 
-auto gse::task::consumer_token() -> moodycamel::ConsumerToken& {
-	if (!t_consumer_token) {
-		t_consumer_token.emplace(submission_queue);
+auto gse::task::try_steal_from(const std::size_t victim_idx) -> std::optional<job_entry> {
+	if (victim_idx >= per_worker_queues.size()) {
+		return std::nullopt;
 	}
-	return *t_consumer_token;
+	auto& q = *per_worker_queues[victim_idx];
+	job_entry entry;
+	if (q.entries.try_steal(entry)) {
+		return std::optional<job_entry>{ std::move(entry) };
+	}
+
+	std::unique_lock lk(q.remote_mtx, std::try_to_lock);
+	if (!lk.owns_lock() || q.remote_entries.empty()) {
+		return std::nullopt;
+	}
+	entry = std::move(q.remote_entries.front());
+	q.remote_entries.pop_front();
+	return std::optional<job_entry>{ std::move(entry) };
+}
+
+auto gse::task::try_pop_or_steal(const std::optional<std::size_t> my_idx) -> std::optional<job_entry> {
+	const auto queue_count = per_worker_queues.size();
+	if (queue_count == 0) {
+		return std::nullopt;
+	}
+
+	if (my_idx.has_value() && *my_idx < queue_count) {
+		if (auto entry = try_pop_local(*my_idx)) {
+			return entry;
+		}
+	}
+
+	const auto start = my_idx.value_or(0);
+	for (std::size_t offset = 1; offset <= queue_count; ++offset) {
+		const auto victim = (start + offset) % queue_count;
+		if (my_idx.has_value() && victim == *my_idx) {
+			continue;
+		}
+		if (auto entry = try_steal_from(victim)) {
+			return entry;
+		}
+	}
+
+	return std::nullopt;
+}
+
+auto gse::task::push_to_queue(const std::size_t target_idx, job_entry&& entry) -> void {
+	auto& q = *per_worker_queues[target_idx];
+	if (owns_queue(target_idx)) {
+		q.entries.push(std::move(entry));
+		return;
+	}
+
+	std::lock_guard lk(q.remote_mtx);
+	q.remote_entries.push_back(std::move(entry));
+}
+
+auto gse::task::owns_queue(const std::size_t target_idx) noexcept -> bool {
+	if (const auto worker = t_worker_index; worker.has_value()) {
+		return *worker == target_idx;
+	}
+	return false;
+}
+
+auto gse::task::select_post_target() -> std::size_t {
+	const auto queue_count = per_worker_queues.size();
+	if (queue_count == 0) {
+		return 0;
+	}
+	if (!t_is_main_thread) {
+		if (const auto w = t_worker_index; w.has_value() && *w < queue_count) {
+			return *w;
+		}
+	}
+	return external_post_rotation.fetch_add(1, std::memory_order_relaxed) % queue_count;
 }
 
 auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t last, move_only_function<void(std::size_t)> func, const id id) -> void {
@@ -504,7 +661,12 @@ auto gse::task::run_job(job_entry& entry) -> void {
 			}
 		}
 		if (entry.gp) {
-			entry.gp->m_counter.fetch_sub(1, std::memory_order_release);
+			entry.gp->m_inflight_notifies.fetch_add(1, std::memory_order_acquire);
+			if (entry.gp->m_counter.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+				std::lock_guard lk(entry.gp->m_done_mutex);
+				entry.gp->m_done_cv.notify_all();
+			}
+			entry.gp->m_inflight_notifies.fetch_sub(1, std::memory_order_release);
 		}
 	});
 
@@ -540,8 +702,11 @@ auto gse::task::worker_loop(const std::stop_token& st, std::size_t index) -> voi
 			return;
 		}
 
-		if (job_entry entry; submission_queue.try_dequeue(consumer_token(), entry)) {
-			run_job(entry);
+		while (auto entry = try_pop_or_steal(t_worker_index)) {
+			run_job(*entry);
+			if (st.stop_requested()) {
+				return;
+			}
 		}
 	}
 }
@@ -555,7 +720,7 @@ auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t paren
 	const auto key = async_key_for(&j);
 	trace::begin_async(trace_id, key);
 
-	job_entry entry{
+	push_to_queue(select_post_target(), job_entry{
 		.fn = std::move(j),
 		.trace_id = trace_id,
 		.parent_eid = parent_eid,
@@ -563,16 +728,14 @@ auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t paren
 		.async_trace = true,
 		.counts_in_flight = true,
 		.gp = nullptr,
-	};
-
-	submission_queue.enqueue(producer_token(), std::move(entry));
+	});
 	work_available.release();
 }
 
 auto gse::task::submit_to_group(group& gp, job j, const id trace_id, const std::uint64_t parent_eid) -> void {
 	gp.m_counter.fetch_add(1, std::memory_order_relaxed);
 
-	job_entry entry{
+	push_to_queue(select_post_target(), job_entry{
 		.fn = std::move(j),
 		.trace_id = trace_id,
 		.parent_eid = parent_eid,
@@ -580,15 +743,20 @@ auto gse::task::submit_to_group(group& gp, job j, const id trace_id, const std::
 		.async_trace = false,
 		.counts_in_flight = false,
 		.gp = &gp,
-	};
-
-	submission_queue.enqueue(producer_token(), std::move(entry));
+	});
 	work_available.release();
 }
 
 auto gse::task::pool_start(const std::size_t worker_count) -> void {
 	worker_count_value.store(worker_count, std::memory_order_release);
 	workers.clear();
+	per_worker_queues.clear();
+	external_post_rotation.store(0, std::memory_order_relaxed);
+
+	per_worker_queues.reserve(worker_count);
+	for (std::size_t i = 0; i < worker_count; ++i) {
+		per_worker_queues.emplace_back(std::make_unique<local_queue>());
+	}
 
 	const std::size_t background_workers = worker_count - 1;
 	workers.reserve(background_workers);
@@ -600,6 +768,7 @@ auto gse::task::pool_start(const std::size_t worker_count) -> void {
 	}
 
 	t_worker_index = worker_count - 1;
+	t_is_main_thread = true;
 	trace::register_main_thread();
 }
 
@@ -615,8 +784,10 @@ auto gse::task::pool_shutdown() -> void {
 	}
 
 	workers.clear();
+	per_worker_queues.clear();
 	worker_count_value.store(0, std::memory_order_release);
 	t_worker_index.reset();
+	t_is_main_thread = false;
 }
 
 auto gse::task::likely_idle() noexcept -> bool {

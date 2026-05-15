@@ -204,6 +204,13 @@ export namespace gse::gpu {
 		compute [[= vk::PipelineBindPoint::eCompute]],
 	};
 
+	enum class queue_type : std::uint8_t {
+		graphics,
+		compute,
+	};
+
+	constexpr std::uint32_t queue_type_count = 2;
+
 	enum class pipeline_stage : std::uint8_t {
 		vertex_shader,
 		fragment_shader,

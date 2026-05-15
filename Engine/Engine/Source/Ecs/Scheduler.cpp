@@ -160,6 +160,9 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 	std::unordered_set<id> registered;
 	for (const auto& node : m_nodes) {
 		registered.insert(node.state_id);
+		if (node.state_type_id.exists()) {
+			registered.insert(node.state_type_id);
+		}
 	}
 	registered.insert(m_external_resources.begin(), m_external_resources.end());
 
@@ -198,35 +201,45 @@ auto gse::scheduler::run_unified_update() -> void {
 
 	std::vector<async::task<>> tasks;
 	tasks.reserve(m_nodes.size());
-	for (auto& node : m_nodes) {
-		if (!node.invoke_run_fn) {
-			continue;
-		}
-		if (!node.run_launched) {
-			bool deps_ready = true;
-			for (const id& dep : node.run_state_deps) {
-				if (!m_update_graph.is_state_ready(dep)) {
-					deps_ready = false;
-					break;
-				}
-			}
-			if (!deps_ready) {
+	{
+		trace::scope_guard sg_dispatch{ trace_id<"sched::run_dispatch">() };
+		for (auto& node : m_nodes) {
+			if (!node.invoke_run_fn) {
 				continue;
 			}
+			if (!node.run_launched) {
+				bool deps_ready = true;
+				for (const id& dep : node.run_state_deps) {
+					if (!m_update_graph.is_state_ready(dep)) {
+						deps_ready = false;
+						break;
+					}
+				}
+				if (!deps_ready) {
+					continue;
+				}
+			}
+			tasks.push_back(advance_one_run_system(node));
 		}
-		tasks.push_back(advance_one_run_system(node));
 	}
-	sync_wait_or_dump(std::move(tasks), wait_phase::update);
+	{
+		trace::scope_guard sg_wait{ trace_id<"sched::run_wait">() };
+		sync_wait_or_dump(std::move(tasks), wait_phase::update);
+	}
 }
 
 auto gse::scheduler::update() -> void {
 	trace::scope_guard sg{ trace_id<"scheduler::update">() };
-	drain_hot_add_queue();
+	{
+		trace::scope_guard sg_drain{ trace_id<"sched::drain_hot_add">() };
+		drain_hot_add_queue();
+	}
 	if (!m_dep_graph_checked) {
 		check_closed_dep_graph();
 		m_dep_graph_checked = true;
 	}
 	{
+		trace::scope_guard sg_apply{ trace_id<"sched::apply_settings">() };
 		auto writer = m_channels_store.make_writer();
 		for (auto& node : m_nodes) {
 			if (node.invoke_apply_settings_fn) {
@@ -235,7 +248,10 @@ auto gse::scheduler::update() -> void {
 		}
 	}
 	run_unified_update();
-	snapshot_all_states();
+	{
+		trace::scope_guard sg_snap{ trace_id<"sched::snapshot_all">() };
+		snapshot_all_states();
+	}
 }
 
 auto gse::scheduler::tick(const bool frame_ok, const std::function<void()>& in_frame) -> void {
@@ -263,6 +279,10 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 	auto* state_ptr = node.state_ptr;
 	m_states.register_state(canonical_idx, node.state_ptr, node.state_snapshot_ptr);
 
+	if (node.state_type_id.exists() && node.state_type_id != canonical_idx) {
+		m_states.register_state(node.state_type_id, node.state_ptr, node.state_snapshot_ptr);
+	}
+
 	auto combined_deps = node.run_state_deps;
 	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
 	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
@@ -272,6 +292,11 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 }
 
 auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> {
+	node.advance_in_flight = true;
+	auto in_flight_guard = make_scope_exit([&node] {
+		node.advance_in_flight = false;
+	});
+
 	if (!node.tick_ctx) {
 		node.tick_writer = std::make_unique<channel_writer>(m_channels_store.make_writer());
 		node.tick_ctx = std::make_unique<run_context>(
@@ -321,6 +346,9 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 
 	if (node.settled) {
 		m_update_graph.notify_state_ready(node.state_id);
+		if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
+			m_update_graph.notify_state_ready(node.state_type_id);
+		}
 	}
 }
 
@@ -413,7 +441,7 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 		if (!node.invoke_run_fn) {
 			continue;
 		}
-		if (node.settled) {
+		if (!node.advance_in_flight) {
 			continue;
 		}
 		if (!node.run_launched) {
@@ -430,7 +458,7 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 				log::println(
 					log::level::error,
 					log::category::runtime,
-					"STALL [phase={} elapsed={::ms} dump=#{}] system {} not launched (deps appear ready, launch deferred)",
+					"STALL [phase={} elapsed={::ms} dump=#{}] system {} advance entered but not launched (no deps blocking)",
 					phase_name, elapsed, dump_count, node.trace_id
 				);
 			}
@@ -438,16 +466,24 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 				log::println(
 					log::level::error,
 					log::category::runtime,
-					"STALL [phase={} elapsed={::ms} dump=#{}] system {} not launched, waiting on deps: {}",
+					"STALL [phase={} elapsed={::ms} dump=#{}] system {} waiting on upstream deps: {}",
 					phase_name, elapsed, dump_count, node.trace_id, missing
 				);
 			}
+		}
+		else if (!node.settled) {
+			log::println(
+				log::level::warning,
+				log::category::runtime,
+				"STALL [phase={} elapsed={::ms} dump=#{}] system {} tick in-flight, first next_tick() not reached yet (slow init or stuck in initial setup)",
+				phase_name, elapsed, dump_count, node.trace_id
+			);
 		}
 		else {
 			log::println(
 				log::level::error,
 				log::category::runtime,
-				"STALL [phase={} elapsed={::ms} dump=#{}] system {} stuck inside run() (deps ready, paused_event never set)",
+				"STALL [phase={} elapsed={::ms} dump=#{}] system {} tick in-flight past budget; user coroutine has not yielded back this tick",
 				phase_name, elapsed, dump_count, node.trace_id
 			);
 		}
@@ -486,6 +522,9 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	for (auto& node : m_nodes) {
 		if (!node.has_frame) {
 			m_frame_graph.notify_state_ready(node.state_id);
+			if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
+				m_frame_graph.notify_state_ready(node.state_type_id);
+			}
 		}
 	}
 	for (const id& type_id : m_external_resources) {

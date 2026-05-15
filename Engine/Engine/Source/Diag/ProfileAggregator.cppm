@@ -66,6 +66,10 @@ export namespace gse::profile {
 	auto dump(
 		const std::filesystem::path& path = config::resource_path / "Misc" / "profile.txt"
 	) -> void;
+
+	auto dump_chrome_trace(
+		const std::filesystem::path& path = config::resource_path / "Misc" / "profile.json"
+	) -> void;
 }
 
 namespace gse::profile {
@@ -87,6 +91,7 @@ namespace gse::profile {
 	auto walk_node(
 		const trace::node& n,
 		flat_map<id, entry>& cpu_agg,
+		const std::unordered_set<id>& hidden,
 		bool pooled
 	) -> void;
 
@@ -120,15 +125,15 @@ auto gse::profile::update_entry(flat_map<id, entry>& map, const id id, const sam
 	++e.samples_by_tid[thread_id];
 }
 
-auto gse::profile::walk_node(const trace::node& n, flat_map<id, entry>& cpu_agg, const bool pooled) -> void {
+auto gse::profile::walk_node(const trace::node& n, flat_map<id, entry>& cpu_agg, const std::unordered_set<id>& hidden, const bool pooled) -> void {
 	const auto main_tid = trace::main_tid();
 	const bool node_pooled = pooled || (main_tid != 0 && n.trace_id != main_tid);
 
-	if (!trace::is_hidden(n.id)) {
+	if (!hidden.contains(n.id)) {
 		update_entry(cpu_agg, n.id, sample_time(n.self), n.trace_id, node_pooled);
 	}
 	for (std::size_t i = 0; i < n.children_count; ++i) {
-		walk_node(n.children_first[i], cpu_agg, node_pooled);
+		walk_node(n.children_first[i], cpu_agg, hidden, node_pooled);
 	}
 }
 
@@ -138,11 +143,12 @@ auto gse::profile::ingest_frame() -> void {
 	}
 
 	const auto [roots, storage] = trace::view();
+	const auto hidden = trace::hidden_ids_snapshot();
 
 	std::unique_lock lk(state_mutex);
 	frame_count.fetch_add(1, std::memory_order_relaxed);
 	for (const auto& root : roots) {
-		walk_node(root, cpu_entries, false);
+		walk_node(root, cpu_entries, hidden, false);
 	}
 }
 
@@ -483,4 +489,105 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 	for (const auto* r : sorted_roots) {
 		render(*r, 0);
 	}
+}
+
+auto gse::profile::dump_chrome_trace(const std::filesystem::path& path) -> void {
+	std::filesystem::create_directories(path.parent_path());
+
+	std::ofstream out(path);
+	if (!out.is_open()) {
+		return;
+	}
+
+	const auto [roots, storage] = trace::view();
+
+	out << "[\n";
+
+	if (roots.empty()) {
+		out << "]\n";
+		return;
+	}
+
+	auto tmin = roots.front().start;
+	for (const auto& r : roots) {
+		if (r.start < tmin) {
+			tmin = r.start;
+		}
+	}
+
+	const auto escape = [](const std::string_view s) {
+		std::string r;
+		r.reserve(s.size() + 2);
+		for (const char c : s) {
+			switch (c) {
+				case '"':  r += "\\\""; break;
+				case '\\': r += "\\\\"; break;
+				case '\n': r += "\\n"; break;
+				case '\r': r += "\\r"; break;
+				case '\t': r += "\\t"; break;
+				default:
+					if (static_cast<unsigned char>(c) < 0x20) {
+						r += std::format("\\u{:04x}", static_cast<unsigned>(c));
+					}
+					else {
+						r += c;
+					}
+			}
+		}
+		return r;
+	};
+
+	bool first = true;
+	const auto sep = [&] {
+		if (!first) {
+			out << ",\n";
+		}
+		first = false;
+	};
+
+	std::unordered_set<std::uint32_t> tids;
+	const auto hidden = trace::hidden_ids_snapshot();
+
+	std::function<void(const trace::node&)> emit_node = [&](const trace::node& n) {
+		if (n.stop > n.start && !hidden.contains(n.id)) {
+			const double ts_us = sample_time(n.start - tmin).as<gse::microseconds>();
+			const double dur_us = sample_time(n.stop - n.start).as<gse::microseconds>();
+			tids.insert(n.trace_id);
+
+			sep();
+			out << std::format(
+				R"({{"ph":"X","name":"{}","cat":"perf","ts":{:.3f},"dur":{:.3f},"pid":1,"tid":{}}})",
+				escape(n.id.tag()), ts_us, dur_us, n.trace_id
+			);
+		}
+		for (std::size_t i = 0; i < n.children_count; ++i) {
+			emit_node(n.children_first[i]);
+		}
+	};
+
+	for (const auto& r : roots) {
+		emit_node(r);
+	}
+
+	const auto main_tid = trace::main_tid();
+	for (const auto tid : tids) {
+		std::string name;
+		if (tid == main_tid) {
+			name = "main";
+		}
+		else if (const auto vname = trace::virtual_thread_name(tid)) {
+			name = *vname;
+		}
+		else {
+			name = std::format("worker {}", tid);
+		}
+
+		sep();
+		out << std::format(
+			R"({{"ph":"M","name":"thread_name","pid":1,"tid":{},"args":{{"name":"{}"}}}})",
+			tid, escape(name)
+		);
+	}
+
+	out << "\n]\n";
 }

@@ -57,6 +57,7 @@ auto gse::renderer::system::run(run_context& ctx, const gpu::context::data& gpu_
 
 		if (actions::system::pressed(actions::system::current_state(sys), sys, d.dump_profile_action)) {
 			profile::dump();
+			profile::dump_chrome_trace();
 			log::println(log::category::render, "Profile dumped");
 		}
 

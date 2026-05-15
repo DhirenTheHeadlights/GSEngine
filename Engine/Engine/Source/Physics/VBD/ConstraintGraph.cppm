@@ -69,6 +69,8 @@ export namespace gse::vbd {
 		static_vector<std::vector<std::uint32_t>, 64> m_body_colors;
 		std::vector<std::vector<std::uint32_t>> m_body_contacts;
 		std::vector<std::vector<std::uint32_t>> m_body_joints;
+		std::vector<std::vector<std::uint32_t>> m_adjacency;
+		std::vector<int> m_body_color_scratch;
 	};
 }
 
@@ -97,9 +99,19 @@ auto gse::vbd::constraint_graph::remove_joint(const std::uint32_t index) -> void
 }
 
 auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies, const std::span<const bool> locked) -> void {
+	for (auto& v : m_body_colors) {
+		v.clear();
+	}
 	m_body_colors.clear();
-	m_body_contacts.assign(num_bodies, {});
-	m_body_joints.assign(num_bodies, {});
+
+	m_body_contacts.resize(num_bodies);
+	m_body_joints.resize(num_bodies);
+	m_adjacency.resize(num_bodies);
+	for (std::uint32_t i = 0; i < num_bodies; ++i) {
+		m_body_contacts[i].clear();
+		m_body_joints[i].clear();
+		m_adjacency[i].clear();
+	}
 
 	if (m_contacts.empty() && m_joints.empty()) return;
 
@@ -113,23 +125,22 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 		m_body_joints[m_joints[i].body_b].push_back(i);
 	}
 
-	std::vector<std::vector<std::uint32_t>> adjacency(num_bodies);
 	for (const auto& c : m_contacts) {
 		if (locked[c.body_a] || locked[c.body_b]) continue;
-		adjacency[c.body_a].push_back(c.body_b);
-		adjacency[c.body_b].push_back(c.body_a);
+		m_adjacency[c.body_a].push_back(c.body_b);
+		m_adjacency[c.body_b].push_back(c.body_a);
 	}
 	for (const auto& j : m_joints) {
 		if (locked[j.body_a] || locked[j.body_b]) continue;
-		adjacency[j.body_a].push_back(j.body_b);
-		adjacency[j.body_b].push_back(j.body_a);
+		m_adjacency[j.body_a].push_back(j.body_b);
+		m_adjacency[j.body_b].push_back(j.body_a);
 	}
-	for (auto& adj : adjacency) {
+	for (auto& adj : m_adjacency) {
 		std::ranges::sort(adj);
 		adj.erase(std::ranges::unique(adj).begin(), adj.end());
 	}
 
-	std::vector body_color(num_bodies, -1);
+	m_body_color_scratch.assign(num_bodies, -1);
 
 	for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
 		if (locked[bi] || (m_body_contacts[bi].empty() && m_body_joints[bi].empty())) {
@@ -137,9 +148,9 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 		}
 
 		std::uint64_t used_colors = 0;
-		for (const auto neighbor : adjacency[bi]) {
-			if (body_color[neighbor] >= 0 && body_color[neighbor] < 64) {
-				used_colors |= (1ull << body_color[neighbor]);
+		for (const auto neighbor : m_adjacency[bi]) {
+			if (m_body_color_scratch[neighbor] >= 0 && m_body_color_scratch[neighbor] < 64) {
+				used_colors |= (1ull << m_body_color_scratch[neighbor]);
 			}
 		}
 
@@ -148,7 +159,7 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 			++color;
 		}
 
-		body_color[bi] = color;
+		m_body_color_scratch[bi] = color;
 
 		while (static_cast<std::size_t>(color) >= m_body_colors.size()) {
 			m_body_colors.emplace_back();
@@ -161,9 +172,10 @@ auto gse::vbd::constraint_graph::clear() -> void {
 	m_contacts.clear();
 	m_motors.clear();
 	m_joints.clear();
+	for (auto& v : m_body_colors) {
+		v.clear();
+	}
 	m_body_colors.clear();
-	m_body_contacts.clear();
-	m_body_joints.clear();
 }
 
 auto gse::vbd::constraint_graph::clear_joints() -> void {

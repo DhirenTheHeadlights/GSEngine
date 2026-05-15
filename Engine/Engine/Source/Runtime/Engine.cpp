@@ -179,6 +179,7 @@ auto gse::engine::render() -> void {
 
 auto gse::engine::shutdown() -> void {
 	profile::dump();
+	profile::dump_chrome_trace();
 
 	m_save.save_now();
 	m_save.set_auto_save(false);
