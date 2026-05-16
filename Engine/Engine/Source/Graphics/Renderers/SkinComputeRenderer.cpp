@@ -94,10 +94,8 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, shared_view<
 	};
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.writes(gpu::storage_write(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-		.tracks(gc_r.skeleton_buffer, gc_r.local_pose_buffer[frame_index]);
+		.pipeline(d.pipeline);
 
-	rec.bind(d.pipeline);
 	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 	rec.push(d.pipeline, skin_pc);
 	rec.dispatch(data.pending_compute_instance_count, 1, 1);

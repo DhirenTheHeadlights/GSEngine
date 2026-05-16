@@ -8,12 +8,15 @@ import gse.concurrency;
 import :component;
 
 export namespace gse {
-	enum class access_mode { read, write };
+	enum class access_mode : std::uint8_t {
+		read,
+		write
+	};
 
 	class registry;
 	class run_context;
 
-	class access_token {
+	class access_token : non_copyable {
 	public:
 		access_token(
 			access_token&&
@@ -22,14 +25,6 @@ export namespace gse {
 		auto operator=(
 			access_token&&
 		) noexcept -> access_token& = default;
-
-		access_token(
-			const access_token&
-		) = delete;
-
-		auto operator=(
-			const access_token&
-		) -> access_token& = delete;
 
 	private:
 		friend class run_context;
@@ -45,11 +40,9 @@ export namespace gse {
 		using span_type = std::span<value_type>;
 		using lookup_fn = pointer (*)(void* ctx, id);
 
-		~access(
-		) override;
+		~access() override;
 
-		access(
-		) = delete;
+		access() = delete;
 
 		access(
 			access&& other
@@ -67,17 +60,13 @@ export namespace gse {
 			this access& self
 		) -> decltype(auto);
 
-		auto size(
-		) const -> std::size_t;
+		auto size() const -> std::size_t;
 
-		auto empty(
-		) const -> bool;
+		auto empty() const -> bool;
 
-		auto data(
-		) -> pointer;
+		auto data() -> pointer;
 
-		auto data(
-		) const -> pointer;
+		auto data() const -> pointer;
 
 		auto operator[](
 			std::size_t i
@@ -91,10 +80,9 @@ export namespace gse {
 			id owner
 		) const -> pointer;
 
-		auto owner_ids(
-		) const -> std::span<const id>;
+		[[nodiscard]] auto owner_ids() const -> std::span<const id>;
 
-		auto owner_id_at(
+		[[nodiscard]] auto owner_id_at(
 			std::size_t i
 		) const -> id;
 
@@ -140,7 +128,8 @@ gse::access<T, M>::access(access&& other) noexcept
 	  m_lookup(other.m_lookup),
 	  m_lookup_ctx(other.m_lookup_ctx),
 	  m_mutex(std::exchange(other.m_mutex, nullptr)),
-	  m_held_locks(std::exchange(other.m_held_locks, nullptr)) {}
+	  m_held_locks(std::exchange(other.m_held_locks, nullptr)) {
+}
 
 template <typename T, gse::access_mode M>
 auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {

@@ -3,16 +3,20 @@
   "clangd.arguments": [
     "--background-index",
     "--header-insertion=never",
-    "--clang-tidy=false",
     "--completion-style=detailed",
     "--pch-storage=memory",
     "-j=8"
   ],
   "clangd.checkUpdates": false,
   "C_Cpp.intelliSenseEngine": "disabled",
+  "editor.inlayHints.enabled": "off",
   "files.associations": {
     "*.cppm": "cpp",
     "*.ixx": "cpp"
+  },
+  "[cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": true
   },
   "cmake.environmentSetupScript": "${workspaceFolder}/scripts/vsdev_env.bat",
   "cmake.debugConfig": {

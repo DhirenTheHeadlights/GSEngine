@@ -18,6 +18,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.log;
 import gse.math;
 
 namespace gse::renderer::depth_prepass::meshlet {
@@ -142,7 +143,21 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 		.proj = proj,
 		.inv_view = mat4f(1.0f),
 	};
-	gse::memcpy(d.camera_ubo_buffers[frame_index].mapped(), camera);
+	d.camera_ubo_buffers[frame_index].host_write(camera);
+
+	{
+		static std::uint64_t s_seq = 0;
+		log::println(
+			log::category::render,
+			"cam_snap[seq={}] pass=depth_prepass frame_index={} view_row3=({},{},{},{})",
+			s_seq++,
+			frame_index,
+			view[3].x(),
+			view[3].y(),
+			view[3].z(),
+			view[3].w()
+		);
+	}
 
 	const auto ext = gpu_s.render_graph->extent();
 
@@ -150,21 +165,14 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), skinned::entry::pod);
 
 	auto rec = co_await gpu::pass<system>(ctx)
+		.pipeline(d.meshlet_pipeline)
 		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
-		.after<cull_compute::system, physics_transform::system>()
-		.reads(
-			gpu::storage_read(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
-			gpu::storage_read(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
-			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index]),
-			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index])
-		)
-		.tracks(d.camera_ubo_buffers[frame_index], gc_r.instance_buffer[frame_index]);
+		.after<cull_compute::system, physics_transform::system>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
 	if (!data.normal_batches.empty()) {
-		rec.bind(d.meshlet_pipeline);
 		rec.bind_descriptors(d.meshlet_pipeline, d.meshlet_descriptors[frame_index]);
 
 		const auto& instance_buf = gc_r.instance_buffer[frame_index];
@@ -183,7 +191,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 			meshlet_writer.begin(frame_index);
 			mesh.meshlet_gpu().bind(meshlet_writer);
 			meshlet_writer.buffer<meshlet::instance_data_buffer>(instance_buf);
-			rec.commit(meshlet_writer.native_writer(), d.meshlet_pipeline, 1);
+			rec.commit(meshlet_writer, d.meshlet_pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
 
@@ -217,7 +225,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 		skinned_writer
 			.buffer<skinned::skin_matrices>(skin_buf)
 			.buffer<skinned::instance_data_buffer>(instance_buf);
-		rec.commit(skinned_writer.native_writer(), d.skinned_pipeline, 1);
+		rec.commit(skinned_writer, d.skinned_pipeline, 1);
 
 		for (std::size_t i = 0; i < data.skinned_batches.size(); ++i) {
 			const auto& batch = data.skinned_batches[i];

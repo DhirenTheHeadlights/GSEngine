@@ -12,8 +12,7 @@ import :component;
 export namespace gse {
 	class component_storage_base {
 	public:
-		virtual ~component_storage_base(
-		) = default;
+		virtual ~component_storage_base() = default;
 
 		virtual auto activate_pending(
 			id owner
@@ -30,7 +29,7 @@ export namespace gse {
 		auto add(
 			id owner,
 			bool entity_active,
-			T value = T{}
+			T value = T {}
 		) -> T*;
 
 		auto activate_pending(
@@ -50,21 +49,17 @@ export namespace gse {
 			this component_storage& self
 		) -> decltype(auto);
 
-		auto owners(
-		) const -> std::span<const id>;
+		auto owners() const -> std::span<const id>;
 
 		auto mark_updated(
 			id owner
 		) -> void;
 
-		auto drain_added(
-		) -> std::vector<id>;
+		auto drain_added() -> std::vector<id>;
 
-		auto drain_updated(
-		) -> std::vector<id>;
+		auto drain_updated() -> std::vector<id>;
 
-		auto drain_removed(
-		) -> std::vector<id>;
+		auto drain_removed() -> std::vector<id>;
 
 	private:
 		std::vector<T> m_data;
@@ -80,8 +75,7 @@ export namespace gse {
 
 	class registry final : public non_copyable {
 	public:
-		~registry(
-		) override = default;
+		~registry() override = default;
 
 		auto create(
 			std::string_view name
@@ -114,7 +108,7 @@ export namespace gse {
 		template <typename T>
 		auto add_component(
 			id owner,
-			T value = T{}
+			T value = T {}
 		) -> T*;
 
 		template <typename T>
@@ -164,25 +158,20 @@ export namespace gse {
 		) -> void;
 
 		template <typename T>
-		auto drain_component_adds(
-		) -> std::vector<id>;
+		auto drain_component_adds() -> std::vector<id>;
 
 		template <typename T>
-		auto drain_component_updates(
-		) -> std::vector<id>;
+		auto drain_component_updates() -> std::vector<id>;
 
 		template <typename T>
-		auto drain_component_removes(
-		) -> std::vector<id>;
+		auto drain_component_removes() -> std::vector<id>;
 
 		template <typename T>
-		auto ensure_storage(
-		) -> void;
+		auto ensure_storage() -> void;
 
 	private:
 		template <typename T>
-		auto storage(
-		) -> component_storage<T>&;
+		auto storage() -> component_storage<T>&;
 
 		template <typename T>
 		auto try_storage(
@@ -405,13 +394,13 @@ auto gse::registry::remove_component(const id owner) -> void {
 template <typename T>
 auto gse::registry::components(this registry& self) -> decltype(auto) {
 	auto* s = self.try_storage<T>();
-	return s ? s->items() : std::span<T>{};
+	return s ? s->items() : std::span<T> {};
 }
 
 template <typename T>
 auto gse::registry::owner_ids(this registry& self) -> std::span<const id> {
 	auto* s = self.try_storage<T>();
-	return s ? s->owners() : std::span<const id>{};
+	return s ? s->owners() : std::span<const id> {};
 }
 
 template <typename T>
@@ -495,4 +484,3 @@ auto gse::registry::drain_component_removes() -> std::vector<id> {
 	}
 	return static_cast<component_storage<T>&>(*it->second).drain_removed();
 }
-

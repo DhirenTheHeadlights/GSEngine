@@ -14,6 +14,27 @@ import gse.diag;
 import gse.math;
 
 export namespace gse::gpu {
+	enum class resource_type : std::uint8_t {
+		buffer,
+		image,
+		acceleration_structure,
+	};
+
+	struct resource_ref {
+		const void* ptr = nullptr;
+		resource_type type = resource_type::buffer;
+	};
+
+	enum class descriptor_access : std::uint8_t {
+		read,
+		read_write,
+	};
+
+	struct resource_slot {
+		std::uint32_t slot = 0;
+		resource_ref ref;
+	};
+
 	struct descriptor_buffer_properties {
 		vk::DeviceSize offset_alignment = 0;
 		vk::DeviceSize uniform_buffer_descriptor_size = 0;
@@ -38,6 +59,7 @@ export namespace gse::gpu {
 		transfer_src [[= vk::BufferUsageFlagBits::eTransferSrc]] = 0x40,
 		acceleration_structure_storage [[= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x80,
 		acceleration_structure_build_input [[= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x100,
+		video_encode_dst [[= vk::BufferUsageFlagBits::eVideoEncodeDstKHR]] = 0x200,
 	};
 
 	using buffer_usage = gse::flags<buffer_flag>;
@@ -211,14 +233,6 @@ export namespace gse::gpu {
 
 	constexpr std::uint32_t queue_type_count = 2;
 
-	enum class pipeline_stage : std::uint8_t {
-		vertex_shader,
-		fragment_shader,
-		compute_shader,
-		draw_indirect,
-		late_fragment_tests,
-	};
-
 	enum class barrier_scope : std::uint8_t {
 		compute_to_compute,
 		compute_to_indirect,
@@ -320,6 +334,7 @@ export namespace gse::gpu {
 		descriptor_type type = descriptor_type::uniform_buffer;
 		std::uint32_t count = 1;
 		stage_flags stages;
+		descriptor_access access = descriptor_access::read;
 	};
 
 	enum class descriptor_set_type : std::uint8_t {
@@ -494,6 +509,14 @@ export namespace gse::gpu {
 	using pipeline_stage_flags = gse::flags<pipeline_stage_flag>;
 	constexpr auto operator|(pipeline_stage_flag a, pipeline_stage_flag b) -> pipeline_stage_flags { return pipeline_stage_flags(a) | b; }
 
+	struct binding_use {
+		std::uint32_t set = 0;
+		std::uint32_t slot = 0;
+		descriptor_access access = descriptor_access::read;
+		descriptor_type type = descriptor_type::storage_buffer;
+		pipeline_stage_flags stages = {};
+	};
+
 	enum class memory_property_flag : std::uint32_t {
 		device_local [[= vk::MemoryPropertyFlagBits::eDeviceLocal]] = 1u << 0,
 		host_visible [[= vk::MemoryPropertyFlagBits::eHostVisible]] = 1u << 1,
@@ -614,6 +637,7 @@ export namespace gse::gpu {
 	struct buffer_create_info {
 		device_size size = 0;
 		buffer_usage usage = buffer_flag::storage;
+		const void* pnext = nullptr;
 	};
 
 	enum class image_create_flag : std::uint8_t {
@@ -1291,6 +1315,9 @@ auto gse::vulkan::to_vk(const gpu::buffer_usage fls) -> vk::BufferUsageFlags {
 	}
 	if (fls.test(gpu::buffer_flag::acceleration_structure_build_input)) {
 		result |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	}
+	if (fls.test(gpu::buffer_flag::video_encode_dst)) {
+		result |= vk::BufferUsageFlagBits::eVideoEncodeDstKHR;
 	}
 	return result;
 }

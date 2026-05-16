@@ -11,22 +11,26 @@ import :vulkan_commands;
 import :vulkan_image;
 import :vulkan_semaphore;
 import :descriptor_heap;
+import :descriptors;
 import :device;
 import :swap_chain;
 import :frame;
 import :bindless;
 
 import gse.assert;
+import gse.log;
 import gse.core;
 import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.math;
+import gse.meta;
 
 export namespace gse::gpu {
 	class render_graph;
 	class recording_context;
+	struct render_pass_data;
 
 	using pass_body_fn = std::shared_ptr<move_only_function<void(recording_context&)>>;
 
@@ -42,53 +46,11 @@ export namespace gse::gpu {
 		gpu::depth_clear clear_value;
 	};
 
-	enum class resource_type : std::uint8_t {
-		buffer,
-		image
-	};
-
-	struct resource_ref {
-		const void* ptr = nullptr;
-		resource_type type = resource_type::buffer;
-	};
-
 	struct resource_usage {
 		resource_ref resource;
 		gpu::pipeline_stage_flags stage;
 		gpu::access_flags access;
 	};
-
-	auto sampled(
-		const image& img,
-		gpu::pipeline_stage_flags stage
-	) -> resource_usage;
-
-	auto storage(
-		const buffer& buf,
-		gpu::pipeline_stage_flags stage
-	) -> resource_usage;
-
-	auto storage_read(
-		const buffer& buf,
-		gpu::pipeline_stage_flags stage
-	) -> resource_usage;
-
-	auto transfer_read(
-		const buffer& buf
-	) -> resource_usage;
-
-	auto transfer_write(
-		const buffer& buf
-	) -> resource_usage;
-
-	auto indirect_read(
-		const buffer& buf
-	) -> resource_usage;
-
-	auto attachment(
-		const image& img,
-		gpu::pipeline_stage_flags stage
-	) -> resource_usage;
 
 	class recording_context {
 	public:
@@ -138,7 +100,7 @@ export namespace gse::gpu {
 		auto dispatch_indirect(
 			const buffer& buf,
 			std::size_t offset = 0
-		) const -> void;
+		) -> void;
 
 		auto end_rendering(
 		) const -> void;
@@ -154,14 +116,14 @@ export namespace gse::gpu {
 			std::size_t offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
-		) const -> void;
+		) -> void;
 
 		auto draw_mesh_tasks_indirect(
 			const buffer& buf,
 			std::size_t offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
-		) const -> void;
+		) -> void;
 
 		auto bind(
 			const gpu::pipeline& p
@@ -171,18 +133,18 @@ export namespace gse::gpu {
 			const gpu::pipeline& p,
 			const gpu::descriptor_region& region,
 			std::uint32_t set_index = 0
-		) const -> void;
+		) -> void;
 
 		auto bind_vertex(
 			const buffer& buf,
 			std::size_t offset = 0
-		) const -> void;
+		) -> void;
 
 		auto bind_index(
 			const buffer& buf,
 			gpu::index_type type = gpu::index_type::uint32,
 			std::size_t offset = 0
-		) const -> void;
+		) -> void;
 
 		auto set_viewport(
 			vec2u extent
@@ -193,10 +155,10 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto commit(
-			const gpu::descriptor_set_writer& writer,
+			const gpu::descriptor_writer& writer,
 			const gpu::pipeline& p,
 			std::uint32_t set_index = 0
-		) const -> void;
+		) -> void;
 
 		auto copy_buffer(
 			const buffer& src,
@@ -204,14 +166,14 @@ export namespace gse::gpu {
 			std::size_t size,
 			std::size_t src_offset = 0,
 			std::size_t dst_offset = 0
-		) const -> void;
+		) -> void;
 
 		auto fill_buffer(
 			const buffer& dst,
 			std::size_t offset,
 			std::size_t size,
 			std::uint32_t data = 0
-		) const -> void;
+		) -> void;
 
 		auto barrier(
 			gpu::barrier_scope scope
@@ -220,7 +182,7 @@ export namespace gse::gpu {
 		auto build_acceleration_structure(
 			const gpu::acceleration_structure_build_geometry_info& build_info,
 			std::span<const gpu::acceleration_structure_build_range_info* const> range_infos
-		) const -> void;
+		) -> void;
 
 		auto pipeline_barrier(
 			const gpu::dependency_info& dep
@@ -267,24 +229,43 @@ export namespace gse::gpu {
 
 	private:
 		friend class render_graph;
+
+		struct touched_resource {
+			resource_ref ref;
+			gpu::pipeline_stage_flags stages = {};
+			gpu::access_flags access = {};
+		};
+
 		vulkan::commands m_cmd;
 		std::span<const gpu::auto_bind_entry> m_auto_binds;
+		render_pass_data* m_pass = nullptr;
+		std::vector<touched_resource> m_touched;
+
 		recording_context(
 			commands cmd,
-			std::span<const gpu::auto_bind_entry> auto_binds
+			std::span<const gpu::auto_bind_entry> auto_binds,
+			render_pass_data* pass
 		);
 
 		auto check_active(
 		) const -> void;
+
+		auto note_touched(
+			resource_ref ref,
+			gpu::pipeline_stage_flags stages,
+			gpu::access_flags access
+		) -> void;
+
+		auto finalize_pass(
+		) -> void;
 	};
 
 	struct render_pass_data {
 		id pass_type{};
 		gpu::queue_type queue = gpu::queue_type::graphics;
+		const gpu::pipeline* primary_pipeline = nullptr;
 		std::vector<resource_usage> reads;
 		std::vector<resource_usage> writes;
-		std::vector<const buffer*> tracked_buffers;
-		gpu::pipeline_stage_flags tracked_stage = gpu::pipeline_stage_flag::all_commands;
 		std::vector<id> after_passes;
 		std::optional<color_output_info> color_output;
 		std::optional<depth_output_info> depth_output;
@@ -388,50 +369,50 @@ export namespace gse::gpu {
 	};
 }
 
-export namespace gse::gpu {
-	auto storage_read(
-		const buffer& buf,
-		pipeline_stage stage
-	) -> resource_usage;
-
-	auto storage_write(
-		const buffer& buf,
-		pipeline_stage stage
-	) -> resource_usage;
-
-	auto sampled(
-		const image& img,
-		pipeline_stage stage
-	) -> resource_usage;
-}
-
-gse::gpu::recording_context::recording_context(const commands cmd, const std::span<const gpu::auto_bind_entry> auto_binds) : m_cmd(cmd), m_auto_binds(auto_binds) {
+gse::gpu::recording_context::recording_context(const commands cmd, const std::span<const gpu::auto_bind_entry> auto_binds, render_pass_data* pass) : m_cmd(cmd), m_auto_binds(auto_binds), m_pass(pass) {
 	if (m_cmd) {
 		async::pass_recording_scope_push();
 	}
 }
 
-gse::gpu::recording_context::recording_context(recording_context&& other) noexcept : m_cmd(other.m_cmd), m_auto_binds(other.m_auto_binds) {
+namespace gse::gpu {
+	auto barrier_access(
+		descriptor_type type,
+		descriptor_access access
+	) -> access_flags;
+
+	auto format_bound_slots(
+		std::span<const resource_slot> resources
+	) -> std::string;
+}
+
+gse::gpu::recording_context::recording_context(recording_context&& other) noexcept : m_cmd(other.m_cmd), m_auto_binds(other.m_auto_binds), m_pass(other.m_pass), m_touched(std::move(other.m_touched)) {
 	other.m_cmd = commands{};
 	other.m_auto_binds = {};
+	other.m_pass = nullptr;
 }
 
 auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
 	if (this != &other) {
 		if (m_cmd) {
+			finalize_pass();
 			m_cmd.end();
 			async::pass_recording_scope_pop();
 		}
 		m_cmd = other.m_cmd;
 		m_auto_binds = other.m_auto_binds;
+		m_pass = other.m_pass;
+		m_touched = std::move(other.m_touched);
 		other.m_cmd = commands{};
 		other.m_auto_binds = {};
+		other.m_pass = nullptr;
 	}
 	return *this;
 }
 
 gse::gpu::recording_context::~recording_context() {
 	if (m_cmd) {
+		finalize_pass();
 		m_cmd.end();
 		async::pass_recording_scope_pop();
 	}
@@ -441,8 +422,68 @@ auto gse::gpu::recording_context::check_active() const -> void {
 	assert(async::pass_recording_scope_active() > 0, "recording_context method called outside an active pass; rec was captured by reference past its lifetime");
 }
 
-auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& dst, const std::size_t size, const std::size_t src_offset, const std::size_t dst_offset) const -> void {
+auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
+	if (!ref.ptr) {
+		return;
+	}
+	for (auto& existing : m_touched) {
+		if (existing.ref.ptr == ref.ptr) {
+			existing.stages |= stages;
+			existing.access |= access;
+			return;
+		}
+	}
+	m_touched.push_back({
+		.ref = ref,
+		.stages = stages,
+		.access = access,
+	});
+}
+
+auto gse::gpu::recording_context::finalize_pass() -> void {
+	if (!m_pass) {
+		return;
+	}
+
+	constexpr gpu::access_flags write_mask =
+		gpu::access_flag::shader_write
+		| gpu::access_flag::shader_storage_write
+		| gpu::access_flag::color_attachment_write
+		| gpu::access_flag::depth_stencil_attachment_write
+		| gpu::access_flag::transfer_write
+		| gpu::access_flag::host_write
+		| gpu::access_flag::memory_write
+		| gpu::access_flag::acceleration_structure_write;
+
+	for (const auto& [ref, stages, access] : m_touched) {
+		const bool has_writes = (access & write_mask).bits() != 0;
+		auto& bucket = has_writes ? m_pass->writes : m_pass->reads;
+		bucket.push_back({
+			.resource = ref,
+			.stage = stages,
+			.access = access,
+		});
+	}
+}
+
+auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& dst, const std::size_t size, const std::size_t src_offset, const std::size_t dst_offset) -> void {
 	check_active();
+	note_touched(
+		{
+			.ptr = std::addressof(src),
+			.type = resource_type::buffer,
+		},
+		gpu::pipeline_stage_flag::copy,
+		gpu::access_flag::transfer_read
+	);
+	note_touched(
+		{
+			.ptr = std::addressof(dst),
+			.type = resource_type::buffer,
+		},
+		gpu::pipeline_stage_flag::copy,
+		gpu::access_flag::transfer_write
+	);
 	m_cmd.copy_buffer(src.handle(), dst.handle(), gpu::buffer_copy_region{
 		.src_offset = src_offset,
 		.dst_offset = dst_offset,
@@ -450,8 +491,16 @@ auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& d
 	});
 }
 
-auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size_t offset, const std::size_t size, const std::uint32_t data) const -> void {
+auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size_t offset, const std::size_t size, const std::uint32_t data) -> void {
 	check_active();
+	note_touched(
+		{
+			.ptr = std::addressof(dst),
+			.type = resource_type::buffer,
+		},
+		gpu::pipeline_stage_flag::copy,
+		gpu::access_flag::transfer_write
+	);
 	m_cmd.fill_buffer(dst.handle(), offset, size, data);
 }
 
@@ -525,8 +574,16 @@ auto gse::gpu::recording_context::barrier(const gpu::barrier_scope scope) const 
 auto gse::gpu::recording_context::build_acceleration_structure(
 	const gpu::acceleration_structure_build_geometry_info& build_info,
 	const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos
-) const -> void {
+) -> void {
 	check_active();
+	note_touched(
+		{
+			.ptr = std::bit_cast<const void*>(build_info.dst.value),
+			.type = resource_type::acceleration_structure,
+		},
+		gpu::pipeline_stage_flag::acceleration_structure_build,
+		gpu::access_flag::acceleration_structure_read | gpu::access_flag::acceleration_structure_write
+	);
 	m_cmd.build_acceleration_structures(build_info, range_infos);
 }
 
@@ -737,8 +794,16 @@ auto gse::gpu::recording_context::dispatch(const std::uint32_t x, const std::uin
 	m_cmd.dispatch(x, y, z);
 }
 
-auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std::size_t offset) const -> void {
+auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std::size_t offset) -> void {
 	check_active();
+	note_touched(
+		{
+			.ptr = std::addressof(buf),
+			.type = resource_type::buffer,
+		},
+		gpu::pipeline_stage_flag::draw_indirect,
+		gpu::access_flag::indirect_command_read
+	);
 	m_cmd.dispatch_indirect(buf.handle(), static_cast<gpu::device_size>(offset));
 }
 
@@ -753,13 +818,29 @@ auto gse::gpu::recording_context::push(const gpu::pipeline& p, const gpu::typed_
 	typed.replay(m_cmd.native(), p.layout());
 }
 
-auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
 	check_active();
+	note_touched(
+		{
+			.ptr = std::addressof(buf),
+			.type = resource_type::buffer,
+		},
+		gpu::pipeline_stage_flag::draw_indirect,
+		gpu::access_flag::indirect_command_read
+	);
 	m_cmd.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
 }
 
-auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
 	check_active();
+	note_touched(
+		{
+			.ptr = std::addressof(buf),
+			.type = resource_type::buffer,
+		},
+		gpu::pipeline_stage_flag::draw_indirect,
+		gpu::access_flag::indirect_command_read
+	);
 	m_cmd.draw_mesh_tasks_indirect(buf.handle(), offset, draw_count, stride);
 }
 
@@ -776,21 +857,56 @@ auto gse::gpu::recording_context::bind(const gpu::pipeline& p) const -> void {
 	}
 }
 
-auto gse::gpu::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) const -> void {
+auto gse::gpu::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) -> void {
 	check_active();
 	assert(region, "Cannot bind null descriptor region");
+	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
+		if (set != set_index) {
+			continue;
+		}
+		const auto it = std::ranges::find_if(region.resources, [slot](const resource_slot& rs) {
+			return rs.slot == slot;
+		});
+		assert(
+			it != region.resources.end(),
+			"render pass '{}' bound a pipeline expecting set={} slot={} ({}, {}) but the descriptor region has no resource at that slot. Bound slots: {}",
+			m_pass ? m_pass->pass_type.tag() : std::string_view{ "<unknown>" },
+			set,
+			slot,
+			type,
+			access,
+			format_bound_slots(region.resources)
+		);
+		note_touched(it->ref, stages, barrier_access(type, access));
+	}
 	region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_index, region);
 }
 
-auto gse::gpu::recording_context::bind_vertex(const buffer& buf, const std::size_t offset) const -> void {
+auto gse::gpu::recording_context::bind_vertex(const buffer& buf, const std::size_t offset) -> void {
 	check_active();
+	note_touched(
+		{
+			.ptr = std::addressof(buf),
+			.type = resource_type::buffer,
+		},
+		gpu::pipeline_stage_flag::vertex_attribute_input,
+		gpu::access_flag::vertex_attribute_read
+	);
 	const gpu::handle<buffer> buffers[]{ buf.handle() };
 	const gpu::device_size offsets[]{ offset };
 	m_cmd.bind_vertex_buffers(0, std::span<const gpu::handle<buffer>>(buffers), std::span<const gpu::device_size>(offsets));
 }
 
-auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index_type type, const std::size_t offset) const -> void {
+auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index_type type, const std::size_t offset) -> void {
 	check_active();
+	note_touched(
+		{
+			.ptr = std::addressof(buf),
+			.type = resource_type::buffer,
+		},
+		gpu::pipeline_stage_flag::index_input,
+		gpu::access_flag::index_read
+	);
 	m_cmd.bind_index_buffer_2(buf.handle(), offset, vk::WholeSize, type);
 }
 
@@ -817,30 +933,48 @@ auto gse::gpu::recording_context::set_scissor(const vec2u extent) const -> void 
 
 auto gse::gpu::recording_context::begin_rendering(const vec2u extent, const image* depth, const gpu::image_layout depth_layout, const bool clear_depth, const float clear_depth_value) const -> void {
 	check_active();
-	std::optional<vk::RenderingAttachmentInfo> depth_att;
+	std::optional<gpu::rendering_attachment_info> depth_att;
 	if (depth) {
-		depth_att = vk::RenderingAttachmentInfo{
-			.imageView = std::bit_cast<vk::ImageView>(depth->view()),
-			.imageLayout = vulkan::to_vk(depth_layout),
-			.loadOp = clear_depth ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
-			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{ .depthStencil = { clear_depth_value, 0 } }
+		depth_att = gpu::rendering_attachment_info{
+			.image_view = depth->view(),
+			.layout = depth_layout,
+			.load = clear_depth ? gpu::load_op::clear : gpu::load_op::load,
+			.store = gpu::store_op::store,
+			.depth_clear_value = { .depth = clear_depth_value },
 		};
 	}
 
-	const vk::RenderingInfo ri{
-		.renderArea = { { 0, 0 }, { extent.x(), extent.y() } },
-		.layerCount = 1,
-		.colorAttachmentCount = 0,
-		.pColorAttachments = nullptr,
-		.pDepthAttachment = depth_att ? &*depth_att : nullptr
+	const gpu::rendering_info ri{
+		.render_area = gse::rect_t<vec2i>::from_position_size(vec2i{ 0, 0 }, vec2i{ static_cast<int>(extent.x()), static_cast<int>(extent.y()) }),
+		.layer_count = 1,
+		.depth_attachment = depth_att ? &*depth_att : nullptr,
 	};
 	m_cmd.begin_rendering(ri);
 }
 
-auto gse::gpu::recording_context::commit(const gpu::descriptor_set_writer& writer, const gpu::pipeline& p, const std::uint32_t set_index) const -> void {
+auto gse::gpu::recording_context::commit(const gpu::descriptor_writer& writer, const gpu::pipeline& p, const std::uint32_t set_index) -> void {
 	check_active();
-	writer.commit(
+	const auto written = writer.touched_resources();
+	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
+		if (set != set_index) {
+			continue;
+		}
+		const auto it = std::ranges::find_if(written, [slot](const resource_slot& rs) {
+			return rs.slot == slot;
+		});
+		assert(
+			it != written.end(),
+			"render pass '{}' committed a push descriptor for set={} slot={} ({}, {}) but the writer has no resource at that slot. Written slots: {}",
+			m_pass ? m_pass->pass_type.tag() : std::string_view{ "<unknown>" },
+			set,
+			slot,
+			type,
+			access,
+			format_bound_slots(written)
+		);
+		note_touched(it->ref, stages, barrier_access(type, access));
+	}
+	writer.native_writer().commit(
 		m_cmd.native(),
 		p.bind_point(),
 		p.layout(),
@@ -848,84 +982,38 @@ auto gse::gpu::recording_context::commit(const gpu::descriptor_set_writer& write
 	);
 }
 
-namespace gse::gpu {
-	auto pipeline_stage_to_flags(
-		pipeline_stage s
-	) -> pipeline_stage_flags;
-}
-
-auto gse::gpu::pipeline_stage_to_flags(const gpu::pipeline_stage s) -> gpu::pipeline_stage_flags {
-	switch (s) {
-		case gpu::pipeline_stage::vertex_shader:
-			return gpu::pipeline_stage_flag::vertex_shader;
-		case gpu::pipeline_stage::fragment_shader:
-			return gpu::pipeline_stage_flag::fragment_shader;
-		case gpu::pipeline_stage::compute_shader:
-			return gpu::pipeline_stage_flag::compute_shader;
-		case gpu::pipeline_stage::draw_indirect:
-			return gpu::pipeline_stage_flag::draw_indirect;
-		case gpu::pipeline_stage::late_fragment_tests:
-			return gpu::pipeline_stage_flag::late_fragment_tests;
+auto gse::gpu::format_bound_slots(const std::span<const resource_slot> resources) -> std::string {
+	if (resources.empty()) {
+		return "<none>";
 	}
-	return {};
+	return resources
+		| std::views::transform([](const resource_slot& rs) {
+			return std::format("slot={} ({})", rs.slot, rs.ref.type);
+		})
+		| std::views::join_with(std::string_view{ ", " })
+		| std::ranges::to<std::string>();
 }
 
-auto gse::gpu::sampled(const image& img, const gpu::pipeline_stage_flags stage) -> resource_usage {
-	return { { .ptr = std::addressof(img), .type = resource_type::image }, stage, gpu::access_flag::shader_sampled_read };
-}
-
-auto gse::gpu::storage(const buffer& buf, const gpu::pipeline_stage_flags stage) -> resource_usage {
-	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, gpu::access_flag::shader_storage_read | gpu::access_flag::shader_storage_write };
-}
-
-auto gse::gpu::storage_read(const buffer& buf, const gpu::pipeline_stage_flags stage) -> resource_usage {
-	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, gpu::access_flag::shader_storage_read };
-}
-
-auto gse::gpu::transfer_read(const buffer& buf) -> resource_usage {
-	return {
-		{
-			.ptr = std::addressof(buf),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::copy,
-		gpu::access_flag::transfer_read,
-	};
-}
-
-auto gse::gpu::transfer_write(const buffer& buf) -> resource_usage {
-	return {
-		{
-			.ptr = std::addressof(buf),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::copy,
-		gpu::access_flag::transfer_write,
-	};
-}
-
-auto gse::gpu::indirect_read(const buffer& buf) -> resource_usage {
-	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, gpu::pipeline_stage_flag::draw_indirect, gpu::access_flag::indirect_command_read };
-}
-
-auto gse::gpu::attachment(const image& img, const gpu::pipeline_stage_flags stage) -> resource_usage {
-	const bool is_depth = stage.test(gpu::pipeline_stage_flag::late_fragment_tests) || stage.test(gpu::pipeline_stage_flag::early_fragment_tests);
-	const auto access = is_depth
-		? gpu::access_flags{ gpu::access_flag::depth_stencil_attachment_write }
-		: gpu::access_flags{ gpu::access_flag::color_attachment_write };
-	return { { .ptr = std::addressof(img), .type = resource_type::image }, stage, access };
-}
-
-auto gse::gpu::storage_read(const buffer& buf, const pipeline_stage stage) -> resource_usage {
-	return storage_read(buf, pipeline_stage_to_flags(stage));
-}
-
-auto gse::gpu::storage_write(const buffer& buf, const pipeline_stage stage) -> resource_usage {
-	return storage(buf, pipeline_stage_to_flags(stage));
-}
-
-auto gse::gpu::sampled(const image& img, const pipeline_stage stage) -> resource_usage {
-	return sampled(img, pipeline_stage_to_flags(stage));
+auto gse::gpu::barrier_access(const descriptor_type type, const descriptor_access access) -> access_flags {
+	switch (type) {
+		case descriptor_type::uniform_buffer:
+			return access_flag::uniform_read;
+		case descriptor_type::storage_buffer:
+			return access == descriptor_access::read_write
+				? access_flag::shader_storage_read | access_flag::shader_storage_write
+				: access_flags{ access_flag::shader_storage_read };
+		case descriptor_type::combined_image_sampler:
+		case descriptor_type::sampled_image:
+		case descriptor_type::sampler:
+			return access_flag::shader_sampled_read;
+		case descriptor_type::storage_image:
+			return access == descriptor_access::read_write
+				? access_flag::shader_storage_read | access_flag::shader_storage_write
+				: access_flags{ access_flag::shader_storage_read };
+		case descriptor_type::acceleration_structure:
+			return access_flag::acceleration_structure_read;
+	}
+	return access_flag::shader_storage_read;
 }
 
 namespace gse::gpu {
@@ -1159,6 +1247,90 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 		}
 	}
 
+	auto pass_queue = [&](const std::size_t pi) -> gpu::queue_type {
+		return effective_queue(passes[pi].queue);
+	};
+
+	auto& worker_pools = m_device->worker_command_pools();
+	worker_pools.reset_frame(frame_idx);
+	const auto color_format = m_swapchain->format();
+
+	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
+
+	auto& inheritance = m_inheritance_storage[frame_idx];
+	inheritance.color_formats = { vulkan::to_vk(color_format) };
+	inheritance.rendering_inherits.assign(passes.size(), vk::CommandBufferInheritanceRenderingInfo{});
+	inheritance.inherits.assign(passes.size(), vk::CommandBufferInheritanceInfo{});
+
+	task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
+		auto& pass = passes[pi];
+		const auto queue = pass_queue(pi);
+		const bool is_graphics_pass = pass.color_output || pass.depth_output;
+		const bool maybe_issue_stats = timestamps_enabled && stats_enabled && is_graphics_pass;
+
+		const auto worker_idx = task::current_worker();
+		assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
+		const auto secondary = worker_pools.acquire_secondary(queue, *worker_idx, frame_idx);
+
+		inheritance.rendering_inherits[pi] = vk::CommandBufferInheritanceRenderingInfo{
+			.viewMask = 0,
+			.colorAttachmentCount = pass.color_output ? 1u : 0u,
+			.pColorAttachmentFormats = pass.color_output ? inheritance.color_formats.data() : nullptr,
+			.depthAttachmentFormat = pass.depth_output ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
+			.stencilAttachmentFormat = vk::Format::eUndefined,
+			.rasterizationSamples = vk::SampleCountFlagBits::e1,
+		};
+
+		auto& inherit = inheritance.inherits[pi];
+		vk::CommandBufferUsageFlags begin_flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+		if (is_graphics_pass) {
+			inherit.pNext = &inheritance.rendering_inherits[pi];
+			begin_flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
+		}
+		if (maybe_issue_stats) {
+			inherit.pipelineStatistics = profile_stats_flags;
+		}
+
+		secondary.begin({
+			.flags = begin_flags,
+			.pInheritanceInfo = &inherit
+		});
+		m_device->descriptor_heap().bind_descriptor_storage(std::bit_cast<gpu::handle<command_buffer>>(secondary));
+		recording_context rec{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) }, m_auto_binds, std::addressof(pass) };
+		if (pass.primary_pipeline) {
+			rec.bind(*pass.primary_pipeline);
+		}
+		if (pass.depth_output) {
+			const auto depth_ref = resource_ref{
+				.ptr = std::addressof(m_swapchain->depth_image()),
+				.type = resource_type::image,
+			};
+			if (pass.depth_output->op == load_op::load) {
+				rec.note_touched(
+					depth_ref,
+					gpu::pipeline_stage_flag::early_fragment_tests,
+					gpu::access_flag::depth_stencil_attachment_read
+				);
+			}
+			else {
+				rec.note_touched(
+					depth_ref,
+					gpu::pipeline_stage_flag::late_fragment_tests,
+					gpu::access_flag::depth_stencil_attachment_write
+				);
+			}
+		}
+		if (pass.body) {
+			(*pass.body)(rec);
+		}
+		else {
+			*pass.record_ctx_slot = std::move(rec);
+			pass.record_handle.resume();
+		}
+
+		pass_secondaries[pi] = secondary;
+	});
+
 	std::vector<std::size_t> sorted;
 
 	{
@@ -1191,32 +1363,37 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 
 		for (std::size_t i = 0; i < passes.size(); ++i) {
 			for (std::size_t j = i + 1; j < passes.size(); ++j) {
-				bool conflict = false;
+				bool i_writes_j_reads = false;
+				bool j_writes_i_reads = false;
+				bool both_write = false;
 
 				for (const auto& w : passes[i].writes) {
 					for (const auto& r : passes[j].reads) {
 						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
-							conflict = true;
+							i_writes_j_reads = true;
 						}
 					}
 				}
 				for (const auto& w : passes[j].writes) {
 					for (const auto& r : passes[i].reads) {
 						if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
-							conflict = true;
+							j_writes_i_reads = true;
 						}
 					}
 				}
 				for (const auto& wi : passes[i].writes) {
 					for (const auto& wj : passes[j].writes) {
 						if (wi.resource.ptr && wj.resource.ptr && wi.resource.ptr == wj.resource.ptr) {
-							conflict = true;
+							both_write = true;
 						}
 					}
 				}
 
-				if (conflict) {
+				if (i_writes_j_reads || both_write) {
 					add_edge(i, j);
+				}
+				else if (j_writes_i_reads) {
+					add_edge(j, i);
 				}
 			}
 		}
@@ -1240,11 +1417,51 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 				}
 			}
 		}
+		if (sorted.size() != passes.size()) {
+			log::println(log::level::error, log::category::vulkan, "render_graph: cycle detected. Remaining passes (in_degree > 0):");
+			for (std::size_t i = 0; i < passes.size(); ++i) {
+				if (in_degree[i] != 0) {
+					std::string deps;
+					for (std::size_t j = 0; j < passes.size(); ++j) {
+						if (j == i) continue;
+						for (const auto n : adj[j]) {
+							if (n == i) {
+								if (!deps.empty()) deps += ", ";
+								deps += std::format("{}", passes[j].pass_type.tag());
+								break;
+							}
+						}
+					}
+					log::println(
+						log::level::error,
+						log::category::vulkan,
+						"  pass '{}' (queue={}) in_degree={} waiting on: {}",
+						passes[i].pass_type.tag(),
+						passes[i].queue,
+						in_degree[i],
+						deps
+					);
+					auto dump = [&](std::string_view label, const std::vector<resource_usage>& usages) {
+						for (const auto& u : usages) {
+							log::println(
+								log::level::error,
+								log::category::vulkan,
+								"    {} resource={} type={} stages={:#x} access={:#x}",
+								label,
+								u.resource.ptr,
+								u.resource.type,
+								u.stage.bits(),
+								u.access.bits()
+							);
+						}
+					};
+					dump("reads", passes[i].reads);
+					dump("writes", passes[i].writes);
+				}
+			}
+		}
+		assert(sorted.size() == passes.size(), "render_graph: cyclic pass dependency graph");
 	}
-
-	auto pass_queue = [&](const std::size_t pi) -> gpu::queue_type {
-		return effective_queue(passes[pi].queue);
-	};
 
 	std::array<std::array<bool, gpu::queue_type_count>, gpu::queue_type_count> queue_waits_on{};
 	for (std::size_t i = 0; i < passes.size(); ++i) {
@@ -1271,124 +1488,94 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 		}
 	}
 
-	auto& worker_pools = m_device->worker_command_pools();
-	worker_pools.reset_frame(frame_idx);
-	const auto color_format = m_swapchain->format();
-
-	std::vector<std::size_t> pass_to_serial(passes.size());
-	for (std::size_t si = 0; si < sorted.size(); ++si) {
-		pass_to_serial[sorted[si]] = si;
-	}
-
-	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
-
-	auto& inheritance = m_inheritance_storage[frame_idx];
-	inheritance.color_formats = { vulkan::to_vk(color_format) };
-	inheritance.rendering_inherits.assign(passes.size(), vk::CommandBufferInheritanceRenderingInfo{});
-	inheritance.inherits.assign(passes.size(), vk::CommandBufferInheritanceInfo{});
-
-	task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
-		auto& pass = passes[pi];
-		const auto queue = pass_queue(pi);
-		const bool is_graphics_pass = pass.color_output || pass.depth_output;
-		const std::size_t si = pass_to_serial[pi];
-		const bool profile_pass = timestamps_enabled && si < max_profiled_passes;
-		const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass;
-
-		const auto worker_idx = task::current_worker();
-		assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
-		const auto secondary = worker_pools.acquire_secondary(queue, *worker_idx, frame_idx);
-
-		inheritance.rendering_inherits[pi] = vk::CommandBufferInheritanceRenderingInfo{
-			.viewMask = 0,
-			.colorAttachmentCount = pass.color_output ? 1u : 0u,
-			.pColorAttachmentFormats = pass.color_output ? inheritance.color_formats.data() : nullptr,
-			.depthAttachmentFormat = pass.depth_output ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
-			.stencilAttachmentFormat = vk::Format::eUndefined,
-			.rasterizationSamples = vk::SampleCountFlagBits::e1,
-		};
-
-		auto& inherit = inheritance.inherits[pi];
-		vk::CommandBufferUsageFlags begin_flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-		if (is_graphics_pass) {
-			inherit.pNext = &inheritance.rendering_inherits[pi];
-			begin_flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
-		}
-		if (issue_stats) {
-			inherit.pipelineStatistics = profile_stats_flags;
-		}
-
-		secondary.begin({
-			.flags = begin_flags,
-			.pInheritanceInfo = &inherit
-		});
-		m_device->descriptor_heap().bind_descriptor_storage(std::bit_cast<gpu::handle<command_buffer>>(secondary));
-		recording_context rec{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) }, m_auto_binds };
-		if (pass.body) {
-			(*pass.body)(rec);
-		}
-		else {
-			*pass.record_ctx_slot = std::move(rec);
-			pass.record_handle.resume();
-		}
-
-		pass_secondaries[pi] = secondary;
-	});
-
 	{
 		trace::scope_guard sg{gse::trace_id<"graph::record_replay">()};
 
-		auto append_tracked_barriers = [](const render_pass_data& p, const gpu::queue_type queue, std::vector<gpu::memory_barrier>& out) {
-			if (p.tracked_buffers.empty()) {
-				return;
+		auto aspect_for_image = [](const image& img) -> gpu::image_aspect_flags {
+			constexpr auto d32 = static_cast<gpu::image_format_value>(vk::Format::eD32Sfloat);
+			if (img.format() == d32) {
+				return gpu::image_aspect_flag::depth;
 			}
-			gpu::pipeline_stage_flags tracked_stage{};
-			gpu::access_flags tracked_access{};
-			bool has_unmatched_tracked_buffer = false;
-
-			for (const auto* tracked : p.tracked_buffers) {
-				bool matched = false;
-				for (const auto& [resource, stage, access] : p.reads) {
-					if (resource.ptr == tracked && resource.type == resource_type::buffer) {
-						tracked_stage |= stage;
-						tracked_access |= access;
-						matched = true;
-					}
-				}
-				for (const auto& [resource, stage, access] : p.writes) {
-					if (resource.ptr == tracked && resource.type == resource_type::buffer) {
-						tracked_stage |= stage;
-						tracked_access |= access;
-						matched = true;
-					}
-				}
-				if (!matched) {
-					has_unmatched_tracked_buffer = true;
-				}
-			}
-
-			if (has_unmatched_tracked_buffer || !tracked_stage) {
-				tracked_stage |= p.tracked_stage;
-				tracked_access |= gpu::access_flag::shader_storage_read
-					| gpu::access_flag::shader_storage_write
-					| gpu::access_flag::uniform_read
-					| gpu::access_flag::transfer_read;
-				if (queue == gpu::queue_type::graphics) {
-					tracked_access |= gpu::access_flag::indirect_command_read
-						| gpu::access_flag::vertex_attribute_read
-						| gpu::access_flag::index_read;
-				}
-			}
-
-			out.push_back({
-				.src_stages = gpu::pipeline_stage_flag::host,
-				.src_access = gpu::access_flag::host_write,
-				.dst_stages = tracked_stage,
-				.dst_access = tracked_access,
-			});
+			return gpu::image_aspect_flag::color;
 		};
 
-		auto append_prev_pass_barriers = [&](const render_pass_data& cur, const gpu::queue_type cur_queue, const std::size_t serial_index, std::vector<gpu::memory_barrier>& out) {
+		auto append_barrier_for_resource = [&](
+			const resource_ref& resource,
+			const gpu::pipeline_stage_flags src_stages,
+			const gpu::access_flags src_access,
+			const gpu::pipeline_stage_flags dst_stages,
+			const gpu::access_flags dst_access,
+			std::vector<gpu::memory_barrier>& memory_out,
+			std::vector<gpu::buffer_barrier>& buffer_out,
+			std::vector<gpu::image_barrier>& image_out
+		) {
+			if (resource.type == resource_type::buffer) {
+				const auto* buf = static_cast<const buffer*>(resource.ptr);
+				buffer_out.push_back({
+					.src_stages = src_stages,
+					.src_access = src_access,
+					.dst_stages = dst_stages,
+					.dst_access = dst_access,
+					.buffer = buf->handle(),
+					.offset = 0,
+					.size = buf->size(),
+				});
+			}
+			else if (resource.type == resource_type::image) {
+				const auto* img = static_cast<const image*>(resource.ptr);
+				const auto layout = img->layout();
+				image_out.push_back({
+					.src_stages = src_stages,
+					.src_access = src_access,
+					.dst_stages = dst_stages,
+					.dst_access = dst_access,
+					.old_layout = layout,
+					.new_layout = layout,
+					.image = img->handle(),
+					.aspects = aspect_for_image(*img),
+					.base_mip_level = 0,
+					.level_count = 1,
+					.base_array_layer = 0,
+					.layer_count = 1,
+				});
+			}
+			else {
+				memory_out.push_back({
+					.src_stages = src_stages,
+					.src_access = src_access,
+					.dst_stages = dst_stages,
+					.dst_access = dst_access,
+				});
+			}
+		};
+
+		auto append_host_dirty_barriers = [&](const render_pass_data& p, std::vector<gpu::buffer_barrier>& out) {
+			auto walk = [&](const std::vector<resource_usage>& list) {
+				for (const auto& [resource, stage, access] : list) {
+					if (resource.type != resource_type::buffer || !resource.ptr) {
+						continue;
+					}
+					const auto* buf = static_cast<const buffer*>(resource.ptr);
+					if (!buf->host_dirty()) {
+						continue;
+					}
+					out.push_back({
+						.src_stages = gpu::pipeline_stage_flag::host,
+						.src_access = gpu::access_flag::host_write,
+						.dst_stages = stage,
+						.dst_access = access,
+						.buffer = buf->handle(),
+						.offset = 0,
+						.size = buf->size(),
+					});
+					buf->clear_host_dirty();
+				}
+			};
+			walk(p.reads);
+			walk(p.writes);
+		};
+
+		auto append_prev_pass_barriers = [&](const render_pass_data& cur, const gpu::queue_type cur_queue, const std::size_t serial_index, std::vector<gpu::memory_barrier>& memory_out, std::vector<gpu::buffer_barrier>& buffer_out, std::vector<gpu::image_barrier>& image_out) {
 			for (std::size_t pi = 0; pi < serial_index; ++pi) {
 				const auto& prev = passes[sorted[pi]];
 				const auto prev_queue = pass_queue(sorted[pi]);
@@ -1401,22 +1588,12 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 					}
 					for (const auto& [read_resource, read_stage, read_access] : cur.reads) {
 						if (read_resource.ptr && prev_resource.ptr == read_resource.ptr) {
-							out.push_back({
-								.src_stages = prev_stage,
-								.src_access = prev_access,
-								.dst_stages = read_stage,
-								.dst_access = read_access,
-							});
+							append_barrier_for_resource(prev_resource, prev_stage, prev_access, read_stage, read_access, memory_out, buffer_out, image_out);
 						}
 					}
 					for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
 						if (cur_resource.ptr && prev_resource.ptr == cur_resource.ptr) {
-							out.push_back({
-								.src_stages = prev_stage,
-								.src_access = prev_access,
-								.dst_stages = cur_stage,
-								.dst_access = cur_access,
-							});
+							append_barrier_for_resource(prev_resource, prev_stage, prev_access, cur_stage, cur_access, memory_out, buffer_out, image_out);
 						}
 					}
 				}
@@ -1426,12 +1603,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 					}
 					for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
 						if (cur_resource.ptr && prev_resource.ptr == cur_resource.ptr) {
-							out.push_back({
-								.src_stages = prev_stage,
-								.src_access = {},
-								.dst_stages = cur_stage,
-								.dst_access = cur_access,
-							});
+							append_barrier_for_resource(prev_resource, prev_stage, {}, cur_stage, cur_access, memory_out, buffer_out, image_out);
 						}
 					}
 				}
@@ -1446,15 +1618,17 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 			const auto target_primary = primary_buffers[static_cast<std::size_t>(queue)];
 			auto& target_slot = m_profile_slots[static_cast<std::size_t>(queue)][frame_idx];
 
-			std::vector<gpu::memory_barrier> barriers;
+			std::vector<gpu::memory_barrier> memory_barriers;
+			std::vector<gpu::buffer_barrier> buffer_barriers;
+			std::vector<gpu::image_barrier> image_barriers;
 
-			append_tracked_barriers(pass, queue, barriers);
-			append_prev_pass_barriers(pass, queue, si, barriers);
+			append_host_dirty_barriers(pass, buffer_barriers);
+			append_prev_pass_barriers(pass, queue, si, memory_barriers, buffer_barriers, image_barriers);
 
 			{
 				std::vector<gpu::memory_barrier> coalesced;
-				coalesced.reserve(barriers.size());
-				for (const auto& b : barriers) {
+				coalesced.reserve(memory_barriers.size());
+				for (const auto& b : memory_barriers) {
 					bool merged = false;
 					for (auto& o : coalesced) {
 						if (o.src_stages.bits() == b.src_stages.bits() && o.dst_stages.bits() == b.dst_stages.bits()) {
@@ -1468,10 +1642,61 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 						coalesced.push_back(b);
 					}
 				}
-				barriers = std::move(coalesced);
+				memory_barriers = std::move(coalesced);
 			}
 
-			std::vector<gpu::image_barrier> image_barriers;
+			{
+				std::vector<gpu::buffer_barrier> coalesced;
+				coalesced.reserve(buffer_barriers.size());
+				for (const auto& b : buffer_barriers) {
+					bool merged = false;
+					for (auto& o : coalesced) {
+						if (o.buffer.value == b.buffer.value
+							&& o.offset == b.offset
+							&& o.size == b.size
+							&& o.src_stages.bits() == b.src_stages.bits()
+							&& o.dst_stages.bits() == b.dst_stages.bits()) {
+							o.src_access |= b.src_access;
+							o.dst_access |= b.dst_access;
+							merged = true;
+							break;
+						}
+					}
+					if (!merged) {
+						coalesced.push_back(b);
+					}
+				}
+				buffer_barriers = std::move(coalesced);
+			}
+
+			{
+				std::vector<gpu::image_barrier> coalesced;
+				coalesced.reserve(image_barriers.size());
+				for (const auto& b : image_barriers) {
+					bool merged = false;
+					for (auto& o : coalesced) {
+						if (o.image.value == b.image.value
+							&& o.old_layout == b.old_layout
+							&& o.new_layout == b.new_layout
+							&& o.aspects.bits() == b.aspects.bits()
+							&& o.base_mip_level == b.base_mip_level
+							&& o.level_count == b.level_count
+							&& o.base_array_layer == b.base_array_layer
+							&& o.layer_count == b.layer_count
+							&& o.src_stages.bits() == b.src_stages.bits()
+							&& o.dst_stages.bits() == b.dst_stages.bits()) {
+							o.src_access |= b.src_access;
+							o.dst_access |= b.dst_access;
+							merged = true;
+							break;
+						}
+					}
+					if (!merged) {
+						coalesced.push_back(b);
+					}
+				}
+				image_barriers = std::move(coalesced);
+			}
 
 			const bool profile_pass = timestamps_enabled && target_slot.pass_count < max_profiled_passes;
 			const std::uint32_t pass_index = target_slot.pass_count;
@@ -1487,13 +1712,10 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 				.pass_type = pass.pass_type,
 			});
 
-			if (!barriers.empty()) {
+			if (!memory_barriers.empty() || !buffer_barriers.empty() || !image_barriers.empty()) {
 				vulkan::commands(target_handle).pipeline_barrier(gpu::dependency_info{
-					.memory_barriers = barriers,
-				});
-			}
-			if (!image_barriers.empty()) {
-				vulkan::commands(target_handle).pipeline_barrier(gpu::dependency_info{
+					.memory_barriers = memory_barriers,
+					.buffer_barriers = buffer_barriers,
 					.image_barriers = image_barriers,
 				});
 			}

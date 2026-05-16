@@ -3,6 +3,7 @@ module gse.gpu;
 import std;
 
 import :context;
+import :vulkan_buffer;
 import :vulkan_device;
 import :device;
 import :swap_chain;
@@ -82,6 +83,7 @@ auto gse::gpu::context::end_frame(data& d, window::data& window_s) -> void {
 	auto aux_subs = d.render_graph->take_aux_submissions();
 	auto graphics_waits = d.render_graph->take_graphics_extra_waits();
 	d.frame->end(window_s, aux_subs, graphics_waits);
+	vulkan::drain_dirty_buffers();
 }
 
 namespace gse::gpu {
@@ -94,8 +96,7 @@ namespace gse::gpu {
 	) -> gpu::depth_output_info;
 
 	auto to_pass_data(
-		render_pass_request req,
-		const gpu::render_graph& graph
+		render_pass_request req
 	) -> gpu::render_pass_data;
 }
 
@@ -115,13 +116,11 @@ auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> gpu::depth_out
 	};
 }
 
-auto gse::gpu::to_pass_data(render_pass_request req, const gpu::render_graph& graph) -> gpu::render_pass_data {
+auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
 	gpu::render_pass_data p{
 		.pass_type = req.desc.pass_kind,
 		.queue = req.desc.queue,
-		.reads = std::move(req.desc.reads),
-		.writes = std::move(req.desc.writes),
-		.tracked_buffers = std::move(req.desc.tracked_buffers),
+		.primary_pipeline = req.desc.primary_pipeline,
 		.after_passes = std::move(req.desc.after_deps),
 		.record_handle = req.record_handle,
 		.record_ctx_slot = req.record_ctx_slot,
@@ -134,19 +133,6 @@ auto gse::gpu::to_pass_data(render_pass_request req, const gpu::render_graph& gr
 
 	if (req.desc.depth) {
 		p.depth_output = to_depth_output_info(*req.desc.depth);
-		if (req.desc.depth->op == load_op::load) {
-			p.reads.push_back({
-				.resource = {
-					.ptr = std::addressof(graph.depth_image()),
-					.type = gpu::resource_type::image,
-				},
-				.stage = pipeline_stage_flag::early_fragment_tests,
-				.access = access_flag::depth_stencil_attachment_read,
-			});
-		}
-		else {
-			p.writes.push_back(gpu::attachment(graph.depth_image(), pipeline_stage_flag::late_fragment_tests));
-		}
 	}
 
 	return p;
@@ -156,7 +142,7 @@ auto gse::gpu::context::execute_frame(data& d, std::vector<render_pass_request> 
 	std::vector<gpu::render_pass_data> passes;
 	passes.reserve(requests.size());
 	for (auto& req : requests) {
-		passes.push_back(to_pass_data(std::move(req), *d.render_graph));
+		passes.push_back(to_pass_data(std::move(req)));
 	}
 	d.render_graph->execute(std::move(passes));
 }

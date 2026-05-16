@@ -156,7 +156,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu
 		d.mapping_buffer_capacity = mapping_bytes;
 	}
 
-	gse::memcpy(d.mapping_buffers[frame_index].mapped(), mapping.data(), mapping_bytes);
+	d.mapping_buffers[frame_index].host_write(mapping.data(), mapping_bytes);
 
 	auto& tlas_inst_buf = d.tlas_per_frame[frame_index].instance_buffer();
 
@@ -178,12 +178,10 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu
 	const std::uint32_t workgroups = (instance_count + 63) / 64;
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.after<geometry_collector::system>()
-		.reads(gpu::storage_read(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-		.tracks(gc_r.instance_buffer[frame_index]);
+		.pipeline(d.tlas_update_pipeline)
+		.after<geometry_collector::system>();
 
 	rec.barrier(gpu::barrier_scope::transfer_to_compute);
-	rec.bind(d.tlas_update_pipeline);
 	rec.bind_descriptors(d.tlas_update_pipeline, d.tlas_update_descriptors[frame_index]);
 	rec.push(d.tlas_update_pipeline, pc);
 	rec.dispatch(workgroups, 1, 1);

@@ -55,9 +55,6 @@ export namespace gse::gpu {
 		[[nodiscard]] auto region(
 		) const -> const descriptor_region&;
 
-		[[nodiscard]] auto capacity(
-		) const -> std::uint32_t;
-
 	private:
 		vk::raii::DescriptorSetLayout m_layout = nullptr;
 		vk::raii::Sampler m_null_sampler = nullptr;
@@ -203,8 +200,4 @@ auto gse::gpu::bindless_texture_set::layout_handle() const -> handle<vulkan::des
 
 auto gse::gpu::bindless_texture_set::region() const -> const descriptor_region& {
 	return m_region;
-}
-
-auto gse::gpu::bindless_texture_set::capacity() const -> std::uint32_t {
-	return m_capacity;
 }

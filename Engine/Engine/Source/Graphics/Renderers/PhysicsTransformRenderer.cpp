@@ -15,6 +15,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.physics;
+import gse.log;
 
 namespace gse::renderer::physics_transform {
 	struct [[= shaders::shader_struct]] physics_mapping {
@@ -84,6 +85,29 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
+	if (auto* mapped = snapshot.mapped(); mapped && info.body_count > 1) {
+		const auto* bodies = reinterpret_cast<const vbd::body_state*>(mapped);
+		std::uint32_t probe_idx = info.body_count;
+		for (std::uint32_t i = 0; i < info.body_count; ++i) {
+			if (!bodies[i].locked) {
+				probe_idx = i;
+				break;
+			}
+		}
+		if (probe_idx < info.body_count) {
+			static std::uint64_t s_log_seq = 0;
+			log::println(
+				log::category::render,
+				"render_read[seq={}] snapshot_ptr={} probe_idx={} pos={} orient={}",
+				s_log_seq++,
+				static_cast<const void*>(&snapshot),
+				probe_idx,
+				bodies[probe_idx].position,
+				bodies[probe_idx].orientation
+			);
+		}
+	}
+
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 
 	if (!render_items.empty() && render_items[0].physics_mapping_count > 0) {
@@ -103,7 +127,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 			d.mapping_buffer_size = required;
 		} else {
 			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				gse::memcpy(d.mapping_buffers[i].mapped(), data.physics_mappings.data(), required);
+				d.mapping_buffers[i].host_write(data.physics_mappings.data(), required);
 			}
 		}
 	}
@@ -129,15 +153,9 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.after<geometry_collector::system, vbd::vbd_readback_copy_stage>()
-		.reads(
-			gpu::storage_read(snapshot, gpu::pipeline_stage::compute_shader),
-			gpu::storage_read(d.mapping_buffers[frame_index], gpu::pipeline_stage::compute_shader)
-		)
-		.writes(gpu::storage_write(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::compute_shader))
-		.tracks(d.mapping_buffers[frame_index], gc_r.instance_buffer[frame_index]);
+		.pipeline(d.pipeline)
+		.after<geometry_collector::system, vbd::vbd_readback_copy_stage>();
 
-	rec.bind(d.pipeline);
 	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 	rec.push(d.pipeline, pc);
 	rec.dispatch(workgroups, 1, 1);

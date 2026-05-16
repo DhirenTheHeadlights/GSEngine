@@ -37,10 +37,6 @@ export namespace gse::vulkan {
         std::uint32_t layer_count = 1
     ) -> void;
 
-    [[nodiscard]] auto query_descriptor_buffer_properties(
-        const vk::raii::PhysicalDevice& physical_device
-    ) -> gpu::descriptor_buffer_properties;
-
     [[nodiscard]] auto wait_for_fence(
         const device& dev,
         gpu::handle<fence> fence,
@@ -139,27 +135,11 @@ export namespace gse::vulkan {
         ) const -> gpu::result;
 
         auto create_buffer(
-            const vk::BufferCreateInfo& buffer_info,
-            const void* data = nullptr,
-            std::string_view tag = "",
-            const std::source_location& loc = std::source_location::current()
-        ) -> basic_buffer<device>;
-
-        auto create_buffer(
             const gpu::buffer_create_info& buffer_info,
             const void* data = nullptr,
             std::string_view tag = "",
             const std::source_location& loc = std::source_location::current()
         ) -> basic_buffer<device>;
-
-        auto create_image(
-            const vk::ImageCreateInfo& info,
-            vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-            const vk::ImageViewCreateInfo& view_info = {},
-            const void* data = nullptr,
-            std::string_view tag = "",
-            std::source_location loc = std::source_location::current()
-        ) -> basic_image<device>;
 
         auto create_image(
             const gpu::image_create_info& info,
@@ -202,6 +182,22 @@ export namespace gse::vulkan {
             std::uint32_t graphics_family,
             std::uint32_t compute_family
         );
+
+        auto create_buffer(
+            const vk::BufferCreateInfo& buffer_info,
+            const void* data,
+            std::string_view tag,
+            const std::source_location& loc
+        ) -> basic_buffer<device>;
+
+        auto create_image(
+            const vk::ImageCreateInfo& info,
+            vk::MemoryPropertyFlags properties,
+            const vk::ImageViewCreateInfo& view_info,
+            const void* data,
+            std::string_view tag,
+            std::source_location loc
+        ) -> basic_image<device>;
 
         auto allocate(
             const vk::MemoryRequirements& requirements,
@@ -273,6 +269,12 @@ export namespace gse::vulkan {
         bool video_encode_enabled = false;
         gpu::descriptor_buffer_properties desc_buf_props;
     };
+}
+
+namespace gse::vulkan {
+    [[nodiscard]] auto query_descriptor_buffer_properties(
+        const vk::raii::PhysicalDevice& physical_device
+    ) -> gpu::descriptor_buffer_properties;
 }
 
 auto gse::vulkan::device::physical_device(this auto&& self) -> auto& {

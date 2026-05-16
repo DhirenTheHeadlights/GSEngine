@@ -24,11 +24,13 @@ export namespace gse::actions {
 	class handle {
 	public:
 		handle() = default;
-		explicit handle(const id action_id) : m_action_id(action_id) {}
+		explicit handle(const id action_id) : m_action_id(action_id) {
+		}
 
 		auto id() const -> id {
 			return m_action_id;
 		}
+
 	private:
 		gse::id m_action_id;
 	};
@@ -65,12 +67,12 @@ export namespace gse::actions {
 		) : identifiable(name), m_bit_index(bit_index) {
 		}
 
-		auto bit_index(
-		) const -> std::uint16_t {
+		auto bit_index() const -> std::uint16_t {
 			return m_bit_index;
 		}
+
 	private:
-		std::uint16_t m_bit_index{};
+		std::uint16_t m_bit_index {};
 	};
 
 	using word = std::uint64_t;
@@ -98,26 +100,23 @@ export namespace gse::actions {
 			std::uint16_t bit_index
 		) const -> bool;
 
-		auto reset(
-		) -> void;
+		auto reset() -> void;
 
-		auto word_count(
-		) const -> std::size_t;
+		auto word_count() const -> std::size_t;
 
-		auto words(
-		) const -> std::span<const word>;
+		auto words() const -> std::span<const word>;
 
 		auto assign(
 			std::span<const word> w
 		) -> void;
+
 	private:
 		std::vector<word> m_words;
 	};
 
 	class state {
 	public:
-		auto begin_frame(
-		) -> void;
+		auto begin_frame() -> void;
 
 		auto ensure_capacity(
 			std::size_t count
@@ -128,8 +127,7 @@ export namespace gse::actions {
 			std::span<const std::uint16_t> axes2
 		) -> void;
 
-		auto clear_all_axes(
-		) -> void;
+		auto clear_all_axes() -> void;
 
 		auto set_pressed(
 			std::uint16_t bit_index,
@@ -177,14 +175,11 @@ export namespace gse::actions {
 			std::uint16_t id
 		) const -> axis;
 
-		auto held_mask(
-		) const -> const mask&;
+		auto held_mask() const -> const mask&;
 
-		auto pressed_mask(
-		) const -> const mask&;
+		auto pressed_mask() const -> const mask&;
 
-		auto released_mask(
-		) const -> const mask&;
+		auto released_mask() const -> const mask&;
 
 		auto load_transients(
 			std::span<const word> pressed,
@@ -201,8 +196,8 @@ export namespace gse::actions {
 			angle yaw
 		) -> void;
 
-		auto camera_yaw(
-		) const -> angle;
+		auto camera_yaw() const -> angle;
+
 	private:
 		auto ensure_axis1_capacity(
 			std::uint16_t id
@@ -218,10 +213,10 @@ export namespace gse::actions {
 
 		std::vector<float> m_axes1;
 		std::vector<axis> m_axes2;
-		angle m_camera_yaw{};
+		angle m_camera_yaw;
 	};
 
-	inline thread_local angle g_context_camera_yaw{};
+	inline thread_local angle g_context_camera_yaw {};
 	inline thread_local bool g_context_camera_yaw_set = false;
 	inline thread_local std::unordered_map<id, angle> g_entity_camera_yaw;
 
@@ -515,7 +510,7 @@ auto gse::actions::state::reset_axes(const std::span<const std::uint16_t> axes1,
 
 auto gse::actions::state::clear_all_axes() -> void {
 	std::ranges::fill(m_axes1, 0.f);
-	std::ranges::fill(m_axes2, axis{});
+	std::ranges::fill(m_axes2, axis {});
 }
 
 auto gse::actions::state::set_pressed(const std::uint16_t bit_index, const std::size_t count) -> void {
@@ -640,70 +635,67 @@ auto gse::actions::system::run(run_context& ctx, data& d, const input::system::d
 	finalize_bindings(d);
 
 	while (true) {
-	bool config_changed = false;
+		bool config_changed = false;
 
-	for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
-		add_description(d, name, action_id);
-		d.pending_key_bindings.emplace_back(name, default_key, action_id);
-		d.action_defaults[name] = static_cast<int>(default_key);
-		config_changed = true;
-	}
-
-	for (const auto& [info, axis_id] : ctx.read_channel<bind_axis2_request>()) {
-		d.pending_axis2_reqs.push_back({
-			info,
-			axis_id
-		});
-		config_changed = true;
-	}
-
-	for (const auto& [action_name, new_key] : ctx.read_channel<rebind_request>()) {
-		rebind(d, action_name, new_key);
-	}
-
-	if (config_changed) {
-		finalize_bindings(d);
-	}
-
-	const auto& in = input::system::current_state(input_s);
-
-	auto& action_state = d.current_input_state;
-	action_state.begin_frame();
-
-	const auto count = d.descriptions.size();
-	action_state.ensure_capacity(count);
-	action_state.reset_axes(d.axis1_ids_cache, d.axis2_ids_cache);
-
-	for (auto& [k, bit_index] : d.resolved.key_to_action) {
-		if (in.key_pressed(k)) {
-			action_state.set_pressed(bit_index, count);
+		for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
+			add_description(d, name, action_id);
+			d.pending_key_bindings.emplace_back(name, default_key, action_id);
+			d.action_defaults[name] = static_cast<int>(default_key);
+			config_changed = true;
 		}
-		if (in.key_released(k)) {
-			action_state.set_released(bit_index, count);
-		}
-		action_state.set_held(bit_index, in.key_held(k), count);
-	}
 
-	for (auto& [mb, bit_index] : d.resolved.mouse_to_action) {
-		if (in.mouse_button_pressed(mb)) {
-			action_state.set_pressed(bit_index, count);
+		for (const auto& [info, axis_id] : ctx.read_channel<bind_axis2_request>()) {
+			d.pending_axis2_reqs.push_back({ info, axis_id });
+			config_changed = true;
 		}
-		if (in.mouse_button_released(mb)) {
-			action_state.set_released(bit_index, count);
+
+		for (const auto& [action_name, new_key] : ctx.read_channel<rebind_request>()) {
+			rebind(d, action_name, new_key);
 		}
-		action_state.set_held(bit_index, in.mouse_button_held(mb), count);
-	}
 
-	for (const auto& [neg, pos, axis, scale] : d.resolved.axes1_from_keys) {
-		const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
-		action_state.set_axis1(axis, static_cast<float>(v) * scale);
-	}
+		if (config_changed) {
+			finalize_bindings(d);
+		}
 
-	for (const auto& [id, left, right, back, fwd, scale] : d.axis2_by_id.items()) {
-		const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
-		const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
-		action_state.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
-	}
+		const auto& in = input::system::current_state(input_s);
+
+		auto& action_state = d.current_input_state;
+		action_state.begin_frame();
+
+		const auto count = d.descriptions.size();
+		action_state.ensure_capacity(count);
+		action_state.reset_axes(d.axis1_ids_cache, d.axis2_ids_cache);
+
+		for (auto& [k, bit_index] : d.resolved.key_to_action) {
+			if (in.key_pressed(k)) {
+				action_state.set_pressed(bit_index, count);
+			}
+			if (in.key_released(k)) {
+				action_state.set_released(bit_index, count);
+			}
+			action_state.set_held(bit_index, in.key_held(k), count);
+		}
+
+		for (auto& [mb, bit_index] : d.resolved.mouse_to_action) {
+			if (in.mouse_button_pressed(mb)) {
+				action_state.set_pressed(bit_index, count);
+			}
+			if (in.mouse_button_released(mb)) {
+				action_state.set_released(bit_index, count);
+			}
+			action_state.set_held(bit_index, in.mouse_button_held(mb), count);
+		}
+
+		for (const auto& [neg, pos, axis, scale] : d.resolved.axes1_from_keys) {
+			const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
+			action_state.set_axis1(axis, static_cast<float>(v) * scale);
+		}
+
+		for (const auto& [id, left, right, back, fwd, scale] : d.axis2_by_id.items()) {
+			const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
+			const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
+			action_state.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
+		}
 
 		co_await ctx.next_tick();
 	}
@@ -741,7 +733,7 @@ auto gse::actions::system::finalize_bindings(data& d) -> void {
 	auto key_for_action = [&](const id action_id) -> key {
 		const auto* desc = d.descriptions.try_get(action_id);
 		if (!desc) {
-			return key{};
+			return key {};
 		}
 		const auto bit_index = desc->bit_index();
 		for (const auto& [k, idx] : d.resolved.key_to_action) {
@@ -749,11 +741,11 @@ auto gse::actions::system::finalize_bindings(data& d) -> void {
 				return k;
 			}
 		}
-		return key{};
+		return key {};
 	};
 
 	for (const auto& [info, id] : d.pending_axis2_reqs) {
-		resolved_axis2_keys r{
+		resolved_axis2_keys r {
 			.id = id,
 			.left = key_for_action(info.left.id()),
 			.right = key_for_action(info.right.id()),
@@ -868,110 +860,215 @@ auto gse::actions::released(const handle& h, const actions::state& s, const syst
 
 auto gse::key_to_string(const key k) -> std::string_view {
 	switch (k) {
-		case key::space: return "Space";
-		case key::apostrophe: return "'";
-		case key::comma: return ",";
-		case key::minus: return "-";
-		case key::period: return ".";
-		case key::slash: return "/";
-		case key::num_0: return "0";
-		case key::num_1: return "1";
-		case key::num_2: return "2";
-		case key::num_3: return "3";
-		case key::num_4: return "4";
-		case key::num_5: return "5";
-		case key::num_6: return "6";
-		case key::num_7: return "7";
-		case key::num_8: return "8";
-		case key::num_9: return "9";
-		case key::semicolon: return ";";
-		case key::equal: return "=";
-		case key::a: return "A";
-		case key::b: return "B";
-		case key::c: return "C";
-		case key::d: return "D";
-		case key::e: return "E";
-		case key::f: return "F";
-		case key::g: return "G";
-		case key::h: return "H";
-		case key::i: return "I";
-		case key::j: return "J";
-		case key::k: return "K";
-		case key::l: return "L";
-		case key::m: return "M";
-		case key::n: return "N";
-		case key::o: return "O";
-		case key::p: return "P";
-		case key::q: return "Q";
-		case key::r: return "R";
-		case key::s: return "S";
-		case key::t: return "T";
-		case key::u: return "U";
-		case key::v: return "V";
-		case key::w: return "W";
-		case key::x: return "X";
-		case key::y: return "Y";
-		case key::z: return "Z";
-		case key::left_bracket: return "[";
-		case key::backslash: return "\\";
-		case key::right_bracket: return "]";
-		case key::grave_accent: return "`";
-		case key::escape: return "Escape";
-		case key::enter: return "Enter";
-		case key::tab: return "Tab";
-		case key::backspace: return "Backspace";
-		case key::insert: return "Insert";
-		case key::del: return "Delete";
-		case key::right: return "Right";
-		case key::left: return "Left";
-		case key::down: return "Down";
-		case key::up: return "Up";
-		case key::page_up: return "Page Up";
-		case key::page_down: return "Page Down";
-		case key::home: return "Home";
-		case key::end: return "End";
-		case key::caps_lock: return "Caps Lock";
-		case key::scroll_lock: return "Scroll Lock";
-		case key::num_lock: return "Num Lock";
-		case key::print_screen: return "Print Screen";
-		case key::pause: return "Pause";
-		case key::f1: return "F1";
-		case key::f2: return "F2";
-		case key::f3: return "F3";
-		case key::f4: return "F4";
-		case key::f5: return "F5";
-		case key::f6: return "F6";
-		case key::f7: return "F7";
-		case key::f8: return "F8";
-		case key::f9: return "F9";
-		case key::f10: return "F10";
-		case key::f11: return "F11";
-		case key::f12: return "F12";
-		case key::kp_0: return "Numpad 0";
-		case key::kp_1: return "Numpad 1";
-		case key::kp_2: return "Numpad 2";
-		case key::kp_3: return "Numpad 3";
-		case key::kp_4: return "Numpad 4";
-		case key::kp_5: return "Numpad 5";
-		case key::kp_6: return "Numpad 6";
-		case key::kp_7: return "Numpad 7";
-		case key::kp_8: return "Numpad 8";
-		case key::kp_9: return "Numpad 9";
-		case key::kp_decimal: return "Numpad .";
-		case key::kp_divide: return "Numpad /";
-		case key::kp_multiply: return "Numpad *";
-		case key::kp_subtract: return "Numpad -";
-		case key::kp_add: return "Numpad +";
-		case key::kp_enter: return "Numpad Enter";
-		case key::left_shift: return "Left Shift";
-		case key::left_control: return "Left Ctrl";
-		case key::left_alt: return "Left Alt";
-		case key::left_super: return "Left Super";
-		case key::right_shift: return "Right Shift";
-		case key::right_control: return "Right Ctrl";
-		case key::right_alt: return "Right Alt";
-		case key::right_super: return "Right Super";
-		case key::menu: return "Menu";
-		default: return "Unknown";
+		case key::space:
+			return "Space";
+		case key::apostrophe:
+			return "'";
+		case key::comma:
+			return ",";
+		case key::minus:
+			return "-";
+		case key::period:
+			return ".";
+		case key::slash:
+			return "/";
+		case key::num_0:
+			return "0";
+		case key::num_1:
+			return "1";
+		case key::num_2:
+			return "2";
+		case key::num_3:
+			return "3";
+		case key::num_4:
+			return "4";
+		case key::num_5:
+			return "5";
+		case key::num_6:
+			return "6";
+		case key::num_7:
+			return "7";
+		case key::num_8:
+			return "8";
+		case key::num_9:
+			return "9";
+		case key::semicolon:
+			return ";";
+		case key::equal:
+			return "=";
+		case key::a:
+			return "A";
+		case key::b:
+			return "B";
+		case key::c:
+			return "C";
+		case key::d:
+			return "D";
+		case key::e:
+			return "E";
+		case key::f:
+			return "F";
+		case key::g:
+			return "G";
+		case key::h:
+			return "H";
+		case key::i:
+			return "I";
+		case key::j:
+			return "J";
+		case key::k:
+			return "K";
+		case key::l:
+			return "L";
+		case key::m:
+			return "M";
+		case key::n:
+			return "N";
+		case key::o:
+			return "O";
+		case key::p:
+			return "P";
+		case key::q:
+			return "Q";
+		case key::r:
+			return "R";
+		case key::s:
+			return "S";
+		case key::t:
+			return "T";
+		case key::u:
+			return "U";
+		case key::v:
+			return "V";
+		case key::w:
+			return "W";
+		case key::x:
+			return "X";
+		case key::y:
+			return "Y";
+		case key::z:
+			return "Z";
+		case key::left_bracket:
+			return "[";
+		case key::backslash:
+			return "\\";
+		case key::right_bracket:
+			return "]";
+		case key::grave_accent:
+			return "`";
+		case key::escape:
+			return "Escape";
+		case key::enter:
+			return "Enter";
+		case key::tab:
+			return "Tab";
+		case key::backspace:
+			return "Backspace";
+		case key::insert:
+			return "Insert";
+		case key::del:
+			return "Delete";
+		case key::right:
+			return "Right";
+		case key::left:
+			return "Left";
+		case key::down:
+			return "Down";
+		case key::up:
+			return "Up";
+		case key::page_up:
+			return "Page Up";
+		case key::page_down:
+			return "Page Down";
+		case key::home:
+			return "Home";
+		case key::end:
+			return "End";
+		case key::caps_lock:
+			return "Caps Lock";
+		case key::scroll_lock:
+			return "Scroll Lock";
+		case key::num_lock:
+			return "Num Lock";
+		case key::print_screen:
+			return "Print Screen";
+		case key::pause:
+			return "Pause";
+		case key::f1:
+			return "F1";
+		case key::f2:
+			return "F2";
+		case key::f3:
+			return "F3";
+		case key::f4:
+			return "F4";
+		case key::f5:
+			return "F5";
+		case key::f6:
+			return "F6";
+		case key::f7:
+			return "F7";
+		case key::f8:
+			return "F8";
+		case key::f9:
+			return "F9";
+		case key::f10:
+			return "F10";
+		case key::f11:
+			return "F11";
+		case key::f12:
+			return "F12";
+		case key::kp_0:
+			return "Numpad 0";
+		case key::kp_1:
+			return "Numpad 1";
+		case key::kp_2:
+			return "Numpad 2";
+		case key::kp_3:
+			return "Numpad 3";
+		case key::kp_4:
+			return "Numpad 4";
+		case key::kp_5:
+			return "Numpad 5";
+		case key::kp_6:
+			return "Numpad 6";
+		case key::kp_7:
+			return "Numpad 7";
+		case key::kp_8:
+			return "Numpad 8";
+		case key::kp_9:
+			return "Numpad 9";
+		case key::kp_decimal:
+			return "Numpad .";
+		case key::kp_divide:
+			return "Numpad /";
+		case key::kp_multiply:
+			return "Numpad *";
+		case key::kp_subtract:
+			return "Numpad -";
+		case key::kp_add:
+			return "Numpad +";
+		case key::kp_enter:
+			return "Numpad Enter";
+		case key::left_shift:
+			return "Left Shift";
+		case key::left_control:
+			return "Left Ctrl";
+		case key::left_alt:
+			return "Left Alt";
+		case key::left_super:
+			return "Left Super";
+		case key::right_shift:
+			return "Right Shift";
+		case key::right_control:
+			return "Right Ctrl";
+		case key::right_alt:
+			return "Right Alt";
+		case key::right_super:
+			return "Right Super";
+		case key::menu:
+			return "Menu";
+		default:
+			return "Unknown";
 	}
 }

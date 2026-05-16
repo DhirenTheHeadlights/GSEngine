@@ -11,6 +11,9 @@ KEEP_BINARIES = {
     "clang.exe",
     "clang-cl.exe",
     "clang++.exe",
+    "clangd.exe",
+    "clang-format.exe",
+    "clang-tidy.exe",
     "lld-link.exe",
     "lld.exe",
     "llvm-ar.exe",
@@ -18,6 +21,23 @@ KEEP_BINARIES = {
     "llvm-lib.exe",
     "clang-scan-deps.exe",
 }
+
+FULL_BUILD_TARGETS = [
+    "clang", "lld",
+    "llvm-ar", "llvm-lib", "llvm-rc", "clang-scan-deps",
+    "clangd", "clang-format", "clang-tidy",
+]
+
+CLANGD_ONLY_TARGETS = ["clangd"]
+
+GSE_TIDY_CHECKS_SRC = Path("scripts") / "gse_tidy_checks"
+GSE_TIDY_DST_SUBDIR = Path("clang-tools-extra") / "clang-tidy" / "gse"
+GSE_FORCE_LINKER_ANCHOR = """
+// This anchor is used to force the linker to link the GseModule.
+extern volatile int GseModuleAnchorSource;
+static int LLVM_ATTRIBUTE_UNUSED GseModuleAnchorDestination =
+    GseModuleAnchorSource;
+"""
 
 
 def run(cmd, cwd=None):
@@ -47,13 +67,59 @@ def current_sha(src):
     return result.stdout.strip()
 
 
+def install_gse_tidy_checks(src):
+    repo_root = Path(__file__).resolve().parent.parent
+    gse_src = repo_root / GSE_TIDY_CHECKS_SRC
+    if not gse_src.exists():
+        raise SystemExit(f"GSE tidy check sources not found at {gse_src}")
+
+    gse_dst = src / GSE_TIDY_DST_SUBDIR
+    if gse_dst.exists():
+        shutil.rmtree(gse_dst)
+    gse_dst.mkdir(parents=True)
+    for entry in gse_src.iterdir():
+        if entry.name == ".clangd":
+            continue
+        if entry.is_file():
+            shutil.copy2(entry, gse_dst / entry.name)
+
+    tidy_cmake = src / "clang-tools-extra" / "clang-tidy" / "CMakeLists.txt"
+    text = tidy_cmake.read_text()
+    changed = False
+    if "add_subdirectory(gse)" not in text:
+        marker = "add_subdirectory(zircon)"
+        if marker not in text:
+            raise SystemExit(f"Couldn't find '{marker}' in {tidy_cmake}")
+        text = text.replace(marker, f"{marker}\nadd_subdirectory(gse)", 1)
+        changed = True
+    if "clangTidyGseModule" not in text:
+        marker = "clangTidyZirconModule"
+        if marker not in text:
+            raise SystemExit(f"Couldn't find '{marker}' in {tidy_cmake}")
+        text = text.replace(
+            marker, f"{marker}\n  clangTidyGseModule", 1
+        )
+        changed = True
+    if changed:
+        tidy_cmake.write_text(text)
+
+    force_linker = src / "clang-tools-extra" / "clang-tidy" / "ClangTidyForceLinker.h"
+    text = force_linker.read_text()
+    if "GseModuleAnchorSource" not in text:
+        marker = "} // namespace clang::tidy"
+        if marker not in text:
+            raise SystemExit(f"Couldn't find namespace close in {force_linker}")
+        text = text.replace(marker, f"{GSE_FORCE_LINKER_ANCHOR}\n{marker}", 1)
+        force_linker.write_text(text)
+
+
 def configure(src, build, link_jobs):
     build.mkdir(parents=True, exist_ok=True)
     cmake_args = [
         "cmake", "-S", str(src / "llvm"), "-B", str(build),
         "-G", "Ninja",
         "-DCMAKE_BUILD_TYPE=Release",
-        "-DLLVM_ENABLE_PROJECTS=clang;lld",
+        "-DLLVM_ENABLE_PROJECTS=clang;clang-tools-extra;lld",
         "-DLLVM_TARGETS_TO_BUILD=X86",
         "-DLLVM_ENABLE_ASSERTIONS=OFF",
         "-DLLVM_ENABLE_DIA_SDK=OFF",
@@ -63,28 +129,33 @@ def configure(src, build, link_jobs):
     run(cmake_args)
 
 
-def build_targets(build):
-    run([
-        "cmake", "--build", str(build),
-        "--target",
-        "clang", "lld",
-        "llvm-ar", "llvm-lib", "llvm-rc", "clang-scan-deps",
-    ])
+def build_targets(build, targets):
+    run(["cmake", "--build", str(build), "--target", *targets])
 
 
-def stage(build, dist):
-    if dist.exists():
+def stage(build, dist, *, full):
+    if full and dist.exists():
         shutil.rmtree(dist)
-    (dist / "bin").mkdir(parents=True)
+    (dist / "bin").mkdir(parents=True, exist_ok=True)
     bin_src = build / "bin"
     for name in KEEP_BINARIES:
         src = bin_src / name
         if src.exists():
             shutil.copy2(src, dist / "bin" / name)
 
-    lib_src = build / "lib" / "clang"
-    if lib_src.exists():
-        shutil.copytree(lib_src, dist / "lib" / "clang")
+    if full:
+        lib_src = build / "lib" / "clang"
+        if lib_src.exists():
+            shutil.copytree(lib_src, dist / "lib" / "clang")
+
+
+def stage_clangd_only(build, dist):
+    (dist / "bin").mkdir(parents=True, exist_ok=True)
+    src = build / "bin" / "clangd.exe"
+    if not src.exists():
+        raise SystemExit(f"clangd.exe not found at {src} — did the build succeed?")
+    shutil.copy2(src, dist / "bin" / "clangd.exe")
+    print(f"Staged clangd into {dist / 'bin' / 'clangd.exe'}")
 
 
 def zip_dist(dist, out_zip):
@@ -112,6 +183,11 @@ def main():
     parser.add_argument("--sha", default=None, help="Pin clang-p2996 to a specific commit SHA")
     parser.add_argument("--skip-build", action="store_true", help="Only stage and zip an existing build")
     parser.add_argument(
+        "--clangd-only",
+        action="store_true",
+        help="Build only clangd and graft it into an existing dist without wiping libc++/compiler-rt",
+    )
+    parser.add_argument(
         "--link-jobs",
         type=int,
         default=None,
@@ -119,12 +195,22 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.clangd_only:
+        ensure_clone(args.src, args.branch, args.sha)
+        install_gse_tidy_checks(args.src)
+        configure(args.src, args.build, args.link_jobs)
+        build_targets(args.build, CLANGD_ONLY_TARGETS)
+        stage_clangd_only(args.build, args.dist)
+        print(f"\nSource SHA: {current_sha(args.src)}")
+        return
+
     if not args.skip_build:
         ensure_clone(args.src, args.branch, args.sha)
+        install_gse_tidy_checks(args.src)
         configure(args.src, args.build, args.link_jobs)
-        build_targets(args.build)
+        build_targets(args.build, FULL_BUILD_TARGETS)
 
-    stage(args.build, args.dist)
+    stage(args.build, args.dist, full=True)
     zip_dist(args.dist, args.out)
 
     print()

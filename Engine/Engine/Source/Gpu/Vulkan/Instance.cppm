@@ -4,11 +4,14 @@ import std;
 import vulkan;
 
 import :handles;
+import :types;
 
 import gse.core;
 import gse.os;
 
 export namespace gse::vulkan {
+	class device;
+
 	class instance : public non_copyable {
 	public:
 		~instance(
@@ -27,9 +30,23 @@ export namespace gse::vulkan {
 			bool enable_validation
 		) -> instance;
 
-		auto set_surface(
-			vk::raii::SurfaceKHR&& surface
+		auto create_surface(
+			const window::data& win
 		) -> void;
+
+	private:
+		friend class device;
+		friend class swap_chain;
+		friend auto pick_surface_format(
+			const device& dev,
+			const instance& inst
+		) -> gpu::image_format;
+
+		instance(
+			vk::raii::Context&& context,
+			vk::raii::Instance&& instance,
+			vk::raii::DebugUtilsMessengerEXT&& debug_messenger
+		);
 
 		[[nodiscard]] auto enumerate_physical_devices(
 		) const -> std::vector<vk::raii::PhysicalDevice>;
@@ -40,30 +57,19 @@ export namespace gse::vulkan {
 		[[nodiscard]] auto raii_surface(
 		) const -> const vk::raii::SurfaceKHR&;
 
-	private:
-		instance(
-			vk::raii::Context&& context,
-			vk::raii::Instance&& instance,
-			vk::raii::DebugUtilsMessengerEXT&& debug_messenger
-		);
-
 		vk::raii::Context m_context;
 		vk::raii::Instance m_instance;
 		vk::raii::SurfaceKHR m_surface;
 		vk::raii::DebugUtilsMessengerEXT m_debug_messenger;
 	};
-
-	auto create_surface(
-		const window::data& win,
-		instance& instance
-	) -> void;
 }
 
 gse::vulkan::instance::instance(vk::raii::Context&& context, vk::raii::Instance&& instance, vk::raii::DebugUtilsMessengerEXT&& debug_messenger)
 	: m_context(std::move(context)), m_instance(std::move(instance)), m_surface(nullptr), m_debug_messenger(std::move(debug_messenger)) {}
 
-auto gse::vulkan::instance::set_surface(vk::raii::SurfaceKHR&& surface) -> void {
-	m_surface = std::move(surface);
+auto gse::vulkan::instance::create_surface(const window::data& win) -> void {
+	const auto raw_surface = window::create_vulkan_surface(win, *m_instance);
+	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
 }
 
 auto gse::vulkan::instance::enumerate_physical_devices() const -> std::vector<vk::raii::PhysicalDevice> {

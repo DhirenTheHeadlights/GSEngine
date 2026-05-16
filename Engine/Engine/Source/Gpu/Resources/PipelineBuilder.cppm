@@ -22,6 +22,7 @@ import :descriptors;
 import :shader_codegen;
 import :shader_markers;
 import :shader_registry;
+import :spirv_reflect;
 
 export namespace gse::gpu {
 	struct compute_param_pod {
@@ -471,6 +472,36 @@ export namespace gse::gpu {
 }
 
 namespace gse::gpu {
+	auto lookup_descriptor_type(const family_layout& family, const std::uint32_t set, const std::uint32_t slot) -> descriptor_type {
+		for (const auto& fs : family.sets) {
+			if (static_cast<std::uint32_t>(fs.type) != set) {
+				continue;
+			}
+			for (const auto& b : fs.bindings) {
+				if (b.desc.binding == slot) {
+					return b.desc.type;
+				}
+			}
+		}
+		return descriptor_type::storage_buffer;
+	}
+
+	auto to_pipeline_stage(const stage_flag s) -> pipeline_stage_flag {
+		switch (s) {
+			case stage_flag::vertex:
+				return pipeline_stage_flag::vertex_shader;
+			case stage_flag::fragment:
+				return pipeline_stage_flag::fragment_shader;
+			case stage_flag::compute:
+				return pipeline_stage_flag::compute_shader;
+			case stage_flag::task:
+				return pipeline_stage_flag::task_shader;
+			case stage_flag::mesh:
+				return pipeline_stage_flag::mesh_shader;
+		}
+		return pipeline_stage_flag::all_commands;
+	}
+
 	struct shader_param_decl {
 		std::string name;
 		std::string slang_type;
@@ -895,11 +926,23 @@ auto gse::gpu::create_compute_pipeline_from_spirv(device& dev, shader_registry& 
 		.entry_point = "main",
 	};
 
+	std::vector<binding_use> active_bindings;
+	for (const auto& use : used_bindings(spirv)) {
+		active_bindings.push_back({
+			.set = use.set,
+			.slot = use.slot,
+			.access = use.access,
+			.type = lookup_descriptor_type(*family, use.set, use.slot),
+			.stages = gpu::pipeline_stage_flag::compute_shader,
+		});
+	}
+
 	vulkan::compute_pipeline_create_info info{
 		.stage = compute_stage,
 		.set_layouts = layouts,
 		.push_constant_range = push_range,
 		.auto_bound_sets = auto_bound_sets,
+		.active_bindings = active_bindings,
 	};
 
 	return vulkan::pipeline::create_compute(dev.vulkan_device(), info);
@@ -1249,6 +1292,7 @@ auto gse::gpu::build_graphics_pipeline(device& dev, shader_registry& registry, b
 	std::vector<shader_stage_create_info> stage_infos;
 	stage_infos.reserve(program.stages.size());
 	bool is_mesh = false;
+	std::vector<binding_use> active_bindings;
 
 	for (auto& s : program.stages) {
 		auto module_handle = shader_module::create(dev.vulkan_device(), s.spirv);
@@ -1257,6 +1301,27 @@ auto gse::gpu::build_graphics_pipeline(device& dev, shader_registry& registry, b
 			.module_handle = module_handle.handle().value,
 			.entry_point = "main",
 		});
+		const auto stage_pipeline = to_pipeline_stage(s.flag);
+		for (const auto& use : used_bindings(s.spirv)) {
+			const auto it = std::ranges::find_if(active_bindings, [&](const binding_use& existing) {
+				return existing.set == use.set && existing.slot == use.slot;
+			});
+			if (it == active_bindings.end()) {
+				active_bindings.push_back({
+					.set = use.set,
+					.slot = use.slot,
+					.access = use.access,
+					.type = lookup_descriptor_type(*family, use.set, use.slot),
+					.stages = stage_pipeline,
+				});
+			}
+			else {
+				it->stages |= stage_pipeline;
+				if (use.access == descriptor_access::read_write) {
+					it->access = descriptor_access::read_write;
+				}
+			}
+		}
 		modules.push_back(std::move(module_handle));
 		if (s.kind == graphics_stage_kind::amplification || s.kind == graphics_stage_kind::mesh) {
 			is_mesh = true;
@@ -1287,6 +1352,7 @@ auto gse::gpu::build_graphics_pipeline(device& dev, shader_registry& registry, b
 		.has_depth = has_depth,
 		.is_mesh_pipeline = is_mesh,
 		.auto_bound_sets = auto_bound_sets,
+		.active_bindings = active_bindings,
 	};
 
 	return vulkan::pipeline::create_graphics(dev.vulkan_device(), info);

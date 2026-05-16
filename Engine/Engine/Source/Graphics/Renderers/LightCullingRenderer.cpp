@@ -237,7 +237,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 	}
 
 	if (light_count > 0) {
-		gse::memcpy(light_alloc.mapped(), lights.data(), light_count * sizeof(shaders::forward::light));
+		light_alloc.host_write(lights.data(), light_count * sizeof(shaders::forward::light));
 	}
 
 	const culling_params_data params{
@@ -246,20 +246,14 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 		.screen_size = vec2u{ extent.x(), extent.y() },
 		.num_lights = static_cast<std::uint32_t>(light_count),
 	};
-	gse::memcpy(d.culling_params_buffers[frame_index].mapped(), &params, sizeof(params));
+	d.culling_params_buffers[frame_index].host_write(params);
 
 	const auto tiles = tile_count(d);
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.after<depth_prepass::system>()
-		.reads(gpu::sampled(graph.depth_image(), gpu::pipeline_stage::compute_shader))
-		.writes(
-			gpu::storage_write(d.tile_light_table_buffers[frame_index], gpu::pipeline_stage::compute_shader),
-			gpu::storage_write(d.light_index_list_buffers[frame_index], gpu::pipeline_stage::compute_shader)
-		)
-		.tracks(d.culling_params_buffers[frame_index], d.light_buffers[frame_index]);
+		.pipeline(d.pipeline)
+		.after<depth_prepass::system>();
 
-	rec.bind(d.pipeline);
 	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 	rec.dispatch(tiles.x(), tiles.y(), 1);
 }

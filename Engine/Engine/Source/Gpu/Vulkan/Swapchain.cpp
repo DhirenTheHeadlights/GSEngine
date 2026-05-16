@@ -20,31 +20,21 @@ auto gse::vulkan::pick_surface_format(const device& dev, const instance& inst) -
 	return pick_surface_format(dev.physical_device(), inst.raii_surface());
 }
 
-gse::vulkan::swap_chain_details::swap_chain_details(vk::SurfaceCapabilitiesKHR capabilities, std::vector<vk::SurfaceFormatKHR>&& formats, std::vector<vk::PresentModeKHR>&& present_modes)
-	: m_capabilities(std::move(capabilities)),
+gse::vulkan::swap_chain_details::swap_chain_details(gpu::surface_capabilities capabilities, std::vector<gpu::surface_format>&& formats, std::vector<gpu::present_mode>&& present_modes)
+	: m_capabilities(capabilities),
 	  m_formats(std::move(formats)),
 	  m_present_modes(std::move(present_modes)) {}
 
 auto gse::vulkan::swap_chain_details::capabilities() const -> gpu::surface_capabilities {
-	return from_vk(m_capabilities);
+	return m_capabilities;
 }
 
-auto gse::vulkan::swap_chain_details::formats() const -> std::vector<gpu::surface_format> {
-	std::vector<gpu::surface_format> out;
-	out.reserve(m_formats.size());
-	for (const auto& f : m_formats) {
-		out.push_back(from_vk(f));
-	}
-	return out;
+auto gse::vulkan::swap_chain_details::formats() const -> std::span<const gpu::surface_format> {
+	return m_formats;
 }
 
-auto gse::vulkan::swap_chain_details::present_modes() const -> std::vector<gpu::present_mode> {
-	std::vector<gpu::present_mode> out;
-	out.reserve(m_present_modes.size());
-	for (const auto m : m_present_modes) {
-		out.push_back(from_vk(m));
-	}
-	return out;
+auto gse::vulkan::swap_chain_details::present_modes() const -> std::span<const gpu::present_mode> {
+	return m_present_modes;
 }
 
 gse::vulkan::swap_chain::swap_chain(vk::raii::SwapchainKHR&& swap_chain, const vk::SurfaceFormatKHR surface_format, const vk::PresentModeKHR present_mode, const vk::Extent2D extent, std::vector<vk::Image>&& images, std::vector<vk::raii::ImageView>&& image_views, const vk::Format format, swap_chain_details&& details, basic_image<device>&& depth_image)
@@ -156,7 +146,19 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instanc
 	create_info.presentMode = present_mode;
 	create_info.clipped = true;
 
-	swap_chain_details details(vk_capabilities, std::move(vk_formats), std::move(vk_present_modes));
+	std::vector<gpu::surface_format> gpu_formats;
+	gpu_formats.reserve(vk_formats.size());
+	for (const auto& f : vk_formats) {
+		gpu_formats.push_back(from_vk(f));
+	}
+
+	std::vector<gpu::present_mode> gpu_present_modes;
+	gpu_present_modes.reserve(vk_present_modes.size());
+	for (const auto m : vk_present_modes) {
+		gpu_present_modes.push_back(from_vk(m));
+	}
+
+	swap_chain_details details(from_vk(vk_capabilities), std::move(gpu_formats), std::move(gpu_present_modes));
 
 	auto vk_swap_chain = device_data.raii_device().createSwapchainKHR(create_info);
 	auto images = vk_swap_chain.getImages();

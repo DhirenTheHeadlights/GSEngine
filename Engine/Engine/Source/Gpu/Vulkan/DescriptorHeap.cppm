@@ -38,6 +38,7 @@ export namespace gse::gpu {
 		descriptor_heap* heap = nullptr;
 		std::uint32_t buffer_index = 0;
 		const family_layout* family = nullptr;
+		std::vector<resource_slot> resources;
 
 		operator bool() const {
 			return heap != nullptr;
@@ -77,19 +78,6 @@ export namespace gse::gpu {
 			std::uint32_t frame_index,
 			gpu::device_size size
 		) -> descriptor_region;
-
-		auto write_bytes(
-			const descriptor_region& region,
-			gpu::device_size offset_within_region,
-			const void* data,
-			gpu::device_size data_size
-		) const -> void;
-
-		auto descriptor(
-			const descriptor_get_info& info,
-			gpu::device_size descriptor_size,
-			void* out
-		) const -> void;
 
 		auto write_descriptor(
 			const descriptor_region& region,
@@ -133,6 +121,19 @@ export namespace gse::gpu {
 			void* mapped = nullptr;
 			gpu::device_size capacity = 0;
 		};
+
+		auto write_bytes(
+			const descriptor_region& region,
+			gpu::device_size offset_within_region,
+			const void* data,
+			gpu::device_size data_size
+		) const -> void;
+
+		auto descriptor(
+			const descriptor_get_info& info,
+			gpu::device_size descriptor_size,
+			void* out
+		) const -> void;
 
 		auto create_sub_buffer(
 			const vulkan::device& dev,

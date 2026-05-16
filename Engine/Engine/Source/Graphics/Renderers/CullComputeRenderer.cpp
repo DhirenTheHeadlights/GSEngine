@@ -127,7 +127,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<
 
 	const view_projection_matrix view_proj = data.proj * data.view;
 	const auto planes = extract_frustum_planes(view_proj);
-	gse::memcpy(d.frustum_buffer[frame_index].mapped(), planes);
+	d.frustum_buffer[frame_index].host_write(planes);
 
 	using batch_info = renderer::cull_compute::batch_info;
 	std::vector<batch_info> batch_staging(normal_count + skinned_count);
@@ -152,17 +152,11 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<
 	}
 
 	if (!batch_staging.empty()) {
-		gse::memcpy(d.batch_info_buffer[frame_index].mapped(), batch_staging.data(), batch_staging.size() * sizeof(batch_info));
+		d.batch_info_buffer[frame_index].host_write(batch_staging.data(), batch_staging.size() * sizeof(batch_info));
 	}
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.writes(
-			gpu::storage_write(gc_r.normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader),
-			gpu::storage_write(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::compute_shader)
-		)
-		.tracks(d.frustum_buffer[frame_index], d.batch_info_buffer[frame_index]);
-
-	rec.bind(d.pipeline);
+		.pipeline(d.pipeline);
 
 	if (normal_count > 0) {
 		rec.bind_descriptors(d.pipeline, d.normal_descriptors[frame_index]);

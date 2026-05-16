@@ -312,8 +312,8 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
     const auto frame_index = gpu_s.render_graph->current_frame();
     auto& [vertex_buffer, index_buffer] = d.gpu_frames[frame_index];
 
-    gse::memcpy(vertex_buffer.mapped(), vertices);
-    gse::memcpy(index_buffer.mapped(), indices);
+    vertex_buffer.host_write(vertices);
+    index_buffer.host_write(indices);
 
     const auto ext = gpu_s.render_graph->extent();
     const auto width = ext.x();
@@ -342,8 +342,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 
     auto rec = co_await gpu::pass<ui::system>(ctx)
         .color(gpu::load_color())
-        .after<forward::system>()
-        .tracks(vertex_buffer, index_buffer);
+        .after<forward::system>();
 
     rec.bind_vertex(vertex_buffer);
     rec.bind_index(index_buffer);

@@ -14,6 +14,7 @@ export namespace gse::vulkan {
 	class fence;
 	class semaphore;
 	class swap_chain;
+	class device;
 }
 
 export namespace gse::gpu {
@@ -51,21 +52,8 @@ export namespace gse::vulkan {
 		) const -> bool;
 	};
 
-	[[nodiscard]] auto find_queue_families(
-		const vk::raii::PhysicalDevice& device,
-		const vk::raii::SurfaceKHR& surface
-	) -> queue_family;
-
 	class queue : public non_copyable {
 	public:
-		queue(
-			vk::raii::Queue&& graphics,
-			vk::raii::Queue&& present,
-			vk::raii::Queue&& compute,
-			std::uint32_t graphics_family,
-			std::uint32_t compute_family
-		);
-
 		~queue(
 		) = default;
 
@@ -76,11 +64,6 @@ export namespace gse::vulkan {
 		auto operator=(
 			queue&&
 		) noexcept -> queue& = default;
-
-		auto set_video_encode(
-			vk::raii::Queue&& q,
-			std::uint32_t family
-		) -> void;
 
 		[[nodiscard]] auto has_video_encode(
 		) const -> bool;
@@ -93,9 +76,6 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto video_encode_family_index(
 		) const -> std::optional<std::uint32_t>;
-
-		[[nodiscard]] auto raii_compute_queue(
-		) const -> const vk::raii::Queue&;
 
 		auto submit(
 			gpu::queue_type queue,
@@ -123,6 +103,21 @@ export namespace gse::vulkan {
 		) -> gpu::result;
 
 	private:
+		friend class device;
+
+		queue(
+			vk::raii::Queue&& graphics,
+			vk::raii::Queue&& present,
+			vk::raii::Queue&& compute,
+			std::uint32_t graphics_family,
+			std::uint32_t compute_family
+		);
+
+		auto set_video_encode(
+			vk::raii::Queue&& q,
+			std::uint32_t family
+		) -> void;
+
 		vk::raii::Queue m_graphics;
 		vk::raii::Queue m_present;
 		vk::raii::Queue m_compute;
@@ -136,6 +131,11 @@ export namespace gse::vulkan {
 }
 
 namespace gse::vulkan {
+	[[nodiscard]] auto find_queue_families(
+		const vk::raii::PhysicalDevice& device,
+		const vk::raii::SurfaceKHR& surface
+	) -> queue_family;
+
 	struct submit_scratch {
 		std::vector<vk::SemaphoreSubmitInfo> waits;
 		std::vector<vk::SemaphoreSubmitInfo> signals;
@@ -269,10 +269,6 @@ auto gse::vulkan::queue::compute_family_index() const -> std::uint32_t {
 
 auto gse::vulkan::queue::video_encode_family_index() const -> std::optional<std::uint32_t> {
 	return m_video_encode_family_index;
-}
-
-auto gse::vulkan::queue::raii_compute_queue() const -> const vk::raii::Queue& {
-	return m_compute;
 }
 
 auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_info& info, const gpu::handle<fence> signal_fence) -> void {

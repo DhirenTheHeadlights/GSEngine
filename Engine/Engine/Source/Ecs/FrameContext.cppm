@@ -29,8 +29,7 @@ export namespace gse {
 		) const -> const T*;
 
 		template <typename T>
-		auto components(
-		) const -> std::span<const T>;
+		auto components() const -> std::span<const T>;
 
 	private:
 		registry& m_reg;
@@ -44,8 +43,9 @@ gse::frame_context::frame_context(
 	channel_writer& channels,
 	task_graph& graph,
 	registry& reg
-) : task_context{ states, resources_store, channels_store, channels, graph, false },
-	m_reg(reg) {}
+) : task_context { .states = states, .resources_store = resources_store, .channels_store = channels_store, .channels = channels, .graph = graph, .live_state = false },
+	m_reg(reg) {
+}
 
 template <typename T>
 auto gse::frame_context::try_component(const id owner) const -> const T* {
