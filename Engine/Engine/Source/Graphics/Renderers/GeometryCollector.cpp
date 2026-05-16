@@ -510,12 +510,11 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	if (!data.instance_staging.empty()) {
-		gse::memcpy(d.instance_buffer[frame_index].mapped(), data.instance_staging);
+		d.instance_buffer[frame_index].host_write(data.instance_staging);
 	}
 
 	if (!data.physics_mappings.empty()) {
-		gse::memcpy(
-			d.physics_mapping_buffer[frame_index].mapped(),
+		d.physics_mapping_buffer[frame_index].host_write(
 			data.physics_mappings.data(),
 			data.physics_mappings.size() * sizeof(physics_mapping_entry)
 		);
@@ -536,7 +535,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 		}
 
 		if (!normal_indirect_commands.empty()) {
-			gse::memcpy(d.normal_indirect_commands_buffer[frame_index].mapped(), normal_indirect_commands);
+			d.normal_indirect_commands_buffer[frame_index].host_write(normal_indirect_commands);
 		}
 	}
 
@@ -556,13 +555,13 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 		}
 
 		if (!skinned_indirect_commands.empty()) {
-			gse::memcpy(d.skinned_indirect_commands_buffer[frame_index].mapped(), skinned_indirect_commands);
+			d.skinned_indirect_commands_buffer[frame_index].host_write(skinned_indirect_commands);
 		}
 	}
 
 	if (!data.local_pose_staging.empty() && d.current_joint_count > 0) {
-		gse::memcpy(d.local_pose_buffer[frame_index].mapped(), data.local_pose_staging);
+		d.local_pose_buffer[frame_index].host_write(data.local_pose_staging);
 	} else if (!data.skin_staging.empty()) {
-		gse::memcpy(d.skin_buffer[frame_index].mapped(), data.skin_staging);
+		d.skin_buffer[frame_index].host_write(data.skin_staging);
 	}
 }

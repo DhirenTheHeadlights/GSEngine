@@ -23,6 +23,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.log;
 import gse.os;
 import gse.assets;
 import gse.gpu;
@@ -216,7 +217,21 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		.proj = proj,
 		.inv_view = view.inverse(),
 	};
-	gse::memcpy(d.camera_ubo_buffers[frame_index].mapped(), camera);
+	d.camera_ubo_buffers[frame_index].host_write(camera);
+
+	{
+		static std::uint64_t s_seq = 0;
+		log::println(
+			log::category::render,
+			"cam_snap[seq={}] pass=forward frame_index={} view_row3=({},{},{},{})",
+			s_seq++,
+			frame_index,
+			view[3].x(),
+			view[3].y(),
+			view[3].z(),
+			view[3].w()
+		);
+	}
 
 	auto dir_chunk = ctx.components<directional_light_component>();
 	auto spot_chunk = ctx.components<spot_light_component>();
@@ -292,7 +307,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	}
 
 	if (light_count > 0) {
-		gse::memcpy(d.light_buffers[frame_index].mapped(), staging.data(), light_count * sizeof(shaders::forward::light));
+		d.light_buffers[frame_index].host_write(staging.data(), light_count * sizeof(shaders::forward::light));
 	}
 
 	const auto material_count = std::min(data.material_palette_map.size(), max_materials);
@@ -313,7 +328,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 			};
 		}
 
-		gse::memcpy(d.material_palette_buffers[frame_index].mapped(), mat_staging.data(), material_count * sizeof(shaders::forward::material_data));
+		d.material_palette_buffers[frame_index].host_write(mat_staging.data(), material_count * sizeof(shaders::forward::material_data));
 	}
 
 	const auto& normal_batches = data.normal_batches;
@@ -329,29 +344,17 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
 
 	auto rec = co_await gpu::pass<system>(ctx)
+		.pipeline(d.pipeline)
 		.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
 		.depth(gpu::load_depth())
-		.after<rt_shadow::system, light_culling::system, depth_prepass::system>()
-		.reads(
-			gpu::storage_read(lc_r.tile_light_table_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
-			gpu::storage_read(lc_r.light_index_list_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
-			gpu::storage_read(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
-			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index]),
-			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index])
-		)
-		.tracks(
-			d.camera_ubo_buffers[frame_index],
-			d.light_buffers[frame_index],
-			d.material_palette_buffers[frame_index],
-			gc_r.instance_buffer[frame_index]
-		);
+		.after<rt_shadow::system, light_culling::system, depth_prepass::system>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
 	if (!normal_batches.empty()) {
 		const auto& instance_buf = gc_r.instance_buffer[frame_index];
 
-		bool pipeline_bound = false;
+		bool descriptors_bound = false;
 
 		for (std::size_t i = 0; i < normal_batches.size(); ++i) {
 			const auto& batch = normal_batches[i];
@@ -370,10 +373,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 			const auto& tex_img = has_texture ? diffuse->gpu_image() : d.blank_texture->gpu_image();
 			const auto& tex_samp = has_texture ? diffuse->gpu_sampler() : d.blank_texture->gpu_sampler();
 
-			if (!pipeline_bound) {
-				rec.bind(d.pipeline);
+			if (!descriptors_bound) {
 				rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
-				pipeline_bound = true;
+				descriptors_bound = true;
 			}
 
 			meshlet_writer.begin(frame_index);
@@ -381,7 +383,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 			meshlet_writer
 				.buffer<instance_data_buffer>(instance_buf)
 				.image<diffuse_sampler>(tex_img, tex_samp, gpu::image_layout::shader_read_only);
-			rec.commit(meshlet_writer.native_writer(), d.pipeline, 1);
+			rec.commit(meshlet_writer, d.pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
 
@@ -429,7 +431,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 				.image<shaders::standard_3d::diffuse_sampler>(tex_img, tex_samp, gpu::image_layout::shader_read_only)
 				.buffer<shaders::standard_3d::skin_matrices>(skin_buf)
 				.buffer<shaders::standard_3d::instance_data_buffer>(instance_buf);
-			rec.commit(skinned_writer.native_writer(), d.skinned_pipeline, 1);
+			rec.commit(skinned_writer, d.skinned_pipeline, 1);
 
 			rec.bind_vertex(mesh.vertex_gpu_buffer());
 			rec.bind_index(mesh.index_gpu_buffer());

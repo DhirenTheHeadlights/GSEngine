@@ -16,11 +16,6 @@ export namespace gse::vulkan {
         transient_command_buffer(
         ) = default;
 
-        transient_command_buffer(
-            vk::CommandBuffer cmd,
-            transient_command_pool* pool
-        );
-
         [[nodiscard]] auto handle(
         ) const -> gpu::handle<command_buffer>;
 
@@ -44,6 +39,13 @@ export namespace gse::vulkan {
         ) const;
 
     private:
+        friend class transient_command_pool;
+
+        transient_command_buffer(
+            vk::CommandBuffer cmd,
+            transient_command_pool* pool
+        );
+
         vk::CommandBuffer m_cmd{ nullptr };
         transient_command_pool* m_pool = nullptr;
         std::uint64_t m_marker_seq = std::numeric_limits<std::uint64_t>::max();

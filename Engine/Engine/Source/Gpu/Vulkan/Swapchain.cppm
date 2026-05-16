@@ -30,9 +30,9 @@ export namespace gse::vulkan {
 	class swap_chain_details : public non_copyable {
 	public:
 		swap_chain_details(
-			vk::SurfaceCapabilitiesKHR capabilities,
-			std::vector<vk::SurfaceFormatKHR>&& formats,
-			std::vector<vk::PresentModeKHR>&& present_modes
+			gpu::surface_capabilities capabilities,
+			std::vector<gpu::surface_format>&& formats,
+			std::vector<gpu::present_mode>&& present_modes
 		);
 
 		~swap_chain_details(
@@ -50,15 +50,15 @@ export namespace gse::vulkan {
 		) const -> gpu::surface_capabilities;
 
 		[[nodiscard]] auto formats(
-		) const -> std::vector<gpu::surface_format>;
+		) const -> std::span<const gpu::surface_format>;
 
 		[[nodiscard]] auto present_modes(
-		) const -> std::vector<gpu::present_mode>;
+		) const -> std::span<const gpu::present_mode>;
 
 	private:
-		vk::SurfaceCapabilitiesKHR m_capabilities;
-		std::vector<vk::SurfaceFormatKHR> m_formats;
-		std::vector<vk::PresentModeKHR> m_present_modes;
+		gpu::surface_capabilities m_capabilities{};
+		std::vector<gpu::surface_format> m_formats;
+		std::vector<gpu::present_mode> m_present_modes;
 	};
 
 	class swap_chain : public non_copyable {

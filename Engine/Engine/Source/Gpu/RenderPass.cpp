@@ -45,6 +45,11 @@ auto gse::gpu::pass_builder::on(const queue_type queue) && -> pass_builder&& {
 	return std::move(*this);
 }
 
+auto gse::gpu::pass_builder::pipeline(const gpu::pipeline& p) && -> pass_builder&& {
+	m_desc.primary_pipeline = std::addressof(p);
+	return std::move(*this);
+}
+
 auto gse::gpu::pass_builder::color(color_attachment value) && -> pass_builder&& {
 	m_desc.color = value;
 	return std::move(*this);

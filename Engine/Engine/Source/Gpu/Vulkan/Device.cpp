@@ -664,6 +664,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 
 auto gse::vulkan::device::create_buffer(const gpu::buffer_create_info& buffer_info, const void* data, const std::string_view tag, const std::source_location& loc) -> basic_buffer<device> {
 	const vk::BufferCreateInfo vk_info{
+		.pNext = buffer_info.pnext,
 		.size = buffer_info.size,
 		.usage = to_vk(buffer_info.usage),
 	};

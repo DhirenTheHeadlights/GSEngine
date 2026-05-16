@@ -68,17 +68,16 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 		.proj = proj_matrix,
 		.inv_view = mat4f(1.0f),
 	};
-	gse::memcpy(d.camera_ubo_buffers[frame_index].mapped(), camera);
+	d.camera_ubo_buffers[frame_index].host_write(camera);
 
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
 
 	auto rec = co_await gpu::pass<system>(ctx)
+		.pipeline(d.pipeline)
 		.color(gpu::load_color())
-		.after<forward::system>()
-		.tracks(d.camera_ubo_buffers[frame_index]);
+		.after<forward::system>();
 
-	rec.bind(d.pipeline);
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);

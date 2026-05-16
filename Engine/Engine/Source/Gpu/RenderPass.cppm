@@ -9,7 +9,6 @@ import gse.ecs;
 import gse.meta;
 
 import :types;
-import :vulkan_buffer;
 import :render_graph;
 
 export namespace gse::gpu {
@@ -26,12 +25,10 @@ export namespace gse::gpu {
 	struct render_pass_descriptor {
 		id pass_kind{};
 		queue_type queue = queue_type::graphics;
+		const pipeline* primary_pipeline = nullptr;
 		std::optional<color_attachment> color;
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
-		std::vector<resource_usage> reads;
-		std::vector<resource_usage> writes;
-		std::vector<const buffer*> tracked_buffers;
 	};
 
 	struct [[= same_frame_channel]] render_pass_request {
@@ -93,6 +90,10 @@ export namespace gse::gpu {
 			queue_type queue
 		) && -> pass_builder&&;
 
+		auto pipeline(
+			const gpu::pipeline& p
+		) && -> pass_builder&&;
+
 		auto color(
 			color_attachment value
 		) && -> pass_builder&&;
@@ -103,21 +104,6 @@ export namespace gse::gpu {
 
 		template <typename... States>
 		auto after() && -> pass_builder&&;
-
-		template <typename... Usages>
-		auto reads(
-			Usages&&... usages
-		) && -> pass_builder&&;
-
-		template <typename... Usages>
-		auto writes(
-			Usages&&... usages
-		) && -> pass_builder&&;
-
-		template <typename... Buffers>
-		auto tracks(
-			const Buffers&... buffers
-		) && -> pass_builder&&;
 
 		template <typename F>
 		auto record(
@@ -160,24 +146,6 @@ export namespace gse::gpu {
 template <typename... States>
 auto gse::gpu::pass_builder::after() && -> pass_builder&& {
 	(m_desc.after_deps.push_back(trace_id<States>()), ...);
-	return std::move(*this);
-}
-
-template <typename... Usages>
-auto gse::gpu::pass_builder::reads(Usages&&... usages) && -> pass_builder&& {
-	(m_desc.reads.push_back(std::forward<Usages>(usages)), ...);
-	return std::move(*this);
-}
-
-template <typename... Usages>
-auto gse::gpu::pass_builder::writes(Usages&&... usages) && -> pass_builder&& {
-	(m_desc.writes.push_back(std::forward<Usages>(usages)), ...);
-	return std::move(*this);
-}
-
-template <typename... Buffers>
-auto gse::gpu::pass_builder::tracks(const Buffers&... buffers) && -> pass_builder&& {
-	(m_desc.tracked_buffers.push_back(std::addressof(buffers)), ...);
 	return std::move(*this);
 }
 

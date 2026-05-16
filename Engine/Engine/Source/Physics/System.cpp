@@ -508,9 +508,18 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 			}
 
 			{
-				static std::uint64_t s_log_frame = 0;
+				static std::uint64_t s_log_tick = 0;
+				static flat_map<id, vec3<position>> s_prev_positions;
 				const auto motion_ids = motion.owner_ids();
 				const bool order_matches = transform.size() == motion.size() && std::ranges::equal(motion_ids, transform.owner_ids());
+				id probe_eid{};
+				vec3<position> probe_pos{};
+				quat probe_orient{};
+				bool have_probe = false;
+				auto worst_delta = magnitude(vec3<displacement>{});
+				id worst_eid{};
+				vec3<position> worst_pos{};
+				vec3<position> worst_prev{};
 				for (std::size_t i = 0; i < motion.size(); ++i) {
 					if (!std::holds_alternative<dynamic_body>(motion[i].body)) {
 						continue;
@@ -520,19 +529,40 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 					if (!tc) {
 						continue;
 					}
+					if (!have_probe) {
+						probe_eid = eid;
+						probe_pos = tc->position;
+						probe_orient = tc->orientation;
+						have_probe = true;
+					}
+					if (const auto it = s_prev_positions.find(eid); it != s_prev_positions.end()) {
+						const auto delta = magnitude(tc->position - it->second);
+						if (delta > worst_delta) {
+							worst_delta = delta;
+							worst_eid = eid;
+							worst_pos = tc->position;
+							worst_prev = it->second;
+						}
+					}
+					s_prev_positions[eid] = tc->position;
+				}
+				if (have_probe) {
 					log::println(
 						log::category::physics,
-						"trace[{}] solver={} steps={} accum={} eid={} pos={}",
-						s_log_frame,
+						"cpu_view[tick={}] solver={} steps={} eid={} pos={} orient={} worst_delta={} worst_eid={} worst_pos={} prev={}",
+						s_log_tick,
 						d.use_gpu_solver ? "gpu" : "cpu",
 						steps,
-						d.accumulator,
-						eid,
-						tc->position
+						probe_eid,
+						probe_pos,
+						probe_orient,
+						worst_delta,
+						worst_eid,
+						worst_pos,
+						worst_prev
 					);
-					break;
 				}
-				++s_log_frame;
+				++s_log_tick;
 			}
 		}
 

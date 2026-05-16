@@ -24,7 +24,7 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
 	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), validation_layers_enabled);
-	vulkan::create_surface(win, instance);
+	instance.create_surface(win);
 
 	auto creation = vulkan::device::create(instance, device_cfg, aftermath_tracker);
 	std::array<std::uint32_t, gpu::queue_type_count> queue_families{};

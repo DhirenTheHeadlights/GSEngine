@@ -74,6 +74,37 @@ for (uint ci = tid; ci < num_contacts; ci += WG_SIZE) {
 AllMemoryBarrierWithGroupSync();
 
 for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
+    uint off = contact_offsets[bi];
+    uint cnt = contact_counts[bi];
+    if (off + cnt > MAX_CONTACT_ADJACENCY) {
+        cnt = (off < MAX_CONTACT_ADJACENCY) ? (MAX_CONTACT_ADJACENCY - off) : 0u;
+    }
+    for (uint i = 1; i < cnt; i++) {
+        uint key_ci = contact_adjacency[off + i];
+        contact_constraint key_c = contact_data[key_ci];
+        uint key_other = (key_c.body_a == bi) ? key_c.body_b : key_c.body_a;
+        uint key_hi = uint(key_c.feature_key >> 32);
+        uint key_lo = uint(key_c.feature_key);
+        uint j = i;
+        while (j > 0) {
+            uint prev_ci = contact_adjacency[off + j - 1];
+            contact_constraint prev_c = contact_data[prev_ci];
+            uint prev_other = (prev_c.body_a == bi) ? prev_c.body_b : prev_c.body_a;
+            uint prev_hi = uint(prev_c.feature_key >> 32);
+            uint prev_lo = uint(prev_c.feature_key);
+            bool prev_less = prev_other < key_other
+                || (prev_other == key_other && (prev_hi < key_hi
+                    || (prev_hi == key_hi && prev_lo < key_lo)));
+            if (prev_less) break;
+            contact_adjacency[off + j] = prev_ci;
+            j--;
+        }
+        contact_adjacency[off + j] = key_ci;
+    }
+}
+AllMemoryBarrierWithGroupSync();
+
+for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
     joint_offsets[bi] = 0;
     joint_counts[bi] = 0;
 }
@@ -120,6 +151,24 @@ for (uint ji = tid; ji < num_joints; ji += WG_SIZE) {
         if (off_b < MAX_JOINT_ADJACENCY) {
             joint_adjacency[off_b] = ji;
         }
+    }
+}
+AllMemoryBarrierWithGroupSync();
+
+for (uint bi = tid; bi < body_count; bi += WG_SIZE) {
+    uint off = joint_offsets[bi];
+    uint cnt = joint_counts[bi];
+    if (off + cnt > MAX_JOINT_ADJACENCY) {
+        cnt = (off < MAX_JOINT_ADJACENCY) ? (MAX_JOINT_ADJACENCY - off) : 0u;
+    }
+    for (uint i = 1; i < cnt; i++) {
+        uint key_ji = joint_adjacency[off + i];
+        uint j = i;
+        while (j > 0 && joint_adjacency[off + j - 1] > key_ji) {
+            joint_adjacency[off + j] = joint_adjacency[off + j - 1];
+            j--;
+        }
+        joint_adjacency[off + j] = key_ji;
     }
 }
 AllMemoryBarrierWithGroupSync();

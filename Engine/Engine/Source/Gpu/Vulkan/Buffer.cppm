@@ -9,6 +9,7 @@ import :vulkan_allocation;
 import gse.assert;
 import gse.math;
 import gse.core;
+import gse.log;
 
 export namespace gse::vulkan {
 	class device;
@@ -58,10 +59,23 @@ export namespace gse::vulkan {
 		[[nodiscard]] auto mapped(
 		) const -> std::byte*;
 
-		auto upload(
+		auto host_write(
 			const void* data,
-			std::size_t size
-		) -> void;
+			std::size_t size,
+			std::size_t offset = 0
+		) const -> void;
+
+		template <typename T> requires (!std::is_pointer_v<T>)
+		auto host_write(
+			const T& src,
+			std::size_t offset = 0
+		) const -> void;
+
+		[[nodiscard]] auto host_dirty(
+		) const noexcept -> bool;
+
+		auto clear_host_dirty(
+		) const noexcept -> void;
 
 		explicit operator bool(
 		) const;
@@ -70,9 +84,68 @@ export namespace gse::vulkan {
 		gpu::handle<basic_buffer<device>> m_buffer;
 		gpu::device_size m_size = 0;
 		basic_allocation<Device> m_allocation;
+		mutable std::atomic<bool> m_host_dirty{ false };
 	};
 
 	using buffer = basic_buffer<device>;
+
+	auto register_dirty_buffer(
+		const buffer* buf
+	) -> void;
+
+	auto unregister_dirty_buffer(
+		const buffer* buf
+	) -> void;
+
+	auto drain_dirty_buffers(
+	) -> void;
+}
+
+namespace gse::vulkan {
+	struct dirty_buffer_registry_state {
+		std::mutex mutex;
+		std::unordered_set<const buffer*> set;
+	};
+
+	auto dirty_buffer_registry(
+	) -> dirty_buffer_registry_state& {
+		static dirty_buffer_registry_state state;
+		return state;
+	}
+}
+
+auto gse::vulkan::register_dirty_buffer(const buffer* buf) -> void {
+	auto& r = dirty_buffer_registry();
+	std::lock_guard lock(r.mutex);
+	r.set.insert(buf);
+}
+
+auto gse::vulkan::unregister_dirty_buffer(const buffer* buf) -> void {
+	auto& r = dirty_buffer_registry();
+	std::lock_guard lock(r.mutex);
+	r.set.erase(buf);
+}
+
+auto gse::vulkan::drain_dirty_buffers() -> void {
+	std::unordered_set<const buffer*> stale;
+	{
+		auto& r = dirty_buffer_registry();
+		std::lock_guard lock(r.mutex);
+		if (r.set.empty()) {
+			return;
+		}
+		stale = std::move(r.set);
+		r.set.clear();
+	}
+	log::println(
+		log::level::warning,
+		log::category::vulkan,
+		"render_graph: {} buffer(s) host_write'd but not consumed by any pass this frame; clearing dirty flags",
+		stale.size()
+	);
+	for (const auto* b : stale) {
+		b->clear_host_dirty();
+	}
 }
 
 template <typename Device>
@@ -94,6 +167,11 @@ auto gse::vulkan::basic_buffer<Device>::create(Device& dev, const gpu::buffer_de
 
 template <typename Device>
 gse::vulkan::basic_buffer<Device>::~basic_buffer() {
+	if constexpr (std::is_same_v<Device, device>) {
+		if (m_host_dirty.load(std::memory_order_acquire)) {
+			unregister_dirty_buffer(this);
+		}
+	}
 	if (m_allocation.device() && m_buffer) {
 		m_allocation.device()->destroy_buffer(m_buffer);
 	}
@@ -101,14 +179,27 @@ gse::vulkan::basic_buffer<Device>::~basic_buffer() {
 
 template <typename Device>
 gse::vulkan::basic_buffer<Device>::basic_buffer(basic_buffer&& other) noexcept
-	: m_buffer(other.m_buffer), m_size(other.m_size), m_allocation(std::move(other.m_allocation)) {
+	: m_buffer(other.m_buffer), m_size(other.m_size), m_allocation(std::move(other.m_allocation)),
+	  m_host_dirty(other.m_host_dirty.load(std::memory_order_relaxed)) {
 	other.m_buffer = {};
 	other.m_size = 0;
+	const bool was_dirty = other.m_host_dirty.exchange(false, std::memory_order_acq_rel);
+	if constexpr (std::is_same_v<Device, device>) {
+		if (was_dirty) {
+			unregister_dirty_buffer(&other);
+			register_dirty_buffer(this);
+		}
+	}
 }
 
 template <typename Device>
 auto gse::vulkan::basic_buffer<Device>::operator=(basic_buffer&& other) noexcept -> basic_buffer& {
 	if (this != &other) {
+		if constexpr (std::is_same_v<Device, device>) {
+			if (m_host_dirty.load(std::memory_order_acquire)) {
+				unregister_dirty_buffer(this);
+			}
+		}
 		if (m_allocation.device() && m_buffer) {
 			m_allocation.device()->destroy_buffer(m_buffer);
 		}
@@ -116,8 +207,16 @@ auto gse::vulkan::basic_buffer<Device>::operator=(basic_buffer&& other) noexcept
 		m_buffer = other.m_buffer;
 		m_size = other.m_size;
 		m_allocation = std::move(other.m_allocation);
+		m_host_dirty.store(other.m_host_dirty.load(std::memory_order_relaxed), std::memory_order_relaxed);
 		other.m_buffer = {};
 		other.m_size = 0;
+		const bool was_dirty = other.m_host_dirty.exchange(false, std::memory_order_acq_rel);
+		if constexpr (std::is_same_v<Device, device>) {
+			if (was_dirty) {
+				unregister_dirty_buffer(&other);
+				register_dirty_buffer(this);
+			}
+		}
 	}
 	return *this;
 }
@@ -153,9 +252,46 @@ gse::vulkan::basic_buffer<Device>::operator bool() const {
 }
 
 template <typename Device>
-auto gse::vulkan::basic_buffer<Device>::upload(const void* data, const std::size_t bytes) -> void {
-	assert(m_allocation.mapped(), "Buffer for uploading must be persistently mapped");
-	assert(bytes <= m_size, "Upload size exceeds buffer size");
+auto gse::vulkan::basic_buffer<Device>::host_write(const void* data, const std::size_t bytes, const std::size_t offset) const -> void {
+	assert(m_allocation.mapped(), "Buffer must be persistently mapped to host_write");
+	assert(offset + bytes <= m_size, "host_write extends past buffer size");
 
-	gse::memcpy(m_allocation.mapped(), data, bytes);
+	gse::memcpy(m_allocation.mapped() + offset, data, bytes);
+	const bool was_dirty = m_host_dirty.exchange(true, std::memory_order_acq_rel);
+	if constexpr (std::is_same_v<Device, device>) {
+		if (!was_dirty) {
+			register_dirty_buffer(this);
+		}
+	}
+}
+
+template <typename Device>
+template <typename T> requires (!std::is_pointer_v<T>)
+auto gse::vulkan::basic_buffer<Device>::host_write(const T& src, const std::size_t offset) const -> void {
+	if constexpr (std::ranges::contiguous_range<T>) {
+		host_write(
+			std::ranges::data(src),
+			std::ranges::size(src) * sizeof(std::ranges::range_value_t<T>),
+			offset
+		);
+	}
+	else {
+		static_assert(std::is_trivially_copyable_v<T>, "host_write requires a trivially copyable type");
+		host_write(std::addressof(src), sizeof(T), offset);
+	}
+}
+
+template <typename Device>
+auto gse::vulkan::basic_buffer<Device>::host_dirty() const noexcept -> bool {
+	return m_host_dirty.load(std::memory_order_acquire);
+}
+
+template <typename Device>
+auto gse::vulkan::basic_buffer<Device>::clear_host_dirty() const noexcept -> void {
+	const bool was_dirty = m_host_dirty.exchange(false, std::memory_order_acq_rel);
+	if constexpr (std::is_same_v<Device, device>) {
+		if (was_dirty) {
+			unregister_dirty_buffer(this);
+		}
+	}
 }

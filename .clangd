@@ -1,4 +1,5 @@
 CompileFlags:
+  CompilationDatabase: out/build/x64-clang-p2996-libcxx-Debug
   Add:
     - -std=c++2c
     - -freflection-latest

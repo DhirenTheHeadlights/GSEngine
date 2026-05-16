@@ -242,5 +242,7 @@ export namespace gse::vbd {
 		std::uint32_t m_staged_contact_count = 0;
 		std::uint32_t m_staged_joint_count = 0;
 		bool m_staged_valid = false;
+
+		per_frame_resource<std::vector<body_state>> m_last_uploaded{ std::vector<body_state>{}, std::vector<body_state>{} };
 	};
 }

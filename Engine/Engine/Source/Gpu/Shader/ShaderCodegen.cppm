@@ -97,6 +97,10 @@ export namespace gse::shaders {
 	consteval auto descriptor_count_of(
 	) -> std::uint32_t;
 
+	template <is_shader_binding T>
+	consteval auto descriptor_access_of(
+	) -> gpu::descriptor_access;
+
 	template <typename Pack>
 	auto build_family_sets(
 		Pack pack
@@ -422,6 +426,18 @@ consteval auto gse::shaders::descriptor_count_of() -> std::uint32_t {
 	}
 }
 
+template <gse::shaders::is_shader_binding T>
+consteval auto gse::shaders::descriptor_access_of() -> gpu::descriptor_access {
+	if constexpr (has_annotation<ssbo_readwrite_tag>(^^T)
+		|| has_annotation<rw_byte_address_buffer_tag>(^^T)
+		|| has_annotation<storage_image_tag>(^^T)) {
+		return gpu::descriptor_access::read_write;
+	}
+	else {
+		return gpu::descriptor_access::read;
+	}
+}
+
 namespace gse::shaders {
 	template <is_shader_binding T>
 	auto append_family_binding(std::vector<family_set>& sets) -> void {
@@ -430,6 +446,7 @@ namespace gse::shaders {
 		constexpr auto slot_idx = binding_t::slot;
 		constexpr auto desc_type = descriptor_type_of<T>();
 		constexpr auto count = descriptor_count_of<T>();
+		constexpr auto access = descriptor_access_of<T>();
 		constexpr auto set_type = static_cast<gpu::descriptor_set_type>(set_idx);
 		constexpr gpu::stage_flags all_stages =
 			gpu::stage_flag::vertex
@@ -451,6 +468,7 @@ namespace gse::shaders {
 				.type = desc_type,
 				.count = count,
 				.stages = all_stages,
+				.access = access,
 			},
 		});
 	}

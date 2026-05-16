@@ -28,6 +28,7 @@ export namespace gse::vulkan {
 		bool has_depth = false;
 		bool is_mesh_pipeline = false;
 		std::span<const std::uint32_t> auto_bound_sets;
+		std::span<const gpu::binding_use> active_bindings;
 	};
 
 	struct compute_pipeline_create_info {
@@ -35,6 +36,7 @@ export namespace gse::vulkan {
 		std::span<const gpu::handle<descriptor_set_layout>> set_layouts;
 		std::optional<gpu::push_constant_range> push_constant_range;
 		std::span<const std::uint32_t> auto_bound_sets;
+		std::span<const gpu::binding_use> active_bindings;
 	};
 
 	class pipeline final : public non_copyable {
@@ -77,6 +79,10 @@ export namespace gse::vulkan {
 			this const pipeline& self
 		) -> std::span<const std::uint32_t>;
 
+		[[nodiscard]] auto active_bindings(
+			this const pipeline& self
+		) -> std::span<const gpu::binding_use>;
+
 		explicit operator bool(
 		) const;
 
@@ -85,12 +91,14 @@ export namespace gse::vulkan {
 			vk::raii::Pipeline&& pipeline,
 			vk::raii::PipelineLayout&& layout,
 			vk::PipelineBindPoint bind_point,
-			std::vector<std::uint32_t> auto_bound_sets
+			std::vector<std::uint32_t> auto_bound_sets,
+			std::vector<gpu::binding_use> active_bindings
 		);
 
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_layout = nullptr;
 		vk::PipelineBindPoint m_bind_point = vk::PipelineBindPoint::eGraphics;
 		std::vector<std::uint32_t> m_auto_bound_sets;
+		std::vector<gpu::binding_use> m_active_bindings;
 	};
 }
