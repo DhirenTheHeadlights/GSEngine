@@ -506,6 +506,34 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 				trace::scope_guard sg{ trace_id<"physics::tick_cpu">() };
 				update_vbd(steps, d, transform, motion, status, motor, collision, results, impulses);
 			}
+
+			{
+				static std::uint64_t s_log_frame = 0;
+				const auto motion_ids = motion.owner_ids();
+				const bool order_matches = transform.size() == motion.size() && std::ranges::equal(motion_ids, transform.owner_ids());
+				for (std::size_t i = 0; i < motion.size(); ++i) {
+					if (!std::holds_alternative<dynamic_body>(motion[i].body)) {
+						continue;
+					}
+					const auto eid = motion_ids[i];
+					const auto* tc = order_matches ? std::addressof(transform[i]) : transform.find(eid);
+					if (!tc) {
+						continue;
+					}
+					log::println(
+						log::category::physics,
+						"trace[{}] solver={} steps={} accum={} eid={} pos={}",
+						s_log_frame,
+						d.use_gpu_solver ? "gpu" : "cpu",
+						steps,
+						d.accumulator,
+						eid,
+						tc->position
+					);
+					break;
+				}
+				++s_log_frame;
+			}
 		}
 
 		co_await ctx.next_tick();
@@ -901,6 +929,14 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 	}
 
 	if (steps <= 0) {
+		if (d.gpu_solver.body_count() > 0) {
+			channels.push<gpu_solver_frame_info>({
+				.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
+				.body_count = d.gpu_solver.body_count(),
+				.body_stride = sizeof(vbd::body_state),
+				.position_offset = std::meta::offset_of_v<^^vbd::body_state::position>
+			});
+		}
 		return;
 	}
 
@@ -1513,23 +1549,19 @@ auto gse::physics::system::frame(frame_context& ctx, const gpu::context::data* g
 		};
 	}
 
-	if (d.gpu_solver.pending_dispatch() && d.gpu_solver.ready_to_dispatch()) {
+	if (d.gpu_solver.pending_dispatch()) {
 		d.gpu_solver.commit_upload();
-		d.gpu_solver.dispatch_compute();
+		co_await d.gpu_solver.dispatch_compute(ctx);
 	}
 
 	ctx.channels.push<gpu_solver_stats>({
 		.active = true,
 		.contact_count = d.gpu_solver.contact_count(),
 		.motor_count = d.gpu_solver.motor_count(),
-		.solve_time = d.gpu_solver.solve_time(),
 	});
 
-	const auto snap_slot = d.gpu_solver.latest_snapshot_slot();
-
 	ctx.channels.push<gpu_solver_frame_info>({
-		.snapshot = &d.gpu_solver.snapshot_buffer(snap_slot),
-		.semaphore = d.gpu_solver.compute_semaphore(),
+		.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
 		.body_count = d.gpu_solver.body_count(),
 		.body_stride = sizeof(vbd::body_state),
 		.position_offset = std::meta::offset_of_v<^^vbd::body_state::position>

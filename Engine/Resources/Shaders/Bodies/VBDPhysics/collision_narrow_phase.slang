@@ -951,14 +951,19 @@ float3 constraint_normal = -sat.normal;
 ContactResult contacts = generate_contacts(center_a, he_a, axes_a, center_b, he_b, axes_b, sat.normal, sat.separation);
 record_narrow_phase_debug(body_a_idx, body_b_idx, sat, contacts);
 
-for (int p = 0; p < contacts.count; p++) {
-    uint ci;
-    InterlockedAdd(collision_state[0], 1, ci);
-    if (ci >= MAX_CONTACTS) {
-        uint unused;
-        InterlockedAdd(collision_state[0], -1, unused);
-        return;
-    }
+uint local_count = uint(contacts.count);
+uint wave_sum = WaveActiveSum(local_count);
+uint my_offset = WavePrefixSum(local_count);
+
+uint wave_base = 0;
+if (WaveIsFirstLane() && wave_sum > 0) {
+    InterlockedAdd(collision_state[0], wave_sum, wave_base);
+}
+wave_base = WaveReadLaneFirst(wave_base);
+
+for (uint p = 0; p < local_count; p++) {
+    uint ci = wave_base + my_offset + p;
+    if (ci >= MAX_CONTACTS) continue;
 
     ContactCandidate candidate = contacts.candidates[p];
     float3 world_anchor_a = candidate.position_on_a;

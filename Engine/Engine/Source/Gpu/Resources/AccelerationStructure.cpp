@@ -159,7 +159,7 @@ auto gse::gpu::build_tlas(gpu::device& device, const std::uint32_t max_instances
 	return t;
 }
 
-auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::span<const tlas_instance_desc> instances, vulkan::recording_context& rec) -> void {
+auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::span<const tlas_instance_desc> instances, recording_context& rec) -> void {
 	auto& dev = device;
 	const auto& dev_cfg = dev.vulkan_device();
 
@@ -239,7 +239,7 @@ auto gse::gpu::write_tlas_instances(vulkan::tlas& t, const std::span<const tlas_
 	}
 }
 
-auto gse::gpu::build_tlas_in_place(gpu::device& device, vulkan::tlas& t, const std::uint32_t instance_count, vulkan::recording_context& rec) -> void {
+auto gse::gpu::build_tlas_in_place(gpu::device& device, vulkan::tlas& t, const std::uint32_t instance_count, recording_context& rec) -> void {
 	const auto& dev_cfg = device.vulkan_device();
 
 	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());

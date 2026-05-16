@@ -336,8 +336,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 			gpu::storage_read(lc_r.tile_light_table_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
 			gpu::storage_read(lc_r.light_index_list_buffers[frame_index], gpu::pipeline_stage::fragment_shader),
 			gpu::storage_read(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
-			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect),
-			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
+			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index]),
+			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index])
 		)
 		.tracks(
 			d.camera_ubo_buffers[frame_index],

@@ -13,6 +13,7 @@ import :vulkan_commands;
 import :vulkan_descriptor_set_layout;
 import :vulkan_shader_module;
 import :vulkan_device;
+import :vulkan_sync;
 
 export namespace gse::gpu {
 	using blas = vulkan::blas;
@@ -26,6 +27,9 @@ export namespace gse::gpu {
 	using pipeline_layout = vulkan::pipeline_layout;
 	using pipeline = vulkan::pipeline;
 	using command_buffer = vulkan::command_buffer;
+	using commands = vulkan::commands;
+
+	constexpr std::uint32_t max_frames_in_flight = vulkan::max_frames_in_flight;
 	using image_view = vulkan::image_view;
 	using descriptor_set_layout = vulkan::descriptor_set_layout;
 	using shader_module = vulkan::shader_module;

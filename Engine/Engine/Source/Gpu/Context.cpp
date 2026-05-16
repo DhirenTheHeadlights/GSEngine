@@ -25,7 +25,7 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 	d.swapchain = swap_chain::create(window::viewport(window_s), *d.device);
 	d.frame = frame::create(*d.device, *d.swapchain);
 	d.bindless_textures = std::make_unique<bindless_texture_set>(d.device->vulkan_device(), d.device->descriptor_heap());
-	d.render_graph = std::make_unique<vulkan::render_graph>(*d.device, *d.swapchain, *d.frame, d.bindless_textures.get());
+	d.render_graph = std::make_unique<gpu::render_graph>(*d.device, *d.swapchain, *d.frame, d.bindless_textures.get());
 
 	d.device->transient().recorder().pre_frame([graph = d.render_graph.get()](handle<command_buffer> cmd) {
 		vulkan::transition_image_layout(
@@ -79,68 +79,44 @@ auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::exp
 }
 
 auto gse::gpu::context::end_frame(data& d, window::data& window_s) -> void {
-	auto compute_subs = d.render_graph->take_compute_submissions();
+	auto aux_subs = d.render_graph->take_aux_submissions();
 	auto graphics_waits = d.render_graph->take_graphics_extra_waits();
-	d.frame->end(window_s, compute_subs, graphics_waits);
+	d.frame->end(window_s, aux_subs, graphics_waits);
 }
 
 namespace gse::gpu {
 	auto to_color_output_info(
 		const color_attachment& a
-	) -> vulkan::color_output_info;
+	) -> gpu::color_output_info;
 
 	auto to_depth_output_info(
 		const depth_attachment& a
-	) -> vulkan::depth_output_info;
+	) -> gpu::depth_output_info;
 
 	auto to_pass_data(
 		render_pass_request req,
-		const vulkan::render_graph& graph
-	) -> vulkan::render_pass_data;
+		const gpu::render_graph& graph
+	) -> gpu::render_pass_data;
 }
 
-auto gse::gpu::to_color_output_info(const color_attachment& a) -> vulkan::color_output_info {
-	auto vk_op = vulkan::load_op::dont_care;
-	switch (a.op) {
-		case load_op::clear:
-			vk_op = vulkan::load_op::clear_color;
-			break;
-		case load_op::load:
-			vk_op = vulkan::load_op::load;
-			break;
-		case load_op::dont_care:
-			vk_op = vulkan::load_op::dont_care;
-			break;
-	}
+auto gse::gpu::to_color_output_info(const color_attachment& a) -> gpu::color_output_info {
 	return {
 		.is_swapchain = true,
 		.custom_target = nullptr,
-		.op = vk_op,
+		.op = a.op,
 		.clear_value = a.clear,
 	};
 }
 
-auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> vulkan::depth_output_info {
-	auto vk_op = vulkan::load_op::dont_care;
-	switch (a.op) {
-		case load_op::clear:
-			vk_op = vulkan::load_op::clear_depth;
-			break;
-		case load_op::load:
-			vk_op = vulkan::load_op::load;
-			break;
-		case load_op::dont_care:
-			vk_op = vulkan::load_op::dont_care;
-			break;
-	}
+auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> gpu::depth_output_info {
 	return {
-		.op = vk_op,
+		.op = a.op,
 		.clear_value = a.clear,
 	};
 }
 
-auto gse::gpu::to_pass_data(render_pass_request req, const vulkan::render_graph& graph) -> vulkan::render_pass_data {
-	vulkan::render_pass_data p{
+auto gse::gpu::to_pass_data(render_pass_request req, const gpu::render_graph& graph) -> gpu::render_pass_data {
+	gpu::render_pass_data p{
 		.pass_type = req.desc.pass_kind,
 		.queue = req.desc.queue,
 		.reads = std::move(req.desc.reads),
@@ -149,6 +125,7 @@ auto gse::gpu::to_pass_data(render_pass_request req, const vulkan::render_graph&
 		.after_passes = std::move(req.desc.after_deps),
 		.record_handle = req.record_handle,
 		.record_ctx_slot = req.record_ctx_slot,
+		.body = std::move(req.body),
 	};
 
 	if (req.desc.color) {
@@ -161,14 +138,14 @@ auto gse::gpu::to_pass_data(render_pass_request req, const vulkan::render_graph&
 			p.reads.push_back({
 				.resource = {
 					.ptr = std::addressof(graph.depth_image()),
-					.type = vulkan::resource_type::image,
+					.type = gpu::resource_type::image,
 				},
 				.stage = pipeline_stage_flag::early_fragment_tests,
 				.access = access_flag::depth_stencil_attachment_read,
 			});
 		}
 		else {
-			p.writes.push_back(vulkan::attachment(graph.depth_image(), pipeline_stage_flag::late_fragment_tests));
+			p.writes.push_back(gpu::attachment(graph.depth_image(), pipeline_stage_flag::late_fragment_tests));
 		}
 	}
 
@@ -176,7 +153,7 @@ auto gse::gpu::to_pass_data(render_pass_request req, const vulkan::render_graph&
 }
 
 auto gse::gpu::context::execute_frame(data& d, std::vector<render_pass_request> requests) -> void {
-	std::vector<vulkan::render_pass_data> passes;
+	std::vector<gpu::render_pass_data> passes;
 	passes.reserve(requests.size());
 	for (auto& req : requests) {
 		passes.push_back(to_pass_data(std::move(req), *d.render_graph));

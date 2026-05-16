@@ -8,6 +8,8 @@ import :contact_manifold;
 import :motion_component;
 
 export namespace gse::vbd {
+	constexpr std::uint32_t max_contacts = 16384;
+
 	struct body_solve_state {
 		vec3<force> gradient = {};
 		mat3<stiffness> hessian = {};

@@ -155,8 +155,8 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 		.reads(
 			gpu::storage_read(gc_r.instance_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
 			gpu::storage_read(gc_r.skin_buffer[frame_index], gpu::pipeline_stage::vertex_shader),
-			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect),
-			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index], gpu::pipeline_stage::draw_indirect)
+			gpu::indirect_read(gc_r.normal_indirect_commands_buffer[frame_index]),
+			gpu::indirect_read(gc_r.skinned_indirect_commands_buffer[frame_index])
 		)
 		.tracks(d.camera_ubo_buffers[frame_index], gc_r.instance_buffer[frame_index]);
 

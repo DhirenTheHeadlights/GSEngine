@@ -102,8 +102,7 @@ gse::vulkan::device::device(device&& other) noexcept
 	m_device(std::move(other.m_device)),
 	m_fault_enabled(other.m_fault_enabled),
 	m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled),
-	m_graphics_family(other.m_graphics_family),
-	m_compute_family(other.m_compute_family),
+	m_queue_families(other.m_queue_families),
 	m_pools(std::move(other.m_pools)),
 	m_live_allocation_count(other.m_live_allocation_count.load()),
 	m_next_allocation_id(other.m_next_allocation_id.load()),
@@ -118,8 +117,7 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 		m_device = std::move(other.m_device);
 		m_fault_enabled = other.m_fault_enabled;
 		m_vendor_binary_fault_enabled = other.m_vendor_binary_fault_enabled;
-		m_graphics_family = other.m_graphics_family;
-		m_compute_family = other.m_compute_family;
+		m_queue_families = other.m_queue_families;
 		m_pools = std::move(other.m_pools);
 		m_live_allocation_count = other.m_live_allocation_count.load();
 		m_next_allocation_id = other.m_next_allocation_id.load();
@@ -130,16 +128,25 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 	return *this;
 }
 
+auto gse::vulkan::device::queue_family(const gpu::queue_type queue) const -> std::uint32_t {
+	return m_queue_families[static_cast<std::size_t>(queue)];
+}
+
 auto gse::vulkan::device::graphics_family() const -> std::uint32_t {
-	return m_graphics_family;
+	return m_queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)];
 }
 
 auto gse::vulkan::device::compute_family() const -> std::uint32_t {
-	return m_compute_family;
+	return m_queue_families[static_cast<std::size_t>(gpu::queue_type::compute)];
 }
 
 auto gse::vulkan::device::families_distinct() const -> bool {
-	return m_graphics_family != m_compute_family;
+	for (std::size_t i = 1; i < gpu::queue_type_count; ++i) {
+		if (m_queue_families[i] != m_queue_families[0]) {
+			return true;
+		}
+	}
+	return false;
 }
 
 auto gse::vulkan::device::create(const instance& instance_data, device::settings& cfg, aftermath& aftermath_tracker) -> device_creation_result {
@@ -597,7 +604,7 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		actual_buffer_info.usage |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	}
 
-	const std::array shared_family_indices{ m_graphics_family, m_compute_family };
+	const auto shared_family_indices = m_queue_families;
 	if (families_distinct() && actual_buffer_info.sharingMode == vk::SharingMode::eExclusive) {
 		actual_buffer_info.sharingMode = vk::SharingMode::eConcurrent;
 		actual_buffer_info.queueFamilyIndexCount = static_cast<std::uint32_t>(shared_family_indices.size());
@@ -826,9 +833,9 @@ gse::vulkan::device::device(vk::raii::PhysicalDevice&& physical_device, vk::raii
 	m_device(std::move(device)),
 	m_fault_enabled(device_fault_enabled),
 	m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled),
-	m_graphics_family(graphics_family),
-	m_compute_family(compute_family),
 	m_settings(&cfg) {
+	m_queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = graphics_family;
+	m_queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = compute_family;
 }
 
 auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<basic_allocation<device>, std::string> {

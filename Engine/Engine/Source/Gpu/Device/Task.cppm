@@ -90,7 +90,7 @@ auto gse::gpu::begin_transient_awaiter::await_resume() -> vulkan::transient_comm
     assert(worker.has_value(), "begin_transient must be co_awaited from a task worker thread");
     auto cmd = m_queue->allocate_primary(m_gpu_device->vulkan_device(), *worker);
     cmd.begin_one_time();
-    const auto marker = m_gpu_device->begin_pass_marker(cmd.handle(), m_pass_marker);
+    const auto marker = m_gpu_device->begin_pass_marker(cmd.handle(), device::pass_marker_domain::transient, m_pass_marker);
     m_gpu_device->checkpoint_pass_marker(cmd.handle(), marker);
     m_gpu_device->post_renderpass_pass_marker(cmd.handle(), marker);
     cmd.set_marker_seq(marker.seq);
@@ -114,7 +114,7 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
     }
 
     if (m_cmd.marker_seq() != std::numeric_limits<std::uint64_t>::max()) {
-        m_gpu_device->end_pass_marker(m_cmd.handle(), device::pass_marker_handle{ .seq = m_cmd.marker_seq() });
+        m_gpu_device->end_pass_marker(m_cmd.handle(), device::pass_marker_handle{ .seq = m_cmd.marker_seq(), .domain = device::pass_marker_domain::transient });
     }
 
     m_cmd.end();

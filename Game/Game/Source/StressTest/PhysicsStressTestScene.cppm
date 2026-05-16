@@ -440,7 +440,7 @@ auto gs::physics_stress_test_scene_setup(gse::scene& s, gse::channel_writer& cha
 	build_high_speed_impact_target(assets, s);
 	build_box_grid(assets, s);
 	build_spring_tests(assets, s, channels);
-	build_tumbler(assets, s);
+	//build_tumbler(assets, s);
 
 	build_sphere(
 		assets,

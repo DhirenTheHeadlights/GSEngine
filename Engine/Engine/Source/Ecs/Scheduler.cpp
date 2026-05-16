@@ -115,13 +115,7 @@ auto gse::scheduler::check_state_dep_cycles() -> void {
 }
 
 auto gse::scheduler::initialize() -> void {
-	if (!m_initialized) {
-		frame_sync::on_begin([this] {
-			m_channels_store.take_snapshot_all();
-		});
-		m_initialized = true;
-	}
-
+	m_initialized = true;
 	m_channels_store.flip_all();
 
 	advance_run_systems_during_init();

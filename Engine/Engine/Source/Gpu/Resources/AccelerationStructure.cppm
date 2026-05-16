@@ -50,7 +50,7 @@ export namespace gse::gpu {
 		gpu::device& device,
 		vulkan::tlas& t,
 		std::span<const tlas_instance_desc> instances,
-		vulkan::recording_context& rec
+		gpu::recording_context& rec
 	) -> void;
 
 	auto write_tlas_instances(
@@ -62,7 +62,7 @@ export namespace gse::gpu {
 		gpu::device& device,
 		vulkan::tlas& t,
 		std::uint32_t instance_count,
-		vulkan::recording_context& rec
+		gpu::recording_context& rec
 	) -> void;
 }
 

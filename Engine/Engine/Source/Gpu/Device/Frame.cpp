@@ -43,7 +43,7 @@ auto gse::gpu::frame::image_index() const -> std::uint32_t {
 }
 
 auto gse::gpu::frame::command_buffer(const queue_type queue) const -> handle<vulkan::command_buffer> {
-    return queue == queue_type::compute ? m_compute_command_buffer : m_graphics_command_buffer;
+    return m_command_buffers[static_cast<std::size_t>(queue)];
 }
 
 auto gse::gpu::frame::frame_in_progress() const -> bool {
@@ -72,8 +72,10 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
     }
 
     try {
-        const auto fence_result = vulkan::wait_for_fence(dev, m_sync.in_flight_fence(m_current_frame));
-        assert(fence_result == result::success, "Failed to wait for in-flight fence!");
+        for (std::size_t i = 0; i < queue_type_count; ++i) {
+            const auto fence_result = vulkan::wait_for_fence(dev, m_sync.in_flight_fence(static_cast<queue_type>(i), m_current_frame));
+            assert(fence_result == result::success, "Failed to wait for in-flight fence!");
+        }
     } catch (const vk::DeviceLostError&) {
         m_device->report_device_lost(std::format("begin_frame waitForFences (frame {})", m_current_frame));
         return std::unexpected(frame_status::device_lost);
@@ -118,13 +120,14 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
         "Failed to acquire swap chain image!"
     );
 
-    vulkan::reset_fence(dev, m_sync.in_flight_fence(m_current_frame));
+    vulkan::reset_fence(dev, m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
 
     m_image_index = acquired_image_index;
-    m_graphics_command_buffer = m_device->vulkan_command().frame_command_buffer(queue_type::graphics, m_current_frame);
-    m_compute_command_buffer = m_device->vulkan_command().frame_command_buffer(queue_type::compute, m_current_frame);
+    for (std::size_t i = 0; i < queue_type_count; ++i) {
+        m_command_buffers[i] = m_device->vulkan_command().frame_command_buffer(static_cast<queue_type>(i), m_current_frame);
+    }
 
-    const vulkan::commands cmd_main{ m_graphics_command_buffer };
+    const vulkan::commands cmd_main{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
     cmd_main.reset();
     cmd_main.begin();
 
@@ -176,7 +179,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
     };
     cmd_main.pipeline_barrier(dependency_info{ .memory_barriers = transient_visibility_barriers });
 
-    m_device->transient().recorder().run_pre_frame(m_graphics_command_buffer);
+    m_device->transient().recorder().run_pre_frame(m_command_buffers[static_cast<std::size_t>(queue_type::graphics)]);
 
     m_frame_in_progress = true;
 
@@ -186,16 +189,11 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
     };
 }
 
-auto gse::gpu::frame::add_wait_semaphore(const compute_semaphore_state& state) -> void {
-    if (state.raii_semaphore() && state.value() > 0) {
-        m_extra_waits.push_back(state);
-    }
-}
+auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits) -> void {
+    const auto graphics_cb = m_command_buffers[static_cast<std::size_t>(queue_type::graphics)];
+    m_device->transient().recorder().run_post_frame(graphics_cb);
 
-auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> compute_submissions, std::span<const semaphore_submit_info> extra_graphics_waits) -> void {
-    m_device->transient().recorder().run_post_frame(m_graphics_command_buffer);
-
-    const vulkan::commands cmd_tail{ m_graphics_command_buffer };
+    const vulkan::commands cmd_tail{ graphics_cb };
 
     const image_barrier present_barrier{
         .src_stages = pipeline_stage_flag::color_attachment_output,
@@ -214,9 +212,24 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> c
         cmd_tail.end();
     }
 
+    std::array<std::size_t, queue_type_count> last_idx_per_queue;
+    last_idx_per_queue.fill(static_cast<std::size_t>(-1));
+    for (std::size_t i = 0; i < aux_submissions.size(); ++i) {
+        last_idx_per_queue[static_cast<std::size_t>(aux_submissions[i].queue)] = i;
+    }
+    for (std::size_t qi = 0; qi < queue_type_count; ++qi) {
+        if (qi == static_cast<std::size_t>(queue_type::graphics)) continue;
+        if (last_idx_per_queue[qi] != static_cast<std::size_t>(-1)) {
+            vulkan::reset_fence(m_device->vulkan_device(), m_sync.in_flight_fence(static_cast<queue_type>(qi), m_current_frame));
+        }
+    }
+
     {
-        trace::scope_guard sg{trace_id<"end_frame::submit_compute">()};
-        for (const auto& sub : compute_submissions) {
+        trace::scope_guard sg{trace_id<"end_frame::submit_aux">()};
+        for (std::size_t i = 0; i < aux_submissions.size(); ++i) {
+            const auto& sub = aux_submissions[i];
+            assert(sub.queue != queue_type::graphics, "graphics submissions go through the main submit path, not aux_submissions");
+            const bool last_for_queue = (last_idx_per_queue[static_cast<std::size_t>(sub.queue)] == i);
             try {
                 const command_buffer_submit_info cmd_info{
                     .command_buffer = sub.command_buffer,
@@ -226,9 +239,9 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> c
                     .command_buffers = std::span(&cmd_info, 1),
                     .signal_semaphores = sub.signals,
                 };
-                m_device->vulkan_queue().submit_compute(submit, {});
+                m_device->vulkan_queue().submit(sub.queue, submit, last_for_queue ? m_sync.in_flight_fence(sub.queue, m_current_frame) : handle<vulkan::fence>{});
             } catch (const vk::DeviceLostError&) {
-                m_device->report_device_lost(std::format("submit_compute (frame {}, image {})", m_current_frame, m_image_index));
+                m_device->report_device_lost(std::format("aux submit (frame {}, image {})", m_current_frame, m_image_index));
                 throw;
             }
         }
@@ -245,15 +258,6 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> c
         main_waits.push_back(w);
     }
 
-    for (const auto& wait : m_extra_waits) {
-        main_waits.push_back({
-            .semaphore = std::bit_cast<handle<semaphore>>(**wait.raii_semaphore()),
-            .value = wait.value(),
-            .stages = pipeline_stage_flag::all_commands,
-        });
-    }
-    m_extra_waits.clear();
-
     const semaphore_submit_info render_finished_signal{
         .semaphore = m_sync.render_finished(m_image_index),
         .value = 0,
@@ -264,16 +268,17 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> c
         trace::scope_guard sg{trace_id<"end_frame::submit">()};
         try {
             const command_buffer_submit_info cmd_info{
-                .command_buffer = m_graphics_command_buffer,
+                .command_buffer = graphics_cb,
             };
             const submit_info submit{
                 .wait_semaphores = main_waits,
                 .command_buffers = std::span(&cmd_info, 1),
                 .signal_semaphores = std::span(&render_finished_signal, 1),
             };
-            m_device->vulkan_queue().submit_graphics(
+            m_device->vulkan_queue().submit(
+                queue_type::graphics,
                 submit,
-                m_sync.in_flight_fence(m_current_frame)
+                m_sync.in_flight_fence(queue_type::graphics, m_current_frame)
             );
         } catch (const vk::DeviceLostError&) {
             m_device->report_device_lost(std::format("submit2 (frame {}, image {})", m_current_frame, m_image_index));

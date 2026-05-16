@@ -75,7 +75,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		co_return;
 	}
 
-	if (!solver_infos[0].snapshot || solver_infos[0].semaphore.value() == 0 || solver_infos[0].body_count == 0) {
+	if (!solver_infos[0].snapshot || solver_infos[0].body_count == 0) {
 		co_return;
 	}
 
@@ -112,10 +112,6 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		co_return;
 	}
 
-	if (!info.semaphore.has_signaled()) {
-		co_return;
-	}
-
 	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[frame_index])
 		.buffer<body_data>(snapshot, 0, info.body_count * info.body_stride)
 		.buffer<mapping_data>(d.mapping_buffers[frame_index], 0, d.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry))
@@ -133,7 +129,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.after<geometry_collector::system>()
+		.after<geometry_collector::system, vbd::vbd_readback_copy_stage>()
 		.reads(
 			gpu::storage_read(snapshot, gpu::pipeline_stage::compute_shader),
 			gpu::storage_read(d.mapping_buffers[frame_index], gpu::pipeline_stage::compute_shader)

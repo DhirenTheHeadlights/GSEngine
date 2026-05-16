@@ -51,7 +51,7 @@ export namespace gse::gpu {
 			[[=gse::shared]] std::unique_ptr<gpu::shader_registry> shader_registry;
 			[[=gse::shared]] std::unique_ptr<swap_chain> swapchain;
 			[[=gse::shared]] std::unique_ptr<gpu::frame> frame;
-			[[=gse::shared]] std::unique_ptr<vulkan::render_graph> render_graph;
+			[[=gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
 			[[=gse::shared]] std::unique_ptr<bindless_texture_set> bindless_textures;
 			[[=gse::shared]] concurrency::frame_scheduler scheduler;
 		};

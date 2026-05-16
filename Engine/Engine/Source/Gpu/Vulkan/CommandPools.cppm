@@ -32,14 +32,11 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] static auto create(
 			const device& device_data,
-			std::uint32_t graphics_family,
-			std::uint32_t compute_family
+			const std::array<std::uint32_t, gpu::queue_type_count>& queue_families
 		) -> command;
 
-		[[nodiscard]] auto graphics_family_index(
-		) const -> std::uint32_t;
-
-		[[nodiscard]] auto compute_family_index(
+		[[nodiscard]] auto family_index(
+			gpu::queue_type queue
 		) const -> std::uint32_t;
 
 		[[nodiscard]] auto frame_command_buffer(
@@ -54,10 +51,8 @@ export namespace gse::vulkan {
 		};
 
 		command(
-			family_pool graphics,
-			family_pool compute,
-			std::uint32_t graphics_family,
-			std::uint32_t compute_family
+			std::array<family_pool, gpu::queue_type_count> pools,
+			std::array<std::uint32_t, gpu::queue_type_count> families
 		);
 
 		static auto make_primary_pool(
@@ -66,10 +61,8 @@ export namespace gse::vulkan {
 			std::string_view label
 		) -> family_pool;
 
-		family_pool m_graphics_pool;
-		family_pool m_compute_pool;
-		std::uint32_t m_graphics_family = 0;
-		std::uint32_t m_compute_family = 0;
+		std::array<family_pool, gpu::queue_type_count> m_pools;
+		std::array<std::uint32_t, gpu::queue_type_count> m_families{};
 	};
 
 	class worker_command_pools : public non_copyable {
@@ -86,10 +79,9 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] static auto create(
 			const device& device_data,
-			std::uint32_t graphics_family,
-			std::uint32_t compute_family,
+			const std::array<std::uint32_t, gpu::queue_type_count>& queue_families,
 			std::size_t worker_count,
-			std::size_t secondaries_per_pool = 32
+			std::size_t secondaries_per_pool = 128
 		) -> worker_command_pools;
 
 		auto reset_frame(
@@ -117,10 +109,8 @@ export namespace gse::vulkan {
 		};
 
 		worker_command_pools(
-			family_pools graphics,
-			family_pools compute,
-			std::uint32_t graphics_family,
-			std::uint32_t compute_family
+			std::array<family_pools, gpu::queue_type_count> pools,
+			std::array<std::uint32_t, gpu::queue_type_count> families
 		);
 
 		static auto build_family_pools(
@@ -131,18 +121,14 @@ export namespace gse::vulkan {
 			std::size_t secondaries_per_pool
 		) -> family_pools;
 
-		family_pools m_graphics;
-		family_pools m_compute;
-		std::uint32_t m_graphics_family = 0;
-		std::uint32_t m_compute_family = 0;
+		std::array<family_pools, gpu::queue_type_count> m_pools;
+		std::array<std::uint32_t, gpu::queue_type_count> m_families{};
 	};
 }
 
-gse::vulkan::command::command(family_pool graphics, family_pool compute, const std::uint32_t graphics_family, const std::uint32_t compute_family)
-	: m_graphics_pool(std::move(graphics)),
-	  m_compute_pool(std::move(compute)),
-	  m_graphics_family(graphics_family),
-	  m_compute_family(compute_family) {}
+gse::vulkan::command::command(std::array<family_pool, gpu::queue_type_count> pools, std::array<std::uint32_t, gpu::queue_type_count> families)
+	: m_pools(std::move(pools)),
+	  m_families(families) {}
 
 auto gse::vulkan::command::make_primary_pool(const device& device_data, const std::uint32_t family, const std::string_view label) -> family_pool {
 	const vk::CommandPoolCreateInfo pool_info{
@@ -183,38 +169,43 @@ auto gse::vulkan::command::make_primary_pool(const device& device_data, const st
 	};
 }
 
-auto gse::vulkan::command::create(const device& device_data, const std::uint32_t graphics_family, const std::uint32_t compute_family) -> command {
-	auto graphics_pool = make_primary_pool(device_data, graphics_family, "graphics");
-	auto compute_pool = (graphics_family == compute_family)
-		? family_pool{}
-		: make_primary_pool(device_data, compute_family, "compute");
+auto gse::vulkan::command::create(const device& device_data, const std::array<std::uint32_t, gpu::queue_type_count>& queue_families) -> command {
+	std::array<family_pool, gpu::queue_type_count> pools;
+	pools[0] = make_primary_pool(device_data, queue_families[0], std::format("queue_{}", 0));
+	for (std::size_t i = 1; i < gpu::queue_type_count; ++i) {
+		if (queue_families[i] == queue_families[0]) {
+			continue;
+		}
+		bool duplicate = false;
+		for (std::size_t j = 1; j < i; ++j) {
+			if (queue_families[j] == queue_families[i]) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate) {
+			pools[i] = make_primary_pool(device_data, queue_families[i], std::format("queue_{}", i));
+		}
+	}
 
-	log::println(log::category::vulkan, "Primary command pools created (graphics_family={}, compute_family={}, distinct={})",
-		graphics_family, compute_family, graphics_family != compute_family);
+	log::println(log::category::vulkan, "Primary command pools created");
 
-	return command(std::move(graphics_pool), std::move(compute_pool), graphics_family, compute_family);
+	return command(std::move(pools), queue_families);
 }
 
-auto gse::vulkan::command::graphics_family_index() const -> std::uint32_t {
-	return m_graphics_family;
-}
-
-auto gse::vulkan::command::compute_family_index() const -> std::uint32_t {
-	return m_compute_family;
+auto gse::vulkan::command::family_index(const gpu::queue_type queue) const -> std::uint32_t {
+	return m_families[static_cast<std::size_t>(queue)];
 }
 
 auto gse::vulkan::command::frame_command_buffer(const gpu::queue_type queue, const std::uint32_t frame_index) const -> gpu::handle<command_buffer> {
-	const auto& pool = (queue == gpu::queue_type::compute && m_graphics_family != m_compute_family)
-		? m_compute_pool
-		: m_graphics_pool;
+	const auto idx = static_cast<std::size_t>(queue);
+	const auto& pool = *m_pools[idx].pool ? m_pools[idx] : m_pools[0];
 	return std::bit_cast<gpu::handle<command_buffer>>(*pool.buffers[frame_index]);
 }
 
-gse::vulkan::worker_command_pools::worker_command_pools(family_pools graphics, family_pools compute, const std::uint32_t graphics_family, const std::uint32_t compute_family)
-	: m_graphics(std::move(graphics)),
-	  m_compute(std::move(compute)),
-	  m_graphics_family(graphics_family),
-	  m_compute_family(compute_family) {}
+gse::vulkan::worker_command_pools::worker_command_pools(std::array<family_pools, gpu::queue_type_count> pools, std::array<std::uint32_t, gpu::queue_type_count> families)
+	: m_pools(std::move(pools)),
+	  m_families(families) {}
 
 gse::vulkan::worker_command_pools::~worker_command_pools() = default;
 
@@ -273,43 +264,47 @@ auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_
 	return family_pools{ .per_worker = std::move(pools) };
 }
 
-auto gse::vulkan::worker_command_pools::create(const device& device_data, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count, const std::size_t secondaries_per_pool) -> worker_command_pools {
+auto gse::vulkan::worker_command_pools::create(const device& device_data, const std::array<std::uint32_t, gpu::queue_type_count>& queue_families, const std::size_t worker_count, const std::size_t secondaries_per_pool) -> worker_command_pools {
 	static_assert(max_frames_in_flight == 2, "worker_command_pools::create assumes per_frame_resource default of 2 frames");
 
-	auto graphics_pools = build_family_pools(device_data, graphics_family, "graphics", worker_count, secondaries_per_pool);
-	auto compute_pools = (graphics_family == compute_family)
-		? family_pools{}
-		: build_family_pools(device_data, compute_family, "compute", worker_count, secondaries_per_pool);
+	std::array<family_pools, gpu::queue_type_count> pools;
+	pools[0] = build_family_pools(device_data, queue_families[0], std::format("queue_{}", 0), worker_count, secondaries_per_pool);
+	for (std::size_t i = 1; i < gpu::queue_type_count; ++i) {
+		bool duplicate = false;
+		for (std::size_t j = 0; j < i; ++j) {
+			if (queue_families[j] == queue_families[i]) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate) {
+			pools[i] = build_family_pools(device_data, queue_families[i], std::format("queue_{}", i), worker_count, secondaries_per_pool);
+		}
+	}
 
 	log::println(
 		log::category::vulkan,
-		"Worker Command Pools Created (workers: {}, secondaries/pool: {}, graphics_family: {}, compute_family: {}, distinct: {})",
+		"Worker Command Pools Created (workers: {}, secondaries/pool: {})",
 		worker_count,
-		secondaries_per_pool,
-		graphics_family,
-		compute_family,
-		graphics_family != compute_family
+		secondaries_per_pool
 	);
 
-	return worker_command_pools(std::move(graphics_pools), std::move(compute_pools), graphics_family, compute_family);
+	return worker_command_pools(std::move(pools), queue_families);
 }
 
 auto gse::vulkan::worker_command_pools::reset_frame(const std::uint32_t frame_index) -> void {
-	auto reset_family = [frame_index](family_pools& fp) {
+	for (auto& fp : m_pools) {
 		for (auto& worker_pools : fp.per_worker) {
 			auto& slot = worker_pools[frame_index];
 			slot.pool.reset();
 			slot.used = 0;
 		}
-	};
-	reset_family(m_graphics);
-	if (m_graphics_family != m_compute_family) {
-		reset_family(m_compute);
 	}
 }
 
 auto gse::vulkan::worker_command_pools::acquire_secondary(const gpu::queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> vk::CommandBuffer {
-	auto& family = (queue == gpu::queue_type::compute && m_graphics_family != m_compute_family) ? m_compute : m_graphics;
+	const auto idx = static_cast<std::size_t>(queue);
+	auto& family = m_pools[idx].per_worker.empty() ? m_pools[0] : m_pools[idx];
 
 	assert(
 		worker_index < family.per_worker.size(),
@@ -332,6 +327,6 @@ auto gse::vulkan::worker_command_pools::acquire_secondary(const gpu::queue_type 
 }
 
 auto gse::vulkan::worker_command_pools::worker_count() const -> std::size_t {
-	return m_graphics.per_worker.size();
+	return m_pools[0].per_worker.size();
 }
 

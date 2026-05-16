@@ -18,8 +18,6 @@ import gse.math;
 import gse.log;
 
 export namespace gse::renderer::rt_shadow {
-	constexpr std::uint32_t max_instances = 4096;
-
 	struct system {
 		struct data {
 			per_frame_resource<const gpu::tlas*> tlas_ptrs{};
