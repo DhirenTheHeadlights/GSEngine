@@ -62,31 +62,13 @@ export namespace gse {
 		std::unordered_map<id, void*> m_slots;
 	};
 
+	class channel_registry;
+
 	class channel_writer {
 	public:
-		template <typename F>
 		explicit channel_writer(
-			F&& fn
+			channel_registry* registry
 		);
-
-		channel_writer(
-			channel_writer&&
-		) noexcept;
-
-		auto operator=(
-			channel_writer&&
-		) noexcept -> channel_writer&;
-
-		~channel_writer(
-		);
-
-		channel_writer(
-			const channel_writer&
-		) = delete;
-
-		auto operator=(
-			const channel_writer&
-		) -> channel_writer& = delete;
 
 		template <typename T>
 		auto push(
@@ -99,35 +81,18 @@ export namespace gse {
 		) -> channel_future<typename T::result_type>;
 
 	private:
-		auto invoke_push(
-			id idx,
-			std::any value,
-			channel_factory_fn factory
-		) -> void;
-
-		void* m_ctx = nullptr;
-		void(*m_invoke)(void*, id, std::any, channel_factory_fn) = nullptr;
-		void(*m_destroy)(void*) noexcept = nullptr;
+		channel_registry* m_registry = nullptr;
 	};
 
 	class channel_registry {
 	public:
-		auto ensure(
-			id type,
-			channel_factory_fn factory
-		) -> channel_base&;
+		template <typename T>
+		auto ensure_typed(
+		) -> typed_channel<T>&;
 
-		auto find(
-			this auto& self,
-			id type
-		) -> decltype(auto);
-
-		auto snapshot_data(
-			id type
-		) const -> const void*;
-
-		auto take_snapshot_all(
-		) -> void;
+		template <typename T>
+		auto ensure_same_frame(
+		) -> same_frame_typed_channel<T>&;
 
 		auto flip_all(
 		) -> void;
@@ -202,122 +167,57 @@ auto gse::resource_registry::clear() -> void {
 	m_slots.clear();
 }
 
-template <typename F>
-gse::channel_writer::channel_writer(F&& fn) {
-	using closure = std::decay_t<F>;
-	m_ctx = new closure(std::forward<F>(fn));
-	m_invoke = +[](void* p, id idx, std::any value, channel_factory_fn factory) {
-		(*static_cast<closure*>(p))(idx, std::move(value), std::move(factory));
-	};
-	m_destroy = +[](void* p) noexcept {
-		delete static_cast<closure*>(p);
-	};
-}
+gse::channel_writer::channel_writer(channel_registry* registry) : m_registry(registry) {}
 
 template <typename T>
 auto gse::channel_writer::push(T item) -> void {
-	invoke_push(
-		id_of<T>(),
-		std::any(std::move(item)),
-		+[]() -> std::unique_ptr<channel_base> {
-			if constexpr (is_same_frame_channel_v<T>) {
-				return std::make_unique<same_frame_typed_channel<T>>();
-			}
-			else {
-				return std::make_unique<typed_channel<T>>();
-			}
-		}
-	);
+	if constexpr (is_same_frame_channel_v<T>) {
+		m_registry->ensure_same_frame<T>().push(std::move(item));
+	}
+	else {
+		m_registry->ensure_typed<T>().data.push(std::move(item));
+	}
 }
 
 template <gse::promiseable T>
 auto gse::channel_writer::push(T item) -> channel_future<typename T::result_type> {
 	auto [future, promise] = make_promise<typename T::result_type>();
 	item.promise = std::move(promise);
-	invoke_push(
-		id_of<T>(),
-		std::any(std::move(item)),
-		+[]() -> std::unique_ptr<channel_base> {
-			return std::make_unique<typed_channel<T>>();
-		}
-	);
+	if constexpr (is_same_frame_channel_v<T>) {
+		m_registry->ensure_same_frame<T>().push(std::move(item));
+	}
+	else {
+		m_registry->ensure_typed<T>().data.push(std::move(item));
+	}
 	return future;
+}
+
+template <typename T>
+auto gse::channel_registry::ensure_typed() -> typed_channel<T>& {
+	std::lock_guard lock(m_mutex);
+	const auto type_id = id_of<T>();
+	auto it = m_channels.find(type_id);
+	if (it == m_channels.end()) {
+		it = m_channels.emplace(type_id, std::make_unique<typed_channel<T>>()).first;
+	}
+	return static_cast<typed_channel<T>&>(*it->second);
+}
+
+template <typename T>
+auto gse::channel_registry::ensure_same_frame() -> same_frame_typed_channel<T>& {
+	std::lock_guard lock(m_mutex);
+	const auto type_id = id_of<T>();
+	auto it = m_channels.find(type_id);
+	if (it == m_channels.end()) {
+		it = m_channels.emplace(type_id, std::make_unique<same_frame_typed_channel<T>>()).first;
+	}
+	return static_cast<same_frame_typed_channel<T>&>(*it->second);
 }
 
 template <typename T>
 	requires gse::is_same_frame_channel_v<T>
 auto gse::channel_registry::drain() -> std::vector<T> {
-	auto& base = ensure(id_of<T>(), +[]() -> std::unique_ptr<channel_base> {
-		return std::make_unique<same_frame_typed_channel<T>>();
-	});
-	return static_cast<same_frame_typed_channel<T>&>(base).drain();
-}
-
-gse::channel_writer::channel_writer(channel_writer&& other) noexcept
-	: m_ctx(other.m_ctx), m_invoke(other.m_invoke), m_destroy(other.m_destroy) {
-	other.m_ctx = nullptr;
-	other.m_invoke = nullptr;
-	other.m_destroy = nullptr;
-}
-
-auto gse::channel_writer::operator=(channel_writer&& other) noexcept -> channel_writer& {
-	if (this != &other) {
-		if (m_destroy && m_ctx) {
-			m_destroy(m_ctx);
-		}
-		m_ctx = other.m_ctx;
-		m_invoke = other.m_invoke;
-		m_destroy = other.m_destroy;
-		other.m_ctx = nullptr;
-		other.m_invoke = nullptr;
-		other.m_destroy = nullptr;
-	}
-	return *this;
-}
-
-gse::channel_writer::~channel_writer() {
-	if (m_destroy && m_ctx) {
-		m_destroy(m_ctx);
-	}
-}
-
-auto gse::channel_writer::invoke_push(const id idx, std::any value, const channel_factory_fn factory) -> void {
-	m_invoke(m_ctx, idx, std::move(value), std::move(factory));
-}
-
-auto gse::channel_registry::ensure(const id type, const channel_factory_fn factory) -> channel_base& {
-	std::lock_guard lock(m_mutex);
-	auto it = m_channels.find(type);
-	if (it == m_channels.end()) {
-		it = m_channels.emplace(type, factory()).first;
-	}
-	return *it->second;
-}
-
-auto gse::channel_registry::find(this auto& self, const id type) -> decltype(auto) {
-	using ret_t = std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const channel_base*, channel_base*>;
-	std::lock_guard lock(self.m_mutex);
-	const auto it = self.m_channels.find(type);
-	if (it == self.m_channels.end()) {
-		return ret_t{ nullptr };
-	}
-	return static_cast<ret_t>(it->second.get());
-}
-
-auto gse::channel_registry::snapshot_data(const id type) const -> const void* {
-	std::lock_guard lock(m_mutex);
-	const auto it = m_channels.find(type);
-	if (it == m_channels.end()) {
-		return nullptr;
-	}
-	return it->second->snapshot_data();
-}
-
-auto gse::channel_registry::take_snapshot_all() -> void {
-	std::lock_guard lock(m_mutex);
-	for (const auto& ch : std::views::values(m_channels)) {
-		ch->take_snapshot();
-	}
+	return ensure_same_frame<T>().drain();
 }
 
 auto gse::channel_registry::flip_all() -> void {
@@ -328,14 +228,7 @@ auto gse::channel_registry::flip_all() -> void {
 }
 
 auto gse::channel_registry::make_writer() -> channel_writer {
-	return channel_writer([this](const id type, std::any item, const channel_factory_fn factory) {
-		std::lock_guard lock(m_mutex);
-		auto it = m_channels.find(type);
-		if (it == m_channels.end()) {
-			it = m_channels.emplace(type, factory()).first;
-		}
-		it->second->push_any(std::move(item));
-	});
+	return channel_writer{ this };
 }
 
 auto gse::channel_registry::clear() -> void {

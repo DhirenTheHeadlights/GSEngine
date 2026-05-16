@@ -151,12 +151,10 @@ export namespace gse::physics {
 		bool active = false;
 		std::uint32_t contact_count = 0;
 		std::uint32_t motor_count = 0;
-		time_t<float, seconds> solve_time{};
 	};
 
 	struct gpu_solver_frame_info {
 		const gpu::buffer* snapshot = nullptr;
-		gpu::compute_semaphore_state semaphore{};
 		std::uint32_t body_count = 0;
 		std::uint32_t body_stride = 0;
 		std::uint32_t position_offset = 0;

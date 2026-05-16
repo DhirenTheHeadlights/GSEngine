@@ -5,6 +5,7 @@ import std;
 import gse.assert;
 import gse.core;
 import gse.containers;
+import gse.meta;
 import gse.time;
 
 export namespace gse {
@@ -39,7 +40,8 @@ export namespace gse {
 
 		using value_type = T;
 
-		channel();
+		channel(
+		);
 
 		auto read(
 		) const -> reader;
@@ -66,31 +68,14 @@ export namespace gse {
 
 	struct channel_base {
 		virtual ~channel_base() = default;
-		virtual auto take_snapshot() -> void = 0;
-		virtual auto snapshot_data() const -> const void* = 0;
-		virtual auto push_any(std::any item) -> void = 0;
-		virtual auto flip() -> void = 0;
+
+		virtual auto flip(
+		) -> void = 0;
 	};
 
 	template <typename T>
 	struct typed_channel final : channel_base {
 		channel<T> data;
-
-		auto take_snapshot(
-		) -> void override {}
-
-		auto snapshot_data(
-		) const -> const void* override {
-			return &data.read_raw();
-		}
-
-		auto push_any(
-			std::any item
-		) -> void override {
-			if (auto* ptr = std::any_cast<T>(&item)) {
-				data.push(std::move(*ptr));
-			}
-		}
 
 		auto flip(
 		) -> void override {
@@ -99,47 +84,23 @@ export namespace gse {
 	};
 
 	template <typename T>
-	struct same_frame_channel_t : std::false_type {};
-
-	template <typename T>
-	constexpr bool is_same_frame_channel_v = same_frame_channel_t<T>::value;
+	constexpr bool is_same_frame_channel_v = has_annotation<same_frame_channel_tag>(^^T);
 
 	template <typename T>
 	struct same_frame_typed_channel final : channel_base {
 		std::vector<T> data;
 		mutable std::mutex mutex;
 
-		auto take_snapshot(
-		) -> void override {}
-
-		auto snapshot_data(
-		) const -> const void* override {
-			return nullptr;
-		}
-
-		auto push_any(
-			std::any item
-		) -> void override {
-			if (auto* ptr = std::any_cast<T>(&item)) {
-				std::lock_guard lock(mutex);
-				data.push_back(std::move(*ptr));
-			}
-		}
+		auto push(
+			T item
+		) -> void;
 
 		auto flip(
-		) -> void override {
-			std::lock_guard lock(mutex);
-			data.clear();
-		}
+		) -> void override;
 
 		auto drain(
-		) -> std::vector<T> {
-			std::lock_guard lock(mutex);
-			return std::exchange(data, {});
-		}
+		) -> std::vector<T>;
 	};
-
-	using channel_factory_fn = std::unique_ptr<channel_base>(*)();
 
 	template <typename T>
 	class channel_read_guard : non_copyable {
@@ -166,14 +127,14 @@ export namespace gse {
 
 		auto front(
 		) const -> const T&;
+
 	private:
 		const std::vector<T>* m_data;
 	};
 }
 
 template <typename T>
-gse::channel<T>::reader::reader(const std::vector<T>* data)
-	: m_data(data) {}
+gse::channel<T>::reader::reader(const std::vector<T>* data) : m_data(data) {}
 
 template <typename T>
 auto gse::channel<T>::reader::begin() const -> std::vector<T>::const_iterator {
@@ -235,6 +196,24 @@ auto gse::channel<T>::flip() -> void {
 	std::lock_guard lock(m_write_mutex);
 	m_buffer.flip();
 	m_buffer.write().clear();
+}
+
+template <typename T>
+auto gse::same_frame_typed_channel<T>::push(T item) -> void {
+	std::lock_guard lock(mutex);
+	data.push_back(std::move(item));
+}
+
+template <typename T>
+auto gse::same_frame_typed_channel<T>::flip() -> void {
+	std::lock_guard lock(mutex);
+	data.clear();
+}
+
+template <typename T>
+auto gse::same_frame_typed_channel<T>::drain() -> std::vector<T> {
+	std::lock_guard lock(mutex);
+	return std::exchange(data, {});
 }
 
 template <typename T>

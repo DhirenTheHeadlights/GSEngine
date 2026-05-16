@@ -457,14 +457,7 @@ template <typename S>
 auto gse::invoke_apply_settings_for(void* data_ptr, channel_registry& channels_store, channel_writer& channels) -> void {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
 	using data_t = typename S::data;
-	channels_store.ensure(id_of<settings::change_request<S>>(), +[]() -> std::unique_ptr<channel_base> {
-		return std::make_unique<typed_channel<settings::change_request<S>>>();
-	});
-	const auto* snap = channels_store.snapshot_data(id_of<settings::change_request<S>>());
-	if (!snap) {
-		return;
-	}
-	const auto& reqs = *static_cast<const std::vector<settings::change_request<S>>*>(snap);
+	const auto& reqs = channels_store.ensure_typed<settings::change_request<S>>().data.read_raw();
 	for (const auto& req : reqs) {
 		if (!req.apply) {
 			continue;

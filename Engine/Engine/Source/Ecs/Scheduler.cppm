@@ -202,10 +202,7 @@ auto gse::scheduler::register_external_resource(T* ptr) -> void {
 
 template <typename T>
 auto gse::scheduler::channel() -> gse::channel<T>& {
-	auto& base = m_channels_store.ensure(id_of<T>(), +[]() -> std::unique_ptr<channel_base> {
-		return std::make_unique<typed_channel<T>>();
-	});
-	return static_cast<typed_channel<T>&>(base).data;
+	return m_channels_store.ensure_typed<T>().data;
 }
 
 template <typename T>

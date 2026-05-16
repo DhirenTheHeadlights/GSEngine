@@ -279,7 +279,7 @@ auto gse::vbd::prepare_joint(const joint_constraint& j, const body_state& body_a
 	if (j.type == joint_type::distance) {
 		num_pos_rows = 1;
 	}
-		else if (j.type == joint_type::slider) {
+	else if (j.type == joint_type::slider) {
 		num_pos_rows = 2;
 	}
 
@@ -359,7 +359,7 @@ auto gse::vbd::prepare_joint(const joint_constraint& j, const body_state& body_a
 	if (j.type == joint_type::distance) {
 		pos_c0_val[0] = magnitude(d_vec) - j.target_distance;
 	}
-		else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
+	else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
 		for (int k = 0; k < 3; ++k) {
 			pos_c0_val[k] = dot(dirs[k], d_vec);
 		}
@@ -389,13 +389,13 @@ auto gse::vbd::prepare_joint(const joint_constraint& j, const body_state& body_a
 				if (const angle twist_angle = dot(axis_a, theta); twist_angle < j.limit_lower) {
 					limit_c0_val = twist_angle - j.limit_lower;
 				}
-		else if (twist_angle > j.limit_upper) {
+			else if (twist_angle > j.limit_upper) {
 					limit_c0_val = twist_angle - j.limit_upper;
 				}
 			}
 		}
 	}
-		else if (j.type == joint_type::slider) {
+	else if (j.type == joint_type::slider) {
 		const auto axis_w = normalize(rotate_vector(body_a_state.orientation, j.local_axis_a));
 		vec3f perp0 = cross(axis_w, axis_y);
 		if (magnitude(perp0) < 1e-6f) {
@@ -420,17 +420,9 @@ auto gse::vbd::prepare_joint(const joint_constraint& j, const body_state& body_a
 	g.limit_penalty = limit_penalty_val;
 	g.pos_c0 = pos_c0_val;
 	g.ang_c0 = ang_c0_val;
-g.limit_c0 = limit_c0_val;
+	g.limit_c0 = limit_c0_val;
 
-return g;
-}
-
-gse::vbd::gpu_solver::~gpu_solver() {
-	if (m_compute.initialized) {
-		for (auto& f : m_frames) {
-			f.queue.wait();
-		}
-	}
+	return g;
 }
 
 auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void {
@@ -675,12 +667,12 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 }
 
 auto gse::vbd::gpu_solver::stage_readback() -> void {
-	auto& f = m_frames[1 - m_dispatch_slot];
+	auto& f = m_frames[m_dispatch_slot];
 	if (!f.readback_pending) {
 		return;
 	}
 
-	if (!f.first_submit && !f.queue.is_complete()) {
+	if (m_frame_count - f.dispatched_at_frame < gpu::max_frames_in_flight) {
 		return;
 	}
 
@@ -743,20 +735,6 @@ auto gse::vbd::gpu_solver::pending_dispatch() const -> bool {
 	return m_pending_dispatch;
 }
 
-auto gse::vbd::gpu_solver::ready_to_dispatch() const -> bool {
-	const auto& f = m_frames[m_dispatch_slot];
-	const auto& other = m_frames[1 - m_dispatch_slot];
-	return (f.first_submit || f.queue.is_complete()) && !other.readback_pending;
-}
-
-auto gse::vbd::gpu_solver::mark_dispatched() -> void {
-	auto& f = m_frames[m_dispatch_slot];
-	f.readback_info = { m_body_count, m_contact_count, m_joint_count };
-	f.readback_pending = true;
-	m_pending_dispatch = false;
-	m_frame_count++;
-}
-
 auto gse::vbd::gpu_solver::body_count() const -> std::uint32_t {
 	return m_body_count;
 }
@@ -785,21 +763,12 @@ auto gse::vbd::gpu_solver::frame_count() const -> std::uint32_t {
 	return m_frame_count;
 }
 
-auto gse::vbd::gpu_solver::solve_time() const -> time_step {
-	return milliseconds(m_compute.solve_ms);
-}
-
 auto gse::vbd::gpu_solver::snapshot_buffer(const std::uint32_t slot) const -> const gpu::buffer& {
 	return m_frames[slot].physics_snapshot_buffer;
 }
 
 auto gse::vbd::gpu_solver::latest_snapshot_slot() const -> std::uint32_t {
 	return 1 - m_dispatch_slot;
-}
-
-auto gse::vbd::gpu_solver::compute_semaphore() const -> gpu::compute_semaphore_state {
-	const auto slot = latest_snapshot_slot();
-	return m_frames[slot].queue.semaphore_state();
 }
 
 auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::context::data& gpu_s) -> async::task<> {
@@ -828,7 +797,6 @@ auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::conte
 	create_buffers(gpu_s);
 
 	for (auto& f : m_frames) {
-		f.queue = gpu::compute_queue::create(*gpu_s.device, gpu_s.bindless_textures.get());
 		f.descriptors = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), predict_entry::pod);
 
 		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), f.descriptors)
@@ -859,34 +827,14 @@ auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::conte
 	co_return;
 }
 
-auto gse::vbd::gpu_solver::dispatch_compute() -> void {
+auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<> {
 	if (!m_buffers_created || m_body_count == 0) {
-		return;
+		co_return;
 	}
 
 	auto& f = m_frames[m_dispatch_slot];
+	auto& other = m_frames[1 - m_dispatch_slot];
 
-	m_compute.solve_ms = f.queue.read_timing();
-
-	auto ingest_stage = [&](const std::string_view tag, const std::uint32_t start_slot, const std::uint32_t end_slot) {
-		const float ms = f.queue.read_timing(start_slot, end_slot);
-		if (ms > 0.f) {
-			profile::ingest_gpu_sample(find_or_generate_id(tag), milliseconds(ms));
-		}
-	};
-
-	ingest_stage("gpu:vbd_collision", timing_slot::begin, timing_slot::after_collision);
-	ingest_stage("gpu:vbd_predict", timing_slot::after_collision, timing_slot::after_predict);
-	ingest_stage("gpu:vbd_solve", timing_slot::after_predict, timing_slot::after_solve);
-	ingest_stage("gpu:vbd_velocity", timing_slot::after_solve, timing_slot::after_velocity);
-	ingest_stage("gpu:vbd_finalize", timing_slot::after_velocity, timing_slot::after_finalize);
-
-	f.queue.begin("compute_queue.vbd_solver");
-
-	constexpr std::array init_scopes = { gpu::barrier_scope::host_to_compute, gpu::barrier_scope::transfer_to_transfer };
-	f.queue.barriers(init_scopes);
-
-	const auto& cfg = m_solver_cfg;
 	const std::uint32_t total = total_substeps();
 	const time_step sub_dt = m_dt / static_cast<float>(total);
 	const auto h_squared = sub_dt * sub_dt;
@@ -895,9 +843,8 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 		return (a + b - 1) / b;
 	};
 
-	f.queue.begin_timing();
-
-	auto make_pc = [&](const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
+	auto make_pc = [this, sub_dt, h_squared](const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
+		const auto& cfg = m_solver_cfg;
 		return gpu::typed_push_constants<vbd_push_constants>{
 			.data = {
 				.body_count = m_body_count,
@@ -937,215 +884,407 @@ auto gse::vbd::gpu_solver::dispatch_compute() -> void {
 		};
 	};
 
-	auto bind_and_push = [&](const gpu::pipeline& pipeline, const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
-		f.queue.bind_pipeline(pipeline);
-		f.queue.bind_descriptors(pipeline, f.descriptors);
-		const auto pc = make_pc(color_offset, color_count, substep, iteration, current_alpha, warm_start_count);
-		f.queue.push(pipeline, pc);
-	};
-
 	const std::uint32_t body_workgroups = ceil_div(m_body_count, workgroup_size);
+	const std::uint32_t reset_workgroups = ceil_div(std::max({ m_body_count, max_contacts, grid_table_size }), workgroup_size);
+	const std::uint32_t joint_workgroups = ceil_div(std::max(m_joint_count, 1u), workgroup_size);
 	constexpr std::uint32_t num_colors = max_colors;
-	const std::uint32_t num_iterations = cfg.iterations;
-	const float solve_alpha = cfg.post_stabilize ? 1.f : cfg.alpha;
+	const std::uint32_t num_iterations = m_solver_cfg.iterations;
+	const float solve_alpha = m_solver_cfg.post_stabilize ? 1.f : m_solver_cfg.alpha;
+	const bool use_jacobi = m_solver_cfg.use_jacobi;
+	const bool post_stabilize = m_solver_cfg.post_stabilize;
+	const std::uint32_t joint_count = m_joint_count;
+
+	const auto compute_stage = gpu::pipeline_stage::compute_shader;
+
+	constexpr std::size_t frozen_jacobian_clear_size = max_contacts * sizeof(frozen_jacobian);
+	constexpr std::size_t solve_state_clear_size = max_bodies * solve_state_float4s_per_body * sizeof(float) * 4;
+	constexpr std::size_t solve_deltas_clear_size = max_bodies * 2 * sizeof(float) * 4;
+	gpu::pass<vbd_clear_state_buffers_stage>(ctx)
+		.on(gpu::queue_type::compute)
+		.writes(
+			gpu::transfer_write(f.frozen_jacobian_buffer),
+			gpu::transfer_write(f.solve_state_buffer),
+			gpu::transfer_write(f.solve_deltas_buffer)
+		)
+		.record([&f](gpu::recording_context& rec) {
+			rec.fill_buffer(f.frozen_jacobian_buffer, 0, frozen_jacobian_clear_size);
+			rec.fill_buffer(f.solve_state_buffer, 0, solve_state_clear_size);
+			rec.fill_buffer(f.solve_deltas_buffer, 0, solve_deltas_clear_size);
+		});
 
 	for (std::uint32_t sub = 0; sub < total; ++sub) {
-		const std::uint32_t substep_warm_start_count = (sub == 0) ? m_warm_start_count : 0u;
+		const std::uint32_t warm = (sub == 0) ? m_warm_start_count : 0u;
 
-		bind_and_push(m_compute.collision_reset_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(ceil_div(std::max({m_body_count, max_contacts, grid_table_size}), workgroup_size), 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+		gpu::pass<vbd_collision_reset_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.writes(
+				gpu::storage_write(f.collision_state_buffer, compute_stage),
+				gpu::storage_write(f.color_buffer, compute_stage),
+				gpu::storage_write(f.grid_buffer, compute_stage),
+				gpu::storage_write(f.indirect_dispatch_buffer, compute_stage)
+			)
+			.tracks(f.motor_buffer, f.motor_map_buffer, f.warm_start_buffer, f.joint_buffer)
+			.record([this, &f, sub, warm, make_pc, reset_workgroups](gpu::recording_context& rec) {
+				rec.bind(m_compute.collision_reset_pipeline);
+				rec.bind_descriptors(m_compute.collision_reset_pipeline, f.descriptors);
+				rec.push(m_compute.collision_reset_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch(reset_workgroups, 1, 1);
+			});
 
-		bind_and_push(m_compute.collision_grid_build_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(body_workgroups, 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+		gpu::pass<vbd_grid_build_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(gpu::storage_read(f.body_buffer, compute_stage))
+			.writes(gpu::storage_write(f.grid_buffer, compute_stage))
+			.record([this, &f, sub, warm, make_pc, body_workgroups](gpu::recording_context& rec) {
+				rec.bind(m_compute.collision_grid_build_pipeline);
+				rec.bind_descriptors(m_compute.collision_grid_build_pipeline, f.descriptors);
+				rec.push(m_compute.collision_grid_build_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch(body_workgroups, 1, 1);
+			});
 
-		bind_and_push(m_compute.collision_broad_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(body_workgroups, 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+		gpu::pass<vbd_broad_phase_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(
+				gpu::storage_read(f.body_buffer, compute_stage),
+				gpu::storage_read(f.grid_buffer, compute_stage)
+			)
+			.writes(gpu::storage_write(f.collision_pair_buffer, compute_stage))
+			.record([this, &f, sub, warm, make_pc, body_workgroups](gpu::recording_context& rec) {
+				rec.bind(m_compute.collision_broad_phase_pipeline);
+				rec.bind_descriptors(m_compute.collision_broad_phase_pipeline, f.descriptors);
+				rec.push(m_compute.collision_broad_phase_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch(body_workgroups, 1, 1);
+			});
 
-		bind_and_push(m_compute.prepare_indirect_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(1, 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
+		gpu::pass<vbd_prepare_indirect_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(gpu::storage_read(f.collision_pair_buffer, compute_stage))
+			.writes(gpu::storage_write(f.indirect_dispatch_buffer, compute_stage))
+			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
+				rec.bind(m_compute.prepare_indirect_pipeline);
+				rec.bind_descriptors(m_compute.prepare_indirect_pipeline, f.descriptors);
+				rec.push(m_compute.prepare_indirect_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch(1, 1, 1);
+			});
 
-		bind_and_push(m_compute.collision_narrow_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 0);
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+		gpu::pass<vbd_narrow_phase_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(
+				gpu::storage_read(f.body_buffer, compute_stage),
+				gpu::storage_read(f.collision_pair_buffer, compute_stage),
+				gpu::storage_read(f.warm_start_buffer, compute_stage),
+				gpu::indirect_read(f.indirect_dispatch_buffer)
+			)
+			.writes(
+				gpu::storage_write(f.contact_buffer, compute_stage),
+				gpu::storage_write(f.collision_state_buffer, compute_stage)
+			)
+			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
+				rec.bind(m_compute.collision_narrow_phase_pipeline);
+				rec.bind_descriptors(m_compute.collision_narrow_phase_pipeline, f.descriptors);
+				rec.push(m_compute.collision_narrow_phase_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch_indirect(f.indirect_dispatch_buffer, 0);
+			});
 
-		bind_and_push(m_compute.prepare_contact_indirect_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(1, 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
+		gpu::pass<vbd_prepare_contact_indirect_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(gpu::storage_read(f.collision_state_buffer, compute_stage))
+			.writes(gpu::storage_write(f.indirect_dispatch_buffer, compute_stage))
+			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
+				rec.bind(m_compute.prepare_contact_indirect_pipeline);
+				rec.bind_descriptors(m_compute.prepare_contact_indirect_pipeline, f.descriptors);
+				rec.push(m_compute.prepare_contact_indirect_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch(1, 1, 1);
+			});
 
-		bind_and_push(m_compute.collision_build_adjacency_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(1, 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
+		gpu::pass<vbd_build_adjacency_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(
+				gpu::storage_read(f.contact_buffer, compute_stage),
+				gpu::storage_read(f.joint_buffer, compute_stage),
+				gpu::storage_read(f.body_buffer, compute_stage),
+				gpu::storage_read(f.collision_state_buffer, compute_stage)
+			)
+			.writes(
+				gpu::storage_write(f.contact_offsets_buffer, compute_stage),
+				gpu::storage_write(f.contact_counts_buffer, compute_stage),
+				gpu::storage_write(f.contact_adjacency_buffer, compute_stage),
+				gpu::storage_write(f.joint_offsets_buffer, compute_stage),
+				gpu::storage_write(f.joint_counts_buffer, compute_stage),
+				gpu::storage_write(f.joint_adjacency_buffer, compute_stage),
+				gpu::storage_write(f.color_buffer, compute_stage),
+				gpu::storage_write(f.indirect_dispatch_buffer, compute_stage),
+				gpu::storage_write(f.collision_state_buffer, compute_stage)
+			)
+			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
+				rec.bind(m_compute.collision_build_adjacency_pipeline);
+				rec.bind_descriptors(m_compute.collision_build_adjacency_pipeline, f.descriptors);
+				rec.push(m_compute.collision_build_adjacency_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch(1, 1, 1);
+			});
 
-		f.queue.mark_timing(timing_slot::after_collision);
+		gpu::pass<vbd_predict_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(
+				gpu::storage_read(f.motor_buffer, compute_stage),
+				gpu::storage_read(f.motor_map_buffer, compute_stage),
+				gpu::storage_read(f.contact_buffer, compute_stage),
+				gpu::storage_read(f.contact_offsets_buffer, compute_stage),
+				gpu::storage_read(f.contact_counts_buffer, compute_stage),
+				gpu::storage_read(f.contact_adjacency_buffer, compute_stage),
+				gpu::storage_read(f.joint_buffer, compute_stage),
+				gpu::storage_read(f.joint_offsets_buffer, compute_stage),
+				gpu::storage_read(f.joint_counts_buffer, compute_stage),
+				gpu::storage_read(f.joint_adjacency_buffer, compute_stage),
+				gpu::storage_read(f.body_buffer, compute_stage)
+			)
+			.writes(gpu::storage_write(f.body_buffer, compute_stage))
+			.record([this, &f, sub, warm, make_pc, body_workgroups](gpu::recording_context& rec) {
+				rec.bind(m_compute.predict_pipeline);
+				rec.bind_descriptors(m_compute.predict_pipeline, f.descriptors);
+				rec.push(m_compute.predict_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch(body_workgroups, 1, 1);
+			});
 
-		bind_and_push(m_compute.predict_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(body_workgroups, 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+		gpu::pass<vbd_freeze_jacobians_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(
+				gpu::storage_read(f.contact_buffer, compute_stage),
+				gpu::storage_read(f.body_buffer, compute_stage),
+				gpu::indirect_read(f.indirect_dispatch_buffer)
+			)
+			.writes(gpu::storage_write(f.frozen_jacobian_buffer, compute_stage))
+			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
+				rec.bind(m_compute.freeze_jacobians_pipeline);
+				rec.bind_descriptors(m_compute.freeze_jacobians_pipeline, f.descriptors);
+				rec.push(m_compute.freeze_jacobians_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
+			});
 
-		bind_and_push(m_compute.freeze_jacobians_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+		gpu::pass<vbd_solve_iterations_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(
+				gpu::storage_read(f.body_buffer, compute_stage),
+				gpu::storage_read(f.contact_buffer, compute_stage),
+				gpu::storage_read(f.contact_offsets_buffer, compute_stage),
+				gpu::storage_read(f.contact_counts_buffer, compute_stage),
+				gpu::storage_read(f.contact_adjacency_buffer, compute_stage),
+				gpu::storage_read(f.motor_buffer, compute_stage),
+				gpu::storage_read(f.motor_map_buffer, compute_stage),
+				gpu::storage_read(f.joint_buffer, compute_stage),
+				gpu::storage_read(f.joint_offsets_buffer, compute_stage),
+				gpu::storage_read(f.joint_counts_buffer, compute_stage),
+				gpu::storage_read(f.joint_adjacency_buffer, compute_stage),
+				gpu::storage_read(f.color_buffer, compute_stage),
+				gpu::storage_read(f.frozen_jacobian_buffer, compute_stage),
+				gpu::indirect_read(f.indirect_dispatch_buffer)
+			)
+			.writes(
+				gpu::storage_write(f.body_buffer, compute_stage),
+				gpu::storage_write(f.contact_buffer, compute_stage),
+				gpu::storage_write(f.joint_buffer, compute_stage),
+				gpu::storage_write(f.solve_state_buffer, compute_stage),
+				gpu::storage_write(f.solve_deltas_buffer, compute_stage),
+				gpu::storage_write(f.collision_state_buffer, compute_stage)
+			)
+			.record([this, &f, sub, warm, make_pc, body_workgroups, joint_workgroups, num_iterations, solve_alpha, use_jacobi, joint_count](gpu::recording_context& rec) {
+				for (std::uint32_t it = 0; it < num_iterations; ++it) {
+					rec.bind(m_compute.solve_color_pipeline);
+					rec.bind_descriptors(m_compute.solve_color_pipeline, f.descriptors);
+					auto color_pc = make_pc(0u, num_colors, sub, it, solve_alpha, warm);
 
-		f.queue.mark_timing(timing_slot::after_predict);
+					if (use_jacobi) {
+						rec.push(m_compute.solve_color_pipeline, color_pc);
+						rec.dispatch(body_workgroups, 1, 1);
+						rec.barrier(gpu::barrier_scope::compute_to_compute);
 
-		for (std::uint32_t iterations = 0; iterations < num_iterations; ++iterations) {
-			bind_and_push(m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, solve_alpha, substep_warm_start_count);
-			auto color_pc = make_pc(0u, num_colors, sub, iterations, solve_alpha, substep_warm_start_count);
+						rec.bind(m_compute.apply_jacobi_pipeline);
+						rec.bind_descriptors(m_compute.apply_jacobi_pipeline, f.descriptors);
+						rec.push(m_compute.apply_jacobi_pipeline, make_pc(0u, 0u, sub, it, solve_alpha, warm));
+						rec.dispatch(body_workgroups, 1, 1);
+						rec.barrier(gpu::barrier_scope::compute_to_compute);
+					}
+					else {
+						for (std::uint32_t color = 0; color < num_colors; ++color) {
+							color_pc.data.color_offset = color;
+							rec.push(m_compute.solve_color_pipeline, color_pc);
+							rec.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
+							if (color + 1 < num_colors) {
+								rec.barrier(gpu::barrier_scope::compute_to_compute);
+							}
+						}
+						rec.barrier(gpu::barrier_scope::compute_to_compute);
+					}
 
-			if (cfg.use_jacobi) {
-				f.queue.push(m_compute.solve_color_pipeline, color_pc);
-				f.queue.dispatch(body_workgroups, 1, 1);
-				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+					rec.bind(m_compute.update_lambda_pipeline);
+					rec.bind_descriptors(m_compute.update_lambda_pipeline, f.descriptors);
+					rec.push(m_compute.update_lambda_pipeline, make_pc(0u, 0u, sub, it, solve_alpha, warm));
+					rec.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
+					if (joint_count > 0) {
+						rec.bind(m_compute.update_joint_lambda_pipeline);
+						rec.bind_descriptors(m_compute.update_joint_lambda_pipeline, f.descriptors);
+						rec.push(m_compute.update_joint_lambda_pipeline, make_pc(0u, 0u, sub, it, solve_alpha, warm));
+						rec.dispatch(joint_workgroups, 1, 1);
+					}
+					rec.barrier(gpu::barrier_scope::compute_to_indirect);
+				}
+			});
 
-				bind_and_push(m_compute.apply_jacobi_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
-				f.queue.dispatch(body_workgroups, 1, 1);
-				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-			}
-		else {
+		gpu::pass<vbd_derive_velocities_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(gpu::storage_read(f.body_buffer, compute_stage))
+			.writes(
+				gpu::storage_write(f.body_buffer, compute_stage),
+				gpu::storage_write(f.collision_state_buffer, compute_stage)
+			)
+			.record([this, &f, sub, warm, make_pc, body_workgroups, num_iterations, solve_alpha](gpu::recording_context& rec) {
+				rec.bind(m_compute.derive_velocities_pipeline);
+				rec.bind_descriptors(m_compute.derive_velocities_pipeline, f.descriptors);
+				rec.push(m_compute.derive_velocities_pipeline, make_pc(0u, 0u, sub, num_iterations, solve_alpha, warm));
+				rec.dispatch(body_workgroups, 1, 1);
+			});
+
+		gpu::pass<vbd_apply_restitution_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(
+				gpu::storage_read(f.body_buffer, compute_stage),
+				gpu::storage_read(f.contact_buffer, compute_stage),
+				gpu::storage_read(f.contact_offsets_buffer, compute_stage),
+				gpu::storage_read(f.contact_counts_buffer, compute_stage),
+				gpu::storage_read(f.contact_adjacency_buffer, compute_stage),
+				gpu::storage_read(f.color_buffer, compute_stage),
+				gpu::indirect_read(f.indirect_dispatch_buffer)
+			)
+			.writes(gpu::storage_write(f.body_buffer, compute_stage))
+			.record([this, &f, sub, warm, make_pc, num_iterations](gpu::recording_context& rec) {
+				auto restitution_pc = make_pc(0u, num_colors, sub, num_iterations, 0.f, warm);
+				rec.bind(m_compute.apply_restitution_pipeline);
+				rec.bind_descriptors(m_compute.apply_restitution_pipeline, f.descriptors);
 				for (std::uint32_t color = 0; color < num_colors; ++color) {
-					color_pc.data.color_offset = color;
-					f.queue.push(m_compute.solve_color_pipeline, color_pc);
-					f.queue.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
+					restitution_pc.data.color_offset = color;
+					rec.push(m_compute.apply_restitution_pipeline, restitution_pc);
+					rec.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
 					if (color + 1 < num_colors) {
-						f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+						rec.barrier(gpu::barrier_scope::compute_to_compute);
 					}
 				}
+			});
 
-				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-			}
+		if (post_stabilize) {
+			gpu::pass<vbd_post_stabilize_stage>(ctx)
+				.on(gpu::queue_type::compute)
+				.reads(
+					gpu::storage_read(f.body_buffer, compute_stage),
+					gpu::storage_read(f.contact_buffer, compute_stage),
+					gpu::storage_read(f.contact_offsets_buffer, compute_stage),
+					gpu::storage_read(f.contact_counts_buffer, compute_stage),
+					gpu::storage_read(f.contact_adjacency_buffer, compute_stage),
+					gpu::storage_read(f.motor_buffer, compute_stage),
+					gpu::storage_read(f.motor_map_buffer, compute_stage),
+					gpu::storage_read(f.joint_buffer, compute_stage),
+					gpu::storage_read(f.joint_offsets_buffer, compute_stage),
+					gpu::storage_read(f.joint_counts_buffer, compute_stage),
+					gpu::storage_read(f.joint_adjacency_buffer, compute_stage),
+					gpu::storage_read(f.color_buffer, compute_stage),
+					gpu::storage_read(f.frozen_jacobian_buffer, compute_stage)
+				)
+				.writes(
+					gpu::storage_write(f.body_buffer, compute_stage),
+					gpu::storage_write(f.contact_buffer, compute_stage),
+					gpu::storage_write(f.joint_buffer, compute_stage),
+					gpu::storage_write(f.solve_state_buffer, compute_stage),
+					gpu::storage_write(f.solve_deltas_buffer, compute_stage),
+					gpu::storage_write(f.indirect_dispatch_buffer, compute_stage)
+				)
+				.record([this, &f, sub, warm, make_pc, body_workgroups, num_iterations, use_jacobi](gpu::recording_context& rec) {
+					rec.bind(m_compute.prepare_color_indirect_pipeline);
+					rec.bind_descriptors(m_compute.prepare_color_indirect_pipeline, f.descriptors);
+					rec.push(m_compute.prepare_color_indirect_pipeline, make_pc(0u, 0u, sub, num_iterations, 0.f, warm));
+					rec.dispatch(1, 1, 1);
+					rec.barrier(gpu::barrier_scope::compute_to_indirect);
 
-			bind_and_push(m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
-			f.queue.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
-			if (m_joint_count > 0) {
-				bind_and_push(m_compute.update_joint_lambda_pipeline, 0u, 0u, sub, iterations, solve_alpha, substep_warm_start_count);
-				f.queue.dispatch(ceil_div(m_joint_count, workgroup_size), 1, 1);
-			}
-			f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
-		}
+					auto color_pc = make_pc(0u, num_colors, sub, num_iterations, 0.f, warm);
 
-		f.queue.mark_timing(timing_slot::after_solve);
+					rec.bind(m_compute.solve_color_pipeline);
+					rec.bind_descriptors(m_compute.solve_color_pipeline, f.descriptors);
 
-		bind_and_push(m_compute.derive_velocities_pipeline, 0u, 0u, sub, num_iterations, solve_alpha, substep_warm_start_count);
-		f.queue.dispatch(body_workgroups, 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+					if (use_jacobi) {
+						rec.push(m_compute.solve_color_pipeline, color_pc);
+						rec.dispatch(body_workgroups, 1, 1);
+						rec.barrier(gpu::barrier_scope::compute_to_compute);
 
-		auto restitution_pc = make_pc(0u, num_colors, sub, num_iterations, 0.f, substep_warm_start_count);
-		f.queue.bind_pipeline(m_compute.apply_restitution_pipeline);
-		f.queue.bind_descriptors(m_compute.apply_restitution_pipeline, f.descriptors);
-		for (std::uint32_t color = 0; color < num_colors; ++color) {
-			restitution_pc.data.color_offset = color;
-			f.queue.push(m_compute.apply_restitution_pipeline, restitution_pc);
-			f.queue.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
-			if (color + 1 < num_colors) {
-				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-			}
-		}
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-
-		if (cfg.post_stabilize) {
-			bind_and_push(m_compute.prepare_color_indirect_pipeline, 0u, 0u, sub, num_iterations, 0.f, substep_warm_start_count);
-			f.queue.dispatch(1, 1, 1);
-			f.queue.barrier(gpu::barrier_scope::compute_to_indirect);
-
-			auto color_pc = make_pc(0u, num_colors, sub, num_iterations, 0.f, substep_warm_start_count);
-
-			f.queue.bind_pipeline(m_compute.solve_color_pipeline);
-			f.queue.bind_descriptors(m_compute.solve_color_pipeline, f.descriptors);
-
-			if (cfg.use_jacobi) {
-				f.queue.push(m_compute.solve_color_pipeline, color_pc);
-				f.queue.dispatch(body_workgroups, 1, 1);
-				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-
-				bind_and_push(m_compute.apply_jacobi_pipeline, 0u, 0u, sub, num_iterations, 0.f, substep_warm_start_count);
-				f.queue.dispatch(body_workgroups, 1, 1);
-				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-			}
-			else {
-				for (std::uint32_t color = 0; color < num_colors; ++color) {
-					color_pc.data.color_offset = color;
-					f.queue.push(m_compute.solve_color_pipeline, color_pc);
-					f.queue.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
-					if (color + 1 < num_colors) {
-						f.queue.barrier(gpu::barrier_scope::compute_to_compute);
+						rec.bind(m_compute.apply_jacobi_pipeline);
+						rec.bind_descriptors(m_compute.apply_jacobi_pipeline, f.descriptors);
+						rec.push(m_compute.apply_jacobi_pipeline, make_pc(0u, 0u, sub, num_iterations, 0.f, warm));
+						rec.dispatch(body_workgroups, 1, 1);
 					}
-				}
-				f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-			}
+					else {
+						for (std::uint32_t color = 0; color < num_colors; ++color) {
+							color_pc.data.color_offset = color;
+							rec.push(m_compute.solve_color_pipeline, color_pc);
+							rec.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
+							if (color + 1 < num_colors) {
+								rec.barrier(gpu::barrier_scope::compute_to_compute);
+							}
+						}
+					}
+				});
 		}
 
-		f.queue.mark_timing(timing_slot::after_velocity);
-
-		bind_and_push(m_compute.finalize_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		f.queue.dispatch(body_workgroups, 1, 1);
-		f.queue.barrier(gpu::barrier_scope::compute_to_compute);
-
-		f.queue.mark_timing(timing_slot::after_finalize);
+		gpu::pass<vbd_finalize_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(gpu::storage_read(f.body_buffer, compute_stage))
+			.writes(gpu::storage_write(f.body_buffer, compute_stage))
+			.record([this, &f, sub, warm, make_pc, body_workgroups](gpu::recording_context& rec) {
+				rec.bind(m_compute.finalize_pipeline);
+				rec.bind_descriptors(m_compute.finalize_pipeline, f.descriptors);
+				rec.push(m_compute.finalize_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
+				rec.dispatch(body_workgroups, 1, 1);
+			});
 	}
 
-	f.queue.end_timing();
+	{
+		constexpr std::size_t contact_dst_base = max_bodies * sizeof(body_state);
+		constexpr std::size_t contact_copy_size = max_contacts * sizeof(contact_constraint);
+		constexpr std::size_t count_dst = contact_dst_base + contact_copy_size;
+		const std::size_t body_copy_size = m_body_count * sizeof(body_state);
+		const std::size_t joint_copy_size = joint_count * sizeof(joint_constraint);
 
-	f.queue.barrier(gpu::barrier_scope::compute_to_transfer);
+		gpu::pass<vbd_readback_copy_stage>(ctx)
+			.on(gpu::queue_type::compute)
+			.reads(
+				gpu::transfer_read(f.body_buffer),
+				gpu::transfer_read(f.contact_buffer),
+				gpu::transfer_read(f.collision_state_buffer),
+				gpu::transfer_read(f.joint_buffer)
+			)
+			.writes(
+				gpu::transfer_write(f.readback_buffer),
+				gpu::transfer_write(f.physics_snapshot_buffer),
+				gpu::transfer_write(other.body_buffer)
+			)
+			.record([&f, &other, body_copy_size, joint_copy_size, joint_count](gpu::recording_context& rec) {
+				rec.copy_buffer(f.body_buffer, f.readback_buffer, body_copy_size);
+				rec.copy_buffer(f.contact_buffer, f.readback_buffer, contact_copy_size, 0, contact_dst_base);
+				rec.copy_buffer(f.collision_state_buffer, f.readback_buffer, collision_state_uints * sizeof(std::uint32_t), 0, count_dst);
 
-	const std::size_t body_copy_size = m_body_count * sizeof(body_state);
-	f.queue.copy_buffer({
-		.src = f.body_buffer,
-		.dst = f.readback_buffer,
-		.size = body_copy_size
-	});
+				if (joint_count > 0) {
+					constexpr std::size_t joint_dst = count_dst + collision_state_uints * sizeof(std::uint32_t);
+					rec.copy_buffer(f.joint_buffer, f.readback_buffer, joint_copy_size, 0, joint_dst);
+				}
 
-	constexpr std::size_t contact_dst_base = max_bodies * sizeof(body_state);
-	constexpr std::size_t contact_copy_size = max_contacts * sizeof(contact_constraint);
-	f.queue.copy_buffer({
-		.src = f.contact_buffer,
-		.dst = f.readback_buffer,
-		.dst_offset = contact_dst_base,
-		.size = contact_copy_size
-	});
-
-	constexpr std::size_t count_dst = contact_dst_base + contact_copy_size;
-	f.queue.copy_buffer({
-		.src = f.collision_state_buffer,
-		.dst = f.readback_buffer,
-		.dst_offset = count_dst,
-		.size = collision_state_uints * sizeof(std::uint32_t)
-	});
-
-	if (m_joint_count > 0) {
-		constexpr std::size_t joint_dst = count_dst + collision_state_uints * sizeof(std::uint32_t);
-		const std::size_t joint_copy_size = m_joint_count * sizeof(joint_constraint);
-		f.queue.copy_buffer({
-			.src = f.joint_buffer,
-			.dst = f.readback_buffer,
-			.dst_offset = joint_dst,
-			.size = joint_copy_size
-		});
+				rec.copy_buffer(f.body_buffer, other.body_buffer, body_copy_size);
+				rec.copy_buffer(f.body_buffer, f.physics_snapshot_buffer, body_copy_size);
+			});
 	}
 
-	auto& other = m_frames[1 - m_dispatch_slot];
-	f.queue.copy_buffer({
-		.src = f.body_buffer,
-		.dst = other.body_buffer,
-		.size = body_copy_size
-	});
-
-	f.queue.copy_buffer({
-		.src = f.body_buffer,
-		.dst = f.physics_snapshot_buffer,
-		.size = body_copy_size
-	});
-
-	f.queue.barrier(gpu::barrier_scope::transfer_to_host);
-
-	f.queue.submit();
-
-	mark_dispatched();
-	f.first_submit = false;
+	f.readback_info = { m_body_count, m_contact_count, m_joint_count };
+	f.readback_pending = true;
+	f.dispatched_at_frame = m_frame_count;
+	m_pending_dispatch = false;
+	m_frame_count++;
 	m_dispatch_slot = 1 - m_dispatch_slot;
+	co_return;
 }
 
 auto gse::vbd::gpu_solver::compute_initialized() const -> bool {

@@ -152,7 +152,6 @@ export namespace gse::vbd {
 		std::vector<vec3<velocity>> m_prev_velocity;
 		std::vector<float> m_accel_weight;
 
-		static constexpr std::uint32_t max_contacts = 16384;
 		std::vector<frozen_contact_jacobian> m_frozen_jacobians;
 	};
 }

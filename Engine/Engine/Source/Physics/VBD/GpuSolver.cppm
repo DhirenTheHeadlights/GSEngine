@@ -43,7 +43,6 @@ export namespace gse::vbd {
 
 export namespace gse::vbd {
 	constexpr std::uint32_t max_bodies = 2048;
-	constexpr std::uint32_t max_contacts = 16384;
 	constexpr std::uint32_t max_motors = 16;
 	constexpr std::uint32_t max_joints = 128;
 	constexpr std::uint32_t max_colors = 16;
@@ -53,22 +52,27 @@ export namespace gse::vbd {
 
 	constexpr std::uint32_t solve_state_float4s_per_body = 11;
 	constexpr std::uint32_t collision_state_uints = collision_state_header_uints;
-
-	namespace timing_slot {
-		constexpr std::uint32_t begin = 0;
-		constexpr std::uint32_t after_collision = 2;
-		constexpr std::uint32_t after_predict = 3;
-		constexpr std::uint32_t after_solve = 4;
-		constexpr std::uint32_t after_velocity = 5;
-		constexpr std::uint32_t after_finalize = 6;
-		constexpr std::uint32_t end = 1;
-	}
 	constexpr std::uint32_t grid_table_size = 4096;
+
+	struct vbd_clear_state_buffers_stage {};
+	struct vbd_collision_reset_stage {};
+	struct vbd_grid_build_stage {};
+	struct vbd_broad_phase_stage {};
+	struct vbd_prepare_indirect_stage {};
+	struct vbd_narrow_phase_stage {};
+	struct vbd_prepare_contact_indirect_stage {};
+	struct vbd_build_adjacency_stage {};
+	struct vbd_predict_stage {};
+	struct vbd_freeze_jacobians_stage {};
+	struct vbd_solve_iterations_stage {};
+	struct vbd_derive_velocities_stage {};
+	struct vbd_apply_restitution_stage {};
+	struct vbd_post_stabilize_stage {};
+	struct vbd_finalize_stage {};
+	struct vbd_readback_copy_stage {};
 
 	class gpu_solver {
 	public:
-		~gpu_solver();
-
 		auto create_buffers(
 			const gpu::context::data& ctx
 		) -> void;
@@ -79,7 +83,8 @@ export namespace gse::vbd {
 		) -> async::task<>;
 
 		auto dispatch_compute(
-		) -> void;
+			frame_context& ctx
+		) -> async::task<>;
 
 		auto compute_initialized(
 		) const -> bool;
@@ -118,12 +123,6 @@ export namespace gse::vbd {
 		auto pending_dispatch(
 		) const -> bool;
 
-		auto ready_to_dispatch(
-		) const -> bool;
-
-		auto mark_dispatched(
-		) -> void;
-
 		auto body_count(
 		) const -> std::uint32_t;
 
@@ -145,18 +144,12 @@ export namespace gse::vbd {
 		auto frame_count(
 		) const -> std::uint32_t;
 
-		auto solve_time(
-		) const -> time_step;
-
 		auto snapshot_buffer(
 			std::uint32_t slot
 		) const -> const gpu::buffer&;
 
 		auto latest_snapshot_slot(
 		) const -> std::uint32_t;
-
-		auto compute_semaphore(
-		) const -> gpu::compute_semaphore_state;
 
 	private:
 		struct compute_shaders {
@@ -178,12 +171,10 @@ export namespace gse::vbd {
 			gpu::pipeline apply_jacobi_pipeline;
 			gpu::pipeline apply_restitution_pipeline;
 
-			float solve_ms = 0.f;
 			bool initialized = false;
 		} m_compute;
 
 		struct per_frame_data {
-			gpu::compute_queue queue;
 			gpu::descriptor_region descriptors;
 
 			gpu::buffer body_buffer;
@@ -216,7 +207,7 @@ export namespace gse::vbd {
 			} readback_info;
 
 			bool readback_pending = false;
-			bool first_submit = true;
+			std::uint64_t dispatched_at_frame = 0;
 		};
 
 		per_frame_resource<per_frame_data> m_frames{ per_frame_data{}, per_frame_data{} };

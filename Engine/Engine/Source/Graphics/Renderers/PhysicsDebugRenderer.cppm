@@ -30,7 +30,6 @@ export namespace gse::renderer::physics_debug {
 		std::uint32_t contact_count = 0;
 		std::uint32_t motor_count = 0;
 		std::uint32_t colliding_pairs = 0;
-		time_t<float, seconds> solve_time{};
 		velocity max_linear_speed{};
 		angular_velocity max_angular_speed{};
 		length max_penetration{};

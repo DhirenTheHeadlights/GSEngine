@@ -219,7 +219,7 @@ auto gse::server<Components...>::resend_reliable_messages() -> void {
 
 			m_outgoing.push(pkt);
 
-			msg->sent_time_ms = network::current_time_ms();
+			msg->sent_time_ms = system_clock::now<std::uint64_t>().as<seconds>();
 			++msg->send_count;
 		}
 	}

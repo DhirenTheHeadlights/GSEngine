@@ -6,6 +6,7 @@ import gse.core;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.meta;
 
 import :types;
 import :vulkan_buffer;
@@ -28,24 +29,18 @@ export namespace gse::gpu {
 		std::optional<color_attachment> color;
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
-		std::vector<vulkan::resource_usage> reads;
-		std::vector<vulkan::resource_usage> writes;
-		std::vector<const vulkan::buffer*> tracked_buffers;
+		std::vector<resource_usage> reads;
+		std::vector<resource_usage> writes;
+		std::vector<const buffer*> tracked_buffers;
 	};
 
-	struct render_pass_request {
+	struct [[= same_frame_channel]] render_pass_request {
 		render_pass_descriptor desc;
 		std::coroutine_handle<> record_handle;
-		std::optional<vulkan::recording_context>* record_ctx_slot = nullptr;
+		std::optional<recording_context>* record_ctx_slot = nullptr;
+		pass_body_fn body;
 	};
-}
 
-namespace gse {
-	template <>
-	struct same_frame_channel_t<gpu::render_pass_request> : std::true_type {};
-}
-
-export namespace gse::gpu {
 	class request_pass_awaitable {
 	public:
 		request_pass_awaitable(
@@ -77,12 +72,12 @@ export namespace gse::gpu {
 		) noexcept -> void;
 
 		auto await_resume(
-		) noexcept -> vulkan::recording_context;
+		) noexcept -> recording_context;
 
 	private:
 		const frame_context* m_ctx;
 		render_pass_descriptor m_desc;
-		std::optional<vulkan::recording_context> m_rec;
+		std::optional<recording_context> m_rec;
 		id m_trace_id{};
 		std::uint64_t m_trace_key = 0;
 	};
@@ -123,6 +118,11 @@ export namespace gse::gpu {
 		auto tracks(
 			const Buffers&... buffers
 		) && -> pass_builder&&;
+
+		template <typename F>
+		auto record(
+			F&& body
+		) && -> void;
 
 		auto operator co_await(
 		) && -> request_pass_awaitable;
@@ -179,6 +179,14 @@ template <typename... Buffers>
 auto gse::gpu::pass_builder::tracks(const Buffers&... buffers) && -> pass_builder&& {
 	(m_desc.tracked_buffers.push_back(std::addressof(buffers)), ...);
 	return std::move(*this);
+}
+
+template <typename F>
+auto gse::gpu::pass_builder::record(F&& body) && -> void {
+	m_ctx->channels.push<render_pass_request>({
+		.desc = std::move(m_desc),
+		.body = std::make_shared<move_only_function<void(recording_context&)>>(std::forward<F>(body)),
+	});
 }
 
 template <typename Owner>

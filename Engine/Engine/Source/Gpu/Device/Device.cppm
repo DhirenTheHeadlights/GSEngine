@@ -63,12 +63,22 @@ export namespace gse::gpu {
 			id pass_type{};
 		};
 
+		enum class pass_marker_domain : std::uint8_t {
+			graphics_queue = 0,
+			compute_queue = 1,
+			transient = 2,
+		};
+
+		static constexpr std::size_t pass_marker_domain_count = 3;
+
 		struct pass_marker_handle {
 			std::uint64_t seq = 0;
+			pass_marker_domain domain = pass_marker_domain::graphics_queue;
 		};
 
 		auto begin_pass_marker(
 			handle<command_buffer> cmd,
+			pass_marker_domain domain,
 			pass_marker marker
 		) -> pass_marker_handle;
 
@@ -142,11 +152,15 @@ export namespace gse::gpu {
 		bool m_video_encode_enabled = false;
 
 		static constexpr std::size_t pass_marker_ring_size = 128;
-		std::array<pass_marker, pass_marker_ring_size> m_pass_markers{};
-		std::atomic<std::uint64_t> m_pass_marker_seq{ 1 };
 
-		vulkan::buffer m_pass_checkpoint_buffer;
-		std::uint32_t* m_pass_checkpoint_slots = nullptr;
+		struct pass_marker_ring {
+			std::array<pass_marker, pass_marker_ring_size> entries{};
+			std::atomic<std::uint64_t> seq{ 1 };
+			vulkan::buffer checkpoint_buffer;
+			std::uint32_t* checkpoint_slots = nullptr;
+		};
+
+		std::array<pass_marker_ring, pass_marker_domain_count> m_pass_marker_rings;
 	};
 }
 

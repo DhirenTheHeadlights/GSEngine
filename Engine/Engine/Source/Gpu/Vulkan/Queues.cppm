@@ -97,6 +97,12 @@ export namespace gse::vulkan {
 		[[nodiscard]] auto raii_compute_queue(
 		) const -> const vk::raii::Queue&;
 
+		auto submit(
+			gpu::queue_type queue,
+			const gpu::submit_info& info,
+			gpu::handle<fence> signal_fence = {}
+		) -> void;
+
 		auto submit_graphics(
 			const gpu::submit_info& info,
 			gpu::handle<fence> signal_fence = {}
@@ -267,6 +273,17 @@ auto gse::vulkan::queue::video_encode_family_index() const -> std::optional<std:
 
 auto gse::vulkan::queue::raii_compute_queue() const -> const vk::raii::Queue& {
 	return m_compute;
+}
+
+auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_info& info, const gpu::handle<fence> signal_fence) -> void {
+	switch (queue) {
+		case gpu::queue_type::graphics:
+			submit_graphics(info, signal_fence);
+			break;
+		case gpu::queue_type::compute:
+			submit_compute(info, signal_fence);
+			break;
+	}
 }
 
 auto gse::vulkan::queue::submit_graphics(const gpu::submit_info& info, const gpu::handle<fence> signal_fence) -> void {
