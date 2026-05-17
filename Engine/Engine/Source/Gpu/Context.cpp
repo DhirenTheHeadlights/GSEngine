@@ -8,6 +8,7 @@ import :vulkan_device;
 import :device;
 import :swap_chain;
 import :frame;
+import :transient_pool;
 import :render_graph;
 import :render_pass;
 import :bindless;
@@ -122,6 +123,7 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
 		.queue = req.desc.queue,
 		.primary_pipeline = req.desc.primary_pipeline,
 		.after_passes = std::move(req.desc.after_deps),
+		.chain_id = req.desc.chain_id,
 		.record_handle = req.record_handle,
 		.record_ctx_slot = req.record_ctx_slot,
 		.body = std::move(req.body),
@@ -138,13 +140,13 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
 	return p;
 }
 
-auto gse::gpu::context::execute_frame(data& d, std::vector<render_pass_request> requests) -> void {
+auto gse::gpu::context::execute_frame(data& d, std::vector<render_pass_request> requests, std::vector<transient_image_request> transient_images, std::vector<transient_buffer_request> transient_buffers) -> void {
 	std::vector<gpu::render_pass_data> passes;
 	passes.reserve(requests.size());
 	for (auto& req : requests) {
 		passes.push_back(to_pass_data(std::move(req)));
 	}
-	d.render_graph->execute(std::move(passes));
+	d.render_graph->execute(std::move(passes), std::move(transient_images), std::move(transient_buffers));
 }
 
 auto gse::gpu::context::on_swap_chain_recreate(const data& d, swap_chain_recreate_callback callback) -> void {

@@ -481,13 +481,14 @@ auto gse::renderer::geometry_collector::system::upload_skeleton_data(const data&
 	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 	const auto joints = skel.joints();
 
-	auto* buffer = static_cast<joint_data*>(static_cast<void*>(d.skeleton_buffer.mapped()));
-
 	for (std::size_t i = 0; i < joint_count; ++i) {
-		buffer[i] = {
-			.inverse_bind = joints[i].inverse_bind(),
-			.parent_index = joints[i].parent_index(),
-		};
+		d.skeleton_buffer.host_write(
+			joint_data{
+				.inverse_bind = joints[i].inverse_bind(),
+				.parent_index = joints[i].parent_index(),
+			},
+			i * sizeof(joint_data)
+		);
 	}
 }
 

@@ -37,6 +37,7 @@ export import :transient_api;
 export import :device;
 export import :swap_chain;
 export import :frame;
+export import :transient_pool;
 export import :render_graph;
 export import :render_pass;
 export import :shader_codegen;

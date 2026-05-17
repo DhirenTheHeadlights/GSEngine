@@ -9,6 +9,7 @@ import :shader_registry;
 import :device;
 import :swap_chain;
 import :frame;
+import :transient_pool;
 import :render_graph;
 import :render_pass;
 import :bindless;
@@ -76,7 +77,9 @@ export namespace gse::gpu {
 
 		static auto execute_frame(
 			data& d,
-			std::vector<render_pass_request> requests
+			std::vector<render_pass_request> requests,
+			std::vector<transient_image_request> transient_images = {},
+			std::vector<transient_buffer_request> transient_buffers = {}
 		) -> void;
 
 		static auto end_frame(

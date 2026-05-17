@@ -778,6 +778,105 @@ auto gse::vulkan::device::destroy_image_view(const gpu::handle<image_view> view)
 	(*m_device).destroyImageView(std::bit_cast<vk::ImageView>(view), nullptr);
 }
 
+auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<image>, memory_requirements> {
+	const vk::ImageCreateInfo vk_info{
+		.flags = to_vk(info.flags),
+		.imageType = to_vk(info.type),
+		.format = to_vk(info.format),
+		.extent = vk::Extent3D{ info.extent.x(), info.extent.y(), info.extent.z() },
+		.mipLevels = info.mip_levels,
+		.arrayLayers = info.array_layers,
+		.samples = to_vk(info.samples),
+		.tiling = vk::ImageTiling::eOptimal,
+		.usage = to_vk(info.usage),
+	};
+	const auto vk_image = (*m_device).createImage(vk_info, nullptr);
+	const auto reqs = (*m_device).getImageMemoryRequirements(vk_image);
+	return {
+		std::bit_cast<gpu::handle<image>>(vk_image),
+		memory_requirements{
+			.size = reqs.size,
+			.alignment = reqs.alignment,
+			.memory_type_bits = reqs.memoryTypeBits,
+		},
+	};
+}
+
+auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& info) const -> std::pair<gpu::handle<buffer>, memory_requirements> {
+	const vk::BufferCreateInfo vk_info{
+		.pNext = info.pnext,
+		.size = info.size,
+		.usage = to_vk(info.usage),
+	};
+	const auto vk_buffer = (*m_device).createBuffer(vk_info, nullptr);
+	const auto reqs = (*m_device).getBufferMemoryRequirements(vk_buffer);
+	return {
+		std::bit_cast<gpu::handle<buffer>>(vk_buffer),
+		memory_requirements{
+			.size = reqs.size,
+			.alignment = reqs.alignment,
+			.memory_type_bits = reqs.memoryTypeBits,
+		},
+	};
+}
+
+auto gse::vulkan::device::bind_image_memory(const gpu::handle<image> img, const device_memory_handle mem, const gpu::device_size offset) const -> void {
+	(*m_device).bindImageMemory(std::bit_cast<vk::Image>(img), std::bit_cast<vk::DeviceMemory>(mem.value), offset);
+}
+
+auto gse::vulkan::device::bind_buffer_memory(const gpu::handle<buffer> buf, const device_memory_handle mem, const gpu::device_size offset) const -> void {
+	(*m_device).bindBufferMemory(std::bit_cast<vk::Buffer>(buf), std::bit_cast<vk::DeviceMemory>(mem.value), offset);
+}
+
+auto gse::vulkan::device::create_image_view(const gpu::handle<image> img, const gpu::image_view_create_info& info) const -> gpu::handle<image_view> {
+	const vk::ImageViewCreateInfo vk_info{
+		.image = std::bit_cast<vk::Image>(img),
+		.viewType = to_vk(info.view_type),
+		.format = to_vk(info.format),
+		.subresourceRange = {
+			.aspectMask = to_vk(info.aspects),
+			.baseMipLevel = info.base_mip_level,
+			.levelCount = info.level_count,
+			.baseArrayLayer = info.base_array_layer,
+			.layerCount = info.layer_count,
+		},
+	};
+	const auto vk_view = (*m_device).createImageView(vk_info, nullptr);
+	return std::bit_cast<gpu::handle<image_view>>(vk_view);
+}
+
+auto gse::vulkan::device::allocate_aliased_memory(const gpu::device_size size, const std::uint32_t memory_type_index) const -> device_memory_handle {
+	const vk::MemoryAllocateInfo alloc_info{
+		.allocationSize = size,
+		.memoryTypeIndex = memory_type_index,
+	};
+	const auto vk_memory = (*m_device).allocateMemory(alloc_info);
+	return { .value = std::bit_cast<std::uint64_t>(vk_memory) };
+}
+
+auto gse::vulkan::device::free_aliased_memory(const device_memory_handle mem) const -> void {
+	if (!mem) {
+		return;
+	}
+	(*m_device).freeMemory(std::bit_cast<vk::DeviceMemory>(mem.value), nullptr);
+}
+
+auto gse::vulkan::device::find_memory_type_index(const std::uint32_t type_bits, const gpu::memory_property_flags required) const -> std::uint32_t {
+	const auto vk_required = to_vk(required);
+	const auto props = m_physical_device.getMemoryProperties();
+	for (std::uint32_t i = 0; i < props.memoryTypeCount; ++i) {
+		if (!(type_bits & (1u << i))) {
+			continue;
+		}
+		if ((props.memoryTypes[i].propertyFlags & vk_required) != vk_required) {
+			continue;
+		}
+		return i;
+	}
+	assert(false, "no compatible memory type for type_bits={:#x}", type_bits);
+	return 0;
+}
+
 auto gse::vulkan::device::free_allocation(const basic_allocation<device>& alloc) -> void {
 	std::lock_guard lock(m_mutex);
 

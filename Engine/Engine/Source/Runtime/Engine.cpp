@@ -155,7 +155,9 @@ auto gse::engine::render() -> void {
 			{
 				trace::scope_guard sg{trace_id<"render::graph_execute">()};
 				auto requests = m_scheduler.drain_channel<gpu::render_pass_request>();
-				gpu::context::execute_frame(*gpu_state, std::move(requests));
+				auto transient_images = m_scheduler.drain_channel<gpu::transient_image_request>();
+				auto transient_buffers = m_scheduler.drain_channel<gpu::transient_buffer_request>();
+				gpu::context::execute_frame(*gpu_state, std::move(requests), std::move(transient_images), std::move(transient_buffers));
 			}
 		}
 

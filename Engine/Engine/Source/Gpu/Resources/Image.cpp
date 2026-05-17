@@ -145,10 +145,10 @@ auto gse::upload_image_layers_async(gpu::device& dev, vulkan::image& resource, s
 		}
 	);
 
-	const auto mapped = staging.mapped();
 	for (std::size_t i = 0; i < layer_count; ++i) {
-		memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
+		staging.host_write(face_data[i], bytes_per_face, i * bytes_per_face);
 	}
+	staging.clear_host_dirty();
 
 	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics, "transient.image_upload_layers");
 
@@ -278,10 +278,10 @@ auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const s
 		}
 	);
 
-	const auto mapped = staging.mapped();
 	for (std::size_t i = 0; i < layer_count; ++i) {
-		memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
+		staging.host_write(face_data[i], bytes_per_face, i * bytes_per_face);
 	}
+	staging.clear_host_dirty();
 
 	auto cmd_awaiter = begin_transient(dev, queue_id::graphics, "transient.image_upload_layers");
 	auto cmd = cmd_awaiter.await_resume();

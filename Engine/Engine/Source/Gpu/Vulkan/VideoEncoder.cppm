@@ -702,8 +702,8 @@ auto gse::gpu::video_encoder::read_bitstream(const std::uint32_t frame_slot) -> 
 	unit.pts = slot.last_pts;
 	unit.keyframe = slot.last_was_keyframe;
 
-	const auto* src = slot.bitstream.mapped() + feedback.offset;
-	gse::memcpy(unit.bytes.data(), src, feedback.bytes_written);
+	const auto src = slot.bitstream.host_read().subspan(feedback.offset);
+	gse::memcpy(unit.bytes.data(), src.data(), feedback.bytes_written);
 
 	slot.has_output = false;
 	return unit;

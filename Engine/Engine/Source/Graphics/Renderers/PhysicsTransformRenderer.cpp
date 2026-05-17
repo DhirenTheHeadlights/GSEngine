@@ -15,7 +15,6 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.physics;
-import gse.log;
 
 namespace gse::renderer::physics_transform {
 	struct [[= shaders::shader_struct]] physics_mapping {
@@ -84,29 +83,6 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 	const auto& snapshot = *info.snapshot;
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
-
-	if (auto* mapped = snapshot.mapped(); mapped && info.body_count > 1) {
-		const auto* bodies = reinterpret_cast<const vbd::body_state*>(mapped);
-		std::uint32_t probe_idx = info.body_count;
-		for (std::uint32_t i = 0; i < info.body_count; ++i) {
-			if (!bodies[i].locked) {
-				probe_idx = i;
-				break;
-			}
-		}
-		if (probe_idx < info.body_count) {
-			static std::uint64_t s_log_seq = 0;
-			log::println(
-				log::category::render,
-				"render_read[seq={}] snapshot_ptr={} probe_idx={} pos={} orient={}",
-				s_log_seq++,
-				static_cast<const void*>(&snapshot),
-				probe_idx,
-				bodies[probe_idx].position,
-				bodies[probe_idx].orientation
-			);
-		}
-	}
 
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 

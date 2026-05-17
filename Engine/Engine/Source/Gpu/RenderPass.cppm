@@ -29,6 +29,7 @@ export namespace gse::gpu {
 		std::optional<color_attachment> color;
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
+		id chain_id;
 	};
 
 	struct [[= same_frame_channel]] render_pass_request {
@@ -102,6 +103,9 @@ export namespace gse::gpu {
 			depth_attachment value
 		) && -> pass_builder&&;
 
+		template <typename Chain>
+		auto in_chain() && -> pass_builder&&;
+
 		template <typename... States>
 		auto after() && -> pass_builder&&;
 
@@ -146,6 +150,12 @@ export namespace gse::gpu {
 template <typename... States>
 auto gse::gpu::pass_builder::after() && -> pass_builder&& {
 	(m_desc.after_deps.push_back(trace_id<States>()), ...);
+	return std::move(*this);
+}
+
+template <typename Chain>
+auto gse::gpu::pass_builder::in_chain() && -> pass_builder&& {
+	m_desc.chain_id = trace_id<Chain>();
 	return std::move(*this);
 }
 

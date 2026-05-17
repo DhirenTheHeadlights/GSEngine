@@ -94,7 +94,7 @@ gse::gpu::device::device(vulkan::aftermath&& aftermath_tracker, vulkan::instance
 			zeros.data(),
 			std::format("device.pass_checkpoint.{}", static_cast<pass_marker_domain>(di))
 		);
-		ring.checkpoint_slots = std::bit_cast<std::uint32_t*>(ring.checkpoint_buffer.mapped());
+		ring.checkpoint_slots = std::bit_cast<const std::uint32_t*>(ring.checkpoint_buffer.host_read().data());
 	}
 }
 

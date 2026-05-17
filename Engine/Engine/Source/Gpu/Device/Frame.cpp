@@ -17,7 +17,6 @@ import :types;
 import gse.os;
 import gse.assert;
 import gse.diag;
-import gse.log;
 
 auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<frame> {
     auto sync = create_sync_objects(dev.vulkan_device(), sc.config());
@@ -124,15 +123,6 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
     vulkan::reset_fence(dev, m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
 
     m_image_index = acquired_image_index;
-    m_active_frame_sequence = m_next_frame_sequence++;
-    log::println(
-        log::category::vulkan,
-        "frame_begin[seq={}] current_frame={} image_index={} image_count={}",
-        m_active_frame_sequence,
-        m_current_frame,
-        m_image_index,
-        m_swapchain->config().image_count()
-    );
 
     for (std::size_t i = 0; i < queue_type_count; ++i) {
         m_command_buffers[i] = m_device->vulkan_command().frame_command_buffer(static_cast<queue_type>(i), m_current_frame);
@@ -258,16 +248,6 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
         }
     }
 
-    log::println(
-        log::category::vulkan,
-        "frame_submit[seq={}] current_frame={} image_index={} aux_submissions={} graphics_waits={}",
-        m_active_frame_sequence,
-        m_current_frame,
-        m_image_index,
-        aux_submissions.size(),
-        extra_graphics_waits.size()
-    );
-
     std::vector<semaphore_submit_info> main_waits;
     main_waits.push_back({
         .semaphore = m_sync.image_available(m_current_frame),
@@ -340,15 +320,6 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
             "Failed to present swap chain image!"
         );
     }
-
-    log::println(
-        log::category::vulkan,
-        "frame_present[seq={}] current_frame={} image_index={} result={}",
-        m_active_frame_sequence,
-        m_current_frame,
-        m_image_index,
-        static_cast<int>(present_result)
-    );
 
     m_current_frame = (m_current_frame + 1) % vulkan::max_frames_in_flight;
     m_frame_in_progress = false;
