@@ -1,11 +1,11 @@
 
 uint bi = dispatch_id.x;
 if (bi >= pc.body_count) return;
-if (collision_state[CONVERGED_FLAG_INDEX] != 0) return;
+if (collision_state[state_converged_flag_index] != 0) return;
 
 body_state body = body_data[bi];
 if (body.locked != 0) return;
-if (body.sleep_counter >= SLEEP_THRESHOLD) return;
+if (body.sleep_counter >= sleep_threshold) return;
 
 float3 delta_x = solve_deltas[bi * 2].xyz;
 float3 delta_theta = solve_deltas[bi * 2 + 1].xyz;

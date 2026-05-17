@@ -16,6 +16,7 @@
 #include "NoInlineInModulesCheck.h"
 #include "NoMutableCheck.h"
 #include "PreferTemplateArgOverExplicitConstructCheck.h"
+#include "RedundantNamespaceQualifierCheck.h"
 #include "RedundantTemplateArgCheck.h"
 
 namespace clang::tidy {
@@ -38,6 +39,8 @@ public:
         "gse-no-mutable");
     CheckFactories.registerCheck<PreferTemplateArgOverExplicitConstructCheck>(
         "gse-prefer-template-arg-over-explicit-construct");
+    CheckFactories.registerCheck<RedundantNamespaceQualifierCheck>(
+        "gse-redundant-namespace-qualifier");
     CheckFactories.registerCheck<RedundantTemplateArgCheck>(
         "gse-redundant-template-arg");
   }

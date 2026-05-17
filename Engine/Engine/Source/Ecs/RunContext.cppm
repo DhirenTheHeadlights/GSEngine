@@ -17,6 +17,34 @@ import :traits;
 export namespace gse {
 	class scheduler;
 
+	template <typename T>
+	struct read_tag {};
+
+	template <typename T>
+	struct write_tag {};
+
+	template <typename T>
+	constexpr read_tag<T> read_v {};
+
+	template <typename T>
+	constexpr write_tag<T> write_v {};
+
+	template <typename Tag>
+	struct tag_to_access;
+
+	template <typename T>
+	struct tag_to_access<read_tag<T>> {
+		using type = read<T>;
+	};
+
+	template <typename T>
+	struct tag_to_access<write_tag<T>> {
+		using type = write<T>;
+	};
+
+	template <typename Tag>
+	using tag_to_access_t = typename tag_to_access<Tag>::type;
+
 	class run_context : public task_context {
 	public:
 		run_context(
@@ -45,6 +73,11 @@ export namespace gse {
 
 		template <typename... Accesses>
 		auto acquire() -> async::task<std::tuple<Accesses...>>;
+
+		template <typename... Tags>
+		auto acquire_with(
+			Tags... tags
+		) -> async::task<std::tuple<tag_to_access_t<Tags>...>>;
 
 		template <typename T>
 		auto try_component(
@@ -267,6 +300,11 @@ auto gse::run_context::acquire() -> async::task<std::tuple<Accesses...>> {
 	co_return std::tuple<Accesses...> {
 		make_locked_handle<Accesses>(access_token {}, m_reg, m_access_mutexes, &m_held_locks)...
 	};
+}
+
+template <typename... Tags>
+auto gse::run_context::acquire_with(Tags...) -> async::task<std::tuple<tag_to_access_t<Tags>...>> {
+	return acquire<tag_to_access_t<Tags>...>();
 }
 
 auto gse::run_context::held_lock_count() const -> int {

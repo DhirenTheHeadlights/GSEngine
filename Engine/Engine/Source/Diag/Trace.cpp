@@ -26,7 +26,7 @@ auto gse::trace::start(const config& cfg) -> void {
 }
 
 auto gse::trace::begin_block(const id id, std::uint64_t parent) -> std::uint64_t {
-	if (paused()) {
+	if (paused() || !id.exists()) {
 		return 0;
 	}
 
@@ -52,7 +52,7 @@ auto gse::trace::begin_block(const id id, std::uint64_t parent) -> std::uint64_t
 }
 
 auto gse::trace::end_block(const id id, const std::uint64_t eid, const std::uint64_t parent) -> void {
-	if (paused() || eid == 0) {
+	if (paused() || eid == 0 || !id.exists()) {
 		return;
 	}
 
@@ -69,7 +69,7 @@ auto gse::trace::end_block(const id id, const std::uint64_t eid, const std::uint
 }
 
 auto gse::trace::begin_async(const id id, const std::uint64_t key) -> void {
-	if (paused()) {
+	if (paused() || !id.exists()) {
 		return;
 	}
 
@@ -88,7 +88,7 @@ auto gse::trace::begin_async(const id id, const std::uint64_t key) -> void {
 }
 
 auto gse::trace::end_async(const id id, const std::uint64_t key) -> void {
-	if (paused()) {
+	if (paused() || !id.exists()) {
 		return;
 	}
 
@@ -107,7 +107,7 @@ auto gse::trace::end_async(const id id, const std::uint64_t key) -> void {
 }
 
 auto gse::trace::mark(const id id) -> void {
-	if (paused()) {
+	if (paused() || !id.exists()) {
 		return;
 	}
 
@@ -126,7 +126,7 @@ auto gse::trace::mark(const id id) -> void {
 }
 
 auto gse::trace::counter(const id id, const double value) -> void {
-	if (paused()) {
+	if (paused() || !id.exists()) {
 		return;
 	}
 
@@ -145,7 +145,7 @@ auto gse::trace::counter(const id id, const double value) -> void {
 }
 
 auto gse::trace::begin_async_at(const id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
-	if (paused()) {
+	if (paused() || !id.exists()) {
 		return;
 	}
 
@@ -164,7 +164,7 @@ auto gse::trace::begin_async_at(const id id, const std::uint64_t key, const std:
 }
 
 auto gse::trace::end_async_at(const id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
-	if (paused()) {
+	if (paused() || !id.exists()) {
 		return;
 	}
 
@@ -183,7 +183,7 @@ auto gse::trace::end_async_at(const id id, const std::uint64_t key, const std::u
 }
 
 auto gse::trace::counter_at(const id id, const double value, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
-	if (paused()) {
+	if (paused() || !id.exists()) {
 		return;
 	}
 
@@ -614,51 +614,6 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	}
 }
 
-auto gse::trace::make_loc_id(const std::source_location& loc) -> id {
-	std::string_view fn = loc.function_name();
-
-	if (const auto lp = fn.find('('); lp != std::string_view::npos) {
-		fn = fn.substr(0, lp);
-	}
-
-	while (!fn.empty() && std::isspace(static_cast<unsigned char>(fn.back()))) {
-		fn.remove_suffix(1);
-	}
-
-	const auto last_col_col = fn.rfind("::");
-	std::string_view tag;
-
-	if (last_col_col != std::string_view::npos) {
-		std::size_t start = fn.rfind(' ', last_col_col);
-
-		if (start == std::string_view::npos) {
-			start = 0;
-		} else {
-			start += 1;
-		}
-
-		tag = fn.substr(start);
-
-		static constexpr std::string_view candidates[] = {
-			"__cdecl", "__stdcall", "__thiscall", "__vectorcall", "cdecl", "stdcall", "thiscall", "vectorcall"
-		};
-
-		if (auto it = std::ranges::find_if(candidates, [&](const std::string_view cc) {
-			return tag.size() > cc.size() && tag.starts_with(cc);
-		}); it != std::end(candidates)) {
-			tag.remove_prefix(it->size());
-			while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.front()))) {
-				tag.remove_prefix(1);
-			}
-		}
-	} else {
-		const auto last_sp = fn.rfind(' ');
-		tag = last_sp == std::string_view::npos ? fn : fn.substr(last_sp + 1);
-	}
-
-	return find_or_generate_id(tag);
-}
-
 auto gse::trace::allocate_span_eid() -> std::uint64_t {
 	return next_eid.fetch_add(1, std::memory_order_relaxed);
 }
@@ -676,7 +631,7 @@ gse::trace::scope_guard::scope_guard(const id id, const std::uint64_t parent) : 
 }
 
 auto gse::trace::scope_guard::enter(std::uint64_t parent) -> void {
-	if (paused()) {
+	if (paused() || !m_id.exists()) {
 		return;
 	}
 

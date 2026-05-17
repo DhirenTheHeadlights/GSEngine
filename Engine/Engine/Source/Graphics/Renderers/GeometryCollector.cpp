@@ -421,11 +421,11 @@ auto gse::renderer::geometry_collector::tick(run_context& ctx, system::data& d, 
 
 	auto body_index_map = read_body_index_map(ctx);
 
-	auto [render, transform, anim] = co_await ctx.acquire<
-		write<render_component>,
-		read<physics::transform_component>,
-		read<animation_component>
-	>();
+	auto [render, transform, anim] = co_await ctx.acquire_with(
+		write_v<render_component>,
+		read_v<physics::transform_component>,
+		read_v<animation_component>
+	);
 
 	if (render.empty()) {
 		co_return;

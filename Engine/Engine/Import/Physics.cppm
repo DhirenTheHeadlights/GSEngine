@@ -7,7 +7,6 @@ export import :collision_component;
 export import :contact_manifold;
 export import :joint_spec;
 export import :motion_component;
-export import :motion_status_component;
 export import :motor_component;
 export import :narrow_phase_collision;
 export import :system;

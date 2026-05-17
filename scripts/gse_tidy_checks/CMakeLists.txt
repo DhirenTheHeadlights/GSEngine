@@ -12,6 +12,7 @@ add_clang_library(clangTidyGseModule STATIC
   NoInlineInModulesCheck.cpp
   NoMutableCheck.cpp
   PreferTemplateArgOverExplicitConstructCheck.cpp
+  RedundantNamespaceQualifierCheck.cpp
   RedundantTemplateArgCheck.cpp
 
   LINK_LIBS

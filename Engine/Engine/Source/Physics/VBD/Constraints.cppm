@@ -8,7 +8,42 @@ import :contact_manifold;
 import :motion_component;
 
 export namespace gse::vbd {
-	constexpr std::uint32_t max_contacts = 16384;
+	struct [[= shaders::shader_constant_block]] vbd_limits {
+		std::uint32_t max_bodies = 2048;
+		std::uint32_t max_contacts = 16384;
+		std::uint32_t max_collision_pairs = 16384;
+		std::uint32_t max_colors = 16;
+		std::uint32_t max_joints = 128;
+		std::uint32_t max_impulses = 64;
+		std::uint32_t max_motors = 16;
+		std::uint32_t max_contact_adjacency = 16384 * 2;
+		std::uint32_t max_joint_adjacency = 128 * 2;
+		std::uint32_t max_grounded_uints = (2048 + 31) / 32;
+		std::uint32_t grid_table_size = 4096;
+		std::uint32_t grid_max_entries = 2048 * 8;
+		std::uint32_t workgroup_size = 64;
+		std::uint32_t adjacency_workgroup_size = 1024;
+		std::uint32_t coloring_rounds = 32;
+		std::uint32_t sleep_threshold = 60;
+		std::uint32_t collision_state_header_uints = 8;
+		std::uint32_t solve_state_float4s_per_body = 11;
+		std::uint32_t state_contact_count_index = 0;
+		std::uint32_t state_max_used_color_index = 1;
+		std::uint32_t state_debug_count_index = 2;
+		std::uint32_t state_convergence_max_delta_index = 4;
+		std::uint32_t state_converged_flag_index = 5;
+		std::uint32_t state_convergence_max_angular_delta_index = 6;
+		std::uint32_t narrow_phase_debug_record_uints = 8;
+		std::uint32_t max_narrow_phase_debug_records = 32;
+		std::uint32_t feature_vertex = 0;
+		std::uint32_t feature_edge = 1;
+		std::uint32_t feature_face = 2;
+		std::uint32_t feature_side_none = 0xFFu;
+		std::uint32_t sat_axis_face = 0;
+		std::uint32_t sat_axis_cross = 1;
+	};
+
+	constexpr vbd_limits limits{};
 
 	struct body_solve_state {
 		vec3<force> gradient = {};
@@ -18,7 +53,14 @@ export namespace gse::vbd {
 		mat3<linear_angular_stiffness> hessian_xtheta = {};
 	};
 
-	enum class joint_type : std::uint32_t { distance, fixed, hinge, slider };
+	enum class [[= shaders::shader_enum]] joint_type : std::uint32_t { distance, fixed, hinge, slider };
+
+	struct [[= shaders::shader_struct]] frozen_jacobian {
+		vec3<lever_arm> world_r_a;
+		vec3<lever_arm> world_r_b;
+		mat3<length> j_ang_a;
+		mat3<length> j_ang_b;
+	};
 
 	struct [[= shaders::shader_struct]] contact_constraint {
 		std::uint32_t body_a = 0;
@@ -102,7 +144,6 @@ export namespace gse::vbd {
 		vec3<gse::position> old_position;
 
 		vec3<velocity> velocity;
-		vec3<gse::velocity> predicted_velocity;
 
 		quat orientation;
 		quat predicted_orientation;
@@ -110,7 +151,6 @@ export namespace gse::vbd {
 		quat old_orientation;
 
 		vec3<angular_velocity> angular_velocity;
-		vec3<gse::angular_velocity> predicted_angular_velocity;
 
 		vec3<target_position> motor_target;
 
@@ -133,11 +173,6 @@ export namespace gse::vbd {
 	};
 }
 
-export template <>
-struct gse::shaders::slang_type<gse::vbd::joint_type> {
-	static constexpr std::string_view name = "uint";
-};
-
 auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
 	if (locked) {
 		return gse::inverse_mass{ 0.f };
@@ -146,5 +181,5 @@ auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
 }
 
 auto gse::vbd::body_state::sleeping() const -> bool {
-	return sleep_counter >= 60;
+	return sleep_counter >= limits.sleep_threshold;
 }

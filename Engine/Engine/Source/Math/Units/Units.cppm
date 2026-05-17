@@ -176,6 +176,10 @@ namespace gse::internal {
             gse::seconds, gse::minutes, gse::hours
         };
     };
+
+    template <> struct base_unit_override<gse::time_tag> {
+        using type = std::remove_cvref_t<decltype(gse::seconds)>;
+    };
 }
 
 export namespace gse {
@@ -576,6 +580,36 @@ export namespace gse {
 
 namespace gse::internal {
     template <> struct dimension_to_tag<dimi<1, -2, 1, -1>> { static constexpr bool found = true; using tag = gse::linear_angular_stiffness_tag; };
+}
+
+export namespace gse {
+    struct [[= internal::quantity_root<^^internal::dimi<-1, -2, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N/m^2">]]
+    stiffness_per_length_tag {};
+
+    constexpr internal::unit<stiffness_per_length_tag, std::ratio<1>, "N/m^2"> newtons_per_meter_squared;
+
+    template <typename T = float, auto U = ([: internal::resolve_default_unit_info(^^stiffness_per_length_tag) :])>
+    using stiffness_per_length_t = internal::quantity_t<stiffness_per_length_tag, T, U>;
+    using stiffness_per_length = stiffness_per_length_t<>;
+}
+
+namespace gse::internal {
+    template <> struct dimension_to_tag<dimi<-1, -2, 1, 0>> { static constexpr bool found = true; using tag = gse::stiffness_per_length_tag; };
+}
+
+export namespace gse {
+    struct [[= internal::quantity_root<^^internal::dimi<2, -2, 1, -2>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N-m/rad^2">]]
+    angular_stiffness_per_angle_tag {};
+
+    constexpr internal::unit<angular_stiffness_per_angle_tag, std::ratio<1>, "N-m/rad^2"> newton_meters_per_radian_squared;
+
+    template <typename T = float, auto U = ([: internal::resolve_default_unit_info(^^angular_stiffness_per_angle_tag) :])>
+    using angular_stiffness_per_angle_t = internal::quantity_t<angular_stiffness_per_angle_tag, T, U>;
+    using angular_stiffness_per_angle = angular_stiffness_per_angle_t<>;
+}
+
+namespace gse::internal {
+    template <> struct dimension_to_tag<dimi<2, -2, 1, -2>> { static constexpr bool found = true; using tag = gse::angular_stiffness_per_angle_tag; };
 }
 
 namespace gse::internal {

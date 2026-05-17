@@ -141,7 +141,7 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 				handle.resume();
 			});
 		}
-		gse::task::post_range(jobs.begin(), jobs.end());
+		gse::task::post_range(jobs.begin(), jobs.end(), trace_id<"async::when_all::resume">());
 	}
 	return helpers[0].consume_start_handle();
 }
@@ -170,7 +170,7 @@ auto gse::async::yield_to_worker_t::await_suspend(std::coroutine_handle<> h) con
 	gse::task::post([h] {
 		if (!h) return;
 		h.resume();
-	});
+	}, trace_id<"async::yield_to_worker">());
 }
 
 auto gse::async::yield_to_worker_t::await_resume() const noexcept -> void {}

@@ -99,11 +99,11 @@ auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, 
 	const time dt = system_clock::dt();
 
 	{
-		auto [animations, controllers, clips] = co_await ctx.acquire<
-			write<animation_component>,
-			write<controller_component>,
-			write<clip_component>
-		>();
+		auto [animations, controllers, clips] = co_await ctx.acquire_with(
+			write_v<animation_component>,
+			write_v<controller_component>,
+			write_v<clip_component>
+		);
 
 		d.jobs.clear();
 		d.controller_jobs.clear();
@@ -207,7 +207,7 @@ auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, 
 				const auto& job = d.jobs[job_idx];
 				build_local_pose(*job.anim, *job.skel, *job.asset, job.sample_t);
 				build_global_and_skins(*job.anim, *job.skel);
-			});
+			}, trace_id<"animation::pose_build">());
 
 			task::parallel_for(0uz, d.jobs.size(), [&](const std::size_t i) {
 				if (const auto source_idx = job_cache_index[i]; source_idx != i) {
@@ -218,13 +218,13 @@ auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, 
 					std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
 					std::ranges::copy(source_anim.skins, dest_anim.skins.begin());
 				}
-			});
+			}, trace_id<"animation::pose_dedup_copy">());
 		}
 
 		if (!d.controller_jobs.empty()) {
 			task::parallel_for(0uz, d.controller_jobs.size(), [&](const std::size_t i) {
 				process_controller_job(d.controller_jobs[i], assets_s, dt);
-			});
+			}, trace_id<"animation::controller_jobs">());
 		}
 	}
 

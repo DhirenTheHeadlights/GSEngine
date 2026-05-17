@@ -169,7 +169,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 			log::println(log::category::render, "Screenshot saved: {}", path.string());
 
 			write_flag->store(false);
-		});
+		}, trace_id<"capture::screenshot_write">());
 	}
 
 	if (d.ring_budget != d.applied_ring_budget) {
@@ -234,7 +234,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 						);
 					}
 					flag->store(false);
-				});
+				}, trace_id<"capture::clip_mux">());
 			}
 		}
 	}

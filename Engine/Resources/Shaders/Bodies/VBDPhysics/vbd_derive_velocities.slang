@@ -2,15 +2,16 @@
 uint bi = dispatch_id.x;
 
 if (bi == 0) {
-    collision_state[CONVERGED_FLAG_INDEX] = 0;
-    collision_state[CONVERGENCE_MAX_DELTA_INDEX] = 0;
+    collision_state[state_converged_flag_index] = 0;
+    collision_state[state_convergence_max_delta_index] = 0;
+    collision_state[state_convergence_max_angular_delta_index] = 0;
 }
 
 if (bi >= pc.body_count) return;
 
 body_state body = body_data[bi];
 bool locked = body.locked != 0;
-bool sleeping = body.sleep_counter >= SLEEP_THRESHOLD;
+bool sleeping = body.sleep_counter >= sleep_threshold;
 bool update_orient = body.update_orientation != 0;
 
 if (locked || sleeping) {
@@ -46,7 +47,7 @@ if (update_orient) {
 
 float lin_speed = length(body.velocity.xyz);
 float ang_speed = length(body.angular_velocity.xyz);
-if (lin_speed < pc.velocity_sleep_threshold && ang_speed < pc.angular_sleep_threshold) {
+if (lin_speed < pc.cfg.velocity_sleep_threshold && ang_speed < pc.cfg.angular_sleep_threshold) {
     body.sleep_counter = body.sleep_counter + 1;
 } else {
     body.sleep_counter = body.sleep_counter / 2;

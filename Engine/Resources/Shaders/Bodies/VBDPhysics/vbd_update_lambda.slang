@@ -1,11 +1,11 @@
 
-if (collision_state[CONVERGED_FLAG_INDEX] != 0) {
+if (collision_state[state_converged_flag_index] != 0) {
     return;
 }
 
 uint ci = dispatch_id.x;
 
-uint actual_contact_count = min(collision_state[0], MAX_CONTACTS);
+uint actual_contact_count = min(collision_state[state_contact_count_index], max_contacts);
 if (ci >= actual_contact_count) {
     return;
 }
@@ -22,7 +22,7 @@ float3 p_b = body_b.predicted_position.xyz + world_r_b;
 float3 d = p_a - p_b;
 
 float3 Cn = float3(
-    dot(c.normal.xyz, d) + pc.collision_margin,
+    dot(c.normal.xyz, d) + pc.cfg.collision_margin,
     dot(c.tangent_u.xyz, d),
     dot(c.tangent_v.xyz, d)
 );
@@ -38,16 +38,16 @@ lambda.y = clamp(penalty.y * C.y + lambda.y, -friction_bound, friction_bound);
 lambda.z = clamp(penalty.z * C.z + lambda.z, -friction_bound, friction_bound);
 
 if (lambda.x < 0.0) {
-    penalty.x = min(penalty.x + pc.beta * abs(C.x), pc.penalty_max);
-    InterlockedMax(collision_state[CONVERGENCE_MAX_DELTA_INDEX], asuint(abs(C.x)));
+    penalty.x = min(penalty.x + pc.cfg.beta * abs(C.x), pc.cfg.penalty_max);
+    InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(C.x)));
 }
 
 if (friction_bound > 1e-10) {
     if (abs(lambda.y) < friction_bound) {
-        penalty.y = min(penalty.y + pc.beta * abs(C.y), pc.penalty_max);
+        penalty.y = min(penalty.y + pc.cfg.beta * abs(C.y), pc.cfg.penalty_max);
     }
     if (abs(lambda.z) < friction_bound) {
-        penalty.z = min(penalty.z + pc.beta * abs(C.z), pc.penalty_max);
+        penalty.z = min(penalty.z + pc.cfg.beta * abs(C.z), pc.cfg.penalty_max);
     }
 }
 

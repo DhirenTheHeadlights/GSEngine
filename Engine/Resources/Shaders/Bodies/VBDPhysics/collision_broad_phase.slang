@@ -5,7 +5,7 @@ int3 world_to_cell(float3 pos, float cell_size) {
 
 uint hash_cell(int3 cell) {
     uint h = uint(cell.x * 73856093 ^ cell.y * 19349663 ^ cell.z * 83492791);
-    return (h % GRID_TABLE_SIZE) + 1;
+    return (h % grid_table_size) + 1;
 }
 
 // entry:
@@ -18,7 +18,7 @@ body_state body_i = body_data[i];
 
 bool i_locked = body_i.locked != 0;
 
-float margin = pc.speculative_margin;
+float margin = pc.cfg.speculative_margin;
 float3 min_a = body_i.aabb_min.xyz;
 float3 max_a = body_i.aabb_max.xyz;
 
@@ -33,7 +33,7 @@ for (int cx = min_cell_i.x; cx <= max_cell_i.x; cx++) {
             uint bucket = hash_cell(cell);
             uint entry_ptr = grid_data[bucket];
 
-            while (entry_ptr != 0 && entry_ptr >= GRID_TABLE_SIZE + 1) {
+            while (entry_ptr != 0 && entry_ptr >= grid_table_size + 1) {
                 uint j = grid_data[entry_ptr];
                 uint next = grid_data[entry_ptr + 1];
 
@@ -57,7 +57,7 @@ for (int cx = min_cell_i.x; cx <= max_cell_i.x; cx++) {
                                 uint slot;
                                 InterlockedAdd(collision_pairs[0], 1, slot);
 
-                                if (slot >= MAX_COLLISION_PAIRS) {
+                                if (slot >= max_collision_pairs) {
                                     InterlockedAdd(collision_pairs[0], -1, slot);
                                     return;
                                 }

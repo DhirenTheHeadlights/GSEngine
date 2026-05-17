@@ -51,29 +51,11 @@ auto gs::build_inverted_mass_pyramid(gse::scene& s) -> void {
 	constexpr float x = -15.f;
 	constexpr float z = 0.f;
 
-	build_box(
-		&s,
-		"Pyramid Light Base",
-		gse::vec3<gse::position>(x, 0.5f, z),
-		gse::vec3<gse::length>(gse::meters(1.f)),
-		gse::kilograms(5.f)
-	);
+	s.spawn("Pyramid Light Base", gs::box(gse::vec3<gse::position>(x, 0.5f, z), gse::vec3<gse::length>(gse::meters(1.f)), gse::kilograms(5.f)));
 
-	build_box(
-		&s,
-		"Pyramid Mid",
-		gse::vec3<gse::position>(x, 1.5f, z),
-		gse::vec3<gse::length>(gse::meters(1.f)),
-		gse::kilograms(50.f)
-	);
+	s.spawn("Pyramid Mid", gs::box(gse::vec3<gse::position>(x, 1.5f, z), gse::vec3<gse::length>(gse::meters(1.f)), gse::kilograms(50.f)));
 
-	build_box(
-		&s,
-		"Pyramid Heavy Top",
-		gse::vec3<gse::position>(x, 2.5f, z),
-		gse::vec3<gse::length>(gse::meters(1.f)),
-		gse::kilograms(500.f)
-	);
+	s.spawn("Pyramid Heavy Top", gs::box(gse::vec3<gse::position>(x, 2.5f, z), gse::vec3<gse::length>(gse::meters(1.f)), gse::kilograms(500.f)));
 }
 
 auto gs::build_domino_chain(gse::scene& s) -> void {
@@ -83,14 +65,7 @@ auto gs::build_domino_chain(gse::scene& s) -> void {
 
 	for (int i = 0; i < 12; ++i) {
 		const float x = start_x + static_cast<float>(i) * spacing;
-		build_box(
-			&s,
-			std::format("Domino {}", i + 1),
-			gse::vec3<gse::position>(x, (i == 0) ? 1.2f : 1.f, z),
-			gse::vec3<gse::length>(0.3f, 2.f, 1.f),
-			gse::kilograms(30.f),
-			(i == 0) ? gse::quat({ 0.f, 0.f, 1.f }, gse::radians(-0.8f)) : gse::quat()
-		);
+		s.spawn(std::format("Domino {}", i + 1), gs::box(gse::vec3<gse::position>(x, (i == 0) ? 1.2f : 1.f, z), gse::vec3<gse::length>(0.3f, 2.f, 1.f), gse::kilograms(30.f), (i == 0) ? gse::quat({ 0.f, 0.f, 1.f }, gse::radians(-0.8f)) : gse::quat()));
 	}
 }
 
@@ -110,41 +85,18 @@ auto gs::build_funnel(gse::scene& s) -> void {
 	const float half_len = wall_len * 0.5f;
 	const float mid_offset = (spread + half_opening) * 0.5f;
 
-	build_static_box(
-		&s,
-		"Funnel Left Wall",
-		gse::vec3<gse::position>(cx - mid_offset, wall_height * 0.5f, cz),
-		gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
-		left_rot
-	);
+	s.spawn("Funnel Left Wall", gs::static_box(gse::vec3<gse::position>(cx - mid_offset, wall_height * 0.5f, cz), gse::vec3<gse::length>(wall_len, wall_height, 0.3f), left_rot));
 
-	build_static_box(
-		&s,
-		"Funnel Right Wall",
-		gse::vec3<gse::position>(cx + mid_offset, wall_height * 0.5f, cz),
-		gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
-		right_rot
-	);
+	s.spawn("Funnel Right Wall", gs::static_box(gse::vec3<gse::position>(cx + mid_offset, wall_height * 0.5f, cz), gse::vec3<gse::length>(wall_len, wall_height, 0.3f), right_rot));
 
-	build_static_box(
-		&s,
-		"Funnel Back Wall",
-		gse::vec3<gse::position>(cx, wall_height * 0.5f, cz - half_len),
-		gse::vec3<gse::length>(spread * 2.f + 1.f, wall_height, 0.3f)
-	);
+	s.spawn("Funnel Back Wall", gs::static_box(gse::vec3<gse::position>(cx, wall_height * 0.5f, cz - half_len), gse::vec3<gse::length>(spread * 2.f + 1.f, wall_height, 0.3f)));
 
 	for (int row = 0; row < 3; ++row) {
 		for (int col = 0; col < 3; ++col) {
 			const float bx = cx - 1.f + static_cast<float>(col) * 1.1f;
 			const float by = 0.5f + static_cast<float>(row) * 1.1f;
 			const float bz = cz - 3.f;
-			build_box(
-				&s,
-				std::format("Funnel Box r{}c{}", row, col),
-				gse::vec3<gse::position>(bx, by, bz),
-				gse::vec3<gse::length>(gse::meters(1.f)),
-				gse::kilograms(40.f)
-			);
+			s.spawn(std::format("Funnel Box r{}c{}", row, col), gs::box(gse::vec3<gse::position>(bx, by, bz), gse::vec3<gse::length>(gse::meters(1.f)), gse::kilograms(40.f)));
 		}
 	}
 }
@@ -165,30 +117,16 @@ auto gs::build_slope_friction_test(gse::scene& s) -> void {
 	const gse::quat ramp_tilt(gse::axis_z, gse::degrees(30.f));
 	const gse::vec3<gse::position> ramp_position(x, 2.f, z);
 
-	build_static_box(&s, "Ramp 30deg", ramp_position, ramp_size, ramp_tilt);
+	s.spawn("Ramp 30deg", gs::static_box(ramp_position, ramp_size, ramp_tilt));
 
-	build_box(
-		&s,
-		"Ramp Box Should Hold",
-		ramp_position + resting_offset_for(ramp_tilt),
-		box_size,
-		gse::kilograms(50.f),
-		ramp_tilt
-	);
+	s.spawn("Ramp Box Should Hold", gs::box(ramp_position + resting_offset_for(ramp_tilt), box_size, gse::kilograms(50.f), ramp_tilt));
 
 	const gse::quat steep_tilt(gse::axis_z, gse::degrees(45.f));
 	const gse::vec3<gse::position> steep_ramp_position(x + 12.f, 2.f, z);
 
-	build_static_box(&s, "Steep Ramp 45deg", steep_ramp_position, ramp_size, steep_tilt);
+	s.spawn("Steep Ramp 45deg", gs::static_box(steep_ramp_position, ramp_size, steep_tilt));
 
-	build_box(
-		&s,
-		"Steep Box Should Slide",
-		steep_ramp_position + resting_offset_for(steep_tilt),
-		box_size,
-		gse::kilograms(50.f),
-		steep_tilt
-	);
+	s.spawn("Steep Box Should Slide", gs::box(steep_ramp_position + resting_offset_for(steep_tilt), box_size, gse::kilograms(50.f), steep_tilt));
 }
 
 auto gs::build_high_speed_impact_target(gse::scene& s) -> void {
@@ -199,13 +137,7 @@ auto gs::build_high_speed_impact_target(gse::scene& s) -> void {
 		for (int col = 0; col < 3; ++col) {
 			const float bx = x - 1.1f + static_cast<float>(col) * 1.1f;
 			const float by = 0.5f + static_cast<float>(row) * 1.05f;
-			build_box(
-				&s,
-				std::format("Impact Wall r{}c{}", row, col),
-				gse::vec3<gse::position>(bx, by, z),
-				gse::vec3<gse::length>(gse::meters(1.f)),
-				gse::kilograms(80.f)
-			);
+			s.spawn(std::format("Impact Wall r{}c{}", row, col), gs::box(gse::vec3<gse::position>(bx, by, z), gse::vec3<gse::length>(gse::meters(1.f)), gse::kilograms(80.f)));
 		}
 	}
 }
@@ -224,22 +156,9 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 		const std::array<std::string, 3> labels = { "Stiff", "Medium", "Soft" };
 		const float bx = x + static_cast<float>(i) * 5.f;
 
-		const auto anchor_id = build_static_box(
-								   &s,
-								   std::format("Spring {} Anchor", labels[i]),
-								   gse::vec3<gse::position>(bx, 10.f, z),
-								   gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
-		)
-								   .identify();
+		const auto anchor_id = s.spawn(std::format("Spring {} Anchor", labels[i]), gs::static_box(gse::vec3<gse::position>(bx, 10.f, z), gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)));
 
-		const auto bob_id = build_sphere(
-								&s,
-								std::format("Spring {} Bob", labels[i]),
-								gse::vec3<gse::position>(bx + 2.f, 10.f, z),
-								gse::meters(0.5f),
-								gse::sphere_lod::lo
-		)
-								.identify();
+		const auto bob_id = s.spawn(std::format("Spring {} Bob", labels[i]), gs::sphere(gse::vec3<gse::position>(bx + 2.f, 10.f, z), gse::meters(0.5f), gse::sphere_lod::lo));
 
 		s.build(std::format("Spring {} Joint", labels[i]))
 			.with<gse::physics::joint_spec>({
@@ -253,25 +172,12 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 			});
 	}
 
-	const auto chain_anchor = build_static_box(
-								  &s,
-								  "Spring Chain Anchor",
-								  gse::vec3<gse::position>(x + 18.f, 12.f, z),
-								  gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
-	)
-								  .identify();
+	const auto chain_anchor = s.spawn("Spring Chain Anchor", gs::static_box(gse::vec3<gse::position>(x + 18.f, 12.f, z), gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)));
 
 	auto prev_id = chain_anchor;
 	for (int i = 0; i < 5; ++i) {
 		const float by = 12.f - static_cast<float>(i + 1) * 2.f;
-		const auto link_id = build_sphere(
-								 &s,
-								 std::format("Spring Chain Link {}", i),
-								 gse::vec3<gse::position>(x + 18.f, by, z),
-								 gse::meters(0.4f),
-								 gse::sphere_lod::lo
-		)
-								 .identify();
+		const auto link_id = s.spawn(std::format("Spring Chain Link {}", i), gs::sphere(gse::vec3<gse::position>(x + 18.f, by, z), gse::meters(0.4f), gse::sphere_lod::lo));
 
 		s.build(std::format("Spring Chain Joint {}", i))
 			.with<gse::physics::joint_spec>({
@@ -342,22 +248,19 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 	};
 
 	for (const auto& wall : walls) {
-		build_box(
-			&s,
-			std::format("Tumbler Wall {}", wall.suffix),
+		auto wall_arch = gs::box(
 			center + wall.local_offset,
 			wall.size,
 			gse::kilograms(10000.f)
-		)
-			.with<gs::tumbler::component>({
-				.center = center,
-				.axis = rotation_axis,
-				.angular_speed = angular_speed,
-				.local_offset = wall.local_offset,
-			})
-			.configure([](gse::physics::motion_component& mc) {
-				mc.body = gse::physics::kinematic_body {};
-			});
+		);
+		wall_arch.motion.body = gse::physics::kinematic_body {};
+		const auto wall_id = s.spawn(std::format("Tumbler Wall {}", wall.suffix), std::move(wall_arch));
+		s.registry().add_component<gs::tumbler::component>(wall_id, {
+																		.center = center,
+																		.axis = rotation_axis,
+																		.angular_speed = angular_speed,
+																		.local_offset = wall.local_offset,
+																	});
 	}
 
 	constexpr int nx = 8;
@@ -374,13 +277,7 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 				const float fx = -radial_span + (static_cast<float>(ix) + 0.5f) * (radial_span * 2.f / nx);
 				const float fy = -radial_span + (static_cast<float>(iy) + 0.5f) * (radial_span * 2.f / ny);
 				const float fz = -axial_span + (static_cast<float>(iz) + 0.5f) * (axial_span * 2.f / nz);
-				build_box(
-					&s,
-					std::format("Tumbler Cube {}", content_id++),
-					gse::vec3<gse::position>(cx + fx, cy + fy, cz + fz),
-					gse::vec3<gse::length>(gse::meters(content_size)),
-					gse::kilograms(1.f)
-				);
+				s.spawn(std::format("Tumbler Cube {}", content_id++), gs::box(gse::vec3<gse::position>(cx + fx, cy + fy, cz + fz), gse::vec3<gse::length>(gse::meters(content_size)), gse::kilograms(1.f)));
 			}
 		}
 	}
@@ -400,13 +297,7 @@ auto gs::build_box_grid(gse::scene& s) -> void {
 				const float x = base_x + static_cast<float>(ix) * spacing;
 				const float y = 0.5f + static_cast<float>(layer) * 1.05f;
 				const float z = base_z + static_cast<float>(iz) * spacing;
-				build_box(
-					&s,
-					std::format("Grid L{}R{}C{}", layer, ix, iz),
-					gse::vec3<gse::position>(x, y, z),
-					gse::vec3<gse::length>(gse::meters(1.f)),
-					gse::kilograms(20.f)
-				);
+				s.spawn(std::format("Grid L{}R{}C{}", layer, ix, iz), gs::box(gse::vec3<gse::position>(x, y, z), gse::vec3<gse::length>(gse::meters(1.f)), gse::kilograms(20.f)));
 			}
 		}
 	}
@@ -414,7 +305,7 @@ auto gs::build_box_grid(gse::scene& s) -> void {
 
 auto gs::physics_stress_test_scene_setup(gse::scene& s) -> void {
 	const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
-	build_static_box(&s, "Floor", floor_pos, gse::vec3<gse::length>(60.f, 1.f, 60.f));
+	s.spawn("Floor", gs::static_box(floor_pos, gse::vec3<gse::length>(60.f, 1.f, 60.f)));
 
 	build_inverted_mass_pyramid(s);
 	build_domino_chain(s);
@@ -425,12 +316,7 @@ auto gs::physics_stress_test_scene_setup(gse::scene& s) -> void {
 	build_spring_tests(s);
 	build_tumbler(s);
 
-	build_sphere(
-		&s,
-		"Bouncy Sphere",
-		gse::vec3<gse::position>(-15.f, 8.f, 0.f),
-		gse::meters(1.f)
-	);
+	s.spawn("Bouncy Sphere", gs::sphere(gse::vec3<gse::position>(-15.f, 8.f, 0.f), gse::meters(1.f)));
 
 	s.build("Player")
 		.with<gs::player::component>({
@@ -442,10 +328,5 @@ auto gs::physics_stress_test_scene_setup(gse::scene& s) -> void {
 			.initial_position = gse::vec3<gse::position>(0.f, 20.f, 40.f),
 		});
 
-	build_sphere_light(
-		&s,
-		"Scene Light",
-		gse::vec3<gse::position>(0.f, 25.f, 0.f),
-		gse::meters(0.5f)
-	);
+	s.spawn("Scene Light", gs::sphere_light(gse::vec3<gse::position>(0.f, 25.f, 0.f), gse::meters(0.5f)));
 }

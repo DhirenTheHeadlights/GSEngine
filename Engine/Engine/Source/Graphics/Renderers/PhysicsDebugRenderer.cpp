@@ -132,13 +132,12 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 
 		{
 			constexpr std::size_t max_shape_debug_vertices = 256;
-			auto [transforms, motions, statuses, collisions, results] = co_await ctx.acquire<
-				read<physics::transform_component>,
-				read<physics::motion_component>,
-				read<physics::motion_status_component>,
-				read<physics::collision_component>,
-				read<physics::collision_result_component>
-			>();
+			auto [transforms, motions, collisions, results] = co_await ctx.acquire_with(
+				read_v<physics::transform_component>,
+				read_v<physics::motion_component>,
+				read_v<physics::collision_component>,
+				read_v<physics::collision_result_component>
+			);
 
 			std::vector<debug_vertex> vertices;
 			vertices.reserve(collisions.size() * max_shape_debug_vertices);
@@ -156,8 +155,8 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 				}
 			}
 
-			for (const auto& st : statuses) {
-				if (st.sleeping) {
+			for (const auto bit : ps.body_sleeping) {
+				if (bit != 0) {
 					stats.sleeping_count++;
 				}
 			}

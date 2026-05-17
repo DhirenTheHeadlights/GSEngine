@@ -1368,7 +1368,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 		}
 
 		pass_secondaries[pi] = secondary;
-	});
+	}, trace_id<"render_graph::record_passes">());
 
 	std::vector<std::size_t> sorted;
 

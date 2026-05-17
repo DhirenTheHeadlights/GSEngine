@@ -39,7 +39,11 @@ export namespace gse::physics {
         const motion_component& mc
     ) -> bool;
 
-    auto is_locked(
+    auto is_kinematic(
+        const motion_component& mc
+    ) -> bool;
+
+    auto is_static(
         const motion_component& mc
     ) -> bool;
 
@@ -57,8 +61,12 @@ auto gse::physics::is_dynamic(const motion_component& mc) -> bool {
     return std::holds_alternative<dynamic_body>(mc.body);
 }
 
-auto gse::physics::is_locked(const motion_component& mc) -> bool {
-    return !std::holds_alternative<dynamic_body>(mc.body);
+auto gse::physics::is_kinematic(const motion_component& mc) -> bool {
+    return std::holds_alternative<kinematic_body>(mc.body);
+}
+
+auto gse::physics::is_static(const motion_component& mc) -> bool {
+    return std::holds_alternative<static_body>(mc.body);
 }
 
 auto gse::physics::mass_of(const motion_component& mc) -> mass {

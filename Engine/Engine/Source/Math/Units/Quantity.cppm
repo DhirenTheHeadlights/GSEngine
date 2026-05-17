@@ -110,6 +110,11 @@ namespace gse::internal {
     template <typename Tag, typename T = float, auto U = ([: resolve_default_unit_info(^^Tag) :])>
     using quantity_t = typename quantity_traits<Tag>::template type<T, U>;
 
+    export template <typename Tag>
+    struct base_unit_override {
+        using type = void;
+    };
+
     export template <typename T>
     concept is_arithmetic = std::integral<T> || std::floating_point<T>;
 
@@ -767,6 +772,13 @@ export namespace gse::internal {
 
     template <typename T1, typename T2>
     using common_quantity_t = decltype(common_quantity_fn<T1, T2>())::type;
+
+    template <typename Q>
+    using quantity_base_unit_t = std::conditional_t<
+        std::is_same_v<typename base_unit_override<typename Q::quantity_tag>::type, void>,
+        typename Q::default_unit,
+        typename base_unit_override<typename Q::quantity_tag>::type
+    >;
 }
 
 export namespace gse::internal {
@@ -905,13 +917,14 @@ template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 constexpr auto gse::internal::operator*(const Q1& lhs, const Q2& rhs) {
 	using result_v = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
 	using result_d = decltype(typename Q1::dimension() * typename Q2::dimension());
+	const auto product = lhs.template as<quantity_base_unit_t<Q1>>() * rhs.template as<quantity_base_unit_t<Q2>>();
 	if constexpr (dimension_to_tag<result_d>::found) {
 		using found_tag = typename dimension_to_tag<result_d>::tag;
 		using result_t = typename quantity_traits<found_tag>::template type<result_v>;
-		return result_t(lhs.template as<typename Q1::default_unit>() * rhs.template as<typename Q2::default_unit>());
+		return result_t::template from<quantity_base_unit_t<result_t>>(product);
 	}
 	else {
-		return generic_quantity<result_v, result_d>(lhs.template as<typename Q1::default_unit>() * rhs.template as<typename Q2::default_unit>());
+		return generic_quantity<result_v, result_d>(product);
 	}
 }
 
@@ -928,20 +941,21 @@ constexpr auto gse::internal::operator*(const S& lhs, const Q& rhs) -> Q {
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 	requires gse::internal::has_same_dimension_as<Q1, Q2>
 constexpr auto gse::internal::operator/(const Q1& lhs, const Q2& rhs) -> Q1::value_type {
-	return lhs.template as<typename Q1::default_unit>() / rhs.template as<typename Q2::default_unit>();
+	return lhs.template as<quantity_base_unit_t<Q1>>() / rhs.template as<quantity_base_unit_t<Q2>>();
 }
 
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 constexpr auto gse::internal::operator/(const Q1& lhs, const Q2& rhs) {
 	using result_v = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
 	using result_d = decltype(typename Q1::dimension() / typename Q2::dimension());
+	const auto quotient = lhs.template as<quantity_base_unit_t<Q1>>() / rhs.template as<quantity_base_unit_t<Q2>>();
 	if constexpr (dimension_to_tag<result_d>::found) {
 		using found_tag = typename dimension_to_tag<result_d>::tag;
 		using result_t = typename quantity_traits<found_tag>::template type<result_v>;
-		return result_t(lhs.template as<typename Q1::default_unit>() / rhs.template as<typename Q2::default_unit>());
+		return result_t::template from<quantity_base_unit_t<result_t>>(quotient);
 	}
 	else {
-		return generic_quantity<result_v, result_d>(lhs.template as<typename Q1::default_unit>() / rhs.template as<typename Q2::default_unit>());
+		return generic_quantity<result_v, result_d>(quotient);
 	}
 }
 
@@ -954,7 +968,7 @@ template <gse::internal::is_arithmetic S, gse::internal::is_quantity Q>
 constexpr auto gse::internal::operator/(const S& lhs, const Q& rhs) {
 	using result_v = Q::value_type;
 	using result_d = decltype(dimensionless{} / typename Q::dimension());
-	return generic_quantity<result_v, result_d>(static_cast<result_v>(lhs) / rhs.template as<typename Q::default_unit>());
+	return generic_quantity<result_v, result_d>(static_cast<result_v>(lhs) / rhs.template as<quantity_base_unit_t<Q>>());
 }
 
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>

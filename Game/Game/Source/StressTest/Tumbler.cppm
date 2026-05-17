@@ -10,7 +10,6 @@ export namespace gs::tumbler {
 		gse::angular_velocity angular_speed = gse::radians_per_second(0.6f);
 		gse::vec3<gse::length> local_offset;
 		gse::angle phase = gse::radians(0.f);
-		gse::time accumulator = gse::seconds(0.f);
 	};
 
 	struct system {
@@ -25,14 +24,14 @@ export namespace gs::tumbler {
 auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [tumblers, transforms, motions, statuses] = co_await ctx.acquire<
-				gse::write<component>,
-				gse::write<gse::physics::transform_component>,
-				gse::write<gse::physics::motion_component>,
-				gse::write<gse::physics::motion_status_component>
-			>();
+			auto [tumblers, transforms, motions] = co_await ctx.acquire_with(
+				gse::write_v<component>,
+				gse::write_v<gse::physics::transform_component>,
+				gse::write_v<gse::physics::motion_component>
+			);
 
-			constexpr auto physics_step = gse::seconds(1.f / 60.f);
+			const int steps = gse::system_clock::fixed_steps_this_frame();
+			const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
 
 			const auto tumbler_ids = tumblers.owner_ids();
 			for (std::size_t i = 0; i < tumblers.size(); ++i) {
@@ -44,11 +43,7 @@ auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 					continue;
 				}
 
-				t.accumulator += gse::system_clock::dt();
-				while (t.accumulator >= physics_step) {
-					t.accumulator -= physics_step;
-					t.phase += t.angular_speed * physics_step;
-				}
+				t.phase += t.angular_speed * step_dt * static_cast<float>(steps);
 
 				const gse::quat world_rot(t.axis, t.phase);
 				const auto world_offset = gse::rotate_vector(world_rot, t.local_offset);
@@ -63,9 +58,6 @@ auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 				transform->orientation = world_rot;
 				motion->current_velocity = lin_vel;
 				motion->angular_velocity = ang_vel;
-				if (auto* status = statuses.find(eid)) {
-					status->sleeping = false;
-				}
 			}
 		}
 

@@ -1,15 +1,6 @@
 
-static const uint COLLISION_STATE_HEADER_UINTS = 8;
-static const uint NARROW_PHASE_DEBUG_RECORD_UINTS = 8;
-static const uint MAX_NARROW_PHASE_DEBUG_RECORDS = 32;
-static const uint FEATURE_VERTEX = 0;
-static const uint FEATURE_EDGE = 1;
-static const uint FEATURE_FACE = 2;
-static const uint FEATURE_SIDE_NONE = 0xFF;
 static const float SAT_AXIS_RELATIVE_TOLERANCE = 0.95;
 static const float SAT_AXIS_ABSOLUTE_TOLERANCE = 0.01;
-static const uint SAT_AXIS_FACE = 0;
-static const uint SAT_AXIS_CROSS = 1;
 
 float contact_effective_mass(
     body_state body_a,
@@ -96,7 +87,7 @@ void update_sat_choice(inout SatAxisChoice best, float3 axis, float overlap, uin
 }
 
 SatAxisChoice prefer_face_sat_axis(SatAxisChoice best, SatAxisChoice best_face) {
-    if (!best.valid || best.source != SAT_AXIS_CROSS || !best_face.valid) {
+    if (!best.valid || best.source != sat_axis_cross || !best_face.valid) {
         return best;
     }
 
@@ -126,7 +117,7 @@ SatResult sat_speculative(
     best_axis.axis = float3(0, 0, 0);
     best_axis.overlap = 0.0;
     best_axis.extent_scale = 0.0;
-    best_axis.source = SAT_AXIS_FACE;
+    best_axis.source = sat_axis_face;
     best_axis.valid = false;
 
     SatAxisChoice best_face_axis = best_axis;
@@ -146,8 +137,8 @@ SatResult sat_speculative(
             if (overlap < -speculative_margin) return result;
             if (overlap <= 0.0) all_positive = false;
 
-            update_sat_choice(best_axis, axis, overlap, SAT_AXIS_FACE, he_a[i]);
-            update_sat_choice(best_face_axis, axis, overlap, SAT_AXIS_FACE, he_a[i]);
+            update_sat_choice(best_axis, axis, overlap, sat_axis_face, he_a[i]);
+            update_sat_choice(best_face_axis, axis, overlap, sat_axis_face, he_a[i]);
         }
     }
 
@@ -165,8 +156,8 @@ SatResult sat_speculative(
             if (overlap < -speculative_margin) return result;
             if (overlap <= 0.0) all_positive = false;
 
-            update_sat_choice(best_axis, axis, overlap, SAT_AXIS_FACE, he_b[i]);
-            update_sat_choice(best_face_axis, axis, overlap, SAT_AXIS_FACE, he_b[i]);
+            update_sat_choice(best_axis, axis, overlap, sat_axis_face, he_b[i]);
+            update_sat_choice(best_face_axis, axis, overlap, sat_axis_face, he_b[i]);
         }
     }
 
@@ -185,7 +176,7 @@ SatResult sat_speculative(
             if (overlap < -speculative_margin) return result;
             if (overlap <= 0.0) all_positive = false;
 
-            update_sat_choice(best_axis, axis, overlap, SAT_AXIS_CROSS, 0.0);
+            update_sat_choice(best_axis, axis, overlap, sat_axis_cross, 0.0);
         }
     }
 
@@ -327,10 +318,10 @@ FeatureDetail classify_feature(float3 center, float3 he, float3 axes[3], float3 
     float boundary_threshold = clamp(tangent_scale * 0.002, 0.0005, 0.01);
 
     FeatureDetail result;
-    result.type = FEATURE_FACE;
+    result.type = feature_face;
     result.face = face_index;
-    result.side0 = FEATURE_SIDE_NONE;
-    result.side1 = FEATURE_SIDE_NONE;
+    result.side0 = feature_side_none;
+    result.side1 = feature_side_none;
 
     float half_extent_u = he[u_axis];
     float dist_u = half_extent_u - clamp(abs(local[u_axis]), 0.0, half_extent_u);
@@ -342,7 +333,7 @@ FeatureDetail classify_feature(float3 center, float3 he, float3 axes[3], float3 
     float dist_v = half_extent_v - clamp(abs(local[v_axis]), 0.0, half_extent_v);
     if (dist_v <= boundary_threshold) {
         uint side = local[v_axis] >= 0.0 ? 2u : 3u;
-        if (result.side0 == FEATURE_SIDE_NONE) {
+        if (result.side0 == feature_side_none) {
             result.side0 = side;
         } else if (result.side0 != side) {
             result.side1 = side;
@@ -350,11 +341,11 @@ FeatureDetail classify_feature(float3 center, float3 he, float3 axes[3], float3 
     }
 
     result.type =
-        result.side0 == FEATURE_SIDE_NONE
-            ? FEATURE_FACE
-            : (result.side1 == FEATURE_SIDE_NONE ? FEATURE_EDGE : FEATURE_VERTEX);
+        result.side0 == feature_side_none
+            ? feature_face
+            : (result.side1 == feature_side_none ? feature_edge : feature_vertex);
 
-    if (result.side1 != FEATURE_SIDE_NONE && result.side1 < result.side0) {
+    if (result.side1 != feature_side_none && result.side1 < result.side0) {
         uint tmp = result.side0;
         result.side0 = result.side1;
         result.side1 = tmp;
@@ -364,13 +355,13 @@ FeatureDetail classify_feature(float3 center, float3 he, float3 axes[3], float3 
 }
 
 void init_active_sides(out ActiveSides sides) {
-    sides.values[0] = FEATURE_SIDE_NONE;
-    sides.values[1] = FEATURE_SIDE_NONE;
+    sides.values[0] = feature_side_none;
+    sides.values[1] = feature_side_none;
     sides.count = 0;
 }
 
 void add_side(inout ActiveSides sides, uint side) {
-    if (side == FEATURE_SIDE_NONE) return;
+    if (side == feature_side_none) return;
 
     for (uint i = 0; i < sides.count; i++) {
         if (sides.values[i] == side) return;
@@ -424,7 +415,7 @@ ActiveSides vertex_side_set(uint ordinal) {
 }
 
 uint feature_type_from_sides(ActiveSides sides) {
-    return sides.count == 0 ? FEATURE_FACE : (sides.count == 1 ? FEATURE_EDGE : FEATURE_VERTEX);
+    return sides.count == 0 ? feature_face : (sides.count == 1 ? feature_edge : feature_vertex);
 }
 
 uint reference_edge_side_id(uint edge_index) {
@@ -564,7 +555,7 @@ ClippedFaceContacts build_clipped_face_contacts(
         reference_plane,
         false,
         false,
-        FEATURE_SIDE_NONE
+        feature_side_none
     );
 
     float face_alignment = dot(reference_normal, -normalize(incident_info.normal));
@@ -863,12 +854,12 @@ void record_narrow_phase_debug(
     }
 
     uint debug_index;
-    InterlockedAdd(collision_state[2], 1, debug_index);
-    if (debug_index >= MAX_NARROW_PHASE_DEBUG_RECORDS) {
+    InterlockedAdd(collision_state[state_debug_count_index], 1, debug_index);
+    if (debug_index >= max_narrow_phase_debug_records) {
         return;
     }
 
-    uint base = COLLISION_STATE_HEADER_UINTS + debug_index * NARROW_PHASE_DEBUG_RECORD_UINTS;
+    uint base = collision_state_header_uints + debug_index * narrow_phase_debug_record_uints;
     uint flags = 0;
     if (contacts.clipped_valid) flags |= 0x1u;
     if (contacts.used_fallback) flags |= 0x2u;
@@ -918,7 +909,7 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint 
 // entry:
 uint pair_idx = dispatch_id.x;
 
-uint pair_count = min(collision_pairs[0], MAX_COLLISION_PAIRS);
+uint pair_count = min(collision_pairs[0], max_collision_pairs);
 if (pair_idx >= pair_count) return;
 
 uint body_a_idx = collision_pairs[1 + pair_idx * 2];
@@ -938,7 +929,7 @@ mat3 rot_b = rotation_from_quat(bb.orientation);
 float3 axes_a[3] = { rot_a[0], rot_a[1], rot_a[2] };
 float3 axes_b[3] = { rot_b[0], rot_b[1], rot_b[2] };
 
-SatResult sat = sat_speculative(center_a, he_a, axes_a, center_b, he_b, axes_b, pc.speculative_margin);
+SatResult sat = sat_speculative(center_a, he_a, axes_a, center_b, he_b, axes_b, pc.cfg.speculative_margin);
 
 if (!sat.valid) return;
 
@@ -957,13 +948,13 @@ uint my_offset = WavePrefixSum(local_count);
 
 uint wave_base = 0;
 if (WaveIsFirstLane() && wave_sum > 0) {
-    InterlockedAdd(collision_state[0], wave_sum, wave_base);
+    InterlockedAdd(collision_state[state_contact_count_index], wave_sum, wave_base);
 }
 wave_base = WaveReadLaneFirst(wave_base);
 
 for (uint p = 0; p < local_count; p++) {
     uint ci = wave_base + my_offset + p;
-    if (ci >= MAX_CONTACTS) continue;
+    if (ci >= max_contacts) continue;
 
     ContactCandidate candidate = contacts.candidates[p];
     float3 world_anchor_a = candidate.position_on_a;
@@ -980,7 +971,7 @@ for (uint p = 0; p < local_count; p++) {
     contact_constraint cached_ws;
     bool has_cached = warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, pc.warm_start_count, cached_ws);
     float3 current_d = world_anchor_a - world_anchor_b;
-    float current_normal_gap = dot(constraint_normal, current_d) + pc.collision_margin;
+    float current_normal_gap = dot(constraint_normal, current_d) + pc.cfg.collision_margin;
     bool reuse_cached_normal =
         has_cached &&
         (cached_ws.lambda.x < -1e-3 || current_normal_gap < -1e-4);
@@ -992,19 +983,19 @@ for (uint p = 0; p < local_count; p++) {
         cached_ws.sticking != 0;
 
     float3 init_lambda = float3(0, 0, 0);
-    float3 init_penalty = float3(pc.penalty_min, pc.penalty_min, pc.penalty_min);
+    float3 init_penalty = float3(pc.cfg.penalty_min, pc.cfg.penalty_min, pc.cfg.penalty_min);
     bool sticking = has_cached && cached_ws.sticking != 0;
 
     if (reuse_cached_normal) {
-        init_penalty.x = max(cached_ws.penalty.x, pc.penalty_min);
+        init_penalty.x = max(cached_ws.penalty.x, pc.cfg.penalty_min);
 
         float3 cached_normal_force = cached_ws.normal.xyz * cached_ws.lambda.x;
         init_lambda.x = min(dot(cached_normal_force, constraint_normal), 0.0);
     }
 
     if (reuse_cached_tangent) {
-        init_penalty.y = max(cached_ws.penalty.y, pc.penalty_min);
-        init_penalty.z = max(cached_ws.penalty.z, pc.penalty_min);
+        init_penalty.y = max(cached_ws.penalty.y, pc.cfg.penalty_min);
+        init_penalty.z = max(cached_ws.penalty.z, pc.cfg.penalty_min);
 
         float3 cached_tangent_force =
             cached_ws.tangent_u.xyz * cached_ws.lambda.y +
@@ -1013,7 +1004,7 @@ for (uint p = 0; p < local_count; p++) {
         init_lambda.y = dot(cached_tangent_force, tangent_u);
         init_lambda.z = dot(cached_tangent_force, tangent_v);
 
-        float friction_bound = abs(init_lambda.x) * pc.friction_coefficient;
+        float friction_bound = abs(init_lambda.x) * pc.cfg.friction_coefficient;
         init_lambda.y = clamp(init_lambda.y, -friction_bound, friction_bound);
         init_lambda.z = clamp(init_lambda.z, -friction_bound, friction_bound);
     }
@@ -1030,40 +1021,40 @@ for (uint p = 0; p < local_count; p++) {
     float3 d = pA - pB;
 
     float3 C0 = float3(
-        dot(constraint_normal, d) + pc.collision_margin,
+        dot(constraint_normal, d) + pc.cfg.collision_margin,
         dot(tangent_u, d),
         dot(tangent_v, d)
     );
 
-    float base_floor = has_cached ? max(cached_ws.penalty_floor, pc.penalty_min) : pc.penalty_min;
+    float base_floor = has_cached ? max(cached_ws.penalty_floor, pc.cfg.penalty_min) : pc.cfg.penalty_min;
     bool active_normal =
         init_lambda.x < -1e-3 ||
         C0.x < -1e-4;
     float normal_floor =
         active_normal
-            ? clamp(contact_effective_mass(ba, bb, rAW, rBW, constraint_normal) / pc.h_squared, base_floor, pc.penalty_max)
+            ? clamp(contact_effective_mass(ba, bb, rAW, rBW, constraint_normal) / pc.h_squared, base_floor, pc.cfg.penalty_max)
             : base_floor;
 
     float row_floor_y =
         sticking
-            ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_u) / pc.h_squared, pc.penalty_min, pc.penalty_max)
-            : pc.penalty_min;
+            ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_u) / pc.h_squared, pc.cfg.penalty_min, pc.cfg.penalty_max)
+            : pc.cfg.penalty_min;
     float row_floor_z =
         sticking
-            ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_v) / pc.h_squared, pc.penalty_min, pc.penalty_max)
-            : pc.penalty_min;
+            ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_v) / pc.h_squared, pc.cfg.penalty_min, pc.cfg.penalty_max)
+            : pc.cfg.penalty_min;
 
     float3 penalty = init_penalty;
     float3 lambda = init_lambda;
-    if (pc.post_stabilize != 0) {
-        penalty.x = clamp(penalty.x * pc.gamma, normal_floor, pc.penalty_max);
-        penalty.y = clamp(penalty.y * pc.gamma, row_floor_y, pc.penalty_max);
-        penalty.z = clamp(penalty.z * pc.gamma, row_floor_z, pc.penalty_max);
+    if (pc.cfg.post_stabilize != 0) {
+        penalty.x = clamp(penalty.x * pc.cfg.gamma, normal_floor, pc.cfg.penalty_max);
+        penalty.y = clamp(penalty.y * pc.cfg.gamma, row_floor_y, pc.cfg.penalty_max);
+        penalty.z = clamp(penalty.z * pc.cfg.gamma, row_floor_z, pc.cfg.penalty_max);
     } else {
-        lambda *= (pc.solver_alpha * pc.gamma);
-        penalty.x = clamp(penalty.x * pc.gamma, normal_floor, pc.penalty_max);
-        penalty.y = clamp(penalty.y * pc.gamma, row_floor_y, pc.penalty_max);
-        penalty.z = clamp(penalty.z * pc.gamma, row_floor_z, pc.penalty_max);
+        lambda *= (pc.cfg.alpha * pc.cfg.gamma);
+        penalty.x = clamp(penalty.x * pc.cfg.gamma, normal_floor, pc.cfg.penalty_max);
+        penalty.y = clamp(penalty.y * pc.cfg.gamma, row_floor_y, pc.cfg.penalty_max);
+        penalty.z = clamp(penalty.z * pc.cfg.gamma, row_floor_z, pc.cfg.penalty_max);
     }
 
     float3 va = ba.velocity + cross(ba.angular_velocity, rAW);
@@ -1084,9 +1075,9 @@ for (uint p = 0; p < local_count; p++) {
     c.local_anchor_a = local_r_a;
     c.local_anchor_b = local_r_b;
     c.c0 = C0;
-    c.friction_coeff = pc.friction_coefficient;
+    c.friction_coeff = pc.cfg.friction_coefficient;
     c.restitution = pair_restitution;
-    c.penalty_floor = pc.penalty_min;
+    c.penalty_floor = pc.cfg.penalty_min;
     c.approach_speed = approach;
     c.lambda = lambda;
     c.penalty = penalty;
