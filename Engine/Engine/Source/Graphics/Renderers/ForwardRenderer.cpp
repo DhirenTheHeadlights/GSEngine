@@ -30,29 +30,29 @@ import gse.save;
 import gse.meta;
 
 namespace gse::renderer::forward {
-	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
+	struct[[= shaders::binding<0, 0>{}]] camera_ubo {
 		using element = shaders::common::camera_data;
 	};
 
-	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] lights_ssbo {
+	struct[[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] lights_ssbo {
 		using element = shaders::forward::light;
 	};
 
-	struct [[= shaders::binding<0, 2>{}, = shaders::tlas]] scene_tlas {};
+	struct[[= shaders::binding<0, 2>{}, = shaders::tlas]] scene_tlas {};
 
-	struct [[= shaders::binding<0, 3>{}, = shaders::ssbo_readonly]] light_index_list {
+	struct[[= shaders::binding<0, 3>{}, = shaders::ssbo_readonly]] light_index_list {
 		using element = std::uint32_t;
 	};
 
-	struct [[= shaders::binding<0, 4>{}, = shaders::ssbo_readonly]] tile_light_table {
+	struct[[= shaders::binding<0, 4>{}, = shaders::ssbo_readonly]] tile_light_table {
 		using element = vec2u;
 	};
 
-	struct [[= shaders::binding<0, 5>{}, = shaders::ssbo_readonly]] material_palette {
+	struct[[= shaders::binding<0, 5>{}, = shaders::ssbo_readonly]] material_palette {
 		using element = shaders::forward::material_data;
 	};
 
-	struct [[= shaders::binding<1, 5>{}, = shaders::ssbo_readonly]] instance_data_buffer {
+	struct[[= shaders::binding<1, 5>{}, = shaders::ssbo_readonly]] instance_data_buffer {
 		using element = shaders::common::instance_data;
 	};
 
@@ -69,10 +69,9 @@ namespace gse::renderer::forward {
 		shaders::meshlet::meshlet_triangles,
 		shaders::meshlet::meshlet_bounds_buffer,
 		instance_data_buffer,
-		shaders::bindless::textures
-	>;
+		shaders::bindless::textures>;
 
-	struct [[= shaders::shader_struct]] meshlet_push_constants {
+	struct[[= shaders::shader_struct]] meshlet_push_constants {
 		std::uint32_t meshlet_offset;
 		std::uint32_t meshlet_count;
 		std::uint32_t first_instance;
@@ -93,10 +92,9 @@ namespace gse::renderer::forward {
 		gpu::mesh_stage<"ms_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<meshlet_push_constants>,
-		gpu::depth<true, false, gpu::compare_op::less_or_equal>
-	>;
+		gpu::depth<true, false, gpu::compare_op::less_or_equal>>;
 
-	struct [[= shaders::shader_struct]] skinned_push_constants {
+	struct[[= shaders::shader_struct]] skinned_push_constants {
 		std::uint32_t diffuse_index;
 	};
 
@@ -108,8 +106,7 @@ namespace gse::renderer::forward {
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<skinned_push_constants>,
-		gpu::depth<true, false, gpu::compare_op::less_or_equal>
-	>;
+		gpu::depth<true, false, gpu::compare_op::less_or_equal>>;
 }
 
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, data& d) -> async::task<> {
@@ -126,20 +123,11 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 	d.material_staging.reserve(material_buffer_size);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = camera_ubo_size,
-			.usage = gpu::buffer_flag::uniform
-		});
+		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = camera_ubo_size, .usage = gpu::buffer_flag::uniform });
 
-		d.light_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = light_buffer_size,
-			.usage = gpu::buffer_flag::storage
-		});
+		d.light_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = light_buffer_size, .usage = gpu::buffer_flag::storage });
 
-		d.material_palette_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = material_buffer_size,
-			.usage = gpu::buffer_flag::storage
-		});
+		d.material_palette_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = material_buffer_size, .usage = gpu::buffer_flag::storage });
 
 		d.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet_entry::pod);
 
@@ -194,8 +182,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	if (render_items.empty()) {
 		const auto ext = gpu_s.render_graph->extent();
 		auto rec = co_await gpu::pass<system>(ctx)
-			.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
-			.depth(gpu::clear_depth(gpu::depth_clear{ .depth = 1.0f }));
+					   .color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
+					   .depth(gpu::clear_depth(gpu::depth_clear{ .depth = 1.0f }));
 		rec.set_viewport(ext);
 		rec.set_scissor(ext);
 		co_return;
@@ -328,10 +316,10 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.pipeline(d.pipeline)
-		.color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
-		.depth(gpu::load_depth())
-		.after<rt_shadow::system, light_culling::system, depth_prepass::system>();
+				   .pipeline(d.pipeline)
+				   .color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
+				   .depth(gpu::load_depth())
+				   .after<rt_shadow::system, light_culling::system, depth_prepass::system>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 

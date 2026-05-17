@@ -17,7 +17,7 @@ import :vbd_constraints;
 import :vbd_solver;
 
 export namespace gse::vbd {
-	struct [[= shaders::shader_struct]] dispatch_args {
+	struct[[= shaders::shader_struct]] dispatch_args {
 		std::uint32_t x;
 		std::uint32_t y;
 		std::uint32_t z;
@@ -33,8 +33,7 @@ export namespace gse::vbd {
 		joint_constraint,
 		impulse_constraint,
 		frozen_jacobian,
-		dispatch_args
-	>;
+		dispatch_args>;
 
 	struct vbd_solve_chain {};
 
@@ -72,11 +71,9 @@ export namespace gse::vbd {
 			frame_context& ctx
 		) -> async::task<>;
 
-		auto compute_initialized(
-		) const -> bool;
+		auto compute_initialized() const -> bool;
 
-		auto buffers_created(
-		) const -> bool;
+		auto buffers_created() const -> bool;
 
 		auto upload(
 			std::span<const body_state> bodies,
@@ -89,43 +86,33 @@ export namespace gse::vbd {
 			bool refresh_joints
 		) -> void;
 
-		auto total_substeps(
-		) const -> std::uint32_t;
+		auto total_substeps() const -> std::uint32_t;
 
-		auto commit_upload(
-		) -> void;
+		auto commit_upload() -> void;
 
-		auto read_grounded(
-		) const -> std::span<const std::uint32_t>;
+		auto read_grounded() const -> std::span<const std::uint32_t>;
 
 		auto query_body_snapshot(
 			std::uint32_t body_index
 		) const -> std::optional<body_state>;
 
-		auto pending_dispatch(
-		) const -> bool;
+		auto pending_dispatch() const -> bool;
 
-		auto body_count(
-		) const -> std::uint32_t;
+		auto body_count() const -> std::uint32_t;
 
-		auto motor_count(
-		) const -> std::uint32_t;
+		auto motor_count() const -> std::uint32_t;
 
-		auto joint_count(
-		) const -> std::uint32_t;
+		auto joint_count() const -> std::uint32_t;
 
-		auto solver_cfg(
-		) const -> const solver_config&;
+		auto solver_cfg() const -> const solver_config&;
 
-		auto dt(
-		) const -> time_step;
+		auto dt() const -> time_step;
 
 		auto snapshot_buffer(
 			std::uint32_t slot
 		) const -> const gpu::buffer&;
 
-		auto latest_snapshot_slot(
-		) const -> std::uint32_t;
+		auto latest_snapshot_slot() const -> std::uint32_t;
 
 	private:
 		struct compute_shaders {

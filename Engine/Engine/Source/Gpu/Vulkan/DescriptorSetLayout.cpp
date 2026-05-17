@@ -4,7 +4,8 @@ import std;
 import vulkan;
 
 gse::vulkan::descriptor_set_layout::descriptor_set_layout(vk::raii::DescriptorSetLayout&& layout)
-	: m_layout(std::move(layout)) {}
+	: m_layout(std::move(layout)) {
+}
 
 auto gse::vulkan::descriptor_set_layout::create(const device& dev, const std::span<const gpu::descriptor_binding_desc> bindings) -> descriptor_set_layout {
 	std::vector<vk::DescriptorSetLayoutBinding> raw;

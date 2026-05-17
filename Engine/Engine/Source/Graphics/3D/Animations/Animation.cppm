@@ -50,8 +50,8 @@ export namespace gse::animation {
 	struct pose_cache_key_hash {
 		auto operator()(const pose_cache_key& k) const -> std::size_t {
 			return std::hash<const void*>{}(k.clip) ^
-			       (std::hash<const void*>{}(k.skel) << 1) ^
-			       (std::hash<std::int64_t>{}(k.time_bucket) << 2);
+				(std::hash<const void*>{}(k.skel) << 1) ^
+				(std::hash<std::int64_t>{}(k.time_bucket) << 2);
 		}
 	};
 

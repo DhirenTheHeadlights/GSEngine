@@ -2,53 +2,34 @@ export module gse.concurrency:manual_event;
 
 import std;
 
+import gse.core;
+
 export namespace gse::async {
-	class manual_event {
+	class manual_event : non_copyable, non_movable {
 	public:
-		manual_event(
-		) = default;
+		manual_event() = default;
 
-		manual_event(
-			const manual_event&
-		) = delete;
-
-		manual_event(
-			manual_event&&
-		) = delete;
-
-		auto operator=(
-			const manual_event&
-		) -> manual_event& = delete;
-
-		auto operator=(
-			manual_event&&
-		) -> manual_event& = delete;
+		~manual_event() override = default;
 
 		struct awaiter {
 			manual_event* m_event;
 
-			auto await_ready(
-			) const noexcept -> bool;
+			[[nodiscard]] auto await_ready() const noexcept -> bool;
 
-			auto await_suspend(
+			[[nodiscard]] auto await_suspend(
 				std::coroutine_handle<> h
 			) const noexcept -> bool;
 
-			static auto await_resume(
-			) noexcept -> void;
+			static auto await_resume() noexcept -> void;
 		};
 
-		auto wait(
-		) -> awaiter;
+		auto wait() -> awaiter;
 
-		auto set(
-		) -> void;
+		auto set() -> void;
 
-		auto reset(
-		) -> void;
+		auto reset() -> void;
 
-		auto is_set(
-		) const -> bool;
+		auto is_set() const -> bool;
 
 	private:
 		mutable std::mutex m_state;
@@ -71,7 +52,8 @@ auto gse::async::manual_event::awaiter::await_suspend(const std::coroutine_handl
 	return true;
 }
 
-auto gse::async::manual_event::awaiter::await_resume() noexcept -> void {}
+auto gse::async::manual_event::awaiter::await_resume() noexcept -> void {
+}
 
 auto gse::async::manual_event::wait() -> awaiter {
 	return awaiter{ this };

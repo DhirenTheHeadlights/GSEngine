@@ -41,8 +41,7 @@ export namespace gse::vulkan {
 			this const fence& self
 		) -> gpu::handle<fence>;
 
-		explicit operator bool(
-		) const;
+		explicit operator bool() const;
 
 	private:
 		explicit fence(
@@ -53,7 +52,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::fence::fence(vk::raii::Fence&& fence) : m_fence(std::move(fence)) {}
+gse::vulkan::fence::fence(vk::raii::Fence&& fence) : m_fence(std::move(fence)) {
+}
 
 auto gse::vulkan::fence::create(const device& dev, const bool start_signaled) -> fence {
 	const vk::FenceCreateInfo info{

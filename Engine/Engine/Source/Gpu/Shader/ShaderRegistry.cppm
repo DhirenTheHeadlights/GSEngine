@@ -44,9 +44,11 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::shader_registry::shader_registry(device& dev) : m_device(&dev) {}
+gse::gpu::shader_registry::shader_registry(device& dev) : m_device(&dev) {
+}
 
-gse::gpu::shader_registry::~shader_registry() {}
+gse::gpu::shader_registry::~shader_registry() {
+}
 
 auto gse::gpu::shader_registry::register_family(std::string name, std::vector<shaders::family_set> sets) -> void {
 	std::lock_guard lock(m_mutex);

@@ -50,20 +50,22 @@ export namespace gse::gpu {
 	};
 
 	enum class buffer_flag : std::uint32_t {
-		uniform [[= vk::BufferUsageFlagBits::eUniformBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x01,
-		storage [[= vk::BufferUsageFlagBits::eStorageBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x02,
-		indirect [[= vk::BufferUsageFlagBits::eIndirectBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x04,
-		transfer_dst [[= vk::BufferUsageFlagBits::eTransferDst]] = 0x08,
-		vertex [[= vk::BufferUsageFlagBits::eVertexBuffer]] = 0x10,
-		index [[= vk::BufferUsageFlagBits::eIndexBuffer]] = 0x20,
-		transfer_src [[= vk::BufferUsageFlagBits::eTransferSrc]] = 0x40,
-		acceleration_structure_storage [[= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x80,
-		acceleration_structure_build_input [[= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x100,
-		video_encode_dst [[= vk::BufferUsageFlagBits::eVideoEncodeDstKHR]] = 0x200,
+		uniform[[= vk::BufferUsageFlagBits::eUniformBuffer]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x01,
+		storage[[= vk::BufferUsageFlagBits::eStorageBuffer]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x02,
+		indirect[[= vk::BufferUsageFlagBits::eIndirectBuffer]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x04,
+		transfer_dst[[= vk::BufferUsageFlagBits::eTransferDst]] = 0x08,
+		vertex[[= vk::BufferUsageFlagBits::eVertexBuffer]] = 0x10,
+		index[[= vk::BufferUsageFlagBits::eIndexBuffer]] = 0x20,
+		transfer_src[[= vk::BufferUsageFlagBits::eTransferSrc]] = 0x40,
+		acceleration_structure_storage[[= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x80,
+		acceleration_structure_build_input[[= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x100,
+		video_encode_dst[[= vk::BufferUsageFlagBits::eVideoEncodeDstKHR]] = 0x200,
 	};
 
 	using buffer_usage = gse::flags<buffer_flag>;
-	constexpr auto operator|(buffer_flag a, buffer_flag b) -> buffer_usage { return buffer_usage(a) | b; }
+	constexpr auto operator|(buffer_flag a, buffer_flag b) -> buffer_usage {
+		return buffer_usage(a) | b;
+	}
 
 	struct buffer_desc {
 		std::size_t size = 0;
@@ -72,32 +74,32 @@ export namespace gse::gpu {
 	};
 
 	enum class cull_mode : std::uint8_t {
-		none [[= vk::CullModeFlagBits::eNone]],
-		front [[= vk::CullModeFlagBits::eFront]],
-		back [[= vk::CullModeFlagBits::eBack]],
+		none[[= vk::CullModeFlagBits::eNone]],
+		front[[= vk::CullModeFlagBits::eFront]],
+		back[[= vk::CullModeFlagBits::eBack]],
 	};
 
 	enum class compare_op : std::uint8_t {
-		never [[= vk::CompareOp::eNever]],
-		less [[= vk::CompareOp::eLess]],
-		equal [[= vk::CompareOp::eEqual]],
-		less_or_equal [[= vk::CompareOp::eLessOrEqual]],
-		greater [[= vk::CompareOp::eGreater]],
-		not_equal [[= vk::CompareOp::eNotEqual]],
-		greater_or_equal [[= vk::CompareOp::eGreaterOrEqual]],
-		always [[= vk::CompareOp::eAlways]],
+		never[[= vk::CompareOp::eNever]],
+		less[[= vk::CompareOp::eLess]],
+		equal[[= vk::CompareOp::eEqual]],
+		less_or_equal[[= vk::CompareOp::eLessOrEqual]],
+		greater[[= vk::CompareOp::eGreater]],
+		not_equal[[= vk::CompareOp::eNotEqual]],
+		greater_or_equal[[= vk::CompareOp::eGreaterOrEqual]],
+		always[[= vk::CompareOp::eAlways]],
 	};
 
 	enum class polygon_mode : std::uint8_t {
-		fill [[= vk::PolygonMode::eFill]],
-		line [[= vk::PolygonMode::eLine]],
-		point [[= vk::PolygonMode::ePoint]],
+		fill[[= vk::PolygonMode::eFill]],
+		line[[= vk::PolygonMode::eLine]],
+		point[[= vk::PolygonMode::ePoint]],
 	};
 
 	enum class topology : std::uint8_t {
-		triangle_list [[= vk::PrimitiveTopology::eTriangleList]],
-		line_list [[= vk::PrimitiveTopology::eLineList]],
-		point_list [[= vk::PrimitiveTopology::ePointList]],
+		triangle_list[[= vk::PrimitiveTopology::eTriangleList]],
+		line_list[[= vk::PrimitiveTopology::eLineList]],
+		point_list[[= vk::PrimitiveTopology::ePointList]],
 	};
 
 	enum class blend_preset : std::uint8_t {
@@ -132,21 +134,21 @@ export namespace gse::gpu {
 	};
 
 	enum class sampler_filter : std::uint8_t {
-		nearest [[= vk::Filter::eNearest]],
-		linear [[= vk::Filter::eLinear]],
+		nearest[[= vk::Filter::eNearest]],
+		linear[[= vk::Filter::eLinear]],
 	};
 
 	enum class sampler_address_mode : std::uint8_t {
-		repeat [[= vk::SamplerAddressMode::eRepeat]],
-		clamp_to_edge [[= vk::SamplerAddressMode::eClampToEdge]],
-		clamp_to_border [[= vk::SamplerAddressMode::eClampToBorder]],
-		mirrored_repeat [[= vk::SamplerAddressMode::eMirroredRepeat]],
+		repeat[[= vk::SamplerAddressMode::eRepeat]],
+		clamp_to_edge[[= vk::SamplerAddressMode::eClampToEdge]],
+		clamp_to_border[[= vk::SamplerAddressMode::eClampToBorder]],
+		mirrored_repeat[[= vk::SamplerAddressMode::eMirroredRepeat]],
 	};
 
 	enum class border_color : std::uint8_t {
-		float_opaque_white [[= vk::BorderColor::eFloatOpaqueWhite]],
-		float_opaque_black [[= vk::BorderColor::eFloatOpaqueBlack]],
-		float_transparent_black [[= vk::BorderColor::eFloatTransparentBlack]],
+		float_opaque_white[[= vk::BorderColor::eFloatOpaqueWhite]],
+		float_opaque_black[[= vk::BorderColor::eFloatOpaqueBlack]],
+		float_transparent_black[[= vk::BorderColor::eFloatTransparentBlack]],
 	};
 
 	struct sampler_desc {
@@ -164,48 +166,50 @@ export namespace gse::gpu {
 	};
 
 	enum class image_format : std::uint8_t {
-		d32_sfloat [[= vk::Format::eD32Sfloat]],
-		r8g8b8a8_srgb [[= vk::Format::eR8G8B8A8Srgb]],
-		r8g8b8a8_unorm [[= vk::Format::eR8G8B8A8Unorm]],
-		b8g8r8a8_srgb [[= vk::Format::eB8G8R8A8Srgb]],
-		b8g8r8a8_unorm [[= vk::Format::eB8G8R8A8Unorm]],
-		r8g8b8_srgb [[= vk::Format::eR8G8B8Srgb]],
-		r8g8b8_unorm [[= vk::Format::eR8G8B8Unorm]],
-		r8_unorm [[= vk::Format::eR8Unorm]],
-		b10g11r11_ufloat [[= vk::Format::eB10G11R11UfloatPack32]],
-		r8g8_snorm [[= vk::Format::eR8G8Snorm]],
-		r8g8_unorm [[= vk::Format::eR8G8Unorm]],
-		r16g16b16a16_sfloat [[= vk::Format::eR16G16B16A16Sfloat]],
+		d32_sfloat[[= vk::Format::eD32Sfloat]],
+		r8g8b8a8_srgb[[= vk::Format::eR8G8B8A8Srgb]],
+		r8g8b8a8_unorm[[= vk::Format::eR8G8B8A8Unorm]],
+		b8g8r8a8_srgb[[= vk::Format::eB8G8R8A8Srgb]],
+		b8g8r8a8_unorm[[= vk::Format::eB8G8R8A8Unorm]],
+		r8g8b8_srgb[[= vk::Format::eR8G8B8Srgb]],
+		r8g8b8_unorm[[= vk::Format::eR8G8B8Unorm]],
+		r8_unorm[[= vk::Format::eR8Unorm]],
+		b10g11r11_ufloat[[= vk::Format::eB10G11R11UfloatPack32]],
+		r8g8_snorm[[= vk::Format::eR8G8Snorm]],
+		r8g8_unorm[[= vk::Format::eR8G8Unorm]],
+		r16g16b16a16_sfloat[[= vk::Format::eR16G16B16A16Sfloat]],
 	};
 
 	enum class image_view_type : std::uint8_t {
-		e2d [[= vk::ImageViewType::e2D]],
-		cube [[= vk::ImageViewType::eCube]],
+		e2d[[= vk::ImageViewType::e2D]],
+		cube[[= vk::ImageViewType::eCube]],
 	};
 
 	enum class image_flag : std::uint8_t {
-		sampled [[= vk::ImageUsageFlagBits::eSampled]] = 1 << 0,
-		depth_attachment [[= vk::ImageUsageFlagBits::eDepthStencilAttachment]] = 1 << 1,
-		color_attachment [[= vk::ImageUsageFlagBits::eColorAttachment]] = 1 << 2,
-		transfer_dst [[= vk::ImageUsageFlagBits::eTransferDst]] = 1 << 3,
-		storage [[= vk::ImageUsageFlagBits::eStorage]] = 1 << 4,
-		transfer_src [[= vk::ImageUsageFlagBits::eTransferSrc]] = 1 << 5,
+		sampled[[= vk::ImageUsageFlagBits::eSampled]] = 1 << 0,
+		depth_attachment[[= vk::ImageUsageFlagBits::eDepthStencilAttachment]] = 1 << 1,
+		color_attachment[[= vk::ImageUsageFlagBits::eColorAttachment]] = 1 << 2,
+		transfer_dst[[= vk::ImageUsageFlagBits::eTransferDst]] = 1 << 3,
+		storage[[= vk::ImageUsageFlagBits::eStorage]] = 1 << 4,
+		transfer_src[[= vk::ImageUsageFlagBits::eTransferSrc]] = 1 << 5,
 	};
 
 	using image_usage = gse::flags<image_flag>;
-	constexpr auto operator|(image_flag a, image_flag b) -> image_usage { return image_usage(a) | b; }
+	constexpr auto operator|(image_flag a, image_flag b) -> image_usage {
+		return image_usage(a) | b;
+	}
 
 	enum class image_layout : std::uint8_t {
-		undefined [[= vk::ImageLayout::eUndefined]],
-		general [[= vk::ImageLayout::eGeneral]],
-		shader_read_only [[= vk::ImageLayout::eShaderReadOnlyOptimal]],
-		color_attachment [[= vk::ImageLayout::eColorAttachmentOptimal]],
-		depth_stencil_attachment [[= vk::ImageLayout::eDepthStencilAttachmentOptimal]],
-		depth_attachment [[= vk::ImageLayout::eDepthAttachmentOptimal]],
-		transfer_src [[= vk::ImageLayout::eTransferSrcOptimal]],
-		transfer_dst [[= vk::ImageLayout::eTransferDstOptimal]],
-		present_src [[= vk::ImageLayout::ePresentSrcKHR]],
-		video_encode_src [[= vk::ImageLayout::eVideoEncodeSrcKHR]],
+		undefined[[= vk::ImageLayout::eUndefined]],
+		general[[= vk::ImageLayout::eGeneral]],
+		shader_read_only[[= vk::ImageLayout::eShaderReadOnlyOptimal]],
+		color_attachment[[= vk::ImageLayout::eColorAttachmentOptimal]],
+		depth_stencil_attachment[[= vk::ImageLayout::eDepthStencilAttachmentOptimal]],
+		depth_attachment[[= vk::ImageLayout::eDepthAttachmentOptimal]],
+		transfer_src[[= vk::ImageLayout::eTransferSrcOptimal]],
+		transfer_dst[[= vk::ImageLayout::eTransferDstOptimal]],
+		present_src[[= vk::ImageLayout::ePresentSrcKHR]],
+		video_encode_src[[= vk::ImageLayout::eVideoEncodeSrcKHR]],
 	};
 
 	struct image_desc {
@@ -217,13 +221,13 @@ export namespace gse::gpu {
 	};
 
 	enum class index_type : std::uint8_t {
-		uint16 [[= vk::IndexType::eUint16]],
-		uint32 [[= vk::IndexType::eUint32]],
+		uint16[[= vk::IndexType::eUint16]],
+		uint32[[= vk::IndexType::eUint32]],
 	};
 
 	enum class bind_point : std::uint8_t {
-		graphics [[= vk::PipelineBindPoint::eGraphics]],
-		compute [[= vk::PipelineBindPoint::eCompute]],
+		graphics[[= vk::PipelineBindPoint::eGraphics]],
+		compute[[= vk::PipelineBindPoint::eCompute]],
 	};
 
 	enum class queue_type : std::uint8_t {
@@ -277,43 +281,49 @@ export namespace gse::gpu {
 	};
 
 	enum class shader_stage : std::uint8_t {
-		vertex, fragment, compute, task, mesh
+		vertex,
+		fragment,
+		compute,
+		task,
+		mesh
 	};
 
 	enum class stage_flag : std::uint8_t {
-		vertex [[= vk::ShaderStageFlagBits::eVertex]] = 1 << 0,
-		fragment [[= vk::ShaderStageFlagBits::eFragment]] = 1 << 1,
-		compute [[= vk::ShaderStageFlagBits::eCompute]] = 1 << 2,
-		task [[= vk::ShaderStageFlagBits::eTaskEXT]] = 1 << 3,
-		mesh [[= vk::ShaderStageFlagBits::eMeshEXT]] = 1 << 4,
+		vertex[[= vk::ShaderStageFlagBits::eVertex]] = 1 << 0,
+		fragment[[= vk::ShaderStageFlagBits::eFragment]] = 1 << 1,
+		compute[[= vk::ShaderStageFlagBits::eCompute]] = 1 << 2,
+		task[[= vk::ShaderStageFlagBits::eTaskEXT]] = 1 << 3,
+		mesh[[= vk::ShaderStageFlagBits::eMeshEXT]] = 1 << 4,
 	};
 
 	using stage_flags = gse::flags<stage_flag>;
-	constexpr auto operator|(stage_flag a, stage_flag b) -> stage_flags { return stage_flags(a) | b; }
+	constexpr auto operator|(stage_flag a, stage_flag b) -> stage_flags {
+		return stage_flags(a) | b;
+	}
 
 	enum class descriptor_type : std::uint8_t {
-		uniform_buffer [[= vk::DescriptorType::eUniformBuffer]],
-		storage_buffer [[= vk::DescriptorType::eStorageBuffer]],
-		combined_image_sampler [[= vk::DescriptorType::eCombinedImageSampler]],
-		sampled_image [[= vk::DescriptorType::eSampledImage]],
-		storage_image [[= vk::DescriptorType::eStorageImage]],
-		sampler [[= vk::DescriptorType::eSampler]],
-		acceleration_structure [[= vk::DescriptorType::eAccelerationStructureKHR]],
+		uniform_buffer[[= vk::DescriptorType::eUniformBuffer]],
+		storage_buffer[[= vk::DescriptorType::eStorageBuffer]],
+		combined_image_sampler[[= vk::DescriptorType::eCombinedImageSampler]],
+		sampled_image[[= vk::DescriptorType::eSampledImage]],
+		storage_image[[= vk::DescriptorType::eStorageImage]],
+		sampler[[= vk::DescriptorType::eSampler]],
+		acceleration_structure[[= vk::DescriptorType::eAccelerationStructureKHR]],
 	};
 
 	enum class vertex_format : std::uint8_t {
-		r32_sfloat [[= vk::Format::eR32Sfloat]],
-		r32g32_sfloat [[= vk::Format::eR32G32Sfloat]],
-		r32g32b32_sfloat [[= vk::Format::eR32G32B32Sfloat]],
-		r32g32b32a32_sfloat [[= vk::Format::eR32G32B32A32Sfloat]],
-		r32_sint [[= vk::Format::eR32Sint]],
-		r32g32_sint [[= vk::Format::eR32G32Sint]],
-		r32g32b32_sint [[= vk::Format::eR32G32B32Sint]],
-		r32g32b32a32_sint [[= vk::Format::eR32G32B32A32Sint]],
-		r32_uint [[= vk::Format::eR32Uint]],
-		r32g32_uint [[= vk::Format::eR32G32Uint]],
-		r32g32b32_uint [[= vk::Format::eR32G32B32Uint]],
-		r32g32b32a32_uint [[= vk::Format::eR32G32B32A32Uint]],
+		r32_sfloat[[= vk::Format::eR32Sfloat]],
+		r32g32_sfloat[[= vk::Format::eR32G32Sfloat]],
+		r32g32b32_sfloat[[= vk::Format::eR32G32B32Sfloat]],
+		r32g32b32a32_sfloat[[= vk::Format::eR32G32B32A32Sfloat]],
+		r32_sint[[= vk::Format::eR32Sint]],
+		r32g32_sint[[= vk::Format::eR32G32Sint]],
+		r32g32b32_sint[[= vk::Format::eR32G32B32Sint]],
+		r32g32b32a32_sint[[= vk::Format::eR32G32B32A32Sint]],
+		r32_uint[[= vk::Format::eR32Uint]],
+		r32g32_uint[[= vk::Format::eR32G32Uint]],
+		r32g32b32_uint[[= vk::Format::eR32G32B32Uint]],
+		r32g32b32a32_uint[[= vk::Format::eR32G32B32A32Uint]],
 	};
 
 	struct vertex_binding_desc {
@@ -346,37 +356,43 @@ export namespace gse::gpu {
 	struct acceleration_structure_handle {
 		std::uint64_t value = 0;
 
-		explicit operator bool() const { return value != 0; }
+		explicit operator bool() const {
+			return value != 0;
+		}
 	};
 
 	enum class acceleration_structure_type : std::uint8_t {
-		top_level [[= vk::AccelerationStructureTypeKHR::eTopLevel]],
-		bottom_level [[= vk::AccelerationStructureTypeKHR::eBottomLevel]],
+		top_level[[= vk::AccelerationStructureTypeKHR::eTopLevel]],
+		bottom_level[[= vk::AccelerationStructureTypeKHR::eBottomLevel]],
 	};
 
 	enum class build_acceleration_structure_mode : std::uint8_t {
-		build [[= vk::BuildAccelerationStructureModeKHR::eBuild]],
-		update [[= vk::BuildAccelerationStructureModeKHR::eUpdate]],
+		build[[= vk::BuildAccelerationStructureModeKHR::eBuild]],
+		update[[= vk::BuildAccelerationStructureModeKHR::eUpdate]],
 	};
 
 	enum class build_acceleration_structure_flag : std::uint32_t {
-		allow_update [[= vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate]] = 1u << 0,
-		allow_compaction [[= vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction]] = 1u << 1,
-		prefer_fast_trace [[= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace]] = 1u << 2,
-		prefer_fast_build [[= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild]] = 1u << 3,
-		low_memory [[= vk::BuildAccelerationStructureFlagBitsKHR::eLowMemory]] = 1u << 4,
+		allow_update[[= vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate]] = 1u << 0,
+		allow_compaction[[= vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction]] = 1u << 1,
+		prefer_fast_trace[[= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace]] = 1u << 2,
+		prefer_fast_build[[= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild]] = 1u << 3,
+		low_memory[[= vk::BuildAccelerationStructureFlagBitsKHR::eLowMemory]] = 1u << 4,
 	};
 
 	using build_acceleration_structure_flags = gse::flags<build_acceleration_structure_flag>;
-	constexpr auto operator|(build_acceleration_structure_flag a, build_acceleration_structure_flag b) -> build_acceleration_structure_flags { return build_acceleration_structure_flags(a) | b; }
+	constexpr auto operator|(build_acceleration_structure_flag a, build_acceleration_structure_flag b) -> build_acceleration_structure_flags {
+		return build_acceleration_structure_flags(a) | b;
+	}
 
 	enum class geometry_flag : std::uint8_t {
-		opaque [[= vk::GeometryFlagBitsKHR::eOpaque]] = 1 << 0,
-		no_duplicate_any_hit_invocation [[= vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation]] = 1 << 1,
+		opaque[[= vk::GeometryFlagBitsKHR::eOpaque]] = 1 << 0,
+		no_duplicate_any_hit_invocation[[= vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation]] = 1 << 1,
 	};
 
 	using geometry_flags = gse::flags<geometry_flag>;
-	constexpr auto operator|(geometry_flag a, geometry_flag b) -> geometry_flags { return geometry_flags(a) | b; }
+	constexpr auto operator|(geometry_flag a, geometry_flag b) -> geometry_flags {
+		return geometry_flags(a) | b;
+	}
 
 	struct acceleration_structure_geometry_triangles_data {
 		vertex_format vertex_format = vertex_format::r32g32b32_sfloat;
@@ -421,93 +437,99 @@ export namespace gse::gpu {
 	};
 
 	enum class result : std::int32_t {
-		success [[= vk::Result::eSuccess]],
-		not_ready [[= vk::Result::eNotReady]],
-		timeout [[= vk::Result::eTimeout]],
-		event_set [[= vk::Result::eEventSet]],
-		event_reset [[= vk::Result::eEventReset]],
-		incomplete [[= vk::Result::eIncomplete]],
-		suboptimal_khr [[= vk::Result::eSuboptimalKHR]],
-		error_out_of_host_memory [[= vk::Result::eErrorOutOfHostMemory]],
-		error_out_of_device_memory [[= vk::Result::eErrorOutOfDeviceMemory]],
-		error_device_lost [[= vk::Result::eErrorDeviceLost]],
-		error_out_of_date_khr [[= vk::Result::eErrorOutOfDateKHR]],
-		error_surface_lost_khr [[= vk::Result::eErrorSurfaceLostKHR]],
-		error_unknown [[= vk::Result::eErrorUnknown]],
+		success[[= vk::Result::eSuccess]],
+		not_ready[[= vk::Result::eNotReady]],
+		timeout[[= vk::Result::eTimeout]],
+		event_set[[= vk::Result::eEventSet]],
+		event_reset[[= vk::Result::eEventReset]],
+		incomplete[[= vk::Result::eIncomplete]],
+		suboptimal_khr[[= vk::Result::eSuboptimalKHR]],
+		error_out_of_host_memory[[= vk::Result::eErrorOutOfHostMemory]],
+		error_out_of_device_memory[[= vk::Result::eErrorOutOfDeviceMemory]],
+		error_device_lost[[= vk::Result::eErrorDeviceLost]],
+		error_out_of_date_khr[[= vk::Result::eErrorOutOfDateKHR]],
+		error_surface_lost_khr[[= vk::Result::eErrorSurfaceLostKHR]],
+		error_unknown[[= vk::Result::eErrorUnknown]],
 	};
 
 	enum class image_aspect_flag : std::uint32_t {
-		color [[= vk::ImageAspectFlagBits::eColor]] = 1u << 0,
-		depth [[= vk::ImageAspectFlagBits::eDepth]] = 1u << 1,
-		stencil [[= vk::ImageAspectFlagBits::eStencil]] = 1u << 2,
+		color[[= vk::ImageAspectFlagBits::eColor]] = 1u << 0,
+		depth[[= vk::ImageAspectFlagBits::eDepth]] = 1u << 1,
+		stencil[[= vk::ImageAspectFlagBits::eStencil]] = 1u << 2,
 	};
 
 	using image_aspect_flags = gse::flags<image_aspect_flag>;
-	constexpr auto operator|(image_aspect_flag a, image_aspect_flag b) -> image_aspect_flags { return image_aspect_flags(a) | b; }
+	constexpr auto operator|(image_aspect_flag a, image_aspect_flag b) -> image_aspect_flags {
+		return image_aspect_flags(a) | b;
+	}
 
 	enum class access_flag : std::uint64_t {
 		none = 0,
-		indirect_command_read [[= vk::AccessFlagBits2::eIndirectCommandRead]] = 1ull << 0,
-		index_read [[= vk::AccessFlagBits2::eIndexRead]] = 1ull << 1,
-		vertex_attribute_read [[= vk::AccessFlagBits2::eVertexAttributeRead]] = 1ull << 2,
-		uniform_read [[= vk::AccessFlagBits2::eUniformRead]] = 1ull << 3,
-		input_attachment_read [[= vk::AccessFlagBits2::eInputAttachmentRead]] = 1ull << 4,
-		shader_read [[= vk::AccessFlagBits2::eShaderRead]] = 1ull << 5,
-		shader_write [[= vk::AccessFlagBits2::eShaderWrite]] = 1ull << 6,
-		color_attachment_read [[= vk::AccessFlagBits2::eColorAttachmentRead]] = 1ull << 7,
-		color_attachment_write [[= vk::AccessFlagBits2::eColorAttachmentWrite]] = 1ull << 8,
-		depth_stencil_attachment_read [[= vk::AccessFlagBits2::eDepthStencilAttachmentRead]] = 1ull << 9,
-		depth_stencil_attachment_write [[= vk::AccessFlagBits2::eDepthStencilAttachmentWrite]] = 1ull << 10,
-		transfer_read [[= vk::AccessFlagBits2::eTransferRead]] = 1ull << 11,
-		transfer_write [[= vk::AccessFlagBits2::eTransferWrite]] = 1ull << 12,
-		host_read [[= vk::AccessFlagBits2::eHostRead]] = 1ull << 13,
-		host_write [[= vk::AccessFlagBits2::eHostWrite]] = 1ull << 14,
-		memory_read [[= vk::AccessFlagBits2::eMemoryRead]] = 1ull << 15,
-		memory_write [[= vk::AccessFlagBits2::eMemoryWrite]] = 1ull << 16,
-		shader_sampled_read [[= vk::AccessFlagBits2::eShaderSampledRead]] = 1ull << 17,
-		shader_storage_read [[= vk::AccessFlagBits2::eShaderStorageRead]] = 1ull << 18,
-		shader_storage_write [[= vk::AccessFlagBits2::eShaderStorageWrite]] = 1ull << 19,
-		acceleration_structure_read [[= vk::AccessFlagBits2::eAccelerationStructureReadKHR]] = 1ull << 20,
-		acceleration_structure_write [[= vk::AccessFlagBits2::eAccelerationStructureWriteKHR]] = 1ull << 21,
+		indirect_command_read[[= vk::AccessFlagBits2::eIndirectCommandRead]] = 1ull << 0,
+		index_read[[= vk::AccessFlagBits2::eIndexRead]] = 1ull << 1,
+		vertex_attribute_read[[= vk::AccessFlagBits2::eVertexAttributeRead]] = 1ull << 2,
+		uniform_read[[= vk::AccessFlagBits2::eUniformRead]] = 1ull << 3,
+		input_attachment_read[[= vk::AccessFlagBits2::eInputAttachmentRead]] = 1ull << 4,
+		shader_read[[= vk::AccessFlagBits2::eShaderRead]] = 1ull << 5,
+		shader_write[[= vk::AccessFlagBits2::eShaderWrite]] = 1ull << 6,
+		color_attachment_read[[= vk::AccessFlagBits2::eColorAttachmentRead]] = 1ull << 7,
+		color_attachment_write[[= vk::AccessFlagBits2::eColorAttachmentWrite]] = 1ull << 8,
+		depth_stencil_attachment_read[[= vk::AccessFlagBits2::eDepthStencilAttachmentRead]] = 1ull << 9,
+		depth_stencil_attachment_write[[= vk::AccessFlagBits2::eDepthStencilAttachmentWrite]] = 1ull << 10,
+		transfer_read[[= vk::AccessFlagBits2::eTransferRead]] = 1ull << 11,
+		transfer_write[[= vk::AccessFlagBits2::eTransferWrite]] = 1ull << 12,
+		host_read[[= vk::AccessFlagBits2::eHostRead]] = 1ull << 13,
+		host_write[[= vk::AccessFlagBits2::eHostWrite]] = 1ull << 14,
+		memory_read[[= vk::AccessFlagBits2::eMemoryRead]] = 1ull << 15,
+		memory_write[[= vk::AccessFlagBits2::eMemoryWrite]] = 1ull << 16,
+		shader_sampled_read[[= vk::AccessFlagBits2::eShaderSampledRead]] = 1ull << 17,
+		shader_storage_read[[= vk::AccessFlagBits2::eShaderStorageRead]] = 1ull << 18,
+		shader_storage_write[[= vk::AccessFlagBits2::eShaderStorageWrite]] = 1ull << 19,
+		acceleration_structure_read[[= vk::AccessFlagBits2::eAccelerationStructureReadKHR]] = 1ull << 20,
+		acceleration_structure_write[[= vk::AccessFlagBits2::eAccelerationStructureWriteKHR]] = 1ull << 21,
 	};
 
 	using access_flags = gse::flags<access_flag>;
-	constexpr auto operator|(access_flag a, access_flag b) -> access_flags { return access_flags(a) | b; }
+	constexpr auto operator|(access_flag a, access_flag b) -> access_flags {
+		return access_flags(a) | b;
+	}
 
 	enum class pipeline_stage_flag : std::uint64_t {
 		none = 0,
-		top_of_pipe [[= vk::PipelineStageFlagBits2::eTopOfPipe]] = 1ull << 0,
-		draw_indirect [[= vk::PipelineStageFlagBits2::eDrawIndirect]] = 1ull << 1,
-		vertex_input [[= vk::PipelineStageFlagBits2::eVertexInput]] = 1ull << 2,
-		vertex_shader [[= vk::PipelineStageFlagBits2::eVertexShader]] = 1ull << 3,
-		tessellation_control [[= vk::PipelineStageFlagBits2::eTessellationControlShader]] = 1ull << 4,
-		tessellation_evaluation [[= vk::PipelineStageFlagBits2::eTessellationEvaluationShader]] = 1ull << 5,
-		geometry_shader [[= vk::PipelineStageFlagBits2::eGeometryShader]] = 1ull << 6,
-		fragment_shader [[= vk::PipelineStageFlagBits2::eFragmentShader]] = 1ull << 7,
-		early_fragment_tests [[= vk::PipelineStageFlagBits2::eEarlyFragmentTests]] = 1ull << 8,
-		late_fragment_tests [[= vk::PipelineStageFlagBits2::eLateFragmentTests]] = 1ull << 9,
-		color_attachment_output [[= vk::PipelineStageFlagBits2::eColorAttachmentOutput]] = 1ull << 10,
-		compute_shader [[= vk::PipelineStageFlagBits2::eComputeShader]] = 1ull << 11,
-		transfer [[= vk::PipelineStageFlagBits2::eAllTransfer]] = 1ull << 12,
-		bottom_of_pipe [[= vk::PipelineStageFlagBits2::eBottomOfPipe]] = 1ull << 13,
-		host [[= vk::PipelineStageFlagBits2::eHost]] = 1ull << 14,
-		all_graphics [[= vk::PipelineStageFlagBits2::eAllGraphics]] = 1ull << 15,
-		all_commands [[= vk::PipelineStageFlagBits2::eAllCommands]] = 1ull << 16,
-		copy [[= vk::PipelineStageFlagBits2::eCopy]] = 1ull << 17,
-		resolve [[= vk::PipelineStageFlagBits2::eResolve]] = 1ull << 18,
-		blit [[= vk::PipelineStageFlagBits2::eBlit]] = 1ull << 19,
-		clear [[= vk::PipelineStageFlagBits2::eClear]] = 1ull << 20,
-		index_input [[= vk::PipelineStageFlagBits2::eIndexInput]] = 1ull << 21,
-		vertex_attribute_input [[= vk::PipelineStageFlagBits2::eVertexAttributeInput]] = 1ull << 22,
-		pre_rasterization_shaders [[= vk::PipelineStageFlagBits2::ePreRasterizationShaders]] = 1ull << 23,
-		mesh_shader [[= vk::PipelineStageFlagBits2::eMeshShaderEXT]] = 1ull << 24,
-		task_shader [[= vk::PipelineStageFlagBits2::eTaskShaderEXT]] = 1ull << 25,
-		acceleration_structure_build [[= vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR]] = 1ull << 26,
-		ray_tracing_shader [[= vk::PipelineStageFlagBits2::eRayTracingShaderKHR]] = 1ull << 27,
+		top_of_pipe[[= vk::PipelineStageFlagBits2::eTopOfPipe]] = 1ull << 0,
+		draw_indirect[[= vk::PipelineStageFlagBits2::eDrawIndirect]] = 1ull << 1,
+		vertex_input[[= vk::PipelineStageFlagBits2::eVertexInput]] = 1ull << 2,
+		vertex_shader[[= vk::PipelineStageFlagBits2::eVertexShader]] = 1ull << 3,
+		tessellation_control[[= vk::PipelineStageFlagBits2::eTessellationControlShader]] = 1ull << 4,
+		tessellation_evaluation[[= vk::PipelineStageFlagBits2::eTessellationEvaluationShader]] = 1ull << 5,
+		geometry_shader[[= vk::PipelineStageFlagBits2::eGeometryShader]] = 1ull << 6,
+		fragment_shader[[= vk::PipelineStageFlagBits2::eFragmentShader]] = 1ull << 7,
+		early_fragment_tests[[= vk::PipelineStageFlagBits2::eEarlyFragmentTests]] = 1ull << 8,
+		late_fragment_tests[[= vk::PipelineStageFlagBits2::eLateFragmentTests]] = 1ull << 9,
+		color_attachment_output[[= vk::PipelineStageFlagBits2::eColorAttachmentOutput]] = 1ull << 10,
+		compute_shader[[= vk::PipelineStageFlagBits2::eComputeShader]] = 1ull << 11,
+		transfer[[= vk::PipelineStageFlagBits2::eAllTransfer]] = 1ull << 12,
+		bottom_of_pipe[[= vk::PipelineStageFlagBits2::eBottomOfPipe]] = 1ull << 13,
+		host[[= vk::PipelineStageFlagBits2::eHost]] = 1ull << 14,
+		all_graphics[[= vk::PipelineStageFlagBits2::eAllGraphics]] = 1ull << 15,
+		all_commands[[= vk::PipelineStageFlagBits2::eAllCommands]] = 1ull << 16,
+		copy[[= vk::PipelineStageFlagBits2::eCopy]] = 1ull << 17,
+		resolve[[= vk::PipelineStageFlagBits2::eResolve]] = 1ull << 18,
+		blit[[= vk::PipelineStageFlagBits2::eBlit]] = 1ull << 19,
+		clear[[= vk::PipelineStageFlagBits2::eClear]] = 1ull << 20,
+		index_input[[= vk::PipelineStageFlagBits2::eIndexInput]] = 1ull << 21,
+		vertex_attribute_input[[= vk::PipelineStageFlagBits2::eVertexAttributeInput]] = 1ull << 22,
+		pre_rasterization_shaders[[= vk::PipelineStageFlagBits2::ePreRasterizationShaders]] = 1ull << 23,
+		mesh_shader[[= vk::PipelineStageFlagBits2::eMeshShaderEXT]] = 1ull << 24,
+		task_shader[[= vk::PipelineStageFlagBits2::eTaskShaderEXT]] = 1ull << 25,
+		acceleration_structure_build[[= vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR]] = 1ull << 26,
+		ray_tracing_shader[[= vk::PipelineStageFlagBits2::eRayTracingShaderKHR]] = 1ull << 27,
 	};
 
 	using pipeline_stage_flags = gse::flags<pipeline_stage_flag>;
-	constexpr auto operator|(pipeline_stage_flag a, pipeline_stage_flag b) -> pipeline_stage_flags { return pipeline_stage_flags(a) | b; }
+	constexpr auto operator|(pipeline_stage_flag a, pipeline_stage_flag b) -> pipeline_stage_flags {
+		return pipeline_stage_flags(a) | b;
+	}
 
 	struct binding_use {
 		std::uint32_t set = 0;
@@ -518,25 +540,27 @@ export namespace gse::gpu {
 	};
 
 	enum class memory_property_flag : std::uint32_t {
-		device_local [[= vk::MemoryPropertyFlagBits::eDeviceLocal]] = 1u << 0,
-		host_visible [[= vk::MemoryPropertyFlagBits::eHostVisible]] = 1u << 1,
-		host_coherent [[= vk::MemoryPropertyFlagBits::eHostCoherent]] = 1u << 2,
-		host_cached [[= vk::MemoryPropertyFlagBits::eHostCached]] = 1u << 3,
-		lazily_allocated [[= vk::MemoryPropertyFlagBits::eLazilyAllocated]] = 1u << 4,
+		device_local[[= vk::MemoryPropertyFlagBits::eDeviceLocal]] = 1u << 0,
+		host_visible[[= vk::MemoryPropertyFlagBits::eHostVisible]] = 1u << 1,
+		host_coherent[[= vk::MemoryPropertyFlagBits::eHostCoherent]] = 1u << 2,
+		host_cached[[= vk::MemoryPropertyFlagBits::eHostCached]] = 1u << 3,
+		lazily_allocated[[= vk::MemoryPropertyFlagBits::eLazilyAllocated]] = 1u << 4,
 	};
 
 	using memory_property_flags = gse::flags<memory_property_flag>;
-	constexpr auto operator|(memory_property_flag a, memory_property_flag b) -> memory_property_flags { return memory_property_flags(a) | b; }
+	constexpr auto operator|(memory_property_flag a, memory_property_flag b) -> memory_property_flags {
+		return memory_property_flags(a) | b;
+	}
 
 	enum class present_mode : std::uint8_t {
-		immediate [[= vk::PresentModeKHR::eImmediate]],
-		mailbox [[= vk::PresentModeKHR::eMailbox]],
-		fifo [[= vk::PresentModeKHR::eFifo]],
-		fifo_relaxed [[= vk::PresentModeKHR::eFifoRelaxed]],
+		immediate[[= vk::PresentModeKHR::eImmediate]],
+		mailbox[[= vk::PresentModeKHR::eMailbox]],
+		fifo[[= vk::PresentModeKHR::eFifo]],
+		fifo_relaxed[[= vk::PresentModeKHR::eFifoRelaxed]],
 	};
 
 	enum class color_space : std::uint8_t {
-		srgb_nonlinear [[= vk::ColorSpaceKHR::eSrgbNonlinear]],
+		srgb_nonlinear[[= vk::ColorSpaceKHR::eSrgbNonlinear]],
 	};
 
 	struct surface_format {
@@ -624,20 +648,22 @@ export namespace gse::gpu {
 	};
 
 	enum class load_op : std::uint8_t {
-		load [[= vk::AttachmentLoadOp::eLoad]],
-		clear [[= vk::AttachmentLoadOp::eClear]],
-		dont_care [[= vk::AttachmentLoadOp::eDontCare]],
+		load[[= vk::AttachmentLoadOp::eLoad]],
+		clear[[= vk::AttachmentLoadOp::eClear]],
+		dont_care[[= vk::AttachmentLoadOp::eDontCare]],
 	};
 
 	enum class pipeline_statistic_flag : std::uint32_t {
-		input_assembly_vertices [[= vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices]] = 1u << 0,
-		input_assembly_primitives [[= vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives]] = 1u << 1,
-		clipping_invocations [[= vk::QueryPipelineStatisticFlagBits::eClippingInvocations]] = 1u << 2,
-		fragment_shader_invocations [[= vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations]] = 1u << 3,
+		input_assembly_vertices[[= vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices]] = 1u << 0,
+		input_assembly_primitives[[= vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives]] = 1u << 1,
+		clipping_invocations[[= vk::QueryPipelineStatisticFlagBits::eClippingInvocations]] = 1u << 2,
+		fragment_shader_invocations[[= vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations]] = 1u << 3,
 	};
 
 	using pipeline_statistic_flags = gse::flags<pipeline_statistic_flag>;
-	constexpr auto operator|(pipeline_statistic_flag a, pipeline_statistic_flag b) -> pipeline_statistic_flags { return pipeline_statistic_flags(a) | b; }
+	constexpr auto operator|(pipeline_statistic_flag a, pipeline_statistic_flag b) -> pipeline_statistic_flags {
+		return pipeline_statistic_flags(a) | b;
+	}
 
 	enum class query_status : std::uint8_t {
 		success,
@@ -652,8 +678,8 @@ export namespace gse::gpu {
 	};
 
 	enum class store_op : std::uint8_t {
-		store [[= vk::AttachmentStoreOp::eStore]],
-		dont_care [[= vk::AttachmentStoreOp::eDontCare]],
+		store[[= vk::AttachmentStoreOp::eStore]],
+		dont_care[[= vk::AttachmentStoreOp::eDontCare]],
 	};
 
 	struct buffer_create_info {
@@ -663,26 +689,28 @@ export namespace gse::gpu {
 	};
 
 	enum class image_create_flag : std::uint8_t {
-		cube_compatible [[= vk::ImageCreateFlagBits::eCubeCompatible]] = 1 << 0,
+		cube_compatible[[= vk::ImageCreateFlagBits::eCubeCompatible]] = 1 << 0,
 	};
 
 	using image_create_flags = gse::flags<image_create_flag>;
-	constexpr auto operator|(image_create_flag a, image_create_flag b) -> image_create_flags { return image_create_flags(a) | b; }
+	constexpr auto operator|(image_create_flag a, image_create_flag b) -> image_create_flags {
+		return image_create_flags(a) | b;
+	}
 
 	enum class image_type : std::uint8_t {
-		e1d [[= vk::ImageType::e1D]],
-		e2d [[= vk::ImageType::e2D]],
-		e3d [[= vk::ImageType::e3D]],
+		e1d[[= vk::ImageType::e1D]],
+		e2d[[= vk::ImageType::e2D]],
+		e3d[[= vk::ImageType::e3D]],
 	};
 
 	enum class sample_count : std::uint8_t {
-		e1 [[= vk::SampleCountFlagBits::e1]],
-		e2 [[= vk::SampleCountFlagBits::e2]],
-		e4 [[= vk::SampleCountFlagBits::e4]],
-		e8 [[= vk::SampleCountFlagBits::e8]],
-		e16 [[= vk::SampleCountFlagBits::e16]],
-		e32 [[= vk::SampleCountFlagBits::e32]],
-		e64 [[= vk::SampleCountFlagBits::e64]],
+		e1[[= vk::SampleCountFlagBits::e1]],
+		e2[[= vk::SampleCountFlagBits::e2]],
+		e4[[= vk::SampleCountFlagBits::e4]],
+		e8[[= vk::SampleCountFlagBits::e8]],
+		e16[[= vk::SampleCountFlagBits::e16]],
+		e32[[= vk::SampleCountFlagBits::e32]],
+		e64[[= vk::SampleCountFlagBits::e64]],
 	};
 
 	struct image_create_info {

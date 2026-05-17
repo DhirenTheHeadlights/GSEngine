@@ -14,26 +14,21 @@ export namespace gse::async {
 	template <typename T = void>
 	class task;
 
-	auto pass_recording_scope_push(
-	) noexcept -> void;
+	auto pass_recording_scope_push() noexcept -> void;
 
-	auto pass_recording_scope_pop(
-	) noexcept -> void;
+	auto pass_recording_scope_pop() noexcept -> void;
 
-	[[nodiscard]] auto pass_recording_scope_active(
-	) noexcept -> int;
+	[[nodiscard]] auto pass_recording_scope_active() noexcept -> int;
 
 	struct final_awaiter {
-		static auto await_ready(
-		) noexcept -> bool;
+		static auto await_ready() noexcept -> bool;
 
 		template <typename P>
 		static auto await_suspend(
 			std::coroutine_handle<P> h
 		) noexcept -> std::coroutine_handle<>;
 
-		static auto await_resume(
-		) noexcept -> void;
+		static auto await_resume() noexcept -> void;
 	};
 
 	struct promise_base {
@@ -41,14 +36,11 @@ export namespace gse::async {
 		std::exception_ptr m_exception;
 		std::atomic<bool> m_started{ false };
 
-		static auto initial_suspend(
-		) noexcept -> std::suspend_always;
+		static auto initial_suspend() noexcept -> std::suspend_always;
 
-		static auto final_suspend(
-		) noexcept -> final_awaiter;
+		static auto final_suspend() noexcept -> final_awaiter;
 
-		auto unhandled_exception(
-		) -> void;
+		auto unhandled_exception() -> void;
 
 		auto operator new(
 			std::size_t size
@@ -60,50 +52,43 @@ export namespace gse::async {
 		) -> void;
 
 		template <typename Awaitable>
-		decltype(auto) await_transform(
+		auto await_transform(
 			Awaitable&& aw
-		);
+		) -> decltype(auto);
 	};
 
 	template <typename T>
 	struct value_promise : promise_base {
 		std::optional<T> m_result;
 
-		auto get_return_object(
-		) -> task<T>;
+		auto get_return_object() -> task<T>;
 
 		auto return_value(
 			T value
 		) -> void;
 
-		auto result(
-		) -> T;
+		auto result() -> T;
 	};
 
 	template <typename T>
 	struct value_promise<T&> : promise_base {
 		T* m_result = nullptr;
 
-		auto get_return_object(
-		) -> task<T&>;
+		auto get_return_object() -> task<T&>;
 
 		auto return_value(
 			T& value
 		) -> void;
 
-		auto result(
-		) -> T&;
+		auto result() -> T&;
 	};
 
 	struct void_promise : promise_base {
-		auto get_return_object(
-		) -> task<>;
+		auto get_return_object() -> task<>;
 
-		static auto return_void(
-		) noexcept -> void;
+		static auto return_void() noexcept -> void;
 
-		auto result(
-		) const -> void;
+		auto result() const -> void;
 	};
 
 	template <typename T>
@@ -112,15 +97,13 @@ export namespace gse::async {
 		using promise_type = std::conditional_t<std::is_void_v<T>, void_promise, value_promise<T>>;
 		using handle_type = std::coroutine_handle<promise_type>;
 
-		task(
-		) noexcept = default;
+		task() noexcept = default;
 
 		explicit task(
 			handle_type h
 		) noexcept;
 
-		~task(
-		);
+		~task();
 
 		task(
 			task&& other
@@ -138,31 +121,25 @@ export namespace gse::async {
 			const task&
 		) -> task& = delete;
 
-		auto start(
-		) -> void;
+		auto start() -> void;
 
-		auto consume_start_handle(
-		) -> std::coroutine_handle<>;
+		auto consume_start_handle() -> std::coroutine_handle<>;
 
-		auto done(
-		) const -> bool;
+		auto done() const -> bool;
 
 		struct awaiter {
 			handle_type m_handle;
 
-			auto await_ready(
-			) const noexcept -> bool;
+			auto await_ready() const noexcept -> bool;
 
 			auto await_suspend(
 				std::coroutine_handle<> caller
 			) noexcept -> std::coroutine_handle<>;
 
-			auto await_resume(
-			) -> T;
+			auto await_resume() -> T;
 		};
 
-		auto operator co_await(
-		) noexcept -> awaiter;
+		auto operator co_await() noexcept -> awaiter;
 
 	private:
 		handle_type m_handle{};
@@ -200,19 +177,16 @@ export namespace gse::async {
 	) -> T;
 
 	struct yield_to_worker_t {
-		auto await_ready(
-		) const noexcept -> bool;
+		auto await_ready() const noexcept -> bool;
 
 		auto await_suspend(
 			std::coroutine_handle<> h
 		) const -> void;
 
-		auto await_resume(
-		) const noexcept -> void;
+		auto await_resume() const noexcept -> void;
 	};
 
-	[[nodiscard]] auto yield_to_worker(
-	) noexcept -> yield_to_worker_t;
+	[[nodiscard]] auto yield_to_worker() noexcept -> yield_to_worker_t;
 }
 
 template <typename P>
@@ -263,7 +237,8 @@ auto gse::async::value_promise<T&>::result() -> T& {
 }
 
 template <typename T>
-gse::async::task<T>::task(handle_type h) noexcept : m_handle(h) {}
+gse::async::task<T>::task(handle_type h) noexcept : m_handle(h) {
+}
 
 template <typename T>
 gse::async::task<T>::~task() {

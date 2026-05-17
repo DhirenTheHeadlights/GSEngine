@@ -17,8 +17,7 @@ export namespace gse {
 			registry* reg
 		);
 
-		auto id(
-		) const -> gse::id;
+		auto id() const -> gse::id;
 
 		template <typename T>
 		auto add_component(
@@ -26,24 +25,20 @@ export namespace gse {
 		) -> T*;
 
 		template <typename T>
-		auto remove(
-		) -> void;
+		auto remove() -> void;
 
 		template <typename T>
-		auto component_read(
-		) -> const T&;
+		auto component_read() -> const T&;
 
 		template <typename T>
-		auto component_write(
-		) -> T&;
+		auto component_write() -> T&;
 
 		template <typename T>
-		auto try_component_read(
-		) -> const T*;
+		auto try_component_read() -> const T*;
 
 		template <typename T>
-		auto try_component_write(
-		) -> T*;
+		auto try_component_write() -> T*;
+
 	private:
 		gse::id m_entity_id;
 		registry* m_registry = nullptr;
@@ -53,7 +48,7 @@ export namespace gse {
 	public:
 		using player_factory_fn = std::function<gse::id(scene&, std::optional<gse::id>)>;
 		using init_fn = gse::move_only_function<void(gse::id, registry&)>;
-		using setup_fn = void(*)(scene&);
+		using setup_fn = void (*)(scene&);
 
 		class builder {
 		public:
@@ -77,8 +72,8 @@ export namespace gse {
 				Func&& fn
 			) -> builder&;
 
-			auto identify(
-			) const -> gse::id;
+			auto identify() const -> gse::id;
+
 		private:
 			auto push_init(
 				init_fn fn
@@ -120,26 +115,23 @@ export namespace gse {
 			bool is_active
 		) -> void;
 
-		auto active(
-		) const -> bool;
+		auto active() const -> bool;
 
-		auto entities(
-		) const -> std::span<const gse::id>;
+		auto entities() const -> std::span<const gse::id>;
 
-		auto registry(
-		) const -> registry&;
+		auto registry() const -> registry&;
 
 		auto set_player_factory(
 			player_factory_fn factory
 		) -> void;
 
-		auto player_factory(
-		) const -> const player_factory_fn&;
+		auto player_factory() const -> const player_factory_fn&;
 
 		auto push_init(
 			gse::id entity_id,
 			init_fn fn
 		) -> void;
+
 	private:
 		gse::registry& m_registry;
 		std::vector<gse::id> m_entities;
@@ -152,7 +144,8 @@ export namespace gse {
 	};
 }
 
-gse::scene_init_context::scene_init_context(const gse::id entity_id, registry* reg) : m_entity_id(entity_id), m_registry(reg) {}
+gse::scene_init_context::scene_init_context(const gse::id entity_id, registry* reg) : m_entity_id(entity_id), m_registry(reg) {
+}
 
 auto gse::scene_init_context::id() const -> gse::id {
 	return m_entity_id;
@@ -188,7 +181,8 @@ auto gse::scene_init_context::try_component_write() -> T* {
 	return m_registry->try_component<T>(m_entity_id);
 }
 
-gse::scene::scene(gse::registry& registry, const std::string_view name) : identifiable(std::string(name)), m_registry(registry) {}
+gse::scene::scene(gse::registry& registry, const std::string_view name) : identifiable(std::string(name)), m_registry(registry) {
+}
 
 auto gse::scene::add_entity(const std::string& name) -> gse::id {
 	const auto id = m_registry.create(name);
@@ -221,7 +215,7 @@ auto gse::scene::spawn(const std::string& name, Archetype&& archetype) -> gse::i
 	const auto id = add_entity(name);
 	using arch_t = std::remove_cvref_t<Archetype>;
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^arch_t, std::meta::access_context::unchecked()))) {
-		using component_t = typename [: std::meta::type_of(m) :];
+		using component_t = typename[:std::meta::type_of(m):];
 		m_registry.add_component<component_t>(id, std::forward_like<Archetype>(archetype.[:m:]));
 	}
 	return id;
@@ -281,7 +275,8 @@ auto gse::scene::push_init(const gse::id entity_id, init_fn fn) -> void {
 	m_pending_inits.emplace_back(entity_id, std::move(fn));
 }
 
-gse::scene::builder::builder(const gse::id entity_id, scene* owner, gse::registry* reg) : m_entity_id(entity_id), m_scene(owner), m_registry(reg) {}
+gse::scene::builder::builder(const gse::id entity_id, scene* owner, gse::registry* reg) : m_entity_id(entity_id), m_scene(owner), m_registry(reg) {
+}
 
 template <typename T>
 auto gse::scene::builder::with(T value) -> builder& {
@@ -303,7 +298,7 @@ auto gse::scene::builder::initialize(gse::move_only_function<void(scene_init_con
 
 template <typename Func>
 auto gse::scene::builder::configure(Func&& fn) -> builder& {
-	using c = std::remove_cvref_t<typename [: std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<Func>::operator())[0]) :]>;
+	using c = std::remove_cvref_t<typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<Func>::operator())[0]):]>;
 	push_init([fn = std::forward<Func>(fn)](const gse::id self, gse::registry& reg) mutable {
 		if (auto* component = reg.try_component<c>(self)) {
 			fn(*component);

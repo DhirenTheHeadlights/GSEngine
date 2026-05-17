@@ -14,8 +14,7 @@ export namespace gse::vulkan {
 
 	class instance : public non_copyable {
 	public:
-		~instance(
-		) override = default;
+		~instance() override = default;
 
 		instance(
 			instance&&
@@ -48,14 +47,11 @@ export namespace gse::vulkan {
 			vk::raii::DebugUtilsMessengerEXT&& debug_messenger
 		);
 
-		[[nodiscard]] auto enumerate_physical_devices(
-		) const -> std::vector<vk::raii::PhysicalDevice>;
+		[[nodiscard]] auto enumerate_physical_devices() const -> std::vector<vk::raii::PhysicalDevice>;
 
-		[[nodiscard]] auto raii_instance(
-		) const -> const vk::raii::Instance&;
+		[[nodiscard]] auto raii_instance() const -> const vk::raii::Instance&;
 
-		[[nodiscard]] auto raii_surface(
-		) const -> const vk::raii::SurfaceKHR&;
+		[[nodiscard]] auto raii_surface() const -> const vk::raii::SurfaceKHR&;
 
 		vk::raii::Context m_context;
 		vk::raii::Instance m_instance;
@@ -65,7 +61,8 @@ export namespace gse::vulkan {
 }
 
 gse::vulkan::instance::instance(vk::raii::Context&& context, vk::raii::Instance&& instance, vk::raii::DebugUtilsMessengerEXT&& debug_messenger)
-	: m_context(std::move(context)), m_instance(std::move(instance)), m_surface(nullptr), m_debug_messenger(std::move(debug_messenger)) {}
+	: m_context(std::move(context)), m_instance(std::move(instance)), m_surface(nullptr), m_debug_messenger(std::move(debug_messenger)) {
+}
 
 auto gse::vulkan::instance::create_surface(const window::data& win) -> void {
 	const auto raw_surface = window::create_vulkan_surface(win, *m_instance);

@@ -11,12 +11,11 @@ import :skeleton;
 import :clip;
 
 export namespace gse::graphics {
-    using asset_types = type_pack<
-        texture,
-        font,
-        model,
-        skinned_model,
-        skeleton,
-        clip_asset
-    >;
+	using asset_types = type_pack<
+		texture,
+		font,
+		model,
+		skinned_model,
+		skeleton,
+		clip_asset>;
 }

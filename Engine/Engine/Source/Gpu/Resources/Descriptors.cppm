@@ -41,8 +41,7 @@ export namespace gse::gpu {
 			std::string_view layout_name
 		);
 
-		~descriptor_writer(
-		) override = default;
+		~descriptor_writer() override = default;
 
 		descriptor_writer(
 			descriptor_writer&&
@@ -75,8 +74,7 @@ export namespace gse::gpu {
 			acceleration_structure_handle as
 		) -> descriptor_writer&;
 
-		auto commit(
-		) -> void;
+		auto commit() -> void;
 
 		auto begin(
 			std::uint32_t frame_index
@@ -86,8 +84,7 @@ export namespace gse::gpu {
 			this auto&& self
 		) -> auto&;
 
-		[[nodiscard]] auto touched_resources(
-		) const -> std::span<const resource_slot>;
+		[[nodiscard]] auto touched_resources() const -> std::span<const resource_slot>;
 
 	private:
 		enum class mode : std::uint8_t {
@@ -224,19 +221,19 @@ auto gse::gpu::descriptor_writer::buffer(const vulkan::basic_buffer<vulkan::devi
 
 template <gse::shaders::is_shader_binding T>
 auto gse::gpu::descriptor_writer::buffer(const vulkan::basic_buffer<vulkan::device>& buf, const std::size_t offset, const std::size_t range) -> descriptor_writer& {
-	using binding_t = [: shaders::find_binding_type(^^T) :];
+	using binding_t = [:shaders::find_binding_type(^^T):];
 	return buffer_impl(binding_t::slot, buf, offset, range);
 }
 
 template <gse::shaders::is_shader_binding T>
 auto gse::gpu::descriptor_writer::storage_image(const vulkan::basic_image<vulkan::device>& img, const image_layout layout) -> descriptor_writer& {
-	using binding_t = [: shaders::find_binding_type(^^T) :];
+	using binding_t = [:shaders::find_binding_type(^^T):];
 	return storage_image_impl(binding_t::slot, img, layout);
 }
 
 template <gse::shaders::is_shader_binding T>
 auto gse::gpu::descriptor_writer::acceleration_structure(const acceleration_structure_handle as) -> descriptor_writer& {
-	using binding_t = [: shaders::find_binding_type(^^T) :];
+	using binding_t = [:shaders::find_binding_type(^^T):];
 	return acceleration_structure_impl(binding_t::slot, as);
 }
 

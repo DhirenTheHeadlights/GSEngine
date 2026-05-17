@@ -8,366 +8,378 @@ import :static_vector;
 
 export namespace gse {
 
-    struct archive_skip {};
+	struct archive_skip {};
 
-    template <typename T>
-    struct raw_blob {
-        std::vector<T>& data;
-    };
+	template <typename T>
+	struct raw_blob {
+		std::vector<T>& data;
+	};
 
-    template <typename T>
-    struct raw_blob_owned {
-        std::vector<T> storage;
-    };
+	template <typename T>
+	struct raw_blob_owned {
+		std::vector<T> storage;
+	};
 
-    template <typename A, typename T>
-    concept has_user_serialize = requires (A& a, T& v) { serialize(a, v); };
+	template <typename A, typename T>
+	concept has_user_serialize = requires(A& a, T& v) {
+		serialize(a, v);
+	};
 
-    consteval auto is_archive_skipped(
-        std::meta::info member
-    ) -> bool;
+	consteval auto is_archive_skipped(
+		std::meta::info member
+	) -> bool;
 
-    struct binary_writer {
-        static constexpr bool is_writing = true;
+	struct binary_writer {
+		static constexpr bool is_writing = true;
 
-        explicit binary_writer(
-            std::ofstream& stream
-        );
+		explicit binary_writer(
+			std::ofstream& stream
+		);
 
-        binary_writer(
-            std::ofstream& stream,
-            std::uint32_t magic,
-            std::uint32_t version
-        );
+		binary_writer(
+			std::ofstream& stream,
+			std::uint32_t magic,
+			std::uint32_t version
+		);
 
-        template <typename T> requires std::is_trivially_copyable_v<T>
-        auto operator&(
-            const T& value
-        ) -> binary_writer&;
+		template <typename T>
+		requires std::is_trivially_copyable_v<T>
+		auto operator&(
+			const T& value
+		) -> binary_writer&;
 
-        auto operator&(
-            const std::string& str
-        ) -> binary_writer&;
+		auto operator&(
+			const std::string& str
+		) -> binary_writer&;
 
-        template <typename T>
-        auto operator&(
-            const std::vector<T>& vec
-        ) -> binary_writer&;
+		template <typename T>
+		auto operator&(
+			const std::vector<T>& vec
+		) -> binary_writer&;
 
-        template <typename T, std::size_t N>
-        auto operator&(
-            const static_vector<T, N>& vec
-        ) -> binary_writer&;
+		template <typename T, std::size_t N>
+		auto operator&(
+			const static_vector<T, N>& vec
+		) -> binary_writer&;
 
-        template <typename T>
-        auto operator&(
-            const std::optional<T>& opt
-        ) -> binary_writer&;
+		template <typename T>
+		auto operator&(
+			const std::optional<T>& opt
+		) -> binary_writer&;
 
-        template <typename K, typename V>
-        auto operator&(
-            const std::unordered_map<K, V>& map
-        ) -> binary_writer&;
+		template <typename K, typename V>
+		auto operator&(
+			const std::unordered_map<K, V>& map
+		) -> binary_writer&;
 
-        template <typename T>
-        auto operator&(
-            const raw_blob<T>& blob
-        ) -> binary_writer&;
+		template <typename T>
+		auto operator&(
+			const raw_blob<T>& blob
+		) -> binary_writer&;
 
-        template <typename T> requires (!std::is_trivially_copyable_v<T>)
-        auto operator&(
-            const T& value
-        ) -> binary_writer&;
+		template <typename T>
+		requires(!std::is_trivially_copyable_v<T>)
+		auto operator&(
+			const T& value
+		) -> binary_writer&;
 
-    private:
-        std::ofstream& m_stream;
-    };
+	private:
+		std::ofstream& m_stream;
+	};
 
-    struct binary_reader {
-        static constexpr bool is_writing = false;
+	struct binary_reader {
+		static constexpr bool is_writing = false;
 
-        explicit binary_reader(
-            std::ifstream& stream
-        );
+		explicit binary_reader(
+			std::ifstream& stream
+		);
 
-        binary_reader(
-            std::ifstream& stream,
-            std::uint32_t expected_magic,
-            std::uint32_t expected_version,
-            std::string_view path,
-            const std::source_location& loc = std::source_location::current()
-        );
+		binary_reader(
+			std::ifstream& stream,
+			std::uint32_t expected_magic,
+			std::uint32_t expected_version,
+			std::string_view path,
+			const std::source_location& loc = std::source_location::current()
+		);
 
-        auto valid(
-        ) const -> bool;
+		[[nodiscard]] auto valid() const -> bool;
 
-        template <typename T> requires std::is_trivially_copyable_v<T>
-        auto operator&(
-            T& value
-        ) -> binary_reader&;
+		template <typename T>
+		requires std::is_trivially_copyable_v<T>
+		auto operator&(
+			T& value
+		) -> binary_reader&;
 
-        auto operator&(
-            std::string& str
-        ) -> binary_reader&;
+		auto operator&(
+			std::string& str
+		) -> binary_reader&;
 
-        template <typename T>
-        auto operator&(
-            std::vector<T>& vec
-        ) -> binary_reader&;
+		template <typename T>
+		auto operator&(
+			std::vector<T>& vec
+		) -> binary_reader&;
 
-        template <typename T, std::size_t N>
-        auto operator&(
-            static_vector<T, N>& vec
-        ) -> binary_reader&;
+		template <typename T, std::size_t N>
+		auto operator&(
+			static_vector<T, N>& vec
+		) -> binary_reader&;
 
-        template <typename T>
-        auto operator&(
-            std::optional<T>& opt
-        ) -> binary_reader&;
+		template <typename T>
+		auto operator&(
+			std::optional<T>& opt
+		) -> binary_reader&;
 
-        template <typename K, typename V>
-        auto operator&(
-            std::unordered_map<K, V>& map
-        ) -> binary_reader&;
+		template <typename K, typename V>
+		auto operator&(
+			std::unordered_map<K, V>& map
+		) -> binary_reader&;
 
-        template <typename T>
-        auto operator&(
-            const raw_blob<T>& blob
-        ) -> binary_reader&;
+		template <typename T>
+		auto operator&(
+			const raw_blob<T>& blob
+		) -> binary_reader&;
 
-        template <typename T> requires (!std::is_trivially_copyable_v<T>)
-        auto operator&(
-            T& value
-        ) -> binary_reader&;
+		template <typename T>
+		requires(!std::is_trivially_copyable_v<T>)
+		auto operator&(
+			T& value
+		) -> binary_reader&;
 
-    private:
-        std::ifstream& m_stream;
-        bool m_valid = true;
-    };
+	private:
+		std::ifstream& m_stream;
+		bool m_valid = true;
+	};
 
-    template <typename T>
-    concept archive = std::same_as<T, binary_writer> || std::same_as<T, binary_reader>;
+	template <typename T>
+	concept archive = std::same_as<T, binary_writer> || std::same_as<T, binary_reader>;
 
-    template <typename T>
-    auto serialize(
-        binary_writer& ar,
-        raw_blob_owned<T>& v
-    ) -> void;
+	template <typename T>
+	auto serialize(
+		binary_writer& ar,
+		raw_blob_owned<T>& v
+	) -> void;
 
-    template <typename T>
-    auto serialize(
-        binary_reader& ar,
-        raw_blob_owned<T>& v
-    ) -> void;
+	template <typename T>
+	auto serialize(
+		binary_reader& ar,
+		raw_blob_owned<T>& v
+	) -> void;
 }
 
 consteval auto gse::is_archive_skipped(const std::meta::info member) -> bool {
-    return std::ranges::any_of(
-        std::define_static_array(std::meta::annotations_of(member)),
-        [](std::meta::info ann) {
-            return std::meta::type_of(ann) == ^^archive_skip;
-        }
-    );
+	return std::ranges::any_of(
+		std::define_static_array(std::meta::annotations_of(member)),
+		[](std::meta::info ann) {
+			return std::meta::type_of(ann) == ^^archive_skip;
+		}
+	);
 }
 
-gse::binary_writer::binary_writer(std::ofstream& stream) : m_stream(stream) {}
+gse::binary_writer::binary_writer(std::ofstream& stream) : m_stream(stream) {
+}
 
 gse::binary_writer::binary_writer(std::ofstream& stream, const std::uint32_t magic, const std::uint32_t version) : m_stream(stream) {
-    *this & magic & version;
+	*this & magic & version;
 }
 
-template <typename T> requires std::is_trivially_copyable_v<T>
+template <typename T>
+requires std::is_trivially_copyable_v<T>
 auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
-    m_stream.write(reinterpret_cast<const char*>(&value), sizeof(T));
-    return *this;
+	m_stream.write(reinterpret_cast<const char*>(&value), sizeof(T));
+	return *this;
 }
 
 auto gse::binary_writer::operator&(const std::string& str) -> binary_writer& {
-    const auto size = static_cast<std::uint32_t>(str.size());
-    m_stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
-    m_stream.write(str.c_str(), size);
-    return *this;
+	const auto size = static_cast<std::uint32_t>(str.size());
+	m_stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
+	m_stream.write(str.c_str(), size);
+	return *this;
 }
 
 template <typename T>
 auto gse::binary_writer::operator&(const std::vector<T>& vec) -> binary_writer& {
-    const auto count = static_cast<std::uint32_t>(vec.size());
-    *this & count;
-    for (const auto& item : vec) {
-        *this & item;
-    }
-    return *this;
+	const auto count = static_cast<std::uint32_t>(vec.size());
+	*this& count;
+	for (const auto& item : vec) {
+		*this& item;
+	}
+	return *this;
 }
 
 template <typename T, std::size_t N>
 auto gse::binary_writer::operator&(const static_vector<T, N>& vec) -> binary_writer& {
-    const auto count = static_cast<std::uint32_t>(vec.size());
-    *this & count;
-    for (const auto& item : vec) {
-        *this & item;
-    }
-    return *this;
+	const auto count = static_cast<std::uint32_t>(vec.size());
+	*this& count;
+	for (const auto& item : vec) {
+		*this& item;
+	}
+	return *this;
 }
 
 template <typename T>
 auto gse::binary_writer::operator&(const std::optional<T>& opt) -> binary_writer& {
-    const bool has = opt.has_value();
-    *this & has;
-    if (has) {
-        *this & *opt;
-    }
-    return *this;
+	const bool has = opt.has_value();
+	*this& has;
+	if (has) {
+		*this&* opt;
+	}
+	return *this;
 }
 
 template <typename K, typename V>
 auto gse::binary_writer::operator&(const std::unordered_map<K, V>& map) -> binary_writer& {
-    const auto count = static_cast<std::uint32_t>(map.size());
-    *this & count;
-    for (const auto& [k, v] : map) {
-        *this & k & v;
-    }
-    return *this;
+	const auto count = static_cast<std::uint32_t>(map.size());
+	*this& count;
+	for (const auto& [k, v] : map) {
+		*this & k & v;
+	}
+	return *this;
 }
 
 template <typename T>
 auto gse::binary_writer::operator&(const raw_blob<T>& blob) -> binary_writer& {
-    const auto byte_size = static_cast<std::uint64_t>(blob.data.size() * sizeof(T));
-    m_stream.write(reinterpret_cast<const char*>(&byte_size), sizeof(byte_size));
-    if (byte_size > 0) {
-        m_stream.write(reinterpret_cast<const char*>(blob.data.data()), static_cast<std::streamsize>(byte_size));
-    }
-    return *this;
+	const auto byte_size = static_cast<std::uint64_t>(blob.data.size() * sizeof(T));
+	m_stream.write(reinterpret_cast<const char*>(&byte_size), sizeof(byte_size));
+	if (byte_size > 0) {
+		m_stream.write(reinterpret_cast<const char*>(blob.data.data()), static_cast<std::streamsize>(byte_size));
+	}
+	return *this;
 }
 
-template <typename T> requires (!std::is_trivially_copyable_v<T>)
+template <typename T>
+requires(!std::is_trivially_copyable_v<T>)
 auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
-    if constexpr (has_user_serialize<binary_writer, T>) {
-        serialize(*this, const_cast<T&>(value));
-    }
-    else {
-        template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-            if constexpr (!is_archive_skipped(m)) {
-                *this & value.[:m:];
-            }
-        }
-    }
-    return *this;
+	if constexpr (has_user_serialize<binary_writer, T>) {
+		serialize(*this, const_cast<T&>(value));
+	}
+	else {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+			if constexpr (!is_archive_skipped(m)) {
+				*this& value.[:m:];
+			}
+		}
+	}
+	return *this;
 }
 
-gse::binary_reader::binary_reader(std::ifstream& stream) : m_stream(stream) {}
+gse::binary_reader::binary_reader(std::ifstream& stream) : m_stream(stream) {
+}
 
 gse::binary_reader::binary_reader(std::ifstream& stream, const std::uint32_t expected_magic, const std::uint32_t expected_version, std::string_view path, const std::source_location& loc) : m_stream(stream) {
-    std::uint32_t magic = 0, version = 0;
-    *this & magic & version;
-    m_valid = (magic == expected_magic && version == expected_version);
-    gse::assert(m_valid, loc, "Invalid or outdated baked file: {}", path);
+	std::uint32_t magic = 0;
+	std::uint32_t version = 0;
+	*this & magic & version;
+	m_valid = (magic == expected_magic && version == expected_version);
+	gse::assert(m_valid, loc, "Invalid or outdated baked file: {}", path);
 }
 
 auto gse::binary_reader::valid() const -> bool {
-    return m_valid;
+	return m_valid;
 }
 
-template <typename T> requires std::is_trivially_copyable_v<T>
+template <typename T>
+requires std::is_trivially_copyable_v<T>
 auto gse::binary_reader::operator&(T& value) -> binary_reader& {
-    m_stream.read(reinterpret_cast<char*>(&value), sizeof(T));
-    return *this;
+	m_stream.read(reinterpret_cast<char*>(&value), sizeof(T));
+	return *this;
 }
 
 auto gse::binary_reader::operator&(std::string& str) -> binary_reader& {
-    std::uint32_t size = 0;
-    m_stream.read(reinterpret_cast<char*>(&size), sizeof(size));
-    str.resize(size);
-    if (size > 0) {
-        m_stream.read(str.data(), size);
-    }
-    return *this;
+	std::uint32_t size = 0;
+	m_stream.read(reinterpret_cast<char*>(&size), sizeof(size));
+	str.resize(size);
+	if (size > 0) {
+		m_stream.read(str.data(), size);
+	}
+	return *this;
 }
 
 template <typename T>
 auto gse::binary_reader::operator&(std::vector<T>& vec) -> binary_reader& {
-    std::uint32_t count = 0;
-    *this & count;
-    vec.resize(count);
-    for (auto& item : vec) {
-        *this & item;
-    }
-    return *this;
+	std::uint32_t count = 0;
+	*this& count;
+	vec.resize(count);
+	for (auto& item : vec) {
+		*this& item;
+	}
+	return *this;
 }
 
 template <typename T, std::size_t N>
 auto gse::binary_reader::operator&(static_vector<T, N>& vec) -> binary_reader& {
-    std::uint32_t count = 0;
-    *this & count;
-    gse::assert(count <= N, "static_vector deserialization: count {} exceeds capacity {}", count, N);
-    vec.clear();
-    for (std::uint32_t i = 0; i < count; ++i) {
-        T val{};
-        *this & val;
-        vec.push_back(std::move(val));
-    }
-    return *this;
+	std::uint32_t count = 0;
+	*this& count;
+	gse::assert(count <= N, "static_vector deserialization: count {} exceeds capacity {}", count, N);
+	vec.clear();
+	for (std::uint32_t i = 0; i < count; ++i) {
+		T val{};
+		*this& val;
+		vec.push_back(std::move(val));
+	}
+	return *this;
 }
 
 template <typename T>
 auto gse::binary_reader::operator&(std::optional<T>& opt) -> binary_reader& {
-    bool has = false;
-    *this & has;
-    if (has) {
-        T val{};
-        *this & val;
-        opt = std::move(val);
-    }
-    else {
-        opt = std::nullopt;
-    }
-    return *this;
+	bool has = false;
+	*this& has;
+	if (has) {
+		T val{};
+		*this& val;
+		opt = std::move(val);
+	}
+	else {
+		opt = std::nullopt;
+	}
+	return *this;
 }
 
 template <typename K, typename V>
 auto gse::binary_reader::operator&(std::unordered_map<K, V>& map) -> binary_reader& {
-    std::uint32_t count = 0;
-    *this & count;
-    for (std::uint32_t i = 0; i < count; ++i) {
-        K k{};
-        V v{};
-        *this & k & v;
-        map.emplace(std::move(k), std::move(v));
-    }
-    return *this;
+	std::uint32_t count = 0;
+	*this& count;
+	for (std::uint32_t i = 0; i < count; ++i) {
+		K k{};
+		V v{};
+		*this & k & v;
+		map.emplace(std::move(k), std::move(v));
+	}
+	return *this;
 }
 
 template <typename T>
 auto gse::binary_reader::operator&(const raw_blob<T>& blob) -> binary_reader& {
-    std::uint64_t byte_size = 0;
-    m_stream.read(reinterpret_cast<char*>(&byte_size), sizeof(byte_size));
-    blob.data.resize(byte_size / sizeof(T));
-    if (byte_size > 0) {
-        m_stream.read(reinterpret_cast<char*>(blob.data.data()), static_cast<std::streamsize>(byte_size));
-    }
-    return *this;
+	std::uint64_t byte_size = 0;
+	m_stream.read(reinterpret_cast<char*>(&byte_size), sizeof(byte_size));
+	blob.data.resize(byte_size / sizeof(T));
+	if (byte_size > 0) {
+		m_stream.read(reinterpret_cast<char*>(blob.data.data()), static_cast<std::streamsize>(byte_size));
+	}
+	return *this;
 }
 
-template <typename T> requires (!std::is_trivially_copyable_v<T>)
+template <typename T>
+requires(!std::is_trivially_copyable_v<T>)
 auto gse::binary_reader::operator&(T& value) -> binary_reader& {
-    if constexpr (has_user_serialize<binary_reader, T>) {
-        serialize(*this, value);
-    }
-    else {
-        template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-            if constexpr (!is_archive_skipped(m)) {
-                *this & value.[:m:];
-            }
-        }
-    }
-    return *this;
+	if constexpr (has_user_serialize<binary_reader, T>) {
+		serialize(*this, value);
+	}
+	else {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+			if constexpr (!is_archive_skipped(m)) {
+				*this& value.[:m:];
+			}
+		}
+	}
+	return *this;
 }
 
 template <typename T>
 auto gse::serialize(binary_writer& ar, raw_blob_owned<T>& v) -> void {
-    ar & raw_blob<T>{ v.storage };
+	ar& raw_blob<T>{ v.storage };
 }
 
 template <typename T>
 auto gse::serialize(binary_reader& ar, raw_blob_owned<T>& v) -> void {
-    ar & raw_blob<T>{ v.storage };
+	ar& raw_blob<T>{ v.storage };
 }

@@ -28,32 +28,23 @@ export namespace gse::vbd {
 			std::span<const bool> locked
 		) -> void;
 
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 
-		auto clear_joints(
-		) -> void;
+		auto clear_joints() -> void;
 
-		auto contact_constraints(
-		) -> std::vector<contact_constraint>&;
+		auto contact_constraints() -> std::vector<contact_constraint>&;
 
-		auto contact_constraints(
-		) const -> std::span<const contact_constraint>;
+		auto contact_constraints() const -> std::span<const contact_constraint>;
 
-		auto motor_constraints(
-		) -> std::vector<velocity_motor_constraint>&;
+		auto motor_constraints() -> std::vector<velocity_motor_constraint>&;
 
-		auto motor_constraints(
-		) const -> std::span<const velocity_motor_constraint>;
+		auto motor_constraints() const -> std::span<const velocity_motor_constraint>;
 
-		auto joint_constraints(
-		) -> std::vector<joint_constraint>&;
+		auto joint_constraints() -> std::vector<joint_constraint>&;
 
-		auto joint_constraints(
-		) const -> std::span<const joint_constraint>;
+		auto joint_constraints() const -> std::span<const joint_constraint>;
 
-		auto body_colors(
-		) const -> std::span<const std::vector<std::uint32_t>>;
+		auto body_colors() const -> std::span<const std::vector<std::uint32_t>>;
 
 		auto body_contact_indices(
 			std::uint32_t body_idx
@@ -62,6 +53,7 @@ export namespace gse::vbd {
 		auto body_joint_indices(
 			std::uint32_t body_idx
 		) const -> std::span<const std::uint32_t>;
+
 	private:
 		std::vector<contact_constraint> m_contacts;
 		std::vector<velocity_motor_constraint> m_motors;
@@ -113,7 +105,9 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 		m_adjacency[i].clear();
 	}
 
-	if (m_contacts.empty() && m_joints.empty()) return;
+	if (m_contacts.empty() && m_joints.empty()) {
+		return;
+	}
 
 	for (std::uint32_t i = 0; i < m_contacts.size(); ++i) {
 		m_body_contacts[m_contacts[i].body_a].push_back(i);
@@ -126,12 +120,16 @@ auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies
 	}
 
 	for (const auto& c : m_contacts) {
-		if (locked[c.body_a] || locked[c.body_b]) continue;
+		if (locked[c.body_a] || locked[c.body_b]) {
+			continue;
+		}
 		m_adjacency[c.body_a].push_back(c.body_b);
 		m_adjacency[c.body_b].push_back(c.body_a);
 	}
 	for (const auto& j : m_joints) {
-		if (locked[j.body_a] || locked[j.body_b]) continue;
+		if (locked[j.body_a] || locked[j.body_b]) {
+			continue;
+		}
 		m_adjacency[j.body_a].push_back(j.body_b);
 		m_adjacency[j.body_b].push_back(j.body_a);
 	}
@@ -211,11 +209,15 @@ auto gse::vbd::constraint_graph::body_colors() const -> std::span<const std::vec
 }
 
 auto gse::vbd::constraint_graph::body_contact_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {
-	if (body_idx >= m_body_contacts.size()) return {};
+	if (body_idx >= m_body_contacts.size()) {
+		return {};
+	}
 	return m_body_contacts[body_idx];
 }
 
 auto gse::vbd::constraint_graph::body_joint_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {
-	if (body_idx >= m_body_joints.size()) return {};
+	if (body_idx >= m_body_joints.size()) {
+		return {};
+	}
 	return m_body_joints[body_idx];
 }

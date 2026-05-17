@@ -19,8 +19,7 @@ import gse.diag;
 import gse.log;
 
 namespace gse::gpu {
-	auto allocate_transient_key(
-	) -> std::uint64_t;
+	auto allocate_transient_key() -> std::uint64_t;
 
 	auto aspect_for_format(
 		image_format fmt
@@ -202,7 +201,8 @@ auto gse::gpu::greedy_color(const std::span<const lifetime_entry> intervals) -> 
 	return colors;
 }
 
-gse::gpu::transient_pool::transient_pool(gpu::device& dev) : m_device(std::addressof(dev)) {}
+gse::gpu::transient_pool::transient_pool(gpu::device& dev) : m_device(std::addressof(dev)) {
+}
 
 gse::gpu::transient_pool::~transient_pool() {
 	if (!m_device) {
@@ -438,14 +438,14 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 		img->set_layout(req.desc.layout);
 
 		slot.images.emplace(req.handle.key, transient_image_allocation{
-			.resource = std::move(img),
-			.aspects = aspect_for_format(req.desc.format),
-			.format = req.desc.format,
-			.layout = req.desc.layout,
-			.color = si.color,
-			.first_pass = intervals[si.entry_index].first_pass,
-			.last_pass = intervals[si.entry_index].last_pass,
-		});
+												.resource = std::move(img),
+												.aspects = aspect_for_format(req.desc.format),
+												.format = req.desc.format,
+												.layout = req.desc.layout,
+												.color = si.color,
+												.first_pass = intervals[si.entry_index].first_pass,
+												.last_pass = intervals[si.entry_index].last_pass,
+											});
 	}
 
 	for (const auto& sb : staged_buffers) {
@@ -460,10 +460,10 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 		);
 
 		slot.buffers.emplace(req.handle.key, transient_buffer_allocation{
-			.resource = std::move(buf),
-			.color = sb.color,
-			.first_pass = intervals[sb.entry_index].first_pass,
-			.last_pass = intervals[sb.entry_index].last_pass,
-		});
+												 .resource = std::move(buf),
+												 .color = sb.color,
+												 .first_pass = intervals[sb.entry_index].first_pass,
+												 .last_pass = intervals[sb.entry_index].last_pass,
+											 });
 	}
 }

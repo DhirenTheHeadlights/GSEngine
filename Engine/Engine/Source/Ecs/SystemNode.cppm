@@ -17,8 +17,7 @@ export namespace gse {
 	concept names_data = requires { typename S::data; };
 
 	template <typename T>
-	consteval auto has_describe_fields(
-	) -> bool;
+	consteval auto has_describe_fields() -> bool;
 
 	template <typename S>
 	concept has_settings = names_data<S> && has_describe_fields<typename S::data>();
@@ -33,11 +32,9 @@ export namespace gse {
 	concept names_frame = requires { &S::frame; };
 
 	struct system_node : non_copyable {
-		~system_node(
-		) = default;
+		~system_node() = default;
 
-		system_node(
-		) = default;
+		system_node() = default;
 
 		system_node(
 			system_node&&
@@ -47,7 +44,7 @@ export namespace gse {
 			system_node&&
 		) noexcept -> system_node& = default;
 
-		std::unique_ptr<void, void(*)(void*)> data{ nullptr, nullptr };
+		std::unique_ptr<void, void (*)(void*)> data{ nullptr, nullptr };
 
 		void (*invoke_shutdown_fn)(shutdown_context&, void*) = nullptr;
 		auto (*invoke_run_fn)(run_context&, void*) -> async::task<> = nullptr;

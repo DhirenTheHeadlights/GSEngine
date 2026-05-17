@@ -36,8 +36,7 @@ export namespace gse::vulkan {
 			this const semaphore& self
 		) -> gpu::handle<semaphore>;
 
-		explicit operator bool(
-		) const;
+		explicit operator bool() const;
 
 	private:
 		explicit semaphore(
@@ -48,7 +47,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::semaphore::semaphore(vk::raii::Semaphore&& semaphore) : m_semaphore(std::move(semaphore)) {}
+gse::vulkan::semaphore::semaphore(vk::raii::Semaphore&& semaphore) : m_semaphore(std::move(semaphore)) {
+}
 
 auto gse::vulkan::semaphore::create_binary(const device& dev) -> semaphore {
 	constexpr vk::SemaphoreCreateInfo info{};

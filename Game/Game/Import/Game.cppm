@@ -16,5 +16,5 @@ export import :client_ui;
 export import :world_loader;
 
 export namespace gs {
-    using networked_components = gse::network::engine_components;
+	using networked_components = gse::network::engine_components;
 }

@@ -244,12 +244,12 @@ auto gse::image::read_jpeg_file(const std::filesystem::path& path, const bool fo
 
 auto gse::image::load_any(const std::filesystem::path& path, const bool force_rgba) -> read_result {
 	switch (detect_format(path)) {
-	case image_format::png:
-		return read_png_file(path, force_rgba);
-	case image_format::jpeg:
-		return read_jpeg_file(path, force_rgba);
-	case image_format::unknown:
-		return {};
+		case image_format::png:
+			return read_png_file(path, force_rgba);
+		case image_format::jpeg:
+			return read_jpeg_file(path, force_rgba);
+		case image_format::unknown:
+			return {};
 	}
 	return {};
 }
@@ -286,20 +286,20 @@ auto gse::image::write_png_file(
 
 			int color_type = png_color_type_rgba;
 			switch (channels) {
-			case 1:
-				color_type = png_color_type_gray;
-				break;
-			case 2:
-				color_type = png_color_type_gray_alpha;
-				break;
-			case 3:
-				color_type = png_color_type_rgb;
-				break;
-			case 4:
-				color_type = png_color_type_rgba;
-				break;
-			default:
-				break;
+				case 1:
+					color_type = png_color_type_gray;
+					break;
+				case 2:
+					color_type = png_color_type_gray_alpha;
+					break;
+				case 3:
+					color_type = png_color_type_rgb;
+					break;
+				case 4:
+					color_type = png_color_type_rgba;
+					break;
+				default:
+					break;
 			}
 
 			png_set_IHDR(

@@ -37,7 +37,7 @@ export namespace gse::gpu {
 		id chain_id;
 	};
 
-	struct [[= same_frame_channel]] render_pass_request {
+	struct[[= same_frame_channel]] render_pass_request {
 		render_pass_descriptor desc;
 		std::coroutine_handle<> record_handle;
 		std::optional<recording_context>* record_ctx_slot = nullptr;
@@ -67,15 +67,13 @@ export namespace gse::gpu {
 			request_pass_awaitable&&
 		) noexcept -> request_pass_awaitable& = default;
 
-		auto await_ready(
-		) const noexcept -> bool;
+		auto await_ready() const noexcept -> bool;
 
 		auto await_suspend(
 			std::coroutine_handle<> h
 		) noexcept -> void;
 
-		auto await_resume(
-		) noexcept -> recording_context;
+		auto await_resume() noexcept -> recording_context;
 
 	private:
 		const frame_context* m_ctx;
@@ -119,8 +117,7 @@ export namespace gse::gpu {
 			F&& body
 		) && -> void;
 
-		auto operator co_await(
-		) && -> request_pass_awaitable;
+		auto operator co_await() && -> request_pass_awaitable;
 
 	private:
 		const frame_context* m_ctx;
@@ -141,15 +138,13 @@ export namespace gse::gpu {
 		gpu::color_clear value
 	) -> color_attachment;
 
-	auto load_color(
-	) -> color_attachment;
+	auto load_color() -> color_attachment;
 
 	auto clear_depth(
 		gpu::depth_clear value
 	) -> depth_attachment;
 
-	auto load_depth(
-	) -> depth_attachment;
+	auto load_depth() -> depth_attachment;
 }
 
 template <typename... States>

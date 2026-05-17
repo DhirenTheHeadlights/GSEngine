@@ -42,19 +42,17 @@ export namespace gse::gpu {
 		struct data {
 			static constexpr std::string_view category = "Graphics";
 
-			[[=gse::settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant overhead. Requires a restart.">{}, =gse::settings::restart_required{}]]
-			bool validation_layers_enabled = false;
+			[[= gse::settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant overhead. Requires a restart.">{}, = gse::settings::restart_required{}]] bool validation_layers_enabled = false;
 
-			[[=gse::settings::describe<"Vulkan device tracking and naming options.">{}]]
-			vulkan::device::settings device_settings;
+			[[= gse::settings::describe<"Vulkan device tracking and naming options.">{}]] vulkan::device::settings device_settings;
 
-			[[=gse::shared]] std::unique_ptr<gpu::device> device;
-			[[=gse::shared]] std::unique_ptr<gpu::shader_registry> shader_registry;
-			[[=gse::shared]] std::unique_ptr<swap_chain> swapchain;
-			[[=gse::shared]] std::unique_ptr<gpu::frame> frame;
-			[[=gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
-			[[=gse::shared]] std::unique_ptr<bindless_texture_set> bindless_textures;
-			[[=gse::shared]] concurrency::frame_scheduler scheduler;
+			[[= gse::shared]] std::unique_ptr<gpu::device> device;
+			[[= gse::shared]] std::unique_ptr<gpu::shader_registry> shader_registry;
+			[[= gse::shared]] std::unique_ptr<swap_chain> swapchain;
+			[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
+			[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
+			[[= gse::shared]] std::unique_ptr<bindless_texture_set> bindless_textures;
+			[[= gse::shared]] concurrency::frame_scheduler scheduler;
 		};
 
 		using swap_chain_recreate_callback = std::function<void()>;
@@ -110,15 +108,13 @@ export namespace gse::gpu {
 		channel_writer& channels;
 		context::data* state = nullptr;
 
-		auto await_ready(
-		) const noexcept -> bool;
+		auto await_ready() const noexcept -> bool;
 
 		auto await_suspend(
 			std::coroutine_handle<> h
 		) -> void;
 
-		auto await_resume(
-		) -> context::data&;
+		auto await_resume() -> context::data&;
 	};
 
 	[[nodiscard]] auto on_gpu(

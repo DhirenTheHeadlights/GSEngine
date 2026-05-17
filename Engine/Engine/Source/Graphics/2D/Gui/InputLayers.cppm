@@ -34,6 +34,7 @@ export namespace gse::gui {
 			render_layer widget_layer,
 			vec2f position
 		) const -> bool;
+
 	private:
 		std::array<std::vector<ui_rect>, 7> m_hit_regions;
 	};

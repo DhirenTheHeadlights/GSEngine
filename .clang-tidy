@@ -27,7 +27,10 @@ Checks: >
   -cppcoreguidelines-avoid-non-const-global-variables,
   -misc-use-anonymous-namespace,
   -readability-uppercase-literal-suffix,
-  -readability-math-missing-parentheses
+  -readability-math-missing-parentheses,
+  -readability-convert-member-functions-to-static,
+  -cppcoreguidelines-special-member-functions,
+  -misc-use-internal-linkage
 
 WarningsAsErrors: ''
 

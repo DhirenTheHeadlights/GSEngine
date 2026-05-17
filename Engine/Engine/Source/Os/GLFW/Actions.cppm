@@ -72,7 +72,7 @@ export namespace gse::actions {
 		}
 
 	private:
-		std::uint16_t m_bit_index {};
+		std::uint16_t m_bit_index{};
 	};
 
 	using word = std::uint64_t;
@@ -216,7 +216,7 @@ export namespace gse::actions {
 		angle m_camera_yaw;
 	};
 
-	inline thread_local angle g_context_camera_yaw {};
+	inline thread_local angle g_context_camera_yaw{};
 	inline thread_local bool g_context_camera_yaw_set = false;
 	inline thread_local std::unordered_map<id, angle> g_entity_camera_yaw;
 
@@ -510,7 +510,7 @@ auto gse::actions::state::reset_axes(const std::span<const std::uint16_t> axes1,
 
 auto gse::actions::state::clear_all_axes() -> void {
 	std::ranges::fill(m_axes1, 0.f);
-	std::ranges::fill(m_axes2, axis {});
+	std::ranges::fill(m_axes2, axis{});
 }
 
 auto gse::actions::state::set_pressed(const std::uint16_t bit_index, const std::size_t count) -> void {
@@ -733,7 +733,7 @@ auto gse::actions::system::finalize_bindings(data& d) -> void {
 	auto key_for_action = [&](const id action_id) -> key {
 		const auto* desc = d.descriptions.try_get(action_id);
 		if (!desc) {
-			return key {};
+			return key{};
 		}
 		const auto bit_index = desc->bit_index();
 		for (const auto& [k, idx] : d.resolved.key_to_action) {
@@ -741,11 +741,11 @@ auto gse::actions::system::finalize_bindings(data& d) -> void {
 				return k;
 			}
 		}
-		return key {};
+		return key{};
 	};
 
 	for (const auto& [info, id] : d.pending_axis2_reqs) {
-		resolved_axis2_keys r {
+		resolved_axis2_keys r{
 			.id = id,
 			.left = key_for_action(info.left.id()),
 			.right = key_for_action(info.right.id()),

@@ -136,8 +136,7 @@ export namespace gse {
 	) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto identity(
-	) -> quat_t<T>;
+	constexpr auto identity() -> quat_t<T>;
 
 	template <typename T>
 	constexpr auto from_axis_angle(

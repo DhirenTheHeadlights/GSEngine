@@ -31,8 +31,7 @@ export namespace gse {
 		const engine_config& config = {}
 	) -> void;
 
-	auto shutdown(
-	) -> void;
+	auto shutdown() -> void;
 }
 
 namespace gse {
@@ -86,46 +85,46 @@ auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const
 
 		while (!should_shutdown.load(std::memory_order_acquire)) {
 			{
-				trace::scope_guard sg{loop_id};
+				trace::scope_guard sg{ loop_id };
 				if (engine_flags.test(engine_flag::create_window)) {
 					{
-						trace::scope_guard sg{poll_id};
+						trace::scope_guard sg{ poll_id };
 						window::poll_events();
 					}
 				}
 
 				{
-					trace::scope_guard sg{sync_begin_id};
+					trace::scope_guard sg{ sync_begin_id };
 					frame_sync::begin();
 				}
 
 				{
-					trace::scope_guard sg{e.id()};
+					trace::scope_guard sg{ e.id() };
 					{
-						trace::scope_guard sg{update_id};
+						trace::scope_guard sg{ update_id };
 						e.update();
 					}
 
 					if (engine_flags.test(engine_flag::render)) {
 						{
-							trace::scope_guard sg{render_id};
+							trace::scope_guard sg{ render_id };
 							e.render();
 						}
 					}
 				}
 
 				{
-					trace::scope_guard sg{sync_end_id};
+					trace::scope_guard sg{ sync_end_id };
 					frame_sync::end();
 				}
 			}
 
 			{
-				trace::scope_guard sg{finalize_id};
+				trace::scope_guard sg{ finalize_id };
 				trace::finalize_frame();
 			}
 			{
-				trace::scope_guard sg{ingest_id};
+				trace::scope_guard sg{ ingest_id };
 				profile::ingest_frame();
 			}
 		}

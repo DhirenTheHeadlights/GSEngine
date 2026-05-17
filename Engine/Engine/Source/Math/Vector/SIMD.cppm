@@ -10,14 +10,14 @@ module;
 #include <type_traits>
 
 #ifdef _WIN32
-	#include <intrin.h>
+#include <intrin.h>
 #else
-	#include <cpuid.h>
-	#include <immintrin.h>
+#include <cpuid.h>
+#include <immintrin.h>
 #endif
 
 #ifndef _XCR_XFEATURE_ENABLED_MASK
-	#define _XCR_XFEATURE_ENABLED_MASK 0
+#define _XCR_XFEATURE_ENABLED_MASK 0
 #endif
 
 export module gse.math:simd;
@@ -207,13 +207,10 @@ export namespace gse::simd {
 
 		template <typename T, int N>
 		concept simd =
-			(is_int32<T> && (N == 4 || N == 8))
-			|| (is_float<T> && (N == 4 || N == 8))
-			|| (is_double<T> && (N == 2 || N == 4));
+			(is_int32<T> && (N == 4 || N == 8)) || (is_float<T> && (N == 4 || N == 8)) || (is_double<T> && (N == 2 || N == 4));
 
 		template <typename T, int N>
-		auto simd_cpu_supported(
-		) noexcept -> bool;
+		auto simd_cpu_supported() noexcept -> bool;
 	}
 }
 

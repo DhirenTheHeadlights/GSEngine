@@ -39,7 +39,8 @@ auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool
 	return true;
 }
 
-gse::audio_clip::audio_clip(const std::filesystem::path& filepath) : identifiable(filepath, config::baked_resource_path), m_path(filepath) {}
+gse::audio_clip::audio_clip(const std::filesystem::path& filepath) : identifiable(filepath, config::baked_resource_path), m_path(filepath) {
+}
 
 auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
 	baked b{};
@@ -135,9 +136,7 @@ auto gse::audio::system::release_voice(data& d, const voice_handle handle) -> vo
 }
 
 auto gse::audio::system::valid_voice(const data& d, const voice_handle handle) -> bool {
-	return handle.index < d.voices.size()
-		&& d.voices[handle.index]->active
-		&& d.voices[handle.index]->generation == handle.generation;
+	return handle.index < d.voices.size() && d.voices[handle.index]->active && d.voices[handle.index]->generation == handle.generation;
 }
 
 auto gse::audio::system::run(run_context& ctx, data& d) -> async::task<> {

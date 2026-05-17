@@ -16,7 +16,7 @@ export namespace gse {
 
 namespace gse::task {
 	template <typename F>
-	using first_arg_t = typename [: std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]) :];
+	using first_arg_t = typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):];
 
 	using parallel_for_fn = move_only_function<void(std::size_t)>;
 
@@ -57,17 +57,13 @@ export namespace gse::task {
 		id id = trace::loc_id<trace::current_loc_tag()>()
 	) -> void;
 
-	auto thread_count(
-	) -> std::size_t;
+	auto thread_count() -> std::size_t;
 
-	auto current_worker(
-	) noexcept -> std::optional<std::size_t>;
+	auto current_worker() noexcept -> std::optional<std::size_t>;
 
-	auto wait_idle(
-	) -> void;
+	auto wait_idle() -> void;
 
-	auto try_run_one(
-	) -> bool;
+	auto try_run_one() -> bool;
 
 	auto parallel_invoke_range(
 		std::size_t first,
@@ -104,8 +100,7 @@ export namespace gse::task {
 			id id = trace::loc_id<trace::current_loc_tag()>()
 		) -> void;
 
-		auto wait(
-		) const -> void;
+		auto wait() const -> void;
 
 	private:
 		friend struct job_entry;
@@ -137,11 +132,9 @@ export namespace gse::task {
 			T& out
 		) const -> bool;
 
-		auto drain(
-		) const -> std::vector<T>;
+		auto drain() const -> std::vector<T>;
 
-		[[nodiscard]] auto size(
-		) const -> std::size_t;
+		[[nodiscard]] auto size() const -> std::size_t;
 
 	private:
 		mutable std::mutex m_mutex;
@@ -247,11 +240,9 @@ namespace gse::task {
 		std::size_t worker_count
 	) -> void;
 
-	auto pool_shutdown(
-	) -> void;
+	auto pool_shutdown() -> void;
 
-	auto likely_idle(
-	) noexcept -> bool;
+	auto likely_idle() noexcept -> bool;
 
 	auto async_key_for(
 		const void* p
@@ -283,8 +274,7 @@ namespace gse::task {
 		std::size_t target_idx
 	) noexcept -> bool;
 
-	auto select_post_target(
-	) -> std::size_t;
+	auto select_post_target() -> std::size_t;
 }
 
 gse::task::group::group(const id label) : m_label(label) {
@@ -324,7 +314,7 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 	if (started.load(std::memory_order_acquire)) {
 		if constexpr (std::is_void_v<std::invoke_result_t<F&>>) {
 			{
-				trace::scope_guard sg{generate_id("task.start.reentrant")};
+				trace::scope_guard sg{ generate_id("task.start.reentrant") };
 				fn();
 			}
 			return;
@@ -332,7 +322,7 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 		else {
 			std::invoke_result_t<F&> r{};
 			{
-				trace::scope_guard sg{generate_id("task.start.reentrant")};
+				trace::scope_guard sg{ generate_id("task.start.reentrant") };
 				r = fn();
 			}
 			return r;
@@ -367,7 +357,7 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 
 	if constexpr (std::is_void_v<std::invoke_result_t<F&>>) {
 		{
-			trace::scope_guard sg{generate_id("task.start.body")};
+			trace::scope_guard sg{ generate_id("task.start.body") };
 			fn();
 		}
 		return;
@@ -376,7 +366,7 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 		using r = std::invoke_result_t<F&>;
 		r ret{};
 		{
-			trace::scope_guard sg{generate_id("task.start.body")};
+			trace::scope_guard sg{ generate_id("task.start.body") };
 			ret = fn();
 		}
 		return ret;
@@ -403,15 +393,18 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 		}
 		const auto key = async_key_for(&*it);
 		trace::begin_async(id, key);
-		push_to_queue(select_post_target(), job_entry{
-			.fn = std::move(*it),
-			.trace_id = id,
-			.parent_eid = parent_eid,
-			.async_key = key,
-			.async_trace = true,
-			.counts_in_flight = true,
-			.gp = nullptr,
-		});
+		push_to_queue(
+			select_post_target(),
+			job_entry{
+				.fn = std::move(*it),
+				.trace_id = id,
+				.parent_eid = parent_eid,
+				.async_key = key,
+				.async_trace = true,
+				.counts_in_flight = true,
+				.gp = nullptr,
+			}
+		);
 	}
 
 	work_available.release(static_cast<std::ptrdiff_t>(count));
@@ -425,7 +418,7 @@ auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t las
 	const std::size_t n = last - first;
 
 	{
-		trace::scope_guard sg{id};
+		trace::scope_guard sg{ id };
 		if (n <= coalesce_threshold) {
 			for (std::size_t i = first; i < last; ++i) {
 				func(i);
@@ -439,11 +432,14 @@ auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t las
 		group g(id);
 		for (std::size_t chunk_start = first; chunk_start < last; chunk_start += chunk) {
 			const std::size_t chunk_stop = std::min(chunk_start + chunk, last);
-			g.post([chunk_start, chunk_stop, &func] {
-				for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
-					func(i);
-				}
-			}, id);
+			g.post(
+				[chunk_start, chunk_stop, &func] {
+					for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
+						func(i);
+					}
+				},
+				id
+			);
 		}
 		g.wait();
 	}
@@ -492,11 +488,14 @@ auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk
 	group g{ label };
 	for (std::size_t start = 0; start < n; start += chunk) {
 		const auto end = std::min(start + chunk, n);
-		g.post([start, end, &fn] {
-			for (std::size_t i = start; i < end; ++i) {
-				fn(i);
-			}
-		}, label);
+		g.post(
+			[start, end, &fn] {
+				for (std::size_t i = start; i < end; ++i) {
+					fn(i);
+				}
+			},
+			label
+		);
 	}
 }
 
@@ -642,7 +641,7 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 
 	const std::size_t n = last - first;
 
-	trace::scope_guard sg{id};
+	trace::scope_guard sg{ id };
 
 	if (n == 1) {
 		func(first);
@@ -655,11 +654,14 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 	group g(id);
 	for (std::size_t chunk_start = first; chunk_start < last; chunk_start += chunk) {
 		const std::size_t chunk_stop = std::min(chunk_start + chunk, last);
-		g.post([chunk_start, chunk_stop, &func] {
-			for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
-				func(i);
-			}
-		}, id);
+		g.post(
+			[chunk_start, chunk_stop, &func] {
+				for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
+					func(i);
+				}
+			},
+			id
+		);
 	}
 	g.wait();
 }
@@ -690,7 +692,7 @@ auto gse::task::run_job(job_entry& entry) -> void {
 
 	try {
 		{
-			trace::scope_guard sg{entry.trace_id, entry.parent_eid};
+			trace::scope_guard sg{ entry.trace_id, entry.parent_eid };
 			entry.fn();
 		}
 	}
@@ -747,30 +749,36 @@ auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t paren
 	const auto key = async_key_for(&j);
 	trace::begin_async(trace_id, key);
 
-	push_to_queue(select_post_target(), job_entry{
-		.fn = std::move(j),
-		.trace_id = trace_id,
-		.parent_eid = parent_eid,
-		.async_key = key,
-		.async_trace = true,
-		.counts_in_flight = true,
-		.gp = nullptr,
-	});
+	push_to_queue(
+		select_post_target(),
+		job_entry{
+			.fn = std::move(j),
+			.trace_id = trace_id,
+			.parent_eid = parent_eid,
+			.async_key = key,
+			.async_trace = true,
+			.counts_in_flight = true,
+			.gp = nullptr,
+		}
+	);
 	work_available.release();
 }
 
 auto gse::task::submit_to_group(group& gp, job j, const id trace_id, const std::uint64_t parent_eid) -> void {
 	gp.m_counter.fetch_add(1, std::memory_order_relaxed);
 
-	push_to_queue(select_post_target(), job_entry{
-		.fn = std::move(j),
-		.trace_id = trace_id,
-		.parent_eid = parent_eid,
-		.async_key = 0,
-		.async_trace = false,
-		.counts_in_flight = false,
-		.gp = &gp,
-	});
+	push_to_queue(
+		select_post_target(),
+		job_entry{
+			.fn = std::move(j),
+			.trace_id = trace_id,
+			.parent_eid = parent_eid,
+			.async_key = 0,
+			.async_trace = false,
+			.counts_in_flight = false,
+			.gp = &gp,
+		}
+	);
 	work_available.release();
 }
 
@@ -849,4 +857,3 @@ auto gse::task::compute_chunk_size(const std::size_t n, const std::size_t worker
 	}
 	return std::max<std::size_t>(1, (n + target_chunks - 1) / target_chunks);
 }
-

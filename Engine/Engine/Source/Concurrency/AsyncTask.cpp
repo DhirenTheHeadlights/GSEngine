@@ -21,29 +21,25 @@ namespace gse::async {
 		std::coroutine_handle<>& target;
 		std::vector<task<>>& helpers;
 
-		static auto await_ready(
-		) noexcept -> bool;
+		static auto await_ready() noexcept -> bool;
 
 		auto await_suspend(
 			std::coroutine_handle<> h
 		) const noexcept -> std::coroutine_handle<>;
 
-		static auto await_resume(
-		) noexcept -> void;
+		static auto await_resume() noexcept -> void;
 	};
 
 	struct symmetric_resume {
 		std::coroutine_handle<> handle;
 
-		static auto await_ready(
-		) noexcept -> bool;
+		static auto await_ready() noexcept -> bool;
 
 		auto await_suspend(
 			std::coroutine_handle<> h
 		) const noexcept -> std::coroutine_handle<>;
 
-		static auto await_resume(
-		) noexcept -> void;
+		static auto await_resume() noexcept -> void;
 	};
 
 	auto when_all_helper(
@@ -60,7 +56,8 @@ auto gse::async::final_awaiter::await_ready() noexcept -> bool {
 	return false;
 }
 
-auto gse::async::final_awaiter::await_resume() noexcept -> void {}
+auto gse::async::final_awaiter::await_resume() noexcept -> void {
+}
 
 auto gse::async::promise_base::initial_suspend() noexcept -> std::suspend_always {
 	return {};
@@ -110,7 +107,8 @@ auto gse::async::void_promise::get_return_object() -> task<> {
 	return task{ std::coroutine_handle<void_promise>::from_promise(*this) };
 }
 
-auto gse::async::void_promise::return_void() noexcept -> void {}
+auto gse::async::void_promise::return_void() noexcept -> void {
+}
 
 auto gse::async::void_promise::result() const -> void {
 	if (m_exception) {
@@ -137,7 +135,9 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 				continue;
 			}
 			jobs.emplace_back([handle] {
-				if (!handle) return;
+				if (!handle) {
+					return;
+				}
 				handle.resume();
 			});
 		}
@@ -146,7 +146,8 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 	return helpers[0].consume_start_handle();
 }
 
-auto gse::async::suspend_and_capture::await_resume() noexcept -> void {}
+auto gse::async::suspend_and_capture::await_resume() noexcept -> void {
+}
 
 auto gse::async::symmetric_resume::await_ready() noexcept -> bool {
 	return false;
@@ -156,7 +157,8 @@ auto gse::async::symmetric_resume::await_suspend(std::coroutine_handle<>) const 
 	return handle ? handle : std::noop_coroutine();
 }
 
-auto gse::async::symmetric_resume::await_resume() noexcept -> void {}
+auto gse::async::symmetric_resume::await_resume() noexcept -> void {
+}
 
 auto gse::async::yield_to_worker_t::await_ready() const noexcept -> bool {
 	return false;
@@ -168,12 +170,16 @@ auto gse::async::yield_to_worker_t::await_suspend(std::coroutine_handle<> h) con
 		return;
 	}
 	gse::task::post([h] {
-		if (!h) return;
+		if (!h) {
+			return;
+		}
 		h.resume();
-	}, trace_id<"async::yield_to_worker">());
+	},
+					trace_id<"async::yield_to_worker">());
 }
 
-auto gse::async::yield_to_worker_t::await_resume() const noexcept -> void {}
+auto gse::async::yield_to_worker_t::await_resume() const noexcept -> void {
+}
 
 auto gse::async::yield_to_worker() noexcept -> yield_to_worker_t {
 	return {};

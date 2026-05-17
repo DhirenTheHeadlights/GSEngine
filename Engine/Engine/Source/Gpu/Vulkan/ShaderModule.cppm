@@ -33,8 +33,7 @@ export namespace gse::vulkan {
 			this const shader_module& self
 		) -> gpu::handle<shader_module>;
 
-		explicit operator bool(
-		) const;
+		explicit operator bool() const;
 
 	private:
 		explicit shader_module(
@@ -46,7 +45,8 @@ export namespace gse::vulkan {
 }
 
 gse::vulkan::shader_module::shader_module(vk::raii::ShaderModule&& module)
-	: m_module(std::move(module)) {}
+	: m_module(std::move(module)) {
+}
 
 auto gse::vulkan::shader_module::create(const device& dev, const std::span<const std::uint32_t> spirv) -> shader_module {
 	aftermath::register_spirv(spirv);

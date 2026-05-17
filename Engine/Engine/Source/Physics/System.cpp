@@ -87,7 +87,8 @@ auto gse::physics::make_joint_definition(const id a, const id b, const joint_con
 				.damping = cfg.damping,
 			};
 		}
-	}, config);
+	},
+					  config);
 }
 
 auto gse::physics::system::create_joint(data& d, const joint_definition& def) -> joint_handle {
@@ -136,7 +137,7 @@ auto gse::physics::system::is_sleeping(const data& d, const id entity_id) -> boo
 }
 
 auto gse::physics::system::collect_collision_objects(write<transform_component>& transform, write<collision_component>& collision) -> std::vector<collision_pair> {
-	trace::scope_guard sg{trace_id<"vbd_cpu::collect_objects">()};
+	trace::scope_guard sg{ trace_id<"vbd_cpu::collect_objects">() };
 	std::vector<collision_pair> objects;
 	objects.reserve(collision.size());
 	const auto collision_ids = collision.owner_ids();
@@ -160,10 +161,10 @@ auto gse::physics::system::collect_collision_objects(write<transform_component>&
 }
 
 auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
-	trace::scope_guard sg{trace_id<"vbd_cpu::broad_phase">()};
+	trace::scope_guard sg{ trace_id<"vbd_cpu::broad_phase">() };
 
 	{
-		trace::scope_guard sg_sort{trace_id<"vbd_cpu::broad_phase::sort">()};
+		trace::scope_guard sg_sort{ trace_id<"vbd_cpu::broad_phase::sort">() };
 		std::ranges::sort(objects, [](const collision_pair& a, const collision_pair& b) {
 			return a.box.min.x() < b.box.min.x();
 		});
@@ -266,7 +267,9 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 
 				const auto restitution_of = [&](const id eid) -> float {
 					const auto* m = motion.find(eid);
-					if (!m) return 0.f;
+					if (!m) {
+						return 0.f;
+					}
 					const auto* d = std::get_if<dynamic_body>(&m->body);
 					return d ? d->restitution : 0.f;
 				};
@@ -348,10 +351,11 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 					});
 				}
 			}
-		}, trace_id<"vbd_cpu::broad_phase::pair_loop">());
+		},
+									trace_id<"vbd_cpu::broad_phase::pair_loop">());
 	}
 
-	trace::scope_guard sg_merge{trace_id<"vbd_cpu::broad_phase::merge">()};
+	trace::scope_guard sg_merge{ trace_id<"vbd_cpu::broad_phase::merge">() };
 
 	if (update_scene_state) {
 		auto* motion_base = motion.data();
@@ -405,21 +409,7 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 }
 
 auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.vbd_solver.configure(vbd::solver_config{
-		.iterations = static_cast<std::uint32_t>(d.solver_iterations),
-		.alpha = 0.99f,
-		.beta = newtons_per_meter_squared(100000.f),
-		.gamma = 0.99f,
-		.post_stabilize = true,
-		.penalty_min = newtons_per_meter(1.0f),
-		.penalty_max = newtons_per_meter(1e9f),
-		.collision_margin = meters(0.0005f),
-		.stick_threshold = meters(0.01f),
-		.friction_coefficient = 0.6f,
-		.velocity_sleep_threshold = meters_per_second(0.05f),
-		.angular_sleep_threshold = radians_per_second(0.05f),
-		.speculative_margin = meters(0.02f)
-	});
+	d.vbd_solver.configure(vbd::solver_config{ .iterations = static_cast<std::uint32_t>(d.solver_iterations), .alpha = 0.99f, .beta = newtons_per_meter_squared(100000.f), .gamma = 0.99f, .post_stabilize = true, .penalty_min = newtons_per_meter(1.0f), .penalty_max = newtons_per_meter(1e9f), .collision_margin = meters(0.0005f), .stick_threshold = meters(0.01f), .friction_coefficient = 0.6f, .velocity_sleep_threshold = meters_per_second(0.05f), .angular_sleep_threshold = radians_per_second(0.05f), .speculative_margin = meters(0.02f) });
 
 	if (gpu_s) {
 		co_await d.gpu_solver.initialize_compute(ctx, *gpu_s);
@@ -496,18 +486,16 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 
 	if (steps <= 0) {
 		if (d.gpu_solver.body_count() > 0) {
-			channels.push<gpu_solver_frame_info>({
-				.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
-				.body_count = d.gpu_solver.body_count(),
-				.body_stride = sizeof(vbd::body_state),
-				.position_offset = std::meta::offset_of_v<^^vbd::body_state::position>
-			});
+			channels.push<gpu_solver_frame_info>({ .snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
+												   .body_count = d.gpu_solver.body_count(),
+												   .body_stride = sizeof(vbd::body_state),
+												   .position_offset = std::meta::offset_of_v<^^vbd::body_state::position> });
 		}
 		return;
 	}
 
 	{
-		trace::scope_guard sg{trace_id<"vbd_gpu::airborne_update">()};
+		trace::scope_guard sg{ trace_id<"vbd_gpu::airborne_update">() };
 		const auto grounded_bits_raw = d.gpu_solver.read_grounded();
 		const auto motion_count = motion.size();
 		d.body_airborne.resize(motion_count, 1);
@@ -516,7 +504,8 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 		if (grounded_bits_raw.empty()) {
 			task::coarse_parallel(motion_count, 512, [airborne_data](std::size_t i) {
 				airborne_data[i] = 1;
-			}, trace_id<"vbd_gpu::airborne_update::all_airborne">());
+			},
+								  trace_id<"vbd_gpu::airborne_update::all_airborne">());
 		}
 		else {
 			std::array<std::uint32_t, vbd::limits.max_grounded_uints> grounded_local{};
@@ -526,16 +515,18 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 			const auto bit_count = std::min<std::size_t>(motion_count, vbd::limits.max_bodies);
 			task::coarse_parallel(bit_count, 512, [airborne_data, &grounded_local](std::size_t i) {
 				const auto bit = (grounded_local[i / 32u] >> (i % 32u)) & 1u;
-				airborne_data[i] = (bit == 0) ? std::uint8_t{1} : std::uint8_t{0};
-			}, trace_id<"vbd_gpu::airborne_update::bits">());
+				airborne_data[i] = (bit == 0) ? std::uint8_t{ 1 } : std::uint8_t{ 0 };
+			},
+								  trace_id<"vbd_gpu::airborne_update::bits">());
 			task::coarse_parallel(motion_count - bit_count, 512, [airborne_data, bit_count](std::size_t i) {
 				airborne_data[bit_count + i] = 1;
-			}, trace_id<"vbd_gpu::airborne_update::overflow">());
+			},
+								  trace_id<"vbd_gpu::airborne_update::overflow">());
 		}
 	}
 
 	{
-		trace::scope_guard sg{trace_id<"vbd_gpu::clear_collision_results">()};
+		trace::scope_guard sg{ trace_id<"vbd_gpu::clear_collision_results">() };
 		auto* results_data = results.data();
 		task::coarse_parallel(results.size(), 512, [results_data](std::size_t i) {
 			auto& res = results_data[i];
@@ -543,11 +534,12 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 			res.collision_normal = {};
 			res.penetration = {};
 			res.collision_points.clear();
-		}, trace_id<"vbd_gpu::clear_collision_results::loop">());
+		},
+							  trace_id<"vbd_gpu::clear_collision_results::loop">());
 	}
 
 	{
-		trace::scope_guard sg{trace_id<"vbd_gpu::impulses_cpu">()};
+		trace::scope_guard sg{ trace_id<"vbd_gpu::impulses_cpu">() };
 
 		for (const auto& req : impulses) {
 			auto* mc = motion.find(req.target);
@@ -569,7 +561,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 	std::vector<std::pair<id, std::uint32_t>> id_to_body_index_staging;
 
 	{
-		trace::scope_guard sg{trace_id<"vbd_gpu::build_bodies">()};
+		trace::scope_guard sg{ trace_id<"vbd_gpu::build_bodies">() };
 		const auto body_count = motion.size();
 		bodies.resize(body_count);
 		entity_ids.resize(body_count);
@@ -616,57 +608,61 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 				.inv_inertia = inv_inertial_tensor(mc, tc->orientation),
 			};
 			entity_ids[i] = eid;
-		}, trace::untraced);
+		},
+									trace::untraced);
 
 		d.id_to_body_index.assign_unsorted(std::move(id_to_body_index_staging));
 	}
 
 	{
-		trace::scope_guard sg{trace_id<"vbd_gpu::build_collision">()};
-			for (auto& b : bodies) {
-				b.aabb_min = vec3<position>(position(1e30f));
-				b.aabb_max = vec3<position>(position(-1e30f));
-			}
+		trace::scope_guard sg{ trace_id<"vbd_gpu::build_collision">() };
+		for (auto& b : bodies) {
+			b.aabb_min = vec3<position>(position(1e30f));
+			b.aabb_max = vec3<position>(position(-1e30f));
+		}
 
-			const auto& id_to_body_index_ref = d.id_to_body_index;
-			const auto collision_ids = collision.owner_ids();
-			const bool coll_transform_order_matches = transform.size() == collision.size() && std::ranges::equal(collision_ids, transform.owner_ids());
-			task::parallel_invoke_range(
-				0,
-				collision.size(),
-				[&](std::size_t i) {
-					collision_component& cc = collision[i];
-					if (!cc.resolve_collisions) {
-						return;
-					}
-					const auto eid = collision_ids[i];
-					const auto it = id_to_body_index_ref.find(eid);
-					if (it == id_to_body_index_ref.end()) {
-						return;
-					}
-					const auto* tc = coll_transform_order_matches ? std::addressof(transform[i]) : transform.find(eid);
-					if (!tc) {
-						return;
-					}
+		const auto& id_to_body_index_ref = d.id_to_body_index;
+		const auto collision_ids = collision.owner_ids();
+		const bool coll_transform_order_matches = transform.size() == collision.size() && std::ranges::equal(collision_ids, transform.owner_ids());
+		task::parallel_invoke_range(
+			0,
+			collision.size(),
+			[&](std::size_t i) {
+				collision_component& cc = collision[i];
+				if (!cc.resolve_collisions) {
+					return;
+				}
+				const auto eid = collision_ids[i];
+				const auto it = id_to_body_index_ref.find(eid);
+				if (it == id_to_body_index_ref.end()) {
+					return;
+				}
+				const auto* tc = coll_transform_order_matches ? std::addressof(transform[i]) : transform.find(eid);
+				if (!tc) {
+					return;
+				}
 
-					const transform_component body_tc{
-						.position = bodies[it->second].position,
-						.orientation = bodies[it->second].orientation,
-					};
-					const auto bb = std::visit([&](const auto& shape) { return gse::bounding_box(body_tc, shape); }, cc.shape);
-					const auto [max, min] = bb.aabb();
-					auto& b = bodies[it->second];
-					b.half_extents = bb.half_extents();
-					b.aabb_min = min;
-					b.aabb_max = max;
+				const transform_component body_tc{
+					.position = bodies[it->second].position,
+					.orientation = bodies[it->second].orientation,
+				};
+				const auto bb = std::visit([&](const auto& shape) {
+					return gse::bounding_box(body_tc, shape);
 				},
-				trace::untraced
-			);
+										   cc.shape);
+				const auto [max, min] = bb.aabb();
+				auto& b = bodies[it->second];
+				b.half_extents = bb.half_extents();
+				b.aabb_min = min;
+				b.aabb_max = max;
+			},
+			trace::untraced
+		);
 	}
 
 	std::vector<vbd::impulse_constraint> gpu_impulses;
 	{
-		trace::scope_guard sg{trace_id<"vbd_gpu::build_impulses">()};
+		trace::scope_guard sg{ trace_id<"vbd_gpu::build_impulses">() };
 		gpu_impulses.reserve(impulses.size());
 		for (const auto& req : impulses) {
 			const auto it = d.id_to_body_index.find(req.target);
@@ -686,7 +682,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 
 	std::vector<vbd::velocity_motor_constraint> motors;
 	{
-		trace::scope_guard sg{trace_id<"vbd_gpu::build_motors">()};
+		trace::scope_guard sg{ trace_id<"vbd_gpu::build_motors">() };
 		const auto motor_ids = motor.owner_ids();
 		motors.reserve(motor.size());
 		for (std::size_t i = 0; i < motor.size(); ++i) {
@@ -722,7 +718,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 
 	std::vector<vbd::joint_constraint> gpu_joints;
 	{
-		trace::scope_guard sg{trace_id<"vbd_gpu::build_joints">()};
+		trace::scope_guard sg{ trace_id<"vbd_gpu::build_joints">() };
 		gpu_joints.reserve(d.joints.size());
 		for (auto& jd : d.joints) {
 			const auto it_a = d.id_to_body_index.find(jd.entity_a);
@@ -762,22 +758,20 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 	}
 
 	{
-		trace::scope_guard sg{trace_id<"vbd_gpu::upload">()};
+		trace::scope_guard sg{ trace_id<"vbd_gpu::upload">() };
 		const bool refresh_joints =
 			d.gpu_joints_dirty ||
 			d.gpu_uploaded_body_count != entity_ids.size() ||
 			d.gpu_uploaded_joint_count != gpu_joints.size();
 
-		channels.push<gpu_upload_payload>({
-			.bodies = bodies,
-			.motors = motors,
-			.joints = gpu_joints,
-			.impulses = std::move(gpu_impulses),
-			.solver_cfg = d.vbd_solver.config(),
-			.dt = dt * static_cast<float>(steps),
-			.steps = steps * std::max(d.physics_substeps, 1),
-			.refresh_joints = refresh_joints
-		});
+		channels.push<gpu_upload_payload>({ .bodies = bodies,
+											.motors = motors,
+											.joints = gpu_joints,
+											.impulses = std::move(gpu_impulses),
+											.solver_cfg = d.vbd_solver.config(),
+											.dt = dt * static_cast<float>(steps),
+											.steps = steps * std::max(d.physics_substeps, 1),
+											.refresh_joints = refresh_joints });
 
 		d.gpu_joints_dirty = false;
 		d.gpu_uploaded_body_count = static_cast<std::uint32_t>(entity_ids.size());
@@ -793,7 +787,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 }
 
 auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses) -> void {
-	trace::scope_guard sg_update{trace_id<"vbd_cpu::update">()};
+	trace::scope_guard sg_update{ trace_id<"vbd_cpu::update">() };
 
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 	const int substeps = std::max(d.physics_substeps, 1);
@@ -828,7 +822,7 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 
 	const int total_substeps = steps * substeps;
 	for (int step = 0; step < total_substeps; ++step) {
-		trace::scope_guard sg_step{trace_id<"vbd_cpu::substep">()};
+		trace::scope_guard sg_step{ trace_id<"vbd_cpu::substep">() };
 
 		std::vector<vbd::body_state> bodies;
 		bodies.resize(motion.size());
@@ -875,10 +869,11 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 					.restitution = dyn ? dyn->restitution : 0.f,
 					.inv_inertia = inv_inertial_tensor(mc, tc->orientation),
 				};
-			}, trace::untraced);
+			},
+										trace::untraced);
 		}
 
-		std::ranges::fill(d.body_airborne, std::uint8_t{1});
+		std::ranges::fill(d.body_airborne, std::uint8_t{ 1 });
 
 		for (collision_result_component& res : results) {
 			res.colliding = false;
@@ -888,7 +883,7 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 		}
 
 		{
-			trace::scope_guard sg{trace_id<"vbd_cpu::begin_frame">()};
+			trace::scope_guard sg{ trace_id<"vbd_cpu::begin_frame">() };
 			d.vbd_solver.begin_frame(bodies, d.contact_cache);
 		}
 
@@ -988,12 +983,12 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 
 		std::vector<vbd::body_state> result_bodies;
 		{
-			trace::scope_guard sg{trace_id<"vbd_cpu::end_frame">()};
+			trace::scope_guard sg{ trace_id<"vbd_cpu::end_frame">() };
 			d.vbd_solver.end_frame(result_bodies, d.contact_cache);
 		}
 
 		{
-			trace::scope_guard sg{trace_id<"vbd_cpu::writeback">()};
+			trace::scope_guard sg{ trace_id<"vbd_cpu::writeback">() };
 			const auto result_motion_ids = motion.owner_ids();
 			const bool result_transform_order_matches = transform.size() == motion.size() && std::ranges::equal(result_motion_ids, transform.owner_ids());
 			for (std::size_t i = 0; i < motion.size(); ++i) {
@@ -1034,7 +1029,7 @@ auto gse::physics::system::frame(frame_context& ctx, const gpu::context::data* g
 	}
 
 	if (const auto& uploads = ctx.read_channel<gpu_upload_payload>(); !uploads.empty()) {
-		trace::scope_guard sg{trace_id<"physics::frame::upload">()};
+		trace::scope_guard sg{ trace_id<"physics::frame::upload">() };
 		const auto& upload = uploads[0];
 
 		d.gpu_solver.upload(
@@ -1051,7 +1046,7 @@ auto gse::physics::system::frame(frame_context& ctx, const gpu::context::data* g
 
 	if (d.gpu_solver.pending_dispatch()) {
 		{
-			trace::scope_guard sg{trace_id<"physics::frame::commit_upload">()};
+			trace::scope_guard sg{ trace_id<"physics::frame::commit_upload">() };
 			d.gpu_solver.commit_upload();
 		}
 		co_await d.gpu_solver.dispatch_compute(ctx);
@@ -1062,10 +1057,8 @@ auto gse::physics::system::frame(frame_context& ctx, const gpu::context::data* g
 		.motor_count = d.gpu_solver.motor_count(),
 	});
 
-	ctx.channels.push<gpu_solver_frame_info>({
-		.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
-		.body_count = d.gpu_solver.body_count(),
-		.body_stride = sizeof(vbd::body_state),
-		.position_offset = std::meta::offset_of_v<^^vbd::body_state::position>
-	});
+	ctx.channels.push<gpu_solver_frame_info>({ .snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
+											   .body_count = d.gpu_solver.body_count(),
+											   .body_stride = sizeof(vbd::body_state),
+											   .position_offset = std::meta::offset_of_v<^^vbd::body_state::position> });
 }

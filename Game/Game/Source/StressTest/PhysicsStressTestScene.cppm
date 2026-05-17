@@ -39,7 +39,11 @@ namespace gs {
 	) -> void;
 
 	auto build_tumbler(
-		gse::scene& s
+		gse::scene& s,
+		int index,
+		const gse::vec3<gse::position>& center,
+		const gse::vec3f& rotation_axis,
+		gse::angular_velocity angular_speed
 	) -> void;
 
 	auto build_box_grid(
@@ -164,7 +168,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 			.with<gse::physics::joint_spec>({
 				.entity_a = anchor_id,
 				.entity_b = bob_id,
-				.config = gse::physics::spring_joint {
+				.config = gse::physics::spring_joint{
 					.target = gse::meters(4.f),
 					.compliance = compliances[i],
 					.damping = 0.3f,
@@ -183,7 +187,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 			.with<gse::physics::joint_spec>({
 				.entity_a = prev_id,
 				.entity_b = link_id,
-				.config = gse::physics::spring_joint {
+				.config = gse::physics::spring_joint{
 					.target = gse::meters(1.5f),
 					.compliance = gse::per_kilograms(0.02f),
 					.damping = 0.5f,
@@ -193,14 +197,7 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 	}
 }
 
-auto gs::build_tumbler(gse::scene& s) -> void {
-	constexpr float cx = 0.f;
-	constexpr float cy = 10.f;
-	constexpr float cz = 24.f;
-	const gse::vec3<gse::position> center(cx, cy, cz);
-	constexpr auto rotation_axis = gse::axis_z;
-	const gse::angular_velocity angular_speed = gse::radians_per_second(0.6f);
-
+auto gs::build_tumbler(gse::scene& s, const int index, const gse::vec3<gse::position>& center, const gse::vec3f& rotation_axis, const gse::angular_velocity angular_speed) -> void {
 	constexpr float interior_half = 3.5f;
 	constexpr float length_half = 6.0f;
 	constexpr float thickness = 0.3f;
@@ -215,32 +212,32 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 	};
 
 	const std::array walls = {
-		wall_def {
+		wall_def{
 			.suffix = "Bottom",
 			.local_offset = gse::vec3<gse::length>(0.f, -wall_offset, 0.f),
 			.size = gse::vec3<gse::length>(outer_half * 2.f, thickness, side_wall_length),
 		},
-		wall_def {
+		wall_def{
 			.suffix = "Top",
 			.local_offset = gse::vec3<gse::length>(0.f, wall_offset, 0.f),
 			.size = gse::vec3<gse::length>(outer_half * 2.f, thickness, side_wall_length),
 		},
-		wall_def {
+		wall_def{
 			.suffix = "Left",
 			.local_offset = gse::vec3<gse::length>(-wall_offset, 0.f, 0.f),
 			.size = gse::vec3<gse::length>(thickness, outer_half * 2.f, side_wall_length),
 		},
-		wall_def {
+		wall_def{
 			.suffix = "Right",
 			.local_offset = gse::vec3<gse::length>(wall_offset, 0.f, 0.f),
 			.size = gse::vec3<gse::length>(thickness, outer_half * 2.f, side_wall_length),
 		},
-		wall_def {
+		wall_def{
 			.suffix = "Front",
 			.local_offset = gse::vec3<gse::length>(0.f, 0.f, length_half + thickness * 0.5f),
 			.size = gse::vec3<gse::length>(outer_half * 2.f, outer_half * 2.f, thickness),
 		},
-		wall_def {
+		wall_def{
 			.suffix = "Back",
 			.local_offset = gse::vec3<gse::length>(0.f, 0.f, -(length_half + thickness * 0.5f)),
 			.size = gse::vec3<gse::length>(outer_half * 2.f, outer_half * 2.f, thickness),
@@ -253,8 +250,8 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 			wall.size,
 			gse::kilograms(10000.f)
 		);
-		wall_arch.motion.body = gse::physics::kinematic_body {};
-		const auto wall_id = s.spawn(std::format("Tumbler Wall {}", wall.suffix), std::move(wall_arch));
+		wall_arch.motion.body = gse::physics::kinematic_body{};
+		const auto wall_id = s.spawn(std::format("Tumbler {} Wall {}", index, wall.suffix), std::move(wall_arch));
 		s.registry().add_component<gs::tumbler::component>(wall_id, {
 																		.center = center,
 																		.axis = rotation_axis,
@@ -277,7 +274,7 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 				const float fx = -radial_span + (static_cast<float>(ix) + 0.5f) * (radial_span * 2.f / nx);
 				const float fy = -radial_span + (static_cast<float>(iy) + 0.5f) * (radial_span * 2.f / ny);
 				const float fz = -axial_span + (static_cast<float>(iz) + 0.5f) * (axial_span * 2.f / nz);
-				s.spawn(std::format("Tumbler Cube {}", content_id++), gs::box(gse::vec3<gse::position>(cx + fx, cy + fy, cz + fz), gse::vec3<gse::length>(gse::meters(content_size)), gse::kilograms(1.f)));
+				s.spawn(std::format("Tumbler {} Cube {}", index, content_id++), gs::box(center + gse::vec3<gse::length>(fx, fy, fz), gse::vec3<gse::length>(gse::meters(content_size)), gse::kilograms(1.f)));
 			}
 		}
 	}
@@ -314,7 +311,11 @@ auto gs::physics_stress_test_scene_setup(gse::scene& s) -> void {
 	build_high_speed_impact_target(s);
 	build_box_grid(s);
 	build_spring_tests(s);
-	build_tumbler(s);
+
+	build_tumbler(s, 0, gse::vec3<gse::position>(-12.f, 10.f, 24.f), gse::axis_z, gse::radians_per_second(0.6f));
+	build_tumbler(s, 1, gse::vec3<gse::position>(12.f, 10.f, 24.f), gse::axis_x, gse::radians_per_second(0.5f));
+	build_tumbler(s, 2, gse::vec3<gse::position>(-12.f, 10.f, -24.f), gse::axis_y, gse::radians_per_second(0.7f));
+	build_tumbler(s, 3, gse::vec3<gse::position>(12.f, 10.f, -24.f), gse::axis_z, gse::radians_per_second(-0.45f));
 
 	s.spawn("Bouncy Sphere", gs::sphere(gse::vec3<gse::position>(-15.f, 8.f, 0.f), gse::meters(1.f)));
 

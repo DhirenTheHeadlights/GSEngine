@@ -20,8 +20,7 @@ export namespace gse::gpu {
 		static constexpr std::uint32_t invalid_index = std::numeric_limits<std::uint32_t>::max();
 		std::uint32_t index = invalid_index;
 
-		explicit operator bool(
-		) const {
+		explicit operator bool() const {
 			return index != invalid_index;
 		}
 	};
@@ -50,11 +49,9 @@ export namespace gse::gpu {
 			std::uint32_t frame_index
 		) -> void;
 
-		[[nodiscard]] auto layout_handle(
-		) const -> handle<vulkan::descriptor_set_layout>;
+		[[nodiscard]] auto layout_handle() const -> handle<vulkan::descriptor_set_layout>;
 
-		[[nodiscard]] auto region(
-		) const -> const descriptor_region&;
+		[[nodiscard]] auto region() const -> const descriptor_region&;
 
 	private:
 		vk::raii::DescriptorSetLayout m_layout = nullptr;
@@ -104,14 +101,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 
 	m_layout = device.createDescriptorSetLayout(layout_info);
 
-	m_null_sampler = device.createSampler({
-		.magFilter = vk::Filter::eNearest,
-		.minFilter = vk::Filter::eNearest,
-		.mipmapMode = vk::SamplerMipmapMode::eNearest,
-		.addressModeU = vk::SamplerAddressMode::eClampToEdge,
-		.addressModeV = vk::SamplerAddressMode::eClampToEdge,
-		.addressModeW = vk::SamplerAddressMode::eClampToEdge
-	});
+	m_null_sampler = device.createSampler({ .magFilter = vk::Filter::eNearest, .minFilter = vk::Filter::eNearest, .mipmapMode = vk::SamplerMipmapMode::eNearest, .addressModeU = vk::SamplerAddressMode::eClampToEdge, .addressModeV = vk::SamplerAddressMode::eClampToEdge, .addressModeW = vk::SamplerAddressMode::eClampToEdge });
 
 	const auto layout_handle = std::bit_cast<handle<vulkan::descriptor_set_layout>>(*m_layout);
 	m_descriptor_size = heap.props().combined_image_sampler_descriptor_size;

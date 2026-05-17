@@ -17,26 +17,26 @@ import gse.ecs;
 import gse.physics;
 
 namespace gse::renderer::physics_transform {
-	struct [[= shaders::shader_struct]] physics_mapping {
+	struct[[= shaders::shader_struct]] physics_mapping {
 		std::uint32_t body_index;
 		std::uint32_t instance_index;
 		vec3f center_of_mass;
 	};
 
-	struct [[= shaders::shader_struct]] push_constants {
+	struct[[= shaders::shader_struct]] push_constants {
 		std::uint32_t mapping_count;
 		std::uint32_t body_count;
 	};
 
-	struct [[= shaders::binding<0, 0>{}, = shaders::ssbo_readonly]] body_data {
+	struct[[= shaders::binding<0, 0>{}, = shaders::ssbo_readonly]] body_data {
 		using element = vbd::body_state;
 	};
 
-	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] mapping_data {
+	struct[[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] mapping_data {
 		using element = physics_mapping;
 	};
 
-	struct [[= shaders::binding<0, 2>{}, = shaders::ssbo_readwrite]] instance_data_buffer {
+	struct[[= shaders::binding<0, 2>{}, = shaders::ssbo_readwrite]] instance_data_buffer {
 		using element = shaders::common::instance_data;
 	};
 
@@ -51,8 +51,7 @@ namespace gse::renderer::physics_transform {
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::threads<64>,
 		gpu::push_constant<push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+		gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
 auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
@@ -68,7 +67,6 @@ auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::
 }
 
 auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {
-
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
 
 	if (solver_infos.empty()) {
@@ -94,14 +92,11 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 
 		if (d.mapping_buffer_size < required) {
 			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				d.mapping_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-					.size = required,
-					.usage = gpu::buffer_flag::storage,
-					.data = data.physics_mappings.data()
-				});
+				d.mapping_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = required, .usage = gpu::buffer_flag::storage, .data = data.physics_mappings.data() });
 			}
 			d.mapping_buffer_size = required;
-		} else {
+		}
+		else {
 			d.mapping_buffers[frame_index].host_write(data.physics_mappings.data(), required);
 		}
 	}
@@ -127,8 +122,8 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.pipeline(d.pipeline)
-		.after<geometry_collector::system, vbd::vbd_state_copy_stage>();
+				   .pipeline(d.pipeline)
+				   .after<geometry_collector::system, vbd::vbd_state_copy_stage>();
 
 	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 	rec.push(d.pipeline, pc);

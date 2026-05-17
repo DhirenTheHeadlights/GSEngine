@@ -8,67 +8,45 @@ import gse.diag;
 import :task;
 
 export namespace gse::async {
-	class rw_mutex {
+	class rw_mutex : non_copyable, non_movable {
 	public:
 		rw_mutex() = default;
 
-		rw_mutex(
-			const rw_mutex&
-		) = delete;
-
-		rw_mutex(
-			rw_mutex&&
-		) = delete;
-
-		auto operator=(
-			const rw_mutex&
-		) -> rw_mutex& = delete;
-
-		auto operator=(
-			rw_mutex&&
-		) -> rw_mutex& = delete;
+		~rw_mutex() override = default;
 
 		struct shared_awaiter {
-			rw_mutex* m_mutex;
+			rw_mutex* m_mutex{};
 			mutable std::uint64_t m_wait_key = 0;
 
-			auto await_ready(
-			) const noexcept -> bool;
+			auto await_ready() const noexcept -> bool;
 
 			auto await_suspend(
 				std::coroutine_handle<> h
 			) const noexcept -> bool;
 
-			auto await_resume(
-			) const noexcept -> void;
+			auto await_resume() const noexcept -> void;
 		};
 
 		struct exclusive_awaiter {
-			rw_mutex* m_mutex;
+			rw_mutex* m_mutex{};
 			mutable std::uint64_t m_wait_key = 0;
 
-			auto await_ready(
-			) const noexcept -> bool;
+			auto await_ready() const noexcept -> bool;
 
 			auto await_suspend(
 				std::coroutine_handle<> h
 			) const noexcept -> bool;
 
-			auto await_resume(
-			) const noexcept -> void;
+			auto await_resume() const noexcept -> void;
 		};
 
-		auto lock_shared(
-		) -> shared_awaiter;
+		auto lock_shared() -> shared_awaiter;
 
-		auto lock_exclusive(
-		) -> exclusive_awaiter;
+		auto lock_exclusive() -> exclusive_awaiter;
 
-		auto unlock_shared(
-		) -> void;
+		auto unlock_shared() -> void;
 
-		auto unlock_exclusive(
-		) -> void;
+		auto unlock_exclusive() -> void;
 
 	private:
 		std::mutex m_state;
@@ -165,11 +143,18 @@ auto gse::async::rw_mutex::unlock_shared() -> void {
 		}
 	}
 	for (const auto h : to_wake) {
-		if (!h) continue;
-		task::post([h] {
-			if (!h) return;
-			h.resume();
-		}, trace_id<"rw_mutex::unlock_shared::resume">());
+		if (!h) {
+			continue;
+		}
+		task::post(
+			[h] -> void {
+				if (!h) {
+					return;
+				}
+				h.resume();
+			},
+			trace_id<"rw_mutex::unlock_shared::resume">()
+		);
 	}
 }
 
@@ -193,11 +178,18 @@ auto gse::async::rw_mutex::unlock_exclusive() -> void {
 		}
 	}
 	for (const auto h : to_wake) {
-		if (!h) continue;
-		task::post([h] {
-			if (!h) return;
-			h.resume();
-		}, trace_id<"rw_mutex::unlock_exclusive::resume">());
+		if (!h) {
+			continue;
+		}
+		task::post(
+			[h] {
+				if (!h) {
+					return;
+				}
+				h.resume();
+			},
+			trace_id<"rw_mutex::unlock_exclusive::resume">()
+		);
 	}
 }
 

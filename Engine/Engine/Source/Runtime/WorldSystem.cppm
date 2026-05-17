@@ -87,6 +87,7 @@ export namespace gse {
 		auto when(
 			const trigger& trigger
 		) -> director&;
+
 	private:
 		world_system::data* m_state = nullptr;
 	};
@@ -99,7 +100,8 @@ namespace gse {
 	) -> void;
 }
 
-gse::director::director(world_system::data* state) : m_state(state) {}
+gse::director::director(world_system::data* state) : m_state(state) {
+}
 
 auto gse::director::when(const trigger& trigger) -> director& {
 	m_state->triggers.push_back(trigger);
@@ -232,7 +234,7 @@ auto gse::update_player_controllers(world_system::data& d, registry& reg) -> voi
 			}
 
 			if (current_local.exists()) {
-				for (auto it = d.pc_controller_to_local_player.begin(); it != d.pc_controller_to_local_player.end(); ) {
+				for (auto it = d.pc_controller_to_local_player.begin(); it != d.pc_controller_to_local_player.end();) {
 					if (it->second == current_local) {
 						d.pc_processed.erase(it->first);
 						it = d.pc_controller_to_local_player.erase(it);

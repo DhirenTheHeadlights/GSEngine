@@ -58,7 +58,11 @@ auto gse::run_node_frame(frame_context& ctx, system_node& node) -> async::task<>
 }
 
 auto gse::scheduler::check_state_dep_cycles() -> void {
-	enum class color : std::uint8_t { white, gray, black };
+	enum class color : std::uint8_t {
+		white,
+		gray,
+		black
+	};
 	std::unordered_map<id, color> colors;
 	for (const auto& [state_idx, _] : m_state_deps) {
 		colors[state_idx] = color::white;
@@ -165,12 +169,7 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 	auto check_deps = [&](const std::span<const id> deps, const id source, const std::string_view phase_tag) {
 		for (const id& dep : deps) {
 			if (!registered.contains(dep)) {
-				violations.push_back(std::format(
-					"system {} {} reads {} but no system registers that state or resources type",
-					source,
-					phase_tag,
-					dep
-				));
+				violations.push_back(std::format("system {} {} reads {} but no system registers that state or resources type", source, phase_tag, dep));
 			}
 		}
 	};
@@ -416,7 +415,10 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 					log::level::error,
 					log::category::runtime,
 					"STALL [phase={} elapsed={::ms} dump=#{}] frame system {} stuck inside frame() (all deps ready)",
-					phase_name, elapsed, dump_count, node.trace_id
+					phase_name,
+					elapsed,
+					dump_count,
+					node.trace_id
 				);
 			}
 			else {
@@ -424,7 +426,11 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 					log::level::error,
 					log::category::runtime,
 					"STALL [phase={} elapsed={::ms} dump=#{}] frame system {} waiting on deps: {}",
-					phase_name, elapsed, dump_count, node.trace_id, missing
+					phase_name,
+					elapsed,
+					dump_count,
+					node.trace_id,
+					missing
 				);
 			}
 		}
@@ -453,7 +459,10 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 					log::level::error,
 					log::category::runtime,
 					"STALL [phase={} elapsed={::ms} dump=#{}] system {} advance entered but not launched (no deps blocking)",
-					phase_name, elapsed, dump_count, node.trace_id
+					phase_name,
+					elapsed,
+					dump_count,
+					node.trace_id
 				);
 			}
 			else {
@@ -461,7 +470,11 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 					log::level::error,
 					log::category::runtime,
 					"STALL [phase={} elapsed={::ms} dump=#{}] system {} waiting on upstream deps: {}",
-					phase_name, elapsed, dump_count, node.trace_id, missing
+					phase_name,
+					elapsed,
+					dump_count,
+					node.trace_id,
+					missing
 				);
 			}
 		}
@@ -470,7 +483,10 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 				log::level::warning,
 				log::category::runtime,
 				"STALL [phase={} elapsed={::ms} dump=#{}] system {} tick in-flight, first next_tick() not reached yet (slow init or stuck in initial setup)",
-				phase_name, elapsed, dump_count, node.trace_id
+				phase_name,
+				elapsed,
+				dump_count,
+				node.trace_id
 			);
 		}
 		else {
@@ -478,7 +494,10 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 				log::level::error,
 				log::category::runtime,
 				"STALL [phase={} elapsed={::ms} dump=#{}] system {} tick in-flight past budget; user coroutine has not yielded back this tick",
-				phase_name, elapsed, dump_count, node.trace_id
+				phase_name,
+				elapsed,
+				dump_count,
+				node.trace_id
 			);
 		}
 	}
@@ -541,7 +560,8 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 		for (std::size_t i = 0; i < tasks.size(); ++i) {
 			group.post([t_ptr = std::addressof(tasks[i])] {
 				t_ptr->start();
-			}, task_nodes[i]->frame_start_id);
+			},
+					   task_nodes[i]->frame_start_id);
 		}
 		group.wait();
 	}

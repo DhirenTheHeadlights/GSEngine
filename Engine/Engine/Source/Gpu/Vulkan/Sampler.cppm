@@ -33,8 +33,7 @@ export namespace gse::vulkan {
 			this const sampler& self
 		) -> gpu::handle<sampler>;
 
-		explicit operator bool(
-		) const;
+		explicit operator bool() const;
 
 	private:
 		explicit sampler(
@@ -45,7 +44,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::sampler::sampler(vk::raii::Sampler&& sampler) : m_sampler(std::move(sampler)) {}
+gse::vulkan::sampler::sampler(vk::raii::Sampler&& sampler) : m_sampler(std::move(sampler)) {
+}
 
 auto gse::vulkan::sampler::create(const device& dev, const gpu::sampler_desc& desc) -> sampler {
 	const vk::SamplerCreateInfo info{

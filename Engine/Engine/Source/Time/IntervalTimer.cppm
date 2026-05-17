@@ -20,8 +20,8 @@ export namespace gse {
 			time_t<T> dt = system_clock::dt<time_t<T>>()
 		) -> bool;
 
-		auto reset(
-		) -> void;
+		auto reset() -> void;
+
 	private:
 		time_t<T> m_interval;
 		time_t<T> m_accumulated = time_t<T>(0);

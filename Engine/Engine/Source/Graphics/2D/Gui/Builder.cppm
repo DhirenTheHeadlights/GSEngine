@@ -23,8 +23,7 @@ export namespace gse::gui {
 				std::declval<id&>(),
 				std::declval<id&>()
 			)),
-			typename W::result
-		>;
+			typename W::result>;
 	};
 
 	template <typename W>
@@ -39,8 +38,7 @@ export namespace gse::gui {
 				std::declval<id&>(),
 				std::declval<id&>()
 			)),
-			typename W::result
-		>;
+			typename W::result>;
 	};
 
 	struct builder {

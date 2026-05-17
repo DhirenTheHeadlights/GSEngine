@@ -35,8 +35,7 @@ export namespace gse::vulkan {
 			basic_allocation<Device> allocation
 		);
 
-		~basic_image(
-		) override;
+		~basic_image() override;
 
 		basic_image(
 			basic_image&& other
@@ -46,20 +45,15 @@ export namespace gse::vulkan {
 			basic_image&& other
 		) noexcept -> basic_image&;
 
-		[[nodiscard]] auto handle(
-		) const -> gpu::handle<basic_image<device>>;
+		[[nodiscard]] auto handle() const -> gpu::handle<basic_image<device>>;
 
-		[[nodiscard]] auto view(
-		) const -> gpu::handle<image_view>;
+		[[nodiscard]] auto view() const -> gpu::handle<image_view>;
 
-		[[nodiscard]] auto format(
-		) const -> gpu::image_format_value;
+		[[nodiscard]] auto format() const -> gpu::image_format_value;
 
-		[[nodiscard]] auto layout(
-		) const -> gpu::image_layout;
+		[[nodiscard]] auto layout() const -> gpu::image_layout;
 
-		[[nodiscard]] auto extent(
-		) const -> vec3u;
+		[[nodiscard]] auto extent() const -> vec3u;
 
 		auto set_layout(
 			gpu::image_layout new_layout
@@ -79,7 +73,8 @@ export namespace gse::vulkan {
 
 template <typename Device>
 gse::vulkan::basic_image<Device>::basic_image(const gpu::handle<basic_image<device>> image, const gpu::handle<image_view> view, const gpu::image_format_value format, const gpu::image_layout current_layout, const vec3u extent, basic_allocation<Device> allocation)
-	: m_image(image), m_view(view), m_format(format), m_current_layout(current_layout), m_extent(extent), m_allocation(std::move(allocation)) {}
+	: m_image(image), m_view(view), m_format(format), m_current_layout(current_layout), m_extent(extent), m_allocation(std::move(allocation)) {
+}
 
 template <typename Device>
 auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc& desc, const std::string_view tag, const std::source_location& loc) -> basic_image {

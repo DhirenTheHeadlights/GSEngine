@@ -29,8 +29,7 @@ namespace gse {
 export namespace gse {
 	class scheduler {
 	public:
-		scheduler(
-		) = default;
+		scheduler() = default;
 
 		auto set_registry(
 			registry& reg
@@ -40,11 +39,9 @@ export namespace gse {
 			std::function<void(id system_id, std::string_view phase)> fn
 		) -> void;
 
-		auto initialize(
-		) -> void;
+		auto initialize() -> void;
 
-		auto update(
-		) -> void;
+		auto update() -> void;
 
 		auto tick(
 			bool frame_ok,
@@ -56,11 +53,9 @@ export namespace gse {
 			const std::function<void()>& in_frame = {}
 		) -> void;
 
-		auto shutdown(
-		) -> void;
+		auto shutdown() -> void;
 
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 
 		template <typename S, typename... Args>
 		auto add_system(
@@ -101,40 +96,32 @@ export namespace gse {
 		template <typename T>
 		auto channel() -> gse::channel<T>&;
 
-		auto make_channel_writer(
-		) -> channel_writer;
+		auto make_channel_writer() -> channel_writer;
 
 		template <typename T>
-			requires is_same_frame_channel_v<T>
-		auto drain_channel(
-		) -> std::vector<T>;
+		requires is_same_frame_channel_v<T>
+		auto drain_channel() -> std::vector<T>;
 
 	private:
 		auto register_node(
 			system_node node
 		) -> void*;
 
-		auto check_state_dep_cycles(
-		) -> void;
+		auto check_state_dep_cycles() -> void;
 
-		auto check_closed_dep_graph(
-		) -> void;
+		auto check_closed_dep_graph() -> void;
 
-		auto run_unified_update(
-		) -> void;
+		auto run_unified_update() -> void;
 
-		auto advance_run_systems_during_init(
-		) -> void;
+		auto advance_run_systems_during_init() -> void;
 
 		auto advance_one_run_system(
 			system_node& node
 		) -> async::task<>;
 
-		auto drain_hot_add_queue(
-		) -> void;
+		auto drain_hot_add_queue() -> void;
 
-		auto snapshot_all_states(
-		) -> void;
+		auto snapshot_all_states() -> void;
 
 		auto sync_wait_or_dump(
 			std::vector<async::task<>>&& tasks,
@@ -206,7 +193,7 @@ auto gse::scheduler::channel() -> gse::channel<T>& {
 }
 
 template <typename T>
-	requires gse::is_same_frame_channel_v<T>
+requires gse::is_same_frame_channel_v<T>
 auto gse::scheduler::drain_channel() -> std::vector<T> {
 	return m_channels_store.template drain<T>();
 }

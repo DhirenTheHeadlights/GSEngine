@@ -23,7 +23,8 @@ auto gse::vulkan::pick_surface_format(const device& dev, const instance& inst) -
 gse::vulkan::swap_chain_details::swap_chain_details(gpu::surface_capabilities capabilities, std::vector<gpu::surface_format>&& formats, std::vector<gpu::present_mode>&& present_modes)
 	: m_capabilities(capabilities),
 	  m_formats(std::move(formats)),
-	  m_present_modes(std::move(present_modes)) {}
+	  m_present_modes(std::move(present_modes)) {
+}
 
 auto gse::vulkan::swap_chain_details::capabilities() const -> gpu::surface_capabilities {
 	return m_capabilities;
@@ -46,7 +47,8 @@ gse::vulkan::swap_chain::swap_chain(vk::raii::SwapchainKHR&& swap_chain, const v
 	  m_image_views(std::move(image_views)),
 	  m_format(format),
 	  m_details(std::move(details)),
-	  m_depth_image(std::move(depth_image)) {}
+	  m_depth_image(std::move(depth_image)) {
+}
 
 auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instance& instance_data, device& device_data) -> swap_chain {
 	const auto vk_capabilities = device_data.physical_device().getSurfaceCapabilitiesKHR(*instance_data.raii_surface());
@@ -206,8 +208,7 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instanc
 				.baseMipLevel = 0,
 				.levelCount = 1,
 				.baseArrayLayer = 0,
-				.layerCount = 1
-			}
+				.layerCount = 1 }
 		};
 		image_views.emplace_back(device_data.raii_device(), iv_create_info);
 	}

@@ -69,7 +69,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		auto& asset_state = m_scheduler.state<asset::data>();
 
 		using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
-		gse::asset::system_for<game_assets> assets { asset_state };
+		gse::asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
 		primitives::initialize(m_primitives, asset_state);
 		assets.install_hot_reload_fns();
@@ -117,7 +117,7 @@ auto gse::engine::render() -> void {
 		const clock fence_timer;
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{
-			trace::scope_guard sg { trace_id<"render::begin_frame">() };
+			trace::scope_guard sg{ trace_id<"render::begin_frame">() };
 			result = gpu::context::begin_frame(*gpu_state, window_state);
 		}
 		const auto fence_wait = fence_timer.elapsed();
@@ -135,7 +135,7 @@ auto gse::engine::render() -> void {
 		if (gpu_state) {
 			gpu_state->scheduler.flush();
 			{
-				trace::scope_guard sg { trace_id<"render::graph_execute">() };
+				trace::scope_guard sg{ trace_id<"render::graph_execute">() };
 				auto requests = m_scheduler.drain_channel<gpu::render_pass_request>();
 				auto transient_images = m_scheduler.drain_channel<gpu::transient_image_request>();
 				auto transient_buffers = m_scheduler.drain_channel<gpu::transient_buffer_request>();
@@ -146,11 +146,11 @@ auto gse::engine::render() -> void {
 
 	if (frame_ok && gpu_state) {
 		{
-			trace::scope_guard sg { trace_id<"render::end_frame">() };
+			trace::scope_guard sg{ trace_id<"render::end_frame">() };
 			auto& window_state = m_scheduler.state<window::data>();
 			gpu::context::end_frame(*gpu_state, window_state);
 			if (asset_state) {
-				trace::scope_guard sg { trace_id<"end_frame::finalize_reloads">() };
+				trace::scope_guard sg{ trace_id<"end_frame::finalize_reloads">() };
 				for (const auto& l : std::views::values(asset_state->resource_loaders)) {
 					l->finalize_reloads();
 				}

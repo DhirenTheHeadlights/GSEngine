@@ -112,12 +112,7 @@ auto gse::upload_image_2d_async(gpu::device& dev, vulkan::image& resource, const
 		.image_extent = vec3u{ extent.x(), extent.y(), 1 },
 	};
 
-	vulkan::commands(cmd.handle()).copy_buffer_to_image(
-		staging.handle(),
-		resource.handle(),
-		gpu::image_layout::transfer_dst,
-		std::span(&region, 1)
-	);
+	vulkan::commands(cmd.handle()).copy_buffer_to_image(staging.handle(), resource.handle(), gpu::image_layout::transfer_dst, std::span(&region, 1));
 
 	vulkan::transition_image_layout(
 		resource,
@@ -180,12 +175,7 @@ auto gse::upload_image_layers_async(gpu::device& dev, vulkan::image& resource, s
 		});
 	}
 
-	vulkan::commands(cmd.handle()).copy_buffer_to_image(
-		staging.handle(),
-		resource.handle(),
-		gpu::image_layout::transfer_dst,
-		regions
-	);
+	vulkan::commands(cmd.handle()).copy_buffer_to_image(staging.handle(), resource.handle(), gpu::image_layout::transfer_dst, regions);
 
 	vulkan::transition_image_layout(
 		resource,
@@ -240,12 +230,7 @@ auto gse::gpu::upload_image_2d(gpu::device& dev, vulkan::image& img, const void*
 		.image_extent = vec3u{ extent3.x(), extent3.y(), 1 },
 	};
 
-	vulkan::commands(cmd.handle()).copy_buffer_to_image(
-		staging.handle(),
-		img.handle(),
-		image_layout::transfer_dst,
-		std::span(&region, 1)
-	);
+	vulkan::commands(cmd.handle()).copy_buffer_to_image(staging.handle(), img.handle(), image_layout::transfer_dst, std::span(&region, 1));
 
 	vulkan::transition_image_layout(
 		img,
@@ -259,8 +244,8 @@ auto gse::gpu::upload_image_2d(gpu::device& dev, vulkan::image& img, const void*
 	);
 
 	auto token = submit(dev, std::move(cmd), queue_id::graphics)
-		.retain(std::move(staging))
-		.submit_sync();
+					 .retain(std::move(staging))
+					 .submit_sync();
 
 	img.set_layout(image_layout::shader_read_only);
 	return token;
@@ -314,12 +299,7 @@ auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const s
 		});
 	}
 
-	vulkan::commands(cmd.handle()).copy_buffer_to_image(
-		staging.handle(),
-		img.handle(),
-		image_layout::transfer_dst,
-		regions
-	);
+	vulkan::commands(cmd.handle()).copy_buffer_to_image(staging.handle(), img.handle(), image_layout::transfer_dst, regions);
 
 	vulkan::transition_image_layout(
 		img,
@@ -335,8 +315,8 @@ auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const s
 	);
 
 	auto token = submit(dev, std::move(cmd), queue_id::graphics)
-		.retain(std::move(staging))
-		.submit_sync();
+					 .retain(std::move(staging))
+					 .submit_sync();
 
 	img.set_layout(image_layout::shader_read_only);
 	return token;

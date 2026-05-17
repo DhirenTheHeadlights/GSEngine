@@ -16,17 +16,16 @@ export namespace gse::profile {
 
 	struct entry {
 		id id;
-		sample_time ema{};
-		sample_time last{};
-		sample_time peak{};
+		sample_time ema;
+		sample_time last;
+		sample_time peak;
 		std::uint64_t sample_count = 0;
 		std::uint32_t thread_id = 0;
 		bool pooled = false;
 		flat_map<std::uint32_t, std::uint64_t> samples_by_tid;
 	};
 
-	auto ingest_frame(
-	) -> void;
+	auto ingest_frame() -> void;
 
 	auto ingest_gpu_sample(
 		id pass_id,
@@ -50,18 +49,15 @@ export namespace gse::profile {
 		double alpha
 	) -> void;
 
-	auto alpha(
-	) -> double;
+	auto alpha() -> double;
 
 	auto set_enabled(
 		bool enabled
 	) -> void;
 
-	auto enabled(
-	) -> bool;
+	auto enabled() -> bool;
 
-	auto reset(
-	) -> void;
+	auto reset() -> void;
 
 	auto dump(
 		const std::filesystem::path& path = config::resource_path / "Misc" / "profile.txt"
@@ -245,7 +241,9 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 			const double calls = frames > 0 ? static_cast<double>(e.sample_count) / static_cast<double>(frames) : 0.0;
 			out.push_back({ &e, e.ema * calls, calls });
 		}
-		std::ranges::sort(out, [](const row_view& a, const row_view& b) { return a.per_frame > b.per_frame; });
+		std::ranges::sort(out, [](const row_view& a, const row_view& b) {
+			return a.per_frame > b.per_frame;
+		});
 		return out;
 	};
 
@@ -258,7 +256,16 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 		out << "--- " << title << " ---\n";
 		out << std::format(
 			"{:<{}} {:>13} {:>13} {:>13} {:>13} {:>7} {:>8} {:>14} {:>9}\n",
-			"tag", tag_width, "per/f", "avg", "peak", "last", "% top", "% frame", "total", "calls/f"
+			"tag",
+			tag_width,
+			"per/f",
+			"avg",
+			"peak",
+			"last",
+			"% top",
+			"% frame",
+			"total",
+			"calls/f"
 		);
 		out << std::string(tag_width + 13 * 4 + 7 + 8 + 14 + 9 + 8, '-') << '\n';
 
@@ -373,7 +380,9 @@ auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<
 				worker_per_frame += per;
 			}
 		}
-		std::ranges::sort(tids, [](const auto& a, const auto& b) { return a.second > b.second; });
+		std::ranges::sort(tids, [](const auto& a, const auto& b) {
+			return a.second > b.second;
+		});
 
 		std::string tid_breakdown;
 		const std::size_t tid_show = std::min<std::size_t>(6, tids.size());
@@ -385,8 +394,7 @@ auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<
 			tid_breakdown += std::format("t{}:{:.2f}", tids[j].first, per);
 		}
 
-		out << std::format("{:<{}}  {:>10.2f}  {:>10.2f}  {:<40}\n",
-			e.id.tag(), tag_width, main_per_frame, worker_per_frame, tid_breakdown);
+		out << std::format("{:<{}}  {:>10.2f}  {:>10.2f}  {:<40}\n", e.id.tag(), tag_width, main_per_frame, worker_per_frame, tid_breakdown);
 	}
 	out << '\n';
 }
@@ -520,11 +528,21 @@ auto gse::profile::dump_chrome_trace(const std::filesystem::path& path) -> void 
 		r.reserve(s.size() + 2);
 		for (const char c : s) {
 			switch (c) {
-				case '"':  r += "\\\""; break;
-				case '\\': r += "\\\\"; break;
-				case '\n': r += "\\n"; break;
-				case '\r': r += "\\r"; break;
-				case '\t': r += "\\t"; break;
+				case '"':
+					r += "\\\"";
+					break;
+				case '\\':
+					r += "\\\\";
+					break;
+				case '\n':
+					r += "\\n";
+					break;
+				case '\r':
+					r += "\\r";
+					break;
+				case '\t':
+					r += "\\t";
+					break;
 				default:
 					if (static_cast<unsigned char>(c) < 0x20) {
 						r += std::format("\\u{:04x}", static_cast<unsigned>(c));
@@ -557,7 +575,10 @@ auto gse::profile::dump_chrome_trace(const std::filesystem::path& path) -> void 
 			sep();
 			out << std::format(
 				R"({{"ph":"X","name":"{}","cat":"perf","ts":{:.3f},"dur":{:.3f},"pid":1,"tid":{}}})",
-				escape(n.id.tag()), ts_us, dur_us, n.trace_id
+				escape(n.id.tag()),
+				ts_us,
+				dur_us,
+				n.trace_id
 			);
 		}
 		for (std::size_t i = 0; i < n.children_count; ++i) {
@@ -585,7 +606,8 @@ auto gse::profile::dump_chrome_trace(const std::filesystem::path& path) -> void 
 		sep();
 		out << std::format(
 			R"({{"ph":"M","name":"thread_name","pid":1,"tid":{},"args":{{"name":"{}"}}}})",
-			tid, escape(name)
+			tid,
+			escape(name)
 		);
 	}
 

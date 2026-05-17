@@ -4,7 +4,8 @@ import std;
 import vulkan;
 
 gse::vulkan::pipeline::pipeline(vk::raii::Pipeline&& pipeline, vk::raii::PipelineLayout&& layout, vk::PipelineBindPoint bind_point, std::vector<std::uint32_t> auto_bound_sets, std::vector<gpu::binding_use> active_bindings)
-	: m_pipeline(std::move(pipeline)), m_layout(std::move(layout)), m_bind_point(bind_point), m_auto_bound_sets(std::move(auto_bound_sets)), m_active_bindings(std::move(active_bindings)) {}
+	: m_pipeline(std::move(pipeline)), m_layout(std::move(layout)), m_bind_point(bind_point), m_auto_bound_sets(std::move(auto_bound_sets)), m_active_bindings(std::move(active_bindings)) {
+}
 
 auto gse::vulkan::pipeline::handle(this const pipeline& self) -> gpu::handle<pipeline> {
 	return std::bit_cast<gpu::handle<pipeline>>(*self.m_pipeline);
@@ -44,12 +45,7 @@ auto gse::vulkan::pipeline::create_graphics(const device& dev, const graphics_pi
 	}
 	const vk::PushConstantRange* pc_ptr = vk_pc_range.has_value() ? &*vk_pc_range : nullptr;
 
-	vk::raii::PipelineLayout layout = dev.raii_device().createPipelineLayout({
-		.setLayoutCount = static_cast<std::uint32_t>(vk_set_layouts.size()),
-		.pSetLayouts = vk_set_layouts.data(),
-		.pushConstantRangeCount = pc_count,
-		.pPushConstantRanges = pc_ptr
-	});
+	vk::raii::PipelineLayout layout = dev.raii_device().createPipelineLayout({ .setLayoutCount = static_cast<std::uint32_t>(vk_set_layouts.size()), .pSetLayouts = vk_set_layouts.data(), .pushConstantRangeCount = pc_count, .pPushConstantRanges = pc_ptr });
 
 	const vk::PipelineRasterizationStateCreateInfo rasterizer{
 		.depthClampEnable = vk::False,
@@ -191,22 +187,7 @@ auto gse::vulkan::pipeline::create_graphics(const device& dev, const graphics_pi
 		});
 	}
 
-	vk::raii::Pipeline handle = dev.raii_device().createGraphicsPipeline(nullptr, {
-		.pNext = &rendering_info,
-		.flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT,
-		.stageCount = static_cast<std::uint32_t>(vk_stages.size()),
-		.pStages = vk_stages.data(),
-		.pVertexInputState = info.is_mesh_pipeline ? nullptr : &vertex_input,
-		.pInputAssemblyState = info.is_mesh_pipeline ? nullptr : &input_assembly,
-		.pTessellationState = nullptr,
-		.pViewportState = &viewport_state,
-		.pRasterizationState = &rasterizer,
-		.pMultisampleState = &multisampling,
-		.pDepthStencilState = &depth_stencil,
-		.pColorBlendState = info.has_color ? &color_blending : nullptr,
-		.pDynamicState = &dynamic_state,
-		.layout = *layout
-	});
+	vk::raii::Pipeline handle = dev.raii_device().createGraphicsPipeline(nullptr, { .pNext = &rendering_info, .flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT, .stageCount = static_cast<std::uint32_t>(vk_stages.size()), .pStages = vk_stages.data(), .pVertexInputState = info.is_mesh_pipeline ? nullptr : &vertex_input, .pInputAssemblyState = info.is_mesh_pipeline ? nullptr : &input_assembly, .pTessellationState = nullptr, .pViewportState = &viewport_state, .pRasterizationState = &rasterizer, .pMultisampleState = &multisampling, .pDepthStencilState = &depth_stencil, .pColorBlendState = info.has_color ? &color_blending : nullptr, .pDynamicState = &dynamic_state, .layout = *layout });
 
 	return pipeline(
 		std::move(handle),
@@ -231,12 +212,7 @@ auto gse::vulkan::pipeline::create_compute(const device& dev, const compute_pipe
 	}
 	const vk::PushConstantRange* pc_ptr = vk_pc_range.has_value() ? &*vk_pc_range : nullptr;
 
-	vk::raii::PipelineLayout layout = dev.raii_device().createPipelineLayout({
-		.setLayoutCount = static_cast<std::uint32_t>(vk_set_layouts.size()),
-		.pSetLayouts = vk_set_layouts.data(),
-		.pushConstantRangeCount = pc_count,
-		.pPushConstantRanges = pc_ptr
-	});
+	vk::raii::PipelineLayout layout = dev.raii_device().createPipelineLayout({ .setLayoutCount = static_cast<std::uint32_t>(vk_set_layouts.size()), .pSetLayouts = vk_set_layouts.data(), .pushConstantRangeCount = pc_count, .pPushConstantRanges = pc_ptr });
 
 	const vk::PipelineShaderStageCreateInfo vk_stage{
 		.stage = to_vk(info.stage.stage),
@@ -244,11 +220,7 @@ auto gse::vulkan::pipeline::create_compute(const device& dev, const compute_pipe
 		.pName = info.stage.entry_point.c_str(),
 	};
 
-	vk::raii::Pipeline handle = dev.raii_device().createComputePipeline(nullptr, {
-		.flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT,
-		.stage = vk_stage,
-		.layout = *layout
-	});
+	vk::raii::Pipeline handle = dev.raii_device().createComputePipeline(nullptr, { .flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT, .stage = vk_stage, .layout = *layout });
 
 	return pipeline(
 		std::move(handle),

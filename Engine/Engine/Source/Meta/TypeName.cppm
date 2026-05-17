@@ -5,16 +5,13 @@ import gse.std_meta;
 
 export namespace gse::meta {
 	template <typename T>
-	consteval auto qualified_name(
-	) -> std::string_view;
+	consteval auto qualified_name() -> std::string_view;
 
 	template <typename T>
-	consteval auto unqualified_name(
-	) -> std::string_view;
+	consteval auto unqualified_name() -> std::string_view;
 
 	template <typename T>
-	consteval auto namespace_name(
-	) -> std::string_view;
+	consteval auto namespace_name() -> std::string_view;
 }
 
 template <typename T>

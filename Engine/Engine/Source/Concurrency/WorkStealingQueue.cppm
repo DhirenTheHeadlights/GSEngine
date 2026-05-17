@@ -13,8 +13,7 @@ export namespace gse::task {
 			std::size_t initial_capacity = 256
 		);
 
-		~work_stealing_queue(
-		) override;
+		~work_stealing_queue() override;
 
 		auto push(
 			T value
@@ -28,19 +27,16 @@ export namespace gse::task {
 			T& out
 		) -> bool;
 
-		[[nodiscard]] auto approximate_size(
-		) const noexcept -> std::size_t;
+		[[nodiscard]] auto approximate_size() const noexcept -> std::size_t;
 
 	private:
 		struct slot {
 			alignas(T) std::byte m_storage[sizeof(T)]{};
 			std::atomic<bool> m_occupied{ false };
 
-			auto value(
-			) noexcept -> T*;
+			auto value() noexcept -> T*;
 
-			auto value(
-			) const noexcept -> const T*;
+			auto value() const noexcept -> const T*;
 		};
 
 		class buffer : non_copyable, non_movable {
@@ -49,11 +45,9 @@ export namespace gse::task {
 				std::size_t capacity
 			);
 
-			~buffer(
-			) override;
+			~buffer() override;
 
-			[[nodiscard]] auto capacity(
-			) const noexcept -> std::size_t;
+			[[nodiscard]] auto capacity() const noexcept -> std::size_t;
 
 			[[nodiscard]] auto occupied(
 				std::size_t index

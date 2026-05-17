@@ -24,7 +24,7 @@ export namespace gse::resource {
 		double_buffer<std::unique_ptr<T>> resource;
 		std::atomic<state> current_state;
 		std::filesystem::path path;
-		std::atomic<std::uint32_t> version { 0 };
+		std::atomic<std::uint32_t> version{ 0 };
 
 		resource_slot(
 			std::unique_ptr<T>&& res,
@@ -48,12 +48,12 @@ export namespace gse::resource {
 
 		handle(
 			id resource_id,
-			resource_slot<T>* slot
+			const resource_slot<T>* slot
 		);
 
 		handle(
 			id resource_id,
-			resource_slot<T>* slot,
+			const resource_slot<T>* slot,
 			std::uint32_t version
 		);
 
@@ -84,7 +84,7 @@ export namespace gse::resource {
 		explicit operator bool() const;
 
 	private:
-		resource_slot<T>* m_slot = nullptr;
+		const resource_slot<T>* m_slot = nullptr;
 		mutable std::uint32_t m_version = 0;
 	};
 }
@@ -100,14 +100,14 @@ gse::resource::resource_slot<T>::resource_slot(resource_slot&& other) noexcept
 	: current_state(other.current_state.load(std::memory_order_relaxed)),
 	  path(std::move(other.path)),
 	  version(other.version.load(std::memory_order_relaxed)) {
-	resource.write() = std::move(const_cast<std::unique_ptr<T>&>(other.resource.read()));
+	resource.write() = other.resource.take_ready();
 	resource.publish();
 }
 
 template <typename T>
 auto gse::resource::resource_slot<T>::operator=(resource_slot&& other) noexcept -> resource_slot& {
 	if (this != &other) {
-		resource.write() = std::move(const_cast<std::unique_ptr<T>&>(other.resource.read()));
+		resource.write() = other.resource.take_ready();
 		resource.publish();
 		current_state.store(other.current_state.load(std::memory_order_relaxed));
 		path = std::move(other.path);
@@ -117,14 +117,14 @@ auto gse::resource::resource_slot<T>::operator=(resource_slot&& other) noexcept 
 }
 
 template <typename T>
-gse::resource::handle<T>::handle(const gse::id resource_id, resource_slot<T>* slot) : identifiable_owned(resource_id), m_slot(slot) {
+gse::resource::handle<T>::handle(const gse::id resource_id, const resource_slot<T>* slot) : identifiable_owned(resource_id), m_slot(slot) {
 	if (m_slot) {
 		m_version = m_slot->version.load(std::memory_order_acquire);
 	}
 }
 
 template <typename T>
-gse::resource::handle<T>::handle(const gse::id resource_id, resource_slot<T>* slot, const std::uint32_t version) : identifiable_owned(resource_id), m_slot(slot), m_version(version) {
+gse::resource::handle<T>::handle(const gse::id resource_id, const resource_slot<T>* slot, const std::uint32_t version) : identifiable_owned(resource_id), m_slot(slot), m_version(version) {
 }
 
 template <typename T>

@@ -128,11 +128,9 @@ export namespace gse::resource {
 			asset::data& d
 		);
 
-		~loader(
-		) override = default;
+		~loader() override = default;
 
-		auto flush(
-		) -> void override;
+		auto flush() -> void override;
 
 		auto update_state(
 			id resource_id,
@@ -145,18 +143,17 @@ export namespace gse::resource {
 
 		auto queue_reload_by_path(
 			const std::filesystem::path& baked_path
-		) -> void;
+		) -> void override;
 
 		auto queue_by_path(
 			const std::filesystem::path& baked_path
-		) -> void;
-
-		auto finalize_reloads(
 		) -> void override;
+
+		auto finalize_reloads() -> void override;
 
 		auto set_pre_load_fn(
 			std::function<void(const std::filesystem::path&)> fn
-		) -> void;
+		) -> void override;
 
 		auto get(
 			id id
@@ -186,6 +183,7 @@ export namespace gse::resource {
 			const std::string& name,
 			std::unique_ptr<Resource> resource
 		) -> handle<Resource>;
+
 	private:
 		asset::data& m_data;
 		id_mapped_collection<std::unique_ptr<resource_slot<Resource>>> m_resources;
@@ -201,7 +199,7 @@ export namespace gse::resource {
 		auto slot_ptr(
 			this auto&& self,
 			id id
-		) -> resource_slot<Resource>*;
+		);
 
 		auto launch_load(
 			id resource_id
@@ -211,8 +209,7 @@ export namespace gse::resource {
 			id resource_id
 		) -> async::task<>;
 
-		auto reap_done_tasks(
-		) -> void;
+		auto reap_done_tasks() -> void;
 	};
 }
 
@@ -334,7 +331,8 @@ auto gse::asset::load(run_context& ctx, const std::string_view path) -> async::t
 }
 
 template <typename R>
-gse::resource::loader<R>::loader(asset::data& d) : m_data(d) {}
+gse::resource::loader<R>::loader(asset::data& d) : m_data(d) {
+}
 
 template <typename R>
 auto gse::resource::loader<R>::set_pre_load_fn(std::function<void(const std::filesystem::path&)> fn) -> void {
@@ -351,16 +349,16 @@ auto gse::resource::loader<R>::state_of(const id resource_id) const -> state {
 }
 
 template <typename R>
-auto gse::resource::loader<R>::slot_ptr(this auto&& self, const id id) -> resource_slot<R>* {
-	if (auto* uptr = self.m_resources.try_get(id)) {
-		return uptr->get();
-	}
-	return nullptr;
+auto gse::resource::loader<R>::slot_ptr(this auto&& self, const id id) {
+	auto* uptr = self.m_resources.try_get(id);
+	return uptr ? uptr->get() : nullptr;
 }
 
 template <typename R>
 auto gse::resource::loader<R>::reap_done_tasks() -> void {
-	std::erase_if(m_in_flight, [](const async::task<>& t) { return t.done(); });
+	std::erase_if(m_in_flight, [](const async::task<>& t) {
+		return t.done();
+	});
 }
 
 template <typename R>
@@ -543,8 +541,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid) -> async::task<> {
 		co_return;
 	}
 
-	if (s->resource.read()) {
-		auto* old_resource = const_cast<R*>(s->resource.read().get());
+	if (auto old_resource = s->resource.take_ready()) {
 		old_resource->unload();
 	}
 
@@ -561,7 +558,7 @@ auto gse::resource::loader<R>::get(const id id) const -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	const auto* s = slot_ptr(id);
 	assert(s, "Resource with ID {} not found in this loader.", id);
-	return handle<R>(id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
+	return handle<R>(id, s, s->version.load(std::memory_order_acquire));
 }
 
 template <typename R>
@@ -570,7 +567,7 @@ auto gse::resource::loader<R>::get(const std::string& filename_no_ext) const -> 
 	std::lock_guard lock(m_mutex);
 	const auto* s = slot_ptr(resource_id);
 	assert(s, "Resource with ID {} not found in this loader.", resource_id);
-	return handle<R>(resource_id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
+	return handle<R>(resource_id, s, s->version.load(std::memory_order_acquire));
 }
 
 template <typename R>
@@ -580,7 +577,7 @@ auto gse::resource::loader<R>::try_get(const id id) const -> handle<R> {
 	if (!s) {
 		return handle<R>{};
 	}
-	return handle<R>(id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
+	return handle<R>(id, s, s->version.load(std::memory_order_acquire));
 }
 
 template <typename R>
@@ -594,7 +591,7 @@ auto gse::resource::loader<R>::try_get(const std::string& filename_no_ext) const
 	if (!s) {
 		return handle<R>{};
 	}
-	return handle<R>(resource_id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
+	return handle<R>(resource_id, s, s->version.load(std::memory_order_acquire));
 }
 
 template <typename R>
@@ -603,7 +600,7 @@ auto gse::resource::loader<R>::enqueue(const std::string& name, std::unique_ptr<
 	if (exists(name)) {
 		if (const auto resource_id = gse::find(name); m_resources.contains(resource_id)) {
 			const auto* s = slot_ptr(resource_id);
-			return handle<R>(resource_id, const_cast<resource_slot<R>*>(s), s->version.load(std::memory_order_acquire));
+			return handle<R>(resource_id, s, s->version.load(std::memory_order_acquire));
 		}
 	}
 

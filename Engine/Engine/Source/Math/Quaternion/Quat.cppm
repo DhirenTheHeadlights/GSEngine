@@ -30,6 +30,7 @@ namespace gse {
 		constexpr auto imaginary_part() const -> vec<T, 3>;
 		constexpr auto v4(this auto&& self) -> vec<T, 4>;
 		constexpr auto euler_angles() const -> vec3<angle_t<T>>;
+
 	private:
 		using base_type::w;
 		using base_type::r;
@@ -38,7 +39,8 @@ namespace gse {
 		using base_type::a;
 	};
 
-	export template <typename T> using quat_t = quaternion<T>;
+	export template <typename T>
+	using quat_t = quaternion<T>;
 	export using quati = quaternion<int>;
 	export using quat = quaternion<float>;
 	export using quatd = quaternion<double>;
@@ -46,35 +48,40 @@ namespace gse {
 
 template <gse::internal::is_arithmetic T, typename CharT>
 struct std::formatter<gse::quaternion<T>, CharT> {
-    std::formatter<gse::vec<T, 4>, CharT> vec_formatter;
+	std::formatter<gse::vec<T, 4>, CharT> vec_formatter;
 
-    constexpr auto parse(std::format_parse_context& ctx) {
-        return vec_formatter.parse(ctx);
-    }
+	constexpr auto parse(std::format_parse_context& ctx) {
+		return vec_formatter.parse(ctx);
+	}
 
-    template <typename FormatContext>
-    auto format(const gse::quaternion<T>& q, FormatContext& ctx) const {
-        auto out = ctx.out();
-        out = std::format_to(out, "quat");
-        const auto& v4 = static_cast<const gse::vec<T,4>&>(q);
-        return vec_formatter.format(v4, ctx);
-    }
+	template <typename FormatContext>
+	auto format(const gse::quaternion<T>& q, FormatContext& ctx) const {
+		auto out = ctx.out();
+		out = std::format_to(out, "quat");
+		const auto& v4 = static_cast<const gse::vec<T, 4>&>(q);
+		return vec_formatter.format(v4, ctx);
+	}
 };
 
 template <gse::internal::is_arithmetic T>
-constexpr gse::quaternion<T>::quaternion() : vec<T, 4>{ T(1), T(0), T(0), T(0) } {}
+constexpr gse::quaternion<T>::quaternion() : vec<T, 4>{ T(1), T(0), T(0), T(0) } {
+}
 
 template <gse::internal::is_arithmetic T>
-constexpr gse::quaternion<T>::quaternion(const vec<T, 4>& v4) : vec<T, 4>{ v4.at(0), v4.at(1), v4.at(2), v4.at(3) } {}
+constexpr gse::quaternion<T>::quaternion(const vec<T, 4>& v4) : vec<T, 4>{ v4.at(0), v4.at(1), v4.at(2), v4.at(3) } {
+}
 
 template <gse::internal::is_arithmetic T>
-constexpr gse::quaternion<T>::quaternion(const vec<T, 3>& v3, const T scalar) : vec<T, 4>{ scalar, v3.at(0), v3.at(1), v3.at(2) } {}
+constexpr gse::quaternion<T>::quaternion(const vec<T, 3>& v3, const T scalar) : vec<T, 4>{ scalar, v3.at(0), v3.at(1), v3.at(2) } {
+}
 
 template <gse::internal::is_arithmetic T>
-constexpr gse::quaternion<T>::quaternion(const T scalar, const vec<T, 3>& v3) : vec<T, 4>{ scalar, v3.at(0), v3.at(1), v3.at(2) } {}
+constexpr gse::quaternion<T>::quaternion(const T scalar, const vec<T, 3>& v3) : vec<T, 4>{ scalar, v3.at(0), v3.at(1), v3.at(2) } {
+}
 
 template <gse::internal::is_arithmetic T>
-constexpr gse::quaternion<T>::quaternion(T s, T x, T y, T z) : vec<T, 4>{ s, x, y, z } {}
+constexpr gse::quaternion<T>::quaternion(T s, T x, T y, T z) : vec<T, 4>{ s, x, y, z } {
+}
 
 template <gse::internal::is_arithmetic T>
 constexpr gse::quaternion<T>::quaternion(const vec<T, 3>& axis, angle_t<T> angle) {
@@ -84,7 +91,8 @@ constexpr gse::quaternion<T>::quaternion(const vec<T, 3>& axis, angle_t<T> angle
 }
 
 template <gse::internal::is_arithmetic T>
-constexpr gse::quaternion<T>::quaternion(angle_t<T> angle, const vec<T, 3>& axis) : quaternion(axis, angle) {}
+constexpr gse::quaternion<T>::quaternion(angle_t<T> angle, const vec<T, 3>& axis) : quaternion(axis, angle) {
+}
 
 template <gse::internal::is_arithmetic T>
 constexpr decltype(auto) gse::quaternion<T>::operator[](this auto&& self, std::size_t index) {
@@ -129,9 +137,9 @@ constexpr auto gse::quaternion<T>::euler_angles() const -> vec3<angle_t<T>> {
 
 	const T sinp = T(2) * (s() * y() - z() * x());
 	if (std::abs(sinp) >= 1) {
-		angle_y = radians(std::copysign(std::numbers::pi_v<T> / T(2), sinp)); 
-		angle_x = radians(T(2) * std::atan2(x(), s()));               
-		angle_z = radians(T(0));                                     
+		angle_y = radians(std::copysign(std::numbers::pi_v<T> / T(2), sinp));
+		angle_x = radians(T(2) * std::atan2(x(), s()));
+		angle_z = radians(T(0));
 	}
 	else {
 		angle_y = radians(std::asin(sinp));

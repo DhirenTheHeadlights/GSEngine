@@ -29,8 +29,7 @@ namespace gse::renderer::physics_debug {
 		gpu::rasterization<gpu::polygon_mode::line, gpu::cull_mode::none>,
 		gpu::depth<false, false>,
 		gpu::blend<gpu::blend_preset::alpha>,
-		gpu::primitive_topology<gpu::topology::line_list>
-	>;
+		gpu::primitive_topology<gpu::topology::line_list>>;
 }
 
 auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
@@ -72,9 +71,9 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.pipeline(d.pipeline)
-		.color(gpu::load_color())
-		.after<forward::system>();
+				   .pipeline(d.pipeline)
+				   .color(gpu::load_color())
+				   .after<forward::system>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
@@ -100,10 +99,7 @@ auto gse::renderer::physics_debug::system::ensure_vertex_capacity(data& d, gpu::
 		max_verts *= 2;
 	}
 
-	vertex_buffer = gpu::buffer::create(device.allocator(), {
-		.size = max_verts * sizeof(debug_vertex),
-		.usage = gpu::buffer_flag::vertex
-	});
+	vertex_buffer = gpu::buffer::create(device.allocator(), { .size = max_verts * sizeof(debug_vertex), .usage = gpu::buffer_flag::vertex });
 }
 
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const physics::system::data& ps) -> async::task<> {
@@ -112,10 +108,7 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = camera_ubo_size,
-			.usage = gpu::buffer_flag::uniform
-		});
+		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = camera_ubo_size, .usage = gpu::buffer_flag::uniform });
 
 		d.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 
@@ -220,11 +213,7 @@ auto gse::renderer::physics_debug::system::build_obb_lines_for_collider(const ph
 		corners[idx++] = center + axes[0] * x + axes[1] * y + axes[2] * z;
 	}
 
-	static constexpr std::array<std::pair<int, int>, 12> edges{ {
-		{0, 1}, {1, 3}, {3, 2}, {2, 0},
-		{4, 5}, {5, 7}, {7, 6}, {6, 4},
-		{0, 4}, {1, 5}, {2, 6}, {3, 7}
-	} };
+	static constexpr std::array<std::pair<int, int>, 12> edges{ { { 0, 1 }, { 1, 3 }, { 3, 2 }, { 2, 0 }, { 4, 5 }, { 5, 7 }, { 7, 6 }, { 6, 4 }, { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 } } };
 
 	constexpr vec3f color{ 0.0f, 1.0f, 0.0f };
 

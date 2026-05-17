@@ -25,8 +25,7 @@ export namespace gse {
 		resource::handle<texture> normal_texture;
 		resource::handle<texture> specular_texture;
 
-		[[nodiscard]] auto textures_ready(
-		) const -> bool;
+		[[nodiscard]] auto textures_ready() const -> bool;
 	};
 }
 

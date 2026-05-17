@@ -83,8 +83,7 @@ export namespace gse::vulkan {
 			this const pipeline& self
 		) -> std::span<const gpu::binding_use>;
 
-		explicit operator bool(
-		) const;
+		explicit operator bool() const;
 
 	private:
 		pipeline(

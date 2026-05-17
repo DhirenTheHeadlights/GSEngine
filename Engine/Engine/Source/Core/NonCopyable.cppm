@@ -14,7 +14,7 @@ export namespace gse {
 	};
 
 	class non_movable {
-		public:
+	public:
 		non_movable() = default;
 		non_movable(const non_movable&) = default;
 		auto operator=(const non_movable&) -> non_movable& = default;

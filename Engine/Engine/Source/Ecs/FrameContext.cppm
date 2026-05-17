@@ -43,7 +43,7 @@ gse::frame_context::frame_context(
 	channel_writer& channels,
 	task_graph& graph,
 	registry& reg
-) : task_context { .states = states, .resources_store = resources_store, .channels_store = channels_store, .channels = channels, .graph = graph, .live_state = false },
+) : task_context{ .states = states, .resources_store = resources_store, .channels_store = channels_store, .channels = channels, .graph = graph, .live_state = false },
 	m_reg(reg) {
 }
 

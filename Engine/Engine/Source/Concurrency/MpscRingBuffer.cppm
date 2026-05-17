@@ -6,6 +6,7 @@ export namespace gse {
 	template <typename T, std::size_t Capacity>
 	class mpsc_ring_buffer {
 		static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
+
 	public:
 		auto push(
 			const T& value
@@ -18,6 +19,7 @@ export namespace gse {
 		auto pop(
 			T& out
 		) -> bool;
+
 	private:
 		static constexpr auto index(
 			std::size_t i
@@ -31,7 +33,7 @@ export namespace gse {
 
 template <typename T, std::size_t Capacity>
 auto gse::mpsc_ring_buffer<T, Capacity>::push(const T& value) -> bool {
-	std::size_t head_old;
+	std::size_t head_old = 0;
 	for (;;) {
 		head_old = m_head.load(std::memory_order_relaxed);
 		if (const auto tail = m_tail.load(std::memory_order_acquire); head_old - tail >= Capacity) {
@@ -52,7 +54,7 @@ auto gse::mpsc_ring_buffer<T, Capacity>::push(const T& value) -> bool {
 
 template <typename T, std::size_t Capacity>
 auto gse::mpsc_ring_buffer<T, Capacity>::push(T&& value) -> bool {
-	std::size_t head_old;
+	std::size_t head_old = 0;
 	for (;;) {
 		head_old = m_head.load(std::memory_order_relaxed);
 		if (const auto tail = m_tail.load(std::memory_order_acquire); head_old - tail >= Capacity) {
@@ -86,4 +88,3 @@ template <typename T, std::size_t Capacity>
 constexpr auto gse::mpsc_ring_buffer<T, Capacity>::index(const std::size_t i) -> std::size_t {
 	return i & (Capacity - 1);
 }
-

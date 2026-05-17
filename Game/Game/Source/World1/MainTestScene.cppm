@@ -26,32 +26,18 @@ auto gs::main_test_scene_setup(gse::scene& s) -> void {
 			player_id = sc.add_entity(std::format("Player_{}", next_id++));
 		}
 		sc.registry().add_component<gse::free_camera::component>(player_id, {
-			.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f),
-		});
+																				.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f),
+																			});
 		return player_id;
 	});
 
 	arena::create(&s);
 
-	s.spawn("Smaller Box", gs::box(
-		gse::vec3<gse::position>(2.f, -40.f, 2.f),
-		gse::vec3<gse::length>(2.f, 2.f, 2.f)
-	));
+	s.spawn("Smaller Box", gs::box(gse::vec3<gse::position>(2.f, -40.f, 2.f), gse::vec3<gse::length>(2.f, 2.f, 2.f)));
 
-	s.spawn("Bigger Box", gs::box(
-		gse::vec3<gse::position>(-2.f, -40.f, 2.f),
-		gse::vec3<gse::length>(4.f, 4.f, 4.f),
-		gse::kilograms(100000.f)
-	));
+	s.spawn("Bigger Box", gs::box(gse::vec3<gse::position>(-2.f, -40.f, 2.f), gse::vec3<gse::length>(4.f, 4.f, 4.f), gse::kilograms(100000.f)));
 
-	s.spawn("Center Sphere Light", gs::sphere_light(
-		gse::vec3<gse::position>(0.f, -30.f, 0.f),
-		gse::meters(1.f)
-	));
+	s.spawn("Center Sphere Light", gs::sphere_light(gse::vec3<gse::position>(0.f, -30.f, 0.f), gse::meters(1.f)));
 
-	s.spawn("Second Sphere", gs::sphere(
-		gse::vec3<gse::position>(0.f, 0.f, 20.f),
-		gse::meters(1.f),
-		gse::sphere_lod::lo
-	));
+	s.spawn("Second Sphere", gs::sphere(gse::vec3<gse::position>(0.f, 0.f, 20.f), gse::meters(1.f), gse::sphere_lod::lo));
 }

@@ -31,8 +31,8 @@ export namespace gse::renderer::light_culling {
 
 			per_frame_resource<gpu::buffer> culling_params_buffers;
 			per_frame_resource<gpu::buffer> light_buffers;
-			[[=gse::shared]] per_frame_resource<gpu::buffer> light_index_list_buffers;
-			[[=gse::shared]] per_frame_resource<gpu::buffer> tile_light_table_buffers;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> light_index_list_buffers;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> tile_light_table_buffers;
 
 			gpu::sampler depth_sampler;
 			gpu::bindless_texture_slot depth_slot;

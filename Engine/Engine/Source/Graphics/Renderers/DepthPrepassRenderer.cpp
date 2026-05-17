@@ -21,11 +21,11 @@ import gse.ecs;
 import gse.math;
 
 namespace gse::renderer::depth_prepass::meshlet {
-	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
+	struct[[= shaders::binding<0, 0>{}]] camera_ubo {
 		using element = shaders::common::camera_data;
 	};
 
-	struct [[= shaders::binding<1, 5>{}, = shaders::ssbo_readonly]] instance_data_buffer {
+	struct[[= shaders::binding<1, 5>{}, = shaders::ssbo_readonly]] instance_data_buffer {
 		using element = shaders::common::instance_data;
 	};
 
@@ -36,10 +36,9 @@ namespace gse::renderer::depth_prepass::meshlet {
 		shaders::meshlet::meshlet_vertex_indices,
 		shaders::meshlet::meshlet_triangles,
 		shaders::meshlet::meshlet_bounds_buffer,
-		instance_data_buffer
-	>;
+		instance_data_buffer>;
 
-	struct [[= shaders::shader_struct]] push_constants {
+	struct[[= shaders::shader_struct]] push_constants {
 		std::uint32_t meshlet_offset;
 		std::uint32_t meshlet_count;
 		std::uint32_t first_instance;
@@ -56,28 +55,26 @@ namespace gse::renderer::depth_prepass::meshlet {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
 		gpu::depth<true, true, gpu::compare_op::less>,
-		gpu::color_target<gpu::color_format::none>
-	>;
+		gpu::color_target<gpu::color_format::none>>;
 }
 
 namespace gse::renderer::depth_prepass::skinned {
-	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
+	struct[[= shaders::binding<0, 0>{}]] camera_ubo {
 		using element = shaders::common::camera_data;
 	};
 
-	struct [[= shaders::binding<1, 0>{}, = shaders::ssbo_readonly]] skin_matrices {
+	struct[[= shaders::binding<1, 0>{}, = shaders::ssbo_readonly]] skin_matrices {
 		using element = mat4f;
 	};
 
-	struct [[= shaders::binding<1, 1>{}, = shaders::ssbo_readonly]] instance_data_buffer {
+	struct[[= shaders::binding<1, 1>{}, = shaders::ssbo_readonly]] instance_data_buffer {
 		using element = shaders::common::instance_data;
 	};
 
 	using shader_binding_types = type_pack<
 		camera_ubo,
 		skin_matrices,
-		instance_data_buffer
-	>;
+		instance_data_buffer>;
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/skinned_depth_only">,
@@ -87,8 +84,7 @@ namespace gse::renderer::depth_prepass::skinned {
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::depth<true, true, gpu::compare_op::less>,
-		gpu::color_target<gpu::color_format::none>
-	>;
+		gpu::color_target<gpu::color_format::none>>;
 }
 
 auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
@@ -98,10 +94,7 @@ auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::cont
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = camera_ubo_size,
-			.usage = gpu::buffer_flag::uniform
-		});
+		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = camera_ubo_size, .usage = gpu::buffer_flag::uniform });
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
@@ -150,9 +143,9 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), skinned::entry::pod);
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.pipeline(d.meshlet_pipeline)
-		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
-		.after<cull_compute::system, physics_transform::system>();
+				   .pipeline(d.meshlet_pipeline)
+				   .depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
+				   .after<cull_compute::system, physics_transform::system>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

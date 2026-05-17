@@ -20,6 +20,7 @@ export namespace gse {
 	class mixed_mat : public mat<T, ColSpec::size, ColSpec::size> {
 		static constexpr std::size_t N = ColSpec::size;
 		static_assert(ColSpec::size == RowSpec::size);
+
 	public:
 		using base = mat<T, ColSpec::size, ColSpec::size>;
 
@@ -50,8 +51,7 @@ export namespace gse {
 		);
 
 		template <std::size_t Col, std::size_t Row>
-		constexpr auto at(
-		) const -> element_t<Col, Row>;
+		constexpr auto at() const -> element_t<Col, Row>;
 
 		template <std::size_t Col, std::size_t Row>
 		constexpr auto set(
@@ -63,37 +63,33 @@ export namespace gse {
 		) const -> mixed_mat;
 
 		template <typename OtherCol, typename OtherRow>
-			requires std::same_as<typename OtherRow::template type<0>, typename ColSpec::template type<0>>
+		requires std::same_as<typename OtherRow::template type<0>, typename ColSpec::template type<0>>
 		constexpr auto operator*(
 			const mixed_mat<OtherCol, OtherRow, T>& rhs
 		) const -> mixed_mat<OtherCol, RowSpec, T>;
 
 		template <internal::is_quantity Q>
-			requires (internal::same_unit_family_v<typename Q::quantity_tag, typename ColSpec::template type<0>::quantity_tag>)
+		requires(internal::same_unit_family_v<typename Q::quantity_tag, typename ColSpec::template type<0>::quantity_tag>)
 		constexpr auto transform_point(
 			const vec3<Q>& p
 		) const -> vec3<row_t<0>>
-			requires (N == 4 &&
-				std::same_as<col_t<0>, col_t<1>> && std::same_as<col_t<1>, col_t<2>> &&
-				std::same_as<row_t<0>, row_t<1>> && std::same_as<row_t<1>, row_t<2>>);
+		requires(N == 4 && std::same_as<col_t<0>, col_t<1>> && std::same_as<col_t<1>, col_t<2>> && std::same_as<row_t<0>, row_t<1>> && std::same_as<row_t<1>, row_t<2>>);
 
 		constexpr auto transform_direction(
 			const vec3f& d
 		) const -> vec3f
-			requires (N == 4);
+		requires(N == 4);
 
-		constexpr auto inverse(
-		) const -> mixed_mat<RowSpec, ColSpec, T>;
+		constexpr auto inverse() const -> mixed_mat<RowSpec, ColSpec, T>;
 
 		template <typename OtherCol, typename OtherRow>
-		constexpr auto inverse_as(
-		) const -> mixed_mat<OtherCol, OtherRow, T>;
-
+		constexpr auto inverse_as() const -> mixed_mat<OtherCol, OtherRow, T>;
 	};
 }
 
 template <typename ColSpec, typename RowSpec, typename T>
-constexpr gse::mixed_mat<ColSpec, RowSpec, T>::mixed_mat(const mat<T, N, N>& raw) : base(raw) {}
+constexpr gse::mixed_mat<ColSpec, RowSpec, T>::mixed_mat(const mat<T, N, N>& raw) : base(raw) {
+}
 
 template <typename ColSpec, typename RowSpec, typename T>
 template <std::size_t Col, std::size_t Row>
@@ -113,7 +109,8 @@ constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::operator*(const mixed_mat& r
 }
 
 template <typename ColSpec, typename RowSpec, typename T>
-template <typename OtherCol, typename OtherRow> requires std::same_as<typename OtherRow::template type<0>, typename ColSpec::template type<0>>
+template <typename OtherCol, typename OtherRow>
+requires std::same_as<typename OtherRow::template type<0>, typename ColSpec::template type<0>>
 constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::operator*(const mixed_mat<OtherCol, OtherRow, T>& rhs) const -> mixed_mat<OtherCol, RowSpec, T> {
 	return mixed_mat<OtherCol, RowSpec, T>{
 		static_cast<const base&>(*this) * static_cast<const mixed_mat<OtherCol, OtherRow, T>::base&>(rhs)
@@ -122,23 +119,18 @@ constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::operator*(const mixed_mat<Ot
 
 template <typename ColSpec, typename RowSpec, typename T>
 template <gse::internal::is_quantity Q>
-	requires (gse::internal::same_unit_family_v<typename Q::quantity_tag, typename ColSpec::template type<0>::quantity_tag>)
+requires(gse::internal::same_unit_family_v<typename Q::quantity_tag, typename ColSpec::template type<0>::quantity_tag>)
 constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::transform_point(const vec3<Q>& p) const -> vec3<row_t<0>>
-	requires (N == 4 &&
-		std::same_as<col_t<0>, col_t<1>> && std::same_as<col_t<1>, col_t<2>> &&
-		std::same_as<row_t<0>, row_t<1>> && std::same_as<row_t<1>, row_t<2>>) {
-	const auto v4 = static_cast<const base&>(*this) * vec4f{
-		internal::to_storage(p.x()),
-		internal::to_storage(p.y()),
-		internal::to_storage(p.z()),
-		T(1)
-	};
+requires(N == 4 && std::same_as<col_t<0>, col_t<1>> && std::same_as<col_t<1>, col_t<2>> && std::same_as<row_t<0>, row_t<1>> && std::same_as<row_t<1>, row_t<2>>)
+{
+	const auto v4 = static_cast<const base&>(*this) * vec4f{ internal::to_storage(p.x()), internal::to_storage(p.y()), internal::to_storage(p.z()), T(1) };
 	return { row_t<0>(v4[0]), row_t<0>(v4[1]), row_t<0>(v4[2]) };
 }
 
 template <typename ColSpec, typename RowSpec, typename T>
 constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::transform_direction(const vec3f& d) const -> vec3f
-	requires (N == 4) {
+requires(N == 4)
+{
 	const auto v4 = static_cast<const base&>(*this) * vec4f{ d.x(), d.y(), d.z(), T(0) };
 	return { v4[0], v4[1], v4[2] };
 }

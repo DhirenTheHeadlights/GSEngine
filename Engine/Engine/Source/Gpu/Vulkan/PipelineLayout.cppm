@@ -35,8 +35,7 @@ export namespace gse::vulkan {
 			this const pipeline_layout& self
 		) -> gpu::handle<pipeline_layout>;
 
-		explicit operator bool(
-		) const;
+		explicit operator bool() const;
 
 	private:
 		explicit pipeline_layout(
@@ -47,7 +46,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::pipeline_layout::pipeline_layout(vk::raii::PipelineLayout&& layout) : m_layout(std::move(layout)) {}
+gse::vulkan::pipeline_layout::pipeline_layout(vk::raii::PipelineLayout&& layout) : m_layout(std::move(layout)) {
+}
 
 auto gse::vulkan::pipeline_layout::create(const device& dev, const std::span<const gpu::handle<descriptor_set_layout>> set_layouts, const std::span<const gpu::push_constant_range> push_ranges) -> pipeline_layout {
 	std::vector<vk::DescriptorSetLayout> vk_layouts;

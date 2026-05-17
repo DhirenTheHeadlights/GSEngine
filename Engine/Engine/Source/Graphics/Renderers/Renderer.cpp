@@ -38,11 +38,9 @@ import gse.save;
 
 auto gse::renderer::system::run(run_context& ctx, const gpu::context::data& gpu_s, const window::data& window_s, data& d, const actions::system::data& sys) -> async::task<> {
 	const id dump_profile_id = generate_id("Dump Profile");
-	ctx.channels.push<actions::add_action_request>({
-		.name = "Dump Profile",
-		.default_key = key::f11,
-		.action_id = dump_profile_id
-	});
+	ctx.channels.push<actions::add_action_request>({ .name = "Dump Profile",
+													 .default_key = key::f11,
+													 .action_id = dump_profile_id });
 	d.dump_profile_action = actions::handle(dump_profile_id);
 
 	while (true) {

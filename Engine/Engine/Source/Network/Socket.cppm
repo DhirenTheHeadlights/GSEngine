@@ -52,8 +52,7 @@ export namespace gse::network {
 			const address& address
 		) -> bool;
 
-		auto local_address(
-		) const -> std::optional<address>;
+		auto local_address() const -> std::optional<address>;
 
 		auto send_data(
 			const packet& packet,
@@ -73,13 +72,12 @@ export namespace gse::network {
 			time_t<std::uint32_t> timeout
 		) const -> wait_result;
 
-		auto id(
-		) const -> std::uint64_t;
+		auto id() const -> std::uint64_t;
 
-		auto valid(
-		) const -> bool;
+		auto valid() const -> bool;
+
 	private:
-		std::uint64_t m_handle = ~std::uint64_t{0};
+		std::uint64_t m_handle = ~std::uint64_t{ 0 };
 		address m_local_address;
 	};
 }

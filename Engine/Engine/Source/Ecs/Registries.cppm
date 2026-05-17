@@ -19,7 +19,7 @@ export namespace gse {
 			const void* snapshot_ptr
 		) -> void;
 
-		auto contains(
+		[[nodiscard]] auto contains(
 			id type
 		) const -> bool;
 
@@ -32,8 +32,7 @@ export namespace gse {
 			id type
 		) const -> const void*;
 
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 
 	private:
 		std::unordered_map<id, slot> m_slots;
@@ -55,8 +54,7 @@ export namespace gse {
 			id type
 		) -> decltype(auto);
 
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 
 	private:
 		std::unordered_map<id, void*> m_slots;
@@ -87,26 +85,20 @@ export namespace gse {
 	class channel_registry {
 	public:
 		template <typename T>
-		auto ensure_typed(
-		) -> typed_channel<T>&;
+		auto ensure_typed() -> typed_channel<T>&;
 
 		template <typename T>
-		auto ensure_same_frame(
-		) -> same_frame_typed_channel<T>&;
+		auto ensure_same_frame() -> same_frame_typed_channel<T>&;
 
-		auto flip_all(
-		) -> void;
+		auto flip_all() -> void;
 
-		auto make_writer(
-		) -> channel_writer;
+		auto make_writer() -> channel_writer;
 
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 
 		template <typename T>
-			requires is_same_frame_channel_v<T>
-		auto drain(
-		) -> std::vector<T>;
+		requires is_same_frame_channel_v<T>
+		auto drain() -> std::vector<T>;
 
 	private:
 		std::unordered_map<id, std::unique_ptr<channel_base>> m_channels;
@@ -167,7 +159,8 @@ auto gse::resource_registry::clear() -> void {
 	m_slots.clear();
 }
 
-gse::channel_writer::channel_writer(channel_registry* registry) : m_registry(registry) {}
+gse::channel_writer::channel_writer(channel_registry* registry) : m_registry(registry) {
+}
 
 template <typename T>
 auto gse::channel_writer::push(T item) -> void {
@@ -215,7 +208,7 @@ auto gse::channel_registry::ensure_same_frame() -> same_frame_typed_channel<T>& 
 }
 
 template <typename T>
-	requires gse::is_same_frame_channel_v<T>
+requires gse::is_same_frame_channel_v<T>
 auto gse::channel_registry::drain() -> std::vector<T> {
 	return ensure_same_frame<T>().drain();
 }
