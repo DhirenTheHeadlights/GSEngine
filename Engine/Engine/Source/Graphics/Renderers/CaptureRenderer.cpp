@@ -146,7 +146,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		const auto h = height;
 		const auto byte_count = static_cast<std::size_t>(w) * h * 4;
 		std::vector<std::byte> pixels(byte_count);
-		gse::memcpy(pixels.data(), staging.mapped(), byte_count);
+		gse::memcpy(pixels.data(), staging.host_read().data(), byte_count);
 
 		const bool needs_swizzle = gpu_s.swapchain->is_bgra();
 		const auto timestamp = system_clock::timestamp_filename();

@@ -12,7 +12,6 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.log;
 
 import :vbd_constraints;
 import :vbd_solver;
@@ -53,6 +52,8 @@ export namespace gse::vbd {
 	constexpr std::uint32_t solve_state_float4s_per_body = 11;
 	constexpr std::uint32_t collision_state_uints = collision_state_header_uints;
 	constexpr std::uint32_t grid_table_size = 4096;
+
+	struct vbd_solve_chain {};
 
 	struct vbd_clear_state_buffers_stage {};
 	struct vbd_collision_reset_stage {};
@@ -216,6 +217,8 @@ export namespace gse::vbd {
 		bool m_buffers_created = false;
 		bool m_pending_dispatch = false;
 		std::uint32_t m_frame_count = 0;
+		bool m_body_buffers_seeded = false;
+		std::uint32_t m_seeded_body_count = 0;
 
 		std::uint32_t m_body_count = 0;
 		std::uint32_t m_contact_count = 0;
@@ -243,6 +246,5 @@ export namespace gse::vbd {
 		std::uint32_t m_staged_joint_count = 0;
 		bool m_staged_valid = false;
 
-		per_frame_resource<std::vector<body_state>> m_last_uploaded{ std::vector<body_state>{}, std::vector<body_state>{} };
 	};
 }

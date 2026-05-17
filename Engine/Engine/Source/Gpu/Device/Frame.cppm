@@ -77,8 +77,6 @@ export namespace gse::gpu {
         std::uint32_t m_image_index = 0;
         std::array<handle<vulkan::command_buffer>, queue_type_count> m_command_buffers{};
         std::uint32_t m_current_frame = 0;
-        std::uint64_t m_next_frame_sequence = 0;
-        std::uint64_t m_active_frame_sequence = 0;
         bool m_frame_in_progress = false;
         device* m_device;
         swap_chain* m_swapchain;

@@ -55,7 +55,7 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_h
 	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics)
 		.retain(std::move(scratch));
 }
-auto gse::to_vk_instance(const gpu::tlas_instance_desc& inst) -> vk::AccelerationStructureInstanceKHR {
+auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> vulkan::as_instance {
 	vk::TransformMatrixKHR transform{};
 	for (int row = 0; row < 3; ++row) {
 		for (int col = 0; col < 4; ++col) {
@@ -163,14 +163,17 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::spa
 	auto& dev = device;
 	const auto& dev_cfg = dev.vulkan_device();
 
-	std::vector<vk::AccelerationStructureInstanceKHR> vk_instances;
-	vk_instances.reserve(instances.size());
+	std::vector<vulkan::as_instance> packed_instances;
+	packed_instances.reserve(instances.size());
 	for (const auto& inst : instances) {
-		vk_instances.push_back(to_vk_instance(inst));
+		packed_instances.push_back(to_packed_instance(inst));
 	}
 
-	if (auto* mapped = t.instance_buffer().mapped(); mapped && !vk_instances.empty()) {
-		std::memcpy(mapped, vk_instances.data(), vk_instances.size() * sizeof(vk::AccelerationStructureInstanceKHR));
+	if (!packed_instances.empty()) {
+		t.instance_buffer().host_write(
+			packed_instances.data(),
+			packed_instances.size() * sizeof(vulkan::as_instance)
+		);
 	}
 
 	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());
@@ -193,6 +196,7 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::spa
 		},
 	};
 	rec.pipeline_barrier(dependency_info{ .memory_barriers = pre_barriers });
+	t.instance_buffer().clear_host_dirty();
 
 	const acceleration_structure_geometry geometry{
 		.type = acceleration_structure_geometry_type::instances,
@@ -212,7 +216,7 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::spa
 	};
 
 	const acceleration_structure_build_range_info range{
-		.primitive_count = static_cast<std::uint32_t>(vk_instances.size()),
+		.primitive_count = static_cast<std::uint32_t>(packed_instances.size()),
 	};
 	const acceleration_structure_build_range_info* range_ptr = &range;
 
@@ -228,14 +232,17 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::spa
 }
 
 auto gse::gpu::write_tlas_instances(vulkan::tlas& t, const std::span<const tlas_instance_desc> instances) -> void {
-	std::vector<vk::AccelerationStructureInstanceKHR> vk_instances;
-	vk_instances.reserve(instances.size());
+	std::vector<vulkan::as_instance> packed_instances;
+	packed_instances.reserve(instances.size());
 	for (const auto& inst : instances) {
-		vk_instances.push_back(to_vk_instance(inst));
+		packed_instances.push_back(to_packed_instance(inst));
 	}
 
-	if (auto* mapped = t.instance_buffer().mapped(); mapped && !vk_instances.empty()) {
-		std::memcpy(mapped, vk_instances.data(), vk_instances.size() * sizeof(vk::AccelerationStructureInstanceKHR));
+	if (!packed_instances.empty()) {
+		t.instance_buffer().host_write(
+			packed_instances.data(),
+			packed_instances.size() * sizeof(vulkan::as_instance)
+		);
 	}
 }
 
@@ -268,6 +275,7 @@ auto gse::gpu::build_tlas_in_place(gpu::device& device, vulkan::tlas& t, const s
 		},
 	};
 	rec.pipeline_barrier(dependency_info{ .memory_barriers = pre_barriers });
+	t.instance_buffer().clear_host_dirty();
 
 	const acceleration_structure_geometry geometry{
 		.type = acceleration_structure_geometry_type::instances,

@@ -23,7 +23,6 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
-import gse.log;
 import gse.os;
 import gse.assets;
 import gse.gpu;
@@ -218,20 +217,6 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		.inv_view = view.inverse(),
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
-
-	{
-		static std::uint64_t s_seq = 0;
-		log::println(
-			log::category::render,
-			"cam_snap[seq={}] pass=forward frame_index={} view_row3=({},{},{},{})",
-			s_seq++,
-			frame_index,
-			view[3].x(),
-			view[3].y(),
-			view[3].z(),
-			view[3].w()
-		);
-	}
 
 	auto dir_chunk = ctx.components<directional_light_component>();
 	auto spot_chunk = ctx.components<spot_light_component>();

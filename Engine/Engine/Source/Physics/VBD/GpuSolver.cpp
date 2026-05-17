@@ -16,7 +16,6 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.log;
 
 namespace gse::vbd {
 	using time_step = time_t<float, gse::seconds>;
@@ -521,19 +520,19 @@ auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void
 			.size = readback_size,
 			.usage = storage_dst
 		});
-		std::memset(f.readback_buffer.mapped(), 0, f.readback_buffer.size());
+		f.readback_buffer.host_zero();
 
 		f.physics_snapshot_buffer = gpu::buffer::create(ctx.device->allocator(), {
 			.size = max_bodies * sizeof(body_state),
 			.usage = storage_dst
 		});
-		std::memset(f.physics_snapshot_buffer.mapped(), 0, f.physics_snapshot_buffer.size());
+		f.physics_snapshot_buffer.host_zero();
 
 		f.indirect_dispatch_buffer = gpu::buffer::create(ctx.device->allocator(), {
 			.size = (2 + max_colors) * 3 * sizeof(std::uint32_t),
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::indirect
 		});
-		std::memset(f.indirect_dispatch_buffer.mapped(), 0, f.indirect_dispatch_buffer.size());
+		f.indirect_dispatch_buffer.host_zero();
 
 		f.frozen_jacobian_buffer = gpu::buffer::create(ctx.device->allocator(), {
 			.size = max_contacts * sizeof(frozen_jacobian),
@@ -568,61 +567,24 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 
 	if (m_body_count == 0) {
 		m_pending_dispatch = false;
+		m_body_buffers_seeded = false;
+		m_seeded_body_count = 0;
 		return;
 	}
 
-	{
-		auto& prev = m_last_uploaded[m_dispatch_slot];
-		std::uint32_t worst_pos_idx = 0;
-		auto worst_pos_delta = magnitude(vec3<displacement>{});
-		std::uint32_t worst_rot_idx = 0;
-		auto worst_rot_delta = magnitude(vec4f{});
-		const bool have_prev = prev.size() == m_body_count;
-		if (have_prev) {
-			for (std::uint32_t i = 0; i < m_body_count; ++i) {
-				if (bodies[i].locked) {
-					continue;
-				}
-				const auto& cur = bodies[i];
-				const auto& old = prev[i];
-				const auto dp = magnitude(cur.position - old.position);
-				if (dp > worst_pos_delta) {
-					worst_pos_delta = dp;
-					worst_pos_idx = i;
-				}
-				const auto dq = magnitude(cur.orientation.v4() - old.orientation.v4());
-				if (dq > worst_rot_delta) {
-					worst_rot_delta = dq;
-					worst_rot_idx = i;
-				}
-			}
-		}
-		std::uint32_t first_dyn = m_body_count;
-		for (std::uint32_t i = 0; i < m_body_count; ++i) {
-			if (!bodies[i].locked) {
-				first_dyn = i;
-				break;
-			}
-		}
-		const auto& probe = bodies[first_dyn < m_body_count ? first_dyn : 0];
-		log::println(
-			log::category::physics,
-			"upload[frame={}] slot={} probe_idx={} pos={} orient={} max_pos_delta={}@{} max_rot_delta={}@{}",
-			m_frame_count,
-			m_dispatch_slot,
-			first_dyn,
-			probe.position,
-			probe.orientation,
-			worst_pos_delta,
-			worst_pos_idx,
-			worst_rot_delta,
-			worst_rot_idx
-		);
-		prev.assign(bodies.begin(), bodies.begin() + m_body_count);
-	}
+	const bool upload_body_buffer = !m_body_buffers_seeded || m_seeded_body_count != m_body_count;
 
-	auto* gpu_bodies = reinterpret_cast<body_state*>(m_frames[m_dispatch_slot].body_buffer.mapped());
-	std::ranges::copy_n(bodies.begin(), m_body_count, gpu_bodies);
+	auto& frame_data = m_frames[m_dispatch_slot];
+	if (upload_body_buffer) {
+		frame_data.body_buffer.host_write(bodies.first(m_body_count));
+	}
+	else {
+		for (std::uint32_t i = 0; i < m_body_count; ++i) {
+			if (bodies[i].locked) {
+				frame_data.body_buffer.host_write(bodies[i], i * sizeof(body_state));
+			}
+		}
+	}
 
 	displacement max_extent = meters(0.5f);
 	for (std::uint32_t i = 0; i < m_body_count; ++i) {
@@ -679,27 +641,7 @@ auto gse::vbd::gpu_solver::total_substeps() const -> std::uint32_t {
 
 auto gse::vbd::gpu_solver::commit_upload() -> void {
 	if (!m_buffers_created || !m_pending_dispatch || m_body_count == 0) {
-		if (m_frame_count < 5) {
-			log::println(
-				log::level::warning,
-				log::category::physics,
-				"commit_upload skipped: created={} pending={} bodies={}",
-				m_buffers_created,
-				m_pending_dispatch,
-				m_body_count
-			);
-		}
 		return;
-	}
-	if (m_frame_count < 5) {
-		log::println(
-			log::category::physics,
-			"commit_upload: bodies={} motors={} joints={} warm_starts={}",
-			m_body_count,
-			m_motor_count,
-			m_joint_count,
-			m_warm_start_count
-		);
 	}
 
 	auto& f = m_frames[m_dispatch_slot];
@@ -734,7 +676,7 @@ auto gse::vbd::gpu_solver::stage_readback() -> void {
 		return;
 	}
 
-	const auto* rb = f.readback_buffer.mapped();
+	const auto* rb = f.readback_buffer.host_read().data();
 	const auto* bodies_src = reinterpret_cast<const body_state*>(rb);
 	const auto* contacts_src = reinterpret_cast<const contact_constraint*>(rb + max_bodies * sizeof(body_state));
 	const auto* state_src = reinterpret_cast<const std::uint32_t*>(rb + max_bodies * sizeof(body_state) + max_contacts * sizeof(contact_constraint));
@@ -949,6 +891,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 	constexpr std::size_t solve_deltas_clear_size = max_bodies * 2 * sizeof(float) * 4;
 	gpu::pass<vbd_clear_state_buffers_stage>(ctx)
 		.on(gpu::queue_type::compute)
+		.in_chain<vbd_solve_chain>()
 		.record([&f](gpu::recording_context& rec) {
 			rec.fill_buffer(f.frozen_jacobian_buffer, 0, frozen_jacobian_clear_size);
 			rec.fill_buffer(f.solve_state_buffer, 0, solve_state_clear_size);
@@ -960,6 +903,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_collision_reset_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_reset_pipeline)
 			.record([this, &f, sub, warm, make_pc, reset_workgroups](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.collision_reset_pipeline, f.descriptors);
@@ -969,6 +913,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_grid_build_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_grid_build_pipeline)
 			.record([this, &f, sub, warm, make_pc, body_workgroups](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.collision_grid_build_pipeline, f.descriptors);
@@ -978,6 +923,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_broad_phase_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_broad_phase_pipeline)
 			.record([this, &f, sub, warm, make_pc, body_workgroups](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.collision_broad_phase_pipeline, f.descriptors);
@@ -987,6 +933,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_prepare_indirect_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.prepare_indirect_pipeline)
 			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.prepare_indirect_pipeline, f.descriptors);
@@ -996,6 +943,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_narrow_phase_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_narrow_phase_pipeline)
 			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.collision_narrow_phase_pipeline, f.descriptors);
@@ -1005,6 +953,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_prepare_contact_indirect_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.prepare_contact_indirect_pipeline)
 			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.prepare_contact_indirect_pipeline, f.descriptors);
@@ -1014,6 +963,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_build_adjacency_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_build_adjacency_pipeline)
 			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.collision_build_adjacency_pipeline, f.descriptors);
@@ -1023,6 +973,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_predict_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.predict_pipeline)
 			.record([this, &f, sub, warm, make_pc, body_workgroups](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.predict_pipeline, f.descriptors);
@@ -1032,6 +983,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_freeze_jacobians_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.freeze_jacobians_pipeline)
 			.record([this, &f, sub, warm, make_pc](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.freeze_jacobians_pipeline, f.descriptors);
@@ -1041,6 +993,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_solve_iterations_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.solve_color_pipeline)
 			.record([this, &f, sub, warm, make_pc, body_workgroups, joint_workgroups, num_iterations, solve_alpha, use_jacobi, joint_count](gpu::recording_context& rec) {
 				for (std::uint32_t it = 0; it < num_iterations; ++it) {
@@ -1087,6 +1040,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_derive_velocities_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.derive_velocities_pipeline)
 			.record([this, &f, sub, warm, make_pc, body_workgroups, num_iterations, solve_alpha](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.derive_velocities_pipeline, f.descriptors);
@@ -1096,6 +1050,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_apply_restitution_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.apply_restitution_pipeline)
 			.record([this, &f, sub, warm, make_pc, num_iterations](gpu::recording_context& rec) {
 				auto restitution_pc = make_pc(0u, num_colors, sub, num_iterations, 0.f, warm);
@@ -1113,6 +1068,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 		if (post_stabilize) {
 			gpu::pass<vbd_post_stabilize_stage>(ctx)
 				.on(gpu::queue_type::compute)
+				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.prepare_color_indirect_pipeline)
 				.record([this, &f, sub, warm, make_pc, body_workgroups, num_iterations, use_jacobi](gpu::recording_context& rec) {
 					rec.bind_descriptors(m_compute.prepare_color_indirect_pipeline, f.descriptors);
@@ -1150,6 +1106,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_finalize_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.finalize_pipeline)
 			.record([this, &f, sub, warm, make_pc, body_workgroups](gpu::recording_context& rec) {
 				rec.bind_descriptors(m_compute.finalize_pipeline, f.descriptors);
@@ -1167,6 +1124,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		gpu::pass<vbd_readback_copy_stage>(ctx)
 			.on(gpu::queue_type::compute)
+			.in_chain<vbd_solve_chain>()
 			.record([&f, &other, body_copy_size, joint_copy_size, joint_count](gpu::recording_context& rec) {
 				rec.copy_buffer(f.body_buffer, f.readback_buffer, body_copy_size);
 				rec.copy_buffer(f.contact_buffer, f.readback_buffer, contact_copy_size, 0, contact_dst_base);
@@ -1186,6 +1144,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 	f.readback_pending = true;
 	f.dispatched_at_frame = m_frame_count;
 	m_pending_dispatch = false;
+	m_body_buffers_seeded = true;
+	m_seeded_body_count = m_body_count;
 	m_frame_count++;
 	m_dispatch_slot = 1 - m_dispatch_slot;
 	co_return;

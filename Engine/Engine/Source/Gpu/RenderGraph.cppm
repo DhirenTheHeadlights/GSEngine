@@ -16,9 +16,9 @@ import :device;
 import :swap_chain;
 import :frame;
 import :bindless;
+import :transient_pool;
 
 import gse.assert;
-import gse.log;
 import gse.core;
 import gse.containers;
 import gse.time;
@@ -209,6 +209,14 @@ export namespace gse::gpu {
 			float clear_depth_value = 1.0f
 		) const -> void;
 
+		[[nodiscard]] auto resolve(
+			transient_image_handle h
+		) const -> const image&;
+
+		[[nodiscard]] auto resolve(
+			transient_buffer_handle h
+		) const -> const buffer&;
+
 		recording_context(
 			recording_context&& other
 		) noexcept;
@@ -239,12 +247,14 @@ export namespace gse::gpu {
 		vulkan::commands m_cmd;
 		std::span<const gpu::auto_bind_entry> m_auto_binds;
 		render_pass_data* m_pass = nullptr;
+		const gpu::transient_pool* m_transient_pool = nullptr;
 		std::vector<touched_resource> m_touched;
 
 		recording_context(
 			commands cmd,
 			std::span<const gpu::auto_bind_entry> auto_binds,
-			render_pass_data* pass
+			render_pass_data* pass,
+			const gpu::transient_pool* transient_pool
 		);
 
 		auto check_active(
@@ -267,6 +277,7 @@ export namespace gse::gpu {
 		std::vector<resource_usage> reads;
 		std::vector<resource_usage> writes;
 		std::vector<id> after_passes;
+		id chain_id;
 		std::optional<color_output_info> color_output;
 		std::optional<depth_output_info> depth_output;
 		std::coroutine_handle<> record_handle;
@@ -284,8 +295,14 @@ export namespace gse::gpu {
 		);
 
 		auto execute(
-			std::vector<render_pass_data> passes
+			std::vector<render_pass_data> passes,
+			std::vector<transient_image_request> transient_images = {},
+			std::vector<transient_buffer_request> transient_buffers = {}
 		) -> void;
+
+		[[nodiscard]] auto transient_pool(
+			this auto& self
+		) -> auto&;
 
 		auto set_gpu_timestamps_enabled(
 			bool enabled
@@ -353,6 +370,7 @@ export namespace gse::gpu {
 		gpu::swap_chain* m_swapchain;
 		gpu::frame* m_frame;
 		gpu::bindless_texture_set* m_bindless = nullptr;
+		gpu::transient_pool m_transient_pool;
 		std::array<per_frame_resource<gpu_profile_slot>, gpu::queue_type_count> m_profile_slots{
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
@@ -369,7 +387,7 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::recording_context::recording_context(const commands cmd, const std::span<const gpu::auto_bind_entry> auto_binds, render_pass_data* pass) : m_cmd(cmd), m_auto_binds(auto_binds), m_pass(pass) {
+gse::gpu::recording_context::recording_context(const commands cmd, const std::span<const gpu::auto_bind_entry> auto_binds, render_pass_data* pass, const gpu::transient_pool* transient_pool) : m_cmd(cmd), m_auto_binds(auto_binds), m_pass(pass), m_transient_pool(transient_pool) {
 	if (m_cmd) {
 		async::pass_recording_scope_push();
 	}
@@ -386,10 +404,11 @@ namespace gse::gpu {
 	) -> std::string;
 }
 
-gse::gpu::recording_context::recording_context(recording_context&& other) noexcept : m_cmd(other.m_cmd), m_auto_binds(other.m_auto_binds), m_pass(other.m_pass), m_touched(std::move(other.m_touched)) {
+gse::gpu::recording_context::recording_context(recording_context&& other) noexcept : m_cmd(other.m_cmd), m_auto_binds(other.m_auto_binds), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_touched(std::move(other.m_touched)) {
 	other.m_cmd = commands{};
 	other.m_auto_binds = {};
 	other.m_pass = nullptr;
+	other.m_transient_pool = nullptr;
 }
 
 auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
@@ -402,12 +421,28 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_cmd = other.m_cmd;
 		m_auto_binds = other.m_auto_binds;
 		m_pass = other.m_pass;
+		m_transient_pool = other.m_transient_pool;
 		m_touched = std::move(other.m_touched);
 		other.m_cmd = commands{};
 		other.m_auto_binds = {};
 		other.m_pass = nullptr;
+		other.m_transient_pool = nullptr;
 	}
 	return *this;
+}
+
+auto gse::gpu::recording_context::resolve(const transient_image_handle h) const -> const image& {
+	assert(m_transient_pool != nullptr, "recording_context::resolve called but no transient_pool is bound");
+	const auto* img = m_transient_pool->resolve_image(h);
+	assert(img != nullptr, "transient_image_handle {} could not be resolved; ensure it was declared via gpu::transient_image before this pass runs", h.key);
+	return *img;
+}
+
+auto gse::gpu::recording_context::resolve(const transient_buffer_handle h) const -> const buffer& {
+	assert(m_transient_pool != nullptr, "recording_context::resolve called but no transient_pool is bound");
+	const auto* buf = m_transient_pool->resolve_buffer(h);
+	assert(buf != nullptr, "transient_buffer_handle {} could not be resolved; ensure it was declared via gpu::transient_buffer before this pass runs", h.key);
+	return *buf;
 }
 
 gse::gpu::recording_context::~recording_context() {
@@ -1024,7 +1059,7 @@ namespace gse::gpu {
 		| vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations;
 }
 
-gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame, gpu::bindless_texture_set* bindless) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_bindless(bindless) {
+gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame, gpu::bindless_texture_set* bindless) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_bindless(bindless), m_transient_pool(device) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 	for (auto& q : m_queue_states) {
 		q.timeline = vulkan::semaphore::create_timeline(device.vulkan_device(), 0);
@@ -1142,16 +1177,29 @@ auto gse::gpu::render_graph::depth_image(this auto& self) -> auto& {
 	return self.m_swapchain->depth_image();
 }
 
+auto gse::gpu::render_graph::transient_pool(this auto& self) -> auto& {
+	return self.m_transient_pool;
+}
+
 auto gse::gpu::render_graph::frame_in_progress() const -> bool {
 	return m_frame->frame_in_progress();
 }
 
-auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> void {
+auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::vector<transient_image_request> transient_images, std::vector<transient_buffer_request> transient_buffers) -> void {
 	m_pending_aux_submissions.clear();
 	m_pending_graphics_extra_waits.clear();
 
 	if (!m_frame->frame_in_progress()) {
 		return;
+	}
+
+	{
+		std::vector<id> pass_kind_order;
+		pass_kind_order.reserve(passes.size());
+		for (const auto& p : passes) {
+			pass_kind_order.push_back(p.pass_type);
+		}
+		m_transient_pool.plan(m_frame->current_frame(), transient_images, transient_buffers, pass_kind_order);
 	}
 
 	m_auto_binds.clear();
@@ -1247,6 +1295,17 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 		}
 	}
 
+	{
+		const auto transitions = m_transient_pool.pending_transitions();
+		if (!transitions.empty()) {
+			const auto graphics_handle = primary_handles[static_cast<std::size_t>(gpu::queue_type::graphics)];
+			vulkan::commands(graphics_handle).pipeline_barrier(gpu::dependency_info{
+				.image_barriers = transitions,
+			});
+			m_transient_pool.clear_pending_transitions();
+		}
+	}
+
 	auto pass_queue = [&](const std::size_t pi) -> gpu::queue_type {
 		return effective_queue(passes[pi].queue);
 	};
@@ -1296,7 +1355,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 			.pInheritanceInfo = &inherit
 		});
 		m_device->descriptor_heap().bind_descriptor_storage(std::bit_cast<gpu::handle<command_buffer>>(secondary));
-		recording_context rec{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) }, m_auto_binds, std::addressof(pass) };
+		recording_context rec{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) }, m_auto_binds, std::addressof(pass), std::addressof(m_transient_pool) };
 		if (pass.primary_pipeline) {
 			rec.bind(*pass.primary_pipeline);
 		}
@@ -1363,6 +1422,11 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 
 		for (std::size_t i = 0; i < passes.size(); ++i) {
 			for (std::size_t j = i + 1; j < passes.size(); ++j) {
+				if (passes[i].chain_id.exists() && passes[i].chain_id == passes[j].chain_id) {
+					add_edge(i, j);
+					continue;
+				}
+
 				bool i_writes_j_reads = false;
 				bool j_writes_i_reads = false;
 				bool both_write = false;
@@ -1414,49 +1478,6 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes) -> vo
 			for (auto next : adj[front]) {
 				if (--in_degree[next] == 0) {
 					queue.push(next);
-				}
-			}
-		}
-		if (sorted.size() != passes.size()) {
-			log::println(log::level::error, log::category::vulkan, "render_graph: cycle detected. Remaining passes (in_degree > 0):");
-			for (std::size_t i = 0; i < passes.size(); ++i) {
-				if (in_degree[i] != 0) {
-					std::string deps;
-					for (std::size_t j = 0; j < passes.size(); ++j) {
-						if (j == i) continue;
-						for (const auto n : adj[j]) {
-							if (n == i) {
-								if (!deps.empty()) deps += ", ";
-								deps += std::format("{}", passes[j].pass_type.tag());
-								break;
-							}
-						}
-					}
-					log::println(
-						log::level::error,
-						log::category::vulkan,
-						"  pass '{}' (queue={}) in_degree={} waiting on: {}",
-						passes[i].pass_type.tag(),
-						passes[i].queue,
-						in_degree[i],
-						deps
-					);
-					auto dump = [&](std::string_view label, const std::vector<resource_usage>& usages) {
-						for (const auto& u : usages) {
-							log::println(
-								log::level::error,
-								log::category::vulkan,
-								"    {} resource={} type={} stages={:#x} access={:#x}",
-								label,
-								u.resource.ptr,
-								u.resource.type,
-								u.stage.bits(),
-								u.access.bits()
-							);
-						}
-					};
-					dump("reads", passes[i].reads);
-					dump("writes", passes[i].writes);
 				}
 			}
 		}

@@ -24,6 +24,24 @@ import gse.log;
 export namespace gse::vulkan {
     class device;
 
+    struct memory_requirements {
+        gpu::device_size size = 0;
+        gpu::device_size alignment = 0;
+        std::uint32_t memory_type_bits = 0;
+    };
+
+    struct device_memory_handle {
+        std::uint64_t value = 0;
+
+        constexpr auto operator==(
+            const device_memory_handle&
+        ) const -> bool = default;
+
+        explicit constexpr operator bool() const {
+            return value != 0;
+        }
+    };
+
     auto transition_image_layout(
         basic_image<device>& image_resource,
         gpu::handle<command_buffer> cmd_handle,
@@ -171,6 +189,45 @@ export namespace gse::vulkan {
         auto free_allocation(
             const basic_allocation<device>& alloc
         ) -> void;
+
+        [[nodiscard]] auto create_image_unbound(
+            const gpu::image_create_info& info
+        ) const -> std::pair<gpu::handle<image>, memory_requirements>;
+
+        [[nodiscard]] auto create_buffer_unbound(
+            const gpu::buffer_create_info& info
+        ) const -> std::pair<gpu::handle<buffer>, memory_requirements>;
+
+        auto bind_image_memory(
+            gpu::handle<image> img,
+            device_memory_handle mem,
+            gpu::device_size offset
+        ) const -> void;
+
+        auto bind_buffer_memory(
+            gpu::handle<buffer> buf,
+            device_memory_handle mem,
+            gpu::device_size offset
+        ) const -> void;
+
+        [[nodiscard]] auto create_image_view(
+            gpu::handle<image> img,
+            const gpu::image_view_create_info& info
+        ) const -> gpu::handle<image_view>;
+
+        [[nodiscard]] auto allocate_aliased_memory(
+            gpu::device_size size,
+            std::uint32_t memory_type_index
+        ) const -> device_memory_handle;
+
+        auto free_aliased_memory(
+            device_memory_handle mem
+        ) const -> void;
+
+        [[nodiscard]] auto find_memory_type_index(
+            std::uint32_t type_bits,
+            gpu::memory_property_flags required
+        ) const -> std::uint32_t;
 
     private:
         device(

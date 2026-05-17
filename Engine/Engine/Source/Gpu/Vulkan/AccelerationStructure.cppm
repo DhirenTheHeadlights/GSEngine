@@ -11,6 +11,8 @@ import :vulkan_buffer;
 import gse.core;
 
 export namespace gse::vulkan {
+	using as_instance = vk::AccelerationStructureInstanceKHR;
+
 	struct acceleration_structure_build_sizes {
 		gpu::device_size acceleration_structure_size = 0;
 		gpu::device_size build_scratch_size = 0;
@@ -317,7 +319,7 @@ auto gse::vulkan::tlas::create(device& dev, const std::uint32_t max_instances) -
 		.usage = gpu::buffer_flag::storage,
 	});
 
-	const gpu::device_size instance_buf_size = max_instances * sizeof(vk::AccelerationStructureInstanceKHR);
+	const gpu::device_size instance_buf_size = max_instances * sizeof(as_instance);
 	auto instance_buf = dev.create_buffer(gpu::buffer_create_info{
 		.size = instance_buf_size,
 		.usage = gpu::buffer_flag::acceleration_structure_build_input | gpu::buffer_flag::storage,

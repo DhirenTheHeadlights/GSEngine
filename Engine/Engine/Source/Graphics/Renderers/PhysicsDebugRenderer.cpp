@@ -56,9 +56,7 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 	ensure_vertex_capacity(d, *gpu_s.device, frame_index, verts.size());
 
 	auto& vertex_buffer = d.vertex_buffers[frame_index];
-	if (auto* dst = vertex_buffer.mapped()) {
-		gse::memcpy(dst, verts);
-	}
+	vertex_buffer.host_write(verts);
 
 	const auto view_matrix = cam_state.view_matrix;
 	const auto proj_matrix = cam_state.projection_matrix;

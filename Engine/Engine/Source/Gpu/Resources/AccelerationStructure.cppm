@@ -67,9 +67,9 @@ export namespace gse::gpu {
 }
 
 namespace gse {
-	auto to_vk_instance(
+	auto to_packed_instance(
 		const gpu::tlas_instance_desc& inst
-	) -> vk::AccelerationStructureInstanceKHR;
+	) -> vulkan::as_instance;
 
 	auto build_blas_async(
 		gpu::device& dev,

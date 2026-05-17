@@ -157,7 +157,7 @@ export namespace gse::gpu {
 			std::array<pass_marker, pass_marker_ring_size> entries{};
 			std::atomic<std::uint64_t> seq{ 1 };
 			vulkan::buffer checkpoint_buffer;
-			std::uint32_t* checkpoint_slots = nullptr;
+			const std::uint32_t* checkpoint_slots = nullptr;
 		};
 
 		std::array<pass_marker_ring, pass_marker_domain_count> m_pass_marker_rings;
