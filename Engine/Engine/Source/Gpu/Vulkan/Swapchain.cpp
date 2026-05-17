@@ -113,10 +113,12 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instanc
 		);
 	}
 
-	std::uint32_t image_count = vk_capabilities.minImageCount + 1;
+	std::uint32_t image_count = vk_capabilities.minImageCount + 2;
 	if (vk_capabilities.maxImageCount > 0 && image_count > vk_capabilities.maxImageCount) {
 		image_count = vk_capabilities.maxImageCount;
 	}
+
+	log::println(log::category::vulkan, "Swapchain image count: requested {}, min {}, max {}", image_count, vk_capabilities.minImageCount, vk_capabilities.maxImageCount);
 
 	vk::SwapchainCreateInfoKHR create_info{
 		.flags = {},

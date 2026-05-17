@@ -23,9 +23,8 @@ import gse.time;
 namespace gse::renderer::capture {
 	struct [[= shaders::shader_struct]] push_constants {
 		vec2u extent;
+		std::uint32_t rgba_index;
 	};
-
-	struct [[= shaders::binding<0, 0>{}, = shaders::sampler2d]] input_rgba {};
 
 	struct [[= shaders::binding<0, 1>{}, = shaders::storage_image]] output_y {
 		using element = float;
@@ -35,7 +34,7 @@ namespace gse::renderer::capture {
 		using element = vec2f;
 	};
 
-	using shader_binding_types = type_pack<input_rgba, output_y, output_uv>;
+	using shader_binding_types = type_pack<output_y, output_uv, shaders::bindless::textures>;
 
 	using entry = gpu::compute_entry<
 		gpu::body_path<"Compute/rgba_to_nv12">,
@@ -88,6 +87,11 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 				.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
 			});
 
+			d.rgba_slots[i] = gpu_s.bindless_textures->allocate(
+				d.rgba_captures[i].view(),
+				d.capture_sampler.native()
+			);
+
 			d.y_planes[i] = gpu::image::create(gpu_s.device->allocator(), {
 				.size = ext,
 				.format = gpu::image_format::r8_unorm,
@@ -105,7 +109,6 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 			d.convert_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 
 			gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.convert_descriptors[i])
-				.image<input_rgba>(d.rgba_captures[i], d.capture_sampler, gpu::image_layout::shader_read_only)
 				.storage_image<output_y>(d.y_planes[i])
 				.storage_image<output_uv>(d.uv_planes[i])
 				.commit();
@@ -265,7 +268,10 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 	const auto ext = gpu_s.render_graph->extent();
 
 	gpu::typed_push_constants<push_constants> convert_pc{
-		.data = { .extent = ext },
+		.data = {
+			.extent = ext,
+			.rgba_index = d.rgba_slots[frame_index] ? d.rgba_slots[frame_index].index : shaders::bindless::invalid_index,
+		},
 		.stages = gpu::stage_flag::compute,
 	};
 
@@ -281,6 +287,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 	if (do_encode) {
 		const auto capture_extent = d.rgba_captures[frame_index].extent();
 		rec.blit_swapchain_to_image(*gpu_s.swapchain, *gpu_s.frame, d.rgba_captures[frame_index], vec2u{ capture_extent.x(), capture_extent.y() });
+		rec.sample_image(d.rgba_captures[frame_index], gpu::pipeline_stage_flag::compute_shader);
 		rec.bind(d.convert_pipeline);
 		rec.bind_descriptors(d.convert_pipeline, d.convert_descriptors[frame_index]);
 		rec.push(d.convert_pipeline, convert_pc);

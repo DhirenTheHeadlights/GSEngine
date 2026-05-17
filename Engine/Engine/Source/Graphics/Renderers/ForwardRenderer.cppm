@@ -78,8 +78,6 @@ export namespace gse::renderer::forward {
 			per_frame_resource<gpu::buffer> light_buffers;
 			per_frame_resource<gpu::buffer> material_palette_buffers;
 
-			resource::handle<texture> blank_texture;
-
 			linear_vector<std::byte> light_staging;
 			linear_vector<std::byte> material_staging;
 		};

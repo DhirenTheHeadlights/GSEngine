@@ -4,6 +4,8 @@ public static const uint MAX_CONTACTS = 16384;
 public static const uint MAX_COLLISION_PAIRS = 16384;
 public static const uint MAX_COLORS = 16;
 public static const uint MAX_JOINTS = 128;
+public static const uint MAX_IMPULSES = 64;
+public static const uint MAX_GROUNDED_UINTS = (MAX_BODIES + 31) / 32;
 
 public static const uint JOINT_TYPE_DISTANCE = 0;
 public static const uint JOINT_TYPE_FIXED = 1;

@@ -372,14 +372,16 @@ float trace_shadow(float3 origin, float3 normal, float3 direction, float t_max, 
 
 [shader("fragment")]
 float4 fs_main(MeshOutput input) : SV_Target0 {
-    float3 tex_sample = diffuse_sampler.Sample(input.tex_coord).rgb;
     float3 normal_vs = normalize(input.view_normal);
     float3 pos_vs = input.view_pos;
     float3 pos_world = input.world_pos;
 
     instance_data inst = instance_data_buffer[input.instance_idx];
     material_data mat = material_palette[inst.material_index];
-    float3 base_color = tex_sample * mat.base_color;
+    float3 tex_sample = mat.diffuse_index == 0xFFFFFFFFu
+        ? float3(1.0)
+        : textures[NonUniformResourceIndex(mat.diffuse_index)].Sample(input.tex_coord).rgb;
+    float3 base_color = tex_sample * mat.base_color * inst.tint;
     float3 F0 = lerp(float3(0.04), base_color, mat.metallic);
 
     float3 V = normalize(-pos_vs);

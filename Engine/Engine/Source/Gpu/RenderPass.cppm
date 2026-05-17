@@ -9,17 +9,22 @@ import gse.ecs;
 import gse.meta;
 
 import :types;
+import :transient_pool;
 import :render_graph;
 
 export namespace gse::gpu {
 	struct color_attachment {
 		load_op op = load_op::clear;
 		gpu::color_clear clear{};
+		const image* target = nullptr;
+		transient_image_handle transient_target;
 	};
 
 	struct depth_attachment {
 		load_op op = load_op::clear;
 		gpu::depth_clear clear{};
+		const image* target = nullptr;
+		transient_image_handle transient_target;
 	};
 
 	struct render_pass_descriptor {

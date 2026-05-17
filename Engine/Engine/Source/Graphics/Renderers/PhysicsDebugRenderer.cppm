@@ -27,7 +27,6 @@ export namespace gse::renderer::physics_debug {
 	struct debug_stats {
 		std::uint32_t body_count = 0;
 		std::uint32_t sleeping_count = 0;
-		std::uint32_t contact_count = 0;
 		std::uint32_t motor_count = 0;
 		std::uint32_t colliding_pairs = 0;
 		velocity max_linear_speed{};

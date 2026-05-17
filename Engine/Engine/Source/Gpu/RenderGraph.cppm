@@ -37,11 +37,15 @@ export namespace gse::gpu {
 	struct color_output_info {
 		bool is_swapchain = false;
 		const image* custom_target = nullptr;
+		transient_image_handle transient_target;
 		load_op op = load_op::clear;
 		gpu::color_clear clear_value;
 	};
 
 	struct depth_output_info {
+		bool is_swapchain = false;
+		const image* custom_target = nullptr;
+		transient_image_handle transient_target;
 		load_op op = load_op::clear;
 		gpu::depth_clear clear_value;
 	};
@@ -178,6 +182,11 @@ export namespace gse::gpu {
 		auto barrier(
 			gpu::barrier_scope scope
 		) const -> void;
+
+		auto sample_image(
+			const image& img,
+			gpu::pipeline_stage_flags stages
+		) -> void;
 
 		auto build_acceleration_structure(
 			const gpu::acceleration_structure_build_geometry_info& build_info,
@@ -358,7 +367,7 @@ export namespace gse::gpu {
 		struct inheritance_storage {
 			std::vector<vk::CommandBufferInheritanceRenderingInfo> rendering_inherits;
 			std::vector<vk::CommandBufferInheritanceInfo> inherits;
-			std::array<vk::Format, 1> color_formats{};
+			std::vector<std::array<vk::Format, 1>> color_formats;
 		};
 
 		struct queue_state {
@@ -455,6 +464,18 @@ gse::gpu::recording_context::~recording_context() {
 
 auto gse::gpu::recording_context::check_active() const -> void {
 	assert(async::pass_recording_scope_active() > 0, "recording_context method called outside an active pass; rec was captured by reference past its lifetime");
+}
+
+auto gse::gpu::recording_context::sample_image(const image& img, const gpu::pipeline_stage_flags stages) -> void {
+	check_active();
+	note_touched(
+		{
+			.ptr = std::addressof(img),
+			.type = resource_type::image,
+		},
+		stages,
+		gpu::access_flag::shader_sampled_read
+	);
 }
 
 auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
@@ -1295,17 +1316,6 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 		}
 	}
 
-	{
-		const auto transitions = m_transient_pool.pending_transitions();
-		if (!transitions.empty()) {
-			const auto graphics_handle = primary_handles[static_cast<std::size_t>(gpu::queue_type::graphics)];
-			vulkan::commands(graphics_handle).pipeline_barrier(gpu::dependency_info{
-				.image_barriers = transitions,
-			});
-			m_transient_pool.clear_pending_transitions();
-		}
-	}
-
 	auto pass_queue = [&](const std::size_t pi) -> gpu::queue_type {
 		return effective_queue(passes[pi].queue);
 	};
@@ -1317,9 +1327,29 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
 
 	auto& inheritance = m_inheritance_storage[frame_idx];
-	inheritance.color_formats = { vulkan::to_vk(color_format) };
+	inheritance.color_formats.assign(passes.size(), std::array<vk::Format, 1>{});
 	inheritance.rendering_inherits.assign(passes.size(), vk::CommandBufferInheritanceRenderingInfo{});
 	inheritance.inherits.assign(passes.size(), vk::CommandBufferInheritanceInfo{});
+
+	auto resolve_color_target = [&](const color_output_info& info) -> const image* {
+		if (info.transient_target) {
+			return m_transient_pool.resolve_image(info.transient_target);
+		}
+		if (info.custom_target) {
+			return info.custom_target;
+		}
+		return nullptr;
+	};
+
+	auto resolve_depth_target = [&](const depth_output_info& info) -> const image* {
+		if (info.transient_target) {
+			return m_transient_pool.resolve_image(info.transient_target);
+		}
+		if (info.custom_target) {
+			return info.custom_target;
+		}
+		return nullptr;
+	};
 
 	task::parallel_invoke_range(0, passes.size(), [&](std::size_t pi) {
 		auto& pass = passes[pi];
@@ -1331,11 +1361,22 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 		assert(worker_idx.has_value(), "graph::record_parallel: thread has no arena slot");
 		const auto secondary = worker_pools.acquire_secondary(queue, *worker_idx, frame_idx);
 
+		const auto* color_target = pass.color_output ? resolve_color_target(*pass.color_output) : nullptr;
+		const auto* depth_target = pass.depth_output ? resolve_depth_target(*pass.depth_output) : nullptr;
+
+		const auto color_attach_format = color_target
+			? static_cast<vk::Format>(color_target->format())
+			: vulkan::to_vk(color_format);
+		const auto depth_attach_format = depth_target
+			? static_cast<vk::Format>(depth_target->format())
+			: vk::Format::eD32Sfloat;
+		inheritance.color_formats[pi] = { color_attach_format };
+
 		inheritance.rendering_inherits[pi] = vk::CommandBufferInheritanceRenderingInfo{
 			.viewMask = 0,
 			.colorAttachmentCount = pass.color_output ? 1u : 0u,
-			.pColorAttachmentFormats = pass.color_output ? inheritance.color_formats.data() : nullptr,
-			.depthAttachmentFormat = pass.depth_output ? vk::Format::eD32Sfloat : vk::Format::eUndefined,
+			.pColorAttachmentFormats = pass.color_output ? inheritance.color_formats[pi].data() : nullptr,
+			.depthAttachmentFormat = pass.depth_output ? depth_attach_format : vk::Format::eUndefined,
 			.stencilAttachmentFormat = vk::Format::eUndefined,
 			.rasterizationSamples = vk::SampleCountFlagBits::e1,
 		};
@@ -1360,8 +1401,9 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 			rec.bind(*pass.primary_pipeline);
 		}
 		if (pass.depth_output) {
+			const auto* depth_img = depth_target ? depth_target : std::addressof(m_swapchain->depth_image());
 			const auto depth_ref = resource_ref{
-				.ptr = std::addressof(m_swapchain->depth_image()),
+				.ptr = depth_img,
 				.type = resource_type::image,
 			};
 			if (pass.depth_output->op == load_op::load) {
@@ -1377,6 +1419,29 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 					gpu::pipeline_stage_flag::late_fragment_tests,
 					gpu::access_flag::depth_stencil_attachment_write
 				);
+			}
+		}
+		if (pass.color_output) {
+			const auto* color_img = color_target;
+			if (color_img) {
+				const auto color_ref = resource_ref{
+					.ptr = color_img,
+					.type = resource_type::image,
+				};
+				if (pass.color_output->op == load_op::load) {
+					rec.note_touched(
+						color_ref,
+						gpu::pipeline_stage_flag::color_attachment_output,
+						gpu::access_flag::color_attachment_read | gpu::access_flag::color_attachment_write
+					);
+				}
+				else {
+					rec.note_touched(
+						color_ref,
+						gpu::pipeline_stage_flag::color_attachment_output,
+						gpu::access_flag::color_attachment_write
+					);
+				}
 			}
 		}
 		if (pass.body) {
@@ -1631,6 +1696,52 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 			}
 		};
 
+		std::vector<std::vector<gpu::image_barrier>> alias_barriers_for_sorted(sorted.size());
+		{
+			const auto transient_infos = m_transient_pool.transient_images();
+			for (const auto& info : transient_infos) {
+				std::size_t first_si = sorted.size();
+				gpu::pipeline_stage_flags first_stages;
+				gpu::access_flags first_access;
+				for (std::size_t si = 0; si < sorted.size(); ++si) {
+					const auto& p = passes[sorted[si]];
+					auto match = [&](const std::vector<resource_usage>& list) -> bool {
+						for (const auto& u : list) {
+							if (u.resource.type == resource_type::image && u.resource.ptr == info.resource) {
+								first_stages |= u.stage;
+								first_access |= u.access;
+								return true;
+							}
+						}
+						return false;
+					};
+					const bool in_reads = match(p.reads);
+					const bool in_writes = match(p.writes);
+					if (in_reads || in_writes) {
+						first_si = si;
+						break;
+					}
+				}
+				if (first_si == sorted.size()) {
+					continue;
+				}
+				alias_barriers_for_sorted[first_si].push_back({
+					.src_stages = gpu::pipeline_stage_flag::all_commands,
+					.src_access = gpu::access_flag::memory_write,
+					.dst_stages = first_stages,
+					.dst_access = first_access,
+					.old_layout = gpu::image_layout::undefined,
+					.new_layout = info.target_layout,
+					.image = info.resource->handle(),
+					.aspects = info.aspects,
+					.base_mip_level = 0,
+					.level_count = 1,
+					.base_array_layer = 0,
+					.layer_count = 1,
+				});
+			}
+		}
+
 		for (std::size_t si = 0; si < sorted.size(); ++si) {
 			const auto pass_idx = sorted[si];
 			auto& pass = passes[pass_idx];
@@ -1641,7 +1752,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 
 			std::vector<gpu::memory_barrier> memory_barriers;
 			std::vector<gpu::buffer_barrier> buffer_barriers;
-			std::vector<gpu::image_barrier> image_barriers;
+			std::vector<gpu::image_barrier> image_barriers = std::move(alias_barriers_for_sorted[si]);
 
 			append_host_dirty_barriers(pass, buffer_barriers);
 			append_prev_pass_barriers(pass, queue, si, memory_barriers, buffer_barriers, image_barriers);
@@ -1759,6 +1870,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 			if (is_graphics_pass) {
 				std::vector<vk::RenderingAttachmentInfo> color_attachments;
 				std::optional<vk::RenderingAttachmentInfo> depth_att;
+				vk::Extent2D pass_extent = vk_extent;
 
 				if (pass.color_output) {
 					const auto& info = *pass.color_output;
@@ -1777,9 +1889,23 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 						vk_load = vk::AttachmentLoadOp::eLoad;
 					}
 
+					const auto* color_target = resolve_color_target(info);
+					vk::ImageView color_view;
+					vk::ImageLayout color_layout;
+					if (color_target) {
+						color_view = std::bit_cast<vk::ImageView>(color_target->view());
+						color_layout = vulkan::to_vk(color_target->layout());
+						const auto ext = color_target->extent();
+						pass_extent = vk::Extent2D{ ext.x(), ext.y() };
+					}
+					else {
+						color_view = std::bit_cast<vk::ImageView>(m_swapchain->image_view(image_index));
+						color_layout = vk::ImageLayout::eColorAttachmentOptimal;
+					}
+
 					color_attachments.push_back({
-						.imageView = std::bit_cast<vk::ImageView>(m_swapchain->image_view(image_index)),
-						.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+						.imageView = color_view,
+						.imageLayout = color_layout,
 						.loadOp = vk_load,
 						.storeOp = vk::AttachmentStoreOp::eStore,
 						.clearValue = clear_val
@@ -1787,7 +1913,9 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 				}
 
 				if (pass.depth_output) {
-					const auto& [op, clear_value] = *pass.depth_output;
+					const auto& info = *pass.depth_output;
+					const auto op = info.op;
+					const auto& clear_value = info.clear_value;
 					auto vk_load = vk::AttachmentLoadOp::eDontCare;
 					vk::ClearValue clear_val{};
 
@@ -1799,9 +1927,25 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 						vk_load = vk::AttachmentLoadOp::eLoad;
 					}
 
+					const auto* depth_target = resolve_depth_target(info);
+					vk::ImageView depth_view;
+					vk::ImageLayout depth_layout;
+					if (depth_target) {
+						depth_view = std::bit_cast<vk::ImageView>(depth_target->view());
+						depth_layout = vulkan::to_vk(depth_target->layout());
+						if (!pass.color_output) {
+							const auto ext = depth_target->extent();
+							pass_extent = vk::Extent2D{ ext.x(), ext.y() };
+						}
+					}
+					else {
+						depth_view = std::bit_cast<vk::ImageView>(m_swapchain->depth_image().view());
+						depth_layout = vk::ImageLayout::eGeneral;
+					}
+
 					depth_att = vk::RenderingAttachmentInfo{
-						.imageView = std::bit_cast<vk::ImageView>(m_swapchain->depth_image().view()),
-						.imageLayout = vk::ImageLayout::eGeneral,
+						.imageView = depth_view,
+						.imageLayout = depth_layout,
 						.loadOp = vk_load,
 						.storeOp = vk::AttachmentStoreOp::eStore,
 						.clearValue = clear_val
@@ -1810,7 +1954,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 
 				const vk::RenderingInfo ri{
 					.flags = vk::RenderingFlagBits::eContentsSecondaryCommandBuffers,
-					.renderArea = { { 0, 0 }, vk_extent },
+					.renderArea = { { 0, 0 }, pass_extent },
 					.layerCount = 1,
 					.colorAttachmentCount = static_cast<std::uint32_t>(color_attachments.size()),
 					.pColorAttachments = color_attachments.empty() ? nullptr : color_attachments.data(),

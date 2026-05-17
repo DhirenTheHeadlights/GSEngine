@@ -66,7 +66,9 @@ struct FS_OUTPUT {
 FS_OUTPUT fs_main(VS_OUTPUT input) {
     FS_OUTPUT o;
 
-    float3 base_color = diffuse_sampler.Sample(input.tex_coord).rgb;
+    float3 base_color = pc.diffuse_index == 0xFFFFFFFFu
+        ? float3(1.0)
+        : textures[NonUniformResourceIndex(pc.diffuse_index)].Sample(input.tex_coord).rgb;
 
     o.out_albedo = base_color;
     o.out_normal = encode_octahedron(normalize(input.view_normal));

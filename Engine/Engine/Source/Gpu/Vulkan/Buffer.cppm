@@ -69,6 +69,8 @@ export namespace gse::vulkan {
 
 		auto clear_host_dirty() const noexcept -> void;
 
+		[[nodiscard]] auto debug_info() const -> const allocation_debug_info&;
+
 		explicit operator bool() const;
 
 	private:
@@ -134,11 +136,18 @@ auto gse::vulkan::drain_dirty_buffers() -> void {
 		stale = std::move(r.set);
 		r.set.clear();
 	}
+	std::string detail;
+	for (const auto* b : stale) {
+		const auto& di = b->debug_info();
+		const auto file = std::filesystem::path(di.creation_location.file_name()).filename().string();
+		detail += std::format("\n  #{} [{}] {} bytes @ {}:{}", di.allocation_id, di.tag, b->size_bytes(), file, di.creation_location.line());
+	}
 	log::println(
 		log::level::warning,
 		log::category::vulkan,
-		"render_graph: {} buffer(s) host_write'd but not consumed by any pass this frame; clearing dirty flags",
-		stale.size()
+		"render_graph: {} buffer(s) host_write'd but not consumed by any pass this frame; clearing dirty flags:{}",
+		stale.size(),
+		detail
 	);
 	for (const auto* b : stale) {
 		b->clear_host_dirty();
@@ -228,6 +237,11 @@ auto gse::vulkan::basic_buffer<Device>::size() const -> gpu::device_size {
 template <typename Device>
 gse::vulkan::basic_buffer<Device>::operator bool() const {
 	return static_cast<bool>(m_buffer);
+}
+
+template <typename Device>
+auto gse::vulkan::basic_buffer<Device>::debug_info() const -> const allocation_debug_info& {
+	return m_allocation.debug_info();
 }
 
 template <typename Device>

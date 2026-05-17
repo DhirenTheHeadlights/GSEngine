@@ -10,7 +10,6 @@ import :aliases;
 export namespace gse::shaders {
 	struct shader_struct_tag {};
 	struct shader_enum_tag {};
-	struct sampler2d_tag {};
 	struct sampler2d_array_tag {};
 	struct ssbo_readonly_tag {};
 	struct ssbo_readwrite_tag {};
@@ -21,7 +20,6 @@ export namespace gse::shaders {
 
 	constexpr shader_struct_tag shader_struct{};
 	constexpr shader_enum_tag shader_enum{};
-	constexpr sampler2d_tag sampler2d{};
 	constexpr sampler2d_array_tag sampler2d_array{};
 	constexpr ssbo_readonly_tag ssbo_readonly{};
 	constexpr ssbo_readwrite_tag ssbo_readwrite{};
@@ -255,10 +253,7 @@ template <gse::shaders::is_shader_binding T>
 auto gse::shaders::emit_slang_binding() -> std::string {
 	using binding_t = [: find_binding_type(^^T) :];
 	constexpr auto name = std::meta::identifier_of(^^T);
-	if constexpr (has_annotation<sampler2d_tag>(^^T)) {
-		return std::format("public [[vk::binding({}, {})]] Sampler2D {};\n", binding_t::slot, binding_t::set, name);
-	}
-	else if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
+	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
 		return std::format("public [[vk::binding({}, {})]] Sampler2D {}[];\n", binding_t::slot, binding_t::set, name);
 	}
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {
@@ -399,7 +394,7 @@ consteval auto gse::shaders::slang_scalar_size() -> std::size_t {
 
 template <gse::shaders::is_shader_binding T>
 consteval auto gse::shaders::descriptor_type_of() -> gpu::descriptor_type {
-	if constexpr (has_annotation<sampler2d_tag>(^^T) || has_annotation<sampler2d_array_tag>(^^T)) {
+	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
 		return gpu::descriptor_type::combined_image_sampler;
 	}
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {

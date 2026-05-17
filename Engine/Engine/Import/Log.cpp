@@ -73,7 +73,7 @@ auto gse::log::current_thread_tag() -> std::uint64_t {
 }
 
 auto gse::log::should_flush(const level lvl) -> bool {
-    return lvl == level::warning || lvl == level::error;
+    return lvl == level::error;
 }
 
 auto gse::log::decorate(const level lvl, const category cat, const std::string_view msg) -> std::string {
@@ -119,7 +119,10 @@ auto gse::log::logger::write(const level lvl, const std::string_view msg) -> voi
     }
 
     if (m_file.is_open()) {
-        m_file << msg << '\n' << std::flush;
+        m_file << msg << '\n';
+        if (flush_now) {
+            m_file.flush();
+        }
     }
 }
 

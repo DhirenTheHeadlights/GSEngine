@@ -77,6 +77,7 @@ export namespace gse {
 		id state_type_id;
 		id update_wall_id;
 		id frame_wall_id;
+		id frame_start_id;
 		id trace_id;
 	};
 

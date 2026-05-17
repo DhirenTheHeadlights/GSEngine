@@ -8,7 +8,6 @@ import :vulkan_image;
 import :vulkan_buffer;
 import :vulkan_device;
 import :vulkan_allocation;
-import :vulkan_commands;
 import :aliases;
 import :device;
 
@@ -85,6 +84,8 @@ export namespace gse::gpu {
 
 	struct transient_image_allocation {
 		std::unique_ptr<gpu::image> resource;
+		image_aspect_flags aspects;
+		image_format format = image_format::r8g8b8a8_unorm;
 		image_layout layout = image_layout::general;
 		std::uint32_t color = 0;
 		std::uint32_t first_pass = 0;
@@ -133,11 +134,15 @@ export namespace gse::gpu {
 			transient_buffer_handle h
 		) const -> const buffer*;
 
-		[[nodiscard]] auto pending_transitions(
-		) const -> std::span<const image_barrier>;
+		struct transient_image_info {
+			const image* resource = nullptr;
+			image_aspect_flags aspects;
+			image_layout target_layout = image_layout::general;
+			image_format format = image_format::r8g8b8a8_unorm;
+		};
 
-		auto clear_pending_transitions(
-		) -> void;
+		[[nodiscard]] auto transient_images(
+		) const -> std::vector<transient_image_info>;
 
 	private:
 		struct memory_block {
@@ -150,7 +155,6 @@ export namespace gse::gpu {
 			std::unordered_map<std::uint64_t, transient_image_allocation> images;
 			std::unordered_map<std::uint64_t, transient_buffer_allocation> buffers;
 			std::vector<memory_block> blocks;
-			std::vector<image_barrier> pending_transitions;
 		};
 
 		auto ensure_block_for_color(

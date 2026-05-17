@@ -65,13 +65,6 @@ export namespace gse::gpu {
 		) -> descriptor_writer&;
 
 		template <shaders::is_shader_binding T>
-		auto image(
-			const vulkan::basic_image<vulkan::device>& img,
-			const sampler& samp,
-			image_layout layout = image_layout::shader_read_only
-		) -> descriptor_writer&;
-
-		template <shaders::is_shader_binding T>
 		auto storage_image(
 			const vulkan::basic_image<vulkan::device>& img,
 			image_layout layout = image_layout::general
@@ -115,13 +108,6 @@ export namespace gse::gpu {
 			std::size_t range
 		) -> descriptor_writer&;
 
-		auto image_impl(
-			std::uint32_t slot,
-			const vulkan::basic_image<vulkan::device>& img,
-			const sampler& samp,
-			image_layout layout
-		) -> descriptor_writer&;
-
 		auto storage_image_impl(
 			std::uint32_t slot,
 			const vulkan::basic_image<vulkan::device>& img,
@@ -139,7 +125,6 @@ export namespace gse::gpu {
 		mode m_mode = mode::persistent;
 
 		std::unordered_map<std::uint32_t, stored_buffer_info> m_buffer_infos;
-		std::unordered_map<std::uint32_t, descriptor_image_info> m_image_infos;
 		std::unordered_map<std::uint32_t, descriptor_image_info> m_storage_image_infos;
 		std::unordered_map<std::uint32_t, acceleration_structure_handle> m_as_infos;
 
@@ -244,12 +229,6 @@ auto gse::gpu::descriptor_writer::buffer(const vulkan::basic_buffer<vulkan::devi
 }
 
 template <gse::shaders::is_shader_binding T>
-auto gse::gpu::descriptor_writer::image(const vulkan::basic_image<vulkan::device>& img, const sampler& samp, const image_layout layout) -> descriptor_writer& {
-	using binding_t = [: shaders::find_binding_type(^^T) :];
-	return image_impl(binding_t::slot, img, samp, layout);
-}
-
-template <gse::shaders::is_shader_binding T>
 auto gse::gpu::descriptor_writer::storage_image(const vulkan::basic_image<vulkan::device>& img, const image_layout layout) -> descriptor_writer& {
 	using binding_t = [: shaders::find_binding_type(^^T) :];
 	return storage_image_impl(binding_t::slot, img, layout);
@@ -277,27 +256,6 @@ auto gse::gpu::descriptor_writer::buffer_impl(const std::uint32_t slot, const vu
 		.ref = {
 			.ptr = std::addressof(buf),
 			.type = resource_type::buffer,
-		},
-	});
-	return *this;
-}
-
-auto gse::gpu::descriptor_writer::image_impl(const std::uint32_t slot, const vulkan::basic_image<vulkan::device>& img, const sampler& samp, const image_layout layout) -> descriptor_writer& {
-	if (m_mode == mode::persistent) {
-		m_image_infos[slot] = descriptor_image_info{
-			.sampler = samp.native(),
-			.image_view = img.view(),
-			.layout = layout,
-		};
-	}
-	else {
-		m_push_writer.image(slot, img.view(), samp.native(), layout);
-	}
-	m_touched.push_back({
-		.slot = slot,
-		.ref = {
-			.ptr = std::addressof(img),
-			.type = resource_type::image,
 		},
 	});
 	return *this;
@@ -365,15 +323,6 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 			return;
 		}
 
-		if (auto it2 = m_image_infos.find(binding); it2 != m_image_infos.end()) {
-			const descriptor_get_info get_info{
-				.type = descriptor_type::combined_image_sampler,
-				.image = it2->second,
-			};
-			heap.write_descriptor(region, boff, get_info, props.combined_image_sampler_descriptor_size);
-			return;
-		}
-
 		if (auto it_si = m_storage_image_infos.find(binding); it_si != m_storage_image_infos.end()) {
 			const descriptor_get_info get_info{
 				.type = descriptor_type::storage_image,
@@ -412,7 +361,6 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 	}
 
 	m_buffer_infos.clear();
-	m_image_infos.clear();
 	m_storage_image_infos.clear();
 	m_as_infos.clear();
 

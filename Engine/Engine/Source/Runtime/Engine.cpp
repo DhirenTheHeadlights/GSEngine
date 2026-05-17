@@ -35,6 +35,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_save.set_auto_save(true, config::resource_path / "Misc/settings.ini");
 	m_save.set_on_restart([] { app::restart(); });
 	m_scheduler.register_external_resource<save::registry>(&m_save);
+	m_scheduler.register_external_resource<primitives::data>(&m_primitives);
 
 	add_system<input::system>();
 	add_system<actions::system>();
@@ -47,6 +48,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		add_system<physics::system>();
 		add_system<camera::system>();
 		add_system<renderer::system>();
+		add_system<primitive_resolver::system>();
 		add_system<renderer::geometry_collector::system>();
 		add_system<renderer::skin_compute::system>();
 		add_system<renderer::cull_compute::system>();
@@ -67,6 +69,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
 		gse::asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
+		primitives::initialize(m_primitives, asset_state);
 		assets.install_hot_reload_fns();
 		if (const auto result = assets.compile_all(); result.success_count > 0 || result.failure_count > 0) {
 			log::println(

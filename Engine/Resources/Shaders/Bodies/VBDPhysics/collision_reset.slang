@@ -22,6 +22,10 @@ if (bi < MAX_CONTACTS) {
     contact_data[bi].body_b = 0;
 }
 
+if (bi < MAX_GROUNDED_UINTS) {
+    grounded_bits[bi] = 0;
+}
+
 if (bi == 0) {
     grid_data[0] = 0;
 }

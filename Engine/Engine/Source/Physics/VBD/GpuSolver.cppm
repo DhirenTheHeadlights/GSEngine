@@ -35,6 +35,7 @@ export namespace gse::vbd {
 		contact_constraint,
 		velocity_motor_constraint,
 		joint_constraint,
+		impulse_constraint,
 		frozen_jacobian,
 		dispatch_args
 	>;
@@ -46,12 +47,14 @@ export namespace gse::vbd {
 	constexpr std::uint32_t max_joints = 128;
 	constexpr std::uint32_t max_colors = 16;
 	constexpr std::uint32_t max_collision_pairs = 16384;
+	constexpr std::uint32_t max_impulses = 64;
 	constexpr std::uint32_t workgroup_size = 64;
 	constexpr std::uint32_t collision_state_header_uints = 8;
 
 	constexpr std::uint32_t solve_state_float4s_per_body = 11;
 	constexpr std::uint32_t collision_state_uints = collision_state_header_uints;
 	constexpr std::uint32_t grid_table_size = 4096;
+	constexpr std::uint32_t grounded_bits_uints = (max_bodies + 31) / 32;
 
 	struct vbd_solve_chain {};
 
@@ -63,6 +66,7 @@ export namespace gse::vbd {
 	struct vbd_narrow_phase_stage {};
 	struct vbd_prepare_contact_indirect_stage {};
 	struct vbd_build_adjacency_stage {};
+	struct vbd_apply_impulses_stage {};
 	struct vbd_predict_stage {};
 	struct vbd_freeze_jacobians_stage {};
 	struct vbd_solve_iterations_stage {};
@@ -70,7 +74,7 @@ export namespace gse::vbd {
 	struct vbd_apply_restitution_stage {};
 	struct vbd_post_stabilize_stage {};
 	struct vbd_finalize_stage {};
-	struct vbd_readback_copy_stage {};
+	struct vbd_state_copy_stage {};
 
 	class gpu_solver {
 	public:
@@ -97,10 +101,11 @@ export namespace gse::vbd {
 			std::span<const body_state> bodies,
 			std::span<const velocity_motor_constraint> motors,
 			std::span<const joint_constraint> joints,
-			std::span<const contact_constraint> prev_contacts,
+			std::span<const impulse_constraint> impulses,
 			const solver_config& solver_cfg,
 			time_step dt,
-			int steps
+			int steps,
+			bool refresh_joints
 		) -> void;
 
 		auto total_substeps(
@@ -109,25 +114,17 @@ export namespace gse::vbd {
 		auto commit_upload(
 		) -> void;
 
-		auto stage_readback(
-		) -> void;
+		auto read_grounded(
+		) const -> std::span<const std::uint32_t>;
 
-		auto readback(
-			std::span<body_state> bodies,
-			std::vector<contact_constraint>& contacts_out,
-			std::span<joint_constraint> joints_out
-		) -> void;
-
-		auto has_readback_data(
-		) const -> bool;
+		auto query_body_snapshot(
+			std::uint32_t body_index
+		) const -> std::optional<body_state>;
 
 		auto pending_dispatch(
 		) const -> bool;
 
 		auto body_count(
-		) const -> std::uint32_t;
-
-		auto contact_count(
 		) const -> std::uint32_t;
 
 		auto motor_count(
@@ -141,9 +138,6 @@ export namespace gse::vbd {
 
 		auto dt(
 		) const -> time_step;
-
-		auto frame_count(
-		) const -> std::uint32_t;
 
 		auto snapshot_buffer(
 			std::uint32_t slot
@@ -171,6 +165,7 @@ export namespace gse::vbd {
 			gpu::pipeline freeze_jacobians_pipeline;
 			gpu::pipeline apply_jacobi_pipeline;
 			gpu::pipeline apply_restitution_pipeline;
+			gpu::pipeline apply_impulses_pipeline;
 
 			bool initialized = false;
 		} m_compute;
@@ -190,7 +185,6 @@ export namespace gse::vbd {
 			gpu::buffer joint_counts_buffer;
 			gpu::buffer joint_adjacency_buffer;
 			gpu::buffer solve_state_buffer;
-			gpu::buffer readback_buffer;
 			gpu::buffer collision_pair_buffer;
 			gpu::buffer collision_state_buffer;
 			gpu::buffer warm_start_buffer;
@@ -200,15 +194,11 @@ export namespace gse::vbd {
 			gpu::buffer indirect_dispatch_buffer;
 			gpu::buffer frozen_jacobian_buffer;
 			gpu::buffer solve_deltas_buffer;
+			gpu::buffer grounded_buffer;
+			gpu::buffer grounded_readback_buffer;
+			gpu::buffer impulse_buffer;
 
-			struct readback_frame_info {
-				std::uint32_t body_count = 0;
-				std::uint32_t contact_count = 0;
-				std::uint32_t joint_count = 0;
-			} readback_info;
-
-			bool readback_pending = false;
-			std::uint64_t dispatched_at_frame = 0;
+			bool grounded_valid = false;
 		};
 
 		per_frame_resource<per_frame_data> m_frames{ per_frame_data{}, per_frame_data{} };
@@ -216,14 +206,14 @@ export namespace gse::vbd {
 
 		bool m_buffers_created = false;
 		bool m_pending_dispatch = false;
-		std::uint32_t m_frame_count = 0;
 		bool m_body_buffers_seeded = false;
 		std::uint32_t m_seeded_body_count = 0;
+		bool m_joint_buffers_seeded = false;
 
 		std::uint32_t m_body_count = 0;
-		std::uint32_t m_contact_count = 0;
 		std::uint32_t m_motor_count = 0;
 		std::uint32_t m_joint_count = 0;
+		std::uint32_t m_impulse_count = 0;
 
 		std::uint32_t m_steps = 1;
 		gap m_grid_cell_size = meters(2.0f);
@@ -233,18 +223,10 @@ export namespace gse::vbd {
 		std::uint32_t m_warm_start_count = 0;
 
 		std::vector<velocity_motor_constraint> m_upload_motors;
-		std::vector<contact_constraint> m_upload_warm_starts;
 		std::vector<joint_constraint> m_upload_joints;
+		std::vector<impulse_constraint> m_upload_impulses;
 		std::vector<std::uint32_t> m_upload_motor_map;
 		std::vector<std::uint32_t> m_upload_collision_state;
-
-		std::vector<contact_constraint> m_staged_contacts;
-		std::vector<joint_constraint> m_staged_joints;
-		std::vector<body_state> m_staged_bodies;
-		std::uint32_t m_staged_body_count = 0;
-		std::uint32_t m_staged_contact_count = 0;
-		std::uint32_t m_staged_joint_count = 0;
-		bool m_staged_valid = false;
-
+		bool m_upload_joints_dirty = false;
 	};
 }

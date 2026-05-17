@@ -11,6 +11,7 @@ import :skinned_model;
 import :render_component;
 import :animation_component;
 import :material;
+import :primitive_resolver;
 import :skeleton;
 import :texture;
 
@@ -41,7 +42,8 @@ namespace gse::renderer::geometry_collector {
 		const mat4f& normal_matrix,
 		std::uint32_t skin_offset,
 		std::uint32_t joint_count,
-		std::uint32_t mat_idx
+		std::uint32_t mat_idx,
+		const vec3f& tint
 	) -> void;
 
 	template <typename Items, typename Batches, typename KeyOf, typename GetMesh, typename AccumAabb, typename OnInstance>
@@ -113,14 +115,14 @@ auto gse::renderer::geometry_collector::material_palette_index(render_data& data
 	return index;
 }
 
-auto gse::renderer::geometry_collector::write_instance(std::vector<shaders::common::instance_data>& instance_staging, const mat4f& model_matrix, const mat4f& normal_matrix, const std::uint32_t skin_offset, const std::uint32_t joint_count, const std::uint32_t mat_idx) -> void {
+auto gse::renderer::geometry_collector::write_instance(std::vector<shaders::common::instance_data>& instance_staging, const mat4f& model_matrix, const mat4f& normal_matrix, const std::uint32_t skin_offset, const std::uint32_t joint_count, const std::uint32_t mat_idx, const vec3f& tint) -> void {
 	instance_staging.push_back({
 		.model_matrix = model_matrix,
 		.normal_matrix = normal_matrix,
 		.skin_offset = skin_offset,
 		.joint_count = joint_count,
 		.material_index = mat_idx,
-		.pad0 = 0,
+		.tint = tint,
 	});
 }
 
@@ -192,19 +194,19 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 		}
 
 		for (std::uint32_t j = 0; j < component.model_count; ++j) {
-			const auto* mdl = component.models[j].resolve();
-			if (mdl == nullptr) {
+			if (!component.models[j].valid()) {
 				continue;
 			}
-			const auto [model_matrix, normal_matrix] = compute_render_transform(*tc, mdl->center_of_mass());
-			for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
+			const auto& mdl = component.models[j].resolve();
+			const auto [model_matrix, normal_matrix] = compute_render_transform(*tc, mdl.center_of_mass(), component.sizes[j]);
+			for (std::size_t mi = 0; mi < mdl.meshes().size(); ++mi) {
 				out.push_back({
 					.entry = {
 						.model = component.models[j],
 						.index = mi,
 						.model_matrix = model_matrix,
 						.normal_matrix = normal_matrix,
-						.color = vec3f(1.0f)
+						.color = component.tints[j]
 					},
 					.owner = eid,
 					.body_index = body_index
@@ -239,10 +241,10 @@ auto gse::renderer::geometry_collector::collect_skinned(write<render_component>&
 
 		for (std::uint32_t j = 0; j < component.skinned_model_count; ++j) {
 			const auto& handle = component.skinned_models[j];
-			const auto* mdl = handle.resolve();
-			if (mdl == nullptr) {
+			if (!handle.valid()) {
 				continue;
 			}
+			const auto& mdl = handle.resolve();
 
 			const std::uint32_t skin_offset = static_cast<std::uint32_t>(local_pose_staging.size());
 			local_pose_staging.insert(local_pose_staging.end(), anim_comp->local_pose.begin(), anim_comp->local_pose.end());
@@ -255,14 +257,14 @@ auto gse::renderer::geometry_collector::collect_skinned(write<render_component>&
 
 			++skinned_instance_count;
 
-			const auto [model_matrix, normal_matrix] = compute_render_transform(*tc, mdl->center_of_mass());
-			for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
+			const auto [model_matrix, normal_matrix] = compute_render_transform(*tc, mdl.center_of_mass(), vec3<length>(meters(1.0f)));
+			for (std::size_t mi = 0; mi < mdl.meshes().size(); ++mi) {
 				skinned_out.push_back({
 					.model = handle,
 					.index = mi,
 					.model_matrix = model_matrix,
 					.normal_matrix = normal_matrix,
-					.color = vec3f(1.0f),
+					.color = component.tints[j],
 					.skin_offset = skin_offset,
 					.joint_count = d.current_joint_count
 				});
@@ -278,8 +280,8 @@ auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_que
 	std::ranges::sort(
 		out,
 		[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
-			const auto* ma = a.entry.model.resolve();
-			const auto* mb = b.entry.model.resolve();
+			const auto ma = a.entry.model.id();
+			const auto mb = b.entry.model.id();
 
 			if (ma != mb) {
 				return ma < mb;
@@ -292,8 +294,8 @@ auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_que
 	std::ranges::sort(
 		skinned_out,
 		[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
-			const auto* ma = a.model.resolve();
-			const auto* mb = b.model.resolve();
+			const auto ma = a.model.id();
+			const auto mb = b.model.id();
 
 			if (ma != mb) {
 				return ma < mb;
@@ -312,12 +314,19 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 		data.render_queue,
 		data.normal_batches,
 		[](const owned_render_queue_entry& q) {
-			return normal_batch_key{ .model_ptr = q.entry.model.resolve(), .mesh_index = q.entry.index };
+			return normal_batch_key{ .model_ptr = &q.entry.model.resolve(), .mesh_index = q.entry.index };
 		},
 		[](const normal_batch_key& key) -> const mesh& {
 			return key.model_ptr->meshes()[key.mesh_index];
 		},
 		[](vec3<length>& mn, vec3<length>& mx, std::span<const owned_render_queue_entry> batch, const mesh& m) {
+			if (std::ranges::any_of(batch, [](const owned_render_queue_entry& q) { return q.body_index != owned_render_queue_entry::invalid_body_index; })) {
+				constexpr float physics_cull_extent = 1.0e9f;
+				mn = vec3<length>(meters(-physics_cull_extent));
+				mx = vec3<length>(meters(physics_cull_extent));
+				return;
+			}
+
 			const auto [local_min, local_max] = m.aabb();
 			for (const auto& q : batch) {
 				const auto [inst_min, inst_max] = transform_aabb(local_min, local_max, q.entry.model_matrix);
@@ -327,7 +336,7 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 		},
 		[&](const owned_render_queue_entry& q, const normal_batch_key& key, std::uint32_t mat_idx, std::uint32_t instance_index) {
 			const auto& entry = q.entry;
-			write_instance(data.instance_staging, entry.model_matrix, entry.normal_matrix, 0, 0, mat_idx);
+			write_instance(data.instance_staging, entry.model_matrix, entry.normal_matrix, 0, 0, mat_idx, entry.color);
 			if (q.body_index != owned_render_queue_entry::invalid_body_index) {
 				data.physics_mappings.push_back({
 					.body_index = q.body_index,
@@ -347,7 +356,7 @@ auto gse::renderer::geometry_collector::build_skinned_batches(render_data& data,
 		data.skinned_render_queue,
 		data.skinned_batches,
 		[](const skinned_render_queue_entry& s) {
-			return skinned_batch_key{ .model_ptr = s.model.resolve(), .mesh_index = s.index };
+			return skinned_batch_key{ .model_ptr = &s.model.resolve(), .mesh_index = s.index };
 		},
 		[](const skinned_batch_key& key) -> const skinned_mesh& {
 			return key.model_ptr->meshes()[key.mesh_index];
@@ -361,7 +370,7 @@ auto gse::renderer::geometry_collector::build_skinned_batches(render_data& data,
 			}
 		},
 		[&](const skinned_render_queue_entry& s, const skinned_batch_key&, std::uint32_t mat_idx, std::uint32_t) {
-			write_instance(data.instance_staging, s.model_matrix, s.normal_matrix, s.skin_offset, s.joint_count, mat_idx);
+			write_instance(data.instance_staging, s.model_matrix, s.normal_matrix, s.skin_offset, s.joint_count, mat_idx, s.color);
 		}
 	);
 }
@@ -394,12 +403,6 @@ auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::
 		constexpr std::size_t local_pose_size = system::data::max_skin_matrices * sizeof(mat4f);
 		d.local_pose_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
 			.size = local_pose_size,
-			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
-		});
-
-		constexpr std::size_t mapping_buffer_size = system::data::max_instances * sizeof(physics_mapping_entry);
-		d.physics_mapping_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = mapping_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 	}
@@ -492,7 +495,7 @@ auto gse::renderer::geometry_collector::system::upload_skeleton_data(const data&
 	}
 }
 
-auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const camera::system::data& cam_state) -> async::task<> {
+auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const camera::system::data& cam_state, const primitive_resolver::system::data& resolver_state) -> async::task<> {
 	co_await initialize(ctx, gpu_s, d);
 
 	while (true) {
@@ -512,13 +515,6 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 
 	if (!data.instance_staging.empty()) {
 		d.instance_buffer[frame_index].host_write(data.instance_staging);
-	}
-
-	if (!data.physics_mappings.empty()) {
-		d.physics_mapping_buffer[frame_index].host_write(
-			data.physics_mappings.data(),
-			data.physics_mappings.size() * sizeof(physics_mapping_entry)
-		);
 	}
 
 	if (!data.normal_batches.empty()) {

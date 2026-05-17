@@ -35,12 +35,13 @@ export namespace gs::player {
 			gse::run_context& ctx,
 			data& d,
 			const gse::actions::system::data& as,
-			const gse::camera::system::data& cam_s
+			const gse::camera::system::data& cam_s,
+			const gse::physics::system::data& phys_s
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::camera::system::data& cam_s) -> gse::async::task<> {
+auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::camera::system::data& cam_s, const gse::physics::system::data& phys_s) -> gse::async::task<> {
 	while (true) {
 		{
 			auto [players, transforms, motions, statuses, motors, follows] = co_await ctx.acquire<
@@ -188,7 +189,10 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 				}
 
 				if (auto* cam_follow = follows.find(owner_id)) {
-					if (const auto* tc = transforms.find(owner_id)) {
+					if (auto snap = gse::physics::system::query_transform(phys_s, owner_id)) {
+						cam_follow->position = snap->position;
+					}
+					else if (const auto* tc = transforms.find(owner_id)) {
 						cam_follow->position = tc->position;
 					}
 				}

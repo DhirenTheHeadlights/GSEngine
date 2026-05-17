@@ -126,31 +126,25 @@ export namespace gse::physics {
 		std::vector<vbd::body_state> bodies;
 		std::vector<vbd::velocity_motor_constraint> motors;
 		std::vector<vbd::joint_constraint> joints;
-		std::vector<vbd::contact_constraint> warm_starts;
+		std::vector<vbd::impulse_constraint> impulses;
 		vbd::solver_config solver_cfg;
 		time_t<float, seconds> dt{};
 		int steps = 1;
-		std::vector<id> entity_ids;
-		std::uint32_t joint_count = 0;
+		bool refresh_joints = false;
 	};
 
 	struct gpu_body_index_map {
 		std::vector<std::pair<id, std::uint32_t>> entries;
 	};
 
-	struct gpu_readback_result {
-		std::vector<id> entity_ids;
-		std::vector<vbd::body_state> gpu_input_bodies;
-		std::vector<vbd::body_state> gpu_result_bodies;
-		std::vector<vbd::contact_constraint> gpu_contacts;
-		std::vector<vbd::joint_constraint> gpu_joint_readback;
-		std::uint32_t gpu_joint_count = 0;
-	};
-
 	struct gpu_solver_stats {
 		bool active = false;
-		std::uint32_t contact_count = 0;
 		std::uint32_t motor_count = 0;
+	};
+
+	struct transform_snapshot {
+		vec3<position> position;
+		quat orientation;
 	};
 
 	struct gpu_solver_frame_info {
@@ -174,9 +168,6 @@ export namespace gse::physics {
 			[[=gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce jitter at the cost of frame time.">{}, =gse::settings::range<1, 40>{}]]
 			int solver_iterations = 15;
 
-			[[=gse::settings::describe<"Run the CPU and GPU solvers side by side to validate parity. Disable in shipping builds.">{}]]
-			bool compare_solvers = false;
-
 			[[=gse::settings::describe<"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{}]]
 			bool use_jacobi = false;
 
@@ -196,33 +187,12 @@ export namespace gse::physics {
 			vbd::solver vbd_solver;
 			vbd::contact_cache contact_cache;
 			std::unordered_map<id, std::uint32_t> sleep_counters;
-			interval_timer<> comparison_timer{ seconds(0.25f) };
-			struct solver_comparison_snapshot {
-				std::vector<vbd::body_state> cpu_result;
-				std::vector<vbd::contact_constraint> cpu_contacts;
-				std::vector<vbd::joint_constraint> cpu_joints;
-			};
-			std::optional<solver_comparison_snapshot> comparison_pending;
-			struct gpu_prev_frame {
-				std::vector<vbd::body_state> result_bodies;
-				std::vector<id> result_entity_ids;
-				std::vector<vbd::contact_constraint> warm_start_contacts;
-
-				gpu_prev_frame() {
-					result_bodies.reserve(vbd::max_bodies);
-					result_entity_ids.reserve(vbd::max_bodies);
-					warm_start_contacts.reserve(vbd::max_contacts);
-				}
-			} gpu_prev;
-			std::optional<gpu_readback_result> completed_readback;
+			bool gpu_joints_dirty = true;
+			std::uint32_t gpu_uploaded_body_count = 0;
+			std::uint32_t gpu_uploaded_joint_count = 0;
+			flat_map<id, std::uint32_t> id_to_body_index;
 
 			vbd::gpu_solver gpu_solver;
-			struct readback_frame {
-				std::vector<id> entity_ids;
-				std::vector<vbd::body_state> gpu_input_bodies;
-				std::uint32_t gpu_joint_count = 0;
-			};
-			std::optional<readback_frame> in_flight;
 		};
 
 		static auto run(
@@ -248,26 +218,15 @@ export namespace gse::physics {
 			joint_handle handle
 		) -> void;
 
+		static auto query_transform(
+			const data& d,
+			id entity_id
+		) -> std::optional<transform_snapshot>;
+
 	private:
 		struct collision_pair {
 			id owner;
 			aabb box;
-		};
-
-		struct contact_compare_key {
-			std::uint32_t body_a = 0;
-			std::uint32_t body_b = 0;
-			std::uint64_t feature_key = 0;
-
-			auto operator==(
-				const contact_compare_key&
-			) const -> bool = default;
-		};
-
-		struct contact_compare_key_hash {
-			auto operator()(
-				const contact_compare_key& key
-			) const noexcept -> std::size_t;
 		};
 
 		static auto collect_collision_objects(
@@ -286,15 +245,6 @@ export namespace gse::physics {
 			write<collision_component>& collision,
 			write<collision_result_component>* results,
 			write<motion_status_component>* status
-		) -> void;
-
-		static auto build_contact_cache_from_warm_start(
-			const std::span<const vbd::contact_constraint> warm_start_contacts
-		) -> vbd::contact_cache;
-
-		static auto invalidate_warm_start_entries(
-			std::vector<vbd::contact_constraint>& warm_start_contacts,
-			const std::span<const std::uint32_t> body_indices
 		) -> void;
 
 		static auto update_vbd(

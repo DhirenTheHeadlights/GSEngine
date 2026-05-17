@@ -191,13 +191,6 @@ export namespace gse::gpu {
 			gpu::device_size range
 		) -> descriptor_set_writer&;
 
-		auto image(
-			std::uint32_t binding,
-			gpu::handle<vulkan::image_view> view,
-			gpu::handle<vulkan::sampler> sampler,
-			image_layout layout = image_layout::general
-		) -> descriptor_set_writer&;
-
 		auto storage_image(
 			std::uint32_t binding,
 			gpu::handle<vulkan::image_view> view,
@@ -520,25 +513,6 @@ auto gse::gpu::descriptor_set_writer::buffer(std::uint32_t binding, const gpu::h
 	};
 
 	m_heap->write_descriptor(m_current_region, binding_offset, get_info, descriptor_size);
-	return *this;
-}
-
-auto gse::gpu::descriptor_set_writer::image(std::uint32_t binding, const gpu::handle<vulkan::image_view> view, const gpu::handle<vulkan::sampler> sampler, const image_layout layout) -> descriptor_set_writer& {
-	assert(binding < m_bindings.size(),
-		"Binding {} out of range (max {})", binding, m_bindings.size());
-
-	const auto& info = m_bindings[binding];
-
-	const descriptor_get_info get_info{
-		.type = descriptor_type::combined_image_sampler,
-		.image = {
-			.sampler = sampler,
-			.image_view = view,
-			.layout = layout,
-		},
-	};
-
-	m_heap->write_descriptor(m_current_region, info.offset, get_info, info.descriptor_size);
 	return *this;
 }
 

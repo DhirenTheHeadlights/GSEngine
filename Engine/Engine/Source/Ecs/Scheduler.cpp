@@ -526,20 +526,22 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	}
 
 	std::vector<async::task<>> tasks;
+	std::vector<system_node*> task_nodes;
 	for (auto& node : m_nodes) {
 		if (!node.has_frame) {
 			continue;
 		}
 		tasks.push_back(run_node_frame(f_ctx, node));
+		task_nodes.push_back(&node);
 	}
 
 	if (!tasks.empty()) {
 		trace::scope_guard sg2{ trace_id<"scheduler::start_frame_tasks">() };
 		task::group group(trace_id<"scheduler::start_frame_tasks">());
-		for (auto& t : tasks) {
-			group.post([t_ptr = std::addressof(t)] {
+		for (std::size_t i = 0; i < tasks.size(); ++i) {
+			group.post([t_ptr = std::addressof(tasks[i])] {
 				t_ptr->start();
-			});
+			}, task_nodes[i]->frame_start_id);
 		}
 		group.wait();
 	}

@@ -69,6 +69,14 @@ for (uint ci = tid; ci < num_contacts; ci += WG_SIZE) {
         if (off_b < MAX_CONTACT_ADJACENCY) {
             contact_adjacency[off_b] = ci;
         }
+
+        uint dummy;
+        if (c.normal.y > 0.7) {
+            InterlockedOr(grounded_bits[c.body_a / 32u], 1u << (c.body_a % 32u), dummy);
+        }
+        if (c.normal.y < -0.7) {
+            InterlockedOr(grounded_bits[c.body_b / 32u], 1u << (c.body_b % 32u), dummy);
+        }
     }
 }
 AllMemoryBarrierWithGroupSync();

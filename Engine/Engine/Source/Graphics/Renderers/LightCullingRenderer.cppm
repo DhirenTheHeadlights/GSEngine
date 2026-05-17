@@ -35,6 +35,7 @@ export namespace gse::renderer::light_culling {
 			[[=gse::shared]] per_frame_resource<gpu::buffer> tile_light_table_buffers;
 
 			gpu::sampler depth_sampler;
+			gpu::bindless_texture_slot depth_slot;
 		};
 
 		static auto run(

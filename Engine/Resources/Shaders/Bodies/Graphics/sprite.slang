@@ -29,7 +29,7 @@ VS_OUTPUT vs_main(
 
 [shader("fragment")]
 float4 fs_main(VS_OUTPUT input) : SV_Target0 {
-    float4 col = g_textures[NonUniformResourceIndex(pc.tex_idx)].Sample(input.tex_coord) * input.color;
+    float4 col = textures[NonUniformResourceIndex(pc.tex_idx)].Sample(input.tex_coord) * input.color;
 
     if (input.corner_radius > 0.0) {
         float2 q = abs(input.local_pos) - input.half_size + input.corner_radius;
