@@ -26,13 +26,6 @@ namespace gse::task {
 		parallel_for_fn func,
 		id id
 	) -> void;
-
-	auto parallel_invoke_range_impl(
-		std::size_t first,
-		std::size_t last,
-		parallel_for_fn func,
-		id id
-	) -> void;
 }
 
 export namespace gse::task {
@@ -46,14 +39,14 @@ export namespace gse::task {
 
 	auto post(
 		job j,
-		id id = trace::make_loc_id(std::source_location::current())
+		id id = trace::loc_id<trace::current_loc_tag()>()
 	) -> void;
 
 	template <std::forward_iterator It>
 	auto post_range(
 		It first,
 		It last,
-		id id = trace::make_loc_id(std::source_location::current())
+		id id = trace::loc_id<trace::current_loc_tag()>()
 	) -> void;
 
 	template <typename F>
@@ -61,7 +54,7 @@ export namespace gse::task {
 		first_arg_t<F> first,
 		first_arg_t<F> last,
 		F&& func,
-		id id = trace::make_loc_id(std::source_location::current())
+		id id = trace::loc_id<trace::current_loc_tag()>()
 	) -> void;
 
 	auto thread_count(
@@ -80,7 +73,7 @@ export namespace gse::task {
 		std::size_t first,
 		std::size_t last,
 		move_only_function<void(std::size_t)> func,
-		id id = trace::make_loc_id(std::source_location::current())
+		id id = trace::loc_id<trace::current_loc_tag()>()
 	) -> void;
 
 	template <typename Fn>
@@ -88,27 +81,27 @@ export namespace gse::task {
 		std::size_t n,
 		std::size_t min_chunk_items,
 		Fn&& fn,
-		id label = trace::make_loc_id(std::source_location::current())
+		id label = trace::loc_id<trace::current_loc_tag()>()
 	) -> void;
 
 	class group : non_copyable, non_movable {
 	public:
 		explicit group(
-			id label = trace::make_loc_id(std::source_location::current())
+			id label = trace::loc_id<trace::current_loc_tag()>()
 		);
 
 		~group() noexcept override;
 
 		auto post(
 			job j,
-			id id = trace::make_loc_id(std::source_location::current())
+			id id = trace::loc_id<trace::current_loc_tag()>()
 		) -> void;
 
 		template <std::input_iterator It>
 		auto post_range(
 			It first,
 			It last,
-			id id = trace::make_loc_id(std::source_location::current())
+			id id = trace::loc_id<trace::current_loc_tag()>()
 		) -> void;
 
 		auto wait(
@@ -647,10 +640,6 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 		return;
 	}
 
-	parallel_invoke_range_impl(first, last, std::move(func), id);
-}
-
-auto gse::task::parallel_invoke_range_impl(const std::size_t first, const std::size_t last, parallel_for_fn func, const id id) -> void {
 	const std::size_t n = last - first;
 
 	trace::scope_guard sg{id};
@@ -660,10 +649,16 @@ auto gse::task::parallel_invoke_range_impl(const std::size_t first, const std::s
 		return;
 	}
 
+	const std::size_t workers = std::max<std::size_t>(1, worker_count_value.load(std::memory_order_acquire));
+	const std::size_t chunk = compute_chunk_size(n, workers);
+
 	group g(id);
-	for (std::size_t i = first; i < last; ++i) {
-		g.post([i, &func] {
-			func(i);
+	for (std::size_t chunk_start = first; chunk_start < last; chunk_start += chunk) {
+		const std::size_t chunk_stop = std::min(chunk_start + chunk, last);
+		g.post([chunk_start, chunk_stop, &func] {
+			for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
+				func(i);
+			}
 		}, id);
 	}
 	g.wait();

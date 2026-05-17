@@ -44,14 +44,13 @@ export namespace gs::player {
 auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::camera::system::data& cam_s, const gse::physics::system::data& phys_s) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [players, transforms, motions, statuses, motors, follows] = co_await ctx.acquire<
-				gse::write<component>,
-				gse::read<gse::physics::transform_component>,
-				gse::read<gse::physics::motion_component>,
-				gse::read<gse::physics::motion_status_component>,
-				gse::write<gse::physics::motor_component>,
-				gse::write<gse::camera::follow_component>
-			>();
+			auto [players, transforms, motions, motors, follows] = co_await ctx.acquire_with(
+				gse::write_v<component>,
+				gse::read_v<gse::physics::transform_component>,
+				gse::read_v<gse::physics::motion_component>,
+				gse::write_v<gse::physics::motor_component>,
+				gse::write_v<gse::camera::follow_component>
+			);
 
 			const auto player_ids = players.owner_ids();
 			for (std::size_t i = 0; i < players.size(); ++i) {
@@ -74,7 +73,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 				b.jump = gse::actions::add<"Player_Jump">(ctx.channels, gse::key::space);
 				b.move_axis_id = gse::actions::bind_axis2(
 					ctx.channels,
-					gse::actions::pending_axis2_info{
+					gse::actions::pending_axis2_info {
 						.left = a,
 						.right = d,
 						.back = s_key,
@@ -95,7 +94,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 
 				b.jetpack_move_axis_id = gse::actions::bind_axis2(
 					ctx.channels,
-					gse::actions::pending_axis2_info{
+					gse::actions::pending_axis2_info {
 						.left = ja,
 						.right = jd,
 						.back = js,
@@ -109,29 +108,29 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 				const gse::length width = gse::feet(3.0f);
 
 				ctx.add_component<gse::physics::transform_component>(owner_id, {
-					.position = p.initial_position,
-				});
+																				   .position = p.initial_position,
+																			   });
 
 				ctx.add_component<gse::physics::motion_component>(owner_id, {
-					.body = gse::physics::dynamic_body{
-						.mass = gse::pounds(180.f),
-						.update_orientation = false,
-					},
-				});
+																				.body = gse::physics::dynamic_body {
+																					.mass = gse::pounds(180.f),
+																					.update_orientation = false,
+																				},
+																			});
 
 				ctx.add_component<gse::physics::motor_component>(owner_id, {});
 
 				ctx.add_component<gse::physics::collision_component>(owner_id, {
-					.shape = gse::physics::box_shape{ .size = { width, height, width } },
-				});
+																				   .shape = gse::physics::box_shape { .size = { width, height, width } },
+																			   });
 
 				ctx.add_component<gse::camera::follow_component>(owner_id, {
-					.offset = gse::vec3<gse::length>(gse::meters(0.f)),
-					.priority = 50,
-					.blend_in_duration = gse::milliseconds(300),
-					.active = true,
-					.use_entity_position = false,
-				});
+																			   .offset = gse::vec3<gse::length>(gse::meters(0.f)),
+																			   .priority = 50,
+																			   .blend_in_duration = gse::milliseconds(300),
+																			   .active = true,
+																			   .use_entity_position = false,
+																		   });
 			}
 
 			const auto& cs = gse::actions::system::current_state(as);
@@ -143,7 +142,6 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 
 				const auto* motion = motions.find(owner_id);
 				auto* motor = motors.find(owner_id);
-				const auto* status = statuses.find(owner_id);
 				if (!motor || !motion) {
 					continue;
 				}
@@ -161,14 +159,13 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 					const float len = gse::magnitude(horizontal);
 					motor->velocity_drive_target = len > 1e-6f
 						? speed * (horizontal / len)
-						: gse::vec3<gse::velocity>{};
+						: gse::vec3<gse::velocity> {};
 				}
 				else {
 					motor->velocity_drive_target = {};
 				}
 
-				const bool airborne = status ? status->airborne : true;
-				if (gse::actions::pressed(b.jump, cs, as) && !airborne) {
+				if (gse::actions::pressed(b.jump, cs, as) && !gse::physics::system::is_airborne(phys_s, owner_id)) {
 					ctx.channels.push<gse::physics::impulse_request>({
 						.target = owner_id,
 						.impulse = gse::vec3<gse::impulse>(gse::newton_seconds(0.f), p.jump_speed * gse::physics::mass_of(*motion), gse::newton_seconds(0.f)),

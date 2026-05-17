@@ -25,7 +25,9 @@ Checks: >
   -bugprone-easily-swappable-parameters,
   -misc-non-private-member-variables-in-classes,
   -cppcoreguidelines-avoid-non-const-global-variables,
-  -misc-use-anonymous-namespace
+  -misc-use-anonymous-namespace,
+  -readability-uppercase-literal-suffix,
+  -readability-math-missing-parentheses
 
 WarningsAsErrors: ''
 

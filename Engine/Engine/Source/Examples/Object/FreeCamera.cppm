@@ -49,10 +49,10 @@ export namespace gse::free_camera {
 auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::system::data& as, const camera::system::data& cam_s) -> async::task<> {
 	while (true) {
 		{
-			auto [cameras, follows] = co_await ctx.acquire<
-				write<component>,
-				write<camera::follow_component>
-			>();
+			auto [cameras, follows] = co_await ctx.acquire_with(
+				write_v<component>,
+				write_v<camera::follow_component>
+			);
 
 			const auto camera_ids = cameras.owner_ids();
 			for (std::size_t i = 0; i < cameras.size(); ++i) {

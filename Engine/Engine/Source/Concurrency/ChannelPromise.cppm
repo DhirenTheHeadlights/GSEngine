@@ -146,7 +146,7 @@ auto gse::channel_promise<T>::fulfill(T value) const -> void {
 		task::post([h = m_state->continuation] {
 			if (!h) return;
 			h.resume();
-		});
+		}, trace_id<"channel_promise::fulfill::resume">());
 	}
 }
 

@@ -21,13 +21,13 @@ export namespace gse::vbd {
 		angle angular{};
 	};
 
-	struct solver_config {
+	struct [[= shaders::shader_struct]] solver_config {
 		std::uint32_t iterations = 4;
 		float alpha = 0.99f;
-		stiffness beta = newtons_per_meter(100000.f);
-		angular_stiffness ang_beta = newton_meters_per_radian(100000.f);
+		stiffness_per_length beta = newtons_per_meter_squared(100000.f);
+		angular_stiffness_per_angle ang_beta = newton_meters_per_radian_squared(100000.f);
 		float gamma = 0.99f;
-		bool post_stabilize = true;
+		std::uint32_t post_stabilize = 1;
 		stiffness penalty_min = newtons_per_meter(1.0f);
 		stiffness penalty_max = newtons_per_meter(1e9f);
 		angular_stiffness ang_penalty_min = newton_meters_per_radian(1.0f);
@@ -39,19 +39,19 @@ export namespace gse::vbd {
 		velocity velocity_sleep_threshold = meters_per_second(0.001f);
 		angular_velocity angular_sleep_threshold = radians_per_second(0.05f);
 		gap speculative_margin = meters(0.02f);
-		step_delta convergence_threshold = { meters(0.01f), radians(0.01f) };
+		length convergence_threshold_linear = meters(0.01f);
+		angle convergence_threshold_angular = radians(0.01f);
 		std::uint32_t min_iterations = 4;
 		float linear_damping = 0.f;
 		float angular_damping = 0.01f;
-		bool use_jacobi = false;
+		std::uint32_t use_jacobi = 0;
 		float jacobi_omega = 0.67f;
-	};
-
-	struct frozen_contact_jacobian {
-		vec3<lever_arm> world_r_a;
-		vec3<lever_arm> world_r_b;
-		mat3<length> J_ang_a;
-		mat3<length> J_ang_b;
+		velocity max_linear_speed = meters_per_second(15.f);
+		angular_velocity max_angular_speed = radians_per_second(50.f);
+		length max_linear_step = meters(0.1f);
+		angle max_angular_step = radians(0.5f);
+		stiffness linear_regularization = newtons_per_meter(1e-6f);
+		angular_stiffness angular_regularization = newton_meters_per_radian(1e-6f);
 	};
 
 	class solver {
@@ -106,7 +106,7 @@ export namespace gse::vbd {
 	private:
 		auto accumulate_contact(
 			const contact_constraint& constraint,
-			const frozen_contact_jacobian& frozen,
+			const frozen_jacobian& frozen,
 			std::uint32_t body_idx,
 			time_squared h_squared,
 			float alpha
@@ -136,9 +136,7 @@ export namespace gse::vbd {
 
 		auto update_joint_dual(
 			time_squared h_squared
-		) -> void;
-
-		static constexpr std::uint32_t max_solver_bodies = 2048;
+		) -> step_delta;
 
 		solver_config m_config;
 		constraint_graph m_graph;
@@ -152,7 +150,7 @@ export namespace gse::vbd {
 		std::vector<vec3<velocity>> m_prev_velocity;
 		std::vector<float> m_accel_weight;
 
-		std::vector<frozen_contact_jacobian> m_frozen_jacobians;
+		std::vector<frozen_jacobian> m_frozen_jacobians;
 	};
 }
 
@@ -161,19 +159,7 @@ auto gse::vbd::solver::graph(this Self&& self) -> auto& {
 	return self.m_graph;
 }
 
-namespace gse::vbd {
-	auto rotate_axis(
-		const quat& q,
-		const vec3f& v
-	) -> vec3f;
-
-	auto accumulate_geometric_stiffness(
-		body_solve_state& state,
-		const vec3<lever_arm>& r,
-		const vec3f& dir,
-		force abs_force
-	) -> void;
-
+export namespace gse::vbd {
 	auto contact_effective_mass(
 		const body_state& body_a,
 		const body_state& body_b,
@@ -181,16 +167,39 @@ namespace gse::vbd {
 		const vec3<lever_arm>& r_bw,
 		const vec3f& dir
 	) -> mass;
+
+	auto warm_start_joint(
+		joint_constraint& j,
+		const body_state& body_a,
+		const body_state& body_b,
+		time_squared h_squared,
+		const solver_config& cfg
+	) -> void;
+
+	auto compute_joint_c0(
+		joint_constraint& j,
+		const body_state& body_a,
+		const body_state& body_b
+	) -> void;
+}
+
+namespace gse::vbd {
+	auto accumulate_geometric_stiffness(
+		body_solve_state& state,
+		const vec3<lever_arm>& r,
+		const vec3f& dir,
+		force abs_force
+	) -> void;
 }
 
 gse::vbd::solver::solver() {
-	m_bodies.reserve(max_solver_bodies);
-	m_solve_state.reserve(max_solver_bodies);
-	m_body_motor_index.reserve(max_solver_bodies);
-	m_body_in_color_group.reserve(max_solver_bodies);
-	m_prev_velocity.reserve(max_solver_bodies);
-	m_accel_weight.reserve(max_solver_bodies);
-	m_frozen_jacobians.reserve(max_contacts);
+	m_bodies.reserve(limits.max_bodies);
+	m_solve_state.reserve(limits.max_bodies);
+	m_body_motor_index.reserve(limits.max_bodies);
+	m_body_in_color_group.reserve(limits.max_bodies);
+	m_prev_velocity.reserve(limits.max_bodies);
+	m_accel_weight.reserve(limits.max_bodies);
+	m_frozen_jacobians.reserve(limits.max_contacts);
 }
 
 auto gse::vbd::solver::configure(const solver_config& cfg) -> void {
@@ -234,7 +243,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	{
 		trace::scope_guard sg{ trace_id<"vbd::coloring">() };
-		static_vector<bool, max_solver_bodies> locked;
+		static_vector<bool, limits.max_bodies> locked;
 		for (std::uint32_t i = 0; i < num_bodies; ++i) {
 			locked.push_back(m_bodies[i].locked);
 		}
@@ -331,199 +340,14 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	{
 		auto& joints_ref = m_graph.joint_constraints();
 		task::coarse_parallel(joints_ref.size(), 32, [&, this](std::size_t ji) {
-			auto& j = joints_ref[ji];
-			const auto& ba = m_bodies[j.body_a];
-			const auto& bb = m_bodies[j.body_b];
-			const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, j.local_anchor_a);
-			const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, j.local_anchor_b);
-
-			for (int k = 0; k < 3; ++k) {
-				j.pos_lambda[k] *= m_config.gamma;
-			}
-			for (int k = 0; k < 3; ++k) {
-				j.ang_lambda[k] *= m_config.gamma;
-			}
-			if (j.limits_enabled) {
-				j.limit_lambda *= m_config.gamma;
-			}
-
-			constexpr std::array dirs = { axis_x, axis_y, axis_z };
-
-			int num_pos_rows = 3;
-			if (j.type == joint_type::distance) {
-				num_pos_rows = 1;
-			}
-			else if (j.type == joint_type::slider) {
-				num_pos_rows = 2;
-			}
-
-			for (int k = 0; k < num_pos_rows; ++k) {
-				vec3f dir;
-				if (j.type == joint_type::distance) {
-					const vec3<displacement> d = (ba.position + r_aw) - (bb.position + r_bw);
-					dir = magnitude(d) > meters(1e-7f) ? normalize(d) : axis_y;
-				}
-				else if (j.type == joint_type::slider) {
-					const vec3f axis_w = rotate_axis(ba.orientation, j.local_axis_a);
-					vec3f perp0 = cross(axis_w, axis_y);
-					if (magnitude(perp0) < 1e-6f) {
-						perp0 = cross(axis_w, axis_x);
-					}
-					perp0 = normalize(perp0);
-					dir = k == 0 ? perp0 : normalize(cross(axis_w, perp0));
-				}
-				else {
-					dir = dirs[k];
-				}
-				const stiffness eff = contact_effective_mass(ba, bb, r_aw, r_bw, dir) / h_squared;
-				const stiffness pos_penalty_cap = (j.compliance > inverse_mass{})
-					? std::min<stiffness>(1.f / (j.compliance * h_squared), m_config.penalty_max)
-					: m_config.penalty_max;
-				j.pos_penalty[k] = std::clamp(
-					std::max(j.pos_penalty[k] * m_config.gamma, eff),
-					m_config.penalty_min, pos_penalty_cap
-				);
-			}
-
-			int num_ang_rows = 3;
-			if (j.type == joint_type::distance) {
-				num_ang_rows = 0;
-			}
-			else if (j.type == joint_type::hinge) {
-				num_ang_rows = 2;
-			}
-
-			for (int k = 0; k < num_ang_rows; ++k) {
-				vec3f ang_dir;
-				if (j.type == joint_type::hinge) {
-					const vec3f axis_a = rotate_axis(ba.orientation, j.local_axis_a);
-					vec3f perp_u = cross(axis_a, axis_y);
-					if (magnitude(perp_u) < 1e-6f) {
-						perp_u = cross(axis_a, axis_x);
-					}
-					perp_u = normalize(perp_u);
-					ang_dir = k == 0 ? perp_u : normalize(cross(axis_a, perp_u));
-				}
-				else {
-					ang_dir = dirs[k];
-				}
-
-				inverse_inertia inv_i_sum{};
-
-				if (!ba.locked) {
-					inv_i_sum += dot(ang_dir, ba.inv_inertia * ang_dir);
-				}
-				if (!bb.locked) {
-					inv_i_sum += dot(ang_dir, bb.inv_inertia * ang_dir);
-				}
-
-				const angular_stiffness eff_ang = inv_i_sum > per_kilogram_meter_squared(1e-10f)
-					? 1.f / inv_i_sum / h_squared / rad
-					: m_config.ang_penalty_min;
-
-				j.ang_penalty[k] = std::clamp(
-					std::max(j.ang_penalty[k] * m_config.gamma, eff_ang),
-					m_config.ang_penalty_min, m_config.ang_penalty_max
-				);
-			}
-
-			if (j.limits_enabled) {
-				const vec3f limit_axis = rotate_axis(ba.orientation, j.local_axis_a);
-				inverse_inertia inv_i_sum{};
-
-				if (!ba.locked) {
-					inv_i_sum += dot(limit_axis, ba.inv_inertia * limit_axis);
-				}
-				if (!bb.locked) {
-					inv_i_sum += dot(limit_axis, bb.inv_inertia * limit_axis);
-				}
-
-				const angular_stiffness eff_limit = inv_i_sum > per_kilogram_meter_squared(1e-10f)
-					? 1.f / inv_i_sum / h_squared / rad
-					: m_config.ang_penalty_min;
-
-				j.limit_penalty = std::clamp(
-					std::max(j.limit_penalty * m_config.gamma, eff_limit),
-					m_config.ang_penalty_min, m_config.ang_penalty_max
-				);
-			}
+			warm_start_joint(joints_ref[ji], m_bodies[joints_ref[ji].body_a], m_bodies[joints_ref[ji].body_b], h_squared, m_config);
 		}, trace_id<"vbd::warm_joints">());
 	}
 
 	{
 		auto& joints_ref = m_graph.joint_constraints();
 		task::coarse_parallel(joints_ref.size(), 32, [&, this](std::size_t ji) {
-			auto& j = joints_ref[ji];
-			const auto& ba = m_bodies[j.body_a];
-			const auto& bb = m_bodies[j.body_b];
-
-			const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, j.local_anchor_a);
-			const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, j.local_anchor_b);
-			const vec3<displacement> d = (ba.position + r_aw) - (bb.position + r_bw);
-
-			if (j.type == joint_type::distance) {
-				j.pos_c0[0] = magnitude(d) - j.target_distance;
-			}
-			else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
-				constexpr std::array dirs = { axis_x, axis_y, axis_z };
-				for (int k = 0; k < 3; ++k) {
-					j.pos_c0[k] = dot(dirs[k], d);
-				}
-
-				const quat q_error = bb.orientation * conjugate(ba.orientation) * conjugate(j.rest_orientation);
-				const vec3<angle> theta = to_axis_angle(q_error);
-
-				if (j.type == joint_type::fixed) {
-					for (int k = 0; k < 3; ++k) {
-						j.ang_c0[k] = theta[k];
-					}
-				}
-				else {
-					const vec3f axis_a = rotate_axis(ba.orientation, j.local_axis_a);
-					const vec3f axis_b = rotate_axis(bb.orientation, j.local_axis_b);
-					const vec3f swing_error = cross(axis_a, axis_b);
-
-					vec3f perp_u = cross(axis_a, axis_y);
-
-					if (magnitude(perp_u) < 1e-6f) {
-						perp_u = cross(axis_a, axis_x);
-					}
-
-					perp_u = normalize(perp_u);
-					const vec3f perp_v = normalize(cross(axis_a, perp_u));
-					j.ang_c0[0] = radians(dot(perp_u, swing_error));
-					j.ang_c0[1] = radians(dot(perp_v, swing_error));
-
-					if (j.limits_enabled) {
-						const angle twist_angle = dot(axis_a, theta);
-						if (twist_angle < j.limit_lower) {
-							j.limit_c0 = twist_angle - j.limit_lower;
-						}
-						else if (twist_angle > j.limit_upper) {
-							j.limit_c0 = twist_angle - j.limit_upper;
-						}
-						else {
-							j.limit_c0 = angle{};
-						}
-					}
-				}
-			}
-			else if (j.type == joint_type::slider) {
-				const vec3f axis_w = normalize(rotate_axis(ba.orientation, j.local_axis_a));
-				vec3f perp0 = cross(axis_w, axis_y);
-				if (magnitude(perp0) < 1e-6f) {
-					perp0 = cross(axis_w, axis_x);
-				}
-				perp0 = normalize(perp0);
-				const vec3f perp1 = normalize(cross(axis_w, perp0));
-				j.pos_c0[0] = dot(perp0, d);
-				j.pos_c0[1] = dot(perp1, d);
-
-				const auto slider_theta = to_axis_angle(bb.orientation * conjugate(ba.orientation) * conjugate(j.rest_orientation));
-				for (int k = 0; k < 3; ++k) {
-					j.ang_c0[k] = slider_theta[k];
-				}
-			}
+			compute_joint_c0(joints_ref[ji], m_bodies[joints_ref[ji].body_a], m_bodies[joints_ref[ji].body_b]);
 		}, trace_id<"vbd::joint_c0">());
 	}
 
@@ -561,14 +385,12 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			body.velocity *= (1.f - m_config.linear_damping);
 			body.angular_velocity *= (1.f - m_config.angular_damping);
 
-			constexpr velocity max_linear_speed = meters_per_second(15.f);
-			if (const auto v = magnitude(body.velocity); v > max_linear_speed) {
-				body.velocity *= (max_linear_speed / v);
+			if (const auto v = magnitude(body.velocity); v > m_config.max_linear_speed) {
+				body.velocity *= (m_config.max_linear_speed / v);
 			}
 
-			constexpr angular_velocity max_angular_speed = radians_per_second(50.f);
-			if (const auto w = magnitude(body.angular_velocity); w > max_angular_speed) {
-				body.angular_velocity *= (max_angular_speed / w);
+			if (const auto w = magnitude(body.angular_velocity); w > m_config.max_angular_speed) {
+				body.angular_velocity *= (m_config.max_angular_speed / w);
 			}
 
 			body.inertia_target = body.position + body.velocity * dt;
@@ -657,7 +479,6 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	const int num_iterations = static_cast<int>(m_config.iterations);
 	const float solve_alpha = m_config.post_stabilize ? 1.0f : m_config.alpha;
-	const bool can_stop_on_contact_convergence = joints.empty();
 
 	{
 		m_frozen_jacobians.resize(contacts.size());
@@ -673,8 +494,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			m_frozen_jacobians[ci] = {
 				.world_r_a = r_aw,
 				.world_r_b = r_bw,
-				.J_ang_a = { cross(r_aw, dirs[0]), cross(r_aw, dirs[1]), cross(r_aw, dirs[2]) },
-				.J_ang_b = { cross(r_bw, dirs[0]), cross(r_bw, dirs[1]), cross(r_bw, dirs[2]) },
+				.j_ang_a = { cross(r_aw, dirs[0]), cross(r_aw, dirs[1]), cross(r_aw, dirs[2]) },
+				.j_ang_b = { cross(r_bw, dirs[0]), cross(r_bw, dirs[1]), cross(r_bw, dirs[2]) },
 			};
 		}, trace_id<"vbd::frozen_jacobians">());
 	}
@@ -764,13 +585,14 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		trace::scope_guard sg{ trace_id<"vbd::iterations">() };
 		for (int it = 0; it < num_iterations; ++it) {
 			solve_iteration(solve_alpha);
-			const auto [linear, angular] = update_dual(solve_alpha);
-			update_joint_dual(h_squared);
+			const auto contact_delta = update_dual(solve_alpha);
+			const auto joint_delta = update_joint_dual(h_squared);
+			const length linear = std::max(contact_delta.linear, joint_delta.linear);
+			const angle angular = std::max(contact_delta.angular, joint_delta.angular);
 
-			if (can_stop_on_contact_convergence &&
-				it + 1 >= static_cast<int>(m_config.min_iterations) &&
-				linear < m_config.convergence_threshold.linear &&
-				angular < m_config.convergence_threshold.angular) {
+			if (it + 1 >= static_cast<int>(m_config.min_iterations) &&
+				linear < m_config.convergence_threshold_linear &&
+				angular < m_config.convergence_threshold_angular) {
 				break;
 			}
 		}
@@ -898,7 +720,7 @@ auto gse::vbd::solver::body_states(this auto&& self) -> decltype(auto) {
 	return std::span(self.m_bodies);
 }
 
-auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, const frozen_contact_jacobian& frozen, const std::uint32_t body_idx, const time_squared h_squared, const float alpha) -> void {
+auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, const frozen_jacobian& frozen, const std::uint32_t body_idx, const time_squared h_squared, const float alpha) -> void {
 	const auto& body_a = m_bodies[constraint.body_a];
 	const auto& body_b = m_bodies[constraint.body_b];
 	const bool is_a = (body_idx == constraint.body_a);
@@ -923,7 +745,7 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 	const float sign = is_a ? 1.f : -1.f;
 	const std::array dirs = { constraint.normal, constraint.tangent_u, constraint.tangent_v };
 	const std::array f = { f0, f1, f2 };
-	const auto& J_ang_frozen = is_a ? frozen.J_ang_a : frozen.J_ang_b;
+	const auto& j_ang_frozen = is_a ? frozen.j_ang_a : frozen.j_ang_b;
 
 	for (int i = 0; i < 3; i++) {
 		if (i > 0 && friction_bound <= newtons(1e-10f)) {
@@ -934,7 +756,7 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 		}
 
 		const vec3f j_lin = dirs[i] * sign;
-		const vec3<length> j_ang = J_ang_frozen[i] * sign;
+		const vec3<length> j_ang = j_ang_frozen[i] * sign;
 
 		m_solve_state[body_idx].gradient += j_lin * f[i];
 		m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.penalty[i];
@@ -1031,11 +853,10 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 
 	const vec3<force> g_lin = (body.predicted_position - body.inertia_target) * inertia_weight + m_solve_state[body_idx].gradient;
 
-	constexpr stiffness reg = newtons_per_meter(1e-6f);
 	mat3<stiffness> h_xx = mat3(inertia_weight) + m_solve_state[body_idx].hessian;
-	h_xx[0][0] += reg;
-	h_xx[1][1] += reg;
-	h_xx[2][2] += reg;
+	h_xx[0][0] += m_config.linear_regularization;
+	h_xx[1][1] += m_config.linear_regularization;
+	h_xx[2][2] += m_config.linear_regularization;
 
 	const float omega = m_config.use_jacobi ? m_config.jacobi_omega : 1.f;
 
@@ -1043,10 +864,9 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 		const auto inv_h = h_xx.inverse();
 		auto delta_x = -(inv_h * g_lin);
 
-		constexpr length max_step = meters(0.1f);
 		const auto step_size = magnitude(delta_x);
-		if (step_size > max_step) {
-			delta_x *= (max_step / step_size);
+		if (step_size > m_config.max_linear_step) {
+			delta_x *= (m_config.max_linear_step / step_size);
 		}
 
 		body.predicted_position += delta_x * omega;
@@ -1063,10 +883,9 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	const vec3<torque> g_ang = m_solve_state[body_idx].angular_gradient + g_ang_inertia;
 
 	auto h_tt = m_solve_state[body_idx].angular_hessian + ang_inertia_hessian;
-	constexpr angular_stiffness ang_reg = newton_meters_per_radian(1e-6f);
-	h_tt[0][0] += ang_reg;
-	h_tt[1][1] += ang_reg;
-	h_tt[2][2] += ang_reg;
+	h_tt[0][0] += m_config.angular_regularization;
+	h_tt[1][1] += m_config.angular_regularization;
+	h_tt[2][2] += m_config.angular_regularization;
 
 	const auto& h_xt = m_solve_state[body_idx].hessian_xtheta;
 	const auto h_tx = h_xt.transpose() * rad;
@@ -1078,17 +897,14 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	auto delta_theta = -(s_inv * (g_ang - h_tx * (h_xx_inv * g_lin)));
 	auto delta_x = -(h_xx_inv * (g_lin + h_xt * delta_theta));
 
-	constexpr length max_lin_step = meters(0.1f);
-	constexpr angle max_ang_step = radians(0.5f);
-
 	const auto lin_step = magnitude(delta_x);
 	const auto ang_step = magnitude(delta_theta);
 
-	if (lin_step > max_lin_step) {
-		delta_x *= (max_lin_step / lin_step);
+	if (lin_step > m_config.max_linear_step) {
+		delta_x *= (m_config.max_linear_step / lin_step);
 	}
-	if (ang_step > max_ang_step) {
-		delta_theta *= (max_ang_step / ang_step);
+	if (ang_step > m_config.max_angular_step) {
+		delta_theta *= (m_config.max_angular_step / ang_step);
 	}
 
 	body.predicted_position += delta_x * omega;
@@ -1134,20 +950,20 @@ auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
 		con.lambda[2] = std::clamp<force>(con.penalty[2] * c[2] + con.lambda[2], -friction_bound, friction_bound);
 
 		if (con.lambda[0] < force{}) {
-			con.penalty[0] = std::min(con.penalty[0] + m_config.beta * internal::to_storage(abs(c[0])), m_config.penalty_max);
+			con.penalty[0] = std::min(con.penalty[0] + m_config.beta * abs(c[0]), m_config.penalty_max);
 			const auto worker_idx = task::current_worker().value_or(0);
 			per_worker_max[worker_idx] = std::max<length>(per_worker_max[worker_idx], abs(c[0]));
 		}
 
 		if (friction_bound > newtons(1e-10f)) {
 			if (abs(con.lambda[1]) < friction_bound) {
-				con.penalty[1] = std::min(con.penalty[1] + m_config.beta * internal::to_storage(abs(c[1])), m_config.penalty_max);
+				con.penalty[1] = std::min(con.penalty[1] + m_config.beta * abs(c[1]), m_config.penalty_max);
 			}
 			if (abs(con.lambda[2]) < friction_bound) {
-				con.penalty[2] = std::min(con.penalty[2] + m_config.beta * internal::to_storage(abs(c[2])), m_config.penalty_max);
+				con.penalty[2] = std::min(con.penalty[2] + m_config.beta * abs(c[2]), m_config.penalty_max);
 			}
 		}
-	});
+	}, trace_id<"vbd::contact_dual_update">());
 
 	step_delta max_violation;
 	for (const auto& m : per_worker_max) {
@@ -1233,8 +1049,8 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 				}
 			}
 			else {
-				const vec3f axis_a = rotate_axis(body_a.predicted_orientation, constraint.local_axis_a);
-				const vec3f axis_b = rotate_axis(body_b.predicted_orientation, constraint.local_axis_b);
+				const vec3f axis_a = rotate_vector(body_a.predicted_orientation, constraint.local_axis_a);
+				const vec3f axis_b = rotate_vector(body_b.predicted_orientation, constraint.local_axis_b);
 				const vec3f swing_error = cross(axis_a, axis_b);
 
 				vec3f perp_u = cross(axis_a, axis_y);
@@ -1289,7 +1105,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 		}
 	}
 	else if (constraint.type == joint_type::slider) {
-		const vec3f axis_w = normalize(rotate_axis(body_a.predicted_orientation, constraint.local_axis_a));
+		const vec3f axis_w = normalize(rotate_vector(body_a.predicted_orientation, constraint.local_axis_a));
 		vec3f perp0 = cross(axis_w, axis_y);
 		if (magnitude(perp0) < 1e-6f) {
 			perp0 = cross(axis_w, axis_x);
@@ -1333,8 +1149,14 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 	}
 }
 
-auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
+auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_delta {
 	auto& joints = m_graph.joint_constraints();
+	const auto worker_count = std::max<std::size_t>(1, task::thread_count());
+	static_vector<step_delta, 64> per_worker_max;
+	for (std::size_t i = 0; i < worker_count; ++i) {
+		per_worker_max.push_back({});
+	}
+
 	task::coarse_parallel(joints.size(), 256, [&, this](std::size_t ji) {
 		auto& j = joints[ji];
 		const auto& body_a = m_bodies[j.body_a];
@@ -1343,6 +1165,14 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 		if ((body_a.locked || body_a.sleeping()) && (body_b.locked || body_b.sleeping())) {
 			return;
 		}
+
+		const auto worker_idx = task::current_worker().value_or(0);
+		auto track_linear = [&](const length v) {
+			per_worker_max[worker_idx].linear = std::max(per_worker_max[worker_idx].linear, abs(v));
+		};
+		auto track_angular = [&](const angle v) {
+			per_worker_max[worker_idx].angular = std::max(per_worker_max[worker_idx].angular, abs(v));
+		};
 
 		const vec3<lever_arm> r_aw = rotate_vector(body_a.predicted_orientation, j.local_anchor_a);
 		const vec3<lever_arm> r_bw = rotate_vector(body_b.predicted_orientation, j.local_anchor_b);
@@ -1356,14 +1186,16 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 			const stiffness penalty_cap = (j.compliance > inverse_mass{})
 				? std::min<stiffness>(1.f / (j.compliance * h_squared), m_config.penalty_max)
 				: m_config.penalty_max;
-			j.pos_penalty[0] = std::min(j.pos_penalty[0] + m_config.beta * internal::to_storage(abs(C)), penalty_cap);
+			j.pos_penalty[0] = std::min(j.pos_penalty[0] + m_config.beta * abs(C), penalty_cap);
+			track_linear(C);
 		}
 		else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
 			for (int k = 0; k < 3; ++k) {
 				constexpr std::array dirs = { axis_x, axis_y, axis_z };
 				const length c = dot(dirs[k], d) - j.pos_c0[k];
 				j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
-				j.pos_penalty[k] = std::min(j.pos_penalty[k] + m_config.beta * internal::to_storage(abs(c)), m_config.penalty_max);
+				j.pos_penalty[k] = std::min(j.pos_penalty[k] + m_config.beta * abs(c), m_config.penalty_max);
+				track_linear(c);
 			}
 
 			const quat q_error = body_b.predicted_orientation * conjugate(body_a.predicted_orientation) * conjugate(j.rest_orientation);
@@ -1373,12 +1205,13 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 				for (int k = 0; k < 3; ++k) {
 					const angle c_ang = theta[k] - j.ang_c0[k];
 					j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-					j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.ang_beta * internal::to_storage(abs(c_ang)), m_config.ang_penalty_max);
+					j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.ang_beta * abs(c_ang), m_config.ang_penalty_max);
+					track_angular(c_ang);
 				}
 			}
 			else {
-				const vec3f axis_a = rotate_axis(body_a.predicted_orientation, j.local_axis_a);
-				const vec3f axis_b = rotate_axis(body_b.predicted_orientation, j.local_axis_b);
+				const vec3f axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a);
+				const vec3f axis_b = rotate_vector(body_b.predicted_orientation, j.local_axis_b);
 				const vec3f swing_error = cross(axis_a, axis_b);
 
 				vec3f perp_u = cross(axis_a, axis_y);
@@ -1392,10 +1225,12 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 				const angle c_v = radians(dot(perp_v, swing_error)) - j.ang_c0[1];
 
 				j.ang_lambda[0] = j.ang_penalty[0] * c_u + j.ang_lambda[0];
-				j.ang_penalty[0] = std::min(j.ang_penalty[0] + m_config.ang_beta * internal::to_storage(abs(c_u)), m_config.ang_penalty_max);
+				j.ang_penalty[0] = std::min(j.ang_penalty[0] + m_config.ang_beta * abs(c_u), m_config.ang_penalty_max);
+				track_angular(c_u);
 
 				j.ang_lambda[1] = j.ang_penalty[1] * c_v + j.ang_lambda[1];
-				j.ang_penalty[1] = std::min(j.ang_penalty[1] + m_config.ang_beta * internal::to_storage(abs(c_v)), m_config.ang_penalty_max);
+				j.ang_penalty[1] = std::min(j.ang_penalty[1] + m_config.ang_beta * abs(c_v), m_config.ang_penalty_max);
+				track_angular(c_v);
 
 				if (j.limits_enabled) {
 					const angle twist = dot(axis_a, theta);
@@ -1405,18 +1240,20 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 					if (twist < lower) {
 						const angle c_limit = (twist - lower) - j.limit_c0;
 						j.limit_lambda = std::min<torque>(j.limit_penalty * c_limit + j.limit_lambda, torque{});
-						j.limit_penalty = std::min(j.limit_penalty + m_config.ang_beta * internal::to_storage(abs(c_limit)), m_config.ang_penalty_max);
+						j.limit_penalty = std::min(j.limit_penalty + m_config.ang_beta * abs(c_limit), m_config.ang_penalty_max);
+						track_angular(c_limit);
 					}
 					else if (twist > upper) {
 						const angle c_limit = (twist - upper) - j.limit_c0;
 						j.limit_lambda = std::max<torque>(j.limit_penalty * c_limit + j.limit_lambda, torque{});
-						j.limit_penalty = std::min(j.limit_penalty + m_config.ang_beta * internal::to_storage(abs(c_limit)), m_config.ang_penalty_max);
+						j.limit_penalty = std::min(j.limit_penalty + m_config.ang_beta * abs(c_limit), m_config.ang_penalty_max);
+						track_angular(c_limit);
 					}
 				}
 			}
 		}
 		else if (j.type == joint_type::slider) {
-			const vec3f axis_w = normalize(rotate_axis(body_a.predicted_orientation, j.local_axis_a));
+			const vec3f axis_w = normalize(rotate_vector(body_a.predicted_orientation, j.local_axis_a));
 			vec3f perp0 = cross(axis_w, axis_y);
 			if (magnitude(perp0) < 1e-6f) {
 				perp0 = cross(axis_w, axis_x);
@@ -1428,7 +1265,8 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 			for (int k = 0; k < 2; ++k) {
 				const length c = dot(perps[k], d) - j.pos_c0[k];
 				j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
-				j.pos_penalty[k] = std::min(j.pos_penalty[k] + m_config.beta * internal::to_storage(abs(c)), m_config.penalty_max);
+				j.pos_penalty[k] = std::min(j.pos_penalty[k] + m_config.beta * abs(c), m_config.penalty_max);
+				track_linear(c);
 			}
 
 			const quat q_error = body_b.predicted_orientation * conjugate(body_a.predicted_orientation) * conjugate(j.rest_orientation);
@@ -1437,17 +1275,18 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 			for (int k = 0; k < 3; ++k) {
 				const angle c_ang = theta[k] - j.ang_c0[k];
 				j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-				j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.ang_beta * internal::to_storage(abs(c_ang)), m_config.ang_penalty_max);
+				j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.ang_beta * abs(c_ang), m_config.ang_penalty_max);
+				track_angular(c_ang);
 			}
 		}
-	});
-}
+	}, trace_id<"vbd::joint_dual_update">());
 
-auto gse::vbd::rotate_axis(const quat& q, const vec3f& v) -> vec3f {
-	const vec3f u{ q[1], q[2], q[3] };
-	const float s = q[0];
-	const vec3f t = 2.f * cross(u, v);
-	return v + s * t + cross(u, t);
+	step_delta result;
+	for (const auto& m : per_worker_max) {
+		result.linear = std::max(result.linear, m.linear);
+		result.angular = std::max(result.angular, m.angular);
+	}
+	return result;
 }
 
 auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<lever_arm>& r, const vec3f& dir, const force abs_force) -> void {
@@ -1486,4 +1325,190 @@ auto gse::vbd::contact_effective_mass(const body_state& body_a, const body_state
 	}
 
 	return 1.f / inv_mass_sum;
+}
+
+auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const body_state& bb, const time_squared h_squared, const solver_config& cfg) -> void {
+	const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, j.local_anchor_a);
+	const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, j.local_anchor_b);
+
+	for (int k = 0; k < 3; ++k) {
+		j.pos_lambda[k] *= cfg.gamma;
+	}
+	for (int k = 0; k < 3; ++k) {
+		j.ang_lambda[k] *= cfg.gamma;
+	}
+	if (j.limits_enabled) {
+		j.limit_lambda *= cfg.gamma;
+	}
+
+	constexpr std::array dirs = { axis_x, axis_y, axis_z };
+
+	int num_pos_rows = 3;
+	if (j.type == joint_type::distance) {
+		num_pos_rows = 1;
+	}
+	else if (j.type == joint_type::slider) {
+		num_pos_rows = 2;
+	}
+
+	for (int k = 0; k < num_pos_rows; ++k) {
+		vec3f dir;
+		if (j.type == joint_type::distance) {
+			const vec3<displacement> d = (ba.position + r_aw) - (bb.position + r_bw);
+			dir = magnitude(d) > meters(1e-7f) ? normalize(d) : axis_y;
+		}
+		else if (j.type == joint_type::slider) {
+			const vec3f axis_w = rotate_vector(ba.orientation, j.local_axis_a);
+			vec3f perp0 = cross(axis_w, axis_y);
+			if (magnitude(perp0) < 1e-6f) {
+				perp0 = cross(axis_w, axis_x);
+			}
+			perp0 = normalize(perp0);
+			dir = k == 0 ? perp0 : normalize(cross(axis_w, perp0));
+		}
+		else {
+			dir = dirs[k];
+		}
+		const stiffness eff = contact_effective_mass(ba, bb, r_aw, r_bw, dir) / h_squared;
+		const stiffness pos_penalty_cap = (j.compliance > inverse_mass{})
+			? std::min<stiffness>(1.f / (j.compliance * h_squared), cfg.penalty_max)
+			: cfg.penalty_max;
+		j.pos_penalty[k] = std::clamp(
+			std::max(j.pos_penalty[k] * cfg.gamma, eff),
+			cfg.penalty_min, pos_penalty_cap
+		);
+	}
+
+	int num_ang_rows = 3;
+	if (j.type == joint_type::distance) {
+		num_ang_rows = 0;
+	}
+	else if (j.type == joint_type::hinge) {
+		num_ang_rows = 2;
+	}
+
+	for (int k = 0; k < num_ang_rows; ++k) {
+		vec3f ang_dir;
+		if (j.type == joint_type::hinge) {
+			const vec3f axis_a = rotate_vector(ba.orientation, j.local_axis_a);
+			vec3f perp_u = cross(axis_a, axis_y);
+			if (magnitude(perp_u) < 1e-6f) {
+				perp_u = cross(axis_a, axis_x);
+			}
+			perp_u = normalize(perp_u);
+			ang_dir = k == 0 ? perp_u : normalize(cross(axis_a, perp_u));
+		}
+		else {
+			ang_dir = dirs[k];
+		}
+
+		inverse_inertia inv_i_sum{};
+		if (!ba.locked) {
+			inv_i_sum += dot(ang_dir, ba.inv_inertia * ang_dir);
+		}
+		if (!bb.locked) {
+			inv_i_sum += dot(ang_dir, bb.inv_inertia * ang_dir);
+		}
+
+		const angular_stiffness eff_ang = inv_i_sum > per_kilogram_meter_squared(1e-10f)
+			? 1.f / inv_i_sum / h_squared / rad
+			: cfg.ang_penalty_min;
+
+		j.ang_penalty[k] = std::clamp(
+			std::max(j.ang_penalty[k] * cfg.gamma, eff_ang),
+			cfg.ang_penalty_min, cfg.ang_penalty_max
+		);
+	}
+
+	if (j.limits_enabled) {
+		const vec3f limit_axis = rotate_vector(ba.orientation, j.local_axis_a);
+		inverse_inertia inv_i_sum{};
+		if (!ba.locked) {
+			inv_i_sum += dot(limit_axis, ba.inv_inertia * limit_axis);
+		}
+		if (!bb.locked) {
+			inv_i_sum += dot(limit_axis, bb.inv_inertia * limit_axis);
+		}
+
+		const angular_stiffness eff_limit = inv_i_sum > per_kilogram_meter_squared(1e-10f)
+			? 1.f / inv_i_sum / h_squared / rad
+			: cfg.ang_penalty_min;
+
+		j.limit_penalty = std::clamp(
+			std::max(j.limit_penalty * cfg.gamma, eff_limit),
+			cfg.ang_penalty_min, cfg.ang_penalty_max
+		);
+	}
+}
+
+auto gse::vbd::compute_joint_c0(joint_constraint& j, const body_state& ba, const body_state& bb) -> void {
+	const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, j.local_anchor_a);
+	const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, j.local_anchor_b);
+	const vec3<displacement> d = (ba.position + r_aw) - (bb.position + r_bw);
+
+	if (j.type == joint_type::distance) {
+		j.pos_c0[0] = magnitude(d) - j.target_distance;
+		return;
+	}
+
+	if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
+		constexpr std::array dirs = { axis_x, axis_y, axis_z };
+		for (int k = 0; k < 3; ++k) {
+			j.pos_c0[k] = dot(dirs[k], d);
+		}
+
+		const quat q_error = bb.orientation * conjugate(ba.orientation) * conjugate(j.rest_orientation);
+		const vec3<angle> theta = to_axis_angle(q_error);
+
+		if (j.type == joint_type::fixed) {
+			for (int k = 0; k < 3; ++k) {
+				j.ang_c0[k] = theta[k];
+			}
+			return;
+		}
+
+		const vec3f axis_a = rotate_vector(ba.orientation, j.local_axis_a);
+		const vec3f axis_b = rotate_vector(bb.orientation, j.local_axis_b);
+		const vec3f swing_error = cross(axis_a, axis_b);
+
+		vec3f perp_u = cross(axis_a, axis_y);
+		if (magnitude(perp_u) < 1e-6f) {
+			perp_u = cross(axis_a, axis_x);
+		}
+		perp_u = normalize(perp_u);
+		const vec3f perp_v = normalize(cross(axis_a, perp_u));
+		j.ang_c0[0] = radians(dot(perp_u, swing_error));
+		j.ang_c0[1] = radians(dot(perp_v, swing_error));
+
+		if (j.limits_enabled) {
+			const angle twist_angle = dot(axis_a, theta);
+			if (twist_angle < j.limit_lower) {
+				j.limit_c0 = twist_angle - j.limit_lower;
+			}
+			else if (twist_angle > j.limit_upper) {
+				j.limit_c0 = twist_angle - j.limit_upper;
+			}
+			else {
+				j.limit_c0 = angle{};
+			}
+		}
+		return;
+	}
+
+	if (j.type == joint_type::slider) {
+		const vec3f axis_w = normalize(rotate_vector(ba.orientation, j.local_axis_a));
+		vec3f perp0 = cross(axis_w, axis_y);
+		if (magnitude(perp0) < 1e-6f) {
+			perp0 = cross(axis_w, axis_x);
+		}
+		perp0 = normalize(perp0);
+		const vec3f perp1 = normalize(cross(axis_w, perp0));
+		j.pos_c0[0] = dot(perp0, d);
+		j.pos_c0[1] = dot(perp1, d);
+
+		const auto slider_theta = to_axis_angle(bb.orientation * conjugate(ba.orientation) * conjugate(j.rest_orientation));
+		for (int k = 0; k < 3; ++k) {
+			j.ang_c0[k] = slider_theta[k];
+		}
+	}
 }

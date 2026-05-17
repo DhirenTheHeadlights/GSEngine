@@ -33,33 +33,25 @@ auto gs::main_test_scene_setup(gse::scene& s) -> void {
 
 	arena::create(&s);
 
-	build_box(
-		&s,
-		"Smaller Box",
+	s.spawn("Smaller Box", gs::box(
 		gse::vec3<gse::position>(2.f, -40.f, 2.f),
 		gse::vec3<gse::length>(2.f, 2.f, 2.f)
-	);
+	));
 
-	build_box(
-		&s,
-		"Bigger Box",
+	s.spawn("Bigger Box", gs::box(
 		gse::vec3<gse::position>(-2.f, -40.f, 2.f),
 		gse::vec3<gse::length>(4.f, 4.f, 4.f),
 		gse::kilograms(100000.f)
-	);
+	));
 
-	build_sphere_light(
-		&s,
-		"Center Sphere Light",
+	s.spawn("Center Sphere Light", gs::sphere_light(
 		gse::vec3<gse::position>(0.f, -30.f, 0.f),
 		gse::meters(1.f)
-	);
+	));
 
-	build_sphere(
-		&s,
-		"Second Sphere",
+	s.spawn("Second Sphere", gs::sphere(
 		gse::vec3<gse::position>(0.f, 0.f, 20.f),
 		gse::meters(1.f),
 		gse::sphere_lod::lo
-	);
+	));
 }

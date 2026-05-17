@@ -47,7 +47,6 @@ BinPackParameters: false
 BinPackArguments: false
 AllowAllParametersOfDeclarationOnNextLine: false
 AllowAllArgumentsOnNextLine: false
-AllowAllConstructorInitializersOnNextLine: false
 ExperimentalAutoDetectBinPacking: false
 
 AllowShortBlocksOnASingleLine: Never

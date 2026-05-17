@@ -1,26 +1,3 @@
-public static const uint SLEEP_THRESHOLD = 60;
-public static const uint MAX_BODIES = 2048;
-public static const uint MAX_CONTACTS = 16384;
-public static const uint MAX_COLLISION_PAIRS = 16384;
-public static const uint MAX_COLORS = 16;
-public static const uint MAX_JOINTS = 128;
-public static const uint MAX_IMPULSES = 64;
-public static const uint MAX_GROUNDED_UINTS = (MAX_BODIES + 31) / 32;
-
-public static const uint JOINT_TYPE_DISTANCE = 0;
-public static const uint JOINT_TYPE_FIXED = 1;
-public static const uint JOINT_TYPE_HINGE = 2;
-public static const uint JOINT_TYPE_SLIDER = 3;
-
-public static const uint MAX_CONTACT_ADJACENCY = MAX_CONTACTS * 2;
-public static const uint MAX_JOINT_ADJACENCY = MAX_JOINTS * 2;
-
-public static const uint CONVERGENCE_MAX_DELTA_INDEX = 4;
-public static const uint CONVERGED_FLAG_INDEX = 5;
-
-public static const uint GRID_TABLE_SIZE = 4096;
-public static const uint GRID_MAX_ENTRIES = MAX_BODIES * 8;
-
 public uint safe_load_uint(RWStructuredBuffer<uint> buf, uint index, uint max_index) {
     return (index < max_index) ? buf[index] : 0;
 }

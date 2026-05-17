@@ -17,13 +17,6 @@ import :vbd_constraints;
 import :vbd_solver;
 
 export namespace gse::vbd {
-	struct [[= shaders::shader_struct]] frozen_jacobian {
-		vec4<lever_arm> world_r_a;
-		vec4<lever_arm> world_r_b;
-		mat3f j_ang_a;
-		mat3f j_ang_b;
-	};
-
 	struct [[= shaders::shader_struct]] dispatch_args {
 		std::uint32_t x;
 		std::uint32_t y;
@@ -31,6 +24,9 @@ export namespace gse::vbd {
 	};
 
 	using shader_types = type_pack<
+		vbd_limits,
+		joint_type,
+		solver_config,
 		body_state,
 		contact_constraint,
 		velocity_motor_constraint,
@@ -39,22 +35,6 @@ export namespace gse::vbd {
 		frozen_jacobian,
 		dispatch_args
 	>;
-}
-
-export namespace gse::vbd {
-	constexpr std::uint32_t max_bodies = 2048;
-	constexpr std::uint32_t max_motors = 16;
-	constexpr std::uint32_t max_joints = 128;
-	constexpr std::uint32_t max_colors = 16;
-	constexpr std::uint32_t max_collision_pairs = 16384;
-	constexpr std::uint32_t max_impulses = 64;
-	constexpr std::uint32_t workgroup_size = 64;
-	constexpr std::uint32_t collision_state_header_uints = 8;
-
-	constexpr std::uint32_t solve_state_float4s_per_body = 11;
-	constexpr std::uint32_t collision_state_uints = collision_state_header_uints;
-	constexpr std::uint32_t grid_table_size = 4096;
-	constexpr std::uint32_t grounded_bits_uints = (max_bodies + 31) / 32;
 
 	struct vbd_solve_chain {};
 
@@ -66,6 +46,7 @@ export namespace gse::vbd {
 	struct vbd_narrow_phase_stage {};
 	struct vbd_prepare_contact_indirect_stage {};
 	struct vbd_build_adjacency_stage {};
+	struct vbd_build_coloring_stage {};
 	struct vbd_apply_impulses_stage {};
 	struct vbd_predict_stage {};
 	struct vbd_freeze_jacobians_stage {};
@@ -158,6 +139,7 @@ export namespace gse::vbd {
 			gpu::pipeline collision_broad_phase_pipeline;
 			gpu::pipeline collision_narrow_phase_pipeline;
 			gpu::pipeline collision_build_adjacency_pipeline;
+			gpu::pipeline collision_build_coloring_pipeline;
 			gpu::pipeline update_joint_lambda_pipeline;
 			gpu::pipeline prepare_indirect_pipeline;
 			gpu::pipeline prepare_contact_indirect_pipeline;

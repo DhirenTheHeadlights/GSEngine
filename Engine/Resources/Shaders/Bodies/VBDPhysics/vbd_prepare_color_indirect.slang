@@ -1,8 +1,8 @@
 
 uint color = dispatch_id.x;
-if (color >= MAX_COLORS) return;
+if (color >= max_colors) return;
 
-uint count = color_data[MAX_COLORS + color];
-indirect_args[2 + color].x = (count + 63) / 64;
+uint count = color_data[max_colors + color];
+indirect_args[2 + color].x = (count + workgroup_size - 1) / workgroup_size;
 indirect_args[2 + color].y = 1;
 indirect_args[2 + color].z = 1;

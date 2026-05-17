@@ -169,7 +169,7 @@ auto gse::async::rw_mutex::unlock_shared() -> void {
 		task::post([h] {
 			if (!h) return;
 			h.resume();
-		});
+		}, trace_id<"rw_mutex::unlock_shared::resume">());
 	}
 }
 
@@ -197,7 +197,7 @@ auto gse::async::rw_mutex::unlock_exclusive() -> void {
 		task::post([h] {
 			if (!h) return;
 			h.resume();
-		});
+		}, trace_id<"rw_mutex::unlock_exclusive::resume">());
 	}
 }
 

@@ -9,10 +9,9 @@
 #include "RedundantTemplateArgCheck.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclTemplate.h"
-#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
-#include "llvm/ADT/SmallPtrSet.h"
+#include "clang/Lex/Lexer.h"
 
 using namespace clang::ast_matchers;
 
@@ -20,28 +19,59 @@ namespace clang::tidy::gse {
 
 namespace {
 
-class CollectTypeParms
-    : public RecursiveASTVisitor<CollectTypeParms> {
-public:
-  llvm::SmallPtrSet<const TemplateTypeParmDecl *, 4> Found;
+bool isDeducibleInType(QualType T, const TemplateTypeParmDecl *Target) {
+  if (T.isNull())
+    return false;
+  T = T.getNonReferenceType();
+  if (T.isNull())
+    return false;
+  const Type *TPtr = T.getTypePtr();
 
-  bool VisitTemplateTypeParmType(const TemplateTypeParmType *T) {
-    if (const auto *D = T->getDecl())
-      Found.insert(D);
-    return true;
-  }
-};
+  if (const auto *PT = dyn_cast<TemplateTypeParmType>(TPtr))
+    return PT->getDecl() == Target;
 
-llvm::SmallPtrSet<const TemplateTypeParmDecl *, 4>
-collectDeducibleTypeParms(const FunctionDecl *FD) {
-  CollectTypeParms Collector;
-  for (const ParmVarDecl *P : FD->parameters()) {
-    QualType T = P->getType();
-    if (T.isNull())
-      continue;
-    Collector.TraverseType(T);
+  if (const auto *PT = dyn_cast<PointerType>(TPtr))
+    return isDeducibleInType(PT->getPointeeType(), Target);
+
+  if (const auto *AT = dyn_cast<ArrayType>(TPtr))
+    return isDeducibleInType(AT->getElementType(), Target);
+
+  if (const auto *MPT = dyn_cast<MemberPointerType>(TPtr))
+    return isDeducibleInType(MPT->getPointeeType(), Target);
+
+  if (const auto *TST = dyn_cast<TemplateSpecializationType>(TPtr)) {
+    for (const TemplateArgument &Arg : TST->template_arguments()) {
+      if (Arg.getKind() != TemplateArgument::Type)
+        continue;
+      if (isDeducibleInType(Arg.getAsType(), Target))
+        return true;
+    }
+    return false;
   }
-  return std::move(Collector.Found);
+
+  if (const auto *FPT = dyn_cast<FunctionProtoType>(TPtr)) {
+    if (isDeducibleInType(FPT->getReturnType(), Target))
+      return true;
+    for (QualType P : FPT->getParamTypes()) {
+      if (isDeducibleInType(P, Target))
+        return true;
+    }
+    return false;
+  }
+
+  if (const auto *PT = dyn_cast<ParenType>(TPtr))
+    return isDeducibleInType(PT->getInnerType(), Target);
+
+  return false;
+}
+
+bool isParameterDeducible(const FunctionDecl *Pattern,
+                          const TemplateTypeParmDecl *Param) {
+  for (const ParmVarDecl *P : Pattern->parameters()) {
+    if (isDeducibleInType(P->getType(), Param))
+      return true;
+  }
+  return false;
 }
 
 } // namespace
@@ -73,10 +103,6 @@ void RedundantTemplateArgCheck::check(
   if (!Pattern)
     return;
 
-  auto Deducible = collectDeducibleTypeParms(Pattern);
-  if (Deducible.empty())
-    return;
-
   const TemplateParameterList *TPL = Primary->getTemplateParameters();
   if (!TPL)
     return;
@@ -85,25 +111,33 @@ void RedundantTemplateArgCheck::check(
   if (WrittenCount > TPL->size())
     return;
 
-  bool AllDeducible = true;
   for (unsigned I = 0; I < WrittenCount; ++I) {
     const NamedDecl *Param = TPL->getParam(I);
     const auto *TTPD = dyn_cast<TemplateTypeParmDecl>(Param);
-    if (!TTPD || !Deducible.contains(TTPD)) {
-      AllDeducible = false;
-      break;
-    }
+    if (!TTPD || TTPD->isParameterPack())
+      return;
+    if (!isParameterDeducible(Pattern, TTPD))
+      return;
   }
-  if (!AllDeducible)
+
+  SourceLocation LAngle = Written->getLAngleLoc();
+  SourceLocation RAngle = Written->getRAngleLoc();
+  if (LAngle.isInvalid() || RAngle.isInvalid())
+    return;
+  if (Result.SourceManager->isInSystemHeader(LAngle))
     return;
 
-  SourceRange ArgRange(Written->getLAngleLoc(), Written->getRAngleLoc());
-  diag(Written->getLAngleLoc(),
+  SourceLocation RemovalEnd =
+      Lexer::getLocForEndOfToken(RAngle, 0, *Result.SourceManager,
+                                 Result.Context->getLangOpts());
+
+  diag(LAngle,
        "explicit template argument(s) on call to %0 are redundant; "
-       "all are deducible from the function arguments — let template "
-       "deduction handle it")
+       "all written arguments are deducible from the function call — "
+       "let template argument deduction handle it")
       << FD
-      << FixItHint::CreateRemoval(ArgRange);
+      << FixItHint::CreateRemoval(
+             CharSourceRange::getCharRange(LAngle, RemovalEnd));
 }
 
 } // namespace clang::tidy::gse

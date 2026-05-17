@@ -4,7 +4,7 @@ if (bi >= pc.body_count) return;
 
 body_state body = body_data[bi];
 bool locked = body.locked != 0;
-bool sleeping = body.sleep_counter >= SLEEP_THRESHOLD;
+bool sleeping = body.sleep_counter >= sleep_threshold;
 bool update_orient = body.update_orientation != 0;
 bool gravity = body.affected_by_gravity != 0;
 
@@ -18,18 +18,18 @@ if (pc.substep == 0) {
     }
 
     if (sleeping) {
-        float wake_thresh = pc.velocity_sleep_threshold * 10.0;
+        float wake_thresh = pc.cfg.velocity_sleep_threshold * 10.0;
         uint co = contact_offsets[bi];
         uint cc = contact_counts[bi];
         for (uint k = 0; k < cc; k++) {
-            uint ci = safe_load_uint(contact_adjacency, co + k, MAX_CONTACT_ADJACENCY);
-            if (ci >= MAX_CONTACTS) continue;
+            uint ci = safe_load_uint(contact_adjacency, co + k, max_contact_adjacency);
+            if (ci >= max_contacts) continue;
             contact_constraint c = contact_data[ci];
             uint other = (c.body_a == bi) ? c.body_b : c.body_a;
             if (other >= pc.body_count) continue;
             body_state other_body = body_data[other];
             bool other_locked = other_body.locked != 0;
-            bool other_sleeping = other_body.sleep_counter >= SLEEP_THRESHOLD;
+            bool other_sleeping = other_body.sleep_counter >= sleep_threshold;
             float other_speed = length(other_body.velocity.xyz);
 
             if (!other_locked && !other_sleeping && other_speed > wake_thresh) {
@@ -43,14 +43,14 @@ if (pc.substep == 0) {
             uint j_off = joint_offsets[bi];
             uint jc = joint_counts[bi];
             for (uint k = 0; k < jc; k++) {
-                uint ji = safe_load_uint(joint_adjacency, j_off + k, MAX_JOINT_ADJACENCY);
-                if (ji >= MAX_JOINTS) continue;
+                uint ji = safe_load_uint(joint_adjacency, j_off + k, max_joint_adjacency);
+                if (ji >= max_joints) continue;
                 joint_constraint jnt = joint_data[ji];
                 uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
                 if (other >= pc.body_count) continue;
                 body_state other_body = body_data[other];
                 bool other_locked = other_body.locked != 0;
-                bool other_sleeping = other_body.sleep_counter >= SLEEP_THRESHOLD;
+                bool other_sleeping = other_body.sleep_counter >= sleep_threshold;
                 float other_speed = length(other_body.velocity.xyz);
 
                 if (!other_locked && !other_sleeping && other_speed > wake_thresh) {
@@ -72,34 +72,33 @@ if (locked || sleeping) {
     body.predicted_orientation = body.orientation;
     body.angular_inertia_target = body.orientation;
     body.motor_target = body.position;
-    body.predicted_velocity = float3(0, 0, 0);
-    body.predicted_angular_velocity = float3(0, 0, 0);
     body_data[bi] = body;
     return;
 }
 
+body.velocity *= (1.0 - pc.cfg.linear_damping);
+body.angular_velocity *= (1.0 - pc.cfg.angular_damping);
+
 float3 linear_velocity = body.velocity.xyz;
 float lin_speed = length(linear_velocity);
-if (lin_speed > 15.0) {
-    linear_velocity *= (15.0 / lin_speed);
+if (lin_speed > pc.cfg.max_linear_speed) {
+    linear_velocity *= (pc.cfg.max_linear_speed / lin_speed);
     body.velocity = linear_velocity;
 }
 
 float3 angular_velocity = body.angular_velocity.xyz;
 float ang_speed = length(angular_velocity);
-if (ang_speed > 50.0) {
-    angular_velocity *= (50.0 / ang_speed);
+if (ang_speed > pc.cfg.max_angular_speed) {
+    angular_velocity *= (pc.cfg.max_angular_speed / ang_speed);
     body.angular_velocity = angular_velocity;
 }
 
 float3 gravity_step = gravity ? float3(0, -9.8 * pc.dt * pc.dt, 0) : float3(0, 0, 0);
 body.inertia_target = body.position + body.velocity * pc.dt + gravity_step;
 body.predicted_position = body.position + body.velocity * pc.dt + gravity_step * body.accel_weight;
-body.predicted_velocity = body.velocity;
 body.motor_target = body.inertia_target;
 
 if (update_orient) {
-    body.predicted_angular_velocity = body.angular_velocity;
     float3 w = angular_velocity;
     float omega_mag = length(w);
     if (omega_mag > 1e-7) {
@@ -115,7 +114,6 @@ if (update_orient) {
     }
 } else {
     body.predicted_orientation = body.orientation;
-    body.predicted_angular_velocity = float3(0, 0, 0);
 }
 
 body.angular_inertia_target = body.predicted_orientation;

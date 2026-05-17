@@ -14,6 +14,29 @@ export namespace gse::trace {
 		bool enable_browser_dump = false;
 	};
 
+	constexpr id untraced{};
+
+	struct loc_tag {
+		char data[192]{};
+		std::uint32_t size = 0;
+		std::uint32_t line = 0;
+
+		consteval auto view(
+		) const -> std::string_view;
+	};
+
+	consteval auto strip_function_signature(
+		std::string_view fn
+	) -> std::string_view;
+
+	consteval auto current_loc_tag(
+		std::source_location loc = std::source_location::current()
+	) -> loc_tag;
+
+	template <loc_tag Tag>
+	auto loc_id(
+	) -> id;
+
 	auto start(
 		const config& cfg = {}
 	) -> void;
@@ -135,10 +158,6 @@ export namespace gse::trace {
 
 	auto main_tid(
 	) -> std::uint32_t;
-
-	auto make_loc_id(
-		const std::source_location& loc
-	) -> id;
 
 	auto mark_hidden(
 		id id
@@ -358,4 +377,63 @@ namespace gse::trace {
 
 	auto allocate_span_eid(
 	) -> std::uint64_t;
+}
+
+consteval auto gse::trace::loc_tag::view() const -> std::string_view {
+	return { data, size };
+}
+
+consteval auto gse::trace::strip_function_signature(const std::string_view fn) -> std::string_view {
+	std::string_view name = fn;
+
+	if (const auto lp = name.find('('); lp != std::string_view::npos) {
+		name = name.substr(0, lp);
+	}
+
+	while (!name.empty() && (name.back() == ' ' || name.back() == '\t')) {
+		name.remove_suffix(1);
+	}
+
+	if (const auto last_col_col = name.rfind("::"); last_col_col != std::string_view::npos) {
+		std::size_t start = name.rfind(' ', last_col_col);
+		start = (start == std::string_view::npos) ? 0 : start + 1;
+		name = name.substr(start);
+
+		constexpr std::string_view candidates[] = {
+			"__cdecl", "__stdcall", "__thiscall", "__vectorcall",
+			"cdecl", "stdcall", "thiscall", "vectorcall"
+		};
+		for (const auto cc : candidates) {
+			if (name.size() > cc.size() && name.starts_with(cc)) {
+				name.remove_prefix(cc.size());
+				while (!name.empty() && (name.front() == ' ' || name.front() == '\t')) {
+					name.remove_prefix(1);
+				}
+				break;
+			}
+		}
+	}
+	else if (const auto last_sp = name.rfind(' '); last_sp != std::string_view::npos) {
+		name = name.substr(last_sp + 1);
+	}
+
+	return name;
+}
+
+consteval auto gse::trace::current_loc_tag(const std::source_location loc) -> loc_tag {
+	loc_tag out{};
+	const auto stripped = strip_function_signature(loc.function_name());
+	const auto copy_size = std::min<std::size_t>(stripped.size(), sizeof(out.data) - 1);
+	for (std::size_t i = 0; i < copy_size; ++i) {
+		out.data[i] = stripped[i];
+	}
+	out.size = static_cast<std::uint32_t>(copy_size);
+	out.line = loc.line();
+	return out;
+}
+
+template <gse::trace::loc_tag Tag>
+auto gse::trace::loc_id() -> id {
+	static const id cached = find_or_generate_id(std::format("{}:{}", Tag.view(), Tag.line));
+	return cached;
 }

@@ -4,7 +4,7 @@ if (bi >= pc.body_count) return;
 
 body_state body = body_data[bi];
 bool locked = body.locked != 0;
-bool sleeping = body.sleep_counter >= SLEEP_THRESHOLD;
+bool sleeping = body.sleep_counter >= sleep_threshold;
 bool update_orient = body.update_orientation != 0;
 
 if (locked || sleeping) return;

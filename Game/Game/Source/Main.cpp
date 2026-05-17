@@ -4,7 +4,7 @@ import gse;
 import gs;
 
 auto main() -> int {
-	gse::start([](gse::engine& e) {
+	gse::start([](gse::engine& e) -> void {
 		e.add_system<gse::network::system_for<gs::networked_components>>();
 		e.add_system<gs::client_system>();
 		e.add_system<gs::client_ui_system>();

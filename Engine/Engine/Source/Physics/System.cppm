@@ -19,7 +19,6 @@ import gse.gpu;
 
 import :narrow_phase_collision;
 import :motion_component;
-import :motion_status_component;
 import :motor_component;
 import :collision_component;
 import :transform_component;
@@ -142,9 +141,6 @@ export namespace gse::physics {
 			gpu_solver_stats gpu_stats;
 			std::vector<joint_definition> joints;
 
-			time_t<float, seconds> accumulator{};
-			clock tick_clock;
-			bool tick_clock_primed = false;
 			vbd::solver vbd_solver;
 			vbd::contact_cache contact_cache;
 			std::unordered_map<id, std::uint32_t> sleep_counters;
@@ -152,6 +148,9 @@ export namespace gse::physics {
 			std::uint32_t gpu_uploaded_body_count = 0;
 			std::uint32_t gpu_uploaded_joint_count = 0;
 			flat_map<id, std::uint32_t> id_to_body_index;
+
+			std::vector<std::uint8_t> body_airborne;
+			std::vector<std::uint8_t> body_sleeping;
 
 			vbd::gpu_solver gpu_solver;
 		};
@@ -184,6 +183,16 @@ export namespace gse::physics {
 			id entity_id
 		) -> std::optional<transform_snapshot>;
 
+		static auto is_airborne(
+			const data& d,
+			id entity_id
+		) -> bool;
+
+		static auto is_sleeping(
+			const data& d,
+			id entity_id
+		) -> bool;
+
 	private:
 		struct collision_pair {
 			id owner;
@@ -205,7 +214,7 @@ export namespace gse::physics {
 			write<motion_component>& motion,
 			write<collision_component>& collision,
 			write<collision_result_component>* results,
-			write<motion_status_component>* status
+			std::span<std::uint8_t> body_airborne
 		) -> void;
 
 		static auto update_vbd(
@@ -213,7 +222,6 @@ export namespace gse::physics {
 			data& d,
 			write<transform_component>& transform,
 			write<motion_component>& motion,
-			write<motion_status_component>& status,
 			read<motor_component>& motor,
 			write<collision_component>& collision,
 			write<collision_result_component>& results,
@@ -225,7 +233,6 @@ export namespace gse::physics {
 			data& d,
 			write<transform_component>& transform,
 			write<motion_component>& motion,
-			write<motion_status_component>& status,
 			read<motor_component>& motor,
 			write<collision_component>& collision,
 			write<collision_result_component>& results,

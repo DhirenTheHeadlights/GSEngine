@@ -63,11 +63,11 @@ auto gse::primitive_resolver::system::run(run_context& ctx, data&, const primiti
         }
 
         {
-            auto [boxes, spheres, renders] = co_await ctx.acquire<
-                write<primitive_box_spec>,
-                write<primitive_sphere_spec>,
-                write<render_component>
-            >();
+            auto [boxes, spheres, renders] = co_await ctx.acquire_with(
+                write_v<primitive_box_spec>,
+                write_v<primitive_sphere_spec>,
+                write_v<render_component>
+            );
 
             const auto box_owners = boxes.owner_ids();
             for (std::size_t i = 0; i < boxes.size(); ++i) {

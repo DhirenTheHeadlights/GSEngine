@@ -30,6 +30,10 @@ FULL_BUILD_TARGETS = [
 
 CLANGD_ONLY_TARGETS = ["clangd"]
 
+TOOLS_ONLY_TARGETS = ["clangd", "clang-tidy", "clang-format"]
+
+TOOLS_ONLY_BINARIES = ["clangd.exe", "clang-tidy.exe", "clang-format.exe"]
+
 GSE_TIDY_CHECKS_SRC = Path("scripts") / "gse_tidy_checks"
 GSE_TIDY_DST_SUBDIR = Path("clang-tools-extra") / "clang-tidy" / "gse"
 GSE_FORCE_LINKER_ANCHOR = """
@@ -149,13 +153,30 @@ def stage(build, dist, *, full):
             shutil.copytree(lib_src, dist / "lib" / "clang")
 
 
-def stage_clangd_only(build, dist):
+def stage_binaries(build, dist, names):
     (dist / "bin").mkdir(parents=True, exist_ok=True)
-    src = build / "bin" / "clangd.exe"
-    if not src.exists():
-        raise SystemExit(f"clangd.exe not found at {src} — did the build succeed?")
-    shutil.copy2(src, dist / "bin" / "clangd.exe")
-    print(f"Staged clangd into {dist / 'bin' / 'clangd.exe'}")
+    for name in names:
+        src = build / "bin" / name
+        dest = dist / "bin" / name
+        if not src.exists():
+            raise SystemExit(f"{name} not found at {src} — did the build succeed?")
+        try:
+            shutil.copy2(src, dest)
+        except PermissionError as e:
+            raise SystemExit(
+                f"Failed to copy {name} → {dest}: {e}\n"
+                f"Likely cause: {name} is running. Stop the running process "
+                f"(close your editor for clangd.exe) and re-run with --skip-build."
+            ) from e
+        print(f"Staged {name} into {dest}")
+
+
+def stage_clangd_only(build, dist):
+    stage_binaries(build, dist, ["clangd.exe"])
+
+
+def stage_tools_only(build, dist):
+    stage_binaries(build, dist, TOOLS_ONLY_BINARIES)
 
 
 def zip_dist(dist, out_zip):
@@ -188,6 +209,11 @@ def main():
         help="Build only clangd and graft it into an existing dist without wiping libc++/compiler-rt",
     )
     parser.add_argument(
+        "--tools-only",
+        action="store_true",
+        help="Build clangd + clang-tidy + clang-format (no compiler rebuild); for editor/CLI tidy refresh",
+    )
+    parser.add_argument(
         "--link-jobs",
         type=int,
         default=None,
@@ -195,12 +221,26 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.clangd_only and args.tools_only:
+        raise SystemExit("--clangd-only and --tools-only are mutually exclusive")
+
     if args.clangd_only:
-        ensure_clone(args.src, args.branch, args.sha)
-        install_gse_tidy_checks(args.src)
-        configure(args.src, args.build, args.link_jobs)
-        build_targets(args.build, CLANGD_ONLY_TARGETS)
+        if not args.skip_build:
+            ensure_clone(args.src, args.branch, args.sha)
+            install_gse_tidy_checks(args.src)
+            configure(args.src, args.build, args.link_jobs)
+            build_targets(args.build, CLANGD_ONLY_TARGETS)
         stage_clangd_only(args.build, args.dist)
+        print(f"\nSource SHA: {current_sha(args.src)}")
+        return
+
+    if args.tools_only:
+        if not args.skip_build:
+            ensure_clone(args.src, args.branch, args.sha)
+            install_gse_tidy_checks(args.src)
+            configure(args.src, args.build, args.link_jobs)
+            build_targets(args.build, TOOLS_ONLY_TARGETS)
+        stage_tools_only(args.build, args.dist)
         print(f"\nSource SHA: {current_sha(args.src)}")
         return
 

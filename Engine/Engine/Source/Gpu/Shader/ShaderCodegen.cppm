@@ -10,6 +10,7 @@ import :aliases;
 export namespace gse::shaders {
 	struct shader_struct_tag {};
 	struct shader_enum_tag {};
+	struct shader_constant_block_tag {};
 	struct sampler2d_array_tag {};
 	struct ssbo_readonly_tag {};
 	struct ssbo_readwrite_tag {};
@@ -20,6 +21,7 @@ export namespace gse::shaders {
 
 	constexpr shader_struct_tag shader_struct{};
 	constexpr shader_enum_tag shader_enum{};
+	constexpr shader_constant_block_tag shader_constant_block{};
 	constexpr sampler2d_array_tag sampler2d_array{};
 	constexpr ssbo_readonly_tag ssbo_readonly{};
 	constexpr ssbo_readwrite_tag ssbo_readwrite{};
@@ -53,10 +55,13 @@ export namespace gse::shaders {
 	concept is_shader_enum = std::is_enum_v<T> && has_annotation<shader_enum_tag>(^^T);
 
 	template <typename T>
+	concept is_shader_constant_block = has_annotation<shader_constant_block_tag>(^^T);
+
+	template <typename T>
 	concept is_shader_binding = find_binding_type(^^T) != std::meta::info{};
 
 	template <typename T>
-	concept is_shader_user_type = is_shader_struct<T> || is_shader_enum<T>;
+	concept is_shader_user_type = is_shader_struct<T> || is_shader_enum<T> || is_shader_constant_block<T>;
 
 	template <is_shader_struct T>
 	auto emit_slang_struct(
@@ -64,6 +69,10 @@ export namespace gse::shaders {
 
 	template <is_shader_enum E>
 	auto emit_slang_enum(
+	) -> std::string;
+
+	template <is_shader_constant_block T>
+	auto emit_slang_constants(
 	) -> std::string;
 
 	template <is_shader_binding T>
@@ -236,6 +245,22 @@ auto gse::shaders::emit_slang_enum() -> std::string {
 		);
 	}
 	out += "};\n";
+	return out;
+}
+
+template <gse::shaders::is_shader_constant_block T>
+auto gse::shaders::emit_slang_constants() -> std::string {
+	std::string out;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		using member_t = [: std::meta::type_of(m) :];
+		constexpr member_t v = T{}.[: m :];
+		out += std::format(
+			"public static const {} {} = {};\n",
+			slang_type<member_t>::name,
+			std::meta::identifier_of(m),
+			v
+		);
+	}
 	return out;
 }
 
@@ -511,6 +536,10 @@ namespace gse::shaders {
 		}
 		else if constexpr (is_shader_struct<T>) {
 			out.append(emit_slang_struct<T>());
+			out.push_back('\n');
+		}
+		else if constexpr (is_shader_constant_block<T>) {
+			out.append(emit_slang_constants<T>());
 			out.push_back('\n');
 		}
 	}

@@ -1,6 +1,6 @@
 
 uint ci = dispatch_id.x;
-uint actual_count = collision_state[0];
+uint actual_count = collision_state[state_contact_count_index];
 if (ci >= actual_count) return;
 
 contact_constraint c = contact_data[ci];
@@ -15,8 +15,8 @@ float3 r_bw = rotate_vector(b.predicted_orientation, c.local_anchor_b.xyz);
 float3 dirs[3] = { c.normal.xyz, c.tangent_u.xyz, c.tangent_v.xyz };
 
 frozen_jacobian fj;
-fj.world_r_a = float4(r_aw, 0);
-fj.world_r_b = float4(r_bw, 0);
+fj.world_r_a = r_aw;
+fj.world_r_b = r_bw;
 fj.j_ang_a = float3x3(
     cross(r_aw, dirs[0]),
     cross(r_aw, dirs[1]),
