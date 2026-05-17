@@ -4,4 +4,4 @@ export import :engine;
 export import :scene;
 
 export import :bootstrap;
-export import :world;
+export import :world_system;

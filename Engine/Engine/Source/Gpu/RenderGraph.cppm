@@ -1,14 +1,13 @@
 export module gse.gpu:render_graph;
 
 import std;
-import vulkan;
 
+import :aliases;
+import :handles;
 import :types;
 import :pipeline;
-import :vulkan_buffer;
-import :vulkan_device;
 import :vulkan_commands;
-import :vulkan_image;
+import :vulkan_query_pool;
 import :vulkan_semaphore;
 import :descriptor_heap;
 import :descriptors;
@@ -105,9 +104,6 @@ export namespace gse::gpu {
 			const buffer& buf,
 			std::size_t offset = 0
 		) -> void;
-
-		auto end_rendering(
-		) const -> void;
 
 		template <typename T>
 		auto push(
@@ -210,14 +206,6 @@ export namespace gse::gpu {
 			vec2u dst_extent
 		) const -> void;
 
-		auto begin_rendering(
-			vec2u extent,
-			const image* depth = nullptr,
-			gpu::image_layout depth_layout = gpu::image_layout::general,
-			bool clear_depth = true,
-			float clear_depth_value = 1.0f
-		) const -> void;
-
 		[[nodiscard]] auto resolve(
 			transient_image_handle h
 		) const -> const image&;
@@ -253,7 +241,7 @@ export namespace gse::gpu {
 			gpu::access_flags access = {};
 		};
 
-		vulkan::commands m_cmd;
+		gpu::commands m_cmd;
 		std::span<const gpu::auto_bind_entry> m_auto_binds;
 		render_pass_data* m_pass = nullptr;
 		const gpu::transient_pool* m_transient_pool = nullptr;
@@ -344,8 +332,8 @@ export namespace gse::gpu {
 		static constexpr std::uint32_t max_profiled_passes = 128;
 
 		struct gpu_profile_slot {
-			vk::raii::QueryPool timestamp_pool = nullptr;
-			vk::raii::QueryPool stats_pool = nullptr;
+			gpu::query_pool timestamp_pool;
+			gpu::query_pool stats_pool;
 			static_vector<id, max_profiled_passes> pass_types;
 			static_vector<gpu::queue_type, max_profiled_passes> pass_queues;
 			std::uint32_t pass_count = 0;
@@ -364,14 +352,8 @@ export namespace gse::gpu {
 			gpu_profile_slot& slot
 		) -> void;
 
-		struct inheritance_storage {
-			std::vector<vk::CommandBufferInheritanceRenderingInfo> rendering_inherits;
-			std::vector<vk::CommandBufferInheritanceInfo> inherits;
-			std::vector<std::array<vk::Format, 1>> color_formats;
-		};
-
 		struct queue_state {
-			vulkan::semaphore timeline;
+			gpu::semaphore timeline;
 			std::uint64_t signal_counter = 0;
 		};
 
@@ -384,7 +366,6 @@ export namespace gse::gpu {
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
 			per_frame_resource<gpu_profile_slot>{ gpu_profile_slot{}, gpu_profile_slot{} },
 		};
-		per_frame_resource<inheritance_storage> m_inheritance_storage{ inheritance_storage{}, inheritance_storage{} };
 		std::vector<gpu::auto_bind_entry> m_auto_binds;
 		std::atomic<bool> m_gpu_timestamps_enabled{ true };
 		std::atomic<bool> m_gpu_pipeline_stats_enabled{ false };
@@ -863,11 +844,6 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 	m_cmd.dispatch_indirect(buf.handle(), static_cast<gpu::device_size>(offset));
 }
 
-auto gse::gpu::recording_context::end_rendering() const -> void {
-	check_active();
-	m_cmd.end_rendering();
-}
-
 template <typename T>
 auto gse::gpu::recording_context::push(const gpu::pipeline& p, const gpu::typed_push_constants<T>& typed) const -> void {
 	check_active();
@@ -963,7 +939,7 @@ auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index
 		gpu::pipeline_stage_flag::index_input,
 		gpu::access_flag::index_read
 	);
-	m_cmd.bind_index_buffer_2(buf.handle(), offset, vk::WholeSize, type);
+	m_cmd.bind_index_buffer_2(buf.handle(), offset, gpu::whole_size, type);
 }
 
 auto gse::gpu::recording_context::set_viewport(const vec2u extent) const -> void {
@@ -985,27 +961,6 @@ auto gse::gpu::recording_context::set_scissor(const vec2u extent) const -> void 
 		.max = vec2i{ static_cast<int>(extent.x()), static_cast<int>(extent.y()) },
 	} };
 	m_cmd.set_scissor(sc);
-}
-
-auto gse::gpu::recording_context::begin_rendering(const vec2u extent, const image* depth, const gpu::image_layout depth_layout, const bool clear_depth, const float clear_depth_value) const -> void {
-	check_active();
-	std::optional<gpu::rendering_attachment_info> depth_att;
-	if (depth) {
-		depth_att = gpu::rendering_attachment_info{
-			.image_view = depth->view(),
-			.layout = depth_layout,
-			.load = clear_depth ? gpu::load_op::clear : gpu::load_op::load,
-			.store = gpu::store_op::store,
-			.depth_clear_value = { .depth = clear_depth_value },
-		};
-	}
-
-	const gpu::rendering_info ri{
-		.render_area = gse::rect_t<vec2i>::from_position_size(vec2i{ 0, 0 }, vec2i{ static_cast<int>(extent.x()), static_cast<int>(extent.y()) }),
-		.layer_count = 1,
-		.depth_attachment = depth_att ? &*depth_att : nullptr,
-	};
-	m_cmd.begin_rendering(ri);
 }
 
 auto gse::gpu::recording_context::commit(const gpu::descriptor_writer& writer, const gpu::pipeline& p, const std::uint32_t set_index) -> void {
@@ -1074,16 +1029,16 @@ auto gse::gpu::barrier_access(const descriptor_type type, const descriptor_acces
 
 namespace gse::gpu {
 	constexpr auto profile_stats_flags =
-		vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices
-		| vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives
-		| vk::QueryPipelineStatisticFlagBits::eClippingInvocations
-		| vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations;
+		gpu::pipeline_statistic_flag::input_assembly_vertices
+		| gpu::pipeline_statistic_flag::input_assembly_primitives
+		| gpu::pipeline_statistic_flag::clipping_invocations
+		| gpu::pipeline_statistic_flag::fragment_shader_invocations;
 }
 
 gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame, gpu::bindless_texture_set* bindless) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_bindless(bindless), m_transient_pool(device) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 	for (auto& q : m_queue_states) {
-		q.timeline = vulkan::semaphore::create_timeline(device.vulkan_device(), 0);
+		q.timeline = gpu::semaphore::create_timeline(device.vulkan_device(), 0);
 	}
 }
 
@@ -1104,18 +1059,11 @@ auto gse::gpu::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) 
 }
 
 auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
-	if (!*slot.timestamp_pool) {
-		slot.timestamp_pool = m_device->vulkan_device().raii_device().createQueryPool({
-			.queryType = vk::QueryType::eTimestamp,
-			.queryCount = max_profiled_passes * 2 + 1,
-		});
+	if (!slot.timestamp_pool) {
+		slot.timestamp_pool = gpu::query_pool::create_timestamp(m_device->vulkan_device(), max_profiled_passes * 2 + 1);
 	}
-	if (allow_stats && !*slot.stats_pool) {
-		slot.stats_pool = m_device->vulkan_device().raii_device().createQueryPool({
-			.queryType = vk::QueryType::ePipelineStatistics,
-			.queryCount = max_profiled_passes,
-			.pipelineStatistics = profile_stats_flags,
-		});
+	if (allow_stats && !slot.stats_pool) {
+		slot.stats_pool = gpu::query_pool::create_pipeline_stats(m_device->vulkan_device(), max_profiled_passes, profile_stats_flags);
 	}
 }
 
@@ -1125,15 +1073,9 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 	}
 
 	const std::uint32_t timestamp_count = slot.pass_count * 2 + 1;
-	const auto [ts_status, timestamps] = slot.timestamp_pool.getResults<std::uint64_t>(
-		0,
-		timestamp_count,
-		timestamp_count * sizeof(std::uint64_t),
-		sizeof(std::uint64_t),
-		vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait
-	);
+	const auto [ts_status, timestamps] = slot.timestamp_pool.results<std::uint64_t>(0, timestamp_count, sizeof(std::uint64_t));
 
-	if (ts_status != vk::Result::eSuccess) {
+	if (ts_status != gpu::query_status::success) {
 		slot.results_valid = false;
 		return;
 	}
@@ -1160,15 +1102,9 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 
 	if (slot.stats_issued) {
 		constexpr std::uint32_t stats_per_pass = 4;
-		const auto [stats_status, stats] = slot.stats_pool.getResults<std::uint64_t>(
-			0,
-			slot.pass_count,
-			slot.pass_count * stats_per_pass * sizeof(std::uint64_t),
-			sizeof(std::uint64_t) * stats_per_pass,
-			vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait
-		);
+		const auto [stats_status, stats] = slot.stats_pool.results<std::uint64_t>(0, slot.pass_count, sizeof(std::uint64_t) * stats_per_pass);
 
-		if (stats_status == vk::Result::eSuccess) {
+		if (stats_status == gpu::query_status::success) {
 			static constexpr std::array<const char*, stats_per_pass> labels{
 				":ia_verts", ":ia_prims", ":clip_invocs", ":fs_invocs"
 			};
@@ -1231,15 +1167,15 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 
 	const auto frame_idx = m_frame->current_frame();
 	std::array<gpu::handle<command_buffer>, gpu::queue_type_count> primary_handles;
-	std::array<vk::CommandBuffer, gpu::queue_type_count> primary_buffers;
+	std::array<gpu::commands, gpu::queue_type_count> primary_buffers;
 	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
 		primary_handles[qi] = m_frame->command_buffer(static_cast<gpu::queue_type>(qi));
-		primary_buffers[qi] = std::bit_cast<vk::CommandBuffer>(primary_handles[qi]);
+		primary_buffers[qi] = gpu::commands(primary_handles[qi]);
 	}
-	const auto graphics_family = m_device->vulkan_device().queue_family(gpu::queue_type::graphics);
+	const auto graphics_family = m_device->queue_family(gpu::queue_type::graphics);
 	std::array<bool, gpu::queue_type_count> queue_distinct{};
 	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
-		queue_distinct[qi] = m_device->vulkan_device().queue_family(static_cast<gpu::queue_type>(qi)) != graphics_family;
+		queue_distinct[qi] = m_device->queue_family(static_cast<gpu::queue_type>(qi)) != graphics_family;
 	}
 	queue_distinct[static_cast<std::size_t>(gpu::queue_type::graphics)] = true;
 
@@ -1249,7 +1185,6 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 
 	const auto image_index = m_frame->image_index();
 	const auto swap_extent = m_swapchain->extent();
-	const vk::Extent2D vk_extent{ swap_extent.x(), swap_extent.y() };
 
 	const bool timestamps_enabled = m_gpu_timestamps_enabled.load(std::memory_order_relaxed);
 	const bool stats_enabled = m_gpu_pipeline_stats_enabled.load(std::memory_order_relaxed);
@@ -1282,7 +1217,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 	}
 
 	auto open_primary = [this](const gpu::handle<command_buffer> handle) {
-		const vulkan::commands cmd(handle);
+		const gpu::commands cmd(handle);
 		cmd.reset();
 		cmd.begin();
 		m_device->descriptor_heap().bind_descriptor_storage(handle);
@@ -1295,15 +1230,15 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 		}
 	}
 
-	auto setup_timestamps = [&](gpu_profile_slot& s, vk::CommandBuffer cb, const bool with_stats) {
+	auto setup_timestamps = [&](gpu_profile_slot& s, const gpu::commands& cb, const bool with_stats) {
 		ensure_profile_pools(s, with_stats);
-		cb.resetQueryPool(*s.timestamp_pool, 0, max_profiled_passes * 2 + 1);
+		cb.reset_query_pool(s.timestamp_pool.handle(), 0, max_profiled_passes * 2 + 1);
 		if (with_stats) {
-			cb.resetQueryPool(*s.stats_pool, 0, max_profiled_passes);
+			cb.reset_query_pool(s.stats_pool.handle(), 0, max_profiled_passes);
 		}
 		s.cpu_ref = system_clock::now<trace::tick_step>();
 		s.frame_counter = m_frames_submitted;
-		cb.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *s.timestamp_pool, 0);
+		cb.write_timestamp(gpu::pipeline_stage_flag::all_commands, s.timestamp_pool.handle(), 0);
 	};
 
 	if (timestamps_enabled) {
@@ -1311,8 +1246,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 			if (!queue_has_work[qi]) continue;
 			const auto q = static_cast<gpu::queue_type>(qi);
 			const bool with_stats = (q == gpu::queue_type::graphics) && stats_enabled;
-			auto cb = std::bit_cast<vk::CommandBuffer>(m_frame->command_buffer(q));
-			setup_timestamps(m_profile_slots[qi][frame_idx], cb, with_stats);
+			setup_timestamps(m_profile_slots[qi][frame_idx], primary_buffers[qi], with_stats);
 		}
 	}
 
@@ -1322,14 +1256,9 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 
 	auto& worker_pools = m_device->worker_command_pools();
 	worker_pools.reset_frame(frame_idx);
-	const auto color_format = m_swapchain->format();
+	const auto color_format_value = vulkan::format_value(m_swapchain->format());
 
-	std::vector<vk::CommandBuffer> pass_secondaries(passes.size());
-
-	auto& inheritance = m_inheritance_storage[frame_idx];
-	inheritance.color_formats.assign(passes.size(), std::array<vk::Format, 1>{});
-	inheritance.rendering_inherits.assign(passes.size(), vk::CommandBufferInheritanceRenderingInfo{});
-	inheritance.inherits.assign(passes.size(), vk::CommandBufferInheritanceInfo{});
+	std::vector<gpu::handle<command_buffer>> pass_secondaries(passes.size());
 
 	auto resolve_color_target = [&](const color_output_info& info) -> const image* {
 		if (info.transient_target) {
@@ -1365,38 +1294,24 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 		const auto* depth_target = pass.depth_output ? resolve_depth_target(*pass.depth_output) : nullptr;
 
 		const auto color_attach_format = color_target
-			? static_cast<vk::Format>(color_target->format())
-			: vulkan::to_vk(color_format);
+			? color_target->format()
+			: color_format_value;
 		const auto depth_attach_format = depth_target
-			? static_cast<vk::Format>(depth_target->format())
-			: vk::Format::eD32Sfloat;
-		inheritance.color_formats[pi] = { color_attach_format };
+			? depth_target->format()
+			: vulkan::format_value(gpu::image_format::d32_sfloat);
+		const std::array<gpu::image_format_value, 1> color_formats{ color_attach_format };
 
-		inheritance.rendering_inherits[pi] = vk::CommandBufferInheritanceRenderingInfo{
-			.viewMask = 0,
-			.colorAttachmentCount = pass.color_output ? 1u : 0u,
-			.pColorAttachmentFormats = pass.color_output ? inheritance.color_formats[pi].data() : nullptr,
-			.depthAttachmentFormat = pass.depth_output ? depth_attach_format : vk::Format::eUndefined,
-			.stencilAttachmentFormat = vk::Format::eUndefined,
-			.rasterizationSamples = vk::SampleCountFlagBits::e1,
+		const gpu::secondary_inheritance_info inherit_info{
+			.render_pass_continue = is_graphics_pass,
+			.color_attachment_formats = pass.color_output ? std::span<const gpu::image_format_value>{ color_formats } : std::span<const gpu::image_format_value>{},
+			.depth_attachment_format = pass.depth_output ? depth_attach_format : gpu::image_format_value{ 0 },
+			.pipeline_statistics = maybe_issue_stats ? profile_stats_flags : gpu::pipeline_statistic_flags{},
 		};
 
-		auto& inherit = inheritance.inherits[pi];
-		vk::CommandBufferUsageFlags begin_flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-		if (is_graphics_pass) {
-			inherit.pNext = &inheritance.rendering_inherits[pi];
-			begin_flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
-		}
-		if (maybe_issue_stats) {
-			inherit.pipelineStatistics = profile_stats_flags;
-		}
-
-		secondary.begin({
-			.flags = begin_flags,
-			.pInheritanceInfo = &inherit
-		});
-		m_device->descriptor_heap().bind_descriptor_storage(std::bit_cast<gpu::handle<command_buffer>>(secondary));
-		recording_context rec{ commands{ std::bit_cast<gpu::handle<command_buffer>>(secondary) }, m_auto_binds, std::addressof(pass), std::addressof(m_transient_pool) };
+		const gpu::commands sec_cmd(secondary);
+		sec_cmd.begin_secondary(inherit_info);
+		m_device->descriptor_heap().bind_descriptor_storage(secondary);
+		recording_context rec{ sec_cmd, m_auto_binds, std::addressof(pass), std::addressof(m_transient_pool) };
 		if (pass.primary_pipeline) {
 			rec.bind(*pass.primary_pipeline);
 		}
@@ -1578,11 +1493,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 		trace::scope_guard sg{gse::trace_id<"graph::record_replay">()};
 
 		auto aspect_for_image = [](const image& img) -> gpu::image_aspect_flags {
-			constexpr auto d32 = static_cast<gpu::image_format_value>(vk::Format::eD32Sfloat);
-			if (img.format() == d32) {
-				return gpu::image_aspect_flag::depth;
-			}
-			return gpu::image_aspect_flag::color;
+			return vulkan::image_aspect_for(img.format());
 		};
 
 		auto append_barrier_for_resource = [&](
@@ -1845,7 +1756,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 			});
 
 			if (!memory_barriers.empty() || !buffer_barriers.empty() || !image_barriers.empty()) {
-				vulkan::commands(target_handle).pipeline_barrier(gpu::dependency_info{
+				target_primary.pipeline_barrier(gpu::dependency_info{
 					.memory_barriers = memory_barriers,
 					.buffer_barriers = buffer_barriers,
 					.image_barriers = image_barriers,
@@ -1855,12 +1766,12 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 			m_device->checkpoint_pass_marker(target_handle, marker_handle);
 
 			if (profile_pass) {
-				target_primary.writeTimestamp2(vk::PipelineStageFlagBits2::eNone, *target_slot.timestamp_pool, 1 + pass_index * 2);
+				target_primary.write_timestamp(gpu::pipeline_stage_flags{}, target_slot.timestamp_pool.handle(), 1 + pass_index * 2);
 				target_slot.pass_types.push_back(pass.pass_type);
 				target_slot.pass_queues.push_back(queue);
 				++target_slot.pass_count;
 				if (issue_stats) {
-					target_primary.beginQuery(*target_slot.stats_pool, pass_index, {});
+					target_primary.begin_query(target_slot.stats_pool.handle(), pass_index);
 					target_slot.stats_issued = true;
 				}
 			}
@@ -1868,113 +1779,86 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 			const auto secondary = pass_secondaries[sorted[si]];
 
 			if (is_graphics_pass) {
-				std::vector<vk::RenderingAttachmentInfo> color_attachments;
-				std::optional<vk::RenderingAttachmentInfo> depth_att;
-				vk::Extent2D pass_extent = vk_extent;
+				std::vector<gpu::rendering_attachment_info> color_attachments;
+				std::optional<gpu::rendering_attachment_info> depth_att;
+				vec2u pass_extent = swap_extent;
 
 				if (pass.color_output) {
 					const auto& info = *pass.color_output;
 					const auto op = info.op;
-					const auto& clear_value = info.clear_value;
-					auto vk_load = vk::AttachmentLoadOp::eDontCare;
-					vk::ClearValue clear_val{};
-
-					if (op == load_op::clear) {
-						vk_load = vk::AttachmentLoadOp::eClear;
-						clear_val.color = vk::ClearColorValue{
-							.float32 = std::array{ clear_value.r, clear_value.g, clear_value.b, clear_value.a }
-						};
-					}
-					else if (op == load_op::load) {
-						vk_load = vk::AttachmentLoadOp::eLoad;
-					}
-
 					const auto* color_target = resolve_color_target(info);
-					vk::ImageView color_view;
-					vk::ImageLayout color_layout;
+
+					gpu::handle<image_view> color_view;
+					gpu::image_layout color_layout = gpu::image_layout::color_attachment;
 					if (color_target) {
-						color_view = std::bit_cast<vk::ImageView>(color_target->view());
-						color_layout = vulkan::to_vk(color_target->layout());
+						color_view = color_target->view();
+						color_layout = color_target->layout();
 						const auto ext = color_target->extent();
-						pass_extent = vk::Extent2D{ ext.x(), ext.y() };
+						pass_extent = vec2u{ ext.x(), ext.y() };
 					}
 					else {
-						color_view = std::bit_cast<vk::ImageView>(m_swapchain->image_view(image_index));
-						color_layout = vk::ImageLayout::eColorAttachmentOptimal;
+						color_view = m_swapchain->image_view(image_index);
 					}
 
-					color_attachments.push_back({
-						.imageView = color_view,
-						.imageLayout = color_layout,
-						.loadOp = vk_load,
-						.storeOp = vk::AttachmentStoreOp::eStore,
-						.clearValue = clear_val
+					color_attachments.push_back(gpu::rendering_attachment_info{
+						.image_view = color_view,
+						.layout = color_layout,
+						.load = op,
+						.store = gpu::store_op::store,
+						.color_clear_value = info.clear_value,
 					});
 				}
 
 				if (pass.depth_output) {
 					const auto& info = *pass.depth_output;
 					const auto op = info.op;
-					const auto& clear_value = info.clear_value;
-					auto vk_load = vk::AttachmentLoadOp::eDontCare;
-					vk::ClearValue clear_val{};
-
-					if (op == load_op::clear) {
-						vk_load = vk::AttachmentLoadOp::eClear;
-						clear_val.depthStencil = vk::ClearDepthStencilValue{ .depth = clear_value.depth };
-					}
-					else if (op == load_op::load) {
-						vk_load = vk::AttachmentLoadOp::eLoad;
-					}
-
 					const auto* depth_target = resolve_depth_target(info);
-					vk::ImageView depth_view;
-					vk::ImageLayout depth_layout;
+
+					gpu::handle<image_view> depth_view;
+					gpu::image_layout depth_layout = gpu::image_layout::general;
 					if (depth_target) {
-						depth_view = std::bit_cast<vk::ImageView>(depth_target->view());
-						depth_layout = vulkan::to_vk(depth_target->layout());
+						depth_view = depth_target->view();
+						depth_layout = depth_target->layout();
 						if (!pass.color_output) {
 							const auto ext = depth_target->extent();
-							pass_extent = vk::Extent2D{ ext.x(), ext.y() };
+							pass_extent = vec2u{ ext.x(), ext.y() };
 						}
 					}
 					else {
-						depth_view = std::bit_cast<vk::ImageView>(m_swapchain->depth_image().view());
-						depth_layout = vk::ImageLayout::eGeneral;
+						depth_view = m_swapchain->depth_image().view();
 					}
 
-					depth_att = vk::RenderingAttachmentInfo{
-						.imageView = depth_view,
-						.imageLayout = depth_layout,
-						.loadOp = vk_load,
-						.storeOp = vk::AttachmentStoreOp::eStore,
-						.clearValue = clear_val
+					depth_att = gpu::rendering_attachment_info{
+						.image_view = depth_view,
+						.layout = depth_layout,
+						.load = op,
+						.store = gpu::store_op::store,
+						.depth_clear_value = info.clear_value,
 					};
 				}
 
-				const vk::RenderingInfo ri{
-					.flags = vk::RenderingFlagBits::eContentsSecondaryCommandBuffers,
-					.renderArea = { { 0, 0 }, pass_extent },
-					.layerCount = 1,
-					.colorAttachmentCount = static_cast<std::uint32_t>(color_attachments.size()),
-					.pColorAttachments = color_attachments.empty() ? nullptr : color_attachments.data(),
-					.pDepthAttachment = depth_att ? &*depth_att : nullptr
+				const gpu::rendering_info ri{
+					.render_area = gse::rect_t<vec2i>({ .min = vec2i{ 0, 0 }, .max = vec2i{ static_cast<int>(pass_extent.x()), static_cast<int>(pass_extent.y()) } }),
+					.layer_count = 1,
+					.color_attachments = color_attachments,
+					.depth_attachment = depth_att ? &*depth_att : nullptr,
+					.secondary_command_buffers = true,
 				};
-				target_primary.beginRendering(ri);
-				target_primary.executeCommands(secondary);
-				target_primary.endRendering();
+				target_primary.begin_rendering(ri);
+				target_primary.execute_commands(secondary);
+				target_primary.end_rendering();
 			}
 			else {
-				target_primary.executeCommands(secondary);
+				target_primary.execute_commands(secondary);
 			}
 
 			m_device->post_renderpass_pass_marker(target_handle, marker_handle);
 
 			if (profile_pass) {
 				if (issue_stats) {
-					target_primary.endQuery(*target_slot.stats_pool, pass_index);
+					target_primary.end_query(target_slot.stats_pool.handle(), pass_index);
 				}
-				target_primary.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *target_slot.timestamp_pool, 2 + pass_index * 2);
+				target_primary.write_timestamp(gpu::pipeline_stage_flag::all_commands, target_slot.timestamp_pool.handle(), 2 + pass_index * 2);
 			}
 
 			m_device->end_pass_marker(target_handle, marker_handle);
@@ -1998,7 +1882,7 @@ auto gse::gpu::render_graph::execute(std::vector<render_pass_data> passes, std::
 
 		const auto q = static_cast<gpu::queue_type>(qi);
 		const auto handle = m_frame->command_buffer(q);
-		vulkan::commands(handle).end();
+		gpu::commands(handle).end();
 
 		auto& state = m_queue_states[qi];
 		const std::uint64_t previous_value = state.signal_counter;

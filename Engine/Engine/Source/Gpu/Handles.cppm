@@ -25,4 +25,6 @@ export namespace gse::gpu {
 	using device_address = std::uint64_t;
 	using image_format_value = std::uint32_t;
 	using image_layout_value = std::uint32_t;
+
+	constexpr device_size whole_size = ~static_cast<device_size>(0);
 }

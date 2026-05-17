@@ -65,6 +65,7 @@ export namespace gse::gpu {
 		std::span<const rendering_attachment_info> color_attachments;
 		const rendering_attachment_info* depth_attachment = nullptr;
 		const rendering_attachment_info* stencil_attachment = nullptr;
+		bool secondary_command_buffers = false;
 	};
 }
 
@@ -83,9 +84,17 @@ export namespace gse::vulkan {
 
 		auto begin() const -> void;
 
+		auto begin_secondary(
+			const gpu::secondary_inheritance_info& info
+		) const -> void;
+
 		auto end() const -> void;
 
 		auto reset() const -> void;
+
+		auto execute_commands(
+			gpu::handle<command_buffer> secondary
+		) const -> void;
 
 		auto begin_rendering(
 			const gpu::rendering_info& info
@@ -95,6 +104,28 @@ export namespace gse::vulkan {
 
 		auto pipeline_barrier(
 			const gpu::dependency_info& dep
+		) const -> void;
+
+		auto reset_query_pool(
+			gpu::handle<query_pool> pool,
+			std::uint32_t first_query,
+			std::uint32_t query_count
+		) const -> void;
+
+		auto write_timestamp(
+			gpu::pipeline_stage_flags stage,
+			gpu::handle<query_pool> pool,
+			std::uint32_t query_index
+		) const -> void;
+
+		auto begin_query(
+			gpu::handle<query_pool> pool,
+			std::uint32_t query_index
+		) const -> void;
+
+		auto end_query(
+			gpu::handle<query_pool> pool,
+			std::uint32_t query_index
 		) const -> void;
 
 		auto bind_pipeline(
@@ -258,12 +289,69 @@ auto gse::vulkan::commands::begin() const -> void {
 	raw().begin(vk::CommandBufferBeginInfo {});
 }
 
+auto gse::vulkan::commands::begin_secondary(const gpu::secondary_inheritance_info& info) const -> void {
+	std::vector<vk::Format> color_formats;
+	color_formats.reserve(info.color_attachment_formats.size());
+	for (const auto f : info.color_attachment_formats) {
+		color_formats.push_back(static_cast<vk::Format>(f));
+	}
+
+	const vk::CommandBufferInheritanceRenderingInfo rendering_inherit{
+		.viewMask = 0,
+		.colorAttachmentCount = static_cast<std::uint32_t>(color_formats.size()),
+		.pColorAttachmentFormats = color_formats.empty() ? nullptr : color_formats.data(),
+		.depthAttachmentFormat = static_cast<vk::Format>(info.depth_attachment_format),
+		.stencilAttachmentFormat = vk::Format::eUndefined,
+		.rasterizationSamples = vk::SampleCountFlagBits::e1,
+	};
+
+	vk::CommandBufferInheritanceInfo inherit{};
+	if (info.render_pass_continue) {
+		inherit.pNext = &rendering_inherit;
+	}
+	if (info.pipeline_statistics.bits() != 0) {
+		inherit.pipelineStatistics = to_vk(info.pipeline_statistics);
+	}
+
+	vk::CommandBufferUsageFlags flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+	if (info.render_pass_continue) {
+		flags |= vk::CommandBufferUsageFlagBits::eRenderPassContinue;
+	}
+
+	const vk::CommandBufferBeginInfo begin_info{
+		.flags = flags,
+		.pInheritanceInfo = &inherit,
+	};
+	raw().begin(begin_info);
+}
+
 auto gse::vulkan::commands::end() const -> void {
 	raw().end();
 }
 
 auto gse::vulkan::commands::reset() const -> void {
 	raw().reset();
+}
+
+auto gse::vulkan::commands::execute_commands(const gpu::handle<command_buffer> secondary) const -> void {
+	const vk::CommandBuffer cb = std::bit_cast<vk::CommandBuffer>(secondary);
+	raw().executeCommands(cb);
+}
+
+auto gse::vulkan::commands::reset_query_pool(const gpu::handle<query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {
+	raw().resetQueryPool(std::bit_cast<vk::QueryPool>(pool), first_query, query_count);
+}
+
+auto gse::vulkan::commands::write_timestamp(const gpu::pipeline_stage_flags stage, const gpu::handle<query_pool> pool, const std::uint32_t query_index) const -> void {
+	raw().writeTimestamp2(to_vk(stage), std::bit_cast<vk::QueryPool>(pool), query_index);
+}
+
+auto gse::vulkan::commands::begin_query(const gpu::handle<query_pool> pool, const std::uint32_t query_index) const -> void {
+	raw().beginQuery(std::bit_cast<vk::QueryPool>(pool), query_index, {});
+}
+
+auto gse::vulkan::commands::end_query(const gpu::handle<query_pool> pool, const std::uint32_t query_index) const -> void {
+	raw().endQuery(std::bit_cast<vk::QueryPool>(pool), query_index);
 }
 
 namespace gse::vulkan {
@@ -331,6 +419,7 @@ auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rende
 	const auto min = info.render_area.min();
 	const auto size = info.render_area.size();
 	return vk::RenderingInfo {
+		.flags = info.secondary_command_buffers ? vk::RenderingFlags { vk::RenderingFlagBits::eContentsSecondaryCommandBuffers } : vk::RenderingFlags {},
 		.renderArea = vk::Rect2D {
 			.offset = vk::Offset2D { min.x(), min.y() },
 			.extent = vk::Extent2D { static_cast<std::uint32_t>(size.x()), static_cast<std::uint32_t>(size.y()) },

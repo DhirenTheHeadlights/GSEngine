@@ -57,10 +57,6 @@ export namespace gse::physics {
 
 	using joint_handle = std::uint32_t;
 
-	struct joint_request {
-		joint_definition def;
-	};
-
 	struct fixed_joint {
 		vec3<displacement> anchor_a;
 		vec3<displacement> anchor_b;
@@ -86,41 +82,6 @@ export namespace gse::physics {
 		inverse_mass compliance = per_kilograms(0.01f);
 		float damping = 0.5f;
 	};
-
-	auto join(
-		channel_writer& channels,
-		id a,
-		id b,
-		const fixed_joint& config
-	) -> void;
-
-	auto join(
-		channel_writer& channels,
-		id a,
-		id b,
-		const distance_joint& config
-	) -> void;
-
-	auto join(
-		channel_writer& channels,
-		id a,
-		id b,
-		const hinge_joint& config
-	) -> void;
-
-	auto join(
-		channel_writer& channels,
-		id a,
-		id b,
-		const slider_joint& config
-	) -> void;
-
-	auto join(
-		channel_writer& channels,
-		id a,
-		id b,
-		const spring_joint& config
-	) -> void;
 
 	struct gpu_upload_payload {
 		std::vector<vbd::body_state> bodies;

@@ -629,6 +629,28 @@ export namespace gse::gpu {
 		dont_care [[= vk::AttachmentLoadOp::eDontCare]],
 	};
 
+	enum class pipeline_statistic_flag : std::uint32_t {
+		input_assembly_vertices [[= vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices]] = 1u << 0,
+		input_assembly_primitives [[= vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives]] = 1u << 1,
+		clipping_invocations [[= vk::QueryPipelineStatisticFlagBits::eClippingInvocations]] = 1u << 2,
+		fragment_shader_invocations [[= vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations]] = 1u << 3,
+	};
+
+	using pipeline_statistic_flags = gse::flags<pipeline_statistic_flag>;
+	constexpr auto operator|(pipeline_statistic_flag a, pipeline_statistic_flag b) -> pipeline_statistic_flags { return pipeline_statistic_flags(a) | b; }
+
+	enum class query_status : std::uint8_t {
+		success,
+		error,
+	};
+
+	struct secondary_inheritance_info {
+		bool render_pass_continue = false;
+		std::span<const image_format_value> color_attachment_formats;
+		image_format_value depth_attachment_format = 0;
+		pipeline_statistic_flags pipeline_statistics;
+	};
+
 	enum class store_op : std::uint8_t {
 		store [[= vk::AttachmentStoreOp::eStore]],
 		dont_care [[= vk::AttachmentStoreOp::eDontCare]],
@@ -839,6 +861,18 @@ export namespace gse::vulkan {
 	auto to_vk(
 		gpu::pipeline_stage_flags fls
 	) -> vk::PipelineStageFlags2;
+
+	auto to_vk(
+		gpu::pipeline_statistic_flags fls
+	) -> vk::QueryPipelineStatisticFlags;
+
+	auto format_value(
+		gpu::image_format f
+	) -> gpu::image_format_value;
+
+	auto image_aspect_for(
+		gpu::image_format_value f
+	) -> gpu::image_aspect_flags;
 
 	auto to_vk(
 		gpu::memory_property_flags fls
@@ -1812,4 +1846,32 @@ auto gse::vulkan::from_vk(const vk::SurfaceCapabilitiesKHR& caps) -> gpu::surfac
 		.max_image_extent = vec2u{ caps.maxImageExtent.width, caps.maxImageExtent.height },
 		.max_image_array_layers = caps.maxImageArrayLayers,
 	};
+}
+
+auto gse::vulkan::to_vk(const gpu::pipeline_statistic_flags fls) -> vk::QueryPipelineStatisticFlags {
+	vk::QueryPipelineStatisticFlags out{};
+	if (fls.test(gpu::pipeline_statistic_flag::input_assembly_vertices)) {
+		out |= vk::QueryPipelineStatisticFlagBits::eInputAssemblyVertices;
+	}
+	if (fls.test(gpu::pipeline_statistic_flag::input_assembly_primitives)) {
+		out |= vk::QueryPipelineStatisticFlagBits::eInputAssemblyPrimitives;
+	}
+	if (fls.test(gpu::pipeline_statistic_flag::clipping_invocations)) {
+		out |= vk::QueryPipelineStatisticFlagBits::eClippingInvocations;
+	}
+	if (fls.test(gpu::pipeline_statistic_flag::fragment_shader_invocations)) {
+		out |= vk::QueryPipelineStatisticFlagBits::eFragmentShaderInvocations;
+	}
+	return out;
+}
+
+auto gse::vulkan::format_value(const gpu::image_format f) -> gpu::image_format_value {
+	return static_cast<gpu::image_format_value>(to_vk(f));
+}
+
+auto gse::vulkan::image_aspect_for(const gpu::image_format_value f) -> gpu::image_aspect_flags {
+	if (f == static_cast<gpu::image_format_value>(vk::Format::eD32Sfloat)) {
+		return gpu::image_aspect_flag::depth;
+	}
+	return gpu::image_aspect_flag::color;
 }

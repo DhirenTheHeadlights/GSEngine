@@ -225,25 +225,27 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 		const float bx = x + static_cast<float>(i) * 5.f;
 
 		const auto anchor_id = build_static_box(
-			&s,
-			std::format("Spring {} Anchor", labels[i]),
-			gse::vec3<gse::position>(bx, 10.f, z),
-			gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
-		).identify();
+								   &s,
+								   std::format("Spring {} Anchor", labels[i]),
+								   gse::vec3<gse::position>(bx, 10.f, z),
+								   gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
+		)
+								   .identify();
 
 		const auto bob_id = build_sphere(
-			&s,
-			std::format("Spring {} Bob", labels[i]),
-			gse::vec3<gse::position>(bx + 2.f, 10.f, z),
-			gse::meters(0.5f),
-			gse::sphere_lod::lo
-		).identify();
+								&s,
+								std::format("Spring {} Bob", labels[i]),
+								gse::vec3<gse::position>(bx + 2.f, 10.f, z),
+								gse::meters(0.5f),
+								gse::sphere_lod::lo
+		)
+								.identify();
 
 		s.build(std::format("Spring {} Joint", labels[i]))
 			.with<gse::physics::joint_spec>({
 				.entity_a = anchor_id,
 				.entity_b = bob_id,
-				.config = gse::physics::spring_joint{
+				.config = gse::physics::spring_joint {
 					.target = gse::meters(4.f),
 					.compliance = compliances[i],
 					.damping = 0.3f,
@@ -252,28 +254,30 @@ auto gs::build_spring_tests(gse::scene& s) -> void {
 	}
 
 	const auto chain_anchor = build_static_box(
-		&s,
-		"Spring Chain Anchor",
-		gse::vec3<gse::position>(x + 18.f, 12.f, z),
-		gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
-	).identify();
+								  &s,
+								  "Spring Chain Anchor",
+								  gse::vec3<gse::position>(x + 18.f, 12.f, z),
+								  gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
+	)
+								  .identify();
 
 	auto prev_id = chain_anchor;
 	for (int i = 0; i < 5; ++i) {
 		const float by = 12.f - static_cast<float>(i + 1) * 2.f;
 		const auto link_id = build_sphere(
-			&s,
-			std::format("Spring Chain Link {}", i),
-			gse::vec3<gse::position>(x + 18.f, by, z),
-			gse::meters(0.4f),
-			gse::sphere_lod::lo
-		).identify();
+								 &s,
+								 std::format("Spring Chain Link {}", i),
+								 gse::vec3<gse::position>(x + 18.f, by, z),
+								 gse::meters(0.4f),
+								 gse::sphere_lod::lo
+		)
+								 .identify();
 
 		s.build(std::format("Spring Chain Joint {}", i))
 			.with<gse::physics::joint_spec>({
 				.entity_a = prev_id,
 				.entity_b = link_id,
-				.config = gse::physics::spring_joint{
+				.config = gse::physics::spring_joint {
 					.target = gse::meters(1.5f),
 					.compliance = gse::per_kilograms(0.02f),
 					.damping = 0.5f,
@@ -305,32 +309,32 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 	};
 
 	const std::array walls = {
-		wall_def{
+		wall_def {
 			.suffix = "Bottom",
 			.local_offset = gse::vec3<gse::length>(0.f, -wall_offset, 0.f),
 			.size = gse::vec3<gse::length>(outer_half * 2.f, thickness, side_wall_length),
 		},
-		wall_def{
+		wall_def {
 			.suffix = "Top",
 			.local_offset = gse::vec3<gse::length>(0.f, wall_offset, 0.f),
 			.size = gse::vec3<gse::length>(outer_half * 2.f, thickness, side_wall_length),
 		},
-		wall_def{
+		wall_def {
 			.suffix = "Left",
 			.local_offset = gse::vec3<gse::length>(-wall_offset, 0.f, 0.f),
 			.size = gse::vec3<gse::length>(thickness, outer_half * 2.f, side_wall_length),
 		},
-		wall_def{
+		wall_def {
 			.suffix = "Right",
 			.local_offset = gse::vec3<gse::length>(wall_offset, 0.f, 0.f),
 			.size = gse::vec3<gse::length>(thickness, outer_half * 2.f, side_wall_length),
 		},
-		wall_def{
+		wall_def {
 			.suffix = "Front",
 			.local_offset = gse::vec3<gse::length>(0.f, 0.f, length_half + thickness * 0.5f),
 			.size = gse::vec3<gse::length>(outer_half * 2.f, outer_half * 2.f, thickness),
 		},
-		wall_def{
+		wall_def {
 			.suffix = "Back",
 			.local_offset = gse::vec3<gse::length>(0.f, 0.f, -(length_half + thickness * 0.5f)),
 			.size = gse::vec3<gse::length>(outer_half * 2.f, outer_half * 2.f, thickness),
@@ -352,7 +356,7 @@ auto gs::build_tumbler(gse::scene& s) -> void {
 				.local_offset = wall.local_offset,
 			})
 			.configure([](gse::physics::motion_component& mc) {
-				mc.body = gse::physics::kinematic_body{};
+				mc.body = gse::physics::kinematic_body {};
 			});
 	}
 
@@ -419,6 +423,7 @@ auto gs::physics_stress_test_scene_setup(gse::scene& s) -> void {
 	build_high_speed_impact_target(s);
 	build_box_grid(s);
 	build_spring_tests(s);
+	build_tumbler(s);
 
 	build_sphere(
 		&s,

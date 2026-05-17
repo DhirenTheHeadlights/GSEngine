@@ -19,7 +19,7 @@ import gse.save;
 import gse.config;
 
 import :scene;
-import :world;
+import :world_system;
 
 export namespace gse {
 	enum class engine_flag : std::uint8_t {
@@ -52,38 +52,23 @@ export namespace gse {
 		auto make_channel_writer(
 		) -> channel_writer;
 
+		auto registry(
+		) -> gse::registry&;
+
 		auto world(
-		) -> gse::world&;
-
-		auto add_scene(
-			std::string_view name,
-			scene::setup_fn setup = {}
-		) -> scene*;
-
-		auto direct(
-		) -> director;
-
-		auto triggers(
-		) const -> std::span<const trigger>;
+		) -> world_system::data&;
 
 		template <typename S, typename... Args>
 		auto add_system(
 			Args&&... args
 		) -> state_of_t<S>&;
 	private:
-		auto drain_lifecycle_channels(
-		) -> void;
-
 		flags<engine_flag> m_flags;
 		scheduler m_scheduler;
 		save::registry m_save;
 		primitives::data m_primitives;
-		gse::world m_world;
+		gse::registry m_registry;
 	};
-}
-
-auto gse::engine::add_scene(std::string_view name, scene::setup_fn setup) -> scene* {
-	return m_world.add(name, std::move(setup));
 }
 
 namespace gse {

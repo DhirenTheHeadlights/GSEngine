@@ -10,12 +10,12 @@ export namespace gse {
 	struct server_system {
 		struct data {
 			std::optional<server<Components...>> srv;
-			gse::world* world_ptr = nullptr;
 		};
 
 		static auto run(
 			run_context& ctx,
 			data& d,
+			world_system::data& world_d,
 			const actions::system::data& actions_d
 		) -> async::task<>;
 	};
@@ -45,10 +45,10 @@ export namespace gse {
 }
 
 template <typename... Components>
-auto gse::server_system<Components...>::run(run_context& ctx, data& d, const actions::system::data& actions_d) -> async::task<> {
+auto gse::server_system<Components...>::run(run_context& ctx, data& d, world_system::data& world_d, const actions::system::data& actions_d) -> async::task<> {
 	while (true) {
-		if (d.srv && d.world_ptr) {
-			d.srv->update(*d.world_ptr, ctx.channels, actions_d);
+		if (d.srv) {
+			d.srv->update(world_d, ctx.registry(), ctx.channels, actions_d);
 		}
 		co_await ctx.next_tick();
 	}
@@ -114,12 +114,11 @@ template <typename ServerSystem>
 auto gse::server_app_setup(engine& e) -> void {
 	auto channels = e.make_channel_writer();
 	channels.push<ui_focus_request>({ .focus = true });
-	e.world().set_networked(true);
+	e.world().networked = true;
 
 	auto& srv_data = e.add_system<ServerSystem>();
 	srv_data.srv.emplace(9000);
 	srv_data.srv->initialize();
-	srv_data.world_ptr = &e.world();
 
 	e.add_system<server_app_system<ServerSystem>>();
 }

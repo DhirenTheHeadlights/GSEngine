@@ -4,7 +4,7 @@ import std;
 
 import :engine;
 import :scene;
-import :world;
+import :world_system;
 
 import gse.core;
 import gse.containers;
@@ -23,22 +23,24 @@ import gse.log;
 import gse.save;
 import gse.config;
 
-gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags) : identifiable(name), m_flags(engine_flags), m_world(m_scheduler, "World") {}
+gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags) : identifiable(name), m_flags(engine_flags) {
+}
 
 auto gse::engine::initialize(const setup_fn& app_setup) -> void {
-	trace::start({
-		.per_thread_event_cap = static_cast<std::size_t>(1e6)
-	});
+	trace::start({ .per_thread_event_cap = static_cast<std::size_t>(1e6) });
 
-	m_scheduler.set_registry(m_world.registry());
+	m_scheduler.set_registry(m_registry);
 
 	m_save.set_auto_save(true, config::resource_path / "Misc/settings.ini");
-	m_save.set_on_restart([] { app::restart(); });
+	m_save.set_on_restart([] {
+		app::restart();
+	});
 	m_scheduler.register_external_resource<save::registry>(&m_save);
 	m_scheduler.register_external_resource<primitives::data>(&m_primitives);
 
 	add_system<input::system>();
 	add_system<actions::system>();
+	add_system<world_system>();
 
 	if (m_flags.test(engine_flag::render)) {
 		auto& window_state = add_system<window>();
@@ -67,7 +69,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		auto& asset_state = m_scheduler.state<asset::data>();
 
 		using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
-		gse::asset::system_for<game_assets> assets{ asset_state };
+		gse::asset::system_for<game_assets> assets { asset_state };
 		assets.register_loaders();
 		primitives::initialize(m_primitives, asset_state);
 		assets.install_hot_reload_fns();
@@ -103,29 +105,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 auto gse::engine::update() -> void {
 	system_clock::update();
 	m_scheduler.update();
-	drain_lifecycle_channels();
-	m_world.update();
-}
-
-auto gse::engine::drain_lifecycle_channels() -> void {
-	for (const auto& r : m_scheduler.drain_channel<set_networked_request>()) {
-		m_world.set_networked(r.value);
-	}
-	for (const auto& r : m_scheduler.drain_channel<set_authoritative_request>()) {
-		m_world.set_authoritative(r.value);
-	}
-	for (const auto& r : m_scheduler.drain_channel<set_local_controller_id_request>()) {
-		m_world.set_local_controller_id(r.controller_id);
-	}
-	for (const auto& r : m_scheduler.drain_channel<activate_scene_request>()) {
-		m_world.activate(r.scene_id);
-	}
-	const auto deactivate_requests = m_scheduler.drain_channel<deactivate_active_scene_request>();
-	if (!deactivate_requests.empty()) {
-		if (auto* active = m_world.current_scene()) {
-			m_world.deactivate(active->id());
-		}
-	}
 }
 
 auto gse::engine::render() -> void {
@@ -138,7 +117,7 @@ auto gse::engine::render() -> void {
 		const clock fence_timer;
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{
-			trace::scope_guard sg{trace_id<"render::begin_frame">()};
+			trace::scope_guard sg { trace_id<"render::begin_frame">() };
 			result = gpu::context::begin_frame(*gpu_state, window_state);
 		}
 		const auto fence_wait = fence_timer.elapsed();
@@ -156,24 +135,22 @@ auto gse::engine::render() -> void {
 		if (gpu_state) {
 			gpu_state->scheduler.flush();
 			{
-				trace::scope_guard sg{trace_id<"render::graph_execute">()};
+				trace::scope_guard sg { trace_id<"render::graph_execute">() };
 				auto requests = m_scheduler.drain_channel<gpu::render_pass_request>();
 				auto transient_images = m_scheduler.drain_channel<gpu::transient_image_request>();
 				auto transient_buffers = m_scheduler.drain_channel<gpu::transient_buffer_request>();
 				gpu::context::execute_frame(*gpu_state, std::move(requests), std::move(transient_images), std::move(transient_buffers));
 			}
 		}
-
-		m_world.render();
 	});
 
 	if (frame_ok && gpu_state) {
 		{
-			trace::scope_guard sg{trace_id<"render::end_frame">()};
+			trace::scope_guard sg { trace_id<"render::end_frame">() };
 			auto& window_state = m_scheduler.state<window::data>();
 			gpu::context::end_frame(*gpu_state, window_state);
 			if (asset_state) {
-				trace::scope_guard sg{trace_id<"end_frame::finalize_reloads">()};
+				trace::scope_guard sg { trace_id<"end_frame::finalize_reloads">() };
 				for (const auto& l : std::views::values(asset_state->resource_loaders)) {
 					l->finalize_reloads();
 				}
@@ -194,7 +171,6 @@ auto gse::engine::shutdown() -> void {
 	}
 
 	m_scheduler.shutdown();
-	m_world.shutdown();
 
 	m_scheduler.clear();
 }
@@ -203,14 +179,10 @@ auto gse::engine::make_channel_writer() -> channel_writer {
 	return m_scheduler.make_channel_writer();
 }
 
-auto gse::engine::world() -> gse::world& {
-	return m_world;
+auto gse::engine::registry() -> gse::registry& {
+	return m_registry;
 }
 
-auto gse::engine::direct() -> director {
-	return m_world.direct();
-}
-
-auto gse::engine::triggers() const -> std::span<const trigger> {
-	return m_world.triggers();
+auto gse::engine::world() -> world_system::data& {
+	return m_scheduler.state<world_system::data>();
 }
