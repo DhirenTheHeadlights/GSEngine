@@ -102,9 +102,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 			}
 			d.mapping_buffer_size = required;
 		} else {
-			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				d.mapping_buffers[i].host_write(data.physics_mappings.data(), required);
-			}
+			d.mapping_buffers[frame_index].host_write(data.physics_mappings.data(), required);
 		}
 	}
 
@@ -130,7 +128,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.pipeline(d.pipeline)
-		.after<geometry_collector::system, vbd::vbd_readback_copy_stage>();
+		.after<geometry_collector::system, vbd::vbd_state_copy_stage>();
 
 	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 	rec.push(d.pipeline, pc);

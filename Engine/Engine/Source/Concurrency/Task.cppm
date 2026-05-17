@@ -26,6 +26,13 @@ namespace gse::task {
 		parallel_for_fn func,
 		id id
 	) -> void;
+
+	auto parallel_invoke_range_impl(
+		std::size_t first,
+		std::size_t last,
+		parallel_for_fn func,
+		id id
+	) -> void;
 }
 
 export namespace gse::task {
@@ -124,8 +131,6 @@ export namespace gse::task {
 		std::uint64_t m_parent_eid = 0;
 		std::atomic<std::size_t> m_counter{ 0 };
 		std::atomic<std::size_t> m_inflight_notifies{ 0 };
-		mutable std::mutex m_done_mutex;
-		mutable std::condition_variable m_done_cv;
 	};
 
 	template <typename T>
@@ -221,6 +226,7 @@ namespace gse::task {
 
 	inline constexpr std::size_t coalesce_threshold = 64;
 	inline constexpr std::size_t min_chunks_per_worker = 4;
+	inline constexpr std::size_t hot_spin_yields = 200;
 
 	auto run_job(
 		job_entry& entry
@@ -302,14 +308,6 @@ gse::task::group::~group() noexcept {
 }
 
 auto gse::task::group::wait() const -> void {
-	if (t_is_main_thread) {
-		std::unique_lock lk(m_done_mutex);
-		m_done_cv.wait(lk, [this] {
-			return m_counter.load(std::memory_order_acquire) == 0;
-		});
-		return;
-	}
-
 	while (m_counter.load(std::memory_order_acquire) > 0) {
 		if (auto entry = try_pop_or_steal(t_worker_index)) {
 			run_job(*entry);
@@ -649,7 +647,26 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 		return;
 	}
 
-	parallel_for_impl(first, last, std::move(func), id);
+	parallel_invoke_range_impl(first, last, std::move(func), id);
+}
+
+auto gse::task::parallel_invoke_range_impl(const std::size_t first, const std::size_t last, parallel_for_fn func, const id id) -> void {
+	const std::size_t n = last - first;
+
+	trace::scope_guard sg{id};
+
+	if (n == 1) {
+		func(first);
+		return;
+	}
+
+	group g(id);
+	for (std::size_t i = first; i < last; ++i) {
+		g.post([i, &func] {
+			func(i);
+		}, id);
+	}
+	g.wait();
 }
 
 auto gse::task::run_job(job_entry& entry) -> void {
@@ -662,10 +679,7 @@ auto gse::task::run_job(job_entry& entry) -> void {
 		}
 		if (entry.gp) {
 			entry.gp->m_inflight_notifies.fetch_add(1, std::memory_order_acquire);
-			if (entry.gp->m_counter.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-				std::lock_guard lk(entry.gp->m_done_mutex);
-				entry.gp->m_done_cv.notify_all();
-			}
+			entry.gp->m_counter.fetch_sub(1, std::memory_order_acq_rel);
 			entry.gp->m_inflight_notifies.fetch_sub(1, std::memory_order_release);
 		}
 	});
@@ -697,16 +711,34 @@ auto gse::task::worker_loop(const std::stop_token& st, std::size_t index) -> voi
 	t_worker_index = index;
 
 	while (!st.stop_requested()) {
-		work_available.acquire();
-		if (st.stop_requested()) {
-			return;
-		}
-
 		while (auto entry = try_pop_or_steal(t_worker_index)) {
 			run_job(*entry);
 			if (st.stop_requested()) {
 				return;
 			}
+		}
+
+		bool found_in_spin = false;
+		for (std::size_t i = 0; i < hot_spin_yields; ++i) {
+			if (auto entry = try_pop_local(index)) {
+				run_job(*entry);
+				found_in_spin = true;
+				break;
+			}
+			std::this_thread::yield();
+		}
+		if (found_in_spin) {
+			continue;
+		}
+
+		if (auto entry = try_pop_or_steal(t_worker_index)) {
+			run_job(*entry);
+			continue;
+		}
+
+		work_available.acquire();
+		if (st.stop_requested()) {
+			return;
 		}
 	}
 }

@@ -9,14 +9,11 @@ import :entity_builders;
 
 export namespace gs {
 	auto main_test_scene_setup(
-		gse::scene& s,
-		gse::channel_writer& channels,
-		gse::asset::data& assets
+		gse::scene& s
 	) -> void;
 }
 
-auto gs::main_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
-	(void)channels;
+auto gs::main_test_scene_setup(gse::scene& s) -> void {
 	s.set_player_factory([next_id = 0u](gse::scene& sc, std::optional<gse::id> server_id) mutable -> gse::id {
 		gse::id player_id;
 		if (server_id) {
@@ -34,10 +31,9 @@ auto gs::main_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse
 		return player_id;
 	});
 
-	arena::create(assets, &s);
+	arena::create(&s);
 
 	build_box(
-		assets,
 		&s,
 		"Smaller Box",
 		gse::vec3<gse::position>(2.f, -40.f, 2.f),
@@ -45,7 +41,6 @@ auto gs::main_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse
 	);
 
 	build_box(
-		assets,
 		&s,
 		"Bigger Box",
 		gse::vec3<gse::position>(-2.f, -40.f, 2.f),
@@ -54,7 +49,6 @@ auto gs::main_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse
 	);
 
 	build_sphere_light(
-		assets,
 		&s,
 		"Center Sphere Light",
 		gse::vec3<gse::position>(0.f, -30.f, 0.f),
@@ -62,12 +56,10 @@ auto gs::main_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse
 	);
 
 	build_sphere(
-		assets,
 		&s,
 		"Second Sphere",
 		gse::vec3<gse::position>(0.f, 0.f, 20.f),
 		gse::meters(1.f),
-		18,
-		10
+		gse::sphere_lod::lo
 	);
 }

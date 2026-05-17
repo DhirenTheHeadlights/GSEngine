@@ -7,14 +7,11 @@ import :player;
 
 export namespace gs {
 	auto skybox_scene_setup(
-		gse::scene& s,
-		gse::channel_writer& channels,
-		gse::asset::data& assets
+		gse::scene& s
 	) -> void;
 }
 
-auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
-	(void)channels;
+auto gs::skybox_scene_setup(gse::scene& s) -> void {
 	const auto skybox_position = gse::vec3<gse::position>(0.f, 0.f, 0.f);
 	const auto skybox_size = gse::vec3<gse::length>(20000.f, 20000.f, 20000.f);
 
@@ -28,19 +25,13 @@ auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::a
 		.with<gse::physics::collision_component>({
 			.shape = gse::physics::box_shape{ .size = skybox_size },
 		})
-		.with<gse::render_component>({
-			.models = {
-				gse::procedural_model::box(
-					assets,
-					gse::material{
-						.base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
-						.roughness = 0.5f,
-						.metallic = 0.0f,
-					},
-					skybox_size
-				),
+		.with<gse::primitive_box_spec>({
+			.material = {
+				.base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
+				.roughness = 0.5f,
+				.metallic = 0.0f,
 			},
-			.model_count = 1,
+			.size = skybox_size,
 		})
 		.with<gse::directional_light_component>({
 			.color = gse::vec3f(1.f),
@@ -65,19 +56,13 @@ auto gs::skybox_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::a
 		.with<gse::physics::collision_component>({
 			.shape = gse::physics::box_shape{ .size = floor_size },
 		})
-		.with<gse::render_component>({
-			.models = {
-				gse::procedural_model::box(
-					assets,
-					gse::material{
-						.base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
-						.roughness = 0.5f,
-						.metallic = 0.0f,
-					},
-					floor_size
-				),
+		.with<gse::primitive_box_spec>({
+			.material = {
+				.base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
+				.roughness = 0.5f,
+				.metallic = 0.0f,
 			},
-			.model_count = 1,
+			.size = floor_size,
 		})
 		.configure([](gse::physics::collision_component& cc) {
 			cc.resolve_collisions = false;

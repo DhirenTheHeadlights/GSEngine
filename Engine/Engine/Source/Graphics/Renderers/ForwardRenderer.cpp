@@ -56,8 +56,6 @@ namespace gse::renderer::forward {
 		using element = shaders::common::instance_data;
 	};
 
-	struct [[= shaders::binding<1, 6>{}, = shaders::sampler2d]] diffuse_sampler {};
-
 	using shader_binding_types = type_pack<
 		camera_ubo,
 		lights_ssbo,
@@ -71,7 +69,7 @@ namespace gse::renderer::forward {
 		shaders::meshlet::meshlet_triangles,
 		shaders::meshlet::meshlet_bounds_buffer,
 		instance_data_buffer,
-		diffuse_sampler
+		shaders::bindless::textures
 	>;
 
 	struct [[= shaders::shader_struct]] meshlet_push_constants {
@@ -98,6 +96,10 @@ namespace gse::renderer::forward {
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>
 	>;
 
+	struct [[= shaders::shader_struct]] skinned_push_constants {
+		std::uint32_t diffuse_index;
+	};
+
 	using skinned_geometry_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/skinned_geometry_pass">,
 		gpu::layout<"standard_3d">,
@@ -105,6 +107,7 @@ namespace gse::renderer::forward {
 		gpu::bindings<shaders::standard_3d::shader_binding_types>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<skinned_push_constants>,
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>
 	>;
 }
@@ -112,8 +115,6 @@ namespace gse::renderer::forward {
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet_entry::pod);
 	d.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned_geometry_entry::pod);
-
-	auto& assets = const_cast<asset::data&>(assets_s);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
@@ -179,11 +180,6 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.skinned_descriptors[i])
 			.buffer<shaders::standard_3d::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
-	}
-
-	d.blank_texture = asset::queue<texture>(assets, "blank", vec4f(1, 1, 1, 1));
-	while (asset::resource_state<texture>(assets, d.blank_texture.id()) != resource::state::loaded) {
-		co_await ctx.next_tick();
 	}
 
 	co_return;
@@ -306,10 +302,13 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 			if (idx >= max_materials) {
 				continue;
 			}
+			const auto& diffuse = mat_ptr->diffuse_texture;
+			const auto diffuse_slot = diffuse.valid() ? diffuse->bindless_slot() : gpu::bindless_texture_slot{};
 			staging_materials[idx] = {
 				.base_color = mat_ptr->base_color,
 				.roughness = mat_ptr->roughness,
 				.metallic = mat_ptr->metallic,
+				.diffuse_index = diffuse_slot ? diffuse_slot.index : shaders::bindless::invalid_index,
 			};
 		}
 
@@ -353,11 +352,6 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 				continue;
 			}
 
-			const auto& diffuse = mesh.material().diffuse_texture;
-			const bool has_texture = diffuse.valid() && diffuse->upload_token().ready();
-			const auto& tex_img = has_texture ? diffuse->gpu_image() : d.blank_texture->gpu_image();
-			const auto& tex_samp = has_texture ? diffuse->gpu_sampler() : d.blank_texture->gpu_sampler();
-
 			if (!descriptors_bound) {
 				rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 				descriptors_bound = true;
@@ -365,9 +359,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 
 			meshlet_writer.begin(frame_index);
 			mesh.meshlet_gpu().bind(meshlet_writer);
-			meshlet_writer
-				.buffer<instance_data_buffer>(instance_buf)
-				.image<diffuse_sampler>(tex_img, tex_samp, gpu::image_layout::shader_read_only);
+			meshlet_writer.buffer<instance_data_buffer>(instance_buf);
 			rec.commit(meshlet_writer, d.pipeline, 1);
 
 			const std::uint32_t meshlet_count = mesh.meshlet_count();
@@ -403,20 +395,25 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		const auto& skin_buf = gc_r.skin_buffer[frame_index];
 		const auto& instance_buf = gc_r.instance_buffer[frame_index];
 
+		skinned_writer.begin(frame_index);
+		skinned_writer
+			.buffer<shaders::standard_3d::skin_matrices>(skin_buf)
+			.buffer<shaders::standard_3d::instance_data_buffer>(instance_buf);
+		rec.commit(skinned_writer, d.skinned_pipeline, 1);
+
+		gpu::typed_push_constants<skinned_push_constants> skinned_pc{
+			.data = { .diffuse_index = shaders::bindless::invalid_index },
+			.stages = gpu::stage_flag::fragment,
+		};
+
 		for (std::size_t i = 0; i < skinned_batches.size(); ++i) {
 			const auto& batch = skinned_batches[i];
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-			const bool has_texture = mesh.material().diffuse_texture.valid();
-			const auto& tex_img = has_texture ? mesh.material().diffuse_texture->gpu_image() : d.blank_texture->gpu_image();
-			const auto& tex_samp = has_texture ? mesh.material().diffuse_texture->gpu_sampler() : d.blank_texture->gpu_sampler();
-
-			skinned_writer.begin(frame_index);
-			skinned_writer
-				.image<shaders::standard_3d::diffuse_sampler>(tex_img, tex_samp, gpu::image_layout::shader_read_only)
-				.buffer<shaders::standard_3d::skin_matrices>(skin_buf)
-				.buffer<shaders::standard_3d::instance_data_buffer>(instance_buf);
-			rec.commit(skinned_writer, d.skinned_pipeline, 1);
+			const auto& diffuse = mesh.material().diffuse_texture;
+			const auto diffuse_slot = diffuse.valid() ? diffuse->bindless_slot() : gpu::bindless_texture_slot{};
+			skinned_pc.data.diffuse_index = diffuse_slot ? diffuse_slot.index : shaders::bindless::invalid_index;
+			rec.push(d.skinned_pipeline, skinned_pc);
 
 			rec.bind_vertex(mesh.vertex_gpu_buffer());
 			rec.bind_index(mesh.index_gpu_buffer());

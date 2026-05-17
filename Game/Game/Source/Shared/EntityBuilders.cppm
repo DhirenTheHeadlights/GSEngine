@@ -5,7 +5,6 @@ import gse;
 
 export namespace gs {
 	auto build_box(
-		gse::asset::data& assets,
 		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
@@ -17,27 +16,22 @@ export namespace gs {
 	) -> gse::scene::builder;
 
 	auto build_sphere(
-		gse::asset::data& assets,
 		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
 		gse::length radius,
-		int sectors = 24,
-		int stacks = 16
+		gse::sphere_lod lod = gse::sphere_lod::mid
 	) -> gse::scene::builder;
 
 	auto build_sphere_light(
-		gse::asset::data& assets,
 		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
 		gse::length radius,
-		int sectors = 18,
-		int stacks = 10
+		gse::sphere_lod lod = gse::sphere_lod::lo
 	) -> void;
 
 	auto build_static_box(
-		gse::asset::data& assets,
 		gse::scene* scene,
 		const std::string& name,
 		const gse::vec3<gse::position>& position,
@@ -46,13 +40,8 @@ export namespace gs {
 	) -> gse::scene::builder;
 }
 
-auto gs::build_box(gse::asset::data& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> gse::scene::builder {
+auto gs::build_box(gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> gse::scene::builder {
 	const gse::inertia box_inertia = m * gse::dot(size, size) / 18.f;
-	const gse::material mat{
-		.base_color = gse::vec3f(gse::random_value(0.3f, 1.0f), gse::random_value(0.3f, 1.0f), gse::random_value(0.3f, 1.0f)),
-		.roughness = roughness,
-		.metallic = metallic,
-	};
 
 	return scene->build(name)
 		.with<gse::physics::transform_component>({
@@ -68,15 +57,17 @@ auto gs::build_box(gse::asset::data& assets, gse::scene* scene, const std::strin
 		.with<gse::physics::collision_component>({
 			.shape = gse::physics::box_shape{ .size = size },
 		})
-		.with<gse::render_component>({
-			.models = {
-				gse::procedural_model::box(assets, mat, size),
+		.with<gse::primitive_box_spec>({
+			.material = {
+				.base_color = gse::vec3f(gse::random_value(0.3f, 1.0f), gse::random_value(0.3f, 1.0f), gse::random_value(0.3f, 1.0f)),
+				.roughness = roughness,
+				.metallic = metallic,
 			},
-			.model_count = 1,
+			.size = size,
 		});
 }
 
-auto gs::build_sphere(gse::asset::data& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> gse::scene::builder {
+auto gs::build_sphere(gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod) -> gse::scene::builder {
 	return scene->build(name)
 		.with<gse::physics::transform_component>({
 			.position = position,
@@ -89,24 +80,17 @@ auto gs::build_sphere(gse::asset::data& assets, gse::scene* scene, const std::st
 		.with<gse::physics::collision_component>({
 			.shape = gse::physics::sphere_shape{ .radius = radius },
 		})
-		.with<gse::render_component>({
-			.models = {
-				gse::procedural_model::sphere(
-					assets,
-					gse::material{
-						.diffuse_texture = gse::asset::get<gse::texture>(assets, "Textures/Textures/sun"),
-					},
-					radius,
-					sectors,
-					stacks
-				),
+		.with<gse::primitive_sphere_spec>({
+			.material = {
+				.base_color = gse::vec3f(1.0f),
 			},
-			.model_count = 1,
+			.lod = lod,
+			.radius = radius,
 		});
 }
 
-auto gs::build_sphere_light(gse::asset::data& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const int sectors, const int stacks) -> void {
-	build_sphere(assets, scene, name, position, radius, sectors, stacks)
+auto gs::build_sphere_light(gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod) -> void {
+	build_sphere(scene, name, position, radius, lod)
 		.with<gse::point_light_component>({
 			.color = gse::vec3f(1.f),
 			.intensity = 78.5f,
@@ -121,7 +105,7 @@ auto gs::build_sphere_light(gse::asset::data& assets, gse::scene* scene, const s
 		});
 }
 
-auto gs::build_static_box(gse::asset::data& assets, gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> gse::scene::builder {
+auto gs::build_static_box(gse::scene* scene, const std::string& name, const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> gse::scene::builder {
 	return scene->build(name)
 		.with<gse::physics::transform_component>({
 			.position = position,
@@ -133,18 +117,12 @@ auto gs::build_static_box(gse::asset::data& assets, gse::scene* scene, const std
 		.with<gse::physics::collision_component>({
 			.shape = gse::physics::box_shape{ .size = size },
 		})
-		.with<gse::render_component>({
-			.models = {
-				gse::procedural_model::box(
-					assets,
-					gse::material{
-						.base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
-						.roughness = 0.8f,
-						.metallic = 0.0f,
-					},
-					size
-				),
+		.with<gse::primitive_box_spec>({
+			.material = {
+				.base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
+				.roughness = 0.8f,
+				.metallic = 0.0f,
 			},
-			.model_count = 1,
+			.size = size,
 		});
 }

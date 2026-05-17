@@ -527,6 +527,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	}
 	node.update_wall_id = find_or_generate_id(std::format("update_wall:{}", type_tag<S>()));
 	node.frame_wall_id = find_or_generate_id(std::format("frame_wall:{}", type_tag<S>()));
+	node.frame_start_id = find_or_generate_id(std::format("frame_start:{}", type_tag<S>()));
 	node.trace_id = trace_id<S>();
 
 	return node;

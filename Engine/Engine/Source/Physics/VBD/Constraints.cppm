@@ -57,6 +57,12 @@ export namespace gse::vbd {
 		force max_force = newtons(1000.f);
 	};
 
+	struct [[= shaders::shader_struct]] impulse_constraint {
+		std::uint32_t body_index = 0;
+
+		vec3<velocity> delta_velocity;
+	};
+
 	struct [[= shaders::shader_struct]] joint_constraint {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;

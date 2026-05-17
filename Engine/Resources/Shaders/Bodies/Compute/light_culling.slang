@@ -89,9 +89,9 @@ if (group_index == 0) {
 GroupMemoryBarrierWithGroupSync();
 
 float depth = 1.0;
-if (pixel.x < screen_size.x && pixel.y < screen_size.y) {
+if (pixel.x < screen_size.x && pixel.y < screen_size.y && depth_index != 0xFFFFFFFFu) {
     float2 uv = screen_uv(float2(pixel) + 0.5);
-    depth = g_depth.SampleLevel(uv, 0).r;
+    depth = textures[NonUniformResourceIndex(depth_index)].SampleLevel(uv, 0).r;
 }
 
 if (depth < 1.0 - 1e-5) {

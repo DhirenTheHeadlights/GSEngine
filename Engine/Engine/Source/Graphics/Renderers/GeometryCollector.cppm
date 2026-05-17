@@ -10,6 +10,7 @@ import :skinned_model;
 import :render_component;
 import :animation_component;
 import :material;
+import :primitive_resolver;
 import :skeleton;
 import :texture;
 
@@ -31,20 +32,18 @@ export namespace gse::renderer::geometry_collector {
 	struct [[= shaders::shader_struct]] joint_data {
 		mat4f inverse_bind;
 		std::uint32_t parent_index;
-		std::uint32_t pad0;
-		std::uint32_t pad1;
-		std::uint32_t pad2;
 	};
 }
 
 export namespace gse::renderer {
 	using frustum_planes = std::array<vec4f, 6>;
 
-	auto compute_render_transform(const physics::transform_component& tc, const vec3<length>& center_of_mass) -> std::pair<mat4f, mat4f> {
+	auto compute_render_transform(const physics::transform_component& tc, const vec3<length>& center_of_mass, const vec3<length>& scale_factors) -> std::pair<mat4f, mat4f> {
 		const mat4f rot_mat = mat4f(mat3_cast(tc.orientation));
 		const mat4f trans_mat = translate(mat4f(1.0f), tc.position);
+		const mat4f scale_mat = scale(mat4f(1.0f), scale_factors);
 		const mat4f pivot_correction_mat = translate(mat4f(1.0f), -center_of_mass);
-		const mat4f model_matrix = trans_mat * rot_mat * pivot_correction_mat;
+		const mat4f model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
 		const mat4f normal_matrix = rot_mat;
 		return { model_matrix, normal_matrix };
 	}
@@ -189,8 +188,6 @@ export namespace gse::renderer::geometry_collector {
 			[[=gse::shared]] gpu::buffer skeleton_buffer;
 			[[=gse::shared]] per_frame_resource<gpu::buffer> local_pose_buffer;
 			[[=gse::shared]] per_frame_resource<gpu::buffer> skin_buffer;
-
-			per_frame_resource<gpu::buffer> physics_mapping_buffer;
 		};
 
 		static auto run(
@@ -198,7 +195,8 @@ export namespace gse::renderer::geometry_collector {
 			const gpu::context::data& gpu_s,
 			const asset::data& assets_s,
 			data& d,
-			const camera::system::data& cam_state
+			const camera::system::data& cam_state,
+			const primitive_resolver::system::data& resolver_state
 		) -> async::task<>;
 
 		static auto frame(

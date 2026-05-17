@@ -7,9 +7,10 @@ float3 srgb_to_linear(float3 c) {
 // entry:
 uint2 pixel = dispatch_id.xy;
 if (pixel.x >= pc.extent.x || pixel.y >= pc.extent.y) return;
+if (pc.rgba_index == 0xFFFFFFFFu) return;
 
 float2 uv = (float2(pixel) + 0.5) / float2(pc.extent);
-float4 rgba = input_rgba.SampleLevel(uv, 0);
+float4 rgba = textures[NonUniformResourceIndex(pc.rgba_index)].SampleLevel(uv, 0);
 float3 rgb = srgb_to_linear(rgba.rgb);
 
 float luma = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;

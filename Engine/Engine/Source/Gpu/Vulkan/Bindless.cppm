@@ -38,7 +38,8 @@ export namespace gse::gpu {
 
 		auto allocate(
 			handle<vulkan::image_view> view,
-			handle<vulkan::sampler> samp
+			handle<vulkan::sampler> samp,
+			image_layout layout = image_layout::shader_read_only
 		) -> bindless_texture_slot;
 
 		auto release(
@@ -148,7 +149,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 
 gse::gpu::bindless_texture_set::~bindless_texture_set() = default;
 
-auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> view, const handle<vulkan::sampler> samp) -> bindless_texture_slot {
+auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> view, const handle<vulkan::sampler> samp, const image_layout layout) -> bindless_texture_slot {
 	std::lock_guard lock(m_mutex);
 
 	assert(!m_free_list.empty(), "Bindless texture set exhausted (capacity {})", m_capacity);
@@ -161,7 +162,7 @@ auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> v
 		.image = {
 			.sampler = samp,
 			.image_view = view,
-			.layout = image_layout::shader_read_only,
+			.layout = layout,
 		},
 	};
 

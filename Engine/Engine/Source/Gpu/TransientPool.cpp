@@ -240,7 +240,6 @@ auto gse::gpu::transient_pool::operator=(transient_pool&& other) noexcept -> tra
 auto gse::gpu::transient_pool::free_slot_resources(frame_state& slot) -> void {
 	slot.images.clear();
 	slot.buffers.clear();
-	slot.pending_transitions.clear();
 }
 
 auto gse::gpu::transient_pool::free_slot_memory(frame_state& slot) -> void {
@@ -283,12 +282,19 @@ auto gse::gpu::transient_pool::resolve_buffer(const transient_buffer_handle h) c
 	return it->second.resource.get();
 }
 
-auto gse::gpu::transient_pool::pending_transitions() const -> std::span<const image_barrier> {
-	return m_slots[m_current_frame].pending_transitions;
-}
-
-auto gse::gpu::transient_pool::clear_pending_transitions() -> void {
-	m_slots[m_current_frame].pending_transitions.clear();
+auto gse::gpu::transient_pool::transient_images() const -> std::vector<transient_image_info> {
+	const auto& slot = m_slots[m_current_frame];
+	std::vector<transient_image_info> out;
+	out.reserve(slot.images.size());
+	for (const auto& [_, alloc] : slot.images) {
+		out.push_back({
+			.resource = alloc.resource.get(),
+			.aspects = alloc.aspects,
+			.target_layout = alloc.layout,
+			.format = alloc.format,
+		});
+	}
+	return out;
 }
 
 auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const std::uint32_t color, const gpu::device_size required_size, const std::uint32_t memory_type_mask) -> void {
@@ -429,27 +435,12 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 			make_synthetic_allocation(vulkan_dev, req.desc.tag)
 		);
 
-		const auto aspects = aspect_for_format(req.desc.format);
-		slot.pending_transitions.push_back({
-			.src_stages = pipeline_stage_flag::top_of_pipe,
-			.src_access = {},
-			.dst_stages = pipeline_stage_flag::all_commands,
-			.dst_access = depth_for_format(req.desc.format)
-				? (access_flag::depth_stencil_attachment_read | access_flag::depth_stencil_attachment_write)
-				: (access_flag::shader_read | access_flag::shader_write),
-			.old_layout = image_layout::undefined,
-			.new_layout = req.desc.layout,
-			.image = si.handle,
-			.aspects = aspects,
-			.base_mip_level = 0,
-			.level_count = 1,
-			.base_array_layer = 0,
-			.layer_count = 1,
-		});
 		img->set_layout(req.desc.layout);
 
 		slot.images.emplace(req.handle.key, transient_image_allocation{
 			.resource = std::move(img),
+			.aspects = aspect_for_format(req.desc.format),
+			.format = req.desc.format,
 			.layout = req.desc.layout,
 			.color = si.color,
 			.first_pass = intervals[si.entry_index].first_pass,

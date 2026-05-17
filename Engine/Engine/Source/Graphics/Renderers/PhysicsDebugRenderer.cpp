@@ -189,7 +189,6 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 
 			if (ps.use_gpu_solver && ps.gpu_stats.active) {
 				stats.gpu_solver_active = true;
-				stats.contact_count = ps.gpu_stats.contact_count;
 				stats.motor_count = ps.gpu_stats.motor_count;
 			}
 

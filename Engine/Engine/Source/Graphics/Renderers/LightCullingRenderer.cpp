@@ -26,9 +26,8 @@ namespace gse::renderer::light_culling {
 		mat4f inv_proj;
 		vec2u screen_size;
 		std::uint32_t num_lights;
+		std::uint32_t depth_index;
 	};
-
-	struct [[= shaders::binding<0, 0>{}, = shaders::sampler2d]] g_depth {};
 
 	struct [[= shaders::binding<0, 1>{}]] culling_params {
 		using element = culling_params_data;
@@ -47,11 +46,11 @@ namespace gse::renderer::light_culling {
 	};
 
 	using shader_binding_types = type_pack<
-		g_depth,
 		culling_params,
 		lights,
 		light_index_list,
-		tile_light_table
+		tile_light_table,
+		shaders::bindless::textures
 	>;
 
 	using shader_types = type_pack<culling_params_data>;
@@ -74,11 +73,13 @@ auto gse::renderer::light_culling::system::tile_count(const data& d) -> vec2u {
 }
 
 auto gse::renderer::light_culling::system::update_depth_descriptor(const gpu::context::data& gpu_s, data& d) -> void {
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i])
-			.image<g_depth>(gpu_s.render_graph->depth_image(), d.depth_sampler, gpu::image_layout::general)
-			.commit();
+	if (d.depth_slot) {
+		gpu_s.bindless_textures->release(d.depth_slot);
 	}
+	d.depth_slot = gpu_s.bindless_textures->allocate(
+		gpu_s.render_graph->depth_image().view(),
+		d.depth_sampler.native()
+	);
 }
 
 auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::context::data& gpu_s, data& d) -> void {
@@ -245,6 +246,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 		.inv_proj = inv_proj,
 		.screen_size = vec2u{ extent.x(), extent.y() },
 		.num_lights = static_cast<std::uint32_t>(light_count),
+		.depth_index = d.depth_slot ? d.depth_slot.index : shaders::bindless::invalid_index,
 	};
 	d.culling_params_buffers[frame_index].host_write(params);
 
@@ -254,6 +256,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 		.pipeline(d.pipeline)
 		.after<depth_prepass::system>();
 
+	rec.sample_image(gpu_s.render_graph->depth_image(), gpu::pipeline_stage_flag::compute_shader);
 	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 	rec.dispatch(tiles.x(), tiles.y(), 1);
 }

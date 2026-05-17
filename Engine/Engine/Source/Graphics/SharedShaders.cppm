@@ -6,6 +6,12 @@ import gse.containers;
 import gse.gpu;
 import gse.math;
 
+export namespace gse::shaders::bindless {
+	struct [[= binding<2, 0>{}, = sampler2d_array]] textures {};
+
+	constexpr std::uint32_t invalid_index = std::numeric_limits<std::uint32_t>::max();
+}
+
 export namespace gse::shaders::common {
 	struct [[= shader_struct]] camera_data {
 		mat4f view;
@@ -19,7 +25,7 @@ export namespace gse::shaders::common {
 		std::uint32_t skin_offset;
 		std::uint32_t joint_count;
 		std::uint32_t material_index;
-		std::uint32_t pad0;
+		vec3f tint;
 	};
 
 	using shader_types = type_pack<camera_data, instance_data>;
@@ -36,9 +42,7 @@ export namespace gse::shaders::forward {
 		vec3f base_color;
 		float roughness;
 		float metallic;
-		float pad0;
-		float pad1;
-		float pad2;
+		std::uint32_t diffuse_index;
 	};
 
 	struct [[= shader_struct]] light {
@@ -106,8 +110,6 @@ export namespace gse::shaders::standard_3d {
 		using element = common::camera_data;
 	};
 
-	struct [[= binding<1, 2>{}, = sampler2d]] diffuse_sampler {};
-
 	struct [[= binding<1, 3>{}, = ssbo_readonly]] skin_matrices {
 		using element = mat4f;
 	};
@@ -116,6 +118,6 @@ export namespace gse::shaders::standard_3d {
 		using element = common::instance_data;
 	};
 
-	using shader_binding_types = type_pack<camera_ubo, diffuse_sampler, skin_matrices, instance_data_buffer>;
+	using shader_binding_types = type_pack<camera_ubo, skin_matrices, instance_data_buffer, bindless::textures>;
 }
 

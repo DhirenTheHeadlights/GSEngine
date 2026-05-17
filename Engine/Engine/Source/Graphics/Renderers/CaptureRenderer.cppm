@@ -42,6 +42,7 @@ export namespace gse::renderer::capture {
             per_frame_resource<gpu::image> rgba_captures;
             per_frame_resource<gpu::image> y_planes;
             per_frame_resource<gpu::image> uv_planes;
+            std::array<gpu::bindless_texture_slot, per_frame_resource<gpu::image>::frames_in_flight> rgba_slots;
             gpu::sampler capture_sampler;
             bool encode_active = false;
 

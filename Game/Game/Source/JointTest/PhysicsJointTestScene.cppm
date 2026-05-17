@@ -8,50 +8,37 @@ import :entity_builders;
 
 export namespace gs {
 	auto physics_joint_test_scene_setup(
-		gse::scene& s,
-		gse::channel_writer& channels,
-		gse::asset::data& assets
+		gse::scene& s
 	) -> void;
 }
 
 namespace gs {
 	auto build_fixed_joint_test(
-		gse::scene& s,
-		gse::channel_writer& channels,
-		gse::asset::data& assets
+		gse::scene& s
 	) -> void;
 
 	auto build_distance_pendulum(
-		gse::scene& s,
-		gse::channel_writer& channels,
-		gse::asset::data& assets
+		gse::scene& s
 	) -> void;
 
 	auto build_hinge_door(
-		gse::scene& s,
-		gse::channel_writer& channels,
-		gse::asset::data& assets
+		gse::scene& s
 	) -> void;
 
 	auto build_slider_elevator(
-		gse::scene& s,
-		gse::channel_writer& channels,
-		gse::asset::data& assets
+		gse::scene& s
 	) -> void;
 
 	auto build_pendulum_chain(
-		gse::scene& s,
-		gse::channel_writer& channels,
-		gse::asset::data& assets
+		gse::scene& s
 	) -> void;
 }
 
-auto gs::build_fixed_joint_test(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
+auto gs::build_fixed_joint_test(gse::scene& s) -> void {
 	constexpr float x = -20.f;
 	constexpr float z = 0.f;
 
 	const auto anchor_id = build_static_box(
-		assets,
 		&s,
 		"Fixed Anchor",
 		gse::vec3<gse::position>(x, 5.f, z),
@@ -59,7 +46,6 @@ auto gs::build_fixed_joint_test(gse::scene& s, gse::channel_writer& channels, gs
 	).identify();
 
 	const auto hanging_id = build_box(
-		assets,
 		&s,
 		"Fixed Hanging Box",
 		gse::vec3<gse::position>(x, 3.5f, z),
@@ -67,18 +53,22 @@ auto gs::build_fixed_joint_test(gse::scene& s, gse::channel_writer& channels, gs
 		gse::kilograms(20.f)
 	).identify();
 
-	gse::physics::join(channels, anchor_id, hanging_id, gse::physics::fixed_joint{
-		.anchor_a = gse::vec3<gse::displacement>(0.f, -0.5f, 0.f),
-		.anchor_b = gse::vec3<gse::displacement>(0.f, 0.5f, 0.f),
-	});
+	s.build("Fixed Joint")
+		.with<gse::physics::joint_spec>({
+			.entity_a = anchor_id,
+			.entity_b = hanging_id,
+			.config = gse::physics::fixed_joint{
+				.anchor_a = gse::vec3<gse::displacement>(0.f, -0.5f, 0.f),
+				.anchor_b = gse::vec3<gse::displacement>(0.f, 0.5f, 0.f),
+			},
+		});
 }
 
-auto gs::build_distance_pendulum(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
+auto gs::build_distance_pendulum(gse::scene& s) -> void {
 	constexpr float x = -10.f;
 	constexpr float z = 0.f;
 
 	const auto pivot_id = build_static_box(
-		assets,
 		&s,
 		"Distance Pivot",
 		gse::vec3<gse::position>(x, 8.f, z),
@@ -86,7 +76,6 @@ auto gs::build_distance_pendulum(gse::scene& s, gse::channel_writer& channels, g
 	).identify();
 
 	const auto bob_id = build_box(
-		assets,
 		&s,
 		"Distance Bob",
 		gse::vec3<gse::position>(x + 3.f, 5.f, z),
@@ -94,17 +83,21 @@ auto gs::build_distance_pendulum(gse::scene& s, gse::channel_writer& channels, g
 		gse::kilograms(30.f)
 	).identify();
 
-	gse::physics::join(channels, pivot_id, bob_id, gse::physics::distance_joint{
-		.target = gse::meters(4.f),
-	});
+	s.build("Distance Joint")
+		.with<gse::physics::joint_spec>({
+			.entity_a = pivot_id,
+			.entity_b = bob_id,
+			.config = gse::physics::distance_joint{
+				.target = gse::meters(4.f),
+			},
+		});
 }
 
-auto gs::build_hinge_door(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
+auto gs::build_hinge_door(gse::scene& s) -> void {
 	constexpr float x = 0.f;
 	constexpr float z = 0.f;
 
 	const auto frame_id = build_static_box(
-		assets,
 		&s,
 		"Hinge Frame",
 		gse::vec3<gse::position>(x, 2.f, z),
@@ -112,7 +105,6 @@ auto gs::build_hinge_door(gse::scene& s, gse::channel_writer& channels, gse::ass
 	).identify();
 
 	const auto door_id = build_box(
-		assets,
 		&s,
 		"Hinge Door",
 		gse::vec3<gse::position>(x + 1.5f, 2.f, z),
@@ -124,20 +116,24 @@ auto gs::build_hinge_door(gse::scene& s, gse::channel_writer& channels, gse::ass
 		}
 	}).identify();
 
-	gse::physics::join(channels, frame_id, door_id, gse::physics::hinge_joint{
-		.anchor_a = gse::vec3<gse::displacement>(0.15f, 0.f, 0.f),
-		.anchor_b = gse::vec3<gse::displacement>(-1.5f, 0.f, 0.f),
-		.axis = { 0.f, 1.f, 0.f },
-		.limits = std::pair{ gse::radians(-1.57f), gse::radians(1.57f) },
-	});
+	s.build("Hinge Joint")
+		.with<gse::physics::joint_spec>({
+			.entity_a = frame_id,
+			.entity_b = door_id,
+			.config = gse::physics::hinge_joint{
+				.anchor_a = gse::vec3<gse::displacement>(0.15f, 0.f, 0.f),
+				.anchor_b = gse::vec3<gse::displacement>(-1.5f, 0.f, 0.f),
+				.axis = { 0.f, 1.f, 0.f },
+				.limits = std::pair{ gse::radians(-1.57f), gse::radians(1.57f) },
+			},
+		});
 }
 
-auto gs::build_slider_elevator(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
+auto gs::build_slider_elevator(gse::scene& s) -> void {
 	constexpr float x = 10.f;
 	constexpr float z = 0.f;
 
 	const auto rail_id = build_static_box(
-		assets,
 		&s,
 		"Slider Rail",
 		gse::vec3<gse::position>(x, 4.f, z),
@@ -145,7 +141,6 @@ auto gs::build_slider_elevator(gse::scene& s, gse::channel_writer& channels, gse
 	).identify();
 
 	const auto platform_id = build_box(
-		assets,
 		&s,
 		"Slider Platform",
 		gse::vec3<gse::position>(x, 6.f, z),
@@ -153,19 +148,23 @@ auto gs::build_slider_elevator(gse::scene& s, gse::channel_writer& channels, gse
 		gse::kilograms(30.f)
 	).identify();
 
-	gse::physics::join(channels, rail_id, platform_id, gse::physics::slider_joint{
-		.axis = { 0.f, 1.f, 0.f },
-	});
+	s.build("Slider Joint")
+		.with<gse::physics::joint_spec>({
+			.entity_a = rail_id,
+			.entity_b = platform_id,
+			.config = gse::physics::slider_joint{
+				.axis = { 0.f, 1.f, 0.f },
+			},
+		});
 }
 
-auto gs::build_pendulum_chain(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
+auto gs::build_pendulum_chain(gse::scene& s) -> void {
 	constexpr float x = 20.f;
 	constexpr float z = 0.f;
 	constexpr int chain_length = 5;
 	constexpr float link_spacing = 1.5f;
 
 	const auto ceiling_id = build_static_box(
-		assets,
 		&s,
 		"Chain Ceiling",
 		gse::vec3<gse::position>(x, 12.f, z),
@@ -179,7 +178,6 @@ auto gs::build_pendulum_chain(gse::scene& s, gse::channel_writer& channels, gse:
 		const float y = 12.f - (static_cast<float>(i) + 1.f) * link_spacing;
 		const float x_offset = (i == chain_length - 1) ? 2.f : 0.f;
 		const auto link_id = build_box(
-			assets,
 			&s,
 			std::format("Chain Link {}", i),
 			gse::vec3<gse::position>(x + x_offset, y, z),
@@ -190,24 +188,28 @@ auto gs::build_pendulum_chain(gse::scene& s, gse::channel_writer& channels, gse:
 	}
 
 	for (std::size_t i = 0; i + 1 < link_ids.size(); ++i) {
-		gse::physics::join(channels, link_ids[i], link_ids[i + 1], gse::physics::distance_joint{
-			.target = gse::meters(link_spacing),
-		});
+		s.build(std::format("Chain Joint {}", i))
+			.with<gse::physics::joint_spec>({
+				.entity_a = link_ids[i],
+				.entity_b = link_ids[i + 1],
+				.config = gse::physics::distance_joint{
+					.target = gse::meters(link_spacing),
+				},
+			});
 	}
 }
 
-auto gs::physics_joint_test_scene_setup(gse::scene& s, gse::channel_writer& channels, gse::asset::data& assets) -> void {
+auto gs::physics_joint_test_scene_setup(gse::scene& s) -> void {
 	const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
-	build_static_box(assets, &s, "Floor", floor_pos, gse::vec3<gse::length>(80.f, 1.f, 80.f));
+	build_static_box(&s, "Floor", floor_pos, gse::vec3<gse::length>(80.f, 1.f, 80.f));
 
-	build_fixed_joint_test(s, channels, assets);
-	build_distance_pendulum(s, channels, assets);
-	build_hinge_door(s, channels, assets);
-	build_slider_elevator(s, channels, assets);
-	build_pendulum_chain(s, channels, assets);
+	build_fixed_joint_test(s);
+	build_distance_pendulum(s);
+	build_hinge_door(s);
+	build_slider_elevator(s);
+	build_pendulum_chain(s);
 
 	build_sphere(
-		assets,
 		&s,
 		"Sphere Ball",
 		gse::vec3<gse::position>(0.f, 6.f, -8.f),
@@ -225,12 +227,9 @@ auto gs::physics_joint_test_scene_setup(gse::scene& s, gse::channel_writer& chan
 		});
 
 	build_sphere_light(
-		assets,
 		&s,
 		"Scene Light",
 		gse::vec3<gse::position>(0.f, 30.f, 0.f),
-		gse::meters(0.5f),
-		12,
-		8
+		gse::meters(0.5f)
 	);
 }

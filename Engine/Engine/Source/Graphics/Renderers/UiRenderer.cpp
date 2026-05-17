@@ -18,9 +18,7 @@ import gse.math;
 import gse.log;
 
 namespace gse::renderer::ui {
-    struct [[= shaders::binding<2, 0>{}, = shaders::sampler2d_array]] g_textures {};
-
-    using shader_binding_types = type_pack<g_textures>;
+    using shader_binding_types = type_pack<shaders::bindless::textures>;
 
     struct [[= shaders::shader_struct]] sprite_push_constants {
         mat4f projection;

@@ -77,6 +77,7 @@ export namespace gse {
 		flags<engine_flag> m_flags;
 		scheduler m_scheduler;
 		save::registry m_save;
+		primitives::data m_primitives;
 		gse::world m_world;
 	};
 }

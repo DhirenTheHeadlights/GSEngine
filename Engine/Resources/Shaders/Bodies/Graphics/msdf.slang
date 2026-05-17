@@ -29,7 +29,7 @@ float median(float r, float g, float b) {
 
 [shader("fragment")]
 float4 fs_main(VS_OUTPUT input) : SV_Target0 {
-    float3 msdf_sample = g_textures[NonUniformResourceIndex(pc.tex_idx)].Sample(input.tex_coord).rgb;
+    float3 msdf_sample = textures[NonUniformResourceIndex(pc.tex_idx)].Sample(input.tex_coord).rgb;
     float sd = median(msdf_sample.r, msdf_sample.g, msdf_sample.b);
     float screen_px_dist = max(input.px_range, 1.0) * (0.5 - sd);
     float alpha = clamp(screen_px_dist + 0.5, 0.0, 1.0);

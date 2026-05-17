@@ -104,13 +104,17 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu
 	std::uint32_t render_queue_idx = 0;
 	for (const auto& queue_entry : data.render_queue) {
 		const auto& entry = queue_entry.entry;
-		const auto* mdl = entry.model.resolve();
-		if (!mdl || entry.index >= mdl->meshes().size()) {
+		if (!entry.model.valid()) {
+			++render_queue_idx;
+			continue;
+		}
+		const auto& mdl = entry.model.resolve();
+		if (entry.index >= mdl.meshes().size()) {
 			++render_queue_idx;
 			continue;
 		}
 
-		const auto* mesh_ptr = &mdl->meshes()[entry.index];
+		const auto* mesh_ptr = &mdl.meshes()[entry.index];
 		const auto it = d.blas_cache.find(mesh_ptr);
 		if (it == d.blas_cache.end()) {
 			++render_queue_idx;

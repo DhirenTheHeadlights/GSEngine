@@ -103,8 +103,9 @@ namespace gse::gpu {
 
 auto gse::gpu::to_color_output_info(const color_attachment& a) -> gpu::color_output_info {
 	return {
-		.is_swapchain = true,
-		.custom_target = nullptr,
+		.is_swapchain = a.target == nullptr && !a.transient_target,
+		.custom_target = a.target,
+		.transient_target = a.transient_target,
 		.op = a.op,
 		.clear_value = a.clear,
 	};
@@ -112,6 +113,9 @@ auto gse::gpu::to_color_output_info(const color_attachment& a) -> gpu::color_out
 
 auto gse::gpu::to_depth_output_info(const depth_attachment& a) -> gpu::depth_output_info {
 	return {
+		.is_swapchain = a.target == nullptr && !a.transient_target,
+		.custom_target = a.target,
+		.transient_target = a.transient_target,
 		.op = a.op,
 		.clear_value = a.clear,
 	};

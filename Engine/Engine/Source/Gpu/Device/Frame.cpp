@@ -72,6 +72,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
     }
 
     try {
+        trace::scope_guard sg{trace_id<"begin_frame::wait_fence">()};
         for (std::size_t i = 0; i < queue_type_count; ++i) {
             const auto fence_result = vulkan::wait_for_fence(dev, m_sync.in_flight_fence(static_cast<queue_type>(i), m_current_frame));
             assert(fence_result == result::success, "Failed to wait for in-flight fence!");
@@ -82,6 +83,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
     }
 
     try {
+        trace::scope_guard sg{trace_id<"begin_frame::transient">()};
         m_device->transient().begin_frame(dev);
     } catch (const vk::DeviceLostError&) {
         m_device->report_device_lost(std::format("transient begin_frame (frame {})", m_current_frame));
@@ -96,6 +98,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
     result acquire_status = result::error_unknown;
     std::uint32_t acquired_image_index = 0;
     try {
+        trace::scope_guard sg{trace_id<"begin_frame::acquire">()};
         const auto acquired = vulkan::acquire_next_image(
             dev,
             m_swapchain->config().swap_chain_handle(),
@@ -119,6 +122,8 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
         acquire_status == result::success || acquire_status == result::suboptimal_khr,
         "Failed to acquire swap chain image!"
     );
+
+    trace::scope_guard sg_setup{trace_id<"begin_frame::setup">()};
 
     vulkan::reset_fence(dev, m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
 

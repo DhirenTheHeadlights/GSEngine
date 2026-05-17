@@ -24,7 +24,7 @@ export namespace gse::resource {
 		double_buffer<std::unique_ptr<T>> resource;
 		std::atomic<state> current_state;
 		std::filesystem::path path;
-		std::atomic<std::uint32_t> version{ 0 };
+		std::atomic<std::uint32_t> version { 0 };
 
 		resource_slot(
 			std::unique_ptr<T>&& res,
@@ -57,29 +57,21 @@ export namespace gse::resource {
 			std::uint32_t version
 		);
 
-		[[nodiscard]] auto resolve(
-		) const -> T*;
+		[[nodiscard]] auto resolve() const -> T&;
 
-		[[nodiscard]] auto state(
-		) const -> resource::state;
+		[[nodiscard]] auto state() const -> resource::state;
 
-		[[nodiscard]] auto valid(
-		) const -> bool;
+		[[nodiscard]] auto valid() const -> bool;
 
-		[[nodiscard]] auto id(
-		) const -> id;
+		[[nodiscard]] auto id() const -> id;
 
-		[[nodiscard]] auto version(
-		) const -> std::uint32_t;
+		[[nodiscard]] auto version() const -> std::uint32_t;
 
-		[[nodiscard]] auto is_current(
-		) const -> bool;
+		[[nodiscard]] auto is_current() const -> bool;
 
-		[[nodiscard]] auto operator->(
-		) const -> T*;
+		[[nodiscard]] auto operator->() const -> T*;
 
-		[[nodiscard]] auto operator*(
-		) const -> T&;
+		[[nodiscard]] auto operator*() const -> T&;
 
 		[[nodiscard]] auto operator==(
 			const handle& other
@@ -89,8 +81,8 @@ export namespace gse::resource {
 			const handle& other
 		) const -> bool;
 
-		explicit operator bool(
-		) const;
+		explicit operator bool() const;
+
 	private:
 		resource_slot<T>* m_slot = nullptr;
 		mutable std::uint32_t m_version = 0;
@@ -132,20 +124,15 @@ gse::resource::handle<T>::handle(const gse::id resource_id, resource_slot<T>* sl
 }
 
 template <typename T>
-gse::resource::handle<T>::handle(const gse::id resource_id, resource_slot<T>* slot, const std::uint32_t version) : identifiable_owned(resource_id), m_slot(slot), m_version(version) {}
+gse::resource::handle<T>::handle(const gse::id resource_id, resource_slot<T>* slot, const std::uint32_t version) : identifiable_owned(resource_id), m_slot(slot), m_version(version) {
+}
 
 template <typename T>
-auto gse::resource::handle<T>::resolve() const -> T* {
-	if (!m_slot) {
-		return nullptr;
-	}
-	const auto current = m_slot->current_state.load(std::memory_order_acquire);
-	if (current != state::loaded && current != state::reloading) {
-		return nullptr;
-	}
+auto gse::resource::handle<T>::resolve() const -> T& {
+	assert(valid(), "resolve() on invalid resource handle: id {}", owner_id());
 	m_version = m_slot->version.load(std::memory_order_acquire);
 	const auto& ptr = m_slot->resource.read();
-	return ptr ? ptr.get() : nullptr;
+	return *ptr;
 }
 
 template <typename T>
@@ -182,16 +169,12 @@ auto gse::resource::handle<T>::is_current() const -> bool {
 
 template <typename T>
 auto gse::resource::handle<T>::operator->() const -> T* {
-	T* r = resolve();
-	assert(r, "Attempting to access an unloaded or invalid resource with ID: {}", owner_id());
-	return r;
+	return &resolve();
 }
 
 template <typename T>
 auto gse::resource::handle<T>::operator*() const -> T& {
-	T* r = resolve();
-	assert(r, "Attempting to dereference an unloaded or invalid resource with ID: {}", owner_id());
-	return *r;
+	return resolve();
 }
 
 template <typename T>
