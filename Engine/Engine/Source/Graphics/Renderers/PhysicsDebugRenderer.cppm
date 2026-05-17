@@ -44,8 +44,7 @@ export namespace gse::renderer::physics_debug {
 		struct data {
 			static constexpr std::string_view category = "Graphics";
 
-			[[=gse::settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}]]
-			bool enabled = true;
+			[[= gse::settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}]] bool enabled = true;
 
 			debug_stats latest_stats;
 

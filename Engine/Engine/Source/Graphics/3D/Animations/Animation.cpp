@@ -96,139 +96,130 @@ auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, 
 	d.last_tick = system_clock::now();
 
 	while (true) {
-	const time dt = system_clock::dt();
+		const time dt = system_clock::dt();
 
-	{
-		auto [animations, controllers, clips] = co_await ctx.acquire_with(
-			write_v<animation_component>,
-			write_v<controller_component>,
-			write_v<clip_component>
-		);
+		{
+			auto [animations, controllers, clips] = co_await ctx.acquire_with(
+				write_v<animation_component>,
+				write_v<controller_component>,
+				write_v<clip_component>
+			);
 
-		d.jobs.clear();
-		d.controller_jobs.clear();
-		d.pose_cache.clear();
+			d.jobs.clear();
+			d.controller_jobs.clear();
+			d.pose_cache.clear();
 
-		const auto anim_ids = animations.owner_ids();
-		for (std::size_t i = 0; i < animations.size(); ++i) {
-			auto& anim = animations[i];
-			if (!anim.skeleton && anim.skeleton_id.exists()) {
-				anim.skeleton = asset::get<skeleton>(assets_s, anim.skeleton_id);
-			}
+			const auto anim_ids = animations.owner_ids();
+			for (std::size_t i = 0; i < animations.size(); ++i) {
+				auto& anim = animations[i];
+				if (!anim.skeleton && anim.skeleton_id.exists()) {
+					anim.skeleton = asset::get<skeleton>(assets_s, anim.skeleton_id);
+				}
 
-			if (!anim.skeleton) {
-				continue;
-			}
-
-			const auto& skel = *anim.skeleton;
-			const auto joint_count = static_cast<std::size_t>(skel.joint_count());
-			ensure_pose_buffers(anim, joint_count);
-
-			const auto eid = anim_ids[i];
-			if (auto* ctrl_c = controllers.find(eid)) {
-				if (const auto graph_it = d.graphs.find(ctrl_c->graph_id); graph_it != d.graphs.end()) {
-					d.controller_jobs.push_back({
-						.anim = std::addressof(anim),
-						.ctrl = ctrl_c,
-						.skel = std::addressof(skel),
-						.graph = &graph_it->second
-					});
+				if (!anim.skeleton) {
 					continue;
 				}
-			}
 
-			auto* clip_c = clips.find(eid);
-			if (clip_c == nullptr) {
-				continue;
-			}
-			if (!clip_c->clip && clip_c->clip_id.exists()) {
-				clip_c->clip = asset::get<clip_asset>(assets_s, clip_c->clip_id);
-			}
+				const auto& skel = *anim.skeleton;
+				const auto joint_count = static_cast<std::size_t>(skel.joint_count());
+				ensure_pose_buffers(anim, joint_count);
 
-			if (!clip_c->clip) {
-				continue;
-			}
-
-			const auto& clip = *clip_c->clip;
-
-			if (clip_c->playing) {
-				clip_c->t += dt * clip_c->scale;
-			}
-
-			const time length = clip.length();
-			time sample_t = clip_c->t;
-			const bool should_loop = (clip_c->loop && clip.loop());
-
-			if (should_loop) {
-				sample_t = wrap_time(sample_t, length);
-				clip_c->t = sample_t;
-			} else if (length > seconds(0.f) && sample_t >= length) {
-				sample_t = length;
-				clip_c->t = length;
-				clip_c->playing = false;
-			}
-
-			d.jobs.push_back({
-				.anim = std::addressof(anim),
-				.clip = clip_c,
-				.skel = std::addressof(skel),
-				.asset = std::addressof(clip),
-				.scale = clip_c->scale,
-				.loop = should_loop,
-				.sample_t = sample_t
-			});
-		}
-
-		if (!d.jobs.empty()) {
-			std::vector<std::size_t> job_cache_index(d.jobs.size());
-			std::vector<std::size_t> unique_job_indices;
-
-			for (std::size_t i = 0; i < d.jobs.size(); ++i) {
-				constexpr float time_bucket_size = 16'666'666.f;
-				const auto& job = d.jobs[i];
-				const auto time_bucket = static_cast<std::int64_t>(job.sample_t / time{time_bucket_size});
-
-				const pose_cache_key key{
-					.clip = job.asset,
-					.skel = job.skel,
-					.time_bucket = time_bucket
-				};
-
-				const auto [it, inserted] = d.pose_cache.try_emplace(key, i);
-				job_cache_index[i] = it->second;
-
-				if (inserted) {
-					unique_job_indices.push_back(i);
+				const auto eid = anim_ids[i];
+				if (auto* ctrl_c = controllers.find(eid)) {
+					if (const auto graph_it = d.graphs.find(ctrl_c->graph_id); graph_it != d.graphs.end()) {
+						d.controller_jobs.push_back({ .anim = std::addressof(anim), .ctrl = ctrl_c, .skel = std::addressof(skel), .graph = &graph_it->second });
+						continue;
+					}
 				}
+
+				auto* clip_c = clips.find(eid);
+				if (clip_c == nullptr) {
+					continue;
+				}
+				if (!clip_c->clip && clip_c->clip_id.exists()) {
+					clip_c->clip = asset::get<clip_asset>(assets_s, clip_c->clip_id);
+				}
+
+				if (!clip_c->clip) {
+					continue;
+				}
+
+				const auto& clip = *clip_c->clip;
+
+				if (clip_c->playing) {
+					clip_c->t += dt * clip_c->scale;
+				}
+
+				const time length = clip.length();
+				time sample_t = clip_c->t;
+				const bool should_loop = (clip_c->loop && clip.loop());
+
+				if (should_loop) {
+					sample_t = wrap_time(sample_t, length);
+					clip_c->t = sample_t;
+				}
+				else if (length > seconds(0.f) && sample_t >= length) {
+					sample_t = length;
+					clip_c->t = length;
+					clip_c->playing = false;
+				}
+
+				d.jobs.push_back({ .anim = std::addressof(anim), .clip = clip_c, .skel = std::addressof(skel), .asset = std::addressof(clip), .scale = clip_c->scale, .loop = should_loop, .sample_t = sample_t });
 			}
 
-			task::parallel_for(0uz, unique_job_indices.size(), [&](const std::size_t i) {
-				const auto job_idx = unique_job_indices[i];
-				const auto& job = d.jobs[job_idx];
-				build_local_pose(*job.anim, *job.skel, *job.asset, job.sample_t);
-				build_global_and_skins(*job.anim, *job.skel);
-			}, trace_id<"animation::pose_build">());
+			if (!d.jobs.empty()) {
+				std::vector<std::size_t> job_cache_index(d.jobs.size());
+				std::vector<std::size_t> unique_job_indices;
 
-			task::parallel_for(0uz, d.jobs.size(), [&](const std::size_t i) {
-				if (const auto source_idx = job_cache_index[i]; source_idx != i) {
-					const auto& source_anim = *d.jobs[source_idx].anim;
-					auto& dest_anim = *d.jobs[i].anim;
+				for (std::size_t i = 0; i < d.jobs.size(); ++i) {
+					constexpr float time_bucket_size = 16'666'666.f;
+					const auto& job = d.jobs[i];
+					const auto time_bucket = static_cast<std::int64_t>(job.sample_t / time{ time_bucket_size });
 
-					std::ranges::copy(source_anim.local_pose, dest_anim.local_pose.begin());
-					std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
-					std::ranges::copy(source_anim.skins, dest_anim.skins.begin());
+					const pose_cache_key key{
+						.clip = job.asset,
+						.skel = job.skel,
+						.time_bucket = time_bucket
+					};
+
+					const auto [it, inserted] = d.pose_cache.try_emplace(key, i);
+					job_cache_index[i] = it->second;
+
+					if (inserted) {
+						unique_job_indices.push_back(i);
+					}
 				}
-			}, trace_id<"animation::pose_dedup_copy">());
+
+				task::parallel_for(0uz, unique_job_indices.size(), [&](const std::size_t i) {
+					const auto job_idx = unique_job_indices[i];
+					const auto& job = d.jobs[job_idx];
+					build_local_pose(*job.anim, *job.skel, *job.asset, job.sample_t);
+					build_global_and_skins(*job.anim, *job.skel);
+				},
+								   trace_id<"animation::pose_build">());
+
+				task::parallel_for(0uz, d.jobs.size(), [&](const std::size_t i) {
+					if (const auto source_idx = job_cache_index[i]; source_idx != i) {
+						const auto& source_anim = *d.jobs[source_idx].anim;
+						auto& dest_anim = *d.jobs[i].anim;
+
+						std::ranges::copy(source_anim.local_pose, dest_anim.local_pose.begin());
+						std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
+						std::ranges::copy(source_anim.skins, dest_anim.skins.begin());
+					}
+				},
+								   trace_id<"animation::pose_dedup_copy">());
+			}
+
+			if (!d.controller_jobs.empty()) {
+				task::parallel_for(0uz, d.controller_jobs.size(), [&](const std::size_t i) {
+					process_controller_job(d.controller_jobs[i], assets_s, dt);
+				},
+								   trace_id<"animation::controller_jobs">());
+			}
 		}
 
-		if (!d.controller_jobs.empty()) {
-			task::parallel_for(0uz, d.controller_jobs.size(), [&](const std::size_t i) {
-				process_controller_job(d.controller_jobs[i], assets_s, dt);
-			}, trace_id<"animation::controller_jobs">());
-		}
-	}
-
-	co_await ctx.next_tick();
+		co_await ctx.next_tick();
 	}
 }
 
@@ -272,7 +263,8 @@ auto gse::animation::system::sample_track(const joint_track& track, const time t
 	while (lo + 1 < hi) {
 		if (const std::size_t mid = (lo + hi) / 2; track.keys[mid].time <= t) {
 			lo = mid;
-		} else {
+		}
+		else {
 			hi = mid;
 		}
 	}
@@ -381,29 +373,29 @@ auto gse::animation::system::evaluate_condition(const transition_condition& cond
 	const auto& [value, is_trigger] = it->second;
 
 	switch (condition.type) {
-	case transition_condition_type::bool_equals:
-		if (const auto* val = std::get_if<bool>(&value)) {
-			return *val == condition.bool_value;
-		}
-		return false;
+		case transition_condition_type::bool_equals:
+			if (const auto* val = std::get_if<bool>(&value)) {
+				return *val == condition.bool_value;
+			}
+			return false;
 
-	case transition_condition_type::float_greater:
-		if (const auto* val = std::get_if<float>(&value)) {
-			return *val > condition.threshold;
-		}
-		return false;
+		case transition_condition_type::float_greater:
+			if (const auto* val = std::get_if<float>(&value)) {
+				return *val > condition.threshold;
+			}
+			return false;
 
-	case transition_condition_type::float_less:
-		if (const auto* val = std::get_if<float>(&value)) {
-			return *val < condition.threshold;
-		}
-		return false;
+		case transition_condition_type::float_less:
+			if (const auto* val = std::get_if<float>(&value)) {
+				return *val < condition.threshold;
+			}
+			return false;
 
-	case transition_condition_type::trigger:
-		if (const auto* val = std::get_if<bool>(&value)) {
-			return *val && is_trigger;
-		}
-		return false;
+		case transition_condition_type::trigger:
+			if (const auto* val = std::get_if<bool>(&value)) {
+				return *val && is_trigger;
+			}
+			return false;
 	}
 
 	return false;

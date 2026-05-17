@@ -21,7 +21,7 @@ export namespace gse::vbd {
 		angle angular{};
 	};
 
-	struct [[= shaders::shader_struct]] solver_config {
+	struct[[= shaders::shader_struct]] solver_config {
 		std::uint32_t iterations = 4;
 		float alpha = 0.99f;
 		stiffness_per_length beta = newtons_per_meter_squared(100000.f);
@@ -56,15 +56,13 @@ export namespace gse::vbd {
 
 	class solver {
 	public:
-		solver(
-		);
+		solver();
 
 		auto configure(
 			const solver_config& cfg
 		) -> void;
 
-		auto config(
-		) const -> const solver_config&;
+		auto config() const -> const solver_config&;
 
 		auto begin_frame(
 			std::span<const body_state> bodies,
@@ -103,6 +101,7 @@ export namespace gse::vbd {
 		auto graph(
 			this auto&& self
 		) -> auto&;
+
 	private:
 		auto accumulate_contact(
 			const contact_constraint& constraint,
@@ -282,7 +281,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			const auto vb = bb.velocity + cross(bb.angular_velocity, r_bw) / rad;
 			const velocity v_rel_n = dot(c.normal, va - vb);
 			c.approach_speed = (v_rel_n < normal_speed{}) ? normal_speed{ v_rel_n } : normal_speed{};
-		}, trace_id<"vbd::warm_contacts">());
+		},
+							  trace_id<"vbd::warm_contacts">());
 	}
 
 	{
@@ -300,28 +300,28 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 			const stiffness normal_floor =
 				active_normal
-					? std::clamp<stiffness>(
-						contact_effective_mass(ba, bb, r_aw, r_bw, c.normal) / h_squared,
-						base_floor,
-						m_config.penalty_max
-					)
-					: base_floor;
+				? std::clamp<stiffness>(
+					  contact_effective_mass(ba, bb, r_aw, r_bw, c.normal) / h_squared,
+					  base_floor,
+					  m_config.penalty_max
+				  )
+				: base_floor;
 
 			const std::array row_floor = {
 				normal_floor,
 				c.sticking
 					? std::clamp<stiffness>(
-						contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_u) / h_squared,
-						m_config.penalty_min,
-						m_config.penalty_max
-					)
+						  contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_u) / h_squared,
+						  m_config.penalty_min,
+						  m_config.penalty_max
+					  )
 					: m_config.penalty_min,
 				c.sticking
 					? std::clamp<stiffness>(
-						contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_v) / h_squared,
-						m_config.penalty_min,
-						m_config.penalty_max
-					)
+						  contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_v) / h_squared,
+						  m_config.penalty_min,
+						  m_config.penalty_max
+					  )
 					: m_config.penalty_min
 			};
 
@@ -334,21 +334,24 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					c.penalty[i] = std::clamp(c.penalty[i] * m_config.gamma, row_floor[i], m_config.penalty_max);
 				}
 			}
-		}, trace_id<"vbd::contact_penalty">());
+		},
+							  trace_id<"vbd::contact_penalty">());
 	}
 
 	{
 		auto& joints_ref = m_graph.joint_constraints();
 		task::coarse_parallel(joints_ref.size(), 32, [&, this](std::size_t ji) {
 			warm_start_joint(joints_ref[ji], m_bodies[joints_ref[ji].body_a], m_bodies[joints_ref[ji].body_b], h_squared, m_config);
-		}, trace_id<"vbd::warm_joints">());
+		},
+							  trace_id<"vbd::warm_joints">());
 	}
 
 	{
 		auto& joints_ref = m_graph.joint_constraints();
 		task::coarse_parallel(joints_ref.size(), 32, [&, this](std::size_t ji) {
 			compute_joint_c0(joints_ref[ji], m_bodies[joints_ref[ji].body_a], m_bodies[joints_ref[ji].body_b]);
-		}, trace_id<"vbd::joint_c0">());
+		},
+							  trace_id<"vbd::joint_c0">());
 	}
 
 	constexpr acceleration gravity_mag = meters_per_second_squared(9.8f);
@@ -422,7 +425,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			}
 
 			body.motor_target = body.inertia_target;
-		}, trace_id<"vbd::predict_bodies">());
+		},
+							  trace_id<"vbd::predict_bodies">());
 	}
 
 	for (const auto& motor : m_graph.motor_constraints()) {
@@ -497,7 +501,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				.j_ang_a = { cross(r_aw, dirs[0]), cross(r_aw, dirs[1]), cross(r_aw, dirs[2]) },
 				.j_ang_b = { cross(r_bw, dirs[0]), cross(r_bw, dirs[1]), cross(r_bw, dirs[2]) },
 			};
-		}, trace_id<"vbd::frozen_jacobians">());
+		},
+							  trace_id<"vbd::frozen_jacobians">());
 	}
 
 	auto solve_iteration_gauss_seidel = [&](const float alpha) {
@@ -515,7 +520,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					accumulate_motor(motors[mi], h_squared);
 				}
 				perform_newton_step(bi, h_squared);
-			}, trace_id<"vbd::gs_color_iter">());
+			},
+								  trace_id<"vbd::gs_color_iter">());
 		}
 
 		for (const auto& motor : motors) {
@@ -562,14 +568,16 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			if (const auto mi = m_body_motor_index[bi]; mi != no_motor) {
 				accumulate_motor(motors[mi], h_squared);
 			}
-		}, trace_id<"vbd::jacobi_accum">());
+		},
+							  trace_id<"vbd::jacobi_accum">());
 
 		task::coarse_parallel(num_bodies, 128, [&, this](std::size_t bi) {
 			if (m_bodies[bi].locked || m_bodies[bi].sleeping()) {
 				return;
 			}
 			perform_newton_step(static_cast<std::uint32_t>(bi), h_squared);
-		}, trace_id<"vbd::jacobi_step">());
+		},
+							  trace_id<"vbd::jacobi_step">());
 	};
 
 	auto solve_iteration = [&](const float alpha) {
@@ -608,7 +616,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					body.angular_velocity = difference_axis_angle(body.old_orientation, body.predicted_orientation) / dt;
 				}
 			}
-		}, trace_id<"vbd::velocity_writeback">());
+		},
+							  trace_id<"vbd::velocity_writeback">());
 	}
 
 	for (const auto& c : m_graph.contact_constraints()) {
@@ -634,7 +643,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 		const float speed_ratio = std::clamp(
 			(-c.approach_speed - m_config.restitution_threshold) / m_config.restitution_threshold,
-			0.f, 1.f
+			0.f,
+			1.f
 		);
 		const velocity v_target = -c.restitution * speed_ratio * c.approach_speed;
 		const velocity dv = v_target - v_rel_after;
@@ -685,7 +695,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			if (body.update_orientation) {
 				body.orientation = body.predicted_orientation;
 			}
-		}, trace_id<"vbd::sleep_writeback">());
+		},
+							  trace_id<"vbd::sleep_writeback">());
 	}
 }
 
@@ -700,17 +711,7 @@ auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache&
 			tangential_gap < m_config.stick_threshold &&
 			tangential_lambda < friction_bound;
 
-		cache.store(c.body_a, c.body_b, unpack_feature(c.feature_key), cached_lambda{
-			.lambda = c.lambda,
-			.penalty = c.penalty,
-			.normal = c.normal,
-			.tangent_u = c.tangent_u,
-			.tangent_v = c.tangent_v,
-			.local_anchor_a = c.local_anchor_a,
-			.local_anchor_b = c.local_anchor_b,
-			.sticking = sticking,
-			.age = 0
-		});
+		cache.store(c.body_a, c.body_b, unpack_feature(c.feature_key), cached_lambda{ .lambda = c.lambda, .penalty = c.penalty, .normal = c.normal, .tangent_u = c.tangent_u, .tangent_v = c.tangent_v, .local_anchor_a = c.local_anchor_a, .local_anchor_b = c.local_anchor_b, .sticking = sticking, .age = 0 });
 	}
 
 	bodies.assign(m_bodies.begin(), m_bodies.end());
@@ -963,7 +964,8 @@ auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
 				con.penalty[2] = std::min(con.penalty[2] + m_config.beta * abs(c[2]), m_config.penalty_max);
 			}
 		}
-	}, trace_id<"vbd::contact_dual_update">());
+	},
+						  trace_id<"vbd::contact_dual_update">());
 
 	step_delta max_violation;
 	for (const auto& m : per_worker_max) {
@@ -1279,7 +1281,8 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 				track_angular(c_ang);
 			}
 		}
-	}, trace_id<"vbd::joint_dual_update">());
+	},
+						  trace_id<"vbd::joint_dual_update">());
 
 	step_delta result;
 	for (const auto& m : per_worker_max) {
@@ -1291,7 +1294,9 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 
 auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<lever_arm>& r, const vec3f& dir, const force abs_force) -> void {
 	length rd{};
-	for (int i = 0; i < 3; ++i) rd += r[i] * dir[i];
+	for (int i = 0; i < 3; ++i) {
+		rd += r[i] * dir[i];
+	}
 	for (int j = 0; j < 3; ++j) {
 		length col_norm{};
 		for (int i = 0; i < 3; ++i) {
@@ -1375,7 +1380,8 @@ auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const
 			: cfg.penalty_max;
 		j.pos_penalty[k] = std::clamp(
 			std::max(j.pos_penalty[k] * cfg.gamma, eff),
-			cfg.penalty_min, pos_penalty_cap
+			cfg.penalty_min,
+			pos_penalty_cap
 		);
 	}
 
@@ -1416,7 +1422,8 @@ auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const
 
 		j.ang_penalty[k] = std::clamp(
 			std::max(j.ang_penalty[k] * cfg.gamma, eff_ang),
-			cfg.ang_penalty_min, cfg.ang_penalty_max
+			cfg.ang_penalty_min,
+			cfg.ang_penalty_max
 		);
 	}
 
@@ -1436,7 +1443,8 @@ auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const
 
 		j.limit_penalty = std::clamp(
 			std::max(j.limit_penalty * cfg.gamma, eff_limit),
-			cfg.ang_penalty_min, cfg.ang_penalty_max
+			cfg.ang_penalty_min,
+			cfg.ang_penalty_max
 		);
 	}
 }

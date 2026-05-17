@@ -8,19 +8,19 @@ import :contact_manifold;
 import :motion_component;
 
 export namespace gse::vbd {
-	struct [[= shaders::shader_constant_block]] vbd_limits {
-		std::uint32_t max_bodies = 2048;
-		std::uint32_t max_contacts = 16384;
-		std::uint32_t max_collision_pairs = 16384;
+	struct[[= shaders::shader_constant_block]] vbd_limits {
+		std::uint32_t max_bodies = 8192;
+		std::uint32_t max_contacts = 32768;
+		std::uint32_t max_collision_pairs = 32768;
 		std::uint32_t max_colors = 16;
 		std::uint32_t max_joints = 128;
 		std::uint32_t max_impulses = 64;
 		std::uint32_t max_motors = 16;
-		std::uint32_t max_contact_adjacency = 16384 * 2;
+		std::uint32_t max_contact_adjacency = 32768 * 2;
 		std::uint32_t max_joint_adjacency = 128 * 2;
-		std::uint32_t max_grounded_uints = (2048 + 31) / 32;
+		std::uint32_t max_grounded_uints = (8192 + 31) / 32;
 		std::uint32_t grid_table_size = 4096;
-		std::uint32_t grid_max_entries = 2048 * 8;
+		std::uint32_t grid_max_entries = 8192 * 8;
 		std::uint32_t workgroup_size = 64;
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;
@@ -53,16 +53,21 @@ export namespace gse::vbd {
 		mat3<linear_angular_stiffness> hessian_xtheta = {};
 	};
 
-	enum class [[= shaders::shader_enum]] joint_type : std::uint32_t { distance, fixed, hinge, slider };
+	enum class[[= shaders::shader_enum]] joint_type : std::uint32_t {
+		distance,
+		fixed,
+		hinge,
+		slider
+	};
 
-	struct [[= shaders::shader_struct]] frozen_jacobian {
+	struct[[= shaders::shader_struct]] frozen_jacobian {
 		vec3<lever_arm> world_r_a;
 		vec3<lever_arm> world_r_b;
 		mat3<length> j_ang_a;
 		mat3<length> j_ang_b;
 	};
 
-	struct [[= shaders::shader_struct]] contact_constraint {
+	struct[[= shaders::shader_struct]] contact_constraint {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
 		std::uint64_t feature_key = 0;
@@ -89,7 +94,7 @@ export namespace gse::vbd {
 		std::uint32_t pad_end = 0;
 	};
 
-	struct [[= shaders::shader_struct]] velocity_motor_constraint {
+	struct[[= shaders::shader_struct]] velocity_motor_constraint {
 		std::uint32_t body_index = 0;
 		std::uint32_t horizontal_only = 0;
 
@@ -99,13 +104,13 @@ export namespace gse::vbd {
 		force max_force = newtons(1000.f);
 	};
 
-	struct [[= shaders::shader_struct]] impulse_constraint {
+	struct[[= shaders::shader_struct]] impulse_constraint {
 		std::uint32_t body_index = 0;
 
 		vec3<velocity> delta_velocity;
 	};
 
-	struct [[= shaders::shader_struct]] joint_constraint {
+	struct[[= shaders::shader_struct]] joint_constraint {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
 		joint_type type = joint_type::distance;
@@ -137,7 +142,7 @@ export namespace gse::vbd {
 		angle limit_c0 = {};
 	};
 
-	struct [[= shaders::shader_struct]] body_state {
+	struct[[= shaders::shader_struct]] body_state {
 		vec3<position> position;
 		vec3<predicted_position> predicted_position;
 		vec3<target_position> inertia_target;

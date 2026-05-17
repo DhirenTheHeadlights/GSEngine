@@ -248,25 +248,26 @@ export namespace gse::gpu {
 				else if constexpr (is_system_values<Spec>::value) {
 					[&]<is_system_value... SVs>(system_values<SVs...>) consteval {
 						(([&]() consteval {
-							e.params[e.param_count++] = {
-								.name = default_sv_name<SVs>(),
-								.slang_type = system_value_type_name<SVs>(),
-								.semantic = system_value_semantic<SVs>(),
-								.is_function_param = true,
-							};
-						}()), ...);
+							 e.params[e.param_count++] = {
+								 .name = default_sv_name<SVs>(),
+								 .slang_type = system_value_type_name<SVs>(),
+								 .semantic = system_value_semantic<SVs>(),
+								 .is_function_param = true,
+							 };
+						 }()),
+						 ...);
 					}(Spec{});
 				}
 				else if constexpr (is_bindings<Spec>::value) {
 					e.emit_bindings = +[]() -> std::string {
 						std::string out;
-						[&] <typename... Packs> (bindings<Packs...>) {
+						[&]<typename... Packs>(bindings<Packs...>) {
 							((out.append(shaders::emit_pack_bindings<Packs>())), ...);
 						}(Spec{});
 						return out;
 					};
 					e.build_family_sets_fn = +[]() -> std::vector<shaders::family_set> {
-						return [] <typename... Packs> (bindings<Packs...>) {
+						return []<typename... Packs>(bindings<Packs...>) {
 							return shaders::build_combined_family_sets<Packs...>();
 						}(Spec{});
 					};
@@ -274,14 +275,14 @@ export namespace gse::gpu {
 				else if constexpr (is_types<Spec>::value) {
 					e.emit_types = +[]() -> std::string {
 						std::string out;
-						[&] <typename... Packs> (types<Packs...>) {
+						[&]<typename... Packs>(types<Packs...>) {
 							((out.append(shaders::emit_pack_types<Packs>())), ...);
 						}(Spec{});
 						return out;
 					};
 				}
 				else if constexpr (is_helpers<Spec>::value) {
-					[&] <fixed_string... Paths> (helpers<Paths...>) consteval {
+					[&]<fixed_string... Paths>(helpers<Paths...>) consteval {
 						((e.helper_paths[e.helper_count++] = Paths), ...);
 					}(Spec{});
 				}
@@ -355,35 +356,55 @@ export namespace gse::gpu {
 		static constexpr depth_format value = F;
 	};
 
-	template <typename T> struct is_vertex_stage : std::false_type {};
-	template <fixed_string N> struct is_vertex_stage<vertex_stage<N>> : std::true_type {};
+	template <typename T>
+	struct is_vertex_stage : std::false_type {};
+	template <fixed_string N>
+	struct is_vertex_stage<vertex_stage<N>> : std::true_type {};
 
-	template <typename T> struct is_fragment_stage : std::false_type {};
-	template <fixed_string N> struct is_fragment_stage<fragment_stage<N>> : std::true_type {};
+	template <typename T>
+	struct is_fragment_stage : std::false_type {};
+	template <fixed_string N>
+	struct is_fragment_stage<fragment_stage<N>> : std::true_type {};
 
-	template <typename T> struct is_amplification_stage : std::false_type {};
-	template <fixed_string N> struct is_amplification_stage<amplification_stage<N>> : std::true_type {};
+	template <typename T>
+	struct is_amplification_stage : std::false_type {};
+	template <fixed_string N>
+	struct is_amplification_stage<amplification_stage<N>> : std::true_type {};
 
-	template <typename T> struct is_mesh_stage : std::false_type {};
-	template <fixed_string N> struct is_mesh_stage<mesh_stage<N>> : std::true_type {};
+	template <typename T>
+	struct is_mesh_stage : std::false_type {};
+	template <fixed_string N>
+	struct is_mesh_stage<mesh_stage<N>> : std::true_type {};
 
-	template <typename T> struct is_rasterization : std::false_type {};
-	template <polygon_mode P, cull_mode C> struct is_rasterization<rasterization<P, C>> : std::true_type {};
+	template <typename T>
+	struct is_rasterization : std::false_type {};
+	template <polygon_mode P, cull_mode C>
+	struct is_rasterization<rasterization<P, C>> : std::true_type {};
 
-	template <typename T> struct is_depth_spec : std::false_type {};
-	template <bool Te, bool W, compare_op O> struct is_depth_spec<depth<Te, W, O>> : std::true_type {};
+	template <typename T>
+	struct is_depth_spec : std::false_type {};
+	template <bool Te, bool W, compare_op O>
+	struct is_depth_spec<depth<Te, W, O>> : std::true_type {};
 
-	template <typename T> struct is_blend_spec : std::false_type {};
-	template <blend_preset B> struct is_blend_spec<blend<B>> : std::true_type {};
+	template <typename T>
+	struct is_blend_spec : std::false_type {};
+	template <blend_preset B>
+	struct is_blend_spec<blend<B>> : std::true_type {};
 
-	template <typename T> struct is_primitive_topology : std::false_type {};
-	template <topology Tv> struct is_primitive_topology<primitive_topology<Tv>> : std::true_type {};
+	template <typename T>
+	struct is_primitive_topology : std::false_type {};
+	template <topology Tv>
+	struct is_primitive_topology<primitive_topology<Tv>> : std::true_type {};
 
-	template <typename T> struct is_color_target : std::false_type {};
-	template <color_format F> struct is_color_target<color_target<F>> : std::true_type {};
+	template <typename T>
+	struct is_color_target : std::false_type {};
+	template <color_format F>
+	struct is_color_target<color_target<F>> : std::true_type {};
 
-	template <typename T> struct is_depth_target : std::false_type {};
-	template <depth_format F> struct is_depth_target<depth_target<F>> : std::true_type {};
+	template <typename T>
+	struct is_depth_target : std::false_type {};
+	template <depth_format F>
+	struct is_depth_target<depth_target<F>> : std::true_type {};
 
 	template <typename... Specs>
 	struct graphics_entry {
@@ -436,13 +457,13 @@ export namespace gse::gpu {
 				else if constexpr (is_bindings<Spec>::value) {
 					e.emit_bindings = +[]() -> std::string {
 						std::string out;
-						[&] <typename... Packs> (bindings<Packs...>) {
+						[&]<typename... Packs>(bindings<Packs...>) {
 							((out.append(shaders::emit_pack_bindings<Packs>())), ...);
 						}(Spec{});
 						return out;
 					};
 					e.build_family_sets_fn = +[]() -> std::vector<shaders::family_set> {
-						return [] <typename... Packs> (bindings<Packs...>) {
+						return []<typename... Packs>(bindings<Packs...>) {
 							return shaders::build_combined_family_sets<Packs...>();
 						}(Spec{});
 					};
@@ -450,14 +471,14 @@ export namespace gse::gpu {
 				else if constexpr (is_types<Spec>::value) {
 					e.emit_types = +[]() -> std::string {
 						std::string out;
-						[&] <typename... Packs> (types<Packs...>) {
+						[&]<typename... Packs>(types<Packs...>) {
 							((out.append(shaders::emit_pack_types<Packs>())), ...);
 						}(Spec{});
 						return out;
 					};
 				}
 				else if constexpr (is_helpers<Spec>::value) {
-					[&] <fixed_string... Paths> (helpers<Paths...>) consteval {
+					[&]<fixed_string... Paths>(helpers<Paths...>) consteval {
 						((e.helper_paths[e.helper_count++] = Paths), ...);
 					}(Spec{});
 				}
@@ -528,8 +549,7 @@ namespace gse::gpu {
 		Slang::ComPtr<slang::ISession> session;
 	};
 
-	auto make_slang_session(
-	) -> owned_slang_session;
+	auto make_slang_session() -> owned_slang_session;
 
 	auto log_slang_diagnostics(
 		slang::IBlob* diagnostics
@@ -1058,29 +1078,44 @@ namespace gse::gpu {
 		using k = slang::TypeReflection::ScalarType;
 		if (scalar == k::Float32) {
 			switch (elements) {
-				case 1: return vertex_format::r32_sfloat;
-				case 2: return vertex_format::r32g32_sfloat;
-				case 3: return vertex_format::r32g32b32_sfloat;
-				case 4: return vertex_format::r32g32b32a32_sfloat;
-				default: return vertex_format::r32g32b32_sfloat;
+				case 1:
+					return vertex_format::r32_sfloat;
+				case 2:
+					return vertex_format::r32g32_sfloat;
+				case 3:
+					return vertex_format::r32g32b32_sfloat;
+				case 4:
+					return vertex_format::r32g32b32a32_sfloat;
+				default:
+					return vertex_format::r32g32b32_sfloat;
 			}
 		}
 		if (scalar == k::Int32) {
 			switch (elements) {
-				case 1: return vertex_format::r32_sint;
-				case 2: return vertex_format::r32g32_sint;
-				case 3: return vertex_format::r32g32b32_sint;
-				case 4: return vertex_format::r32g32b32a32_sint;
-				default: return vertex_format::r32g32b32_sint;
+				case 1:
+					return vertex_format::r32_sint;
+				case 2:
+					return vertex_format::r32g32_sint;
+				case 3:
+					return vertex_format::r32g32b32_sint;
+				case 4:
+					return vertex_format::r32g32b32a32_sint;
+				default:
+					return vertex_format::r32g32b32_sint;
 			}
 		}
 		if (scalar == k::UInt32) {
 			switch (elements) {
-				case 1: return vertex_format::r32_uint;
-				case 2: return vertex_format::r32g32_uint;
-				case 3: return vertex_format::r32g32b32_uint;
-				case 4: return vertex_format::r32g32b32a32_uint;
-				default: return vertex_format::r32g32b32_uint;
+				case 1:
+					return vertex_format::r32_uint;
+				case 2:
+					return vertex_format::r32g32_uint;
+				case 3:
+					return vertex_format::r32g32b32_uint;
+				case 4:
+					return vertex_format::r32g32b32a32_uint;
+				default:
+					return vertex_format::r32g32b32_uint;
 			}
 		}
 		return vertex_format::r32_sfloat;
@@ -1357,4 +1392,3 @@ auto gse::gpu::build_graphics_pipeline(device& dev, shader_registry& registry, b
 
 	return vulkan::pipeline::create_graphics(dev.vulkan_device(), info);
 }
-

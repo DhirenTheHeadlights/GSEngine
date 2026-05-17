@@ -83,71 +83,73 @@ auto gs::client_system::run(gse::run_context& ctx, data& d, const gse::network::
 		ctx.channels.push<gse::gui::menu_content>({
 			.menu = "Network",
 			.build = [&](gse::gui::builder& ui) {
-			switch (net_d.connection_state) {
-				case gse::network::client::state::disconnected:
-					ui.draw<gse::gui::text>({
-						.content = "Status: Disconnected",
-					});
-					break;
-				case gse::network::client::state::connecting:
-					ui.draw<gse::gui::text>({
-						.content = "Status: Connecting...",
-					});
-					break;
-				case gse::network::client::state::connected:
-					ui.draw<gse::gui::text>({
-						.content = std::format("Status: Connected ({}/{})", net_d.connected_players, net_d.connected_max_players),
-					});
-					break;
-				default:
-					break;
-			}
-
-			if (ui.draw<gse::gui::button>({
-				.text = "Refresh",
-			})) {
-				ctx.channels.push<gse::network::refresh_servers_request>({
-					.timeout = gse::milliseconds(150),
-				});
-			}
-
-			const auto& list = net_d.available_servers;
-			ui.draw<gse::gui::text>({
-				.content = std::format("Found: {}", list.size()),
-			});
-
-			for (std::size_t idx = 0; idx < list.size(); ++idx) {
-				const auto& sv = list[idx];
-				const bool picked = (d.selected == static_cast<int>(idx));
-				if (ui.draw<gse::gui::selectable>({
-					.text = std::format("{}  {}:{}  {}/{}  v{}", sv.name, sv.addr.ip, sv.addr.port, sv.players, sv.max_players, sv.build),
-					.selected = picked,
-				})) {
-					d.selected = static_cast<int>(idx);
+				switch (net_d.connection_state) {
+					case gse::network::client::state::disconnected:
+						ui.draw<gse::gui::text>({
+							.content = "Status: Disconnected",
+						});
+						break;
+					case gse::network::client::state::connecting:
+						ui.draw<gse::gui::text>({
+							.content = "Status: Connecting...",
+						});
+						break;
+					case gse::network::client::state::connected:
+						ui.draw<gse::gui::text>({
+							.content = std::format("Status: Connected ({}/{})", net_d.connected_players, net_d.connected_max_players),
+						});
+						break;
+					default:
+						break;
 				}
-			}
 
-			if (ui.draw<gse::gui::button>({
-				.text = "Connect",
-			}) && d.selected >= 0 && d.selected < static_cast<int>(list.size())) {
-				const auto& pick = list[static_cast<std::size_t>(d.selected)];
-				ctx.channels.push<gse::network::connect_request>({
-					.options = {
-						.addr = pick.addr,
-						.local_bind = gse::network::address{ .ip = "0.0.0.0", .port = 0 },
-						.timeout = gse::seconds(5),
-						.retry = gse::seconds(1),
-					},
-				});
-			}
+				if (ui.draw<gse::gui::button>({
+						.text = "Refresh",
+					})) {
+					ctx.channels.push<gse::network::refresh_servers_request>({
+						.timeout = gse::milliseconds(150),
+					});
+				}
 
-			if (ui.draw<gse::gui::button>({
-				.text = "Send Ping",
-			}) && net_d.connection_state == gse::network::client::state::connected) {
-				send_message(gse::network::ping{
-					.sequence = ++d.ping_seq,
+				const auto& list = net_d.available_servers;
+				ui.draw<gse::gui::text>({
+					.content = std::format("Found: {}", list.size()),
 				});
-			}
+
+				for (std::size_t idx = 0; idx < list.size(); ++idx) {
+					const auto& sv = list[idx];
+					const bool picked = (d.selected == static_cast<int>(idx));
+					if (ui.draw<gse::gui::selectable>({
+							.text = std::format("{}  {}:{}  {}/{}  v{}", sv.name, sv.addr.ip, sv.addr.port, sv.players, sv.max_players, sv.build),
+							.selected = picked,
+						})) {
+						d.selected = static_cast<int>(idx);
+					}
+				}
+
+				if (ui.draw<gse::gui::button>({
+						.text = "Connect",
+					}) &&
+					d.selected >= 0 && d.selected < static_cast<int>(list.size())) {
+					const auto& pick = list[static_cast<std::size_t>(d.selected)];
+					ctx.channels.push<gse::network::connect_request>({
+						.options = {
+							.addr = pick.addr,
+							.local_bind = gse::network::address{ .ip = "0.0.0.0", .port = 0 },
+							.timeout = gse::seconds(5),
+							.retry = gse::seconds(1),
+						},
+					});
+				}
+
+				if (ui.draw<gse::gui::button>({
+						.text = "Send Ping",
+					}) &&
+					net_d.connection_state == gse::network::client::state::connected) {
+					send_message(gse::network::ping{
+						.sequence = ++d.ping_seq,
+					});
+				}
 			},
 		});
 

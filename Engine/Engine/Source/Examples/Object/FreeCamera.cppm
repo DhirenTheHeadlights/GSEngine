@@ -86,13 +86,13 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 				);
 
 				ctx.add_component<camera::follow_component>(owner_id, {
-					.offset = vec3<length>(meters(0.f)),
-					.priority = c.priority,
-					.blend_in_duration = milliseconds(300),
-					.active = true,
-					.use_entity_position = false,
-					.position = c.initial_position,
-				});
+																		  .offset = vec3<length>(meters(0.f)),
+																		  .priority = c.priority,
+																		  .blend_in_duration = milliseconds(300),
+																		  .active = true,
+																		  .use_entity_position = false,
+																		  .position = c.initial_position,
+																	  });
 			}
 
 			const auto& cs = actions::system::current_state(as);

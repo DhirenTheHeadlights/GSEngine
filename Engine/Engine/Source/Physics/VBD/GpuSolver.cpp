@@ -18,7 +18,7 @@ import gse.assets;
 import gse.gpu;
 
 namespace gse::vbd {
-	struct [[= shaders::shader_struct]] vbd_push_constants {
+	struct[[= shaders::shader_struct]] vbd_push_constants {
 		solver_config cfg;
 		std::uint32_t body_count;
 		std::uint32_t contact_count;
@@ -36,70 +36,70 @@ namespace gse::vbd {
 		gap grid_cell_size;
 	};
 
-	struct [[= shaders::binding<0, 0>{}, = shaders::ssbo_readwrite]] body_data {
+	struct[[= shaders::binding<0, 0>{}, = shaders::ssbo_readwrite]] body_data {
 		using element = body_state;
 	};
-	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readwrite]] contact_data {
+	struct[[= shaders::binding<0, 1>{}, = shaders::ssbo_readwrite]] contact_data {
 		using element = contact_constraint;
 	};
-	struct [[= shaders::binding<0, 2>{}, = shaders::ssbo_readonly]] motor_data {
+	struct[[= shaders::binding<0, 2>{}, = shaders::ssbo_readonly]] motor_data {
 		using element = velocity_motor_constraint;
 	};
-	struct [[= shaders::binding<0, 3>{}, = shaders::ssbo_readwrite]] color_data {
+	struct[[= shaders::binding<0, 3>{}, = shaders::ssbo_readwrite]] color_data {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 4>{}, = shaders::ssbo_readwrite]] contact_offsets {
+	struct[[= shaders::binding<0, 4>{}, = shaders::ssbo_readwrite]] contact_offsets {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 5>{}, = shaders::ssbo_readwrite]] solve_state {
+	struct[[= shaders::binding<0, 5>{}, = shaders::ssbo_readwrite]] solve_state {
 		using element = vec4f;
 	};
-	struct [[= shaders::binding<0, 6>{}, = shaders::ssbo_readwrite]] collision_pairs {
+	struct[[= shaders::binding<0, 6>{}, = shaders::ssbo_readwrite]] collision_pairs {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 7>{}, = shaders::ssbo_readwrite]] collision_state {
+	struct[[= shaders::binding<0, 7>{}, = shaders::ssbo_readwrite]] collision_state {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 8>{}, = shaders::ssbo_readonly]] warm_starts {
+	struct[[= shaders::binding<0, 8>{}, = shaders::ssbo_readonly]] warm_starts {
 		using element = contact_constraint;
 	};
-	struct [[= shaders::binding<0, 9>{}, = shaders::ssbo_readwrite]] joint_data {
+	struct[[= shaders::binding<0, 9>{}, = shaders::ssbo_readwrite]] joint_data {
 		using element = joint_constraint;
 	};
-	struct [[= shaders::binding<0, 10>{}, = shaders::ssbo_readwrite]] contact_counts {
+	struct[[= shaders::binding<0, 10>{}, = shaders::ssbo_readwrite]] contact_counts {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 11>{}, = shaders::ssbo_readwrite]] contact_adjacency {
+	struct[[= shaders::binding<0, 11>{}, = shaders::ssbo_readwrite]] contact_adjacency {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 12>{}, = shaders::ssbo_readwrite]] motor_map {
+	struct[[= shaders::binding<0, 12>{}, = shaders::ssbo_readwrite]] motor_map {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 13>{}, = shaders::ssbo_readwrite]] joint_offsets {
+	struct[[= shaders::binding<0, 13>{}, = shaders::ssbo_readwrite]] joint_offsets {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 14>{}, = shaders::ssbo_readwrite]] joint_counts {
+	struct[[= shaders::binding<0, 14>{}, = shaders::ssbo_readwrite]] joint_counts {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 15>{}, = shaders::ssbo_readwrite]] joint_adjacency {
+	struct[[= shaders::binding<0, 15>{}, = shaders::ssbo_readwrite]] joint_adjacency {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 16>{}, = shaders::ssbo_readwrite]] grid_data {
+	struct[[= shaders::binding<0, 16>{}, = shaders::ssbo_readwrite]] grid_data {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 17>{}, = shaders::ssbo_readwrite]] indirect_args {
+	struct[[= shaders::binding<0, 17>{}, = shaders::ssbo_readwrite]] indirect_args {
 		using element = dispatch_args;
 	};
-	struct [[= shaders::binding<0, 18>{}, = shaders::ssbo_readwrite]] frozen_jacobians {
+	struct[[= shaders::binding<0, 18>{}, = shaders::ssbo_readwrite]] frozen_jacobians {
 		using element = frozen_jacobian;
 	};
-	struct [[= shaders::binding<0, 19>{}, = shaders::ssbo_readwrite]] solve_deltas {
+	struct[[= shaders::binding<0, 19>{}, = shaders::ssbo_readwrite]] solve_deltas {
 		using element = vec4f;
 	};
-	struct [[= shaders::binding<0, 20>{}, = shaders::ssbo_readwrite]] grounded_bits {
+	struct[[= shaders::binding<0, 20>{}, = shaders::ssbo_readwrite]] grounded_bits {
 		using element = std::uint32_t;
 	};
-	struct [[= shaders::binding<0, 21>{}, = shaders::ssbo_readonly]] impulse_data {
+	struct[[= shaders::binding<0, 21>{}, = shaders::ssbo_readonly]] impulse_data {
 		using element = impulse_constraint;
 	};
 
@@ -125,8 +125,7 @@ namespace gse::vbd {
 		frozen_jacobians,
 		solve_deltas,
 		grounded_bits,
-		impulse_data
-	>;
+		impulse_data>;
 
 	template <fixed_string BodyPath>
 	using vbd_compute = gpu::compute_entry<
@@ -137,8 +136,7 @@ namespace gse::vbd {
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+		gpu::system_values<gpu::dispatch_thread_id>>;
 
 	using predict_entry = vbd_compute<"VBDPhysics/vbd_predict">;
 	using solve_color_entry = vbd_compute<"VBDPhysics/vbd_solve_color">;
@@ -163,8 +161,7 @@ namespace gse::vbd {
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
+		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>>;
 
 	using collision_build_coloring_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/collision_build_coloring">,
@@ -174,8 +171,7 @@ namespace gse::vbd {
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
+		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>>;
 
 	using prepare_indirect_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_prepare_indirect">,
@@ -184,8 +180,7 @@ namespace gse::vbd {
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::threads<1>,
-		gpu::push_constant<vbd_push_constants>
-	>;
+		gpu::push_constant<vbd_push_constants>>;
 
 	using prepare_contact_indirect_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_prepare_contact_indirect">,
@@ -194,8 +189,7 @@ namespace gse::vbd {
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::threads<1>,
-		gpu::push_constant<vbd_push_constants>
-	>;
+		gpu::push_constant<vbd_push_constants>>;
 
 	using prepare_color_indirect_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_prepare_color_indirect">,
@@ -205,8 +199,7 @@ namespace gse::vbd {
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::threads<16>,
 		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+		gpu::system_values<gpu::dispatch_thread_id>>;
 
 }
 
@@ -220,124 +213,52 @@ auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void
 	constexpr std::size_t joint_buffer_size = limits.max_joints * sizeof(joint_constraint);
 
 	for (auto& f : m_frames) {
-		f.body_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_bodies * sizeof(body_state),
-			.usage = storage_src_dst
-		});
+		f.body_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_bodies * sizeof(body_state), .usage = storage_src_dst });
 
-		f.contact_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_contacts * sizeof(contact_constraint),
-			.usage = storage_src
-		});
+		f.contact_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_contacts * sizeof(contact_constraint), .usage = storage_src });
 
-		f.motor_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_motors * sizeof(velocity_motor_constraint),
-			.usage = gpu::buffer_flag::storage
-		});
+		f.motor_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_motors * sizeof(velocity_motor_constraint), .usage = gpu::buffer_flag::storage });
 
-		f.color_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = color_buffer_size,
-			.usage = gpu::buffer_flag::storage
-		});
+		f.color_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = color_buffer_size, .usage = gpu::buffer_flag::storage });
 
-		f.contact_offsets_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_bodies * sizeof(std::uint32_t),
-			.usage = gpu::buffer_flag::storage
-		});
-		f.contact_counts_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_bodies * sizeof(std::uint32_t),
-			.usage = gpu::buffer_flag::storage
-		});
-		f.contact_adjacency_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_contacts * 2 * sizeof(std::uint32_t),
-			.usage = gpu::buffer_flag::storage
-		});
-		f.motor_map_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_bodies * sizeof(std::uint32_t),
-			.usage = gpu::buffer_flag::storage
-		});
-		f.joint_offsets_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_bodies * sizeof(std::uint32_t),
-			.usage = gpu::buffer_flag::storage
-		});
-		f.joint_counts_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_bodies * sizeof(std::uint32_t),
-			.usage = gpu::buffer_flag::storage
-		});
-		f.joint_adjacency_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_joints * 2 * sizeof(std::uint32_t),
-			.usage = gpu::buffer_flag::storage
-		});
+		f.contact_offsets_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_bodies * sizeof(std::uint32_t), .usage = gpu::buffer_flag::storage });
+		f.contact_counts_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_bodies * sizeof(std::uint32_t), .usage = gpu::buffer_flag::storage });
+		f.contact_adjacency_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_contacts * 2 * sizeof(std::uint32_t), .usage = gpu::buffer_flag::storage });
+		f.motor_map_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_bodies * sizeof(std::uint32_t), .usage = gpu::buffer_flag::storage });
+		f.joint_offsets_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_bodies * sizeof(std::uint32_t), .usage = gpu::buffer_flag::storage });
+		f.joint_counts_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_bodies * sizeof(std::uint32_t), .usage = gpu::buffer_flag::storage });
+		f.joint_adjacency_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_joints * 2 * sizeof(std::uint32_t), .usage = gpu::buffer_flag::storage });
 
-		f.solve_state_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4,
-			.usage = gpu::buffer_flag::storage
-		});
+		f.solve_state_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4, .usage = gpu::buffer_flag::storage });
 
-		f.collision_pair_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = collision_pair_size,
-			.usage = gpu::buffer_flag::storage
-		});
+		f.collision_pair_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = collision_pair_size, .usage = gpu::buffer_flag::storage });
 
-		f.collision_state_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = collision_state_size,
-			.usage = storage_src
-		});
+		f.collision_state_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = collision_state_size, .usage = storage_src });
 
-		f.warm_start_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = 16,
-			.usage = gpu::buffer_flag::storage
-		});
+		f.warm_start_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = 16, .usage = gpu::buffer_flag::storage });
 
-		f.joint_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = std::max<std::size_t>(joint_buffer_size, 16),
-			.usage = storage_src
-		});
+		f.joint_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = std::max<std::size_t>(joint_buffer_size, 16), .usage = storage_src });
 
 		constexpr std::size_t grid_buffer_size = (1 + limits.grid_table_size + limits.max_bodies * 8 * 2) * sizeof(std::uint32_t);
-		f.grid_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = grid_buffer_size,
-			.usage = gpu::buffer_flag::storage
-		});
+		f.grid_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = grid_buffer_size, .usage = gpu::buffer_flag::storage });
 
-		f.physics_snapshot_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_bodies * sizeof(body_state),
-			.usage = storage_dst
-		});
+		f.physics_snapshot_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_bodies * sizeof(body_state), .usage = storage_dst });
 		f.physics_snapshot_buffer.host_zero();
 
-		f.indirect_dispatch_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = (2 + limits.max_colors) * 3 * sizeof(std::uint32_t),
-			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::indirect
-		});
+		f.indirect_dispatch_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = (2 + limits.max_colors) * 3 * sizeof(std::uint32_t), .usage = gpu::buffer_flag::storage | gpu::buffer_flag::indirect });
 		f.indirect_dispatch_buffer.host_zero();
 
-		f.frozen_jacobian_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_contacts * sizeof(frozen_jacobian),
-			.usage = gpu::buffer_flag::storage
-		});
+		f.frozen_jacobian_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_contacts * sizeof(frozen_jacobian), .usage = gpu::buffer_flag::storage });
 
-		f.solve_deltas_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_bodies * 2 * sizeof(float) * 4,
-			.usage = gpu::buffer_flag::storage
-		});
+		f.solve_deltas_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_bodies * 2 * sizeof(float) * 4, .usage = gpu::buffer_flag::storage });
 
-		f.grounded_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_grounded_uints * sizeof(std::uint32_t),
-			.usage = storage_src
-		});
+		f.grounded_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_grounded_uints * sizeof(std::uint32_t), .usage = storage_src });
 		f.grounded_buffer.host_zero();
 
-		f.grounded_readback_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_grounded_uints * sizeof(std::uint32_t),
-			.usage = storage_dst
-		});
+		f.grounded_readback_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_grounded_uints * sizeof(std::uint32_t), .usage = storage_dst });
 		f.grounded_readback_buffer.host_zero();
 
-		f.impulse_buffer = gpu::buffer::create(ctx.device->allocator(), {
-			.size = limits.max_impulses * sizeof(impulse_constraint),
-			.usage = gpu::buffer_flag::storage
-		});
+		f.impulse_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = limits.max_impulses * sizeof(impulse_constraint), .usage = gpu::buffer_flag::storage });
 	}
 
 	m_upload_motors.reserve(limits.max_motors);

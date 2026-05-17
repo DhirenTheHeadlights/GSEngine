@@ -14,7 +14,7 @@ export namespace gse {
 	template <typename T>
 	struct promise_state {
 		std::optional<T> value;
-		std::atomic<bool> ready{false};
+		std::atomic<bool> ready{ false };
 		std::mutex mutex;
 		std::coroutine_handle<> continuation;
 	};
@@ -25,28 +25,22 @@ export namespace gse {
 		struct awaiter {
 			std::shared_ptr<promise_state<T>> m_state;
 
-			auto await_ready(
-			) const noexcept -> bool;
+			[[nodiscard]] auto await_ready() const noexcept -> bool;
 
 			auto await_suspend(
 				std::coroutine_handle<> h
 			) -> bool;
 
-			auto await_resume(
-			) -> T;
+			auto await_resume() -> T;
 		};
 
-		auto ready(
-		) const -> bool;
+		[[nodiscard]] auto ready() const -> bool;
 
-		auto try_get(
-		) const -> const T*;
+		auto try_get() const -> const T*;
 
-		auto get(
-		) const -> const T&;
+		auto get() const -> const T&;
 
-		auto operator co_await(
-		) noexcept -> awaiter;
+		auto operator co_await() noexcept -> awaiter;
 
 		explicit channel_future(
 			std::shared_ptr<promise_state<T>> state
@@ -59,8 +53,7 @@ export namespace gse {
 	template <typename T>
 	class channel_promise {
 	public:
-		channel_promise(
-		) = default;
+		channel_promise() = default;
 
 		explicit channel_promise(
 			std::shared_ptr<promise_state<T>> state
@@ -70,16 +63,14 @@ export namespace gse {
 			T value
 		) const -> void;
 
-		auto valid(
-		) const -> bool;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		std::shared_ptr<promise_state<T>> m_state;
 	};
 
 	template <typename T>
-	auto make_promise(
-	) -> std::pair<channel_future<T>, channel_promise<T>>;
+	auto make_promise() -> std::pair<channel_future<T>, channel_promise<T>>;
 
 	template <typename T>
 	concept promiseable = requires(T t) {
@@ -89,7 +80,8 @@ export namespace gse {
 }
 
 template <typename T>
-gse::channel_future<T>::channel_future(std::shared_ptr<promise_state<T>> state) : m_state(std::move(state)) {}
+gse::channel_future<T>::channel_future(std::shared_ptr<promise_state<T>> state) : m_state(std::move(state)) {
+}
 
 template <typename T>
 auto gse::channel_future<T>::awaiter::await_ready() const noexcept -> bool {
@@ -131,11 +123,12 @@ auto gse::channel_future<T>::get() const -> const T& {
 
 template <typename T>
 auto gse::channel_future<T>::operator co_await() noexcept -> awaiter {
-	return {m_state};
+	return { m_state };
 }
 
 template <typename T>
-gse::channel_promise<T>::channel_promise(std::shared_ptr<promise_state<T>> state) : m_state(std::move(state)) {}
+gse::channel_promise<T>::channel_promise(std::shared_ptr<promise_state<T>> state) : m_state(std::move(state)) {
+}
 
 template <typename T>
 auto gse::channel_promise<T>::fulfill(T value) const -> void {
@@ -143,10 +136,15 @@ auto gse::channel_promise<T>::fulfill(T value) const -> void {
 	m_state->value = std::move(value);
 	m_state->ready.store(true, std::memory_order_release);
 	if (m_state->continuation) {
-		task::post([h = m_state->continuation] {
-			if (!h) return;
-			h.resume();
-		}, trace_id<"channel_promise::fulfill::resume">());
+		task::post(
+			[h = m_state->continuation] -> auto {
+				if (!h) {
+					return;
+				}
+				h.resume();
+			},
+			trace_id<"channel_promise::fulfill::resume">()
+		);
 	}
 }
 

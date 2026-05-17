@@ -10,8 +10,7 @@ import gse.diag;
 import gse.ecs;
 
 export namespace gse::gui::ids {
-	auto current_seed(
-	) -> std::uint64_t;
+	auto current_seed() -> std::uint64_t;
 
 	auto stable_key(
 		std::string_view s
@@ -32,8 +31,7 @@ export namespace gse::gui::ids {
 			std::string_view s
 		);
 
-		~scope(
-		) override;
+		~scope() override;
 	};
 }
 
@@ -63,8 +61,7 @@ namespace gse::gui::ids {
 		std::string_view s
 	) -> void;
 
-	auto pop(
-	) -> void;
+	auto pop() -> void;
 }
 
 auto gse::gui::ids::current_seed() -> std::uint64_t {

@@ -1,17 +1,17 @@
 module;
 
 #ifdef _WIN32
-	#include <winsock2.h>
-	#include <ws2tcpip.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #else
-	#include <arpa/inet.h>
-	#include <fcntl.h>
-	#include <netinet/in.h>
-	#include <poll.h>
-	#include <sys/socket.h>
-	#include <sys/types.h>
-	#include <unistd.h>
-	#include <cerrno>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <cerrno>
 #endif
 
 #undef assert

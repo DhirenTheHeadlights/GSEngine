@@ -53,11 +53,9 @@ export namespace gse::network {
 			time_t<std::uint32_t> retry = seconds(1)
 		) -> bool;
 
-		auto tick(
-		) -> void;
+		auto tick() -> void;
 
-		auto current_state(
-		) const -> state;
+		auto current_state() const -> state;
 
 		template <typename T>
 		auto send(
@@ -125,7 +123,6 @@ gse::network::client::client(const address& listen, const address& server) : m_s
 		constexpr time_t<std::uint32_t> max_sleep = milliseconds(8);
 
 		while (m_running.load(std::memory_order_acquire) && !st.stop_requested()) {
-
 			auto wait = max_sleep;
 			if (m_state.load(std::memory_order_relaxed) == state::connecting) {
 				const auto retry_elapsed = m_retry_clock.elapsed<std::uint32_t>();
@@ -265,7 +262,7 @@ auto gse::network::client::send(const T& msg) -> void {
 	write_bitstream stream(buffer);
 	stream.write(header);
 	write(stream, msg);
-	
+
 	const packet pkt{
 		.data = reinterpret_cast<std::uint8_t*>(buffer.data()),
 		.size = stream.bytes_written()

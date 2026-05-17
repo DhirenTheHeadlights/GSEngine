@@ -26,23 +26,20 @@ export namespace gse::gpu {
 
 		swap_chain(vulkan::swap_chain&& config, device& dev);
 
-		[[nodiscard]] auto extent(
-		) const -> vec2u;
+		[[nodiscard]] auto extent() const -> vec2u;
 
 		[[nodiscard]] auto depth_image(
 			this auto& self
 		) -> auto&;
 
-		auto clear_depth_image(
-		) -> void;
+		auto clear_depth_image() -> void;
 
 		using recreate_callback = std::function<void()>;
 		auto on_recreate(
 			recreate_callback callback
 		) -> void;
 
-		auto notify_recreated(
-		) -> void;
+		auto notify_recreated() -> void;
 
 		auto set_config(
 			vulkan::swap_chain&& config
@@ -60,20 +57,15 @@ export namespace gse::gpu {
 			std::uint32_t index
 		) const -> handle<vulkan::image_view>;
 
-		[[nodiscard]] auto format(
-		) const -> image_format;
+		[[nodiscard]] auto format() const -> image_format;
 
-		[[nodiscard]] auto is_bgra(
-		) const -> bool;
+		[[nodiscard]] auto is_bgra() const -> bool;
 
-		[[nodiscard]] auto generation(
-		) const -> std::uint64_t;
+		[[nodiscard]] auto generation() const -> std::uint64_t;
 
-		[[nodiscard]] auto config(
-		) -> vulkan::swap_chain&;
+		[[nodiscard]] auto config() -> vulkan::swap_chain&;
 
-		[[nodiscard]] auto config(
-		) const -> const vulkan::swap_chain&;
+		[[nodiscard]] auto config() const -> const vulkan::swap_chain&;
 
 	private:
 		vulkan::swap_chain m_config;
@@ -89,7 +81,8 @@ auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, device& dev) -> 
 }
 
 gse::gpu::swap_chain::swap_chain(vulkan::swap_chain&& config, device& dev)
-	: m_config(std::move(config)), m_device(&dev) {}
+	: m_config(std::move(config)), m_device(&dev) {
+}
 
 auto gse::gpu::swap_chain::extent() const -> vec2u {
 	return m_config.extent();
@@ -136,8 +129,7 @@ auto gse::gpu::swap_chain::format() const -> image_format {
 }
 
 auto gse::gpu::swap_chain::is_bgra() const -> bool {
-	return m_config.format() == image_format::b8g8r8a8_srgb
-		|| m_config.format() == image_format::b8g8r8a8_unorm;
+	return m_config.format() == image_format::b8g8r8a8_srgb || m_config.format() == image_format::b8g8r8a8_unorm;
 }
 
 auto gse::gpu::swap_chain::generation() const -> std::uint64_t {

@@ -17,14 +17,12 @@ export namespace gse {
 
 		~scoped_timer();
 
-		auto completed(
-		) const -> bool;
+		auto completed() const -> bool;
 
-		auto name(
-		) const -> std::string_view;
+		auto name() const -> std::string_view;
 
-		auto set_completed(
-		) -> void;
+		auto set_completed() -> void;
+
 	private:
 		std::string m_name;
 		bool m_print = false;
@@ -32,7 +30,8 @@ export namespace gse {
 	};
 }
 
-gse::scoped_timer::scoped_timer(std::string name, const bool print): m_name(std::move(name)), m_print(print) {}
+gse::scoped_timer::scoped_timer(std::string name, const bool print) : m_name(std::move(name)), m_print(print) {
+}
 
 gse::scoped_timer::~scoped_timer() {
 	if (!m_completed) {
@@ -54,4 +53,3 @@ auto gse::scoped_timer::name() const -> std::string_view {
 auto gse::scoped_timer::set_completed() -> void {
 	m_completed = true;
 }
-

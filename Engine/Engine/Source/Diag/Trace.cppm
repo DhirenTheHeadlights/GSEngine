@@ -21,8 +21,7 @@ export namespace gse::trace {
 		std::uint32_t size = 0;
 		std::uint32_t line = 0;
 
-		consteval auto view(
-		) const -> std::string_view;
+		[[nodiscard]] consteval auto view() const -> std::string_view;
 	};
 
 	consteval auto strip_function_signature(
@@ -34,8 +33,7 @@ export namespace gse::trace {
 	) -> loc_tag;
 
 	template <loc_tag Tag>
-	auto loc_id(
-	) -> id;
+	auto loc_id() -> id;
 
 	auto start(
 		const config& cfg = {}
@@ -62,8 +60,7 @@ export namespace gse::trace {
 		std::uint64_t key
 	) -> void;
 
-	auto allocate_async_key(
-	) -> std::uint64_t;
+	auto allocate_async_key() -> std::uint64_t;
 
 	class scope_guard {
 	public:
@@ -76,8 +73,7 @@ export namespace gse::trace {
 			std::uint64_t parent
 		);
 
-		~scope_guard(
-		);
+		~scope_guard();
 
 		scope_guard(
 			const scope_guard&
@@ -150,14 +146,11 @@ export namespace gse::trace {
 		std::uint32_t tid
 	) -> std::optional<std::string>;
 
-	auto hidden_ids_snapshot(
-	) -> std::unordered_set<id>;
+	auto hidden_ids_snapshot() -> std::unordered_set<id>;
 
-	auto register_main_thread(
-	) -> void;
+	auto register_main_thread() -> void;
 
-	auto main_tid(
-	) -> std::uint32_t;
+	auto main_tid() -> std::uint32_t;
 
 	auto mark_hidden(
 		id id
@@ -167,8 +160,7 @@ export namespace gse::trace {
 		id id
 	) -> bool;
 
-	auto current_eid(
-	) -> std::uint64_t;
+	auto current_eid() -> std::uint64_t;
 
 	struct node {
 		id id;
@@ -187,33 +179,28 @@ export namespace gse::trace {
 		const std::byte* storage;
 	};
 
-	auto finalize_frame(
-	) -> void;
+	auto finalize_frame() -> void;
 
-	auto view(
-	) -> frame_view;
+	auto view() -> frame_view;
 
 	struct thread_pause {
 		thread_pause();
 		~thread_pause();
 	};
 
-	auto paused(
-	) -> bool;
+	auto paused() -> bool;
 
 	auto set_enabled(
 		bool enable
 	) -> void;
 
-	auto enabled(
-	) -> bool;
+	auto enabled() -> bool;
 
 	auto set_finalize_paused(
 		bool pause
 	) -> void;
 
-	auto finalize_paused(
-	) -> bool;
+	auto finalize_paused() -> bool;
 }
 
 namespace gse::trace {
@@ -250,14 +237,12 @@ namespace gse::trace {
 			Out& out
 		) noexcept -> void;
 
-		auto clear(
-		) noexcept -> void;
+		auto clear() noexcept -> void;
 
-		auto size(
-		) const noexcept -> std::size_t;
+		auto size() const noexcept -> std::size_t;
 
-		auto ensure_storage(
-		) -> void;
+		auto ensure_storage() -> void;
+
 	private:
 		static constexpr std::uint32_t capacity_pow_2 = 1u << 18;
 		static constexpr std::uint32_t capacity = capacity_pow_2;
@@ -307,9 +292,9 @@ namespace gse::trace {
 		struct flat_node {
 			id id;
 			std::uint32_t tid;
-			time_t<std::uint64_t> start = {};
-			time_t<std::uint64_t> end = {};
-			time_t<std::uint64_t> self = {};
+			time_t<std::uint64_t> start;
+			time_t<std::uint64_t> end;
+			time_t<std::uint64_t> self;
 			std::uint32_t children_first = 0;
 			std::uint32_t children_count = 0;
 		};
@@ -342,18 +327,15 @@ namespace gse::trace {
 	std::shared_mutex virtual_thread_mutex;
 	std::unordered_map<std::uint32_t, std::string> virtual_thread_names;
 
-	auto ensure_tls_registered(
-	) -> void;
+	auto ensure_tls_registered() -> void;
 
-	auto make_tid(
-	) -> std::uint32_t;
+	auto make_tid() -> std::uint32_t;
 
 	auto emit(
 		const event& e
 	) -> void;
 
-	auto current_parent_eid(
-	) -> std::uint64_t;
+	auto current_parent_eid() -> std::uint64_t;
 
 	auto build_tree(
 		frame_storage& fs
@@ -375,8 +357,7 @@ namespace gse::trace {
 		std::size_t flat_i
 	) -> void;
 
-	auto allocate_span_eid(
-	) -> std::uint64_t;
+	auto allocate_span_eid() -> std::uint64_t;
 }
 
 consteval auto gse::trace::loc_tag::view() const -> std::string_view {
@@ -400,8 +381,14 @@ consteval auto gse::trace::strip_function_signature(const std::string_view fn) -
 		name = name.substr(start);
 
 		constexpr std::string_view candidates[] = {
-			"__cdecl", "__stdcall", "__thiscall", "__vectorcall",
-			"cdecl", "stdcall", "thiscall", "vectorcall"
+			"__cdecl",
+			"__stdcall",
+			"__thiscall",
+			"__vectorcall",
+			"cdecl",
+			"stdcall",
+			"thiscall",
+			"vectorcall"
 		};
 		for (const auto cc : candidates) {
 			if (name.size() > cc.size() && name.starts_with(cc)) {

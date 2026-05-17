@@ -9,9 +9,10 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_h
 	auto& dev_cfg = dev.vulkan_device();
 
 	auto scratch = dev_cfg.create_buffer(gpu::buffer_create_info{
-		.size = scratch_size + scratch_alignment,
-		.usage = gpu::buffer_flag::storage,
-	}, nullptr);
+											 .size = scratch_size + scratch_alignment,
+											 .usage = gpu::buffer_flag::storage,
+										 },
+										 nullptr);
 
 	const auto scratch_addr = vulkan::buffer_device_address(dev_cfg, scratch.handle());
 	const gpu::device_address aligned_scratch = (scratch_addr + scratch_alignment - 1) & ~(scratch_alignment - 1);

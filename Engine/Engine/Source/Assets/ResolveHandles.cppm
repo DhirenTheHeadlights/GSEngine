@@ -29,8 +29,7 @@ namespace gse::asset {
 	constexpr bool is_resource_handle_v<resource::handle<T>> = true;
 
 	template <typename T>
-	consteval auto has_networked_members(
-	) -> bool;
+	consteval auto has_networked_members() -> bool;
 }
 
 template <typename T>
@@ -56,7 +55,7 @@ template <typename T>
 auto gse::asset::resolve_handles(T& c, const data& assets) -> void {
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (has_annotation<networked_tag>(m)) {
-			using m_type = typename [: std::meta::type_of(m) :];
+			using m_type = typename[:std::meta::type_of(m):];
 
 			if constexpr (is_resource_handle_v<m_type>) {
 				resolve(c.[:m:], assets);

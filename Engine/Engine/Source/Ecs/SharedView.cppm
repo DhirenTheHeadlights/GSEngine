@@ -15,10 +15,7 @@ namespace gse {
 				if (has_annotation<shared_tag>(m)) {
 					auto m_type = std::meta::type_of(m);
 					auto ref_type = std::meta::add_lvalue_reference(std::meta::add_const(m_type));
-					members.push_back(std::meta::data_member_spec(
-						ref_type,
-						{ .name = std::meta::identifier_of(m) }
-					));
+					members.push_back(std::meta::data_member_spec(ref_type, { .name = std::meta::identifier_of(m) }));
 				}
 			}
 			std::meta::define_aggregate(^^type, members);
@@ -62,7 +59,7 @@ template <typename S>
 auto gse::make_shared_view(const typename S::data& d) -> shared_view<S> {
 	using V = shared_view<S>;
 	using base_t = typename shared_fields_aggregate<typename S::data>::type;
-	constexpr auto members = std::define_static_array([]consteval {
+	constexpr auto members = std::define_static_array([] consteval {
 		std::vector<std::meta::info> result;
 		for (auto m : std::meta::nonstatic_data_members_of(^^typename S::data, std::meta::access_context::unchecked())) {
 			if (has_annotation<shared_tag>(m)) {

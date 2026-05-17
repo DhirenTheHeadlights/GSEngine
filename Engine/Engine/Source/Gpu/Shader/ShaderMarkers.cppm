@@ -33,16 +33,13 @@ export namespace gse::gpu {
 		std::is_same_v<T, group_index>;
 
 	template <is_system_value T>
-	consteval auto system_value_semantic(
-	) -> std::string_view;
+	consteval auto system_value_semantic() -> std::string_view;
 
 	template <is_system_value T>
-	consteval auto system_value_type_name(
-	) -> std::string_view;
+	consteval auto system_value_type_name() -> std::string_view;
 
 	template <is_system_value T>
-	consteval auto default_sv_name(
-	) -> std::string_view;
+	consteval auto default_sv_name() -> std::string_view;
 }
 
 template <gse::gpu::is_system_value T>

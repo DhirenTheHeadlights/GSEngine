@@ -16,8 +16,7 @@ export namespace gse::save {
 			std::filesystem::path auto_save_path = {}
 		);
 
-		~registry(
-		);
+		~registry();
 
 		registry(
 			registry&&
@@ -40,14 +39,11 @@ export namespace gse::save {
 			settings::register_settings_type entry
 		) -> void;
 
-		auto entries(
-		) const -> std::span<const settings::register_settings_type>;
+		auto entries() const -> std::span<const settings::register_settings_type>;
 
-		auto save_now(
-		) -> bool;
+		auto save_now() -> bool;
 
-		auto trigger_restart(
-		) -> void;
+		auto trigger_restart() -> void;
 
 		template <typename T>
 		[[nodiscard]] static auto read_one(
@@ -60,8 +56,7 @@ export namespace gse::save {
 	private:
 		using doc = std::unordered_map<
 			std::string,
-			std::unordered_map<std::string, std::string>
-		>;
+			std::unordered_map<std::string, std::string>>;
 
 		static auto read_file(
 			const std::filesystem::path& path

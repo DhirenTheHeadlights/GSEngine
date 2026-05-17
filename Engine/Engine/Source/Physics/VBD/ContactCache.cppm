@@ -36,15 +36,14 @@ export namespace gse::vbd {
 			const cached_lambda& data
 		) -> void;
 
-		auto age_and_prune(
-		) -> void;
+		auto age_and_prune() -> void;
 
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 
 		auto remove_body(
 			std::uint32_t body_index
 		) -> void;
+
 	private:
 		struct cache_key {
 			std::uint32_t body_a;
@@ -92,8 +91,7 @@ auto gse::vbd::contact_cache::lookup(const std::uint32_t body_a, const std::uint
 			.side_a0 = fid.side_b0,
 			.side_a1 = fid.side_b1,
 			.side_b0 = fid.side_a0,
-			.side_b1 = fid.side_a1
-		}
+			.side_b1 = fid.side_a1 }
 	};
 
 	if (const auto it = m_cache.find(key_swapped); it != m_cache.end()) {
@@ -119,7 +117,7 @@ auto gse::vbd::contact_cache::store(const std::uint32_t body_a, const std::uint3
 }
 
 auto gse::vbd::contact_cache::age_and_prune() -> void {
-	for (auto it = m_cache.begin(); it != m_cache.end(); ) {
+	for (auto it = m_cache.begin(); it != m_cache.end();) {
 		it->second.age++;
 		if (it->second.age > max_age) {
 			it = m_cache.erase(it);
@@ -135,7 +133,7 @@ auto gse::vbd::contact_cache::clear() -> void {
 }
 
 auto gse::vbd::contact_cache::remove_body(const std::uint32_t body_index) -> void {
-	for (auto it = m_cache.begin(); it != m_cache.end(); ) {
+	for (auto it = m_cache.begin(); it != m_cache.end();) {
 		if (it->first.body_a == body_index || it->first.body_b == body_index) {
 			it = m_cache.erase(it);
 		}

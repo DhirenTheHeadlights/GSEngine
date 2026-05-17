@@ -19,31 +19,31 @@ import gse.diag;
 import gse.ecs;
 
 namespace gse::renderer::cull_compute {
-	struct [[= shaders::shader_struct]] frustum_data {
+	struct[[= shaders::shader_struct]] frustum_data {
 		vec4f planes[6];
 	};
 
-	struct [[= shaders::shader_struct]] batch_info {
+	struct[[= shaders::shader_struct]] batch_info {
 		std::uint32_t first_instance;
 		std::uint32_t instance_count;
 		vec3<length> aabb_min;
 		vec3<length> aabb_max;
 	};
 
-	struct [[= shaders::shader_struct]] push_constants {
+	struct[[= shaders::shader_struct]] push_constants {
 		std::uint32_t batch_offset;
 		std::uint32_t indirect_stride;
 	};
 
-	struct [[= shaders::binding<0, 0>{}]] frustum_ubo {
+	struct[[= shaders::binding<0, 0>{}]] frustum_ubo {
 		using element = frustum_data;
 	};
 
-	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] batches {
+	struct[[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] batches {
 		using element = batch_info;
 	};
 
-	struct [[= shaders::binding<0, 2>{}, = shaders::rw_byte_address_buffer]] indirect_commands {};
+	struct[[= shaders::binding<0, 2>{}, = shaders::rw_byte_address_buffer]] indirect_commands {};
 
 	using shader_binding_types = type_pack<frustum_ubo, batches, indirect_commands>;
 	using shader_types = type_pack<frustum_data, batch_info>;
@@ -55,8 +55,7 @@ namespace gse::renderer::cull_compute {
 		gpu::bindings<shader_binding_types>,
 		gpu::threads<1>,
 		gpu::push_constant<push_constants>,
-		gpu::system_values<gpu::group_id>
-	>;
+		gpu::system_values<gpu::group_id>>;
 }
 
 auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
@@ -64,16 +63,10 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
-		d.frustum_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = frustum_size,
-			.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
-		});
+		d.frustum_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = frustum_size, .usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst });
 
 		constexpr std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * sizeof(batch_info);
-		d.batch_info_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), {
-			.size = batch_info_size,
-			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
-		});
+		d.batch_info_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = batch_info_size, .usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst });
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
@@ -156,7 +149,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<
 	}
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.pipeline(d.pipeline);
+				   .pipeline(d.pipeline);
 
 	if (normal_count > 0) {
 		rec.bind_descriptors(d.pipeline, d.normal_descriptors[frame_index]);

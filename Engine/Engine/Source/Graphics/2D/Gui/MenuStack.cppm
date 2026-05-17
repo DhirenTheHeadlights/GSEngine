@@ -8,9 +8,13 @@ export namespace gse::gui {
 	struct screen {
 		virtual ~screen() = default;
 		virtual auto build(builder& ui) -> void = 0;
-		virtual auto on_push() -> void {}
-		virtual auto on_pop() -> void {}
-		virtual auto captures_input() const -> bool { return true; }
+		virtual auto on_push() -> void {
+		}
+		virtual auto on_pop() -> void {
+		}
+		virtual auto captures_input() const -> bool {
+			return true;
+		}
 	};
 
 	struct menu_stack_state {

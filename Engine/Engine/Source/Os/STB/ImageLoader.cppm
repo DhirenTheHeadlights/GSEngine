@@ -18,8 +18,7 @@ export namespace gse::image {
 		std::uint32_t channels = 0;
 		std::vector<std::byte> pixels;
 
-		auto size_bytes(
-		) const -> std::size_t;
+		auto size_bytes() const -> std::size_t;
 	};
 
 	auto load(

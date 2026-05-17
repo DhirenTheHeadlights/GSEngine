@@ -6,7 +6,7 @@ import gse.assert;
 import gse.core;
 
 export namespace gse {
-	template<typename T, std::size_t N = 2>
+	template <typename T, std::size_t N = 2>
 	class per_frame_resource {
 	public:
 		static_assert(N >= 2, "per_frame_resource requires at least 2 frames");
@@ -15,11 +15,12 @@ export namespace gse {
 		using storage_type = std::array<T, N>;
 		static constexpr std::size_t frames_in_flight = N;
 
-		per_frame_resource(
-		) requires std::is_default_constructible_v<T> = default;
+		per_frame_resource()
+		requires std::is_default_constructible_v<T>
+		= default;
 
 		template <std::convertible_to<T>... Args>
-			requires (sizeof...(Args) == N)
+		requires(sizeof...(Args) == N)
 		explicit per_frame_resource(
 			Args&&... slots
 		);
@@ -41,8 +42,6 @@ export namespace gse {
 			this auto&& self
 		) -> decltype(auto);
 
-		explicit operator value_type&() = delete;
-		explicit operator const value_type&() const = delete;
 	private:
 		storage_type m_resources{};
 	};
@@ -50,8 +49,9 @@ export namespace gse {
 
 template <typename T, std::size_t N>
 template <std::convertible_to<T>... Args>
-	requires (sizeof...(Args) == N)
-gse::per_frame_resource<T, N>::per_frame_resource(Args&&... slots) : m_resources{ std::forward<Args>(slots)... } {}
+requires(sizeof...(Args) == N)
+gse::per_frame_resource<T, N>::per_frame_resource(Args&&... slots) : m_resources{ std::forward<Args>(slots)... } {
+}
 
 template <typename T, std::size_t N>
 auto gse::per_frame_resource<T, N>::operator[](this auto&& self, const std::size_t frame_index) -> decltype(auto) {

@@ -29,7 +29,7 @@ import gse.physics;
 import :shared_shaders;
 
 export namespace gse::renderer::geometry_collector {
-	struct [[= shaders::shader_struct]] joint_data {
+	struct[[= shaders::shader_struct]] joint_data {
 		mat4f inverse_bind;
 		std::uint32_t parent_index;
 	};
@@ -89,12 +89,12 @@ export namespace gse::renderer {
 		constexpr auto r2 = std::integral_constant<std::size_t, 2>{};
 		constexpr auto r3 = std::integral_constant<std::size_t, 3>{};
 
-		planes[0] = { at(c0,r3) + at(c0,r0), at(c1,r3) + at(c1,r0), at(c2,r3) + at(c2,r0), at(c3,r3) + at(c3,r0) };
-		planes[1] = { at(c0,r3) - at(c0,r0), at(c1,r3) - at(c1,r0), at(c2,r3) - at(c2,r0), at(c3,r3) - at(c3,r0) };
-		planes[2] = { at(c0,r3) + at(c0,r1), at(c1,r3) + at(c1,r1), at(c2,r3) + at(c2,r1), at(c3,r3) + at(c3,r1) };
-		planes[3] = { at(c0,r3) - at(c0,r1), at(c1,r3) - at(c1,r1), at(c2,r3) - at(c2,r1), at(c3,r3) - at(c3,r1) };
-		planes[4] = { at(c0,r3) + at(c0,r2), at(c1,r3) + at(c1,r2), at(c2,r3) + at(c2,r2), at(c3,r3) + at(c3,r2) };
-		planes[5] = { at(c0,r3) - at(c0,r2), at(c1,r3) - at(c1,r2), at(c2,r3) - at(c2,r2), at(c3,r3) - at(c3,r2) };
+		planes[0] = { at(c0, r3) + at(c0, r0), at(c1, r3) + at(c1, r0), at(c2, r3) + at(c2, r0), at(c3, r3) + at(c3, r0) };
+		planes[1] = { at(c0, r3) - at(c0, r0), at(c1, r3) - at(c1, r0), at(c2, r3) - at(c2, r0), at(c3, r3) - at(c3, r0) };
+		planes[2] = { at(c0, r3) + at(c0, r1), at(c1, r3) + at(c1, r1), at(c2, r3) + at(c2, r1), at(c3, r3) + at(c3, r1) };
+		planes[3] = { at(c0, r3) - at(c0, r1), at(c1, r3) - at(c1, r1), at(c2, r3) - at(c2, r1), at(c3, r3) - at(c3, r1) };
+		planes[4] = { at(c0, r3) + at(c0, r2), at(c1, r3) + at(c1, r2), at(c2, r3) + at(c2, r2), at(c3, r3) + at(c3, r2) };
+		planes[5] = { at(c0, r3) - at(c0, r2), at(c1, r3) - at(c1, r2), at(c2, r3) - at(c2, r2), at(c3, r3) - at(c3, r2) };
 
 		for (auto& plane : planes) {
 			if (const float length = magnitude(plane); length > 0.0f) {
@@ -150,7 +150,7 @@ export namespace gse::renderer::geometry_collector {
 
 		std::vector<owned_render_queue_entry> render_queue;
 		std::vector<skinned_render_queue_entry> skinned_render_queue;
-		static_vector<normal_instance_batch, max_batches>  normal_batches;
+		static_vector<normal_instance_batch, max_batches> normal_batches;
 		static_vector<skinned_instance_batch, max_batches> skinned_batches;
 
 		std::vector<shaders::common::instance_data> instance_staging;
@@ -175,19 +175,19 @@ export namespace gse::renderer::geometry_collector {
 	struct system {
 		struct data {
 			resource::handle<skeleton> current_skeleton;
-			[[=gse::shared]] std::uint32_t current_joint_count = 0;
+			[[= gse::shared]] std::uint32_t current_joint_count = 0;
 
-			[[=gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
 			static constexpr std::size_t max_instances = 4096;
 			static constexpr std::size_t max_skin_matrices = 256 * 128;
 			static constexpr std::size_t max_joints = 256;
 
-			[[=gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
-			[[=gse::shared]] per_frame_resource<gpu::buffer> skinned_indirect_commands_buffer;
-			[[=gse::shared]] gpu::buffer skeleton_buffer;
-			[[=gse::shared]] per_frame_resource<gpu::buffer> local_pose_buffer;
-			[[=gse::shared]] per_frame_resource<gpu::buffer> skin_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> skinned_indirect_commands_buffer;
+			[[= gse::shared]] gpu::buffer skeleton_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> local_pose_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> skin_buffer;
 		};
 
 		static auto run(

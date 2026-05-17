@@ -15,9 +15,9 @@ export namespace gse {
 	struct render_component {
 		static constexpr std::size_t max_models = 16;
 
-		[[= networked]] std::array<resource::handle<model>, max_models> models {};
+		[[= networked]] std::array<resource::handle<model>, max_models> models{};
 		[[= networked]] std::uint32_t model_count = 0;
-		[[= networked]] std::array<resource::handle<skinned_model>, max_models> skinned_models {};
+		[[= networked]] std::array<resource::handle<skinned_model>, max_models> skinned_models{};
 		[[= networked]] std::uint32_t skinned_model_count = 0;
 		[[= networked]] std::array<vec3f, max_models> tints = [] -> std::array<vec3f, max_models> {
 			std::array<vec3f, max_models> result;

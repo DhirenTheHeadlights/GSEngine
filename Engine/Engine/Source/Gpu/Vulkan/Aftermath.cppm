@@ -26,8 +26,7 @@ export namespace gse::vulkan {
 			std::string last_dump_stem;
 		};
 
-		~aftermath(
-		);
+		~aftermath();
 
 		aftermath(
 			aftermath&&
@@ -41,11 +40,9 @@ export namespace gse::vulkan {
 			settings cfg
 		) -> aftermath;
 
-		[[nodiscard]] auto available(
-		) const -> bool;
+		[[nodiscard]] auto available() const -> bool;
 
-		[[nodiscard]] auto required_device_extensions(
-		) const -> std::span<const char* const>;
+		[[nodiscard]] auto required_device_extensions() const -> std::span<const char* const>;
 
 		[[nodiscard]] auto device_create_info_pnext(
 			void* next
@@ -60,8 +57,7 @@ export namespace gse::vulkan {
 		) -> void;
 
 	private:
-		aftermath(
-		);
+		aftermath();
 
 		std::unique_ptr<data> m_state;
 	};

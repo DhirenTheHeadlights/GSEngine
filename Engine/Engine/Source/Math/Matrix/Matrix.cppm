@@ -42,8 +42,7 @@ export namespace gse {
 		static constexpr std::size_t extent_cols = Cols;
 		static constexpr std::size_t extent_rows = Rows;
 
-		constexpr mat(
-		) = default;
+		constexpr mat() = default;
 
 		constexpr mat(
 			const Element& value
@@ -55,7 +54,8 @@ export namespace gse {
 
 		constexpr mat(
 			const quat_t<value_type>& q
-		) requires (internal::is_arithmetic<Element> && ((Cols == 3 && Rows == 3) || (Cols == 4 && Rows == 4)));
+		)
+		requires(internal::is_arithmetic<Element> && ((Cols == 3 && Rows == 3) || (Cols == 4 && Rows == 4)));
 
 		template <std::size_t OtherCols, std::size_t OtherRows>
 		constexpr mat(
@@ -63,13 +63,13 @@ export namespace gse {
 		);
 
 		template <internal::is_vec_element OtherE>
-			requires (!std::same_as<Element, OtherE> && requires(OtherE e) { static_cast<Element>(e); })
+		requires(!std::same_as<Element, OtherE> && requires(OtherE e) { static_cast<Element>(e); })
 		constexpr mat(
 			const mat<OtherE, Cols, Rows>& other
 		);
 
 		constexpr decltype(auto) operator[](
-			this auto& self, 
+			this auto& self,
 			std::size_t index
 		);
 
@@ -77,65 +77,69 @@ export namespace gse {
 			const mat&
 		) const -> bool = default;
 
-		constexpr auto transpose(
-		) const -> mat<Element, Rows, Cols>;
+		constexpr auto transpose() const -> mat<Element, Rows, Cols>;
 
-		constexpr auto inverse(
-		) const;
+		constexpr auto inverse() const;
 
-		constexpr auto determinant(
-		) const -> value_type;
+		constexpr auto determinant() const -> value_type;
 
-		constexpr auto trace(
-		) const -> value_type;
+		constexpr auto trace() const -> value_type;
 
 		template <typename Self, internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 		constexpr auto operator+(
-			this const Self& self, 
+			this const Self& self,
 			const mat<E2, C2, R2>& rhs
-		) requires (Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2>);
+		)
+		requires(Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2>);
 
 		template <typename Self, internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 		constexpr auto operator-(
-			this const Self& self, 
+			this const Self& self,
 			const mat<E2, C2, R2>& rhs
-		) requires (Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2>);
+		)
+		requires(Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2>);
 
 		template <typename Self, internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 		constexpr auto operator+=(
-			this Self& self, 
+			this Self& self,
 			const mat<E2, C2, R2>& rhs
-		) -> Self& requires (Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2> && std::same_as<internal::add_exposed_t<Element, E2>, Element>);
+		) -> Self&
+		requires(Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2> && std::same_as<internal::add_exposed_t<Element, E2>, Element>);
 
 		template <typename Self, internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 		constexpr auto operator-=(
 			this Self& self,
 			const mat<E2, C2, R2>& rhs
-		) -> Self& requires (Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2> && std::same_as<internal::sub_exposed_t<Element, E2>, Element>);
+		) -> Self&
+		requires(Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2> && std::same_as<internal::sub_exposed_t<Element, E2>, Element>);
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator*(
-			this const Self& self, 
+			this const Self& self,
 			const S& rhs
-		) requires gse::internal::are_multipliable<Element, S>;
+		)
+		requires gse::internal::are_multipliable<Element, S>;
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator/(
-			this const Self& self, 
+			this const Self& self,
 			const S& rhs
-		) requires gse::internal::are_divisible<Element, S>;
+		)
+		requires gse::internal::are_divisible<Element, S>;
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator*=(
-			this Self& self, 
+			this Self& self,
 			const S& rhs
-		) -> Self& requires (gse::internal::are_multipliable<Element, S> && std::same_as<internal::mul_exposed_t<Element, S>, Element>);
+		) -> Self&
+		requires(gse::internal::are_multipliable<Element, S> && std::same_as<internal::mul_exposed_t<Element, S>, Element>);
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator/=(
-			this Self& self, 
+			this Self& self,
 			const S& rhs
-		) -> Self& requires (gse::internal::are_divisible<Element, S> && std::same_as<internal::div_exposed_t<Element, S>, Element>);
+		) -> Self&
+		requires(gse::internal::are_divisible<Element, S> && std::same_as<internal::div_exposed_t<Element, S>, Element>);
 
 		template <typename Self>
 		constexpr auto operator-(
@@ -143,21 +147,21 @@ export namespace gse {
 		) -> Self;
 
 		template <typename Self, internal::is_mat_like M2>
-			requires (Cols == M2::extent_rows)
+		requires(Cols == M2::extent_rows)
 		constexpr auto operator*(
 			this const Self& self,
 			const M2& rhs
 		);
 
 		template <typename Self, typename V>
-			requires (internal::is_vec_like<V> && V::extent == Cols)
+		requires(internal::is_vec_like<V> && V::extent == Cols)
 		constexpr auto operator*(
 			this const Self& self,
 			const V& rhs
 		);
 
 		template <typename Self, internal::is_mat_like M2>
-			requires (Cols == Rows && Cols == M2::extent_cols && Rows == M2::extent_rows)
+		requires(Cols == Rows && Cols == M2::extent_cols && Rows == M2::extent_rows)
 		constexpr auto operator*=(
 			this Self& self,
 			const M2& rhs
@@ -180,7 +184,9 @@ constexpr gse::mat<Element, Cols, Rows>::mat(const Element& value) : internal::m
 }
 
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
-constexpr gse::mat<Element, Cols, Rows>::mat(const quat_t<value_type>& q) requires (internal::is_arithmetic<Element> && ((Cols == 3 && Rows == 3) || (Cols == 4 && Rows == 4))) {
+constexpr gse::mat<Element, Cols, Rows>::mat(const quat_t<value_type>& q)
+requires(internal::is_arithmetic<Element> && ((Cols == 3 && Rows == 3) || (Cols == 4 && Rows == 4)))
+{
 	const value_type qx2 = q.x() * q.x();
 	const value_type qy2 = q.y() * q.y();
 	const value_type qz2 = q.z() * q.z();
@@ -239,7 +245,7 @@ constexpr gse::mat<Element, Cols, Rows>::mat(const mat<Element, OtherCols, Other
 
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <gse::internal::is_vec_element OtherE>
-	requires (!std::same_as<Element, OtherE> && requires(OtherE e) { static_cast<Element>(e); })
+requires(!std::same_as<Element, OtherE> && requires(OtherE e) { static_cast<Element>(e); })
 constexpr gse::mat<Element, Cols, Rows>::mat(const mat<OtherE, Cols, Rows>& other) : internal::mat_storage<Element, Cols, Rows>{} {
 	for (std::size_t j = 0; j < Cols; ++j) {
 		for (std::size_t i = 0; i < Rows; ++i) {
@@ -269,7 +275,9 @@ constexpr auto gse::mat<Element, Cols, Rows>::inverse() const {
 	static_assert(Cols == Rows, "Inverse is only defined for square matrices.");
 	using inv_elem = decltype(std::declval<value_type>() / std::declval<Element>());
 
-	auto r = [this](std::size_t c, std::size_t i) -> value_type { return this->data[c].as_storage_span()[i]; };
+	auto r = [this](std::size_t c, std::size_t i) -> value_type {
+		return this->data[c].as_storage_span()[i];
+	};
 
 	if constexpr (Cols == 2) {
 		const value_type det = determinant();
@@ -351,14 +359,22 @@ constexpr auto gse::mat<Element, Cols, Rows>::inverse() const {
 		auto s1 = result[1].as_storage_span();
 		auto s2 = result[2].as_storage_span();
 		auto s3 = result[3].as_storage_span();
-		s0[0] = f00 * inv_det; s0[1] = f01 * inv_det;
-		s0[2] = f02 * inv_det; s0[3] = f03 * inv_det;
-		s1[0] = f10 * inv_det; s1[1] = f11 * inv_det;
-		s1[2] = f12 * inv_det; s1[3] = f13 * inv_det;
-		s2[0] = f20 * inv_det; s2[1] = f21 * inv_det;
-		s2[2] = f22 * inv_det; s2[3] = f23 * inv_det;
-		s3[0] = f30 * inv_det; s3[1] = f31 * inv_det;
-		s3[2] = f32 * inv_det; s3[3] = f33 * inv_det;
+		s0[0] = f00 * inv_det;
+		s0[1] = f01 * inv_det;
+		s0[2] = f02 * inv_det;
+		s0[3] = f03 * inv_det;
+		s1[0] = f10 * inv_det;
+		s1[1] = f11 * inv_det;
+		s1[2] = f12 * inv_det;
+		s1[3] = f13 * inv_det;
+		s2[0] = f20 * inv_det;
+		s2[1] = f21 * inv_det;
+		s2[2] = f22 * inv_det;
+		s2[3] = f23 * inv_det;
+		s3[0] = f30 * inv_det;
+		s3[1] = f31 * inv_det;
+		s3[2] = f32 * inv_det;
+		s3[3] = f33 * inv_det;
 		return result;
 	}
 	else {
@@ -371,7 +387,9 @@ template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t R
 constexpr auto gse::mat<Element, Cols, Rows>::determinant() const -> value_type {
 	static_assert(Rows == Cols, "Determinant is only defined for square matrices.");
 
-	auto r = [this](std::size_t c, std::size_t i) -> value_type { return this->data[c].as_storage_span()[i]; };
+	auto r = [this](std::size_t c, std::size_t i) -> value_type {
+		return this->data[c].as_storage_span()[i];
+	};
 
 	if constexpr (Cols == 2) {
 		return r(0, 0) * r(1, 1) - r(1, 0) * r(0, 1);
@@ -442,7 +460,8 @@ constexpr auto gse::mat<Element, Cols, Rows>::trace() const -> value_type {
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 constexpr auto gse::mat<Element, Cols, Rows>::operator+(this const Self& self, const mat<E2, C2, R2>& rhs)
-	requires (Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2>) {
+requires(Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2>)
+{
 	using R = internal::add_exposed_t<Element, E2>;
 	std::conditional_t<std::same_as<R, Element>, Self, mat<R, Cols, Rows>> out{};
 	for (std::size_t c = 0; c < Cols; ++c) {
@@ -454,7 +473,8 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator+(this const Self& self, c
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 constexpr auto gse::mat<Element, Cols, Rows>::operator-(this const Self& self, const mat<E2, C2, R2>& rhs)
-	requires (Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2>) {
+requires(Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2>)
+{
 	using R = internal::sub_exposed_t<Element, E2>;
 	std::conditional_t<std::same_as<R, Element>, Self, mat<R, Cols, Rows>> out{};
 	for (std::size_t c = 0; c < Cols; ++c) {
@@ -466,7 +486,8 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator-(this const Self& self, c
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 constexpr auto gse::mat<Element, Cols, Rows>::operator+=(this Self& self, const mat<E2, C2, R2>& rhs) -> Self&
-	requires (Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2> && std::same_as<internal::add_exposed_t<Element, E2>, Element>) {
+requires(Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2> && std::same_as<internal::add_exposed_t<Element, E2>, Element>)
+{
 	for (std::size_t c = 0; c < Cols; ++c) {
 		simd::add(self.data[c].as_storage_span(), rhs.data[c].as_storage_span(), self.data[c].as_storage_span());
 	}
@@ -476,7 +497,8 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator+=(this Self& self, const 
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 constexpr auto gse::mat<Element, Cols, Rows>::operator-=(this Self& self, const mat<E2, C2, R2>& rhs) -> Self&
-	requires (Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2> && std::same_as<internal::sub_exposed_t<Element, E2>, Element>) {
+requires(Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2> && std::same_as<internal::sub_exposed_t<Element, E2>, Element>)
+{
 	for (std::size_t c = 0; c < Cols; ++c) {
 		simd::sub(self.data[c].as_storage_span(), rhs.data[c].as_storage_span(), self.data[c].as_storage_span());
 	}
@@ -485,7 +507,9 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator-=(this Self& self, const 
 
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_vec_element S>
-constexpr auto gse::mat<Element, Cols, Rows>::operator*(this const Self& self, const S& rhs) requires gse::internal::are_multipliable<Element, S> {
+constexpr auto gse::mat<Element, Cols, Rows>::operator*(this const Self& self, const S& rhs)
+requires gse::internal::are_multipliable<Element, S>
+{
 	using R = internal::mul_exposed_t<Element, S>;
 	std::conditional_t<std::same_as<R, Element>, Self, mat<R, Cols, Rows>> out{};
 	const auto scalar = static_cast<value_type>(internal::to_storage(rhs));
@@ -497,7 +521,9 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator*(this const Self& self, c
 
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_vec_element S>
-constexpr auto gse::mat<Element, Cols, Rows>::operator/(this const Self& self, const S& rhs) requires gse::internal::are_divisible<Element, S> {
+constexpr auto gse::mat<Element, Cols, Rows>::operator/(this const Self& self, const S& rhs)
+requires gse::internal::are_divisible<Element, S>
+{
 	using R = internal::div_exposed_t<Element, S>;
 	std::conditional_t<std::same_as<R, Element>, Self, mat<R, Cols, Rows>> out{};
 	const auto scalar = static_cast<value_type>(internal::to_storage(rhs));
@@ -510,7 +536,8 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator/(this const Self& self, c
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_vec_element S>
 constexpr auto gse::mat<Element, Cols, Rows>::operator*=(this Self& self, const S& rhs) -> Self&
-	requires (gse::internal::are_multipliable<Element, S> && std::same_as<internal::mul_exposed_t<Element, S>, Element>) {
+requires(gse::internal::are_multipliable<Element, S> && std::same_as<internal::mul_exposed_t<Element, S>, Element>)
+{
 	const auto scalar = static_cast<value_type>(internal::to_storage(rhs));
 	for (std::size_t c = 0; c < Cols; ++c) {
 		simd::mul_s(self.data[c].as_storage_span(), scalar, self.data[c].as_storage_span());
@@ -521,7 +548,8 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator*=(this Self& self, const 
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_vec_element S>
 constexpr auto gse::mat<Element, Cols, Rows>::operator/=(this Self& self, const S& rhs) -> Self&
-	requires (gse::internal::are_divisible<Element, S> && std::same_as<internal::div_exposed_t<Element, S>, Element>) {
+requires(gse::internal::are_divisible<Element, S> && std::same_as<internal::div_exposed_t<Element, S>, Element>)
+{
 	const auto scalar = static_cast<value_type>(internal::to_storage(rhs));
 	for (std::size_t c = 0; c < Cols; ++c) {
 		simd::div_s(self.data[c].as_storage_span(), scalar, self.data[c].as_storage_span());
@@ -546,7 +574,7 @@ constexpr auto gse::operator*(const S& lhs, const mat<E, Cols, Rows>& rhs) {
 
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_mat_like M2>
-	requires (Cols == M2::extent_rows)
+requires(Cols == M2::extent_rows)
 constexpr auto gse::mat<Element, Cols, Rows>::operator*(this const Self& self, const M2& rhs) {
 	using E2 = typename M2::element_type;
 	using RE = internal::mul_exposed_t<Element, E2>;
@@ -575,7 +603,7 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator*(this const Self& self, c
 
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, typename V>
-	requires (gse::internal::is_vec_like<V> && V::extent == Cols)
+requires(gse::internal::is_vec_like<V> && V::extent == Cols)
 constexpr auto gse::mat<Element, Cols, Rows>::operator*(this const Self& self, const V& rhs) {
 	using result_elem = internal::mul_exposed_t<Element, typename V::value_type>;
 	vec<result_elem, Rows> result{};
@@ -594,7 +622,7 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator*(this const Self& self, c
 
 template <gse::internal::is_vec_element Element, std::size_t Cols, std::size_t Rows>
 template <typename Self, gse::internal::is_mat_like M2>
-	requires (Cols == Rows && Cols == M2::extent_cols && Rows == M2::extent_rows)
+requires(Cols == Rows && Cols == M2::extent_cols && Rows == M2::extent_rows)
 constexpr auto gse::mat<Element, Cols, Rows>::operator*=(this Self& self, const M2& rhs) -> Self& {
 	self = self * rhs;
 	return self;

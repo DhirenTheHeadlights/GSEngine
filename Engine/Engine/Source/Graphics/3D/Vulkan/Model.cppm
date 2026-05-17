@@ -51,7 +51,7 @@ export namespace gse {
 			raw_blob_owned<std::uint32_t> indices;
 		};
 
-		struct [[
+		struct[[
 			= asset_format::baked_ext<".gmdl">{},
 			= asset_format::baked_dir<"Models">{},
 			= asset_format::magic<0x474D444C>{},
@@ -60,7 +60,8 @@ export namespace gse {
 			std::vector<mesh_baked> meshes;
 		};
 
-		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
+		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {
+		}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
 		auto load(asset::load_ctx& ctx) -> async::task<>;
@@ -69,8 +70,8 @@ export namespace gse {
 		auto meshes() const -> std::span<const mesh>;
 		auto center_of_mass() const -> vec3<length>;
 
-		auto uploads_ready(
-		) const -> bool;
+		auto uploads_ready() const -> bool;
+
 	private:
 		std::vector<mesh> m_meshes;
 		std::filesystem::path m_baked_model_path;

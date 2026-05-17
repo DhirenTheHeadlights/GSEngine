@@ -21,7 +21,8 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		});
 		if (layer_present) {
 			validation_layers.push_back(layer_name);
-		} else {
+		}
+		else {
 			log::println(
 				log::category::vulkan,
 				"Validation layer '{}' requested but not available on this system; continuing without it. "
@@ -44,11 +45,11 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	extensions.push_back(vk::EXTDebugUtilsExtensionName);
 
 	auto debug_callback = [](
-		const vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
-		vk::DebugUtilsMessageTypeFlagsEXT message_type,
-		const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
-		void* user_data
-	) -> vk::Bool32 {
+							  const vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+							  vk::DebugUtilsMessageTypeFlagsEXT message_type,
+							  const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
+							  void* user_data
+						  ) -> vk::Bool32 {
 		if (message_severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose) {
 			return vk::False;
 		}
@@ -58,9 +59,8 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		}
 
 		const auto lvl =
-			message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ? log::level::error :
-			message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning ? log::level::warning :
-			log::level::info;
+			message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ? log::level::error : message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning ? log::level::warning
+																																											: log::level::info;
 
 		log::println(lvl, log::category::vulkan_validation, "{}", callback_data->pMessage);
 
@@ -123,7 +123,8 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	try {
 		instance = vk::raii::Instance(context, create_info);
 		log::println(log::category::vulkan, "Vulkan Instance Created{}!", enable_validation ? " with validation layers" : "");
-	} catch (vk::SystemError& err) {
+	}
+	catch (vk::SystemError& err) {
 		log::println(log::level::error, log::category::vulkan, "Failed to create Vulkan instance: {}", err.what());
 		throw;
 	}
@@ -135,7 +136,8 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		try {
 			debug_messenger = instance.createDebugUtilsMessengerEXT(debug_create_info);
 			log::println(log::category::vulkan, "Debug Messenger Created Successfully!");
-		} catch (vk::SystemError& err) {
+		}
+		catch (vk::SystemError& err) {
 			log::println(log::level::error, log::category::vulkan, "Failed to create Debug Messenger: {}", err.what());
 		}
 	}

@@ -81,7 +81,7 @@ namespace gse {
 	constexpr std::size_t arity_of = std::meta::parameters_of(MemberFn).size();
 
 	template <auto MemberFn, std::size_t I>
-	using arg_type_of = typename [: std::meta::type_of(std::meta::parameters_of(MemberFn)[I]) :];
+	using arg_type_of = typename[:std::meta::type_of(std::meta::parameters_of(MemberFn)[I]):];
 
 	template <typename T>
 	auto direct_state_ref(
@@ -153,31 +153,25 @@ namespace gse {
 	) -> void;
 
 	template <auto MemberFn, typename S>
-	auto register_state_dep_tags(
-	) -> void;
+	auto register_state_dep_tags() -> void;
 
 	template <typename S>
-	auto extract_run_state_deps(
-	) -> std::vector<id>;
+	auto extract_run_state_deps() -> std::vector<id>;
 
 	template <typename S>
-	auto extract_frame_state_deps(
-	) -> std::vector<id>;
+	auto extract_frame_state_deps() -> std::vector<id>;
 
 	template <typename T>
-	consteval auto compute_state_dep_id(
-	) -> id;
+	consteval auto compute_state_dep_id() -> id;
 
 	template <typename T>
 	constexpr id state_dep_id_v = compute_state_dep_id<dep_pointee_t<T>>();
 
 	template <auto MemberFn, typename S>
-	consteval auto compute_state_dep_count(
-	) -> std::size_t;
+	consteval auto compute_state_dep_count() -> std::size_t;
 
 	template <auto MemberFn, typename S>
-	consteval auto compute_state_dep_ids(
-	) -> std::array<id, compute_state_dep_count<MemberFn, S>()>;
+	consteval auto compute_state_dep_ids() -> std::array<id, compute_state_dep_count<MemberFn, S>()>;
 
 	template <typename S>
 	concept shutdown_takes_state = requires(shutdown_context& p, state_of_t<S>& s) {
@@ -192,7 +186,8 @@ namespace gse {
 
 template <typename S>
 template <typename... Args>
-gse::system_node_data<S>::system_node_data(Args&&... args) : state(std::forward<Args>(args)...) {}
+gse::system_node_data<S>::system_node_data(Args&&... args) : state(std::forward<Args>(args)...) {
+}
 
 template <typename T>
 auto gse::direct_state_ref(const task_context& ctx) -> const T& {
@@ -238,9 +233,9 @@ auto gse::resolve_run_arg(run_context& ctx, state_of_t<S>& state) -> decltype(au
 		);
 		constexpr id state_lookup_id = compute_state_dep_id<Pointee>();
 		const void* p = ctx.live_state ? ctx.states.state_ptr(state_lookup_id)
-		                                : (ctx.states.state_snapshot_ptr(state_lookup_id)
-		                                    ? ctx.states.state_snapshot_ptr(state_lookup_id)
-		                                    : ctx.states.state_ptr(state_lookup_id));
+									   : (ctx.states.state_snapshot_ptr(state_lookup_id)
+											  ? ctx.states.state_snapshot_ptr(state_lookup_id)
+											  : ctx.states.state_ptr(state_lookup_id));
 		if (!p) {
 			p = ctx.resources_store.resources_ptr(id_of<Pointee>());
 		}
@@ -268,9 +263,9 @@ auto gse::resolve_frame_arg(frame_context& ctx, state_of_t<S>& state) -> decltyp
 		using Target = shared_view_target_t<U>;
 		constexpr id lookup_id = id_of<Target>();
 		const void* p = ctx.live_state ? ctx.states.state_ptr(lookup_id)
-		                                : (ctx.states.state_snapshot_ptr(lookup_id)
-		                                    ? ctx.states.state_snapshot_ptr(lookup_id)
-		                                    : ctx.states.state_ptr(lookup_id));
+									   : (ctx.states.state_snapshot_ptr(lookup_id)
+											  ? ctx.states.state_snapshot_ptr(lookup_id)
+											  : ctx.states.state_ptr(lookup_id));
 		assert(p != nullptr, "shared_view target system not registered");
 		return make_shared_view<Target>(*static_cast<const typename Target::data*>(p));
 	}
@@ -282,9 +277,9 @@ auto gse::resolve_frame_arg(frame_context& ctx, state_of_t<S>& state) -> decltyp
 		);
 		constexpr id state_lookup_id = compute_state_dep_id<Pointee>();
 		const void* p = ctx.live_state ? ctx.states.state_ptr(state_lookup_id)
-		                                : (ctx.states.state_snapshot_ptr(state_lookup_id)
-		                                    ? ctx.states.state_snapshot_ptr(state_lookup_id)
-		                                    : ctx.states.state_ptr(state_lookup_id));
+									   : (ctx.states.state_snapshot_ptr(state_lookup_id)
+											  ? ctx.states.state_snapshot_ptr(state_lookup_id)
+											  : ctx.states.state_ptr(state_lookup_id));
 		if (!p) {
 			p = ctx.resources_store.resources_ptr(id_of<Pointee>());
 		}
@@ -299,20 +294,22 @@ auto gse::resolve_frame_arg(frame_context& ctx, state_of_t<S>& state) -> decltyp
 	}
 }
 
-auto gse::noop_shutdown(shutdown_context&, void*) -> void {}
+auto gse::noop_shutdown(shutdown_context&, void*) -> void {
+}
 
 template <typename S>
 auto gse::noop_dispatchers::noop_frame_for(frame_context&, void*) -> async::task<> {
 	co_return;
 }
 
-auto gse::noop_snapshot(void*) -> void {}
+auto gse::noop_snapshot(void*) -> void {
+}
 
 template <typename T>
 consteval auto gse::compute_state_dep_id() -> id {
 	constexpr auto entity = std::meta::dealias(^^T);
 	if constexpr (std::meta::is_class_member(entity)) {
-		using parent_t = typename [: std::meta::parent_of(entity) :];
+		using parent_t = typename[:std::meta::parent_of(entity):];
 		if constexpr (requires { typename parent_t::data; }) {
 			if constexpr (std::is_same_v<typename parent_t::data, T>) {
 				return id_of<parent_t>();
@@ -328,13 +325,16 @@ consteval auto gse::compute_state_dep_count() -> std::size_t {
 	for (auto p : std::meta::parameters_of(MemberFn)) {
 		auto t = std::meta::dealias(std::meta::type_of(p));
 		const bool is_optional = std::meta::extract<bool>(
-			std::meta::substitute(^^is_optional_dep_v, { t })
+			std::meta::substitute(^^is_optional_dep_v, {
+														   t })
 		);
 		if (is_optional) {
 			continue;
 		}
 		const bool is_dep = std::meta::extract<bool>(
-			std::meta::substitute(^^is_state_dep_v, { t, ^^S })
+			std::meta::substitute(^^is_state_dep_v, {
+														t,
+														^^S })
 		);
 		if (is_dep) {
 			++count;
@@ -350,19 +350,23 @@ consteval auto gse::compute_state_dep_ids() -> std::array<id, compute_state_dep_
 	for (auto p : std::meta::parameters_of(MemberFn)) {
 		auto t = std::meta::dealias(std::meta::type_of(p));
 		const bool is_optional = std::meta::extract<bool>(
-			std::meta::substitute(^^is_optional_dep_v, { t })
+			std::meta::substitute(^^is_optional_dep_v, {
+														   t })
 		);
 		if (is_optional) {
 			continue;
 		}
 		const bool is_dep = std::meta::extract<bool>(
-			std::meta::substitute(^^is_state_dep_v, { t, ^^S })
+			std::meta::substitute(^^is_state_dep_v, {
+														t,
+														^^S })
 		);
 		if (!is_dep) {
 			continue;
 		}
 		const id dep_id = std::meta::extract<id>(
-			std::meta::substitute(^^state_dep_id_v, { t })
+			std::meta::substitute(^^state_dep_id_v, {
+														t })
 		);
 		result[i++] = dep_id;
 	}
@@ -373,11 +377,12 @@ template <auto MemberFn, typename S>
 auto gse::register_state_dep_tags() -> void {
 	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
 		(([] {
-			using ArgT = arg_type_of<MemberFn, Is>;
-			if constexpr (is_state_dep_v<ArgT, S>) {
-				(void)trace_id<dep_pointee_t<ArgT>>();
-			}
-		}()), ...);
+			 using ArgT = arg_type_of<MemberFn, Is>;
+			 if constexpr (is_state_dep_v<ArgT, S>) {
+				 (void)trace_id<dep_pointee_t<ArgT>>();
+			 }
+		 }()),
+		 ...);
 	}(std::make_index_sequence<arity_of<MemberFn>>{});
 }
 
@@ -427,7 +432,8 @@ auto gse::invoke_run_for(run_context& ctx, void* data_ptr) -> async::task<> {
 	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
 		return S::run(
 			resolve_run_arg<arg_type_of<^^S::run, Is>, S>(
-				ctx, d.state
+				ctx,
+				d.state
 			)...
 		);
 	}(std::make_index_sequence<arity_of<^^S::run>>{});
@@ -439,7 +445,8 @@ auto gse::invoke_frame_for(frame_context& ctx, void* data_ptr) -> async::task<> 
 	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
 		return S::frame(
 			resolve_frame_arg<arg_type_of<^^S::frame, Is>, S>(
-				ctx, d.state
+				ctx,
+				d.state
 			)...
 		);
 	}(std::make_index_sequence<arity_of<^^S::frame>>{});
@@ -483,7 +490,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	auto* d = new system_node_data<S>(std::forward<Args>(args)...);
 
 	system_node node;
-	node.data = std::unique_ptr<void, void(*)(void*)>(d, &data_delete_for<S>);
+	node.data = std::unique_ptr<void, void (*)(void*)>(d, &data_delete_for<S>);
 
 	if constexpr (names_shutdown<S>) {
 		node.invoke_shutdown_fn = &invoke_shutdown_for<S>;

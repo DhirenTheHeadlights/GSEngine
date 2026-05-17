@@ -6,6 +6,7 @@ export namespace gse {
 	template <typename T, std::size_t Capacity>
 	class spsc_ring_buffer {
 		static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
+
 	public:
 		auto push(
 			const T& value
@@ -14,6 +15,7 @@ export namespace gse {
 		auto pop(
 			T& out
 		) -> bool;
+
 	private:
 		static constexpr auto mask(
 			std::size_t i
@@ -52,4 +54,3 @@ template <typename T, std::size_t Capacity>
 constexpr auto gse::spsc_ring_buffer<T, Capacity>::mask(const std::size_t i) -> std::size_t {
 	return i & (Capacity - 1);
 }
-

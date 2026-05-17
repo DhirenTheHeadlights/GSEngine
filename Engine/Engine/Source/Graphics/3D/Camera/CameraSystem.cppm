@@ -41,8 +41,8 @@ export namespace gse::camera {
 			angle pitch = degrees(0.0f);
 			float mouse_sensitivity = 0.1f;
 
-			[[=gse::shared]] gse::view_matrix view_matrix{};
-			[[=gse::shared]] gse::projection_matrix projection_matrix{};
+			[[= gse::shared]] gse::view_matrix view_matrix{};
+			[[= gse::shared]] gse::projection_matrix projection_matrix{};
 
 			vec2f viewport{ 1920.f, 1080.f };
 			bool ui_focus = false;

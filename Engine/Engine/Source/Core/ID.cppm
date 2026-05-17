@@ -1,6 +1,7 @@
 export module gse.core:id;
 
 import std;
+
 import gse.std_meta;
 import gse.meta;
 
@@ -19,24 +20,19 @@ export namespace gse {
 	) -> uuid;
 
 	template <typename T>
-	consteval auto id_of(
-	) -> id;
+	consteval auto id_of() -> id;
 
 	template <fixed_string Tag>
-	consteval auto id_of(
-	) -> id;
+	consteval auto id_of() -> id;
 
 	template <typename T>
-	auto trace_id(
-	) -> id;
+	auto trace_id() -> id;
 
 	template <fixed_string Tag>
-	auto trace_id(
-	) -> id;
+	auto trace_id() -> id;
 
 	template <typename T>
-	consteval auto type_tag(
-	) -> std::string_view;
+	consteval auto type_tag() -> std::string_view;
 
 	auto generate_id(
 		std::string_view tag
@@ -104,17 +100,14 @@ export namespace gse {
 			id other
 		) const -> std::strong_ordering;
 
-		constexpr auto number(
-		) const -> uuid;
+		[[nodiscard]] constexpr auto number() const -> uuid;
 
-		auto tag(
-		) const -> std::string_view;
+		[[nodiscard]] auto tag() const -> std::string_view;
 
-		constexpr auto exists(
-		) const -> bool;
+		[[nodiscard]] constexpr auto exists() const -> bool;
 
-		auto reset(
-		) -> void;
+		auto reset() -> void;
+
 	private:
 		explicit constexpr id(
 			uuid id
@@ -173,7 +166,8 @@ auto gse::id::reset() -> void {
 	this->m_number = std::numeric_limits<uuid>::max();
 }
 
-constexpr gse::id::id(const uuid id) : m_number(id) {}
+constexpr gse::id::id(const uuid id) : m_number(id) {
+}
 
 export namespace gse {
 	class identifiable {
@@ -191,12 +185,12 @@ export namespace gse {
 			const std::filesystem::path& base
 		);
 
-		auto id(
-		) const -> id;
+		[[nodiscard]] auto id() const -> id;
 
 		auto operator==(
 			const identifiable& other
 		) const -> bool = default;
+
 	private:
 		gse::id m_id;
 
@@ -207,11 +201,14 @@ export namespace gse {
 	};
 }
 
-gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
+gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {
+}
 
-gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(relative_stem(path, {}))) {}
+gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(relative_stem(path, {}))) {
+}
 
-gse::identifiable::identifiable(const std::filesystem::path& path, const std::filesystem::path& base) : m_id(generate_id(relative_stem(path, base))) {}
+gse::identifiable::identifiable(const std::filesystem::path& path, const std::filesystem::path& base) : m_id(generate_id(relative_stem(path, base))) {
+}
 
 auto gse::identifiable::id() const -> gse::id {
 	return m_id;
@@ -241,15 +238,13 @@ auto gse::identifiable::relative_stem(const std::filesystem::path& path, const s
 export namespace gse {
 	class identifiable_owned {
 	public:
-		identifiable_owned(
-		) = default;
+		identifiable_owned() = default;
 
 		explicit identifiable_owned(
 			id owner_id
 		);
 
-		auto owner_id(
-		) const -> id;
+		auto owner_id() const -> id;
 
 		auto operator==(
 			const identifiable_owned& other
@@ -262,12 +257,14 @@ export namespace gse {
 		auto swap_parent(
 			const identifiable& new_parent
 		) -> void;
+
 	private:
 		id m_owner_id;
 	};
 }
 
-gse::identifiable_owned::identifiable_owned(const id owner_id) : m_owner_id(owner_id) {}
+gse::identifiable_owned::identifiable_owned(const id owner_id) : m_owner_id(owner_id) {
+}
 
 auto gse::identifiable_owned::owner_id() const -> id {
 	return m_owner_id;
@@ -305,7 +302,7 @@ export namespace gse {
 			const PrimaryIdType& id
 		) -> T*;
 
-		auto try_get(
+		[[nodiscard]] auto try_get(
 			const PrimaryIdType& id
 		) const -> const T*;
 
@@ -317,15 +314,14 @@ export namespace gse {
 			const PrimaryIdType& id
 		) const -> bool;
 
-		auto size(
-		) const -> std::size_t;
+		[[nodiscard]] auto size() const -> std::size_t;
 
-		auto clear(
-		) noexcept -> void;
+		auto clear() noexcept -> void;
 
 		auto transfer_from(
 			id_mapped_collection& other
 		) -> void;
+
 	private:
 		std::vector<T> m_items;
 		std::vector<PrimaryIdType> m_ids;
@@ -422,18 +418,22 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::clear() noexcept -> void {
 template <typename T, typename PrimaryIdType>
 auto gse::id_mapped_collection<T, PrimaryIdType>::transfer_from(id_mapped_collection& other) -> void {
 	m_items = std::move(other.m_items);
-    m_ids   = std::move(other.m_ids);
-    m_map   = std::move(other.m_map);
+	m_ids = std::move(other.m_ids);
+	m_map = std::move(other.m_map);
 }
 
 namespace gse {
 	struct transparent_hash {
 		using is_transparent = void;
-		auto operator()(const std::string_view sv) const noexcept { return std::hash<std::string_view>{}(sv); }
+		auto operator()(const std::string_view sv) const noexcept {
+			return std::hash<std::string_view>{}(sv);
+		}
 	};
 	struct transparent_equal {
 		using is_transparent = void;
-		auto operator()(const std::string_view a, const std::string_view b) const noexcept { return a == b; }
+		auto operator()(const std::string_view a, const std::string_view b) const noexcept {
+			return a == b;
+		}
 	};
 
 	struct id_registry_data {
@@ -616,4 +616,3 @@ template <typename T>
 consteval auto gse::type_tag() -> std::string_view {
 	return gse::meta::qualified_name<T>();
 }
-

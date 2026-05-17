@@ -87,4 +87,3 @@ namespace gse {
 		gpu::device_address scratch_addr
 	) -> async::task<>;
 }
-

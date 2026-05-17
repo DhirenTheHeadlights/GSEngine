@@ -111,8 +111,8 @@ export namespace gse::gpu {
 			gpu::handle<vulkan::buffer> buffer
 		) const -> device_address;
 
-		[[nodiscard]] auto props(
-		) const -> const descriptor_buffer_properties&;
+		[[nodiscard]] auto props() const -> const descriptor_buffer_properties&;
+
 	private:
 		struct sub_buffer {
 			vk::Buffer buffer = nullptr;
@@ -261,8 +261,7 @@ auto gse::gpu::build_vk_get_info(const descriptor_get_info& info, vk::Descriptor
 
 namespace gse::gpu {
 	constexpr auto descriptor_buffer_usage =
-		vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT
-		| vk::BufferUsageFlagBits::eSamplerDescriptorBufferEXT;
+		vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT | vk::BufferUsageFlagBits::eSamplerDescriptorBufferEXT;
 }
 
 auto gse::gpu::descriptor_heap::create_sub_buffer(const vulkan::device& dev, const gpu::device_size capacity, const std::string_view tag) -> sub_buffer {
@@ -285,8 +284,7 @@ auto gse::gpu::descriptor_heap::create_sub_buffer(const vulkan::device& dev, con
 	constexpr auto preferred_flags = required_flags | vk::MemoryPropertyFlagBits::eDeviceLocal;
 
 	for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-		if ((mem_reqs.memoryTypeBits & (1u << i))
-			&& (mem_props.memoryTypes[i].propertyFlags & preferred_flags) == preferred_flags) {
+		if ((mem_reqs.memoryTypeBits & (1u << i)) && (mem_props.memoryTypes[i].propertyFlags & preferred_flags) == preferred_flags) {
 			memory_type_index = i;
 			break;
 		}
@@ -294,8 +292,7 @@ auto gse::gpu::descriptor_heap::create_sub_buffer(const vulkan::device& dev, con
 
 	if (memory_type_index == std::numeric_limits<std::uint32_t>::max()) {
 		for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-			if ((mem_reqs.memoryTypeBits & (1u << i))
-				&& (mem_props.memoryTypes[i].propertyFlags & required_flags) == required_flags) {
+			if ((mem_reqs.memoryTypeBits & (1u << i)) && (mem_props.memoryTypes[i].propertyFlags & required_flags) == required_flags) {
 				memory_type_index = i;
 				break;
 			}
@@ -325,10 +322,7 @@ auto gse::gpu::descriptor_heap::create_sub_buffer(const vulkan::device& dev, con
 	sb.mapped = m_device.mapMemory(sb.memory, 0, capacity, {});
 	sb.address = m_device.getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = sb.buffer });
 
-	log::println(log::category::vulkan_memory,
-		"Descriptor heap '{}' sub-buffer created: {} KB, address 0x{:x}, memory type {} ({})",
-		tag, capacity / 1024, sb.address, memory_type_index,
-		device_local ? "DEVICE_LOCAL+HOST_VISIBLE" : "HOST_VISIBLE only");
+	log::println(log::category::vulkan_memory, "Descriptor heap '{}' sub-buffer created: {} KB, address 0x{:x}, memory type {} ({})", tag, capacity / 1024, sb.address, memory_type_index, device_local ? "DEVICE_LOCAL+HOST_VISIBLE" : "HOST_VISIBLE only");
 
 	return sb;
 }
@@ -380,7 +374,12 @@ auto gse::gpu::descriptor_heap::allocate(const gpu::device_size size, const std:
 	assert(
 		aligned_offset + aligned_size <= m_persistent.capacity,
 		"Persistent descriptor buffer exhausted: requested {} bytes at offset {}, capacity {} (caller {}:{} in {})",
-		aligned_size, aligned_offset, m_persistent.capacity, loc.file_name(), loc.line(), loc.function_name()
+		aligned_size,
+		aligned_offset,
+		m_persistent.capacity,
+		loc.file_name(),
+		loc.line(),
+		loc.function_name()
 	);
 
 	m_persistent_offset = aligned_offset + aligned_size;
@@ -410,7 +409,10 @@ auto gse::gpu::descriptor_heap::allocate_transient(const std::uint32_t frame_ind
 	assert(
 		offset + aligned_size <= slice_end,
 		"Transient descriptor frame slice exhausted for frame {}: requested {} at {}, slice ends at {}",
-		frame_index, aligned_size, offset, slice_end
+		frame_index,
+		aligned_size,
+		offset,
+		slice_end
 	);
 
 	std::memset(static_cast<std::byte*>(m_transient.mapped) + offset, 0, aligned_size);
@@ -462,7 +464,7 @@ auto gse::gpu::descriptor_heap::bind(const gpu::handle<vulkan::command_buffer> c
 auto gse::gpu::descriptor_heap::bind_descriptor_storage(const gpu::handle<vulkan::command_buffer> cmd) const -> void {
 	const std::array<vk::DescriptorBufferBindingInfoEXT, 2> bindings = {
 		vk::DescriptorBufferBindingInfoEXT{ .address = m_persistent.address, .usage = descriptor_buffer_usage },
-		vk::DescriptorBufferBindingInfoEXT{ .address = m_transient.address,  .usage = descriptor_buffer_usage },
+		vk::DescriptorBufferBindingInfoEXT{ .address = m_transient.address, .usage = descriptor_buffer_usage },
 	};
 	std::bit_cast<vk::CommandBuffer>(cmd).bindDescriptorBuffersEXT(static_cast<std::uint32_t>(bindings.size()), bindings.data());
 }
@@ -488,7 +490,8 @@ auto gse::gpu::descriptor_heap::align_up(const gpu::device_size value) const -> 
 	return (value + alignment - 1) & ~(alignment - 1);
 }
 
-gse::gpu::descriptor_set_writer::descriptor_set_writer(descriptor_heap& heap, gpu::handle<vulkan::descriptor_set_layout> layout, const gpu::device_size layout_size, std::vector<descriptor_binding_info> bindings) : m_heap(&heap), m_layout_size(layout_size), m_bindings(std::move(bindings)) {}
+gse::gpu::descriptor_set_writer::descriptor_set_writer(descriptor_heap& heap, gpu::handle<vulkan::descriptor_set_layout> layout, const gpu::device_size layout_size, std::vector<descriptor_binding_info> bindings) : m_heap(&heap), m_layout_size(layout_size), m_bindings(std::move(bindings)) {
+}
 
 auto gse::gpu::descriptor_set_writer::begin(const std::uint32_t frame_index) -> descriptor_region {
 	m_current_region = m_heap->allocate_transient(frame_index, m_layout_size);
@@ -496,8 +499,7 @@ auto gse::gpu::descriptor_set_writer::begin(const std::uint32_t frame_index) -> 
 }
 
 auto gse::gpu::descriptor_set_writer::buffer(std::uint32_t binding, const gpu::handle<vulkan::buffer> buf, const gpu::device_size offset, const gpu::device_size range) -> descriptor_set_writer& {
-	assert(binding < m_bindings.size(),
-		"Binding {} out of range (max {})", binding, m_bindings.size());
+	assert(binding < m_bindings.size(), "Binding {} out of range (max {})", binding, m_bindings.size());
 
 	const auto& [binding_offset, descriptor_size, type] = m_bindings[binding];
 	const auto addr = m_heap->buffer_address(buf);
@@ -517,8 +519,7 @@ auto gse::gpu::descriptor_set_writer::buffer(std::uint32_t binding, const gpu::h
 }
 
 auto gse::gpu::descriptor_set_writer::storage_image(const std::uint32_t binding, const gpu::handle<vulkan::image_view> view, const image_layout layout) -> descriptor_set_writer& {
-	assert(binding < m_bindings.size(),
-		"Binding {} out of range (max {})", binding, m_bindings.size());
+	assert(binding < m_bindings.size(), "Binding {} out of range (max {})", binding, m_bindings.size());
 
 	const auto& info = m_bindings[binding];
 

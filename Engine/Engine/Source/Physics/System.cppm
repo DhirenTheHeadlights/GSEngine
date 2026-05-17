@@ -119,23 +119,17 @@ export namespace gse::physics {
 		struct data {
 			static constexpr std::string_view category = "Physics";
 
-			[[=gse::settings::describe<"Step the physics world each frame.">{}]]
-			bool update_phys = true;
+			[[= gse::settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
-			[[=gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{}]]
-			bool use_gpu_solver = false;
+			[[= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{}]] bool use_gpu_solver = false;
 
-			[[=gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce jitter at the cost of frame time.">{}, =gse::settings::range<1, 40>{}]]
-			int solver_iterations = 15;
+			[[= gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce jitter at the cost of frame time.">{}, = gse::settings::range<1, 40>{}]] int solver_iterations = 15;
 
-			[[=gse::settings::describe<"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{}]]
-			bool use_jacobi = false;
+			[[= gse::settings::describe<"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{}]] bool use_jacobi = false;
 
-			[[=gse::settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; higher values converge faster.">{}, =gse::settings::range<0.1f, 1.0f>{}]]
-			float jacobi_omega = 0.67f;
+			[[= gse::settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; higher values converge faster.">{}, = gse::settings::range<0.1f, 1.0f>{}]] float jacobi_omega = 0.67f;
 
-			[[=gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for fast-moving bodies.">{}, =gse::settings::range<1, 8>{}]]
-			int physics_substeps = 2;
+			[[= gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for fast-moving bodies.">{}, = gse::settings::range<1, 8>{}]] int physics_substeps = 2;
 
 			bool gpu_buffers_created = false;
 			gpu_solver_stats gpu_stats;

@@ -56,8 +56,7 @@ export namespace gse {
 			const contact_point& p
 		) -> bool;
 
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 	};
 
 	auto compute_tangent_basis(
@@ -78,8 +77,7 @@ auto gse::contact_manifold::clear() -> void {
 }
 
 auto gse::pack_feature(const feature_id& feature) -> std::uint64_t {
-	return
-		(static_cast<std::uint64_t>(static_cast<std::uint8_t>(feature.type_a)) << 56) |
+	return (static_cast<std::uint64_t>(static_cast<std::uint8_t>(feature.type_a)) << 56) |
 		(static_cast<std::uint64_t>(feature.index_a) << 48) |
 		(static_cast<std::uint64_t>(feature.side_a0) << 40) |
 		(static_cast<std::uint64_t>(feature.side_a1) << 32) |

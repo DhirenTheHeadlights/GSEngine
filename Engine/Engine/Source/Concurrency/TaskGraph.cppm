@@ -10,8 +10,7 @@ import :async_task;
 export namespace gse {
 	class task_graph {
 	public:
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 
 		auto notify_state_ready(
 			id state_type
@@ -97,8 +96,7 @@ auto gse::task_graph::wait_state_ready(const id state_type) -> async::task<> {
 	struct state_awaiter {
 		state_slot* slot;
 
-		static auto await_ready(
-		) noexcept -> bool {
+		[[nodiscard]] auto await_ready() const noexcept -> bool {
 			return false;
 		}
 
@@ -121,8 +119,8 @@ auto gse::task_graph::wait_state_ready(const id state_type) -> async::task<> {
 			}
 		}
 
-		static auto await_resume(
-		) noexcept -> void {}
+		auto await_resume() const noexcept -> void {
+		}
 	};
 
 	co_await state_awaiter{ slot };

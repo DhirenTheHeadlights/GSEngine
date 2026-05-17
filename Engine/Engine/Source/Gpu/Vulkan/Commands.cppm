@@ -286,7 +286,7 @@ auto gse::vulkan::commands::raw() const -> vk::CommandBuffer {
 }
 
 auto gse::vulkan::commands::begin() const -> void {
-	raw().begin(vk::CommandBufferBeginInfo {});
+	raw().begin(vk::CommandBufferBeginInfo{});
 }
 
 auto gse::vulkan::commands::begin_secondary(const gpu::secondary_inheritance_info& info) const -> void {
@@ -384,19 +384,19 @@ namespace gse::vulkan {
 }
 
 auto gse::vulkan::build_vk_attachment(const gpu::rendering_attachment_info& att, const bool is_depth) -> vk::RenderingAttachmentInfo {
-	vk::ClearValue clear {};
+	vk::ClearValue clear{};
 	if (is_depth) {
-		clear.depthStencil = vk::ClearDepthStencilValue { .depth = att.depth_clear_value.depth, .stencil = 0 };
+		clear.depthStencil = vk::ClearDepthStencilValue{ .depth = att.depth_clear_value.depth, .stencil = 0 };
 	}
 	else {
-		clear.color = vk::ClearColorValue { std::array {
+		clear.color = vk::ClearColorValue{ std::array{
 			att.color_clear_value.r,
 			att.color_clear_value.g,
 			att.color_clear_value.b,
 			att.color_clear_value.a,
 		} };
 	}
-	return vk::RenderingAttachmentInfo {
+	return vk::RenderingAttachmentInfo{
 		.imageView = std::bit_cast<vk::ImageView>(att.image_view),
 		.imageLayout = to_vk(att.layout),
 		.loadOp = to_vk(att.load),
@@ -418,11 +418,11 @@ auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rende
 	}
 	const auto min = info.render_area.min();
 	const auto size = info.render_area.size();
-	return vk::RenderingInfo {
-		.flags = info.secondary_command_buffers ? vk::RenderingFlags { vk::RenderingFlagBits::eContentsSecondaryCommandBuffers } : vk::RenderingFlags {},
-		.renderArea = vk::Rect2D {
-			.offset = vk::Offset2D { min.x(), min.y() },
-			.extent = vk::Extent2D { static_cast<std::uint32_t>(size.x()), static_cast<std::uint32_t>(size.y()) },
+	return vk::RenderingInfo{
+		.flags = info.secondary_command_buffers ? vk::RenderingFlags{ vk::RenderingFlagBits::eContentsSecondaryCommandBuffers } : vk::RenderingFlags{},
+		.renderArea = vk::Rect2D{
+			.offset = vk::Offset2D{ min.x(), min.y() },
+			.extent = vk::Extent2D{ static_cast<std::uint32_t>(size.x()), static_cast<std::uint32_t>(size.y()) },
 		},
 		.layerCount = info.layer_count,
 		.colorAttachmentCount = static_cast<std::uint32_t>(scratch.color.size()),
@@ -435,7 +435,7 @@ auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rende
 auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, dependency_scratch& scratch) -> vk::DependencyInfo {
 	scratch.memory.reserve(dep.memory_barriers.size());
 	for (const auto& b : dep.memory_barriers) {
-		scratch.memory.push_back(vk::MemoryBarrier2 {
+		scratch.memory.push_back(vk::MemoryBarrier2{
 			.srcStageMask = to_vk(b.src_stages),
 			.srcAccessMask = to_vk(b.src_access),
 			.dstStageMask = to_vk(b.dst_stages),
@@ -444,7 +444,7 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 	}
 	scratch.buffer.reserve(dep.buffer_barriers.size());
 	for (const auto& b : dep.buffer_barriers) {
-		scratch.buffer.push_back(vk::BufferMemoryBarrier2 {
+		scratch.buffer.push_back(vk::BufferMemoryBarrier2{
 			.srcStageMask = to_vk(b.src_stages),
 			.srcAccessMask = to_vk(b.src_access),
 			.dstStageMask = to_vk(b.dst_stages),
@@ -458,7 +458,7 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 	}
 	scratch.image.reserve(dep.image_barriers.size());
 	for (const auto& b : dep.image_barriers) {
-		scratch.image.push_back(vk::ImageMemoryBarrier2 {
+		scratch.image.push_back(vk::ImageMemoryBarrier2{
 			.srcStageMask = to_vk(b.src_stages),
 			.srcAccessMask = to_vk(b.src_access),
 			.dstStageMask = to_vk(b.dst_stages),
@@ -468,7 +468,7 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 			.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 			.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
 			.image = std::bit_cast<vk::Image>(b.image),
-			.subresourceRange = vk::ImageSubresourceRange {
+			.subresourceRange = vk::ImageSubresourceRange{
 				.aspectMask = to_vk(b.aspects),
 				.baseMipLevel = b.base_mip_level,
 				.levelCount = b.level_count,
@@ -477,7 +477,7 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 			},
 		});
 	}
-	return vk::DependencyInfo {
+	return vk::DependencyInfo{
 		.memoryBarrierCount = static_cast<std::uint32_t>(scratch.memory.size()),
 		.pMemoryBarriers = scratch.memory.data(),
 		.bufferMemoryBarrierCount = static_cast<std::uint32_t>(scratch.buffer.size()),
@@ -548,7 +548,7 @@ auto gse::vulkan::commands::set_viewport(const gpu::viewport& viewport) const ->
 auto gse::vulkan::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const -> void {
 	const auto min = scissor.min();
 	const auto size = scissor.size();
-	const vk::Rect2D rect {
+	const vk::Rect2D rect{
 		.offset = { min.x(), min.y() },
 		.extent = { static_cast<std::uint32_t>(size.x()), static_cast<std::uint32_t>(size.y()) },
 	};
@@ -622,40 +622,40 @@ auto gse::vulkan::commands::build_acceleration_structures(const gpu::acceleratio
 	std::vector<vk::AccelerationStructureGeometryKHR> vk_geometries;
 	vk_geometries.reserve(build_info.geometries.size());
 	for (const auto& g : build_info.geometries) {
-		vk::AccelerationStructureGeometryDataKHR data {};
+		vk::AccelerationStructureGeometryDataKHR data{};
 		vk::GeometryTypeKHR vk_geometry_type = vk::GeometryTypeKHR::eInstances;
 		if (g.type == gpu::acceleration_structure_geometry_type::triangles) {
 			vk_geometry_type = vk::GeometryTypeKHR::eTriangles;
-			data.triangles = vk::AccelerationStructureGeometryTrianglesDataKHR {
+			data.triangles = vk::AccelerationStructureGeometryTrianglesDataKHR{
 				.vertexFormat = to_vk(g.triangles.vertex_format),
-				.vertexData = vk::DeviceOrHostAddressConstKHR { .deviceAddress = g.triangles.vertex_data },
+				.vertexData = vk::DeviceOrHostAddressConstKHR{ .deviceAddress = g.triangles.vertex_data },
 				.vertexStride = g.triangles.vertex_stride,
 				.maxVertex = g.triangles.max_vertex,
 				.indexType = to_vk(g.triangles.index_type),
-				.indexData = vk::DeviceOrHostAddressConstKHR { .deviceAddress = g.triangles.index_data },
+				.indexData = vk::DeviceOrHostAddressConstKHR{ .deviceAddress = g.triangles.index_data },
 			};
 		}
 		else {
-			data.instances = vk::AccelerationStructureGeometryInstancesDataKHR {
+			data.instances = vk::AccelerationStructureGeometryInstancesDataKHR{
 				.arrayOfPointers = g.instances.array_of_pointers ? vk::True : vk::False,
-				.data = vk::DeviceOrHostAddressConstKHR { .deviceAddress = g.instances.data },
+				.data = vk::DeviceOrHostAddressConstKHR{ .deviceAddress = g.instances.data },
 			};
 		}
-		vk_geometries.push_back(vk::AccelerationStructureGeometryKHR {
+		vk_geometries.push_back(vk::AccelerationStructureGeometryKHR{
 			.geometryType = vk_geometry_type,
 			.geometry = data,
 			.flags = to_vk(g.flags),
 		});
 	}
 
-	const vk::AccelerationStructureBuildGeometryInfoKHR vk_build_info {
+	const vk::AccelerationStructureBuildGeometryInfoKHR vk_build_info{
 		.type = to_vk(build_info.type),
 		.flags = to_vk(build_info.flags),
 		.mode = to_vk(build_info.mode),
 		.dstAccelerationStructure = std::bit_cast<vk::AccelerationStructureKHR>(build_info.dst.value),
 		.geometryCount = static_cast<std::uint32_t>(vk_geometries.size()),
 		.pGeometries = vk_geometries.data(),
-		.scratchData = vk::DeviceOrHostAddressKHR { .deviceAddress = build_info.scratch_address },
+		.scratchData = vk::DeviceOrHostAddressKHR{ .deviceAddress = build_info.scratch_address },
 	};
 
 	std::vector<vk::AccelerationStructureBuildRangeInfoKHR> vk_ranges;

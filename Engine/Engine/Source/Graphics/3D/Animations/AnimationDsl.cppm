@@ -162,18 +162,26 @@ export namespace gse::animation {
 	class graph_builder {
 	public:
 		graph_builder(const std::string_view name, const state_handle& default_state)
-			: m_name(name), m_default_state(default_state) {}
+			: m_name(name), m_default_state(default_state) {
+		}
 
 		template <typename... Transitions>
-			requires (std::convertible_to<Transitions, transition_def> && ...)
+		requires(std::convertible_to<Transitions, transition_def> && ...)
 		auto transitions(Transitions&&... t) -> graph_builder& {
 			(m_transitions.push_back(std::forward<Transitions>(t)), ...);
 			return *this;
 		}
 
-		auto name() const -> const std::string& { return m_name; }
-		auto default_state() const -> const state_handle& { return m_default_state; }
-		auto transitions() const -> const std::vector<transition_def>& { return m_transitions; }
+		auto name() const -> const std::string& {
+			return m_name;
+		}
+		auto default_state() const -> const state_handle& {
+			return m_default_state;
+		}
+		auto transitions() const -> const std::vector<transition_def>& {
+			return m_transitions;
+		}
+
 	private:
 		std::string m_name;
 		state_handle m_default_state;

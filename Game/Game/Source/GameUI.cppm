@@ -34,27 +34,27 @@ auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::input:
 		ctx.channels.push<gse::gui::menu_content>({
 			.menu = "Test",
 			.build = [&](gse::gui::builder& ui) {
-			ui.draw<gse::gui::value<float>>({
-				.name = "FPS",
-				.val = static_cast<float>(gse::system_clock::fps()),
-			});
-			ui.draw<gse::gui::value<int>>({
-				.name = "Test Value",
-				.val = 42,
-			});
-			ui.draw<gse::gui::text>({
-				.content = std::format("Test Quantity: {:.2f} m", gse::meters(5.0f).as<gse::meters>()),
-			});
-			ui.draw<gse::gui::input>({
-				.name = "Input Test",
-				.buffer = d.buff,
-			});
-			ui.draw<gse::gui::slider<float>>({
-				.name = "Slider Test",
-				.value = d.slider_f,
-				.min = 0.f,
-				.max = 10.f,
-			});
+				ui.draw<gse::gui::value<float>>({
+					.name = "FPS",
+					.val = static_cast<float>(gse::system_clock::fps()),
+				});
+				ui.draw<gse::gui::value<int>>({
+					.name = "Test Value",
+					.val = 42,
+				});
+				ui.draw<gse::gui::text>({
+					.content = std::format("Test Quantity: {:.2f} m", gse::meters(5.0f).as<gse::meters>()),
+				});
+				ui.draw<gse::gui::input>({
+					.name = "Input Test",
+					.buffer = d.buff,
+				});
+				ui.draw<gse::gui::slider<float>>({
+					.name = "Slider Test",
+					.value = d.slider_f,
+					.min = 0.f,
+					.max = 10.f,
+				});
 			},
 		});
 

@@ -116,15 +116,18 @@ auto gse::camera::system::run(run_context& ctx, data& d, const input::system::da
 				d.blend_duration = best_blend_duration;
 				d.blend_elapsed = time{};
 				d.blending = true;
-			} else {
+			}
+			else {
 				d.current = best_target;
 			}
 			d.active_controller_entity = best_controller;
 			d.active_priority = highest_priority;
-		} else if (best_controller.exists()) {
+		}
+		else if (best_controller.exists()) {
 			if (d.blending) {
 				d.blend_to = best_target;
-			} else {
+			}
+			else {
 				d.current = best_target;
 			}
 		}

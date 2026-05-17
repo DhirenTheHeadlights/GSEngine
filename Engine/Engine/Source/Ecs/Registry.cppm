@@ -29,7 +29,7 @@ export namespace gse {
 		auto add(
 			id owner,
 			bool entity_active,
-			T value = T {}
+			T value = T{}
 		) -> T*;
 
 		auto activate_pending(
@@ -108,7 +108,7 @@ export namespace gse {
 		template <typename T>
 		auto add_component(
 			id owner,
-			T value = T {}
+			T value = T{}
 		) -> T*;
 
 		template <typename T>
@@ -394,13 +394,13 @@ auto gse::registry::remove_component(const id owner) -> void {
 template <typename T>
 auto gse::registry::components(this registry& self) -> decltype(auto) {
 	auto* s = self.try_storage<T>();
-	return s ? s->items() : std::span<T> {};
+	return s ? s->items() : std::span<T>{};
 }
 
 template <typename T>
 auto gse::registry::owner_ids(this registry& self) -> std::span<const id> {
 	auto* s = self.try_storage<T>();
-	return s ? s->owners() : std::span<const id> {};
+	return s ? s->owners() : std::span<const id>{};
 }
 
 template <typename T>

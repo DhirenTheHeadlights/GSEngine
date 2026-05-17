@@ -19,8 +19,7 @@ import gse.log;
 export namespace gse::vulkan {
 	class command : public non_copyable {
 	public:
-		~command(
-		) override = default;
+		~command() override = default;
 
 		command(
 			command&&
@@ -94,8 +93,7 @@ export namespace gse::vulkan {
 			std::uint32_t frame_index
 		) -> gpu::handle<command_buffer>;
 
-		[[nodiscard]] auto worker_count(
-		) const -> std::size_t;
+		[[nodiscard]] auto worker_count() const -> std::size_t;
 
 	private:
 		struct pool_slot {
@@ -128,7 +126,8 @@ export namespace gse::vulkan {
 
 gse::vulkan::command::command(std::array<family_pool, gpu::queue_type_count> pools, std::array<std::uint32_t, gpu::queue_type_count> families)
 	: m_pools(std::move(pools)),
-	  m_families(families) {}
+	  m_families(families) {
+}
 
 auto gse::vulkan::command::make_primary_pool(const device& device_data, const std::uint32_t family, const std::string_view label) -> family_pool {
 	const vk::CommandPoolCreateInfo pool_info{
@@ -205,7 +204,8 @@ auto gse::vulkan::command::frame_command_buffer(const gpu::queue_type queue, con
 
 gse::vulkan::worker_command_pools::worker_command_pools(std::array<family_pools, gpu::queue_type_count> pools, std::array<std::uint32_t, gpu::queue_type_count> families)
 	: m_pools(std::move(pools)),
-	  m_families(families) {}
+	  m_families(families) {
+}
 
 gse::vulkan::worker_command_pools::~worker_command_pools() = default;
 
@@ -329,4 +329,3 @@ auto gse::vulkan::worker_command_pools::acquire_secondary(const gpu::queue_type 
 auto gse::vulkan::worker_command_pools::worker_count() const -> std::size_t {
 	return m_pools[0].per_worker.size();
 }
-

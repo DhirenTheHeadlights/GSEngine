@@ -31,28 +31,23 @@ export namespace gse::gpu {
 
 		~device() override;
 
-		[[nodiscard]] auto allocator(
-		) -> vulkan::device&;
+		[[nodiscard]] auto allocator() -> vulkan::device&;
 
-		[[nodiscard]] auto allocator(
-		) const -> const vulkan::device&;
+		[[nodiscard]] auto allocator() const -> const vulkan::device&;
 
 		[[nodiscard]] auto descriptor_heap(
 			this auto& self
 		) -> decltype(auto);
 
-		[[nodiscard]] auto surface_format(
-		) const -> image_format;
+		[[nodiscard]] auto surface_format() const -> image_format;
 
 		[[nodiscard]] auto queue_family(
 			gpu::queue_type queue
 		) const -> std::uint32_t;
 
-		auto wait_idle(
-		) const -> void;
+		auto wait_idle() const -> void;
 
-		[[nodiscard]] auto timestamp_period(
-		) const -> float;
+		[[nodiscard]] auto timestamp_period() const -> float;
 
 		auto report_device_lost(
 			std::string_view operation
@@ -106,23 +101,17 @@ export namespace gse::gpu {
 			this auto& self
 		) -> auto&;
 
-		[[nodiscard]] auto vulkan_queue(
-		) -> vulkan::queue&;
+		[[nodiscard]] auto vulkan_queue() -> vulkan::queue&;
 
-		[[nodiscard]] auto vulkan_command(
-		) -> vulkan::command&;
+		[[nodiscard]] auto vulkan_command() -> vulkan::command&;
 
-		[[nodiscard]] auto worker_command_pools(
-		) -> vulkan::worker_command_pools&;
+		[[nodiscard]] auto worker_command_pools() -> vulkan::worker_command_pools&;
 
-		[[nodiscard]] auto transient(
-		) -> transient_executor&;
+		[[nodiscard]] auto transient() -> transient_executor&;
 
-		[[nodiscard]] auto descriptor_buffer_props(
-		) const -> const descriptor_buffer_properties&;
+		[[nodiscard]] auto descriptor_buffer_props() const -> const descriptor_buffer_properties&;
 
-		[[nodiscard]] auto video_encode_enabled(
-		) const -> bool;
+		[[nodiscard]] auto video_encode_enabled() const -> bool;
 
 	private:
 		device(

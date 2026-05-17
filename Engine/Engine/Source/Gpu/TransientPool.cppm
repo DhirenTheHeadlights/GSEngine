@@ -62,12 +62,12 @@ export namespace gse::gpu {
 		}
 	};
 
-	struct [[= same_frame_channel]] transient_image_request {
+	struct[[= same_frame_channel]] transient_image_request {
 		transient_image_handle handle;
 		transient_image_desc desc;
 	};
 
-	struct [[= same_frame_channel]] transient_buffer_request {
+	struct[[= same_frame_channel]] transient_buffer_request {
 		transient_buffer_handle handle;
 		transient_buffer_desc desc;
 	};
@@ -105,8 +105,7 @@ export namespace gse::gpu {
 			gpu::device& dev
 		);
 
-		~transient_pool(
-		) override;
+		~transient_pool() override;
 
 		transient_pool(
 			transient_pool&& other
@@ -123,8 +122,7 @@ export namespace gse::gpu {
 			std::span<const id> pass_kind_order
 		) -> void;
 
-		auto reset(
-		) -> void;
+		auto reset() -> void;
 
 		[[nodiscard]] auto resolve_image(
 			transient_image_handle h
@@ -141,8 +139,7 @@ export namespace gse::gpu {
 			image_format format = image_format::r8g8b8a8_unorm;
 		};
 
-		[[nodiscard]] auto transient_images(
-		) const -> std::vector<transient_image_info>;
+		[[nodiscard]] auto transient_images() const -> std::vector<transient_image_info>;
 
 	private:
 		struct memory_block {

@@ -25,7 +25,7 @@ export namespace gse {
 
 	class skinned_model : public identifiable {
 	public:
-		struct [[
+		struct[[
 			= asset_format::baked_ext<".gsmdl">{},
 			= asset_format::baked_dir<"SkinnedModels">{},
 			= asset_format::source_dir<"SkinnedModels">{},
@@ -36,7 +36,8 @@ export namespace gse {
 			raw_blob_owned<std::byte> bytes;
 		};
 
-		explicit skinned_model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
+		explicit skinned_model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {
+		}
 		explicit skinned_model(std::string_view name, std::vector<skinned_mesh_data> meshes);
 
 		auto load(asset::load_ctx& ctx) -> async::task<>;
@@ -45,8 +46,8 @@ export namespace gse {
 		auto meshes() const -> std::span<const skinned_mesh>;
 		auto center_of_mass() const -> vec3<length>;
 
-		auto uploads_ready(
-		) const -> bool;
+		auto uploads_ready() const -> bool;
+
 	private:
 		std::vector<skinned_mesh> m_meshes;
 		std::filesystem::path m_baked_model_path;
@@ -177,11 +178,7 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> async::task<> {
 				std::vector<std::uint32_t> indices(index_count);
 				read_into(indices.data(), index_count * sizeof(std::uint32_t));
 
-				m_meshes.emplace_back(skinned_mesh_data{
-					.vertices = std::move(vertices),
-					.indices = std::move(indices),
-					.material = std::move(mat)
-				});
+				m_meshes.emplace_back(skinned_mesh_data{ .vertices = std::move(vertices), .indices = std::move(indices), .material = std::move(mat) });
 			}
 		}
 	}

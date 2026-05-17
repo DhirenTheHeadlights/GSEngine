@@ -25,6 +25,7 @@ export namespace gse {
 	template <typename... Qs>
 	class mixed_vec : vec<float, sizeof...(Qs)> {
 		using base = vec<float, sizeof...(Qs)>;
+
 	public:
 		static constexpr std::size_t size = sizeof...(Qs);
 
@@ -35,8 +36,7 @@ export namespace gse {
 		);
 
 		template <std::size_t I>
-		constexpr auto at(
-		) const -> internal::nth_t<I, Qs...>;
+		constexpr auto at() const -> internal::nth_t<I, Qs...>;
 
 		template <std::size_t I>
 		constexpr auto set(
@@ -46,7 +46,8 @@ export namespace gse {
 }
 
 template <typename... Qs>
-constexpr gse::mixed_vec<Qs...>::mixed_vec(const vec<float, size>& raw) : base(raw) {}
+constexpr gse::mixed_vec<Qs...>::mixed_vec(const vec<float, size>& raw) : base(raw) {
+}
 
 template <typename... Qs>
 template <std::size_t I>

@@ -205,12 +205,7 @@ auto gse::gpu::used_bindings(const std::span<const std::uint32_t> spirv) -> std:
 		else if (op == op_image_write && wcount >= 4) {
 			record(spirv[i + 1], descriptor_access::read_write);
 		}
-		else if ((op == op_image_read || op == op_image_fetch
-			|| op == op_image_sample_implicit_lod || op == op_image_sample_explicit_lod
-			|| op == op_image_sample_dref_implicit_lod || op == op_image_sample_dref_explicit_lod
-			|| op == op_image_sample_proj_implicit_lod || op == op_image_sample_proj_explicit_lod
-			|| op == op_image_sample_proj_dref_implicit_lod || op == op_image_sample_proj_dref_explicit_lod)
-			&& wcount >= 4) {
+		else if ((op == op_image_read || op == op_image_fetch || op == op_image_sample_implicit_lod || op == op_image_sample_explicit_lod || op == op_image_sample_dref_implicit_lod || op == op_image_sample_dref_explicit_lod || op == op_image_sample_proj_implicit_lod || op == op_image_sample_proj_explicit_lod || op == op_image_sample_proj_dref_implicit_lod || op == op_image_sample_proj_dref_explicit_lod) && wcount >= 4) {
 			record(spirv[i + 3], descriptor_access::read);
 		}
 		else if (op == op_sampled_image && wcount >= 5) {

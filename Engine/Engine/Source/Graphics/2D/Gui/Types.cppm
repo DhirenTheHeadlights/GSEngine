@@ -12,256 +12,249 @@ import :ui_renderer;
 import :styles;
 
 export namespace gse::gui {
-    using ui_rect = rect_t<vec2f>;
+	using ui_rect = rect_t<vec2f>;
 
-    enum class resize_handle {
-        none,
-        left,
-        right,
-        top,
-        bottom,
-        top_left,
-        top_right,
-        bottom_left,
-        bottom_right,
-    };
+	enum class resize_handle {
+		none,
+		left,
+		right,
+		top,
+		bottom,
+		top_left,
+		top_right,
+		bottom_left,
+		bottom_right,
+	};
 
-    struct tooltip_state {
-        std::string text;
-        id widget_id;
-        id pending_widget_id;
-        time hover_time{};
-        vec2f position;
-        bool visible = false;
+	struct tooltip_state {
+		std::string text;
+		id widget_id;
+		id pending_widget_id;
+		time hover_time{};
+		vec2f position;
+		bool visible = false;
 
-        static constexpr time show_delay = seconds(0.5f);
-    };
+		static constexpr time show_delay = seconds(0.5f);
+	};
 
-    struct scroll_state {
-        float offset = 0.f;
-        float velocity = 0.f;
-        float target_offset = 0.f;
-        float content_height = 0.f;
-        bool scrollbar_held = false;
-        bool scrollbar_hovered = false;
-        float scrollbar_grab_offset = 0.f;
-    };
+	struct scroll_state {
+		float offset = 0.f;
+		float velocity = 0.f;
+		float target_offset = 0.f;
+		float content_height = 0.f;
+		bool scrollbar_held = false;
+		bool scrollbar_hovered = false;
+		float scrollbar_grab_offset = 0.f;
+	};
 
-    struct scroll_config {
-        float scrollbar_width = 8.f;
-        float scrollbar_min_height = 20.f;
-        float scroll_speed = 40.f;
-        float smooth_factor = 0.15f;
-        bool auto_hide_scrollbar = true;
-        bool smooth_scrolling = true;
-    };
+	struct scroll_config {
+		float scrollbar_width = 8.f;
+		float scrollbar_min_height = 20.f;
+		float scroll_speed = 40.f;
+		float smooth_factor = 0.15f;
+		bool auto_hide_scrollbar = true;
+		bool smooth_scrolling = true;
+	};
 
-    struct scroll_region_info {
-        std::string_view id;
-        vec2f size{ 0.f, 0.f };
-        scroll_config config{};
-    };
+	struct scroll_region_info {
+		std::string_view id;
+		vec2f size{ 0.f, 0.f };
+		scroll_config config{};
+	};
 }
 
 namespace gse::gui::dock {
-    enum class location {
-        none,
-        center,
-        left,
-        right,
-        top,
-        bottom
-    };
+	enum class location {
+		none,
+		center,
+		left,
+		right,
+		top,
+		bottom
+	};
 
-    struct area {
-        ui_rect rect;
-        ui_rect target;
-        location dock_location = location::none;
+	struct area {
+		ui_rect rect;
+		ui_rect target;
+		location dock_location = location::none;
 
-        ~area() noexcept = default;
-    };
+		~area() noexcept = default;
+	};
 
-    struct space {
-        std::array<area, 5> areas;
+	struct space {
+		std::array<area, 5> areas;
 
-        ~space() noexcept = default;
-    };
+		~space() noexcept = default;
+	};
 }
 
 export namespace gse::gui {
-    struct menu_data {
-        ui_rect rect;
-        id parent_id;
-        dock::location docked_to = dock::location::none;
-        float dock_split_ratio = 0.5f;
-    };
+	struct menu_data {
+		ui_rect rect;
+		id parent_id;
+		dock::location docked_to = dock::location::none;
+		float dock_split_ratio = 0.5f;
+	};
 
-    struct draw_context;
+	struct draw_context;
 
-    struct menu : identifiable, identifiable_owned {
-        explicit menu(
-            std::string_view tag,
-            const menu_data& data
-        );
+	struct menu : identifiable, identifiable_owned {
+		explicit menu(
+			std::string_view tag,
+			const menu_data& data
+		);
 
-        ui_rect rect;
-        vec2f grab_offset;
-        std::optional<vec2f> pre_docked_size;
-        bool grabbed = false;
-        bool chrome_drawn_this_frame = false;
-        float dock_split_ratio = 0.5f;
-        resize_handle active_resize_handle = resize_handle::none;
-        dock::location docked_to = dock::location::none;
-        std::vector<std::string> tab_contents;
-        std::uint32_t active_tab_index = 0;
-        bool was_begun_this_frame = false;
-        bool was_visible_last_frame = false;
-    };
+		ui_rect rect;
+		vec2f grab_offset;
+		std::optional<vec2f> pre_docked_size;
+		bool grabbed = false;
+		bool chrome_drawn_this_frame = false;
+		float dock_split_ratio = 0.5f;
+		resize_handle active_resize_handle = resize_handle::none;
+		dock::location docked_to = dock::location::none;
+		std::vector<std::string> tab_contents;
+		std::uint32_t active_tab_index = 0;
+		bool was_begun_this_frame = false;
+		bool was_visible_last_frame = false;
+	};
 
-    struct draw_context {
-        menu* current_menu;
-        const style& style;
-        const input::state& input;
-        resource::handle<font> font;
-        resource::handle<texture> blank_texture;
-        vec2f& layout_cursor;
-        std::vector<renderer::sprite_command>& sprites;
-        std::vector<renderer::text_command>& texts;
-        std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
-        std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
+	struct draw_context {
+		menu* current_menu;
+		const style& style;
+		const input::state& input;
+		resource::handle<font> font;
+		resource::handle<texture> blank_texture;
+		vec2f& layout_cursor;
+		std::vector<renderer::sprite_command>& sprites;
+		std::vector<renderer::text_command>& texts;
+		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
+		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
 
-        render_layer current_layer = render_layer::content;
-        std::uint32_t current_z_order = 0;
+		render_layer current_layer = render_layer::content;
+		std::uint32_t current_z_order = 0;
 
-        render_layer input_layer = render_layer::content;
-        tooltip_state* tooltip = nullptr;
-        std::vector<ui_rect> clip_stack;
+		render_layer input_layer = render_layer::content;
+		tooltip_state* tooltip = nullptr;
+		std::vector<ui_rect> clip_stack;
 
-        auto queue_sprite(
-            renderer::sprite_command cmd
-        ) const -> void;
+		auto queue_sprite(
+			renderer::sprite_command cmd
+		) const -> void;
 
-        auto queue_text(
-            renderer::text_command cmd
-        ) const -> void;
+		auto queue_text(
+			renderer::text_command cmd
+		) const -> void;
 
-        [[nodiscard]] auto input_available(
-        ) const -> bool;
+		[[nodiscard]] auto input_available() const -> bool;
 
-        auto set_tooltip(
-            const id& widget_id,
-            const std::string& text
-        ) const -> void;
+		auto set_tooltip(
+			const id& widget_id,
+			const std::string& text
+		) const -> void;
 
-        auto next_row(
-            float height_multiplier = 1.f
-        ) const -> ui_rect;
+		auto next_row(
+			float height_multiplier = 1.f
+		) const -> ui_rect;
 
-        auto animated_color(
-            const id& widget_id,
-            vec4f target,
-            float speed = 10.f
-        ) const -> vec4f;
+		auto animated_color(
+			const id& widget_id,
+			vec4f target,
+			float speed = 10.f
+		) const -> vec4f;
 
-        [[nodiscard]] auto current_clip(
-        ) const -> std::optional<ui_rect>;
-    };
+		[[nodiscard]] auto current_clip() const -> std::optional<ui_rect>;
+	};
 
-    struct scroll_handle : non_copyable {
-        scroll_handle(
-        ) noexcept = default;
+	struct scroll_handle : non_copyable {
+		scroll_handle() noexcept = default;
 
-        scroll_handle(
-            draw_context& ctx,
-            scroll_state& state,
-            const ui_rect& visible_rect,
-            float saved_layout_y,
-            const scroll_config& config
-        ) noexcept;
+		scroll_handle(
+			draw_context& ctx,
+			scroll_state& state,
+			const ui_rect& visible_rect,
+			float saved_layout_y,
+			const scroll_config& config
+		) noexcept;
 
-        scroll_handle(
-            scroll_handle&& other
-        ) noexcept;
+		scroll_handle(
+			scroll_handle&& other
+		) noexcept;
 
-        auto operator=(
-            scroll_handle&& other
-        ) noexcept -> scroll_handle&;
+		auto operator=(
+			scroll_handle&& other
+		) noexcept -> scroll_handle&;
 
-        ~scroll_handle(
-        ) noexcept;
+		~scroll_handle() noexcept;
 
-        [[nodiscard]] auto valid(
-        ) const -> bool;
+		[[nodiscard]] auto valid() const -> bool;
 
-        [[nodiscard]] auto visible_rect(
-        ) const -> const ui_rect&;
+		[[nodiscard]] auto visible_rect() const -> const ui_rect&;
 
-        [[nodiscard]] auto offset(
-        ) const -> float;
+		[[nodiscard]] auto offset() const -> float;
 
-    private:
-        draw_context* m_ctx = nullptr;
-        scroll_state* m_state = nullptr;
-        ui_rect m_visible_rect;
-        float m_saved_layout_y = 0.f;
-        float m_content_start_y = 0.f;
-        scroll_config m_config{};
-        bool m_active = false;
-    };
+	private:
+		draw_context* m_ctx = nullptr;
+		scroll_state* m_state = nullptr;
+		ui_rect m_visible_rect;
+		float m_saved_layout_y = 0.f;
+		float m_content_start_y = 0.f;
+		scroll_config m_config{};
+		bool m_active = false;
+	};
 
-    [[nodiscard]] auto scroll_region(
-        draw_context& ctx,
-        const scroll_region_info& info
-    ) -> scroll_handle;
+	[[nodiscard]] auto scroll_region(
+		draw_context& ctx,
+		const scroll_region_info& info
+	) -> scroll_handle;
 }
 
 namespace gse::gui::states {
-    struct idle {};
+	struct idle {};
 
-    struct dragging {
-        id menu_id;
-        vec2f offset;
-    };
+	struct dragging {
+		id menu_id;
+		vec2f offset;
+	};
 
-    struct resizing {
-        id menu_id;
-        resize_handle handle;
-    };
+	struct resizing {
+		id menu_id;
+		resize_handle handle;
+	};
 
-    struct resizing_divider {
-        id parent_id;
-        id child_id;
-    };
+	struct resizing_divider {
+		id parent_id;
+		id child_id;
+	};
 
-    struct pending_drag {
-        id menu_id;
-        vec2f start_position;
-        vec2f offset;
-        std::optional<std::uint32_t> tab_index;
-    };
+	struct pending_drag {
+		id menu_id;
+		vec2f start_position;
+		vec2f offset;
+		std::optional<std::uint32_t> tab_index;
+	};
 }
 
 namespace gse::gui {
-    struct state {
-        using value_type = std::variant<
-            states::idle,
-            states::dragging,
-            states::resizing,
-            states::resizing_divider,
-            states::pending_drag
-        >;
+	struct state {
+		using value_type = std::variant<
+			states::idle,
+			states::dragging,
+			states::resizing,
+			states::resizing_divider,
+			states::pending_drag>;
 
-        value_type v;
+		value_type v;
 
-        template <typename T>
-            requires (!std::same_as<std::remove_cvref_t<T>, state>) && std::constructible_from<value_type, T&&>
-        state(T&& x) : v(std::forward<T>(x)) {}
+		template <typename T>
+		requires(!std::same_as<std::remove_cvref_t<T>, state>) && std::constructible_from<value_type, T&&>
+		state(T&& x) : v(std::forward<T>(x)) {
+		}
 
-        template <typename T>
-            requires (!std::same_as<std::remove_cvref_t<T>, state>) && std::assignable_from<value_type&, T&&>
-        auto operator=(T&& x) -> state& {
-            v = std::forward<T>(x);
-            return *this;
-        }
-    };
+		template <typename T>
+		requires(!std::same_as<std::remove_cvref_t<T>, state>) && std::assignable_from<value_type&, T&&>
+		auto operator=(T&& x) -> state& {
+			v = std::forward<T>(x);
+			return *this;
+		}
+	};
 }

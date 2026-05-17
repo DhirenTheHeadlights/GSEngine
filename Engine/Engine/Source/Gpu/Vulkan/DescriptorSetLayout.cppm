@@ -33,8 +33,7 @@ export namespace gse::vulkan {
 			this const descriptor_set_layout& self
 		) -> gpu::handle<descriptor_set_layout>;
 
-		explicit operator bool(
-		) const;
+		explicit operator bool() const;
 
 	private:
 		explicit descriptor_set_layout(

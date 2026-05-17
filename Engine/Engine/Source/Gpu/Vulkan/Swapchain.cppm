@@ -35,8 +35,7 @@ export namespace gse::vulkan {
 			std::vector<gpu::present_mode>&& present_modes
 		);
 
-		~swap_chain_details(
-		) = default;
+		~swap_chain_details() = default;
 
 		swap_chain_details(
 			swap_chain_details&&
@@ -46,14 +45,11 @@ export namespace gse::vulkan {
 			swap_chain_details&&
 		) noexcept -> swap_chain_details& = default;
 
-		[[nodiscard]] auto capabilities(
-		) const -> gpu::surface_capabilities;
+		[[nodiscard]] auto capabilities() const -> gpu::surface_capabilities;
 
-		[[nodiscard]] auto formats(
-		) const -> std::span<const gpu::surface_format>;
+		[[nodiscard]] auto formats() const -> std::span<const gpu::surface_format>;
 
-		[[nodiscard]] auto present_modes(
-		) const -> std::span<const gpu::present_mode>;
+		[[nodiscard]] auto present_modes() const -> std::span<const gpu::present_mode>;
 
 	private:
 		gpu::surface_capabilities m_capabilities{};
@@ -63,8 +59,7 @@ export namespace gse::vulkan {
 
 	class swap_chain : public non_copyable {
 	public:
-		~swap_chain(
-		) = default;
+		~swap_chain() = default;
 
 		swap_chain(
 			swap_chain&&
@@ -80,23 +75,17 @@ export namespace gse::vulkan {
 			device& device_data
 		) -> swap_chain;
 
-		[[nodiscard]] auto swap_chain_handle(
-		) const -> gpu::handle<swap_chain>;
+		[[nodiscard]] auto swap_chain_handle() const -> gpu::handle<swap_chain>;
 
-		[[nodiscard]] auto extent(
-		) const -> vec2u;
+		[[nodiscard]] auto extent() const -> vec2u;
 
-		[[nodiscard]] auto format(
-		) const -> gpu::image_format;
+		[[nodiscard]] auto format() const -> gpu::image_format;
 
-		[[nodiscard]] auto surface_format(
-		) const -> gpu::surface_format;
+		[[nodiscard]] auto surface_format() const -> gpu::surface_format;
 
-		[[nodiscard]] auto present_mode(
-		) const -> gpu::present_mode;
+		[[nodiscard]] auto present_mode() const -> gpu::present_mode;
 
-		[[nodiscard]] auto image_count(
-		) const -> std::uint32_t;
+		[[nodiscard]] auto image_count() const -> std::uint32_t;
 
 		[[nodiscard]] auto image(
 			std::uint32_t index
@@ -112,14 +101,11 @@ export namespace gse::vulkan {
 			return self.m_depth_image;
 		}
 
-		auto clear_depth(
-		) -> void;
+		auto clear_depth() -> void;
 
-		auto reset_swapchain(
-		) -> void;
+		auto reset_swapchain() -> void;
 
-		[[nodiscard]] auto details(
-		) const -> const swap_chain_details&;
+		[[nodiscard]] auto details() const -> const swap_chain_details&;
 
 	private:
 		swap_chain(

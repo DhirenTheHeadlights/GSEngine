@@ -20,8 +20,7 @@ export namespace gse {
 		bool live_state = true;
 
 		template <typename T>
-		auto read_channel(
-		) const -> channel_read_guard<T>;
+		auto read_channel() const -> channel_read_guard<T>;
 
 		auto after_id(
 			id state_id

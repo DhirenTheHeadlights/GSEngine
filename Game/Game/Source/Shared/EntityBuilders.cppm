@@ -63,13 +63,13 @@ auto gs::box(const gse::vec3<gse::position>& position, const gse::vec3<gse::leng
 			.orientation = orientation,
 		},
 		.motion = {
-			.body = gse::physics::dynamic_body {
+			.body = gse::physics::dynamic_body{
 				.mass = m,
 				.moment_of_inertia = box_inertia,
 			},
 		},
 		.collision = {
-			.shape = gse::physics::box_shape { .size = size },
+			.shape = gse::physics::box_shape{ .size = size },
 		},
 		.spec = {
 			.material = {
@@ -88,12 +88,12 @@ auto gs::sphere(const gse::vec3<gse::position>& position, const gse::length radi
 			.position = position,
 		},
 		.motion = {
-			.body = gse::physics::dynamic_body {
+			.body = gse::physics::dynamic_body{
 				.mass = gse::kilograms(100.f),
 			},
 		},
 		.collision = {
-			.shape = gse::physics::sphere_shape { .radius = radius },
+			.shape = gse::physics::sphere_shape{ .radius = radius },
 		},
 		.spec = {
 			.material = {
@@ -111,10 +111,10 @@ auto gs::sphere_light(const gse::vec3<gse::position>& position, const gse::lengt
 			.position = position,
 		},
 		.motion = {
-			.body = gse::physics::static_body {},
+			.body = gse::physics::static_body{},
 		},
 		.collision = {
-			.shape = gse::physics::sphere_shape { .radius = radius },
+			.shape = gse::physics::sphere_shape{ .radius = radius },
 		},
 		.spec = {
 			.material = {
@@ -142,10 +142,10 @@ auto gs::static_box(const gse::vec3<gse::position>& position, const gse::vec3<gs
 			.orientation = orientation,
 		},
 		.motion = {
-			.body = gse::physics::static_body {},
+			.body = gse::physics::static_body{},
 		},
 		.collision = {
-			.shape = gse::physics::box_shape { .size = size },
+			.shape = gse::physics::box_shape{ .size = size },
 		},
 		.spec = {
 			.material = {

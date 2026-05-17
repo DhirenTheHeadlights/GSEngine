@@ -50,17 +50,13 @@ export namespace gse {
 		struct data {
 			static constexpr std::string_view category = "Window";
 
-			[[=gse::settings::describe<"Run in fullscreen on the selected monitor. When off, the window uses its last windowed rect.">{}]]
-			bool fullscreen = false;
+			[[= gse::settings::describe<"Run in fullscreen on the selected monitor. When off, the window uses its last windowed rect.">{}]] bool fullscreen = false;
 
-			[[=gse::settings::describe<"Show the system mouse cursor over the window.">{}]]
-			bool mouse_visible = false;
+			[[= gse::settings::describe<"Show the system mouse cursor over the window.">{}]] bool mouse_visible = false;
 
-			[[=gse::settings::describe<"Monitor that hosts the window in fullscreen mode.">{}]]
-			gse::settings::choice<int> monitor;
+			[[= gse::settings::describe<"Monitor that hosts the window in fullscreen mode.">{}]] gse::settings::choice<int> monitor;
 
-			[[=gse::settings::describe<"Resolution and refresh rate used when fullscreen.">{}]]
-			gse::settings::choice<int> resolution;
+			[[= gse::settings::describe<"Resolution and refresh rate used when fullscreen.">{}]] gse::settings::choice<int> resolution;
 
 			GLFWwindow* handle = nullptr;
 			std::string title;
@@ -86,8 +82,7 @@ export namespace gse {
 			data& d
 		) -> void;
 
-		static auto poll_events(
-		) -> void;
+		static auto poll_events() -> void;
 
 		[[nodiscard]] static auto is_open(
 			const data& d
@@ -123,11 +118,9 @@ export namespace gse {
 			const data& d
 		) -> bool;
 
-		[[nodiscard]] static auto vulkan_instance_extensions(
-		) -> std::span<const char* const>;
+		[[nodiscard]] static auto vulkan_instance_extensions() -> std::span<const char* const>;
 
-		[[nodiscard]] static auto enumerate_monitors(
-		) -> std::vector<monitor_info>;
+		[[nodiscard]] static auto enumerate_monitors() -> std::vector<monitor_info>;
 
 		[[nodiscard]] static auto enumerate_resolutions(
 			int monitor_index

@@ -71,4 +71,3 @@ auto gse::random_value(const NumberType& max) -> NumberType {
 		return dis(generator);
 	}
 }
-

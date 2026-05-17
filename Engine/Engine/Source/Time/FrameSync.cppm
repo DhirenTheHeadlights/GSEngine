@@ -14,11 +14,9 @@ export namespace gse::frame_sync {
 		callback cb
 	) -> void;
 
-	auto begin(
-	) -> void;
+	auto begin() -> void;
 
-	auto end(
-	) -> void;
+	auto end() -> void;
 }
 
 namespace gse::frame_sync {

@@ -77,7 +77,7 @@ export namespace gse::vulkan {
 		gpu::handle<basic_buffer<device>> m_buffer;
 		gpu::device_size m_size = 0;
 		basic_allocation<Device> m_allocation;
-		mutable std::atomic<bool> m_host_dirty { false };
+		mutable std::atomic<bool> m_host_dirty{ false };
 	};
 
 	using buffer = basic_buffer<device>;
@@ -162,7 +162,7 @@ gse::vulkan::basic_buffer<Device>::basic_buffer(const gpu::handle<basic_buffer<d
 template <typename Device>
 auto gse::vulkan::basic_buffer<Device>::create(Device& dev, const gpu::buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> basic_buffer {
 	return dev.create_buffer(
-		gpu::buffer_create_info {
+		gpu::buffer_create_info{
 			.size = desc.size,
 			.usage = desc.usage,
 		},

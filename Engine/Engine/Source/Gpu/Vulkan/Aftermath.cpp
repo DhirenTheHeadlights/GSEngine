@@ -23,11 +23,9 @@ namespace gse::vulkan {
 
 	aftermath::data* active_state = nullptr;
 
-	auto default_dump_directory(
-	) -> std::filesystem::path;
+	auto default_dump_directory() -> std::filesystem::path;
 
-	auto default_shader_directory(
-	) -> std::filesystem::path;
+	auto default_shader_directory() -> std::filesystem::path;
 
 	auto build_diagnostics_flags(
 		const aftermath::settings& cfg
@@ -119,7 +117,8 @@ extern "C" void GFSDK_AFTERMATH_CALL gse_aftermath_crash_dump_description_cb(PFN
 }
 #endif
 
-gse::vulkan::aftermath::aftermath() : m_state(std::make_unique<data>()) {}
+gse::vulkan::aftermath::aftermath() : m_state(std::make_unique<data>()) {
+}
 
 gse::vulkan::aftermath::~aftermath() {
 	if (!m_state || !m_state->enabled) {
@@ -209,8 +208,7 @@ auto gse::vulkan::aftermath::wait_for_crash_dump(time timeout) -> void {
 		if (!GFSDK_Aftermath_SUCCEED(result)) {
 			return;
 		}
-		if (status == GFSDK_Aftermath_CrashDump_Status_Finished
-			|| status == GFSDK_Aftermath_CrashDump_Status_NotStarted) {
+		if (status == GFSDK_Aftermath_CrashDump_Status_Finished || status == GFSDK_Aftermath_CrashDump_Status_NotStarted) {
 			return;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));

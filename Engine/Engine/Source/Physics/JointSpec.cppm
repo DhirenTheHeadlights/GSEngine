@@ -9,18 +9,17 @@ import gse.math;
 import gse.meta;
 
 export namespace gse::physics {
-    using joint_config = std::variant<
-        fixed_joint,
-        distance_joint,
-        hinge_joint,
-        slider_joint,
-        spring_joint
-    >;
+	using joint_config = std::variant<
+		fixed_joint,
+		distance_joint,
+		hinge_joint,
+		slider_joint,
+		spring_joint>;
 
-    struct joint_spec {
-        [[= networked]] id entity_a;
-        [[= networked]] id entity_b;
-        [[= networked]] joint_config config;
-        bool resolved = false;
-    };
+	struct joint_spec {
+		[[= networked]] id entity_a;
+		[[= networked]] id entity_b;
+		[[= networked]] joint_config config;
+		bool resolved = false;
+	};
 }

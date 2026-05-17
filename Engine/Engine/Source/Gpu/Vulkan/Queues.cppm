@@ -48,14 +48,12 @@ export namespace gse::vulkan {
 		std::optional<std::uint32_t> compute_family;
 		std::optional<std::uint32_t> video_encode_family;
 
-		[[nodiscard]] auto complete(
-		) const -> bool;
+		[[nodiscard]] auto complete() const -> bool;
 	};
 
 	class queue : public non_copyable {
 	public:
-		~queue(
-		) = default;
+		~queue() = default;
 
 		queue(
 			queue&&
@@ -65,17 +63,13 @@ export namespace gse::vulkan {
 			queue&&
 		) noexcept -> queue& = default;
 
-		[[nodiscard]] auto has_video_encode(
-		) const -> bool;
+		[[nodiscard]] auto has_video_encode() const -> bool;
 
-		[[nodiscard]] auto graphics_family_index(
-		) const -> std::uint32_t;
+		[[nodiscard]] auto graphics_family_index() const -> std::uint32_t;
 
-		[[nodiscard]] auto compute_family_index(
-		) const -> std::uint32_t;
+		[[nodiscard]] auto compute_family_index() const -> std::uint32_t;
 
-		[[nodiscard]] auto video_encode_family_index(
-		) const -> std::optional<std::uint32_t>;
+		[[nodiscard]] auto video_encode_family_index() const -> std::optional<std::uint32_t>;
 
 		auto submit(
 			gpu::queue_type queue,
@@ -248,7 +242,8 @@ gse::vulkan::queue::queue(vk::raii::Queue&& graphics, vk::raii::Queue&& present,
 	  m_compute(std::move(compute)),
 	  m_graphics_family_index(graphics_family),
 	  m_compute_family_index(compute_family),
-	  m_mutex(std::make_unique<std::recursive_mutex>()) {}
+	  m_mutex(std::make_unique<std::recursive_mutex>()) {
+}
 
 auto gse::vulkan::queue::set_video_encode(vk::raii::Queue&& q, const std::uint32_t family) -> void {
 	m_video_encode = std::move(q);

@@ -16,22 +16,22 @@ import gse.diag;
 import gse.ecs;
 
 namespace gse::renderer::skin_compute {
-	struct [[= shaders::shader_struct]] push_constants {
+	struct[[= shaders::shader_struct]] push_constants {
 		std::uint32_t joint_count;
 		std::uint32_t instance_count;
 		std::uint32_t local_pose_stride;
 		std::uint32_t skin_stride;
 	};
 
-	struct [[= shaders::binding<0, 0>{}, = shaders::ssbo_readonly]] skeleton_data {
+	struct[[= shaders::binding<0, 0>{}, = shaders::ssbo_readonly]] skeleton_data {
 		using element = geometry_collector::joint_data;
 	};
 
-	struct [[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] local_poses {
+	struct[[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] local_poses {
 		using element = mat4f;
 	};
 
-	struct [[= shaders::binding<0, 2>{}, = shaders::ssbo_readwrite]] skin_matrices {
+	struct[[= shaders::binding<0, 2>{}, = shaders::ssbo_readwrite]] skin_matrices {
 		using element = mat4f;
 	};
 
@@ -45,8 +45,7 @@ namespace gse::renderer::skin_compute {
 		gpu::bindings<shader_binding_types>,
 		gpu::threads<64>,
 		gpu::push_constant<push_constants>,
-		gpu::system_values<gpu::group_id, gpu::group_thread_id>
-	>;
+		gpu::system_values<gpu::group_id, gpu::group_thread_id>>;
 }
 
 auto gse::renderer::skin_compute::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc, data& d) -> async::task<> {
@@ -94,7 +93,7 @@ auto gse::renderer::skin_compute::system::frame(frame_context& ctx, shared_view<
 	};
 
 	auto rec = co_await gpu::pass<system>(ctx)
-		.pipeline(d.pipeline);
+				   .pipeline(d.pipeline);
 
 	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 	rec.push(d.pipeline, skin_pc);

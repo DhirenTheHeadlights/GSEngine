@@ -41,8 +41,7 @@ export namespace gse::vulkan {
 			this const query_pool& self
 		) -> gpu::handle<query_pool>;
 
-		explicit operator bool(
-		) const;
+		explicit operator bool() const;
 
 		template <typename T>
 		[[nodiscard]] auto results(
@@ -64,7 +63,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::query_pool::query_pool(vk::raii::QueryPool&& pool) : m_pool(std::move(pool)) {}
+gse::vulkan::query_pool::query_pool(vk::raii::QueryPool&& pool) : m_pool(std::move(pool)) {
+}
 
 auto gse::vulkan::query_pool::translate_status(const vk::Result r) -> gpu::query_status {
 	return r == vk::Result::eSuccess ? gpu::query_status::success : gpu::query_status::error;

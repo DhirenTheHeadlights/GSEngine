@@ -43,14 +43,11 @@ export namespace gse::gui {
 		struct data {
 			static constexpr std::string_view category = "UI";
 
-			[[=gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}]]
-			theme current_theme = theme::dark;
+			[[= gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}]] theme current_theme = theme::dark;
 
-			[[=gse::settings::describe<"Multiplier on UI element sizes and font metrics. Useful for high-DPI displays.">{}, =gse::settings::range<0.5f, 2.0f>{}]]
-			float ui_scale = 1.0f;
+			[[= gse::settings::describe<"Multiplier on UI element sizes and font metrics. Useful for high-DPI displays.">{}, = gse::settings::range<0.5f, 2.0f>{}]] float ui_scale = 1.0f;
 
-			[[=gse::settings::describe<"Font used to render text in the UI.">{}]]
-			gse::settings::choice<int> font;
+			[[= gse::settings::describe<"Font used to render text in the UI.">{}]] gse::settings::choice<int> font;
 
 			id_mapped_collection<menu> menus;
 			menu* current_menu = nullptr;

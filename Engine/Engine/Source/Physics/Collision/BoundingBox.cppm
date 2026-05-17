@@ -29,8 +29,7 @@ export namespace gse {
 		penetration penetration;
 		std::vector<vec3<position>> collision_points;
 
-		auto axis(
-		) const -> axis;
+		auto axis() const -> axis;
 	};
 }
 
@@ -53,8 +52,7 @@ export namespace gse {
 
 	class bounding_box {
 	public:
-		bounding_box(
-		) = default;
+		bounding_box() = default;
 
 		bounding_box(
 			const physics::transform_component& tc,
@@ -75,33 +73,28 @@ export namespace gse {
 			const physics::transform_component& tc
 		);
 
-		auto aabb(
-		) const -> aabb;
+		auto aabb() const -> aabb;
 
-		auto obb(
-		) const -> obb;
+		auto obb() const -> obb;
 
-		auto center(
-		) const -> vec3<position>;
+		auto center() const -> vec3<position>;
 
-		auto half_extents(
-		) const -> vec3<displacement>;
+		auto half_extents() const -> vec3<displacement>;
 
-		auto face_normals(
-		) const -> std::array<vec3f, 6>;
+		auto face_normals() const -> std::array<vec3f, 6>;
 
 		auto face_vertices(
 			std::uint32_t face_index
 		) const -> std::array<vec3<position>, 4>;
 
-		auto obb_vertices(
-		) const -> std::vector<vec3<position>>;
+		auto obb_vertices() const -> std::vector<vec3<position>>;
 
 		auto edge_endpoints(
 			std::uint32_t edge_index
 		) const -> std::pair<vec3<position>, vec3<position>>;
 
 		static constexpr std::uint32_t edge_count = 12;
+
 	private:
 		vec3<position> m_center;
 		quat m_orientation = quat(1.f, 0.f, 0.f, 0.f);
@@ -126,22 +119,26 @@ gse::bounding_box::bounding_box(const physics::transform_component& tc, const ph
 		  shape.size.x() * 0.5f,
 		  shape.size.y() * 0.5f,
 		  shape.size.z() * 0.5f
-	  ) {}
+	  ) {
+}
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::sphere_shape& shape)
 	: m_center(tc.position),
 	  m_orientation(tc.orientation),
-	  m_half_extents(shape.radius, shape.radius, shape.radius) {}
+	  m_half_extents(shape.radius, shape.radius, shape.radius) {
+}
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::capsule_shape& shape)
 	: m_center(tc.position),
 	  m_orientation(tc.orientation),
-	  m_half_extents(shape.radius, shape.half_height + shape.radius, shape.radius) {}
+	  m_half_extents(shape.radius, shape.half_height + shape.radius, shape.radius) {
+}
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc)
 	: m_center(tc.position),
 	  m_orientation(tc.orientation),
-	  m_half_extents{} {}
+	  m_half_extents{} {
+}
 
 auto gse::bounding_box::aabb() const -> gse::aabb {
 	const auto rotation = mat3_cast(m_orientation);
@@ -227,11 +224,7 @@ auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<position>> {
 auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const -> std::pair<vec3<position>, vec3<position>> {
 	const auto vertices = obb_vertices();
 
-	static constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 12> edge_indices = {{
-		{0, 1}, {2, 3}, {4, 5}, {6, 7},
-		{0, 2}, {1, 3}, {4, 6}, {5, 7},
-		{0, 4}, {1, 5}, {2, 6}, {3, 7}
-	}};
+	static constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 12> edge_indices = { { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 }, { 0, 2 }, { 1, 3 }, { 4, 6 }, { 5, 7 }, { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 } } };
 
 	const auto& [i0, i1] = edge_indices[edge_index % 12];
 	return { vertices[i0], vertices[i1] };

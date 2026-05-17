@@ -19,17 +19,13 @@ export namespace gse::network {
 	public:
 		explicit remote_peer(const address& addr);
 
-		auto addr(
-		) const -> const address&;
+		auto addr() const -> const address&;
 
-		auto sequence(
-		) -> std::uint32_t&;
+		auto sequence() -> std::uint32_t&;
 
-		auto remote_ack_sequence(
-		) -> std::uint32_t&;
+		auto remote_ack_sequence() -> std::uint32_t&;
 
-		auto remote_ack_bitfield(
-		) -> std::uint32_t&;
+		auto remote_ack_bitfield() -> std::uint32_t&;
 
 		auto queue_reliable(
 			std::uint32_t seq,
@@ -60,7 +56,8 @@ export namespace gse::network {
 	};
 }
 
-gse::network::remote_peer::remote_peer(const address& addr) : m_address(addr) {}
+gse::network::remote_peer::remote_peer(const address& addr) : m_address(addr) {
+}
 
 auto gse::network::remote_peer::addr() const -> const address& {
 	return m_address;

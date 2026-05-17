@@ -73,7 +73,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 				b.jump = gse::actions::add<"Player_Jump">(ctx.channels, gse::key::space);
 				b.move_axis_id = gse::actions::bind_axis2(
 					ctx.channels,
-					gse::actions::pending_axis2_info {
+					gse::actions::pending_axis2_info{
 						.left = a,
 						.right = d,
 						.back = s_key,
@@ -94,7 +94,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 
 				b.jetpack_move_axis_id = gse::actions::bind_axis2(
 					ctx.channels,
-					gse::actions::pending_axis2_info {
+					gse::actions::pending_axis2_info{
 						.left = ja,
 						.right = jd,
 						.back = js,
@@ -112,7 +112,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 																			   });
 
 				ctx.add_component<gse::physics::motion_component>(owner_id, {
-																				.body = gse::physics::dynamic_body {
+																				.body = gse::physics::dynamic_body{
 																					.mass = gse::pounds(180.f),
 																					.update_orientation = false,
 																				},
@@ -121,7 +121,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 				ctx.add_component<gse::physics::motor_component>(owner_id, {});
 
 				ctx.add_component<gse::physics::collision_component>(owner_id, {
-																				   .shape = gse::physics::box_shape { .size = { width, height, width } },
+																				   .shape = gse::physics::box_shape{ .size = { width, height, width } },
 																			   });
 
 				ctx.add_component<gse::camera::follow_component>(owner_id, {
@@ -159,7 +159,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 					const float len = gse::magnitude(horizontal);
 					motor->velocity_drive_target = len > 1e-6f
 						? speed * (horizontal / len)
-						: gse::vec3<gse::velocity> {};
+						: gse::vec3<gse::velocity>{};
 				}
 				else {
 					motor->velocity_drive_target = {};

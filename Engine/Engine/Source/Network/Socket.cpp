@@ -60,7 +60,8 @@ namespace gse::network {
 		return ::fcntl(s, sockets::f_setfl, flags | sockets::o_nonblock) != -1;
 	}
 
-	auto ensure_initialized() -> void {}
+	auto ensure_initialized() -> void {
+	}
 #endif
 
 	auto to_native(std::uint64_t h) -> native_socket {
@@ -71,13 +72,13 @@ namespace gse::network {
 		return static_cast<std::uint64_t>(s);
 	}
 
-	constexpr auto handle_invalid = ~std::uint64_t{0};
+	constexpr auto handle_invalid = ~std::uint64_t{ 0 };
 
 	auto sockaddr_to_address(const ::sockaddr_in& src) -> address {
 		char buf[64] = {};
 		::inet_ntop(sockets::af_inet, &src.sin_addr, buf, sizeof(buf));
 		return {
-			.ip = std::string{buf},
+			.ip = std::string{ buf },
 			.port = ::ntohs(src.sin_port),
 		};
 	}

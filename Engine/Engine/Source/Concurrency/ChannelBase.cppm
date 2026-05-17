@@ -18,17 +18,13 @@ export namespace gse {
 				const std::vector<T>* data
 			);
 
-			auto begin(
-			) const -> std::vector<T>::const_iterator;
+			auto begin() const -> std::vector<T>::const_iterator;
 
-			auto end(
-			) const -> std::vector<T>::const_iterator;
+			auto end() const -> std::vector<T>::const_iterator;
 
-			auto size(
-			) const -> std::size_t;
+			[[nodiscard]] auto size() const -> std::size_t;
 
-			auto empty(
-			) const -> bool;
+			[[nodiscard]] auto empty() const -> bool;
 
 			auto operator[](
 				std::size_t i
@@ -40,14 +36,11 @@ export namespace gse {
 
 		using value_type = T;
 
-		channel(
-		);
+		channel();
 
-		auto read(
-		) const -> reader;
+		auto read() const -> reader;
 
-		auto read_raw(
-		) const -> const std::vector<T>&;
+		auto read_raw() const -> const std::vector<T>&;
 
 		auto push(
 			T item
@@ -58,8 +51,7 @@ export namespace gse {
 			Args&&... args
 		) -> T&;
 
-		auto flip(
-		) -> void;
+		auto flip() -> void;
 
 	private:
 		double_buffer<std::vector<T>> m_buffer;
@@ -69,16 +61,14 @@ export namespace gse {
 	struct channel_base {
 		virtual ~channel_base() = default;
 
-		virtual auto flip(
-		) -> void = 0;
+		virtual auto flip() -> void = 0;
 	};
 
 	template <typename T>
 	struct typed_channel final : channel_base {
 		channel<T> data;
 
-		auto flip(
-		) -> void override {
+		auto flip() -> void override {
 			data.flip();
 		}
 	};
@@ -95,11 +85,9 @@ export namespace gse {
 			T item
 		) -> void;
 
-		auto flip(
-		) -> void override;
+		auto flip() -> void override;
 
-		auto drain(
-		) -> std::vector<T>;
+		auto drain() -> std::vector<T>;
 	};
 
 	template <typename T>
@@ -113,20 +101,15 @@ export namespace gse {
 			std::size_t i
 		) const -> const T&;
 
-		auto empty(
-		) const -> bool;
+		[[nodiscard]] auto empty() const -> bool;
 
-		auto size(
-		) const -> std::size_t;
+		[[nodiscard]] auto size() const -> std::size_t;
 
-		auto begin(
-		) const -> std::vector<T>::const_iterator;
+		auto begin() const -> std::vector<T>::const_iterator;
 
-		auto end(
-		) const -> std::vector<T>::const_iterator;
+		auto end() const -> std::vector<T>::const_iterator;
 
-		auto front(
-		) const -> const T&;
+		auto front() const -> const T&;
 
 	private:
 		const std::vector<T>* m_data;
@@ -134,7 +117,8 @@ export namespace gse {
 }
 
 template <typename T>
-gse::channel<T>::reader::reader(const std::vector<T>* data) : m_data(data) {}
+gse::channel<T>::reader::reader(const std::vector<T>* data) : m_data(data) {
+}
 
 template <typename T>
 auto gse::channel<T>::reader::begin() const -> std::vector<T>::const_iterator {
@@ -163,7 +147,7 @@ auto gse::channel<T>::reader::operator[](std::size_t i) const -> const T& {
 
 template <typename T>
 gse::channel<T>::channel() {
-	frame_sync::on_end([this] {
+	frame_sync::on_end([this] -> auto {
 		flip();
 	});
 }
@@ -217,7 +201,8 @@ auto gse::same_frame_typed_channel<T>::drain() -> std::vector<T> {
 }
 
 template <typename T>
-gse::channel_read_guard<T>::channel_read_guard(const std::vector<T>& data) : m_data(&data) {}
+gse::channel_read_guard<T>::channel_read_guard(const std::vector<T>& data) : m_data(&data) {
+}
 
 template <typename T>
 auto gse::channel_read_guard<T>::operator[](const std::size_t i) const -> const T& {

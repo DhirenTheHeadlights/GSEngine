@@ -40,28 +40,23 @@ export namespace gse {
 			const setup_fn& app_setup = {}
 		) -> void;
 
-		auto update(
-		) -> void;
+		auto update() -> void;
 
-		auto render(
-		) -> void;
+		auto render() -> void;
 
-		auto shutdown(
-		) -> void;
+		auto shutdown() -> void;
 
-		auto make_channel_writer(
-		) -> channel_writer;
+		auto make_channel_writer() -> channel_writer;
 
-		auto registry(
-		) -> gse::registry&;
+		auto registry() -> gse::registry&;
 
-		auto world(
-		) -> world_system::data&;
+		auto world() -> world_system::data&;
 
 		template <typename S, typename... Args>
 		auto add_system(
 			Args&&... args
 		) -> state_of_t<S>&;
+
 	private:
 		flags<engine_flag> m_flags;
 		scheduler m_scheduler;
@@ -80,8 +75,8 @@ namespace gse {
 			.type_id = id_of<data_t>(),
 			.settings_ptr = &obj,
 			.write = &settings::write_settings_for<data_t>,
-			.read  = &settings::read_settings_for<data_t>,
-			.draw  = &settings::draw_struct_thunk<S>,
+			.read = &settings::read_settings_for<data_t>,
+			.draw = &settings::draw_struct_thunk<S>,
 		};
 	}
 }

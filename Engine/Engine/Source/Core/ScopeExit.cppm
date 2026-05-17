@@ -27,11 +27,10 @@ export namespace gse {
 
 		~scope_exit() noexcept override;
 
-		auto release(
-		) noexcept -> void;
+		auto release() noexcept -> void;
 
-		auto active(
-		) const noexcept -> bool;
+		[[nodiscard]] auto active() const noexcept -> bool;
+
 	private:
 		F m_func;
 		bool m_active = true;
@@ -44,10 +43,11 @@ auto gse::make_scope_exit(F&& f) noexcept(std::is_nothrow_constructible_v<std::d
 }
 
 template <class F>
-gse::scope_exit<F>::scope_exit(F&& f) noexcept(std::is_nothrow_move_constructible_v<F>): m_func(std::move(f)) {}
+gse::scope_exit<F>::scope_exit(F&& f) noexcept(std::is_nothrow_move_constructible_v<F>) : m_func(std::move(f)) {
+}
 
 template <class F>
-gse::scope_exit<F>::scope_exit(scope_exit&& other) noexcept(std::is_nothrow_move_constructible_v<F>): m_func(std::move(other.m_func)), m_active(other.m_active) {
+gse::scope_exit<F>::scope_exit(scope_exit&& other) noexcept(std::is_nothrow_move_constructible_v<F>) : m_func(std::move(other.m_func)), m_active(other.m_active) {
 	other.m_active = false;
 }
 
@@ -58,8 +58,9 @@ gse::scope_exit<F>::~scope_exit() noexcept {
 	}
 	try {
 		std::invoke(m_func);
-	} catch (...) {
-		std::terminate(); 
+	}
+	catch (...) {
+		std::terminate();
 	}
 }
 

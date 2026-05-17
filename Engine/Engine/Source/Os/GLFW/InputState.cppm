@@ -44,17 +44,13 @@ export namespace gse::input {
 			mouse_button button
 		) const -> bool;
 
-		auto mouse_position(
-		) const -> vec2f;
+		auto mouse_position() const -> vec2f;
 
-		auto mouse_delta(
-		) const -> vec2f;
+		auto mouse_delta() const -> vec2f;
 
-		auto scroll_delta(
-		) const -> vec2f;
+		auto scroll_delta() const -> vec2f;
 
-		auto text_entered(
-		) const -> const std::string&;
+		auto text_entered() const -> const std::string&;
 
 		auto begin_frame(
 			const detail::input_state_token& token

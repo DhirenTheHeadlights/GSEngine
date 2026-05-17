@@ -66,14 +66,8 @@ auto gse::network::extract_input_frame(const actions::state& state, const std::s
 		.pressed = pad(pm.words()),
 		.released = pad(rm.words()),
 		.held = pad(hm.words()),
-		.axes1 = axes1_ids
-			| std::views::transform(build_axes1)
-			| std::views::filter(axes1_active)
-			| std::ranges::to<std::vector>(),
-		.axes2 = axes2_ids
-			| std::views::transform(build_axes2)
-			| std::views::filter(axes2_active)
-			| std::ranges::to<std::vector>(),
+		.axes1 = axes1_ids | std::views::transform(build_axes1) | std::views::filter(axes1_active) | std::ranges::to<std::vector>(),
+		.axes2 = axes2_ids | std::views::transform(build_axes2) | std::views::filter(axes2_active) | std::ranges::to<std::vector>(),
 	};
 }
 
