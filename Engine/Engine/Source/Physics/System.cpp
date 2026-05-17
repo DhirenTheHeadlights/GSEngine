@@ -97,71 +97,6 @@ auto gse::physics::system::create_joint(data& d, const joint_definition& def) ->
 	return handle;
 }
 
-auto gse::physics::join(channel_writer& channels, const id a, const id b, const fixed_joint& config) -> void {
-	channels.push<joint_request>({
-		.def = {
-			.entity_a = a,
-			.entity_b = b,
-			.type = vbd::joint_type::fixed,
-			.local_anchor_a = config.anchor_a,
-			.local_anchor_b = config.anchor_b,
-		},
-	});
-}
-
-auto gse::physics::join(channel_writer& channels, const id a, const id b, const distance_joint& config) -> void {
-	channels.push<joint_request>({
-		.def = {
-			.entity_a = a,
-			.entity_b = b,
-			.type = vbd::joint_type::distance,
-			.target_distance = config.target,
-		},
-	});
-}
-
-auto gse::physics::join(channel_writer& channels, const id a, const id b, const hinge_joint& config) -> void {
-	channels.push<joint_request>({
-		.def = {
-			.entity_a = a,
-			.entity_b = b,
-			.type = vbd::joint_type::hinge,
-			.local_anchor_a = config.anchor_a,
-			.local_anchor_b = config.anchor_b,
-			.local_axis_a = config.axis,
-			.local_axis_b = config.axis,
-			.limit_lower = config.limits ? config.limits->first : radians(-std::numbers::pi_v<float>),
-			.limit_upper = config.limits ? config.limits->second : radians(std::numbers::pi_v<float>),
-			.limits_enabled = config.limits.has_value(),
-		},
-	});
-}
-
-auto gse::physics::join(channel_writer& channels, const id a, const id b, const slider_joint& config) -> void {
-	channels.push<joint_request>({
-		.def = {
-			.entity_a = a,
-			.entity_b = b,
-			.type = vbd::joint_type::slider,
-			.local_axis_a = config.axis,
-			.local_axis_b = config.axis,
-		},
-	});
-}
-
-auto gse::physics::join(channel_writer& channels, const id a, const id b, const spring_joint& config) -> void {
-	channels.push<joint_request>({
-		.def = {
-			.entity_a = a,
-			.entity_b = b,
-			.type = vbd::joint_type::distance,
-			.target_distance = config.target,
-			.compliance = config.compliance,
-			.damping = config.damping,
-		},
-	});
-}
-
 auto gse::physics::system::remove_joint(data& d, const joint_handle handle) -> void {
 	if (handle < d.joints.size()) {
 		d.joints.erase(d.joints.begin() + handle);
@@ -470,10 +405,6 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 	}
 
 	while (true) {
-		for (const auto& req : ctx.read_channel<joint_request>()) {
-			system::create_joint(d, req.def);
-		}
-
 		{
 			auto [specs] = co_await ctx.acquire<write<joint_spec>>();
 			for (auto& spec : specs) {

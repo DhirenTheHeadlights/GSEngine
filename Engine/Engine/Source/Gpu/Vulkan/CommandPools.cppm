@@ -92,7 +92,7 @@ export namespace gse::vulkan {
 			gpu::queue_type queue,
 			std::size_t worker_index,
 			std::uint32_t frame_index
-		) -> vk::CommandBuffer;
+		) -> gpu::handle<command_buffer>;
 
 		[[nodiscard]] auto worker_count(
 		) const -> std::size_t;
@@ -302,7 +302,7 @@ auto gse::vulkan::worker_command_pools::reset_frame(const std::uint32_t frame_in
 	}
 }
 
-auto gse::vulkan::worker_command_pools::acquire_secondary(const gpu::queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> vk::CommandBuffer {
+auto gse::vulkan::worker_command_pools::acquire_secondary(const gpu::queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::handle<command_buffer> {
 	const auto idx = static_cast<std::size_t>(queue);
 	auto& family = m_pools[idx].per_worker.empty() ? m_pools[0] : m_pools[idx];
 
@@ -323,7 +323,7 @@ auto gse::vulkan::worker_command_pools::acquire_secondary(const gpu::queue_type 
 		slot.secondaries.size()
 	);
 
-	return *slot.secondaries[slot.used++];
+	return std::bit_cast<gpu::handle<command_buffer>>(*slot.secondaries[slot.used++]);
 }
 
 auto gse::vulkan::worker_command_pools::worker_count() const -> std::size_t {

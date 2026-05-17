@@ -39,15 +39,12 @@ export namespace gse {
 			Args&&... args
 		) -> void;
 
-		[[nodiscard]] auto next_tick(
-		) -> async::task<>;
+		[[nodiscard]] auto next_tick() -> async::task<>;
 
-		[[nodiscard]] auto yield_tick(
-		) -> async::task<>;
+		[[nodiscard]] auto yield_tick() -> async::task<>;
 
 		template <typename... Accesses>
-		auto acquire(
-		) -> async::task<std::tuple<Accesses...>>;
+		auto acquire() -> async::task<std::tuple<Accesses...>>;
 
 		template <typename T>
 		auto try_component(
@@ -55,20 +52,16 @@ export namespace gse {
 		) const -> const T*;
 
 		template <typename T>
-		auto components(
-		) const -> std::span<const T>;
+		auto components() const -> std::span<const T>;
 
 		template <typename T>
-		auto drain_component_adds(
-		) -> std::vector<id>;
+		auto drain_component_adds() -> std::vector<id>;
 
 		template <typename T>
-		auto drain_component_updates(
-		) -> std::vector<id>;
+		auto drain_component_updates() -> std::vector<id>;
 
 		template <typename T>
-		auto drain_component_removes(
-		) -> std::vector<id>;
+		auto drain_component_removes() -> std::vector<id>;
 
 		auto ensure_exists(
 			id owner
@@ -93,7 +86,7 @@ export namespace gse {
 		template <typename T>
 		auto add_component(
 			id owner,
-			T value = T{}
+			T value = T {}
 		) -> T*;
 
 		template <typename T>
@@ -102,17 +95,17 @@ export namespace gse {
 		) -> void;
 
 		template <typename T>
-		auto ensure_storage(
-		) -> void;
+		auto ensure_storage() -> void;
 
-		[[nodiscard]] auto held_lock_count(
-		) const -> int;
+		[[nodiscard]] auto registry() const -> gse::registry&;
+
+		[[nodiscard]] auto held_lock_count() const -> int;
 
 	private:
 		scheduler& m_sched;
-		registry& m_reg;
+		gse::registry& m_reg;
 		async::rw_mutex_registry& m_access_mutexes;
-		std::atomic<int> m_held_locks{ 0 };
+		std::atomic<int> m_held_locks { 0 };
 		async::manual_event& m_resume_event;
 		async::manual_event& m_paused_event;
 		bool& m_is_in_update_loop;
@@ -121,7 +114,7 @@ export namespace gse {
 }
 
 namespace gse {
-	using lock_fn = async::task<>(*)(async::rw_mutex_registry&, id);
+	using lock_fn = async::task<> (*)(async::rw_mutex_registry&, id);
 
 	auto acquire_shared(
 		async::rw_mutex_registry& mutexes,
@@ -158,15 +151,14 @@ namespace gse {
 	) -> Access;
 
 	template <typename Access>
-	auto access_trace_label(
-	) -> std::string;
+	auto access_trace_label() -> std::string;
 
 	template <typename... Accesses>
-	auto acquire_trace_id(
-	) -> id;
+	auto acquire_trace_id() -> id;
 }
 
-gse::run_context::run_context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, registry& reg, async::rw_mutex_registry& access_mutexes, async::manual_event& resume_event, async::manual_event& paused_event, bool& is_in_update_loop, bool& settled) : task_context{ states, resources_store, channels_store, channels, graph, true }, m_sched(sched), m_reg(reg), m_access_mutexes(access_mutexes), m_resume_event(resume_event), m_paused_event(paused_event), m_is_in_update_loop(is_in_update_loop), m_settled(settled) {}
+gse::run_context::run_context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, gse::registry& reg, async::rw_mutex_registry& access_mutexes, async::manual_event& resume_event, async::manual_event& paused_event, bool& is_in_update_loop, bool& settled) : task_context { states, resources_store, channels_store, channels, graph, true }, m_sched(sched), m_reg(reg), m_access_mutexes(access_mutexes), m_resume_event(resume_event), m_paused_event(paused_event), m_is_in_update_loop(is_in_update_loop), m_settled(settled) {
+}
 
 auto gse::run_context::next_tick() -> async::task<> {
 	const int locks = held_lock_count();
@@ -201,9 +193,9 @@ auto gse::acquire_locks_in_sorted_order(async::rw_mutex_registry& mutexes, const
 	const std::size_t count = type_ids.size();
 	assert(count <= max_arity, "acquire arity {} exceeds max {}", count, max_arity);
 
-	std::array<std::size_t, max_arity> order_buf{};
+	std::array<std::size_t, max_arity> order_buf {};
 	const std::span order(order_buf.data(), count);
-	std::iota(order.begin(), order.end(), std::size_t{ 0 });
+	std::ranges::iota(order, std::size_t { 0 });
 	std::ranges::sort(order, [type_ids](const std::size_t a, const std::size_t b) {
 		return type_ids[a] < type_ids[b];
 	});
@@ -257,7 +249,7 @@ auto gse::access_trace_label() -> std::string {
 template <typename... Accesses>
 auto gse::acquire_trace_id() -> id {
 	static const id cached = make_acquire_trace_id(
-		std::array<std::string, sizeof...(Accesses)>{ access_trace_label<Accesses>()... }
+		std::array<std::string, sizeof...(Accesses)> { access_trace_label<Accesses>()... }
 	);
 	return cached;
 }
@@ -272,13 +264,17 @@ auto gse::run_context::acquire() -> async::task<std::tuple<Accesses...>> {
 	};
 	static const id tid = acquire_trace_id<Accesses...>();
 	co_await acquire_locks_in_sorted_order(m_access_mutexes, type_ids, fns, tid);
-	co_return std::tuple<Accesses...>{
-		make_locked_handle<Accesses>(access_token{}, m_reg, m_access_mutexes, &m_held_locks)...
+	co_return std::tuple<Accesses...> {
+		make_locked_handle<Accesses>(access_token {}, m_reg, m_access_mutexes, &m_held_locks)...
 	};
 }
 
 auto gse::run_context::held_lock_count() const -> int {
 	return m_held_locks.load(std::memory_order_acquire);
+}
+
+auto gse::run_context::registry() const -> gse::registry& {
+	return m_reg;
 }
 
 template <typename T>

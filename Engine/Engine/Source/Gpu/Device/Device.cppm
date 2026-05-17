@@ -44,7 +44,8 @@ export namespace gse::gpu {
 		[[nodiscard]] auto surface_format(
 		) const -> image_format;
 
-		[[nodiscard]] auto compute_queue_family(
+		[[nodiscard]] auto queue_family(
+			gpu::queue_type queue
 		) const -> std::uint32_t;
 
 		auto wait_idle(

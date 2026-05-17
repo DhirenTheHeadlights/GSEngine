@@ -114,8 +114,8 @@ auto gse::gpu::device::surface_format() const -> image_format {
 	return m_surface_format;
 }
 
-auto gse::gpu::device::compute_queue_family() const -> std::uint32_t {
-	return m_queue.compute_family_index();
+auto gse::gpu::device::queue_family(const gpu::queue_type queue) const -> std::uint32_t {
+	return m_device_config.queue_family(queue);
 }
 
 auto gse::gpu::device::wait_idle() const -> void {
