@@ -11,6 +11,7 @@ import gse.ecs;
 import gse.math;
 
 import :types;
+import :render_layer;
 
 export namespace gse::gui {
 	template <typename W>

@@ -10,6 +10,7 @@ import :font;
 import :texture;
 import :ui_renderer;
 import :styles;
+import :render_layer;
 
 export namespace gse::gui {
 	using ui_rect = rect_t<vec2f>;

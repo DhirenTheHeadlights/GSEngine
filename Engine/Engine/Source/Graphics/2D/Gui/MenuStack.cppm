@@ -2,9 +2,10 @@ export module gse.graphics:menu_stack;
 
 import std;
 
-import :builder;
+import gse.math;
 
-export import :menu_bar;
+import :builder;
+import :types;
 
 export namespace gse::gui {
 	struct screen;
@@ -66,9 +67,15 @@ export namespace gse::gui {
 			return {};
 		}
 
-		virtual auto section() const -> menu_bar::section {
-			return menu_bar::section::none;
-		}
+		virtual auto body_rect(
+			const style& sty,
+			vec2f viewport_size
+		) const -> ui_rect;
+
+		virtual auto draw_backdrop(
+			draw_context& ctx,
+			vec2f viewport_size
+		) const -> void;
 	};
 
 	struct menu_stack_state {
@@ -87,8 +94,10 @@ export namespace gse::gui {
 		auto clear(
 		) -> void;
 
+		template <typename Self>
 		[[nodiscard]] auto top(
-		) -> screen*;
+			this Self& self
+		);
 
 		[[nodiscard]] auto empty(
 		) const -> bool;
@@ -98,9 +107,6 @@ export namespace gse::gui {
 
 		[[nodiscard]] auto captures_input(
 		) const -> bool;
-
-		[[nodiscard]] auto top_section(
-		) const -> menu_bar::section;
 
 		auto tick(
 			builder& ui
@@ -120,6 +126,28 @@ export namespace gse::gui {
 	struct pop_screen_request {};
 
 	struct clear_screens_request {};
+}
+
+auto gse::gui::screen::body_rect(const style& sty, const vec2f viewport_size) const -> ui_rect {
+	return ui_rect::from_position_size(
+		{ 0.f, viewport_size.y() },
+		{ viewport_size.x(), viewport_size.y() }
+	);
+}
+
+auto gse::gui::screen::draw_backdrop(draw_context& ctx, const vec2f viewport_size) const -> void {
+	const ui_rect rect = body_rect(ctx.style, viewport_size);
+	const vec4f color = {
+		ctx.style.color_menu_body.x(),
+		ctx.style.color_menu_body.y(),
+		ctx.style.color_menu_body.z(),
+		1.0f,
+	};
+	ctx.queue_sprite({
+		.rect = rect,
+		.color = color,
+		.texture = ctx.blank_texture,
+	});
 }
 
 template <typename T, typename... Args>
@@ -182,8 +210,13 @@ auto gse::gui::menu_stack_state::clear() -> void {
 	}
 }
 
-auto gse::gui::menu_stack_state::top() -> screen* {
-	return m_stack.empty() ? nullptr : m_stack.back().get();
+template <typename Self>
+auto gse::gui::menu_stack_state::top(this Self& self) {
+	using ptr_t = std::conditional_t<std::is_const_v<Self>, const screen*, screen*>;
+	if (self.m_stack.empty()) {
+		return ptr_t{};
+	}
+	return static_cast<ptr_t>(self.m_stack.back().get());
 }
 
 auto gse::gui::menu_stack_state::empty() const -> bool {
@@ -196,13 +229,6 @@ auto gse::gui::menu_stack_state::size() const -> std::size_t {
 
 auto gse::gui::menu_stack_state::captures_input() const -> bool {
 	return !m_stack.empty() && m_stack.back()->captures_input();
-}
-
-auto gse::gui::menu_stack_state::top_section() const -> menu_bar::section {
-	if (m_stack.empty()) {
-		return menu_bar::section::none;
-	}
-	return m_stack.back()->section();
 }
 
 auto gse::gui::menu_stack_state::tick(builder& ui) -> void {

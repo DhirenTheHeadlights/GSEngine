@@ -196,7 +196,7 @@ export namespace gse::renderer::geometry_collector {
 			const asset::data& assets_s,
 			data& d,
 			const camera::system::data& cam_state,
-			const primitive_resolver::system::data& resolver_state
+			const primitive_resolver::system& resolver_state
 		) -> async::task<>;
 
 		static auto frame(

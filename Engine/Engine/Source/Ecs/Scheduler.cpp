@@ -297,7 +297,19 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
 	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
 
+	const bool has_run = node.invoke_run_fn != nullptr;
+	const auto state_id = node.state_id;
+	const auto state_type_id = node.state_type_id;
+
 	m_nodes.push_back(std::move(node));
+
+	if (!has_run) {
+		m_update_graph.notify_state_ready(state_id);
+		if (state_type_id.exists() && state_type_id != state_id) {
+			m_update_graph.notify_state_ready(state_type_id);
+		}
+	}
+
 	return state_ptr;
 }
 

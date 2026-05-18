@@ -451,7 +451,7 @@ auto gse::renderer::geometry_collector::system::upload_skeleton_data(const data&
 	}
 }
 
-auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const camera::system::data& cam_state, const primitive_resolver::system::data& resolver_state) -> async::task<> {
+auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const camera::system::data& cam_state, const primitive_resolver::system& resolver_state) -> async::task<> {
 	co_await initialize(ctx, gpu_s, d);
 
 	while (true) {

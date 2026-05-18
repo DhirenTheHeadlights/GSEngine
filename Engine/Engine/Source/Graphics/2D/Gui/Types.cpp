@@ -8,6 +8,7 @@ import :texture;
 import :ui_renderer;
 import :styles;
 import :scroll_widget;
+import :render_layer;
 
 import gse.math;
 import gse.core;

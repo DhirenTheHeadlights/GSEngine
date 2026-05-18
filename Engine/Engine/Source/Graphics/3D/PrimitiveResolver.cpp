@@ -49,7 +49,7 @@ auto gse::primitive_resolver::attach_sphere(const primitive_sphere_spec& spec, c
 	++render.model_count;
 }
 
-auto gse::primitive_resolver::system::run(run_context& ctx, data&, const primitives::data& prims) -> async::task<> {
+auto gse::primitive_resolver::system::run(run_context& ctx, const primitives::data& prims) -> async::task<> {
 	while (true) {
 		for (const auto eid : ctx.drain_component_adds<primitive_box_spec>()) {
 			if (!ctx.try_component<render_component>(eid)) {
