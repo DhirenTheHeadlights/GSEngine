@@ -139,20 +139,32 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& n
 	const float row_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
-	float max_option_width = 60.f;
 	const std::size_t count = option_count();
-	for (std::size_t i = 0; i < count; ++i) {
-		const auto label = get_option(i);
-		max_option_width = std::max(
-			max_option_width,
-			ctx.font->width(std::string(label), ctx.style.font_size) + ctx.style.padding * 4.f
-		);
-	}
+
+	const float label_width = content_rect.width() * 0.4f;
+
+	const ui_rect label_rect = ui_rect::from_position_size(
+		{ content_rect.left(), ctx.layout_cursor.y() },
+		{ label_width, row_height }
+	);
+
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = name,
+		.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size * 0.35f },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = label_rect,
+	});
+
+	const float header_width = content_rect.width() - label_width;
 
 	const ui_rect header_rect = ui_rect::from_position_size(
-		{ content_rect.right() - max_option_width, ctx.layout_cursor.y() },
-		{ max_option_width, row_height }
+		{ content_rect.left() + label_width, ctx.layout_cursor.y() },
+		{ header_width, row_height }
 	);
+
+	const float max_option_width = header_width;
 
 	const bool header_hovered = header_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
 

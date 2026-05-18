@@ -38,53 +38,89 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.register_external_resource<save::registry>(&m_save);
 	m_scheduler.register_external_resource<primitives::data>(&m_primitives);
 
-	add_system<input::system>();
-	add_system<actions::system>();
-	add_system<world_system>();
-
 	if (m_flags.test(engine_flag::render)) {
-		auto& window_state = add_system<window>();
-		window_state.title = std::string(id().tag());
+		add_system<input::system>();
+		add_system<actions::system>();
+		add_system<world_system>();
+		auto win = add_system<window>();
+		win->title = std::string(id().tag());
 		add_system<gpu::context>();
 		add_system<asset::registry>();
-		add_system<physics::system>();
-		add_system<camera::system>();
 		add_system<renderer::system>();
-		add_system<primitive_resolver::system>();
-		add_system<renderer::geometry_collector::system>();
-		add_system<renderer::skin_compute::system>();
-		add_system<renderer::cull_compute::system>();
-		add_system<renderer::physics_transform::system>();
-		add_system<renderer::depth_prepass::system>();
-		add_system<renderer::rt_shadow::system>();
-		add_system<renderer::light_culling::system>();
-		add_system<renderer::forward::system>();
-		add_system<renderer::physics_debug::system>();
 		add_system<renderer::ui::system>();
-		add_system<renderer::capture::system>();
 		add_system<gui::system>();
-		add_system<animation::system>();
-		add_system<audio::system>();
 
 		auto& asset_state = m_scheduler.state<asset::data>();
-
 		using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
 		gse::asset::system_for<game_assets> assets{ asset_state };
 		assets.register_loaders();
 		primitives::initialize(m_primitives, asset_state);
 		assets.install_hot_reload_fns();
-		if (const auto result = assets.compile_all(); result.success_count > 0 || result.failure_count > 0) {
+
+		m_loading.set_phase("Compiling boot assets");
+		if (const auto result = assets.compile_boot_critical(); result.success_count > 0 || result.failure_count > 0) {
 			log::println(
 				result.failure_count > 0 ? log::level::warning : log::level::info,
 				log::category::assets,
-				"Compiled {} assets ({} skipped, {} failed)",
+				"Compiled {} boot assets ({} skipped, {} failed)",
 				result.success_count,
 				result.skipped_count,
 				result.failure_count
 			);
 		}
+
+		m_scheduler.initialize();
+		m_scheduler.enter_running();
+
+		auto& gui_data = m_scheduler.state<gse::gui::system::data>();
+		gui_data.menu_stack.push<gse::gui::loading_screen>(m_loading);
+
+		auto* asset_state_ptr = &asset_state;
+
+		task::post([this, app_setup, asset_state_ptr] {
+			add_system<physics::system>();
+			add_system<camera::system>();
+			add_system<primitive_resolver::system>();
+			add_system<renderer::geometry_collector::system>();
+			add_system<renderer::skin_compute::system>();
+			add_system<renderer::cull_compute::system>();
+			add_system<renderer::physics_transform::system>();
+			add_system<renderer::depth_prepass::system>();
+			add_system<renderer::rt_shadow::system>();
+			add_system<renderer::light_culling::system>();
+			add_system<renderer::forward::system>();
+			add_system<renderer::physics_debug::system>();
+			add_system<renderer::capture::system>();
+			add_system<animation::system>();
+			add_system<audio::system>();
+
+			using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
+			gse::asset::system_for<game_assets> assets{ *asset_state_ptr };
+
+			m_loading.set_phase("Compiling assets");
+			if (const auto result = assets.compile_non_boot_critical(); result.success_count > 0 || result.failure_count > 0) {
+				log::println(
+					result.failure_count > 0 ? log::level::warning : log::level::info,
+					log::category::assets,
+					"Compiled {} assets ({} skipped, {} failed)",
+					result.success_count,
+					result.skipped_count,
+					result.failure_count
+				);
+			}
+
+			if (app_setup) {
+				m_loading.set_phase("Initializing game");
+				app_setup(*this);
+			}
+
+			m_loading.mark_finished();
+		});
 	}
 	else {
+		add_system<input::system>();
+		add_system<actions::system>();
+		add_system<world_system>();
 		add_system<asset::registry>();
 
 		auto& asset_state = m_scheduler.state<asset::data>();
@@ -92,13 +128,14 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		asset::add_loader<skinned_model>(asset_state);
 
 		add_system<physics::system>();
-	}
 
-	m_scheduler.initialize();
+		if (app_setup) {
+			app_setup(*this);
+		}
 
-	if (app_setup) {
-		app_setup(*this);
 		m_scheduler.initialize();
+		m_scheduler.enter_running();
+		m_loading.mark_finished();
 	}
 }
 
@@ -170,6 +207,7 @@ auto gse::engine::shutdown() -> void {
 		gpu::context::wait_idle(*gpu_state);
 	}
 
+	m_scheduler.enter_shutdown();
 	m_scheduler.shutdown();
 
 	m_scheduler.clear();

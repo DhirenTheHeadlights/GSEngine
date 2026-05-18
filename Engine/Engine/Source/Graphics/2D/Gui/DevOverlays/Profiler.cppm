@@ -1,4 +1,4 @@
-export module gse.graphics:profiler_widget;
+export module gse.graphics:profiler_overlay;
 
 import std;
 

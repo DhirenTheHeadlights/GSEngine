@@ -260,9 +260,9 @@ auto gs::build_tumbler(gse::scene& s, const int index, const gse::vec3<gse::posi
 																	});
 	}
 
-	constexpr int nx = 8;
-	constexpr int ny = 8;
-	constexpr int nz = 15;
+	constexpr int nx = 6;
+	constexpr int ny = 6;
+	constexpr int nz = 12;
 	constexpr float content_size = 0.5f;
 	constexpr float radial_span = interior_half - content_size;
 	constexpr float axial_span = length_half - content_size;
@@ -314,8 +314,6 @@ auto gs::physics_stress_test_scene_setup(gse::scene& s) -> void {
 
 	build_tumbler(s, 0, gse::vec3<gse::position>(-12.f, 10.f, 24.f), gse::axis_z, gse::radians_per_second(0.6f));
 	build_tumbler(s, 1, gse::vec3<gse::position>(12.f, 10.f, 24.f), gse::axis_x, gse::radians_per_second(0.5f));
-	build_tumbler(s, 2, gse::vec3<gse::position>(-12.f, 10.f, -24.f), gse::axis_y, gse::radians_per_second(0.7f));
-	build_tumbler(s, 3, gse::vec3<gse::position>(12.f, 10.f, -24.f), gse::axis_z, gse::radians_per_second(-0.45f));
 
 	s.spawn("Bouncy Sphere", gs::sphere(gse::vec3<gse::position>(-15.f, 8.f, 0.f), gse::meters(1.f)));
 

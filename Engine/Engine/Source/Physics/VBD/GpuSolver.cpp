@@ -209,7 +209,7 @@ auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void
 	constexpr auto storage_src_dst = storage_src | gpu::buffer_flag::transfer_dst;
 	constexpr std::size_t color_buffer_size = limits.max_colors * sizeof(std::uint32_t) * 2 + limits.max_bodies * sizeof(std::uint32_t);
 	constexpr std::size_t collision_pair_size = sizeof(std::uint32_t) + limits.max_collision_pairs * 2 * sizeof(std::uint32_t);
-	constexpr std::size_t collision_state_size = limits.collision_state_header_uints * sizeof(std::uint32_t);
+	constexpr std::size_t collision_state_size = (limits.collision_state_header_uints + limits.max_narrow_phase_debug_records * limits.narrow_phase_debug_record_uints) * sizeof(std::uint32_t);
 	constexpr std::size_t joint_buffer_size = limits.max_joints * sizeof(joint_constraint);
 
 	for (auto& f : m_frames) {
@@ -234,6 +234,7 @@ auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void
 		f.collision_pair_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = collision_pair_size, .usage = gpu::buffer_flag::storage });
 
 		f.collision_state_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = collision_state_size, .usage = storage_src });
+		f.collision_state_buffer.host_zero();
 
 		f.warm_start_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = 16, .usage = gpu::buffer_flag::storage });
 
@@ -271,9 +272,14 @@ auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void
 }
 
 auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, const std::span<const velocity_motor_constraint> motors, const std::span<const joint_constraint> joints, const std::span<const impulse_constraint> impulses, const solver_config& solver_cfg, const time_step dt, const int steps, const bool refresh_joints) -> void {
-	m_body_count = static_cast<std::uint32_t>(std::min(bodies.size(), static_cast<std::size_t>(limits.max_bodies)));
-	m_motor_count = static_cast<std::uint32_t>(std::min(motors.size(), static_cast<std::size_t>(limits.max_motors)));
-	m_impulse_count = static_cast<std::uint32_t>(std::min(impulses.size(), static_cast<std::size_t>(limits.max_impulses)));
+	assert(bodies.size() <= limits.max_bodies, "body count {} exceeds max_bodies {}", bodies.size(), limits.max_bodies);
+	assert(motors.size() <= limits.max_motors, "motor count {} exceeds max_motors {}", motors.size(), limits.max_motors);
+	assert(impulses.size() <= limits.max_impulses, "impulse count {} exceeds max_impulses {}", impulses.size(), limits.max_impulses);
+	assert(joints.size() <= limits.max_joints, "joint count {} exceeds max_joints {}", joints.size(), limits.max_joints);
+
+	m_body_count = static_cast<std::uint32_t>(bodies.size());
+	m_motor_count = static_cast<std::uint32_t>(motors.size());
+	m_impulse_count = static_cast<std::uint32_t>(impulses.size());
 	m_steps = static_cast<std::uint32_t>(std::max(steps, 1));
 	m_solver_cfg = solver_cfg;
 	m_dt = dt;
@@ -330,12 +336,12 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 
 	if (upload_joint_buffer) {
 		m_joint_count = 0;
-		m_upload_joints.assign(std::min(joints.size(), static_cast<std::size_t>(limits.max_joints)), joint_constraint{});
+		m_upload_joints.assign(joints.size(), joint_constraint{});
 
 		const time_step sub_dt = dt / static_cast<float>(std::max(m_steps, 1u));
 		const time_squared h_squared = sub_dt * sub_dt;
 
-		for (std::size_t i = 0; i < joints.size() && m_joint_count < limits.max_joints; ++i) {
+		for (std::size_t i = 0; i < joints.size(); ++i) {
 			const auto& j = joints[i];
 			if (j.body_a >= m_body_count || j.body_b >= m_body_count) {
 				continue;

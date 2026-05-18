@@ -52,7 +52,11 @@
       "displayName": "x64 clang-p2996 libc++ Release",
       "inherits": "x64-clang-p2996-libcxx-base",
       "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets"
+      }
     },
     {
       "name": "x64-clang-p2996-libcxx-RelWithDebInfo",
@@ -62,8 +66,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
-        "VCPKG_MANIFEST_FEATURES": "aftermath"
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets"
       }
     },
     {
@@ -73,6 +76,8 @@
       "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Release-trace",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
         "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2 -ftime-trace -ftime-trace-granularity=100 -Xclang -print-stats"
       }
     },

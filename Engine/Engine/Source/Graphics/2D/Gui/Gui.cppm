@@ -29,6 +29,7 @@ import :input_layers;
 import :menu_bar;
 import :styles;
 import :builder;
+import :menu_stack;
 
 namespace gse::gui {
 	struct frame_state {
@@ -69,7 +70,6 @@ export namespace gse::gui {
 			draw_context* context = nullptr;
 
 			menu_bar::state menu_bar_state;
-			gse::settings::panel_state settings_state;
 
 			int last_font_index = 0;
 
@@ -86,6 +86,9 @@ export namespace gse::gui {
 			std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
 
 			std::unique_ptr<ids::scope> current_scope;
+
+			menu_stack_state menu_stack;
+			std::optional<menu> screen_surface;
 
 			static constexpr time update_interval = seconds(30.f);
 		};
@@ -214,6 +217,12 @@ export namespace gse::gui {
 			const std::string& name,
 			render_layer layer,
 			const std::function<void(builder&)>& build
+		) -> void;
+
+		static auto process_screen(
+			data& d,
+			const input::state& input_state,
+			vec2f viewport_size
 		) -> void;
 	};
 }

@@ -563,6 +563,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 	{
 		trace::scope_guard sg{ trace_id<"vbd_gpu::build_bodies">() };
 		const auto body_count = motion.size();
+		assert(body_count <= vbd::limits.max_bodies, "scene has {} bodies, exceeds vbd::limits.max_bodies = {}", body_count, vbd::limits.max_bodies);
 		bodies.resize(body_count);
 		entity_ids.resize(body_count);
 		id_to_body_index_staging.resize(body_count);
@@ -663,6 +664,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 	std::vector<vbd::impulse_constraint> gpu_impulses;
 	{
 		trace::scope_guard sg{ trace_id<"vbd_gpu::build_impulses">() };
+		assert(impulses.size() <= vbd::limits.max_impulses, "impulse count {} exceeds vbd::limits.max_impulses = {}", impulses.size(), vbd::limits.max_impulses);
 		gpu_impulses.reserve(impulses.size());
 		for (const auto& req : impulses) {
 			const auto it = d.id_to_body_index.find(req.target);
@@ -683,6 +685,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 	std::vector<vbd::velocity_motor_constraint> motors;
 	{
 		trace::scope_guard sg{ trace_id<"vbd_gpu::build_motors">() };
+		assert(motor.size() <= vbd::limits.max_motors, "motor count {} exceeds vbd::limits.max_motors = {}", motor.size(), vbd::limits.max_motors);
 		const auto motor_ids = motor.owner_ids();
 		motors.reserve(motor.size());
 		for (std::size_t i = 0; i < motor.size(); ++i) {
@@ -719,6 +722,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 	std::vector<vbd::joint_constraint> gpu_joints;
 	{
 		trace::scope_guard sg{ trace_id<"vbd_gpu::build_joints">() };
+		assert(d.joints.size() <= vbd::limits.max_joints, "joint count {} exceeds vbd::limits.max_joints = {}", d.joints.size(), vbd::limits.max_joints);
 		gpu_joints.reserve(d.joints.size());
 		for (auto& jd : d.joints) {
 			const auto it_a = d.id_to_body_index.find(jd.entity_a);

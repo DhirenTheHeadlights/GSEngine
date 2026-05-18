@@ -9,18 +9,18 @@ import :motion_component;
 
 export namespace gse::vbd {
 	struct[[= shaders::shader_constant_block]] vbd_limits {
-		std::uint32_t max_bodies = 8192;
-		std::uint32_t max_contacts = 32768;
-		std::uint32_t max_collision_pairs = 32768;
+		std::uint32_t max_bodies = 2048;
+		std::uint32_t max_contacts = 16384;
+		std::uint32_t max_collision_pairs = 16384;
 		std::uint32_t max_colors = 16;
 		std::uint32_t max_joints = 128;
 		std::uint32_t max_impulses = 64;
 		std::uint32_t max_motors = 16;
-		std::uint32_t max_contact_adjacency = 32768 * 2;
+		std::uint32_t max_contact_adjacency = 16384 * 2;
 		std::uint32_t max_joint_adjacency = 128 * 2;
-		std::uint32_t max_grounded_uints = (8192 + 31) / 32;
+		std::uint32_t max_grounded_uints = (2048 + 31) / 32;
 		std::uint32_t grid_table_size = 4096;
-		std::uint32_t grid_max_entries = 8192 * 8;
+		std::uint32_t grid_max_entries = 2048 * 8;
 		std::uint32_t workgroup_size = 64;
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;

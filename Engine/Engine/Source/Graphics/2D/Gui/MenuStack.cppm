@@ -4,52 +4,234 @@ import std;
 
 import :builder;
 
+export import :menu_bar;
+
 export namespace gse::gui {
+	struct screen;
+
+	struct nav {
+		template <typename T, typename... Args>
+		auto push(
+			Args&&... args
+		) -> void;
+
+		auto pop(
+		) -> void;
+
+		auto clear(
+		) -> void;
+
+		template <typename T, typename... Args>
+		auto replace_top(
+			Args&&... args
+		) -> void;
+
+		[[nodiscard]] auto depth(
+		) const -> std::size_t;
+	private:
+		friend struct menu_stack_state;
+		struct pop_tag {};
+		struct clear_tag {};
+		using factory = std::function<std::unique_ptr<screen>()>;
+		using action = std::variant<factory, pop_tag, clear_tag>;
+		std::vector<action> m_actions;
+		std::size_t m_depth = 0;
+	};
+
 	struct screen {
 		virtual ~screen() = default;
-		virtual auto build(builder& ui) -> void = 0;
-		virtual auto on_push() -> void {
-		}
-		virtual auto on_pop() -> void {
-		}
+
+		virtual auto build(
+			builder& ui,
+			nav& n
+		) -> void = 0;
+
+		virtual auto on_push() -> void {}
+
+		virtual auto on_pop() -> void {}
+
 		virtual auto captures_input() const -> bool {
 			return true;
+		}
+
+		virtual auto wants_chrome() const -> bool {
+			return false;
+		}
+
+		virtual auto dismissable() const -> bool {
+			return true;
+		}
+
+		virtual auto title() const -> std::string_view {
+			return {};
+		}
+
+		virtual auto section() const -> menu_bar::section {
+			return menu_bar::section::none;
 		}
 	};
 
 	struct menu_stack_state {
-		std::vector<std::unique_ptr<screen>> stack;
-
 		template <typename T, typename... Args>
-		auto push(Args&&... args) -> void {
-			auto s = std::make_unique<T>(std::forward<Args>(args)...);
-			s->on_push();
-			stack.push_back(std::move(s));
-		}
+		auto push(
+			Args&&... args
+		) -> void;
 
-		auto pop() -> void {
-			if (!stack.empty()) {
-				stack.back()->on_pop();
-				stack.pop_back();
-			}
-		}
+		auto push_factory(
+			std::function<std::unique_ptr<screen>()> factory
+		) -> void;
 
-		auto clear() -> void {
-			while (!stack.empty()) {
+		auto pop(
+		) -> void;
+
+		auto clear(
+		) -> void;
+
+		[[nodiscard]] auto top(
+		) -> screen*;
+
+		[[nodiscard]] auto empty(
+		) const -> bool;
+
+		[[nodiscard]] auto size(
+		) const -> std::size_t;
+
+		[[nodiscard]] auto captures_input(
+		) const -> bool;
+
+		[[nodiscard]] auto top_section(
+		) const -> menu_bar::section;
+
+		auto tick(
+			builder& ui
+		) -> void;
+	private:
+		auto apply(
+			nav& n
+		) -> void;
+
+		std::vector<std::unique_ptr<screen>> m_stack;
+	};
+
+	struct push_screen_request {
+		std::function<std::unique_ptr<screen>()> factory;
+	};
+
+	struct pop_screen_request {};
+
+	struct clear_screens_request {};
+}
+
+template <typename T, typename... Args>
+auto gse::gui::nav::push(Args&&... args) -> void {
+	m_actions.emplace_back(factory{
+		[...captured = std::forward<Args>(args)]() mutable -> std::unique_ptr<screen> {
+			return std::make_unique<T>(std::move(captured)...);
+		}
+	});
+}
+
+auto gse::gui::nav::pop() -> void {
+	m_actions.emplace_back(pop_tag{});
+}
+
+auto gse::gui::nav::clear() -> void {
+	m_actions.emplace_back(clear_tag{});
+}
+
+template <typename T, typename... Args>
+auto gse::gui::nav::replace_top(Args&&... args) -> void {
+	pop();
+	push<T>(std::forward<Args>(args)...);
+}
+
+auto gse::gui::nav::depth() const -> std::size_t {
+	return m_depth;
+}
+
+template <typename T, typename... Args>
+auto gse::gui::menu_stack_state::push(Args&&... args) -> void {
+	auto s = std::make_unique<T>(std::forward<Args>(args)...);
+	s->on_push();
+	m_stack.push_back(std::move(s));
+}
+
+auto gse::gui::menu_stack_state::push_factory(std::function<std::unique_ptr<screen>()> factory) -> void {
+	if (!factory) {
+		return;
+	}
+	auto s = factory();
+	if (!s) {
+		return;
+	}
+	s->on_push();
+	m_stack.push_back(std::move(s));
+}
+
+auto gse::gui::menu_stack_state::pop() -> void {
+	if (m_stack.empty()) {
+		return;
+	}
+	m_stack.back()->on_pop();
+	m_stack.pop_back();
+}
+
+auto gse::gui::menu_stack_state::clear() -> void {
+	while (!m_stack.empty()) {
+		pop();
+	}
+}
+
+auto gse::gui::menu_stack_state::top() -> screen* {
+	return m_stack.empty() ? nullptr : m_stack.back().get();
+}
+
+auto gse::gui::menu_stack_state::empty() const -> bool {
+	return m_stack.empty();
+}
+
+auto gse::gui::menu_stack_state::size() const -> std::size_t {
+	return m_stack.size();
+}
+
+auto gse::gui::menu_stack_state::captures_input() const -> bool {
+	return !m_stack.empty() && m_stack.back()->captures_input();
+}
+
+auto gse::gui::menu_stack_state::top_section() const -> menu_bar::section {
+	if (m_stack.empty()) {
+		return menu_bar::section::none;
+	}
+	return m_stack.back()->section();
+}
+
+auto gse::gui::menu_stack_state::tick(builder& ui) -> void {
+	if (m_stack.empty()) {
+		return;
+	}
+	nav n;
+	n.m_depth = m_stack.size();
+	m_stack.back()->build(ui, n);
+	apply(n);
+}
+
+auto gse::gui::menu_stack_state::apply(nav& n) -> void {
+	for (auto& a : n.m_actions) {
+		std::visit([this](auto&& x) {
+			using A = std::decay_t<decltype(x)>;
+			if constexpr (std::is_same_v<A, nav::pop_tag>) {
 				pop();
 			}
-		}
-
-		auto empty() const -> bool {
-			return stack.empty();
-		}
-
-		auto top() -> screen* {
-			return stack.empty() ? nullptr : stack.back().get();
-		}
-
-		auto captures_input() const -> bool {
-			return !stack.empty() && stack.back()->captures_input();
-		}
-	};
+			else if constexpr (std::is_same_v<A, nav::clear_tag>) {
+				clear();
+			}
+			else {
+				auto s = x();
+				s->on_push();
+				m_stack.push_back(std::move(s));
+			}
+		}, a);
+	}
+	n.m_actions.clear();
+	n.m_depth = m_stack.size();
 }

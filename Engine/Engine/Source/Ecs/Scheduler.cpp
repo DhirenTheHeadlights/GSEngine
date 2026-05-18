@@ -18,6 +18,19 @@ auto gse::scheduler::set_advance_hook(std::function<void(id, std::string_view)> 
 	m_advance_hook = std::move(fn);
 }
 
+auto gse::scheduler::current_phase() const -> scheduler_phase {
+	return m_phase;
+}
+
+auto gse::scheduler::enter_running() -> void {
+	assert(m_phase == scheduler_phase::boot, "scheduler::enter_running requires boot phase");
+	m_phase = scheduler_phase::running;
+}
+
+auto gse::scheduler::enter_shutdown() -> void {
+	m_phase = scheduler_phase::shutdown;
+}
+
 auto gse::scheduler::make_channel_writer() -> channel_writer {
 	return m_channels_store.make_writer();
 }
@@ -262,9 +275,13 @@ auto gse::scheduler::drain_hot_add_queue() -> void {
 		std::lock_guard lock(m_hot_add_mutex);
 		drained.swap(m_hot_add_queue);
 	}
+	if (drained.empty()) {
+		return;
+	}
 	for (auto& node : drained) {
 		register_node(std::move(node));
 	}
+	m_dep_graph_checked = false;
 }
 
 auto gse::scheduler::register_node(system_node node) -> void* {
@@ -597,4 +614,5 @@ auto gse::scheduler::clear() -> void {
 	m_external_resources.clear();
 	m_initialized = false;
 	m_dep_graph_checked = false;
+	m_phase = scheduler_phase::boot;
 }

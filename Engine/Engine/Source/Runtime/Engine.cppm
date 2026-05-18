@@ -55,7 +55,7 @@ export namespace gse {
 		template <typename S, typename... Args>
 		auto add_system(
 			Args&&... args
-		) -> state_of_t<S>&;
+		) -> system_handle<S>;
 
 	private:
 		flags<engine_flag> m_flags;
@@ -63,6 +63,7 @@ export namespace gse {
 		save::registry m_save;
 		primitives::data m_primitives;
 		gse::registry m_registry;
+		loading::state m_loading;
 	};
 }
 
@@ -82,11 +83,11 @@ namespace gse {
 }
 
 template <typename S, typename... Args>
-auto gse::engine::add_system(Args&&... args) -> state_of_t<S>& {
-	auto& state_ref = m_scheduler.add_system<S>(std::forward<Args>(args)...);
+auto gse::engine::add_system(Args&&... args) -> system_handle<S> {
+	auto handle = m_scheduler.add_system<S>(std::forward<Args>(args)...);
 	if constexpr (has_settings<S>) {
 		using data_t = typename S::data;
-		m_save.add(make_settings_record<S>(m_scheduler.state<data_t>()));
+		m_save.add(make_settings_record<S>(handle.state()));
 	}
-	return state_ref;
+	return handle;
 }
