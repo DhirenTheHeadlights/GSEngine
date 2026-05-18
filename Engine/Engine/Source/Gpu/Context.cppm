@@ -25,18 +25,6 @@ import gse.diag;
 import gse.ecs;
 import gse.meta;
 
-export namespace gse {
-	enum class render_layer : std::uint8_t {
-		background = 0,
-		content = 1,
-		overlay = 2,
-		popup = 3,
-		modal = 4,
-		cursor = 5,
-		debug = 6,
-	};
-}
-
 export namespace gse::gpu {
 	struct context {
 		struct data {

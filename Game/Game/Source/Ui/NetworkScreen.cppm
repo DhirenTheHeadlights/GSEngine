@@ -18,9 +18,6 @@ export namespace gs {
 
 		auto title(
 		) const -> std::string_view override;
-
-		auto section(
-		) const -> gse::menu_bar::section override;
 	private:
 		const gse::network::data* m_net;
 		gse::channel_writer m_channels;
@@ -125,8 +122,4 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 
 auto gs::network_screen::title() const -> std::string_view {
 	return "Network";
-}
-
-auto gs::network_screen::section() const -> gse::menu_bar::section {
-	return gse::menu_bar::section::network;
 }

@@ -14,33 +14,32 @@ export namespace gse::gui {
 
 	struct style {
 		// Window chrome
-		vec4f color_title_bar = { 0.18f, 0.18f, 0.20f, 0.95f };
-		vec4f color_title_bar_inactive = { 0.12f, 0.12f, 0.14f, 0.95f };
-		vec4f color_menu_body = { 0.10f, 0.10f, 0.12f, 0.98f };
-		vec4f color_menu_bar = { 0.08f, 0.08f, 0.10f, 1.0f };
-		vec4f color_border = { 0.06f, 0.06f, 0.08f, 1.0f };
+		vec4f color_title_bar = { 0.18f, 0.18f, 0.22f, 0.95f };
+		vec4f color_title_bar_inactive = { 0.14f, 0.14f, 0.17f, 0.95f };
+		vec4f color_menu_body = { 0.14f, 0.14f, 0.18f, 0.98f };
+		vec4f color_border = { 0.26f, 0.28f, 0.34f, 1.0f };
 
 		// Text
-		vec4f color_text = { 0.92f, 0.92f, 0.94f, 1.0f };
-		vec4f color_text_secondary = { 0.6f, 0.6f, 0.62f, 1.0f };
-		vec4f color_text_disabled = { 0.5f, 0.5f, 0.52f, 1.0f };
+		vec4f color_text = { 0.94f, 0.94f, 0.96f, 1.0f };
+		vec4f color_text_secondary = { 0.72f, 0.72f, 0.78f, 1.0f };
+		vec4f color_text_disabled = { 0.48f, 0.48f, 0.52f, 1.0f };
 
 		// Icons
-		vec4f color_icon = { 0.7f, 0.7f, 0.72f, 1.0f };
+		vec4f color_icon = { 0.78f, 0.78f, 0.82f, 1.0f };
 		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 		// Interactive widget states (buttons, selectables, tree rows)
-		vec4f color_widget_background = { 0.22f, 0.22f, 0.24f, 1.0f };
-		vec4f color_widget_hovered = { 0.30f, 0.30f, 0.34f, 1.0f };
-		vec4f color_widget_active = { 0.24f, 0.52f, 0.88f, 1.0f };
-		vec4f color_widget_selected = { 0.24f, 0.52f, 0.88f, 0.85f };
+		vec4f color_widget_background = { 0.20f, 0.20f, 0.24f, 1.0f };
+		vec4f color_widget_hovered = { 0.32f, 0.34f, 0.42f, 1.0f };
+		vec4f color_widget_active = { 0.32f, 0.64f, 0.98f, 1.0f };
+		vec4f color_widget_selected = { 0.32f, 0.64f, 0.98f, 0.85f };
 
 		// Sliders
-		vec4f color_slider_fill = { 0.24f, 0.52f, 0.88f, 0.9f };
+		vec4f color_slider_fill = { 0.32f, 0.64f, 0.98f, 0.9f };
 
 		// Toggle switches
-		vec4f color_toggle_on = { 0.2f, 0.65f, 0.35f, 1.0f };
-		vec4f color_toggle_off = { 0.28f, 0.28f, 0.30f, 1.0f };
+		vec4f color_toggle_on = { 0.30f, 0.80f, 0.46f, 1.0f };
+		vec4f color_toggle_off = { 0.30f, 0.30f, 0.34f, 1.0f };
 
 		// Knobs/handles (for toggles, sliders)
 		vec4f color_handle = { 0.92f, 0.92f, 0.94f, 1.0f };
@@ -63,7 +62,6 @@ export namespace gse::gui {
 		float resize_border_thickness = 8.f;
 		vec2f min_menu_size = { 150.f, 100.f };
 		float font_size = 16.f;
-		float menu_bar_height = 32.f;
 		std::filesystem::path font;
 
 		float corner_radius = 6.f;
@@ -84,46 +82,45 @@ export namespace gse::gui {
 constexpr auto gse::gui::style::dark() -> style {
 	return style{
 		// Window chrome
-		.color_title_bar = { 0.16f, 0.16f, 0.18f, 1.0f },
-		.color_title_bar_inactive = { 0.12f, 0.12f, 0.14f, 1.0f },
-		.color_menu_body = { 0.10f, 0.10f, 0.12f, 0.05f },
-		.color_menu_bar = { 0.08f, 0.08f, 0.10f, 1.0f },
-		.color_border = { 0.20f, 0.20f, 0.22f, 0.6f },
+		.color_title_bar = { 0.18f, 0.18f, 0.22f, 1.0f },
+		.color_title_bar_inactive = { 0.14f, 0.14f, 0.17f, 1.0f },
+		.color_menu_body = { 0.14f, 0.14f, 0.18f, 0.05f },
+		.color_border = { 0.26f, 0.28f, 0.34f, 0.7f },
 
 		// Text
-		.color_text = { 0.92f, 0.92f, 0.94f, 1.0f },
-		.color_text_secondary = { 0.55f, 0.55f, 0.58f, 1.0f },
-		.color_text_disabled = { 0.4f, 0.4f, 0.42f, 1.0f },
+		.color_text = { 0.94f, 0.94f, 0.96f, 1.0f },
+		.color_text_secondary = { 0.72f, 0.72f, 0.78f, 1.0f },
+		.color_text_disabled = { 0.48f, 0.48f, 0.52f, 1.0f },
 
 		// Icons
-		.color_icon = { 0.7f, 0.7f, 0.72f, 1.0f },
+		.color_icon = { 0.78f, 0.78f, 0.82f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
 
 		// Interactive widgets
-		.color_widget_background = { 0.18f, 0.18f, 0.20f, 0.9f },
-		.color_widget_hovered = { 0.26f, 0.26f, 0.30f, 0.95f },
-		.color_widget_active = { 0.24f, 0.52f, 0.88f, 1.0f },
-		.color_widget_selected = { 0.24f, 0.52f, 0.88f, 0.85f },
+		.color_widget_background = { 0.20f, 0.20f, 0.24f, 0.92f },
+		.color_widget_hovered = { 0.32f, 0.34f, 0.42f, 0.96f },
+		.color_widget_active = { 0.32f, 0.64f, 0.98f, 1.0f },
+		.color_widget_selected = { 0.32f, 0.64f, 0.98f, 0.85f },
 
 		// Sliders
-		.color_slider_fill = { 0.24f, 0.52f, 0.88f, 0.9f },
+		.color_slider_fill = { 0.32f, 0.64f, 0.98f, 0.95f },
 
 		// Toggles
-		.color_toggle_on = { 0.2f, 0.65f, 0.35f, 1.0f },
-		.color_toggle_off = { 0.28f, 0.28f, 0.30f, 1.0f },
+		.color_toggle_on = { 0.30f, 0.80f, 0.46f, 1.0f },
+		.color_toggle_off = { 0.30f, 0.30f, 0.34f, 1.0f },
 
 		// Handles
-		.color_handle = { 0.92f, 0.92f, 0.94f, 1.0f },
+		.color_handle = { 0.94f, 0.94f, 0.96f, 1.0f },
 		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
 
 		// Input fields
-		.color_input_background = { 0.08f, 0.08f, 0.10f, 1.0f },
-		.color_selection = { 0.24f, 0.52f, 0.88f, 0.45f },
-		.color_caret = { 0.92f, 0.92f, 0.94f, 1.0f },
+		.color_input_background = { 0.10f, 0.10f, 0.13f, 1.0f },
+		.color_selection = { 0.32f, 0.64f, 0.98f, 0.45f },
+		.color_caret = { 0.94f, 0.94f, 0.96f, 1.0f },
 
 		// Docking
-		.color_dock_preview = { 0.24f, 0.52f, 0.88f, 0.35f },
-		.color_dock_tab_active = { 0.24f, 0.52f, 0.88f, 0.6f },
+		.color_dock_preview = { 0.32f, 0.64f, 0.98f, 0.35f },
+		.color_dock_tab_active = { 0.32f, 0.64f, 0.98f, 0.6f },
 
 		.color_shadow = { 0.f, 0.f, 0.f, 0.3f },
 
@@ -133,7 +130,6 @@ constexpr auto gse::gui::style::dark() -> style {
 		.resize_border_thickness = 8.f,
 		.min_menu_size = { 150.f, 100.f },
 		.font_size = 16.f,
-		.menu_bar_height = 32.f,
 		.font = {},
 		.corner_radius = 6.f,
 		.corner_radius_menu = 8.f,
@@ -149,7 +145,6 @@ constexpr auto gse::gui::style::darker() -> style {
 		.color_title_bar = { 0.12f, 0.12f, 0.14f, 1.0f },
 		.color_title_bar_inactive = { 0.08f, 0.08f, 0.10f, 1.0f },
 		.color_menu_body = { 0.06f, 0.06f, 0.07f, 1.0f },
-		.color_menu_bar = { 0.04f, 0.04f, 0.05f, 1.0f },
 		.color_border = { 0.16f, 0.16f, 0.18f, 0.6f },
 
 		// Text
@@ -195,7 +190,6 @@ constexpr auto gse::gui::style::darker() -> style {
 		.resize_border_thickness = 8.f,
 		.min_menu_size = { 150.f, 100.f },
 		.font_size = 16.f,
-		.menu_bar_height = 32.f,
 		.font = {},
 		.corner_radius = 6.f,
 		.corner_radius_menu = 8.f,
@@ -211,7 +205,6 @@ constexpr auto gse::gui::style::light() -> style {
 		.color_title_bar = { 0.85f, 0.85f, 0.87f, 1.0f },
 		.color_title_bar_inactive = { 0.78f, 0.78f, 0.80f, 1.0f },
 		.color_menu_body = { 0.94f, 0.94f, 0.95f, 1.0f },
-		.color_menu_bar = { 0.90f, 0.90f, 0.92f, 1.0f },
 		.color_border = { 0.75f, 0.75f, 0.78f, 1.0f },
 
 		// Text
@@ -257,7 +250,6 @@ constexpr auto gse::gui::style::light() -> style {
 		.resize_border_thickness = 8.f,
 		.min_menu_size = { 150.f, 100.f },
 		.font_size = 16.f,
-		.menu_bar_height = 32.f,
 		.font = {},
 		.corner_radius = 6.f,
 		.corner_radius_menu = 8.f,
@@ -273,7 +265,6 @@ constexpr auto gse::gui::style::high_contrast() -> style {
 		.color_title_bar = { 0.0f, 0.0f, 0.0f, 1.0f },
 		.color_title_bar_inactive = { 0.0f, 0.0f, 0.0f, 1.0f },
 		.color_menu_body = { 0.0f, 0.0f, 0.0f, 1.0f },
-		.color_menu_bar = { 0.0f, 0.0f, 0.0f, 1.0f },
 		.color_border = { 1.0f, 1.0f, 1.0f, 1.0f },
 
 		// Text - pure white
@@ -319,7 +310,6 @@ constexpr auto gse::gui::style::high_contrast() -> style {
 		.resize_border_thickness = 10.f,
 		.min_menu_size = { 150.f, 100.f },
 		.font_size = 18.f,
-		.menu_bar_height = 36.f,
 		.font = {},
 		.corner_radius = 0.f,
 		.corner_radius_menu = 0.f,

@@ -26,10 +26,10 @@ import :cursor;
 import :save;
 import :ids;
 import :input_layers;
-import :menu_bar;
 import :styles;
 import :builder;
 import :menu_stack;
+import :render_layer;
 
 namespace gse::gui {
 	struct frame_state {
@@ -50,6 +50,8 @@ export namespace gse::gui {
 
 			[[= gse::settings::describe<"Font used to render text in the UI.">{}]] gse::settings::choice<int> font;
 
+			[[= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{}]] bool show_dev_overlays = false;
+
 			id_mapped_collection<menu> menus;
 			menu* current_menu = nullptr;
 
@@ -68,8 +70,6 @@ export namespace gse::gui {
 
 			frame_state fstate{};
 			draw_context* context = nullptr;
-
-			menu_bar::state menu_bar_state;
 
 			int last_font_index = 0;
 

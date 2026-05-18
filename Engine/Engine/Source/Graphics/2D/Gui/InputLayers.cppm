@@ -12,6 +12,9 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
+import :render_layer;
+
 namespace gse::gui {
 	using ui_rect = rect_t<vec2f>;
 }

@@ -9,6 +9,7 @@ import gse.math;
 
 import :ui_renderer;
 import :texture;
+import :render_layer;
 
 export namespace gse::cursor {
 	enum class style {

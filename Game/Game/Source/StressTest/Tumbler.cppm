@@ -13,8 +13,6 @@ export namespace gs::tumbler {
 	};
 
 	struct system {
-		struct data {};
-
 		static auto run(
 			gse::run_context& ctx
 		) -> gse::async::task<>;

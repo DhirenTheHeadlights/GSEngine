@@ -4,6 +4,7 @@ import std;
 
 import :texture;
 import :font;
+import :render_layer;
 
 import gse.os;
 import gse.assets;

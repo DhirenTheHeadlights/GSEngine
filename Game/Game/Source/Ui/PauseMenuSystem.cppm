@@ -1,0 +1,55 @@
+export module gs:pause_menu_system;
+
+import std;
+import gse;
+
+import :crosshair_system;
+import :main_menu_screen;
+
+export namespace gs {
+	struct pause_menu_system {
+		static auto run(
+			gse::run_context& ctx,
+			const gse::input::system::data& input_d,
+			const gse::gui::system::data& gui_d,
+			const gse::world_system::data& world_d,
+			const gse::network::data& net_d,
+			const gse::save::registry& save_reg,
+			const crosshair_system::data& crosshair_d
+		) -> gse::async::task<>;
+	};
+}
+
+auto gs::pause_menu_system::run(gse::run_context& ctx, const gse::input::system::data& input_d, const gse::gui::system::data& gui_d, const gse::world_system::data& world_d, const gse::network::data& net_d, const gse::save::registry& save_reg, const crosshair_system::data& crosshair_d) -> gse::async::task<> {
+	const auto push_main_menu = [&] {
+		ctx.channels.push<gse::gui::push_screen_request>({
+			.factory = [&world_d, &net_d, &save_reg, &crosshair_d, channels = ctx.channels] {
+				return std::make_unique<main_menu_screen>(world_d, net_d, save_reg, crosshair_d, channels);
+			},
+		});
+	};
+
+	while (true) {
+		const auto& input = gse::input::system::current_state(input_d);
+		const auto* top = gui_d.menu_stack.top();
+		const bool blocks = top != nullptr && !top->dismissable();
+		const bool scene_active = world_d.active_scene.has_value();
+
+		if (!blocks && top == nullptr && !scene_active) {
+			push_main_menu();
+		}
+
+		if (input.key_pressed(gse::key::escape)) {
+			if (blocks) {
+			}
+			else if (top != nullptr) {
+				ctx.channels.push<gse::gui::pop_screen_request>({});
+			}
+			else if (scene_active) {
+				push_main_menu();
+			}
+		}
+
+		co_await ctx.next_tick();
+	}
+}

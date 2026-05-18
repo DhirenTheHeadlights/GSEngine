@@ -15,6 +15,7 @@ import :types;
 import :ids;
 import :styles;
 import :builder;
+import :render_layer;
 
 export namespace gse::gui {
 	struct dropdown_state {
