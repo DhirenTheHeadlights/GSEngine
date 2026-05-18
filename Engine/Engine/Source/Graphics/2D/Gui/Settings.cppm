@@ -187,12 +187,12 @@ auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, 
 }
 
 auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& channels, const save::registry& save_reg, const std::string_view category_filter) -> void {
-	for (const auto& entry : save_reg.entries()) {
+	save_reg.for_each_entry([&](const register_settings_type& entry) {
 		if (!category_filter.empty() && entry.category != category_filter) {
-			continue;
+			return;
 		}
 		if (entry.draw && entry.settings_ptr) {
 			entry.draw(&b, &ps, entry.category, entry.settings_ptr, &channels);
 		}
-	}
+	});
 }

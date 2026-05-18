@@ -13,6 +13,7 @@ export import :entity_builders;
 export import :arena;
 export import :tumbler;
 export import :client_ui;
+export import :network_screen;
 export import :world_loader;
 
 export namespace gs {

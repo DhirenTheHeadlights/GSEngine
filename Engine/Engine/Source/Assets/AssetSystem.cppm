@@ -8,8 +8,10 @@ import gse.log;
 import gse.containers;
 import gse.concurrency;
 import gse.fs;
+import gse.meta;
 
 import :asset_format;
+import :boot_critical;
 import :resource_handle;
 import :resource_loader;
 import :registry;
@@ -81,6 +83,10 @@ export namespace gse::asset {
 		auto compile() -> compile_result;
 
 		auto compile_all() -> compile_result;
+
+		auto compile_boot_critical() -> compile_result;
+
+		auto compile_non_boot_critical() -> compile_result;
 
 		auto register_loaders() -> void;
 
@@ -314,5 +320,29 @@ template <typename... Ts>
 auto gse::asset::system<Ts...>::compile_all() -> compile_result {
 	compile_result total{};
 	((total += compile<Ts>()), ...);
+	return total;
+}
+
+template <typename... Ts>
+auto gse::asset::system<Ts...>::compile_boot_critical() -> compile_result {
+	compile_result total{};
+	auto try_one = [&]<typename T>() {
+		if constexpr (has_annotation<boot_critical>(^^T)) {
+			total += compile<T>();
+		}
+	};
+	(try_one.template operator()<Ts>(), ...);
+	return total;
+}
+
+template <typename... Ts>
+auto gse::asset::system<Ts...>::compile_non_boot_critical() -> compile_result {
+	compile_result total{};
+	auto try_one = [&]<typename T>() {
+		if constexpr (!has_annotation<boot_critical>(^^T)) {
+			total += compile<T>();
+		}
+	};
+	(try_one.template operator()<Ts>(), ...);
 	return total;
 }

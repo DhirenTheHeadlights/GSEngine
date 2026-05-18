@@ -16,6 +16,8 @@ import :menu_bar;
 import :settings;
 import :styles;
 import :builder;
+import :menu_stack;
+import :settings_screen;
 
 import gse.os;
 import gse.config;
@@ -218,7 +220,7 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 
 	d.hot_widget_id = {};
 
-	d.input_layer_render = d.menu_bar_state.settings_open
+	d.input_layer_render = !d.menu_stack.empty()
 		? render_layer::popup
 		: render_layer::content;
 
@@ -293,19 +295,36 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 	};
 	menu_bar::update(d.menu_bar_state, mb_ctx, input_st, viewport_size);
 
-	if (d.menu_bar_state.settings_open) {
-		ctx.channels.push<menu_content>({
-			.menu = "Settings",
-			.layer = render_layer::popup,
-			.build = [&d, &ctx, &save_reg](builder& b) {
-				b.scroll_region(
-					{ .id = "settings.body" },
-					[&](builder& b) {
-						gse::settings::panel(b, d.settings_state, ctx.channels, save_reg);
-					}
-				);
-			},
-		});
+	{
+		const auto active = d.menu_bar_state.active;
+		const auto top_section = d.menu_stack.top_section();
+		const bool top_is_section_screen = !d.menu_stack.empty()
+			&& top_section != menu_bar::section::none;
+		const bool top_is_non_section_screen = !d.menu_stack.empty()
+			&& top_section == menu_bar::section::none;
+
+		if (!top_is_non_section_screen && active != top_section) {
+			if (top_is_section_screen) {
+				d.menu_stack.pop();
+			}
+			if (active == menu_bar::section::settings) {
+				d.menu_stack.push<settings_screen>(save_reg, ctx.channels);
+			}
+		}
+	}
+
+	for (const auto& req : ctx.read_channel<push_screen_request>()) {
+		d.menu_stack.push_factory(req.factory);
+	}
+	for ([[maybe_unused]] const auto& req : ctx.read_channel<pop_screen_request>()) {
+		d.menu_stack.pop();
+	}
+	for ([[maybe_unused]] const auto& req : ctx.read_channel<clear_screens_request>()) {
+		d.menu_stack.clear();
+	}
+
+	if (!d.menu_stack.empty()) {
+		process_screen(d, input_st, viewport_size);
 	}
 
 	for (const auto& content : ctx.read_channel<menu_content>()) {
@@ -545,6 +564,81 @@ auto gse::gui::system::begin_menu(data& d, const std::string& name) -> bool {
 auto gse::gui::system::end_menu(data& d) -> void {
 	d.current_scope.reset();
 	d.current_menu = nullptr;
+}
+
+auto gse::gui::system::process_screen(data& d, const gse::input::state& input_state, const vec2f viewport_size) -> void {
+	if (!d.fstate.active) {
+		return;
+	}
+
+	const style& sty = d.fstate.sty;
+
+	const float usable_height = viewport_size.y() - menu_bar::height(sty);
+	const ui_rect body_rect = ui_rect::from_position_size(
+		{ 0.f, usable_height },
+		{ viewport_size.x(), usable_height }
+	);
+
+	if (!d.screen_surface) {
+		d.screen_surface.emplace(
+			"__gui_screen__",
+			menu_data{
+				.rect = body_rect,
+				.parent_id = id(),
+			}
+		);
+	}
+	d.screen_surface->rect = body_rect;
+
+	const vec4f backdrop_color = {
+		sty.color_menu_body.x(),
+		sty.color_menu_body.y(),
+		sty.color_menu_body.z(),
+		1.0f,
+	};
+
+	d.sprite_commands.push_back({
+		.rect = body_rect,
+		.color = backdrop_color,
+		.texture = d.blank_texture,
+		.layer = render_layer::popup,
+	});
+
+	const ui_rect content_rect = body_rect.inset({ sty.padding, sty.padding });
+	vec2f layout_cursor = content_rect.top_left();
+
+	ids::scope screen_scope(d.screen_surface->id().number());
+
+	draw_context ctx{
+		.current_menu = &*d.screen_surface,
+		.style = sty,
+		.input = input_state,
+		.font = d.gui_font,
+		.blank_texture = d.blank_texture,
+		.layout_cursor = layout_cursor,
+		.sprites = d.sprite_commands,
+		.texts = d.text_commands,
+		.widget_anim_colors = d.widget_anim_colors,
+		.widget_scrolls = d.widget_scrolls,
+		.current_layer = render_layer::popup,
+		.input_layer = d.input_layer_render,
+		.tooltip = &d.tooltip,
+		.clip_stack = { body_rect },
+	};
+
+	d.hot_widget_id = {};
+	d.context = &ctx;
+
+	builder b{
+		.ctx = ctx,
+		.hot_widget_id = d.hot_widget_id,
+		.active_widget_id = d.active_widget_id,
+		.focus_widget_id = d.focus_widget_id,
+	};
+
+	d.menu_stack.tick(b);
+
+	d.context = nullptr;
 }
 
 auto gse::gui::system::usable_screen_rect(data& d, const window::data& window_s) -> ui_rect {

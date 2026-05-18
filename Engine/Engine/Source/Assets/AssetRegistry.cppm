@@ -143,17 +143,17 @@ export namespace gse::resource {
 
 		auto queue_reload_by_path(
 			const std::filesystem::path& baked_path
-		) -> void override;
+		) -> void;
 
 		auto queue_by_path(
 			const std::filesystem::path& baked_path
-		) -> void override;
+		) -> void;
 
 		auto finalize_reloads() -> void override;
 
 		auto set_pre_load_fn(
 			std::function<void(const std::filesystem::path&)> fn
-		) -> void override;
+		) -> void;
 
 		auto get(
 			id id

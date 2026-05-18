@@ -12,7 +12,7 @@ import gse.containers;
 import gse.concurrency;
 
 export namespace gse {
-	class texture : public identifiable {
+	class[[= asset::boot_critical{}]] texture : public identifiable {
 	public:
 		enum struct profile : std::uint8_t {
 			generic_repeat,

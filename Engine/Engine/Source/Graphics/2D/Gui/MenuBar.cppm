@@ -21,9 +21,16 @@ export namespace gse::menu_bar {
 		std::vector<renderer::text_command>& texts;
 	};
 
+	enum class section : std::uint8_t {
+		none,
+		settings,
+		network,
+	};
+
 	struct state {
+		section active = section::none;
 		bool settings_hovered = false;
-		bool settings_open = false;
+		bool network_hovered = false;
 	};
 
 	auto update(
@@ -45,6 +52,14 @@ export namespace gse::menu_bar {
 
 namespace gse::menu_bar {
 	auto draw_gear_icon(
+		std::vector<renderer::sprite_command>& commands,
+		vec2f center,
+		float size,
+		vec4f color,
+		resource::handle<texture> texture
+	) -> void;
+
+	auto draw_network_icon(
 		std::vector<renderer::sprite_command>& commands,
 		vec2f center,
 		float size,
@@ -86,15 +101,39 @@ auto gse::menu_bar::update(state& state, const context& ctx, const input::state&
 		{ button_size, button_size }
 	);
 
+	const vec2f network_center = {
+		settings_center.x() - button_size - sty.padding,
+		bar.center().y()
+	};
+
+	const gui::ui_rect network_hit_rect = gui::ui_rect::from_position_size(
+		{ network_center.x() - button_size * 0.5f, network_center.y() + button_size * 0.5f },
+		{ button_size, button_size }
+	);
+
 	const vec2f mouse_pos = input.mouse_position();
 	state.settings_hovered = settings_hit_rect.contains(mouse_pos);
+	state.network_hovered = network_hit_rect.contains(mouse_pos);
 
 	if (state.settings_hovered && input.mouse_button_pressed(mouse_button::button_1)) {
-		state.settings_open = !state.settings_open;
+		state.active = (state.active == section::settings) ? section::none : section::settings;
 	}
 
-	const vec4f gear_color = state.settings_hovered ? sty.color_icon_hovered : sty.color_icon;
+	if (state.network_hovered && input.mouse_button_pressed(mouse_button::button_1)) {
+		state.active = (state.active == section::network) ? section::none : section::network;
+	}
+
+	const bool settings_active = (state.active == section::settings);
+	const vec4f gear_color = settings_active
+		? sty.color_icon_hovered
+		: (state.settings_hovered ? sty.color_icon_hovered : sty.color_icon);
 	draw_gear_icon(ctx.sprites, settings_center, button_size * 0.4f, gear_color, ctx.blank_texture);
+
+	const bool network_active = (state.active == section::network);
+	const vec4f net_color = network_active
+		? sty.color_icon_hovered
+		: (state.network_hovered ? sty.color_icon_hovered : sty.color_icon);
+	draw_network_icon(ctx.sprites, network_center, button_size * 0.4f, net_color, ctx.blank_texture);
 }
 
 auto gse::menu_bar::draw_gear_icon(std::vector<renderer::sprite_command>& commands, const vec2f center, const float size, const vec4f color, const resource::handle<texture> texture) -> void {
@@ -121,4 +160,28 @@ auto gse::menu_bar::draw_gear_icon(std::vector<renderer::sprite_command>& comman
 	commands.push_back({ .rect = gui::ui_rect::from_position_size({ center.x() - center_size, center.y() + thickness * 0.5f }, { center_size * 2.f, thickness }), .color = color, .texture = texture });
 
 	commands.push_back({ .rect = gui::ui_rect::from_position_size({ center.x() - thickness * 0.5f, center.y() + center_size }, { thickness, center_size * 2.f }), .color = color, .texture = texture });
+}
+
+auto gse::menu_bar::draw_network_icon(std::vector<renderer::sprite_command>& commands, const vec2f center, const float size, const vec4f color, const resource::handle<texture> texture) -> void {
+	constexpr int bar_count = 4;
+	constexpr float bar_width = 2.f;
+	constexpr float spacing = 2.f;
+
+	const float max_height = size * 1.6f;
+	const float total_width = bar_count * bar_width + (bar_count - 1) * spacing;
+	const float baseline_y = center.y() - max_height * 0.5f;
+	const float start_x = center.x() - total_width * 0.5f;
+
+	for (int i = 0; i < bar_count; ++i) {
+		const float h = max_height * (static_cast<float>(i + 1) / static_cast<float>(bar_count));
+		const float x = start_x + static_cast<float>(i) * (bar_width + spacing);
+		commands.push_back({
+			.rect = gui::ui_rect::from_position_size(
+				{ x, baseline_y + h },
+				{ bar_width, h }
+			),
+			.color = color,
+			.texture = texture,
+		});
+	}
 }

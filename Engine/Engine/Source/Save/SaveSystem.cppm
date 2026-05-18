@@ -18,14 +18,6 @@ export namespace gse::save {
 
 		~registry();
 
-		registry(
-			registry&&
-		) noexcept = default;
-
-		auto operator=(
-			registry&&
-		) noexcept -> registry& = default;
-
 		auto set_auto_save(
 			bool enabled,
 			std::filesystem::path path = {}
@@ -39,7 +31,12 @@ export namespace gse::save {
 			settings::register_settings_type entry
 		) -> void;
 
-		auto entries() const -> std::span<const settings::register_settings_type>;
+		template <typename Fn>
+		auto for_each_entry(
+			Fn&& fn
+		) const -> void;
+
+		auto entry_count() const -> std::size_t;
 
 		auto save_now() -> bool;
 
@@ -83,11 +80,20 @@ export namespace gse::save {
 		) const -> bool;
 
 		std::vector<settings::register_settings_type> m_entries;
+		mutable std::mutex m_entries_mutex;
 		std::filesystem::path m_auto_save_path;
 		bool m_auto_save = false;
 		std::function<void()> m_on_restart;
 		doc m_loaded;
 	};
+}
+
+template <typename Fn>
+auto gse::save::registry::for_each_entry(Fn&& fn) const -> void {
+	std::lock_guard lock(m_entries_mutex);
+	for (const auto& entry : m_entries) {
+		fn(entry);
+	}
 }
 
 gse::save::registry::registry(std::filesystem::path auto_save_path) : m_auto_save_path(std::move(auto_save_path)) {
@@ -117,6 +123,8 @@ auto gse::save::registry::set_on_restart(std::function<void()> fn) -> void {
 }
 
 auto gse::save::registry::add(settings::register_settings_type entry) -> void {
+	std::lock_guard lock(m_entries_mutex);
+
 	if (entry.read && entry.settings_ptr) {
 		entry.read(m_loaded, entry.category, entry.settings_ptr);
 	}
@@ -133,8 +141,9 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 	m_entries.push_back(std::move(entry));
 }
 
-auto gse::save::registry::entries() const -> std::span<const settings::register_settings_type> {
-	return m_entries;
+auto gse::save::registry::entry_count() const -> std::size_t {
+	std::lock_guard lock(m_entries_mutex);
+	return m_entries.size();
 }
 
 auto gse::save::registry::save_now() -> bool {
@@ -258,6 +267,7 @@ auto gse::save::registry::load_from_file(const std::filesystem::path& path) -> b
 
 	m_loaded = parse(*content);
 
+	std::lock_guard lock(m_entries_mutex);
 	for (const auto& entry : m_entries) {
 		if (entry.read && entry.settings_ptr) {
 			entry.read(m_loaded, entry.category, entry.settings_ptr);
@@ -268,9 +278,12 @@ auto gse::save::registry::load_from_file(const std::filesystem::path& path) -> b
 
 auto gse::save::registry::save_to_file(const std::filesystem::path& path) const -> bool {
 	doc d;
-	for (const auto& entry : m_entries) {
-		if (entry.write && entry.settings_ptr) {
-			entry.write(d, entry.category, entry.settings_ptr);
+	{
+		std::lock_guard lock(m_entries_mutex);
+		for (const auto& entry : m_entries) {
+			if (entry.write && entry.settings_ptr) {
+				entry.write(d, entry.category, entry.settings_ptr);
+			}
 		}
 	}
 
