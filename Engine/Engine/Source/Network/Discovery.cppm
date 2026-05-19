@@ -29,35 +29,25 @@ export namespace gse::network {
 	struct discovery_provider {
 		virtual ~discovery_provider() = default;
 
-		virtual auto refresh(
-			time_t<std::uint32_t>
-		) -> void = 0;
+		virtual auto refresh(time_t<std::uint32_t>) -> void = 0;
 
 		virtual auto results() -> std::span<const discovery_result> = 0;
 	};
 
 	class wan_directory_provider : public discovery_provider {
 	public:
-		wan_directory_provider(
-			std::vector<discovery_result> seed = {}
-		);
+		wan_directory_provider(std::vector<discovery_result> seed = {});
 
 		~wan_directory_provider();
 
-		auto refresh(
-			time_t<std::uint32_t>
-		) -> void override;
+		auto refresh(time_t<std::uint32_t>) -> void override;
 
 		auto results() -> std::span<const discovery_result> override;
 
-		auto set_seed(
-			std::vector<discovery_result> seed
-		) -> void;
+		auto set_seed(std::vector<discovery_result> seed) -> void;
 
 	private:
-		auto query_servers_async(
-			time_t<std::uint32_t> timeout
-		) -> void;
+		auto query_servers_async(time_t<std::uint32_t> timeout) -> void;
 
 		std::vector<discovery_result> m_seed;
 		std::vector<discovery_result> m_published;
@@ -70,7 +60,9 @@ export namespace gse::network {
 }
 
 gse::network::wan_directory_provider::wan_directory_provider(std::vector<gse::network::discovery_result> seed)
-	: m_seed(seed), m_published(seed), m_pending(std::move(seed)) {
+	: m_seed(seed),
+	  m_published(seed),
+	  m_pending(std::move(seed)) {
 }
 
 gse::network::wan_directory_provider::~wan_directory_provider() {
@@ -113,10 +105,8 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
 	request_stream.write(packet_header{});
 	write(request_stream, server_info_request{});
 
-	const packet request_pkt{
-		.data = reinterpret_cast<std::uint8_t*>(request_buffer.data()),
-		.size = request_stream.bytes_written()
-	};
+	const packet request_pkt{ .data = reinterpret_cast<std::uint8_t*>(request_buffer.data()),
+							  .size = request_stream.bytes_written() };
 
 	for (const auto& server : local_copy) {
 		socket.send_data(request_pkt, server.addr);

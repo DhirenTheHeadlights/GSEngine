@@ -18,34 +18,20 @@ export namespace gse {
 
 		~static_vector();
 
-		static_vector(
-			const static_vector& other
-		);
+		static_vector(const static_vector& other);
 
-		auto operator=(
-			const static_vector& other
-		) -> static_vector&;
+		auto operator=(const static_vector& other) -> static_vector&;
 
-		static_vector(
-			static_vector&& other
-		) noexcept;
+		static_vector(static_vector&& other) noexcept;
 
-		auto operator=(
-			static_vector&& other
-		) noexcept -> static_vector&;
+		auto operator=(static_vector&& other) noexcept -> static_vector&;
 
-		auto push_back(
-			const T& value
-		) -> reference;
+		auto push_back(const T& value) -> reference;
 
-		auto push_back(
-			T&& value
-		) -> reference;
+		auto push_back(T&& value) -> reference;
 
 		template <typename... Args>
-		auto emplace_back(
-			Args&&... args
-		) -> reference;
+		auto emplace_back(Args&&... args) -> reference;
 
 		auto pop_back() -> void;
 
@@ -60,42 +46,26 @@ export namespace gse {
 		[[nodiscard]] auto full() const -> bool;
 
 		template <typename Self>
-		[[nodiscard]] auto data(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto data(this Self& self) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto begin(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto begin(this Self& self) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto end(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto end(this Self& self) -> decltype(auto);
 
 		template <typename Self>
-		auto operator[](
-			this Self& self,
-			size_type i
-		) -> decltype(auto);
+		auto operator[](this Self& self, size_type i) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto back(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto back(this Self& self) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto span(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto span(this Self& self) -> decltype(auto);
 
 	private:
 		template <typename Self>
-		auto slot(
-			this Self& self,
-			size_type i
-		) -> decltype(auto);
+		auto slot(this Self& self, size_type i) -> decltype(auto);
 
 		alignas(T) std::byte m_storage[sizeof(T) * N]{};
 		size_type m_size = 0;

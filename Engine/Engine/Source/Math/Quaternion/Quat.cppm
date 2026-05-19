@@ -72,11 +72,13 @@ constexpr gse::quaternion<T>::quaternion(const vec<T, 4>& v4) : vec<T, 4>{ v4.at
 }
 
 template <gse::internal::is_arithmetic T>
-constexpr gse::quaternion<T>::quaternion(const vec<T, 3>& v3, const T scalar) : vec<T, 4>{ scalar, v3.at(0), v3.at(1), v3.at(2) } {
+constexpr gse::quaternion<T>::quaternion(const vec<T, 3>& v3, const T scalar)
+	: vec<T, 4>{ scalar, v3.at(0), v3.at(1), v3.at(2) } {
 }
 
 template <gse::internal::is_arithmetic T>
-constexpr gse::quaternion<T>::quaternion(const T scalar, const vec<T, 3>& v3) : vec<T, 4>{ scalar, v3.at(0), v3.at(1), v3.at(2) } {
+constexpr gse::quaternion<T>::quaternion(const T scalar, const vec<T, 3>& v3)
+	: vec<T, 4>{ scalar, v3.at(0), v3.at(1), v3.at(2) } {
 }
 
 template <gse::internal::is_arithmetic T>

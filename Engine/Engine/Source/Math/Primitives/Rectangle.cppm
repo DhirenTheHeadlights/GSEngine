@@ -148,8 +148,7 @@ constexpr auto gse::rect_t<T>::max(this auto&& self) -> decltype(auto) {
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::contains(const T& point) const -> bool {
-	return (point.x() >= m_min.x() && point.x() <= m_max.x()) &&
-		(point.y() >= m_min.y() && point.y() <= m_max.y());
+	return (point.x() >= m_min.x() && point.x() <= m_max.x()) && (point.y() >= m_min.y() && point.y() <= m_max.y());
 }
 
 template <gse::is_vec2 T>
@@ -182,6 +181,13 @@ struct std::formatter<gse::rect_t<T>> {
 
 	template <typename FormatContext>
 	auto format(const gse::rect_t<T>& rect, FormatContext& ctx) const {
-		return std::format_to(ctx.out(), "Rect(L:{}, B:{}, W:{}, H:{})", rect.left(), rect.bottom(), rect.width(), rect.height());
+		return std::format_to(
+			ctx.out(),
+			"Rect(L:{}, B:{}, W:{}, H:{})",
+			rect.left(),
+			rect.bottom(),
+			rect.width(),
+			rect.height()
+		);
 	}
 };

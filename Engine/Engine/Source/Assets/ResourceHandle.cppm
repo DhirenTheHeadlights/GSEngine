@@ -26,19 +26,11 @@ export namespace gse::resource {
 		std::filesystem::path path;
 		std::atomic<std::uint32_t> version{ 0 };
 
-		resource_slot(
-			std::unique_ptr<T>&& res,
-			state s,
-			const std::filesystem::path& p
-		);
+		resource_slot(std::unique_ptr<T>&& res, state s, const std::filesystem::path& p);
 
-		resource_slot(
-			resource_slot&& other
-		) noexcept;
+		resource_slot(resource_slot&& other) noexcept;
 
-		auto operator=(
-			resource_slot&& other
-		) noexcept -> resource_slot&;
+		auto operator=(resource_slot&& other) noexcept -> resource_slot&;
 	};
 
 	template <typename T>
@@ -46,16 +38,9 @@ export namespace gse::resource {
 	public:
 		handle() = default;
 
-		handle(
-			id resource_id,
-			const resource_slot<T>* slot
-		);
+		handle(id resource_id, const resource_slot<T>* slot);
 
-		handle(
-			id resource_id,
-			const resource_slot<T>* slot,
-			std::uint32_t version
-		);
+		handle(id resource_id, const resource_slot<T>* slot, std::uint32_t version);
 
 		[[nodiscard]] auto resolve() const -> T&;
 
@@ -73,13 +58,9 @@ export namespace gse::resource {
 
 		[[nodiscard]] auto operator*() const -> T&;
 
-		[[nodiscard]] auto operator==(
-			const handle& other
-		) const -> bool;
+		[[nodiscard]] auto operator==(const handle& other) const -> bool;
 
-		[[nodiscard]] auto operator!=(
-			const handle& other
-		) const -> bool;
+		[[nodiscard]] auto operator!=(const handle& other) const -> bool;
 
 		explicit operator bool() const;
 
@@ -90,7 +71,9 @@ export namespace gse::resource {
 }
 
 template <typename T>
-gse::resource::resource_slot<T>::resource_slot(std::unique_ptr<T>&& res, const state s, const std::filesystem::path& p) : current_state(s), path(p) {
+gse::resource::resource_slot<T>::resource_slot(std::unique_ptr<T>&& res, const state s, const std::filesystem::path& p)
+	: current_state(s),
+	  path(p) {
 	resource.write() = std::move(res);
 	resource.publish();
 }
@@ -117,14 +100,19 @@ auto gse::resource::resource_slot<T>::operator=(resource_slot&& other) noexcept 
 }
 
 template <typename T>
-gse::resource::handle<T>::handle(const gse::id resource_id, const resource_slot<T>* slot) : identifiable_owned(resource_id), m_slot(slot) {
+gse::resource::handle<T>::handle(const gse::id resource_id, const resource_slot<T>* slot)
+	: identifiable_owned(resource_id),
+	  m_slot(slot) {
 	if (m_slot) {
 		m_version = m_slot->version.load(std::memory_order_acquire);
 	}
 }
 
 template <typename T>
-gse::resource::handle<T>::handle(const gse::id resource_id, const resource_slot<T>* slot, const std::uint32_t version) : identifiable_owned(resource_id), m_slot(slot), m_version(version) {
+gse::resource::handle<T>::handle(const gse::id resource_id, const resource_slot<T>* slot, const std::uint32_t version)
+	: identifiable_owned(resource_id),
+	  m_slot(slot),
+	  m_version(version) {
 }
 
 template <typename T>

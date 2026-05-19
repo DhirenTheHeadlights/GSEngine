@@ -49,26 +49,41 @@ export namespace gse::internal {
 
 	template <typename D1, typename D2>
 	concept has_same_dimensions =
-		is_dimension<D1> && is_dimension<D2> && std::ratio_equal_v<typename D1::length, typename D2::length> && std::ratio_equal_v<typename D1::time, typename D2::time> && std::ratio_equal_v<typename D1::mass, typename D2::mass> && std::ratio_equal_v<typename D1::angle, typename D2::angle>;
+		is_dimension<D1> && is_dimension<D2> && std::ratio_equal_v<typename D1::length, typename D2::length> &&
+		std::ratio_equal_v<typename D1::time, typename D2::time> &&
+		std::ratio_equal_v<typename D1::mass, typename D2::mass> &&
+		std::ratio_equal_v<typename D1::angle, typename D2::angle>;
 
 	template <std::intmax_t LhsNum, std::intmax_t LhsDen, std::intmax_t RhsNum, std::intmax_t RhsDen>
 	struct unit_mismatch_length {
-		static_assert(LhsNum * RhsDen == RhsNum * LhsDen, "UNIT MISMATCH [L]: length exponents differ — args are <left_num, left_den, right_num, right_den>");
+		static_assert(
+			LhsNum * RhsDen == RhsNum * LhsDen,
+			"UNIT MISMATCH [L]: length exponents differ — args are <left_num, left_den, right_num, right_den>"
+		);
 	};
 
 	template <std::intmax_t LhsNum, std::intmax_t LhsDen, std::intmax_t RhsNum, std::intmax_t RhsDen>
 	struct unit_mismatch_time {
-		static_assert(LhsNum * RhsDen == RhsNum * LhsDen, "UNIT MISMATCH [T]: time exponents differ — args are <left_num, left_den, right_num, right_den>");
+		static_assert(
+			LhsNum * RhsDen == RhsNum * LhsDen,
+			"UNIT MISMATCH [T]: time exponents differ — args are <left_num, left_den, right_num, right_den>"
+		);
 	};
 
 	template <std::intmax_t LhsNum, std::intmax_t LhsDen, std::intmax_t RhsNum, std::intmax_t RhsDen>
 	struct unit_mismatch_mass {
-		static_assert(LhsNum * RhsDen == RhsNum * LhsDen, "UNIT MISMATCH [M]: mass exponents differ — args are <left_num, left_den, right_num, right_den>");
+		static_assert(
+			LhsNum * RhsDen == RhsNum * LhsDen,
+			"UNIT MISMATCH [M]: mass exponents differ — args are <left_num, left_den, right_num, right_den>"
+		);
 	};
 
 	template <std::intmax_t LhsNum, std::intmax_t LhsDen, std::intmax_t RhsNum, std::intmax_t RhsDen>
 	struct unit_mismatch_angle {
-		static_assert(LhsNum * RhsDen == RhsNum * LhsDen, "UNIT MISMATCH [A]: angle exponents differ — args are <left_num, left_den, right_num, right_den>");
+		static_assert(
+			LhsNum * RhsDen == RhsNum * LhsDen,
+			"UNIT MISMATCH [A]: angle exponents differ — args are <left_num, left_den, right_num, right_den>"
+		);
 	};
 
 	template <is_dimension Lhs, is_dimension Rhs>

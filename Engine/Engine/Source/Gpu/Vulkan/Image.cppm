@@ -37,13 +37,9 @@ export namespace gse::vulkan {
 
 		~basic_image() override;
 
-		basic_image(
-			basic_image&& other
-		) noexcept;
+		basic_image(basic_image&& other) noexcept;
 
-		auto operator=(
-			basic_image&& other
-		) noexcept -> basic_image&;
+		auto operator=(basic_image&& other) noexcept -> basic_image&;
 
 		[[nodiscard]] auto handle() const -> gpu::handle<basic_image<device>>;
 
@@ -55,9 +51,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto extent() const -> vec3u;
 
-		auto set_layout(
-			gpu::image_layout new_layout
-		) -> void;
+		auto set_layout(gpu::image_layout new_layout) -> void;
 
 	private:
 		gpu::handle<basic_image<device>> m_image;
@@ -72,18 +66,36 @@ export namespace gse::vulkan {
 }
 
 template <typename Device>
-gse::vulkan::basic_image<Device>::basic_image(const gpu::handle<basic_image<device>> image, const gpu::handle<image_view> view, const gpu::image_format_value format, const gpu::image_layout current_layout, const vec3u extent, basic_allocation<Device> allocation)
-	: m_image(image), m_view(view), m_format(format), m_current_layout(current_layout), m_extent(extent), m_allocation(std::move(allocation)) {
+gse::vulkan::basic_image<Device>::basic_image(
+	const gpu::handle<basic_image<device>> image,
+	const gpu::handle<image_view> view,
+	const gpu::image_format_value format,
+	const gpu::image_layout current_layout,
+	const vec3u extent,
+	basic_allocation<Device> allocation
+)
+	: m_image(image),
+	  m_view(view),
+	  m_format(format),
+	  m_current_layout(current_layout),
+	  m_extent(extent),
+	  m_allocation(std::move(allocation)) {
 }
 
 template <typename Device>
-auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc& desc, const std::string_view tag, const std::source_location& loc) -> basic_image {
+auto gse::vulkan::basic_image<Device>::create(
+	Device& dev,
+	const gpu::image_desc& desc,
+	const std::string_view tag,
+	const std::source_location& loc
+) -> basic_image {
 	const bool is_depth = desc.format == gpu::image_format::d32_sfloat;
 	const bool is_cube = desc.view == gpu::image_view_type::cube;
 	const std::uint32_t layers = is_cube ? 6u : 1u;
 
 	const gpu::image_create_info create_info{
-		.flags = is_cube ? gpu::image_create_flags{ gpu::image_create_flag::cube_compatible } : gpu::image_create_flags{},
+		.flags =
+			is_cube ? gpu::image_create_flags{ gpu::image_create_flag::cube_compatible } : gpu::image_create_flags{},
 		.type = gpu::image_type::e2d,
 		.format = desc.format,
 		.extent = vec3u{ desc.size.x(), desc.size.y(), 1 },
@@ -95,7 +107,8 @@ auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc
 	const gpu::image_view_create_info view_info{
 		.format = desc.format,
 		.view_type = is_cube ? gpu::image_view_type::cube : gpu::image_view_type::e2d,
-		.aspects = is_depth ? gpu::image_aspect_flags{ gpu::image_aspect_flag::depth } : gpu::image_aspect_flags{ gpu::image_aspect_flag::color },
+		.aspects = is_depth ? gpu::image_aspect_flags{ gpu::image_aspect_flag::depth }
+							: gpu::image_aspect_flags{ gpu::image_aspect_flag::color },
 		.base_mip_level = 0,
 		.level_count = 1,
 		.base_array_layer = 0,
@@ -119,7 +132,12 @@ gse::vulkan::basic_image<Device>::~basic_image() {
 
 template <typename Device>
 gse::vulkan::basic_image<Device>::basic_image(basic_image&& other) noexcept
-	: m_image(other.m_image), m_view(other.m_view), m_format(other.m_format), m_current_layout(other.m_current_layout), m_extent(other.m_extent), m_allocation(std::move(other.m_allocation)) {
+	: m_image(other.m_image),
+	  m_view(other.m_view),
+	  m_format(other.m_format),
+	  m_current_layout(other.m_current_layout),
+	  m_extent(other.m_extent),
+	  m_allocation(std::move(other.m_allocation)) {
 	other.m_image = {};
 	other.m_view = {};
 }

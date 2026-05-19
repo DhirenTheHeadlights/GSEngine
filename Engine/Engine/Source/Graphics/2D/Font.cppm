@@ -25,9 +25,7 @@ export namespace gse {
 
 		glyph() = default;
 
-		glyph(
-			const info& i
-		);
+		glyph(const info& i);
 
 		[[nodiscard]] auto ft_glyph_index() const -> float;
 
@@ -63,7 +61,7 @@ export namespace gse {
 			= asset_format::source_dir<"Fonts">{},
 			= asset_format::source_exts<".ttf", ".otf">{},
 			= asset_format::magic<0x47464E54>{},
-			= asset_format::version<2>{}
+			= asset_format::version<3>{}
 		]] baked {
 			std::string source_path_relative;
 			float ascender = 0.0f;
@@ -75,34 +73,22 @@ export namespace gse {
 			std::unordered_map<char, glyph> glyphs;
 		};
 
-		explicit font(
-			const std::filesystem::path& path
-		);
+		explicit font(const std::filesystem::path& path);
 
 		~font();
 
-		auto load(
-			asset::load_ctx& ctx
-		) -> async::task<>;
+		auto load(asset::load_ctx& ctx) -> async::task<>;
 
 		auto unload() -> void;
 
 		[[nodiscard]] auto texture() const -> const gse::texture*;
 
-		[[nodiscard]] auto text_layout(
-			std::string_view text,
-			vec2f start,
-			float scale = 1.0f
-		) const -> std::vector<positioned_glyph>;
+		[[nodiscard]] auto text_layout(std::string_view text, vec2f start, float scale = 1.0f) const
+			-> std::vector<positioned_glyph>;
 
-		[[nodiscard]] auto line_height(
-			float scale = 1.0f
-		) const -> float;
+		[[nodiscard]] auto line_height(float scale = 1.0f) const -> float;
 
-		[[nodiscard]] auto width(
-			std::string_view text,
-			float scale = 1.0f
-		) const -> float;
+		[[nodiscard]] auto width(std::string_view text, float scale = 1.0f) const -> float;
 
 		[[nodiscard]] auto pixel_range() const -> float;
 
@@ -113,8 +99,8 @@ export namespace gse {
 		std::unordered_map<char, glyph> m_glyphs;
 		std::unordered_map<std::uint64_t, float> m_kerning;
 
-		float m_glyph_cell_size = 64.f;
-		float m_padding = 8.f;
+		float m_glyph_cell_size = 128.f;
+		float m_padding = 16.f;
 		float m_ascender = 0.0f;
 		float m_descender = 0.0f;
 

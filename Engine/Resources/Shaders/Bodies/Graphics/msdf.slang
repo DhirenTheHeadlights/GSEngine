@@ -2,7 +2,6 @@ struct VS_OUTPUT {
     float4 clip_pos  : SV_Position;
     float2 tex_coord : TEXCOORD0;
     float4 color     : COLOR0;
-    float  px_range  : TEXCOORD4;
 };
 
 [shader("vertex")]
@@ -12,14 +11,12 @@ VS_OUTPUT vs_main(
     float4 in_color         : COLOR0,
     float2 in_local_pos     : TEXCOORD1,
     float2 in_half_size     : TEXCOORD2,
-    float  in_corner_radius : TEXCOORD3,
-    float  in_px_range      : TEXCOORD4
+    float  in_corner_radius : TEXCOORD3
 ) {
     VS_OUTPUT output;
     output.clip_pos = mul(pc.projection, float4(in_position, pc.depth, 1.0));
     output.tex_coord = in_tex_coord;
     output.color = in_color;
-    output.px_range = in_px_range;
     return output;
 }
 
@@ -27,11 +24,50 @@ float median(float r, float g, float b) {
     return max(min(r, g), min(max(r, g), b));
 }
 
+float mtsdf_distance(uint tex_idx, float2 uv) {
+    float4 s = textures[NonUniformResourceIndex(tex_idx)].Sample(uv);
+    float msd = median(s.r, s.g, s.b);
+    float tsd = s.a;
+    return (abs(msd - 0.5) > abs(tsd - 0.5)) ? msd : tsd;
+}
+
+float sample_alpha(uint tex_idx, float2 uv, float screen_px_range) {
+    float sd = mtsdf_distance(tex_idx, uv);
+    return clamp(screen_px_range * (0.5 - sd) + 0.5, 0.0, 1.0);
+}
+
+float supersampled_alpha(uint tex_idx, float2 uv, float2 dx, float2 dy, float screen_px_range) {
+    float2 ox1 = dx * 0.125;
+    float2 ox3 = dx * 0.375;
+    float2 oy1 = dy * 0.125;
+    float2 oy3 = dy * 0.375;
+    float a0 = sample_alpha(tex_idx, uv - ox1 - oy3, screen_px_range);
+    float a1 = sample_alpha(tex_idx, uv + ox3 - oy1, screen_px_range);
+    float a2 = sample_alpha(tex_idx, uv + ox1 + oy3, screen_px_range);
+    float a3 = sample_alpha(tex_idx, uv - ox3 + oy1, screen_px_range);
+    return (a0 + a1 + a2 + a3) * 0.25;
+}
+
 [shader("fragment")]
 float4 fs_main(VS_OUTPUT input) : SV_Target0 {
-    float3 msdf_sample = textures[NonUniformResourceIndex(pc.tex_idx)].Sample(input.tex_coord).rgb;
-    float sd = median(msdf_sample.r, msdf_sample.g, msdf_sample.b);
-    float screen_px_dist = max(input.px_range, 1.0) * (0.5 - sd);
-    float alpha = clamp(screen_px_dist + 0.5, 0.0, 1.0);
-    return float4(input.color.rgb * alpha, input.color.a * alpha);
+    float2 dx = ddx(input.tex_coord);
+    float2 dy = ddy(input.tex_coord);
+
+    float2 screen_tex_size = float2(1.0, 1.0) / max(abs(dx) + abs(dy), float2(1e-7, 1e-7));
+    float screen_px_range = max(0.5 * dot(pc.unit_range, screen_tex_size), 1.0);
+
+    float glyph_alpha = supersampled_alpha(pc.tex_idx, input.tex_coord, dx, dy, screen_px_range);
+
+    float2 shadow_uv_offset = dy * pc.shadow_offset_px;
+    float shadow_px_range = screen_px_range * pc.shadow_softness;
+    float shadow_alpha = supersampled_alpha(pc.tex_idx, input.tex_coord + shadow_uv_offset, dx, dy, shadow_px_range)
+        * pc.shadow_strength;
+
+    float3 fg_rgb = input.color.rgb;
+    float3 sh_rgb = pc.shadow_color;
+    float  fg_a   = input.color.a * glyph_alpha;
+    float  sh_a   = input.color.a * shadow_alpha;
+    float3 out_rgb = fg_rgb * fg_a + sh_rgb * sh_a * (1.0 - fg_a);
+    float  out_a   = fg_a + sh_a * (1.0 - fg_a);
+    return float4(out_rgb, out_a);
 }

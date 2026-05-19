@@ -24,19 +24,11 @@ export namespace gse::gui {
 	public:
 		auto begin_frame() -> void;
 
-		auto register_hit_region(
-			render_layer layer,
-			const ui_rect& rect
-		) -> void;
+		auto register_hit_region(render_layer layer, const ui_rect& rect) -> void;
 
-		[[nodiscard]] auto input_layer_at(
-			vec2f position
-		) const -> render_layer;
+		[[nodiscard]] auto input_layer_at(vec2f position) const -> render_layer;
 
-		[[nodiscard]] auto input_available_at(
-			render_layer widget_layer,
-			vec2f position
-		) const -> bool;
+		[[nodiscard]] auto input_available_at(render_layer widget_layer, vec2f position) const -> bool;
 
 	private:
 		std::array<std::vector<ui_rect>, 7> m_hit_regions;

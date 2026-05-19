@@ -33,10 +33,7 @@ export namespace gse::gpu {
 		std::size_t dst_offset = 0;
 	};
 
-	auto upload_to_buffers(
-		gpu::device& dev,
-		std::span<const buffer_upload> uploads
-	) -> sync_token;
+	auto upload_to_buffers(gpu::device& dev, std::span<const buffer_upload> uploads) -> sync_token;
 }
 
 namespace gse {
@@ -47,8 +44,5 @@ namespace gse {
 		gpu::device_size offset;
 	};
 
-	auto upload_to_buffers_async(
-		gpu::device& dev,
-		std::vector<upload_entry> entries
-	) -> async::task<gpu::sync_token>;
+	auto upload_to_buffers_async(gpu::device& dev, std::vector<upload_entry> entries) -> async::task<gpu::sync_token>;
 }

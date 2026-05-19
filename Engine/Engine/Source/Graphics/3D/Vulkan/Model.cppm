@@ -25,8 +25,8 @@ export namespace gse {
 	struct render_queue_entry_t {
 		resource::handle<ModelType> model;
 		std::size_t index;
-		mat4f model_matrix;
-		mat4f normal_matrix;
+		spatial_matrix model_matrix;
+		spatial_matrix normal_matrix;
 		vec3f color;
 		std::uint32_t skin_offset = 0;
 		std::uint32_t joint_count = 0;
@@ -60,7 +60,9 @@ export namespace gse {
 			std::vector<mesh_baked> meshes;
 		};
 
-		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {
+		explicit model(const std::filesystem::path& path)
+			: identifiable(path, config::baked_resource_path),
+			  m_baked_model_path(path) {
 		}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
@@ -122,11 +124,13 @@ auto gse::model::load(asset::load_ctx& ctx) -> async::task<> {
 				mat.specular_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 			}
 
-			m_meshes.emplace_back(mesh_data{
-				.vertices = std::move(mb.vertices.storage),
-				.indices = std::move(mb.indices.storage),
-				.material = std::move(mat),
-			});
+			m_meshes.emplace_back(
+				mesh_data{
+					.vertices = std::move(mb.vertices.storage),
+					.indices = std::move(mb.indices.storage),
+					.material = std::move(mat),
+				}
+			);
 		}
 	}
 

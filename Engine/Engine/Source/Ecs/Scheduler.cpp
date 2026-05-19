@@ -42,16 +42,10 @@ auto gse::scheduler::snapshot_all_states() -> void {
 }
 
 namespace gse {
-	auto run_node_frame(
-		frame_context& ctx,
-		system_node& node
-	) -> async::task<>;
+	auto run_node_frame(frame_context& ctx, system_node& node) -> async::task<>;
 
 	template <std::invocable OnComplete>
-	auto wrap_run_task(
-		async::task<> inner,
-		OnComplete on_complete
-	) -> async::task<> {
+	auto wrap_run_task(async::task<> inner, OnComplete on_complete) -> async::task<> {
 		co_await std::move(inner);
 		on_complete();
 	}
@@ -107,11 +101,7 @@ auto gse::scheduler::check_state_dep_cycles() -> void {
 					continue;
 				}
 				if (colors[dep] == color::gray) {
-					assert(
-						false,
-						"state_deps cycle detected: {}",
-						format_cycle(dep)
-					);
+					assert(false, "state_deps cycle detected: {}", format_cycle(dep));
 					continue;
 				}
 				if (colors[dep] == color::white) {
@@ -182,7 +172,14 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 	auto check_deps = [&](const std::span<const id> deps, const id source, const std::string_view phase_tag) {
 		for (const id& dep : deps) {
 			if (!registered.contains(dep)) {
-				violations.push_back(std::format("system {} {} reads {} but no system registers that state or resources type", source, phase_tag, dep));
+				violations.push_back(
+					std::format(
+						"system {} {} reads {} but no system registers that state or resources type",
+						source,
+						phase_tag,
+						dep
+					)
+				);
 			}
 		}
 	};
@@ -197,7 +194,8 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 		for (const auto& v : violations) {
 			message += "  - " + v + "\n";
 		}
-		message += "fix: add the missing system to your scheduler config, or remove the parameter from the reader's update/frame signature";
+		message += "fix: add the missing system to your scheduler config, or remove the parameter from the reader's "
+				   "update/frame signature";
 		assert(false, "{}", message);
 	}
 }
@@ -347,13 +345,10 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 
 	if (!node.run_launched) {
 		node.run_launched = true;
-		node.run_task = wrap_run_task(
-			node.invoke_run_fn(*node.tick_ctx, node.data.get()),
-			[&node] {
-				node.settled = true;
-				node.paused_event->set();
-			}
-		);
+		node.run_task = wrap_run_task(node.invoke_run_fn(*node.tick_ctx, node.data.get()), [&node] {
+			node.settled = true;
+			node.paused_event->set();
+		});
 		node.run_task.start();
 	}
 	else if (!node.run_task.done()) {
@@ -418,7 +413,8 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 	}
 }
 
-auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count) -> void {
+auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count)
+	-> void {
 	constexpr std::array<std::string_view, 3> phase_names{ "init", "update", "frame" };
 	const auto phase_name = phase_names[static_cast<std::size_t>(phase)];
 
@@ -487,7 +483,8 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 				log::println(
 					log::level::error,
 					log::category::runtime,
-					"STALL [phase={} elapsed={::ms} dump=#{}] system {} advance entered but not launched (no deps blocking)",
+					"STALL [phase={} elapsed={::ms} dump=#{}] system {} advance entered but not launched (no deps "
+					"blocking)",
 					phase_name,
 					elapsed,
 					dump_count,
@@ -511,7 +508,8 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 			log::println(
 				log::level::warning,
 				log::category::runtime,
-				"STALL [phase={} elapsed={::ms} dump=#{}] system {} tick in-flight, first next_tick() not reached yet (slow init or stuck in initial setup)",
+				"STALL [phase={} elapsed={::ms} dump=#{}] system {} tick in-flight, first next_tick() not reached yet "
+				"(slow init or stuck in initial setup)",
 				phase_name,
 				elapsed,
 				dump_count,
@@ -522,7 +520,8 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 			log::println(
 				log::level::error,
 				log::category::runtime,
-				"STALL [phase={} elapsed={::ms} dump=#{}] system {} tick in-flight past budget; user coroutine has not yielded back this tick",
+				"STALL [phase={} elapsed={::ms} dump=#{}] system {} tick in-flight past budget; user coroutine has not "
+				"yielded back this tick",
 				phase_name,
 				elapsed,
 				dump_count,
@@ -552,14 +551,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	trace::scope_guard sg{ trace_id<"scheduler::render">() };
 	auto writer = m_channels_store.make_writer();
 
-	frame_context f_ctx(
-		m_states,
-		m_resources_store,
-		m_channels_store,
-		writer,
-		m_frame_graph,
-		*m_registry
-	);
+	frame_context f_ctx(m_states, m_resources_store, m_channels_store, writer, m_frame_graph, *m_registry);
 
 	for (auto& node : m_nodes) {
 		if (!node.has_frame) {
@@ -587,10 +579,12 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 		trace::scope_guard sg2{ trace_id<"scheduler::start_frame_tasks">() };
 		task::group group(trace_id<"scheduler::start_frame_tasks">());
 		for (std::size_t i = 0; i < tasks.size(); ++i) {
-			group.post([t_ptr = std::addressof(tasks[i])] {
-				t_ptr->start();
-			},
-					   task_nodes[i]->frame_start_id);
+			group.post(
+				[t_ptr = std::addressof(tasks[i])] {
+					t_ptr->start();
+				},
+				task_nodes[i]->frame_start_id
+			);
 		}
 		group.wait();
 	}

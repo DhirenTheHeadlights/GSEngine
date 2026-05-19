@@ -13,49 +13,29 @@ export namespace gse {
 		constexpr flags() = default;
 		constexpr flags(E e);
 
-		constexpr auto set(
-			E e
-		) -> flags&;
+		constexpr auto set(E e) -> flags&;
 
-		constexpr auto clear(
-			E e
-		) -> flags&;
+		constexpr auto clear(E e) -> flags&;
 
-		constexpr auto test(
-			E e
-		) const -> bool;
+		constexpr auto test(E e) const -> bool;
 
-		constexpr auto operator|(
-			flags rhs
-		) const -> flags;
+		constexpr auto operator|(flags rhs) const -> flags;
 
-		constexpr auto operator&(
-			flags rhs
-		) const -> flags;
+		constexpr auto operator&(flags rhs) const -> flags;
 
-		constexpr auto operator|=(
-			flags rhs
-		) -> flags&;
+		constexpr auto operator|=(flags rhs) -> flags&;
 
-		constexpr auto operator&=(
-			flags rhs
-		) -> flags&;
+		constexpr auto operator&=(flags rhs) -> flags&;
 
-		constexpr auto operator|(
-			E e
-		) const -> flags;
+		constexpr auto operator|(E e) const -> flags;
 
-		constexpr auto operator&(
-			E e
-		) const -> flags;
+		constexpr auto operator&(E e) const -> flags;
 
 		constexpr explicit operator bool() const;
 
 		constexpr auto bits() const -> underlying_type;
 
-		static constexpr auto from_bits(
-			underlying_type raw
-		) -> flags;
+		static constexpr auto from_bits(underlying_type raw) -> flags;
 
 	private:
 		constexpr explicit flags(underlying_type bits);

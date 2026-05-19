@@ -20,9 +20,7 @@ export namespace gse {
 			mat4f inverse_bind;
 		};
 
-		explicit joint(
-			const params& p
-		);
+		explicit joint(const params& p);
 
 		auto parent_index() const -> std::uint16_t;
 

@@ -17,12 +17,7 @@ import :styles;
 import :builder;
 
 export namespace gse::gui::draw {
-	auto button(
-		const draw_context& ctx,
-		const std::string& name,
-		id& hot_widget_id,
-		id& active_widget_id
-	) -> bool;
+	auto button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id) -> bool;
 }
 
 export namespace gse::gui {
@@ -37,7 +32,8 @@ export namespace gse::gui {
 	};
 }
 
-auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id) -> bool {
+auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id)
+	-> bool {
 	if (!ctx.current_menu) {
 		return false;
 	}
@@ -70,15 +66,25 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 		target_color = ctx.style.color_widget_hovered;
 	}
 
-	ctx.queue_sprite({ .rect = button_rect, .color = ctx.animated_color(widget_id, target_color), .texture = ctx.blank_texture, .corner_radius = ctx.style.corner_radius });
+	ctx.queue_sprite(
+		{ .rect = button_rect,
+		  .color = ctx.animated_color(widget_id, target_color),
+		  .texture = ctx.blank_texture,
+		  .corner_radius = ctx.style.corner_radius }
+	);
 
 	const float text_width = ctx.font->width(name, ctx.style.font_size);
-	const vec2f text_pos = {
-		button_rect.center().x() - text_width / 2.f,
-		button_rect.center().y() + ctx.style.font_size / 2.f
-	};
+	const vec2f text_pos = { button_rect.center().x() - text_width / 2.f,
+							 button_rect.center().y() + ctx.style.font_size / 2.f };
 
-	ctx.queue_text({ .font = ctx.font, .text = name, .position = text_pos, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = button_rect });
+	ctx.queue_text(
+		{ .font = ctx.font,
+		  .text = name,
+		  .position = text_pos,
+		  .scale = ctx.style.font_size,
+		  .color = ctx.style.color_text,
+		  .clip_rect = button_rect }
+	);
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 

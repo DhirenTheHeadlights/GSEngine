@@ -27,23 +27,13 @@ export namespace gse::network {
 
 		auto remote_ack_bitfield() -> std::uint32_t&;
 
-		auto queue_reliable(
-			std::uint32_t seq,
-			std::span<const std::byte> data
-		) -> void;
+		auto queue_reliable(std::uint32_t seq, std::span<const std::byte> data) -> void;
 
-		auto process_acks(
-			std::uint32_t ack,
-			std::uint32_t ack_bits
-		) -> void;
+		auto process_acks(std::uint32_t ack, std::uint32_t ack_bits) -> void;
 
-		auto ingest_packet_sequence(
-			std::uint32_t sequence
-		) -> void;
+		auto ingest_packet_sequence(std::uint32_t sequence) -> void;
 
-		auto messages_to_resend(
-			std::uint32_t retry_interval_ms
-		) -> std::vector<pending_reliable_message*>;
+		auto messages_to_resend(std::uint32_t retry_interval_ms) -> std::vector<pending_reliable_message*>;
 
 	private:
 		address m_address;
@@ -121,7 +111,8 @@ auto gse::network::remote_peer::process_acks(const std::uint32_t ack, const std:
 	});
 }
 
-auto gse::network::remote_peer::messages_to_resend(const std::uint32_t retry_interval_ms) -> std::vector<pending_reliable_message*> {
+auto gse::network::remote_peer::messages_to_resend(const std::uint32_t retry_interval_ms)
+	-> std::vector<pending_reliable_message*> {
 	std::vector<pending_reliable_message*> result;
 	const auto now = system_clock::now<time_t<std::uint64_t>>().as<milliseconds>();
 

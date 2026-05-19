@@ -7,7 +7,18 @@ import gse.assert;
 import gse.core;
 import gse.log;
 
-auto gse::vulkan::transition_image_layout(basic_image<device>& image_resource, const gpu::handle<command_buffer> cmd_handle, const gpu::image_layout new_layout, const gpu::image_aspect_flags aspects, const gpu::pipeline_stage_flags src_stages, const gpu::access_flags src_access, const gpu::pipeline_stage_flags dst_stages, const gpu::access_flags dst_access, const std::uint32_t mip_levels, const std::uint32_t layer_count) -> void {
+auto gse::vulkan::transition_image_layout(
+	basic_image<device>& image_resource,
+	const gpu::handle<command_buffer> cmd_handle,
+	const gpu::image_layout new_layout,
+	const gpu::image_aspect_flags aspects,
+	const gpu::pipeline_stage_flags src_stages,
+	const gpu::access_flags src_access,
+	const gpu::pipeline_stage_flags dst_stages,
+	const gpu::access_flags dst_access,
+	const std::uint32_t mip_levels,
+	const std::uint32_t layer_count
+) -> void {
 	const auto current = image_resource.layout();
 	if (current == new_layout) {
 		return;
@@ -34,10 +45,11 @@ auto gse::vulkan::transition_image_layout(basic_image<device>& image_resource, c
 	image_resource.set_layout(new_layout);
 }
 
-auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device) -> gpu::descriptor_buffer_properties {
-	const auto props = physical_device.getProperties2<
-		vk::PhysicalDeviceProperties2,
-		vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
+auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device)
+	-> gpu::descriptor_buffer_properties {
+	const auto props =
+		physical_device
+			.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
 	const auto& db = props.get<vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
 
 	log::println(log::category::vulkan, "Descriptor buffer properties:");
@@ -49,7 +61,11 @@ auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDev
 	log::println(log::category::vulkan, "  combined image sampler size: {}", db.combinedImageSamplerDescriptorSize);
 	log::println(log::category::vulkan, "  storage image size: {}", db.storageImageDescriptorSize);
 	log::println(log::category::vulkan, "  input attachment size: {}", db.inputAttachmentDescriptorSize);
-	log::println(log::category::vulkan, "  bufferless push descriptors: {}", db.bufferlessPushDescriptors ? "true" : "false");
+	log::println(
+		log::category::vulkan,
+		"  bufferless push descriptors: {}",
+		db.bufferlessPushDescriptors ? "true" : "false"
+	);
 	log::println(log::category::vulkan, "  acceleration structure size: {}", db.accelerationStructureDescriptorSize);
 
 	return {
@@ -67,7 +83,8 @@ auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDev
 	};
 }
 
-auto gse::vulkan::wait_for_fence(const device& dev, const gpu::handle<fence> fence, const std::uint64_t timeout_ns) -> gpu::result {
+auto gse::vulkan::wait_for_fence(const device& dev, const gpu::handle<fence> fence, const std::uint64_t timeout_ns)
+	-> gpu::result {
 	const auto vk_fence = std::bit_cast<vk::Fence>(fence);
 	const auto vk_result = dev.raii_device().waitForFences(vk_fence, vk::True, timeout_ns);
 	return from_vk(vk_result);
@@ -77,7 +94,12 @@ auto gse::vulkan::reset_fence(const device& dev, const gpu::handle<fence> fence)
 	dev.raii_device().resetFences(std::bit_cast<vk::Fence>(fence));
 }
 
-auto gse::vulkan::acquire_next_image(const device& dev, const gpu::handle<swap_chain> swapchain, const gpu::handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) -> acquire_next_image_result {
+auto gse::vulkan::acquire_next_image(
+	const device& dev,
+	const gpu::handle<swap_chain> swapchain,
+	const gpu::handle<semaphore> wait_semaphore,
+	const std::uint64_t timeout_ns
+) -> acquire_next_image_result {
 	const vk::AcquireNextImageInfoKHR info{
 		.swapchain = std::bit_cast<vk::SwapchainKHR>(swapchain),
 		.timeout = timeout_ns,
@@ -149,7 +171,8 @@ auto gse::vulkan::device::families_distinct() const -> bool {
 	return false;
 }
 
-auto gse::vulkan::device::create(const instance& instance_data, device::settings& cfg, aftermath& aftermath_tracker) -> device_creation_result {
+auto gse::vulkan::device::create(const instance& instance_data, device::settings& cfg, aftermath& aftermath_tracker)
+	-> device_creation_result {
 	const auto devices = instance_data.enumerate_physical_devices();
 	assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
 
@@ -167,7 +190,11 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	}
 
 	const auto physical_device_properties = physical_device.getProperties();
-	log::println(log::category::vulkan, "Selected GPU: {}", std::string_view(physical_device_properties.deviceName.data()));
+	log::println(
+		log::category::vulkan,
+		"Selected GPU: {}",
+		std::string_view(physical_device_properties.deviceName.data())
+	);
 
 	const auto families = find_queue_families(physical_device, instance_data.raii_surface());
 
@@ -203,8 +230,7 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	const bool robustness2_extension_supported = supports_extension(vk::EXTRobustness2ExtensionName);
 	const bool nested_cb_extension_supported = supports_extension(vk::EXTNestedCommandBufferExtensionName);
 
-	const bool rt_extensions_available =
-		supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
+	const bool rt_extensions_available = supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
 		supports_extension(vk::KHRAccelerationStructureExtensionName) &&
 		supports_extension(vk::KHRRayQueryExtensionName);
 
@@ -234,10 +260,7 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		"Ray tracing (acceleration structure + ray query) is required but not supported by this GPU"
 	);
 	const auto& desc_buf_query = feature_chain.get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>();
-	assert(
-		desc_buf_query.descriptorBuffer,
-		"Descriptor buffer is required but not supported by this GPU"
-	);
+	assert(desc_buf_query.descriptorBuffer, "Descriptor buffer is required but not supported by this GPU");
 	const bool descriptor_buffer_push_descriptors_supported = desc_buf_query.descriptorBufferPushDescriptors;
 	const bool descriptor_buffer_capture_replay_supported = desc_buf_query.descriptorBufferCaptureReplay;
 	const bool acceleration_structure_capture_replay_supported = as_query.accelerationStructureCaptureReplay;
@@ -247,11 +270,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	const auto& robustness2_query = feature_chain.get<vk::PhysicalDeviceRobustness2FeaturesEXT>();
 	const bool robustness2_supported = robustness2_extension_supported && robustness2_query.robustBufferAccess2;
 	const auto& nested_cb_query = feature_chain.get<vk::PhysicalDeviceNestedCommandBufferFeaturesEXT>();
-	const bool nested_cb_supported =
-		nested_cb_extension_supported &&
-		nested_cb_query.nestedCommandBuffer &&
-		nested_cb_query.nestedCommandBufferRendering &&
-		nested_cb_query.nestedCommandBufferSimultaneousUse;
+	const bool nested_cb_supported = nested_cb_extension_supported && nested_cb_query.nestedCommandBuffer &&
+		nested_cb_query.nestedCommandBufferRendering && nested_cb_query.nestedCommandBufferSimultaneousUse;
 
 	log::println(log::category::vulkan, "Mesh shader support detected");
 	log::println(log::category::vulkan, "Ray tracing support detected");
@@ -360,7 +380,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		.deviceFaultVendorBinary = device_fault_vendor_binary_supported ? vk::True : vk::False,
 	};
 
-	void* post_fault_chain_head = device_fault_supported ? static_cast<void*>(&fault_features) : static_cast<void*>(&ray_query_features);
+	void* post_fault_chain_head =
+		device_fault_supported ? static_cast<void*>(&fault_features) : static_cast<void*>(&ray_query_features);
 
 	vk::PhysicalDeviceRobustness2FeaturesEXT robustness2_features{
 		.pNext = post_fault_chain_head,
@@ -380,20 +401,19 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		.nestedCommandBufferSimultaneousUse = vk::True,
 	};
 
-	void* post_nested_cb_chain_head = nested_cb_supported
-		? static_cast<void*>(&nested_cb_features)
-		: static_cast<void*>(&present_wait_features);
+	void* post_nested_cb_chain_head =
+		nested_cb_supported ? static_cast<void*>(&nested_cb_features) : static_cast<void*>(&present_wait_features);
 
-	const bool av1_encode_supported = video_encode_extensions_available && supports_extension(vk::KHRVideoEncodeAv1ExtensionName);
+	const bool av1_encode_supported =
+		video_encode_extensions_available && supports_extension(vk::KHRVideoEncodeAv1ExtensionName);
 
 	vk::PhysicalDeviceVideoEncodeAV1FeaturesKHR av1_encode_features{
 		.pNext = post_nested_cb_chain_head,
 		.videoEncodeAV1 = vk::True,
 	};
 
-	void* post_video_chain_head = av1_encode_supported
-		? static_cast<void*>(&av1_encode_features)
-		: post_nested_cb_chain_head;
+	void* post_video_chain_head =
+		av1_encode_supported ? static_cast<void*>(&av1_encode_features) : post_nested_cb_chain_head;
 
 	void* post_aftermath_chain_head = aftermath_tracker.device_create_info_pnext(post_video_chain_head);
 
@@ -499,8 +519,15 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	};
 
 	if (video_encode_extensions_available) {
-		result.queue.set_video_encode(result.device.raii_device().getQueue(families.video_encode_family.value(), 0), families.video_encode_family.value());
-		log::println(log::category::vulkan, "Video encode queue acquired (family {})", families.video_encode_family.value());
+		result.queue.set_video_encode(
+			result.device.raii_device().getQueue(families.video_encode_family.value(), 0),
+			families.video_encode_family.value()
+		);
+		log::println(
+			log::category::vulkan,
+			"Video encode queue acquired (family {})",
+			families.video_encode_family.value()
+		);
 	}
 
 	return result;
@@ -535,7 +562,8 @@ auto gse::vulkan::device::query_fault_counts(gpu::device_fault_counts& counts) c
 	return from_vk(vk_result);
 }
 
-auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu::device_fault_info& info) const -> gpu::result {
+auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu::device_fault_info& info) const
+	-> gpu::result {
 	std::vector<vk::DeviceFaultAddressInfoEXT> vk_address_infos(counts.address_info_count);
 	std::vector<vk::DeviceFaultVendorInfoEXT> vk_vendor_infos(counts.vendor_info_count);
 	std::vector<std::byte> vk_vendor_binary(counts.vendor_binary_size);
@@ -563,11 +591,13 @@ auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu
 	tls_addresses.clear();
 	tls_addresses.reserve(vk_address_infos.size());
 	for (const auto& a : vk_address_infos) {
-		tls_addresses.push_back({
-			.address_type = static_cast<std::uint32_t>(a.addressType),
-			.reported_address = a.reportedAddress,
-			.address_precision = a.addressPrecision,
-		});
+		tls_addresses.push_back(
+			{
+				.address_type = static_cast<std::uint32_t>(a.addressType),
+				.reported_address = a.reportedAddress,
+				.address_precision = a.addressPrecision,
+			}
+		);
 	}
 	info.address_infos = tls_addresses;
 
@@ -575,11 +605,13 @@ auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu
 	tls_vendors.clear();
 	tls_vendors.reserve(vk_vendor_infos.size());
 	for (const auto& v : vk_vendor_infos) {
-		tls_vendors.push_back({
-			.description = v.description.data(),
-			.vendor_fault_code = v.vendorFaultCode,
-			.vendor_fault_data = v.vendorFaultData,
-		});
+		tls_vendors.push_back(
+			{
+				.description = v.description.data(),
+				.vendor_fault_code = v.vendorFaultCode,
+				.vendor_fault_data = v.vendorFaultData,
+			}
+		);
 	}
 	info.vendor_infos = tls_vendors;
 
@@ -590,10 +622,18 @@ auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu
 	return from_vk(vk_result);
 }
 
-auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info, const void* data, const std::string_view tag, const std::source_location& loc) -> basic_buffer<device> {
+auto gse::vulkan::device::create_buffer(
+	const vk::BufferCreateInfo& buffer_info,
+	const void* data,
+	const std::string_view tag,
+	const std::source_location& loc
+) -> basic_buffer<device> {
 	auto actual_buffer_info = buffer_info;
-	constexpr auto device_addressable_usage =
-		vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	constexpr auto device_addressable_usage = vk::BufferUsageFlagBits::eUniformBuffer |
+		vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
+		vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+		vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+		vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	const bool needs_device_address = static_cast<bool>(actual_buffer_info.usage & device_addressable_usage);
 
 	if (needs_device_address) {
@@ -614,14 +654,16 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 	bool success = false;
 
 	if (data) {
-		constexpr vk::MemoryPropertyFlags required_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+		constexpr vk::MemoryPropertyFlags required_flags =
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
 		if (auto expected_alloc = allocate(requirements, required_flags, tag, loc, needs_device_address)) {
 			alloc = std::move(*expected_alloc);
 			success = true;
 		}
 	}
 	else {
-		for (const auto property_preferences = memory_flag_preferences(actual_buffer_info.usage); const auto& props : property_preferences) {
+		for (const auto property_preferences = memory_flag_preferences(actual_buffer_info.usage);
+			 const auto& props : property_preferences) {
 			if (auto expected_alloc = allocate(requirements, props, tag, loc, needs_device_address)) {
 				alloc = std::move(*expected_alloc);
 				success = true;
@@ -641,11 +683,13 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 			? std::format("Buffer ({}:{})", file, debug_info.creation_location.line())
 			: std::format("Buffer '{}' ({}:{})", debug_info.tag, file, debug_info.creation_location.line());
 
-		(*m_device).setDebugUtilsObjectNameEXT({
-			.objectType = vk::ObjectType::eBuffer,
-			.objectHandle = static_cast<std::uint64_t>(std::bit_cast<std::uintptr_t>(buffer)),
-			.pObjectName = name.c_str(),
-		});
+		(*m_device).setDebugUtilsObjectNameEXT(
+			{
+				.objectType = vk::ObjectType::eBuffer,
+				.objectHandle = static_cast<std::uint64_t>(std::bit_cast<std::uintptr_t>(buffer)),
+				.pObjectName = name.c_str(),
+			}
+		);
 	}
 
 	if (data && alloc.mapped()) {
@@ -655,10 +699,19 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 		assert(false, "Buffer created with data, but the allocated memory is not mappable.");
 	}
 
-	return basic_buffer<device>(std::bit_cast<gpu::handle<vulkan::buffer>>(buffer), std::move(alloc), actual_buffer_info.size);
+	return basic_buffer<device>(
+		std::bit_cast<gpu::handle<vulkan::buffer>>(buffer),
+		std::move(alloc),
+		actual_buffer_info.size
+	);
 }
 
-auto gse::vulkan::device::create_buffer(const gpu::buffer_create_info& buffer_info, const void* data, const std::string_view tag, const std::source_location& loc) -> basic_buffer<device> {
+auto gse::vulkan::device::create_buffer(
+	const gpu::buffer_create_info& buffer_info,
+	const void* data,
+	const std::string_view tag,
+	const std::source_location& loc
+) -> basic_buffer<device> {
 	const vk::BufferCreateInfo vk_info{
 		.pNext = buffer_info.pnext,
 		.size = buffer_info.size,
@@ -667,7 +720,14 @@ auto gse::vulkan::device::create_buffer(const gpu::buffer_create_info& buffer_in
 	return create_buffer(vk_info, data, tag, loc);
 }
 
-auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const vk::ImageViewCreateInfo& view_info, const void* data, const std::string_view tag, const std::source_location loc) -> basic_image<device> {
+auto gse::vulkan::device::create_image(
+	const vk::ImageCreateInfo& info,
+	const vk::MemoryPropertyFlags properties,
+	const vk::ImageViewCreateInfo& view_info,
+	const void* data,
+	const std::string_view tag,
+	const std::source_location loc
+) -> basic_image<device> {
 	auto image = (*m_device).createImage(info, nullptr);
 	const auto requirements = (*m_device).getImageMemoryRequirements(image);
 
@@ -724,7 +784,14 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 	);
 }
 
-auto gse::vulkan::device::create_image(const gpu::image_create_info& info, const gpu::memory_property_flags properties, const gpu::image_view_create_info& view_info, const void* data, const std::string_view tag, const std::source_location loc) -> basic_image<device> {
+auto gse::vulkan::device::create_image(
+	const gpu::image_create_info& info,
+	const gpu::memory_property_flags properties,
+	const gpu::image_view_create_info& view_info,
+	const void* data,
+	const std::string_view tag,
+	const std::source_location loc
+) -> basic_image<device> {
 	const vk::ImageCreateInfo vk_info{
 		.flags = to_vk(info.flags),
 		.imageType = to_vk(info.type),
@@ -776,7 +843,8 @@ auto gse::vulkan::device::destroy_image_view(const gpu::handle<image_view> view)
 	(*m_device).destroyImageView(std::bit_cast<vk::ImageView>(view), nullptr);
 }
 
-auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<image>, memory_requirements> {
+auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& info) const
+	-> std::pair<gpu::handle<image>, memory_requirements> {
 	const vk::ImageCreateInfo vk_info{
 		.flags = to_vk(info.flags),
 		.imageType = to_vk(info.type),
@@ -800,7 +868,8 @@ auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& inf
 	};
 }
 
-auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& info) const -> std::pair<gpu::handle<buffer>, memory_requirements> {
+auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& info) const
+	-> std::pair<gpu::handle<buffer>, memory_requirements> {
 	const vk::BufferCreateInfo vk_info{
 		.pNext = info.pnext,
 		.size = info.size,
@@ -818,15 +887,24 @@ auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& i
 	};
 }
 
-auto gse::vulkan::device::bind_image_memory(const gpu::handle<image> img, const device_memory_handle mem, const gpu::device_size offset) const -> void {
+auto gse::vulkan::device::bind_image_memory(
+	const gpu::handle<image> img,
+	const device_memory_handle mem,
+	const gpu::device_size offset
+) const -> void {
 	(*m_device).bindImageMemory(std::bit_cast<vk::Image>(img), std::bit_cast<vk::DeviceMemory>(mem.value), offset);
 }
 
-auto gse::vulkan::device::bind_buffer_memory(const gpu::handle<buffer> buf, const device_memory_handle mem, const gpu::device_size offset) const -> void {
+auto gse::vulkan::device::bind_buffer_memory(
+	const gpu::handle<buffer> buf,
+	const device_memory_handle mem,
+	const gpu::device_size offset
+) const -> void {
 	(*m_device).bindBufferMemory(std::bit_cast<vk::Buffer>(buf), std::bit_cast<vk::DeviceMemory>(mem.value), offset);
 }
 
-auto gse::vulkan::device::create_image_view(const gpu::handle<image> img, const gpu::image_view_create_info& info) const -> gpu::handle<image_view> {
+auto gse::vulkan::device::create_image_view(const gpu::handle<image> img, const gpu::image_view_create_info& info) const
+	-> gpu::handle<image_view> {
 	const vk::ImageViewCreateInfo vk_info{
 		.image = std::bit_cast<vk::Image>(img),
 		.viewType = to_vk(info.view_type),
@@ -843,7 +921,10 @@ auto gse::vulkan::device::create_image_view(const gpu::handle<image> img, const 
 	return std::bit_cast<gpu::handle<image_view>>(vk_view);
 }
 
-auto gse::vulkan::device::allocate_aliased_memory(const gpu::device_size size, const std::uint32_t memory_type_index) const -> device_memory_handle {
+auto gse::vulkan::device::allocate_aliased_memory(
+	const gpu::device_size size,
+	const std::uint32_t memory_type_index
+) const -> device_memory_handle {
 	const vk::MemoryAllocateInfo alloc_info{
 		.allocationSize = size,
 		.memoryTypeIndex = memory_type_index,
@@ -859,7 +940,10 @@ auto gse::vulkan::device::free_aliased_memory(const device_memory_handle mem) co
 	(*m_device).freeMemory(std::bit_cast<vk::DeviceMemory>(mem.value), nullptr);
 }
 
-auto gse::vulkan::device::find_memory_type_index(const std::uint32_t type_bits, const gpu::memory_property_flags required) const -> std::uint32_t {
+auto gse::vulkan::device::find_memory_type_index(
+	const std::uint32_t type_bits,
+	const gpu::memory_property_flags required
+) const -> std::uint32_t {
 	const auto vk_required = to_vk(required);
 	const auto props = m_physical_device.getMemoryProperties();
 	for (std::uint32_t i = 0; i < props.memoryTypeCount; ++i) {
@@ -926,7 +1010,15 @@ auto gse::vulkan::device::free_allocation(const basic_allocation<device>& alloc)
 	}
 }
 
-gse::vulkan::device::device(vk::raii::PhysicalDevice&& physical_device, vk::raii::Device&& device, device::settings& cfg, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled, const std::uint32_t graphics_family, const std::uint32_t compute_family)
+gse::vulkan::device::device(
+	vk::raii::PhysicalDevice&& physical_device,
+	vk::raii::Device&& device,
+	device::settings& cfg,
+	const bool device_fault_enabled,
+	const bool device_fault_vendor_binary_enabled,
+	const std::uint32_t graphics_family,
+	const std::uint32_t compute_family
+)
 	: m_physical_device(std::move(physical_device)),
 	  m_device(std::move(device)),
 	  m_fault_enabled(device_fault_enabled),
@@ -936,7 +1028,13 @@ gse::vulkan::device::device(vk::raii::PhysicalDevice&& physical_device, vk::raii
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = compute_family;
 }
 
-auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<basic_allocation<device>, std::string> {
+auto gse::vulkan::device::allocate(
+	const vk::MemoryRequirements& requirements,
+	const vk::MemoryPropertyFlags properties,
+	const std::string_view tag,
+	const std::source_location loc,
+	const bool device_address
+) -> std::expected<basic_allocation<device>, std::string> {
 	std::lock_guard lock(m_mutex);
 
 	if ((m_settings && m_settings->tracking_enabled)) {
@@ -978,12 +1076,14 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 					continue;
 				}
 
-				const vk::DeviceSize aligned_offset = (it->offset + requirements.alignment - 1) & ~(requirements.alignment - 1);
+				const vk::DeviceSize aligned_offset =
+					(it->offset + requirements.alignment - 1) & ~(requirements.alignment - 1);
 				if (aligned_offset + requirements.size > it->offset + it->size) {
 					continue;
 				}
 
-				if (const vk::DeviceSize leftover = it->size - (aligned_offset - it->offset) - requirements.size; leftover < best_leftover) {
+				if (const vk::DeviceSize leftover = it->size - (aligned_offset - it->offset) - requirements.size;
+					leftover < best_leftover) {
 					best_block = &block;
 					best_sub_it = it;
 					best_leftover = leftover;
@@ -1024,16 +1124,16 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 			++m_live_allocation_count;
 		}
 
-		return basic_allocation<device>{
-			std::bit_cast<std::uint64_t>(best_block->memory),
-			requirements.size,
-			best_aligned_offset,
-			best_block->mapped ? static_cast<char*>(best_block->mapped) + best_aligned_offset : nullptr,
-			&*owner_it,
-			this,
-			this,
-			std::move(debug_info)
-		};
+		return basic_allocation<device>{ std::bit_cast<std::uint64_t>(best_block->memory),
+										 requirements.size,
+										 best_aligned_offset,
+										 best_block->mapped
+											 ? static_cast<char*>(best_block->mapped) + best_aligned_offset
+											 : nullptr,
+										 &*owner_it,
+										 this,
+										 this,
+										 std::move(debug_info) };
 	}
 
 	const vk::DeviceSize aligned_offset = (0 + requirements.alignment - 1) & ~(requirements.alignment - 1);
@@ -1050,11 +1150,7 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 	};
 	auto memory = (*m_device).allocateMemory(alloc_info, nullptr);
 
-	blocks.emplace_back(
-		memory,
-		new_block_size,
-		properties
-	);
+	blocks.emplace_back(memory, new_block_size, properties);
 
 	auto& new_block = blocks.back();
 
@@ -1083,16 +1179,14 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 		++m_live_allocation_count;
 	}
 
-	return basic_allocation<device>{
-		std::bit_cast<std::uint64_t>(new_block.memory),
-		requirements.size,
-		aligned_offset,
-		new_block.mapped ? static_cast<char*>(new_block.mapped) + aligned_offset : nullptr,
-		owner_ptr,
-		this,
-		this,
-		std::move(debug_info)
-	};
+	return basic_allocation<device>{ std::bit_cast<std::uint64_t>(new_block.memory),
+									 requirements.size,
+									 aligned_offset,
+									 new_block.mapped ? static_cast<char*>(new_block.mapped) + aligned_offset : nullptr,
+									 owner_ptr,
+									 this,
+									 this,
+									 std::move(debug_info) };
 }
 
 auto gse::vulkan::device::clean_up() -> void {
@@ -1114,9 +1208,23 @@ auto gse::vulkan::device::clean_up() -> void {
 	}
 
 	if (leaked_sub_allocations > 0) {
-		log::println(log::level::error, log::category::vulkan_memory, "{} sub-allocations still in use at allocator cleanup!", leaked_sub_allocations);
-		log::println(log::level::error, log::category::vulkan_memory, "Resources are being destroyed after their memory is freed.");
-		log::println(log::level::error, log::category::vulkan_memory, "Destroy all vulkan::basic_image<vulkan::device> and vulkan::basic_buffer<vulkan::device> instances before the device.");
+		log::println(
+			log::level::error,
+			log::category::vulkan_memory,
+			"{} sub-allocations still in use at allocator cleanup!",
+			leaked_sub_allocations
+		);
+		log::println(
+			log::level::error,
+			log::category::vulkan_memory,
+			"Resources are being destroyed after their memory is freed."
+		);
+		log::println(
+			log::level::error,
+			log::category::vulkan_memory,
+			"Destroy all vulkan::basic_image<vulkan::device> and vulkan::basic_buffer<vulkan::device> instances before "
+			"the device."
+		);
 
 		if ((m_settings && m_settings->tracking_enabled) && !m_live_allocations.empty()) {
 			log::println(log::level::error, log::category::vulkan_memory, "Tracked allocations still alive:");
@@ -1134,7 +1242,11 @@ auto gse::vulkan::device::clean_up() -> void {
 			}
 		}
 		else if (!(m_settings && m_settings->tracking_enabled)) {
-			log::println(log::level::warning, log::category::vulkan_memory, "Enable 'Vulkan.Track Allocations' for detailed allocation info.");
+			log::println(
+				log::level::warning,
+				log::category::vulkan_memory,
+				"Enable 'Vulkan.Track Allocations' for detailed allocation info."
+			);
 		}
 
 		assert(
@@ -1160,7 +1272,8 @@ auto gse::vulkan::device::clean_up() -> void {
 	m_pools.clear();
 }
 
-auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usage) -> std::vector<vk::MemoryPropertyFlags> {
+auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usage)
+	-> std::vector<vk::MemoryPropertyFlags> {
 	using mpf = vk::MemoryPropertyFlagBits;
 
 	if (usage & vk::BufferUsageFlagBits::eVertexBuffer || usage & vk::BufferUsageFlagBits::eIndexBuffer) {
@@ -1195,12 +1308,14 @@ auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usa
 }
 
 auto gse::vulkan::device::pool_key::operator==(const pool_key& other) const -> bool {
-	return memory_type_index == other.memory_type_index && properties == other.properties && device_address == other.device_address;
+	return memory_type_index == other.memory_type_index && properties == other.properties &&
+		device_address == other.device_address;
 }
 
 auto gse::vulkan::device::pool_key_hash::operator()(const pool_key& key) const noexcept -> std::size_t {
 	const auto memory_hash = std::hash<std::uint32_t>()(key.memory_type_index);
-	const auto props_hash = std::hash<vk::MemoryPropertyFlags::MaskType>()(static_cast<vk::MemoryPropertyFlags::MaskType>(key.properties));
+	const auto props_hash =
+		std::hash<vk::MemoryPropertyFlags::MaskType>()(static_cast<vk::MemoryPropertyFlags::MaskType>(key.properties));
 	const auto address_hash = std::hash<bool>()(key.device_address);
 	return memory_hash ^ (props_hash << 1) ^ (address_hash << 2);
 }

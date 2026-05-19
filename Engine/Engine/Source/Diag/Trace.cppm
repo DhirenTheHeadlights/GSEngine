@@ -24,77 +24,43 @@ export namespace gse::trace {
 		[[nodiscard]] consteval auto view() const -> std::string_view;
 	};
 
-	consteval auto strip_function_signature(
-		std::string_view fn
-	) -> std::string_view;
+	consteval auto strip_function_signature(std::string_view fn) -> std::string_view;
 
-	consteval auto current_loc_tag(
-		std::source_location loc = std::source_location::current()
-	) -> loc_tag;
+	consteval auto current_loc_tag(std::source_location loc = std::source_location::current()) -> loc_tag;
 
 	template <loc_tag Tag>
 	auto loc_id() -> id;
 
-	auto start(
-		const config& cfg = {}
-	) -> void;
+	auto start(const config& cfg = {}) -> void;
 
-	auto begin_block(
-		id id,
-		std::uint64_t parent
-	) -> std::uint64_t;
+	auto begin_block(id id, std::uint64_t parent) -> std::uint64_t;
 
-	auto end_block(
-		id id,
-		std::uint64_t eid,
-		std::uint64_t parent
-	) -> void;
+	auto end_block(id id, std::uint64_t eid, std::uint64_t parent) -> void;
 
-	auto begin_async(
-		id id,
-		std::uint64_t key
-	) -> void;
+	auto begin_async(id id, std::uint64_t key) -> void;
 
-	auto end_async(
-		id id,
-		std::uint64_t key
-	) -> void;
+	auto end_async(id id, std::uint64_t key) -> void;
 
 	auto allocate_async_key() -> std::uint64_t;
 
 	class scope_guard {
 	public:
-		explicit scope_guard(
-			id id
-		);
+		explicit scope_guard(id id);
 
-		scope_guard(
-			id id,
-			std::uint64_t parent
-		);
+		scope_guard(id id, std::uint64_t parent);
 
 		~scope_guard();
 
-		scope_guard(
-			const scope_guard&
-		) = delete;
+		scope_guard(const scope_guard&) = delete;
 
-		scope_guard(
-			scope_guard&&
-		) = delete;
+		scope_guard(scope_guard&&) = delete;
 
-		auto operator=(
-			const scope_guard&
-		) -> scope_guard& = delete;
+		auto operator=(const scope_guard&) -> scope_guard& = delete;
 
-		auto operator=(
-			scope_guard&&
-		) -> scope_guard& = delete;
+		auto operator=(scope_guard&&) -> scope_guard& = delete;
 
 	private:
-		auto enter(
-			std::uint64_t parent
-		) -> void;
+		auto enter(std::uint64_t parent) -> void;
 
 		id m_id;
 		std::uint32_t m_tid = 0;
@@ -103,48 +69,23 @@ export namespace gse::trace {
 		bool m_pushed_parent = false;
 	};
 
-	auto mark(
-		id id
-	) -> void;
+	auto mark(id id) -> void;
 
-	auto counter(
-		id id,
-		double value
-	) -> void;
+	auto counter(id id, double value) -> void;
 
 	constexpr std::uint32_t gpu_virtual_tid = 0xFFFFFFFFu;
 	constexpr std::uint32_t gpu_stats_virtual_tid = 0xFFFFFFFEu;
 	constexpr std::uint32_t gpu_compute_virtual_tid = 0xFFFFFFFDu;
 
-	auto begin_async_at(
-		id id,
-		std::uint64_t key,
-		std::uint32_t tid,
-		time_t<std::uint64_t> ts
-	) -> void;
+	auto begin_async_at(id id, std::uint64_t key, std::uint32_t tid, time_t<std::uint64_t> ts) -> void;
 
-	auto end_async_at(
-		id id,
-		std::uint64_t key,
-		std::uint32_t tid,
-		time_t<std::uint64_t> ts
-	) -> void;
+	auto end_async_at(id id, std::uint64_t key, std::uint32_t tid, time_t<std::uint64_t> ts) -> void;
 
-	auto counter_at(
-		id id,
-		double value,
-		std::uint32_t tid,
-		time_t<std::uint64_t> ts
-	) -> void;
+	auto counter_at(id id, double value, std::uint32_t tid, time_t<std::uint64_t> ts) -> void;
 
-	auto register_virtual_thread(
-		std::uint32_t tid,
-		std::string_view name
-	) -> void;
+	auto register_virtual_thread(std::uint32_t tid, std::string_view name) -> void;
 
-	auto virtual_thread_name(
-		std::uint32_t tid
-	) -> std::optional<std::string>;
+	auto virtual_thread_name(std::uint32_t tid) -> std::optional<std::string>;
 
 	auto hidden_ids_snapshot() -> std::unordered_set<id>;
 
@@ -152,13 +93,9 @@ export namespace gse::trace {
 
 	auto main_tid() -> std::uint32_t;
 
-	auto mark_hidden(
-		id id
-	) -> void;
+	auto mark_hidden(id id) -> void;
 
-	auto is_hidden(
-		id id
-	) -> bool;
+	auto is_hidden(id id) -> bool;
 
 	auto current_eid() -> std::uint64_t;
 
@@ -190,15 +127,11 @@ export namespace gse::trace {
 
 	auto paused() -> bool;
 
-	auto set_enabled(
-		bool enable
-	) -> void;
+	auto set_enabled(bool enable) -> void;
 
 	auto enabled() -> bool;
 
-	auto set_finalize_paused(
-		bool pause
-	) -> void;
+	auto set_finalize_paused(bool pause) -> void;
 
 	auto finalize_paused() -> bool;
 }
@@ -228,14 +161,10 @@ namespace gse::trace {
 
 	class scsp_events {
 	public:
-		auto push(
-			const event& e
-		) noexcept -> void;
+		auto push(const event& e) noexcept -> void;
 
 		template <typename Out>
-		auto drain_to(
-			Out& out
-		) noexcept -> void;
+		auto drain_to(Out& out) noexcept -> void;
 
 		auto clear() noexcept -> void;
 
@@ -331,31 +260,17 @@ namespace gse::trace {
 
 	auto make_tid() -> std::uint32_t;
 
-	auto emit(
-		const event& e
-	) -> void;
+	auto emit(const event& e) -> void;
 
 	auto current_parent_eid() -> std::uint64_t;
 
-	auto build_tree(
-		frame_storage& fs
-	) -> void;
+	auto build_tree(frame_storage& fs) -> void;
 
-	auto compute_self_time(
-		frame_storage& fs,
-		std::size_t i
-	) -> void;
+	auto compute_self_time(frame_storage& fs, std::size_t i) -> void;
 
-	auto emplace_shallow_node(
-		frame_storage& fs,
-		std::size_t flat_i
-	) -> std::size_t;
+	auto emplace_shallow_node(frame_storage& fs, std::size_t flat_i) -> std::size_t;
 
-	auto build_subtree(
-		frame_storage& fs,
-		std::size_t node_idx,
-		std::size_t flat_i
-	) -> void;
+	auto build_subtree(frame_storage& fs, std::size_t node_idx, std::size_t flat_i) -> void;
 
 	auto allocate_span_eid() -> std::uint64_t;
 }
@@ -380,16 +295,8 @@ consteval auto gse::trace::strip_function_signature(const std::string_view fn) -
 		start = (start == std::string_view::npos) ? 0 : start + 1;
 		name = name.substr(start);
 
-		constexpr std::string_view candidates[] = {
-			"__cdecl",
-			"__stdcall",
-			"__thiscall",
-			"__vectorcall",
-			"cdecl",
-			"stdcall",
-			"thiscall",
-			"vectorcall"
-		};
+		constexpr std::string_view candidates[] = { "__cdecl", "__stdcall", "__thiscall", "__vectorcall",
+													"cdecl",   "stdcall",	"thiscall",	  "vectorcall" };
 		for (const auto cc : candidates) {
 			if (name.size() > cc.size() && name.starts_with(cc)) {
 				name.remove_prefix(cc.size());

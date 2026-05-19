@@ -13,19 +13,13 @@ export namespace gse {
 
 		template <typename T>
 		requires std::convertible_to<const T&, std::string_view>
-		consteval fmt_loc(
-			const T& s,
-			std::source_location l = std::source_location::current()
-		) : fmt(s), loc(l) {
+		consteval fmt_loc(const T& s, std::source_location l = std::source_location::current()) : fmt(s),
+																								  loc(l) {
 		}
 	};
 
 	template <typename... Args>
-	auto assert(
-		bool condition,
-		fmt_loc<std::type_identity_t<Args>...> f,
-		Args&&... args
-	) -> void;
+	auto assert(bool condition, fmt_loc<std::type_identity_t<Args>...> f, Args&&... args) -> void;
 
 	template <typename... Args>
 	auto assert(
@@ -37,14 +31,9 @@ export namespace gse {
 }
 
 namespace gse {
-	auto assert_format_message(
-		std::source_location loc,
-		std::string_view comment
-	) -> std::string;
+	auto assert_format_message(std::source_location loc, std::string_view comment) -> std::string;
 
-	auto assert_fail(
-		std::string_view message
-	) noexcept -> void;
+	auto assert_fail(std::string_view message) noexcept -> void;
 }
 
 template <class... Args>
@@ -58,7 +47,12 @@ auto gse::assert(const bool condition, fmt_loc<std::type_identity_t<Args>...> f,
 }
 
 template <class... Args>
-auto gse::assert(const bool condition, const std::source_location loc, std::format_string<std::type_identity_t<Args>...> fmt, Args&&... args) -> void {
+auto gse::assert(
+	const bool condition,
+	const std::source_location loc,
+	std::format_string<std::type_identity_t<Args>...> fmt,
+	Args&&... args
+) -> void {
 	if (condition) {
 		return;
 	}
@@ -84,12 +78,7 @@ auto gse::assert_format_message(const std::source_location loc, const std::strin
 }
 
 auto gse::assert_fail(const std::string_view message) noexcept -> void {
-	log::println(
-		log::level::error,
-		log::category::general,
-		"{}",
-		message
-	);
+	log::println(log::level::error, log::category::general, "{}", message);
 	log::flush();
 	std::terminate();
 }

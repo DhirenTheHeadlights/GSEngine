@@ -6,7 +6,10 @@ import vulkan;
 import gse.log;
 import gse.math;
 
-auto gse::vulkan::pick_surface_format(const vk::raii::PhysicalDevice& physical_device, const vk::raii::SurfaceKHR& surface) -> gpu::image_format {
+auto gse::vulkan::pick_surface_format(
+	const vk::raii::PhysicalDevice& physical_device,
+	const vk::raii::SurfaceKHR& surface
+) -> gpu::image_format {
 	const auto formats = physical_device.getSurfaceFormatsKHR(*surface);
 	for (const auto& [format, colorSpace] : formats) {
 		if (format == vk::Format::eB8G8R8A8Srgb && colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
@@ -20,7 +23,11 @@ auto gse::vulkan::pick_surface_format(const device& dev, const instance& inst) -
 	return pick_surface_format(dev.physical_device(), inst.raii_surface());
 }
 
-gse::vulkan::swap_chain_details::swap_chain_details(gpu::surface_capabilities capabilities, std::vector<gpu::surface_format>&& formats, std::vector<gpu::present_mode>&& present_modes)
+gse::vulkan::swap_chain_details::swap_chain_details(
+	gpu::surface_capabilities capabilities,
+	std::vector<gpu::surface_format>&& formats,
+	std::vector<gpu::present_mode>&& present_modes
+)
 	: m_capabilities(capabilities),
 	  m_formats(std::move(formats)),
 	  m_present_modes(std::move(present_modes)) {
@@ -38,7 +45,17 @@ auto gse::vulkan::swap_chain_details::present_modes() const -> std::span<const g
 	return m_present_modes;
 }
 
-gse::vulkan::swap_chain::swap_chain(vk::raii::SwapchainKHR&& swap_chain, const vk::SurfaceFormatKHR surface_format, const vk::PresentModeKHR present_mode, const vk::Extent2D extent, std::vector<vk::Image>&& images, std::vector<vk::raii::ImageView>&& image_views, const vk::Format format, swap_chain_details&& details, basic_image<device>&& depth_image)
+gse::vulkan::swap_chain::swap_chain(
+	vk::raii::SwapchainKHR&& swap_chain,
+	const vk::SurfaceFormatKHR surface_format,
+	const vk::PresentModeKHR present_mode,
+	const vk::Extent2D extent,
+	std::vector<vk::Image>&& images,
+	std::vector<vk::raii::ImageView>&& image_views,
+	const vk::Format format,
+	swap_chain_details&& details,
+	basic_image<device>&& depth_image
+)
 	: m_swap_chain(std::move(swap_chain)),
 	  m_surface_format(surface_format),
 	  m_present_mode(present_mode),
@@ -50,7 +67,12 @@ gse::vulkan::swap_chain::swap_chain(vk::raii::SwapchainKHR&& swap_chain, const v
 	  m_depth_image(std::move(depth_image)) {
 }
 
-auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instance& instance_data, device& device_data) -> swap_chain {
+auto gse::vulkan::swap_chain::create(
+	const vec2i framebuffer_size,
+	const gpu::present_mode preferred_present_mode,
+	const instance& instance_data,
+	device& device_data
+) -> swap_chain {
 	const auto vk_capabilities = device_data.physical_device().getSurfaceCapabilitiesKHR(*instance_data.raii_surface());
 	auto vk_formats = device_data.physical_device().getSurfaceFormatsKHR(*instance_data.raii_surface());
 	auto vk_present_modes = device_data.physical_device().getSurfacePresentModesKHR(*instance_data.raii_surface());
@@ -65,14 +87,12 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instanc
 		surface_format = vk_formats[0];
 	}
 
+	const auto requested_present_mode = to_vk(preferred_present_mode);
 	auto present_mode = vk::PresentModeKHR::eFifo;
 	for (const auto& mode : vk_present_modes) {
-		if (mode == vk::PresentModeKHR::eImmediate) {
+		if (mode == requested_present_mode) {
 			present_mode = mode;
 			break;
-		}
-		if (mode == vk::PresentModeKHR::eMailbox && present_mode == vk::PresentModeKHR::eFifo) {
-			present_mode = mode;
 		}
 	}
 
@@ -90,23 +110,23 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instanc
 				return "Unknown";
 		}
 	};
-	log::println(log::category::vulkan, "Present mode: {}", mode_name(present_mode));
+	log::println(
+		log::category::vulkan,
+		"Present mode: requested {}, granted {}",
+		mode_name(requested_present_mode),
+		mode_name(present_mode)
+	);
 
 	vk::Extent2D extent;
 	if (vk_capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
 		extent = vk_capabilities.currentExtent;
 	}
 	else {
-		vk::Extent2D actual_extent = {
-			static_cast<std::uint32_t>(framebuffer_size.x()),
-			static_cast<std::uint32_t>(framebuffer_size.y())
-		};
+		vk::Extent2D actual_extent = { static_cast<std::uint32_t>(framebuffer_size.x()),
+									   static_cast<std::uint32_t>(framebuffer_size.y()) };
 
-		extent.width = std::clamp(
-			actual_extent.width,
-			vk_capabilities.minImageExtent.width,
-			vk_capabilities.maxImageExtent.width
-		);
+		extent.width =
+			std::clamp(actual_extent.width, vk_capabilities.minImageExtent.width, vk_capabilities.maxImageExtent.width);
 
 		extent.height = std::clamp(
 			actual_extent.height,
@@ -120,18 +140,23 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instanc
 		image_count = vk_capabilities.maxImageCount;
 	}
 
-	log::println(log::category::vulkan, "Swapchain image count: requested {}, min {}, max {}", image_count, vk_capabilities.minImageCount, vk_capabilities.maxImageCount);
+	log::println(
+		log::category::vulkan,
+		"Swapchain image count: requested {}, min {}, max {}",
+		image_count,
+		vk_capabilities.minImageCount,
+		vk_capabilities.maxImageCount
+	);
 
-	vk::SwapchainCreateInfoKHR create_info{
-		.flags = {},
-		.surface = *instance_data.raii_surface(),
-		.minImageCount = image_count,
-		.imageFormat = surface_format.format,
-		.imageColorSpace = surface_format.colorSpace,
-		.imageExtent = extent,
-		.imageArrayLayers = 1,
-		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc
-	};
+	vk::SwapchainCreateInfoKHR create_info{ .flags = {},
+											.surface = *instance_data.raii_surface(),
+											.minImageCount = image_count,
+											.imageFormat = surface_format.format,
+											.imageColorSpace = surface_format.colorSpace,
+											.imageExtent = extent,
+											.imageArrayLayers = 1,
+											.imageUsage = vk::ImageUsageFlagBits::eColorAttachment |
+												vk::ImageUsageFlagBits::eTransferSrc };
 
 	const auto families = find_queue_families(device_data.physical_device(), instance_data.raii_surface());
 	const std::uint32_t queue_family_indices[] = { families.graphics_family.value(), families.present_family.value() };
@@ -197,19 +222,16 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const instanc
 	image_views.reserve(images.size());
 
 	for (const auto& img : images) {
-		vk::ImageViewCreateInfo iv_create_info{
-			.flags = {},
-			.image = img,
-			.viewType = vk::ImageViewType::e2D,
-			.format = format,
-			.components = {},
-			.subresourceRange = {
-				.aspectMask = vk::ImageAspectFlagBits::eColor,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1 }
-		};
+		vk::ImageViewCreateInfo iv_create_info{ .flags = {},
+												.image = img,
+												.viewType = vk::ImageViewType::e2D,
+												.format = format,
+												.components = {},
+												.subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor,
+																	  .baseMipLevel = 0,
+																	  .levelCount = 1,
+																	  .baseArrayLayer = 0,
+																	  .layerCount = 1 } };
 		image_views.emplace_back(device_data.raii_device(), iv_create_info);
 	}
 

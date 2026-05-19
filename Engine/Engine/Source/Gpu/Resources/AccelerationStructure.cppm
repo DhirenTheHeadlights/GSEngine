@@ -36,15 +36,9 @@ export namespace gse::gpu {
 		std::uint64_t blas_address = 0;
 	};
 
-	auto build_blas(
-		gpu::device& device,
-		const blas_geometry_desc& desc
-	) -> vulkan::blas;
+	auto build_blas(gpu::device& device, const blas_geometry_desc& desc) -> vulkan::blas;
 
-	auto build_tlas(
-		gpu::device& device,
-		std::uint32_t max_instances
-	) -> vulkan::tlas;
+	auto build_tlas(gpu::device& device, std::uint32_t max_instances) -> vulkan::tlas;
 
 	auto rebuild_tlas(
 		gpu::device& device,
@@ -53,10 +47,7 @@ export namespace gse::gpu {
 		gpu::recording_context& rec
 	) -> void;
 
-	auto write_tlas_instances(
-		vulkan::tlas& t,
-		std::span<const tlas_instance_desc> instances
-	) -> void;
+	auto write_tlas_instances(vulkan::tlas& t, std::span<const tlas_instance_desc> instances) -> void;
 
 	auto build_tlas_in_place(
 		gpu::device& device,
@@ -67,9 +58,7 @@ export namespace gse::gpu {
 }
 
 namespace gse {
-	auto to_packed_instance(
-		const gpu::tlas_instance_desc& inst
-	) -> vulkan::as_instance;
+	auto to_packed_instance(const gpu::tlas_instance_desc& inst) -> vulkan::as_instance;
 
 	auto build_blas_async(
 		gpu::device& dev,

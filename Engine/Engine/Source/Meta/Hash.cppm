@@ -5,15 +5,15 @@ import gse.std_meta;
 
 export namespace gse {
 	template <typename T>
-	auto hash_combine(
-		const T& value
-	) -> std::size_t;
+	auto hash_combine(const T& value) -> std::size_t;
 }
 
 template <typename T>
 auto gse::hash_combine(const T& value) -> std::size_t {
 	std::size_t h = 0;
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+	template for (constexpr auto m : std::define_static_array(
+					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+				  )) {
 		using member_type = std::remove_cvref_t<decltype(value.[:m:])>;
 		const std::size_t sub = std::hash<member_type>{}(value.[:m:]);
 		h ^= sub + 0x9e3779b9u + (h << 6) + (h >> 2);

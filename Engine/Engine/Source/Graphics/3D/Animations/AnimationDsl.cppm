@@ -162,7 +162,8 @@ export namespace gse::animation {
 	class graph_builder {
 	public:
 		graph_builder(const std::string_view name, const state_handle& default_state)
-			: m_name(name), m_default_state(default_state) {
+			: m_name(name),
+			  m_default_state(default_state) {
 		}
 
 		template <typename... Transitions>

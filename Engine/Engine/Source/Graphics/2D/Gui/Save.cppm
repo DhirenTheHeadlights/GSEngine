@@ -25,43 +25,24 @@ export namespace gse::gui {
 		std::vector<std::string> tab_tags;
 	};
 
-	auto save(
-		id_mapped_collection<menu>& menus,
-		const std::filesystem::path& file_path
-	) -> void;
+	auto save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path) -> void;
 
-	auto load(
-		const std::filesystem::path& file_path,
-		id_mapped_collection<menu>& default_menus
-	) -> id_mapped_collection<menu>;
+	auto load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus)
+		-> id_mapped_collection<menu>;
 }
 
 namespace gse::gui {
-	auto dock_to_string(
-		dock::location location
-	) -> std::string_view;
+	auto dock_to_string(dock::location location) -> std::string_view;
 
-	auto location_from_string(
-		std::string_view str
-	) -> dock::location;
+	auto location_from_string(std::string_view str) -> dock::location;
 
-	auto join(
-		std::span<const std::string> parts,
-		char sep
-	) -> std::string;
+	auto join(std::span<const std::string> parts, char sep) -> std::string;
 
-	auto split(
-		std::string_view text,
-		char sep
-	) -> std::vector<std::string>;
+	auto split(std::string_view text, char sep) -> std::vector<std::string>;
 
-	auto trim(
-		std::string_view s
-	) -> std::string_view;
+	auto trim(std::string_view s) -> std::string_view;
 
-	auto parse_layout(
-		std::string_view text
-	) -> std::vector<loaded_menu_data>;
+	auto parse_layout(std::string_view text) -> std::vector<loaded_menu_data>;
 }
 
 auto gse::gui::dock_to_string(const dock::location location) -> std::string_view {
@@ -118,9 +99,7 @@ auto gse::gui::split(const std::string_view text, const char sep) -> std::vector
 	std::size_t start = 0;
 	while (start <= text.size()) {
 		const std::size_t end = text.find(sep, start);
-		const auto piece = end == std::string_view::npos
-			? text.substr(start)
-			: text.substr(start, end - start);
+		const auto piece = end == std::string_view::npos ? text.substr(start) : text.substr(start, end - start);
 		if (!piece.empty()) {
 			out.emplace_back(piece);
 		}
@@ -158,10 +137,8 @@ auto gse::gui::parse_layout(const std::string_view text) -> std::vector<loaded_m
 	std::size_t pos = 0;
 	while (pos < text.size()) {
 		const std::size_t line_end = text.find('\n', pos);
-		const std::string_view line_raw = text.substr(
-			pos,
-			line_end == std::string_view::npos ? text.size() - pos : line_end - pos
-		);
+		const std::string_view line_raw =
+			text.substr(pos, line_end == std::string_view::npos ? text.size() - pos : line_end - pos);
 		pos = line_end == std::string_view::npos ? text.size() : line_end + 1;
 
 		const auto line = trim(line_raw);
@@ -232,8 +209,18 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 		}
 		out.append(std::format("[menu {}]\n", i));
 		out.append(std::format("tag = {}\n", std::string(menu.id().tag())));
-		out.append(std::format("owner = {}\n", menu.owner_id().exists() ? std::string(menu.owner_id().tag()) : std::string{}));
-		out.append(std::format("rect = {},{},{},{}\n", menu.rect.left(), menu.rect.top(), menu.rect.width(), menu.rect.height()));
+		out.append(
+			std::format("owner = {}\n", menu.owner_id().exists() ? std::string(menu.owner_id().tag()) : std::string{})
+		);
+		out.append(
+			std::format(
+				"rect = {},{},{},{}\n",
+				menu.rect.left(),
+				menu.rect.top(),
+				menu.rect.width(),
+				menu.rect.height()
+			)
+		);
 		out.append(std::format("docked_to = {}\n", dock_to_string(menu.docked_to)));
 		out.append(std::format("dock_split_ratio = {}\n", menu.dock_split_ratio));
 		out.append(std::format("active_tab = {}\n", menu.active_tab_index));
@@ -245,7 +232,8 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 	file << out;
 }
 
-auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
+auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus)
+	-> id_mapped_collection<menu> {
 	if (!std::filesystem::exists(file_path)) {
 		id_mapped_collection<menu> menus_to_save = default_menus;
 		save(menus_to_save, file_path);
@@ -285,10 +273,8 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		new_menu.tab_contents = data.tab_tags;
 
 		if (!new_menu.tab_contents.empty()) {
-			new_menu.active_tab_index = std::min(
-				static_cast<std::uint32_t>(new_menu.tab_contents.size() - 1),
-				data.active_tab_index
-			);
+			new_menu.active_tab_index =
+				std::min(static_cast<std::uint32_t>(new_menu.tab_contents.size() - 1), data.active_tab_index);
 		}
 		else {
 			new_menu.active_tab_index = 0;

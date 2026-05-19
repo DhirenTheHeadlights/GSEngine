@@ -14,14 +14,15 @@ export namespace gse::shaders::bindless {
 
 export namespace gse::shaders::common {
 	struct[[= shader_struct]] camera_data {
-		mat4f view;
-		mat4f proj;
-		mat4f inv_view;
+		view_matrix view;
+		projection_matrix proj;
+		view_matrix inv_view;
+		inverse_projection_matrix inv_view_proj;
 	};
 
 	struct[[= shader_struct]] instance_data {
-		mat4f model_matrix;
-		mat4f normal_matrix;
+		spatial_matrix model_matrix;
+		spatial_matrix normal_matrix;
 		std::uint32_t skin_offset;
 		std::uint32_t joint_count;
 		std::uint32_t material_index;

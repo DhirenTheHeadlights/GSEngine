@@ -16,13 +16,9 @@ export namespace gse::vulkan {
 
 		~query_pool() override = default;
 
-		query_pool(
-			query_pool&&
-		) noexcept = default;
+		query_pool(query_pool&&) noexcept = default;
 
-		auto operator=(
-			query_pool&&
-		) noexcept -> query_pool& = default;
+		auto operator=(query_pool&&) noexcept -> query_pool& = default;
 
 		[[nodiscard]] static auto create_timestamp(
 			const device& dev,
@@ -37,27 +33,18 @@ export namespace gse::vulkan {
 			std::string_view label = {}
 		) -> query_pool;
 
-		[[nodiscard]] auto handle(
-			this const query_pool& self
-		) -> gpu::handle<query_pool>;
+		[[nodiscard]] auto handle(this const query_pool& self) -> gpu::handle<query_pool>;
 
 		explicit operator bool() const;
 
 		template <typename T>
-		[[nodiscard]] auto results(
-			std::uint32_t first_query,
-			std::uint32_t query_count,
-			std::uint64_t stride
-		) const -> std::pair<gpu::query_status, std::vector<T>>;
+		[[nodiscard]] auto results(std::uint32_t first_query, std::uint32_t query_count, std::uint64_t stride) const
+			-> std::pair<gpu::query_status, std::vector<T>>;
 
 	private:
-		explicit query_pool(
-			vk::raii::QueryPool&& pool
-		);
+		explicit query_pool(vk::raii::QueryPool&& pool);
 
-		[[nodiscard]] static auto translate_status(
-			vk::Result r
-		) -> gpu::query_status;
+		[[nodiscard]] static auto translate_status(vk::Result r) -> gpu::query_status;
 
 		vk::raii::QueryPool m_pool = nullptr;
 	};
@@ -70,7 +57,11 @@ auto gse::vulkan::query_pool::translate_status(const vk::Result r) -> gpu::query
 	return r == vk::Result::eSuccess ? gpu::query_status::success : gpu::query_status::error;
 }
 
-auto gse::vulkan::query_pool::create_timestamp(const device& dev, const std::uint32_t capacity, const std::string_view label) -> query_pool {
+auto gse::vulkan::query_pool::create_timestamp(
+	const device& dev,
+	const std::uint32_t capacity,
+	const std::string_view label
+) -> query_pool {
 	const vk::QueryPoolCreateInfo info{
 		.queryType = vk::QueryType::eTimestamp,
 		.queryCount = capacity,
@@ -88,7 +79,12 @@ auto gse::vulkan::query_pool::create_timestamp(const device& dev, const std::uin
 	return query_pool(std::move(pool));
 }
 
-auto gse::vulkan::query_pool::create_pipeline_stats(const device& dev, const std::uint32_t capacity, const gpu::pipeline_statistic_flags statistics, const std::string_view label) -> query_pool {
+auto gse::vulkan::query_pool::create_pipeline_stats(
+	const device& dev,
+	const std::uint32_t capacity,
+	const gpu::pipeline_statistic_flags statistics,
+	const std::string_view label
+) -> query_pool {
 	const vk::QueryPoolCreateInfo info{
 		.queryType = vk::QueryType::ePipelineStatistics,
 		.queryCount = capacity,
@@ -116,7 +112,11 @@ gse::vulkan::query_pool::operator bool() const {
 }
 
 template <typename T>
-auto gse::vulkan::query_pool::results(const std::uint32_t first_query, const std::uint32_t query_count, const std::uint64_t stride) const -> std::pair<gpu::query_status, std::vector<T>> {
+auto gse::vulkan::query_pool::results(
+	const std::uint32_t first_query,
+	const std::uint32_t query_count,
+	const std::uint64_t stride
+) const -> std::pair<gpu::query_status, std::vector<T>> {
 	static_assert(sizeof(T) == sizeof(std::uint64_t), "query_pool::results currently expects 64-bit results");
 	const std::size_t group_count = stride > 0 ? std::max<std::size_t>(stride / sizeof(T), 1) : 1;
 	const std::size_t element_count = static_cast<std::size_t>(query_count) * group_count;

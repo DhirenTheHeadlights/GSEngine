@@ -13,6 +13,11 @@ export namespace gse::settings {
 		static constexpr std::string_view value = V;
 	};
 
+	template <fixed_string V>
+	struct category {
+		static constexpr std::string_view value = V;
+	};
+
 	struct restart_required {};
 	struct skip {};
 
@@ -55,26 +60,20 @@ struct gse::parser<gse::settings::choice<T>> {
 
 export namespace gse {
 	template <typename Anno>
-	consteval auto find_annotation(
-		std::meta::info member
-	) -> std::meta::info;
+	consteval auto find_annotation(std::meta::info member) -> std::meta::info;
 
 	template <typename Anno, std::meta::info M>
 	consteval auto annotation_of() -> Anno;
 }
 
 export namespace gse::meta {
-	consteval auto member_name(
-		std::meta::info m
-	) -> std::string_view;
+	consteval auto member_name(std::meta::info m) -> std::string_view;
 
-	consteval auto find_range(
-		std::meta::info m
-	) -> std::meta::info;
+	consteval auto find_range(std::meta::info m) -> std::meta::info;
 
-	consteval auto find_describe(
-		std::meta::info m
-	) -> std::meta::info;
+	consteval auto find_describe(std::meta::info m) -> std::meta::info;
+
+	consteval auto find_category(std::meta::info m) -> std::meta::info;
 }
 
 template <typename Anno>
@@ -116,6 +115,17 @@ consteval auto gse::meta::find_range(const std::meta::info m) -> std::meta::info
 
 consteval auto gse::meta::find_describe(const std::meta::info m) -> std::meta::info {
 	constexpr auto target = ^^settings::describe;
+	for (auto ann : std::meta::annotations_of(m)) {
+		const auto t = std::meta::dealias(std::meta::type_of(ann));
+		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == target) {
+			return t;
+		}
+	}
+	return std::meta::info{};
+}
+
+consteval auto gse::meta::find_category(const std::meta::info m) -> std::meta::info {
+	constexpr auto target = ^^settings::category;
 	for (auto ann : std::meta::annotations_of(m)) {
 		const auto t = std::meta::dealias(std::meta::type_of(ann));
 		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == target) {

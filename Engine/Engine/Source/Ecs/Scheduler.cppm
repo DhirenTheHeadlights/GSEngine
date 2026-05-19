@@ -35,25 +35,22 @@ export namespace gse {
 
 	template <typename S>
 	struct system_handle {
-		auto state(
-		) const -> state_of_t<S>& {
+		auto state() const -> state_of_t<S>& {
 			return *m_state;
 		}
 
-		auto operator*(
-		) const -> state_of_t<S>& {
+		auto operator*() const -> state_of_t<S>& {
 			return *m_state;
 		}
 
-		auto operator->(
-		) const -> state_of_t<S>* {
+		auto operator->() const -> state_of_t<S>* {
 			return m_state;
 		}
 
-		explicit operator bool(
-		) const {
+		explicit operator bool() const {
 			return m_state != nullptr;
 		}
+
 	private:
 		friend class scheduler;
 		state_of_t<S>* m_state = nullptr;
@@ -63,70 +60,45 @@ export namespace gse {
 	public:
 		scheduler() = default;
 
-		auto set_registry(
-			registry& reg
-		) -> void;
+		auto set_registry(registry& reg) -> void;
 
-		auto set_advance_hook(
-			std::function<void(id system_id, std::string_view phase)> fn
-		) -> void;
+		auto set_advance_hook(std::function<void(id system_id, std::string_view phase)> fn) -> void;
 
-		[[nodiscard]] auto current_phase(
-		) const -> scheduler_phase;
+		[[nodiscard]] auto current_phase() const -> scheduler_phase;
 
-		auto enter_running(
-		) -> void;
+		auto enter_running() -> void;
 
-		auto enter_shutdown(
-		) -> void;
+		auto enter_shutdown() -> void;
 
 		auto initialize() -> void;
 
 		auto update() -> void;
 
-		auto tick(
-			bool frame_ok,
-			const std::function<void()>& in_frame = {}
-		) -> void;
+		auto tick(bool frame_ok, const std::function<void()>& in_frame = {}) -> void;
 
-		auto render(
-			bool frame_ok,
-			const std::function<void()>& in_frame = {}
-		) -> void;
+		auto render(bool frame_ok, const std::function<void()>& in_frame = {}) -> void;
 
 		auto shutdown() -> void;
 
 		auto clear() -> void;
 
 		template <typename S, typename... Args>
-		auto add_system(
-			Args&&... args
-		) -> system_handle<S>;
+		auto add_system(Args&&... args) -> system_handle<S>;
 
 		template <typename S, typename... Args>
-		auto ensure_system(
-			Args&&... args
-		) -> system_handle<S>;
+		auto ensure_system(Args&&... args) -> system_handle<S>;
 
 		template <typename S, typename... Args>
-		auto queue_add_system(
-			Args&&... args
-		) -> system_handle<S>;
+		auto queue_add_system(Args&&... args) -> system_handle<S>;
 
 		template <typename T>
-		auto register_external_resource(
-			T* ptr
-		) -> void;
+		auto register_external_resource(T* ptr) -> void;
 
 		template <typename State>
-		auto state(
-			this auto& self
-		) -> auto&;
+		auto state(this auto& self) -> auto&;
 
 		template <typename State>
-		auto try_state_of(
-			this auto& self
-		) -> auto*;
+		auto try_state_of(this auto& self) -> auto*;
 
 		template <typename State>
 		auto has() const -> bool;
@@ -144,9 +116,7 @@ export namespace gse {
 		auto drain_channel() -> std::vector<T>;
 
 	private:
-		auto register_node(
-			system_node node
-		) -> void*;
+		auto register_node(system_node node) -> void*;
 
 		auto check_state_dep_cycles() -> void;
 
@@ -156,24 +126,15 @@ export namespace gse {
 
 		auto advance_run_systems_during_init() -> void;
 
-		auto advance_one_run_system(
-			system_node& node
-		) -> async::task<>;
+		auto advance_one_run_system(system_node& node) -> async::task<>;
 
 		auto drain_hot_add_queue() -> void;
 
 		auto snapshot_all_states() -> void;
 
-		auto sync_wait_or_dump(
-			std::vector<async::task<>>&& tasks,
-			wait_phase phase
-		) -> void;
+		auto sync_wait_or_dump(std::vector<async::task<>>&& tasks, wait_phase phase) -> void;
 
-		auto log_stall_state(
-			wait_phase phase,
-			time_t<float> elapsed,
-			int dump_count
-		) -> void;
+		auto log_stall_state(wait_phase phase, time_t<float> elapsed, int dump_count) -> void;
 
 		std::deque<system_node> m_nodes;
 		scheduler_phase m_phase = scheduler_phase::boot;

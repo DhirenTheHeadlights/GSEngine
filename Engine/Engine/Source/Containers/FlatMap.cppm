@@ -16,47 +16,26 @@ export namespace gse {
 
 		flat_map() = default;
 
-		flat_map(
-			std::initializer_list<value_type> init
-		);
+		flat_map(std::initializer_list<value_type> init);
 
 		template <typename Self>
-		[[nodiscard]] auto at(
-			this Self& self,
-			const Key& key
-		) -> decltype(auto);
+		[[nodiscard]] auto at(this Self& self, const Key& key) -> decltype(auto);
 
-		auto operator[](
-			const Key& key
-		) -> Value&;
+		auto operator[](const Key& key) -> Value&;
 
 		template <typename Self>
-		[[nodiscard]] auto find(
-			this Self& self,
-			const Key& key
-		) -> decltype(auto);
+		[[nodiscard]] auto find(this Self& self, const Key& key) -> decltype(auto);
 
-		auto insert(
-			const value_type& pair
-		) -> std::pair<iterator, bool>;
+		auto insert(const value_type& pair) -> std::pair<iterator, bool>;
 
-		auto insert(
-			value_type&& pair
-		) -> std::pair<iterator, bool>;
+		auto insert(value_type&& pair) -> std::pair<iterator, bool>;
 
 		template <typename... Args>
-		auto emplace(
-			const Key& key,
-			Args&&... args
-		) -> std::pair<iterator, bool>;
+		auto emplace(const Key& key, Args&&... args) -> std::pair<iterator, bool>;
 
-		auto erase(
-			const Key& key
-		) -> size_type;
+		auto erase(const Key& key) -> size_type;
 
-		auto erase(
-			iterator pos
-		) -> iterator;
+		auto erase(iterator pos) -> iterator;
 
 		auto clear() -> void;
 
@@ -64,36 +43,22 @@ export namespace gse {
 
 		[[nodiscard]] auto empty() const -> bool;
 
-		[[nodiscard]] auto contains(
-			const Key& key
-		) const -> bool;
+		[[nodiscard]] auto contains(const Key& key) const -> bool;
 
 		template <typename Self>
-		[[nodiscard]] auto begin(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto begin(this Self& self) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto end(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto end(this Self& self) -> decltype(auto);
 
-		auto reserve(
-			size_type capacity
-		) -> void;
+		auto reserve(size_type capacity) -> void;
 
-		auto assign_unsorted(
-			std::vector<value_type> values
-		) -> void;
+		auto assign_unsorted(std::vector<value_type> values) -> void;
 
 	private:
-		[[nodiscard]] auto lower(
-			const Key& key
-		) const -> const_iterator;
+		[[nodiscard]] auto lower(const Key& key) const -> const_iterator;
 
-		[[nodiscard]] auto lower(
-			const Key& key
-		) -> iterator;
+		[[nodiscard]] auto lower(const Key& key) -> iterator;
 
 		std::vector<value_type> m_data;
 		[[no_unique_address]] Compare m_compare;

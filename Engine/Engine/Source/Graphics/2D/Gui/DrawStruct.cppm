@@ -16,43 +16,41 @@ import :settings;
 
 export namespace gse::gui {
 	template <typename T>
-	auto draw_struct(
-		builder& b,
-		T& value,
-		settings::panel_state& state,
-		std::string_view key_prefix = {}
-	) -> void;
+	auto draw_struct(builder& b, T& value, settings::panel_state& state, std::string_view key_prefix = {}) -> void;
 }
 
 template <typename T>
-auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, const std::string_view key_prefix) -> void {
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, const std::string_view key_prefix)
+	-> void {
+	template for (constexpr auto m : std::define_static_array(
+					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+				  )) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
-			using F = [: std::meta::type_of(m) :];
+			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
 
 			if constexpr (has_annotation<settings::draw_with>(m)) {
 				constexpr auto dw = annotation_of<settings::draw_with, m>();
-				dw.fn(b, state, label, &value.[: m :]);
+				dw.fn(b, state, label, &value.[:m:]);
 			}
 			else if constexpr (std::same_as<F, bool>) {
 				b.draw<toggle>({
 					.name = label,
-					.value = value.[: m :],
+					.value = value.[:m:],
 				});
 			}
 			else if constexpr (settings::is_choice_v<F>) {
 				const std::string key = std::string(key_prefix) + "::" + std::string(label);
 				auto& dd_state = state.dropdowns[key];
-				std::size_t idx = static_cast<std::size_t>(value.[: m :].value);
+				std::size_t idx = static_cast<std::size_t>(value.[:m:].value);
 				const auto r = b.draw<dropdown>({
 					.name = label,
 					.current_index = idx,
-					.options = value.[: m :].options,
-					.state = dd_state,
+					.options = value.[:m:]
+						.options, .state = dd_state,
 				});
 				if (r.changed) {
-					value.[: m :].value = static_cast<typename F::value_type>(idx);
+					value.[:m:].value = static_cast<typename F::value_type>(idx);
 				}
 			}
 			else if constexpr (std::is_enum_v<F>) {
@@ -70,14 +68,14 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 				static const std::vector<F> values = [] {
 					std::vector<F> v;
 					template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^F))) {
-						v.push_back([: e :]);
+						v.push_back([:e:]);
 					}
 					return v;
 				}();
 
 				std::size_t idx = 0;
 				for (std::size_t i = 0; i < values.size(); ++i) {
-					if (values[i] == value.[: m :]) {
+					if (values[i] == value.[:m:]) {
 						idx = i;
 						break;
 					}
@@ -91,25 +89,21 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 				});
 
 				if (r.changed && idx < values.size()) {
-					value.[: m :] = values[idx];
+					value.[:m:] = values[idx];
 				}
 			}
 			else if constexpr (constexpr auto range_t = meta::find_range(m); range_t != std::meta::info{}) {
-				using R = [: range_t :];
+				using R = [:range_t:];
 				if constexpr (gse::internal::is_quantity<F>) {
 					b.draw<quantity_slider<F, typename F::default_unit{}>>({
 						.name = label,
-						.value = value.[: m :],
-						.min = R::min,
-						.max = R::max,
+						.value = value.[:m:], .min = R::min, .max = R::max,
 					});
 				}
 				else {
 					b.draw<slider<F>>({
 						.name = label,
-						.value = value.[: m :],
-						.min = static_cast<F>(R::min),
-						.max = static_cast<F>(R::max),
+						.value = value.[:m:], .min = static_cast<F>(R::min), .max = static_cast<F>(R::max),
 					});
 				}
 			}

@@ -18,13 +18,9 @@ export namespace gse {
 
 	class access_token : non_copyable {
 	public:
-		access_token(
-			access_token&&
-		) noexcept = default;
+		access_token(access_token&&) noexcept = default;
 
-		auto operator=(
-			access_token&&
-		) noexcept -> access_token& = default;
+		auto operator=(access_token&&) noexcept -> access_token& = default;
 
 	private:
 		friend class run_context;
@@ -44,21 +40,13 @@ export namespace gse {
 
 		access() = delete;
 
-		access(
-			access&& other
-		) noexcept;
+		access(access&& other) noexcept;
 
-		auto operator=(
-			access&& other
-		) noexcept -> access&;
+		auto operator=(access&& other) noexcept -> access&;
 
-		auto begin(
-			this access& self
-		) -> decltype(auto);
+		auto begin(this access& self) -> decltype(auto);
 
-		auto end(
-			this access& self
-		) -> decltype(auto);
+		auto end(this access& self) -> decltype(auto);
 
 		auto size() const -> std::size_t;
 
@@ -68,23 +56,15 @@ export namespace gse {
 
 		auto data() const -> pointer;
 
-		auto operator[](
-			std::size_t i
-		) -> reference;
+		auto operator[](std::size_t i) -> reference;
 
-		auto operator[](
-			std::size_t i
-		) const -> reference;
+		auto operator[](std::size_t i) const -> reference;
 
-		auto find(
-			id owner
-		) const -> pointer;
+		auto find(id owner) const -> pointer;
 
 		[[nodiscard]] auto owner_ids() const -> std::span<const id>;
 
-		[[nodiscard]] auto owner_id_at(
-			std::size_t i
-		) const -> id;
+		[[nodiscard]] auto owner_id_at(std::size_t i) const -> id;
 
 	private:
 		friend class registry;
@@ -114,8 +94,20 @@ export namespace gse {
 }
 
 template <typename T, gse::access_mode M>
-gse::access<T, M>::access(const span_type span, const std::span<const id> owners, const lookup_fn fn, void* ctx, async::rw_mutex* mutex, std::atomic<int>* held_locks)
-	: m_span(span), m_owners(owners), m_lookup(fn), m_lookup_ctx(ctx), m_mutex(mutex), m_held_locks(held_locks) {
+gse::access<T, M>::access(
+	const span_type span,
+	const std::span<const id> owners,
+	const lookup_fn fn,
+	void* ctx,
+	async::rw_mutex* mutex,
+	std::atomic<int>* held_locks
+)
+	: m_span(span),
+	  m_owners(owners),
+	  m_lookup(fn),
+	  m_lookup_ctx(ctx),
+	  m_mutex(mutex),
+	  m_held_locks(held_locks) {
 	if (m_mutex && m_held_locks) {
 		m_held_locks->fetch_add(1, std::memory_order_acq_rel);
 	}

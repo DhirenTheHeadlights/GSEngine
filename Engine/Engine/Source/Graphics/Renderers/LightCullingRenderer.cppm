@@ -38,12 +38,8 @@ export namespace gse::renderer::light_culling {
 			gpu::bindless_texture_slot depth_slot;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
-			data& d
-		) -> async::task<>;
+		static auto run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d)
+			-> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,
@@ -53,18 +49,10 @@ export namespace gse::renderer::light_culling {
 		) -> async::task<>;
 
 	private:
-		static auto tile_count(
-			const data& d
-		) -> vec2u;
+		static auto tile_count(const data& d) -> vec2u;
 
-		static auto update_depth_descriptor(
-			const gpu::context::data& gpu_s,
-			data& d
-		) -> void;
+		static auto update_depth_descriptor(const gpu::context::data& gpu_s, data& d) -> void;
 
-		static auto rebuild_tile_buffers(
-			const gpu::context::data& gpu_s,
-			data& d
-		) -> void;
+		static auto rebuild_tile_buffers(const gpu::context::data& gpu_s, data& d) -> void;
 	};
 }

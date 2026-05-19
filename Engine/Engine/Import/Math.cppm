@@ -31,15 +31,10 @@ export namespace gse {
 	concept is_quantity = internal::is_quantity<T>;
 
 	template <is_arithmetic NumberType>
-	auto random_value(
-		const NumberType& min,
-		const NumberType& max
-	) -> NumberType;
+	auto random_value(const NumberType& min, const NumberType& max) -> NumberType;
 
 	template <is_arithmetic NumberType>
-	auto random_value(
-		const NumberType& max
-	) -> NumberType;
+	auto random_value(const NumberType& max) -> NumberType;
 
 }
 

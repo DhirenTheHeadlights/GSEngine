@@ -36,11 +36,17 @@ import gse.audio;
 import gse.math;
 import gse.save;
 
-auto gse::renderer::system::run(run_context& ctx, const gpu::context::data& gpu_s, const window::data& window_s, data& d, const actions::system::data& sys) -> async::task<> {
+auto gse::renderer::system::run(
+	run_context& ctx,
+	const gpu::context::data& gpu_s,
+	const window::data& window_s,
+	data& d,
+	const actions::system::data& sys
+) -> async::task<> {
 	const id dump_profile_id = generate_id("Dump Profile");
-	ctx.channels.push<actions::add_action_request>({ .name = "Dump Profile",
-													 .default_key = key::f11,
-													 .action_id = dump_profile_id });
+	ctx.channels.push<actions::add_action_request>(
+		{ .name = "Dump Profile", .default_key = key::f11, .action_id = dump_profile_id }
+	);
 	d.dump_profile_action = actions::handle(dump_profile_id);
 
 	while (true) {
@@ -60,10 +66,7 @@ auto gse::renderer::system::run(run_context& ctx, const gpu::context::data& gpu_
 		}
 
 		const auto window_size = window::viewport(window_s);
-		const auto new_viewport = vec2f(
-			static_cast<float>(window_size.x()),
-			static_cast<float>(window_size.y())
-		);
+		const auto new_viewport = vec2f(static_cast<float>(window_size.x()), static_cast<float>(window_size.y()));
 
 		if (new_viewport.x() != d.last_viewport.x() || new_viewport.y() != d.last_viewport.y()) {
 			ctx.channels.push<camera::viewport_update>({ .size = new_viewport });

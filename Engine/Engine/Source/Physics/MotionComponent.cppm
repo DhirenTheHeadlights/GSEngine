@@ -35,26 +35,15 @@ export namespace gse::physics {
 		vec3<impulse> impulse;
 	};
 
-	auto is_dynamic(
-		const motion_component& mc
-	) -> bool;
+	auto is_dynamic(const motion_component& mc) -> bool;
 
-	auto is_kinematic(
-		const motion_component& mc
-	) -> bool;
+	auto is_kinematic(const motion_component& mc) -> bool;
 
-	auto is_static(
-		const motion_component& mc
-	) -> bool;
+	auto is_static(const motion_component& mc) -> bool;
 
-	auto mass_of(
-		const motion_component& mc
-	) -> mass;
+	auto mass_of(const motion_component& mc) -> mass;
 
-	auto inv_inertial_tensor(
-		const motion_component& mc,
-		const quat& orientation
-	) -> mat3<inverse_inertia>;
+	auto inv_inertial_tensor(const motion_component& mc, const quat& orientation) -> mat3<inverse_inertia>;
 }
 
 auto gse::physics::is_dynamic(const motion_component& mc) -> bool {

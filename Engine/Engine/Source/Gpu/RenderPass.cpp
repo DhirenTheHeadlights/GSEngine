@@ -11,8 +11,14 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 
-gse::gpu::request_pass_awaitable::request_pass_awaitable(const frame_context& ctx, render_pass_descriptor desc) noexcept : m_ctx(std::addressof(ctx)), m_desc(std::move(desc)) {
-	assert(m_desc.pass_kind.exists(), "render pass descriptor missing pass_kind; pass it via gpu::pass(ctx, trace_id<owner>()) or gpu::pass<owner>(ctx)");
+gse::gpu::request_pass_awaitable::request_pass_awaitable(const frame_context& ctx, render_pass_descriptor desc) noexcept
+	: m_ctx(std::addressof(ctx)),
+	  m_desc(std::move(desc)) {
+	assert(
+		m_desc.pass_kind.exists(),
+		"render pass descriptor missing pass_kind; pass it via gpu::pass(ctx, trace_id<owner>()) or "
+		"gpu::pass<owner>(ctx)"
+	);
 }
 
 auto gse::gpu::request_pass_awaitable::await_ready() const noexcept -> bool {
@@ -36,7 +42,8 @@ auto gse::gpu::request_pass_awaitable::await_resume() noexcept -> recording_cont
 	return std::move(*m_rec);
 }
 
-gse::gpu::pass_builder::pass_builder(const frame_context& ctx, const id pass_kind) noexcept : m_ctx(std::addressof(ctx)) {
+gse::gpu::pass_builder::pass_builder(const frame_context& ctx, const id pass_kind) noexcept
+	: m_ctx(std::addressof(ctx)) {
 	m_desc.pass_kind = pass_kind;
 }
 

@@ -54,11 +54,18 @@ namespace gse::renderer::physics_transform {
 		gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
-auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+auto gse::renderer::physics_transform::system::run(
+	run_context& ctx,
+	const gpu::context::data& gpu_s,
+	const asset::data& assets_s,
+	data& d
+) -> async::task<> {
+	d.pipeline =
+		gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+		d.descriptors[i] =
+			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 	}
 
 	d.initialized = true;
@@ -66,7 +73,12 @@ auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::
 	co_return;
 }
 
-auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {
+auto gse::renderer::physics_transform::system::frame(
+	frame_context& ctx,
+	shared_view<gpu::context> gpu_s,
+	data& d,
+	shared_view<geometry_collector::system> gc_r
+) -> async::task<> {
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
 
 	if (solver_infos.empty()) {
@@ -92,7 +104,10 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 
 		if (d.mapping_buffer_size < required) {
 			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				d.mapping_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = required, .usage = gpu::buffer_flag::storage, .data = data.physics_mappings.data() });
+				d.mapping_buffers[i] = gpu::buffer::create(
+					gpu_s.device->allocator(),
+					{ .size = required, .usage = gpu::buffer_flag::storage, .data = data.physics_mappings.data() }
+				);
 			}
 			d.mapping_buffer_size = required;
 		}
@@ -107,7 +122,11 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 
 	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[frame_index])
 		.buffer<body_data>(snapshot, 0, info.body_count * info.body_stride)
-		.buffer<mapping_data>(d.mapping_buffers[frame_index], 0, d.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry))
+		.buffer<mapping_data>(
+			d.mapping_buffers[frame_index],
+			0,
+			d.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry)
+		)
 		.buffer<instance_data_buffer>(gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
 		.commit();
 

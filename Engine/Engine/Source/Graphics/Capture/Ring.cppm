@@ -10,15 +10,11 @@ import gse.gpu;
 export namespace gse::renderer::capture {
 	class ring {
 	public:
-		auto push(
-			gpu::encoded_unit unit
-		) -> void;
+		auto push(gpu::encoded_unit unit) -> void;
 
 		[[nodiscard]] auto snapshot_from_earliest_keyframe() const -> std::vector<gpu::encoded_unit>;
 
-		auto set_budget(
-			time budget
-		) -> void;
+		auto set_budget(time budget) -> void;
 
 		[[nodiscard]] auto budget() const -> time;
 

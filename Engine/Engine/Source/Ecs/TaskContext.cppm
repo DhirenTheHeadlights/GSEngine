@@ -22,13 +22,9 @@ export namespace gse {
 		template <typename T>
 		auto read_channel() const -> channel_read_guard<T>;
 
-		auto after_id(
-			id state_id
-		) -> async::task<>;
+		auto after_id(id state_id) -> async::task<>;
 
-		auto notify_ready_by_id(
-			id state_id
-		) -> void;
+		auto notify_ready_by_id(id state_id) -> void;
 	};
 }
 

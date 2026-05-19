@@ -13,10 +13,7 @@ export namespace gse::resource {
 
 		virtual auto flush() -> void = 0;
 
-		virtual auto update_state(
-			id resource_id,
-			state new_state
-		) -> void = 0;
+		virtual auto update_state(id resource_id, state new_state) -> void = 0;
 
 		virtual auto finalize_reloads() -> void = 0;
 	};

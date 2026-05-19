@@ -42,17 +42,11 @@ export namespace gse {
 			raw_blob_owned<std::byte> bytes;
 		};
 
-		explicit clip_asset(
-			const std::filesystem::path& path
-		);
+		explicit clip_asset(const std::filesystem::path& path);
 
-		explicit clip_asset(
-			params p
-		);
+		explicit clip_asset(params p);
 
-		auto load(
-			asset::load_ctx& ctx
-		) -> async::task<>;
+		auto load(asset::load_ctx& ctx) -> async::task<>;
 
 		auto unload() -> void;
 
@@ -69,14 +63,12 @@ export namespace gse {
 		std::filesystem::path m_baked_path;
 	};
 
-	auto bake(
-		const std::filesystem::path& src,
-		clip_asset::baked& out
-	) -> bool;
+	auto bake(const std::filesystem::path& src, clip_asset::baked& out) -> bool;
 }
 
 gse::clip_asset::clip_asset(const std::filesystem::path& path)
-	: identifiable(path, config::baked_resource_path), m_baked_path(path) {
+	: identifiable(path, config::baked_resource_path),
+	  m_baked_path(path) {
 }
 
 gse::clip_asset::clip_asset(params p)
@@ -168,7 +160,9 @@ auto gse::clip_asset::load(asset::load_ctx& ctx) -> async::task<> {
 				}
 			}
 
-			track.keys.push_back(joint_keyframe{ .time = seconds(key_time_seconds), .local_transform = local_transform });
+			track.keys.push_back(
+				joint_keyframe{ .time = seconds(key_time_seconds), .local_transform = local_transform }
+			);
 		}
 
 		m_tracks.push_back(std::move(track));

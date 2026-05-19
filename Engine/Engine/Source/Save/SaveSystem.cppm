@@ -8,33 +8,23 @@ import gse.meta;
 import gse.core;
 import gse.concurrency;
 import gse.ecs;
+import gse.assert;
 
 export namespace gse::save {
 	class registry : public non_copyable {
 	public:
-		explicit registry(
-			std::filesystem::path auto_save_path = {}
-		);
+		explicit registry(std::filesystem::path auto_save_path = {});
 
 		~registry();
 
-		auto set_auto_save(
-			bool enabled,
-			std::filesystem::path path = {}
-		) -> void;
+		auto set_auto_save(bool enabled, std::filesystem::path path = {}) -> void;
 
-		auto set_on_restart(
-			std::function<void()> fn
-		) -> void;
+		auto set_on_restart(std::function<void()> fn) -> void;
 
-		auto add(
-			settings::register_settings_type entry
-		) -> void;
+		auto add(settings::register_settings_type entry) -> void;
 
 		template <typename Fn>
-		auto for_each_entry(
-			Fn&& fn
-		) const -> void;
+		auto for_each_entry(Fn&& fn) const -> void;
 
 		auto entry_count() const -> std::size_t;
 
@@ -51,33 +41,19 @@ export namespace gse::save {
 		) -> T;
 
 	private:
-		using doc = std::unordered_map<
-			std::string,
-			std::unordered_map<std::string, std::string>>;
+		using doc = std::unordered_map<std::string, std::unordered_map<std::string, std::string>>;
 
-		static auto read_file(
-			const std::filesystem::path& path
-		) -> std::expected<std::string, std::error_code>;
+		static auto read_file(const std::filesystem::path& path) -> std::expected<std::string, std::error_code>;
 
-		static auto trim(
-			std::string_view s
-		) -> std::string_view;
+		static auto trim(std::string_view s) -> std::string_view;
 
-		static auto parse(
-			std::string_view text
-		) -> doc;
+		static auto parse(std::string_view text) -> doc;
 
-		static auto emit(
-			const doc& d
-		) -> std::string;
+		static auto emit(const doc& d) -> std::string;
 
-		auto load_from_file(
-			const std::filesystem::path& path
-		) -> bool;
+		auto load_from_file(const std::filesystem::path& path) -> bool;
 
-		auto save_to_file(
-			const std::filesystem::path& path
-		) const -> bool;
+		auto save_to_file(const std::filesystem::path& path) const -> bool;
 
 		std::vector<settings::register_settings_type> m_entries;
 		mutable std::mutex m_entries_mutex;
@@ -105,7 +81,12 @@ gse::save::registry::registry(std::filesystem::path auto_save_path) : m_auto_sav
 gse::save::registry::~registry() {
 	if (m_auto_save && !m_auto_save_path.empty()) {
 		if (!save_to_file(m_auto_save_path)) {
-			log::println(log::level::warning, log::category::save_system, "Failed to save settings to {}", m_auto_save_path.string());
+			log::println(
+				log::level::warning,
+				log::category::save_system,
+				"Failed to save settings to {}",
+				m_auto_save_path.string()
+			);
 		}
 	}
 }
@@ -136,6 +117,22 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 	if (match != m_entries.end()) {
 		*match = std::move(entry);
 		return;
+	}
+
+	for (const auto& existing : m_entries) {
+		if (existing.category != entry.category) {
+			continue;
+		}
+		for (const auto& key : entry.keys) {
+			assert(
+				std::ranges::find(existing.keys, key) == existing.keys.end(),
+				"settings field name collision: category=\"{}\" key=\"{}\" is declared by both {} and {}",
+				entry.category,
+				key,
+				existing.type_id,
+				entry.type_id
+			);
+		}
 	}
 
 	m_entries.push_back(std::move(entry));
@@ -199,10 +196,8 @@ auto gse::save::registry::parse(const std::string_view text) -> doc {
 	std::size_t pos = 0;
 	while (pos < text.size()) {
 		const std::size_t line_end = text.find('\n', pos);
-		const std::string_view line_raw = text.substr(
-			pos,
-			line_end == std::string_view::npos ? text.size() - pos : line_end - pos
-		);
+		const std::string_view line_raw =
+			text.substr(pos, line_end == std::string_view::npos ? text.size() - pos : line_end - pos);
 		pos = line_end == std::string_view::npos ? text.size() : line_end + 1;
 
 		const auto line = trim(line_raw);
@@ -255,13 +250,24 @@ auto gse::save::registry::emit(const doc& d) -> std::string {
 
 auto gse::save::registry::load_from_file(const std::filesystem::path& path) -> bool {
 	if (!std::filesystem::exists(path)) {
-		log::println(log::level::warning, log::category::save_system, "Settings file does not exist: {}", path.string());
+		log::println(
+			log::level::warning,
+			log::category::save_system,
+			"Settings file does not exist: {}",
+			path.string()
+		);
 		return false;
 	}
 
 	const auto content = read_file(path);
 	if (!content) {
-		log::println(log::level::warning, log::category::save_system, "Failed to read {}: {}", path.string(), content.error().message());
+		log::println(
+			log::level::warning,
+			log::category::save_system,
+			"Failed to read {}: {}",
+			path.string(),
+			content.error().message()
+		);
 		return false;
 	}
 
@@ -296,7 +302,12 @@ auto gse::save::registry::save_to_file(const std::filesystem::path& path) const 
 }
 
 template <typename T>
-auto gse::save::registry::read_one(const std::filesystem::path& path, const std::string_view category, const std::string_view name, T fallback) -> T {
+auto gse::save::registry::read_one(
+	const std::filesystem::path& path,
+	const std::string_view category,
+	const std::string_view name,
+	T fallback
+) -> T {
 	if (!std::filesystem::exists(path)) {
 		return fallback;
 	}

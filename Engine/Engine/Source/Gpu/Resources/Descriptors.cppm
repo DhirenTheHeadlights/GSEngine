@@ -29,10 +29,7 @@ export namespace gse::gpu {
 
 	class descriptor_writer final : public non_copyable {
 	public:
-		descriptor_writer(
-			handle<vulkan::device> dev,
-			descriptor_region& region
-		);
+		descriptor_writer(handle<vulkan::device> dev, descriptor_region& region);
 
 		descriptor_writer(
 			shader_registry& registry,
@@ -43,46 +40,29 @@ export namespace gse::gpu {
 
 		~descriptor_writer() override = default;
 
-		descriptor_writer(
-			descriptor_writer&&
-		) noexcept = default;
+		descriptor_writer(descriptor_writer&&) noexcept = default;
 
-		auto operator=(
-			descriptor_writer&&
-		) noexcept -> descriptor_writer& = default;
+		auto operator=(descriptor_writer&&) noexcept -> descriptor_writer& = default;
 
 		template <shaders::is_shader_binding T>
-		auto buffer(
-			const vulkan::basic_buffer<vulkan::device>& buf
-		) -> descriptor_writer&;
+		auto buffer(const vulkan::basic_buffer<vulkan::device>& buf) -> descriptor_writer&;
 
 		template <shaders::is_shader_binding T>
-		auto buffer(
-			const vulkan::basic_buffer<vulkan::device>& buf,
-			std::size_t offset,
-			std::size_t range
-		) -> descriptor_writer&;
+		auto buffer(const vulkan::basic_buffer<vulkan::device>& buf, std::size_t offset, std::size_t range)
+			-> descriptor_writer&;
 
 		template <shaders::is_shader_binding T>
-		auto storage_image(
-			const vulkan::basic_image<vulkan::device>& img,
-			image_layout layout = image_layout::general
-		) -> descriptor_writer&;
+		auto storage_image(const vulkan::basic_image<vulkan::device>& img, image_layout layout = image_layout::general)
+			-> descriptor_writer&;
 
 		template <shaders::is_shader_binding T>
-		auto acceleration_structure(
-			acceleration_structure_handle as
-		) -> descriptor_writer&;
+		auto acceleration_structure(acceleration_structure_handle as) -> descriptor_writer&;
 
 		auto commit() -> void;
 
-		auto begin(
-			std::uint32_t frame_index
-		) -> void;
+		auto begin(std::uint32_t frame_index) -> void;
 
-		[[nodiscard]] auto native_writer(
-			this auto&& self
-		) -> auto&;
+		[[nodiscard]] auto native_writer(this auto&& self) -> auto&;
 
 		[[nodiscard]] auto touched_resources() const -> std::span<const resource_slot>;
 
@@ -105,16 +85,10 @@ export namespace gse::gpu {
 			std::size_t range
 		) -> descriptor_writer&;
 
-		auto storage_image_impl(
-			std::uint32_t slot,
-			const vulkan::basic_image<vulkan::device>& img,
-			image_layout layout
-		) -> descriptor_writer&;
+		auto storage_image_impl(std::uint32_t slot, const vulkan::basic_image<vulkan::device>& img, image_layout layout)
+			-> descriptor_writer&;
 
-		auto acceleration_structure_impl(
-			std::uint32_t slot,
-			acceleration_structure_handle as
-		) -> descriptor_writer&;
+		auto acceleration_structure_impl(std::uint32_t slot, acceleration_structure_handle as) -> descriptor_writer&;
 
 		const family_layout* m_family = nullptr;
 		handle<vulkan::device> m_device;
@@ -132,13 +106,15 @@ export namespace gse::gpu {
 }
 
 namespace gse::gpu {
-	auto build_push_writer_from_family(
-		descriptor_heap& heap,
-		const family_layout& family
-	) -> descriptor_set_writer;
+	auto build_push_writer_from_family(descriptor_heap& heap, const family_layout& family) -> descriptor_set_writer;
 }
 
-auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const std::string_view layout_name, const std::source_location& loc) -> descriptor_region {
+auto gse::gpu::allocate_descriptors(
+	shader_registry& registry,
+	descriptor_heap& heap,
+	const std::string_view layout_name,
+	const std::source_location& loc
+) -> descriptor_region {
 	const auto* family = registry.find_family(layout_name);
 	assert(family, "Shader family layout not registered: {}", layout_name);
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
@@ -151,7 +127,8 @@ auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& 
 	return region;
 }
 
-auto gse::gpu::build_push_writer_from_family(descriptor_heap& heap, const family_layout& family) -> descriptor_set_writer {
+auto gse::gpu::build_push_writer_from_family(descriptor_heap& heap, const family_layout& family)
+	-> descriptor_set_writer {
 	const auto& props = heap.props();
 	constexpr auto push_idx = static_cast<std::uint32_t>(descriptor_set_type::push);
 
@@ -204,12 +181,21 @@ auto gse::gpu::build_push_writer_from_family(descriptor_heap& heap, const family
 }
 
 gse::gpu::descriptor_writer::descriptor_writer(const handle<vulkan::device> dev, descriptor_region& region)
-	: m_family(region.family), m_device(dev), m_region(&region) {
+	: m_family(region.family),
+	  m_device(dev),
+	  m_region(&region) {
 	assert(m_family, "descriptor_region was not allocated against a registered family");
 }
 
-gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<vulkan::device> dev, descriptor_heap& heap, const std::string_view layout_name)
-	: m_family(registry.find_family(layout_name)), m_device(dev), m_mode(mode::push) {
+gse::gpu::descriptor_writer::descriptor_writer(
+	shader_registry& registry,
+	const handle<vulkan::device> dev,
+	descriptor_heap& heap,
+	const std::string_view layout_name
+)
+	: m_family(registry.find_family(layout_name)),
+	  m_device(dev),
+	  m_mode(mode::push) {
 	assert(m_family, "Shader family layout not registered: {}", layout_name);
 	m_push_writer = build_push_writer_from_family(heap, *m_family);
 }
@@ -220,13 +206,20 @@ auto gse::gpu::descriptor_writer::buffer(const vulkan::basic_buffer<vulkan::devi
 }
 
 template <gse::shaders::is_shader_binding T>
-auto gse::gpu::descriptor_writer::buffer(const vulkan::basic_buffer<vulkan::device>& buf, const std::size_t offset, const std::size_t range) -> descriptor_writer& {
+auto gse::gpu::descriptor_writer::buffer(
+	const vulkan::basic_buffer<vulkan::device>& buf,
+	const std::size_t offset,
+	const std::size_t range
+) -> descriptor_writer& {
 	using binding_t = [:shaders::find_binding_type(^^T):];
 	return buffer_impl(binding_t::slot, buf, offset, range);
 }
 
 template <gse::shaders::is_shader_binding T>
-auto gse::gpu::descriptor_writer::storage_image(const vulkan::basic_image<vulkan::device>& img, const image_layout layout) -> descriptor_writer& {
+auto gse::gpu::descriptor_writer::storage_image(
+	const vulkan::basic_image<vulkan::device>& img,
+	const image_layout layout
+) -> descriptor_writer& {
 	using binding_t = [:shaders::find_binding_type(^^T):];
 	return storage_image_impl(binding_t::slot, img, layout);
 }
@@ -237,7 +230,12 @@ auto gse::gpu::descriptor_writer::acceleration_structure(const acceleration_stru
 	return acceleration_structure_impl(binding_t::slot, as);
 }
 
-auto gse::gpu::descriptor_writer::buffer_impl(const std::uint32_t slot, const vulkan::basic_buffer<vulkan::device>& buf, const std::size_t offset, const std::size_t range) -> descriptor_writer& {
+auto gse::gpu::descriptor_writer::buffer_impl(
+	const std::uint32_t slot,
+	const vulkan::basic_buffer<vulkan::device>& buf,
+	const std::size_t offset,
+	const std::size_t range
+) -> descriptor_writer& {
 	if (m_mode == mode::persistent) {
 		m_buffer_infos[slot] = stored_buffer_info{
 			.buf = buf.handle(),
@@ -258,7 +256,11 @@ auto gse::gpu::descriptor_writer::buffer_impl(const std::uint32_t slot, const vu
 	return *this;
 }
 
-auto gse::gpu::descriptor_writer::storage_image_impl(const std::uint32_t slot, const vulkan::basic_image<vulkan::device>& img, const image_layout layout) -> descriptor_writer& {
+auto gse::gpu::descriptor_writer::storage_image_impl(
+	const std::uint32_t slot,
+	const vulkan::basic_image<vulkan::device>& img,
+	const image_layout layout
+) -> descriptor_writer& {
 	if (m_mode == mode::persistent) {
 		m_storage_image_infos[slot] = descriptor_image_info{
 			.sampler = {},
@@ -279,7 +281,10 @@ auto gse::gpu::descriptor_writer::storage_image_impl(const std::uint32_t slot, c
 	return *this;
 }
 
-auto gse::gpu::descriptor_writer::acceleration_structure_impl(const std::uint32_t slot, const acceleration_structure_handle as) -> descriptor_writer& {
+auto gse::gpu::descriptor_writer::acceleration_structure_impl(
+	const std::uint32_t slot,
+	const acceleration_structure_handle as
+) -> descriptor_writer& {
 	m_as_infos[slot] = as;
 	m_touched.push_back({
 		.slot = slot,

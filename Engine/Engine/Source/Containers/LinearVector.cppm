@@ -17,56 +17,31 @@ export namespace gse {
 
 		linear_vector() = default;
 
-		explicit linear_vector(
-			size_type capacity
-		);
+		explicit linear_vector(size_type capacity);
 
 		~linear_vector() override;
 
-		linear_vector(
-			linear_vector&& other
-		) noexcept;
+		linear_vector(linear_vector&& other) noexcept;
 
-		auto operator=(
-			linear_vector&& other
-		) noexcept -> linear_vector&;
+		auto operator=(linear_vector&& other) noexcept -> linear_vector&;
 
-		auto push_back(
-			const T& value
-		) -> reference;
+		auto push_back(const T& value) -> reference;
 
-		auto push_back(
-			T&& value
-		) -> reference;
+		auto push_back(T&& value) -> reference;
 
 		template <typename... Args>
-		auto emplace_back(
-			Args&&... args
-		) -> reference;
+		auto emplace_back(Args&&... args) -> reference;
 
-		auto reserve(
-			size_type new_capacity
-		) -> void;
+		auto reserve(size_type new_capacity) -> void;
 
-		auto resize(
-			size_type n
-		) -> void;
+		auto resize(size_type n) -> void;
 
-		auto resize(
-			size_type n,
-			const T& val
-		) -> void;
+		auto resize(size_type n, const T& val) -> void;
 
-		auto assign(
-			size_type n,
-			const T& val
-		) -> void;
+		auto assign(size_type n, const T& val) -> void;
 
 		template <std::input_iterator InputIt>
-		auto assign(
-			InputIt first,
-			InputIt last
-		) -> void;
+		auto assign(InputIt first, InputIt last) -> void;
 
 		auto pop_back() -> void;
 
@@ -79,30 +54,19 @@ export namespace gse {
 		[[nodiscard]] auto empty() const -> bool;
 
 		template <typename Self>
-		[[nodiscard]] auto data(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto data(this Self& self) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto begin(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto begin(this Self& self) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto end(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto end(this Self& self) -> decltype(auto);
 
 		template <typename Self>
-		auto operator[](
-			this Self& self,
-			size_type i
-		) -> decltype(auto);
+		auto operator[](this Self& self, size_type i) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto span(
-			this Self& self
-		) -> decltype(auto);
+		[[nodiscard]] auto span(this Self& self) -> decltype(auto);
 
 	private:
 		T* m_data = nullptr;
@@ -113,7 +77,8 @@ export namespace gse {
 
 template <typename T>
 gse::linear_vector<T>::linear_vector(const size_type capacity)
-	: m_data(static_cast<T*>(operator new(capacity * sizeof(T), std::align_val_t{ alignof(T) }))), m_capacity(capacity) {
+	: m_data(static_cast<T*>(operator new(capacity * sizeof(T), std::align_val_t{ alignof(T) }))),
+	  m_capacity(capacity) {
 }
 
 template <typename T>
@@ -124,7 +89,9 @@ gse::linear_vector<T>::~linear_vector() {
 
 template <typename T>
 gse::linear_vector<T>::linear_vector(linear_vector&& other) noexcept
-	: m_data(other.m_data), m_size(other.m_size), m_capacity(other.m_capacity) {
+	: m_data(other.m_data),
+	  m_size(other.m_size),
+	  m_capacity(other.m_capacity) {
 	other.m_data = nullptr;
 	other.m_size = 0;
 	other.m_capacity = 0;

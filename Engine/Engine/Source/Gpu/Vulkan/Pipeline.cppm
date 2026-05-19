@@ -45,43 +45,25 @@ export namespace gse::vulkan {
 
 		~pipeline() override = default;
 
-		pipeline(
-			pipeline&&
-		) noexcept = default;
+		pipeline(pipeline&&) noexcept = default;
 
-		auto operator=(
-			pipeline&&
-		) noexcept -> pipeline& = default;
+		auto operator=(pipeline&&) noexcept -> pipeline& = default;
 
-		[[nodiscard]] static auto create_graphics(
-			const device& dev,
-			const graphics_pipeline_create_info& info
-		) -> pipeline;
+		[[nodiscard]] static auto create_graphics(const device& dev, const graphics_pipeline_create_info& info)
+			-> pipeline;
 
-		[[nodiscard]] static auto create_compute(
-			const device& dev,
-			const compute_pipeline_create_info& info
-		) -> pipeline;
+		[[nodiscard]] static auto create_compute(const device& dev, const compute_pipeline_create_info& info)
+			-> pipeline;
 
-		[[nodiscard]] auto handle(
-			this const pipeline& self
-		) -> gpu::handle<pipeline>;
+		[[nodiscard]] auto handle(this const pipeline& self) -> gpu::handle<pipeline>;
 
-		[[nodiscard]] auto layout(
-			this const pipeline& self
-		) -> gpu::handle<pipeline_layout>;
+		[[nodiscard]] auto layout(this const pipeline& self) -> gpu::handle<pipeline_layout>;
 
-		[[nodiscard]] auto bind_point(
-			this const pipeline& self
-		) -> gpu::bind_point;
+		[[nodiscard]] auto bind_point(this const pipeline& self) -> gpu::bind_point;
 
-		[[nodiscard]] auto auto_bound_sets(
-			this const pipeline& self
-		) -> std::span<const std::uint32_t>;
+		[[nodiscard]] auto auto_bound_sets(this const pipeline& self) -> std::span<const std::uint32_t>;
 
-		[[nodiscard]] auto active_bindings(
-			this const pipeline& self
-		) -> std::span<const gpu::binding_use>;
+		[[nodiscard]] auto active_bindings(this const pipeline& self) -> std::span<const gpu::binding_use>;
 
 		explicit operator bool() const;
 

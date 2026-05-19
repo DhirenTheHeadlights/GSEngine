@@ -9,7 +9,8 @@ import gse.assert;
 import gse.log;
 import gse.os;
 
-auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> instance {
+auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation)
+	-> instance {
 	vk::detail::defaultDispatchLoaderDynamic.init();
 
 	std::vector<const char*> validation_layers;
@@ -44,12 +45,10 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	std::vector extensions(required_extensions.begin(), required_extensions.end());
 	extensions.push_back(vk::EXTDebugUtilsExtensionName);
 
-	auto debug_callback = [](
-							  const vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
-							  vk::DebugUtilsMessageTypeFlagsEXT message_type,
-							  const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
-							  void* user_data
-						  ) -> vk::Bool32 {
+	auto debug_callback = [](const vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+							 vk::DebugUtilsMessageTypeFlagsEXT message_type,
+							 const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
+							 void* user_data) -> vk::Bool32 {
 		if (message_severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose) {
 			return vk::False;
 		}
@@ -58,9 +57,9 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 			return vk::False;
 		}
 
-		const auto lvl =
-			message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ? log::level::error : message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning ? log::level::warning
-																																											: log::level::info;
+		const auto lvl = message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ? log::level::error
+			: message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning			 ? log::level::warning
+																							 : log::level::info;
 
 		log::println(lvl, log::category::vulkan_validation, "{}", callback_data->pMessage);
 
@@ -88,8 +87,11 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 
 	const vk::DebugUtilsMessengerCreateInfoEXT debug_create_info{
 		.flags = {},
-		.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo | vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose,
-		.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+		.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+			vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
+			vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose,
+		.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+			vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
 		.pfnUserCallback = debug_callback,
 	};
 
@@ -122,7 +124,11 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 
 	try {
 		instance = vk::raii::Instance(context, create_info);
-		log::println(log::category::vulkan, "Vulkan Instance Created{}!", enable_validation ? " with validation layers" : "");
+		log::println(
+			log::category::vulkan,
+			"Vulkan Instance Created{}!",
+			enable_validation ? " with validation layers" : ""
+		);
 	}
 	catch (vk::SystemError& err) {
 		log::println(log::level::error, log::category::vulkan, "Failed to create Vulkan instance: {}", err.what());

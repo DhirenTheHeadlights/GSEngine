@@ -14,8 +14,7 @@ VS_OUTPUT vs_main(
     float4 in_color         : COLOR0,
     float2 in_local_pos     : TEXCOORD1,
     float2 in_half_size     : TEXCOORD2,
-    float  in_corner_radius : TEXCOORD3,
-    float  in_px_range      : TEXCOORD4
+    float  in_corner_radius : TEXCOORD3
 ) {
     VS_OUTPUT output;
     output.clip_pos = mul(pc.projection, float4(in_position, 0.0, 1.0));

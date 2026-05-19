@@ -18,66 +18,47 @@ import :registry;
 
 export namespace gse::asset {
 	template <typename T>
-	concept loadable = requires(T t, load_ctx& ctx) {
-		t.load(ctx);
-	};
+	concept loadable = requires(T t, load_ctx& ctx) { t.load(ctx); };
 
 	template <typename T>
-	concept has_compile_path = requires { typename T::baked; } && has_asset_format<typename T::baked> && requires(const std::filesystem::path& src, typename T::baked& b) {
-		{ bake(src, b) } -> std::convertible_to<bool>;
-	};
+	concept has_compile_path = requires { typename T::baked; } && has_asset_format<typename T::baked> &&
+		requires(const std::filesystem::path& src, typename T::baked& b) {
+			{ bake(src, b) } -> std::convertible_to<bool>;
+		};
 
 	template <has_compile_path T>
-	auto bake_to_disk(
-		const std::filesystem::path& src,
-		const std::filesystem::path& dst
-	) -> bool;
+	auto bake_to_disk(const std::filesystem::path& src, const std::filesystem::path& dst) -> bool;
 
 	template <has_compile_path T>
-	auto needs_recompile(
-		const std::filesystem::path& src,
-		const std::filesystem::path& dst
-	) -> bool;
+	auto needs_recompile(const std::filesystem::path& src, const std::filesystem::path& dst) -> bool;
 
 	template <typename T>
 	auto enumerate_resources() -> std::vector<std::string>;
 
 	template <typename T>
-	auto recompile_if_stale(
-		const std::filesystem::path& baked_path
-	) -> bool;
+	auto recompile_if_stale(const std::filesystem::path& baked_path) -> bool;
 
 	template <typename T>
-	auto setup_hot_reload_for(
-		data& d
-	) -> void;
+	auto setup_hot_reload_for(data& d) -> void;
 
 	struct compile_result {
 		std::size_t success_count = 0;
 		std::size_t failure_count = 0;
 		std::size_t skipped_count = 0;
 
-		auto operator+=(
-			const compile_result& other
-		) -> compile_result&;
+		auto operator+=(const compile_result& other) -> compile_result&;
 	};
 
 	template <typename... Ts>
 	class system : public non_copyable {
 	public:
-		explicit system(
-			data& d
-		);
+		explicit system(data& d);
 
 		~system() = default;
 
-		system(
-			system&&
-		) noexcept = default;
+		system(system&&) noexcept = default;
 
-		auto operator=(
-			system&&
-		) noexcept -> system& = default;
+		auto operator=(system&&) noexcept -> system& = default;
 
 		template <typename T>
 		auto compile() -> compile_result;
@@ -140,6 +121,15 @@ auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::fi
 		if (std::filesystem::exists(meta) && std::filesystem::last_write_time(meta) > dst_time) {
 			return true;
 		}
+	}
+	std::ifstream in(dst, std::ios::binary);
+	if (!in.is_open()) {
+		return true;
+	}
+	std::uint32_t header[2]{};
+	in.read(reinterpret_cast<char*>(header), sizeof(header));
+	if (!in.good() || header[0] != fmt.magic || header[1] != fmt.version) {
+		return true;
 	}
 	return false;
 }
@@ -222,7 +212,12 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 					}
 				}
 				else {
-					log::println(log::level::warning, log::category::assets, "Hot reload failed to recompile: {}", changed_file.filename().string());
+					log::println(
+						log::level::warning,
+						log::category::assets,
+						"Hot reload failed to recompile: {}",
+						changed_file.filename().string()
+					);
 				}
 			},
 			exts,

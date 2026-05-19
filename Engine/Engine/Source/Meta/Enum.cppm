@@ -7,16 +7,11 @@ export namespace gse {
 
 	template <typename E>
 	requires std::is_enum_v<E>
-	constexpr auto enum_to_string(
-		E value
-	) -> std::string_view;
+	constexpr auto enum_to_string(E value) -> std::string_view;
 
 	template <typename E>
 	requires std::is_enum_v<E>
-	constexpr auto enum_from_string(
-		std::string_view name,
-		E& out
-	) -> bool;
+	constexpr auto enum_from_string(std::string_view name, E& out) -> bool;
 }
 
 template <typename E>

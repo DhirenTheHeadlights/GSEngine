@@ -14,11 +14,8 @@ import gse.ecs;
 import gse.math;
 
 namespace gse::primitive_resolver {
-	auto attach_box(
-		const primitive_box_spec& spec,
-		const resource::handle<model>& handle,
-		render_component& render
-	) -> void;
+	auto attach_box(const primitive_box_spec& spec, const resource::handle<model>& handle, render_component& render)
+		-> void;
 
 	auto attach_sphere(
 		const primitive_sphere_spec& spec,
@@ -27,7 +24,11 @@ namespace gse::primitive_resolver {
 	) -> void;
 }
 
-auto gse::primitive_resolver::attach_box(const primitive_box_spec& spec, const resource::handle<model>& handle, render_component& render) -> void {
+auto gse::primitive_resolver::attach_box(
+	const primitive_box_spec& spec,
+	const resource::handle<model>& handle,
+	render_component& render
+) -> void {
 	if (render.model_count >= render_component::max_models) {
 		return;
 	}
@@ -38,7 +39,11 @@ auto gse::primitive_resolver::attach_box(const primitive_box_spec& spec, const r
 	++render.model_count;
 }
 
-auto gse::primitive_resolver::attach_sphere(const primitive_sphere_spec& spec, const resource::handle<model>& handle, render_component& render) -> void {
+auto gse::primitive_resolver::attach_sphere(
+	const primitive_sphere_spec& spec,
+	const resource::handle<model>& handle,
+	render_component& render
+) -> void {
 	if (render.model_count >= render_component::max_models) {
 		return;
 	}

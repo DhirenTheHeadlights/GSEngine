@@ -39,7 +39,13 @@ export namespace gse::gui {
 	};
 }
 
-auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name, const bool selected, id& hot_widget_id, id& active_widget_id) -> bool {
+auto gse::gui::draw::selectable(
+	const draw_context& ctx,
+	const std::string& name,
+	const bool selected,
+	id& hot_widget_id,
+	id& active_widget_id
+) -> bool {
 	if (!ctx.current_menu) {
 		return false;
 	}
@@ -75,15 +81,24 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
 		target_color = ctx.style.color_widget_hovered;
 	}
 
-	ctx.queue_sprite({ .rect = row_rect, .color = ctx.animated_color(widget_id, target_color), .texture = ctx.blank_texture, .corner_radius = ctx.style.corner_radius });
+	ctx.queue_sprite(
+		{ .rect = row_rect,
+		  .color = ctx.animated_color(widget_id, target_color),
+		  .texture = ctx.blank_texture,
+		  .corner_radius = ctx.style.corner_radius }
+	);
 
 	const float text_w = ctx.font->width(name, ctx.style.font_size);
-	const vec2f text_pos = {
-		row_rect.center().x() - text_w / 2.f,
-		row_rect.center().y() + ctx.style.font_size / 2.f
-	};
+	const vec2f text_pos = { row_rect.center().x() - text_w / 2.f, row_rect.center().y() + ctx.style.font_size / 2.f };
 
-	ctx.queue_text({ .font = ctx.font, .text = name, .position = text_pos, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = row_rect });
+	ctx.queue_text(
+		{ .font = ctx.font,
+		  .text = name,
+		  .position = text_pos,
+		  .scale = ctx.style.font_size,
+		  .color = ctx.style.color_text,
+		  .clip_rect = row_rect }
+	);
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 

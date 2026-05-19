@@ -36,43 +36,35 @@ export namespace gse::animation {
 		template <typename F>
 		requires std::invocable<F> && std::convertible_to<std::invoke_result_t<F>, float>
 		auto bind(const param_handle<float>& p, F&& func) -> bindings& {
-			m_params.push_back({ .name = p.name, .sync = [name = p.name, f = std::forward<F>(func)](controller_component& c) {
-									c.parameters[name] = animation_parameter{
-										.value = static_cast<float>(f()),
-										.is_trigger = false
-									};
-								} });
+			m_params.push_back(
+				{ .name = p.name, .sync = [name = p.name, f = std::forward<F>(func)](controller_component& c) {
+					 c.parameters[name] = animation_parameter{ .value = static_cast<float>(f()), .is_trigger = false };
+				 } }
+			);
 			return *this;
 		}
 
 		template <typename F>
 		requires std::invocable<F> && std::same_as<std::invoke_result_t<F>, bool>
 		auto bind(const param_handle<bool>& p, F&& func) -> bindings& {
-			m_params.push_back({ .name = p.name, .sync = [name = p.name, f = std::forward<F>(func)](controller_component& c) {
-									c.parameters[name] = animation_parameter{
-										.value = f(),
-										.is_trigger = false
-									};
-								} });
+			m_params.push_back(
+				{ .name = p.name, .sync = [name = p.name, f = std::forward<F>(func)](controller_component& c) {
+					 c.parameters[name] = animation_parameter{ .value = f(), .is_trigger = false };
+				 } }
+			);
 			return *this;
 		}
 
 		auto bind(const param_handle<bool>& p, const bool& ref) -> bindings& {
 			m_params.push_back({ .name = p.name, .sync = [name = p.name, &ref](controller_component& c) {
-									c.parameters[name] = animation_parameter{
-										.value = ref,
-										.is_trigger = false
-									};
+									c.parameters[name] = animation_parameter{ .value = ref, .is_trigger = false };
 								} });
 			return *this;
 		}
 
 		auto bind(const param_handle<float>& p, const float& ref) -> bindings& {
 			m_params.push_back({ .name = p.name, .sync = [name = p.name, &ref](controller_component& c) {
-									c.parameters[name] = animation_parameter{
-										.value = ref,
-										.is_trigger = false
-									};
+									c.parameters[name] = animation_parameter{ .value = ref, .is_trigger = false };
 								} });
 			return *this;
 		}
@@ -95,10 +87,7 @@ export namespace gse::animation {
 
 			for (const auto& [name, condition] : m_triggers) {
 				if (condition()) {
-					m_ctrl->parameters[name] = {
-						.value = true,
-						.is_trigger = true
-					};
+					m_ctrl->parameters[name] = { .value = true, .is_trigger = true };
 				}
 			}
 		}

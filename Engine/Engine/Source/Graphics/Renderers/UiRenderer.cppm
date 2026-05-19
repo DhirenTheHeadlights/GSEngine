@@ -53,7 +53,6 @@ namespace gse::renderer::ui {
 		vec2f local_pos;
 		vec2f half_size;
 		float corner_radius = 0.f;
-		float px_range = 0.f;
 	};
 
 	struct draw_batch {
@@ -125,17 +124,9 @@ export namespace gse::renderer::ui {
 			triple_buffer<gpu_frame_data> buffered_frames;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
-			data& d
-		) -> async::task<>;
+		static auto run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d)
+			-> async::task<>;
 
-		static auto frame(
-			frame_context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
+		static auto frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<>;
 	};
 }

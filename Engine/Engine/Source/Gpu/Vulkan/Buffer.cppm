@@ -34,13 +34,9 @@ export namespace gse::vulkan {
 
 		~basic_buffer() override;
 
-		basic_buffer(
-			basic_buffer&& other
-		) noexcept;
+		basic_buffer(basic_buffer&& other) noexcept;
 
-		auto operator=(
-			basic_buffer&& other
-		) noexcept -> basic_buffer&;
+		auto operator=(basic_buffer&& other) noexcept -> basic_buffer&;
 
 		[[nodiscard]] auto handle() const -> gpu::handle<basic_buffer<device>>;
 
@@ -48,18 +44,11 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto size() const -> gpu::device_size;
 
-		auto host_write(
-			const void* data,
-			std::size_t bytes,
-			std::size_t offset = 0
-		) const -> void;
+		auto host_write(const void* data, std::size_t bytes, std::size_t offset = 0) const -> void;
 
 		template <typename T>
 		requires(!std::is_pointer_v<T>)
-		auto host_write(
-			const T& src,
-			std::size_t offset = 0
-		) const -> void;
+		auto host_write(const T& src, std::size_t offset = 0) const -> void;
 
 		auto host_zero() const -> void;
 
@@ -82,13 +71,9 @@ export namespace gse::vulkan {
 
 	using buffer = basic_buffer<device>;
 
-	auto register_dirty_buffer(
-		const buffer* buf
-	) -> void;
+	auto register_dirty_buffer(const buffer* buf) -> void;
 
-	auto unregister_dirty_buffer(
-		const buffer* buf
-	) -> void;
+	auto unregister_dirty_buffer(const buffer* buf) -> void;
 
 	template <typename T>
 	auto register_dirty_buffer([[maybe_unused]] const T* buf) noexcept -> void {
@@ -140,7 +125,14 @@ auto gse::vulkan::drain_dirty_buffers() -> void {
 	for (const auto* b : stale) {
 		const auto& di = b->debug_info();
 		const auto file = std::filesystem::path(di.creation_location.file_name()).filename().string();
-		detail += std::format("\n  #{} [{}] {} bytes @ {}:{}", di.allocation_id, di.tag, b->size_bytes(), file, di.creation_location.line());
+		detail += std::format(
+			"\n  #{} [{}] {} bytes @ {}:{}",
+			di.allocation_id,
+			di.tag,
+			b->size_bytes(),
+			file,
+			di.creation_location.line()
+		);
 	}
 	log::println(
 		log::level::warning,
@@ -155,12 +147,23 @@ auto gse::vulkan::drain_dirty_buffers() -> void {
 }
 
 template <typename Device>
-gse::vulkan::basic_buffer<Device>::basic_buffer(const gpu::handle<basic_buffer<device>> buffer, basic_allocation<Device> allocation, const gpu::device_size size)
-	: m_buffer(buffer), m_size(size), m_allocation(std::move(allocation)) {
+gse::vulkan::basic_buffer<Device>::basic_buffer(
+	const gpu::handle<basic_buffer<device>> buffer,
+	basic_allocation<Device> allocation,
+	const gpu::device_size size
+)
+	: m_buffer(buffer),
+	  m_size(size),
+	  m_allocation(std::move(allocation)) {
 }
 
 template <typename Device>
-auto gse::vulkan::basic_buffer<Device>::create(Device& dev, const gpu::buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> basic_buffer {
+auto gse::vulkan::basic_buffer<Device>::create(
+	Device& dev,
+	const gpu::buffer_desc& desc,
+	const std::string_view tag,
+	const std::source_location& loc
+) -> basic_buffer {
 	return dev.create_buffer(
 		gpu::buffer_create_info{
 			.size = desc.size,
@@ -184,7 +187,10 @@ gse::vulkan::basic_buffer<Device>::~basic_buffer() {
 
 template <typename Device>
 gse::vulkan::basic_buffer<Device>::basic_buffer(basic_buffer&& other) noexcept
-	: m_buffer(other.m_buffer), m_size(other.m_size), m_allocation(std::move(other.m_allocation)), m_host_dirty(other.m_host_dirty.load(std::memory_order_relaxed)) {
+	: m_buffer(other.m_buffer),
+	  m_size(other.m_size),
+	  m_allocation(std::move(other.m_allocation)),
+	  m_host_dirty(other.m_host_dirty.load(std::memory_order_relaxed)) {
 	other.m_buffer = {};
 	other.m_size = 0;
 	const bool was_dirty = other.m_host_dirty.exchange(false, std::memory_order_acq_rel);
@@ -245,7 +251,11 @@ auto gse::vulkan::basic_buffer<Device>::debug_info() const -> const allocation_d
 }
 
 template <typename Device>
-auto gse::vulkan::basic_buffer<Device>::host_write(const void* data, const std::size_t bytes, const std::size_t offset) const -> void {
+auto gse::vulkan::basic_buffer<Device>::host_write(
+	const void* data,
+	const std::size_t bytes,
+	const std::size_t offset
+) const -> void {
 	assert(m_allocation.mapped(), "Buffer must be persistently mapped to host_write");
 	assert(offset + bytes <= m_size, "host_write extends past buffer size");
 
@@ -261,11 +271,7 @@ template <typename T>
 requires(!std::is_pointer_v<T>)
 auto gse::vulkan::basic_buffer<Device>::host_write(const T& src, const std::size_t offset) const -> void {
 	if constexpr (std::ranges::contiguous_range<T>) {
-		host_write(
-			std::ranges::data(src),
-			std::ranges::size(src) * sizeof(std::ranges::range_value_t<T>),
-			offset
-		);
+		host_write(std::ranges::data(src), std::ranges::size(src) * sizeof(std::ranges::range_value_t<T>), offset);
 	}
 	else {
 		static_assert(std::is_trivially_copyable_v<T>, "host_write requires a trivially copyable type");

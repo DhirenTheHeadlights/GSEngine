@@ -34,15 +34,9 @@ export namespace gse::input {
 			double_buffer<input::state> states;
 		};
 
-		static auto run(
-			run_context& ctx,
-			data& d,
-			const window::data* win
-		) -> async::task<>;
+		static auto run(run_context& ctx, data& d, const window::data* win) -> async::task<>;
 
-		static auto current_state(
-			const data& d
-		) -> const input::state&;
+		static auto current_state(const data& d) -> const input::state&;
 	};
 }
 

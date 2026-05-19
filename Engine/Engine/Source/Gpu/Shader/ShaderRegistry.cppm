@@ -22,20 +22,13 @@ export namespace gse::gpu {
 
 	class shader_registry final : public non_copyable {
 	public:
-		explicit shader_registry(
-			device& dev
-		);
+		explicit shader_registry(device& dev);
 
 		~shader_registry() override;
 
-		auto register_family(
-			std::string name,
-			std::vector<shaders::family_set> sets
-		) -> void;
+		auto register_family(std::string name, std::vector<shaders::family_set> sets) -> void;
 
-		[[nodiscard]] auto find_family(
-			std::string_view name
-		) -> const family_layout*;
+		[[nodiscard]] auto find_family(std::string_view name) -> const family_layout*;
 
 	private:
 		device* m_device;

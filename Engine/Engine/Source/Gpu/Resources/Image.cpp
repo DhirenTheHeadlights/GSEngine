@@ -5,7 +5,14 @@ import std;
 import gse.concurrency;
 import gse.math;
 
-auto gse::transition_image_async(gpu::device& dev, gpu::handle<vulkan::image> img, gpu::image_layout target_layout, gpu::image_aspect_flag aspect, std::uint32_t layers, bool is_depth) -> async::task<gpu::sync_token> {
+auto gse::transition_image_async(
+	gpu::device& dev,
+	gpu::handle<vulkan::image> img,
+	gpu::image_layout target_layout,
+	gpu::image_aspect_flag aspect,
+	std::uint32_t layers,
+	bool is_depth
+) -> async::task<gpu::sync_token> {
 	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics, "transient.image_transition");
 
 	const auto dst_stages = is_depth
@@ -36,7 +43,8 @@ auto gse::transition_image_async(gpu::device& dev, gpu::handle<vulkan::image> im
 	co_return co_await submit(dev, std::move(cmd), gpu::queue_id::graphics);
 }
 
-auto gse::gpu::transition_image_to(gpu::device& dev, vulkan::image& img, const image_layout target_layout) -> sync_token {
+auto gse::gpu::transition_image_to(gpu::device& dev, vulkan::image& img, const image_layout target_layout)
+	-> sync_token {
 	if (target_layout == image_layout::undefined) {
 		return {};
 	}
@@ -79,7 +87,13 @@ auto gse::gpu::transition_image_to(gpu::device& dev, vulkan::image& img, const i
 	return token;
 }
 
-auto gse::upload_image_2d_async(gpu::device& dev, vulkan::image& resource, const void* pixel_data, std::size_t data_size, vec2u extent) -> async::task<gpu::sync_token> {
+auto gse::upload_image_2d_async(
+	gpu::device& dev,
+	vulkan::image& resource,
+	const void* pixel_data,
+	std::size_t data_size,
+	vec2u extent
+) -> async::task<gpu::sync_token> {
 	auto staging = dev.allocator().create_buffer(
 		gpu::buffer_create_info{
 			.size = data_size,
@@ -112,7 +126,13 @@ auto gse::upload_image_2d_async(gpu::device& dev, vulkan::image& resource, const
 		.image_extent = vec3u{ extent.x(), extent.y(), 1 },
 	};
 
-	vulkan::commands(cmd.handle()).copy_buffer_to_image(staging.handle(), resource.handle(), gpu::image_layout::transfer_dst, std::span(&region, 1));
+	vulkan::commands(cmd.handle())
+		.copy_buffer_to_image(
+			staging.handle(),
+			resource.handle(),
+			gpu::image_layout::transfer_dst,
+			std::span(&region, 1)
+		);
 
 	vulkan::transition_image_layout(
 		resource,
@@ -125,11 +145,16 @@ auto gse::upload_image_2d_async(gpu::device& dev, vulkan::image& resource, const
 		gpu::access_flag::shader_read
 	);
 
-	co_return co_await submit(dev, std::move(cmd), gpu::queue_id::graphics)
-		.retain(std::move(staging));
+	co_return co_await submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(staging));
 }
 
-auto gse::upload_image_layers_async(gpu::device& dev, vulkan::image& resource, std::vector<const void*> face_data, std::size_t bytes_per_face, vec2u extent) -> async::task<gpu::sync_token> {
+auto gse::upload_image_layers_async(
+	gpu::device& dev,
+	vulkan::image& resource,
+	std::vector<const void*> face_data,
+	std::size_t bytes_per_face,
+	vec2u extent
+) -> async::task<gpu::sync_token> {
 	const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
 	const std::size_t total_size = layer_count * bytes_per_face;
 
@@ -175,7 +200,8 @@ auto gse::upload_image_layers_async(gpu::device& dev, vulkan::image& resource, s
 		});
 	}
 
-	vulkan::commands(cmd.handle()).copy_buffer_to_image(staging.handle(), resource.handle(), gpu::image_layout::transfer_dst, regions);
+	vulkan::commands(cmd.handle())
+		.copy_buffer_to_image(staging.handle(), resource.handle(), gpu::image_layout::transfer_dst, regions);
 
 	vulkan::transition_image_layout(
 		resource,
@@ -190,11 +216,15 @@ auto gse::upload_image_layers_async(gpu::device& dev, vulkan::image& resource, s
 		layer_count
 	);
 
-	co_return co_await submit(dev, std::move(cmd), gpu::queue_id::graphics)
-		.retain(std::move(staging));
+	co_return co_await submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(staging));
 }
 
-auto gse::gpu::upload_image_2d(gpu::device& dev, vulkan::image& img, const void* pixel_data, const std::size_t data_size) -> sync_token {
+auto gse::gpu::upload_image_2d(
+	gpu::device& dev,
+	vulkan::image& img,
+	const void* pixel_data,
+	const std::size_t data_size
+) -> sync_token {
 	const auto extent3 = img.extent();
 
 	auto staging = dev.allocator().create_buffer(
@@ -230,7 +260,8 @@ auto gse::gpu::upload_image_2d(gpu::device& dev, vulkan::image& img, const void*
 		.image_extent = vec3u{ extent3.x(), extent3.y(), 1 },
 	};
 
-	vulkan::commands(cmd.handle()).copy_buffer_to_image(staging.handle(), img.handle(), image_layout::transfer_dst, std::span(&region, 1));
+	vulkan::commands(cmd.handle())
+		.copy_buffer_to_image(staging.handle(), img.handle(), image_layout::transfer_dst, std::span(&region, 1));
 
 	vulkan::transition_image_layout(
 		img,
@@ -243,15 +274,18 @@ auto gse::gpu::upload_image_2d(gpu::device& dev, vulkan::image& img, const void*
 		access_flag::shader_read
 	);
 
-	auto token = submit(dev, std::move(cmd), queue_id::graphics)
-					 .retain(std::move(staging))
-					 .submit_sync();
+	auto token = submit(dev, std::move(cmd), queue_id::graphics).retain(std::move(staging)).submit_sync();
 
 	img.set_layout(image_layout::shader_read_only);
 	return token;
 }
 
-auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const std::vector<const void*>& face_data, const std::size_t bytes_per_face) -> sync_token {
+auto gse::gpu::upload_image_layers(
+	gpu::device& dev,
+	vulkan::image& img,
+	const std::vector<const void*>& face_data,
+	const std::size_t bytes_per_face
+) -> sync_token {
 	const auto extent3 = img.extent();
 	const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
 	const std::size_t total_size = layer_count * bytes_per_face;
@@ -299,7 +333,8 @@ auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const s
 		});
 	}
 
-	vulkan::commands(cmd.handle()).copy_buffer_to_image(staging.handle(), img.handle(), image_layout::transfer_dst, regions);
+	vulkan::commands(cmd.handle())
+		.copy_buffer_to_image(staging.handle(), img.handle(), image_layout::transfer_dst, regions);
 
 	vulkan::transition_image_layout(
 		img,
@@ -314,9 +349,7 @@ auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const s
 		layer_count
 	);
 
-	auto token = submit(dev, std::move(cmd), queue_id::graphics)
-					 .retain(std::move(staging))
-					 .submit_sync();
+	auto token = submit(dev, std::move(cmd), queue_id::graphics).retain(std::move(staging)).submit_sync();
 
 	img.set_layout(image_layout::shader_read_only);
 	return token;

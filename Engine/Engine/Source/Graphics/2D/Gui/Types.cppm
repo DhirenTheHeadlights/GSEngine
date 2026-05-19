@@ -100,10 +100,7 @@ export namespace gse::gui {
 	struct draw_context;
 
 	struct menu : identifiable, identifiable_owned {
-		explicit menu(
-			std::string_view tag,
-			const menu_data& data
-		);
+		explicit menu(std::string_view tag, const menu_data& data);
 
 		ui_rect rect;
 		vec2f grab_offset;
@@ -138,30 +135,17 @@ export namespace gse::gui {
 		tooltip_state* tooltip = nullptr;
 		std::vector<ui_rect> clip_stack;
 
-		auto queue_sprite(
-			renderer::sprite_command cmd
-		) const -> void;
+		auto queue_sprite(renderer::sprite_command cmd) const -> void;
 
-		auto queue_text(
-			renderer::text_command cmd
-		) const -> void;
+		auto queue_text(renderer::text_command cmd) const -> void;
 
 		[[nodiscard]] auto input_available() const -> bool;
 
-		auto set_tooltip(
-			const id& widget_id,
-			const std::string& text
-		) const -> void;
+		auto set_tooltip(const id& widget_id, const std::string& text) const -> void;
 
-		auto next_row(
-			float height_multiplier = 1.f
-		) const -> ui_rect;
+		auto next_row(float height_multiplier = 1.f) const -> ui_rect;
 
-		auto animated_color(
-			const id& widget_id,
-			vec4f target,
-			float speed = 10.f
-		) const -> vec4f;
+		auto animated_color(const id& widget_id, vec4f target, float speed = 10.f) const -> vec4f;
 
 		[[nodiscard]] auto current_clip() const -> std::optional<ui_rect>;
 	};
@@ -177,13 +161,9 @@ export namespace gse::gui {
 			const scroll_config& config
 		) noexcept;
 
-		scroll_handle(
-			scroll_handle&& other
-		) noexcept;
+		scroll_handle(scroll_handle&& other) noexcept;
 
-		auto operator=(
-			scroll_handle&& other
-		) noexcept -> scroll_handle&;
+		auto operator=(scroll_handle&& other) noexcept -> scroll_handle&;
 
 		~scroll_handle() noexcept;
 
@@ -203,10 +183,7 @@ export namespace gse::gui {
 		bool m_active = false;
 	};
 
-	[[nodiscard]] auto scroll_region(
-		draw_context& ctx,
-		const scroll_region_info& info
-	) -> scroll_handle;
+	[[nodiscard]] auto scroll_region(draw_context& ctx, const scroll_region_info& info) -> scroll_handle;
 }
 
 namespace gse::gui::states {
@@ -237,12 +214,8 @@ namespace gse::gui::states {
 
 namespace gse::gui {
 	struct state {
-		using value_type = std::variant<
-			states::idle,
-			states::dragging,
-			states::resizing,
-			states::resizing_divider,
-			states::pending_drag>;
+		using value_type = std::
+			variant<states::idle, states::dragging, states::resizing, states::resizing_divider, states::pending_drag>;
 
 		value_type v;
 

@@ -58,14 +58,9 @@ export namespace gse::gui {
 			return W::draw(ctx, hot_widget_id, active_widget_id, focus_widget_id);
 		}
 
-		[[nodiscard]] auto scroll_region(
-			const scroll_region_info& info
-		) -> scroll_handle;
+		[[nodiscard]] auto scroll_region(const scroll_region_info& info) -> scroll_handle;
 
-		auto scroll_region(
-			const scroll_region_info& info,
-			const std::function<void(builder&)>& content
-		) -> void;
+		auto scroll_region(const scroll_region_info& info, const std::function<void(builder&)>& content) -> void;
 	};
 
 	struct menu_content {
@@ -80,7 +75,8 @@ auto gse::gui::builder::scroll_region(const scroll_region_info& info) -> scroll_
 	return gse::gui::scroll_region(ctx, info);
 }
 
-auto gse::gui::builder::scroll_region(const scroll_region_info& info, const std::function<void(builder&)>& content) -> void {
+auto gse::gui::builder::scroll_region(const scroll_region_info& info, const std::function<void(builder&)>& content)
+	-> void {
 	auto guard = scroll_region(info);
 	if (!guard.valid()) {
 		return;

@@ -17,44 +17,28 @@ import :remote_peer;
 
 export namespace gse::network {
 	template <typename T>
-	auto broadcast_component_deltas(
-		auto& send_fn,
-		registry& reg,
-		const std::unordered_map<address, remote_peer>& peers
-	) -> void;
+	auto broadcast_component_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers)
+		-> void;
 
 	template <typename Pack>
-	auto replicate_deltas(
-		auto& send_fn,
-		registry& reg,
-		const std::unordered_map<address, remote_peer>& peers
-	) -> void;
+	auto replicate_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers) -> void;
 
 	template <typename T>
-	auto snapshot_components_to(
-		auto& send_fn,
-		registry& reg,
-		const address& addr
-	) -> void;
+	auto snapshot_components_to(auto& send_fn, registry& reg, const address& addr) -> void;
 
 	template <typename Pack>
-	auto replicate_snapshot_to(
-		auto& send_fn,
-		registry& reg,
-		const address& addr
-	) -> void;
+	auto replicate_snapshot_to(auto& send_fn, registry& reg, const address& addr) -> void;
 
 	template <typename Pack>
-	auto match_and_apply_components(
-		read_bitstream& s,
-		std::uint64_t id,
-		auto&& on_upsert,
-		auto&& on_remove
-	) -> bool;
+	auto match_and_apply_components(read_bitstream& s, std::uint64_t id, auto&& on_upsert, auto&& on_remove) -> bool;
 }
 
 template <typename T>
-auto gse::network::broadcast_component_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers) -> void {
+auto gse::network::broadcast_component_deltas(
+	auto& send_fn,
+	registry& reg,
+	const std::unordered_map<address, remote_peer>& peers
+) -> void {
 	const auto broadcast = [&](const auto& msg) {
 		for (const auto& addr : peers | std::views::keys) {
 			send_fn(msg, addr);
@@ -79,7 +63,8 @@ auto gse::network::broadcast_component_deltas(auto& send_fn, registry& reg, cons
 }
 
 template <typename Pack>
-auto gse::network::replicate_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers) -> void {
+auto gse::network::replicate_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers)
+	-> void {
 	if (peers.empty()) {
 		return;
 	}
@@ -106,8 +91,16 @@ auto gse::network::replicate_snapshot_to(auto& send_fn, registry& reg, const add
 }
 
 template <typename Pack>
-auto gse::network::match_and_apply_components(read_bitstream& s, const std::uint64_t id, auto&& on_upsert, auto&& on_remove) -> bool {
+auto gse::network::match_and_apply_components(
+	read_bitstream& s,
+	const std::uint64_t id,
+	auto&& on_upsert,
+	auto&& on_remove
+) -> bool {
 	return [&]<typename... C>(type_pack<C...>) {
-		return ((try_decode<component_upsert<C>>(s, id, on_upsert) || try_decode<component_remove<C>>(s, id, on_remove)) || ...);
+		return (
+			(try_decode<component_upsert<C>>(s, id, on_upsert) || try_decode<component_remove<C>>(s, id, on_remove)) ||
+			...
+		);
 	}(Pack{});
 }

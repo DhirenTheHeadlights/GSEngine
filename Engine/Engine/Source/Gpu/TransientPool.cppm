@@ -41,9 +41,7 @@ export namespace gse::gpu {
 	struct transient_image_handle {
 		std::uint64_t key = 0;
 
-		constexpr auto operator==(
-			const transient_image_handle&
-		) const -> bool = default;
+		constexpr auto operator==(const transient_image_handle&) const -> bool = default;
 
 		explicit constexpr operator bool() const {
 			return key != 0;
@@ -53,9 +51,7 @@ export namespace gse::gpu {
 	struct transient_buffer_handle {
 		std::uint64_t key = 0;
 
-		constexpr auto operator==(
-			const transient_buffer_handle&
-		) const -> bool = default;
+		constexpr auto operator==(const transient_buffer_handle&) const -> bool = default;
 
 		explicit constexpr operator bool() const {
 			return key != 0;
@@ -72,15 +68,10 @@ export namespace gse::gpu {
 		transient_buffer_desc desc;
 	};
 
-	[[nodiscard]] auto transient_image(
-		const frame_context& ctx,
-		transient_image_desc desc
-	) -> transient_image_handle;
+	[[nodiscard]] auto transient_image(const frame_context& ctx, transient_image_desc desc) -> transient_image_handle;
 
-	[[nodiscard]] auto transient_buffer(
-		const frame_context& ctx,
-		transient_buffer_desc desc
-	) -> transient_buffer_handle;
+	[[nodiscard]] auto transient_buffer(const frame_context& ctx, transient_buffer_desc desc)
+		-> transient_buffer_handle;
 
 	struct transient_image_allocation {
 		std::unique_ptr<gpu::image> resource;
@@ -101,19 +92,13 @@ export namespace gse::gpu {
 
 	class transient_pool : public non_copyable {
 	public:
-		explicit transient_pool(
-			gpu::device& dev
-		);
+		explicit transient_pool(gpu::device& dev);
 
 		~transient_pool() override;
 
-		transient_pool(
-			transient_pool&& other
-		) noexcept;
+		transient_pool(transient_pool&& other) noexcept;
 
-		auto operator=(
-			transient_pool&& other
-		) noexcept -> transient_pool&;
+		auto operator=(transient_pool&& other) noexcept -> transient_pool&;
 
 		auto plan(
 			std::uint32_t frame_idx,
@@ -124,13 +109,9 @@ export namespace gse::gpu {
 
 		auto reset() -> void;
 
-		[[nodiscard]] auto resolve_image(
-			transient_image_handle h
-		) const -> const image*;
+		[[nodiscard]] auto resolve_image(transient_image_handle h) const -> const image*;
 
-		[[nodiscard]] auto resolve_buffer(
-			transient_buffer_handle h
-		) const -> const buffer*;
+		[[nodiscard]] auto resolve_buffer(transient_buffer_handle h) const -> const buffer*;
 
 		struct transient_image_info {
 			const image* resource = nullptr;
@@ -161,13 +142,9 @@ export namespace gse::gpu {
 			std::uint32_t memory_type_mask
 		) -> void;
 
-		auto free_slot_resources(
-			frame_state& slot
-		) -> void;
+		auto free_slot_resources(frame_state& slot) -> void;
 
-		auto free_slot_memory(
-			frame_state& slot
-		) -> void;
+		auto free_slot_memory(frame_state& slot) -> void;
 
 		gpu::device* m_device = nullptr;
 		per_frame_resource<frame_state> m_slots;

@@ -58,41 +58,23 @@ namespace gse::internal {
 		absolute
 	};
 
-	consteval auto quantity_spec_type_of(
-		std::meta::info tag_info
-	) -> std::meta::info;
+	consteval auto quantity_spec_type_of(std::meta::info tag_info) -> std::meta::info;
 
-	consteval auto has_quantity_spec(
-		std::meta::info tag_info
-	) -> bool;
+	consteval auto has_quantity_spec(std::meta::info tag_info) -> bool;
 
-	consteval auto classify_spec(
-		std::meta::info spec_t
-	) -> spec_kind;
+	consteval auto classify_spec(std::meta::info spec_t) -> spec_kind;
 
-	consteval auto resolve_dim_info(
-		std::meta::info tag_info
-	) -> std::meta::info;
+	consteval auto resolve_dim_info(std::meta::info tag_info) -> std::meta::info;
 
-	consteval auto resolve_default_unit_info(
-		std::meta::info tag_info
-	) -> std::meta::info;
+	consteval auto resolve_default_unit_info(std::meta::info tag_info) -> std::meta::info;
 
-	consteval auto resolve_parent_tag(
-		std::meta::info tag_info
-	) -> std::meta::info;
+	consteval auto resolve_parent_tag(std::meta::info tag_info) -> std::meta::info;
 
-	consteval auto resolve_unit_family_tag(
-		std::meta::info tag_info
-	) -> std::meta::info;
+	consteval auto resolve_unit_family_tag(std::meta::info tag_info) -> std::meta::info;
 
-	consteval auto resolve_relative_tag(
-		std::meta::info tag_info
-	) -> std::meta::info;
+	consteval auto resolve_relative_tag(std::meta::info tag_info) -> std::meta::info;
 
-	consteval auto resolve_semantic_kind(
-		std::meta::info tag_info
-	) -> quantity_semantic_kind;
+	consteval auto resolve_semantic_kind(std::meta::info tag_info) -> quantity_semantic_kind;
 
 	template <typename Tag>
 	struct quantity_tag_traits {
@@ -130,9 +112,7 @@ consteval auto gse::internal::quantity_spec_type_of(std::meta::info tag_info) ->
 			continue;
 		}
 		auto tmpl = std::meta::template_of(t);
-		if (tmpl == ^^quantity_root_spec ||
-			tmpl == ^^quantity_child_spec ||
-			tmpl == ^^quantity_sub_root_spec ||
+		if (tmpl == ^^quantity_root_spec || tmpl == ^^quantity_child_spec || tmpl == ^^quantity_sub_root_spec ||
 			tmpl == ^^quantity_absolute_spec) {
 			return t;
 		}
@@ -168,14 +148,10 @@ consteval auto gse::internal::resolve_dim_info(std::meta::info tag_info) -> std:
 	auto spec_t = quantity_spec_type_of(tag_info);
 	auto kind = classify_spec(spec_t);
 	if (kind == spec_kind::root) {
-		return std::meta::extract<std::meta::info>(
-			std::meta::template_arguments_of(spec_t)[0]
-		);
+		return std::meta::extract<std::meta::info>(std::meta::template_arguments_of(spec_t)[0]);
 	}
 	if (kind == spec_kind::child || kind == spec_kind::sub_root || kind == spec_kind::absolute) {
-		auto parent_info = std::meta::extract<std::meta::info>(
-			std::meta::template_arguments_of(spec_t)[0]
-		);
+		auto parent_info = std::meta::extract<std::meta::info>(std::meta::template_arguments_of(spec_t)[0]);
 		return resolve_dim_info(parent_info);
 	}
 	return std::meta::info{};
@@ -192,9 +168,7 @@ consteval auto gse::internal::resolve_default_unit_info(std::meta::info tag_info
 		return std::meta::substitute(^^default_unit_for_type, holder_args);
 	}
 	if (kind == spec_kind::child || kind == spec_kind::sub_root || kind == spec_kind::absolute) {
-		auto parent_info = std::meta::extract<std::meta::info>(
-			std::meta::template_arguments_of(spec_t)[0]
-		);
+		auto parent_info = std::meta::extract<std::meta::info>(std::meta::template_arguments_of(spec_t)[0]);
 		return resolve_default_unit_info(parent_info);
 	}
 	return std::meta::info{};
@@ -204,9 +178,7 @@ consteval auto gse::internal::resolve_parent_tag(std::meta::info tag_info) -> st
 	auto spec_t = quantity_spec_type_of(tag_info);
 	auto kind = classify_spec(spec_t);
 	if (kind == spec_kind::child || kind == spec_kind::sub_root || kind == spec_kind::absolute) {
-		return std::meta::extract<std::meta::info>(
-			std::meta::template_arguments_of(spec_t)[0]
-		);
+		return std::meta::extract<std::meta::info>(std::meta::template_arguments_of(spec_t)[0]);
 	}
 	return ^^no_parent_quantity_tag;
 }
@@ -218,9 +190,7 @@ consteval auto gse::internal::resolve_unit_family_tag(std::meta::info tag_info) 
 		return tag_info;
 	}
 	if (kind == spec_kind::child || kind == spec_kind::sub_root || kind == spec_kind::absolute) {
-		auto parent_info = std::meta::extract<std::meta::info>(
-			std::meta::template_arguments_of(spec_t)[0]
-		);
+		auto parent_info = std::meta::extract<std::meta::info>(std::meta::template_arguments_of(spec_t)[0]);
 		return resolve_unit_family_tag(parent_info);
 	}
 	return tag_info;
@@ -233,15 +203,11 @@ consteval auto gse::internal::resolve_relative_tag(std::meta::info tag_info) -> 
 		return tag_info;
 	}
 	if (kind == spec_kind::child) {
-		auto parent_info = std::meta::extract<std::meta::info>(
-			std::meta::template_arguments_of(spec_t)[0]
-		);
+		auto parent_info = std::meta::extract<std::meta::info>(std::meta::template_arguments_of(spec_t)[0]);
 		return resolve_relative_tag(parent_info);
 	}
 	if (kind == spec_kind::absolute) {
-		return std::meta::extract<std::meta::info>(
-			std::meta::template_arguments_of(spec_t)[1]
-		);
+		return std::meta::extract<std::meta::info>(std::meta::template_arguments_of(spec_t)[1]);
 	}
 	return tag_info;
 }
@@ -250,9 +216,7 @@ consteval auto gse::internal::resolve_semantic_kind(std::meta::info tag_info) ->
 	auto spec_t = quantity_spec_type_of(tag_info);
 	auto kind = classify_spec(spec_t);
 	if (kind == spec_kind::root || kind == spec_kind::child) {
-		return std::meta::extract<quantity_semantic_kind>(
-			std::meta::template_arguments_of(spec_t)[1]
-		);
+		return std::meta::extract<quantity_semantic_kind>(std::meta::template_arguments_of(spec_t)[1]);
 	}
 	if (kind == spec_kind::sub_root) {
 		return quantity_semantic_kind::relative;
@@ -313,9 +277,7 @@ namespace gse::internal {
 	inline constexpr bool is_generic_tag_v = std::same_as<normalized_tag_t<Tag>, generic_quantity_tag>;
 
 	template <typename Tag1, typename Tag2>
-	inline constexpr bool same_unit_family_v =
-		is_generic_tag_v<Tag1> ||
-		is_generic_tag_v<Tag2> ||
+	inline constexpr bool same_unit_family_v = is_generic_tag_v<Tag1> || is_generic_tag_v<Tag2> ||
 		std::same_as<unit_family_tag_t<Tag1>, unit_family_tag_t<Tag2>>;
 
 	template <typename T>
@@ -458,14 +420,14 @@ namespace gse::internal {
 
 		constexpr quantity() = default;
 
-		explicit constexpr quantity(
-			ArithmeticType value
-		);
+		explicit constexpr quantity(ArithmeticType value);
 
 		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
-		requires has_same_dimensions<Dimensions, Dim2> &&
-			same_unit_family_v<QuantityTagType, Tag2>
-		explicit(!is_generic_tag_v<Tag2> && (is_generic_tag_v<QuantityTagType> || semantic_kind_v<QuantityTagType> != semantic_kind_v<Tag2>)) constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>& other)
+		requires has_same_dimensions<Dimensions, Dim2> && same_unit_family_v<QuantityTagType, Tag2>
+		explicit(
+			!is_generic_tag_v<Tag2> &&
+			(is_generic_tag_v<QuantityTagType> || semantic_kind_v<QuantityTagType> != semantic_kind_v<Tag2>)
+		) constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>& other)
 			: m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {
 		}
 
@@ -517,8 +479,7 @@ namespace gse::internal {
 		}
 
 		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
-		requires has_same_dimensions<Dimensions, Dim2> &&
-			same_unit_family_v<QuantityTagType, Tag2>
+		requires has_same_dimensions<Dimensions, Dim2> && same_unit_family_v<QuantityTagType, Tag2>
 		constexpr auto operator<=>(const quantity<T2, Dim2, Tag2, Unit2>& other) const {
 			using common_t = std::common_type_t<ArithmeticType, T2>;
 			const auto lhs = static_cast<common_t>(this->as<DefaultUnitType>());
@@ -527,8 +488,7 @@ namespace gse::internal {
 		}
 
 		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
-		requires has_same_dimensions<Dimensions, Dim2> &&
-			same_unit_family_v<QuantityTagType, Tag2>
+		requires has_same_dimensions<Dimensions, Dim2> && same_unit_family_v<QuantityTagType, Tag2>
 		constexpr auto operator==(const quantity<T2, Dim2, Tag2, Unit2>& other) const -> bool {
 			return ((*this <=> other) == 0);
 		}
@@ -539,9 +499,7 @@ namespace gse::internal {
 
 	protected:
 		template <is_unit UnitType>
-		constexpr auto converted_value(
-			ArithmeticType value
-		) const -> ArithmeticType;
+		constexpr auto converted_value(ArithmeticType value) const -> ArithmeticType;
 	};
 }
 
@@ -576,27 +534,27 @@ constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::converted_value(A va
 namespace gse::internal {
 	template <typename Units, typename Fn>
 	constexpr auto dispatch_named_unit(const Units& units, std::string_view name, Fn&& fn) -> bool {
-		return std::apply([&](const auto&... u) {
-			bool found = false;
-			auto try_match = [&](const auto& unit_const) {
-				if (!found && name == std::string_view(std::remove_cvref_t<decltype(unit_const)>::unit_name)) {
-					fn(unit_const);
-					found = true;
-				}
-			};
-			(try_match(u), ...);
-			return found;
-		},
-						  units);
+		return std::apply(
+			[&](const auto&... u) {
+				bool found = false;
+				auto try_match = [&](const auto& unit_const) {
+					if (!found && name == std::string_view(std::remove_cvref_t<decltype(unit_const)>::unit_name)) {
+						fn(unit_const);
+						found = true;
+					}
+				};
+				(try_match(u), ...);
+				return found;
+			},
+			units
+		);
 	}
 
 	export template <typename Tag>
 	struct quantity_units;
 
 	template <typename Tag>
-	concept has_unit_list = requires {
-		quantity_units<Tag>::units;
-	};
+	concept has_unit_list = requires { quantity_units<Tag>::units; };
 }
 
 template <typename A, typename Dim, typename Tag, typename Unit, typename CharT>
@@ -701,20 +659,16 @@ struct gse::scalar<gse::internal::quantity<A, Dim, Tag, Unit>> {
 
 export namespace gse::internal {
 	template <typename Q>
-	concept is_quantity =
-		requires {
-			typename std::remove_cvref_t<Q>::value_type;
-			typename std::remove_cvref_t<Q>::dimension;
-			typename std::remove_cvref_t<Q>::quantity_tag;
-			typename std::remove_cvref_t<Q>::default_unit;
-		};
+	concept is_quantity = requires {
+		typename std::remove_cvref_t<Q>::value_type;
+		typename std::remove_cvref_t<Q>::dimension;
+		typename std::remove_cvref_t<Q>::quantity_tag;
+		typename std::remove_cvref_t<Q>::default_unit;
+	};
 
 	template <typename Q1, typename Q2>
-	concept has_same_dimension_as =
-		is_quantity<Q1> && is_quantity<Q2> &&
-		has_same_dimensions<
-			typename std::remove_cvref_t<Q1>::dimension,
-			typename std::remove_cvref_t<Q2>::dimension>;
+	concept has_same_dimension_as = is_quantity<Q1> && is_quantity<Q2> &&
+		has_same_dimensions<typename std::remove_cvref_t<Q1>::dimension, typename std::remove_cvref_t<Q2>::dimension>;
 
 	template <typename T, is_dimension Dim>
 	using generic_quantity = quantity<T, Dim, generic_quantity_tag, no_default_unit>;
@@ -722,14 +676,8 @@ export namespace gse::internal {
 	template <typename Tag>
 	requires(has_quantity_spec(^^Tag))
 	struct quantity_traits<Tag> {
-		template <
-			typename T,
-			auto U = ([:resolve_default_unit_info(^^Tag):])>
-		using type = quantity<
-			T,
-			typename[:resolve_dim_info(^^Tag):],
-											   Tag,
-											   decltype(U)>;
+		template <typename T, auto U = ([:resolve_default_unit_info(^^Tag):])>
+		using type = quantity<T, typename[:resolve_dim_info(^^Tag):], Tag, decltype(U)>;
 	};
 
 	template <bool IsGeneric, typename Tag, typename ValueType, typename Dim>
@@ -784,91 +732,50 @@ export namespace gse::internal {
 export namespace gse::internal {
 	template <is_quantity Q1, is_quantity Q2>
 	requires has_same_dimension_as<Q1, Q2>
-	constexpr auto operator+(
-		const Q1& lhs,
-		const Q2& rhs
-	) -> addition_result_t<Q1, Q2>;
+	constexpr auto operator+(const Q1& lhs, const Q2& rhs) -> addition_result_t<Q1, Q2>;
 
 	template <is_quantity Q1, is_quantity Q2>
 	requires has_same_dimension_as<Q1, Q2>
-	constexpr auto operator-(
-		const Q1& lhs,
-		const Q2& rhs
-	) -> subtraction_result_t<Q1, Q2>;
+	constexpr auto operator-(const Q1& lhs, const Q2& rhs) -> subtraction_result_t<Q1, Q2>;
 
 	template <is_quantity Q1, is_quantity Q2>
-	constexpr auto operator*(
-		const Q1& lhs,
-		const Q2& rhs
-	);
+	constexpr auto operator*(const Q1& lhs, const Q2& rhs);
 
 	template <is_quantity Q, is_arithmetic S>
-	constexpr auto operator*(
-		const Q& lhs,
-		const S& rhs
-	) -> Q;
+	constexpr auto operator*(const Q& lhs, const S& rhs) -> Q;
 
 	template <is_arithmetic S, is_quantity Q>
-	constexpr auto operator*(
-		const S& lhs,
-		const Q& rhs
-	) -> Q;
+	constexpr auto operator*(const S& lhs, const Q& rhs) -> Q;
 
 	template <is_quantity Q1, is_quantity Q2>
 	requires has_same_dimension_as<Q1, Q2>
-	constexpr auto operator/(
-		const Q1& lhs,
-		const Q2& rhs
-	) -> Q1::value_type;
+	constexpr auto operator/(const Q1& lhs, const Q2& rhs) -> Q1::value_type;
 
 	template <is_quantity Q1, is_quantity Q2>
-	constexpr auto operator/(
-		const Q1& lhs,
-		const Q2& rhs
-	);
+	constexpr auto operator/(const Q1& lhs, const Q2& rhs);
 
 	template <is_quantity Q, is_arithmetic S>
-	constexpr auto operator/(
-		const Q& lhs,
-		const S& rhs
-	) -> Q;
+	constexpr auto operator/(const Q& lhs, const S& rhs) -> Q;
 
 	template <is_arithmetic S, is_quantity Q>
-	constexpr auto operator/(
-		const S& lhs,
-		const Q& rhs
-	);
+	constexpr auto operator/(const S& lhs, const Q& rhs);
 
 	template <is_quantity Q1, is_quantity Q2>
 	requires has_same_dimension_as<Q1, Q2>
-	constexpr auto operator+=(
-		Q1& lhs,
-		const Q2& rhs
-	) -> Q1&;
+	constexpr auto operator+=(Q1& lhs, const Q2& rhs) -> Q1&;
 
 	template <is_quantity Q1, is_quantity Q2>
 	requires has_same_dimension_as<Q1, Q2>
-	constexpr auto operator-=(
-		Q1& lhs,
-		const Q2& rhs
-	) -> Q1&;
+	constexpr auto operator-=(Q1& lhs, const Q2& rhs) -> Q1&;
 
 	template <is_quantity Q, is_arithmetic S>
-	constexpr auto operator*=(
-		Q& lhs,
-		const S& rhs
-	) -> Q&;
+	constexpr auto operator*=(Q& lhs, const S& rhs) -> Q&;
 
 	template <is_quantity Q, is_arithmetic S>
-	constexpr auto operator/=(
-		Q& lhs,
-		const S& rhs
-	) -> Q&;
+	constexpr auto operator/=(Q& lhs, const S& rhs) -> Q&;
 
 	template <is_quantity Q>
-	constexpr auto operator-(
-		const Q& v
-	) -> Q;
+	constexpr auto operator-(const Q& v) -> Q;
 
 	template <is_quantity Q1, is_quantity Q2>
 	requires(!has_same_dimension_as<Q1, Q2>)
@@ -903,14 +810,18 @@ template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 requires gse::internal::has_same_dimension_as<Q1, Q2>
 constexpr auto gse::internal::operator+(const Q1& lhs, const Q2& rhs) -> addition_result_t<Q1, Q2> {
 	using result_type = addition_result_t<Q1, Q2>;
-	return result_type(lhs.template as<typename result_type::default_unit>() + rhs.template as<typename result_type::default_unit>());
+	return result_type(
+		lhs.template as<typename result_type::default_unit>() + rhs.template as<typename result_type::default_unit>()
+	);
 }
 
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 requires gse::internal::has_same_dimension_as<Q1, Q2>
 constexpr auto gse::internal::operator-(const Q1& lhs, const Q2& rhs) -> subtraction_result_t<Q1, Q2> {
 	using result_type = subtraction_result_t<Q1, Q2>;
-	return result_type(lhs.template as<typename result_type::default_unit>() - rhs.template as<typename result_type::default_unit>());
+	return result_type(
+		lhs.template as<typename result_type::default_unit>() - rhs.template as<typename result_type::default_unit>()
+	);
 }
 
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
@@ -968,7 +879,9 @@ template <gse::internal::is_arithmetic S, gse::internal::is_quantity Q>
 constexpr auto gse::internal::operator/(const S& lhs, const Q& rhs) {
 	using result_v = Q::value_type;
 	using result_d = decltype(dimensionless{} / typename Q::dimension());
-	return generic_quantity<result_v, result_d>(static_cast<result_v>(lhs) / rhs.template as<quantity_base_unit_t<Q>>());
+	return generic_quantity<result_v, result_d>(
+		static_cast<result_v>(lhs) / rhs.template as<quantity_base_unit_t<Q>>()
+	);
 }
 
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
@@ -1021,14 +934,10 @@ constexpr auto gse::quantity_cast(const FromQuantity& q) -> ToQuantity {
 	const long double value_in_to_unit = static_cast<long double>(q.template as<to_unit>());
 
 	if constexpr (std::is_integral_v<to_val>) {
-		return ToQuantity::template from<to_unit>(
-			static_cast<to_val>(internal::cexpr_llround(value_in_to_unit))
-		);
+		return ToQuantity::template from<to_unit>(static_cast<to_val>(internal::cexpr_llround(value_in_to_unit)));
 	}
 	else {
-		return ToQuantity::template from<to_unit>(
-			static_cast<to_val>(value_in_to_unit)
-		);
+		return ToQuantity::template from<to_unit>(static_cast<to_val>(value_in_to_unit));
 	}
 }
 

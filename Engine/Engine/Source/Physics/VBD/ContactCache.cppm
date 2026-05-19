@@ -23,26 +23,17 @@ export namespace gse::vbd {
 	public:
 		static constexpr std::uint32_t max_age = 3;
 
-		auto lookup(
-			std::uint32_t body_a,
-			std::uint32_t body_b,
-			const feature_id& fid
-		) const -> std::optional<cached_lambda>;
+		auto lookup(std::uint32_t body_a, std::uint32_t body_b, const feature_id& fid) const
+			-> std::optional<cached_lambda>;
 
-		auto store(
-			std::uint32_t body_a,
-			std::uint32_t body_b,
-			const feature_id& fid,
-			const cached_lambda& data
-		) -> void;
+		auto store(std::uint32_t body_a, std::uint32_t body_b, const feature_id& fid, const cached_lambda& data)
+			-> void;
 
 		auto age_and_prune() -> void;
 
 		auto clear() -> void;
 
-		auto remove_body(
-			std::uint32_t body_index
-		) -> void;
+		auto remove_body(std::uint32_t body_index) -> void;
 
 	private:
 		struct cache_key {
@@ -50,15 +41,11 @@ export namespace gse::vbd {
 			std::uint32_t body_b;
 			feature_id feature;
 
-			auto operator==(
-				const cache_key&
-			) const -> bool = default;
+			auto operator==(const cache_key&) const -> bool = default;
 		};
 
 		struct cache_key_hash {
-			auto operator()(
-				const cache_key& k
-			) const noexcept -> std::size_t;
+			auto operator()(const cache_key& k) const noexcept -> std::size_t;
 		};
 
 		std::unordered_map<cache_key, cached_lambda, cache_key_hash> m_cache;
@@ -69,30 +56,27 @@ auto gse::vbd::contact_cache::cache_key_hash::operator()(const cache_key& k) con
 	return gse::hash_combine(k);
 }
 
-auto gse::vbd::contact_cache::lookup(const std::uint32_t body_a, const std::uint32_t body_b, const feature_id& fid) const -> std::optional<cached_lambda> {
-	const cache_key key{
-		.body_a = body_a,
-		.body_b = body_b,
-		.feature = fid
-	};
+auto gse::vbd::contact_cache::lookup(
+	const std::uint32_t body_a,
+	const std::uint32_t body_b,
+	const feature_id& fid
+) const -> std::optional<cached_lambda> {
+	const cache_key key{ .body_a = body_a, .body_b = body_b, .feature = fid };
 
 	if (const auto it = m_cache.find(key); it != m_cache.end()) {
 		return it->second;
 	}
 
-	const cache_key key_swapped{
-		.body_a = body_b,
-		.body_b = body_a,
-		.feature = {
-			.type_a = fid.type_b,
-			.type_b = fid.type_a,
-			.index_a = fid.index_b,
-			.index_b = fid.index_a,
-			.side_a0 = fid.side_b0,
-			.side_a1 = fid.side_b1,
-			.side_b0 = fid.side_a0,
-			.side_b1 = fid.side_a1 }
-	};
+	const cache_key key_swapped{ .body_a = body_b,
+								 .body_b = body_a,
+								 .feature = { .type_a = fid.type_b,
+											  .type_b = fid.type_a,
+											  .index_a = fid.index_b,
+											  .index_b = fid.index_a,
+											  .side_a0 = fid.side_b0,
+											  .side_a1 = fid.side_b1,
+											  .side_b0 = fid.side_a0,
+											  .side_b1 = fid.side_a1 } };
 
 	if (const auto it = m_cache.find(key_swapped); it != m_cache.end()) {
 		auto result = it->second;
@@ -106,12 +90,13 @@ auto gse::vbd::contact_cache::lookup(const std::uint32_t body_a, const std::uint
 	return std::nullopt;
 }
 
-auto gse::vbd::contact_cache::store(const std::uint32_t body_a, const std::uint32_t body_b, const feature_id& fid, const cached_lambda& data) -> void {
-	const cache_key key{
-		.body_a = body_a,
-		.body_b = body_b,
-		.feature = fid
-	};
+auto gse::vbd::contact_cache::store(
+	const std::uint32_t body_a,
+	const std::uint32_t body_b,
+	const feature_id& fid,
+	const cached_lambda& data
+) -> void {
+	const cache_key key{ .body_a = body_a, .body_b = body_b, .feature = fid };
 	m_cache[key] = data;
 	m_cache[key].age = 0;
 }

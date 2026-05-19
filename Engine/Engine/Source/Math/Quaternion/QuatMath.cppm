@@ -10,151 +10,82 @@ import :matrix;
 
 export namespace gse {
 	template <typename T>
-	constexpr auto operator+(
-		const quat_t<T>& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>;
+	constexpr auto operator+(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto operator-(
-		const quat_t<T>& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>;
+	constexpr auto operator-(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto operator*(
-		const quat_t<T>& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>;
+	constexpr auto operator*(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto operator/(
-		const quat_t<T>& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>;
+	constexpr auto operator/(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto operator+=(
-		quat_t<T>& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>&;
+	constexpr auto operator+=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>&;
 
 	template <typename T>
-	constexpr auto operator-=(
-		quat_t<T>& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>&;
+	constexpr auto operator-=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>&;
 
 	template <typename T>
-	constexpr auto operator*=(
-		quat_t<T>& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>&;
+	constexpr auto operator*=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>&;
 
 	template <typename T>
-	constexpr auto operator/=(
-		quat_t<T>& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>&;
+	constexpr auto operator/=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>&;
 
 	template <typename T>
-	constexpr auto operator*(
-		const quat_t<T>& lhs,
-		const T& rhs
-	) -> quat_t<T>;
+	constexpr auto operator*(const quat_t<T>& lhs, const T& rhs) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto operator*(
-		const T& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>;
+	constexpr auto operator*(const T& lhs, const quat_t<T>& rhs) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto operator/(
-		const quat_t<T>& lhs,
-		const T& rhs
-	) -> quat_t<T>;
+	constexpr auto operator/(const quat_t<T>& lhs, const T& rhs) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto operator/(
-		const T& lhs,
-		const quat_t<T>& rhs
-	) -> quat_t<T>;
+	constexpr auto operator/(const T& lhs, const quat_t<T>& rhs) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto operator*(
-		const quaternion<T>& lhs,
-		const vec3<T>& rhs
-	) -> vec3<T>;
+	constexpr auto operator*(const quaternion<T>& lhs, const vec3<T>& rhs) -> vec3<T>;
 
 	template <typename T>
-	constexpr auto operator*=(
-		quat_t<T>& lhs,
-		const T& rhs
-	) -> quat_t<T>&;
+	constexpr auto operator*=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>&;
 
 	template <typename T>
-	constexpr auto operator/=(
-		quat_t<T>& lhs,
-		const T& rhs
-	) -> quat_t<T>&;
+	constexpr auto operator/=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>&;
 
 	template <typename T>
-	constexpr auto normalize(
-		const quat_t<T>& q
-	) -> quat_t<T>;
+	constexpr auto normalize(const quat_t<T>& q) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto conjugate(
-		const quat_t<T>& q
-	) -> quat_t<T>;
+	constexpr auto conjugate(const quat_t<T>& q) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto norm_squared(
-		const quat_t<T>& q
-	) -> T;
+	constexpr auto norm_squared(const quat_t<T>& q) -> T;
 
 	template <typename T>
-	constexpr auto inverse(
-		const quat_t<T>& q
-	) -> quat_t<T>;
+	constexpr auto inverse(const quat_t<T>& q) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto dot(
-		const quat_t<T>& lhs,
-		const quat_t<T>& rhs
-	) -> T;
+	constexpr auto dot(const quat_t<T>& lhs, const quat_t<T>& rhs) -> T;
 
 	template <typename T>
-	constexpr auto mat3_cast(
-		const quat_t<T>& q
-	) -> mat3<T>;
+	constexpr auto mat3_cast(const quat_t<T>& q) -> mat3<T>;
 
 	template <typename T>
-	constexpr auto from_mat4(
-		const mat4<T>& m
-	) -> quat_t<T>;
+	constexpr auto from_mat4(const mat4<T>& m) -> quat_t<T>;
 
 	template <typename T>
 	constexpr auto identity() -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto from_axis_angle(
-		const vec3<T>& axis,
-		angle_t<T> angle
-	) -> quat_t<T>;
+	constexpr auto from_axis_angle(const vec3<T>& axis, angle_t<T> angle) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto slerp(
-		const quat_t<T>& a,
-		const quat_t<T>& b,
-		T t
-	) -> quat_t<T>;
+	constexpr auto slerp(const quat_t<T>& a, const quat_t<T>& b, T t) -> quat_t<T>;
 
 	template <typename T>
-	constexpr auto to_axis_angle(
-		const quat_t<T>& q
-	) -> vec3<angle_t<T>>;
+	constexpr auto to_axis_angle(const quat_t<T>& q) -> vec3<angle_t<T>>;
 
 	template <internal::is_quantity Q>
 	constexpr auto from_axis_angle_vector(const vec3<Q>& aa) -> quat_t<typename Q::value_type> {
@@ -175,22 +106,13 @@ export namespace gse {
 	}
 
 	template <typename T>
-	constexpr auto difference_axis_angle(
-		const quat_t<T>& q_from,
-		const quat_t<T>& q_to
-	) -> vec3<angle_t<T>>;
+	constexpr auto difference_axis_angle(const quat_t<T>& q_from, const quat_t<T>& q_to) -> vec3<angle_t<T>>;
 
 	template <typename T, typename Q>
-	constexpr auto rotate_vector(
-		const quat_t<T>& q,
-		const vec3<Q>& v
-	) -> vec3<Q>;
+	constexpr auto rotate_vector(const quat_t<T>& q, const vec3<Q>& v) -> vec3<Q>;
 
 	template <typename T, typename Q>
-	constexpr auto inverse_rotate_vector(
-		const quat_t<T>& q,
-		const vec3<Q>& v
-	) -> vec3<Q>;
+	constexpr auto inverse_rotate_vector(const quat_t<T>& q, const vec3<Q>& v) -> vec3<Q>;
 }
 
 template <typename T>
@@ -333,11 +255,9 @@ constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3<T> {
 	const T wx = w * x2;
 	const T wy = w * y2;
 	const T wz = w * z2;
-	return mat3<T>{
-		vec3<T>{ T(1) - (yy + zz), xy + wz, xz - wy },
-		vec3<T>{ xy - wz, T(1) - (xx + zz), yz + wx },
-		vec3<T>{ xz + wy, yz - wx, T(1) - (xx + yy) }
-	};
+	return mat3<T>{ vec3<T>{ T(1) - (yy + zz), xy + wz, xz - wy },
+					vec3<T>{ xy - wz, T(1) - (xx + zz), yz + wx },
+					vec3<T>{ xz + wy, yz - wx, T(1) - (xx + yy) } };
 }
 
 template <typename T>

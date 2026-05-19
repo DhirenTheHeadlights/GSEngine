@@ -15,9 +15,7 @@ namespace gse {
 export namespace gse {
 	class id;
 
-	consteval auto stable_id(
-		std::string_view tag
-	) -> uuid;
+	consteval auto stable_id(std::string_view tag) -> uuid;
 
 	template <typename T>
 	consteval auto id_of() -> id;
@@ -34,57 +32,31 @@ export namespace gse {
 	template <typename T>
 	consteval auto type_tag() -> std::string_view;
 
-	auto generate_id(
-		std::string_view tag
-	) -> id;
+	auto generate_id(std::string_view tag) -> id;
 
-	auto generate_id(
-		std::uint64_t number
-	) -> id;
+	auto generate_id(std::uint64_t number) -> id;
 
-	constexpr auto generate_temp_id(
-		uuid number
-	) -> id;
+	constexpr auto generate_temp_id(uuid number) -> id;
 
-	auto find(
-		uuid number
-	) -> id;
+	auto find(uuid number) -> id;
 
-	auto find(
-		std::string_view tag
-	) -> id;
+	auto find(std::string_view tag) -> id;
 
-	auto try_find(
-		std::string_view tag
-	) -> std::optional<id>;
+	auto try_find(std::string_view tag) -> std::optional<id>;
 
-	auto try_find(
-		uuid number
-	) -> std::optional<id>;
+	auto try_find(uuid number) -> std::optional<id>;
 
-	auto find_or_generate_id(
-		std::string_view tag
-	) -> id;
+	auto find_or_generate_id(std::string_view tag) -> id;
 
-	auto find_or_generate_id(
-		uuid number
-	) -> id;
+	auto find_or_generate_id(uuid number) -> id;
 
-	auto exists(
-		uuid number
-	) -> bool;
+	auto exists(uuid number) -> bool;
 
-	auto exists(
-		std::string_view tag
-	) -> bool;
+	auto exists(std::string_view tag) -> bool;
 
-	auto tag(
-		uuid number
-	) -> std::string_view;
+	auto tag(uuid number) -> std::string_view;
 
-	auto number(
-		std::string_view tag
-	) -> uuid;
+	auto number(std::string_view tag) -> uuid;
 }
 
 export namespace gse {
@@ -92,13 +64,9 @@ export namespace gse {
 	public:
 		id() = default;
 
-		auto operator==(
-			id other
-		) const -> bool;
+		auto operator==(id other) const -> bool;
 
-		auto operator<=>(
-			id other
-		) const -> std::strong_ordering;
+		auto operator<=>(id other) const -> std::strong_ordering;
 
 		[[nodiscard]] constexpr auto number() const -> uuid;
 
@@ -109,9 +77,7 @@ export namespace gse {
 		auto reset() -> void;
 
 	private:
-		explicit constexpr id(
-			uuid id
-		);
+		explicit constexpr id(uuid id);
 
 		uuid m_number = std::numeric_limits<uuid>::max();
 
@@ -172,32 +138,20 @@ constexpr gse::id::id(const uuid id) : m_number(id) {
 export namespace gse {
 	class identifiable {
 	public:
-		explicit identifiable(
-			const std::string& tag
-		);
+		explicit identifiable(const std::string& tag);
 
-		explicit identifiable(
-			const std::filesystem::path& path
-		);
+		explicit identifiable(const std::filesystem::path& path);
 
-		explicit identifiable(
-			const std::filesystem::path& path,
-			const std::filesystem::path& base
-		);
+		explicit identifiable(const std::filesystem::path& path, const std::filesystem::path& base);
 
 		[[nodiscard]] auto id() const -> id;
 
-		auto operator==(
-			const identifiable& other
-		) const -> bool = default;
+		auto operator==(const identifiable& other) const -> bool = default;
 
 	private:
 		gse::id m_id;
 
-		static auto relative_stem(
-			const std::filesystem::path& path,
-			const std::filesystem::path& base
-		) -> std::string;
+		static auto relative_stem(const std::filesystem::path& path, const std::filesystem::path& base) -> std::string;
 	};
 }
 
@@ -207,14 +161,16 @@ gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag))
 gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(relative_stem(path, {}))) {
 }
 
-gse::identifiable::identifiable(const std::filesystem::path& path, const std::filesystem::path& base) : m_id(generate_id(relative_stem(path, base))) {
+gse::identifiable::identifiable(const std::filesystem::path& path, const std::filesystem::path& base)
+	: m_id(generate_id(relative_stem(path, base))) {
 }
 
 auto gse::identifiable::id() const -> gse::id {
 	return m_id;
 }
 
-auto gse::identifiable::relative_stem(const std::filesystem::path& path, const std::filesystem::path& base) -> std::string {
+auto gse::identifiable::relative_stem(const std::filesystem::path& path, const std::filesystem::path& base)
+	-> std::string {
 	std::filesystem::path relative = path;
 	if (!base.empty() && path.generic_string().starts_with(base.generic_string())) {
 		relative = path.lexically_relative(base);
@@ -240,23 +196,15 @@ export namespace gse {
 	public:
 		identifiable_owned() = default;
 
-		explicit identifiable_owned(
-			id owner_id
-		);
+		explicit identifiable_owned(id owner_id);
 
 		auto owner_id() const -> id;
 
-		auto operator==(
-			const identifiable_owned& other
-		) const -> bool = default;
+		auto operator==(const identifiable_owned& other) const -> bool = default;
 
-		auto swap_parent(
-			id new_parent_id
-		) -> void;
+		auto swap_parent(id new_parent_id) -> void;
 
-		auto swap_parent(
-			const identifiable& new_parent
-		) -> void;
+		auto swap_parent(const identifiable& new_parent) -> void;
 
 	private:
 		id m_owner_id;
@@ -285,42 +233,25 @@ export namespace gse {
 	template <typename T, typename PrimaryIdType = id>
 	class id_mapped_collection {
 	public:
-		auto add(
-			const PrimaryIdType& id,
-			T object
-		) -> T*;
+		auto add(const PrimaryIdType& id, T object) -> T*;
 
-		auto remove(
-			const PrimaryIdType& id
-		) -> void;
+		auto remove(const PrimaryIdType& id) -> void;
 
-		auto pop(
-			const PrimaryIdType& id
-		) -> std::optional<T>;
+		auto pop(const PrimaryIdType& id) -> std::optional<T>;
 
-		auto try_get(
-			const PrimaryIdType& id
-		) -> T*;
+		auto try_get(const PrimaryIdType& id) -> T*;
 
-		[[nodiscard]] auto try_get(
-			const PrimaryIdType& id
-		) const -> const T*;
+		[[nodiscard]] auto try_get(const PrimaryIdType& id) const -> const T*;
 
-		auto items(
-			this auto&& self
-		) -> decltype(auto);
+		auto items(this auto&& self) -> decltype(auto);
 
-		auto contains(
-			const PrimaryIdType& id
-		) const -> bool;
+		auto contains(const PrimaryIdType& id) const -> bool;
 
 		[[nodiscard]] auto size() const -> std::size_t;
 
 		auto clear() noexcept -> void;
 
-		auto transfer_from(
-			id_mapped_collection& other
-		) -> void;
+		auto transfer_from(id_mapped_collection& other) -> void;
 
 	private:
 		std::vector<T> m_items;
@@ -461,12 +392,7 @@ auto gse::generate_id(const std::string_view tag) -> id {
 
 	if (registry.by_uuid.contains(stable_id)) {
 		if (const auto it = registry.uuid_to_tag.find(stable_id); it != registry.uuid_to_tag.end()) {
-			assert(
-				it->second == tag,
-				"ID collision for tag {} vs existing tag {}",
-				tag,
-				it->second
-			);
+			assert(it->second == tag, "ID collision for tag {} vs existing tag {}", tag, it->second);
 
 			if (auto* existing = registry.by_uuid.try_get(stable_id)) {
 				return *existing;

@@ -36,7 +36,9 @@ export namespace gse {
 			raw_blob_owned<std::byte> bytes;
 		};
 
-		explicit skinned_model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {
+		explicit skinned_model(const std::filesystem::path& path)
+			: identifiable(path, config::baked_resource_path),
+			  m_baked_model_path(path) {
 		}
 		explicit skinned_model(std::string_view name, std::vector<skinned_mesh_data> meshes);
 
@@ -54,13 +56,11 @@ export namespace gse {
 		vec3<length> m_center_of_mass;
 	};
 
-	auto bake(
-		const std::filesystem::path& src,
-		skinned_model::baked& out
-	) -> bool;
+	auto bake(const std::filesystem::path& src, skinned_model::baked& out) -> bool;
 }
 
-gse::skinned_model::skinned_model(const std::string_view name, std::vector<skinned_mesh_data> meshes) : identifiable(name) {
+gse::skinned_model::skinned_model(const std::string_view name, std::vector<skinned_mesh_data> meshes)
+	: identifiable(name) {
 	m_meshes.reserve(meshes.size());
 	for (auto& mesh_data : meshes) {
 		m_meshes.emplace_back(std::move(mesh_data));
@@ -125,11 +125,9 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> async::task<> {
 				gse::material mat;
 
 				if (version >= 2) {
-					mat.base_color = {
-						read_val.template operator()<float>(),
-						read_val.template operator()<float>(),
-						read_val.template operator()<float>()
-					};
+					mat.base_color = { read_val.template operator()<float>(),
+									   read_val.template operator()<float>(),
+									   read_val.template operator()<float>() };
 					mat.roughness = read_val.template operator()<float>();
 					mat.metallic = read_val.template operator()<float>();
 
@@ -158,10 +156,12 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> async::task<> {
 
 				std::vector<skinned_vertex> vertices(vertex_count);
 				for (std::uint32_t v = 0; v < vertex_count; ++v) {
-					float px = read_val.template operator()<float>(), py = read_val.template operator()<float>(), pz = read_val.template operator()<float>();
+					float px = read_val.template operator()<float>(), py = read_val.template operator()<float>(),
+						  pz = read_val.template operator()<float>();
 					vertices[v].position = vec3<displacement>{ meters(px), meters(py), meters(pz) };
 
-					float nx = read_val.template operator()<float>(), ny = read_val.template operator()<float>(), nz = read_val.template operator()<float>();
+					float nx = read_val.template operator()<float>(), ny = read_val.template operator()<float>(),
+						  nz = read_val.template operator()<float>();
 					vertices[v].normal = vec3f{ nx, ny, nz };
 
 					float u = read_val.template operator()<float>(), vt = read_val.template operator()<float>();
@@ -178,7 +178,11 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> async::task<> {
 				std::vector<std::uint32_t> indices(index_count);
 				read_into(indices.data(), index_count * sizeof(std::uint32_t));
 
-				m_meshes.emplace_back(skinned_mesh_data{ .vertices = std::move(vertices), .indices = std::move(indices), .material = std::move(mat) });
+				m_meshes.emplace_back(
+					skinned_mesh_data{ .vertices = std::move(vertices),
+									   .indices = std::move(indices),
+									   .material = std::move(mat) }
+				);
 			}
 		}
 	}

@@ -31,14 +31,9 @@ export namespace gse {
 	public:
 		using setup_fn = std::function<void(engine&)>;
 
-		engine(
-			const std::string& name,
-			flags<engine_flag> engine_flags
-		);
+		engine(const std::string& name, flags<engine_flag> engine_flags);
 
-		auto initialize(
-			const setup_fn& app_setup = {}
-		) -> void;
+		auto initialize(const setup_fn& app_setup = {}) -> void;
 
 		auto update() -> void;
 
@@ -53,9 +48,7 @@ export namespace gse {
 		auto world() -> world_system::data&;
 
 		template <typename S, typename... Args>
-		auto add_system(
-			Args&&... args
-		) -> system_handle<S>;
+		auto add_system(Args&&... args) -> system_handle<S>;
 
 	private:
 		flags<engine_flag> m_flags;
@@ -75,6 +68,7 @@ namespace gse {
 			.category = std::string(settings::category_of<data_t>()),
 			.type_id = id_of<data_t>(),
 			.settings_ptr = &obj,
+			.keys = settings::collect_settings_keys<data_t>(),
 			.write = &settings::write_settings_for<data_t>,
 			.read = &settings::read_settings_for<data_t>,
 			.draw = &settings::draw_struct_thunk<S>,

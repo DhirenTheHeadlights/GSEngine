@@ -13,4 +13,5 @@ export namespace gse {
 	using view_matrix = spatial_matrix;
 	using projection_matrix = mixed_mat<spatial_spec, clip_spec>;
 	using view_projection_matrix = projection_matrix;
+	using inverse_projection_matrix = mixed_mat<clip_spec, spatial_spec>;
 }

@@ -36,13 +36,9 @@ export namespace gse {
 
 		system_node() = default;
 
-		system_node(
-			system_node&&
-		) noexcept = default;
+		system_node(system_node&&) noexcept = default;
 
-		auto operator=(
-			system_node&&
-		) noexcept -> system_node& = default;
+		auto operator=(system_node&&) noexcept -> system_node& = default;
 
 		std::unique_ptr<void, void (*)(void*)> data{ nullptr, nullptr };
 
@@ -79,15 +75,15 @@ export namespace gse {
 	};
 
 	template <typename S, typename... Args>
-	auto make_system_node(
-		Args&&... args
-	) -> system_node;
+	auto make_system_node(Args&&... args) -> system_node;
 }
 
 template <typename T>
 consteval auto gse::has_describe_fields() -> bool {
 	bool found = false;
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+	template for (constexpr auto m : std::define_static_array(
+					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+				  )) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			found = true;
 		}

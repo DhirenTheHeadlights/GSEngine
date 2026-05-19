@@ -21,4 +21,5 @@ export namespace msdfgen {
 	using ::msdfgen::destroyFont;
 	using ::msdfgen::edgeColoringSimple;
 	using ::msdfgen::generateMSDF;
+	using ::msdfgen::generateMTSDF;
 }

@@ -15,38 +15,26 @@ export namespace gse::vulkan {
 
 		~queue_timeline() = default;
 
-		queue_timeline(
-			queue_timeline&&
-		) noexcept = default;
+		queue_timeline(queue_timeline&&) noexcept = default;
 
-		auto operator=(
-			queue_timeline&&
-		) noexcept -> queue_timeline& = default;
+		auto operator=(queue_timeline&&) noexcept -> queue_timeline& = default;
 
-		[[nodiscard]] static auto create(
-			const device& device
-		) -> queue_timeline;
+		[[nodiscard]] static auto create(const device& device) -> queue_timeline;
 
 		[[nodiscard]] auto handle() const -> gpu::handle<semaphore>;
 
 		[[nodiscard]] auto read() const -> std::uint64_t;
 
-		auto wait_until(
-			const device& device,
-			std::uint64_t value
-		) const -> void;
+		auto wait_until(const device& device, std::uint64_t value) const -> void;
 
 	private:
-		explicit queue_timeline(
-			vk::raii::Semaphore&& semaphore
-		);
+		explicit queue_timeline(vk::raii::Semaphore&& semaphore);
 
 		vk::raii::Semaphore m_semaphore{ nullptr };
 	};
 }
 
-gse::vulkan::queue_timeline::queue_timeline(vk::raii::Semaphore&& semaphore)
-	: m_semaphore(std::move(semaphore)) {
+gse::vulkan::queue_timeline::queue_timeline(vk::raii::Semaphore&& semaphore) : m_semaphore(std::move(semaphore)) {
 }
 
 auto gse::vulkan::queue_timeline::create(const device& device) -> queue_timeline {

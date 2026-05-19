@@ -4,6 +4,7 @@ import std;
 import gse;
 
 import :crosshair_system;
+import :dev_spawn_system;
 
 export namespace gs {
 	struct client_ui_system {
@@ -31,7 +32,12 @@ namespace gs {
 	) -> void;
 }
 
-auto gs::push_crosshair(gse::run_context& ctx, const gse::gui::system::data& gui_d, const gse::window::data& window_d, const crosshair_system::data& crosshair_d) -> void {
+auto gs::push_crosshair(
+	gse::run_context& ctx,
+	const gse::gui::system::data& gui_d,
+	const gse::window::data& window_d,
+	const crosshair_system::data& crosshair_d
+) -> void {
 	if (!crosshair_d.show) {
 		return;
 	}
@@ -67,34 +73,47 @@ auto gs::push_crosshair(gse::run_context& ctx, const gse::gui::system::data& gui
 	};
 
 	if (arm > 0.f) {
-		push_arm(gse::gui::ui_rect::from_position_size(
-			{ center.x() - gap - arm, center.y() + thickness * 0.5f },
-			{ arm, thickness }
-		));
-		push_arm(gse::gui::ui_rect::from_position_size(
-			{ center.x() + gap, center.y() + thickness * 0.5f },
-			{ arm, thickness }
-		));
-		push_arm(gse::gui::ui_rect::from_position_size(
-			{ center.x() - thickness * 0.5f, center.y() + gap + arm },
-			{ thickness, arm }
-		));
-		push_arm(gse::gui::ui_rect::from_position_size(
-			{ center.x() - thickness * 0.5f, center.y() - gap },
-			{ thickness, arm }
-		));
+		push_arm(
+			gse::gui::ui_rect::from_position_size(
+				{ center.x() - gap - arm, center.y() + thickness * 0.5f },
+				{ arm, thickness }
+			)
+		);
+		push_arm(
+			gse::gui::ui_rect::from_position_size(
+				{ center.x() + gap, center.y() + thickness * 0.5f },
+				{ arm, thickness }
+			)
+		);
+		push_arm(
+			gse::gui::ui_rect::from_position_size(
+				{ center.x() - thickness * 0.5f, center.y() + gap + arm },
+				{ thickness, arm }
+			)
+		);
+		push_arm(
+			gse::gui::ui_rect::from_position_size(
+				{ center.x() - thickness * 0.5f, center.y() - gap },
+				{ thickness, arm }
+			)
+		);
 	}
 
 	if (crosshair_d.show_dot) {
 		const float dot = crosshair_d.dot_size;
-		push_arm(gse::gui::ui_rect::from_position_size(
-			{ center.x() - dot * 0.5f, center.y() + dot * 0.5f },
-			{ dot, dot }
-		));
+		push_arm(
+			gse::gui::ui_rect::from_position_size({ center.x() - dot * 0.5f, center.y() + dot * 0.5f }, { dot, dot })
+		);
 	}
 }
 
-auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::gui::system::data& gui_d, const gse::window::data& window_d, const crosshair_system::data& crosshair_d) -> gse::async::task<> {
+auto gs::client_ui_system::run(
+	gse::run_context& ctx,
+	data& d,
+	const gse::gui::system::data& gui_d,
+	const gse::window::data& window_d,
+	const crosshair_system::data& crosshair_d
+) -> gse::async::task<> {
 	while (true) {
 		if (gui_d.menu_stack.empty()) {
 			push_crosshair(ctx, gui_d, window_d, crosshair_d);
@@ -103,36 +122,51 @@ auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::gui::s
 		if (gui_d.show_dev_overlays) {
 			ctx.channels.push<gse::gui::menu_content>({
 				.menu = "Test",
-				.build = [&](gse::gui::builder& ui) {
-					ui.draw<gse::gui::value<float>>({
-						.name = "FPS",
-						.val = static_cast<float>(gse::system_clock::fps()),
-					});
-					ui.draw<gse::gui::value<int>>({
-						.name = "Test Value",
-						.val = 42,
-					});
-					ui.draw<gse::gui::text>({
-						.content = std::format("Test Quantity: {:.2f} m", gse::meters(5.0f).as<gse::meters>()),
-					});
-					ui.draw<gse::gui::input>({
-						.name = "Input Test",
-						.buffer = d.buff,
-					});
-					ui.draw<gse::gui::slider<float>>({
-						.name = "Slider Test",
-						.value = d.slider_f,
-						.min = 0.f,
-						.max = 10.f,
-					});
-				},
+				.build =
+					[&](gse::gui::builder& ui) {
+						ui.draw<gse::gui::value<float>>({
+							.name = "FPS",
+							.val = static_cast<float>(gse::system_clock::fps()),
+						});
+						ui.draw<gse::gui::value<int>>({
+							.name = "Test Value",
+							.val = 42,
+						});
+						ui.draw<gse::gui::text>({
+							.content = std::format("Test Quantity: {:.2f} m", gse::meters(5.0f).as<gse::meters>()),
+						});
+						ui.draw<gse::gui::input>({
+							.name = "Input Test",
+							.buffer = d.buff,
+						});
+						ui.draw<gse::gui::slider<float>>({
+							.name = "Slider Test",
+							.value = d.slider_f,
+							.min = 0.f,
+							.max = 10.f,
+						});
+					},
 			});
 
 			ctx.channels.push<gse::gui::menu_content>({
 				.menu = "Profiler",
-				.build = [](gse::gui::builder& ui) {
-					ui.draw<gse::gui::profiler>();
-				},
+				.build =
+					[](gse::gui::builder& ui) {
+						ui.draw<gse::gui::profiler>();
+					},
+			});
+
+			ctx.channels.push<gse::gui::menu_content>({
+				.menu = "Dev Spawn",
+				.build =
+					[&](gse::gui::builder& ui) {
+						if (ui.draw<gse::gui::button>({ .text = "Physics Stress Test (F5)" })) {
+							ctx.channels.push<gs::spawn_stress_request>({});
+						}
+						if (ui.draw<gse::gui::button>({ .text = "Joint Test (F6)" })) {
+							ctx.channels.push<gs::spawn_joints_request>({});
+						}
+					},
 			});
 		}
 

@@ -25,18 +25,7 @@ auto gse::app::restart() -> void {
 	si.cb = sizeof(si);
 	PROCESS_INFORMATION pi{};
 
-	if (CreateProcessW(
-			path,
-			GetCommandLineW(),
-			nullptr,
-			nullptr,
-			FALSE,
-			0,
-			nullptr,
-			nullptr,
-			&si,
-			&pi
-		)) {
+	if (CreateProcessW(path, GetCommandLineW(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
 		ExitProcess(0);

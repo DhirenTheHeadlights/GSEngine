@@ -42,6 +42,7 @@ export namespace gse::settings {
 		std::string category;
 		id type_id;
 		void* settings_ptr = nullptr;
+		std::vector<std::string> keys;
 		write_settings_thunk write = nullptr;
 		read_settings_thunk read = nullptr;
 		draw_settings_thunk draw = nullptr;
@@ -53,7 +54,8 @@ export namespace gse::settings {
 	};
 
 	template <typename T>
-	concept is_scalar_settings_field = std::is_arithmetic_v<T> || std::is_enum_v<T> || std::same_as<T, bool> || std::same_as<T, std::string> || has_parser_specialization<T>;
+	concept is_scalar_settings_field = std::is_arithmetic_v<T> || std::is_enum_v<T> || std::same_as<T, bool> ||
+		std::same_as<T, std::string> || has_parser_specialization<T>;
 
 	template <typename T>
 	auto write_settings_with_prefix(
@@ -86,18 +88,29 @@ export namespace gse::settings {
 	) -> void;
 
 	template <typename T>
+	auto collect_settings_keys_with_prefix(std::vector<std::string>& out, std::string_view prefix) -> void;
+
+	template <typename T>
+	auto collect_settings_keys() -> std::vector<std::string>;
+
+	template <typename T>
 	consteval auto category_of() -> std::string_view;
 }
 
 template <typename T>
-auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, const T& value) -> void {
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+auto gse::settings::write_settings_with_prefix(
+	std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+	const std::string_view category,
+	const std::string_view prefix,
+	const T& value
+) -> void {
+	template for (constexpr auto m : std::define_static_array(
+					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+				  )) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
-			const std::string key = prefix.empty()
-				? std::string(name)
-				: std::format("{}.{}", prefix, name);
+			const std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
 				write_settings_with_prefix<F>(doc, category, key, value.[:m:]);
@@ -112,18 +125,23 @@ auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, s
 }
 
 template <typename T>
-auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, T& value) -> void {
+auto gse::settings::read_settings_with_prefix(
+	const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+	const std::string_view category,
+	const std::string_view prefix,
+	T& value
+) -> void {
 	const auto cat_it = doc.find(std::string(category));
 	if (cat_it == doc.end()) {
 		return;
 	}
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+	template for (constexpr auto m : std::define_static_array(
+					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+				  )) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
-			const std::string key = prefix.empty()
-				? std::string(name)
-				: std::format("{}.{}", prefix, name);
+			const std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
 				read_settings_with_prefix<F>(doc, category, key, value.[:m:]);
@@ -136,19 +154,57 @@ auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::stri
 }
 
 template <typename T>
-auto gse::settings::write_settings_for(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const void* settings_ptr) -> void {
+auto gse::settings::write_settings_for(
+	std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+	const std::string_view category,
+	const void* settings_ptr
+) -> void {
 	write_settings_with_prefix<T>(doc, category, {}, *static_cast<const T*>(settings_ptr));
 }
 
 template <typename T>
-auto gse::settings::read_settings_for(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, void* settings_ptr) -> void {
+auto gse::settings::read_settings_for(
+	const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+	const std::string_view category,
+	void* settings_ptr
+) -> void {
 	read_settings_with_prefix<T>(doc, category, {}, *static_cast<T*>(settings_ptr));
 }
 
 template <typename T>
+auto gse::settings::collect_settings_keys_with_prefix(std::vector<std::string>& out, const std::string_view prefix)
+	-> void {
+	template for (constexpr auto m : std::define_static_array(
+					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+				  )) {
+		if constexpr (meta::find_describe(m) != std::meta::info{}) {
+			using F = [:std::meta::type_of(m):];
+			constexpr std::string_view name = meta::member_name(m);
+			std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
+
+			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
+				collect_settings_keys_with_prefix<F>(out, key);
+			}
+			else {
+				out.push_back(std::move(key));
+			}
+		}
+	}
+}
+
+template <typename T>
+auto gse::settings::collect_settings_keys() -> std::vector<std::string> {
+	std::vector<std::string> out;
+	collect_settings_keys_with_prefix<T>(out, {});
+	return out;
+}
+
+template <typename T>
 consteval auto gse::settings::category_of() -> std::string_view {
-	if constexpr (requires { T::category; }) {
-		return T::category;
+	constexpr auto cat = meta::find_category(^^T);
+	if constexpr (cat != std::meta::info{}) {
+		using C = [:cat:];
+		return C::value;
 	}
 	else {
 		return std::string_view{};

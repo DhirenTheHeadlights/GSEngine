@@ -5,14 +5,23 @@ import vulkan;
 
 import gse.concurrency;
 
-auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_handle as_handle, gpu::acceleration_structure_geometry geometry, const std::uint32_t prim_count, const gpu::device_size scratch_size, const gpu::device_size scratch_alignment) -> async::task<> {
+auto gse::build_blas_async(
+	gpu::device& dev,
+	const gpu::acceleration_structure_handle as_handle,
+	gpu::acceleration_structure_geometry geometry,
+	const std::uint32_t prim_count,
+	const gpu::device_size scratch_size,
+	const gpu::device_size scratch_alignment
+) -> async::task<> {
 	auto& dev_cfg = dev.vulkan_device();
 
-	auto scratch = dev_cfg.create_buffer(gpu::buffer_create_info{
-											 .size = scratch_size + scratch_alignment,
-											 .usage = gpu::buffer_flag::storage,
-										 },
-										 nullptr);
+	auto scratch = dev_cfg.create_buffer(
+		gpu::buffer_create_info{
+			.size = scratch_size + scratch_alignment,
+			.usage = gpu::buffer_flag::storage,
+		},
+		nullptr
+	);
 
 	const auto scratch_addr = vulkan::buffer_device_address(dev_cfg, scratch.handle());
 	const gpu::device_address aligned_scratch = (scratch_addr + scratch_alignment - 1) & ~(scratch_alignment - 1);
@@ -41,7 +50,8 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_h
 		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
 		.dst_access = gpu::access_flag::shader_read,
 	};
-	vulkan::commands(cmd_handle).pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&pre_barrier, 1) });
+	vulkan::commands(cmd_handle)
+		.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&pre_barrier, 1) });
 
 	vulkan::commands(cmd_handle).build_acceleration_structures(build_info, std::span(&range_ptr, 1));
 
@@ -53,8 +63,7 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_h
 	};
 	vulkan::commands(cmd_handle).pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&barrier, 1) });
 
-	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics)
-		.retain(std::move(scratch));
+	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(scratch));
 }
 auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> vulkan::as_instance {
 	vk::TransformMatrixKHR transform{};
@@ -69,7 +78,10 @@ auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> vulkan::as_
 		.instanceCustomIndex = inst.custom_index,
 		.mask = inst.mask,
 		.instanceShaderBindingTableRecordOffset = inst.sbt_offset,
-		.flags = static_cast<std::uint8_t>(inst.cull_disable ? vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable : vk::GeometryInstanceFlagBitsKHR{}),
+		.flags = static_cast<std::uint8_t>(
+			inst.cull_disable ? vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable
+							  : vk::GeometryInstanceFlagBitsKHR{}
+		),
 		.accelerationStructureReference = inst.blas_address,
 	};
 }
@@ -101,12 +113,20 @@ auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -
 	const auto sizes = vulkan::query_blas_build_sizes(dev_cfg, geometry, prim_count);
 	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);
 
-	dispatch(dev, gse::build_blas_async(dev, result.handle(), geometry, prim_count, sizes.build_scratch_size, scratch_alignment));
+	dispatch(
+		dev,
+		gse::build_blas_async(dev, result.handle(), geometry, prim_count, sizes.build_scratch_size, scratch_alignment)
+	);
 
 	return result;
 }
 
-auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::acceleration_structure_handle as_handle, const gpu::device_address instance_addr, const gpu::device_address scratch_addr) -> async::task<> {
+auto gse::build_tlas_initial_empty_async(
+	gpu::device& dev,
+	const gpu::acceleration_structure_handle as_handle,
+	const gpu::device_address instance_addr,
+	const gpu::device_address scratch_addr
+) -> async::task<> {
 	auto cmd = co_await gpu::begin_transient(dev, gpu::queue_id::graphics, "transient.tlas_initial_build");
 
 	const gpu::acceleration_structure_geometry geometry{
@@ -119,7 +139,8 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 
 	const gpu::acceleration_structure_build_geometry_info build_info{
 		.type = gpu::acceleration_structure_type::top_level,
-		.flags = gpu::build_acceleration_structure_flag::prefer_fast_build | gpu::build_acceleration_structure_flag::allow_update,
+		.flags = gpu::build_acceleration_structure_flag::prefer_fast_build |
+			gpu::build_acceleration_structure_flag::allow_update,
 		.mode = gpu::build_acceleration_structure_mode::build,
 		.dst = as_handle,
 		.geometries = std::span(&geometry, 1),
@@ -136,10 +157,12 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 	const gpu::memory_barrier post_barrier{
 		.src_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
 		.src_access = gpu::access_flag::acceleration_structure_write,
-		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build | gpu::pipeline_stage_flag::fragment_shader,
+		.dst_stages =
+			gpu::pipeline_stage_flag::acceleration_structure_build | gpu::pipeline_stage_flag::fragment_shader,
 		.dst_access = gpu::access_flag::acceleration_structure_read,
 	};
-	vulkan::commands(cmd.handle()).pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&post_barrier, 1) });
+	vulkan::commands(cmd.handle())
+		.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&post_barrier, 1) });
 
 	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics);
 }
@@ -160,7 +183,12 @@ auto gse::gpu::build_tlas(gpu::device& device, const std::uint32_t max_instances
 	return t;
 }
 
-auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::span<const tlas_instance_desc> instances, recording_context& rec) -> void {
+auto gse::gpu::rebuild_tlas(
+	gpu::device& device,
+	vulkan::tlas& t,
+	const std::span<const tlas_instance_desc> instances,
+	recording_context& rec
+) -> void {
 	auto& dev = device;
 	const auto& dev_cfg = dev.vulkan_device();
 
@@ -171,10 +199,7 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::spa
 	}
 
 	if (!packed_instances.empty()) {
-		t.instance_buffer().host_write(
-			packed_instances.data(),
-			packed_instances.size() * sizeof(vulkan::as_instance)
-		);
+		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(vulkan::as_instance));
 	}
 
 	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());
@@ -240,14 +265,16 @@ auto gse::gpu::write_tlas_instances(vulkan::tlas& t, const std::span<const tlas_
 	}
 
 	if (!packed_instances.empty()) {
-		t.instance_buffer().host_write(
-			packed_instances.data(),
-			packed_instances.size() * sizeof(vulkan::as_instance)
-		);
+		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(vulkan::as_instance));
 	}
 }
 
-auto gse::gpu::build_tlas_in_place(gpu::device& device, vulkan::tlas& t, const std::uint32_t instance_count, recording_context& rec) -> void {
+auto gse::gpu::build_tlas_in_place(
+	gpu::device& device,
+	vulkan::tlas& t,
+	const std::uint32_t instance_count,
+	recording_context& rec
+) -> void {
 	const auto& dev_cfg = device.vulkan_device();
 
 	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());

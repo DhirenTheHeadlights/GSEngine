@@ -35,23 +35,17 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto allocator() const -> const vulkan::device&;
 
-		[[nodiscard]] auto descriptor_heap(
-			this auto& self
-		) -> decltype(auto);
+		[[nodiscard]] auto descriptor_heap(this auto& self) -> decltype(auto);
 
 		[[nodiscard]] auto surface_format() const -> image_format;
 
-		[[nodiscard]] auto queue_family(
-			gpu::queue_type queue
-		) const -> std::uint32_t;
+		[[nodiscard]] auto queue_family(gpu::queue_type queue) const -> std::uint32_t;
 
 		auto wait_idle() const -> void;
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
-		auto report_device_lost(
-			std::string_view operation
-		) -> void;
+		auto report_device_lost(std::string_view operation) -> void;
 
 		struct pass_marker {
 			std::uint64_t frame_counter = 0;
@@ -72,34 +66,18 @@ export namespace gse::gpu {
 			pass_marker_domain domain = pass_marker_domain::graphics_queue;
 		};
 
-		auto begin_pass_marker(
-			handle<command_buffer> cmd,
-			pass_marker_domain domain,
-			pass_marker marker
-		) -> pass_marker_handle;
+		auto begin_pass_marker(handle<command_buffer> cmd, pass_marker_domain domain, pass_marker marker)
+			-> pass_marker_handle;
 
-		auto checkpoint_pass_marker(
-			handle<command_buffer> cmd,
-			pass_marker_handle handle
-		) -> void;
+		auto checkpoint_pass_marker(handle<command_buffer> cmd, pass_marker_handle handle) -> void;
 
-		auto post_renderpass_pass_marker(
-			handle<command_buffer> cmd,
-			pass_marker_handle handle
-		) -> void;
+		auto post_renderpass_pass_marker(handle<command_buffer> cmd, pass_marker_handle handle) -> void;
 
-		auto end_pass_marker(
-			handle<command_buffer> cmd,
-			pass_marker_handle handle
-		) -> void;
+		auto end_pass_marker(handle<command_buffer> cmd, pass_marker_handle handle) -> void;
 
-		[[nodiscard]] auto vulkan_instance(
-			this auto& self
-		) -> auto&;
+		[[nodiscard]] auto vulkan_instance(this auto& self) -> auto&;
 
-		[[nodiscard]] auto vulkan_device(
-			this auto& self
-		) -> auto&;
+		[[nodiscard]] auto vulkan_device(this auto& self) -> auto&;
 
 		[[nodiscard]] auto vulkan_queue() -> vulkan::queue&;
 
