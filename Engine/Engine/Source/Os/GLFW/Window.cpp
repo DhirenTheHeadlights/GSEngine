@@ -14,35 +14,24 @@ import gse.concurrency;
 import gse.ecs;
 
 namespace gse {
-	auto refresh_monitor_settings(
-		window::data& d
-	) -> void;
+	auto refresh_monitor_settings(window::data& d) -> void;
 
-	auto refresh_resolution_settings(
-		window::data& d
-	) -> void;
+	auto refresh_resolution_settings(window::data& d) -> void;
 
-	auto apply_cursor_mode(
-		const window::data& d
-	) -> void;
+	auto refresh_display_mode_settings(window::data& d) -> void;
 
-	auto apply_fullscreen(
-		window::data& d,
-		bool fullscreen
-	) -> void;
+	auto refresh_present_mode_settings(window::data& d) -> void;
 
-	auto move_window_to_monitor(
-		const window::data& d,
-		int monitor_index
-	) -> void;
+	auto apply_cursor_mode(const window::data& d) -> void;
 
-	auto to_input_key(
-		int glfw_key
-	) -> std::optional<key>;
+	auto apply_display_mode(window::data& d, display_mode mode) -> void;
 
-	auto to_input_mouse_button(
-		int glfw_button
-	) -> std::optional<mouse_button>;
+	auto move_window_to_monitor(const window::data& d, int monitor_index) -> void;
+
+	auto to_input_key(int glfw_key) -> std::optional<key>;
+
+	auto to_input_mouse_button(int glfw_button) -> std::optional<mouse_button>;
+
 }
 
 auto gse::to_input_key(const int glfw_key) -> std::optional<key> {
@@ -86,6 +75,31 @@ auto gse::refresh_resolution_settings(window::data& d) -> void {
 	}
 }
 
+auto gse::refresh_display_mode_settings(window::data& d) -> void {
+	d.display_mode.options = {
+		"Windowed",
+		"Borderless Fullscreen",
+		"Exclusive Fullscreen",
+	};
+
+	if (d.display_mode.value < 0 || d.display_mode.value >= static_cast<int>(d.display_mode.options.size())) {
+		d.display_mode.value = 0;
+	}
+}
+
+auto gse::refresh_present_mode_settings(window::data& d) -> void {
+	d.present_mode.options = {
+		"FIFO (VSync)",
+		"FIFO Relaxed",
+		"Mailbox",
+		"Immediate",
+	};
+
+	if (d.present_mode.value < 0 || d.present_mode.value >= static_cast<int>(d.present_mode.options.size())) {
+		d.present_mode.value = 0;
+	}
+}
+
 auto gse::apply_cursor_mode(const window::data& d) -> void {
 	const int target_mode = d.mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
 	const int current_mode = glfwGetInputMode(d.handle, glfw::cursor);
@@ -123,12 +137,15 @@ auto gse::move_window_to_monitor(const window::data& d, const int monitor_index)
 	glfwSetWindowPos(d.handle, new_x, new_y);
 }
 
-auto gse::apply_fullscreen(window::data& d, const bool fullscreen) -> void {
-	if (d.current_fullscreen == fullscreen) {
+auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
+	if (d.current_display_mode == mode) {
 		return;
 	}
 
-	if (fullscreen) {
+	const bool was_windowed = d.current_display_mode == display_mode::windowed;
+	const bool will_be_windowed = mode == display_mode::windowed;
+
+	if (was_windowed && !will_be_windowed) {
 		int x = 0;
 		int y = 0;
 		int w = 0;
@@ -138,9 +155,9 @@ auto gse::apply_fullscreen(window::data& d, const bool fullscreen) -> void {
 		d.windowed_rect = rect_t<vec2i>::from_position_size({ x, y }, { w, h });
 	}
 
-	d.current_fullscreen = fullscreen;
+	d.current_display_mode = mode;
 
-	if (!fullscreen) {
+	if (will_be_windowed) {
 		const auto pos = d.windowed_rect.top_left();
 		const auto size = d.windowed_rect.size();
 		glfwSetWindowMonitor(d.handle, nullptr, pos.x(), pos.y(), size.x(), size.y(), 0);
@@ -167,7 +184,8 @@ auto gse::apply_fullscreen(window::data& d, const bool fullscreen) -> void {
 	else {
 		const auto resolutions = window::enumerate_resolutions(selected_monitor);
 
-		if (const int res_idx = d.resolution.value - 1; res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())) {
+		if (const int res_idx = d.resolution.value - 1;
+			res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())) {
 			target_width = resolutions[res_idx].width;
 			target_height = resolutions[res_idx].height;
 			target_refresh = resolutions[res_idx].refresh_rate;
@@ -293,6 +311,10 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	refresh_monitor_settings(d);
 	d.last_monitor_index = d.monitor.value;
 	refresh_resolution_settings(d);
+	refresh_display_mode_settings(d);
+	refresh_present_mode_settings(d);
+
+	d.current_present_mode_index = d.present_mode.value;
 
 	glfwFocusWindow(d.handle);
 
@@ -305,7 +327,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 			const int old_monitor = d.last_monitor_index;
 			d.last_monitor_index = d.monitor.value;
 
-			if (!d.current_fullscreen && old_monitor != d.monitor.value) {
+			if (d.current_display_mode == display_mode::windowed && old_monitor != d.monitor.value) {
 				move_window_to_monitor(d, d.monitor.value);
 			}
 		}
@@ -313,8 +335,14 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 		if (d.focused) {
 			apply_cursor_mode(d);
 
-			if (d.current_fullscreen != d.fullscreen) {
-				apply_fullscreen(d, d.fullscreen);
+			const auto desired_display_mode = static_cast<display_mode>(d.display_mode.value);
+			if (d.current_display_mode != desired_display_mode) {
+				apply_display_mode(d, desired_display_mode);
+			}
+
+			if (d.current_present_mode_index != d.present_mode.value) {
+				d.current_present_mode_index = d.present_mode.value;
+				d.framebuffer_resized = true;
 			}
 		}
 
@@ -404,12 +432,14 @@ auto gse::window::enumerate_monitors() -> std::vector<monitor_info> {
 		const char* name = glfwGetMonitorName(monitor);
 		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
-		result.push_back({
-			.name = name ? name : std::format("Monitor {}", i + 1),
-			.width = mode ? mode->width : 0,
-			.height = mode ? mode->height : 0,
-			.refresh_rate = mode ? mode->refreshRate : 0,
-		});
+		result.push_back(
+			{
+				.name = name ? name : std::format("Monitor {}", i + 1),
+				.width = mode ? mode->width : 0,
+				.height = mode ? mode->height : 0,
+				.refresh_rate = mode ? mode->refreshRate : 0,
+			}
+		);
 	}
 
 	return result;
@@ -444,11 +474,13 @@ auto gse::window::enumerate_resolutions(const int monitor_index) -> std::vector<
 		}
 		seen.insert(key);
 
-		result.push_back({
-			.width = mode.width,
-			.height = mode.height,
-			.refresh_rate = mode.refreshRate,
-		});
+		result.push_back(
+			{
+				.width = mode.width,
+				.height = mode.height,
+				.refresh_rate = mode.refreshRate,
+			}
+		);
 	}
 
 	return result;

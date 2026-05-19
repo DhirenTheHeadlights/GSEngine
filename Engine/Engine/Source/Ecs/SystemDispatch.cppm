@@ -43,9 +43,7 @@ namespace gse {
 	template <typename S>
 	struct system_node_data {
 		template <typename... Args>
-		explicit system_node_data(
-			Args&&... args
-		);
+		explicit system_node_data(Args&&... args);
 
 		state_of_t<S> state;
 		[[no_unique_address]] snapshot_storage<state_of_t<S>> snapshot;
@@ -77,6 +75,43 @@ namespace gse {
 		}
 	}();
 
+	template <typename Arg, typename S>
+	constexpr bool is_cyclic_frame_dep_v = [] consteval -> bool {
+		if constexpr (!is_state_dep_v<Arg, S>) {
+			return false;
+		}
+		else {
+			using U = dep_pointee_t<Arg>;
+			constexpr auto entity = std::meta::dealias(^^U);
+			if constexpr (std::meta::is_class_member(entity)) {
+				using parent_t = typename[:std::meta::parent_of(entity):];
+				if constexpr (requires { typename parent_t::data; }) {
+					if constexpr (std::is_same_v<typename parent_t::data, U>) {
+						return names_frame<parent_t>;
+					}
+				}
+			}
+			return false;
+		}
+	}();
+
+	template <auto MemberFn, typename S>
+	consteval auto frame_signature_has_cyclic_deps() -> bool {
+		for (auto p : std::meta::parameters_of(MemberFn)) {
+			auto t = std::meta::dealias(std::meta::type_of(p));
+			const bool cyclic = std::meta::extract<bool>(std::meta::substitute(
+				^^is_cyclic_frame_dep_v,
+				{
+					t,
+					^^S }
+			));
+			if (cyclic) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	template <auto MemberFn>
 	constexpr std::size_t arity_of = std::meta::parameters_of(MemberFn).size();
 
@@ -84,73 +119,40 @@ namespace gse {
 	using arg_type_of = typename[:std::meta::type_of(std::meta::parameters_of(MemberFn)[I]):];
 
 	template <typename T>
-	auto direct_state_ref(
-		const task_context& ctx
-	) -> const T&;
+	auto direct_state_ref(const task_context& ctx) -> const T&;
 
 	template <typename Arg, typename S>
-	auto resolve_run_arg(
-		run_context& ctx,
-		state_of_t<S>& state
-	) -> decltype(auto);
+	auto resolve_run_arg(run_context& ctx, state_of_t<S>& state) -> decltype(auto);
 
 	template <typename Arg, typename S>
-	auto resolve_frame_arg(
-		frame_context& ctx,
-		state_of_t<S>& state
-	) -> decltype(auto);
+	auto resolve_frame_arg(frame_context& ctx, state_of_t<S>& state) -> decltype(auto);
 
 	template <typename S>
-	auto invoke_shutdown_for(
-		shutdown_context& phase,
-		void* data_ptr
-	) -> void;
+	auto invoke_shutdown_for(shutdown_context& phase, void* data_ptr) -> void;
 
 	template <typename S>
-	auto invoke_run_for(
-		run_context& ctx,
-		void* data_ptr
-	) -> async::task<>;
+	auto invoke_run_for(run_context& ctx, void* data_ptr) -> async::task<>;
 
 	template <typename S>
-	auto invoke_frame_for(
-		frame_context& ctx,
-		void* data_ptr
-	) -> async::task<>;
+	auto invoke_frame_for(frame_context& ctx, void* data_ptr) -> async::task<>;
 
 	template <typename S>
-	auto invoke_snapshot_for(
-		void* data_ptr
-	) -> void;
+	auto invoke_snapshot_for(void* data_ptr) -> void;
 
 	template <typename S>
-	auto invoke_apply_settings_for(
-		void* data_ptr,
-		channel_registry& channels_store,
-		channel_writer& channels
-	) -> void;
+	auto invoke_apply_settings_for(void* data_ptr, channel_registry& channels_store, channel_writer& channels) -> void;
 
 	template <typename S>
-	auto data_delete_for(
-		void* data_ptr
-	) -> void;
+	auto data_delete_for(void* data_ptr) -> void;
 
-	auto noop_shutdown(
-		shutdown_context& phase,
-		void* data_ptr
-	) -> void;
+	auto noop_shutdown(shutdown_context& phase, void* data_ptr) -> void;
 
 	struct noop_dispatchers {
 		template <typename S>
-		static auto noop_frame_for(
-			frame_context& ctx,
-			void* data_ptr
-		) -> async::task<>;
+		static auto noop_frame_for(frame_context& ctx, void* data_ptr) -> async::task<>;
 	};
 
-	auto noop_snapshot(
-		void* data_ptr
-	) -> void;
+	auto noop_snapshot(void* data_ptr) -> void;
 
 	template <auto MemberFn, typename S>
 	auto register_state_dep_tags() -> void;
@@ -174,14 +176,10 @@ namespace gse {
 	consteval auto compute_state_dep_ids() -> std::array<id, compute_state_dep_count<MemberFn, S>()>;
 
 	template <typename S>
-	concept shutdown_takes_state = requires(shutdown_context& p, state_of_t<S>& s) {
-		S::shutdown(p, s);
-	};
+	concept shutdown_takes_state = requires(shutdown_context& p, state_of_t<S>& s) { S::shutdown(p, s); };
 
 	template <typename S>
-	concept shutdown_takes_phase_only = requires(shutdown_context& p) {
-		S::shutdown(p);
-	};
+	concept shutdown_takes_phase_only = requires(shutdown_context& p) { S::shutdown(p); };
 }
 
 template <typename S>
@@ -232,10 +230,10 @@ auto gse::resolve_run_arg(run_context& ctx, state_of_t<S>& state) -> decltype(au
 			"cross-system state must be const; use channels for mutation"
 		);
 		constexpr id state_lookup_id = compute_state_dep_id<Pointee>();
-		const void* p = ctx.live_state ? ctx.states.state_ptr(state_lookup_id)
-									   : (ctx.states.state_snapshot_ptr(state_lookup_id)
-											  ? ctx.states.state_snapshot_ptr(state_lookup_id)
-											  : ctx.states.state_ptr(state_lookup_id));
+		const void* p = ctx.live_state
+			? ctx.states.state_ptr(state_lookup_id)
+			: (ctx.states.state_snapshot_ptr(state_lookup_id) ? ctx.states.state_snapshot_ptr(state_lookup_id)
+															  : ctx.states.state_ptr(state_lookup_id));
 		if (!p) {
 			p = ctx.resources_store.resources_ptr(id_of<Pointee>());
 		}
@@ -262,10 +260,10 @@ auto gse::resolve_frame_arg(frame_context& ctx, state_of_t<S>& state) -> decltyp
 	else if constexpr (is_shared_view_v<U>) {
 		using Target = shared_view_target_t<U>;
 		constexpr id lookup_id = id_of<Target>();
-		const void* p = ctx.live_state ? ctx.states.state_ptr(lookup_id)
-									   : (ctx.states.state_snapshot_ptr(lookup_id)
-											  ? ctx.states.state_snapshot_ptr(lookup_id)
-											  : ctx.states.state_ptr(lookup_id));
+		const void* p = ctx.live_state
+			? ctx.states.state_ptr(lookup_id)
+			: (ctx.states.state_snapshot_ptr(lookup_id) ? ctx.states.state_snapshot_ptr(lookup_id)
+														: ctx.states.state_ptr(lookup_id));
 		assert(p != nullptr, "shared_view target system not registered");
 		return make_shared_view<Target>(*static_cast<const typename Target::data*>(p));
 	}
@@ -276,10 +274,10 @@ auto gse::resolve_frame_arg(frame_context& ctx, state_of_t<S>& state) -> decltyp
 			"cross-system state must be const; use channels for mutation"
 		);
 		constexpr id state_lookup_id = compute_state_dep_id<Pointee>();
-		const void* p = ctx.live_state ? ctx.states.state_ptr(state_lookup_id)
-									   : (ctx.states.state_snapshot_ptr(state_lookup_id)
-											  ? ctx.states.state_snapshot_ptr(state_lookup_id)
-											  : ctx.states.state_ptr(state_lookup_id));
+		const void* p = ctx.live_state
+			? ctx.states.state_ptr(state_lookup_id)
+			: (ctx.states.state_snapshot_ptr(state_lookup_id) ? ctx.states.state_snapshot_ptr(state_lookup_id)
+															  : ctx.states.state_ptr(state_lookup_id));
 		if (!p) {
 			p = ctx.resources_store.resources_ptr(id_of<Pointee>());
 		}
@@ -324,18 +322,20 @@ consteval auto gse::compute_state_dep_count() -> std::size_t {
 	std::size_t count = 0;
 	for (auto p : std::meta::parameters_of(MemberFn)) {
 		auto t = std::meta::dealias(std::meta::type_of(p));
-		const bool is_optional = std::meta::extract<bool>(
-			std::meta::substitute(^^is_optional_dep_v, {
-														   t })
-		);
+		const bool is_optional = std::meta::extract<bool>(std::meta::substitute(
+			^^is_optional_dep_v,
+			{
+				t }
+		));
 		if (is_optional) {
 			continue;
 		}
-		const bool is_dep = std::meta::extract<bool>(
-			std::meta::substitute(^^is_state_dep_v, {
-														t,
-														^^S })
-		);
+		const bool is_dep = std::meta::extract<bool>(std::meta::substitute(
+			^^is_state_dep_v,
+			{
+				t,
+				^^S }
+		));
 		if (is_dep) {
 			++count;
 		}
@@ -349,25 +349,28 @@ consteval auto gse::compute_state_dep_ids() -> std::array<id, compute_state_dep_
 	std::size_t i = 0;
 	for (auto p : std::meta::parameters_of(MemberFn)) {
 		auto t = std::meta::dealias(std::meta::type_of(p));
-		const bool is_optional = std::meta::extract<bool>(
-			std::meta::substitute(^^is_optional_dep_v, {
-														   t })
-		);
+		const bool is_optional = std::meta::extract<bool>(std::meta::substitute(
+			^^is_optional_dep_v,
+			{
+				t }
+		));
 		if (is_optional) {
 			continue;
 		}
-		const bool is_dep = std::meta::extract<bool>(
-			std::meta::substitute(^^is_state_dep_v, {
-														t,
-														^^S })
-		);
+		const bool is_dep = std::meta::extract<bool>(std::meta::substitute(
+			^^is_state_dep_v,
+			{
+				t,
+				^^S }
+		));
 		if (!is_dep) {
 			continue;
 		}
-		const id dep_id = std::meta::extract<id>(
-			std::meta::substitute(^^state_dep_id_v, {
-														t })
-		);
+		const id dep_id = std::meta::extract<id>(std::meta::substitute(
+			^^state_dep_id_v,
+			{
+				t }
+		));
 		result[i++] = dep_id;
 	}
 	return result;
@@ -430,12 +433,7 @@ template <typename S>
 auto gse::invoke_run_for(run_context& ctx, void* data_ptr) -> async::task<> {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
 	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		return S::run(
-			resolve_run_arg<arg_type_of<^^S::run, Is>, S>(
-				ctx,
-				d.state
-			)...
-		);
+		return S::run(resolve_run_arg<arg_type_of<^^S::run, Is>, S>(ctx, d.state)...);
 	}(std::make_index_sequence<arity_of<^^S::run>>{});
 }
 
@@ -443,12 +441,7 @@ template <typename S>
 auto gse::invoke_frame_for(frame_context& ctx, void* data_ptr) -> async::task<> {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
 	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		return S::frame(
-			resolve_frame_arg<arg_type_of<^^S::frame, Is>, S>(
-				ctx,
-				d.state
-			)...
-		);
+		return S::frame(resolve_frame_arg<arg_type_of<^^S::frame, Is>, S>(ctx, d.state)...);
 	}(std::make_index_sequence<arity_of<^^S::frame>>{});
 }
 
@@ -461,7 +454,8 @@ auto gse::invoke_snapshot_for(void* data_ptr) -> void {
 }
 
 template <typename S>
-auto gse::invoke_apply_settings_for(void* data_ptr, channel_registry& channels_store, channel_writer& channels) -> void {
+auto gse::invoke_apply_settings_for(void* data_ptr, channel_registry& channels_store, channel_writer& channels)
+	-> void {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
 	using data_t = typename S::data;
 	const auto& reqs = channels_store.ensure_typed<settings::change_request<S>>().data.read_raw();
@@ -504,6 +498,18 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 		node.paused_event = std::make_unique<async::manual_event>();
 	}
 	if constexpr (names_frame<S>) {
+		static_assert(
+			!frame_signature_has_cyclic_deps<^^S::frame, S>(),
+			"frame() has a const-ref dependency on another system's data, where the target system also defines "
+			"frame(). "
+			"This deadlocks the scheduler: state_ready for the target only fires after its pass dispatches in "
+			"execute_frame, "
+			"which is after the channel drain — so this frame's pass push misses the drain and the coroutine never "
+			"resumes. "
+			"Use shared_view<X> for snapshot reads (annotate the fields you need with [[= gse::shared]]), or channels "
+			"for "
+			"cross-frame communication."
+		);
 		node.invoke_frame_fn = &invoke_frame_for<S>;
 	}
 	else {

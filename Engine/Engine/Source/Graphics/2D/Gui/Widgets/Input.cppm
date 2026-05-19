@@ -53,7 +53,13 @@ namespace gse::gui::draw {
 	std::unordered_map<std::uint64_t, input_state> global_input_state;
 }
 
-auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std::string& buffer, id& hot_widget_id, id& focus_widget_id) -> void {
+auto gse::gui::draw::input(
+	const draw_context& ctx,
+	const std::string& name,
+	std::string& buffer,
+	id& hot_widget_id,
+	id& focus_widget_id
+) -> void {
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -75,10 +81,7 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
 
 	const float label_width = content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(
-		row_rect.top_left(),
-		{ label_width, widget_height }
-	);
+	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
 
 	const ui_rect box_rect = ui_rect::from_position_size(
 		{ row_rect.left() + label_width, row_rect.top() },
@@ -295,16 +298,25 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
 		}
 	}
 
-	ctx.queue_text({ .font = ctx.font, .text = name, .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f }, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = label_rect });
+	ctx.queue_text(
+		{ .font = ctx.font,
+		  .text = name,
+		  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+		  .scale = ctx.style.font_size,
+		  .color = ctx.style.color_text,
+		  .clip_rect = label_rect }
+	);
 
-	ctx.queue_sprite({ .rect = box_rect, .color = ctx.style.color_input_background, .texture = ctx.blank_texture, .corner_radius = ctx.style.corner_radius });
+	ctx.queue_sprite(
+		{ .rect = box_rect,
+		  .color = ctx.style.color_input_background,
+		  .texture = ctx.blank_texture,
+		  .corner_radius = ctx.style.corner_radius }
+	);
 
 	constexpr float text_padding = 5.f;
 	const ui_rect clip_rect = box_rect.inset({ text_padding, 0.f });
-	const vec2f text_pos = {
-		box_rect.left() + text_padding,
-		box_rect.center().y() + ctx.style.font_size / 2.f
-	};
+	const vec2f text_pos = { box_rect.left() + text_padding, box_rect.center().y() + ctx.style.font_size / 2.f };
 
 	if (focused && has_sel(state)) {
 		auto [a, b] = sel_range(state);
@@ -319,7 +331,14 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
 		ctx.queue_sprite({ .rect = sel_rect, .color = ctx.style.color_selection, .texture = ctx.blank_texture });
 	}
 
-	ctx.queue_text({ .font = ctx.font, .text = buffer, .position = { text_pos.x() - state.scroll_x, text_pos.y() }, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = clip_rect });
+	ctx.queue_text(
+		{ .font = ctx.font,
+		  .text = buffer,
+		  .position = { text_pos.x() - state.scroll_x, text_pos.y() },
+		  .scale = ctx.style.font_size,
+		  .color = ctx.style.color_text,
+		  .clip_rect = clip_rect }
+	);
 
 	if (focused && state.blink_on) {
 		const float cx = ctx.font->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;

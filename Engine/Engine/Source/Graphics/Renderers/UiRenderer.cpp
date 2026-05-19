@@ -21,7 +21,7 @@ namespace gse::renderer::ui {
 	using shader_binding_types = type_pack<shaders::bindless::textures>;
 
 	struct[[= shaders::shader_struct]] sprite_push_constants {
-		mat4f projection;
+		projection_matrix projection;
 		std::uint32_t tex_idx;
 	};
 
@@ -38,9 +38,14 @@ namespace gse::renderer::ui {
 		gpu::depth_target<gpu::depth_format::none>>;
 
 	struct[[= shaders::shader_struct]] msdf_push_constants {
-		mat4f projection;
+		projection_matrix projection;
+		vec2f unit_range;
 		float depth;
 		std::uint32_t tex_idx;
+		vec3f shadow_color;
+		float shadow_offset_px;
+		float shadow_softness;
+		float shadow_strength;
 	};
 
 	using msdf_entry = gpu::graphics_entry<
@@ -56,7 +61,11 @@ namespace gse::renderer::ui {
 		gpu::depth_target<gpu::depth_format::none>>;
 }
 
-auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
+auto gse::renderer::ui::add_sprite_quad(
+	linear_vector<vertex>& vertices,
+	linear_vector<std::uint32_t>& indices,
+	const unified_command& cmd
+) -> void {
 	if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 		return;
 	}
@@ -65,10 +74,7 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 
 	const vec2f top_left = cmd.rect.top_left();
 	const vec2f size = cmd.rect.size();
-	const vec2f center = {
-		top_left.x() + size.x() * 0.5f,
-		top_left.y() - size.y() * 0.5f
-	};
+	const vec2f center = { top_left.x() + size.x() * 0.5f, top_left.y() - size.y() * 0.5f };
 
 	const vec2f half = { size.x() * 0.5f, size.y() * 0.5f };
 	const vec2f l0 = { -half.x(), half.y() };
@@ -86,10 +92,10 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 	const float u1 = cmd.uv_rect.x() + cmd.uv_rect.z();
 	const float v1 = cmd.uv_rect.y() + cmd.uv_rect.w();
 
-	vertices.push_back(vertex{ p0, { u0, v0 }, cmd.color, l0, half, cmd.corner_radius, 0.f });
-	vertices.push_back(vertex{ p1, { u1, v0 }, cmd.color, l1, half, cmd.corner_radius, 0.f });
-	vertices.push_back(vertex{ p2, { u1, v1 }, cmd.color, l2, half, cmd.corner_radius, 0.f });
-	vertices.push_back(vertex{ p3, { u0, v1 }, cmd.color, l3, half, cmd.corner_radius, 0.f });
+	vertices.push_back(vertex{ p0, { u0, v0 }, cmd.color, l0, half, cmd.corner_radius });
+	vertices.push_back(vertex{ p1, { u1, v0 }, cmd.color, l1, half, cmd.corner_radius });
+	vertices.push_back(vertex{ p2, { u1, v1 }, cmd.color, l2, half, cmd.corner_radius });
+	vertices.push_back(vertex{ p3, { u0, v1 }, cmd.color, l3, half, cmd.corner_radius });
 
 	indices.push_back(base_index + 0);
 	indices.push_back(base_index + 2);
@@ -99,9 +105,11 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 	indices.push_back(base_index + 2);
 }
 
-auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
-	const float font_px_range = cmd.font->pixel_range() * (cmd.scale / cmd.font->glyph_cell_size());
-
+auto gse::renderer::ui::add_text_quads(
+	linear_vector<vertex>& vertices,
+	linear_vector<std::uint32_t>& indices,
+	const unified_command& cmd
+) -> void {
 	for (const auto& [screen_rect, uv_rect] : cmd.font->text_layout(cmd.text, cmd.position, cmd.scale)) {
 		if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 			break;
@@ -122,10 +130,10 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 		const float u1 = uv_rect.x() + uv_rect.z();
 		const float v1 = uv_rect.y() + uv_rect.w();
 
-		vertices.push_back({ p0, { u0, v1 }, cmd.color, {}, {}, 0.f, font_px_range });
-		vertices.push_back({ p1, { u1, v1 }, cmd.color, {}, {}, 0.f, font_px_range });
-		vertices.push_back({ p2, { u1, v0 }, cmd.color, {}, {}, 0.f, font_px_range });
-		vertices.push_back({ p3, { u0, v0 }, cmd.color, {}, {}, 0.f, font_px_range });
+		vertices.push_back({ p0, { u0, v1 }, cmd.color, {}, {}, 0.f });
+		vertices.push_back({ p1, { u1, v1 }, cmd.color, {}, {}, 0.f });
+		vertices.push_back({ p2, { u1, v0 }, cmd.color, {}, {}, 0.f });
+		vertices.push_back({ p3, { u0, v0 }, cmd.color, {}, {}, 0.f });
 
 		indices.push_back(base_index + 0);
 		indices.push_back(base_index + 2);
@@ -136,23 +144,40 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 	}
 }
 
-auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.sprite_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, sprite_entry::pod);
-	d.text_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, msdf_entry::pod);
+auto gse::renderer::ui::system::run(
+	run_context& ctx,
+	const gpu::context::data& gpu_s,
+	const asset::data& assets_s,
+	data& d
+) -> async::task<> {
+	d.sprite_pipeline = gpu::build_graphics_pipeline(
+		*gpu_s.device,
+		*gpu_s.shader_registry,
+		*gpu_s.bindless_textures,
+		sprite_entry::pod
+	);
+	d.text_pipeline =
+		gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, msdf_entry::pod);
 
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
 	for (auto& [vertex_buffer, index_buffer] : d.gpu_frames) {
-		vertex_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
-																		   .size = vertex_buffer_size,
-																		   .usage = gpu::buffer_flag::vertex,
-																	   });
+		vertex_buffer = gpu::buffer::create(
+			gpu_s.device->allocator(),
+			{
+				.size = vertex_buffer_size,
+				.usage = gpu::buffer_flag::vertex,
+			}
+		);
 
-		index_buffer = gpu::buffer::create(gpu_s.device->allocator(), {
-																		  .size = index_buffer_size,
-																		  .usage = gpu::buffer_flag::index,
-																	  });
+		index_buffer = gpu::buffer::create(
+			gpu_s.device->allocator(),
+			{
+				.size = index_buffer_size,
+				.usage = gpu::buffer_flag::index,
+			}
+		);
 	}
 
 	while (true) {
@@ -172,27 +197,30 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 		std::vector<unified_command> unified;
 		unified.reserve(sprite_commands.size() + text_commands.size());
 
-		for (const auto& [rect, color, texture, uv_rect, clip_rect, rotation, layer, z_order, corner_radius] : sprite_commands) {
+		for (const auto& [rect, color, texture, uv_rect, clip_rect, rotation, layer, z_order, corner_radius] :
+			 sprite_commands) {
 			if (!texture.valid()) {
 				continue;
 			}
 
-			unified.push_back({
-				.type = command_type::sprite,
-				.layer = layer,
-				.z_order = z_order,
-				.clip_rect = clip_rect,
-				.texture = texture,
-				.rect = rect,
-				.color = color,
-				.uv_rect = uv_rect,
-				.rotation = rotation,
-				.corner_radius = corner_radius,
-				.font = {},
-				.text = {},
-				.position = {},
-				.scale = 1.0f,
-			});
+			unified.push_back(
+				{
+					.type = command_type::sprite,
+					.layer = layer,
+					.z_order = z_order,
+					.clip_rect = clip_rect,
+					.texture = texture,
+					.rect = rect,
+					.color = color,
+					.uv_rect = uv_rect,
+					.rotation = rotation,
+					.corner_radius = corner_radius,
+					.font = {},
+					.text = {},
+					.position = {},
+					.scale = 1.0f,
+				}
+			);
 		}
 
 		for (const auto& [font, text, position, scale, color, clip_rect, layer, z_order] : text_commands) {
@@ -200,21 +228,23 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 				continue;
 			}
 
-			unified.push_back({
-				.type = command_type::text,
-				.layer = layer,
-				.z_order = z_order,
-				.clip_rect = clip_rect,
-				.texture = {},
-				.rect = {},
-				.color = color,
-				.uv_rect = {},
-				.rotation = {},
-				.font = font,
-				.text = text,
-				.position = position,
-				.scale = scale,
-			});
+			unified.push_back(
+				{
+					.type = command_type::text,
+					.layer = layer,
+					.z_order = z_order,
+					.clip_rect = clip_rect,
+					.texture = {},
+					.rect = {},
+					.color = color,
+					.uv_rect = {},
+					.rotation = {},
+					.font = font,
+					.text = text,
+					.position = position,
+					.scale = scale,
+				}
+			);
 		}
 
 		std::ranges::stable_sort(unified, [](const unified_command& a, const unified_command& b) {
@@ -244,14 +274,16 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 
 		auto flush_batch = [&] {
 			if (indices.size() > batch_index_start) {
-				batches.push_back({
-					.type = current_type,
-					.index_offset = batch_index_start,
-					.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
-					.clip_rect = current_clip,
-					.texture = current_texture,
-					.font = current_font,
-				});
+				batches.push_back(
+					{
+						.type = current_type,
+						.index_offset = batch_index_start,
+						.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
+						.clip_rect = current_clip,
+						.texture = current_texture,
+						.font = current_font,
+					}
+				);
 			}
 			batch_index_start = static_cast<std::uint32_t>(indices.size());
 		};
@@ -265,7 +297,8 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 			else if (cmd.clip_rect.has_value() != current_clip.has_value()) {
 				needs_flush = true;
 			}
-			else if (cmd.clip_rect.has_value() && (cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())) {
+			else if (cmd.clip_rect.has_value() &&
+					 (cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())) {
 				needs_flush = true;
 			}
 			else if (cmd.type == command_type::sprite && cmd.texture.id() != current_texture.id()) {
@@ -335,15 +368,22 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
 	};
 	gpu::typed_push_constants<msdf_push_constants> text_pc{
-		.data = { .projection = projection, .depth = 0.0f, .tex_idx = 0 },
+		.data = {
+			.projection = projection,
+			.unit_range = {},
+			.depth = 0.0f,
+			.tex_idx = 0,
+			.shadow_color = vec3f{ 0.f, 0.f, 0.f },
+			.shadow_offset_px = 1.0f,
+			.shadow_softness = 0.7f,
+			.shadow_strength = 0.45f,
+		},
 		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
 	};
 
 	const vec2u ext_size{ width, height };
 
-	auto rec = co_await gpu::pass<ui::system>(ctx)
-				   .color(gpu::load_color())
-				   .after<forward::system>();
+	auto rec = co_await gpu::pass<ui::system>(ctx).color(gpu::load_color()).after<forward::system>();
 
 	rec.bind_vertex(vertex_buffer);
 	rec.bind_index(index_buffer);
@@ -394,6 +434,10 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			rec.push(d.sprite_pipeline, sprite_pc);
 		}
 		else {
+			const auto atlas_size = font->texture()->image_data().size;
+			const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);
+			const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
+			text_pc.data.unit_range = { font->pixel_range() / atlas_w, font->pixel_range() / atlas_h };
 			text_pc.data.tex_idx = tex_idx;
 			rec.push(d.text_pipeline, text_pc);
 		}

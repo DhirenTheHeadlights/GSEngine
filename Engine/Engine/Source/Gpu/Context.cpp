@@ -24,9 +24,14 @@ import gse.log;
 auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data& d) -> async::task<> {
 	d.device = device::create(window_s, d.validation_layers_enabled, d.device_settings);
 	d.shader_registry = std::make_unique<gpu::shader_registry>(*d.device);
-	d.swapchain = swap_chain::create(window::viewport(window_s), *d.device);
+	d.swapchain = swap_chain::create(
+		window::viewport(window_s),
+		present_mode_from_setting_index(window_s.current_present_mode_index),
+		*d.device
+	);
 	d.frame = frame::create(*d.device, *d.swapchain);
-	d.bindless_textures = std::make_unique<bindless_texture_set>(d.device->vulkan_device(), d.device->descriptor_heap());
+	d.bindless_textures =
+		std::make_unique<bindless_texture_set>(d.device->vulkan_device(), d.device->descriptor_heap());
 	d.render_graph = std::make_unique<gpu::render_graph>(*d.device, *d.swapchain, *d.frame, d.bindless_textures.get());
 
 	d.device->transient().recorder().pre_frame([graph = d.render_graph.get()](handle<command_buffer> cmd) {
@@ -88,17 +93,11 @@ auto gse::gpu::context::end_frame(data& d, window::data& window_s) -> void {
 }
 
 namespace gse::gpu {
-	auto to_color_output_info(
-		const color_attachment& a
-	) -> gpu::color_output_info;
+	auto to_color_output_info(const color_attachment& a) -> gpu::color_output_info;
 
-	auto to_depth_output_info(
-		const depth_attachment& a
-	) -> gpu::depth_output_info;
+	auto to_depth_output_info(const depth_attachment& a) -> gpu::depth_output_info;
 
-	auto to_pass_data(
-		render_pass_request req
-	) -> gpu::render_pass_data;
+	auto to_pass_data(render_pass_request req) -> gpu::render_pass_data;
 }
 
 auto gse::gpu::to_color_output_info(const color_attachment& a) -> gpu::color_output_info {
@@ -144,7 +143,12 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
 	return p;
 }
 
-auto gse::gpu::context::execute_frame(data& d, std::vector<render_pass_request> requests, std::vector<transient_image_request> transient_images, std::vector<transient_buffer_request> transient_buffers) -> void {
+auto gse::gpu::context::execute_frame(
+	data& d,
+	std::vector<render_pass_request> requests,
+	std::vector<transient_image_request> transient_images,
+	std::vector<transient_buffer_request> transient_buffers
+) -> void {
 	std::vector<gpu::render_pass_data> passes;
 	passes.reserve(requests.size());
 	for (auto& req : requests) {

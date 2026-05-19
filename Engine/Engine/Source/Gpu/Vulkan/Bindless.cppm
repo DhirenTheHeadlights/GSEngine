@@ -27,11 +27,7 @@ export namespace gse::gpu {
 
 	class bindless_texture_set final : public non_copyable, non_movable {
 	public:
-		bindless_texture_set(
-			const vulkan::device& device,
-			descriptor_heap& heap,
-			std::uint32_t capacity = 4096
-		);
+		bindless_texture_set(const vulkan::device& device, descriptor_heap& heap, std::uint32_t capacity = 4096);
 
 		~bindless_texture_set() override;
 
@@ -41,13 +37,9 @@ export namespace gse::gpu {
 			image_layout layout = image_layout::shader_read_only
 		) -> bindless_texture_slot;
 
-		auto release(
-			bindless_texture_slot slot
-		) -> void;
+		auto release(bindless_texture_slot slot) -> void;
 
-		auto begin_frame(
-			std::uint32_t frame_index
-		) -> void;
+		auto begin_frame(std::uint32_t frame_index) -> void;
 
 		[[nodiscard]] auto layout_handle() const -> handle<vulkan::descriptor_set_layout>;
 
@@ -75,22 +67,23 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& device_cfg, descriptor_heap& heap, const std::uint32_t capacity)
-	: m_heap(&heap), m_capacity(capacity) {
+gse::gpu::bindless_texture_set::bindless_texture_set(
+	const vulkan::device& device_cfg,
+	descriptor_heap& heap,
+	const std::uint32_t capacity
+)
+	: m_heap(&heap),
+	  m_capacity(capacity) {
 	const auto& device = device_cfg.raii_device();
-	const vk::DescriptorSetLayoutBinding binding{
-		.binding = 0,
-		.descriptorType = vk::DescriptorType::eCombinedImageSampler,
-		.descriptorCount = capacity,
-		.stageFlags = vk::ShaderStageFlagBits::eAll
-	};
+	const vk::DescriptorSetLayoutBinding binding{ .binding = 0,
+												  .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+												  .descriptorCount = capacity,
+												  .stageFlags = vk::ShaderStageFlagBits::eAll };
 
 	constexpr vk::DescriptorBindingFlags binding_flags = vk::DescriptorBindingFlagBits::ePartiallyBound;
 
-	const vk::DescriptorSetLayoutBindingFlagsCreateInfo flags_info{
-		.bindingCount = 1,
-		.pBindingFlags = &binding_flags
-	};
+	const vk::DescriptorSetLayoutBindingFlagsCreateInfo flags_info{ .bindingCount = 1,
+																	.pBindingFlags = &binding_flags };
 
 	const vk::DescriptorSetLayoutCreateInfo layout_info{
 		.pNext = &flags_info,
@@ -101,7 +94,14 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 
 	m_layout = device.createDescriptorSetLayout(layout_info);
 
-	m_null_sampler = device.createSampler({ .magFilter = vk::Filter::eNearest, .minFilter = vk::Filter::eNearest, .mipmapMode = vk::SamplerMipmapMode::eNearest, .addressModeU = vk::SamplerAddressMode::eClampToEdge, .addressModeV = vk::SamplerAddressMode::eClampToEdge, .addressModeW = vk::SamplerAddressMode::eClampToEdge });
+	m_null_sampler = device.createSampler(
+		{ .magFilter = vk::Filter::eNearest,
+		  .minFilter = vk::Filter::eNearest,
+		  .mipmapMode = vk::SamplerMipmapMode::eNearest,
+		  .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+		  .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+		  .addressModeW = vk::SamplerAddressMode::eClampToEdge }
+	);
 
 	const auto layout_handle = std::bit_cast<handle<vulkan::descriptor_set_layout>>(*m_layout);
 	m_descriptor_size = heap.props().combined_image_sampler_descriptor_size;
@@ -139,7 +139,11 @@ gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& devic
 
 gse::gpu::bindless_texture_set::~bindless_texture_set() = default;
 
-auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> view, const handle<vulkan::sampler> samp, const image_layout layout) -> bindless_texture_slot {
+auto gse::gpu::bindless_texture_set::allocate(
+	const handle<vulkan::image_view> view,
+	const handle<vulkan::sampler> samp,
+	const image_layout layout
+) -> bindless_texture_slot {
 	std::lock_guard lock(m_mutex);
 
 	assert(!m_free_list.empty(), "Bindless texture set exhausted (capacity {})", m_capacity);
@@ -166,10 +170,12 @@ auto gse::gpu::bindless_texture_set::release(const bindless_texture_slot slot) -
 		return;
 	}
 	std::lock_guard lock(m_mutex);
-	m_pending_releases.push_back({
-		.slot = slot.index,
-		.retire_after = m_frame_counter + vulkan::max_frames_in_flight,
-	});
+	m_pending_releases.push_back(
+		{
+			.slot = slot.index,
+			.retire_after = m_frame_counter + vulkan::max_frames_in_flight,
+		}
+	);
 }
 
 auto gse::gpu::bindless_texture_set::begin_frame(const std::uint32_t) -> void {

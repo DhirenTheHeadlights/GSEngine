@@ -14,46 +14,27 @@ export namespace gse {
 	public:
 		virtual ~component_storage_base() = default;
 
-		virtual auto activate_pending(
-			id owner
-		) -> bool = 0;
+		virtual auto activate_pending(id owner) -> bool = 0;
 
-		virtual auto remove_owner(
-			id owner
-		) -> void = 0;
+		virtual auto remove_owner(id owner) -> void = 0;
 	};
 
 	template <typename T>
 	class component_storage final : public component_storage_base {
 	public:
-		auto add(
-			id owner,
-			bool entity_active,
-			T value = T{}
-		) -> T*;
+		auto add(id owner, bool entity_active, T value = T{}) -> T*;
 
-		auto activate_pending(
-			id owner
-		) -> bool override;
+		auto activate_pending(id owner) -> bool override;
 
-		auto remove_owner(
-			id owner
-		) -> void override;
+		auto remove_owner(id owner) -> void override;
 
-		auto try_get(
-			this component_storage& self,
-			id owner
-		) -> decltype(auto);
+		auto try_get(this component_storage& self, id owner) -> decltype(auto);
 
-		auto items(
-			this component_storage& self
-		) -> decltype(auto);
+		auto items(this component_storage& self) -> decltype(auto);
 
 		auto owners() const -> std::span<const id>;
 
-		auto mark_updated(
-			id owner
-		) -> void;
+		auto mark_updated(id owner) -> void;
 
 		auto drain_added() -> std::vector<id>;
 
@@ -77,85 +58,48 @@ export namespace gse {
 	public:
 		~registry() override = default;
 
-		auto create(
-			std::string_view name
-		) -> id;
+		auto create(std::string_view name) -> id;
 
-		auto activate(
-			id owner
-		) -> void;
+		auto activate(id owner) -> void;
 
-		auto remove(
-			id owner
-		) -> void;
+		auto remove(id owner) -> void;
 
-		auto ensure_exists(
-			id owner
-		) -> void;
+		auto ensure_exists(id owner) -> void;
 
-		auto ensure_active(
-			id owner
-		) -> void;
+		auto ensure_active(id owner) -> void;
 
-		auto exists(
-			id owner
-		) const -> bool;
+		auto exists(id owner) const -> bool;
 
-		auto active(
-			id owner
-		) const -> bool;
+		auto active(id owner) const -> bool;
 
 		template <typename T>
-		auto add_component(
-			id owner,
-			T value = T{}
-		) -> T*;
+		auto add_component(id owner, T value = T{}) -> T*;
 
 		template <typename T>
-		auto remove_component(
-			id owner
-		) -> void;
+		auto remove_component(id owner) -> void;
 
 		template <typename T>
-		auto components(
-			this registry& self
-		) -> decltype(auto);
+		auto components(this registry& self) -> decltype(auto);
 
 		template <typename T>
-		auto owner_ids(
-			this registry& self
-		) -> std::span<const id>;
+		auto owner_ids(this registry& self) -> std::span<const id>;
 
 		template <typename T>
-		auto component(
-			this registry& self,
-			id owner
-		) -> decltype(auto);
+		auto component(this registry& self, id owner) -> decltype(auto);
 
 		template <typename T>
-		auto try_component(
-			this registry& self,
-			id owner
-		) -> decltype(auto);
+		auto try_component(this registry& self, id owner) -> decltype(auto);
 
 		template <typename T>
-		auto acquire_read(
-			access_token,
-			async::rw_mutex* mutex = nullptr,
-			std::atomic<int>* held_locks = nullptr
-		) -> read<T>;
+		auto acquire_read(access_token, async::rw_mutex* mutex = nullptr, std::atomic<int>* held_locks = nullptr)
+			-> read<T>;
 
 		template <typename T>
-		auto acquire_write(
-			access_token,
-			async::rw_mutex* mutex = nullptr,
-			std::atomic<int>* held_locks = nullptr
-		) -> write<T>;
+		auto acquire_write(access_token, async::rw_mutex* mutex = nullptr, std::atomic<int>* held_locks = nullptr)
+			-> write<T>;
 
 		template <typename T>
-		auto mark_component_updated(
-			id owner
-		) -> void;
+		auto mark_component_updated(id owner) -> void;
 
 		template <typename T>
 		auto drain_component_adds() -> std::vector<id>;
@@ -174,9 +118,7 @@ export namespace gse {
 		auto storage() -> component_storage<T>&;
 
 		template <typename T>
-		auto try_storage(
-			this registry& self
-		) -> component_storage<T>*;
+		auto try_storage(this registry& self) -> component_storage<T>*;
 
 		std::unordered_set<id> m_active;
 		std::unordered_set<id> m_inactive;
@@ -293,11 +235,7 @@ auto gse::registry::create(const std::string_view name) -> id {
 }
 
 auto gse::registry::activate(const id owner) -> void {
-	assert(
-		m_inactive.contains(owner),
-		"Cannot activate entity with id {}: it is not inactive.",
-		owner
-	);
+	assert(m_inactive.contains(owner), "Cannot activate entity with id {}: it is not inactive.", owner);
 
 	m_inactive.erase(owner);
 	m_active.insert(owner);
@@ -371,11 +309,7 @@ auto gse::registry::try_storage(this registry& self) -> component_storage<T>* {
 
 template <typename T>
 auto gse::registry::add_component(const id owner, T value) -> T* {
-	assert(
-		exists(owner),
-		"Cannot add component to entity with id {}: it does not exist.",
-		owner
-	);
+	assert(exists(owner), "Cannot add component to entity with id {}: it does not exist.", owner);
 
 	auto& s = storage<T>();
 	return s.add(owner, active(owner), std::move(value));
@@ -406,12 +340,7 @@ auto gse::registry::owner_ids(this registry& self) -> std::span<const id> {
 template <typename T>
 auto gse::registry::component(this registry& self, const id owner) -> decltype(auto) {
 	auto* ptr = self.try_component<T>(owner);
-	assert(
-		ptr != nullptr,
-		"Component of type {} with id {} not found.",
-		type_tag<T>(),
-		owner
-	);
+	assert(ptr != nullptr, "Component of type {} with id {} not found.", type_tag<T>(), owner);
 	return *ptr;
 }
 

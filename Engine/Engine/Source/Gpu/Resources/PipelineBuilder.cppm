@@ -34,6 +34,7 @@ export namespace gse::gpu {
 
 	struct compute_entry_pod {
 		std::string_view body_path;
+		std::string_view body_source;
 		std::string_view layout_name;
 		std::uint32_t threads_x = 1;
 		std::uint32_t threads_y = 1;
@@ -71,6 +72,7 @@ export namespace gse::gpu {
 
 	struct graphics_entry_pod {
 		std::string_view body_path;
+		std::string_view body_source;
 		std::string_view layout_name;
 		std::string_view push_constant_type_name;
 		std::uint32_t push_constant_size = 0;
@@ -140,6 +142,11 @@ export namespace gse::gpu {
 	};
 
 	template <fixed_string V>
+	struct body_inline {
+		static constexpr std::string_view value = V;
+	};
+
+	template <fixed_string V>
 	struct layout {
 		static constexpr std::string_view value = V;
 	};
@@ -173,6 +180,12 @@ export namespace gse::gpu {
 
 	template <fixed_string V>
 	struct is_body_path<body_path<V>> : std::true_type {};
+
+	template <typename T>
+	struct is_body_inline : std::false_type {};
+
+	template <fixed_string V>
+	struct is_body_inline<body_inline<V>> : std::true_type {};
 
 	template <typename T>
 	struct is_layout : std::false_type {};
@@ -223,6 +236,9 @@ export namespace gse::gpu {
 			auto apply = [&]<typename Spec>() consteval {
 				if constexpr (is_body_path<Spec>::value) {
 					e.body_path = Spec::value;
+				}
+				else if constexpr (is_body_inline<Spec>::value) {
+					e.body_source = Spec::value;
 				}
 				else if constexpr (is_layout<Spec>::value) {
 					e.layout_name = Spec::value;
@@ -414,6 +430,9 @@ export namespace gse::gpu {
 				if constexpr (is_body_path<Spec>::value) {
 					e.body_path = Spec::value;
 				}
+				else if constexpr (is_body_inline<Spec>::value) {
+					e.body_source = Spec::value;
+				}
 				else if constexpr (is_layout<Spec>::value) {
 					e.layout_name = Spec::value;
 				}
@@ -425,7 +444,8 @@ export namespace gse::gpu {
 						return shaders::emit_slang_struct<T>();
 					};
 				}
-				else if constexpr (is_vertex_stage<Spec>::value || is_fragment_stage<Spec>::value || is_amplification_stage<Spec>::value || is_mesh_stage<Spec>::value) {
+				else if constexpr (is_vertex_stage<Spec>::value || is_fragment_stage<Spec>::value ||
+								   is_amplification_stage<Spec>::value || is_mesh_stage<Spec>::value) {
 					e.stages[e.stage_count++] = {
 						.entry_point = Spec::entry_point,
 						.kind = Spec::kind,
@@ -493,7 +513,8 @@ export namespace gse::gpu {
 }
 
 namespace gse::gpu {
-	auto lookup_descriptor_type(const family_layout& family, const std::uint32_t set, const std::uint32_t slot) -> descriptor_type {
+	auto lookup_descriptor_type(const family_layout& family, const std::uint32_t set, const std::uint32_t slot)
+		-> descriptor_type {
 		for (const auto& fs : family.sets) {
 			if (static_cast<std::uint32_t>(fs.type) != set) {
 				continue;
@@ -537,6 +558,7 @@ namespace gse::gpu {
 		std::uint32_t threads_z = 1;
 		std::string layout_name;
 		std::string body_path;
+		std::string inline_source;
 		std::vector<std::string> helper_paths;
 		std::uint32_t push_constant_size = 0;
 		std::string (*emit_push_constant_struct)() = nullptr;
@@ -551,9 +573,7 @@ namespace gse::gpu {
 
 	auto make_slang_session() -> owned_slang_session;
 
-	auto log_slang_diagnostics(
-		slang::IBlob* diagnostics
-	) -> void;
+	auto log_slang_diagnostics(slang::IBlob* diagnostics) -> void;
 
 	struct parsed_body {
 		std::vector<std::string> imports;
@@ -561,31 +581,18 @@ namespace gse::gpu {
 		std::string body;
 	};
 
-	auto parse_body_file(
-		std::string_view body_source
-	) -> parsed_body;
+	auto parse_body_file(std::string_view body_source) -> parsed_body;
 
-	auto load_body_file(
-		std::string_view body_path
-	) -> std::string;
+	auto load_body_file(std::string_view body_path) -> std::string;
 
-	auto load_helper_file(
-		std::string_view helper_path
-	) -> std::string;
+	auto load_helper_file(std::string_view helper_path) -> std::string;
 
-	auto inline_helpers(
-		const std::vector<std::string>& helper_paths
-	) -> std::string;
+	auto inline_helpers(const std::vector<std::string>& helper_paths) -> std::string;
 
-	auto build_compute_wrapper_source(
-		const shader_compile_inputs& inputs,
-		const parsed_body& parsed
-	) -> std::string;
+	auto build_compute_wrapper_source(const shader_compile_inputs& inputs, const parsed_body& parsed) -> std::string;
 
-	[[nodiscard]] auto compile_compute_spirv(
-		const shader_compile_inputs& inputs,
-		std::string_view wrapper_source
-	) -> std::vector<std::uint32_t>;
+	[[nodiscard]] auto compile_compute_spirv(const shader_compile_inputs& inputs, std::string_view wrapper_source)
+		-> std::vector<std::uint32_t>;
 
 	[[nodiscard]] auto create_compute_pipeline_from_spirv(
 		device& dev,
@@ -616,21 +623,20 @@ namespace gse::gpu {
 		std::vector<vertex_binding_desc> vertex_bindings;
 	};
 
-	auto build_graphics_wrapper_source(
-		const graphics_entry_pod& pod,
-		const parsed_body& parsed
-	) -> std::string;
+	auto build_graphics_wrapper_source(const graphics_entry_pod& pod, const parsed_body& parsed) -> std::string;
 
-	[[nodiscard]] auto compile_graphics_program(
-		const graphics_entry_pod& pod,
-		std::string_view wrapper_source
-	) -> compiled_graphics_program;
+	[[nodiscard]] auto compile_graphics_program(const graphics_entry_pod& pod, std::string_view wrapper_source)
+		-> compiled_graphics_program;
 }
 
 auto gse::gpu::make_slang_session() -> owned_slang_session {
 	owned_slang_session out;
 	if (slang_failed(createGlobalSession(out.global.writeRef())) || !out.global) {
-		log::println(log::level::error, log::category::assets, "Failed to create Slang global session for pipeline builder");
+		log::println(
+			log::level::error,
+			log::category::assets,
+			"Failed to create Slang global session for pipeline builder"
+		);
 		return out;
 	}
 	auto* global = out.global.get();
@@ -689,10 +695,7 @@ auto gse::gpu::log_slang_diagnostics(slang::IBlob* diagnostics) -> void {
 	if (!diagnostics || diagnostics->getBufferSize() == 0) {
 		return;
 	}
-	const std::string message(
-		static_cast<const char*>(diagnostics->getBufferPointer()),
-		diagnostics->getBufferSize()
-	);
+	const std::string message(static_cast<const char*>(diagnostics->getBufferPointer()), diagnostics->getBufferSize());
 	log::println(log::level::error, log::category::assets, "{}", message);
 }
 
@@ -779,7 +782,8 @@ auto gse::gpu::inline_helpers(const std::vector<std::string>& helper_paths) -> s
 	return out;
 }
 
-auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs, const parsed_body& parsed) -> std::string {
+auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs, const parsed_body& parsed)
+	-> std::string {
 	std::string out;
 
 	for (const auto& imp : parsed.imports) {
@@ -847,7 +851,8 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 	return out;
 }
 
-auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const std::string_view wrapper_source) -> std::vector<std::uint32_t> {
+auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const std::string_view wrapper_source)
+	-> std::vector<std::uint32_t> {
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
@@ -858,7 +863,14 @@ auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const 
 	std::ranges::replace(sanitized, '\\', '_');
 
 	auto dump_wrapper_source = [&]() {
-		log::println(log::level::error, log::category::assets, "Wrapper source for '{}' (body: {}):\n{}", sanitized, inputs.body_path, wrapper_source);
+		log::println(
+			log::level::error,
+			log::category::assets,
+			"Wrapper source for '{}' (body: {}):\n{}",
+			sanitized,
+			inputs.body_path,
+			wrapper_source
+		);
 	};
 
 	Slang::ComPtr<slang::IBlob> diags;
@@ -918,7 +930,14 @@ auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const 
 	return spirv;
 }
 
-auto gse::gpu::create_compute_pipeline_from_spirv(device& dev, shader_registry& registry, bindless_texture_set& bindless, const std::span<const std::uint32_t> spirv, const std::string_view layout_name, const std::uint32_t push_constant_size) -> pipeline {
+auto gse::gpu::create_compute_pipeline_from_spirv(
+	device& dev,
+	shader_registry& registry,
+	bindless_texture_set& bindless,
+	const std::span<const std::uint32_t> spirv,
+	const std::string_view layout_name,
+	const std::uint32_t push_constant_size
+) -> pipeline {
 	const auto* family = registry.find_family(layout_name);
 	assert(family, "Shader family layout not registered: {}", layout_name);
 
@@ -948,13 +967,15 @@ auto gse::gpu::create_compute_pipeline_from_spirv(device& dev, shader_registry& 
 
 	std::vector<binding_use> active_bindings;
 	for (const auto& use : used_bindings(spirv)) {
-		active_bindings.push_back({
-			.set = use.set,
-			.slot = use.slot,
-			.access = use.access,
-			.type = lookup_descriptor_type(*family, use.set, use.slot),
-			.stages = gpu::pipeline_stage_flag::compute_shader,
-		});
+		active_bindings.push_back(
+			{
+				.set = use.set,
+				.slot = use.slot,
+				.access = use.access,
+				.type = lookup_descriptor_type(*family, use.set, use.slot),
+				.stages = gpu::pipeline_stage_flag::compute_shader,
+			}
+		);
 	}
 
 	vulkan::compute_pipeline_create_info info{
@@ -968,11 +989,16 @@ auto gse::gpu::create_compute_pipeline_from_spirv(device& dev, shader_registry& 
 	return vulkan::pipeline::create_compute(dev.vulkan_device(), info);
 }
 
-auto gse::gpu::build_compute_pipeline_impl(device& dev, shader_registry& registry, bindless_texture_set& bindless, const shader_compile_inputs& inputs) -> pipeline {
+auto gse::gpu::build_compute_pipeline_impl(
+	device& dev,
+	shader_registry& registry,
+	bindless_texture_set& bindless,
+	const shader_compile_inputs& inputs
+) -> pipeline {
 	assert(!inputs.body_path.empty(), "shader_fn annotation missing on compute entry");
 	assert(!inputs.layout_name.empty(), "shader_layout annotation missing on compute entry");
 
-	const auto body_source = load_body_file(inputs.body_path);
+	const auto body_source = inputs.inline_source.empty() ? load_body_file(inputs.body_path) : inputs.inline_source;
 	const auto parsed = parse_body_file(body_source);
 	const auto wrapper_source = build_compute_wrapper_source(inputs, parsed);
 
@@ -987,12 +1013,18 @@ auto gse::gpu::build_compute_pipeline_impl(device& dev, shader_registry& registr
 	);
 }
 
-auto gse::gpu::build_compute_pipeline(device& dev, shader_registry& registry, bindless_texture_set& bindless, const compute_entry_pod& pod) -> pipeline {
+auto gse::gpu::build_compute_pipeline(
+	device& dev,
+	shader_registry& registry,
+	bindless_texture_set& bindless,
+	const compute_entry_pod& pod
+) -> pipeline {
 	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
 	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
 
 	shader_compile_inputs inputs;
 	inputs.body_path = std::string(pod.body_path);
+	inputs.inline_source = std::string(pod.body_source);
 	inputs.layout_name = std::string(pod.layout_name);
 	inputs.threads_x = pod.threads_x;
 	inputs.threads_y = pod.threads_y;
@@ -1007,12 +1039,14 @@ auto gse::gpu::build_compute_pipeline(device& dev, shader_registry& registry, bi
 	}
 	inputs.params.reserve(pod.param_count);
 	for (std::size_t i = 0; i < pod.param_count; ++i) {
-		inputs.params.push_back({
-			.name = std::string(pod.params[i].name),
-			.slang_type = std::string(pod.params[i].slang_type),
-			.semantic = std::string(pod.params[i].semantic),
-			.is_function_param = pod.params[i].is_function_param,
-		});
+		inputs.params.push_back(
+			{
+				.name = std::string(pod.params[i].name),
+				.slang_type = std::string(pod.params[i].slang_type),
+				.semantic = std::string(pod.params[i].semantic),
+				.is_function_param = pod.params[i].is_function_param,
+			}
+		);
 	}
 	return build_compute_pipeline_impl(dev, registry, bindless, inputs);
 }
@@ -1144,7 +1178,8 @@ namespace gse::gpu {
 	}
 }
 
-auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std::string_view wrapper_source) -> compiled_graphics_program {
+auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std::string_view wrapper_source)
+	-> compiled_graphics_program {
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
@@ -1155,7 +1190,14 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 	std::ranges::replace(sanitized, '\\', '_');
 
 	auto dump_wrapper_source = [&] {
-		log::println(log::level::error, log::category::assets, "Wrapper source for '{}' (body: {}):\n{}", sanitized, pod.body_path, wrapper_source);
+		log::println(
+			log::level::error,
+			log::category::assets,
+			"Wrapper source for '{}' (body: {}):\n{}",
+			sanitized,
+			pod.body_path,
+			wrapper_source
+		);
 	};
 
 	Slang::ComPtr<slang::IBlob> diags;
@@ -1186,7 +1228,10 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 		for (int j = 0; j < ep_count; ++j) {
 			Slang::ComPtr<slang::IEntryPoint> candidate;
 			mod->getDefinedEntryPoint(j, candidate.writeRef());
-			if (!std::strcmp(candidate->getFunctionReflection()->getName(), std::string(stage_pod.entry_point).c_str())) {
+			if (!std::strcmp(
+					candidate->getFunctionReflection()->getName(),
+					std::string(stage_pod.entry_point).c_str()
+				)) {
 				ep = candidate;
 				break;
 			}
@@ -1207,7 +1252,12 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 	}
 
 	Slang::ComPtr<slang::IComponentType> composed;
-	if (slang_failed(session->createCompositeComponentType(parts.data(), static_cast<SlangInt>(parts.size()), composed.writeRef(), diags.writeRef()))) {
+	if (slang_failed(session->createCompositeComponentType(
+			parts.data(),
+			static_cast<SlangInt>(parts.size()),
+			composed.writeRef(),
+			diags.writeRef()
+		))) {
 		log_slang_diagnostics(diags.get());
 		dump_wrapper_source();
 		assert(false, "Failed to compose graphics program in {}", sanitized);
@@ -1224,7 +1274,10 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 		const auto& stage_pod = pod.stages[i];
 
 		Slang::ComPtr<ISlangBlob> blob;
-		if (slang_failed(program->getEntryPointCode(static_cast<SlangInt>(ep_indices[i]), 0, blob.writeRef(), diags.writeRef())) || !blob) {
+		if (slang_failed(
+				program->getEntryPointCode(static_cast<SlangInt>(ep_indices[i]), 0, blob.writeRef(), diags.writeRef())
+			) ||
+			!blob) {
 			log_slang_diagnostics(diags.get());
 			dump_wrapper_source();
 			assert(false, "Failed to get SPIR-V for graphics entry point '{}' in {}", stage_pod.entry_point, sanitized);
@@ -1234,16 +1287,19 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 		std::vector<std::uint32_t> spirv(byte_size / sizeof(std::uint32_t));
 		std::memcpy(spirv.data(), blob->getBufferPointer(), byte_size);
 
-		result.stages.push_back({
-			.flag = stage_pod.stage_flag_value,
-			.kind = stage_pod.kind,
-			.entry_point = std::string(stage_pod.entry_point),
-			.spirv = std::move(spirv),
-		});
+		result.stages.push_back(
+			{
+				.flag = stage_pod.stage_flag_value,
+				.kind = stage_pod.kind,
+				.entry_point = std::string(stage_pod.entry_point),
+				.spirv = std::move(spirv),
+			}
+		);
 
 		if (stage_pod.kind == graphics_stage_kind::vertex) {
 			auto* layout_reflection = program->getLayout();
-			if (layout_reflection && static_cast<std::size_t>(layout_reflection->getEntryPointCount()) > ep_indices[i]) {
+			if (layout_reflection &&
+				static_cast<std::size_t>(layout_reflection->getEntryPointCount()) > ep_indices[i]) {
 				auto* ep_layout = layout_reflection->getEntryPointByIndex(static_cast<SlangInt>(ep_indices[i]));
 				auto* scope_vl = ep_layout ? ep_layout->getVarLayout() : nullptr;
 				auto* scope_tl = scope_vl ? scope_vl->getTypeLayout() : nullptr;
@@ -1266,20 +1322,24 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 						}
 						const auto fmt = to_vertex_format_from_slang(tl->getType());
 						const auto attr_size = byte_size_of_vertex_format(fmt);
-						result.vertex_attributes.push_back({
-							.location = next_location++,
-							.binding = 0,
-							.format = fmt,
-							.offset = offset,
-						});
+						result.vertex_attributes.push_back(
+							{
+								.location = next_location++,
+								.binding = 0,
+								.format = fmt,
+								.offset = offset,
+							}
+						);
 						offset += attr_size;
 					}
 					if (offset > 0) {
-						result.vertex_bindings.push_back({
-							.binding = 0,
-							.stride = offset,
-							.per_instance = false,
-						});
+						result.vertex_bindings.push_back(
+							{
+								.binding = 0,
+								.stride = offset,
+								.per_instance = false,
+							}
+						);
 					}
 				}
 			}
@@ -1289,14 +1349,20 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 	return result;
 }
 
-auto gse::gpu::build_graphics_pipeline(device& dev, shader_registry& registry, bindless_texture_set& bindless, const graphics_entry_pod& pod) -> pipeline {
+auto gse::gpu::build_graphics_pipeline(
+	device& dev,
+	shader_registry& registry,
+	bindless_texture_set& bindless,
+	const graphics_entry_pod& pod
+) -> pipeline {
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
 	assert(!pod.layout_name.empty(), "layout missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");
 	assert(pod.build_family_sets_fn, "bindings missing on graphics entry");
 	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
 
-	const auto body_source = load_body_file(pod.body_path);
+	const std::string body_source =
+		pod.body_source.empty() ? load_body_file(pod.body_path) : std::string(pod.body_source);
 	const auto parsed = parse_body_file(body_source);
 	const auto wrapper_source = build_graphics_wrapper_source(pod, parsed);
 
@@ -1331,24 +1397,28 @@ auto gse::gpu::build_graphics_pipeline(device& dev, shader_registry& registry, b
 
 	for (auto& s : program.stages) {
 		auto module_handle = shader_module::create(dev.vulkan_device(), s.spirv);
-		stage_infos.push_back({
-			.stage = s.flag,
-			.module_handle = module_handle.handle().value,
-			.entry_point = "main",
-		});
+		stage_infos.push_back(
+			{
+				.stage = s.flag,
+				.module_handle = module_handle.handle().value,
+				.entry_point = "main",
+			}
+		);
 		const auto stage_pipeline = to_pipeline_stage(s.flag);
 		for (const auto& use : used_bindings(s.spirv)) {
 			const auto it = std::ranges::find_if(active_bindings, [&](const binding_use& existing) {
 				return existing.set == use.set && existing.slot == use.slot;
 			});
 			if (it == active_bindings.end()) {
-				active_bindings.push_back({
-					.set = use.set,
-					.slot = use.slot,
-					.access = use.access,
-					.type = lookup_descriptor_type(*family, use.set, use.slot),
-					.stages = stage_pipeline,
-				});
+				active_bindings.push_back(
+					{
+						.set = use.set,
+						.slot = use.slot,
+						.access = use.access,
+						.type = lookup_descriptor_type(*family, use.set, use.slot),
+						.stages = stage_pipeline,
+					}
+				);
 			}
 			else {
 				it->stages |= stage_pipeline;

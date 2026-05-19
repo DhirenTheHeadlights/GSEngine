@@ -23,9 +23,7 @@ export namespace gse::vulkan {
 
 		auto end() -> void;
 
-		auto set_marker_seq(
-			std::uint64_t seq
-		) -> void;
+		auto set_marker_seq(std::uint64_t seq) -> void;
 
 		[[nodiscard]] auto marker_seq() const -> std::uint64_t;
 
@@ -34,10 +32,7 @@ export namespace gse::vulkan {
 	private:
 		friend class transient_command_pool;
 
-		transient_command_buffer(
-			vk::CommandBuffer cmd,
-			transient_command_pool* pool
-		);
+		transient_command_buffer(vk::CommandBuffer cmd, transient_command_pool* pool);
 
 		vk::CommandBuffer m_cmd{ nullptr };
 		transient_command_pool* m_pool = nullptr;
@@ -45,8 +40,12 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::transient_command_buffer::transient_command_buffer(const vk::CommandBuffer cmd, transient_command_pool* pool)
-	: m_cmd(cmd), m_pool(pool) {
+gse::vulkan::transient_command_buffer::transient_command_buffer(
+	const vk::CommandBuffer cmd,
+	transient_command_pool* pool
+)
+	: m_cmd(cmd),
+	  m_pool(pool) {
 }
 
 auto gse::vulkan::transient_command_buffer::handle() const -> gpu::handle<command_buffer> {

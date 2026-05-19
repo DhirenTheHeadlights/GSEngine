@@ -62,7 +62,10 @@ export namespace gse {
 	class mesh final : non_copyable {
 	public:
 		explicit mesh(mesh_data&& data);
-		mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {}) : m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(mat) {
+		mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {})
+			: m_vertices(std::move(vertices)),
+			  m_indices(std::move(indices)),
+			  m_material(mat) {
 		}
 
 		auto initialize(gpu::context::data& ctx) -> void;
@@ -103,15 +106,10 @@ export namespace gse {
 		gpu::sync_token m_upload_token;
 	};
 
-	auto generate_bounding_box_mesh(
-		vec3<displacement> upper,
-		vec3<displacement> lower
-	) -> mesh_data;
+	auto generate_bounding_box_mesh(vec3<displacement> upper, vec3<displacement> lower) -> mesh_data;
 
-	auto build_runtime_meshlets(
-		const std::vector<vertex>& vertices,
-		const std::vector<std::uint32_t>& indices
-	) -> meshlet_data;
+	auto build_runtime_meshlets(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices)
+		-> meshlet_data;
 }
 
 gse::mesh::mesh(mesh_data&& data)
@@ -122,8 +120,7 @@ gse::mesh::mesh(mesh_data&& data)
 }
 
 auto gse::meshlet_gpu_data::bind(gpu::descriptor_writer& writer) const -> void {
-	writer
-		.buffer<shaders::meshlet::vertices_buffer>(vertex_storage)
+	writer.buffer<shaders::meshlet::vertices_buffer>(vertex_storage)
 		.buffer<shaders::meshlet::meshlets_buffer>(descriptors)
 		.buffer<shaders::meshlet::meshlet_vertex_indices>(vertices)
 		.buffer<shaders::meshlet::meshlet_triangles>(triangles)
@@ -144,14 +141,24 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 
 	constexpr auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
 
-	m_vertex_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = vertex_buffer_size, .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst | gpu::buffer_flag::acceleration_structure_build_input }, "mesh.vertex");
+	m_vertex_buffer = gpu::buffer::create(
+		ctx.device->allocator(),
+		{ .size = vertex_buffer_size,
+		  .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
+			  gpu::buffer_flag::acceleration_structure_build_input },
+		"mesh.vertex"
+	);
 
-	m_index_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = index_buffer_size, .usage = gpu::buffer_flag::index | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst | gpu::buffer_flag::acceleration_structure_build_input }, "mesh.index");
+	m_index_buffer = gpu::buffer::create(
+		ctx.device->allocator(),
+		{ .size = index_buffer_size,
+		  .usage = gpu::buffer_flag::index | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
+			  gpu::buffer_flag::acceleration_structure_build_input },
+		"mesh.index"
+	);
 
-	std::vector<gpu::buffer_upload> uploads{
-		{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
-		{ &m_index_buffer, m_indices.data(), index_buffer_size }
-	};
+	std::vector<gpu::buffer_upload> uploads{ { &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
+											 { &m_index_buffer, m_indices.data(), index_buffer_size } };
 
 	if (!m_meshlets.descriptors.empty()) {
 		const auto tri_size = (m_meshlets.triangles.size() + 3) & ~std::size_t(3);
@@ -159,19 +166,49 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		meshlet_gpu_data ml;
 		ml.count = static_cast<std::uint32_t>(m_meshlets.descriptors.size());
 
-		ml.vertex_storage = gpu::buffer::create(ctx.device->allocator(), { .size = vertex_buffer_size, .usage = storage_dst }, "mesh.meshlet.vertex_storage");
-		ml.descriptors = gpu::buffer::create(ctx.device->allocator(), { .size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(), .usage = storage_dst }, "mesh.meshlet.descriptors");
-		ml.vertices = gpu::buffer::create(ctx.device->allocator(), { .size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(), .usage = storage_dst }, "mesh.meshlet.vertices");
-		ml.triangles = gpu::buffer::create(ctx.device->allocator(), { .size = tri_size, .usage = storage_dst }, "mesh.meshlet.triangles");
-		ml.bounds = gpu::buffer::create(ctx.device->allocator(), { .size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(), .usage = storage_dst }, "mesh.meshlet.bounds");
+		ml.vertex_storage = gpu::buffer::create(
+			ctx.device->allocator(),
+			{ .size = vertex_buffer_size, .usage = storage_dst },
+			"mesh.meshlet.vertex_storage"
+		);
+		ml.descriptors = gpu::buffer::create(
+			ctx.device->allocator(),
+			{ .size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(), .usage = storage_dst },
+			"mesh.meshlet.descriptors"
+		);
+		ml.vertices = gpu::buffer::create(
+			ctx.device->allocator(),
+			{ .size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(), .usage = storage_dst },
+			"mesh.meshlet.vertices"
+		);
+		ml.triangles = gpu::buffer::create(
+			ctx.device->allocator(),
+			{ .size = tri_size, .usage = storage_dst },
+			"mesh.meshlet.triangles"
+		);
+		ml.bounds = gpu::buffer::create(
+			ctx.device->allocator(),
+			{ .size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(), .usage = storage_dst },
+			"mesh.meshlet.bounds"
+		);
 
 		m_meshlet_gpu = std::move(ml);
 
 		uploads.push_back({ &m_meshlet_gpu->vertex_storage, m_vertices.data(), vertex_buffer_size });
-		uploads.push_back({ &m_meshlet_gpu->descriptors, m_meshlets.descriptors.data(), sizeof(meshlet_descriptor) * m_meshlets.descriptors.size() });
-		uploads.push_back({ &m_meshlet_gpu->vertices, m_meshlets.vertex_indices.data(), sizeof(std::uint32_t) * m_meshlets.vertex_indices.size() });
+		uploads.push_back(
+			{ &m_meshlet_gpu->descriptors,
+			  m_meshlets.descriptors.data(),
+			  sizeof(meshlet_descriptor) * m_meshlets.descriptors.size() }
+		);
+		uploads.push_back(
+			{ &m_meshlet_gpu->vertices,
+			  m_meshlets.vertex_indices.data(),
+			  sizeof(std::uint32_t) * m_meshlets.vertex_indices.size() }
+		);
 		uploads.push_back({ &m_meshlet_gpu->triangles, m_meshlets.triangles.data(), tri_size });
-		uploads.push_back({ &m_meshlet_gpu->bounds, m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
+		uploads.push_back(
+			{ &m_meshlet_gpu->bounds, m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() }
+		);
 	}
 
 	m_upload_token = gpu::upload_to_buffers(*ctx.device, uploads);
@@ -191,18 +228,30 @@ auto gse::mesh::center_of_mass() const -> vec3<displacement> {
 	volume_d total_volume{};
 	decltype(vec3_ld{} * volume_d{}) moment{};
 
-	assert(m_indices.size() % 3 == 0, "m_indices count is not a multiple of 3. Ensure that each face is defined by exactly three m_indices.");
+	assert(
+		m_indices.size() % 3 == 0,
+		"m_indices count is not a multiple of 3. Ensure that each face is defined by exactly three m_indices."
+	);
 
 	for (std::size_t i = 0; i < m_indices.size(); i += 3) {
 		const unsigned int idx0 = m_indices[i];
 		const unsigned int idx1 = m_indices[i + 1];
 		const unsigned int idx2 = m_indices[i + 2];
 
-		assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), "Index out of range while accessing m_vertices.");
+		assert(
+			idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(),
+			"Index out of range while accessing m_vertices."
+		);
 
-		const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
-		const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
-		const vec3_ld v2 = { length_d(m_vertices[idx2].position.x()), length_d(m_vertices[idx2].position.y()), length_d(m_vertices[idx2].position.z()) };
+		const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()),
+							 length_d(m_vertices[idx0].position.y()),
+							 length_d(m_vertices[idx0].position.z()) };
+		const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()),
+							 length_d(m_vertices[idx1].position.y()),
+							 length_d(m_vertices[idx1].position.z()) };
+		const vec3_ld v2 = { length_d(m_vertices[idx2].position.x()),
+							 length_d(m_vertices[idx2].position.y()),
+							 length_d(m_vertices[idx2].position.z()) };
 
 		const vec3_ld a = v0 - reference_point;
 		const vec3_ld b = v1 - reference_point;
@@ -251,70 +300,36 @@ auto gse::mesh::aabb() const -> std::pair<vec3<displacement>, vec3<displacement>
 
 auto gse::generate_bounding_box_mesh(const vec3<displacement> upper, const vec3<displacement> lower) -> mesh_data {
 	auto create_vertex = [](const vec3<displacement>& position) -> vertex {
-		return {
-			.position = position,
-			.normal = { 0.0f, 0.0f, 0.0f },
-			.tex_coords = { 0.0f, 0.0f }
-		};
+		return { .position = position, .normal = { 0.0f, 0.0f, 0.0f }, .tex_coords = { 0.0f, 0.0f } };
 	};
 
 	const std::vector vertices = {
-		create_vertex({ lower.x(), lower.y(), lower.z() }),
-		create_vertex({ upper.x(), lower.y(), lower.z() }),
-		create_vertex({ upper.x(), upper.y(), lower.z() }),
-		create_vertex({ lower.x(), upper.y(), lower.z() }),
-		create_vertex({ lower.x(), lower.y(), upper.z() }),
-		create_vertex({ upper.x(), lower.y(), upper.z() }),
-		create_vertex({ upper.x(), upper.y(), upper.z() }),
-		create_vertex({ lower.x(), upper.y(), upper.z() })
+		create_vertex({ lower.x(), lower.y(), lower.z() }), create_vertex({ upper.x(), lower.y(), lower.z() }),
+		create_vertex({ upper.x(), upper.y(), lower.z() }), create_vertex({ lower.x(), upper.y(), lower.z() }),
+		create_vertex({ lower.x(), lower.y(), upper.z() }), create_vertex({ upper.x(), lower.y(), upper.z() }),
+		create_vertex({ upper.x(), upper.y(), upper.z() }), create_vertex({ lower.x(), upper.y(), upper.z() })
 	};
 
 	const std::vector<std::uint32_t> indices = {
-		0,
-		1,
-		2,
-		2,
-		3,
+		0, 1, 2, 2, 3,
 		0, // Front face
-		4,
-		5,
-		6,
-		6,
-		7,
+		4, 5, 6, 6, 7,
 		4, // Back face
-		0,
-		4,
-		7,
-		7,
-		3,
+		0, 4, 7, 7, 3,
 		0, // Left face
-		1,
-		5,
-		6,
-		6,
-		2,
+		1, 5, 6, 6, 2,
 		1, // Right face
-		0,
-		1,
-		5,
-		5,
-		4,
+		0, 1, 5, 5, 4,
 		0, // Bottom face
-		3,
-		2,
-		6,
-		6,
-		7,
+		3, 2, 6, 6, 7,
 		3 // Top face
 	};
 
-	return mesh_data{
-		.vertices = vertices,
-		.indices = indices
-	};
+	return mesh_data{ .vertices = vertices, .indices = indices };
 }
 
-auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices) -> meshlet_data {
+auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices)
+	-> meshlet_data {
 	constexpr std::uint32_t max_vertices = 64;
 	constexpr std::uint32_t max_triangles = 124;
 
@@ -364,12 +379,7 @@ auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std:
 
 		const float cone_cutoff = min_dot < 0.f ? -1.f : min_dot;
 
-		return {
-			.center = centroid,
-			.radius = max_dist,
-			.cone_axis = cone_axis,
-			.cone_cutoff = cone_cutoff
-		};
+		return { .center = centroid, .radius = max_dist, .cone_axis = cone_axis, .cone_cutoff = cone_cutoff };
 	};
 
 	auto finalize_meshlet = [&] {
@@ -377,12 +387,10 @@ auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std:
 			return;
 		}
 
-		const meshlet_descriptor desc{
-			.vertex_offset = static_cast<std::uint32_t>(result.vertex_indices.size()),
-			.triangle_offset = static_cast<std::uint32_t>(result.triangles.size()),
-			.vertex_count = static_cast<std::uint32_t>(current_vertices.size()),
-			.triangle_count = static_cast<std::uint32_t>(current_triangles.size() / 3)
-		};
+		const meshlet_descriptor desc{ .vertex_offset = static_cast<std::uint32_t>(result.vertex_indices.size()),
+									   .triangle_offset = static_cast<std::uint32_t>(result.triangles.size()),
+									   .vertex_count = static_cast<std::uint32_t>(current_vertices.size()),
+									   .triangle_count = static_cast<std::uint32_t>(current_triangles.size() / 3) };
 
 		const auto bounds = compute_bounds(desc);
 
@@ -406,13 +414,15 @@ auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std:
 			}
 		}
 
-		if (current_vertices.size() + new_vertex_count > max_vertices || current_triangles.size() / 3 >= max_triangles) {
+		if (current_vertices.size() + new_vertex_count > max_vertices ||
+			current_triangles.size() / 3 >= max_triangles) {
 			finalize_meshlet();
 		}
 
 		std::uint8_t local_tri[3];
 		for (int j = 0; j < 3; ++j) {
-			auto [it, inserted] = local_vertex_map.emplace(tri_indices[j], static_cast<std::uint8_t>(current_vertices.size()));
+			auto [it, inserted] =
+				local_vertex_map.emplace(tri_indices[j], static_cast<std::uint8_t>(current_vertices.size()));
 			if (inserted) {
 				current_vertices.push_back(tri_indices[j]);
 			}

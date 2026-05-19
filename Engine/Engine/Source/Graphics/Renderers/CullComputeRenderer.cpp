@@ -58,20 +58,35 @@ namespace gse::renderer::cull_compute {
 		gpu::system_values<gpu::group_id>>;
 }
 
-auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
-	d.pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+auto gse::renderer::cull_compute::system::run(
+	run_context& ctx,
+	const gpu::context::data& gpu_s,
+	const asset::data& assets_s,
+	const geometry_collector::system::data& gc_r,
+	data& d
+) -> async::task<> {
+	d.pipeline =
+		gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
-		d.frustum_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = frustum_size, .usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst });
+		d.frustum_buffer[i] = gpu::buffer::create(
+			gpu_s.device->allocator(),
+			{ .size = frustum_size, .usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst }
+		);
 
 		constexpr std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * sizeof(batch_info);
-		d.batch_info_buffer[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = batch_info_size, .usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst });
+		d.batch_info_buffer[i] = gpu::buffer::create(
+			gpu_s.device->allocator(),
+			{ .size = batch_info_size, .usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst }
+		);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.normal_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
-		d.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+		d.normal_descriptors[i] =
+			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+		d.skinned_descriptors[i] =
+			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
@@ -81,20 +96,21 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 		};
 
 		gpu::descriptor_writer normal_writer(gpu::context::device_handle(*gpu_s.device), d.normal_descriptors[i]);
-		write_shared(normal_writer)
-			.buffer<indirect_commands>(gc_r.normal_indirect_commands_buffer[i])
-			.commit();
+		write_shared(normal_writer).buffer<indirect_commands>(gc_r.normal_indirect_commands_buffer[i]).commit();
 
 		gpu::descriptor_writer skinned_writer(gpu::context::device_handle(*gpu_s.device), d.skinned_descriptors[i]);
-		write_shared(skinned_writer)
-			.buffer<indirect_commands>(gc_r.skinned_indirect_commands_buffer[i])
-			.commit();
+		write_shared(skinned_writer).buffer<indirect_commands>(gc_r.skinned_indirect_commands_buffer[i]).commit();
 	}
 
 	co_return;
 }
 
-auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, shared_view<geometry_collector::system> gc_r, const data& d) -> async::task<> {
+auto gse::renderer::cull_compute::system::frame(
+	frame_context& ctx,
+	shared_view<gpu::context> gpu_s,
+	shared_view<geometry_collector::system> gc_r,
+	const data& d
+) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -148,8 +164,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<
 		d.batch_info_buffer[frame_index].host_write(batch_staging.data(), batch_staging.size() * sizeof(batch_info));
 	}
 
-	auto rec = co_await gpu::pass<system>(ctx)
-				   .pipeline(d.pipeline);
+	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.pipeline);
 
 	if (normal_count > 0) {
 		rec.bind_descriptors(d.pipeline, d.normal_descriptors[frame_index]);

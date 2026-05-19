@@ -14,28 +14,21 @@ export namespace gse {
 
 		~move_only_function();
 
-		move_only_function(
-			const move_only_function&
-		) = delete;
+		move_only_function(const move_only_function&) = delete;
 
-		auto operator=(
-			const move_only_function&
-		) -> move_only_function& = delete;
+		auto operator=(const move_only_function&) -> move_only_function& = delete;
 
-		move_only_function(
-			move_only_function&& other
-		) noexcept;
+		move_only_function(move_only_function&& other) noexcept;
 
-		auto operator=(
-			move_only_function&& other
-		) noexcept -> move_only_function&;
+		auto operator=(move_only_function&& other) noexcept -> move_only_function&;
 
-		move_only_function(
-			std::nullptr_t
-		) noexcept;
+		move_only_function(std::nullptr_t) noexcept;
 
 		template <typename F>
-		requires(!std::same_as<std::remove_cvref_t<F>, move_only_function<R(Args...)>> && std::invocable<std::decay_t<F>&, Args...>)
+		requires(
+			!std::same_as<std::remove_cvref_t<F>, move_only_function<R(Args...)>> &&
+			std::invocable<std::decay_t<F>&, Args...>
+		)
 		move_only_function(F&& f) {
 			using D = std::decay_t<F>;
 			if constexpr (fits_inline_v<D>) {
@@ -57,9 +50,7 @@ export namespace gse {
 
 		[[nodiscard]] auto invoke_address() const noexcept -> const void*;
 
-		auto operator()(
-			Args... args
-		) -> R;
+		auto operator()(Args... args) -> R;
 
 	private:
 		static constexpr std::size_t buffer_size = 3 * sizeof(void*);
@@ -72,7 +63,8 @@ export namespace gse {
 		};
 
 		template <typename F>
-		static constexpr bool fits_inline_v = sizeof(F) <= buffer_size && alignof(F) <= buffer_align && std::is_nothrow_move_constructible_v<F>;
+		static constexpr bool fits_inline_v =
+			sizeof(F) <= buffer_size && alignof(F) <= buffer_align && std::is_nothrow_move_constructible_v<F>;
 
 		template <typename F>
 		static auto inline_invoke(void* p, Args... args) -> R {
@@ -139,7 +131,8 @@ gse::move_only_function<R(Args...)>::~move_only_function() {
 }
 
 template <typename R, typename... Args>
-gse::move_only_function<R(Args...)>::move_only_function(move_only_function&& other) noexcept : m_vtable(other.m_vtable) {
+gse::move_only_function<R(Args...)>::move_only_function(move_only_function&& other) noexcept
+	: m_vtable(other.m_vtable) {
 	if (m_vtable) {
 		m_vtable->move_init(other.m_buffer, m_buffer);
 		other.m_vtable = nullptr;

@@ -49,8 +49,7 @@ export namespace gse::animation {
 
 	struct pose_cache_key_hash {
 		auto operator()(const pose_cache_key& k) const -> std::size_t {
-			return std::hash<const void*>{}(k.clip) ^
-				(std::hash<const void*>{}(k.skel) << 1) ^
+			return std::hash<const void*>{}(k.clip) ^ (std::hash<const void*>{}(k.skel) << 1) ^
 				(std::hash<std::int64_t>{}(k.time_bucket) << 2);
 		}
 	};
@@ -64,34 +63,16 @@ export namespace gse::animation {
 			std::unordered_map<id, animation_graph> graphs;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const asset::data& assets_s,
-			data& d
-		) -> async::task<>;
+		static auto run(run_context& ctx, const asset::data& assets_s, data& d) -> async::task<>;
 
 	private:
-		static auto wrap_time(
-			time t,
-			time length
-		) -> time;
+		static auto wrap_time(time t, time length) -> time;
 
-		static auto lerp_mat4(
-			const mat4f& a,
-			const mat4f& b,
-			float t
-		) -> mat4f;
+		static auto lerp_mat4(const mat4f& a, const mat4f& b, float t) -> mat4f;
 
-		static auto sample_track(
-			const joint_track& track,
-			time t,
-			mat4f& out
-		) -> bool;
+		static auto sample_track(const joint_track& track, time t, mat4f& out) -> bool;
 
-		static auto ensure_pose_buffers(
-			animation_component& anim,
-			std::size_t joint_count
-		) -> void;
+		static auto ensure_pose_buffers(animation_component& anim, std::size_t joint_count) -> void;
 
 		static auto build_local_pose(
 			animation_component& anim,
@@ -100,17 +81,10 @@ export namespace gse::animation {
 			time t
 		) -> void;
 
-		static auto build_global_and_skins(
-			animation_component& anim,
-			const skeleton& skeleton
-		) -> void;
+		static auto build_global_and_skins(animation_component& anim, const skeleton& skeleton) -> void;
 
-		static auto sample_clip_to_pose(
-			std::vector<mat4f>& pose,
-			const skeleton& skel,
-			const clip_asset& clip,
-			time t
-		) -> void;
+		static auto sample_clip_to_pose(std::vector<mat4f>& pose, const skeleton& skel, const clip_asset& clip, time t)
+			-> void;
 
 		static auto blend_poses(
 			std::vector<mat4f>& out,
@@ -131,14 +105,8 @@ export namespace gse::animation {
 			time clip_length
 		) -> bool;
 
-		static auto clear_triggers(
-			std::unordered_map<std::string, animation_parameter>& params
-		) -> void;
+		static auto clear_triggers(std::unordered_map<std::string, animation_parameter>& params) -> void;
 
-		static auto process_controller_job(
-			const controller_job& job,
-			const asset::data& assets_s,
-			time dt
-		) -> void;
+		static auto process_controller_job(const controller_job& job, const asset::data& assets_s, time dt) -> void;
 	};
 }

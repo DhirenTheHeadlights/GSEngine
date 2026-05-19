@@ -39,7 +39,9 @@ export namespace gse {
 		vec3<position> min;
 
 		auto overlaps(const aabb& other, const length margin = meters(0.f)) const -> bool {
-			return min.x() - margin <= other.max.x() && max.x() + margin >= other.min.x() && min.y() - margin <= other.max.y() && max.y() + margin >= other.min.y() && min.z() - margin <= other.max.z() && max.z() + margin >= other.min.z();
+			return min.x() - margin <= other.max.x() && max.x() + margin >= other.min.x() &&
+				min.y() - margin <= other.max.y() && max.y() + margin >= other.min.y() &&
+				min.z() - margin <= other.max.z() && max.z() + margin >= other.min.z();
 		}
 	};
 
@@ -54,24 +56,13 @@ export namespace gse {
 	public:
 		bounding_box() = default;
 
-		bounding_box(
-			const physics::transform_component& tc,
-			const physics::box_shape& shape
-		);
+		bounding_box(const physics::transform_component& tc, const physics::box_shape& shape);
 
-		bounding_box(
-			const physics::transform_component& tc,
-			const physics::sphere_shape& shape
-		);
+		bounding_box(const physics::transform_component& tc, const physics::sphere_shape& shape);
 
-		bounding_box(
-			const physics::transform_component& tc,
-			const physics::capsule_shape& shape
-		);
+		bounding_box(const physics::transform_component& tc, const physics::capsule_shape& shape);
 
-		explicit bounding_box(
-			const physics::transform_component& tc
-		);
+		explicit bounding_box(const physics::transform_component& tc);
 
 		auto aabb() const -> aabb;
 
@@ -83,15 +74,11 @@ export namespace gse {
 
 		auto face_normals() const -> std::array<vec3f, 6>;
 
-		auto face_vertices(
-			std::uint32_t face_index
-		) const -> std::array<vec3<position>, 4>;
+		auto face_vertices(std::uint32_t face_index) const -> std::array<vec3<position>, 4>;
 
 		auto obb_vertices() const -> std::vector<vec3<position>>;
 
-		auto edge_endpoints(
-			std::uint32_t edge_index
-		) const -> std::pair<vec3<position>, vec3<position>>;
+		auto edge_endpoints(std::uint32_t edge_index) const -> std::pair<vec3<position>, vec3<position>>;
 
 		static constexpr std::uint32_t edge_count = 12;
 
@@ -115,11 +102,7 @@ auto gse::collision_information::axis() const -> gse::axis {
 gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::box_shape& shape)
 	: m_center(tc.position),
 	  m_orientation(tc.orientation),
-	  m_half_extents(
-		  shape.size.x() * 0.5f,
-		  shape.size.y() * 0.5f,
-		  shape.size.z() * 0.5f
-	  ) {
+	  m_half_extents(shape.size.x() * 0.5f, shape.size.y() * 0.5f, shape.size.z() * 0.5f) {
 }
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::sphere_shape& shape)
@@ -142,9 +125,7 @@ gse::bounding_box::bounding_box(const physics::transform_component& tc)
 
 auto gse::bounding_box::aabb() const -> gse::aabb {
 	const auto rotation = mat3_cast(m_orientation);
-	const auto extent =
-		gse::abs(rotation[0]) * m_half_extents.x() +
-		gse::abs(rotation[1]) * m_half_extents.y() +
+	const auto extent = gse::abs(rotation[0]) * m_half_extents.x() + gse::abs(rotation[1]) * m_half_extents.y() +
 		gse::abs(rotation[2]) * m_half_extents.z();
 	return {
 		.max = m_center + extent,
@@ -176,14 +157,7 @@ auto gse::bounding_box::half_extents() const -> vec3<displacement> {
 
 auto gse::bounding_box::face_normals() const -> std::array<vec3f, 6> {
 	const auto box_obb = obb();
-	return {
-		box_obb.axes[0],
-		-box_obb.axes[0],
-		box_obb.axes[1],
-		-box_obb.axes[1],
-		box_obb.axes[2],
-		-box_obb.axes[2]
-	};
+	return { box_obb.axes[0], -box_obb.axes[0], box_obb.axes[1], -box_obb.axes[1], box_obb.axes[2], -box_obb.axes[2] };
 }
 
 auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> std::array<vec3<position>, 4> {
@@ -201,12 +175,10 @@ auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> s
 
 	const vec3<position> face_center = box_obb.center + primary_axis * (m_half_extents[axis_idx] * sign);
 
-	return {
-		face_center + u_axis * h_u + v_axis * h_v,
-		face_center - u_axis * h_u + v_axis * h_v,
-		face_center - u_axis * h_u - v_axis * h_v,
-		face_center + u_axis * h_u - v_axis * h_v
-	};
+	return { face_center + u_axis * h_u + v_axis * h_v,
+			 face_center - u_axis * h_u + v_axis * h_v,
+			 face_center - u_axis * h_u - v_axis * h_v,
+			 face_center + u_axis * h_u - v_axis * h_v };
 }
 
 auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<position>> {
@@ -221,10 +193,22 @@ auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<position>> {
 	return corners;
 }
 
-auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const -> std::pair<vec3<position>, vec3<position>> {
+auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const
+	-> std::pair<vec3<position>, vec3<position>> {
 	const auto vertices = obb_vertices();
 
-	static constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 12> edge_indices = { { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 }, { 0, 2 }, { 1, 3 }, { 4, 6 }, { 5, 7 }, { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 } } };
+	static constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 12> edge_indices = { { { 0, 1 },
+																								{ 2, 3 },
+																								{ 4, 5 },
+																								{ 6, 7 },
+																								{ 0, 2 },
+																								{ 1, 3 },
+																								{ 4, 6 },
+																								{ 5, 7 },
+																								{ 0, 4 },
+																								{ 1, 5 },
+																								{ 2, 6 },
+																								{ 3, 7 } } };
 
 	const auto& [i0, i1] = edge_indices[edge_index % 12];
 	return { vertices[i0], vertices[i1] };

@@ -12,23 +12,17 @@ export namespace gse::gui {
 
 	struct nav {
 		template <typename T, typename... Args>
-		auto push(
-			Args&&... args
-		) -> void;
+		auto push(Args&&... args) -> void;
 
-		auto pop(
-		) -> void;
+		auto pop() -> void;
 
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 
 		template <typename T, typename... Args>
-		auto replace_top(
-			Args&&... args
-		) -> void;
+		auto replace_top(Args&&... args) -> void;
 
-		[[nodiscard]] auto depth(
-		) const -> std::size_t;
+		[[nodiscard]] auto depth() const -> std::size_t;
+
 	private:
 		friend struct menu_stack_state;
 		struct pop_tag {};
@@ -42,14 +36,13 @@ export namespace gse::gui {
 	struct screen {
 		virtual ~screen() = default;
 
-		virtual auto build(
-			builder& ui,
-			nav& n
-		) -> void = 0;
+		virtual auto build(builder& ui, nav& n) -> void = 0;
 
-		virtual auto on_push() -> void {}
+		virtual auto on_push() -> void {
+		}
 
-		virtual auto on_pop() -> void {}
+		virtual auto on_pop() -> void {
+		}
 
 		virtual auto captures_input() const -> bool {
 			return true;
@@ -67,54 +60,34 @@ export namespace gse::gui {
 			return {};
 		}
 
-		virtual auto body_rect(
-			const style& sty,
-			vec2f viewport_size
-		) const -> ui_rect;
+		virtual auto body_rect(const style& sty, vec2f viewport_size) const -> ui_rect;
 
-		virtual auto draw_backdrop(
-			draw_context& ctx,
-			vec2f viewport_size
-		) const -> void;
+		virtual auto draw_backdrop(draw_context& ctx, vec2f viewport_size) const -> void;
 	};
 
 	struct menu_stack_state {
 		template <typename T, typename... Args>
-		auto push(
-			Args&&... args
-		) -> void;
+		auto push(Args&&... args) -> void;
 
-		auto push_factory(
-			std::function<std::unique_ptr<screen>()> factory
-		) -> void;
+		auto push_factory(std::function<std::unique_ptr<screen>()> factory) -> void;
 
-		auto pop(
-		) -> void;
+		auto pop() -> void;
 
-		auto clear(
-		) -> void;
+		auto clear() -> void;
 
 		template <typename Self>
-		[[nodiscard]] auto top(
-			this Self& self
-		);
+		[[nodiscard]] auto top(this Self& self);
 
-		[[nodiscard]] auto empty(
-		) const -> bool;
+		[[nodiscard]] auto empty() const -> bool;
 
-		[[nodiscard]] auto size(
-		) const -> std::size_t;
+		[[nodiscard]] auto size() const -> std::size_t;
 
-		[[nodiscard]] auto captures_input(
-		) const -> bool;
+		[[nodiscard]] auto captures_input() const -> bool;
 
-		auto tick(
-			builder& ui
-		) -> void;
+		auto tick(builder& ui) -> void;
+
 	private:
-		auto apply(
-			nav& n
-		) -> void;
+		auto apply(nav& n) -> void;
 
 		std::vector<std::unique_ptr<screen>> m_stack;
 	};
@@ -129,10 +102,7 @@ export namespace gse::gui {
 }
 
 auto gse::gui::screen::body_rect(const style& sty, const vec2f viewport_size) const -> ui_rect {
-	return ui_rect::from_position_size(
-		{ 0.f, viewport_size.y() },
-		{ viewport_size.x(), viewport_size.y() }
-	);
+	return ui_rect::from_position_size({ 0.f, viewport_size.y() }, { viewport_size.x(), viewport_size.y() });
 }
 
 auto gse::gui::screen::draw_backdrop(draw_context& ctx, const vec2f viewport_size) const -> void {
@@ -143,20 +113,20 @@ auto gse::gui::screen::draw_backdrop(draw_context& ctx, const vec2f viewport_siz
 		ctx.style.color_menu_body.z(),
 		1.0f,
 	};
-	ctx.queue_sprite({
-		.rect = rect,
-		.color = color,
-		.texture = ctx.blank_texture,
-	});
+	ctx.queue_sprite(
+		{
+			.rect = rect,
+			.color = color,
+			.texture = ctx.blank_texture,
+		}
+	);
 }
 
 template <typename T, typename... Args>
 auto gse::gui::nav::push(Args&&... args) -> void {
-	m_actions.emplace_back(factory{
-		[...captured = std::forward<Args>(args)]() mutable -> std::unique_ptr<screen> {
-			return std::make_unique<T>(std::move(captured)...);
-		}
-	});
+	m_actions.emplace_back(factory{ [... captured = std::forward<Args>(args)]() mutable -> std::unique_ptr<screen> {
+		return std::make_unique<T>(std::move(captured)...);
+	} });
 }
 
 auto gse::gui::nav::pop() -> void {
@@ -243,20 +213,23 @@ auto gse::gui::menu_stack_state::tick(builder& ui) -> void {
 
 auto gse::gui::menu_stack_state::apply(nav& n) -> void {
 	for (auto& a : n.m_actions) {
-		std::visit([this](auto&& x) {
-			using A = std::decay_t<decltype(x)>;
-			if constexpr (std::is_same_v<A, nav::pop_tag>) {
-				pop();
-			}
-			else if constexpr (std::is_same_v<A, nav::clear_tag>) {
-				clear();
-			}
-			else {
-				auto s = x();
-				s->on_push();
-				m_stack.push_back(std::move(s));
-			}
-		}, a);
+		std::visit(
+			[this](auto&& x) {
+				using A = std::decay_t<decltype(x)>;
+				if constexpr (std::is_same_v<A, nav::pop_tag>) {
+					pop();
+				}
+				else if constexpr (std::is_same_v<A, nav::clear_tag>) {
+					clear();
+				}
+				else {
+					auto s = x();
+					s->on_push();
+					m_stack.push_back(std::move(s));
+				}
+			},
+			a
+		);
 	}
 	n.m_actions.clear();
 	n.m_depth = m_stack.size();

@@ -108,7 +108,9 @@ gse::network::udp_socket::~udp_socket() {
 	}
 }
 
-gse::network::udp_socket::udp_socket(udp_socket&& other) noexcept : m_handle(other.m_handle), m_local_address(std::move(other.m_local_address)) {
+gse::network::udp_socket::udp_socket(udp_socket&& other) noexcept
+	: m_handle(other.m_handle),
+	  m_local_address(std::move(other.m_local_address)) {
 	other.m_handle = handle_invalid;
 }
 
@@ -137,7 +139,12 @@ auto gse::network::udp_socket::bind(const address& address) -> bool {
 	::sockaddr_in addr = make_sockaddr(address);
 
 	if (::bind(s, reinterpret_cast<::sockaddr*>(&addr), sizeof(addr)) == sockets::socket_error) {
-		log::println(log::level::error, log::category::network, "Failed to bind socket: error {}", sockets::last_error());
+		log::println(
+			log::level::error,
+			log::category::network,
+			"Failed to bind socket: error {}",
+			sockets::last_error()
+		);
 		sockets::close_socket(s);
 		m_handle = handle_invalid;
 		return false;
@@ -150,7 +157,12 @@ auto gse::network::udp_socket::bind(const address& address) -> bool {
 	}
 
 	if (!set_nonblocking_native(s)) {
-		log::println(log::level::error, log::category::network, "Failed to set non-blocking mode: error {}", sockets::last_error());
+		log::println(
+			log::level::error,
+			log::category::network,
+			"Failed to set non-blocking mode: error {}",
+			sockets::last_error()
+		);
 		sockets::close_socket(s);
 		m_handle = handle_invalid;
 		return false;
@@ -183,7 +195,12 @@ auto gse::network::udp_socket::send_data(const packet& packet, const address& ad
 #endif
 
 	if (::sendto(s, buf, len, 0, reinterpret_cast<::sockaddr*>(&addr), sizeof(addr)) == sockets::socket_error) {
-		log::println(log::level::error, log::category::network, "Socket sendto failed with error {}", sockets::last_error());
+		log::println(
+			log::level::error,
+			log::category::network,
+			"Socket sendto failed with error {}",
+			sockets::last_error()
+		);
 		return socket_state::error;
 	}
 

@@ -41,52 +41,26 @@ export namespace gse {
 			bool pc_local_player_created = false;
 		};
 
-		static auto run(
-			run_context& ctx,
-			data& d,
-			const actions::system::data& actions_d
-		) -> async::task<>;
+		static auto run(run_context& ctx, data& d, const actions::system::data& actions_d) -> async::task<>;
 
-		static auto shutdown(
-			shutdown_context& phase,
-			data& d
-		) -> void;
+		static auto shutdown(shutdown_context& phase, data& d) -> void;
 	};
 
-	auto add_scene(
-		world_system::data& d,
-		registry& reg,
-		std::string_view name,
-		scene::setup_fn setup = {}
-	) -> scene*;
+	auto add_scene(world_system::data& d, registry& reg, std::string_view name, scene::setup_fn setup = {}) -> scene*;
 
-	auto find_scene(
-		world_system::data& d,
-		const id& scene_id
-	) -> scene*;
+	auto find_scene(world_system::data& d, const id& scene_id) -> scene*;
 
-	auto current_scene(
-		world_system::data& d
-	) -> scene*;
+	auto current_scene(world_system::data& d) -> scene*;
 
-	auto activate_scene(
-		world_system::data& d,
-		const id& scene_id
-	) -> void;
+	auto activate_scene(world_system::data& d, const id& scene_id) -> void;
 
-	auto deactivate_active_scene(
-		world_system::data& d
-	) -> void;
+	auto deactivate_active_scene(world_system::data& d) -> void;
 
 	class director {
 	public:
-		explicit director(
-			world_system::data* state = nullptr
-		);
+		explicit director(world_system::data* state = nullptr);
 
-		auto when(
-			const trigger& trigger
-		) -> director&;
+		auto when(const trigger& trigger) -> director&;
 
 	private:
 		world_system::data* m_state = nullptr;
@@ -94,10 +68,7 @@ export namespace gse {
 }
 
 namespace gse {
-	auto update_player_controllers(
-		world_system::data& d,
-		registry& reg
-	) -> void;
+	auto update_player_controllers(world_system::data& d, registry& reg) -> void;
 }
 
 gse::director::director(world_system::data* state) : m_state(state) {

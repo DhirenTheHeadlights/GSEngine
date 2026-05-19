@@ -80,242 +80,238 @@ export namespace gse::gui {
 }
 
 constexpr auto gse::gui::style::dark() -> style {
-	return style{
-		// Window chrome
-		.color_title_bar = { 0.18f, 0.18f, 0.22f, 1.0f },
-		.color_title_bar_inactive = { 0.14f, 0.14f, 0.17f, 1.0f },
-		.color_menu_body = { 0.14f, 0.14f, 0.18f, 0.05f },
-		.color_border = { 0.26f, 0.28f, 0.34f, 0.7f },
+	return style{ // Window chrome
+				  .color_title_bar = { 0.18f, 0.18f, 0.22f, 1.0f },
+				  .color_title_bar_inactive = { 0.14f, 0.14f, 0.17f, 1.0f },
+				  .color_menu_body = { 0.14f, 0.14f, 0.18f, 0.05f },
+				  .color_border = { 0.26f, 0.28f, 0.34f, 0.7f },
 
-		// Text
-		.color_text = { 0.94f, 0.94f, 0.96f, 1.0f },
-		.color_text_secondary = { 0.72f, 0.72f, 0.78f, 1.0f },
-		.color_text_disabled = { 0.48f, 0.48f, 0.52f, 1.0f },
+				  // Text
+				  .color_text = { 0.94f, 0.94f, 0.96f, 1.0f },
+				  .color_text_secondary = { 0.72f, 0.72f, 0.78f, 1.0f },
+				  .color_text_disabled = { 0.48f, 0.48f, 0.52f, 1.0f },
 
-		// Icons
-		.color_icon = { 0.78f, 0.78f, 0.82f, 1.0f },
-		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+				  // Icons
+				  .color_icon = { 0.78f, 0.78f, 0.82f, 1.0f },
+				  .color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
 
-		// Interactive widgets
-		.color_widget_background = { 0.20f, 0.20f, 0.24f, 0.92f },
-		.color_widget_hovered = { 0.32f, 0.34f, 0.42f, 0.96f },
-		.color_widget_active = { 0.32f, 0.64f, 0.98f, 1.0f },
-		.color_widget_selected = { 0.32f, 0.64f, 0.98f, 0.85f },
+				  // Interactive widgets
+				  .color_widget_background = { 0.20f, 0.20f, 0.24f, 0.92f },
+				  .color_widget_hovered = { 0.32f, 0.34f, 0.42f, 0.96f },
+				  .color_widget_active = { 0.32f, 0.64f, 0.98f, 1.0f },
+				  .color_widget_selected = { 0.32f, 0.64f, 0.98f, 0.85f },
 
-		// Sliders
-		.color_slider_fill = { 0.32f, 0.64f, 0.98f, 0.95f },
+				  // Sliders
+				  .color_slider_fill = { 0.32f, 0.64f, 0.98f, 0.95f },
 
-		// Toggles
-		.color_toggle_on = { 0.30f, 0.80f, 0.46f, 1.0f },
-		.color_toggle_off = { 0.30f, 0.30f, 0.34f, 1.0f },
+				  // Toggles
+				  .color_toggle_on = { 0.30f, 0.80f, 0.46f, 1.0f },
+				  .color_toggle_off = { 0.30f, 0.30f, 0.34f, 1.0f },
 
-		// Handles
-		.color_handle = { 0.94f, 0.94f, 0.96f, 1.0f },
-		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+				  // Handles
+				  .color_handle = { 0.94f, 0.94f, 0.96f, 1.0f },
+				  .color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
 
-		// Input fields
-		.color_input_background = { 0.10f, 0.10f, 0.13f, 1.0f },
-		.color_selection = { 0.32f, 0.64f, 0.98f, 0.45f },
-		.color_caret = { 0.94f, 0.94f, 0.96f, 1.0f },
+				  // Input fields
+				  .color_input_background = { 0.10f, 0.10f, 0.13f, 1.0f },
+				  .color_selection = { 0.32f, 0.64f, 0.98f, 0.45f },
+				  .color_caret = { 0.94f, 0.94f, 0.96f, 1.0f },
 
-		// Docking
-		.color_dock_preview = { 0.32f, 0.64f, 0.98f, 0.35f },
-		.color_dock_tab_active = { 0.32f, 0.64f, 0.98f, 0.6f },
+				  // Docking
+				  .color_dock_preview = { 0.32f, 0.64f, 0.98f, 0.35f },
+				  .color_dock_tab_active = { 0.32f, 0.64f, 0.98f, 0.6f },
 
-		.color_shadow = { 0.f, 0.f, 0.f, 0.3f },
+				  .color_shadow = { 0.f, 0.f, 0.f, 0.3f },
 
-		// Sizing
-		.padding = 10.f,
-		.title_bar_height = 30.f,
-		.resize_border_thickness = 8.f,
-		.min_menu_size = { 150.f, 100.f },
-		.font_size = 16.f,
-		.font = {},
-		.corner_radius = 6.f,
-		.corner_radius_menu = 8.f,
-		.widget_height_padding = 0.6f,
-		.item_spacing = 0.f,
-		.section_spacing = 8.f
+				  // Sizing
+				  .padding = 10.f,
+				  .title_bar_height = 30.f,
+				  .resize_border_thickness = 8.f,
+				  .min_menu_size = { 150.f, 100.f },
+				  .font_size = 16.f,
+				  .font = {},
+				  .corner_radius = 6.f,
+				  .corner_radius_menu = 8.f,
+				  .widget_height_padding = 0.6f,
+				  .item_spacing = 0.f,
+				  .section_spacing = 8.f
 	};
 }
 
 constexpr auto gse::gui::style::darker() -> style {
-	return style{
-		// Window chrome - fully opaque, darker
-		.color_title_bar = { 0.12f, 0.12f, 0.14f, 1.0f },
-		.color_title_bar_inactive = { 0.08f, 0.08f, 0.10f, 1.0f },
-		.color_menu_body = { 0.06f, 0.06f, 0.07f, 1.0f },
-		.color_border = { 0.16f, 0.16f, 0.18f, 0.6f },
+	return style{ // Window chrome - fully opaque, darker
+				  .color_title_bar = { 0.12f, 0.12f, 0.14f, 1.0f },
+				  .color_title_bar_inactive = { 0.08f, 0.08f, 0.10f, 1.0f },
+				  .color_menu_body = { 0.06f, 0.06f, 0.07f, 1.0f },
+				  .color_border = { 0.16f, 0.16f, 0.18f, 0.6f },
 
-		// Text
-		.color_text = { 0.88f, 0.88f, 0.90f, 1.0f },
-		.color_text_secondary = { 0.50f, 0.50f, 0.53f, 1.0f },
-		.color_text_disabled = { 0.35f, 0.35f, 0.38f, 1.0f },
+				  // Text
+				  .color_text = { 0.88f, 0.88f, 0.90f, 1.0f },
+				  .color_text_secondary = { 0.50f, 0.50f, 0.53f, 1.0f },
+				  .color_text_disabled = { 0.35f, 0.35f, 0.38f, 1.0f },
 
-		// Icons
-		.color_icon = { 0.6f, 0.6f, 0.62f, 1.0f },
-		.color_icon_hovered = { 0.95f, 0.95f, 0.97f, 1.0f },
+				  // Icons
+				  .color_icon = { 0.6f, 0.6f, 0.62f, 1.0f },
+				  .color_icon_hovered = { 0.95f, 0.95f, 0.97f, 1.0f },
 
-		// Interactive widgets - fully opaque
-		.color_widget_background = { 0.12f, 0.12f, 0.14f, 1.0f },
-		.color_widget_hovered = { 0.18f, 0.18f, 0.21f, 1.0f },
-		.color_widget_active = { 0.20f, 0.45f, 0.78f, 1.0f },
-		.color_widget_selected = { 0.20f, 0.45f, 0.78f, 1.0f },
+				  // Interactive widgets - fully opaque
+				  .color_widget_background = { 0.12f, 0.12f, 0.14f, 1.0f },
+				  .color_widget_hovered = { 0.18f, 0.18f, 0.21f, 1.0f },
+				  .color_widget_active = { 0.20f, 0.45f, 0.78f, 1.0f },
+				  .color_widget_selected = { 0.20f, 0.45f, 0.78f, 1.0f },
 
-		// Sliders
-		.color_slider_fill = { 0.20f, 0.45f, 0.78f, 1.0f },
+				  // Sliders
+				  .color_slider_fill = { 0.20f, 0.45f, 0.78f, 1.0f },
 
-		// Toggles
-		.color_toggle_on = { 0.18f, 0.55f, 0.30f, 1.0f },
-		.color_toggle_off = { 0.20f, 0.20f, 0.22f, 1.0f },
+				  // Toggles
+				  .color_toggle_on = { 0.18f, 0.55f, 0.30f, 1.0f },
+				  .color_toggle_off = { 0.20f, 0.20f, 0.22f, 1.0f },
 
-		// Handles
-		.color_handle = { 0.85f, 0.85f, 0.87f, 1.0f },
-		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+				  // Handles
+				  .color_handle = { 0.85f, 0.85f, 0.87f, 1.0f },
+				  .color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
 
-		// Input fields
-		.color_input_background = { 0.04f, 0.04f, 0.05f, 1.0f },
-		.color_selection = { 0.20f, 0.45f, 0.78f, 0.5f },
-		.color_caret = { 0.88f, 0.88f, 0.90f, 1.0f },
+				  // Input fields
+				  .color_input_background = { 0.04f, 0.04f, 0.05f, 1.0f },
+				  .color_selection = { 0.20f, 0.45f, 0.78f, 0.5f },
+				  .color_caret = { 0.88f, 0.88f, 0.90f, 1.0f },
 
-		// Docking
-		.color_dock_preview = { 0.20f, 0.45f, 0.78f, 0.4f },
-		.color_dock_tab_active = { 0.20f, 0.45f, 0.78f, 0.7f },
+				  // Docking
+				  .color_dock_preview = { 0.20f, 0.45f, 0.78f, 0.4f },
+				  .color_dock_tab_active = { 0.20f, 0.45f, 0.78f, 0.7f },
 
-		.color_shadow = { 0.f, 0.f, 0.f, 0.4f },
+				  .color_shadow = { 0.f, 0.f, 0.f, 0.4f },
 
-		// Sizing
-		.padding = 10.f,
-		.title_bar_height = 30.f,
-		.resize_border_thickness = 8.f,
-		.min_menu_size = { 150.f, 100.f },
-		.font_size = 16.f,
-		.font = {},
-		.corner_radius = 6.f,
-		.corner_radius_menu = 8.f,
-		.widget_height_padding = 0.6f,
-		.item_spacing = 0.f,
-		.section_spacing = 8.f
+				  // Sizing
+				  .padding = 10.f,
+				  .title_bar_height = 30.f,
+				  .resize_border_thickness = 8.f,
+				  .min_menu_size = { 150.f, 100.f },
+				  .font_size = 16.f,
+				  .font = {},
+				  .corner_radius = 6.f,
+				  .corner_radius_menu = 8.f,
+				  .widget_height_padding = 0.6f,
+				  .item_spacing = 0.f,
+				  .section_spacing = 8.f
 	};
 }
 
 constexpr auto gse::gui::style::light() -> style {
-	return style{
-		// Window chrome
-		.color_title_bar = { 0.85f, 0.85f, 0.87f, 1.0f },
-		.color_title_bar_inactive = { 0.78f, 0.78f, 0.80f, 1.0f },
-		.color_menu_body = { 0.94f, 0.94f, 0.95f, 1.0f },
-		.color_border = { 0.75f, 0.75f, 0.78f, 1.0f },
+	return style{ // Window chrome
+				  .color_title_bar = { 0.85f, 0.85f, 0.87f, 1.0f },
+				  .color_title_bar_inactive = { 0.78f, 0.78f, 0.80f, 1.0f },
+				  .color_menu_body = { 0.94f, 0.94f, 0.95f, 1.0f },
+				  .color_border = { 0.75f, 0.75f, 0.78f, 1.0f },
 
-		// Text
-		.color_text = { 0.10f, 0.10f, 0.12f, 1.0f },
-		.color_text_secondary = { 0.40f, 0.40f, 0.42f, 1.0f },
-		.color_text_disabled = { 0.60f, 0.60f, 0.62f, 1.0f },
+				  // Text
+				  .color_text = { 0.10f, 0.10f, 0.12f, 1.0f },
+				  .color_text_secondary = { 0.40f, 0.40f, 0.42f, 1.0f },
+				  .color_text_disabled = { 0.60f, 0.60f, 0.62f, 1.0f },
 
-		// Icons
-		.color_icon = { 0.35f, 0.35f, 0.38f, 1.0f },
-		.color_icon_hovered = { 0.10f, 0.10f, 0.12f, 1.0f },
+				  // Icons
+				  .color_icon = { 0.35f, 0.35f, 0.38f, 1.0f },
+				  .color_icon_hovered = { 0.10f, 0.10f, 0.12f, 1.0f },
 
-		// Interactive widgets
-		.color_widget_background = { 0.82f, 0.82f, 0.84f, 1.0f },
-		.color_widget_hovered = { 0.75f, 0.75f, 0.78f, 1.0f },
-		.color_widget_active = { 0.30f, 0.58f, 0.92f, 1.0f },
-		.color_widget_selected = { 0.30f, 0.58f, 0.92f, 0.9f },
+				  // Interactive widgets
+				  .color_widget_background = { 0.82f, 0.82f, 0.84f, 1.0f },
+				  .color_widget_hovered = { 0.75f, 0.75f, 0.78f, 1.0f },
+				  .color_widget_active = { 0.30f, 0.58f, 0.92f, 1.0f },
+				  .color_widget_selected = { 0.30f, 0.58f, 0.92f, 0.9f },
 
-		// Sliders
-		.color_slider_fill = { 0.30f, 0.58f, 0.92f, 1.0f },
+				  // Sliders
+				  .color_slider_fill = { 0.30f, 0.58f, 0.92f, 1.0f },
 
-		// Toggles
-		.color_toggle_on = { 0.25f, 0.72f, 0.40f, 1.0f },
-		.color_toggle_off = { 0.70f, 0.70f, 0.72f, 1.0f },
+				  // Toggles
+				  .color_toggle_on = { 0.25f, 0.72f, 0.40f, 1.0f },
+				  .color_toggle_off = { 0.70f, 0.70f, 0.72f, 1.0f },
 
-		// Handles
-		.color_handle = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_handle_hovered = { 0.95f, 0.95f, 0.97f, 1.0f },
+				  // Handles
+				  .color_handle = { 1.0f, 1.0f, 1.0f, 1.0f },
+				  .color_handle_hovered = { 0.95f, 0.95f, 0.97f, 1.0f },
 
-		// Input fields
-		.color_input_background = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_selection = { 0.30f, 0.58f, 0.92f, 0.35f },
-		.color_caret = { 0.10f, 0.10f, 0.12f, 1.0f },
+				  // Input fields
+				  .color_input_background = { 1.0f, 1.0f, 1.0f, 1.0f },
+				  .color_selection = { 0.30f, 0.58f, 0.92f, 0.35f },
+				  .color_caret = { 0.10f, 0.10f, 0.12f, 1.0f },
 
-		// Docking
-		.color_dock_preview = { 0.30f, 0.58f, 0.92f, 0.3f },
-		.color_dock_tab_active = { 0.30f, 0.58f, 0.92f, 0.5f },
+				  // Docking
+				  .color_dock_preview = { 0.30f, 0.58f, 0.92f, 0.3f },
+				  .color_dock_tab_active = { 0.30f, 0.58f, 0.92f, 0.5f },
 
-		.color_shadow = { 0.f, 0.f, 0.f, 0.15f },
+				  .color_shadow = { 0.f, 0.f, 0.f, 0.15f },
 
-		// Sizing
-		.padding = 10.f,
-		.title_bar_height = 30.f,
-		.resize_border_thickness = 8.f,
-		.min_menu_size = { 150.f, 100.f },
-		.font_size = 16.f,
-		.font = {},
-		.corner_radius = 6.f,
-		.corner_radius_menu = 8.f,
-		.widget_height_padding = 0.6f,
-		.item_spacing = 0.f,
-		.section_spacing = 8.f
+				  // Sizing
+				  .padding = 10.f,
+				  .title_bar_height = 30.f,
+				  .resize_border_thickness = 8.f,
+				  .min_menu_size = { 150.f, 100.f },
+				  .font_size = 16.f,
+				  .font = {},
+				  .corner_radius = 6.f,
+				  .corner_radius_menu = 8.f,
+				  .widget_height_padding = 0.6f,
+				  .item_spacing = 0.f,
+				  .section_spacing = 8.f
 	};
 }
 
 constexpr auto gse::gui::style::high_contrast() -> style {
-	return style{
-		// Window chrome - pure black
-		.color_title_bar = { 0.0f, 0.0f, 0.0f, 1.0f },
-		.color_title_bar_inactive = { 0.0f, 0.0f, 0.0f, 1.0f },
-		.color_menu_body = { 0.0f, 0.0f, 0.0f, 1.0f },
-		.color_border = { 1.0f, 1.0f, 1.0f, 1.0f },
+	return style{ // Window chrome - pure black
+				  .color_title_bar = { 0.0f, 0.0f, 0.0f, 1.0f },
+				  .color_title_bar_inactive = { 0.0f, 0.0f, 0.0f, 1.0f },
+				  .color_menu_body = { 0.0f, 0.0f, 0.0f, 1.0f },
+				  .color_border = { 1.0f, 1.0f, 1.0f, 1.0f },
 
-		// Text - pure white
-		.color_text = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_text_secondary = { 0.8f, 0.8f, 0.8f, 1.0f },
-		.color_text_disabled = { 0.5f, 0.5f, 0.5f, 1.0f },
+				  // Text - pure white
+				  .color_text = { 1.0f, 1.0f, 1.0f, 1.0f },
+				  .color_text_secondary = { 0.8f, 0.8f, 0.8f, 1.0f },
+				  .color_text_disabled = { 0.5f, 0.5f, 0.5f, 1.0f },
 
-		// Icons
-		.color_icon = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_icon_hovered = { 1.0f, 1.0f, 0.0f, 1.0f },
+				  // Icons
+				  .color_icon = { 1.0f, 1.0f, 1.0f, 1.0f },
+				  .color_icon_hovered = { 1.0f, 1.0f, 0.0f, 1.0f },
 
-		// Interactive widgets - high contrast yellow/cyan accents
-		.color_widget_background = { 0.0f, 0.0f, 0.0f, 1.0f },
-		.color_widget_hovered = { 0.2f, 0.2f, 0.0f, 1.0f },
-		.color_widget_active = { 0.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_selected = { 1.0f, 1.0f, 0.0f, 1.0f },
+				  // Interactive widgets - high contrast yellow/cyan accents
+				  .color_widget_background = { 0.0f, 0.0f, 0.0f, 1.0f },
+				  .color_widget_hovered = { 0.2f, 0.2f, 0.0f, 1.0f },
+				  .color_widget_active = { 0.0f, 1.0f, 1.0f, 1.0f },
+				  .color_widget_selected = { 1.0f, 1.0f, 0.0f, 1.0f },
 
-		// Sliders
-		.color_slider_fill = { 0.0f, 1.0f, 1.0f, 1.0f },
+				  // Sliders
+				  .color_slider_fill = { 0.0f, 1.0f, 1.0f, 1.0f },
 
-		// Toggles
-		.color_toggle_on = { 0.0f, 1.0f, 0.0f, 1.0f },
-		.color_toggle_off = { 0.3f, 0.3f, 0.3f, 1.0f },
+				  // Toggles
+				  .color_toggle_on = { 0.0f, 1.0f, 0.0f, 1.0f },
+				  .color_toggle_off = { 0.3f, 0.3f, 0.3f, 1.0f },
 
-		// Handles
-		.color_handle = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_handle_hovered = { 1.0f, 1.0f, 0.0f, 1.0f },
+				  // Handles
+				  .color_handle = { 1.0f, 1.0f, 1.0f, 1.0f },
+				  .color_handle_hovered = { 1.0f, 1.0f, 0.0f, 1.0f },
 
-		// Input fields
-		.color_input_background = { 0.0f, 0.0f, 0.0f, 1.0f },
-		.color_selection = { 0.0f, 0.5f, 1.0f, 0.6f },
-		.color_caret = { 1.0f, 1.0f, 1.0f, 1.0f },
+				  // Input fields
+				  .color_input_background = { 0.0f, 0.0f, 0.0f, 1.0f },
+				  .color_selection = { 0.0f, 0.5f, 1.0f, 0.6f },
+				  .color_caret = { 1.0f, 1.0f, 1.0f, 1.0f },
 
-		// Docking
-		.color_dock_preview = { 1.0f, 1.0f, 0.0f, 0.5f },
-		.color_dock_tab_active = { 1.0f, 1.0f, 0.0f, 0.8f },
+				  // Docking
+				  .color_dock_preview = { 1.0f, 1.0f, 0.0f, 0.5f },
+				  .color_dock_tab_active = { 1.0f, 1.0f, 0.0f, 0.8f },
 
-		.color_shadow = { 0.f, 0.f, 0.f, 0.5f },
+				  .color_shadow = { 0.f, 0.f, 0.f, 0.5f },
 
-		// Sizing
-		.padding = 12.f,
-		.title_bar_height = 32.f,
-		.resize_border_thickness = 10.f,
-		.min_menu_size = { 150.f, 100.f },
-		.font_size = 18.f,
-		.font = {},
-		.corner_radius = 0.f,
-		.corner_radius_menu = 0.f,
-		.widget_height_padding = 0.6f,
-		.item_spacing = 0.f,
-		.section_spacing = 10.f
+				  // Sizing
+				  .padding = 12.f,
+				  .title_bar_height = 32.f,
+				  .resize_border_thickness = 10.f,
+				  .min_menu_size = { 150.f, 100.f },
+				  .font_size = 18.f,
+				  .font = {},
+				  .corner_radius = 0.f,
+				  .corner_radius_menu = 0.f,
+				  .widget_height_padding = 0.6f,
+				  .item_spacing = 0.f,
+				  .section_spacing = 10.f
 	};
 }
 

@@ -12,37 +12,24 @@ export namespace gse {
 
 		n_buffer() = default;
 
-		explicit n_buffer(
-			const value_type& initial_value
-		);
+		explicit n_buffer(const value_type& initial_value);
 
-		auto operator=(
-			const value_type& v
-		) -> n_buffer&;
+		auto operator=(const value_type& v) -> n_buffer&;
 
-		auto write(
-		) -> value_type&;
+		auto write() -> value_type&;
 
-		auto publish(
-		) noexcept -> void;
+		auto publish() noexcept -> void;
 
-		[[nodiscard]] auto read(
-		) const -> const value_type&;
+		[[nodiscard]] auto read() const -> const value_type&;
 
-		auto take_ready(
-		) noexcept -> value_type;
+		auto take_ready() noexcept -> value_type;
 
-		auto flip(
-		) noexcept -> void;
+		auto flip() noexcept -> void;
 
-		auto buffer(
-			this auto&& self
-		) -> decltype(auto);
+		auto buffer(this auto&& self) -> decltype(auto);
 
 	private:
-		auto next_write_index(
-			std::size_t current
-		) const noexcept -> std::size_t;
+		auto next_write_index(std::size_t current) const noexcept -> std::size_t;
 
 		std::array<value_type, N> m_buffers{};
 		std::size_t m_write_index{ 0 };

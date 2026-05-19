@@ -14,9 +14,7 @@ export namespace gse::physics {
 		[[= networked]] quat orientation = quat(1.f, 0.f, 0.f, 0.f);
 	};
 
-	auto transformation_matrix(
-		const transform_component& tc
-	) -> mat4f;
+	auto transformation_matrix(const transform_component& tc) -> mat4f;
 }
 
 auto gse::physics::transformation_matrix(const transform_component& tc) -> mat4f {

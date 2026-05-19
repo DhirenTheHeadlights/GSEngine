@@ -10,6 +10,7 @@ auto main() -> int {
 		e.add_system<gs::client_system>();
 		e.add_system<gs::client_ui_system>();
 		e.add_system<gs::pause_menu_system>();
+		e.add_system<gs::dev_spawn_system>();
 		gs::world_loader_setup(e);
 	});
 }

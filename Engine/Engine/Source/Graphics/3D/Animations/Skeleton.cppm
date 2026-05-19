@@ -35,17 +35,11 @@ export namespace gse {
 			raw_blob_owned<std::byte> bytes;
 		};
 
-		explicit skeleton(
-			const std::filesystem::path& path
-		);
+		explicit skeleton(const std::filesystem::path& path);
 
-		explicit skeleton(
-			const params& p
-		);
+		explicit skeleton(const params& p);
 
-		auto load(
-			asset::load_ctx& ctx
-		) -> async::task<>;
+		auto load(asset::load_ctx& ctx) -> async::task<>;
 
 		auto unload() -> void;
 
@@ -53,27 +47,22 @@ export namespace gse {
 
 		auto joints() const -> std::span<const joint>;
 
-		auto joint(
-			std::uint16_t index
-		) const -> const joint&;
+		auto joint(std::uint16_t index) const -> const joint&;
 
 	private:
 		std::vector<gse::joint> m_joints;
 		std::filesystem::path m_baked_path;
 	};
 
-	auto bake(
-		const std::filesystem::path& src,
-		skeleton::baked& out
-	) -> bool;
+	auto bake(const std::filesystem::path& src, skeleton::baked& out) -> bool;
 }
 
 gse::skeleton::skeleton(const std::filesystem::path& path)
-	: identifiable(path, config::baked_resource_path), m_baked_path(path) {
+	: identifiable(path, config::baked_resource_path),
+	  m_baked_path(path) {
 }
 
-gse::skeleton::skeleton(const params& p)
-	: identifiable(p.name), m_joints(p.joints) {
+gse::skeleton::skeleton(const params& p) : identifiable(p.name), m_joints(p.joints) {
 }
 
 auto gse::bake(const std::filesystem::path& src, skeleton::baked& out) -> bool {
@@ -150,7 +139,12 @@ auto gse::skeleton::load(asset::load_ctx& ctx) -> async::task<> {
 			}
 		}
 
-		m_joints.emplace_back(joint::params{ .name = std::move(name), .parent_index = parent_index, .local_bind = local_bind, .inverse_bind = inverse_bind });
+		m_joints.emplace_back(
+			joint::params{ .name = std::move(name),
+						   .parent_index = parent_index,
+						   .local_bind = local_bind,
+						   .inverse_bind = inverse_bind }
+		);
 	}
 }
 

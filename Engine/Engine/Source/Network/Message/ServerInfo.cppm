@@ -5,8 +5,7 @@ import std;
 import :message;
 
 export namespace gse::network {
-	struct[[= network_message{}]] server_info_request {
-	};
+	struct[[= network_message{}]] server_info_request {};
 
 	struct[[= network_message{}]] server_info_response {
 		std::uint8_t players{};

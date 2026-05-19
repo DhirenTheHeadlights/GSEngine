@@ -21,21 +21,13 @@ import gse.log;
 namespace gse::gpu {
 	auto allocate_transient_key() -> std::uint64_t;
 
-	auto aspect_for_format(
-		image_format fmt
-	) -> image_aspect_flags;
+	auto aspect_for_format(image_format fmt) -> image_aspect_flags;
 
-	auto depth_for_format(
-		image_format fmt
-	) -> bool;
+	auto depth_for_format(image_format fmt) -> bool;
 
-	auto image_create_info_from(
-		const transient_image_desc& desc
-	) -> image_create_info;
+	auto image_create_info_from(const transient_image_desc& desc) -> image_create_info;
 
-	auto image_view_create_info_from(
-		const transient_image_desc& desc
-	) -> image_view_create_info;
+	auto image_view_create_info_from(const transient_image_desc& desc) -> image_view_create_info;
 
 	struct lifetime_entry {
 		std::uint32_t first_pass = 0;
@@ -44,19 +36,13 @@ namespace gse::gpu {
 		std::size_t request_index = 0;
 	};
 
-	auto compute_lifetime(
-		const std::vector<id>& used_by,
-		std::span<const id> pass_kind_order
-	) -> std::pair<std::uint32_t, std::uint32_t>;
+	auto compute_lifetime(const std::vector<id>& used_by, std::span<const id> pass_kind_order)
+		-> std::pair<std::uint32_t, std::uint32_t>;
 
-	auto greedy_color(
-		std::span<const lifetime_entry> intervals
-	) -> std::vector<std::uint32_t>;
+	auto greedy_color(std::span<const lifetime_entry> intervals) -> std::vector<std::uint32_t>;
 
-	auto make_synthetic_allocation(
-		vulkan::device& dev,
-		std::string_view tag
-	) -> vulkan::basic_allocation<vulkan::device>;
+	auto make_synthetic_allocation(vulkan::device& dev, std::string_view tag)
+		-> vulkan::basic_allocation<vulkan::device>;
 }
 
 auto gse::gpu::allocate_transient_key() -> std::uint64_t {
@@ -117,7 +103,8 @@ auto gse::gpu::image_view_create_info_from(const transient_image_desc& desc) -> 
 	};
 }
 
-auto gse::gpu::make_synthetic_allocation(vulkan::device& dev, const std::string_view tag) -> vulkan::basic_allocation<vulkan::device> {
+auto gse::gpu::make_synthetic_allocation(vulkan::device& dev, const std::string_view tag)
+	-> vulkan::basic_allocation<vulkan::device> {
 	return {
 		0,
 		0,
@@ -130,7 +117,8 @@ auto gse::gpu::make_synthetic_allocation(vulkan::device& dev, const std::string_
 	};
 }
 
-auto gse::gpu::compute_lifetime(const std::vector<id>& used_by, const std::span<const id> pass_kind_order) -> std::pair<std::uint32_t, std::uint32_t> {
+auto gse::gpu::compute_lifetime(const std::vector<id>& used_by, const std::span<const id> pass_kind_order)
+	-> std::pair<std::uint32_t, std::uint32_t> {
 	if (pass_kind_order.empty()) {
 		return { 0, 0 };
 	}
@@ -287,17 +275,24 @@ auto gse::gpu::transient_pool::transient_images() const -> std::vector<transient
 	std::vector<transient_image_info> out;
 	out.reserve(slot.images.size());
 	for (const auto& [_, alloc] : slot.images) {
-		out.push_back({
-			.resource = alloc.resource.get(),
-			.aspects = alloc.aspects,
-			.target_layout = alloc.layout,
-			.format = alloc.format,
-		});
+		out.push_back(
+			{
+				.resource = alloc.resource.get(),
+				.aspects = alloc.aspects,
+				.target_layout = alloc.layout,
+				.format = alloc.format,
+			}
+		);
 	}
 	return out;
 }
 
-auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const std::uint32_t color, const gpu::device_size required_size, const std::uint32_t memory_type_mask) -> void {
+auto gse::gpu::transient_pool::ensure_block_for_color(
+	frame_state& slot,
+	const std::uint32_t color,
+	const gpu::device_size required_size,
+	const std::uint32_t memory_type_mask
+) -> void {
 	while (slot.blocks.size() <= color) {
 		slot.blocks.push_back({});
 	}
@@ -323,7 +318,12 @@ auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const s
 	block.memory_type_index = type_index;
 }
 
-auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::span<const transient_image_request> image_requests, const std::span<const transient_buffer_request> buffer_requests, const std::span<const id> pass_kind_order) -> void {
+auto gse::gpu::transient_pool::plan(
+	const std::uint32_t frame_idx,
+	const std::span<const transient_image_request> image_requests,
+	const std::span<const transient_buffer_request> buffer_requests,
+	const std::span<const id> pass_kind_order
+) -> void {
 	m_current_frame = frame_idx;
 	auto& slot = m_slots[frame_idx];
 	free_slot_resources(slot);
@@ -339,21 +339,25 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 
 	for (std::size_t i = 0; i < image_requests.size(); ++i) {
 		const auto [first, last] = compute_lifetime(image_requests[i].desc.used_by, pass_kind_order);
-		intervals.push_back({
-			.first_pass = first,
-			.last_pass = last,
-			.is_image = true,
-			.request_index = i,
-		});
+		intervals.push_back(
+			{
+				.first_pass = first,
+				.last_pass = last,
+				.is_image = true,
+				.request_index = i,
+			}
+		);
 	}
 	for (std::size_t i = 0; i < buffer_requests.size(); ++i) {
 		const auto [first, last] = compute_lifetime(buffer_requests[i].desc.used_by, pass_kind_order);
-		intervals.push_back({
-			.first_pass = first,
-			.last_pass = last,
-			.is_image = false,
-			.request_index = i,
-		});
+		intervals.push_back(
+			{
+				.first_pass = first,
+				.last_pass = last,
+				.is_image = false,
+				.request_index = i,
+			}
+		);
 	}
 
 	const auto colors = greedy_color(intervals);
@@ -391,32 +395,42 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 			aggregates[color].size = std::max(aggregates[color].size, reqs.size);
 			aggregates[color].type_mask &= reqs.memory_type_bits;
 
-			staged_images.push_back({
-				.handle = img_handle,
-				.color = color,
-				.entry_index = e,
-			});
+			staged_images.push_back(
+				{
+					.handle = img_handle,
+					.color = color,
+					.entry_index = e,
+				}
+			);
 		}
 		else {
 			const auto& req = buffer_requests[intervals[e].request_index];
-			const auto [buf_handle, reqs] = vulkan_dev.create_buffer_unbound({
-				.size = req.desc.size,
-				.usage = req.desc.usage,
-			});
+			const auto [buf_handle, reqs] = vulkan_dev.create_buffer_unbound(
+				{
+					.size = req.desc.size,
+					.usage = req.desc.usage,
+				}
+			);
 
 			aggregates[color].size = std::max(aggregates[color].size, reqs.size);
 			aggregates[color].type_mask &= reqs.memory_type_bits;
 
-			staged_buffers.push_back({
-				.handle = buf_handle,
-				.color = color,
-				.entry_index = e,
-			});
+			staged_buffers.push_back(
+				{
+					.handle = buf_handle,
+					.color = color,
+					.entry_index = e,
+				}
+			);
 		}
 	}
 
 	for (std::uint32_t c = 0; c < aggregates.size(); ++c) {
-		assert(aggregates[c].type_mask != 0, "transient_pool: alias color {} has no compatible memory type across its resources", c);
+		assert(
+			aggregates[c].type_mask != 0,
+			"transient_pool: alias color {} has no compatible memory type across its resources",
+			c
+		);
 		ensure_block_for_color(slot, c, aggregates[c].size, aggregates[c].type_mask);
 	}
 
@@ -437,15 +451,18 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 
 		img->set_layout(req.desc.layout);
 
-		slot.images.emplace(req.handle.key, transient_image_allocation{
-												.resource = std::move(img),
-												.aspects = aspect_for_format(req.desc.format),
-												.format = req.desc.format,
-												.layout = req.desc.layout,
-												.color = si.color,
-												.first_pass = intervals[si.entry_index].first_pass,
-												.last_pass = intervals[si.entry_index].last_pass,
-											});
+		slot.images.emplace(
+			req.handle.key,
+			transient_image_allocation{
+				.resource = std::move(img),
+				.aspects = aspect_for_format(req.desc.format),
+				.format = req.desc.format,
+				.layout = req.desc.layout,
+				.color = si.color,
+				.first_pass = intervals[si.entry_index].first_pass,
+				.last_pass = intervals[si.entry_index].last_pass,
+			}
+		);
 	}
 
 	for (const auto& sb : staged_buffers) {
@@ -459,11 +476,14 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 			req.desc.size
 		);
 
-		slot.buffers.emplace(req.handle.key, transient_buffer_allocation{
-												 .resource = std::move(buf),
-												 .color = sb.color,
-												 .first_pass = intervals[sb.entry_index].first_pass,
-												 .last_pass = intervals[sb.entry_index].last_pass,
-											 });
+		slot.buffers.emplace(
+			req.handle.key,
+			transient_buffer_allocation{
+				.resource = std::move(buf),
+				.color = sb.color,
+				.first_pass = intervals[sb.entry_index].first_pass,
+				.last_pass = intervals[sb.entry_index].last_pass,
+			}
+		);
 	}
 }

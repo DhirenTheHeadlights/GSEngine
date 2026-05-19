@@ -20,12 +20,21 @@ export namespace gs {
 	};
 }
 
-auto gs::pause_menu_system::run(gse::run_context& ctx, const gse::input::system::data& input_d, const gse::gui::system::data& gui_d, const gse::world_system::data& world_d, const gse::network::data& net_d, const gse::save::registry& save_reg, const crosshair_system::data& crosshair_d) -> gse::async::task<> {
+auto gs::pause_menu_system::run(
+	gse::run_context& ctx,
+	const gse::input::system::data& input_d,
+	const gse::gui::system::data& gui_d,
+	const gse::world_system::data& world_d,
+	const gse::network::data& net_d,
+	const gse::save::registry& save_reg,
+	const crosshair_system::data& crosshair_d
+) -> gse::async::task<> {
 	const auto push_main_menu = [&] {
 		ctx.channels.push<gse::gui::push_screen_request>({
-			.factory = [&world_d, &net_d, &save_reg, &crosshair_d, channels = ctx.channels] {
-				return std::make_unique<main_menu_screen>(world_d, net_d, save_reg, crosshair_d, channels);
-			},
+			.factory =
+				[&world_d, &net_d, &save_reg, &crosshair_d, channels = ctx.channels] {
+					return std::make_unique<main_menu_screen>(world_d, net_d, save_reg, crosshair_d, channels);
+				},
 		});
 	};
 

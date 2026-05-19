@@ -20,6 +20,9 @@ export namespace gse::free_camera {
 		vec3<position> initial_position = vec3<position>(0.f, 0.f, 5.f);
 		int priority = 10;
 		velocity speed = meters_per_second(100.f);
+		angle yaw = degrees(-90.f);
+		angle pitch = degrees(0.f);
+		float mouse_sensitivity = 0.1f;
 	};
 
 	struct bindings {
@@ -34,37 +37,39 @@ export namespace gse::free_camera {
 
 	struct system {
 		struct data {
-			std::unordered_map<id, std::unique_ptr<bindings>> bindings_by_owner;
+			std::unordered_map<id, bindings> bindings_by_owner;
 		};
 
 		static auto run(
 			run_context& ctx,
 			data& d,
 			const actions::system::data& as,
+			const input::system::data& input_s,
 			const camera::system::data& cam_s
 		) -> async::task<>;
 	};
 }
 
-auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::system::data& as, const camera::system::data& cam_s) -> async::task<> {
+auto gse::free_camera::system::run(
+	run_context& ctx,
+	data& d,
+	const actions::system::data& as,
+	const input::system::data& input_s,
+	const camera::system::data& cam_s
+) -> async::task<> {
 	while (true) {
 		{
-			auto [cameras, follows] = co_await ctx.acquire_with(
-				write_v<component>,
-				write_v<camera::follow_component>
-			);
+			auto [cameras, follows] = co_await ctx.acquire_with(write_v<component>, write_v<camera::follow_component>);
 
 			const auto camera_ids = cameras.owner_ids();
 			for (std::size_t i = 0; i < cameras.size(); ++i) {
 				auto& c = cameras[i];
 				const auto owner_id = camera_ids[i];
-				auto& slot = d.bindings_by_owner[owner_id];
-				if (slot) {
+				auto [it, inserted] = d.bindings_by_owner.try_emplace(owner_id);
+				if (!inserted) {
 					continue;
 				}
-
-				slot = std::make_unique<bindings>();
-				auto& b = *slot;
+				auto& b = it->second;
 
 				b.forward = actions::add<"FreeCamera_Move_Forward">(ctx.channels, key::w);
 				b.left = actions::add<"FreeCamera_Move_Left">(ctx.channels, key::a);
@@ -85,37 +90,54 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 					trace_id<"FreeCamera_Move">()
 				);
 
-				ctx.add_component<camera::follow_component>(owner_id, {
-																		  .offset = vec3<length>(meters(0.f)),
-																		  .priority = c.priority,
-																		  .blend_in_duration = milliseconds(300),
-																		  .active = true,
-																		  .use_entity_position = false,
-																		  .position = c.initial_position,
-																	  });
+				const quat initial_orientation =
+					normalize(quat(vec3f(0.f, 1.f, 0.f), c.yaw) * quat(vec3f(1.f, 0.f, 0.f), c.pitch));
+
+				ctx.add_component<camera::follow_component>(
+					owner_id,
+					{
+						.offset = vec3<length>(meters(0.f)),
+						.priority = c.priority,
+						.blend_in_duration = milliseconds(300),
+						.active = true,
+						.use_entity_position = false,
+						.position = c.initial_position,
+						.orientation = initial_orientation,
+					}
+				);
 			}
 
 			const auto& cs = actions::system::current_state(as);
+			const auto& in = input::system::current_state(input_s);
 
 			for (std::size_t i = 0; i < cameras.size(); ++i) {
 				auto& c = cameras[i];
 				const auto owner_id = camera_ids[i];
-				const auto& b = *d.bindings_by_owner[owner_id];
+				const auto& b = d.bindings_by_owner[owner_id];
 
 				auto* cam_follow = follows.find(owner_id);
 				if (!cam_follow) {
 					continue;
 				}
 
-				const auto v = cs.axis2_v(static_cast<std::uint16_t>(b.move_axis_id.number()));
-				const float lift = (actions::held(b.up, cs, as) ? 1.f : 0.f) - (actions::held(b.down, cs, as) ? 1.f : 0.f);
+				const bool is_active_view = cam_s.active_controller_entity == owner_id;
+				if (is_active_view && !cam_s.ui_focus) {
+					const auto delta = in.mouse_delta();
+					c.yaw -= degrees(delta.x() * c.mouse_sensitivity);
+					c.pitch -= degrees(delta.y() * c.mouse_sensitivity);
+					c.pitch = std::clamp(c.pitch, degrees(-89.f), degrees(89.f));
+				}
 
-				const auto direction = camera::system::direction_relative_to_origin(
-					cam_s,
-					{ v.x(), lift, v.y() }
-				);
-				(void)owner_id;
+				const quat orientation =
+					normalize(quat(vec3f(0.f, 1.f, 0.f), c.yaw) * quat(vec3f(1.f, 0.f, 0.f), c.pitch));
+
+				const auto v = cs.axis2_v(static_cast<std::uint16_t>(b.move_axis_id.number()));
+				const float lift =
+					(actions::held(b.up, cs, as) ? 1.f : 0.f) - (actions::held(b.down, cs, as) ? 1.f : 0.f);
+
+				const vec3f direction = rotate_vector(orientation, vec3f(v.x(), lift, v.y()));
 				cam_follow->position += direction * c.speed * system_clock::dt();
+				cam_follow->orientation = orientation;
 			}
 
 			std::erase_if(d.bindings_by_owner, [&cameras](const auto& entry) {

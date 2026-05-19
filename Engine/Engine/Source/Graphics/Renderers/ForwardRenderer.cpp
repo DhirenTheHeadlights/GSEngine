@@ -109,9 +109,26 @@ namespace gse::renderer::forward {
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>>;
 }
 
-auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, data& d) -> async::task<> {
-	d.pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, meshlet_entry::pod);
-	d.skinned_pipeline = gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, skinned_geometry_entry::pod);
+auto gse::renderer::forward::system::run(
+	run_context& ctx,
+	const gpu::context::data& gpu_s,
+	const asset::data& assets_s,
+	const rt_shadow::system::data& rt_state,
+	const light_culling::system::data& lc_r,
+	data& d
+) -> async::task<> {
+	d.pipeline = gpu::build_graphics_pipeline(
+		*gpu_s.device,
+		*gpu_s.shader_registry,
+		*gpu_s.bindless_textures,
+		meshlet_entry::pod
+	);
+	d.skinned_pipeline = gpu::build_graphics_pipeline(
+		*gpu_s.device,
+		*gpu_s.shader_registry,
+		*gpu_s.bindless_textures,
+		skinned_geometry_entry::pod
+	);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
@@ -123,13 +140,23 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 	d.material_staging.reserve(material_buffer_size);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = camera_ubo_size, .usage = gpu::buffer_flag::uniform });
+		d.camera_ubo_buffers[i] = gpu::buffer::create(
+			gpu_s.device->allocator(),
+			{ .size = camera_ubo_size, .usage = gpu::buffer_flag::uniform }
+		);
 
-		d.light_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = light_buffer_size, .usage = gpu::buffer_flag::storage });
+		d.light_buffers[i] = gpu::buffer::create(
+			gpu_s.device->allocator(),
+			{ .size = light_buffer_size, .usage = gpu::buffer_flag::storage }
+		);
 
-		d.material_palette_buffers[i] = gpu::buffer::create(gpu_s.device->allocator(), { .size = material_buffer_size, .usage = gpu::buffer_flag::storage });
+		d.material_palette_buffers[i] = gpu::buffer::create(
+			gpu_s.device->allocator(),
+			{ .size = material_buffer_size, .usage = gpu::buffer_flag::storage }
+		);
 
-		d.descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet_entry::pod);
+		d.descriptors[i] =
+			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet_entry::pod);
 
 		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i])
 			.buffer<camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
@@ -163,7 +190,11 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 	});
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.skinned_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
+		d.skinned_descriptors[i] = gpu::allocate_descriptors(
+			*gpu_s.shader_registry,
+			gpu_s.device->descriptor_heap(),
+			skinned_geometry_entry::pod
+		);
 
 		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.skinned_descriptors[i])
 			.buffer<shaders::standard_3d::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
@@ -173,7 +204,14 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 	co_return;
 }
 
-auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<geometry_collector::system> gc_r, shared_view<light_culling::system> lc_r) -> async::task<> {
+auto gse::renderer::forward::system::frame(
+	frame_context& ctx,
+	shared_view<gpu::context> gpu_s,
+	data& d,
+	shared_view<camera::system> cam_state,
+	shared_view<geometry_collector::system> gc_r,
+	shared_view<light_culling::system> lc_r
+) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -182,7 +220,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	if (render_items.empty()) {
 		const auto ext = gpu_s.render_graph->extent();
 		auto rec = co_await gpu::pass<system>(ctx)
-					   .color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
+					   .color(gpu::clear_color(gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f }))
 					   .depth(gpu::clear_depth(gpu::depth_clear{ .depth = 1.0f }));
 		rec.set_viewport(ext);
 		rec.set_scissor(ext);
@@ -199,6 +237,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		.view = view,
 		.proj = proj,
 		.inv_view = view.inverse(),
+		.inv_view_proj = (proj * view).inverse(),
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 
@@ -206,10 +245,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	auto spot_chunk = ctx.components<spot_light_component>();
 	auto point_chunk = ctx.components<point_light_component>();
 
-	const std::size_t total_lights = std::min(
-		dir_chunk.size() + spot_chunk.size() + point_chunk.size(),
-		max_lights
-	);
+	const std::size_t total_lights = std::min(dir_chunk.size() + spot_chunk.size() + point_chunk.size(), max_lights);
 	auto& staging = d.light_staging;
 	staging.assign(total_lights * sizeof(shaders::forward::light), std::byte{ 0 });
 	auto* staging_lights = reinterpret_cast<shaders::forward::light*>(staging.data());
@@ -300,7 +336,10 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 			};
 		}
 
-		d.material_palette_buffers[frame_index].host_write(mat_staging.data(), material_count * sizeof(shaders::forward::material_data));
+		d.material_palette_buffers[frame_index].host_write(
+			mat_staging.data(),
+			material_count * sizeof(shaders::forward::material_data)
+		);
 	}
 
 	const auto& normal_batches = data.normal_batches;
@@ -312,12 +351,22 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	const int ao_quality_i = static_cast<int>(d.ao_quality);
 	const int reflection_quality_i = static_cast<int>(d.reflection_quality);
 
-	auto meshlet_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), meshlet_entry::pod);
-	auto skinned_writer = gpu::make_push_writer(*gpu_s.shader_registry, gpu::context::device_handle(*gpu_s.device), gpu_s.device->descriptor_heap(), skinned_geometry_entry::pod);
+	auto meshlet_writer = gpu::make_push_writer(
+		*gpu_s.shader_registry,
+		gpu::context::device_handle(*gpu_s.device),
+		gpu_s.device->descriptor_heap(),
+		meshlet_entry::pod
+	);
+	auto skinned_writer = gpu::make_push_writer(
+		*gpu_s.shader_registry,
+		gpu::context::device_handle(*gpu_s.device),
+		gpu_s.device->descriptor_heap(),
+		skinned_geometry_entry::pod
+	);
 
 	auto rec = co_await gpu::pass<system>(ctx)
 				   .pipeline(d.pipeline)
-				   .color(gpu::clear_color(gpu::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f }))
+				   .color(gpu::clear_color(gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f }))
 				   .depth(gpu::load_depth())
 				   .after<rt_shadow::system, light_culling::system, depth_prepass::system>();
 	rec.set_viewport(ext);
@@ -384,8 +433,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		const auto& instance_buf = gc_r.instance_buffer[frame_index];
 
 		skinned_writer.begin(frame_index);
-		skinned_writer
-			.buffer<shaders::standard_3d::skin_matrices>(skin_buf)
+		skinned_writer.buffer<shaders::standard_3d::skin_matrices>(skin_buf)
 			.buffer<shaders::standard_3d::instance_data_buffer>(instance_buf);
 		rec.commit(skinned_writer, d.skinned_pipeline, 1);
 

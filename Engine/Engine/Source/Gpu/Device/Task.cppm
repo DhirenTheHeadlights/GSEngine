@@ -28,9 +28,7 @@ export namespace gse::gpu {
 
 		auto await_ready() const noexcept -> bool;
 
-		auto await_suspend(
-			std::coroutine_handle<>
-		) noexcept -> bool;
+		auto await_suspend(std::coroutine_handle<>) noexcept -> bool;
 
 		auto await_resume() -> vulkan::transient_command_buffer;
 	};
@@ -46,17 +44,13 @@ export namespace gse::gpu {
 		);
 
 		template <typename T>
-		auto retain(
-			T&& resource
-		) && -> submission&&;
+		auto retain(T&& resource) && -> submission&&;
 
 		auto submit_sync() -> sync_token;
 
 		auto await_ready() noexcept -> bool;
 
-		auto await_suspend(
-			std::coroutine_handle<> caller
-		) -> bool;
+		auto await_suspend(std::coroutine_handle<> caller) -> bool;
 
 		auto await_resume() noexcept -> sync_token;
 
@@ -85,22 +79,35 @@ auto gse::gpu::begin_transient_awaiter::await_resume() -> vulkan::transient_comm
 	assert(worker.has_value(), "begin_transient must be co_awaited from a task worker thread");
 	auto cmd = m_queue->allocate_primary(m_gpu_device->vulkan_device(), *worker);
 	cmd.begin_one_time();
-	const auto marker = m_gpu_device->begin_pass_marker(cmd.handle(), device::pass_marker_domain::transient, m_pass_marker);
+	const auto marker =
+		m_gpu_device->begin_pass_marker(cmd.handle(), device::pass_marker_domain::transient, m_pass_marker);
 	m_gpu_device->checkpoint_pass_marker(cmd.handle(), marker);
 	m_gpu_device->post_renderpass_pass_marker(cmd.handle(), marker);
 	cmd.set_marker_seq(marker.seq);
 	return cmd;
 }
 
-gse::gpu::submission::submission(gpu::device& gpu_dev, vulkan::queue& queues, transient_queue& queue, frame_resource_bin& bin, vulkan::transient_command_buffer&& cmd)
-	: m_gpu_device(&gpu_dev), m_queues(&queues), m_queue(&queue), m_bin(&bin), m_cmd(std::move(cmd)) {
+gse::gpu::submission::submission(
+	gpu::device& gpu_dev,
+	vulkan::queue& queues,
+	transient_queue& queue,
+	frame_resource_bin& bin,
+	vulkan::transient_command_buffer&& cmd
+)
+	: m_gpu_device(&gpu_dev),
+	  m_queues(&queues),
+	  m_queue(&queue),
+	  m_bin(&bin),
+	  m_cmd(std::move(cmd)) {
 }
 
 template <typename T>
 auto gse::gpu::submission::retain(T&& resource) && -> submission&& {
-	m_pending_retains.push_back([bin = m_bin, qid = m_queue->id(), value = std::ref(m_value), payload = std::forward<T>(resource)]() mutable {
-		bin->retain(qid, value.get(), std::move(payload));
-	});
+	m_pending_retains.push_back(
+		[bin = m_bin, qid = m_queue->id(), value = std::ref(m_value), payload = std::forward<T>(resource)]() mutable {
+			bin->retain(qid, value.get(), std::move(payload));
+		}
+	);
 	return std::move(*this);
 }
 
@@ -110,7 +117,10 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 	}
 
 	if (m_cmd.marker_seq() != std::numeric_limits<std::uint64_t>::max()) {
-		m_gpu_device->end_pass_marker(m_cmd.handle(), device::pass_marker_handle{ .seq = m_cmd.marker_seq(), .domain = device::pass_marker_domain::transient });
+		m_gpu_device->end_pass_marker(
+			m_cmd.handle(),
+			device::pass_marker_handle{ .seq = m_cmd.marker_seq(), .domain = device::pass_marker_domain::transient }
+		);
 	}
 
 	m_cmd.end();

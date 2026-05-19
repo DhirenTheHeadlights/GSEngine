@@ -26,11 +26,8 @@ export namespace gse::gpu {
 	};
 
 	template <typename T>
-	concept is_system_value =
-		std::is_same_v<T, dispatch_thread_id> ||
-		std::is_same_v<T, group_id> ||
-		std::is_same_v<T, group_thread_id> ||
-		std::is_same_v<T, group_index>;
+	concept is_system_value = std::is_same_v<T, dispatch_thread_id> || std::is_same_v<T, group_id> ||
+		std::is_same_v<T, group_thread_id> || std::is_same_v<T, group_index>;
 
 	template <is_system_value T>
 	consteval auto system_value_semantic() -> std::string_view;

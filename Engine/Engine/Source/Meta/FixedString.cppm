@@ -7,9 +7,7 @@ export namespace gse {
 	struct fixed_string {
 		char data[N]{};
 
-		consteval fixed_string(
-			const char (&s)[N]
-		);
+		consteval fixed_string(const char (&s)[N]);
 
 		consteval operator std::string_view() const;
 	};

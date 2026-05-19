@@ -116,20 +116,33 @@ export namespace gse::physics {
 
 	class system {
 	public:
-		struct data {
-			static constexpr std::string_view category = "Physics";
-
+		struct[[= gse::settings::category<"Physics">{}]] data {
 			[[= gse::settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
-			[[= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{}]] bool use_gpu_solver = false;
+			[[= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{}]] bool
+				use_gpu_solver = false;
 
-			[[= gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce jitter at the cost of frame time.">{}, = gse::settings::range<1, 40>{}]] int solver_iterations = 15;
+			[[
+				= gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce "
+										  "jitter at the cost of frame time.">{},
+				= gse::settings::range<1, 40>{}
+			]] int solver_iterations = 15;
 
-			[[= gse::settings::describe<"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{}]] bool use_jacobi = false;
+			[[= gse::settings::describe<
+				"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{}]] bool
+				use_jacobi = false;
 
-			[[= gse::settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; higher values converge faster.">{}, = gse::settings::range<0.1f, 1.0f>{}]] float jacobi_omega = 0.67f;
+			[[
+				= gse::settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
+										  "higher values converge faster.">{},
+				= gse::settings::range<0.1f, 1.0f>{}
+			]] float jacobi_omega = 0.67f;
 
-			[[= gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for fast-moving bodies.">{}, = gse::settings::range<1, 8>{}]] int physics_substeps = 2;
+			[[
+				= gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for "
+										  "fast-moving bodies.">{},
+				= gse::settings::range<1, 8>{}
+			]] int physics_substeps = 2;
 
 			bool gpu_buffers_created = false;
 			gpu_solver_stats gpu_stats;
@@ -142,6 +155,7 @@ export namespace gse::physics {
 			std::uint32_t gpu_uploaded_body_count = 0;
 			std::uint32_t gpu_uploaded_joint_count = 0;
 			flat_map<id, std::uint32_t> id_to_body_index;
+			std::vector<impulse_request> gpu_pending_impulses;
 
 			std::vector<std::uint8_t> body_airborne;
 			std::vector<std::uint8_t> body_sleeping;
@@ -149,43 +163,20 @@ export namespace gse::physics {
 			vbd::gpu_solver gpu_solver;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data* gpu_s,
-			const asset::data& assets_s,
-			data& d
-		) -> async::task<>;
+		static auto run(run_context& ctx, const gpu::context::data* gpu_s, const asset::data& assets_s, data& d)
+			-> async::task<>;
 
-		static auto frame(
-			frame_context& ctx,
-			const gpu::context::data* gpu_s,
-			data& d
-		) -> async::task<>;
+		static auto frame(frame_context& ctx, const gpu::context::data* gpu_s, data& d) -> async::task<>;
 
-		static auto create_joint(
-			data& d,
-			const joint_definition& def
-		) -> joint_handle;
+		static auto create_joint(data& d, const joint_definition& def) -> joint_handle;
 
-		static auto remove_joint(
-			data& d,
-			joint_handle handle
-		) -> void;
+		static auto remove_joint(data& d, joint_handle handle) -> void;
 
-		static auto query_transform(
-			const data& d,
-			id entity_id
-		) -> std::optional<transform_snapshot>;
+		static auto query_transform(const data& d, id entity_id) -> std::optional<transform_snapshot>;
 
-		static auto is_airborne(
-			const data& d,
-			id entity_id
-		) -> bool;
+		static auto is_airborne(const data& d, id entity_id) -> bool;
 
-		static auto is_sleeping(
-			const data& d,
-			id entity_id
-		) -> bool;
+		static auto is_sleeping(const data& d, id entity_id) -> bool;
 
 	private:
 		struct collision_pair {

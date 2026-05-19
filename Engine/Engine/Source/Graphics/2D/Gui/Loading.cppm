@@ -10,29 +10,20 @@ export namespace gse::loading {
 		state() = default;
 		~state() = default;
 
-		auto set_phase(
-			std::string p
-		) -> void;
+		auto set_phase(std::string p) -> void;
 
-		auto set_progress(
-			std::uint32_t done,
-			std::uint32_t total
-		) -> void;
+		auto set_progress(std::uint32_t done, std::uint32_t total) -> void;
 
-		auto mark_finished(
-		) -> void;
+		auto mark_finished() -> void;
 
-		[[nodiscard]] auto phase(
-		) const -> std::string;
+		[[nodiscard]] auto phase() const -> std::string;
 
-		[[nodiscard]] auto done(
-		) const -> std::uint32_t;
+		[[nodiscard]] auto done() const -> std::uint32_t;
 
-		[[nodiscard]] auto total(
-		) const -> std::uint32_t;
+		[[nodiscard]] auto total() const -> std::uint32_t;
 
-		[[nodiscard]] auto finished(
-		) const -> bool;
+		[[nodiscard]] auto finished() const -> bool;
+
 	private:
 		mutable std::mutex m_mutex;
 		std::string m_phase;

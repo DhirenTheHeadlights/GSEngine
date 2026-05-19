@@ -39,7 +39,9 @@ auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool
 	return true;
 }
 
-gse::audio_clip::audio_clip(const std::filesystem::path& filepath) : identifiable(filepath, config::baked_resource_path), m_path(filepath) {
+gse::audio_clip::audio_clip(const std::filesystem::path& filepath)
+	: identifiable(filepath, config::baked_resource_path),
+	  m_path(filepath) {
 }
 
 auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
@@ -51,13 +53,16 @@ auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
 
 	const ma_decoder_config cfg = ma_decoder_config_init(ma_format_value_unknown, 0, 0);
 	ma_decoder decoder;
-	if (const auto result = ma_decoder_init_memory(m_bytes.data(), m_bytes.size(), &cfg, &decoder); result == ma_result_success) {
+	if (const auto result = ma_decoder_init_memory(m_bytes.data(), m_bytes.size(), &cfg, &decoder);
+		result == ma_result_success) {
 		ma_uint64 length = 0;
 		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
 		m_sample_rate = decoder.outputSampleRate;
 		m_channels = decoder.outputChannels;
 		m_frame_count = length;
-		m_duration = (length > 0 && m_sample_rate > 0) ? seconds(static_cast<float>(length) / static_cast<float>(m_sample_rate)) : seconds(0.f);
+		m_duration = (length > 0 && m_sample_rate > 0)
+			? seconds(static_cast<float>(length) / static_cast<float>(m_sample_rate))
+			: seconds(0.f);
 		ma_decoder_uninit(&decoder);
 	}
 	co_return;
@@ -136,7 +141,8 @@ auto gse::audio::system::release_voice(data& d, const voice_handle handle) -> vo
 }
 
 auto gse::audio::system::valid_voice(const data& d, const voice_handle handle) -> bool {
-	return handle.index < d.voices.size() && d.voices[handle.index]->active && d.voices[handle.index]->generation == handle.generation;
+	return handle.index < d.voices.size() && d.voices[handle.index]->active &&
+		d.voices[handle.index]->generation == handle.generation;
 }
 
 auto gse::audio::system::run(run_context& ctx, data& d) -> async::task<> {
@@ -173,7 +179,10 @@ auto gse::audio::system::run(run_context& ctx, data& d) -> async::task<> {
 
 		for (const auto& req : ctx.read_channel<set_volume_request>()) {
 			if (valid_voice(d, req.handle)) {
-				ma_sound_set_volume(&d.voices[req.handle.index]->sound, req.vol.value(percentage<float>::bound::zero_to_one));
+				ma_sound_set_volume(
+					&d.voices[req.handle.index]->sound,
+					req.vol.value(percentage<float>::bound::zero_to_one)
+				);
 			}
 		}
 

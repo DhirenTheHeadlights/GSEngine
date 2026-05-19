@@ -24,13 +24,9 @@ export namespace gse {
 			raw_blob_owned<std::byte> bytes;
 		};
 
-		explicit audio_clip(
-			const std::filesystem::path& filepath
-		);
+		explicit audio_clip(const std::filesystem::path& filepath);
 
-		auto load(
-			asset::load_ctx& ctx
-		) -> async::task<>;
+		auto load(asset::load_ctx& ctx) -> async::task<>;
 
 		auto unload() -> void;
 
@@ -53,10 +49,7 @@ export namespace gse {
 		time_t<float, seconds> m_duration;
 	};
 
-	auto bake(
-		const std::filesystem::path& src,
-		audio_clip::baked& out
-	) -> bool;
+	auto bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool;
 }
 
 export namespace gse {
@@ -110,31 +103,15 @@ export namespace gse::audio {
 			std::vector<std::uint32_t> free_list;
 		};
 
-		static auto run(
-			run_context& ctx,
-			data& d
-		) -> async::task<>;
+		static auto run(run_context& ctx, data& d) -> async::task<>;
 
-		static auto shutdown(
-			shutdown_context& phase,
-			data& d
-		) -> void;
+		static auto shutdown(shutdown_context& phase, data& d) -> void;
 
 	private:
-		static auto allocate_voice(
-			data& d,
-			const audio_clip& clip,
-			bool loop
-		) -> voice_handle;
+		static auto allocate_voice(data& d, const audio_clip& clip, bool loop) -> voice_handle;
 
-		static auto release_voice(
-			data& d,
-			voice_handle handle
-		) -> void;
+		static auto release_voice(data& d, voice_handle handle) -> void;
 
-		static auto valid_voice(
-			const data& d,
-			voice_handle handle
-		) -> bool;
+		static auto valid_voice(const data& d, voice_handle handle) -> bool;
 	};
 }

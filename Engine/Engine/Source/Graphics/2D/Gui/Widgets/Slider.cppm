@@ -134,7 +134,15 @@ namespace gse::gui::draw {
 }
 
 template <gse::is_arithmetic T>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T& value, T min, T max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(
+	const draw_context& ctx,
+	const std::string& name,
+	T& value,
+	T min,
+	T max,
+	id& hot_widget_id,
+	id& active_widget_id
+) -> void {
 	std::array value_ptrs = { &value };
 	const std::array min_values = { min };
 	const std::array max_values = { max };
@@ -142,7 +150,15 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T&
 }
 
 template <gse::internal::is_quantity T, auto Unit>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T& value, T min, T max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(
+	const draw_context& ctx,
+	const std::string& name,
+	T& value,
+	T min,
+	T max,
+	id& hot_widget_id,
+	id& active_widget_id
+) -> void {
 	std::array value_ptrs = { &value };
 	const std::array min_values = { min };
 	const std::array max_values = { max };
@@ -152,7 +168,15 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T&
 
 template <typename T, std::size_t N>
 requires gse::is_arithmetic<T>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(
+	const draw_context& ctx,
+	const std::string& name,
+	gse::vec<T, N>& v,
+	gse::vec<T, N> min,
+	gse::vec<T, N> max,
+	id& hot_widget_id,
+	id& active_widget_id
+) -> void {
 	std::array<T*, N> value_ptrs;
 	std::array<T, N> min_values;
 	std::array<T, N> max_values;
@@ -167,7 +191,15 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gs
 }
 
 template <gse::internal::is_quantity T, std::size_t N, auto Unit>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(
+	const draw_context& ctx,
+	const std::string& name,
+	gse::vec<T, N>& v,
+	gse::vec<T, N> min,
+	gse::vec<T, N> max,
+	id& hot_widget_id,
+	id& active_widget_id
+) -> void {
 	std::array<T*, N> value_ptrs;
 	std::array<T, N> min_values;
 	std::array<T, N> max_values;
@@ -183,7 +215,16 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gs
 }
 
 template <typename T>
-auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, const id active_widget_id) -> void {
+auto gse::gui::draw::slider_box(
+	const draw_context& ctx,
+	const ui_rect& rect,
+	const id widget_id,
+	T& value,
+	T min,
+	T max,
+	id& hot_widget_id,
+	const id active_widget_id
+) -> void {
 	if (rect.contains(ctx.input.mouse_position()) && ctx.input_available()) {
 		hot_widget_id = widget_id;
 	}
@@ -202,7 +243,12 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 		value = max;
 	}
 
-	ctx.queue_sprite({ .rect = rect, .color = ctx.style.color_widget_background, .texture = ctx.blank_texture, .corner_radius = ctx.style.corner_radius });
+	ctx.queue_sprite(
+		{ .rect = rect,
+		  .color = ctx.style.color_widget_background,
+		  .texture = ctx.blank_texture,
+		  .corner_radius = ctx.style.corner_radius }
+	);
 
 	float fill_ratio = 0.0f;
 	const auto range = max - min;
@@ -223,12 +269,15 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 		fill_ratio = static_cast<float>((value - min) / range);
 	}
 
-	const ui_rect fill_rect = ui_rect::from_position_size(
-		rect.top_left(),
-		{ rect.width() * fill_ratio, rect.height() }
-	);
+	const ui_rect fill_rect =
+		ui_rect::from_position_size(rect.top_left(), { rect.width() * fill_ratio, rect.height() });
 
-	ctx.queue_sprite({ .rect = fill_rect, .color = ctx.style.color_slider_fill, .texture = ctx.blank_texture, .corner_radius = ctx.style.corner_radius });
+	ctx.queue_sprite(
+		{ .rect = fill_rect,
+		  .color = ctx.style.color_slider_fill,
+		  .texture = ctx.blank_texture,
+		  .corner_radius = ctx.style.corner_radius }
+	);
 
 	std::string value_str;
 	if constexpr (internal::is_quantity<T>) {
@@ -241,16 +290,29 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 		value_str = std::format("{}", value);
 	}
 	const float text_width = ctx.font->width(value_str, ctx.style.font_size);
-	const vec2f value_text_pos = {
-		rect.center().x() - text_width / 2.f,
-		rect.center().y() + ctx.style.font_size / 2.f
-	};
+	const vec2f value_text_pos = { rect.center().x() - text_width / 2.f,
+								   rect.center().y() + ctx.style.font_size / 2.f };
 
-	ctx.queue_text({ .font = ctx.font, .text = value_str, .position = value_text_pos, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = rect });
+	ctx.queue_text(
+		{ .font = ctx.font,
+		  .text = value_str,
+		  .position = value_text_pos,
+		  .scale = ctx.style.font_size,
+		  .color = ctx.style.color_text,
+		  .clip_rect = rect }
+	);
 }
 
 template <typename T, std::size_t N>
-auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name, std::array<T*, N>& value_ptrs, const std::array<T, N>& min_values, const std::array<T, N>& max_values, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider_row(
+	const draw_context& ctx,
+	const std::string& name,
+	std::array<T*, N>& value_ptrs,
+	const std::array<T, N>& min_values,
+	const std::array<T, N>& max_values,
+	id& hot_widget_id,
+	id& active_widget_id
+) -> void {
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -265,12 +327,16 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 
 	const float label_width = content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(
-		row_rect.top_left(),
-		{ label_width, widget_height }
-	);
+	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
 
-	ctx.queue_text({ .font = ctx.font, .text = name, .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f }, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = label_rect });
+	ctx.queue_text(
+		{ .font = ctx.font,
+		  .text = name,
+		  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+		  .scale = ctx.style.font_size,
+		  .color = ctx.style.color_text,
+		  .clip_rect = label_rect }
+	);
 
 	const float values_total_width = content_rect.width() - label_width;
 	const float all_spacing = ctx.style.padding * std::max(0.0f, static_cast<float>(N - 1));
@@ -279,14 +345,20 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	vec2f current_box_pos = { row_rect.left() + label_width, row_rect.top() };
 
 	for (std::size_t i = 0; i < N; ++i) {
-		const ui_rect box_rect = ui_rect::from_position_size(
-			current_box_pos,
-			{ slider_box_width, widget_height }
-		);
+		const ui_rect box_rect = ui_rect::from_position_size(current_box_pos, { slider_box_width, widget_height });
 
 		const id box_id = ids::make(name + "##" + std::to_string(i));
 
-		slider_box(ctx, box_rect, box_id, *value_ptrs[i], min_values[i], max_values[i], hot_widget_id, active_widget_id);
+		slider_box(
+			ctx,
+			box_rect,
+			box_id,
+			*value_ptrs[i],
+			min_values[i],
+			max_values[i],
+			hot_widget_id,
+			active_widget_id
+		);
 
 		current_box_pos.x() += slider_box_width + ctx.style.padding;
 	}

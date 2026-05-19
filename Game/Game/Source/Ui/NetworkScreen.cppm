@@ -6,18 +6,12 @@ import gse;
 export namespace gs {
 	class network_screen : public gse::gui::screen {
 	public:
-		network_screen(
-			const gse::network::data& net,
-			gse::channel_writer channels
-		);
+		network_screen(const gse::network::data& net, gse::channel_writer channels);
 
-		auto build(
-			gse::gui::builder& ui,
-			gse::gui::nav& n
-		) -> void override;
+		auto build(gse::gui::builder& ui, gse::gui::nav& n) -> void override;
 
-		auto title(
-		) const -> std::string_view override;
+		auto title() const -> std::string_view override;
+
 	private:
 		const gse::network::data* m_net;
 		gse::channel_writer m_channels;
@@ -29,16 +23,19 @@ export namespace gs {
 }
 
 gs::network_screen::network_screen(const gse::network::data& net, gse::channel_writer channels)
-	: m_net(&net), m_channels(std::move(channels)) {}
+	: m_net(&net),
+	  m_channels(std::move(channels)) {
+}
 
 auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void {
 	const auto& net = *m_net;
 
 	const auto send_message = [this](auto m) {
 		m_channels.push<gse::network::send_request>({
-			.action = [m = std::move(m)](gse::network::client& c) {
-				c.send(m);
-			},
+			.action =
+				[m = std::move(m)](gse::network::client& c) {
+					c.send(m);
+				},
 		});
 	};
 
@@ -90,7 +87,15 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 		const auto& sv = list[idx];
 		const bool picked = (m_selected == static_cast<int>(idx));
 		if (ui.draw<gse::gui::selectable>({
-				.text = std::format("{}  {}:{}  {}/{}  v{}", sv.name, sv.addr.ip, sv.addr.port, sv.players, sv.max_players, sv.build),
+				.text = std::format(
+					"{}  {}:{}  {}/{}  v{}",
+					sv.name,
+					sv.addr.ip,
+					sv.addr.port,
+					sv.players,
+					sv.max_players,
+					sv.build
+				),
 				.selected = picked,
 			})) {
 			m_selected = static_cast<int>(idx);
@@ -99,7 +104,8 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 
 	if (ui.draw<gse::gui::button>({
 			.text = "Connect",
-		}) && m_selected >= 0 && m_selected < static_cast<int>(list.size())) {
+		}) &&
+		m_selected >= 0 && m_selected < static_cast<int>(list.size())) {
 		const auto& pick = list[static_cast<std::size_t>(m_selected)];
 		m_channels.push<gse::network::connect_request>({
 			.options = {
@@ -113,10 +119,13 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 
 	if (ui.draw<gse::gui::button>({
 			.text = "Send Ping",
-		}) && net.connection_state == gse::network::client::state::connected) {
-		send_message(gse::network::ping{
-			.sequence = ++m_ping_seq,
-		});
+		}) &&
+		net.connection_state == gse::network::client::state::connected) {
+		send_message(
+			gse::network::ping{
+				.sequence = ++m_ping_seq,
+			}
+		);
 	}
 }
 

@@ -3,15 +3,9 @@ export module gse.concurrency:frame_arena;
 import std;
 
 export namespace gse::frame_arena {
-	auto allocate(
-		std::size_t size,
-		std::size_t align = alignof(std::max_align_t)
-	) -> void*;
+	auto allocate(std::size_t size, std::size_t align = alignof(std::max_align_t)) -> void*;
 
-	auto deallocate(
-		void* ptr,
-		std::size_t size
-	) -> void;
+	auto deallocate(void* ptr, std::size_t size) -> void;
 }
 
 namespace gse::frame_arena {
@@ -51,9 +45,7 @@ namespace gse::frame_arena {
 
 	inline thread_local thread_pool pool;
 
-	auto bucket_index(
-		std::size_t size
-	) -> std::size_t;
+	auto bucket_index(std::size_t size) -> std::size_t;
 }
 
 auto gse::frame_arena::bucket_index(const std::size_t size) -> std::size_t {

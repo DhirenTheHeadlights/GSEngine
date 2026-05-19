@@ -14,6 +14,7 @@ import :vulkan_descriptor_set_layout;
 import :vulkan_shader_module;
 import :vulkan_device;
 import :vulkan_sync;
+import :types;
 
 export namespace gse::gpu {
 	using blas = vulkan::blas;
@@ -33,4 +34,19 @@ export namespace gse::gpu {
 	using image_view = vulkan::image_view;
 	using descriptor_set_layout = vulkan::descriptor_set_layout;
 	using shader_module = vulkan::shader_module;
+
+	constexpr auto present_mode_from_setting_index(const int index) -> present_mode {
+		switch (index) {
+			case 0:
+				return present_mode::fifo;
+			case 1:
+				return present_mode::fifo_relaxed;
+			case 2:
+				return present_mode::mailbox;
+			case 3:
+				return present_mode::immediate;
+			default:
+				return present_mode::fifo;
+		}
+	}
 }

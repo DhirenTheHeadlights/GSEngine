@@ -32,13 +32,11 @@ auto gse::camera::system::direction_relative_to_origin(const data& d, const vec3
 }
 
 auto gse::camera::system::interpolate_target(const target& from, const target& to, const float t) -> target {
-	return {
-		.position = lerp(from.position, to.position, t),
-		.orientation = slerp(from.orientation, to.orientation, t),
-		.fov = from.fov + (to.fov - from.fov) * t,
-		.near_plane = from.near_plane + (to.near_plane - from.near_plane) * t,
-		.far_plane = from.far_plane + (to.far_plane - from.far_plane) * t
-	};
+	return { .position = lerp(from.position, to.position, t),
+			 .orientation = slerp(from.orientation, to.orientation, t),
+			 .fov = from.fov + (to.fov - from.fov) * t,
+			 .near_plane = from.near_plane + (to.near_plane - from.near_plane) * t,
+			 .far_plane = from.far_plane + (to.far_plane - from.far_plane) * t };
 }
 
 auto gse::camera::system::compute_view_matrix(const target& t) -> view_matrix {
@@ -52,8 +50,7 @@ auto gse::camera::system::compute_projection_matrix(const target& t, const vec2f
 	return perspective(t.fov, aspect_ratio, t.near_plane, t.far_plane);
 }
 
-auto gse::camera::system::run(run_context& ctx, data& d, const input::system::data& input_state) -> async::task<> {
-	d.current.orientation = identity<float>();
+auto gse::camera::system::run(run_context& ctx, data& d) -> async::task<> {
 	d.view_matrix = compute_view_matrix(d.current);
 	d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
 
@@ -67,18 +64,6 @@ auto gse::camera::system::run(run_context& ctx, data& d, const input::system::da
 		for (const auto& [size] : ctx.read_channel<viewport_update>()) {
 			d.viewport = size;
 		}
-
-		if (!d.ui_focus) {
-			const auto delta = input::system::current_state(input_state).mouse_delta();
-			const auto transformed_offset = delta * d.mouse_sensitivity;
-			d.yaw -= degrees(transformed_offset.x());
-			d.pitch -= degrees(transformed_offset.y());
-			d.pitch = std::clamp(d.pitch, degrees(-89.0f), degrees(89.0f));
-		}
-
-		const quat yaw_rotation = quat({ 0.f, 1.f, 0.f }, d.yaw);
-		const quat pitch_rotation = quat({ 1.f, 0.f, 0.f }, d.pitch);
-		const quat new_orientation = normalize(yaw_rotation * pitch_rotation);
 
 		int highest_priority = -1;
 		id best_controller{};
@@ -101,7 +86,7 @@ auto gse::camera::system::run(run_context& ctx, data& d, const input::system::da
 					best_blend_duration = cam.blend_in_duration;
 
 					best_target.position = cam.position + cam.offset;
-					best_target.orientation = new_orientation;
+					best_target.orientation = cam.orientation;
 					best_target.fov = degrees(45.0f);
 					best_target.near_plane = meters(0.1f);
 					best_target.far_plane = meters(10000.0f);
@@ -143,7 +128,8 @@ auto gse::camera::system::run(run_context& ctx, data& d, const input::system::da
 			}
 		}
 
-		d.current.orientation = new_orientation;
+		const vec3f forward = rotate_vector(d.current.orientation, vec3f(0.f, 0.f, -1.f));
+		d.yaw = radians(std::atan2(-forward.x(), -forward.z()));
 
 		d.view_matrix = compute_view_matrix(d.current);
 		d.projection_matrix = compute_projection_matrix(d.current, d.viewport);

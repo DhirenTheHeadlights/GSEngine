@@ -80,10 +80,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	constexpr float hit_w = 6.0f;
 
 	auto handle_resize = [&](float& width, const float right_anchor_x, const float split_x, const int idx) {
-		const ui_rect hit_rect = ui_rect::from_position_size(
-			{ split_x - hit_w * 0.5f, header_y },
-			{ hit_w, row_h }
-		);
+		const ui_rect hit_rect = ui_rect::from_position_size({ split_x - hit_w * 0.5f, header_y }, { hit_w, row_h });
 
 		const bool hovered = hit_rect.contains(mouse_pos);
 
@@ -115,7 +112,13 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	auto draw_header_item = [&](const std::string& txt, float x, float w) {
 		const ui_rect r = ui_rect::from_position_size({ x, header_y }, { w, row_h });
 		ctx.queue_sprite({ .rect = r, .color = ctx.style.color_title_bar, .texture = ctx.blank_texture });
-		ctx.queue_text({ .font = ctx.font, .text = txt, .position = { r.left() + pad * 0.5f, r.center().y() + font_sz * 0.5f }, .scale = font_sz, .clip_rect = r });
+		ctx.queue_text(
+			{ .font = ctx.font,
+			  .text = txt,
+			  .position = { r.left() + pad * 0.5f, r.center().y() + font_sz * 0.5f },
+			  .scale = font_sz,
+			  .clip_rect = r }
+		);
 	};
 
 	draw_header_item("Duration", draw_x_dur, w_dur);
@@ -161,7 +164,8 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		return (a.stop - a.start) > (b.stop - b.start);
 	};
 
-	const auto flatten_hidden = [](auto& self, std::span<const trace::node> input, std::vector<trace::node>& out) -> void {
+	const auto flatten_hidden =
+		[](auto& self, std::span<const trace::node> input, std::vector<trace::node>& out) -> void {
 		for (const auto& n : input) {
 			if (trace::is_hidden(n.id)) {
 				self(self, { n.children_first, n.children_count }, out);
@@ -185,7 +189,11 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	}
 
 	if (!gpu_children_buf.empty()) {
-		sorted_roots_buf.push_back(trace::node{ .id = gpu_root_id, .children_first = gpu_children_buf.data(), .children_count = gpu_children_buf.size() });
+		sorted_roots_buf.push_back(
+			trace::node{ .id = gpu_root_id,
+						 .children_first = gpu_children_buf.data(),
+						 .children_count = gpu_children_buf.size() }
+		);
 	}
 
 	const draw::tree_ops<trace::node> ops{
@@ -213,50 +221,63 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		.is_leaf = [](const trace::node& n) -> bool {
 			return n.children_count == 0;
 		},
-		.custom_draw = [=](const trace::node& n, const draw_context& draw_ctx, const ui_rect& row, bool, bool, int) {
-			const bool has_cpu_timing = n.stop > n.start;
-			const double dur_ns = has_cpu_timing ? static_cast<double>((n.stop - n.start).as<nanoseconds>()) : 0.0;
-			const double self_ns = has_cpu_timing ? static_cast<double>(n.self.as<nanoseconds>()) : 0.0;
-			const double pct_frame = (frame_ns > 0.0 && has_cpu_timing) ? (dur_ns / frame_ns) * 100.0 : 0.0;
+		.custom_draw =
+			[=](const trace::node& n, const draw_context& draw_ctx, const ui_rect& row, bool, bool, int) {
+				const bool has_cpu_timing = n.stop > n.start;
+				const double dur_ns = has_cpu_timing ? static_cast<double>((n.stop - n.start).as<nanoseconds>()) : 0.0;
+				const double self_ns = has_cpu_timing ? static_cast<double>(n.self.as<nanoseconds>()) : 0.0;
+				const double pct_frame = (frame_ns > 0.0 && has_cpu_timing) ? (dur_ns / frame_ns) * 100.0 : 0.0;
 
-			auto to_fixed = [](const double v, char* buf, const std::size_t len, const int prec) -> std::string_view {
-				auto [p, ec] = std::to_chars(buf, buf + len, v, std::chars_format::fixed, prec);
-				return ec == std::errc{} ? std::string_view{ buf, static_cast<std::size_t>(p - buf) } : std::string_view{};
-			};
+				auto to_fixed =
+					[](const double v, char* buf, const std::size_t len, const int prec) -> std::string_view {
+					auto [p, ec] = std::to_chars(buf, buf + len, v, std::chars_format::fixed, prec);
+					return ec == std::errc{} ? std::string_view{ buf, static_cast<std::size_t>(p - buf) }
+											 : std::string_view{};
+				};
 
-			char buf[32];
+				char buf[32];
 
-			auto draw_col = [&](const std::string_view val, float x, float w) {
-				const ui_rect box = ui_rect::from_position_size({ x, row.top() }, { w, row.height() });
+				auto draw_col = [&](const std::string_view val, float x, float w) {
+					const ui_rect box = ui_rect::from_position_size({ x, row.top() }, { w, row.height() });
 
-				draw_ctx.queue_sprite({ .rect = box, .color = draw_ctx.style.color_widget_background, .texture = draw_ctx.blank_texture });
+					draw_ctx.queue_sprite(
+						{ .rect = box,
+						  .color = draw_ctx.style.color_widget_background,
+						  .texture = draw_ctx.blank_texture }
+					);
 
-				draw_ctx.queue_text({ .font = draw_ctx.font, .text = std::string(val), .position = { box.left() + pad * 0.5f, box.center().y() + font_sz * 0.5f }, .scale = font_sz, .clip_rect = box });
-			};
+					draw_ctx.queue_text(
+						{ .font = draw_ctx.font,
+						  .text = std::string(val),
+						  .position = { box.left() + pad * 0.5f, box.center().y() + font_sz * 0.5f },
+						  .scale = font_sz,
+						  .clip_rect = box }
+					);
+				};
 
-			if (has_cpu_timing) {
-				draw_col(to_fixed(dur_ns / 1000.0, buf, 32, 1), draw_x_dur, w_dur);
-				draw_col(to_fixed(self_ns / 1000.0, buf, 32, 1), draw_x_self, w_self);
-				draw_col(to_fixed(pct_frame, buf, 32, 1), draw_x_frame, w_frame);
+				if (has_cpu_timing) {
+					draw_col(to_fixed(dur_ns / 1000.0, buf, 32, 1), draw_x_dur, w_dur);
+					draw_col(to_fixed(self_ns / 1000.0, buf, 32, 1), draw_x_self, w_self);
+					draw_col(to_fixed(pct_frame, buf, 32, 1), draw_x_frame, w_frame);
+				}
+				else {
+					draw_col("", draw_x_dur, w_dur);
+					draw_col("", draw_x_self, w_self);
+					draw_col("", draw_x_frame, w_frame);
+				}
+
+				const auto node_id = n.id;
+				const auto gpu_agg = profile::lookup_gpu(node_id);
+				const auto cpu_agg = gpu_agg ? std::nullopt : profile::lookup_cpu(node_id);
+				if (const auto& agg = gpu_agg ? gpu_agg : cpu_agg) {
+					draw_col(to_fixed(agg->ema.as<microseconds>(), buf, 32, 1), draw_x_avg, w_avg);
+					draw_col(to_fixed(agg->peak.as<microseconds>(), buf, 32, 1), draw_x_peak, w_peak);
+				}
+				else {
+					draw_col("", draw_x_avg, w_avg);
+					draw_col("", draw_x_peak, w_peak);
+				}
 			}
-			else {
-				draw_col("", draw_x_dur, w_dur);
-				draw_col("", draw_x_self, w_self);
-				draw_col("", draw_x_frame, w_frame);
-			}
-
-			const auto node_id = n.id;
-			const auto gpu_agg = profile::lookup_gpu(node_id);
-			const auto cpu_agg = gpu_agg ? std::nullopt : profile::lookup_cpu(node_id);
-			if (const auto& agg = gpu_agg ? gpu_agg : cpu_agg) {
-				draw_col(to_fixed(agg->ema.as<microseconds>(), buf, 32, 1), draw_x_avg, w_avg);
-				draw_col(to_fixed(agg->peak.as<microseconds>(), buf, 32, 1), draw_x_peak, w_peak);
-			}
-			else {
-				draw_col("", draw_x_avg, w_avg);
-				draw_col("", draw_x_peak, w_peak);
-			}
-		}
 	};
 
 	ids::scope tree_scope("gui.tree.profiler");
@@ -276,6 +297,8 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 
 	{
 		auto region = scroll_region(ctx, body_info);
-		trace::set_finalize_paused(draw::tree(ctx, std::span<const trace::node>(sorted_roots_buf), ops, options, &selection, active));
+		trace::set_finalize_paused(
+			draw::tree(ctx, std::span<const trace::node>(sorted_roots_buf), ops, options, &selection, active)
+		);
 	}
 }

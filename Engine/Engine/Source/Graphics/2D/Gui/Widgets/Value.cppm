@@ -15,32 +15,16 @@ import :builder;
 
 export namespace gse::gui::draw {
 	template <is_arithmetic T>
-	auto value(
-		const draw_context& ctx,
-		const std::string& name,
-		T value
-	) -> void;
+	auto value(const draw_context& ctx, const std::string& name, T value) -> void;
 
 	template <is_quantity T, auto Unit = typename T::default_unit{}>
-	auto value(
-		const draw_context& ctx,
-		const std::string& name,
-		T value
-	) -> void;
+	auto value(const draw_context& ctx, const std::string& name, T value) -> void;
 
 	template <typename T, int N, auto Unit = typename T::default_unit{}>
-	auto vec(
-		const draw_context& ctx,
-		const std::string& name,
-		const gse::vec<T, N>& v
-	) -> void;
+	auto vec(const draw_context& ctx, const std::string& name, const gse::vec<T, N>& v) -> void;
 
 	template <typename T, int N>
-	auto vec(
-		const draw_context& ctx,
-		const std::string& name,
-		gse::vec<T, N> v
-	) -> void;
+	auto vec(const draw_context& ctx, const std::string& name, gse::vec<T, N> v) -> void;
 }
 
 export namespace gse::gui {
@@ -70,18 +54,10 @@ export namespace gse::gui {
 }
 
 namespace gse::gui::draw {
-	auto value_box(
-		const draw_context& ctx,
-		const std::string& value,
-		const ui_rect& rect
-	) -> void;
+	auto value_box(const draw_context& ctx, const std::string& value, const ui_rect& rect) -> void;
 
 	template <std::size_t N>
-	auto value_row(
-		const draw_context& ctx,
-		const std::string& name,
-		const std::array<std::string, N>& values
-	) -> void;
+	auto value_row(const draw_context& ctx, const std::string& name, const std::array<std::string, N>& values) -> void;
 }
 
 template <gse::is_arithmetic T>
@@ -119,19 +95,32 @@ auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, gse::
 }
 
 auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value, const ui_rect& rect) -> void {
-	ctx.queue_sprite({ .rect = rect, .color = ctx.style.color_widget_background, .texture = ctx.blank_texture, .corner_radius = ctx.style.corner_radius });
+	ctx.queue_sprite(
+		{ .rect = rect,
+		  .color = ctx.style.color_widget_background,
+		  .texture = ctx.blank_texture,
+		  .corner_radius = ctx.style.corner_radius }
+	);
 
 	const float text_width = ctx.font->width(value, ctx.style.font_size);
-	const vec2f text_pos = {
-		rect.center().x() - text_width / 2.f,
-		rect.center().y() + ctx.style.font_size / 2.f
-	};
+	const vec2f text_pos = { rect.center().x() - text_width / 2.f, rect.center().y() + ctx.style.font_size / 2.f };
 
-	ctx.queue_text({ .font = ctx.font, .text = value, .position = text_pos, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = rect });
+	ctx.queue_text(
+		{ .font = ctx.font,
+		  .text = value,
+		  .position = text_pos,
+		  .scale = ctx.style.font_size,
+		  .color = ctx.style.color_text,
+		  .clip_rect = rect }
+	);
 }
 
 template <std::size_t N>
-auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name, const std::array<std::string, N>& values) -> void {
+auto gse::gui::draw::value_row(
+	const draw_context& ctx,
+	const std::string& name,
+	const std::array<std::string, N>& values
+) -> void {
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -146,12 +135,16 @@ auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name,
 
 	const float label_width = content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(
-		row_rect.top_left(),
-		{ label_width, widget_height }
-	);
+	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
 
-	ctx.queue_text({ .font = ctx.font, .text = name, .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f }, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = label_rect });
+	ctx.queue_text(
+		{ .font = ctx.font,
+		  .text = name,
+		  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+		  .scale = ctx.style.font_size,
+		  .color = ctx.style.color_text,
+		  .clip_rect = label_rect }
+	);
 
 	const float values_total_width = content_rect.width() - label_width;
 	const float all_spacing = ctx.style.padding * std::max(0.0f, static_cast<float>(N - 1));

@@ -12,13 +12,9 @@ export namespace gse {
 	template <typename T = float>
 	class interval_timer {
 	public:
-		explicit interval_timer(
-			time_t<T> interval
-		);
+		explicit interval_timer(time_t<T> interval);
 
-		auto tick(
-			time_t<T> dt = system_clock::dt<time_t<T>>()
-		) -> bool;
+		auto tick(time_t<T> dt = system_clock::dt<time_t<T>>()) -> bool;
 
 		auto reset() -> void;
 
@@ -30,18 +26,12 @@ export namespace gse {
 
 template <typename T>
 gse::interval_timer<T>::interval_timer(const time_t<T> interval) : m_interval(interval) {
-	assert(
-		m_interval >= time_t<T>(0),
-		"Interval must be non-negative"
-	);
+	assert(m_interval >= time_t<T>(0), "Interval must be non-negative");
 }
 
 template <typename T>
 auto gse::interval_timer<T>::tick(const time_t<T> dt) -> bool {
-	assert(
-		dt >= time_t<T>(0),
-		"Delta time must be non-negative"
-	);
+	assert(dt >= time_t<T>(0), "Delta time must be non-negative");
 
 	m_accumulated += dt;
 	if (m_accumulated >= m_interval) {

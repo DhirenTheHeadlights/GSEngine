@@ -23,7 +23,9 @@ import gse.log;
 import gse.save;
 import gse.config;
 
-gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags) : identifiable(name), m_flags(engine_flags) {
+gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags)
+	: identifiable(name),
+	  m_flags(engine_flags) {
 }
 
 auto gse::engine::initialize(const setup_fn& app_setup) -> void {
@@ -89,6 +91,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			add_system<renderer::rt_shadow::system>();
 			add_system<renderer::light_culling::system>();
 			add_system<renderer::forward::system>();
+			add_system<renderer::sdf_grid::system>();
+			add_system<renderer::world_text::system>();
 			add_system<renderer::physics_debug::system>();
 			add_system<renderer::capture::system>();
 			add_system<animation::system>();
@@ -98,7 +102,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			gse::asset::system_for<game_assets> assets{ *asset_state_ptr };
 
 			m_loading.set_phase("Compiling assets");
-			if (const auto result = assets.compile_non_boot_critical(); result.success_count > 0 || result.failure_count > 0) {
+			if (const auto result = assets.compile_non_boot_critical();
+				result.success_count > 0 || result.failure_count > 0) {
 				log::println(
 					result.failure_count > 0 ? log::level::warning : log::level::info,
 					log::category::assets,
@@ -176,7 +181,12 @@ auto gse::engine::render() -> void {
 				auto requests = m_scheduler.drain_channel<gpu::render_pass_request>();
 				auto transient_images = m_scheduler.drain_channel<gpu::transient_image_request>();
 				auto transient_buffers = m_scheduler.drain_channel<gpu::transient_buffer_request>();
-				gpu::context::execute_frame(*gpu_state, std::move(requests), std::move(transient_images), std::move(transient_buffers));
+				gpu::context::execute_frame(
+					*gpu_state,
+					std::move(requests),
+					std::move(transient_images),
+					std::move(transient_buffers)
+				);
 			}
 		}
 	});

@@ -19,43 +19,29 @@ import gse.log;
 export namespace gse::gpu {
 	class swap_chain final : public non_copyable {
 	public:
-		[[nodiscard]] static auto create(
-			vec2i framebuffer_size,
-			device& dev
-		) -> std::unique_ptr<swap_chain>;
+		[[nodiscard]] static auto create(vec2i framebuffer_size, present_mode preferred_present_mode, device& dev)
+			-> std::unique_ptr<swap_chain>;
 
 		swap_chain(vulkan::swap_chain&& config, device& dev);
 
 		[[nodiscard]] auto extent() const -> vec2u;
 
-		[[nodiscard]] auto depth_image(
-			this auto& self
-		) -> auto&;
+		[[nodiscard]] auto depth_image(this auto& self) -> auto&;
 
 		auto clear_depth_image() -> void;
 
 		using recreate_callback = std::function<void()>;
-		auto on_recreate(
-			recreate_callback callback
-		) -> void;
+		auto on_recreate(recreate_callback callback) -> void;
 
 		auto notify_recreated() -> void;
 
-		auto set_config(
-			vulkan::swap_chain&& config
-		) -> void;
+		auto set_config(vulkan::swap_chain&& config) -> void;
 
-		auto recreate(
-			vec2i framebuffer_size
-		) -> void;
+		auto recreate(vec2i framebuffer_size, present_mode preferred_present_mode) -> void;
 
-		[[nodiscard]] auto image(
-			std::uint32_t index
-		) const -> handle<vulkan::image>;
+		[[nodiscard]] auto image(std::uint32_t index) const -> handle<vulkan::image>;
 
-		[[nodiscard]] auto image_view(
-			std::uint32_t index
-		) const -> handle<vulkan::image_view>;
+		[[nodiscard]] auto image_view(std::uint32_t index) const -> handle<vulkan::image_view>;
 
 		[[nodiscard]] auto format() const -> image_format;
 
@@ -75,13 +61,20 @@ export namespace gse::gpu {
 	};
 }
 
-auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, device& dev) -> std::unique_ptr<swap_chain> {
-	auto config = vulkan::swap_chain::create(framebuffer_size, dev.vulkan_instance(), dev.vulkan_device());
+auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const present_mode preferred_present_mode, device& dev)
+	-> std::unique_ptr<swap_chain> {
+	auto config = vulkan::swap_chain::create(
+		framebuffer_size,
+		preferred_present_mode,
+		dev.vulkan_instance(),
+		dev.vulkan_device()
+	);
 	return std::make_unique<swap_chain>(std::move(config), dev);
 }
 
 gse::gpu::swap_chain::swap_chain(vulkan::swap_chain&& config, device& dev)
-	: m_config(std::move(config)), m_device(&dev) {
+	: m_config(std::move(config)),
+	  m_device(&dev) {
 }
 
 auto gse::gpu::swap_chain::extent() const -> vec2u {
@@ -111,9 +104,14 @@ auto gse::gpu::swap_chain::set_config(vulkan::swap_chain&& config) -> void {
 	m_config = std::move(config);
 }
 
-auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size) -> void {
+auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size, const present_mode preferred_present_mode) -> void {
 	m_config.reset_swapchain();
-	m_config = vulkan::swap_chain::create(framebuffer_size, m_device->vulkan_instance(), m_device->vulkan_device());
+	m_config = vulkan::swap_chain::create(
+		framebuffer_size,
+		preferred_present_mode,
+		m_device->vulkan_instance(),
+		m_device->vulkan_device()
+	);
 }
 
 auto gse::gpu::swap_chain::image(const std::uint32_t index) const -> handle<vulkan::image> {

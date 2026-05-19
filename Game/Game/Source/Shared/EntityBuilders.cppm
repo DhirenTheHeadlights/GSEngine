@@ -11,6 +11,12 @@ export namespace gs {
 		gse::primitive_box_spec spec;
 	};
 
+	struct static_collider_archetype {
+		gse::physics::transform_component transform;
+		gse::physics::motion_component motion;
+		gse::physics::collision_component collision;
+	};
+
 	struct sphere_archetype {
 		gse::physics::transform_component transform;
 		gse::physics::motion_component motion;
@@ -52,9 +58,22 @@ export namespace gs {
 		const gse::vec3<gse::length>& size,
 		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
 	) -> box_archetype;
+
+	auto static_collider(
+		const gse::vec3<gse::position>& position,
+		const gse::vec3<gse::length>& size,
+		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
+	) -> static_collider_archetype;
 }
 
-auto gs::box(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> box_archetype {
+auto gs::box(
+	const gse::vec3<gse::position>& position,
+	const gse::vec3<gse::length>& size,
+	const gse::mass m,
+	const gse::quat& orientation,
+	const float roughness,
+	const float metallic
+) -> box_archetype {
 	const gse::inertia box_inertia = m * gse::dot(size, size) / 18.f;
 
 	return {
@@ -82,7 +101,8 @@ auto gs::box(const gse::vec3<gse::position>& position, const gse::vec3<gse::leng
 	};
 }
 
-auto gs::sphere(const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod) -> sphere_archetype {
+auto gs::sphere(const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod)
+	-> sphere_archetype {
 	return {
 		.transform = {
 			.position = position,
@@ -105,7 +125,8 @@ auto gs::sphere(const gse::vec3<gse::position>& position, const gse::length radi
 	};
 }
 
-auto gs::sphere_light(const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod) -> sphere_light_archetype {
+auto gs::sphere_light(const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod)
+	-> sphere_light_archetype {
 	return {
 		.transform = {
 			.position = position,
@@ -135,7 +156,11 @@ auto gs::sphere_light(const gse::vec3<gse::position>& position, const gse::lengt
 	};
 }
 
-auto gs::static_box(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> box_archetype {
+auto gs::static_box(
+	const gse::vec3<gse::position>& position,
+	const gse::vec3<gse::length>& size,
+	const gse::quat& orientation
+) -> box_archetype {
 	return {
 		.transform = {
 			.position = position,
@@ -154,6 +179,25 @@ auto gs::static_box(const gse::vec3<gse::position>& position, const gse::vec3<gs
 				.metallic = 0.0f,
 			},
 			.size = size,
+		},
+	};
+}
+
+auto gs::static_collider(
+	const gse::vec3<gse::position>& position,
+	const gse::vec3<gse::length>& size,
+	const gse::quat& orientation
+) -> static_collider_archetype {
+	return {
+		.transform = {
+			.position = position,
+			.orientation = orientation,
+		},
+		.motion = {
+			.body = gse::physics::static_body{},
+		},
+		.collision = {
+			.shape = gse::physics::box_shape{ .size = size },
 		},
 	};
 }

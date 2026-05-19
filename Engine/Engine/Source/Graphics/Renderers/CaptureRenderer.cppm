@@ -28,10 +28,12 @@ export namespace gse::renderer::capture {
 	struct save_clip_request {};
 
 	struct system {
-		struct data {
-			static constexpr std::string_view category = "Graphics";
-
-			[[= gse::settings::describe<"Length of the rolling capture ring buffer. Saving a clip writes the most recent N seconds of frames.">{}, = gse::settings::range<seconds(5.f), seconds(120.f)>{}]] time ring_budget = seconds(30.f);
+		struct[[= gse::settings::category<"Graphics">{}]] data {
+			[[
+				= gse::settings::describe<"Length of the rolling capture ring buffer. Saving a clip writes the most "
+										  "recent N seconds of frames.">{},
+				= gse::settings::range<seconds(5.f), seconds(120.f)>{}
+			]] time ring_budget = seconds(30.f);
 
 			actions::handle screenshot_action;
 			actions::handle save_clip_action;
@@ -63,10 +65,6 @@ export namespace gse::renderer::capture {
 			data& d
 		) -> async::task<>;
 
-		static auto frame(
-			const frame_context& ctx,
-			shared_view<gpu::context> gpu_s,
-			data& d
-		) -> async::task<>;
+		static auto frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<>;
 	};
 }

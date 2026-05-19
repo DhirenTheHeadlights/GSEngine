@@ -13,9 +13,7 @@ export namespace gs::tumbler {
 	};
 
 	struct system {
-		static auto run(
-			gse::run_context& ctx
-		) -> gse::async::task<>;
+		static auto run(gse::run_context& ctx) -> gse::async::task<>;
 	};
 }
 

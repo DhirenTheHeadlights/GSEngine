@@ -3,7 +3,7 @@ Language: Cpp
 Standard: Latest
 BasedOnStyle: LLVM
 
-ColumnLimit: 0
+ColumnLimit: 120
 
 UseTab: Always
 TabWidth: 4
@@ -81,7 +81,10 @@ RequiresClausePosition: OwnLine
 IndentRequiresClause: false
 
 AlwaysBreakAfterReturnType: None
+BreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: false
+PenaltyReturnTypeOnItsOwnLine: 10000
+PenaltyBreakBeforeFirstCallParameter: 0
 
 SpaceAfterTemplateKeyword: true
 SpaceBeforeAssignmentOperators: true

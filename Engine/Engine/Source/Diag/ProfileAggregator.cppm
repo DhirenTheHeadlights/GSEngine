@@ -27,45 +27,27 @@ export namespace gse::profile {
 
 	auto ingest_frame() -> void;
 
-	auto ingest_gpu_sample(
-		id pass_id,
-		sample_time duration
-	) -> void;
+	auto ingest_gpu_sample(id pass_id, sample_time duration) -> void;
 
-	auto lookup_cpu(
-		id id
-	) -> std::optional<entry>;
+	auto lookup_cpu(id id) -> std::optional<entry>;
 
-	auto lookup_gpu(
-		id id
-	) -> std::optional<entry>;
+	auto lookup_gpu(id id) -> std::optional<entry>;
 
-	auto top_n(
-		std::size_t n,
-		bool gpu
-	) -> std::vector<entry>;
+	auto top_n(std::size_t n, bool gpu) -> std::vector<entry>;
 
-	auto set_alpha(
-		double alpha
-	) -> void;
+	auto set_alpha(double alpha) -> void;
 
 	auto alpha() -> double;
 
-	auto set_enabled(
-		bool enabled
-	) -> void;
+	auto set_enabled(bool enabled) -> void;
 
 	auto enabled() -> bool;
 
 	auto reset() -> void;
 
-	auto dump(
-		const std::filesystem::path& path = config::resource_path / "Misc" / "profile.txt"
-	) -> void;
+	auto dump(const std::filesystem::path& path = config::resource_path / "Misc" / "profile.txt") -> void;
 
-	auto dump_chrome_trace(
-		const std::filesystem::path& path = config::resource_path / "Misc" / "profile.json"
-	) -> void;
+	auto dump_chrome_trace(const std::filesystem::path& path = config::resource_path / "Misc" / "profile.json") -> void;
 }
 
 namespace gse::profile {
@@ -76,13 +58,8 @@ namespace gse::profile {
 	std::atomic is_enabled{ true };
 	std::atomic<std::uint64_t> frame_count{ 0 };
 
-	auto update_entry(
-		flat_map<id, entry>& map,
-		id id,
-		sample_time duration,
-		std::uint32_t thread_id,
-		bool pooled
-	) -> void;
+	auto update_entry(flat_map<id, entry>& map, id id, sample_time duration, std::uint32_t thread_id, bool pooled)
+		-> void;
 
 	auto walk_node(
 		const trace::node& n,
@@ -91,17 +68,18 @@ namespace gse::profile {
 		bool pooled
 	) -> void;
 
-	auto write_dag(
-		std::ofstream& out
-	) -> void;
+	auto write_dag(std::ofstream& out) -> void;
 
-	auto write_thread_breakdown(
-		std::ofstream& out,
-		const std::vector<entry>& worker_src
-	) -> void;
+	auto write_thread_breakdown(std::ofstream& out, const std::vector<entry>& worker_src) -> void;
 }
 
-auto gse::profile::update_entry(flat_map<id, entry>& map, const id id, const sample_time duration, const std::uint32_t thread_id, const bool pooled) -> void {
+auto gse::profile::update_entry(
+	flat_map<id, entry>& map,
+	const id id,
+	const sample_time duration,
+	const std::uint32_t thread_id,
+	const bool pooled
+) -> void {
 	auto& e = map[id];
 	if (e.sample_count == 0) {
 		e.id = id;
@@ -121,7 +99,12 @@ auto gse::profile::update_entry(flat_map<id, entry>& map, const id id, const sam
 	++e.samples_by_tid[thread_id];
 }
 
-auto gse::profile::walk_node(const trace::node& n, flat_map<id, entry>& cpu_agg, const std::unordered_set<id>& hidden, const bool pooled) -> void {
+auto gse::profile::walk_node(
+	const trace::node& n,
+	flat_map<id, entry>& cpu_agg,
+	const std::unordered_set<id>& hidden,
+	const bool pooled
+) -> void {
 	const auto main_tid = trace::main_tid();
 	const bool node_pooled = pooled || (main_tid != 0 && n.trace_id != main_tid);
 
@@ -277,7 +260,8 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 			const auto total = e->ema * static_cast<double>(e->sample_count);
 
 			out << std::format(
-				"{:<{}} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>6.1f}% {:>7.1f}% {:>11.2f:ms} {:>9.2f}\n",
+				"{:<{}} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>10.2f:us} {:>6.1f}% {:>7.1f}% {:>11.2f:ms} "
+				"{:>9.2f}\n",
 				e->id.tag(),
 				tag_width,
 				per_frame,
@@ -318,7 +302,8 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 
 	out << std::format("=== Profile dump ({}) ===\n", system_clock::timestamp_filename());
 	out << std::format(
-		"frame: {:.2f:ms} ({} fps)    main-thread top: {:.2f:ms}    GPU top: {:.2f:ms}    {} frames profiled    EMA alpha: {:.3f}\n",
+		"frame: {:.2f:ms} ({} fps)    main-thread top: {:.2f:ms}    GPU top: {:.2f:ms}    {} frames profiled    EMA "
+		"alpha: {:.3f}\n",
 		frame_time,
 		fps,
 		cpu_top,
@@ -326,7 +311,8 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 		frames,
 		alpha()
 	);
-	out << "sorted by per/f = avg * calls/f (real per-frame cost).  % top = per/f relative to top row.  % frame = per/f / frame_time.  Worker rows can sum > 100% (parallel).\n\n";
+	out << "sorted by per/f = avg * calls/f (real per-frame cost).  % top = per/f relative to top row.  % frame = "
+		   "per/f / frame_time.  Worker rows can sum > 100% (parallel).\n\n";
 
 	write_section("CPU - Main Thread (sequential, blocks the frame)", main_rows);
 	write_section("CPU - Workers (parallel; sums can exceed 100%)", worker_rows);
@@ -359,7 +345,14 @@ auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<
 		tag_width = std::max(tag_width, e->id.tag().size());
 	}
 
-	out << std::format("{:<{}}  {:>10}  {:>10}  {:>40}\n", "tag", tag_width, "main/f", "worker/f", "per-tid /f (top 6)");
+	out << std::format(
+		"{:<{}}  {:>10}  {:>10}  {:>40}\n",
+		"tag",
+		tag_width,
+		"main/f",
+		"worker/f",
+		"per-tid /f (top 6)"
+	);
 	out << std::string(tag_width + 2 + 10 + 2 + 10 + 2 + 40, '-') << '\n';
 
 	const std::size_t max_to_show = std::min<std::size_t>(20, sorted.size());
@@ -394,7 +387,14 @@ auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<
 			tid_breakdown += std::format("t{}:{:.2f}", tids[j].first, per);
 		}
 
-		out << std::format("{:<{}}  {:>10.2f}  {:>10.2f}  {:<40}\n", e.id.tag(), tag_width, main_per_frame, worker_per_frame, tid_breakdown);
+		out << std::format(
+			"{:<{}}  {:>10.2f}  {:>10.2f}  {:<40}\n",
+			e.id.tag(),
+			tag_width,
+			main_per_frame,
+			worker_per_frame,
+			tid_breakdown
+		);
 	}
 	out << '\n';
 }
@@ -428,7 +428,8 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 
 	const auto main_tid = trace::main_tid();
 
-	std::function<std::size_t(const trace::node&, int)> max_label_width = [&](const trace::node& n, int depth) -> std::size_t {
+	std::function<std::size_t(const trace::node&, int)> max_label_width = [&](const trace::node& n,
+																			  int depth) -> std::size_t {
 		if (depth > max_depth) {
 			return 0;
 		}
@@ -445,7 +446,12 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 	}
 
 	out << "--- Frame DAG (absolute timeline; bars at same column = parallel) ---\n";
-	out << std::format("total range: {:.2f:us} across {} columns ({:.2f} us per column).  '#' = main thread, '=' = worker.\n\n", total_range, bar_width, total_us / static_cast<double>(bar_width));
+	out << std::format(
+		"total range: {:.2f:us} across {} columns ({:.2f} us per column).  '#' = main thread, '=' = worker.\n\n",
+		total_range,
+		bar_width,
+		total_us / static_cast<double>(bar_width)
+	);
 
 	std::function<void(const trace::node&, int)> render = [&](const trace::node& n, int depth) {
 		if (depth > max_depth) {
@@ -463,7 +469,8 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 		const double dur_us = duration.as<gse::microseconds>();
 
 		std::size_t col_start = static_cast<std::size_t>((offset_us / total_us) * static_cast<double>(bar_width));
-		std::size_t col_end = static_cast<std::size_t>(((offset_us + dur_us) / total_us) * static_cast<double>(bar_width));
+		std::size_t col_end =
+			static_cast<std::size_t>(((offset_us + dur_us) / total_us) * static_cast<double>(bar_width));
 		col_start = std::min(col_start, bar_width - 1);
 		col_end = std::min(col_end, bar_width);
 		if (col_end <= col_start) {

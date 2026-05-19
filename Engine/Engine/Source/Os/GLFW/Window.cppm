@@ -33,6 +33,12 @@ export namespace gse {
 		int height = 0;
 		int refresh_rate = 0;
 	};
+
+	enum class display_mode : std::uint8_t {
+		windowed = 0,
+		borderless_fullscreen = 1,
+		exclusive_fullscreen = 2,
+	};
 }
 
 template <>
@@ -47,21 +53,32 @@ struct std::formatter<gse::resolution_info> : std::formatter<std::string> {
 
 export namespace gse {
 	struct window {
-		struct data {
-			static constexpr std::string_view category = "Window";
-
-			[[= gse::settings::describe<"Run in fullscreen on the selected monitor. When off, the window uses its last windowed rect.">{}]] bool fullscreen = false;
+		struct[[= gse::settings::category<"Window">{}]] data {
+			[[= gse::settings::describe<
+				"Windowed, borderless fullscreen, or exclusive fullscreen on the selected monitor.">{}]] gse::settings::
+				choice<int>
+					display_mode;
 
 			[[= gse::settings::describe<"Show the system mouse cursor over the window.">{}]] bool mouse_visible = false;
 
-			[[= gse::settings::describe<"Monitor that hosts the window in fullscreen mode.">{}]] gse::settings::choice<int> monitor;
+			[[= gse::settings::describe<"Monitor that hosts the window in fullscreen mode.">{}]] gse::settings::choice<
+				int>
+				monitor;
 
-			[[= gse::settings::describe<"Resolution and refresh rate used when fullscreen.">{}]] gse::settings::choice<int> resolution;
+			[[= gse::settings::describe<"Resolution and refresh rate used when fullscreen.">{}]] gse::settings::choice<
+				int>
+				resolution;
+
+			[[= gse::settings::describe<
+				"Vulkan present mode. FIFO is vsync (no tearing). Mailbox is low-latency vsync. Immediate has tearing "
+				"but lowest latency. FIFO Relaxed is FIFO with tear-on-late-frame.">{}]] gse::settings::choice<int>
+				present_mode;
 
 			GLFWwindow* handle = nullptr;
 			std::string title;
 
-			bool current_fullscreen = false;
+			gse::display_mode current_display_mode = gse::display_mode::windowed;
+			int current_present_mode_index = 0;
 			bool focused = true;
 			bool framebuffer_resized = false;
 			bool ui_focus = false;
@@ -72,58 +89,32 @@ export namespace gse {
 			task::concurrent_queue<input::event> input_events;
 		};
 
-		static auto run(
-			run_context& ctx,
-			data& d
-		) -> async::task<>;
+		static auto run(run_context& ctx, data& d) -> async::task<>;
 
-		static auto shutdown(
-			shutdown_context& phase,
-			data& d
-		) -> void;
+		static auto shutdown(shutdown_context& phase, data& d) -> void;
 
 		static auto poll_events() -> void;
 
-		[[nodiscard]] static auto is_open(
-			const data& d
-		) -> bool;
+		[[nodiscard]] static auto is_open(const data& d) -> bool;
 
-		[[nodiscard]] static auto minimized(
-			const data& d
-		) -> bool;
+		[[nodiscard]] static auto minimized(const data& d) -> bool;
 
-		[[nodiscard]] static auto viewport(
-			const data& d
-		) -> vec2i;
+		[[nodiscard]] static auto viewport(const data& d) -> vec2i;
 
-		[[nodiscard]] static auto frame_buffer_resized(
-			data& d
-		) -> bool;
+		[[nodiscard]] static auto frame_buffer_resized(data& d) -> bool;
 
-		[[nodiscard]] static auto create_vulkan_surface(
-			const data& d,
-			vk::Instance instance
-		) -> vk::SurfaceKHR;
+		[[nodiscard]] static auto create_vulkan_surface(const data& d, vk::Instance instance) -> vk::SurfaceKHR;
 
-		[[nodiscard]] static auto raw_handle(
-			const data& d
-		) -> GLFWwindow*;
+		[[nodiscard]] static auto raw_handle(const data& d) -> GLFWwindow*;
 
-		static auto set_ui_focus(
-			data& d,
-			bool focus
-		) -> void;
+		static auto set_ui_focus(data& d, bool focus) -> void;
 
-		[[nodiscard]] static auto ui_focus(
-			const data& d
-		) -> bool;
+		[[nodiscard]] static auto ui_focus(const data& d) -> bool;
 
 		[[nodiscard]] static auto vulkan_instance_extensions() -> std::span<const char* const>;
 
 		[[nodiscard]] static auto enumerate_monitors() -> std::vector<monitor_info>;
 
-		[[nodiscard]] static auto enumerate_resolutions(
-			int monitor_index
-		) -> std::vector<resolution_info>;
+		[[nodiscard]] static auto enumerate_resolutions(int monitor_index) -> std::vector<resolution_info>;
 	};
 }

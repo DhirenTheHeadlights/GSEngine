@@ -13,11 +13,7 @@ import :styles;
 import :builder;
 
 export namespace gse::gui::draw {
-	auto text(
-		const draw_context& ctx,
-		const std::string& name,
-		const std::string& text
-	) -> void;
+	auto text(const draw_context& ctx, const std::string& name, const std::string& text) -> void;
 }
 
 export namespace gse::gui {
@@ -47,10 +43,7 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
 
 	const float label_width = name.empty() ? 0.f : content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(
-		row_rect.top_left(),
-		{ label_width, widget_height }
-	);
+	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
 
 	const ui_rect value_rect = ui_rect::from_position_size(
 		{ row_rect.left() + label_width, row_rect.top() },
@@ -58,10 +51,24 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
 	);
 
 	if (!name.empty()) {
-		ctx.queue_text({ .font = ctx.font, .text = name, .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f }, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = label_rect });
+		ctx.queue_text(
+			{ .font = ctx.font,
+			  .text = name,
+			  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+			  .scale = ctx.style.font_size,
+			  .color = ctx.style.color_text,
+			  .clip_rect = label_rect }
+		);
 	}
 
-	ctx.queue_text({ .font = ctx.font, .text = text, .position = { value_rect.left(), value_rect.center().y() + ctx.style.font_size / 2.f }, .scale = ctx.style.font_size, .color = ctx.style.color_text, .clip_rect = value_rect });
+	ctx.queue_text(
+		{ .font = ctx.font,
+		  .text = text,
+		  .position = { value_rect.left(), value_rect.center().y() + ctx.style.font_size / 2.f },
+		  .scale = ctx.style.font_size,
+		  .color = ctx.style.color_text,
+		  .clip_rect = value_rect }
+	);
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 }

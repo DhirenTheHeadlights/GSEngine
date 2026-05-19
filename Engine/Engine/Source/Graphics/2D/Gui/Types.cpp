@@ -15,7 +15,11 @@ import gse.core;
 import gse.time;
 
 gse::gui::menu::menu(std::string_view tag, const menu_data& data)
-	: identifiable(tag), identifiable_owned(data.parent_id), rect(data.rect), dock_split_ratio(data.dock_split_ratio), docked_to(data.docked_to) {
+	: identifiable(tag),
+	  identifiable_owned(data.parent_id),
+	  rect(data.rect),
+	  dock_split_ratio(data.dock_split_ratio),
+	  docked_to(data.docked_to) {
 	tab_contents.emplace_back(tag);
 }
 
@@ -26,12 +30,9 @@ auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const ->
 	if (cmd.z_order == 0) {
 		cmd.z_order = current_z_order;
 	}
-	if (!clip_stack.empty() &&
-		static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
+	if (!clip_stack.empty() && static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
 		const ui_rect& clip = clip_stack.back();
-		cmd.clip_rect = cmd.clip_rect.has_value()
-			? cmd.clip_rect->intersection(clip)
-			: clip;
+		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(clip) : clip;
 	}
 	sprites.push_back(std::move(cmd));
 }
@@ -43,12 +44,9 @@ auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> voi
 	if (cmd.z_order == 0) {
 		cmd.z_order = current_z_order;
 	}
-	if (!clip_stack.empty() &&
-		static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
+	if (!clip_stack.empty() && static_cast<std::uint8_t>(cmd.layer) <= static_cast<std::uint8_t>(render_layer::popup)) {
 		const ui_rect& clip = clip_stack.back();
-		cmd.clip_rect = cmd.clip_rect.has_value()
-			? cmd.clip_rect->intersection(clip)
-			: clip;
+		cmd.clip_rect = cmd.clip_rect.has_value() ? cmd.clip_rect->intersection(clip) : clip;
 	}
 	texts.push_back(std::move(cmd));
 }
@@ -79,13 +77,12 @@ auto gse::gui::draw_context::next_row(const float height_multiplier) const -> ui
 		return {};
 	}
 
-	const float row_height = (font->line_height(style.font_size) + style.padding * style.widget_height_padding) * height_multiplier;
+	const float row_height =
+		(font->line_height(style.font_size) + style.padding * style.widget_height_padding) * height_multiplier;
 	const ui_rect content_rect = current_menu->rect.inset({ style.padding, style.padding });
 
-	const ui_rect row = ui_rect::from_position_size(
-		{ content_rect.left(), layout_cursor.y() },
-		{ content_rect.width(), row_height }
-	);
+	const ui_rect row =
+		ui_rect::from_position_size({ content_rect.left(), layout_cursor.y() }, { content_rect.width(), row_height });
 
 	layout_cursor.y() -= row_height + style.padding + style.item_spacing;
 	return row;
@@ -105,14 +102,32 @@ auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f tar
 	return it->second;
 }
 
-gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept
-	: m_ctx(&ctx), m_state(&state), m_visible_rect(visible_rect), m_saved_layout_y(saved_layout_y), m_content_start_y(visible_rect.top() + state.offset), m_config(config), m_active(true) {
+gse::gui::scroll_handle::scroll_handle(
+	draw_context& ctx,
+	scroll_state& state,
+	const ui_rect& visible_rect,
+	const float saved_layout_y,
+	const scroll_config& config
+) noexcept
+	: m_ctx(&ctx),
+	  m_state(&state),
+	  m_visible_rect(visible_rect),
+	  m_saved_layout_y(saved_layout_y),
+	  m_content_start_y(visible_rect.top() + state.offset),
+	  m_config(config),
+	  m_active(true) {
 	ctx.layout_cursor.y() = m_content_start_y;
 	ctx.clip_stack.push_back(visible_rect);
 }
 
 gse::gui::scroll_handle::scroll_handle(scroll_handle&& other) noexcept
-	: m_ctx(other.m_ctx), m_state(other.m_state), m_visible_rect(other.m_visible_rect), m_saved_layout_y(other.m_saved_layout_y), m_content_start_y(other.m_content_start_y), m_config(other.m_config), m_active(other.m_active) {
+	: m_ctx(other.m_ctx),
+	  m_state(other.m_state),
+	  m_visible_rect(other.m_visible_rect),
+	  m_saved_layout_y(other.m_saved_layout_y),
+	  m_content_start_y(other.m_content_start_y),
+	  m_config(other.m_config),
+	  m_active(other.m_active) {
 	other.m_active = false;
 }
 

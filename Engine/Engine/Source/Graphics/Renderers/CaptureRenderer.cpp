@@ -45,7 +45,13 @@ namespace gse::renderer::capture {
 		gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
-auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const actions::system::data& sys, data& d) -> async::task<> {
+auto gse::renderer::capture::system::run(
+	run_context& ctx,
+	const gpu::context::data& gpu_s,
+	const asset::data& assets_s,
+	const actions::system::data& sys,
+	data& d
+) -> async::task<> {
 	const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
 		const id action_id = generate_id(name);
 		ctx.channels.push<actions::add_action_request>({
@@ -69,43 +75,54 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 		const auto ext = gpu_s.render_graph->extent();
 		const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
-		d.convert_pipeline = gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+		d.convert_pipeline =
+			gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
-		d.capture_sampler = gpu::sampler::create(gpu_s.device->allocator(), {
-																				.min = gpu::sampler_filter::nearest,
-																				.mag = gpu::sampler_filter::nearest,
-																				.address_u = gpu::sampler_address_mode::clamp_to_edge,
-																				.address_v = gpu::sampler_address_mode::clamp_to_edge,
-																				.address_w = gpu::sampler_address_mode::clamp_to_edge,
-																			});
+		d.capture_sampler = gpu::sampler::create(
+			gpu_s.device->allocator(),
+			{
+				.min = gpu::sampler_filter::nearest,
+				.mag = gpu::sampler_filter::nearest,
+				.address_u = gpu::sampler_address_mode::clamp_to_edge,
+				.address_v = gpu::sampler_address_mode::clamp_to_edge,
+				.address_w = gpu::sampler_address_mode::clamp_to_edge,
+			}
+		);
 
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-			d.rgba_captures[i] = gpu::image::create(gpu_s.device->allocator(), {
-																				   .size = ext,
-																				   .format = gpu::image_format::r8g8b8a8_srgb,
-																				   .usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
-																			   });
-
-			d.rgba_slots[i] = gpu_s.bindless_textures->allocate(
-				d.rgba_captures[i].view(),
-				d.capture_sampler.native()
+			d.rgba_captures[i] = gpu::image::create(
+				gpu_s.device->allocator(),
+				{
+					.size = ext,
+					.format = gpu::image_format::r8g8b8a8_srgb,
+					.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
+				}
 			);
 
-			d.y_planes[i] = gpu::image::create(gpu_s.device->allocator(), {
-																			  .size = ext,
-																			  .format = gpu::image_format::r8_unorm,
-																			  .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-																		  });
+			d.rgba_slots[i] = gpu_s.bindless_textures->allocate(d.rgba_captures[i].view(), d.capture_sampler.native());
+
+			d.y_planes[i] = gpu::image::create(
+				gpu_s.device->allocator(),
+				{
+					.size = ext,
+					.format = gpu::image_format::r8_unorm,
+					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
+				}
+			);
 			gpu::transition_image_to(*gpu_s.device, d.y_planes[i], gpu::image_layout::general);
 
-			d.uv_planes[i] = gpu::image::create(gpu_s.device->allocator(), {
-																			   .size = half_ext,
-																			   .format = gpu::image_format::r8g8_unorm,
-																			   .usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-																		   });
+			d.uv_planes[i] = gpu::image::create(
+				gpu_s.device->allocator(),
+				{
+					.size = half_ext,
+					.format = gpu::image_format::r8g8_unorm,
+					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
+				}
+			);
 			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i], gpu::image_layout::general);
 
-			d.convert_descriptors[i] = gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+			d.convert_descriptors[i] =
+				gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 
 			gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.convert_descriptors[i])
 				.storage_image<output_y>(d.y_planes[i])
@@ -135,7 +152,8 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 	}
 }
 
-auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d)
+	-> async::task<> {
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto& [staging, width, height, pending] = d.screenshots[frame_index];
@@ -153,23 +171,30 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		const bool needs_swizzle = gpu_s.swapchain->is_bgra();
 		const auto timestamp = system_clock::timestamp_filename();
 
-		task::post([pixels = std::move(pixels), w, h, needs_swizzle, timestamp, write_flag = d.write_in_progress.get()] mutable {
-			for (std::size_t i = 0; i < pixels.size(); i += 4) {
-				if (needs_swizzle) {
-					std::swap(pixels[i], pixels[i + 2]);
+		task::post(
+			[pixels = std::move(pixels),
+			 w,
+			 h,
+			 needs_swizzle,
+			 timestamp,
+			 write_flag = d.write_in_progress.get()] mutable {
+				for (std::size_t i = 0; i < pixels.size(); i += 4) {
+					if (needs_swizzle) {
+						std::swap(pixels[i], pixels[i + 2]);
+					}
+					pixels[i + 3] = std::byte{ 0xFF };
 				}
-				pixels[i + 3] = std::byte{ 0xFF };
-			}
 
-			const auto path = config::resource_path / "Screenshots" / std::format("screenshot_{}.png", timestamp);
-			std::filesystem::create_directories(path.parent_path());
+				const auto path = config::resource_path / "Screenshots" / std::format("screenshot_{}.png", timestamp);
+				std::filesystem::create_directories(path.parent_path());
 
-			image::write_png(path, w, h, 4, pixels.data());
-			log::println(log::category::render, "Screenshot saved: {}", path.string());
+				image::write_png(path, w, h, 4, pixels.data());
+				log::println(log::category::render, "Screenshot saved: {}", path.string());
 
-			write_flag->store(false);
-		},
-				   trace_id<"capture::screenshot_write">());
+				write_flag->store(false);
+			},
+			trace_id<"capture::screenshot_write">()
+		);
 	}
 
 	if (d.ring_budget != d.applied_ring_budget) {
@@ -211,25 +236,32 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 			else {
 				d.clip_save_in_progress->store(true);
 
-				const auto path = config::resource_path / "Clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
+				const auto path =
+					config::resource_path / "Clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
 				std::filesystem::create_directories(path.parent_path());
 
-				task::post([snap = std::move(snapshot), codec = d.encoder.codec(), extent = d.encoder.extent(), path, flag = d.clip_save_in_progress.get()] mutable {
-					const auto ok = mp4::mux(snap, { codec, extent }, path);
-					if (ok) {
-						log::println(log::category::render, "Clip saved: {}", path.string());
-					}
-					else {
-						log::println(
-							log::level::warning,
-							log::category::render,
-							"Failed to mux clip to {}",
-							path.string()
-						);
-					}
-					flag->store(false);
-				},
-						   trace_id<"capture::clip_mux">());
+				task::post(
+					[snap = std::move(snapshot),
+					 codec = d.encoder.codec(),
+					 extent = d.encoder.extent(),
+					 path,
+					 flag = d.clip_save_in_progress.get()] mutable {
+						const auto ok = mp4::mux(snap, { codec, extent }, path);
+						if (ok) {
+							log::println(log::category::render, "Clip saved: {}", path.string());
+						}
+						else {
+							log::println(
+								log::level::warning,
+								log::category::render,
+								"Failed to mux clip to {}",
+								path.string()
+							);
+						}
+						flag->store(false);
+					},
+					trace_id<"capture::clip_mux">()
+				);
 			}
 		}
 	}
@@ -238,10 +270,13 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		const auto ext = gpu_s.render_graph->extent();
 
 		if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging || staging.size() < needed) {
-			staging = gpu::buffer::create(gpu_s.device->allocator(), {
-																		 .size = needed,
-																		 .usage = gpu::buffer_flag::transfer_dst,
-																	 });
+			staging = gpu::buffer::create(
+				gpu_s.device->allocator(),
+				{
+					.size = needed,
+					.usage = gpu::buffer_flag::transfer_dst,
+				}
+			);
 		}
 
 		width = ext.x();
@@ -270,8 +305,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		.stages = gpu::stage_flag::compute,
 	};
 
-	auto rec = co_await gpu::pass<system>(ctx)
-				   .after<ui::system>();
+	auto rec = co_await gpu::pass<system>(ctx).after<ui::system>();
 
 	if (do_screenshot) {
 		rec.capture_swapchain(*gpu_s.swapchain, *gpu_s.frame, staging);
@@ -281,7 +315,12 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 
 	if (do_encode) {
 		const auto capture_extent = d.rgba_captures[frame_index].extent();
-		rec.blit_swapchain_to_image(*gpu_s.swapchain, *gpu_s.frame, d.rgba_captures[frame_index], vec2u{ capture_extent.x(), capture_extent.y() });
+		rec.blit_swapchain_to_image(
+			*gpu_s.swapchain,
+			*gpu_s.frame,
+			d.rgba_captures[frame_index],
+			vec2u{ capture_extent.x(), capture_extent.y() }
+		);
 		rec.sample_image(d.rgba_captures[frame_index], gpu::pipeline_stage_flag::compute_shader);
 		rec.bind(d.convert_pipeline);
 		rec.bind_descriptors(d.convert_pipeline, d.convert_descriptors[frame_index]);

@@ -52,14 +52,31 @@ auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const
 				std::rethrow_exception(ex);
 			}
 			catch (const std::exception& e) {
-				log::println(log::level::error, log::category::general, "std::terminate called via uncaught exception (type={}): {}\nStack:\n{}", typeid(e).name(), e.what(), stack);
+				log::println(
+					log::level::error,
+					log::category::general,
+					"std::terminate called via uncaught exception (type={}): {}\nStack:\n{}",
+					typeid(e).name(),
+					e.what(),
+					stack
+				);
 			}
 			catch (...) {
-				log::println(log::level::error, log::category::general, "std::terminate called via uncaught unknown exception\nStack:\n{}", stack);
+				log::println(
+					log::level::error,
+					log::category::general,
+					"std::terminate called via uncaught unknown exception\nStack:\n{}",
+					stack
+				);
 			}
 		}
 		else {
-			log::println(log::level::error, log::category::general, "std::terminate called with no current exception\nStack:\n{}", stack);
+			log::println(
+				log::level::error,
+				log::category::general,
+				"std::terminate called with no current exception\nStack:\n{}",
+				stack
+			);
 		}
 		log::flush();
 		std::abort();

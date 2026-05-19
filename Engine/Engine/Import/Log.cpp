@@ -12,9 +12,7 @@ namespace gse::log {
 
 	auto current_thread_tag() -> std::uint64_t;
 
-	auto should_flush(
-		level lvl
-	) -> bool;
+	auto should_flush(level lvl) -> bool;
 }
 
 auto gse::log::log_file_path() -> std::filesystem::path {
@@ -63,7 +61,13 @@ gse::log::logger::~logger() {
 	std::cout.flush();
 }
 
-auto gse::log::logger::write_line(const level lvl, const category cat, const std::string_view extra_prefix, const std::string_view fmt, std::format_args args) -> void {
+auto gse::log::logger::write_line(
+	const level lvl,
+	const category cat,
+	const std::string_view extra_prefix,
+	const std::string_view fmt,
+	std::format_args args
+) -> void {
 	std::lock_guard lock(m_mutex);
 	const bool flush_now = should_flush(lvl);
 	auto& console = flush_now ? static_cast<std::ostream&>(std::cerr) : static_cast<std::ostream&>(std::cout);

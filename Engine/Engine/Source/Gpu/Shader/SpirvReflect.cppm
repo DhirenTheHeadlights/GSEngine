@@ -7,9 +7,7 @@ import :types;
 import gse.assert;
 
 export namespace gse::gpu {
-	auto used_bindings(
-		std::span<const std::uint32_t> spirv
-	) -> std::vector<binding_use>;
+	auto used_bindings(std::span<const std::uint32_t> spirv) -> std::vector<binding_use>;
 }
 
 namespace gse::gpu {
@@ -147,7 +145,9 @@ auto gse::gpu::used_bindings(const std::span<const std::uint32_t> spirv) -> std:
 			std::uint32_t base = 0;
 			bool propagate = false;
 
-			if ((op == op_access_chain || op == op_in_bounds_access_chain || op == op_ptr_access_chain || op == op_in_bounds_ptr_access_chain) && wcount >= 4) {
+			if ((op == op_access_chain || op == op_in_bounds_access_chain || op == op_ptr_access_chain ||
+				 op == op_in_bounds_ptr_access_chain) &&
+				wcount >= 4) {
 				result_id = spirv[i + 2];
 				base = spirv[i + 3];
 				propagate = true;
@@ -205,7 +205,12 @@ auto gse::gpu::used_bindings(const std::span<const std::uint32_t> spirv) -> std:
 		else if (op == op_image_write && wcount >= 4) {
 			record(spirv[i + 1], descriptor_access::read_write);
 		}
-		else if ((op == op_image_read || op == op_image_fetch || op == op_image_sample_implicit_lod || op == op_image_sample_explicit_lod || op == op_image_sample_dref_implicit_lod || op == op_image_sample_dref_explicit_lod || op == op_image_sample_proj_implicit_lod || op == op_image_sample_proj_explicit_lod || op == op_image_sample_proj_dref_implicit_lod || op == op_image_sample_proj_dref_explicit_lod) && wcount >= 4) {
+		else if ((op == op_image_read || op == op_image_fetch || op == op_image_sample_implicit_lod ||
+				  op == op_image_sample_explicit_lod || op == op_image_sample_dref_implicit_lod ||
+				  op == op_image_sample_dref_explicit_lod || op == op_image_sample_proj_implicit_lod ||
+				  op == op_image_sample_proj_explicit_lod || op == op_image_sample_proj_dref_implicit_lod ||
+				  op == op_image_sample_proj_dref_explicit_lod) &&
+				 wcount >= 4) {
 			record(spirv[i + 3], descriptor_access::read);
 		}
 		else if (op == op_sampled_image && wcount >= 5) {
@@ -232,11 +237,13 @@ auto gse::gpu::used_bindings(const std::span<const std::uint32_t> spirv) -> std:
 		if (deco_it == decorations.end()) {
 			continue;
 		}
-		result.push_back({
-			.set = deco_it->second.set,
-			.slot = deco_it->second.slot,
-			.access = access,
-		});
+		result.push_back(
+			{
+				.set = deco_it->second.set,
+				.slot = deco_it->second.slot,
+				.access = access,
+			}
+		);
 	}
 
 	std::ranges::sort(result, [](const binding_use& a, const binding_use& b) {

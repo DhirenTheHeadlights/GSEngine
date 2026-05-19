@@ -56,14 +56,18 @@ export namespace gse::renderer::forward {
 	};
 
 	struct system {
-		struct data {
-			static constexpr std::string_view category = "Graphics";
+		struct[[= gse::settings::category<"Graphics">{}]] data {
+			[[= gse::settings::describe<"Shadow map resolution and filtering quality. Off disables shadow rendering "
+										"entirely.">{}]] shadow_quality_level shadow_quality =
+				shadow_quality_level::medium;
 
-			[[= gse::settings::describe<"Shadow map resolution and filtering quality. Off disables shadow rendering entirely.">{}]] shadow_quality_level shadow_quality = shadow_quality_level::medium;
+			[[= gse::settings::describe<
+				"Screen-space ambient occlusion sample count and blur quality.">{}]] ao_quality_level ao_quality =
+				ao_quality_level::medium;
 
-			[[= gse::settings::describe<"Screen-space ambient occlusion sample count and blur quality.">{}]] ao_quality_level ao_quality = ao_quality_level::medium;
-
-			[[= gse::settings::describe<"Screen-space and ray-traced reflection quality. Higher levels trace more rays per pixel.">{}]] reflection_quality_level reflection_quality = reflection_quality_level::medium;
+			[[= gse::settings::describe<"Screen-space and ray-traced reflection quality. Higher levels trace more rays "
+										"per pixel.">{}]] reflection_quality_level reflection_quality =
+				reflection_quality_level::medium;
 
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;

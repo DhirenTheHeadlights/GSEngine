@@ -41,30 +41,20 @@ export namespace gse::network {
 			connected
 		};
 
-		client(
-			const address& listen,
-			const address& server
-		);
+		client(const address& listen, const address& server);
 
 		~client();
 
-		auto connect(
-			time_t<std::uint32_t> timeout = seconds(5),
-			time_t<std::uint32_t> retry = seconds(1)
-		) -> bool;
+		auto connect(time_t<std::uint32_t> timeout = seconds(5), time_t<std::uint32_t> retry = seconds(1)) -> bool;
 
 		auto tick() -> void;
 
 		auto current_state() const -> state;
 
 		template <typename T>
-		auto send(
-			const T& msg
-		) -> void;
+		auto send(const T& msg) -> void;
 
-		auto drain(
-			const std::function<void(raw_message&)>& on_receive
-		) -> void;
+		auto drain(const std::function<void(raw_message&)>& on_receive) -> void;
 
 		auto push_input(
 			const actions::state& s,
@@ -109,7 +99,13 @@ export namespace gse::network {
 
 gse::network::client::client(const address& listen, const address& server) : m_server(server) {
 	if (!m_socket.bind(listen)) {
-		log::println(log::level::error, log::category::network, "Client failed to bind socket to {}:{}", listen.ip, listen.port);
+		log::println(
+			log::level::error,
+			log::category::network,
+			"Client failed to bind socket to {}:{}",
+			listen.ip,
+			listen.port
+		);
 		return;
 	}
 
@@ -149,7 +145,11 @@ auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const ti
 	}
 
 	if (!m_socket.valid()) {
-		log::println(log::level::error, log::category::network, "Client cannot connect because the socket is not valid");
+		log::println(
+			log::level::error,
+			log::category::network,
+			"Client cannot connect because the socket is not valid"
+		);
 		return false;
 	}
 
@@ -206,10 +206,12 @@ auto gse::network::client::tick() -> void {
 		}
 
 		std::lock_guard lk(m_inbox_mutex);
-		m_inbox.emplace_back(raw_message{
-			.id = id,
-			.payload = std::move(payload),
-		});
+		m_inbox.emplace_back(
+			raw_message{
+				.id = id,
+				.payload = std::move(payload),
+			}
+		);
 	}
 
 	if (current == state::connected && m_input_clock.elapsed<std::uint32_t>() > milliseconds(16u)) {
@@ -253,20 +255,15 @@ template <typename T>
 auto gse::network::client::send(const T& msg) -> void {
 	std::array<std::byte, max_packet_size> buffer;
 
-	const packet_header header{
-		.sequence = ++m_server.sequence(),
-		.ack = m_server.remote_ack_sequence(),
-		.ack_bits = m_server.remote_ack_bitfield()
-	};
+	const packet_header header{ .sequence = ++m_server.sequence(),
+								.ack = m_server.remote_ack_sequence(),
+								.ack_bits = m_server.remote_ack_bitfield() };
 
 	write_bitstream stream(buffer);
 	stream.write(header);
 	write(stream, msg);
 
-	const packet pkt{
-		.data = reinterpret_cast<std::uint8_t*>(buffer.data()),
-		.size = stream.bytes_written()
-	};
+	const packet pkt{ .data = reinterpret_cast<std::uint8_t*>(buffer.data()), .size = stream.bytes_written() };
 
 	(void)m_socket.send_data(pkt, m_server.addr());
 }
@@ -285,7 +282,12 @@ auto gse::network::client::drain(const std::function<void(raw_message&)>& on_rec
 	}
 }
 
-auto gse::network::client::push_input(const actions::state& s, std::span<const std::uint16_t> axis1_ids, std::span<const std::uint16_t> axis2_ids, const angle camera_yaw) -> void {
+auto gse::network::client::push_input(
+	const actions::state& s,
+	std::span<const std::uint16_t> axis1_ids,
+	std::span<const std::uint16_t> axis2_ids,
+	const angle camera_yaw
+) -> void {
 	input_snapshot snap;
 	snap.state = s;
 	snap.axis1_ids.assign(axis1_ids.begin(), axis1_ids.end());

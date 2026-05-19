@@ -20,7 +20,11 @@ import gse.log;
 import gse.concurrency;
 import gse.meta;
 
-auto gse::gpu::device::create(const window::data& win, const bool validation_layers_enabled, vulkan::device::settings& device_cfg) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(
+	const window::data& win,
+	const bool validation_layers_enabled,
+	vulkan::device::settings& device_cfg
+) -> std::unique_ptr<device> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
 	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), validation_layers_enabled);
@@ -33,11 +37,7 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 
 	auto command = vulkan::command::create(creation.device, queue_families);
 
-	auto worker_pools = vulkan::worker_command_pools::create(
-		creation.device,
-		queue_families,
-		task::thread_count()
-	);
+	auto worker_pools = vulkan::worker_command_pools::create(creation.device, queue_families, task::thread_count());
 
 	auto transient = transient_executor::create(
 		creation.device,
@@ -46,10 +46,7 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 		task::thread_count()
 	);
 
-	auto desc_heap = std::make_unique<gpu::descriptor_heap>(
-		creation.device,
-		creation.desc_buf_props
-	);
+	auto desc_heap = std::make_unique<gpu::descriptor_heap>(creation.device, creation.desc_buf_props);
 
 	const auto surface_format = vulkan::pick_surface_format(creation.device, instance);
 
@@ -68,7 +65,19 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 	));
 }
 
-gse::gpu::device::device(vulkan::aftermath&& aftermath_tracker, vulkan::instance&& instance, vulkan::device&& device, vulkan::queue&& queue, vulkan::command&& command, vulkan::worker_command_pools&& worker_pools, transient_executor&& transient, std::unique_ptr<gpu::descriptor_heap> descriptor_heap, descriptor_buffer_properties desc_buf_props, image_format surface_format, bool video_encode_enabled)
+gse::gpu::device::device(
+	vulkan::aftermath&& aftermath_tracker,
+	vulkan::instance&& instance,
+	vulkan::device&& device,
+	vulkan::queue&& queue,
+	vulkan::command&& command,
+	vulkan::worker_command_pools&& worker_pools,
+	transient_executor&& transient,
+	std::unique_ptr<gpu::descriptor_heap> descriptor_heap,
+	descriptor_buffer_properties desc_buf_props,
+	image_format surface_format,
+	bool video_encode_enabled
+)
 	: m_aftermath(std::move(aftermath_tracker)),
 	  m_instance(std::move(instance)),
 	  m_device_config(std::move(device)),
@@ -126,7 +135,11 @@ auto gse::gpu::device::timestamp_period() const -> float {
 	return m_device_config.timestamp_period();
 }
 
-auto gse::gpu::device::begin_pass_marker(const handle<command_buffer> cmd, const pass_marker_domain domain, const pass_marker marker) -> pass_marker_handle {
+auto gse::gpu::device::begin_pass_marker(
+	const handle<command_buffer> cmd,
+	const pass_marker_domain domain,
+	const pass_marker marker
+) -> pass_marker_handle {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(domain)];
 	const auto seq = ring.seq.fetch_add(1, std::memory_order_relaxed);
 	ring.entries[seq % pass_marker_ring_size] = marker;
@@ -134,13 +147,19 @@ auto gse::gpu::device::begin_pass_marker(const handle<command_buffer> cmd, const
 	if (ring.checkpoint_buffer) {
 		const auto slot = seq % pass_marker_ring_size;
 		const auto offset = slot * 4 * sizeof(std::uint32_t);
-		vulkan::commands(cmd).fill_buffer(ring.checkpoint_buffer.handle(), offset, sizeof(std::uint32_t), static_cast<std::uint32_t>(seq));
+		vulkan::commands(cmd).fill_buffer(
+			ring.checkpoint_buffer.handle(),
+			offset,
+			sizeof(std::uint32_t),
+			static_cast<std::uint32_t>(seq)
+		);
 	}
 
 	return pass_marker_handle{ .seq = seq, .domain = domain };
 }
 
-auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
+auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle)
+	-> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer) {
 		return;
@@ -148,10 +167,16 @@ auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, 
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + sizeof(std::uint32_t);
-	vulkan::commands(cmd).fill_buffer(ring.checkpoint_buffer.handle(), offset, sizeof(std::uint32_t), static_cast<std::uint32_t>(handle.seq));
+	vulkan::commands(cmd).fill_buffer(
+		ring.checkpoint_buffer.handle(),
+		offset,
+		sizeof(std::uint32_t),
+		static_cast<std::uint32_t>(handle.seq)
+	);
 }
 
-auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
+auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle)
+	-> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer) {
 		return;
@@ -159,7 +184,12 @@ auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> 
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + 2 * sizeof(std::uint32_t);
-	vulkan::commands(cmd).fill_buffer(ring.checkpoint_buffer.handle(), offset, sizeof(std::uint32_t), static_cast<std::uint32_t>(handle.seq));
+	vulkan::commands(cmd).fill_buffer(
+		ring.checkpoint_buffer.handle(),
+		offset,
+		sizeof(std::uint32_t),
+		static_cast<std::uint32_t>(handle.seq)
+	);
 }
 
 auto gse::gpu::device::end_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
@@ -170,11 +200,17 @@ auto gse::gpu::device::end_pass_marker(const handle<command_buffer> cmd, const p
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + 3 * sizeof(std::uint32_t);
-	vulkan::commands(cmd).fill_buffer(ring.checkpoint_buffer.handle(), offset, sizeof(std::uint32_t), static_cast<std::uint32_t>(handle.seq));
+	vulkan::commands(cmd).fill_buffer(
+		ring.checkpoint_buffer.handle(),
+		offset,
+		sizeof(std::uint32_t),
+		static_cast<std::uint32_t>(handle.seq)
+	);
 }
 
 auto gse::gpu::device::report_device_lost(const std::string_view operation) -> void {
-	if (bool expected = false; !m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
+	if (bool expected = false;
+		!m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
 		return;
 	}
 
@@ -195,7 +231,13 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 
 		const auto count = std::min<std::uint64_t>(total, pass_marker_ring_size);
 		const auto first_seq = seq_next - count;
-		log::println(log::level::error, log::category::vulkan, "Last {} pass markers for {} (oldest first, status from GPU checkpoint):", count, domain);
+		log::println(
+			log::level::error,
+			log::category::vulkan,
+			"Last {} pass markers for {} (oldest first, status from GPU checkpoint):",
+			count,
+			domain
+		);
 
 		std::uint64_t last_gpu_inflight = 0;
 		std::string_view last_gpu_inflight_phase = {};
@@ -280,7 +322,12 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 
 	device_fault_counts counts{};
 	if (const auto result = m_device_config.query_fault_counts(counts); result != gpu::result::success) {
-		log::println(log::level::warning, log::category::vulkan, "Failed to query device fault counts: {}", static_cast<int>(result));
+		log::println(
+			log::level::warning,
+			log::category::vulkan,
+			"Failed to query device fault counts: {}",
+			static_cast<int>(result)
+		);
 		return;
 	}
 
@@ -290,7 +337,12 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 
 	device_fault_info fault_info{};
 	if (const auto result = m_device_config.query_fault_info(counts, fault_info); result != gpu::result::success) {
-		log::println(log::level::warning, log::category::vulkan, "Failed to query device fault info: {}", static_cast<int>(result));
+		log::println(
+			log::level::warning,
+			log::category::vulkan,
+			"Failed to query device fault info: {}",
+			static_cast<int>(result)
+		);
 		return;
 	}
 
@@ -328,7 +380,12 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	}
 
 	if (!fault_info.vendor_binary.empty()) {
-		log::println(log::level::error, log::category::vulkan, "Device fault vendor binary size: {} bytes", fault_info.vendor_binary.size());
+		log::println(
+			log::level::error,
+			log::category::vulkan,
+			"Device fault vendor binary size: {} bytes",
+			fault_info.vendor_binary.size()
+		);
 	}
 }
 

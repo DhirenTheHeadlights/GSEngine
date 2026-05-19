@@ -14,9 +14,7 @@ export namespace gse {
 	public:
 		class reader {
 		public:
-			explicit reader(
-				const std::vector<T>* data
-			);
+			explicit reader(const std::vector<T>* data);
 
 			auto begin() const -> std::vector<T>::const_iterator;
 
@@ -26,9 +24,7 @@ export namespace gse {
 
 			[[nodiscard]] auto empty() const -> bool;
 
-			auto operator[](
-				std::size_t i
-			) const -> const T&;
+			auto operator[](std::size_t i) const -> const T&;
 
 		private:
 			const std::vector<T>* m_data;
@@ -42,14 +38,10 @@ export namespace gse {
 
 		auto read_raw() const -> const std::vector<T>&;
 
-		auto push(
-			T item
-		) -> void;
+		auto push(T item) -> void;
 
 		template <typename... Args>
-		auto emplace(
-			Args&&... args
-		) -> T&;
+		auto emplace(Args&&... args) -> T&;
 
 		auto flip() -> void;
 
@@ -81,9 +73,7 @@ export namespace gse {
 		std::vector<T> data;
 		mutable std::mutex mutex;
 
-		auto push(
-			T item
-		) -> void;
+		auto push(T item) -> void;
 
 		auto flip() -> void override;
 
@@ -93,13 +83,9 @@ export namespace gse {
 	template <typename T>
 	class channel_read_guard : non_copyable {
 	public:
-		explicit channel_read_guard(
-			const std::vector<T>& data
-		);
+		explicit channel_read_guard(const std::vector<T>& data);
 
-		auto operator[](
-			std::size_t i
-		) const -> const T&;
+		auto operator[](std::size_t i) const -> const T&;
 
 		[[nodiscard]] auto empty() const -> bool;
 
@@ -231,9 +217,6 @@ auto gse::channel_read_guard<T>::end() const -> std::vector<T>::const_iterator {
 
 template <typename T>
 auto gse::channel_read_guard<T>::front() const -> const T& {
-	assert(
-		!m_data->empty(),
-		"Attempted to access front of empty channel read guard"
-	);
+	assert(!m_data->empty(), "Attempted to access front of empty channel read guard");
 	return (*m_data)[0];
 }

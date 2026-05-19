@@ -21,53 +21,22 @@ import :renderer;
 import :animation;
 
 namespace gse::animation {
-	auto wrap_time(
-		time t,
-		time length
-	) -> time;
+	auto wrap_time(time t, time length) -> time;
 
-	auto lerp_mat4(
-		const mat4f& a,
-		const mat4f& b,
-		float t
-	) -> mat4f;
+	auto lerp_mat4(const mat4f& a, const mat4f& b, float t) -> mat4f;
 
-	auto sample_track(
-		const joint_track& track,
-		time t,
-		mat4f& out
-	) -> bool;
+	auto sample_track(const joint_track& track, time t, mat4f& out) -> bool;
 
-	auto ensure_pose_buffers(
-		animation_component& anim,
-		std::size_t joint_count
-	) -> void;
+	auto ensure_pose_buffers(animation_component& anim, std::size_t joint_count) -> void;
 
-	auto build_local_pose(
-		animation_component& anim,
-		const skeleton& skeleton,
-		const clip_asset& clip,
-		time t
-	) -> void;
+	auto build_local_pose(animation_component& anim, const skeleton& skeleton, const clip_asset& clip, time t) -> void;
 
-	auto build_global_and_skins(
-		animation_component& anim,
-		const skeleton& skeleton
-	) -> void;
+	auto build_global_and_skins(animation_component& anim, const skeleton& skeleton) -> void;
 
-	auto sample_clip_to_pose(
-		std::vector<mat4f>& pose,
-		const skeleton& skel,
-		const clip_asset& clip,
-		time t
-	) -> void;
+	auto sample_clip_to_pose(std::vector<mat4f>& pose, const skeleton& skel, const clip_asset& clip, time t) -> void;
 
-	auto blend_poses(
-		std::vector<mat4f>& out,
-		const std::vector<mat4f>& from,
-		const std::vector<mat4f>& to,
-		float alpha
-	) -> void;
+	auto blend_poses(std::vector<mat4f>& out, const std::vector<mat4f>& from, const std::vector<mat4f>& to, float alpha)
+		-> void;
 
 	auto evaluate_condition(
 		const transition_condition& condition,
@@ -81,15 +50,9 @@ namespace gse::animation {
 		time clip_length
 	) -> bool;
 
-	auto clear_triggers(
-		std::unordered_map<std::string, animation_parameter>& params
-	) -> void;
+	auto clear_triggers(std::unordered_map<std::string, animation_parameter>& params) -> void;
 
-	auto process_controller_job(
-		const controller_job& job,
-		const asset::data& assets_s,
-		time dt
-	) -> void;
+	auto process_controller_job(const controller_job& job, const asset::data& assets_s, time dt) -> void;
 }
 
 auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, data& d) -> async::task<> {
@@ -127,7 +90,12 @@ auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, 
 				const auto eid = anim_ids[i];
 				if (auto* ctrl_c = controllers.find(eid)) {
 					if (const auto graph_it = d.graphs.find(ctrl_c->graph_id); graph_it != d.graphs.end()) {
-						d.controller_jobs.push_back({ .anim = std::addressof(anim), .ctrl = ctrl_c, .skel = std::addressof(skel), .graph = &graph_it->second });
+						d.controller_jobs.push_back(
+							{ .anim = std::addressof(anim),
+							  .ctrl = ctrl_c,
+							  .skel = std::addressof(skel),
+							  .graph = &graph_it->second }
+						);
 						continue;
 					}
 				}
@@ -164,7 +132,15 @@ auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, 
 					clip_c->playing = false;
 				}
 
-				d.jobs.push_back({ .anim = std::addressof(anim), .clip = clip_c, .skel = std::addressof(skel), .asset = std::addressof(clip), .scale = clip_c->scale, .loop = should_loop, .sample_t = sample_t });
+				d.jobs.push_back(
+					{ .anim = std::addressof(anim),
+					  .clip = clip_c,
+					  .skel = std::addressof(skel),
+					  .asset = std::addressof(clip),
+					  .scale = clip_c->scale,
+					  .loop = should_loop,
+					  .sample_t = sample_t }
+				);
 			}
 
 			if (!d.jobs.empty()) {
@@ -176,11 +152,7 @@ auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, 
 					const auto& job = d.jobs[i];
 					const auto time_bucket = static_cast<std::int64_t>(job.sample_t / time{ time_bucket_size });
 
-					const pose_cache_key key{
-						.clip = job.asset,
-						.skel = job.skel,
-						.time_bucket = time_bucket
-					};
+					const pose_cache_key key{ .clip = job.asset, .skel = job.skel, .time_bucket = time_bucket };
 
 					const auto [it, inserted] = d.pose_cache.try_emplace(key, i);
 					job_cache_index[i] = it->second;
@@ -190,32 +162,44 @@ auto gse::animation::system::run(run_context& ctx, const asset::data& assets_s, 
 					}
 				}
 
-				task::parallel_for(0uz, unique_job_indices.size(), [&](const std::size_t i) {
-					const auto job_idx = unique_job_indices[i];
-					const auto& job = d.jobs[job_idx];
-					build_local_pose(*job.anim, *job.skel, *job.asset, job.sample_t);
-					build_global_and_skins(*job.anim, *job.skel);
-				},
-								   trace_id<"animation::pose_build">());
+				task::parallel_for(
+					0uz,
+					unique_job_indices.size(),
+					[&](const std::size_t i) {
+						const auto job_idx = unique_job_indices[i];
+						const auto& job = d.jobs[job_idx];
+						build_local_pose(*job.anim, *job.skel, *job.asset, job.sample_t);
+						build_global_and_skins(*job.anim, *job.skel);
+					},
+					trace_id<"animation::pose_build">()
+				);
 
-				task::parallel_for(0uz, d.jobs.size(), [&](const std::size_t i) {
-					if (const auto source_idx = job_cache_index[i]; source_idx != i) {
-						const auto& source_anim = *d.jobs[source_idx].anim;
-						auto& dest_anim = *d.jobs[i].anim;
+				task::parallel_for(
+					0uz,
+					d.jobs.size(),
+					[&](const std::size_t i) {
+						if (const auto source_idx = job_cache_index[i]; source_idx != i) {
+							const auto& source_anim = *d.jobs[source_idx].anim;
+							auto& dest_anim = *d.jobs[i].anim;
 
-						std::ranges::copy(source_anim.local_pose, dest_anim.local_pose.begin());
-						std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
-						std::ranges::copy(source_anim.skins, dest_anim.skins.begin());
-					}
-				},
-								   trace_id<"animation::pose_dedup_copy">());
+							std::ranges::copy(source_anim.local_pose, dest_anim.local_pose.begin());
+							std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
+							std::ranges::copy(source_anim.skins, dest_anim.skins.begin());
+						}
+					},
+					trace_id<"animation::pose_dedup_copy">()
+				);
 			}
 
 			if (!d.controller_jobs.empty()) {
-				task::parallel_for(0uz, d.controller_jobs.size(), [&](const std::size_t i) {
-					process_controller_job(d.controller_jobs[i], assets_s, dt);
-				},
-								   trace_id<"animation::controller_jobs">());
+				task::parallel_for(
+					0uz,
+					d.controller_jobs.size(),
+					[&](const std::size_t i) {
+						process_controller_job(d.controller_jobs[i], assets_s, dt);
+					},
+					trace_id<"animation::controller_jobs">()
+				);
 			}
 		}
 
@@ -298,7 +282,12 @@ auto gse::animation::system::ensure_pose_buffers(animation_component& anim, cons
 	}
 }
 
-auto gse::animation::system::build_local_pose(animation_component& anim, const skeleton& skeleton, const clip_asset& clip, const time t) -> void {
+auto gse::animation::system::build_local_pose(
+	animation_component& anim,
+	const skeleton& skeleton,
+	const clip_asset& clip,
+	const time t
+) -> void {
 	const auto joint_count = static_cast<std::size_t>(skeleton.joint_count());
 	const auto joints = skeleton.joints();
 
@@ -308,7 +297,8 @@ auto gse::animation::system::build_local_pose(animation_component& anim, const s
 
 	mat4f sampled;
 	for (const auto& track : clip.tracks()) {
-		if (const auto idx = static_cast<std::size_t>(track.joint_index); idx < joint_count && sample_track(track, t, sampled)) {
+		if (const auto idx = static_cast<std::size_t>(track.joint_index);
+			idx < joint_count && sample_track(track, t, sampled)) {
 			anim.local_pose[idx] = sampled;
 		}
 	}
@@ -333,7 +323,12 @@ auto gse::animation::system::build_global_and_skins(animation_component& anim, c
 	}
 }
 
-auto gse::animation::system::sample_clip_to_pose(std::vector<mat4f>& pose, const skeleton& skel, const clip_asset& clip, const time t) -> void {
+auto gse::animation::system::sample_clip_to_pose(
+	std::vector<mat4f>& pose,
+	const skeleton& skel,
+	const clip_asset& clip,
+	const time t
+) -> void {
 	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 	const auto joints = skel.joints();
 
@@ -347,13 +342,19 @@ auto gse::animation::system::sample_clip_to_pose(std::vector<mat4f>& pose, const
 
 	mat4f sampled;
 	for (const auto& track : clip.tracks()) {
-		if (const auto idx = static_cast<std::size_t>(track.joint_index); idx < joint_count && sample_track(track, t, sampled)) {
+		if (const auto idx = static_cast<std::size_t>(track.joint_index);
+			idx < joint_count && sample_track(track, t, sampled)) {
 			pose[idx] = sampled;
 		}
 	}
 }
 
-auto gse::animation::system::blend_poses(std::vector<mat4f>& out, const std::vector<mat4f>& from, const std::vector<mat4f>& to, const float alpha) -> void {
+auto gse::animation::system::blend_poses(
+	std::vector<mat4f>& out,
+	const std::vector<mat4f>& from,
+	const std::vector<mat4f>& to,
+	const float alpha
+) -> void {
 	const auto count = std::min(from.size(), to.size());
 	if (out.size() != count) {
 		out.resize(count);
@@ -364,7 +365,10 @@ auto gse::animation::system::blend_poses(std::vector<mat4f>& out, const std::vec
 	}
 }
 
-auto gse::animation::system::evaluate_condition(const transition_condition& condition, const std::unordered_map<std::string, animation_parameter>& params) -> bool {
+auto gse::animation::system::evaluate_condition(
+	const transition_condition& condition,
+	const std::unordered_map<std::string, animation_parameter>& params
+) -> bool {
 	const auto it = params.find(condition.parameter_name);
 	if (it == params.end()) {
 		return false;
@@ -401,7 +405,12 @@ auto gse::animation::system::evaluate_condition(const transition_condition& cond
 	return false;
 }
 
-auto gse::animation::system::evaluate_transition(const animation_transition& transition, const std::unordered_map<std::string, animation_parameter>& params, const time state_time, const time clip_length) -> bool {
+auto gse::animation::system::evaluate_transition(
+	const animation_transition& transition,
+	const std::unordered_map<std::string, animation_parameter>& params,
+	const time state_time,
+	const time clip_length
+) -> bool {
 	if (transition.has_exit_time && clip_length > time{}) {
 		if (const float normalized = state_time / clip_length; normalized < transition.exit_time_normalized) {
 			return false;
@@ -425,7 +434,11 @@ auto gse::animation::system::clear_triggers(std::unordered_map<std::string, anim
 	}
 }
 
-auto gse::animation::system::process_controller_job(const controller_job& job, const asset::data& assets_s, const time dt) -> void {
+auto gse::animation::system::process_controller_job(
+	const controller_job& job,
+	const asset::data& assets_s,
+	const time dt
+) -> void {
 	auto& anim = *job.anim;
 	auto& ctrl = *job.ctrl;
 	const auto& skel = *job.skel;

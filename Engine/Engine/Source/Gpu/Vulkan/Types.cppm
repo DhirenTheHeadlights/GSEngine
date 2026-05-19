@@ -52,13 +52,16 @@ export namespace gse::gpu {
 	enum class buffer_flag : std::uint32_t {
 		uniform[[= vk::BufferUsageFlagBits::eUniformBuffer]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x01,
 		storage[[= vk::BufferUsageFlagBits::eStorageBuffer]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x02,
-		indirect[[= vk::BufferUsageFlagBits::eIndirectBuffer]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x04,
+		indirect[[= vk::BufferUsageFlagBits::eIndirectBuffer]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] =
+			0x04,
 		transfer_dst[[= vk::BufferUsageFlagBits::eTransferDst]] = 0x08,
 		vertex[[= vk::BufferUsageFlagBits::eVertexBuffer]] = 0x10,
 		index[[= vk::BufferUsageFlagBits::eIndexBuffer]] = 0x20,
 		transfer_src[[= vk::BufferUsageFlagBits::eTransferSrc]] = 0x40,
-		acceleration_structure_storage[[= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x80,
-		acceleration_structure_build_input[[= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR]][[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x100,
+		acceleration_structure_storage[[= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR]]
+									  [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x80,
+		acceleration_structure_build_input[[= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR]]
+										  [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x100,
 		video_encode_dst[[= vk::BufferUsageFlagBits::eVideoEncodeDstKHR]] = 0x200,
 	};
 
@@ -380,7 +383,8 @@ export namespace gse::gpu {
 	};
 
 	using build_acceleration_structure_flags = gse::flags<build_acceleration_structure_flag>;
-	constexpr auto operator|(build_acceleration_structure_flag a, build_acceleration_structure_flag b) -> build_acceleration_structure_flags {
+	constexpr auto operator|(build_acceleration_structure_flag a, build_acceleration_structure_flag b)
+		-> build_acceleration_structure_flags {
 		return build_acceleration_structure_flags(a) | b;
 	}
 
@@ -762,217 +766,111 @@ export namespace gse::gpu {
 }
 
 export namespace gse::vulkan {
-	auto to_vk(
-		gpu::cull_mode m
-	) -> vk::CullModeFlagBits;
+	auto to_vk(gpu::cull_mode m) -> vk::CullModeFlagBits;
 
-	auto to_vk(
-		gpu::compare_op op
-	) -> vk::CompareOp;
+	auto to_vk(gpu::compare_op op) -> vk::CompareOp;
 
-	auto to_vk(
-		gpu::polygon_mode m
-	) -> vk::PolygonMode;
+	auto to_vk(gpu::polygon_mode m) -> vk::PolygonMode;
 
-	auto to_vk(
-		gpu::topology t
-	) -> vk::PrimitiveTopology;
+	auto to_vk(gpu::topology t) -> vk::PrimitiveTopology;
 
-	auto to_vk(
-		gpu::sampler_filter f
-	) -> vk::Filter;
+	auto to_vk(gpu::sampler_filter f) -> vk::Filter;
 
-	auto to_vk(
-		gpu::sampler_address_mode m
-	) -> vk::SamplerAddressMode;
+	auto to_vk(gpu::sampler_address_mode m) -> vk::SamplerAddressMode;
 
-	auto to_vk(
-		gpu::border_color c
-	) -> vk::BorderColor;
+	auto to_vk(gpu::border_color c) -> vk::BorderColor;
 
-	auto to_vk(
-		gpu::image_format f
-	) -> vk::Format;
+	auto to_vk(gpu::image_format f) -> vk::Format;
 
-	auto to_vk(
-		gpu::image_view_type t
-	) -> vk::ImageViewType;
+	auto to_vk(gpu::image_view_type t) -> vk::ImageViewType;
 
-	auto to_vk(
-		gpu::image_layout l
-	) -> vk::ImageLayout;
+	auto to_vk(gpu::image_layout l) -> vk::ImageLayout;
 
-	auto to_vk(
-		gpu::index_type t
-	) -> vk::IndexType;
+	auto to_vk(gpu::index_type t) -> vk::IndexType;
 
-	auto to_vk(
-		gpu::bind_point p
-	) -> vk::PipelineBindPoint;
+	auto to_vk(gpu::bind_point p) -> vk::PipelineBindPoint;
 
-	auto to_vk(
-		gpu::descriptor_type t
-	) -> vk::DescriptorType;
+	auto to_vk(gpu::descriptor_type t) -> vk::DescriptorType;
 
-	auto to_vk(
-		gpu::vertex_format f
-	) -> vk::Format;
+	auto to_vk(gpu::vertex_format f) -> vk::Format;
 
-	auto to_vk(
-		gpu::acceleration_structure_type t
-	) -> vk::AccelerationStructureTypeKHR;
+	auto to_vk(gpu::acceleration_structure_type t) -> vk::AccelerationStructureTypeKHR;
 
-	auto to_vk(
-		gpu::build_acceleration_structure_mode m
-	) -> vk::BuildAccelerationStructureModeKHR;
+	auto to_vk(gpu::build_acceleration_structure_mode m) -> vk::BuildAccelerationStructureModeKHR;
 
-	auto to_vk(
-		gpu::result r
-	) -> vk::Result;
+	auto to_vk(gpu::result r) -> vk::Result;
 
-	auto to_vk(
-		gpu::present_mode m
-	) -> vk::PresentModeKHR;
+	auto to_vk(gpu::present_mode m) -> vk::PresentModeKHR;
 
-	auto to_vk(
-		gpu::color_space c
-	) -> vk::ColorSpaceKHR;
+	auto to_vk(gpu::color_space c) -> vk::ColorSpaceKHR;
 
-	auto to_vk(
-		gpu::load_op op
-	) -> vk::AttachmentLoadOp;
+	auto to_vk(gpu::load_op op) -> vk::AttachmentLoadOp;
 
-	auto to_vk(
-		gpu::store_op op
-	) -> vk::AttachmentStoreOp;
+	auto to_vk(gpu::store_op op) -> vk::AttachmentStoreOp;
 
-	auto to_vk(
-		gpu::image_type t
-	) -> vk::ImageType;
+	auto to_vk(gpu::image_type t) -> vk::ImageType;
 
-	auto to_vk(
-		gpu::sample_count c
-	) -> vk::SampleCountFlagBits;
+	auto to_vk(gpu::sample_count c) -> vk::SampleCountFlagBits;
 
-	auto to_vk(
-		gpu::stage_flag s
-	) -> vk::ShaderStageFlagBits;
+	auto to_vk(gpu::stage_flag s) -> vk::ShaderStageFlagBits;
 
-	auto to_vk(
-		gpu::buffer_usage fls
-	) -> vk::BufferUsageFlags;
+	auto to_vk(gpu::buffer_usage fls) -> vk::BufferUsageFlags;
 
-	auto to_vk(
-		gpu::image_usage fls
-	) -> vk::ImageUsageFlags;
+	auto to_vk(gpu::image_usage fls) -> vk::ImageUsageFlags;
 
-	auto to_vk(
-		gpu::stage_flags fls
-	) -> vk::ShaderStageFlags;
+	auto to_vk(gpu::stage_flags fls) -> vk::ShaderStageFlags;
 
-	auto to_vk(
-		gpu::build_acceleration_structure_flags fls
-	) -> vk::BuildAccelerationStructureFlagsKHR;
+	auto to_vk(gpu::build_acceleration_structure_flags fls) -> vk::BuildAccelerationStructureFlagsKHR;
 
-	auto to_vk(
-		gpu::geometry_flags fls
-	) -> vk::GeometryFlagsKHR;
+	auto to_vk(gpu::geometry_flags fls) -> vk::GeometryFlagsKHR;
 
-	auto to_vk(
-		gpu::image_aspect_flags fls
-	) -> vk::ImageAspectFlags;
+	auto to_vk(gpu::image_aspect_flags fls) -> vk::ImageAspectFlags;
 
-	auto to_vk(
-		gpu::access_flags fls
-	) -> vk::AccessFlags2;
+	auto to_vk(gpu::access_flags fls) -> vk::AccessFlags2;
 
-	auto to_vk(
-		gpu::pipeline_stage_flags fls
-	) -> vk::PipelineStageFlags2;
+	auto to_vk(gpu::pipeline_stage_flags fls) -> vk::PipelineStageFlags2;
 
-	auto to_vk(
-		gpu::pipeline_statistic_flags fls
-	) -> vk::QueryPipelineStatisticFlags;
+	auto to_vk(gpu::pipeline_statistic_flags fls) -> vk::QueryPipelineStatisticFlags;
 
-	auto format_value(
-		gpu::image_format f
-	) -> gpu::image_format_value;
+	auto format_value(gpu::image_format f) -> gpu::image_format_value;
 
-	auto image_aspect_for(
-		gpu::image_format_value f
-	) -> gpu::image_aspect_flags;
+	auto image_aspect_for(gpu::image_format_value f) -> gpu::image_aspect_flags;
 
-	auto to_vk(
-		gpu::memory_property_flags fls
-	) -> vk::MemoryPropertyFlags;
+	auto to_vk(gpu::memory_property_flags fls) -> vk::MemoryPropertyFlags;
 
-	auto to_vk(
-		gpu::image_create_flags fls
-	) -> vk::ImageCreateFlags;
+	auto to_vk(gpu::image_create_flags fls) -> vk::ImageCreateFlags;
 
-	auto to_vk(
-		const gpu::surface_format& sf
-	) -> vk::SurfaceFormatKHR;
+	auto to_vk(const gpu::surface_format& sf) -> vk::SurfaceFormatKHR;
 
-	auto to_vk(
-		const gpu::viewport& v
-	) -> vk::Viewport;
+	auto to_vk(const gpu::viewport& v) -> vk::Viewport;
 
-	auto to_vk(
-		const gpu::push_constant_range& pcr
-	) -> vk::PushConstantRange;
+	auto to_vk(const gpu::push_constant_range& pcr) -> vk::PushConstantRange;
 
-	auto to_vk(
-		const gpu::buffer_copy_region& r
-	) -> vk::BufferCopy;
+	auto to_vk(const gpu::buffer_copy_region& r) -> vk::BufferCopy;
 
-	auto to_vk(
-		const gpu::image_subresource_layers& s
-	) -> vk::ImageSubresourceLayers;
+	auto to_vk(const gpu::image_subresource_layers& s) -> vk::ImageSubresourceLayers;
 
-	auto to_vk(
-		const gpu::buffer_image_copy_region& r
-	) -> vk::BufferImageCopy;
+	auto to_vk(const gpu::buffer_image_copy_region& r) -> vk::BufferImageCopy;
 
-	auto to_vk(
-		const gpu::image_copy_region& r
-	) -> vk::ImageCopy;
+	auto to_vk(const gpu::image_copy_region& r) -> vk::ImageCopy;
 
-	auto to_vk(
-		const gpu::image_blit_region& r
-	) -> vk::ImageBlit;
+	auto to_vk(const gpu::image_blit_region& r) -> vk::ImageBlit;
 
-	auto to_vk(
-		const gpu::acceleration_structure_build_range_info& r
-	) -> vk::AccelerationStructureBuildRangeInfoKHR;
+	auto to_vk(const gpu::acceleration_structure_build_range_info& r) -> vk::AccelerationStructureBuildRangeInfoKHR;
 
-	auto from_vk(
-		vk::Result r
-	) -> gpu::result;
+	auto from_vk(vk::Result r) -> gpu::result;
 
-	auto from_vk(
-		vk::PresentModeKHR mode
-	) -> gpu::present_mode;
+	auto from_vk(vk::PresentModeKHR mode) -> gpu::present_mode;
 
-	auto from_vk(
-		vk::ColorSpaceKHR cs
-	) -> gpu::color_space;
+	auto from_vk(vk::ColorSpaceKHR cs) -> gpu::color_space;
 
-	auto from_vk(
-		vk::Format f
-	) -> gpu::image_format;
+	auto from_vk(vk::Format f) -> gpu::image_format;
 
-	auto from_vk(
-		vk::ImageLayout l
-	) -> gpu::image_layout;
+	auto from_vk(vk::ImageLayout l) -> gpu::image_layout;
 
-	auto from_vk(
-		const vk::SurfaceFormatKHR& sf
-	) -> gpu::surface_format;
+	auto from_vk(const vk::SurfaceFormatKHR& sf) -> gpu::surface_format;
 
-	auto from_vk(
-		const vk::SurfaceCapabilitiesKHR& caps
-	) -> gpu::surface_capabilities;
+	auto from_vk(const vk::SurfaceCapabilitiesKHR& caps) -> gpu::surface_capabilities;
 }
 
 auto gse::vulkan::to_vk(const gpu::cull_mode m) -> vk::CullModeFlagBits {
@@ -1373,10 +1271,12 @@ auto gse::vulkan::to_vk(const gpu::buffer_usage fls) -> vk::BufferUsageFlags {
 		result |= vk::BufferUsageFlagBits::eTransferSrc;
 	}
 	if (fls.test(gpu::buffer_flag::acceleration_structure_storage)) {
-		result |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+		result |=
+			vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	}
 	if (fls.test(gpu::buffer_flag::acceleration_structure_build_input)) {
-		result |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+		result |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+			vk::BufferUsageFlagBits::eShaderDeviceAddress;
 	}
 	if (fls.test(gpu::buffer_flag::video_encode_dst)) {
 		result |= vk::BufferUsageFlagBits::eVideoEncodeDstKHR;
@@ -1736,7 +1636,8 @@ auto gse::vulkan::to_vk(const gpu::image_blit_region& r) -> vk::ImageBlit {
 	return out;
 }
 
-auto gse::vulkan::to_vk(const gpu::acceleration_structure_build_range_info& r) -> vk::AccelerationStructureBuildRangeInfoKHR {
+auto gse::vulkan::to_vk(const gpu::acceleration_structure_build_range_info& r)
+	-> vk::AccelerationStructureBuildRangeInfoKHR {
 	return {
 		.primitiveCount = r.primitive_count,
 		.primitiveOffset = r.primitive_offset,

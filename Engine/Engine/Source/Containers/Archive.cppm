@@ -21,67 +21,41 @@ export namespace gse {
 	};
 
 	template <typename A, typename T>
-	concept has_user_serialize = requires(A& a, T& v) {
-		serialize(a, v);
-	};
+	concept has_user_serialize = requires(A& a, T& v) { serialize(a, v); };
 
-	consteval auto is_archive_skipped(
-		std::meta::info member
-	) -> bool;
+	consteval auto is_archive_skipped(std::meta::info member) -> bool;
 
 	struct binary_writer {
 		static constexpr bool is_writing = true;
 
-		explicit binary_writer(
-			std::ofstream& stream
-		);
+		explicit binary_writer(std::ofstream& stream);
 
-		binary_writer(
-			std::ofstream& stream,
-			std::uint32_t magic,
-			std::uint32_t version
-		);
+		binary_writer(std::ofstream& stream, std::uint32_t magic, std::uint32_t version);
 
 		template <typename T>
 		requires std::is_trivially_copyable_v<T>
-		auto operator&(
-			const T& value
-		) -> binary_writer&;
+		auto operator&(const T& value) -> binary_writer&;
 
-		auto operator&(
-			const std::string& str
-		) -> binary_writer&;
+		auto operator&(const std::string& str) -> binary_writer&;
 
 		template <typename T>
-		auto operator&(
-			const std::vector<T>& vec
-		) -> binary_writer&;
+		auto operator&(const std::vector<T>& vec) -> binary_writer&;
 
 		template <typename T, std::size_t N>
-		auto operator&(
-			const static_vector<T, N>& vec
-		) -> binary_writer&;
+		auto operator&(const static_vector<T, N>& vec) -> binary_writer&;
 
 		template <typename T>
-		auto operator&(
-			const std::optional<T>& opt
-		) -> binary_writer&;
+		auto operator&(const std::optional<T>& opt) -> binary_writer&;
 
 		template <typename K, typename V>
-		auto operator&(
-			const std::unordered_map<K, V>& map
-		) -> binary_writer&;
+		auto operator&(const std::unordered_map<K, V>& map) -> binary_writer&;
 
 		template <typename T>
-		auto operator&(
-			const raw_blob<T>& blob
-		) -> binary_writer&;
+		auto operator&(const raw_blob<T>& blob) -> binary_writer&;
 
 		template <typename T>
 		requires(!std::is_trivially_copyable_v<T>)
-		auto operator&(
-			const T& value
-		) -> binary_writer&;
+		auto operator&(const T& value) -> binary_writer&;
 
 	private:
 		std::ofstream& m_stream;
@@ -90,9 +64,7 @@ export namespace gse {
 	struct binary_reader {
 		static constexpr bool is_writing = false;
 
-		explicit binary_reader(
-			std::ifstream& stream
-		);
+		explicit binary_reader(std::ifstream& stream);
 
 		binary_reader(
 			std::ifstream& stream,
@@ -106,44 +78,28 @@ export namespace gse {
 
 		template <typename T>
 		requires std::is_trivially_copyable_v<T>
-		auto operator&(
-			T& value
-		) -> binary_reader&;
+		auto operator&(T& value) -> binary_reader&;
 
-		auto operator&(
-			std::string& str
-		) -> binary_reader&;
+		auto operator&(std::string& str) -> binary_reader&;
 
 		template <typename T>
-		auto operator&(
-			std::vector<T>& vec
-		) -> binary_reader&;
+		auto operator&(std::vector<T>& vec) -> binary_reader&;
 
 		template <typename T, std::size_t N>
-		auto operator&(
-			static_vector<T, N>& vec
-		) -> binary_reader&;
+		auto operator&(static_vector<T, N>& vec) -> binary_reader&;
 
 		template <typename T>
-		auto operator&(
-			std::optional<T>& opt
-		) -> binary_reader&;
+		auto operator&(std::optional<T>& opt) -> binary_reader&;
 
 		template <typename K, typename V>
-		auto operator&(
-			std::unordered_map<K, V>& map
-		) -> binary_reader&;
+		auto operator&(std::unordered_map<K, V>& map) -> binary_reader&;
 
 		template <typename T>
-		auto operator&(
-			const raw_blob<T>& blob
-		) -> binary_reader&;
+		auto operator&(const raw_blob<T>& blob) -> binary_reader&;
 
 		template <typename T>
 		requires(!std::is_trivially_copyable_v<T>)
-		auto operator&(
-			T& value
-		) -> binary_reader&;
+		auto operator&(T& value) -> binary_reader&;
 
 	private:
 		std::ifstream& m_stream;
@@ -154,31 +110,23 @@ export namespace gse {
 	concept archive = std::same_as<T, binary_writer> || std::same_as<T, binary_reader>;
 
 	template <typename T>
-	auto serialize(
-		binary_writer& ar,
-		raw_blob_owned<T>& v
-	) -> void;
+	auto serialize(binary_writer& ar, raw_blob_owned<T>& v) -> void;
 
 	template <typename T>
-	auto serialize(
-		binary_reader& ar,
-		raw_blob_owned<T>& v
-	) -> void;
+	auto serialize(binary_reader& ar, raw_blob_owned<T>& v) -> void;
 }
 
 consteval auto gse::is_archive_skipped(const std::meta::info member) -> bool {
-	return std::ranges::any_of(
-		std::define_static_array(std::meta::annotations_of(member)),
-		[](std::meta::info ann) {
-			return std::meta::type_of(ann) == ^^archive_skip;
-		}
-	);
+	return std::ranges::any_of(std::define_static_array(std::meta::annotations_of(member)), [](std::meta::info ann) {
+		return std::meta::type_of(ann) == ^^archive_skip;
+	});
 }
 
 gse::binary_writer::binary_writer(std::ofstream& stream) : m_stream(stream) {
 }
 
-gse::binary_writer::binary_writer(std::ofstream& stream, const std::uint32_t magic, const std::uint32_t version) : m_stream(stream) {
+gse::binary_writer::binary_writer(std::ofstream& stream, const std::uint32_t magic, const std::uint32_t version)
+	: m_stream(stream) {
 	*this & magic & version;
 }
 
@@ -253,7 +201,9 @@ auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
 		serialize(*this, const_cast<T&>(value));
 	}
 	else {
-		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		template for (constexpr auto m : std::define_static_array(
+						  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+					  )) {
 			if constexpr (!is_archive_skipped(m)) {
 				*this& value.[:m:];
 			}
@@ -265,7 +215,14 @@ auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
 gse::binary_reader::binary_reader(std::ifstream& stream) : m_stream(stream) {
 }
 
-gse::binary_reader::binary_reader(std::ifstream& stream, const std::uint32_t expected_magic, const std::uint32_t expected_version, std::string_view path, const std::source_location& loc) : m_stream(stream) {
+gse::binary_reader::binary_reader(
+	std::ifstream& stream,
+	const std::uint32_t expected_magic,
+	const std::uint32_t expected_version,
+	std::string_view path,
+	const std::source_location& loc
+)
+	: m_stream(stream) {
 	std::uint32_t magic = 0;
 	std::uint32_t version = 0;
 	*this & magic & version;
@@ -365,7 +322,9 @@ auto gse::binary_reader::operator&(T& value) -> binary_reader& {
 		serialize(*this, value);
 	}
 	else {
-		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		template for (constexpr auto m : std::define_static_array(
+						  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+					  )) {
 			if constexpr (!is_archive_skipped(m)) {
 				*this& value.[:m:];
 			}

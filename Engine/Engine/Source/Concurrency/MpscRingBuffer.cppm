@@ -8,22 +8,14 @@ export namespace gse {
 		static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
 
 	public:
-		auto push(
-			const T& value
-		) -> bool;
+		auto push(const T& value) -> bool;
 
-		auto push(
-			T&& value
-		) -> bool;
+		auto push(T&& value) -> bool;
 
-		auto pop(
-			T& out
-		) -> bool;
+		auto pop(T& out) -> bool;
 
 	private:
-		static constexpr auto index(
-			std::size_t i
-		) -> std::size_t;
+		static constexpr auto index(std::size_t i) -> std::size_t;
 
 		std::array<T, Capacity> m_data{};
 		alignas(std::hardware_destructive_interference_size) std::atomic<std::size_t> m_head{ 0 };
@@ -39,12 +31,8 @@ auto gse::mpsc_ring_buffer<T, Capacity>::push(const T& value) -> bool {
 		if (const auto tail = m_tail.load(std::memory_order_acquire); head_old - tail >= Capacity) {
 			return false;
 		}
-		if (m_head.compare_exchange_weak(
-				head_old,
-				head_old + 1,
-				std::memory_order_acq_rel,
-				std::memory_order_relaxed
-			)) {
+		if (m_head
+				.compare_exchange_weak(head_old, head_old + 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
 			break;
 		}
 	}
@@ -60,12 +48,8 @@ auto gse::mpsc_ring_buffer<T, Capacity>::push(T&& value) -> bool {
 		if (const auto tail = m_tail.load(std::memory_order_acquire); head_old - tail >= Capacity) {
 			return false;
 		}
-		if (m_head.compare_exchange_weak(
-				head_old,
-				head_old + 1,
-				std::memory_order_acq_rel,
-				std::memory_order_relaxed
-			)) {
+		if (m_head
+				.compare_exchange_weak(head_old, head_old + 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
 			break;
 		}
 	}

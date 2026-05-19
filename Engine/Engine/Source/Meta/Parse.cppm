@@ -10,44 +10,29 @@ export namespace gse {
 	struct parser;
 
 	template <typename T>
-	auto parse(
-		std::string_view raw,
-		T& out
-	) -> bool;
+	auto parse(std::string_view raw, T& out) -> bool;
 }
 
 export template <>
 struct gse::parser<bool> {
-	static auto parse(
-		std::string_view raw,
-		bool& out
-	) -> bool;
+	static auto parse(std::string_view raw, bool& out) -> bool;
 };
 
 export template <>
 struct gse::parser<std::string> {
-	static auto parse(
-		std::string_view raw,
-		std::string& out
-	) -> bool;
+	static auto parse(std::string_view raw, std::string& out) -> bool;
 };
 
 export template <typename T>
 requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
 struct gse::parser<T> {
-	static auto parse(
-		std::string_view raw,
-		T& out
-	) -> bool;
+	static auto parse(std::string_view raw, T& out) -> bool;
 };
 
 export template <typename E>
 requires std::is_enum_v<E>
 struct gse::parser<E> {
-	static auto parse(
-		std::string_view raw,
-		E& out
-	) -> bool;
+	static auto parse(std::string_view raw, E& out) -> bool;
 };
 
 template <typename T>

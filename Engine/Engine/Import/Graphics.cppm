@@ -53,6 +53,8 @@ export import :render_layer;
 export import :renderer;
 export import :rt_shadow_renderer;
 export import :save;
+export import :sdf_grid_renderer;
+export import :world_text_renderer;
 export import :scroll_widget;
 export import :section_widget;
 export import :selectable_widget;

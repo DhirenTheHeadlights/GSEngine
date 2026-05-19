@@ -67,12 +67,14 @@ export {
 
 	inline constexpr SlangBindingTypeIntegral slang_binding_type_base_mask = SLANG_BINDING_TYPE_BASE_MASK;
 	inline constexpr SlangBindingTypeIntegral slang_binding_type_mutable_flag = SLANG_BINDING_TYPE_MUTABLE_FLAG;
-	inline constexpr SlangBindingType slang_binding_type_combined_texture_sampler = SLANG_BINDING_TYPE_COMBINED_TEXTURE_SAMPLER;
+	inline constexpr SlangBindingType slang_binding_type_combined_texture_sampler =
+		SLANG_BINDING_TYPE_COMBINED_TEXTURE_SAMPLER;
 	inline constexpr SlangBindingType slang_binding_type_constant_buffer = SLANG_BINDING_TYPE_CONSTANT_BUFFER;
 	inline constexpr SlangBindingType slang_binding_type_input_render_target = SLANG_BINDING_TYPE_INPUT_RENDER_TARGET;
 	inline constexpr SlangBindingType slang_binding_type_parameter_block = SLANG_BINDING_TYPE_PARAMETER_BLOCK;
 	inline constexpr SlangBindingType slang_binding_type_raw_buffer = SLANG_BINDING_TYPE_RAW_BUFFER;
-	inline constexpr SlangBindingType slang_binding_type_ray_tracing_acceleration_structure = SLANG_BINDING_TYPE_RAY_TRACING_ACCELERATION_STRUCTURE;
+	inline constexpr SlangBindingType slang_binding_type_ray_tracing_acceleration_structure =
+		SLANG_BINDING_TYPE_RAY_TRACING_ACCELERATION_STRUCTURE;
 	inline constexpr SlangBindingType slang_binding_type_sampler = SLANG_BINDING_TYPE_SAMPLER;
 	inline constexpr SlangBindingType slang_binding_type_texture = SLANG_BINDING_TYPE_TEXTURE;
 	inline constexpr SlangBindingType slang_binding_type_typed_buffer = SLANG_BINDING_TYPE_TYPED_BUFFER;

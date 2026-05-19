@@ -38,27 +38,29 @@ export namespace gse::renderer::geometry_collector {
 export namespace gse::renderer {
 	using frustum_planes = std::array<vec4f, 6>;
 
-	auto compute_render_transform(const physics::transform_component& tc, const vec3<length>& center_of_mass, const vec3<length>& scale_factors) -> std::pair<mat4f, mat4f> {
+	auto compute_render_transform(
+		const physics::transform_component& tc,
+		const vec3<length>& center_of_mass,
+		const vec3<length>& scale_factors
+	) -> std::pair<spatial_matrix, spatial_matrix> {
 		const mat4f rot_mat = mat4f(mat3_cast(tc.orientation));
 		const mat4f trans_mat = translate(mat4f(1.0f), tc.position);
 		const mat4f scale_mat = scale(mat4f(1.0f), scale_factors);
 		const mat4f pivot_correction_mat = translate(mat4f(1.0f), -center_of_mass);
 		const mat4f model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
-		const mat4f normal_matrix = rot_mat;
-		return { model_matrix, normal_matrix };
+		return { spatial_matrix(model_matrix), spatial_matrix(rot_mat) };
 	}
 
-	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
-		const std::array corners = {
-			vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
-			vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
-			vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
-			vec4<length>(local_max.x(), local_max.y(), local_min.z(), meters(1.0f)),
-			vec4<length>(local_min.x(), local_min.y(), local_max.z(), meters(1.0f)),
-			vec4<length>(local_max.x(), local_min.y(), local_max.z(), meters(1.0f)),
-			vec4<length>(local_min.x(), local_max.y(), local_max.z(), meters(1.0f)),
-			vec4<length>(local_max.x(), local_max.y(), local_max.z(), meters(1.0f))
-		};
+	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix)
+		-> std::pair<vec3<length>, vec3<length>> {
+		const std::array corners = { vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
+									 vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
+									 vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
+									 vec4<length>(local_max.x(), local_max.y(), local_min.z(), meters(1.0f)),
+									 vec4<length>(local_min.x(), local_min.y(), local_max.z(), meters(1.0f)),
+									 vec4<length>(local_max.x(), local_min.y(), local_max.z(), meters(1.0f)),
+									 vec4<length>(local_min.x(), local_max.y(), local_max.z(), meters(1.0f)),
+									 vec4<length>(local_max.x(), local_max.y(), local_max.z(), meters(1.0f)) };
 
 		vec3 world_min(meters(std::numeric_limits<float>::max()));
 		vec3 world_max(meters(std::numeric_limits<float>::lowest()));
@@ -76,7 +78,10 @@ export namespace gse::renderer {
 	auto extract_frustum_planes(const view_projection_matrix& vp) -> frustum_planes {
 		frustum_planes planes;
 
-		auto at = [&]<std::size_t C, std::size_t R>(std::integral_constant<std::size_t, C>, std::integral_constant<std::size_t, R>) {
+		auto at = [&]<std::size_t C, std::size_t R>(
+					  std::integral_constant<std::size_t, C>,
+					  std::integral_constant<std::size_t, R>
+				  ) {
 			return internal::to_storage(vp.at<C, R>());
 		};
 
@@ -89,12 +94,30 @@ export namespace gse::renderer {
 		constexpr auto r2 = std::integral_constant<std::size_t, 2>{};
 		constexpr auto r3 = std::integral_constant<std::size_t, 3>{};
 
-		planes[0] = { at(c0, r3) + at(c0, r0), at(c1, r3) + at(c1, r0), at(c2, r3) + at(c2, r0), at(c3, r3) + at(c3, r0) };
-		planes[1] = { at(c0, r3) - at(c0, r0), at(c1, r3) - at(c1, r0), at(c2, r3) - at(c2, r0), at(c3, r3) - at(c3, r0) };
-		planes[2] = { at(c0, r3) + at(c0, r1), at(c1, r3) + at(c1, r1), at(c2, r3) + at(c2, r1), at(c3, r3) + at(c3, r1) };
-		planes[3] = { at(c0, r3) - at(c0, r1), at(c1, r3) - at(c1, r1), at(c2, r3) - at(c2, r1), at(c3, r3) - at(c3, r1) };
-		planes[4] = { at(c0, r3) + at(c0, r2), at(c1, r3) + at(c1, r2), at(c2, r3) + at(c2, r2), at(c3, r3) + at(c3, r2) };
-		planes[5] = { at(c0, r3) - at(c0, r2), at(c1, r3) - at(c1, r2), at(c2, r3) - at(c2, r2), at(c3, r3) - at(c3, r2) };
+		planes[0] = { at(c0, r3) + at(c0, r0),
+					  at(c1, r3) + at(c1, r0),
+					  at(c2, r3) + at(c2, r0),
+					  at(c3, r3) + at(c3, r0) };
+		planes[1] = { at(c0, r3) - at(c0, r0),
+					  at(c1, r3) - at(c1, r0),
+					  at(c2, r3) - at(c2, r0),
+					  at(c3, r3) - at(c3, r0) };
+		planes[2] = { at(c0, r3) + at(c0, r1),
+					  at(c1, r3) + at(c1, r1),
+					  at(c2, r3) + at(c2, r1),
+					  at(c3, r3) + at(c3, r1) };
+		planes[3] = { at(c0, r3) - at(c0, r1),
+					  at(c1, r3) - at(c1, r1),
+					  at(c2, r3) - at(c2, r1),
+					  at(c3, r3) - at(c3, r1) };
+		planes[4] = { at(c0, r3) + at(c0, r2),
+					  at(c1, r3) + at(c1, r2),
+					  at(c2, r3) + at(c2, r2),
+					  at(c3, r3) + at(c3, r2) };
+		planes[5] = { at(c0, r3) - at(c0, r2),
+					  at(c1, r3) - at(c1, r2),
+					  at(c2, r3) - at(c2, r2),
+					  at(c3, r3) - at(c3, r2) };
 
 		for (auto& plane : planes) {
 			if (const float length = magnitude(plane); length > 0.0f) {
@@ -110,9 +133,7 @@ export namespace gse::renderer {
 		const ModelType* model_ptr;
 		std::size_t mesh_index;
 
-		auto operator==(
-			const batch_key&
-		) const -> bool = default;
+		auto operator==(const batch_key&) const -> bool = default;
 	};
 
 	template <typename ModelType>
@@ -167,10 +188,8 @@ export namespace gse::renderer::geometry_collector {
 		projection_matrix proj;
 	};
 
-	auto filter_render_queue(
-		const render_data& data,
-		std::span<const id> exclude_ids
-	) -> std::vector<render_queue_entry>;
+	auto filter_render_queue(const render_data& data, std::span<const id> exclude_ids)
+		-> std::vector<render_queue_entry>;
 
 	struct system {
 		struct data {
@@ -199,15 +218,8 @@ export namespace gse::renderer::geometry_collector {
 			const primitive_resolver::system& resolver_state
 		) -> async::task<>;
 
-		static auto frame(
-			frame_context& ctx,
-			shared_view<gpu::context> gpu_s,
-			const data& d
-		) -> async::task<>;
+		static auto frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d) -> async::task<>;
 
-		static auto upload_skeleton_data(
-			const data& d,
-			const skeleton& skel
-		) -> void;
+		static auto upload_skeleton_data(const data& d, const skeleton& skel) -> void;
 	};
 }

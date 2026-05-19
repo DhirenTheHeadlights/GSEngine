@@ -27,7 +27,10 @@ export namespace gse {
 
 	class skinned_mesh final : non_copyable {
 	public:
-		explicit skinned_mesh(skinned_mesh_data&& data) : m_vertices(std::move(data.vertices)), m_indices(std::move(data.indices)), m_material(data.material) {
+		explicit skinned_mesh(skinned_mesh_data&& data)
+			: m_vertices(std::move(data.vertices)),
+			  m_indices(std::move(data.indices)),
+			  m_material(data.material) {
 		}
 
 		skinned_mesh(skinned_mesh&& other) noexcept;
@@ -77,11 +80,23 @@ auto gse::skinned_mesh::initialize(gpu::context::data& ctx) -> void {
 	const std::size_t vertex_buffer_size = sizeof(skinned_vertex) * m_vertices.size();
 	const std::size_t index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-	m_vertex_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = vertex_buffer_size, .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst }, "skinned_mesh.vertex");
+	m_vertex_buffer = gpu::buffer::create(
+		ctx.device->allocator(),
+		{ .size = vertex_buffer_size, .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst },
+		"skinned_mesh.vertex"
+	);
 
-	m_index_buffer = gpu::buffer::create(ctx.device->allocator(), { .size = index_buffer_size, .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst }, "skinned_mesh.index");
+	m_index_buffer = gpu::buffer::create(
+		ctx.device->allocator(),
+		{ .size = index_buffer_size, .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst },
+		"skinned_mesh.index"
+	);
 
-	m_upload_token = gpu::upload_to_buffers(*ctx.device, std::array{ gpu::buffer_upload{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size }, gpu::buffer_upload{ &m_index_buffer, m_indices.data(), index_buffer_size } });
+	m_upload_token = gpu::upload_to_buffers(
+		*ctx.device,
+		std::array{ gpu::buffer_upload{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
+					gpu::buffer_upload{ &m_index_buffer, m_indices.data(), index_buffer_size } }
+	);
 }
 
 auto gse::skinned_mesh::upload_token() const -> const gpu::sync_token& {
@@ -107,9 +122,15 @@ auto gse::skinned_mesh::center_of_mass() const -> vec3<displacement> {
 
 		assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), "Index out of range.");
 
-		const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
-		const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
-		const vec3_ld v2 = { length_d(m_vertices[idx2].position.x()), length_d(m_vertices[idx2].position.y()), length_d(m_vertices[idx2].position.z()) };
+		const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()),
+							 length_d(m_vertices[idx0].position.y()),
+							 length_d(m_vertices[idx0].position.z()) };
+		const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()),
+							 length_d(m_vertices[idx1].position.y()),
+							 length_d(m_vertices[idx1].position.z()) };
+		const vec3_ld v2 = { length_d(m_vertices[idx2].position.x()),
+							 length_d(m_vertices[idx2].position.y()),
+							 length_d(m_vertices[idx2].position.z()) };
 
 		const vec3_ld a = v0 - reference_point;
 		const vec3_ld b = v1 - reference_point;

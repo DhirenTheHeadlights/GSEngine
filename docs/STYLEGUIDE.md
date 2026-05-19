@@ -1,95 +1,46 @@
 # GSE Style Guide
 
+Most layout decisions in this codebase are owned by `.clang-format` (e.g. tabs, brace style, pointer alignment, when to wrap, how to indent continuations, where blank lines go inside namespaces, no vertical alignment, always-braces on `if`/`for`/`while`, "fully wrapped or fully inline" arg lists, designated initializers split when exceeding column limit). This document covers everything *clang-format can't decide for you* — semantic conventions, naming, API shape, and patterns specific to the engine.
+
 ## Naming
-- STL style (snake_case for everything)
-- Private member variables prefixed with `m_`
-- Do not prefix functions with `get_`. The verb is implied — a function that returns a value is already a getter. Use the noun (`name()`, `value()`), `_of` for projections (`type_of(x)`, `annotation_of<A>(m)`), or a verb that describes the action (`fetch_`, `compute_`, `find_`) when the work is non-trivial:
+- STL style (snake_case for everything).
+- Private member variables prefixed with `m_`.
+- Do not prefix functions with `get_`. The verb is implied — a function that returns a value is already a getter. Use the noun (`name()`, `value()`), `_of` for projections (`type_of(x)`, `annotation_of<A>(m)`), or a verb that describes the action (`fetch_`, `compute_`, `find_`) when the work is non-trivial.
 
-```cpp
-// correct
-auto name(
-) const -> std::string_view;
-
-auto type_of(
-    const node& n
-) -> type;
-
-auto annotation_of(
-    std::meta::info member
-) -> Anno;
-
-// wrong
-auto get_name(
-) const -> std::string_view;
-
-auto get_type(
-    const node& n
-) -> type;
-```
+Enforced by `clang-tidy` (`readability-identifier-naming` + custom `gse-no-get-prefix`).
 
 ## Comments
+
 Do not add comments. Code should be self-documenting.
 
 ---
 
 ## Function Declarations and Definitions
 
-**Declarations** go inside the namespace. Each parameter on its own line:
+**Declarations** go inside the namespace; **definitions** go outside it:
 
 ```cpp
 export namespace gse::foo {
-    auto bar(
-        const type& param1,
-        type param2
-    ) -> return_type;
+    auto bar(const type& param1, type param2) -> return_type;
 }
-```
 
-**Definitions** go outside the namespace. All parameters on a single line:
-
-```cpp
 auto gse::foo::bar(const type& param1, type param2) -> return_type {
     ...
 }
 ```
 
-Zero-parameter functions follow the same split — `()` across two lines for declarations, collapsed for definitions:
-
-```cpp
-// declaration (inside namespace)
-auto baz(
-) -> return_type;
-
-// definition (outside namespace)
-auto gse::foo::baz() -> return_type {
-    ...
-}
-```
+clang-format handles all wrapping based on the column limit — short signatures stay on one line, long ones wrap with one parameter per line and `)` on its own line.
 
 Default argument values belong only on declarations, never on definitions.
 
 When a constructor has an initializer list, keep it on the same line as the signature with `{` following immediately. If the body is empty, collapse to `{}`:
 
 ```cpp
-// empty body — all on one line
 my_type::my_type(const foo& f) : m_foo(f) {}
 
-// non-empty body — init list and { on same line, body below
 my_type::my_type(const foo& f, const bar& b) : m_foo(f), m_bar(b) {
     do_something();
 }
-```
-
-The per-line parameter rule applies to `= delete` and `= default` declarations as well:
-
-```cpp
-// correct
-linear_vector(
-    const linear_vector&
-) = delete;
-
-// wrong
-linear_vector(const linear_vector&) = delete;
 ```
 
 Prefer `non_copyable` / `non_movable` base classes over writing deleted copy/move declarations by hand. Always declare a destructor in the derived class to suppress virtual destructor warnings from the base. **A user-declared destructor implicitly deletes the move operations**, so when inheriting from `non_copyable` you must also re-declare the move ops as defaulted, otherwise the type silently becomes immovable and standard containers (`std::vector`, `std::pair`, etc.) will refuse to hold it:
@@ -100,13 +51,8 @@ class my_type : public non_copyable {
 public:
     ~my_type();
 
-    my_type(
-        my_type&&
-    ) noexcept = default;
-
-    auto operator=(
-        my_type&&
-    ) noexcept -> my_type& = default;
+    my_type(my_type&&) noexcept = default;
+    auto operator=(my_type&&) noexcept -> my_type& = default;
 };
 
 // wrong — user-declared destructor kills the implicit move ops; instances
@@ -124,64 +70,7 @@ public:
 };
 ```
 
----
-
-## Scoped Statements
-
-Always use braces. Always put the body on its own line. No single-line `if`, `for`, `while`, `do`, or lambda bodies:
-
-```cpp
-// correct
-if (condition) {
-    do_something();
-}
-
-// wrong
-if (condition) do_something();
-if (condition)
-    do_something();
-```
-
-This applies to lambdas as well — no one-liner lambda bodies:
-
-```cpp
-// correct
-defer<state>([handle](state& s) {
-    s.stop(handle);
-});
-
-// wrong
-defer<state>([handle](state& s) { s.stop(handle); });
-```
-
-Long `if` conditions are not wrapped — keep them on one line even if they are long.
-
----
-
-## Multi-line Argument Lists
-
-A call or statement is either fully on one line, or fully wrapped with each argument on its own line. Never mix — no partial wrapping where some arguments are on the opening line and the rest on a continuation line.
-
-```cpp
-// correct — one line
-log::println(log::category::vulkan, "Video encoder created: {} {}x{}", name, w, h);
-
-// correct — fully wrapped, one arg per line
-log::println(
-    log::level::warning,
-    log::category::vulkan,
-    "Video encode feedback query failed: result={} status={} bytes={}",
-    static_cast<int>(result),
-    feedback.status,
-    feedback.bytes_written
-);
-
-// wrong — one arg on opening line, continuation holds the rest
-log::println(log::level::warning, log::category::vulkan, "Video encode feedback query failed: result={} status={} bytes={}",
-    static_cast<int>(result), feedback.status, feedback.bytes_written);
-```
-
-This applies to every kind of multi-line statement — function calls, aggregate initializers, template argument lists, nested expressions. If it won't fit on one line, split it so each argument stands on its own.
+Long `if` conditions are not wrapped — keep them on one line even if they exceed the column limit.
 
 ---
 
@@ -190,58 +79,6 @@ This applies to every kind of multi-line statement — function calls, aggregate
 Each file should have one `export namespace` block containing all declarations, followed by all definitions outside it. Never reopen or add a second `export namespace` block to interleave declarations and definitions.
 
 When a file contains multiple sizeable class definitions, give each sizeable class its own file. Small related types (e.g. a group of phase structs, or a handful of POD structs) can share a file. A class is "sizeable" if its definition section would be long enough to make you scroll past other class declarations to reach it.
-
-No blank line directly inside the namespace braces. The first declaration sits flush against the opening `{`, and the closing `}` sits flush against the last declaration. The blank line goes *outside* the namespace (between the last import and the opening, or between the namespace block and the out-of-line definitions below it):
-
-```cpp
-// correct
-import gse.core;
-
-export namespace gse {
-    struct foo {};
-
-    auto bar(
-    ) -> int;
-}
-
-auto gse::bar() -> int { return 0; }
-
-// wrong
-export namespace gse {
-
-    struct foo {};
-
-    auto bar(
-    ) -> int;
-
-}
-```
-
----
-
-## Alignment
-
-Do not pad with spaces to align `=` signs, type names, or anything else vertically. Each line stands alone:
-
-```cpp
-// correct
-using value_type = T;
-using size_type = std::size_t;
-using reference = T&;
-
-T* m_data = nullptr;
-size_type m_size = 0;
-size_type m_capacity = 0;
-
-// wrong
-using value_type      = T;
-using size_type       = std::size_t;
-using reference       = T&;
-
-T*        m_data     = nullptr;
-size_type m_size     = 0;
-size_type m_capacity = 0;
-```
 
 ---
 
@@ -265,6 +102,8 @@ namespace {
     struct my_impl_helper { ... };
 }
 ```
+
+Enforced by `clang-tidy` (`gse-no-detail-namespace`, `gse-no-anonymous-namespace`).
 
 ---
 
@@ -308,6 +147,8 @@ constexpr std::array<std::string_view, 5> exts = { ".png", ".jpg", ".jpeg", ".tg
 inline constexpr std::array<std::string_view, 5> exts = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
 ```
 
+Enforced by `clang-tidy` (`gse-no-inline-in-modules`).
+
 ---
 
 ## Concepts in Template Parameter Lists
@@ -317,17 +158,11 @@ When constraining a template parameter on a single concept, put the concept in p
 ```cpp
 // correct — concept is the parameter introducer
 template <has_asset_format T>
-auto load_baked(
-    const std::filesystem::path& path,
-    T& out
-) -> bool;
+auto load_baked(const std::filesystem::path& path, T& out) -> bool;
 
 // wrong — extra requires clause for what is just a single concept
 template <typename T> requires has_asset_format<T>
-auto load_baked(
-    const std::filesystem::path& path,
-    T& out
-) -> bool;
+auto load_baked(const std::filesystem::path& path, T& out) -> bool;
 ```
 
 Reserve `requires` clauses for constraints that genuinely don't fit the parameter slot — multi-parameter relationships, ad-hoc `requires { ... }` expressions, or boolean compositions of concepts.
@@ -335,24 +170,20 @@ Reserve `requires` clauses for constraints that genuinely don't fit the paramete
 ```cpp
 // correct — relationship between two parameters needs a requires clause
 template <typename T, typename U> requires std::convertible_to<T, U>
-auto coerce(
-    T&& v
-) -> U;
+auto coerce(T&& v) -> U;
 ```
 
 Apply the same rule to abbreviated function templates (`auto` parameters) — use the concept directly:
 
 ```cpp
 // correct
-auto print_one(
-    std::integral auto v
-) -> void;
+auto print_one(std::integral auto v) -> void;
 
 // wrong
-auto print_one(
-    auto v
-) -> void requires std::integral<decltype(v)>;
+auto print_one(auto v) -> void requires std::integral<decltype(v)>;
 ```
+
+Enforced by `clang-tidy` (`gse-concept-in-template-param`).
 
 ---
 
@@ -374,6 +205,8 @@ auto gse::foo::do_thing(const gse::foo::bar_type& x) -> gse::foo::result_type {
 
 This applies to both function signatures and bodies.
 
+Enforced by `clang-tidy` (`gse-redundant-namespace-qualifier`).
+
 ---
 
 ## Aggregate Initialization
@@ -389,19 +222,6 @@ ctrl.parameters[key] = animation_parameter{ .value = value, .is_trigger = false 
 ```
 
 For function call arguments where the type is needed for template deduction, keep the explicit type.
-
-Always put each designated initializer on its own line:
-
-```cpp
-// correct
-ctrl.parameters[key] = {
-    .value = value,
-    .is_trigger = false,
-};
-
-// wrong
-ctrl.parameters[key] = { .value = value, .is_trigger = false };
-```
 
 ---
 
@@ -451,12 +271,7 @@ const float fov = 90.f;
 
 Numeric type can be specified via `time_t<T>`, `length_t<T>`, etc. when `float` is not appropriate (e.g. `time_t<std::uint32_t>`).
 
-To extract a value in a specific unit, pass the unit constant directly as an NTTP:
-
-```cpp
-const float ms = t.as<milliseconds>();
-const float deg = angle.as<degrees>();
-```
+Never strip units back to floats via `.as<unit>()` — unit types are layout-compatible with `float` and pass through math and GPU push constants directly. Only extract when interfacing with external APIs that demand raw scalars.
 
 ---
 
@@ -467,9 +282,7 @@ Use explicit object parameters (deducing `this`) to collapse const/non-const ove
 ```cpp
 // correct — one function handles both const and non-const
 template <typename Self>
-auto networked_data(
-    this Self& self
-) -> decltype(auto);
+auto networked_data(this Self& self) -> decltype(auto);
 
 // wrong — two identical functions differing only in constness
 auto networked_data() -> network_data_t&;
@@ -493,6 +306,8 @@ defer([value](my_system_state& s) {
 // wrong — punches a hole in const to sneak in a write
 mutable int m_some_field = 0;  // in a system state accessed via const&
 ```
+
+Enforced by `clang-tidy` (`gse-no-mutable`).
 
 ---
 
@@ -520,12 +335,10 @@ When a getter exposes a contiguous sequence (vector, array, etc.) that callers o
 
 ```cpp
 // correct
-[[nodiscard]] auto formats(
-) const -> std::span<const vk::SurfaceFormatKHR>;
+[[nodiscard]] auto formats() const -> std::span<const vk::SurfaceFormatKHR>;
 
 // wrong — locks the API to a specific container
-[[nodiscard]] auto formats(
-) const -> const std::vector<vk::SurfaceFormatKHR>&;
+[[nodiscard]] auto formats() const -> const std::vector<vk::SurfaceFormatKHR>&;
 ```
 
 Use a concrete container reference only when the caller genuinely needs container-specific operations (e.g. `.reserve()`, `.emplace_back()`, `.size()` returning the container's exact size_type) — and consider whether the API should expose those at all. If the caller just iterates or indexes, return a span.
@@ -579,14 +392,16 @@ auto result = my_map.emplace(key, value);
 use(result.second);
 ```
 
-Template function definitions also go outside the namespace:
+---
+
+## Template Definitions
+
+Template function definitions go outside the namespace, same as non-templates:
 
 ```cpp
 // declaration (inside namespace)
 template <fixed_string Tag>
-auto add(
-    key default_key
-) -> handle;
+auto add(key default_key) -> handle;
 
 // definition (outside namespace)
 template <gse::foo::fixed_string Tag>

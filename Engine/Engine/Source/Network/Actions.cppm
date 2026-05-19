@@ -17,13 +17,16 @@ export namespace gse::network {
 		angle camera_yaw = {}
 	) -> input_frame;
 
-	auto apply_input_frame(
-		actions::state& target,
-		const input_frame& m
-	) -> void;
+	auto apply_input_frame(actions::state& target, const input_frame& m) -> void;
 }
 
-auto gse::network::extract_input_frame(const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const std::uint32_t input_sequence, const angle camera_yaw) -> input_frame {
+auto gse::network::extract_input_frame(
+	const actions::state& state,
+	const std::span<const std::uint16_t> axes1_ids,
+	const std::span<const std::uint16_t> axes2_ids,
+	const std::uint32_t input_sequence,
+	const angle camera_yaw
+) -> input_frame {
 	const auto& pm = state.pressed_mask();
 	const auto& rm = state.released_mask();
 	const auto& hm = state.held_mask();
@@ -66,8 +69,10 @@ auto gse::network::extract_input_frame(const actions::state& state, const std::s
 		.pressed = pad(pm.words()),
 		.released = pad(rm.words()),
 		.held = pad(hm.words()),
-		.axes1 = axes1_ids | std::views::transform(build_axes1) | std::views::filter(axes1_active) | std::ranges::to<std::vector>(),
-		.axes2 = axes2_ids | std::views::transform(build_axes2) | std::views::filter(axes2_active) | std::ranges::to<std::vector>(),
+		.axes1 = axes1_ids | std::views::transform(build_axes1) | std::views::filter(axes1_active) |
+			std::ranges::to<std::vector>(),
+		.axes2 = axes2_ids | std::views::transform(build_axes2) | std::views::filter(axes2_active) |
+			std::ranges::to<std::vector>(),
 	};
 }
 

@@ -27,15 +27,9 @@ export namespace gse::cursor {
 		omni_move
 	};
 
-	auto set_style(
-		style new_style
-	) -> void;
+	auto set_style(style new_style) -> void;
 
-	auto render_to(
-		const asset::data& assets,
-		std::vector<renderer::sprite_command>& commands,
-		vec2f mouse_pos
-	) -> void;
+	auto render_to(const asset::data& assets, std::vector<renderer::sprite_command>& commands, vec2f mouse_pos) -> void;
 }
 
 namespace gse::cursor {
@@ -64,7 +58,11 @@ auto gse::cursor::set_style(const style new_style) -> void {
 	current_style = new_style;
 }
 
-auto gse::cursor::render_to(const asset::data& assets, std::vector<renderer::sprite_command>& commands, const vec2f mouse_pos) -> void {
+auto gse::cursor::render_to(
+	const asset::data& assets,
+	std::vector<renderer::sprite_command>& commands,
+	const vec2f mouse_pos
+) -> void {
 	const resource::handle<texture> blank_texture = asset::get<texture>(assets, find("blank"));
 	constexpr vec4f color = { 1.f, 1.f, 1.f, 1.f };
 	constexpr float length = 22.f;
@@ -74,58 +72,134 @@ auto gse::cursor::render_to(const asset::data& assets, std::vector<renderer::spr
 		case style::gameplay:
 		case style::arrow: {
 			constexpr float thickness = 2.f;
-			draw_line(commands, { .line = { { mouse_pos.x() - half_len, mouse_pos.y() }, { mouse_pos.x() + half_len, mouse_pos.y() } }, .thickness = thickness, .color = color, .texture = blank_texture });
-			draw_line(commands, { .line = { { mouse_pos.x(), mouse_pos.y() - half_len }, { mouse_pos.x(), mouse_pos.y() + half_len } }, .thickness = thickness, .color = color, .texture = blank_texture });
+			draw_line(
+				commands,
+				{ .line = { { mouse_pos.x() - half_len, mouse_pos.y() }, { mouse_pos.x() + half_len, mouse_pos.y() } },
+				  .thickness = thickness,
+				  .color = color,
+				  .texture = blank_texture }
+			);
+			draw_line(
+				commands,
+				{ .line = { { mouse_pos.x(), mouse_pos.y() - half_len }, { mouse_pos.x(), mouse_pos.y() + half_len } },
+				  .thickness = thickness,
+				  .color = color,
+				  .texture = blank_texture }
+			);
 			break;
 		}
 		case style::resize_n: {
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { 0.f, 1.f }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands, .tip_position = mouse_pos, .direction = { 0.f, 1.f }, .texture = blank_texture }
+			);
 			break;
 		}
 		case style::resize_s: {
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { 0.f, -1.f }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos,
+				  .direction = { 0.f, -1.f },
+				  .texture = blank_texture }
+			);
 			break;
 		}
 		case style::resize_e: {
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { 1.f, 0.f }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands, .tip_position = mouse_pos, .direction = { 1.f, 0.f }, .texture = blank_texture }
+			);
 			break;
 		}
 		case style::resize_w: {
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { -1.f, 0.f }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos,
+				  .direction = { -1.f, 0.f },
+				  .texture = blank_texture }
+			);
 			break;
 		}
 		case style::resize_ne: {
 			constexpr float inv_sqrt2 = 0.7071067811865476f;
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { inv_sqrt2, inv_sqrt2 }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos,
+				  .direction = { inv_sqrt2, inv_sqrt2 },
+				  .texture = blank_texture }
+			);
 			break;
 		}
 		case style::resize_nw: {
 			constexpr float inv_sqrt2 = 0.7071067811865476f;
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { -inv_sqrt2, inv_sqrt2 }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos,
+				  .direction = { -inv_sqrt2, inv_sqrt2 },
+				  .texture = blank_texture }
+			);
 			break;
 		}
 		case style::resize_se: {
 			constexpr float inv_sqrt2 = 0.7071067811865476f;
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { inv_sqrt2, -inv_sqrt2 }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos,
+				  .direction = { inv_sqrt2, -inv_sqrt2 },
+				  .texture = blank_texture }
+			);
 			break;
 		}
 		case style::resize_sw: {
 			constexpr float inv_sqrt2 = 0.7071067811865476f;
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { -inv_sqrt2, -inv_sqrt2 }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos,
+				  .direction = { -inv_sqrt2, -inv_sqrt2 },
+				  .texture = blank_texture }
+			);
 			break;
 		}
 		case style::resize_ew: {
 			constexpr float offset = 4.f;
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ -offset, 0.f }, .direction = { -1.f, 0.f }, .texture = blank_texture });
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ offset, 0.f }, .direction = { 1.f, 0.f }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos + vec2f{ -offset, 0.f },
+				  .direction = { -1.f, 0.f },
+				  .texture = blank_texture }
+			);
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos + vec2f{ offset, 0.f },
+				  .direction = { 1.f, 0.f },
+				  .texture = blank_texture }
+			);
 			break;
 		}
 		case style::omni_move: {
 			constexpr float offset = 10.f;
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ 0.f, offset }, .direction = { 0.f, 1.f }, .texture = blank_texture });
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ 0.f, -offset }, .direction = { 0.f, -1.f }, .texture = blank_texture });
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ offset, 0.f }, .direction = { 1.f, 0.f }, .texture = blank_texture });
-			draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ -offset, 0.f }, .direction = { -1.f, 0.f }, .texture = blank_texture });
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos + vec2f{ 0.f, offset },
+				  .direction = { 0.f, 1.f },
+				  .texture = blank_texture }
+			);
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos + vec2f{ 0.f, -offset },
+				  .direction = { 0.f, -1.f },
+				  .texture = blank_texture }
+			);
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos + vec2f{ offset, 0.f },
+				  .direction = { 1.f, 0.f },
+				  .texture = blank_texture }
+			);
+			draw_arrow_head(
+				{ .commands = commands,
+				  .tip_position = mouse_pos + vec2f{ -offset, 0.f },
+				  .direction = { -1.f, 0.f },
+				  .texture = blank_texture }
+			);
 			break;
 		}
 		default:
@@ -139,7 +213,13 @@ auto gse::cursor::draw_line(std::vector<renderer::sprite_command>& commands, con
 	const vec2f size = { len, params.thickness };
 	const vec2f half_size = size / 2.f;
 
-	commands.push_back({ .rect = rect_t<vec2f>({ .min = mid - half_size, .max = mid + half_size }), .color = params.color, .texture = params.texture, .rotation = params.line.angle(), .layer = render_layer::cursor });
+	commands.push_back(
+		{ .rect = rect_t<vec2f>({ .min = mid - half_size, .max = mid + half_size }),
+		  .color = params.color,
+		  .texture = params.texture,
+		  .rotation = params.line.angle(),
+		  .layer = render_layer::cursor }
+	);
 }
 
 auto gse::cursor::draw_arrow_head(const arrow_head_params& params) -> void {
@@ -152,7 +232,19 @@ auto gse::cursor::draw_arrow_head(const arrow_head_params& params) -> void {
 	const vec2f dir1 = rotate(base_dir, head_half_angle);
 	const vec2f dir2 = rotate(base_dir, -head_half_angle);
 
-	draw_line(params.commands, { .line = { params.tip_position, params.tip_position + dir1 * head_length }, .thickness = thickness, .color = white, .texture = params.texture });
+	draw_line(
+		params.commands,
+		{ .line = { params.tip_position, params.tip_position + dir1 * head_length },
+		  .thickness = thickness,
+		  .color = white,
+		  .texture = params.texture }
+	);
 
-	draw_line(params.commands, { .line = { params.tip_position, params.tip_position + dir2 * head_length }, .thickness = thickness, .color = white, .texture = params.texture });
+	draw_line(
+		params.commands,
+		{ .line = { params.tip_position, params.tip_position + dir2 * head_length },
+		  .thickness = thickness,
+		  .color = white,
+		  .texture = params.texture }
+	);
 }

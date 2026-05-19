@@ -9,16 +9,10 @@ import :resource_handle;
 
 export namespace gse::asset {
 	template <typename T>
-	auto resolve(
-		resource::handle<T>& h,
-		const data& assets
-	) -> void;
+	auto resolve(resource::handle<T>& h, const data& assets) -> void;
 
 	template <typename T>
-	auto resolve_handles(
-		T& c,
-		const data& assets
-	) -> void;
+	auto resolve_handles(T& c, const data& assets) -> void;
 }
 
 namespace gse::asset {
@@ -53,7 +47,9 @@ auto gse::asset::resolve(resource::handle<T>& h, const data& assets) -> void {
 
 template <typename T>
 auto gse::asset::resolve_handles(T& c, const data& assets) -> void {
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+	template for (constexpr auto m : std::define_static_array(
+					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+				  )) {
 		if constexpr (has_annotation<networked_tag>(m)) {
 			using m_type = typename[:std::meta::type_of(m):];
 

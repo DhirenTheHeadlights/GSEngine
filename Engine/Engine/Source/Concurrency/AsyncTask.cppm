@@ -24,9 +24,7 @@ export namespace gse::async {
 		static auto await_ready() noexcept -> bool;
 
 		template <typename P>
-		static auto await_suspend(
-			std::coroutine_handle<P> h
-		) noexcept -> std::coroutine_handle<>;
+		static auto await_suspend(std::coroutine_handle<P> h) noexcept -> std::coroutine_handle<>;
 
 		static auto await_resume() noexcept -> void;
 	};
@@ -42,19 +40,12 @@ export namespace gse::async {
 
 		auto unhandled_exception() -> void;
 
-		auto operator new(
-			std::size_t size
-		) -> void*;
+		auto operator new(std::size_t size) -> void*;
 
-		auto operator delete(
-			void* ptr,
-			std::size_t size
-		) -> void;
+		auto operator delete(void* ptr, std::size_t size) -> void;
 
 		template <typename Awaitable>
-		auto await_transform(
-			Awaitable&& aw
-		) -> decltype(auto);
+		auto await_transform(Awaitable&& aw) -> decltype(auto);
 	};
 
 	template <typename T>
@@ -63,9 +54,7 @@ export namespace gse::async {
 
 		auto get_return_object() -> task<T>;
 
-		auto return_value(
-			T value
-		) -> void;
+		auto return_value(T value) -> void;
 
 		auto result() -> T;
 	};
@@ -76,9 +65,7 @@ export namespace gse::async {
 
 		auto get_return_object() -> task<T&>;
 
-		auto return_value(
-			T& value
-		) -> void;
+		auto return_value(T& value) -> void;
 
 		auto result() -> T&;
 	};
@@ -99,27 +86,17 @@ export namespace gse::async {
 
 		task() noexcept = default;
 
-		explicit task(
-			handle_type h
-		) noexcept;
+		explicit task(handle_type h) noexcept;
 
 		~task();
 
-		task(
-			task&& other
-		) noexcept;
+		task(task&& other) noexcept;
 
-		auto operator=(
-			task&& other
-		) noexcept -> task&;
+		auto operator=(task&& other) noexcept -> task&;
 
-		task(
-			const task&
-		) = delete;
+		task(const task&) = delete;
 
-		auto operator=(
-			const task&
-		) -> task& = delete;
+		auto operator=(const task&) -> task& = delete;
 
 		auto start() -> void;
 
@@ -132,9 +109,7 @@ export namespace gse::async {
 
 			auto await_ready() const noexcept -> bool;
 
-			auto await_suspend(
-				std::coroutine_handle<> caller
-			) noexcept -> std::coroutine_handle<>;
+			auto await_suspend(std::coroutine_handle<> caller) noexcept -> std::coroutine_handle<>;
 
 			auto await_resume() -> T;
 		};
@@ -145,43 +120,23 @@ export namespace gse::async {
 		handle_type m_handle{};
 	};
 
-	auto when_all(
-		task<> a,
-		task<> b
-	) -> task<>;
+	auto when_all(task<> a, task<> b) -> task<>;
 
-	auto when_all(
-		task<> a,
-		task<> b,
-		task<> c
-	) -> task<>;
+	auto when_all(task<> a, task<> b, task<> c) -> task<>;
 
-	auto when_all(
-		task<> a,
-		task<> b,
-		task<> c,
-		task<> d
-	) -> task<>;
+	auto when_all(task<> a, task<> b, task<> c, task<> d) -> task<>;
 
-	auto when_all(
-		std::vector<task<>> tasks
-	) -> task<>;
+	auto when_all(std::vector<task<>> tasks) -> task<>;
 
-	auto sync_wait(
-		task<>&& t
-	) -> void;
+	auto sync_wait(task<>&& t) -> void;
 
 	template <typename T>
-	auto sync_wait(
-		task<T>&& t
-	) -> T;
+	auto sync_wait(task<T>&& t) -> T;
 
 	struct yield_to_worker_t {
 		auto await_ready() const noexcept -> bool;
 
-		auto await_suspend(
-			std::coroutine_handle<> h
-		) const -> void;
+		auto await_suspend(std::coroutine_handle<> h) const -> void;
 
 		auto await_resume() const noexcept -> void;
 	};
@@ -196,7 +151,10 @@ auto gse::async::final_awaiter::await_suspend(std::coroutine_handle<P> h) noexce
 
 template <typename Awaitable>
 decltype(auto) gse::async::promise_base::await_transform(Awaitable&& aw) {
-	assert(pass_recording_scope_active() == 0, "co_await is forbidden while a recording_context is alive; co_await before or after the pass scope");
+	assert(
+		pass_recording_scope_active() == 0,
+		"co_await is forbidden while a recording_context is alive; co_await before or after the pass scope"
+	);
 	return std::forward<Awaitable>(aw);
 }
 

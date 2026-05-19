@@ -14,10 +14,7 @@ import gse.math;
 namespace gse::primitives {
 	auto build_box_meshes() -> std::vector<mesh_data>;
 
-	auto build_sphere_meshes(
-		std::uint32_t sectors,
-		std::uint32_t stacks
-	) -> std::vector<mesh_data>;
+	auto build_sphere_meshes(std::uint32_t sectors, std::uint32_t stacks) -> std::vector<mesh_data>;
 }
 
 auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
@@ -27,7 +24,11 @@ auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
 	std::vector<vertex> v;
 	v.reserve(24);
 
-	auto push_face = [&](const vec3<length>& a, const vec3<length>& b, const vec3<length>& c, const vec3<length>& d, const vec3f& n) {
+	auto push_face = [&](const vec3<length>& a,
+						 const vec3<length>& b,
+						 const vec3<length>& c,
+						 const vec3<length>& d,
+						 const vec3f& n) {
 		v.push_back({ a, n, { 0.0f, 0.0f } });
 		v.push_back({ b, n, { 1.0f, 0.0f } });
 		v.push_back({ c, n, { 1.0f, 1.0f } });
@@ -54,15 +55,18 @@ auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
 	}
 
 	std::vector<mesh_data> meshes;
-	meshes.push_back({
-		.vertices = std::move(v),
-		.indices = std::move(idx),
-		.material = {},
-	});
+	meshes.push_back(
+		{
+			.vertices = std::move(v),
+			.indices = std::move(idx),
+			.material = {},
+		}
+	);
 	return meshes;
 }
 
-auto gse::primitives::build_sphere_meshes(const std::uint32_t sectors, const std::uint32_t stacks) -> std::vector<mesh_data> {
+auto gse::primitives::build_sphere_meshes(const std::uint32_t sectors, const std::uint32_t stacks)
+	-> std::vector<mesh_data> {
 	const auto radius = meters(1.0f);
 
 	std::vector<vertex> vertices;
@@ -119,11 +123,13 @@ auto gse::primitives::build_sphere_meshes(const std::uint32_t sectors, const std
 	}
 
 	std::vector<mesh_data> meshes;
-	meshes.push_back({
-		.vertices = std::move(vertices),
-		.indices = std::move(indices),
-		.material = {},
-	});
+	meshes.push_back(
+		{
+			.vertices = std::move(vertices),
+			.indices = std::move(indices),
+			.material = {},
+		}
+	);
 	return meshes;
 }
 

@@ -23,14 +23,12 @@ consteval auto gse::meta::qualified_name() -> std::string_view {
 			return std::string(std::meta::display_string_of(entity));
 		}
 
-		const auto parent = has_tmpl_args
-			? std::meta::parent_of(std::meta::template_of(entity))
-			: std::meta::parent_of(entity);
+		const auto parent =
+			has_tmpl_args ? std::meta::parent_of(std::meta::template_of(entity)) : std::meta::parent_of(entity);
 
 		std::string parent_name = self(parent);
-		std::string my_name = has_tmpl_args
-			? std::string(std::meta::identifier_of(std::meta::template_of(entity)))
-			: std::string(std::meta::identifier_of(entity));
+		std::string my_name = has_tmpl_args ? std::string(std::meta::identifier_of(std::meta::template_of(entity)))
+											: std::string(std::meta::identifier_of(entity));
 
 		if (has_tmpl_args) {
 			my_name += "<";

@@ -12,19 +12,13 @@ export namespace gse::concurrency {
 	class frame_scheduler {
 	public:
 		template <typename State>
-		auto submit(
-			move_only_function<void()> work
-		) -> void;
+		auto submit(move_only_function<void()> work) -> void;
 
-		auto flush(
-		) -> void;
+		auto flush() -> void;
 
-		auto report_frame_time(
-			time fence_wait
-		) -> void;
+		auto report_frame_time(time fence_wait) -> void;
 
-		[[nodiscard]] auto spread(
-		) const -> int;
+		[[nodiscard]] auto spread() const -> int;
 
 	private:
 		struct pending_entry {
@@ -55,10 +49,12 @@ template <typename State>
 auto gse::concurrency::frame_scheduler::submit(move_only_function<void()> work) -> void {
 	constexpr id type_id = id_of<State>();
 
-	m_pending.push_back({
-		.type = type_id,
-		.work = std::move(work),
-	});
+	m_pending.push_back(
+		{
+			.type = type_id,
+			.work = std::move(work),
+		}
+	);
 
 	if (!m_registered.contains(type_id)) {
 		m_registered[type_id] = static_cast<int>(m_registered.size());

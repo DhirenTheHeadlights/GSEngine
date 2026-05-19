@@ -47,13 +47,9 @@ export namespace gse {
 		std::vector<animation_state> states;
 		std::vector<animation_transition> transitions;
 
-		auto find_state(
-			std::string_view state_name
-		) const -> const animation_state*;
+		auto find_state(std::string_view state_name) const -> const animation_state*;
 
-		auto find_transitions_from(
-			std::string_view state_name
-		) const -> std::vector<const animation_transition*>;
+		auto find_transitions_from(std::string_view state_name) const -> std::vector<const animation_transition*>;
 	};
 }
 
@@ -66,7 +62,8 @@ auto gse::animation_graph::find_state(const std::string_view state_name) const -
 	return nullptr;
 }
 
-auto gse::animation_graph::find_transitions_from(const std::string_view state_name) const -> std::vector<const animation_transition*> {
+auto gse::animation_graph::find_transitions_from(const std::string_view state_name) const
+	-> std::vector<const animation_transition*> {
 	std::vector<const animation_transition*> result;
 	for (const auto& transition : transitions) {
 		if (transition.from_state == state_name) {

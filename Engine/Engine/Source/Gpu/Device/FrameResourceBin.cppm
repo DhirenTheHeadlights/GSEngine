@@ -24,24 +24,14 @@ export namespace gse::gpu {
 
 		~frame_resource_bin();
 
-		frame_resource_bin(
-			frame_resource_bin&&
-		) noexcept = default;
+		frame_resource_bin(frame_resource_bin&&) noexcept = default;
 
-		auto operator=(
-			frame_resource_bin&&
-		) noexcept -> frame_resource_bin& = default;
+		auto operator=(frame_resource_bin&&) noexcept -> frame_resource_bin& = default;
 
 		template <typename T>
-		auto retain(
-			queue_id queue,
-			std::uint64_t until_value,
-			T resource
-		) -> void;
+		auto retain(queue_id queue, std::uint64_t until_value, T resource) -> void;
 
-		auto drain(
-			std::span<const queue_progress> progress
-		) -> void;
+		auto drain(std::span<const queue_progress> progress) -> void;
 
 		auto wait_idle_clear() -> void;
 
@@ -56,9 +46,7 @@ export namespace gse::gpu {
 		struct retained_holder final : retained_base {
 			T m_value;
 
-			explicit retained_holder(
-				T&& v
-			) : m_value(std::move(v)) {
+			explicit retained_holder(T&& v) : m_value(std::move(v)) {
 			}
 		};
 
@@ -78,11 +66,13 @@ gse::gpu::frame_resource_bin::~frame_resource_bin() = default;
 template <typename T>
 auto gse::gpu::frame_resource_bin::retain(const queue_id queue, const std::uint64_t until_value, T resource) -> void {
 	std::lock_guard lock(*m_mutex);
-	m_slots.push_back({
-		.m_queue = queue,
-		.m_until_value = until_value,
-		.m_holder = std::make_unique<retained_holder<T>>(std::move(resource)),
-	});
+	m_slots.push_back(
+		{
+			.m_queue = queue,
+			.m_until_value = until_value,
+			.m_holder = std::make_unique<retained_holder<T>>(std::move(resource)),
+		}
+	);
 }
 
 auto gse::gpu::frame_resource_bin::drain(std::span<const queue_progress> progress) -> void {

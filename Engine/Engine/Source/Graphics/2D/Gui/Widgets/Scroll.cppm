@@ -37,13 +37,9 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 
 	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 
-	const float available_width = info.size.x() > 0.f
-		? info.size.x()
-		: content_rect.right() - ctx.layout_cursor.x();
+	const float available_width = info.size.x() > 0.f ? info.size.x() : content_rect.right() - ctx.layout_cursor.x();
 
-	const float available_height = info.size.y() > 0.f
-		? info.size.y()
-		: ctx.layout_cursor.y() - content_rect.bottom();
+	const float available_height = info.size.y() > 0.f ? info.size.y() : ctx.layout_cursor.y() - content_rect.bottom();
 
 	const ui_rect visible_rect = ui_rect::from_position_size(
 		{ ctx.layout_cursor.x(), ctx.layout_cursor.y() },
@@ -57,7 +53,13 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 	return scroll_handle{ ctx, state, visible_rect, saved_layout_y, info.config };
 }
 
-auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const float content_start_y, const scroll_config& config) -> void {
+auto gse::gui::run_scroll_end(
+	draw_context& ctx,
+	scroll_state& state,
+	const ui_rect& visible_rect,
+	const float content_start_y,
+	const scroll_config& config
+) -> void {
 	const float visible_height = visible_rect.height();
 	const float content_height = content_start_y - ctx.layout_cursor.y();
 	state.content_height = content_height;
@@ -97,20 +99,16 @@ auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_r
 		return;
 	}
 
-	const bool show_scrollbar = !config.auto_hide_scrollbar ||
-		mouse_in_region ||
-		state.scrollbar_held ||
-		state.scrollbar_hovered;
+	const bool show_scrollbar =
+		!config.auto_hide_scrollbar || mouse_in_region || state.scrollbar_held || state.scrollbar_hovered;
 
 	if (!show_scrollbar) {
 		return;
 	}
 
 	const float scrollbar_track_height = visible_height;
-	const float scrollbar_height = std::max(
-		config.scrollbar_min_height,
-		(visible_height / content_height) * scrollbar_track_height
-	);
+	const float scrollbar_height =
+		std::max(config.scrollbar_min_height, (visible_height / content_height) * scrollbar_track_height);
 
 	const float scroll_ratio = state.offset / max_scroll;
 	const float scrollbar_travel = scrollbar_track_height - scrollbar_height;
@@ -146,10 +144,8 @@ auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_r
 		}
 	}
 
-	if (scrollbar_track_rect.contains(mouse_pos) &&
-		!scrollbar_rect.contains(mouse_pos) &&
-		ctx.input.mouse_button_pressed(mouse_button::button_1) &&
-		!state.scrollbar_held) {
+	if (scrollbar_track_rect.contains(mouse_pos) && !scrollbar_rect.contains(mouse_pos) &&
+		ctx.input.mouse_button_pressed(mouse_button::button_1) && !state.scrollbar_held) {
 		const float click_ratio = (visible_rect.top() - mouse_pos.y()) / scrollbar_track_height;
 		const float new_offset = std::clamp(click_ratio, 0.f, 1.f) * max_scroll;
 		state.target_offset = new_offset;
@@ -161,12 +157,14 @@ auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_r
 	vec4f track_color = ctx.style.color_widget_background;
 	track_color.w() *= 0.3f;
 
-	ctx.queue_sprite({
-		.rect = scrollbar_track_rect,
-		.color = track_color,
-		.texture = ctx.blank_texture,
-		.layer = ctx.current_layer,
-	});
+	ctx.queue_sprite(
+		{
+			.rect = scrollbar_track_rect,
+			.color = track_color,
+			.texture = ctx.blank_texture,
+			.layer = ctx.current_layer,
+		}
+	);
 
 	vec4f bar_color = ctx.style.color_widget_background;
 	if (state.scrollbar_held) {
@@ -176,10 +174,12 @@ auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_r
 		bar_color = ctx.style.color_widget_hovered;
 	}
 
-	ctx.queue_sprite({
-		.rect = scrollbar_rect,
-		.color = bar_color,
-		.texture = ctx.blank_texture,
-		.layer = ctx.current_layer,
-	});
+	ctx.queue_sprite(
+		{
+			.rect = scrollbar_rect,
+			.color = bar_color,
+			.texture = ctx.blank_texture,
+			.layer = ctx.current_layer,
+		}
+	);
 }

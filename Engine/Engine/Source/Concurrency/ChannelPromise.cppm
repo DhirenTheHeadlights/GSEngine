@@ -27,9 +27,7 @@ export namespace gse {
 
 			[[nodiscard]] auto await_ready() const noexcept -> bool;
 
-			auto await_suspend(
-				std::coroutine_handle<> h
-			) -> bool;
+			auto await_suspend(std::coroutine_handle<> h) -> bool;
 
 			auto await_resume() -> T;
 		};
@@ -42,9 +40,7 @@ export namespace gse {
 
 		auto operator co_await() noexcept -> awaiter;
 
-		explicit channel_future(
-			std::shared_ptr<promise_state<T>> state
-		);
+		explicit channel_future(std::shared_ptr<promise_state<T>> state);
 
 	private:
 		std::shared_ptr<promise_state<T>> m_state;
@@ -55,13 +51,9 @@ export namespace gse {
 	public:
 		channel_promise() = default;
 
-		explicit channel_promise(
-			std::shared_ptr<promise_state<T>> state
-		);
+		explicit channel_promise(std::shared_ptr<promise_state<T>> state);
 
-		auto fulfill(
-			T value
-		) const -> void;
+		auto fulfill(T value) const -> void;
 
 		[[nodiscard]] auto valid() const -> bool;
 
@@ -156,8 +148,5 @@ auto gse::channel_promise<T>::valid() const -> bool {
 template <typename T>
 auto gse::make_promise() -> std::pair<channel_future<T>, channel_promise<T>> {
 	auto state = std::make_shared<promise_state<T>>();
-	return {
-		channel_future<T>(state),
-		channel_promise<T>(state)
-	};
+	return { channel_future<T>(state), channel_promise<T>(state) };
 }

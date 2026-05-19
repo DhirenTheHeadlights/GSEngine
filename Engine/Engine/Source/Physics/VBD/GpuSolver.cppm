@@ -58,18 +58,11 @@ export namespace gse::vbd {
 
 	class gpu_solver {
 	public:
-		auto create_buffers(
-			const gpu::context::data& ctx
-		) -> void;
+		auto create_buffers(const gpu::context::data& ctx) -> void;
 
-		auto initialize_compute(
-			run_context& ctx,
-			const gpu::context::data& gpu_s
-		) -> async::task<>;
+		auto initialize_compute(run_context& ctx, const gpu::context::data& gpu_s) -> async::task<>;
 
-		auto dispatch_compute(
-			frame_context& ctx
-		) -> async::task<>;
+		auto dispatch_compute(frame_context& ctx) -> async::task<>;
 
 		auto compute_initialized() const -> bool;
 
@@ -92,9 +85,7 @@ export namespace gse::vbd {
 
 		auto read_grounded() const -> std::span<const std::uint32_t>;
 
-		auto query_body_snapshot(
-			std::uint32_t body_index
-		) const -> std::optional<body_state>;
+		auto query_body_snapshot(std::uint32_t body_index) const -> std::optional<body_state>;
 
 		auto pending_dispatch() const -> bool;
 
@@ -108,9 +99,7 @@ export namespace gse::vbd {
 
 		auto dt() const -> time_step;
 
-		auto snapshot_buffer(
-			std::uint32_t slot
-		) const -> const gpu::buffer&;
+		auto snapshot_buffer(std::uint32_t slot) const -> const gpu::buffer&;
 
 		auto latest_snapshot_slot() const -> std::uint32_t;
 

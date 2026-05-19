@@ -37,13 +37,9 @@ export namespace gse::vulkan {
 
 		~basic_allocation() override;
 
-		basic_allocation(
-			basic_allocation&& other
-		) noexcept;
+		basic_allocation(basic_allocation&& other) noexcept;
 
-		auto operator=(
-			basic_allocation&& other
-		) noexcept -> basic_allocation&;
+		auto operator=(basic_allocation&& other) noexcept -> basic_allocation&;
 
 		[[nodiscard]] auto memory() const -> std::uint64_t;
 
@@ -72,7 +68,16 @@ export namespace gse::vulkan {
 }
 
 template <typename Allocator>
-gse::vulkan::basic_allocation<Allocator>::basic_allocation(const std::uint64_t memory, const gpu::device_size size, const gpu::device_size offset, void* mapped, sub_allocation* owner, Allocator* alloc, const Allocator* device, allocation_debug_info debug_info)
+gse::vulkan::basic_allocation<Allocator>::basic_allocation(
+	const std::uint64_t memory,
+	const gpu::device_size size,
+	const gpu::device_size offset,
+	void* mapped,
+	sub_allocation* owner,
+	Allocator* alloc,
+	const Allocator* device,
+	allocation_debug_info debug_info
+)
 	: m_memory(memory),
 	  m_size(size),
 	  m_offset(offset),

@@ -6,20 +6,17 @@ import gse.std_meta;
 import :annotations;
 
 namespace gse::internal {
-	consteval auto is_user_namespace(
-		std::meta::info type
-	) -> bool;
+	consteval auto is_user_namespace(std::meta::info type) -> bool;
 
 	inline thread_local int format_depth = 0;
 
 	template <typename T, typename CharT>
-	concept reflectable_user_class = (std::is_class_v<T> && !std::is_polymorphic_v<T> && std::is_same_v<CharT, char> && is_user_namespace(^^T));
+	concept reflectable_user_class =
+		(std::is_class_v<T> && !std::is_polymorphic_v<T> && std::is_same_v<CharT, char> && is_user_namespace(^^T));
 }
 
 consteval auto gse::internal::is_user_namespace(std::meta::info type) -> bool {
-	const auto entity = std::meta::has_template_arguments(type)
-		? std::meta::template_of(type)
-		: type;
+	const auto entity = std::meta::has_template_arguments(type) ? std::meta::template_of(type) : type;
 	auto parent = std::meta::parent_of(entity);
 	while (std::meta::has_identifier(parent)) {
 		const auto name = std::meta::identifier_of(parent);
@@ -35,15 +32,10 @@ export template <typename T, typename CharT>
 requires gse::internal::reflectable_user_class<T, CharT>
 struct std::formatter<T, CharT> {
 	template <typename ParseContext>
-	constexpr auto parse(
-		ParseContext& ctx
-	);
+	constexpr auto parse(ParseContext& ctx);
 
 	template <typename FormatContext>
-	auto format(
-		const T& value,
-		FormatContext& ctx
-	) const;
+	auto format(const T& value, FormatContext& ctx) const;
 };
 
 template <typename T, typename CharT>
@@ -62,7 +54,9 @@ auto std::formatter<T, CharT>::format(const T& value, FormatContext& ctx) const 
 	const auto outer = std::string(static_cast<std::size_t>(gse::internal::format_depth - 1) * 2, ' ');
 	auto out = std::format_to(ctx.out(), "{{");
 	bool first = true;
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+	template for (constexpr auto m : std::define_static_array(
+					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+				  )) {
 		if constexpr (!gse::has_annotation<gse::format_skip_tag>(m)) {
 			if (!first) {
 				out = std::format_to(out, ",");

@@ -27,12 +27,7 @@ export namespace gse::settings {
 		std::unordered_map<std::string, gui::dropdown_state> dropdowns;
 	};
 
-	using custom_draw_fn = void (*)(
-		gui::builder& b,
-		panel_state& ps,
-		std::string_view label,
-		void* field
-	);
+	using custom_draw_fn = void (*)(gui::builder& b, panel_state& ps, std::string_view label, void* field);
 
 	struct draw_with {
 		custom_draw_fn fn;
@@ -58,17 +53,18 @@ export namespace gse::settings {
 
 namespace gse::settings {
 	template <typename E>
-	auto draw_enum_dropdown(
-		gui::builder& b,
-		panel_state& ps,
-		std::string_view key,
-		std::string_view label,
-		E& ref
-	) -> void;
+	auto draw_enum_dropdown(gui::builder& b, panel_state& ps, std::string_view key, std::string_view label, E& ref)
+		-> void;
 }
 
 template <typename E>
-auto gse::settings::draw_enum_dropdown(gui::builder& b, panel_state& ps, const std::string_view key, const std::string_view label, E& ref) -> void {
+auto gse::settings::draw_enum_dropdown(
+	gui::builder& b,
+	panel_state& ps,
+	const std::string_view key,
+	const std::string_view label,
+	E& ref
+) -> void {
 	static const std::vector<std::string> options = [] {
 		std::vector<std::string> v;
 		template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
@@ -108,7 +104,13 @@ auto gse::settings::draw_enum_dropdown(gui::builder& b, panel_state& ps, const s
 }
 
 template <typename S>
-auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, const std::string_view category, void* settings_ptr, void* channels_writer) -> void {
+auto gse::settings::draw_struct_thunk(
+	void* gui_builder,
+	void* panel_state_ptr,
+	const std::string_view category,
+	void* settings_ptr,
+	void* channels_writer
+) -> void {
 	using data_t = typename S::data;
 	auto& b = *static_cast<gui::builder*>(gui_builder);
 	auto& ps = *static_cast<panel_state*>(panel_state_ptr);
@@ -117,7 +119,9 @@ auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, 
 
 	b.draw<gui::section>({ .title = category });
 
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked()))) {
+	template for (constexpr auto m : std::define_static_array(
+					  std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked())
+				  )) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
@@ -186,7 +190,13 @@ auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, 
 	}
 }
 
-auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& channels, const save::registry& save_reg, const std::string_view category_filter) -> void {
+auto gse::settings::panel(
+	gui::builder& b,
+	panel_state& ps,
+	channel_writer& channels,
+	const save::registry& save_reg,
+	const std::string_view category_filter
+) -> void {
 	save_reg.for_each_entry([&](const register_settings_type& entry) {
 		if (!category_filter.empty() && entry.category != category_filter) {
 			return;

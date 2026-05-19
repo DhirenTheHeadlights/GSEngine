@@ -28,33 +28,21 @@ export namespace gse::vulkan {
 
 		~aftermath();
 
-		aftermath(
-			aftermath&&
-		) noexcept = default;
+		aftermath(aftermath&&) noexcept = default;
 
-		auto operator=(
-			aftermath&&
-		) noexcept -> aftermath& = default;
+		auto operator=(aftermath&&) noexcept -> aftermath& = default;
 
-		[[nodiscard]] static auto create(
-			settings cfg
-		) -> aftermath;
+		[[nodiscard]] static auto create(settings cfg) -> aftermath;
 
 		[[nodiscard]] auto available() const -> bool;
 
 		[[nodiscard]] auto required_device_extensions() const -> std::span<const char* const>;
 
-		[[nodiscard]] auto device_create_info_pnext(
-			void* next
-		) -> void*;
+		[[nodiscard]] auto device_create_info_pnext(void* next) -> void*;
 
-		auto wait_for_crash_dump(
-			time timeout = seconds(5)
-		) -> void;
+		auto wait_for_crash_dump(time timeout = seconds(5)) -> void;
 
-		static auto register_spirv(
-			std::span<const std::uint32_t> spirv
-		) -> void;
+		static auto register_spirv(std::span<const std::uint32_t> spirv) -> void;
 
 	private:
 		aftermath();
