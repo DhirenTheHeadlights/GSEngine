@@ -4,14 +4,10 @@ import std;
 
 import :camera_system;
 import :mesh;
-import :skinned_mesh;
 import :model;
-import :skinned_model;
 import :render_component;
-import :animation_component;
 import :material;
 import :primitive_resolver;
-import :skeleton;
 import :texture;
 
 import gse.math;
@@ -27,13 +23,6 @@ import gse.gpu;
 import gse.physics;
 
 import :shared_shaders;
-
-export namespace gse::renderer::geometry_collector {
-	struct[[= shaders::shader_struct]] joint_data {
-		mat4f inverse_bind;
-		std::uint32_t parent_index;
-	};
-}
 
 export namespace gse::renderer {
 	using frustum_planes = std::array<vec4f, 6>;
@@ -128,27 +117,20 @@ export namespace gse::renderer {
 		return planes;
 	}
 
-	template <typename ModelType>
-	struct batch_key {
-		const ModelType* model_ptr;
+	struct normal_batch_key {
+		const model* model_ptr;
 		std::size_t mesh_index;
 
-		auto operator==(const batch_key&) const -> bool = default;
+		auto operator==(const normal_batch_key&) const -> bool = default;
 	};
 
-	template <typename ModelType>
-	struct instance_batch {
-		batch_key<ModelType> key;
+	struct normal_instance_batch {
+		normal_batch_key key;
 		std::uint32_t first_instance;
 		std::uint32_t instance_count;
 		vec3<length> world_aabb_min;
 		vec3<length> world_aabb_max;
 	};
-
-	using normal_batch_key = batch_key<model>;
-	using normal_instance_batch = instance_batch<model>;
-	using skinned_batch_key = batch_key<skinned_model>;
-	using skinned_instance_batch = instance_batch<skinned_model>;
 }
 
 export namespace gse::renderer::geometry_collector {
@@ -170,14 +152,9 @@ export namespace gse::renderer::geometry_collector {
 		static constexpr std::size_t max_batches = 256;
 
 		std::vector<owned_render_queue_entry> render_queue;
-		std::vector<skinned_render_queue_entry> skinned_render_queue;
 		static_vector<normal_instance_batch, max_batches> normal_batches;
-		static_vector<skinned_instance_batch, max_batches> skinned_batches;
 
 		std::vector<shaders::common::instance_data> instance_staging;
-		std::vector<mat4f> skin_staging;
-		std::vector<mat4f> local_pose_staging;
-		std::uint32_t pending_compute_instance_count = 0;
 
 		std::vector<physics_mapping_entry> physics_mappings;
 		std::uint32_t physics_mapping_count = 0;
@@ -193,20 +170,11 @@ export namespace gse::renderer::geometry_collector {
 
 	struct system {
 		struct data {
-			resource::handle<skeleton> current_skeleton;
-			[[= gse::shared]] std::uint32_t current_joint_count = 0;
-
 			[[= gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
 			static constexpr std::size_t max_instances = 4096;
-			static constexpr std::size_t max_skin_matrices = 256 * 128;
-			static constexpr std::size_t max_joints = 256;
 
 			[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
-			[[= gse::shared]] per_frame_resource<gpu::buffer> skinned_indirect_commands_buffer;
-			[[= gse::shared]] gpu::buffer skeleton_buffer;
-			[[= gse::shared]] per_frame_resource<gpu::buffer> local_pose_buffer;
-			[[= gse::shared]] per_frame_resource<gpu::buffer> skin_buffer;
 		};
 
 		static auto run(
@@ -219,7 +187,5 @@ export namespace gse::renderer::geometry_collector {
 		) -> async::task<>;
 
 		static auto frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d) -> async::task<>;
-
-		static auto upload_skeleton_data(const data& d, const skeleton& skel) -> void;
 	};
 }

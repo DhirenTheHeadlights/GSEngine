@@ -14,7 +14,6 @@ import gse.gpu;
 import gse.assets;
 
 import :camera_system;
-import gse.log;
 
 namespace gse::renderer::physics_debug {
 	struct debug_vertex {
@@ -24,20 +23,10 @@ namespace gse::renderer::physics_debug {
 }
 
 export namespace gse::renderer::physics_debug {
-	struct debug_stats {
-		std::uint32_t body_count = 0;
-		std::uint32_t sleeping_count = 0;
-		std::uint32_t motor_count = 0;
-		std::uint32_t colliding_pairs = 0;
-		velocity max_linear_speed{};
-		angular_velocity max_angular_speed{};
-		length max_penetration{};
-		bool gpu_solver_active = false;
-	};
-
-	struct render_data {
-		std::vector<debug_vertex> vertices;
-		debug_stats stats;
+	struct[[= shaders::shader_struct]] shape_instance {
+		std::uint32_t body_index;
+		vec3<length> shape_scale;
+		vec3f color;
 	};
 
 	struct system {
@@ -45,14 +34,40 @@ export namespace gse::renderer::physics_debug {
 			[[= gse::settings::describe<
 				"Draw collision shapes, contact points, and joint anchors over the scene.">{}]] bool enabled = true;
 
-			debug_stats latest_stats;
+			gpu::pipeline pipeline_instanced;
+			gpu::pipeline pipeline_lines;
 
-			gpu::pipeline pipeline;
-			per_frame_resource<gpu::descriptor_region> descriptors;
+			per_frame_resource<gpu::descriptor_region> descriptors_box;
+			per_frame_resource<gpu::descriptor_region> descriptors_sphere;
+			per_frame_resource<gpu::descriptor_region> descriptors_capsule;
+			per_frame_resource<gpu::descriptor_region> descriptors_lines;
+
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 
-			per_frame_resource<gpu::buffer> vertex_buffers;
-			per_frame_resource<std::size_t> max_vertices;
+			gpu::buffer unit_box_vb;
+			gpu::buffer unit_sphere_vb;
+			gpu::buffer unit_capsule_vb;
+			std::uint32_t unit_box_vert_count = 0;
+			std::uint32_t unit_sphere_vert_count = 0;
+			std::uint32_t unit_capsule_vert_count = 0;
+
+			per_frame_resource<gpu::buffer> cpu_body_buffers;
+			per_frame_resource<std::size_t> cpu_body_capacity;
+			std::vector<vbd::body_state> cpu_body_staging;
+
+			per_frame_resource<gpu::buffer> box_instance_buffers;
+			per_frame_resource<gpu::buffer> sphere_instance_buffers;
+			per_frame_resource<gpu::buffer> capsule_instance_buffers;
+			per_frame_resource<std::size_t> box_instance_capacity;
+			per_frame_resource<std::size_t> sphere_instance_capacity;
+			per_frame_resource<std::size_t> capsule_instance_capacity;
+			std::vector<shape_instance> box_instances;
+			std::vector<shape_instance> sphere_instances;
+			std::vector<shape_instance> capsule_instances;
+
+			per_frame_resource<gpu::buffer> line_vertex_buffers;
+			per_frame_resource<std::size_t> line_vertex_capacity;
+			std::vector<debug_vertex> line_vertices;
 		};
 
 		static auto run(
@@ -69,50 +84,5 @@ export namespace gse::renderer::physics_debug {
 			data& d,
 			shared_view<camera::system> cam_state
 		) -> async::task<>;
-
-	private:
-		static auto add_line(
-			const vec3<position>& a,
-			const vec3<position>& b,
-			const vec3f& color,
-			std::vector<debug_vertex>& out_vertices
-		) -> void;
-
-		static auto build_obb_lines_for_collider(
-			const physics::transform_component& tc,
-			const physics::box_shape& shape,
-			std::vector<debug_vertex>& out_vertices
-		) -> void;
-
-		static auto build_sphere_lines_for_collider(
-			const physics::transform_component& tc,
-			const physics::sphere_shape& shape,
-			std::vector<debug_vertex>& out_vertices
-		) -> void;
-
-		static auto build_capsule_lines_for_collider(
-			const physics::transform_component& tc,
-			const physics::capsule_shape& shape,
-			std::vector<debug_vertex>& out_vertices
-		) -> void;
-
-		static auto build_shape_lines_for_collider(
-			const physics::collision_component& coll,
-			const physics::transform_component* tc,
-			std::vector<debug_vertex>& out_vertices
-		) -> void;
-
-		static auto build_contact_debug_for_collider(
-			const collision_information& info,
-			const physics::motion_component& mc,
-			std::vector<debug_vertex>& out_vertices
-		) -> void;
-
-		static auto ensure_vertex_capacity(
-			data& d,
-			gpu::device& device,
-			std::size_t frame_index,
-			std::size_t required_vertex_count
-		) -> void;
 	};
 }

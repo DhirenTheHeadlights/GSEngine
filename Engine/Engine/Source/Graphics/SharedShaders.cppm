@@ -23,8 +23,6 @@ export namespace gse::shaders::common {
 	struct[[= shader_struct]] instance_data {
 		spatial_matrix model_matrix;
 		spatial_matrix normal_matrix;
-		std::uint32_t skin_offset;
-		std::uint32_t joint_count;
 		std::uint32_t material_index;
 		vec3f tint;
 	};
@@ -111,13 +109,9 @@ export namespace gse::shaders::standard_3d {
 		using element = common::camera_data;
 	};
 
-	struct[[= binding<1, 3>{}, = ssbo_readonly]] skin_matrices {
-		using element = mat4f;
-	};
-
 	struct[[= binding<1, 4>{}, = ssbo_readonly]] instance_data_buffer {
 		using element = common::instance_data;
 	};
 
-	using shader_binding_types = type_pack<camera_ubo, skin_matrices, instance_data_buffer, bindless::textures>;
+	using shader_binding_types = type_pack<camera_ubo, instance_data_buffer, bindless::textures>;
 }

@@ -4,7 +4,6 @@ import std;
 
 import :geometry_collector;
 import :cull_compute_renderer;
-import :skin_compute_renderer;
 import :physics_transform_renderer;
 import :camera_system;
 
@@ -24,9 +23,6 @@ export namespace gse::renderer::depth_prepass {
 		struct data {
 			gpu::pipeline meshlet_pipeline;
 			per_frame_resource<gpu::descriptor_region> meshlet_descriptors;
-
-			gpu::pipeline skinned_pipeline;
-			per_frame_resource<gpu::descriptor_region> skinned_descriptors;
 
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		};

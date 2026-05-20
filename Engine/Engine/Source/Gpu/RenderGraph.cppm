@@ -722,7 +722,7 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(
 	const gpu::image_barrier dst_to_read{
 		.src_stages = gpu::pipeline_stage_flag::transfer,
 		.src_access = gpu::access_flag::transfer_write,
-		.dst_stages = gpu::pipeline_stage_flag::compute_shader,
+		.dst_stages = gpu::pipeline_stage_flag::compute_shader | gpu::pipeline_stage_flag::fragment_shader,
 		.dst_access = gpu::access_flag::shader_sampled_read,
 		.old_layout = gpu::image_layout::transfer_dst,
 		.new_layout = gpu::image_layout::shader_read_only,

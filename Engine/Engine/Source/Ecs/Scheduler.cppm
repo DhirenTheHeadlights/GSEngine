@@ -64,6 +64,8 @@ export namespace gse {
 
 		auto set_advance_hook(std::function<void(id system_id, std::string_view phase)> fn) -> void;
 
+		auto set_settings_register_hook(std::function<void(settings::register_settings_type)> fn) -> void;
+
 		[[nodiscard]] auto current_phase() const -> scheduler_phase;
 
 		auto enter_running() -> void;
@@ -147,6 +149,7 @@ export namespace gse {
 		std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
 		std::function<void(id, std::string_view)> m_advance_hook;
+		std::function<void(settings::register_settings_type)> m_settings_register_hook;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
 		async::rw_mutex_registry m_access_mutexes;

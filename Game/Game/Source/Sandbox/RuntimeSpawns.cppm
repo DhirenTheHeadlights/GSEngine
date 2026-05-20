@@ -4,6 +4,9 @@ import std;
 import gse;
 
 import :entity_builders;
+import :humanoid_skeleton;
+import :skeleton_spawn;
+import :test_skeletons;
 import :tumbler;
 
 export namespace gs {
@@ -44,6 +47,10 @@ namespace gs {
 	auto spawn_slider_elevator(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
 
 	auto spawn_pendulum_chain(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+
+	auto spawn_dangling_t(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+
+	auto spawn_humanoid_test(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
 }
 
 auto gs::spawn_inverted_mass_pyramid(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
@@ -515,12 +522,55 @@ auto gs::spawn_physics_stress(gse::scene& s) -> void {
 	s.spawn("Bouncy Sphere", gs::sphere(gse::vec3<gse::position>(-15.f, 8.f, 0.f), gse::meters(1.f)));
 }
 
+auto gs::spawn_dangling_t(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
+	const auto anchor_pos = origin + gse::vec3<gse::length>(0.f, 8.f, 0.f);
+	const auto anchor_id =
+		s.spawn("Skeleton Anchor", gs::static_box(anchor_pos, gse::vec3<gse::length>(gse::meters(0.5f))));
+
+	const auto torso_pos = anchor_pos + gse::vec3<gse::length>(0.f, -0.65f, 0.f);
+	const auto skel = gs::test_skeleton_t();
+	const auto handle = gs::spawn_skeleton(s, skel, torso_pos);
+
+	s.build("Skeleton Anchor Joint")
+		.with<gse::physics::joint_spec>({
+			.entity_a = anchor_id,
+			.entity_b = handle.bone_ids[0],
+			.config =
+				gse::physics::fixed_joint{
+					.anchor_a = gse::vec3<gse::displacement>(0.f, -0.25f, 0.f),
+					.anchor_b = gse::vec3<gse::displacement>(0.f, 0.4f, 0.f),
+				},
+		});
+}
+
+auto gs::spawn_humanoid_test(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
+	const auto anchor_pos = origin + gse::vec3<gse::length>(0.f, 4.f, 0.f);
+	const auto anchor_id =
+		s.spawn("Humanoid Anchor", gs::static_box(anchor_pos, gse::vec3<gse::length>(gse::meters(0.5f))));
+
+	const auto pelvis_pos = anchor_pos + gse::vec3<gse::length>(0.f, -0.65f, 0.f);
+	const auto handle = gs::spawn_humanoid(s, pelvis_pos);
+
+	s.build("Humanoid Anchor Joint")
+		.with<gse::physics::joint_spec>({
+			.entity_a = anchor_id,
+			.entity_b = handle.bone_ids[0],
+			.config =
+				gse::physics::fixed_joint{
+					.anchor_a = gse::vec3<gse::displacement>(0.f, -0.25f, 0.f),
+					.anchor_b = gse::vec3<gse::displacement>(0.f, 0.1f, 0.f),
+				},
+		});
+}
+
 auto gs::spawn_joint_test(gse::scene& s) -> void {
 	spawn_fixed_joint(s, gse::vec3<gse::position>(-20.f, 0.f, 0.f));
 	spawn_distance_pendulum(s, gse::vec3<gse::position>(-10.f, 0.f, 0.f));
 	spawn_hinge_door(s, gse::vec3<gse::position>(0.f, 0.f, 0.f));
 	spawn_slider_elevator(s, gse::vec3<gse::position>(10.f, 0.f, 0.f));
 	spawn_pendulum_chain(s, gse::vec3<gse::position>(20.f, 0.f, 0.f));
+	spawn_dangling_t(s, gse::vec3<gse::position>(0.f, 0.f, 12.f));
+	spawn_humanoid_test(s, gse::vec3<gse::position>(-12.f, 0.f, 12.f));
 
 	s.spawn("Joint Test Sphere", gs::sphere(gse::vec3<gse::position>(0.f, 6.f, -8.f), gse::meters(1.f)));
 }

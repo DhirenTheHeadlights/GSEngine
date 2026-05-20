@@ -4,11 +4,8 @@ import std;
 
 import :renderer;
 import :camera_system;
-import :clip;
 import :font;
 import :model;
-import :skinned_model;
-import :skeleton;
 import :texture;
 import :capture_renderer;
 import :cull_compute_renderer;
@@ -19,7 +16,6 @@ import :light_culling_renderer;
 import :physics_debug_renderer;
 import :physics_transform_renderer;
 import :rt_shadow_renderer;
-import :skin_compute_renderer;
 import :ui_renderer;
 import :settings;
 
@@ -68,7 +64,8 @@ auto gse::renderer::system::run(
 		const auto window_size = window::viewport(window_s);
 		const auto new_viewport = vec2f(static_cast<float>(window_size.x()), static_cast<float>(window_size.y()));
 
-		if (new_viewport.x() != d.last_viewport.x() || new_viewport.y() != d.last_viewport.y()) {
+		if (new_viewport.x() > 0.f && new_viewport.y() > 0.f &&
+			(new_viewport.x() != d.last_viewport.x() || new_viewport.y() != d.last_viewport.y())) {
 			ctx.channels.push<camera::viewport_update>({ .size = new_viewport });
 			d.last_viewport = new_viewport;
 		}

@@ -4,7 +4,6 @@ import std;
 
 import :cull_compute_renderer;
 import :geometry_collector;
-import :skin_compute_renderer;
 import :camera_system;
 
 import gse.os;
@@ -85,21 +84,14 @@ auto gse::renderer::cull_compute::system::run(
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.normal_descriptors[i] =
 			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
-		d.skinned_descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		auto write_shared = [&](gpu::descriptor_writer& w) -> gpu::descriptor_writer& {
-			return w.buffer<frustum_ubo>(d.frustum_buffer[i], 0, sizeof(std::array<vec4f, 6>))
-				.buffer<batches>(d.batch_info_buffer[i]);
-		};
-
 		gpu::descriptor_writer normal_writer(gpu::context::device_handle(*gpu_s.device), d.normal_descriptors[i]);
-		write_shared(normal_writer).buffer<indirect_commands>(gc_r.normal_indirect_commands_buffer[i]).commit();
-
-		gpu::descriptor_writer skinned_writer(gpu::context::device_handle(*gpu_s.device), d.skinned_descriptors[i]);
-		write_shared(skinned_writer).buffer<indirect_commands>(gc_r.skinned_indirect_commands_buffer[i]).commit();
+		normal_writer.buffer<frustum_ubo>(d.frustum_buffer[i], 0, sizeof(std::array<vec4f, 6>))
+			.buffer<batches>(d.batch_info_buffer[i])
+			.buffer<indirect_commands>(gc_r.normal_indirect_commands_buffer[i])
+			.commit();
 	}
 
 	co_return;
@@ -128,9 +120,8 @@ auto gse::renderer::cull_compute::system::frame(
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	const auto normal_count = static_cast<std::uint32_t>(data.normal_batches.size());
-	const auto skinned_count = static_cast<std::uint32_t>(data.skinned_batches.size());
 
-	if (normal_count == 0 && skinned_count == 0) {
+	if (normal_count == 0) {
 		co_return;
 	}
 
@@ -139,20 +130,11 @@ auto gse::renderer::cull_compute::system::frame(
 	d.frustum_buffer[frame_index].host_write(planes);
 
 	using batch_info = renderer::cull_compute::batch_info;
-	std::vector<batch_info> batch_staging(normal_count + skinned_count);
+	std::vector<batch_info> batch_staging(normal_count);
 
 	for (std::size_t i = 0; i < data.normal_batches.size(); ++i) {
 		const auto& b = data.normal_batches[i];
 		batch_staging[i] = {
-			.first_instance = b.first_instance,
-			.instance_count = b.instance_count,
-			.aabb_min = b.world_aabb_min,
-			.aabb_max = b.world_aabb_max,
-		};
-	}
-	for (std::size_t i = 0; i < data.skinned_batches.size(); ++i) {
-		const auto& b = data.skinned_batches[i];
-		batch_staging[normal_count + i] = {
 			.first_instance = b.first_instance,
 			.instance_count = b.instance_count,
 			.aabb_min = b.world_aabb_min,
@@ -166,29 +148,14 @@ auto gse::renderer::cull_compute::system::frame(
 
 	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.pipeline);
 
-	if (normal_count > 0) {
-		rec.bind_descriptors(d.pipeline, d.normal_descriptors[frame_index]);
-		const gpu::typed_push_constants<push_constants> pc{
-			.data = {
-				.batch_offset = 0,
-				.indirect_stride = static_cast<std::uint32_t>(sizeof(gpu::draw_mesh_tasks_indirect_command)),
-			},
-			.stages = gpu::stage_flag::compute,
-		};
-		rec.push(d.pipeline, pc);
-		rec.dispatch(normal_count, 1, 1);
-	}
-
-	if (skinned_count > 0) {
-		rec.bind_descriptors(d.pipeline, d.skinned_descriptors[frame_index]);
-		const gpu::typed_push_constants<push_constants> pc{
-			.data = {
-				.batch_offset = normal_count,
-				.indirect_stride = static_cast<std::uint32_t>(sizeof(gpu::draw_indexed_indirect_command)),
-			},
-			.stages = gpu::stage_flag::compute,
-		};
-		rec.push(d.pipeline, pc);
-		rec.dispatch(skinned_count, 1, 1);
-	}
+	rec.bind_descriptors(d.pipeline, d.normal_descriptors[frame_index]);
+	const gpu::typed_push_constants<push_constants> pc{
+		.data = {
+			.batch_offset = 0,
+			.indirect_stride = static_cast<std::uint32_t>(sizeof(gpu::draw_mesh_tasks_indirect_command)),
+		},
+		.stages = gpu::stage_flag::compute,
+	};
+	rec.push(d.pipeline, pc);
+	rec.dispatch(normal_count, 1, 1);
 }

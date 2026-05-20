@@ -4,6 +4,9 @@ import std;
 
 import :message;
 
+import gse.math;
+import gse.time;
+
 export namespace gse::network {
 	struct axes1_pair {
 		std::uint16_t id;
@@ -17,7 +20,7 @@ export namespace gse::network {
 
 	struct[[= network_message{}]] input_frame {
 		std::uint32_t input_sequence = 0;
-		std::uint32_t client_time_ms = 0;
+		time_t<std::uint32_t, milliseconds> client_time = {};
 		float camera_yaw = 0.f;
 		std::vector<std::uint64_t> pressed;
 		std::vector<std::uint64_t> released;

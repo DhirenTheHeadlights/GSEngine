@@ -11,6 +11,7 @@ import :phase_context;
 import :registries;
 import :run_context;
 import :frame_context;
+import :settings;
 
 export namespace gse {
 	template <typename S>
@@ -72,6 +73,8 @@ export namespace gse {
 		id frame_wall_id;
 		id frame_start_id;
 		id trace_id;
+
+		std::optional<settings::register_settings_type> settings_record;
 	};
 
 	template <typename S, typename... Args>

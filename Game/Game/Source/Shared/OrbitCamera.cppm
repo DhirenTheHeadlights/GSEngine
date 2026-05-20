@@ -36,7 +36,8 @@ export namespace gs::orbit_camera {
 			data& d,
 			const gse::actions::system::data& as,
 			const gse::input::system::data& input_s,
-			const gse::camera::system::data& cam_s
+			const gse::camera::system::data& cam_s,
+			const gse::physics::system::data& phys_s
 		) -> gse::async::task<>;
 	};
 }
@@ -46,7 +47,8 @@ auto gs::orbit_camera::system::run(
 	data& d,
 	const gse::actions::system::data& as,
 	const gse::input::system::data& input_s,
-	const gse::camera::system::data& cam_s
+	const gse::camera::system::data& cam_s,
+	const gse::physics::system::data& phys_s
 ) -> gse::async::task<> {
 	while (true) {
 		{
@@ -139,13 +141,19 @@ auto gs::orbit_camera::system::run(
 					gse::quat(gse::vec3f(0.f, 1.f, 0.f), o.yaw) * gse::quat(gse::vec3f(1.f, 0.f, 0.f), o.pitch)
 				);
 
-				const auto* target_tc = transforms.find(o.target);
-				if (!target_tc) {
+				gse::vec3<gse::position> target_pos;
+				if (auto snap = gse::physics::system::query_transform(phys_s, o.target)) {
+					target_pos = snap->position;
+				}
+				else if (const auto* tc = transforms.find(o.target)) {
+					target_pos = tc->position;
+				}
+				else {
 					continue;
 				}
 
 				const gse::vec3f forward = gse::rotate_vector(orientation, gse::vec3f(0.f, 0.f, -1.f));
-				cam_follow->position = target_tc->position - forward * o.distance;
+				cam_follow->position = target_pos - forward * o.distance;
 				cam_follow->orientation = orientation;
 			}
 

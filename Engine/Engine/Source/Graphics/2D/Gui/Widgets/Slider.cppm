@@ -255,7 +255,7 @@ auto gse::gui::draw::slider_box(
 
 	bool range_is_zero = false;
 	if constexpr (internal::is_quantity<decltype(range)>) {
-		if (range.template as<typename decltype(range)::default_unit>() == typename decltype(range)::value_type{ 0 }) {
+		if (static_cast<typename decltype(range)::value_type>(range) == typename decltype(range)::value_type{ 0 }) {
 			range_is_zero = true;
 		}
 	}
@@ -281,7 +281,7 @@ auto gse::gui::draw::slider_box(
 
 	std::string value_str;
 	if constexpr (internal::is_quantity<T>) {
-		value_str = std::format("{:.2f}", value.template as<typename T::default_unit>());
+		value_str = std::format("{:.2f}", static_cast<typename T::value_type>(value));
 	}
 	else if constexpr (std::is_floating_point_v<T>) {
 		value_str = std::format("{:.2f}", value);

@@ -21,16 +21,16 @@ import gse.save;
 import gse.time;
 
 namespace gse::renderer::capture {
-	struct[[= shaders::shader_struct]] push_constants {
+	struct [[= shaders::shader_struct]] push_constants {
 		vec2u extent;
 		std::uint32_t rgba_index;
 	};
 
-	struct[[= shaders::binding<0, 1>{}, = shaders::storage_image]] output_y {
+	struct [[= shaders::binding<0, 1>{}, = shaders::storage_image]] output_y {
 		using element = float;
 	};
 
-	struct[[= shaders::binding<0, 2>{}, = shaders::storage_image]] output_uv {
+	struct [[= shaders::binding<0, 2>{}, = shaders::storage_image]] output_uv {
 		using element = vec2f;
 	};
 
@@ -42,7 +42,8 @@ namespace gse::renderer::capture {
 		gpu::bindings<shader_binding_types>,
 		gpu::threads<16, 16, 1>,
 		gpu::push_constant<push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>>;
+		gpu::system_values<gpu::dispatch_thread_id>
+	>;
 }
 
 auto gse::renderer::capture::system::run(

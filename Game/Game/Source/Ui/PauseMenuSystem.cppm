@@ -38,6 +38,8 @@ auto gs::pause_menu_system::run(
 		});
 	};
 
+	bool manual_cursor = false;
+
 	while (true) {
 		const auto& input = gse::input::system::current_state(input_d);
 		const auto* top = gui_d.menu_stack.top();
@@ -57,6 +59,17 @@ auto gs::pause_menu_system::run(
 			else if (scene_active) {
 				push_main_menu();
 			}
+		}
+
+		const bool cursor_toggle_pressed =
+			input.key_pressed(gse::key::n) || input.mouse_button_pressed(gse::mouse_button::button_3);
+		if (cursor_toggle_pressed && top == nullptr && scene_active) {
+			manual_cursor = !manual_cursor;
+			ctx.channels.push<gse::gui::set_manual_cursor_request>({ .show = manual_cursor });
+		}
+		else if (top != nullptr && manual_cursor) {
+			manual_cursor = false;
+			ctx.channels.push<gse::gui::set_manual_cursor_request>({ .show = false });
 		}
 
 		co_await ctx.next_tick();

@@ -1055,6 +1055,48 @@ auto gse::vbd::solver::accumulate_joint(
 			accumulate_geometric_stiffness(m_solve_state[body_idx], r, d_hat, abs(fi));
 		}
 	}
+	else if (constraint.type == joint_type::muscle) {
+		if (constraint.activation <= 0.f) {
+			return;
+		}
+		const auto d_mag = magnitude(d);
+		if (d_mag <= meters(1e-7f)) {
+			return;
+		}
+		const vec3f d_hat = normalize(d);
+		const length stretch = d_mag - constraint.target_distance;
+		if (stretch <= length{}) {
+			return;
+		}
+
+		length c = stretch - constraint.pos_c0[0] * alpha;
+		if (constraint.damping > 0.f) {
+			const auto vel_a = body_a.velocity + cross(body_a.angular_velocity, r_aw) / rad;
+			const auto vel_b = body_b.velocity + cross(body_b.angular_velocity, r_bw) / rad;
+			const velocity v_rel = dot(d_hat, vel_a - vel_b);
+			c += v_rel * dt * constraint.damping;
+		}
+
+		const stiffness eff_penalty = constraint.pos_penalty[0] * constraint.activation;
+		const force fi_uncapped =
+			std::max(constraint.pos_penalty[0] * c + constraint.pos_lambda[0], force{}) * constraint.activation;
+		const force fi = constraint.max_force > force{}
+			? std::min(fi_uncapped, constraint.max_force)
+			: fi_uncapped;
+
+		const vec3f j_lin = d_hat * sign;
+		const vec3<lever_arm> j_ang = cross(r, d_hat);
+
+		m_solve_state[body_idx].gradient += j_lin * fi;
+		m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * eff_penalty;
+
+		if (m_bodies[body_idx].update_orientation) {
+			m_solve_state[body_idx].angular_gradient += j_ang * fi;
+			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * eff_penalty / rad;
+			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * eff_penalty / rad;
+			accumulate_geometric_stiffness(m_solve_state[body_idx], r, d_hat, abs(fi));
+		}
+	}
 	else if (constraint.type == joint_type::fixed || constraint.type == joint_type::hinge) {
 		constexpr std::array dirs = { axis_x, axis_y, axis_z };
 
@@ -1234,6 +1276,16 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 			if (j.type == joint_type::distance) {
 				const length C = (magnitude(d) - j.target_distance) - j.pos_c0[0];
 				j.pos_lambda[0] = j.pos_penalty[0] * C + j.pos_lambda[0];
+				const stiffness penalty_cap = (j.compliance > inverse_mass{})
+					? std::min<stiffness>(1.f / (j.compliance * h_squared), m_config.penalty_max)
+					: m_config.penalty_max;
+				j.pos_penalty[0] = std::min(j.pos_penalty[0] + m_config.beta * abs(C), penalty_cap);
+				track_linear(C);
+			}
+			else if (j.type == joint_type::muscle) {
+				const length stretch = magnitude(d) - j.target_distance;
+				const length C = std::max(stretch, length{}) - j.pos_c0[0];
+				j.pos_lambda[0] = std::max(j.pos_penalty[0] * C + j.pos_lambda[0], force{});
 				const stiffness penalty_cap = (j.compliance > inverse_mass{})
 					? std::min<stiffness>(1.f / (j.compliance * h_squared), m_config.penalty_max)
 					: m_config.penalty_max;
@@ -1422,7 +1474,7 @@ auto gse::vbd::warm_start_joint(
 	constexpr std::array dirs = { axis_x, axis_y, axis_z };
 
 	int num_pos_rows = 3;
-	if (j.type == joint_type::distance) {
+	if (j.type == joint_type::distance || j.type == joint_type::muscle) {
 		num_pos_rows = 1;
 	}
 	else if (j.type == joint_type::slider) {
@@ -1431,7 +1483,7 @@ auto gse::vbd::warm_start_joint(
 
 	for (int k = 0; k < num_pos_rows; ++k) {
 		vec3f dir;
-		if (j.type == joint_type::distance) {
+		if (j.type == joint_type::distance || j.type == joint_type::muscle) {
 			const vec3<displacement> d = (ba.position + r_aw) - (bb.position + r_bw);
 			dir = magnitude(d) > meters(1e-7f) ? normalize(d) : axis_y;
 		}
@@ -1455,7 +1507,7 @@ auto gse::vbd::warm_start_joint(
 	}
 
 	int num_ang_rows = 3;
-	if (j.type == joint_type::distance) {
+	if (j.type == joint_type::distance || j.type == joint_type::muscle) {
 		num_ang_rows = 0;
 	}
 	else if (j.type == joint_type::hinge) {
@@ -1517,6 +1569,12 @@ auto gse::vbd::compute_joint_c0(joint_constraint& j, const body_state& ba, const
 
 	if (j.type == joint_type::distance) {
 		j.pos_c0[0] = magnitude(d) - j.target_distance;
+		return;
+	}
+
+	if (j.type == joint_type::muscle) {
+		const length stretch = magnitude(d) - j.target_distance;
+		j.pos_c0[0] = std::max(stretch, length{});
 		return;
 	}
 

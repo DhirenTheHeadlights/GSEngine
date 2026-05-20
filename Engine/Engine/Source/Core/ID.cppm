@@ -64,9 +64,7 @@ export namespace gse {
 	public:
 		id() = default;
 
-		auto operator==(id other) const -> bool;
-
-		auto operator<=>(id other) const -> std::strong_ordering;
+		auto operator<=>(const id&) const -> std::strong_ordering = default;
 
 		[[nodiscard]] constexpr auto number() const -> uuid;
 
@@ -103,18 +101,6 @@ struct std::formatter<gse::id> {
 		return std::format_to(ctx.out(), "[{}]", value.number());
 	}
 };
-
-auto gse::id::operator==(const id other) const -> bool {
-	if (!exists() || !other.exists()) {
-		return false;
-	}
-
-	return m_number == other.m_number;
-}
-
-auto gse::id::operator<=>(const id other) const -> std::strong_ordering {
-	return m_number <=> other.m_number;
-}
 
 constexpr auto gse::id::number() const -> uuid {
 	return m_number;

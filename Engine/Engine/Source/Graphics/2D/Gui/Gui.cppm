@@ -93,6 +93,7 @@ export namespace gse::gui {
 
 			menu_stack_state menu_stack;
 			std::optional<menu> screen_surface;
+			bool manual_cursor = false;
 
 			static constexpr time update_interval = seconds(30.f);
 		};

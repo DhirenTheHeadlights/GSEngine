@@ -11,7 +11,7 @@ export namespace gse::network {
 	struct pending_reliable_message {
 		std::uint32_t sequence = 0;
 		std::vector<std::byte> data;
-		std::uint64_t sent_time_ms = 0;
+		time_t<std::uint64_t, milliseconds> sent_time = {};
 		std::uint32_t send_count = 1;
 	};
 
@@ -69,7 +69,7 @@ auto gse::network::remote_peer::queue_reliable(const std::uint32_t seq, const st
 	pending_reliable_message msg;
 	msg.sequence = seq;
 	msg.data.assign(data.begin(), data.end());
-	msg.sent_time_ms = system_clock::now<time_t<std::uint64_t>>().as<milliseconds>();
+	msg.sent_time = system_clock::now<time_t<std::uint64_t, milliseconds>>();
 	msg.send_count = 1;
 	m_pending_reliable.push_back(std::move(msg));
 }
@@ -114,10 +114,11 @@ auto gse::network::remote_peer::process_acks(const std::uint32_t ack, const std:
 auto gse::network::remote_peer::messages_to_resend(const std::uint32_t retry_interval_ms)
 	-> std::vector<pending_reliable_message*> {
 	std::vector<pending_reliable_message*> result;
-	const auto now = system_clock::now<time_t<std::uint64_t>>().as<milliseconds>();
+	const auto now = system_clock::now<time_t<std::uint64_t, milliseconds>>();
+	const auto retry_interval = milliseconds(static_cast<std::uint64_t>(retry_interval_ms));
 
 	for (auto& msg : m_pending_reliable) {
-		if (now - msg.sent_time_ms >= system_clock::now<time_t<std::uint64_t>>().as<milliseconds>()) {
+		if (now - msg.sent_time >= retry_interval) {
 			result.push_back(&msg);
 		}
 	}

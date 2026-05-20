@@ -3,7 +3,9 @@ export module gs:sandbox_scene;
 import std;
 import gse;
 
+import :balance;
 import :entity_builders;
+import :humanoid_skeleton;
 import :orbit_camera;
 import :player;
 
@@ -42,9 +44,47 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 		.ambient_strength = 0.18f,
 	});
 
+	const auto player_initial_pos = gse::vec3<gse::position>(0.f, 1.05f, 0.f);
+	const auto player_initial_yaw = gse::degrees(-90.f);
+	const auto player_initial_orientation = gse::quat(gse::vec3f(0.f, 1.f, 0.f), player_initial_yaw);
+	const auto humanoid_handle = gs::spawn_humanoid(s, player_initial_pos, player_initial_orientation);
+	const auto pelvis_id = humanoid_handle.bone_ids[0];
+
+	if (auto* m = s.registry().try_component<gse::physics::motion_component>(pelvis_id)) {
+		if (auto* dyn = std::get_if<gse::physics::dynamic_body>(&m->body)) {
+			dyn->update_orientation = false;
+		}
+	}
+
+	s.registry().add_component<gse::physics::motor_component>(
+		pelvis_id,
+		{
+			.requires_ground_contact = false,
+			.max_force = gse::newtons(600.f),
+		}
+	);
+
+	s.registry().add_component<gs::balance::component>(
+		pelvis_id,
+		{
+			.support_a = humanoid_handle.bone_ids[11],
+			.support_b = humanoid_handle.bone_ids[14],
+			.response_time = gse::seconds(0.5f),
+			.damping = 3.0f,
+			.max_correction = gse::meters_per_second(1.2f),
+		}
+	);
+
 	const auto player_id = s.build("Player")
 		.with<gs::player::component>({
-			.initial_position = gse::vec3<gse::position>(0.f, 2.f, 0.f),
+			.initial_position = player_initial_pos,
+			.pelvis_id = pelvis_id,
+			.hip_l_id = humanoid_handle.joint_ids[8],
+			.knee_l_id = humanoid_handle.joint_ids[9],
+			.hip_r_id = humanoid_handle.joint_ids[11],
+			.knee_r_id = humanoid_handle.joint_ids[12],
+			.foot_l_id = humanoid_handle.bone_ids[11],
+			.foot_r_id = humanoid_handle.bone_ids[14],
 		})
 		.identify();
 

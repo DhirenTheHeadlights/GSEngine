@@ -86,6 +86,10 @@ AlwaysBreakBeforeMultilineStrings: false
 PenaltyReturnTypeOnItsOwnLine: 10000
 PenaltyBreakBeforeFirstCallParameter: 0
 
+BreakAfterAttributes: WhenLong
+AlwaysBreakDesignatedInit: true
+BreakBeforeTemplateCloser: true
+
 SpaceAfterTemplateKeyword: true
 SpaceBeforeAssignmentOperators: true
 SpaceBeforeCpp11BracedList: false

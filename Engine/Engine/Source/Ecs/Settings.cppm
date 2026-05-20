@@ -95,6 +95,9 @@ export namespace gse::settings {
 
 	template <typename T>
 	consteval auto category_of() -> std::string_view;
+
+	template <typename S>
+	auto build_settings_record(typename S::data& obj) -> register_settings_type;
 }
 
 template <typename T>
@@ -104,9 +107,11 @@ auto gse::settings::write_settings_with_prefix(
 	const std::string_view prefix,
 	const T& value
 ) -> void {
-	template for (constexpr auto m : std::define_static_array(
-					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-				  )) {
+	template for (
+		constexpr auto m : std::define_static_array(
+			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+		)
+	) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
@@ -135,9 +140,11 @@ auto gse::settings::read_settings_with_prefix(
 	if (cat_it == doc.end()) {
 		return;
 	}
-	template for (constexpr auto m : std::define_static_array(
-					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-				  )) {
+	template for (
+		constexpr auto m : std::define_static_array(
+			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+		)
+	) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
@@ -174,9 +181,11 @@ auto gse::settings::read_settings_for(
 template <typename T>
 auto gse::settings::collect_settings_keys_with_prefix(std::vector<std::string>& out, const std::string_view prefix)
 	-> void {
-	template for (constexpr auto m : std::define_static_array(
-					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-				  )) {
+	template for (
+		constexpr auto m : std::define_static_array(
+			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+		)
+	) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
@@ -209,4 +218,18 @@ consteval auto gse::settings::category_of() -> std::string_view {
 	else {
 		return std::string_view{};
 	}
+}
+
+template <typename S>
+auto gse::settings::build_settings_record(typename S::data& obj) -> register_settings_type {
+	using data_t = typename S::data;
+	return {
+		.category = std::string(category_of<data_t>()),
+		.type_id = id_of<data_t>(),
+		.settings_ptr = &obj,
+		.keys = collect_settings_keys<data_t>(),
+		.write = &write_settings_for<data_t>,
+		.read = &read_settings_for<data_t>,
+		.draw = nullptr,
+	};
 }

@@ -90,9 +90,9 @@ export namespace gse {
 	template <internal::is_quantity Q>
 	constexpr auto from_axis_angle_vector(const vec3<Q>& aa) -> quat_t<typename Q::value_type> {
 		using T = typename Q::value_type;
-		const T ax = angle_t<T>(aa.x()).template as<radians>();
-		const T ay = angle_t<T>(aa.y()).template as<radians>();
-		const T az = angle_t<T>(aa.z()).template as<radians>();
+		const T ax = static_cast<T>(angle_t<T>(aa.x()));
+		const T ay = static_cast<T>(angle_t<T>(aa.y()));
+		const T az = static_cast<T>(angle_t<T>(aa.z()));
 		const T angle_sq = ax * ax + ay * ay + az * az;
 
 		if (angle_sq < T(1e-14)) {
@@ -302,7 +302,7 @@ constexpr auto gse::identity() -> quat_t<T> {
 
 template <typename T>
 constexpr auto gse::from_axis_angle(const vec3<T>& axis, angle_t<T> angle) -> quat_t<T> {
-	const T half_angle = angle.template as<radians>() / T(2);
+	const T half_angle = static_cast<T>(angle) / T(2);
 	const T s = std::sin(half_angle);
 	const T c = std::cos(half_angle);
 	return quat_t<T>{ c, axis[0] * s, axis[1] * s, axis[2] * s };

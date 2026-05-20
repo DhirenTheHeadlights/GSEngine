@@ -21,18 +21,13 @@ import gse.log;
 export namespace gse {
 	class model;
 
-	template <typename ModelType>
-	struct render_queue_entry_t {
-		resource::handle<ModelType> model;
+	struct render_queue_entry {
+		resource::handle<model> model;
 		std::size_t index;
 		spatial_matrix model_matrix;
 		spatial_matrix normal_matrix;
 		vec3f color;
-		std::uint32_t skin_offset = 0;
-		std::uint32_t joint_count = 0;
 	};
-
-	using render_queue_entry = render_queue_entry_t<model>;
 
 	class model : public identifiable {
 	public:

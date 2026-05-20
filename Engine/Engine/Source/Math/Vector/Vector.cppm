@@ -32,6 +32,22 @@ export namespace gse::internal {
 		return *reinterpret_cast<const vec_storage_type_t<T>*>(&val);
 	}
 
+	template <typename T>
+	constexpr float vec_unit_scale_v = []() consteval {
+		if constexpr (requires { { T::canonical_storage_scale() } -> std::convertible_to<float>; }) {
+			return T::canonical_storage_scale();
+		}
+		else {
+			return 1.0f;
+		}
+	}();
+
+	template <typename T, typename S, typename R>
+	constexpr float vec_mul_scale_v = vec_unit_scale_v<R> / (vec_unit_scale_v<T> * vec_unit_scale_v<S>);
+
+	template <typename T, typename S, typename R>
+	constexpr float vec_div_scale_v = vec_unit_scale_v<R> * vec_unit_scale_v<S> / vec_unit_scale_v<T>;
+
 	template <typename V>
 	concept is_vec_like = requires(const V& v) {
 		typename V::tag;
@@ -447,8 +463,12 @@ constexpr auto gse::vec<T, N>::operator*(this const Self& self, const vec<T2, M>
 requires(N == M && gse::internal::are_multipliable<T, T2>)
 {
 	using R = gse::internal::mul_exposed_t<T, T2>;
+	constexpr float scale = gse::internal::vec_mul_scale_v<T, T2, R>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
 	simd::mul(self.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
+	if constexpr (scale != 1.0f) {
+		simd::mul_s(out.as_storage_span(), scale, out.as_storage_span());
+	}
 	return out;
 }
 
@@ -458,8 +478,12 @@ constexpr auto gse::vec<T, N>::operator/(this const Self& self, const vec<T2, M>
 requires(N == M && gse::internal::are_divisible<T, T2>)
 {
 	using R = gse::internal::div_exposed_t<T, T2>;
+	constexpr float scale = gse::internal::vec_div_scale_v<T, T2, R>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
 	simd::div(self.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
+	if constexpr (scale != 1.0f) {
+		simd::mul_s(out.as_storage_span(), scale, out.as_storage_span());
+	}
 	return out;
 }
 
@@ -505,8 +529,10 @@ constexpr auto gse::vec<T, N>::operator*(this const Self& self, const S& rhs)
 requires gse::internal::are_multipliable<T, S>
 {
 	using R = gse::internal::mul_exposed_t<T, S>;
+	constexpr float scale = gse::internal::vec_mul_scale_v<T, S, R>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
-	simd::mul_s(self.as_storage_span(), static_cast<storage_type>(internal::to_storage(rhs)), out.as_storage_span());
+	const auto adjusted_rhs = static_cast<storage_type>(internal::to_storage(rhs)) * scale;
+	simd::mul_s(self.as_storage_span(), adjusted_rhs, out.as_storage_span());
 	return out;
 }
 
@@ -516,8 +542,10 @@ constexpr auto gse::vec<T, N>::operator/(this const Self& self, const S& rhs)
 requires gse::internal::are_divisible<T, S>
 {
 	using R = gse::internal::div_exposed_t<T, S>;
+	constexpr float scale = gse::internal::vec_div_scale_v<T, S, R>;
 	std::conditional_t<std::same_as<R, T>, Self, vec<R, N>> out{};
-	simd::div_s(self.as_storage_span(), static_cast<storage_type>(internal::to_storage(rhs)), out.as_storage_span());
+	const auto adjusted_rhs = static_cast<storage_type>(internal::to_storage(rhs)) / scale;
+	simd::div_s(self.as_storage_span(), adjusted_rhs, out.as_storage_span());
 	return out;
 }
 

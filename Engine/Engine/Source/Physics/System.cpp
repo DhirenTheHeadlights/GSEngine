@@ -6,6 +6,7 @@ import :system;
 import :joint_spec;
 import :narrow_phase_collision;
 import :motion_component;
+import :muscle_component;
 import :collision_component;
 import :contact_manifold;
 import :vbd_constraints;
@@ -32,61 +33,72 @@ namespace gse::physics {
 }
 
 auto gse::physics::make_joint_definition(const id a, const id b, const joint_config& config) -> joint_definition {
-	return std::visit(
-		[&]<typename Config>(const Config& cfg) -> joint_definition {
-			if constexpr (std::is_same_v<Config, fixed_joint>) {
-				return {
-					.entity_a = a,
-					.entity_b = b,
-					.type = vbd::joint_type::fixed,
-					.local_anchor_a = cfg.anchor_a,
-					.local_anchor_b = cfg.anchor_b,
-				};
-			}
-			else if constexpr (std::is_same_v<Config, distance_joint>) {
-				return {
-					.entity_a = a,
-					.entity_b = b,
-					.type = vbd::joint_type::distance,
-					.target_distance = cfg.target,
-				};
-			}
-			else if constexpr (std::is_same_v<Config, hinge_joint>) {
-				return {
-					.entity_a = a,
-					.entity_b = b,
-					.type = vbd::joint_type::hinge,
-					.local_anchor_a = cfg.anchor_a,
-					.local_anchor_b = cfg.anchor_b,
-					.local_axis_a = cfg.axis,
-					.local_axis_b = cfg.axis,
-					.limit_lower = cfg.limits ? cfg.limits->first : radians(-std::numbers::pi_v<float>),
-					.limit_upper = cfg.limits ? cfg.limits->second : radians(std::numbers::pi_v<float>),
-					.limits_enabled = cfg.limits.has_value(),
-				};
-			}
-			else if constexpr (std::is_same_v<Config, slider_joint>) {
-				return {
-					.entity_a = a,
-					.entity_b = b,
-					.type = vbd::joint_type::slider,
-					.local_axis_a = cfg.axis,
-					.local_axis_b = cfg.axis,
-				};
-			}
-			else if constexpr (std::is_same_v<Config, spring_joint>) {
-				return {
-					.entity_a = a,
-					.entity_b = b,
-					.type = vbd::joint_type::distance,
-					.target_distance = cfg.target,
-					.compliance = cfg.compliance,
-					.damping = cfg.damping,
-				};
-			}
-		},
-		config
-	);
+	joint_definition result;
+	gse::match(config)
+		.if_is([&](const fixed_joint& cfg) {
+			result = {
+				.entity_a = a,
+				.entity_b = b,
+				.type = vbd::joint_type::fixed,
+				.local_anchor_a = cfg.anchor_a,
+				.local_anchor_b = cfg.anchor_b,
+			};
+		})
+		.else_if_is([&](const distance_joint& cfg) {
+			result = {
+				.entity_a = a,
+				.entity_b = b,
+				.type = vbd::joint_type::distance,
+				.target_distance = cfg.target,
+			};
+		})
+		.else_if_is([&](const hinge_joint& cfg) {
+			result = {
+				.entity_a = a,
+				.entity_b = b,
+				.type = vbd::joint_type::hinge,
+				.local_anchor_a = cfg.anchor_a,
+				.local_anchor_b = cfg.anchor_b,
+				.local_axis_a = cfg.axis,
+				.local_axis_b = cfg.axis,
+				.limit_lower = cfg.limits ? cfg.limits->first : radians(-std::numbers::pi_v<float>),
+				.limit_upper = cfg.limits ? cfg.limits->second : radians(std::numbers::pi_v<float>),
+				.limits_enabled = cfg.limits.has_value(),
+			};
+		})
+		.else_if_is([&](const slider_joint& cfg) {
+			result = {
+				.entity_a = a,
+				.entity_b = b,
+				.type = vbd::joint_type::slider,
+				.local_axis_a = cfg.axis,
+				.local_axis_b = cfg.axis,
+			};
+		})
+		.else_if_is([&](const spring_joint& cfg) {
+			result = {
+				.entity_a = a,
+				.entity_b = b,
+				.type = vbd::joint_type::distance,
+				.target_distance = cfg.target,
+				.compliance = cfg.compliance,
+				.damping = cfg.damping,
+			};
+		})
+		.else_if_is([&](const muscle_joint& cfg) {
+			result = {
+				.entity_a = a,
+				.entity_b = b,
+				.type = vbd::joint_type::muscle,
+				.local_anchor_a = cfg.anchor_a,
+				.local_anchor_b = cfg.anchor_b,
+				.target_distance = cfg.rest_length,
+				.compliance = cfg.compliance,
+				.damping = cfg.damping,
+				.max_force = cfg.max_force,
+			};
+		});
+	return result;
 }
 
 auto gse::physics::system::create_joint(data& d, const joint_definition& def) -> joint_handle {
@@ -452,13 +464,29 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 
 	while (true) {
 		{
-			auto [specs] = co_await ctx.acquire<write<joint_spec>>();
-			for (auto& spec : specs) {
+			auto [specs, muscles] = co_await ctx.acquire<write<joint_spec>, read<muscle_component>>();
+			const auto spec_owners = specs.owner_ids();
+			for (std::size_t i = 0; i < specs.size(); ++i) {
+				auto& spec = specs[i];
 				if (spec.resolved) {
 					continue;
 				}
-				system::create_joint(d, make_joint_definition(spec.entity_a, spec.entity_b, spec.config));
+				const auto handle =
+					system::create_joint(d, make_joint_definition(spec.entity_a, spec.entity_b, spec.config));
+				d.joint_handles_by_entity[spec_owners[i]] = handle;
 				spec.resolved = true;
+			}
+
+			const auto muscle_owners = muscles.owner_ids();
+			for (std::size_t i = 0; i < muscles.size(); ++i) {
+				const auto handle_it = d.joint_handles_by_entity.find(muscle_owners[i]);
+				if (handle_it == d.joint_handles_by_entity.end()) {
+					continue;
+				}
+				if (handle_it->second >= d.joints.size()) {
+					continue;
+				}
+				d.joints[handle_it->second].activation = muscles[i].activation;
 			}
 		}
 
@@ -746,12 +774,17 @@ auto gse::physics::system::update_vbd_gpu(
 					.position = bodies[it->second].position,
 					.orientation = bodies[it->second].orientation,
 				};
-				const auto bb = std::visit(
-					[&](const auto& shape) {
-						return gse::bounding_box(body_tc, shape);
-					},
-					cc.shape
-				);
+				gse::bounding_box bb;
+				gse::match(cc.shape)
+					.if_is([&](const box_shape& s) {
+						bb = gse::bounding_box(body_tc, s);
+					})
+					.else_if_is([&](const sphere_shape& s) {
+						bb = gse::bounding_box(body_tc, s);
+					})
+					.else_if_is([&](const capsule_shape& s) {
+						bb = gse::bounding_box(body_tc, s);
+					});
 				const auto [max, min] = bb.aabb();
 				auto& b = bodies[it->second];
 				b.half_extents = bb.half_extents();
@@ -809,7 +842,8 @@ auto gse::physics::system::update_vbd_gpu(
 				continue;
 			}
 			const auto motion_idx = static_cast<std::size_t>(mc - motion.data());
-			if (motion_idx < d.body_airborne.size() && d.body_airborne[motion_idx] != 0) {
+			if (mt.requires_ground_contact && motion_idx < d.body_airborne.size()
+				&& d.body_airborne[motion_idx] != 0) {
 				continue;
 			}
 			const auto it = d.id_to_body_index.find(eid);
@@ -828,7 +862,7 @@ auto gse::physics::system::update_vbd_gpu(
 					.horizontal_only = mt.horizontal_only ? 1u : 0u,
 					.target_velocity = mt.velocity_drive_target,
 					.compliance = 0.5f,
-					.max_force = mass_of(*mc) * meters_per_second_squared(50.f),
+					.max_force = mt.max_force,
 				}
 			);
 		}
@@ -878,6 +912,8 @@ auto gse::physics::system::update_vbd_gpu(
 					.ang_penalty = jd.ang_penalty,
 					.limit_lambda = jd.limit_lambda,
 					.limit_penalty = jd.limit_penalty,
+					.activation = jd.activation,
+					.max_force = jd.max_force,
 				}
 			);
 		}
@@ -1048,7 +1084,8 @@ auto gse::physics::system::update_vbd(
 				continue;
 			}
 			const auto motion_idx = static_cast<std::size_t>(mc - motion.data());
-			if (motion_idx < d.body_airborne.size() && d.body_airborne[motion_idx] != 0) {
+			if (mt.requires_ground_contact && motion_idx < d.body_airborne.size()
+				&& d.body_airborne[motion_idx] != 0) {
 				continue;
 			}
 			const auto it = id_to_body_index.find(eid);
@@ -1067,7 +1104,7 @@ auto gse::physics::system::update_vbd(
 					.horizontal_only = mt.horizontal_only ? 1u : 0u,
 					.target_velocity = mt.velocity_drive_target,
 					.compliance = 0.5f,
-					.max_force = mass_of(*mc) * meters_per_second_squared(50.f),
+					.max_force = mt.max_force,
 				}
 			);
 		}
@@ -1106,6 +1143,8 @@ auto gse::physics::system::update_vbd(
 					.ang_penalty = jd.ang_penalty,
 					.limit_lambda = jd.limit_lambda,
 					.limit_penalty = jd.limit_penalty,
+					.activation = jd.activation,
+					.max_force = jd.max_force,
 				}
 			);
 		}

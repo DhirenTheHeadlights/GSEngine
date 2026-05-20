@@ -133,7 +133,7 @@ auto gs::client_ui_system::run(
 							.val = 42,
 						});
 						ui.draw<gse::gui::text>({
-							.content = std::format("Test Quantity: {:.2f} m", gse::meters(5.0f).as<gse::meters>()),
+							.content = std::format("Test Quantity: {:.2f}", gse::meters(5.0f)),
 						});
 						ui.draw<gse::gui::input>({
 							.name = "Input Test",

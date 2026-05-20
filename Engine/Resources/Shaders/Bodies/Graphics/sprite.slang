@@ -28,7 +28,17 @@ VS_OUTPUT vs_main(
 
 [shader("fragment")]
 float4 fs_main(VS_OUTPUT input) : SV_Target0 {
-    float4 col = textures[NonUniformResourceIndex(pc.tex_idx)].Sample(input.tex_coord) * input.color;
+    const uint INVALID_INDEX = 0xFFFFFFFFu;
+
+    float4 col;
+    if (pc.snapshot_tex_idx != INVALID_INDEX) {
+        // DIAGNOSTIC: show input.color.r as grayscale. We expect ~0.14 (DARK).
+        // If widget is bright/white, the RED component is also wrong → vertex layout mismatch.
+        // If widget is dark gray (~14% brightness), red is correct and only alpha is wrong.
+        col = float4(input.color.r, input.color.r, input.color.r, 1.0);
+    } else {
+        col = textures[NonUniformResourceIndex(pc.tex_idx)].Sample(input.tex_coord) * input.color;
+    }
 
     if (input.corner_radius > 0.0) {
         float2 q = abs(input.local_pos) - input.half_size + input.corner_radius;

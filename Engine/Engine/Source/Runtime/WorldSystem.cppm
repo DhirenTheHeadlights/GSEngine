@@ -104,7 +104,7 @@ auto gse::current_scene(world_system::data& d) -> scene* {
 }
 
 auto gse::activate_scene(world_system::data& d, const id& scene_id) -> void {
-	if (d.active_scene.has_value() && d.active_scene.value() == scene_id) {
+	if (d.active_scene.has_value()) {
 		if (auto* old_scene = find_scene(d, d.active_scene.value())) {
 			old_scene->set_active(false);
 		}
@@ -238,11 +238,11 @@ auto gse::world_system::run(run_context& ctx, data& d, const actions::system::da
 		for (const auto& r : ctx.read_channel<set_local_controller_id_request>()) {
 			d.local_controller_id = r.controller_id;
 		}
-		for (const auto& r : ctx.read_channel<activate_scene_request>()) {
-			activate_scene(d, r.scene_id);
-		}
 		if (!ctx.read_channel<deactivate_active_scene_request>().empty()) {
 			deactivate_active_scene(d);
+		}
+		for (const auto& r : ctx.read_channel<activate_scene_request>()) {
+			activate_scene(d, r.scene_id);
 		}
 
 		if (!d.networked) {

@@ -21,10 +21,16 @@ export namespace gse::physics {
 }
 
 auto gse::physics::world_aabb_of(const transform_component& tc, const collision_component& cc) -> aabb {
-	return std::visit(
-		[&](const auto& shape) {
-			return bounding_box(tc, shape).aabb();
-		},
-		cc.shape
-	);
+	aabb result;
+	gse::match(cc.shape)
+		.if_is([&](const box_shape& s) {
+			result = bounding_box(tc, s).aabb();
+		})
+		.else_if_is([&](const sphere_shape& s) {
+			result = bounding_box(tc, s).aabb();
+		})
+		.else_if_is([&](const capsule_shape& s) {
+			result = bounding_box(tc, s).aabb();
+		});
+	return result;
 }

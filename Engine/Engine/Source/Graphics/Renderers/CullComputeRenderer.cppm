@@ -3,7 +3,6 @@ export module gse.graphics:cull_compute_renderer;
 import std;
 
 import :geometry_collector;
-import :skin_compute_renderer;
 import :camera_system;
 import gse.os;
 import gse.assets;
@@ -23,7 +22,6 @@ export namespace gse::renderer::cull_compute {
 
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> normal_descriptors;
-			per_frame_resource<gpu::descriptor_region> skinned_descriptors;
 			per_frame_resource<gpu::buffer> frustum_buffer;
 			per_frame_resource<gpu::buffer> batch_info_buffer;
 		};

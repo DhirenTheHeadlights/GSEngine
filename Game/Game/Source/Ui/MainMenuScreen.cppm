@@ -96,15 +96,13 @@ auto gs::main_menu_screen::body_rect(const gse::gui::style&, const gse::vec2f vi
 }
 
 auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
-	const float eased = eased_progress();
-
 	const gse::gui::ui_rect full =
 		gse::gui::ui_rect::from_position_size({ 0.f, viewport_size.y() }, { viewport_size.x(), viewport_size.y() });
 
 	ctx.sprites.push_back(
 		{
 			.rect = full,
-			.color = { 0.f, 0.f, 0.f, dim_max_alpha * eased },
+			.color = { 0.f, 0.f, 0.f, dim_max_alpha },
 			.texture = ctx.blank_texture,
 			.layer = gse::render_layer::popup,
 		}
@@ -152,9 +150,6 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 	for (const auto& [scene_id, scene_ptr] : world.scenes) {
 		const std::string scene_name(scene_ptr->id().tag());
 		if (ui.draw<gse::gui::button>({ .text = scene_name })) {
-			if (scene_active) {
-				m_channels.push<gse::deactivate_active_scene_request>({});
-			}
 			m_channels.push<gse::activate_scene_request>({ .scene_id = scene_id });
 			m_channels.push<gse::gui::pop_screen_request>({});
 		}

@@ -7,7 +7,6 @@ import :geometry_collector;
 import :depth_prepass_renderer;
 import :rt_shadow_renderer;
 import :light_culling_renderer;
-import :skin_compute_renderer;
 import :cull_compute_renderer;
 import :camera_system;
 import :texture;
@@ -93,20 +92,6 @@ namespace gse::renderer::forward {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<meshlet_push_constants>,
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>>;
-
-	struct[[= shaders::shader_struct]] skinned_push_constants {
-		std::uint32_t diffuse_index;
-	};
-
-	using skinned_geometry_entry = gpu::graphics_entry<
-		gpu::body_path<"Graphics/skinned_geometry_pass">,
-		gpu::layout<"standard_3d">,
-		gpu::types<shaders::common::shader_types>,
-		gpu::bindings<shaders::standard_3d::shader_binding_types>,
-		gpu::vertex_stage<"vs_main">,
-		gpu::fragment_stage<"fs_main">,
-		gpu::push_constant<skinned_push_constants>,
-		gpu::depth<true, false, gpu::compare_op::less_or_equal>>;
 }
 
 auto gse::renderer::forward::system::run(
@@ -122,12 +107,6 @@ auto gse::renderer::forward::system::run(
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		meshlet_entry::pod
-	);
-	d.skinned_pipeline = gpu::build_graphics_pipeline(
-		*gpu_s.device,
-		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
-		skinned_geometry_entry::pod
 	);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -188,18 +167,6 @@ auto gse::renderer::forward::system::run(
 			writer.commit();
 		}
 	});
-
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.skinned_descriptors[i] = gpu::allocate_descriptors(
-			*gpu_s.shader_registry,
-			gpu_s.device->descriptor_heap(),
-			skinned_geometry_entry::pod
-		);
-
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.skinned_descriptors[i])
-			.buffer<shaders::standard_3d::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
-			.commit();
-	}
 
 	co_return;
 }
@@ -343,7 +310,6 @@ auto gse::renderer::forward::system::frame(
 	}
 
 	const auto& normal_batches = data.normal_batches;
-	const auto& skinned_batches = data.skinned_batches;
 
 	const auto ext = gpu_s.render_graph->extent();
 	const int num_lights_i = static_cast<int>(light_count);
@@ -356,12 +322,6 @@ auto gse::renderer::forward::system::frame(
 		gpu::context::device_handle(*gpu_s.device),
 		gpu_s.device->descriptor_heap(),
 		meshlet_entry::pod
-	);
-	auto skinned_writer = gpu::make_push_writer(
-		*gpu_s.shader_registry,
-		gpu::context::device_handle(*gpu_s.device),
-		gpu_s.device->descriptor_heap(),
-		skinned_geometry_entry::pod
 	);
 
 	auto rec = co_await gpu::pass<system>(ctx)
@@ -421,44 +381,6 @@ auto gse::renderer::forward::system::frame(
 				i * sizeof(gpu::draw_mesh_tasks_indirect_command),
 				1,
 				sizeof(gpu::draw_mesh_tasks_indirect_command)
-			);
-		}
-	}
-
-	if (!skinned_batches.empty()) {
-		rec.bind(d.skinned_pipeline);
-		rec.bind_descriptors(d.skinned_pipeline, d.skinned_descriptors[frame_index]);
-
-		const auto& skin_buf = gc_r.skin_buffer[frame_index];
-		const auto& instance_buf = gc_r.instance_buffer[frame_index];
-
-		skinned_writer.begin(frame_index);
-		skinned_writer.buffer<shaders::standard_3d::skin_matrices>(skin_buf)
-			.buffer<shaders::standard_3d::instance_data_buffer>(instance_buf);
-		rec.commit(skinned_writer, d.skinned_pipeline, 1);
-
-		gpu::typed_push_constants<skinned_push_constants> skinned_pc{
-			.data = { .diffuse_index = shaders::bindless::invalid_index },
-			.stages = gpu::stage_flag::fragment,
-		};
-
-		for (std::size_t i = 0; i < skinned_batches.size(); ++i) {
-			const auto& batch = skinned_batches[i];
-			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
-
-			const auto& diffuse = mesh.material().diffuse_texture;
-			const auto diffuse_slot = diffuse.valid() ? diffuse->bindless_slot() : gpu::bindless_texture_slot{};
-			skinned_pc.data.diffuse_index = diffuse_slot ? diffuse_slot.index : shaders::bindless::invalid_index;
-			rec.push(d.skinned_pipeline, skinned_pc);
-
-			rec.bind_vertex(mesh.vertex_gpu_buffer());
-			rec.bind_index(mesh.index_gpu_buffer());
-
-			rec.draw_indirect(
-				gc_r.skinned_indirect_commands_buffer[frame_index],
-				i * sizeof(gpu::draw_indexed_indirect_command),
-				1,
-				0
 			);
 		}
 	}

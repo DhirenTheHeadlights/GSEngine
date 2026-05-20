@@ -46,6 +46,9 @@ auto gse::camera::system::compute_view_matrix(const target& t) -> view_matrix {
 }
 
 auto gse::camera::system::compute_projection_matrix(const target& t, const vec2f& viewport) -> projection_matrix {
+	if (viewport.x() <= 0.f || viewport.y() <= 0.f) {
+		return perspective(t.fov, 1.f, t.near_plane, t.far_plane);
+	}
 	const float aspect_ratio = viewport.x() / viewport.y();
 	return perspective(t.fov, aspect_ratio, t.near_plane, t.far_plane);
 }

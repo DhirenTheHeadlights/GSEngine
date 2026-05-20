@@ -64,8 +64,8 @@ auto gse::network::extract_input_frame(
 
 	return input_frame{
 		.input_sequence = input_sequence,
-		.client_time_ms = system_clock::now<time_t<std::uint32_t>>().as<milliseconds>(),
-		.camera_yaw = camera_yaw.as<radians>(),
+		.client_time = system_clock::now<time_t<std::uint32_t, milliseconds>>(),
+		.camera_yaw = static_cast<float>(camera_yaw),
 		.pressed = pad(pm.words()),
 		.released = pad(rm.words()),
 		.held = pad(hm.words()),
