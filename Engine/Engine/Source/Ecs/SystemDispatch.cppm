@@ -532,6 +532,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	}
 	if constexpr (has_settings<S>) {
 		node.invoke_apply_settings_fn = &invoke_apply_settings_for<S>;
+		node.settings_record = settings::build_settings_record<S>(d->state);
 	}
 	node.has_frame = names_frame<S>;
 	node.state_id = id_of<S>();

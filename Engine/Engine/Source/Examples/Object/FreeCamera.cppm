@@ -121,7 +121,8 @@ auto gse::free_camera::system::run(
 				}
 
 				const bool is_active_view = cam_s.active_controller_entity == owner_id;
-				if (is_active_view && !cam_s.ui_focus) {
+				const bool left_held = in.mouse_button_held(mouse_button::button_1);
+				if (is_active_view && !cam_s.ui_focus && left_held) {
 					const auto delta = in.mouse_delta();
 					c.yaw -= degrees(delta.x() * c.mouse_sensitivity);
 					c.pitch -= degrees(delta.y() * c.mouse_sensitivity);
@@ -140,7 +141,7 @@ auto gse::free_camera::system::run(
 				cam_follow->orientation = orientation;
 			}
 
-			std::erase_if(d.bindings_by_owner, [&cameras](const auto& entry) {
+			std::erase_if(d.bindings_by_owner, [&cameras](const auto& entry) -> auto {
 				return !cameras.find(entry.first);
 			});
 		}

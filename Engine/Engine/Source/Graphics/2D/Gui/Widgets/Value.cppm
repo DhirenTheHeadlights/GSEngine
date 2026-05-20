@@ -9,6 +9,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+
 import :types;
 import :styles;
 import :builder;
@@ -72,14 +73,18 @@ auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T v
 
 template <gse::is_quantity T, auto Unit>
 auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T value) -> void {
-	value_row<1>(ctx, name, { std::format("{:.2f} {}", value.template as<Unit>(), std::string_view(Unit.unit_name)) });
+	value_row<1>(
+		ctx,
+		name,
+		{ std::format("{:.2f} {}", gse::internal::value_in<decltype(Unit)>(value), std::string_view(Unit.unit_name)) }
+	);
 }
 
 template <typename T, int N, auto Unit>
 auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, const gse::vec<T, N>& v) -> void {
 	std::array<std::string, N> values;
 	for (std::size_t i = 0; i < N; ++i) {
-		values[i] = std::format("{:.2f}", v[i].template as<Unit>());
+		values[i] = std::format("{:.2f}", gse::internal::value_in<decltype(Unit)>(v[i]));
 	}
 	value_row<N>(ctx, name, values);
 }
@@ -96,22 +101,26 @@ auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, gse::
 
 auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value, const ui_rect& rect) -> void {
 	ctx.queue_sprite(
-		{ .rect = rect,
-		  .color = ctx.style.color_widget_background,
-		  .texture = ctx.blank_texture,
-		  .corner_radius = ctx.style.corner_radius }
+		{
+			.rect = rect,
+			.color = ctx.style.color_widget_background,
+			.texture = ctx.blank_texture,
+			.corner_radius = ctx.style.corner_radius
+		}
 	);
 
 	const float text_width = ctx.font->width(value, ctx.style.font_size);
 	const vec2f text_pos = { rect.center().x() - text_width / 2.f, rect.center().y() + ctx.style.font_size / 2.f };
 
 	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = value,
-		  .position = text_pos,
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text,
-		  .clip_rect = rect }
+		{
+			.font = ctx.font,
+			.text = value,
+			.position = text_pos,
+			.scale = ctx.style.font_size,
+			.color = ctx.style.color_text,
+			.clip_rect = rect
+		}
 	);
 }
 
@@ -138,12 +147,14 @@ auto gse::gui::draw::value_row(
 	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
 
 	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = name,
-		  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text,
-		  .clip_rect = label_rect }
+		{
+			.font = ctx.font,
+			.text = name,
+			.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+			.scale = ctx.style.font_size,
+			.color = ctx.style.color_text,
+			.clip_rect = label_rect
+		}
 	);
 
 	const float values_total_width = content_rect.width() - label_width;

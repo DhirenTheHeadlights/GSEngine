@@ -307,13 +307,16 @@ auto gse::gui::system::update_body(
 	for ([[maybe_unused]] const auto& req : ctx.read_channel<clear_screens_request>()) {
 		d.menu_stack.clear();
 	}
+	for (const auto& req : ctx.read_channel<set_manual_cursor_request>()) {
+		d.manual_cursor = req.show;
+	}
 
 	if (!d.menu_stack.empty()) {
 		process_screen(d, input_st, viewport_size);
 	}
 
 	ctx.channels.push<ui_focus_request>({
-		.focus = !d.menu_stack.empty(),
+		.focus = !d.menu_stack.empty() || d.manual_cursor,
 	});
 
 	for (const auto& content : ctx.read_channel<menu_content>()) {
@@ -501,7 +504,8 @@ auto gse::gui::system::process_menu(
 		  .color = sty.color_menu_body,
 		  .texture = d.blank_texture,
 		  .layer = layer,
-		  .corner_radius = menu_radius }
+		  .corner_radius = menu_radius,
+		  .sample_scene_snapshot = true }
 	);
 
 	const ui_rect content_rect = body_rect.inset({ sty.padding, sty.padding });
@@ -738,7 +742,8 @@ auto gse::gui::system::draw_menu_chrome(
 		  .color = sty.color_menu_body,
 		  .texture = d.blank_texture,
 		  .layer = layer,
-		  .corner_radius = menu_radius }
+		  .corner_radius = menu_radius,
+		  .sample_scene_snapshot = true }
 	);
 
 	if (current_menu.tab_contents.size() > 1) {

@@ -63,16 +63,9 @@ export namespace gse {
 namespace gse {
 	template <typename S>
 	auto make_settings_record(typename S::data& obj) -> settings::register_settings_type {
-		using data_t = typename S::data;
-		return {
-			.category = std::string(settings::category_of<data_t>()),
-			.type_id = id_of<data_t>(),
-			.settings_ptr = &obj,
-			.keys = settings::collect_settings_keys<data_t>(),
-			.write = &settings::write_settings_for<data_t>,
-			.read = &settings::read_settings_for<data_t>,
-			.draw = &settings::draw_struct_thunk<S>,
-		};
+		auto record = settings::build_settings_record<S>(obj);
+		record.draw = &settings::draw_struct_thunk<S>;
+		return record;
 	}
 }
 

@@ -120,9 +120,13 @@ constexpr auto gse::dot(const V1& lhs, const V2& rhs) {
 	using t2 = V2::value_type;
 	using result_type = decltype(std::declval<t1>() * std::declval<t2>());
 	using storage_type = internal::vec_storage_type_t<result_type>;
+	constexpr float scale = internal::vec_mul_scale_v<t1, t2, result_type>;
 
 	storage_type sum{};
 	simd::dot(lhs.as_storage_span(), rhs.as_storage_span(), sum);
+	if constexpr (scale != 1.0f) {
+		sum *= scale;
+	}
 	return result_type(sum);
 }
 
@@ -160,7 +164,9 @@ constexpr auto gse::cross(const V1& lhs, const V2& rhs) {
 	using T1 = V1::value_type;
 	using T2 = V2::value_type;
 	using result_type = decltype(std::declval<T1>() * std::declval<T2>());
+	constexpr float scale = internal::vec_mul_scale_v<T1, T2, result_type>;
 	vec<result_type, 3> out{};
+
 	auto out_span = out.as_storage_span();
 	auto lhs_span = lhs.as_storage_span();
 	auto rhs_span = rhs.as_storage_span();
@@ -168,6 +174,10 @@ constexpr auto gse::cross(const V1& lhs, const V2& rhs) {
 	out_span[0] = lhs_span[1] * rhs_span[2] - lhs_span[2] * rhs_span[1];
 	out_span[1] = lhs_span[2] * rhs_span[0] - lhs_span[0] * rhs_span[2];
 	out_span[2] = lhs_span[0] * rhs_span[1] - lhs_span[1] * rhs_span[0];
+
+	if constexpr (scale != 1.0f) {
+		simd::mul_s(out_span, scale, out_span);
+	}
 
 	return out;
 }
@@ -382,7 +392,7 @@ constexpr auto gse::rotate(const V& v, angle_t<typename V::storage_type> angle, 
 	}
 
 	V result = v;
-	const storage_type rad = angle.template as<radians>();
+	const storage_type rad = static_cast<storage_type>(angle);
 
 	const storage_type cos_theta = std::cos(rad);
 	const storage_type sin_theta = std::sin(rad);

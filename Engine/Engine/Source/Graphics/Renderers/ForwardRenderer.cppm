@@ -6,7 +6,6 @@ import :geometry_collector;
 import :depth_prepass_renderer;
 import :rt_shadow_renderer;
 import :light_culling_renderer;
-import :skin_compute_renderer;
 import :cull_compute_renderer;
 import :camera_system;
 import :texture;
@@ -71,9 +70,6 @@ export namespace gse::renderer::forward {
 
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
-
-			gpu::pipeline skinned_pipeline;
-			per_frame_resource<gpu::descriptor_region> skinned_descriptors;
 
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 			per_frame_resource<gpu::buffer> light_buffers;

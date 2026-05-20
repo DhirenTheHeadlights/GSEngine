@@ -57,7 +57,8 @@ export namespace gse::vbd {
 		distance,
 		fixed,
 		hinge,
-		slider
+		slider,
+		muscle
 	};
 
 	struct[[= shaders::shader_struct]] frozen_jacobian {
@@ -140,6 +141,9 @@ export namespace gse::vbd {
 		vec3<gap> pos_c0 = {};
 		vec3<angle> ang_c0 = {};
 		angle limit_c0 = {};
+
+		float activation = 0.f;
+		force max_force = newtons(0.f);
 	};
 
 	struct[[= shaders::shader_struct]] body_state {

@@ -6,6 +6,10 @@ import :ui_renderer;
 import :texture;
 import :font;
 import :forward_renderer;
+import :scene_snapshot_renderer;
+import :physics_debug_renderer;
+import :sdf_grid_renderer;
+import :world_text_renderer;
 
 import gse.os;
 import gse.assets;
@@ -16,6 +20,7 @@ import gse.concurrency;
 import gse.ecs;
 import gse.math;
 import gse.log;
+import gse.time;
 
 namespace gse::renderer::ui {
 	using shader_binding_types = type_pack<shaders::bindless::textures>;
@@ -23,6 +28,8 @@ namespace gse::renderer::ui {
 	struct[[= shaders::shader_struct]] sprite_push_constants {
 		projection_matrix projection;
 		std::uint32_t tex_idx;
+		std::uint32_t snapshot_tex_idx;
+		vec2f inv_screen_size;
 	};
 
 	using sprite_entry = gpu::graphics_entry<
@@ -197,24 +204,24 @@ auto gse::renderer::ui::system::run(
 		std::vector<unified_command> unified;
 		unified.reserve(sprite_commands.size() + text_commands.size());
 
-		for (const auto& [rect, color, texture, uv_rect, clip_rect, rotation, layer, z_order, corner_radius] :
-			 sprite_commands) {
-			if (!texture.valid()) {
+		for (const auto& cmd : sprite_commands) {
+			if (!cmd.texture.valid()) {
 				continue;
 			}
 
 			unified.push_back(
 				{
 					.type = command_type::sprite,
-					.layer = layer,
-					.z_order = z_order,
-					.clip_rect = clip_rect,
-					.texture = texture,
-					.rect = rect,
-					.color = color,
-					.uv_rect = uv_rect,
-					.rotation = rotation,
-					.corner_radius = corner_radius,
+					.layer = cmd.layer,
+					.z_order = cmd.z_order,
+					.clip_rect = cmd.clip_rect,
+					.texture = cmd.texture,
+					.rect = cmd.rect,
+					.color = cmd.color,
+					.uv_rect = cmd.uv_rect,
+					.rotation = cmd.rotation,
+					.corner_radius = cmd.corner_radius,
+					.sample_scene_snapshot = cmd.sample_scene_snapshot,
 					.font = {},
 					.text = {},
 					.position = {},
@@ -270,6 +277,7 @@ auto gse::renderer::ui::system::run(
 		resource::handle<texture> current_texture;
 		resource::handle<font> current_font;
 		std::optional<rect_t<vec2f>> current_clip;
+		bool current_sample_snapshot = false;
 		std::uint32_t batch_index_start = 0;
 
 		auto flush_batch = [&] {
@@ -282,6 +290,7 @@ auto gse::renderer::ui::system::run(
 						.clip_rect = current_clip,
 						.texture = current_texture,
 						.font = current_font,
+						.sample_scene_snapshot = current_sample_snapshot,
 					}
 				);
 			}
@@ -307,6 +316,9 @@ auto gse::renderer::ui::system::run(
 			else if (cmd.type == command_type::text && cmd.font.id() != current_font.id()) {
 				needs_flush = true;
 			}
+			else if (cmd.type == command_type::sprite && cmd.sample_scene_snapshot != current_sample_snapshot) {
+				needs_flush = true;
+			}
 
 			if (needs_flush) {
 				flush_batch();
@@ -314,6 +326,7 @@ auto gse::renderer::ui::system::run(
 				current_clip = cmd.clip_rect;
 				current_texture = cmd.texture;
 				current_font = cmd.font;
+				current_sample_snapshot = cmd.sample_scene_snapshot;
 			}
 
 			if (cmd.type == command_type::sprite) {
@@ -332,7 +345,12 @@ auto gse::renderer::ui::system::run(
 	}
 }
 
-auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::ui::system::frame(
+	frame_context& ctx,
+	shared_view<gpu::context> gpu_s,
+	data& d,
+	shared_view<scene_snapshot::system> snapshot_s
+) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -363,8 +381,42 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 		meters(1.0f)
 	);
 
+	const vec2f inv_screen_size{ width > 0 ? 1.0f / static_cast<float>(width) : 0.0f,
+								 height > 0 ? 1.0f / static_cast<float>(height) : 0.0f };
+
+	const std::uint32_t snapshot_idx = [&]() -> std::uint32_t {
+		if (!snapshot_s.ready) {
+			return shaders::bindless::invalid_index;
+		}
+		const auto& slot = snapshot_s.slots[frame_index];
+		return slot ? slot.index : shaders::bindless::invalid_index;
+	}();
+
+	{
+		static gse::interval_timer<> log_timer{ gse::seconds(2.f) };
+		if (log_timer.tick()) {
+			std::size_t snapshot_batches = 0;
+			for (const auto& b : batches) {
+				if (b.sample_scene_snapshot) {
+					++snapshot_batches;
+				}
+			}
+			gse::log::println(
+				gse::log::category::render,
+				"ui::frame -> snapshot_ready={}, snapshot_idx={}, total_batches={}, snapshot_batches={}",
+				snapshot_s.ready,
+				snapshot_idx,
+				batches.size(),
+				snapshot_batches
+			);
+		}
+	}
+
 	gpu::typed_push_constants<sprite_push_constants> sprite_pc{
-		.data = { .projection = projection, .tex_idx = 0 },
+		.data = { .projection = projection,
+				  .tex_idx = 0,
+				  .snapshot_tex_idx = shaders::bindless::invalid_index,
+				  .inv_screen_size = inv_screen_size },
 		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
 	};
 	gpu::typed_push_constants<msdf_push_constants> text_pc{
@@ -383,7 +435,18 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 
 	const vec2u ext_size{ width, height };
 
-	auto rec = co_await gpu::pass<ui::system>(ctx).color(gpu::load_color()).after<forward::system>();
+	auto rec = co_await gpu::pass<ui::system>(ctx)
+				   .color(gpu::load_color())
+				   .after<
+					   forward::system,
+					   scene_snapshot::system,
+					   physics_debug::system,
+					   sdf_grid::system,
+					   world_text::system>();
+
+	if (snapshot_idx != shaders::bindless::invalid_index) {
+		rec.sample_image(snapshot_s.snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);
+	}
 
 	rec.bind_vertex(vertex_buffer);
 	rec.bind_index(index_buffer);
@@ -394,7 +457,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 	auto bound_type = command_type::sprite;
 	bool first_batch = true;
 
-	for (const auto& [type, index_offset, index_count, clip_rect, texture, font] : batches) {
+	for (const auto& [type, index_offset, index_count, clip_rect, texture, font, sample_scene_snapshot] : batches) {
 		if (index_count == 0) {
 			continue;
 		}
@@ -431,6 +494,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 
 		if (type == command_type::sprite) {
 			sprite_pc.data.tex_idx = tex_idx;
+			sprite_pc.data.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
 			rec.push(d.sprite_pipeline, sprite_pc);
 		}
 		else {

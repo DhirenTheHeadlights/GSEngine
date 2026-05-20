@@ -87,7 +87,7 @@ constexpr gse::quaternion<T>::quaternion(T s, T x, T y, T z) : vec<T, 4>{ s, x, 
 
 template <gse::internal::is_arithmetic T>
 constexpr gse::quaternion<T>::quaternion(const vec<T, 3>& axis, angle_t<T> angle) {
-	auto half_angle = angle.template as<radians>() / T(2);
+	auto half_angle = static_cast<T>(angle) / T(2);
 	auto sin_half_angle = std::sin(half_angle);
 	*this = quaternion(axis * sin_half_angle, std::cos(half_angle));
 }

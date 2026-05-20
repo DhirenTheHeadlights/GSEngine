@@ -48,9 +48,9 @@ export namespace gse {
 
 		auto end(this access& self) -> decltype(auto);
 
-		auto size() const -> std::size_t;
+		[[nodiscard]] auto size() const -> std::size_t;
 
-		auto empty() const -> bool;
+		[[nodiscard]] auto empty() const -> bool;
 
 		auto data() -> pointer;
 

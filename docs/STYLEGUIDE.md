@@ -271,7 +271,7 @@ const float fov = 90.f;
 
 Numeric type can be specified via `time_t<T>`, `length_t<T>`, etc. when `float` is not appropriate (e.g. `time_t<std::uint32_t>`).
 
-Never strip units back to floats via `.as<unit>()` — unit types are layout-compatible with `float` and pass through math and GPU push constants directly. Only extract when interfacing with external APIs that demand raw scalars.
+Unit types are layout-compatible with their underlying arithmetic type and pass through math and GPU push constants directly. `.as<Unit>()` is for converting between units (e.g. `time.as<milliseconds>()` from ns-stored time); identity strip via `.as<DefaultUnit>()` is a compile error. When you genuinely need the raw scalar at a foreign-API boundary, write `static_cast<value_type>(q)`.
 
 ---
 

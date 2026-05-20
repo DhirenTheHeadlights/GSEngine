@@ -5,6 +5,7 @@ import std;
 import :texture;
 import :font;
 import :render_layer;
+import :scene_snapshot_renderer;
 
 import gse.os;
 import gse.assets;
@@ -26,6 +27,7 @@ export namespace gse::renderer {
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
 		float corner_radius = 0.f;
+		bool sample_scene_snapshot = false;
 	};
 
 	struct text_command {
@@ -62,6 +64,7 @@ namespace gse::renderer::ui {
 		std::optional<rect_t<vec2f>> clip_rect;
 		resource::handle<texture> texture;
 		resource::handle<font> font;
+		bool sample_scene_snapshot = false;
 	};
 
 	export constexpr std::size_t max_quads_per_frame = 32768;
@@ -89,6 +92,7 @@ namespace gse::renderer::ui {
 		vec4f uv_rect;
 		angle rotation;
 		float corner_radius = 0.f;
+		bool sample_scene_snapshot = false;
 
 		resource::handle<font> font;
 		std::string text;
@@ -127,6 +131,11 @@ export namespace gse::renderer::ui {
 		static auto run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d)
 			-> async::task<>;
 
-		static auto frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<>;
+		static auto frame(
+			frame_context& ctx,
+			shared_view<gpu::context> gpu_s,
+			data& d,
+			shared_view<scene_snapshot::system> snapshot_s
+		) -> async::task<>;
 	};
 }

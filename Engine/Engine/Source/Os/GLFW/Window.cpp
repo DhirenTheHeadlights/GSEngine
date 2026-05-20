@@ -401,10 +401,15 @@ auto gse::window::set_ui_focus(data& d, const bool focus) -> void {
 	const bool was = d.ui_focus;
 	d.ui_focus = focus;
 
-	if (!was && focus && d.handle) {
-		const auto dims = viewport(d);
-		glfwSetCursorPos(d.handle, dims.x() / 2.0, dims.y() / 2.0);
+	if (was || !focus || !d.handle) {
+		return;
 	}
+
+	const auto dims = viewport(d);
+	const double center_x = dims.x() / 2.0;
+	const double center_y = dims.y() / 2.0;
+	glfwSetCursorPos(d.handle, center_x, center_y);
+	d.input_events.push(input::mouse_moved{ center_x, dims.y() - center_y });
 }
 
 auto gse::window::ui_focus(const data& d) -> bool {

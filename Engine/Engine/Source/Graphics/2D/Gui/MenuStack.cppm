@@ -99,6 +99,10 @@ export namespace gse::gui {
 	struct pop_screen_request {};
 
 	struct clear_screens_request {};
+
+	struct set_manual_cursor_request {
+		bool show = false;
+	};
 }
 
 auto gse::gui::screen::body_rect(const style& sty, const vec2f viewport_size) const -> ui_rect {

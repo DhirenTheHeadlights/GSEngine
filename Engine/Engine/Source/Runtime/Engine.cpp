@@ -37,6 +37,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_save.set_on_restart([] {
 		app::restart();
 	});
+	m_scheduler.set_settings_register_hook([this](settings::register_settings_type entry) {
+		m_save.add(std::move(entry));
+	});
 	m_scheduler.register_external_resource<save::registry>(&m_save);
 	m_scheduler.register_external_resource<primitives::data>(&m_primitives);
 
@@ -49,6 +52,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		add_system<gpu::context>();
 		add_system<asset::registry>();
 		add_system<renderer::system>();
+		add_system<renderer::scene_snapshot::system>();
 		add_system<renderer::ui::system>();
 		add_system<gui::system>();
 
@@ -84,7 +88,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			add_system<camera::system>();
 			add_system<primitive_resolver::system>();
 			add_system<renderer::geometry_collector::system>();
-			add_system<renderer::skin_compute::system>();
 			add_system<renderer::cull_compute::system>();
 			add_system<renderer::physics_transform::system>();
 			add_system<renderer::depth_prepass::system>();
@@ -95,7 +98,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			add_system<renderer::world_text::system>();
 			add_system<renderer::physics_debug::system>();
 			add_system<renderer::capture::system>();
-			add_system<animation::system>();
 			add_system<audio::system>();
 
 			using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
@@ -130,7 +132,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 		auto& asset_state = m_scheduler.state<asset::data>();
 		asset::add_loader<model>(asset_state);
-		asset::add_loader<skinned_model>(asset_state);
 
 		add_system<physics::system>();
 

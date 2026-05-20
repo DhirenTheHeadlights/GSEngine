@@ -18,6 +18,10 @@ auto gse::scheduler::set_advance_hook(std::function<void(id, std::string_view)> 
 	m_advance_hook = std::move(fn);
 }
 
+auto gse::scheduler::set_settings_register_hook(std::function<void(settings::register_settings_type)> fn) -> void {
+	m_settings_register_hook = std::move(fn);
+}
+
 auto gse::scheduler::current_phase() const -> scheduler_phase {
 	return m_phase;
 }
@@ -298,6 +302,10 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 	const bool has_run = node.invoke_run_fn != nullptr;
 	const auto state_id = node.state_id;
 	const auto state_type_id = node.state_type_id;
+
+	if (node.settings_record && m_settings_register_hook) {
+		m_settings_register_hook(std::move(*node.settings_record));
+	}
 
 	m_nodes.push_back(std::move(node));
 

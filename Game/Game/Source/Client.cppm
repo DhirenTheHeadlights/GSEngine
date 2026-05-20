@@ -3,8 +3,10 @@ export module gs:client;
 import std;
 import gse;
 
+import :balance;
 import :orbit_camera;
 import :player;
+import :pose_driver;
 import :tumbler;
 
 export namespace gs {
@@ -17,6 +19,8 @@ auto gs::client_system::run(gse::run_context& ctx) -> gse::async::task<> {
 	ctx.add_system<gs::player::system>();
 	ctx.add_system<gs::orbit_camera::system>();
 	ctx.add_system<gs::tumbler::system>();
+	ctx.add_system<gs::pose_driver::system>();
+	ctx.add_system<gs::balance::system>();
 	ctx.add_system<gse::free_camera::system>();
 
 	ctx.channels.push<gse::network::clear_providers_request>({});

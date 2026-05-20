@@ -34,7 +34,8 @@ export namespace gse::internal {
 		std::ratio_add<typename D1::length, typename D2::length>,
 		std::ratio_add<typename D1::time, typename D2::time>,
 		std::ratio_add<typename D1::mass, typename D2::mass>,
-		std::ratio_add<typename D1::angle, typename D2::angle>> {
+		std::ratio_add<typename D1::angle, typename D2::angle>
+	> {
 		return {};
 	}
 
@@ -43,7 +44,8 @@ export namespace gse::internal {
 		std::ratio_subtract<typename D1::length, typename D2::length>,
 		std::ratio_subtract<typename D1::time, typename D2::time>,
 		std::ratio_subtract<typename D1::mass, typename D2::mass>,
-		std::ratio_subtract<typename D1::angle, typename D2::angle>> {
+		std::ratio_subtract<typename D1::angle, typename D2::angle>
+	> {
 		return {};
 	}
 
@@ -99,7 +101,8 @@ export namespace gse::internal {
 		std::ratio_divide<typename D::length, std::ratio<2>>,
 		std::ratio_divide<typename D::time, std::ratio<2>>,
 		std::ratio_divide<typename D::mass, std::ratio<2>>,
-		std::ratio_divide<typename D::angle, std::ratio<2>>> {
+		std::ratio_divide<typename D::angle, std::ratio<2>>
+	> {
 		return {};
 	}
 

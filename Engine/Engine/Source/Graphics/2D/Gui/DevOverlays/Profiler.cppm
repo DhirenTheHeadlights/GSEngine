@@ -153,7 +153,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		}
 	}
 
-	const double frame_ns = static_cast<double>((frame_end - frame_start).as<nanoseconds>());
+	const double frame_ns = static_cast<double>(static_cast<std::uint64_t>(frame_end - frame_start));
 
 	static std::unordered_map<const trace::node*, std::vector<trace::node>> children_sort_cache;
 	static std::vector<trace::node> sorted_roots_buf;
@@ -224,8 +224,8 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		.custom_draw =
 			[=](const trace::node& n, const draw_context& draw_ctx, const ui_rect& row, bool, bool, int) {
 				const bool has_cpu_timing = n.stop > n.start;
-				const double dur_ns = has_cpu_timing ? static_cast<double>((n.stop - n.start).as<nanoseconds>()) : 0.0;
-				const double self_ns = has_cpu_timing ? static_cast<double>(n.self.as<nanoseconds>()) : 0.0;
+				const double dur_ns = has_cpu_timing ? static_cast<double>(static_cast<std::uint64_t>(n.stop - n.start)) : 0.0;
+				const double self_ns = has_cpu_timing ? static_cast<double>(static_cast<std::uint64_t>(n.self)) : 0.0;
 				const double pct_frame = (frame_ns > 0.0 && has_cpu_timing) ? (dur_ns / frame_ns) * 100.0 : 0.0;
 
 				auto to_fixed =

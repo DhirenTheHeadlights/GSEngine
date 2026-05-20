@@ -5,7 +5,6 @@ import std;
 import :depth_prepass_renderer;
 import :geometry_collector;
 import :cull_compute_renderer;
-import :skin_compute_renderer;
 import :physics_transform_renderer;
 import :camera_system;
 
@@ -58,32 +57,6 @@ namespace gse::renderer::depth_prepass::meshlet {
 		gpu::color_target<gpu::color_format::none>>;
 }
 
-namespace gse::renderer::depth_prepass::skinned {
-	struct[[= shaders::binding<0, 0>{}]] camera_ubo {
-		using element = shaders::common::camera_data;
-	};
-
-	struct[[= shaders::binding<1, 0>{}, = shaders::ssbo_readonly]] skin_matrices {
-		using element = mat4f;
-	};
-
-	struct[[= shaders::binding<1, 1>{}, = shaders::ssbo_readonly]] instance_data_buffer {
-		using element = shaders::common::instance_data;
-	};
-
-	using shader_binding_types = type_pack<camera_ubo, skin_matrices, instance_data_buffer>;
-
-	using entry = gpu::graphics_entry<
-		gpu::body_path<"Graphics/skinned_depth_only">,
-		gpu::layout<"skinned_depth_only">,
-		gpu::types<shaders::common::shader_types>,
-		gpu::bindings<shader_binding_types>,
-		gpu::vertex_stage<"vs_main">,
-		gpu::fragment_stage<"fs_main">,
-		gpu::depth<true, true, gpu::compare_op::less>,
-		gpu::color_target<gpu::color_format::none>>;
-}
-
 auto gse::renderer::depth_prepass::system::run(
 	run_context& ctx,
 	const gpu::context::data& gpu_s,
@@ -95,12 +68,6 @@ auto gse::renderer::depth_prepass::system::run(
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		meshlet::entry::pod
-	);
-	d.skinned_pipeline = gpu::build_graphics_pipeline(
-		*gpu_s.device,
-		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
-		skinned::entry::pod
 	);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
@@ -118,13 +85,6 @@ auto gse::renderer::depth_prepass::system::run(
 
 		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.meshlet_descriptors[i])
 			.buffer<meshlet::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
-			.commit();
-
-		d.skinned_descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), skinned::entry::pod);
-
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.skinned_descriptors[i])
-			.buffer<skinned::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
 			.commit();
 	}
 
@@ -168,12 +128,6 @@ auto gse::renderer::depth_prepass::system::frame(
 		gpu::context::device_handle(*gpu_s.device),
 		gpu_s.device->descriptor_heap(),
 		meshlet::entry::pod
-	);
-	auto skinned_writer = gpu::make_push_writer(
-		*gpu_s.shader_registry,
-		gpu::context::device_handle(*gpu_s.device),
-		gpu_s.device->descriptor_heap(),
-		skinned::entry::pod
 	);
 
 	auto rec = co_await gpu::pass<system>(ctx)
@@ -222,33 +176,6 @@ auto gse::renderer::depth_prepass::system::frame(
 				i * sizeof(gpu::draw_mesh_tasks_indirect_command),
 				1,
 				sizeof(gpu::draw_mesh_tasks_indirect_command)
-			);
-		}
-	}
-
-	if (!data.skinned_batches.empty()) {
-		rec.bind(d.skinned_pipeline);
-		rec.bind_descriptors(d.skinned_pipeline, d.skinned_descriptors[frame_index]);
-
-		const auto& skin_buf = gc_r.skin_buffer[frame_index];
-		const auto& instance_buf = gc_r.instance_buffer[frame_index];
-
-		skinned_writer.begin(frame_index);
-		skinned_writer.buffer<skinned::skin_matrices>(skin_buf).buffer<skinned::instance_data_buffer>(instance_buf);
-		rec.commit(skinned_writer, d.skinned_pipeline, 1);
-
-		for (std::size_t i = 0; i < data.skinned_batches.size(); ++i) {
-			const auto& batch = data.skinned_batches[i];
-			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
-
-			rec.bind_vertex(mesh.vertex_gpu_buffer());
-			rec.bind_index(mesh.index_gpu_buffer());
-
-			rec.draw_indirect(
-				gc_r.skinned_indirect_commands_buffer[frame_index],
-				i * sizeof(gpu::draw_indexed_indirect_command),
-				1,
-				0
 			);
 		}
 	}

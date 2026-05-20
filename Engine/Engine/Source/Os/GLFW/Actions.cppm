@@ -105,15 +105,13 @@ export namespace gse::actions {
 	public:
 		auto begin_frame() -> void;
 
+		auto finalize_frame() -> void;
+
 		auto ensure_capacity(std::size_t count) -> void;
 
 		auto reset_axes(std::span<const std::uint16_t> axes1, std::span<const std::uint16_t> axes2) -> void;
 
 		auto clear_all_axes() -> void;
-
-		auto set_pressed(std::uint16_t bit_index, std::size_t count) -> void;
-
-		auto set_released(std::uint16_t bit_index, std::size_t count) -> void;
 
 		auto set_held(std::uint16_t bit_index, bool on, std::size_t count) -> void;
 
@@ -152,6 +150,7 @@ export namespace gse::actions {
 		auto ensure_axis2_capacity(std::uint16_t id) -> void;
 
 		mask m_held;
+		mask m_prev_held;
 		mask m_pressed;
 		mask m_released;
 
@@ -366,12 +365,28 @@ auto gse::actions::mask::assign(const std::span<const word> w) -> void {
 }
 
 auto gse::actions::state::begin_frame() -> void {
+	m_prev_held.assign(m_held.words());
 	m_pressed.reset();
 	m_released.reset();
 }
 
+auto gse::actions::state::finalize_frame() -> void {
+	const auto bit_count = m_held.word_count() * 64;
+	for (std::uint16_t bit = 0; bit < bit_count; ++bit) {
+		const bool h = m_held.test(bit);
+		const bool ph = m_prev_held.test(bit);
+		if (h && !ph) {
+			m_pressed.set(bit);
+		}
+		else if (!h && ph) {
+			m_released.set(bit);
+		}
+	}
+}
+
 auto gse::actions::state::ensure_capacity(const std::size_t count) -> void {
 	m_held.ensure_for(count);
+	m_prev_held.ensure_for(count);
 	m_pressed.ensure_for(count);
 	m_released.ensure_for(count);
 }
@@ -396,18 +411,6 @@ auto gse::actions::state::reset_axes(
 auto gse::actions::state::clear_all_axes() -> void {
 	std::ranges::fill(m_axes1, 0.f);
 	std::ranges::fill(m_axes2, axis{});
-}
-
-auto gse::actions::state::set_pressed(const std::uint16_t bit_index, const std::size_t count) -> void {
-	ensure_capacity(count);
-	m_pressed.set(bit_index);
-	m_held.set(bit_index);
-}
-
-auto gse::actions::state::set_released(const std::uint16_t bit_index, const std::size_t count) -> void {
-	ensure_capacity(count);
-	m_released.set(bit_index);
-	m_held.clear(bit_index);
 }
 
 auto gse::actions::state::set_held(const std::uint16_t bit_index, const bool on, const std::size_t count) -> void {
@@ -557,24 +560,14 @@ auto gse::actions::system::run(run_context& ctx, data& d, const input::system::d
 		action_state.reset_axes(d.axis1_ids_cache, d.axis2_ids_cache);
 
 		for (auto& [k, bit_index] : d.resolved.key_to_action) {
-			if (in.key_pressed(k)) {
-				action_state.set_pressed(bit_index, count);
-			}
-			if (in.key_released(k)) {
-				action_state.set_released(bit_index, count);
-			}
 			action_state.set_held(bit_index, in.key_held(k), count);
 		}
 
 		for (auto& [mb, bit_index] : d.resolved.mouse_to_action) {
-			if (in.mouse_button_pressed(mb)) {
-				action_state.set_pressed(bit_index, count);
-			}
-			if (in.mouse_button_released(mb)) {
-				action_state.set_released(bit_index, count);
-			}
 			action_state.set_held(bit_index, in.mouse_button_held(mb), count);
 		}
+
+		action_state.finalize_frame();
 
 		for (const auto& [neg, pos, axis, scale] : d.resolved.axes1_from_keys) {
 			const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
