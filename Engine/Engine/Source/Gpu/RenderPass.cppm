@@ -37,11 +37,10 @@ export namespace gse::gpu {
 		id chain_id;
 	};
 
-	struct[[= same_frame_channel]] render_pass_request {
+	struct [[= same_frame_channel]] render_pass_request {
 		render_pass_descriptor desc;
 		std::coroutine_handle<> record_handle;
 		std::optional<recording_context>* record_ctx_slot = nullptr;
-		pass_body_fn body;
 	};
 
 	class request_pass_awaitable {
@@ -60,7 +59,7 @@ export namespace gse::gpu {
 
 		auto await_suspend(std::coroutine_handle<> h) noexcept -> void;
 
-		auto await_resume() noexcept -> recording_context;
+		[[nodiscard]] auto await_resume() noexcept -> recording_context;
 
 	private:
 		const frame_context* m_ctx;
@@ -88,9 +87,6 @@ export namespace gse::gpu {
 		template <typename... States>
 		auto after() && -> pass_builder&&;
 
-		template <typename F>
-		auto record(F&& body) && -> void;
-
 		auto operator co_await() && -> request_pass_awaitable;
 
 	private:
@@ -105,7 +101,11 @@ export namespace gse::gpu {
 
 	auto clear_color(gpu::color_clear value) -> color_attachment;
 
+	auto clear_color(gpu::color_clear value, const image& target) -> color_attachment;
+
 	auto load_color() -> color_attachment;
+
+	auto load_color(const image& target) -> color_attachment;
 
 	auto clear_depth(gpu::depth_clear value) -> depth_attachment;
 
@@ -122,14 +122,6 @@ template <typename Chain>
 auto gse::gpu::pass_builder::in_chain() && -> pass_builder&& {
 	m_desc.chain_id = trace_id<Chain>();
 	return std::move(*this);
-}
-
-template <typename F>
-auto gse::gpu::pass_builder::record(F&& body) && -> void {
-	m_ctx->channels.push<render_pass_request>({
-		.desc = std::move(m_desc),
-		.body = std::make_shared<move_only_function<void(recording_context&)>>(std::forward<F>(body)),
-	});
 }
 
 template <typename Owner>

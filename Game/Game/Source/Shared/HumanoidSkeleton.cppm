@@ -112,110 +112,162 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 	const auto hip_offset_y = -pelvis.size.y() * 0.5f - thigh.size.y() * 0.5f;
 	const auto shin_offset_y = -thigh.size.y() * 0.5f - shin.size.y() * 0.5f;
 	const auto foot_offset_y = -shin.size.y() * 0.5f - foot.size.y() * 0.5f;
-	const auto foot_offset_z = -foot.size.z() * 0.25f;
+	const auto foot_offset_z = gse::meters(0.f);
 
-	s.bones.push_back({ .name = "pelvis", .shape = box_shape{ .size = pelvis.size }, .mass = pelvis.mass });
+	s.bones.push_back({
+		.name = "pelvis",
+		.shape =
+			box_shape{
+				.size = pelvis.size
+			},
+		.mass = pelvis.mass
+	});
 	s.bones.push_back({
 		.name = "torso",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), torso_offset_y, gse::meters(0.f)),
-		.shape = box_shape{ .size = torso.size },
+		.shape =
+			box_shape{
+				.size = torso.size
+			},
 		.mass = torso.mass,
 	});
 	s.bones.push_back({
 		.name = "head",
 		.parent_index = 1,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), head_offset_y, gse::meters(0.f)),
-		.shape = sphere_shape{ .radius = head_radius },
+		.shape =
+			sphere_shape{
+				.radius = head_radius
+			},
 		.mass = gse::kilograms(6.f),
 	});
 	s.bones.push_back({
 		.name = "upper_arm_l",
 		.parent_index = 1,
 		.local_offset = gse::vec3<gse::displacement>(-shoulder_offset_x, shoulder_offset_y, gse::meters(0.f)),
-		.shape = box_shape{ .size = upper_arm.size },
+		.shape =
+			box_shape{
+				.size = upper_arm.size
+			},
 		.mass = upper_arm.mass,
 	});
 	s.bones.push_back({
 		.name = "forearm_l",
 		.parent_index = 3,
 		.local_offset = gse::vec3<gse::displacement>(-forearm_offset_x, gse::meters(0.f), gse::meters(0.f)),
-		.shape = box_shape{ .size = forearm.size },
+		.shape =
+			box_shape{
+				.size = forearm.size
+			},
 		.mass = forearm.mass,
 	});
 	s.bones.push_back({
 		.name = "hand_l",
 		.parent_index = 4,
 		.local_offset = gse::vec3<gse::displacement>(-hand_offset_x, gse::meters(0.f), gse::meters(0.f)),
-		.shape = box_shape{ .size = hand.size },
+		.shape =
+			box_shape{
+				.size = hand.size
+			},
 		.mass = hand.mass,
 	});
 	s.bones.push_back({
 		.name = "upper_arm_r",
 		.parent_index = 1,
 		.local_offset = gse::vec3<gse::displacement>(shoulder_offset_x, shoulder_offset_y, gse::meters(0.f)),
-		.shape = box_shape{ .size = upper_arm.size },
+		.shape =
+			box_shape{
+				.size = upper_arm.size
+			},
 		.mass = upper_arm.mass,
 	});
 	s.bones.push_back({
 		.name = "forearm_r",
 		.parent_index = 6,
 		.local_offset = gse::vec3<gse::displacement>(forearm_offset_x, gse::meters(0.f), gse::meters(0.f)),
-		.shape = box_shape{ .size = forearm.size },
+		.shape =
+			box_shape{
+				.size = forearm.size
+			},
 		.mass = forearm.mass,
 	});
 	s.bones.push_back({
 		.name = "hand_r",
 		.parent_index = 7,
 		.local_offset = gse::vec3<gse::displacement>(hand_offset_x, gse::meters(0.f), gse::meters(0.f)),
-		.shape = box_shape{ .size = hand.size },
+		.shape =
+			box_shape{
+				.size = hand.size
+			},
 		.mass = hand.mass,
 	});
 	s.bones.push_back({
 		.name = "thigh_l",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(-hip_offset_x, hip_offset_y, gse::meters(0.f)),
-		.shape = box_shape{ .size = thigh.size },
+		.shape =
+			box_shape{
+				.size = thigh.size
+			},
 		.mass = thigh.mass,
 	});
 	s.bones.push_back({
 		.name = "shin_l",
 		.parent_index = 9,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), shin_offset_y, gse::meters(0.f)),
-		.shape = box_shape{ .size = shin.size },
+		.shape =
+			box_shape{
+				.size = shin.size
+			},
 		.mass = shin.mass,
 	});
 	s.bones.push_back({
 		.name = "foot_l",
 		.parent_index = 10,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), foot_offset_y, foot_offset_z),
-		.shape = box_shape{ .size = foot.size },
+		.shape =
+			box_shape{
+				.size = foot.size
+			},
 		.mass = foot.mass,
 	});
 	s.bones.push_back({
 		.name = "thigh_r",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(hip_offset_x, hip_offset_y, gse::meters(0.f)),
-		.shape = box_shape{ .size = thigh.size },
+		.shape =
+			box_shape{
+				.size = thigh.size
+			},
 		.mass = thigh.mass,
 	});
 	s.bones.push_back({
 		.name = "shin_r",
 		.parent_index = 12,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), shin_offset_y, gse::meters(0.f)),
-		.shape = box_shape{ .size = shin.size },
+		.shape =
+			box_shape{
+				.size = shin.size
+			},
 		.mass = shin.mass,
 	});
 	s.bones.push_back({
 		.name = "foot_r",
 		.parent_index = 13,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), foot_offset_y, foot_offset_z),
-		.shape = box_shape{ .size = foot.size },
+		.shape =
+			box_shape{
+				.size = foot.size
+			},
 		.mass = foot.mass,
 	});
 
-	auto add_hinge = [&](std::uint16_t a, std::uint16_t b, const gse::vec3<gse::displacement>& anchor_a,
-						 const gse::vec3<gse::displacement>& anchor_b, const gse::vec3f& axis,
+	auto add_hinge = [&](std::uint16_t a,
+						 std::uint16_t b,
+						 const gse::vec3<gse::displacement>& anchor_a,
+						 const gse::vec3<gse::displacement>& anchor_b,
+						 const gse::vec3f& axis,
 						 std::optional<std::pair<gse::angle, gse::angle>> limits = std::nullopt) {
 		s.joints.push_back({
 			.bone_a = a,
@@ -230,7 +282,9 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		});
 	};
 
-	auto add_fixed = [&](std::uint16_t a, std::uint16_t b, const gse::vec3<gse::displacement>& anchor_a,
+	auto add_fixed = [&](std::uint16_t a,
+						 std::uint16_t b,
+						 const gse::vec3<gse::displacement>& anchor_a,
 						 const gse::vec3<gse::displacement>& anchor_b) {
 		s.joints.push_back({
 			.bone_a = a,
@@ -243,97 +297,131 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		});
 	};
 
+	auto add_ball = [&](std::uint16_t a,
+						std::uint16_t b,
+						const gse::vec3<gse::displacement>& anchor_a,
+						const gse::vec3<gse::displacement>& anchor_b,
+						const gse::vec3<gse::angular_stiffness>& rest_stiffness = {}) {
+		s.joints.push_back({
+			.bone_a = a,
+			.bone_b = b,
+			.config =
+				ball_joint{
+					.anchor_a = anchor_a,
+					.anchor_b = anchor_b,
+					.rest_stiffness = rest_stiffness,
+				},
+		});
+	};
+
 	const auto z_axis = gse::vec3f(0.f, 0.f, 1.f);
 	const auto x_axis = gse::vec3f(1.f, 0.f, 0.f);
 
-	const auto hip_limits = std::make_pair(gse::degrees(-30.f), gse::degrees(120.f));
 	const auto knee_limits = std::make_pair(gse::degrees(-150.f), gse::degrees(5.f));
 	const auto shoulder_limits = std::make_pair(gse::degrees(-120.f), gse::degrees(120.f));
 	const auto elbow_limits = std::make_pair(gse::degrees(-100.f), gse::degrees(100.f));
 
+	const auto hip_rest_stiffness = gse::vec3<gse::angular_stiffness>(
+		gse::newton_meters_per_radian(0.f),
+		gse::newton_meters_per_radian(8.f),
+		gse::newton_meters_per_radian(200.f)
+	);
+
 	add_fixed(
-		0, 1,
+		0,
+		1,
 		gse::vec3<gse::displacement>(gse::meters(0.f), pelvis.size.y() * 0.5f, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(gse::meters(0.f), -torso.size.y() * 0.5f, gse::meters(0.f))
 	);
 	add_fixed(
-		1, 2,
+		1,
+		2,
 		gse::vec3<gse::displacement>(gse::meters(0.f), torso.size.y() * 0.5f, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(gse::meters(0.f), -head_radius, gse::meters(0.f))
 	);
 	add_hinge(
-		1, 3,
+		1,
+		3,
 		gse::vec3<gse::displacement>(-torso.size.x() * 0.5f, shoulder_offset_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(upper_arm.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f)),
 		z_axis,
 		shoulder_limits
 	);
 	add_hinge(
-		3, 4,
+		3,
+		4,
 		gse::vec3<gse::displacement>(-upper_arm.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f)),
 		gse::vec3<gse::displacement>(forearm.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f)),
 		z_axis,
 		elbow_limits
 	);
 	add_fixed(
-		4, 5,
+		4,
+		5,
 		gse::vec3<gse::displacement>(-forearm.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f)),
 		gse::vec3<gse::displacement>(hand.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f))
 	);
 	add_hinge(
-		1, 6,
+		1,
+		6,
 		gse::vec3<gse::displacement>(torso.size.x() * 0.5f, shoulder_offset_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-upper_arm.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f)),
 		z_axis,
 		shoulder_limits
 	);
 	add_hinge(
-		6, 7,
+		6,
+		7,
 		gse::vec3<gse::displacement>(upper_arm.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-forearm.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f)),
 		z_axis,
 		elbow_limits
 	);
 	add_fixed(
-		7, 8,
+		7,
+		8,
 		gse::vec3<gse::displacement>(forearm.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-hand.size.x() * 0.5f, gse::meters(0.f), gse::meters(0.f))
 	);
-	add_hinge(
-		0, 9,
+	add_ball(
+		0,
+		9,
 		gse::vec3<gse::displacement>(-hip_offset_x, -pelvis.size.y() * 0.5f, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(gse::meters(0.f), thigh.size.y() * 0.5f, gse::meters(0.f)),
-		x_axis,
-		hip_limits
+		hip_rest_stiffness
 	);
 	add_hinge(
-		9, 10,
+		9,
+		10,
 		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh.size.y() * 0.5f, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(gse::meters(0.f), shin.size.y() * 0.5f, gse::meters(0.f)),
 		x_axis,
 		knee_limits
 	);
 	add_fixed(
-		10, 11,
+		10,
+		11,
 		gse::vec3<gse::displacement>(gse::meters(0.f), -shin.size.y() * 0.5f, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(gse::meters(0.f), foot.size.y() * 0.5f, -foot_offset_z)
 	);
-	add_hinge(
-		0, 12,
+	add_ball(
+		0,
+		12,
 		gse::vec3<gse::displacement>(hip_offset_x, -pelvis.size.y() * 0.5f, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(gse::meters(0.f), thigh.size.y() * 0.5f, gse::meters(0.f)),
-		x_axis,
-		hip_limits
+		hip_rest_stiffness
 	);
 	add_hinge(
-		12, 13,
+		12,
+		13,
 		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh.size.y() * 0.5f, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(gse::meters(0.f), shin.size.y() * 0.5f, gse::meters(0.f)),
 		x_axis,
 		knee_limits
 	);
 	add_fixed(
-		13, 14,
+		13,
+		14,
 		gse::vec3<gse::displacement>(gse::meters(0.f), -shin.size.y() * 0.5f, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(gse::meters(0.f), foot.size.y() * 0.5f, -foot_offset_z)
 	);
@@ -349,18 +437,17 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		}
 	}
 
-	auto add_muscle_pair = [&](std::uint16_t a, std::uint16_t b,
-							   const gse::vec3<gse::displacement>& flexor_anchor_a,
-							   const gse::vec3<gse::displacement>& flexor_anchor_b,
-							   const gse::vec3<gse::displacement>& extensor_anchor_a,
-							   const gse::vec3<gse::displacement>& extensor_anchor_b
-						   ) -> std::pair<std::uint16_t, std::uint16_t> {
-		const auto flex_rest = gse::magnitude(
-			(bone_world_offset[a] + flexor_anchor_a) - (bone_world_offset[b] + flexor_anchor_b)
-		);
-		const auto ext_rest = gse::magnitude(
-			(bone_world_offset[a] + extensor_anchor_a) - (bone_world_offset[b] + extensor_anchor_b)
-		);
+	auto add_muscle_pair =
+		[&](std::uint16_t a,
+			std::uint16_t b,
+			const gse::vec3<gse::displacement>& flexor_anchor_a,
+			const gse::vec3<gse::displacement>& flexor_anchor_b,
+			const gse::vec3<gse::displacement>& extensor_anchor_a,
+			const gse::vec3<gse::displacement>& extensor_anchor_b) -> std::pair<std::uint16_t, std::uint16_t> {
+		const auto flex_rest =
+			gse::magnitude((bone_world_offset[a] + flexor_anchor_a) - (bone_world_offset[b] + flexor_anchor_b));
+		const auto ext_rest =
+			gse::magnitude((bone_world_offset[a] + extensor_anchor_a) - (bone_world_offset[b] + extensor_anchor_b));
 
 		const auto fi = static_cast<std::uint16_t>(s.muscles.size());
 		s.muscles.push_back({
@@ -401,73 +488,95 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 	const auto shin_front_z = shin.size.z() * 0.5f;
 	const auto shin_back_z = -shin.size.z() * 0.5f;
 
-	const auto [shoulder_l_flex, shoulder_l_ext] = add_muscle_pair(
-		1, 3,
+	add_muscle_pair(
+		1,
+		3,
 		gse::vec3<gse::displacement>(-torso_shoulder_x, torso_shoulder_bot_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-upper_arm_distal_offset, arm_bot_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-torso_shoulder_x, torso_shoulder_top_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-upper_arm_distal_offset, arm_top_y, gse::meters(0.f))
 	);
-	const auto [elbow_l_flex, elbow_l_ext] = add_muscle_pair(
-		3, 4,
+	add_muscle_pair(
+		3,
+		4,
 		gse::vec3<gse::displacement>(-upper_arm_distal_offset, arm_bot_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(forearm_proximal_offset, forearm_bot_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-upper_arm_distal_offset, arm_top_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(forearm_proximal_offset, forearm_top_y, gse::meters(0.f))
 	);
-	const auto [shoulder_r_flex, shoulder_r_ext] = add_muscle_pair(
-		1, 6,
+	add_muscle_pair(
+		1,
+		6,
 		gse::vec3<gse::displacement>(torso_shoulder_x, torso_shoulder_bot_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(upper_arm_distal_offset, arm_bot_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(torso_shoulder_x, torso_shoulder_top_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(upper_arm_distal_offset, arm_top_y, gse::meters(0.f))
 	);
-	const auto [elbow_r_flex, elbow_r_ext] = add_muscle_pair(
-		6, 7,
+	add_muscle_pair(
+		6,
+		7,
 		gse::vec3<gse::displacement>(upper_arm_distal_offset, arm_bot_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-forearm_proximal_offset, forearm_bot_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(upper_arm_distal_offset, arm_top_y, gse::meters(0.f)),
 		gse::vec3<gse::displacement>(-forearm_proximal_offset, forearm_top_y, gse::meters(0.f))
 	);
 	const auto [hip_l_flex, hip_l_ext] = add_muscle_pair(
-		0, 9,
-		gse::vec3<gse::displacement>(-pelvis_anchor_x, pelvis_anchor_y, thigh_front_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), thigh_distal_offset, thigh_front_z),
+		0,
+		9,
 		gse::vec3<gse::displacement>(-pelvis_anchor_x, pelvis_anchor_y, thigh_back_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), thigh_distal_offset, thigh_back_z)
+		gse::vec3<gse::displacement>(gse::meters(0.f), thigh_distal_offset, thigh_back_z),
+		gse::vec3<gse::displacement>(-pelvis_anchor_x, pelvis_anchor_y, thigh_front_z),
+		gse::vec3<gse::displacement>(gse::meters(0.f), thigh_distal_offset, thigh_front_z)
 	);
 	const auto [knee_l_flex, knee_l_ext] = add_muscle_pair(
-		9, 10,
+		9,
+		10,
 		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, thigh_back_z),
 		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, shin_back_z),
 		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, thigh_front_z),
 		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, shin_front_z)
 	);
 	const auto [hip_r_flex, hip_r_ext] = add_muscle_pair(
-		0, 12,
-		gse::vec3<gse::displacement>(pelvis_anchor_x, pelvis_anchor_y, thigh_front_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), thigh_distal_offset, thigh_front_z),
+		0,
+		12,
 		gse::vec3<gse::displacement>(pelvis_anchor_x, pelvis_anchor_y, thigh_back_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), thigh_distal_offset, thigh_back_z)
+		gse::vec3<gse::displacement>(gse::meters(0.f), thigh_distal_offset, thigh_back_z),
+		gse::vec3<gse::displacement>(pelvis_anchor_x, pelvis_anchor_y, thigh_front_z),
+		gse::vec3<gse::displacement>(gse::meters(0.f), thigh_distal_offset, thigh_front_z)
 	);
 	const auto [knee_r_flex, knee_r_ext] = add_muscle_pair(
-		12, 13,
+		12,
+		13,
 		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, thigh_back_z),
 		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, shin_back_z),
 		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, thigh_front_z),
 		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, shin_front_z)
 	);
 
-	const auto neg_z_axis = gse::vec3f(0.f, 0.f, -1.f);
-
-	rig.controlled.push_back({ .joint_index = 2, .hinge_axis = z_axis, .flexor_muscle_index = shoulder_l_flex, .extensor_muscle_index = shoulder_l_ext });
-	rig.controlled.push_back({ .joint_index = 3, .hinge_axis = z_axis, .flexor_muscle_index = elbow_l_flex, .extensor_muscle_index = elbow_l_ext });
-	rig.controlled.push_back({ .joint_index = 5, .hinge_axis = neg_z_axis, .flexor_muscle_index = shoulder_r_flex, .extensor_muscle_index = shoulder_r_ext });
-	rig.controlled.push_back({ .joint_index = 6, .hinge_axis = neg_z_axis, .flexor_muscle_index = elbow_r_flex, .extensor_muscle_index = elbow_r_ext });
-	rig.controlled.push_back({ .joint_index = 8, .hinge_axis = x_axis, .flexor_muscle_index = hip_l_flex, .extensor_muscle_index = hip_l_ext });
-	rig.controlled.push_back({ .joint_index = 9, .hinge_axis = x_axis, .flexor_muscle_index = knee_l_flex, .extensor_muscle_index = knee_l_ext });
-	rig.controlled.push_back({ .joint_index = 11, .hinge_axis = x_axis, .flexor_muscle_index = hip_r_flex, .extensor_muscle_index = hip_r_ext });
-	rig.controlled.push_back({ .joint_index = 12, .hinge_axis = x_axis, .flexor_muscle_index = knee_r_flex, .extensor_muscle_index = knee_r_ext });
+	rig.controlled.push_back({
+		.joint_index = 8,
+		.hinge_axis = x_axis,
+		.flexor_muscle_index = hip_l_flex,
+		.extensor_muscle_index = hip_l_ext
+	});
+	rig.controlled.push_back({
+		.joint_index = 9,
+		.hinge_axis = x_axis,
+		.flexor_muscle_index = knee_l_flex,
+		.extensor_muscle_index = knee_l_ext
+	});
+	rig.controlled.push_back({
+		.joint_index = 11,
+		.hinge_axis = x_axis,
+		.flexor_muscle_index = hip_r_flex,
+		.extensor_muscle_index = hip_r_ext
+	});
+	rig.controlled.push_back({
+		.joint_index = 12,
+		.hinge_axis = x_axis,
+		.flexor_muscle_index = knee_r_flex,
+		.extensor_muscle_index = knee_r_ext
+	});
 
 	return rig;
 }
@@ -485,9 +594,8 @@ auto gs::spawn_humanoid(
 			continue;
 		}
 		const auto joint_entity = handle.joint_ids[cj.joint_index];
-		const auto flexor_id = cj.flexor_muscle_index < handle.muscle_ids.size()
-			? handle.muscle_ids[cj.flexor_muscle_index]
-			: gse::id{};
+		const auto flexor_id =
+			cj.flexor_muscle_index < handle.muscle_ids.size() ? handle.muscle_ids[cj.flexor_muscle_index] : gse::id{};
 		const auto extensor_id = cj.extensor_muscle_index < handle.muscle_ids.size()
 			? handle.muscle_ids[cj.extensor_muscle_index]
 			: gse::id{};

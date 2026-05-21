@@ -53,7 +53,8 @@ export namespace gse::vulkan {
 		std::uint32_t layer_count = 1
 	) -> void;
 
-	[[nodiscard]] auto wait_for_fence(
+	[[nodiscard]]
+	auto wait_for_fence(
 		const device& dev,
 		gpu::handle<fence> fence,
 		std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
@@ -66,7 +67,8 @@ export namespace gse::vulkan {
 		std::uint32_t image_index = 0;
 	};
 
-	[[nodiscard]] auto acquire_next_image(
+	[[nodiscard]]
+	auto acquire_next_image(
 		const device& dev,
 		gpu::handle<swap_chain> swapchain,
 		gpu::handle<semaphore> wait_semaphore,
@@ -78,12 +80,16 @@ export namespace gse::vulkan {
 	class device : public non_copyable {
 	public:
 		struct settings {
-			[[= gse::settings::describe<
-				"Track GPU resource lifetimes for leak detection and faulting diagnostics.">{}]] bool tracking_enabled =
-				false;
+			[[
+				= gse::settings::describe<"Track GPU resource lifetimes for leak detection and faulting diagnostics.">{}
+			]]
+			bool tracking_enabled = false;
 
-			[[= gse::settings::describe<"Attach debug names to GPU resources so they appear by name in RenderDoc, "
-										"NSight, and validation messages.">{}]] bool name_resources = false;
+			[[
+				= gse::settings::describe<"Attach debug names to GPU resources so they appear by name in RenderDoc, "
+										  "NSight, and validation messages.">{}
+			]]
+			bool name_resources = false;
 		};
 
 		~device() override;
@@ -92,8 +98,12 @@ export namespace gse::vulkan {
 
 		auto operator=(device&&) noexcept -> device&;
 
-		[[nodiscard]] static auto create(const instance& instance_data, settings& cfg, aftermath& aftermath_tracker)
-			-> device_creation_result;
+		[[nodiscard]]
+		static auto create(
+			const instance& instance_data,
+			settings& cfg,
+			aftermath& aftermath_tracker
+		) -> device_creation_result;
 
 		[[nodiscard]] auto physical_device(this auto&& self) -> auto&;
 
@@ -119,8 +129,8 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto query_fault_counts(gpu::device_fault_counts& counts) const -> gpu::result;
 
-		[[nodiscard]] auto query_fault_info(gpu::device_fault_counts& counts, gpu::device_fault_info& info) const
-			-> gpu::result;
+		[[nodiscard]]
+		auto query_fault_info(gpu::device_fault_counts& counts, gpu::device_fault_info& info) const -> gpu::result;
 
 		auto create_buffer(
 			const gpu::buffer_create_info& buffer_info,
@@ -150,27 +160,43 @@ export namespace gse::vulkan {
 
 		auto free_allocation(const basic_allocation<device>& alloc) -> void;
 
-		[[nodiscard]] auto create_image_unbound(const gpu::image_create_info& info) const
-			-> std::pair<gpu::handle<image>, memory_requirements>;
+		[[nodiscard]]
+		auto create_image_unbound(
+			const gpu::image_create_info& info
+		) const -> std::pair<gpu::handle<image>, memory_requirements>;
 
-		[[nodiscard]] auto create_buffer_unbound(const gpu::buffer_create_info& info) const
-			-> std::pair<gpu::handle<buffer>, memory_requirements>;
+		[[nodiscard]]
+		auto create_buffer_unbound(
+			const gpu::buffer_create_info& info
+		) const -> std::pair<gpu::handle<buffer>, memory_requirements>;
 
 		auto bind_image_memory(gpu::handle<image> img, device_memory_handle mem, gpu::device_size offset) const -> void;
 
-		auto bind_buffer_memory(gpu::handle<buffer> buf, device_memory_handle mem, gpu::device_size offset) const
-			-> void;
+		auto bind_buffer_memory(
+			gpu::handle<buffer> buf,
+			device_memory_handle mem,
+			gpu::device_size offset
+		) const -> void;
 
-		[[nodiscard]] auto create_image_view(gpu::handle<image> img, const gpu::image_view_create_info& info) const
-			-> gpu::handle<image_view>;
+		[[nodiscard]]
+		auto create_image_view(
+			gpu::handle<image> img,
+			const gpu::image_view_create_info& info
+		) const -> gpu::handle<image_view>;
 
-		[[nodiscard]] auto allocate_aliased_memory(gpu::device_size size, std::uint32_t memory_type_index) const
-			-> device_memory_handle;
+		[[nodiscard]]
+		auto allocate_aliased_memory(
+			gpu::device_size size,
+			std::uint32_t memory_type_index
+		) const -> device_memory_handle;
 
 		auto free_aliased_memory(device_memory_handle mem) const -> void;
 
-		[[nodiscard]] auto find_memory_type_index(std::uint32_t type_bits, gpu::memory_property_flags required) const
-			-> std::uint32_t;
+		[[nodiscard]]
+		auto find_memory_type_index(
+			std::uint32_t type_bits,
+			gpu::memory_property_flags required
+		) const -> std::uint32_t;
 
 	private:
 		device(
@@ -265,8 +291,10 @@ export namespace gse::vulkan {
 }
 
 namespace gse::vulkan {
-	[[nodiscard]] auto query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device)
-		-> gpu::descriptor_buffer_properties;
+	[[nodiscard]]
+	auto query_descriptor_buffer_properties(
+		const vk::raii::PhysicalDevice& physical_device
+	) -> gpu::descriptor_buffer_properties;
 }
 
 auto gse::vulkan::device::physical_device(this auto&& self) -> auto& {

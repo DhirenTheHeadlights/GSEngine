@@ -243,12 +243,12 @@ auto gse::gui::draw::slider_box(
 		value = max;
 	}
 
-	ctx.queue_sprite(
-		{ .rect = rect,
-		  .color = ctx.style.color_widget_background,
-		  .texture = ctx.blank_texture,
-		  .corner_radius = ctx.style.corner_radius }
-	);
+	ctx.queue_sprite({
+		.rect = rect,
+		.color = ctx.style.color_widget_background,
+		.texture = ctx.blank_texture,
+		.corner_radius = ctx.style.corner_radius
+	});
 
 	float fill_ratio = 0.0f;
 	const auto range = max - min;
@@ -272,12 +272,12 @@ auto gse::gui::draw::slider_box(
 	const ui_rect fill_rect =
 		ui_rect::from_position_size(rect.top_left(), { rect.width() * fill_ratio, rect.height() });
 
-	ctx.queue_sprite(
-		{ .rect = fill_rect,
-		  .color = ctx.style.color_slider_fill,
-		  .texture = ctx.blank_texture,
-		  .corner_radius = ctx.style.corner_radius }
-	);
+	ctx.queue_sprite({
+		.rect = fill_rect,
+		.color = ctx.style.color_slider_fill,
+		.texture = ctx.blank_texture,
+		.corner_radius = ctx.style.corner_radius
+	});
 
 	std::string value_str;
 	if constexpr (internal::is_quantity<T>) {
@@ -293,14 +293,14 @@ auto gse::gui::draw::slider_box(
 	const vec2f value_text_pos = { rect.center().x() - text_width / 2.f,
 								   rect.center().y() + ctx.style.font_size / 2.f };
 
-	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = value_str,
-		  .position = value_text_pos,
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text,
-		  .clip_rect = rect }
-	);
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = value_str,
+		.position = value_text_pos,
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = rect
+	});
 }
 
 template <typename T, std::size_t N>
@@ -329,14 +329,14 @@ auto gse::gui::draw::slider_row(
 
 	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
 
-	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = name,
-		  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text,
-		  .clip_rect = label_rect }
-	);
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = name,
+		.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = label_rect
+	});
 
 	const float values_total_width = content_rect.width() - label_width;
 	const float all_spacing = ctx.style.padding * std::max(0.0f, static_cast<float>(N - 1));

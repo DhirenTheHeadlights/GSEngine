@@ -27,13 +27,25 @@ export namespace gs::balance {
 auto gs::balance::system::run(gse::run_context& ctx, data& d) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [balances, transforms, motions] = co_await ctx.acquire_with(
+			auto [balances, transforms, motions, collisions] = co_await ctx.acquire_with(
 				gse::write_v<component>,
 				gse::read_v<gse::physics::transform_component>,
-				gse::read_v<gse::physics::motion_component>
+				gse::read_v<gse::physics::motion_component>,
+				gse::read_v<gse::physics::collision_component>
 			);
 
 			const bool log_now = d.log_timer.tick();
+
+			const auto excess_past_edge =
+				[](gse::position value, gse::position lo, gse::position hi) -> gse::displacement {
+				if (value < lo) {
+					return value - lo;
+				}
+				if (value > hi) {
+					return value - hi;
+				}
+				return gse::displacement{};
+			};
 
 			const auto owner_ids = balances.owner_ids();
 			for (std::size_t i = 0; i < balances.size(); ++i) {
@@ -44,26 +56,39 @@ auto gs::balance::system::run(gse::run_context& ctx, data& d) -> gse::async::tas
 				const auto* body_mc = motions.find(owner);
 				const auto* support_a_tc = transforms.find(b.support_a);
 				const auto* support_b_tc = transforms.find(b.support_b);
+				const auto* support_a_cc = collisions.find(b.support_a);
+				const auto* support_b_cc = collisions.find(b.support_b);
 
-				if (!body_tc || !body_mc || !support_a_tc || !support_b_tc) {
+				if (!body_tc || !body_mc || !support_a_tc || !support_b_tc || !support_a_cc || !support_b_cc) {
 					b.correction_velocity = {};
 					if (log_now) {
 						gse::log::println(
-							"balance owner={} missing: body_tc={} body_mc={} support_a={} support_b={}",
+							"balance owner={} missing: body_tc={} body_mc={} support_a={} support_b={} "
+							"support_a_cc={} support_b_cc={}",
 							owner.number(),
 							body_tc != nullptr,
 							body_mc != nullptr,
 							support_a_tc != nullptr,
-							support_b_tc != nullptr
+							support_b_tc != nullptr,
+							support_a_cc != nullptr,
+							support_b_cc != nullptr
 						);
 					}
 					continue;
 				}
 
-				const auto support_center =
-					support_a_tc->position + (support_b_tc->position - support_a_tc->position) * 0.5f;
-				const auto offset = body_tc->position - support_center;
-				const auto lean = gse::vec3<gse::displacement>(offset.x(), gse::meters(0.f), offset.z());
+				const auto a_aabb = world_aabb_of(*support_a_tc, *support_a_cc);
+				const auto b_aabb = world_aabb_of(*support_b_tc, *support_b_cc);
+				const auto support_min_x = std::min(a_aabb.min.x(), b_aabb.min.x());
+				const auto support_max_x = std::max(a_aabb.max.x(), b_aabb.max.x());
+				const auto support_min_z = std::min(a_aabb.min.z(), b_aabb.min.z());
+				const auto support_max_z = std::max(a_aabb.max.z(), b_aabb.max.z());
+
+				const auto lean = gse::vec3<gse::displacement>(
+					excess_past_edge(body_tc->position.x(), support_min_x, support_max_x),
+					gse::meters(0.f),
+					excess_past_edge(body_tc->position.z(), support_min_z, support_max_z)
+				);
 				const auto horizontal_v = gse::vec3<gse::velocity>(
 					body_mc->current_velocity.x(),
 					gse::meters_per_second(0.f),
@@ -83,17 +108,23 @@ auto gs::balance::system::run(gse::run_context& ctx, data& d) -> gse::async::tas
 				b.stepping_bias_forward = -capture_point_body.z();
 
 				if (log_now) {
+					const auto support_cx = support_min_x + (support_max_x - support_min_x) * 0.5f;
+					const auto support_cz = support_min_z + (support_max_z - support_min_z) * 0.5f;
 					gse::log::println(
-						"balance owner={} pelvis=({:+.2f},{:+.2f},{:+.2f}) feet_ctr=({:+.2f},{:+.2f},{:+.2f}) "
+						"balance owner={} pelvis=({:+.2f},{:+.2f},{:+.2f}) "
+						"support_x=[{:+.2f},{:+.2f}] support_z=[{:+.2f},{:+.2f}] center=({:+.2f},{:+.2f}) "
 						"lean=({:+.3f},{:+.3f}) vel=({:+.2f},{:+.2f}) correction=({:+.2f},{:+.2f}) |c|={:.2f} "
 						"step_bias_fwd={:+.3f}",
 						owner.number(),
 						static_cast<float>(body_tc->position.x()),
 						static_cast<float>(body_tc->position.y()),
 						static_cast<float>(body_tc->position.z()),
-						static_cast<float>(support_center.x()),
-						static_cast<float>(support_center.y()),
-						static_cast<float>(support_center.z()),
+						static_cast<float>(support_min_x),
+						static_cast<float>(support_max_x),
+						static_cast<float>(support_min_z),
+						static_cast<float>(support_max_z),
+						static_cast<float>(support_cx),
+						static_cast<float>(support_cz),
 						static_cast<float>(lean.x()),
 						static_cast<float>(lean.z()),
 						static_cast<float>(horizontal_v.x()),

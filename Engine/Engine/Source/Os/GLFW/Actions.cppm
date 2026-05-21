@@ -137,8 +137,11 @@ export namespace gse::actions {
 
 		auto load_transients(std::span<const word> pressed, std::span<const word> released) -> void;
 
-		auto load_state(std::span<const word> pressed, std::span<const word> released, std::span<const word> held)
-			-> void;
+		auto load_state(
+			std::span<const word> pressed,
+			std::span<const word> released,
+			std::span<const word> held
+		) -> void;
 
 		auto set_camera_yaw(angle yaw) -> void;
 
@@ -483,8 +486,10 @@ auto gse::actions::state::released_mask() const -> const mask& {
 	return m_released;
 }
 
-auto gse::actions::state::load_transients(const std::span<const word> pressed, const std::span<const word> released)
-	-> void {
+auto gse::actions::state::load_transients(
+	const std::span<const word> pressed,
+	const std::span<const word> released
+) -> void {
 	m_pressed.assign(pressed);
 	m_released.assign(released);
 
@@ -631,12 +636,14 @@ auto gse::actions::system::finalize_bindings(data& d) -> void {
 	};
 
 	for (const auto& [info, id] : d.pending_axis2_reqs) {
-		resolved_axis2_keys r{ .id = id,
-							   .left = key_for_action(info.left.id()),
-							   .right = key_for_action(info.right.id()),
-							   .back = key_for_action(info.back.id()),
-							   .fwd = key_for_action(info.fwd.id()),
-							   .scale = info.scale };
+		resolved_axis2_keys r{
+			.id = id,
+			.left = key_for_action(info.left.id()),
+			.right = key_for_action(info.right.id()),
+			.back = key_for_action(info.back.id()),
+			.fwd = key_for_action(info.fwd.id()),
+			.scale = info.scale
+		};
 		d.axis2_by_id.add(r.id, std::move(r));
 	}
 
@@ -655,8 +662,11 @@ auto gse::actions::system::finalize_bindings(data& d) -> void {
 	d.axis2_ids_cache.erase(std::ranges::unique(d.axis2_ids_cache).begin(), d.axis2_ids_cache.end());
 }
 
-auto gse::actions::system::add_description(data& d, const std::string_view tag, const id action_id)
-	-> actions::description& {
+auto gse::actions::system::add_description(
+	data& d,
+	const std::string_view tag,
+	const id action_id
+) -> actions::description& {
 	if (const auto existing = d.descriptions.try_get(action_id)) {
 		return *existing;
 	}

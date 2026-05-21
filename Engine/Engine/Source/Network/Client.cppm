@@ -255,15 +255,20 @@ template <typename T>
 auto gse::network::client::send(const T& msg) -> void {
 	std::array<std::byte, max_packet_size> buffer;
 
-	const packet_header header{ .sequence = ++m_server.sequence(),
-								.ack = m_server.remote_ack_sequence(),
-								.ack_bits = m_server.remote_ack_bitfield() };
+	const packet_header header{
+		.sequence = ++m_server.sequence(),
+		.ack = m_server.remote_ack_sequence(),
+		.ack_bits = m_server.remote_ack_bitfield()
+	};
 
 	write_bitstream stream(buffer);
 	stream.write(header);
 	write(stream, msg);
 
-	const packet pkt{ .data = reinterpret_cast<std::uint8_t*>(buffer.data()), .size = stream.bytes_written() };
+	const packet pkt{
+		.data = reinterpret_cast<std::uint8_t*>(buffer.data()),
+		.size = stream.bytes_written()
+	};
 
 	(void)m_socket.send_data(pkt, m_server.addr());
 }

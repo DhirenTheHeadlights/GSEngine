@@ -21,7 +21,8 @@ export namespace gse::vulkan {
 
 		auto operator=(pipeline_layout&&) noexcept -> pipeline_layout& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const device& dev,
 			std::span<const gpu::handle<descriptor_set_layout>> set_layouts,
 			std::span<const gpu::push_constant_range> push_ranges
@@ -55,13 +56,11 @@ auto gse::vulkan::pipeline_layout::create(
 	std::vector<vk::PushConstantRange> vk_ranges;
 	vk_ranges.reserve(push_ranges.size());
 	for (const auto& r : push_ranges) {
-		vk_ranges.push_back(
-			{
-				.stageFlags = to_vk(r.stages),
-				.offset = r.offset,
-				.size = r.size,
-			}
-		);
+		vk_ranges.push_back({
+			.stageFlags = to_vk(r.stages),
+			.offset = r.offset,
+			.size = r.size,
+		});
 	}
 
 	const vk::PipelineLayoutCreateInfo info{

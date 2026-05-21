@@ -28,12 +28,13 @@ export namespace gse::renderer::capture {
 	struct save_clip_request {};
 
 	struct system {
-		struct[[= gse::settings::category<"Graphics">{}]] data {
+		struct [[= gse::settings::category<"Graphics">{}]] data {
 			[[
 				= gse::settings::describe<"Length of the rolling capture ring buffer. Saving a clip writes the most "
 										  "recent N seconds of frames.">{},
 				= gse::settings::range<seconds(5.f), seconds(120.f)>{}
-			]] time ring_budget = seconds(30.f);
+			]]
+			time ring_budget = seconds(30.f);
 
 			actions::handle screenshot_action;
 			actions::handle save_clip_action;

@@ -176,16 +176,14 @@ auto gse::gui::draw::dropdown_impl(
 	const ui_rect label_rect =
 		ui_rect::from_position_size({ content_rect.left(), ctx.layout_cursor.y() }, { label_width, row_height });
 
-	ctx.queue_text(
-		{
-			.font = ctx.font,
-			.text = name,
-			.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size * 0.35f },
-			.scale = ctx.style.font_size,
-			.color = ctx.style.color_text,
-			.clip_rect = label_rect,
-		}
-	);
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = name,
+		.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size * 0.35f },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = label_rect,
+	});
 
 	const float header_width = content_rect.width() - label_width;
 
@@ -228,32 +226,36 @@ auto gse::gui::draw::dropdown_impl(
 		header_bg = ctx.style.color_widget_hovered;
 	}
 
-	ctx.queue_sprite({ .rect = header_rect, .color = header_bg, .texture = ctx.blank_texture });
+	ctx.queue_sprite({
+		.rect = header_rect,
+		.color = header_bg,
+		.texture = ctx.blank_texture
+	});
 
 	const std::string current_label = current_index < count ? std::string(get_option(current_index)) : "";
 
 	const float arrow_width = ctx.style.font_size * 0.6f;
 	const float text_x = header_rect.left() + ctx.style.padding;
 
-	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = current_label,
-		  .position = { text_x, header_rect.center().y() + ctx.style.font_size * 0.35f },
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text,
-		  .clip_rect = header_rect }
-	);
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = current_label,
+		.position = { text_x, header_rect.center().y() + ctx.style.font_size * 0.35f },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = header_rect
+	});
 
 	const std::string arrow = is_open ? "^" : "v";
 	const float arrow_x = header_rect.right() - arrow_width;
-	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = arrow,
-		  .position = { arrow_x, header_rect.center().y() + ctx.style.font_size * 0.35f },
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text_secondary,
-		  .clip_rect = header_rect }
-	);
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = arrow,
+		.position = { arrow_x, header_rect.center().y() + ctx.style.font_size * 0.35f },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text_secondary,
+		.clip_rect = header_rect
+	});
 
 	ctx.layout_cursor.y() -= row_height + ctx.style.padding;
 
@@ -273,19 +275,19 @@ auto gse::gui::draw::dropdown_impl(
 			: list_rect;
 
 		constexpr float border = 1.f;
-		ctx.queue_sprite(
-			{ .rect = list_rect.inset({ -border, -border }),
-			  .color = ctx.style.color_border,
-			  .texture = ctx.blank_texture,
-			  .layer = render_layer::modal }
-		);
+		ctx.queue_sprite({
+			.rect = list_rect.inset({ -border, -border }),
+			.color = ctx.style.color_border,
+			.texture = ctx.blank_texture,
+			.layer = render_layer::modal
+		});
 
-		ctx.queue_sprite(
-			{ .rect = list_rect,
-			  .color = ctx.style.color_menu_body,
-			  .texture = ctx.blank_texture,
-			  .layer = render_layer::modal }
-		);
+		ctx.queue_sprite({
+			.rect = list_rect,
+			.color = ctx.style.color_menu_body,
+			.texture = ctx.blank_texture,
+			.layer = render_layer::modal
+		});
 
 		const float max_scroll = std::max(0.f, total_content_height - visible_height);
 		const vec2f mouse_pos = ctx.input.mouse_position();
@@ -341,23 +343,23 @@ auto gse::gui::draw::dropdown_impl(
 				option_bg = ctx.style.color_widget_hovered;
 			}
 
-			ctx.queue_sprite(
-				{ .rect = clipped_option,
-				  .color = option_bg,
-				  .texture = ctx.blank_texture,
-				  .layer = render_layer::modal }
-			);
+			ctx.queue_sprite({
+				.rect = clipped_option,
+				.color = option_bg,
+				.texture = ctx.blank_texture,
+				.layer = render_layer::modal
+			});
 
-			ctx.queue_text(
-				{ .font = ctx.font,
-				  .text = std::string(get_option(i)),
-				  .position = { option_rect.left() + ctx.style.padding,
-								option_rect.center().y() + ctx.style.font_size * 0.35f },
-				  .scale = ctx.style.font_size,
-				  .color = ctx.style.color_text,
-				  .clip_rect = content_area,
-				  .layer = render_layer::modal }
-			);
+			ctx.queue_text({
+				.font = ctx.font,
+				.text = std::string(get_option(i)),
+				.position = { option_rect.left() + ctx.style.padding,
+							  option_rect.center().y() + ctx.style.font_size * 0.35f },
+				.scale = ctx.style.font_size,
+				.color = ctx.style.color_text,
+				.clip_rect = content_area,
+				.layer = render_layer::modal
+			});
 
 			if (option_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
 				result.changed = true;
@@ -374,12 +376,12 @@ auto gse::gui::draw::dropdown_impl(
 
 			vec4f track_color = ctx.style.color_widget_background;
 			track_color.w() *= 0.3f;
-			ctx.queue_sprite(
-				{ .rect = scrollbar_track,
-				  .color = track_color,
-				  .texture = ctx.blank_texture,
-				  .layer = render_layer::modal }
-			);
+			ctx.queue_sprite({
+				.rect = scrollbar_track,
+				.color = track_color,
+				.texture = ctx.blank_texture,
+				.layer = render_layer::modal
+			});
 
 			const float scrollbar_height = std::max(20.f, (visible_height / total_content_height) * visible_height);
 			const float scroll_ratio = max_scroll > 0.f ? state.scroll.offset / max_scroll : 0.f;
@@ -418,16 +420,18 @@ auto gse::gui::draw::dropdown_impl(
 				bar_color = ctx.style.color_widget_hovered;
 			}
 
-			ctx.queue_sprite(
-				{ .rect = scrollbar_rect,
-				  .color = bar_color,
-				  .texture = ctx.blank_texture,
-				  .layer = render_layer::modal }
-			);
+			ctx.queue_sprite({
+				.rect = scrollbar_rect,
+				.color = bar_color,
+				.texture = ctx.blank_texture,
+				.layer = render_layer::modal
+			});
 		}
 
-		if (!list_rect.contains(mouse_pos) && !header_rect.contains(mouse_pos) &&
-			ctx.input.mouse_button_pressed(mouse_button::button_1) && !state.scroll.scrollbar_held) {
+		if (
+			!list_rect.contains(mouse_pos) && !header_rect.contains(mouse_pos) &&
+			ctx.input.mouse_button_pressed(mouse_button::button_1) && !state.scroll.scrollbar_held
+		) {
 			state.open_dropdown_id.reset();
 		}
 	}

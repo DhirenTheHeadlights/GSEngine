@@ -30,7 +30,7 @@ if (j.type == joint_type::distance) {
     j.pos_penalty.x = min(j.pos_penalty.x + pc.cfg.beta * abs(c), penalty_cap);
     InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
 }
-else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
+else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
     float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
     for (int k = 0; k < 3; k++) {
         float c = dot(dirs[k], d) - j.pos_c0[k];
@@ -39,52 +39,61 @@ else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
         InterlockedMax(collision_state[state_convergence_max_delta_index], asuint(abs(c)));
     }
 
-    float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
-    float3 theta = to_axis_angle(q_error);
+    if (j.type != joint_type::ball) {
+        float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
+        float3 theta = to_axis_angle(q_error);
 
-    if (j.type == joint_type::fixed) {
-        for (int k = 0; k < 3; k++) {
-            float c_ang = theta[k] - j.ang_c0[k];
-            j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-            j.ang_penalty[k] = min(j.ang_penalty[k] + pc.cfg.ang_beta * abs(c_ang), pc.cfg.ang_penalty_max);
-            InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_ang)));
-        }
-    }
-    else {
-        float3 axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz);
-        float3 axis_b = rotate_vector(body_b.predicted_orientation, j.local_axis_b.xyz);
-        float3 swing_error = cross(axis_a, axis_b);
-
-        float3 perp_u = cross(axis_a, float3(0, 1, 0));
-        if (length(perp_u) < 1e-6) perp_u = cross(axis_a, float3(1, 0, 0));
-        perp_u = normalize(perp_u);
-        float3 perp_v = normalize(cross(axis_a, perp_u));
-
-        float c_u = dot(perp_u, swing_error) - j.ang_c0.x;
-        float c_v = dot(perp_v, swing_error) - j.ang_c0.y;
-
-        j.ang_lambda.x = j.ang_penalty.x * c_u + j.ang_lambda.x;
-        j.ang_penalty.x = min(j.ang_penalty.x + pc.cfg.ang_beta * abs(c_u), pc.cfg.ang_penalty_max);
-        InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_u)));
-
-        j.ang_lambda.y = j.ang_penalty.y * c_v + j.ang_lambda.y;
-        j.ang_penalty.y = min(j.ang_penalty.y + pc.cfg.ang_beta * abs(c_v), pc.cfg.ang_penalty_max);
-        InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_v)));
-
-        if (j.limits_enabled != 0) {
-            float twist = dot(axis_a, theta);
-
-            if (twist < j.limit_lower) {
-                float c_limit = (twist - j.limit_lower) - j.limit_c0;
-                j.limit_lambda = min(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
-                j.limit_penalty = min(j.limit_penalty + pc.cfg.ang_beta * abs(c_limit), pc.cfg.ang_penalty_max);
-                InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
+        if (j.type == joint_type::fixed) {
+            for (int k = 0; k < 3; k++) {
+                float c_ang = theta[k] - j.ang_c0[k];
+                j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
+                j.ang_penalty[k] = min(j.ang_penalty[k] + pc.cfg.ang_beta * abs(c_ang), pc.cfg.ang_penalty_max);
+                InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_ang)));
             }
-            else if (twist > j.limit_upper) {
-                float c_limit = (twist - j.limit_upper) - j.limit_c0;
-                j.limit_lambda = max(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
-                j.limit_penalty = min(j.limit_penalty + pc.cfg.ang_beta * abs(c_limit), pc.cfg.ang_penalty_max);
-                InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
+        }
+        else if (j.type == joint_type::universal) {
+            float3 axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz);
+            float c_twist = dot(axis_a, theta) - j.ang_c0.x;
+            j.ang_lambda.x = j.ang_penalty.x * c_twist + j.ang_lambda.x;
+            j.ang_penalty.x = min(j.ang_penalty.x + pc.cfg.ang_beta * abs(c_twist), pc.cfg.ang_penalty_max);
+            InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_twist)));
+        }
+        else {
+            float3 axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz);
+            float3 axis_b = rotate_vector(body_b.predicted_orientation, j.local_axis_b.xyz);
+            float3 swing_error = cross(axis_a, axis_b);
+
+            float3 perp_u = cross(axis_a, float3(0, 1, 0));
+            if (length(perp_u) < 1e-6) perp_u = cross(axis_a, float3(1, 0, 0));
+            perp_u = normalize(perp_u);
+            float3 perp_v = normalize(cross(axis_a, perp_u));
+
+            float c_u = dot(perp_u, swing_error) - j.ang_c0.x;
+            float c_v = dot(perp_v, swing_error) - j.ang_c0.y;
+
+            j.ang_lambda.x = j.ang_penalty.x * c_u + j.ang_lambda.x;
+            j.ang_penalty.x = min(j.ang_penalty.x + pc.cfg.ang_beta * abs(c_u), pc.cfg.ang_penalty_max);
+            InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_u)));
+
+            j.ang_lambda.y = j.ang_penalty.y * c_v + j.ang_lambda.y;
+            j.ang_penalty.y = min(j.ang_penalty.y + pc.cfg.ang_beta * abs(c_v), pc.cfg.ang_penalty_max);
+            InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_v)));
+
+            if (j.limits_enabled != 0) {
+                float twist = dot(axis_a, theta);
+
+                if (twist < j.limit_lower) {
+                    float c_limit = (twist - j.limit_lower) - j.limit_c0;
+                    j.limit_lambda = min(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
+                    j.limit_penalty = min(j.limit_penalty + pc.cfg.ang_beta * abs(c_limit), pc.cfg.ang_penalty_max);
+                    InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
+                }
+                else if (twist > j.limit_upper) {
+                    float c_limit = (twist - j.limit_upper) - j.limit_c0;
+                    j.limit_lambda = max(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
+                    j.limit_penalty = min(j.limit_penalty + pc.cfg.ang_beta * abs(c_limit), pc.cfg.ang_penalty_max);
+                    InterlockedMax(collision_state[state_convergence_max_angular_delta_index], asuint(abs(c_limit)));
+                }
             }
         }
     }

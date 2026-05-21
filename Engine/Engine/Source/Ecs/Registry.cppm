@@ -91,12 +91,18 @@ export namespace gse {
 		auto try_component(this registry& self, id owner) -> decltype(auto);
 
 		template <typename T>
-		auto acquire_read(access_token, async::rw_mutex* mutex = nullptr, std::atomic<int>* held_locks = nullptr)
-			-> read<T>;
+		auto acquire_read(
+			access_token,
+			async::rw_mutex* mutex = nullptr,
+			std::atomic<int>* held_locks = nullptr
+		) -> read<T>;
 
 		template <typename T>
-		auto acquire_write(access_token, async::rw_mutex* mutex = nullptr, std::atomic<int>* held_locks = nullptr)
-			-> write<T>;
+		auto acquire_write(
+			access_token,
+			async::rw_mutex* mutex = nullptr,
+			std::atomic<int>* held_locks = nullptr
+		) -> write<T>;
 
 		template <typename T>
 		auto mark_component_updated(id owner) -> void;

@@ -14,8 +14,11 @@ import gse.ecs;
 import gse.math;
 
 namespace gse::primitive_resolver {
-	auto attach_box(const primitive_box_spec& spec, const resource::handle<model>& handle, render_component& render)
-		-> void;
+	auto attach_box(
+		const primitive_box_spec& spec,
+		const resource::handle<model>& handle,
+		render_component& render
+	) -> void;
 
 	auto attach_sphere(
 		const primitive_sphere_spec& spec,

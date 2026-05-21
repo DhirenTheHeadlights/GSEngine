@@ -23,16 +23,18 @@ namespace gse::renderer::physics_debug {
 }
 
 export namespace gse::renderer::physics_debug {
-	struct[[= shaders::shader_struct]] shape_instance {
+	struct [[= shaders::shader_struct]] shape_instance {
 		std::uint32_t body_index;
 		vec3<length> shape_scale;
 		vec3f color;
 	};
 
 	struct system {
-		struct[[= gse::settings::category<"Graphics">{}]] data {
-			[[= gse::settings::describe<
-				"Draw collision shapes, contact points, and joint anchors over the scene.">{}]] bool enabled = true;
+		struct [[= gse::settings::category<"Graphics">{}]] data {
+			[[
+				= gse::settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}
+			]]
+			bool enabled = true;
 
 			gpu::pipeline pipeline_instanced;
 			gpu::pipeline pipeline_lines;

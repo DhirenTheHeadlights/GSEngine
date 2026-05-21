@@ -34,7 +34,9 @@ export namespace gse::internal {
 
 	template <typename T>
 	constexpr float vec_unit_scale_v = []() consteval {
-		if constexpr (requires { { T::canonical_storage_scale() } -> std::convertible_to<float>; }) {
+		if constexpr (requires {
+						  { T::canonical_storage_scale() } -> std::convertible_to<float>;
+					  }) {
 			return T::canonical_storage_scale();
 		}
 		else {

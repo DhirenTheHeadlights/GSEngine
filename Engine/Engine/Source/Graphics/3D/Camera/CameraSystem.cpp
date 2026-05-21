@@ -32,11 +32,13 @@ auto gse::camera::system::direction_relative_to_origin(const data& d, const vec3
 }
 
 auto gse::camera::system::interpolate_target(const target& from, const target& to, const float t) -> target {
-	return { .position = lerp(from.position, to.position, t),
-			 .orientation = slerp(from.orientation, to.orientation, t),
-			 .fov = from.fov + (to.fov - from.fov) * t,
-			 .near_plane = from.near_plane + (to.near_plane - from.near_plane) * t,
-			 .far_plane = from.far_plane + (to.far_plane - from.far_plane) * t };
+	return {
+		.position = lerp(from.position, to.position, t),
+		.orientation = slerp(from.orientation, to.orientation, t),
+		.fov = from.fov + (to.fov - from.fov) * t,
+		.near_plane = from.near_plane + (to.near_plane - from.near_plane) * t,
+		.far_plane = from.far_plane + (to.far_plane - from.far_plane) * t
+	};
 }
 
 auto gse::camera::system::compute_view_matrix(const target& t) -> view_matrix {

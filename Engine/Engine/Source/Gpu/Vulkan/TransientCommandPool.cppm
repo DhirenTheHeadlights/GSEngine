@@ -19,7 +19,8 @@ export namespace gse::vulkan {
 
 		auto operator=(transient_command_pool&&) noexcept -> transient_command_pool& = default;
 
-		[[nodiscard]] static auto create(const device& device, std::uint32_t family) -> transient_command_pool;
+		[[nodiscard]]
+		static auto create(const device& device, std::uint32_t family) -> transient_command_pool;
 
 		[[nodiscard]] auto allocate_primary(const device& device) -> transient_command_buffer;
 
@@ -44,8 +45,10 @@ export namespace gse::vulkan {
 gse::vulkan::transient_command_pool::transient_command_pool(vk::raii::CommandPool&& pool) : m_pool(std::move(pool)) {
 }
 
-auto gse::vulkan::transient_command_pool::create(const device& device, const std::uint32_t family)
-	-> transient_command_pool {
+auto gse::vulkan::transient_command_pool::create(
+	const device& device,
+	const std::uint32_t family
+) -> transient_command_pool {
 	const vk::CommandPoolCreateInfo pool_info{
 		.flags = vk::CommandPoolCreateFlagBits::eTransient,
 		.queueFamilyIndex = family,

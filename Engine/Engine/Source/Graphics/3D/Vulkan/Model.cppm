@@ -46,7 +46,7 @@ export namespace gse {
 			raw_blob_owned<std::uint32_t> indices;
 		};
 
-		struct[[
+		struct [[
 			= asset_format::baked_ext<".gmdl">{},
 			= asset_format::baked_dir<"Models">{},
 			= asset_format::magic<0x474D444C>{},

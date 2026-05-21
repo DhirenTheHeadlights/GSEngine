@@ -53,8 +53,13 @@ export namespace gse::settings {
 
 namespace gse::settings {
 	template <typename E>
-	auto draw_enum_dropdown(gui::builder& b, panel_state& ps, std::string_view key, std::string_view label, E& ref)
-		-> void;
+	auto draw_enum_dropdown(
+		gui::builder& b,
+		panel_state& ps,
+		std::string_view key,
+		std::string_view label,
+		E& ref
+	) -> void;
 }
 
 template <typename E>
@@ -117,11 +122,15 @@ auto gse::settings::draw_struct_thunk(
 	auto& channels = *static_cast<channel_writer*>(channels_writer);
 	const auto& live = *static_cast<const data_t*>(settings_ptr);
 
-	b.draw<gui::section>({ .title = category });
+	b.draw<gui::section>({
+		.title = category
+	});
 
-	template for (constexpr auto m : std::define_static_array(
-					  std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked())
-				  )) {
+	template for (
+		constexpr auto m : std::define_static_array(
+			std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked())
+		)
+	) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
@@ -132,7 +141,10 @@ auto gse::settings::draw_struct_thunk(
 				dw.fn(b, ps, label, &local_value);
 			}
 			else if constexpr (std::same_as<F, bool>) {
-				b.draw<gui::toggle>({ .name = label, .value = local_value });
+				b.draw<gui::toggle>({
+					.name = label,
+					.value = local_value
+				});
 			}
 			else if constexpr (settings::is_choice_v<F>) {
 				const std::string key = std::string(category) + "::" + std::string(label);
@@ -174,16 +186,22 @@ auto gse::settings::draw_struct_thunk(
 
 			if constexpr (settings::is_choice_v<F>) {
 				if (local_value.value != live.[:m:].value) {
-					channels.push<settings::change_request<S>>({ .apply = [new_value = local_value.value](data_t& d) {
-						d.[:m:].value = new_value;
-					} });
+					channels.push<settings::change_request<S>>({
+						.apply =
+							[new_value = local_value.value](data_t& d) {
+								d.[:m:].value = new_value;
+							}
+					});
 				}
 			}
 			else if constexpr (requires(F a, F b_) { a == b_; }) {
 				if (local_value != live.[:m:]) {
-					channels.push<settings::change_request<S>>({ .apply = [new_value = local_value](data_t& d) {
-						d.[:m:] = new_value;
-					} });
+					channels.push<settings::change_request<S>>({
+						.apply =
+							[new_value = local_value](data_t& d) {
+								d.[:m:] = new_value;
+							}
+					});
 				}
 			}
 		}

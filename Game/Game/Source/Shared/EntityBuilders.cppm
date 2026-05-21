@@ -101,8 +101,11 @@ auto gs::box(
 	};
 }
 
-auto gs::sphere(const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod)
-	-> sphere_archetype {
+auto gs::sphere(
+	const gse::vec3<gse::position>& position,
+	const gse::length radius,
+	const gse::sphere_lod lod
+) -> sphere_archetype {
 	return {
 		.transform = {
 			.position = position,
@@ -125,8 +128,11 @@ auto gs::sphere(const gse::vec3<gse::position>& position, const gse::length radi
 	};
 }
 
-auto gs::sphere_light(const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod)
-	-> sphere_light_archetype {
+auto gs::sphere_light(
+	const gse::vec3<gse::position>& position,
+	const gse::length radius,
+	const gse::sphere_lod lod
+) -> sphere_light_archetype {
 	return {
 		.transform = {
 			.position = position,

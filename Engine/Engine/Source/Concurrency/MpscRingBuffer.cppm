@@ -31,8 +31,9 @@ auto gse::mpsc_ring_buffer<T, Capacity>::push(const T& value) -> bool {
 		if (const auto tail = m_tail.load(std::memory_order_acquire); head_old - tail >= Capacity) {
 			return false;
 		}
-		if (m_head
-				.compare_exchange_weak(head_old, head_old + 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+		if (
+			m_head.compare_exchange_weak(head_old, head_old + 1, std::memory_order_acq_rel, std::memory_order_relaxed)
+		) {
 			break;
 		}
 	}
@@ -48,8 +49,9 @@ auto gse::mpsc_ring_buffer<T, Capacity>::push(T&& value) -> bool {
 		if (const auto tail = m_tail.load(std::memory_order_acquire); head_old - tail >= Capacity) {
 			return false;
 		}
-		if (m_head
-				.compare_exchange_weak(head_old, head_old + 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+		if (
+			m_head.compare_exchange_weak(head_old, head_old + 1, std::memory_order_acq_rel, std::memory_order_relaxed)
+		) {
 			break;
 		}
 	}

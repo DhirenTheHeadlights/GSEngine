@@ -46,5 +46,6 @@ export namespace gse::input {
 		mouse_button_released,
 		mouse_moved,
 		mouse_scrolled,
-		text_entered>;
+		text_entered
+	>;
 }

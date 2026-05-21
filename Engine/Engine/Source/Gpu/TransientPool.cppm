@@ -58,20 +58,21 @@ export namespace gse::gpu {
 		}
 	};
 
-	struct[[= same_frame_channel]] transient_image_request {
+	struct [[= same_frame_channel]] transient_image_request {
 		transient_image_handle handle;
 		transient_image_desc desc;
 	};
 
-	struct[[= same_frame_channel]] transient_buffer_request {
+	struct [[= same_frame_channel]] transient_buffer_request {
 		transient_buffer_handle handle;
 		transient_buffer_desc desc;
 	};
 
-	[[nodiscard]] auto transient_image(const frame_context& ctx, transient_image_desc desc) -> transient_image_handle;
+	[[nodiscard]]
+	auto transient_image(const frame_context& ctx, transient_image_desc desc) -> transient_image_handle;
 
-	[[nodiscard]] auto transient_buffer(const frame_context& ctx, transient_buffer_desc desc)
-		-> transient_buffer_handle;
+	[[nodiscard]]
+	auto transient_buffer(const frame_context& ctx, transient_buffer_desc desc) -> transient_buffer_handle;
 
 	struct transient_image_allocation {
 		std::unique_ptr<gpu::image> resource;

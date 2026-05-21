@@ -49,12 +49,10 @@ template <typename State>
 auto gse::concurrency::frame_scheduler::submit(move_only_function<void()> work) -> void {
 	constexpr id type_id = id_of<State>();
 
-	m_pending.push_back(
-		{
-			.type = type_id,
-			.work = std::move(work),
-		}
-	);
+	m_pending.push_back({
+		.type = type_id,
+		.work = std::move(work),
+	});
 
 	if (!m_registered.contains(type_id)) {
 		m_registered[type_id] = static_cast<int>(m_registered.size());

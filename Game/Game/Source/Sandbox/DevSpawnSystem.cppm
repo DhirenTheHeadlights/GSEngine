@@ -6,9 +6,9 @@ import gse;
 import :runtime_spawns;
 
 export namespace gs {
-	struct[[= gse::same_frame_channel]] spawn_stress_request {};
+	struct [[= gse::same_frame_channel]] spawn_stress_request {};
 
-	struct[[= gse::same_frame_channel]] spawn_joints_request {};
+	struct [[= gse::same_frame_channel]] spawn_joints_request {};
 
 	struct dev_spawn_system {
 		struct data {

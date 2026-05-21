@@ -117,13 +117,11 @@ auto gse::gui::screen::draw_backdrop(draw_context& ctx, const vec2f viewport_siz
 		ctx.style.color_menu_body.z(),
 		1.0f,
 	};
-	ctx.queue_sprite(
-		{
-			.rect = rect,
-			.color = color,
-			.texture = ctx.blank_texture,
-		}
-	);
+	ctx.queue_sprite({
+		.rect = rect,
+		.color = color,
+		.texture = ctx.blank_texture,
+	});
 }
 
 template <typename T, typename... Args>

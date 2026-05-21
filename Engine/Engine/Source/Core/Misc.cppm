@@ -12,14 +12,16 @@ export namespace gse {
 		typename Container,
 		typename T = std::remove_reference_t<decltype(**std::begin(std::declval<Container&>()))>,
 		typename Ret,
-		typename... Args>
+		typename... Args
+	>
 	auto bulk_invoke(Container&& container, Ret (T::*func)(Args...) const, Args&&... args) -> void;
 
 	template <
 		typename Container,
 		typename T = std::remove_reference_t<decltype(**std::begin(std::declval<Container&>()))>,
 		typename Ret,
-		typename... Args>
+		typename... Args
+	>
 	auto bulk_invoke(Container&& container, Ret (T::*func)(Args...), Args&&... args) -> void;
 
 	template <typename T>

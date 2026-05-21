@@ -24,31 +24,31 @@ namespace gse::internal {
 	struct unit;
 
 	template <std::meta::info UnitTypeInfo>
-	inline constexpr typename[:UnitTypeInfo:] default_unit_for_type{};
+	constexpr typename[:UnitTypeInfo:] default_unit_for_type{};
 
 	template <std::meta::info Dim, quantity_semantic_kind Kind, typename DefaultRatio, fixed_string DefaultName>
 	struct quantity_root_spec {};
 
 	template <std::meta::info Dim, quantity_semantic_kind Kind, typename DefaultRatio, fixed_string DefaultName>
-	inline constexpr quantity_root_spec<Dim, Kind, DefaultRatio, DefaultName> quantity_root{};
+	constexpr quantity_root_spec<Dim, Kind, DefaultRatio, DefaultName> quantity_root{};
 
 	template <std::meta::info Parent, quantity_semantic_kind Kind>
 	struct quantity_child_spec {};
 
 	template <std::meta::info Parent, quantity_semantic_kind Kind>
-	inline constexpr quantity_child_spec<Parent, Kind> quantity_child{};
+	constexpr quantity_child_spec<Parent, Kind> quantity_child{};
 
 	template <std::meta::info Parent>
 	struct quantity_sub_root_spec {};
 
 	template <std::meta::info Parent>
-	inline constexpr quantity_sub_root_spec<Parent> quantity_sub_root{};
+	constexpr quantity_sub_root_spec<Parent> quantity_sub_root{};
 
 	template <std::meta::info Parent, std::meta::info RelativeTag>
 	struct quantity_absolute_spec {};
 
 	template <std::meta::info Parent, std::meta::info RelativeTag>
-	inline constexpr quantity_absolute_spec<Parent, RelativeTag> quantity_absolute{};
+	constexpr quantity_absolute_spec<Parent, RelativeTag> quantity_absolute{};
 
 	enum class spec_kind {
 		none,
@@ -112,8 +112,10 @@ consteval auto gse::internal::quantity_spec_type_of(std::meta::info tag_info) ->
 			continue;
 		}
 		auto tmpl = std::meta::template_of(t);
-		if (tmpl == ^^quantity_root_spec || tmpl == ^^quantity_child_spec || tmpl == ^^quantity_sub_root_spec ||
-			tmpl == ^^quantity_absolute_spec) {
+		if (
+			tmpl == ^^quantity_root_spec || tmpl == ^^quantity_child_spec || tmpl == ^^quantity_sub_root_spec ||
+			tmpl == ^^quantity_absolute_spec
+		) {
 			return t;
 		}
 	}
@@ -271,36 +273,20 @@ namespace gse::internal {
 	using relative_quantity_tag_t = quantity_tag_traits<normalized_tag_t<Tag>>::relative_tag;
 
 	template <typename Tag>
-	inline constexpr quantity_semantic_kind semantic_kind_v = quantity_tag_traits<normalized_tag_t<Tag>>::semantic_kind;
+	constexpr quantity_semantic_kind semantic_kind_v = quantity_tag_traits<normalized_tag_t<Tag>>::semantic_kind;
 
 	template <typename Tag>
-	inline constexpr bool is_generic_tag_v = std::same_as<normalized_tag_t<Tag>, generic_quantity_tag>;
+	constexpr bool is_generic_tag_v = std::same_as<normalized_tag_t<Tag>, generic_quantity_tag>;
 
 	template <typename Tag1, typename Tag2>
-	inline constexpr bool same_unit_family_v = is_generic_tag_v<Tag1> || is_generic_tag_v<Tag2> ||
+	constexpr bool same_unit_family_v = is_generic_tag_v<Tag1> || is_generic_tag_v<Tag2> ||
 		std::same_as<unit_family_tag_t<Tag1>, unit_family_tag_t<Tag2>>;
 
 	template <typename T>
-	inline constexpr bool dependent_false_v = false;
+	constexpr bool dependent_false_v = false;
 
 	template <typename AncestorTag, typename DescendantTag>
-	consteval auto is_same_or_ancestor_tag() -> bool {
-		using ancestor = normalized_tag_t<AncestorTag>;
-		using descendant = normalized_tag_t<DescendantTag>;
-
-		if constexpr (std::same_as<ancestor, descendant>) {
-			return true;
-		}
-		else if constexpr (std::same_as<descendant, no_parent_quantity_tag>) {
-			return false;
-		}
-		else if constexpr (std::same_as<parent_quantity_tag_t<descendant>, no_parent_quantity_tag>) {
-			return false;
-		}
-		else {
-			return is_same_or_ancestor_tag<ancestor, parent_quantity_tag_t<descendant>>();
-		}
-	}
+	consteval auto is_same_or_ancestor_tag() -> bool;
 
 	template <typename Tag1, typename Tag2>
 	consteval auto common_ancestor_tag_fn() {
@@ -410,7 +396,8 @@ namespace gse::internal {
 		is_arithmetic ArithmeticType,
 		is_dimension Dimensions,
 		typename QuantityTagType,
-		typename DefaultUnitType>
+		typename DefaultUnitType
+	>
 	class quantity {
 	public:
 		using value_type = ArithmeticType;
@@ -426,74 +413,43 @@ namespace gse::internal {
 		requires has_same_dimensions<Dimensions, Dim2> && same_unit_family_v<QuantityTagType, Tag2>
 		explicit(
 			!is_generic_tag_v<Tag2> &&
-			(is_generic_tag_v<QuantityTagType> || semantic_kind_v<QuantityTagType> != semantic_kind_v<Tag2>)
-		) constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>& other)
-			: m_val(static_cast<ArithmeticType>(value_in<DefaultUnitType>(other))) {
-		}
+			(is_generic_tag_v<QuantityTagType> ||
+			 (semantic_kind_v<QuantityTagType> != semantic_kind_v<Tag2> &&
+			  !is_same_or_ancestor_tag<Tag2, QuantityTagType>()))
+		) constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>& other);
 
 		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
 		requires(!has_same_dimensions<Dimensions, Dim2>)
-		constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>&) {
-			dimension_mismatch_diagnostic<Dimensions, Dim2>{};
-		}
+		constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>&);
 
 		template <is_unit UnitType>
 		requires valid_unit_for_quantity<UnitType, quantity>
-		constexpr auto set(ArithmeticType value) -> void {
-			m_val = this->converted_value<UnitType>(value);
-		}
+		constexpr auto set(ArithmeticType value) -> void;
 
 		template <is_unit UnitType>
 		requires valid_unit_for_quantity<UnitType, quantity>
-		constexpr auto as() const -> ArithmeticType {
-			static_assert(
-				!std::same_as<UnitType, DefaultUnitType>,
-				"as<DefaultUnit>() is an identity strip; use static_cast<value_type>(q) for the raw scalar"
-			);
-			return value_in<UnitType>(*this);
-		}
+		constexpr auto as() const -> ArithmeticType;
 
-		constexpr explicit operator ArithmeticType() const noexcept {
-			return m_val;
-		}
+		constexpr explicit operator ArithmeticType() const noexcept;
 
 		template <auto UnitObj>
 		requires is_unit<decltype(UnitObj)> && valid_unit_for_quantity<decltype(UnitObj), quantity>
-		constexpr auto as() const -> ArithmeticType {
-			return this->as<decltype(UnitObj)>();
-		}
+		constexpr auto as() const -> ArithmeticType;
 
 		template <is_unit UnitType>
 		requires valid_unit_for_quantity<UnitType, quantity>
-		constexpr static auto from(ArithmeticType value) -> quantity {
-			quantity result;
-			result.m_val = result.converted_value<UnitType>(value);
-			return result;
-		}
+		constexpr static auto from(ArithmeticType value) -> quantity;
 
-		constexpr static auto canonical_storage_scale() -> float {
-			using can_type = std::conditional_t<
-				std::is_same_v<typename base_unit_override<QuantityTagType>::type, void>,
-				DefaultUnitType,
-				typename base_unit_override<QuantityTagType>::type>;
-			using r = std::ratio_divide<typename can_type::conversion_ratio, typename DefaultUnitType::conversion_ratio>;
-			return static_cast<float>(r::num) / static_cast<float>(r::den);
-		}
+		constexpr static auto canonical_storage_scale() -> float;
 
 		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
 		requires has_same_dimensions<Dimensions, Dim2> && same_unit_family_v<QuantityTagType, Tag2>
-		constexpr auto operator<=>(const quantity<T2, Dim2, Tag2, Unit2>& other) const {
-			using common_t = std::common_type_t<ArithmeticType, T2>;
-			const auto lhs = static_cast<common_t>(m_val);
-			const auto rhs = static_cast<common_t>(value_in<DefaultUnitType>(other));
-			return lhs <=> rhs;
-		}
+		constexpr auto operator<=>(const quantity<T2, Dim2, Tag2, Unit2>& other) const;
 
 		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
 		requires has_same_dimensions<Dimensions, Dim2> && same_unit_family_v<QuantityTagType, Tag2>
-		constexpr auto operator==(const quantity<T2, Dim2, Tag2, Unit2>& other) const -> bool {
-			return ((*this <=> other) == 0);
-		}
+		constexpr auto operator==(const quantity<T2, Dim2, Tag2, Unit2>& other) const -> bool;
+
 		// Public only because clang p2996 requires structural types for NTTP, and
 		// structural types must have all non-static data members public. Once that
 		// constraint relaxes, move this back to `protected`. Do not assign directly.
@@ -505,8 +461,113 @@ namespace gse::internal {
 	};
 }
 
+template <typename AncestorTag, typename DescendantTag>
+consteval auto gse::internal::is_same_or_ancestor_tag() -> bool {
+	using ancestor = normalized_tag_t<AncestorTag>;
+	using descendant = normalized_tag_t<DescendantTag>;
+
+	if constexpr (std::same_as<ancestor, descendant>) {
+		return true;
+	}
+	else if constexpr (std::same_as<descendant, no_parent_quantity_tag>) {
+		return false;
+	}
+	else if constexpr (std::same_as<parent_quantity_tag_t<descendant>, no_parent_quantity_tag>) {
+		return false;
+	}
+	else {
+		return is_same_or_ancestor_tag<ancestor, parent_quantity_tag_t<descendant>>();
+	}
+}
+
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 constexpr gse::internal::quantity<A, D, Tag, DefUnit>::quantity(A value) : m_val(value) {
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <gse::internal::is_arithmetic T2, gse::internal::is_dimension D2, typename Tag2, typename Unit2>
+requires gse::internal::has_same_dimensions<D, D2> && gse::internal::same_unit_family_v<Tag, Tag2>
+constexpr gse::internal::quantity<A, D, Tag, DefUnit>::quantity(const quantity<T2, D2, Tag2, Unit2>& other)
+	: m_val(static_cast<A>(value_in<DefUnit>(other))) {
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <gse::internal::is_arithmetic T2, gse::internal::is_dimension D2, typename Tag2, typename Unit2>
+requires(!gse::internal::has_same_dimensions<D, D2>)
+constexpr gse::internal::quantity<A, D, Tag, DefUnit>::quantity(const quantity<T2, D2, Tag2, Unit2>&) {
+	dimension_mismatch_diagnostic<D, D2>{};
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <gse::internal::is_unit UnitType>
+requires gse::internal::valid_unit_for_quantity<UnitType, gse::internal::quantity<A, D, Tag, DefUnit>>
+constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::set(A value) -> void {
+	m_val = this->template converted_value<UnitType>(value);
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <gse::internal::is_unit UnitType>
+requires gse::internal::valid_unit_for_quantity<UnitType, gse::internal::quantity<A, D, Tag, DefUnit>>
+constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::as() const -> A {
+	static_assert(
+		!std::same_as<UnitType, DefUnit>,
+		"as<DefaultUnit>() is an identity strip; use static_cast<value_type>(q) for the raw scalar"
+	);
+	return value_in<UnitType>(*this);
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+constexpr gse::internal::quantity<A, D, Tag, DefUnit>::operator A() const noexcept {
+	return m_val;
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <auto UnitObj>
+requires gse::internal::is_unit<decltype(UnitObj)> &&
+	gse::internal::valid_unit_for_quantity<decltype(UnitObj), gse::internal::quantity<A, D, Tag, DefUnit>>
+constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::as() const -> A {
+	return this->template as<decltype(UnitObj)>();
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <gse::internal::is_unit UnitType>
+requires gse::internal::valid_unit_for_quantity<UnitType, gse::internal::quantity<A, D, Tag, DefUnit>>
+constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::from(A value) -> quantity {
+	quantity result;
+	result.m_val = result.template converted_value<UnitType>(value);
+	return result;
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::canonical_storage_scale() -> float {
+	using can_type = std::conditional_t<
+		std::is_same_v<typename base_unit_override<Tag>::type, void>,
+		DefUnit,
+		typename base_unit_override<Tag>::type
+	>;
+	using r = std::ratio_divide<typename can_type::conversion_ratio, typename DefUnit::conversion_ratio>;
+	return static_cast<float>(r::num) / static_cast<float>(r::den);
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <gse::internal::is_arithmetic T2, gse::internal::is_dimension D2, typename Tag2, typename Unit2>
+requires gse::internal::has_same_dimensions<D, D2> && gse::internal::same_unit_family_v<Tag, Tag2>
+constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::operator<=>(
+	const quantity<T2, D2, Tag2, Unit2>& other
+) const {
+	using common_t = std::common_type_t<A, T2>;
+	const auto lhs = static_cast<common_t>(m_val);
+	const auto rhs = static_cast<common_t>(value_in<DefUnit>(other));
+	return lhs <=> rhs;
+}
+
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <gse::internal::is_arithmetic T2, gse::internal::is_dimension D2, typename Tag2, typename Unit2>
+requires gse::internal::has_same_dimensions<D, D2> && gse::internal::same_unit_family_v<Tag, Tag2>
+constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::operator==(
+	const quantity<T2, D2, Tag2, Unit2>& other
+) const -> bool {
+	return ((*this <=> other) == 0);
 }
 
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
@@ -518,7 +579,7 @@ constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::converted_value(A va
 	using r_u = u::conversion_ratio;
 	using r_d = def::conversion_ratio;
 
-	const long double v = static_cast<long double>(value);
+	const auto v = static_cast<long double>(value);
 
 	const long double num = static_cast<long double>(r_u::num) * static_cast<long double>(r_d::den);
 	const long double den = static_cast<long double>(r_u::den) * static_cast<long double>(r_d::num);
@@ -536,53 +597,66 @@ constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::converted_value(A va
 namespace gse::internal {
 	export template <typename TargetUnit, is_arithmetic A, is_dimension D, typename Tag, typename DefUnit>
 	requires is_unit<TargetUnit>
-	constexpr auto value_in(const quantity<A, D, Tag, DefUnit>& q) -> A {
-		if constexpr (std::same_as<TargetUnit, DefUnit>) {
-			return static_cast<A>(q);
-		}
-		else {
-			using r_u = typename TargetUnit::conversion_ratio;
-			using r_d = typename DefUnit::conversion_ratio;
-
-			const long double v = static_cast<long double>(static_cast<A>(q));
-
-			const long double num = static_cast<long double>(r_d::num) * static_cast<long double>(r_u::den);
-			const long double den = static_cast<long double>(r_d::den) * static_cast<long double>(r_u::num);
-
-			long double out = v * num / den;
-
-			if constexpr (std::is_integral_v<A>) {
-				return static_cast<A>(cexpr_llround(out));
-			}
-			else {
-				return static_cast<A>(out);
-			}
-		}
-	}
+	constexpr auto value_in(const quantity<A, D, Tag, DefUnit>& q) -> A;
 
 	template <typename Units, typename Fn>
-	constexpr auto dispatch_named_unit(const Units& units, std::string_view name, Fn&& fn) -> bool {
-		return std::apply(
-			[&](const auto&... u) {
-				bool found = false;
-				auto try_match = [&](const auto& unit_const) {
-					if (!found && name == std::string_view(std::remove_cvref_t<decltype(unit_const)>::unit_name)) {
-						fn(unit_const);
-						found = true;
-					}
-				};
-				(try_match(u), ...);
-				return found;
-			},
-			units
-		);
-	}
+	constexpr auto dispatch_named_unit(const Units& units, std::string_view name, Fn&& fn) -> bool;
 
 	export template <typename Tag>
 	struct quantity_units;
 
 	template <typename Tag>
 	concept has_unit_list = requires { quantity_units<Tag>::units; };
+}
+
+template <
+	typename TargetUnit,
+	gse::internal::is_arithmetic A,
+	gse::internal::is_dimension D,
+	typename Tag,
+	typename DefUnit
+>
+requires gse::internal::is_unit<TargetUnit>
+constexpr auto gse::internal::value_in(const quantity<A, D, Tag, DefUnit>& q) -> A {
+	if constexpr (std::same_as<TargetUnit, DefUnit>) {
+		return static_cast<A>(q);
+	}
+	else {
+		using r_u = typename TargetUnit::conversion_ratio;
+		using r_d = typename DefUnit::conversion_ratio;
+
+		const long double v = static_cast<long double>(static_cast<A>(q));
+
+		const long double num = static_cast<long double>(r_d::num) * static_cast<long double>(r_u::den);
+		const long double den = static_cast<long double>(r_d::den) * static_cast<long double>(r_u::num);
+
+		long double out = v * num / den;
+
+		if constexpr (std::is_integral_v<A>) {
+			return static_cast<A>(cexpr_llround(out));
+		}
+		else {
+			return static_cast<A>(out);
+		}
+	}
+}
+
+template <typename Units, typename Fn>
+constexpr auto gse::internal::dispatch_named_unit(const Units& units, std::string_view name, Fn&& fn) -> bool {
+	return std::apply(
+		[&](const auto&... u) {
+			bool found = false;
+			auto try_match = [&](const auto& unit_const) {
+				if (!found && name == std::string_view(std::remove_cvref_t<decltype(unit_const)>::unit_name)) {
+					fn(unit_const);
+					found = true;
+				}
+			};
+			(try_match(u), ...);
+			return found;
+		},
+		units
+	);
 }
 
 template <typename A, typename Dim, typename Tag, typename Unit, typename CharT>
@@ -723,14 +797,16 @@ export namespace gse::internal {
 		is_generic_tag_v<addition_result_tag_t<typename Q1::quantity_tag, typename Q2::quantity_tag>>,
 		addition_result_tag_t<typename Q1::quantity_tag, typename Q2::quantity_tag>,
 		std::common_type_t<typename Q1::value_type, typename Q2::value_type>,
-		typename Q1::dimension>::type;
+		typename Q1::dimension
+	>::type;
 
 	template <is_quantity Q1, is_quantity Q2>
 	using subtraction_result_t = lazy_quantity_for_tag<
 		is_generic_tag_v<subtraction_result_tag_t<typename Q1::quantity_tag, typename Q2::quantity_tag>>,
 		subtraction_result_tag_t<typename Q1::quantity_tag, typename Q2::quantity_tag>,
 		std::common_type_t<typename Q1::value_type, typename Q2::value_type>,
-		typename Q1::dimension>::type;
+		typename Q1::dimension
+	>::type;
 
 	template <typename T1, typename T2>
 	consteval auto common_quantity_fn() {
@@ -754,7 +830,8 @@ export namespace gse::internal {
 	using quantity_base_unit_t = std::conditional_t<
 		std::is_same_v<typename base_unit_override<typename Q::quantity_tag>::type, void>,
 		typename Q::default_unit,
-		typename base_unit_override<typename Q::quantity_tag>::type>;
+		typename base_unit_override<typename Q::quantity_tag>::type
+	>;
 }
 
 export namespace gse::internal {
@@ -907,9 +984,7 @@ template <gse::internal::is_arithmetic S, gse::internal::is_quantity Q>
 constexpr auto gse::internal::operator/(const S& lhs, const Q& rhs) {
 	using result_v = Q::value_type;
 	using result_d = decltype(dimensionless{} / typename Q::dimension());
-	return generic_quantity<result_v, result_d>(
-		static_cast<result_v>(lhs) / value_in<quantity_base_unit_t<Q>>(rhs)
-	);
+	return generic_quantity<result_v, result_d>(static_cast<result_v>(lhs) / value_in<quantity_base_unit_t<Q>>(rhs));
 }
 
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
@@ -972,7 +1047,9 @@ constexpr auto gse::quantity_cast(const FromQuantity& q) -> ToQuantity {
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 requires gse::internal::has_same_dimension_as<Q1, Q2>
 constexpr auto gse::fmod(const Q1& a, const Q2& b) -> Q1 {
-	return Q1(std::fmod(internal::value_in<typename Q1::default_unit>(a), internal::value_in<typename Q1::default_unit>(b)));
+	return Q1(
+		std::fmod(internal::value_in<typename Q1::default_unit>(a), internal::value_in<typename Q1::default_unit>(b))
+	);
 }
 
 export namespace gse {

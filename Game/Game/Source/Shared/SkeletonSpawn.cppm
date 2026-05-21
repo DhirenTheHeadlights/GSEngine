@@ -169,34 +169,30 @@ auto gs::spawn_skeleton(
 	for (std::size_t j = 0; j < skel.joints.size(); ++j) {
 		const auto& joint = skel.joints[j];
 		handle.joint_ids[j] = s.build(std::format("{}.joint_{}", skel.name, j))
-			.with<gse::physics::joint_spec>(
-				{
-					.entity_a = handle.bone_ids[joint.bone_a],
-					.entity_b = handle.bone_ids[joint.bone_b],
-					.config = joint.config,
-				}
-			)
-			.identify();
+								  .with<gse::physics::joint_spec>({
+									  .entity_a = handle.bone_ids[joint.bone_a],
+									  .entity_b = handle.bone_ids[joint.bone_b],
+									  .config = joint.config,
+								  })
+								  .identify();
 	}
 
 	handle.muscle_ids.resize(skel.muscles.size());
 	for (std::size_t m = 0; m < skel.muscles.size(); ++m) {
 		const auto& muscle = skel.muscles[m];
 		handle.muscle_ids[m] = s.build(std::format("{}.muscle_{}", skel.name, m))
-			.with<gse::physics::joint_spec>(
-				{
-					.entity_a = handle.bone_ids[muscle.bone_a],
-					.entity_b = handle.bone_ids[muscle.bone_b],
-					.config =
-						gse::physics::muscle_joint{
-							.anchor_a = muscle.anchor_a,
-							.anchor_b = muscle.anchor_b,
-							.rest_length = muscle.rest_length,
-						},
-				}
-			)
-			.with<gse::physics::muscle_component>({})
-			.identify();
+								   .with<gse::physics::joint_spec>({
+									   .entity_a = handle.bone_ids[muscle.bone_a],
+									   .entity_b = handle.bone_ids[muscle.bone_b],
+									   .config =
+										   gse::physics::muscle_joint{
+											   .anchor_a = muscle.anchor_a,
+											   .anchor_b = muscle.anchor_b,
+											   .rest_length = muscle.rest_length,
+										   },
+								   })
+								   .with<gse::physics::muscle_component>({})
+								   .identify();
 	}
 
 	return handle;

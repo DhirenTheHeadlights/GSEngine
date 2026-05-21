@@ -17,8 +17,11 @@ import :remote_peer;
 
 export namespace gse::network {
 	template <typename T>
-	auto broadcast_component_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers)
-		-> void;
+	auto broadcast_component_deltas(
+		auto& send_fn,
+		registry& reg,
+		const std::unordered_map<address, remote_peer>& peers
+	) -> void;
 
 	template <typename Pack>
 	auto replicate_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers) -> void;
@@ -47,7 +50,12 @@ auto gse::network::broadcast_component_deltas(
 
 	const auto upsert = [&](const id eid) {
 		if (auto* c = reg.try_component<T>(eid)) {
-			broadcast(component_upsert<T>{ .owner_id = eid, .data = extract_networked(*c) });
+			broadcast(
+				component_upsert<T>{
+					.owner_id = eid,
+					.data = extract_networked(*c)
+				}
+			);
 		}
 	};
 
@@ -58,13 +66,20 @@ auto gse::network::broadcast_component_deltas(
 		upsert(eid);
 	}
 	for (const auto eid : reg.drain_component_removes<T>()) {
-		broadcast(component_remove<T>{ .owner_id = eid });
+		broadcast(
+			component_remove<T>{
+				.owner_id = eid
+			}
+		);
 	}
 }
 
 template <typename Pack>
-auto gse::network::replicate_deltas(auto& send_fn, registry& reg, const std::unordered_map<address, remote_peer>& peers)
-	-> void {
+auto gse::network::replicate_deltas(
+	auto& send_fn,
+	registry& reg,
+	const std::unordered_map<address, remote_peer>& peers
+) -> void {
 	if (peers.empty()) {
 		return;
 	}
@@ -79,7 +94,13 @@ auto gse::network::snapshot_components_to(auto& send_fn, registry& reg, const ad
 	const auto components = reg.components<T>();
 	const auto ids = reg.owner_ids<T>();
 	for (std::size_t i = 0; i < components.size(); ++i) {
-		send_fn(component_upsert<T>{ .owner_id = ids[i], .data = extract_networked(components[i]) }, addr);
+		send_fn(
+			component_upsert<T>{
+				.owner_id = ids[i],
+				.data = extract_networked(components[i])
+			},
+			addr
+		);
 	}
 }
 

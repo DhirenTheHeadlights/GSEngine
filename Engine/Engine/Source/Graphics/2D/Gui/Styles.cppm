@@ -16,7 +16,7 @@ export namespace gse::gui {
 		// Window chrome
 		vec4f color_title_bar = { 0.18f, 0.18f, 0.22f, 0.95f };
 		vec4f color_title_bar_inactive = { 0.14f, 0.14f, 0.17f, 0.95f };
-		vec4f color_menu_body = { 0.14f, 0.14f, 0.18f, 0.98f };
+		vec4f color_menu_body = { 0.14f, 0.14f, 0.18f, 0.5f };
 		vec4f color_border = { 0.26f, 0.28f, 0.34f, 1.0f };
 
 		// Text
@@ -83,7 +83,7 @@ constexpr auto gse::gui::style::dark() -> style {
 	return style{ // Window chrome
 				  .color_title_bar = { 0.18f, 0.18f, 0.22f, 1.0f },
 				  .color_title_bar_inactive = { 0.14f, 0.14f, 0.17f, 1.0f },
-				  .color_menu_body = { 0.14f, 0.14f, 0.18f, 0.05f },
+				  .color_menu_body = { 0.14f, 0.14f, 0.18f, 0.5f },
 				  .color_border = { 0.26f, 0.28f, 0.34f, 0.7f },
 
 				  // Text
@@ -142,7 +142,7 @@ constexpr auto gse::gui::style::darker() -> style {
 	return style{ // Window chrome - fully opaque, darker
 				  .color_title_bar = { 0.12f, 0.12f, 0.14f, 1.0f },
 				  .color_title_bar_inactive = { 0.08f, 0.08f, 0.10f, 1.0f },
-				  .color_menu_body = { 0.06f, 0.06f, 0.07f, 1.0f },
+				  .color_menu_body = { 0.06f, 0.06f, 0.07f, 0.5f },
 				  .color_border = { 0.16f, 0.16f, 0.18f, 0.6f },
 
 				  // Text
@@ -201,7 +201,7 @@ constexpr auto gse::gui::style::light() -> style {
 	return style{ // Window chrome
 				  .color_title_bar = { 0.85f, 0.85f, 0.87f, 1.0f },
 				  .color_title_bar_inactive = { 0.78f, 0.78f, 0.80f, 1.0f },
-				  .color_menu_body = { 0.94f, 0.94f, 0.95f, 1.0f },
+				  .color_menu_body = { 0.94f, 0.94f, 0.95f, 0.5f },
 				  .color_border = { 0.75f, 0.75f, 0.78f, 1.0f },
 
 				  // Text
@@ -260,7 +260,7 @@ constexpr auto gse::gui::style::high_contrast() -> style {
 	return style{ // Window chrome - pure black
 				  .color_title_bar = { 0.0f, 0.0f, 0.0f, 1.0f },
 				  .color_title_bar_inactive = { 0.0f, 0.0f, 0.0f, 1.0f },
-				  .color_menu_body = { 0.0f, 0.0f, 0.0f, 1.0f },
+				  .color_menu_body = { 0.0f, 0.0f, 0.0f, 0.5f },
 				  .color_border = { 1.0f, 1.0f, 1.0f, 1.0f },
 
 				  // Text - pure white

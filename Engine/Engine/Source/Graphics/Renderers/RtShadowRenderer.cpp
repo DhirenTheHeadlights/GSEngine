@@ -17,19 +17,28 @@ import gse.math;
 import gse.log;
 
 namespace gse::renderer::rt_shadow {
-	struct[[= shaders::shader_struct]] push_constants {
+	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t count;
 		std::uint32_t instance_stride;
 		std::uint32_t model_matrix_offset;
 	};
 
-	struct[[= shaders::binding<0, 0>{}, = shaders::byte_address_buffer]] source_instance_data {};
+	struct [[
+		= shaders::binding<0, 0>{},
+		= shaders::byte_address_buffer
+	]] source_instance_data {};
 
-	struct[[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] index_mapping {
+	struct [[
+		= shaders::binding<0, 1>{},
+		= shaders::ssbo_readonly
+	]] index_mapping {
 		using element = std::uint32_t;
 	};
 
-	struct[[= shaders::binding<0, 2>{}, = shaders::rw_byte_address_buffer]] tlas_instances {};
+	struct [[
+		= shaders::binding<0, 2>{},
+		= shaders::rw_byte_address_buffer
+	]] tlas_instances {};
 
 	using shader_binding_types = type_pack<source_instance_data, index_mapping, tlas_instances>;
 
@@ -39,7 +48,8 @@ namespace gse::renderer::rt_shadow {
 		gpu::bindings<shader_binding_types>,
 		gpu::threads<64>,
 		gpu::push_constant<push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>>;
+		gpu::system_values<gpu::dispatch_thread_id>
+	>;
 }
 
 auto gse::renderer::rt_shadow::system::run(
@@ -98,11 +108,13 @@ auto gse::renderer::rt_shadow::system::frame(
 
 			d.blas_cache[mesh_ptr] = gpu::build_blas(
 				*gpu_s.device,
-				{ .vertex_buffer = &m.vertex_gpu_buffer(),
-				  .vertex_count = vertex_count,
-				  .vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
-				  .index_buffer = &m.index_gpu_buffer(),
-				  .index_count = index_count }
+				{
+					.vertex_buffer = &m.vertex_gpu_buffer(),
+					.vertex_count = vertex_count,
+					.vertex_stride = static_cast<std::uint32_t>(sizeof(vertex)),
+					.index_buffer = &m.index_gpu_buffer(),
+					.index_count = index_count
+				}
 			);
 		}
 	}
@@ -134,17 +146,19 @@ auto gse::renderer::rt_shadow::system::frame(
 		}
 
 		std::uint32_t palette_idx = 0;
-		if (const auto palette_it = data.material_palette_map.find(&mesh_ptr->material());
-			palette_it != data.material_palette_map.end()) {
+		if (
+			const auto palette_it = data.material_palette_map.find(&mesh_ptr->material());
+			palette_it != data.material_palette_map.end()
+		) {
 			palette_idx = palette_it->second;
 		}
 
-		instances.push_back(
-			{ .transform = entry.model_matrix,
-			  .custom_index = palette_idx,
-			  .cull_disable = true,
-			  .blas_address = it->second.device_address() }
-		);
+		instances.push_back({
+			.transform = entry.model_matrix,
+			.custom_index = palette_idx,
+			.cull_disable = true,
+			.blas_address = it->second.device_address()
+		});
 
 		mapping.push_back(render_queue_idx);
 		++render_queue_idx;
@@ -167,7 +181,10 @@ auto gse::renderer::rt_shadow::system::frame(
 		for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 			d.mapping_buffers[i] = gpu::buffer::create(
 				gpu_s.device->allocator(),
-				{ .size = mapping_bytes, .usage = gpu::buffer_flag::storage }
+				{
+					.size = mapping_bytes,
+					.usage = gpu::buffer_flag::storage
+				}
 			);
 		}
 		d.mapping_buffer_capacity = mapping_bytes;

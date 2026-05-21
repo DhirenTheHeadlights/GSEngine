@@ -27,17 +27,31 @@ export namespace gse::narrow_phase_collision {
 		const std::variant<physics::box_shape, physics::sphere_shape, physics::capsule_shape>* shape = nullptr;
 	};
 
-	auto sat_speculative(const bounding_box& bb1, const bounding_box& bb2, length speculative_margin)
-		-> std::optional<sat_result>;
+	auto sat_speculative(
+		const bounding_box& bb1,
+		const bounding_box& bb2,
+		length speculative_margin
+	) -> std::optional<sat_result>;
 
-	auto generate_manifold(const bounding_box& bb1, const bounding_box& bb2, const vec3f& normal, separation separation)
-		-> contact_manifold;
+	auto generate_manifold(
+		const bounding_box& bb1,
+		const bounding_box& bb2,
+		const vec3f& normal,
+		separation separation
+	) -> contact_manifold;
 
-	auto speculative_test(const shape_data& a, const shape_data& b, length speculative_margin)
-		-> std::optional<sat_result>;
+	auto speculative_test(
+		const shape_data& a,
+		const shape_data& b,
+		length speculative_margin
+	) -> std::optional<sat_result>;
 
-	auto generate_shape_manifold(const shape_data& a, const shape_data& b, const vec3f& normal, separation separation)
-		-> contact_manifold;
+	auto generate_shape_manifold(
+		const shape_data& a,
+		const shape_data& b,
+		const vec3f& normal,
+		separation separation
+	) -> contact_manifold;
 }
 
 namespace gse::narrow_phase_collision {
@@ -117,8 +131,11 @@ namespace gse::narrow_phase_collision {
 		std::uint8_t reference_side
 	) -> static_vector<clip_vertex, 9>;
 
-	auto build_clipped_face_contacts(const bounding_box& bb1, const bounding_box& bb2, const vec3f& collision_normal)
-		-> std::optional<clipped_face_contacts>;
+	auto build_clipped_face_contacts(
+		const bounding_box& bb1,
+		const bounding_box& bb2,
+		const vec3f& collision_normal
+	) -> std::optional<clipped_face_contacts>;
 
 	auto build_feature_from_clip_vertex(const clipped_face_contacts& clipped, const clip_vertex& vertex) -> feature_id;
 
@@ -149,8 +166,11 @@ namespace gse::narrow_phase_collision {
 
 	auto capsule_endpoints(const bounding_box& bb, length half_height) -> std::pair<vec3<position>, vec3<position>>;
 
-	auto closest_point_on_segment(const vec3<position>& a, const vec3<position>& b, const vec3<position>& p)
-		-> vec3<position>;
+	auto closest_point_on_segment(
+		const vec3<position>& a,
+		const vec3<position>& b,
+		const vec3<position>& p
+	) -> vec3<position>;
 
 	auto segment_segment_closest_params(
 		const vec3<position>& p1,
@@ -161,8 +181,11 @@ namespace gse::narrow_phase_collision {
 
 	auto query_obb(const bounding_box& bb, const vec3<position>& point) -> obb_query_result;
 
-	auto segment_obb_query(const bounding_box& bb, const vec3<position>& seg_start, const vec3<position>& seg_end)
-		-> std::pair<vec3<position>, obb_query_result>;
+	auto segment_obb_query(
+		const bounding_box& bb,
+		const vec3<position>& seg_start,
+		const vec3<position>& seg_end
+	) -> std::pair<vec3<position>, obb_query_result>;
 
 	auto classify_box_face(const bounding_box& bb, const vec3f& direction) -> std::uint8_t;
 
@@ -176,8 +199,12 @@ namespace gse::narrow_phase_collision {
 		length margin
 	) -> std::optional<sat_result>;
 
-	auto box_sphere_speculative(const bounding_box& bb, const vec3<position>& center, length radius, length margin)
-		-> std::optional<sat_result>;
+	auto box_sphere_speculative(
+		const bounding_box& bb,
+		const vec3<position>& center,
+		length radius,
+		length margin
+	) -> std::optional<sat_result>;
 
 	auto capsule_capsule_speculative(
 		const bounding_box& bb_a,
@@ -396,9 +423,11 @@ auto gse::narrow_phase_collision::clip_polygon(
 			const length denom = prev_dist - curr_dist;
 			if (abs(denom) > meters(1e-6f)) {
 				const float t = prev_dist / denom;
-				clip_vertex intersection{ .point = prev.point + (curr.point - prev.point) * t,
-										  .reference_sides = shared_sides(prev.reference_sides, curr.reference_sides),
-										  .incident_sides = shared_sides(prev.incident_sides, curr.incident_sides) };
+				clip_vertex intersection{
+					.point = prev.point + (curr.point - prev.point) * t,
+					.reference_sides = shared_sides(prev.reference_sides, curr.reference_sides),
+					.incident_sides = shared_sides(prev.incident_sides, curr.incident_sides)
+				};
 				if (tag_reference_side) {
 					add_side(intersection.reference_sides, reference_side);
 				}
@@ -434,8 +463,10 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(
 	const auto info1 = find_best_face_info(bb1, n);
 	const auto info2 = find_best_face_info(bb2, -n);
 
-	if (constexpr float reference_face_similarity_threshold = 0.85f;
-		std::max(info1.max_dot, info2.max_dot) < reference_face_similarity_threshold) {
+	if (
+		constexpr float reference_face_similarity_threshold = 0.85f;
+		std::max(info1.max_dot, info2.max_dot) < reference_face_similarity_threshold
+	) {
 		return std::nullopt;
 	}
 
@@ -446,7 +477,10 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(
 
 	static_vector<clip_vertex, 9> polygon;
 	for (std::uint8_t i = 0; i < incident_info.vertices.size(); ++i) {
-		polygon.push_back({ .point = incident_info.vertices[i], .incident_sides = vertex_side_set(i) });
+		polygon.push_back({
+			.point = incident_info.vertices[i],
+			.incident_sides = vertex_side_set(i)
+		});
 	}
 
 	const auto reference_normal = normalize(reference_info.normal);
@@ -480,23 +514,38 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(
 			plane_normal = -plane_normal;
 		}
 
-		polygon =
-			clip_polygon(polygon, plane{ .normal = plane_normal, .point = v1 }, true, true, reference_edge_side_id(i));
+		polygon = clip_polygon(
+			polygon,
+			plane{
+				.normal = plane_normal,
+				.point = v1
+			},
+			true,
+			true,
+			reference_edge_side_id(i)
+		);
 	}
 
 	if (polygon.empty()) {
-		return clipped_face_contacts{ .reference_is_a = reference_is_a,
-									  .reference_face = reference_info.face_index,
-									  .incident_face = incident_info.face_index };
+		return clipped_face_contacts{
+			.reference_is_a = reference_is_a,
+			.reference_face = reference_info.face_index,
+			.incident_face = incident_info.face_index
+		};
 	}
 
-	const plane reference_plane{ .normal = reference_normal, .point = reference_info.vertices[0] };
+	const plane reference_plane{
+		.normal = reference_normal,
+		.point = reference_info.vertices[0]
+	};
 
 	polygon = clip_polygon(polygon, reference_plane, false, false, feature_side_none);
 
 	const float face_alignment = dot(reference_normal, -normalize(incident_info.normal));
-	if (constexpr float slanted_face_alignment_threshold = 0.985f;
-		!polygon.empty() && face_alignment < slanted_face_alignment_threshold) {
+	if (
+		constexpr float slanted_face_alignment_threshold = 0.985f;
+		!polygon.empty() && face_alignment < slanted_face_alignment_threshold
+	) {
 		length max_incident_span = meters(0.f);
 		for (std::size_t i = 0; i < incident_info.vertices.size(); ++i) {
 			const length edge_length =
@@ -513,8 +562,10 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(
 
 		static_vector<clip_vertex, 9> filtered;
 		for (const auto& vertex : polygon) {
-			if (const length dist = dot(reference_normal, vertex.point - reference_plane.point);
-				closest_plane_distance - dist <= contact_band) {
+			if (
+				const length dist = dot(reference_normal, vertex.point - reference_plane.point);
+				closest_plane_distance - dist <= contact_band
+			) {
 				filtered.push_back(vertex);
 			}
 		}
@@ -529,10 +580,12 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(
 		vertex.point -= reference_normal * dist;
 	}
 
-	return clipped_face_contacts{ .vertices = std::move(polygon),
-								  .reference_is_a = reference_is_a,
-								  .reference_face = reference_info.face_index,
-								  .incident_face = incident_info.face_index };
+	return clipped_face_contacts{
+		.vertices = std::move(polygon),
+		.reference_is_a = reference_is_a,
+		.reference_face = reference_info.face_index,
+		.incident_face = incident_info.face_index
+	};
 }
 
 auto gse::narrow_phase_collision::build_feature_from_clip_vertex(
@@ -540,24 +593,28 @@ auto gse::narrow_phase_collision::build_feature_from_clip_vertex(
 	const clip_vertex& vertex
 ) -> feature_id {
 	if (clipped.reference_is_a) {
-		return feature_id{ .type_a = feature_type_from_sides(vertex.reference_sides),
-						   .type_b = feature_type_from_sides(vertex.incident_sides),
-						   .index_a = clipped.reference_face,
-						   .index_b = clipped.incident_face,
-						   .side_a0 = vertex.reference_sides.values[0],
-						   .side_a1 = vertex.reference_sides.values[1],
-						   .side_b0 = vertex.incident_sides.values[0],
-						   .side_b1 = vertex.incident_sides.values[1] };
+		return feature_id{
+			.type_a = feature_type_from_sides(vertex.reference_sides),
+			.type_b = feature_type_from_sides(vertex.incident_sides),
+			.index_a = clipped.reference_face,
+			.index_b = clipped.incident_face,
+			.side_a0 = vertex.reference_sides.values[0],
+			.side_a1 = vertex.reference_sides.values[1],
+			.side_b0 = vertex.incident_sides.values[0],
+			.side_b1 = vertex.incident_sides.values[1]
+		};
 	}
 
-	return feature_id{ .type_a = feature_type_from_sides(vertex.incident_sides),
-					   .type_b = feature_type_from_sides(vertex.reference_sides),
-					   .index_a = clipped.incident_face,
-					   .index_b = clipped.reference_face,
-					   .side_a0 = vertex.incident_sides.values[0],
-					   .side_a1 = vertex.incident_sides.values[1],
-					   .side_b0 = vertex.reference_sides.values[0],
-					   .side_b1 = vertex.reference_sides.values[1] };
+	return feature_id{
+		.type_a = feature_type_from_sides(vertex.incident_sides),
+		.type_b = feature_type_from_sides(vertex.reference_sides),
+		.index_a = clipped.incident_face,
+		.index_b = clipped.reference_face,
+		.side_a0 = vertex.incident_sides.values[0],
+		.side_a1 = vertex.incident_sides.values[1],
+		.side_b0 = vertex.reference_sides.values[0],
+		.side_b1 = vertex.reference_sides.values[1]
+	};
 }
 
 auto gse::narrow_phase_collision::should_replace_sat_choice(
@@ -587,16 +644,20 @@ auto gse::narrow_phase_collision::update_sat_choice(
 	const length extent_scale
 ) -> void {
 	if (should_replace_sat_choice(best, overlap, extent_scale)) {
-		best = sat_axis_choice{ .axis = axis,
-								.overlap = overlap,
-								.extent_scale = extent_scale,
-								.source = source,
-								.valid = true };
+		best = sat_axis_choice{
+			.axis = axis,
+			.overlap = overlap,
+			.extent_scale = extent_scale,
+			.source = source,
+			.valid = true
+		};
 	}
 }
 
-auto gse::narrow_phase_collision::prefer_face_sat_axis(sat_axis_choice best, const sat_axis_choice& best_face)
-	-> sat_axis_choice {
+auto gse::narrow_phase_collision::prefer_face_sat_axis(
+	sat_axis_choice best,
+	const sat_axis_choice& best_face
+) -> sat_axis_choice {
 	if (!best.valid || best.source != sat_axis_source::cross || !best_face.valid) {
 		return best;
 	}
@@ -611,8 +672,10 @@ auto gse::narrow_phase_collision::prefer_face_sat_axis(sat_axis_choice best, con
 	return best;
 }
 
-auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const bounding_box& bb2)
-	-> std::pair<vec3f, length> {
+auto gse::narrow_phase_collision::sat_penetration(
+	const bounding_box& bb1,
+	const bounding_box& bb2
+) -> std::pair<vec3f, length> {
 	sat_axis_choice best_axis;
 	sat_axis_choice best_face_axis;
 
@@ -729,7 +792,11 @@ auto gse::narrow_phase_collision::sat_speculative(
 		best_axis.axis = -best_axis.axis;
 	}
 
-	return sat_result{ .normal = best_axis.axis, .separation = best_axis.overlap, .is_speculative = !all_positive };
+	return sat_result{
+		.normal = best_axis.axis,
+		.separation = best_axis.overlap,
+		.is_speculative = !all_positive
+	};
 }
 
 auto gse::narrow_phase_collision::generate_manifold(
@@ -800,7 +867,9 @@ auto gse::narrow_phase_collision::generate_manifold(
 			const length tangent_scale = std::max(half_extents[u_axis], half_extents[v_axis]);
 			const length boundary_threshold = std::clamp(tangent_scale * 0.002f, meters(0.0005f), meters(0.01f));
 
-			detail result{ .face = face_index };
+			detail result{
+				.face = face_index
+			};
 
 			auto boundary_distance = [&](const std::uint8_t axis) -> length {
 				const length half_extent = half_extents[axis];
@@ -831,14 +900,16 @@ auto gse::narrow_phase_collision::generate_manifold(
 
 		const auto detail_a = classify(bb1, normal, point);
 		const auto detail_b = classify(bb2, -normal, point);
-		return feature_id{ .type_a = detail_a.type,
-						   .type_b = detail_b.type,
-						   .index_a = detail_a.face,
-						   .index_b = detail_b.face,
-						   .side_a0 = detail_a.side0,
-						   .side_a1 = detail_a.side1,
-						   .side_b0 = detail_b.side0,
-						   .side_b1 = detail_b.side1 };
+		return feature_id{
+			.type_a = detail_a.type,
+			.type_b = detail_b.type,
+			.index_a = detail_a.face,
+			.index_b = detail_b.face,
+			.side_a0 = detail_a.side0,
+			.side_a1 = detail_a.side1,
+			.side_b0 = detail_b.side0,
+			.side_b1 = detail_b.side1
+		};
 	};
 
 	std::vector<manifold_candidate> candidates;
@@ -850,9 +921,11 @@ auto gse::narrow_phase_collision::generate_manifold(
 			const vec3<position> position_on_b =
 				clipped->reference_is_a ? (vertex.point + normal * contact_gap) : vertex.point;
 			candidates.push_back(
-				manifold_candidate{ .position_on_a = position_on_a,
-									.position_on_b = position_on_b,
-									.feature = build_feature_from_clip_vertex(*clipped, vertex) }
+				manifold_candidate{
+					.position_on_a = position_on_a,
+					.position_on_b = position_on_b,
+					.feature = build_feature_from_clip_vertex(*clipped, vertex)
+				}
 			);
 		}
 	}
@@ -895,11 +968,13 @@ auto gse::narrow_phase_collision::generate_manifold(
 		}
 
 		manifold.add_point(
-			contact_point{ .position_on_a = position_on_a,
-						   .position_on_b = position_on_b,
-						   .normal = normal,
-						   .separation = meters(0.f),
-						   .feature = feature }
+			contact_point{
+				.position_on_a = position_on_a,
+				.position_on_b = position_on_b,
+				.normal = normal,
+				.separation = meters(0.f),
+				.feature = feature
+			}
 		);
 	}
 
@@ -908,19 +983,23 @@ auto gse::narrow_phase_collision::generate_manifold(
 		const auto cp = mk.support_b + (mk.support_a - mk.support_b) * 0.5f;
 
 		manifold.add_point(
-			contact_point{ .position_on_a = mk.support_a,
-						   .position_on_b = mk.support_b,
-						   .normal = normal,
-						   .separation = meters(0.f),
-						   .feature = derive_fallback_feature(cp) }
+			contact_point{
+				.position_on_a = mk.support_a,
+				.position_on_b = mk.support_b,
+				.normal = normal,
+				.separation = meters(0.f),
+				.feature = derive_fallback_feature(cp)
+			}
 		);
 	}
 
 	return manifold;
 }
 
-auto gse::narrow_phase_collision::capsule_endpoints(const bounding_box& bb, const length half_height)
-	-> std::pair<vec3<position>, vec3<position>> {
+auto gse::narrow_phase_collision::capsule_endpoints(
+	const bounding_box& bb,
+	const length half_height
+) -> std::pair<vec3<position>, vec3<position>> {
 	const auto axis = mat3_cast(bb.obb().orientation) * vec3f(0.f, 1.f, 0.f);
 	return { bb.center() + axis * half_height, bb.center() - axis * half_height };
 }
@@ -1104,7 +1183,11 @@ auto gse::narrow_phase_collision::sphere_sphere_speculative(
 
 	const vec3f normal = (dist > meters(1e-6f)) ? normalize(diff) : vec3f(0.f, 1.f, 0.f);
 
-	return sat_result{ .normal = normal, .separation = separation, .is_speculative = separation < length{} };
+	return sat_result{
+		.normal = normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
 }
 
 auto gse::narrow_phase_collision::box_sphere_speculative(
@@ -1120,7 +1203,11 @@ auto gse::narrow_phase_collision::box_sphere_speculative(
 		return std::nullopt;
 	}
 
-	return sat_result{ .normal = normal, .separation = separation, .is_speculative = separation < length{} };
+	return sat_result{
+		.normal = normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
 }
 
 auto gse::narrow_phase_collision::capsule_capsule_speculative(
@@ -1149,7 +1236,11 @@ auto gse::narrow_phase_collision::capsule_capsule_speculative(
 
 	const vec3f normal = (dist > meters(1e-6f)) ? normalize(diff) : vec3f(0.f, 1.f, 0.f);
 
-	return sat_result{ .normal = normal, .separation = separation, .is_speculative = separation < length{} };
+	return sat_result{
+		.normal = normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
 }
 
 auto gse::narrow_phase_collision::box_capsule_speculative(
@@ -1168,7 +1259,11 @@ auto gse::narrow_phase_collision::box_capsule_speculative(
 		return std::nullopt;
 	}
 
-	return sat_result{ .normal = obb_result.normal, .separation = separation, .is_speculative = separation < length{} };
+	return sat_result{
+		.normal = obb_result.normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
 }
 
 auto gse::narrow_phase_collision::sphere_capsule_speculative(
@@ -1192,7 +1287,11 @@ auto gse::narrow_phase_collision::sphere_capsule_speculative(
 
 	const vec3f normal = (dist > meters(1e-6f)) ? normalize(diff) : vec3f(0.f, 1.f, 0.f);
 
-	return sat_result{ .normal = normal, .separation = separation, .is_speculative = separation < length{} };
+	return sat_result{
+		.normal = normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
 }
 
 auto gse::narrow_phase_collision::sphere_sphere_manifold(
@@ -1209,16 +1308,19 @@ auto gse::narrow_phase_collision::sphere_sphere_manifold(
 	manifold.tangent_v = tv;
 
 	manifold.add_point(
-		contact_point{ .position_on_a = ca + normal * ra,
-					   .position_on_b = cb - normal * rb,
-					   .normal = normal,
-					   .separation = meters(0.f),
-					   .feature = feature_id{
-						   .type_a = feature_type::face,
-						   .type_b = feature_type::face,
-						   .index_a = sphere_surface_index,
-						   .index_b = sphere_surface_index,
-					   } }
+		contact_point{
+			.position_on_a = ca + normal * ra,
+			.position_on_b = cb - normal * rb,
+			.normal = normal,
+			.separation = meters(0.f),
+			.feature =
+				feature_id{
+					.type_a = feature_type::face,
+					.type_b = feature_type::face,
+					.index_a = sphere_surface_index,
+					.index_b = sphere_surface_index,
+				}
+		}
 	);
 
 	return manifold;
@@ -1251,32 +1353,38 @@ auto gse::narrow_phase_collision::box_sphere_manifold(
 			const auto sphere_point = center + normalize(box_point - center) * radius;
 
 			manifold.add_point(
-				contact_point{ .position_on_a = box_point,
-							   .position_on_b = sphere_point,
-							   .normal = normal,
-							   .separation = meters(0.f),
-							   .feature = feature_id{
-								   .type_a = feature_type::face,
-								   .type_b = feature_type::face,
-								   .index_a = box_face,
-								   .index_b = sphere_surface_index,
-								   .side_b0 = static_cast<std::uint8_t>(i),
-							   } }
+				contact_point{
+					.position_on_a = box_point,
+					.position_on_b = sphere_point,
+					.normal = normal,
+					.separation = meters(0.f),
+					.feature =
+						feature_id{
+							.type_a = feature_type::face,
+							.type_b = feature_type::face,
+							.index_a = box_face,
+							.index_b = sphere_surface_index,
+							.side_b0 = static_cast<std::uint8_t>(i),
+						}
+				}
 			);
 		}
 	}
 	else {
 		manifold.add_point(
-			contact_point{ .position_on_a = closest,
-						   .position_on_b = center - normal * radius,
-						   .normal = normal,
-						   .separation = meters(0.f),
-						   .feature = feature_id{
-							   .type_a = feature_type::face,
-							   .type_b = feature_type::face,
-							   .index_a = box_face,
-							   .index_b = sphere_surface_index,
-						   } }
+			contact_point{
+				.position_on_a = closest,
+				.position_on_b = center - normal * radius,
+				.normal = normal,
+				.separation = meters(0.f),
+				.feature =
+					feature_id{
+						.type_a = feature_type::face,
+						.type_b = feature_type::face,
+						.index_a = box_face,
+						.index_b = sphere_surface_index,
+					}
+			}
 		);
 	}
 
@@ -1309,16 +1417,19 @@ auto gse::narrow_phase_collision::capsule_capsule_manifold(
 	auto [type_b, index_b] = classify_capsule_feature(t);
 
 	manifold.add_point(
-		contact_point{ .position_on_a = closest_a + normal * ra,
-					   .position_on_b = closest_b - normal * rb,
-					   .normal = normal,
-					   .separation = meters(0.f),
-					   .feature = feature_id{
-						   .type_a = type_a,
-						   .type_b = type_b,
-						   .index_a = index_a,
-						   .index_b = index_b,
-					   } }
+		contact_point{
+			.position_on_a = closest_a + normal * ra,
+			.position_on_b = closest_b - normal * rb,
+			.normal = normal,
+			.separation = meters(0.f),
+			.feature =
+				feature_id{
+					.type_a = type_a,
+					.type_b = type_b,
+					.index_a = index_a,
+					.index_b = index_b,
+				}
+		}
 	);
 
 	return manifold;
@@ -1349,16 +1460,19 @@ auto gse::narrow_phase_collision::box_capsule_manifold(
 	auto [cap_type, cap_index] = classify_capsule_feature(t_param);
 
 	manifold.add_point(
-		contact_point{ .position_on_a = obb_result.closest,
-					   .position_on_b = seg_pt - normal * cap_r,
-					   .normal = normal,
-					   .separation = meters(0.f),
-					   .feature = feature_id{
-						   .type_a = feature_type::face,
-						   .type_b = cap_type,
-						   .index_a = classify_box_face(bb, normal),
-						   .index_b = cap_index,
-					   } }
+		contact_point{
+			.position_on_a = obb_result.closest,
+			.position_on_b = seg_pt - normal * cap_r,
+			.normal = normal,
+			.separation = meters(0.f),
+			.feature =
+				feature_id{
+					.type_a = feature_type::face,
+					.type_b = cap_type,
+					.index_a = classify_box_face(bb, normal),
+					.index_b = cap_index,
+				}
+		}
 	);
 
 	return manifold;
@@ -1390,23 +1504,29 @@ auto gse::narrow_phase_collision::sphere_capsule_manifold(
 	auto [cap_type, cap_index] = classify_capsule_feature(t_param);
 
 	manifold.add_point(
-		contact_point{ .position_on_a = sph_center + normal * sph_r,
-					   .position_on_b = closest_on_seg - normal * cap_r,
-					   .normal = normal,
-					   .separation = meters(0.f),
-					   .feature = feature_id{
-						   .type_a = feature_type::face,
-						   .type_b = cap_type,
-						   .index_a = sphere_surface_index,
-						   .index_b = cap_index,
-					   } }
+		contact_point{
+			.position_on_a = sph_center + normal * sph_r,
+			.position_on_b = closest_on_seg - normal * cap_r,
+			.normal = normal,
+			.separation = meters(0.f),
+			.feature =
+				feature_id{
+					.type_a = feature_type::face,
+					.type_b = cap_type,
+					.index_a = sphere_surface_index,
+					.index_b = cap_index,
+				}
+		}
 	);
 
 	return manifold;
 }
 
-auto gse::narrow_phase_collision::speculative_test(const shape_data& a, const shape_data& b, const length margin)
-	-> std::optional<sat_result> {
+auto gse::narrow_phase_collision::speculative_test(
+	const shape_data& a,
+	const shape_data& b,
+	const length margin
+) -> std::optional<sat_result> {
 	const bool swap = a.shape->index() > b.shape->index();
 	const auto& lo = swap ? b : a;
 	const auto& hi = swap ? a : b;

@@ -42,51 +42,43 @@ auto gs::crosshair_screen::title() const -> std::string_view {
 	return "Crosshair";
 }
 
-auto gs::crosshair_screen::draw_preview(const gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect) const
-	-> void {
-	ctx.queue_sprite(
-		{
-			.rect = rect,
-			.color = { 0.06f, 0.06f, 0.09f, 1.f },
-			.texture = ctx.blank_texture,
-		}
-	);
+auto gs::crosshair_screen::draw_preview(
+	const gse::gui::draw_context& ctx,
+	const gse::gui::ui_rect& rect
+) const -> void {
+	ctx.queue_sprite({
+		.rect = rect,
+		.color = { 0.06f, 0.06f, 0.09f, 1.f },
+		.texture = ctx.blank_texture,
+	});
 
 	constexpr float border = 1.f;
 	const auto border_color = ctx.style.color_border;
 
-	ctx.queue_sprite(
-		{
-			.rect = gse::gui::ui_rect::from_position_size(rect.top_left(), { rect.width(), border }),
-			.color = border_color,
-			.texture = ctx.blank_texture,
-		}
-	);
-	ctx.queue_sprite(
-		{
-			.rect = gse::gui::ui_rect::from_position_size(
-				{ rect.left(), rect.bottom() + border },
-				{ rect.width(), border }
-			),
-			.color = border_color,
-			.texture = ctx.blank_texture,
-		}
-	);
-	ctx.queue_sprite(
-		{
-			.rect = gse::gui::ui_rect::from_position_size(rect.top_left(), { border, rect.height() }),
-			.color = border_color,
-			.texture = ctx.blank_texture,
-		}
-	);
-	ctx.queue_sprite(
-		{
-			.rect =
-				gse::gui::ui_rect::from_position_size({ rect.right() - border, rect.top() }, { border, rect.height() }),
-			.color = border_color,
-			.texture = ctx.blank_texture,
-		}
-	);
+	ctx.queue_sprite({
+		.rect = gse::gui::ui_rect::from_position_size(rect.top_left(), { rect.width(), border }),
+		.color = border_color,
+		.texture = ctx.blank_texture,
+	});
+	ctx.queue_sprite({
+		.rect = gse::gui::ui_rect::from_position_size(
+			{ rect.left(), rect.bottom() + border },
+			{ rect.width(), border }
+		),
+		.color = border_color,
+		.texture = ctx.blank_texture,
+	});
+	ctx.queue_sprite({
+		.rect = gse::gui::ui_rect::from_position_size(rect.top_left(), { border, rect.height() }),
+		.color = border_color,
+		.texture = ctx.blank_texture,
+	});
+	ctx.queue_sprite({
+		.rect =
+			gse::gui::ui_rect::from_position_size({ rect.right() - border, rect.top() }, { border, rect.height() }),
+		.color = border_color,
+		.texture = ctx.blank_texture,
+	});
 
 	const auto& c = *m_crosshair;
 	const gse::vec2f center = rect.center();
@@ -100,21 +92,17 @@ auto gs::crosshair_screen::draw_preview(const gse::gui::draw_context& ctx, const
 
 	const auto push_arm = [&](const gse::gui::ui_rect& r) {
 		if (outline > 0.f) {
-			ctx.queue_sprite(
-				{
-					.rect = r.inset({ -outline, -outline }),
-					.color = outline_color,
-					.texture = ctx.blank_texture,
-				}
-			);
-		}
-		ctx.queue_sprite(
-			{
-				.rect = r,
-				.color = color,
+			ctx.queue_sprite({
+				.rect = r.inset({ -outline, -outline }),
+				.color = outline_color,
 				.texture = ctx.blank_texture,
-			}
-		);
+			});
+		}
+		ctx.queue_sprite({
+			.rect = r,
+			.color = color,
+			.texture = ctx.blank_texture,
+		});
 	};
 
 	if (arm > 0.f) {
@@ -165,7 +153,12 @@ auto gs::crosshair_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 
 	ctx.layout_cursor = { content.left(), content.top() - preview_height - pad * 2.f };
 
-	ui.scroll_region({ .id = "crosshair.settings" }, [this](gse::gui::builder& b) {
-		gse::settings::panel(b, m_panel_state, m_channels, *m_save_reg, "Crosshair");
-	});
+	ui.scroll_region(
+		{
+			.id = "crosshair.settings"
+		},
+		[this](gse::gui::builder& b) {
+			gse::settings::panel(b, m_panel_state, m_channels, *m_save_reg, "Crosshair");
+		}
+	);
 }

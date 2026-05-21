@@ -74,6 +74,8 @@ export namespace gse {
 
 		auto initialize() -> void;
 
+		[[nodiscard]] auto all_settled() const -> bool;
+
 		auto update() -> void;
 
 		auto tick(bool frame_ok, const std::function<void()>& in_frame = {}) -> void;
@@ -146,7 +148,7 @@ export namespace gse {
 		resource_registry m_resources_store;
 		channel_registry m_channels_store;
 		std::vector<system_node> m_hot_add_queue;
-		std::mutex m_hot_add_mutex;
+		mutable std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
 		std::function<void(id, std::string_view)> m_advance_hook;
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;

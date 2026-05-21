@@ -12,7 +12,7 @@ import gse.containers;
 import gse.concurrency;
 
 export namespace gse {
-	class[[= asset::boot_critical{}]] texture : public identifiable {
+	class texture : public identifiable {
 	public:
 		enum struct profile : std::uint8_t {
 			generic_repeat,
@@ -21,7 +21,7 @@ export namespace gse {
 			pixel_art
 		};
 
-		struct[[
+		struct [[
 			= asset_format::baked_ext<".gtx">{},
 			= asset_format::baked_dir<"Textures">{},
 			= asset_format::source_exts<".png", ".jpg", ".jpeg", ".tga", ".bmp">{},

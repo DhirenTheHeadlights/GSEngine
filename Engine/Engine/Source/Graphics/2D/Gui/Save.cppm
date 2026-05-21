@@ -27,8 +27,10 @@ export namespace gse::gui {
 
 	auto save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path) -> void;
 
-	auto load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus)
-		-> id_mapped_collection<menu>;
+	auto load(
+		const std::filesystem::path& file_path,
+		id_mapped_collection<menu>& default_menus
+	) -> id_mapped_collection<menu>;
 }
 
 namespace gse::gui {
@@ -232,8 +234,10 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 	file << out;
 }
 
-auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus)
-	-> id_mapped_collection<menu> {
+auto gse::gui::load(
+	const std::filesystem::path& file_path,
+	id_mapped_collection<menu>& default_menus
+) -> id_mapped_collection<menu> {
 	if (!std::filesystem::exists(file_path)) {
 		id_mapped_collection<menu> menus_to_save = default_menus;
 		save(menus_to_save, file_path);
@@ -265,7 +269,10 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 	id_by_tag.reserve(loaded_map.size());
 
 	for (const auto& [tag, data] : loaded_map) {
-		menu_data md = { .rect = data.rect, .parent_id = id() };
+		menu_data md = {
+			.rect = data.rect,
+			.parent_id = id()
+		};
 		menu new_menu(tag, md);
 
 		new_menu.docked_to = data.docked_to;

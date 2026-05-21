@@ -53,6 +53,8 @@ export namespace gse::physics {
 		torque limit_lambda = {};
 		angular_stiffness limit_penalty = {};
 
+		vec3<angular_stiffness> soft_ang_stiffness = {};
+
 		float activation = 0.f;
 		force max_force = newtons(0.f);
 	};
@@ -90,8 +92,20 @@ export namespace gse::physics {
 		vec3<displacement> anchor_b;
 		length rest_length;
 		inverse_mass compliance = per_kilograms(0.001f);
-		float damping = 0.5f;
-		force max_force = newtons(10000.f);
+		float damping = 2.5f;
+		force max_force = newtons(1800.f);
+	};
+
+	struct ball_joint {
+		vec3<displacement> anchor_a;
+		vec3<displacement> anchor_b;
+		vec3<angular_stiffness> rest_stiffness = {};
+	};
+
+	struct universal_joint {
+		vec3<displacement> anchor_a;
+		vec3<displacement> anchor_b;
+		vec3f twist_axis = { 0.f, 1.f, 0.f };
 	};
 
 	struct gpu_upload_payload {
@@ -129,10 +143,7 @@ export namespace gse::physics {
 	class system {
 	public:
 		struct [[= gse::settings::category<"Physics">{}]] data {
-			[[
-				= gse::settings::describe<"Step the physics world each frame.">{}
-			]]
-			bool update_phys = true;
+			[[= gse::settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
 			[[
 				= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{}
@@ -148,7 +159,8 @@ export namespace gse::physics {
 
 			[[
 				= gse::settings::describe<
-					"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower.">{}
+					"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower."
+				>{}
 			]]
 			bool use_jacobi = false;
 
@@ -186,8 +198,12 @@ export namespace gse::physics {
 			vbd::gpu_solver gpu_solver;
 		};
 
-		static auto run(run_context& ctx, const gpu::context::data* gpu_s, const asset::data& assets_s, data& d)
-			-> async::task<>;
+		static auto run(
+			run_context& ctx,
+			const gpu::context::data* gpu_s,
+			const asset::data& assets_s,
+			data& d
+		) -> async::task<>;
 
 		static auto frame(frame_context& ctx, const gpu::context::data* gpu_s, data& d) -> async::task<>;
 

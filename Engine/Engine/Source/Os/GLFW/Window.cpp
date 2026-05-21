@@ -184,8 +184,9 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 	else {
 		const auto resolutions = window::enumerate_resolutions(selected_monitor);
 
-		if (const int res_idx = d.resolution.value - 1;
-			res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())) {
+		if (
+			const int res_idx = d.resolution.value - 1; res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())
+		) {
 			target_width = resolutions[res_idx].width;
 			target_height = resolutions[res_idx].height;
 			target_refresh = resolutions[res_idx].refresh_rate;
@@ -212,6 +213,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwWindowHint(glfw::client_api, glfw::no_api);
 	glfwWindowHint(glfw::resizable, glfw::true_);
 	glfwWindowHint(glfw::focus_on_show, glfw::true_);
+	glfwWindowHint(glfw::visible, glfw::false_);
 
 	const auto initial_size = d.windowed_rect.size();
 	d.handle = glfwCreateWindow(initial_size.x(), initial_size.y(), d.title.c_str(), nullptr, nullptr);
@@ -229,10 +231,18 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 			return;
 		}
 		if (action == glfw::press) {
-			self->input_events.push(input::key_pressed{ .key_code = *mapped });
+			self->input_events.push(
+				input::key_pressed{
+					.key_code = *mapped
+				}
+			);
 		}
 		else if (action == glfw::release) {
-			self->input_events.push(input::key_released{ .key_code = *mapped });
+			self->input_events.push(
+				input::key_released{
+					.key_code = *mapped
+				}
+			);
 		}
 	});
 
@@ -397,6 +407,12 @@ auto gse::window::raw_handle(const data& d) -> GLFWwindow* {
 	return d.handle;
 }
 
+auto gse::window::show(const data& d) -> void {
+	if (d.handle) {
+		glfwShowWindow(d.handle);
+	}
+}
+
 auto gse::window::set_ui_focus(data& d, const bool focus) -> void {
 	const bool was = d.ui_focus;
 	d.ui_focus = focus;
@@ -437,14 +453,12 @@ auto gse::window::enumerate_monitors() -> std::vector<monitor_info> {
 		const char* name = glfwGetMonitorName(monitor);
 		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
-		result.push_back(
-			{
-				.name = name ? name : std::format("Monitor {}", i + 1),
-				.width = mode ? mode->width : 0,
-				.height = mode ? mode->height : 0,
-				.refresh_rate = mode ? mode->refreshRate : 0,
-			}
-		);
+		result.push_back({
+			.name = name ? name : std::format("Monitor {}", i + 1),
+			.width = mode ? mode->width : 0,
+			.height = mode ? mode->height : 0,
+			.refresh_rate = mode ? mode->refreshRate : 0,
+		});
 	}
 
 	return result;
@@ -479,13 +493,11 @@ auto gse::window::enumerate_resolutions(const int monitor_index) -> std::vector<
 		}
 		seen.insert(key);
 
-		result.push_back(
-			{
-				.width = mode.width,
-				.height = mode.height,
-				.refresh_rate = mode.refreshRate,
-			}
-		);
+		result.push_back({
+			.width = mode.width,
+			.height = mode.height,
+			.refresh_rate = mode.refreshRate,
+		});
 	}
 
 	return result;

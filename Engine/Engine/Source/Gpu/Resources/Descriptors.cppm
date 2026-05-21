@@ -48,12 +48,24 @@ export namespace gse::gpu {
 		auto buffer(const vulkan::basic_buffer<vulkan::device>& buf) -> descriptor_writer&;
 
 		template <shaders::is_shader_binding T>
-		auto buffer(const vulkan::basic_buffer<vulkan::device>& buf, std::size_t offset, std::size_t range)
-			-> descriptor_writer&;
+		auto buffer(
+			const vulkan::basic_buffer<vulkan::device>& buf,
+			std::size_t offset,
+			std::size_t range
+		) -> descriptor_writer&;
 
 		template <shaders::is_shader_binding T>
-		auto storage_image(const vulkan::basic_image<vulkan::device>& img, image_layout layout = image_layout::general)
-			-> descriptor_writer&;
+		auto storage_image(
+			const vulkan::basic_image<vulkan::device>& img,
+			image_layout layout = image_layout::general
+		) -> descriptor_writer&;
+
+		template <shaders::is_shader_binding T>
+		auto combined_image_sampler(
+			const vulkan::basic_image<vulkan::device>& img,
+			const vulkan::sampler& sampler,
+			image_layout layout = image_layout::general
+		) -> descriptor_writer&;
 
 		template <shaders::is_shader_binding T>
 		auto acceleration_structure(acceleration_structure_handle as) -> descriptor_writer&;
@@ -85,8 +97,18 @@ export namespace gse::gpu {
 			std::size_t range
 		) -> descriptor_writer&;
 
-		auto storage_image_impl(std::uint32_t slot, const vulkan::basic_image<vulkan::device>& img, image_layout layout)
-			-> descriptor_writer&;
+		auto storage_image_impl(
+			std::uint32_t slot,
+			const vulkan::basic_image<vulkan::device>& img,
+			image_layout layout
+		) -> descriptor_writer&;
+
+		auto combined_image_sampler_impl(
+			std::uint32_t slot,
+			const vulkan::basic_image<vulkan::device>& img,
+			const vulkan::sampler& sampler,
+			image_layout layout
+		) -> descriptor_writer&;
 
 		auto acceleration_structure_impl(std::uint32_t slot, acceleration_structure_handle as) -> descriptor_writer&;
 
@@ -97,6 +119,7 @@ export namespace gse::gpu {
 
 		std::unordered_map<std::uint32_t, stored_buffer_info> m_buffer_infos;
 		std::unordered_map<std::uint32_t, descriptor_image_info> m_storage_image_infos;
+		std::unordered_map<std::uint32_t, descriptor_image_info> m_combined_sampler_infos;
 		std::unordered_map<std::uint32_t, acceleration_structure_handle> m_as_infos;
 
 		std::vector<resource_slot> m_touched;
@@ -127,8 +150,10 @@ auto gse::gpu::allocate_descriptors(
 	return region;
 }
 
-auto gse::gpu::build_push_writer_from_family(descriptor_heap& heap, const family_layout& family)
-	-> descriptor_set_writer {
+auto gse::gpu::build_push_writer_from_family(
+	descriptor_heap& heap,
+	const family_layout& family
+) -> descriptor_set_writer {
 	const auto& props = heap.props();
 	constexpr auto push_idx = static_cast<std::uint32_t>(descriptor_set_type::push);
 
@@ -225,6 +250,16 @@ auto gse::gpu::descriptor_writer::storage_image(
 }
 
 template <gse::shaders::is_shader_binding T>
+auto gse::gpu::descriptor_writer::combined_image_sampler(
+	const vulkan::basic_image<vulkan::device>& img,
+	const vulkan::sampler& sampler,
+	const image_layout layout
+) -> descriptor_writer& {
+	using binding_t = [:shaders::find_binding_type(^^T):];
+	return combined_image_sampler_impl(binding_t::slot, img, sampler, layout);
+}
+
+template <gse::shaders::is_shader_binding T>
 auto gse::gpu::descriptor_writer::acceleration_structure(const acceleration_structure_handle as) -> descriptor_writer& {
 	using binding_t = [:shaders::find_binding_type(^^T):];
 	return acceleration_structure_impl(binding_t::slot, as);
@@ -270,6 +305,32 @@ auto gse::gpu::descriptor_writer::storage_image_impl(
 	}
 	else {
 		m_push_writer.storage_image(slot, img.view(), layout);
+	}
+	m_touched.push_back({
+		.slot = slot,
+		.ref = {
+			.ptr = std::addressof(img),
+			.type = resource_type::image,
+		},
+	});
+	return *this;
+}
+
+auto gse::gpu::descriptor_writer::combined_image_sampler_impl(
+	const std::uint32_t slot,
+	const vulkan::basic_image<vulkan::device>& img,
+	const vulkan::sampler& sampler,
+	const image_layout layout
+) -> descriptor_writer& {
+	if (m_mode == mode::persistent) {
+		m_combined_sampler_infos[slot] = descriptor_image_info{
+			.sampler = sampler.native(),
+			.image_view = img.view(),
+			.layout = layout,
+		};
+	}
+	else {
+		m_push_writer.combined_image_sampler(slot, img.view(), sampler.native(), layout);
 	}
 	m_touched.push_back({
 		.slot = slot,
@@ -334,6 +395,15 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 			return;
 		}
 
+		if (auto it_cis = m_combined_sampler_infos.find(binding); it_cis != m_combined_sampler_infos.end()) {
+			const descriptor_get_info get_info{
+				.type = descriptor_type::combined_image_sampler,
+				.image = it_cis->second,
+			};
+			heap.write_descriptor(region, boff, get_info, props.combined_image_sampler_descriptor_size);
+			return;
+		}
+
 		if (auto it_as = m_as_infos.find(binding); it_as != m_as_infos.end()) {
 			const auto as_addr = vulkan::acceleration_structure_address_from_handle(m_device, it_as->second);
 			if (as_addr == 0) {
@@ -364,6 +434,7 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 
 	m_buffer_infos.clear();
 	m_storage_image_infos.clear();
+	m_combined_sampler_infos.clear();
 	m_as_infos.clear();
 
 	for (const auto& touched : m_touched) {

@@ -8,6 +8,7 @@ import :forward_renderer;
 import :camera_system;
 import :gui;
 import :font;
+import :render_targets;
 
 import gse.gpu;
 import gse.core;
@@ -18,7 +19,7 @@ import gse.math;
 import gse.meta;
 
 namespace gse::renderer::world_text {
-	struct[[= shaders::shader_struct]] push_constants {
+	struct [[= shaders::shader_struct]] push_constants {
 		vec3f color;
 		vec2f unit_range;
 		std::uint32_t tex_idx;
@@ -42,8 +43,10 @@ namespace gse::renderer::world_text {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
+		gpu::color_target<gpu::color_format::hdr>,
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>,
-		gpu::blend<gpu::blend_preset::alpha_premultiplied>>;
+		gpu::blend<gpu::blend_preset::alpha_premultiplied>
+	>;
 
 	auto append_glyph_quad(
 		std::vector<world_text_vertex>& vertices,
@@ -62,8 +65,12 @@ namespace gse::renderer::world_text {
 		bool along_x
 	) -> void;
 
-	auto ensure_vertex_capacity(system::data& d, gpu::device& device, std::size_t frame_index, std::size_t required)
-		-> void;
+	auto ensure_vertex_capacity(
+		system::data& d,
+		gpu::device& device,
+		std::size_t frame_index,
+		std::size_t required
+	) -> void;
 }
 
 auto gse::renderer::world_text::append_glyph_quad(
@@ -143,12 +150,18 @@ auto gse::renderer::world_text::ensure_vertex_capacity(
 	}
 	buf = gpu::buffer::create(
 		device.allocator(),
-		{ .size = cap * sizeof(world_text_vertex), .usage = gpu::buffer_flag::vertex }
+		{
+			.size = cap * sizeof(world_text_vertex),
+			.usage = gpu::buffer_flag::vertex
+		}
 	);
 }
 
-auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d)
-	-> async::task<> {
+auto gse::renderer::world_text::system::run(
+	run_context& ctx,
+	const gpu::context::data& gpu_s,
+	data& d
+) -> async::task<> {
 	d.pipeline =
 		gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
@@ -157,7 +170,10 @@ auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.camera_ubo_buffers[i] = gpu::buffer::create(
 			gpu_s.device->allocator(),
-			{ .size = camera_ubo_size, .usage = gpu::buffer_flag::uniform }
+			{
+				.size = camera_ubo_size,
+				.usage = gpu::buffer_flag::uniform
+			}
 		);
 		d.descriptors[i] =
 			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
@@ -244,7 +260,7 @@ auto gse::renderer::world_text::system::frame(
 
 	auto rec = co_await gpu::pass<system>(ctx)
 				   .pipeline(d.pipeline)
-				   .color(gpu::load_color())
+				   .color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 				   .depth(gpu::load_depth())
 				   .after<sdf_grid::system>();
 

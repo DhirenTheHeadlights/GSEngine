@@ -40,14 +40,12 @@ auto gs::settings_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::
 	const gse::gui::ui_rect full =
 		gse::gui::ui_rect::from_position_size({ 0.f, viewport_size.y() }, { viewport_size.x(), viewport_size.y() });
 
-	ctx.sprites.push_back(
-		{
-			.rect = full,
-			.color = { 0.f, 0.f, 0.f, dim_alpha },
-			.texture = ctx.blank_texture,
-			.layer = gse::render_layer::popup,
-		}
-	);
+	ctx.sprites.push_back({
+		.rect = full,
+		.color = { 0.f, 0.f, 0.f, dim_alpha },
+		.texture = ctx.blank_texture,
+		.layer = gse::render_layer::popup,
+	});
 
 	const gse::gui::ui_rect panel = body_rect(ctx.style, viewport_size);
 	const gse::vec4f panel_color = {
@@ -57,32 +55,33 @@ auto gs::settings_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::
 		1.0f,
 	};
 
-	ctx.sprites.push_back(
-		{
-			.rect = panel,
-			.color = panel_color,
-			.texture = ctx.blank_texture,
-			.layer = gse::render_layer::popup,
-		}
-	);
+	ctx.sprites.push_back({
+		.rect = panel,
+		.color = panel_color,
+		.texture = ctx.blank_texture,
+		.layer = gse::render_layer::popup,
+	});
 
 	const gse::gui::ui_rect border =
 		gse::gui::ui_rect::from_position_size({ panel.right() - 1.f, panel.top() }, { 1.f, panel.height() });
-	ctx.sprites.push_back(
-		{
-			.rect = border,
-			.color = ctx.style.color_border,
-			.texture = ctx.blank_texture,
-			.layer = gse::render_layer::popup,
-		}
-	);
+	ctx.sprites.push_back({
+		.rect = border,
+		.color = ctx.style.color_border,
+		.texture = ctx.blank_texture,
+		.layer = gse::render_layer::popup,
+	});
 }
 
 auto gs::settings_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void {
-	ui.scroll_region({ .id = "settings.body" }, [this](gse::gui::builder& b) {
-		gse::settings::panel(b, m_panel_state, m_channels, *m_save_reg);
-		b.ctx.layout_cursor.y() -= b.ctx.style.padding * 4.f;
-	});
+	ui.scroll_region(
+		{
+			.id = "settings.body"
+		},
+		[this](gse::gui::builder& b) {
+			gse::settings::panel(b, m_panel_state, m_channels, *m_save_reg);
+			b.ctx.layout_cursor.y() -= b.ctx.style.padding * 4.f;
+		}
+	);
 }
 
 auto gs::settings_screen::title() const -> std::string_view {

@@ -3,8 +3,10 @@ module gse.graphics;
 import std;
 
 import :sdf_grid_renderer;
+import :atmosphere_renderer;
 import :forward_renderer;
 import :camera_system;
+import :render_targets;
 
 import gse.os;
 import gse.assets;
@@ -18,7 +20,7 @@ import gse.math;
 import gse.meta;
 
 namespace gse::renderer::sdf_grid {
-	struct[[= shaders::shader_struct]] push_constants {
+	struct [[= shaders::shader_struct]] push_constants {
 		vec3f minor_color;
 		length minor_spacing;
 		vec3f major_color;
@@ -39,8 +41,10 @@ namespace gse::renderer::sdf_grid {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
+		gpu::color_target<gpu::color_format::hdr>,
 		gpu::depth<true, true, gpu::compare_op::less_or_equal>,
-		gpu::blend<gpu::blend_preset::alpha>>;
+		gpu::blend<gpu::blend_preset::alpha>
+	>;
 }
 
 auto gse::renderer::sdf_grid::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
@@ -52,7 +56,10 @@ auto gse::renderer::sdf_grid::system::run(run_context& ctx, const gpu::context::
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.camera_ubo_buffers[i] = gpu::buffer::create(
 			gpu_s.device->allocator(),
-			{ .size = camera_ubo_size, .usage = gpu::buffer_flag::uniform }
+			{
+				.size = camera_ubo_size,
+				.usage = gpu::buffer_flag::uniform
+			}
 		);
 		d.descriptors[i] =
 			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
@@ -110,9 +117,9 @@ auto gse::renderer::sdf_grid::system::frame(
 
 	auto rec = co_await gpu::pass<system>(ctx)
 				   .pipeline(d.pipeline)
-				   .color(gpu::load_color())
+				   .color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 				   .depth(gpu::load_depth())
-				   .after<forward::system>();
+				   .after<forward::system, atmosphere::sky_raster_pass>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

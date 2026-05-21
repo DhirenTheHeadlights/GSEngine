@@ -39,14 +39,17 @@ auto gse::vulkan::transition_image_layout(
 		.layer_count = layer_count,
 	};
 
-	const gpu::dependency_info dep{ .image_barriers = std::span(&barrier, 1) };
+	const gpu::dependency_info dep{
+		.image_barriers = std::span(&barrier, 1)
+	};
 	commands(cmd_handle).pipeline_barrier(dep);
 
 	image_resource.set_layout(new_layout);
 }
 
-auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device)
-	-> gpu::descriptor_buffer_properties {
+auto gse::vulkan::query_descriptor_buffer_properties(
+	const vk::raii::PhysicalDevice& physical_device
+) -> gpu::descriptor_buffer_properties {
 	const auto props =
 		physical_device
 			.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
@@ -83,8 +86,11 @@ auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDev
 	};
 }
 
-auto gse::vulkan::wait_for_fence(const device& dev, const gpu::handle<fence> fence, const std::uint64_t timeout_ns)
-	-> gpu::result {
+auto gse::vulkan::wait_for_fence(
+	const device& dev,
+	const gpu::handle<fence> fence,
+	const std::uint64_t timeout_ns
+) -> gpu::result {
 	const auto vk_fence = std::bit_cast<vk::Fence>(fence);
 	const auto vk_result = dev.raii_device().waitForFences(vk_fence, vk::True, timeout_ns);
 	return from_vk(vk_result);
@@ -171,8 +177,11 @@ auto gse::vulkan::device::families_distinct() const -> bool {
 	return false;
 }
 
-auto gse::vulkan::device::create(const instance& instance_data, device::settings& cfg, aftermath& aftermath_tracker)
-	-> device_creation_result {
+auto gse::vulkan::device::create(
+	const instance& instance_data,
+	device::settings& cfg,
+	aftermath& aftermath_tracker
+) -> device_creation_result {
 	const auto devices = instance_data.enumerate_physical_devices();
 	assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
 
@@ -234,7 +243,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		supports_extension(vk::KHRAccelerationStructureExtensionName) &&
 		supports_extension(vk::KHRRayQueryExtensionName);
 
-	const bool video_encode_extensions_available = false;
+	const bool video_encode_extensions_available = families.video_encode_family.has_value() &&
+		supports_extension(vk::KHRVideoQueueExtensionName) && supports_extension(vk::KHRVideoEncodeQueueExtensionName);
 
 	const auto feature_chain = physical_device.getFeatures2<
 		vk::PhysicalDeviceFeatures2,
@@ -245,7 +255,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
 		vk::PhysicalDeviceRayQueryFeaturesKHR,
 		vk::PhysicalDeviceRobustness2FeaturesEXT,
-		vk::PhysicalDeviceNestedCommandBufferFeaturesEXT>();
+		vk::PhysicalDeviceNestedCommandBufferFeaturesEXT
+	>();
 	const auto& vk12_query = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
 	const bool buffer_device_address_capture_replay_supported = vk12_query.bufferDeviceAddressCaptureReplay;
 	const auto& mesh_shader_query = feature_chain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
@@ -562,8 +573,10 @@ auto gse::vulkan::device::query_fault_counts(gpu::device_fault_counts& counts) c
 	return from_vk(vk_result);
 }
 
-auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu::device_fault_info& info) const
-	-> gpu::result {
+auto gse::vulkan::device::query_fault_info(
+	gpu::device_fault_counts& counts,
+	gpu::device_fault_info& info
+) const -> gpu::result {
 	std::vector<vk::DeviceFaultAddressInfoEXT> vk_address_infos(counts.address_info_count);
 	std::vector<vk::DeviceFaultVendorInfoEXT> vk_vendor_infos(counts.vendor_info_count);
 	std::vector<std::byte> vk_vendor_binary(counts.vendor_binary_size);
@@ -591,13 +604,11 @@ auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu
 	tls_addresses.clear();
 	tls_addresses.reserve(vk_address_infos.size());
 	for (const auto& a : vk_address_infos) {
-		tls_addresses.push_back(
-			{
-				.address_type = static_cast<std::uint32_t>(a.addressType),
-				.reported_address = a.reportedAddress,
-				.address_precision = a.addressPrecision,
-			}
-		);
+		tls_addresses.push_back({
+			.address_type = static_cast<std::uint32_t>(a.addressType),
+			.reported_address = a.reportedAddress,
+			.address_precision = a.addressPrecision,
+		});
 	}
 	info.address_infos = tls_addresses;
 
@@ -605,13 +616,11 @@ auto gse::vulkan::device::query_fault_info(gpu::device_fault_counts& counts, gpu
 	tls_vendors.clear();
 	tls_vendors.reserve(vk_vendor_infos.size());
 	for (const auto& v : vk_vendor_infos) {
-		tls_vendors.push_back(
-			{
-				.description = v.description.data(),
-				.vendor_fault_code = v.vendorFaultCode,
-				.vendor_fault_data = v.vendorFaultData,
-			}
-		);
+		tls_vendors.push_back({
+			.description = v.description.data(),
+			.vendor_fault_code = v.vendorFaultCode,
+			.vendor_fault_data = v.vendorFaultData,
+		});
 	}
 	info.vendor_infos = tls_vendors;
 
@@ -683,13 +692,11 @@ auto gse::vulkan::device::create_buffer(
 			? std::format("Buffer ({}:{})", file, debug_info.creation_location.line())
 			: std::format("Buffer '{}' ({}:{})", debug_info.tag, file, debug_info.creation_location.line());
 
-		(*m_device).setDebugUtilsObjectNameEXT(
-			{
-				.objectType = vk::ObjectType::eBuffer,
-				.objectHandle = static_cast<std::uint64_t>(std::bit_cast<std::uintptr_t>(buffer)),
-				.pObjectName = name.c_str(),
-			}
-		);
+		(*m_device).setDebugUtilsObjectNameEXT({
+			.objectType = vk::ObjectType::eBuffer,
+			.objectHandle = static_cast<std::uint64_t>(std::bit_cast<std::uintptr_t>(buffer)),
+			.pObjectName = name.c_str(),
+		});
 	}
 
 	if (data && alloc.mapped()) {
@@ -843,8 +850,9 @@ auto gse::vulkan::device::destroy_image_view(const gpu::handle<image_view> view)
 	(*m_device).destroyImageView(std::bit_cast<vk::ImageView>(view), nullptr);
 }
 
-auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& info) const
-	-> std::pair<gpu::handle<image>, memory_requirements> {
+auto gse::vulkan::device::create_image_unbound(
+	const gpu::image_create_info& info
+) const -> std::pair<gpu::handle<image>, memory_requirements> {
 	const vk::ImageCreateInfo vk_info{
 		.flags = to_vk(info.flags),
 		.imageType = to_vk(info.type),
@@ -868,8 +876,9 @@ auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& inf
 	};
 }
 
-auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& info) const
-	-> std::pair<gpu::handle<buffer>, memory_requirements> {
+auto gse::vulkan::device::create_buffer_unbound(
+	const gpu::buffer_create_info& info
+) const -> std::pair<gpu::handle<buffer>, memory_requirements> {
 	const vk::BufferCreateInfo vk_info{
 		.pNext = info.pnext,
 		.size = info.size,
@@ -903,8 +912,10 @@ auto gse::vulkan::device::bind_buffer_memory(
 	(*m_device).bindBufferMemory(std::bit_cast<vk::Buffer>(buf), std::bit_cast<vk::DeviceMemory>(mem.value), offset);
 }
 
-auto gse::vulkan::device::create_image_view(const gpu::handle<image> img, const gpu::image_view_create_info& info) const
-	-> gpu::handle<image_view> {
+auto gse::vulkan::device::create_image_view(
+	const gpu::handle<image> img,
+	const gpu::image_view_create_info& info
+) const -> gpu::handle<image_view> {
 	const vk::ImageViewCreateInfo vk_info{
 		.image = std::bit_cast<vk::Image>(img),
 		.viewType = to_vk(info.view_type),
@@ -930,7 +941,9 @@ auto gse::vulkan::device::allocate_aliased_memory(
 		.memoryTypeIndex = memory_type_index,
 	};
 	const auto vk_memory = (*m_device).allocateMemory(alloc_info);
-	return { .value = std::bit_cast<std::uint64_t>(vk_memory) };
+	return {
+		.value = std::bit_cast<std::uint64_t>(vk_memory)
+	};
 }
 
 auto gse::vulkan::device::free_aliased_memory(const device_memory_handle mem) const -> void {
@@ -1048,8 +1061,10 @@ auto gse::vulkan::device::allocate(
 
 	std::uint32_t new_memory_type_index = std::numeric_limits<std::uint32_t>::max();
 	for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-		if ((requirements.memoryTypeBits & (1u << i)) &&
-			(mem_props.memoryTypes[i].propertyFlags & properties) == properties) {
+		if (
+			(requirements.memoryTypeBits & (1u << i)) &&
+			(mem_props.memoryTypes[i].propertyFlags & properties) == properties
+		) {
 			new_memory_type_index = i;
 			break;
 		}
@@ -1082,8 +1097,10 @@ auto gse::vulkan::device::allocate(
 					continue;
 				}
 
-				if (const vk::DeviceSize leftover = it->size - (aligned_offset - it->offset) - requirements.size;
-					leftover < best_leftover) {
+				if (
+					const vk::DeviceSize leftover = it->size - (aligned_offset - it->offset) - requirements.size;
+					leftover < best_leftover
+				) {
 					best_block = &block;
 					best_sub_it = it;
 					best_leftover = leftover;
@@ -1272,8 +1289,9 @@ auto gse::vulkan::device::clean_up() -> void {
 	m_pools.clear();
 }
 
-auto gse::vulkan::device::memory_flag_preferences(const vk::BufferUsageFlags usage)
-	-> std::vector<vk::MemoryPropertyFlags> {
+auto gse::vulkan::device::memory_flag_preferences(
+	const vk::BufferUsageFlags usage
+) -> std::vector<vk::MemoryPropertyFlags> {
 	using mpf = vk::MemoryPropertyFlagBits;
 
 	if (usage & vk::BufferUsageFlagBits::eVertexBuffer || usage & vk::BufferUsageFlagBits::eIndexBuffer) {

@@ -158,6 +158,7 @@ export namespace glfw {
 	inline constexpr int press = GLFW_PRESS;
 	inline constexpr int release = GLFW_RELEASE;
 	inline constexpr int resizable = GLFW_RESIZABLE;
+	inline constexpr int visible = GLFW_VISIBLE;
 	inline constexpr int true_ = GLFW_TRUE;
 	inline constexpr int false_ = GLFW_FALSE;
 	inline constexpr int key_unknown = GLFW_KEY_UNKNOWN;

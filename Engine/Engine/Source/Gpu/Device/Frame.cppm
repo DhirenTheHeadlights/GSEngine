@@ -32,8 +32,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto image_index() const -> std::uint32_t;
 
-		[[nodiscard]] auto command_buffer(queue_type queue = queue_type::graphics) const
-			-> handle<vulkan::command_buffer>;
+		[[nodiscard]]
+		auto command_buffer(queue_type queue = queue_type::graphics) const -> handle<vulkan::command_buffer>;
 
 		[[nodiscard]] auto frame_in_progress() const -> bool;
 
@@ -50,8 +50,10 @@ export namespace gse::gpu {
 	private:
 		auto recreate_resources(const window::data& win) -> void;
 
-		static auto create_sync_objects(const vulkan::device& device_data, const vulkan::swap_chain& swap_chain_data)
-			-> vulkan::sync;
+		static auto create_sync_objects(
+			const vulkan::device& device_data,
+			const vulkan::swap_chain& swap_chain_data
+		) -> vulkan::sync;
 
 		vulkan::sync m_sync;
 		std::uint32_t m_image_index = 0;

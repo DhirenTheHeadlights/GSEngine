@@ -18,7 +18,7 @@ export namespace gse::network {
 		float x, y;
 	};
 
-	struct[[= network_message{}]] input_frame {
+	struct [[= network_message{}]] input_frame {
 		std::uint32_t input_sequence = 0;
 		time_t<std::uint32_t, milliseconds> client_time = {};
 		float camera_yaw = 0.f;

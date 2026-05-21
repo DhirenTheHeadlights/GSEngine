@@ -104,8 +104,9 @@ constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::operator*(const mixed_mat& r
 template <typename ColSpec, typename RowSpec, typename T>
 template <typename OtherCol, typename OtherRow>
 requires std::same_as<typename OtherRow::template type<0>, typename ColSpec::template type<0>>
-constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::operator*(const mixed_mat<OtherCol, OtherRow, T>& rhs) const
-	-> mixed_mat<OtherCol, RowSpec, T> {
+constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::operator*(
+	const mixed_mat<OtherCol, OtherRow, T>& rhs
+) const -> mixed_mat<OtherCol, RowSpec, T> {
 	return mixed_mat<OtherCol, RowSpec, T>{ static_cast<const base&>(*this) *
 											static_cast<const mixed_mat<OtherCol, OtherRow, T>::base&>(rhs) };
 }

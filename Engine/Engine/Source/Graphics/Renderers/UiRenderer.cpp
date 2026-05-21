@@ -9,6 +9,7 @@ import :forward_renderer;
 import :scene_snapshot_renderer;
 import :physics_debug_renderer;
 import :sdf_grid_renderer;
+import :tonemap_renderer;
 import :world_text_renderer;
 
 import gse.os;
@@ -19,13 +20,11 @@ import gse.containers;
 import gse.concurrency;
 import gse.ecs;
 import gse.math;
-import gse.log;
-import gse.time;
 
 namespace gse::renderer::ui {
 	using shader_binding_types = type_pack<shaders::bindless::textures>;
 
-	struct[[= shaders::shader_struct]] sprite_push_constants {
+	struct [[= shaders::shader_struct]] sprite_push_constants {
 		projection_matrix projection;
 		std::uint32_t tex_idx;
 		std::uint32_t snapshot_tex_idx;
@@ -42,9 +41,10 @@ namespace gse::renderer::ui {
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::depth<false, false>,
 		gpu::blend<gpu::blend_preset::alpha_premultiplied>,
-		gpu::depth_target<gpu::depth_format::none>>;
+		gpu::depth_target<gpu::depth_format::none>
+	>;
 
-	struct[[= shaders::shader_struct]] msdf_push_constants {
+	struct [[= shaders::shader_struct]] msdf_push_constants {
 		projection_matrix projection;
 		vec2f unit_range;
 		float depth;
@@ -65,7 +65,8 @@ namespace gse::renderer::ui {
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::depth<false, false>,
 		gpu::blend<gpu::blend_preset::alpha_premultiplied>,
-		gpu::depth_target<gpu::depth_format::none>>;
+		gpu::depth_target<gpu::depth_format::none>
+	>;
 }
 
 auto gse::renderer::ui::add_sprite_quad(
@@ -209,25 +210,23 @@ auto gse::renderer::ui::system::run(
 				continue;
 			}
 
-			unified.push_back(
-				{
-					.type = command_type::sprite,
-					.layer = cmd.layer,
-					.z_order = cmd.z_order,
-					.clip_rect = cmd.clip_rect,
-					.texture = cmd.texture,
-					.rect = cmd.rect,
-					.color = cmd.color,
-					.uv_rect = cmd.uv_rect,
-					.rotation = cmd.rotation,
-					.corner_radius = cmd.corner_radius,
-					.sample_scene_snapshot = cmd.sample_scene_snapshot,
-					.font = {},
-					.text = {},
-					.position = {},
-					.scale = 1.0f,
-				}
-			);
+			unified.push_back({
+				.type = command_type::sprite,
+				.layer = cmd.layer,
+				.z_order = cmd.z_order,
+				.clip_rect = cmd.clip_rect,
+				.texture = cmd.texture,
+				.rect = cmd.rect,
+				.color = cmd.color,
+				.uv_rect = cmd.uv_rect,
+				.rotation = cmd.rotation,
+				.corner_radius = cmd.corner_radius,
+				.sample_scene_snapshot = cmd.sample_scene_snapshot,
+				.font = {},
+				.text = {},
+				.position = {},
+				.scale = 1.0f,
+			});
 		}
 
 		for (const auto& [font, text, position, scale, color, clip_rect, layer, z_order] : text_commands) {
@@ -235,23 +234,21 @@ auto gse::renderer::ui::system::run(
 				continue;
 			}
 
-			unified.push_back(
-				{
-					.type = command_type::text,
-					.layer = layer,
-					.z_order = z_order,
-					.clip_rect = clip_rect,
-					.texture = {},
-					.rect = {},
-					.color = color,
-					.uv_rect = {},
-					.rotation = {},
-					.font = font,
-					.text = text,
-					.position = position,
-					.scale = scale,
-				}
-			);
+			unified.push_back({
+				.type = command_type::text,
+				.layer = layer,
+				.z_order = z_order,
+				.clip_rect = clip_rect,
+				.texture = {},
+				.rect = {},
+				.color = color,
+				.uv_rect = {},
+				.rotation = {},
+				.font = font,
+				.text = text,
+				.position = position,
+				.scale = scale,
+			});
 		}
 
 		std::ranges::stable_sort(unified, [](const unified_command& a, const unified_command& b) {
@@ -282,17 +279,15 @@ auto gse::renderer::ui::system::run(
 
 		auto flush_batch = [&] {
 			if (indices.size() > batch_index_start) {
-				batches.push_back(
-					{
-						.type = current_type,
-						.index_offset = batch_index_start,
-						.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
-						.clip_rect = current_clip,
-						.texture = current_texture,
-						.font = current_font,
-						.sample_scene_snapshot = current_sample_snapshot,
-					}
-				);
+				batches.push_back({
+					.type = current_type,
+					.index_offset = batch_index_start,
+					.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
+					.clip_rect = current_clip,
+					.texture = current_texture,
+					.font = current_font,
+					.sample_scene_snapshot = current_sample_snapshot,
+				});
 			}
 			batch_index_start = static_cast<std::uint32_t>(indices.size());
 		};
@@ -306,8 +301,10 @@ auto gse::renderer::ui::system::run(
 			else if (cmd.clip_rect.has_value() != current_clip.has_value()) {
 				needs_flush = true;
 			}
-			else if (cmd.clip_rect.has_value() &&
-					 (cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())) {
+			else if (
+				cmd.clip_rect.has_value() &&
+				(cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())
+			) {
 				needs_flush = true;
 			}
 			else if (cmd.type == command_type::sprite && cmd.texture.id() != current_texture.id()) {
@@ -392,26 +389,6 @@ auto gse::renderer::ui::system::frame(
 		return slot ? slot.index : shaders::bindless::invalid_index;
 	}();
 
-	{
-		static gse::interval_timer<> log_timer{ gse::seconds(2.f) };
-		if (log_timer.tick()) {
-			std::size_t snapshot_batches = 0;
-			for (const auto& b : batches) {
-				if (b.sample_scene_snapshot) {
-					++snapshot_batches;
-				}
-			}
-			gse::log::println(
-				gse::log::category::render,
-				"ui::frame -> snapshot_ready={}, snapshot_idx={}, total_batches={}, snapshot_batches={}",
-				snapshot_s.ready,
-				snapshot_idx,
-				batches.size(),
-				snapshot_batches
-			);
-		}
-	}
-
 	gpu::typed_push_constants<sprite_push_constants> sprite_pc{
 		.data = { .projection = projection,
 				  .tex_idx = 0,
@@ -442,7 +419,9 @@ auto gse::renderer::ui::system::frame(
 					   scene_snapshot::system,
 					   physics_debug::system,
 					   sdf_grid::system,
-					   world_text::system>();
+					   tonemap::system,
+					   world_text::system
+				   >();
 
 	if (snapshot_idx != shaders::bindless::invalid_index) {
 		rec.sample_image(snapshot_s.snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);

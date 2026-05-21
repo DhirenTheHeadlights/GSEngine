@@ -26,11 +26,17 @@ namespace gse::renderer::capture {
 		std::uint32_t rgba_index;
 	};
 
-	struct [[= shaders::binding<0, 1>{}, = shaders::storage_image]] output_y {
+	struct [[
+		= shaders::binding<0, 1>{},
+		= shaders::storage_image
+	]] output_y {
 		using element = float;
 	};
 
-	struct [[= shaders::binding<0, 2>{}, = shaders::storage_image]] output_uv {
+	struct [[
+		= shaders::binding<0, 2>{},
+		= shaders::storage_image
+	]] output_uv {
 		using element = vec2f;
 	};
 
@@ -153,8 +159,11 @@ auto gse::renderer::capture::system::run(
 	}
 }
 
-auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d)
-	-> async::task<> {
+auto gse::renderer::capture::system::frame(
+	const frame_context& ctx,
+	shared_view<gpu::context> gpu_s,
+	data& d
+) -> async::task<> {
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto& [staging, width, height, pending] = d.screenshots[frame_index];

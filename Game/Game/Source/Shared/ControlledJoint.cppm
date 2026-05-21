@@ -9,10 +9,11 @@ export namespace gs {
 		gse::angle target_angle = gse::radians(0.f);
 		gse::id flexor_muscle;
 		gse::id extensor_muscle;
-		float gain = 4.f;
-		float damping = 1.0f;
+		float gain = 12.f;
+		float damping = 2.0f;
 		gse::quat rest_orientation = gse::quat(1.f, 0.f, 0.f, 0.f);
 		gse::angle prev_angle = gse::radians(0.f);
-		bool rest_initialized = false;
+		std::uint32_t rest_settle_ticks = 0;
+		bool enabled = true;
 	};
 }

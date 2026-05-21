@@ -160,10 +160,14 @@ auto gs::client_ui_system::run(
 				.menu = "Dev Spawn",
 				.build =
 					[&](gse::gui::builder& ui) {
-						if (ui.draw<gse::gui::button>({ .text = "Physics Stress Test (F5)" })) {
+						if (ui.draw<gse::gui::button>({
+								.text = "Physics Stress Test (F5)"
+							})) {
 							ctx.channels.push<gs::spawn_stress_request>({});
 						}
-						if (ui.draw<gse::gui::button>({ .text = "Joint Test (F6)" })) {
+						if (ui.draw<gse::gui::button>({
+								.text = "Joint Test (F6)"
+							})) {
 							ctx.channels.push<gs::spawn_joints_request>({});
 						}
 					},

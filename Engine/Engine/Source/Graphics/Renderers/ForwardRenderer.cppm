@@ -2,6 +2,7 @@ export module gse.graphics:forward_renderer;
 
 import std;
 
+import :atmosphere_renderer;
 import :geometry_collector;
 import :depth_prepass_renderer;
 import :rt_shadow_renderer;
@@ -55,18 +56,24 @@ export namespace gse::renderer::forward {
 	};
 
 	struct system {
-		struct[[= gse::settings::category<"Graphics">{}]] data {
-			[[= gse::settings::describe<"Shadow map resolution and filtering quality. Off disables shadow rendering "
-										"entirely.">{}]] shadow_quality_level shadow_quality =
-				shadow_quality_level::medium;
+		struct [[= gse::settings::category<"Graphics">{}]] data {
+			[[
+				= gse::settings::describe<"Shadow map resolution and filtering quality. Off disables shadow rendering "
+										  "entirely.">{}
+			]]
+			shadow_quality_level shadow_quality = shadow_quality_level::medium;
 
-			[[= gse::settings::describe<
-				"Screen-space ambient occlusion sample count and blur quality.">{}]] ao_quality_level ao_quality =
-				ao_quality_level::medium;
+			[[
+				= gse::settings::describe<"Screen-space ambient occlusion sample count and blur quality.">{}
+			]]
+			ao_quality_level ao_quality = ao_quality_level::medium;
 
-			[[= gse::settings::describe<"Screen-space and ray-traced reflection quality. Higher levels trace more rays "
-										"per pixel.">{}]] reflection_quality_level reflection_quality =
-				reflection_quality_level::medium;
+			[[
+				= gse::settings::
+					describe<"Screen-space and ray-traced reflection quality. Higher levels trace more rays "
+							 "per pixel.">{}
+			]]
+			reflection_quality_level reflection_quality = reflection_quality_level::medium;
 
 			gpu::pipeline pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
@@ -85,6 +92,7 @@ export namespace gse::renderer::forward {
 			const asset::data& assets_s,
 			const rt_shadow::system::data& rt_state,
 			const light_culling::system::data& lc_r,
+			const atmosphere::system::data& atm_state,
 			data& d
 		) -> async::task<>;
 

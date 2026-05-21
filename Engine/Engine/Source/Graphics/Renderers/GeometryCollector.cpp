@@ -43,7 +43,8 @@ namespace gse::renderer::geometry_collector {
 		typename KeyOf,
 		typename GetMesh,
 		typename AccumAabb,
-		typename OnInstance>
+		typename OnInstance
+	>
 	auto build_batches(
 		render_data& data,
 		std::uint32_t& global_instance_offset,
@@ -73,8 +74,10 @@ namespace gse::renderer::geometry_collector {
 	auto tick(run_context& ctx, system::data& d, const camera::system::data& cam_state) -> async::task<>;
 }
 
-auto gse::renderer::geometry_collector::material_palette_index(render_data& data, const material* mat_ptr)
-	-> std::uint32_t {
+auto gse::renderer::geometry_collector::material_palette_index(
+	render_data& data,
+	const material* mat_ptr
+) -> std::uint32_t {
 	if (auto it = data.material_palette_map.find(mat_ptr); it != data.material_palette_map.end()) {
 		return it->second;
 	}
@@ -90,14 +93,12 @@ auto gse::renderer::geometry_collector::write_instance(
 	const std::uint32_t mat_idx,
 	const vec3f& tint
 ) -> void {
-	instance_staging.push_back(
-		{
-			.model_matrix = model_matrix,
-			.normal_matrix = normal_matrix,
-			.material_index = mat_idx,
-			.tint = tint,
-		}
-	);
+	instance_staging.push_back({
+		.model_matrix = model_matrix,
+		.normal_matrix = normal_matrix,
+		.material_index = mat_idx,
+		.tint = tint,
+	});
 }
 
 template <typename Items, typename Batches, typename KeyOf, typename GetMesh, typename AccumAabb, typename OnInstance>
@@ -128,13 +129,13 @@ auto gse::renderer::geometry_collector::build_batches(
 		vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
 		accum_aabb(world_aabb_min, world_aabb_max, batch, mesh);
 
-		batches.push_back(
-			{ .key = key,
-			  .first_instance = global_instance_offset,
-			  .instance_count = instance_count,
-			  .world_aabb_min = world_aabb_min,
-			  .world_aabb_max = world_aabb_max }
-		);
+		batches.push_back({
+			.key = key,
+			.first_instance = global_instance_offset,
+			.instance_count = instance_count,
+			.world_aabb_min = world_aabb_min,
+			.world_aabb_max = world_aabb_max
+		});
 
 		for (const auto& item : batch) {
 			on_instance(item, key, mat_idx, global_instance_offset++);
@@ -218,8 +219,10 @@ auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_que
 	});
 }
 
-auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, std::uint32_t& global_instance_offset)
-	-> void {
+auto gse::renderer::geometry_collector::build_normal_batches(
+	render_data& data,
+	std::uint32_t& global_instance_offset
+) -> void {
 	trace::scope_guard sg{ trace_id<"geom_collect::batch_normal">() };
 	build_batches(
 		data,
@@ -227,7 +230,10 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 		data.render_queue,
 		data.normal_batches,
 		[](const owned_render_queue_entry& q) {
-			return normal_batch_key{ .model_ptr = &q.entry.model.resolve(), .mesh_index = q.entry.index };
+			return normal_batch_key{
+				.model_ptr = &q.entry.model.resolve(),
+				.mesh_index = q.entry.index
+			};
 		},
 		[](const normal_batch_key& key) -> const mesh& {
 			return key.model_ptr->meshes()[key.mesh_index];
@@ -264,49 +270,58 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 			const auto& entry = q.entry;
 			write_instance(data.instance_staging, entry.model_matrix, entry.normal_matrix, mat_idx, entry.color);
 			if (q.body_index != owned_render_queue_entry::invalid_body_index) {
-				data.physics_mappings.push_back(
-					{ .body_index = q.body_index,
-					  .instance_index = instance_index,
-					  .center_of_mass = key.model_ptr->center_of_mass() }
-				);
+				data.physics_mappings.push_back({
+					.body_index = q.body_index,
+					.instance_index = instance_index,
+					.center_of_mass = key.model_ptr->center_of_mass()
+				});
 			}
 		}
 	);
 }
 
-auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::context::data& gpu_s, system::data& d)
-	-> async::task<> {
+auto gse::renderer::geometry_collector::initialize(
+	run_context& ctx,
+	const gpu::context::data& gpu_s,
+	system::data& d
+) -> async::task<> {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		constexpr std::size_t instance_buffer_size = system::data::max_instances * sizeof(shaders::common::instance_data);
+		constexpr std::size_t instance_buffer_size =
+			system::data::max_instances * sizeof(shaders::common::instance_data);
 		d.instance_buffer[i] = gpu::buffer::create(
 			gpu_s.device->allocator(),
-			{ .size = instance_buffer_size,
-			  .usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst }
+			{
+				.size = instance_buffer_size,
+				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
+			}
 		);
 
 		constexpr std::size_t normal_indirect_buffer_size =
 			render_data::max_batches * sizeof(gpu::draw_mesh_tasks_indirect_command);
 		d.normal_indirect_commands_buffer[i] = gpu::buffer::create(
 			gpu_s.device->allocator(),
-			{ .size = normal_indirect_buffer_size,
-			  .usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst }
+			{
+				.size = normal_indirect_buffer_size,
+				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
+			}
 		);
 	}
 
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::tick(run_context& ctx, system::data& d, const camera::system::data& cam_state)
-	-> async::task<> {
+auto gse::renderer::geometry_collector::tick(
+	run_context& ctx,
+	system::data& d,
+	const camera::system::data& cam_state
+) -> async::task<> {
 	const view_matrix view_matrix = cam_state.view_matrix;
 	const projection_matrix proj_matrix = cam_state.projection_matrix;
 
 	auto body_index_map = read_body_index_map(ctx);
 
-	auto [render, transform] = co_await ctx.acquire_with(
-		write_v<render_component>,
-		read_v<physics::transform_component>
-	);
+	auto [render, transform] =
+		co_await ctx.acquire_with(write_v<render_component>, read_v<physics::transform_component>);
 
 	if (render.empty()) {
 		co_return;
@@ -394,9 +409,11 @@ auto gse::renderer::geometry_collector::system::frame(
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 			const std::uint32_t task_groups = (mesh.meshlet_count() + 31) / 32;
 
-			normal_indirect_commands.push_back(
-				{ .group_count_x = task_groups, .group_count_y = batch.instance_count, .group_count_z = 1 }
-			);
+			normal_indirect_commands.push_back({
+				.group_count_x = task_groups,
+				.group_count_y = batch.instance_count,
+				.group_count_z = 1
+			});
 		}
 
 		if (!normal_indirect_commands.empty()) {

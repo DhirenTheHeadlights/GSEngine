@@ -87,8 +87,10 @@ auto gs::main_menu_screen::target_width(const gse::vec2f viewport_size) const ->
 	return std::min(panel_max_width, viewport_size.x() * 0.35f);
 }
 
-auto gs::main_menu_screen::body_rect(const gse::gui::style&, const gse::vec2f viewport_size) const
-	-> gse::gui::ui_rect {
+auto gs::main_menu_screen::body_rect(
+	const gse::gui::style&,
+	const gse::vec2f viewport_size
+) const -> gse::gui::ui_rect {
 	const float width = target_width(viewport_size);
 	const float eased = eased_progress();
 	const float left = -width * (1.0f - eased);
@@ -99,14 +101,12 @@ auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse:
 	const gse::gui::ui_rect full =
 		gse::gui::ui_rect::from_position_size({ 0.f, viewport_size.y() }, { viewport_size.x(), viewport_size.y() });
 
-	ctx.sprites.push_back(
-		{
-			.rect = full,
-			.color = { 0.f, 0.f, 0.f, dim_max_alpha },
-			.texture = ctx.blank_texture,
-			.layer = gse::render_layer::popup,
-		}
-	);
+	ctx.sprites.push_back({
+		.rect = full,
+		.color = { 0.f, 0.f, 0.f, dim_max_alpha },
+		.texture = ctx.blank_texture,
+		.layer = gse::render_layer::popup,
+	});
 
 	const gse::gui::ui_rect panel = body_rect(ctx.style, viewport_size);
 	const gse::vec4f panel_color = {
@@ -116,25 +116,21 @@ auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse:
 		1.0f,
 	};
 
-	ctx.sprites.push_back(
-		{
-			.rect = panel,
-			.color = panel_color,
-			.texture = ctx.blank_texture,
-			.layer = gse::render_layer::popup,
-		}
-	);
+	ctx.sprites.push_back({
+		.rect = panel,
+		.color = panel_color,
+		.texture = ctx.blank_texture,
+		.layer = gse::render_layer::popup,
+	});
 
 	const gse::gui::ui_rect border =
 		gse::gui::ui_rect::from_position_size({ panel.right() - 1.f, panel.top() }, { 1.f, panel.height() });
-	ctx.sprites.push_back(
-		{
-			.rect = border,
-			.color = ctx.style.color_border,
-			.texture = ctx.blank_texture,
-			.layer = gse::render_layer::popup,
-		}
-	);
+	ctx.sprites.push_back({
+		.rect = border,
+		.color = ctx.style.color_border,
+		.texture = ctx.blank_texture,
+		.layer = gse::render_layer::popup,
+	});
 }
 
 auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void {
@@ -142,20 +138,28 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 	const bool scene_active = world.active_scene.has_value();
 
 	if (scene_active) {
-		if (ui.draw<gse::gui::button>({ .text = "Resume" })) {
+		if (ui.draw<gse::gui::button>({
+				.text = "Resume"
+			})) {
 			m_channels.push<gse::gui::pop_screen_request>({});
 		}
 	}
 
 	for (const auto& [scene_id, scene_ptr] : world.scenes) {
 		const std::string scene_name(scene_ptr->id().tag());
-		if (ui.draw<gse::gui::button>({ .text = scene_name })) {
-			m_channels.push<gse::activate_scene_request>({ .scene_id = scene_id });
+		if (ui.draw<gse::gui::button>({
+				.text = scene_name
+			})) {
+			m_channels.push<gse::activate_scene_request>({
+				.scene_id = scene_id
+			});
 			m_channels.push<gse::gui::pop_screen_request>({});
 		}
 	}
 
-	if (ui.draw<gse::gui::button>({ .text = "Network" })) {
+	if (ui.draw<gse::gui::button>({
+			.text = "Network"
+		})) {
 		m_channels.push<gse::gui::push_screen_request>({
 			.factory =
 				[net = m_net, channels = m_channels] {
@@ -164,7 +168,9 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 		});
 	}
 
-	if (ui.draw<gse::gui::button>({ .text = "Crosshair" })) {
+	if (ui.draw<gse::gui::button>({
+			.text = "Crosshair"
+		})) {
 		m_channels.push<gse::gui::push_screen_request>({
 			.factory =
 				[save_reg = m_save_reg, crosshair = m_crosshair, channels = m_channels] {
@@ -173,7 +179,9 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 		});
 	}
 
-	if (ui.draw<gse::gui::button>({ .text = "Settings" })) {
+	if (ui.draw<gse::gui::button>({
+			.text = "Settings"
+		})) {
 		m_channels.push<gse::gui::push_screen_request>({
 			.factory =
 				[save_reg = m_save_reg, channels = m_channels] {
@@ -183,12 +191,16 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 	}
 
 	if (scene_active) {
-		if (ui.draw<gse::gui::button>({ .text = "Exit to Main Menu" })) {
+		if (ui.draw<gse::gui::button>({
+				.text = "Exit to Main Menu"
+			})) {
 			m_channels.push<gse::deactivate_active_scene_request>({});
 		}
 	}
 
-	if (ui.draw<gse::gui::button>({ .text = "Quit" })) {
+	if (ui.draw<gse::gui::button>({
+			.text = "Quit"
+		})) {
 		gse::shutdown();
 	}
 }

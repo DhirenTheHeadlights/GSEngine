@@ -14,13 +14,17 @@ import :camera_system;
 
 export namespace gse::renderer::sdf_grid {
 	struct system {
-		struct[[= gse::settings::category<"Grid">{}]] data {
-			[[= gse::settings::describe<"Render a procedural SDF-based grid on the y=0 plane.">{},
-			  = gse::shared]] bool enabled = true;
+		struct [[= gse::settings::category<"Grid">{}]] data {
+			[[
+				= gse::settings::describe<"Render a procedural SDF-based grid on the y=0 plane.">{},
+				= gse::shared
+			]]
+			bool enabled = true;
 			[[
 				= gse::settings::describe<"Stamp distance labels along the X and Z axes at every major gridline.">{},
 				= gse::shared
-			]] bool show_labels = true;
+			]]
+			bool show_labels = true;
 
 			length minor_spacing = meters(1.f);
 			[[= gse::shared]] length major_spacing = meters(10.f);

@@ -53,8 +53,10 @@ auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
 
 	const ma_decoder_config cfg = ma_decoder_config_init(ma_format_value_unknown, 0, 0);
 	ma_decoder decoder;
-	if (const auto result = ma_decoder_init_memory(m_bytes.data(), m_bytes.size(), &cfg, &decoder);
-		result == ma_result_success) {
+	if (
+		const auto result = ma_decoder_init_memory(m_bytes.data(), m_bytes.size(), &cfg, &decoder);
+		result == ma_result_success
+	) {
 		ma_uint64 length = 0;
 		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
 		m_sample_rate = decoder.outputSampleRate;

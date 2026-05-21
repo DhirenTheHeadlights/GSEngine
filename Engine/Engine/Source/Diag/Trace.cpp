@@ -39,14 +39,14 @@ auto gse::trace::begin_block(const id id, std::uint64_t parent) -> std::uint64_t
 	const auto tid = make_tid();
 	const auto eid = allocate_span_eid();
 
-	emit(
-		{ .type = event_type::begin,
-		  .id = id,
-		  .eid = eid,
-		  .parent_eid = parent,
-		  .tid = tid,
-		  .ts = system_clock::now<tick_step>() }
-	);
+	emit({
+		.type = event_type::begin,
+		.id = id,
+		.eid = eid,
+		.parent_eid = parent,
+		.tid = tid,
+		.ts = system_clock::now<tick_step>()
+	});
 
 	return eid;
 }
@@ -58,14 +58,14 @@ auto gse::trace::end_block(const id id, const std::uint64_t eid, const std::uint
 
 	ensure_tls_registered();
 
-	emit(
-		{ .type = event_type::end,
-		  .id = id,
-		  .eid = eid,
-		  .parent_eid = parent,
-		  .tid = make_tid(),
-		  .ts = system_clock::now<tick_step>() }
-	);
+	emit({
+		.type = event_type::end,
+		.id = id,
+		.eid = eid,
+		.parent_eid = parent,
+		.tid = make_tid(),
+		.ts = system_clock::now<tick_step>()
+	});
 }
 
 auto gse::trace::begin_async(const id id, const std::uint64_t key) -> void {
@@ -75,16 +75,16 @@ auto gse::trace::begin_async(const id id, const std::uint64_t key) -> void {
 
 	ensure_tls_registered();
 
-	emit(
-		{ .type = event_type::async_begin,
-		  .id = id,
-		  .eid = 0,
-		  .parent_eid = current_parent_eid(),
-		  .tid = make_tid(),
-		  .ts = system_clock::now<tick_step>(),
-		  .value = 0.0,
-		  .key = key }
-	);
+	emit({
+		.type = event_type::async_begin,
+		.id = id,
+		.eid = 0,
+		.parent_eid = current_parent_eid(),
+		.tid = make_tid(),
+		.ts = system_clock::now<tick_step>(),
+		.value = 0.0,
+		.key = key
+	});
 }
 
 auto gse::trace::end_async(const id id, const std::uint64_t key) -> void {
@@ -94,16 +94,16 @@ auto gse::trace::end_async(const id id, const std::uint64_t key) -> void {
 
 	ensure_tls_registered();
 
-	emit(
-		{ .type = event_type::async_end,
-		  .id = id,
-		  .eid = 0,
-		  .parent_eid = 0,
-		  .tid = make_tid(),
-		  .ts = system_clock::now<tick_step>(),
-		  .value = 0.0,
-		  .key = key }
-	);
+	emit({
+		.type = event_type::async_end,
+		.id = id,
+		.eid = 0,
+		.parent_eid = 0,
+		.tid = make_tid(),
+		.ts = system_clock::now<tick_step>(),
+		.value = 0.0,
+		.key = key
+	});
 }
 
 auto gse::trace::mark(const id id) -> void {
@@ -113,16 +113,16 @@ auto gse::trace::mark(const id id) -> void {
 
 	ensure_tls_registered();
 
-	emit(
-		{ .type = event_type::instant,
-		  .id = id,
-		  .eid = 0,
-		  .parent_eid = current_parent_eid(),
-		  .tid = make_tid(),
-		  .ts = system_clock::now<tick_step>(),
-		  .value = 0.0,
-		  .key = 0 }
-	);
+	emit({
+		.type = event_type::instant,
+		.id = id,
+		.eid = 0,
+		.parent_eid = current_parent_eid(),
+		.tid = make_tid(),
+		.ts = system_clock::now<tick_step>(),
+		.value = 0.0,
+		.key = 0
+	});
 }
 
 auto gse::trace::counter(const id id, const double value) -> void {
@@ -132,18 +132,16 @@ auto gse::trace::counter(const id id, const double value) -> void {
 
 	ensure_tls_registered();
 
-	emit(
-		{
-			.type = event_type::counter,
-			.id = id,
-			.eid = 0,
-			.parent_eid = 0,
-			.tid = make_tid(),
-			.ts = system_clock::now<tick_step>(),
-			.value = value,
-			.key = 0,
-		}
-	);
+	emit({
+		.type = event_type::counter,
+		.id = id,
+		.eid = 0,
+		.parent_eid = 0,
+		.tid = make_tid(),
+		.ts = system_clock::now<tick_step>(),
+		.value = value,
+		.key = 0,
+	});
 }
 
 auto gse::trace::begin_async_at(
@@ -158,16 +156,16 @@ auto gse::trace::begin_async_at(
 
 	ensure_tls_registered();
 
-	emit(
-		{ .type = event_type::async_begin,
-		  .id = id,
-		  .eid = 0,
-		  .parent_eid = 0,
-		  .tid = tid,
-		  .ts = ts,
-		  .value = 0.0,
-		  .key = key }
-	);
+	emit({
+		.type = event_type::async_begin,
+		.id = id,
+		.eid = 0,
+		.parent_eid = 0,
+		.tid = tid,
+		.ts = ts,
+		.value = 0.0,
+		.key = key
+	});
 }
 
 auto gse::trace::end_async_at(
@@ -182,38 +180,40 @@ auto gse::trace::end_async_at(
 
 	ensure_tls_registered();
 
-	emit(
-		{ .type = event_type::async_end,
-		  .id = id,
-		  .eid = 0,
-		  .parent_eid = 0,
-		  .tid = tid,
-		  .ts = ts,
-		  .value = 0.0,
-		  .key = key }
-	);
+	emit({
+		.type = event_type::async_end,
+		.id = id,
+		.eid = 0,
+		.parent_eid = 0,
+		.tid = tid,
+		.ts = ts,
+		.value = 0.0,
+		.key = key
+	});
 }
 
-auto gse::trace::counter_at(const id id, const double value, const std::uint32_t tid, const time_t<std::uint64_t> ts)
-	-> void {
+auto gse::trace::counter_at(
+	const id id,
+	const double value,
+	const std::uint32_t tid,
+	const time_t<std::uint64_t> ts
+) -> void {
 	if (paused() || !id.exists()) {
 		return;
 	}
 
 	ensure_tls_registered();
 
-	emit(
-		{
-			.type = event_type::counter,
-			.id = id,
-			.eid = 0,
-			.parent_eid = 0,
-			.tid = tid,
-			.ts = ts,
-			.value = value,
-			.key = 0,
-		}
-	);
+	emit({
+		.type = event_type::counter,
+		.id = id,
+		.eid = 0,
+		.parent_eid = 0,
+		.tid = tid,
+		.ts = ts,
+		.value = value,
+		.key = 0,
+	});
 }
 
 auto gse::trace::register_virtual_thread(const std::uint32_t tid, const std::string_view name) -> void {
@@ -446,13 +446,15 @@ auto gse::trace::compute_self_time(frame_storage& fs, std::size_t i) -> void {
 auto gse::trace::emplace_shallow_node(frame_storage& fs, std::size_t flat_i) -> std::size_t {
 	const auto& fn = fs.flat[flat_i];
 	fs.node_pool.push_back(
-		node{ .id = fn.id,
-			  .trace_id = fn.tid,
-			  .start = fn.start,
-			  .stop = fn.end,
-			  .self = fn.self,
-			  .children_first = nullptr,
-			  .children_count = 0 }
+		node{
+			.id = fn.id,
+			.trace_id = fn.tid,
+			.start = fn.start,
+			.stop = fn.end,
+			.self = fn.self,
+			.children_first = nullptr,
+			.children_count = 0
+		}
 	);
 	return fs.node_pool.size() - 1;
 }
@@ -514,11 +516,13 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		if (e.type == event_type::begin) {
 			spans.emplace_back(
 				e.eid,
-				span_info{ .id = e.id,
-						   .tid = static_cast<std::uint32_t>(e.tid),
-						   .t0 = e.ts,
-						   .t1 = {},
-						   .parent = e.parent_eid }
+				span_info{
+					.id = e.id,
+					.tid = static_cast<std::uint32_t>(e.tid),
+					.t0 = e.ts,
+					.t1 = {},
+					.parent = e.parent_eid
+				}
 			);
 		}
 	}
@@ -551,13 +555,15 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		}
 
 		fs.flat.push_back(
-			frame_storage::flat_node{ .id = sp.id,
-									  .tid = sp.tid,
-									  .start = sp.t0,
-									  .end = sp.t1,
-									  .self = {},
-									  .children_first = 0,
-									  .children_count = 0 }
+			frame_storage::flat_node{
+				.id = sp.id,
+				.tid = sp.tid,
+				.start = sp.t0,
+				.end = sp.t1,
+				.self = {},
+				.children_first = 0,
+				.children_count = 0
+			}
 		);
 	}
 
@@ -668,14 +674,14 @@ auto gse::trace::scope_guard::enter(std::uint64_t parent) -> void {
 	m_parent = parent;
 	m_eid = allocate_span_eid();
 
-	emit(
-		{ .type = event_type::begin,
-		  .id = m_id,
-		  .eid = m_eid,
-		  .parent_eid = m_parent,
-		  .tid = m_tid,
-		  .ts = system_clock::now<tick_step>() }
-	);
+	emit({
+		.type = event_type::begin,
+		.id = m_id,
+		.eid = m_eid,
+		.parent_eid = m_parent,
+		.tid = m_tid,
+		.ts = system_clock::now<tick_step>()
+	});
 
 	tls.stack.push_back(m_eid);
 }
@@ -689,14 +695,14 @@ gse::trace::scope_guard::~scope_guard() {
 		return;
 	}
 
-	emit(
-		{ .type = event_type::end,
-		  .id = m_id,
-		  .eid = m_eid,
-		  .parent_eid = m_parent,
-		  .tid = m_tid,
-		  .ts = system_clock::now<tick_step>() }
-	);
+	emit({
+		.type = event_type::end,
+		.id = m_id,
+		.eid = m_eid,
+		.parent_eid = m_parent,
+		.tid = m_tid,
+		.ts = system_clock::now<tick_step>()
+	});
 
 	tls.stack.pop_back();
 	if (m_pushed_parent && !tls.stack.empty() && tls.stack.back() == m_parent) {

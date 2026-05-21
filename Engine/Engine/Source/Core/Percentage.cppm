@@ -11,8 +11,10 @@ export namespace gse {
 
 		constexpr static auto fraction(const T& value = static_cast<T>(0)) -> percentage;
 
-		constexpr static auto ratio(const T& numerator = static_cast<T>(0), const T& denominator = static_cast<T>(1))
-			-> percentage;
+		constexpr static auto ratio(
+			const T& numerator = static_cast<T>(0),
+			const T& denominator = static_cast<T>(1)
+		) -> percentage;
 
 		constexpr static auto one() -> percentage;
 

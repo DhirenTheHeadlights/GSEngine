@@ -13,8 +13,10 @@ export namespace gse::renderer::scene_snapshot {
 	struct system {
 		struct data {
 			[[= gse::shared]] per_frame_resource<gpu::image> snapshots;
-			[[= gse::shared]] std::array<gpu::bindless_texture_slot, per_frame_resource<gpu::image>::frames_in_flight>
-				slots;
+			[[
+				= gse::shared
+			]]
+			std::array<gpu::bindless_texture_slot, per_frame_resource<gpu::image>::frames_in_flight> slots;
 			[[= gse::shared]] bool ready = false;
 
 			gpu::sampler sampler;

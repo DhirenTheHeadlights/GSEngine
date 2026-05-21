@@ -29,7 +29,9 @@ gse::engine::engine(const std::string& name, const flags<engine_flag> engine_fla
 }
 
 auto gse::engine::initialize(const setup_fn& app_setup) -> void {
-	trace::start({ .per_thread_event_cap = static_cast<std::size_t>(1e6) });
+	trace::start({
+		.per_thread_event_cap = static_cast<std::size_t>(1e6)
+	});
 
 	m_scheduler.set_registry(m_registry);
 
@@ -64,6 +66,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		assets.install_hot_reload_fns();
 
 		m_loading.set_phase("Compiling boot assets");
+		log::println(log::category::runtime, "boot: compile_boot_critical begin");
 		if (const auto result = assets.compile_boot_critical(); result.success_count > 0 || result.failure_count > 0) {
 			log::println(
 				result.failure_count > 0 ? log::level::warning : log::level::info,
@@ -74,16 +77,23 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 				result.failure_count
 			);
 		}
+		log::println(log::category::runtime, "boot: compile_boot_critical end");
 
+		log::println(log::category::runtime, "boot: scheduler.initialize begin");
 		m_scheduler.initialize();
 		m_scheduler.enter_running();
+		log::println(log::category::runtime, "boot: scheduler.initialize end");
 
 		auto& gui_data = m_scheduler.state<gse::gui::system::data>();
 		gui_data.menu_stack.push<gse::gui::loading_screen>(m_loading);
+		log::println(log::category::runtime, "boot: loading_screen pushed to menu stack");
 
 		auto* asset_state_ptr = &asset_state;
 
-		task::post([this, app_setup, asset_state_ptr] {
+		m_deferred_boot = [this, app_setup, asset_state_ptr] {
+			log::println(log::category::runtime, "boot: deferred boot begin (loading screen rendered)");
+
+			m_loading.set_phase("Compiling shaders");
 			add_system<physics::system>();
 			add_system<camera::system>();
 			add_system<primitive_resolver::system>();
@@ -97,32 +107,44 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			add_system<renderer::sdf_grid::system>();
 			add_system<renderer::world_text::system>();
 			add_system<renderer::physics_debug::system>();
+			add_system<renderer::atmosphere::system>();
+			add_system<renderer::bloom::system>();
+			add_system<renderer::tonemap::system>();
 			add_system<renderer::capture::system>();
 			add_system<audio::system>();
 
-			using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
-			gse::asset::system_for<game_assets> assets{ *asset_state_ptr };
+			task::post([this, app_setup, asset_state_ptr] {
+				using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
+				gse::asset::system_for<game_assets> assets{ *asset_state_ptr };
 
-			m_loading.set_phase("Compiling assets");
-			if (const auto result = assets.compile_non_boot_critical();
-				result.success_count > 0 || result.failure_count > 0) {
-				log::println(
-					result.failure_count > 0 ? log::level::warning : log::level::info,
-					log::category::assets,
-					"Compiled {} assets ({} skipped, {} failed)",
-					result.success_count,
-					result.skipped_count,
-					result.failure_count
-				);
-			}
+				m_loading.set_phase("Compiling assets");
+				log::println(log::category::runtime, "boot: compile_non_boot_critical begin");
+				if (
+					const auto result = assets.compile_non_boot_critical();
+					result.success_count > 0 || result.failure_count > 0
+				) {
+					log::println(
+						result.failure_count > 0 ? log::level::warning : log::level::info,
+						log::category::assets,
+						"Compiled {} assets ({} skipped, {} failed)",
+						result.success_count,
+						result.skipped_count,
+						result.failure_count
+					);
+				}
+				log::println(log::category::runtime, "boot: compile_non_boot_critical end");
 
-			if (app_setup) {
-				m_loading.set_phase("Initializing game");
-				app_setup(*this);
-			}
+				if (app_setup) {
+					m_loading.set_phase("Initializing game");
+					log::println(log::category::runtime, "boot: app_setup begin");
+					app_setup(*this);
+					log::println(log::category::runtime, "boot: app_setup end");
+				}
 
-			m_loading.mark_finished();
-		});
+				m_boot_tasks_done.store(true, std::memory_order_release);
+				log::println(log::category::runtime, "boot: task::post complete, waiting for systems to settle");
+			});
+		};
 	}
 	else {
 		add_system<input::system>();
@@ -148,6 +170,20 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 auto gse::engine::update() -> void {
 	system_clock::update();
 	m_scheduler.update();
+
+	if (m_deferred_boot && m_loading.rendered_once()) {
+		auto deferred = std::move(m_deferred_boot);
+		m_deferred_boot = {};
+		deferred();
+	}
+
+	if (
+		!m_loading.finished() && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled() &&
+		m_loading.rendered_once()
+	) {
+		m_loading.mark_finished();
+		log::println(log::category::runtime, "boot: loading.mark_finished (all settled + rendered)");
+	}
 }
 
 auto gse::engine::render() -> void {
@@ -169,7 +205,7 @@ auto gse::engine::render() -> void {
 		frame_ok = result.has_value();
 
 		if (!result && result.error() == gpu::frame_status::device_lost) {
-			log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame — terminating");
+			log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame â€” terminating");
 			std::abort();
 		}
 	}
@@ -179,15 +215,7 @@ auto gse::engine::render() -> void {
 			gpu_state->scheduler.flush();
 			{
 				trace::scope_guard sg{ trace_id<"render::graph_execute">() };
-				auto requests = m_scheduler.drain_channel<gpu::render_pass_request>();
-				auto transient_images = m_scheduler.drain_channel<gpu::transient_image_request>();
-				auto transient_buffers = m_scheduler.drain_channel<gpu::transient_buffer_request>();
-				gpu::context::execute_frame(
-					*gpu_state,
-					std::move(requests),
-					std::move(transient_images),
-					std::move(transient_buffers)
-				);
+				gpu::context::execute_frame(*gpu_state, m_scheduler);
 			}
 		}
 	});
@@ -201,6 +229,21 @@ auto gse::engine::render() -> void {
 				trace::scope_guard sg{ trace_id<"end_frame::finalize_reloads">() };
 				for (const auto& l : std::views::values(asset_state->resource_loaders)) {
 					l->finalize_reloads();
+				}
+			}
+			if (!m_window_shown) {
+				if (m_loading.finished()) {
+					window::show(window_state);
+					m_window_shown = true;
+					log::println(log::category::runtime, "boot: window shown (loading finished)");
+				}
+				else if (m_loading.rendered_once()) {
+					++m_frames_since_rendered;
+					if (m_frames_since_rendered >= 2) {
+						window::show(window_state);
+						m_window_shown = true;
+						log::println(log::category::runtime, "boot: window shown (loading screen on swapchain)");
+					}
 				}
 			}
 		}

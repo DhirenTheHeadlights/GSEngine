@@ -19,7 +19,8 @@ export namespace gse::vulkan {
 	public:
 		basic_image() = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			Device& dev,
 			const gpu::image_desc& desc,
 			std::string_view tag = "",
@@ -91,14 +92,17 @@ auto gse::vulkan::basic_image<Device>::create(
 ) -> basic_image {
 	const bool is_depth = desc.format == gpu::image_format::d32_sfloat;
 	const bool is_cube = desc.view == gpu::image_view_type::cube;
+	const bool is_3d = desc.view == gpu::image_view_type::e3d;
 	const std::uint32_t layers = is_cube ? 6u : 1u;
+	const gpu::image_type type = is_3d ? gpu::image_type::e3d : gpu::image_type::e2d;
+	const std::uint32_t z_extent = is_3d ? desc.depth : 1u;
 
 	const gpu::image_create_info create_info{
 		.flags =
 			is_cube ? gpu::image_create_flags{ gpu::image_create_flag::cube_compatible } : gpu::image_create_flags{},
-		.type = gpu::image_type::e2d,
+		.type = type,
 		.format = desc.format,
-		.extent = vec3u{ desc.size.x(), desc.size.y(), 1 },
+		.extent = vec3u{ desc.size.x(), desc.size.y(), z_extent },
 		.mip_levels = 1,
 		.array_layers = layers,
 		.samples = gpu::sample_count::e1,
@@ -106,7 +110,7 @@ auto gse::vulkan::basic_image<Device>::create(
 	};
 	const gpu::image_view_create_info view_info{
 		.format = desc.format,
-		.view_type = is_cube ? gpu::image_view_type::cube : gpu::image_view_type::e2d,
+		.view_type = desc.view,
 		.aspects = is_depth ? gpu::image_aspect_flags{ gpu::image_aspect_flag::depth }
 							: gpu::image_aspect_flags{ gpu::image_aspect_flag::color },
 		.base_mip_level = 0,

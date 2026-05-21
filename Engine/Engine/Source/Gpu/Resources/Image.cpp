@@ -37,14 +37,19 @@ auto gse::transition_image_async(
 		.layer_count = layers,
 	};
 
-	const gpu::dependency_info dep{ .image_barriers = std::span(&barrier, 1) };
+	const gpu::dependency_info dep{
+		.image_barriers = std::span(&barrier, 1)
+	};
 	vulkan::commands(cmd.handle()).pipeline_barrier(dep);
 
 	co_return co_await submit(dev, std::move(cmd), gpu::queue_id::graphics);
 }
 
-auto gse::gpu::transition_image_to(gpu::device& dev, vulkan::image& img, const image_layout target_layout)
-	-> sync_token {
+auto gse::gpu::transition_image_to(
+	gpu::device& dev,
+	vulkan::image& img,
+	const image_layout target_layout
+) -> sync_token {
 	if (target_layout == image_layout::undefined) {
 		return {};
 	}
@@ -78,7 +83,9 @@ auto gse::gpu::transition_image_to(gpu::device& dev, vulkan::image& img, const i
 		.layer_count = 1,
 	};
 
-	const dependency_info dep{ .image_barriers = std::span(&barrier, 1) };
+	const dependency_info dep{
+		.image_barriers = std::span(&barrier, 1)
+	};
 	vulkan::commands(cmd.handle()).pipeline_barrier(dep);
 
 	auto token = submit(dev, std::move(cmd), queue_id::graphics).submit_sync();

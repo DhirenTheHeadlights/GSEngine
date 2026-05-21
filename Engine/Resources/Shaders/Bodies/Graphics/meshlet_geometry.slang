@@ -465,5 +465,13 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
         result += trace_reflection(pos_world, world_n, world_V, mat.roughness, pixel, rcfg, view_dist, F_refl);
     }
 
+    float2 screen_uv = pixel / float2(pc.screen_size);
+    float view_dist_km = view_dist * 0.001;
+    float slice = saturate(view_dist_km / max_view_distance);
+    float4 ap = aerial_perspective_in.SampleLevel(float3(screen_uv, slice), 0);
+    float3 in_scatter = ap.rgb;
+    float transmittance = ap.a;
+    result = result * transmittance + in_scatter;
+
     return float4(result, 1.0);
 }

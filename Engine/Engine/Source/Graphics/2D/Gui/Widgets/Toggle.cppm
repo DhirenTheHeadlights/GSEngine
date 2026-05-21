@@ -59,14 +59,14 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 
 	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
 
-	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = std::string(p.name),
-		  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text,
-		  .clip_rect = label_rect }
-	);
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = std::string(p.name),
+		.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = label_rect
+	});
 
 	const float track_width = 40.f * (ctx.style.font_size / 16.f);
 	const float track_height = 20.f * (ctx.style.font_size / 16.f);
@@ -80,12 +80,12 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	const vec4f track_target = p.value ? ctx.style.color_toggle_on : ctx.style.color_toggle_off;
 	const id track_anim_id = ids::make(std::string(p.name) + "##track");
 
-	ctx.queue_sprite(
-		{ .rect = track_rect,
-		  .color = ctx.animated_color(track_anim_id, track_target),
-		  .texture = ctx.blank_texture,
-		  .corner_radius = track_height / 2.f }
-	);
+	ctx.queue_sprite({
+		.rect = track_rect,
+		.color = ctx.animated_color(track_anim_id, track_target),
+		.texture = ctx.blank_texture,
+		.corner_radius = track_height / 2.f
+	});
 
 	const float knob_size = track_height - knob_padding * 2.f;
 	const float knob_x = p.value ? track_x + track_width - knob_size - knob_padding : track_x + knob_padding;
@@ -95,12 +95,12 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 
 	const vec4f knob_target = hovered ? ctx.style.color_handle_hovered : ctx.style.color_handle;
 
-	ctx.queue_sprite(
-		{ .rect = knob_rect,
-		  .color = ctx.animated_color(widget_id, knob_target),
-		  .texture = ctx.blank_texture,
-		  .corner_radius = knob_size / 2.f }
-	);
+	ctx.queue_sprite({
+		.rect = knob_rect,
+		.color = ctx.animated_color(widget_id, knob_target),
+		.texture = ctx.blank_texture,
+		.corner_radius = knob_size / 2.f
+	});
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding + ctx.style.item_spacing;
 

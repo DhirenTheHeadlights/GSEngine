@@ -33,7 +33,8 @@ export namespace gse::save {
 		auto trigger_restart() -> void;
 
 		template <typename T>
-		[[nodiscard]] static auto read_one(
+		[[nodiscard]]
+		static auto read_one(
 			const std::filesystem::path& path,
 			std::string_view category,
 			std::string_view name,

@@ -102,8 +102,12 @@ export namespace gse {
 	constexpr auto epsilon_equal_index(const V1& a, const V2& b, std::size_t index) -> bool;
 
 	template <is_vec V>
-	constexpr auto rotate(const V& v, angle_t<typename V::storage_type> angle, std::size_t i = 0, std::size_t j = 1)
-		-> V;
+	constexpr auto rotate(
+		const V& v,
+		angle_t<typename V::storage_type> angle,
+		std::size_t i = 0,
+		std::size_t j = 1
+	) -> V;
 
 	template <is_vec V>
 	requires(V::extent == 3)

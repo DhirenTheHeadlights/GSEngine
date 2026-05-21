@@ -87,8 +87,12 @@ constexpr auto gse::look_at(const vec3<QPos>& position, const vec3<QTgt>& target
 }
 
 template <typename T>
-constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T> near, length_t<T> far)
-	-> projection_matrix {
+constexpr auto gse::perspective(
+	const angle_t<T> fov,
+	const T aspect,
+	length_t<T> near,
+	length_t<T> far
+) -> projection_matrix {
 	const auto tan_half_fov_y = tan(fov / T(2));
 	const auto range = far - near;
 

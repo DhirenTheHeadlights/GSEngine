@@ -193,8 +193,9 @@ auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<position>> {
 	return corners;
 }
 
-auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const
-	-> std::pair<vec3<position>, vec3<position>> {
+auto gse::bounding_box::edge_endpoints(
+	const std::uint32_t edge_index
+) const -> std::pair<vec3<position>, vec3<position>> {
 	const auto vertices = obb_vertices();
 
 	static constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 12> edge_indices = { { { 0, 1 },

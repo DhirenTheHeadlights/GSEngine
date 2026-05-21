@@ -1,6 +1,8 @@
 export module gse.graphics;
 
 export import :asset_types;
+export import :atmosphere_renderer;
+export import :bloom_renderer;
 export import :builder;
 export import :shared_shaders;
 export import :button_widget;
@@ -41,11 +43,13 @@ export import :primitives;
 export import :profiler_overlay;
 export import :render_component;
 export import :render_layer;
+export import :render_targets;
 export import :renderer;
 export import :rt_shadow_renderer;
 export import :save;
 export import :scene_snapshot_renderer;
 export import :sdf_grid_renderer;
+export import :tonemap_renderer;
 export import :world_text_renderer;
 export import :scroll_widget;
 export import :section_widget;

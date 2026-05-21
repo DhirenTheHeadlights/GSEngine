@@ -24,7 +24,8 @@ export namespace gse::gui {
 				std::declval<id&>(),
 				std::declval<id&>()
 			)),
-			typename W::result>;
+			typename W::result
+		>;
 	};
 
 	template <typename W>
@@ -39,7 +40,8 @@ export namespace gse::gui {
 				std::declval<id&>(),
 				std::declval<id&>()
 			)),
-			typename W::result>;
+			typename W::result
+		>;
 	};
 
 	struct builder {
@@ -75,8 +77,10 @@ auto gse::gui::builder::scroll_region(const scroll_region_info& info) -> scroll_
 	return gse::gui::scroll_region(ctx, info);
 }
 
-auto gse::gui::builder::scroll_region(const scroll_region_info& info, const std::function<void(builder&)>& content)
-	-> void {
+auto gse::gui::builder::scroll_region(
+	const scroll_region_info& info,
+	const std::function<void(builder&)>& content
+) -> void {
 	auto guard = scroll_region(info);
 	if (!guard.valid()) {
 		return;

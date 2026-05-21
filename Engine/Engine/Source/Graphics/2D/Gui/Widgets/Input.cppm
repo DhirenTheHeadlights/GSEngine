@@ -298,21 +298,21 @@ auto gse::gui::draw::input(
 		}
 	}
 
-	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = name,
-		  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text,
-		  .clip_rect = label_rect }
-	);
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = name,
+		.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = label_rect
+	});
 
-	ctx.queue_sprite(
-		{ .rect = box_rect,
-		  .color = ctx.style.color_input_background,
-		  .texture = ctx.blank_texture,
-		  .corner_radius = ctx.style.corner_radius }
-	);
+	ctx.queue_sprite({
+		.rect = box_rect,
+		.color = ctx.style.color_input_background,
+		.texture = ctx.blank_texture,
+		.corner_radius = ctx.style.corner_radius
+	});
 
 	constexpr float text_padding = 5.f;
 	const ui_rect clip_rect = box_rect.inset({ text_padding, 0.f });
@@ -328,17 +328,21 @@ auto gse::gui::draw::input(
 			{ std::max(1.f, bx - ax), ctx.style.font_size }
 		);
 
-		ctx.queue_sprite({ .rect = sel_rect, .color = ctx.style.color_selection, .texture = ctx.blank_texture });
+		ctx.queue_sprite({
+			.rect = sel_rect,
+			.color = ctx.style.color_selection,
+			.texture = ctx.blank_texture
+		});
 	}
 
-	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = buffer,
-		  .position = { text_pos.x() - state.scroll_x, text_pos.y() },
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text,
-		  .clip_rect = clip_rect }
-	);
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = buffer,
+		.position = { text_pos.x() - state.scroll_x, text_pos.y() },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = clip_rect
+	});
 
 	if (focused && state.blink_on) {
 		const float cx = ctx.font->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
@@ -347,7 +351,11 @@ auto gse::gui::draw::input(
 			{ 2.f, ctx.style.font_size }
 		);
 
-		ctx.queue_sprite({ .rect = cursor_rect, .color = ctx.style.color_caret, .texture = ctx.blank_texture });
+		ctx.queue_sprite({
+			.rect = cursor_rect,
+			.color = ctx.style.color_caret,
+			.texture = ctx.blank_texture
+		});
 	}
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;

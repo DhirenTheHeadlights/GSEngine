@@ -17,7 +17,8 @@ import gse.log;
 import gse.math;
 
 export namespace gse::vulkan {
-	[[nodiscard]] auto pick_surface_format(
+	[[nodiscard]]
+	auto pick_surface_format(
 		const vk::raii::PhysicalDevice& physical_device,
 		const vk::raii::SurfaceKHR& surface
 	) -> gpu::image_format;
@@ -58,7 +59,8 @@ export namespace gse::vulkan {
 
 		auto operator=(swap_chain&&) noexcept -> swap_chain& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			vec2i framebuffer_size,
 			gpu::present_mode preferred_present_mode,
 			const instance& instance_data,

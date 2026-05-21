@@ -40,8 +40,10 @@ export namespace gse {
 		mutable std::mutex m_mutex;
 		interval_timer<> m_poll_timer{ milliseconds(500.f) };
 
-		static auto matches_extensions(const std::filesystem::path& path, std::span<const std::string> extensions)
-			-> bool;
+		static auto matches_extensions(
+			const std::filesystem::path& path,
+			std::span<const std::string> extensions
+		) -> bool;
 
 		static auto scan_directory(
 			const std::filesystem::path& directory,
@@ -58,14 +60,14 @@ auto gse::file_watcher::watch(const std::filesystem::path& path, callback on_cha
 		return;
 	}
 
-	m_watches.push_back(
-		{ .path = path,
-		  .last_modified = std::filesystem::last_write_time(path),
-		  .on_change = std::move(on_change),
-		  .is_directory = false,
-		  .recursive = false,
-		  .extensions = {} }
-	);
+	m_watches.push_back({
+		.path = path,
+		.last_modified = std::filesystem::last_write_time(path),
+		.on_change = std::move(on_change),
+		.is_directory = false,
+		.recursive = false,
+		.extensions = {}
+	});
 }
 
 auto gse::file_watcher::watch_directory(
@@ -86,14 +88,14 @@ auto gse::file_watcher::watch_directory(
 		m_directory_files[file_path] = mod_time;
 	}
 
-	m_watches.push_back(
-		{ .path = directory,
-		  .last_modified = {},
-		  .on_change = std::move(on_change),
-		  .is_directory = true,
-		  .recursive = recursive,
-		  .extensions = std::move(ext_vec) }
-	);
+	m_watches.push_back({
+		.path = directory,
+		.last_modified = {},
+		.on_change = std::move(on_change),
+		.is_directory = true,
+		.recursive = recursive,
+		.extensions = std::move(ext_vec)
+	});
 }
 
 auto gse::file_watcher::unwatch(const std::filesystem::path& path) -> void {
@@ -158,8 +160,10 @@ auto gse::file_watcher::clear() -> void {
 	m_directory_files.clear();
 }
 
-auto gse::file_watcher::matches_extensions(const std::filesystem::path& path, std::span<const std::string> extensions)
-	-> bool {
+auto gse::file_watcher::matches_extensions(
+	const std::filesystem::path& path,
+	std::span<const std::string> extensions
+) -> bool {
 	if (extensions.empty()) {
 		return true;
 	}

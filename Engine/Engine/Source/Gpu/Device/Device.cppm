@@ -23,7 +23,8 @@ import gse.save;
 export namespace gse::gpu {
 	class device final : public non_copyable {
 	public:
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const window::data& win,
 			bool validation_layers_enabled,
 			vulkan::device::settings& device_cfg
@@ -66,8 +67,11 @@ export namespace gse::gpu {
 			pass_marker_domain domain = pass_marker_domain::graphics_queue;
 		};
 
-		auto begin_pass_marker(handle<command_buffer> cmd, pass_marker_domain domain, pass_marker marker)
-			-> pass_marker_handle;
+		auto begin_pass_marker(
+			handle<command_buffer> cmd,
+			pass_marker_domain domain,
+			pass_marker marker
+		) -> pass_marker_handle;
 
 		auto checkpoint_pass_marker(handle<command_buffer> cmd, pass_marker_handle handle) -> void;
 

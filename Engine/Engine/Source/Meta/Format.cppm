@@ -54,9 +54,11 @@ auto std::formatter<T, CharT>::format(const T& value, FormatContext& ctx) const 
 	const auto outer = std::string(static_cast<std::size_t>(gse::internal::format_depth - 1) * 2, ' ');
 	auto out = std::format_to(ctx.out(), "{{");
 	bool first = true;
-	template for (constexpr auto m : std::define_static_array(
-					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-				  )) {
+	template for (
+		constexpr auto m : std::define_static_array(
+			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+		)
+	) {
 		if constexpr (!gse::has_annotation<gse::format_skip_tag>(m)) {
 			if (!first) {
 				out = std::format_to(out, ",");

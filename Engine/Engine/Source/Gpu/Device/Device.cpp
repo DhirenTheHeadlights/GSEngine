@@ -155,11 +155,16 @@ auto gse::gpu::device::begin_pass_marker(
 		);
 	}
 
-	return pass_marker_handle{ .seq = seq, .domain = domain };
+	return pass_marker_handle{
+		.seq = seq,
+		.domain = domain
+	};
 }
 
-auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle)
-	-> void {
+auto gse::gpu::device::checkpoint_pass_marker(
+	const handle<command_buffer> cmd,
+	const pass_marker_handle handle
+) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer) {
 		return;
@@ -175,8 +180,10 @@ auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, 
 	);
 }
 
-auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle)
-	-> void {
+auto gse::gpu::device::post_renderpass_pass_marker(
+	const handle<command_buffer> cmd,
+	const pass_marker_handle handle
+) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer) {
 		return;
@@ -209,8 +216,10 @@ auto gse::gpu::device::end_pass_marker(const handle<command_buffer> cmd, const p
 }
 
 auto gse::gpu::device::report_device_lost(const std::string_view operation) -> void {
-	if (bool expected = false;
-		!m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
+	if (
+		bool expected = false;
+		!m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)
+	) {
 		return;
 	}
 

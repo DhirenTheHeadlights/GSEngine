@@ -33,7 +33,11 @@ auto gse::gui::separator::draw(const draw_context& ctx, id&, id&, id&) -> void {
 		{ content_rect.width(), line_height }
 	);
 
-	ctx.queue_sprite({ .rect = line_rect, .color = ctx.style.color_border, .texture = ctx.blank_texture });
+	ctx.queue_sprite({
+		.rect = line_rect,
+		.color = ctx.style.color_border,
+		.texture = ctx.blank_texture
+	});
 
 	ctx.layout_cursor.y() -= line_height + half_spacing;
 }

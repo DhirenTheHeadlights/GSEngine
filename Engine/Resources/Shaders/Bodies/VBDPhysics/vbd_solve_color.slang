@@ -55,7 +55,7 @@ void accumulate_joint_for_body(
             accumulate_geometric_stiffness(r, d_hat, abs(f), ang_hess);
         }
     }
-    else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
+    else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
         float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
         for (int k = 0; k < 3; k++) {
             float c = dot(dirs[k], d) - j.pos_c0[k] * pc.current_alpha;
@@ -75,7 +75,7 @@ void accumulate_joint_for_body(
             }
         }
 
-        if (update_orient) {
+        if (update_orient && j.type != joint_type::ball) {
             float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
             float3 theta = to_axis_angle(q_error);
 
@@ -87,6 +87,14 @@ void accumulate_joint_for_body(
                     ang_grad += j_ang_dir * f_ang;
                     ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang_dir, j_ang_dir), j.ang_penalty[k]));
                 }
+            }
+            else if (j.type == joint_type::universal) {
+                float3 axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz);
+                float c_twist = dot(axis_a, theta) - j.ang_c0.x * pc.current_alpha;
+                float f_twist = j.ang_penalty.x * c_twist + j.ang_lambda.x;
+                float3 j_twist = axis_a * (-sign);
+                ang_grad += j_twist * f_twist;
+                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_twist, j_twist), j.ang_penalty.x));
             }
             else {
                 float3 axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz);
