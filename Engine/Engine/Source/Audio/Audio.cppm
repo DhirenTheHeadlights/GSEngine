@@ -13,7 +13,7 @@ import gse.gpu;
 export namespace gse {
 	class audio_clip : public identifiable {
 	public:
-		struct[[
+		struct [[
 			= asset_format::baked_ext<".gaud">{},
 			= asset_format::baked_dir<"Audio">{},
 			= asset_format::source_dir<"Audio">{},

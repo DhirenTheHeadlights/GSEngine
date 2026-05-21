@@ -8,7 +8,7 @@ import :contact_manifold;
 import :motion_component;
 
 export namespace gse::vbd {
-	struct[[= shaders::shader_constant_block]] vbd_limits {
+	struct [[= shaders::shader_constant_block]] vbd_limits {
 		std::uint32_t max_bodies = 2048;
 		std::uint32_t max_contacts = 16384;
 		std::uint32_t max_collision_pairs = 16384;
@@ -53,22 +53,24 @@ export namespace gse::vbd {
 		mat3<linear_angular_stiffness> hessian_xtheta = {};
 	};
 
-	enum class[[= shaders::shader_enum]] joint_type : std::uint32_t {
+	enum class [[= shaders::shader_enum]] joint_type : std::uint32_t {
 		distance,
 		fixed,
 		hinge,
 		slider,
-		muscle
+		muscle,
+		ball,
+		universal
 	};
 
-	struct[[= shaders::shader_struct]] frozen_jacobian {
+	struct [[= shaders::shader_struct]] frozen_jacobian {
 		vec3<lever_arm> world_r_a;
 		vec3<lever_arm> world_r_b;
 		mat3<length> j_ang_a;
 		mat3<length> j_ang_b;
 	};
 
-	struct[[= shaders::shader_struct]] contact_constraint {
+	struct [[= shaders::shader_struct]] contact_constraint {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
 		std::uint64_t feature_key = 0;
@@ -95,7 +97,7 @@ export namespace gse::vbd {
 		std::uint32_t pad_end = 0;
 	};
 
-	struct[[= shaders::shader_struct]] velocity_motor_constraint {
+	struct [[= shaders::shader_struct]] velocity_motor_constraint {
 		std::uint32_t body_index = 0;
 		std::uint32_t horizontal_only = 0;
 
@@ -105,13 +107,13 @@ export namespace gse::vbd {
 		force max_force = newtons(1000.f);
 	};
 
-	struct[[= shaders::shader_struct]] impulse_constraint {
+	struct [[= shaders::shader_struct]] impulse_constraint {
 		std::uint32_t body_index = 0;
 
 		vec3<velocity> delta_velocity;
 	};
 
-	struct[[= shaders::shader_struct]] joint_constraint {
+	struct [[= shaders::shader_struct]] joint_constraint {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
 		joint_type type = joint_type::distance;
@@ -142,11 +144,13 @@ export namespace gse::vbd {
 		vec3<angle> ang_c0 = {};
 		angle limit_c0 = {};
 
+		vec3<angular_stiffness> soft_ang_stiffness = {};
+
 		float activation = 0.f;
 		force max_force = newtons(0.f);
 	};
 
-	struct[[= shaders::shader_struct]] body_state {
+	struct [[= shaders::shader_struct]] body_state {
 		vec3<position> position;
 		vec3<predicted_position> predicted_position;
 		vec3<target_position> inertia_target;

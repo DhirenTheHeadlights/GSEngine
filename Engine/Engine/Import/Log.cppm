@@ -101,8 +101,12 @@ auto gse::log::println(const category cat, std::format_string<Args...> fmt, cons
 }
 
 template <typename... Args>
-auto gse::log::println(const level lvl, const category cat, std::format_string<Args...> fmt, const Args&... args)
-	-> void {
+auto gse::log::println(
+	const level lvl,
+	const category cat,
+	std::format_string<Args...> fmt,
+	const Args&... args
+) -> void {
 	instance().write_line(lvl, cat, {}, fmt.get(), std::make_format_args(args...));
 }
 

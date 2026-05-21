@@ -454,8 +454,11 @@ auto gse::invoke_snapshot_for(void* data_ptr) -> void {
 }
 
 template <typename S>
-auto gse::invoke_apply_settings_for(void* data_ptr, channel_registry& channels_store, channel_writer& channels)
-	-> void {
+auto gse::invoke_apply_settings_for(
+	void* data_ptr,
+	channel_registry& channels_store,
+	channel_writer& channels
+) -> void {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
 	using data_t = typename S::data;
 	const auto& reqs = channels_store.ensure_typed<settings::change_request<S>>().data.read_raw();
@@ -466,7 +469,10 @@ auto gse::invoke_apply_settings_for(void* data_ptr, channel_registry& channels_s
 		if constexpr (std::is_trivially_copyable_v<data_t>) {
 			data_t old_value = d.state;
 			req.apply(d.state);
-			channels.push<settings::changed<S>>({ .old_value = std::move(old_value), .new_value = d.state });
+			channels.push<settings::changed<S>>({
+				.old_value = std::move(old_value),
+				.new_value = d.state
+			});
 		}
 		else {
 			req.apply(d.state);

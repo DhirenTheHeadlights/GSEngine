@@ -96,8 +96,11 @@ export namespace gse::vulkan {
 
 		auto pipeline_barrier(const gpu::dependency_info& dep) const -> void;
 
-		auto reset_query_pool(gpu::handle<query_pool> pool, std::uint32_t first_query, std::uint32_t query_count) const
-			-> void;
+		auto reset_query_pool(
+			gpu::handle<query_pool> pool,
+			std::uint32_t first_query,
+			std::uint32_t query_count
+		) const -> void;
 
 		auto write_timestamp(
 			gpu::pipeline_stage_flags stage,
@@ -147,8 +150,11 @@ export namespace gse::vulkan {
 
 		auto set_scissor(const gse::rect_t<vec2i>& scissor) const -> void;
 
-		auto copy_buffer(gpu::handle<buffer> src, gpu::handle<buffer> dst, const gpu::buffer_copy_region& region) const
-			-> void;
+		auto copy_buffer(
+			gpu::handle<buffer> src,
+			gpu::handle<buffer> dst,
+			const gpu::buffer_copy_region& region
+		) const -> void;
 
 		auto fill_buffer(
 			gpu::handle<buffer> dst,
@@ -313,13 +319,17 @@ auto gse::vulkan::commands::write_timestamp(
 	raw().writeTimestamp2(to_vk(stage), std::bit_cast<vk::QueryPool>(pool), query_index);
 }
 
-auto gse::vulkan::commands::begin_query(const gpu::handle<query_pool> pool, const std::uint32_t query_index) const
-	-> void {
+auto gse::vulkan::commands::begin_query(
+	const gpu::handle<query_pool> pool,
+	const std::uint32_t query_index
+) const -> void {
 	raw().beginQuery(std::bit_cast<vk::QueryPool>(pool), query_index, {});
 }
 
-auto gse::vulkan::commands::end_query(const gpu::handle<query_pool> pool, const std::uint32_t query_index) const
-	-> void {
+auto gse::vulkan::commands::end_query(
+	const gpu::handle<query_pool> pool,
+	const std::uint32_t query_index
+) const -> void {
 	raw().endQuery(std::bit_cast<vk::QueryPool>(pool), query_index);
 }
 
@@ -343,11 +353,16 @@ namespace gse::vulkan {
 	auto build_vk_dependency_info(const gpu::dependency_info& dep, dependency_scratch& scratch) -> vk::DependencyInfo;
 }
 
-auto gse::vulkan::build_vk_attachment(const gpu::rendering_attachment_info& att, const bool is_depth)
-	-> vk::RenderingAttachmentInfo {
+auto gse::vulkan::build_vk_attachment(
+	const gpu::rendering_attachment_info& att,
+	const bool is_depth
+) -> vk::RenderingAttachmentInfo {
 	vk::ClearValue clear{};
 	if (is_depth) {
-		clear.depthStencil = vk::ClearDepthStencilValue{ .depth = att.depth_clear_value.depth, .stencil = 0 };
+		clear.depthStencil = vk::ClearDepthStencilValue{
+			.depth = att.depth_clear_value.depth,
+			.stencil = 0
+		};
 	}
 	else {
 		clear.color = vk::ClearColorValue{ std::array{
@@ -366,8 +381,10 @@ auto gse::vulkan::build_vk_attachment(const gpu::rendering_attachment_info& att,
 	};
 }
 
-auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rendering_scratch& scratch)
-	-> vk::RenderingInfo {
+auto gse::vulkan::build_vk_rendering_info(
+	const gpu::rendering_info& info,
+	rendering_scratch& scratch
+) -> vk::RenderingInfo {
 	scratch.color.reserve(info.color_attachments.size());
 	for (const auto& a : info.color_attachments) {
 		scratch.color.push_back(build_vk_attachment(a, false));
@@ -397,8 +414,10 @@ auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rende
 	};
 }
 
-auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, dependency_scratch& scratch)
-	-> vk::DependencyInfo {
+auto gse::vulkan::build_vk_dependency_info(
+	const gpu::dependency_info& dep,
+	dependency_scratch& scratch
+) -> vk::DependencyInfo {
 	scratch.memory.reserve(dep.memory_barriers.size());
 	for (const auto& b : dep.memory_barriers) {
 		scratch.memory.push_back(
@@ -476,8 +495,10 @@ auto gse::vulkan::commands::pipeline_barrier(const gpu::dependency_info& dep) co
 	raw().pipelineBarrier2(vk_dep);
 }
 
-auto gse::vulkan::commands::bind_pipeline(const gpu::bind_point point, const gpu::handle<pipeline> pipeline) const
-	-> void {
+auto gse::vulkan::commands::bind_pipeline(
+	const gpu::bind_point point,
+	const gpu::handle<pipeline> pipeline
+) const -> void {
 	raw().bindPipeline(to_vk(point), std::bit_cast<vk::Pipeline>(pipeline));
 }
 
@@ -527,13 +548,18 @@ auto gse::vulkan::commands::draw_indexed_indirect(
 	raw().drawIndexedIndirect(std::bit_cast<vk::Buffer>(buffer), offset, draw_count, stride);
 }
 
-auto gse::vulkan::commands::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const
-	-> void {
+auto gse::vulkan::commands::dispatch(
+	const std::uint32_t x,
+	const std::uint32_t y,
+	const std::uint32_t z
+) const -> void {
 	raw().dispatch(x, y, z);
 }
 
-auto gse::vulkan::commands::dispatch_indirect(const gpu::handle<buffer> buffer, const gpu::device_size offset) const
-	-> void {
+auto gse::vulkan::commands::dispatch_indirect(
+	const gpu::handle<buffer> buffer,
+	const gpu::device_size offset
+) const -> void {
 	raw().dispatchIndirect(std::bit_cast<vk::Buffer>(buffer), offset);
 }
 
@@ -659,8 +685,11 @@ auto gse::vulkan::commands::draw_indexed(
 	raw().drawIndexed(index_count, instance_count, first_index, vertex_offset, first_instance);
 }
 
-auto gse::vulkan::commands::draw_mesh_tasks(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const
-	-> void {
+auto gse::vulkan::commands::draw_mesh_tasks(
+	const std::uint32_t x,
+	const std::uint32_t y,
+	const std::uint32_t z
+) const -> void {
 	raw().drawMeshTasksEXT(x, y, z);
 }
 
@@ -686,17 +715,26 @@ auto gse::vulkan::commands::build_acceleration_structures(
 			vk_geometry_type = vk::GeometryTypeKHR::eTriangles;
 			data.triangles = vk::AccelerationStructureGeometryTrianglesDataKHR{
 				.vertexFormat = to_vk(g.triangles.vertex_format),
-				.vertexData = vk::DeviceOrHostAddressConstKHR{ .deviceAddress = g.triangles.vertex_data },
+				.vertexData =
+					vk::DeviceOrHostAddressConstKHR{
+						.deviceAddress = g.triangles.vertex_data
+					},
 				.vertexStride = g.triangles.vertex_stride,
 				.maxVertex = g.triangles.max_vertex,
 				.indexType = to_vk(g.triangles.index_type),
-				.indexData = vk::DeviceOrHostAddressConstKHR{ .deviceAddress = g.triangles.index_data },
+				.indexData =
+					vk::DeviceOrHostAddressConstKHR{
+						.deviceAddress = g.triangles.index_data
+					},
 			};
 		}
 		else {
 			data.instances = vk::AccelerationStructureGeometryInstancesDataKHR{
 				.arrayOfPointers = g.instances.array_of_pointers ? vk::True : vk::False,
-				.data = vk::DeviceOrHostAddressConstKHR{ .deviceAddress = g.instances.data },
+				.data =
+					vk::DeviceOrHostAddressConstKHR{
+						.deviceAddress = g.instances.data
+					},
 			};
 		}
 		vk_geometries.push_back(
@@ -715,7 +753,10 @@ auto gse::vulkan::commands::build_acceleration_structures(
 		.dstAccelerationStructure = std::bit_cast<vk::AccelerationStructureKHR>(build_info.dst.value),
 		.geometryCount = static_cast<std::uint32_t>(vk_geometries.size()),
 		.pGeometries = vk_geometries.data(),
-		.scratchData = vk::DeviceOrHostAddressKHR{ .deviceAddress = build_info.scratch_address },
+		.scratchData =
+			vk::DeviceOrHostAddressKHR{
+				.deviceAddress = build_info.scratch_address
+			},
 	};
 
 	std::vector<vk::AccelerationStructureBuildRangeInfoKHR> vk_ranges;

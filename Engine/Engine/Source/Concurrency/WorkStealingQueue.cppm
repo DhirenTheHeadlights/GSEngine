@@ -59,8 +59,8 @@ export namespace gse::task {
 
 		[[nodiscard]] static auto rounded_capacity(std::size_t requested) -> std::size_t;
 
-		[[nodiscard]] auto needs_growth(const buffer& current, std::size_t top, std::size_t bottom) const noexcept
-			-> bool;
+		[[nodiscard]]
+		auto needs_growth(const buffer& current, std::size_t top, std::size_t bottom) const noexcept -> bool;
 
 		auto grow(std::size_t bottom) -> buffer&;
 

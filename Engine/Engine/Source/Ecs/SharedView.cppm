@@ -15,7 +15,14 @@ namespace gse {
 				if (has_annotation<shared_tag>(m)) {
 					auto m_type = std::meta::type_of(m);
 					auto ref_type = std::meta::add_lvalue_reference(std::meta::add_const(m_type));
-					members.push_back(std::meta::data_member_spec(ref_type, { .name = std::meta::identifier_of(m) }));
+					members.push_back(
+						std::meta::data_member_spec(
+							ref_type,
+							{
+								.name = std::meta::identifier_of(m)
+							}
+						)
+					);
 				}
 			}
 			std::meta::define_aggregate(^^type, members);

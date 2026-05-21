@@ -20,11 +20,17 @@ export namespace gse::gui {
 }
 
 template <typename T>
-auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, const std::string_view key_prefix)
-	-> void {
-	template for (constexpr auto m : std::define_static_array(
-					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-				  )) {
+auto gse::gui::draw_struct(
+	builder& b,
+	T& value,
+	settings::panel_state& state,
+	const std::string_view key_prefix
+) -> void {
+	template for (
+		constexpr auto m : std::define_static_array(
+			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+		)
+	) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
@@ -47,7 +53,8 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 					.name = label,
 					.current_index = idx,
 					.options = value.[:m:]
-						.options, .state = dd_state,
+						.options,
+						.state = dd_state,
 				});
 				if (r.changed) {
 					value.[:m:].value = static_cast<typename F::value_type>(idx);
@@ -97,13 +104,17 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 				if constexpr (gse::internal::is_quantity<F>) {
 					b.draw<quantity_slider<F, typename F::default_unit{}>>({
 						.name = label,
-						.value = value.[:m:], .min = R::min, .max = R::max,
+						.value = value.[:m:],
+											.min = R::min,
+											.max = R::max,
 					});
 				}
 				else {
 					b.draw<slider<F>>({
 						.name = label,
-						.value = value.[:m:], .min = static_cast<F>(R::min), .max = static_cast<F>(R::max),
+						.value = value.[:m:],
+											.min = static_cast<F>(R::min),
+											.max = static_cast<F>(R::max),
 					});
 				}
 			}

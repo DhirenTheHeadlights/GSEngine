@@ -53,9 +53,9 @@ export namespace gse {
 		const vec4f uv_rect;
 	};
 
-	class[[= asset::boot_critical{}]] font : public identifiable {
+	class [[= asset::boot_critical{}]] font : public identifiable {
 	public:
-		struct[[
+		struct [[
 			= asset_format::baked_ext<".gfont">{},
 			= asset_format::baked_dir<"Fonts">{},
 			= asset_format::source_dir<"Fonts">{},
@@ -83,8 +83,8 @@ export namespace gse {
 
 		[[nodiscard]] auto texture() const -> const gse::texture*;
 
-		[[nodiscard]] auto text_layout(std::string_view text, vec2f start, float scale = 1.0f) const
-			-> std::vector<positioned_glyph>;
+		[[nodiscard]]
+		auto text_layout(std::string_view text, vec2f start, float scale = 1.0f) const -> std::vector<positioned_glyph>;
 
 		[[nodiscard]] auto line_height(float scale = 1.0f) const -> float;
 

@@ -57,6 +57,10 @@ export namespace gse {
 		primitives::data m_primitives;
 		gse::registry m_registry;
 		loading::state m_loading;
+		std::function<void()> m_deferred_boot;
+		std::atomic<bool> m_boot_tasks_done = false;
+		std::uint32_t m_frames_since_rendered = 0;
+		bool m_window_shown = false;
 	};
 }
 

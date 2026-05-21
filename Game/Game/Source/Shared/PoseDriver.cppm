@@ -33,6 +33,17 @@ auto gs::pose_driver::system::run(gse::run_context& ctx, data& d) -> gse::async:
 			for (std::size_t i = 0; i < ctrls.size(); ++i) {
 				auto& cj = ctrls[i];
 				const auto eid = ctrl_owners[i];
+
+				if (!cj.enabled) {
+					if (auto* m = muscles.find(cj.flexor_muscle)) {
+						m->activation = 0.f;
+					}
+					if (auto* m = muscles.find(cj.extensor_muscle)) {
+						m->activation = 0.f;
+					}
+					continue;
+				}
+
 				const auto* spec = specs.find(eid);
 				if (!spec) {
 					continue;
@@ -48,10 +59,17 @@ auto gs::pose_driver::system::run(gse::run_context& ctx, data& d) -> gse::async:
 				const auto& q_b = trans_b->orientation;
 				const auto q_rel = q_b * gse::conjugate(q_a);
 
-				if (!cj.rest_initialized) {
+				constexpr std::uint32_t rest_settle_required_ticks = 30;
+				if (cj.rest_settle_ticks < rest_settle_required_ticks) {
 					cj.rest_orientation = q_rel;
 					cj.prev_angle = gse::radians(0.f);
-					cj.rest_initialized = true;
+					++cj.rest_settle_ticks;
+					if (auto* m = muscles.find(cj.flexor_muscle)) {
+						m->activation = 0.f;
+					}
+					if (auto* m = muscles.find(cj.extensor_muscle)) {
+						m->activation = 0.f;
+					}
 					continue;
 				}
 

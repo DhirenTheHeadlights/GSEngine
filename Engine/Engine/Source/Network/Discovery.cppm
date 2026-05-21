@@ -96,7 +96,14 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
 	}
 
 	udp_socket socket;
-	if (!socket.bind(address{ .ip = "0.0.0.0", .port = 0 })) {
+	if (
+		!socket.bind(
+			address{
+				.ip = "0.0.0.0",
+				.port = 0
+			}
+		)
+	) {
 		return;
 	}
 
@@ -105,8 +112,10 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
 	request_stream.write(packet_header{});
 	write(request_stream, server_info_request{});
 
-	const packet request_pkt{ .data = reinterpret_cast<std::uint8_t*>(request_buffer.data()),
-							  .size = request_stream.bytes_written() };
+	const packet request_pkt{
+		.data = reinterpret_cast<std::uint8_t*>(request_buffer.data()),
+		.size = request_stream.bytes_written()
+	};
 
 	for (const auto& server : local_copy) {
 		socket.send_data(request_pkt, server.addr);

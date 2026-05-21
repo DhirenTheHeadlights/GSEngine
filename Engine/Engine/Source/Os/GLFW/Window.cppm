@@ -53,26 +53,34 @@ struct std::formatter<gse::resolution_info> : std::formatter<std::string> {
 
 export namespace gse {
 	struct window {
-		struct[[= gse::settings::category<"Window">{}]] data {
-			[[= gse::settings::describe<
-				"Windowed, borderless fullscreen, or exclusive fullscreen on the selected monitor.">{}]] gse::settings::
-				choice<int>
-					display_mode;
+		struct [[= gse::settings::category<"Window">{}]] data {
+			[[
+				= gse::settings::
+					describe<"Windowed, borderless fullscreen, or exclusive fullscreen on the selected monitor.">{}
+			]]
+			gse::settings::choice<int> display_mode;
 
-			[[= gse::settings::describe<"Show the system mouse cursor over the window.">{}]] bool mouse_visible = false;
+			[[
+				= gse::settings::describe<"Show the system mouse cursor over the window.">{}
+			]]
+			bool mouse_visible = false;
 
-			[[= gse::settings::describe<"Monitor that hosts the window in fullscreen mode.">{}]] gse::settings::choice<
-				int>
-				monitor;
+			[[
+				= gse::settings::describe<"Monitor that hosts the window in fullscreen mode.">{}
+			]]
+			gse::settings::choice<int> monitor;
 
-			[[= gse::settings::describe<"Resolution and refresh rate used when fullscreen.">{}]] gse::settings::choice<
-				int>
-				resolution;
+			[[
+				= gse::settings::describe<"Resolution and refresh rate used when fullscreen.">{}
+			]]
+			gse::settings::choice<int> resolution;
 
-			[[= gse::settings::describe<
-				"Vulkan present mode. FIFO is vsync (no tearing). Mailbox is low-latency vsync. Immediate has tearing "
-				"but lowest latency. FIFO Relaxed is FIFO with tear-on-late-frame.">{}]] gse::settings::choice<int>
-				present_mode;
+			[[
+				= gse::settings::describe<"Vulkan present mode. FIFO is vsync (no tearing). Mailbox is low-latency "
+										  "vsync. Immediate has tearing "
+										  "but lowest latency. FIFO Relaxed is FIFO with tear-on-late-frame.">{}
+			]]
+			gse::settings::choice<int> present_mode;
 
 			GLFWwindow* handle = nullptr;
 			std::string title;
@@ -103,9 +111,12 @@ export namespace gse {
 
 		[[nodiscard]] static auto frame_buffer_resized(data& d) -> bool;
 
-		[[nodiscard]] static auto create_vulkan_surface(const data& d, vk::Instance instance) -> vk::SurfaceKHR;
+		[[nodiscard]]
+		static auto create_vulkan_surface(const data& d, vk::Instance instance) -> vk::SurfaceKHR;
 
 		[[nodiscard]] static auto raw_handle(const data& d) -> GLFWwindow*;
+
+		static auto show(const data& d) -> void;
 
 		static auto set_ui_focus(data& d, bool focus) -> void;
 

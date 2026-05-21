@@ -201,9 +201,11 @@ auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
 		serialize(*this, const_cast<T&>(value));
 	}
 	else {
-		template for (constexpr auto m : std::define_static_array(
-						  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-					  )) {
+		template for (
+			constexpr auto m : std::define_static_array(
+				std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+			)
+		) {
 			if constexpr (!is_archive_skipped(m)) {
 				*this& value.[:m:];
 			}
@@ -322,9 +324,11 @@ auto gse::binary_reader::operator&(T& value) -> binary_reader& {
 		serialize(*this, value);
 	}
 	else {
-		template for (constexpr auto m : std::define_static_array(
-						  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-					  )) {
+		template for (
+			constexpr auto m : std::define_static_array(
+				std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+			)
+		) {
 			if constexpr (!is_archive_skipped(m)) {
 				*this& value.[:m:];
 			}

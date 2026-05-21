@@ -119,7 +119,10 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 	if (m_cmd.marker_seq() != std::numeric_limits<std::uint64_t>::max()) {
 		m_gpu_device->end_pass_marker(
 			m_cmd.handle(),
-			device::pass_marker_handle{ .seq = m_cmd.marker_seq(), .domain = device::pass_marker_domain::transient }
+			device::pass_marker_handle{
+				.seq = m_cmd.marker_seq(),
+				.domain = device::pass_marker_domain::transient
+			}
 		);
 	}
 

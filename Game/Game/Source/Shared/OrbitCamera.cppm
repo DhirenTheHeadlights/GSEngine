@@ -121,10 +121,10 @@ auto gs::orbit_camera::system::run(
 					o.pitch -= gse::degrees(delta.y() * o.mouse_sensitivity);
 				}
 				else {
-					const float yaw_axis =
-						(gse::actions::held(b.yaw_left, cs, as) ? 1.f : 0.f) - (gse::actions::held(b.yaw_right, cs, as) ? 1.f : 0.f);
-					const float pitch_axis =
-						(gse::actions::held(b.pitch_up, cs, as) ? 1.f : 0.f) - (gse::actions::held(b.pitch_down, cs, as) ? 1.f : 0.f);
+					const float yaw_axis = (gse::actions::held(b.yaw_left, cs, as) ? 1.f : 0.f) -
+						(gse::actions::held(b.yaw_right, cs, as) ? 1.f : 0.f);
+					const float pitch_axis = (gse::actions::held(b.pitch_up, cs, as) ? 1.f : 0.f) -
+						(gse::actions::held(b.pitch_down, cs, as) ? 1.f : 0.f);
 					o.yaw += gse::degrees(yaw_axis * o.arrow_speed * dt_seconds);
 					o.pitch += gse::degrees(pitch_axis * o.arrow_speed * dt_seconds);
 				}

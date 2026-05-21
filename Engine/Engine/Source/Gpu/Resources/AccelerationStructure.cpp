@@ -51,7 +51,11 @@ auto gse::build_blas_async(
 		.dst_access = gpu::access_flag::shader_read,
 	};
 	vulkan::commands(cmd_handle)
-		.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&pre_barrier, 1) });
+		.pipeline_barrier(
+			gpu::dependency_info{
+				.memory_barriers = std::span(&pre_barrier, 1)
+			}
+		);
 
 	vulkan::commands(cmd_handle).build_acceleration_structures(build_info, std::span(&range_ptr, 1));
 
@@ -61,7 +65,12 @@ auto gse::build_blas_async(
 		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
 		.dst_access = gpu::access_flag::acceleration_structure_read,
 	};
-	vulkan::commands(cmd_handle).pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&barrier, 1) });
+	vulkan::commands(cmd_handle)
+		.pipeline_barrier(
+			gpu::dependency_info{
+				.memory_barriers = std::span(&barrier, 1)
+			}
+		);
 
 	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(scratch));
 }
@@ -162,7 +171,11 @@ auto gse::build_tlas_initial_empty_async(
 		.dst_access = gpu::access_flag::acceleration_structure_read,
 	};
 	vulkan::commands(cmd.handle())
-		.pipeline_barrier(gpu::dependency_info{ .memory_barriers = std::span(&post_barrier, 1) });
+		.pipeline_barrier(
+			gpu::dependency_info{
+				.memory_barriers = std::span(&post_barrier, 1)
+			}
+		);
 
 	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics);
 }
@@ -221,7 +234,11 @@ auto gse::gpu::rebuild_tlas(
 			.dst_access = access_flag::acceleration_structure_read,
 		},
 	};
-	rec.pipeline_barrier(dependency_info{ .memory_barriers = pre_barriers });
+	rec.pipeline_barrier(
+		dependency_info{
+			.memory_barriers = pre_barriers
+		}
+	);
 	t.instance_buffer().clear_host_dirty();
 
 	const acceleration_structure_geometry geometry{
@@ -254,7 +271,11 @@ auto gse::gpu::rebuild_tlas(
 		.dst_stages = pipeline_stage_flag::acceleration_structure_build | pipeline_stage_flag::fragment_shader,
 		.dst_access = access_flag::acceleration_structure_read | access_flag::acceleration_structure_write,
 	};
-	rec.pipeline_barrier(dependency_info{ .memory_barriers = std::span(&barrier, 1) });
+	rec.pipeline_barrier(
+		dependency_info{
+			.memory_barriers = std::span(&barrier, 1)
+		}
+	);
 }
 
 auto gse::gpu::write_tlas_instances(vulkan::tlas& t, const std::span<const tlas_instance_desc> instances) -> void {
@@ -302,7 +323,11 @@ auto gse::gpu::build_tlas_in_place(
 			.dst_access = access_flag::acceleration_structure_read,
 		},
 	};
-	rec.pipeline_barrier(dependency_info{ .memory_barriers = pre_barriers });
+	rec.pipeline_barrier(
+		dependency_info{
+			.memory_barriers = pre_barriers
+		}
+	);
 	t.instance_buffer().clear_host_dirty();
 
 	const acceleration_structure_geometry geometry{
@@ -335,5 +360,9 @@ auto gse::gpu::build_tlas_in_place(
 		.dst_stages = pipeline_stage_flag::acceleration_structure_build | pipeline_stage_flag::fragment_shader,
 		.dst_access = access_flag::acceleration_structure_read | access_flag::acceleration_structure_write,
 	};
-	rec.pipeline_barrier(dependency_info{ .memory_barriers = std::span(&post_barrier, 1) });
+	rec.pipeline_barrier(
+		dependency_info{
+			.memory_barriers = std::span(&post_barrier, 1)
+		}
+	);
 }

@@ -38,8 +38,12 @@ export namespace gse::renderer::light_culling {
 			gpu::bindless_texture_slot depth_slot;
 		};
 
-		static auto run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d)
-			-> async::task<>;
+		static auto run(
+			run_context& ctx,
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			data& d
+		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,

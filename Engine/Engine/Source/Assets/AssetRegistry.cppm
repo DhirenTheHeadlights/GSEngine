@@ -64,7 +64,8 @@ export namespace gse::asset {
 	auto add(data& d, T&& resource) -> resource::handle<T>;
 
 	template <typename T>
-	[[nodiscard]] auto resource_state(const data& d, id resource_id) -> resource::state;
+	[[nodiscard]]
+	auto resource_state(const data& d, id resource_id) -> resource::state;
 
 	struct load_ctx {
 		data& assets;
@@ -72,7 +73,8 @@ export namespace gse::asset {
 	};
 
 	template <typename T>
-	[[nodiscard]] auto load(run_context& ctx, std::string_view path) -> async::task<resource::handle<T>>;
+	[[nodiscard]]
+	auto load(run_context& ctx, std::string_view path) -> async::task<resource::handle<T>>;
 }
 
 namespace gse::asset {
@@ -339,7 +341,10 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 	}
 
 	assert(m_data.channels != nullptr, "asset::registry::run must run before flush()");
-	asset::load_ctx ctx{ .assets = m_data, .channels = *m_data.channels };
+	asset::load_ctx ctx{
+		.assets = m_data,
+		.channels = *m_data.channels
+	};
 
 	try {
 		co_await resource_ptr->load(ctx);
@@ -455,7 +460,10 @@ auto gse::resource::loader<R>::launch_reload(const id rid) -> async::task<> {
 	auto new_resource = std::make_unique<R>(path);
 
 	assert(m_data.channels != nullptr, "asset::registry::run must run before finalize_reloads()");
-	asset::load_ctx ctx{ .assets = m_data, .channels = *m_data.channels };
+	asset::load_ctx ctx{
+		.assets = m_data,
+		.channels = *m_data.channels
+	};
 
 	try {
 		co_await new_resource->load(ctx);

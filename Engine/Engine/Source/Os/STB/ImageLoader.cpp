@@ -113,8 +113,10 @@ auto gse::image::read_png_file(const std::filesystem::path& path, const bool for
 			}
 
 			if (force_rgba) {
-				if (color_type == png_color_type_rgb || color_type == png_color_type_gray ||
-					color_type == png_color_type_palette) {
+				if (
+					color_type == png_color_type_rgb || color_type == png_color_type_gray ||
+					color_type == png_color_type_palette
+				) {
 					png_set_filler(png, 0xFF, png_filler_after);
 				}
 				if (color_type == png_color_type_gray || color_type == png_color_type_gray_alpha) {

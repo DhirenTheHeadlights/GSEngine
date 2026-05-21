@@ -6,6 +6,7 @@ import :scene_snapshot_renderer;
 import :forward_renderer;
 import :physics_debug_renderer;
 import :sdf_grid_renderer;
+import :tonemap_renderer;
 import :world_text_renderer;
 import :shared_shaders;
 
@@ -14,8 +15,6 @@ import gse.core;
 import gse.concurrency;
 import gse.math;
 import gse.meta;
-import gse.log;
-import gse.time;
 
 namespace gse::renderer::scene_snapshot {
 	template <typename GpuS>
@@ -45,8 +44,11 @@ namespace gse::renderer::scene_snapshot {
 	}
 }
 
-auto gse::renderer::scene_snapshot::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d)
-	-> async::task<> {
+auto gse::renderer::scene_snapshot::system::run(
+	run_context& ctx,
+	const gpu::context::data& gpu_s,
+	data& d
+) -> async::task<> {
 	d.sampler = gpu::sampler::create(
 		gpu_s.device->allocator(),
 		{
@@ -68,8 +70,11 @@ auto gse::renderer::scene_snapshot::system::run(run_context& ctx, const gpu::con
 	}
 }
 
-auto gse::renderer::scene_snapshot::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d)
-	-> async::task<> {
+auto gse::renderer::scene_snapshot::system::frame(
+	const frame_context& ctx,
+	shared_view<gpu::context> gpu_s,
+	data& d
+) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -85,8 +90,9 @@ auto gse::renderer::scene_snapshot::system::frame(const frame_context& ctx, shar
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	auto rec = co_await gpu::pass<system>(ctx)
-				   .after<forward::system, physics_debug::system, sdf_grid::system, world_text::system>();
+	auto rec =
+		co_await gpu::pass<system>(ctx)
+			.after<forward::system, physics_debug::system, sdf_grid::system, world_text::system, tonemap::system>();
 
 	rec.blit_swapchain_to_image(*gpu_s.swapchain, *gpu_s.frame, d.snapshots[frame_index], extent);
 }

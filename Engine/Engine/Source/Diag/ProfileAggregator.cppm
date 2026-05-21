@@ -58,8 +58,13 @@ namespace gse::profile {
 	std::atomic is_enabled{ true };
 	std::atomic<std::uint64_t> frame_count{ 0 };
 
-	auto update_entry(flat_map<id, entry>& map, id id, sample_time duration, std::uint32_t thread_id, bool pooled)
-		-> void;
+	auto update_entry(
+		flat_map<id, entry>& map,
+		id id,
+		sample_time duration,
+		std::uint32_t thread_id,
+		bool pooled
+	) -> void;
 
 	auto walk_node(
 		const trace::node& n,

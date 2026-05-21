@@ -70,27 +70,28 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 			.support_a = humanoid_handle.bone_ids[11],
 			.support_b = humanoid_handle.bone_ids[14],
 			.response_time = gse::seconds(0.5f),
-			.damping = 3.0f,
-			.max_correction = gse::meters_per_second(1.2f),
+			.damping = 4.0f,
+			.max_correction = gse::meters_per_second(1.0f),
 		}
 	);
 
 	const auto player_id = s.build("Player")
-		.with<gs::player::component>({
-			.initial_position = player_initial_pos,
-			.pelvis_id = pelvis_id,
-			.hip_l_id = humanoid_handle.joint_ids[8],
-			.knee_l_id = humanoid_handle.joint_ids[9],
-			.hip_r_id = humanoid_handle.joint_ids[11],
-			.knee_r_id = humanoid_handle.joint_ids[12],
-			.foot_l_id = humanoid_handle.bone_ids[11],
-			.foot_r_id = humanoid_handle.bone_ids[14],
-		})
-		.identify();
+							   .with<gs::player::component>({
+								   .initial_position = player_initial_pos,
+								   .pelvis_id = pelvis_id,
+								   .hip_l_id = humanoid_handle.joint_ids[8],
+								   .knee_l_id = humanoid_handle.joint_ids[9],
+								   .hip_r_id = humanoid_handle.joint_ids[11],
+								   .knee_r_id = humanoid_handle.joint_ids[12],
+								   .foot_l_id = humanoid_handle.bone_ids[11],
+								   .foot_r_id = humanoid_handle.bone_ids[14],
+							   })
+							   .identify();
 
-	s.build("Orbit Camera").with<gs::orbit_camera::component>({
-		.target = player_id,
-	});
+	s.build("Orbit Camera")
+		.with<gs::orbit_camera::component>({
+			.target = player_id,
+		});
 
 	s.build("Scene Camera")
 		.with<gse::free_camera::component>({

@@ -134,6 +134,21 @@ auto gse::scheduler::initialize() -> void {
 	check_state_dep_cycles();
 }
 
+auto gse::scheduler::all_settled() const -> bool {
+	{
+		std::lock_guard lock(m_hot_add_mutex);
+		if (!m_hot_add_queue.empty()) {
+			return false;
+		}
+	}
+	for (const auto& node : m_nodes) {
+		if (node.invoke_run_fn && !node.settled) {
+			return false;
+		}
+	}
+	return true;
+}
+
 auto gse::scheduler::advance_run_systems_during_init() -> void {
 	while (true) {
 		std::vector<async::task<>> tasks;
@@ -421,8 +436,11 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 	}
 }
 
-auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count)
-	-> void {
+auto gse::scheduler::log_stall_state(
+	const wait_phase phase,
+	const time_t<float> elapsed,
+	const int dump_count
+) -> void {
 	constexpr std::array<std::string_view, 3> phase_names{ "init", "update", "frame" };
 	const auto phase_name = phase_names[static_cast<std::size_t>(phase)];
 
@@ -544,29 +562,19 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 		return;
 	}
 
-	for (const auto& node : m_nodes) {
-		if (!node.has_frame) {
-			continue;
-		}
-		if (!node.run_launched) {
-			return;
-		}
-		if (!node.settled) {
-			return;
-		}
-	}
-
 	trace::scope_guard sg{ trace_id<"scheduler::render">() };
 	auto writer = m_channels_store.make_writer();
 
 	frame_context f_ctx(m_states, m_resources_store, m_channels_store, writer, m_frame_graph, *m_registry);
 
 	for (auto& node : m_nodes) {
-		if (!node.has_frame) {
-			m_frame_graph.notify_state_ready(node.state_id);
-			if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
-				m_frame_graph.notify_state_ready(node.state_type_id);
-			}
+		const bool frame_ready = node.has_frame && node.run_launched && node.settled;
+		if (frame_ready) {
+			continue;
+		}
+		m_frame_graph.notify_state_ready(node.state_id);
+		if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
+			m_frame_graph.notify_state_ready(node.state_type_id);
 		}
 	}
 	for (const id& type_id : m_external_resources) {
@@ -577,6 +585,9 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	std::vector<system_node*> task_nodes;
 	for (auto& node : m_nodes) {
 		if (!node.has_frame) {
+			continue;
+		}
+		if (!node.run_launched || !node.settled) {
 			continue;
 		}
 		tasks.push_back(run_node_frame(f_ctx, node));

@@ -156,31 +156,37 @@ for (uint ji = tid; ji < num_joints; ji += adjacency_workgroup_size) {
     if (j.type == joint_type::distance) {
         j.pos_c0.x = length(d) - j.target_distance;
     }
-    else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
+    else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
         j.pos_c0 = d;
 
-        float4 q_error = quat_mul(bb.orientation, quat_mul(quat_conjugate(ba.orientation), quat_conjugate(j.rest_orientation)));
-        float3 theta = to_axis_angle(q_error);
+        if (j.type != joint_type::ball) {
+            float4 q_error = quat_mul(bb.orientation, quat_mul(quat_conjugate(ba.orientation), quat_conjugate(j.rest_orientation)));
+            float3 theta = to_axis_angle(q_error);
 
-        if (j.type == joint_type::fixed) {
-            j.ang_c0 = theta;
-        }
-        else {
-            float3 axis_a = rotate_vector(ba.orientation, j.local_axis_a.xyz);
-            float3 axis_b = rotate_vector(bb.orientation, j.local_axis_b.xyz);
-            float3 swing_error = cross(axis_a, axis_b);
-            float3 perp_u = cross(axis_a, float3(0, 1, 0));
-            if (length(perp_u) < 1e-6) perp_u = cross(axis_a, float3(1, 0, 0));
-            perp_u = normalize(perp_u);
-            float3 perp_v = normalize(cross(axis_a, perp_u));
-            j.ang_c0.x = dot(perp_u, swing_error);
-            j.ang_c0.y = dot(perp_v, swing_error);
+            if (j.type == joint_type::fixed) {
+                j.ang_c0 = theta;
+            }
+            else if (j.type == joint_type::universal) {
+                float3 axis_a = rotate_vector(ba.orientation, j.local_axis_a.xyz);
+                j.ang_c0.x = dot(axis_a, theta);
+            }
+            else {
+                float3 axis_a = rotate_vector(ba.orientation, j.local_axis_a.xyz);
+                float3 axis_b = rotate_vector(bb.orientation, j.local_axis_b.xyz);
+                float3 swing_error = cross(axis_a, axis_b);
+                float3 perp_u = cross(axis_a, float3(0, 1, 0));
+                if (length(perp_u) < 1e-6) perp_u = cross(axis_a, float3(1, 0, 0));
+                perp_u = normalize(perp_u);
+                float3 perp_v = normalize(cross(axis_a, perp_u));
+                j.ang_c0.x = dot(perp_u, swing_error);
+                j.ang_c0.y = dot(perp_v, swing_error);
 
-            if (j.limits_enabled != 0) {
-                float twist = dot(axis_a, theta);
-                if (twist < j.limit_lower) j.limit_c0 = twist - j.limit_lower;
-                else if (twist > j.limit_upper) j.limit_c0 = twist - j.limit_upper;
-                else j.limit_c0 = 0.0;
+                if (j.limits_enabled != 0) {
+                    float twist = dot(axis_a, theta);
+                    if (twist < j.limit_lower) j.limit_c0 = twist - j.limit_lower;
+                    else if (twist > j.limit_upper) j.limit_c0 = twist - j.limit_upper;
+                    else j.limit_c0 = 0.0;
+                }
             }
         }
     }

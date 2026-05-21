@@ -131,8 +131,11 @@ auto gse::font::texture() const -> const gse::texture* {
 	return m_texture.get();
 }
 
-auto gse::font::text_layout(const std::string_view text, const vec2f start, const float scale) const
-	-> std::vector<positioned_glyph> {
+auto gse::font::text_layout(
+	const std::string_view text,
+	const vec2f start,
+	const float scale
+) const -> std::vector<positioned_glyph> {
 	std::vector<positioned_glyph> positioned_glyphs;
 	if (text.empty() || m_glyphs.empty()) {
 		return {};

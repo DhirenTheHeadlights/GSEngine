@@ -23,8 +23,12 @@ import gse.math;
 export namespace gse::gpu {
 	auto transition_image_to(gpu::device& dev, vulkan::image& img, image_layout target) -> sync_token;
 
-	auto upload_image_2d(gpu::device& dev, vulkan::image& img, const void* pixel_data, std::size_t data_size)
-		-> sync_token;
+	auto upload_image_2d(
+		gpu::device& dev,
+		vulkan::image& img,
+		const void* pixel_data,
+		std::size_t data_size
+	) -> sync_token;
 
 	auto upload_image_layers(
 		gpu::device& dev,

@@ -103,8 +103,11 @@ export namespace gse::vulkan {
 }
 
 namespace gse::vulkan {
-	[[nodiscard]] auto find_queue_families(const vk::raii::PhysicalDevice& device, const vk::raii::SurfaceKHR& surface)
-		-> queue_family;
+	[[nodiscard]]
+	auto find_queue_families(
+		const vk::raii::PhysicalDevice& device,
+		const vk::raii::SurfaceKHR& surface
+	) -> queue_family;
 
 	struct submit_scratch {
 		std::vector<vk::SemaphoreSubmitInfo> waits;
@@ -186,8 +189,10 @@ auto gse::vulkan::queue_family::complete() const -> bool {
 	return graphics_family.has_value() && present_family.has_value() && compute_family.has_value();
 }
 
-auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, const vk::raii::SurfaceKHR& surface)
-	-> queue_family {
+auto gse::vulkan::find_queue_families(
+	const vk::raii::PhysicalDevice& device,
+	const vk::raii::SurfaceKHR& surface
+) -> queue_family {
 	queue_family indices;
 	const auto queue_families = device.getQueueFamilyProperties();
 	for (std::uint32_t i = 0; i < queue_families.size(); i++) {
@@ -203,12 +208,16 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
 		if (device.getSurfaceSupportKHR(i, surface)) {
 			indices.present_family = i;
 		}
-		if ((queue_families[i].queueFlags & vk::QueueFlagBits::eCompute) &&
-			!(queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
+		if (
+			(queue_families[i].queueFlags & vk::QueueFlagBits::eCompute) &&
+			!(queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics)
+		) {
 			indices.compute_family = i;
 		}
-		if ((queue_families[i].queueFlags & vk::QueueFlagBits::eVideoEncodeKHR) &&
-			!indices.video_encode_family.has_value()) {
+		if (
+			(queue_families[i].queueFlags & vk::QueueFlagBits::eVideoEncodeKHR) &&
+			!indices.video_encode_family.has_value()
+		) {
 			indices.video_encode_family = i;
 		}
 	}
@@ -283,8 +292,10 @@ auto gse::vulkan::queue::submit_compute(const gpu::submit_info& info, const gpu:
 	m_compute.submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
 }
 
-auto gse::vulkan::queue::submit_video_encode(const gpu::submit_info& info, const gpu::handle<fence> signal_fence)
-	-> void {
+auto gse::vulkan::queue::submit_video_encode(
+	const gpu::submit_info& info,
+	const gpu::handle<fence> signal_fence
+) -> void {
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);

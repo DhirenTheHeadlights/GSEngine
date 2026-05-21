@@ -144,8 +144,10 @@ auto gse::gui::run_scroll_end(
 		}
 	}
 
-	if (scrollbar_track_rect.contains(mouse_pos) && !scrollbar_rect.contains(mouse_pos) &&
-		ctx.input.mouse_button_pressed(mouse_button::button_1) && !state.scrollbar_held) {
+	if (
+		scrollbar_track_rect.contains(mouse_pos) && !scrollbar_rect.contains(mouse_pos) &&
+		ctx.input.mouse_button_pressed(mouse_button::button_1) && !state.scrollbar_held
+	) {
 		const float click_ratio = (visible_rect.top() - mouse_pos.y()) / scrollbar_track_height;
 		const float new_offset = std::clamp(click_ratio, 0.f, 1.f) * max_scroll;
 		state.target_offset = new_offset;
@@ -157,14 +159,12 @@ auto gse::gui::run_scroll_end(
 	vec4f track_color = ctx.style.color_widget_background;
 	track_color.w() *= 0.3f;
 
-	ctx.queue_sprite(
-		{
-			.rect = scrollbar_track_rect,
-			.color = track_color,
-			.texture = ctx.blank_texture,
-			.layer = ctx.current_layer,
-		}
-	);
+	ctx.queue_sprite({
+		.rect = scrollbar_track_rect,
+		.color = track_color,
+		.texture = ctx.blank_texture,
+		.layer = ctx.current_layer,
+	});
 
 	vec4f bar_color = ctx.style.color_widget_background;
 	if (state.scrollbar_held) {
@@ -174,12 +174,10 @@ auto gse::gui::run_scroll_end(
 		bar_color = ctx.style.color_widget_hovered;
 	}
 
-	ctx.queue_sprite(
-		{
-			.rect = scrollbar_rect,
-			.color = bar_color,
-			.texture = ctx.blank_texture,
-			.layer = ctx.current_layer,
-		}
-	);
+	ctx.queue_sprite({
+		.rect = scrollbar_rect,
+		.color = bar_color,
+		.texture = ctx.blank_texture,
+		.layer = ctx.current_layer,
+	});
 }

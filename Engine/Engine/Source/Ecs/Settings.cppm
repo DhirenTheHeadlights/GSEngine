@@ -179,8 +179,10 @@ auto gse::settings::read_settings_for(
 }
 
 template <typename T>
-auto gse::settings::collect_settings_keys_with_prefix(std::vector<std::string>& out, const std::string_view prefix)
-	-> void {
+auto gse::settings::collect_settings_keys_with_prefix(
+	std::vector<std::string>& out,
+	const std::string_view prefix
+) -> void {
 	template for (
 		constexpr auto m : std::define_static_array(
 			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())

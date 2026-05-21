@@ -149,7 +149,11 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		.image = m_swapchain->image(m_image_index),
 		.aspects = image_aspect_flag::color,
 	};
-	cmd_main.pipeline_barrier(dependency_info{ .image_barriers = std::span(&acquire_barrier, 1) });
+	cmd_main.pipeline_barrier(
+		dependency_info{
+			.image_barriers = std::span(&acquire_barrier, 1)
+		}
+	);
 
 	const std::array transient_visibility_barriers{
 		memory_barrier{
@@ -173,7 +177,11 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 				access_flag::shader_sampled_read,
 		},
 	};
-	cmd_main.pipeline_barrier(dependency_info{ .memory_barriers = transient_visibility_barriers });
+	cmd_main.pipeline_barrier(
+		dependency_info{
+			.memory_barriers = transient_visibility_barriers
+		}
+	);
 
 	m_device->transient().recorder().run_pre_frame(m_command_buffers[static_cast<std::size_t>(queue_type::graphics)]);
 
@@ -205,7 +213,11 @@ auto gse::gpu::frame::end(
 		.image = m_swapchain->image(m_image_index),
 		.aspects = image_aspect_flag::color,
 	};
-	cmd_tail.pipeline_barrier(dependency_info{ .image_barriers = std::span(&present_barrier, 1) });
+	cmd_tail.pipeline_barrier(
+		dependency_info{
+			.image_barriers = std::span(&present_barrier, 1)
+		}
+	);
 
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::cmd_end">() };
@@ -263,13 +275,11 @@ auto gse::gpu::frame::end(
 	}
 
 	std::vector<semaphore_submit_info> main_waits;
-	main_waits.push_back(
-		{
-			.semaphore = m_sync.image_available(m_current_frame),
-			.value = 0,
-			.stages = pipeline_stage_flag::top_of_pipe,
-		}
-	);
+	main_waits.push_back({
+		.semaphore = m_sync.image_available(m_current_frame),
+		.value = 0,
+		.stages = pipeline_stage_flag::top_of_pipe,
+	});
 
 	for (const auto& w : extra_graphics_waits) {
 		main_waits.push_back(w);
@@ -338,7 +348,9 @@ auto gse::gpu::frame::end(
 	m_frame_in_progress = false;
 }
 
-auto gse::gpu::frame::create_sync_objects(const vulkan::device& device_data, const vulkan::swap_chain& swap_chain_data)
-	-> vulkan::sync {
+auto gse::gpu::frame::create_sync_objects(
+	const vulkan::device& device_data,
+	const vulkan::swap_chain& swap_chain_data
+) -> vulkan::sync {
 	return vulkan::sync::create(device_data, swap_chain_data.image_count());
 }

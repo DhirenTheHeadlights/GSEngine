@@ -180,9 +180,11 @@ template <typename Archetype>
 auto gse::scene::spawn(const std::string& name, Archetype&& archetype) -> gse::id {
 	const auto id = add_entity(name);
 	using arch_t = std::remove_cvref_t<Archetype>;
-	template for (constexpr auto m : std::define_static_array(
-					  std::meta::nonstatic_data_members_of(^^arch_t, std::meta::access_context::unchecked())
-				  )) {
+	template for (
+		constexpr auto m : std::define_static_array(
+			std::meta::nonstatic_data_members_of(^^arch_t, std::meta::access_context::unchecked())
+		)
+	) {
 		using component_t = typename[:std::meta::type_of(m):];
 		m_registry.add_component<component_t>(id, std::forward_like<Archetype>(archetype.[:m:]));
 	}
@@ -270,7 +272,8 @@ auto gse::scene::builder::initialize(gse::move_only_function<void(scene_init_con
 template <typename Func>
 auto gse::scene::builder::configure(Func&& fn) -> builder& {
 	using c = std::remove_cvref_t<
-		typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<Func>::operator())[0]):]>;
+		typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<Func>::operator())[0]):]
+	>;
 	push_init([fn = std::forward<Func>(fn)](const gse::id self, gse::registry& reg) mutable {
 		if (auto* component = reg.try_component<c>(self)) {
 			fn(*component);

@@ -51,24 +51,24 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
 	);
 
 	if (!name.empty()) {
-		ctx.queue_text(
-			{ .font = ctx.font,
-			  .text = name,
-			  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
-			  .scale = ctx.style.font_size,
-			  .color = ctx.style.color_text,
-			  .clip_rect = label_rect }
-		);
+		ctx.queue_text({
+			.font = ctx.font,
+			.text = name,
+			.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+			.scale = ctx.style.font_size,
+			.color = ctx.style.color_text,
+			.clip_rect = label_rect
+		});
 	}
 
-	ctx.queue_text(
-		{ .font = ctx.font,
-		  .text = text,
-		  .position = { value_rect.left(), value_rect.center().y() + ctx.style.font_size / 2.f },
-		  .scale = ctx.style.font_size,
-		  .color = ctx.style.color_text,
-		  .clip_rect = value_rect }
-	);
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = text,
+		.position = { value_rect.left(), value_rect.center().y() + ctx.style.font_size / 2.f },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = value_rect
+	});
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 }

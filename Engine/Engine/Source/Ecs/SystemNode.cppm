@@ -84,9 +84,11 @@ export namespace gse {
 template <typename T>
 consteval auto gse::has_describe_fields() -> bool {
 	bool found = false;
-	template for (constexpr auto m : std::define_static_array(
-					  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-				  )) {
+	template for (
+		constexpr auto m : std::define_static_array(
+			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
+		)
+	) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			found = true;
 		}

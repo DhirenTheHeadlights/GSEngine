@@ -82,9 +82,24 @@ auto gse::gpu::clear_color(const gpu::color_clear value) -> color_attachment {
 	};
 }
 
+auto gse::gpu::clear_color(const gpu::color_clear value, const image& target) -> color_attachment {
+	return {
+		.op = load_op::clear,
+		.clear = value,
+		.target = std::addressof(target),
+	};
+}
+
 auto gse::gpu::load_color() -> color_attachment {
 	return {
 		.op = load_op::load,
+	};
+}
+
+auto gse::gpu::load_color(const image& target) -> color_attachment {
+	return {
+		.op = load_op::load,
+		.target = std::addressof(target),
 	};
 }
 

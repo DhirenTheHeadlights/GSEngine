@@ -10,9 +10,9 @@ import gse.diag;
 import gse.ecs;
 
 export namespace gse::network {
-	struct[[= network_message{}]] connection_request {};
+	struct [[= network_message{}]] connection_request {};
 
-	struct[[= network_message{}]] connection_accepted {
+	struct [[= network_message{}]] connection_accepted {
 		id controller_id{};
 	};
 }

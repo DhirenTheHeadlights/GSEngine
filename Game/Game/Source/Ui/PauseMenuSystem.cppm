@@ -65,11 +65,15 @@ auto gs::pause_menu_system::run(
 			input.key_pressed(gse::key::n) || input.mouse_button_pressed(gse::mouse_button::button_3);
 		if (cursor_toggle_pressed && top == nullptr && scene_active) {
 			manual_cursor = !manual_cursor;
-			ctx.channels.push<gse::gui::set_manual_cursor_request>({ .show = manual_cursor });
+			ctx.channels.push<gse::gui::set_manual_cursor_request>({
+				.show = manual_cursor
+			});
 		}
 		else if (top != nullptr && manual_cursor) {
 			manual_cursor = false;
-			ctx.channels.push<gse::gui::set_manual_cursor_request>({ .show = false });
+			ctx.channels.push<gse::gui::set_manual_cursor_request>({
+				.show = false
+			});
 		}
 
 		co_await ctx.next_tick();

@@ -49,11 +49,11 @@ export namespace gse::vulkan {
 
 		auto operator=(pipeline&&) noexcept -> pipeline& = default;
 
-		[[nodiscard]] static auto create_graphics(const device& dev, const graphics_pipeline_create_info& info)
-			-> pipeline;
+		[[nodiscard]]
+		static auto create_graphics(const device& dev, const graphics_pipeline_create_info& info) -> pipeline;
 
-		[[nodiscard]] static auto create_compute(const device& dev, const compute_pipeline_create_info& info)
-			-> pipeline;
+		[[nodiscard]]
+		static auto create_compute(const device& dev, const compute_pipeline_create_info& info) -> pipeline;
 
 		[[nodiscard]] auto handle(this const pipeline& self) -> gpu::handle<pipeline>;
 
@@ -63,7 +63,8 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto auto_bound_sets(this const pipeline& self) -> std::span<const std::uint32_t>;
 
-		[[nodiscard]] auto active_bindings(this const pipeline& self) -> std::span<const gpu::binding_use>;
+		[[nodiscard]]
+		auto active_bindings(this const pipeline& self) -> std::span<const gpu::binding_use>;
 
 		explicit operator bool() const;
 

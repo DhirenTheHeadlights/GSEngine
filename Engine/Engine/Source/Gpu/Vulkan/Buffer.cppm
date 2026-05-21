@@ -19,7 +19,8 @@ export namespace gse::vulkan {
 	public:
 		basic_buffer() = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			Device& dev,
 			const gpu::buffer_desc& desc,
 			std::string_view tag = "",

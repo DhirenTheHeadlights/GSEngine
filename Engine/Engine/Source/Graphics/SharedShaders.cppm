@@ -7,20 +7,23 @@ import gse.gpu;
 import gse.math;
 
 export namespace gse::shaders::bindless {
-	struct[[= binding<2, 0>{}, = sampler2d_array]] textures {};
+	struct [[
+		= binding<2, 0>{},
+		= sampler2d_array
+	]] textures {};
 
 	constexpr std::uint32_t invalid_index = std::numeric_limits<std::uint32_t>::max();
 }
 
 export namespace gse::shaders::common {
-	struct[[= shader_struct]] camera_data {
+	struct [[= shader_struct]] camera_data {
 		view_matrix view;
 		projection_matrix proj;
 		view_matrix inv_view;
 		inverse_projection_matrix inv_view_proj;
 	};
 
-	struct[[= shader_struct]] instance_data {
+	struct [[= shader_struct]] instance_data {
 		spatial_matrix model_matrix;
 		spatial_matrix normal_matrix;
 		std::uint32_t material_index;
@@ -31,20 +34,20 @@ export namespace gse::shaders::common {
 }
 
 export namespace gse::shaders::forward {
-	enum class[[= shader_enum]] light_type : std::uint32_t {
+	enum class [[= shader_enum]] light_type : std::uint32_t {
 		directional = 0,
 		point = 1,
 		spot = 2,
 	};
 
-	struct[[= shader_struct]] material_data {
+	struct [[= shader_struct]] material_data {
 		vec3f base_color;
 		float roughness;
 		float metallic;
 		std::uint32_t diffuse_index;
 	};
 
-	struct[[= shader_struct]] light {
+	struct [[= shader_struct]] light {
 		light_type light_type;
 		vec3<gse::position> position;
 		vec3<gse::displacement> direction;
@@ -61,20 +64,20 @@ export namespace gse::shaders::forward {
 		float source_radius;
 	};
 
-	struct[[= shader_struct]] vertex {
+	struct [[= shader_struct]] vertex {
 		vec3f position;
 		vec3f normal;
 		vec2f tex_coords;
 	};
 
-	struct[[= shader_struct]] meshlet_descriptor {
+	struct [[= shader_struct]] meshlet_descriptor {
 		std::uint32_t vertex_offset;
 		std::uint32_t triangle_offset;
 		std::uint32_t vertex_count;
 		std::uint32_t triangle_count;
 	};
 
-	struct[[= shader_struct]] meshlet_bounds {
+	struct [[= shader_struct]] meshlet_bounds {
 		vec3f center;
 		float radius;
 		vec3f cone_axis;
@@ -85,31 +88,49 @@ export namespace gse::shaders::forward {
 }
 
 export namespace gse::shaders::meshlet {
-	struct[[= binding<1, 0>{}, = ssbo_readonly]] vertices_buffer {
+	struct [[
+		= binding<1, 0>{},
+		= ssbo_readonly
+	]] vertices_buffer {
 		using element = forward::vertex;
 	};
 
-	struct[[= binding<1, 1>{}, = ssbo_readonly]] meshlets_buffer {
+	struct [[
+		= binding<1, 1>{},
+		= ssbo_readonly
+	]] meshlets_buffer {
 		using element = forward::meshlet_descriptor;
 	};
 
-	struct[[= binding<1, 2>{}, = ssbo_readonly]] meshlet_vertex_indices {
+	struct [[
+		= binding<1, 2>{},
+		= ssbo_readonly
+	]] meshlet_vertex_indices {
 		using element = std::uint32_t;
 	};
 
-	struct[[= binding<1, 3>{}, = byte_address_buffer]] meshlet_triangles {};
+	struct [[
+		= binding<1, 3>{},
+		= byte_address_buffer
+	]] meshlet_triangles {};
 
-	struct[[= binding<1, 4>{}, = ssbo_readonly]] meshlet_bounds_buffer {
+	struct [[
+		= binding<1, 4>{},
+		= ssbo_readonly
+	]] meshlet_bounds_buffer {
 		using element = forward::meshlet_bounds;
 	};
 }
 
 export namespace gse::shaders::standard_3d {
-	struct[[= binding<0, 0>{}]] camera_ubo {
+	struct [[= binding<0, 0>{}]] camera_ubo {
 		using element = common::camera_data;
 	};
 
-	struct[[= binding<1, 4>{}, = ssbo_readonly]] instance_data_buffer {
+	struct [[
+		= binding<1, 4>{},
+		= ssbo_readonly
+	]] instance_data_buffer {
 		using element = common::instance_data;
 	};
 

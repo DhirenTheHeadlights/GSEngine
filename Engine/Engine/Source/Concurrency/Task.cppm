@@ -349,8 +349,12 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 	work_available.release(static_cast<std::ptrdiff_t>(count));
 }
 
-auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t last, parallel_for_fn func, const id id)
-	-> void {
+auto gse::task::parallel_for_impl(
+	const std::size_t first,
+	const std::size_t last,
+	parallel_for_fn func,
+	const id id
+) -> void {
 	if (last <= first) {
 		return;
 	}
@@ -404,8 +408,12 @@ auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func
 }
 
 template <typename Fn>
-auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk_items, Fn&& fn, const id label)
-	-> void {
+auto gse::task::coarse_parallel(
+	const std::size_t n,
+	const std::size_t min_chunk_items,
+	Fn&& fn,
+	const id label
+) -> void {
 	if (n == 0) {
 		return;
 	}

@@ -20,13 +20,15 @@ export namespace gse::vulkan {
 
 		auto operator=(query_pool&&) noexcept -> query_pool& = default;
 
-		[[nodiscard]] static auto create_timestamp(
+		[[nodiscard]]
+		static auto create_timestamp(
 			const device& dev,
 			std::uint32_t capacity,
 			std::string_view label = {}
 		) -> query_pool;
 
-		[[nodiscard]] static auto create_pipeline_stats(
+		[[nodiscard]]
+		static auto create_pipeline_stats(
 			const device& dev,
 			std::uint32_t capacity,
 			gpu::pipeline_statistic_flags statistics,
@@ -38,8 +40,12 @@ export namespace gse::vulkan {
 		explicit operator bool() const;
 
 		template <typename T>
-		[[nodiscard]] auto results(std::uint32_t first_query, std::uint32_t query_count, std::uint64_t stride) const
-			-> std::pair<gpu::query_status, std::vector<T>>;
+		[[nodiscard]]
+		auto results(
+			std::uint32_t first_query,
+			std::uint32_t query_count,
+			std::uint64_t stride
+		) const -> std::pair<gpu::query_status, std::vector<T>>;
 
 	private:
 		explicit query_pool(vk::raii::QueryPool&& pool);

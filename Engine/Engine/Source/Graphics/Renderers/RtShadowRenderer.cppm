@@ -32,8 +32,12 @@ export namespace gse::renderer::rt_shadow {
 			std::size_t mapping_buffer_capacity = 0;
 		};
 
-		static auto run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d)
-			-> async::task<>;
+		static auto run(
+			run_context& ctx,
+			const gpu::context::data& gpu_s,
+			const asset::data& assets_s,
+			data& d
+		) -> async::task<>;
 
 		static auto frame(
 			frame_context& ctx,

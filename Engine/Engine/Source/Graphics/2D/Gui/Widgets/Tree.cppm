@@ -121,8 +121,11 @@ auto gse::gui::draw::tree(
 }
 
 template <typename T>
-auto gse::gui::draw::tree_node_key(const T& t, const tree_ops<T>& ops, const std::uint64_t tree_scope)
-	-> std::uint64_t {
+auto gse::gui::draw::tree_node_key(
+	const T& t,
+	const tree_ops<T>& ops,
+	const std::uint64_t tree_scope
+) -> std::uint64_t {
 	if (ops.key) {
 		return ops.key(t);
 	}
@@ -206,21 +209,25 @@ auto gse::gui::draw::tree_node(
 			self_is_active = true;
 		}
 
-		ctx.queue_sprite({ .rect = row_rect, .color = background, .texture = ctx.blank_texture });
+		ctx.queue_sprite({
+			.rect = row_rect,
+			.color = background,
+			.texture = ctx.blank_texture
+		});
 
 		const float arrow_w = ctx.style.font_size;
 		const ui_rect arrow_rect = ui_rect::from_position_size(row_rect.top_left(), { arrow_w, row_height });
 
 		if (!leaf) {
-			ctx.queue_text(
-				{ .font = ctx.font,
-				  .text = is_open ? "v" : ">",
-				  .position = { arrow_rect.center().x() - ctx.font->width("v", ctx.style.font_size) * 0.5f,
-								arrow_rect.center().y() + ctx.style.font_size / 2.f },
-				  .scale = ctx.style.font_size,
-				  .color = ctx.style.color_text,
-				  .clip_rect = arrow_rect }
-			);
+			ctx.queue_text({
+				.font = ctx.font,
+				.text = is_open ? "v" : ">",
+				.position = { arrow_rect.center().x() - ctx.font->width("v", ctx.style.font_size) * 0.5f,
+							  arrow_rect.center().y() + ctx.style.font_size / 2.f },
+				.scale = ctx.style.font_size,
+				.color = ctx.style.color_text,
+				.clip_rect = arrow_rect
+			});
 		}
 
 		const std::string_view lbl = ops.label ? ops.label(t) : std::string_view{};
@@ -233,14 +240,14 @@ auto gse::gui::draw::tree_node(
 			{ label_available_width, row_height }
 		);
 
-		ctx.queue_text(
-			{ .font = ctx.font,
-			  .text = std::string(lbl),
-			  .position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
-			  .scale = ctx.style.font_size,
-			  .color = ctx.style.color_text,
-			  .clip_rect = label_rect }
-		);
+		ctx.queue_text({
+			.font = ctx.font,
+			.text = std::string(lbl),
+			.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+			.scale = ctx.style.font_size,
+			.color = ctx.style.color_text,
+			.clip_rect = label_rect
+		});
 
 		if (ops.custom_draw) {
 			ops.custom_draw(t, ctx, row_rect, hovered, selected, level);
@@ -255,8 +262,10 @@ auto gse::gui::draw::tree_node(
 			const ui_rect arrow_rect =
 				ui_rect::from_position_size(row_rect.top_left(), { ctx.style.font_size, row_height });
 
-			if (const bool clicked_arrow = arrow_rect.contains(mouse_pos);
-				!leaf && (opt.toggle_on_row_click || clicked_arrow)) {
+			if (
+				const bool clicked_arrow = arrow_rect.contains(mouse_pos);
+				!leaf && (opt.toggle_on_row_click || clicked_arrow)
+			) {
 				if (is_open) {
 					open_set.erase(key);
 				}
@@ -267,8 +276,10 @@ auto gse::gui::draw::tree_node(
 			}
 
 			if (sel) {
-				if (const bool ctrl = ctx.input.key_held(key::left_control) || ctx.input.key_held(key::right_control);
-					opt.multi_select || ctrl) {
+				if (
+					const bool ctrl = ctx.input.key_held(key::left_control) || ctx.input.key_held(key::right_control);
+					opt.multi_select || ctrl
+				) {
 					if (const auto it = sel->keys.find(key); it != sel->keys.end()) {
 						sel->keys.erase(it);
 					}

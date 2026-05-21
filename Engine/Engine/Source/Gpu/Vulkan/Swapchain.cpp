@@ -79,8 +79,10 @@ auto gse::vulkan::swap_chain::create(
 
 	vk::SurfaceFormatKHR surface_format;
 	for (const auto& available_format : vk_formats) {
-		if (available_format.format == vk::Format::eB8G8R8A8Srgb &&
-			available_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+		if (
+			available_format.format == vk::Format::eB8G8R8A8Srgb &&
+			available_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear
+		) {
 			surface_format = available_format;
 			break;
 		}
@@ -148,15 +150,16 @@ auto gse::vulkan::swap_chain::create(
 		vk_capabilities.maxImageCount
 	);
 
-	vk::SwapchainCreateInfoKHR create_info{ .flags = {},
-											.surface = *instance_data.raii_surface(),
-											.minImageCount = image_count,
-											.imageFormat = surface_format.format,
-											.imageColorSpace = surface_format.colorSpace,
-											.imageExtent = extent,
-											.imageArrayLayers = 1,
-											.imageUsage = vk::ImageUsageFlagBits::eColorAttachment |
-												vk::ImageUsageFlagBits::eTransferSrc };
+	vk::SwapchainCreateInfoKHR create_info{
+		.flags = {},
+		.surface = *instance_data.raii_surface(),
+		.minImageCount = image_count,
+		.imageFormat = surface_format.format,
+		.imageColorSpace = surface_format.colorSpace,
+		.imageExtent = extent,
+		.imageArrayLayers = 1,
+		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc
+	};
 
 	const auto families = find_queue_families(device_data.physical_device(), instance_data.raii_surface());
 	const std::uint32_t queue_family_indices[] = { families.graphics_family.value(), families.present_family.value() };

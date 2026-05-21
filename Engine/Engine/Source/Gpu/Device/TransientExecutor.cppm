@@ -20,7 +20,8 @@ export namespace gse::gpu {
 
 		auto operator=(transient_executor&&) noexcept -> transient_executor& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const vulkan::device& device,
 			std::uint32_t graphics_family,
 			std::uint32_t compute_family,

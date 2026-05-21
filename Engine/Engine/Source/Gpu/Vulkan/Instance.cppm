@@ -20,8 +20,8 @@ export namespace gse::vulkan {
 
 		auto operator=(instance&&) noexcept -> instance& = default;
 
-		[[nodiscard]] static auto create(std::span<const char* const> required_extensions, bool enable_validation)
-			-> instance;
+		[[nodiscard]]
+		static auto create(std::span<const char* const> required_extensions, bool enable_validation) -> instance;
 
 		auto create_surface(const window::data& win) -> void;
 

@@ -20,11 +20,14 @@ import gse.ecs;
 import gse.math;
 
 namespace gse::renderer::depth_prepass::meshlet {
-	struct[[= shaders::binding<0, 0>{}]] camera_ubo {
+	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
 		using element = shaders::common::camera_data;
 	};
 
-	struct[[= shaders::binding<1, 5>{}, = shaders::ssbo_readonly]] instance_data_buffer {
+	struct [[
+		= shaders::binding<1, 5>{},
+		= shaders::ssbo_readonly
+	]] instance_data_buffer {
 		using element = shaders::common::instance_data;
 	};
 
@@ -35,9 +38,10 @@ namespace gse::renderer::depth_prepass::meshlet {
 		shaders::meshlet::meshlet_vertex_indices,
 		shaders::meshlet::meshlet_triangles,
 		shaders::meshlet::meshlet_bounds_buffer,
-		instance_data_buffer>;
+		instance_data_buffer
+	>;
 
-	struct[[= shaders::shader_struct]] push_constants {
+	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t meshlet_offset;
 		std::uint32_t meshlet_count;
 		std::uint32_t first_instance;
@@ -54,7 +58,8 @@ namespace gse::renderer::depth_prepass::meshlet {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
 		gpu::depth<true, true, gpu::compare_op::less>,
-		gpu::color_target<gpu::color_format::none>>;
+		gpu::color_target<gpu::color_format::none>
+	>;
 }
 
 auto gse::renderer::depth_prepass::system::run(
@@ -75,7 +80,10 @@ auto gse::renderer::depth_prepass::system::run(
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		d.camera_ubo_buffers[i] = gpu::buffer::create(
 			gpu_s.device->allocator(),
-			{ .size = camera_ubo_size, .usage = gpu::buffer_flag::uniform }
+			{
+				.size = camera_ubo_size,
+				.usage = gpu::buffer_flag::uniform
+			}
 		);
 	}
 

@@ -65,8 +65,10 @@ namespace gse {
 	LONG WINAPI vectored_handler(EXCEPTION_POINTERS* info) noexcept {
 		const auto* rec = info->ExceptionRecord;
 		const auto code = rec->ExceptionCode;
-		if (code == cpp_exception_code || code == breakpoint_code || code == dbg_print_exception_code ||
-			code == dbg_print_exception_wide_c || code == ms_thread_name_code) {
+		if (
+			code == cpp_exception_code || code == breakpoint_code || code == dbg_print_exception_code ||
+			code == dbg_print_exception_wide_c || code == ms_thread_name_code
+		) {
 			return EXCEPTION_CONTINUE_SEARCH;
 		}
 

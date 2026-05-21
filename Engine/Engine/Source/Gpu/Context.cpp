@@ -45,6 +45,7 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 			pipeline_stage_flag::early_fragment_tests | pipeline_stage_flag::late_fragment_tests,
 			access_flag::depth_stencil_attachment_write | access_flag::depth_stencil_attachment_read
 		);
+		graph->pre_frame_transitions(cmd);
 	});
 
 	while (true) {
@@ -129,7 +130,6 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
 		.chain_id = req.desc.chain_id,
 		.record_handle = req.record_handle,
 		.record_ctx_slot = req.record_ctx_slot,
-		.body = std::move(req.body),
 	};
 
 	if (req.desc.color) {
@@ -143,18 +143,29 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
 	return p;
 }
 
-auto gse::gpu::context::execute_frame(
-	data& d,
-	std::vector<render_pass_request> requests,
-	std::vector<transient_image_request> transient_images,
-	std::vector<transient_buffer_request> transient_buffers
-) -> void {
-	std::vector<gpu::render_pass_data> passes;
-	passes.reserve(requests.size());
-	for (auto& req : requests) {
-		passes.push_back(to_pass_data(std::move(req)));
-	}
-	d.render_graph->execute(std::move(passes), std::move(transient_images), std::move(transient_buffers));
+auto gse::gpu::context::execute_frame(data& d, scheduler& s) -> void {
+	d.render_graph->execute(
+		frame_request_drain{
+			.drain_passes =
+				[&s] {
+					auto requests = s.drain_channel<render_pass_request>();
+					std::vector<render_pass_data> passes;
+					passes.reserve(requests.size());
+					for (auto& req : requests) {
+						passes.push_back(to_pass_data(std::move(req)));
+					}
+					return passes;
+				},
+			.drain_images =
+				[&s] {
+					return s.drain_channel<transient_image_request>();
+				},
+			.drain_buffers =
+				[&s] {
+					return s.drain_channel<transient_buffer_request>();
+				},
+		}
+	);
 }
 
 auto gse::gpu::context::on_swap_chain_recreate(const data& d, swap_chain_recreate_callback callback) -> void {

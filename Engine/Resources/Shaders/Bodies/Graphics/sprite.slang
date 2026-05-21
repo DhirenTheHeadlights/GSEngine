@@ -32,10 +32,11 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
 
     float4 col;
     if (pc.snapshot_tex_idx != INVALID_INDEX) {
-        // DIAGNOSTIC: show input.color.r as grayscale. We expect ~0.14 (DARK).
-        // If widget is bright/white, the RED component is also wrong → vertex layout mismatch.
-        // If widget is dark gray (~14% brightness), red is correct and only alpha is wrong.
-        col = float4(input.color.r, input.color.r, input.color.r, 1.0);
+        float2 screen_uv = input.clip_pos.xy * pc.inv_screen_size;
+        float4 bg = textures[NonUniformResourceIndex(pc.snapshot_tex_idx)].Sample(screen_uv);
+        float a = input.color.a;
+        col.rgb = input.color.rgb * a + bg.rgb * (1.0 - a);
+        col.a = 1.0;
     } else {
         col = textures[NonUniformResourceIndex(pc.tex_idx)].Sample(input.tex_coord) * input.color;
     }

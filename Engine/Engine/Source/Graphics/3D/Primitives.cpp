@@ -55,18 +55,18 @@ auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
 	}
 
 	std::vector<mesh_data> meshes;
-	meshes.push_back(
-		{
-			.vertices = std::move(v),
-			.indices = std::move(idx),
-			.material = {},
-		}
-	);
+	meshes.push_back({
+		.vertices = std::move(v),
+		.indices = std::move(idx),
+		.material = {},
+	});
 	return meshes;
 }
 
-auto gse::primitives::build_sphere_meshes(const std::uint32_t sectors, const std::uint32_t stacks)
-	-> std::vector<mesh_data> {
+auto gse::primitives::build_sphere_meshes(
+	const std::uint32_t sectors,
+	const std::uint32_t stacks
+) -> std::vector<mesh_data> {
 	const auto radius = meters(1.0f);
 
 	std::vector<vertex> vertices;
@@ -123,13 +123,11 @@ auto gse::primitives::build_sphere_meshes(const std::uint32_t sectors, const std
 	}
 
 	std::vector<mesh_data> meshes;
-	meshes.push_back(
-		{
-			.vertices = std::move(vertices),
-			.indices = std::move(indices),
-			.material = {},
-		}
-	);
+	meshes.push_back({
+		.vertices = std::move(vertices),
+		.indices = std::move(indices),
+		.material = {},
+	});
 	return meshes;
 }
 

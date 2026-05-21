@@ -16,6 +16,8 @@ export namespace gse::loading {
 
 		auto mark_finished() -> void;
 
+		auto mark_rendered() -> void;
+
 		[[nodiscard]] auto phase() const -> std::string;
 
 		[[nodiscard]] auto done() const -> std::uint32_t;
@@ -24,12 +26,15 @@ export namespace gse::loading {
 
 		[[nodiscard]] auto finished() const -> bool;
 
+		[[nodiscard]] auto rendered_once() const -> bool;
+
 	private:
 		mutable std::mutex m_mutex;
 		std::string m_phase;
 		std::uint32_t m_done = 0;
 		std::uint32_t m_total = 0;
 		std::atomic<bool> m_finished = false;
+		std::atomic<bool> m_rendered_once = false;
 	};
 }
 
@@ -46,6 +51,10 @@ auto gse::loading::state::set_progress(const std::uint32_t done, const std::uint
 
 auto gse::loading::state::mark_finished() -> void {
 	m_finished.store(true, std::memory_order_release);
+}
+
+auto gse::loading::state::mark_rendered() -> void {
+	m_rendered_once.store(true, std::memory_order_release);
 }
 
 auto gse::loading::state::phase() const -> std::string {
@@ -65,4 +74,8 @@ auto gse::loading::state::total() const -> std::uint32_t {
 
 auto gse::loading::state::finished() const -> bool {
 	return m_finished.load(std::memory_order_acquire);
+}
+
+auto gse::loading::state::rendered_once() const -> bool {
+	return m_rendered_once.load(std::memory_order_acquire);
 }

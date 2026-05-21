@@ -17,7 +17,7 @@ import :vbd_constraints;
 import :vbd_solver;
 
 export namespace gse::vbd {
-	struct[[= shaders::shader_struct]] dispatch_args {
+	struct [[= shaders::shader_struct]] dispatch_args {
 		std::uint32_t x;
 		std::uint32_t y;
 		std::uint32_t z;
@@ -33,7 +33,8 @@ export namespace gse::vbd {
 		joint_constraint,
 		impulse_constraint,
 		frozen_jacobian,
-		dispatch_args>;
+		dispatch_args
+	>;
 
 	struct vbd_solve_chain {};
 

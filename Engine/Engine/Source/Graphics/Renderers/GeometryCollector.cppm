@@ -40,8 +40,11 @@ export namespace gse::renderer {
 		return { spatial_matrix(model_matrix), spatial_matrix(rot_mat) };
 	}
 
-	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix)
-		-> std::pair<vec3<length>, vec3<length>> {
+	auto transform_aabb(
+		const vec3<length>& local_min,
+		const vec3<length>& local_max,
+		const mat4f& model_matrix
+	) -> std::pair<vec3<length>, vec3<length>> {
 		const std::array corners = { vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
 									 vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
 									 vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
@@ -165,8 +168,10 @@ export namespace gse::renderer::geometry_collector {
 		projection_matrix proj;
 	};
 
-	auto filter_render_queue(const render_data& data, std::span<const id> exclude_ids)
-		-> std::vector<render_queue_entry>;
+	auto filter_render_queue(
+		const render_data& data,
+		std::span<const id> exclude_ids
+	) -> std::vector<render_queue_entry>;
 
 	struct system {
 		struct data {

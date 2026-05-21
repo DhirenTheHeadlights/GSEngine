@@ -24,7 +24,10 @@ auto gs::test_skeleton_t() -> gse::physics::skeleton {
 	s.bones.push_back({
 		.name = "torso",
 		.parent_index = no_bone,
-		.shape = box_shape{ .size = gse::vec3<gse::displacement>(gse::meters(0.4f), gse::meters(0.8f), gse::meters(0.2f)) },
+		.shape =
+			box_shape{
+				.size = gse::vec3<gse::displacement>(gse::meters(0.4f), gse::meters(0.8f), gse::meters(0.2f))
+			},
 		.mass = gse::kilograms(20.f),
 	});
 
@@ -32,7 +35,10 @@ auto gs::test_skeleton_t() -> gse::physics::skeleton {
 		.name = "upper_arm_l",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(-shoulder_x - half_arm, shoulder_y, gse::meters(0.f)),
-		.shape = box_shape{ .size = gse::vec3<gse::displacement>(upper_arm_len, gse::meters(0.07f), gse::meters(0.07f)) },
+		.shape =
+			box_shape{
+				.size = gse::vec3<gse::displacement>(upper_arm_len, gse::meters(0.07f), gse::meters(0.07f))
+			},
 		.mass = gse::kilograms(2.f),
 	});
 
@@ -40,7 +46,10 @@ auto gs::test_skeleton_t() -> gse::physics::skeleton {
 		.name = "upper_arm_r",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(shoulder_x + half_arm, shoulder_y, gse::meters(0.f)),
-		.shape = box_shape{ .size = gse::vec3<gse::displacement>(upper_arm_len, gse::meters(0.07f), gse::meters(0.07f)) },
+		.shape =
+			box_shape{
+				.size = gse::vec3<gse::displacement>(upper_arm_len, gse::meters(0.07f), gse::meters(0.07f))
+			},
 		.mass = gse::kilograms(2.f),
 	});
 

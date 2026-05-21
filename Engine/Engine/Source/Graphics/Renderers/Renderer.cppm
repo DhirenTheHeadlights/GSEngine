@@ -49,7 +49,8 @@ export namespace gse::renderer {
 
 			[[
 				= gse::settings::describe<
-					"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
+					"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead."
+				>{}
 			]]
 			bool gpu_pipeline_stats_enabled = false;
 

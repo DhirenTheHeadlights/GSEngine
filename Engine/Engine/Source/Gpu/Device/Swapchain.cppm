@@ -19,8 +19,12 @@ import gse.log;
 export namespace gse::gpu {
 	class swap_chain final : public non_copyable {
 	public:
-		[[nodiscard]] static auto create(vec2i framebuffer_size, present_mode preferred_present_mode, device& dev)
-			-> std::unique_ptr<swap_chain>;
+		[[nodiscard]]
+		static auto create(
+			vec2i framebuffer_size,
+			present_mode preferred_present_mode,
+			device& dev
+		) -> std::unique_ptr<swap_chain>;
 
 		swap_chain(vulkan::swap_chain&& config, device& dev);
 
@@ -61,8 +65,11 @@ export namespace gse::gpu {
 	};
 }
 
-auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const present_mode preferred_present_mode, device& dev)
-	-> std::unique_ptr<swap_chain> {
+auto gse::gpu::swap_chain::create(
+	const vec2i framebuffer_size,
+	const present_mode preferred_present_mode,
+	device& dev
+) -> std::unique_ptr<swap_chain> {
 	auto config = vulkan::swap_chain::create(
 		framebuffer_size,
 		preferred_present_mode,

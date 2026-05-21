@@ -27,7 +27,8 @@ export namespace gse::gpu {
 
 		auto operator=(transient_queue&& other) noexcept -> transient_queue&;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const vulkan::device& device,
 			queue_id id,
 			std::uint32_t family,
@@ -44,8 +45,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto timeline_handle() const -> handle<vulkan::semaphore>;
 
-		[[nodiscard]] auto allocate_primary(const vulkan::device& device, std::size_t worker_idx)
-			-> vulkan::transient_command_buffer;
+		[[nodiscard]]
+		auto allocate_primary(const vulkan::device& device, std::size_t worker_idx) -> vulkan::transient_command_buffer;
 
 		auto park(std::uint64_t value, std::coroutine_handle<> handle) -> void;
 
@@ -131,7 +132,10 @@ auto gse::gpu::transient_queue::id() const -> queue_id {
 auto gse::gpu::transient_queue::reserve_for_submit() -> submit_ticket {
 	std::unique_lock lock(*m_mutex);
 	const auto value = ++m_next_value;
-	return submit_ticket{ .lock = std::move(lock), .value = value };
+	return submit_ticket{
+		.lock = std::move(lock),
+		.value = value
+	};
 }
 
 auto gse::gpu::transient_queue::progress() const -> std::uint64_t {
@@ -146,8 +150,10 @@ auto gse::gpu::transient_queue::timeline_handle() const -> handle<vulkan::semaph
 	return m_timeline.handle();
 }
 
-auto gse::gpu::transient_queue::allocate_primary(const vulkan::device& device, const std::size_t worker_idx)
-	-> vulkan::transient_command_buffer {
+auto gse::gpu::transient_queue::allocate_primary(
+	const vulkan::device& device,
+	const std::size_t worker_idx
+) -> vulkan::transient_command_buffer {
 	assert(
 		worker_idx < m_pools.size(),
 		"transient_queue: worker index {} out of range (pools: {})",
@@ -161,12 +167,10 @@ auto gse::gpu::transient_queue::allocate_primary(const vulkan::device& device, c
 
 auto gse::gpu::transient_queue::park(const std::uint64_t value, std::coroutine_handle<> handle) -> void {
 	std::lock_guard lock(*m_mutex);
-	m_waiters.push_back(
-		{
-			.m_value = value,
-			.m_handle = handle,
-		}
-	);
+	m_waiters.push_back({
+		.m_value = value,
+		.m_handle = handle,
+	});
 }
 
 auto gse::gpu::transient_queue::poll(const vulkan::device& device) -> std::uint64_t {

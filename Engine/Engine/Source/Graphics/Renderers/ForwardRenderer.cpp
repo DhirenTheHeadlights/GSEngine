@@ -3,12 +3,14 @@ module gse.graphics;
 import std;
 
 import :forward_renderer;
+import :atmosphere_renderer;
 import :geometry_collector;
 import :depth_prepass_renderer;
 import :rt_shadow_renderer;
 import :light_culling_renderer;
 import :cull_compute_renderer;
 import :camera_system;
+import :render_targets;
 import :texture;
 import :point_light;
 import :spot_light;
@@ -29,29 +31,52 @@ import gse.save;
 import gse.meta;
 
 namespace gse::renderer::forward {
-	struct[[= shaders::binding<0, 0>{}]] camera_ubo {
+	struct [[= shaders::binding<0, 0>{}]] camera_ubo {
 		using element = shaders::common::camera_data;
 	};
 
-	struct[[= shaders::binding<0, 1>{}, = shaders::ssbo_readonly]] lights_ssbo {
+	struct [[
+		= shaders::binding<0, 1>{},
+		= shaders::ssbo_readonly
+	]] lights_ssbo {
 		using element = shaders::forward::light;
 	};
 
-	struct[[= shaders::binding<0, 2>{}, = shaders::tlas]] scene_tlas {};
+	struct [[
+		= shaders::binding<0, 2>{},
+		= shaders::tlas
+	]] scene_tlas {};
 
-	struct[[= shaders::binding<0, 3>{}, = shaders::ssbo_readonly]] light_index_list {
+	struct [[
+		= shaders::binding<0, 3>{},
+		= shaders::ssbo_readonly
+	]] light_index_list {
 		using element = std::uint32_t;
 	};
 
-	struct[[= shaders::binding<0, 4>{}, = shaders::ssbo_readonly]] tile_light_table {
+	struct [[
+		= shaders::binding<0, 4>{},
+		= shaders::ssbo_readonly
+	]] tile_light_table {
 		using element = vec2u;
 	};
 
-	struct[[= shaders::binding<0, 5>{}, = shaders::ssbo_readonly]] material_palette {
+	struct [[
+		= shaders::binding<0, 5>{},
+		= shaders::ssbo_readonly
+	]] material_palette {
 		using element = shaders::forward::material_data;
 	};
 
-	struct[[= shaders::binding<1, 5>{}, = shaders::ssbo_readonly]] instance_data_buffer {
+	struct [[
+		= shaders::binding<0, 6>{},
+		= shaders::sampler3d
+	]] aerial_perspective_in {};
+
+	struct [[
+		= shaders::binding<1, 5>{},
+		= shaders::ssbo_readonly
+	]] instance_data_buffer {
 		using element = shaders::common::instance_data;
 	};
 
@@ -62,15 +87,18 @@ namespace gse::renderer::forward {
 		light_index_list,
 		tile_light_table,
 		material_palette,
+		aerial_perspective_in,
+		atmosphere::atmosphere_ubo,
 		shaders::meshlet::vertices_buffer,
 		shaders::meshlet::meshlets_buffer,
 		shaders::meshlet::meshlet_vertex_indices,
 		shaders::meshlet::meshlet_triangles,
 		shaders::meshlet::meshlet_bounds_buffer,
 		instance_data_buffer,
-		shaders::bindless::textures>;
+		shaders::bindless::textures
+	>;
 
-	struct[[= shaders::shader_struct]] meshlet_push_constants {
+	struct [[= shaders::shader_struct]] meshlet_push_constants {
 		std::uint32_t meshlet_offset;
 		std::uint32_t meshlet_count;
 		std::uint32_t first_instance;
@@ -91,7 +119,9 @@ namespace gse::renderer::forward {
 		gpu::mesh_stage<"ms_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<meshlet_push_constants>,
-		gpu::depth<true, false, gpu::compare_op::less_or_equal>>;
+		gpu::color_target<gpu::color_format::hdr>,
+		gpu::depth<true, false, gpu::compare_op::less_or_equal>
+	>;
 }
 
 auto gse::renderer::forward::system::run(
@@ -100,6 +130,7 @@ auto gse::renderer::forward::system::run(
 	const asset::data& assets_s,
 	const rt_shadow::system::data& rt_state,
 	const light_culling::system::data& lc_r,
+	const atmosphere::system::data& atm_state,
 	data& d
 ) -> async::task<> {
 	d.pipeline = gpu::build_graphics_pipeline(
@@ -121,17 +152,26 @@ auto gse::renderer::forward::system::run(
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.camera_ubo_buffers[i] = gpu::buffer::create(
 			gpu_s.device->allocator(),
-			{ .size = camera_ubo_size, .usage = gpu::buffer_flag::uniform }
+			{
+				.size = camera_ubo_size,
+				.usage = gpu::buffer_flag::uniform
+			}
 		);
 
 		d.light_buffers[i] = gpu::buffer::create(
 			gpu_s.device->allocator(),
-			{ .size = light_buffer_size, .usage = gpu::buffer_flag::storage }
+			{
+				.size = light_buffer_size,
+				.usage = gpu::buffer_flag::storage
+			}
 		);
 
 		d.material_palette_buffers[i] = gpu::buffer::create(
 			gpu_s.device->allocator(),
-			{ .size = material_buffer_size, .usage = gpu::buffer_flag::storage }
+			{
+				.size = material_buffer_size,
+				.usage = gpu::buffer_flag::storage
+			}
 		);
 
 		d.descriptors[i] =
@@ -150,19 +190,31 @@ auto gse::renderer::forward::system::run(
 
 		writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
 		writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
-			.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi]);
+			.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi])
+			.combined_image_sampler<aerial_perspective_in>(atm_state.ap_volume, atm_state.lut_sampler)
+			.buffer<atmosphere::atmosphere_ubo>(
+				atm_state.atmosphere_ubo_buffer,
+				0,
+				sizeof(atmosphere::atmosphere_data)
+			);
 
 		writer.commit();
 	}
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&d, &lc_r, &rt_state, &gpu_s]() {
+	gpu::context::on_swap_chain_recreate(gpu_s, [&d, &lc_r, &rt_state, &atm_state, &gpu_s]() {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
 			gpu::descriptor_writer writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i]);
 
 			writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
 			writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
-				.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi]);
+				.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi])
+				.combined_image_sampler<aerial_perspective_in>(atm_state.ap_volume, atm_state.lut_sampler)
+				.buffer<atmosphere::atmosphere_ubo>(
+					atm_state.atmosphere_ubo_buffer,
+					0,
+					sizeof(atmosphere::atmosphere_data)
+				);
 
 			writer.commit();
 		}
@@ -187,8 +239,19 @@ auto gse::renderer::forward::system::frame(
 	if (render_items.empty()) {
 		const auto ext = gpu_s.render_graph->extent();
 		auto rec = co_await gpu::pass<system>(ctx)
-					   .color(gpu::clear_color(gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f }))
-					   .depth(gpu::clear_depth(gpu::depth_clear{ .depth = 1.0f }));
+					   .color(
+						   gpu::clear_color(
+							   gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
+							   gpu_s.render_graph->framebuffer_image<targets::hdr_color>()
+						   )
+					   )
+					   .depth(
+						   gpu::clear_depth(
+							   gpu::depth_clear{
+								   .depth = 1.0f
+							   }
+						   )
+					   );
 		rec.set_viewport(ext);
 		rec.set_scissor(ext);
 		co_return;
@@ -324,11 +387,17 @@ auto gse::renderer::forward::system::frame(
 		meshlet_entry::pod
 	);
 
-	auto rec = co_await gpu::pass<system>(ctx)
-				   .pipeline(d.pipeline)
-				   .color(gpu::clear_color(gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f }))
-				   .depth(gpu::load_depth())
-				   .after<rt_shadow::system, light_culling::system, depth_prepass::system>();
+	auto rec =
+		co_await gpu::pass<system>(ctx)
+			.pipeline(d.pipeline)
+			.color(
+				gpu::clear_color(
+					gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
+					gpu_s.render_graph->framebuffer_image<targets::hdr_color>()
+				)
+			)
+			.depth(gpu::load_depth())
+			.after<rt_shadow::system, light_culling::system, depth_prepass::system, atmosphere::ap_compute_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 

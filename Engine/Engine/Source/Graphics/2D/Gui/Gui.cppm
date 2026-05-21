@@ -41,20 +41,28 @@ namespace gse::gui {
 export namespace gse::gui {
 	class system {
 	public:
-		struct[[= gse::settings::category<"UI">{}]] data {
-			[[= gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}]] theme current_theme =
-				theme::dark;
+		struct [[= gse::settings::category<"UI">{}]] data {
+			[[
+				= gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}
+			]]
+			theme current_theme = theme::dark;
 
 			[[
-				= gse::settings::describe<
-					"Multiplier on UI element sizes and font metrics. Useful for high-DPI displays.">{},
+				= gse::settings::
+					describe<"Multiplier on UI element sizes and font metrics. Useful for high-DPI displays.">{},
 				= gse::settings::range<0.5f, 2.0f>{}
-			]] float ui_scale = 1.0f;
+			]]
+			float ui_scale = 1.0f;
 
-			[[= gse::settings::describe<"Font used to render text in the UI.">{}]] gse::settings::choice<int> font;
+			[[
+				= gse::settings::describe<"Font used to render text in the UI.">{}
+			]]
+			gse::settings::choice<int> font;
 
-			[[= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{}]] bool
-				show_dev_overlays = false;
+			[[
+				= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{}
+			]]
+			bool show_dev_overlays = false;
 
 			id_mapped_collection<menu> menus;
 			menu* current_menu = nullptr;
@@ -112,8 +120,12 @@ export namespace gse::gui {
 		static auto save(data& d) -> void;
 
 	private:
-		static auto init_body(run_context& ctx, const window::data& window_s, asset::data& assets, data& d)
-			-> async::task<>;
+		static auto init_body(
+			run_context& ctx,
+			const window::data& window_s,
+			asset::data& assets,
+			data& d
+		) -> async::task<>;
 
 		static auto update_body(
 			run_context& ctx,
@@ -164,8 +176,12 @@ export namespace gse::gui {
 			bool mouse_held
 		) -> gui::state;
 
-		static auto draw_menu_chrome(data& d, const input::state& input_state, menu& current_menu, render_layer layer)
-			-> void;
+		static auto draw_menu_chrome(
+			data& d,
+			const input::state& input_state,
+			menu& current_menu,
+			render_layer layer
+		) -> void;
 
 		static auto draw_tab_bar(
 			data& d,

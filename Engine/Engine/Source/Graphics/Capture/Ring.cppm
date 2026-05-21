@@ -54,7 +54,11 @@ auto gse::renderer::capture::ring::snapshot_from_earliest_keyframe() const -> st
 	snapshot.reserve(static_cast<std::size_t>(std::ranges::distance(first_keyframe, m_units.end())));
 
 	for (auto it = first_keyframe; it != m_units.end(); ++it) {
-		snapshot.push_back({ .bytes = it->bytes, .pts = it->pts, .keyframe = it->keyframe });
+		snapshot.push_back({
+			.bytes = it->bytes,
+			.pts = it->pts,
+			.keyframe = it->keyframe
+		});
 	}
 
 	return snapshot;

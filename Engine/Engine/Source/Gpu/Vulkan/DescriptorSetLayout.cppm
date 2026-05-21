@@ -20,10 +20,14 @@ export namespace gse::vulkan {
 
 		auto operator=(descriptor_set_layout&&) noexcept -> descriptor_set_layout& = default;
 
-		[[nodiscard]] static auto create(const device& dev, std::span<const gpu::descriptor_binding_desc> bindings)
-			-> descriptor_set_layout;
+		[[nodiscard]]
+		static auto create(
+			const device& dev,
+			std::span<const gpu::descriptor_binding_desc> bindings
+		) -> descriptor_set_layout;
 
-		[[nodiscard]] auto handle(this const descriptor_set_layout& self) -> gpu::handle<descriptor_set_layout>;
+		[[nodiscard]]
+		auto handle(this const descriptor_set_layout& self) -> gpu::handle<descriptor_set_layout>;
 
 		explicit operator bool() const;
 

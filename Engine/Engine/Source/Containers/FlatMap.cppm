@@ -19,12 +19,14 @@ export namespace gse {
 		flat_map(std::initializer_list<value_type> init);
 
 		template <typename Self>
-		[[nodiscard]] auto at(this Self& self, const Key& key) -> decltype(auto);
+		[[nodiscard]]
+		auto at(this Self& self, const Key& key) -> decltype(auto);
 
 		auto operator[](const Key& key) -> Value&;
 
 		template <typename Self>
-		[[nodiscard]] auto find(this Self& self, const Key& key) -> decltype(auto);
+		[[nodiscard]]
+		auto find(this Self& self, const Key& key) -> decltype(auto);
 
 		auto insert(const value_type& pair) -> std::pair<iterator, bool>;
 

@@ -550,8 +550,9 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator*(this const Self& self, c
 	constexpr auto OtherCols = M2::extent_cols;
 	mat<RE, OtherCols, Rows> result;
 
-	if constexpr (std::is_same_v<Element, float> && std::is_same_v<E2, float> && Cols == 4 && Rows == 4 &&
-				  OtherCols == 4) {
+	if constexpr (
+		std::is_same_v<Element, float> && std::is_same_v<E2, float> && Cols == 4 && Rows == 4 && OtherCols == 4
+	) {
 		if (!std::is_constant_evaluated()) {
 			simd::mul_mat4(
 				self.data[0].as_storage_span().data(),

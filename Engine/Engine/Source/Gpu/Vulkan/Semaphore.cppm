@@ -21,7 +21,8 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] static auto create_binary(const device& dev) -> semaphore;
 
-		[[nodiscard]] static auto create_timeline(const device& dev, std::uint64_t initial_value) -> semaphore;
+		[[nodiscard]]
+		static auto create_timeline(const device& dev, std::uint64_t initial_value) -> semaphore;
 
 		[[nodiscard]] auto handle(this const semaphore& self) -> gpu::handle<semaphore>;
 
