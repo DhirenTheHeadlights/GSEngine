@@ -17,7 +17,9 @@ export namespace gse {
 		vec3f normal;
 		vec2f tex_coords;
 
-		auto operator==(const vertex&) const -> bool = default;
+		auto operator==(
+			const vertex&
+		) const -> bool = default;
 	};
 
 	struct meshlet_descriptor {
@@ -49,7 +51,9 @@ export namespace gse {
 		gpu::buffer bounds;
 		std::uint32_t count = 0;
 
-		auto bind(gpu::descriptor_writer& writer) const -> void;
+		auto bind(
+			gpu::descriptor_writer& writer
+		) const -> void;
 	};
 
 	struct mesh_data {
@@ -61,19 +65,26 @@ export namespace gse {
 
 	class mesh final : non_copyable {
 	public:
-		explicit mesh(mesh_data&& data);
+		explicit mesh(
+			mesh_data&& data
+		);
 		mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {})
 			: m_vertices(std::move(vertices)),
 			  m_indices(std::move(indices)),
 			  m_material(mat) {
 		}
 
-		auto initialize(gpu::context::data& ctx) -> void;
+		auto initialize(
+			gpu::context::data& ctx
+		) -> void;
 
 		auto center_of_mass() const -> vec3<displacement>;
 		auto material() const -> const gse::material&;
 		auto indices() const -> const std::vector<std::uint32_t>&;
-		auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
+		auto aabb() const -> std::pair<
+			vec3<displacement>,
+			vec3<displacement>
+		>;
 
 		auto vertex_gpu_buffer(this const mesh& self) -> const gpu::buffer& {
 			return self.m_vertex_buffer;
@@ -106,7 +117,10 @@ export namespace gse {
 		gpu::sync_token m_upload_token;
 	};
 
-	auto generate_bounding_box_mesh(vec3<displacement> upper, vec3<displacement> lower) -> mesh_data;
+	auto generate_bounding_box_mesh(
+		vec3<displacement> upper,
+		vec3<displacement> lower
+	) -> mesh_data;
 
 	auto build_runtime_meshlets(
 		const std::vector<vertex>& vertices,
@@ -216,16 +230,8 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		m_meshlet_gpu = std::move(ml);
 
 		uploads.push_back({ &m_meshlet_gpu->vertex_storage, m_vertices.data(), vertex_buffer_size });
-		uploads.push_back(
-			{ &m_meshlet_gpu->descriptors,
-			  m_meshlets.descriptors.data(),
-			  sizeof(meshlet_descriptor) * m_meshlets.descriptors.size() }
-		);
-		uploads.push_back(
-			{ &m_meshlet_gpu->vertices,
-			  m_meshlets.vertex_indices.data(),
-			  sizeof(std::uint32_t) * m_meshlets.vertex_indices.size() }
-		);
+		uploads.push_back({ &m_meshlet_gpu->descriptors, m_meshlets.descriptors.data(), sizeof(meshlet_descriptor) * m_meshlets.descriptors.size() });
+		uploads.push_back({ &m_meshlet_gpu->vertices, m_meshlets.vertex_indices.data(), sizeof(std::uint32_t) * m_meshlets.vertex_indices.size() });
 		uploads.push_back({ &m_meshlet_gpu->triangles, m_meshlets.triangles.data(), tri_size });
 		uploads
 			.push_back({ &m_meshlet_gpu->bounds, m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
@@ -328,24 +334,52 @@ auto gse::generate_bounding_box_mesh(const vec3<displacement> upper, const vec3<
 	};
 
 	const std::vector vertices = {
-		create_vertex({ lower.x(), lower.y(), lower.z() }), create_vertex({ upper.x(), lower.y(), lower.z() }),
-		create_vertex({ upper.x(), upper.y(), lower.z() }), create_vertex({ lower.x(), upper.y(), lower.z() }),
-		create_vertex({ lower.x(), lower.y(), upper.z() }), create_vertex({ upper.x(), lower.y(), upper.z() }),
-		create_vertex({ upper.x(), upper.y(), upper.z() }), create_vertex({ lower.x(), upper.y(), upper.z() })
+		create_vertex({ lower.x(), lower.y(), lower.z() }),
+		create_vertex({ upper.x(), lower.y(), lower.z() }),
+		create_vertex({ upper.x(), upper.y(), lower.z() }),
+		create_vertex({ lower.x(), upper.y(), lower.z() }),
+		create_vertex({ lower.x(), lower.y(), upper.z() }),
+		create_vertex({ upper.x(), lower.y(), upper.z() }),
+		create_vertex({ upper.x(), upper.y(), upper.z() }),
+		create_vertex({ lower.x(), upper.y(), upper.z() })
 	};
 
 	const std::vector<std::uint32_t> indices = {
-		0, 1, 2, 2, 3,
+		0,
+		1,
+		2,
+		2,
+		3,
 		0, // Front face
-		4, 5, 6, 6, 7,
+		4,
+		5,
+		6,
+		6,
+		7,
 		4, // Back face
-		0, 4, 7, 7, 3,
+		0,
+		4,
+		7,
+		7,
+		3,
 		0, // Left face
-		1, 5, 6, 6, 2,
+		1,
+		5,
+		6,
+		6,
+		2,
 		1, // Right face
-		0, 1, 5, 5, 4,
+		0,
+		1,
+		5,
+		5,
+		4,
 		0, // Bottom face
-		3, 2, 6, 6, 7,
+		3,
+		2,
+		6,
+		6,
+		7,
 		3 // Top face
 	};
 
@@ -355,10 +389,7 @@ auto gse::generate_bounding_box_mesh(const vec3<displacement> upper, const vec3<
 	};
 }
 
-auto gse::build_runtime_meshlets(
-	const std::vector<vertex>& vertices,
-	const std::vector<std::uint32_t>& indices
-) -> meshlet_data {
+auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices) -> meshlet_data {
 	constexpr std::uint32_t max_vertices = 64;
 	constexpr std::uint32_t max_triangles = 124;
 
@@ -450,9 +481,7 @@ auto gse::build_runtime_meshlets(
 			}
 		}
 
-		if (
-			current_vertices.size() + new_vertex_count > max_vertices || current_triangles.size() / 3 >= max_triangles
-		) {
+		if (current_vertices.size() + new_vertex_count > max_vertices || current_triangles.size() / 3 >= max_triangles) {
 			finalize_meshlet();
 		}
 

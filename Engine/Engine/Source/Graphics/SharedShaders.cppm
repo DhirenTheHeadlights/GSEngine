@@ -54,14 +54,14 @@ export namespace gse::shaders::forward {
 		vec3<gse::position> world_position;
 		vec3<gse::displacement> world_direction;
 		vec3f color;
-		float intensity;
+		irradiance intensity;
 		float constant;
-		float linear;
+		inverse_length linear;
 		float quadratic;
 		float cut_off;
 		float outer_cut_off;
 		float ambient_strength;
-		float source_radius;
+		length source_radius;
 	};
 
 	struct [[= shader_struct]] vertex {

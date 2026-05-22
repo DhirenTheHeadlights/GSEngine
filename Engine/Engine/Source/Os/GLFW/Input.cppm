@@ -34,9 +34,15 @@ export namespace gse::input {
 			double_buffer<input::state> states;
 		};
 
-		static auto run(run_context& ctx, data& d, const window::data* win) -> async::task<>;
+		static auto run(
+			run_context& ctx,
+			data& d,
+			const window::data* win
+		) -> async::task<>;
 
-		static auto current_state(const data& d) -> const input::state&;
+		static auto current_state(
+			const data& d
+		) -> const input::state&;
 	};
 }
 
@@ -72,10 +78,18 @@ auto gse::input::system::run(run_context& ctx, data& d, const window::data* win)
 					persistent_state.on_mouse_button_released(arg.button, tok);
 				})
 				.else_if_is([&](const mouse_moved& arg) {
-					persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
+					persistent_state.on_mouse_moved(
+						static_cast<float>(arg.x_pos),
+						static_cast<float>(arg.y_pos),
+						tok
+					);
 				})
 				.else_if_is([&](const mouse_scrolled& arg) {
-					persistent_state.on_scroll(static_cast<float>(arg.x_offset), static_cast<float>(arg.y_offset), tok);
+					persistent_state.on_scroll(
+						static_cast<float>(arg.x_offset),
+						static_cast<float>(arg.y_offset),
+						tok
+					);
 				})
 				.else_if_is([&](const text_entered& arg) {
 					persistent_state.append_codepoint(arg.codepoint, tok);

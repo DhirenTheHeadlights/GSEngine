@@ -46,19 +46,38 @@ export namespace gse::camera {
 			bool ui_focus = false;
 		};
 
-		static auto run(run_context& ctx, data& d) -> async::task<>;
+		static auto run(
+			run_context& ctx,
+			data& d
+		) -> async::task<>;
 
-		static auto position(const data& d) -> vec3<gse::position>;
+		static auto position(
+			const data& d
+		) -> vec3<gse::position>;
 
-		static auto orientation(const data& d) -> quat;
+		static auto orientation(
+			const data& d
+		) -> quat;
 
-		static auto direction_relative_to_origin(const data& d, const vec3f& direction) -> vec3f;
+		static auto direction_relative_to_origin(
+			const data& d,
+			const vec3f& direction
+		) -> vec3f;
 
 	private:
-		static auto interpolate_target(const target& from, const target& to, float t) -> target;
+		static auto interpolate_target(
+			const target& from,
+			const target& to,
+			float t
+		) -> target;
 
-		static auto compute_view_matrix(const target& t) -> view_matrix;
+		static auto compute_view_matrix(
+			const target& t
+		) -> view_matrix;
 
-		static auto compute_projection_matrix(const target& t, const vec2f& viewport) -> projection_matrix;
+		static auto compute_projection_matrix(
+			const target& t,
+			const vec2f& viewport
+		) -> projection_matrix;
 	};
 }

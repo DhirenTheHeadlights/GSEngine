@@ -1,4 +1,4 @@
-
+void vbd_predict(uint3 dispatch_id) {
 uint bi = dispatch_id.x;
 if (bi >= pc.body_count) return;
 
@@ -132,3 +132,4 @@ for (uint mi = 0; mi < pc.motor_count; mi++) {
 }
 
 body_data[bi] = body;
+}

@@ -27,7 +27,10 @@ import gse.meta;
 import :shared_shaders;
 
 namespace gse::renderer::geometry_collector {
-	auto material_palette_index(render_data& data, const material* mat_ptr) -> std::uint32_t;
+	auto material_palette_index(
+		render_data& data,
+		const material* mat_ptr
+	) -> std::uint32_t;
 
 	auto write_instance(
 		std::vector<shaders::common::instance_data>& instance_staging,
@@ -56,28 +59,44 @@ namespace gse::renderer::geometry_collector {
 		OnInstance on_instance
 	) -> void;
 
-	auto read_body_index_map(run_context& ctx) -> std::unordered_map<id, std::uint32_t>;
+	auto read_body_index_map(
+		run_context& ctx
+	) -> std::unordered_map<id,
+							std::uint32_t>;
 
 	auto collect_static(
 		write<render_component>& render,
 		read<physics::transform_component>& transform,
-		const std::unordered_map<id, std::uint32_t>& body_index_map,
+		const std::unordered_map<
+			id,
+			std::uint32_t
+		>& body_index_map,
 		std::vector<owned_render_queue_entry>& out
 	) -> void;
 
-	auto sort_queues(std::vector<owned_render_queue_entry>& out) -> void;
+	auto sort_queues(
+		std::vector<owned_render_queue_entry>& out
+	) -> void;
 
-	auto build_normal_batches(render_data& data, std::uint32_t& global_instance_offset) -> void;
+	auto build_normal_batches(
+		render_data& data,
+		std::uint32_t& global_instance_offset
+	) -> void;
 
-	auto initialize(run_context& ctx, const gpu::context::data& gpu_s, system::data& d) -> async::task<>;
+	auto initialize(
+		run_context& ctx,
+		const gpu::context::data& gpu_s,
+		system::data& d
+	) -> async::task<>;
 
-	auto tick(run_context& ctx, system::data& d, const camera::system::data& cam_state) -> async::task<>;
+	auto tick(
+		run_context& ctx,
+		system::data& d,
+		const camera::system::data& cam_state
+	) -> async::task<>;
 }
 
-auto gse::renderer::geometry_collector::material_palette_index(
-	render_data& data,
-	const material* mat_ptr
-) -> std::uint32_t {
+auto gse::renderer::geometry_collector::material_palette_index(render_data& data, const material* mat_ptr) -> std::uint32_t {
 	if (auto it = data.material_palette_map.find(mat_ptr); it != data.material_palette_map.end()) {
 		return it->second;
 	}
@@ -86,13 +105,7 @@ auto gse::renderer::geometry_collector::material_palette_index(
 	return index;
 }
 
-auto gse::renderer::geometry_collector::write_instance(
-	std::vector<shaders::common::instance_data>& instance_staging,
-	const spatial_matrix& model_matrix,
-	const spatial_matrix& normal_matrix,
-	const std::uint32_t mat_idx,
-	const vec3f& tint
-) -> void {
+auto gse::renderer::geometry_collector::write_instance(std::vector<shaders::common::instance_data>& instance_staging, const spatial_matrix& model_matrix, const spatial_matrix& normal_matrix, const std::uint32_t mat_idx, const vec3f& tint) -> void {
 	instance_staging.push_back({
 		.model_matrix = model_matrix,
 		.normal_matrix = normal_matrix,
@@ -102,16 +115,7 @@ auto gse::renderer::geometry_collector::write_instance(
 }
 
 template <typename Items, typename Batches, typename KeyOf, typename GetMesh, typename AccumAabb, typename OnInstance>
-auto gse::renderer::geometry_collector::build_batches(
-	render_data& data,
-	std::uint32_t& global_instance_offset,
-	const Items& items,
-	Batches& batches,
-	KeyOf key_of,
-	GetMesh get_mesh,
-	AccumAabb accum_aabb,
-	OnInstance on_instance
-) -> void {
+auto gse::renderer::geometry_collector::build_batches(render_data& data, std::uint32_t& global_instance_offset, const Items& items, Batches& batches, KeyOf key_of, GetMesh get_mesh, AccumAabb accum_aabb, OnInstance on_instance) -> void {
 	std::size_t batch_begin = 0;
 	while (batch_begin < items.size()) {
 		const auto key = key_of(items[batch_begin]);
@@ -155,12 +159,7 @@ auto gse::renderer::geometry_collector::read_body_index_map(run_context& ctx) ->
 	return body_index_map;
 }
 
-auto gse::renderer::geometry_collector::collect_static(
-	write<render_component>& render,
-	read<physics::transform_component>& transform,
-	const std::unordered_map<id, std::uint32_t>& body_index_map,
-	std::vector<owned_render_queue_entry>& out
-) -> void {
+auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, const std::unordered_map<id, std::uint32_t>& body_index_map, std::vector<owned_render_queue_entry>& out) -> void {
 	const auto render_size = render.size();
 	const auto render_ids = render.owner_ids();
 	const bool transform_order_matches =
@@ -191,15 +190,17 @@ auto gse::renderer::geometry_collector::collect_static(
 			const auto [model_matrix, normal_matrix] =
 				compute_render_transform(*tc, mdl.center_of_mass(), component.sizes[j]);
 			for (std::size_t mi = 0; mi < mdl.meshes().size(); ++mi) {
-				out.push_back(
-					{ .entry = { .model = component.models[j],
-								 .index = mi,
-								 .model_matrix = model_matrix,
-								 .normal_matrix = normal_matrix,
-								 .color = component.tints[j] },
-					  .owner = eid,
-					  .body_index = body_index }
-				);
+				out.push_back({
+					.entry = {
+						.model = component.models[j],
+						.index = mi,
+						.model_matrix = model_matrix,
+						.normal_matrix = normal_matrix,
+						.color = component.tints[j]
+					},
+					.owner = eid,
+					.body_index = body_index
+				});
 			}
 		}
 	}
@@ -219,10 +220,7 @@ auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_que
 	});
 }
 
-auto gse::renderer::geometry_collector::build_normal_batches(
-	render_data& data,
-	std::uint32_t& global_instance_offset
-) -> void {
+auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, std::uint32_t& global_instance_offset) -> void {
 	trace::scope_guard sg{ trace_id<"geom_collect::batch_normal">() };
 	build_batches(
 		data,
@@ -280,11 +278,7 @@ auto gse::renderer::geometry_collector::build_normal_batches(
 	);
 }
 
-auto gse::renderer::geometry_collector::initialize(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	system::data& d
-) -> async::task<> {
+auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::context::data& gpu_s, system::data& d) -> async::task<> {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t instance_buffer_size =
 			system::data::max_instances * sizeof(shaders::common::instance_data);
@@ -310,11 +304,7 @@ auto gse::renderer::geometry_collector::initialize(
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::tick(
-	run_context& ctx,
-	system::data& d,
-	const camera::system::data& cam_state
-) -> async::task<> {
+auto gse::renderer::geometry_collector::tick(run_context& ctx, system::data& d, const camera::system::data& cam_state) -> async::task<> {
 	const view_matrix view_matrix = cam_state.view_matrix;
 	const projection_matrix proj_matrix = cam_state.projection_matrix;
 
@@ -349,10 +339,7 @@ auto gse::renderer::geometry_collector::tick(
 	ctx.channels.push<render_data>(std::move(data));
 }
 
-auto gse::renderer::geometry_collector::filter_render_queue(
-	const render_data& data,
-	const std::span<const id> exclude_ids
-) -> std::vector<render_queue_entry> {
+auto gse::renderer::geometry_collector::filter_render_queue(const render_data& data, const std::span<const id> exclude_ids) -> std::vector<render_queue_entry> {
 	std::vector<render_queue_entry> result;
 	result.reserve(data.render_queue.size());
 
@@ -369,14 +356,7 @@ auto gse::renderer::geometry_collector::filter_render_queue(
 	return result;
 }
 
-auto gse::renderer::geometry_collector::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const asset::data& assets_s,
-	data& d,
-	const camera::system::data& cam_state,
-	const primitive_resolver::system& resolver_state
-) -> async::task<> {
+auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const camera::system::data& cam_state, const primitive_resolver::system& resolver_state) -> async::task<> {
 	co_await initialize(ctx, gpu_s, d);
 
 	while (true) {
@@ -385,11 +365,7 @@ auto gse::renderer::geometry_collector::system::run(
 	}
 }
 
-auto gse::renderer::geometry_collector::system::frame(
-	frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	const data& d
-) -> async::task<> {
+auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d) -> async::task<> {
 	const auto& items = ctx.read_channel<render_data>();
 	if (items.empty()) {
 		co_return;

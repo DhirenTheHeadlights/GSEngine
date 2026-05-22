@@ -20,11 +20,7 @@ import gse.log;
 import gse.concurrency;
 import gse.meta;
 
-auto gse::gpu::device::create(
-	const window::data& win,
-	const bool validation_layers_enabled,
-	vulkan::device::settings& device_cfg
-) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(const window::data& win, const bool validation_layers_enabled, vulkan::device::settings& device_cfg) -> std::unique_ptr<device> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
 	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), validation_layers_enabled);
@@ -135,11 +131,7 @@ auto gse::gpu::device::timestamp_period() const -> float {
 	return m_device_config.timestamp_period();
 }
 
-auto gse::gpu::device::begin_pass_marker(
-	const handle<command_buffer> cmd,
-	const pass_marker_domain domain,
-	const pass_marker marker
-) -> pass_marker_handle {
+auto gse::gpu::device::begin_pass_marker(const handle<command_buffer> cmd, const pass_marker_domain domain, const pass_marker marker) -> pass_marker_handle {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(domain)];
 	const auto seq = ring.seq.fetch_add(1, std::memory_order_relaxed);
 	ring.entries[seq % pass_marker_ring_size] = marker;
@@ -161,10 +153,7 @@ auto gse::gpu::device::begin_pass_marker(
 	};
 }
 
-auto gse::gpu::device::checkpoint_pass_marker(
-	const handle<command_buffer> cmd,
-	const pass_marker_handle handle
-) -> void {
+auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer) {
 		return;
@@ -180,10 +169,7 @@ auto gse::gpu::device::checkpoint_pass_marker(
 	);
 }
 
-auto gse::gpu::device::post_renderpass_pass_marker(
-	const handle<command_buffer> cmd,
-	const pass_marker_handle handle
-) -> void {
+auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer) {
 		return;

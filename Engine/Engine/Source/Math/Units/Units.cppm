@@ -164,8 +164,7 @@ namespace gse::internal {
 
 	template <>
 	struct quantity_units<gse::length_tag> {
-		static constexpr auto units = std::tuple{ gse::kilometers, gse::meters, gse::centimeters, gse::millimeters,
-												  gse::yards,	   gse::feet,	gse::inches };
+		static constexpr auto units = std::tuple{ gse::kilometers, gse::meters, gse::centimeters, gse::millimeters, gse::yards, gse::feet, gse::inches };
 	};
 }
 
@@ -198,8 +197,7 @@ namespace gse::internal {
 
 	template <>
 	struct quantity_units<gse::time_tag> {
-		static constexpr auto units = std::tuple{ gse::nanoseconds, gse::microseconds, gse::milliseconds,
-												  gse::seconds,		gse::minutes,	   gse::hours };
+		static constexpr auto units = std::tuple{ gse::nanoseconds, gse::microseconds, gse::milliseconds, gse::seconds, gse::minutes, gse::hours };
 	};
 
 	template <>
@@ -346,8 +344,7 @@ export namespace gse {
 namespace gse::internal {
 	template <>
 	struct quantity_units<gse::energy_tag> {
-		static constexpr auto units = std::tuple{ gse::gigajoules, gse::megajoules,	  gse::kilojoules,
-												  gse::joules,	   gse::kilocalories, gse::calories };
+		static constexpr auto units = std::tuple{ gse::gigajoules, gse::megajoules, gse::kilojoules, gse::joules, gse::kilocalories, gse::calories };
 	};
 }
 
@@ -870,9 +867,72 @@ namespace gse::internal {
 	};
 }
 
+export namespace gse {
+	constexpr auto asin(const float v) -> angle {
+		return radians(std::asin(v));
+	}
+
+	template <internal::is_quantity Q>
+	constexpr auto asin(const Q& q) -> angle {
+		return radians(std::asin(internal::value_in<typename Q::default_unit>(q)));
+	}
+
+	constexpr auto acos(const float v) -> angle {
+		return radians(std::acos(v));
+	}
+
+	template <internal::is_quantity Q>
+	constexpr auto acos(const Q& q) -> angle {
+		return radians(std::acos(internal::value_in<typename Q::default_unit>(q)));
+	}
+
+	constexpr auto atan2(const float y, const float x) -> angle {
+		return radians(std::atan2(y, x));
+	}
+
+	template <internal::is_quantity Q1, internal::is_quantity Q2>
+	requires internal::has_same_dimension_as<Q1, Q2>
+	constexpr auto atan2(const Q1& y, const Q2& x) -> angle {
+		return radians(
+			std::atan2(
+				internal::value_in<internal::quantity_base_unit_t<Q1>>(y),
+				internal::value_in<internal::quantity_base_unit_t<Q2>>(x)
+			)
+		);
+	}
+
+	constexpr auto atan(const float v) -> angle {
+		return radians(std::atan(v));
+	}
+
+	template <internal::is_quantity Q>
+	constexpr auto atan(const Q& q) -> angle {
+		return radians(std::atan(internal::value_in<typename Q::default_unit>(q)));
+	}
+}
+
 namespace gse::internal {
-	static_assert(std::same_as<force::dimension, dimi<1, -2, 1, 0>>);
-	static_assert(std::same_as<quantity_tag_traits<closing_speed_tag>::parent_tag, normal_speed_tag>);
-	static_assert(quantity_tag_traits<position_tag>::semantic_kind == quantity_semantic_kind::absolute);
-	static_assert(has_unit_list<time_tag>);
+	static_assert(
+		std::same_as<
+			force::dimension,
+			dimi<
+				1,
+				-2,
+				1,
+				0
+			>
+		>
+	);
+	static_assert(
+		std::same_as<
+			quantity_tag_traits<closing_speed_tag>::parent_tag,
+			normal_speed_tag
+		>
+	);
+	static_assert(
+		quantity_tag_traits<position_tag>::semantic_kind == quantity_semantic_kind::absolute
+	);
+	static_assert(
+		has_unit_list<time_tag>
+	);
 }

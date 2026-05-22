@@ -5,7 +5,9 @@ import gse;
 import :sandbox_scene;
 
 export namespace gs {
-	auto world_loader_setup(gse::engine& e) -> void;
+	auto world_loader_setup(
+		gse::engine& e
+	) -> void;
 }
 
 auto gs::world_loader_setup(gse::engine& e) -> void {

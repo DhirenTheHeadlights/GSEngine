@@ -19,8 +19,7 @@ export namespace gse::vulkan {
 	public:
 		basic_buffer() = default;
 
-		[[nodiscard]]
-		static auto create(
+		[[nodiscard]] static auto create(
 			Device& dev,
 			const gpu::buffer_desc& desc,
 			std::string_view tag = "",
@@ -35,9 +34,13 @@ export namespace gse::vulkan {
 
 		~basic_buffer() override;
 
-		basic_buffer(basic_buffer&& other) noexcept;
+		basic_buffer(
+			basic_buffer&& other
+		) noexcept;
 
-		auto operator=(basic_buffer&& other) noexcept -> basic_buffer&;
+		auto operator=(
+			basic_buffer&& other
+		) noexcept -> basic_buffer&;
 
 		[[nodiscard]] auto handle() const -> gpu::handle<basic_buffer<device>>;
 
@@ -45,11 +48,18 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto size() const -> gpu::device_size;
 
-		auto host_write(const void* data, std::size_t bytes, std::size_t offset = 0) const -> void;
+		auto host_write(
+			const void* data,
+			std::size_t bytes,
+			std::size_t offset = 0
+		) const -> void;
 
 		template <typename T>
 		requires(!std::is_pointer_v<T>)
-		auto host_write(const T& src, std::size_t offset = 0) const -> void;
+		auto host_write(
+			const T& src,
+			std::size_t offset = 0
+		) const -> void;
 
 		auto host_zero() const -> void;
 
@@ -72,9 +82,13 @@ export namespace gse::vulkan {
 
 	using buffer = basic_buffer<device>;
 
-	auto register_dirty_buffer(const buffer* buf) -> void;
+	auto register_dirty_buffer(
+		const buffer* buf
+	) -> void;
 
-	auto unregister_dirty_buffer(const buffer* buf) -> void;
+	auto unregister_dirty_buffer(
+		const buffer* buf
+	) -> void;
 
 	template <typename T>
 	auto register_dirty_buffer([[maybe_unused]] const T* buf) noexcept -> void {
@@ -159,12 +173,7 @@ gse::vulkan::basic_buffer<Device>::basic_buffer(
 }
 
 template <typename Device>
-auto gse::vulkan::basic_buffer<Device>::create(
-	Device& dev,
-	const gpu::buffer_desc& desc,
-	const std::string_view tag,
-	const std::source_location& loc
-) -> basic_buffer {
+auto gse::vulkan::basic_buffer<Device>::create(Device& dev, const gpu::buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> basic_buffer {
 	return dev.create_buffer(
 		gpu::buffer_create_info{
 			.size = desc.size,
@@ -252,11 +261,7 @@ auto gse::vulkan::basic_buffer<Device>::debug_info() const -> const allocation_d
 }
 
 template <typename Device>
-auto gse::vulkan::basic_buffer<Device>::host_write(
-	const void* data,
-	const std::size_t bytes,
-	const std::size_t offset
-) const -> void {
+auto gse::vulkan::basic_buffer<Device>::host_write(const void* data, const std::size_t bytes, const std::size_t offset) const -> void {
 	assert(m_allocation.mapped(), "Buffer must be persistently mapped to host_write");
 	assert(offset + bytes <= m_size, "host_write extends past buffer size");
 

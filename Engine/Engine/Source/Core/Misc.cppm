@@ -4,7 +4,9 @@ import std;
 
 namespace gse {
 	template <typename T>
-	auto de_ref(T&& val) -> decltype(auto);
+	auto de_ref(
+		T&& val
+	) -> decltype(auto);
 }
 
 export namespace gse {
@@ -14,7 +16,11 @@ export namespace gse {
 		typename Ret,
 		typename... Args
 	>
-	auto bulk_invoke(Container&& container, Ret (T::*func)(Args...) const, Args&&... args) -> void;
+	auto bulk_invoke(
+		Container&& container,
+		Ret (T::*func)(Args...) const,
+		Args&&... args
+	) -> void;
 
 	template <
 		typename Container,
@@ -22,7 +28,11 @@ export namespace gse {
 		typename Ret,
 		typename... Args
 	>
-	auto bulk_invoke(Container&& container, Ret (T::*func)(Args...), Args&&... args) -> void;
+	auto bulk_invoke(
+		Container&& container,
+		Ret (T::*func)(Args...),
+		Args&&... args
+	) -> void;
 
 	template <typename T>
 	concept is_trivially_copyable = std::is_trivially_copyable_v<T>;
@@ -33,22 +43,43 @@ export namespace gse {
 		std::ranges::size(c);
 	};
 
-	auto scope(const std::function<void()>& in_scope) -> void;
+	auto scope(
+		const std::function<void()>& in_scope
+	) -> void;
 
 	template <is_trivially_copyable... Src>
-	auto memcpy(std::byte* dest, const Src&... src) -> void
+	auto memcpy(
+		std::byte* dest,
+		const Src&... src
+	) -> void
 	requires(!std::is_pointer_v<Src> && ...);
 
 	template <contiguous_byte_source Container>
-	auto memcpy(std::byte* dest, const Container& src) -> void;
+	auto memcpy(
+		std::byte* dest,
+		const Container& src
+	) -> void;
 
 	template <is_trivially_copyable T>
-	auto memcpy(T& dest, const std::byte* src) -> void;
+	auto memcpy(
+		T& dest,
+		const std::byte* src
+	) -> void;
 
-	template <is_trivially_copyable T, std::size_t N>
-	auto memcpy(std::byte* dest, const T (&src)[N]) -> void;
+	template <
+		is_trivially_copyable T,
+		std::size_t N
+	>
+	auto memcpy(
+		std::byte* dest,
+		const T (&src)[N]
+	) -> void;
 
-	auto memcpy(std::byte* dest, const void* src, std::size_t size) -> void;
+	auto memcpy(
+		std::byte* dest,
+		const void* src,
+		std::size_t size
+	) -> void;
 }
 
 template <typename T>

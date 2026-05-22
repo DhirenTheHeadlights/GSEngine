@@ -11,8 +11,7 @@ export namespace gse::renderer::capture::mp4 {
 		vec2u extent;
 	};
 
-	[[nodiscard]]
-	auto mux(
+	[[nodiscard]] auto mux(
 		std::span<const gpu::encoded_unit> units,
 		const track_info& track,
 		const std::filesystem::path& out

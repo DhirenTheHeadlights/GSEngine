@@ -23,7 +23,11 @@ export namespace gse::renderer::world_text {
 			per_frame_resource<std::size_t> vertex_capacities;
 		};
 
-		static auto run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<>;
+		static auto run(
+			run_context& ctx,
+			const gpu::context::data& gpu_s,
+			data& d
+		) -> async::task<>;
 
 		static auto frame(
 			const frame_context& ctx,

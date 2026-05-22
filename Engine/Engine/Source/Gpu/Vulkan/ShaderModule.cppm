@@ -16,19 +16,29 @@ export namespace gse::vulkan {
 
 		~shader_module() override = default;
 
-		shader_module(shader_module&&) noexcept = default;
+		shader_module(
+			shader_module&&
+		) noexcept = default;
 
-		auto operator=(shader_module&&) noexcept -> shader_module& = default;
+		auto operator=(
+			shader_module&&
+		) noexcept -> shader_module& = default;
 
-		[[nodiscard]]
-		static auto create(const device& dev, std::span<const std::uint32_t> spirv) -> shader_module;
+		[[nodiscard]] static auto create(
+			const device& dev,
+			std::span<const std::uint32_t> spirv
+		) -> shader_module;
 
-		[[nodiscard]] auto handle(this const shader_module& self) -> gpu::handle<shader_module>;
+		[[nodiscard]] auto handle(
+			this const shader_module& self
+		) -> gpu::handle<shader_module>;
 
 		explicit operator bool() const;
 
 	private:
-		explicit shader_module(vk::raii::ShaderModule&& module);
+		explicit shader_module(
+			vk::raii::ShaderModule&& module
+		);
 
 		vk::raii::ShaderModule m_module = nullptr;
 	};
@@ -37,10 +47,7 @@ export namespace gse::vulkan {
 gse::vulkan::shader_module::shader_module(vk::raii::ShaderModule&& module) : m_module(std::move(module)) {
 }
 
-auto gse::vulkan::shader_module::create(
-	const device& dev,
-	const std::span<const std::uint32_t> spirv
-) -> shader_module {
+auto gse::vulkan::shader_module::create(const device& dev, const std::span<const std::uint32_t> spirv) -> shader_module {
 	aftermath::register_spirv(spirv);
 
 	const vk::ShaderModuleCreateInfo info{

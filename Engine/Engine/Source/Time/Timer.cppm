@@ -10,7 +10,10 @@ import gse.math;
 export namespace gse {
 	class scoped_timer : public clock {
 	public:
-		explicit scoped_timer(std::string name, bool print = true);
+		explicit scoped_timer(
+			std::string name,
+			bool print = true
+		);
 
 		~scoped_timer();
 

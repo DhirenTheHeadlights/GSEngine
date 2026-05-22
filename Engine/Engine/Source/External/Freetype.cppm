@@ -22,10 +22,12 @@ export {
 	using ::FT_Done_Face;
 	using ::FT_Set_Pixel_Sizes;
 	using ::FT_Load_Char;
+	using ::FT_Load_Glyph;
+	using ::FT_Get_Char_Index;
 	using ::FT_Get_Kerning;
 }
 
 export namespace gse {
-	inline constexpr ::FT_Int32 freetype_load_default = FT_LOAD_DEFAULT;
-	inline constexpr ::FT_UInt freetype_kerning_default = FT_KERNING_DEFAULT;
+	inline constexpr ::FT_Int32 freetype_load_no_scale = FT_LOAD_NO_SCALE;
+	inline constexpr ::FT_UInt freetype_kerning_unscaled = FT_KERNING_UNSCALED;
 }

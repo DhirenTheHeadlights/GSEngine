@@ -25,7 +25,10 @@ export namespace gse::gui {
 		std::vector<std::string> tab_tags;
 	};
 
-	auto save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path) -> void;
+	auto save(
+		id_mapped_collection<menu>& menus,
+		const std::filesystem::path& file_path
+	) -> void;
 
 	auto load(
 		const std::filesystem::path& file_path,
@@ -34,17 +37,31 @@ export namespace gse::gui {
 }
 
 namespace gse::gui {
-	auto dock_to_string(dock::location location) -> std::string_view;
+	auto dock_to_string(
+		dock::location location
+	) -> std::string_view;
 
-	auto location_from_string(std::string_view str) -> dock::location;
+	auto location_from_string(
+		std::string_view str
+	) -> dock::location;
 
-	auto join(std::span<const std::string> parts, char sep) -> std::string;
+	auto join(
+		std::span<const std::string> parts,
+		char sep
+	) -> std::string;
 
-	auto split(std::string_view text, char sep) -> std::vector<std::string>;
+	auto split(
+		std::string_view text,
+		char sep
+	) -> std::vector<std::string>;
 
-	auto trim(std::string_view s) -> std::string_view;
+	auto trim(
+		std::string_view s
+	) -> std::string_view;
 
-	auto parse_layout(std::string_view text) -> std::vector<loaded_menu_data>;
+	auto parse_layout(
+		std::string_view text
+	) -> std::vector<loaded_menu_data>;
 }
 
 auto gse::gui::dock_to_string(const dock::location location) -> std::string_view {
@@ -234,10 +251,7 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 	file << out;
 }
 
-auto gse::gui::load(
-	const std::filesystem::path& file_path,
-	id_mapped_collection<menu>& default_menus
-) -> id_mapped_collection<menu> {
+auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
 	if (!std::filesystem::exists(file_path)) {
 		id_mapped_collection<menu> menus_to_save = default_menus;
 		save(menus_to_save, file_path);

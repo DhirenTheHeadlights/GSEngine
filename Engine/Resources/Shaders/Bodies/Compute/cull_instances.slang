@@ -15,15 +15,16 @@ bool is_aabb_in_frustum(float3 aabb_min, float3 aabb_max) {
     return true;
 }
 
-// entry:
-uint batch_idx = group_id.x;
-batch_info batch = batches[pc.batch_offset + batch_idx];
+void cull_instances(uint3 group_id) {
+    uint batch_idx = group_id.x;
+    batch_info batch = batches[pc.batch_offset + batch_idx];
 
-bool batch_visible = true;
-if (batch.instance_count > 0) {
-    batch_visible = is_aabb_in_frustum(batch.aabb_min, batch.aabb_max);
+    bool batch_visible = true;
+    if (batch.instance_count > 0) {
+        batch_visible = is_aabb_in_frustum(batch.aabb_min, batch.aabb_max);
+    }
+
+    uint cullable_count = batch_visible ? batch.instance_count : 0;
+    uint byte_offset = batch_idx * pc.indirect_stride + cullable_count_byte_offset;
+    indirect_commands.Store(byte_offset, cullable_count);
 }
-
-uint cullable_count = batch_visible ? batch.instance_count : 0;
-uint byte_offset = batch_idx * pc.indirect_stride + cullable_count_byte_offset;
-indirect_commands.Store(byte_offset, cullable_count);

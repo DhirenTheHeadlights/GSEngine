@@ -18,7 +18,9 @@ export namespace gse {
 	constexpr same_frame_channel_tag same_frame_channel{};
 
 	template <typename Tag>
-	consteval auto has_annotation(std::meta::info member) -> bool;
+	consteval auto has_annotation(
+		std::meta::info member
+	) -> bool;
 
 	template <typename Source, typename Tag>
 	struct project_holder;
@@ -72,9 +74,14 @@ export namespace gse {
 	};
 
 	template <typename Schema>
-	consteval auto find_field_by_name(std::string_view name) -> std::meta::info;
+	consteval auto find_field_by_name(
+		std::string_view name
+	) -> std::meta::info;
 
-	template <typename Schema, typename T>
+	template <
+		typename Schema,
+		typename T
+	>
 	consteval auto apply_annotations() -> std::optional<Schema>;
 }
 

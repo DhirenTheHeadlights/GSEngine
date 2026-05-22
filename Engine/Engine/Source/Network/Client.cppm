@@ -41,20 +41,30 @@ export namespace gse::network {
 			connected
 		};
 
-		client(const address& listen, const address& server);
+		client(
+			const address& listen,
+			const address& server
+		);
 
 		~client();
 
-		auto connect(time_t<std::uint32_t> timeout = seconds(5), time_t<std::uint32_t> retry = seconds(1)) -> bool;
+		auto connect(
+			time_t<std::uint32_t> timeout = seconds(5),
+			time_t<std::uint32_t> retry = seconds(1)
+		) -> bool;
 
 		auto tick() -> void;
 
 		auto current_state() const -> state;
 
 		template <typename T>
-		auto send(const T& msg) -> void;
+		auto send(
+			const T& msg
+		) -> void;
 
-		auto drain(const std::function<void(raw_message&)>& on_receive) -> void;
+		auto drain(
+			const std::function<void(raw_message&)>& on_receive
+		) -> void;
 
 		auto push_input(
 			const actions::state& s,
@@ -287,12 +297,7 @@ auto gse::network::client::drain(const std::function<void(raw_message&)>& on_rec
 	}
 }
 
-auto gse::network::client::push_input(
-	const actions::state& s,
-	std::span<const std::uint16_t> axis1_ids,
-	std::span<const std::uint16_t> axis2_ids,
-	const angle camera_yaw
-) -> void {
+auto gse::network::client::push_input(const actions::state& s, std::span<const std::uint16_t> axis1_ids, std::span<const std::uint16_t> axis2_ids, const angle camera_yaw) -> void {
 	input_snapshot snap;
 	snap.state = s;
 	snap.axis1_ids.assign(axis1_ids.begin(), axis1_ids.end());

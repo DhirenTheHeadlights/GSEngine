@@ -53,13 +53,7 @@ namespace gse::gui::draw {
 	std::unordered_map<std::uint64_t, input_state> global_input_state;
 }
 
-auto gse::gui::draw::input(
-	const draw_context& ctx,
-	const std::string& name,
-	std::string& buffer,
-	id& hot_widget_id,
-	id& focus_widget_id
-) -> void {
+auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std::string& buffer, id& hot_widget_id, id& focus_widget_id) -> void {
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -301,7 +295,7 @@ auto gse::gui::draw::input(
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = label_rect
@@ -316,7 +310,8 @@ auto gse::gui::draw::input(
 
 	constexpr float text_padding = 5.f;
 	const ui_rect clip_rect = box_rect.inset({ text_padding, 0.f });
-	const vec2f text_pos = { box_rect.left() + text_padding, box_rect.center().y() + ctx.style.font_size / 2.f };
+	const vec2f text_pos = { box_rect.left() + text_padding,
+							 box_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) };
 
 	if (focused && has_sel(state)) {
 		auto [a, b] = sel_range(state);

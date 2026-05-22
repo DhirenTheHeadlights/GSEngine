@@ -62,12 +62,7 @@ namespace gse::renderer::depth_prepass::meshlet {
 	>;
 }
 
-auto gse::renderer::depth_prepass::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const asset::data& assets_s,
-	data& d
-) -> async::task<> {
+auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.meshlet_pipeline = gpu::build_graphics_pipeline(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
@@ -99,13 +94,7 @@ auto gse::renderer::depth_prepass::system::run(
 	co_return;
 }
 
-auto gse::renderer::depth_prepass::system::frame(
-	frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	const data& d,
-	shared_view<geometry_collector::system> gc_r,
-	shared_view<camera::system> cam_state
-) -> async::task<> {
+auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<geometry_collector::system> gc_r, shared_view<camera::system> cam_state) -> async::task<> {
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
@@ -139,9 +128,9 @@ auto gse::renderer::depth_prepass::system::frame(
 	);
 
 	auto rec = co_await gpu::pass<system>(ctx)
-				   .pipeline(d.meshlet_pipeline)
-				   .depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
-				   .after<cull_compute::system, physics_transform::system>();
+		.pipeline(d.meshlet_pipeline)
+		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
+		.after<cull_compute::system, physics_transform::system>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

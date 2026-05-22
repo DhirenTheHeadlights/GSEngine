@@ -25,7 +25,12 @@ export namespace gs {
 	auto spawn_humanoid(
 		gse::scene& s,
 		const gse::vec3<gse::position>& root_position,
-		const gse::quat& root_orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
+		const gse::quat& root_orientation = gse::quat(
+			1.f,
+			0.f,
+			0.f,
+			0.f
+		)
 	) -> skeleton_handle;
 }
 
@@ -116,150 +121,135 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 
 	s.bones.push_back({
 		.name = "pelvis",
-		.shape =
-			box_shape{
-				.size = pelvis.size
-			},
+		.shape = box_shape{
+			.size = pelvis.size
+		},
 		.mass = pelvis.mass
 	});
 	s.bones.push_back({
 		.name = "torso",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), torso_offset_y, gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = torso.size
-			},
+		.shape = box_shape{
+			.size = torso.size
+		},
 		.mass = torso.mass,
 	});
 	s.bones.push_back({
 		.name = "head",
 		.parent_index = 1,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), head_offset_y, gse::meters(0.f)),
-		.shape =
-			sphere_shape{
-				.radius = head_radius
-			},
+		.shape = sphere_shape{
+			.radius = head_radius
+		},
 		.mass = gse::kilograms(6.f),
 	});
 	s.bones.push_back({
 		.name = "upper_arm_l",
 		.parent_index = 1,
 		.local_offset = gse::vec3<gse::displacement>(-shoulder_offset_x, shoulder_offset_y, gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = upper_arm.size
-			},
+		.shape = box_shape{
+			.size = upper_arm.size
+		},
 		.mass = upper_arm.mass,
 	});
 	s.bones.push_back({
 		.name = "forearm_l",
 		.parent_index = 3,
 		.local_offset = gse::vec3<gse::displacement>(-forearm_offset_x, gse::meters(0.f), gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = forearm.size
-			},
+		.shape = box_shape{
+			.size = forearm.size
+		},
 		.mass = forearm.mass,
 	});
 	s.bones.push_back({
 		.name = "hand_l",
 		.parent_index = 4,
 		.local_offset = gse::vec3<gse::displacement>(-hand_offset_x, gse::meters(0.f), gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = hand.size
-			},
+		.shape = box_shape{
+			.size = hand.size
+		},
 		.mass = hand.mass,
 	});
 	s.bones.push_back({
 		.name = "upper_arm_r",
 		.parent_index = 1,
 		.local_offset = gse::vec3<gse::displacement>(shoulder_offset_x, shoulder_offset_y, gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = upper_arm.size
-			},
+		.shape = box_shape{
+			.size = upper_arm.size
+		},
 		.mass = upper_arm.mass,
 	});
 	s.bones.push_back({
 		.name = "forearm_r",
 		.parent_index = 6,
 		.local_offset = gse::vec3<gse::displacement>(forearm_offset_x, gse::meters(0.f), gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = forearm.size
-			},
+		.shape = box_shape{
+			.size = forearm.size
+		},
 		.mass = forearm.mass,
 	});
 	s.bones.push_back({
 		.name = "hand_r",
 		.parent_index = 7,
 		.local_offset = gse::vec3<gse::displacement>(hand_offset_x, gse::meters(0.f), gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = hand.size
-			},
+		.shape = box_shape{
+			.size = hand.size
+		},
 		.mass = hand.mass,
 	});
 	s.bones.push_back({
 		.name = "thigh_l",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(-hip_offset_x, hip_offset_y, gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = thigh.size
-			},
+		.shape = box_shape{
+			.size = thigh.size
+		},
 		.mass = thigh.mass,
 	});
 	s.bones.push_back({
 		.name = "shin_l",
 		.parent_index = 9,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), shin_offset_y, gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = shin.size
-			},
+		.shape = box_shape{
+			.size = shin.size
+		},
 		.mass = shin.mass,
 	});
 	s.bones.push_back({
 		.name = "foot_l",
 		.parent_index = 10,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), foot_offset_y, foot_offset_z),
-		.shape =
-			box_shape{
-				.size = foot.size
-			},
+		.shape = box_shape{
+			.size = foot.size
+		},
 		.mass = foot.mass,
 	});
 	s.bones.push_back({
 		.name = "thigh_r",
 		.parent_index = 0,
 		.local_offset = gse::vec3<gse::displacement>(hip_offset_x, hip_offset_y, gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = thigh.size
-			},
+		.shape = box_shape{
+			.size = thigh.size
+		},
 		.mass = thigh.mass,
 	});
 	s.bones.push_back({
 		.name = "shin_r",
 		.parent_index = 12,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), shin_offset_y, gse::meters(0.f)),
-		.shape =
-			box_shape{
-				.size = shin.size
-			},
+		.shape = box_shape{
+			.size = shin.size
+		},
 		.mass = shin.mass,
 	});
 	s.bones.push_back({
 		.name = "foot_r",
 		.parent_index = 13,
 		.local_offset = gse::vec3<gse::displacement>(gse::meters(0.f), foot_offset_y, foot_offset_z),
-		.shape =
-			box_shape{
-				.size = foot.size
-			},
+		.shape = box_shape{
+			.size = foot.size
+		},
 		.mass = foot.mass,
 	});
 
@@ -272,13 +262,12 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		s.joints.push_back({
 			.bone_a = a,
 			.bone_b = b,
-			.config =
-				hinge_joint{
-					.anchor_a = anchor_a,
-					.anchor_b = anchor_b,
-					.axis = axis,
-					.limits = limits,
-				},
+			.config = hinge_joint{
+				.anchor_a = anchor_a,
+				.anchor_b = anchor_b,
+				.axis = axis,
+				.limits = limits,
+			},
 		});
 	};
 
@@ -289,11 +278,10 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		s.joints.push_back({
 			.bone_a = a,
 			.bone_b = b,
-			.config =
-				fixed_joint{
-					.anchor_a = anchor_a,
-					.anchor_b = anchor_b,
-				},
+			.config = fixed_joint{
+				.anchor_a = anchor_a,
+				.anchor_b = anchor_b,
+			},
 		});
 	};
 
@@ -305,12 +293,11 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		s.joints.push_back({
 			.bone_a = a,
 			.bone_b = b,
-			.config =
-				ball_joint{
-					.anchor_a = anchor_a,
-					.anchor_b = anchor_b,
-					.rest_stiffness = rest_stiffness,
-				},
+			.config = ball_joint{
+				.anchor_a = anchor_a,
+				.anchor_b = anchor_b,
+				.rest_stiffness = rest_stiffness,
+			},
 		});
 	};
 
@@ -487,6 +474,10 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 	const auto thigh_back_z = -thigh.size.z() * 0.5f;
 	const auto shin_front_z = shin.size.z() * 0.5f;
 	const auto shin_back_z = -shin.size.z() * 0.5f;
+	const auto knee_thigh_front_z = thigh.size.z() * 0.9f;
+	const auto knee_thigh_back_z = -thigh.size.z() * 0.9f;
+	const auto knee_shin_front_z = shin.size.z() * 0.9f;
+	const auto knee_shin_back_z = -shin.size.z() * 0.9f;
 
 	add_muscle_pair(
 		1,
@@ -531,10 +522,10 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 	const auto [knee_l_flex, knee_l_ext] = add_muscle_pair(
 		9,
 		10,
-		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, thigh_back_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, shin_back_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, thigh_front_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, shin_front_z)
+		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, knee_thigh_back_z),
+		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, knee_shin_back_z),
+		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, knee_thigh_front_z),
+		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, knee_shin_front_z)
 	);
 	const auto [hip_r_flex, hip_r_ext] = add_muscle_pair(
 		0,
@@ -547,10 +538,10 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 	const auto [knee_r_flex, knee_r_ext] = add_muscle_pair(
 		12,
 		13,
-		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, thigh_back_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, shin_back_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, thigh_front_z),
-		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, shin_front_z)
+		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, knee_thigh_back_z),
+		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, knee_shin_back_z),
+		gse::vec3<gse::displacement>(gse::meters(0.f), -thigh_distal_offset, knee_thigh_front_z),
+		gse::vec3<gse::displacement>(gse::meters(0.f), shin_proximal_offset, knee_shin_front_z)
 	);
 
 	rig.controlled.push_back({
@@ -581,11 +572,7 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 	return rig;
 }
 
-auto gs::spawn_humanoid(
-	gse::scene& s,
-	const gse::vec3<gse::position>& root_position,
-	const gse::quat& root_orientation
-) -> skeleton_handle {
+auto gs::spawn_humanoid(gse::scene& s, const gse::vec3<gse::position>& root_position, const gse::quat& root_orientation) -> skeleton_handle {
 	const auto rig = humanoid_rig_default();
 	auto handle = spawn_skeleton(s, rig.skel, root_position, root_orientation);
 

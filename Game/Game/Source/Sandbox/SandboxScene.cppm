@@ -3,14 +3,16 @@ export module gs:sandbox_scene;
 import std;
 import gse;
 
-import :balance;
 import :entity_builders;
 import :humanoid_skeleton;
+import :locomotion_types;
 import :orbit_camera;
 import :player;
 
 export namespace gs {
-	auto sandbox_scene_setup(gse::scene& s) -> void;
+	auto sandbox_scene_setup(
+		gse::scene& s
+	) -> void;
 }
 
 auto gs::sandbox_scene_setup(gse::scene& s) -> void {
@@ -35,16 +37,26 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 	});
 
 	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
-	s.spawn("Floor", gs::static_collider(gse::vec3<gse::position>(0.f, -0.5f, 0.f), floor_size));
+	s.spawn(
+		"Floor",
+		gs::static_box(
+			gse::vec3<gse::position>(0.f, -0.5f, 0.f),
+			floor_size,
+			gse::quat(1.f, 0.f, 0.f, 0.f),
+			gse::vec3f(0.08f, 0.08f, 0.09f),
+			0.45f,
+			0.0f
+		)
+	);
 
 	s.build("Sun").with<gse::directional_light_component>({
 		.color = gse::vec3f(1.0f, 0.97f, 0.92f),
-		.intensity = 1.6f,
+		.intensity = gse::watts_per_square_meter(1.6f),
 		.direction = gse::vec3f(0.25f, -1.0f, 0.15f),
 		.ambient_strength = 0.18f,
 	});
 
-	const auto player_initial_pos = gse::vec3<gse::position>(0.f, 1.05f, 0.f);
+	const auto player_initial_pos = gse::vec3<gse::position>(0.f, 1.005f, 0.f);
 	const auto player_initial_yaw = gse::degrees(-90.f);
 	const auto player_initial_orientation = gse::quat(gse::vec3f(0.f, 1.f, 0.f), player_initial_yaw);
 	const auto humanoid_handle = gs::spawn_humanoid(s, player_initial_pos, player_initial_orientation);
@@ -56,37 +68,40 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 		}
 	}
 
-	s.registry().add_component<gse::physics::motor_component>(
+	s.registry().add_component<gs::locomotion::skeleton_refs>(
 		pelvis_id,
 		{
-			.requires_ground_contact = false,
-			.max_force = gse::newtons(600.f),
+			.pelvis_id = pelvis_id,
+			.thigh_l_id = humanoid_handle.bone_ids[9],
+			.shin_l_id = humanoid_handle.bone_ids[10],
+			.foot_l_id = humanoid_handle.bone_ids[11],
+			.thigh_r_id = humanoid_handle.bone_ids[12],
+			.shin_r_id = humanoid_handle.bone_ids[13],
+			.foot_r_id = humanoid_handle.bone_ids[14],
+			.hip_l_joint_id = humanoid_handle.joint_ids[8],
+			.knee_l_joint_id = humanoid_handle.joint_ids[9],
+			.hip_r_joint_id = humanoid_handle.joint_ids[11],
+			.knee_r_joint_id = humanoid_handle.joint_ids[12],
+			.thigh_length = gse::meters(0.45f),
+			.shin_length = gse::meters(0.40f),
+			.hip_offset_lateral = gse::meters(0.075f),
+			.hip_offset_below_pelvis = gse::meters(0.10f),
+			.pelvis_target_height = gse::meters(0.95f),
 		}
 	);
 
-	s.registry().add_component<gs::balance::component>(
-		pelvis_id,
-		{
-			.support_a = humanoid_handle.bone_ids[11],
-			.support_b = humanoid_handle.bone_ids[14],
-			.response_time = gse::seconds(0.5f),
-			.damping = 4.0f,
-			.max_correction = gse::meters_per_second(1.0f),
-		}
-	);
+	s.registry().add_component<gs::locomotion::intent>(pelvis_id, {});
+	s.registry().add_component<gs::locomotion::state>(pelvis_id, {});
+	s.registry().add_component<gs::locomotion::gait>(pelvis_id, {});
+	s.registry().add_component<gs::locomotion::plan>(pelvis_id, {});
+	s.registry().add_component<gs::locomotion::leg_context>(pelvis_id, {});
 
 	const auto player_id = s.build("Player")
-							   .with<gs::player::component>({
-								   .initial_position = player_initial_pos,
-								   .pelvis_id = pelvis_id,
-								   .hip_l_id = humanoid_handle.joint_ids[8],
-								   .knee_l_id = humanoid_handle.joint_ids[9],
-								   .hip_r_id = humanoid_handle.joint_ids[11],
-								   .knee_r_id = humanoid_handle.joint_ids[12],
-								   .foot_l_id = humanoid_handle.bone_ids[11],
-								   .foot_r_id = humanoid_handle.bone_ids[14],
-							   })
-							   .identify();
+		.with<gs::player::component>({
+			.pelvis_id = pelvis_id,
+			.yaw = player_initial_yaw,
+		})
+		.identify();
 
 	s.build("Orbit Camera")
 		.with<gs::orbit_camera::component>({

@@ -56,13 +56,24 @@ export namespace gse {
 	public:
 		bounding_box() = default;
 
-		bounding_box(const physics::transform_component& tc, const physics::box_shape& shape);
+		bounding_box(
+			const physics::transform_component& tc,
+			const physics::box_shape& shape
+		);
 
-		bounding_box(const physics::transform_component& tc, const physics::sphere_shape& shape);
+		bounding_box(
+			const physics::transform_component& tc,
+			const physics::sphere_shape& shape
+		);
 
-		bounding_box(const physics::transform_component& tc, const physics::capsule_shape& shape);
+		bounding_box(
+			const physics::transform_component& tc,
+			const physics::capsule_shape& shape
+		);
 
-		explicit bounding_box(const physics::transform_component& tc);
+		explicit bounding_box(
+			const physics::transform_component& tc
+		);
 
 		auto aabb() const -> aabb;
 
@@ -72,13 +83,22 @@ export namespace gse {
 
 		auto half_extents() const -> vec3<displacement>;
 
-		auto face_normals() const -> std::array<vec3f, 6>;
+		auto face_normals() const -> std::array<
+			vec3f,
+			6
+		>;
 
-		auto face_vertices(std::uint32_t face_index) const -> std::array<vec3<position>, 4>;
+		auto face_vertices(
+			std::uint32_t face_index
+		) const -> std::array<vec3<position>,
+							  4>;
 
 		auto obb_vertices() const -> std::vector<vec3<position>>;
 
-		auto edge_endpoints(std::uint32_t edge_index) const -> std::pair<vec3<position>, vec3<position>>;
+		auto edge_endpoints(
+			std::uint32_t edge_index
+		) const -> std::pair<vec3<position>,
+							 vec3<position>>;
 
 		static constexpr std::uint32_t edge_count = 12;
 
@@ -193,9 +213,7 @@ auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<position>> {
 	return corners;
 }
 
-auto gse::bounding_box::edge_endpoints(
-	const std::uint32_t edge_index
-) const -> std::pair<vec3<position>, vec3<position>> {
+auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const -> std::pair<vec3<position>, vec3<position>> {
 	const auto vertices = obb_vertices();
 
 	static constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 12> edge_indices = { { { 0, 1 },

@@ -8,9 +8,13 @@ export namespace gse::gpu {
 	struct handle {
 		std::uint64_t value = 0;
 
-		constexpr auto operator==(const handle&) const -> bool = default;
+		constexpr auto operator==(
+			const handle&
+		) const -> bool = default;
 
-		constexpr auto operator<=>(const handle&) const = default;
+		constexpr auto operator<=>(
+			const handle&
+		) const = default;
 
 		explicit constexpr operator bool() const {
 			return value != 0;

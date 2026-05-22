@@ -27,7 +27,9 @@ namespace gse::vulkan {
 
 	auto default_shader_directory() -> std::filesystem::path;
 
-	auto build_diagnostics_flags(const aftermath::settings& cfg) -> vk::DeviceDiagnosticsConfigFlagsNV;
+	auto build_diagnostics_flags(
+		const aftermath::settings& cfg
+	) -> vk::DeviceDiagnosticsConfigFlagsNV;
 
 	auto write_dump_to_disk(
 		const std::filesystem::path& directory,
@@ -38,7 +40,9 @@ namespace gse::vulkan {
 	) -> std::filesystem::path;
 
 #ifdef GSE_HAVE_AFTERMATH
-	auto translate_result(GFSDK_Aftermath_Result r) -> std::string;
+	auto translate_result(
+		GFSDK_Aftermath_Result r
+	) -> std::string;
 #endif
 }
 
@@ -67,13 +71,7 @@ auto gse::vulkan::build_diagnostics_flags(const aftermath::settings& cfg) -> vk:
 	return flags;
 }
 
-auto gse::vulkan::write_dump_to_disk(
-	const std::filesystem::path& directory,
-	const std::string& stem,
-	std::string_view extension,
-	const void* data,
-	std::size_t size
-) -> std::filesystem::path {
+auto gse::vulkan::write_dump_to_disk(const std::filesystem::path& directory, const std::string& stem, std::string_view extension, const void* data, std::size_t size) -> std::filesystem::path {
 	std::error_code ec;
 	std::filesystem::create_directories(directory, ec);
 
@@ -228,9 +226,7 @@ auto gse::vulkan::aftermath::wait_for_crash_dump(time timeout) -> void {
 		if (!GFSDK_Aftermath_SUCCEED(result)) {
 			return;
 		}
-		if (
-			status == GFSDK_Aftermath_CrashDump_Status_Finished || status == GFSDK_Aftermath_CrashDump_Status_NotStarted
-		) {
+		if (status == GFSDK_Aftermath_CrashDump_Status_Finished || status == GFSDK_Aftermath_CrashDump_Status_NotStarted) {
 			return;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));

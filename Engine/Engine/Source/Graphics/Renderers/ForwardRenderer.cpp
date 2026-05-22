@@ -124,15 +124,7 @@ namespace gse::renderer::forward {
 	>;
 }
 
-auto gse::renderer::forward::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const asset::data& assets_s,
-	const rt_shadow::system::data& rt_state,
-	const light_culling::system::data& lc_r,
-	const atmosphere::system::data& atm_state,
-	data& d
-) -> async::task<> {
+auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, const atmosphere::system::data& atm_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_pipeline(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
@@ -223,14 +215,7 @@ auto gse::renderer::forward::system::run(
 	co_return;
 }
 
-auto gse::renderer::forward::system::frame(
-	frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d,
-	shared_view<camera::system> cam_state,
-	shared_view<geometry_collector::system> gc_r,
-	shared_view<light_culling::system> lc_r
-) -> async::task<> {
+auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<geometry_collector::system> gc_r, shared_view<light_culling::system> lc_r, shared_view<atmosphere::system> atm_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -239,19 +224,19 @@ auto gse::renderer::forward::system::frame(
 	if (render_items.empty()) {
 		const auto ext = gpu_s.render_graph->extent();
 		auto rec = co_await gpu::pass<system>(ctx)
-					   .color(
-						   gpu::clear_color(
-							   gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
-							   gpu_s.render_graph->framebuffer_image<targets::hdr_color>()
-						   )
-					   )
-					   .depth(
-						   gpu::clear_depth(
-							   gpu::depth_clear{
-								   .depth = 1.0f
-							   }
-						   )
-					   );
+			.color(
+				gpu::clear_color(
+					gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
+					gpu_s.render_graph->framebuffer_image<targets::hdr_color>()
+				)
+			)
+			.depth(
+				gpu::clear_depth(
+					gpu::depth_clear{
+						.depth = 1.0f
+					}
+				)
+			);
 		rec.set_viewport(ext);
 		rec.set_scissor(ext);
 		co_return;
@@ -275,11 +260,29 @@ auto gse::renderer::forward::system::frame(
 	auto spot_chunk = ctx.components<spot_light_component>();
 	auto point_chunk = ctx.components<point_light_component>();
 
-	const std::size_t total_lights = std::min(dir_chunk.size() + spot_chunk.size() + point_chunk.size(), max_lights);
+	const bool inject_atmosphere_sun = dir_chunk.empty();
+	const std::size_t total_lights = std::min(
+		dir_chunk.size() + spot_chunk.size() + point_chunk.size() + (inject_atmosphere_sun ? 1u : 0u),
+		max_lights
+	);
 	auto& staging = d.light_staging;
 	staging.assign(total_lights * sizeof(shaders::forward::light), std::byte{ 0 });
 	auto* staging_lights = reinterpret_cast<shaders::forward::light*>(staging.data());
 	std::size_t light_count = 0;
+
+	if (inject_atmosphere_sun && light_count < max_lights) {
+		const auto sun_to_surface = -atm_state.sun_direction;
+		staging_lights[light_count] = {
+			.light_type = shaders::forward::light_type::directional,
+			.direction = view.transform_direction(sun_to_surface),
+			.world_direction = sun_to_surface,
+			.color = atm_state.sun_color,
+			.intensity = atm_state.sun_intensity,
+			.ambient_strength = 0.1f,
+			.source_radius = gse::meters(0.05f),
+		};
+		++light_count;
+	}
 
 	for (const auto& comp : dir_chunk) {
 		if (light_count >= max_lights) {
@@ -387,17 +390,21 @@ auto gse::renderer::forward::system::frame(
 		meshlet_entry::pod
 	);
 
-	auto rec =
-		co_await gpu::pass<system>(ctx)
-			.pipeline(d.pipeline)
-			.color(
-				gpu::clear_color(
-					gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
-					gpu_s.render_graph->framebuffer_image<targets::hdr_color>()
-				)
+	auto rec = co_await gpu::pass<system>(ctx)
+		.pipeline(d.pipeline)
+		.color(
+			gpu::clear_color(
+				gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f },
+				gpu_s.render_graph->framebuffer_image<targets::hdr_color>()
 			)
-			.depth(gpu::load_depth())
-			.after<rt_shadow::system, light_culling::system, depth_prepass::system, atmosphere::ap_compute_pass>();
+		)
+		.depth(gpu::load_depth())
+		.after<
+			rt_shadow::system,
+			light_culling::system,
+			depth_prepass::system,
+			atmosphere::ap_compute_pass
+		>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 

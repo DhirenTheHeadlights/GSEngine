@@ -55,16 +55,12 @@ namespace gse::renderer::tonemap {
 	) -> void;
 }
 
-auto gse::renderer::tonemap::rewrite_descriptors(
-	const gpu::context::data& gpu_s,
-	const bloom::system::data& bloom_state,
-	system::data& d
-) -> void {
+auto gse::renderer::tonemap::rewrite_descriptors(const gpu::context::data& gpu_s, const bloom::system::data& bloom_state, system::data& d) -> void {
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::hdr_color>();
 	if (!hdr.handle()) {
 		return;
 	}
-	const auto& bloom_source = bloom_state.active_mip_count > 0 ? bloom_state.mips_up[0] : hdr;
+	const auto& bloom_source = bloom_state.active_mip_count > 0 ? bloom_state.mips_down[0] : hdr;
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i])
 			.combined_image_sampler<hdr_color>(hdr, d.sampler)
@@ -73,12 +69,7 @@ auto gse::renderer::tonemap::rewrite_descriptors(
 	}
 }
 
-auto gse::renderer::tonemap::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const bloom::system::data& bloom_state,
-	data& d
-) -> async::task<> {
+auto gse::renderer::tonemap::system::run(run_context& ctx, const gpu::context::data& gpu_s, const bloom::system::data& bloom_state, data& d) -> async::task<> {
 	d.pipeline =
 		gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
@@ -107,12 +98,7 @@ auto gse::renderer::tonemap::system::run(
 	co_return;
 }
 
-auto gse::renderer::tonemap::system::frame(
-	const frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d,
-	shared_view<bloom::system> bloom_state
-) -> async::task<> {
+auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<bloom::system> bloom_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -124,6 +110,7 @@ auto gse::renderer::tonemap::system::frame(
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 	const auto ext = gpu_s.render_graph->extent();
+
 	const bool bloom_active =
 		bloom_state.bloom_quality != bloom::quality_level::off && bloom_state.active_mip_count > 0;
 
@@ -136,19 +123,19 @@ auto gse::renderer::tonemap::system::frame(
 	};
 
 	auto rec = co_await gpu::pass<system>(ctx)
-				   .pipeline(d.pipeline)
-				   .color(gpu::clear_color(gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f }))
-				   .after<
-					   forward::system,
-					   physics_debug::system,
-					   sdf_grid::system,
-					   world_text::system,
-					   bloom::upsample_pass
-				   >();
+		.pipeline(d.pipeline)
+		.color(gpu::clear_color(gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f }))
+		.after<
+			forward::system,
+			physics_debug::system,
+			sdf_grid::system,
+			world_text::system,
+			bloom::downsample_pass
+		>();
 
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::fragment_shader);
 	if (bloom_active) {
-		rec.sample_image(bloom_state.mips_up[0], gpu::pipeline_stage_flag::fragment_shader);
+		rec.sample_image(bloom_state.mips_down[0], gpu::pipeline_stage_flag::fragment_shader);
 	}
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

@@ -72,12 +72,7 @@ auto gse::renderer::sdf_grid::system::run(run_context& ctx, const gpu::context::
 	co_return;
 }
 
-auto gse::renderer::sdf_grid::system::frame(
-	const frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d,
-	shared_view<camera::system> cam_state
-) -> async::task<> {
+auto gse::renderer::sdf_grid::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -116,10 +111,10 @@ auto gse::renderer::sdf_grid::system::frame(
 	};
 
 	auto rec = co_await gpu::pass<system>(ctx)
-				   .pipeline(d.pipeline)
-				   .color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
-				   .depth(gpu::load_depth())
-				   .after<forward::system, atmosphere::sky_raster_pass>();
+		.pipeline(d.pipeline)
+		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
+		.depth(gpu::load_depth())
+		.after<forward::system, atmosphere::sky_raster_pass>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

@@ -6,9 +6,13 @@ import gse.moodycamel;
 export namespace gse::frame_sync {
 	using callback = std::function<void()>;
 
-	auto on_begin(callback cb) -> void;
+	auto on_begin(
+		callback cb
+	) -> void;
 
-	auto on_end(callback cb) -> void;
+	auto on_end(
+		callback cb
+	) -> void;
 
 	auto begin() -> void;
 
@@ -22,7 +26,10 @@ namespace gse::frame_sync {
 	std::vector<callback> begin_list;
 	std::vector<callback> end_list;
 
-	auto drain(moodycamel::ConcurrentQueue<callback>& q, std::vector<callback>& out) -> void;
+	auto drain(
+		moodycamel::ConcurrentQueue<callback>& q,
+		std::vector<callback>& out
+	) -> void;
 }
 
 auto gse::frame_sync::on_begin(callback cb) -> void {

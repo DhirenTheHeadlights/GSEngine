@@ -1,0 +1,133 @@
+export module gse.graphics:cloud_renderer;
+
+import std;
+
+import :atmosphere_renderer;
+import :camera_system;
+
+import gse.gpu;
+import gse.core;
+import gse.containers;
+import gse.concurrency;
+import gse.ecs;
+import gse.meta;
+import gse.math;
+
+export namespace gse::renderer::cloud {
+	constexpr vec3u shape_noise_size{ 128, 128, 128 };
+	constexpr vec3u detail_noise_size{ 32, 32, 32 };
+	constexpr std::uint32_t cloud_target_divisor = 2;
+
+	struct cloud_raymarch_pass {};
+	struct cloud_composite_pass {};
+
+	using atmosphere_length = atmosphere::atmosphere_length;
+	using atmosphere_inverse_length = atmosphere::atmosphere_inverse_length;
+
+	struct [[= shaders::shader_struct]] cloud_data {
+		atmosphere_length cloud_bottom;
+		atmosphere_length cloud_top;
+		float cloud_coverage;
+		float cloud_type;
+
+		float density_multiplier;
+		float view_extinction;
+		float light_extinction;
+		atmosphere_inverse_length shape_scale;
+
+		atmosphere_inverse_length detail_scale;
+		float detail_strength;
+		float phase_g_forward;
+		float phase_g_back;
+
+		float phase_blend;
+		float ambient_strength;
+		atmosphere_length max_distance;
+	};
+
+	struct [[= shaders::binding<0, 5>{}]] cloud_ubo {
+		using element = cloud_data;
+	};
+
+	struct system {
+		struct [[= gse::settings::category<"Clouds">{}]] data {
+			[[= gse::settings::describe<"Cloud layer bottom altitude (km)">{}]] atmosphere_length cloud_bottom = kilometers(1.5f);
+
+			[[= gse::settings::describe<"Cloud layer top altitude (km)">{}]] atmosphere_length cloud_top = kilometers(6.0f);
+
+			[[
+				= gse::settings::describe<"Global cloud coverage (0 = clear sky, 1 = overcast)">{},
+				= gse::shared
+			]] float cloud_coverage = 0.55f;
+
+			[[
+				= gse::settings::describe<"Cloud type bias (0 = stratus, 1 = cumulus)">{},
+				= gse::shared
+			]] float cloud_type = 0.7f;
+
+			[[= gse::settings::describe<"Cloud density multiplier">{}]] float density_multiplier = 1.0f;
+
+			[[= gse::settings::describe<"View-ray Beer's law extinction coefficient">{}]] float view_extinction = 0.15f;
+
+			[[= gse::settings::describe<"Light-ray Beer's law extinction coefficient">{}]] float light_extinction = 0.10f;
+
+			[[= gse::settings::describe<"Shape noise sampling scale (1/km)">{}]] atmosphere_inverse_length shape_scale = per_kilometer(0.4f);
+
+			[[= gse::settings::describe<"Detail noise sampling scale (1/km)">{}]] atmosphere_inverse_length detail_scale = per_kilometer(3.5f);
+
+			[[= gse::settings::describe<"Detail erosion strength">{}]] float detail_strength = 0.35f;
+
+			[[= gse::settings::describe<"Henyey-Greenstein forward asymmetry">{}]] float phase_g_forward = 0.80f;
+
+			[[= gse::settings::describe<"Henyey-Greenstein back asymmetry">{}]] float phase_g_back = -0.30f;
+
+			[[= gse::settings::describe<"Dual-lobe phase blend (0 = back only, 1 = forward only)">{}]] float phase_blend = 0.65f;
+
+			[[= gse::settings::describe<"Ambient sky contribution into clouds">{}]] float ambient_strength = 1.0f;
+
+			[[= gse::settings::describe<"Maximum cloud raymarch distance (km)">{}]] atmosphere_length max_distance = kilometers(80.0f);
+
+			[[= gse::settings::describe<"Cloud wind velocity in world space (km/s)">{}]] vec3<atmosphere_length> wind_offset = { kilometers(0.0f), kilometers(0.0f), kilometers(0.0f) };
+
+			gpu::pipeline shape_bake_pipeline;
+			gpu::pipeline detail_bake_pipeline;
+			gpu::pipeline raymarch_pipeline;
+			gpu::pipeline composite_pipeline;
+
+			gpu::image shape_noise;
+			gpu::image detail_noise;
+			gpu::image cloud_target;
+
+			gpu::sampler noise_sampler;
+			gpu::sampler atmosphere_lut_sampler;
+			gpu::sampler sky_view_sampler;
+			gpu::sampler composite_sampler;
+
+			gpu::buffer cloud_ubo_buffer;
+
+			gpu::descriptor_region shape_bake_descriptors;
+			gpu::descriptor_region detail_bake_descriptors;
+			per_frame_resource<gpu::descriptor_region> raymarch_descriptors;
+			per_frame_resource<gpu::descriptor_region> composite_descriptors;
+
+			vec2u cloud_target_extent{ 0, 0 };
+			std::uint32_t frame_counter = 0;
+			bool noises_ready = false;
+			bool raymarch_descriptors_ready = false;
+		};
+
+		static auto run(
+			run_context& ctx,
+			const gpu::context::data& gpu_s,
+			data& d
+		) -> async::task<>;
+
+		static auto frame(
+			const frame_context& ctx,
+			shared_view<gpu::context> gpu_s,
+			data& d,
+			shared_view<atmosphere::system> atm_state,
+			shared_view<camera::system> cam_state
+		) -> async::task<>;
+	};
+}

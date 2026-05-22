@@ -27,38 +27,56 @@ export namespace gse::asset {
 		};
 
 	template <has_compile_path T>
-	auto bake_to_disk(const std::filesystem::path& src, const std::filesystem::path& dst) -> bool;
+	auto bake_to_disk(
+		const std::filesystem::path& src,
+		const std::filesystem::path& dst
+	) -> bool;
 
 	template <has_compile_path T>
-	auto needs_recompile(const std::filesystem::path& src, const std::filesystem::path& dst) -> bool;
+	auto needs_recompile(
+		const std::filesystem::path& src,
+		const std::filesystem::path& dst
+	) -> bool;
 
 	template <typename T>
 	auto enumerate_resources() -> std::vector<std::string>;
 
 	template <typename T>
-	auto recompile_if_stale(const std::filesystem::path& baked_path) -> bool;
+	auto recompile_if_stale(
+		const std::filesystem::path& baked_path
+	) -> bool;
 
 	template <typename T>
-	auto setup_hot_reload_for(data& d) -> void;
+	auto setup_hot_reload_for(
+		data& d
+	) -> void;
 
 	struct compile_result {
 		std::size_t success_count = 0;
 		std::size_t failure_count = 0;
 		std::size_t skipped_count = 0;
 
-		auto operator+=(const compile_result& other) -> compile_result&;
+		auto operator+=(
+			const compile_result& other
+		) -> compile_result&;
 	};
 
 	template <typename... Ts>
 	class system : public non_copyable {
 	public:
-		explicit system(data& d);
+		explicit system(
+			data& d
+		);
 
 		~system() = default;
 
-		system(system&&) noexcept = default;
+		system(
+			system&&
+		) noexcept = default;
 
-		auto operator=(system&&) noexcept -> system& = default;
+		auto operator=(
+			system&&
+		) noexcept -> system& = default;
 
 		template <typename T>
 		auto compile() -> compile_result;

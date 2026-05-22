@@ -46,7 +46,10 @@ auto gse::scheduler::snapshot_all_states() -> void {
 }
 
 namespace gse {
-	auto run_node_frame(frame_context& ctx, system_node& node) -> async::task<>;
+	auto run_node_frame(
+		frame_context& ctx,
+		system_node& node
+	) -> async::task<>;
 
 	template <std::invocable OnComplete>
 	auto wrap_run_task(async::task<> inner, OnComplete on_complete) -> async::task<> {
@@ -241,8 +244,14 @@ auto gse::scheduler::run_unified_update() -> void {
 				if (!deps_ready) {
 					continue;
 				}
+				tasks.push_back(advance_one_run_system(node));
 			}
-			tasks.push_back(advance_one_run_system(node));
+			else if (node.settled) {
+				tasks.push_back(advance_one_run_system(node));
+			}
+			else if (!node.advance_in_flight) {
+				node.resume_event->set();
+			}
 		}
 	}
 	{
@@ -372,7 +381,15 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 			node.settled = true;
 			node.paused_event->set();
 		});
-		node.run_task.start();
+		if (m_phase == scheduler_phase::boot) {
+			node.run_task.start();
+		}
+		else {
+			auto start_handle = node.run_task.consume_start_handle();
+			task::post([start_handle] {
+				start_handle.resume();
+			});
+		}
 	}
 	else if (!node.run_task.done()) {
 		node.paused_event->reset();
@@ -436,11 +453,7 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 	}
 }
 
-auto gse::scheduler::log_stall_state(
-	const wait_phase phase,
-	const time_t<float> elapsed,
-	const int dump_count
-) -> void {
+auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count) -> void {
 	constexpr std::array<std::string_view, 3> phase_names{ "init", "update", "frame" };
 	const auto phase_name = phase_names[static_cast<std::size_t>(phase)];
 

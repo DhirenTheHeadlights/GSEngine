@@ -16,9 +16,14 @@ import :loading;
 export namespace gse::gui {
 	class loading_screen : public screen {
 	public:
-		explicit loading_screen(const loading::state& state);
+		explicit loading_screen(
+			const loading::state& state
+		);
 
-		auto build(builder& ui, nav& n) -> void override;
+		auto build(
+			builder& ui,
+			nav& n
+		) -> void override;
 
 		auto title() const -> std::string_view override;
 
@@ -71,7 +76,7 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = label,
-		.position = { center.x() - label_w * 0.5f, center.y() + font_sz * 0.5f + row_h * 1.5f },
+		.position = { center.x() - label_w * 0.5f, center.y() + ctx.font->vertical_center_offset(font_sz) + row_h * 1.5f },
 		.scale = font_sz,
 		.color = ctx.style.color_text,
 	});

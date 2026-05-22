@@ -18,13 +18,11 @@ export namespace gse::renderer::sdf_grid {
 			[[
 				= gse::settings::describe<"Render a procedural SDF-based grid on the y=0 plane.">{},
 				= gse::shared
-			]]
-			bool enabled = true;
+			]] bool enabled = true;
 			[[
 				= gse::settings::describe<"Stamp distance labels along the X and Z axes at every major gridline.">{},
 				= gse::shared
-			]]
-			bool show_labels = true;
+			]] bool show_labels = true;
 
 			length minor_spacing = meters(1.f);
 			[[= gse::shared]] length major_spacing = meters(10.f);
@@ -43,7 +41,11 @@ export namespace gse::renderer::sdf_grid {
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		};
 
-		static auto run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<>;
+		static auto run(
+			run_context& ctx,
+			const gpu::context::data& gpu_s,
+			data& d
+		) -> async::task<>;
 
 		static auto frame(
 			const frame_context& ctx,

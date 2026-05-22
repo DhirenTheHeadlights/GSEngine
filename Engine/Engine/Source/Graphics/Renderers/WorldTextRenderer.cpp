@@ -73,13 +73,7 @@ namespace gse::renderer::world_text {
 	) -> void;
 }
 
-auto gse::renderer::world_text::append_glyph_quad(
-	std::vector<world_text_vertex>& vertices,
-	const vec3<position>& tick_origin,
-	const vec2f& pixel_top_left,
-	const vec2f& pixel_size,
-	const vec4f& uv_rect
-) -> void {
+auto gse::renderer::world_text::append_glyph_quad(std::vector<world_text_vertex>& vertices, const vec3<position>& tick_origin, const vec2f& pixel_top_left, const vec2f& pixel_size, const vec4f& uv_rect) -> void {
 	const length lift = meters(0.001f);
 	const length x0 = meters(pixel_top_left.x());
 	const length x1 = meters(pixel_top_left.x() + pixel_size.x());
@@ -96,22 +90,15 @@ auto gse::renderer::world_text::append_glyph_quad(
 	const float u1 = uv_rect.x() + uv_rect.z();
 	const float v1 = uv_rect.y() + uv_rect.w();
 
-	vertices.push_back({ tl, { u0, v1 } });
-	vertices.push_back({ tr, { u1, v1 } });
-	vertices.push_back({ br, { u1, v0 } });
-	vertices.push_back({ tl, { u0, v1 } });
-	vertices.push_back({ br, { u1, v0 } });
-	vertices.push_back({ bl, { u0, v0 } });
+	vertices.push_back({ tl, { u0, v0 } });
+	vertices.push_back({ tr, { u1, v0 } });
+	vertices.push_back({ br, { u1, v1 } });
+	vertices.push_back({ tl, { u0, v0 } });
+	vertices.push_back({ br, { u1, v1 } });
+	vertices.push_back({ bl, { u0, v1 } });
 }
 
-auto gse::renderer::world_text::build_labels_for_axis(
-	std::vector<world_text_vertex>& vertices,
-	const font& f,
-	const float world_scale,
-	const length major_spacing,
-	const int max_ticks,
-	const bool along_x
-) -> void {
+auto gse::renderer::world_text::build_labels_for_axis(std::vector<world_text_vertex>& vertices, const font& f, const float world_scale, const length major_spacing, const int max_ticks, const bool along_x) -> void {
 	for (int n = -max_ticks; n <= max_ticks; ++n) {
 		if (n == 0) {
 			continue;
@@ -130,12 +117,7 @@ auto gse::renderer::world_text::build_labels_for_axis(
 	}
 }
 
-auto gse::renderer::world_text::ensure_vertex_capacity(
-	system::data& d,
-	gpu::device& device,
-	const std::size_t frame_index,
-	const std::size_t required
-) -> void {
+auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::device& device, const std::size_t frame_index, const std::size_t required) -> void {
 	auto& cap = d.vertex_capacities[frame_index];
 	auto& buf = d.vertex_buffers[frame_index];
 	if (required <= cap && buf) {
@@ -157,11 +139,7 @@ auto gse::renderer::world_text::ensure_vertex_capacity(
 	);
 }
 
-auto gse::renderer::world_text::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	data& d
-) -> async::task<> {
+auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.pipeline =
 		gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
@@ -186,14 +164,7 @@ auto gse::renderer::world_text::system::run(
 	co_return;
 }
 
-auto gse::renderer::world_text::system::frame(
-	const frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d,
-	shared_view<camera::system> cam_state,
-	shared_view<gui::system> gui_d,
-	shared_view<sdf_grid::system> grid_d
-) -> async::task<> {
+auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<gui::system> gui_d, shared_view<sdf_grid::system> grid_d) -> async::task<> {
 	if (!grid_d.enabled || !grid_d.show_labels) {
 		co_return;
 	}
@@ -259,10 +230,10 @@ auto gse::renderer::world_text::system::frame(
 	const auto vertex_count = static_cast<std::uint32_t>(vertices.size());
 
 	auto rec = co_await gpu::pass<system>(ctx)
-				   .pipeline(d.pipeline)
-				   .color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
-				   .depth(gpu::load_depth())
-				   .after<sdf_grid::system>();
+		.pipeline(d.pipeline)
+		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
+		.depth(gpu::load_depth())
+		.after<sdf_grid::system>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);

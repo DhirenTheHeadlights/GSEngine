@@ -11,6 +11,7 @@ import :texture;
 import :ui_renderer;
 import :styles;
 import :render_layer;
+import :input_layers;
 
 export namespace gse::gui {
 	using ui_rect = rect_t<vec2f>;
@@ -100,7 +101,10 @@ export namespace gse::gui {
 	struct draw_context;
 
 	struct menu : identifiable, identifiable_owned {
-		explicit menu(std::string_view tag, const menu_data& data);
+		explicit menu(
+			std::string_view tag,
+			const menu_data& data
+		);
 
 		ui_rect rect;
 		vec2f grab_offset;
@@ -132,20 +136,43 @@ export namespace gse::gui {
 		std::uint32_t current_z_order = 0;
 
 		render_layer input_layer = render_layer::content;
+		class input_layer* hit_regions = nullptr;
 		tooltip_state* tooltip = nullptr;
 		std::vector<ui_rect> clip_stack;
 
-		auto queue_sprite(renderer::sprite_command cmd) const -> void;
+		auto queue_sprite(
+			renderer::sprite_command cmd
+		) const -> void;
 
-		auto queue_text(renderer::text_command cmd) const -> void;
+		auto queue_text(
+			renderer::text_command cmd
+		) const -> void;
+
+		auto register_hit_region(
+			render_layer layer,
+			const ui_rect& rect
+		) const -> void;
 
 		[[nodiscard]] auto input_available() const -> bool;
 
-		auto set_tooltip(const id& widget_id, const std::string& text) const -> void;
+		[[nodiscard]] auto input_available_at(
+			vec2f position
+		) const -> bool;
 
-		auto next_row(float height_multiplier = 1.f) const -> ui_rect;
+		auto set_tooltip(
+			const id& widget_id,
+			const std::string& text
+		) const -> void;
 
-		auto animated_color(const id& widget_id, vec4f target, float speed = 10.f) const -> vec4f;
+		auto next_row(
+			float height_multiplier = 1.f
+		) const -> ui_rect;
+
+		auto animated_color(
+			const id& widget_id,
+			vec4f target,
+			float speed = 10.f
+		) const -> vec4f;
 
 		[[nodiscard]] auto current_clip() const -> std::optional<ui_rect>;
 	};
@@ -161,9 +188,13 @@ export namespace gse::gui {
 			const scroll_config& config
 		) noexcept;
 
-		scroll_handle(scroll_handle&& other) noexcept;
+		scroll_handle(
+			scroll_handle&& other
+		) noexcept;
 
-		auto operator=(scroll_handle&& other) noexcept -> scroll_handle&;
+		auto operator=(
+			scroll_handle&& other
+		) noexcept -> scroll_handle&;
 
 		~scroll_handle() noexcept;
 
@@ -183,7 +214,10 @@ export namespace gse::gui {
 		bool m_active = false;
 	};
 
-	[[nodiscard]] auto scroll_region(draw_context& ctx, const scroll_region_info& info) -> scroll_handle;
+	[[nodiscard]] auto scroll_region(
+		draw_context& ctx,
+		const scroll_region_info& info
+	) -> scroll_handle;
 }
 
 namespace gse::gui::states {

@@ -14,14 +14,40 @@ import :quat_math;
 import :simd;
 
 export namespace gse {
-	template <typename T, gse::internal::is_quantity QPos, gse::internal::is_quantity QTgt>
-	requires std::same_as<typename QPos::value_type, T> && std::same_as<typename QTgt::value_type, T> &&
-		gse::internal::same_unit_family_v<typename QPos::quantity_tag, gse::length_tag> &&
-		gse::internal::same_unit_family_v<typename QTgt::quantity_tag, gse::length_tag>
-	constexpr auto look_at(const vec3<QPos>& position, const vec3<QTgt>& target, const vec3<T>& up) -> view_matrix;
+	template <
+		typename T,
+		gse::internal::is_quantity QPos,
+		gse::internal::is_quantity QTgt
+	>
+	requires std::same_as<
+				 typename QPos::value_type,
+				 T
+			 > &&
+		std::same_as<
+				 typename QTgt::value_type,
+				 T
+		> &&
+		gse::internal::same_unit_family_v<
+				 typename QPos::quantity_tag,
+				 gse::length_tag
+		> &&
+		gse::internal::same_unit_family_v<
+				 typename QTgt::quantity_tag,
+				 gse::length_tag
+		>
+	constexpr auto look_at(
+		const vec3<QPos>& position,
+		const vec3<QTgt>& target,
+		const vec3<T>& up
+	) -> view_matrix;
 
 	template <typename T>
-	constexpr auto perspective(angle_t<T> fov, T aspect, length_t<T> near, length_t<T> far) -> projection_matrix;
+	constexpr auto perspective(
+		angle_t<T> fov,
+		T aspect,
+		length_t<T> near,
+		length_t<T> far
+	) -> projection_matrix;
 
 	template <typename T>
 	constexpr auto orthographic(
@@ -33,30 +59,73 @@ export namespace gse {
 		length_t<T> far
 	) -> projection_matrix;
 
-	template <typename T, gse::internal::is_quantity Q>
-	requires std::same_as<typename Q::value_type, T> &&
-		gse::internal::same_unit_family_v<typename Q::quantity_tag, gse::length_tag>
-	constexpr auto translate(const mat4<T>& matrix, const vec3<Q>& translation) -> mat4<T>;
+	template <
+		typename T,
+		gse::internal::is_quantity Q
+	>
+	requires std::same_as<
+				 typename Q::value_type,
+				 T
+			 > &&
+		gse::internal::same_unit_family_v<
+				 typename Q::quantity_tag,
+				 gse::length_tag
+		>
+	constexpr auto translate(
+		const mat4<T>& matrix,
+		const vec3<Q>& translation
+	) -> mat4<T>;
 
 	template <typename T>
-	constexpr auto rotate(const mat4<T>& matrix, axis axis, std::type_identity_t<angle_t<T>> angle) -> mat4<T>;
+	constexpr auto rotate(
+		const mat4<T>& matrix,
+		axis axis,
+		std::type_identity_t<angle_t<T>> angle
+	) -> mat4<T>;
 
-	template <typename T, is_vec V>
+	template <
+		typename T,
+		is_vec V
+	>
 	requires(V::extent == 3)
-	constexpr auto scale(const mat4<T>& matrix, const V& scale) -> mat4<T>;
+	constexpr auto scale(
+		const mat4<T>& matrix,
+		const V& scale
+	) -> mat4<T>;
 
 	template <is_mat M>
-	constexpr auto value_ptr(M& matrix) -> typename M::value_type*;
+	constexpr auto value_ptr(
+		M& matrix
+	) -> typename M::value_type*;
 
 	template <is_mat M>
-	constexpr auto value_ptr(const M& matrix) -> const typename M::value_type*;
+	constexpr auto value_ptr(
+		const M& matrix
+	) -> const typename M::value_type*;
 
-	template <typename T, std::size_t N, std::size_t M>
-	constexpr auto identity() -> mat<T, N, M>;
+	template <
+		typename T,
+		std::size_t N,
+		std::size_t M
+	>
+	constexpr auto identity() -> mat<
+		T,
+		N,
+		M
+	>;
 
-	template <is_vec V1, is_vec V2>
-	requires(std::same_as<typename V1::storage_type, typename V2::storage_type>)
-	constexpr auto outer_product(const V1& a, const V2& b);
+	template <
+		is_vec V1,
+		is_vec V2
+	>
+	requires(std::same_as<
+			 typename V1::storage_type,
+			 typename V2::storage_type
+	>)
+	constexpr auto outer_product(
+		const V1& a,
+		const V2& b
+	);
 }
 
 template <typename T, gse::internal::is_quantity QPos, gse::internal::is_quantity QTgt>
@@ -87,12 +156,7 @@ constexpr auto gse::look_at(const vec3<QPos>& position, const vec3<QTgt>& target
 }
 
 template <typename T>
-constexpr auto gse::perspective(
-	const angle_t<T> fov,
-	const T aspect,
-	length_t<T> near,
-	length_t<T> far
-) -> projection_matrix {
+constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T> near, length_t<T> far) -> projection_matrix {
 	const auto tan_half_fov_y = tan(fov / T(2));
 	const auto range = far - near;
 
@@ -108,14 +172,7 @@ constexpr auto gse::perspective(
 }
 
 template <typename T>
-constexpr auto gse::orthographic(
-	length_t<T> left,
-	length_t<T> right,
-	length_t<T> bottom,
-	length_t<T> top,
-	length_t<T> near,
-	length_t<T> far
-) -> projection_matrix {
+constexpr auto gse::orthographic(length_t<T> left, length_t<T> right, length_t<T> bottom, length_t<T> top, length_t<T> near, length_t<T> far) -> projection_matrix {
 	return projection_matrix(
 		mat4<T>{ { 2 / internal::to_storage(right - left), 0, 0, 0 },
 				 { 0, 2 / internal::to_storage(bottom - top), 0, 0 },

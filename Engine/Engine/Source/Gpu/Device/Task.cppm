@@ -28,7 +28,9 @@ export namespace gse::gpu {
 
 		auto await_ready() const noexcept -> bool;
 
-		auto await_suspend(std::coroutine_handle<>) noexcept -> bool;
+		auto await_suspend(
+			std::coroutine_handle<>
+		) noexcept -> bool;
 
 		auto await_resume() -> vulkan::transient_command_buffer;
 	};
@@ -44,13 +46,17 @@ export namespace gse::gpu {
 		);
 
 		template <typename T>
-		auto retain(T&& resource) && -> submission&&;
+		auto retain(
+			T&& resource
+		) && -> submission&&;
 
 		auto submit_sync() -> sync_token;
 
 		auto await_ready() noexcept -> bool;
 
-		auto await_suspend(std::coroutine_handle<> caller) -> bool;
+		auto await_suspend(
+			std::coroutine_handle<> caller
+		) -> bool;
 
 		auto await_resume() noexcept -> sync_token;
 

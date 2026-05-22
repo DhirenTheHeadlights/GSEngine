@@ -21,17 +21,37 @@ export namespace gse::image {
 		auto size_bytes() const -> std::size_t;
 	};
 
-	auto load(const std::filesystem::path& path) -> data;
+	auto load(
+		const std::filesystem::path& path
+	) -> data;
 
-	auto load(vec4f color, vec2u size) -> data;
+	auto load(
+		vec4f color,
+		vec2u size
+	) -> data;
 
-	auto load_rgba(const std::filesystem::path& path) -> data;
+	auto load_rgba(
+		const std::filesystem::path& path
+	) -> data;
 
-	auto load_cube_faces(const std::array<std::filesystem::path, 6>& paths) -> std::array<data, 6>;
+	auto load_cube_faces(
+		const std::array<
+			std::filesystem::path,
+			6
+		>& paths
+	) -> std::
+		array<
+			data,
+			6
+		>;
 
-	auto load_raw(const std::filesystem::path& path) -> data;
+	auto load_raw(
+		const std::filesystem::path& path
+	) -> data;
 
-	auto dimensions(const std::filesystem::path& path) -> vec2u;
+	auto dimensions(
+		const std::filesystem::path& path
+	) -> vec2u;
 
 	auto write_png(
 		const std::filesystem::path& path,

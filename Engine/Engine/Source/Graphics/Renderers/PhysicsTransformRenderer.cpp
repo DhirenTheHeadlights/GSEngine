@@ -64,12 +64,7 @@ namespace gse::renderer::physics_transform {
 	>;
 }
 
-auto gse::renderer::physics_transform::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const asset::data& assets_s,
-	data& d
-) -> async::task<> {
+auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.pipeline =
 		gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
@@ -83,12 +78,7 @@ auto gse::renderer::physics_transform::system::run(
 	co_return;
 }
 
-auto gse::renderer::physics_transform::system::frame(
-	frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d,
-	shared_view<geometry_collector::system> gc_r
-) -> async::task<> {
+auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
 
 	if (solver_infos.empty()) {
@@ -141,7 +131,11 @@ auto gse::renderer::physics_transform::system::frame(
 			0,
 			d.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry)
 		)
-		.buffer<instance_data_buffer>(gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
+		.buffer<instance_data_buffer>(
+			gc_r.instance_buffer[frame_index],
+			0,
+			gc_r.instance_buffer[frame_index].size()
+		)
 		.commit();
 
 	const gpu::typed_push_constants<push_constants> pc{
@@ -155,8 +149,8 @@ auto gse::renderer::physics_transform::system::frame(
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
 	auto rec = co_await gpu::pass<system>(ctx)
-				   .pipeline(d.pipeline)
-				   .after<geometry_collector::system, vbd::vbd_state_copy_stage>();
+		.pipeline(d.pipeline)
+		.after<geometry_collector::system, vbd::vbd_state_copy_stage>();
 
 	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
 	rec.push(d.pipeline, pc);

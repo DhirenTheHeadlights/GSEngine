@@ -13,12 +13,20 @@ export namespace gse {
 		virtual ~timed_lock() = default;
 		timed_lock() = default;
 
-		timed_lock(const T& value, time duration);
+		timed_lock(
+			const T& value,
+			time duration
+		);
 
 		template <typename... Args>
-		timed_lock(time duration, Args&&... args);
+		timed_lock(
+			time duration,
+			Args&&... args
+		);
 
-		virtual auto operator=(const T& value) -> timed_lock&;
+		virtual auto operator=(
+			const T& value
+		) -> timed_lock&;
 
 		virtual auto try_get_mutable_value() -> T*;
 
@@ -79,7 +87,9 @@ export namespace gse {
 		using timed_lock<T>::timed_lock;
 
 	public:
-		auto operator=(const T& value) -> quota_timed_lock& override;
+		auto operator=(
+			const T& value
+		) -> quota_timed_lock& override;
 
 		auto try_get_mutable_value() -> T* override;
 

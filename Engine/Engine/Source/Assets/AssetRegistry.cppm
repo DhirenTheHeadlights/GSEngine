@@ -35,37 +35,69 @@ export namespace gse::asset {
 			channel_writer* channels = nullptr;
 		};
 
-		static auto run(run_context& ctx, data& d) -> async::task<>;
+		static auto run(
+			run_context& ctx,
+			data& d
+		) -> async::task<>;
 
-		static auto shutdown(shutdown_context& phase, data& d) -> void;
+		static auto shutdown(
+			shutdown_context& phase,
+			data& d
+		) -> void;
 	};
 
 	using data = registry::data;
 
 	template <typename T>
-	auto add_loader(data& d) -> resource::loader<T>*;
+	auto add_loader(
+		data& d
+	) -> resource::loader<T>*;
 
 	template <typename T>
-	auto get(const data& d, id resource_id) -> resource::handle<T>;
+	auto get(
+		const data& d,
+		id resource_id
+	) -> resource::handle<T>;
 
 	template <typename T>
-	auto get(const data& d, const std::string& filename) -> resource::handle<T>;
+	auto get(
+		const data& d,
+		const std::string& filename
+	) -> resource::handle<T>;
 
 	template <typename T>
-	auto try_get(const data& d, id resource_id) -> resource::handle<T>;
+	auto try_get(
+		const data& d,
+		id resource_id
+	) -> resource::handle<T>;
 
 	template <typename T>
-	auto try_get(const data& d, const std::string& filename) -> resource::handle<T>;
+	auto try_get(
+		const data& d,
+		const std::string& filename
+	) -> resource::handle<T>;
 
-	template <typename T, typename... Args>
-	auto queue(data& d, const std::string& name, Args&&... args) -> resource::handle<T>;
+	template <
+		typename T,
+		typename... Args
+	>
+	auto queue(
+		data& d,
+		const std::string& name,
+		Args&&... args
+	) -> resource::handle<T>;
 
 	template <typename T>
-	auto add(data& d, T&& resource) -> resource::handle<T>;
+	auto add(
+		data& d,
+		T&& resource
+	) -> resource::handle<T>;
 
 	template <typename T>
-	[[nodiscard]]
-	auto resource_state(const data& d, id resource_id) -> resource::state;
+	[[nodiscard]] auto resource_state(
+		const data& d,
+		id resource_id
+	) -> resource::state;
 
 	struct load_ctx {
 		data& assets;
@@ -73,52 +105,87 @@ export namespace gse::asset {
 	};
 
 	template <typename T>
-	[[nodiscard]]
-	auto load(run_context& ctx, std::string_view path) -> async::task<resource::handle<T>>;
+	[[nodiscard]] auto load(
+		run_context& ctx,
+		std::string_view path
+	) -> async::task<resource::handle<T>>;
 }
 
 namespace gse::asset {
 	template <typename T>
-	auto loader_for(const data& d) -> resource::loader<T>*;
+	auto loader_for(
+		const data& d
+	) -> resource::loader<T>*;
 
-	auto loader_base_for(const data& d, id type_index) -> resource::loader_base*;
+	auto loader_base_for(
+		const data& d,
+		id type_index
+	) -> resource::loader_base*;
 }
 
 export namespace gse::resource {
 	template <typename Resource>
 	class loader final : public loader_base, public non_copyable {
 	public:
-		explicit loader(asset::data& d);
+		explicit loader(
+			asset::data& d
+		);
 
 		~loader() override = default;
 
 		auto flush() -> void override;
 
-		auto update_state(id resource_id, state new_state) -> void override;
+		auto update_state(
+			id resource_id,
+			state new_state
+		) -> void override;
 
-		auto queue_reload(id resource_id) -> void;
+		auto queue_reload(
+			id resource_id
+		) -> void;
 
-		auto queue_reload_by_path(const std::filesystem::path& baked_path) -> void;
+		auto queue_reload_by_path(
+			const std::filesystem::path& baked_path
+		) -> void;
 
-		auto queue_by_path(const std::filesystem::path& baked_path) -> void;
+		auto queue_by_path(
+			const std::filesystem::path& baked_path
+		) -> void;
 
 		auto finalize_reloads() -> void override;
 
-		auto set_pre_load_fn(std::function<void(const std::filesystem::path&)> fn) -> void;
+		auto set_pre_load_fn(
+			std::function<void(const std::filesystem::path&)> fn
+		) -> void;
 
-		auto get(id id) const -> handle<Resource>;
+		auto get(
+			id id
+		) const -> handle<Resource>;
 
-		auto get(const std::string& filename_no_ext) const -> handle<Resource>;
+		auto get(
+			const std::string& filename_no_ext
+		) const -> handle<Resource>;
 
-		auto try_get(id id) const -> handle<Resource>;
+		auto try_get(
+			id id
+		) const -> handle<Resource>;
 
-		auto try_get(const std::string& filename_no_ext) const -> handle<Resource>;
+		auto try_get(
+			const std::string& filename_no_ext
+		) const -> handle<Resource>;
 
-		[[nodiscard]] auto state_of(id resource_id) const -> state;
+		[[nodiscard]] auto state_of(
+			id resource_id
+		) const -> state;
 
-		auto add(std::unique_ptr<Resource> resource) -> handle<Resource>;
+		auto add(
+			std::unique_ptr<Resource> resource
+		) -> handle<Resource>;
 
-		auto enqueue(const std::string& name, std::unique_ptr<Resource> resource) -> handle<Resource>;
+		auto enqueue(
+			const std::string& name,
+			std::unique_ptr<Resource> resource
+		) -> handle<Resource>;
 
 	private:
 		asset::data& m_data;
@@ -132,11 +199,18 @@ export namespace gse::resource {
 
 		std::function<void(const std::filesystem::path&)> m_pre_load_fn;
 
-		auto slot_ptr(this auto&& self, id id);
+		auto slot_ptr(
+			this auto&& self,
+			id id
+		);
 
-		auto launch_load(id rid) -> async::task<>;
+		auto launch_load(
+			id rid
+		) -> async::task<>;
 
-		auto launch_reload(id rid) -> async::task<>;
+		auto launch_reload(
+			id rid
+		) -> async::task<>;
 
 		auto reap_done_tasks() -> void;
 	};

@@ -53,17 +53,18 @@ float3 integrate_sky_radiance(float3 origin, float3 view_dir, float3 sun_dir) {
     return luminance;
 }
 
-// entry:
-uint2 size;
-sky_view_out.GetDimensions(size.x, size.y);
-if (dispatch_id.x >= size.x || dispatch_id.y >= size.y) {
-    return;
+void atmosphere_sky_view(uint3 dispatch_id) {
+    uint2 size;
+    sky_view_out.GetDimensions(size.x, size.y);
+    if (dispatch_id.x >= size.x || dispatch_id.y >= size.y) {
+        return;
+    }
+
+    float2 uv = (float2(dispatch_id.xy) + 0.5) / float2(size);
+    float3 view_dir = sky_view_uv_to_dir(uv);
+
+    float3 origin = float3(0.0, bottom_radius + pc.camera_altitude, 0.0);
+    float3 radiance = integrate_sky_radiance(origin, view_dir, pc.sun_direction);
+
+    sky_view_out[dispatch_id.xy] = float4(radiance, 1.0);
 }
-
-float2 uv = (float2(dispatch_id.xy) + 0.5) / float2(size);
-float3 view_dir = sky_view_uv_to_dir(uv);
-
-float3 origin = float3(0.0, bottom_radius + pc.camera_altitude, 0.0);
-float3 radiance = integrate_sky_radiance(origin, view_dir, pc.sun_direction);
-
-sky_view_out[dispatch_id.xy] = float4(radiance, 1.0);

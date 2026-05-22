@@ -41,7 +41,9 @@ export namespace gse {
 	template <typename... Components>
 	class server {
 	public:
-		explicit server(std::uint16_t port);
+		explicit server(
+			std::uint16_t port
+		);
 
 		auto initialize() -> void;
 
@@ -53,21 +55,38 @@ export namespace gse {
 		) -> void;
 
 		template <typename T>
-		auto send(const T& msg, const network::address& to, bool reliable = false) -> void;
+		auto send(
+			const T& msg,
+			const network::address& to,
+			bool reliable = false
+		) -> void;
 
 		template <typename T>
-		auto send_reliable(const T& msg, const network::address& to) -> void;
+		auto send_reliable(
+			const T& msg,
+			const network::address& to
+		) -> void;
 
-		auto peers() const -> const std::unordered_map<network::address, network::remote_peer>&;
+		auto peers() const -> const std::unordered_map<
+			network::address,
+			network::remote_peer
+		>&;
 
-		auto clients() const -> const std::unordered_map<network::address, client_data>&;
+		auto clients() const -> const std::unordered_map<
+			network::address,
+			client_data
+		>&;
 
 		auto host_entity() const -> std::optional<id>;
 
 		auto host_address() const -> std::optional<network::address>;
 
 	private:
-		auto accept_connection(const world_system::data& w, registry& reg, const network::address& addr) -> void;
+		auto accept_connection(
+			const world_system::data& w,
+			registry& reg,
+			const network::address& addr
+		) -> void;
 
 		std::uint16_t m_port;
 		network::udp_socket m_socket;
@@ -215,12 +234,7 @@ auto gse::server<Components...>::resend_reliable_messages() -> void {
 }
 
 template <typename... Components>
-auto gse::server<Components...>::update(
-	const world_system::data& w,
-	registry& reg,
-	channel_writer& channels,
-	const actions::system::data& actions_s
-) -> void {
+auto gse::server<Components...>::update(const world_system::data& w, registry& reg, channel_writer& channels, const actions::system::data& actions_s) -> void {
 	const auto* active_scene_ptr = w.active_scene.has_value()
 		? (w.scenes.contains(*w.active_scene) ? w.scenes.at(*w.active_scene).get() : nullptr)
 		: nullptr;
@@ -432,11 +446,7 @@ auto gse::server<Components...>::host_address() const -> std::optional<network::
 }
 
 template <typename... Components>
-auto gse::server<Components...>::accept_connection(
-	const world_system::data& w,
-	registry& reg,
-	const network::address& addr
-) -> void {
+auto gse::server<Components...>::accept_connection(const world_system::data& w, registry& reg, const network::address& addr) -> void {
 	const bool has_active_scene = w.active_scene.has_value() && w.scenes.contains(*w.active_scene);
 
 	id controller_id{};

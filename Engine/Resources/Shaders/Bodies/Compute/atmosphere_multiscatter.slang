@@ -63,34 +63,35 @@ ms_integrand integrate_along_ray(float3 origin, float3 dir, float3 sun_dir) {
     return result;
 }
 
-// entry:
-uint2 size;
-multiscatter_out.GetDimensions(size.x, size.y);
-if (dispatch_id.x >= size.x || dispatch_id.y >= size.y) {
-    return;
+void atmosphere_multiscatter(uint3 dispatch_id) {
+    uint2 size;
+    multiscatter_out.GetDimensions(size.x, size.y);
+    if (dispatch_id.x >= size.x || dispatch_id.y >= size.y) {
+        return;
+    }
+
+    float2 uv = (float2(dispatch_id.xy) + 0.5) / float2(size);
+    float mu_sun = uv.x * 2.0 - 1.0;
+    float altitude = uv.y * (top_radius - bottom_radius);
+    float radius = bottom_radius + altitude;
+
+    float3 sun_dir = float3(sqrt(saturate(1.0 - mu_sun * mu_sun)), mu_sun, 0.0);
+    float3 origin = float3(0.0, radius, 0.0);
+
+    float3 luminance_sum = float3(0.0, 0.0, 0.0);
+    float3 f_ms_sum = float3(0.0, 0.0, 0.0);
+
+    for (int i = 0; i < sphere_samples; ++i) {
+        float3 dir = fibonacci_sphere_direction(i, sphere_samples);
+        ms_integrand m = integrate_along_ray(origin, dir, sun_dir);
+        luminance_sum += m.luminance;
+        f_ms_sum += m.f_ms;
+    }
+
+    float inv_samples = 1.0 / float(sphere_samples);
+    float3 l_2 = luminance_sum * inv_samples;
+    float3 f_ms = f_ms_sum * inv_samples;
+
+    float3 multi_scattering = l_2 / max(float3(1.0, 1.0, 1.0) - f_ms, float3(1e-6, 1e-6, 1e-6));
+    multiscatter_out[dispatch_id.xy] = float4(multi_scattering, 1.0);
 }
-
-float2 uv = (float2(dispatch_id.xy) + 0.5) / float2(size);
-float mu_sun = uv.x * 2.0 - 1.0;
-float altitude = uv.y * (top_radius - bottom_radius);
-float radius = bottom_radius + altitude;
-
-float3 sun_dir = float3(sqrt(saturate(1.0 - mu_sun * mu_sun)), mu_sun, 0.0);
-float3 origin = float3(0.0, radius, 0.0);
-
-float3 luminance_sum = float3(0.0, 0.0, 0.0);
-float3 f_ms_sum = float3(0.0, 0.0, 0.0);
-
-for (int i = 0; i < sphere_samples; ++i) {
-    float3 dir = fibonacci_sphere_direction(i, sphere_samples);
-    ms_integrand m = integrate_along_ray(origin, dir, sun_dir);
-    luminance_sum += m.luminance;
-    f_ms_sum += m.f_ms;
-}
-
-float inv_samples = 1.0 / float(sphere_samples);
-float3 l_2 = luminance_sum * inv_samples;
-float3 f_ms = f_ms_sum * inv_samples;
-
-float3 multi_scattering = l_2 / max(float3(1.0, 1.0, 1.0) - f_ms, float3(1e-6, 1e-6, 1e-6));
-multiscatter_out[dispatch_id.xy] = float4(multi_scattering, 1.0);

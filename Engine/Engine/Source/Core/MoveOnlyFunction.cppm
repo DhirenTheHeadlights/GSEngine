@@ -14,15 +14,25 @@ export namespace gse {
 
 		~move_only_function();
 
-		move_only_function(const move_only_function&) = delete;
+		move_only_function(
+			const move_only_function&
+		) = delete;
 
-		auto operator=(const move_only_function&) -> move_only_function& = delete;
+		auto operator=(
+			const move_only_function&
+		) -> move_only_function& = delete;
 
-		move_only_function(move_only_function&& other) noexcept;
+		move_only_function(
+			move_only_function&& other
+		) noexcept;
 
-		auto operator=(move_only_function&& other) noexcept -> move_only_function&;
+		auto operator=(
+			move_only_function&& other
+		) noexcept -> move_only_function&;
 
-		move_only_function(std::nullptr_t) noexcept;
+		move_only_function(
+			std::nullptr_t
+		) noexcept;
 
 		template <typename F>
 		requires(
@@ -50,16 +60,32 @@ export namespace gse {
 
 		[[nodiscard]] auto invoke_address() const noexcept -> const void*;
 
-		auto operator()(Args... args) -> R;
+		auto operator()(
+			Args... args
+		) -> R;
 
 	private:
 		static constexpr std::size_t buffer_size = 3 * sizeof(void*);
 		static constexpr std::size_t buffer_align = alignof(void*);
 
 		struct vtable {
-			R (*invoke)(void*, Args...);
-			void (*move_init)(void* src, void* dst) noexcept;
-			void (*destroy)(void*) noexcept;
+			R (
+				*invoke
+			)(
+				void*,
+				Args...
+			);
+			void (
+				*move_init
+			)(
+				void* src,
+				void* dst
+			) noexcept;
+			void (
+				*destroy
+			)(
+				void*
+			) noexcept;
 		};
 
 		template <typename F>
@@ -119,7 +145,9 @@ export namespace gse {
 		}
 
 		const vtable* m_vtable = nullptr;
-		alignas(buffer_align) std::byte m_buffer[buffer_size]{};
+		alignas(
+			buffer_align
+		) std::byte m_buffer[buffer_size]{};
 	};
 }
 

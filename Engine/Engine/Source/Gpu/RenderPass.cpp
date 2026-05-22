@@ -26,6 +26,8 @@ auto gse::gpu::request_pass_awaitable::await_ready() const noexcept -> bool {
 }
 
 auto gse::gpu::request_pass_awaitable::await_suspend(const std::coroutine_handle<> h) noexcept -> void {
+	recording_context::finalize_active_on_current_thread();
+
 	m_trace_id = find_or_generate_id(std::format("record<{}>", m_desc.pass_kind.tag()));
 	m_trace_key = trace::allocate_async_key();
 	trace::begin_async(m_trace_id, m_trace_key);

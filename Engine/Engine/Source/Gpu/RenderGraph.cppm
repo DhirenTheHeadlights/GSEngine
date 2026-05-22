@@ -75,7 +75,12 @@ export namespace gse::gpu {
 			float max_depth = 1.0f
 		) const -> void;
 
-		auto set_scissor(std::int32_t x, std::int32_t y, std::uint32_t width, std::uint32_t height) const -> void;
+		auto set_scissor(
+			std::int32_t x,
+			std::int32_t y,
+			std::uint32_t width,
+			std::uint32_t height
+		) const -> void;
 
 		auto draw(
 			std::uint32_t vertex_count,
@@ -92,14 +97,28 @@ export namespace gse::gpu {
 			std::uint32_t first_instance = 0
 		) const -> void;
 
-		auto draw_mesh_tasks(std::uint32_t x, std::uint32_t y = 1, std::uint32_t z = 1) const -> void;
+		auto draw_mesh_tasks(
+			std::uint32_t x,
+			std::uint32_t y = 1,
+			std::uint32_t z = 1
+		) const -> void;
 
-		auto dispatch(std::uint32_t x, std::uint32_t y = 1, std::uint32_t z = 1) const -> void;
+		auto dispatch(
+			std::uint32_t x,
+			std::uint32_t y = 1,
+			std::uint32_t z = 1
+		) const -> void;
 
-		auto dispatch_indirect(const buffer& buf, std::size_t offset = 0) -> void;
+		auto dispatch_indirect(
+			const buffer& buf,
+			std::size_t offset = 0
+		) -> void;
 
 		template <typename T>
-		auto push(const gpu::pipeline& p, const gpu::typed_push_constants<T>& typed) const -> void;
+		auto push(
+			const gpu::pipeline& p,
+			const gpu::typed_push_constants<T>& typed
+		) const -> void;
 
 		auto draw_indirect(
 			const buffer& buf,
@@ -115,7 +134,9 @@ export namespace gse::gpu {
 			std::uint32_t stride
 		) -> void;
 
-		auto bind(const gpu::pipeline& p) const -> void;
+		auto bind(
+			const gpu::pipeline& p
+		) const -> void;
 
 		auto bind_descriptors(
 			const gpu::pipeline& p,
@@ -123,7 +144,10 @@ export namespace gse::gpu {
 			std::uint32_t set_index = 0
 		) -> void;
 
-		auto bind_vertex(const buffer& buf, std::size_t offset = 0) -> void;
+		auto bind_vertex(
+			const buffer& buf,
+			std::size_t offset = 0
+		) -> void;
 
 		auto bind_index(
 			const buffer& buf,
@@ -131,11 +155,19 @@ export namespace gse::gpu {
 			std::size_t offset = 0
 		) -> void;
 
-		auto set_viewport(vec2u extent) const -> void;
+		auto set_viewport(
+			vec2u extent
+		) const -> void;
 
-		auto set_scissor(vec2u extent) const -> void;
+		auto set_scissor(
+			vec2u extent
+		) const -> void;
 
-		auto commit(const gpu::descriptor_writer& writer, const gpu::pipeline& p, std::uint32_t set_index = 0) -> void;
+		auto commit(
+			const gpu::descriptor_writer& writer,
+			const gpu::pipeline& p,
+			std::uint32_t set_index = 0
+		) -> void;
 
 		auto copy_buffer(
 			const buffer& src,
@@ -145,18 +177,30 @@ export namespace gse::gpu {
 			std::size_t dst_offset = 0
 		) -> void;
 
-		auto fill_buffer(const buffer& dst, std::size_t offset, std::size_t size, std::uint32_t data = 0) -> void;
+		auto fill_buffer(
+			const buffer& dst,
+			std::size_t offset,
+			std::size_t size,
+			std::uint32_t data = 0
+		) -> void;
 
-		auto barrier(gpu::barrier_scope scope) const -> void;
+		auto barrier(
+			gpu::barrier_scope scope
+		) const -> void;
 
-		auto sample_image(const image& img, gpu::pipeline_stage_flags stages) -> void;
+		auto sample_image(
+			const image& img,
+			gpu::pipeline_stage_flags stages
+		) -> void;
 
 		auto build_acceleration_structure(
 			const gpu::acceleration_structure_build_geometry_info& build_info,
 			std::span<const gpu::acceleration_structure_build_range_info* const> range_infos
 		) -> void;
 
-		auto pipeline_barrier(const gpu::dependency_info& dep) const -> void;
+		auto pipeline_barrier(
+			const gpu::dependency_info& dep
+		) const -> void;
 
 		auto capture_swapchain(
 			const gpu::swap_chain& swapchain,
@@ -171,19 +215,33 @@ export namespace gse::gpu {
 			vec2u dst_extent
 		) const -> void;
 
-		[[nodiscard]] auto resolve(transient_image_handle h) const -> const image&;
+		[[nodiscard]] auto resolve(
+			transient_image_handle h
+		) const -> const image&;
 
-		[[nodiscard]] auto resolve(transient_buffer_handle h) const -> const buffer&;
+		[[nodiscard]] auto resolve(
+			transient_buffer_handle h
+		) const -> const buffer&;
 
-		recording_context(recording_context&& other) noexcept;
+		recording_context(
+			recording_context&& other
+		) noexcept;
 
-		auto operator=(recording_context&& other) noexcept -> recording_context&;
+		auto operator=(
+			recording_context&& other
+		) noexcept -> recording_context&;
 
-		recording_context(const recording_context&) = delete;
+		recording_context(
+			const recording_context&
+		) = delete;
 
-		auto operator=(const recording_context&) -> recording_context& = delete;
+		auto operator=(
+			const recording_context&
+		) -> recording_context& = delete;
 
 		~recording_context();
+
+		static auto finalize_active_on_current_thread() noexcept -> void;
 
 	private:
 		friend class render_graph;
@@ -199,6 +257,7 @@ export namespace gse::gpu {
 		render_pass_data* m_pass = nullptr;
 		const gpu::transient_pool* m_transient_pool = nullptr;
 		std::vector<touched_resource> m_touched;
+		std::thread::id m_origin_thread;
 
 		recording_context(
 			commands cmd,
@@ -209,7 +268,11 @@ export namespace gse::gpu {
 
 		auto check_active() const -> void;
 
-		auto note_touched(resource_ref ref, gpu::pipeline_stage_flags stages, gpu::access_flags access) -> void;
+		auto note_touched(
+			resource_ref ref,
+			gpu::pipeline_stage_flags stages,
+			gpu::access_flags access
+		) -> void;
 
 		auto finalize_pass() -> void;
 	};
@@ -243,26 +306,43 @@ export namespace gse::gpu {
 			gpu::bindless_texture_set* bindless = nullptr
 		);
 
-		auto execute(frame_request_drain drain) -> void;
+		auto execute(
+			frame_request_drain drain
+		) -> void;
 
-		[[nodiscard]] auto transient_pool(this auto& self) -> auto&;
+		[[nodiscard]] auto transient_pool(
+			this auto& self
+		) -> auto&;
 
-		auto set_gpu_timestamps_enabled(bool enabled) -> void;
+		auto set_gpu_timestamps_enabled(
+			bool enabled
+		) -> void;
 
-		auto set_gpu_pipeline_stats_enabled(bool enabled) -> void;
+		auto set_gpu_pipeline_stats_enabled(
+			bool enabled
+		) -> void;
 
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
 
 		[[nodiscard]] auto extent() const -> vec2u;
 
-		[[nodiscard]] auto depth_image(this auto& self) -> auto&;
+		[[nodiscard]] auto depth_image(
+			this auto& self
+		) -> auto&;
 
-		auto register_framebuffer_image(id name, const framebuffer_image_desc& desc) -> const image&;
+		auto register_framebuffer_image(
+			id name,
+			const framebuffer_image_desc& desc
+		) -> const image&;
 
 		template <typename Marker>
-		auto framebuffer_image(this auto& self) -> auto&;
+		auto framebuffer_image(
+			this auto& self
+		) -> auto&;
 
-		auto pre_frame_transitions(handle<command_buffer> cmd) -> void;
+		auto pre_frame_transitions(
+			handle<command_buffer> cmd
+		) -> void;
 
 		[[nodiscard]] auto frame_in_progress() const -> bool;
 
@@ -285,13 +365,21 @@ export namespace gse::gpu {
 			bool results_valid = false;
 		};
 
-		auto ensure_profile_pools(gpu_profile_slot& slot, bool allow_stats) const -> void;
+		auto ensure_profile_pools(
+			gpu_profile_slot& slot,
+			bool allow_stats
+		) const -> void;
 
-		auto read_profile_slot(gpu_profile_slot& slot) -> void;
+		auto read_profile_slot(
+			gpu_profile_slot& slot
+		) -> void;
 
 		auto recreate_framebuffer_images() -> void;
 
-		auto create_framebuffer_image(const framebuffer_image_desc& desc, std::string_view tag) -> image;
+		auto create_framebuffer_image(
+			const framebuffer_image_desc& desc,
+			std::string_view tag
+		) -> image;
 
 		struct registered_image {
 			framebuffer_image_desc desc;
@@ -325,6 +413,10 @@ export namespace gse::gpu {
 	};
 }
 
+namespace gse::gpu {
+	inline thread_local recording_context* tl_active_recording_context = nullptr;
+}
+
 gse::gpu::recording_context::recording_context(
 	const commands cmd,
 	const std::span<const gpu::auto_bind_entry> auto_binds,
@@ -335,12 +427,26 @@ gse::gpu::recording_context::recording_context(
 	  m_auto_binds(auto_binds),
 	  m_pass(pass),
 	  m_transient_pool(transient_pool) {
+	if (m_cmd) {
+		assert(
+			tl_active_recording_context == nullptr,
+			"another recording_context is still active on this worker thread; a prior coroutine held its rec across a "
+			"co_await that was not gpu::pass<...>(ctx). Scope each rec to end before any non-pass await."
+		);
+		tl_active_recording_context = this;
+		m_origin_thread = std::this_thread::get_id();
+	}
 }
 
 namespace gse::gpu {
-	auto barrier_access(descriptor_type type, descriptor_access access) -> access_flags;
+	auto barrier_access(
+		descriptor_type type,
+		descriptor_access access
+	) -> access_flags;
 
-	auto format_bound_slots(std::span<const resource_slot> resources) -> std::string;
+	auto format_bound_slots(
+		std::span<const resource_slot> resources
+	) -> std::string;
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
@@ -348,7 +454,11 @@ gse::gpu::recording_context::recording_context(recording_context&& other) noexce
 	  m_auto_binds(other.m_auto_binds),
 	  m_pass(other.m_pass),
 	  m_transient_pool(other.m_transient_pool),
-	  m_touched(std::move(other.m_touched)) {
+	  m_touched(std::move(other.m_touched)),
+	  m_origin_thread(other.m_origin_thread) {
+	if (tl_active_recording_context == &other) {
+		tl_active_recording_context = this;
+	}
 	other.m_cmd = commands{};
 	other.m_auto_binds = {};
 	other.m_pass = nullptr;
@@ -358,14 +468,28 @@ gse::gpu::recording_context::recording_context(recording_context&& other) noexce
 auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
 	if (this != &other) {
 		if (m_cmd) {
+			assert(
+				std::this_thread::get_id() == m_origin_thread,
+				"recording_context's secondary command buffer is being ended on a thread other than its origin. "
+				"This means the rec was held alive across a co_await that was not gpu::pass<...>(ctx) and the "
+				"coroutine "
+				"resumed on a different worker. Scope the rec to end before any non-pass await."
+			);
 			finalize_pass();
 			m_cmd.end();
+		}
+		if (tl_active_recording_context == this) {
+			tl_active_recording_context = nullptr;
 		}
 		m_cmd = other.m_cmd;
 		m_auto_binds = other.m_auto_binds;
 		m_pass = other.m_pass;
 		m_transient_pool = other.m_transient_pool;
 		m_touched = std::move(other.m_touched);
+		m_origin_thread = other.m_origin_thread;
+		if (tl_active_recording_context == &other) {
+			tl_active_recording_context = this;
+		}
 		other.m_cmd = commands{};
 		other.m_auto_binds = {};
 		other.m_pass = nullptr;
@@ -400,17 +524,49 @@ auto gse::gpu::recording_context::resolve(const transient_buffer_handle h) const
 
 gse::gpu::recording_context::~recording_context() {
 	if (m_cmd) {
+		assert(
+			std::this_thread::get_id() == m_origin_thread,
+			"recording_context's secondary command buffer is being ended on a thread other than its origin. "
+			"This means the rec was held alive across a co_await that was not gpu::pass<...>(ctx) and the coroutine "
+			"resumed on a different worker. Scope the rec to end before any non-pass await."
+		);
 		finalize_pass();
 		m_cmd.end();
 	}
+	if (tl_active_recording_context == this) {
+		tl_active_recording_context = nullptr;
+	}
+}
+
+auto gse::gpu::recording_context::finalize_active_on_current_thread() noexcept -> void {
+	auto* active = tl_active_recording_context;
+	if (active != nullptr && active->m_cmd) {
+		assert(
+			std::this_thread::get_id() == active->m_origin_thread,
+			"finalize_active_on_current_thread invoked on a thread that does not own the active rec's secondary; "
+			"tl_active_recording_context was corrupted (probably by a rec being held across a non-pass co_await)."
+		);
+		active->finalize_pass();
+		active->m_cmd.end();
+		active->m_cmd = commands{};
+	}
+	tl_active_recording_context = nullptr;
 }
 
 auto gse::gpu::recording_context::check_active() const -> void {
 	assert(
 		static_cast<bool>(m_cmd),
-		"recording_context method called after the pass's secondary was finalized (moved-from or destroyed). "
-		"If you reassigned rec with `rec = co_await ...`, this is the old (now empty) rec; use the new rec returned "
-		"by co_await instead. If you saved a reference, the original rec went out of scope."
+		"recording_context method called after the pass's secondary was finalized. This happens when the previous rec "
+		"was implicitly closed by a subsequent `co_await gpu::pass(...)` (each new pass await closes the prior rec on "
+		"the suspending thread to keep VkCommandPool access single-threaded). Use only the rec returned by the most "
+		"recent co_await, or scope each rec in its own block."
+	);
+	assert(
+		std::this_thread::get_id() == m_origin_thread,
+		"recording_context method called from a different thread than the one that constructed it. This means the rec "
+		"was held alive across a co_await that was not gpu::pass<...>(ctx) and the coroutine resumed on a different "
+		"worker. Recording onto a secondary from a thread that does not own its command pool is undefined; scope the "
+		"rec to end before any non-pass await."
 	);
 }
 
@@ -426,11 +582,7 @@ auto gse::gpu::recording_context::sample_image(const image& img, const gpu::pipe
 	);
 }
 
-auto gse::gpu::recording_context::note_touched(
-	const resource_ref ref,
-	const gpu::pipeline_stage_flags stages,
-	const gpu::access_flags access
-) -> void {
+auto gse::gpu::recording_context::note_touched(const resource_ref ref, const gpu::pipeline_stage_flags stages, const gpu::access_flags access) -> void {
 	if (!ref.ptr) {
 		return;
 	}
@@ -441,8 +593,7 @@ auto gse::gpu::recording_context::note_touched(
 			return;
 		}
 	}
-	m_touched.push_back(
-	{
+	m_touched.push_back({
 		.ref = ref,
 		.stages = stages,
 		.access = access,
@@ -470,13 +621,7 @@ auto gse::gpu::recording_context::finalize_pass() -> void {
 	}
 }
 
-auto gse::gpu::recording_context::copy_buffer(
-	const buffer& src,
-	const buffer& dst,
-	const std::size_t size,
-	const std::size_t src_offset,
-	const std::size_t dst_offset
-) -> void {
+auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& dst, const std::size_t size, const std::size_t src_offset, const std::size_t dst_offset) -> void {
 	check_active();
 	note_touched(
 		{
@@ -505,12 +650,7 @@ auto gse::gpu::recording_context::copy_buffer(
 	);
 }
 
-auto gse::gpu::recording_context::fill_buffer(
-	const buffer& dst,
-	const std::size_t offset,
-	const std::size_t size,
-	const std::uint32_t data
-) -> void {
+auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size_t offset, const std::size_t size, const std::uint32_t data) -> void {
 	check_active();
 	note_touched(
 		{
@@ -592,10 +732,7 @@ auto gse::gpu::recording_context::barrier(const gpu::barrier_scope scope) const 
 	m_cmd.pipeline_barrier(dep);
 }
 
-auto gse::gpu::recording_context::build_acceleration_structure(
-	const gpu::acceleration_structure_build_geometry_info& build_info,
-	const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos
-) -> void {
+auto gse::gpu::recording_context::build_acceleration_structure(const gpu::acceleration_structure_build_geometry_info& build_info, const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos) -> void {
 	check_active();
 	note_touched(
 		{
@@ -613,11 +750,7 @@ auto gse::gpu::recording_context::pipeline_barrier(const gpu::dependency_info& d
 	m_cmd.pipeline_barrier(dep);
 }
 
-auto gse::gpu::recording_context::capture_swapchain(
-	const gpu::swap_chain& swapchain,
-	const gpu::frame& frame,
-	const buffer& dst
-) const -> void {
+auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapchain, const gpu::frame& frame, const buffer& dst) const -> void {
 	check_active();
 	const auto ext = swapchain.extent();
 	const auto dst_buffer = dst.handle();
@@ -679,12 +812,7 @@ auto gse::gpu::recording_context::capture_swapchain(
 	);
 }
 
-auto gse::gpu::recording_context::blit_swapchain_to_image(
-	const gpu::swap_chain& swapchain,
-	const gpu::frame& frame,
-	const image& dst,
-	const vec2u dst_extent
-) const -> void {
+auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const image& dst, const vec2u dst_extent) const -> void {
 	check_active();
 	const auto src_image = swapchain.image(frame.image_index());
 	const auto src_ext = swapchain.extent();
@@ -795,14 +923,7 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(
 	);
 }
 
-auto gse::gpu::recording_context::set_viewport(
-	const float x,
-	const float y,
-	const float width,
-	const float height,
-	const float min_depth,
-	const float max_depth
-) const -> void {
+auto gse::gpu::recording_context::set_viewport(const float x, const float y, const float width, const float height, const float min_depth, const float max_depth) const -> void {
 	check_active();
 	m_cmd.set_viewport(
 		gpu::viewport{
@@ -816,12 +937,7 @@ auto gse::gpu::recording_context::set_viewport(
 	);
 }
 
-auto gse::gpu::recording_context::set_scissor(
-	const std::int32_t x,
-	const std::int32_t y,
-	const std::uint32_t width,
-	const std::uint32_t height
-) const -> void {
+auto gse::gpu::recording_context::set_scissor(const std::int32_t x, const std::int32_t y, const std::uint32_t width, const std::uint32_t height) const -> void {
 	check_active();
 	const gse::rect_t<vec2i> sc{ {
 		.min = vec2i{ x, y },
@@ -830,41 +946,22 @@ auto gse::gpu::recording_context::set_scissor(
 	m_cmd.set_scissor(sc);
 }
 
-auto gse::gpu::recording_context::draw(
-	const std::uint32_t vertex_count,
-	const std::uint32_t instance_count,
-	const std::uint32_t first_vertex,
-	const std::uint32_t first_instance
-) const -> void {
+auto gse::gpu::recording_context::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) const -> void {
 	check_active();
 	m_cmd.draw(vertex_count, instance_count, first_vertex, first_instance);
 }
 
-auto gse::gpu::recording_context::draw_indexed(
-	const std::uint32_t index_count,
-	const std::uint32_t instance_count,
-	const std::uint32_t first_index,
-	const std::int32_t vertex_offset,
-	const std::uint32_t first_instance
-) const -> void {
+auto gse::gpu::recording_context::draw_indexed(const std::uint32_t index_count, const std::uint32_t instance_count, const std::uint32_t first_index, const std::int32_t vertex_offset, const std::uint32_t first_instance) const -> void {
 	check_active();
 	m_cmd.draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance);
 }
 
-auto gse::gpu::recording_context::draw_mesh_tasks(
-	const std::uint32_t x,
-	const std::uint32_t y,
-	const std::uint32_t z
-) const -> void {
+auto gse::gpu::recording_context::draw_mesh_tasks(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
 	check_active();
 	m_cmd.draw_mesh_tasks(x, y, z);
 }
 
-auto gse::gpu::recording_context::dispatch(
-	const std::uint32_t x,
-	const std::uint32_t y,
-	const std::uint32_t z
-) const -> void {
+auto gse::gpu::recording_context::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
 	check_active();
 	m_cmd.dispatch(x, y, z);
 }
@@ -883,20 +980,12 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 }
 
 template <typename T>
-auto gse::gpu::recording_context::push(
-	const gpu::pipeline& p,
-	const gpu::typed_push_constants<T>& typed
-) const -> void {
+auto gse::gpu::recording_context::push(const gpu::pipeline& p, const gpu::typed_push_constants<T>& typed) const -> void {
 	check_active();
 	typed.replay(m_cmd.native(), p.layout());
 }
 
-auto gse::gpu::recording_context::draw_indirect(
-	const buffer& buf,
-	const std::size_t offset,
-	const std::uint32_t draw_count,
-	const std::uint32_t stride
-) -> void {
+auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
 	check_active();
 	note_touched(
 		{
@@ -909,12 +998,7 @@ auto gse::gpu::recording_context::draw_indirect(
 	m_cmd.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
 }
 
-auto gse::gpu::recording_context::draw_mesh_tasks_indirect(
-	const buffer& buf,
-	const std::size_t offset,
-	const std::uint32_t draw_count,
-	const std::uint32_t stride
-) -> void {
+auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
 	check_active();
 	note_touched(
 		{
@@ -940,11 +1024,7 @@ auto gse::gpu::recording_context::bind(const gpu::pipeline& p) const -> void {
 	}
 }
 
-auto gse::gpu::recording_context::bind_descriptors(
-	const gpu::pipeline& p,
-	const gpu::descriptor_region& region,
-	const std::uint32_t set_index
-) -> void {
+auto gse::gpu::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) -> void {
 	check_active();
 	assert(region, "Cannot bind null descriptor region");
 	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
@@ -989,11 +1069,7 @@ auto gse::gpu::recording_context::bind_vertex(const buffer& buf, const std::size
 	);
 }
 
-auto gse::gpu::recording_context::bind_index(
-	const buffer& buf,
-	const gpu::index_type type,
-	const std::size_t offset
-) -> void {
+auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index_type type, const std::size_t offset) -> void {
 	check_active();
 	note_touched(
 		{
@@ -1029,11 +1105,7 @@ auto gse::gpu::recording_context::set_scissor(const vec2u extent) const -> void 
 	m_cmd.set_scissor(sc);
 }
 
-auto gse::gpu::recording_context::commit(
-	const gpu::descriptor_writer& writer,
-	const gpu::pipeline& p,
-	const std::uint32_t set_index
-) -> void {
+auto gse::gpu::recording_context::commit(const gpu::descriptor_writer& writer, const gpu::pipeline& p, const std::uint32_t set_index) -> void {
 	check_active();
 	const auto written = writer.touched_resources();
 	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
@@ -1117,10 +1189,7 @@ gse::gpu::render_graph::render_graph(
 	});
 }
 
-auto gse::gpu::render_graph::create_framebuffer_image(
-	const framebuffer_image_desc& desc,
-	const std::string_view tag
-) -> image {
+auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_desc& desc, const std::string_view tag) -> image {
 	const auto ext = m_swapchain->extent();
 	if (ext.x() == 0 || ext.y() == 0) {
 		return {};
@@ -1142,10 +1211,7 @@ auto gse::gpu::render_graph::recreate_framebuffer_images() -> void {
 	}
 }
 
-auto gse::gpu::render_graph::register_framebuffer_image(
-	const id name,
-	const framebuffer_image_desc& desc
-) -> const image& {
+auto gse::gpu::render_graph::register_framebuffer_image(const id name, const framebuffer_image_desc& desc) -> const image& {
 	auto& slot = m_framebuffer_images[name];
 	if (!slot) {
 		slot = std::make_unique<registered_image>(registered_image{
@@ -1609,7 +1675,10 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			if (has_edge(from, to)) {
 				return;
 			}
-			adj[from].push_back({ .to = to, .kind = kind });
+			adj[from].push_back({
+				.to = to,
+				.kind = kind
+			});
 			++in_degree[to];
 			update_reachability_for_new_edge(from, to);
 		};
@@ -2025,10 +2094,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				for (const auto& b : buffer_barriers) {
 					bool merged = false;
 					for (auto& o : coalesced) {
-						if (
-							o.buffer.value == b.buffer.value && o.offset == b.offset && o.size == b.size &&
-							o.src_stages.bits() == b.src_stages.bits() && o.dst_stages.bits() == b.dst_stages.bits()
-						) {
+						if (o.buffer.value == b.buffer.value && o.offset == b.offset && o.size == b.size && o.src_stages.bits() == b.src_stages.bits() && o.dst_stages.bits() == b.dst_stages.bits()) {
 							o.src_access |= b.src_access;
 							o.dst_access |= b.dst_access;
 							merged = true;

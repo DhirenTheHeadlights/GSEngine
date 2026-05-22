@@ -25,19 +25,40 @@ export namespace gse::log {
 	};
 
 	template <typename... Args>
-	auto println(std::format_string<Args...> fmt, const Args&... args) -> void;
+	auto println(
+		std::format_string<Args...> fmt,
+		const Args&... args
+	) -> void;
 
 	template <typename... Args>
-	auto println(level lvl, std::format_string<Args...> fmt, const Args&... args) -> void;
+	auto println(
+		level lvl,
+		std::format_string<Args...> fmt,
+		const Args&... args
+	) -> void;
 
 	template <typename... Args>
-	auto println(level lvl, std::source_location loc, std::format_string<Args...> fmt, const Args&... args) -> void;
+	auto println(
+		level lvl,
+		std::source_location loc,
+		std::format_string<Args...> fmt,
+		const Args&... args
+	) -> void;
 
 	template <typename... Args>
-	auto println(category cat, std::format_string<Args...> fmt, const Args&... args) -> void;
+	auto println(
+		category cat,
+		std::format_string<Args...> fmt,
+		const Args&... args
+	) -> void;
 
 	template <typename... Args>
-	auto println(level lvl, category cat, std::format_string<Args...> fmt, const Args&... args) -> void;
+	auto println(
+		level lvl,
+		category cat,
+		std::format_string<Args...> fmt,
+		const Args&... args
+	) -> void;
 
 	template <typename... Args>
 	auto println(
@@ -86,12 +107,7 @@ auto gse::log::println(const level lvl, std::format_string<Args...> fmt, const A
 }
 
 template <typename... Args>
-auto gse::log::println(
-	const level lvl,
-	const std::source_location loc,
-	std::format_string<Args...> fmt,
-	const Args&... args
-) -> void {
+auto gse::log::println(const level lvl, const std::source_location loc, std::format_string<Args...> fmt, const Args&... args) -> void {
 	println(lvl, category::general, loc, fmt, args...);
 }
 
@@ -101,23 +117,12 @@ auto gse::log::println(const category cat, std::format_string<Args...> fmt, cons
 }
 
 template <typename... Args>
-auto gse::log::println(
-	const level lvl,
-	const category cat,
-	std::format_string<Args...> fmt,
-	const Args&... args
-) -> void {
+auto gse::log::println(const level lvl, const category cat, std::format_string<Args...> fmt, const Args&... args) -> void {
 	instance().write_line(lvl, cat, {}, fmt.get(), std::make_format_args(args...));
 }
 
 template <typename... Args>
-auto gse::log::println(
-	const level lvl,
-	const category cat,
-	const std::source_location loc,
-	std::format_string<Args...> fmt,
-	const Args&... args
-) -> void {
+auto gse::log::println(const level lvl, const category cat, const std::source_location loc, std::format_string<Args...> fmt, const Args&... args) -> void {
 	const auto loc_prefix = std::format("{}:{} - ", loc.file_name(), loc.line());
 	instance().write_line(lvl, cat, loc_prefix, fmt.get(), std::make_format_args(args...));
 }

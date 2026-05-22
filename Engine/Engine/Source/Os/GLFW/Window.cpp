@@ -14,23 +14,43 @@ import gse.concurrency;
 import gse.ecs;
 
 namespace gse {
-	auto refresh_monitor_settings(window::data& d) -> void;
+	auto refresh_monitor_settings(
+		window::data& d
+	) -> void;
 
-	auto refresh_resolution_settings(window::data& d) -> void;
+	auto refresh_resolution_settings(
+		window::data& d
+	) -> void;
 
-	auto refresh_display_mode_settings(window::data& d) -> void;
+	auto refresh_display_mode_settings(
+		window::data& d
+	) -> void;
 
-	auto refresh_present_mode_settings(window::data& d) -> void;
+	auto refresh_present_mode_settings(
+		window::data& d
+	) -> void;
 
-	auto apply_cursor_mode(const window::data& d) -> void;
+	auto apply_cursor_mode(
+		const window::data& d
+	) -> void;
 
-	auto apply_display_mode(window::data& d, display_mode mode) -> void;
+	auto apply_display_mode(
+		window::data& d,
+		display_mode mode
+	) -> void;
 
-	auto move_window_to_monitor(const window::data& d, int monitor_index) -> void;
+	auto move_window_to_monitor(
+		const window::data& d,
+		int monitor_index
+	) -> void;
 
-	auto to_input_key(int glfw_key) -> std::optional<key>;
+	auto to_input_key(
+		int glfw_key
+	) -> std::optional<key>;
 
-	auto to_input_mouse_button(int glfw_button) -> std::optional<mouse_button>;
+	auto to_input_mouse_button(
+		int glfw_button
+	) -> std::optional<mouse_button>;
 
 }
 
@@ -184,9 +204,7 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 	else {
 		const auto resolutions = window::enumerate_resolutions(selected_monitor);
 
-		if (
-			const int res_idx = d.resolution.value - 1; res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())
-		) {
+		if (const int res_idx = d.resolution.value - 1; res_idx >= 0 && res_idx < static_cast<int>(resolutions.size())) {
 			target_width = resolutions[res_idx].width;
 			target_height = resolutions[res_idx].height;
 			target_refresh = resolutions[res_idx].refresh_rate;

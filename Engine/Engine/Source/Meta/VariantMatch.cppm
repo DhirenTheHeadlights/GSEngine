@@ -9,37 +9,71 @@ export namespace gse {
 	public:
 		using var_t = std::remove_reference_t<Variant>;
 
-		explicit variant(var_t& v);
+		explicit variant(
+			var_t& v
+		);
 
-		template <class T, class F>
-		auto if_is(F&& f) & -> variant&;
+		template <
+			class T,
+			class F
+		>
+		auto if_is(
+			F&& f
+		) & -> variant&;
 
-		template <class T, class F>
-		auto else_if_is(F&& f) & -> variant&;
-
-		template <class F>
-		auto otherwise(F&& f) & -> void;
-
-		template <class T, class F>
-		auto if_is(F&& f) && -> variant&&;
-
-		template <class T, class F>
-		auto else_if_is(F&& f) && -> variant&&;
-
-		template <class F>
-		auto otherwise(F&& f) && -> void;
-
-		template <class F>
-		auto if_is(F&& f) & -> variant&;
+		template <
+			class T,
+			class F
+		>
+		auto else_if_is(
+			F&& f
+		) & -> variant&;
 
 		template <class F>
-		auto else_if_is(F&& f) & -> variant&;
+		auto otherwise(
+			F&& f
+		) & -> void;
+
+		template <
+			class T,
+			class F
+		>
+		auto if_is(
+			F&& f
+		) && -> variant&&;
+
+		template <
+			class T,
+			class F
+		>
+		auto else_if_is(
+			F&& f
+		) && -> variant&&;
 
 		template <class F>
-		auto if_is(F&& f) && -> variant&&;
+		auto otherwise(
+			F&& f
+		) && -> void;
 
 		template <class F>
-		auto else_if_is(F&& f) && -> variant&&;
+		auto if_is(
+			F&& f
+		) & -> variant&;
+
+		template <class F>
+		auto else_if_is(
+			F&& f
+		) & -> variant&;
+
+		template <class F>
+		auto if_is(
+			F&& f
+		) && -> variant&&;
+
+		template <class F>
+		auto else_if_is(
+			F&& f
+		) && -> variant&&;
 
 	private:
 		var_t* m_ptr;
@@ -47,10 +81,14 @@ export namespace gse {
 	};
 
 	template <typename... Ts>
-	auto match(std::variant<Ts...>& v) -> variant<std::variant<Ts...>&>;
+	auto match(
+		std::variant<Ts...>& v
+	) -> variant<std::variant<Ts...>&>;
 
 	template <typename... Ts>
-	auto match(const std::variant<Ts...>& v) -> variant<const std::variant<Ts...>&>;
+	auto match(
+		const std::variant<Ts...>& v
+	) -> variant<const std::variant<Ts...>&>;
 }
 
 template <class Variant>

@@ -62,7 +62,10 @@ export namespace gse {
 	consteval auto format_of() -> asset_format_data;
 
 	template <has_asset_format T>
-	auto load_baked(const std::filesystem::path& path, T& out) -> bool;
+	auto load_baked(
+		const std::filesystem::path& path,
+		T& out
+	) -> bool;
 }
 
 template <typename T>

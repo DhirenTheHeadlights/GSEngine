@@ -108,6 +108,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			add_system<renderer::world_text::system>();
 			add_system<renderer::physics_debug::system>();
 			add_system<renderer::atmosphere::system>();
+			add_system<renderer::cloud::system>();
 			add_system<renderer::bloom::system>();
 			add_system<renderer::tonemap::system>();
 			add_system<renderer::capture::system>();
@@ -177,10 +178,7 @@ auto gse::engine::update() -> void {
 		deferred();
 	}
 
-	if (
-		!m_loading.finished() && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled() &&
-		m_loading.rendered_once()
-	) {
+	if (!m_loading.finished() && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled() && m_loading.rendered_once()) {
 		m_loading.mark_finished();
 		log::println(log::category::runtime, "boot: loading.mark_finished (all settled + rendered)");
 	}
@@ -205,7 +203,7 @@ auto gse::engine::render() -> void {
 		frame_ok = result.has_value();
 
 		if (!result && result.error() == gpu::frame_status::device_lost) {
-			log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame â€” terminating");
+			log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame Ã¢â‚¬â€ terminating");
 			std::abort();
 		}
 	}

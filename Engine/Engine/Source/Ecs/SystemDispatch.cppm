@@ -43,7 +43,9 @@ namespace gse {
 	template <typename S>
 	struct system_node_data {
 		template <typename... Args>
-		explicit system_node_data(Args&&... args);
+		explicit system_node_data(
+			Args&&... args
+		);
 
 		state_of_t<S> state;
 		[[no_unique_address]] snapshot_storage<state_of_t<S>> snapshot;
@@ -75,7 +77,10 @@ namespace gse {
 		}
 	}();
 
-	template <typename Arg, typename S>
+	template <
+		typename Arg,
+		typename S
+	>
 	constexpr bool is_cyclic_frame_dep_v = [] consteval -> bool {
 		if constexpr (!is_state_dep_v<Arg, S>) {
 			return false;
@@ -119,42 +124,84 @@ namespace gse {
 	using arg_type_of = typename[:std::meta::type_of(std::meta::parameters_of(MemberFn)[I]):];
 
 	template <typename T>
-	auto direct_state_ref(const task_context& ctx) -> const T&;
+	auto direct_state_ref(
+		const task_context& ctx
+	) -> const T&;
 
-	template <typename Arg, typename S>
-	auto resolve_run_arg(run_context& ctx, state_of_t<S>& state) -> decltype(auto);
+	template <
+		typename Arg,
+		typename S
+	>
+	auto resolve_run_arg(
+		run_context& ctx,
+		state_of_t<S>& state
+	) -> decltype(auto);
 
-	template <typename Arg, typename S>
-	auto resolve_frame_arg(frame_context& ctx, state_of_t<S>& state) -> decltype(auto);
+	template <
+		typename Arg,
+		typename S
+	>
+	auto resolve_frame_arg(
+		frame_context& ctx,
+		state_of_t<S>& state
+	) -> decltype(auto);
 
 	template <typename S>
-	auto invoke_shutdown_for(shutdown_context& phase, void* data_ptr) -> void;
+	auto invoke_shutdown_for(
+		shutdown_context& phase,
+		void* data_ptr
+	) -> void;
 
 	template <typename S>
-	auto invoke_run_for(run_context& ctx, void* data_ptr) -> async::task<>;
+	auto invoke_run_for(
+		run_context& ctx,
+		void* data_ptr
+	) -> async::task<>;
 
 	template <typename S>
-	auto invoke_frame_for(frame_context& ctx, void* data_ptr) -> async::task<>;
+	auto invoke_frame_for(
+		frame_context& ctx,
+		void* data_ptr
+	) -> async::task<>;
 
 	template <typename S>
-	auto invoke_snapshot_for(void* data_ptr) -> void;
+	auto invoke_snapshot_for(
+		void* data_ptr
+	) -> void;
 
 	template <typename S>
-	auto invoke_apply_settings_for(void* data_ptr, channel_registry& channels_store, channel_writer& channels) -> void;
+	auto invoke_apply_settings_for(
+		void* data_ptr,
+		channel_registry& channels_store,
+		channel_writer& channels
+	) -> void;
 
 	template <typename S>
-	auto data_delete_for(void* data_ptr) -> void;
+	auto data_delete_for(
+		void* data_ptr
+	) -> void;
 
-	auto noop_shutdown(shutdown_context& phase, void* data_ptr) -> void;
+	auto noop_shutdown(
+		shutdown_context& phase,
+		void* data_ptr
+	) -> void;
 
 	struct noop_dispatchers {
 		template <typename S>
-		static auto noop_frame_for(frame_context& ctx, void* data_ptr) -> async::task<>;
+		static auto noop_frame_for(
+			frame_context& ctx,
+			void* data_ptr
+		) -> async::task<>;
 	};
 
-	auto noop_snapshot(void* data_ptr) -> void;
+	auto noop_snapshot(
+		void* data_ptr
+	) -> void;
 
-	template <auto MemberFn, typename S>
+	template <
+		auto MemberFn,
+		typename S
+	>
 	auto register_state_dep_tags() -> void;
 
 	template <typename S>
@@ -169,11 +216,23 @@ namespace gse {
 	template <typename T>
 	constexpr id state_dep_id_v = compute_state_dep_id<dep_pointee_t<T>>();
 
-	template <auto MemberFn, typename S>
+	template <
+		auto MemberFn,
+		typename S
+	>
 	consteval auto compute_state_dep_count() -> std::size_t;
 
-	template <auto MemberFn, typename S>
-	consteval auto compute_state_dep_ids() -> std::array<id, compute_state_dep_count<MemberFn, S>()>;
+	template <
+		auto MemberFn,
+		typename S
+	>
+	consteval auto compute_state_dep_ids() -> std::array<
+		id,
+		compute_state_dep_count<
+			MemberFn,
+			S
+		>()
+	>;
 
 	template <typename S>
 	concept shutdown_takes_state = requires(shutdown_context& p, state_of_t<S>& s) { S::shutdown(p, s); };
@@ -454,11 +513,7 @@ auto gse::invoke_snapshot_for(void* data_ptr) -> void {
 }
 
 template <typename S>
-auto gse::invoke_apply_settings_for(
-	void* data_ptr,
-	channel_registry& channels_store,
-	channel_writer& channels
-) -> void {
+auto gse::invoke_apply_settings_for(void* data_ptr, channel_registry& channels_store, channel_writer& channels) -> void {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
 	using data_t = typename S::data;
 	const auto& reqs = channels_store.ensure_typed<settings::change_request<S>>().data.read_raw();
@@ -510,7 +565,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 			"frame(). "
 			"This deadlocks the scheduler: state_ready for the target only fires after its pass dispatches in "
 			"execute_frame, "
-			"which is after the channel drain — so this frame's pass push misses the drain and the coroutine never "
+			"which is after the channel drain â€” so this frame's pass push misses the drain and the coroutine never "
 			"resumes. "
 			"Use shared_view<X> for snapshot reads (annotate the fields you need with [[= gse::shared]]), or channels "
 			"for "

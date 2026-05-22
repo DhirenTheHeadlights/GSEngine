@@ -96,6 +96,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 
 	result acquire_status = result::error_unknown;
 	std::uint32_t acquired_image_index = 0;
+
 	try {
 		trace::scope_guard sg{ trace_id<"begin_frame::acquire">() };
 		const auto acquired = vulkan::acquire_next_image(
@@ -193,11 +194,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 	};
 }
 
-auto gse::gpu::frame::end(
-	window::data& win,
-	std::span<const queue_submission> aux_submissions,
-	std::span<const semaphore_submit_info> extra_graphics_waits
-) -> void {
+auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits) -> void {
 	const auto graphics_cb = m_command_buffers[static_cast<std::size_t>(queue_type::graphics)];
 	m_device->transient().recorder().run_post_frame(graphics_cb);
 
@@ -348,9 +345,6 @@ auto gse::gpu::frame::end(
 	m_frame_in_progress = false;
 }
 
-auto gse::gpu::frame::create_sync_objects(
-	const vulkan::device& device_data,
-	const vulkan::swap_chain& swap_chain_data
-) -> vulkan::sync {
+auto gse::gpu::frame::create_sync_objects(const vulkan::device& device_data, const vulkan::swap_chain& swap_chain_data) -> vulkan::sync {
 	return vulkan::sync::create(device_data, swap_chain_data.image_count());
 }

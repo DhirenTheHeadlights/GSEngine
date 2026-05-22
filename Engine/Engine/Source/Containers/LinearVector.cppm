@@ -17,31 +17,56 @@ export namespace gse {
 
 		linear_vector() = default;
 
-		explicit linear_vector(size_type capacity);
+		explicit linear_vector(
+			size_type capacity
+		);
 
 		~linear_vector() override;
 
-		linear_vector(linear_vector&& other) noexcept;
+		linear_vector(
+			linear_vector&& other
+		) noexcept;
 
-		auto operator=(linear_vector&& other) noexcept -> linear_vector&;
+		auto operator=(
+			linear_vector&& other
+		) noexcept -> linear_vector&;
 
-		auto push_back(const T& value) -> reference;
+		auto push_back(
+			const T& value
+		) -> reference;
 
-		auto push_back(T&& value) -> reference;
+		auto push_back(
+			T&& value
+		) -> reference;
 
 		template <typename... Args>
-		auto emplace_back(Args&&... args) -> reference;
+		auto emplace_back(
+			Args&&... args
+		) -> reference;
 
-		auto reserve(size_type new_capacity) -> void;
+		auto reserve(
+			size_type new_capacity
+		) -> void;
 
-		auto resize(size_type n) -> void;
+		auto resize(
+			size_type n
+		) -> void;
 
-		auto resize(size_type n, const T& val) -> void;
+		auto resize(
+			size_type n,
+			const T& val
+		) -> void;
 
-		auto assign(size_type n, const T& val) -> void;
+		auto assign(
+			size_type n,
+			const T& val
+		) -> void;
 
 		template <std::input_iterator InputIt>
-		auto assign(InputIt first, InputIt last) -> void;
+		auto assign(
+			InputIt first,
+			InputIt last
+		) -> void;
 
 		auto pop_back() -> void;
 
@@ -54,19 +79,30 @@ export namespace gse {
 		[[nodiscard]] auto empty() const -> bool;
 
 		template <typename Self>
-		[[nodiscard]] auto data(this Self& self) -> decltype(auto);
+		[[nodiscard]] auto data(
+			this Self& self
+		) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto begin(this Self& self) -> decltype(auto);
+		[[nodiscard]] auto begin(
+			this Self& self
+		) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto end(this Self& self) -> decltype(auto);
+		[[nodiscard]] auto end(
+			this Self& self
+		) -> decltype(auto);
 
 		template <typename Self>
-		auto operator[](this Self& self, size_type i) -> decltype(auto);
+		auto operator[](
+			this Self& self,
+			size_type i
+		) -> decltype(auto);
 
 		template <typename Self>
-		[[nodiscard]] auto span(this Self& self) -> decltype(auto);
+		[[nodiscard]] auto span(
+			this Self& self
+		) -> decltype(auto);
 
 	private:
 		T* m_data = nullptr;

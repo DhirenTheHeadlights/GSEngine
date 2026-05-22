@@ -14,12 +14,18 @@ export namespace gs {
 			gse::channel_writer channels
 		);
 
-		auto build(gse::gui::builder& ui, gse::gui::nav& n) -> void override;
+		auto build(
+			gse::gui::builder& ui,
+			gse::gui::nav& n
+		) -> void override;
 
 		auto title() const -> std::string_view override;
 
 	private:
-		auto draw_preview(const gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect) const -> void;
+		auto draw_preview(
+			const gse::gui::draw_context& ctx,
+			const gse::gui::ui_rect& rect
+		) const -> void;
 
 		const gse::save::registry* m_save_reg;
 		const crosshair_system::data* m_crosshair;
@@ -42,10 +48,7 @@ auto gs::crosshair_screen::title() const -> std::string_view {
 	return "Crosshair";
 }
 
-auto gs::crosshair_screen::draw_preview(
-	const gse::gui::draw_context& ctx,
-	const gse::gui::ui_rect& rect
-) const -> void {
+auto gs::crosshair_screen::draw_preview(const gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect) const -> void {
 	ctx.queue_sprite({
 		.rect = rect,
 		.color = { 0.06f, 0.06f, 0.09f, 1.f },
@@ -61,10 +64,7 @@ auto gs::crosshair_screen::draw_preview(
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
-		.rect = gse::gui::ui_rect::from_position_size(
-			{ rect.left(), rect.bottom() + border },
-			{ rect.width(), border }
-		),
+		.rect = gse::gui::ui_rect::from_position_size({ rect.left(), rect.bottom() + border }, { rect.width(), border }),
 		.color = border_color,
 		.texture = ctx.blank_texture,
 	});
@@ -74,8 +74,7 @@ auto gs::crosshair_screen::draw_preview(
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
-		.rect =
-			gse::gui::ui_rect::from_position_size({ rect.right() - border, rect.top() }, { border, rect.height() }),
+		.rect = gse::gui::ui_rect::from_position_size({ rect.right() - border, rect.top() }, { border, rect.height() }),
 		.color = border_color,
 		.texture = ctx.blank_texture,
 	});

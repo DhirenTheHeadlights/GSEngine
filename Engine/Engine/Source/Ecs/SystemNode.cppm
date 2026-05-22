@@ -37,17 +37,46 @@ export namespace gse {
 
 		system_node() = default;
 
-		system_node(system_node&&) noexcept = default;
+		system_node(
+			system_node&&
+		) noexcept = default;
 
-		auto operator=(system_node&&) noexcept -> system_node& = default;
+		auto operator=(
+			system_node&&
+		) noexcept -> system_node& = default;
 
 		std::unique_ptr<void, void (*)(void*)> data{ nullptr, nullptr };
 
-		void (*invoke_shutdown_fn)(shutdown_context&, void*) = nullptr;
-		auto (*invoke_run_fn)(run_context&, void*) -> async::task<> = nullptr;
-		auto (*invoke_frame_fn)(frame_context&, void*) -> async::task<> = nullptr;
-		void (*invoke_snapshot_fn)(void*) = nullptr;
-		void (*invoke_apply_settings_fn)(void*, channel_registry&, channel_writer&) = nullptr;
+		void (
+			*invoke_shutdown_fn
+		)(
+			shutdown_context&,
+			void*
+		) = nullptr;
+		auto (
+			*invoke_run_fn
+		)(
+			run_context&,
+			void*
+		) -> async::task<> = nullptr;
+		auto (
+			*invoke_frame_fn
+		)(
+			frame_context&,
+			void*
+		) -> async::task<> = nullptr;
+		void (
+			*invoke_snapshot_fn
+		)(
+			void*
+		) = nullptr;
+		void (
+			*invoke_apply_settings_fn
+		)(
+			void*,
+			channel_registry&,
+			channel_writer&
+		) = nullptr;
 
 		std::vector<id> run_state_deps;
 		std::vector<id> frame_state_deps;
@@ -77,18 +106,19 @@ export namespace gse {
 		std::optional<settings::register_settings_type> settings_record;
 	};
 
-	template <typename S, typename... Args>
-	auto make_system_node(Args&&... args) -> system_node;
+	template <
+		typename S,
+		typename... Args
+	>
+	auto make_system_node(
+		Args&&... args
+	) -> system_node;
 }
 
 template <typename T>
 consteval auto gse::has_describe_fields() -> bool {
 	bool found = false;
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			found = true;
 		}

@@ -17,7 +17,10 @@ export namespace gse::physics {
 
 	struct collision_result_component : collision_information {};
 
-	auto world_aabb_of(const transform_component& tc, const collision_component& cc) -> aabb;
+	auto world_aabb_of(
+		const transform_component& tc,
+		const collision_component& cc
+	) -> aabb;
 }
 
 auto gse::physics::world_aabb_of(const transform_component& tc, const collision_component& cc) -> aabb {

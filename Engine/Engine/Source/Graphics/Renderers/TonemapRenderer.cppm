@@ -14,11 +14,8 @@ import gse.meta;
 export namespace gse::renderer::tonemap {
 	struct system {
 		struct [[= gse::settings::category<"Graphics">{}]] data {
-			[[
-				= gse::settings::
-					describe<"HDR exposure multiplier applied before tonemapping. 1.0 is the neutral default.">{}
-			]]
-			float exposure = 1.0f;
+			[[= gse::settings::
+				  describe<"HDR exposure multiplier applied before tonemapping. 1.0 is the neutral default.">{}]] float exposure = 1.0f;
 
 			gpu::pipeline pipeline;
 			gpu::sampler sampler;

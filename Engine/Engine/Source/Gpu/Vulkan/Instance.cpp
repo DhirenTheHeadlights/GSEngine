@@ -9,10 +9,7 @@ import gse.assert;
 import gse.log;
 import gse.os;
 
-auto gse::vulkan::instance::create(
-	const std::span<const char* const> required_extensions,
-	const bool enable_validation
-) -> instance {
+auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> instance {
 	vk::detail::defaultDispatchLoaderDynamic.init();
 
 	std::vector<const char*> validation_layers;

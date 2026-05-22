@@ -36,7 +36,12 @@ export namespace gs {
 		const gse::vec3<gse::position>& position,
 		const gse::vec3<gse::length>& size,
 		gse::mass m = gse::kilograms(1000.f),
-		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f),
+		const gse::quat& orientation = gse::quat(
+			1.f,
+			0.f,
+			0.f,
+			0.f
+		),
 		float roughness = 0.5f,
 		float metallic = 0.0f
 	) -> box_archetype;
@@ -56,24 +61,30 @@ export namespace gs {
 	auto static_box(
 		const gse::vec3<gse::position>& position,
 		const gse::vec3<gse::length>& size,
-		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
+		const gse::quat& orientation = gse::quat(
+			1.f,
+			0.f,
+			0.f,
+			0.f
+		),
+		const gse::vec3f& base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
+		float roughness = 0.8f,
+		float metallic = 0.0f
 	) -> box_archetype;
 
 	auto static_collider(
 		const gse::vec3<gse::position>& position,
 		const gse::vec3<gse::length>& size,
-		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
+		const gse::quat& orientation = gse::quat(
+			1.f,
+			0.f,
+			0.f,
+			0.f
+		)
 	) -> static_collider_archetype;
 }
 
-auto gs::box(
-	const gse::vec3<gse::position>& position,
-	const gse::vec3<gse::length>& size,
-	const gse::mass m,
-	const gse::quat& orientation,
-	const float roughness,
-	const float metallic
-) -> box_archetype {
+auto gs::box(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> box_archetype {
 	const gse::inertia box_inertia = m * gse::dot(size, size) / 18.f;
 
 	return {
@@ -88,7 +99,9 @@ auto gs::box(
 			},
 		},
 		.collision = {
-			.shape = gse::physics::box_shape{ .size = size },
+			.shape = gse::physics::box_shape{
+				.size = size
+			},
 		},
 		.spec = {
 			.material = {
@@ -101,11 +114,7 @@ auto gs::box(
 	};
 }
 
-auto gs::sphere(
-	const gse::vec3<gse::position>& position,
-	const gse::length radius,
-	const gse::sphere_lod lod
-) -> sphere_archetype {
+auto gs::sphere(const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod) -> sphere_archetype {
 	return {
 		.transform = {
 			.position = position,
@@ -116,7 +125,9 @@ auto gs::sphere(
 			},
 		},
 		.collision = {
-			.shape = gse::physics::sphere_shape{ .radius = radius },
+			.shape = gse::physics::sphere_shape{
+				.radius = radius
+			},
 		},
 		.spec = {
 			.material = {
@@ -128,11 +139,7 @@ auto gs::sphere(
 	};
 }
 
-auto gs::sphere_light(
-	const gse::vec3<gse::position>& position,
-	const gse::length radius,
-	const gse::sphere_lod lod
-) -> sphere_light_archetype {
+auto gs::sphere_light(const gse::vec3<gse::position>& position, const gse::length radius, const gse::sphere_lod lod) -> sphere_light_archetype {
 	return {
 		.transform = {
 			.position = position,
@@ -141,7 +148,9 @@ auto gs::sphere_light(
 			.body = gse::physics::static_body{},
 		},
 		.collision = {
-			.shape = gse::physics::sphere_shape{ .radius = radius },
+			.shape = gse::physics::sphere_shape{
+				.radius = radius
+			},
 		},
 		.spec = {
 			.material = {
@@ -152,21 +161,17 @@ auto gs::sphere_light(
 		},
 		.light = {
 			.color = gse::vec3f(1.f),
-			.intensity = 78.5f,
+			.intensity = gse::watts_per_square_meter(78.5f),
 			.position = position,
 			.constant = 1.0f,
-			.linear = 0.09f,
+			.linear = gse::per_meter(0.09f),
 			.quadratic = 0.032f,
 			.ambient_strength = 0.025f,
 		},
 	};
 }
 
-auto gs::static_box(
-	const gse::vec3<gse::position>& position,
-	const gse::vec3<gse::length>& size,
-	const gse::quat& orientation
-) -> box_archetype {
+auto gs::static_box(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation, const gse::vec3f& base_color, const float roughness, const float metallic) -> box_archetype {
 	return {
 		.transform = {
 			.position = position,
@@ -176,24 +181,22 @@ auto gs::static_box(
 			.body = gse::physics::static_body{},
 		},
 		.collision = {
-			.shape = gse::physics::box_shape{ .size = size },
+			.shape = gse::physics::box_shape{
+				.size = size
+			},
 		},
 		.spec = {
 			.material = {
-				.base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
-				.roughness = 0.8f,
-				.metallic = 0.0f,
+				.base_color = base_color,
+				.roughness = roughness,
+				.metallic = metallic,
 			},
 			.size = size,
 		},
 	};
 }
 
-auto gs::static_collider(
-	const gse::vec3<gse::position>& position,
-	const gse::vec3<gse::length>& size,
-	const gse::quat& orientation
-) -> static_collider_archetype {
+auto gs::static_collider(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::quat& orientation) -> static_collider_archetype {
 	return {
 		.transform = {
 			.position = position,
@@ -203,7 +206,9 @@ auto gs::static_collider(
 			.body = gse::physics::static_body{},
 		},
 		.collision = {
-			.shape = gse::physics::box_shape{ .size = size },
+			.shape = gse::physics::box_shape{
+				.size = size
+			},
 		},
 	};
 }

@@ -19,7 +19,10 @@ export namespace gs {
 			gse::channel_writer channels
 		);
 
-		auto build(gse::gui::builder& ui, gse::gui::nav& n) -> void override;
+		auto build(
+			gse::gui::builder& ui,
+			gse::gui::nav& n
+		) -> void override;
 
 		auto title() const -> std::string_view override;
 
@@ -27,14 +30,22 @@ export namespace gs {
 
 		auto dismissable() const -> bool override;
 
-		auto body_rect(const gse::gui::style& sty, gse::vec2f viewport_size) const -> gse::gui::ui_rect override;
+		auto body_rect(
+			const gse::gui::style& sty,
+			gse::vec2f viewport_size
+		) const -> gse::gui::ui_rect override;
 
-		auto draw_backdrop(gse::gui::draw_context& ctx, gse::vec2f viewport_size) const -> void override;
+		auto draw_backdrop(
+			gse::gui::draw_context& ctx,
+			gse::vec2f viewport_size
+		) const -> void override;
 
 	private:
 		[[nodiscard]] auto eased_progress() const -> float;
 
-		[[nodiscard]] auto target_width(gse::vec2f viewport_size) const -> float;
+		[[nodiscard]] auto target_width(
+			gse::vec2f viewport_size
+		) const -> float;
 
 		const gse::world_system::data* m_world;
 		const gse::network::data* m_net;
@@ -87,10 +98,7 @@ auto gs::main_menu_screen::target_width(const gse::vec2f viewport_size) const ->
 	return std::min(panel_max_width, viewport_size.x() * 0.35f);
 }
 
-auto gs::main_menu_screen::body_rect(
-	const gse::gui::style&,
-	const gse::vec2f viewport_size
-) const -> gse::gui::ui_rect {
+auto gs::main_menu_screen::body_rect(const gse::gui::style&, const gse::vec2f viewport_size) const -> gse::gui::ui_rect {
 	const float width = target_width(viewport_size);
 	const float eased = eased_progress();
 	const float left = -width * (1.0f - eased);
@@ -161,10 +169,9 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 			.text = "Network"
 		})) {
 		m_channels.push<gse::gui::push_screen_request>({
-			.factory =
-				[net = m_net, channels = m_channels] {
-					return std::make_unique<network_screen>(*net, channels);
-				},
+			.factory = [net = m_net, channels = m_channels] {
+				return std::make_unique<network_screen>(*net, channels);
+			},
 		});
 	}
 
@@ -172,10 +179,9 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 			.text = "Crosshair"
 		})) {
 		m_channels.push<gse::gui::push_screen_request>({
-			.factory =
-				[save_reg = m_save_reg, crosshair = m_crosshair, channels = m_channels] {
-					return std::make_unique<crosshair_screen>(*save_reg, *crosshair, channels);
-				},
+			.factory = [save_reg = m_save_reg, crosshair = m_crosshair, channels = m_channels] {
+				return std::make_unique<crosshair_screen>(*save_reg, *crosshair, channels);
+			},
 		});
 	}
 
@@ -183,10 +189,9 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 			.text = "Settings"
 		})) {
 		m_channels.push<gse::gui::push_screen_request>({
-			.factory =
-				[save_reg = m_save_reg, channels = m_channels] {
-					return std::make_unique<settings_screen>(*save_reg, channels);
-				},
+			.factory = [save_reg = m_save_reg, channels = m_channels] {
+				return std::make_unique<settings_screen>(*save_reg, channels);
+			},
 		});
 	}
 

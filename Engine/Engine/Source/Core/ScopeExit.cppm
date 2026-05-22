@@ -6,8 +6,14 @@ import :non_copyable;
 
 export namespace gse {
 	template <class F>
-	[[nodiscard]]
-	auto make_scope_exit(F&& f) noexcept(std::is_nothrow_constructible_v<std::decay_t<F>, F&&>);
+	[[nodiscard]] auto make_scope_exit(
+		F&& f
+	) noexcept(
+		std::is_nothrow_constructible_v<
+			std::decay_t<F>,
+			F&&
+		>
+	);
 }
 
 export namespace gse {
@@ -16,9 +22,17 @@ export namespace gse {
 	public:
 		using func_type = F;
 
-		explicit scope_exit(F&& f) noexcept(std::is_nothrow_move_constructible_v<F>);
+		explicit scope_exit(
+			F&& f
+		) noexcept(
+			std::is_nothrow_move_constructible_v<F>
+		);
 
-		scope_exit(scope_exit&& other) noexcept(std::is_nothrow_move_constructible_v<F>);
+		scope_exit(
+			scope_exit&& other
+		) noexcept(
+			std::is_nothrow_move_constructible_v<F>
+		);
 
 		~scope_exit() noexcept override;
 

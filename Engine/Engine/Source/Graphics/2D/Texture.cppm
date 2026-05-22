@@ -36,9 +36,16 @@ export namespace gse {
 			raw_blob_owned<std::byte> pixels;
 		};
 
-		texture(const std::filesystem::path& filepath);
+		texture(
+			const std::filesystem::path& filepath
+		);
 
-		texture(std::string_view name, const vec4f& color, vec2u size = { 1, 1 });
+		texture(
+			std::string_view name,
+			const vec4f& color,
+			vec2u size = { 1,
+						   1 }
+		);
 
 		texture(
 			std::string_view name,
@@ -48,7 +55,9 @@ export namespace gse {
 			profile texture_profile = profile::generic_repeat
 		);
 
-		auto load(asset::load_ctx& ctx) -> async::task<>;
+		auto load(
+			asset::load_ctx& ctx
+		) -> async::task<>;
 
 		auto unload() -> void;
 
@@ -63,7 +72,10 @@ export namespace gse {
 		auto upload_token() const -> const gpu::sync_token&;
 
 	private:
-		auto create_vulkan_resources(gpu::context::data& context, profile texture_profile) -> void;
+		auto create_vulkan_resources(
+			gpu::context::data& context,
+			profile texture_profile
+		) -> void;
 
 		gpu::image m_image;
 		gpu::sampler m_sampler;

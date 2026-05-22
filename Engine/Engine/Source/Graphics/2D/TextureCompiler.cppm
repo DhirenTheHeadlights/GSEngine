@@ -18,12 +18,17 @@ import :texture;
 
 export namespace gse {
 
-	auto bake(const std::filesystem::path& src, texture::baked& out) -> bool;
+	auto bake(
+		const std::filesystem::path& src,
+		texture::baked& out
+	) -> bool;
 }
 
 namespace gse {
 
-	auto read_texture_profile(const std::filesystem::path& src) -> texture::profile;
+	auto read_texture_profile(
+		const std::filesystem::path& src
+	) -> texture::profile;
 }
 
 auto gse::bake(const std::filesystem::path& src, texture::baked& out) -> bool {

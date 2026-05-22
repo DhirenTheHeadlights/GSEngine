@@ -5,14 +5,7 @@ import vulkan;
 
 import gse.concurrency;
 
-auto gse::build_blas_async(
-	gpu::device& dev,
-	const gpu::acceleration_structure_handle as_handle,
-	gpu::acceleration_structure_geometry geometry,
-	const std::uint32_t prim_count,
-	const gpu::device_size scratch_size,
-	const gpu::device_size scratch_alignment
-) -> async::task<> {
+auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_handle as_handle, gpu::acceleration_structure_geometry geometry, const std::uint32_t prim_count, const gpu::device_size scratch_size, const gpu::device_size scratch_alignment) -> async::task<> {
 	auto& dev_cfg = dev.vulkan_device();
 
 	auto scratch = dev_cfg.create_buffer(
@@ -130,12 +123,7 @@ auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -
 	return result;
 }
 
-auto gse::build_tlas_initial_empty_async(
-	gpu::device& dev,
-	const gpu::acceleration_structure_handle as_handle,
-	const gpu::device_address instance_addr,
-	const gpu::device_address scratch_addr
-) -> async::task<> {
+auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::acceleration_structure_handle as_handle, const gpu::device_address instance_addr, const gpu::device_address scratch_addr) -> async::task<> {
 	auto cmd = co_await gpu::begin_transient(dev, gpu::queue_id::graphics, "transient.tlas_initial_build");
 
 	const gpu::acceleration_structure_geometry geometry{
@@ -196,12 +184,7 @@ auto gse::gpu::build_tlas(gpu::device& device, const std::uint32_t max_instances
 	return t;
 }
 
-auto gse::gpu::rebuild_tlas(
-	gpu::device& device,
-	vulkan::tlas& t,
-	const std::span<const tlas_instance_desc> instances,
-	recording_context& rec
-) -> void {
+auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::span<const tlas_instance_desc> instances, recording_context& rec) -> void {
 	auto& dev = device;
 	const auto& dev_cfg = dev.vulkan_device();
 
@@ -290,12 +273,7 @@ auto gse::gpu::write_tlas_instances(vulkan::tlas& t, const std::span<const tlas_
 	}
 }
 
-auto gse::gpu::build_tlas_in_place(
-	gpu::device& device,
-	vulkan::tlas& t,
-	const std::uint32_t instance_count,
-	recording_context& rec
-) -> void {
+auto gse::gpu::build_tlas_in_place(gpu::device& device, vulkan::tlas& t, const std::uint32_t instance_count, recording_context& rec) -> void {
 	const auto& dev_cfg = device.vulkan_device();
 
 	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());

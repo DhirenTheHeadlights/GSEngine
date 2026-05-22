@@ -23,7 +23,13 @@ export namespace gse::gui {
 			std::string_view name;
 			bool& value;
 		};
-		static auto draw(const draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> bool;
+		static auto draw(
+			const draw_context& ctx,
+			const params& p,
+			id& hot,
+			id& active,
+			id& focus
+		) -> bool;
 	};
 }
 
@@ -62,7 +68,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = std::string(p.name),
-		.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = label_rect

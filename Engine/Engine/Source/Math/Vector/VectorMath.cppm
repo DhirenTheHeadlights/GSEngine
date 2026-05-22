@@ -6,100 +6,260 @@ import :vector;
 import :units;
 
 export namespace gse {
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto dot(const V1& lhs, const V2& rhs);
+	constexpr auto dot(
+		const V1& lhs,
+		const V2& rhs
+	);
 
 	template <is_vec V>
-	constexpr auto magnitude(const V& v);
+	constexpr auto magnitude(
+		const V& v
+	);
 
 	template <is_vec V>
-	constexpr auto normalize(const V& v);
+	constexpr auto normalize(
+		const V& v
+	);
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto distance(const V1& a, const V2& b);
+	constexpr auto distance(
+		const V1& a,
+		const V2& b
+	);
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == 3 && V2::extent == 3)
-	constexpr auto cross(const V1& lhs, const V2& rhs);
+	constexpr auto cross(
+		const V1& lhs,
+		const V2& rhs
+	);
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto project(const V1& a, const V2& b);
+	constexpr auto project(
+		const V1& a,
+		const V2& b
+	);
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto reflect(const V1& v, const V2& n);
+	constexpr auto reflect(
+		const V1& v,
+		const V2& n
+	);
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto angle_between(const V1& a, const V2& b) -> angle_t<typename V1::storage_type>;
+	constexpr auto angle_between(
+		const V1& a,
+		const V2& b
+	) -> angle_t<typename V1::storage_type>;
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto lerp(const V1& a, const V2& b, typename V1::storage_type t);
+	constexpr auto lerp(
+		const V1& a,
+		const V2& b,
+		typename V1::storage_type t
+	);
 
 	template <is_vec V>
-	constexpr auto is_zero(const V& v) -> bool;
+	constexpr auto is_zero(
+		const V& v
+	) -> bool;
 
 	template <is_vec V>
-	constexpr auto is_zero(const V& v, typename V::storage_type epsilon) -> bool;
+	constexpr auto is_zero(
+		const V& v,
+		typename V::storage_type epsilon
+	) -> bool;
 
 	template <is_vec V>
-	constexpr auto abs(const V& v) -> V;
+	constexpr auto abs(
+		const V& v
+	) -> V;
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto min(const V1& a, const V2& b);
+	constexpr auto min(
+		const V1& a,
+		const V2& b
+	);
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto max(const V1& a, const V2& b);
+	constexpr auto max(
+		const V1& a,
+		const V2& b
+	);
 
 	template <is_vec V>
-	constexpr auto clamp(const V& v, const V& min_v, const V& max_v) -> V;
+	constexpr auto clamp(
+		const V& v,
+		const V& min_v,
+		const V& max_v
+	) -> V;
 
 	template <is_vec V>
-	constexpr auto min(const V& v, typename V::storage_type s) -> V;
+	constexpr auto min(
+		const V& v,
+		typename V::storage_type s
+	) -> V;
 
 	template <is_vec V>
-	constexpr auto max(const V& v, typename V::storage_type s) -> V;
+	constexpr auto max(
+		const V& v,
+		typename V::storage_type s
+	) -> V;
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto hadamard_product(const V1& a, const V2& b);
+	constexpr auto hadamard_product(
+		const V1& a,
+		const V2& b
+	);
 
 	template <is_vec V>
-	constexpr auto approx_equal(const V& a, const V& b, typename V::storage_type epsilon) -> bool;
+	constexpr auto approx_equal(
+		const V& a,
+		const V& b,
+		typename V::storage_type epsilon
+	) -> bool;
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto reflect_across(const V1& a, const V2& b);
+	constexpr auto reflect_across(
+		const V1& a,
+		const V2& b
+	);
 
-	template <typename T, std::size_t N>
+	template <
+		typename T,
+		std::size_t N
+	>
 	requires std::is_arithmetic_v<T>
-	constexpr auto sin(const vec<T, N>& v) -> vec<T, N>;
+	constexpr auto sin(
+		const vec<
+			T,
+			N
+		>& v
+	)
+		-> vec<
+			T,
+			N
+		>;
 
-	template <typename T, std::size_t N>
+	template <
+		typename T,
+		std::size_t N
+	>
 	requires std::is_arithmetic_v<T>
-	constexpr auto cos(const vec<T, N>& v) -> vec<T, N>;
+	constexpr auto cos(
+		const vec<
+			T,
+			N
+		>& v
+	)
+		-> vec<
+			T,
+			N
+		>;
 
-	template <typename T, std::size_t N>
+	template <
+		typename T,
+		std::size_t N
+	>
 	requires std::is_arithmetic_v<T>
-	constexpr auto exp(const vec<T, N>& v) -> vec<T, N>;
+	constexpr auto exp(
+		const vec<
+			T,
+			N
+		>& v
+	)
+		-> vec<
+			T,
+			N
+		>;
 
-	template <typename T, std::size_t N>
+	template <
+		typename T,
+		std::size_t N
+	>
 	requires std::is_arithmetic_v<T>
-	constexpr auto logarithm(const vec<T, N>& v) -> vec<T, N>;
+	constexpr auto logarithm(
+		const vec<
+			T,
+			N
+		>& v
+	)
+		-> vec<
+			T,
+			N
+		>;
 
-	template <typename T, std::size_t N>
+	template <
+		typename T,
+		std::size_t N
+	>
 	requires std::is_arithmetic_v<T>
-	constexpr auto pow(const vec<T, N>& v, T exponent) -> vec<T, N>;
+	constexpr auto pow(
+		const vec<
+			T,
+			N
+		>& v,
+		T exponent
+	)
+		-> vec<
+			T,
+			N
+		>;
 
-	template <is_vec V1, is_vec V2>
+	template <
+		is_vec V1,
+		is_vec V2
+	>
 	requires(V1::extent == V2::extent)
-	constexpr auto epsilon_equal_index(const V1& a, const V2& b, std::size_t index) -> bool;
+	constexpr auto epsilon_equal_index(
+		const V1& a,
+		const V2& b,
+		std::size_t index
+	) -> bool;
 
 	template <is_vec V>
 	constexpr auto rotate(
@@ -111,10 +271,17 @@ export namespace gse {
 
 	template <is_vec V>
 	requires(V::extent == 3)
-	constexpr auto barycentric(const V& p, const V& a, const V& b, const V& c) -> vec3<typename V::storage_type>;
+	constexpr auto barycentric(
+		const V& p,
+		const V& a,
+		const V& b,
+		const V& c
+	) -> vec3<typename V::storage_type>;
 
 	template <is_vec V>
-	constexpr auto isfinite(const V& v) -> bool;
+	constexpr auto isfinite(
+		const V& v
+	) -> bool;
 }
 
 template <gse::is_vec V1, gse::is_vec V2>

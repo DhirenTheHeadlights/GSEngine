@@ -26,11 +26,19 @@ export namespace gse::resource {
 		std::filesystem::path path;
 		std::atomic<std::uint32_t> version{ 0 };
 
-		resource_slot(std::unique_ptr<T>&& res, state s, const std::filesystem::path& p);
+		resource_slot(
+			std::unique_ptr<T>&& res,
+			state s,
+			const std::filesystem::path& p
+		);
 
-		resource_slot(resource_slot&& other) noexcept;
+		resource_slot(
+			resource_slot&& other
+		) noexcept;
 
-		auto operator=(resource_slot&& other) noexcept -> resource_slot&;
+		auto operator=(
+			resource_slot&& other
+		) noexcept -> resource_slot&;
 	};
 
 	template <typename T>
@@ -38,9 +46,16 @@ export namespace gse::resource {
 	public:
 		handle() = default;
 
-		handle(id resource_id, const resource_slot<T>* slot);
+		handle(
+			id resource_id,
+			const resource_slot<T>* slot
+		);
 
-		handle(id resource_id, const resource_slot<T>* slot, std::uint32_t version);
+		handle(
+			id resource_id,
+			const resource_slot<T>* slot,
+			std::uint32_t version
+		);
 
 		[[nodiscard]] auto resolve() const -> T&;
 
@@ -58,9 +73,13 @@ export namespace gse::resource {
 
 		[[nodiscard]] auto operator*() const -> T&;
 
-		[[nodiscard]] auto operator==(const handle& other) const -> bool;
+		[[nodiscard]] auto operator==(
+			const handle& other
+		) const -> bool;
 
-		[[nodiscard]] auto operator!=(const handle& other) const -> bool;
+		[[nodiscard]] auto operator!=(
+			const handle& other
+		) const -> bool;
 
 		explicit operator bool() const;
 

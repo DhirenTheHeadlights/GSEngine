@@ -15,22 +15,38 @@ export namespace gse::vulkan {
 
 		~fence() override = default;
 
-		fence(fence&&) noexcept = default;
+		fence(
+			fence&&
+		) noexcept = default;
 
-		auto operator=(fence&&) noexcept -> fence& = default;
+		auto operator=(
+			fence&&
+		) noexcept -> fence& = default;
 
-		[[nodiscard]] static auto create(const device& dev, bool start_signaled) -> fence;
+		[[nodiscard]] static auto create(
+			const device& dev,
+			bool start_signaled
+		) -> fence;
 
-		auto wait(const device& dev, std::uint64_t timeout_ns) const -> bool;
+		auto wait(
+			const device& dev,
+			std::uint64_t timeout_ns
+		) const -> bool;
 
-		auto reset(const device& dev) -> void;
+		auto reset(
+			const device& dev
+		) -> void;
 
-		[[nodiscard]] auto handle(this const fence& self) -> gpu::handle<fence>;
+		[[nodiscard]] auto handle(
+			this const fence& self
+		) -> gpu::handle<fence>;
 
 		explicit operator bool() const;
 
 	private:
-		explicit fence(vk::raii::Fence&& fence);
+		explicit fence(
+			vk::raii::Fence&& fence
+		);
 
 		vk::raii::Fence m_fence = nullptr;
 	};

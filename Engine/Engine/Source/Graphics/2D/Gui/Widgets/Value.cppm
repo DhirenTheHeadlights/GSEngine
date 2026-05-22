@@ -16,16 +16,46 @@ import :builder;
 
 export namespace gse::gui::draw {
 	template <is_arithmetic T>
-	auto value(const draw_context& ctx, const std::string& name, T value) -> void;
+	auto value(
+		const draw_context& ctx,
+		const std::string& name,
+		T value
+	) -> void;
 
-	template <is_quantity T, auto Unit = typename T::default_unit{}>
-	auto value(const draw_context& ctx, const std::string& name, T value) -> void;
+	template <
+		is_quantity T,
+		auto Unit = typename T::default_unit{}
+	>
+	auto value(
+		const draw_context& ctx,
+		const std::string& name,
+		T value
+	) -> void;
 
-	template <typename T, int N, auto Unit = typename T::default_unit{}>
-	auto vec(const draw_context& ctx, const std::string& name, const gse::vec<T, N>& v) -> void;
+	template <
+		typename T,
+		int N,
+		auto Unit = typename T::default_unit{}
+	>
+	auto vec(
+		const draw_context& ctx,
+		const std::string& name,
+		const gse::
+			vec<T,
+				N>& v
+	) -> void;
 
-	template <typename T, int N>
-	auto vec(const draw_context& ctx, const std::string& name, gse::vec<T, N> v) -> void;
+	template <
+		typename T,
+		int N
+	>
+	auto vec(
+		const draw_context& ctx,
+		const std::string& name,
+		gse::
+			vec<T,
+				N> v
+	) -> void;
 }
 
 export namespace gse::gui {
@@ -55,10 +85,21 @@ export namespace gse::gui {
 }
 
 namespace gse::gui::draw {
-	auto value_box(const draw_context& ctx, const std::string& value, const ui_rect& rect) -> void;
+	auto value_box(
+		const draw_context& ctx,
+		const std::string& value,
+		const ui_rect& rect
+	) -> void;
 
 	template <std::size_t N>
-	auto value_row(const draw_context& ctx, const std::string& name, const std::array<std::string, N>& values) -> void;
+	auto value_row(
+		const draw_context& ctx,
+		const std::string& name,
+		const std::array<
+			std::string,
+			N
+		>& values
+	) -> void;
 }
 
 template <gse::is_arithmetic T>
@@ -108,7 +149,8 @@ auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value
 	});
 
 	const float text_width = ctx.font->width(value, ctx.style.font_size);
-	const vec2f text_pos = { rect.center().x() - text_width / 2.f, rect.center().y() + ctx.style.font_size / 2.f };
+	const vec2f text_pos = { rect.center().x() - text_width / 2.f,
+							 rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
 		.font = ctx.font,
@@ -121,11 +163,7 @@ auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value
 }
 
 template <std::size_t N>
-auto gse::gui::draw::value_row(
-	const draw_context& ctx,
-	const std::string& name,
-	const std::array<std::string, N>& values
-) -> void {
+auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name, const std::array<std::string, N>& values) -> void {
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -145,7 +183,7 @@ auto gse::gui::draw::value_row(
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = label_rect

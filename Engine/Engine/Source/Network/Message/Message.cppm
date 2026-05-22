@@ -22,10 +22,15 @@ namespace gse::network {
 	concept variant_field = is_variant<T>::value;
 
 	template <typename T>
-	auto encode_field(write_bitstream& s, const T& v) -> void;
+	auto encode_field(
+		write_bitstream& s,
+		const T& v
+	) -> void;
 
 	template <typename T>
-	auto decode_field(read_bitstream& s) -> T;
+	auto decode_field(
+		read_bitstream& s
+	) -> T;
 }
 
 export namespace gse::network {
@@ -38,16 +43,32 @@ export namespace gse::network {
 	constexpr std::uint64_t message_id_v = stable_id(type_tag<T>());
 
 	template <is_network_message T>
-	auto encode(write_bitstream& s, const T& msg) -> void;
+	auto encode(
+		write_bitstream& s,
+		const T& msg
+	) -> void;
 
 	template <is_network_message T>
-	auto decode(read_bitstream& s, std::type_identity<T>) -> T;
+	auto decode(
+		read_bitstream& s,
+		std::type_identity<T>
+	) -> T;
 
 	template <is_network_message T>
-	auto write(write_bitstream& s, const T& msg) -> void;
+	auto write(
+		write_bitstream& s,
+		const T& msg
+	) -> void;
 
-	template <is_network_message T, typename Fn>
-	auto try_decode(read_bitstream& s, std::uint64_t id, Fn&& on_decode) -> bool;
+	template <
+		is_network_message T,
+		typename Fn
+	>
+	auto try_decode(
+		read_bitstream& s,
+		std::uint64_t id,
+		Fn&& on_decode
+	) -> bool;
 }
 
 template <typename T>
@@ -69,11 +90,7 @@ auto gse::network::encode_field(write_bitstream& s, const T& v) -> void {
 		s.write(v);
 	}
 	else {
-		template for (
-			constexpr auto m : std::define_static_array(
-				std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-			)
-		) {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			encode_field(s, v.[:m:]);
 		}
 	}
@@ -100,11 +117,7 @@ auto gse::network::decode_field(read_bitstream& s) -> T {
 	}
 	else {
 		T v{};
-		template for (
-			constexpr auto m : std::define_static_array(
-				std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-			)
-		) {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			using field_type = typename[:std::meta::type_of(m):];
 			v.[:m:] = decode_field<field_type>(s);
 		}
@@ -114,11 +127,7 @@ auto gse::network::decode_field(read_bitstream& s) -> T {
 
 template <gse::network::is_network_message T>
 auto gse::network::encode(write_bitstream& s, const T& msg) -> void {
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		encode_field(s, msg.[:m:]);
 	}
 }
@@ -126,11 +135,7 @@ auto gse::network::encode(write_bitstream& s, const T& msg) -> void {
 template <gse::network::is_network_message T>
 auto gse::network::decode(read_bitstream& s, std::type_identity<T>) -> T {
 	T msg{};
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		using field_type = typename[:std::meta::type_of(m):];
 		msg.[:m:] = decode_field<field_type>(s);
 	}

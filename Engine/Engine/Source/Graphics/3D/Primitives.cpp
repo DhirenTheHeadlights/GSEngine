@@ -14,7 +14,10 @@ import gse.math;
 namespace gse::primitives {
 	auto build_box_meshes() -> std::vector<mesh_data>;
 
-	auto build_sphere_meshes(std::uint32_t sectors, std::uint32_t stacks) -> std::vector<mesh_data>;
+	auto build_sphere_meshes(
+		std::uint32_t sectors,
+		std::uint32_t stacks
+	) -> std::vector<mesh_data>;
 }
 
 auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
@@ -63,10 +66,7 @@ auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
 	return meshes;
 }
 
-auto gse::primitives::build_sphere_meshes(
-	const std::uint32_t sectors,
-	const std::uint32_t stacks
-) -> std::vector<mesh_data> {
+auto gse::primitives::build_sphere_meshes(const std::uint32_t sectors, const std::uint32_t stacks) -> std::vector<mesh_data> {
 	const auto radius = meters(1.0f);
 
 	std::vector<vertex> vertices;

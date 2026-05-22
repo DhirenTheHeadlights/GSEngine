@@ -23,12 +23,15 @@ export namespace gse::gpu {
 
 		~transient_queue() = default;
 
-		transient_queue(transient_queue&& other) noexcept;
+		transient_queue(
+			transient_queue&& other
+		) noexcept;
 
-		auto operator=(transient_queue&& other) noexcept -> transient_queue&;
+		auto operator=(
+			transient_queue&& other
+		) noexcept -> transient_queue&;
 
-		[[nodiscard]]
-		static auto create(
+		[[nodiscard]] static auto create(
 			const vulkan::device& device,
 			queue_id id,
 			std::uint32_t family,
@@ -41,20 +44,34 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto progress() const -> std::uint64_t;
 
-		[[nodiscard]] auto reached(std::uint64_t value) const -> bool;
+		[[nodiscard]] auto reached(
+			std::uint64_t value
+		) const -> bool;
 
 		[[nodiscard]] auto timeline_handle() const -> handle<vulkan::semaphore>;
 
-		[[nodiscard]]
-		auto allocate_primary(const vulkan::device& device, std::size_t worker_idx) -> vulkan::transient_command_buffer;
+		[[nodiscard]] auto allocate_primary(
+			const vulkan::device& device,
+			std::size_t worker_idx
+		) -> vulkan::transient_command_buffer;
 
-		auto park(std::uint64_t value, std::coroutine_handle<> handle) -> void;
+		auto park(
+			std::uint64_t value,
+			std::coroutine_handle<> handle
+		) -> void;
 
-		auto poll(const vulkan::device& device) -> std::uint64_t;
+		auto poll(
+			const vulkan::device& device
+		) -> std::uint64_t;
 
-		auto wait_until(const vulkan::device& device, std::uint64_t value) -> void;
+		auto wait_until(
+			const vulkan::device& device,
+			std::uint64_t value
+		) -> void;
 
-		auto wait_idle(const vulkan::device& device) -> void;
+		auto wait_idle(
+			const vulkan::device& device
+		) -> void;
 
 	private:
 		transient_queue(
@@ -111,12 +128,7 @@ auto gse::gpu::transient_queue::operator=(transient_queue&& other) noexcept -> t
 	return *this;
 }
 
-auto gse::gpu::transient_queue::create(
-	const vulkan::device& device,
-	const queue_id id,
-	const std::uint32_t family,
-	const std::size_t worker_count
-) -> transient_queue {
+auto gse::gpu::transient_queue::create(const vulkan::device& device, const queue_id id, const std::uint32_t family, const std::size_t worker_count) -> transient_queue {
 	std::vector<vulkan::transient_command_pool> pools;
 	pools.reserve(worker_count);
 	for (std::size_t i = 0; i < worker_count; ++i) {
@@ -150,10 +162,7 @@ auto gse::gpu::transient_queue::timeline_handle() const -> handle<vulkan::semaph
 	return m_timeline.handle();
 }
 
-auto gse::gpu::transient_queue::allocate_primary(
-	const vulkan::device& device,
-	const std::size_t worker_idx
-) -> vulkan::transient_command_buffer {
+auto gse::gpu::transient_queue::allocate_primary(const vulkan::device& device, const std::size_t worker_idx) -> vulkan::transient_command_buffer {
 	assert(
 		worker_idx < m_pools.size(),
 		"transient_queue: worker index {} out of range (pools: {})",

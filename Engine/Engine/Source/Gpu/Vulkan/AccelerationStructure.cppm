@@ -19,30 +19,31 @@ export namespace gse::vulkan {
 		gpu::device_size update_scratch_size = 0;
 	};
 
-	[[nodiscard]]
-	auto buffer_device_address(const device& dev, gpu::handle<buffer> buffer) -> gpu::device_address;
+	[[nodiscard]] auto buffer_device_address(
+		const device& dev,
+		gpu::handle<buffer> buffer
+	) -> gpu::device_address;
 
-	[[nodiscard]]
-	auto query_blas_build_sizes(
+	[[nodiscard]] auto query_blas_build_sizes(
 		const device& dev,
 		const gpu::acceleration_structure_geometry& geometry,
 		std::uint32_t prim_count
 	) -> acceleration_structure_build_sizes;
 
-	[[nodiscard]]
-	auto acceleration_structure_address_from_handle(
+	[[nodiscard]] auto acceleration_structure_address_from_handle(
 		gpu::handle<vulkan::device> device_handle,
 		gpu::acceleration_structure_handle as_handle
 	) -> gpu::device_address;
 
-	[[nodiscard]] auto scratch_offset_alignment(const device& dev) -> gpu::device_size;
+	[[nodiscard]] auto scratch_offset_alignment(
+		const device& dev
+	) -> gpu::device_size;
 
 	class blas final : public non_copyable {
 	public:
 		blas() = default;
 
-		[[nodiscard]]
-		static auto create(
+		[[nodiscard]] static auto create(
 			device& dev,
 			const gpu::acceleration_structure_geometry& geometry,
 			std::uint32_t prim_count
@@ -50,9 +51,13 @@ export namespace gse::vulkan {
 
 		~blas() override = default;
 
-		blas(blas&&) noexcept = default;
+		blas(
+			blas&&
+		) noexcept = default;
 
-		auto operator=(blas&&) noexcept -> blas& = default;
+		auto operator=(
+			blas&&
+		) noexcept -> blas& = default;
 
 		[[nodiscard]] auto handle() const -> gpu::acceleration_structure_handle;
 
@@ -61,7 +66,11 @@ export namespace gse::vulkan {
 		explicit operator bool() const;
 
 	private:
-		blas(buffer storage, vk::raii::AccelerationStructureKHR handle, gpu::device_address device_address);
+		blas(
+			buffer storage,
+			vk::raii::AccelerationStructureKHR handle,
+			gpu::device_address device_address
+		);
 
 		buffer m_storage;
 		vk::raii::AccelerationStructureKHR m_handle{ nullptr };
@@ -72,13 +81,20 @@ export namespace gse::vulkan {
 	public:
 		tlas() = default;
 
-		[[nodiscard]] static auto create(device& dev, std::uint32_t max_instances) -> tlas;
+		[[nodiscard]] static auto create(
+			device& dev,
+			std::uint32_t max_instances
+		) -> tlas;
 
 		~tlas() override = default;
 
-		tlas(tlas&&) noexcept = default;
+		tlas(
+			tlas&&
+		) noexcept = default;
 
-		auto operator=(tlas&&) noexcept -> tlas& = default;
+		auto operator=(
+			tlas&&
+		) noexcept -> tlas& = default;
 
 		[[nodiscard]] auto handle() const -> gpu::acceleration_structure_handle;
 
@@ -91,7 +107,12 @@ export namespace gse::vulkan {
 		explicit operator bool() const;
 
 	private:
-		tlas(buffer storage, buffer scratch, buffer instance_buffer, vk::raii::AccelerationStructureKHR handle);
+		tlas(
+			buffer storage,
+			buffer scratch,
+			buffer instance_buffer,
+			vk::raii::AccelerationStructureKHR handle
+		);
 
 		buffer m_storage;
 		buffer m_scratch;
@@ -101,29 +122,29 @@ export namespace gse::vulkan {
 }
 
 namespace gse::vulkan {
-	auto to_vk_geometry(const gpu::acceleration_structure_geometry& g) -> vk::AccelerationStructureGeometryKHR;
+	auto to_vk_geometry(
+		const gpu::acceleration_structure_geometry& g
+	) -> vk::AccelerationStructureGeometryKHR;
 
-	[[nodiscard]]
-	auto create_acceleration_structure(
+	[[nodiscard]] auto create_acceleration_structure(
 		const device& dev,
 		gpu::handle<buffer> storage_buffer,
 		gpu::device_size size,
 		gpu::acceleration_structure_type type
 	) -> vk::raii::AccelerationStructureKHR;
 
-	[[nodiscard]]
-	auto acceleration_structure_address(
+	[[nodiscard]] auto acceleration_structure_address(
 		const device& dev,
 		const vk::raii::AccelerationStructureKHR& as
 	) -> gpu::device_address;
 
-	[[nodiscard]]
-	auto query_tlas_build_sizes(const device& dev, std::uint32_t max_instances) -> acceleration_structure_build_sizes;
+	[[nodiscard]] auto query_tlas_build_sizes(
+		const device& dev,
+		std::uint32_t max_instances
+	) -> acceleration_structure_build_sizes;
 }
 
-auto gse::vulkan::to_vk_geometry(
-	const gpu::acceleration_structure_geometry& g
-) -> vk::AccelerationStructureGeometryKHR {
+auto gse::vulkan::to_vk_geometry(const gpu::acceleration_structure_geometry& g) -> vk::AccelerationStructureGeometryKHR {
 	vk::AccelerationStructureGeometryDataKHR data{};
 	vk::GeometryTypeKHR vk_type = vk::GeometryTypeKHR::eInstances;
 	if (g.type == gpu::acceleration_structure_geometry_type::triangles) {
@@ -165,11 +186,7 @@ auto gse::vulkan::buffer_device_address(const device& dev, const gpu::handle<buf
 	});
 }
 
-auto gse::vulkan::query_blas_build_sizes(
-	const device& dev,
-	const gpu::acceleration_structure_geometry& geometry,
-	const std::uint32_t prim_count
-) -> acceleration_structure_build_sizes {
+auto gse::vulkan::query_blas_build_sizes(const device& dev, const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> acceleration_structure_build_sizes {
 	const auto vk_geometry = to_vk_geometry(geometry);
 	const vk::AccelerationStructureBuildGeometryInfoKHR sizing_info{
 		.type = vk::AccelerationStructureTypeKHR::eBottomLevel,
@@ -190,16 +207,15 @@ auto gse::vulkan::query_blas_build_sizes(
 	};
 }
 
-auto gse::vulkan::query_tlas_build_sizes(
-	const device& dev,
-	const std::uint32_t max_instances
-) -> acceleration_structure_build_sizes {
+auto gse::vulkan::query_tlas_build_sizes(const device& dev, const std::uint32_t max_instances) -> acceleration_structure_build_sizes {
 	constexpr vk::AccelerationStructureGeometryInstancesDataKHR instances_data{
 		.arrayOfPointers = vk::False,
 	};
 	constexpr vk::AccelerationStructureGeometryKHR vk_geometry{
 		.geometryType = vk::GeometryTypeKHR::eInstances,
-		.geometry = { .instances = instances_data },
+		.geometry = {
+			.instances = instances_data
+		},
 	};
 	const vk::AccelerationStructureBuildGeometryInfoKHR sizing_info{
 		.type = vk::AccelerationStructureTypeKHR::eTopLevel,
@@ -221,12 +237,7 @@ auto gse::vulkan::query_tlas_build_sizes(
 	};
 }
 
-auto gse::vulkan::create_acceleration_structure(
-	const device& dev,
-	const gpu::handle<buffer> storage_buffer,
-	const gpu::device_size size,
-	const gpu::acceleration_structure_type type
-) -> vk::raii::AccelerationStructureKHR {
+auto gse::vulkan::create_acceleration_structure(const device& dev, const gpu::handle<buffer> storage_buffer, const gpu::device_size size, const gpu::acceleration_structure_type type) -> vk::raii::AccelerationStructureKHR {
 	return dev.raii_device().createAccelerationStructureKHR({
 		.buffer = std::bit_cast<vk::Buffer>(storage_buffer),
 		.size = size,
@@ -234,19 +245,13 @@ auto gse::vulkan::create_acceleration_structure(
 	});
 }
 
-auto gse::vulkan::acceleration_structure_address(
-	const device& dev,
-	const vk::raii::AccelerationStructureKHR& as
-) -> gpu::device_address {
+auto gse::vulkan::acceleration_structure_address(const device& dev, const vk::raii::AccelerationStructureKHR& as) -> gpu::device_address {
 	return dev.raii_device().getAccelerationStructureAddressKHR({
 		.accelerationStructure = *as,
 	});
 }
 
-auto gse::vulkan::acceleration_structure_address_from_handle(
-	const gpu::handle<vulkan::device> device_handle,
-	const gpu::acceleration_structure_handle as_handle
-) -> gpu::device_address {
+auto gse::vulkan::acceleration_structure_address_from_handle(const gpu::handle<vulkan::device> device_handle, const gpu::acceleration_structure_handle as_handle) -> gpu::device_address {
 	const auto vk_device = std::bit_cast<vk::Device>(device_handle);
 	const auto vk_as = std::bit_cast<vk::AccelerationStructureKHR>(as_handle.value);
 	return vk_device.getAccelerationStructureAddressKHR({
@@ -257,7 +262,7 @@ auto gse::vulkan::acceleration_structure_address_from_handle(
 auto gse::vulkan::scratch_offset_alignment(const device& dev) -> gpu::device_size {
 	const auto props =
 		dev.physical_device()
-			.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
+		.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
 	const auto& as_props = props.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
 	return std::max<gpu::device_size>(as_props.minAccelerationStructureScratchOffsetAlignment, 1);
 }
@@ -272,11 +277,7 @@ gse::vulkan::blas::blas(
 	  m_device_address(device_address) {
 }
 
-auto gse::vulkan::blas::create(
-	device& dev,
-	const gpu::acceleration_structure_geometry& geometry,
-	const std::uint32_t prim_count
-) -> blas {
+auto gse::vulkan::blas::create(device& dev, const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {
 	const auto sizes = query_blas_build_sizes(dev, geometry, prim_count);
 
 	auto storage = dev.create_buffer(

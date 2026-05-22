@@ -31,10 +31,7 @@ export namespace gse::renderer::physics_debug {
 
 	struct system {
 		struct [[= gse::settings::category<"Graphics">{}]] data {
-			[[
-				= gse::settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}
-			]]
-			bool enabled = true;
+			[[= gse::settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}]] bool enabled = true;
 
 			gpu::pipeline pipeline_instanced;
 			gpu::pipeline pipeline_lines;

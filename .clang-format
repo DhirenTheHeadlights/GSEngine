@@ -3,7 +3,7 @@ Language: Cpp
 Standard: Latest
 BasedOnStyle: LLVM
 
-ColumnLimit: 120
+ColumnLimit: 0
 
 UseTab: Always
 TabWidth: 4

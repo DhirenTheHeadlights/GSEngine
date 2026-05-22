@@ -12,16 +12,24 @@ import gse.ecs;
 export namespace gse::gui::ids {
 	auto current_seed() -> std::uint64_t;
 
-	auto stable_key(std::string_view s) -> std::uint64_t;
+	auto stable_key(
+		std::string_view s
+	) -> std::uint64_t;
 
-	auto make(std::string_view s) -> id;
+	auto make(
+		std::string_view s
+	) -> id;
 
 	struct scope : non_copyable {
 		bool active = false;
 
-		explicit scope(std::uint64_t v);
+		explicit scope(
+			std::uint64_t v
+		);
 
-		explicit scope(std::string_view s);
+		explicit scope(
+			std::string_view s
+		);
 
 		~scope() override;
 	};
@@ -31,15 +39,27 @@ namespace gse::gui::ids {
 	inline thread_local std::vector<std::uint64_t> id_stack;
 	constexpr auto root_seed = 0xD00DCAFE12345678ull;
 
-	auto mix_64(std::uint64_t x) -> std::uint64_t;
+	auto mix_64(
+		std::uint64_t x
+	) -> std::uint64_t;
 
-	auto hash_combine_u64(std::uint64_t h, std::uint64_t v) -> std::uint64_t;
+	auto hash_combine_u64(
+		std::uint64_t h,
+		std::uint64_t v
+	) -> std::uint64_t;
 
-	auto hash_combine_string(std::uint64_t h, std::string_view s) -> std::uint64_t;
+	auto hash_combine_string(
+		std::uint64_t h,
+		std::string_view s
+	) -> std::uint64_t;
 
-	auto push(std::uint64_t v) -> void;
+	auto push(
+		std::uint64_t v
+	) -> void;
 
-	auto push(std::string_view s) -> void;
+	auto push(
+		std::string_view s
+	) -> void;
 
 	auto pop() -> void;
 }

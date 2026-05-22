@@ -13,18 +13,29 @@ import gse.assert;
 export namespace gse::save {
 	class registry : public non_copyable {
 	public:
-		explicit registry(std::filesystem::path auto_save_path = {});
+		explicit registry(
+			std::filesystem::path auto_save_path = {}
+		);
 
 		~registry();
 
-		auto set_auto_save(bool enabled, std::filesystem::path path = {}) -> void;
+		auto set_auto_save(
+			bool enabled,
+			std::filesystem::path path = {}
+		) -> void;
 
-		auto set_on_restart(std::function<void()> fn) -> void;
+		auto set_on_restart(
+			std::function<void()> fn
+		) -> void;
 
-		auto add(settings::register_settings_type entry) -> void;
+		auto add(
+			settings::register_settings_type entry
+		) -> void;
 
 		template <typename Fn>
-		auto for_each_entry(Fn&& fn) const -> void;
+		auto for_each_entry(
+			Fn&& fn
+		) const -> void;
 
 		auto entry_count() const -> std::size_t;
 
@@ -33,8 +44,7 @@ export namespace gse::save {
 		auto trigger_restart() -> void;
 
 		template <typename T>
-		[[nodiscard]]
-		static auto read_one(
+		[[nodiscard]] static auto read_one(
 			const std::filesystem::path& path,
 			std::string_view category,
 			std::string_view name,
@@ -44,17 +54,30 @@ export namespace gse::save {
 	private:
 		using doc = std::unordered_map<std::string, std::unordered_map<std::string, std::string>>;
 
-		static auto read_file(const std::filesystem::path& path) -> std::expected<std::string, std::error_code>;
+		static auto read_file(
+			const std::filesystem::path& path
+		) -> std::expected<std::string,
+						   std::error_code>;
 
-		static auto trim(std::string_view s) -> std::string_view;
+		static auto trim(
+			std::string_view s
+		) -> std::string_view;
 
-		static auto parse(std::string_view text) -> doc;
+		static auto parse(
+			std::string_view text
+		) -> doc;
 
-		static auto emit(const doc& d) -> std::string;
+		static auto emit(
+			const doc& d
+		) -> std::string;
 
-		auto load_from_file(const std::filesystem::path& path) -> bool;
+		auto load_from_file(
+			const std::filesystem::path& path
+		) -> bool;
 
-		auto save_to_file(const std::filesystem::path& path) const -> bool;
+		auto save_to_file(
+			const std::filesystem::path& path
+		) const -> bool;
 
 		std::vector<settings::register_settings_type> m_entries;
 		mutable std::mutex m_entries_mutex;
@@ -303,12 +326,7 @@ auto gse::save::registry::save_to_file(const std::filesystem::path& path) const 
 }
 
 template <typename T>
-auto gse::save::registry::read_one(
-	const std::filesystem::path& path,
-	const std::string_view category,
-	const std::string_view name,
-	T fallback
-) -> T {
+auto gse::save::registry::read_one(const std::filesystem::path& path, const std::string_view category, const std::string_view name, T fallback) -> T {
 	if (!std::filesystem::exists(path)) {
 		return fallback;
 	}

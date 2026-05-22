@@ -11,7 +11,10 @@ export namespace gs::pose_driver {
 			gse::interval_timer<float> log_timer{ gse::seconds(0.5f) };
 		};
 
-		static auto run(gse::run_context& ctx, data& d) -> gse::async::task<>;
+		static auto run(
+			gse::run_context& ctx,
+			data& d
+		) -> gse::async::task<>;
 	};
 }
 

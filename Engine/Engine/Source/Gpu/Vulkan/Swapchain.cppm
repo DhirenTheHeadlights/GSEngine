@@ -17,13 +17,15 @@ import gse.log;
 import gse.math;
 
 export namespace gse::vulkan {
-	[[nodiscard]]
-	auto pick_surface_format(
+	[[nodiscard]] auto pick_surface_format(
 		const vk::raii::PhysicalDevice& physical_device,
 		const vk::raii::SurfaceKHR& surface
 	) -> gpu::image_format;
 
-	[[nodiscard]] auto pick_surface_format(const device& dev, const instance& inst) -> gpu::image_format;
+	[[nodiscard]] auto pick_surface_format(
+		const device& dev,
+		const instance& inst
+	) -> gpu::image_format;
 
 	class swap_chain_details : public non_copyable {
 	public:
@@ -35,9 +37,13 @@ export namespace gse::vulkan {
 
 		~swap_chain_details() = default;
 
-		swap_chain_details(swap_chain_details&&) noexcept = default;
+		swap_chain_details(
+			swap_chain_details&&
+		) noexcept = default;
 
-		auto operator=(swap_chain_details&&) noexcept -> swap_chain_details& = default;
+		auto operator=(
+			swap_chain_details&&
+		) noexcept -> swap_chain_details& = default;
 
 		[[nodiscard]] auto capabilities() const -> gpu::surface_capabilities;
 
@@ -55,12 +61,15 @@ export namespace gse::vulkan {
 	public:
 		~swap_chain() = default;
 
-		swap_chain(swap_chain&&) noexcept = default;
+		swap_chain(
+			swap_chain&&
+		) noexcept = default;
 
-		auto operator=(swap_chain&&) noexcept -> swap_chain& = default;
+		auto operator=(
+			swap_chain&&
+		) noexcept -> swap_chain& = default;
 
-		[[nodiscard]]
-		static auto create(
+		[[nodiscard]] static auto create(
 			vec2i framebuffer_size,
 			gpu::present_mode preferred_present_mode,
 			const instance& instance_data,
@@ -79,9 +88,13 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto image_count() const -> std::uint32_t;
 
-		[[nodiscard]] auto image(std::uint32_t index) const -> gpu::handle<image>;
+		[[nodiscard]] auto image(
+			std::uint32_t index
+		) const -> gpu::handle<image>;
 
-		[[nodiscard]] auto image_view(std::uint32_t index) const -> gpu::handle<image_view>;
+		[[nodiscard]] auto image_view(
+			std::uint32_t index
+		) const -> gpu::handle<image_view>;
 
 		[[nodiscard]] auto depth(this auto&& self) -> auto& {
 			return self.m_depth_image;

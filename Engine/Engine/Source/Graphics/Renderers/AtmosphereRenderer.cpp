@@ -16,10 +16,6 @@ import gse.math;
 import gse.meta;
 
 namespace gse::renderer::atmosphere {
-	struct transmittance_pass {};
-	struct multiscatter_pass {};
-	struct sky_view_pass {};
-
 	using atmosphere_types = type_pack<atmosphere_data>;
 
 	struct [[
@@ -148,23 +144,47 @@ namespace gse::renderer::atmosphere {
 		gpu::system_values<gpu::dispatch_thread_id>
 	>;
 
-	auto compute_ap_volume_extent(vec2u screen_extent) -> vec3u;
+	auto compute_ap_volume_extent(
+		vec2u screen_extent
+	) -> vec3u;
 
-	auto recreate_ap_volume(const gpu::context::data& gpu_s, system::data& d) -> void;
+	auto recreate_ap_volume(
+		const gpu::context::data& gpu_s,
+		system::data& d
+	) -> void;
 
-	auto write_transmittance_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void;
+	auto write_transmittance_descriptors(
+		const gpu::context::data& gpu_s,
+		system::data& d
+	) -> void;
 
-	auto write_multiscatter_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void;
+	auto write_multiscatter_descriptors(
+		const gpu::context::data& gpu_s,
+		system::data& d
+	) -> void;
 
-	auto write_sky_view_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void;
+	auto write_sky_view_descriptors(
+		const gpu::context::data& gpu_s,
+		system::data& d
+	) -> void;
 
-	auto write_sky_raster_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void;
+	auto write_sky_raster_descriptors(
+		const gpu::context::data& gpu_s,
+		system::data& d
+	) -> void;
 
-	auto write_ap_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void;
+	auto write_ap_descriptors(
+		const gpu::context::data& gpu_s,
+		system::data& d
+	) -> void;
 
-	auto compute_sun_direction(const system::data& d) -> vec3f;
+	auto compute_sun_direction(
+		const system::data& d
+	) -> vec3f;
 
-	auto build_atmosphere_data(const system::data& d) -> atmosphere_data;
+	auto build_atmosphere_data(
+		const system::data& d
+	) -> atmosphere_data;
 }
 
 auto gse::renderer::atmosphere::compute_ap_volume_extent(const vec2u screen_extent) -> vec3u {
@@ -192,20 +212,14 @@ auto gse::renderer::atmosphere::recreate_ap_volume(const gpu::context::data& gpu
 	gpu::transition_image_to(*gpu_s.device, d.ap_volume, gpu::image_layout::general);
 }
 
-auto gse::renderer::atmosphere::write_transmittance_descriptors(
-	const gpu::context::data& gpu_s,
-	system::data& d
-) -> void {
+auto gse::renderer::atmosphere::write_transmittance_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
 	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.transmittance_descriptors)
 		.buffer<atmosphere_ubo>(d.atmosphere_ubo_buffer, 0, sizeof(atmosphere_data))
 		.storage_image<transmittance_out>(d.transmittance_lut)
 		.commit();
 }
 
-auto gse::renderer::atmosphere::write_multiscatter_descriptors(
-	const gpu::context::data& gpu_s,
-	system::data& d
-) -> void {
+auto gse::renderer::atmosphere::write_multiscatter_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
 	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.multiscatter_descriptors)
 		.buffer<atmosphere_ubo>(d.atmosphere_ubo_buffer, 0, sizeof(atmosphere_data))
 		.combined_image_sampler<transmittance_in>(d.transmittance_lut, d.lut_sampler)
@@ -270,11 +284,7 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const system::data& d) -> 
 	};
 }
 
-auto gse::renderer::atmosphere::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	data& d
-) -> async::task<> {
+auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.transmittance_pipeline = gpu::build_compute_pipeline(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
@@ -391,12 +401,7 @@ auto gse::renderer::atmosphere::system::run(
 	co_return;
 }
 
-auto gse::renderer::atmosphere::system::frame(
-	const frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d,
-	shared_view<camera::system> cam_state
-) -> async::task<> {
+auto gse::renderer::atmosphere::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -404,8 +409,12 @@ auto gse::renderer::atmosphere::system::frame(
 	const auto frame_index = gpu_s.render_graph->current_frame();
 	const auto ext = gpu_s.render_graph->extent();
 
-	const vec3f sun_direction = compute_sun_direction(d);
-	const auto sun_irradiance = vec3<irradiance>{ d.sun_intensity, d.sun_intensity, d.sun_intensity };
+	d.sun_direction = compute_sun_direction(d);
+	const auto sun_irradiance = vec3<irradiance>{
+		d.sun_intensity * d.sun_color.x(),
+		d.sun_intensity * d.sun_color.y(),
+		d.sun_intensity * d.sun_color.z(),
+	};
 
 	const atmosphere_data shader_payload = build_atmosphere_data(d);
 	d.atmosphere_ubo_buffer.host_write(shader_payload);
@@ -452,7 +461,7 @@ auto gse::renderer::atmosphere::system::frame(
 		d.sky_view_pipeline,
 		gpu::typed_push_constants<sky_view_push_constants>{
 			.data = {
-				.sun_direction = sun_direction,
+				.sun_direction = d.sun_direction,
 				.camera_altitude = d.camera_altitude,
 			},
 			.stages = gpu::stage_flag::compute,
@@ -467,7 +476,7 @@ auto gse::renderer::atmosphere::system::frame(
 		gpu::typed_push_constants<ap_push_constants>{
 			.data = {
 				.inv_view_proj = inv_view_proj,
-				.sun_direction = sun_direction,
+				.sun_direction = d.sun_direction,
 				.camera_altitude = d.camera_altitude,
 				.sun_irradiance = sun_irradiance,
 				._pad = 0.0f,
@@ -478,10 +487,10 @@ auto gse::renderer::atmosphere::system::frame(
 	rec.dispatch(ap_groups.x(), ap_groups.y(), ap_groups.z());
 
 	rec = co_await gpu::pass<sky_raster_pass>(ctx)
-			  .pipeline(d.sky_raster_pipeline)
-			  .color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
-			  .depth(gpu::load_depth())
-			  .after<forward::system, sky_view_pass>();
+		.pipeline(d.sky_raster_pipeline)
+		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
+		.depth(gpu::load_depth())
+		.after<forward::system, sky_view_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 	rec.bind_descriptors(d.sky_raster_pipeline, d.sky_raster_descriptors[frame_index]);
@@ -490,7 +499,7 @@ auto gse::renderer::atmosphere::system::frame(
 		gpu::typed_push_constants<sky_raster_push_constants>{
 			.data = {
 				.inv_view_proj = inv_view_proj,
-				.sun_direction = sun_direction,
+				.sun_direction = d.sun_direction,
 				.camera_altitude = d.camera_altitude,
 				.sun_irradiance = sun_irradiance,
 				.sun_cos_radius = sun_cos_radius,

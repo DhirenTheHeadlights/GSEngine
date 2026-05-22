@@ -12,11 +12,17 @@ export namespace gse {
 	public:
 		auto clear() -> void;
 
-		auto notify_state_ready(id state_type) -> void;
+		auto notify_state_ready(
+			id state_type
+		) -> void;
 
-		auto wait_state_ready(id state_type) -> async::task<>;
+		auto wait_state_ready(
+			id state_type
+		) -> async::task<>;
 
-		auto is_state_ready(id state_type) -> bool;
+		auto is_state_ready(
+			id state_type
+		) -> bool;
 
 	private:
 		struct state_slot {
@@ -25,7 +31,9 @@ export namespace gse {
 			std::vector<std::coroutine_handle<>> waiters;
 		};
 
-		auto get_or_create_slot(id state_type) -> state_slot*;
+		auto get_or_create_slot(
+			id state_type
+		) -> state_slot*;
 
 		flat_map<id, std::unique_ptr<state_slot>> m_states;
 		std::shared_mutex m_states_mutex;

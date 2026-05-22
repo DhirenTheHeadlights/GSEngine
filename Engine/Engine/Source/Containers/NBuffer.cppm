@@ -6,15 +6,22 @@ export namespace gse {
 	template <typename T, std::size_t N>
 	class n_buffer {
 	public:
-		static_assert(N >= 2, "n_buffer requires at least 2 buffers");
+		static_assert(
+			N >= 2,
+			"n_buffer requires at least 2 buffers"
+		);
 
 		using value_type = T;
 
 		n_buffer() = default;
 
-		explicit n_buffer(const value_type& initial_value);
+		explicit n_buffer(
+			const value_type& initial_value
+		);
 
-		auto operator=(const value_type& v) -> n_buffer&;
+		auto operator=(
+			const value_type& v
+		) -> n_buffer&;
 
 		auto write() -> value_type&;
 
@@ -26,10 +33,14 @@ export namespace gse {
 
 		auto flip() noexcept -> void;
 
-		auto buffer(this auto&& self) -> decltype(auto);
+		auto buffer(
+			this auto&& self
+		) -> decltype(auto);
 
 	private:
-		auto next_write_index(std::size_t current) const noexcept -> std::size_t;
+		auto next_write_index(
+			std::size_t current
+		) const noexcept -> std::size_t;
 
 		std::array<value_type, N> m_buffers{};
 		std::size_t m_write_index{ 0 };

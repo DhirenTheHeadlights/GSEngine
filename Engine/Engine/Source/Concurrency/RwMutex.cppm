@@ -20,7 +20,9 @@ export namespace gse::async {
 
 			auto await_ready() const noexcept -> bool;
 
-			auto await_suspend(std::coroutine_handle<> h) const noexcept -> bool;
+			auto await_suspend(
+				std::coroutine_handle<> h
+			) const noexcept -> bool;
 
 			auto await_resume() const noexcept -> void;
 		};
@@ -31,7 +33,9 @@ export namespace gse::async {
 
 			auto await_ready() const noexcept -> bool;
 
-			auto await_suspend(std::coroutine_handle<> h) const noexcept -> bool;
+			auto await_suspend(
+				std::coroutine_handle<> h
+			) const noexcept -> bool;
 
 			auto await_resume() const noexcept -> void;
 		};
@@ -54,7 +58,9 @@ export namespace gse::async {
 
 	class rw_mutex_registry {
 	public:
-		auto mutex_for(id type) -> rw_mutex&;
+		auto mutex_for(
+			id type
+		) -> rw_mutex&;
 
 	private:
 		std::unordered_map<id, std::unique_ptr<rw_mutex>> m_mutexes;

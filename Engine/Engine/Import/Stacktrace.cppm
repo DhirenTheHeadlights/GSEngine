@@ -13,7 +13,9 @@ import gse.log;
 import gse.meta;
 
 export namespace gse {
-	auto capture_stacktrace(std::size_t skip_frames = 1) -> std::string;
+	auto capture_stacktrace(
+		std::size_t skip_frames = 1
+	) -> std::string;
 
 	auto install_crash_handlers() -> void;
 }
@@ -65,10 +67,7 @@ namespace gse {
 	LONG WINAPI vectored_handler(EXCEPTION_POINTERS* info) noexcept {
 		const auto* rec = info->ExceptionRecord;
 		const auto code = rec->ExceptionCode;
-		if (
-			code == cpp_exception_code || code == breakpoint_code || code == dbg_print_exception_code ||
-			code == dbg_print_exception_wide_c || code == ms_thread_name_code
-		) {
+		if (code == cpp_exception_code || code == breakpoint_code || code == dbg_print_exception_code || code == dbg_print_exception_wide_c || code == ms_thread_name_code) {
 			return EXCEPTION_CONTINUE_SEARCH;
 		}
 
@@ -76,7 +75,9 @@ namespace gse {
 		if (code == EXCEPTION_ACCESS_VIOLATION && rec->NumberParameters >= 2) {
 			const auto op = rec->ExceptionInformation[0];
 			const auto addr = rec->ExceptionInformation[1];
-			const std::string_view op_name = op == 0 ? "read" : op == 1 ? "write" : op == 8 ? "execute" : "unknown";
+			const std::string_view op_name = op == 0 ? "read" : op == 1 ? "write"
+				: op == 8												? "execute"
+																		: "unknown";
 			detail = std::format(" ({} at 0x{:016x})", op_name, addr);
 		}
 

@@ -39,16 +39,13 @@ export namespace gse {
 	};
 
 	template <typename ServerSystem>
-	auto server_app_setup(engine& e) -> void;
+	auto server_app_setup(
+		engine& e
+	) -> void;
 }
 
 template <typename... Components>
-auto gse::server_system<Components...>::run(
-	run_context& ctx,
-	data& d,
-	world_system::data& world_d,
-	const actions::system::data& actions_d
-) -> async::task<> {
+auto gse::server_system<Components...>::run(run_context& ctx, data& d, world_system::data& world_d, const actions::system::data& actions_d) -> async::task<> {
 	while (true) {
 		if (d.srv) {
 			d.srv->update(world_d, ctx.registry(), ctx.channels, actions_d);
@@ -58,12 +55,7 @@ auto gse::server_system<Components...>::run(
 }
 
 template <typename ServerSystem>
-auto gse::server_app_system<ServerSystem>::run(
-	run_context& ctx,
-	data& d,
-	const input::system::data& input_d,
-	const typename ServerSystem::data& srv
-) -> async::task<> {
+auto gse::server_app_system<ServerSystem>::run(run_context& ctx, data& d, const input::system::data& input_d, const typename ServerSystem::data& srv) -> async::task<> {
 	while (true) {
 		if (d.timer.tick()) {
 			++d.tick_count;
@@ -75,44 +67,43 @@ auto gse::server_app_system<ServerSystem>::run(
 
 		ctx.channels.push<gui::menu_content>({
 			.menu = "Server Control",
-			.build =
-				[&](gui::builder& ui) {
+			.build = [&](gui::builder& ui) {
+				ui.draw<gui::text>({
+					.content = "This is a simple server application.",
+				});
+
+				if (!srv.srv) {
+					return;
+				}
+
+				ui.draw<gui::value<std::uint32_t>>({
+					.name = "Peers",
+					.val = static_cast<std::uint32_t>(srv.srv->peers().size()),
+				});
+				ui.draw<gui::value<std::uint32_t>>({
+					.name = "Clients",
+					.val = static_cast<std::uint32_t>(srv.srv->clients().size()),
+				});
+				if (const auto h = srv.srv->host_entity()) {
 					ui.draw<gui::text>({
-						.content = "This is a simple server application.",
+						.content = std::format("Host entity: {}", *h),
 					});
-
-					if (!srv.srv) {
-						return;
-					}
-
-					ui.draw<gui::value<std::uint32_t>>({
-						.name = "Peers",
-						.val = static_cast<std::uint32_t>(srv.srv->peers().size()),
+				}
+				else {
+					ui.draw<gui::text>({
+						.content = "Host entity: <none>",
 					});
-					ui.draw<gui::value<std::uint32_t>>({
-						.name = "Clients",
-						.val = static_cast<std::uint32_t>(srv.srv->clients().size()),
+				}
+				for (const auto& [ip, port] : srv.srv->peers() | std::views::keys) {
+					ui.draw<gui::text>({
+						.content = std::format("Peer: {}:{}", ip, port),
 					});
-					if (const auto h = srv.srv->host_entity()) {
-						ui.draw<gui::text>({
-							.content = std::format("Host entity: {}", *h),
-						});
-					}
-					else {
-						ui.draw<gui::text>({
-							.content = "Host entity: <none>",
-						});
-					}
-					for (const auto& [ip, port] : srv.srv->peers() | std::views::keys) {
-						ui.draw<gui::text>({
-							.content = std::format("Peer: {}:{}", ip, port),
-						});
-					}
-					ui.draw<gui::value<std::uint32_t>>({
-						.name = "Ticks",
-						.val = d.tick_count,
-					});
-				},
+				}
+				ui.draw<gui::value<std::uint32_t>>({
+					.name = "Ticks",
+					.val = d.tick_count,
+				});
+			},
 		});
 
 		co_await ctx.next_tick();

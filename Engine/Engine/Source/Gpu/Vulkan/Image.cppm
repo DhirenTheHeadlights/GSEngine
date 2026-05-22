@@ -19,8 +19,7 @@ export namespace gse::vulkan {
 	public:
 		basic_image() = default;
 
-		[[nodiscard]]
-		static auto create(
+		[[nodiscard]] static auto create(
 			Device& dev,
 			const gpu::image_desc& desc,
 			std::string_view tag = "",
@@ -38,9 +37,13 @@ export namespace gse::vulkan {
 
 		~basic_image() override;
 
-		basic_image(basic_image&& other) noexcept;
+		basic_image(
+			basic_image&& other
+		) noexcept;
 
-		auto operator=(basic_image&& other) noexcept -> basic_image&;
+		auto operator=(
+			basic_image&& other
+		) noexcept -> basic_image&;
 
 		[[nodiscard]] auto handle() const -> gpu::handle<basic_image<device>>;
 
@@ -52,7 +55,9 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto extent() const -> vec3u;
 
-		auto set_layout(gpu::image_layout new_layout) -> void;
+		auto set_layout(
+			gpu::image_layout new_layout
+		) -> void;
 
 	private:
 		gpu::handle<basic_image<device>> m_image;
@@ -84,12 +89,7 @@ gse::vulkan::basic_image<Device>::basic_image(
 }
 
 template <typename Device>
-auto gse::vulkan::basic_image<Device>::create(
-	Device& dev,
-	const gpu::image_desc& desc,
-	const std::string_view tag,
-	const std::source_location& loc
-) -> basic_image {
+auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc& desc, const std::string_view tag, const std::source_location& loc) -> basic_image {
 	const bool is_depth = desc.format == gpu::image_format::d32_sfloat;
 	const bool is_cube = desc.view == gpu::image_view_type::cube;
 	const bool is_3d = desc.view == gpu::image_view_type::e3d;
