@@ -40,14 +40,7 @@ namespace gse::renderer::geometry_collector {
 		const vec3f& tint
 	) -> void;
 
-	template <
-		typename Items,
-		typename Batches,
-		typename KeyOf,
-		typename GetMesh,
-		typename AccumAabb,
-		typename OnInstance
-	>
+	template <typename Items, typename Batches, typename KeyOf, typename GetMesh, typename AccumAabb, typename OnInstance>
 	auto build_batches(
 		render_data& data,
 		std::uint32_t& global_instance_offset,
@@ -61,16 +54,12 @@ namespace gse::renderer::geometry_collector {
 
 	auto read_body_index_map(
 		run_context& ctx
-	) -> std::unordered_map<id,
-							std::uint32_t>;
+	) -> std::unordered_map<id, std::uint32_t>;
 
 	auto collect_static(
 		write<render_component>& render,
 		read<physics::transform_component>& transform,
-		const std::unordered_map<
-			id,
-			std::uint32_t
-		>& body_index_map,
+		const std::unordered_map<id, std::uint32_t>& body_index_map,
 		std::vector<owned_render_queue_entry>& out
 	) -> void;
 

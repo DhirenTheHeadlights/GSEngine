@@ -8,12 +8,7 @@ import :quant;
 export namespace gse {
 	using pi_approx = std::ratio<355, 113>;
 
-	struct [[= internal::quantity_root<
-		^^internal::dimi<0, 0, 0, 1>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"rad"
-	>]] angle_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<0, 0, 0, 1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "rad">]] angle_tag {};
 
 	constexpr internal::unit<angle_tag, std::ratio<1>, "rad"> radians;
 	constexpr internal::unit<angle_tag, std::ratio_divide<pi_approx, std::ratio<180>>, "deg"> degrees;
@@ -39,12 +34,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<1, 0, 0, 0>,
-		internal::quantity_semantic_kind::relative,
-		std::ratio<1>,
-		"m"
-	>]] length_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<1, 0, 0, 0>, internal::quantity_semantic_kind::relative, std::ratio<1>, "m">]] length_tag {};
 
 	constexpr internal::unit<length_tag, std::kilo, "km"> kilometers;
 	constexpr internal::unit<length_tag, std::ratio<1>, "m"> meters;
@@ -58,12 +48,7 @@ export namespace gse {
 	using length_t = internal::quantity_t<length_tag, T, U>;
 	using length = length_t<>;
 
-	struct [[= internal::quantity_root<
-		^^internal::dimi<3, 0, 0, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"m^3"
-	>]] volume_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<3, 0, 0, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "m^3">]] volume_tag {};
 
 	constexpr internal::unit<volume_tag, std::ratio<1>, "m^3"> cubic_meters;
 
@@ -169,12 +154,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<0, 1, 0, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"ns"
-	>]] time_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<0, 1, 0, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "ns">]] time_tag {};
 
 	constexpr internal::unit<time_tag, std::ratio<1>, "ns"> nanoseconds;
 	constexpr internal::unit<time_tag, std::kilo, "us"> microseconds;
@@ -207,12 +187,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<0, 0, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"kg"
-	>]] mass_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<0, 0, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "kg">]] mass_tag {};
 
 	constexpr internal::unit<mass_tag, std::ratio<1>, "kg"> kilograms;
 	constexpr internal::unit<mass_tag, std::milli, "g"> grams;
@@ -240,12 +215,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<0, 0, -1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"1/kg"
-	>]] inverse_mass_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<0, 0, -1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "1/kg">]] inverse_mass_tag {};
 
 	constexpr internal::unit<inverse_mass_tag, std::ratio<1>, "1/kg"> per_kilograms;
 
@@ -270,12 +240,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<1, -2, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"N"
-	>]] force_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<1, -2, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N">]] force_tag {};
 
 	constexpr internal::unit<force_tag, std::ratio<1>, "N"> newtons;
 	constexpr internal::unit<force_tag, std::ratio<222411, 50000>, "lbf"> pounds_force;
@@ -299,12 +264,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<1, -1, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"N-s"
-	>]] impulse_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<1, -1, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N-s">]] impulse_tag {};
 
 	constexpr internal::unit<impulse_tag, std::ratio<1>, "N-s"> newton_seconds;
 
@@ -322,12 +282,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<2, -2, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"J"
-	>]] energy_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<2, -2, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "J">]] energy_tag {};
 
 	constexpr internal::unit<energy_tag, std::giga, "GJ"> gigajoules;
 	constexpr internal::unit<energy_tag, std::mega, "MJ"> megajoules;
@@ -349,12 +304,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<2, -2, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"N-m"
-	>]] torque_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<2, -2, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N-m">]] torque_tag {};
 
 	constexpr internal::unit<torque_tag, std::ratio<1>, "N-m"> newton_meters;
 	constexpr internal::unit<torque_tag, std::ratio<67791, 50000>, "lbf-ft"> pound_feet;
@@ -372,12 +322,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<2, -1, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"N-m-s"
-	>]] angular_impulse_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<2, -1, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N-m-s">]] angular_impulse_tag {};
 
 	constexpr internal::unit<angular_impulse_tag, std::ratio<1>, "N-m-s"> newton_meter_seconds;
 
@@ -395,12 +340,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<2, -3, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"W"
-	>]] power_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<2, -3, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "W">]] power_tag {};
 
 	constexpr internal::unit<power_tag, std::giga, "GW"> gigawatts;
 	constexpr internal::unit<power_tag, std::mega, "MW"> megawatts;
@@ -428,12 +368,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<2, 0, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"kg-m^2"
-	>]] inertia_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<2, 0, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "kg-m^2">]] inertia_tag {};
 
 	constexpr internal::unit<inertia_tag, std::ratio<1>, "kg-m^2"> kilograms_meters_squared;
 	constexpr internal::unit<inertia_tag, std::ratio<4214011, 100000000>, "lb-ft^2"> pounds_feet_squared;
@@ -457,12 +392,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<1, -1, 0, 0>,
-		internal::quantity_semantic_kind::relative,
-		std::ratio<1>,
-		"m/s"
-	>]] velocity_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<1, -1, 0, 0>, internal::quantity_semantic_kind::relative, std::ratio<1>, "m/s">]] velocity_tag {};
 
 	constexpr internal::unit<velocity_tag, std::ratio<1>, "m/s"> meters_per_second;
 	constexpr internal::unit<velocity_tag, std::ratio<5, 18>, "km/h"> kilometers_per_hour;
@@ -501,12 +431,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<1, -2, 0, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"m/s^2"
-	>]] acceleration_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<1, -2, 0, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "m/s^2">]] acceleration_tag {};
 
 	constexpr internal::unit<acceleration_tag, std::ratio<1>, "m/s^2"> meters_per_second_squared;
 
@@ -524,12 +449,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<0, -1, 0, 1>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"rad/s"
-	>]] angular_velocity_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<0, -1, 0, 1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "rad/s">]] angular_velocity_tag {};
 
 	constexpr internal::unit<angular_velocity_tag, std::ratio<1>, "rad/s"> radians_per_second;
 	constexpr internal::unit<angular_velocity_tag, std::ratio_divide<pi_approx, std::ratio<180>>, "deg/s">
@@ -554,12 +474,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<0, -2, 0, 1>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"rad/s^2"
-	>]] angular_acceleration_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<0, -2, 0, 1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "rad/s^2">]] angular_acceleration_tag {};
 
 	constexpr internal::unit<angular_acceleration_tag, std::ratio<1>, "rad/s^2"> radians_per_second_squared;
 	constexpr internal::unit<angular_acceleration_tag, std::ratio_divide<pi_approx, std::ratio<180>>, "deg/s^2">
@@ -584,12 +499,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<-3, 0, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"kg/m^3"
-	>]] density_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<-3, 0, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "kg/m^3">]] density_tag {};
 
 	constexpr internal::unit<density_tag, std::ratio<1>, "kg/m^3"> kilograms_per_cubic_meter;
 	constexpr internal::unit<density_tag, std::ratio<625, 2266>, "lb/ft^3"> pounds_per_cubic_foot;
@@ -613,12 +523,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<0, 2, 0, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"s^2"
-	>]] time_squared_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<0, 2, 0, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "s^2">]] time_squared_tag {};
 
 	constexpr internal::unit<time_squared_tag, std::ratio<1>, "s^2"> seconds_squared;
 
@@ -636,12 +541,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<0, -2, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"N/m"
-	>]] stiffness_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<0, -2, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N/m">]] stiffness_tag {};
 
 	constexpr internal::unit<stiffness_tag, std::ratio<1>, "N/m"> newtons_per_meter;
 
@@ -659,12 +559,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<-2, 0, -1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"1/(kg-m^2)"
-	>]] inverse_inertia_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<-2, 0, -1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "1/(kg-m^2)">]] inverse_inertia_tag {};
 
 	constexpr internal::unit<inverse_inertia_tag, std::ratio<1>, "1/(kg-m^2)"> per_kilogram_meter_squared;
 
@@ -689,12 +584,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<2, 0, 0, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"m^2"
-	>]] area_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<2, 0, 0, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "m^2">]] area_tag {};
 
 	constexpr internal::unit<area_tag, std::ratio<1>, "m^2"> square_meters;
 	constexpr internal::unit<area_tag, std::ratio<1027639, 10000000>, "ft^2"> square_feet;
@@ -718,12 +608,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<2, -2, 1, -1>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"N-m/rad"
-	>]] angular_stiffness_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<2, -2, 1, -1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N-m/rad">]] angular_stiffness_tag {};
 
 	constexpr internal::unit<angular_stiffness_tag, std::ratio<1>, "N-m/rad"> newton_meters_per_radian;
 
@@ -741,12 +626,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<1, -2, 1, -1>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"N/rad"
-	>]] linear_angular_stiffness_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<1, -2, 1, -1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N/rad">]] linear_angular_stiffness_tag {};
 
 	constexpr internal::unit<linear_angular_stiffness_tag, std::ratio<1>, "N/rad"> newtons_per_radian;
 
@@ -764,12 +644,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<-1, -2, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"N/m^2"
-	>]] stiffness_per_length_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<-1, -2, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N/m^2">]] stiffness_per_length_tag {};
 
 	constexpr internal::unit<stiffness_per_length_tag, std::ratio<1>, "N/m^2"> newtons_per_meter_squared;
 
@@ -787,12 +662,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<2, -2, 1, -2>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"N-m/rad^2"
-	>]] angular_stiffness_per_angle_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<2, -2, 1, -2>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N-m/rad^2">]] angular_stiffness_per_angle_tag {};
 
 	constexpr internal::unit<angular_stiffness_per_angle_tag, std::ratio<1>, "N-m/rad^2">
 		newton_meters_per_radian_squared;
@@ -811,12 +681,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<0, -3, 1, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"W/m^2"
-	>]] irradiance_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<0, -3, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "W/m^2">]] irradiance_tag {};
 
 	constexpr internal::unit<irradiance_tag, std::ratio<1>, "W/m^2"> watts_per_square_meter;
 
@@ -839,12 +704,7 @@ namespace gse::internal {
 }
 
 export namespace gse {
-	struct [[= internal::quantity_root<
-		^^internal::dimi<-1, 0, 0, 0>,
-		internal::quantity_semantic_kind::measurement,
-		std::ratio<1>,
-		"1/m"
-	>]] inverse_length_tag {};
+	struct [[= internal::quantity_root<^^internal::dimi<-1, 0, 0, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "1/m">]] inverse_length_tag {};
 
 	constexpr internal::unit<inverse_length_tag, std::ratio<1>, "1/m"> per_meter;
 	constexpr internal::unit<inverse_length_tag, std::milli, "1/km"> per_kilometer;
@@ -913,21 +773,10 @@ export namespace gse {
 
 namespace gse::internal {
 	static_assert(
-		std::same_as<
-			force::dimension,
-			dimi<
-				1,
-				-2,
-				1,
-				0
-			>
-		>
+		std::same_as<force::dimension, dimi<1, -2, 1, 0>>
 	);
 	static_assert(
-		std::same_as<
-			quantity_tag_traits<closing_speed_tag>::parent_tag,
-			normal_speed_tag
-		>
+		std::same_as<quantity_tag_traits<closing_speed_tag>::parent_tag, normal_speed_tag>
 	);
 	static_assert(
 		quantity_tag_traits<position_tag>::semantic_kind == quantity_semantic_kind::absolute

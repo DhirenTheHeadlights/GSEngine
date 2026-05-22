@@ -309,9 +309,7 @@ auto gse::scene::builder::initialize(gse::move_only_function<void(scene_init_con
 
 template <typename Func>
 auto gse::scene::builder::configure(Func&& fn) -> builder& {
-	using c = std::remove_cvref_t<
-		typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<Func>::operator())[0]):]
-	>;
+	using c = std::remove_cvref_t<typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<Func>::operator())[0]):]>;
 	push_init([fn = std::forward<Func>(fn)](const gse::id self, gse::registry& reg) mutable {
 		if (auto* component = reg.try_component<c>(self)) {
 			fn(*component);

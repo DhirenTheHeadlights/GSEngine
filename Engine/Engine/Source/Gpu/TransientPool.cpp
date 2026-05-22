@@ -48,10 +48,7 @@ namespace gse::gpu {
 		const std::vector<id>& used_by,
 		std::span<const id> pass_kind_order
 	) -> std::
-		pair<
-			std::uint32_t,
-			std::uint32_t
-		>;
+		pair<std::uint32_t, std::uint32_t>;
 
 	auto greedy_color(
 		std::span<const lifetime_entry> intervals
@@ -300,7 +297,6 @@ auto gse::gpu::transient_pool::transient_images() const -> std::vector<transient
 		out.push_back({
 			.resource = alloc.resource.get(),
 			.aspects = alloc.aspects,
-			.target_layout = alloc.layout,
 			.format = alloc.format,
 		});
 	}
@@ -444,12 +440,9 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 			si.handle,
 			view_handle,
 			static_cast<image_format_value>(req.desc.format),
-			image_layout::undefined,
 			vec3u{ req.desc.extent.x(), req.desc.extent.y(), 1 },
 			make_synthetic_allocation(vulkan_dev, req.desc.tag)
 		);
-
-		img->set_layout(req.desc.layout);
 
 		slot.images.emplace(
 			req.handle.key,
@@ -457,7 +450,6 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 				.resource = std::move(img),
 				.aspects = aspect_for_format(req.desc.format),
 				.format = req.desc.format,
-				.layout = req.desc.layout,
 				.color = si.color,
 				.first_pass = intervals[si.entry_index].first_pass,
 				.last_pass = intervals[si.entry_index].last_pass,

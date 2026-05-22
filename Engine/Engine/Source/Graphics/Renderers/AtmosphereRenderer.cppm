@@ -50,48 +50,99 @@ export namespace gse::renderer::atmosphere {
 
 	struct system {
 		struct [[= gse::settings::category<"Atmosphere">{}]] data {
-			[[= gse::settings::describe<"Sun azimuth (degrees from +X around +Y)">{}]] angle sun_azimuth = degrees(45.0f);
+			[[
+				= gse::settings::describe<"Sun azimuth (degrees from +X around +Y)">{}
+			]]
+			angle sun_azimuth = degrees(45.0f);
 
-			[[= gse::settings::describe<"Sun elevation above horizon (degrees)">{}]] angle sun_elevation = degrees(60.0f);
+			[[
+				= gse::settings::describe<"Sun elevation above horizon (degrees)">{}
+			]]
+			angle sun_elevation = degrees(60.0f);
 
 			[[
 				= gse::settings::describe<"Sun radiant intensity (W/m^2)">{},
 				= gse::shared
-			]] irradiance sun_intensity = watts_per_square_meter(1.6f);
+			]]
+			irradiance sun_intensity = watts_per_square_meter(1.6f);
 
 			[[
 				= gse::settings::describe<"Sun color tint applied to direct lighting and the sun disk">{},
 				= gse::shared
-			]] vec3f sun_color = { 1.0f, 0.9f, 0.75f };
+			]]
+			vec3f sun_color = { 1.0f, 0.9f, 0.75f };
 
-			[[= gse::settings::describe<"Sun disk angular radius (degrees)">{}]] angle sun_angular_radius = degrees(1.5f);
+			[[
+				= gse::settings::describe<"Sun disk angular radius (degrees)">{}
+			]]
+			angle sun_angular_radius = degrees(1.5f);
+
+			[[
+				= gse::settings::describe<"Sun ambient term applied to surfaces not directly lit by the sun.">{},
+				= gse::shared
+			]]
+			float sun_ambient_strength = 0.1f;
+
+			[[
+				= gse::settings::describe<"Sun source radius for soft-shadow penumbra calculation.">{},
+				= gse::shared
+			]]
+			length sun_source_radius = meters(0.05f);
 
 			[[= gse::shared]] vec3f sun_direction = { 0.0f, 1.0f, 0.0f };
 
 			[[
 				= gse::settings::describe<"Camera altitude above sea level (km)">{},
 				= gse::shared
-			]] atmosphere_length camera_altitude = kilometers(0.0f);
+			]]
+			atmosphere_length camera_altitude = kilometers(0.0f);
 
-			[[= gse::settings::describe<"Planet (ground) radius (km)">{}]] atmosphere_length bottom_radius = kilometers(6360.0f);
+			[[
+				= gse::settings::describe<"Planet (ground) radius (km)">{}
+			]]
+			atmosphere_length bottom_radius = kilometers(6360.0f);
 
-			[[= gse::settings::describe<"Top of atmosphere radius (km)">{}]] atmosphere_length top_radius = kilometers(6460.0f);
+			[[
+				= gse::settings::describe<"Top of atmosphere radius (km)">{}
+			]]
+			atmosphere_length top_radius = kilometers(6460.0f);
 
-			[[= gse::settings::describe<"Rayleigh density scale height (km)">{}]] atmosphere_length rayleigh_scale_height = kilometers(8.0f);
+			[[
+				= gse::settings::describe<"Rayleigh density scale height (km)">{}
+			]]
+			atmosphere_length rayleigh_scale_height = kilometers(8.0f);
 
-			[[= gse::settings::describe<"Mie scattering coefficient (per km)">{}]] atmosphere_inverse_length mie_scattering = per_kilometer(3.996e-3f);
+			[[
+				= gse::settings::describe<"Mie scattering coefficient (per km)">{}
+			]]
+			atmosphere_inverse_length mie_scattering = per_kilometer(3.996e-3f);
 
-			[[= gse::settings::describe<"Mie absorption coefficient (per km)">{}]] atmosphere_inverse_length mie_absorption = per_kilometer(0.444e-3f);
+			[[
+				= gse::settings::describe<"Mie absorption coefficient (per km)">{}
+			]]
+			atmosphere_inverse_length mie_absorption = per_kilometer(0.444e-3f);
 
-			[[= gse::settings::describe<"Mie density scale height (km)">{}]] atmosphere_length mie_scale_height = kilometers(1.2f);
+			[[
+				= gse::settings::describe<"Mie density scale height (km)">{}
+			]]
+			atmosphere_length mie_scale_height = kilometers(1.2f);
 
 			[[= gse::settings::describe<"Mie phase asymmetry g (-1 to 1)">{}]] float mie_phase_g = 0.85f;
 
-			[[= gse::settings::describe<"Ozone peak altitude (km)">{}]] atmosphere_length ozone_peak_height = kilometers(25.0f);
+			[[
+				= gse::settings::describe<"Ozone peak altitude (km)">{}
+			]]
+			atmosphere_length ozone_peak_height = kilometers(25.0f);
 
-			[[= gse::settings::describe<"Ozone layer half-width (km)">{}]] atmosphere_length ozone_half_width = kilometers(15.0f);
+			[[
+				= gse::settings::describe<"Ozone layer half-width (km)">{}
+			]]
+			atmosphere_length ozone_half_width = kilometers(15.0f);
 
-			[[= gse::settings::describe<"Aerial perspective max view distance (km)">{}]] atmosphere_length max_view_distance = kilometers(32.0f);
+			[[
+				= gse::settings::describe<"Aerial perspective max view distance (km)">{}
+			]]
+			atmosphere_length max_view_distance = kilometers(32.0f);
 
 			vec3<atmosphere_inverse_length> rayleigh_scattering = {
 				per_kilometer(5.802e-3f),

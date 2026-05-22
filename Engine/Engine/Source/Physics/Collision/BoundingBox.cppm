@@ -83,22 +83,17 @@ export namespace gse {
 
 		auto half_extents() const -> vec3<displacement>;
 
-		auto face_normals() const -> std::array<
-			vec3f,
-			6
-		>;
+		auto face_normals() const -> std::array<vec3f, 6>;
 
 		auto face_vertices(
 			std::uint32_t face_index
-		) const -> std::array<vec3<position>,
-							  4>;
+		) const -> std::array<vec3<position>, 4>;
 
 		auto obb_vertices() const -> std::vector<vec3<position>>;
 
 		auto edge_endpoints(
 			std::uint32_t edge_index
-		) const -> std::pair<vec3<position>,
-							 vec3<position>>;
+		) const -> std::pair<vec3<position>, vec3<position>>;
 
 		static constexpr std::uint32_t edge_count = 12;
 

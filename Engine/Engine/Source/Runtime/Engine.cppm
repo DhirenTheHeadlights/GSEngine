@@ -52,10 +52,7 @@ export namespace gse {
 
 		auto world() -> world_system::data&;
 
-		template <
-			typename S,
-			typename... Args
-		>
+		template <typename S, typename... Args>
 		auto add_system(
 			Args&&... args
 		) -> system_handle<S>;

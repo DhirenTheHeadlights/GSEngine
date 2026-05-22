@@ -45,10 +45,7 @@ export namespace gse::gui::draw {
 				N>& v
 	) -> void;
 
-	template <
-		typename T,
-		int N
-	>
+	template <typename T, int N>
 	auto vec(
 		const draw_context& ctx,
 		const std::string& name,
@@ -95,10 +92,7 @@ namespace gse::gui::draw {
 	auto value_row(
 		const draw_context& ctx,
 		const std::string& name,
-		const std::array<
-			std::string,
-			N
-		>& values
+		const std::array<std::string, N>& values
 	) -> void;
 }
 

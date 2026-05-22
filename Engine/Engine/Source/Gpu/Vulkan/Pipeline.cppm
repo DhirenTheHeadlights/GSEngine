@@ -53,12 +53,14 @@ export namespace gse::vulkan {
 			pipeline&&
 		) noexcept -> pipeline& = default;
 
-		[[nodiscard]] static auto create_graphics(
+		[[nodiscard]]
+		static auto create_graphics(
 			const device& dev,
 			const graphics_pipeline_create_info& info
 		) -> pipeline;
 
-		[[nodiscard]] static auto create_compute(
+		[[nodiscard]]
+		static auto create_compute(
 			const device& dev,
 			const compute_pipeline_create_info& info
 		) -> pipeline;
@@ -79,7 +81,8 @@ export namespace gse::vulkan {
 			this const pipeline& self
 		) -> std::span<const std::uint32_t>;
 
-		[[nodiscard]] auto active_bindings(
+		[[nodiscard]]
+		auto active_bindings(
 			this const pipeline& self
 		) -> std::span<const gpu::binding_use>;
 

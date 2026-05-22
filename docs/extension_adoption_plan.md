@@ -22,11 +22,20 @@ Execution order (suggested)
 
 ---
 
-1. VK_KHR_unified_image_layouts
--------------------------------
+1. VK_KHR_unified_image_layouts  — DONE
+---------------------------------------
 
 All images live in `GENERAL`; only the swapchain transitions to/from
 `PRESENT_SRC_KHR`. The whole layout state machine collapses.
+
+**Extension status**: enabled conditionally in `Vulkan/Device.cpp`
+(detect → feature query → log → enable). Drivers that expose
+`VK_KHR_unified_image_layouts` (e.g. NVIDIA RTX 50 series) get the
+zero-cost-GENERAL perf guarantee. Drivers that don't (e.g. Intel Arc
+140V driver 101.8629, snapshot in `docs/vulkan_extensions.md`) fall
+back to standard GENERAL semantics — still legal everywhere in Vulkan,
+just without the formal "free" promise. The engine code is identical
+either way.
 
 ### Delete
 
@@ -115,34 +124,40 @@ Graphics + compute pipelines become `VkShaderEXT` objects bound via
 
 ---
 
-3. VK_EXT_host_image_copy
--------------------------
+3. VK_EXT_host_image_copy  — DONE
+---------------------------------
 
-For load-once textures (BRDF LUT, environment cubes, sampled assets)
-add `VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT` and call
-`vkCopyMemoryToImageEXT`. No staging buffer, no transfer queue, no
-layout transitions.
+For load-once textures, the staging-buffer + transfer-queue path
+collapses to two host-side calls: `vkTransitionImageLayoutEXT` (move
+to GENERAL) then `vkCopyMemoryToImageEXT` (write pixels). Fully
+synchronous, returns a ready `sync_token` immediately.
 
-### Delete
+**Extension status**: enabled conditionally in `Vulkan/Device.cpp`
+(detect → feature query → log → enable). Both target drivers
+(Intel Arc 140V, NVIDIA RTX 50 series) expose the extension. Drivers
+without it fall back to the staging-buffer path automatically.
 
-- `Resources/Image.cpp:86–139` — `upload_image_2d_async()` body.
-- `Resources/Image.cpp:141–204` — `upload_image_layers_async()` body.
-- `Resources/Image.cpp:206–260` — `upload_image_2d()` body.
-- `Resources/Image.cpp:262–330` — `upload_image_layers()` body.
-- Inside each: staging-buffer alloc, `copy_buffer_to_image`, two
-  transitions, `.retain(std::move(staging))`, transient submit.
+**Wired up:**
+- `Vulkan/Types.cppm` — added `image_flag::host_transfer` (maps to
+  `VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT`).
+- `Vulkan/Image.cppm` — `basic_image::create` auto-adds `host_transfer`
+  to any image that already has `transfer_dst` usage when the device
+  supports the feature. Existing callers stay unchanged.
+- `Resources/Image.cpp` — each of the four upload helpers branches on
+  `dev.vulkan_device().host_image_copy_enabled()`:
+  - **Fast path**: `host_transition_to_general` then `host_copy_layers`.
+    No staging buffer, no transient queue, no fence, no semaphore.
+  - **Fallback path**: existing staging-buffer + transient submit code.
+- `transition_image_async` / `transition_image_to` deliberately do NOT
+  branch — they take raw handles or arbitrary images that may not have
+  `host_transfer` usage (e.g. atmosphere/bloom storage images).
 
-### Shrink
+### Stayed
 
-- `Device/Task.cppm:48–52, 110–118, 69, 167–170` — `.retain()` /
-  pending-retains path; image uploads stop feeding it.
-- `Device/TransientQueue.cppm` — load fraction drops; infrastructure
-  stays for buffer uploads + render passes + compute scratch.
-
-### Must stay
-
-- `Resources/Buffer.cpp:7–72` — buffer uploads need staging.
+- `Resources/Buffer.cpp` — buffer uploads still go through staging.
 - GPU→GPU mip generation, equirect→cube, blit chains.
+- Transient queue infrastructure (still used by buffer uploads, render
+  passes, compute scratch).
 
 ---
 
@@ -182,68 +197,112 @@ layout transitions.
 
 ---
 
-5. VK_EXT_mutable_descriptor_type
----------------------------------
+5. VK_EXT_mutable_descriptor_type  — DONE
+-----------------------------------------
 
-### Delete
+**Extension status**: enabled conditionally in `Vulkan/Device.cpp`
+(detect → feature query → log → enable). Both target drivers support
+it. The actual mutable-binding usage stays for a future commit when a
+specific binding can benefit (e.g. bindless heap holding multiple
+types); the extension is on so that future work is unblocked.
 
-- `Vulkan/Types.cppm:38–50` — seven per-type descriptor-size fields
-  (`uniform_buffer_descriptor_size`, `storage_buffer_descriptor_size`,
-  `sampled_image_descriptor_size`, `sampler_descriptor_size`,
-  `combined_image_sampler_descriptor_size`,
-  `storage_image_descriptor_size`,
-  `acceleration_structure_descriptor_size`) collapse to one
-  `mutable_descriptor_size` queried via `vkGetDescriptorSetLayoutSizeEXT`.
-- `Resources/Descriptors.cppm:183–201` — the `descriptor_size_for(dt)`
-  switch dies with them.
-- `Vulkan/Bindless.cppm:61, 119` — `m_descriptor_size` no longer pulls
-  from the per-type combined_image_sampler size.
+**Done now: per-type descriptor sizes collapsed.**
+- `Vulkan/Types.cppm` — dropped the 7 per-type descriptor-size fields
+  from `descriptor_buffer_properties` (`uniform_buffer`,
+  `storage_buffer`, `sampled_image`, `sampler`,
+  `combined_image_sampler`, `storage_image`, `input_attachment`,
+  `acceleration_structure`). Only `offset_alignment`,
+  `push_descriptors_supported`, `bufferless_push_descriptors` remain.
+- `Vulkan/Device.cpp::query_descriptor_buffer_properties` — dropped
+  the per-type query+log calls.
+- `Vulkan/Bindless.cppm` — `m_descriptor_size` is now derived from
+  `(layout_size - binding_offset) / capacity` instead of pulling
+  `props.combined_image_sampler_descriptor_size`.
+- `Resources/Descriptors.cppm::build_push_writer_from_family` —
+  replaced the `descriptor_size_for(dt)` switch with a sorted-by-offset
+  gap computation: per-binding size = `(next_offset - this_offset) / count`,
+  with `layout_size` as the upper bound for the last binding. Works
+  identically for non-mutable bindings and is the correct approach for
+  future mutable bindings.
+- `Resources/Descriptors.cppm::descriptor_writer::commit` — same
+  treatment applied to the persistent-set write path.
 
-### Reshape
+### Deferred
 
-- `Vulkan/DescriptorSetLayout.cpp:10–30` — add `eMutableDescriptorTypeEXT`
-  + `VkMutableDescriptorTypeCreateInfoEXT` to the pNext chain. Follow
-  the partial-binding pattern at `Bindless.cppm:95–98`.
-- `Resources/Descriptors.cppm:139–141` — `m_storage_image_infos` and
-  `m_combined_sampler_infos` can merge into one
-  `unordered_map<(binding,type), descriptor_image_info>`.
-
-### Must stay
-
-- `descriptor_binding_desc::type` (`Types.cppm:318–324`) — still needed
-  for layout creation; becomes the *set of allowed types* per binding.
-- Samplers (standalone) and acceleration structures — spec forbids them
-  in mutable bindings. `Descriptors.cppm:354–408` AS bucket and sampler
-  bucket stay separate.
-- `bindless_texture_set` slot allocator — stays a single free-list;
-  only the write path gains per-call type dispatch.
+- `VkMutableDescriptorTypeCreateInfoEXT` plumbing in
+  `Vulkan/DescriptorSetLayout.cpp` — waits for a concrete consumer.
+- Merging `m_storage_image_infos` + `m_combined_sampler_infos` in
+  `Resources/Descriptors.cppm` — waits for a consumer too.
+- Bindless heap collapse — waits for a binding that needs more than
+  one descriptor type.
 
 ---
 
-6. VK_KHR_swapchain_maintenance1
---------------------------------
+6. VK_EXT_swapchain_maintenance1  — DONE
+----------------------------------------
 
-### Delete
+**Extension status**: enabled conditionally in `Vulkan/Device.cpp`.
+NVIDIA RTX 50 series supports it; Intel Arc 140V doesn't (driver
+falls back to the existing recreate-on-resize path).
 
-- `Device/Swapchain.cppm:98–141` — 44 lines of pass-through wrappers
-  (`depth_image()`, `extent()`, `format()`, etc.) over
-  `vulkan::swap_chain`. Inline or alias.
-- `Device/Swapchain.cppm:106–108` — `clear_depth_image()`. Depth
-  belongs to RenderPass, not the swapchain.
-- `Device/Swapchain.cppm:121–133` — `set_config()` + `reset_swapchain()`
-  + `m_generation` bump. Replace with a single `recreate()` or deferred
-  in-place mode change via `VkSwapchainPresentModesCreateInfoEXT`.
-- `Vulkan/Swapchain.cppm:283–285` — explicit `reset_swapchain()`
-  nullification. `VkSwapchainPresentFenceInfoEXT` lets the driver defer
-  the destroy.
+### Dead code dropped
+- `gpu::swap_chain::set_config()` — unused, gone.
+- `gpu::swap_chain::generation()` + `m_generation` member — unused, gone.
 
-### Reshape
+### Depth image relocated
+- `vulkan::swap_chain` no longer owns the depth image. Members
+  `m_depth_image`, `depth()` accessor, `clear_depth()`, the constructor
+  param, and the depth-creation block inside `create()` all dropped.
+- `gpu::swap_chain` now owns the depth image directly. New file-scope
+  helper `create_swapchain_depth(device&, extent)` builds it via
+  `gpu::image::create()`.
+- `gpu::swap_chain::clear_depth_image()` dropped — depth dies with the
+  wrapper naturally.
+- `Context.cpp` shutdown no longer needs the manual
+  `swapchain->clear_depth_image()` call before `swapchain.reset()`.
+- 5 callers in `RenderGraph.cppm` and `Frame.cpp` still call
+  `swapchain->depth_image()` — same API, same return type, just owned
+  one level higher.
 
-- `Vulkan/Sync.cppm:56–58` — `m_image_available[frame_index]` +
-  `m_render_finished[image_index]` dual arrays collapse to one per-image
-  release fence array under `VkSwapchainPresentFenceInfoEXT`.
-- `Device/Frame.cpp:74–75` — fence wait switches from per-frame to
-  per-image, dropping the worst-case stall.
+### Present mode switching without recreate (`VK_EXT_swapchain_maintenance1`)
+- `vulkan::swap_chain::create` pNexts `VkSwapchainPresentModesCreateInfoEXT`
+  listing every surface-supported mode (when feature on).
+- `vulkan::swap_chain::set_present_mode()` updates the tracked mode.
+- `present_info` got a `present_modes` span. `build_vk_present_info`
+  pNexts `VkSwapchainPresentModeInfoEXT` per present when populated.
+- `frame::recreate_resources` detects "size unchanged, only mode
+  changed" → calls `set_present_mode` and returns early (no recreate,
+  no `wait_idle`, no sync recreation).
+
+### Deferred destroy + release fences
+- `vulkan::swap_chain` got `std::vector<fence> m_release_fences`
+  (one per image, created start-signaled when maintenance1 is on).
+- New methods: `release_fence(image_index)`, `wait_release_fences(dev)`,
+  `reset_release_fence(dev, image_index)`.
+- `create()` now takes an optional `old_swapchain` handle and passes
+  it via `create_info.oldSwapchain`.
+- `present_info` got a `release_fences` span. `build_vk_present_info`
+  pNexts `VkSwapchainPresentFenceInfoEXT` per present when populated.
+- `gpu::swap_chain::recreate` branches on the feature:
+  - **Maintenance1 path**: wait on the swapchain's release fences (not
+    `wait_idle`), then `create` the new one with `old_swapchain = old`,
+    move-assign. Old swapchain destroyed during the move.
+  - **Fallback path**: existing `reset_swapchain()` + create flow.
+
+### Release-fence wait at acquire
+- `frame::begin`, after `acquireNextImage` returns image N: if
+  maintenance1 is on, wait on `release_fence(N)`. Ensures the
+  presentation engine has released the image before we re-use it.
+
+### Stayed (deferred)
+- "True deferred destroy" with a retiring list of old swap_chains —
+  current impl still synchronously waits on release fences before
+  destroying the old swapchain. The retiring list would let the
+  destroy happen lazily on a background tick.
+- Decoupling `max_frames_in_flight` from `image_count` — would need
+  reworking the frame/sync model.
+- Pass-through wrapper deletion (Item 2B from the audit) — wrapper
+  kept; only the dead `set_config`/`generation` were removed.
 
 ---
 

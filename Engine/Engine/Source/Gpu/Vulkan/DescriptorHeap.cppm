@@ -19,7 +19,7 @@ export namespace gse::gpu {
 	struct descriptor_image_info {
 		gpu::handle<vulkan::sampler> sampler;
 		gpu::handle<vulkan::image_view> image_view;
-		image_layout layout = image_layout::undefined;
+		image_layout layout = image_layout::general;
 	};
 
 	struct descriptor_get_info {
@@ -98,11 +98,13 @@ export namespace gse::gpu {
 			gpu::handle<vulkan::command_buffer> cmd
 		) const -> void;
 
-		[[nodiscard]] auto layout_size(
+		[[nodiscard]]
+		auto layout_size(
 			gpu::handle<vulkan::descriptor_set_layout> layout
 		) const -> gpu::device_size;
 
-		[[nodiscard]] auto binding_offset(
+		[[nodiscard]]
+		auto binding_offset(
 			gpu::handle<vulkan::descriptor_set_layout> layout,
 			std::uint32_t binding
 		) const -> gpu::device_size;

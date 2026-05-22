@@ -14,24 +14,15 @@ namespace gse {
 
 		constexpr quaternion();
 		constexpr quaternion(
-			const vec<
-				T,
-				4
-			>& v4
+			const vec<T, 4>& v4
 		);
 		constexpr quaternion(
-			const vec<
-				T,
-				3
-			>& v3,
+			const vec<T, 3>& v3,
 			T scalar
 		);
 		constexpr quaternion(
 			T scalar,
-			const vec<
-				T,
-				3
-			>& v3
+			const vec<T, 3>& v3
 		);
 		constexpr quaternion(
 			T s,
@@ -40,18 +31,12 @@ namespace gse {
 			T z
 		);
 		constexpr quaternion(
-			const vec<
-				T,
-				3
-			>& axis,
+			const vec<T, 3>& axis,
 			angle_t<T> angle
 		);
 		constexpr quaternion(
 			angle_t<T> angle,
-			const vec<
-				T,
-				3
-			>& axis
+			const vec<T, 3>& axis
 		);
 
 		constexpr decltype(auto) operator[](
@@ -72,14 +57,10 @@ namespace gse {
 			this auto& self
 		);
 
-		constexpr auto imaginary_part() const -> vec<
-			T,
-			3
-		>;
+		constexpr auto imaginary_part() const -> vec<T, 3>;
 		constexpr auto v4(
 			this auto&& self
-		) -> vec<T,
-				 4>;
+		) -> vec<T, 4>;
 		constexpr auto euler_angles() const -> vec3<angle_t<T>>;
 
 	private:

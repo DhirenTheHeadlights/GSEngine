@@ -87,8 +87,7 @@ export namespace gse::actions {
 
 		static auto wb(
 			std::uint16_t bit_index
-		) -> std::pair<std::size_t,
-					   word>;
+		) -> std::pair<std::size_t, word>;
 
 		auto set(
 			std::uint16_t bit_index

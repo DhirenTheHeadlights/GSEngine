@@ -78,10 +78,7 @@ export namespace gse {
 		std::string_view name
 	) -> std::meta::info;
 
-	template <
-		typename Schema,
-		typename T
-	>
+	template <typename Schema, typename T>
 	consteval auto apply_annotations() -> std::optional<Schema>;
 }
 

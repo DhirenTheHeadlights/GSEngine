@@ -16,26 +16,20 @@ export namespace gse {
 
 		[[= networked]] std::array<resource::handle<model>, max_models> models{};
 		[[= networked]] std::uint32_t model_count = 0;
-		[[= networked]] std::array<
-			vec3f,
-			max_models
-		> tints =
-			[] -> std::array<
-				   vec3f,
-				   max_models
-			   > {
+		[[
+			= networked
+		]]
+		std::array<vec3f, max_models> tints =
+			[] -> std::array<vec3f, max_models> {
 			std::array<vec3f, max_models> result;
 			result.fill(vec3f(1.0f));
 			return result;
 		}();
-		[[= networked]] std::array<
-			vec3<length>,
-			max_models
-		> sizes =
-			[] -> std::array<
-				   vec3<length>,
-				   max_models
-			   > {
+		[[
+			= networked
+		]]
+		std::array<vec3<length>, max_models> sizes =
+			[] -> std::array<vec3<length>, max_models> {
 			std::array<vec3<length>, max_models> result;
 			result.fill(vec3<length>(meters(1.0f)));
 			return result;

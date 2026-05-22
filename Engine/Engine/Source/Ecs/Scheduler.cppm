@@ -101,26 +101,17 @@ export namespace gse {
 
 		auto clear() -> void;
 
-		template <
-			typename S,
-			typename... Args
-		>
+		template <typename S, typename... Args>
 		auto add_system(
 			Args&&... args
 		) -> system_handle<S>;
 
-		template <
-			typename S,
-			typename... Args
-		>
+		template <typename S, typename... Args>
 		auto ensure_system(
 			Args&&... args
 		) -> system_handle<S>;
 
-		template <
-			typename S,
-			typename... Args
-		>
+		template <typename S, typename... Args>
 		auto queue_add_system(
 			Args&&... args
 		) -> system_handle<S>;

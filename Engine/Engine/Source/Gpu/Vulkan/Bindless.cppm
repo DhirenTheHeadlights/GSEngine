@@ -38,7 +38,7 @@ export namespace gse::gpu {
 		auto allocate(
 			handle<vulkan::image_view> view,
 			handle<vulkan::sampler> samp,
-			image_layout layout = image_layout::shader_read_only
+			image_layout layout = image_layout::general
 		) -> bindless_texture_slot;
 
 		auto release(
@@ -116,9 +116,9 @@ gse::gpu::bindless_texture_set::bindless_texture_set(
 	});
 
 	const auto layout_handle = std::bit_cast<handle<vulkan::descriptor_set_layout>>(*m_layout);
-	m_descriptor_size = heap.props().combined_image_sampler_descriptor_size;
 	m_binding_offset = heap.binding_offset(layout_handle, 0);
 	const auto layout_size = heap.layout_size(layout_handle);
+	m_descriptor_size = (layout_size - m_binding_offset) / capacity;
 	m_region = heap.allocate(layout_size);
 
 	const descriptor_get_info null_get{

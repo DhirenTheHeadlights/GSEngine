@@ -42,10 +42,7 @@ export namespace gse {
 
 		auto frame_count() const -> std::uint64_t;
 
-		auto duration() const -> time_t<
-			float,
-			seconds
-		>;
+		auto duration() const -> time_t<float, seconds>;
 
 	private:
 		std::filesystem::path m_path;

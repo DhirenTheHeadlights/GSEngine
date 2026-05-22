@@ -19,18 +19,21 @@ export namespace gse::vulkan {
 		gpu::device_size update_scratch_size = 0;
 	};
 
-	[[nodiscard]] auto buffer_device_address(
+	[[nodiscard]]
+	auto buffer_device_address(
 		const device& dev,
 		gpu::handle<buffer> buffer
 	) -> gpu::device_address;
 
-	[[nodiscard]] auto query_blas_build_sizes(
+	[[nodiscard]]
+	auto query_blas_build_sizes(
 		const device& dev,
 		const gpu::acceleration_structure_geometry& geometry,
 		std::uint32_t prim_count
 	) -> acceleration_structure_build_sizes;
 
-	[[nodiscard]] auto acceleration_structure_address_from_handle(
+	[[nodiscard]]
+	auto acceleration_structure_address_from_handle(
 		gpu::handle<vulkan::device> device_handle,
 		gpu::acceleration_structure_handle as_handle
 	) -> gpu::device_address;
@@ -43,7 +46,8 @@ export namespace gse::vulkan {
 	public:
 		blas() = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			device& dev,
 			const gpu::acceleration_structure_geometry& geometry,
 			std::uint32_t prim_count
@@ -126,19 +130,22 @@ namespace gse::vulkan {
 		const gpu::acceleration_structure_geometry& g
 	) -> vk::AccelerationStructureGeometryKHR;
 
-	[[nodiscard]] auto create_acceleration_structure(
+	[[nodiscard]]
+	auto create_acceleration_structure(
 		const device& dev,
 		gpu::handle<buffer> storage_buffer,
 		gpu::device_size size,
 		gpu::acceleration_structure_type type
 	) -> vk::raii::AccelerationStructureKHR;
 
-	[[nodiscard]] auto acceleration_structure_address(
+	[[nodiscard]]
+	auto acceleration_structure_address(
 		const device& dev,
 		const vk::raii::AccelerationStructureKHR& as
 	) -> gpu::device_address;
 
-	[[nodiscard]] auto query_tlas_build_sizes(
+	[[nodiscard]]
+	auto query_tlas_build_sizes(
 		const device& dev,
 		std::uint32_t max_instances
 	) -> acceleration_structure_build_sizes;

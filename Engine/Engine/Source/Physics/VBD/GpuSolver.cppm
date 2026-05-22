@@ -23,18 +23,7 @@ export namespace gse::vbd {
 		std::uint32_t z;
 	};
 
-	using shader_types = type_pack<
-		vbd_limits,
-		joint_type,
-		solver_config,
-		body_state,
-		contact_constraint,
-		velocity_motor_constraint,
-		joint_constraint,
-		impulse_constraint,
-		frozen_jacobian,
-		dispatch_args
-	>;
+	using shader_types = type_pack<vbd_limits, joint_type, solver_config, body_state, contact_constraint, velocity_motor_constraint, joint_constraint, impulse_constraint, frozen_jacobian, dispatch_args>;
 
 	struct vbd_solve_chain {};
 

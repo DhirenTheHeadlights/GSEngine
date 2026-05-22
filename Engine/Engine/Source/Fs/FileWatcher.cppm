@@ -55,10 +55,7 @@ export namespace gse {
 			std::span<const std::string> extensions,
 			bool recursive
 		) -> std::
-			unordered_map<
-				std::filesystem::path,
-				std::filesystem::file_time_type
-			>;
+			unordered_map<std::filesystem::path, std::filesystem::file_time_type>;
 	};
 }
 

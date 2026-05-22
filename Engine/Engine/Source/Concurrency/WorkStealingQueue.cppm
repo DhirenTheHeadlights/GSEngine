@@ -88,7 +88,8 @@ export namespace gse::task {
 			std::size_t requested
 		) -> std::size_t;
 
-		[[nodiscard]] auto needs_growth(
+		[[nodiscard]]
+		auto needs_growth(
 			const buffer& current,
 			std::size_t top,
 			std::size_t bottom

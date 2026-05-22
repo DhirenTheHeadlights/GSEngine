@@ -25,7 +25,8 @@ export namespace gse::vulkan {
 			pipeline_layout&&
 		) noexcept -> pipeline_layout& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const device& dev,
 			std::span<const gpu::handle<descriptor_set_layout>> set_layouts,
 			std::span<const gpu::push_constant_range> push_ranges

@@ -14,27 +14,11 @@ import :quat_math;
 import :simd;
 
 export namespace gse {
-	template <
-		typename T,
-		gse::internal::is_quantity QPos,
-		gse::internal::is_quantity QTgt
-	>
-	requires std::same_as<
-				 typename QPos::value_type,
-				 T
-			 > &&
-		std::same_as<
-				 typename QTgt::value_type,
-				 T
-		> &&
-		gse::internal::same_unit_family_v<
-				 typename QPos::quantity_tag,
-				 gse::length_tag
-		> &&
-		gse::internal::same_unit_family_v<
-				 typename QTgt::quantity_tag,
-				 gse::length_tag
-		>
+	template <typename T, gse::internal::is_quantity QPos, gse::internal::is_quantity QTgt>
+	requires std::same_as<typename QPos::value_type, T> &&
+		std::same_as<typename QTgt::value_type, T> &&
+		gse::internal::same_unit_family_v<typename QPos::quantity_tag, gse::length_tag> &&
+		gse::internal::same_unit_family_v<typename QTgt::quantity_tag, gse::length_tag>
 	constexpr auto look_at(
 		const vec3<QPos>& position,
 		const vec3<QTgt>& target,
@@ -59,18 +43,9 @@ export namespace gse {
 		length_t<T> far
 	) -> projection_matrix;
 
-	template <
-		typename T,
-		gse::internal::is_quantity Q
-	>
-	requires std::same_as<
-				 typename Q::value_type,
-				 T
-			 > &&
-		gse::internal::same_unit_family_v<
-				 typename Q::quantity_tag,
-				 gse::length_tag
-		>
+	template <typename T, gse::internal::is_quantity Q>
+	requires std::same_as<typename Q::value_type, T> &&
+		gse::internal::same_unit_family_v<typename Q::quantity_tag, gse::length_tag>
 	constexpr auto translate(
 		const mat4<T>& matrix,
 		const vec3<Q>& translation
@@ -83,10 +58,7 @@ export namespace gse {
 		std::type_identity_t<angle_t<T>> angle
 	) -> mat4<T>;
 
-	template <
-		typename T,
-		is_vec V
-	>
+	template <typename T, is_vec V>
 	requires(V::extent == 3)
 	constexpr auto scale(
 		const mat4<T>& matrix,
@@ -103,25 +75,11 @@ export namespace gse {
 		const M& matrix
 	) -> const typename M::value_type*;
 
-	template <
-		typename T,
-		std::size_t N,
-		std::size_t M
-	>
-	constexpr auto identity() -> mat<
-		T,
-		N,
-		M
-	>;
+	template <typename T, std::size_t N, std::size_t M>
+	constexpr auto identity() -> mat<T, N, M>;
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
-	requires(std::same_as<
-			 typename V1::storage_type,
-			 typename V2::storage_type
-	>)
+	template <is_vec V1, is_vec V2>
+	requires(std::same_as<typename V1::storage_type, typename V2::storage_type>)
 	constexpr auto outer_product(
 		const V1& a,
 		const V2& b

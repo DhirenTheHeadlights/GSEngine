@@ -23,6 +23,9 @@ export namespace gse::free_camera {
 		angle yaw = degrees(-90.f);
 		angle pitch = degrees(0.f);
 		float mouse_sensitivity = 0.1f;
+		length collision_radius = meters(0.25f);
+		length collision_skin = meters(0.05f);
+		bool collide_with_geometry = true;
 	};
 
 	struct bindings {
@@ -53,7 +56,13 @@ export namespace gse::free_camera {
 auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::system::data& as, const input::system::data& input_s, const camera::system::data& cam_s) -> async::task<> {
 	while (true) {
 		{
-			auto [cameras, follows] = co_await ctx.acquire_with(write_v<component>, write_v<camera::follow_component>);
+			auto [cameras, follows, transforms, collisions, motions] = co_await ctx.acquire_with(
+				write_v<component>,
+				write_v<camera::follow_component>,
+				read_v<physics::transform_component>,
+				read_v<physics::collision_component>,
+				read_v<physics::motion_component>
+			);
 
 			const auto camera_ids = cameras.owner_ids();
 			for (std::size_t i = 0; i < cameras.size(); ++i) {
@@ -131,8 +140,98 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 					(actions::held(b.up, cs, as) ? 1.f : 0.f) - (actions::held(b.down, cs, as) ? 1.f : 0.f);
 
 				const vec3f direction = rotate_vector(orientation, vec3f(v.x(), lift, v.y()));
-				cam_follow->position += direction * c.speed * system_clock::dt();
 				cam_follow->orientation = orientation;
+
+				const auto move_delta = direction * c.speed * system_clock::dt();
+
+				if (!c.collide_with_geometry) {
+					cam_follow->position += move_delta;
+					continue;
+				}
+
+				const auto inflation = c.collision_radius * 2.f;
+				const auto col_ids = collisions.owner_ids();
+
+				auto current_pos = cam_follow->position;
+				for (std::size_t k = 0; k < collisions.size(); ++k) {
+					const auto col_eid = col_ids[k];
+					const auto* mc = motions.find(col_eid);
+					if (!mc || !physics::is_static(*mc)) {
+						continue;
+					}
+					const auto* col_tc = transforms.find(col_eid);
+					if (!col_tc) {
+						continue;
+					}
+					const auto* shape = std::get_if<physics::box_shape>(&collisions[k].shape);
+					if (!shape) {
+						continue;
+					}
+					const physics::box_shape inflated{
+						.size = shape->size + vec3<displacement>(inflation, inflation, inflation)
+					};
+					const bounding_box bb(*col_tc, inflated);
+					const auto result = narrow_phase_collision::query_obb(bb, current_pos);
+					if (result.signed_distance < c.collision_skin) {
+						const auto push = c.collision_skin - result.signed_distance;
+						current_pos = current_pos + result.normal * push;
+					}
+				}
+
+				vec3<displacement> remaining = move_delta;
+				constexpr int max_slide_iterations = 3;
+				for (int iter = 0; iter < max_slide_iterations; ++iter) {
+					const auto remaining_length = magnitude(remaining);
+					if (remaining_length < meters(1e-5f)) {
+						break;
+					}
+					const vec3f seg_dir = normalize(remaining);
+					const auto seg_end = current_pos + remaining;
+
+					std::optional<narrow_phase_collision::segment_obb_hit> closest_hit;
+					for (std::size_t k = 0; k < collisions.size(); ++k) {
+						const auto col_eid = col_ids[k];
+						const auto* mc = motions.find(col_eid);
+						if (!mc || !physics::is_static(*mc)) {
+							continue;
+						}
+						const auto* col_tc = transforms.find(col_eid);
+						if (!col_tc) {
+							continue;
+						}
+						const auto* shape = std::get_if<physics::box_shape>(&collisions[k].shape);
+						if (!shape) {
+							continue;
+						}
+						const physics::box_shape inflated{
+							.size = shape->size + vec3<displacement>(inflation, inflation, inflation)
+						};
+						const bounding_box bb(*col_tc, inflated);
+						if (const auto hit = narrow_phase_collision::segment_obb_first_hit(bb, current_pos, seg_end)) {
+							if (!closest_hit || hit->distance < closest_hit->distance) {
+								closest_hit = hit;
+							}
+						}
+					}
+
+					if (!closest_hit) {
+						current_pos = current_pos + remaining;
+						break;
+					}
+
+					const auto advance = std::max(closest_hit->distance - c.collision_skin, meters(0.f));
+					current_pos = current_pos + seg_dir * advance;
+
+					const auto leftover_length = remaining_length - closest_hit->distance;
+					if (leftover_length <= meters(0.f)) {
+						break;
+					}
+					const auto leftover = seg_dir * leftover_length;
+					const auto along_normal = dot(leftover, closest_hit->normal);
+					remaining = leftover - closest_hit->normal * along_normal;
+				}
+
+				cam_follow->position = current_pos;
 			}
 
 			std::erase_if(d.bindings_by_owner, [&cameras](const auto& entry) -> auto {

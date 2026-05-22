@@ -40,7 +40,7 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 	s.spawn(
 		"Floor",
 		gs::static_box(
-			gse::vec3<gse::position>(0.f, -0.5f, 0.f),
+			gse::vec3<gse::position>(0.f, -0.501f, 0.f),
 			floor_size,
 			gse::quat(1.f, 0.f, 0.f, 0.f),
 			gse::vec3f(0.08f, 0.08f, 0.09f),
@@ -48,13 +48,6 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 			0.0f
 		)
 	);
-
-	s.build("Sun").with<gse::directional_light_component>({
-		.color = gse::vec3f(1.0f, 0.97f, 0.92f),
-		.intensity = gse::watts_per_square_meter(1.6f),
-		.direction = gse::vec3f(0.25f, -1.0f, 0.15f),
-		.ambient_strength = 0.18f,
-	});
 
 	const auto player_initial_pos = gse::vec3<gse::position>(0.f, 1.005f, 0.f);
 	const auto player_initial_yaw = gse::degrees(-90.f);
@@ -64,7 +57,7 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 
 	if (auto* m = s.registry().try_component<gse::physics::motion_component>(pelvis_id)) {
 		if (auto* dyn = std::get_if<gse::physics::dynamic_body>(&m->body)) {
-			dyn->update_orientation = false;
+			dyn->update_orientation = true;
 		}
 	}
 

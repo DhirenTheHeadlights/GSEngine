@@ -40,7 +40,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto image_index() const -> std::uint32_t;
 
-		[[nodiscard]] auto command_buffer(
+		[[nodiscard]]
+		auto command_buffer(
 			queue_type queue = queue_type::graphics
 		) const -> handle<vulkan::command_buffer>;
 
@@ -48,8 +49,7 @@ export namespace gse::gpu {
 
 		auto begin(
 			window::data& win
-		) -> std::expected<frame_token,
-						   frame_status>;
+		) -> std::expected<frame_token, frame_status>;
 
 		auto end(
 			window::data& win,

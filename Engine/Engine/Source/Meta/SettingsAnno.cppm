@@ -64,10 +64,7 @@ export namespace gse {
 		std::meta::info member
 	) -> std::meta::info;
 
-	template <
-		typename Anno,
-		std::meta::info M
-	>
+	template <typename Anno, std::meta::info M>
 	consteval auto annotation_of() -> Anno;
 }
 

@@ -78,34 +78,12 @@ namespace gse::renderer::cloud {
 
 	using shape_bake_bindings = type_pack<cloud_shape_out>;
 	using detail_bake_bindings = type_pack<cloud_detail_out>;
-	using raymarch_bindings = type_pack<
-		atmosphere::atmosphere_ubo,
-		cloud_ubo,
-		transmittance_in,
-		sky_view_in,
-		cloud_shape_in,
-		cloud_detail_in,
-		cloud_out
-	>;
+	using raymarch_bindings = type_pack<atmosphere::atmosphere_ubo, cloud_ubo, transmittance_in, sky_view_in, cloud_shape_in, cloud_detail_in, cloud_out>;
 	using composite_bindings = type_pack<cloud_in>;
 
-	using shape_bake_entry = gpu::compute_entry<
-		gpu::body_path<"Compute/cloud_shape_bake">,
-		gpu::layout<"cloud_shape_bake">,
-		gpu::bindings<shape_bake_bindings>,
-		gpu::helpers<"Clouds/cloud_common">,
-		gpu::threads<8, 8, 1>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+	using shape_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_shape_bake">, gpu::layout<"cloud_shape_bake">, gpu::bindings<shape_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
-	using detail_bake_entry = gpu::compute_entry<
-		gpu::body_path<"Compute/cloud_detail_bake">,
-		gpu::layout<"cloud_detail_bake">,
-		gpu::bindings<detail_bake_bindings>,
-		gpu::helpers<"Clouds/cloud_common">,
-		gpu::threads<8, 8, 1>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+	using detail_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_detail_bake">, gpu::layout<"cloud_detail_bake">, gpu::bindings<detail_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
 	using raymarch_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/cloud_raymarch">,
@@ -127,8 +105,7 @@ namespace gse::renderer::cloud {
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::color_target<gpu::color_format::hdr>,
 		gpu::blend<gpu::blend_preset::alpha>,
-		gpu::depth<false, false>,
-		gpu::depth_target<gpu::depth_format::none>
+		gpu::depth<true, false, gpu::compare_op::less_or_equal>
 	>;
 
 	auto compute_cloud_target_extent(
@@ -183,7 +160,7 @@ auto gse::renderer::cloud::recreate_cloud_target(const gpu::context::data& gpu_s
 		},
 		"cloud_target"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.cloud_target, gpu::image_layout::general);
+	gpu::transition_image_to(*gpu_s.device, d.cloud_target);
 }
 
 auto gse::renderer::cloud::write_shape_bake_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
@@ -288,8 +265,8 @@ auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::dat
 		},
 		"cloud_detail_noise"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.shape_noise, gpu::image_layout::general);
-	gpu::transition_image_to(*gpu_s.device, d.detail_noise, gpu::image_layout::general);
+	gpu::transition_image_to(*gpu_s.device, d.shape_noise);
+	gpu::transition_image_to(*gpu_s.device, d.detail_noise);
 
 	recreate_cloud_target(gpu_s, d);
 
@@ -453,6 +430,7 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 	auto composite_rec = co_await gpu::pass<cloud_composite_pass>(ctx)
 		.pipeline(d.composite_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
+		.depth(gpu::load_depth())
 		.after<atmosphere::sky_raster_pass, cloud_raymarch_pass>();
 	composite_rec.sample_image(d.cloud_target, gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.set_viewport(ext);

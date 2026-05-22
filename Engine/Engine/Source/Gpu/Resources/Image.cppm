@@ -23,8 +23,7 @@ import gse.math;
 export namespace gse::gpu {
 	auto transition_image_to(
 		gpu::device& dev,
-		vulkan::image& img,
-		image_layout target
+		vulkan::image& img
 	) -> sync_token;
 
 	auto upload_image_2d(
@@ -46,7 +45,6 @@ namespace gse {
 	auto transition_image_async(
 		gpu::device& dev,
 		gpu::handle<vulkan::image> img,
-		gpu::image_layout target_layout,
 		gpu::image_aspect_flag aspect,
 		std::uint32_t layers,
 		bool is_depth

@@ -42,17 +42,27 @@ export namespace gse::gui {
 	class system {
 	public:
 		struct [[= gse::settings::category<"UI">{}]] data {
-			[[= gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}]] theme current_theme = theme::midnight;
+			[[
+				= gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}
+			]]
+			theme current_theme = theme::midnight;
 
 			[[
 				= gse::settings::
 					describe<"Multiplier on UI element sizes and font metrics. Useful for high-DPI displays.">{},
 				= gse::settings::range<0.5f, 2.0f>{}
-			]] float ui_scale = 1.0f;
+			]]
+			float ui_scale = 1.0f;
 
-			[[= gse::settings::describe<"Font used to render text in the UI.">{}]] gse::settings::choice<int> font;
+			[[
+				= gse::settings::describe<"Font used to render text in the UI.">{}
+			]]
+			gse::settings::choice<int> font;
 
-			[[= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{}]] bool show_dev_overlays = false;
+			[[
+				= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{}
+			]]
+			bool show_dev_overlays = false;
 
 			id_mapped_collection<menu> menus;
 			menu* current_menu = nullptr;

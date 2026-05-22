@@ -81,10 +81,7 @@ export namespace gse {
 		auto center_of_mass() const -> vec3<displacement>;
 		auto material() const -> const gse::material&;
 		auto indices() const -> const std::vector<std::uint32_t>&;
-		auto aabb() const -> std::pair<
-			vec3<displacement>,
-			vec3<displacement>
-		>;
+		auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
 
 		auto vertex_gpu_buffer(this const mesh& self) -> const gpu::buffer& {
 			return self.m_vertex_buffer;

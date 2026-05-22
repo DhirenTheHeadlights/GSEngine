@@ -35,15 +35,9 @@ export namespace gse::image {
 	) -> data;
 
 	auto load_cube_faces(
-		const std::array<
-			std::filesystem::path,
-			6
-		>& paths
+		const std::array<std::filesystem::path, 6>& paths
 	) -> std::
-		array<
-			data,
-			6
-		>;
+		array<data, 6>;
 
 	auto load_raw(
 		const std::filesystem::path& path

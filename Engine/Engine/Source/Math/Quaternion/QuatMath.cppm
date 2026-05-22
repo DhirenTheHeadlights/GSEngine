@@ -180,19 +180,13 @@ export namespace gse {
 		const quat_t<T>& q_to
 	) -> vec3<angle_t<T>>;
 
-	template <
-		typename T,
-		typename Q
-	>
+	template <typename T, typename Q>
 	constexpr auto rotate_vector(
 		const quat_t<T>& q,
 		const vec3<Q>& v
 	) -> vec3<Q>;
 
-	template <
-		typename T,
-		typename Q
-	>
+	template <typename T, typename Q>
 	constexpr auto inverse_rotate_vector(
 		const quat_t<T>& q,
 		const vec3<Q>& v

@@ -24,7 +24,8 @@ export namespace gse::vulkan {
 			sync&&
 		) noexcept -> sync& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const device& dev,
 			std::uint32_t image_count,
 			std::uint32_t frames_in_flight = max_frames_in_flight
@@ -38,7 +39,8 @@ export namespace gse::vulkan {
 			std::uint32_t image_index
 		) const -> gpu::handle<semaphore>;
 
-		[[nodiscard]] auto in_flight_fence(
+		[[nodiscard]]
+		auto in_flight_fence(
 			gpu::queue_type queue,
 			std::uint32_t frame_index
 		) const -> gpu::handle<fence>;
@@ -47,10 +49,7 @@ export namespace gse::vulkan {
 		sync(
 			std::vector<vk::raii::Semaphore>&& image_available_semaphores,
 			std::vector<vk::raii::Semaphore>&& render_finished_semaphores,
-			std::array<
-				std::vector<vk::raii::Fence>,
-				gpu::queue_type_count
-			>&& in_flight_fences
+			std::array<std::vector<vk::raii::Fence>, gpu::queue_type_count>&& in_flight_fences
 		);
 
 		std::vector<vk::raii::Semaphore> m_image_available;

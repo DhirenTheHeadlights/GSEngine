@@ -29,19 +29,18 @@ export namespace gse::vulkan {
 			command&&
 		) noexcept -> command& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const device& device_data,
-			const std::array<
-				std::uint32_t,
-				gpu::queue_type_count
-			>& queue_families
+			const std::array<std::uint32_t, gpu::queue_type_count>& queue_families
 		) -> command;
 
 		[[nodiscard]] auto family_index(
 			gpu::queue_type queue
 		) const -> std::uint32_t;
 
-		[[nodiscard]] auto frame_command_buffer(
+		[[nodiscard]]
+		auto frame_command_buffer(
 			gpu::queue_type queue,
 			std::uint32_t frame_index
 		) const -> gpu::handle<command_buffer>;
@@ -53,14 +52,8 @@ export namespace gse::vulkan {
 		};
 
 		command(
-			std::array<
-				family_pool,
-				gpu::queue_type_count
-			> pools,
-			std::array<
-				std::uint32_t,
-				gpu::queue_type_count
-			> families
+			std::array<family_pool, gpu::queue_type_count> pools,
+			std::array<std::uint32_t, gpu::queue_type_count> families
 		);
 
 		static auto make_primary_pool(
@@ -85,12 +78,10 @@ export namespace gse::vulkan {
 			worker_command_pools&&
 		) noexcept -> worker_command_pools& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const device& device_data,
-			const std::array<
-				std::uint32_t,
-				gpu::queue_type_count
-			>& queue_families,
+			const std::array<std::uint32_t, gpu::queue_type_count>& queue_families,
 			std::size_t worker_count,
 			std::size_t secondaries_per_pool = 128
 		) -> worker_command_pools;
@@ -99,7 +90,8 @@ export namespace gse::vulkan {
 			std::uint32_t frame_index
 		) -> void;
 
-		[[nodiscard]] auto acquire_secondary(
+		[[nodiscard]]
+		auto acquire_secondary(
 			gpu::queue_type queue,
 			std::size_t worker_index,
 			std::uint32_t frame_index
@@ -119,14 +111,8 @@ export namespace gse::vulkan {
 		};
 
 		worker_command_pools(
-			std::array<
-				family_pools,
-				gpu::queue_type_count
-			> pools,
-			std::array<
-				std::uint32_t,
-				gpu::queue_type_count
-			> families
+			std::array<family_pools, gpu::queue_type_count> pools,
+			std::array<std::uint32_t, gpu::queue_type_count> families
 		);
 
 		static auto build_family_pools(

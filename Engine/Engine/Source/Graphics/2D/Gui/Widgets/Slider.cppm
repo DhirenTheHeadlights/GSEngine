@@ -44,10 +44,7 @@ export namespace gse::gui::draw {
 		id& active_widget_id
 	) -> void;
 
-	template <
-		typename T,
-		std::size_t N
-	>
+	template <typename T, std::size_t N>
 	requires is_arithmetic<T>
 	auto slider(
 		const draw_context& ctx,
@@ -138,25 +135,13 @@ namespace gse::gui::draw {
 		id active_widget_id
 	) -> void;
 
-	template <
-		typename T,
-		std::size_t N
-	>
+	template <typename T, std::size_t N>
 	auto slider_row(
 		const draw_context& ctx,
 		const std::string& name,
-		std::array<
-			T*,
-			N
-		>& value_ptrs,
-		const std::array<
-			T,
-			N
-		>& min_values,
-		const std::array<
-			T,
-			N
-		>& max_values,
+		std::array<T*, N>& value_ptrs,
+		const std::array<T, N>& min_values,
+		const std::array<T, N>& max_values,
 		id& hot_widget_id,
 		id& active_widget_id
 	) -> void;

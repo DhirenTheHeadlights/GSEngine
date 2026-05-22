@@ -6,13 +6,11 @@ import :non_copyable;
 
 export namespace gse {
 	template <class F>
-	[[nodiscard]] auto make_scope_exit(
+	[[nodiscard]]
+	auto make_scope_exit(
 		F&& f
 	) noexcept(
-		std::is_nothrow_constructible_v<
-			std::decay_t<F>,
-			F&&
-		>
+		std::is_nothrow_constructible_v<std::decay_t<F>, F&&>
 	);
 }
 

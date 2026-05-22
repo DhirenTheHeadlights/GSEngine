@@ -31,15 +31,7 @@ namespace gse::renderer::depth_prepass::meshlet {
 		using element = shaders::common::instance_data;
 	};
 
-	using shader_binding_types = type_pack<
-		camera_ubo,
-		shaders::meshlet::vertices_buffer,
-		shaders::meshlet::meshlets_buffer,
-		shaders::meshlet::meshlet_vertex_indices,
-		shaders::meshlet::meshlet_triangles,
-		shaders::meshlet::meshlet_bounds_buffer,
-		instance_data_buffer
-	>;
+	using shader_binding_types = type_pack<camera_ubo, shaders::meshlet::vertices_buffer, shaders::meshlet::meshlets_buffer, shaders::meshlet::meshlet_vertex_indices, shaders::meshlet::meshlet_triangles, shaders::meshlet::meshlet_bounds_buffer, instance_data_buffer>;
 
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t meshlet_offset;

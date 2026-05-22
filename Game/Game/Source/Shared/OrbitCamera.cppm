@@ -16,6 +16,9 @@ export namespace gs::orbit_camera {
 		float mouse_sensitivity = 0.25f;
 		float arrow_speed = 90.f;
 		float scroll_zoom_step = 0.5f;
+		gse::length collision_radius = gse::meters(0.25f);
+		gse::length collision_skin = gse::meters(0.05f);
+		bool collide_with_geometry = true;
 	};
 
 	struct bindings {
@@ -45,10 +48,12 @@ export namespace gs::orbit_camera {
 auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::input::system::data& input_s, const gse::camera::system::data& cam_s, const gse::physics::system::data& phys_s) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [orbits, follows, transforms] = co_await ctx.acquire_with(
+			auto [orbits, follows, transforms, collisions, motions] = co_await ctx.acquire_with(
 				gse::write_v<component>,
 				gse::write_v<gse::camera::follow_component>,
-				gse::read_v<gse::physics::transform_component>
+				gse::read_v<gse::physics::transform_component>,
+				gse::read_v<gse::physics::collision_component>,
+				gse::read_v<gse::physics::motion_component>
 			);
 
 			const auto orbit_ids = orbits.owner_ids();
@@ -146,7 +151,71 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 				}
 
 				const gse::vec3f forward = gse::rotate_vector(orientation, gse::vec3f(0.f, 0.f, -1.f));
-				cam_follow->position = target_pos - forward * o.distance;
+				const auto desired_camera_pos = target_pos - forward * o.distance;
+
+				gse::length spring_distance = o.distance;
+				if (o.collide_with_geometry) {
+					const auto inflation = o.collision_radius * 2.f;
+					const auto col_ids = collisions.owner_ids();
+					for (std::size_t k = 0; k < collisions.size(); ++k) {
+						const auto col_eid = col_ids[k];
+						const auto* mc = motions.find(col_eid);
+						if (!mc || !gse::physics::is_static(*mc)) {
+							continue;
+						}
+						const auto* col_tc = transforms.find(col_eid);
+						if (!col_tc) {
+							continue;
+						}
+						const auto* shape = std::get_if<gse::physics::box_shape>(&collisions[k].shape);
+						if (!shape) {
+							continue;
+						}
+						const gse::physics::box_shape inflated{
+							.size = shape->size + gse::vec3<gse::displacement>(inflation, inflation, inflation)
+						};
+						const gse::bounding_box bb(*col_tc, inflated);
+						if (const auto hit = gse::narrow_phase_collision::segment_obb_first_hit(bb, target_pos, desired_camera_pos)) {
+							const auto safe = std::max(hit->distance - o.collision_skin, gse::meters(0.f));
+							if (safe < spring_distance) {
+								spring_distance = safe;
+							}
+						}
+					}
+				}
+
+				auto camera_pos = target_pos - forward * spring_distance;
+
+				if (o.collide_with_geometry) {
+					const auto inflation = o.collision_radius * 2.f;
+					const auto col_ids = collisions.owner_ids();
+					for (std::size_t k = 0; k < collisions.size(); ++k) {
+						const auto col_eid = col_ids[k];
+						const auto* mc = motions.find(col_eid);
+						if (!mc || !gse::physics::is_static(*mc)) {
+							continue;
+						}
+						const auto* col_tc = transforms.find(col_eid);
+						if (!col_tc) {
+							continue;
+						}
+						const auto* shape = std::get_if<gse::physics::box_shape>(&collisions[k].shape);
+						if (!shape) {
+							continue;
+						}
+						const gse::physics::box_shape inflated{
+							.size = shape->size + gse::vec3<gse::displacement>(inflation, inflation, inflation)
+						};
+						const gse::bounding_box bb(*col_tc, inflated);
+						const auto result = gse::narrow_phase_collision::query_obb(bb, camera_pos);
+						if (result.signed_distance < o.collision_skin) {
+							const auto push = o.collision_skin - result.signed_distance;
+							camera_pos = camera_pos + result.normal * push;
+						}
+					}
+				}
+
+				cam_follow->position = camera_pos;
 				cam_follow->orientation = orientation;
 			}
 

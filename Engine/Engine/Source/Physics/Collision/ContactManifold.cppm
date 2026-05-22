@@ -61,8 +61,7 @@ export namespace gse {
 
 	auto compute_tangent_basis(
 		const vec3f& normal
-	) -> std::pair<vec3f,
-				   vec3f>;
+	) -> std::pair<vec3f, vec3f>;
 }
 
 auto gse::contact_manifold::add_point(const contact_point& p) -> bool {

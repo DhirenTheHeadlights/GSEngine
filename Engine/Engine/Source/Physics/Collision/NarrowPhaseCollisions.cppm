@@ -15,6 +15,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.meta;
+
 export namespace gse::narrow_phase_collision {
 	struct sat_result {
 		vec3f normal;
@@ -52,6 +53,35 @@ export namespace gse::narrow_phase_collision {
 		const vec3f& normal,
 		separation separation
 	) -> contact_manifold;
+
+	struct obb_query_result {
+		vec3<position> closest;
+		vec3f normal;
+		length signed_distance;
+	};
+
+	struct segment_obb_hit {
+		length distance;
+		vec3f normal;
+	};
+
+	auto query_obb(
+		const bounding_box& bb,
+		const vec3<position>& point
+	) -> obb_query_result;
+
+	auto segment_obb_query(
+		const bounding_box& bb,
+		const vec3<position>& seg_start,
+		const vec3<position>& seg_end
+	) -> std::
+		pair<vec3<position>, obb_query_result>;
+
+	auto segment_obb_first_hit(
+		const bounding_box& bb,
+		const vec3<position>& seg_start,
+		const vec3<position>& seg_end
+	) -> std::optional<segment_obb_hit>;
 }
 
 namespace gse::narrow_phase_collision {
@@ -146,19 +176,12 @@ namespace gse::narrow_phase_collision {
 	) -> std::uint8_t;
 
 	auto clip_polygon(
-		const static_vector<
-			clip_vertex,
-			9
-		>& subject,
+		const static_vector<clip_vertex, 9>& subject,
 		const plane& p,
 		bool keep_greater,
 		bool tag_reference_side,
 		std::uint8_t reference_side
-	)
-		-> static_vector<
-			clip_vertex,
-			9
-		>;
+	) -> static_vector<clip_vertex, 9>;
 
 	auto build_clipped_face_contacts(
 		const bounding_box& bb1,
@@ -194,30 +217,18 @@ namespace gse::narrow_phase_collision {
 		const bounding_box& bb1,
 		const bounding_box& bb2
 	) -> std::
-		pair<
-			vec3f,
-			length
-		>;
+		pair<vec3f, length>;
 
 	constexpr std::uint8_t sphere_surface_index = 6;
 	constexpr std::uint8_t capsule_barrel_index = 6;
 	constexpr std::uint8_t capsule_cap_a_index = 7;
 	constexpr std::uint8_t capsule_cap_b_index = 8;
 
-	struct obb_query_result {
-		vec3<position> closest;
-		vec3f normal;
-		length signed_distance;
-	};
-
 	auto capsule_endpoints(
 		const bounding_box& bb,
 		length half_height
 	) -> std::
-		pair<
-			vec3<position>,
-			vec3<position>
-		>;
+		pair<vec3<position>, vec3<position>>;
 
 	auto closest_point_on_segment(
 		const vec3<position>& a,
@@ -231,25 +242,7 @@ namespace gse::narrow_phase_collision {
 		const vec3<position>& p2,
 		const vec3<position>& q2
 	) -> std::
-		pair<
-			float,
-			float
-		>;
-
-	auto query_obb(
-		const bounding_box& bb,
-		const vec3<position>& point
-	) -> obb_query_result;
-
-	auto segment_obb_query(
-		const bounding_box& bb,
-		const vec3<position>& seg_start,
-		const vec3<position>& seg_end
-	) -> std::
-		pair<
-			vec3<position>,
-			obb_query_result
-		>;
+		pair<float, float>;
 
 	auto classify_box_face(
 		const bounding_box& bb,
@@ -258,8 +251,7 @@ namespace gse::narrow_phase_collision {
 
 	auto classify_capsule_feature(
 		float t_param
-	) -> std::pair<feature_type,
-				   std::uint8_t>;
+	) -> std::pair<feature_type, std::uint8_t>;
 
 	auto sphere_sphere_speculative(
 		const vec3<position>& ca,
@@ -1152,6 +1144,64 @@ auto gse::narrow_phase_collision::segment_obb_query(const bounding_box& bb, cons
 	}
 
 	return { best_pt, best };
+}
+
+auto gse::narrow_phase_collision::segment_obb_first_hit(const bounding_box& bb, const vec3<position>& seg_start, const vec3<position>& seg_end) -> std::optional<segment_obb_hit> {
+	const auto o = bb.obb();
+	const auto he = bb.half_extents();
+
+	const auto seg_vec = seg_end - seg_start;
+	const auto seg_length = magnitude(seg_vec);
+	if (seg_length < meters(1e-6f)) {
+		return std::nullopt;
+	}
+
+	const vec3f dir = normalize(seg_vec);
+	const auto origin_diff = seg_start - o.center;
+
+	auto t_enter = meters(0.f);
+	auto t_exit = seg_length;
+	int hit_axis = -1;
+	float hit_sign = 1.0f;
+
+	for (int i = 0; i < 3; ++i) {
+		const float dir_d = dot(dir, o.axes[i]);
+		const auto origin_d = dot(o.axes[i], origin_diff);
+		const auto half = he[i];
+
+		if (std::abs(dir_d) < 1e-6f) {
+			if (abs(origin_d) > half) {
+				return std::nullopt;
+			}
+			continue;
+		}
+
+		const auto t1 = (-half - origin_d) / dir_d;
+		const auto t2 = (half - origin_d) / dir_d;
+		const auto t_near = std::min(t1, t2);
+		const auto t_far = std::max(t1, t2);
+
+		if (t_near > t_enter) {
+			t_enter = t_near;
+			hit_axis = i;
+			hit_sign = dir_d > 0.f ? -1.0f : 1.0f;
+		}
+		if (t_far < t_exit) {
+			t_exit = t_far;
+		}
+
+		if (t_enter > t_exit) {
+			return std::nullopt;
+		}
+	}
+
+	if (t_enter > seg_length || hit_axis < 0) {
+		return std::nullopt;
+	}
+	return segment_obb_hit{
+		.distance = t_enter,
+		.normal = o.axes[hit_axis] * hit_sign,
+	};
 }
 
 auto gse::narrow_phase_collision::classify_box_face(const bounding_box& bb, const vec3f& direction) -> std::uint8_t {

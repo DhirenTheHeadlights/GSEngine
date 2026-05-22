@@ -67,15 +67,9 @@ export namespace gse {
 			const network::address& to
 		) -> void;
 
-		auto peers() const -> const std::unordered_map<
-			network::address,
-			network::remote_peer
-		>&;
+		auto peers() const -> const std::unordered_map<network::address, network::remote_peer>&;
 
-		auto clients() const -> const std::unordered_map<
-			network::address,
-			client_data
-		>&;
+		auto clients() const -> const std::unordered_map<network::address, client_data>&;
 
 		auto host_entity() const -> std::optional<id>;
 

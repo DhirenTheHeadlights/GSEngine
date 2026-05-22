@@ -10,21 +10,45 @@ import :locomotion_types;
 export namespace gs::locomotion {
 	struct leg_controller {
 		struct [[= gse::settings::category<"Legs">{}]] data {
-			[[= gse::settings::describe<"Resting knee bend while standing (radians, negative = bent).">{}]] gse::angle stance_knee_rest = gse::radians(-0.05f);
+			[[
+				= gse::settings::describe<"Resting knee bend while standing (radians, negative = bent).">{}
+			]]
+			gse::angle stance_knee_rest = gse::radians(-0.05f);
 
-			[[= gse::settings::describe<"Peak knee bend during swing midphase (radians, negative = lift foot).">{}]] gse::angle swing_knee_lift = gse::radians(-0.85f);
+			[[
+				= gse::settings::describe<"Peak knee bend during swing midphase (radians, negative = lift foot).">{}
+			]]
+			gse::angle swing_knee_lift = gse::radians(-0.85f);
 
-			[[= gse::settings::describe<"Lift height of swing foot at midphase.">{}]] gse::displacement swing_lift_height = gse::meters(0.12f);
+			[[
+				= gse::settings::describe<"Lift height of swing foot at midphase.">{}
+			]]
+			gse::displacement swing_lift_height = gse::meters(0.12f);
 
-			[[= gse::settings::describe<"Knee proportional gain on pelvis height error.">{}]] gse::inverse_length knee_height_gain = gse::per_meter(2.5f);
+			[[
+				= gse::settings::describe<"Knee proportional gain on pelvis height error.">{}
+			]]
+			gse::inverse_length knee_height_gain = gse::per_meter(2.5f);
 
-			[[= gse::settings::describe<"Hip proportional gain on body-frame forward lean.">{}]] gse::inverse_length hip_lean_gain = gse::per_meter(3.0f);
+			[[
+				= gse::settings::describe<"Hip proportional gain on body-frame forward lean.">{}
+			]]
+			gse::inverse_length hip_lean_gain = gse::per_meter(2.5f);
 
-			[[= gse::settings::describe<"Stance hip extension while walking (per unit forward intent).">{}]] gse::angle stance_push_off = gse::radians(0.18f);
+			[[
+				= gse::settings::describe<"Stance hip extension while walking (per unit forward intent).">{}
+			]]
+			gse::angle stance_push_off = gse::radians(0.40f);
 
-			[[= gse::settings::describe<"Clamp range on stance hip target.">{}]] gse::angle stance_hip_clamp = gse::radians(0.50f);
+			[[
+				= gse::settings::describe<"Clamp range on stance hip target.">{}
+			]]
+			gse::angle stance_hip_clamp = gse::radians(0.60f);
 
-			[[= gse::settings::describe<"Clamp range on stance knee target.">{}]] gse::angle stance_knee_clamp = gse::radians(0.45f);
+			[[
+				= gse::settings::describe<"Clamp range on stance knee target.">{}
+			]]
+			gse::angle stance_knee_clamp = gse::radians(0.45f);
 
 			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 		};
@@ -59,10 +83,7 @@ namespace gs::locomotion {
 		const skeleton_refs& r,
 		const leg_controller::data& d
 	) -> std::
-		pair<
-			gse::angle,
-			gse::angle
-		>;
+		pair<gse::angle, gse::angle>;
 	auto compute_swing(
 		leg which,
 		const state& s,
@@ -72,10 +93,7 @@ namespace gs::locomotion {
 		const leg_context& ctx,
 		const leg_controller::data& d
 	) -> std::
-		pair<
-			gse::angle,
-			gse::angle
-		>;
+		pair<gse::angle, gse::angle>;
 	auto write_targets(
 		const skeleton_refs& r,
 		const leg_joint_targets& targets,
@@ -90,13 +108,9 @@ auto gs::locomotion::smooth_step(const float t) -> float {
 }
 
 auto gs::locomotion::compute_swing_foot(const gse::vec3<gse::position>& start, const gse::vec3<gse::position>& target, const float t, const gse::displacement lift_height) -> gse::vec3<gse::position> {
-	const float st = smooth_step(t);
 	const float lift = 4.f * t * (1.f - t);
-	const auto x = start.x() + (target.x() - start.x()) * st;
-	const auto z = start.z() + (target.z() - start.z()) * st;
-	const auto y_floor = start.y() + (target.y() - start.y()) * st;
-	const auto y = y_floor + lift_height * lift;
-	return gse::vec3<gse::position>(x, y, z);
+	const auto base = gse::lerp(start, target, smooth_step(t));
+	return gse::vec3<gse::position>(base.x(), base.y() + lift_height * lift, base.z());
 }
 
 auto gs::locomotion::compute_stance(const state& s, const intent& it, const skeleton_refs& r, const leg_controller::data& d) -> std::pair<gse::angle, gse::angle> {

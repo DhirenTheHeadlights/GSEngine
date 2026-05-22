@@ -32,24 +32,15 @@ export namespace gse {
 		constexpr mixed_vec() = default;
 
 		explicit constexpr mixed_vec(
-			const vec<
-				float,
-				size
-			>& raw
+			const vec<float, size>& raw
 		);
 
 		template <std::size_t I>
-		constexpr auto at() const -> internal::nth_t<
-			I,
-			Qs...
-		>;
+		constexpr auto at() const -> internal::nth_t<I, Qs...>;
 
 		template <std::size_t I>
 		constexpr auto set(
-			internal::nth_t<
-				I,
-				Qs...
-			> val
+			internal::nth_t<I, Qs...> val
 		) -> void;
 	};
 }

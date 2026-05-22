@@ -10,24 +10,14 @@ namespace gse {
 }
 
 export namespace gse {
-	template <
-		typename Container,
-		typename T = std::remove_reference_t<decltype(**std::begin(std::declval<Container&>()))>,
-		typename Ret,
-		typename... Args
-	>
+	template <typename Container, typename T = std::remove_reference_t<decltype(**std::begin(std::declval<Container&>()))>, typename Ret, typename... Args>
 	auto bulk_invoke(
 		Container&& container,
 		Ret (T::*func)(Args...) const,
 		Args&&... args
 	) -> void;
 
-	template <
-		typename Container,
-		typename T = std::remove_reference_t<decltype(**std::begin(std::declval<Container&>()))>,
-		typename Ret,
-		typename... Args
-	>
+	template <typename Container, typename T = std::remove_reference_t<decltype(**std::begin(std::declval<Container&>()))>, typename Ret, typename... Args>
 	auto bulk_invoke(
 		Container&& container,
 		Ret (T::*func)(Args...),
@@ -66,10 +56,7 @@ export namespace gse {
 		const std::byte* src
 	) -> void;
 
-	template <
-		is_trivially_copyable T,
-		std::size_t N
-	>
+	template <is_trivially_copyable T, std::size_t N>
 	auto memcpy(
 		std::byte* dest,
 		const T (&src)[N]
