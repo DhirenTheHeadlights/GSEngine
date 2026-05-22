@@ -58,8 +58,24 @@ auto gse::gui::draw_context::current_clip() const -> std::optional<ui_rect> {
 	return clip_stack.back();
 }
 
+auto gse::gui::draw_context::register_hit_region(const render_layer layer, const ui_rect& rect) const -> void {
+	if (hit_regions) {
+		hit_regions->register_hit_region(layer, rect);
+	}
+}
+
 auto gse::gui::draw_context::input_available() const -> bool {
-	return static_cast<std::uint8_t>(current_layer) >= static_cast<std::uint8_t>(input_layer);
+	return input_available_at(input.mouse_position());
+}
+
+auto gse::gui::draw_context::input_available_at(const vec2f position) const -> bool {
+	if (static_cast<std::uint8_t>(current_layer) < static_cast<std::uint8_t>(input_layer)) {
+		return false;
+	}
+	if (!hit_regions) {
+		return true;
+	}
+	return hit_regions->input_available_at(current_layer, position);
 }
 
 auto gse::gui::draw_context::set_tooltip(const id& widget_id, const std::string& text) const -> void {

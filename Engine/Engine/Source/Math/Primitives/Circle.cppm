@@ -19,13 +19,19 @@ export namespace gse {
 			value_type radius;
 		};
 
-		constexpr circle_t(const circle_params& p);
+		constexpr circle_t(
+			const circle_params& p
+		);
 
 		constexpr auto center() const -> const T&;
 		constexpr auto radius() const -> value_type;
 
-		constexpr auto contains(const T& point) const -> bool;
-		constexpr auto intersects(const circle_t& other) const -> bool;
+		constexpr auto contains(
+			const T& point
+		) const -> bool;
+		constexpr auto intersects(
+			const circle_t& other
+		) const -> bool;
 
 	private:
 		T m_center;

@@ -16,19 +16,30 @@ export namespace gse::vulkan {
 	public:
 		~instance() override = default;
 
-		instance(instance&&) noexcept = default;
+		instance(
+			instance&&
+		) noexcept = default;
 
-		auto operator=(instance&&) noexcept -> instance& = default;
+		auto operator=(
+			instance&&
+		) noexcept -> instance& = default;
 
-		[[nodiscard]]
-		static auto create(std::span<const char* const> required_extensions, bool enable_validation) -> instance;
+		[[nodiscard]] static auto create(
+			std::span<const char* const> required_extensions,
+			bool enable_validation
+		) -> instance;
 
-		auto create_surface(const window::data& win) -> void;
+		auto create_surface(
+			const window::data& win
+		) -> void;
 
 	private:
 		friend class device;
 		friend class swap_chain;
-		friend auto pick_surface_format(const device& dev, const instance& inst) -> gpu::image_format;
+		friend auto pick_surface_format(
+			const device& dev,
+			const instance& inst
+		) -> gpu::image_format;
 
 		instance(
 			vk::raii::Context&& context,

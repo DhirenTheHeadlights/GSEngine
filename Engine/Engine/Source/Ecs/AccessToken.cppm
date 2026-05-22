@@ -18,9 +18,13 @@ export namespace gse {
 
 	class access_token : non_copyable {
 	public:
-		access_token(access_token&&) noexcept = default;
+		access_token(
+			access_token&&
+		) noexcept = default;
 
-		auto operator=(access_token&&) noexcept -> access_token& = default;
+		auto operator=(
+			access_token&&
+		) noexcept -> access_token& = default;
 
 	private:
 		friend class run_context;
@@ -34,19 +38,32 @@ export namespace gse {
 		using pointer = value_type*;
 		using reference = value_type&;
 		using span_type = std::span<value_type>;
-		using lookup_fn = pointer (*)(void* ctx, id);
+		using lookup_fn = pointer (
+				*
+		)(
+			void* ctx,
+			id
+		);
 
 		~access() override;
 
 		access() = delete;
 
-		access(access&& other) noexcept;
+		access(
+			access&& other
+		) noexcept;
 
-		auto operator=(access&& other) noexcept -> access&;
+		auto operator=(
+			access&& other
+		) noexcept -> access&;
 
-		auto begin(this access& self) -> decltype(auto);
+		auto begin(
+			this access& self
+		) -> decltype(auto);
 
-		auto end(this access& self) -> decltype(auto);
+		auto end(
+			this access& self
+		) -> decltype(auto);
 
 		[[nodiscard]] auto size() const -> std::size_t;
 
@@ -56,15 +73,23 @@ export namespace gse {
 
 		auto data() const -> pointer;
 
-		auto operator[](std::size_t i) -> reference;
+		auto operator[](
+			std::size_t i
+		) -> reference;
 
-		auto operator[](std::size_t i) const -> reference;
+		auto operator[](
+			std::size_t i
+		) const -> reference;
 
-		auto find(id owner) const -> pointer;
+		auto find(
+			id owner
+		) const -> pointer;
 
 		[[nodiscard]] auto owner_ids() const -> std::span<const id>;
 
-		[[nodiscard]] auto owner_id_at(std::size_t i) const -> id;
+		[[nodiscard]] auto owner_id_at(
+			std::size_t i
+		) const -> id;
 
 	private:
 		friend class registry;

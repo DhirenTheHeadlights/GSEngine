@@ -27,11 +27,7 @@ import :shared_shaders;
 export namespace gse::renderer {
 	using frustum_planes = std::array<vec4f, 6>;
 
-	auto compute_render_transform(
-		const physics::transform_component& tc,
-		const vec3<length>& center_of_mass,
-		const vec3<length>& scale_factors
-	) -> std::pair<spatial_matrix, spatial_matrix> {
+	auto compute_render_transform(const physics::transform_component& tc, const vec3<length>& center_of_mass, const vec3<length>& scale_factors) -> std::pair<spatial_matrix, spatial_matrix> {
 		const mat4f rot_mat = mat4f(mat3_cast(tc.orientation));
 		const mat4f trans_mat = translate(mat4f(1.0f), tc.position);
 		const mat4f scale_mat = scale(mat4f(1.0f), scale_factors);
@@ -40,11 +36,7 @@ export namespace gse::renderer {
 		return { spatial_matrix(model_matrix), spatial_matrix(rot_mat) };
 	}
 
-	auto transform_aabb(
-		const vec3<length>& local_min,
-		const vec3<length>& local_max,
-		const mat4f& model_matrix
-	) -> std::pair<vec3<length>, vec3<length>> {
+	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
 		const std::array corners = { vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
 									 vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
 									 vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
@@ -70,10 +62,7 @@ export namespace gse::renderer {
 	auto extract_frustum_planes(const view_projection_matrix& vp) -> frustum_planes {
 		frustum_planes planes;
 
-		auto at = [&]<std::size_t C, std::size_t R>(
-					  std::integral_constant<std::size_t, C>,
-					  std::integral_constant<std::size_t, R>
-				  ) {
+		auto at = [&]<std::size_t C, std::size_t R>(std::integral_constant<std::size_t, C>, std::integral_constant<std::size_t, R>) {
 			return internal::to_storage(vp.at<C, R>());
 		};
 
@@ -124,7 +113,9 @@ export namespace gse::renderer {
 		const model* model_ptr;
 		std::size_t mesh_index;
 
-		auto operator==(const normal_batch_key&) const -> bool = default;
+		auto operator==(
+			const normal_batch_key&
+		) const -> bool = default;
 	};
 
 	struct normal_instance_batch {
@@ -191,6 +182,10 @@ export namespace gse::renderer::geometry_collector {
 			const primitive_resolver::system& resolver_state
 		) -> async::task<>;
 
-		static auto frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d) -> async::task<>;
+		static auto frame(
+			frame_context& ctx,
+			shared_view<gpu::context> gpu_s,
+			const data& d
+		) -> async::task<>;
 	};
 }

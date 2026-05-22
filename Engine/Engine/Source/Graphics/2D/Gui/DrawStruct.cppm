@@ -16,21 +16,17 @@ import :settings;
 
 export namespace gse::gui {
 	template <typename T>
-	auto draw_struct(builder& b, T& value, settings::panel_state& state, std::string_view key_prefix = {}) -> void;
+	auto draw_struct(
+		builder& b,
+		T& value,
+		settings::panel_state& state,
+		std::string_view key_prefix = {}
+	) -> void;
 }
 
 template <typename T>
-auto gse::gui::draw_struct(
-	builder& b,
-	T& value,
-	settings::panel_state& state,
-	const std::string_view key_prefix
-) -> void {
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, const std::string_view key_prefix) -> void {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
@@ -53,8 +49,8 @@ auto gse::gui::draw_struct(
 					.name = label,
 					.current_index = idx,
 					.options = value.[:m:]
-						.options,
-						.state = dd_state,
+					.options,
+					.state = dd_state,
 				});
 				if (r.changed) {
 					value.[:m:].value = static_cast<typename F::value_type>(idx);

@@ -10,6 +10,9 @@ import gse.ecs;
 
 export namespace gse::primitive_resolver {
 	struct system {
-		static auto run(run_context& ctx, const primitives::data& prims) -> async::task<>;
+		static auto run(
+			run_context& ctx,
+			const primitives::data& prims
+		) -> async::task<>;
 	};
 }

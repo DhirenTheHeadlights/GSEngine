@@ -15,9 +15,15 @@ import :types;
 import :ids;
 import :styles;
 import :builder;
+import :interaction;
 
 export namespace gse::gui::draw {
-	auto button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id) -> bool;
+	auto button(
+		const draw_context& ctx,
+		const std::string& name,
+		id& hot_widget_id,
+		id& active_widget_id
+	) -> bool;
 }
 
 export namespace gse::gui {
@@ -32,12 +38,7 @@ export namespace gse::gui {
 	};
 }
 
-auto gse::gui::draw::button(
-	const draw_context& ctx,
-	const std::string& name,
-	id& hot_widget_id,
-	id& active_widget_id
-) -> bool {
+auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id) -> bool {
 	if (!ctx.current_menu) {
 		return false;
 	}
@@ -53,14 +54,11 @@ auto gse::gui::draw::button(
 	);
 
 	const bool hovered = button_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+	const bool pressed = ctx.input.mouse_button_pressed(mouse_button::button_1);
+	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
-	if (hovered) {
-		hot_widget_id = widget_id;
-	}
-
-	if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
-		active_widget_id = widget_id;
-	}
+	interaction::mark_hot(hot_widget_id, widget_id, hovered);
+	interaction::grab_active(active_widget_id, widget_id, hovered && pressed);
 
 	vec4f target_color = ctx.style.color_widget_background;
 	if (active_widget_id == widget_id) {
@@ -79,7 +77,7 @@ auto gse::gui::draw::button(
 
 	const float text_width = ctx.font->width(name, ctx.style.font_size);
 	const vec2f text_pos = { button_rect.center().x() - text_width / 2.f,
-							 button_rect.center().y() + ctx.style.font_size / 2.f };
+							 button_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) };
 
 	ctx.queue_text({
 		.font = ctx.font,
@@ -92,11 +90,5 @@ auto gse::gui::draw::button(
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 
-	bool clicked = false;
-	if (ctx.input.mouse_button_released(mouse_button::button_1) && active_widget_id == widget_id) {
-		clicked = hovered;
-		active_widget_id = {};
-	}
-
-	return clicked;
+	return interaction::release_active(active_widget_id, widget_id, released) && hovered;
 }

@@ -13,7 +13,11 @@ import :styles;
 import :builder;
 
 export namespace gse::gui::draw {
-	auto text(const draw_context& ctx, const std::string& name, const std::string& text) -> void;
+	auto text(
+		const draw_context& ctx,
+		const std::string& name,
+		const std::string& text
+	) -> void;
 }
 
 export namespace gse::gui {
@@ -54,7 +58,7 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
 		ctx.queue_text({
 			.font = ctx.font,
 			.text = name,
-			.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+			.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = ctx.style.color_text,
 			.clip_rect = label_rect
@@ -64,7 +68,7 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = text,
-		.position = { value_rect.left(), value_rect.center().y() + ctx.style.font_size / 2.f },
+		.position = { value_rect.left(), value_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = value_rect

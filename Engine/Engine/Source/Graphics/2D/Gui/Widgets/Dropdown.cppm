@@ -16,6 +16,7 @@ import :ids;
 import :styles;
 import :builder;
 import :render_layer;
+import :interaction;
 
 export namespace gse::gui {
 	struct dropdown_state {
@@ -93,16 +94,7 @@ namespace gse::gui::draw {
 	) -> dropdown_result;
 }
 
-auto gse::gui::draw::dropdown(
-	const draw_context& ctx,
-	const std::string& name,
-	const std::size_t current_index,
-	const std::span<const std::string_view> options,
-	dropdown_state& state,
-	id& hot_widget_id,
-	id& active_widget_id,
-	const dropdown_config& config
-) -> dropdown_result {
+auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string& name, const std::size_t current_index, const std::span<const std::string_view> options, dropdown_state& state, id& hot_widget_id, id& active_widget_id, const dropdown_config& config) -> dropdown_result {
 	return dropdown_impl(
 		ctx,
 		name,
@@ -120,16 +112,7 @@ auto gse::gui::draw::dropdown(
 	);
 }
 
-auto gse::gui::draw::dropdown(
-	const draw_context& ctx,
-	const std::string& name,
-	const std::size_t current_index,
-	const std::span<const std::string> options,
-	dropdown_state& state,
-	id& hot_widget_id,
-	id& active_widget_id,
-	const dropdown_config& config
-) -> dropdown_result {
+auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string& name, const std::size_t current_index, const std::span<const std::string> options, dropdown_state& state, id& hot_widget_id, id& active_widget_id, const dropdown_config& config) -> dropdown_result {
 	return dropdown_impl(
 		ctx,
 		name,
@@ -179,7 +162,7 @@ auto gse::gui::draw::dropdown_impl(
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size * 0.35f },
+		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = label_rect,
@@ -194,17 +177,15 @@ auto gse::gui::draw::dropdown_impl(
 
 	const float max_option_width = header_width;
 
+	const bool pressed = ctx.input.mouse_button_pressed(mouse_button::button_1);
+	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 	const bool header_hovered = header_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
 
-	if (header_hovered) {
-		hot_widget_id = dropdown_id;
-	}
+	interaction::mark_hot(hot_widget_id, dropdown_id, header_hovered);
+	interaction::grab_active(active_widget_id, dropdown_id, header_hovered && pressed);
 
-	if (header_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
-		active_widget_id = dropdown_id;
-	}
-
-	if (header_hovered && active_widget_id == dropdown_id && ctx.input.mouse_button_released(mouse_button::button_1)) {
+	const bool released_by_me = interaction::release_active(active_widget_id, dropdown_id, released);
+	if (released_by_me && header_hovered) {
 		if (is_open) {
 			state.open_dropdown_id.reset();
 		}
@@ -212,7 +193,6 @@ auto gse::gui::draw::dropdown_impl(
 			state.open_dropdown_id = dropdown_id;
 			state.scroll = {};
 		}
-		active_widget_id.reset();
 	}
 
 	vec4f header_bg = ctx.style.color_widget_background;
@@ -234,24 +214,24 @@ auto gse::gui::draw::dropdown_impl(
 
 	const std::string current_label = current_index < count ? std::string(get_option(current_index)) : "";
 
-	const float arrow_width = ctx.style.font_size * 0.6f;
+	const std::string arrow = is_open ? "\xE2\x96\xB2" : "\xE2\x96\xBC";
+	const float arrow_advance = ctx.font->width(arrow, ctx.style.font_size);
 	const float text_x = header_rect.left() + ctx.style.padding;
 
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = current_label,
-		.position = { text_x, header_rect.center().y() + ctx.style.font_size * 0.35f },
+		.position = { text_x, header_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text,
 		.clip_rect = header_rect
 	});
 
-	const std::string arrow = is_open ? "^" : "v";
-	const float arrow_x = header_rect.right() - arrow_width;
+	const float arrow_x = header_rect.right() - arrow_advance - ctx.style.padding;
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = arrow,
-		.position = { arrow_x, header_rect.center().y() + ctx.style.font_size * 0.35f },
+		.position = { arrow_x, header_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 		.scale = ctx.style.font_size,
 		.color = ctx.style.color_text_secondary,
 		.clip_rect = header_rect
@@ -284,7 +264,7 @@ auto gse::gui::draw::dropdown_impl(
 
 		ctx.queue_sprite({
 			.rect = list_rect,
-			.color = ctx.style.color_menu_body,
+			.color = ctx.style.color_panel_alt,
 			.texture = ctx.blank_texture,
 			.layer = render_layer::modal
 		});
@@ -335,9 +315,9 @@ auto gse::gui::draw::dropdown_impl(
 
 			const bool option_hovered = option_rect.contains(mouse_pos) && content_area.contains(mouse_pos);
 
-			vec4f option_bg = ctx.style.color_menu_body;
+			vec4f option_bg{ 0.f, 0.f, 0.f, 0.f };
 			if (i == current_index) {
-				option_bg = ctx.style.color_widget_selected;
+				option_bg = ctx.style.color_accent_dim;
 			}
 			else if (option_hovered) {
 				option_bg = ctx.style.color_widget_hovered;
@@ -353,8 +333,7 @@ auto gse::gui::draw::dropdown_impl(
 			ctx.queue_text({
 				.font = ctx.font,
 				.text = std::string(get_option(i)),
-				.position = { option_rect.left() + ctx.style.padding,
-							  option_rect.center().y() + ctx.style.font_size * 0.35f },
+				.position = { option_rect.left() + ctx.style.padding, option_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 				.scale = ctx.style.font_size,
 				.color = ctx.style.color_text,
 				.clip_rect = content_area,
@@ -428,11 +407,13 @@ auto gse::gui::draw::dropdown_impl(
 			});
 		}
 
-		if (
-			!list_rect.contains(mouse_pos) && !header_rect.contains(mouse_pos) &&
-			ctx.input.mouse_button_pressed(mouse_button::button_1) && !state.scroll.scrollbar_held
-		) {
+		const bool still_open = state.open_dropdown_id == dropdown_id;
+		if (still_open && !header_rect.contains(mouse_pos) && !state.scroll.scrollbar_held && pressed) {
 			state.open_dropdown_id.reset();
+		}
+
+		if (state.open_dropdown_id == dropdown_id) {
+			ctx.register_hit_region(render_layer::modal, list_rect);
 		}
 	}
 

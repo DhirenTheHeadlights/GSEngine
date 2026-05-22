@@ -69,11 +69,7 @@ namespace gse::renderer::ui {
 	>;
 }
 
-auto gse::renderer::ui::add_sprite_quad(
-	linear_vector<vertex>& vertices,
-	linear_vector<std::uint32_t>& indices,
-	const unified_command& cmd
-) -> void {
+auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
 	if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 		return;
 	}
@@ -113,11 +109,7 @@ auto gse::renderer::ui::add_sprite_quad(
 	indices.push_back(base_index + 2);
 }
 
-auto gse::renderer::ui::add_text_quads(
-	linear_vector<vertex>& vertices,
-	linear_vector<std::uint32_t>& indices,
-	const unified_command& cmd
-) -> void {
+auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
 	for (const auto& [screen_rect, uv_rect] : cmd.font->text_layout(cmd.text, cmd.position, cmd.scale)) {
 		if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 			break;
@@ -138,10 +130,10 @@ auto gse::renderer::ui::add_text_quads(
 		const float u1 = uv_rect.x() + uv_rect.z();
 		const float v1 = uv_rect.y() + uv_rect.w();
 
-		vertices.push_back({ p0, { u0, v1 }, cmd.color, {}, {}, 0.f });
-		vertices.push_back({ p1, { u1, v1 }, cmd.color, {}, {}, 0.f });
-		vertices.push_back({ p2, { u1, v0 }, cmd.color, {}, {}, 0.f });
-		vertices.push_back({ p3, { u0, v0 }, cmd.color, {}, {}, 0.f });
+		vertices.push_back({ p0, { u0, v0 }, cmd.color, {}, {}, 0.f });
+		vertices.push_back({ p1, { u1, v0 }, cmd.color, {}, {}, 0.f });
+		vertices.push_back({ p2, { u1, v1 }, cmd.color, {}, {}, 0.f });
+		vertices.push_back({ p3, { u0, v1 }, cmd.color, {}, {}, 0.f });
 
 		indices.push_back(base_index + 0);
 		indices.push_back(base_index + 2);
@@ -152,12 +144,7 @@ auto gse::renderer::ui::add_text_quads(
 	}
 }
 
-auto gse::renderer::ui::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const asset::data& assets_s,
-	data& d
-) -> async::task<> {
+auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.sprite_pipeline = gpu::build_graphics_pipeline(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
@@ -301,10 +288,7 @@ auto gse::renderer::ui::system::run(
 			else if (cmd.clip_rect.has_value() != current_clip.has_value()) {
 				needs_flush = true;
 			}
-			else if (
-				cmd.clip_rect.has_value() &&
-				(cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())
-			) {
+			else if (cmd.clip_rect.has_value() && (cmd.clip_rect->min() != current_clip->min() || cmd.clip_rect->max() != current_clip->max())) {
 				needs_flush = true;
 			}
 			else if (cmd.type == command_type::sprite && cmd.texture.id() != current_texture.id()) {
@@ -342,12 +326,7 @@ auto gse::renderer::ui::system::run(
 	}
 }
 
-auto gse::renderer::ui::system::frame(
-	frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d,
-	shared_view<scene_snapshot::system> snapshot_s
-) -> async::task<> {
+auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<scene_snapshot::system> snapshot_s) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -390,10 +369,12 @@ auto gse::renderer::ui::system::frame(
 	}();
 
 	gpu::typed_push_constants<sprite_push_constants> sprite_pc{
-		.data = { .projection = projection,
-				  .tex_idx = 0,
-				  .snapshot_tex_idx = shaders::bindless::invalid_index,
-				  .inv_screen_size = inv_screen_size },
+		.data = {
+			.projection = projection,
+			.tex_idx = 0,
+			.snapshot_tex_idx = shaders::bindless::invalid_index,
+			.inv_screen_size = inv_screen_size
+		},
 		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
 	};
 	gpu::typed_push_constants<msdf_push_constants> text_pc{
@@ -413,15 +394,15 @@ auto gse::renderer::ui::system::frame(
 	const vec2u ext_size{ width, height };
 
 	auto rec = co_await gpu::pass<ui::system>(ctx)
-				   .color(gpu::load_color())
-				   .after<
-					   forward::system,
-					   scene_snapshot::system,
-					   physics_debug::system,
-					   sdf_grid::system,
-					   tonemap::system,
-					   world_text::system
-				   >();
+		.color(gpu::load_color())
+		.after<
+			forward::system,
+			scene_snapshot::system,
+			physics_debug::system,
+			sdf_grid::system,
+			tonemap::system,
+			world_text::system
+		>();
 
 	if (snapshot_idx != shaders::bindless::invalid_index) {
 		rec.sample_image(snapshot_s.snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);

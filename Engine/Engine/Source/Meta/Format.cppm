@@ -6,7 +6,9 @@ import gse.std_meta;
 import :annotations;
 
 namespace gse::internal {
-	consteval auto is_user_namespace(std::meta::info type) -> bool;
+	consteval auto is_user_namespace(
+		std::meta::info type
+	) -> bool;
 
 	inline thread_local int format_depth = 0;
 
@@ -32,10 +34,15 @@ export template <typename T, typename CharT>
 requires gse::internal::reflectable_user_class<T, CharT>
 struct std::formatter<T, CharT> {
 	template <typename ParseContext>
-	constexpr auto parse(ParseContext& ctx);
+	constexpr auto parse(
+		ParseContext& ctx
+	);
 
 	template <typename FormatContext>
-	auto format(const T& value, FormatContext& ctx) const;
+	auto format(
+		const T& value,
+		FormatContext& ctx
+	) const;
 };
 
 template <typename T, typename CharT>
@@ -54,11 +61,7 @@ auto std::formatter<T, CharT>::format(const T& value, FormatContext& ctx) const 
 	const auto outer = std::string(static_cast<std::size_t>(gse::internal::format_depth - 1) * 2, ' ');
 	auto out = std::format_to(ctx.out(), "{{");
 	bool first = true;
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (!gse::has_annotation<gse::format_skip_tag>(m)) {
 			if (!first) {
 				out = std::format_to(out, ",");

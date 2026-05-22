@@ -48,19 +48,37 @@ export namespace gse::gpu {
 	public:
 		video_encoder() = default;
 
-		video_encoder(video_encoder&&) noexcept = default;
+		video_encoder(
+			video_encoder&&
+		) noexcept = default;
 
-		auto operator=(video_encoder&&) noexcept -> video_encoder& = default;
+		auto operator=(
+			video_encoder&&
+		) noexcept -> video_encoder& = default;
 
-		static auto probe(device& dev) -> encode_capabilities;
+		static auto probe(
+			device& dev
+		) -> encode_capabilities;
 
-		static auto create(device& dev, vec2u extent, const encode_capabilities& probe_caps) -> video_encoder;
+		static auto create(
+			device& dev,
+			vec2u extent,
+			const encode_capabilities& probe_caps
+		) -> video_encoder;
 
-		auto encode_frame(std::uint32_t frame_slot, const image& y_plane, const image& uv_plane) -> void;
+		auto encode_frame(
+			std::uint32_t frame_slot,
+			const image& y_plane,
+			const image& uv_plane
+		) -> void;
 
-		auto wait(std::uint32_t frame_slot) -> void;
+		auto wait(
+			std::uint32_t frame_slot
+		) -> void;
 
-		[[nodiscard]] auto read_bitstream(std::uint32_t frame_slot) -> std::optional<encoded_unit>;
+		[[nodiscard]] auto read_bitstream(
+			std::uint32_t frame_slot
+		) -> std::optional<encoded_unit>;
 
 		[[nodiscard]] auto stream_header() const -> std::span<const std::byte>;
 
@@ -120,10 +138,18 @@ namespace gse::gpu {
 		vk::VideoEncodeAV1ProfileInfoKHR av1_profile;
 	};
 
-	template <typename To, typename From>
-	constexpr auto vk_enum(From v) -> To;
+	template <
+		typename To,
+		typename From
+	>
+	constexpr auto vk_enum(
+		From v
+	) -> To;
 
-	auto build_profile(profile_chain& chain, video_codec codec) -> void;
+	auto build_profile(
+		profile_chain& chain,
+		video_codec codec
+	) -> void;
 
 	constexpr vk::DeviceSize bitstream_buffer_size = 4 * 1024 * 1024;
 	constexpr auto nv12_format = vk::Format::eG8B8R82Plane420Unorm;
@@ -142,7 +168,12 @@ namespace gse::gpu {
 		vec2u extent,
 		vk::ImageUsageFlags usage,
 		const vk::VideoProfileListInfoKHR& profile_list
-	) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory>;
+	) -> std::
+		tuple<
+			vk::Image,
+			vk::raii::ImageView,
+			vk::DeviceMemory
+		>;
 
 	auto find_memory_type(
 		const vk::raii::PhysicalDevice& physical_device,
@@ -166,21 +197,21 @@ auto gse::gpu::video_encoder::probe(device& dev) -> encode_capabilities {
 			vk::VideoCapabilitiesKHR caps;
 			if (codec == video_codec::av1) {
 				caps = physical
-						   .getVideoCapabilitiesKHR<
-							   vk::VideoCapabilitiesKHR,
-							   vk::VideoEncodeCapabilitiesKHR,
-							   vk::VideoEncodeAV1CapabilitiesKHR
-						   >(chain.profile)
-						   .get<vk::VideoCapabilitiesKHR>();
+					.getVideoCapabilitiesKHR<
+						vk::VideoCapabilitiesKHR,
+						vk::VideoEncodeCapabilitiesKHR,
+						vk::VideoEncodeAV1CapabilitiesKHR
+					>(chain.profile)
+					.get<vk::VideoCapabilitiesKHR>();
 			}
 			else {
 				caps = physical
-						   .getVideoCapabilitiesKHR<
-							   vk::VideoCapabilitiesKHR,
-							   vk::VideoEncodeCapabilitiesKHR,
-							   vk::VideoEncodeH265CapabilitiesKHR
-						   >(chain.profile)
-						   .get<vk::VideoCapabilitiesKHR>();
+					.getVideoCapabilitiesKHR<
+						vk::VideoCapabilitiesKHR,
+						vk::VideoEncodeCapabilitiesKHR,
+						vk::VideoEncodeH265CapabilitiesKHR
+					>(chain.profile)
+					.get<vk::VideoCapabilitiesKHR>();
 			}
 
 			const auto codec_name = codec == video_codec::av1 ? "AV1" : "H.265";
@@ -209,11 +240,7 @@ auto gse::gpu::video_encoder::probe(device& dev) -> encode_capabilities {
 	return {};
 }
 
-auto gse::gpu::video_encoder::create(
-	device& dev,
-	const vec2u extent,
-	const encode_capabilities& probe_caps
-) -> video_encoder {
+auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const encode_capabilities& probe_caps) -> video_encoder {
 	video_encoder enc;
 	enc.m_device = &dev;
 	enc.m_codec = probe_caps.codec;
@@ -384,19 +411,12 @@ auto gse::gpu::video_encoder::create(
 	return enc;
 }
 
-auto gse::gpu::video_encoder::encode_frame(
-	const std::uint32_t frame_slot,
-	const image& y_plane,
-	const image& uv_plane
-) -> void {
+auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const image& y_plane, const image& uv_plane) -> void {
 	auto& slot = m_slots[frame_slot];
 	const auto& vk_dev = m_device->vulkan_device().raii_device();
 
 	if (slot.submitted) {
-		if (
-			vk_dev.waitForFences(*slot.fence, vk::True, std::numeric_limits<std::uint64_t>::max()) !=
-			vk::Result::eSuccess
-		) {
+		if (vk_dev.waitForFences(*slot.fence, vk::True, std::numeric_limits<std::uint64_t>::max()) != vk::Result::eSuccess) {
 			return;
 		}
 		vk_dev.resetFences(*slot.fence);
@@ -658,17 +678,23 @@ auto gse::gpu::video_encoder::encode_frame(
 		};
 
 		const vk::video::EncodeH265PictureInfo std_pic_info{
-			.flags = { .is_reference = 1, .IrapPicFlag = is_keyframe ? 1u : 0u, .short_term_ref_pic_set_sps_flag = 0 },
+			.flags = {
+				.is_reference = 1,
+				.IrapPicFlag = is_keyframe ? 1u : 0u,
+				.short_term_ref_pic_set_sps_flag = 0
+			},
 			.pic_type = is_keyframe ? vk::video::H265PictureType::eIdr : vk::video::H265PictureType::eP,
 			.PicOrderCntVal = static_cast<std::int32_t>(m_frame_number & 0xFF),
 			.pRefLists = &ref_lists,
 			.pShortTermRefPicSet = &strps
 		};
 
-		const vk::video::EncodeH265SliceSegmentHeader slice_header{ .flags = { .first_slice_segment_in_pic_flag = 1 },
-																	.slice_type = is_keyframe
-																		? vk::video::H265SliceType::eI
-																		: vk::video::H265SliceType::eP };
+		const vk::video::EncodeH265SliceSegmentHeader slice_header{
+			.flags = {
+				.first_slice_segment_in_pic_flag = 1
+			},
+			.slice_type = is_keyframe ? vk::video::H265SliceType::eI : vk::video::H265SliceType::eP
+		};
 
 		const vk::VideoEncodeH265NaluSliceSegmentInfoKHR nalu{
 			.pStdSliceSegmentHeader = slice_header
@@ -898,13 +924,7 @@ auto gse::gpu::build_profile(profile_chain& chain, const video_codec codec) -> v
 	chain.profile.pNext = &chain.usage;
 }
 
-auto gse::gpu::create_nv12_image(
-	const vk::raii::Device& device,
-	const vk::raii::PhysicalDevice& physical_device,
-	vec2u extent,
-	vk::ImageUsageFlags usage,
-	const vk::VideoProfileListInfoKHR& profile_list
-) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory> {
+auto gse::gpu::create_nv12_image(const vk::raii::Device& device, const vk::raii::PhysicalDevice& physical_device, vec2u extent, vk::ImageUsageFlags usage, const vk::VideoProfileListInfoKHR& profile_list) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory> {
 	auto image = (*device).createImage({
 		.pNext = &profile_list,
 		.imageType = vk::ImageType::e2D,
@@ -923,10 +943,7 @@ auto gse::gpu::create_nv12_image(
 
 	std::uint32_t mem_type = 0;
 	for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-		if (
-			(mem_reqs.memoryTypeBits & (1u << i)) &&
-			(mem_props.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal)
-		) {
+		if ((mem_reqs.memoryTypeBits & (1u << i)) && (mem_props.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal)) {
 			mem_type = i;
 			break;
 		}
@@ -949,11 +966,7 @@ auto gse::gpu::create_nv12_image(
 	return { image, std::move(view), memory };
 }
 
-auto gse::gpu::find_memory_type(
-	const vk::raii::PhysicalDevice& physical_device,
-	std::uint32_t type_bits,
-	vk::MemoryPropertyFlags properties
-) -> std::uint32_t {
+auto gse::gpu::find_memory_type(const vk::raii::PhysicalDevice& physical_device, std::uint32_t type_bits, vk::MemoryPropertyFlags properties) -> std::uint32_t {
 	const auto mem_props = physical_device.getMemoryProperties();
 	for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
 		if ((type_bits & (1u << i)) && (mem_props.memoryTypes[i].propertyFlags & properties) == properties) {

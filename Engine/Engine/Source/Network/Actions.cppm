@@ -17,16 +17,13 @@ export namespace gse::network {
 		angle camera_yaw = {}
 	) -> input_frame;
 
-	auto apply_input_frame(actions::state& target, const input_frame& m) -> void;
+	auto apply_input_frame(
+		actions::state& target,
+		const input_frame& m
+	) -> void;
 }
 
-auto gse::network::extract_input_frame(
-	const actions::state& state,
-	const std::span<const std::uint16_t> axes1_ids,
-	const std::span<const std::uint16_t> axes2_ids,
-	const std::uint32_t input_sequence,
-	const angle camera_yaw
-) -> input_frame {
+auto gse::network::extract_input_frame(const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const std::uint32_t input_sequence, const angle camera_yaw) -> input_frame {
 	const auto& pm = state.pressed_mask();
 	const auto& rm = state.released_mask();
 	const auto& hm = state.held_mask();

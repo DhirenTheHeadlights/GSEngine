@@ -52,13 +52,7 @@ namespace gse::renderer::capture {
 	>;
 }
 
-auto gse::renderer::capture::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const asset::data& assets_s,
-	const actions::system::data& sys,
-	data& d
-) -> async::task<> {
+auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const actions::system::data& sys, data& d) -> async::task<> {
 	const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
 		const id action_id = generate_id(name);
 		ctx.channels.push<actions::add_action_request>({
@@ -159,11 +153,7 @@ auto gse::renderer::capture::system::run(
 	}
 }
 
-auto gse::renderer::capture::system::frame(
-	const frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d
-) -> async::task<> {
+auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto& [staging, width, height, pending] = d.screenshots[frame_index];

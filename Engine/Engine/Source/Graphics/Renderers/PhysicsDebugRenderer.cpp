@@ -101,9 +101,14 @@ namespace gse::renderer::physics_debug {
 
 auto gse::renderer::physics_debug::generate_unit_box() -> std::vector<vec4f> {
 	constexpr std::array<vec4f, 8> corners{
-		vec4f{ -1.f, -1.f, 0.f, -1.f }, vec4f{ +1.f, -1.f, 0.f, -1.f }, vec4f{ -1.f, +1.f, 0.f, -1.f },
-		vec4f{ +1.f, +1.f, 0.f, -1.f }, vec4f{ -1.f, -1.f, 0.f, +1.f }, vec4f{ +1.f, -1.f, 0.f, +1.f },
-		vec4f{ -1.f, +1.f, 0.f, +1.f }, vec4f{ +1.f, +1.f, 0.f, +1.f },
+		vec4f{ -1.f, -1.f, 0.f, -1.f },
+		vec4f{ +1.f, -1.f, 0.f, -1.f },
+		vec4f{ -1.f, +1.f, 0.f, -1.f },
+		vec4f{ +1.f, +1.f, 0.f, -1.f },
+		vec4f{ -1.f, -1.f, 0.f, +1.f },
+		vec4f{ +1.f, -1.f, 0.f, +1.f },
+		vec4f{ -1.f, +1.f, 0.f, +1.f },
+		vec4f{ +1.f, +1.f, 0.f, +1.f },
 	};
 	constexpr std::array<std::pair<int, int>, 12> edges{ { { 0, 1 },
 														   { 1, 3 },
@@ -207,21 +212,12 @@ auto gse::renderer::physics_debug::generate_unit_capsule() -> std::vector<vec4f>
 	return verts;
 }
 
-auto gse::renderer::physics_debug::add_line(
-	const vec3<position>& a,
-	const vec3<position>& b,
-	const vec3f& color,
-	std::vector<debug_vertex>& out_vertices
-) -> void {
+auto gse::renderer::physics_debug::add_line(const vec3<position>& a, const vec3<position>& b, const vec3f& color, std::vector<debug_vertex>& out_vertices) -> void {
 	out_vertices.push_back(debug_vertex{ a, color });
 	out_vertices.push_back(debug_vertex{ b, color });
 }
 
-auto gse::renderer::physics_debug::build_contact_debug(
-	const collision_information& info,
-	const physics::motion_component& mc,
-	std::vector<debug_vertex>& out_vertices
-) -> void {
+auto gse::renderer::physics_debug::build_contact_debug(const collision_information& info, const physics::motion_component& mc, std::vector<debug_vertex>& out_vertices) -> void {
 	const auto& [colliding, collision_normal, penetration, collision_points] = info;
 	if (!colliding || !physics::is_dynamic(mc)) {
 		return;
@@ -256,13 +252,7 @@ auto gse::renderer::physics_debug::build_contact_debug(
 	}
 }
 
-auto gse::renderer::physics_debug::ensure_buffer_capacity(
-	gpu::device& device,
-	gpu::buffer& buffer,
-	std::size_t& capacity,
-	const std::size_t required_bytes,
-	const gpu::buffer_flag usage
-) -> void {
+auto gse::renderer::physics_debug::ensure_buffer_capacity(gpu::device& device, gpu::buffer& buffer, std::size_t& capacity, const std::size_t required_bytes, const gpu::buffer_flag usage) -> void {
 	if (required_bytes <= capacity && buffer) {
 		return;
 	}
@@ -282,13 +272,7 @@ auto gse::renderer::physics_debug::ensure_buffer_capacity(
 	);
 }
 
-auto gse::renderer::physics_debug::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const asset::data& assets_s,
-	data& d,
-	const physics::system::data& ps
-) -> async::task<> {
+auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const physics::system::data& ps) -> async::task<> {
 	d.pipeline_instanced = gpu::build_graphics_pipeline(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
@@ -484,12 +468,7 @@ auto gse::renderer::physics_debug::system::run(
 	}
 }
 
-auto gse::renderer::physics_debug::system::frame(
-	const frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d,
-	shared_view<camera::system> cam_state
-) -> async::task<> {
+auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -499,6 +478,14 @@ auto gse::renderer::physics_debug::system::frame(
 	}
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
+
+	const bool has_shape_instances =
+		!d.box_instances.empty() || !d.sphere_instances.empty() || !d.capsule_instances.empty();
+	const bool has_lines = !d.line_vertices.empty();
+
+	if (!has_shape_instances && !has_lines) {
+		co_return;
+	}
 
 	const auto view = cam_state.view_matrix;
 	const auto proj = cam_state.projection_matrix;
@@ -513,14 +500,6 @@ auto gse::renderer::physics_debug::system::frame(
 
 	const auto ext = gpu_s.render_graph->extent();
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
-
-	const bool has_shape_instances =
-		!d.box_instances.empty() || !d.sphere_instances.empty() || !d.capsule_instances.empty();
-	const bool has_lines = !d.line_vertices.empty();
-
-	if (!has_shape_instances && !has_lines) {
-		co_return;
-	}
 
 	const gpu::buffer* body_buffer = nullptr;
 	std::size_t body_count_bytes = 0;
@@ -574,8 +553,8 @@ auto gse::renderer::physics_debug::system::frame(
 	}
 
 	auto rec = co_await gpu::pass<system>(ctx)
-				   .color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
-				   .after<forward::system, sdf_grid::system, world_text::system>();
+		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
+		.after<forward::system, sdf_grid::system, world_text::system>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 

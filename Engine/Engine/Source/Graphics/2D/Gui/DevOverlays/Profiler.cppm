@@ -24,7 +24,12 @@ import :builder;
 export namespace gse::gui {
 	struct profiler {
 		using result = void;
-		static auto draw(draw_context& ctx, id& hot, id& active, id& focus) -> void;
+		static auto draw(
+			draw_context& ctx,
+			id& hot,
+			id& active,
+			id& focus
+		) -> void;
 	};
 }
 
@@ -119,7 +124,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		ctx.queue_text({
 			.font = ctx.font,
 			.text = txt,
-			.position = { r.left() + pad * 0.5f, r.center().y() + font_sz * 0.5f },
+			.position = { r.left() + pad * 0.5f, r.center().y() + ctx.font->vertical_center_offset(font_sz) },
 			.scale = font_sz,
 			.clip_rect = r
 		});
@@ -260,7 +265,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 					draw_ctx.queue_text({
 						.font = draw_ctx.font,
 						.text = std::string(val),
-						.position = { box.left() + pad * 0.5f, box.center().y() + font_sz * 0.5f },
+						.position = { box.left() + pad * 0.5f, box.center().y() + ctx.font->vertical_center_offset(font_sz) },
 						.scale = font_sz,
 						.clip_rect = box
 					});

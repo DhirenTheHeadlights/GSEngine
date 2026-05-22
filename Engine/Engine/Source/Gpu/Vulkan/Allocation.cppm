@@ -37,9 +37,13 @@ export namespace gse::vulkan {
 
 		~basic_allocation() override;
 
-		basic_allocation(basic_allocation&& other) noexcept;
+		basic_allocation(
+			basic_allocation&& other
+		) noexcept;
 
-		auto operator=(basic_allocation&& other) noexcept -> basic_allocation&;
+		auto operator=(
+			basic_allocation&& other
+		) noexcept -> basic_allocation&;
 
 		[[nodiscard]] auto memory() const -> std::uint64_t;
 

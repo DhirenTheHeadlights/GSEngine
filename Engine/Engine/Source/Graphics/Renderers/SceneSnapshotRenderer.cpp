@@ -44,11 +44,7 @@ namespace gse::renderer::scene_snapshot {
 	}
 }
 
-auto gse::renderer::scene_snapshot::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	data& d
-) -> async::task<> {
+auto gse::renderer::scene_snapshot::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.sampler = gpu::sampler::create(
 		gpu_s.device->allocator(),
 		{
@@ -70,11 +66,7 @@ auto gse::renderer::scene_snapshot::system::run(
 	}
 }
 
-auto gse::renderer::scene_snapshot::system::frame(
-	const frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	data& d
-) -> async::task<> {
+auto gse::renderer::scene_snapshot::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -92,7 +84,7 @@ auto gse::renderer::scene_snapshot::system::frame(
 
 	auto rec =
 		co_await gpu::pass<system>(ctx)
-			.after<forward::system, physics_debug::system, sdf_grid::system, world_text::system, tonemap::system>();
+		.after<forward::system, physics_debug::system, sdf_grid::system, world_text::system, tonemap::system>();
 
 	rec.blit_swapchain_to_image(*gpu_s.swapchain, *gpu_s.frame, d.snapshots[frame_index], extent);
 }

@@ -7,10 +7,14 @@ export namespace gse {
 	struct scalar;
 
 	template <typename T>
-	auto scalar_of(const T& v) -> typename scalar<T>::type;
+	auto scalar_of(
+		const T& v
+	) -> typename scalar<T>::type;
 
 	template <typename T>
-	auto scalar_to(typename scalar<T>::type v) -> T;
+	auto scalar_to(
+		typename scalar<T>::type v
+	) -> T;
 }
 
 export template <typename T>
@@ -18,9 +22,13 @@ requires std::is_arithmetic_v<T>
 struct gse::scalar<T> {
 	using type = T;
 
-	static auto get(const T& v) -> T;
+	static auto get(
+		const T& v
+	) -> T;
 
-	static auto from(T v) -> T;
+	static auto from(
+		T v
+	) -> T;
 };
 
 template <typename T>

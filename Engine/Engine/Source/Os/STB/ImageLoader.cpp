@@ -28,13 +28,24 @@ namespace gse::image {
 		std::jmp_buf buf;
 	};
 
-	auto detect_format(const std::filesystem::path& path) -> image_format;
+	auto detect_format(
+		const std::filesystem::path& path
+	) -> image_format;
 
-	auto read_png_file(const std::filesystem::path& path, bool force_rgba) -> read_result;
+	auto read_png_file(
+		const std::filesystem::path& path,
+		bool force_rgba
+	) -> read_result;
 
-	auto read_jpeg_file(const std::filesystem::path& path, bool force_rgba) -> read_result;
+	auto read_jpeg_file(
+		const std::filesystem::path& path,
+		bool force_rgba
+	) -> read_result;
 
-	auto load_any(const std::filesystem::path& path, bool force_rgba) -> read_result;
+	auto load_any(
+		const std::filesystem::path& path,
+		bool force_rgba
+	) -> read_result;
 
 	auto write_png_file(
 		const std::filesystem::path& path,
@@ -44,7 +55,9 @@ namespace gse::image {
 		const void* pixels
 	) -> bool;
 
-	void jpeg_error_exit(j_common_ptr cinfo);
+	void jpeg_error_exit(
+		j_common_ptr cinfo
+	);
 }
 
 auto gse::image::data::size_bytes() const -> std::size_t {
@@ -113,10 +126,7 @@ auto gse::image::read_png_file(const std::filesystem::path& path, const bool for
 			}
 
 			if (force_rgba) {
-				if (
-					color_type == png_color_type_rgb || color_type == png_color_type_gray ||
-					color_type == png_color_type_palette
-				) {
+				if (color_type == png_color_type_rgb || color_type == png_color_type_gray || color_type == png_color_type_palette) {
 					png_set_filler(png, 0xFF, png_filler_after);
 				}
 				if (color_type == png_color_type_gray || color_type == png_color_type_gray_alpha) {
@@ -244,13 +254,7 @@ auto gse::image::load_any(const std::filesystem::path& path, const bool force_rg
 	return {};
 }
 
-auto gse::image::write_png_file(
-	const std::filesystem::path& path,
-	const std::uint32_t width,
-	const std::uint32_t height,
-	const std::uint32_t channels,
-	const void* pixels
-) -> bool {
+auto gse::image::write_png_file(const std::filesystem::path& path, const std::uint32_t width, const std::uint32_t height, const std::uint32_t channels, const void* pixels) -> bool {
 	std::FILE* fp = std::fopen(path.string().c_str(), "wb");
 	if (!fp) {
 		return false;
@@ -393,12 +397,6 @@ auto gse::image::dimensions(const std::filesystem::path& path) -> vec2u {
 	return { result.width, result.height };
 }
 
-auto gse::image::write_png(
-	const std::filesystem::path& path,
-	const std::uint32_t width,
-	const std::uint32_t height,
-	const std::uint32_t channels,
-	const void* pixels
-) -> bool {
+auto gse::image::write_png(const std::filesystem::path& path, const std::uint32_t width, const std::uint32_t height, const std::uint32_t channels, const void* pixels) -> bool {
 	return write_png_file(path, width, height, channels, pixels);
 }

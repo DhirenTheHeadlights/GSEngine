@@ -16,7 +16,9 @@ export namespace gse::async {
 
 			[[nodiscard]] auto await_ready() const noexcept -> bool;
 
-			[[nodiscard]] auto await_suspend(std::coroutine_handle<> h) const noexcept -> bool;
+			[[nodiscard]] auto await_suspend(
+				std::coroutine_handle<> h
+			) const noexcept -> bool;
 
 			static auto await_resume() noexcept -> void;
 		};

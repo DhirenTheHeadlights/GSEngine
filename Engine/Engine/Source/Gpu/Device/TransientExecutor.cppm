@@ -16,32 +16,50 @@ export namespace gse::gpu {
 	public:
 		~transient_executor();
 
-		transient_executor(transient_executor&&) noexcept = default;
+		transient_executor(
+			transient_executor&&
+		) noexcept = default;
 
-		auto operator=(transient_executor&&) noexcept -> transient_executor& = default;
+		auto operator=(
+			transient_executor&&
+		) noexcept -> transient_executor& = default;
 
-		[[nodiscard]]
-		static auto create(
+		[[nodiscard]] static auto create(
 			const vulkan::device& device,
 			std::uint32_t graphics_family,
 			std::uint32_t compute_family,
 			std::size_t worker_count
 		) -> transient_executor;
 
-		[[nodiscard]] auto recorder(this auto& self) -> auto&;
+		[[nodiscard]] auto recorder(
+			this auto& self
+		) -> auto&;
 
-		[[nodiscard]] auto bin(this auto& self) -> auto&;
+		[[nodiscard]] auto bin(
+			this auto& self
+		) -> auto&;
 
-		[[nodiscard]] auto queue(queue_id id) -> transient_queue&;
+		[[nodiscard]] auto queue(
+			queue_id id
+		) -> transient_queue&;
 
-		auto detach(async::task<> task) -> void;
+		auto detach(
+			async::task<> task
+		) -> void;
 
-		auto begin_frame(const vulkan::device& device) -> void;
+		auto begin_frame(
+			const vulkan::device& device
+		) -> void;
 
-		auto wait_idle(const vulkan::device& device) -> void;
+		auto wait_idle(
+			const vulkan::device& device
+		) -> void;
 
 	private:
-		transient_executor(transient_queue&& graphics, transient_queue&& compute);
+		transient_executor(
+			transient_queue&& graphics,
+			transient_queue&& compute
+		);
 
 		frame_recorder m_recorder;
 		frame_resource_bin m_bin;
@@ -59,12 +77,7 @@ gse::gpu::transient_executor::transient_executor(transient_queue&& graphics, tra
 
 gse::gpu::transient_executor::~transient_executor() = default;
 
-auto gse::gpu::transient_executor::create(
-	const vulkan::device& device,
-	const std::uint32_t graphics_family,
-	const std::uint32_t compute_family,
-	const std::size_t worker_count
-) -> transient_executor {
+auto gse::gpu::transient_executor::create(const vulkan::device& device, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count) -> transient_executor {
 	auto graphics = transient_queue::create(device, queue_id::graphics, graphics_family, worker_count);
 	auto compute = transient_queue::create(device, queue_id::compute, compute_family, worker_count);
 	return transient_executor(std::move(graphics), std::move(compute));

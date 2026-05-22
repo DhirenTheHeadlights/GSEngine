@@ -14,7 +14,12 @@ export namespace gs {
 		gse::scene& s,
 		const gse::physics::skeleton& skel,
 		const gse::vec3<gse::position>& root_position,
-		const gse::quat& root_orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
+		const gse::quat& root_orientation = gse::quat(
+			1.f,
+			0.f,
+			0.f,
+			0.f
+		)
 	) -> skeleton_handle;
 }
 
@@ -42,13 +47,7 @@ namespace gs {
 	) -> gse::id;
 }
 
-auto gs::spawn_bone(
-	gse::scene& scene,
-	const std::string& name,
-	const gse::physics::bone& b,
-	const gse::vec3<gse::position>& world_position,
-	const gse::quat& world_orientation
-) -> gse::id {
+auto gs::spawn_bone(gse::scene& scene, const std::string& name, const gse::physics::bone& b, const gse::vec3<gse::position>& world_position, const gse::quat& world_orientation) -> gse::id {
 	const auto bone_inertia = gse::physics::moment_of_inertia_of(b.shape, b.mass);
 
 	const gse::physics::motion_component motion{
@@ -73,16 +72,16 @@ auto gs::spawn_bone(
 					bone_box_archetype{
 						.transform = transform,
 						.motion = motion,
-						.collision = { .shape = shape },
-						.spec =
-							{
-								.material =
-									{
-										.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
-										.roughness = 0.6f,
-									},
-								.size = shape.size,
+						.collision = {
+							.shape = shape
+						},
+						.spec = {
+							.material = {
+								.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
+								.roughness = 0.6f,
 							},
+							.size = shape.size,
+						},
 					}
 				);
 			}
@@ -92,16 +91,16 @@ auto gs::spawn_bone(
 					bone_sphere_archetype{
 						.transform = transform,
 						.motion = motion,
-						.collision = { .shape = shape },
-						.spec =
-							{
-								.material =
-									{
-										.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
-										.roughness = 0.6f,
-									},
-								.radius = shape.radius,
+						.collision = {
+							.shape = shape
+						},
+						.spec = {
+							.material = {
+								.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
+								.roughness = 0.6f,
 							},
+							.radius = shape.radius,
+						},
 					}
 				);
 			}
@@ -114,16 +113,16 @@ auto gs::spawn_bone(
 					bone_box_archetype{
 						.transform = transform,
 						.motion = motion,
-						.collision = { .shape = shape },
-						.spec =
-							{
-								.material =
-									{
-										.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
-										.roughness = 0.6f,
-									},
-								.size = bbox,
+						.collision = {
+							.shape = shape
+						},
+						.spec = {
+							.material = {
+								.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
+								.roughness = 0.6f,
 							},
+							.size = bbox,
+						},
 					}
 				);
 			}
@@ -133,12 +132,7 @@ auto gs::spawn_bone(
 	return result;
 }
 
-auto gs::spawn_skeleton(
-	gse::scene& s,
-	const gse::physics::skeleton& skel,
-	const gse::vec3<gse::position>& root_position,
-	const gse::quat& root_orientation
-) -> skeleton_handle {
+auto gs::spawn_skeleton(gse::scene& s, const gse::physics::skeleton& skel, const gse::vec3<gse::position>& root_position, const gse::quat& root_orientation) -> skeleton_handle {
 	skeleton_handle handle;
 	handle.bone_ids.resize(skel.bones.size());
 
@@ -169,30 +163,29 @@ auto gs::spawn_skeleton(
 	for (std::size_t j = 0; j < skel.joints.size(); ++j) {
 		const auto& joint = skel.joints[j];
 		handle.joint_ids[j] = s.build(std::format("{}.joint_{}", skel.name, j))
-								  .with<gse::physics::joint_spec>({
-									  .entity_a = handle.bone_ids[joint.bone_a],
-									  .entity_b = handle.bone_ids[joint.bone_b],
-									  .config = joint.config,
-								  })
-								  .identify();
+			.with<gse::physics::joint_spec>({
+				.entity_a = handle.bone_ids[joint.bone_a],
+				.entity_b = handle.bone_ids[joint.bone_b],
+				.config = joint.config,
+			})
+			.identify();
 	}
 
 	handle.muscle_ids.resize(skel.muscles.size());
 	for (std::size_t m = 0; m < skel.muscles.size(); ++m) {
 		const auto& muscle = skel.muscles[m];
 		handle.muscle_ids[m] = s.build(std::format("{}.muscle_{}", skel.name, m))
-								   .with<gse::physics::joint_spec>({
-									   .entity_a = handle.bone_ids[muscle.bone_a],
-									   .entity_b = handle.bone_ids[muscle.bone_b],
-									   .config =
-										   gse::physics::muscle_joint{
-											   .anchor_a = muscle.anchor_a,
-											   .anchor_b = muscle.anchor_b,
-											   .rest_length = muscle.rest_length,
-										   },
-								   })
-								   .with<gse::physics::muscle_component>({})
-								   .identify();
+			.with<gse::physics::joint_spec>({
+				.entity_a = handle.bone_ids[muscle.bone_a],
+				.entity_b = handle.bone_ids[muscle.bone_b],
+				.config = gse::physics::muscle_joint{
+					.anchor_a = muscle.anchor_a,
+					.anchor_b = muscle.anchor_b,
+					.rest_length = muscle.rest_length,
+				},
+			})
+			.with<gse::physics::muscle_component>({})
+			.identify();
 	}
 
 	return handle;

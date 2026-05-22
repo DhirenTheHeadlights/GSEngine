@@ -12,12 +12,17 @@ export namespace gse {
 
 	class scene_init_context {
 	public:
-		scene_init_context(id entity_id, registry* reg);
+		scene_init_context(
+			id entity_id,
+			registry* reg
+		);
 
 		auto id() const -> gse::id;
 
 		template <typename T>
-		auto add_component(T value = T{}) -> T*;
+		auto add_component(
+			T value = T{}
+		) -> T*;
 
 		template <typename T>
 		auto remove() -> void;
@@ -43,44 +48,76 @@ export namespace gse {
 	public:
 		using player_factory_fn = std::function<gse::id(scene&, std::optional<gse::id>)>;
 		using init_fn = gse::move_only_function<void(gse::id, registry&)>;
-		using setup_fn = void (*)(scene&);
+		using setup_fn = void (
+				*
+		)(
+			scene&
+		);
 
 		class builder {
 		public:
-			builder(gse::id entity_id, scene* owner, registry* reg);
+			builder(
+				gse::id entity_id,
+				scene* owner,
+				registry* reg
+			);
 
 			template <typename T>
-			auto with(T value = T{}) -> builder&;
+			auto with(
+				T value = T{}
+			) -> builder&;
 
-			auto initialize(gse::move_only_function<void(scene_init_context&)> fn) -> builder&;
+			auto initialize(
+				gse::move_only_function<void(scene_init_context&)> fn
+			) -> builder&;
 
 			template <typename Func>
-			auto configure(Func&& fn) -> builder&;
+			auto configure(
+				Func&& fn
+			) -> builder&;
 
 			auto identify() const -> gse::id;
 
 		private:
-			auto push_init(init_fn fn) -> void;
+			auto push_init(
+				init_fn fn
+			) -> void;
 
 			gse::id m_entity_id;
 			scene* m_scene = nullptr;
 			registry* m_registry = nullptr;
 		};
 
-		explicit scene(registry& registry, std::string_view name = "Unnamed Scene");
+		explicit scene(
+			registry& registry,
+			std::string_view name = "Unnamed Scene"
+		);
 
-		auto add_entity(const std::string& name) -> gse::id;
+		auto add_entity(
+			const std::string& name
+		) -> gse::id;
 
-		auto remove_entity(const gse::id& id) -> void;
+		auto remove_entity(
+			const gse::id& id
+		) -> void;
 
-		auto build(const std::string& name) -> builder;
+		auto build(
+			const std::string& name
+		) -> builder;
 
 		template <typename Archetype>
-		auto spawn(const std::string& name, Archetype&& archetype) -> gse::id;
+		auto spawn(
+			const std::string& name,
+			Archetype&& archetype
+		) -> gse::id;
 
-		auto set_setup(setup_fn setup) -> void;
+		auto set_setup(
+			setup_fn setup
+		) -> void;
 
-		auto set_active(bool is_active) -> void;
+		auto set_active(
+			bool is_active
+		) -> void;
 
 		auto active() const -> bool;
 
@@ -88,11 +125,16 @@ export namespace gse {
 
 		auto registry() const -> registry&;
 
-		auto set_player_factory(player_factory_fn factory) -> void;
+		auto set_player_factory(
+			player_factory_fn factory
+		) -> void;
 
 		auto player_factory() const -> const player_factory_fn&;
 
-		auto push_init(gse::id entity_id, init_fn fn) -> void;
+		auto push_init(
+			gse::id entity_id,
+			init_fn fn
+		) -> void;
 
 	private:
 		gse::registry& m_registry;
@@ -180,11 +222,7 @@ template <typename Archetype>
 auto gse::scene::spawn(const std::string& name, Archetype&& archetype) -> gse::id {
 	const auto id = add_entity(name);
 	using arch_t = std::remove_cvref_t<Archetype>;
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^arch_t, std::meta::access_context::unchecked())
-		)
-	) {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^arch_t, std::meta::access_context::unchecked()))) {
 		using component_t = typename[:std::meta::type_of(m):];
 		m_registry.add_component<component_t>(id, std::forward_like<Archetype>(archetype.[:m:]));
 	}

@@ -31,9 +31,14 @@ export namespace gse {
 	public:
 		using setup_fn = std::function<void(engine&)>;
 
-		engine(const std::string& name, flags<engine_flag> engine_flags);
+		engine(
+			const std::string& name,
+			flags<engine_flag> engine_flags
+		);
 
-		auto initialize(const setup_fn& app_setup = {}) -> void;
+		auto initialize(
+			const setup_fn& app_setup = {}
+		) -> void;
 
 		auto update() -> void;
 
@@ -47,8 +52,13 @@ export namespace gse {
 
 		auto world() -> world_system::data&;
 
-		template <typename S, typename... Args>
-		auto add_system(Args&&... args) -> system_handle<S>;
+		template <
+			typename S,
+			typename... Args
+		>
+		auto add_system(
+			Args&&... args
+		) -> system_handle<S>;
 
 	private:
 		flags<engine_flag> m_flags;
@@ -64,21 +74,7 @@ export namespace gse {
 	};
 }
 
-namespace gse {
-	template <typename S>
-	auto make_settings_record(typename S::data& obj) -> settings::register_settings_type {
-		auto record = settings::build_settings_record<S>(obj);
-		record.draw = &settings::draw_struct_thunk<S>;
-		return record;
-	}
-}
-
 template <typename S, typename... Args>
 auto gse::engine::add_system(Args&&... args) -> system_handle<S> {
-	auto handle = m_scheduler.add_system<S>(std::forward<Args>(args)...);
-	if constexpr (has_settings<S>) {
-		using data_t = typename S::data;
-		m_save.add(make_settings_record<S>(handle.state()));
-	}
-	return handle;
+	return m_scheduler.add_system<S>(std::forward<Args>(args)...);
 }

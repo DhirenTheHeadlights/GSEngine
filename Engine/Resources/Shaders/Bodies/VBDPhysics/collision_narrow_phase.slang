@@ -906,181 +906,182 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint 
     return false;
 }
 
-// entry:
-uint pair_idx = dispatch_id.x;
+void collision_narrow_phase(uint3 dispatch_id) {
+    uint pair_idx = dispatch_id.x;
 
-uint pair_count = min(collision_pairs[0], max_collision_pairs);
-if (pair_idx >= pair_count) return;
+    uint pair_count = min(collision_pairs[0], max_collision_pairs);
+    if (pair_idx >= pair_count) return;
 
-uint body_a_idx = collision_pairs[1 + pair_idx * 2];
-uint body_b_idx = collision_pairs[1 + pair_idx * 2 + 1];
+    uint body_a_idx = collision_pairs[1 + pair_idx * 2];
+    uint body_b_idx = collision_pairs[1 + pair_idx * 2 + 1];
 
-body_state ba = body_data[body_a_idx];
-body_state bb = body_data[body_b_idx];
+    body_state ba = body_data[body_a_idx];
+    body_state bb = body_data[body_b_idx];
 
-float3 center_a = ba.position.xyz;
-float3 center_b = bb.position.xyz;
-float3 he_a = ba.half_extents.xyz;
-float3 he_b = bb.half_extents.xyz;
+    float3 center_a = ba.position.xyz;
+    float3 center_b = bb.position.xyz;
+    float3 he_a = ba.half_extents.xyz;
+    float3 he_b = bb.half_extents.xyz;
 
-mat3 rot_a = rotation_from_quat(ba.orientation);
-mat3 rot_b = rotation_from_quat(bb.orientation);
+    mat3 rot_a = rotation_from_quat(ba.orientation);
+    mat3 rot_b = rotation_from_quat(bb.orientation);
 
-float3 axes_a[3] = { rot_a[0], rot_a[1], rot_a[2] };
-float3 axes_b[3] = { rot_b[0], rot_b[1], rot_b[2] };
+    float3 axes_a[3] = { rot_a[0], rot_a[1], rot_a[2] };
+    float3 axes_b[3] = { rot_b[0], rot_b[1], rot_b[2] };
 
-SatResult sat = sat_speculative(center_a, he_a, axes_a, center_b, he_b, axes_b, pc.cfg.speculative_margin);
+    SatResult sat = sat_speculative(center_a, he_a, axes_a, center_b, he_b, axes_b, pc.cfg.speculative_margin);
 
-if (!sat.valid) return;
+    if (!sat.valid) return;
 
-float3 tangent_u;
-if (abs(sat.normal.x) < 0.9) tangent_u = normalize(cross(sat.normal, float3(1, 0, 0)));
-else tangent_u = normalize(cross(sat.normal, float3(0, 1, 0)));
-float3 tangent_v = cross(sat.normal, tangent_u);
-float3 constraint_normal = -sat.normal;
+    float3 tangent_u;
+    if (abs(sat.normal.x) < 0.9) tangent_u = normalize(cross(sat.normal, float3(1, 0, 0)));
+    else tangent_u = normalize(cross(sat.normal, float3(0, 1, 0)));
+    float3 tangent_v = cross(sat.normal, tangent_u);
+    float3 constraint_normal = -sat.normal;
 
-ContactResult contacts = generate_contacts(center_a, he_a, axes_a, center_b, he_b, axes_b, sat.normal, sat.separation);
-record_narrow_phase_debug(body_a_idx, body_b_idx, sat, contacts);
+    ContactResult contacts = generate_contacts(center_a, he_a, axes_a, center_b, he_b, axes_b, sat.normal, sat.separation);
+    record_narrow_phase_debug(body_a_idx, body_b_idx, sat, contacts);
 
-uint local_count = uint(contacts.count);
-uint wave_sum = WaveActiveSum(local_count);
-uint my_offset = WavePrefixSum(local_count);
+    uint local_count = uint(contacts.count);
+    uint wave_sum = WaveActiveSum(local_count);
+    uint my_offset = WavePrefixSum(local_count);
 
-uint wave_base = 0;
-if (WaveIsFirstLane() && wave_sum > 0) {
-    InterlockedAdd(collision_state[state_contact_count_index], wave_sum, wave_base);
-}
-wave_base = WaveReadLaneFirst(wave_base);
-
-for (uint p = 0; p < local_count; p++) {
-    uint ci = wave_base + my_offset + p;
-    if (ci >= max_contacts) continue;
-
-    ContactCandidate candidate = contacts.candidates[p];
-    float3 world_anchor_a = candidate.position_on_a;
-    float3 world_anchor_b = candidate.position_on_b;
-    uint feature_hi = candidate.feature_hi;
-    uint feature_lo = candidate.feature_lo;
-
-    float3 world_r_a = world_anchor_a - center_a;
-    float3 world_r_b = world_anchor_b - center_b;
-
-    float3 local_r_a = rotate_vector(quat_conjugate(ba.orientation), world_r_a);
-    float3 local_r_b = rotate_vector(quat_conjugate(bb.orientation), world_r_b);
-
-    contact_constraint cached_ws;
-    bool has_cached = warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, pc.warm_start_count, cached_ws);
-    float3 current_d = world_anchor_a - world_anchor_b;
-    float current_normal_gap = dot(constraint_normal, current_d) + pc.cfg.collision_margin;
-    bool reuse_cached_normal =
-        has_cached &&
-        (cached_ws.lambda.x < -1e-3 || current_normal_gap < -1e-4);
-    bool reuse_cached_tangent =
-        reuse_cached_normal &&
-        has_cached;
-    bool reuse_cached_sticking =
-        reuse_cached_tangent &&
-        cached_ws.sticking != 0;
-
-    float3 init_lambda = float3(0, 0, 0);
-    float3 init_penalty = float3(pc.cfg.penalty_min, pc.cfg.penalty_min, pc.cfg.penalty_min);
-    bool sticking = has_cached && cached_ws.sticking != 0;
-
-    if (reuse_cached_normal) {
-        init_penalty.x = max(cached_ws.penalty.x, pc.cfg.penalty_min);
-
-        float3 cached_normal_force = cached_ws.normal.xyz * cached_ws.lambda.x;
-        init_lambda.x = min(dot(cached_normal_force, constraint_normal), 0.0);
+    uint wave_base = 0;
+    if (WaveIsFirstLane() && wave_sum > 0) {
+        InterlockedAdd(collision_state[state_contact_count_index], wave_sum, wave_base);
     }
+    wave_base = WaveReadLaneFirst(wave_base);
 
-    if (reuse_cached_tangent) {
-        init_penalty.y = max(cached_ws.penalty.y, pc.cfg.penalty_min);
-        init_penalty.z = max(cached_ws.penalty.z, pc.cfg.penalty_min);
+    for (uint p = 0; p < local_count; p++) {
+        uint ci = wave_base + my_offset + p;
+        if (ci >= max_contacts) continue;
 
-        float3 cached_tangent_force =
-            cached_ws.tangent_u.xyz * cached_ws.lambda.y +
-            cached_ws.tangent_v.xyz * cached_ws.lambda.z;
+        ContactCandidate candidate = contacts.candidates[p];
+        float3 world_anchor_a = candidate.position_on_a;
+        float3 world_anchor_b = candidate.position_on_b;
+        uint feature_hi = candidate.feature_hi;
+        uint feature_lo = candidate.feature_lo;
 
-        init_lambda.y = dot(cached_tangent_force, tangent_u);
-        init_lambda.z = dot(cached_tangent_force, tangent_v);
+        float3 world_r_a = world_anchor_a - center_a;
+        float3 world_r_b = world_anchor_b - center_b;
 
-        float friction_bound = abs(init_lambda.x) * pc.cfg.friction_coefficient;
-        init_lambda.y = clamp(init_lambda.y, -friction_bound, friction_bound);
-        init_lambda.z = clamp(init_lambda.z, -friction_bound, friction_bound);
+        float3 local_r_a = rotate_vector(quat_conjugate(ba.orientation), world_r_a);
+        float3 local_r_b = rotate_vector(quat_conjugate(bb.orientation), world_r_b);
+
+        contact_constraint cached_ws;
+        bool has_cached = warm_start_lookup(body_a_idx, body_b_idx, feature_hi, feature_lo, pc.warm_start_count, cached_ws);
+        float3 current_d = world_anchor_a - world_anchor_b;
+        float current_normal_gap = dot(constraint_normal, current_d) + pc.cfg.collision_margin;
+        bool reuse_cached_normal =
+            has_cached &&
+            (cached_ws.lambda.x < -1e-3 || current_normal_gap < -1e-4);
+        bool reuse_cached_tangent =
+            reuse_cached_normal &&
+            has_cached;
+        bool reuse_cached_sticking =
+            reuse_cached_tangent &&
+            cached_ws.sticking != 0;
+
+        float3 init_lambda = float3(0, 0, 0);
+        float3 init_penalty = float3(pc.cfg.penalty_min, pc.cfg.penalty_min, pc.cfg.penalty_min);
+        bool sticking = has_cached && cached_ws.sticking != 0;
+
+        if (reuse_cached_normal) {
+            init_penalty.x = max(cached_ws.penalty.x, pc.cfg.penalty_min);
+
+            float3 cached_normal_force = cached_ws.normal.xyz * cached_ws.lambda.x;
+            init_lambda.x = min(dot(cached_normal_force, constraint_normal), 0.0);
+        }
+
+        if (reuse_cached_tangent) {
+            init_penalty.y = max(cached_ws.penalty.y, pc.cfg.penalty_min);
+            init_penalty.z = max(cached_ws.penalty.z, pc.cfg.penalty_min);
+
+            float3 cached_tangent_force =
+                cached_ws.tangent_u.xyz * cached_ws.lambda.y +
+                cached_ws.tangent_v.xyz * cached_ws.lambda.z;
+
+            init_lambda.y = dot(cached_tangent_force, tangent_u);
+            init_lambda.z = dot(cached_tangent_force, tangent_v);
+
+            float friction_bound = abs(init_lambda.x) * pc.cfg.friction_coefficient;
+            init_lambda.y = clamp(init_lambda.y, -friction_bound, friction_bound);
+            init_lambda.z = clamp(init_lambda.z, -friction_bound, friction_bound);
+        }
+
+        if (reuse_cached_sticking) {
+            local_r_a = cached_ws.local_anchor_a.xyz;
+            local_r_b = cached_ws.local_anchor_b.xyz;
+        }
+
+        float3 rAW = rotate_vector(ba.orientation, local_r_a);
+        float3 rBW = rotate_vector(bb.orientation, local_r_b);
+        float3 pA = center_a + rAW;
+        float3 pB = center_b + rBW;
+        float3 d = pA - pB;
+
+        float3 C0 = float3(
+            dot(constraint_normal, d) + pc.cfg.collision_margin,
+            dot(tangent_u, d),
+            dot(tangent_v, d)
+        );
+
+        float base_floor = has_cached ? max(cached_ws.penalty_floor, pc.cfg.penalty_min) : pc.cfg.penalty_min;
+        bool active_normal =
+            init_lambda.x < -1e-3 ||
+            C0.x < -1e-4;
+        float normal_floor =
+            active_normal
+                ? clamp(contact_effective_mass(ba, bb, rAW, rBW, constraint_normal) / pc.h_squared, base_floor, pc.cfg.penalty_max)
+                : base_floor;
+
+        float row_floor_y =
+            sticking
+                ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_u) / pc.h_squared, pc.cfg.penalty_min, pc.cfg.penalty_max)
+                : pc.cfg.penalty_min;
+        float row_floor_z =
+            sticking
+                ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_v) / pc.h_squared, pc.cfg.penalty_min, pc.cfg.penalty_max)
+                : pc.cfg.penalty_min;
+
+        float3 penalty = init_penalty;
+        float3 lambda = init_lambda;
+        if (pc.cfg.post_stabilize != 0) {
+            penalty.x = clamp(penalty.x * pc.cfg.gamma, normal_floor, pc.cfg.penalty_max);
+            penalty.y = clamp(penalty.y * pc.cfg.gamma, row_floor_y, pc.cfg.penalty_max);
+            penalty.z = clamp(penalty.z * pc.cfg.gamma, row_floor_z, pc.cfg.penalty_max);
+        } else {
+            lambda *= (pc.cfg.alpha * pc.cfg.gamma);
+            penalty.x = clamp(penalty.x * pc.cfg.gamma, normal_floor, pc.cfg.penalty_max);
+            penalty.y = clamp(penalty.y * pc.cfg.gamma, row_floor_y, pc.cfg.penalty_max);
+            penalty.z = clamp(penalty.z * pc.cfg.gamma, row_floor_z, pc.cfg.penalty_max);
+        }
+
+        float3 va = ba.velocity + cross(ba.angular_velocity, rAW);
+        float3 vb = bb.velocity + cross(bb.angular_velocity, rBW);
+        float v_rel_n = dot(constraint_normal, va - vb);
+        float approach = (v_rel_n < 0.0) ? v_rel_n : 0.0;
+
+        float pair_restitution = max(ba.restitution, bb.restitution);
+
+        contact_constraint c;
+        c.body_a = body_a_idx;
+        c.body_b = body_b_idx;
+        c.feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
+        c.sticking = sticking ? 1u : 0u;
+        c.normal = constraint_normal;
+        c.tangent_u = tangent_u;
+        c.tangent_v = tangent_v;
+        c.local_anchor_a = local_r_a;
+        c.local_anchor_b = local_r_b;
+        c.c0 = C0;
+        c.friction_coeff = pc.cfg.friction_coefficient;
+        c.restitution = pair_restitution;
+        c.penalty_floor = pc.cfg.penalty_min;
+        c.approach_speed = approach;
+        c.lambda = lambda;
+        c.penalty = penalty;
+
+        contact_data[ci] = c;
     }
-
-    if (reuse_cached_sticking) {
-        local_r_a = cached_ws.local_anchor_a.xyz;
-        local_r_b = cached_ws.local_anchor_b.xyz;
-    }
-
-    float3 rAW = rotate_vector(ba.orientation, local_r_a);
-    float3 rBW = rotate_vector(bb.orientation, local_r_b);
-    float3 pA = center_a + rAW;
-    float3 pB = center_b + rBW;
-    float3 d = pA - pB;
-
-    float3 C0 = float3(
-        dot(constraint_normal, d) + pc.cfg.collision_margin,
-        dot(tangent_u, d),
-        dot(tangent_v, d)
-    );
-
-    float base_floor = has_cached ? max(cached_ws.penalty_floor, pc.cfg.penalty_min) : pc.cfg.penalty_min;
-    bool active_normal =
-        init_lambda.x < -1e-3 ||
-        C0.x < -1e-4;
-    float normal_floor =
-        active_normal
-            ? clamp(contact_effective_mass(ba, bb, rAW, rBW, constraint_normal) / pc.h_squared, base_floor, pc.cfg.penalty_max)
-            : base_floor;
-
-    float row_floor_y =
-        sticking
-            ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_u) / pc.h_squared, pc.cfg.penalty_min, pc.cfg.penalty_max)
-            : pc.cfg.penalty_min;
-    float row_floor_z =
-        sticking
-            ? clamp(contact_effective_mass(ba, bb, rAW, rBW, tangent_v) / pc.h_squared, pc.cfg.penalty_min, pc.cfg.penalty_max)
-            : pc.cfg.penalty_min;
-
-    float3 penalty = init_penalty;
-    float3 lambda = init_lambda;
-    if (pc.cfg.post_stabilize != 0) {
-        penalty.x = clamp(penalty.x * pc.cfg.gamma, normal_floor, pc.cfg.penalty_max);
-        penalty.y = clamp(penalty.y * pc.cfg.gamma, row_floor_y, pc.cfg.penalty_max);
-        penalty.z = clamp(penalty.z * pc.cfg.gamma, row_floor_z, pc.cfg.penalty_max);
-    } else {
-        lambda *= (pc.cfg.alpha * pc.cfg.gamma);
-        penalty.x = clamp(penalty.x * pc.cfg.gamma, normal_floor, pc.cfg.penalty_max);
-        penalty.y = clamp(penalty.y * pc.cfg.gamma, row_floor_y, pc.cfg.penalty_max);
-        penalty.z = clamp(penalty.z * pc.cfg.gamma, row_floor_z, pc.cfg.penalty_max);
-    }
-
-    float3 va = ba.velocity + cross(ba.angular_velocity, rAW);
-    float3 vb = bb.velocity + cross(bb.angular_velocity, rBW);
-    float v_rel_n = dot(constraint_normal, va - vb);
-    float approach = (v_rel_n < 0.0) ? v_rel_n : 0.0;
-
-    float pair_restitution = max(ba.restitution, bb.restitution);
-
-    contact_constraint c;
-    c.body_a = body_a_idx;
-    c.body_b = body_b_idx;
-    c.feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
-    c.sticking = sticking ? 1u : 0u;
-    c.normal = constraint_normal;
-    c.tangent_u = tangent_u;
-    c.tangent_v = tangent_v;
-    c.local_anchor_a = local_r_a;
-    c.local_anchor_b = local_r_b;
-    c.c0 = C0;
-    c.friction_coeff = pc.cfg.friction_coefficient;
-    c.restitution = pair_restitution;
-    c.penalty_floor = pc.cfg.penalty_min;
-    c.approach_speed = approach;
-    c.lambda = lambda;
-    c.penalty = penalty;
-
-    contact_data[ci] = c;
 }

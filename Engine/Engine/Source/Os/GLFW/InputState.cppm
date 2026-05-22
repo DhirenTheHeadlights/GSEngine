@@ -15,22 +15,42 @@ export namespace gse::input {
 	public:
 		state() noexcept = default;
 		~state() noexcept = default;
-		state(const state&) = default;
-		state(state&&) noexcept = default;
-		auto operator=(const state&) -> state& = default;
-		auto operator=(state&&) noexcept -> state& = default;
+		state(
+			const state&
+		) = default;
+		state(
+			state&&
+		) noexcept = default;
+		auto operator=(
+			const state&
+		) -> state& = default;
+		auto operator=(
+			state&&
+		) noexcept -> state& = default;
 
-		auto key_pressed(key key) const -> bool;
+		auto key_pressed(
+			key key
+		) const -> bool;
 
-		auto key_held(key key) const -> bool;
+		auto key_held(
+			key key
+		) const -> bool;
 
-		auto key_released(key key) const -> bool;
+		auto key_released(
+			key key
+		) const -> bool;
 
-		auto mouse_button_pressed(mouse_button button) const -> bool;
+		auto mouse_button_pressed(
+			mouse_button button
+		) const -> bool;
 
-		auto mouse_button_held(mouse_button button) const -> bool;
+		auto mouse_button_held(
+			mouse_button button
+		) const -> bool;
 
-		auto mouse_button_released(mouse_button button) const -> bool;
+		auto mouse_button_released(
+			mouse_button button
+		) const -> bool;
 
 		auto mouse_position() const -> vec2f;
 
@@ -40,25 +60,54 @@ export namespace gse::input {
 
 		auto text_entered() const -> const std::string&;
 
-		auto begin_frame(const detail::input_state_token& token) -> void;
+		auto begin_frame(
+			const detail::input_state_token& token
+		) -> void;
 
-		auto on_key_pressed(key key, const detail::input_state_token& token) -> void;
+		auto on_key_pressed(
+			key key,
+			const detail::input_state_token& token
+		) -> void;
 
-		auto on_key_released(key key, const detail::input_state_token& token) -> void;
+		auto on_key_released(
+			key key,
+			const detail::input_state_token& token
+		) -> void;
 
-		auto on_mouse_button_pressed(mouse_button button, const detail::input_state_token& token) -> void;
+		auto on_mouse_button_pressed(
+			mouse_button button,
+			const detail::input_state_token& token
+		) -> void;
 
-		auto on_mouse_button_released(mouse_button button, const detail::input_state_token& token) -> void;
+		auto on_mouse_button_released(
+			mouse_button button,
+			const detail::input_state_token& token
+		) -> void;
 
-		auto on_mouse_moved(float x, float y, const detail::input_state_token& token) -> void;
+		auto on_mouse_moved(
+			float x,
+			float y,
+			const detail::input_state_token& token
+		) -> void;
 
-		auto on_scroll(float x, float y, const detail::input_state_token& token) -> void;
+		auto on_scroll(
+			float x,
+			float y,
+			const detail::input_state_token& token
+		) -> void;
 
-		auto append_codepoint(std::uint32_t codepoint, const detail::input_state_token& token) -> void;
+		auto append_codepoint(
+			std::uint32_t codepoint,
+			const detail::input_state_token& token
+		) -> void;
 
-		auto end_frame(const detail::input_state_token& token) -> void;
+		auto end_frame(
+			const detail::input_state_token& token
+		) -> void;
 
-		auto copy_persistent_from(const state& other) -> void;
+		auto copy_persistent_from(
+			const state& other
+		) -> void;
 
 	private:
 		std::unordered_set<key> m_keys_held;

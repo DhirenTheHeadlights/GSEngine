@@ -11,15 +11,25 @@ export namespace gse::gui {
 	struct screen;
 
 	struct nav {
-		template <typename T, typename... Args>
-		auto push(Args&&... args) -> void;
+		template <
+			typename T,
+			typename... Args
+		>
+		auto push(
+			Args&&... args
+		) -> void;
 
 		auto pop() -> void;
 
 		auto clear() -> void;
 
-		template <typename T, typename... Args>
-		auto replace_top(Args&&... args) -> void;
+		template <
+			typename T,
+			typename... Args
+		>
+		auto replace_top(
+			Args&&... args
+		) -> void;
 
 		[[nodiscard]] auto depth() const -> std::size_t;
 
@@ -36,7 +46,10 @@ export namespace gse::gui {
 	struct screen {
 		virtual ~screen() = default;
 
-		virtual auto build(builder& ui, nav& n) -> void = 0;
+		virtual auto build(
+			builder& ui,
+			nav& n
+		) -> void = 0;
 
 		virtual auto on_push() -> void {
 		}
@@ -60,23 +73,38 @@ export namespace gse::gui {
 			return {};
 		}
 
-		virtual auto body_rect(const style& sty, vec2f viewport_size) const -> ui_rect;
+		virtual auto body_rect(
+			const style& sty,
+			vec2f viewport_size
+		) const -> ui_rect;
 
-		virtual auto draw_backdrop(draw_context& ctx, vec2f viewport_size) const -> void;
+		virtual auto draw_backdrop(
+			draw_context& ctx,
+			vec2f viewport_size
+		) const -> void;
 	};
 
 	struct menu_stack_state {
-		template <typename T, typename... Args>
-		auto push(Args&&... args) -> void;
+		template <
+			typename T,
+			typename... Args
+		>
+		auto push(
+			Args&&... args
+		) -> void;
 
-		auto push_factory(std::function<std::unique_ptr<screen>()> factory) -> void;
+		auto push_factory(
+			std::function<std::unique_ptr<screen>()> factory
+		) -> void;
 
 		auto pop() -> void;
 
 		auto clear() -> void;
 
 		template <typename Self>
-		[[nodiscard]] auto top(this Self& self);
+		[[nodiscard]] auto top(
+			this Self& self
+		);
 
 		[[nodiscard]] auto empty() const -> bool;
 
@@ -84,10 +112,14 @@ export namespace gse::gui {
 
 		[[nodiscard]] auto captures_input() const -> bool;
 
-		auto tick(builder& ui) -> void;
+		auto tick(
+			builder& ui
+		) -> void;
 
 	private:
-		auto apply(nav& n) -> void;
+		auto apply(
+			nav& n
+		) -> void;
 
 		std::vector<std::unique_ptr<screen>> m_stack;
 	};

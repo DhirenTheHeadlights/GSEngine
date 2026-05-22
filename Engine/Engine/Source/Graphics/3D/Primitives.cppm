@@ -16,5 +16,8 @@ export namespace gse::primitives {
 		resource::handle<model> sphere_hi;
 	};
 
-	auto initialize(data& d, asset::data& assets) -> void;
+	auto initialize(
+		data& d,
+		asset::data& assets
+	) -> void;
 }

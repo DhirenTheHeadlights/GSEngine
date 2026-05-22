@@ -144,12 +144,7 @@ auto gse::trace::counter(const id id, const double value) -> void {
 	});
 }
 
-auto gse::trace::begin_async_at(
-	const id id,
-	const std::uint64_t key,
-	const std::uint32_t tid,
-	const time_t<std::uint64_t> ts
-) -> void {
+auto gse::trace::begin_async_at(const id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
 	if (paused() || !id.exists()) {
 		return;
 	}
@@ -168,12 +163,7 @@ auto gse::trace::begin_async_at(
 	});
 }
 
-auto gse::trace::end_async_at(
-	const id id,
-	const std::uint64_t key,
-	const std::uint32_t tid,
-	const time_t<std::uint64_t> ts
-) -> void {
+auto gse::trace::end_async_at(const id id, const std::uint64_t key, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
 	if (paused() || !id.exists()) {
 		return;
 	}
@@ -192,12 +182,7 @@ auto gse::trace::end_async_at(
 	});
 }
 
-auto gse::trace::counter_at(
-	const id id,
-	const double value,
-	const std::uint32_t tid,
-	const time_t<std::uint64_t> ts
-) -> void {
+auto gse::trace::counter_at(const id id, const double value, const std::uint32_t tid, const time_t<std::uint64_t> ts) -> void {
 	if (paused() || !id.exists()) {
 		return;
 	}

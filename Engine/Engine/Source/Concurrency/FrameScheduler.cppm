@@ -12,11 +12,15 @@ export namespace gse::concurrency {
 	class frame_scheduler {
 	public:
 		template <typename State>
-		auto submit(move_only_function<void()> work) -> void;
+		auto submit(
+			move_only_function<void()> work
+		) -> void;
 
 		auto flush() -> void;
 
-		auto report_frame_time(time fence_wait) -> void;
+		auto report_frame_time(
+			time fence_wait
+		) -> void;
 
 		[[nodiscard]] auto spread() const -> int;
 

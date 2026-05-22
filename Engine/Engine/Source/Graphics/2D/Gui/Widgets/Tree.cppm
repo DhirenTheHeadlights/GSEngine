@@ -17,6 +17,7 @@ import :types;
 import :ids;
 import :styles;
 import :builder;
+import :interaction;
 
 export namespace gse::gui::draw {
 	struct tree_options {
@@ -79,10 +80,17 @@ namespace gse::gui::draw {
 	expand_state global_expand_state;
 
 	template <typename T>
-	auto tree_node_key(const T& t, const tree_ops<T>& ops, std::uint64_t tree_scope) -> std::uint64_t;
+	auto tree_node_key(
+		const T& t,
+		const tree_ops<T>& ops,
+		std::uint64_t tree_scope
+	) -> std::uint64_t;
 
 	template <typename T>
-	auto tree_node_is_leaf(const T& t, const tree_ops<T>& ops) -> bool;
+	auto tree_node_is_leaf(
+		const T& t,
+		const tree_ops<T>& ops
+	) -> bool;
 
 	template <typename T>
 	auto tree_node(
@@ -98,14 +106,7 @@ namespace gse::gui::draw {
 }
 
 template <typename T>
-auto gse::gui::draw::tree(
-	const draw_context& ctx,
-	std::span<const T> roots,
-	const tree_ops<T>& fns,
-	tree_options opt,
-	tree_selection* sel,
-	id& active_widget_id
-) -> bool {
+auto gse::gui::draw::tree(const draw_context& ctx, std::span<const T> roots, const tree_ops<T>& fns, tree_options opt, tree_selection* sel, id& active_widget_id) -> bool {
 	if (!ctx.current_menu || !ctx.font.valid()) {
 		return false;
 	}
@@ -121,11 +122,7 @@ auto gse::gui::draw::tree(
 }
 
 template <typename T>
-auto gse::gui::draw::tree_node_key(
-	const T& t,
-	const tree_ops<T>& ops,
-	const std::uint64_t tree_scope
-) -> std::uint64_t {
+auto gse::gui::draw::tree_node_key(const T& t, const tree_ops<T>& ops, const std::uint64_t tree_scope) -> std::uint64_t {
 	if (ops.key) {
 		return ops.key(t);
 	}
@@ -148,16 +145,7 @@ auto gse::gui::draw::tree_node_is_leaf(const T& t, const tree_ops<T>& ops) -> bo
 }
 
 template <typename T>
-auto gse::gui::draw::tree_node(
-	const draw_context& ctx,
-	const T& t,
-	const tree_ops<T>& ops,
-	const tree_options& opt,
-	tree_selection* sel,
-	std::uint64_t tree_scope,
-	int level,
-	id& active_widget_id
-) -> bool {
+auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, id& active_widget_id) -> bool {
 	const float row_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const float gap = row_height * opt.row_gap;
 	const ui_rect context_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
@@ -189,6 +177,15 @@ auto gse::gui::draw::tree_node(
 		selected = true;
 	}
 
+	const bool pressed = ctx.input.mouse_button_pressed(mouse_button::button_1);
+	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
+
+	interaction::grab_active(active_widget_id, row_widget_id, hovered && pressed);
+
+	if (active_widget_id == row_widget_id) {
+		self_is_active = true;
+	}
+
 	if (row_visible) {
 		vec4f background = ctx.style.color_widget_background;
 
@@ -200,13 +197,6 @@ auto gse::gui::draw::tree_node(
 		}
 		else if (hovered) {
 			background = ctx.style.color_widget_hovered;
-			if (ctx.input.mouse_button_pressed(mouse_button::button_1)) {
-				active_widget_id = row_widget_id;
-			}
-		}
-
-		if (active_widget_id == row_widget_id) {
-			self_is_active = true;
 		}
 
 		ctx.queue_sprite({
@@ -222,8 +212,7 @@ auto gse::gui::draw::tree_node(
 			ctx.queue_text({
 				.font = ctx.font,
 				.text = is_open ? "v" : ">",
-				.position = { arrow_rect.center().x() - ctx.font->width("v", ctx.style.font_size) * 0.5f,
-							  arrow_rect.center().y() + ctx.style.font_size / 2.f },
+				.position = { arrow_rect.center().x() - ctx.font->width("v", ctx.style.font_size) * 0.5f, arrow_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 				.scale = ctx.style.font_size,
 				.color = ctx.style.color_text,
 				.clip_rect = arrow_rect
@@ -243,7 +232,7 @@ auto gse::gui::draw::tree_node(
 		ctx.queue_text({
 			.font = ctx.font,
 			.text = std::string(lbl),
-			.position = { label_rect.left(), label_rect.center().y() + ctx.style.font_size / 2.f },
+			.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 			.scale = ctx.style.font_size,
 			.color = ctx.style.color_text,
 			.clip_rect = label_rect
@@ -253,49 +242,44 @@ auto gse::gui::draw::tree_node(
 			ops.custom_draw(t, ctx, row_rect, hovered, selected, level);
 		}
 	}
-	else if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
-		active_widget_id = row_widget_id;
-	}
 
-	if (ctx.input.mouse_button_released(mouse_button::button_1)) {
-		if (hovered) {
-			const ui_rect arrow_rect =
-				ui_rect::from_position_size(row_rect.top_left(), { ctx.style.font_size, row_height });
+	if (released && hovered) {
+		const ui_rect arrow_rect =
+			ui_rect::from_position_size(row_rect.top_left(), { ctx.style.font_size, row_height });
 
-			if (
-				const bool clicked_arrow = arrow_rect.contains(mouse_pos);
-				!leaf && (opt.toggle_on_row_click || clicked_arrow)
-			) {
-				if (is_open) {
-					open_set.erase(key);
-				}
-				else {
-					open_set.insert(key);
-				}
-				is_open = !is_open;
+		if (
+			const bool clicked_arrow = arrow_rect.contains(mouse_pos);
+			!leaf && (opt.toggle_on_row_click || clicked_arrow)
+		) {
+			if (is_open) {
+				open_set.erase(key);
 			}
+			else {
+				open_set.insert(key);
+			}
+			is_open = !is_open;
+		}
 
-			if (sel) {
-				if (
-					const bool ctrl = ctx.input.key_held(key::left_control) || ctx.input.key_held(key::right_control);
-					opt.multi_select || ctrl
-				) {
-					if (const auto it = sel->keys.find(key); it != sel->keys.end()) {
-						sel->keys.erase(it);
-					}
-					else {
-						sel->keys.insert(key);
-					}
+		if (sel) {
+			if (
+				const bool ctrl = ctx.input.key_held(key::left_control) || ctx.input.key_held(key::right_control);
+				opt.multi_select || ctrl
+			) {
+				if (const auto it = sel->keys.find(key); it != sel->keys.end()) {
+					sel->keys.erase(it);
 				}
 				else {
-					sel->keys.clear();
 					sel->keys.insert(key);
 				}
 			}
+			else {
+				sel->keys.clear();
+				sel->keys.insert(key);
+			}
 		}
-
-		active_widget_id.reset();
 	}
+
+	interaction::release_active(active_widget_id, row_widget_id, released);
 
 	ctx.layout_cursor.y() -= (row_height + gap);
 

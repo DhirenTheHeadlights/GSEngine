@@ -6,9 +6,15 @@ import gse;
 export namespace gs {
 	class network_screen : public gse::gui::screen {
 	public:
-		network_screen(const gse::network::data& net, gse::channel_writer channels);
+		network_screen(
+			const gse::network::data& net,
+			gse::channel_writer channels
+		);
 
-		auto build(gse::gui::builder& ui, gse::gui::nav& n) -> void override;
+		auto build(
+			gse::gui::builder& ui,
+			gse::gui::nav& n
+		) -> void override;
 
 		auto title() const -> std::string_view override;
 
@@ -32,10 +38,9 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 
 	const auto send_message = [this](auto m) {
 		m_channels.push<gse::network::send_request>({
-			.action =
-				[m = std::move(m)](gse::network::client& c) {
-					c.send(m);
-				},
+			.action = [m = std::move(m)](gse::network::client& c) {
+				c.send(m);
+			},
 		});
 	};
 
@@ -87,15 +92,7 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 		const auto& sv = list[idx];
 		const bool picked = (m_selected == static_cast<int>(idx));
 		if (ui.draw<gse::gui::selectable>({
-				.text = std::format(
-					"{}  {}:{}  {}/{}  v{}",
-					sv.name,
-					sv.addr.ip,
-					sv.addr.port,
-					sv.players,
-					sv.max_players,
-					sv.build
-				),
+				.text = std::format("{}  {}:{}  {}/{}  v{}", sv.name, sv.addr.ip, sv.addr.port, sv.players, sv.max_players, sv.build),
 				.selected = picked,
 			})) {
 			m_selected = static_cast<int>(idx);
@@ -110,7 +107,10 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 		m_channels.push<gse::network::connect_request>({
 			.options = {
 				.addr = pick.addr,
-				.local_bind = gse::network::address{ .ip = "0.0.0.0", .port = 0 },
+				.local_bind = gse::network::address{
+					.ip = "0.0.0.0",
+					.port = 0
+				},
 				.timeout = gse::seconds(5),
 				.retry = gse::seconds(1),
 			},

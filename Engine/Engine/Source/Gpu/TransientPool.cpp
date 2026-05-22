@@ -21,13 +21,21 @@ import gse.log;
 namespace gse::gpu {
 	auto allocate_transient_key() -> std::uint64_t;
 
-	auto aspect_for_format(image_format fmt) -> image_aspect_flags;
+	auto aspect_for_format(
+		image_format fmt
+	) -> image_aspect_flags;
 
-	auto depth_for_format(image_format fmt) -> bool;
+	auto depth_for_format(
+		image_format fmt
+	) -> bool;
 
-	auto image_create_info_from(const transient_image_desc& desc) -> image_create_info;
+	auto image_create_info_from(
+		const transient_image_desc& desc
+	) -> image_create_info;
 
-	auto image_view_create_info_from(const transient_image_desc& desc) -> image_view_create_info;
+	auto image_view_create_info_from(
+		const transient_image_desc& desc
+	) -> image_view_create_info;
 
 	struct lifetime_entry {
 		std::uint32_t first_pass = 0;
@@ -39,9 +47,15 @@ namespace gse::gpu {
 	auto compute_lifetime(
 		const std::vector<id>& used_by,
 		std::span<const id> pass_kind_order
-	) -> std::pair<std::uint32_t, std::uint32_t>;
+	) -> std::
+		pair<
+			std::uint32_t,
+			std::uint32_t
+		>;
 
-	auto greedy_color(std::span<const lifetime_entry> intervals) -> std::vector<std::uint32_t>;
+	auto greedy_color(
+		std::span<const lifetime_entry> intervals
+	) -> std::vector<std::uint32_t>;
 
 	auto make_synthetic_allocation(
 		vulkan::device& dev,
@@ -111,10 +125,7 @@ auto gse::gpu::image_view_create_info_from(const transient_image_desc& desc) -> 
 	};
 }
 
-auto gse::gpu::make_synthetic_allocation(
-	vulkan::device& dev,
-	const std::string_view tag
-) -> vulkan::basic_allocation<vulkan::device> {
+auto gse::gpu::make_synthetic_allocation(vulkan::device& dev, const std::string_view tag) -> vulkan::basic_allocation<vulkan::device> {
 	return {
 		0,
 		0,
@@ -129,10 +140,7 @@ auto gse::gpu::make_synthetic_allocation(
 	};
 }
 
-auto gse::gpu::compute_lifetime(
-	const std::vector<id>& used_by,
-	const std::span<const id> pass_kind_order
-) -> std::pair<std::uint32_t, std::uint32_t> {
+auto gse::gpu::compute_lifetime(const std::vector<id>& used_by, const std::span<const id> pass_kind_order) -> std::pair<std::uint32_t, std::uint32_t> {
 	if (pass_kind_order.empty()) {
 		return { 0, 0 };
 	}
@@ -299,12 +307,7 @@ auto gse::gpu::transient_pool::transient_images() const -> std::vector<transient
 	return out;
 }
 
-auto gse::gpu::transient_pool::ensure_block_for_color(
-	frame_state& slot,
-	const std::uint32_t color,
-	const gpu::device_size required_size,
-	const std::uint32_t memory_type_mask
-) -> void {
+auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const std::uint32_t color, const gpu::device_size required_size, const std::uint32_t memory_type_mask) -> void {
 	while (slot.blocks.size() <= color) {
 		slot.blocks.push_back({});
 	}
@@ -330,12 +333,7 @@ auto gse::gpu::transient_pool::ensure_block_for_color(
 	block.memory_type_index = type_index;
 }
 
-auto gse::gpu::transient_pool::plan(
-	const std::uint32_t frame_idx,
-	const std::span<const transient_image_request> image_requests,
-	const std::span<const transient_buffer_request> buffer_requests,
-	const std::span<const id> pass_kind_order
-) -> void {
+auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::span<const transient_image_request> image_requests, const std::span<const transient_buffer_request> buffer_requests, const std::span<const id> pass_kind_order) -> void {
 	m_current_frame = frame_idx;
 	auto& slot = m_slots[frame_idx];
 	free_slot_resources(slot);

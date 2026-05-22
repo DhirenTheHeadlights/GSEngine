@@ -33,8 +33,7 @@ export namespace gse::renderer::capture {
 				= gse::settings::describe<"Length of the rolling capture ring buffer. Saving a clip writes the most "
 										  "recent N seconds of frames.">{},
 				= gse::settings::range<seconds(5.f), seconds(120.f)>{}
-			]]
-			time ring_budget = seconds(30.f);
+			]] time ring_budget = seconds(30.f);
 
 			actions::handle screenshot_action;
 			actions::handle save_clip_action;
@@ -66,6 +65,10 @@ export namespace gse::renderer::capture {
 			data& d
 		) -> async::task<>;
 
-		static auto frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<>;
+		static auto frame(
+			const frame_context& ctx,
+			shared_view<gpu::context> gpu_s,
+			data& d
+		) -> async::task<>;
 	};
 }

@@ -94,11 +94,17 @@ auto gse::gpu::context::end_frame(data& d, window::data& window_s) -> void {
 }
 
 namespace gse::gpu {
-	auto to_color_output_info(const color_attachment& a) -> gpu::color_output_info;
+	auto to_color_output_info(
+		const color_attachment& a
+	) -> gpu::color_output_info;
 
-	auto to_depth_output_info(const depth_attachment& a) -> gpu::depth_output_info;
+	auto to_depth_output_info(
+		const depth_attachment& a
+	) -> gpu::depth_output_info;
 
-	auto to_pass_data(render_pass_request req) -> gpu::render_pass_data;
+	auto to_pass_data(
+		render_pass_request req
+	) -> gpu::render_pass_data;
 }
 
 auto gse::gpu::to_color_output_info(const color_attachment& a) -> gpu::color_output_info {

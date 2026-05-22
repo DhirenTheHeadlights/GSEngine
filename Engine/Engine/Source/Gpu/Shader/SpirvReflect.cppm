@@ -7,7 +7,9 @@ import :types;
 import gse.assert;
 
 export namespace gse::gpu {
-	auto used_bindings(std::span<const std::uint32_t> spirv) -> std::vector<binding_use>;
+	auto used_bindings(
+		std::span<const std::uint32_t> spirv
+	) -> std::vector<binding_use>;
 }
 
 namespace gse::gpu {
@@ -145,11 +147,7 @@ auto gse::gpu::used_bindings(const std::span<const std::uint32_t> spirv) -> std:
 			std::uint32_t base = 0;
 			bool propagate = false;
 
-			if (
-				(op == op_access_chain || op == op_in_bounds_access_chain || op == op_ptr_access_chain ||
-				 op == op_in_bounds_ptr_access_chain) &&
-				wcount >= 4
-			) {
+			if ((op == op_access_chain || op == op_in_bounds_access_chain || op == op_ptr_access_chain || op == op_in_bounds_ptr_access_chain) && wcount >= 4) {
 				result_id = spirv[i + 2];
 				base = spirv[i + 3];
 				propagate = true;

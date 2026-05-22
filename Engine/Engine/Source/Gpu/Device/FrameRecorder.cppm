@@ -16,17 +16,29 @@ export namespace gse::gpu {
 
 		~frame_recorder();
 
-		frame_recorder(frame_recorder&&) noexcept = default;
+		frame_recorder(
+			frame_recorder&&
+		) noexcept = default;
 
-		auto operator=(frame_recorder&&) noexcept -> frame_recorder& = default;
+		auto operator=(
+			frame_recorder&&
+		) noexcept -> frame_recorder& = default;
 
-		auto pre_frame(frame_record_fn commands) -> void;
+		auto pre_frame(
+			frame_record_fn commands
+		) -> void;
 
-		auto post_frame(frame_record_fn commands) -> void;
+		auto post_frame(
+			frame_record_fn commands
+		) -> void;
 
-		auto run_pre_frame(handle<vulkan::command_buffer> cmd) -> void;
+		auto run_pre_frame(
+			handle<vulkan::command_buffer> cmd
+		) -> void;
 
-		auto run_post_frame(handle<vulkan::command_buffer> cmd) -> void;
+		auto run_post_frame(
+			handle<vulkan::command_buffer> cmd
+		) -> void;
 
 		auto clear() -> void;
 

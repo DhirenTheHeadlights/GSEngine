@@ -17,7 +17,9 @@ import :keys;
 import :input_state;
 
 export namespace gse {
-	auto key_to_string(key k) -> std::string_view;
+	auto key_to_string(
+		key k
+	) -> std::string_view;
 }
 
 export namespace gse::actions {
@@ -79,15 +81,26 @@ export namespace gse::actions {
 
 	class mask {
 	public:
-		auto ensure_for(std::size_t action_count) -> void;
+		auto ensure_for(
+			std::size_t action_count
+		) -> void;
 
-		static auto wb(std::uint16_t bit_index) -> std::pair<std::size_t, word>;
+		static auto wb(
+			std::uint16_t bit_index
+		) -> std::pair<std::size_t,
+					   word>;
 
-		auto set(std::uint16_t bit_index) -> void;
+		auto set(
+			std::uint16_t bit_index
+		) -> void;
 
-		auto clear(std::uint16_t bit_index) -> void;
+		auto clear(
+			std::uint16_t bit_index
+		) -> void;
 
-		auto test(std::uint16_t bit_index) const -> bool;
+		auto test(
+			std::uint16_t bit_index
+		) const -> bool;
 
 		auto reset() -> void;
 
@@ -95,7 +108,9 @@ export namespace gse::actions {
 
 		auto words() const -> std::span<const word>;
 
-		auto assign(std::span<const word> w) -> void;
+		auto assign(
+			std::span<const word> w
+		) -> void;
 
 	private:
 		std::vector<word> m_words;
@@ -107,27 +122,52 @@ export namespace gse::actions {
 
 		auto finalize_frame() -> void;
 
-		auto ensure_capacity(std::size_t count) -> void;
+		auto ensure_capacity(
+			std::size_t count
+		) -> void;
 
-		auto reset_axes(std::span<const std::uint16_t> axes1, std::span<const std::uint16_t> axes2) -> void;
+		auto reset_axes(
+			std::span<const std::uint16_t> axes1,
+			std::span<const std::uint16_t> axes2
+		) -> void;
 
 		auto clear_all_axes() -> void;
 
-		auto set_held(std::uint16_t bit_index, bool on, std::size_t count) -> void;
+		auto set_held(
+			std::uint16_t bit_index,
+			bool on,
+			std::size_t count
+		) -> void;
 
-		auto held(std::uint16_t bit_index) const -> bool;
+		auto held(
+			std::uint16_t bit_index
+		) const -> bool;
 
-		auto pressed(std::uint16_t bit_index) const -> bool;
+		auto pressed(
+			std::uint16_t bit_index
+		) const -> bool;
 
-		auto released(std::uint16_t bit_index) const -> bool;
+		auto released(
+			std::uint16_t bit_index
+		) const -> bool;
 
-		auto set_axis1(std::uint16_t id, float v) -> void;
+		auto set_axis1(
+			std::uint16_t id,
+			float v
+		) -> void;
 
-		auto set_axis2(std::uint16_t id, axis v) -> void;
+		auto set_axis2(
+			std::uint16_t id,
+			axis v
+		) -> void;
 
-		auto axis1(std::uint16_t id) const -> float;
+		auto axis1(
+			std::uint16_t id
+		) const -> float;
 
-		auto axis2_v(std::uint16_t id) const -> axis;
+		auto axis2_v(
+			std::uint16_t id
+		) const -> axis;
 
 		auto held_mask() const -> const mask&;
 
@@ -135,7 +175,10 @@ export namespace gse::actions {
 
 		auto released_mask() const -> const mask&;
 
-		auto load_transients(std::span<const word> pressed, std::span<const word> released) -> void;
+		auto load_transients(
+			std::span<const word> pressed,
+			std::span<const word> released
+		) -> void;
 
 		auto load_state(
 			std::span<const word> pressed,
@@ -143,14 +186,20 @@ export namespace gse::actions {
 			std::span<const word> held
 		) -> void;
 
-		auto set_camera_yaw(angle yaw) -> void;
+		auto set_camera_yaw(
+			angle yaw
+		) -> void;
 
 		auto camera_yaw() const -> angle;
 
 	private:
-		auto ensure_axis1_capacity(std::uint16_t id) -> void;
+		auto ensure_axis1_capacity(
+			std::uint16_t id
+		) -> void;
 
-		auto ensure_axis2_capacity(std::uint16_t id) -> void;
+		auto ensure_axis2_capacity(
+			std::uint16_t id
+		) -> void;
 
 		mask m_held;
 		mask m_prev_held;
@@ -257,45 +306,109 @@ export namespace gse::actions {
 			id_mapped_collection<resolved_axis2_keys> axis2_by_id;
 		};
 
-		static auto run(run_context& ctx, data& d, const input::system::data& input_s) -> async::task<>;
+		static auto run(
+			run_context& ctx,
+			data& d,
+			const input::system::data& input_s
+		) -> async::task<>;
 
-		static auto held(const actions::state& as, const data& d, handle h) -> bool;
+		static auto held(
+			const actions::state& as,
+			const data& d,
+			handle h
+		) -> bool;
 
-		static auto pressed(const actions::state& as, const data& d, handle h) -> bool;
+		static auto pressed(
+			const actions::state& as,
+			const data& d,
+			handle h
+		) -> bool;
 
-		static auto released(const actions::state& as, const data& d, handle h) -> bool;
+		static auto released(
+			const actions::state& as,
+			const data& d,
+			handle h
+		) -> bool;
 
-		static auto current_state(const data& d) -> const actions::state&;
+		static auto current_state(
+			const data& d
+		) -> const actions::state&;
 
-		static auto axis1_ids(const data& d) -> std::span<const std::uint16_t>;
+		static auto axis1_ids(
+			const data& d
+		) -> std::span<const std::uint16_t>;
 
-		static auto axis2_ids(const data& d) -> std::span<const std::uint16_t>;
+		static auto axis2_ids(
+			const data& d
+		) -> std::span<const std::uint16_t>;
 
-		static auto description(const data& d, id action_id) -> const actions::description*;
+		static auto description(
+			const data& d,
+			id action_id
+		) -> const actions::description*;
 
-		static auto rebinds_map(data& d) -> std::map<std::string, int>&;
+		static auto rebinds_map(
+			data& d
+		) -> std::
+			map<std::string,
+				int>&;
 
-		[[nodiscard]] static auto all_bindings(const data& d) -> std::vector<action_binding_info>;
+		[[nodiscard]] static auto all_bindings(
+			const data& d
+		) -> std::vector<action_binding_info>;
 
-		static auto rebind(data& d, std::string_view action_name, key new_key) -> void;
+		static auto rebind(
+			data& d,
+			std::string_view action_name,
+			key new_key
+		) -> void;
 
-		static auto finalize_bindings(data& d) -> void;
+		static auto finalize_bindings(
+			data& d
+		) -> void;
 
-		static auto add_description(data& d, std::string_view tag, id action_id) -> actions::description&;
+		static auto add_description(
+			data& d,
+			std::string_view tag,
+			id action_id
+		) -> actions::description&;
 	};
 
-	auto add_by_name(channel_writer& channels, std::string_view tag, key default_key) -> handle;
+	auto add_by_name(
+		channel_writer& channels,
+		std::string_view tag,
+		key default_key
+	) -> handle;
 
 	template <fixed_string Tag>
-	auto add(channel_writer& channels, key default_key) -> handle;
+	auto add(
+		channel_writer& channels,
+		key default_key
+	) -> handle;
 
-	auto bind_axis2(channel_writer& channels, const pending_axis2_info& info, id axis_id) -> id;
+	auto bind_axis2(
+		channel_writer& channels,
+		const pending_axis2_info& info,
+		id axis_id
+	) -> id;
 
-	auto held(const handle& h, const actions::state& s, const system::data& sys) -> bool;
+	auto held(
+		const handle& h,
+		const actions::state& s,
+		const system::data& sys
+	) -> bool;
 
-	auto pressed(const handle& h, const actions::state& s, const system::data& sys) -> bool;
+	auto pressed(
+		const handle& h,
+		const actions::state& s,
+		const system::data& sys
+	) -> bool;
 
-	auto released(const handle& h, const actions::state& s, const system::data& sys) -> bool;
+	auto released(
+		const handle& h,
+		const actions::state& s,
+		const system::data& sys
+	) -> bool;
 }
 
 auto gse::actions::system::held(const actions::state& as, const data& d, const handle h) -> bool {
@@ -394,10 +507,7 @@ auto gse::actions::state::ensure_capacity(const std::size_t count) -> void {
 	m_released.ensure_for(count);
 }
 
-auto gse::actions::state::reset_axes(
-	const std::span<const std::uint16_t> axes1,
-	const std::span<const std::uint16_t> axes2
-) -> void {
+auto gse::actions::state::reset_axes(const std::span<const std::uint16_t> axes1, const std::span<const std::uint16_t> axes2) -> void {
 	for (const auto id : axes1) {
 		if (id < m_axes1.size()) {
 			m_axes1[id] = 0.f;
@@ -486,10 +596,7 @@ auto gse::actions::state::released_mask() const -> const mask& {
 	return m_released;
 }
 
-auto gse::actions::state::load_transients(
-	const std::span<const word> pressed,
-	const std::span<const word> released
-) -> void {
+auto gse::actions::state::load_transients(const std::span<const word> pressed, const std::span<const word> released) -> void {
 	m_pressed.assign(pressed);
 	m_released.assign(released);
 
@@ -511,11 +618,7 @@ auto gse::actions::state::load_transients(
 	m_held.assign(held);
 }
 
-auto gse::actions::state::load_state(
-	const std::span<const word> pressed,
-	const std::span<const word> released,
-	const std::span<const word> held
-) -> void {
+auto gse::actions::state::load_state(const std::span<const word> pressed, const std::span<const word> released, const std::span<const word> held) -> void {
 	m_pressed.assign(pressed);
 	m_released.assign(released);
 	m_held.assign(held);
@@ -662,11 +765,7 @@ auto gse::actions::system::finalize_bindings(data& d) -> void {
 	d.axis2_ids_cache.erase(std::ranges::unique(d.axis2_ids_cache).begin(), d.axis2_ids_cache.end());
 }
 
-auto gse::actions::system::add_description(
-	data& d,
-	const std::string_view tag,
-	const id action_id
-) -> actions::description& {
+auto gse::actions::system::add_description(data& d, const std::string_view tag, const id action_id) -> actions::description& {
 	if (const auto existing = d.descriptions.try_get(action_id)) {
 		return *existing;
 	}

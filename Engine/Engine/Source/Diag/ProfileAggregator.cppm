@@ -27,27 +27,45 @@ export namespace gse::profile {
 
 	auto ingest_frame() -> void;
 
-	auto ingest_gpu_sample(id pass_id, sample_time duration) -> void;
+	auto ingest_gpu_sample(
+		id pass_id,
+		sample_time duration
+	) -> void;
 
-	auto lookup_cpu(id id) -> std::optional<entry>;
+	auto lookup_cpu(
+		id id
+	) -> std::optional<entry>;
 
-	auto lookup_gpu(id id) -> std::optional<entry>;
+	auto lookup_gpu(
+		id id
+	) -> std::optional<entry>;
 
-	auto top_n(std::size_t n, bool gpu) -> std::vector<entry>;
+	auto top_n(
+		std::size_t n,
+		bool gpu
+	) -> std::vector<entry>;
 
-	auto set_alpha(double alpha) -> void;
+	auto set_alpha(
+		double alpha
+	) -> void;
 
 	auto alpha() -> double;
 
-	auto set_enabled(bool enabled) -> void;
+	auto set_enabled(
+		bool enabled
+	) -> void;
 
 	auto enabled() -> bool;
 
 	auto reset() -> void;
 
-	auto dump(const std::filesystem::path& path = config::resource_path / "Misc" / "profile.txt") -> void;
+	auto dump(
+		const std::filesystem::path& path = config::resource_path / "Misc" / "profile.txt"
+	) -> void;
 
-	auto dump_chrome_trace(const std::filesystem::path& path = config::resource_path / "Misc" / "profile.json") -> void;
+	auto dump_chrome_trace(
+		const std::filesystem::path& path = config::resource_path / "Misc" / "profile.json"
+	) -> void;
 }
 
 namespace gse::profile {
@@ -59,7 +77,10 @@ namespace gse::profile {
 	std::atomic<std::uint64_t> frame_count{ 0 };
 
 	auto update_entry(
-		flat_map<id, entry>& map,
+		flat_map<
+			id,
+			entry
+		>& map,
 		id id,
 		sample_time duration,
 		std::uint32_t thread_id,
@@ -68,23 +89,25 @@ namespace gse::profile {
 
 	auto walk_node(
 		const trace::node& n,
-		flat_map<id, entry>& cpu_agg,
+		flat_map<
+			id,
+			entry
+		>& cpu_agg,
 		const std::unordered_set<id>& hidden,
 		bool pooled
 	) -> void;
 
-	auto write_dag(std::ofstream& out) -> void;
+	auto write_dag(
+		std::ofstream& out
+	) -> void;
 
-	auto write_thread_breakdown(std::ofstream& out, const std::vector<entry>& worker_src) -> void;
+	auto write_thread_breakdown(
+		std::ofstream& out,
+		const std::vector<entry>& worker_src
+	) -> void;
 }
 
-auto gse::profile::update_entry(
-	flat_map<id, entry>& map,
-	const id id,
-	const sample_time duration,
-	const std::uint32_t thread_id,
-	const bool pooled
-) -> void {
+auto gse::profile::update_entry(flat_map<id, entry>& map, const id id, const sample_time duration, const std::uint32_t thread_id, const bool pooled) -> void {
 	auto& e = map[id];
 	if (e.sample_count == 0) {
 		e.id = id;
@@ -104,12 +127,7 @@ auto gse::profile::update_entry(
 	++e.samples_by_tid[thread_id];
 }
 
-auto gse::profile::walk_node(
-	const trace::node& n,
-	flat_map<id, entry>& cpu_agg,
-	const std::unordered_set<id>& hidden,
-	const bool pooled
-) -> void {
+auto gse::profile::walk_node(const trace::node& n, flat_map<id, entry>& cpu_agg, const std::unordered_set<id>& hidden, const bool pooled) -> void {
 	const auto main_tid = trace::main_tid();
 	const bool node_pooled = pooled || (main_tid != 0 && n.trace_id != main_tid);
 

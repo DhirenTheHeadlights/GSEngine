@@ -7,13 +7,17 @@ export namespace gse {
 	struct fixed_string {
 		char data[N]{};
 
-		consteval fixed_string(const char (&s)[N]);
+		consteval fixed_string(
+			const char (&s)[N]
+		);
 
 		consteval operator std::string_view() const;
 	};
 
 	template <std::size_t N>
-	fixed_string(const char (&)[N]) -> fixed_string<N>;
+	fixed_string(
+		const char (&)[N]
+	) -> fixed_string<N>;
 }
 
 template <std::size_t N>

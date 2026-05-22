@@ -42,27 +42,17 @@ export namespace gse::gui {
 	class system {
 	public:
 		struct [[= gse::settings::category<"UI">{}]] data {
-			[[
-				= gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}
-			]]
-			theme current_theme = theme::dark;
+			[[= gse::settings::describe<"Color theme applied to all UI panels and widgets.">{}]] theme current_theme = theme::midnight;
 
 			[[
 				= gse::settings::
 					describe<"Multiplier on UI element sizes and font metrics. Useful for high-DPI displays.">{},
 				= gse::settings::range<0.5f, 2.0f>{}
-			]]
-			float ui_scale = 1.0f;
+			]] float ui_scale = 1.0f;
 
-			[[
-				= gse::settings::describe<"Font used to render text in the UI.">{}
-			]]
-			gse::settings::choice<int> font;
+			[[= gse::settings::describe<"Font used to render text in the UI.">{}]] gse::settings::choice<int> font;
 
-			[[
-				= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{}
-			]]
-			bool show_dev_overlays = false;
+			[[= gse::settings::describe<"Show developer overlays (Test, Profiler, Physics Debug).">{}]] bool show_dev_overlays = false;
 
 			id_mapped_collection<menu> menus;
 			menu* current_menu = nullptr;
@@ -115,9 +105,14 @@ export namespace gse::gui {
 			data& d
 		) -> async::task<>;
 
-		static auto shutdown(shutdown_context& phase, data& d) -> void;
+		static auto shutdown(
+			shutdown_context& phase,
+			data& d
+		) -> void;
 
-		static auto save(data& d) -> void;
+		static auto save(
+			data& d
+		) -> void;
 
 	private:
 		static auto init_body(
@@ -191,17 +186,35 @@ export namespace gse::gui {
 			render_layer layer
 		) -> void;
 
-		static auto usable_screen_rect(data& d, const window::data& window_s) -> ui_rect;
+		static auto usable_screen_rect(
+			data& d,
+			const window::data& window_s
+		) -> ui_rect;
 
-		static auto calculate_display_rect(data& d, const menu& m) -> ui_rect;
+		static auto calculate_display_rect(
+			data& d,
+			const menu& m
+		) -> ui_rect;
 
-		static auto apply_scale(const data& d, style sty, float viewport_height) -> style;
+		static auto apply_scale(
+			const data& d,
+			style sty,
+			float viewport_height
+		) -> style;
 
-		static auto reload_font(data& d, const asset::data& assets) -> void;
+		static auto reload_font(
+			data& d,
+			const asset::data& assets
+		) -> void;
 
-		static auto begin_menu(data& d, const std::string& name) -> bool;
+		static auto begin_menu(
+			data& d,
+			const std::string& name
+		) -> bool;
 
-		static auto end_menu(data& d) -> void;
+		static auto end_menu(
+			data& d
+		) -> void;
 
 		static auto process_menu(
 			data& d,
@@ -211,6 +224,10 @@ export namespace gse::gui {
 			const std::function<void(builder&)>& build
 		) -> void;
 
-		static auto process_screen(data& d, const input::state& input_state, vec2f viewport_size) -> void;
+		static auto process_screen(
+			data& d,
+			const input::state& input_state,
+			vec2f viewport_size
+		) -> void;
 	};
 }

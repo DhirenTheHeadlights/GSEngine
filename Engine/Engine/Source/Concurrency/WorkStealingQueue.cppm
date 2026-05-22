@@ -9,21 +9,31 @@ export namespace gse::task {
 	template <typename T>
 	class work_stealing_queue : non_copyable, non_movable {
 	public:
-		explicit work_stealing_queue(std::size_t initial_capacity = 256);
+		explicit work_stealing_queue(
+			std::size_t initial_capacity = 256
+		);
 
 		~work_stealing_queue() override;
 
-		auto push(T value) -> void;
+		auto push(
+			T value
+		) -> void;
 
-		auto try_pop(T& out) -> bool;
+		auto try_pop(
+			T& out
+		) -> bool;
 
-		auto try_steal(T& out) -> bool;
+		auto try_steal(
+			T& out
+		) -> bool;
 
 		[[nodiscard]] auto approximate_size() const noexcept -> std::size_t;
 
 	private:
 		struct slot {
-			alignas(T) std::byte m_storage[sizeof(T)]{};
+			alignas(
+				T
+			) std::byte m_storage[sizeof(T)]{};
 			std::atomic<bool> m_occupied{ false };
 
 			auto value() noexcept -> T*;
@@ -33,43 +43,71 @@ export namespace gse::task {
 
 		class buffer : non_copyable, non_movable {
 		public:
-			explicit buffer(std::size_t capacity);
+			explicit buffer(
+				std::size_t capacity
+			);
 
 			~buffer() override;
 
 			[[nodiscard]] auto capacity() const noexcept -> std::size_t;
 
-			[[nodiscard]] auto occupied(std::size_t index) const noexcept -> bool;
+			[[nodiscard]] auto occupied(
+				std::size_t index
+			) const noexcept -> bool;
 
-			auto construct(std::size_t index, T&& value) -> void;
+			auto construct(
+				std::size_t index,
+				T&& value
+			) -> void;
 
-			auto take(std::size_t index, T& out) -> void;
+			auto take(
+				std::size_t index,
+				T& out
+			) -> void;
 
-			auto move_construct_from(std::size_t index, buffer& source) -> void;
+			auto move_construct_from(
+				std::size_t index,
+				buffer& source
+			) -> void;
 
 		private:
-			[[nodiscard]] auto slot_at(std::size_t index) noexcept -> slot&;
+			[[nodiscard]] auto slot_at(
+				std::size_t index
+			) noexcept -> slot&;
 
-			[[nodiscard]] auto slot_at(std::size_t index) const noexcept -> const slot&;
+			[[nodiscard]] auto slot_at(
+				std::size_t index
+			) const noexcept -> const slot&;
 
 			std::size_t m_capacity = 0;
 			std::size_t m_mask = 0;
 			std::unique_ptr<slot[]> m_slots;
 		};
 
-		[[nodiscard]] static auto rounded_capacity(std::size_t requested) -> std::size_t;
+		[[nodiscard]] static auto rounded_capacity(
+			std::size_t requested
+		) -> std::size_t;
 
-		[[nodiscard]]
-		auto needs_growth(const buffer& current, std::size_t top, std::size_t bottom) const noexcept -> bool;
+		[[nodiscard]] auto needs_growth(
+			const buffer& current,
+			std::size_t top,
+			std::size_t bottom
+		) const noexcept -> bool;
 
-		auto grow(std::size_t bottom) -> buffer&;
+		auto grow(
+			std::size_t bottom
+		) -> buffer&;
 
 		std::unique_ptr<buffer> m_current;
 		std::vector<std::unique_ptr<buffer>> m_retired;
 		std::atomic<buffer*> m_buffer{ nullptr };
 		mutable std::shared_mutex m_resize_mutex;
-		alignas(std::hardware_destructive_interference_size) std::atomic<std::size_t> m_top{ 0 };
-		alignas(std::hardware_destructive_interference_size) std::atomic<std::size_t> m_bottom{ 0 };
+		alignas(
+			std::hardware_destructive_interference_size
+		) std::atomic<std::size_t> m_top{ 0 };
+		alignas(
+			std::hardware_destructive_interference_size
+		) std::atomic<std::size_t> m_bottom{ 0 };
 	};
 }
 
@@ -250,11 +288,7 @@ auto gse::task::work_stealing_queue<T>::rounded_capacity(std::size_t requested) 
 }
 
 template <typename T>
-auto gse::task::work_stealing_queue<T>::needs_growth(
-	const buffer& current,
-	const std::size_t top,
-	const std::size_t bottom
-) const noexcept -> bool {
+auto gse::task::work_stealing_queue<T>::needs_growth(const buffer& current, const std::size_t top, const std::size_t bottom) const noexcept -> bool {
 	return bottom - top >= current.capacity() - 1 || current.occupied(bottom);
 }
 

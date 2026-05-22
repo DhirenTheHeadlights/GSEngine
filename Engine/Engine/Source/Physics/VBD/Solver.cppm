@@ -58,27 +58,49 @@ export namespace gse::vbd {
 	public:
 		solver();
 
-		auto configure(const solver_config& cfg) -> void;
+		auto configure(
+			const solver_config& cfg
+		) -> void;
 
 		auto config() const -> const solver_config&;
 
-		auto begin_frame(std::span<const body_state> bodies, contact_cache& cache) -> void;
+		auto begin_frame(
+			std::span<const body_state> bodies,
+			contact_cache& cache
+		) -> void;
 
-		auto seed_previous_velocities(std::span<const vec3<velocity>> velocities) -> void;
+		auto seed_previous_velocities(
+			std::span<const vec3<velocity>> velocities
+		) -> void;
 
-		auto add_contact_constraint(const contact_constraint& c) -> void;
+		auto add_contact_constraint(
+			const contact_constraint& c
+		) -> void;
 
-		auto add_motor_constraint(const velocity_motor_constraint& m) -> void;
+		auto add_motor_constraint(
+			const velocity_motor_constraint& m
+		) -> void;
 
-		auto add_joint_constraint(const joint_constraint& j) -> void;
+		auto add_joint_constraint(
+			const joint_constraint& j
+		) -> void;
 
-		auto solve(time_step dt) -> void;
+		auto solve(
+			time_step dt
+		) -> void;
 
-		auto end_frame(std::vector<body_state>& bodies, contact_cache& cache) -> void;
+		auto end_frame(
+			std::vector<body_state>& bodies,
+			contact_cache& cache
+		) -> void;
 
-		auto body_states(this auto&& self) -> decltype(auto);
+		auto body_states(
+			this auto&& self
+		) -> decltype(auto);
 
-		auto graph(this auto&& self) -> auto&;
+		auto graph(
+			this auto&& self
+		) -> auto&;
 
 	private:
 		auto accumulate_contact(
@@ -89,9 +111,15 @@ export namespace gse::vbd {
 			float alpha
 		) -> void;
 
-		auto accumulate_motor(const velocity_motor_constraint& m, time_squared h_squared) -> void;
+		auto accumulate_motor(
+			const velocity_motor_constraint& m,
+			time_squared h_squared
+		) -> void;
 
-		auto perform_newton_step(std::uint32_t body_idx, time_squared h_squared) -> step_delta;
+		auto perform_newton_step(
+			std::uint32_t body_idx,
+			time_squared h_squared
+		) -> step_delta;
 
 		auto accumulate_joint(
 			const joint_constraint& constraint,
@@ -101,9 +129,13 @@ export namespace gse::vbd {
 			float alpha
 		) -> void;
 
-		auto update_dual(float alpha) -> step_delta;
+		auto update_dual(
+			float alpha
+		) -> step_delta;
 
-		auto update_joint_dual(time_squared h_squared) -> step_delta;
+		auto update_joint_dual(
+			time_squared h_squared
+		) -> step_delta;
 
 		solver_config m_config;
 		constraint_graph m_graph;
@@ -143,7 +175,11 @@ export namespace gse::vbd {
 		const solver_config& cfg
 	) -> void;
 
-	auto compute_joint_c0(joint_constraint& j, const body_state& body_a, const body_state& body_b) -> void;
+	auto compute_joint_c0(
+		joint_constraint& j,
+		const body_state& body_a,
+		const body_state& body_b
+	) -> void;
 }
 
 namespace gse::vbd {
@@ -607,10 +643,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			const length linear = std::max(contact_delta.linear, joint_delta.linear);
 			const angle angular = std::max(contact_delta.angular, joint_delta.angular);
 
-			if (
-				it + 1 >= static_cast<int>(m_config.min_iterations) && linear < m_config.convergence_threshold_linear &&
-				angular < m_config.convergence_threshold_angular
-			) {
+			if (it + 1 >= static_cast<int>(m_config.min_iterations) && linear < m_config.convergence_threshold_linear && angular < m_config.convergence_threshold_angular) {
 				break;
 			}
 		}
@@ -698,10 +731,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					return;
 				}
 
-				if (
-					magnitude(body.velocity) < m_config.velocity_sleep_threshold &&
-					magnitude(body.angular_velocity) < m_config.angular_sleep_threshold
-				) {
+				if (magnitude(body.velocity) < m_config.velocity_sleep_threshold && magnitude(body.angular_velocity) < m_config.angular_sleep_threshold) {
 					++body.sleep_counter;
 				}
 				else {
@@ -752,13 +782,7 @@ auto gse::vbd::solver::body_states(this auto&& self) -> decltype(auto) {
 	return std::span(self.m_bodies);
 }
 
-auto gse::vbd::solver::accumulate_contact(
-	const contact_constraint& constraint,
-	const frozen_jacobian& frozen,
-	const std::uint32_t body_idx,
-	const time_squared h_squared,
-	const float alpha
-) -> void {
+auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, const frozen_jacobian& frozen, const std::uint32_t body_idx, const time_squared h_squared, const float alpha) -> void {
 	const auto& body_a = m_bodies[constraint.body_a];
 	const auto& body_b = m_bodies[constraint.body_b];
 	const bool is_a = (body_idx == constraint.body_a);
@@ -1016,13 +1040,7 @@ auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
 	return max_violation;
 }
 
-auto gse::vbd::solver::accumulate_joint(
-	const joint_constraint& constraint,
-	const std::uint32_t body_idx,
-	const time_squared h_squared,
-	const time_step dt,
-	const float alpha
-) -> void {
+auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, const std::uint32_t body_idx, const time_squared h_squared, const time_step dt, const float alpha) -> void {
 	const auto& body_a = m_bodies[constraint.body_a];
 	const auto& body_b = m_bodies[constraint.body_b];
 	const bool is_a = (body_idx == constraint.body_a);
@@ -1111,10 +1129,7 @@ auto gse::vbd::solver::accumulate_joint(
 			accumulate_geometric_stiffness(m_solve_state[body_idx], r, d_hat, abs(fi));
 		}
 	}
-	else if (
-		constraint.type == joint_type::fixed || constraint.type == joint_type::hinge ||
-		constraint.type == joint_type::ball || constraint.type == joint_type::universal
-	) {
+	else if (constraint.type == joint_type::fixed || constraint.type == joint_type::hinge || constraint.type == joint_type::ball || constraint.type == joint_type::universal) {
 		constexpr std::array dirs = { axis_x, axis_y, axis_z };
 
 		for (int k = 0; k < 3; ++k) {
@@ -1333,10 +1348,7 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 				j.pos_penalty[0] = std::min(j.pos_penalty[0] + m_config.beta * abs(C), penalty_cap);
 				track_linear(C);
 			}
-			else if (
-				j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball ||
-				j.type == joint_type::universal
-			) {
+			else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
 				for (int k = 0; k < 3; ++k) {
 					constexpr std::array dirs = { axis_x, axis_y, axis_z };
 					const length c = dot(dirs[k], d) - j.pos_c0[k];
@@ -1458,12 +1470,7 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 	return result;
 }
 
-auto gse::vbd::accumulate_geometric_stiffness(
-	body_solve_state& state,
-	const vec3<lever_arm>& r,
-	const vec3f& dir,
-	const force abs_force
-) -> void {
+auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<lever_arm>& r, const vec3f& dir, const force abs_force) -> void {
 	length rd{};
 	for (int i = 0; i < 3; ++i) {
 		rd += r[i] * dir[i];
@@ -1481,13 +1488,7 @@ auto gse::vbd::accumulate_geometric_stiffness(
 	}
 }
 
-auto gse::vbd::contact_effective_mass(
-	const body_state& body_a,
-	const body_state& body_b,
-	const vec3<lever_arm>& r_aw,
-	const vec3<lever_arm>& r_bw,
-	const vec3f& dir
-) -> mass {
+auto gse::vbd::contact_effective_mass(const body_state& body_a, const body_state& body_b, const vec3<lever_arm>& r_aw, const vec3<lever_arm>& r_bw, const vec3f& dir) -> mass {
 	inverse_mass inv_mass_sum = body_a.inverse_mass() + body_b.inverse_mass();
 
 	if (body_a.update_orientation && !body_a.locked) {
@@ -1507,13 +1508,7 @@ auto gse::vbd::contact_effective_mass(
 	return 1.f / inv_mass_sum;
 }
 
-auto gse::vbd::warm_start_joint(
-	joint_constraint& j,
-	const body_state& ba,
-	const body_state& bb,
-	const time_squared h_squared,
-	const solver_config& cfg
-) -> void {
+auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const body_state& bb, const time_squared h_squared, const solver_config& cfg) -> void {
 	const vec3<lever_arm> r_aw = rotate_vector(ba.orientation, j.local_anchor_a);
 	const vec3<lever_arm> r_bw = rotate_vector(bb.orientation, j.local_anchor_b);
 
@@ -1640,10 +1635,7 @@ auto gse::vbd::compute_joint_c0(joint_constraint& j, const body_state& ba, const
 		return;
 	}
 
-	if (
-		j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball ||
-		j.type == joint_type::universal
-	) {
+	if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal) {
 		constexpr std::array dirs = { axis_x, axis_y, axis_z };
 		for (int k = 0; k < 3; ++k) {
 			j.pos_c0[k] = dot(dirs[k], d);

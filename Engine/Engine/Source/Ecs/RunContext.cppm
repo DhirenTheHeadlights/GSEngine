@@ -62,8 +62,13 @@ export namespace gse {
 			bool& settled
 		);
 
-		template <typename S, typename... Args>
-		auto add_system(Args&&... args) -> void;
+		template <
+			typename S,
+			typename... Args
+		>
+		auto add_system(
+			Args&&... args
+		) -> void;
 
 		[[nodiscard]] auto next_tick() -> async::task<>;
 
@@ -73,10 +78,14 @@ export namespace gse {
 		auto acquire() -> async::task<std::tuple<Accesses...>>;
 
 		template <typename... Tags>
-		auto acquire_with(Tags... tags) -> async::task<std::tuple<tag_to_access_t<Tags>...>>;
+		auto acquire_with(
+			Tags... tags
+		) -> async::task<std::tuple<tag_to_access_t<Tags>...>>;
 
 		template <typename T>
-		auto try_component(id owner) const -> const T*;
+		auto try_component(
+			id owner
+		) const -> const T*;
 
 		template <typename T>
 		auto components() const -> std::span<const T>;
@@ -90,21 +99,36 @@ export namespace gse {
 		template <typename T>
 		auto drain_component_removes() -> std::vector<id>;
 
-		auto ensure_exists(id owner) -> void;
+		auto ensure_exists(
+			id owner
+		) -> void;
 
-		auto exists(id owner) const -> bool;
+		auto exists(
+			id owner
+		) const -> bool;
 
-		auto active(id owner) const -> bool;
+		auto active(
+			id owner
+		) const -> bool;
 
-		auto ensure_active(id owner) -> void;
+		auto ensure_active(
+			id owner
+		) -> void;
 
-		auto remove(id owner) -> void;
+		auto remove(
+			id owner
+		) -> void;
 
 		template <typename T>
-		auto add_component(id owner, T value = T{}) -> T*;
+		auto add_component(
+			id owner,
+			T value = T{}
+		) -> T*;
 
 		template <typename T>
-		auto remove_component(id owner) -> void;
+		auto remove_component(
+			id owner
+		) -> void;
 
 		template <typename T>
 		auto ensure_storage() -> void;
@@ -126,11 +150,22 @@ export namespace gse {
 }
 
 namespace gse {
-	using lock_fn = async::task<> (*)(async::rw_mutex_registry&, id);
+	using lock_fn = async::task<> (
+			*
+	)(
+		async::rw_mutex_registry&,
+		id
+	);
 
-	auto acquire_shared(async::rw_mutex_registry& mutexes, id type) -> async::task<>;
+	auto acquire_shared(
+		async::rw_mutex_registry& mutexes,
+		id type
+	) -> async::task<>;
 
-	auto acquire_exclusive(async::rw_mutex_registry& mutexes, id type) -> async::task<>;
+	auto acquire_exclusive(
+		async::rw_mutex_registry& mutexes,
+		id type
+	) -> async::task<>;
 
 	auto acquire_locks_in_sorted_order(
 		async::rw_mutex_registry& mutexes,
@@ -139,9 +174,14 @@ namespace gse {
 		id trace_id
 	) -> async::task<>;
 
-	auto make_acquire_trace_id(std::span<const std::string> labels) -> id;
+	auto make_acquire_trace_id(
+		std::span<const std::string> labels
+	) -> id;
 
-	auto format_access_label(std::string_view tag, std::string_view type_name) -> std::string;
+	auto format_access_label(
+		std::string_view tag,
+		std::string_view type_name
+	) -> std::string;
 
 	template <typename Access>
 	auto make_locked_handle(
@@ -220,12 +260,7 @@ auto gse::acquire_exclusive(async::rw_mutex_registry& mutexes, const id type) ->
 	co_await mutex.lock_exclusive();
 }
 
-auto gse::acquire_locks_in_sorted_order(
-	async::rw_mutex_registry& mutexes,
-	const std::span<const id> type_ids,
-	const std::span<const lock_fn> fns,
-	const id trace_id
-) -> async::task<> {
+auto gse::acquire_locks_in_sorted_order(async::rw_mutex_registry& mutexes, const std::span<const id> type_ids, const std::span<const lock_fn> fns, const id trace_id) -> async::task<> {
 	constexpr std::size_t max_arity = 16;
 	const std::size_t count = type_ids.size();
 	assert(count <= max_arity, "acquire arity {} exceeds max {}", count, max_arity);
@@ -264,12 +299,7 @@ auto gse::make_acquire_trace_id(const std::span<const std::string> labels) -> id
 }
 
 template <typename Access>
-auto gse::make_locked_handle(
-	access_token token,
-	registry& reg,
-	async::rw_mutex_registry& mutex_registry,
-	std::atomic<int>* held_locks
-) -> Access {
+auto gse::make_locked_handle(access_token token, registry& reg, async::rw_mutex_registry& mutex_registry, std::atomic<int>* held_locks) -> Access {
 	using element_t = access_element_t<Access>;
 	auto& mutex = mutex_registry.mutex_for(id_of<element_t>());
 	if constexpr (is_read_access_v<Access>) {

@@ -433,10 +433,10 @@ void solve_body(uint bi) {
     body_data[bi] = body;
 }
 
-// entry:
-uint idx = dispatch_id.x;
+void vbd_solve_color(uint3 dispatch_id) {
+    uint idx = dispatch_id.x;
 
-if (collision_state[state_converged_flag_index] != 0) return;
+    if (collision_state[state_converged_flag_index] != 0) return;
 
 if (pc.cfg.use_jacobi != 0) {
     uint bi = idx;
@@ -487,4 +487,5 @@ if (color == num_colors - 1 && pc.current_alpha > 0.0 && pc.iteration + 1 >= pc.
 if (color == num_colors - 1 && idx == 0) {
     collision_state[state_convergence_max_delta_index] = 0;
     collision_state[state_convergence_max_angular_delta_index] = 0;
+}
 }

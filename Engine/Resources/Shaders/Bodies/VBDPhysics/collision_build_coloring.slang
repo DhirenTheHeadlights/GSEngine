@@ -19,8 +19,8 @@ uint body_priority(uint bi) {
     return (word >> 22u) ^ word;
 }
 
-// entry:
-uint tid = group_thread_id.x;
+void collision_build_coloring(uint3 dispatch_id, uint3 group_thread_id) {
+    uint tid = group_thread_id.x;
 uint body_count = pc.body_count;
 uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
 uint num_joints = min(pc.joint_count, max_joints);
@@ -257,4 +257,5 @@ for (uint kb = 0; kb < ELEMS_PER_THREAD; kb++) {
     if (bi < gs_total_colored) {
         color_data[max_colors * 2 + bi] = gs_color_bodies[bi];
     }
+}
 }

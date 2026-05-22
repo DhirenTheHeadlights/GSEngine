@@ -59,9 +59,14 @@ export namespace gse {
 			: identifiable(path, config::baked_resource_path),
 			  m_baked_model_path(path) {
 		}
-		explicit model(std::string_view name, std::vector<mesh_data> meshes);
+		explicit model(
+			std::string_view name,
+			std::vector<mesh_data> meshes
+		);
 
-		auto load(asset::load_ctx& ctx) -> async::task<>;
+		auto load(
+			asset::load_ctx& ctx
+		) -> async::task<>;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;

@@ -53,13 +53,7 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 	return scroll_handle{ ctx, state, visible_rect, saved_layout_y, info.config };
 }
 
-auto gse::gui::run_scroll_end(
-	draw_context& ctx,
-	scroll_state& state,
-	const ui_rect& visible_rect,
-	const float content_start_y,
-	const scroll_config& config
-) -> void {
+auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const float content_start_y, const scroll_config& config) -> void {
 	const float visible_height = visible_rect.height();
 	const float content_height = content_start_y - ctx.layout_cursor.y();
 	state.content_height = content_height;
@@ -144,10 +138,7 @@ auto gse::gui::run_scroll_end(
 		}
 	}
 
-	if (
-		scrollbar_track_rect.contains(mouse_pos) && !scrollbar_rect.contains(mouse_pos) &&
-		ctx.input.mouse_button_pressed(mouse_button::button_1) && !state.scrollbar_held
-	) {
+	if (scrollbar_track_rect.contains(mouse_pos) && !scrollbar_rect.contains(mouse_pos) && ctx.input.mouse_button_pressed(mouse_button::button_1) && !state.scrollbar_held) {
 		const float click_ratio = (visible_rect.top() - mouse_pos.y()) / scrollbar_track_height;
 		const float new_offset = std::clamp(click_ratio, 0.f, 1.f) * max_scroll;
 		state.target_offset = new_offset;

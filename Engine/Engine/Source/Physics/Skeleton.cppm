@@ -43,13 +43,24 @@ export namespace gse::physics {
 		std::vector<muscle> muscles;
 	};
 
-	auto bone_index_of(const skeleton& s, std::string_view name) -> std::uint16_t;
+	auto bone_index_of(
+		const skeleton& s,
+		std::string_view name
+	) -> std::uint16_t;
 
-	auto volume_of(const bone_shape& shape) -> volume;
+	auto volume_of(
+		const bone_shape& shape
+	) -> volume;
 
-	auto mass_from_density(const bone_shape& shape, density d) -> mass;
+	auto mass_from_density(
+		const bone_shape& shape,
+		density d
+	) -> mass;
 
-	auto moment_of_inertia_of(const bone_shape& shape, mass m) -> inertia;
+	auto moment_of_inertia_of(
+		const bone_shape& shape,
+		mass m
+	) -> inertia;
 }
 
 auto gse::physics::bone_index_of(const skeleton& s, const std::string_view name) -> std::uint16_t {

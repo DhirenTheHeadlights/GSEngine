@@ -50,13 +50,7 @@ export namespace gse::free_camera {
 	};
 }
 
-auto gse::free_camera::system::run(
-	run_context& ctx,
-	data& d,
-	const actions::system::data& as,
-	const input::system::data& input_s,
-	const camera::system::data& cam_s
-) -> async::task<> {
+auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::system::data& as, const input::system::data& input_s, const camera::system::data& cam_s) -> async::task<> {
 	while (true) {
 		{
 			auto [cameras, follows] = co_await ctx.acquire_with(write_v<component>, write_v<camera::follow_component>);

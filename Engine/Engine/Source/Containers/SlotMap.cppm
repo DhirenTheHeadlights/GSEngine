@@ -15,32 +15,50 @@ export namespace gse {
 				return index != std::numeric_limits<std::uint32_t>::max();
 			}
 
-			auto operator==(const handle&) const -> bool = default;
+			auto operator==(
+				const handle&
+			) const -> bool = default;
 		};
 
 		static constexpr handle invalid_handle{};
 
-		auto insert(T value) -> handle;
+		auto insert(
+			T value
+		) -> handle;
 
-		auto remove(handle h) -> bool;
+		auto remove(
+			handle h
+		) -> bool;
 
 		template <typename Self>
-		[[nodiscard]] auto get(this Self& self, handle h) -> decltype(auto);
+		[[nodiscard]] auto get(
+			this Self& self,
+			handle h
+		) -> decltype(auto);
 
 		template <typename Self>
-		auto operator[](this Self& self, handle h) -> decltype(auto);
+		auto operator[](
+			this Self& self,
+			handle h
+		) -> decltype(auto);
 
-		[[nodiscard]] auto is_valid(handle h) const -> bool;
+		[[nodiscard]] auto is_valid(
+			handle h
+		) const -> bool;
 
 		[[nodiscard]] auto size() const -> std::size_t;
 
 		[[nodiscard]] auto empty() const -> bool;
 
 		template <typename Self>
-		auto begin(this Self& self) -> decltype(auto);
+		auto begin(
+			this Self& self
+		) -> decltype(auto);
 
 		template <typename Self>
-		auto end(this Self& self) -> decltype(auto);
+		auto end(
+			this Self& self
+		) -> decltype(auto);
 
 		auto clear() -> void;
 

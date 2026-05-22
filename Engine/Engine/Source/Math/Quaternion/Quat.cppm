@@ -13,22 +13,73 @@ namespace gse {
 		using base_type = vec<T, 4>;
 
 		constexpr quaternion();
-		constexpr quaternion(const vec<T, 4>& v4);
-		constexpr quaternion(const vec<T, 3>& v3, T scalar);
-		constexpr quaternion(T scalar, const vec<T, 3>& v3);
-		constexpr quaternion(T s, T x, T y, T z);
-		constexpr quaternion(const vec<T, 3>& axis, angle_t<T> angle);
-		constexpr quaternion(angle_t<T> angle, const vec<T, 3>& axis);
+		constexpr quaternion(
+			const vec<
+				T,
+				4
+			>& v4
+		);
+		constexpr quaternion(
+			const vec<
+				T,
+				3
+			>& v3,
+			T scalar
+		);
+		constexpr quaternion(
+			T scalar,
+			const vec<
+				T,
+				3
+			>& v3
+		);
+		constexpr quaternion(
+			T s,
+			T x,
+			T y,
+			T z
+		);
+		constexpr quaternion(
+			const vec<
+				T,
+				3
+			>& axis,
+			angle_t<T> angle
+		);
+		constexpr quaternion(
+			angle_t<T> angle,
+			const vec<
+				T,
+				3
+			>& axis
+		);
 
-		constexpr decltype(auto) operator[](this auto&& self, std::size_t index);
+		constexpr decltype(auto) operator[](
+			this auto&& self,
+			std::size_t index
+		);
 
-		constexpr decltype(auto) s(this auto& self);
-		constexpr decltype(auto) x(this auto& self);
-		constexpr decltype(auto) y(this auto& self);
-		constexpr decltype(auto) z(this auto& self);
+		constexpr decltype(auto) s(
+			this auto& self
+		);
+		constexpr decltype(auto) x(
+			this auto& self
+		);
+		constexpr decltype(auto) y(
+			this auto& self
+		);
+		constexpr decltype(auto) z(
+			this auto& self
+		);
 
-		constexpr auto imaginary_part() const -> vec<T, 3>;
-		constexpr auto v4(this auto&& self) -> vec<T, 4>;
+		constexpr auto imaginary_part() const -> vec<
+			T,
+			3
+		>;
+		constexpr auto v4(
+			this auto&& self
+		) -> vec<T,
+				 4>;
 		constexpr auto euler_angles() const -> vec3<angle_t<T>>;
 
 	private:

@@ -18,19 +18,37 @@ export namespace gse::settings {
 		typename S::data new_value;
 	};
 
-	using write_settings_thunk = void (*)(
-		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+	using write_settings_thunk = void (
+			*
+	)(
+		std::unordered_map<
+			std::string,
+			std::unordered_map<
+				std::string,
+				std::string
+			>
+		>& doc,
 		std::string_view category,
 		const void* settings_ptr
 	);
 
-	using read_settings_thunk = void (*)(
-		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+	using read_settings_thunk = void (
+			*
+	)(
+		const std::unordered_map<
+			std::string,
+			std::unordered_map<
+				std::string,
+				std::string
+			>
+		>& doc,
 		std::string_view category,
 		void* settings_ptr
 	);
 
-	using draw_settings_thunk = void (*)(
+	using draw_settings_thunk = void (
+			*
+	)(
 		void* gui_builder,
 		void* panel_state,
 		std::string_view category,
@@ -48,6 +66,11 @@ export namespace gse::settings {
 		draw_settings_thunk draw = nullptr;
 	};
 
+	template <typename S>
+	struct gui_draw_provider {
+		static constexpr draw_settings_thunk value = nullptr;
+	};
+
 	template <typename T>
 	concept has_parser_specialization = requires(std::string_view raw, T v) {
 		{ parser<T>::parse(raw, v) } -> std::same_as<bool>;
@@ -59,7 +82,13 @@ export namespace gse::settings {
 
 	template <typename T>
 	auto write_settings_with_prefix(
-		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+		std::unordered_map<
+			std::string,
+			std::unordered_map<
+				std::string,
+				std::string
+			>
+		>& doc,
 		std::string_view category,
 		std::string_view prefix,
 		const T& value
@@ -67,7 +96,13 @@ export namespace gse::settings {
 
 	template <typename T>
 	auto read_settings_with_prefix(
-		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+		const std::unordered_map<
+			std::string,
+			std::unordered_map<
+				std::string,
+				std::string
+			>
+		>& doc,
 		std::string_view category,
 		std::string_view prefix,
 		T& value
@@ -75,20 +110,35 @@ export namespace gse::settings {
 
 	template <typename T>
 	auto write_settings_for(
-		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+		std::unordered_map<
+			std::string,
+			std::unordered_map<
+				std::string,
+				std::string
+			>
+		>& doc,
 		std::string_view category,
 		const void* settings_ptr
 	) -> void;
 
 	template <typename T>
 	auto read_settings_for(
-		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
+		const std::unordered_map<
+			std::string,
+			std::unordered_map<
+				std::string,
+				std::string
+			>
+		>& doc,
 		std::string_view category,
 		void* settings_ptr
 	) -> void;
 
 	template <typename T>
-	auto collect_settings_keys_with_prefix(std::vector<std::string>& out, std::string_view prefix) -> void;
+	auto collect_settings_keys_with_prefix(
+		std::vector<std::string>& out,
+		std::string_view prefix
+	) -> void;
 
 	template <typename T>
 	auto collect_settings_keys() -> std::vector<std::string>;
@@ -97,21 +147,14 @@ export namespace gse::settings {
 	consteval auto category_of() -> std::string_view;
 
 	template <typename S>
-	auto build_settings_record(typename S::data& obj) -> register_settings_type;
+	auto build_settings_record(
+		typename S::data& obj
+	) -> register_settings_type;
 }
 
 template <typename T>
-auto gse::settings::write_settings_with_prefix(
-	std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
-	const std::string_view category,
-	const std::string_view prefix,
-	const T& value
-) -> void {
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, const T& value) -> void {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
@@ -130,21 +173,12 @@ auto gse::settings::write_settings_with_prefix(
 }
 
 template <typename T>
-auto gse::settings::read_settings_with_prefix(
-	const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
-	const std::string_view category,
-	const std::string_view prefix,
-	T& value
-) -> void {
+auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const std::string_view prefix, T& value) -> void {
 	const auto cat_it = doc.find(std::string(category));
 	if (cat_it == doc.end()) {
 		return;
 	}
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
@@ -161,33 +195,18 @@ auto gse::settings::read_settings_with_prefix(
 }
 
 template <typename T>
-auto gse::settings::write_settings_for(
-	std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
-	const std::string_view category,
-	const void* settings_ptr
-) -> void {
+auto gse::settings::write_settings_for(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const void* settings_ptr) -> void {
 	write_settings_with_prefix<T>(doc, category, {}, *static_cast<const T*>(settings_ptr));
 }
 
 template <typename T>
-auto gse::settings::read_settings_for(
-	const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
-	const std::string_view category,
-	void* settings_ptr
-) -> void {
+auto gse::settings::read_settings_for(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, void* settings_ptr) -> void {
 	read_settings_with_prefix<T>(doc, category, {}, *static_cast<T*>(settings_ptr));
 }
 
 template <typename T>
-auto gse::settings::collect_settings_keys_with_prefix(
-	std::vector<std::string>& out,
-	const std::string_view prefix
-) -> void {
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+auto gse::settings::collect_settings_keys_with_prefix(std::vector<std::string>& out, const std::string_view prefix) -> void {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
@@ -232,6 +251,6 @@ auto gse::settings::build_settings_record(typename S::data& obj) -> register_set
 		.keys = collect_settings_keys<data_t>(),
 		.write = &write_settings_for<data_t>,
 		.read = &read_settings_for<data_t>,
-		.draw = nullptr,
+		.draw = gui_draw_provider<S>::value,
 	};
 }

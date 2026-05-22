@@ -42,7 +42,13 @@ namespace gse::renderer::capture::mp4 {
 
 	class box_scope : public non_copyable {
 	public:
-		box_scope(std::vector<std::byte>& out, std::array<char, 4> type);
+		box_scope(
+			std::vector<std::byte>& out,
+			std::array<
+				char,
+				4
+			> type
+		);
 
 		~box_scope() override;
 
@@ -51,51 +57,121 @@ namespace gse::renderer::capture::mp4 {
 		std::size_t m_length_offset;
 	};
 
-	auto fourcc(char a, char b, char c, char d) -> std::array<char, 4>;
+	auto fourcc(
+		char a,
+		char b,
+		char c,
+		char d
+	) -> std::
+		array<
+			char,
+			4
+		>;
 
-	auto push_u8(std::vector<std::byte>& out, std::uint8_t v) -> void;
+	auto push_u8(
+		std::vector<std::byte>& out,
+		std::uint8_t v
+	) -> void;
 
-	auto push_u16_be(std::vector<std::byte>& out, std::uint16_t v) -> void;
+	auto push_u16_be(
+		std::vector<std::byte>& out,
+		std::uint16_t v
+	) -> void;
 
-	auto push_u32_be(std::vector<std::byte>& out, std::uint32_t v) -> void;
+	auto push_u32_be(
+		std::vector<std::byte>& out,
+		std::uint32_t v
+	) -> void;
 
-	auto push_u64_be(std::vector<std::byte>& out, std::uint64_t v) -> void;
+	auto push_u64_be(
+		std::vector<std::byte>& out,
+		std::uint64_t v
+	) -> void;
 
-	auto push_bytes(std::vector<std::byte>& out, std::span<const std::byte> src) -> void;
+	auto push_bytes(
+		std::vector<std::byte>& out,
+		std::span<const std::byte> src
+	) -> void;
 
-	auto push_fourcc(std::vector<std::byte>& out, const std::array<char, 4>& cc) -> void;
+	auto push_fourcc(
+		std::vector<std::byte>& out,
+		const std::array<
+			char,
+			4
+		>& cc
+	) -> void;
 
-	auto pts_to_timescale(time pts) -> std::uint64_t;
+	auto pts_to_timescale(
+		time pts
+	) -> std::uint64_t;
 
-	auto read_leb128(std::span<const std::byte> data, std::size_t offset) -> std::optional<leb128_read>;
+	auto read_leb128(
+		std::span<const std::byte> data,
+		std::size_t offset
+	) -> std::optional<leb128_read>;
 
-	auto split_av1_obus(std::span<const std::byte> bitstream) -> std::vector<av1_obu>;
+	auto split_av1_obus(
+		std::span<const std::byte> bitstream
+	) -> std::vector<av1_obu>;
 
-	auto find_sequence_header_obu(std::span<const std::byte> bitstream) -> std::optional<std::span<const std::byte>>;
+	auto find_sequence_header_obu(
+		std::span<const std::byte> bitstream
+	) -> std::optional<std::span<const std::byte>>;
 
-	auto build_av1c(std::span<const std::byte> sequence_header_obu) -> std::vector<std::byte>;
+	auto build_av1c(
+		std::span<const std::byte> sequence_header_obu
+	) -> std::vector<std::byte>;
 
-	auto split_h265_nalus(std::span<const std::byte> bitstream) -> std::vector<h265_nalu>;
+	auto split_h265_nalus(
+		std::span<const std::byte> bitstream
+	) -> std::vector<h265_nalu>;
 
-	auto collect_h265_parameter_sets(std::span<const std::byte> bitstream) -> h265_parameter_sets;
+	auto collect_h265_parameter_sets(
+		std::span<const std::byte> bitstream
+	) -> h265_parameter_sets;
 
-	auto build_hvcc(const h265_parameter_sets& sets) -> std::vector<std::byte>;
+	auto build_hvcc(
+		const h265_parameter_sets& sets
+	) -> std::vector<std::byte>;
 
-	auto emit_ftyp(std::vector<std::byte>& out, gpu::video_codec codec) -> void;
+	auto emit_ftyp(
+		std::vector<std::byte>& out,
+		gpu::video_codec codec
+	) -> void;
 
-	auto emit_mvhd(std::vector<std::byte>& out, std::uint64_t duration) -> void;
+	auto emit_mvhd(
+		std::vector<std::byte>& out,
+		std::uint64_t duration
+	) -> void;
 
-	auto emit_tkhd(std::vector<std::byte>& out, std::uint64_t duration, vec2u extent) -> void;
+	auto emit_tkhd(
+		std::vector<std::byte>& out,
+		std::uint64_t duration,
+		vec2u extent
+	) -> void;
 
-	auto emit_elst(std::vector<std::byte>& out, std::uint64_t duration, std::int64_t media_start) -> void;
+	auto emit_elst(
+		std::vector<std::byte>& out,
+		std::uint64_t duration,
+		std::int64_t media_start
+	) -> void;
 
-	auto emit_mdhd(std::vector<std::byte>& out, std::uint64_t duration) -> void;
+	auto emit_mdhd(
+		std::vector<std::byte>& out,
+		std::uint64_t duration
+	) -> void;
 
-	auto emit_hdlr(std::vector<std::byte>& out) -> void;
+	auto emit_hdlr(
+		std::vector<std::byte>& out
+	) -> void;
 
-	auto emit_vmhd(std::vector<std::byte>& out) -> void;
+	auto emit_vmhd(
+		std::vector<std::byte>& out
+	) -> void;
 
-	auto emit_dinf(std::vector<std::byte>& out) -> void;
+	auto emit_dinf(
+		std::vector<std::byte>& out
+	) -> void;
 
 	auto emit_stsd(
 		std::vector<std::byte>& out,
@@ -104,17 +180,35 @@ namespace gse::renderer::capture::mp4 {
 		std::span<const std::byte> codec_config
 	) -> void;
 
-	auto emit_stts(std::vector<std::byte>& out, const std::vector<std::uint32_t>& sample_durations) -> void;
+	auto emit_stts(
+		std::vector<std::byte>& out,
+		const std::vector<std::uint32_t>& sample_durations
+	) -> void;
 
-	auto emit_stss(std::vector<std::byte>& out, std::span<const gpu::encoded_unit> units) -> void;
+	auto emit_stss(
+		std::vector<std::byte>& out,
+		std::span<const gpu::encoded_unit> units
+	) -> void;
 
-	auto emit_stsc(std::vector<std::byte>& out, std::uint32_t sample_count) -> void;
+	auto emit_stsc(
+		std::vector<std::byte>& out,
+		std::uint32_t sample_count
+	) -> void;
 
-	auto emit_stsz(std::vector<std::byte>& out, std::span<const gpu::encoded_unit> units) -> void;
+	auto emit_stsz(
+		std::vector<std::byte>& out,
+		std::span<const gpu::encoded_unit> units
+	) -> void;
 
-	auto emit_co64(std::vector<std::byte>& out, std::uint64_t mdat_payload_offset) -> void;
+	auto emit_co64(
+		std::vector<std::byte>& out,
+		std::uint64_t mdat_payload_offset
+	) -> void;
 
-	auto rewrite_co64_offset(std::vector<std::byte>& moov, std::uint64_t payload_offset) -> void;
+	auto rewrite_co64_offset(
+		std::vector<std::byte>& moov,
+		std::uint64_t payload_offset
+	) -> void;
 }
 
 gse::renderer::capture::mp4::box_scope::box_scope(std::vector<std::byte>& out, const std::array<char, 4> type)
@@ -133,12 +227,7 @@ gse::renderer::capture::mp4::box_scope::~box_scope() {
 	m_out[m_length_offset + 3] = std::byte{ static_cast<std::uint8_t>(v) };
 }
 
-auto gse::renderer::capture::mp4::fourcc(
-	const char a,
-	const char b,
-	const char c,
-	const char d
-) -> std::array<char, 4> {
+auto gse::renderer::capture::mp4::fourcc(const char a, const char b, const char c, const char d) -> std::array<char, 4> {
 	return { a, b, c, d };
 }
 
@@ -179,10 +268,7 @@ auto gse::renderer::capture::mp4::pts_to_timescale(const time pts) -> std::uint6
 	return static_cast<std::uint64_t>(us < 0.0 ? 0.0 : us);
 }
 
-auto gse::renderer::capture::mp4::read_leb128(
-	std::span<const std::byte> data,
-	std::size_t offset
-) -> std::optional<leb128_read> {
+auto gse::renderer::capture::mp4::read_leb128(std::span<const std::byte> data, std::size_t offset) -> std::optional<leb128_read> {
 	std::uint64_t value = 0;
 	std::size_t consumed = 0;
 	for (std::size_t i = 0; i < 8; ++i) {
@@ -235,9 +321,7 @@ auto gse::renderer::capture::mp4::split_av1_obus(std::span<const std::byte> bits
 	return obus;
 }
 
-auto gse::renderer::capture::mp4::find_sequence_header_obu(
-	std::span<const std::byte> bitstream
-) -> std::optional<std::span<const std::byte>> {
+auto gse::renderer::capture::mp4::find_sequence_header_obu(std::span<const std::byte> bitstream) -> std::optional<std::span<const std::byte>> {
 	for (const auto& obu : split_av1_obus(bitstream)) {
 		if (obu.type == av1_obu_sequence_header) {
 			return obu.full;
@@ -291,9 +375,7 @@ auto gse::renderer::capture::mp4::split_h265_nalus(std::span<const std::byte> bi
 	return nalus;
 }
 
-auto gse::renderer::capture::mp4::collect_h265_parameter_sets(
-	std::span<const std::byte> bitstream
-) -> h265_parameter_sets {
+auto gse::renderer::capture::mp4::collect_h265_parameter_sets(std::span<const std::byte> bitstream) -> h265_parameter_sets {
 	h265_parameter_sets sets;
 	for (const auto& nalu : split_h265_nalus(bitstream)) {
 		std::vector<std::byte> copy(nalu.payload.begin(), nalu.payload.end());
@@ -399,11 +481,7 @@ auto gse::renderer::capture::mp4::emit_mvhd(std::vector<std::byte>& out, const s
 	push_u32_be(out, 2);
 }
 
-auto gse::renderer::capture::mp4::emit_tkhd(
-	std::vector<std::byte>& out,
-	const std::uint64_t duration,
-	const vec2u extent
-) -> void {
+auto gse::renderer::capture::mp4::emit_tkhd(std::vector<std::byte>& out, const std::uint64_t duration, const vec2u extent) -> void {
 	box_scope tkhd(out, fourcc('t', 'k', 'h', 'd'));
 	push_u32_be(out, 0x01000007);
 	push_u64_be(out, 0);
@@ -430,11 +508,7 @@ auto gse::renderer::capture::mp4::emit_tkhd(
 	push_u32_be(out, extent.y() << 16);
 }
 
-auto gse::renderer::capture::mp4::emit_elst(
-	std::vector<std::byte>& out,
-	const std::uint64_t duration,
-	const std::int64_t media_start
-) -> void {
+auto gse::renderer::capture::mp4::emit_elst(std::vector<std::byte>& out, const std::uint64_t duration, const std::int64_t media_start) -> void {
 	box_scope edts(out, fourcc('e', 'd', 't', 's'));
 	box_scope elst(out, fourcc('e', 'l', 's', 't'));
 	push_u32_be(out, 0x01000000);
@@ -489,12 +563,7 @@ auto gse::renderer::capture::mp4::emit_dinf(std::vector<std::byte>& out) -> void
 	push_u32_be(out, 0x00000001);
 }
 
-auto gse::renderer::capture::mp4::emit_stsd(
-	std::vector<std::byte>& out,
-	const vec2u extent,
-	const gpu::video_codec codec,
-	std::span<const std::byte> codec_config
-) -> void {
+auto gse::renderer::capture::mp4::emit_stsd(std::vector<std::byte>& out, const vec2u extent, const gpu::video_codec codec, std::span<const std::byte> codec_config) -> void {
 	box_scope stsd(out, fourcc('s', 't', 's', 'd'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 1);
@@ -529,10 +598,7 @@ auto gse::renderer::capture::mp4::emit_stsd(
 	push_bytes(out, codec_config);
 }
 
-auto gse::renderer::capture::mp4::emit_stts(
-	std::vector<std::byte>& out,
-	const std::vector<std::uint32_t>& sample_durations
-) -> void {
+auto gse::renderer::capture::mp4::emit_stts(std::vector<std::byte>& out, const std::vector<std::uint32_t>& sample_durations) -> void {
 	box_scope stts(out, fourcc('s', 't', 't', 's'));
 	push_u32_be(out, 0);
 
@@ -553,10 +619,7 @@ auto gse::renderer::capture::mp4::emit_stts(
 	}
 }
 
-auto gse::renderer::capture::mp4::emit_stss(
-	std::vector<std::byte>& out,
-	std::span<const gpu::encoded_unit> units
-) -> void {
+auto gse::renderer::capture::mp4::emit_stss(std::vector<std::byte>& out, std::span<const gpu::encoded_unit> units) -> void {
 	std::vector<std::uint32_t> keyframe_indices;
 	for (std::size_t i = 0; i < units.size(); ++i) {
 		if (units[i].keyframe) {
@@ -583,10 +646,7 @@ auto gse::renderer::capture::mp4::emit_stsc(std::vector<std::byte>& out, const s
 	push_u32_be(out, 1);
 }
 
-auto gse::renderer::capture::mp4::emit_stsz(
-	std::vector<std::byte>& out,
-	std::span<const gpu::encoded_unit> units
-) -> void {
+auto gse::renderer::capture::mp4::emit_stsz(std::vector<std::byte>& out, std::span<const gpu::encoded_unit> units) -> void {
 	box_scope stsz(out, fourcc('s', 't', 's', 'z'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 0);
@@ -596,20 +656,14 @@ auto gse::renderer::capture::mp4::emit_stsz(
 	}
 }
 
-auto gse::renderer::capture::mp4::emit_co64(
-	std::vector<std::byte>& out,
-	const std::uint64_t mdat_payload_offset
-) -> void {
+auto gse::renderer::capture::mp4::emit_co64(std::vector<std::byte>& out, const std::uint64_t mdat_payload_offset) -> void {
 	box_scope co64(out, fourcc('c', 'o', '6', '4'));
 	push_u32_be(out, 0);
 	push_u32_be(out, 1);
 	push_u64_be(out, mdat_payload_offset);
 }
 
-auto gse::renderer::capture::mp4::rewrite_co64_offset(
-	std::vector<std::byte>& moov,
-	const std::uint64_t payload_offset
-) -> void {
+auto gse::renderer::capture::mp4::rewrite_co64_offset(std::vector<std::byte>& moov, const std::uint64_t payload_offset) -> void {
 	const std::array<std::byte, 4> marker = {
 		std::byte{ 'c' },
 		std::byte{ 'o' },
@@ -634,11 +688,7 @@ auto gse::renderer::capture::mp4::rewrite_co64_offset(
 	}
 }
 
-auto gse::renderer::capture::mp4::mux(
-	const std::span<const gpu::encoded_unit> units,
-	const track_info& track,
-	const std::filesystem::path& out
-) -> bool {
+auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> units, const track_info& track, const std::filesystem::path& out) -> bool {
 	if (units.empty()) {
 		log::println(log::level::warning, log::category::render, "mp4::mux called with empty units");
 		return false;

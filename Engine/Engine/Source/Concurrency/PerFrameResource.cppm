@@ -9,7 +9,10 @@ export namespace gse {
 	template <typename T, std::size_t N = 2>
 	class per_frame_resource {
 	public:
-		static_assert(N >= 2, "per_frame_resource requires at least 2 frames");
+		static_assert(
+			N >= 2,
+			"per_frame_resource requires at least 2 frames"
+		);
 
 		using value_type = T;
 		using storage_type = std::array<T, N>;
@@ -21,15 +24,26 @@ export namespace gse {
 
 		template <std::convertible_to<T>... Args>
 		requires(sizeof...(Args) == N)
-		explicit per_frame_resource(Args&&... slots);
+		explicit per_frame_resource(
+			Args&&... slots
+		);
 
-		auto operator[](this auto&& self, std::size_t frame_index) -> decltype(auto);
+		auto operator[](
+			this auto&& self,
+			std::size_t frame_index
+		) -> decltype(auto);
 
-		auto begin(this auto&& self) -> decltype(auto);
+		auto begin(
+			this auto&& self
+		) -> decltype(auto);
 
-		auto end(this auto&& self) -> decltype(auto);
+		auto end(
+			this auto&& self
+		) -> decltype(auto);
 
-		auto resources(this auto&& self) -> decltype(auto);
+		auto resources(
+			this auto&& self
+		) -> decltype(auto);
 
 	private:
 		storage_type m_resources{};

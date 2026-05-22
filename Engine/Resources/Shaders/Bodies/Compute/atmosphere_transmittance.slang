@@ -15,17 +15,18 @@ float3 integrate_transmittance(float radius, float view_zenith_cos) {
     return exp(-total_extinction);
 }
 
-// entry:
-uint2 size;
-transmittance_out.GetDimensions(size.x, size.y);
-if (dispatch_id.x >= size.x || dispatch_id.y >= size.y) {
-    return;
+void atmosphere_transmittance(uint3 dispatch_id) {
+    uint2 size;
+    transmittance_out.GetDimensions(size.x, size.y);
+    if (dispatch_id.x >= size.x || dispatch_id.y >= size.y) {
+        return;
+    }
+
+    float2 uv = (float2(dispatch_id.xy) + 0.5) / float2(size);
+    float radius;
+    float view_zenith_cos;
+    transmittance_uv_to_r_mu(uv, radius, view_zenith_cos);
+
+    float3 transmittance = integrate_transmittance(radius, view_zenith_cos);
+    transmittance_out[dispatch_id.xy] = float4(transmittance, 1.0);
 }
-
-float2 uv = (float2(dispatch_id.xy) + 0.5) / float2(size);
-float radius;
-float view_zenith_cos;
-transmittance_uv_to_r_mu(uv, radius, view_zenith_cos);
-
-float3 transmittance = integrate_transmittance(radius, view_zenith_cos);
-transmittance_out[dispatch_id.xy] = float4(transmittance, 1.0);

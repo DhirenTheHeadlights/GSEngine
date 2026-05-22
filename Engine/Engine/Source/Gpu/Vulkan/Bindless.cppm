@@ -27,7 +27,11 @@ export namespace gse::gpu {
 
 	class bindless_texture_set final : public non_copyable, non_movable {
 	public:
-		bindless_texture_set(const vulkan::device& device, descriptor_heap& heap, std::uint32_t capacity = 4096);
+		bindless_texture_set(
+			const vulkan::device& device,
+			descriptor_heap& heap,
+			std::uint32_t capacity = 4096
+		);
 
 		~bindless_texture_set() override;
 
@@ -37,9 +41,13 @@ export namespace gse::gpu {
 			image_layout layout = image_layout::shader_read_only
 		) -> bindless_texture_slot;
 
-		auto release(bindless_texture_slot slot) -> void;
+		auto release(
+			bindless_texture_slot slot
+		) -> void;
 
-		auto begin_frame(std::uint32_t frame_index) -> void;
+		auto begin_frame(
+			std::uint32_t frame_index
+		) -> void;
 
 		[[nodiscard]] auto layout_handle() const -> handle<vulkan::descriptor_set_layout>;
 
@@ -143,11 +151,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(
 
 gse::gpu::bindless_texture_set::~bindless_texture_set() = default;
 
-auto gse::gpu::bindless_texture_set::allocate(
-	const handle<vulkan::image_view> view,
-	const handle<vulkan::sampler> samp,
-	const image_layout layout
-) -> bindless_texture_slot {
+auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> view, const handle<vulkan::sampler> samp, const image_layout layout) -> bindless_texture_slot {
 	std::lock_guard lock(m_mutex);
 
 	assert(!m_free_list.empty(), "Bindless texture set exhausted (capacity {})", m_capacity);

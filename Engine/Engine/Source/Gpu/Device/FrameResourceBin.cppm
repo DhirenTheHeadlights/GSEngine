@@ -24,14 +24,24 @@ export namespace gse::gpu {
 
 		~frame_resource_bin();
 
-		frame_resource_bin(frame_resource_bin&&) noexcept = default;
+		frame_resource_bin(
+			frame_resource_bin&&
+		) noexcept = default;
 
-		auto operator=(frame_resource_bin&&) noexcept -> frame_resource_bin& = default;
+		auto operator=(
+			frame_resource_bin&&
+		) noexcept -> frame_resource_bin& = default;
 
 		template <typename T>
-		auto retain(queue_id queue, std::uint64_t until_value, T resource) -> void;
+		auto retain(
+			queue_id queue,
+			std::uint64_t until_value,
+			T resource
+		) -> void;
 
-		auto drain(std::span<const queue_progress> progress) -> void;
+		auto drain(
+			std::span<const queue_progress> progress
+		) -> void;
 
 		auto wait_idle_clear() -> void;
 

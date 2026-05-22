@@ -42,7 +42,9 @@ export namespace gse::shaders {
 		static constexpr std::uint32_t slot = Slot;
 	};
 
-	consteval auto find_binding_type(std::meta::info m) -> std::meta::info;
+	consteval auto find_binding_type(
+		std::meta::info m
+	) -> std::meta::info;
 
 	template <typename T>
 	struct slang_type;
@@ -104,7 +106,9 @@ export namespace gse::shaders {
 	consteval auto descriptor_access_of() -> gpu::descriptor_access;
 
 	template <typename Pack>
-	auto build_family_sets(Pack pack) -> std::vector<family_set>;
+	auto build_family_sets(
+		Pack pack
+	) -> std::vector<family_set>;
 
 	template <typename... Packs>
 	auto build_combined_family_sets() -> std::vector<family_set>;
@@ -208,11 +212,7 @@ struct gse::shaders::slang_type<gse::quat_t<T>> {
 template <gse::shaders::is_shader_struct T>
 auto gse::shaders::emit_slang_struct() -> std::string {
 	std::string out = std::format("public struct {} {{\n", std::meta::identifier_of(^^T));
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		using member_t = [:std::meta::type_of(m):];
 		if constexpr (std::is_array_v<member_t>) {
 			using element_t = std::remove_extent_t<member_t>;
@@ -245,7 +245,9 @@ auto gse::shaders::emit_slang_enum() -> std::string {
 
 namespace gse::shaders {
 	template <typename T>
-	auto format_slang_literal(const T& v) -> std::string;
+	auto format_slang_literal(
+		const T& v
+	) -> std::string;
 }
 
 template <typename T>
@@ -272,11 +274,7 @@ auto gse::shaders::format_slang_literal(const T& v) -> std::string {
 template <gse::shaders::is_shader_constant_block T>
 auto gse::shaders::emit_slang_constants() -> std::string {
 	std::string out;
-	template for (
-		constexpr auto m : std::define_static_array(
-			std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-		)
-	) {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		using member_t = [:std::meta::type_of(m):];
 		constexpr member_t v = T{}.[:m:];
 		out += std::format(
@@ -380,11 +378,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 		using element_t = typename T::element;
 		std::string out =
 			std::format("[[vk::binding({}, {})]]\npublic cbuffer {} {{\n", binding_t::slot, binding_t::set, name);
-		template for (
-			constexpr auto m : std::define_static_array(
-				std::meta::nonstatic_data_members_of(^^element_t, std::meta::access_context::unchecked())
-			)
-		) {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^element_t, std::meta::access_context::unchecked()))) {
 			using member_t = [:std::meta::type_of(m):];
 			if constexpr (std::is_array_v<member_t>) {
 				using elem_t = std::remove_extent_t<member_t>;
@@ -406,11 +400,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	else {
 		std::string out =
 			std::format("[[vk::binding({}, {})]]\npublic cbuffer {} {{\n", binding_t::slot, binding_t::set, name);
-		template for (
-			constexpr auto m : std::define_static_array(
-				std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-			)
-		) {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			using member_t = [:std::meta::type_of(m):];
 			if constexpr (std::is_array_v<member_t>) {
 				using elem_t = std::remove_extent_t<member_t>;
@@ -450,11 +440,7 @@ consteval auto gse::shaders::slang_scalar_align() -> std::size_t {
 	}
 	else if constexpr (is_shader_struct<T>) {
 		std::size_t a = 1;
-		template for (
-			constexpr auto m : std::define_static_array(
-				std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-			)
-		) {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			using member_t = [:std::meta::type_of(m):];
 			a = std::max(a, slang_scalar_align<member_t>());
 		}
@@ -484,11 +470,7 @@ consteval auto gse::shaders::slang_scalar_size() -> std::size_t {
 	}
 	else if constexpr (is_shader_struct<T>) {
 		std::size_t off = 0;
-		template for (
-			constexpr auto m : std::define_static_array(
-				std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())
-			)
-		) {
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			using member_t = [:std::meta::type_of(m):];
 			constexpr auto a = slang_scalar_align<member_t>();
 			off = (off + a - 1) & ~(a - 1);
@@ -515,10 +497,7 @@ consteval auto gse::shaders::descriptor_type_of() -> gpu::descriptor_type {
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {
 		return gpu::descriptor_type::acceleration_structure;
 	}
-	else if constexpr (
-		has_annotation<ssbo_readonly_tag>(^^T) || has_annotation<ssbo_readwrite_tag>(^^T) ||
-		has_annotation<byte_address_buffer_tag>(^^T) || has_annotation<rw_byte_address_buffer_tag>(^^T)
-	) {
+	else if constexpr (has_annotation<ssbo_readonly_tag>(^^T) || has_annotation<ssbo_readwrite_tag>(^^T) || has_annotation<byte_address_buffer_tag>(^^T) || has_annotation<rw_byte_address_buffer_tag>(^^T)) {
 		return gpu::descriptor_type::storage_buffer;
 	}
 	else if constexpr (has_annotation<storage_image_tag>(^^T) || has_annotation<storage_image_3d_tag>(^^T)) {
@@ -541,10 +520,7 @@ consteval auto gse::shaders::descriptor_count_of() -> std::uint32_t {
 
 template <gse::shaders::is_shader_binding T>
 consteval auto gse::shaders::descriptor_access_of() -> gpu::descriptor_access {
-	if constexpr (
-		has_annotation<ssbo_readwrite_tag>(^^T) || has_annotation<rw_byte_address_buffer_tag>(^^T) ||
-		has_annotation<storage_image_tag>(^^T) || has_annotation<storage_image_3d_tag>(^^T)
-	) {
+	if constexpr (has_annotation<ssbo_readwrite_tag>(^^T) || has_annotation<rw_byte_address_buffer_tag>(^^T) || has_annotation<storage_image_tag>(^^T) || has_annotation<storage_image_3d_tag>(^^T)) {
 		return gpu::descriptor_access::read_write;
 	}
 	else {

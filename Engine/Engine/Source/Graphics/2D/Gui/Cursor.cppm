@@ -27,9 +27,15 @@ export namespace gse::cursor {
 		omni_move
 	};
 
-	auto set_style(style new_style) -> void;
+	auto set_style(
+		style new_style
+	) -> void;
 
-	auto render_to(const asset::data& assets, std::vector<renderer::sprite_command>& commands, vec2f mouse_pos) -> void;
+	auto render_to(
+		const asset::data& assets,
+		std::vector<renderer::sprite_command>& commands,
+		vec2f mouse_pos
+	) -> void;
 }
 
 namespace gse::cursor {
@@ -42,7 +48,10 @@ namespace gse::cursor {
 		resource::handle<texture> texture;
 	};
 
-	auto draw_line(std::vector<renderer::sprite_command>& commands, const line_params& params) -> void;
+	auto draw_line(
+		std::vector<renderer::sprite_command>& commands,
+		const line_params& params
+	) -> void;
 
 	struct arrow_head_params {
 		std::vector<renderer::sprite_command>& commands;
@@ -51,18 +60,16 @@ namespace gse::cursor {
 		resource::handle<texture> texture;
 	};
 
-	auto draw_arrow_head(const arrow_head_params& params) -> void;
+	auto draw_arrow_head(
+		const arrow_head_params& params
+	) -> void;
 }
 
 auto gse::cursor::set_style(const style new_style) -> void {
 	current_style = new_style;
 }
 
-auto gse::cursor::render_to(
-	const asset::data& assets,
-	std::vector<renderer::sprite_command>& commands,
-	const vec2f mouse_pos
-) -> void {
+auto gse::cursor::render_to(const asset::data& assets, std::vector<renderer::sprite_command>& commands, const vec2f mouse_pos) -> void {
 	const resource::handle<texture> blank_texture = asset::get<texture>(assets, find("blank"));
 	constexpr vec4f color = { 1.f, 1.f, 1.f, 1.f };
 	constexpr float length = 22.f;

@@ -7,10 +7,16 @@ import :rectangle;
 
 export namespace gse {
 	template <typename T>
-	constexpr auto intersects(const circle_t<T>& circle, const rect_t<T>& rect) -> bool;
+	constexpr auto intersects(
+		const circle_t<T>& circle,
+		const rect_t<T>& rect
+	) -> bool;
 
 	template <typename T>
-	constexpr auto intersects(const rect_t<T>& rect, const circle_t<T>& circle) -> bool;
+	constexpr auto intersects(
+		const rect_t<T>& rect,
+		const circle_t<T>& circle
+	) -> bool;
 }
 
 template <typename T>

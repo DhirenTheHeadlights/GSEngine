@@ -21,19 +21,34 @@ namespace gse::task {
 
 	using parallel_for_fn = move_only_function<void(std::size_t)>;
 
-	auto parallel_for_impl(std::size_t first, std::size_t last, parallel_for_fn func, id id) -> void;
+	auto parallel_for_impl(
+		std::size_t first,
+		std::size_t last,
+		parallel_for_fn func,
+		id id
+	) -> void;
 }
 
 export namespace gse::task {
 	class group;
 
 	template <typename F>
-	auto start(F&& fn, std::size_t worker_count = std::thread::hardware_concurrency()) -> std::invoke_result_t<F&>;
+	auto start(
+		F&& fn,
+		std::size_t worker_count = std::thread::hardware_concurrency()
+	) -> std::invoke_result_t<F&>;
 
-	auto post(job j, id id = trace::loc_id<trace::current_loc_tag()>()) -> void;
+	auto post(
+		job j,
+		id id = trace::loc_id<trace::current_loc_tag()>()
+	) -> void;
 
 	template <std::forward_iterator It>
-	auto post_range(It first, It last, id id = trace::loc_id<trace::current_loc_tag()>()) -> void;
+	auto post_range(
+		It first,
+		It last,
+		id id = trace::loc_id<trace::current_loc_tag()>()
+	) -> void;
 
 	template <typename F>
 	auto parallel_for(
@@ -68,21 +83,37 @@ export namespace gse::task {
 
 	class group : non_copyable, non_movable {
 	public:
-		explicit group(id label = trace::loc_id<trace::current_loc_tag()>());
+		explicit group(
+			id label = trace::loc_id<trace::current_loc_tag()>()
+		);
 
 		~group() noexcept override;
 
-		auto post(job j, id id = trace::loc_id<trace::current_loc_tag()>()) -> void;
+		auto post(
+			job j,
+			id id = trace::loc_id<trace::current_loc_tag()>()
+		) -> void;
 
 		template <std::input_iterator It>
-		auto post_range(It first, It last, id id = trace::loc_id<trace::current_loc_tag()>()) -> void;
+		auto post_range(
+			It first,
+			It last,
+			id id = trace::loc_id<trace::current_loc_tag()>()
+		) -> void;
 
 		auto wait() const -> void;
 
 	private:
 		friend struct job_entry;
-		friend auto run_job(struct job_entry& entry) -> void;
-		friend auto submit_to_group(group& gp, job j, id trace_id, std::uint64_t parent_eid) -> void;
+		friend auto run_job(
+			struct job_entry& entry
+		) -> void;
+		friend auto submit_to_group(
+			group& gp,
+			job j,
+			id trace_id,
+			std::uint64_t parent_eid
+		) -> void;
 
 		id m_label;
 		std::uint64_t m_outer_parent = 0;
@@ -94,9 +125,13 @@ export namespace gse::task {
 	template <typename T>
 	class concurrent_queue {
 	public:
-		auto push(T value) const -> void;
+		auto push(
+			T value
+		) const -> void;
 
-		auto try_pop(T& out) const -> bool;
+		auto try_pop(
+			T& out
+		) const -> bool;
 
 		auto drain() const -> std::vector<T>;
 
@@ -180,33 +215,65 @@ namespace gse::task {
 	inline constexpr std::size_t min_chunks_per_worker = 4;
 	inline constexpr std::size_t hot_spin_yields = 200;
 
-	auto run_job(job_entry& entry) -> void;
+	auto run_job(
+		job_entry& entry
+	) -> void;
 
-	auto worker_loop(const std::stop_token& st, std::size_t index) -> void;
+	auto worker_loop(
+		const std::stop_token& st,
+		std::size_t index
+	) -> void;
 
-	auto submit_async(job j, id trace_id, std::uint64_t parent_eid) -> void;
+	auto submit_async(
+		job j,
+		id trace_id,
+		std::uint64_t parent_eid
+	) -> void;
 
-	auto submit_to_group(group& gp, job j, id trace_id, std::uint64_t parent_eid) -> void;
+	auto submit_to_group(
+		group& gp,
+		job j,
+		id trace_id,
+		std::uint64_t parent_eid
+	) -> void;
 
-	auto pool_start(std::size_t worker_count) -> void;
+	auto pool_start(
+		std::size_t worker_count
+	) -> void;
 
 	auto pool_shutdown() -> void;
 
 	auto likely_idle() noexcept -> bool;
 
-	auto async_key_for(const void* p) -> std::uint64_t;
+	auto async_key_for(
+		const void* p
+	) -> std::uint64_t;
 
-	auto compute_chunk_size(std::size_t n, std::size_t workers) -> std::size_t;
+	auto compute_chunk_size(
+		std::size_t n,
+		std::size_t workers
+	) -> std::size_t;
 
-	auto try_pop_local(std::size_t worker_idx) -> std::optional<job_entry>;
+	auto try_pop_local(
+		std::size_t worker_idx
+	) -> std::optional<job_entry>;
 
-	auto try_steal_from(std::size_t victim_idx) -> std::optional<job_entry>;
+	auto try_steal_from(
+		std::size_t victim_idx
+	) -> std::optional<job_entry>;
 
-	auto try_pop_or_steal(std::optional<std::size_t> my_idx) -> std::optional<job_entry>;
+	auto try_pop_or_steal(
+		std::optional<std::size_t> my_idx
+	) -> std::optional<job_entry>;
 
-	auto push_to_queue(std::size_t target_idx, job_entry&& entry) -> void;
+	auto push_to_queue(
+		std::size_t target_idx,
+		job_entry&& entry
+	) -> void;
 
-	auto owns_queue(std::size_t target_idx) noexcept -> bool;
+	auto owns_queue(
+		std::size_t target_idx
+	) noexcept -> bool;
 
 	auto select_post_target() -> std::size_t;
 }
@@ -349,12 +416,7 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 	work_available.release(static_cast<std::ptrdiff_t>(count));
 }
 
-auto gse::task::parallel_for_impl(
-	const std::size_t first,
-	const std::size_t last,
-	parallel_for_fn func,
-	const id id
-) -> void {
+auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t last, parallel_for_fn func, const id id) -> void {
 	if (last <= first) {
 		return;
 	}
@@ -408,12 +470,7 @@ auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func
 }
 
 template <typename Fn>
-auto gse::task::coarse_parallel(
-	const std::size_t n,
-	const std::size_t min_chunk_items,
-	Fn&& fn,
-	const id label
-) -> void {
+auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk_items, Fn&& fn, const id label) -> void {
 	if (n == 0) {
 		return;
 	}
@@ -583,12 +640,7 @@ auto gse::task::select_post_target() -> std::size_t {
 	return external_post_rotation.fetch_add(1, std::memory_order_relaxed) % queue_count;
 }
 
-auto gse::task::parallel_invoke_range(
-	const std::size_t first,
-	const std::size_t last,
-	move_only_function<void(std::size_t)> func,
-	const id id
-) -> void {
+auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t last, move_only_function<void(std::size_t)> func, const id id) -> void {
 	if (last <= first) {
 		return;
 	}

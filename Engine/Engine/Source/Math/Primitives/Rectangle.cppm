@@ -18,10 +18,18 @@ export namespace gse {
 		};
 
 		constexpr rect_t() = default;
-		explicit constexpr rect_t(const min_max_params& p);
+		explicit constexpr rect_t(
+			const min_max_params& p
+		);
 
-		static constexpr auto from_position_size(const T& top_left, const T& size) -> rect_t;
-		static constexpr auto bounding_box(const rect_t& a, const rect_t& b) -> rect_t;
+		static constexpr auto from_position_size(
+			const T& top_left,
+			const T& size
+		) -> rect_t;
+		static constexpr auto bounding_box(
+			const rect_t& a,
+			const rect_t& b
+		) -> rect_t;
 
 		constexpr auto left() const -> value_type;
 		constexpr auto right() const -> value_type;
@@ -38,13 +46,25 @@ export namespace gse {
 		constexpr auto top_right() const -> T;
 		constexpr auto bottom_right() const -> T;
 
-		constexpr auto min(this auto&& self) -> decltype(auto);
-		constexpr auto max(this auto&& self) -> decltype(auto);
+		constexpr auto min(
+			this auto&& self
+		) -> decltype(auto);
+		constexpr auto max(
+			this auto&& self
+		) -> decltype(auto);
 
-		constexpr auto contains(const T& point) const -> bool;
-		constexpr auto intersects(const rect_t& other) const -> bool;
-		constexpr auto inset(const T& padding) const -> rect_t;
-		constexpr auto intersection(const rect_t& other) const -> rect_t;
+		constexpr auto contains(
+			const T& point
+		) const -> bool;
+		constexpr auto intersects(
+			const rect_t& other
+		) const -> bool;
+		constexpr auto inset(
+			const T& padding
+		) const -> rect_t;
+		constexpr auto intersection(
+			const rect_t& other
+		) const -> rect_t;
 
 	private:
 		T m_min;

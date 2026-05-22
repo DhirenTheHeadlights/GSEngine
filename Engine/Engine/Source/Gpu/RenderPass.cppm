@@ -45,19 +45,32 @@ export namespace gse::gpu {
 
 	class request_pass_awaitable {
 	public:
-		request_pass_awaitable(const frame_context& ctx, render_pass_descriptor desc) noexcept;
+		request_pass_awaitable(
+			const frame_context& ctx,
+			render_pass_descriptor desc
+		) noexcept;
 
-		request_pass_awaitable(const request_pass_awaitable&) = delete;
+		request_pass_awaitable(
+			const request_pass_awaitable&
+		) = delete;
 
-		auto operator=(const request_pass_awaitable&) -> request_pass_awaitable& = delete;
+		auto operator=(
+			const request_pass_awaitable&
+		) -> request_pass_awaitable& = delete;
 
-		request_pass_awaitable(request_pass_awaitable&&) noexcept = default;
+		request_pass_awaitable(
+			request_pass_awaitable&&
+		) noexcept = default;
 
-		auto operator=(request_pass_awaitable&&) noexcept -> request_pass_awaitable& = default;
+		auto operator=(
+			request_pass_awaitable&&
+		) noexcept -> request_pass_awaitable& = default;
 
 		auto await_ready() const noexcept -> bool;
 
-		auto await_suspend(std::coroutine_handle<> h) noexcept -> void;
+		auto await_suspend(
+			std::coroutine_handle<> h
+		) noexcept -> void;
 
 		[[nodiscard]] auto await_resume() noexcept -> recording_context;
 
@@ -71,15 +84,26 @@ export namespace gse::gpu {
 
 	class pass_builder {
 	public:
-		pass_builder(const frame_context& ctx, id pass_kind) noexcept;
+		pass_builder(
+			const frame_context& ctx,
+			id pass_kind
+		) noexcept;
 
-		auto on(queue_type queue) && -> pass_builder&&;
+		auto on(
+			queue_type queue
+		) && -> pass_builder&&;
 
-		auto pipeline(const gpu::pipeline& p) && -> pass_builder&&;
+		auto pipeline(
+			const gpu::pipeline& p
+		) && -> pass_builder&&;
 
-		auto color(color_attachment value) && -> pass_builder&&;
+		auto color(
+			color_attachment value
+		) && -> pass_builder&&;
 
-		auto depth(depth_attachment value) && -> pass_builder&&;
+		auto depth(
+			depth_attachment value
+		) && -> pass_builder&&;
 
 		template <typename Chain>
 		auto in_chain() && -> pass_builder&&;
@@ -94,20 +118,34 @@ export namespace gse::gpu {
 		render_pass_descriptor m_desc;
 	};
 
-	[[nodiscard]] auto pass(const frame_context& ctx, id pass_kind) -> pass_builder;
+	[[nodiscard]] auto pass(
+		const frame_context& ctx,
+		id pass_kind
+	) -> pass_builder;
 
 	template <typename Owner>
-	[[nodiscard]] auto pass(const frame_context& ctx) -> pass_builder;
+	[[nodiscard]] auto pass(
+		const frame_context& ctx
+	) -> pass_builder;
 
-	auto clear_color(gpu::color_clear value) -> color_attachment;
+	auto clear_color(
+		gpu::color_clear value
+	) -> color_attachment;
 
-	auto clear_color(gpu::color_clear value, const image& target) -> color_attachment;
+	auto clear_color(
+		gpu::color_clear value,
+		const image& target
+	) -> color_attachment;
 
 	auto load_color() -> color_attachment;
 
-	auto load_color(const image& target) -> color_attachment;
+	auto load_color(
+		const image& target
+	) -> color_attachment;
 
-	auto clear_depth(gpu::depth_clear value) -> depth_attachment;
+	auto clear_depth(
+		gpu::depth_clear value
+	) -> depth_attachment;
 
 	auto load_depth() -> depth_attachment;
 }

@@ -64,13 +64,7 @@ namespace gse::renderer::cull_compute {
 	>;
 }
 
-auto gse::renderer::cull_compute::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const asset::data& assets_s,
-	const geometry_collector::system::data& gc_r,
-	data& d
-) -> async::task<> {
+auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
 	d.pipeline =
 		gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
@@ -110,12 +104,7 @@ auto gse::renderer::cull_compute::system::run(
 	co_return;
 }
 
-auto gse::renderer::cull_compute::system::frame(
-	frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	shared_view<geometry_collector::system> gc_r,
-	const data& d
-) -> async::task<> {
+auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, shared_view<geometry_collector::system> gc_r, const data& d) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}

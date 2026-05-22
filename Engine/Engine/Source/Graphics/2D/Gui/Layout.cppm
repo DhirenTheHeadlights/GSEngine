@@ -12,27 +12,43 @@ import :types;
 import :styles;
 
 export namespace gse::gui::layout {
-	auto dock(id_mapped_collection<menu>& menus, id child_id, id parent_id, dock::location location) -> void;
+	auto dock(
+		id_mapped_collection<menu>& menus,
+		id child_id,
+		id parent_id,
+		dock::location location
+	) -> void;
 
-	auto undock(id_mapped_collection<menu>& menus, id child_id) -> void;
+	auto undock(
+		id_mapped_collection<menu>& menus,
+		id child_id
+	) -> void;
 
-	auto update(id_mapped_collection<menu>& menus, id root_id) -> void;
+	auto update(
+		id_mapped_collection<menu>& menus,
+		id root_id
+	) -> void;
 
-	auto dock_space(const ui_rect& target_area) -> dock::space;
+	auto dock_space(
+		const ui_rect& target_area
+	) -> dock::space;
 }
 
 namespace gse::gui::layout {
-	auto dock_target_rect(const ui_rect& parent, dock::location location, float ratio) -> ui_rect;
+	auto dock_target_rect(
+		const ui_rect& parent,
+		dock::location location,
+		float ratio
+	) -> ui_rect;
 
-	auto remaining_rect_for_parent(const ui_rect& parent, dock::location child_location, float ratio) -> ui_rect;
+	auto remaining_rect_for_parent(
+		const ui_rect& parent,
+		dock::location child_location,
+		float ratio
+	) -> ui_rect;
 }
 
-auto gse::gui::layout::dock(
-	id_mapped_collection<menu>& menus,
-	const id child_id,
-	const id parent_id,
-	const dock::location location
-) -> void {
+auto gse::gui::layout::dock(id_mapped_collection<menu>& menus, const id child_id, const id parent_id, const dock::location location) -> void {
 	menu* parent = menus.try_get(parent_id);
 	menu* child = menus.try_get(child_id);
 
@@ -139,9 +155,7 @@ auto gse::gui::layout::update(id_mapped_collection<menu>& menus, const id root_i
 	menu* child = nullptr;
 	for (auto& potential_child : menus.items()) {
 		if (potential_child.owner_id() == root_id && potential_child.was_visible_last_frame) {
-			if (
-				potential_child.docked_to != dock::location::none && potential_child.docked_to != dock::location::center
-			) {
+			if (potential_child.docked_to != dock::location::none && potential_child.docked_to != dock::location::center) {
 				child = &potential_child;
 				break;
 			}
@@ -215,11 +229,7 @@ auto gse::gui::layout::dock_space(const ui_rect& target_area) -> dock::space {
 	return space;
 }
 
-auto gse::gui::layout::dock_target_rect(
-	const ui_rect& parent,
-	const dock::location location,
-	const float ratio
-) -> ui_rect {
+auto gse::gui::layout::dock_target_rect(const ui_rect& parent, const dock::location location, const float ratio) -> ui_rect {
 	const float split_width = parent.width() * ratio;
 	const float split_height = parent.height() * ratio;
 	const float remaining_width = parent.width() - split_width;
@@ -246,11 +256,7 @@ auto gse::gui::layout::dock_target_rect(
 	}
 }
 
-auto gse::gui::layout::remaining_rect_for_parent(
-	const ui_rect& parent,
-	const dock::location child_location,
-	const float ratio
-) -> ui_rect {
+auto gse::gui::layout::remaining_rect_for_parent(const ui_rect& parent, const dock::location child_location, const float ratio) -> ui_rect {
 	const float split_width = parent.width() * ratio;
 	const float split_height = parent.height() * ratio;
 	const float remaining_width = parent.width() - split_width;

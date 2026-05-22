@@ -23,12 +23,18 @@ export namespace gse {
 		std::uint8_t side_b0 = feature_side_none;
 		std::uint8_t side_b1 = feature_side_none;
 
-		auto operator==(const feature_id&) const -> bool = default;
+		auto operator==(
+			const feature_id&
+		) const -> bool = default;
 	};
 
-	auto pack_feature(const feature_id& feature) -> std::uint64_t;
+	auto pack_feature(
+		const feature_id& feature
+	) -> std::uint64_t;
 
-	auto unpack_feature(std::uint64_t packed) -> feature_id;
+	auto unpack_feature(
+		std::uint64_t packed
+	) -> feature_id;
 
 	struct contact_point {
 		vec3<position> position_on_a;
@@ -46,12 +52,17 @@ export namespace gse {
 		vec3f tangent_u;
 		vec3f tangent_v;
 
-		auto add_point(const contact_point& p) -> bool;
+		auto add_point(
+			const contact_point& p
+		) -> bool;
 
 		auto clear() -> void;
 	};
 
-	auto compute_tangent_basis(const vec3f& normal) -> std::pair<vec3f, vec3f>;
+	auto compute_tangent_basis(
+		const vec3f& normal
+	) -> std::pair<vec3f,
+				   vec3f>;
 }
 
 auto gse::contact_manifold::add_point(const contact_point& p) -> bool {

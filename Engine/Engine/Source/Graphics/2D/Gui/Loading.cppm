@@ -10,9 +10,14 @@ export namespace gse::loading {
 		state() = default;
 		~state() = default;
 
-		auto set_phase(std::string p) -> void;
+		auto set_phase(
+			std::string p
+		) -> void;
 
-		auto set_progress(std::uint32_t done, std::uint32_t total) -> void;
+		auto set_progress(
+			std::uint32_t done,
+			std::uint32_t total
+		) -> void;
 
 		auto mark_finished() -> void;
 

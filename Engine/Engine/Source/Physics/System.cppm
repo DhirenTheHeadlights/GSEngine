@@ -93,7 +93,7 @@ export namespace gse::physics {
 		length rest_length;
 		inverse_mass compliance = per_kilograms(0.001f);
 		float damping = 2.5f;
-		force max_force = newtons(1800.f);
+		force max_force = newtons(3200.f);
 	};
 
 	struct ball_joint {
@@ -145,38 +145,29 @@ export namespace gse::physics {
 		struct [[= gse::settings::category<"Physics">{}]] data {
 			[[= gse::settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
-			[[
-				= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{}
-			]]
-			bool use_gpu_solver = false;
+			[[= gse::settings::describe<"Run the constraint solver on the GPU instead of the CPU.">{}]] bool use_gpu_solver = false;
 
 			[[
 				= gse::settings::describe<"Number of constraint solver iterations per substep. Higher values reduce "
 										  "jitter at the cost of frame time.">{},
 				= gse::settings::range<1, 40>{}
-			]]
-			int solver_iterations = 15;
+			]] int solver_iterations = 15;
 
-			[[
-				= gse::settings::describe<
-					"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower."
-				>{}
-			]]
-			bool use_jacobi = false;
+			[[= gse::settings::describe<
+				"Use Jacobi iteration instead of Gauss-Seidel. More parallel-friendly but converges slower."
+			>{}]] bool use_jacobi = false;
 
 			[[
 				= gse::settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
 										  "higher values converge faster.">{},
 				= gse::settings::range<0.1f, 1.0f>{}
-			]]
-			float jacobi_omega = 0.67f;
+			]] float jacobi_omega = 0.67f;
 
 			[[
 				= gse::settings::describe<"Number of substeps per simulation tick. More substeps improve stability for "
 										  "fast-moving bodies.">{},
 				= gse::settings::range<1, 8>{}
-			]]
-			int physics_substeps = 2;
+			]] int physics_substeps = 2;
 
 			bool gpu_buffers_created = false;
 			gpu_solver_stats gpu_stats;
@@ -205,17 +196,36 @@ export namespace gse::physics {
 			data& d
 		) -> async::task<>;
 
-		static auto frame(frame_context& ctx, const gpu::context::data* gpu_s, data& d) -> async::task<>;
+		static auto frame(
+			frame_context& ctx,
+			const gpu::context::data* gpu_s,
+			data& d
+		) -> async::task<>;
 
-		static auto create_joint(data& d, const joint_definition& def) -> joint_handle;
+		static auto create_joint(
+			data& d,
+			const joint_definition& def
+		) -> joint_handle;
 
-		static auto remove_joint(data& d, joint_handle handle) -> void;
+		static auto remove_joint(
+			data& d,
+			joint_handle handle
+		) -> void;
 
-		static auto query_transform(const data& d, id entity_id) -> std::optional<transform_snapshot>;
+		static auto query_transform(
+			const data& d,
+			id entity_id
+		) -> std::optional<transform_snapshot>;
 
-		static auto is_airborne(const data& d, id entity_id) -> bool;
+		static auto is_airborne(
+			const data& d,
+			id entity_id
+		) -> bool;
 
-		static auto is_sleeping(const data& d, id entity_id) -> bool;
+		static auto is_sleeping(
+			const data& d,
+			id entity_id
+		) -> bool;
 
 	private:
 		struct collision_pair {
@@ -232,7 +242,10 @@ export namespace gse::physics {
 			vbd::solver& solver,
 			vbd::contact_cache& contact_cache,
 			std::vector<collision_pair>& objects,
-			const flat_map<id, std::uint32_t>& id_to_body_index,
+			const flat_map<
+				id,
+				std::uint32_t
+			>& id_to_body_index,
 			bool update_scene_state,
 			write<transform_component>& transform,
 			write<motion_component>& motion,
@@ -261,7 +274,10 @@ export namespace gse::physics {
 			write<collision_component>& collision,
 			write<collision_result_component>& results,
 			std::span<const impulse_request> impulses,
-			time_t<float, seconds> dt,
+			time_t<
+				float,
+				seconds
+			> dt,
 			channel_writer& channels
 		) -> void;
 	};

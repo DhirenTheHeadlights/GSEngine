@@ -9,12 +9,12 @@ import gse.ecs;
 export namespace gse {
 	struct point_light_component {
 		vec3f color;
-		float intensity = 1.0f;
+		irradiance intensity = watts_per_square_meter(1.0f);
 		vec3<position> position;
 		float constant = 1.0f;
-		float linear = 0.09f;
+		inverse_length linear = per_meter(0.09f);
 		float quadratic = 0.032f;
 		float ambient_strength = 0.025f;
-		float source_radius = 0.5f;
+		length source_radius = meters(0.5f);
 	};
 }

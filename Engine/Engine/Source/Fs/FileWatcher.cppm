@@ -10,7 +10,10 @@ export namespace gse {
 	public:
 		using callback = std::function<void(const std::filesystem::path&)>;
 
-		auto watch(const std::filesystem::path& path, callback on_change) -> void;
+		auto watch(
+			const std::filesystem::path& path,
+			callback on_change
+		) -> void;
 
 		auto watch_directory(
 			const std::filesystem::path& directory,
@@ -19,7 +22,9 @@ export namespace gse {
 			bool recursive = true
 		) -> void;
 
-		auto unwatch(const std::filesystem::path& path) -> void;
+		auto unwatch(
+			const std::filesystem::path& path
+		) -> void;
 
 		auto poll() -> std::size_t;
 
@@ -49,7 +54,11 @@ export namespace gse {
 			const std::filesystem::path& directory,
 			std::span<const std::string> extensions,
 			bool recursive
-		) -> std::unordered_map<std::filesystem::path, std::filesystem::file_time_type>;
+		) -> std::
+			unordered_map<
+				std::filesystem::path,
+				std::filesystem::file_time_type
+			>;
 	};
 }
 
@@ -70,12 +79,7 @@ auto gse::file_watcher::watch(const std::filesystem::path& path, callback on_cha
 	});
 }
 
-auto gse::file_watcher::watch_directory(
-	const std::filesystem::path& directory,
-	callback on_change,
-	std::span<const std::string> extensions,
-	const bool recursive
-) -> void {
+auto gse::file_watcher::watch_directory(const std::filesystem::path& directory, callback on_change, std::span<const std::string> extensions, const bool recursive) -> void {
 	std::lock_guard lock(m_mutex);
 
 	if (!std::filesystem::exists(directory) || !std::filesystem::is_directory(directory)) {
@@ -160,10 +164,7 @@ auto gse::file_watcher::clear() -> void {
 	m_directory_files.clear();
 }
 
-auto gse::file_watcher::matches_extensions(
-	const std::filesystem::path& path,
-	std::span<const std::string> extensions
-) -> bool {
+auto gse::file_watcher::matches_extensions(const std::filesystem::path& path, std::span<const std::string> extensions) -> bool {
 	if (extensions.empty()) {
 		return true;
 	}
@@ -172,11 +173,7 @@ auto gse::file_watcher::matches_extensions(
 	return std::ranges::find(extensions, ext) != extensions.end();
 }
 
-auto gse::file_watcher::scan_directory(
-	const std::filesystem::path& directory,
-	const std::span<const std::string> extensions,
-	const bool recursive
-) -> std::unordered_map<std::filesystem::path, std::filesystem::file_time_type> {
+auto gse::file_watcher::scan_directory(const std::filesystem::path& directory, const std::span<const std::string> extensions, const bool recursive) -> std::unordered_map<std::filesystem::path, std::filesystem::file_time_type> {
 	std::unordered_map<std::filesystem::path, std::filesystem::file_time_type> result;
 
 	auto process_entry = [&](const std::filesystem::directory_entry& entry) {

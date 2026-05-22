@@ -118,12 +118,7 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 	update_depth_descriptor(gpu_s, d);
 }
 
-auto gse::renderer::light_culling::system::run(
-	run_context& ctx,
-	const gpu::context::data& gpu_s,
-	const asset::data& assets_s,
-	data& d
-) -> async::task<> {
+auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.pipeline =
 		gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
@@ -172,12 +167,7 @@ auto gse::renderer::light_culling::system::run(
 	co_return;
 }
 
-auto gse::renderer::light_culling::system::frame(
-	frame_context& ctx,
-	shared_view<gpu::context> gpu_s,
-	const data& d,
-	shared_view<camera::system> cam_state
-) -> async::task<> {
+auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	auto& graph = *gpu_s.render_graph;
 
 	if (!graph.frame_in_progress()) {

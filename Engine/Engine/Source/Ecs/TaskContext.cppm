@@ -22,14 +22,26 @@ export namespace gse {
 		template <typename T>
 		auto read_channel() const -> channel_read_guard<T>;
 
-		auto after_id(id state_id) -> async::task<>;
+		auto after_id(
+			id state_id
+		) -> async::task<>;
 
-		auto notify_ready_by_id(id state_id) -> void;
+		auto notify_ready_by_id(
+			id state_id
+		) -> void;
 	};
 }
 
 template <typename T>
 auto gse::task_context::read_channel() const -> channel_read_guard<T> {
+	static_assert(
+		!is_same_frame_channel_v<T>,
+		"same_frame_channel<T> cannot be consumed via read_channel — the writer routes through "
+		"ensure_same_frame<T>() while read_channel goes through ensure_typed<T>(), which collide on id_of<T>() "
+		"and produce undefined behavior via a wrong-type static_cast. "
+		"Either drop the [[= same_frame_channel]] annotation (and accept normal next-tick double-buffered delivery), "
+		"or consume via scheduler::drain_channel<T>() instead."
+	);
 	return channel_read_guard<T>(channels_store.ensure_typed<T>().data.read_raw());
 }
 

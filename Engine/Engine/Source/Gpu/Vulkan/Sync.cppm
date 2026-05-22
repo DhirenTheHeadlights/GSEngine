@@ -16,29 +16,41 @@ export namespace gse::vulkan {
 	public:
 		~sync() = default;
 
-		sync(sync&&) noexcept = default;
+		sync(
+			sync&&
+		) noexcept = default;
 
-		auto operator=(sync&&) noexcept -> sync& = default;
+		auto operator=(
+			sync&&
+		) noexcept -> sync& = default;
 
-		[[nodiscard]]
-		static auto create(
+		[[nodiscard]] static auto create(
 			const device& dev,
 			std::uint32_t image_count,
 			std::uint32_t frames_in_flight = max_frames_in_flight
 		) -> sync;
 
-		[[nodiscard]] auto image_available(std::uint32_t frame_index) const -> gpu::handle<semaphore>;
+		[[nodiscard]] auto image_available(
+			std::uint32_t frame_index
+		) const -> gpu::handle<semaphore>;
 
-		[[nodiscard]] auto render_finished(std::uint32_t image_index) const -> gpu::handle<semaphore>;
+		[[nodiscard]] auto render_finished(
+			std::uint32_t image_index
+		) const -> gpu::handle<semaphore>;
 
-		[[nodiscard]]
-		auto in_flight_fence(gpu::queue_type queue, std::uint32_t frame_index) const -> gpu::handle<fence>;
+		[[nodiscard]] auto in_flight_fence(
+			gpu::queue_type queue,
+			std::uint32_t frame_index
+		) const -> gpu::handle<fence>;
 
 	private:
 		sync(
 			std::vector<vk::raii::Semaphore>&& image_available_semaphores,
 			std::vector<vk::raii::Semaphore>&& render_finished_semaphores,
-			std::array<std::vector<vk::raii::Fence>, gpu::queue_type_count>&& in_flight_fences
+			std::array<
+				std::vector<vk::raii::Fence>,
+				gpu::queue_type_count
+			>&& in_flight_fences
 		);
 
 		std::vector<vk::raii::Semaphore> m_image_available;
@@ -57,11 +69,7 @@ gse::vulkan::sync::sync(
 	  m_in_flight(std::move(in_flight_fences)) {
 }
 
-auto gse::vulkan::sync::create(
-	const device& dev,
-	const std::uint32_t image_count,
-	const std::uint32_t frames_in_flight
-) -> sync {
+auto gse::vulkan::sync::create(const device& dev, const std::uint32_t image_count, const std::uint32_t frames_in_flight) -> sync {
 	std::vector<vk::raii::Semaphore> image_available;
 	std::vector<vk::raii::Semaphore> render_finished;
 	std::array<std::vector<vk::raii::Fence>, gpu::queue_type_count> in_flight_fences;
@@ -97,9 +105,6 @@ auto gse::vulkan::sync::render_finished(const std::uint32_t image_index) const -
 	return std::bit_cast<gpu::handle<semaphore>>(*m_render_finished[image_index]);
 }
 
-auto gse::vulkan::sync::in_flight_fence(
-	const gpu::queue_type queue,
-	const std::uint32_t frame_index
-) const -> gpu::handle<fence> {
+auto gse::vulkan::sync::in_flight_fence(const gpu::queue_type queue, const std::uint32_t frame_index) const -> gpu::handle<fence> {
 	return std::bit_cast<gpu::handle<fence>>(*m_in_flight[static_cast<std::size_t>(queue)][frame_index]);
 }

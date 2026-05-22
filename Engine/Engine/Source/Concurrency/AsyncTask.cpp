@@ -23,7 +23,9 @@ namespace gse::async {
 
 		static auto await_ready() noexcept -> bool;
 
-		auto await_suspend(std::coroutine_handle<> h) const noexcept -> std::coroutine_handle<>;
+		auto await_suspend(
+			std::coroutine_handle<> h
+		) const noexcept -> std::coroutine_handle<>;
 
 		static auto await_resume() noexcept -> void;
 	};
@@ -33,14 +35,21 @@ namespace gse::async {
 
 		static auto await_ready() noexcept -> bool;
 
-		auto await_suspend(std::coroutine_handle<> h) const noexcept -> std::coroutine_handle<>;
+		auto await_suspend(
+			std::coroutine_handle<> h
+		) const noexcept -> std::coroutine_handle<>;
 
 		static auto await_resume() noexcept -> void;
 	};
 
-	auto when_all_helper(task<> child, when_all_state* state) -> task<>;
+	auto when_all_helper(
+		task<> child,
+		when_all_state* state
+	) -> task<>;
 
-	auto when_all_impl(std::vector<task<>> tasks) -> task<>;
+	auto when_all_impl(
+		std::vector<task<>> tasks
+	) -> task<>;
 }
 
 auto gse::async::final_awaiter::await_ready() noexcept -> bool {
@@ -95,9 +104,7 @@ auto gse::async::suspend_and_capture::await_ready() noexcept -> bool {
 	return false;
 }
 
-auto gse::async::suspend_and_capture::await_suspend(
-	const std::coroutine_handle<> h
-) const noexcept -> std::coroutine_handle<> {
+auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<> h) const noexcept -> std::coroutine_handle<> {
 	target = h;
 	if (helpers.empty()) {
 		return std::noop_coroutine();

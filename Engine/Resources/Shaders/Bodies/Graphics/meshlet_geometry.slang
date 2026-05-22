@@ -153,7 +153,7 @@ float3 evaluate_pbr(float3 N, float3 V, float3 L, float3 base_color, float rough
     F_out = F;
 
     float3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.01);
-    specular = min(specular, float3(32.0));
+    specular = min(specular, float3(4.0));
 
     float3 kd = (1.0 - F) * (1.0 - metallic);
     float3 diffuse_brdf = kd * base_color / PI;
@@ -315,7 +315,7 @@ float3 trace_reflection(float3 origin, float3 normal, float3 view_dir, float rou
         if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) {
             uint hit_mat_idx = q.CommittedInstanceID();
             material_data hit_mat = material_palette[hit_mat_idx];
-            reflection += hit_mat.base_color * 0.8;
+            reflection += hit_mat.base_color * 0.2;
         }
     }
     reflection *= inv_count;

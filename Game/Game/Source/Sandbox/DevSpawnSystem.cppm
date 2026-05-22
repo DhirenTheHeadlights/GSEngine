@@ -6,9 +6,9 @@ import gse;
 import :runtime_spawns;
 
 export namespace gs {
-	struct [[= gse::same_frame_channel]] spawn_stress_request {};
+	struct spawn_stress_request {};
 
-	struct [[= gse::same_frame_channel]] spawn_joints_request {};
+	struct spawn_joints_request {};
 
 	struct dev_spawn_system {
 		struct data {
@@ -27,7 +27,9 @@ export namespace gs {
 }
 
 namespace gs {
-	auto active_scene_ptr(const gse::world_system::data& w) -> gse::scene*;
+	auto active_scene_ptr(
+		const gse::world_system::data& w
+	) -> gse::scene*;
 }
 
 auto gs::active_scene_ptr(const gse::world_system::data& w) -> gse::scene* {
@@ -41,12 +43,7 @@ auto gs::active_scene_ptr(const gse::world_system::data& w) -> gse::scene* {
 	return it->second.get();
 }
 
-auto gs::dev_spawn_system::run(
-	gse::run_context& ctx,
-	data& d,
-	const gse::actions::system::data& actions_d,
-	const gse::world_system::data& world_d
-) -> gse::async::task<> {
+auto gs::dev_spawn_system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& actions_d, const gse::world_system::data& world_d) -> gse::async::task<> {
 	while (true) {
 		if (!d.bound) {
 			d.spawn_stress = gse::actions::add<"Dev_Spawn_Stress">(ctx.channels, gse::key::f5);

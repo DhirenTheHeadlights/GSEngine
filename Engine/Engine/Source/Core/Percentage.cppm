@@ -7,9 +7,13 @@ export namespace gse {
 	requires std::is_floating_point_v<T>
 	class percentage {
 	public:
-		constexpr static auto scalar(const T& value = static_cast<T>(0)) -> percentage;
+		constexpr static auto scalar(
+			const T& value = static_cast<T>(0)
+		) -> percentage;
 
-		constexpr static auto fraction(const T& value = static_cast<T>(0)) -> percentage;
+		constexpr static auto fraction(
+			const T& value = static_cast<T>(0)
+		) -> percentage;
 
 		constexpr static auto ratio(
 			const T& numerator = static_cast<T>(0),
@@ -27,10 +31,14 @@ export namespace gse {
 			unbounded_zero_to_one,
 		};
 
-		constexpr auto value(bound b = bound::unbounded_zero_to_one) const -> T;
+		constexpr auto value(
+			bound b = bound::unbounded_zero_to_one
+		) const -> T;
 
 	private:
-		explicit constexpr percentage(const T& value = static_cast<T>(0));
+		explicit constexpr percentage(
+			const T& value = static_cast<T>(0)
+		);
 
 		T m_value = static_cast<T>(0);
 	};

@@ -75,65 +75,66 @@ float light_radius(light l) {
     return (-b + sqrt(discriminant)) / (2.0 * a);
 }
 
-// entry:
-uint2 tile_count = (screen_size + TILE_SIZE - 1) / TILE_SIZE;
-uint tile_index = group_id.y * tile_count.x + group_id.x;
-uint2 pixel = group_id.xy * TILE_SIZE + group_thread_id.xy;
+void light_culling(uint3 group_id, uint3 group_thread_id, uint group_index) {
+    uint2 tile_count = (screen_size + TILE_SIZE - 1) / TILE_SIZE;
+    uint tile_index = group_id.y * tile_count.x + group_id.x;
+    uint2 pixel = group_id.xy * TILE_SIZE + group_thread_id.xy;
 
-if (group_index == 0) {
-    tile_light_count = 0;
-    tile_depth_min = 0x7F7FFFFF;
-    tile_depth_max = 0;
-}
-
-GroupMemoryBarrierWithGroupSync();
-
-float depth = 1.0;
-if (pixel.x < screen_size.x && pixel.y < screen_size.y && depth_index != 0xFFFFFFFFu) {
-    float2 uv = screen_uv(float2(pixel) + 0.5);
-    depth = textures[NonUniformResourceIndex(depth_index)].SampleLevel(uv, 0).r;
-}
-
-if (depth < 1.0 - 1e-5) {
-    float view_depth = -reconstruct_view_position(screen_uv(float2(pixel) + 0.5), depth).z;
-    uint d_bits = asuint(view_depth);
-    InterlockedMin(tile_depth_min, d_bits);
-    InterlockedMax(tile_depth_max, d_bits);
-}
-
-GroupMemoryBarrierWithGroupSync();
-
-frustum tile_frustum = build_tile_frustum(group_id.xy);
-float z_near = tile_depth_min == 0x7F7FFFFF ? 0.0 : asfloat(tile_depth_min);
-float z_far  = tile_depth_min == 0x7F7FFFFF ? 1e30 : asfloat(tile_depth_max);
-
-for (uint i = group_index; i < num_lights; i += TILE_SIZE * TILE_SIZE) {
-    light l = lights[i];
-    bool visible;
-    if (l.light_type == light_type::directional) {
-        visible = true;
-    } else {
-        float radius = light_radius(l);
-        visible = sphere_inside_frustum(l.position, radius, tile_frustum, z_near, z_far);
+    if (group_index == 0) {
+        tile_light_count = 0;
+        tile_depth_min = 0x7F7FFFFF;
+        tile_depth_max = 0;
     }
-    if (visible) {
-        uint slot;
-        InterlockedAdd(tile_light_count, 1, slot);
-        if (slot < MAX_LIGHTS_PER_TILE) {
-            tile_light_indices[slot] = i;
+
+    GroupMemoryBarrierWithGroupSync();
+
+    float depth = 1.0;
+    if (pixel.x < screen_size.x && pixel.y < screen_size.y && depth_index != 0xFFFFFFFFu) {
+        float2 uv = screen_uv(float2(pixel) + 0.5);
+        depth = textures[NonUniformResourceIndex(depth_index)].SampleLevel(uv, 0).r;
+    }
+
+    if (depth < 1.0 - 1e-5) {
+        float view_depth = -reconstruct_view_position(screen_uv(float2(pixel) + 0.5), depth).z;
+        uint d_bits = asuint(view_depth);
+        InterlockedMin(tile_depth_min, d_bits);
+        InterlockedMax(tile_depth_max, d_bits);
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    frustum tile_frustum = build_tile_frustum(group_id.xy);
+    float z_near = tile_depth_min == 0x7F7FFFFF ? 0.0 : asfloat(tile_depth_min);
+    float z_far  = tile_depth_min == 0x7F7FFFFF ? 1e30 : asfloat(tile_depth_max);
+
+    for (uint i = group_index; i < num_lights; i += TILE_SIZE * TILE_SIZE) {
+        light l = lights[i];
+        bool visible;
+        if (l.light_type == light_type::directional) {
+            visible = true;
+        } else {
+            float radius = light_radius(l);
+            visible = sphere_inside_frustum(l.position, radius, tile_frustum, z_near, z_far);
+        }
+        if (visible) {
+            uint slot;
+            InterlockedAdd(tile_light_count, 1, slot);
+            if (slot < MAX_LIGHTS_PER_TILE) {
+                tile_light_indices[slot] = i;
+            }
         }
     }
-}
 
-GroupMemoryBarrierWithGroupSync();
+    GroupMemoryBarrierWithGroupSync();
 
-uint count = min(tile_light_count, MAX_LIGHTS_PER_TILE);
-uint list_offset = tile_index * MAX_LIGHTS_PER_TILE;
+    uint count = min(tile_light_count, MAX_LIGHTS_PER_TILE);
+    uint list_offset = tile_index * MAX_LIGHTS_PER_TILE;
 
-if (group_index == 0) {
-    tile_light_table[tile_index] = uint2(list_offset, count);
-}
+    if (group_index == 0) {
+        tile_light_table[tile_index] = uint2(list_offset, count);
+    }
 
-for (uint j = group_index; j < count; j += TILE_SIZE * TILE_SIZE) {
-    light_index_list[list_offset + j] = tile_light_indices[j];
+    for (uint j = group_index; j < count; j += TILE_SIZE * TILE_SIZE) {
+        light_index_list[list_offset + j] = tile_light_indices[j];
+    }
 }

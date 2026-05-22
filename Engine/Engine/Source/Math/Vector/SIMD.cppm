@@ -41,43 +41,114 @@ concept span = requires {
 };
 
 namespace gse::simd {
-	auto cpuid_call(int leaf, int out[4]) -> void;
+	auto cpuid_call(
+		int leaf,
+		int out[4]
+	) -> void;
 
-	auto cpuidex_call(int leaf, int subleaf, int out[4]) -> void;
+	auto cpuidex_call(
+		int leaf,
+		int subleaf,
+		int out[4]
+	) -> void;
 }
 
 export namespace gse::simd {
-	auto add(const span auto& lhs, const span auto& rhs, span auto result) -> void;
+	auto add(
+		const span auto& lhs,
+		const span auto& rhs,
+		span auto result
+	) -> void;
 
-	auto sub(const span auto& lhs, const span auto& rhs, span auto result) -> void;
+	auto sub(
+		const span auto& lhs,
+		const span auto& rhs,
+		span auto result
+	) -> void;
 
-	auto mul(const span auto& lhs, const span auto& rhs, span auto result) -> void;
+	auto mul(
+		const span auto& lhs,
+		const span auto& rhs,
+		span auto result
+	) -> void;
 
-	auto div(const span auto& lhs, const span auto& rhs, span auto result) -> void;
+	auto div(
+		const span auto& lhs,
+		const span auto& rhs,
+		span auto result
+	) -> void;
 
-	auto dot(const span auto& lhs, const span auto& rhs, simd_val auto& result) -> void;
+	auto dot(
+		const span auto& lhs,
+		const span auto& rhs,
+		simd_val auto& result
+	) -> void;
 
-	auto abs(const span auto& v, span auto result) -> void;
+	auto abs(
+		const span auto& v,
+		span auto result
+	) -> void;
 
-	auto min(const span auto& lhs, const span auto& rhs, span auto result) -> void;
+	auto min(
+		const span auto& lhs,
+		const span auto& rhs,
+		span auto result
+	) -> void;
 
-	auto max(const span auto& lhs, const span auto& rhs, span auto result) -> void;
+	auto max(
+		const span auto& lhs,
+		const span auto& rhs,
+		span auto result
+	) -> void;
 
-	auto clamp(const span auto& v, const span auto& min_v, const span auto& max_v, span auto result) -> void;
+	auto clamp(
+		const span auto& v,
+		const span auto& min_v,
+		const span auto& max_v,
+		span auto result
+	) -> void;
 
-	auto mul_mat4(const float* lhs, const float* rhs, float* result) -> void;
+	auto mul_mat4(
+		const float* lhs,
+		const float* rhs,
+		float* result
+	) -> void;
 
-	auto add_s(const span auto& lhs, const simd_val auto& scalar, span auto result) -> void;
+	auto add_s(
+		const span auto& lhs,
+		const simd_val auto& scalar,
+		span auto result
+	) -> void;
 
-	auto sub_s(const span auto& lhs, const simd_val auto& scalar, span auto result) -> void;
+	auto sub_s(
+		const span auto& lhs,
+		const simd_val auto& scalar,
+		span auto result
+	) -> void;
 
-	auto mul_s(const span auto& lhs, const simd_val auto& scalar, span auto result) -> void;
+	auto mul_s(
+		const span auto& lhs,
+		const simd_val auto& scalar,
+		span auto result
+	) -> void;
 
-	auto div_s(const span auto& lhs, const simd_val auto& scalar, span auto result) -> void;
+	auto div_s(
+		const span auto& lhs,
+		const simd_val auto& scalar,
+		span auto result
+	) -> void;
 
-	auto min_s(const span auto& lhs, const simd_val auto& scalar, span auto result) -> void;
+	auto min_s(
+		const span auto& lhs,
+		const simd_val auto& scalar,
+		span auto result
+	) -> void;
 
-	auto max_s(const span auto& lhs, const simd_val auto& scalar, span auto result) -> void;
+	auto max_s(
+		const span auto& lhs,
+		const simd_val auto& scalar,
+		span auto result
+	) -> void;
 
 	namespace support {
 		inline bool sse = [] {
@@ -138,83 +209,263 @@ export namespace gse::simd {
 		concept simd = (is_int32<T> && (N == 4 || N == 8)) || (is_float<T> && (N == 4 || N == 8)) ||
 			(is_double<T> && (N == 2 || N == 4));
 
-		template <typename T, int N>
+		template <
+			typename T,
+			int N
+		>
 		auto simd_cpu_supported() noexcept -> bool;
 	}
 }
 
 namespace gse::simd {
-	auto add_i(const int* lhs, const int* rhs, int* result, int size) -> void;
+	auto add_i(
+		const int* lhs,
+		const int* rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto add_f(const float* lhs, const float* rhs, float* result, int size) -> void;
+	auto add_f(
+		const float* lhs,
+		const float* rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto add_d(const double* lhs, const double* rhs, double* result, int size) -> void;
+	auto add_d(
+		const double* lhs,
+		const double* rhs,
+		double* result,
+		int size
+	) -> void;
 
-	auto sub_i(const int* lhs, const int* rhs, int* result, int size) -> void;
+	auto sub_i(
+		const int* lhs,
+		const int* rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto sub_f(const float* lhs, const float* rhs, float* result, int size) -> void;
+	auto sub_f(
+		const float* lhs,
+		const float* rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto sub_d(const double* lhs, const double* rhs, double* result, int size) -> void;
+	auto sub_d(
+		const double* lhs,
+		const double* rhs,
+		double* result,
+		int size
+	) -> void;
 
-	auto mul_i(const int* lhs, const int* rhs, int* result, int size) -> void;
+	auto mul_i(
+		const int* lhs,
+		const int* rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto mul_f(const float* lhs, const float* rhs, float* result, int size) -> void;
+	auto mul_f(
+		const float* lhs,
+		const float* rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto mul_d(const double* lhs, const double* rhs, double* result, int size) -> void;
+	auto mul_d(
+		const double* lhs,
+		const double* rhs,
+		double* result,
+		int size
+	) -> void;
 
-	auto div_i(const int* lhs, const int* rhs, int* result, int size) -> void;
+	auto div_i(
+		const int* lhs,
+		const int* rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto div_f(const float* lhs, const float* rhs, float* result, int size) -> void;
+	auto div_f(
+		const float* lhs,
+		const float* rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto div_d(const double* lhs, const double* rhs, double* result, int size) -> void;
+	auto div_d(
+		const double* lhs,
+		const double* rhs,
+		double* result,
+		int size
+	) -> void;
 
-	auto add_i(const int* lhs, int rhs, int* result, int size) -> void;
+	auto add_i(
+		const int* lhs,
+		int rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto add_f(const float* lhs, float rhs, float* result, int size) -> void;
+	auto add_f(
+		const float* lhs,
+		float rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto add_d(const double* lhs, double rhs, double* result, int size) -> void;
+	auto add_d(
+		const double* lhs,
+		double rhs,
+		double* result,
+		int size
+	) -> void;
 
-	auto sub_i(const int* lhs, int rhs, int* result, int size) -> void;
+	auto sub_i(
+		const int* lhs,
+		int rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto sub_f(const float* lhs, float rhs, float* result, int size) -> void;
+	auto sub_f(
+		const float* lhs,
+		float rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto sub_d(const double* lhs, double rhs, double* result, int size) -> void;
+	auto sub_d(
+		const double* lhs,
+		double rhs,
+		double* result,
+		int size
+	) -> void;
 
-	auto mul_i(const int* lhs, int rhs, int* result, int size) -> void;
+	auto mul_i(
+		const int* lhs,
+		int rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto mul_f(const float* lhs, float rhs, float* result, int size) -> void;
+	auto mul_f(
+		const float* lhs,
+		float rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto mul_d(const double* lhs, double rhs, double* result, int size) -> void;
+	auto mul_d(
+		const double* lhs,
+		double rhs,
+		double* result,
+		int size
+	) -> void;
 
-	auto div_i(const int* lhs, int rhs, int* result, int size) -> void;
+	auto div_i(
+		const int* lhs,
+		int rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto div_f(const float* lhs, float rhs, float* result, int size) -> void;
+	auto div_f(
+		const float* lhs,
+		float rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto div_d(const double* lhs, double rhs, double* result, int size) -> void;
+	auto div_d(
+		const double* lhs,
+		double rhs,
+		double* result,
+		int size
+	) -> void;
 
-	auto dot_i(const int* lhs, const int* rhs, int& result, int size) -> void;
+	auto dot_i(
+		const int* lhs,
+		const int* rhs,
+		int& result,
+		int size
+	) -> void;
 
-	auto dot_f(const float* lhs, const float* rhs, float& result, int size) -> void;
+	auto dot_f(
+		const float* lhs,
+		const float* rhs,
+		float& result,
+		int size
+	) -> void;
 
-	auto dot_d(const double* lhs, const double* rhs, double& result, int size) -> void;
+	auto dot_d(
+		const double* lhs,
+		const double* rhs,
+		double& result,
+		int size
+	) -> void;
 
-	auto abs_i(const int* v, int* result, int size) -> void;
+	auto abs_i(
+		const int* v,
+		int* result,
+		int size
+	) -> void;
 
-	auto abs_f(const float* v, float* result, int size) -> void;
+	auto abs_f(
+		const float* v,
+		float* result,
+		int size
+	) -> void;
 
-	auto abs_d(const double* v, double* result, int size) -> void;
+	auto abs_d(
+		const double* v,
+		double* result,
+		int size
+	) -> void;
 
-	auto min_i(const int* lhs, const int* rhs, int* result, int size) -> void;
+	auto min_i(
+		const int* lhs,
+		const int* rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto min_f(const float* lhs, const float* rhs, float* result, int size) -> void;
+	auto min_f(
+		const float* lhs,
+		const float* rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto min_d(const double* lhs, const double* rhs, double* result, int size) -> void;
+	auto min_d(
+		const double* lhs,
+		const double* rhs,
+		double* result,
+		int size
+	) -> void;
 
-	auto max_i(const int* lhs, const int* rhs, int* result, int size) -> void;
+	auto max_i(
+		const int* lhs,
+		const int* rhs,
+		int* result,
+		int size
+	) -> void;
 
-	auto max_f(const float* lhs, const float* rhs, float* result, int size) -> void;
+	auto max_f(
+		const float* lhs,
+		const float* rhs,
+		float* result,
+		int size
+	) -> void;
 
-	auto max_d(const double* lhs, const double* rhs, double* result, int size) -> void;
+	auto max_d(
+		const double* lhs,
+		const double* rhs,
+		double* result,
+		int size
+	) -> void;
 }
 
 auto gse::simd::cpuid_call(const int leaf, int out[4]) -> void {

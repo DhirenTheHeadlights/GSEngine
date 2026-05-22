@@ -10,23 +10,45 @@ import :test_skeletons;
 import :tumbler;
 
 export namespace gs {
-	auto spawn_physics_stress(gse::scene& s) -> void;
+	auto spawn_physics_stress(
+		gse::scene& s
+	) -> void;
 
-	auto spawn_joint_test(gse::scene& s) -> void;
+	auto spawn_joint_test(
+		gse::scene& s
+	) -> void;
 }
 
 namespace gs {
-	auto spawn_inverted_mass_pyramid(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_inverted_mass_pyramid(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_domino_chain(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_domino_chain(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_funnel(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_funnel(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_slope_friction_test(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_slope_friction_test(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_high_speed_impact_target(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_high_speed_impact_target(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_spring_tests(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_spring_tests(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
 	auto spawn_tumbler(
 		gse::scene& s,
@@ -36,21 +58,45 @@ namespace gs {
 		gse::angular_velocity angular_speed
 	) -> void;
 
-	auto spawn_box_grid(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_box_grid(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_fixed_joint(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_fixed_joint(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_distance_pendulum(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_distance_pendulum(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_hinge_door(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_hinge_door(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_slider_elevator(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_slider_elevator(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_pendulum_chain(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_pendulum_chain(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_dangling_t(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_dangling_t(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 
-	auto spawn_humanoid_test(gse::scene& s, const gse::vec3<gse::position>& origin) -> void;
+	auto spawn_humanoid_test(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
 }
 
 auto gs::spawn_inverted_mass_pyramid(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
@@ -214,12 +260,11 @@ auto gs::spawn_spring_tests(gse::scene& s, const gse::vec3<gse::position>& origi
 			.with<gse::physics::joint_spec>({
 				.entity_a = anchor_id,
 				.entity_b = bob_id,
-				.config =
-					gse::physics::spring_joint{
-						.target = gse::meters(4.f),
-						.compliance = compliances[i],
-						.damping = 0.3f,
-					},
+				.config = gse::physics::spring_joint{
+					.target = gse::meters(4.f),
+					.compliance = compliances[i],
+					.damping = 0.3f,
+				},
 			});
 	}
 
@@ -239,24 +284,17 @@ auto gs::spawn_spring_tests(gse::scene& s, const gse::vec3<gse::position>& origi
 			.with<gse::physics::joint_spec>({
 				.entity_a = prev_id,
 				.entity_b = link_id,
-				.config =
-					gse::physics::spring_joint{
-						.target = gse::meters(1.5f),
-						.compliance = gse::per_kilograms(0.02f),
-						.damping = 0.5f,
-					},
+				.config = gse::physics::spring_joint{
+					.target = gse::meters(1.5f),
+					.compliance = gse::per_kilograms(0.02f),
+					.damping = 0.5f,
+				},
 			});
 		prev_id = link_id;
 	}
 }
 
-auto gs::spawn_tumbler(
-	gse::scene& s,
-	const int index,
-	const gse::vec3<gse::position>& center,
-	const gse::vec3f& rotation_axis,
-	const gse::angular_velocity angular_speed
-) -> void {
+auto gs::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse::position>& center, const gse::vec3f& rotation_axis, const gse::angular_velocity angular_speed) -> void {
 	constexpr float interior_half = 3.5f;
 	constexpr float length_half = 6.0f;
 	constexpr float thickness = 0.3f;
@@ -387,11 +425,10 @@ auto gs::spawn_fixed_joint(gse::scene& s, const gse::vec3<gse::position>& origin
 		.with<gse::physics::joint_spec>({
 			.entity_a = anchor_id,
 			.entity_b = hanging_id,
-			.config =
-				gse::physics::fixed_joint{
-					.anchor_a = gse::vec3<gse::displacement>(0.f, -0.5f, 0.f),
-					.anchor_b = gse::vec3<gse::displacement>(0.f, 0.5f, 0.f),
-				},
+			.config = gse::physics::fixed_joint{
+				.anchor_a = gse::vec3<gse::displacement>(0.f, -0.5f, 0.f),
+				.anchor_b = gse::vec3<gse::displacement>(0.f, 0.5f, 0.f),
+			},
 		});
 }
 
@@ -413,10 +450,9 @@ auto gs::spawn_distance_pendulum(gse::scene& s, const gse::vec3<gse::position>& 
 		.with<gse::physics::joint_spec>({
 			.entity_a = pivot_id,
 			.entity_b = bob_id,
-			.config =
-				gse::physics::distance_joint{
-					.target = gse::meters(4.f),
-				},
+			.config = gse::physics::distance_joint{
+				.target = gse::meters(4.f),
+			},
 		});
 }
 
@@ -438,13 +474,12 @@ auto gs::spawn_hinge_door(gse::scene& s, const gse::vec3<gse::position>& origin)
 		.with<gse::physics::joint_spec>({
 			.entity_a = frame_id,
 			.entity_b = door_id,
-			.config =
-				gse::physics::hinge_joint{
-					.anchor_a = gse::vec3<gse::displacement>(0.15f, 0.f, 0.f),
-					.anchor_b = gse::vec3<gse::displacement>(-1.5f, 0.f, 0.f),
-					.axis = { 0.f, 1.f, 0.f },
-					.limits = std::pair{ gse::radians(-1.57f), gse::radians(1.57f) },
-				},
+			.config = gse::physics::hinge_joint{
+				.anchor_a = gse::vec3<gse::displacement>(0.15f, 0.f, 0.f),
+				.anchor_b = gse::vec3<gse::displacement>(-1.5f, 0.f, 0.f),
+				.axis = { 0.f, 1.f, 0.f },
+				.limits = std::pair{ gse::radians(-1.57f), gse::radians(1.57f) },
+			},
 		});
 }
 
@@ -465,10 +500,9 @@ auto gs::spawn_slider_elevator(gse::scene& s, const gse::vec3<gse::position>& or
 		.with<gse::physics::joint_spec>({
 			.entity_a = rail_id,
 			.entity_b = platform_id,
-			.config =
-				gse::physics::slider_joint{
-					.axis = { 0.f, 1.f, 0.f },
-				},
+			.config = gse::physics::slider_joint{
+				.axis = { 0.f, 1.f, 0.f },
+			},
 		});
 }
 
@@ -499,10 +533,9 @@ auto gs::spawn_pendulum_chain(gse::scene& s, const gse::vec3<gse::position>& ori
 			.with<gse::physics::joint_spec>({
 				.entity_a = link_ids[i],
 				.entity_b = link_ids[i + 1],
-				.config =
-					gse::physics::distance_joint{
-						.target = gse::meters(link_spacing),
-					},
+				.config = gse::physics::distance_joint{
+					.target = gse::meters(link_spacing),
+				},
 			});
 	}
 }
@@ -535,11 +568,10 @@ auto gs::spawn_dangling_t(gse::scene& s, const gse::vec3<gse::position>& origin)
 		.with<gse::physics::joint_spec>({
 			.entity_a = anchor_id,
 			.entity_b = handle.bone_ids[0],
-			.config =
-				gse::physics::fixed_joint{
-					.anchor_a = gse::vec3<gse::displacement>(0.f, -0.25f, 0.f),
-					.anchor_b = gse::vec3<gse::displacement>(0.f, 0.4f, 0.f),
-				},
+			.config = gse::physics::fixed_joint{
+				.anchor_a = gse::vec3<gse::displacement>(0.f, -0.25f, 0.f),
+				.anchor_b = gse::vec3<gse::displacement>(0.f, 0.4f, 0.f),
+			},
 		});
 }
 
@@ -555,11 +587,10 @@ auto gs::spawn_humanoid_test(gse::scene& s, const gse::vec3<gse::position>& orig
 		.with<gse::physics::joint_spec>({
 			.entity_a = anchor_id,
 			.entity_b = handle.bone_ids[0],
-			.config =
-				gse::physics::fixed_joint{
-					.anchor_a = gse::vec3<gse::displacement>(0.f, -0.25f, 0.f),
-					.anchor_b = gse::vec3<gse::displacement>(0.f, 0.1f, 0.f),
-				},
+			.config = gse::physics::fixed_joint{
+				.anchor_a = gse::vec3<gse::displacement>(0.f, -0.25f, 0.f),
+				.anchor_b = gse::vec3<gse::displacement>(0.f, 0.1f, 0.f),
+			},
 		});
 }
 

@@ -13,7 +13,12 @@ import :builder;
 export namespace gse::gui {
 	struct separator {
 		using result = void;
-		static auto draw(const draw_context& ctx, id&, id&, id&) -> void;
+		static auto draw(
+			const draw_context& ctx,
+			id&,
+			id&,
+			id&
+		) -> void;
 	};
 }
 

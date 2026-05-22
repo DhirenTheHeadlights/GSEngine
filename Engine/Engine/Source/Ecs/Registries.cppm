@@ -13,13 +13,24 @@ export namespace gse {
 			const void* snapshot = nullptr;
 		};
 
-		auto register_state(id type, void* live_ptr, const void* snapshot_ptr) -> void;
+		auto register_state(
+			id type,
+			void* live_ptr,
+			const void* snapshot_ptr
+		) -> void;
 
-		[[nodiscard]] auto contains(id type) const -> bool;
+		[[nodiscard]] auto contains(
+			id type
+		) const -> bool;
 
-		auto state_ptr(this auto& self, id type) -> decltype(auto);
+		auto state_ptr(
+			this auto& self,
+			id type
+		) -> decltype(auto);
 
-		auto state_snapshot_ptr(id type) const -> const void*;
+		auto state_snapshot_ptr(
+			id type
+		) const -> const void*;
 
 		auto clear() -> void;
 
@@ -29,11 +40,19 @@ export namespace gse {
 
 	class resource_registry {
 	public:
-		auto register_resource(id type, void* ptr) -> void;
+		auto register_resource(
+			id type,
+			void* ptr
+		) -> void;
 
-		auto contains(id type) const -> bool;
+		auto contains(
+			id type
+		) const -> bool;
 
-		auto resources_ptr(this auto& self, id type) -> decltype(auto);
+		auto resources_ptr(
+			this auto& self,
+			id type
+		) -> decltype(auto);
 
 		auto clear() -> void;
 
@@ -45,13 +64,19 @@ export namespace gse {
 
 	class channel_writer {
 	public:
-		explicit channel_writer(channel_registry* registry);
+		explicit channel_writer(
+			channel_registry* registry
+		);
 
 		template <typename T>
-		auto push(T item) -> void;
+		auto push(
+			T item
+		) -> void;
 
 		template <promiseable T>
-		auto push(T item) -> channel_future<typename T::result_type>;
+		auto push(
+			T item
+		) -> channel_future<typename T::result_type>;
 
 	private:
 		channel_registry* m_registry = nullptr;

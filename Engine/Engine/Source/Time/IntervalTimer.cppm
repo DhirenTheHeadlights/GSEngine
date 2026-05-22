@@ -12,9 +12,13 @@ export namespace gse {
 	template <typename T = float>
 	class interval_timer {
 	public:
-		explicit interval_timer(time_t<T> interval);
+		explicit interval_timer(
+			time_t<T> interval
+		);
 
-		auto tick(time_t<T> dt = system_clock::dt<time_t<T>>()) -> bool;
+		auto tick(
+			time_t<T> dt = system_clock::dt<time_t<T>>()
+		) -> bool;
 
 		auto reset() -> void;
 

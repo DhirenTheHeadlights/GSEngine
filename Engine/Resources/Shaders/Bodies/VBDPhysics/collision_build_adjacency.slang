@@ -6,8 +6,8 @@ groupshared uint gs_contact_offsets[max_bodies];
 groupshared uint gs_joint_counts[max_bodies];
 groupshared uint gs_joint_offsets[max_bodies];
 
-// entry:
-uint tid = group_thread_id.x;
+void collision_build_adjacency(uint3 dispatch_id, uint3 group_thread_id) {
+    uint tid = group_thread_id.x;
 uint body_count = pc.body_count;
 uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
 uint num_joints = min(pc.joint_count, max_joints);
@@ -205,4 +205,5 @@ for (uint ji = tid; ji < num_joints; ji += adjacency_workgroup_size) {
     }
 
     joint_data[ji] = j;
+}
 }

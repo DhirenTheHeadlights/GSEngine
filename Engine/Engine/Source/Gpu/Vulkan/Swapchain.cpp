@@ -6,10 +6,7 @@ import vulkan;
 import gse.log;
 import gse.math;
 
-auto gse::vulkan::pick_surface_format(
-	const vk::raii::PhysicalDevice& physical_device,
-	const vk::raii::SurfaceKHR& surface
-) -> gpu::image_format {
+auto gse::vulkan::pick_surface_format(const vk::raii::PhysicalDevice& physical_device, const vk::raii::SurfaceKHR& surface) -> gpu::image_format {
 	const auto formats = physical_device.getSurfaceFormatsKHR(*surface);
 	for (const auto& [format, colorSpace] : formats) {
 		if (format == vk::Format::eB8G8R8A8Srgb && colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
@@ -67,22 +64,14 @@ gse::vulkan::swap_chain::swap_chain(
 	  m_depth_image(std::move(depth_image)) {
 }
 
-auto gse::vulkan::swap_chain::create(
-	const vec2i framebuffer_size,
-	const gpu::present_mode preferred_present_mode,
-	const instance& instance_data,
-	device& device_data
-) -> swap_chain {
+auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const instance& instance_data, device& device_data) -> swap_chain {
 	const auto vk_capabilities = device_data.physical_device().getSurfaceCapabilitiesKHR(*instance_data.raii_surface());
 	auto vk_formats = device_data.physical_device().getSurfaceFormatsKHR(*instance_data.raii_surface());
 	auto vk_present_modes = device_data.physical_device().getSurfacePresentModesKHR(*instance_data.raii_surface());
 
 	vk::SurfaceFormatKHR surface_format;
 	for (const auto& available_format : vk_formats) {
-		if (
-			available_format.format == vk::Format::eB8G8R8A8Srgb &&
-			available_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear
-		) {
+		if (available_format.format == vk::Format::eB8G8R8A8Srgb && available_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
 			surface_format = available_format;
 			break;
 		}
@@ -225,16 +214,20 @@ auto gse::vulkan::swap_chain::create(
 	image_views.reserve(images.size());
 
 	for (const auto& img : images) {
-		vk::ImageViewCreateInfo iv_create_info{ .flags = {},
-												.image = img,
-												.viewType = vk::ImageViewType::e2D,
-												.format = format,
-												.components = {},
-												.subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor,
-																	  .baseMipLevel = 0,
-																	  .levelCount = 1,
-																	  .baseArrayLayer = 0,
-																	  .layerCount = 1 } };
+		vk::ImageViewCreateInfo iv_create_info{
+			.flags = {},
+			.image = img,
+			.viewType = vk::ImageViewType::e2D,
+			.format = format,
+			.components = {},
+			.subresourceRange = {
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1
+			}
+		};
 		image_views.emplace_back(device_data.raii_device(), iv_create_info);
 	}
 

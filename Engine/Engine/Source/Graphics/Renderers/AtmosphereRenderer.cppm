@@ -15,11 +15,14 @@ import :camera_system;
 export namespace gse::renderer::atmosphere {
 	constexpr vec2u transmittance_lut_size{ 256, 64 };
 	constexpr vec2u multiscatter_lut_size{ 32, 32 };
-	constexpr vec2u sky_view_lut_size{ 192, 108 };
+	constexpr vec2u sky_view_lut_size{ 384, 216 };
 
 	using atmosphere_length = length_t<float, kilometers>;
 	using atmosphere_inverse_length = inverse_length_t<float, per_kilometer>;
 
+	struct transmittance_pass {};
+	struct multiscatter_pass {};
+	struct sky_view_pass {};
 	struct sky_raster_pass {};
 	struct ap_compute_pass {};
 
@@ -47,77 +50,48 @@ export namespace gse::renderer::atmosphere {
 
 	struct system {
 		struct [[= gse::settings::category<"Atmosphere">{}]] data {
-			[[
-				= gse::settings::describe<"Sun azimuth (degrees from +X around +Y)">{}
-			]]
-			angle sun_azimuth = degrees(45.0f);
+			[[= gse::settings::describe<"Sun azimuth (degrees from +X around +Y)">{}]] angle sun_azimuth = degrees(45.0f);
+
+			[[= gse::settings::describe<"Sun elevation above horizon (degrees)">{}]] angle sun_elevation = degrees(60.0f);
 
 			[[
-				= gse::settings::describe<"Sun elevation above horizon (degrees)">{}
-			]]
-			angle sun_elevation = degrees(60.0f);
+				= gse::settings::describe<"Sun radiant intensity (W/m^2)">{},
+				= gse::shared
+			]] irradiance sun_intensity = watts_per_square_meter(1.6f);
 
 			[[
-				= gse::settings::describe<"Sun radiant intensity (W/m^2)">{}
-			]]
-			irradiance sun_intensity = watts_per_square_meter(1.6f);
+				= gse::settings::describe<"Sun color tint applied to direct lighting and the sun disk">{},
+				= gse::shared
+			]] vec3f sun_color = { 1.0f, 0.9f, 0.75f };
+
+			[[= gse::settings::describe<"Sun disk angular radius (degrees)">{}]] angle sun_angular_radius = degrees(1.5f);
+
+			[[= gse::shared]] vec3f sun_direction = { 0.0f, 1.0f, 0.0f };
 
 			[[
-				= gse::settings::describe<"Sun disk angular radius (degrees)">{}
-			]]
-			angle sun_angular_radius = degrees(1.5f);
+				= gse::settings::describe<"Camera altitude above sea level (km)">{},
+				= gse::shared
+			]] atmosphere_length camera_altitude = kilometers(0.0f);
 
-			[[
-				= gse::settings::describe<"Camera altitude above sea level (km)">{}
-			]]
-			atmosphere_length camera_altitude = kilometers(0.0f);
+			[[= gse::settings::describe<"Planet (ground) radius (km)">{}]] atmosphere_length bottom_radius = kilometers(6360.0f);
 
-			[[
-				= gse::settings::describe<"Planet (ground) radius (km)">{}
-			]]
-			atmosphere_length bottom_radius = kilometers(6360.0f);
+			[[= gse::settings::describe<"Top of atmosphere radius (km)">{}]] atmosphere_length top_radius = kilometers(6460.0f);
 
-			[[
-				= gse::settings::describe<"Top of atmosphere radius (km)">{}
-			]]
-			atmosphere_length top_radius = kilometers(6460.0f);
+			[[= gse::settings::describe<"Rayleigh density scale height (km)">{}]] atmosphere_length rayleigh_scale_height = kilometers(8.0f);
 
-			[[
-				= gse::settings::describe<"Rayleigh density scale height (km)">{}
-			]]
-			atmosphere_length rayleigh_scale_height = kilometers(8.0f);
+			[[= gse::settings::describe<"Mie scattering coefficient (per km)">{}]] atmosphere_inverse_length mie_scattering = per_kilometer(3.996e-3f);
 
-			[[
-				= gse::settings::describe<"Mie scattering coefficient (per km)">{}
-			]]
-			atmosphere_inverse_length mie_scattering = per_kilometer(3.996e-3f);
+			[[= gse::settings::describe<"Mie absorption coefficient (per km)">{}]] atmosphere_inverse_length mie_absorption = per_kilometer(0.444e-3f);
 
-			[[
-				= gse::settings::describe<"Mie absorption coefficient (per km)">{}
-			]]
-			atmosphere_inverse_length mie_absorption = per_kilometer(0.444e-3f);
+			[[= gse::settings::describe<"Mie density scale height (km)">{}]] atmosphere_length mie_scale_height = kilometers(1.2f);
 
-			[[
-				= gse::settings::describe<"Mie density scale height (km)">{}
-			]]
-			atmosphere_length mie_scale_height = kilometers(1.2f);
+			[[= gse::settings::describe<"Mie phase asymmetry g (-1 to 1)">{}]] float mie_phase_g = 0.85f;
 
-			[[= gse::settings::describe<"Mie phase asymmetry g (-1 to 1)">{}]] float mie_phase_g = 0.8f;
+			[[= gse::settings::describe<"Ozone peak altitude (km)">{}]] atmosphere_length ozone_peak_height = kilometers(25.0f);
 
-			[[
-				= gse::settings::describe<"Ozone peak altitude (km)">{}
-			]]
-			atmosphere_length ozone_peak_height = kilometers(25.0f);
+			[[= gse::settings::describe<"Ozone layer half-width (km)">{}]] atmosphere_length ozone_half_width = kilometers(15.0f);
 
-			[[
-				= gse::settings::describe<"Ozone layer half-width (km)">{}
-			]]
-			atmosphere_length ozone_half_width = kilometers(15.0f);
-
-			[[
-				= gse::settings::describe<"Aerial perspective max view distance (km)">{}
-			]]
-			atmosphere_length max_view_distance = kilometers(32.0f);
+			[[= gse::settings::describe<"Aerial perspective max view distance (km)">{}]] atmosphere_length max_view_distance = kilometers(32.0f);
 
 			vec3<atmosphere_inverse_length> rayleigh_scattering = {
 				per_kilometer(5.802e-3f),
@@ -136,16 +110,16 @@ export namespace gse::renderer::atmosphere {
 			gpu::pipeline sky_raster_pipeline;
 			gpu::pipeline ap_pipeline;
 
-			gpu::image transmittance_lut;
+			[[= gse::shared]] gpu::image transmittance_lut;
 			gpu::image multiscatter_lut;
-			gpu::image sky_view_lut;
+			[[= gse::shared]] gpu::image sky_view_lut;
 			gpu::image ap_volume;
 			vec3u ap_volume_extent{ 32, 32, 32 };
 
 			gpu::sampler lut_sampler;
 			gpu::sampler sky_view_sampler;
 
-			gpu::buffer atmosphere_ubo_buffer;
+			[[= gse::shared]] gpu::buffer atmosphere_ubo_buffer;
 
 			gpu::descriptor_region transmittance_descriptors;
 			gpu::descriptor_region multiscatter_descriptors;
@@ -156,7 +130,11 @@ export namespace gse::renderer::atmosphere {
 			bool luts_ready = false;
 		};
 
-		static auto run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<>;
+		static auto run(
+			run_context& ctx,
+			const gpu::context::data& gpu_s,
+			data& d
+		) -> async::task<>;
 
 		static auto frame(
 			const frame_context& ctx,

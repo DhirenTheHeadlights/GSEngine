@@ -40,24 +40,30 @@ float4 fs_main(VS_OUT input) : SV_Target {
         lookup_dir = normalize(lookup_dir);
     }
     float3 sky_radiance = sample_sky_view_at(lookup_dir);
-
     float3 total_radiance = sky_radiance * pc.sun_irradiance;
 
+    float radius = bottom_radius + pc.camera_altitude;
+    float view_zenith_cos = view_dir.y;
+    float3 sun_transmittance_to_eye = sample_transmittance_at(radius, view_zenith_cos);
+
     float mu = dot(view_dir, pc.sun_direction);
-    const float glare_cos_radius = 0.96593;
-    if (mu > glare_cos_radius) {
-        float radius = bottom_radius + pc.camera_altitude;
-        float view_zenith_cos = view_dir.y;
-        float3 sun_transmittance_to_eye = sample_transmittance_at(radius, view_zenith_cos);
 
-        float disk_t = saturate((mu - pc.sun_cos_radius) / max(1.0 - pc.sun_cos_radius, 1e-6));
-        float core = pow(smoothstep(0.0, 1.0, disk_t), 0.5);
+    float ph_m = mie_phase(mu, mie_phase_g);
+    const float baseline_phase = 1.0 / (4.0 * pi);
+    float ph_m_excess = max(ph_m - baseline_phase, 0.0);
+    const float mie_halo_strength = 25.0;
+    float mie_inscatter_length = mie_scattering * mie_scale_height * mie_halo_strength;
+    total_radiance += pc.sun_irradiance * sun_transmittance_to_eye * ph_m_excess * mie_inscatter_length;
 
-        float glare_t = saturate((mu - glare_cos_radius) / max(1.0 - glare_cos_radius, 1e-6));
-        float glare = pow(glare_t, 4.0);
+    if (mu > pc.sun_cos_radius) {
+        float sin_disk_radius_sq = max(1.0 - pc.sun_cos_radius * pc.sun_cos_radius, 1e-6);
+        float r_disk_sq = saturate((1.0 - mu * mu) / sin_disk_radius_sq);
+        float mu_prime = sqrt(1.0 - r_disk_sq);
 
-        float3 contribution = sun_transmittance_to_eye * pc.sun_irradiance * (core * 80.0 + glare * 3.0);
-        total_radiance += contribution;
+        const float3 limb_u = float3(0.78, 0.88, 0.91);
+        float3 limb_darkening = float3(1.0, 1.0, 1.0) - limb_u * (1.0 - mu_prime);
+
+        total_radiance += sun_transmittance_to_eye * pc.sun_irradiance * limb_darkening * 6.0;
     }
 
     return float4(total_radiance, 1.0);

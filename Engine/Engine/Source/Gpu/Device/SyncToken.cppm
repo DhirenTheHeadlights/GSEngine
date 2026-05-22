@@ -10,13 +10,18 @@ export namespace gse::gpu {
 	public:
 		sync_token() = default;
 
-		sync_token(transient_queue* queue, std::uint64_t value);
+		sync_token(
+			transient_queue* queue,
+			std::uint64_t value
+		);
 
 		[[nodiscard]] auto valid() const -> bool;
 
 		[[nodiscard]] auto ready() const -> bool;
 
-		auto wait(const vulkan::device& device) const -> void;
+		auto wait(
+			const vulkan::device& device
+		) const -> void;
 
 		[[nodiscard]] auto operator co_await() const noexcept;
 
@@ -27,7 +32,9 @@ export namespace gse::gpu {
 
 			auto await_ready() const noexcept -> bool;
 
-			auto await_suspend(std::coroutine_handle<> caller) -> bool;
+			auto await_suspend(
+				std::coroutine_handle<> caller
+			) -> bool;
 
 			auto await_resume() const noexcept -> void;
 		};

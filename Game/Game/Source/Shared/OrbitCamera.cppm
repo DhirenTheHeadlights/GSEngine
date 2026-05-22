@@ -42,14 +42,7 @@ export namespace gs::orbit_camera {
 	};
 }
 
-auto gs::orbit_camera::system::run(
-	gse::run_context& ctx,
-	data& d,
-	const gse::actions::system::data& as,
-	const gse::input::system::data& input_s,
-	const gse::camera::system::data& cam_s,
-	const gse::physics::system::data& phys_s
-) -> gse::async::task<> {
+auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::input::system::data& input_s, const gse::camera::system::data& cam_s, const gse::physics::system::data& phys_s) -> gse::async::task<> {
 	while (true) {
 		{
 			auto [orbits, follows, transforms] = co_await ctx.acquire_with(

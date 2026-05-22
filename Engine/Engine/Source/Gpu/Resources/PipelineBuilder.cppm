@@ -44,14 +44,23 @@ export namespace gse::gpu {
 		std::size_t param_count = 0;
 		std::array<std::string_view, 4> helper_paths{};
 		std::size_t helper_count = 0;
-		std::string (*emit_push_constant_struct)() = nullptr;
-		std::string (*emit_types)() = nullptr;
-		std::string (*emit_bindings)() = nullptr;
-		std::vector<shaders::family_set> (*build_family_sets_fn)() = nullptr;
+		std::array<std::string_view, 8> call_names{};
+		std::size_t call_count = 0;
+		std::string (
+			*emit_push_constant_struct
+		)() = nullptr;
+		std::string (
+			*emit_types
+		)() = nullptr;
+		std::string (
+			*emit_bindings
+		)() = nullptr;
+		std::vector<shaders::family_set> (
+			*build_family_sets_fn
+		)() = nullptr;
 	};
 
-	[[nodiscard]]
-	auto build_compute_pipeline(
+	[[nodiscard]] auto build_compute_pipeline(
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
@@ -88,57 +97,40 @@ export namespace gse::gpu {
 		topology topology_value = topology::triangle_list;
 		color_format color = color_format::swapchain;
 		depth_format depth_fmt = depth_format::d32_sfloat;
-		std::string (*emit_push_constant_struct)() = nullptr;
-		std::string (*emit_types)() = nullptr;
-		std::string (*emit_bindings)() = nullptr;
-		std::vector<shaders::family_set> (*build_family_sets_fn)() = nullptr;
+		std::string (
+			*emit_push_constant_struct
+		)() = nullptr;
+		std::string (
+			*emit_types
+		)() = nullptr;
+		std::string (
+			*emit_bindings
+		)() = nullptr;
+		std::vector<shaders::family_set> (
+			*build_family_sets_fn
+		)() = nullptr;
 	};
 
-	[[nodiscard]]
-	auto build_graphics_pipeline(
+	[[nodiscard]] auto build_graphics_pipeline(
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
 		const graphics_entry_pod& pod
 	) -> pipeline;
 
-	[[nodiscard]]
-	inline auto allocate_descriptors(
-		shader_registry& registry,
-		descriptor_heap& heap,
-		const compute_entry_pod& pod,
-		const std::source_location& loc = std::source_location::current()
-	) -> descriptor_region {
+	[[nodiscard]] inline auto allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const compute_entry_pod& pod, const std::source_location& loc = std::source_location::current()) -> descriptor_region {
 		return allocate_descriptors(registry, heap, pod.layout_name, loc);
 	}
 
-	[[nodiscard]]
-	inline auto allocate_descriptors(
-		shader_registry& registry,
-		descriptor_heap& heap,
-		const graphics_entry_pod& pod,
-		const std::source_location& loc = std::source_location::current()
-	) -> descriptor_region {
+	[[nodiscard]] inline auto allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const graphics_entry_pod& pod, const std::source_location& loc = std::source_location::current()) -> descriptor_region {
 		return allocate_descriptors(registry, heap, pod.layout_name, loc);
 	}
 
-	[[nodiscard]]
-	inline auto make_push_writer(
-		shader_registry& registry,
-		handle<vulkan::device> dev,
-		descriptor_heap& heap,
-		const compute_entry_pod& pod
-	) -> descriptor_writer {
+	[[nodiscard]] inline auto make_push_writer(shader_registry& registry, handle<vulkan::device> dev, descriptor_heap& heap, const compute_entry_pod& pod) -> descriptor_writer {
 		return descriptor_writer(registry, dev, heap, pod.layout_name);
 	}
 
-	[[nodiscard]]
-	inline auto make_push_writer(
-		shader_registry& registry,
-		handle<vulkan::device> dev,
-		descriptor_heap& heap,
-		const graphics_entry_pod& pod
-	) -> descriptor_writer {
+	[[nodiscard]] inline auto make_push_writer(shader_registry& registry, handle<vulkan::device> dev, descriptor_heap& heap, const graphics_entry_pod& pod) -> descriptor_writer {
 		return descriptor_writer(registry, dev, heap, pod.layout_name);
 	}
 
@@ -177,6 +169,9 @@ export namespace gse::gpu {
 
 	template <fixed_string... Paths>
 	struct helpers {};
+
+	template <fixed_string... Names>
+	struct calls {};
 
 	template <is_system_value... Ts>
 	struct system_values {};
@@ -234,6 +229,12 @@ export namespace gse::gpu {
 
 	template <fixed_string... Paths>
 	struct is_helpers<helpers<Paths...>> : std::true_type {};
+
+	template <typename T>
+	struct is_calls : std::false_type {};
+
+	template <fixed_string... Names>
+	struct is_calls<calls<Names...>> : std::true_type {};
 
 	template <typename... Specs>
 	struct compute_entry {
@@ -308,11 +309,21 @@ export namespace gse::gpu {
 						((e.helper_paths[e.helper_count++] = Paths), ...);
 					}(Spec{});
 				}
+				else if constexpr (is_calls<Spec>::value) {
+					[&]<fixed_string... Names>(calls<Names...>) consteval {
+						((e.call_names[e.call_count++] = Names), ...);
+					}(Spec{});
+				}
 				else {
 					static_assert(sizeof(Spec) == 0, "unknown compute_entry spec");
 				}
 			};
 			(apply.template operator()<Specs>(), ...);
+			if (e.call_count == 0 && !e.body_path.empty()) {
+				const auto slash = e.body_path.find_last_of('/');
+				e.call_names[e.call_count++] =
+					(slash == std::string_view::npos) ? e.body_path : e.body_path.substr(slash + 1);
+			}
 			return e;
 		}();
 	};
@@ -450,10 +461,7 @@ export namespace gse::gpu {
 						return shaders::emit_slang_struct<T>();
 					};
 				}
-				else if constexpr (
-					is_vertex_stage<Spec>::value || is_fragment_stage<Spec>::value ||
-					is_amplification_stage<Spec>::value || is_mesh_stage<Spec>::value
-				) {
+				else if constexpr (is_vertex_stage<Spec>::value || is_fragment_stage<Spec>::value || is_amplification_stage<Spec>::value || is_mesh_stage<Spec>::value) {
 					e.stages[e.stage_count++] = {
 						.entry_point = Spec::entry_point,
 						.kind = Spec::kind,
@@ -521,11 +529,7 @@ export namespace gse::gpu {
 }
 
 namespace gse::gpu {
-	auto lookup_descriptor_type(
-		const family_layout& family,
-		const std::uint32_t set,
-		const std::uint32_t slot
-	) -> descriptor_type {
+	auto lookup_descriptor_type(const family_layout& family, const std::uint32_t set, const std::uint32_t slot) -> descriptor_type {
 		for (const auto& fs : family.sets) {
 			if (static_cast<std::uint32_t>(fs.type) != set) {
 				continue;
@@ -571,10 +575,17 @@ namespace gse::gpu {
 		std::string body_path;
 		std::string inline_source;
 		std::vector<std::string> helper_paths;
+		std::vector<std::string> call_names;
 		std::uint32_t push_constant_size = 0;
-		std::string (*emit_push_constant_struct)() = nullptr;
-		std::string (*emit_types)() = nullptr;
-		std::string (*emit_bindings)() = nullptr;
+		std::string (
+			*emit_push_constant_struct
+		)() = nullptr;
+		std::string (
+			*emit_types
+		)() = nullptr;
+		std::string (
+			*emit_bindings
+		)() = nullptr;
 	};
 
 	struct owned_slang_session {
@@ -584,32 +595,42 @@ namespace gse::gpu {
 
 	auto make_slang_session() -> owned_slang_session;
 
-	auto log_slang_diagnostics(slang::IBlob* diagnostics) -> void;
+	auto log_slang_diagnostics(
+		slang::IBlob* diagnostics
+	) -> void;
 
 	struct parsed_body {
 		std::vector<std::string> imports;
-		std::string preamble;
 		std::string body;
 	};
 
-	auto parse_body_file(std::string_view body_source) -> parsed_body;
+	auto parse_body_file(
+		std::string_view body_source
+	) -> parsed_body;
 
-	auto load_body_file(std::string_view body_path) -> std::string;
+	auto load_body_file(
+		std::string_view body_path
+	) -> std::string;
 
-	auto load_helper_file(std::string_view helper_path) -> std::string;
+	auto load_helper_file(
+		std::string_view helper_path
+	) -> std::string;
 
-	auto inline_helpers(const std::vector<std::string>& helper_paths) -> std::string;
+	auto inline_helpers(
+		const std::vector<std::string>& helper_paths
+	) -> std::string;
 
-	auto build_compute_wrapper_source(const shader_compile_inputs& inputs, const parsed_body& parsed) -> std::string;
+	auto build_compute_wrapper_source(
+		const shader_compile_inputs& inputs,
+		const parsed_body& parsed
+	) -> std::string;
 
-	[[nodiscard]]
-	auto compile_compute_spirv(
+	[[nodiscard]] auto compile_compute_spirv(
 		const shader_compile_inputs& inputs,
 		std::string_view wrapper_source
 	) -> std::vector<std::uint32_t>;
 
-	[[nodiscard]]
-	auto create_compute_pipeline_from_spirv(
+	[[nodiscard]] auto create_compute_pipeline_from_spirv(
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
@@ -618,8 +639,7 @@ namespace gse::gpu {
 		std::uint32_t push_constant_size
 	) -> pipeline;
 
-	[[nodiscard]]
-	auto build_compute_pipeline_impl(
+	[[nodiscard]] auto build_compute_pipeline_impl(
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
@@ -639,10 +659,12 @@ namespace gse::gpu {
 		std::vector<vertex_binding_desc> vertex_bindings;
 	};
 
-	auto build_graphics_wrapper_source(const graphics_entry_pod& pod, const parsed_body& parsed) -> std::string;
+	auto build_graphics_wrapper_source(
+		const graphics_entry_pod& pod,
+		const parsed_body& parsed
+	) -> std::string;
 
-	[[nodiscard]]
-	auto compile_graphics_program(
+	[[nodiscard]] auto compile_graphics_program(
 		const graphics_entry_pod& pod,
 		std::string_view wrapper_source
 	) -> compiled_graphics_program;
@@ -719,15 +741,9 @@ auto gse::gpu::log_slang_diagnostics(slang::IBlob* diagnostics) -> void {
 }
 
 auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_body {
-	constexpr std::string_view entry_marker = "// entry:";
-
 	parsed_body result;
-	std::string pre_entry;
-	std::string post_entry;
-	std::string* current_section = &pre_entry;
 	std::size_t cursor = 0;
 	bool seen_non_import = false;
-	bool found_marker = false;
 
 	while (cursor < body_source.size()) {
 		const std::size_t line_end = body_source.find('\n', cursor);
@@ -739,19 +755,15 @@ auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_bod
 			trimmed.remove_prefix(1);
 		}
 
-		if (trimmed.starts_with(entry_marker)) {
-			found_marker = true;
-			current_section = &post_entry;
-		}
-		else if (!seen_non_import && (trimmed.starts_with("import ") || trimmed.starts_with("__exported import "))) {
+		if (!seen_non_import && (trimmed.starts_with("import ") || trimmed.starts_with("__exported import "))) {
 			result.imports.emplace_back(line);
 		}
 		else if (!seen_non_import && trimmed.empty()) {
 		}
 		else {
 			seen_non_import = true;
-			current_section->append(line);
-			current_section->push_back('\n');
+			result.body.append(line);
+			result.body.push_back('\n');
 		}
 
 		if (line_end == std::string_view::npos) {
@@ -760,13 +772,6 @@ auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_bod
 		cursor = line_end + 1;
 	}
 
-	if (found_marker) {
-		result.preamble = std::move(pre_entry);
-		result.body = std::move(post_entry);
-	}
-	else {
-		result.body = std::move(pre_entry);
-	}
 	return result;
 }
 
@@ -801,10 +806,7 @@ auto gse::gpu::inline_helpers(const std::vector<std::string>& helper_paths) -> s
 	return out;
 }
 
-auto gse::gpu::build_compute_wrapper_source(
-	const shader_compile_inputs& inputs,
-	const parsed_body& parsed
-) -> std::string {
+auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs, const parsed_body& parsed) -> std::string {
 	std::string out;
 
 	for (const auto& imp : parsed.imports) {
@@ -828,16 +830,6 @@ auto gse::gpu::build_compute_wrapper_source(
 		out.push_back('\n');
 	}
 
-	if (!inputs.helper_paths.empty()) {
-		out.append(inline_helpers(inputs.helper_paths));
-		out.push_back('\n');
-	}
-
-	if (!parsed.preamble.empty()) {
-		out.append(parsed.preamble);
-		out.push_back('\n');
-	}
-
 	for (const auto& p : inputs.params) {
 		if (p.is_function_param) {
 			continue;
@@ -849,6 +841,14 @@ auto gse::gpu::build_compute_wrapper_source(
 		out.append(p.name);
 		out.append(";\n\n");
 	}
+
+	if (!inputs.helper_paths.empty()) {
+		out.append(inline_helpers(inputs.helper_paths));
+		out.push_back('\n');
+	}
+
+	out.append(parsed.body);
+	out.push_back('\n');
 
 	out.append("[shader(\"compute\")]\n");
 	out.append(std::format("[numthreads({}, {}, {})]\n", inputs.threads_x, inputs.threads_y, inputs.threads_z));
@@ -867,15 +867,28 @@ auto gse::gpu::build_compute_wrapper_source(
 	}
 
 	out.append(") {\n");
-	out.append(parsed.body);
+	for (const auto& name : inputs.call_names) {
+		out.append("    ");
+		out.append(name);
+		out.append("(");
+		bool first_arg = true;
+		for (const auto& p : inputs.params) {
+			if (!p.is_function_param) {
+				continue;
+			}
+			if (!first_arg) {
+				out.append(", ");
+			}
+			first_arg = false;
+			out.append(p.name);
+		}
+		out.append(");\n");
+	}
 	out.append("}\n");
 	return out;
 }
 
-auto gse::gpu::compile_compute_spirv(
-	const shader_compile_inputs& inputs,
-	const std::string_view wrapper_source
-) -> std::vector<std::uint32_t> {
+auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const std::string_view wrapper_source) -> std::vector<std::uint32_t> {
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
@@ -953,14 +966,7 @@ auto gse::gpu::compile_compute_spirv(
 	return spirv;
 }
 
-auto gse::gpu::create_compute_pipeline_from_spirv(
-	device& dev,
-	shader_registry& registry,
-	bindless_texture_set& bindless,
-	const std::span<const std::uint32_t> spirv,
-	const std::string_view layout_name,
-	const std::uint32_t push_constant_size
-) -> pipeline {
+auto gse::gpu::create_compute_pipeline_from_spirv(device& dev, shader_registry& registry, bindless_texture_set& bindless, const std::span<const std::uint32_t> spirv, const std::string_view layout_name, const std::uint32_t push_constant_size) -> pipeline {
 	const auto* family = registry.find_family(layout_name);
 	assert(family, "Shader family layout not registered: {}", layout_name);
 
@@ -1010,14 +1016,10 @@ auto gse::gpu::create_compute_pipeline_from_spirv(
 	return vulkan::pipeline::create_compute(dev.vulkan_device(), info);
 }
 
-auto gse::gpu::build_compute_pipeline_impl(
-	device& dev,
-	shader_registry& registry,
-	bindless_texture_set& bindless,
-	const shader_compile_inputs& inputs
-) -> pipeline {
+auto gse::gpu::build_compute_pipeline_impl(device& dev, shader_registry& registry, bindless_texture_set& bindless, const shader_compile_inputs& inputs) -> pipeline {
 	assert(!inputs.body_path.empty(), "shader_fn annotation missing on compute entry");
 	assert(!inputs.layout_name.empty(), "shader_layout annotation missing on compute entry");
+	assert(!inputs.call_names.empty(), "compute entry needs at least one gpu::calls<...> name");
 
 	const auto body_source = inputs.inline_source.empty() ? load_body_file(inputs.body_path) : inputs.inline_source;
 	const auto parsed = parse_body_file(body_source);
@@ -1034,12 +1036,7 @@ auto gse::gpu::build_compute_pipeline_impl(
 	);
 }
 
-auto gse::gpu::build_compute_pipeline(
-	device& dev,
-	shader_registry& registry,
-	bindless_texture_set& bindless,
-	const compute_entry_pod& pod
-) -> pipeline {
+auto gse::gpu::build_compute_pipeline(device& dev, shader_registry& registry, bindless_texture_set& bindless, const compute_entry_pod& pod) -> pipeline {
 	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
 	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
 
@@ -1057,6 +1054,10 @@ auto gse::gpu::build_compute_pipeline(
 	inputs.helper_paths.reserve(pod.helper_count);
 	for (std::size_t i = 0; i < pod.helper_count; ++i) {
 		inputs.helper_paths.emplace_back(pod.helper_paths[i]);
+	}
+	inputs.call_names.reserve(pod.call_count);
+	for (std::size_t i = 0; i < pod.call_count; ++i) {
+		inputs.call_names.emplace_back(pod.call_names[i]);
 	}
 	inputs.params.reserve(pod.param_count);
 	for (std::size_t i = 0; i < pod.param_count; ++i) {
@@ -1094,6 +1095,12 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 		out.push_back('\n');
 	}
 
+	if (pod.push_constant_size > 0) {
+		out.append("[[vk::push_constant]]\nConstantBuffer<");
+		out.append(pod.push_constant_type_name);
+		out.append("> pc;\n\n");
+	}
+
 	if (pod.helper_count > 0) {
 		std::vector<std::string> helper_paths;
 		helper_paths.reserve(pod.helper_count);
@@ -1102,17 +1109,6 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 		}
 		out.append(inline_helpers(helper_paths));
 		out.push_back('\n');
-	}
-
-	if (!parsed.preamble.empty()) {
-		out.append(parsed.preamble);
-		out.push_back('\n');
-	}
-
-	if (pod.push_constant_size > 0) {
-		out.append("[[vk::push_constant]]\nConstantBuffer<");
-		out.append(pod.push_constant_type_name);
-		out.append("> pc;\n\n");
 	}
 
 	out.append(parsed.body);
@@ -1197,10 +1193,7 @@ namespace gse::gpu {
 	}
 }
 
-auto gse::gpu::compile_graphics_program(
-	const graphics_entry_pod& pod,
-	const std::string_view wrapper_source
-) -> compiled_graphics_program {
+auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std::string_view wrapper_source) -> compiled_graphics_program {
 	auto owned = make_slang_session();
 	auto* session = owned.session.get();
 	assert(session, "Slang session not available");
@@ -1249,9 +1242,7 @@ auto gse::gpu::compile_graphics_program(
 		for (int j = 0; j < ep_count; ++j) {
 			Slang::ComPtr<slang::IEntryPoint> candidate;
 			mod->getDefinedEntryPoint(j, candidate.writeRef());
-			if (
-				!std::strcmp(candidate->getFunctionReflection()->getName(), std::string(stage_pod.entry_point).c_str())
-			) {
+			if (!std::strcmp(candidate->getFunctionReflection()->getName(), std::string(stage_pod.entry_point).c_str())) {
 				ep = candidate;
 				break;
 			}
@@ -1272,14 +1263,7 @@ auto gse::gpu::compile_graphics_program(
 	}
 
 	Slang::ComPtr<slang::IComponentType> composed;
-	if (
-		slang_failed(session->createCompositeComponentType(
-			parts.data(),
-			static_cast<SlangInt>(parts.size()),
-			composed.writeRef(),
-			diags.writeRef()
-		))
-	) {
+	if (slang_failed(session->createCompositeComponentType(parts.data(), static_cast<SlangInt>(parts.size()), composed.writeRef(), diags.writeRef()))) {
 		log_slang_diagnostics(diags.get());
 		dump_wrapper_source();
 		assert(false, "Failed to compose graphics program in {}", sanitized);
@@ -1296,12 +1280,7 @@ auto gse::gpu::compile_graphics_program(
 		const auto& stage_pod = pod.stages[i];
 
 		Slang::ComPtr<ISlangBlob> blob;
-		if (
-			slang_failed(
-				program->getEntryPointCode(static_cast<SlangInt>(ep_indices[i]), 0, blob.writeRef(), diags.writeRef())
-			) ||
-			!blob
-		) {
+		if (slang_failed(program->getEntryPointCode(static_cast<SlangInt>(ep_indices[i]), 0, blob.writeRef(), diags.writeRef())) || !blob) {
 			log_slang_diagnostics(diags.get());
 			dump_wrapper_source();
 			assert(false, "Failed to get SPIR-V for graphics entry point '{}' in {}", stage_pod.entry_point, sanitized);
@@ -1320,9 +1299,7 @@ auto gse::gpu::compile_graphics_program(
 
 		if (stage_pod.kind == graphics_stage_kind::vertex) {
 			auto* layout_reflection = program->getLayout();
-			if (
-				layout_reflection && static_cast<std::size_t>(layout_reflection->getEntryPointCount()) > ep_indices[i]
-			) {
+			if (layout_reflection && static_cast<std::size_t>(layout_reflection->getEntryPointCount()) > ep_indices[i]) {
 				auto* ep_layout = layout_reflection->getEntryPointByIndex(static_cast<SlangInt>(ep_indices[i]));
 				auto* scope_vl = ep_layout ? ep_layout->getVarLayout() : nullptr;
 				auto* scope_tl = scope_vl ? scope_vl->getTypeLayout() : nullptr;
@@ -1368,12 +1345,7 @@ auto gse::gpu::compile_graphics_program(
 	return result;
 }
 
-auto gse::gpu::build_graphics_pipeline(
-	device& dev,
-	shader_registry& registry,
-	bindless_texture_set& bindless,
-	const graphics_entry_pod& pod
-) -> pipeline {
+auto gse::gpu::build_graphics_pipeline(device& dev, shader_registry& registry, bindless_texture_set& bindless, const graphics_entry_pod& pod) -> pipeline {
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
 	assert(!pod.layout_name.empty(), "layout missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");

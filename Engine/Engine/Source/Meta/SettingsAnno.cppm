@@ -60,20 +60,33 @@ struct gse::parser<gse::settings::choice<T>> {
 
 export namespace gse {
 	template <typename Anno>
-	consteval auto find_annotation(std::meta::info member) -> std::meta::info;
+	consteval auto find_annotation(
+		std::meta::info member
+	) -> std::meta::info;
 
-	template <typename Anno, std::meta::info M>
+	template <
+		typename Anno,
+		std::meta::info M
+	>
 	consteval auto annotation_of() -> Anno;
 }
 
 export namespace gse::meta {
-	consteval auto member_name(std::meta::info m) -> std::string_view;
+	consteval auto member_name(
+		std::meta::info m
+	) -> std::string_view;
 
-	consteval auto find_range(std::meta::info m) -> std::meta::info;
+	consteval auto find_range(
+		std::meta::info m
+	) -> std::meta::info;
 
-	consteval auto find_describe(std::meta::info m) -> std::meta::info;
+	consteval auto find_describe(
+		std::meta::info m
+	) -> std::meta::info;
 
-	consteval auto find_category(std::meta::info m) -> std::meta::info;
+	consteval auto find_category(
+		std::meta::info m
+	) -> std::meta::info;
 }
 
 template <typename Anno>

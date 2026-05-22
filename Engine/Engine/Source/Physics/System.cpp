@@ -29,7 +29,11 @@ import gse.assets;
 import gse.graphics;
 
 namespace gse::physics {
-	auto make_joint_definition(id a, id b, const joint_config& config) -> joint_definition;
+	auto make_joint_definition(
+		id a,
+		id b,
+		const joint_config& config
+	) -> joint_definition;
 }
 
 auto gse::physics::make_joint_definition(const id a, const id b, const joint_config& config) -> joint_definition {
@@ -167,10 +171,7 @@ auto gse::physics::system::is_sleeping(const data& d, const id entity_id) -> boo
 	return d.body_sleeping[it->second] != 0;
 }
 
-auto gse::physics::system::collect_collision_objects(
-	write<transform_component>& transform,
-	write<collision_component>& collision
-) -> std::vector<collision_pair> {
+auto gse::physics::system::collect_collision_objects(write<transform_component>& transform, write<collision_component>& collision) -> std::vector<collision_pair> {
 	trace::scope_guard sg{ trace_id<"vbd_cpu::collect_objects">() };
 	std::vector<collision_pair> objects;
 	objects.reserve(collision.size());
@@ -458,12 +459,7 @@ auto gse::physics::system::add_scene_contacts_to_solver(
 	}
 }
 
-auto gse::physics::system::run(
-	run_context& ctx,
-	const gpu::context::data* gpu_s,
-	const asset::data& assets_s,
-	data& d
-) -> async::task<> {
+auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.vbd_solver.configure(
 		vbd::solver_config{
 			.iterations = static_cast<std::uint32_t>(d.solver_iterations),

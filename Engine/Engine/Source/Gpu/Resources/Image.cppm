@@ -21,7 +21,11 @@ import gse.diag;
 import gse.math;
 
 export namespace gse::gpu {
-	auto transition_image_to(gpu::device& dev, vulkan::image& img, image_layout target) -> sync_token;
+	auto transition_image_to(
+		gpu::device& dev,
+		vulkan::image& img,
+		image_layout target
+	) -> sync_token;
 
 	auto upload_image_2d(
 		gpu::device& dev,

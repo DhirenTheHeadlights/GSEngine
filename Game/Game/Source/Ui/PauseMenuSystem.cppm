@@ -31,14 +31,15 @@ auto gs::pause_menu_system::run(
 ) -> gse::async::task<> {
 	const auto push_main_menu = [&] {
 		ctx.channels.push<gse::gui::push_screen_request>({
-			.factory =
-				[&world_d, &net_d, &save_reg, &crosshair_d, channels = ctx.channels] {
-					return std::make_unique<main_menu_screen>(world_d, net_d, save_reg, crosshair_d, channels);
-				},
+			.factory = [&world_d, &net_d, &save_reg, &crosshair_d, channels = ctx.channels] {
+				return std::make_unique<main_menu_screen>(world_d, net_d, save_reg, crosshair_d, channels);
+			},
 		});
 	};
 
 	bool manual_cursor = false;
+	bool initial_push_done = false;
+	bool last_scene_active = false;
 
 	while (true) {
 		const auto& input = gse::input::system::current_state(input_d);
@@ -46,9 +47,17 @@ auto gs::pause_menu_system::run(
 		const bool blocks = top != nullptr && !top->dismissable();
 		const bool scene_active = world_d.active_scene.has_value();
 
-		if (!blocks && top == nullptr && !scene_active) {
-			push_main_menu();
+		if (!blocks && top == nullptr) {
+			if (!initial_push_done && !scene_active) {
+				push_main_menu();
+				initial_push_done = true;
+			}
+			else if (last_scene_active && !scene_active) {
+				push_main_menu();
+			}
 		}
+
+		last_scene_active = scene_active;
 
 		if (input.key_pressed(gse::key::escape)) {
 			if (blocks) {

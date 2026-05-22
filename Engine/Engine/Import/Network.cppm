@@ -85,7 +85,10 @@ export namespace gse::network {
 			const camera::system::data& cam_d
 		) -> async::task<>;
 
-		static auto shutdown(shutdown_context& phase, data& d) -> void;
+		static auto shutdown(
+			shutdown_context& phase,
+			data& d
+		) -> void;
 	};
 
 	template <typename Pack>
@@ -98,13 +101,7 @@ auto gse::network::system<Components...>::shutdown(shutdown_context&, data& d) -
 }
 
 template <typename... Components>
-auto gse::network::system<Components...>::run(
-	run_context& ctx,
-	const asset::data& assets_d,
-	data& d,
-	const actions::system::data& actions_d,
-	const camera::system::data& cam_d
-) -> async::task<> {
+auto gse::network::system<Components...>::run(run_context& ctx, const asset::data& assets_d, data& d, const actions::system::data& actions_d, const camera::system::data& cam_d) -> async::task<> {
 	(ctx.template ensure_storage<Components>(), ...);
 
 	while (true) {
