@@ -22,15 +22,30 @@ export namespace gs::locomotion {
 
 	struct gait_scheduler {
 		struct [[= gse::settings::category<"Gait">{}]] data {
-			[[= gse::settings::describe<"Walking weight-shift phase duration.">{}]] gse::time weight_shift_duration = gse::seconds(0.15f);
+			[[
+				= gse::settings::describe<"Walking weight-shift phase duration.">{}
+			]]
+			gse::time weight_shift_duration = gse::seconds(0.15f);
 
-			[[= gse::settings::describe<"Walking swing phase duration.">{}]] gse::time swing_duration = gse::seconds(0.40f);
+			[[
+				= gse::settings::describe<"Walking swing phase duration.">{}
+			]]
+			gse::time swing_duration = gse::seconds(0.40f);
 
-			[[= gse::settings::describe<"Walking plant phase duration.">{}]] gse::time plant_duration = gse::seconds(0.12f);
+			[[
+				= gse::settings::describe<"Walking plant phase duration.">{}
+			]]
+			gse::time plant_duration = gse::seconds(0.12f);
 
-			[[= gse::settings::describe<"Capture-point magnitude that triggers a step from idle.">{}]] gse::displacement capture_step_threshold = gse::meters(0.06f);
+			[[
+				= gse::settings::describe<"Capture-point magnitude that triggers a step from idle.">{}
+			]]
+			gse::displacement capture_step_threshold = gse::meters(0.06f);
 
-			[[= gse::settings::describe<"Pelvis Y below which the character is declared fallen.">{}]] gse::position fall_pelvis_y_threshold = gse::meters(0.45f);
+			[[
+				= gse::settings::describe<"Pelvis Y below which the character is declared fallen.">{}
+			]]
+			gse::position fall_pelvis_y_threshold = gse::meters(0.45f);
 
 			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 		};

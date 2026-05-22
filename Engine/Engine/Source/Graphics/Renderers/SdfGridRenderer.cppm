@@ -18,11 +18,13 @@ export namespace gse::renderer::sdf_grid {
 			[[
 				= gse::settings::describe<"Render a procedural SDF-based grid on the y=0 plane.">{},
 				= gse::shared
-			]] bool enabled = true;
+			]]
+			bool enabled = true;
 			[[
 				= gse::settings::describe<"Stamp distance labels along the X and Z axes at every major gridline.">{},
 				= gse::shared
-			]] bool show_labels = true;
+			]]
+			bool show_labels = true;
 
 			length minor_spacing = meters(1.f);
 			[[= gse::shared]] length major_spacing = meters(10.f);

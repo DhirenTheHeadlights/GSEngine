@@ -60,10 +60,7 @@ export namespace gse::network {
 		const T& msg
 	) -> void;
 
-	template <
-		is_network_message T,
-		typename Fn
-	>
+	template <is_network_message T, typename Fn>
 	auto try_decode(
 		read_bitstream& s,
 		std::uint64_t id,

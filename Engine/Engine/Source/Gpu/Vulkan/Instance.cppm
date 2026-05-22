@@ -24,7 +24,8 @@ export namespace gse::vulkan {
 			instance&&
 		) noexcept -> instance& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			std::span<const char* const> required_extensions,
 			bool enable_validation
 		) -> instance;

@@ -51,7 +51,7 @@ gse::vulkan::swap_chain::swap_chain(
 	std::vector<vk::raii::ImageView>&& image_views,
 	const vk::Format format,
 	swap_chain_details&& details,
-	basic_image<device>&& depth_image
+	std::vector<fence>&& release_fences
 )
 	: m_swap_chain(std::move(swap_chain)),
 	  m_surface_format(surface_format),
@@ -61,10 +61,10 @@ gse::vulkan::swap_chain::swap_chain(
 	  m_image_views(std::move(image_views)),
 	  m_format(format),
 	  m_details(std::move(details)),
-	  m_depth_image(std::move(depth_image)) {
+	  m_release_fences(std::move(release_fences)) {
 }
 
-auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const instance& instance_data, device& device_data) -> swap_chain {
+auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const instance& instance_data, device& device_data, const gpu::handle<swap_chain> old_swapchain) -> swap_chain {
 	const auto vk_capabilities = device_data.physical_device().getSurfaceCapabilitiesKHR(*instance_data.raii_surface());
 	auto vk_formats = device_data.physical_device().getSurfaceFormatsKHR(*instance_data.raii_surface());
 	auto vk_present_modes = device_data.physical_device().getSurfacePresentModesKHR(*instance_data.raii_surface());
@@ -167,6 +167,18 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::pr
 	create_info.presentMode = present_mode;
 	create_info.clipped = true;
 
+	const vk::SwapchainPresentModesCreateInfoEXT present_modes_create_info{
+		.presentModeCount = static_cast<std::uint32_t>(vk_present_modes.size()),
+		.pPresentModes = vk_present_modes.data(),
+	};
+	if (device_data.swapchain_maintenance1_enabled()) {
+		create_info.pNext = &present_modes_create_info;
+	}
+
+	if (old_swapchain) {
+		create_info.oldSwapchain = std::bit_cast<vk::SwapchainKHR>(old_swapchain);
+	}
+
 	std::vector<gpu::surface_format> gpu_formats;
 	gpu_formats.reserve(vk_formats.size());
 	for (const auto& f : vk_formats) {
@@ -184,31 +196,6 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::pr
 	auto vk_swap_chain = device_data.raii_device().createSwapchainKHR(create_info);
 	auto images = vk_swap_chain.getImages();
 	auto format = surface_format.format;
-
-	auto depth_image = device_data.create_image(
-		gpu::image_create_info{
-			.flags = {},
-			.type = gpu::image_type::e2d,
-			.format = gpu::image_format::d32_sfloat,
-			.extent = vec3u{ extent.width, extent.height, 1 },
-			.mip_levels = 1,
-			.array_layers = 1,
-			.samples = gpu::sample_count::e1,
-			.usage = gpu::image_flag::depth_attachment | gpu::image_flag::sampled,
-		},
-		gpu::memory_property_flag::device_local,
-		gpu::image_view_create_info{
-			.format = gpu::image_format::d32_sfloat,
-			.view_type = gpu::image_view_type::e2d,
-			.aspects = gpu::image_aspect_flag::depth,
-			.base_mip_level = 0,
-			.level_count = 1,
-			.base_array_layer = 0,
-			.layer_count = 1,
-		}
-	);
-
-	depth_image.set_layout(gpu::image_layout::undefined);
 
 	std::vector<vk::raii::ImageView> image_views;
 	image_views.reserve(images.size());
@@ -231,6 +218,14 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::pr
 		image_views.emplace_back(device_data.raii_device(), iv_create_info);
 	}
 
+	std::vector<fence> release_fences;
+	if (device_data.swapchain_maintenance1_enabled()) {
+		release_fences.reserve(images.size());
+		for (std::size_t i = 0; i < images.size(); ++i) {
+			release_fences.push_back(fence::create(device_data, true));
+		}
+	}
+
 	return swap_chain(
 		std::move(vk_swap_chain),
 		surface_format,
@@ -240,11 +235,11 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::pr
 		std::move(image_views),
 		format,
 		std::move(details),
-		std::move(depth_image)
+		std::move(release_fences)
 	);
 }
 
-auto gse::vulkan::swap_chain::swap_chain_handle() const -> gpu::handle<swap_chain> {
+auto gse::vulkan::swap_chain::handle() const -> gpu::handle<swap_chain> {
 	return std::bit_cast<gpu::handle<swap_chain>>(*m_swap_chain);
 }
 
@@ -276,8 +271,22 @@ auto gse::vulkan::swap_chain::image_view(const std::uint32_t index) const -> gpu
 	return std::bit_cast<gpu::handle<vulkan::image_view>>(*m_image_views[index]);
 }
 
-auto gse::vulkan::swap_chain::clear_depth() -> void {
-	m_depth_image = {};
+auto gse::vulkan::swap_chain::set_present_mode(const gpu::present_mode mode) -> void {
+	m_present_mode = to_vk(mode);
+}
+
+auto gse::vulkan::swap_chain::release_fence(const std::uint32_t image_index) const -> gpu::handle<fence> {
+	return m_release_fences[image_index].handle();
+}
+
+auto gse::vulkan::swap_chain::wait_release_fences(const device& dev) const -> void {
+	for (const auto& f : m_release_fences) {
+		f.wait(dev, std::numeric_limits<std::uint64_t>::max());
+	}
+}
+
+auto gse::vulkan::swap_chain::reset_release_fence(const device& dev, const std::uint32_t image_index) -> void {
+	m_release_fences[image_index].reset(dev);
 }
 
 auto gse::vulkan::swap_chain::reset_swapchain() -> void {

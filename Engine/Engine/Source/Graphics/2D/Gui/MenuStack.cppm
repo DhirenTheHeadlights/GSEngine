@@ -11,10 +11,7 @@ export namespace gse::gui {
 	struct screen;
 
 	struct nav {
-		template <
-			typename T,
-			typename... Args
-		>
+		template <typename T, typename... Args>
 		auto push(
 			Args&&... args
 		) -> void;
@@ -23,10 +20,7 @@ export namespace gse::gui {
 
 		auto clear() -> void;
 
-		template <
-			typename T,
-			typename... Args
-		>
+		template <typename T, typename... Args>
 		auto replace_top(
 			Args&&... args
 		) -> void;
@@ -85,10 +79,7 @@ export namespace gse::gui {
 	};
 
 	struct menu_stack_state {
-		template <
-			typename T,
-			typename... Args
-		>
+		template <typename T, typename... Args>
 		auto push(
 			Args&&... args
 		) -> void;

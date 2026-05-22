@@ -21,13 +21,7 @@ export namespace gse::settings {
 	using write_settings_thunk = void (
 			*
 	)(
-		std::unordered_map<
-			std::string,
-			std::unordered_map<
-				std::string,
-				std::string
-			>
-		>& doc,
+		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		const void* settings_ptr
 	);
@@ -35,13 +29,7 @@ export namespace gse::settings {
 	using read_settings_thunk = void (
 			*
 	)(
-		const std::unordered_map<
-			std::string,
-			std::unordered_map<
-				std::string,
-				std::string
-			>
-		>& doc,
+		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		void* settings_ptr
 	);
@@ -82,13 +70,7 @@ export namespace gse::settings {
 
 	template <typename T>
 	auto write_settings_with_prefix(
-		std::unordered_map<
-			std::string,
-			std::unordered_map<
-				std::string,
-				std::string
-			>
-		>& doc,
+		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		std::string_view prefix,
 		const T& value
@@ -96,13 +78,7 @@ export namespace gse::settings {
 
 	template <typename T>
 	auto read_settings_with_prefix(
-		const std::unordered_map<
-			std::string,
-			std::unordered_map<
-				std::string,
-				std::string
-			>
-		>& doc,
+		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		std::string_view prefix,
 		T& value
@@ -110,26 +86,14 @@ export namespace gse::settings {
 
 	template <typename T>
 	auto write_settings_for(
-		std::unordered_map<
-			std::string,
-			std::unordered_map<
-				std::string,
-				std::string
-			>
-		>& doc,
+		std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		const void* settings_ptr
 	) -> void;
 
 	template <typename T>
 	auto read_settings_for(
-		const std::unordered_map<
-			std::string,
-			std::unordered_map<
-				std::string,
-				std::string
-			>
-		>& doc,
+		const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc,
 		std::string_view category,
 		void* settings_ptr
 	) -> void;

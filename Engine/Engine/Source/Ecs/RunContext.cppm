@@ -62,10 +62,7 @@ export namespace gse {
 			bool& settled
 		);
 
-		template <
-			typename S,
-			typename... Args
-		>
+		template <typename S, typename... Args>
 		auto add_system(
 			Args&&... args
 		) -> void;

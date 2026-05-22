@@ -59,9 +59,6 @@ export namespace gse::gpu {
 		image_format format = image_format::r8g8b8a8_unorm;
 		image_usage usage;
 		image_aspect_flags aspects = image_aspect_flag::color;
-		image_layout steady_layout = image_layout::general;
-		pipeline_stage_flags steady_stages;
-		access_flags steady_access;
 	};
 
 	class recording_context {
@@ -339,10 +336,6 @@ export namespace gse::gpu {
 		auto framebuffer_image(
 			this auto& self
 		) -> auto&;
-
-		auto pre_frame_transitions(
-			handle<command_buffer> cmd
-		) -> void;
 
 		[[nodiscard]] auto frame_in_progress() const -> bool;
 
@@ -761,14 +754,8 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 		.src_access = gpu::access_flag::color_attachment_write,
 		.dst_stages = gpu::pipeline_stage_flag::transfer,
 		.dst_access = gpu::access_flag::transfer_read,
-		.old_layout = gpu::image_layout::color_attachment,
-		.new_layout = gpu::image_layout::transfer_src,
 		.image = gpu_image,
 		.aspects = gpu::image_aspect_flag::color,
-		.base_mip_level = 0,
-		.level_count = 1,
-		.base_array_layer = 0,
-		.layer_count = 1,
 	};
 	m_cmd.pipeline_barrier(
 		gpu::dependency_info{
@@ -789,21 +776,15 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 		.image_offset = vec3i{ 0, 0, 0 },
 		.image_extent = vec3u{ ext.x(), ext.y(), 1 },
 	};
-	m_cmd.copy_image_to_buffer(gpu_image, gpu::image_layout::transfer_src, dst_buffer, std::span(&gpu_region, 1));
+	m_cmd.copy_image_to_buffer(gpu_image, gpu::image_layout::general, dst_buffer, std::span(&gpu_region, 1));
 
 	const gpu::image_barrier back_to_color{
 		.src_stages = gpu::pipeline_stage_flag::transfer,
 		.src_access = gpu::access_flag::transfer_read,
 		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
 		.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
-		.old_layout = gpu::image_layout::transfer_src,
-		.new_layout = gpu::image_layout::color_attachment,
 		.image = gpu_image,
 		.aspects = gpu::image_aspect_flag::color,
-		.base_mip_level = 0,
-		.level_count = 1,
-		.base_array_layer = 0,
-		.layer_count = 1,
 	};
 	m_cmd.pipeline_barrier(
 		gpu::dependency_info{
@@ -822,14 +803,8 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 		.src_access = gpu::access_flag::color_attachment_write,
 		.dst_stages = gpu::pipeline_stage_flag::transfer,
 		.dst_access = gpu::access_flag::transfer_read,
-		.old_layout = gpu::image_layout::color_attachment,
-		.new_layout = gpu::image_layout::transfer_src,
 		.image = src_image,
 		.aspects = gpu::image_aspect_flag::color,
-		.base_mip_level = 0,
-		.level_count = 1,
-		.base_array_layer = 0,
-		.layer_count = 1,
 	};
 
 	const gpu::image_barrier dst_to_transfer{
@@ -838,13 +813,9 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 		.dst_stages = gpu::pipeline_stage_flag::transfer,
 		.dst_access = gpu::access_flag::transfer_write,
 		.old_layout = gpu::image_layout::undefined,
-		.new_layout = gpu::image_layout::transfer_dst,
+		.new_layout = gpu::image_layout::general,
 		.image = dst.handle(),
 		.aspects = gpu::image_aspect_flag::color,
-		.base_mip_level = 0,
-		.level_count = 1,
-		.base_array_layer = 0,
-		.layer_count = 1,
 	};
 
 	const std::array pre_barriers = { src_to_transfer, dst_to_transfer };
@@ -878,9 +849,9 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 	};
 	m_cmd.blit_image(
 		src_image,
-		gpu::image_layout::transfer_src,
+		gpu::image_layout::general,
 		dst.handle(),
-		gpu::image_layout::transfer_dst,
+		gpu::image_layout::general,
 		gpu_region,
 		gpu::sampler_filter::nearest
 	);
@@ -890,14 +861,8 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 		.src_access = gpu::access_flag::transfer_read,
 		.dst_stages = gpu::pipeline_stage_flag::color_attachment_output,
 		.dst_access = gpu::access_flag::color_attachment_write | gpu::access_flag::color_attachment_read,
-		.old_layout = gpu::image_layout::transfer_src,
-		.new_layout = gpu::image_layout::color_attachment,
 		.image = src_image,
 		.aspects = gpu::image_aspect_flag::color,
-		.base_mip_level = 0,
-		.level_count = 1,
-		.base_array_layer = 0,
-		.layer_count = 1,
 	};
 
 	const gpu::image_barrier dst_to_read{
@@ -905,14 +870,8 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 		.src_access = gpu::access_flag::transfer_write,
 		.dst_stages = gpu::pipeline_stage_flag::compute_shader | gpu::pipeline_stage_flag::fragment_shader,
 		.dst_access = gpu::access_flag::shader_sampled_read,
-		.old_layout = gpu::image_layout::transfer_dst,
-		.new_layout = gpu::image_layout::shader_read_only,
 		.image = dst.handle(),
 		.aspects = gpu::image_aspect_flag::color,
-		.base_mip_level = 0,
-		.level_count = 1,
-		.base_array_layer = 0,
-		.layer_count = 1,
 	};
 
 	const std::array post_barriers = { src_back, dst_to_read };
@@ -1220,24 +1179,6 @@ auto gse::gpu::render_graph::register_framebuffer_image(const id name, const fra
 		});
 	}
 	return slot->img;
-}
-
-auto gse::gpu::render_graph::pre_frame_transitions(const handle<command_buffer> cmd) -> void {
-	for (auto& [name, slot] : m_framebuffer_images) {
-		if (!slot->img.handle()) {
-			continue;
-		}
-		vulkan::transition_image_layout(
-			slot->img,
-			cmd,
-			slot->desc.steady_layout,
-			slot->desc.aspects,
-			pipeline_stage_flag::top_of_pipe,
-			{},
-			slot->desc.steady_stages,
-			slot->desc.steady_access
-		);
-	}
 }
 
 auto gse::gpu::render_graph::take_aux_submissions() -> std::vector<gpu::queue_submission> {
@@ -1888,14 +1829,11 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 			else if (resource.type == resource_type::image) {
 				const auto* img = static_cast<const image*>(resource.ptr);
-				const auto layout = img->layout();
 				image_out.push_back({
 					.src_stages = src_stages,
 					.src_access = src_access,
 					.dst_stages = dst_stages,
 					.dst_access = dst_access,
-					.old_layout = layout,
-					.new_layout = layout,
 					.image = img->handle(),
 					.aspects = aspect_for_image(*img),
 					.base_mip_level = 0,
@@ -2042,7 +1980,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					.dst_stages = first_stages,
 					.dst_access = first_access,
 					.old_layout = gpu::image_layout::undefined,
-					.new_layout = info.target_layout,
+					.new_layout = gpu::image_layout::general,
 					.image = info.resource->handle(),
 					.aspects = info.aspects,
 					.base_mip_level = 0,
@@ -2115,8 +2053,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					bool merged = false;
 					for (auto& o : coalesced) {
 						if (
-							o.image.value == b.image.value && o.old_layout == b.old_layout &&
-							o.new_layout == b.new_layout && o.aspects.bits() == b.aspects.bits() &&
+							o.image.value == b.image.value && o.aspects.bits() == b.aspects.bits() &&
 							o.base_mip_level == b.base_mip_level && o.level_count == b.level_count &&
 							o.base_array_layer == b.base_array_layer && o.layer_count == b.layer_count &&
 							o.src_stages.bits() == b.src_stages.bits() && o.dst_stages.bits() == b.dst_stages.bits()
@@ -2193,10 +2130,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					const auto* color_target = resolve_color_target(info);
 
 					gpu::handle<image_view> color_view;
-					gpu::image_layout color_layout = gpu::image_layout::color_attachment;
 					if (color_target) {
 						color_view = color_target->view();
-						color_layout = color_target->layout();
 						const auto ext = color_target->extent();
 						pass_extent = vec2u{ ext.x(), ext.y() };
 					}
@@ -2207,7 +2142,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					color_attachments.push_back(
 						gpu::rendering_attachment_info{
 							.image_view = color_view,
-							.layout = color_layout,
+							.layout = gpu::image_layout::general,
 							.load = op,
 							.store = gpu::store_op::store,
 							.color_clear_value = info.clear_value,
@@ -2221,10 +2156,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					const auto* depth_target = resolve_depth_target(info);
 
 					gpu::handle<image_view> depth_view;
-					gpu::image_layout depth_layout = gpu::image_layout::general;
 					if (depth_target) {
 						depth_view = depth_target->view();
-						depth_layout = depth_target->layout();
 						if (!pass.color_output) {
 							const auto ext = depth_target->extent();
 							pass_extent = vec2u{ ext.x(), ext.y() };
@@ -2236,7 +2169,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 					depth_att = gpu::rendering_attachment_info{
 						.image_view = depth_view,
-						.layout = depth_layout,
+						.layout = gpu::image_layout::general,
 						.load = op,
 						.store = gpu::store_op::store,
 						.depth_clear_value = info.clear_value,

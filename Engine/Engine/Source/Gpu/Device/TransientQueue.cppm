@@ -31,7 +31,8 @@ export namespace gse::gpu {
 			transient_queue&& other
 		) noexcept -> transient_queue&;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const vulkan::device& device,
 			queue_id id,
 			std::uint32_t family,
@@ -50,7 +51,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto timeline_handle() const -> handle<vulkan::semaphore>;
 
-		[[nodiscard]] auto allocate_primary(
+		[[nodiscard]]
+		auto allocate_primary(
 			const vulkan::device& device,
 			std::size_t worker_idx
 		) -> vulkan::transient_command_buffer;

@@ -21,7 +21,8 @@ export namespace gse {
 		);
 
 		template <typename Self>
-		[[nodiscard]] auto at(
+		[[nodiscard]]
+		auto at(
 			this Self& self,
 			const Key& key
 		) -> decltype(auto);
@@ -31,30 +32,26 @@ export namespace gse {
 		) -> Value&;
 
 		template <typename Self>
-		[[nodiscard]] auto find(
+		[[nodiscard]]
+		auto find(
 			this Self& self,
 			const Key& key
 		) -> decltype(auto);
 
 		auto insert(
 			const value_type& pair
-		) -> std::pair<iterator,
-					   bool>;
+		) -> std::pair<iterator, bool>;
 
 		auto insert(
 			value_type&& pair
-		) -> std::pair<iterator,
-					   bool>;
+		) -> std::pair<iterator, bool>;
 
 		template <typename... Args>
 		auto emplace(
 			const Key& key,
 			Args&&... args
 		) -> std::
-			pair<
-				iterator,
-				bool
-			>;
+			pair<iterator, bool>;
 
 		auto erase(
 			const Key& key

@@ -70,10 +70,7 @@ export namespace gse {
 	};
 
 	template <typename T>
-	auto make_promise() -> std::pair<
-		channel_future<T>,
-		channel_promise<T>
-	>;
+	auto make_promise() -> std::pair<channel_future<T>, channel_promise<T>>;
 
 	template <typename T>
 	concept promiseable = requires(T t) {

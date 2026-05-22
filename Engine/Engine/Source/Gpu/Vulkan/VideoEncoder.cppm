@@ -138,10 +138,7 @@ namespace gse::gpu {
 		vk::VideoEncodeAV1ProfileInfoKHR av1_profile;
 	};
 
-	template <
-		typename To,
-		typename From
-	>
+	template <typename To, typename From>
 	constexpr auto vk_enum(
 		From v
 	) -> To;
@@ -169,11 +166,7 @@ namespace gse::gpu {
 		vk::ImageUsageFlags usage,
 		const vk::VideoProfileListInfoKHR& profile_list
 	) -> std::
-		tuple<
-			vk::Image,
-			vk::raii::ImageView,
-			vk::DeviceMemory
-		>;
+		tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory>;
 
 	auto find_memory_type(
 		const vk::raii::PhysicalDevice& physical_device,
@@ -197,20 +190,12 @@ auto gse::gpu::video_encoder::probe(device& dev) -> encode_capabilities {
 			vk::VideoCapabilitiesKHR caps;
 			if (codec == video_codec::av1) {
 				caps = physical
-					.getVideoCapabilitiesKHR<
-						vk::VideoCapabilitiesKHR,
-						vk::VideoEncodeCapabilitiesKHR,
-						vk::VideoEncodeAV1CapabilitiesKHR
-					>(chain.profile)
+					.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeAV1CapabilitiesKHR>(chain.profile)
 					.get<vk::VideoCapabilitiesKHR>();
 			}
 			else {
 				caps = physical
-					.getVideoCapabilitiesKHR<
-						vk::VideoCapabilitiesKHR,
-						vk::VideoEncodeCapabilitiesKHR,
-						vk::VideoEncodeH265CapabilitiesKHR
-					>(chain.profile)
+					.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeH265CapabilitiesKHR>(chain.profile)
 					.get<vk::VideoCapabilitiesKHR>();
 			}
 

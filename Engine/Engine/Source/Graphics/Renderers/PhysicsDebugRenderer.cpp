@@ -15,6 +15,7 @@ import gse.assets;
 import :physics_debug_renderer;
 import :forward_renderer;
 import :camera_system;
+import :cloud_renderer;
 import :render_targets;
 import :sdf_grid_renderer;
 import :settings;
@@ -554,7 +555,7 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
-		.after<forward::system, sdf_grid::system, world_text::system>();
+		.after<forward::system, sdf_grid::system, world_text::system, cloud::cloud_composite_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 

@@ -27,7 +27,8 @@ export namespace gse::vulkan {
 			const device& dev
 		) -> semaphore;
 
-		[[nodiscard]] static auto create_timeline(
+		[[nodiscard]]
+		static auto create_timeline(
 			const device& dev,
 			std::uint64_t initial_value
 		) -> semaphore;

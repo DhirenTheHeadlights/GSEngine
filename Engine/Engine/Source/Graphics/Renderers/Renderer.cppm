@@ -37,15 +37,25 @@ import gse.meta;
 export namespace gse::renderer {
 	struct system {
 		struct [[= gse::settings::category<"Graphics">{}]] data {
-			[[= gse::settings::describe<"Watch shader sources on disk and reload pipelines when files change.">{}]] bool hot_reload_enabled = false;
+			[[
+				= gse::settings::describe<"Watch shader sources on disk and reload pipelines when files change.">{}
+			]]
+			bool hot_reload_enabled = false;
 
-			[[= gse::settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}]] bool gpu_timestamps_enabled = true;
+			[[
+				= gse::settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
+			]]
+			bool gpu_timestamps_enabled = true;
 
-			[[= gse::settings::describe<
-				"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead."
-			>{}]] bool gpu_pipeline_stats_enabled = false;
+			[[
+				= gse::settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
+			]]
+			bool gpu_pipeline_stats_enabled = false;
 
-			[[= gse::settings::describe<"Aggregate per-frame profiler samples into rolling averages for the HUD.">{}]] bool profile_aggregator_enabled = true;
+			[[
+				= gse::settings::describe<"Aggregate per-frame profiler samples into rolling averages for the HUD.">{}
+			]]
+			bool profile_aggregator_enabled = true;
 
 			actions::handle dump_profile_action;
 			vec2f last_viewport{ 1920.f, 1080.f };

@@ -14,13 +14,15 @@ import gse.concurrency;
 import gse.core;
 
 export namespace gse::gpu {
-	[[nodiscard]] auto begin_transient(
+	[[nodiscard]]
+	auto begin_transient(
 		gpu::device& dev,
 		queue_id id,
 		std::string_view tag = "transient.untagged"
 	) -> begin_transient_awaiter;
 
-	[[nodiscard]] auto submit(
+	[[nodiscard]]
+	auto submit(
 		gpu::device& dev,
 		vulkan::transient_command_buffer&& cmd,
 		queue_id id

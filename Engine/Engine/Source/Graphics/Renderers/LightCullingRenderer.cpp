@@ -167,7 +167,7 @@ auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::cont
 	co_return;
 }
 
-auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<camera::system> cam_state, shared_view<atmosphere::system> atm_state) -> async::task<> {
 	auto& graph = *gpu_s.render_graph;
 
 	if (!graph.frame_in_progress()) {
@@ -194,6 +194,20 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 
 	std::array<shaders::forward::light, max_lights> lights{};
 	std::size_t light_count = 0;
+
+	if (light_count < max_lights) {
+		const auto sun_to_surface = -atm_state.sun_direction;
+		lights[light_count] = {
+			.light_type = shaders::forward::light_type::directional,
+			.direction = view.transform_direction(sun_to_surface),
+			.world_direction = sun_to_surface,
+			.color = atm_state.sun_color,
+			.intensity = atm_state.sun_intensity,
+			.ambient_strength = atm_state.sun_ambient_strength,
+			.source_radius = atm_state.sun_source_radius,
+		};
+		++light_count;
+	}
 
 	for (const auto& comp : dir_chunk) {
 		if (light_count >= max_lights) {

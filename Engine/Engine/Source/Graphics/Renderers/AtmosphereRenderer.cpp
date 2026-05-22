@@ -209,7 +209,7 @@ auto gse::renderer::atmosphere::recreate_ap_volume(const gpu::context::data& gpu
 		},
 		"atmosphere_ap_volume"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.ap_volume, gpu::image_layout::general);
+	gpu::transition_image_to(*gpu_s.device, d.ap_volume);
 }
 
 auto gse::renderer::atmosphere::write_transmittance_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
@@ -339,9 +339,9 @@ auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context
 		},
 		"atmosphere_sky_view_lut"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.transmittance_lut, gpu::image_layout::general);
-	gpu::transition_image_to(*gpu_s.device, d.multiscatter_lut, gpu::image_layout::general);
-	gpu::transition_image_to(*gpu_s.device, d.sky_view_lut, gpu::image_layout::general);
+	gpu::transition_image_to(*gpu_s.device, d.transmittance_lut);
+	gpu::transition_image_to(*gpu_s.device, d.multiscatter_lut);
+	gpu::transition_image_to(*gpu_s.device, d.sky_view_lut);
 
 	recreate_ap_volume(gpu_s, d);
 

@@ -35,17 +35,19 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 	d.render_graph = std::make_unique<gpu::render_graph>(*d.device, *d.swapchain, *d.frame, d.bindless_textures.get());
 
 	d.device->transient().recorder().pre_frame([graph = d.render_graph.get()](handle<command_buffer> cmd) {
-		vulkan::transition_image_layout(
-			graph->depth_image(),
-			cmd,
-			image_layout::general,
-			image_aspect_flag::depth,
-			pipeline_stage_flag::top_of_pipe,
-			{},
-			pipeline_stage_flag::early_fragment_tests | pipeline_stage_flag::late_fragment_tests,
-			access_flag::depth_stencil_attachment_write | access_flag::depth_stencil_attachment_read
-		);
-		graph->pre_frame_transitions(cmd);
+		const image_barrier depth_init{
+			.src_stages = pipeline_stage_flag::top_of_pipe,
+			.src_access = {},
+			.dst_stages = pipeline_stage_flag::early_fragment_tests | pipeline_stage_flag::late_fragment_tests,
+			.dst_access = access_flag::depth_stencil_attachment_write | access_flag::depth_stencil_attachment_read,
+			.old_layout = image_layout::undefined,
+			.new_layout = image_layout::general,
+			.image = graph->depth_image().handle(),
+			.aspects = image_aspect_flag::depth,
+		};
+		vulkan::commands(cmd).pipeline_barrier(dependency_info{
+			.image_barriers = std::span(&depth_init, 1),
+		});
 	});
 
 	while (true) {
@@ -65,7 +67,6 @@ auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
 	}
 
 	d.device->wait_idle();
-	d.swapchain->clear_depth_image();
 
 	d.bindless_textures.reset();
 	d.render_graph.reset();

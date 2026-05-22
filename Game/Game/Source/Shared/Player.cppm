@@ -12,6 +12,9 @@ export namespace gs::player {
 		gse::angle pitch = gse::degrees(0.f);
 		float mouse_sensitivity = 0.1f;
 		bool jetpack_enabled = false;
+		gse::length collision_radius = gse::meters(0.25f);
+		gse::length collision_skin = gse::meters(0.05f);
+		bool collide_with_geometry = true;
 	};
 
 	constexpr std::array<float, 4> camera_distance_levels_m = { 0.f, 2.f, 4.f, 6.f };
@@ -30,13 +33,23 @@ export namespace gs::player {
 			[[
 				= gse::settings::describe<"Camera follow distance level (0=first person, 1-3=third person).">{},
 				= gse::settings::range<0, 3>{}
-			]] int camera_level = 0;
+			]]
+			int camera_level = 0;
 
-			[[= gse::settings::describe<"Smoothing factor on input axes per fixed step (0..1).">{}]] float input_smoothing = 0.20f;
+			[[
+				= gse::settings::describe<"Smoothing factor on input axes per fixed step (0..1).">{}
+			]]
+			float input_smoothing = 0.20f;
 
-			[[= gse::settings::describe<"Slerp rate per frame for pelvis facing toward yaw when grounded.">{}]] float facing_turn_rate = 0.10f;
+			[[
+				= gse::settings::describe<"Slerp rate per frame for pelvis facing toward yaw when grounded.">{}
+			]]
+			float facing_turn_rate = 0.03f;
 
-			[[= gse::settings::describe<"Slerp rate per frame for pelvis facing toward yaw when airborne.">{}]] float facing_turn_rate_airborne = 0.04f;
+			[[
+				= gse::settings::describe<"Slerp rate per frame for pelvis facing toward yaw when airborne.">{}
+			]]
+			float facing_turn_rate_airborne = 0.01f;
 
 			gse::interval_timer<float> input_log_timer{ gse::seconds(0.5f) };
 		};
@@ -89,13 +102,15 @@ auto gs::player::register_bindings(gse::run_context& ctx, bindings& b) -> void {
 auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::input::system::data& input_s, const gse::camera::system::data& cam_s) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [players, transforms, follows, intents, states, gaits] = co_await ctx.acquire_with(
+			auto [players, transforms, follows, intents, states, gaits, collisions, motions] = co_await ctx.acquire_with(
 				gse::write_v<component>,
 				gse::write_v<gse::physics::transform_component>,
 				gse::write_v<gse::camera::follow_component>,
 				gse::write_v<gs::locomotion::intent>,
 				gse::read_v<gs::locomotion::state>,
-				gse::read_v<gs::locomotion::gait>
+				gse::read_v<gs::locomotion::gait>,
+				gse::read_v<gse::physics::collision_component>,
+				gse::read_v<gse::physics::motion_component>
 			);
 
 			const auto player_ids = players.owner_ids();
@@ -160,32 +175,17 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 					continue;
 				}
 
-				const auto* loc_state = states.find(p.pelvis_id);
-				const auto* loc_gait = gaits.find(p.pelvis_id);
-				const bool any_foot_grounded = loc_state && loc_state->any_foot_grounded;
-				const bool both_grounded = loc_state && loc_state->foot_grounded_l && loc_state->foot_grounded_r;
-				const bool fallen = loc_gait && loc_gait->fallen;
-
-				const auto move_axis = cs.axis2_v(static_cast<std::uint16_t>(b.move_axis_id.number()));
-				const float raw_forward = std::clamp(-move_axis.y(), -1.f, 1.f);
-				const float raw_strafe = std::clamp(move_axis.x(), -1.f, 1.f);
-				const float raw_intensity =
-					std::clamp(std::sqrt(raw_forward * raw_forward + raw_strafe * raw_strafe), 0.f, 1.f);
-
-				if (!fallen && any_foot_grounded && raw_intensity > 0.05f) {
-					const gse::quat target_orientation = gse::quat(gse::vec3f(0.f, 1.f, 0.f), p.yaw);
-					const float turn_rate = both_grounded ? d.facing_turn_rate : d.facing_turn_rate_airborne;
-					pelvis_tc->orientation =
-						gse::normalize(gse::slerp(pelvis_tc->orientation, target_orientation, turn_rate));
-				}
+				constexpr float raw_forward = 1.f;
+				constexpr float raw_strafe = 0.f;
+				constexpr float raw_intensity = 1.f;
 
 				if (auto* itn = intents.find(p.pelvis_id)) {
 					const float k = d.input_smoothing;
 					itn->forward += (raw_forward - itn->forward) * k;
 					itn->strafe += (raw_strafe - itn->strafe) * k;
 					itn->intensity += (raw_intensity - itn->intensity) * k;
-					itn->sprint = gse::actions::held(b.shift, cs, as);
-					itn->jump = gse::actions::pressed(b.jump, cs, as);
+					itn->sprint = false;
+					itn->jump = false;
 
 					if (log_now) {
 						gse::log::println(
@@ -213,7 +213,72 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 					);
 					const gse::vec3f camera_forward =
 						gse::rotate_vector(camera_orientation, gse::vec3f(0.f, 0.f, -1.f));
-					cam_follow->position = pelvis_tc->position - camera_forward * distance;
+					const auto target_pos = pelvis_tc->position;
+					const auto desired_camera_pos = target_pos - camera_forward * distance;
+
+					gse::length spring_distance = distance;
+					if (p.collide_with_geometry && distance > gse::meters(0.f)) {
+						const auto inflation = p.collision_radius * 2.f;
+						const auto col_ids = collisions.owner_ids();
+						for (std::size_t k = 0; k < collisions.size(); ++k) {
+							const auto col_eid = col_ids[k];
+							const auto* mc = motions.find(col_eid);
+							if (!mc || !gse::physics::is_static(*mc)) {
+								continue;
+							}
+							const auto* col_tc = transforms.find(col_eid);
+							if (!col_tc) {
+								continue;
+							}
+							const auto* shape = std::get_if<gse::physics::box_shape>(&collisions[k].shape);
+							if (!shape) {
+								continue;
+							}
+							const gse::physics::box_shape inflated{
+								.size = shape->size + gse::vec3<gse::displacement>(inflation, inflation, inflation)
+							};
+							const gse::bounding_box bb(*col_tc, inflated);
+							if (const auto hit = gse::narrow_phase_collision::segment_obb_first_hit(bb, target_pos, desired_camera_pos)) {
+								const auto safe = std::max(hit->distance - p.collision_skin, gse::meters(0.f));
+								if (safe < spring_distance) {
+									spring_distance = safe;
+								}
+							}
+						}
+					}
+
+					auto camera_pos = target_pos - camera_forward * spring_distance;
+
+					if (p.collide_with_geometry) {
+						const auto inflation = p.collision_radius * 2.f;
+						const auto col_ids = collisions.owner_ids();
+						for (std::size_t k = 0; k < collisions.size(); ++k) {
+							const auto col_eid = col_ids[k];
+							const auto* mc = motions.find(col_eid);
+							if (!mc || !gse::physics::is_static(*mc)) {
+								continue;
+							}
+							const auto* col_tc = transforms.find(col_eid);
+							if (!col_tc) {
+								continue;
+							}
+							const auto* shape = std::get_if<gse::physics::box_shape>(&collisions[k].shape);
+							if (!shape) {
+								continue;
+							}
+							const gse::physics::box_shape inflated{
+								.size = shape->size + gse::vec3<gse::displacement>(inflation, inflation, inflation)
+							};
+							const gse::bounding_box bb(*col_tc, inflated);
+							const auto result = gse::narrow_phase_collision::query_obb(bb, camera_pos);
+							if (result.signed_distance < p.collision_skin) {
+								const auto push = p.collision_skin - result.signed_distance;
+								camera_pos = camera_pos + result.normal * push;
+							}
+						}
+					}
+
+					cam_follow->position = camera_pos;
 					cam_follow->orientation = camera_orientation;
 				}
 			}

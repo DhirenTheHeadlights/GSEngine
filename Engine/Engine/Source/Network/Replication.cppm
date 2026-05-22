@@ -20,20 +20,14 @@ export namespace gse::network {
 	auto broadcast_component_deltas(
 		auto& send_fn,
 		registry& reg,
-		const std::unordered_map<
-			address,
-			remote_peer
-		>& peers
+		const std::unordered_map<address, remote_peer>& peers
 	) -> void;
 
 	template <typename Pack>
 	auto replicate_deltas(
 		auto& send_fn,
 		registry& reg,
-		const std::unordered_map<
-			address,
-			remote_peer
-		>& peers
+		const std::unordered_map<address, remote_peer>& peers
 	) -> void;
 
 	template <typename T>

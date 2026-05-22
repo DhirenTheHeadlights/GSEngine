@@ -13,18 +13,12 @@ export namespace gse {
 			var_t& v
 		);
 
-		template <
-			class T,
-			class F
-		>
+		template <class T, class F>
 		auto if_is(
 			F&& f
 		) & -> variant&;
 
-		template <
-			class T,
-			class F
-		>
+		template <class T, class F>
 		auto else_if_is(
 			F&& f
 		) & -> variant&;
@@ -34,18 +28,12 @@ export namespace gse {
 			F&& f
 		) & -> void;
 
-		template <
-			class T,
-			class F
-		>
+		template <class T, class F>
 		auto if_is(
 			F&& f
 		) && -> variant&&;
 
-		template <
-			class T,
-			class F
-		>
+		template <class T, class F>
 		auto else_if_is(
 			F&& f
 		) && -> variant&&;
@@ -149,18 +137,14 @@ auto gse::variant<Variant>::otherwise(F&& f) && -> void {
 template <class Variant>
 template <class F>
 auto gse::variant<Variant>::if_is(F&& f) & -> variant& {
-	using t = std::remove_cvref_t<
-		typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):]
-	>;
+	using t = std::remove_cvref_t<typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):]>;
 	return this->if_is<t>(std::forward<F>(f));
 }
 
 template <class Variant>
 template <class F>
 auto gse::variant<Variant>::else_if_is(F&& f) & -> variant& {
-	using t = std::remove_cvref_t<
-		typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):]
-	>;
+	using t = std::remove_cvref_t<typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):]>;
 	return this->else_if_is<t>(std::forward<F>(f));
 }
 

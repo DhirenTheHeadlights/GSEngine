@@ -7,6 +7,7 @@ import :spot_light;
 import :directional_light;
 import :camera_system;
 import :depth_prepass_renderer;
+import :atmosphere_renderer;
 import gse.os;
 import gse.assets;
 import gse.gpu;
@@ -49,7 +50,8 @@ export namespace gse::renderer::light_culling {
 			frame_context& ctx,
 			shared_view<gpu::context> gpu_s,
 			const data& d,
-			shared_view<camera::system> cam_state
+			shared_view<camera::system> cam_state,
+			shared_view<atmosphere::system> atm_state
 		) -> async::task<>;
 
 	private:

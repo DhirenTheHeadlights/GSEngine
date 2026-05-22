@@ -7,6 +7,7 @@ import :handles;
 import :types;
 import :vulkan_allocation;
 import :vulkan_buffer;
+import :vulkan_fence;
 import :vulkan_image;
 import :vulkan_device;
 import :vulkan_instance;
@@ -17,7 +18,8 @@ import gse.log;
 import gse.math;
 
 export namespace gse::vulkan {
-	[[nodiscard]] auto pick_surface_format(
+	[[nodiscard]]
+	auto pick_surface_format(
 		const vk::raii::PhysicalDevice& physical_device,
 		const vk::raii::SurfaceKHR& surface
 	) -> gpu::image_format;
@@ -69,14 +71,16 @@ export namespace gse::vulkan {
 			swap_chain&&
 		) noexcept -> swap_chain& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			vec2i framebuffer_size,
 			gpu::present_mode preferred_present_mode,
 			const instance& instance_data,
-			device& device_data
+			device& device_data,
+			gpu::handle<swap_chain> old_swapchain = {}
 		) -> swap_chain;
 
-		[[nodiscard]] auto swap_chain_handle() const -> gpu::handle<swap_chain>;
+		[[nodiscard]] auto handle() const -> gpu::handle<swap_chain>;
 
 		[[nodiscard]] auto extent() const -> vec2u;
 
@@ -96,11 +100,22 @@ export namespace gse::vulkan {
 			std::uint32_t index
 		) const -> gpu::handle<image_view>;
 
-		[[nodiscard]] auto depth(this auto&& self) -> auto& {
-			return self.m_depth_image;
-		}
+		auto set_present_mode(
+			gpu::present_mode mode
+		) -> void;
 
-		auto clear_depth() -> void;
+		[[nodiscard]] auto release_fence(
+			std::uint32_t image_index
+		) const -> gpu::handle<fence>;
+
+		auto wait_release_fences(
+			const device& dev
+		) const -> void;
+
+		auto reset_release_fence(
+			const device& dev,
+			std::uint32_t image_index
+		) -> void;
 
 		auto reset_swapchain() -> void;
 
@@ -116,7 +131,7 @@ export namespace gse::vulkan {
 			std::vector<vk::raii::ImageView>&& image_views,
 			vk::Format format,
 			swap_chain_details&& details,
-			basic_image<device>&& depth_image
+			std::vector<fence>&& release_fences
 		);
 
 		vk::raii::SwapchainKHR m_swap_chain;
@@ -127,6 +142,6 @@ export namespace gse::vulkan {
 		std::vector<vk::raii::ImageView> m_image_views;
 		vk::Format m_format;
 		swap_chain_details m_details;
-		basic_image<device> m_depth_image;
+		std::vector<fence> m_release_fences;
 	};
 }

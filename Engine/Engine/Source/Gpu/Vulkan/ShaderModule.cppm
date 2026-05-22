@@ -24,7 +24,8 @@ export namespace gse::vulkan {
 			shader_module&&
 		) noexcept -> shader_module& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const device& dev,
 			std::span<const std::uint32_t> spirv
 		) -> shader_module;

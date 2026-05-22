@@ -51,8 +51,21 @@ auto gse::gpu::frame::set_sync(vulkan::sync&& sync) -> void {
 }
 
 auto gse::gpu::frame::recreate_resources(const window::data& win) -> void {
+	const auto requested_size = window::viewport(win);
+	const auto requested_mode = present_mode_from_setting_index(win.current_present_mode_index);
+	const auto current_extent = m_swapchain->extent();
+	const auto current_mode = m_swapchain->config().present_mode();
+
+	const bool size_unchanged = current_extent.x() == static_cast<std::uint32_t>(requested_size.x()) &&
+		current_extent.y() == static_cast<std::uint32_t>(requested_size.y());
+
+	if (m_device->vulkan_device().swapchain_maintenance1_enabled() && size_unchanged && current_mode != requested_mode) {
+		m_swapchain->config().set_present_mode(requested_mode);
+		return;
+	}
+
 	m_device->wait_idle();
-	m_swapchain->recreate(window::viewport(win), present_mode_from_setting_index(win.current_present_mode_index));
+	m_swapchain->recreate(requested_size, requested_mode);
 	m_sync = create_sync_objects(m_device->vulkan_device(), m_swapchain->config());
 	m_swapchain->notify_recreated();
 	m_device->wait_idle();
@@ -101,7 +114,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		trace::scope_guard sg{ trace_id<"begin_frame::acquire">() };
 		const auto acquired = vulkan::acquire_next_image(
 			dev,
-			m_swapchain->config().swap_chain_handle(),
+			m_swapchain->config().handle(),
 			m_sync.image_available(m_current_frame)
 		);
 		acquire_status = acquired.result;
@@ -131,6 +144,11 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 
 	m_image_index = acquired_image_index;
 
+	if (m_device->vulkan_device().swapchain_maintenance1_enabled()) {
+		const auto release_fence = m_swapchain->config().release_fence(m_image_index);
+		vulkan::wait_for_fence(dev, release_fence);
+	}
+
 	for (std::size_t i = 0; i < queue_type_count; ++i) {
 		m_command_buffers[i] =
 			m_device->vulkan_command().frame_command_buffer(static_cast<queue_type>(i), m_current_frame);
@@ -146,7 +164,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		.dst_stages = pipeline_stage_flag::color_attachment_output,
 		.dst_access = access_flag::color_attachment_write | access_flag::color_attachment_read,
 		.old_layout = image_layout::undefined,
-		.new_layout = image_layout::color_attachment,
+		.new_layout = image_layout::general,
 		.image = m_swapchain->image(m_image_index),
 		.aspects = image_aspect_flag::color,
 	};
@@ -205,7 +223,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 		.src_access = access_flag::color_attachment_write,
 		.dst_stages = pipeline_stage_flag::bottom_of_pipe,
 		.dst_access = {},
-		.old_layout = image_layout::color_attachment,
+		.old_layout = image_layout::general,
 		.new_layout = image_layout::present_src,
 		.image = m_swapchain->image(m_image_index),
 		.aspects = image_aspect_flag::color,
@@ -309,12 +327,21 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	}
 
 	const handle<semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
-	const handle<vulkan::swap_chain> swapchain_handle = m_swapchain->config().swap_chain_handle();
+	const handle<vulkan::swap_chain> swapchain_handle = m_swapchain->config().handle();
+	const auto current_present_mode = m_swapchain->config().present_mode();
+	const auto maintenance1 = m_device->vulkan_device().swapchain_maintenance1_enabled();
+	handle<vulkan::fence> release_fence_handle{};
+	if (maintenance1) {
+		m_swapchain->config().reset_release_fence(m_device->vulkan_device(), m_image_index);
+		release_fence_handle = m_swapchain->config().release_fence(m_image_index);
+	}
 
 	const present_info present_info{
 		.wait_semaphores = std::span(&render_finished_handle, 1),
 		.swapchains = std::span(&swapchain_handle, 1),
 		.image_indices = std::span(&m_image_index, 1),
+		.present_modes = maintenance1 ? std::span(&current_present_mode, 1) : std::span<const present_mode>{},
+		.release_fences = maintenance1 ? std::span(&release_fence_handle, 1) : std::span<const handle<vulkan::fence>>{},
 	};
 
 	result present_result;

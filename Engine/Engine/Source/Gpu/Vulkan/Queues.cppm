@@ -38,6 +38,8 @@ export namespace gse::gpu {
 		std::span<const gpu::handle<vulkan::semaphore>> wait_semaphores;
 		std::span<const gpu::handle<vulkan::swap_chain>> swapchains;
 		std::span<const std::uint32_t> image_indices;
+		std::span<const present_mode> present_modes;
+		std::span<const gpu::handle<vulkan::fence>> release_fences;
 	};
 }
 
@@ -125,7 +127,8 @@ export namespace gse::vulkan {
 }
 
 namespace gse::vulkan {
-	[[nodiscard]] auto find_queue_families(
+	[[nodiscard]]
+	auto find_queue_families(
 		const vk::raii::PhysicalDevice& device,
 		const vk::raii::SurfaceKHR& surface
 	) -> queue_family;
@@ -144,6 +147,10 @@ namespace gse::vulkan {
 	struct present_scratch {
 		std::vector<vk::Semaphore> waits;
 		std::vector<vk::SwapchainKHR> swapchains;
+		std::vector<vk::PresentModeKHR> present_modes;
+		std::vector<vk::Fence> release_fences;
+		std::optional<vk::SwapchainPresentModeInfoEXT> mode_info;
+		std::optional<vk::SwapchainPresentFenceInfoEXT> fence_info;
 	};
 
 	auto build_vk_present_info(
@@ -203,7 +210,35 @@ auto gse::vulkan::build_vk_present_info(const gpu::present_info& info, present_s
 	for (const auto h : info.swapchains) {
 		scratch.swapchains.push_back(std::bit_cast<vk::SwapchainKHR>(h));
 	}
+
+	void* pnext_head = nullptr;
+	if (!info.present_modes.empty()) {
+		scratch.present_modes.reserve(info.present_modes.size());
+		for (const auto m : info.present_modes) {
+			scratch.present_modes.push_back(to_vk(m));
+		}
+		scratch.mode_info = vk::SwapchainPresentModeInfoEXT{
+			.pNext = pnext_head,
+			.swapchainCount = static_cast<std::uint32_t>(scratch.present_modes.size()),
+			.pPresentModes = scratch.present_modes.data(),
+		};
+		pnext_head = &*scratch.mode_info;
+	}
+	if (!info.release_fences.empty()) {
+		scratch.release_fences.reserve(info.release_fences.size());
+		for (const auto h : info.release_fences) {
+			scratch.release_fences.push_back(std::bit_cast<vk::Fence>(h));
+		}
+		scratch.fence_info = vk::SwapchainPresentFenceInfoEXT{
+			.pNext = pnext_head,
+			.swapchainCount = static_cast<std::uint32_t>(scratch.release_fences.size()),
+			.pFences = scratch.release_fences.data(),
+		};
+		pnext_head = &*scratch.fence_info;
+	}
+
 	return vk::PresentInfoKHR{
+		.pNext = pnext_head,
 		.waitSemaphoreCount = static_cast<std::uint32_t>(scratch.waits.size()),
 		.pWaitSemaphores = scratch.waits.data(),
 		.swapchainCount = static_cast<std::uint32_t>(scratch.swapchains.size()),

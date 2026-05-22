@@ -260,9 +260,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	auto spot_chunk = ctx.components<spot_light_component>();
 	auto point_chunk = ctx.components<point_light_component>();
 
-	const bool inject_atmosphere_sun = dir_chunk.empty();
 	const std::size_t total_lights = std::min(
-		dir_chunk.size() + spot_chunk.size() + point_chunk.size() + (inject_atmosphere_sun ? 1u : 0u),
+		dir_chunk.size() + spot_chunk.size() + point_chunk.size() + 1u,
 		max_lights
 	);
 	auto& staging = d.light_staging;
@@ -270,7 +269,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	auto* staging_lights = reinterpret_cast<shaders::forward::light*>(staging.data());
 	std::size_t light_count = 0;
 
-	if (inject_atmosphere_sun && light_count < max_lights) {
+	if (light_count < max_lights) {
 		const auto sun_to_surface = -atm_state.sun_direction;
 		staging_lights[light_count] = {
 			.light_type = shaders::forward::light_type::directional,
@@ -278,8 +277,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 			.world_direction = sun_to_surface,
 			.color = atm_state.sun_color,
 			.intensity = atm_state.sun_intensity,
-			.ambient_strength = 0.1f,
-			.source_radius = gse::meters(0.05f),
+			.ambient_strength = atm_state.sun_ambient_strength,
+			.source_radius = atm_state.sun_source_radius,
 		};
 		++light_count;
 	}
@@ -399,12 +398,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 			)
 		)
 		.depth(gpu::load_depth())
-		.after<
-			rt_shadow::system,
-			light_culling::system,
-			depth_prepass::system,
-			atmosphere::ap_compute_pass
-		>();
+		.after<rt_shadow::system, light_culling::system, depth_prepass::system, atmosphere::ap_compute_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 

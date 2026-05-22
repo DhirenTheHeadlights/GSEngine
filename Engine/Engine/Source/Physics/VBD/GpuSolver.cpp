@@ -243,15 +243,7 @@ namespace gse::vbd {
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
 	>;
 
-	using prepare_indirect_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_prepare_indirect">,
-		gpu::layout<"vbd_physics">,
-		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
-		gpu::threads<1>,
-		gpu::push_constant<vbd_push_constants>
-	>;
+	using prepare_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_indirect">, gpu::layout<"vbd_physics">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::helpers<"VBDPhysics/vbd_shared">, gpu::threads<1>, gpu::push_constant<vbd_push_constants>>;
 
 	using prepare_contact_indirect_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_prepare_contact_indirect">,

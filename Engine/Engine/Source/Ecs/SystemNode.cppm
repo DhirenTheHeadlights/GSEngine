@@ -106,10 +106,7 @@ export namespace gse {
 		std::optional<settings::register_settings_type> settings_record;
 	};
 
-	template <
-		typename S,
-		typename... Args
-	>
+	template <typename S, typename... Args>
 	auto make_system_node(
 		Args&&... args
 	) -> system_node;

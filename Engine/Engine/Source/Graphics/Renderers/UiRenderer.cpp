@@ -395,14 +395,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 
 	auto rec = co_await gpu::pass<ui::system>(ctx)
 		.color(gpu::load_color())
-		.after<
-			forward::system,
-			scene_snapshot::system,
-			physics_debug::system,
-			sdf_grid::system,
-			tonemap::system,
-			world_text::system
-		>();
+		.after<forward::system, scene_snapshot::system, physics_debug::system, sdf_grid::system, tonemap::system, world_text::system>();
 
 	if (snapshot_idx != shaders::bindless::invalid_index) {
 		rec.sample_image(snapshot_s.snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);

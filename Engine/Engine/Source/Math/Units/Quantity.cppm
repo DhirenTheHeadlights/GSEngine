@@ -302,10 +302,7 @@ namespace gse::internal {
 	template <typename T>
 	constexpr bool dependent_false_v = false;
 
-	template <
-		typename AncestorTag,
-		typename DescendantTag
-	>
+	template <typename AncestorTag, typename DescendantTag>
 	consteval auto is_same_or_ancestor_tag() -> bool;
 
 	template <typename Tag1, typename Tag2>
@@ -412,12 +409,7 @@ namespace gse::internal {
 	concept valid_unit_for_quantity =
 		same_unit_family_v<typename UnitType::quantity_tag, typename QuantityType::quantity_tag>;
 
-	export template <
-		is_arithmetic ArithmeticType,
-		is_dimension Dimensions,
-		typename QuantityTagType,
-		typename DefaultUnitType
-	>
+	export template <is_arithmetic ArithmeticType, is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
 	class quantity {
 	public:
 		using value_type = ArithmeticType;
@@ -431,127 +423,61 @@ namespace gse::internal {
 			ArithmeticType value
 		);
 
-		template <is_arithmetic T2,
-				  is_dimension Dim2,
-				  typename Tag2,
-				  typename Unit2>
-		requires has_same_dimensions<Dimensions,
-									 Dim2> &&
-			same_unit_family_v<QuantityTagType,
-							   Tag2>
+		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
+		requires has_same_dimensions<Dimensions, Dim2> &&
+			same_unit_family_v<QuantityTagType, Tag2>
 		explicit(
 			!is_generic_tag_v<Tag2> &&
 			(is_generic_tag_v<QuantityTagType> ||
 			 (semantic_kind_v<QuantityTagType> != semantic_kind_v<Tag2> &&
-			  !is_same_or_ancestor_tag<Tag2,
-									   QuantityTagType>()))
+			  !is_same_or_ancestor_tag<Tag2, QuantityTagType>()))
 		) constexpr quantity(
-			const quantity<T2,
-						   Dim2,
-						   Tag2,
-						   Unit2>& other
+			const quantity<T2, Dim2, Tag2, Unit2>& other
 		);
 
-		template <
-			is_arithmetic T2,
-			is_dimension Dim2,
-			typename Tag2,
-			typename Unit2
-		>
-		requires(!has_same_dimensions<
-				 Dimensions,
-				 Dim2
-		>)
+		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
+		requires(!has_same_dimensions<Dimensions, Dim2>)
 		constexpr quantity(
-			const quantity<
-				T2,
-				Dim2,
-				Tag2,
-				Unit2
-			>&
+			const quantity<T2, Dim2, Tag2, Unit2>&
 		);
 
 		template <is_unit UnitType>
-		requires valid_unit_for_quantity<
-			UnitType,
-			quantity
-		>
+		requires valid_unit_for_quantity<UnitType, quantity>
 		constexpr auto set(
 			ArithmeticType value
 		) -> void;
 
 		template <is_unit UnitType>
-		requires valid_unit_for_quantity<
-			UnitType,
-			quantity
-		>
+		requires valid_unit_for_quantity<UnitType, quantity>
 		constexpr auto as() const -> ArithmeticType;
 
 		constexpr explicit operator ArithmeticType() const noexcept;
 
 		template <auto UnitObj>
 		requires is_unit<decltype(UnitObj)> &&
-			valid_unit_for_quantity<
-					 decltype(UnitObj),
-					 quantity
-			>
+			valid_unit_for_quantity<decltype(UnitObj), quantity>
 		constexpr auto as() const -> ArithmeticType;
 
 		template <is_unit UnitType>
-		requires valid_unit_for_quantity<
-			UnitType,
-			quantity
-		>
+		requires valid_unit_for_quantity<UnitType, quantity>
 		constexpr static auto from(
 			ArithmeticType value
 		) -> quantity;
 
 		constexpr static auto canonical_storage_scale() -> float;
 
-		template <
-			is_arithmetic T2,
-			is_dimension Dim2,
-			typename Tag2,
-			typename Unit2
-		>
-		requires has_same_dimensions<
-					 Dimensions,
-					 Dim2
-				 > &&
-			same_unit_family_v<
-					 QuantityTagType,
-					 Tag2
-			>
+		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
+		requires has_same_dimensions<Dimensions, Dim2> &&
+			same_unit_family_v<QuantityTagType, Tag2>
 		constexpr auto operator<=>(
-			const quantity<
-				T2,
-				Dim2,
-				Tag2,
-				Unit2
-			>& other
+			const quantity<T2, Dim2, Tag2, Unit2>& other
 		) const;
 
-		template <
-			is_arithmetic T2,
-			is_dimension Dim2,
-			typename Tag2,
-			typename Unit2
-		>
-		requires has_same_dimensions<
-					 Dimensions,
-					 Dim2
-				 > &&
-			same_unit_family_v<
-					 QuantityTagType,
-					 Tag2
-			>
+		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
+		requires has_same_dimensions<Dimensions, Dim2> &&
+			same_unit_family_v<QuantityTagType, Tag2>
 		constexpr auto operator==(
-			const quantity<
-				T2,
-				Dim2,
-				Tag2,
-				Unit2
-			>& other
+			const quantity<T2, Dim2, Tag2, Unit2>& other
 		) const -> bool;
 
 		// Public only because clang p2996 requires structural types for NTTP, and
@@ -646,11 +572,7 @@ constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::from(A value) -> qua
 
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::canonical_storage_scale() -> float {
-	using can_type = std::conditional_t<
-		std::is_same_v<typename base_unit_override<Tag>::type, void>,
-		DefUnit,
-		typename base_unit_override<Tag>::type
-	>;
+	using can_type = std::conditional_t<std::is_same_v<typename base_unit_override<Tag>::type, void>, DefUnit, typename base_unit_override<Tag>::type>;
 	using r = std::ratio_divide<typename can_type::conversion_ratio, typename DefUnit::conversion_ratio>;
 	return static_cast<float>(r::num) / static_cast<float>(r::den);
 }
@@ -697,27 +619,13 @@ constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::converted_value(A va
 }
 
 namespace gse::internal {
-	export template <
-		typename TargetUnit,
-		is_arithmetic A,
-		is_dimension D,
-		typename Tag,
-		typename DefUnit
-	>
+	export template <typename TargetUnit, is_arithmetic A, is_dimension D, typename Tag, typename DefUnit>
 	requires is_unit<TargetUnit>
 	constexpr auto value_in(
-		const quantity<
-			A,
-			D,
-			Tag,
-			DefUnit
-		>& q
+		const quantity<A, D, Tag, DefUnit>& q
 	) -> A;
 
-	template <
-		typename Units,
-		typename Fn
-	>
+	template <typename Units, typename Fn>
 	constexpr auto dispatch_named_unit(
 		const Units& units,
 		std::string_view name,
@@ -731,13 +639,7 @@ namespace gse::internal {
 	concept has_unit_list = requires { quantity_units<Tag>::units; };
 }
 
-template <
-	typename TargetUnit,
-	gse::internal::is_arithmetic A,
-	gse::internal::is_dimension D,
-	typename Tag,
-	typename DefUnit
->
+template <typename TargetUnit, gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 requires gse::internal::is_unit<TargetUnit>
 constexpr auto gse::internal::value_in(const quantity<A, D, Tag, DefUnit>& q) -> A {
 	if constexpr (std::same_as<TargetUnit, DefUnit>) {
@@ -949,154 +851,88 @@ export namespace gse::internal {
 	using common_quantity_t = decltype(common_quantity_fn<T1, T2>())::type;
 
 	template <typename Q>
-	using quantity_base_unit_t = std::conditional_t<
-		std::is_same_v<typename base_unit_override<typename Q::quantity_tag>::type, void>,
-		typename Q::default_unit,
-		typename base_unit_override<typename Q::quantity_tag>::type
-	>;
+	using quantity_base_unit_t = std::conditional_t<std::is_same_v<typename base_unit_override<typename Q::quantity_tag>::type, void>, typename Q::default_unit, typename base_unit_override<typename Q::quantity_tag>::type>;
 }
 
 export namespace gse::internal {
-	template <
-		is_quantity Q1,
-		is_quantity Q2
-	>
-	requires has_same_dimension_as<
-		Q1,
-		Q2
-	>
+	template <is_quantity Q1, is_quantity Q2>
+	requires has_same_dimension_as<Q1, Q2>
 	constexpr auto operator+(
 		const Q1& lhs,
 		const Q2& rhs
-	)
-		-> addition_result_t<
-			Q1,
-			Q2
-		>;
+	) -> addition_result_t<Q1, Q2>;
 
-	template <
-		is_quantity Q1,
-		is_quantity Q2
-	>
-	requires has_same_dimension_as<
-		Q1,
-		Q2
-	>
+	template <is_quantity Q1, is_quantity Q2>
+	requires has_same_dimension_as<Q1, Q2>
 	constexpr auto operator-(
 		const Q1& lhs,
 		const Q2& rhs
-	)
-		-> subtraction_result_t<
-			Q1,
-			Q2
-		>;
+	) -> subtraction_result_t<Q1, Q2>;
 
-	template <
-		is_quantity Q1,
-		is_quantity Q2
-	>
+	template <is_quantity Q1, is_quantity Q2>
 	constexpr auto operator*(
 		const Q1& lhs,
 		const Q2& rhs
 	);
 
-	template <
-		is_quantity Q,
-		is_arithmetic S
-	>
+	template <is_quantity Q, is_arithmetic S>
 	constexpr auto operator*(
 		const Q& lhs,
 		const S& rhs
 	) -> Q;
 
-	template <
-		is_arithmetic S,
-		is_quantity Q
-	>
+	template <is_arithmetic S, is_quantity Q>
 	constexpr auto operator*(
 		const S& lhs,
 		const Q& rhs
 	) -> Q;
 
-	template <
-		is_quantity Q1,
-		is_quantity Q2
-	>
-	requires has_same_dimension_as<
-		Q1,
-		Q2
-	>
+	template <is_quantity Q1, is_quantity Q2>
+	requires has_same_dimension_as<Q1, Q2>
 	constexpr auto operator/(
 		const Q1& lhs,
 		const Q2& rhs
 	) -> Q1::value_type;
 
-	template <
-		is_quantity Q1,
-		is_quantity Q2
-	>
+	template <is_quantity Q1, is_quantity Q2>
 	constexpr auto operator/(
 		const Q1& lhs,
 		const Q2& rhs
 	);
 
-	template <
-		is_quantity Q,
-		is_arithmetic S
-	>
+	template <is_quantity Q, is_arithmetic S>
 	constexpr auto operator/(
 		const Q& lhs,
 		const S& rhs
 	) -> Q;
 
-	template <
-		is_arithmetic S,
-		is_quantity Q
-	>
+	template <is_arithmetic S, is_quantity Q>
 	constexpr auto operator/(
 		const S& lhs,
 		const Q& rhs
 	);
 
-	template <
-		is_quantity Q1,
-		is_quantity Q2
-	>
-	requires has_same_dimension_as<
-		Q1,
-		Q2
-	>
+	template <is_quantity Q1, is_quantity Q2>
+	requires has_same_dimension_as<Q1, Q2>
 	constexpr auto operator+=(
 		Q1& lhs,
 		const Q2& rhs
 	) -> Q1&;
 
-	template <
-		is_quantity Q1,
-		is_quantity Q2
-	>
-	requires has_same_dimension_as<
-		Q1,
-		Q2
-	>
+	template <is_quantity Q1, is_quantity Q2>
+	requires has_same_dimension_as<Q1, Q2>
 	constexpr auto operator-=(
 		Q1& lhs,
 		const Q2& rhs
 	) -> Q1&;
 
-	template <
-		is_quantity Q,
-		is_arithmetic S
-	>
+	template <is_quantity Q, is_arithmetic S>
 	constexpr auto operator*=(
 		Q& lhs,
 		const S& rhs
 	) -> Q&;
 
-	template <
-		is_quantity Q,
-		is_arithmetic S
-	>
+	template <is_quantity Q, is_arithmetic S>
 	constexpr auto operator/=(
 		Q& lhs,
 		const S& rhs
@@ -1244,26 +1080,14 @@ constexpr auto gse::internal::operator-(const Q& v) -> Q {
 }
 
 export namespace gse {
-	template <
-		typename ToQuantity,
-		typename FromQuantity
-	>
-	requires gse::internal::has_same_dimension_as<
-		ToQuantity,
-		FromQuantity
-	>
+	template <typename ToQuantity, typename FromQuantity>
+	requires gse::internal::has_same_dimension_as<ToQuantity, FromQuantity>
 	constexpr auto quantity_cast(
 		const FromQuantity& q
 	) -> ToQuantity;
 
-	template <
-		internal::is_quantity Q1,
-		internal::is_quantity Q2
-	>
-	requires internal::has_same_dimension_as<
-		Q1,
-		Q2
-	>
+	template <internal::is_quantity Q1, internal::is_quantity Q2>
+	requires internal::has_same_dimension_as<Q1, Q2>
 	constexpr auto fmod(
 		const Q1& a,
 		const Q2& b

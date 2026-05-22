@@ -82,7 +82,8 @@ export namespace gse {
 
 		[[nodiscard]] auto texture() const -> const gse::texture*;
 
-		[[nodiscard]] auto text_layout(
+		[[nodiscard]]
+		auto text_layout(
 			std::string_view text,
 			vec2f start,
 			float scale = 1.0f

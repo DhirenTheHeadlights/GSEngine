@@ -21,12 +21,7 @@ export namespace gs::pose_driver {
 auto gs::pose_driver::system::run(gse::run_context& ctx, data& d) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [specs, ctrls, transforms, muscles] = co_await ctx.acquire<
-				gse::read<gse::physics::joint_spec>,
-				gse::write<controlled_joint_component>,
-				gse::read<gse::physics::transform_component>,
-				gse::write<gse::physics::muscle_component>
-			>();
+			auto [specs, ctrls, transforms, muscles] = co_await ctx.acquire<gse::read<gse::physics::joint_spec>, gse::write<controlled_joint_component>, gse::read<gse::physics::transform_component>, gse::write<gse::physics::muscle_component>>();
 
 			const auto dt_seconds = gse::system_clock::fixed_dt<gse::time>().as<gse::seconds>();
 			const auto inv_dt = dt_seconds > 0.f ? 1.f / dt_seconds : 0.f;

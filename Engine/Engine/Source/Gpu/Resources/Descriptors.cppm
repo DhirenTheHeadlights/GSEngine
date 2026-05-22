@@ -167,7 +167,6 @@ auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& 
 }
 
 auto gse::gpu::build_push_writer_from_family(descriptor_heap& heap, const family_layout& family) -> descriptor_set_writer {
-	const auto& props = heap.props();
 	constexpr auto push_idx = static_cast<std::uint32_t>(descriptor_set_type::push);
 
 	auto set_it = std::ranges::find_if(family.sets, [](const auto& s) {
@@ -180,38 +179,37 @@ auto gse::gpu::build_push_writer_from_family(descriptor_heap& heap, const family
 	const auto set_layout = family.layout_handles[push_idx];
 	const auto total_size = heap.layout_size(set_layout);
 
-	auto descriptor_size_for = [&](descriptor_type dt) -> device_size {
-		switch (dt) {
-			case descriptor_type::uniform_buffer:
-				return props.uniform_buffer_descriptor_size;
-			case descriptor_type::storage_buffer:
-				return props.storage_buffer_descriptor_size;
-			case descriptor_type::combined_image_sampler:
-				return props.combined_image_sampler_descriptor_size;
-			case descriptor_type::sampled_image:
-				return props.sampled_image_descriptor_size;
-			case descriptor_type::storage_image:
-				return props.storage_image_descriptor_size;
-			case descriptor_type::sampler:
-				return props.sampler_descriptor_size;
-			case descriptor_type::acceleration_structure:
-				return props.acceleration_structure_descriptor_size;
-		}
-		return props.storage_buffer_descriptor_size;
+	struct ordered_binding {
+		std::uint32_t binding;
+		std::uint32_t count;
+		device_size offset;
+		descriptor_type type;
 	};
+	std::vector<ordered_binding> ordered;
+	ordered.reserve(set_it->bindings.size());
+	for (const auto& b : set_it->bindings) {
+		ordered.push_back({
+			.binding = b.desc.binding,
+			.count = b.desc.count == 0 ? 1u : b.desc.count,
+			.offset = heap.binding_offset(set_layout, b.desc.binding),
+			.type = b.desc.type,
+		});
+	}
+	std::ranges::sort(ordered, {}, &ordered_binding::offset);
 
 	std::uint32_t max_binding = 0;
-	for (const auto& b : set_it->bindings) {
-		max_binding = std::max(max_binding, b.desc.binding);
+	for (const auto& o : ordered) {
+		max_binding = std::max(max_binding, o.binding);
 	}
 
 	std::vector<descriptor_binding_info> bindings(max_binding + 1);
-	for (const auto& b : set_it->bindings) {
-		const auto idx = b.desc.binding;
-		bindings[idx] = {
-			.offset = heap.binding_offset(set_layout, idx),
-			.descriptor_size = descriptor_size_for(b.desc.type),
-			.type = b.desc.type,
+	for (std::size_t i = 0; i < ordered.size(); ++i) {
+		const auto end_offset = (i + 1 < ordered.size()) ? ordered[i + 1].offset : total_size;
+		const auto descriptor_size = (end_offset - ordered[i].offset) / ordered[i].count;
+		bindings[ordered[i].binding] = {
+			.offset = ordered[i].offset,
+			.descriptor_size = descriptor_size,
+			.type = ordered[i].type,
 		};
 	}
 
@@ -346,14 +344,44 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 	assert(m_region && *m_region, "Cannot commit to null descriptor region");
 
 	const auto& heap = *m_region->heap;
-	const auto& props = heap.props();
 
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
 	const auto set_layout = m_family->layout_handles[persistent_idx];
 	const auto& region = *m_region;
 
+	struct ordered_binding {
+		std::uint32_t binding;
+		device_size offset;
+		std::uint32_t count;
+	};
+	std::vector<ordered_binding> ordered;
+	for (const auto& fs : m_family->sets) {
+		if (fs.type != descriptor_set_type::persistent) {
+			continue;
+		}
+		ordered.reserve(fs.bindings.size());
+		for (const auto& b : fs.bindings) {
+			ordered.push_back({
+				.binding = b.desc.binding,
+				.offset = heap.binding_offset(set_layout, b.desc.binding),
+				.count = b.desc.count == 0 ? 1u : b.desc.count,
+			});
+		}
+		break;
+	}
+	std::ranges::sort(ordered, {}, &ordered_binding::offset);
+	const auto layout_size = heap.layout_size(set_layout);
+
+	std::unordered_map<std::uint32_t, device_size> binding_sizes;
+	binding_sizes.reserve(ordered.size());
+	for (std::size_t i = 0; i < ordered.size(); ++i) {
+		const auto end_offset = (i + 1 < ordered.size()) ? ordered[i + 1].offset : layout_size;
+		binding_sizes[ordered[i].binding] = (end_offset - ordered[i].offset) / ordered[i].count;
+	}
+
 	auto write_binding = [&](const std::uint32_t binding, const bool is_uniform) {
 		const auto boff = heap.binding_offset(set_layout, binding);
+		const auto size = binding_sizes[binding];
 
 		if (auto it = m_buffer_infos.find(binding); it != m_buffer_infos.end()) {
 			const auto& [buf, offset, range] = it->second;
@@ -366,7 +394,6 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 					.range = range,
 				},
 			};
-			const auto size = is_uniform ? props.uniform_buffer_descriptor_size : props.storage_buffer_descriptor_size;
 			heap.write_descriptor(region, boff, get_info, size);
 			return;
 		}
@@ -376,7 +403,7 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 				.type = descriptor_type::storage_image,
 				.image = it_si->second,
 			};
-			heap.write_descriptor(region, boff, get_info, props.storage_image_descriptor_size);
+			heap.write_descriptor(region, boff, get_info, size);
 			return;
 		}
 
@@ -385,7 +412,7 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 				.type = descriptor_type::combined_image_sampler,
 				.image = it_cis->second,
 			};
-			heap.write_descriptor(region, boff, get_info, props.combined_image_sampler_descriptor_size);
+			heap.write_descriptor(region, boff, get_info, size);
 			return;
 		}
 
@@ -404,7 +431,7 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 				.type = descriptor_type::acceleration_structure,
 				.acceleration_structure = as_addr,
 			};
-			heap.write_descriptor(region, boff, get_info, props.acceleration_structure_descriptor_size);
+			heap.write_descriptor(region, boff, get_info, size);
 		}
 	};
 

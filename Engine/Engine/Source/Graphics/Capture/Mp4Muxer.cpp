@@ -44,10 +44,7 @@ namespace gse::renderer::capture::mp4 {
 	public:
 		box_scope(
 			std::vector<std::byte>& out,
-			std::array<
-				char,
-				4
-			> type
+			std::array<char, 4> type
 		);
 
 		~box_scope() override;
@@ -63,10 +60,7 @@ namespace gse::renderer::capture::mp4 {
 		char c,
 		char d
 	) -> std::
-		array<
-			char,
-			4
-		>;
+		array<char, 4>;
 
 	auto push_u8(
 		std::vector<std::byte>& out,
@@ -95,10 +89,7 @@ namespace gse::renderer::capture::mp4 {
 
 	auto push_fourcc(
 		std::vector<std::byte>& out,
-		const std::array<
-			char,
-			4
-		>& cc
+		const std::array<char, 4>& cc
 	) -> void;
 
 	auto pts_to_timescale(

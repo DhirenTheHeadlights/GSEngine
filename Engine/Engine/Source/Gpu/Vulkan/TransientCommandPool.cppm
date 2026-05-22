@@ -23,7 +23,8 @@ export namespace gse::vulkan {
 			transient_command_pool&&
 		) noexcept -> transient_command_pool& = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			const device& device,
 			std::uint32_t family
 		) -> transient_command_pool;

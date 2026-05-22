@@ -42,14 +42,7 @@ namespace gse::renderer::capture {
 
 	using shader_binding_types = type_pack<output_y, output_uv, shaders::bindless::textures>;
 
-	using entry = gpu::compute_entry<
-		gpu::body_path<"Compute/rgba_to_nv12">,
-		gpu::layout<"rgba_to_nv12">,
-		gpu::bindings<shader_binding_types>,
-		gpu::threads<16, 16, 1>,
-		gpu::push_constant<push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::layout<"rgba_to_nv12">, gpu::bindings<shader_binding_types>, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
 auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const actions::system::data& sys, data& d) -> async::task<> {
@@ -110,7 +103,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
 				}
 			);
-			gpu::transition_image_to(*gpu_s.device, d.y_planes[i], gpu::image_layout::general);
+			gpu::transition_image_to(*gpu_s.device, d.y_planes[i]);
 
 			d.uv_planes[i] = gpu::image::create(
 				gpu_s.device->allocator(),
@@ -120,7 +113,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
 				}
 			);
-			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i], gpu::image_layout::general);
+			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i]);
 
 			d.convert_descriptors[i] =
 				gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);

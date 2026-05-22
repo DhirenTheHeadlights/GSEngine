@@ -7,44 +7,55 @@ import gse.assert;
 import gse.core;
 import gse.log;
 
-auto gse::vulkan::transition_image_layout(
-	basic_image<device>& image_resource,
-	const gpu::handle<command_buffer> cmd_handle,
-	const gpu::image_layout new_layout,
-	const gpu::image_aspect_flags aspects,
-	const gpu::pipeline_stage_flags src_stages,
-	const gpu::access_flags src_access,
-	const gpu::pipeline_stage_flags dst_stages,
-	const gpu::access_flags dst_access,
-	const std::uint32_t mip_levels,
-	const std::uint32_t layer_count
-) -> void {
-	const auto current = image_resource.layout();
-	if (current == new_layout) {
-		return;
+auto gse::vulkan::host_transition_image_to_general(const device& dev, const gpu::handle<image> img, const gpu::image_aspect_flag aspect, const std::uint32_t layer_count) -> void {
+	const vk::ImageAspectFlags aspect_mask = aspect == gpu::image_aspect_flag::depth
+		? vk::ImageAspectFlagBits::eDepth
+		: vk::ImageAspectFlagBits::eColor;
+	const vk::HostImageLayoutTransitionInfoEXT transition{
+		.image = std::bit_cast<vk::Image>(img),
+		.oldLayout = vk::ImageLayout::eUndefined,
+		.newLayout = vk::ImageLayout::eGeneral,
+		.subresourceRange = {
+			.aspectMask = aspect_mask,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = layer_count,
+		},
+	};
+	dev.raii_device().transitionImageLayoutEXT(transition);
+}
+
+auto gse::vulkan::host_upload_image_layers(const device& dev, const gpu::handle<image> img, const std::span<const void* const> layer_pointers, const vec2u extent) -> void {
+	const auto layer_count = static_cast<std::uint32_t>(layer_pointers.size());
+	host_transition_image_to_general(dev, img, gpu::image_aspect_flag::color, layer_count);
+
+	std::vector<vk::MemoryToImageCopyEXT> regions;
+	regions.reserve(layer_count);
+	for (std::uint32_t i = 0; i < layer_count; ++i) {
+		regions.push_back({
+			.pHostPointer = layer_pointers[i],
+			.memoryRowLength = 0,
+			.memoryImageHeight = 0,
+			.imageSubresource = {
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.mipLevel = 0,
+				.baseArrayLayer = i,
+				.layerCount = 1,
+			},
+			.imageOffset = { 0, 0, 0 },
+			.imageExtent = { extent.x(), extent.y(), 1 },
+		});
 	}
 
-	const gpu::image_barrier barrier{
-		.src_stages = src_stages,
-		.src_access = src_access,
-		.dst_stages = dst_stages,
-		.dst_access = dst_access,
-		.old_layout = current,
-		.new_layout = new_layout,
-		.image = image_resource.handle(),
-		.aspects = aspects,
-		.base_mip_level = 0,
-		.level_count = mip_levels,
-		.base_array_layer = 0,
-		.layer_count = layer_count,
+	const vk::CopyMemoryToImageInfoEXT info{
+		.flags = {},
+		.dstImage = std::bit_cast<vk::Image>(img),
+		.dstImageLayout = vk::ImageLayout::eGeneral,
+		.regionCount = static_cast<std::uint32_t>(regions.size()),
+		.pRegions = regions.data(),
 	};
-
-	const gpu::dependency_info dep{
-		.image_barriers = std::span(&barrier, 1)
-	};
-	commands(cmd_handle).pipeline_barrier(dep);
-
-	image_resource.set_layout(new_layout);
+	dev.raii_device().copyMemoryToImageEXT(info);
 }
 
 auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device) -> gpu::descriptor_buffer_properties {
@@ -55,30 +66,14 @@ auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDev
 
 	log::println(log::category::vulkan, "Descriptor buffer properties:");
 	log::println(log::category::vulkan, "  offset alignment: {}", db.descriptorBufferOffsetAlignment);
-	log::println(log::category::vulkan, "  uniform buffer size: {}", db.uniformBufferDescriptorSize);
-	log::println(log::category::vulkan, "  storage buffer size: {}", db.storageBufferDescriptorSize);
-	log::println(log::category::vulkan, "  sampled image size: {}", db.sampledImageDescriptorSize);
-	log::println(log::category::vulkan, "  sampler size: {}", db.samplerDescriptorSize);
-	log::println(log::category::vulkan, "  combined image sampler size: {}", db.combinedImageSamplerDescriptorSize);
-	log::println(log::category::vulkan, "  storage image size: {}", db.storageImageDescriptorSize);
-	log::println(log::category::vulkan, "  input attachment size: {}", db.inputAttachmentDescriptorSize);
 	log::println(
 		log::category::vulkan,
 		"  bufferless push descriptors: {}",
 		db.bufferlessPushDescriptors ? "true" : "false"
 	);
-	log::println(log::category::vulkan, "  acceleration structure size: {}", db.accelerationStructureDescriptorSize);
 
 	return {
 		.offset_alignment = db.descriptorBufferOffsetAlignment,
-		.uniform_buffer_descriptor_size = db.uniformBufferDescriptorSize,
-		.storage_buffer_descriptor_size = db.storageBufferDescriptorSize,
-		.sampled_image_descriptor_size = db.sampledImageDescriptorSize,
-		.sampler_descriptor_size = db.samplerDescriptorSize,
-		.combined_image_sampler_descriptor_size = db.combinedImageSamplerDescriptorSize,
-		.storage_image_descriptor_size = db.storageImageDescriptorSize,
-		.input_attachment_descriptor_size = db.inputAttachmentDescriptorSize,
-		.acceleration_structure_descriptor_size = db.accelerationStructureDescriptorSize,
 		.push_descriptors_supported = false,
 		.bufferless_push_descriptors = static_cast<bool>(db.bufferlessPushDescriptors),
 	};
@@ -118,6 +113,8 @@ gse::vulkan::device::device(device&& other) noexcept
 	  m_device(std::move(other.m_device)),
 	  m_fault_enabled(other.m_fault_enabled),
 	  m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled),
+	  m_host_image_copy_enabled(other.m_host_image_copy_enabled),
+	  m_swapchain_maintenance1_enabled(other.m_swapchain_maintenance1_enabled),
 	  m_queue_families(other.m_queue_families),
 	  m_pools(std::move(other.m_pools)),
 	  m_live_allocation_count(other.m_live_allocation_count.load()),
@@ -134,6 +131,8 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 		m_device = std::move(other.m_device);
 		m_fault_enabled = other.m_fault_enabled;
 		m_vendor_binary_fault_enabled = other.m_vendor_binary_fault_enabled;
+		m_host_image_copy_enabled = other.m_host_image_copy_enabled;
+		m_swapchain_maintenance1_enabled = other.m_swapchain_maintenance1_enabled;
 		m_queue_families = other.m_queue_families;
 		m_pools = std::move(other.m_pools);
 		m_live_allocation_count = other.m_live_allocation_count.load();
@@ -223,6 +222,12 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	const bool device_fault_extension_supported = supports_extension(vk::EXTDeviceFaultExtensionName);
 	const bool robustness2_extension_supported = supports_extension(vk::EXTRobustness2ExtensionName);
 	const bool nested_cb_extension_supported = supports_extension(vk::EXTNestedCommandBufferExtensionName);
+	const bool unified_layouts_extension_supported = supports_extension(vk::KHRUnifiedImageLayoutsExtensionName);
+	const bool host_image_copy_extension_supported = supports_extension(vk::EXTHostImageCopyExtensionName);
+	const bool mutable_descriptor_type_extension_supported =
+		supports_extension(vk::EXTMutableDescriptorTypeExtensionName);
+	const bool swapchain_maintenance1_extension_supported =
+		supports_extension(vk::EXTSwapchainMaintenance1ExtensionName);
 
 	const bool rt_extensions_available = supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
 		supports_extension(vk::KHRAccelerationStructureExtensionName) &&
@@ -240,7 +245,11 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
 		vk::PhysicalDeviceRayQueryFeaturesKHR,
 		vk::PhysicalDeviceRobustness2FeaturesEXT,
-		vk::PhysicalDeviceNestedCommandBufferFeaturesEXT
+		vk::PhysicalDeviceNestedCommandBufferFeaturesEXT,
+		vk::PhysicalDeviceUnifiedImageLayoutsFeaturesKHR,
+		vk::PhysicalDeviceHostImageCopyFeaturesEXT,
+		vk::PhysicalDeviceMutableDescriptorTypeFeaturesEXT,
+		vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT
 	>();
 	const auto& vk12_query = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
 	const bool buffer_device_address_capture_replay_supported = vk12_query.bufferDeviceAddressCaptureReplay;
@@ -268,6 +277,20 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	const auto& nested_cb_query = feature_chain.get<vk::PhysicalDeviceNestedCommandBufferFeaturesEXT>();
 	const bool nested_cb_supported = nested_cb_extension_supported && nested_cb_query.nestedCommandBuffer &&
 		nested_cb_query.nestedCommandBufferRendering && nested_cb_query.nestedCommandBufferSimultaneousUse;
+	const auto& unified_layouts_query = feature_chain.get<vk::PhysicalDeviceUnifiedImageLayoutsFeaturesKHR>();
+	const bool unified_layouts_supported =
+		unified_layouts_extension_supported && unified_layouts_query.unifiedImageLayouts;
+	const auto& host_image_copy_query = feature_chain.get<vk::PhysicalDeviceHostImageCopyFeaturesEXT>();
+	const bool host_image_copy_supported =
+		host_image_copy_extension_supported && host_image_copy_query.hostImageCopy;
+	const auto& mutable_descriptor_type_query =
+		feature_chain.get<vk::PhysicalDeviceMutableDescriptorTypeFeaturesEXT>();
+	const bool mutable_descriptor_type_supported =
+		mutable_descriptor_type_extension_supported && mutable_descriptor_type_query.mutableDescriptorType;
+	const auto& swapchain_maintenance1_query =
+		feature_chain.get<vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT>();
+	const bool swapchain_maintenance1_supported =
+		swapchain_maintenance1_extension_supported && swapchain_maintenance1_query.swapchainMaintenance1;
 
 	log::println(log::category::vulkan, "Mesh shader support detected");
 	log::println(log::category::vulkan, "Ray tracing support detected");
@@ -293,6 +316,50 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	}
 	else {
 		log::println(log::level::warning, log::category::vulkan, "VK_EXT_nested_command_buffer not supported");
+	}
+
+	if (unified_layouts_supported) {
+		log::println(log::category::vulkan, "Unified image layouts support detected (zero-cost GENERAL layout)");
+	}
+	else {
+		log::println(
+			log::level::info,
+			log::category::vulkan,
+			"VK_KHR_unified_image_layouts not supported; GENERAL layout used unconditionally"
+		);
+	}
+
+	if (host_image_copy_supported) {
+		log::println(log::category::vulkan, "Host image copy support detected (staging-buffer-free uploads)");
+	}
+	else {
+		log::println(
+			log::level::info,
+			log::category::vulkan,
+			"VK_EXT_host_image_copy not supported; texture uploads use staging buffers"
+		);
+	}
+
+	if (mutable_descriptor_type_supported) {
+		log::println(log::category::vulkan, "Mutable descriptor type support detected");
+	}
+	else {
+		log::println(
+			log::level::info,
+			log::category::vulkan,
+			"VK_EXT_mutable_descriptor_type not supported"
+		);
+	}
+
+	if (swapchain_maintenance1_supported) {
+		log::println(log::category::vulkan, "Swapchain maintenance1 support detected");
+	}
+	else {
+		log::println(
+			log::level::info,
+			log::category::vulkan,
+			"VK_EXT_swapchain_maintenance1 not supported"
+		);
 	}
 
 	vk::PhysicalDeviceMemoryPriorityFeaturesEXT memory_priority_features{
@@ -400,16 +467,52 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	void* post_nested_cb_chain_head =
 		nested_cb_supported ? static_cast<void*>(&nested_cb_features) : static_cast<void*>(&present_wait_features);
 
+	vk::PhysicalDeviceUnifiedImageLayoutsFeaturesKHR unified_layouts_features{
+		.pNext = post_nested_cb_chain_head,
+		.unifiedImageLayouts = unified_layouts_supported ? vk::True : vk::False,
+	};
+
+	void* post_unified_chain_head = unified_layouts_supported
+		? static_cast<void*>(&unified_layouts_features)
+		: post_nested_cb_chain_head;
+
+	vk::PhysicalDeviceHostImageCopyFeaturesEXT host_image_copy_features{
+		.pNext = post_unified_chain_head,
+		.hostImageCopy = host_image_copy_supported ? vk::True : vk::False,
+	};
+
+	void* post_host_copy_chain_head = host_image_copy_supported
+		? static_cast<void*>(&host_image_copy_features)
+		: post_unified_chain_head;
+
+	vk::PhysicalDeviceMutableDescriptorTypeFeaturesEXT mutable_descriptor_type_features{
+		.pNext = post_host_copy_chain_head,
+		.mutableDescriptorType = mutable_descriptor_type_supported ? vk::True : vk::False,
+	};
+
+	void* post_mutable_descriptor_chain_head = mutable_descriptor_type_supported
+		? static_cast<void*>(&mutable_descriptor_type_features)
+		: post_host_copy_chain_head;
+
+	vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchain_maintenance1_features{
+		.pNext = post_mutable_descriptor_chain_head,
+		.swapchainMaintenance1 = swapchain_maintenance1_supported ? vk::True : vk::False,
+	};
+
+	void* post_swapchain_maintenance1_chain_head = swapchain_maintenance1_supported
+		? static_cast<void*>(&swapchain_maintenance1_features)
+		: post_mutable_descriptor_chain_head;
+
 	const bool av1_encode_supported =
 		video_encode_extensions_available && supports_extension(vk::KHRVideoEncodeAv1ExtensionName);
 
 	vk::PhysicalDeviceVideoEncodeAV1FeaturesKHR av1_encode_features{
-		.pNext = post_nested_cb_chain_head,
+		.pNext = post_swapchain_maintenance1_chain_head,
 		.videoEncodeAV1 = vk::True,
 	};
 
 	void* post_video_chain_head =
-		av1_encode_supported ? static_cast<void*>(&av1_encode_features) : post_nested_cb_chain_head;
+		av1_encode_supported ? static_cast<void*>(&av1_encode_features) : post_swapchain_maintenance1_chain_head;
 
 	void* post_aftermath_chain_head = aftermath_tracker.device_create_info_pnext(post_video_chain_head);
 
@@ -452,6 +555,22 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 
 	if (nested_cb_supported) {
 		device_extensions.push_back(vk::EXTNestedCommandBufferExtensionName);
+	}
+
+	if (unified_layouts_supported) {
+		device_extensions.push_back(vk::KHRUnifiedImageLayoutsExtensionName);
+	}
+
+	if (host_image_copy_supported) {
+		device_extensions.push_back(vk::EXTHostImageCopyExtensionName);
+	}
+
+	if (mutable_descriptor_type_supported) {
+		device_extensions.push_back(vk::EXTMutableDescriptorTypeExtensionName);
+	}
+
+	if (swapchain_maintenance1_supported) {
+		device_extensions.push_back(vk::EXTSwapchainMaintenance1ExtensionName);
 	}
 
 	for (const auto* aftermath_ext : aftermath_tracker.required_device_extensions()) {
@@ -500,6 +619,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 			cfg,
 			device_fault_supported,
 			device_fault_vendor_binary_supported,
+			host_image_copy_supported,
+			swapchain_maintenance1_supported,
 			families.graphics_family.value(),
 			families.compute_family.value()
 		),
@@ -540,6 +661,14 @@ auto gse::vulkan::device::fault_enabled() const -> bool {
 
 auto gse::vulkan::device::vendor_binary_fault_enabled() const -> bool {
 	return m_vendor_binary_fault_enabled;
+}
+
+auto gse::vulkan::device::host_image_copy_enabled() const -> bool {
+	return m_host_image_copy_enabled;
+}
+
+auto gse::vulkan::device::swapchain_maintenance1_enabled() const -> bool {
+	return m_swapchain_maintenance1_enabled;
 }
 
 auto gse::vulkan::device::wait_idle() const -> void {
@@ -781,7 +910,6 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 		std::bit_cast<gpu::handle<vulkan::image>>(image),
 		std::bit_cast<gpu::handle<vulkan::image_view>>(view),
 		static_cast<gpu::image_format_value>(info.format),
-		from_vk(info.initialLayout),
 		vec3u{ info.extent.width, info.extent.height, info.extent.depth },
 		std::move(alloc)
 	);
@@ -997,6 +1125,8 @@ gse::vulkan::device::device(
 	device::settings& cfg,
 	const bool device_fault_enabled,
 	const bool device_fault_vendor_binary_enabled,
+	const bool host_image_copy_enabled,
+	const bool swapchain_maintenance1_enabled,
 	const std::uint32_t graphics_family,
 	const std::uint32_t compute_family
 )
@@ -1004,6 +1134,8 @@ gse::vulkan::device::device(
 	  m_device(std::move(device)),
 	  m_fault_enabled(device_fault_enabled),
 	  m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled),
+	  m_host_image_copy_enabled(host_image_copy_enabled),
+	  m_swapchain_maintenance1_enabled(swapchain_maintenance1_enabled),
 	  m_settings(&cfg) {
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = graphics_family;
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = compute_family;

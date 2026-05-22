@@ -51,43 +51,81 @@ export namespace gse::renderer::cloud {
 
 	struct system {
 		struct [[= gse::settings::category<"Clouds">{}]] data {
-			[[= gse::settings::describe<"Cloud layer bottom altitude (km)">{}]] atmosphere_length cloud_bottom = kilometers(1.5f);
+			[[
+				= gse::settings::describe<"Cloud layer bottom altitude (km)">{}
+			]]
+			atmosphere_length cloud_bottom = kilometers(1.5f);
 
-			[[= gse::settings::describe<"Cloud layer top altitude (km)">{}]] atmosphere_length cloud_top = kilometers(6.0f);
+			[[
+				= gse::settings::describe<"Cloud layer top altitude (km)">{}
+			]]
+			atmosphere_length cloud_top = kilometers(6.0f);
 
 			[[
 				= gse::settings::describe<"Global cloud coverage (0 = clear sky, 1 = overcast)">{},
 				= gse::shared
-			]] float cloud_coverage = 0.55f;
+			]]
+			float cloud_coverage = 0.55f;
 
 			[[
 				= gse::settings::describe<"Cloud type bias (0 = stratus, 1 = cumulus)">{},
 				= gse::shared
-			]] float cloud_type = 0.7f;
+			]]
+			float cloud_type = 0.7f;
 
 			[[= gse::settings::describe<"Cloud density multiplier">{}]] float density_multiplier = 1.0f;
 
-			[[= gse::settings::describe<"View-ray Beer's law extinction coefficient">{}]] float view_extinction = 0.15f;
+			[[
+				= gse::settings::describe<"View-ray Beer's law extinction coefficient">{}
+			]]
+			float view_extinction = 0.15f;
 
-			[[= gse::settings::describe<"Light-ray Beer's law extinction coefficient">{}]] float light_extinction = 0.10f;
+			[[
+				= gse::settings::describe<"Light-ray Beer's law extinction coefficient">{}
+			]]
+			float light_extinction = 0.10f;
 
-			[[= gse::settings::describe<"Shape noise sampling scale (1/km)">{}]] atmosphere_inverse_length shape_scale = per_kilometer(0.4f);
+			[[
+				= gse::settings::describe<"Shape noise sampling scale (1/km)">{}
+			]]
+			atmosphere_inverse_length shape_scale = per_kilometer(0.4f);
 
-			[[= gse::settings::describe<"Detail noise sampling scale (1/km)">{}]] atmosphere_inverse_length detail_scale = per_kilometer(3.5f);
+			[[
+				= gse::settings::describe<"Detail noise sampling scale (1/km)">{}
+			]]
+			atmosphere_inverse_length detail_scale = per_kilometer(3.5f);
 
 			[[= gse::settings::describe<"Detail erosion strength">{}]] float detail_strength = 0.35f;
 
-			[[= gse::settings::describe<"Henyey-Greenstein forward asymmetry">{}]] float phase_g_forward = 0.80f;
+			[[
+				= gse::settings::describe<"Henyey-Greenstein forward asymmetry">{}
+			]]
+			float phase_g_forward = 0.80f;
 
-			[[= gse::settings::describe<"Henyey-Greenstein back asymmetry">{}]] float phase_g_back = -0.30f;
+			[[
+				= gse::settings::describe<"Henyey-Greenstein back asymmetry">{}
+			]]
+			float phase_g_back = -0.30f;
 
-			[[= gse::settings::describe<"Dual-lobe phase blend (0 = back only, 1 = forward only)">{}]] float phase_blend = 0.65f;
+			[[
+				= gse::settings::describe<"Dual-lobe phase blend (0 = back only, 1 = forward only)">{}
+			]]
+			float phase_blend = 0.65f;
 
-			[[= gse::settings::describe<"Ambient sky contribution into clouds">{}]] float ambient_strength = 1.0f;
+			[[
+				= gse::settings::describe<"Ambient sky contribution into clouds">{}
+			]]
+			float ambient_strength = 1.0f;
 
-			[[= gse::settings::describe<"Maximum cloud raymarch distance (km)">{}]] atmosphere_length max_distance = kilometers(80.0f);
+			[[
+				= gse::settings::describe<"Maximum cloud raymarch distance (km)">{}
+			]]
+			atmosphere_length max_distance = kilometers(80.0f);
 
-			[[= gse::settings::describe<"Cloud wind velocity in world space (km/s)">{}]] vec3<atmosphere_length> wind_offset = { kilometers(0.0f), kilometers(0.0f), kilometers(0.0f) };
+			[[
+				= gse::settings::describe<"Cloud wind velocity in world space (km/s)">{}
+			]]
+			vec3<atmosphere_length> wind_offset = { kilometers(0.0f), kilometers(0.0f), kilometers(0.0f) };
 
 			gpu::pipeline shape_bake_pipeline;
 			gpu::pipeline detail_bake_pipeline;

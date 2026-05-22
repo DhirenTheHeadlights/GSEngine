@@ -77,10 +77,7 @@ export namespace gse::asset {
 		const std::string& filename
 	) -> resource::handle<T>;
 
-	template <
-		typename T,
-		typename... Args
-	>
+	template <typename T, typename... Args>
 	auto queue(
 		data& d,
 		const std::string& name,
@@ -94,7 +91,8 @@ export namespace gse::asset {
 	) -> resource::handle<T>;
 
 	template <typename T>
-	[[nodiscard]] auto resource_state(
+	[[nodiscard]]
+	auto resource_state(
 		const data& d,
 		id resource_id
 	) -> resource::state;
@@ -105,7 +103,8 @@ export namespace gse::asset {
 	};
 
 	template <typename T>
-	[[nodiscard]] auto load(
+	[[nodiscard]]
+	auto load(
 		run_context& ctx,
 		std::string_view path
 	) -> async::task<resource::handle<T>>;

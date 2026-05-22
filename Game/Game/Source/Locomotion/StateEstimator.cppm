@@ -8,10 +8,16 @@ import :locomotion_types;
 export namespace gs::locomotion {
 	struct state_estimator {
 		struct [[= gse::settings::category<"State Estimator">{}]] data {
-			[[= gse::settings::
-				  describe<"Y height of the ground plane (foot AABB min Y below this counts as grounded).">{}]] gse::position ground_y = gse::meters(0.f);
+			[[
+				= gse::settings::
+					describe<"Y height of the ground plane (foot AABB min Y below this counts as grounded).">{}
+			]]
+			gse::position ground_y = gse::meters(0.f);
 
-			[[= gse::settings::describe<"Vertical tolerance for foot-ground contact.">{}]] gse::displacement ground_tolerance = gse::meters(0.02f);
+			[[
+				= gse::settings::describe<"Vertical tolerance for foot-ground contact.">{}
+			]]
+			gse::displacement ground_tolerance = gse::meters(0.02f);
 
 			gse::interval_timer<float> log_timer{ gse::seconds(0.5f) };
 		};
@@ -124,17 +130,9 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 				s.foot_grounded_r = r_aabb.min.y() <= contact_y;
 				s.any_foot_grounded = s.foot_grounded_l || s.foot_grounded_r;
 				s.double_support = s.foot_grounded_l && s.foot_grounded_r;
-				s.support_min = gse::vec3<gse::position>(
-					std::min(l_aabb.min.x(), r_aabb.min.x()),
-					std::min(l_aabb.min.y(), r_aabb.min.y()),
-					std::min(l_aabb.min.z(), r_aabb.min.z())
-				);
-				s.support_max = gse::vec3<gse::position>(
-					std::max(l_aabb.max.x(), r_aabb.max.x()),
-					std::max(l_aabb.max.y(), r_aabb.max.y()),
-					std::max(l_aabb.max.z(), r_aabb.max.z())
-				);
-				s.support_center = s.support_min + (s.support_max - s.support_min) * 0.5f;
+				s.support_min = gse::min(l_aabb.min, r_aabb.min);
+				s.support_max = gse::max(l_aabb.max, r_aabb.max);
+				s.support_center = gse::lerp(s.support_min, s.support_max, 0.5f);
 
 				s.com_world = pelvis_tc->position;
 

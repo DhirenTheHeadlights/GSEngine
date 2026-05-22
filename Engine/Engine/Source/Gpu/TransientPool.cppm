@@ -26,7 +26,6 @@ export namespace gse::gpu {
 		image_format format = image_format::r8g8b8a8_unorm;
 		image_usage usage = image_flag::sampled;
 		image_view_type view = image_view_type::e2d;
-		image_layout layout = image_layout::general;
 		std::vector<id> used_by;
 		std::string tag;
 	};
@@ -72,12 +71,14 @@ export namespace gse::gpu {
 		transient_buffer_desc desc;
 	};
 
-	[[nodiscard]] auto transient_image(
+	[[nodiscard]]
+	auto transient_image(
 		const frame_context& ctx,
 		transient_image_desc desc
 	) -> transient_image_handle;
 
-	[[nodiscard]] auto transient_buffer(
+	[[nodiscard]]
+	auto transient_buffer(
 		const frame_context& ctx,
 		transient_buffer_desc desc
 	) -> transient_buffer_handle;
@@ -86,7 +87,6 @@ export namespace gse::gpu {
 		std::unique_ptr<gpu::image> resource;
 		image_aspect_flags aspects;
 		image_format format = image_format::r8g8b8a8_unorm;
-		image_layout layout = image_layout::general;
 		std::uint32_t color = 0;
 		std::uint32_t first_pass = 0;
 		std::uint32_t last_pass = 0;
@@ -135,7 +135,6 @@ export namespace gse::gpu {
 		struct transient_image_info {
 			const image* resource = nullptr;
 			image_aspect_flags aspects;
-			image_layout target_layout = image_layout::general;
 			image_format format = image_format::r8g8b8a8_unorm;
 		};
 

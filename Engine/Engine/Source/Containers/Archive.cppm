@@ -55,15 +55,9 @@ export namespace gse {
 			const std::vector<T>& vec
 		) -> binary_writer&;
 
-		template <
-			typename T,
-			std::size_t N
-		>
+		template <typename T, std::size_t N>
 		auto operator&(
-			const static_vector<
-				T,
-				N
-			>& vec
+			const static_vector<T, N>& vec
 		) -> binary_writer&;
 
 		template <typename T>
@@ -71,15 +65,9 @@ export namespace gse {
 			const std::optional<T>& opt
 		) -> binary_writer&;
 
-		template <
-			typename K,
-			typename V
-		>
+		template <typename K, typename V>
 		auto operator&(
-			const std::unordered_map<
-				K,
-				V
-			>& map
+			const std::unordered_map<K, V>& map
 		) -> binary_writer&;
 
 		template <typename T>
@@ -129,15 +117,9 @@ export namespace gse {
 			std::vector<T>& vec
 		) -> binary_reader&;
 
-		template <
-			typename T,
-			std::size_t N
-		>
+		template <typename T, std::size_t N>
 		auto operator&(
-			static_vector<
-				T,
-				N
-			>& vec
+			static_vector<T, N>& vec
 		) -> binary_reader&;
 
 		template <typename T>
@@ -145,15 +127,9 @@ export namespace gse {
 			std::optional<T>& opt
 		) -> binary_reader&;
 
-		template <
-			typename K,
-			typename V
-		>
+		template <typename K, typename V>
 		auto operator&(
-			std::unordered_map<
-				K,
-				V
-			>& map
+			std::unordered_map<K, V>& map
 		) -> binary_reader&;
 
 		template <typename T>

@@ -37,14 +37,6 @@ export namespace gse::gpu {
 
 	struct descriptor_buffer_properties {
 		vk::DeviceSize offset_alignment = 0;
-		vk::DeviceSize uniform_buffer_descriptor_size = 0;
-		vk::DeviceSize storage_buffer_descriptor_size = 0;
-		vk::DeviceSize sampled_image_descriptor_size = 0;
-		vk::DeviceSize sampler_descriptor_size = 0;
-		vk::DeviceSize combined_image_sampler_descriptor_size = 0;
-		vk::DeviceSize storage_image_descriptor_size = 0;
-		vk::DeviceSize input_attachment_descriptor_size = 0;
-		vk::DeviceSize acceleration_structure_descriptor_size = 0;
 		bool push_descriptors_supported = false;
 		bool bufferless_push_descriptors = false;
 	};
@@ -202,6 +194,7 @@ export namespace gse::gpu {
 		transfer_dst [[= vk::ImageUsageFlagBits::eTransferDst]] = 1 << 3,
 		storage [[= vk::ImageUsageFlagBits::eStorage]] = 1 << 4,
 		transfer_src [[= vk::ImageUsageFlagBits::eTransferSrc]] = 1 << 5,
+		host_transfer [[= vk::ImageUsageFlagBits::eHostTransferEXT]] = 1 << 6,
 	};
 
 	using image_usage = gse::flags<image_flag>;
@@ -212,12 +205,6 @@ export namespace gse::gpu {
 	enum class image_layout : std::uint8_t {
 		undefined [[= vk::ImageLayout::eUndefined]],
 		general [[= vk::ImageLayout::eGeneral]],
-		shader_read_only [[= vk::ImageLayout::eShaderReadOnlyOptimal]],
-		color_attachment [[= vk::ImageLayout::eColorAttachmentOptimal]],
-		depth_stencil_attachment [[= vk::ImageLayout::eDepthStencilAttachmentOptimal]],
-		depth_attachment [[= vk::ImageLayout::eDepthAttachmentOptimal]],
-		transfer_src [[= vk::ImageLayout::eTransferSrcOptimal]],
-		transfer_dst [[= vk::ImageLayout::eTransferDstOptimal]],
 		present_src [[= vk::ImageLayout::ePresentSrcKHR]],
 		video_encode_src [[= vk::ImageLayout::eVideoEncodeSrcKHR]],
 	};
@@ -228,7 +215,6 @@ export namespace gse::gpu {
 		image_format format = image_format::d32_sfloat;
 		image_view_type view = image_view_type::e2d;
 		image_usage usage = image_flag::sampled | image_flag::depth_attachment;
-		image_layout ready_layout = image_layout::undefined;
 	};
 
 	enum class index_type : std::uint8_t {
@@ -974,10 +960,6 @@ export namespace gse::vulkan {
 	) -> gpu::image_format;
 
 	auto from_vk(
-		vk::ImageLayout l
-	) -> gpu::image_layout;
-
-	auto from_vk(
 		const vk::SurfaceFormatKHR& sf
 	) -> gpu::surface_format;
 
@@ -1128,18 +1110,6 @@ auto gse::vulkan::to_vk(const gpu::image_layout l) -> vk::ImageLayout {
 			return vk::ImageLayout::eUndefined;
 		case gpu::image_layout::general:
 			return vk::ImageLayout::eGeneral;
-		case gpu::image_layout::shader_read_only:
-			return vk::ImageLayout::eShaderReadOnlyOptimal;
-		case gpu::image_layout::color_attachment:
-			return vk::ImageLayout::eColorAttachmentOptimal;
-		case gpu::image_layout::depth_stencil_attachment:
-			return vk::ImageLayout::eDepthStencilAttachmentOptimal;
-		case gpu::image_layout::depth_attachment:
-			return vk::ImageLayout::eDepthAttachmentOptimal;
-		case gpu::image_layout::transfer_src:
-			return vk::ImageLayout::eTransferSrcOptimal;
-		case gpu::image_layout::transfer_dst:
-			return vk::ImageLayout::eTransferDstOptimal;
 		case gpu::image_layout::present_src:
 			return vk::ImageLayout::ePresentSrcKHR;
 		case gpu::image_layout::video_encode_src:
@@ -1418,6 +1388,9 @@ auto gse::vulkan::to_vk(const gpu::image_usage fls) -> vk::ImageUsageFlags {
 	}
 	if (fls.test(gpu::image_flag::transfer_src)) {
 		result |= vk::ImageUsageFlagBits::eTransferSrc;
+	}
+	if (fls.test(gpu::image_flag::host_transfer)) {
+		result |= vk::ImageUsageFlagBits::eHostTransferEXT;
 	}
 	return result;
 }
@@ -1843,33 +1816,6 @@ auto gse::vulkan::from_vk(const vk::Format f) -> gpu::image_format {
 			return gpu::image_format::r16g16b16a16_sfloat;
 		default:
 			return gpu::image_format::r8g8b8a8_unorm;
-	}
-}
-
-auto gse::vulkan::from_vk(const vk::ImageLayout l) -> gpu::image_layout {
-	switch (l) {
-		case vk::ImageLayout::eUndefined:
-			return gpu::image_layout::undefined;
-		case vk::ImageLayout::eGeneral:
-			return gpu::image_layout::general;
-		case vk::ImageLayout::eShaderReadOnlyOptimal:
-			return gpu::image_layout::shader_read_only;
-		case vk::ImageLayout::eColorAttachmentOptimal:
-			return gpu::image_layout::color_attachment;
-		case vk::ImageLayout::eDepthStencilAttachmentOptimal:
-			return gpu::image_layout::depth_stencil_attachment;
-		case vk::ImageLayout::eDepthAttachmentOptimal:
-			return gpu::image_layout::depth_attachment;
-		case vk::ImageLayout::eTransferSrcOptimal:
-			return gpu::image_layout::transfer_src;
-		case vk::ImageLayout::eTransferDstOptimal:
-			return gpu::image_layout::transfer_dst;
-		case vk::ImageLayout::ePresentSrcKHR:
-			return gpu::image_layout::present_src;
-		case vk::ImageLayout::eVideoEncodeSrcKHR:
-			return gpu::image_layout::video_encode_src;
-		default:
-			return gpu::image_layout::undefined;
 	}
 }
 

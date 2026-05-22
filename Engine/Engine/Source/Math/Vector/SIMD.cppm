@@ -209,10 +209,7 @@ export namespace gse::simd {
 		concept simd = (is_int32<T> && (N == 4 || N == 8)) || (is_float<T> && (N == 4 || N == 8)) ||
 			(is_double<T> && (N == 2 || N == 4));
 
-		template <
-			typename T,
-			int N
-		>
+		template <typename T, int N>
 		auto simd_cpu_supported() noexcept -> bool;
 	}
 }

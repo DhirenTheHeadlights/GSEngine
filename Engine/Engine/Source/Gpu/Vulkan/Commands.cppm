@@ -34,8 +34,8 @@ export namespace gse::gpu {
 		access_flags src_access;
 		pipeline_stage_flags dst_stages;
 		access_flags dst_access;
-		image_layout old_layout = image_layout::undefined;
-		image_layout new_layout = image_layout::undefined;
+		image_layout old_layout = image_layout::general;
+		image_layout new_layout = image_layout::general;
 		gpu::handle<vulkan::image> image;
 		image_aspect_flags aspects;
 		std::uint32_t base_mip_level = 0;
@@ -52,7 +52,7 @@ export namespace gse::gpu {
 
 	struct rendering_attachment_info {
 		gpu::handle<vulkan::image_view> image_view;
-		image_layout layout = image_layout::undefined;
+		image_layout layout = image_layout::general;
 		load_op load = load_op::dont_care;
 		store_op store = store_op::dont_care;
 		color_clear color_clear_value;

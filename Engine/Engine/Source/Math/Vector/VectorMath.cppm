@@ -6,10 +6,7 @@ import :vector;
 import :units;
 
 export namespace gse {
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto dot(
 		const V1& lhs,
@@ -26,60 +23,42 @@ export namespace gse {
 		const V& v
 	);
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto distance(
 		const V1& a,
 		const V2& b
 	);
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == 3 && V2::extent == 3)
 	constexpr auto cross(
 		const V1& lhs,
 		const V2& rhs
 	);
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto project(
 		const V1& a,
 		const V2& b
 	);
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto reflect(
 		const V1& v,
 		const V2& n
 	);
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto angle_between(
 		const V1& a,
 		const V2& b
 	) -> angle_t<typename V1::storage_type>;
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto lerp(
 		const V1& a,
@@ -103,20 +82,14 @@ export namespace gse {
 		const V& v
 	) -> V;
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto min(
 		const V1& a,
 		const V2& b
 	);
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto max(
 		const V1& a,
@@ -142,10 +115,7 @@ export namespace gse {
 		typename V::storage_type s
 	) -> V;
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto hadamard_product(
 		const V1& a,
@@ -159,101 +129,45 @@ export namespace gse {
 		typename V::storage_type epsilon
 	) -> bool;
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto reflect_across(
 		const V1& a,
 		const V2& b
 	);
 
-	template <
-		typename T,
-		std::size_t N
-	>
+	template <typename T, std::size_t N>
 	requires std::is_arithmetic_v<T>
 	constexpr auto sin(
-		const vec<
-			T,
-			N
-		>& v
-	)
-		-> vec<
-			T,
-			N
-		>;
+		const vec<T, N>& v
+	) -> vec<T, N>;
 
-	template <
-		typename T,
-		std::size_t N
-	>
+	template <typename T, std::size_t N>
 	requires std::is_arithmetic_v<T>
 	constexpr auto cos(
-		const vec<
-			T,
-			N
-		>& v
-	)
-		-> vec<
-			T,
-			N
-		>;
+		const vec<T, N>& v
+	) -> vec<T, N>;
 
-	template <
-		typename T,
-		std::size_t N
-	>
+	template <typename T, std::size_t N>
 	requires std::is_arithmetic_v<T>
 	constexpr auto exp(
-		const vec<
-			T,
-			N
-		>& v
-	)
-		-> vec<
-			T,
-			N
-		>;
+		const vec<T, N>& v
+	) -> vec<T, N>;
 
-	template <
-		typename T,
-		std::size_t N
-	>
+	template <typename T, std::size_t N>
 	requires std::is_arithmetic_v<T>
 	constexpr auto logarithm(
-		const vec<
-			T,
-			N
-		>& v
-	)
-		-> vec<
-			T,
-			N
-		>;
+		const vec<T, N>& v
+	) -> vec<T, N>;
 
-	template <
-		typename T,
-		std::size_t N
-	>
+	template <typename T, std::size_t N>
 	requires std::is_arithmetic_v<T>
 	constexpr auto pow(
-		const vec<
-			T,
-			N
-		>& v,
+		const vec<T, N>& v,
 		T exponent
-	)
-		-> vec<
-			T,
-			N
-		>;
+	) -> vec<T, N>;
 
-	template <
-		is_vec V1,
-		is_vec V2
-	>
+	template <is_vec V1, is_vec V2>
 	requires(V1::extent == V2::extent)
 	constexpr auto epsilon_equal_index(
 		const V1& a,

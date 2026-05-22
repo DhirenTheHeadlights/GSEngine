@@ -44,7 +44,8 @@ export namespace gse::save {
 		auto trigger_restart() -> void;
 
 		template <typename T>
-		[[nodiscard]] static auto read_one(
+		[[nodiscard]]
+		static auto read_one(
 			const std::filesystem::path& path,
 			std::string_view category,
 			std::string_view name,
@@ -56,8 +57,7 @@ export namespace gse::save {
 
 		static auto read_file(
 			const std::filesystem::path& path
-		) -> std::expected<std::string,
-						   std::error_code>;
+		) -> std::expected<std::string, std::error_code>;
 
 		static auto trim(
 			std::string_view s

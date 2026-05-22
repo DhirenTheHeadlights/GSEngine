@@ -60,7 +60,8 @@ export namespace gse::gpu {
 		)() = nullptr;
 	};
 
-	[[nodiscard]] auto build_compute_pipeline(
+	[[nodiscard]]
+	auto build_compute_pipeline(
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
@@ -111,26 +112,31 @@ export namespace gse::gpu {
 		)() = nullptr;
 	};
 
-	[[nodiscard]] auto build_graphics_pipeline(
+	[[nodiscard]]
+	auto build_graphics_pipeline(
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
 		const graphics_entry_pod& pod
 	) -> pipeline;
 
-	[[nodiscard]] inline auto allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const compute_entry_pod& pod, const std::source_location& loc = std::source_location::current()) -> descriptor_region {
+	[[nodiscard]]
+	inline auto allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const compute_entry_pod& pod, const std::source_location& loc = std::source_location::current()) -> descriptor_region {
 		return allocate_descriptors(registry, heap, pod.layout_name, loc);
 	}
 
-	[[nodiscard]] inline auto allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const graphics_entry_pod& pod, const std::source_location& loc = std::source_location::current()) -> descriptor_region {
+	[[nodiscard]]
+	inline auto allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const graphics_entry_pod& pod, const std::source_location& loc = std::source_location::current()) -> descriptor_region {
 		return allocate_descriptors(registry, heap, pod.layout_name, loc);
 	}
 
-	[[nodiscard]] inline auto make_push_writer(shader_registry& registry, handle<vulkan::device> dev, descriptor_heap& heap, const compute_entry_pod& pod) -> descriptor_writer {
+	[[nodiscard]]
+	inline auto make_push_writer(shader_registry& registry, handle<vulkan::device> dev, descriptor_heap& heap, const compute_entry_pod& pod) -> descriptor_writer {
 		return descriptor_writer(registry, dev, heap, pod.layout_name);
 	}
 
-	[[nodiscard]] inline auto make_push_writer(shader_registry& registry, handle<vulkan::device> dev, descriptor_heap& heap, const graphics_entry_pod& pod) -> descriptor_writer {
+	[[nodiscard]]
+	inline auto make_push_writer(shader_registry& registry, handle<vulkan::device> dev, descriptor_heap& heap, const graphics_entry_pod& pod) -> descriptor_writer {
 		return descriptor_writer(registry, dev, heap, pod.layout_name);
 	}
 
@@ -625,12 +631,14 @@ namespace gse::gpu {
 		const parsed_body& parsed
 	) -> std::string;
 
-	[[nodiscard]] auto compile_compute_spirv(
+	[[nodiscard]]
+	auto compile_compute_spirv(
 		const shader_compile_inputs& inputs,
 		std::string_view wrapper_source
 	) -> std::vector<std::uint32_t>;
 
-	[[nodiscard]] auto create_compute_pipeline_from_spirv(
+	[[nodiscard]]
+	auto create_compute_pipeline_from_spirv(
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
@@ -639,7 +647,8 @@ namespace gse::gpu {
 		std::uint32_t push_constant_size
 	) -> pipeline;
 
-	[[nodiscard]] auto build_compute_pipeline_impl(
+	[[nodiscard]]
+	auto build_compute_pipeline_impl(
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
@@ -664,7 +673,8 @@ namespace gse::gpu {
 		const parsed_body& parsed
 	) -> std::string;
 
-	[[nodiscard]] auto compile_graphics_program(
+	[[nodiscard]]
+	auto compile_graphics_program(
 		const graphics_entry_pod& pod,
 		std::string_view wrapper_source
 	) -> compiled_graphics_program;

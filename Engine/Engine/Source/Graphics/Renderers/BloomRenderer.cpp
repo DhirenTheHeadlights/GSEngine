@@ -49,23 +49,9 @@ namespace gse::renderer::bloom {
 	using downsample_bindings = type_pack<bloom_in, bloom_out>;
 	using upsample_bindings = type_pack<bloom_up_out>;
 
-	using downsample_entry = gpu::compute_entry<
-		gpu::body_path<"Compute/bloom_downsample">,
-		gpu::layout<"bloom_downsample">,
-		gpu::bindings<downsample_bindings>,
-		gpu::push_constant<downsample_push_constants>,
-		gpu::threads<8, 8, 1>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+	using downsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_downsample">, gpu::layout<"bloom_downsample">, gpu::bindings<downsample_bindings>, gpu::push_constant<downsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
-	using upsample_entry = gpu::compute_entry<
-		gpu::body_path<"Compute/bloom_upsample">,
-		gpu::layout<"bloom_upsample">,
-		gpu::bindings<upsample_bindings>,
-		gpu::push_constant<upsample_push_constants>,
-		gpu::threads<8, 8, 1>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+	using upsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_upsample">, gpu::layout<"bloom_upsample">, gpu::bindings<upsample_bindings>, gpu::push_constant<upsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
 	auto mips_for_quality(
 		quality_level q
@@ -75,13 +61,7 @@ namespace gse::renderer::bloom {
 		vec2u screen_extent,
 		quality_level q
 	) -> std::
-		pair<
-			std::uint32_t,
-			std::array<
-				vec2u,
-				max_mip_count
-			>
-		>;
+		pair<std::uint32_t, std::array<vec2u, max_mip_count>>;
 
 	auto recreate_mip_chain(
 		const gpu::context::data& gpu_s,
@@ -144,7 +124,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const gpu::context::data& gpu_s, s
 				},
 				std::format("bloom_down_{}", i)
 			);
-			gpu::transition_image_to(*gpu_s.device, d.mips_down[i], gpu::image_layout::general);
+			gpu::transition_image_to(*gpu_s.device, d.mips_down[i]);
 		}
 		else {
 			d.mips_down[i] = {};
@@ -229,13 +209,7 @@ auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<g
 
 	auto rec = co_await gpu::pass<downsample_pass>(ctx)
 		.pipeline(d.downsample_pipeline)
-		.after<
-			forward::system,
-			atmosphere::sky_raster_pass,
-			physics_debug::system,
-			sdf_grid::system,
-			world_text::system
-		>();
+		.after<forward::system, atmosphere::sky_raster_pass, physics_debug::system, sdf_grid::system, world_text::system>();
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::compute_shader);
 	rec.bind_descriptors(d.downsample_pipeline, d.downsample_descriptors[0][frame_index]);
 	rec.push(

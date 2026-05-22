@@ -19,7 +19,8 @@ export namespace gse::vulkan {
 	public:
 		basic_image() = default;
 
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			Device& dev,
 			const gpu::image_desc& desc,
 			std::string_view tag = "",
@@ -30,7 +31,6 @@ export namespace gse::vulkan {
 			gpu::handle<basic_image<device>> image,
 			gpu::handle<image_view> view,
 			gpu::image_format_value format,
-			gpu::image_layout current_layout,
 			vec3u extent,
 			basic_allocation<Device> allocation
 		);
@@ -51,19 +51,12 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto format() const -> gpu::image_format_value;
 
-		[[nodiscard]] auto layout() const -> gpu::image_layout;
-
 		[[nodiscard]] auto extent() const -> vec3u;
-
-		auto set_layout(
-			gpu::image_layout new_layout
-		) -> void;
 
 	private:
 		gpu::handle<basic_image<device>> m_image;
 		gpu::handle<image_view> m_view;
 		gpu::image_format_value m_format = 0;
-		gpu::image_layout m_current_layout = gpu::image_layout::undefined;
 		vec3u m_extent;
 		basic_allocation<Device> m_allocation;
 	};
@@ -76,14 +69,12 @@ gse::vulkan::basic_image<Device>::basic_image(
 	const gpu::handle<basic_image<device>> image,
 	const gpu::handle<image_view> view,
 	const gpu::image_format_value format,
-	const gpu::image_layout current_layout,
 	const vec3u extent,
 	basic_allocation<Device> allocation
 )
 	: m_image(image),
 	  m_view(view),
 	  m_format(format),
-	  m_current_layout(current_layout),
 	  m_extent(extent),
 	  m_allocation(std::move(allocation)) {
 }
@@ -97,6 +88,11 @@ auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc
 	const gpu::image_type type = is_3d ? gpu::image_type::e3d : gpu::image_type::e2d;
 	const std::uint32_t z_extent = is_3d ? desc.depth : 1u;
 
+	auto usage = desc.usage;
+	if (dev.host_image_copy_enabled() && usage.test(gpu::image_flag::transfer_dst)) {
+		usage |= gpu::image_flag::host_transfer;
+	}
+
 	const gpu::image_create_info create_info{
 		.flags =
 			is_cube ? gpu::image_create_flags{ gpu::image_create_flag::cube_compatible } : gpu::image_create_flags{},
@@ -106,7 +102,7 @@ auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc
 		.mip_levels = 1,
 		.array_layers = layers,
 		.samples = gpu::sample_count::e1,
-		.usage = desc.usage,
+		.usage = usage,
 	};
 	const gpu::image_view_create_info view_info{
 		.format = desc.format,
@@ -139,7 +135,6 @@ gse::vulkan::basic_image<Device>::basic_image(basic_image&& other) noexcept
 	: m_image(other.m_image),
 	  m_view(other.m_view),
 	  m_format(other.m_format),
-	  m_current_layout(other.m_current_layout),
 	  m_extent(other.m_extent),
 	  m_allocation(std::move(other.m_allocation)) {
 	other.m_image = {};
@@ -161,7 +156,6 @@ auto gse::vulkan::basic_image<Device>::operator=(basic_image&& other) noexcept -
 		m_image = other.m_image;
 		m_view = other.m_view;
 		m_format = other.m_format;
-		m_current_layout = other.m_current_layout;
 		m_extent = other.m_extent;
 		m_allocation = std::move(other.m_allocation);
 		other.m_image = {};
@@ -186,16 +180,6 @@ auto gse::vulkan::basic_image<Device>::format() const -> gpu::image_format_value
 }
 
 template <typename Device>
-auto gse::vulkan::basic_image<Device>::layout() const -> gpu::image_layout {
-	return m_current_layout;
-}
-
-template <typename Device>
 auto gse::vulkan::basic_image<Device>::extent() const -> vec3u {
 	return m_extent;
-}
-
-template <typename Device>
-auto gse::vulkan::basic_image<Device>::set_layout(const gpu::image_layout new_layout) -> void {
-	m_current_layout = new_layout;
 }

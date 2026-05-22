@@ -2,6 +2,7 @@ export module gse.gpu:swap_chain;
 
 import std;
 
+import :aliases;
 import :vulkan_device;
 import :vulkan_image;
 import :vulkan_instance;
@@ -19,7 +20,8 @@ import gse.log;
 export namespace gse::gpu {
 	class swap_chain final : public non_copyable {
 	public:
-		[[nodiscard]] static auto create(
+		[[nodiscard]]
+		static auto create(
 			vec2i framebuffer_size,
 			present_mode preferred_present_mode,
 			device& dev
@@ -27,6 +29,7 @@ export namespace gse::gpu {
 
 		swap_chain(
 			vulkan::swap_chain&& config,
+			vulkan::image&& depth_image,
 			device& dev
 		);
 
@@ -36,18 +39,12 @@ export namespace gse::gpu {
 			this auto& self
 		) -> auto&;
 
-		auto clear_depth_image() -> void;
-
 		using recreate_callback = std::function<void()>;
 		auto on_recreate(
 			recreate_callback callback
 		) -> void;
 
 		auto notify_recreated() -> void;
-
-		auto set_config(
-			vulkan::swap_chain&& config
-		) -> void;
 
 		auto recreate(
 			vec2i framebuffer_size,
@@ -66,18 +63,30 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto is_bgra() const -> bool;
 
-		[[nodiscard]] auto generation() const -> std::uint64_t;
-
 		[[nodiscard]] auto config() -> vulkan::swap_chain&;
 
 		[[nodiscard]] auto config() const -> const vulkan::swap_chain&;
 
 	private:
 		vulkan::swap_chain m_config;
+		vulkan::image m_depth_image;
 		device* m_device;
 		std::vector<recreate_callback> m_recreate_callbacks;
-		std::uint64_t m_generation = 0;
 	};
+}
+
+namespace gse::gpu {
+	auto create_swapchain_depth(device& dev, const vec2u extent) -> vulkan::image {
+		return vulkan::image::create(
+			dev.vulkan_device(),
+			image_desc{
+				.size = extent,
+				.format = image_format::d32_sfloat,
+				.usage = image_flag::depth_attachment | image_flag::sampled,
+			},
+			"swapchain.depth"
+		);
+	}
 }
 
 auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const present_mode preferred_present_mode, device& dev) -> std::unique_ptr<swap_chain> {
@@ -87,11 +96,13 @@ auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const present_mo
 		dev.vulkan_instance(),
 		dev.vulkan_device()
 	);
-	return std::make_unique<swap_chain>(std::move(config), dev);
+	auto depth = create_swapchain_depth(dev, config.extent());
+	return std::make_unique<swap_chain>(std::move(config), std::move(depth), dev);
 }
 
-gse::gpu::swap_chain::swap_chain(vulkan::swap_chain&& config, device& dev)
+gse::gpu::swap_chain::swap_chain(vulkan::swap_chain&& config, vulkan::image&& depth_image, device& dev)
 	: m_config(std::move(config)),
+	  m_depth_image(std::move(depth_image)),
 	  m_device(&dev) {
 }
 
@@ -100,11 +111,7 @@ auto gse::gpu::swap_chain::extent() const -> vec2u {
 }
 
 auto gse::gpu::swap_chain::depth_image(this auto& self) -> auto& {
-	return (self.m_config.depth());
-}
-
-auto gse::gpu::swap_chain::clear_depth_image() -> void {
-	m_config.clear_depth();
+	return (self.m_depth_image);
 }
 
 auto gse::gpu::swap_chain::on_recreate(recreate_callback callback) -> void {
@@ -112,24 +119,36 @@ auto gse::gpu::swap_chain::on_recreate(recreate_callback callback) -> void {
 }
 
 auto gse::gpu::swap_chain::notify_recreated() -> void {
-	++m_generation;
 	for (const auto& callback : m_recreate_callbacks) {
 		callback();
 	}
 }
 
-auto gse::gpu::swap_chain::set_config(vulkan::swap_chain&& config) -> void {
-	m_config = std::move(config);
-}
-
 auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size, const present_mode preferred_present_mode) -> void {
-	m_config.reset_swapchain();
-	m_config = vulkan::swap_chain::create(
-		framebuffer_size,
-		preferred_present_mode,
-		m_device->vulkan_instance(),
-		m_device->vulkan_device()
-	);
+	m_depth_image = {};
+
+	if (m_device->vulkan_device().swapchain_maintenance1_enabled()) {
+		m_config.wait_release_fences(m_device->vulkan_device());
+		const auto old_handle = m_config.handle();
+		m_config = vulkan::swap_chain::create(
+			framebuffer_size,
+			preferred_present_mode,
+			m_device->vulkan_instance(),
+			m_device->vulkan_device(),
+			old_handle
+		);
+	}
+	else {
+		m_config.reset_swapchain();
+		m_config = vulkan::swap_chain::create(
+			framebuffer_size,
+			preferred_present_mode,
+			m_device->vulkan_instance(),
+			m_device->vulkan_device()
+		);
+	}
+
+	m_depth_image = create_swapchain_depth(*m_device, m_config.extent());
 }
 
 auto gse::gpu::swap_chain::image(const std::uint32_t index) const -> handle<vulkan::image> {
@@ -146,10 +165,6 @@ auto gse::gpu::swap_chain::format() const -> image_format {
 
 auto gse::gpu::swap_chain::is_bgra() const -> bool {
 	return m_config.format() == image_format::b8g8r8a8_srgb || m_config.format() == image_format::b8g8r8a8_unorm;
-}
-
-auto gse::gpu::swap_chain::generation() const -> std::uint64_t {
-	return m_generation;
 }
 
 auto gse::gpu::swap_chain::config() -> vulkan::swap_chain& {

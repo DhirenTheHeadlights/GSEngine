@@ -310,7 +310,7 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 
 	const auto hip_rest_stiffness = gse::vec3<gse::angular_stiffness>(
 		gse::newton_meters_per_radian(0.f),
-		gse::newton_meters_per_radian(8.f),
+		gse::newton_meters_per_radian(200.f),
 		gse::newton_meters_per_radian(200.f)
 	);
 

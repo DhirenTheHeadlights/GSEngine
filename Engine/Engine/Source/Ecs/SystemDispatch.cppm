@@ -77,10 +77,7 @@ namespace gse {
 		}
 	}();
 
-	template <
-		typename Arg,
-		typename S
-	>
+	template <typename Arg, typename S>
 	constexpr bool is_cyclic_frame_dep_v = [] consteval -> bool {
 		if constexpr (!is_state_dep_v<Arg, S>) {
 			return false;
@@ -128,19 +125,13 @@ namespace gse {
 		const task_context& ctx
 	) -> const T&;
 
-	template <
-		typename Arg,
-		typename S
-	>
+	template <typename Arg, typename S>
 	auto resolve_run_arg(
 		run_context& ctx,
 		state_of_t<S>& state
 	) -> decltype(auto);
 
-	template <
-		typename Arg,
-		typename S
-	>
+	template <typename Arg, typename S>
 	auto resolve_frame_arg(
 		frame_context& ctx,
 		state_of_t<S>& state
@@ -198,10 +189,7 @@ namespace gse {
 		void* data_ptr
 	) -> void;
 
-	template <
-		auto MemberFn,
-		typename S
-	>
+	template <auto MemberFn, typename S>
 	auto register_state_dep_tags() -> void;
 
 	template <typename S>
@@ -216,23 +204,11 @@ namespace gse {
 	template <typename T>
 	constexpr id state_dep_id_v = compute_state_dep_id<dep_pointee_t<T>>();
 
-	template <
-		auto MemberFn,
-		typename S
-	>
+	template <auto MemberFn, typename S>
 	consteval auto compute_state_dep_count() -> std::size_t;
 
-	template <
-		auto MemberFn,
-		typename S
-	>
-	consteval auto compute_state_dep_ids() -> std::array<
-		id,
-		compute_state_dep_count<
-			MemberFn,
-			S
-		>()
-	>;
+	template <auto MemberFn, typename S>
+	consteval auto compute_state_dep_ids() -> std::array<id, compute_state_dep_count<MemberFn, S>()>;
 
 	template <typename S>
 	concept shutdown_takes_state = requires(shutdown_context& p, state_of_t<S>& s) { S::shutdown(p, s); };
@@ -565,7 +541,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 			"frame(). "
 			"This deadlocks the scheduler: state_ready for the target only fires after its pass dispatches in "
 			"execute_frame, "
-			"which is after the channel drain â€” so this frame's pass push misses the drain and the coroutine never "
+			"which is after the channel drain Ã¢â‚¬â€ so this frame's pass push misses the drain and the coroutine never "
 			"resumes. "
 			"Use shared_view<X> for snapshot reads (annotate the fields you need with [[= gse::shared]]), or channels "
 			"for "
