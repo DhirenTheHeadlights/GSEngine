@@ -108,6 +108,57 @@ export namespace gse::gpu {
 		alpha_premultiplied,
 	};
 
+	enum class front_face : std::uint8_t {
+		counter_clockwise [[= vk::FrontFace::eCounterClockwise]],
+		clockwise [[= vk::FrontFace::eClockwise]],
+	};
+
+	enum class blend_factor : std::uint8_t {
+		zero [[= vk::BlendFactor::eZero]],
+		one [[= vk::BlendFactor::eOne]],
+		src_color [[= vk::BlendFactor::eSrcColor]],
+		one_minus_src_color [[= vk::BlendFactor::eOneMinusSrcColor]],
+		dst_color [[= vk::BlendFactor::eDstColor]],
+		one_minus_dst_color [[= vk::BlendFactor::eOneMinusDstColor]],
+		src_alpha [[= vk::BlendFactor::eSrcAlpha]],
+		one_minus_src_alpha [[= vk::BlendFactor::eOneMinusSrcAlpha]],
+		dst_alpha [[= vk::BlendFactor::eDstAlpha]],
+		one_minus_dst_alpha [[= vk::BlendFactor::eOneMinusDstAlpha]],
+	};
+
+	enum class blend_op : std::uint8_t {
+		add [[= vk::BlendOp::eAdd]],
+		subtract [[= vk::BlendOp::eSubtract]],
+		reverse_subtract [[= vk::BlendOp::eReverseSubtract]],
+		min [[= vk::BlendOp::eMin]],
+		max [[= vk::BlendOp::eMax]],
+	};
+
+	enum class color_component_flag : std::uint8_t {
+		r [[= vk::ColorComponentFlagBits::eR]] = 1 << 0,
+		g [[= vk::ColorComponentFlagBits::eG]] = 1 << 1,
+		b [[= vk::ColorComponentFlagBits::eB]] = 1 << 2,
+		a [[= vk::ColorComponentFlagBits::eA]] = 1 << 3,
+	};
+
+	using color_component_flags = gse::flags<color_component_flag>;
+	constexpr auto operator|(color_component_flag a, color_component_flag b) -> color_component_flags {
+		return color_component_flags(a) | b;
+	}
+
+	struct color_blend_equation {
+		blend_factor src_color = blend_factor::one;
+		blend_factor dst_color = blend_factor::zero;
+		blend_op color_op = blend_op::add;
+		blend_factor src_alpha = blend_factor::one;
+		blend_factor dst_alpha = blend_factor::zero;
+		blend_op alpha_op = blend_op::add;
+
+		constexpr auto operator==(
+			const color_blend_equation&
+		) const -> bool = default;
+	};
+
 	struct depth_state {
 		bool test = true;
 		bool write = true;
@@ -776,6 +827,26 @@ export namespace gse::vulkan {
 	) -> vk::PrimitiveTopology;
 
 	auto to_vk(
+		gpu::front_face f
+	) -> vk::FrontFace;
+
+	auto to_vk(
+		gpu::blend_factor f
+	) -> vk::BlendFactor;
+
+	auto to_vk(
+		gpu::blend_op o
+	) -> vk::BlendOp;
+
+	auto to_vk(
+		gpu::color_component_flags fls
+	) -> vk::ColorComponentFlags;
+
+	auto to_vk(
+		const gpu::color_blend_equation& eq
+	) -> vk::ColorBlendEquationEXT;
+
+	auto to_vk(
 		gpu::sampler_filter f
 	) -> vk::Filter;
 
@@ -1024,6 +1095,86 @@ auto gse::vulkan::to_vk(const gpu::topology t) -> vk::PrimitiveTopology {
 			return vk::PrimitiveTopology::ePointList;
 	}
 	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::front_face f) -> vk::FrontFace {
+	switch (f) {
+		case gpu::front_face::counter_clockwise:
+			return vk::FrontFace::eCounterClockwise;
+		case gpu::front_face::clockwise:
+			return vk::FrontFace::eClockwise;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::blend_factor f) -> vk::BlendFactor {
+	switch (f) {
+		case gpu::blend_factor::zero:
+			return vk::BlendFactor::eZero;
+		case gpu::blend_factor::one:
+			return vk::BlendFactor::eOne;
+		case gpu::blend_factor::src_color:
+			return vk::BlendFactor::eSrcColor;
+		case gpu::blend_factor::one_minus_src_color:
+			return vk::BlendFactor::eOneMinusSrcColor;
+		case gpu::blend_factor::dst_color:
+			return vk::BlendFactor::eDstColor;
+		case gpu::blend_factor::one_minus_dst_color:
+			return vk::BlendFactor::eOneMinusDstColor;
+		case gpu::blend_factor::src_alpha:
+			return vk::BlendFactor::eSrcAlpha;
+		case gpu::blend_factor::one_minus_src_alpha:
+			return vk::BlendFactor::eOneMinusSrcAlpha;
+		case gpu::blend_factor::dst_alpha:
+			return vk::BlendFactor::eDstAlpha;
+		case gpu::blend_factor::one_minus_dst_alpha:
+			return vk::BlendFactor::eOneMinusDstAlpha;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::blend_op o) -> vk::BlendOp {
+	switch (o) {
+		case gpu::blend_op::add:
+			return vk::BlendOp::eAdd;
+		case gpu::blend_op::subtract:
+			return vk::BlendOp::eSubtract;
+		case gpu::blend_op::reverse_subtract:
+			return vk::BlendOp::eReverseSubtract;
+		case gpu::blend_op::min:
+			return vk::BlendOp::eMin;
+		case gpu::blend_op::max:
+			return vk::BlendOp::eMax;
+	}
+	std::unreachable();
+}
+
+auto gse::vulkan::to_vk(const gpu::color_component_flags fls) -> vk::ColorComponentFlags {
+	vk::ColorComponentFlags result{};
+	if (fls.test(gpu::color_component_flag::r)) {
+		result |= vk::ColorComponentFlagBits::eR;
+	}
+	if (fls.test(gpu::color_component_flag::g)) {
+		result |= vk::ColorComponentFlagBits::eG;
+	}
+	if (fls.test(gpu::color_component_flag::b)) {
+		result |= vk::ColorComponentFlagBits::eB;
+	}
+	if (fls.test(gpu::color_component_flag::a)) {
+		result |= vk::ColorComponentFlagBits::eA;
+	}
+	return result;
+}
+
+auto gse::vulkan::to_vk(const gpu::color_blend_equation& eq) -> vk::ColorBlendEquationEXT {
+	return vk::ColorBlendEquationEXT{
+		.srcColorBlendFactor = to_vk(eq.src_color),
+		.dstColorBlendFactor = to_vk(eq.dst_color),
+		.colorBlendOp = to_vk(eq.color_op),
+		.srcAlphaBlendFactor = to_vk(eq.src_alpha),
+		.dstAlphaBlendFactor = to_vk(eq.dst_alpha),
+		.alphaBlendOp = to_vk(eq.alpha_op),
+	};
 }
 
 auto gse::vulkan::to_vk(const gpu::sampler_filter f) -> vk::Filter {

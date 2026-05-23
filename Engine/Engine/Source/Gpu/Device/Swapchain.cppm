@@ -76,17 +76,10 @@ export namespace gse::gpu {
 }
 
 namespace gse::gpu {
-	auto create_swapchain_depth(device& dev, const vec2u extent) -> vulkan::image {
-		return vulkan::image::create(
-			dev.vulkan_device(),
-			image_desc{
-				.size = extent,
-				.format = image_format::d32_sfloat,
-				.usage = image_flag::depth_attachment | image_flag::sampled,
-			},
-			"swapchain.depth"
-		);
-	}
+	auto create_swapchain_depth(
+		device& dev,
+		vec2u extent
+	) -> vulkan::image;
 }
 
 auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const present_mode preferred_present_mode, device& dev) -> std::unique_ptr<swap_chain> {
@@ -173,4 +166,16 @@ auto gse::gpu::swap_chain::config() -> vulkan::swap_chain& {
 
 auto gse::gpu::swap_chain::config() const -> const vulkan::swap_chain& {
 	return m_config;
+}
+
+auto gse::gpu::create_swapchain_depth(device& dev, const vec2u extent) -> vulkan::image {
+	return vulkan::image::create(
+		dev.vulkan_device(),
+		image_desc{
+			.size = extent,
+			.format = image_format::d32_sfloat,
+			.usage = image_flag::depth_attachment | image_flag::sampled,
+		},
+		"swapchain.depth"
+	);
 }

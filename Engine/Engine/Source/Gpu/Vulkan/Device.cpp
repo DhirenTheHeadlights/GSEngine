@@ -58,27 +58,6 @@ auto gse::vulkan::host_upload_image_layers(const device& dev, const gpu::handle<
 	dev.raii_device().copyMemoryToImageEXT(info);
 }
 
-auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device) -> gpu::descriptor_buffer_properties {
-	const auto props =
-		physical_device
-		.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
-	const auto& db = props.get<vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
-
-	log::println(log::category::vulkan, "Descriptor buffer properties:");
-	log::println(log::category::vulkan, "  offset alignment: {}", db.descriptorBufferOffsetAlignment);
-	log::println(
-		log::category::vulkan,
-		"  bufferless push descriptors: {}",
-		db.bufferlessPushDescriptors ? "true" : "false"
-	);
-
-	return {
-		.offset_alignment = db.descriptorBufferOffsetAlignment,
-		.push_descriptors_supported = false,
-		.bufferless_push_descriptors = static_cast<bool>(db.bufferlessPushDescriptors),
-	};
-}
-
 auto gse::vulkan::wait_for_fence(const device& dev, const gpu::handle<fence> fence, const std::uint64_t timeout_ns) -> gpu::result {
 	const auto vk_fence = std::bit_cast<vk::Fence>(fence);
 	const auto vk_result = dev.raii_device().waitForFences(vk_fence, vk::True, timeout_ns);
@@ -228,6 +207,22 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		supports_extension(vk::EXTMutableDescriptorTypeExtensionName);
 	const bool swapchain_maintenance1_extension_supported =
 		supports_extension(vk::EXTSwapchainMaintenance1ExtensionName);
+	const bool shader_object_extension_supported = supports_extension(vk::EXTShaderObjectExtensionName);
+	const bool eds3_extension_supported = supports_extension(vk::EXTExtendedDynamicState3ExtensionName);
+	const bool vertex_input_dynamic_state_extension_supported =
+		supports_extension(vk::EXTVertexInputDynamicStateExtensionName);
+	assert(
+		shader_object_extension_supported,
+		"VK_EXT_shader_object is required. Update GPU drivers or use an NVIDIA/AMD GPU."
+	);
+	assert(
+		eds3_extension_supported,
+		"VK_EXT_extended_dynamic_state3 is required (shader_object dependency)."
+	);
+	assert(
+		vertex_input_dynamic_state_extension_supported,
+		"VK_EXT_vertex_input_dynamic_state is required (shader_object dependency)."
+	);
 
 	const bool rt_extensions_available = supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
 		supports_extension(vk::KHRAccelerationStructureExtensionName) &&
@@ -249,7 +244,10 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		vk::PhysicalDeviceUnifiedImageLayoutsFeaturesKHR,
 		vk::PhysicalDeviceHostImageCopyFeaturesEXT,
 		vk::PhysicalDeviceMutableDescriptorTypeFeaturesEXT,
-		vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT
+		vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT,
+		vk::PhysicalDeviceShaderObjectFeaturesEXT,
+		vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT,
+		vk::PhysicalDeviceVertexInputDynamicStateFeaturesEXT
 	>();
 	const auto& vk12_query = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
 	const bool buffer_device_address_capture_replay_supported = vk12_query.bufferDeviceAddressCaptureReplay;
@@ -291,6 +289,15 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		feature_chain.get<vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT>();
 	const bool swapchain_maintenance1_supported =
 		swapchain_maintenance1_extension_supported && swapchain_maintenance1_query.swapchainMaintenance1;
+	const auto& shader_object_query = feature_chain.get<vk::PhysicalDeviceShaderObjectFeaturesEXT>();
+	assert(shader_object_query.shaderObject, "VK_EXT_shader_object feature not enabled by driver.");
+	const auto& eds3_query = feature_chain.get<vk::PhysicalDeviceExtendedDynamicState3FeaturesEXT>();
+	const auto& vertex_input_dynamic_state_query =
+		feature_chain.get<vk::PhysicalDeviceVertexInputDynamicStateFeaturesEXT>();
+	assert(
+		vertex_input_dynamic_state_query.vertexInputDynamicState,
+		"VK_EXT_vertex_input_dynamic_state feature not enabled by driver."
+	);
 
 	log::println(log::category::vulkan, "Mesh shader support detected");
 	log::println(log::category::vulkan, "Ray tracing support detected");
@@ -361,6 +368,9 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 			"VK_EXT_swapchain_maintenance1 not supported"
 		);
 	}
+
+	log::println(log::category::vulkan, "Shader object support detected (required)");
+	log::println(log::category::vulkan, "Extended dynamic state 3 support detected (required)");
 
 	vk::PhysicalDeviceMemoryPriorityFeaturesEXT memory_priority_features{
 		.memoryPriority = vk::True,
@@ -503,16 +513,30 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		? static_cast<void*>(&swapchain_maintenance1_features)
 		: post_mutable_descriptor_chain_head;
 
+	vk::PhysicalDeviceShaderObjectFeaturesEXT shader_object_features{
+		.pNext = post_swapchain_maintenance1_chain_head,
+		.shaderObject = vk::True,
+	};
+
+	auto eds3_features = eds3_query;
+	eds3_features.pNext = &shader_object_features;
+
+	vk::PhysicalDeviceVertexInputDynamicStateFeaturesEXT vertex_input_dynamic_state_features{
+		.pNext = &eds3_features,
+		.vertexInputDynamicState = vk::True,
+	};
+
 	const bool av1_encode_supported =
 		video_encode_extensions_available && supports_extension(vk::KHRVideoEncodeAv1ExtensionName);
 
 	vk::PhysicalDeviceVideoEncodeAV1FeaturesKHR av1_encode_features{
-		.pNext = post_swapchain_maintenance1_chain_head,
+		.pNext = &vertex_input_dynamic_state_features,
 		.videoEncodeAV1 = vk::True,
 	};
 
-	void* post_video_chain_head =
-		av1_encode_supported ? static_cast<void*>(&av1_encode_features) : post_swapchain_maintenance1_chain_head;
+	void* post_video_chain_head = av1_encode_supported
+		? static_cast<void*>(&av1_encode_features)
+		: static_cast<void*>(&vertex_input_dynamic_state_features);
 
 	void* post_aftermath_chain_head = aftermath_tracker.device_create_info_pnext(post_video_chain_head);
 
@@ -543,6 +567,9 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		vk::KHRDeferredHostOperationsExtensionName,
 		vk::KHRAccelerationStructureExtensionName,
 		vk::KHRRayQueryExtensionName,
+		vk::EXTShaderObjectExtensionName,
+		vk::EXTExtendedDynamicState3ExtensionName,
+		vk::EXTVertexInputDynamicStateExtensionName,
 	};
 
 	if (device_fault_supported) {
@@ -1425,4 +1452,25 @@ auto gse::vulkan::device::pool_key_hash::operator()(const pool_key& key) const n
 		std::hash<vk::MemoryPropertyFlags::MaskType>()(static_cast<vk::MemoryPropertyFlags::MaskType>(key.properties));
 	const auto address_hash = std::hash<bool>()(key.device_address);
 	return memory_hash ^ (props_hash << 1) ^ (address_hash << 2);
+}
+
+auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device) -> gpu::descriptor_buffer_properties {
+	const auto props =
+		physical_device
+		.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
+	const auto& db = props.get<vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
+
+	log::println(log::category::vulkan, "Descriptor buffer properties:");
+	log::println(log::category::vulkan, "  offset alignment: {}", db.descriptorBufferOffsetAlignment);
+	log::println(
+		log::category::vulkan,
+		"  bufferless push descriptors: {}",
+		db.bufferlessPushDescriptors ? "true" : "false"
+	);
+
+	return {
+		.offset_alignment = db.descriptorBufferOffsetAlignment,
+		.push_descriptors_supported = false,
+		.bufferless_push_descriptors = static_cast<bool>(db.bufferlessPushDescriptors),
+	};
 }

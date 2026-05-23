@@ -14,6 +14,8 @@ export import :vulkan_semaphore;
 export import :vulkan_query_pool;
 export import :vulkan_descriptor_set_layout;
 export import :vulkan_shader_module;
+export import :vulkan_shader_object;
+export import :vulkan_shader_program;
 export import :vulkan_instance;
 export import :vulkan_aftermath;
 export import :vulkan_device;

@@ -218,25 +218,25 @@ auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data
 }
 
 auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.shape_bake_pipeline = gpu::build_compute_pipeline(
+	d.shape_bake_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		shape_bake_entry::pod
 	);
-	d.detail_bake_pipeline = gpu::build_compute_pipeline(
+	d.detail_bake_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		detail_bake_entry::pod
 	);
-	d.raymarch_pipeline = gpu::build_compute_pipeline(
+	d.raymarch_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		raymarch_entry::pod
 	);
-	d.composite_pipeline = gpu::build_graphics_pipeline(
+	d.composite_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,

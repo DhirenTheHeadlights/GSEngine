@@ -44,8 +44,8 @@ export namespace gse::renderer::bloom {
 			]]
 			float bloom_radius = 1.0f;
 
-			gpu::pipeline downsample_pipeline;
-			gpu::pipeline upsample_pipeline;
+			gpu::shader_program downsample_pipeline;
+			gpu::shader_program upsample_pipeline;
 			gpu::sampler bloom_sampler;
 
 			[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_down;

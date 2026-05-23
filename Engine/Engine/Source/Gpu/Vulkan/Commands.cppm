@@ -16,6 +16,26 @@ export namespace gse::vulkan {
 	class pipeline;
 	class pipeline_layout;
 	class query_pool;
+	class shader_object;
+
+	struct pipeline_state_cache {
+		std::optional<gpu::topology> topology;
+		std::optional<gpu::polygon_mode> polygon_mode;
+		std::optional<gpu::cull_mode> cull_mode;
+		std::optional<gpu::front_face> front_face;
+		std::optional<bool> depth_test_enable;
+		std::optional<bool> depth_write_enable;
+		std::optional<gpu::compare_op> depth_compare_op;
+		std::optional<bool> depth_bias_enable;
+		std::optional<bool> rasterizer_discard_enable;
+		std::optional<bool> primitive_restart_enable;
+		std::optional<bool> alpha_to_coverage_enable;
+		std::optional<bool> alpha_to_one_enable;
+		std::optional<bool> logic_op_enable;
+		std::optional<bool> depth_clamp_enable;
+
+		auto invalidate() -> void;
+	};
 }
 
 export namespace gse::gpu {
@@ -80,7 +100,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto native() const -> gpu::handle<command_buffer>;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 		auto begin() const -> void;
 
@@ -133,6 +153,15 @@ export namespace gse::vulkan {
 			gpu::handle<pipeline> pipeline
 		) const -> void;
 
+		auto bind_shaders(
+			std::span<const gpu::stage_flag> stages,
+			std::span<const gpu::handle<shader_object>> shaders
+		) const -> void;
+
+		auto unbind_shaders(
+			std::span<const gpu::stage_flag> stages
+		) const -> void;
+
 		auto push_constants(
 			gpu::handle<pipeline_layout> layout,
 			gpu::stage_flags stages,
@@ -178,6 +207,101 @@ export namespace gse::vulkan {
 
 		auto set_scissor(
 			const gse::rect_t<vec2i>& scissor
+		) const -> void;
+
+		auto set_topology(
+			gpu::topology t
+		) const -> void;
+
+		auto set_polygon_mode(
+			gpu::polygon_mode m
+		) const -> void;
+
+		auto set_cull_mode(
+			gpu::cull_mode m
+		) const -> void;
+
+		auto set_front_face(
+			gpu::front_face f
+		) const -> void;
+
+		auto set_depth_test_enable(
+			bool enable
+		) const -> void;
+
+		auto set_depth_write_enable(
+			bool enable
+		) const -> void;
+
+		auto set_depth_compare_op(
+			gpu::compare_op op
+		) const -> void;
+
+		auto set_depth_bias_enable(
+			bool enable
+		) const -> void;
+
+		auto set_depth_bias(
+			float constant,
+			float clamp,
+			float slope
+		) const -> void;
+
+		auto set_depth_clamp_enable(
+			bool enable
+		) const -> void;
+
+		auto set_rasterizer_discard_enable(
+			bool enable
+		) const -> void;
+
+		auto set_primitive_restart_enable(
+			bool enable
+		) const -> void;
+
+		auto set_rasterization_samples(
+			gpu::sample_count samples
+		) const -> void;
+
+		auto set_sample_mask(
+			gpu::sample_count samples,
+			std::uint32_t mask
+		) const -> void;
+
+		auto set_alpha_to_coverage_enable(
+			bool enable
+		) const -> void;
+
+		auto set_alpha_to_one_enable(
+			bool enable
+		) const -> void;
+
+		auto set_logic_op_enable(
+			bool enable
+		) const -> void;
+
+		auto set_color_blend_enable(
+			std::uint32_t first_attachment,
+			std::span<const std::uint8_t> enables
+		) const -> void;
+
+		auto set_color_blend_equation(
+			std::uint32_t first_attachment,
+			std::span<const gpu::color_blend_equation> equations
+		) const -> void;
+
+		auto set_color_write_mask(
+			std::uint32_t first_attachment,
+			std::span<const gpu::color_component_flags> masks
+		) const -> void;
+
+		auto set_blend_constants(
+			std::array<float, 4> constants
+		) const -> void;
+
+		auto set_vertex_input(
+			std::span<const gpu::vertex_binding_desc> bindings,
+			std::span<const gpu::vertex_attribute_desc> attributes
 		) const -> void;
 
 		auto copy_buffer(
@@ -276,7 +400,7 @@ auto gse::vulkan::commands::native() const -> gpu::handle<command_buffer> {
 	return m_cmd;
 }
 
-gse::vulkan::commands::operator bool() const {
+auto gse::vulkan::commands::valid() const -> bool {
 	return static_cast<bool>(m_cmd);
 }
 
@@ -382,123 +506,6 @@ namespace gse::vulkan {
 	) -> vk::DependencyInfo;
 }
 
-auto gse::vulkan::build_vk_attachment(const gpu::rendering_attachment_info& att, const bool is_depth) -> vk::RenderingAttachmentInfo {
-	vk::ClearValue clear{};
-	if (is_depth) {
-		clear.depthStencil = vk::ClearDepthStencilValue{
-			.depth = att.depth_clear_value.depth,
-			.stencil = 0
-		};
-	}
-	else {
-		clear.color = vk::ClearColorValue{ std::array{
-			att.color_clear_value.r,
-			att.color_clear_value.g,
-			att.color_clear_value.b,
-			att.color_clear_value.a,
-		} };
-	}
-	return vk::RenderingAttachmentInfo{
-		.imageView = std::bit_cast<vk::ImageView>(att.image_view),
-		.imageLayout = to_vk(att.layout),
-		.loadOp = to_vk(att.load),
-		.storeOp = to_vk(att.store),
-		.clearValue = clear,
-	};
-}
-
-auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rendering_scratch& scratch) -> vk::RenderingInfo {
-	scratch.color.reserve(info.color_attachments.size());
-	for (const auto& a : info.color_attachments) {
-		scratch.color.push_back(build_vk_attachment(a, false));
-	}
-	if (info.depth_attachment) {
-		scratch.depth = build_vk_attachment(*info.depth_attachment, true);
-	}
-	if (info.stencil_attachment) {
-		scratch.stencil = build_vk_attachment(*info.stencil_attachment, true);
-	}
-	const auto min = info.render_area.min();
-	const auto size = info.render_area.size();
-	return vk::RenderingInfo{
-		.flags = info.secondary_command_buffers
-			? vk::RenderingFlags{ vk::RenderingFlagBits::eContentsSecondaryCommandBuffers }
-			: vk::RenderingFlags{},
-		.renderArea =
-			vk::Rect2D{
-				.offset = vk::Offset2D{ min.x(), min.y() },
-				.extent = vk::Extent2D{ static_cast<std::uint32_t>(size.x()), static_cast<std::uint32_t>(size.y()) },
-			},
-		.layerCount = info.layer_count,
-		.colorAttachmentCount = static_cast<std::uint32_t>(scratch.color.size()),
-		.pColorAttachments = scratch.color.data(),
-		.pDepthAttachment = scratch.depth ? &*scratch.depth : nullptr,
-		.pStencilAttachment = scratch.stencil ? &*scratch.stencil : nullptr,
-	};
-}
-
-auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, dependency_scratch& scratch) -> vk::DependencyInfo {
-	scratch.memory.reserve(dep.memory_barriers.size());
-	for (const auto& b : dep.memory_barriers) {
-		scratch.memory.push_back(
-			vk::MemoryBarrier2{
-				.srcStageMask = to_vk(b.src_stages),
-				.srcAccessMask = to_vk(b.src_access),
-				.dstStageMask = to_vk(b.dst_stages),
-				.dstAccessMask = to_vk(b.dst_access),
-			}
-		);
-	}
-	scratch.buffer.reserve(dep.buffer_barriers.size());
-	for (const auto& b : dep.buffer_barriers) {
-		scratch.buffer.push_back(
-			vk::BufferMemoryBarrier2{
-				.srcStageMask = to_vk(b.src_stages),
-				.srcAccessMask = to_vk(b.src_access),
-				.dstStageMask = to_vk(b.dst_stages),
-				.dstAccessMask = to_vk(b.dst_access),
-				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.buffer = std::bit_cast<vk::Buffer>(b.buffer),
-				.offset = b.offset,
-				.size = b.size == 0 ? vk::WholeSize : b.size,
-			}
-		);
-	}
-	scratch.image.reserve(dep.image_barriers.size());
-	for (const auto& b : dep.image_barriers) {
-		scratch.image.push_back(
-			vk::ImageMemoryBarrier2{
-				.srcStageMask = to_vk(b.src_stages),
-				.srcAccessMask = to_vk(b.src_access),
-				.dstStageMask = to_vk(b.dst_stages),
-				.dstAccessMask = to_vk(b.dst_access),
-				.oldLayout = to_vk(b.old_layout),
-				.newLayout = to_vk(b.new_layout),
-				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.image = std::bit_cast<vk::Image>(b.image),
-				.subresourceRange =
-					vk::ImageSubresourceRange{
-						.aspectMask = to_vk(b.aspects),
-						.baseMipLevel = b.base_mip_level,
-						.levelCount = b.level_count,
-						.baseArrayLayer = b.base_array_layer,
-						.layerCount = b.layer_count,
-					},
-			}
-		);
-	}
-	return vk::DependencyInfo{
-		.memoryBarrierCount = static_cast<std::uint32_t>(scratch.memory.size()),
-		.pMemoryBarriers = scratch.memory.data(),
-		.bufferMemoryBarrierCount = static_cast<std::uint32_t>(scratch.buffer.size()),
-		.pBufferMemoryBarriers = scratch.buffer.data(),
-		.imageMemoryBarrierCount = static_cast<std::uint32_t>(scratch.image.size()),
-		.pImageMemoryBarriers = scratch.image.data(),
-	};
-}
-
 auto gse::vulkan::commands::begin_rendering(const gpu::rendering_info& info) const -> void {
 	rendering_scratch scratch;
 	const auto vk_info = build_vk_rendering_info(info, scratch);
@@ -517,6 +524,33 @@ auto gse::vulkan::commands::pipeline_barrier(const gpu::dependency_info& dep) co
 
 auto gse::vulkan::commands::bind_pipeline(const gpu::bind_point point, const gpu::handle<pipeline> pipeline) const -> void {
 	raw().bindPipeline(to_vk(point), std::bit_cast<vk::Pipeline>(pipeline));
+}
+
+auto gse::vulkan::commands::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::handle<shader_object>> shaders) const -> void {
+	std::vector<vk::ShaderStageFlagBits> vk_stages;
+	vk_stages.reserve(stages.size());
+	for (const auto s : stages) {
+		vk_stages.push_back(to_vk(s));
+	}
+
+	std::vector<vk::ShaderEXT> vk_shaders;
+	vk_shaders.reserve(shaders.size());
+	for (const auto h : shaders) {
+		vk_shaders.push_back(std::bit_cast<vk::ShaderEXT>(h));
+	}
+
+	raw().bindShadersEXT(vk_stages, vk_shaders);
+}
+
+auto gse::vulkan::commands::unbind_shaders(const std::span<const gpu::stage_flag> stages) const -> void {
+	std::vector<vk::ShaderStageFlagBits> vk_stages;
+	vk_stages.reserve(stages.size());
+	for (const auto s : stages) {
+		vk_stages.push_back(to_vk(s));
+	}
+
+	std::vector<vk::ShaderEXT> vk_shaders(stages.size(), nullptr);
+	raw().bindShadersEXT(vk_stages, vk_shaders);
 }
 
 auto gse::vulkan::commands::push_constants(const gpu::handle<pipeline_layout> layout, const gpu::stage_flags stages, const std::uint32_t offset, const std::uint32_t size, const void* data) const -> void {
@@ -710,4 +744,251 @@ auto gse::vulkan::commands::build_acceleration_structures(const gpu::acceleratio
 
 auto gse::vulkan::commands::build_acceleration_structures(const vk::AccelerationStructureBuildGeometryInfoKHR& build_info, const std::span<const vk::AccelerationStructureBuildRangeInfoKHR* const> range_infos) const -> void {
 	raw().buildAccelerationStructuresKHR(build_info, range_infos);
+}
+
+auto gse::vulkan::build_vk_attachment(const gpu::rendering_attachment_info& att, const bool is_depth) -> vk::RenderingAttachmentInfo {
+	vk::ClearValue clear{};
+	if (is_depth) {
+		clear.depthStencil = vk::ClearDepthStencilValue{
+			.depth = att.depth_clear_value.depth,
+			.stencil = 0
+		};
+	}
+	else {
+		clear.color = vk::ClearColorValue{ std::array{
+			att.color_clear_value.r,
+			att.color_clear_value.g,
+			att.color_clear_value.b,
+			att.color_clear_value.a,
+		} };
+	}
+	return vk::RenderingAttachmentInfo{
+		.imageView = std::bit_cast<vk::ImageView>(att.image_view),
+		.imageLayout = to_vk(att.layout),
+		.loadOp = to_vk(att.load),
+		.storeOp = to_vk(att.store),
+		.clearValue = clear,
+	};
+}
+
+auto gse::vulkan::build_vk_rendering_info(const gpu::rendering_info& info, rendering_scratch& scratch) -> vk::RenderingInfo {
+	scratch.color.reserve(info.color_attachments.size());
+	for (const auto& a : info.color_attachments) {
+		scratch.color.push_back(build_vk_attachment(a, false));
+	}
+	if (info.depth_attachment) {
+		scratch.depth = build_vk_attachment(*info.depth_attachment, true);
+	}
+	if (info.stencil_attachment) {
+		scratch.stencil = build_vk_attachment(*info.stencil_attachment, true);
+	}
+	const auto min = info.render_area.min();
+	const auto size = info.render_area.size();
+	return vk::RenderingInfo{
+		.flags = info.secondary_command_buffers
+			? vk::RenderingFlags{ vk::RenderingFlagBits::eContentsSecondaryCommandBuffers }
+			: vk::RenderingFlags{},
+		.renderArea =
+			vk::Rect2D{
+				.offset = vk::Offset2D{ min.x(), min.y() },
+				.extent = vk::Extent2D{ static_cast<std::uint32_t>(size.x()), static_cast<std::uint32_t>(size.y()) },
+			},
+		.layerCount = info.layer_count,
+		.colorAttachmentCount = static_cast<std::uint32_t>(scratch.color.size()),
+		.pColorAttachments = scratch.color.data(),
+		.pDepthAttachment = scratch.depth ? &*scratch.depth : nullptr,
+		.pStencilAttachment = scratch.stencil ? &*scratch.stencil : nullptr,
+	};
+}
+
+auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, dependency_scratch& scratch) -> vk::DependencyInfo {
+	scratch.memory.reserve(dep.memory_barriers.size());
+	for (const auto& b : dep.memory_barriers) {
+		scratch.memory.push_back(
+			vk::MemoryBarrier2{
+				.srcStageMask = to_vk(b.src_stages),
+				.srcAccessMask = to_vk(b.src_access),
+				.dstStageMask = to_vk(b.dst_stages),
+				.dstAccessMask = to_vk(b.dst_access),
+			}
+		);
+	}
+	scratch.buffer.reserve(dep.buffer_barriers.size());
+	for (const auto& b : dep.buffer_barriers) {
+		scratch.buffer.push_back(
+			vk::BufferMemoryBarrier2{
+				.srcStageMask = to_vk(b.src_stages),
+				.srcAccessMask = to_vk(b.src_access),
+				.dstStageMask = to_vk(b.dst_stages),
+				.dstAccessMask = to_vk(b.dst_access),
+				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.buffer = std::bit_cast<vk::Buffer>(b.buffer),
+				.offset = b.offset,
+				.size = b.size == 0 ? vk::WholeSize : b.size,
+			}
+		);
+	}
+	scratch.image.reserve(dep.image_barriers.size());
+	for (const auto& b : dep.image_barriers) {
+		scratch.image.push_back(
+			vk::ImageMemoryBarrier2{
+				.srcStageMask = to_vk(b.src_stages),
+				.srcAccessMask = to_vk(b.src_access),
+				.dstStageMask = to_vk(b.dst_stages),
+				.dstAccessMask = to_vk(b.dst_access),
+				.oldLayout = to_vk(b.old_layout),
+				.newLayout = to_vk(b.new_layout),
+				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.image = std::bit_cast<vk::Image>(b.image),
+				.subresourceRange =
+					vk::ImageSubresourceRange{
+						.aspectMask = to_vk(b.aspects),
+						.baseMipLevel = b.base_mip_level,
+						.levelCount = b.level_count,
+						.baseArrayLayer = b.base_array_layer,
+						.layerCount = b.layer_count,
+					},
+			}
+		);
+	}
+	return vk::DependencyInfo{
+		.memoryBarrierCount = static_cast<std::uint32_t>(scratch.memory.size()),
+		.pMemoryBarriers = scratch.memory.data(),
+		.bufferMemoryBarrierCount = static_cast<std::uint32_t>(scratch.buffer.size()),
+		.pBufferMemoryBarriers = scratch.buffer.data(),
+		.imageMemoryBarrierCount = static_cast<std::uint32_t>(scratch.image.size()),
+		.pImageMemoryBarriers = scratch.image.data(),
+	};
+}
+
+auto gse::vulkan::pipeline_state_cache::invalidate() -> void {
+	*this = {};
+}
+
+auto gse::vulkan::commands::set_topology(const gpu::topology t) const -> void {
+	raw().setPrimitiveTopology(to_vk(t));
+}
+
+auto gse::vulkan::commands::set_polygon_mode(const gpu::polygon_mode m) const -> void {
+	raw().setPolygonModeEXT(to_vk(m));
+}
+
+auto gse::vulkan::commands::set_cull_mode(const gpu::cull_mode m) const -> void {
+	raw().setCullMode(to_vk(m));
+}
+
+auto gse::vulkan::commands::set_front_face(const gpu::front_face f) const -> void {
+	raw().setFrontFace(to_vk(f));
+}
+
+auto gse::vulkan::commands::set_depth_test_enable(const bool enable) const -> void {
+	raw().setDepthTestEnable(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_depth_write_enable(const bool enable) const -> void {
+	raw().setDepthWriteEnable(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_depth_compare_op(const gpu::compare_op op) const -> void {
+	raw().setDepthCompareOp(to_vk(op));
+}
+
+auto gse::vulkan::commands::set_depth_bias_enable(const bool enable) const -> void {
+	raw().setDepthBiasEnable(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_depth_bias(const float constant, const float clamp, const float slope) const -> void {
+	raw().setDepthBias(constant, clamp, slope);
+}
+
+auto gse::vulkan::commands::set_depth_clamp_enable(const bool enable) const -> void {
+	raw().setDepthClampEnableEXT(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_rasterizer_discard_enable(const bool enable) const -> void {
+	raw().setRasterizerDiscardEnable(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_primitive_restart_enable(const bool enable) const -> void {
+	raw().setPrimitiveRestartEnable(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_rasterization_samples(const gpu::sample_count samples) const -> void {
+	raw().setRasterizationSamplesEXT(to_vk(samples));
+}
+
+auto gse::vulkan::commands::set_sample_mask(const gpu::sample_count samples, const std::uint32_t mask) const -> void {
+	const vk::SampleMask sample_mask = mask;
+	raw().setSampleMaskEXT(to_vk(samples), sample_mask);
+}
+
+auto gse::vulkan::commands::set_alpha_to_coverage_enable(const bool enable) const -> void {
+	raw().setAlphaToCoverageEnableEXT(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_alpha_to_one_enable(const bool enable) const -> void {
+	raw().setAlphaToOneEnableEXT(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_logic_op_enable(const bool enable) const -> void {
+	raw().setLogicOpEnableEXT(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_color_blend_enable(const std::uint32_t first_attachment, const std::span<const std::uint8_t> enables) const -> void {
+	std::vector<vk::Bool32> vk_enables;
+	vk_enables.reserve(enables.size());
+	for (const auto e : enables) {
+		vk_enables.push_back(e ? vk::True : vk::False);
+	}
+	raw().setColorBlendEnableEXT(first_attachment, vk_enables);
+}
+
+auto gse::vulkan::commands::set_color_blend_equation(const std::uint32_t first_attachment, const std::span<const gpu::color_blend_equation> equations) const -> void {
+	std::vector<vk::ColorBlendEquationEXT> vk_equations;
+	vk_equations.reserve(equations.size());
+	for (const auto& eq : equations) {
+		vk_equations.push_back(to_vk(eq));
+	}
+	raw().setColorBlendEquationEXT(first_attachment, vk_equations);
+}
+
+auto gse::vulkan::commands::set_color_write_mask(const std::uint32_t first_attachment, const std::span<const gpu::color_component_flags> masks) const -> void {
+	std::vector<vk::ColorComponentFlags> vk_masks;
+	vk_masks.reserve(masks.size());
+	for (const auto m : masks) {
+		vk_masks.push_back(to_vk(m));
+	}
+	raw().setColorWriteMaskEXT(first_attachment, vk_masks);
+}
+
+auto gse::vulkan::commands::set_blend_constants(const std::array<float, 4> constants) const -> void {
+	raw().setBlendConstants(constants.data());
+}
+
+auto gse::vulkan::commands::set_vertex_input(const std::span<const gpu::vertex_binding_desc> bindings, const std::span<const gpu::vertex_attribute_desc> attributes) const -> void {
+	std::vector<vk::VertexInputBindingDescription2EXT> vk_bindings;
+	vk_bindings.reserve(bindings.size());
+	for (const auto& b : bindings) {
+		vk_bindings.push_back({
+			.binding = b.binding,
+			.stride = b.stride,
+			.inputRate = b.per_instance ? vk::VertexInputRate::eInstance : vk::VertexInputRate::eVertex,
+			.divisor = 1,
+		});
+	}
+
+	std::vector<vk::VertexInputAttributeDescription2EXT> vk_attributes;
+	vk_attributes.reserve(attributes.size());
+	for (const auto& a : attributes) {
+		vk_attributes.push_back({
+			.location = a.location,
+			.binding = a.binding,
+			.format = to_vk(a.format),
+			.offset = a.offset,
+		});
+	}
+
+	raw().setVertexInputEXT(vk_bindings, vk_attributes);
 }

@@ -341,7 +341,7 @@ auto gse::gpu::descriptor_writer::acceleration_structure_impl(const std::uint32_
 }
 
 auto gse::gpu::descriptor_writer::commit() -> void {
-	assert(m_region && *m_region, "Cannot commit to null descriptor region");
+	assert(m_region && m_region->valid(), "Cannot commit to null descriptor region");
 
 	const auto& heap = *m_region->heap;
 

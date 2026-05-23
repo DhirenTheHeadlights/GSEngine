@@ -61,6 +61,15 @@ export namespace gse::asset {
 		) -> compile_result&;
 	};
 
+	struct compile_progress {
+		std::function<void(std::uint32_t done, std::uint32_t total)> on_tick;
+		std::uint32_t done = 0;
+		std::uint32_t total = 0;
+	};
+
+	template <typename T>
+	auto count_compile_work() -> std::uint32_t;
+
 	template <typename... Ts>
 	class system : public non_copyable {
 	public:
@@ -79,13 +88,21 @@ export namespace gse::asset {
 		) noexcept -> system& = default;
 
 		template <typename T>
-		auto compile() -> compile_result;
+		auto compile(
+			compile_progress* progress = nullptr
+		) -> compile_result;
 
-		auto compile_all() -> compile_result;
+		auto compile_all(
+			compile_progress* progress = nullptr
+		) -> compile_result;
 
-		auto compile_boot_critical() -> compile_result;
+		auto compile_boot_critical(
+			compile_progress* progress = nullptr
+		) -> compile_result;
 
-		auto compile_non_boot_critical() -> compile_result;
+		auto compile_non_boot_critical(
+			compile_progress* progress = nullptr
+		) -> compile_result;
 
 		auto register_loaders() -> void;
 
@@ -150,6 +167,33 @@ auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::fi
 		return true;
 	}
 	return false;
+}
+
+template <typename T>
+auto gse::asset::count_compile_work() -> std::uint32_t {
+	if constexpr (!has_compile_path<T>) {
+		return 0;
+	}
+	else {
+		constexpr auto fmt = format_of<typename T::baked>();
+		const auto source_root = config::resource_path / fmt.source_dir;
+		if (!std::filesystem::exists(source_root)) {
+			return 0;
+		}
+
+		std::uint32_t count = 0;
+		for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
+			if (!entry.is_regular_file()) {
+				continue;
+			}
+			const auto ext = entry.path().extension().string();
+			if (std::ranges::find(fmt.source_exts, ext) == fmt.source_exts.end()) {
+				continue;
+			}
+			++count;
+		}
+		return count;
+	}
 }
 
 template <typename T>
@@ -274,7 +318,7 @@ auto gse::asset::system<Ts...>::install_hot_reload_fns() -> void {
 
 template <typename... Ts>
 template <typename T>
-auto gse::asset::system<Ts...>::compile() -> compile_result {
+auto gse::asset::system<Ts...>::compile(compile_progress* progress) -> compile_result {
 	compile_result result{};
 
 	if constexpr (!has_compile_path<T>) {
@@ -290,6 +334,15 @@ auto gse::asset::system<Ts...>::compile() -> compile_result {
 		}
 
 		std::filesystem::create_directories(baked_root);
+
+		auto tick = [progress] {
+			if (progress) {
+				++progress->done;
+				if (progress->on_tick) {
+					progress->on_tick(progress->done, progress->total);
+				}
+			}
+		};
 
 		for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
 			if (!entry.is_regular_file()) {
@@ -312,8 +365,11 @@ auto gse::asset::system<Ts...>::compile() -> compile_result {
 			}
 			else {
 				++result.failure_count;
+				tick();
 				continue;
 			}
+
+			tick();
 
 			if constexpr (loadable<T>) {
 				if (!std::filesystem::exists(dst)) {
@@ -330,18 +386,41 @@ auto gse::asset::system<Ts...>::compile() -> compile_result {
 }
 
 template <typename... Ts>
-auto gse::asset::system<Ts...>::compile_all() -> compile_result {
+auto gse::asset::system<Ts...>::compile_all(compile_progress* progress) -> compile_result {
+	if (progress) {
+		progress->done = 0;
+		progress->total = 0;
+		((progress->total += count_compile_work<Ts>()), ...);
+		if (progress->on_tick) {
+			progress->on_tick(0, progress->total);
+		}
+	}
+
 	compile_result total{};
-	((total += compile<Ts>()), ...);
+	((total += compile<Ts>(progress)), ...);
 	return total;
 }
 
 template <typename... Ts>
-auto gse::asset::system<Ts...>::compile_boot_critical() -> compile_result {
+auto gse::asset::system<Ts...>::compile_boot_critical(compile_progress* progress) -> compile_result {
+	if (progress) {
+		progress->done = 0;
+		progress->total = 0;
+		auto count_one = [&]<typename T>() {
+			if constexpr (has_annotation<boot_critical>(^^T)) {
+				progress->total += count_compile_work<T>();
+			}
+		};
+		(count_one.template operator()<Ts>(), ...);
+		if (progress->on_tick) {
+			progress->on_tick(0, progress->total);
+		}
+	}
+
 	compile_result total{};
 	auto try_one = [&]<typename T>() {
 		if constexpr (has_annotation<boot_critical>(^^T)) {
-			total += compile<T>();
+			total += compile<T>(progress);
 		}
 	};
 	(try_one.template operator()<Ts>(), ...);
@@ -349,11 +428,25 @@ auto gse::asset::system<Ts...>::compile_boot_critical() -> compile_result {
 }
 
 template <typename... Ts>
-auto gse::asset::system<Ts...>::compile_non_boot_critical() -> compile_result {
+auto gse::asset::system<Ts...>::compile_non_boot_critical(compile_progress* progress) -> compile_result {
+	if (progress) {
+		progress->done = 0;
+		progress->total = 0;
+		auto count_one = [&]<typename T>() {
+			if constexpr (!has_annotation<boot_critical>(^^T)) {
+				progress->total += count_compile_work<T>();
+			}
+		};
+		(count_one.template operator()<Ts>(), ...);
+		if (progress->on_tick) {
+			progress->on_tick(0, progress->total);
+		}
+	}
+
 	compile_result total{};
 	auto try_one = [&]<typename T>() {
 		if constexpr (!has_annotation<boot_critical>(^^T)) {
-			total += compile<T>();
+			total += compile<T>(progress);
 		}
 	};
 	(try_one.template operator()<Ts>(), ...);

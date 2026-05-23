@@ -39,7 +39,7 @@ export namespace gse::renderer::capture {
 			actions::handle screenshot_action;
 			actions::handle save_clip_action;
 
-			gpu::pipeline convert_pipeline;
+			gpu::shader_program convert_pipeline;
 			per_frame_resource<gpu::descriptor_region> convert_descriptors;
 			per_frame_resource<gpu::image> rgba_captures;
 			per_frame_resource<gpu::image> y_planes;

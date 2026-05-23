@@ -120,10 +120,10 @@ auto gse::renderer::world_text::build_labels_for_axis(std::vector<world_text_ver
 auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::device& device, const std::size_t frame_index, const std::size_t required) -> void {
 	auto& cap = d.vertex_capacities[frame_index];
 	auto& buf = d.vertex_buffers[frame_index];
-	if (required <= cap && buf) {
+	if (required <= cap && buf.valid()) {
 		return;
 	}
-	if (buf) {
+	if (buf.valid()) {
 		buf = {};
 	}
 	cap = std::max<std::size_t>(cap, 512);
@@ -141,7 +141,7 @@ auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::dev
 
 auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.pipeline =
-		gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+		gpu::build_graphics_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 

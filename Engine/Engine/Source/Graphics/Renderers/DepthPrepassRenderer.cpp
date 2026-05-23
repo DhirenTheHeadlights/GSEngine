@@ -55,7 +55,7 @@ namespace gse::renderer::depth_prepass::meshlet {
 }
 
 auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.meshlet_pipeline = gpu::build_graphics_pipeline(
+	d.meshlet_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,

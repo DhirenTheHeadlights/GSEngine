@@ -125,7 +125,7 @@ namespace gse::renderer::forward {
 }
 
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, const atmosphere::system::data& atm_state, data& d) -> async::task<> {
-	d.pipeline = gpu::build_graphics_pipeline(
+	d.pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,

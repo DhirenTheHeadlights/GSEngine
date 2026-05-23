@@ -10,6 +10,7 @@ export namespace gs {
 	struct client_ui_system {
 		struct data {
 			std::string buff;
+			gse::gui::text_input_state buff_state;
 			float slider_f = 0.f;
 		};
 
@@ -123,9 +124,10 @@ auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::gui::s
 					ui.draw<gse::gui::text>({
 						.content = std::format("Test Quantity: {:.2f}", gse::meters(5.0f)),
 					});
-					ui.draw<gse::gui::input>({
+					ui.draw<gse::gui::text_input>({
 						.name = "Input Test",
 						.buffer = d.buff,
+						.state = d.buff_state,
 					});
 					ui.draw<gse::gui::slider<float>>({
 						.name = "Slider Test",

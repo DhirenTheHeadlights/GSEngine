@@ -17,7 +17,7 @@ import gse.physics;
 export namespace gse::renderer::physics_transform {
 	struct system {
 		struct data {
-			gpu::pipeline pipeline;
+			gpu::shader_program pipeline;
 			bool initialized = false;
 
 			per_frame_resource<gpu::descriptor_region> descriptors;

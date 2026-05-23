@@ -3,6 +3,7 @@ export module gs:client;
 import std;
 import gse;
 
+import :balance_controller;
 import :footstep_planner;
 import :gait_scheduler;
 import :leg_controller;
@@ -27,6 +28,7 @@ auto gs::client_system::run(gse::run_context& ctx) -> gse::async::task<> {
 	ctx.add_system<gs::locomotion::state_estimator>();
 	ctx.add_system<gs::locomotion::gait_scheduler>();
 	ctx.add_system<gs::locomotion::footstep_planner>();
+	ctx.add_system<gs::locomotion::balance_controller>();
 	ctx.add_system<gs::locomotion::leg_controller>();
 	ctx.add_system<gs::pose_driver::system>();
 	ctx.add_system<gse::free_camera::system>();

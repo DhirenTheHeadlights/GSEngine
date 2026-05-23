@@ -37,7 +37,7 @@ auto gse::vulkan::pipeline::active_bindings(this const pipeline& self) -> std::s
 	return self.m_active_bindings;
 }
 
-gse::vulkan::pipeline::operator bool() const {
+auto gse::vulkan::pipeline::valid() const -> bool {
 	return *m_pipeline != nullptr;
 }
 

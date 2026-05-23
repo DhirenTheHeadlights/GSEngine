@@ -27,7 +27,7 @@ export namespace gse::renderer::light_culling {
 		struct data {
 			vec2u current_extent{};
 
-			gpu::pipeline pipeline;
+			gpu::shader_program pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 
 			per_frame_resource<gpu::buffer> culling_params_buffers;

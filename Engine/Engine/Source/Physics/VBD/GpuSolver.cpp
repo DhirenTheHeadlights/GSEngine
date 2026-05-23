@@ -696,115 +696,115 @@ auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::conte
 		co_await ctx.next_tick();
 	}
 
-	m_compute.predict_pipeline = gpu::build_compute_pipeline(
+	m_compute.predict_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		predict_entry::pod
 	);
-	m_compute.solve_color_pipeline = gpu::build_compute_pipeline(
+	m_compute.solve_color_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		solve_color_entry::pod
 	);
-	m_compute.update_lambda_pipeline = gpu::build_compute_pipeline(
+	m_compute.update_lambda_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		update_lambda_entry::pod
 	);
-	m_compute.derive_velocities_pipeline = gpu::build_compute_pipeline(
+	m_compute.derive_velocities_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		derive_velocities_entry::pod
 	);
-	m_compute.finalize_pipeline = gpu::build_compute_pipeline(
+	m_compute.finalize_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		finalize_entry::pod
 	);
-	m_compute.collision_reset_pipeline = gpu::build_compute_pipeline(
+	m_compute.collision_reset_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		collision_reset_entry::pod
 	);
-	m_compute.collision_broad_phase_pipeline = gpu::build_compute_pipeline(
+	m_compute.collision_broad_phase_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		collision_broad_phase_entry::pod
 	);
-	m_compute.collision_narrow_phase_pipeline = gpu::build_compute_pipeline(
+	m_compute.collision_narrow_phase_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		collision_narrow_phase_entry::pod
 	);
-	m_compute.collision_grid_build_pipeline = gpu::build_compute_pipeline(
+	m_compute.collision_grid_build_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		collision_grid_build_entry::pod
 	);
-	m_compute.collision_build_adjacency_pipeline = gpu::build_compute_pipeline(
+	m_compute.collision_build_adjacency_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		collision_build_adjacency_entry::pod
 	);
-	m_compute.collision_build_coloring_pipeline = gpu::build_compute_pipeline(
+	m_compute.collision_build_coloring_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		collision_build_coloring_entry::pod
 	);
-	m_compute.update_joint_lambda_pipeline = gpu::build_compute_pipeline(
+	m_compute.update_joint_lambda_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		update_joint_lambda_entry::pod
 	);
-	m_compute.prepare_indirect_pipeline = gpu::build_compute_pipeline(
+	m_compute.prepare_indirect_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		prepare_indirect_entry::pod
 	);
-	m_compute.prepare_contact_indirect_pipeline = gpu::build_compute_pipeline(
+	m_compute.prepare_contact_indirect_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		prepare_contact_indirect_entry::pod
 	);
-	m_compute.prepare_color_indirect_pipeline = gpu::build_compute_pipeline(
+	m_compute.prepare_color_indirect_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		prepare_color_indirect_entry::pod
 	);
-	m_compute.freeze_jacobians_pipeline = gpu::build_compute_pipeline(
+	m_compute.freeze_jacobians_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		freeze_jacobians_entry::pod
 	);
-	m_compute.apply_jacobi_pipeline = gpu::build_compute_pipeline(
+	m_compute.apply_jacobi_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		apply_jacobi_entry::pod
 	);
-	m_compute.apply_restitution_pipeline = gpu::build_compute_pipeline(
+	m_compute.apply_restitution_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		apply_restitution_entry::pod
 	);
-	m_compute.apply_impulses_pipeline = gpu::build_compute_pipeline(
+	m_compute.apply_impulses_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
@@ -899,8 +899,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 	};
 
 	const std::uint32_t body_workgroups = ceil_div(m_body_count, limits.workgroup_size);
-	const std::uint32_t reset_workgroups =
-		ceil_div(std::max({ m_body_count, limits.max_contacts, limits.grid_table_size }), limits.workgroup_size);
+	const std::uint32_t reset_workgroups = ceil_div(std::max({ m_body_count, limits.max_contacts, limits.grid_table_size }), limits.workgroup_size);
 	const std::uint32_t joint_workgroups = ceil_div(std::max(m_joint_count, 1u), limits.workgroup_size);
 	constexpr std::uint32_t num_colors = limits.max_colors;
 	const std::uint32_t num_iterations = m_solver_cfg.iterations;
@@ -910,12 +909,10 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 	const std::uint32_t joint_count = m_joint_count;
 
 	constexpr std::size_t frozen_jacobian_clear_size = limits.max_contacts * sizeof(frozen_jacobian);
-	constexpr std::size_t solve_state_clear_size =
-		limits.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4;
+	constexpr std::size_t solve_state_clear_size = limits.max_bodies * limits.solve_state_float4s_per_body * sizeof(float) * 4;
 	constexpr std::size_t solve_deltas_clear_size = limits.max_bodies * 2 * sizeof(float) * 4;
 
-	auto rec =
-		co_await gpu::pass<vbd_clear_state_buffers_stage>(ctx).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>();
+	auto rec = co_await gpu::pass<vbd_clear_state_buffers_stage>(ctx).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>();
 	rec.fill_buffer(f.frozen_jacobian_buffer, 0, frozen_jacobian_clear_size);
 	rec.fill_buffer(f.solve_state_buffer, 0, solve_state_clear_size);
 	rec.fill_buffer(f.solve_deltas_buffer, 0, solve_deltas_clear_size);
@@ -927,6 +924,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_reset_pipeline);
+
 		rec.bind_descriptors(m_compute.collision_reset_pipeline, f.descriptors);
 		rec.push(m_compute.collision_reset_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch(reset_workgroups, 1, 1);
@@ -935,6 +933,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_grid_build_pipeline);
+
 		rec.bind_descriptors(m_compute.collision_grid_build_pipeline, f.descriptors);
 		rec.push(m_compute.collision_grid_build_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch(body_workgroups, 1, 1);
@@ -943,6 +942,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_broad_phase_pipeline);
+
 		rec.bind_descriptors(m_compute.collision_broad_phase_pipeline, f.descriptors);
 		rec.push(m_compute.collision_broad_phase_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch(body_workgroups, 1, 1);
@@ -951,6 +951,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.prepare_indirect_pipeline);
+
 		rec.bind_descriptors(m_compute.prepare_indirect_pipeline, f.descriptors);
 		rec.push(m_compute.prepare_indirect_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch(1, 1, 1);
@@ -959,6 +960,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_narrow_phase_pipeline);
+
 		rec.bind_descriptors(m_compute.collision_narrow_phase_pipeline, f.descriptors);
 		rec.push(m_compute.collision_narrow_phase_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch_indirect(f.indirect_dispatch_buffer, 0);
@@ -967,6 +969,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.prepare_contact_indirect_pipeline);
+
 		rec.bind_descriptors(m_compute.prepare_contact_indirect_pipeline, f.descriptors);
 		rec.push(m_compute.prepare_contact_indirect_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch(1, 1, 1);
@@ -975,6 +978,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_build_adjacency_pipeline);
+
 		rec.bind_descriptors(m_compute.collision_build_adjacency_pipeline, f.descriptors);
 		rec.push(m_compute.collision_build_adjacency_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch(1, 1, 1);
@@ -984,6 +988,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				.on(gpu::queue_type::compute)
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.collision_build_coloring_pipeline);
+
 			rec.bind_descriptors(m_compute.collision_build_coloring_pipeline, f.descriptors);
 			rec.push(m_compute.collision_build_coloring_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 			rec.dispatch(1, 1, 1);
@@ -993,6 +998,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				.on(gpu::queue_type::compute)
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.prepare_color_indirect_pipeline);
+
 			rec.bind_descriptors(m_compute.prepare_color_indirect_pipeline, f.descriptors);
 			rec.push(m_compute.prepare_color_indirect_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 			rec.dispatch(1, 1, 1);
@@ -1000,10 +1006,12 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 		if (sub == 0 && m_impulse_count > 0) {
 			const std::uint32_t impulse_workgroups = ceil_div(m_impulse_count, limits.workgroup_size);
+
 			rec = co_await gpu::pass<vbd_apply_impulses_stage>(ctx)
 				.on(gpu::queue_type::compute)
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.apply_impulses_pipeline);
+
 			rec.bind_descriptors(m_compute.apply_impulses_pipeline, f.descriptors);
 			rec.push(m_compute.apply_impulses_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 			rec.dispatch(impulse_workgroups, 1, 1);
@@ -1013,6 +1021,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.predict_pipeline);
+
 		rec.bind_descriptors(m_compute.predict_pipeline, f.descriptors);
 		rec.push(m_compute.predict_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch(body_workgroups, 1, 1);
@@ -1021,6 +1030,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.freeze_jacobians_pipeline);
+
 		rec.bind_descriptors(m_compute.freeze_jacobians_pipeline, f.descriptors);
 		rec.push(m_compute.freeze_jacobians_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch_indirect(f.indirect_dispatch_buffer, 3 * sizeof(std::uint32_t));
@@ -1029,6 +1039,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.solve_color_pipeline);
+
 		for (std::uint32_t it = 0; it < num_iterations; ++it) {
 			rec.bind(m_compute.solve_color_pipeline);
 			rec.bind_descriptors(m_compute.solve_color_pipeline, f.descriptors);
@@ -1074,6 +1085,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.derive_velocities_pipeline);
+
 		rec.bind_descriptors(m_compute.derive_velocities_pipeline, f.descriptors);
 		rec.push(m_compute.derive_velocities_pipeline, make_pc(0u, 0u, sub, num_iterations, solve_alpha, warm));
 		rec.dispatch(body_workgroups, 1, 1);
@@ -1082,12 +1094,16 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.apply_restitution_pipeline);
+
 		auto restitution_pc = make_pc(0u, num_colors, sub, num_iterations, 0.f, warm);
+
 		rec.bind_descriptors(m_compute.apply_restitution_pipeline, f.descriptors);
+
 		for (std::uint32_t color = 0; color < num_colors; ++color) {
 			restitution_pc.data.color_offset = color;
 			rec.push(m_compute.apply_restitution_pipeline, restitution_pc);
 			rec.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
+
 			if (color + 1 < num_colors) {
 				rec.barrier(gpu::barrier_scope::compute_to_compute);
 			}
@@ -1098,6 +1114,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				.on(gpu::queue_type::compute)
 				.in_chain<vbd_solve_chain>()
 				.pipeline(m_compute.prepare_color_indirect_pipeline);
+
 			rec.bind_descriptors(m_compute.prepare_color_indirect_pipeline, f.descriptors);
 			rec.push(m_compute.prepare_color_indirect_pipeline, make_pc(0u, 0u, sub, num_iterations, 0.f, warm));
 			rec.dispatch(1, 1, 1);
@@ -1134,6 +1151,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.on(gpu::queue_type::compute)
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.finalize_pipeline);
+
 		rec.bind_descriptors(m_compute.finalize_pipeline, f.descriptors);
 		rec.push(m_compute.finalize_pipeline, make_pc(0u, 0u, sub, 0u, 0.f, warm));
 		rec.dispatch(body_workgroups, 1, 1);
@@ -1157,6 +1175,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 	m_body_buffers_seeded = true;
 	m_seeded_body_count = m_body_count;
 	m_dispatch_slot = 1 - m_dispatch_slot;
+
 	co_return;
 }
 

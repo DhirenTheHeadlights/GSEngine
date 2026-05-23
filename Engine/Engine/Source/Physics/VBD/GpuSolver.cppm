@@ -106,25 +106,25 @@ export namespace gse::vbd {
 
 	private:
 		struct compute_shaders {
-			gpu::pipeline predict_pipeline;
-			gpu::pipeline solve_color_pipeline;
-			gpu::pipeline update_lambda_pipeline;
-			gpu::pipeline derive_velocities_pipeline;
-			gpu::pipeline finalize_pipeline;
-			gpu::pipeline collision_reset_pipeline;
-			gpu::pipeline collision_grid_build_pipeline;
-			gpu::pipeline collision_broad_phase_pipeline;
-			gpu::pipeline collision_narrow_phase_pipeline;
-			gpu::pipeline collision_build_adjacency_pipeline;
-			gpu::pipeline collision_build_coloring_pipeline;
-			gpu::pipeline update_joint_lambda_pipeline;
-			gpu::pipeline prepare_indirect_pipeline;
-			gpu::pipeline prepare_contact_indirect_pipeline;
-			gpu::pipeline prepare_color_indirect_pipeline;
-			gpu::pipeline freeze_jacobians_pipeline;
-			gpu::pipeline apply_jacobi_pipeline;
-			gpu::pipeline apply_restitution_pipeline;
-			gpu::pipeline apply_impulses_pipeline;
+			gpu::shader_program predict_pipeline;
+			gpu::shader_program solve_color_pipeline;
+			gpu::shader_program update_lambda_pipeline;
+			gpu::shader_program derive_velocities_pipeline;
+			gpu::shader_program finalize_pipeline;
+			gpu::shader_program collision_reset_pipeline;
+			gpu::shader_program collision_grid_build_pipeline;
+			gpu::shader_program collision_broad_phase_pipeline;
+			gpu::shader_program collision_narrow_phase_pipeline;
+			gpu::shader_program collision_build_adjacency_pipeline;
+			gpu::shader_program collision_build_coloring_pipeline;
+			gpu::shader_program update_joint_lambda_pipeline;
+			gpu::shader_program prepare_indirect_pipeline;
+			gpu::shader_program prepare_contact_indirect_pipeline;
+			gpu::shader_program prepare_color_indirect_pipeline;
+			gpu::shader_program freeze_jacobians_pipeline;
+			gpu::shader_program apply_jacobi_pipeline;
+			gpu::shader_program apply_restitution_pipeline;
+			gpu::shader_program apply_impulses_pipeline;
 
 			bool initialized = false;
 		} m_compute;

@@ -198,6 +198,11 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gs
 
 template <typename T>
 auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, const id active_widget_id) -> void {
+	using underlying = internal::vec_storage_type_t<T>;
+	auto& value_u = *reinterpret_cast<underlying*>(&value);
+	const underlying min_u = internal::to_storage(min);
+	const underlying max_u = internal::to_storage(max);
+
 	if (rect.contains(ctx.input.mouse_position()) && ctx.input_available()) {
 		hot_widget_id = widget_id;
 	}
@@ -206,14 +211,20 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 		const float mouse_x = ctx.input.mouse_position().x();
 		const float relative_x = mouse_x - rect.left();
 		const float ratio = std::clamp(relative_x / rect.width(), 0.0f, 1.0f);
-		value = min + ratio * (max - min);
+		const float raw = static_cast<float>(min_u) + ratio * static_cast<float>(max_u - min_u);
+		if constexpr (std::is_integral_v<underlying>) {
+			value_u = static_cast<underlying>(std::lround(raw));
+		}
+		else {
+			value_u = static_cast<underlying>(raw);
+		}
 	}
 
-	if (value < min) {
-		value = min;
+	if (value_u < min_u) {
+		value_u = min_u;
 	}
-	if (value > max) {
-		value = max;
+	if (value_u > max_u) {
+		value_u = max_u;
 	}
 
 	ctx.queue_sprite({
@@ -224,22 +235,9 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 	});
 
 	float fill_ratio = 0.0f;
-	const auto range = max - min;
-
-	bool range_is_zero = false;
-	if constexpr (internal::is_quantity<decltype(range)>) {
-		if (static_cast<typename decltype(range)::value_type>(range) == typename decltype(range)::value_type{ 0 }) {
-			range_is_zero = true;
-		}
-	}
-	else {
-		if (range == T{ 0 }) {
-			range_is_zero = true;
-		}
-	}
-
-	if (!range_is_zero) {
-		fill_ratio = static_cast<float>((value - min) / range);
+	const underlying range_u = max_u - min_u;
+	if (range_u != underlying{ 0 }) {
+		fill_ratio = static_cast<float>(value_u - min_u) / static_cast<float>(range_u);
 	}
 
 	const ui_rect fill_rect =
@@ -253,14 +251,11 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 	});
 
 	std::string value_str;
-	if constexpr (internal::is_quantity<T>) {
-		value_str = std::format("{:.2f}", static_cast<typename T::value_type>(value));
-	}
-	else if constexpr (std::is_floating_point_v<T>) {
-		value_str = std::format("{:.2f}", value);
+	if constexpr (std::is_floating_point_v<underlying>) {
+		value_str = std::format("{:.2f}", value_u);
 	}
 	else {
-		value_str = std::format("{}", value);
+		value_str = std::format("{}", value_u);
 	}
 	const float text_width = ctx.font->width(value_str, ctx.style.font_size);
 	const vec2f value_text_pos = { rect.center().x() - text_width / 2.f,

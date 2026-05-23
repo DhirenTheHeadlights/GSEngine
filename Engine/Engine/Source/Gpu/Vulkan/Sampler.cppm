@@ -33,7 +33,7 @@ export namespace gse::vulkan {
 			this const sampler& self
 		) -> gpu::handle<sampler>;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		explicit sampler(
@@ -73,6 +73,6 @@ auto gse::vulkan::sampler::native(this const sampler& self) -> gpu::handle<sampl
 	return std::bit_cast<gpu::handle<sampler>>(*self.m_sampler);
 }
 
-gse::vulkan::sampler::operator bool() const {
+auto gse::vulkan::sampler::valid() const -> bool {
 	return *m_sampler != nullptr;
 }

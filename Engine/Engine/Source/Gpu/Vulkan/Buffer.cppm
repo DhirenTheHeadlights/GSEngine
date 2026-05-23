@@ -72,7 +72,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto debug_info() const -> const allocation_debug_info&;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		gpu::handle<basic_buffer<device>> m_buffer;
@@ -252,7 +252,7 @@ auto gse::vulkan::basic_buffer<Device>::size() const -> gpu::device_size {
 }
 
 template <typename Device>
-gse::vulkan::basic_buffer<Device>::operator bool() const {
+auto gse::vulkan::basic_buffer<Device>::valid() const -> bool {
 	return static_cast<bool>(m_buffer);
 }
 

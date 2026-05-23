@@ -34,7 +34,7 @@ export namespace gse::gui::draw {
 
 	template <
 		typename T,
-		int N,
+		std::size_t N,
 		auto Unit = typename T::default_unit{}
 	>
 	auto vec(
@@ -45,7 +45,7 @@ export namespace gse::gui::draw {
 				N>& v
 	) -> void;
 
-	template <typename T, int N>
+	template <typename T, std::size_t N>
 	auto vec(
 		const draw_context& ctx,
 		const std::string& name,
@@ -68,7 +68,19 @@ export namespace gse::gui {
 		}
 	};
 
-	template <is_arithmetic T, int N>
+	template <internal::is_quantity T, auto Unit = typename T::default_unit{}>
+	struct quantity_value {
+		using result = void;
+		struct params {
+			std::string_view name;
+			T val;
+		};
+		static auto draw(draw_context& ctx, params p, id&, id&, id&) -> void {
+			draw::value<T, Unit>(ctx, std::string(p.name), p.val);
+		}
+	};
+
+	template <is_arithmetic T, std::size_t N>
 	struct vec_value {
 		using result = void;
 		struct params {
@@ -77,6 +89,18 @@ export namespace gse::gui {
 		};
 		static auto draw(draw_context& ctx, params p, id&, id&, id&) -> void {
 			draw::vec(ctx, std::string(p.name), p.val);
+		}
+	};
+
+	template <internal::is_quantity T, std::size_t N, auto Unit = typename T::default_unit{}>
+	struct quantity_vec_value {
+		using result = void;
+		struct params {
+			std::string_view name;
+			gse::vec<T, N> val;
+		};
+		static auto draw(draw_context& ctx, params p, id&, id&, id&) -> void {
+			draw::vec<T, N, Unit>(ctx, std::string(p.name), p.val);
 		}
 	};
 }
@@ -115,7 +139,7 @@ auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T v
 	);
 }
 
-template <typename T, int N, auto Unit>
+template <typename T, std::size_t N, auto Unit>
 auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, const gse::vec<T, N>& v) -> void {
 	std::array<std::string, N> values;
 	for (std::size_t i = 0; i < N; ++i) {
@@ -124,7 +148,7 @@ auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, const
 	value_row<N>(ctx, name, values);
 }
 
-template <typename T, int N>
+template <typename T, std::size_t N>
 auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, gse::vec<T, N> v) -> void {
 	std::array<std::string, N> values;
 

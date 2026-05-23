@@ -66,8 +66,12 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		assets.install_hot_reload_fns();
 
 		m_loading.set_phase("Compiling boot assets");
+		asset::compile_progress boot_progress;
+		boot_progress.on_tick = [this](const std::uint32_t done, const std::uint32_t total) {
+			m_loading.set_progress(done, total);
+		};
 		log::println(log::category::runtime, "boot: compile_boot_critical begin");
-		if (const auto result = assets.compile_boot_critical(); result.success_count > 0 || result.failure_count > 0) {
+		if (const auto result = assets.compile_boot_critical(&boot_progress); result.success_count > 0 || result.failure_count > 0) {
 			log::println(
 				result.failure_count > 0 ? log::level::warning : log::level::info,
 				log::category::assets,
@@ -94,6 +98,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			log::println(log::category::runtime, "boot: deferred boot begin (loading screen rendered)");
 
 			m_loading.set_phase("Compiling shaders");
+			m_loading.set_progress(0, 0);
 			add_system<physics::system>();
 			add_system<camera::system>();
 			add_system<primitive_resolver::system>();
@@ -119,9 +124,13 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 				gse::asset::system_for<game_assets> assets{ *asset_state_ptr };
 
 				m_loading.set_phase("Compiling assets");
+				asset::compile_progress asset_progress;
+				asset_progress.on_tick = [this](const std::uint32_t done, const std::uint32_t total) {
+					m_loading.set_progress(done, total);
+				};
 				log::println(log::category::runtime, "boot: compile_non_boot_critical begin");
 				if (
-					const auto result = assets.compile_non_boot_critical();
+					const auto result = assets.compile_non_boot_critical(&asset_progress);
 					result.success_count > 0 || result.failure_count > 0
 				) {
 					log::println(
@@ -137,6 +146,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 				if (app_setup) {
 					m_loading.set_phase("Initializing game");
+					m_loading.set_progress(0, 0);
 					log::println(log::category::runtime, "boot: app_setup begin");
 					app_setup(*this);
 					log::println(log::category::runtime, "boot: app_setup end");

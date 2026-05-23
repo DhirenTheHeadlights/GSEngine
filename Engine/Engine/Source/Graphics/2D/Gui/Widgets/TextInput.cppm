@@ -1,4 +1,4 @@
-export module gse.graphics:input_widget;
+export module gse.graphics:text_input_widget;
 
 import std;
 
@@ -16,31 +16,8 @@ import :ids;
 import :styles;
 import :builder;
 
-export namespace gse::gui::draw {
-	auto input(
-		const draw_context& ctx,
-		const std::string& name,
-		std::string& buffer,
-		id& hot_widget_id,
-		id& focus_widget_id
-	) -> void;
-}
-
 export namespace gse::gui {
-	struct input {
-		using result = void;
-		struct params {
-			std::string_view name;
-			std::string& buffer;
-		};
-		static auto draw(const draw_context& ctx, const params& p, id& hot, id&, id& focus) -> void {
-			draw::input(ctx, std::string(p.name), p.buffer, hot, focus);
-		}
-	};
-}
-
-namespace gse::gui::draw {
-	struct input_state {
+	struct text_input_state {
 		int caret = 0;
 		int anchor = 0;
 		float scroll_x = 0.f;
@@ -49,21 +26,50 @@ namespace gse::gui::draw {
 		bool rpt_active = false;
 		double rpt_next_ms = 0.0;
 	};
-
-	std::unordered_map<std::uint64_t, input_state> global_input_state;
 }
 
-auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std::string& buffer, id& hot_widget_id, id& focus_widget_id) -> void {
+export namespace gse::gui::draw {
+	auto text_input_in_rect(
+		const draw_context& ctx,
+		id widget_id,
+		std::string& buffer,
+		text_input_state& state,
+		const ui_rect& box_rect,
+		id& hot_widget_id,
+		id& focus_widget_id
+	) -> void;
+
+	auto text_input(
+		const draw_context& ctx,
+		const std::string& name,
+		std::string& buffer,
+		text_input_state& state,
+		id& hot_widget_id,
+		id& focus_widget_id
+	) -> void;
+}
+
+export namespace gse::gui {
+	struct text_input {
+		using result = void;
+		struct params {
+			std::string_view name;
+			std::string& buffer;
+			text_input_state& state;
+		};
+		static auto draw(const draw_context& ctx, const params& p, id& hot, id&, id& focus) -> void {
+			draw::text_input(ctx, std::string(p.name), p.buffer, p.state, hot, focus);
+		}
+	};
+}
+
+auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name, std::string& buffer, text_input_state& state, id& hot_widget_id, id& focus_widget_id) -> void {
 	if (!ctx.current_menu) {
 		return;
 	}
 
 	const std::string id_label = name + "##Input";
 	const id widget_id = ids::make(id_label);
-
-	input_state& state = global_input_state[widget_id.number()];
-	state.caret = std::clamp(state.caret, 0, static_cast<int>(buffer.size()));
-	state.anchor = std::clamp(state.anchor, 0, static_cast<int>(buffer.size()));
 
 	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
@@ -81,6 +87,24 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
 		{ row_rect.left() + label_width, row_rect.top() },
 		{ content_rect.width() - label_width, widget_height }
 	);
+
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = name,
+		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.clip_rect = label_rect
+	});
+
+	text_input_in_rect(ctx, widget_id, buffer, state, box_rect, hot_widget_id, focus_widget_id);
+
+	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
+}
+
+auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const ui_rect& box_rect, id& hot_widget_id, id& focus_widget_id) -> void {
+	state.caret = std::clamp(state.caret, 0, static_cast<int>(buffer.size()));
+	state.anchor = std::clamp(state.anchor, 0, static_cast<int>(buffer.size()));
 
 	const bool hovered = box_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
 
@@ -131,11 +155,11 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
 		state.blink_on = true;
 	}
 
-	auto has_sel = [](const input_state& s) -> bool {
+	auto has_sel = [](const text_input_state& s) -> bool {
 		return s.caret != s.anchor;
 	};
 
-	auto sel_range = [](const input_state& s) -> std::pair<int, int> {
+	auto sel_range = [](const text_input_state& s) -> std::pair<int, int> {
 		return s.caret < s.anchor ? std::pair{ s.caret, s.anchor } : std::pair{ s.anchor, s.caret };
 	};
 
@@ -292,15 +316,6 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
 		}
 	}
 
-	ctx.queue_text({
-		.font = ctx.font,
-		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
-		.clip_rect = label_rect
-	});
-
 	ctx.queue_sprite({
 		.rect = box_rect,
 		.color = ctx.style.color_input_background,
@@ -352,6 +367,4 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
 			.texture = ctx.blank_texture
 		});
 	}
-
-	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 }

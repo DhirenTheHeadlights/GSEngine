@@ -16,7 +16,7 @@ import :sdf_grid_renderer;
 export namespace gse::renderer::world_text {
 	struct system {
 		struct data {
-			gpu::pipeline pipeline;
+			gpu::shader_program pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 			per_frame_resource<gpu::buffer> vertex_buffers;

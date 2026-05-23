@@ -40,7 +40,7 @@ export namespace gse::gpu {
 		const family_layout* family = nullptr;
 		std::vector<resource_slot> resources;
 
-		operator bool() const {
+		[[nodiscard]] auto valid() const -> bool {
 			return heap != nullptr;
 		}
 	};
@@ -602,6 +602,6 @@ auto gse::gpu::descriptor_set_writer::combined_image_sampler(const std::uint32_t
 }
 
 auto gse::gpu::descriptor_set_writer::commit(const gpu::handle<vulkan::command_buffer> cmd, const bind_point point, const gpu::handle<vulkan::pipeline_layout> layout, const std::uint32_t set_index) const -> void {
-	assert(m_current_region, "Cannot commit without begin()");
+	assert(m_current_region.valid(), "Cannot commit without begin()");
 	m_current_region.heap->bind(cmd, point, layout, set_index, m_current_region);
 }

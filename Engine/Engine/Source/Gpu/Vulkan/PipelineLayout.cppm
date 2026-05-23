@@ -36,7 +36,7 @@ export namespace gse::vulkan {
 			this const pipeline_layout& self
 		) -> gpu::handle<pipeline_layout>;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		explicit pipeline_layout(
@@ -80,6 +80,6 @@ auto gse::vulkan::pipeline_layout::handle(this const pipeline_layout& self) -> g
 	return std::bit_cast<gpu::handle<pipeline_layout>>(*self.m_layout);
 }
 
-gse::vulkan::pipeline_layout::operator bool() const {
+auto gse::vulkan::pipeline_layout::valid() const -> bool {
 	return *m_layout != nullptr;
 }

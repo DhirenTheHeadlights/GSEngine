@@ -43,7 +43,7 @@ export namespace gse::vulkan {
 			this const query_pool& self
 		) -> gpu::handle<query_pool>;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 		template <typename T>
 		[[nodiscard]]
@@ -115,7 +115,7 @@ auto gse::vulkan::query_pool::handle(this const query_pool& self) -> gpu::handle
 	return std::bit_cast<gpu::handle<query_pool>>(*self.m_pool);
 }
 
-gse::vulkan::query_pool::operator bool() const {
+auto gse::vulkan::query_pool::valid() const -> bool {
 	return *m_pool != nullptr;
 }
 

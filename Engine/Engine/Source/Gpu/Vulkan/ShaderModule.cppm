@@ -34,7 +34,7 @@ export namespace gse::vulkan {
 			this const shader_module& self
 		) -> gpu::handle<shader_module>;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		explicit shader_module(
@@ -62,6 +62,6 @@ auto gse::vulkan::shader_module::handle(this const shader_module& self) -> gpu::
 	return std::bit_cast<gpu::handle<shader_module>>(*self.m_module);
 }
 
-gse::vulkan::shader_module::operator bool() const {
+auto gse::vulkan::shader_module::valid() const -> bool {
 	return *m_module != nullptr;
 }

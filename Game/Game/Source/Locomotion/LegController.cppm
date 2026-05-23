@@ -94,6 +94,13 @@ namespace gs::locomotion {
 		const leg_controller::data& d
 	) -> std::
 		pair<gse::angle, gse::angle>;
+	auto weight_shift_ready(
+		const state& s
+	) -> bool;
+	auto is_foot_grounded(
+		const state& s,
+		leg which
+	) -> bool;
 	auto write_targets(
 		const skeleton_refs& r,
 		const leg_joint_targets& targets,
@@ -155,6 +162,15 @@ auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& 
 	return { ik.hip_pitch, ik.knee_bend };
 }
 
+auto gs::locomotion::weight_shift_ready(const state& s) -> bool {
+	return s.double_support && gse::abs(s.capture_forward) <= gse::meters(0.28f) &&
+		gse::abs(s.capture_right) <= gse::meters(0.24f);
+}
+
+auto gs::locomotion::is_foot_grounded(const state& s, const leg which) -> bool {
+	return which == leg::left ? s.foot_grounded_l : s.foot_grounded_r;
+}
+
 auto gs::locomotion::write_targets(const skeleton_refs& r, const leg_joint_targets& targets, gse::write<controlled_joint_component>& ctrls, const bool controllers_active) -> void {
 	auto apply = [&](const gse::id joint_id, const gse::angle target) {
 		if (auto* cj = ctrls.find(joint_id)) {
@@ -214,7 +230,9 @@ auto gs::locomotion::leg_controller::run(gse::run_context& ctx, data& d) -> gse:
 
 				leg_joint_targets targets;
 				if (controllers_active) {
-					if (g->current == phase::idle) {
+					const bool hold_weight_shift = g->current == phase::weight_shift && !weight_shift_ready(*s);
+					const bool settle_planted_foot = g->current == phase::plant && is_foot_grounded(*s, g->swing_leg);
+					if (g->current == phase::idle || hold_weight_shift || settle_planted_foot) {
 						const auto [hip, knee] = compute_stance(*s, *it, *r, d);
 						targets.hip_l = hip;
 						targets.knee_l = knee;

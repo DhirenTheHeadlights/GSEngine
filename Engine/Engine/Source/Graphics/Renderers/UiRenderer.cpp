@@ -145,14 +145,14 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 }
 
 auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.sprite_pipeline = gpu::build_graphics_pipeline(
+	d.sprite_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
 		sprite_entry::pod
 	);
 	d.text_pipeline =
-		gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, msdf_entry::pod);
+		gpu::build_graphics_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, msdf_entry::pod);
 
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);

@@ -24,7 +24,7 @@ export import :geometry_collector;
 export import :gui;
 export import :ids;
 export import :input_layers;
-export import :input_widget;
+export import :text_input_widget;
 export import :interaction;
 export import :layout;
 export import :light_culling_renderer;

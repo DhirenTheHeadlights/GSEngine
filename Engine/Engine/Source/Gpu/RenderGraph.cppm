@@ -117,6 +117,12 @@ export namespace gse::gpu {
 			const gpu::typed_push_constants<T>& typed
 		) const -> void;
 
+		template <typename T>
+		auto push(
+			const gpu::shader_program& p,
+			const gpu::typed_push_constants<T>& typed
+		) const -> void;
+
 		auto draw_indirect(
 			const buffer& buf,
 			std::size_t offset,
@@ -135,8 +141,18 @@ export namespace gse::gpu {
 			const gpu::pipeline& p
 		) const -> void;
 
+		auto bind(
+			const gpu::shader_program& p
+		) -> void;
+
 		auto bind_descriptors(
 			const gpu::pipeline& p,
+			const gpu::descriptor_region& region,
+			std::uint32_t set_index = 0
+		) -> void;
+
+		auto bind_descriptors(
+			const gpu::shader_program& p,
 			const gpu::descriptor_region& region,
 			std::uint32_t set_index = 0
 		) -> void;
@@ -163,6 +179,12 @@ export namespace gse::gpu {
 		auto commit(
 			const gpu::descriptor_writer& writer,
 			const gpu::pipeline& p,
+			std::uint32_t set_index = 0
+		) -> void;
+
+		auto commit(
+			const gpu::descriptor_writer& writer,
+			const gpu::shader_program& p,
 			std::uint32_t set_index = 0
 		) -> void;
 
@@ -255,6 +277,7 @@ export namespace gse::gpu {
 		const gpu::transient_pool* m_transient_pool = nullptr;
 		std::vector<touched_resource> m_touched;
 		std::thread::id m_origin_thread;
+		vulkan::pipeline_state_cache m_state_cache;
 
 		recording_context(
 			commands cmd,
@@ -271,13 +294,17 @@ export namespace gse::gpu {
 			gpu::access_flags access
 		) -> void;
 
+		auto apply_dynamic_state(
+			const gpu::dynamic_pipeline_state& s
+		) -> void;
+
 		auto finalize_pass() -> void;
 	};
 
 	struct render_pass_data {
 		id pass_type{};
 		gpu::queue_type queue = gpu::queue_type::graphics;
-		const gpu::pipeline* primary_pipeline = nullptr;
+		const gpu::shader_program* primary_pipeline = nullptr;
 		std::vector<resource_usage> reads;
 		std::vector<resource_usage> writes;
 		std::vector<id> after_passes;
@@ -420,7 +447,7 @@ gse::gpu::recording_context::recording_context(
 	  m_auto_binds(auto_binds),
 	  m_pass(pass),
 	  m_transient_pool(transient_pool) {
-	if (m_cmd) {
+	if (m_cmd.valid()) {
 		assert(
 			tl_active_recording_context == nullptr,
 			"another recording_context is still active on this worker thread; a prior coroutine held its rec across a "
@@ -448,10 +475,12 @@ gse::gpu::recording_context::recording_context(recording_context&& other) noexce
 	  m_pass(other.m_pass),
 	  m_transient_pool(other.m_transient_pool),
 	  m_touched(std::move(other.m_touched)),
-	  m_origin_thread(other.m_origin_thread) {
+	  m_origin_thread(other.m_origin_thread),
+	  m_state_cache(other.m_state_cache) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
+	other.m_state_cache.invalidate();
 	other.m_cmd = commands{};
 	other.m_auto_binds = {};
 	other.m_pass = nullptr;
@@ -460,7 +489,7 @@ gse::gpu::recording_context::recording_context(recording_context&& other) noexce
 
 auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
 	if (this != &other) {
-		if (m_cmd) {
+		if (m_cmd.valid()) {
 			assert(
 				std::this_thread::get_id() == m_origin_thread,
 				"recording_context's secondary command buffer is being ended on a thread other than its origin. "
@@ -480,9 +509,11 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_transient_pool = other.m_transient_pool;
 		m_touched = std::move(other.m_touched);
 		m_origin_thread = other.m_origin_thread;
+		m_state_cache = other.m_state_cache;
 		if (tl_active_recording_context == &other) {
 			tl_active_recording_context = this;
 		}
+		other.m_state_cache.invalidate();
 		other.m_cmd = commands{};
 		other.m_auto_binds = {};
 		other.m_pass = nullptr;
@@ -516,7 +547,7 @@ auto gse::gpu::recording_context::resolve(const transient_buffer_handle h) const
 }
 
 gse::gpu::recording_context::~recording_context() {
-	if (m_cmd) {
+	if (m_cmd.valid()) {
 		assert(
 			std::this_thread::get_id() == m_origin_thread,
 			"recording_context's secondary command buffer is being ended on a thread other than its origin. "
@@ -533,7 +564,7 @@ gse::gpu::recording_context::~recording_context() {
 
 auto gse::gpu::recording_context::finalize_active_on_current_thread() noexcept -> void {
 	auto* active = tl_active_recording_context;
-	if (active != nullptr && active->m_cmd) {
+	if (active != nullptr && active->m_cmd.valid()) {
 		assert(
 			std::this_thread::get_id() == active->m_origin_thread,
 			"finalize_active_on_current_thread invoked on a thread that does not own the active rec's secondary; "
@@ -548,7 +579,7 @@ auto gse::gpu::recording_context::finalize_active_on_current_thread() noexcept -
 
 auto gse::gpu::recording_context::check_active() const -> void {
 	assert(
-		static_cast<bool>(m_cmd),
+		m_cmd.valid(),
 		"recording_context method called after the pass's secondary was finalized. This happens when the previous rec "
 		"was implicitly closed by a subsequent `co_await gpu::pass(...)` (each new pass await closes the prior rec on "
 		"the suspending thread to keep VkCommandPool access single-threaded). Use only the rec returned by the most "
@@ -944,6 +975,12 @@ auto gse::gpu::recording_context::push(const gpu::pipeline& p, const gpu::typed_
 	typed.replay(m_cmd.native(), p.layout());
 }
 
+template <typename T>
+auto gse::gpu::recording_context::push(const gpu::shader_program& p, const gpu::typed_push_constants<T>& typed) const -> void {
+	check_active();
+	typed.replay(m_cmd.native(), p.layout());
+}
+
 auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
 	check_active();
 	note_touched(
@@ -975,7 +1012,7 @@ auto gse::gpu::recording_context::bind(const gpu::pipeline& p) const -> void {
 	m_cmd.bind_pipeline(p.bind_point(), p.handle());
 	for (const auto set_idx : p.auto_bound_sets()) {
 		for (const auto& [auto_set_idx, region] : m_auto_binds) {
-			if (auto_set_idx == set_idx && region) {
+			if (auto_set_idx == set_idx && region.valid()) {
 				region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_idx, region);
 				break;
 			}
@@ -985,7 +1022,7 @@ auto gse::gpu::recording_context::bind(const gpu::pipeline& p) const -> void {
 
 auto gse::gpu::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) -> void {
 	check_active();
-	assert(region, "Cannot bind null descriptor region");
+	assert(region.valid(), "Cannot bind null descriptor region");
 	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
 		if (set != set_index) {
 			continue;
@@ -1088,6 +1125,152 @@ auto gse::gpu::recording_context::commit(const gpu::descriptor_writer& writer, c
 		note_touched(it->ref, stages, barrier_access(type, access));
 	}
 	writer.native_writer().commit(m_cmd.native(), p.bind_point(), p.layout(), set_index);
+}
+
+auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
+	check_active();
+	m_cmd.bind_shaders(p.stages(), p.shader_handles());
+	if (!p.is_compute()) {
+		apply_dynamic_state(p.state());
+	}
+	for (const auto set_idx : p.auto_bound_sets()) {
+		for (const auto& [auto_set_idx, region] : m_auto_binds) {
+			if (auto_set_idx == set_idx && region.valid()) {
+				region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_idx, region);
+				break;
+			}
+		}
+	}
+}
+
+auto gse::gpu::recording_context::bind_descriptors(const gpu::shader_program& p, const gpu::descriptor_region& region, const std::uint32_t set_index) -> void {
+	check_active();
+	assert(region.valid(), "Cannot bind null descriptor region");
+	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
+		if (set != set_index) {
+			continue;
+		}
+		const auto it = std::ranges::find_if(region.resources, [slot](const resource_slot& rs) {
+			return rs.slot == slot;
+		});
+		assert(
+			it != region.resources.end(),
+			"render pass '{}' bound a shader_program expecting set={} slot={} ({}, {}) but the descriptor region has no "
+			"resource at that slot. Bound slots: {}",
+			m_pass ? m_pass->pass_type.tag() : std::string_view{ "<unknown>" },
+			set,
+			slot,
+			type,
+			access,
+			format_bound_slots(region.resources)
+		);
+		note_touched(it->ref, stages, barrier_access(type, access));
+	}
+	region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_index, region);
+}
+
+auto gse::gpu::recording_context::commit(const gpu::descriptor_writer& writer, const gpu::shader_program& p, const std::uint32_t set_index) -> void {
+	check_active();
+	const auto written = writer.touched_resources();
+	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
+		if (set != set_index) {
+			continue;
+		}
+		const auto it = std::ranges::find_if(written, [slot](const resource_slot& rs) {
+			return rs.slot == slot;
+		});
+		assert(
+			it != written.end(),
+			"render pass '{}' committed a push descriptor for set={} slot={} ({}, {}) but the writer has no resource "
+			"at that slot. Written slots: {}",
+			m_pass ? m_pass->pass_type.tag() : std::string_view{ "<unknown>" },
+			set,
+			slot,
+			type,
+			access,
+			format_bound_slots(written)
+		);
+		note_touched(it->ref, stages, barrier_access(type, access));
+	}
+	writer.native_writer().commit(m_cmd.native(), p.bind_point(), p.layout(), set_index);
+}
+
+auto gse::gpu::recording_context::apply_dynamic_state(const gpu::dynamic_pipeline_state& s) -> void {
+	if (!m_state_cache.topology || *m_state_cache.topology != s.topology) {
+		m_cmd.set_topology(s.topology);
+		m_state_cache.topology = s.topology;
+	}
+	if (!m_state_cache.polygon_mode || *m_state_cache.polygon_mode != s.polygon) {
+		m_cmd.set_polygon_mode(s.polygon);
+		m_state_cache.polygon_mode = s.polygon;
+	}
+	if (!m_state_cache.cull_mode || *m_state_cache.cull_mode != s.cull) {
+		m_cmd.set_cull_mode(s.cull);
+		m_state_cache.cull_mode = s.cull;
+	}
+	if (!m_state_cache.front_face || *m_state_cache.front_face != s.front) {
+		m_cmd.set_front_face(s.front);
+		m_state_cache.front_face = s.front;
+	}
+	if (!m_state_cache.depth_test_enable || *m_state_cache.depth_test_enable != s.depth.test) {
+		m_cmd.set_depth_test_enable(s.depth.test);
+		m_state_cache.depth_test_enable = s.depth.test;
+	}
+	if (!m_state_cache.depth_write_enable || *m_state_cache.depth_write_enable != s.depth.write) {
+		m_cmd.set_depth_write_enable(s.depth.write);
+		m_state_cache.depth_write_enable = s.depth.write;
+	}
+	if (!m_state_cache.depth_compare_op || *m_state_cache.depth_compare_op != s.depth.compare) {
+		m_cmd.set_depth_compare_op(s.depth.compare);
+		m_state_cache.depth_compare_op = s.depth.compare;
+	}
+	if (!m_state_cache.depth_bias_enable || *m_state_cache.depth_bias_enable != s.depth_bias_enable) {
+		m_cmd.set_depth_bias_enable(s.depth_bias_enable);
+		m_state_cache.depth_bias_enable = s.depth_bias_enable;
+	}
+	if (s.depth_bias_enable) {
+		m_cmd.set_depth_bias(s.depth_bias_constant, s.depth_bias_clamp, s.depth_bias_slope);
+	}
+	if (!m_state_cache.depth_clamp_enable || *m_state_cache.depth_clamp_enable != s.depth_clamp_enable) {
+		m_cmd.set_depth_clamp_enable(s.depth_clamp_enable);
+		m_state_cache.depth_clamp_enable = s.depth_clamp_enable;
+	}
+	if (!m_state_cache.rasterizer_discard_enable || *m_state_cache.rasterizer_discard_enable != s.rasterizer_discard_enable) {
+		m_cmd.set_rasterizer_discard_enable(s.rasterizer_discard_enable);
+		m_state_cache.rasterizer_discard_enable = s.rasterizer_discard_enable;
+	}
+	if (!m_state_cache.primitive_restart_enable || *m_state_cache.primitive_restart_enable != s.primitive_restart_enable) {
+		m_cmd.set_primitive_restart_enable(s.primitive_restart_enable);
+		m_state_cache.primitive_restart_enable = s.primitive_restart_enable;
+	}
+	if (!m_state_cache.alpha_to_coverage_enable || *m_state_cache.alpha_to_coverage_enable != s.alpha_to_coverage_enable) {
+		m_cmd.set_alpha_to_coverage_enable(s.alpha_to_coverage_enable);
+		m_state_cache.alpha_to_coverage_enable = s.alpha_to_coverage_enable;
+	}
+	if (!m_state_cache.alpha_to_one_enable || *m_state_cache.alpha_to_one_enable != s.alpha_to_one_enable) {
+		m_cmd.set_alpha_to_one_enable(s.alpha_to_one_enable);
+		m_state_cache.alpha_to_one_enable = s.alpha_to_one_enable;
+	}
+	if (!m_state_cache.logic_op_enable || *m_state_cache.logic_op_enable != s.logic_op_enable) {
+		m_cmd.set_logic_op_enable(s.logic_op_enable);
+		m_state_cache.logic_op_enable = s.logic_op_enable;
+	}
+
+	m_cmd.set_rasterization_samples(s.samples);
+	m_cmd.set_sample_mask(s.samples, s.sample_mask);
+
+	if (!s.blend_enables.empty()) {
+		m_cmd.set_color_blend_enable(0, s.blend_enables);
+	}
+	if (!s.blend_equations.empty()) {
+		m_cmd.set_color_blend_equation(0, s.blend_equations);
+	}
+	if (!s.color_write_masks.empty()) {
+		m_cmd.set_color_write_mask(0, s.color_write_masks);
+	}
+	if (!s.vertex_bindings.empty() || !s.vertex_attributes.empty()) {
+		m_cmd.set_vertex_input(s.vertex_bindings, s.vertex_attributes);
+	}
 }
 
 auto gse::gpu::format_bound_slots(const std::span<const resource_slot> resources) -> std::string {
@@ -1198,10 +1381,10 @@ auto gse::gpu::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) 
 }
 
 auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
-	if (!slot.timestamp_pool) {
+	if (!slot.timestamp_pool.valid()) {
 		slot.timestamp_pool = gpu::query_pool::create_timestamp(m_device->vulkan_device(), max_profiled_passes * 2 + 1);
 	}
-	if (allow_stats && !slot.stats_pool) {
+	if (allow_stats && !slot.stats_pool.valid()) {
 		slot.stats_pool =
 			gpu::query_pool::create_pipeline_stats(m_device->vulkan_device(), max_profiled_passes, profile_stats_flags);
 	}

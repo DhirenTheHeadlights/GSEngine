@@ -75,7 +75,7 @@ export namespace gse::renderer::forward {
 			]]
 			reflection_quality_level reflection_quality = reflection_quality_level::medium;
 
-			gpu::pipeline pipeline;
+			gpu::shader_program pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
