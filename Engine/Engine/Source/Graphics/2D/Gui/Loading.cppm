@@ -3,6 +3,7 @@ export module gse.graphics:loading;
 import std;
 
 import gse.core;
+import gse.log;
 
 export namespace gse::loading {
 	class state : public non_copyable, public non_movable {
@@ -52,6 +53,9 @@ auto gse::loading::state::set_progress(const std::uint32_t done, const std::uint
 	std::lock_guard lock(m_mutex);
 	m_done = done;
 	m_total = total;
+	if (total > 0 && (done == 0 || done == total || done % 25 == 0)) {
+		log::println(log::category::runtime, "loading::set_progress done={} total={}", done, total);
+	}
 }
 
 auto gse::loading::state::mark_finished() -> void {

@@ -5,6 +5,7 @@ import std;
 import gse.core;
 import gse.math;
 import gse.log;
+import gse.time;
 
 import :menu_stack;
 import :builder;
@@ -34,6 +35,7 @@ export namespace gse::gui {
 	private:
 		const loading::state* m_state;
 		bool m_logged_first_build = false;
+		interval_timer<float> m_log_timer{ milliseconds(250.f) };
 	};
 }
 
@@ -69,6 +71,10 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	const std::string phase = m_state->phase();
 	const std::uint32_t done = m_state->done();
 	const std::uint32_t total = m_state->total();
+
+	if (m_log_timer.tick()) {
+		log::println(log::category::runtime, "loading_screen::build read done={} total={} phase=\"{}\"", done, total, phase);
+	}
 
 	const std::string label = phase.empty() ? std::string("Loading...") : phase;
 	const float label_w = ctx.font->width(label, font_sz);

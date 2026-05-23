@@ -172,12 +172,19 @@ auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::fi
 template <typename T>
 auto gse::asset::count_compile_work() -> std::uint32_t {
 	if constexpr (!has_compile_path<T>) {
+		log::println(log::category::assets, "count_compile_work<{}>: 0 (no compile path)", std::meta::identifier_of(^^T));
 		return 0;
 	}
 	else {
 		constexpr auto fmt = format_of<typename T::baked>();
 		const auto source_root = config::resource_path / fmt.source_dir;
 		if (!std::filesystem::exists(source_root)) {
+			log::println(
+				log::category::assets,
+				"count_compile_work<{}>: 0 (source_root missing: {})",
+				std::meta::identifier_of(^^T),
+				source_root.string()
+			);
 			return 0;
 		}
 
@@ -192,6 +199,7 @@ auto gse::asset::count_compile_work() -> std::uint32_t {
 			}
 			++count;
 		}
+		log::println(log::category::assets, "count_compile_work<{}>: {}", std::meta::identifier_of(^^T), count);
 		return count;
 	}
 }
@@ -412,6 +420,12 @@ auto gse::asset::system<Ts...>::compile_boot_critical(compile_progress* progress
 			}
 		};
 		(count_one.template operator()<Ts>(), ...);
+		log::println(
+			log::category::assets,
+			"compile_boot_critical: pre-count total={} on_tick_set={}",
+			progress->total,
+			static_cast<bool>(progress->on_tick)
+		);
 		if (progress->on_tick) {
 			progress->on_tick(0, progress->total);
 		}
@@ -438,6 +452,12 @@ auto gse::asset::system<Ts...>::compile_non_boot_critical(compile_progress* prog
 			}
 		};
 		(count_one.template operator()<Ts>(), ...);
+		log::println(
+			log::category::assets,
+			"compile_non_boot_critical: pre-count total={} on_tick_set={}",
+			progress->total,
+			static_cast<bool>(progress->on_tick)
+		);
 		if (progress->on_tick) {
 			progress->on_tick(0, progress->total);
 		}
