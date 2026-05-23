@@ -1129,10 +1129,32 @@ auto gse::gpu::recording_context::commit(const gpu::descriptor_writer& writer, c
 
 auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 	check_active();
-	m_cmd.bind_shaders(p.stages(), p.shader_handles());
-	if (!p.is_compute()) {
+
+	if (p.is_compute()) {
+		m_cmd.bind_shaders(p.stages(), p.shader_handles());
+	}
+	else {
+		constexpr std::array all_graphics_stages = {
+			gpu::stage_flag::vertex,
+			gpu::stage_flag::fragment,
+			gpu::stage_flag::task,
+			gpu::stage_flag::mesh,
+		};
+		std::array<gpu::handle<vulkan::shader_object>, 4> bound{};
+		const auto stages = p.stages();
+		const auto handles = p.shader_handles();
+		for (std::size_t i = 0; i < all_graphics_stages.size(); ++i) {
+			for (std::size_t j = 0; j < stages.size(); ++j) {
+				if (stages[j] == all_graphics_stages[i]) {
+					bound[i] = handles[j];
+					break;
+				}
+			}
+		}
+		m_cmd.bind_shaders(all_graphics_stages, bound);
 		apply_dynamic_state(p.state());
 	}
+
 	for (const auto set_idx : p.auto_bound_sets()) {
 		for (const auto& [auto_set_idx, region] : m_auto_binds) {
 			if (auto_set_idx == set_idx && region.valid()) {
@@ -1258,6 +1280,9 @@ auto gse::gpu::recording_context::apply_dynamic_state(const gpu::dynamic_pipelin
 
 	m_cmd.set_rasterization_samples(s.samples);
 	m_cmd.set_sample_mask(s.samples, s.sample_mask);
+	m_cmd.set_depth_bounds_test_enable(false);
+	m_cmd.set_stencil_test_enable(false);
+	m_cmd.set_line_width(1.0f);
 
 	if (!s.blend_enables.empty()) {
 		m_cmd.set_color_blend_enable(0, s.blend_enables);
@@ -1268,9 +1293,7 @@ auto gse::gpu::recording_context::apply_dynamic_state(const gpu::dynamic_pipelin
 	if (!s.color_write_masks.empty()) {
 		m_cmd.set_color_write_mask(0, s.color_write_masks);
 	}
-	if (!s.vertex_bindings.empty() || !s.vertex_attributes.empty()) {
-		m_cmd.set_vertex_input(s.vertex_bindings, s.vertex_attributes);
-	}
+	m_cmd.set_vertex_input(s.vertex_bindings, s.vertex_attributes);
 }
 
 auto gse::gpu::format_bound_slots(const std::span<const resource_slot> resources) -> std::string {

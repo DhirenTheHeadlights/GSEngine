@@ -251,6 +251,18 @@ export namespace gse::vulkan {
 			bool enable
 		) const -> void;
 
+		auto set_depth_bounds_test_enable(
+			bool enable
+		) const -> void;
+
+		auto set_stencil_test_enable(
+			bool enable
+		) const -> void;
+
+		auto set_line_width(
+			float width
+		) const -> void;
+
 		auto set_rasterizer_discard_enable(
 			bool enable
 		) const -> void;
@@ -588,7 +600,7 @@ auto gse::vulkan::commands::dispatch_indirect(const gpu::handle<buffer> buffer, 
 }
 
 auto gse::vulkan::commands::set_viewport(const gpu::viewport& viewport) const -> void {
-	raw().setViewport(0, to_vk(viewport));
+	raw().setViewportWithCount(to_vk(viewport));
 }
 
 auto gse::vulkan::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const -> void {
@@ -598,7 +610,7 @@ auto gse::vulkan::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const
 		.offset = { min.x(), min.y() },
 		.extent = { static_cast<std::uint32_t>(size.x()), static_cast<std::uint32_t>(size.y()) },
 	};
-	raw().setScissor(0, rect);
+	raw().setScissorWithCount(rect);
 }
 
 auto gse::vulkan::commands::copy_buffer(const gpu::handle<buffer> src, const gpu::handle<buffer> dst, const gpu::buffer_copy_region& region) const -> void {
@@ -905,6 +917,18 @@ auto gse::vulkan::commands::set_depth_bias(const float constant, const float cla
 
 auto gse::vulkan::commands::set_depth_clamp_enable(const bool enable) const -> void {
 	raw().setDepthClampEnableEXT(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_depth_bounds_test_enable(const bool enable) const -> void {
+	raw().setDepthBoundsTestEnable(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_stencil_test_enable(const bool enable) const -> void {
+	raw().setStencilTestEnable(enable ? vk::True : vk::False);
+}
+
+auto gse::vulkan::commands::set_line_width(const float width) const -> void {
+	raw().setLineWidth(width);
 }
 
 auto gse::vulkan::commands::set_rasterizer_discard_enable(const bool enable) const -> void {
