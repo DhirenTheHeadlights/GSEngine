@@ -33,6 +33,6 @@ auto gse::vulkan::descriptor_set_layout::handle(this const descriptor_set_layout
 	return std::bit_cast<gpu::handle<descriptor_set_layout>>(*self.m_layout);
 }
 
-gse::vulkan::descriptor_set_layout::operator bool() const {
+auto gse::vulkan::descriptor_set_layout::valid() const -> bool {
 	return *m_layout != nullptr;
 }

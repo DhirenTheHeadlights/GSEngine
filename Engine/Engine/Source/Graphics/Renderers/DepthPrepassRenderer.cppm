@@ -21,7 +21,7 @@ import gse.math;
 export namespace gse::renderer::depth_prepass {
 	struct system {
 		struct data {
-			gpu::pipeline meshlet_pipeline;
+			gpu::shader_program meshlet_pipeline;
 			per_frame_resource<gpu::descriptor_region> meshlet_descriptors;
 
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;

@@ -20,7 +20,7 @@ export namespace gse::renderer::tonemap {
 			]]
 			float exposure = 1.0f;
 
-			gpu::pipeline pipeline;
+			gpu::shader_program pipeline;
 			gpu::sampler sampler;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 		};

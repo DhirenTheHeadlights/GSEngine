@@ -146,7 +146,8 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 
 	if (m_device->vulkan_device().swapchain_maintenance1_enabled()) {
 		const auto release_fence = m_swapchain->config().release_fence(m_image_index);
-		vulkan::wait_for_fence(dev, release_fence);
+		const auto release_result = vulkan::wait_for_fence(dev, release_fence);
+		assert(release_result == result::success, "Failed to wait for swapchain release fence!");
 	}
 
 	for (std::size_t i = 0; i < queue_type_count; ++i) {

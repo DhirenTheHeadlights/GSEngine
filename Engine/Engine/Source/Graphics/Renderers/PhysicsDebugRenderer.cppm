@@ -36,8 +36,8 @@ export namespace gse::renderer::physics_debug {
 			]]
 			bool enabled = true;
 
-			gpu::pipeline pipeline_instanced;
-			gpu::pipeline pipeline_lines;
+			gpu::shader_program pipeline_instanced;
+			gpu::shader_program pipeline_lines;
 
 			per_frame_resource<gpu::descriptor_region> descriptors_box;
 			per_frame_resource<gpu::descriptor_region> descriptors_sphere;

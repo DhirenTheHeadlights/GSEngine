@@ -63,25 +63,33 @@ export namespace gse::renderer::cloud {
 
 			[[
 				= gse::settings::describe<"Global cloud coverage (0 = clear sky, 1 = overcast)">{},
+				= gse::settings::range<0.f, 1.f>{},
 				= gse::shared
 			]]
 			float cloud_coverage = 0.55f;
 
 			[[
 				= gse::settings::describe<"Cloud type bias (0 = stratus, 1 = cumulus)">{},
+				= gse::settings::range<0.f, 1.f>{},
 				= gse::shared
 			]]
 			float cloud_type = 0.7f;
 
-			[[= gse::settings::describe<"Cloud density multiplier">{}]] float density_multiplier = 1.0f;
+			[[
+				= gse::settings::describe<"Cloud density multiplier">{},
+				= gse::settings::range<0.f, 5.f>{}
+			]]
+			float density_multiplier = 1.0f;
 
 			[[
-				= gse::settings::describe<"View-ray Beer's law extinction coefficient">{}
+				= gse::settings::describe<"View-ray Beer's law extinction coefficient">{},
+				= gse::settings::range<0.f, 1.f>{}
 			]]
 			float view_extinction = 0.15f;
 
 			[[
-				= gse::settings::describe<"Light-ray Beer's law extinction coefficient">{}
+				= gse::settings::describe<"Light-ray Beer's law extinction coefficient">{},
+				= gse::settings::range<0.f, 1.f>{}
 			]]
 			float light_extinction = 0.10f;
 
@@ -95,25 +103,33 @@ export namespace gse::renderer::cloud {
 			]]
 			atmosphere_inverse_length detail_scale = per_kilometer(3.5f);
 
-			[[= gse::settings::describe<"Detail erosion strength">{}]] float detail_strength = 0.35f;
+			[[
+				= gse::settings::describe<"Detail erosion strength">{},
+				= gse::settings::range<0.f, 1.f>{}
+			]]
+			float detail_strength = 0.35f;
 
 			[[
-				= gse::settings::describe<"Henyey-Greenstein forward asymmetry">{}
+				= gse::settings::describe<"Henyey-Greenstein forward asymmetry">{},
+				= gse::settings::range<0.f, 1.f>{}
 			]]
 			float phase_g_forward = 0.80f;
 
 			[[
-				= gse::settings::describe<"Henyey-Greenstein back asymmetry">{}
+				= gse::settings::describe<"Henyey-Greenstein back asymmetry">{},
+				= gse::settings::range<-1.f, 0.f>{}
 			]]
 			float phase_g_back = -0.30f;
 
 			[[
-				= gse::settings::describe<"Dual-lobe phase blend (0 = back only, 1 = forward only)">{}
+				= gse::settings::describe<"Dual-lobe phase blend (0 = back only, 1 = forward only)">{},
+				= gse::settings::range<0.f, 1.f>{}
 			]]
 			float phase_blend = 0.65f;
 
 			[[
-				= gse::settings::describe<"Ambient sky contribution into clouds">{}
+				= gse::settings::describe<"Ambient sky contribution into clouds">{},
+				= gse::settings::range<0.f, 2.f>{}
 			]]
 			float ambient_strength = 1.0f;
 
@@ -127,10 +143,10 @@ export namespace gse::renderer::cloud {
 			]]
 			vec3<atmosphere_length> wind_offset = { kilometers(0.0f), kilometers(0.0f), kilometers(0.0f) };
 
-			gpu::pipeline shape_bake_pipeline;
-			gpu::pipeline detail_bake_pipeline;
-			gpu::pipeline raymarch_pipeline;
-			gpu::pipeline composite_pipeline;
+			gpu::shader_program shape_bake_pipeline;
+			gpu::shader_program detail_bake_pipeline;
+			gpu::shader_program raymarch_pipeline;
+			gpu::shader_program composite_pipeline;
 
 			gpu::image shape_noise;
 			gpu::image detail_noise;

@@ -37,7 +37,7 @@ export namespace gse::vulkan {
 			this const semaphore& self
 		) -> gpu::handle<semaphore>;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		explicit semaphore(
@@ -71,6 +71,6 @@ auto gse::vulkan::semaphore::handle(this const semaphore& self) -> gpu::handle<s
 	return std::bit_cast<gpu::handle<semaphore>>(*self.m_semaphore);
 }
 
-gse::vulkan::semaphore::operator bool() const {
+auto gse::vulkan::semaphore::valid() const -> bool {
 	return *m_semaphore != nullptr;
 }

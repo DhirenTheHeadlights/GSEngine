@@ -41,7 +41,7 @@ export namespace gse::vulkan {
 			this const fence& self
 		) -> gpu::handle<fence>;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		explicit fence(
@@ -75,6 +75,6 @@ auto gse::vulkan::fence::handle(this const fence& self) -> gpu::handle<fence> {
 	return std::bit_cast<gpu::handle<fence>>(*self.m_fence);
 }
 
-gse::vulkan::fence::operator bool() const {
+auto gse::vulkan::fence::valid() const -> bool {
 	return *m_fence != nullptr;
 }

@@ -47,6 +47,16 @@ export namespace gs::locomotion {
 			]]
 			gse::position fall_pelvis_y_threshold = gse::meters(0.45f);
 
+			[[
+				= gse::settings::describe<"Forward capture limit for allowing a swing from weight shift.">{}
+			]]
+			gse::displacement swing_capture_forward_limit = gse::meters(0.28f);
+
+			[[
+				= gse::settings::describe<"Lateral capture limit for allowing a swing from weight shift.">{}
+			]]
+			gse::displacement swing_capture_right_limit = gse::meters(0.24f);
+
 			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 		};
 
@@ -73,6 +83,14 @@ namespace gs::locomotion {
 		std::string_view reason,
 		gse::id owner
 	) -> void;
+	auto foot_grounded(
+		const state& s,
+		leg which
+	) -> bool;
+	auto capture_safe_for_swing(
+		const state& s,
+		const gait_scheduler::data& d
+	) -> bool;
 }
 
 auto gs::locomotion::config_for(const gait_scheduler::data& d, const intent& it) -> gait_config {
@@ -115,6 +133,15 @@ auto gs::locomotion::begin_phase(gait& g, const phase p, const gse::time duratio
 	g.current = p;
 	g.phase_elapsed = gse::seconds(0.f);
 	g.phase_duration = duration;
+}
+
+auto gs::locomotion::foot_grounded(const state& s, const leg which) -> bool {
+	return which == leg::left ? s.foot_grounded_l : s.foot_grounded_r;
+}
+
+auto gs::locomotion::capture_safe_for_swing(const state& s, const gait_scheduler::data& d) -> bool {
+	return gse::abs(s.capture_forward) <= d.swing_capture_forward_limit &&
+		gse::abs(s.capture_right) <= d.swing_capture_right_limit;
 }
 
 auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse::async::task<> {
@@ -190,14 +217,16 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 						break;
 
 					case phase::weight_shift:
-						if (g.phase_elapsed >= g.phase_duration) {
+						if (
+							g.phase_elapsed >= g.phase_duration && foot_grounded(*s, other(g.swing_leg)) &&
+							capture_safe_for_swing(*s, d)
+						) {
 							begin_phase(g, phase::swing, cfg.swing_duration, "shift_done", owner);
 						}
 						break;
 
 					case phase::swing: {
-						const bool foot_l_swinging = g.swing_leg == leg::left;
-						const bool swing_grounded = foot_l_swinging ? s->foot_grounded_l : s->foot_grounded_r;
+						const bool swing_grounded = foot_grounded(*s, g.swing_leg);
 						const bool min_swing_elapsed = g.phase_elapsed >= cfg.swing_duration * 0.5f;
 						if ((min_swing_elapsed && swing_grounded) || g.phase_elapsed >= g.phase_duration) {
 							begin_phase(
@@ -213,13 +242,19 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 
 					case phase::plant:
 						if (g.phase_elapsed >= g.phase_duration) {
+							const bool swing_grounded = foot_grounded(*s, g.swing_leg);
+							const bool stance_grounded = foot_grounded(*s, other(g.swing_leg));
+							const bool support_transferred = swing_grounded && !stance_grounded;
+							if (!s->double_support && !support_transferred) {
+								break;
+							}
 							g.swing_leg = other(g.swing_leg);
-							if (wants_step) {
+							if (wants_step || support_transferred) {
 								begin_phase(
 									g,
 									phase::weight_shift,
 									cfg.weight_shift_duration,
-									input_wants_step ? "input" : "capture",
+									input_wants_step ? "input" : (capture_wants_step ? "capture" : "support"),
 									owner
 								);
 							}

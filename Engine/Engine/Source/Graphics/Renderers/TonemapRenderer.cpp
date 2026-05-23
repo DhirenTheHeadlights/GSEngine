@@ -71,7 +71,7 @@ auto gse::renderer::tonemap::rewrite_descriptors(const gpu::context::data& gpu_s
 
 auto gse::renderer::tonemap::system::run(run_context& ctx, const gpu::context::data& gpu_s, const bloom::system::data& bloom_state, data& d) -> async::task<> {
 	d.pipeline =
-		gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+		gpu::build_graphics_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 	d.sampler = gpu::sampler::create(
 		gpu_s.device->allocator(),

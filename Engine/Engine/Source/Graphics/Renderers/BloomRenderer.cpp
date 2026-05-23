@@ -151,7 +151,7 @@ auto gse::renderer::bloom::rewrite_descriptors(const gpu::context::data& gpu_s, 
 }
 
 auto gse::renderer::bloom::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.downsample_pipeline = gpu::build_compute_pipeline(
+	d.downsample_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,

@@ -51,12 +51,14 @@ export namespace gse::renderer::atmosphere {
 	struct system {
 		struct [[= gse::settings::category<"Atmosphere">{}]] data {
 			[[
-				= gse::settings::describe<"Sun azimuth (degrees from +X around +Y)">{}
+				= gse::settings::describe<"Sun azimuth (degrees from +X around +Y)">{},
+				= gse::settings::range<0.f, 360.f>{}
 			]]
 			angle sun_azimuth = degrees(45.0f);
 
 			[[
-				= gse::settings::describe<"Sun elevation above horizon (degrees)">{}
+				= gse::settings::describe<"Sun elevation above horizon (degrees)">{},
+				= gse::settings::range<-90.f, 90.f>{}
 			]]
 			angle sun_elevation = degrees(60.0f);
 
@@ -73,12 +75,14 @@ export namespace gse::renderer::atmosphere {
 			vec3f sun_color = { 1.0f, 0.9f, 0.75f };
 
 			[[
-				= gse::settings::describe<"Sun disk angular radius (degrees)">{}
+				= gse::settings::describe<"Sun disk angular radius (degrees)">{},
+				= gse::settings::range<0.1f, 5.f>{}
 			]]
 			angle sun_angular_radius = degrees(1.5f);
 
 			[[
 				= gse::settings::describe<"Sun ambient term applied to surfaces not directly lit by the sun.">{},
+				= gse::settings::range<0.f, 1.f>{},
 				= gse::shared
 			]]
 			float sun_ambient_strength = 0.1f;
@@ -127,7 +131,11 @@ export namespace gse::renderer::atmosphere {
 			]]
 			atmosphere_length mie_scale_height = kilometers(1.2f);
 
-			[[= gse::settings::describe<"Mie phase asymmetry g (-1 to 1)">{}]] float mie_phase_g = 0.85f;
+			[[
+				= gse::settings::describe<"Mie phase asymmetry g (-1 to 1)">{},
+				= gse::settings::range<-1.f, 1.f>{}
+			]]
+			float mie_phase_g = 0.85f;
 
 			[[
 				= gse::settings::describe<"Ozone peak altitude (km)">{}
@@ -155,11 +163,11 @@ export namespace gse::renderer::atmosphere {
 				per_kilometer(0.085e-3f),
 			};
 
-			gpu::pipeline transmittance_pipeline;
-			gpu::pipeline multiscatter_pipeline;
-			gpu::pipeline sky_view_pipeline;
-			gpu::pipeline sky_raster_pipeline;
-			gpu::pipeline ap_pipeline;
+			gpu::shader_program transmittance_pipeline;
+			gpu::shader_program multiscatter_pipeline;
+			gpu::shader_program sky_view_pipeline;
+			gpu::shader_program sky_raster_pipeline;
+			gpu::shader_program ap_pipeline;
 
 			[[= gse::shared]] gpu::image transmittance_lut;
 			gpu::image multiscatter_lut;

@@ -29,7 +29,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto marker_seq() const -> std::uint64_t;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		friend class transient_command_pool;
@@ -80,6 +80,6 @@ auto gse::vulkan::transient_command_buffer::marker_seq() const -> std::uint64_t 
 	return m_marker_seq;
 }
 
-gse::vulkan::transient_command_buffer::operator bool() const {
+auto gse::vulkan::transient_command_buffer::valid() const -> bool {
 	return m_cmd != nullptr;
 }

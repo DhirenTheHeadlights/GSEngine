@@ -70,7 +70,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 		const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
 		d.convert_pipeline =
-			gpu::build_compute_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+			gpu::build_compute_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
 
 		d.capture_sampler = gpu::sampler::create(
 			gpu_s.device->allocator(),
@@ -195,7 +195,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		d.applied_ring_budget = d.ring_budget;
 	}
 
-	if (d.encode_active && d.encoder) {
+	if (d.encode_active && d.encoder.valid()) {
 		d.encoder.wait(frame_index);
 		if (auto unit = d.encoder.read_bitstream(frame_index)) {
 			const bool was_keyframe = unit->keyframe;
@@ -215,7 +215,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 	}
 
 	if (!ctx.read_channel<save_clip_request>().empty()) {
-		if (!d.encode_active || !d.encoder) {
+		if (!d.encode_active || !d.encoder.valid()) {
 			log::println(log::category::render, "Save Clip pressed but video capture is unavailable");
 		}
 		else if (d.clip_save_in_progress->load()) {
@@ -262,7 +262,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 	if (!ctx.read_channel<screenshot_request>().empty() && !d.write_in_progress->load()) {
 		const auto ext = gpu_s.render_graph->extent();
 
-		if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging || staging.size() < needed) {
+		if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging.valid() || staging.size() < needed) {
 			staging = gpu::buffer::create(
 				gpu_s.device->allocator(),
 				{

@@ -38,7 +38,7 @@ export namespace gse::renderer::sdf_grid {
 			vec3f axis_color{ 0.85f, 0.30f, 0.30f };
 			[[= gse::shared]] vec3f label_color{ 1.0f, 1.0f, 1.0f };
 
-			gpu::pipeline pipeline;
+			gpu::shader_program pipeline;
 			per_frame_resource<gpu::descriptor_region> descriptors;
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		};

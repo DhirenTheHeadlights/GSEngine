@@ -67,7 +67,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto device_address() const -> gpu::device_address;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		blas(
@@ -108,7 +108,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto scratch_buffer() const -> const buffer&;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		tlas(
@@ -318,7 +318,7 @@ auto gse::vulkan::blas::device_address() const -> gpu::device_address {
 	return m_device_address;
 }
 
-gse::vulkan::blas::operator bool() const {
+auto gse::vulkan::blas::valid() const -> bool {
 	return *m_handle != nullptr;
 }
 
@@ -391,6 +391,6 @@ auto gse::vulkan::tlas::scratch_buffer() const -> const buffer& {
 	return m_scratch;
 }
 
-gse::vulkan::tlas::operator bool() const {
+auto gse::vulkan::tlas::valid() const -> bool {
 	return *m_handle != nullptr;
 }

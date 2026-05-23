@@ -57,6 +57,30 @@ export namespace gse::gui::draw {
 		id& active_widget_id,
 		const dropdown_config& config = {}
 	) -> dropdown_result;
+
+	auto dropdown_in_rect(
+		const draw_context& ctx,
+		const std::string& name,
+		std::size_t current_index,
+		std::span<const std::string_view> options,
+		dropdown_state& state,
+		const ui_rect& header_rect,
+		id& hot_widget_id,
+		id& active_widget_id,
+		const dropdown_config& config = {}
+	) -> dropdown_result;
+
+	auto dropdown_in_rect(
+		const draw_context& ctx,
+		const std::string& name,
+		std::size_t current_index,
+		std::span<const std::string> options,
+		dropdown_state& state,
+		const ui_rect& header_rect,
+		id& hot_widget_id,
+		id& active_widget_id,
+		const dropdown_config& config = {}
+	) -> dropdown_result;
 }
 
 export namespace gse::gui {
@@ -88,6 +112,19 @@ namespace gse::gui::draw {
 		const std::function<std::size_t()>& option_count,
 		const std::function<std::string_view(std::size_t)>& get_option,
 		dropdown_state& state,
+		id& hot_widget_id,
+		id& active_widget_id,
+		const dropdown_config& config
+	) -> dropdown_result;
+
+	auto dropdown_impl_in_rect(
+		const draw_context& ctx,
+		const std::string& name,
+		std::size_t current_index,
+		const std::function<std::size_t()>& option_count,
+		const std::function<std::string_view(std::size_t)>& get_option,
+		dropdown_state& state,
+		const ui_rect& header_rect,
 		id& hot_widget_id,
 		id& active_widget_id,
 		const dropdown_config& config
@@ -130,6 +167,44 @@ auto gse::gui::draw::dropdown(const draw_context& ctx, const std::string& name, 
 	);
 }
 
+auto gse::gui::draw::dropdown_in_rect(const draw_context& ctx, const std::string& name, const std::size_t current_index, const std::span<const std::string_view> options, dropdown_state& state, const ui_rect& header_rect, id& hot_widget_id, id& active_widget_id, const dropdown_config& config) -> dropdown_result {
+	return dropdown_impl_in_rect(
+		ctx,
+		name,
+		current_index,
+		[&] {
+			return options.size();
+		},
+		[&](const std::size_t i) {
+			return options[i];
+		},
+		state,
+		header_rect,
+		hot_widget_id,
+		active_widget_id,
+		config
+	);
+}
+
+auto gse::gui::draw::dropdown_in_rect(const draw_context& ctx, const std::string& name, const std::size_t current_index, const std::span<const std::string> options, dropdown_state& state, const ui_rect& header_rect, id& hot_widget_id, id& active_widget_id, const dropdown_config& config) -> dropdown_result {
+	return dropdown_impl_in_rect(
+		ctx,
+		name,
+		current_index,
+		[&] {
+			return options.size();
+		},
+		[&](const std::size_t i) -> std::string_view {
+			return options[i];
+		},
+		state,
+		header_rect,
+		hot_widget_id,
+		active_widget_id,
+		config
+	);
+}
+
 auto gse::gui::draw::dropdown_impl(
 	const draw_context& ctx,
 	const std::string& name,
@@ -145,14 +220,8 @@ auto gse::gui::draw::dropdown_impl(
 		return {};
 	}
 
-	const id dropdown_id = ids::make(name);
-	const bool is_open = state.open_dropdown_id == dropdown_id;
-	dropdown_result result;
-
 	const float row_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
-
-	const std::size_t count = option_count();
 
 	const float label_width = content_rect.width() * 0.4f;
 
@@ -168,14 +237,41 @@ auto gse::gui::draw::dropdown_impl(
 		.clip_rect = label_rect,
 	});
 
-	const float header_width = content_rect.width() - label_width;
-
 	const ui_rect header_rect = ui_rect::from_position_size(
 		{ content_rect.left() + label_width, ctx.layout_cursor.y() },
-		{ header_width, row_height }
+		{ content_rect.width() - label_width, row_height }
 	);
 
-	const float max_option_width = header_width;
+	const auto result = dropdown_impl_in_rect(ctx, name, current_index, option_count, get_option, state, header_rect, hot_widget_id, active_widget_id, config);
+
+	ctx.layout_cursor.y() -= row_height + ctx.style.padding;
+
+	return result;
+}
+
+auto gse::gui::draw::dropdown_impl_in_rect(
+	const draw_context& ctx,
+	const std::string& name,
+	const std::size_t current_index,
+	const std::function<std::size_t()>& option_count,
+	const std::function<std::string_view(std::size_t)>& get_option,
+	dropdown_state& state,
+	const ui_rect& header_rect,
+	id& hot_widget_id,
+	id& active_widget_id,
+	const dropdown_config& config
+) -> dropdown_result {
+	if (!ctx.current_menu) {
+		return {};
+	}
+
+	const id dropdown_id = ids::make(name);
+	const bool is_open = state.open_dropdown_id == dropdown_id;
+	dropdown_result result;
+
+	const float row_height = header_rect.height();
+	const std::size_t count = option_count();
+	const float max_option_width = header_rect.width();
 
 	const bool pressed = ctx.input.mouse_button_pressed(mouse_button::button_1);
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
@@ -236,8 +332,6 @@ auto gse::gui::draw::dropdown_impl(
 		.color = ctx.style.color_text_secondary,
 		.clip_rect = header_rect
 	});
-
-	ctx.layout_cursor.y() -= row_height + ctx.style.padding;
 
 	if (is_open && count > 0) {
 		const std::size_t visible_count = std::min(count, config.max_visible_items);

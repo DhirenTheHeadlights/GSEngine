@@ -88,6 +88,15 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 	s.registry().add_component<gs::locomotion::gait>(pelvis_id, {});
 	s.registry().add_component<gs::locomotion::plan>(pelvis_id, {});
 	s.registry().add_component<gs::locomotion::leg_context>(pelvis_id, {});
+	s.registry().add_component<gse::physics::motor_component>(
+		pelvis_id,
+		{
+			.velocity_drive_target = {},
+			.horizontal_only = true,
+			.requires_ground_contact = false,
+			.max_force = gse::newtons(180.f),
+		}
+	);
 
 	const auto player_id = s.build("Player")
 		.with<gs::player::component>({

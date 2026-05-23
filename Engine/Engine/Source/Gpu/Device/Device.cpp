@@ -136,7 +136,7 @@ auto gse::gpu::device::begin_pass_marker(const handle<command_buffer> cmd, const
 	const auto seq = ring.seq.fetch_add(1, std::memory_order_relaxed);
 	ring.entries[seq % pass_marker_ring_size] = marker;
 
-	if (ring.checkpoint_buffer) {
+	if (ring.checkpoint_buffer.valid()) {
 		const auto slot = seq % pass_marker_ring_size;
 		const auto offset = slot * 4 * sizeof(std::uint32_t);
 		vulkan::commands(cmd).fill_buffer(
@@ -155,7 +155,7 @@ auto gse::gpu::device::begin_pass_marker(const handle<command_buffer> cmd, const
 
 auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
-	if (!ring.checkpoint_buffer) {
+	if (!ring.checkpoint_buffer.valid()) {
 		return;
 	}
 
@@ -171,7 +171,7 @@ auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, 
 
 auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
-	if (!ring.checkpoint_buffer) {
+	if (!ring.checkpoint_buffer.valid()) {
 		return;
 	}
 
@@ -187,7 +187,7 @@ auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> 
 
 auto gse::gpu::device::end_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
-	if (!ring.checkpoint_buffer) {
+	if (!ring.checkpoint_buffer.valid()) {
 		return;
 	}
 

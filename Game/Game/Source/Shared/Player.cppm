@@ -214,11 +214,8 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 					const gse::vec3f camera_forward =
 						gse::rotate_vector(camera_orientation, gse::vec3f(0.f, 0.f, -1.f));
 					const auto target_pos = pelvis_tc->position;
-					const auto desired_camera_pos = target_pos - camera_forward * distance;
-
-					gse::length spring_distance = distance;
-					if (p.collide_with_geometry && distance > gse::meters(0.f)) {
-						const auto inflation = p.collision_radius * 2.f;
+					const auto inflation = p.collision_radius * 2.f;
+					const auto for_each_static_box = [&](auto body) {
 						const auto col_ids = collisions.owner_ids();
 						for (std::size_t k = 0; k < collisions.size(); ++k) {
 							const auto col_eid = col_ids[k];
@@ -237,45 +234,49 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 							const gse::physics::box_shape inflated{
 								.size = shape->size + gse::vec3<gse::displacement>(inflation, inflation, inflation)
 							};
-							const gse::bounding_box bb(*col_tc, inflated);
-							if (const auto hit = gse::narrow_phase_collision::segment_obb_first_hit(bb, target_pos, desired_camera_pos)) {
-								const auto safe = std::max(hit->distance - p.collision_skin, gse::meters(0.f));
-								if (safe < spring_distance) {
-									spring_distance = safe;
+							body(gse::bounding_box(*col_tc, inflated));
+						}
+					};
+
+					gse::vec3<gse::displacement> spring_displacement = -camera_forward * distance;
+
+					if (p.collide_with_geometry && distance > gse::meters(0.f)) {
+						for_each_static_box([&](const gse::bounding_box& bb) {
+							const auto q = gse::narrow_phase_collision::query_obb(bb, target_pos);
+							if (q.signed_distance < gse::meters(0.f)) {
+								const auto into_wall = -gse::dot(spring_displacement, q.normal);
+								if (into_wall > gse::meters(0.f)) {
+									spring_displacement += q.normal * into_wall;
 								}
 							}
-						}
+						});
 					}
 
-					auto camera_pos = target_pos - camera_forward * spring_distance;
+					const auto desired_camera_pos = target_pos + spring_displacement;
+					const auto displacement_mag = gse::magnitude(spring_displacement);
+					float spring_factor = 1.f;
+					if (p.collide_with_geometry && displacement_mag > gse::meters(1e-5f)) {
+						for_each_static_box([&](const gse::bounding_box& bb) {
+							if (const auto hit = gse::narrow_phase_collision::segment_obb_first_hit(bb, target_pos, desired_camera_pos)) {
+								const auto safe = std::max(hit->distance - p.collision_skin, gse::meters(0.f));
+								const float factor = safe / displacement_mag;
+								if (factor < spring_factor) {
+									spring_factor = factor;
+								}
+							}
+						});
+					}
+
+					auto camera_pos = target_pos + spring_displacement * spring_factor;
 
 					if (p.collide_with_geometry) {
-						const auto inflation = p.collision_radius * 2.f;
-						const auto col_ids = collisions.owner_ids();
-						for (std::size_t k = 0; k < collisions.size(); ++k) {
-							const auto col_eid = col_ids[k];
-							const auto* mc = motions.find(col_eid);
-							if (!mc || !gse::physics::is_static(*mc)) {
-								continue;
-							}
-							const auto* col_tc = transforms.find(col_eid);
-							if (!col_tc) {
-								continue;
-							}
-							const auto* shape = std::get_if<gse::physics::box_shape>(&collisions[k].shape);
-							if (!shape) {
-								continue;
-							}
-							const gse::physics::box_shape inflated{
-								.size = shape->size + gse::vec3<gse::displacement>(inflation, inflation, inflation)
-							};
-							const gse::bounding_box bb(*col_tc, inflated);
+						for_each_static_box([&](const gse::bounding_box& bb) {
 							const auto result = gse::narrow_phase_collision::query_obb(bb, camera_pos);
 							if (result.signed_distance < p.collision_skin) {
 								const auto push = p.collision_skin - result.signed_distance;
 								camera_pos = camera_pos + result.normal * push;
 							}
-						}
+						});
 					}
 
 					cam_follow->position = camera_pos;

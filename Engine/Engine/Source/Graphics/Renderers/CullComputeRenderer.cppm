@@ -20,7 +20,7 @@ export namespace gse::renderer::cull_compute {
 		struct data {
 			bool enabled = true;
 
-			gpu::pipeline pipeline;
+			gpu::shader_program pipeline;
 			per_frame_resource<gpu::descriptor_region> normal_descriptors;
 			per_frame_resource<gpu::buffer> frustum_buffer;
 			per_frame_resource<gpu::buffer> batch_info_buffer;

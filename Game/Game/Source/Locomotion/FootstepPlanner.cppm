@@ -85,7 +85,7 @@ auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const inten
 	const auto right_xz = gse::normalize(gse::vec3f(s.pelvis_right.x(), 0.f, s.pelvis_right.z()));
 
 	const auto hip_lateral = r.hip_offset_lateral * side_of(g.swing_leg);
-	const auto target = s.pelvis_position + forward_xz * step_forward + right_xz * (hip_lateral + step_lateral);
+	const auto target = s.support_center + forward_xz * step_forward + right_xz * (hip_lateral + step_lateral);
 
 	return gse::vec3<gse::position>(target.x(), d.foot_ground_y, target.z());
 }

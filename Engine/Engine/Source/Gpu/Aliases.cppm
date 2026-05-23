@@ -12,6 +12,8 @@ import :vulkan_pipeline;
 import :vulkan_commands;
 import :vulkan_descriptor_set_layout;
 import :vulkan_shader_module;
+import :vulkan_shader_object;
+import :vulkan_shader_program;
 import :vulkan_device;
 import :vulkan_sync;
 import :types;
@@ -34,6 +36,8 @@ export namespace gse::gpu {
 	using image_view = vulkan::image_view;
 	using descriptor_set_layout = vulkan::descriptor_set_layout;
 	using shader_module = vulkan::shader_module;
+	using shader_object = vulkan::shader_object;
+	using shader_program = vulkan::shader_program;
 
 	constexpr auto present_mode_from_setting_index(const int index) -> present_mode {
 		switch (index) {

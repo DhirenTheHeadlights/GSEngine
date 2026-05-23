@@ -130,8 +130,18 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 				s.foot_grounded_r = r_aabb.min.y() <= contact_y;
 				s.any_foot_grounded = s.foot_grounded_l || s.foot_grounded_r;
 				s.double_support = s.foot_grounded_l && s.foot_grounded_r;
-				s.support_min = gse::min(l_aabb.min, r_aabb.min);
-				s.support_max = gse::max(l_aabb.max, r_aabb.max);
+				if (s.double_support || !s.any_foot_grounded) {
+					s.support_min = gse::min(l_aabb.min, r_aabb.min);
+					s.support_max = gse::max(l_aabb.max, r_aabb.max);
+				}
+				else if (s.foot_grounded_l) {
+					s.support_min = l_aabb.min;
+					s.support_max = l_aabb.max;
+				}
+				else {
+					s.support_min = r_aabb.min;
+					s.support_max = r_aabb.max;
+				}
 				s.support_center = gse::lerp(s.support_min, s.support_max, 0.5f);
 
 				s.com_world = pelvis_tc->position;

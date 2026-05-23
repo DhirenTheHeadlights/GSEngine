@@ -30,7 +30,7 @@ export namespace gse::gpu {
 	struct render_pass_descriptor {
 		id pass_kind{};
 		queue_type queue = queue_type::graphics;
-		const pipeline* primary_pipeline = nullptr;
+		const shader_program* primary_pipeline = nullptr;
 		std::optional<color_attachment> color;
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
@@ -94,7 +94,7 @@ export namespace gse::gpu {
 		) && -> pass_builder&&;
 
 		auto pipeline(
-			const gpu::pipeline& p
+			const gpu::shader_program& p
 		) && -> pass_builder&&;
 
 		auto color(

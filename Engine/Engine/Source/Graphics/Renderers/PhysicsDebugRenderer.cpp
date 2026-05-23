@@ -254,10 +254,10 @@ auto gse::renderer::physics_debug::build_contact_debug(const collision_informati
 }
 
 auto gse::renderer::physics_debug::ensure_buffer_capacity(gpu::device& device, gpu::buffer& buffer, std::size_t& capacity, const std::size_t required_bytes, const gpu::buffer_flag usage) -> void {
-	if (required_bytes <= capacity && buffer) {
+	if (required_bytes <= capacity && buffer.valid()) {
 		return;
 	}
-	if (buffer) {
+	if (buffer.valid()) {
 		buffer = {};
 	}
 	capacity = std::max<std::size_t>(capacity, 4096);
@@ -274,7 +274,7 @@ auto gse::renderer::physics_debug::ensure_buffer_capacity(gpu::device& device, g
 }
 
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const physics::system::data& ps) -> async::task<> {
-	d.pipeline_instanced = gpu::build_graphics_pipeline(
+	d.pipeline_instanced = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
 		*gpu_s.bindless_textures,
@@ -282,7 +282,7 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 	);
 
 	d.pipeline_lines =
-		gpu::build_graphics_pipeline(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, lines_entry::pod);
+		gpu::build_graphics_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, lines_entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 

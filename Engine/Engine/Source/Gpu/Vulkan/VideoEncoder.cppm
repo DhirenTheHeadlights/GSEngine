@@ -86,7 +86,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto extent() const -> vec2u;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		struct per_frame {
@@ -871,7 +871,7 @@ auto gse::gpu::video_encoder::wait(const std::uint32_t frame_slot) -> void {
 	slot.submitted = false;
 }
 
-gse::gpu::video_encoder::operator bool() const {
+auto gse::gpu::video_encoder::valid() const -> bool {
 	return m_session != nullptr;
 }
 

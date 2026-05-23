@@ -121,8 +121,8 @@ export namespace gse::renderer::ui {
 
 	struct system {
 		struct data {
-			gpu::pipeline sprite_pipeline;
-			gpu::pipeline text_pipeline;
+			gpu::shader_program sprite_pipeline;
+			gpu::shader_program text_pipeline;
 			std::array<frame_resources, frames_in_flight> gpu_frames;
 
 			triple_buffer<gpu_frame_data> buffered_frames;
