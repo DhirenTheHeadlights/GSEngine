@@ -113,12 +113,6 @@ export namespace gse::gpu {
 
 		template <typename T>
 		auto push(
-			const gpu::pipeline& p,
-			const gpu::typed_push_constants<T>& typed
-		) const -> void;
-
-		template <typename T>
-		auto push(
 			const gpu::shader_program& p,
 			const gpu::typed_push_constants<T>& typed
 		) const -> void;
@@ -138,17 +132,7 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto bind(
-			const gpu::pipeline& p
-		) const -> void;
-
-		auto bind(
 			const gpu::shader_program& p
-		) -> void;
-
-		auto bind_descriptors(
-			const gpu::pipeline& p,
-			const gpu::descriptor_region& region,
-			std::uint32_t set_index = 0
 		) -> void;
 
 		auto bind_descriptors(
@@ -175,12 +159,6 @@ export namespace gse::gpu {
 		auto set_scissor(
 			vec2u extent
 		) const -> void;
-
-		auto commit(
-			const gpu::descriptor_writer& writer,
-			const gpu::pipeline& p,
-			std::uint32_t set_index = 0
-		) -> void;
 
 		auto commit(
 			const gpu::descriptor_writer& writer,
@@ -698,7 +676,7 @@ auto gse::gpu::recording_context::barrier(const gpu::barrier_scope scope) const 
 				.src_stages = ps::compute_shader,
 				.src_access = ac::shader_storage_write,
 				.dst_stages = ps::compute_shader,
-				.dst_access = ac::shader_storage_read | ac::shader_storage_write,
+				.dst_access = ac::shader_storage_read | ac::shader_storage_write | ac::shader_sampled_read,
 			};
 			break;
 		case gpu::barrier_scope::compute_to_indirect:
@@ -970,12 +948,6 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 }
 
 template <typename T>
-auto gse::gpu::recording_context::push(const gpu::pipeline& p, const gpu::typed_push_constants<T>& typed) const -> void {
-	check_active();
-	typed.replay(m_cmd.native(), p.layout());
-}
-
-template <typename T>
 auto gse::gpu::recording_context::push(const gpu::shader_program& p, const gpu::typed_push_constants<T>& typed) const -> void {
 	check_active();
 	typed.replay(m_cmd.native(), p.layout());
@@ -1005,45 +977,6 @@ auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, co
 		gpu::access_flag::indirect_command_read
 	);
 	m_cmd.draw_mesh_tasks_indirect(buf.handle(), offset, draw_count, stride);
-}
-
-auto gse::gpu::recording_context::bind(const gpu::pipeline& p) const -> void {
-	check_active();
-	m_cmd.bind_pipeline(p.bind_point(), p.handle());
-	for (const auto set_idx : p.auto_bound_sets()) {
-		for (const auto& [auto_set_idx, region] : m_auto_binds) {
-			if (auto_set_idx == set_idx && region.valid()) {
-				region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_idx, region);
-				break;
-			}
-		}
-	}
-}
-
-auto gse::gpu::recording_context::bind_descriptors(const gpu::pipeline& p, const gpu::descriptor_region& region, const std::uint32_t set_index) -> void {
-	check_active();
-	assert(region.valid(), "Cannot bind null descriptor region");
-	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
-		if (set != set_index) {
-			continue;
-		}
-		const auto it = std::ranges::find_if(region.resources, [slot](const resource_slot& rs) {
-			return rs.slot == slot;
-		});
-		assert(
-			it != region.resources.end(),
-			"render pass '{}' bound a pipeline expecting set={} slot={} ({}, {}) but the descriptor region has no "
-			"resource at that slot. Bound slots: {}",
-			m_pass ? m_pass->pass_type.tag() : std::string_view{ "<unknown>" },
-			set,
-			slot,
-			type,
-			access,
-			format_bound_slots(region.resources)
-		);
-		note_touched(it->ref, stages, barrier_access(type, access));
-	}
-	region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_index, region);
 }
 
 auto gse::gpu::recording_context::bind_vertex(const buffer& buf, const std::size_t offset) -> void {
@@ -1099,32 +1032,6 @@ auto gse::gpu::recording_context::set_scissor(const vec2u extent) const -> void 
 		.max = vec2i{ static_cast<int>(extent.x()), static_cast<int>(extent.y()) },
 	} };
 	m_cmd.set_scissor(sc);
-}
-
-auto gse::gpu::recording_context::commit(const gpu::descriptor_writer& writer, const gpu::pipeline& p, const std::uint32_t set_index) -> void {
-	check_active();
-	const auto written = writer.touched_resources();
-	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
-		if (set != set_index) {
-			continue;
-		}
-		const auto it = std::ranges::find_if(written, [slot](const resource_slot& rs) {
-			return rs.slot == slot;
-		});
-		assert(
-			it != written.end(),
-			"render pass '{}' committed a push descriptor for set={} slot={} ({}, {}) but the writer has no resource "
-			"at that slot. Written slots: {}",
-			m_pass ? m_pass->pass_type.tag() : std::string_view{ "<unknown>" },
-			set,
-			slot,
-			type,
-			access,
-			format_bound_slots(written)
-		);
-		note_touched(it->ref, stages, barrier_access(type, access));
-	}
-	writer.native_writer().commit(m_cmd.native(), p.bind_point(), p.layout(), set_index);
 }
 
 auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
@@ -2013,6 +1920,14 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			return vulkan::image_aspect_for(img.format());
 		};
 
+		auto access_has_write = [](const gpu::access_flags a) -> bool {
+			using ac = gpu::access_flag;
+			constexpr auto write_mask = ac::shader_storage_write | ac::shader_write | ac::color_attachment_write |
+				ac::depth_stencil_attachment_write | ac::transfer_write | ac::host_write | ac::memory_write |
+				ac::acceleration_structure_write;
+			return static_cast<bool>(a & write_mask);
+		};
+
 		auto append_barrier_for_resource = [&](const resource_ref& resource,
 											   const gpu::pipeline_stage_flags src_stages,
 											   const gpu::access_flags src_access,
@@ -2021,6 +1936,9 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 											   std::vector<gpu::memory_barrier>& memory_out,
 											   std::vector<gpu::buffer_barrier>& buffer_out,
 											   std::vector<gpu::image_barrier>& image_out) {
+			if (!access_has_write(src_access) && !access_has_write(dst_access) && src_stages.bits() == dst_stages.bits()) {
+				return;
+			}
 			if (resource.type == resource_type::buffer) {
 				const auto* buf = static_cast<const buffer*>(resource.ptr);
 				buffer_out.push_back({
@@ -2084,70 +2002,87 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			walk(p.writes);
 		};
 
+		struct prev_use_record {
+			resource_ref resource;
+			gpu::pipeline_stage_flags stages;
+			gpu::access_flags access;
+		};
+
+		std::array<std::unordered_map<const void*, prev_use_record>, gpu::queue_type_count> latest_writes;
+		std::array<std::unordered_map<const void*, std::vector<prev_use_record>>, gpu::queue_type_count> reads_since_write;
+
 		auto append_prev_pass_barriers = [&](const render_pass_data& cur,
 											 const gpu::queue_type cur_queue,
-											 const std::size_t serial_index,
 											 std::vector<gpu::memory_barrier>& memory_out,
 											 std::vector<gpu::buffer_barrier>& buffer_out,
 											 std::vector<gpu::image_barrier>& image_out) {
-			for (std::size_t pi = 0; pi < serial_index; ++pi) {
-				const auto& prev = passes[sorted[pi]];
-				const auto prev_queue = pass_queue(sorted[pi]);
-				if (prev_queue != cur_queue) {
+			auto& latest = latest_writes[static_cast<std::size_t>(cur_queue)];
+			auto& reads = reads_since_write[static_cast<std::size_t>(cur_queue)];
+
+			for (const auto& [cur_resource, cur_stage, cur_access] : cur.reads) {
+				if (!cur_resource.ptr) {
 					continue;
 				}
-				for (const auto& [prev_resource, prev_stage, prev_access] : prev.writes) {
-					if (!prev_resource.ptr) {
-						continue;
-					}
-					for (const auto& [read_resource, read_stage, read_access] : cur.reads) {
-						if (read_resource.ptr && prev_resource.ptr == read_resource.ptr) {
-							append_barrier_for_resource(
-								prev_resource,
-								prev_stage,
-								prev_access,
-								read_stage,
-								read_access,
-								memory_out,
-								buffer_out,
-								image_out
-							);
-						}
-					}
-					for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
-						if (cur_resource.ptr && prev_resource.ptr == cur_resource.ptr) {
-							append_barrier_for_resource(
-								prev_resource,
-								prev_stage,
-								prev_access,
-								cur_stage,
-								cur_access,
-								memory_out,
-								buffer_out,
-								image_out
-							);
-						}
+				if (const auto it = latest.find(cur_resource.ptr); it != latest.end()) {
+					const auto& prev = it->second;
+					append_barrier_for_resource(
+						prev.resource,
+						prev.stages,
+						prev.access,
+						cur_stage,
+						cur_access,
+						memory_out,
+						buffer_out,
+						image_out
+					);
+				}
+			}
+
+			for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
+				if (!cur_resource.ptr) {
+					continue;
+				}
+				if (const auto it = latest.find(cur_resource.ptr); it != latest.end()) {
+					const auto& prev = it->second;
+					append_barrier_for_resource(
+						prev.resource,
+						prev.stages,
+						prev.access,
+						cur_stage,
+						cur_access,
+						memory_out,
+						buffer_out,
+						image_out
+					);
+				}
+				if (const auto it = reads.find(cur_resource.ptr); it != reads.end()) {
+					for (const auto& prev_read : it->second) {
+						append_barrier_for_resource(
+							prev_read.resource,
+							prev_read.stages,
+							{},
+							cur_stage,
+							cur_access,
+							memory_out,
+							buffer_out,
+							image_out
+						);
 					}
 				}
-				for (const auto& [prev_resource, prev_stage, prev_access] : prev.reads) {
-					if (!prev_resource.ptr) {
-						continue;
-					}
-					for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
-						if (cur_resource.ptr && prev_resource.ptr == cur_resource.ptr) {
-							append_barrier_for_resource(
-								prev_resource,
-								prev_stage,
-								{},
-								cur_stage,
-								cur_access,
-								memory_out,
-								buffer_out,
-								image_out
-							);
-						}
-					}
+			}
+
+			for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
+				if (!cur_resource.ptr) {
+					continue;
 				}
+				latest[cur_resource.ptr] = { cur_resource, cur_stage, cur_access };
+				reads.erase(cur_resource.ptr);
+			}
+			for (const auto& [cur_resource, cur_stage, cur_access] : cur.reads) {
+				if (!cur_resource.ptr) {
+					continue;
+				}
+				reads[cur_resource.ptr].push_back({ cur_resource, cur_stage, cur_access });
 			}
 		};
 
@@ -2210,7 +2145,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			std::vector<gpu::image_barrier> image_barriers = std::move(alias_barriers_for_sorted[si]);
 
 			append_host_dirty_barriers(pass, buffer_barriers);
-			append_prev_pass_barriers(pass, queue, si, memory_barriers, buffer_barriers, image_barriers);
+			append_prev_pass_barriers(pass, queue, memory_barriers, buffer_barriers, image_barriers);
 
 			{
 				std::vector<gpu::memory_barrier> coalesced;

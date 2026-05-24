@@ -66,6 +66,8 @@ export namespace gse {
 		loading::state m_loading;
 		std::function<void()> m_deferred_boot;
 		std::atomic<bool> m_boot_tasks_done = false;
+		std::uint32_t m_boot_init_baseline_settled = 0;
+		bool m_boot_init_baseline_captured = false;
 		std::uint32_t m_frames_since_rendered = 0;
 		bool m_window_shown = false;
 	};

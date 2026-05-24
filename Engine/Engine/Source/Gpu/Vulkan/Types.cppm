@@ -677,12 +677,6 @@ export namespace gse::gpu {
 		vec3i dst_offsets[2];
 	};
 
-	struct shader_stage_create_info {
-		stage_flag stage = stage_flag::vertex;
-		std::uint64_t module_handle = 0;
-		std::string entry_point = "main";
-	};
-
 	struct memory_barrier {
 		pipeline_stage_flags src_stages;
 		access_flags src_access;

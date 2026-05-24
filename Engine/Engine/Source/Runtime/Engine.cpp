@@ -65,13 +65,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		primitives::initialize(m_primitives, asset_state);
 		assets.install_hot_reload_fns();
 
-		m_loading.set_phase("Compiling boot assets");
-		asset::compile_progress boot_progress;
-		boot_progress.on_tick = [this](const std::uint32_t done, const std::uint32_t total) {
-			m_loading.set_progress(done, total);
-		};
 		log::println(log::category::runtime, "boot: compile_boot_critical begin");
-		if (const auto result = assets.compile_boot_critical(&boot_progress); result.success_count > 0 || result.failure_count > 0) {
+		if (const auto result = assets.compile_boot_critical(); result.success_count > 0 || result.failure_count > 0) {
 			log::println(
 				result.failure_count > 0 ? log::level::warning : log::level::info,
 				log::category::assets,
@@ -88,6 +83,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		m_scheduler.enter_running();
 		log::println(log::category::runtime, "boot: scheduler.initialize end");
 
+		m_loading.set_phase("Initializing");
+		m_loading.set_progress(0, 0);
+
 		auto& gui_data = m_scheduler.state<gse::gui::system::data>();
 		gui_data.menu_stack.push<gse::gui::loading_screen>(m_loading);
 		log::println(log::category::runtime, "boot: loading_screen pushed to menu stack");
@@ -97,8 +95,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		m_deferred_boot = [this, app_setup, asset_state_ptr] {
 			log::println(log::category::runtime, "boot: deferred boot begin (loading screen rendered)");
 
-			m_loading.set_phase("Compiling shaders");
-			m_loading.set_progress(0, 0);
 			add_system<physics::system>();
 			add_system<camera::system>();
 			add_system<primitive_resolver::system>();
@@ -123,14 +119,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 				using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
 				gse::asset::system_for<game_assets> assets{ *asset_state_ptr };
 
-				m_loading.set_phase("Compiling assets");
-				asset::compile_progress asset_progress;
-				asset_progress.on_tick = [this](const std::uint32_t done, const std::uint32_t total) {
-					m_loading.set_progress(done, total);
-				};
 				log::println(log::category::runtime, "boot: compile_non_boot_critical begin");
 				if (
-					const auto result = assets.compile_non_boot_critical(&asset_progress);
+					const auto result = assets.compile_non_boot_critical();
 					result.success_count > 0 || result.failure_count > 0
 				) {
 					log::println(
@@ -145,8 +136,6 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 				log::println(log::category::runtime, "boot: compile_non_boot_critical end");
 
 				if (app_setup) {
-					m_loading.set_phase("Initializing game");
-					m_loading.set_progress(0, 0);
 					log::println(log::category::runtime, "boot: app_setup begin");
 					app_setup(*this);
 					log::println(log::category::runtime, "boot: app_setup end");
@@ -186,6 +175,27 @@ auto gse::engine::update() -> void {
 		auto deferred = std::move(m_deferred_boot);
 		m_deferred_boot = {};
 		deferred();
+	}
+
+	if (!m_loading.finished() && m_loading.rendered_once() && !m_deferred_boot) {
+		const auto stats = m_scheduler.settle_progress();
+		if (!m_boot_init_baseline_captured) {
+			m_boot_init_baseline_settled = stats.settled;
+			m_boot_init_baseline_captured = true;
+			log::println(
+				log::category::runtime,
+				"boot: init baseline captured settled={} total={}",
+				stats.settled,
+				stats.total
+			);
+		}
+		if (stats.total > m_boot_init_baseline_settled) {
+			const std::uint32_t done = stats.settled >= m_boot_init_baseline_settled
+				? stats.settled - m_boot_init_baseline_settled
+				: 0;
+			const std::uint32_t total = stats.total - m_boot_init_baseline_settled;
+			m_loading.set_progress(done, total);
+		}
 	}
 
 	if (!m_loading.finished() && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled() && m_loading.rendered_once()) {

@@ -80,47 +80,85 @@ either way.
 
 ---
 
-2. VK_EXT_shader_object
------------------------
+2. VK_EXT_shader_object  — DONE
+-------------------------------
 
-Graphics + compute pipelines become `VkShaderEXT` objects bound via
-`vkCmdBindShadersEXT`. Mesh + RT pipelines stay on `VkPipeline`.
+Graphics + compute pipelines became `VkShaderEXT` objects bound via
+`vkCmdBindShadersEXT`. Mesh shaders also use `VkShaderEXT` (task/mesh
+stages). Ray-tracing pipelines stay on `VkPipeline` (RT is its own
+type system, not unified).
 
-### Delete
+**Extension status**: hard-required (NVIDIA RTX 50 / AMD only).
+`Vulkan/Device.cpp` asserts on absence of `VK_EXT_shader_object`,
+`VK_EXT_extended_dynamic_state3`, and `VK_EXT_vertex_input_dynamic_state`.
+Intel Arc 140V driver doesn't expose shader_object — engine will fail
+device-create on Intel until they ship it.
 
-- `Vulkan/Pipeline.cppm:15–32` — `graphics_pipeline_create_info`.
-- `Vulkan/Pipeline.cppm:34–40` — `compute_pipeline_create_info`.
-- `Vulkan/Pipeline.cpp:44–232` — `pipeline::create_graphics()` body.
-- `Vulkan/Pipeline.cpp:234–277` — `pipeline::create_compute()`.
-- `Vulkan/Pipeline.cpp:65–114` — input assembly / rasterization /
-  depth-stencil / viewport state builders.
-- `Vulkan/Pipeline.cpp:124–158` — blend attachment state builders.
-- `Vulkan/Pipeline.cpp:167–193` — vertex input state builders.
-- `Vulkan/Pipeline.cpp:205–222, 261–267` — `VkGraphicsPipelineCreateInfo`
-  / `VkComputePipelineCreateInfo` assembly.
-- `Vulkan/Pipeline.cppm:97` — `m_pipeline` on the graphics/compute
-  branch (keep on mesh/RT).
-- `Resources/PipelineBuilder.cppm:96, 240–528, 481–482` — `blend_preset`
-  enum + the entire graphics POD template specs.
+### New types
+- `vulkan::shader_object` (`Vulkan/ShaderObject.cppm`) — wraps a single
+  `vk::raii::ShaderEXT`. `create_linked()` is the multi-stage path
+  used for full programs.
+- `vulkan::shader_program` (`Vulkan/ShaderProgram.cppm`) — owns a
+  `pipeline_layout` + N `shader_object`s + dynamic-pipeline-state +
+  active-bindings metadata. Replaces `vulkan::pipeline` for
+  graphics/compute/mesh.
+- `gpu::dynamic_pipeline_state` (in ShaderProgram.cppm) — captures all
+  the per-draw state that used to be baked into `VkPipeline`: topology,
+  polygon mode, cull/front-face, depth state, blend state, vertex input.
 
-### Reshape
+### New commands API
+- `bind_shaders(stages, handles)` / `unbind_shaders(stages)` — wrap
+  `vkCmdBindShadersEXT`.
+- ~22 dynamic state setters: `set_topology`, `set_polygon_mode`,
+  `set_cull_mode`, `set_front_face`, `set_depth_test_enable`,
+  `set_depth_write_enable`, `set_depth_compare_op`,
+  `set_depth_bias_enable/set_depth_bias`, `set_depth_clamp_enable`,
+  `set_depth_bounds_test_enable`, `set_stencil_test_enable`,
+  `set_rasterizer_discard_enable`, `set_primitive_restart_enable`,
+  `set_rasterization_samples`, `set_sample_mask`,
+  `set_alpha_to_coverage_enable`, `set_alpha_to_one_enable`,
+  `set_logic_op_enable`, `set_color_blend_enable/equation/write_mask`,
+  `set_blend_constants`, `set_vertex_input`, `set_line_width`.
+- `set_viewport`/`set_scissor` swapped from `setViewport`/`setScissor`
+  to `setViewportWithCount`/`setScissorWithCount` (shader_object
+  requires the WithCount dynamic state).
+- `vulkan::pipeline_state_cache` lives on `recording_context`
+  (non-mutable, per-pass). `apply_dynamic_state()` skips redundant
+  emissions within a pass; cache invalidates naturally between passes
+  because each pass gets a fresh `recording_context`.
 
-- `Resources/PipelineBuilder.cppm:63–68, 114–119` —
-  `build_graphics_pipeline()` / `build_compute_pipeline()` return
-  `VkShaderEXT[]` instead of `VkPipeline`.
-- `Vulkan/Commands.cppm:131–134` — `bind_pipeline()` stays for mesh/RT;
-  add `bind_shaders()` for graphics/compute. Plus
-  `set_vertex_input`, `set_rasterization_state`, `set_depth_test_enable`,
-  `set_depth_compare_op`, `set_blend_constants`, `set_primitive_topology`,
-  etc.
+### Builder rewrite
+- `build_compute_program()` and `build_graphics_program()` in
+  `Resources/PipelineBuilder.cppm` replaced `build_compute_pipeline()`
+  / `build_graphics_pipeline()`. Same POD-tag input
+  (`compute_entry_pod`, `graphics_entry_pod`), `shader_program`
+  output instead of `pipeline`.
+- `gpu::pass(...).pipeline(shader_program&)` is the call site (no
+  source changes for renderers beyond `gpu::pipeline` →
+  `gpu::shader_program` and `build_*_pipeline` → `build_*_program`).
+- 28 renderer files migrated.
+
+### Dead code deleted (Phase 6)
+- `vulkan::pipeline` class (`Vulkan/Pipeline.cppm` + `.cpp` — whole
+  files gone).
+- `vulkan::shader_module` (`Vulkan/ShaderModule.cppm` — whole file
+  gone, shader_object compiles SPIRV directly).
+- `build_compute_pipeline`, `build_graphics_pipeline`,
+  `build_compute_pipeline_impl`, `create_compute_pipeline_from_spirv`.
+- `recording_context` overloads taking `const gpu::pipeline&`:
+  `push<T>`, `bind`, `bind_descriptors`, `commit`.
+- `commands::bind_pipeline`.
+- `shader_stage_create_info`, `graphics_pipeline_create_info`,
+  `compute_pipeline_create_info`.
+- Module exports: `:vulkan_pipeline`, `:vulkan_shader_module` dropped
+  from `Gpu.cppm`; `pipeline`/`shader_module` aliases dropped from
+  `Aliases.cppm`.
 
 ### Must stay
-
-- `Vulkan/PipelineLayout.cppm` — shader objects bind through a
+- `Vulkan/PipelineLayout.cppm` — shader objects still bind through
   `VkPipelineLayout`.
-- `Vulkan/ShaderModule.cppm` — SPIR-V compile path.
-- Vertex-attribute reflection — moves from pipeline-creation to
-  `vkCmdSetVertexInputEXT` setup.
+- `Resources/Pipeline.cppm` partition — contains
+  `typed_push_constants<T>`, not the deleted class. Kept as-is.
 
 ---
 
@@ -161,34 +199,52 @@ without it fall back to the staging-buffer path automatically.
 
 ---
 
-4. VK_KHR_dynamic_rendering_local_read + render-graph cleanups
---------------------------------------------------------------
+4. VK_KHR_dynamic_rendering_local_read — SKIPPED (no fit)
+---------------------------------------------------------
 
-### LocalRead candidates
+The original audit listed three candidates in `AtmosphereRenderer.cpp`
+(lines 436/458/472). Rescoped after shader_object work: those are all
+**compute→compute** dispatches (`transmittance` → `multiscatter` →
+`sky_view`/`ap_volume`). LocalRead is for **graphics passes that sample
+a color/depth target written earlier in the same render pass** —
+classic deferred lighting reading a G-buffer. Compute shaders can't
+sample render-pass attachments at all.
 
-- `Graphics/Renderers/AtmosphereRenderer.cpp:436` — transmittance →
-  multiscatter (compute→compute, same-region).
-- `AtmosphereRenderer.cpp:458` — multiscatter+transmittance → sky_view.
-- `AtmosphereRenderer.cpp:472` — multiscatter+transmittance → AP volume
-  (currently not chained via `.after()` — separate barrier streams).
+Engine has zero real LocalRead candidates today:
+- Forward shading is single-pass, no intra-pass resample of the
+  framebuffer.
+- Atmosphere does compute LUT generation + one final
+  `sky_raster_pass` that only samples *pre-computed* LUTs, not a
+  current-pass attachment.
+- Bloom is a compute pyramid (the proper fix landed in §4 below as
+  a single-pass chain with `compute_to_compute` barriers).
 
-### Bloom barrier explosion (bug-grade)
+**Revisit when/if deferred lighting ships.** With G-buffers it
+becomes a natural fit; until then the extension would buy nothing.
 
-- `Graphics/Renderers/BloomRenderer.cpp:230–264` — downsample loop opens
-  a fresh `co_await gpu::pass<downsample_pass>()` per mip.
-  `append_prev_pass_barriers` (`RenderGraph.cppm:1943–2008`) is O(n²)
-  over prior passes per mip. Fix by either:
-  - Switching to `.record(lambda)` chaining (see memory note
-    `pass — .record vs co_await`), or
-  - Grouping consecutive mip levels into one pass with internal barriers.
+### Bloom barrier explosion (bug-grade)  — DONE
 
-### Render-graph cleanups (extension-independent)
+- `Graphics/Renderers/BloomRenderer.cpp` — downsample loop was opening
+  a fresh `co_await gpu::pass<downsample_pass>()` per mip. Collapsed
+  to a single pass with `rec.barrier(compute_to_compute)` between
+  dispatches. Each removed pass also removed an O(prior_passes) scan
+  in `append_prev_pass_barriers`. Net: ~6 fewer passes per frame on
+  bloom + much less barrier-bookkeeping.
+- Also extended `barrier_scope::compute_to_compute` to include
+  `shader_sampled_read` in `dst_access` (bloom samples the previous
+  mip as `combined_image_sampler`, not as a storage image).
 
-- `RenderGraph.cppm:1955–2007` — `append_prev_pass_barriers` does
-  O(passes × writes × reads) pointer compares. Build a hash map keyed by
-  `resource.ptr` of prior writes; O(1) lookup.
-- `RenderGraph.cppm:1891–1905` — once layouts are unified, skip emit
-  when stages/access also match.
+### Render-graph cleanups  — DONE
+
+- `RenderGraph.cppm::append_prev_pass_barriers` was O(prior_passes ×
+  prev_accesses × cur_accesses). Replaced with per-queue hash maps:
+  `latest_writes[queue][resource_ptr]` and
+  `reads_since_write[queue][resource_ptr]`. Per-pass cost drops to
+  O(cur_reads + cur_writes). Latest-writer-only is sufficient because
+  writes are ordered (latest dominates earlier ones).
+- `RenderGraph.cppm::append_barrier_for_resource` now early-outs on
+  pure read→read barriers (no write on either side, same stages).
+  These are no-ops in Vulkan — saves coalesce work.
 
 ### Not applicable
 
@@ -306,22 +362,12 @@ falls back to the existing recreate-on-resize path).
 
 ---
 
-7. VK_EXT_extended_dynamic_state3
----------------------------------
+7. VK_EXT_extended_dynamic_state3  — SUBSUMED BY §2
+---------------------------------------------------
 
-Mostly subsumed by §2 (shader_object's dynamic state is a superset). If
-shader_object is skipped, EDS3 still buys:
-
-- `Vulkan/Pipeline.cpp:124–158` — blend presets →
-  `vkCmdSetColorBlendEnableEXT` + `vkCmdSetColorBlendEquationEXT`.
-- `Vulkan/Pipeline.cpp:65–76` — rasterizer (polygon mode, cull, depth
-  bias) → dynamic.
-- `Vulkan/Pipeline.cpp:88–95` — `rasterizationSamples` →
-  `vkCmdSetRasterizationSamplesEXT`.
-- `Resources/PipelineBuilder.cppm:96, 481–482` — collapse N×blend_preset
-  variants to one pipeline.
-
-With shader_object on, delete this entire section.
+Hard-required by §2 (shader_object's dynamic state needs EDS3 setters).
+Enabled in `Vulkan/Device.cpp` alongside shader_object. Nothing
+separate to do here.
 
 ---
 
