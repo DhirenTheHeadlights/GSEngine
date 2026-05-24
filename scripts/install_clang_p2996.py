@@ -11,25 +11,29 @@ from pathlib import Path
 
 RELEASE_URL = "https://github.com/DhirenTheHeadlights/GSEngine/releases/download/{tag}/clang-p2996-windows-x64.zip"
 DEFAULT_TAG = "clang-p2996-v1"
-INSTALL_ROOT = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "clang-p2996"
 ENV_VAR = "CLANG_P2996_ROOT"
 
+# Install under the user home directory (not AppData) so Windows Store Python's
+# VFS sandbox redirection of %LOCALAPPDATA% doesn't cause cmake to see a different
+# filesystem view than the Python process does.
+INSTALL_ROOT = Path.home() / ".clang-p2996"
 
-def install_path(tag):
+
+def install_path(tag: str) -> Path:
     return INSTALL_ROOT / tag
 
 
-def already_installed(tag):
+def already_installed(tag: str) -> bool:
     return (install_path(tag) / "bin" / "clang-cl.exe").exists()
 
 
-def download(url, dest):
+def download(url: str, dest: Path) -> None:
     print(f"Downloading {url}")
     with urllib.request.urlopen(url) as response, open(dest, "wb") as out:
         shutil.copyfileobj(response, out)
 
 
-def verify_sha256(path, expected):
+def verify_sha256(path: Path, expected: str) -> None:
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -39,7 +43,7 @@ def verify_sha256(path, expected):
         raise SystemExit(f"SHA256 mismatch: got {actual}, expected {expected}")
 
 
-def extract(zip_path, dest):
+def extract(zip_path: Path, dest: Path) -> None:
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True, exist_ok=True)
@@ -47,7 +51,7 @@ def extract(zip_path, dest):
         z.extractall(dest)
 
 
-def persist_env_var(name, value):
+def persist_env_var(name: str, value: str) -> None:
     if os.name != "nt":
         print(f"Add to your shell rc: export {name}={value}")
         return
@@ -55,7 +59,7 @@ def persist_env_var(name, value):
     print(f"Persisted {name} (effective in new shells)")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Download and install prebuilt clang-p2996 toolchain")
     parser.add_argument("--tag", default=DEFAULT_TAG, help="Release tag to install")
     parser.add_argument("--sha256", help="Expected SHA256 of the zip")
@@ -78,7 +82,7 @@ def main():
         print(f"Installed: {target}")
 
     if args.persist:
-        persist_env_var(ENV_VAR, target)
+        persist_env_var(ENV_VAR, str(target))
     else:
         print(f"\nTo use this toolchain:")
         print(f"  set {ENV_VAR}={target}    (cmd)")

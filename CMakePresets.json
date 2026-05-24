@@ -115,6 +115,11 @@
       "displayName": "Linux GCC trunk Debug (WSL)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/linux-gcc-trunk-Debug",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "$env{WSL_DISTRO_NAME}",
+        "rhs": ""
+      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",

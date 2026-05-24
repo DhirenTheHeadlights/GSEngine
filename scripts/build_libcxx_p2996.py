@@ -24,6 +24,8 @@ def run(cmd, cwd=None, env=None):
 
 
 VS_SEARCH_ROOTS = [
+    r"C:\Program Files\Microsoft Visual Studio\18",
+    r"C:\Program Files (x86)\Microsoft Visual Studio\18",
     r"C:\Program Files\Microsoft Visual Studio\2022",
     r"C:\Program Files (x86)\Microsoft Visual Studio\2022",
     r"C:\Program Files\Microsoft Visual Studio\2019",
@@ -208,6 +210,9 @@ def ensure_source(src, branch):
 
 def configure(src, build, dist, clang_cl, ninja, env):
     build.mkdir(parents=True, exist_ok=True)
+    clang_bin = str(clang_cl.parent)
+    env = dict(env)
+    env["PATH"] = clang_bin + os.pathsep + env.get("PATH", "")
     run([
         "cmake",
         "-S", str(src / "runtimes"),
