@@ -85,6 +85,13 @@ export namespace gse {
 
 		[[nodiscard]] auto all_settled() const -> bool;
 
+		struct settle_stats {
+			std::uint32_t settled = 0;
+			std::uint32_t total = 0;
+		};
+
+		[[nodiscard]] auto settle_progress() const -> settle_stats;
+
 		auto update() -> void;
 
 		auto tick(

@@ -51,9 +51,10 @@ auto gse::loading::state::set_phase(std::string p) -> void {
 
 auto gse::loading::state::set_progress(const std::uint32_t done, const std::uint32_t total) -> void {
 	std::lock_guard lock(m_mutex);
+	const bool changed = done != m_done || total != m_total;
 	m_done = done;
 	m_total = total;
-	if (total > 0 && (done == 0 || done == total || done % 25 == 0)) {
+	if (changed) {
 		log::println(log::category::runtime, "loading::set_progress done={} total={}", done, total);
 	}
 }

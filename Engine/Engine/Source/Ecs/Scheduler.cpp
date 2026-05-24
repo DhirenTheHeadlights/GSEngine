@@ -152,6 +152,27 @@ auto gse::scheduler::all_settled() const -> bool {
 	return true;
 }
 
+auto gse::scheduler::settle_progress() const -> settle_stats {
+	settle_stats stats{};
+	{
+		std::lock_guard lock(m_hot_add_mutex);
+		for (const auto& node : m_hot_add_queue) {
+			if (node.invoke_run_fn) {
+				++stats.total;
+			}
+		}
+	}
+	for (const auto& node : m_nodes) {
+		if (node.invoke_run_fn) {
+			++stats.total;
+			if (node.settled) {
+				++stats.settled;
+			}
+		}
+	}
+	return stats;
+}
+
 auto gse::scheduler::advance_run_systems_during_init() -> void {
 	while (true) {
 		std::vector<async::task<>> tasks;

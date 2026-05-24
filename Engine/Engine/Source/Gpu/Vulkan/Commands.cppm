@@ -13,7 +13,6 @@ import gse.math;
 
 export namespace gse::vulkan {
 	struct command_buffer;
-	class pipeline;
 	class pipeline_layout;
 	class query_pool;
 	class shader_object;
@@ -146,11 +145,6 @@ export namespace gse::vulkan {
 		auto end_query(
 			gpu::handle<query_pool> pool,
 			std::uint32_t query_index
-		) const -> void;
-
-		auto bind_pipeline(
-			gpu::bind_point point,
-			gpu::handle<pipeline> pipeline
 		) const -> void;
 
 		auto bind_shaders(
@@ -532,10 +526,6 @@ auto gse::vulkan::commands::pipeline_barrier(const gpu::dependency_info& dep) co
 	dependency_scratch scratch;
 	const auto vk_dep = build_vk_dependency_info(dep, scratch);
 	raw().pipelineBarrier2(vk_dep);
-}
-
-auto gse::vulkan::commands::bind_pipeline(const gpu::bind_point point, const gpu::handle<pipeline> pipeline) const -> void {
-	raw().bindPipeline(to_vk(point), std::bit_cast<vk::Pipeline>(pipeline));
 }
 
 auto gse::vulkan::commands::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::handle<shader_object>> shaders) const -> void {

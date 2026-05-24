@@ -211,26 +211,17 @@ auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<g
 		.pipeline(d.downsample_pipeline)
 		.after<forward::system, atmosphere::sky_raster_pass, physics_debug::system, sdf_grid::system, world_text::system>();
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::compute_shader);
-	rec.bind_descriptors(d.downsample_pipeline, d.downsample_descriptors[0][frame_index]);
-	rec.push(
-		d.downsample_pipeline,
-		gpu::typed_push_constants<downsample_push_constants>{
-			.data = {
-				.use_karis_average = 1u
-			},
-			.stages = gpu::stage_flag::compute,
-		}
-	);
-	rec.dispatch((d.mip_extents[0].x() + 7u) / 8u, (d.mip_extents[0].y() + 7u) / 8u, 1);
 
-	for (std::uint32_t i = 1; i < count; ++i) {
-		rec = co_await gpu::pass<downsample_pass>(ctx).pipeline(d.downsample_pipeline);
+	for (std::uint32_t i = 0; i < count; ++i) {
+		if (i > 0) {
+			rec.barrier(gpu::barrier_scope::compute_to_compute);
+		}
 		rec.bind_descriptors(d.downsample_pipeline, d.downsample_descriptors[i][frame_index]);
 		rec.push(
 			d.downsample_pipeline,
 			gpu::typed_push_constants<downsample_push_constants>{
 				.data = {
-					.use_karis_average = 0u
+					.use_karis_average = i == 0 ? 1u : 0u,
 				},
 				.stages = gpu::stage_flag::compute,
 			}

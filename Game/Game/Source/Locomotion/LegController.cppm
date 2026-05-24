@@ -26,21 +26,6 @@ export namespace gs::locomotion {
 			gse::displacement swing_lift_height = gse::meters(0.12f);
 
 			[[
-				= gse::settings::describe<"Knee proportional gain on pelvis height error.">{}
-			]]
-			gse::inverse_length knee_height_gain = gse::per_meter(2.5f);
-
-			[[
-				= gse::settings::describe<"Hip proportional gain on body-frame forward lean.">{}
-			]]
-			gse::inverse_length hip_lean_gain = gse::per_meter(2.5f);
-
-			[[
-				= gse::settings::describe<"Stance hip extension while walking (per unit forward intent).">{}
-			]]
-			gse::angle stance_push_off = gse::radians(0.40f);
-
-			[[
 				= gse::settings::describe<"Clamp range on stance hip target.">{}
 			]]
 			gse::angle stance_hip_clamp = gse::radians(0.60f);
@@ -49,6 +34,11 @@ export namespace gs::locomotion {
 				= gse::settings::describe<"Clamp range on stance knee target.">{}
 			]]
 			gse::angle stance_knee_clamp = gse::radians(0.45f);
+
+			[[
+				= gse::settings::describe<"Foot center Y used by stance IK.">{}
+			]]
+			gse::position stance_foot_ground_y = gse::meters(0.025f);
 
 			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 		};
@@ -78,12 +68,17 @@ namespace gs::locomotion {
 		gse::displacement lift_height
 	) -> gse::vec3<gse::position>;
 	auto compute_stance(
+		leg which,
 		const state& s,
-		const intent& it,
 		const skeleton_refs& r,
 		const leg_controller::data& d
 	) -> std::
 		pair<gse::angle, gse::angle>;
+	auto stance_foot_target(
+		leg which,
+		const state& s,
+		const leg_controller::data& d
+	) -> gse::vec3<gse::position>;
 	auto compute_swing(
 		leg which,
 		const state& s,
@@ -96,10 +91,6 @@ namespace gs::locomotion {
 		pair<gse::angle, gse::angle>;
 	auto weight_shift_ready(
 		const state& s
-	) -> bool;
-	auto is_foot_grounded(
-		const state& s,
-		leg which
 	) -> bool;
 	auto write_targets(
 		const skeleton_refs& r,
@@ -120,19 +111,21 @@ auto gs::locomotion::compute_swing_foot(const gse::vec3<gse::position>& start, c
 	return gse::vec3<gse::position>(base.x(), base.y() + lift_height * lift, base.z());
 }
 
-auto gs::locomotion::compute_stance(const state& s, const intent& it, const skeleton_refs& r, const leg_controller::data& d) -> std::pair<gse::angle, gse::angle> {
-	const auto height_error = r.pelvis_target_height - s.pelvis_position.y();
-	const auto lift_error = std::max(height_error, gse::displacement{});
-	const auto lean_back = s.lean_body.z();
+auto gs::locomotion::stance_foot_target(const leg which, const state& s, const leg_controller::data& d) -> gse::vec3<gse::position> {
+	const auto& foot = which == leg::left ? s.foot_position_l : s.foot_position_r;
+	return gse::vec3<gse::position>(foot.x(), d.stance_foot_ground_y, foot.z());
+}
 
-	const auto knee_correction = gse::radians(1.f) * (d.knee_height_gain * lift_error);
-	auto knee_target = d.stance_knee_rest + knee_correction;
-	knee_target = std::clamp(knee_target, -d.stance_knee_clamp, gse::radians(0.f));
+auto gs::locomotion::compute_stance(const leg which, const state& s, const skeleton_refs& r, const leg_controller::data& d) -> std::pair<gse::angle, gse::angle> {
+	auto support_state = s;
+	support_state.pelvis_position.y() = std::max(support_state.pelvis_position.y(), r.pelvis_target_height);
 
-	const auto hip_correction = gse::radians(1.f) * (d.hip_lean_gain * lean_back);
-	const auto push_off = d.stance_push_off * std::clamp(it.forward * it.intensity, -1.f, 1.f);
-	auto hip_target = hip_correction + push_off;
-	hip_target = std::clamp(hip_target, -d.stance_hip_clamp, d.stance_hip_clamp);
+	const auto hip_world = hip_world_position(support_state, r, which);
+	const auto foot_target = stance_foot_target(which, s, d);
+	const auto ik = solve_leg_ik(hip_world, foot_target, s.pelvis_orientation, r.thigh_length, r.shin_length);
+
+	const auto hip_target = std::clamp(ik.hip_pitch, -d.stance_hip_clamp, d.stance_hip_clamp);
+	const auto knee_target = std::clamp(ik.knee_bend, -d.stance_knee_clamp, gse::radians(0.f));
 
 	return { hip_target, knee_target };
 }
@@ -167,10 +160,6 @@ auto gs::locomotion::weight_shift_ready(const state& s) -> bool {
 		gse::abs(s.capture_right) <= gse::meters(0.24f);
 }
 
-auto gs::locomotion::is_foot_grounded(const state& s, const leg which) -> bool {
-	return which == leg::left ? s.foot_grounded_l : s.foot_grounded_r;
-}
-
 auto gs::locomotion::write_targets(const skeleton_refs& r, const leg_joint_targets& targets, gse::write<controlled_joint_component>& ctrls, const bool controllers_active) -> void {
 	auto apply = [&](const gse::id joint_id, const gse::angle target) {
 		if (auto* cj = ctrls.find(joint_id)) {
@@ -187,9 +176,8 @@ auto gs::locomotion::write_targets(const skeleton_refs& r, const leg_joint_targe
 auto gs::locomotion::leg_controller::run(gse::run_context& ctx, data& d) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [refs, intents, states, gaits, plans, contexts, ctrls] = co_await ctx.acquire_with(
+			auto [refs, states, gaits, plans, contexts, ctrls] = co_await ctx.acquire_with(
 				gse::read_v<skeleton_refs>,
-				gse::read_v<intent>,
 				gse::read_v<state>,
 				gse::read_v<gait>,
 				gse::read_v<plan>,
@@ -204,11 +192,10 @@ auto gs::locomotion::leg_controller::run(gse::run_context& ctx, data& d) -> gse:
 				const auto owner = owner_ids[i];
 
 				const auto* r = refs.find(owner);
-				const auto* it = intents.find(owner);
 				const auto* s = states.find(owner);
 				const auto* g = gaits.find(owner);
 				const auto* p = plans.find(owner);
-				if (!r || !it || !s || !g || !p) {
+				if (!r || !s || !g || !p) {
 					continue;
 				}
 
@@ -231,17 +218,18 @@ auto gs::locomotion::leg_controller::run(gse::run_context& ctx, data& d) -> gse:
 				leg_joint_targets targets;
 				if (controllers_active) {
 					const bool hold_weight_shift = g->current == phase::weight_shift && !weight_shift_ready(*s);
-					const bool settle_planted_foot = g->current == phase::plant && is_foot_grounded(*s, g->swing_leg);
-					if (g->current == phase::idle || hold_weight_shift || settle_planted_foot) {
-						const auto [hip, knee] = compute_stance(*s, *it, *r, d);
-						targets.hip_l = hip;
-						targets.knee_l = knee;
-						targets.hip_r = hip;
-						targets.knee_r = knee;
+					const bool settle_plant = g->current == phase::plant;
+					if (g->current == phase::idle || hold_weight_shift || settle_plant) {
+						const auto [hip_l, knee_l] = compute_stance(leg::left, *s, *r, d);
+						const auto [hip_r, knee_r] = compute_stance(leg::right, *s, *r, d);
+						targets.hip_l = hip_l;
+						targets.knee_l = knee_l;
+						targets.hip_r = hip_r;
+						targets.knee_r = knee_r;
 					}
 					else {
 						const leg stance_leg = other(g->swing_leg);
-						const auto [stance_hip, stance_knee] = compute_stance(*s, *it, *r, d);
+						const auto [stance_hip, stance_knee] = compute_stance(stance_leg, *s, *r, d);
 						const auto [swing_hip, swing_knee] = compute_swing(g->swing_leg, *s, *g, *p, *r, cctx, d);
 						if (stance_leg == leg::left) {
 							targets.hip_l = stance_hip;
