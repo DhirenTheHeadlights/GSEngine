@@ -10,3 +10,4 @@ if not defined VSINSTALL (
   exit /b 1
 )
 call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+if not defined CLANG_P2996_ROOT set "CLANG_P2996_ROOT=%USERPROFILE%\.clang-p2996\clang-p2996-v1"
