@@ -163,7 +163,12 @@ auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const ti
 		return false;
 	}
 
-	log::println(log::category::network, "Client connecting to {}:{}...", m_server.addr().ip, m_server.addr().port);
+	log::println(
+		log::category::network,
+		"Client connecting to {}:{}...",
+		m_server.addr().ip,
+		m_server.addr().port
+	);
 	send(connection_request{});
 
 	m_state = state::connecting;
@@ -205,7 +210,12 @@ auto gse::network::client::tick() -> void {
 		const auto id = stream.read<std::uint64_t>();
 
 		if (m_state.load(std::memory_order_relaxed) == state::connecting && id == message_id_v<connection_accepted>) {
-			log::println(log::category::network, "Client connected to {}:{}", m_server.addr().ip, m_server.addr().port);
+			log::println(
+				log::category::network,
+				"Client connected to {}:{}",
+				m_server.addr().ip,
+				m_server.addr().port
+			);
 			m_state = state::connected;
 		}
 

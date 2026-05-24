@@ -79,7 +79,11 @@ requires std::is_floating_point_v<T>
 constexpr auto gse::percentage<T>::value(const bound b) const -> T {
 	switch (b) {
 		case bound::one_to_hundred:
-			return std::clamp(m_value * static_cast<T>(100), static_cast<T>(0), static_cast<T>(100));
+			return std::clamp(
+				m_value * static_cast<T>(100),
+				static_cast<T>(0),
+				static_cast<T>(100)
+			);
 		case bound::zero_to_one:
 			return std::clamp(m_value, static_cast<T>(0), static_cast<T>(1));
 		case bound::unbounded_one_to_hundred:

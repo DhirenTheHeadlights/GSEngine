@@ -15,6 +15,7 @@ import gse.ecs;
 import :types;
 import :ids;
 import :styles;
+import :layout_ops;
 import :builder;
 import :interaction;
 
@@ -103,7 +104,15 @@ export namespace gse::gui {
 			T max;
 		};
 		static auto draw(draw_context& ctx, params p, id& hot, id& active, id&) -> void {
-			draw::slider<T, Unit>(ctx, std::string(p.name), p.value, p.min, p.max, hot, active);
+			draw::slider<T, Unit>(
+				ctx,
+				std::string(p.name),
+				p.value,
+				p.min,
+				p.max,
+				hot,
+				active
+			);
 		}
 	};
 
@@ -117,7 +126,15 @@ export namespace gse::gui {
 			vec<T, N> max;
 		};
 		static auto draw(draw_context& ctx, params p, id& hot, id& active, id&) -> void {
-			draw::slider<T, N>(ctx, std::string(p.name), p.value, p.min, p.max, hot, active);
+			draw::slider<T, N>(
+				ctx,
+				std::string(p.name),
+				p.value,
+				p.min,
+				p.max,
+				hot,
+				active
+			);
 		}
 	};
 }
@@ -161,7 +178,15 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T&
 	const std::array min_values = { min };
 	const std::array max_values = { max };
 	const std::string name_with_unit = name + " (" + std::string(Unit.unit_name) + ")";
-	slider_row<T, 1>(ctx, name_with_unit, value_ptrs, min_values, max_values, hot_widget_id, active_widget_id);
+	slider_row<T, 1>(
+		ctx,
+		name_with_unit,
+		value_ptrs,
+		min_values,
+		max_values,
+		hot_widget_id,
+		active_widget_id
+	);
 }
 
 template <typename T, std::size_t N>
@@ -193,7 +218,15 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gs
 	}
 
 	const std::string name_with_unit = name + " (" + std::string(Unit.unit_name) + ")";
-	slider_row<T, N>(ctx, name_with_unit, value_ptrs, min_values, max_values, hot_widget_id, active_widget_id);
+	slider_row<T, N>(
+		ctx,
+		name_with_unit,
+		value_ptrs,
+		min_values,
+		max_values,
+		hot_widget_id,
+		active_widget_id
+	);
 }
 
 template <typename T>
@@ -241,7 +274,10 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 	}
 
 	const ui_rect fill_rect =
-		ui_rect::from_position_size(rect.top_left(), { rect.width() * fill_ratio, rect.height() });
+		ui_rect::from_position_size(
+			rect.top_left(),
+			{ rect.width() * fill_ratio, rect.height() }
+		);
 
 	ctx.queue_sprite({
 		.rect = fill_rect,
@@ -250,12 +286,13 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 		.corner_radius = ctx.style.corner_radius
 	});
 
-	std::string value_str;
+	thread_local std::string value_str;
+	value_str.clear();
 	if constexpr (std::is_floating_point_v<underlying>) {
-		value_str = std::format("{:.2f}", value_u);
+		std::format_to(std::back_inserter(value_str), "{:.2f}", value_u);
 	}
 	else {
-		value_str = std::format("{}", value_u);
+		std::format_to(std::back_inserter(value_str), "{}", value_u);
 	}
 	const float text_width = ctx.font->width(value_str, ctx.style.font_size);
 	const vec2f value_text_pos = { rect.center().x() - text_width / 2.f,
@@ -277,44 +314,41 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 		return;
 	}
 
-	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
-	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const auto& sty = ctx.style;
+	namespace lo = layout;
+	using spec = lo::size_spec;
 
-	const ui_rect row_rect = ui_rect::from_position_size(
-		{ content_rect.left(), ctx.layout_cursor.y() },
-		{ content_rect.width(), widget_height }
-	);
+	const float widget_height = ctx.font->line_height(sty.font_size) + sty.padding * 0.5f;
+	const ui_rect row_rect = lo::reserve_row(ctx, widget_height, sty.padding);
 
-	const float label_width = content_rect.width() * 0.4f;
-
-	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
+	const auto [label_rect, value_area] = lo::split_horizontal<2>(row_rect, {
+		spec::ratio(0.4f),
+		spec::flex(),
+	});
 
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
+		.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = sty.color_text,
 		.clip_rect = label_rect
 	});
 
-	const float values_total_width = content_rect.width() - label_width;
-	const float all_spacing = ctx.style.padding * std::max(0.0f, static_cast<float>(N - 1));
-	const float slider_box_width = (values_total_width - all_spacing) / static_cast<float>(N);
+	std::array<spec, N> box_specs;
+	box_specs.fill(spec::flex());
+	const auto box_rects = lo::split_horizontal<N>(value_area, box_specs, sty.padding);
 
 	std::array<id, N> box_ids;
+	const std::uint64_t name_key = stable_id(name);
 	for (std::size_t i = 0; i < N; ++i) {
-		box_ids[i] = ids::make(name + "##" + std::to_string(i));
+		box_ids[i] = ids::make_from_key(hash_combine(name_key, i));
 	}
 
-	vec2f current_box_pos = { row_rect.left() + label_width, row_rect.top() };
-
 	for (std::size_t i = 0; i < N; ++i) {
-		const ui_rect box_rect = ui_rect::from_position_size(current_box_pos, { slider_box_width, widget_height });
-
 		slider_box(
 			ctx,
-			box_rect,
+			box_rects[i],
 			box_ids[i],
 			*value_ptrs[i],
 			min_values[i],
@@ -322,8 +356,6 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 			hot_widget_id,
 			active_widget_id
 		);
-
-		current_box_pos.x() += slider_box_width + ctx.style.padding;
 	}
 
 	const auto hot_is_ours = std::ranges::any_of(box_ids, [&](const id b) {
@@ -333,7 +365,7 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	interaction::grab_active(
 		active_widget_id,
 		hot_widget_id,
-		hot_is_ours && ctx.input.mouse_button_pressed(mouse_button::button_1)
+		hot_is_ours && ctx.mouse_pressed_for(value_area)
 	);
 
 	interaction::release_active(
@@ -341,6 +373,4 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 		std::span<const id>(box_ids),
 		ctx.input.mouse_button_released(mouse_button::button_1)
 	);
-
-	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
 }

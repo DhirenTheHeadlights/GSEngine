@@ -1,5 +1,7 @@
 # Native Capture — Scope of Work (Locked In)
 
+> **Status (kept as design record): ✅ shipped.** The Vulkan-Video-encoded screenshot + rolling-clip + continuous-recording pipeline described below is live as `renderer::capture::system`. Source: `Engine/Engine/Source/Graphics/Renderers/CaptureRenderer.{cppm,cpp}` + `Graphics/Capture/`. This doc remains as the locked-in design spec for future reference.
+
 ## Overview
 
 Add first-class screenshot, video, and clip capture to the engine using **Vulkan Video** for GPU-resident encoding. The headline feature is a **rolling ring buffer** that continuously holds the last *N* seconds of encoded frames so the user can press a hotkey *after* something interesting happens and save a clip retroactively (Shadowplay-style). Screenshots and continuous recording fall out of the same pipeline.

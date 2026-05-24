@@ -13,6 +13,7 @@ import :transient_pool;
 import :render_graph;
 import :render_pass;
 import :bindless;
+import :bindless_heap;
 
 import gse.os;
 
@@ -46,6 +47,7 @@ export namespace gse::gpu {
 			[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
 			[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
 			[[= gse::shared]] std::unique_ptr<bindless_texture_set> bindless_textures;
+			[[= gse::shared]] std::unique_ptr<vulkan::bindless_heaps> bindless_heaps;
 			[[= gse::shared]] concurrency::frame_scheduler scheduler;
 		};
 
@@ -87,10 +89,6 @@ export namespace gse::gpu {
 		static auto wait_idle(
 			const data& d
 		) -> void;
-
-		[[nodiscard]] static auto device_handle(
-			const gpu::device& device
-		) -> handle<vulkan::device>;
 	};
 
 	struct gpu_resume_request {

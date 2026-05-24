@@ -465,6 +465,17 @@ float4 fs_main(MeshOutput input) : SV_Target0 {
         result += trace_reflection(pos_world, world_n, world_V, mat.roughness, pixel, rcfg, view_dist, F_refl);
     }
 
+    if (pc.gi_enabled != 0) {
+        GiGridParams gi_params;
+        gi_params.origin = pc.gi_origin;
+        gi_params.spacing = pc.gi_spacing;
+        gi_params.grid_dim = pc.gi_grid_dim;
+        gi_params.intensity = pc.gi_intensity;
+        gi_params.atlas_size = pc.gi_atlas_size;
+        float3 gi_irradiance = sample_gi_irradiance(pos_world, world_n, gi_params, gi_atlas);
+        result += base_color * (1.0 - mat.metallic) * gi_irradiance / PI;
+    }
+
     float2 screen_uv = pixel / float2(pc.screen_size);
     float view_dist_km = view_dist * 0.001;
     float slice = saturate(view_dist_km / max_view_distance);

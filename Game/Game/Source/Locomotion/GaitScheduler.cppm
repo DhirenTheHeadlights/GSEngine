@@ -8,7 +8,7 @@ import :locomotion_types;
 export namespace gs::locomotion {
 	struct gait_config {
 		gse::time weight_shift_duration = gse::seconds(0.15f);
-		gse::time swing_duration = gse::seconds(0.40f);
+		gse::time swing_duration = gse::seconds(0.65f);
 		gse::time plant_duration = gse::seconds(0.12f);
 		gse::time sprint_weight_shift_duration = gse::seconds(0.10f);
 		gse::time sprint_swing_duration = gse::seconds(0.30f);
@@ -30,12 +30,27 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Walking swing phase duration.">{}
 			]]
-			gse::time swing_duration = gse::seconds(0.40f);
+			gse::time swing_duration = gse::seconds(0.65f);
 
 			[[
 				= gse::settings::describe<"Walking plant phase duration.">{}
 			]]
 			gse::time plant_duration = gse::seconds(0.12f);
+
+			[[
+				= gse::settings::describe<"Swing progress before contact may end the swing.">{}
+			]]
+			float swing_contact_progress = 0.85f;
+
+			[[
+				= gse::settings::describe<"Maximum horizontal foot-target error for accepting swing contact.">{}
+			]]
+			gse::displacement swing_target_tolerance = gse::meters(0.08f);
+
+			[[
+				= gse::settings::describe<"Maximum time a swing may wait for the foot target.">{}
+			]]
+			gse::time swing_timeout = gse::seconds(0.80f);
 
 			[[
 				= gse::settings::describe<"Capture-point magnitude that triggers a step from idle.">{}
@@ -51,6 +66,11 @@ export namespace gs::locomotion {
 				= gse::settings::describe<"Forward capture limit for allowing a swing from weight shift.">{}
 			]]
 			gse::displacement swing_capture_forward_limit = gse::meters(0.28f);
+
+			[[
+				= gse::settings::describe<"Backward capture limit for allowing a swing from weight shift.">{}
+			]]
+			gse::displacement swing_capture_backward_limit = gse::meters(0.18f);
 
 			[[
 				= gse::settings::describe<"Lateral capture limit for allowing a swing from weight shift.">{}
@@ -89,6 +109,20 @@ namespace gs::locomotion {
 	) -> bool;
 	auto capture_safe_for_swing(
 		const state& s,
+		const gait_scheduler::data& d
+	) -> bool;
+	auto capture_demands_swing(
+		const state& s,
+		const gait_scheduler::data& d
+	) -> bool;
+	auto foot_position(
+		const state& s,
+		leg which
+	) -> const gse::vec3<gse::position>&;
+	auto foot_target_reached(
+		const state& s,
+		const plan& p,
+		leg which,
 		const gait_scheduler::data& d
 	) -> bool;
 }
@@ -140,18 +174,38 @@ auto gs::locomotion::foot_grounded(const state& s, const leg which) -> bool {
 }
 
 auto gs::locomotion::capture_safe_for_swing(const state& s, const gait_scheduler::data& d) -> bool {
-	return gse::abs(s.capture_forward) <= d.swing_capture_forward_limit &&
+	return s.capture_forward <= d.swing_capture_forward_limit &&
+		s.capture_forward >= -d.swing_capture_backward_limit &&
 		gse::abs(s.capture_right) <= d.swing_capture_right_limit;
+}
+
+auto gs::locomotion::capture_demands_swing(const state& s, const gait_scheduler::data& d) -> bool {
+	return s.capture_forward > d.swing_capture_forward_limit &&
+		gse::abs(s.capture_right) <= d.swing_capture_right_limit;
+}
+
+auto gs::locomotion::foot_position(const state& s, const leg which) -> const gse::vec3<gse::position>& {
+	return which == leg::left ? s.foot_position_l : s.foot_position_r;
+}
+
+auto gs::locomotion::foot_target_reached(const state& s, const plan& p, const leg which, const gait_scheduler::data& d) -> bool {
+	if (!p.target_valid) {
+		return true;
+	}
+	const auto delta = foot_position(s, which) - p.foot_target_world;
+	const auto horizontal_error = gse::hypot(delta.x(), delta.z());
+	return horizontal_error <= d.swing_target_tolerance;
 }
 
 auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [refs, intents, states, gaits, motions] = co_await ctx.acquire_with(
+			auto [refs, intents, states, gaits, plans, motions] = co_await ctx.acquire_with(
 				gse::read_v<skeleton_refs>,
 				gse::read_v<intent>,
 				gse::read_v<state>,
 				gse::write_v<gait>,
+				gse::read_v<plan>,
 				gse::write_v<gse::physics::motion_component>
 			);
 
@@ -166,6 +220,7 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 				const auto owner = owner_ids[i];
 				const auto* it = intents.find(owner);
 				const auto* s = states.find(owner);
+				const auto* p = plans.find(owner);
 				if (!it || !s) {
 					continue;
 				}
@@ -217,23 +272,28 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 						break;
 
 					case phase::weight_shift:
-						if (
-							g.phase_elapsed >= g.phase_duration && foot_grounded(*s, other(g.swing_leg)) &&
-							capture_safe_for_swing(*s, d)
-						) {
-							begin_phase(g, phase::swing, cfg.swing_duration, "shift_done", owner);
+						if (g.phase_elapsed >= g.phase_duration && foot_grounded(*s, other(g.swing_leg))) {
+							const bool capture_safe = capture_safe_for_swing(*s, d);
+							const bool recovery_step = capture_demands_swing(*s, d);
+							if (capture_safe || recovery_step) {
+								begin_phase(g, phase::swing, cfg.swing_duration, recovery_step ? "capture" : "shift_done", owner);
+							}
 						}
 						break;
 
 					case phase::swing: {
 						const bool swing_grounded = foot_grounded(*s, g.swing_leg);
-						const bool min_swing_elapsed = g.phase_elapsed >= cfg.swing_duration * 0.5f;
-						if ((min_swing_elapsed && swing_grounded) || g.phase_elapsed >= g.phase_duration) {
+						const bool target_reached = !p || foot_target_reached(*s, *p, g.swing_leg, d);
+						const bool contact_allowed = phase_progress(g) >= d.swing_contact_progress;
+						const bool timed_out = g.phase_elapsed >= d.swing_timeout;
+						const bool plant_ready = timed_out || (swing_grounded && contact_allowed);
+						if (plant_ready) {
+							const auto reason = target_reached ? "contact" : (timed_out ? "timed" : "grounded");
 							begin_phase(
 								g,
 								phase::plant,
 								cfg.plant_duration,
-								swing_grounded ? "contact" : "timed",
+								reason,
 								owner
 							);
 						}

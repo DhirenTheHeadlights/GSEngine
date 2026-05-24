@@ -541,7 +541,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 			"frame(). "
 			"This deadlocks the scheduler: state_ready for the target only fires after its pass dispatches in "
 			"execute_frame, "
-			"which is after the channel drain Ã¢â‚¬â€ so this frame's pass push misses the drain and the coroutine never "
+			"which is after the channel drain ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â so this frame's pass push misses the drain and the coroutine never "
 			"resumes. "
 			"Use shared_view<X> for snapshot reads (annotate the fields you need with [[= gse::shared]]), or channels "
 			"for "

@@ -69,9 +69,7 @@ export namespace gse {
 			mesh_data&& data
 		);
 		mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const gse::material& mat = {})
-			: m_vertices(std::move(vertices)),
-			  m_indices(std::move(indices)),
-			  m_material(mat) {
+			: m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(mat) {
 		}
 
 		auto initialize(
@@ -126,10 +124,7 @@ export namespace gse {
 }
 
 gse::mesh::mesh(mesh_data&& data)
-	: m_vertices(std::move(data.vertices)),
-	  m_indices(std::move(data.indices)),
-	  m_material(data.material),
-	  m_meshlets(std::move(data.meshlets)) {
+	: m_vertices(std::move(data.vertices)), m_indices(std::move(data.indices)), m_material(data.material), m_meshlets(std::move(data.meshlets)) {
 }
 
 auto gse::meshlet_gpu_data::bind(gpu::descriptor_writer& writer) const -> void {
@@ -287,7 +282,10 @@ auto gse::mesh::center_of_mass() const -> vec3<displacement> {
 		moment += tetra_com * volume;
 	}
 
-	assert(total_volume != volume_d{}, "Total volume is zero. Check if the mesh is closed and correctly oriented.");
+	assert(
+		total_volume != volume_d{},
+		"Total volume is zero. Check if the mesh is closed and correctly oriented."
+	);
 
 	return vec3<displacement>(moment / total_volume);
 }
@@ -458,8 +456,16 @@ auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std:
 
 		const auto bounds = compute_bounds(desc);
 
-		result.vertex_indices.insert(result.vertex_indices.end(), current_vertices.begin(), current_vertices.end());
-		result.triangles.insert(result.triangles.end(), current_triangles.begin(), current_triangles.end());
+		result.vertex_indices.insert(
+			result.vertex_indices.end(),
+			current_vertices.begin(),
+			current_vertices.end()
+		);
+		result.triangles.insert(
+			result.triangles.end(),
+			current_triangles.begin(),
+			current_triangles.end()
+		);
 		result.descriptors.push_back(desc);
 		result.bounds.push_back(bounds);
 
@@ -485,7 +491,10 @@ auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std:
 		std::uint8_t local_tri[3];
 		for (int j = 0; j < 3; ++j) {
 			auto [it, inserted] =
-				local_vertex_map.emplace(tri_indices[j], static_cast<std::uint8_t>(current_vertices.size()));
+				local_vertex_map.emplace(
+					tri_indices[j],
+					static_cast<std::uint8_t>(current_vertices.size())
+				);
 			if (inserted) {
 				current_vertices.push_back(tri_indices[j]);
 			}

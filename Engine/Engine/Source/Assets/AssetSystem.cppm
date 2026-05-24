@@ -172,7 +172,11 @@ auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::fi
 template <typename T>
 auto gse::asset::count_compile_work() -> std::uint32_t {
 	if constexpr (!has_compile_path<T>) {
-		log::println(log::category::assets, "count_compile_work<{}>: 0 (no compile path)", std::meta::identifier_of(^^T));
+		log::println(
+			log::category::assets,
+			"count_compile_work<{}>: 0 (no compile path)",
+			std::meta::identifier_of(^^T)
+		);
 		return 0;
 	}
 	else {
@@ -199,7 +203,12 @@ auto gse::asset::count_compile_work() -> std::uint32_t {
 			}
 			++count;
 		}
-		log::println(log::category::assets, "count_compile_work<{}>: {}", std::meta::identifier_of(^^T), count);
+		log::println(
+			log::category::assets,
+			"count_compile_work<{}>: {}",
+			std::meta::identifier_of(^^T),
+			count
+		);
 		return count;
 	}
 }
@@ -273,7 +282,11 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 				rel.replace_extension(std::string(fmt.baked_ext));
 				const auto dst = config::baked_resource_path / fmt.baked_dir / rel;
 				if (bake_to_disk<T>(changed_file, dst)) {
-					log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().string());
+					log::println(
+						log::category::assets,
+						"Hot reload recompiled: {}",
+						changed_file.filename().string()
+					);
 					if constexpr (loadable<T>) {
 						if (auto it = d.resource_loaders.find(id_of<T>()); it != d.resource_loaders.end()) {
 							auto* loader = static_cast<resource::loader<T>*>(it->second.get());

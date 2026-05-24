@@ -49,17 +49,29 @@ auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context:
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
-		d.tlas_per_frame[i] = gpu::build_tlas(*gpu_s.device, geometry_collector::system::data::max_instances);
+		d.tlas_per_frame[i] = gpu::build_tlas(
+			*gpu_s.device,
+			geometry_collector::system::data::max_instances
+		);
 		d.tlas_ptrs[i] = &d.tlas_per_frame[i];
 		d.instances[i].reserve(geometry_collector::system::data::max_instances);
 	}
 
 	d.tlas_update_pipeline =
-		gpu::build_compute_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+		gpu::build_compute_program(
+			*gpu_s.device,
+			*gpu_s.shader_registry,
+			*gpu_s.bindless_textures,
+			entry::pod
+		);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.tlas_update_descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				entry::pod
+			);
 	}
 
 	co_return;
@@ -129,10 +141,7 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu
 		}
 
 		std::uint32_t palette_idx = 0;
-		if (
-			const auto palette_it = data.material_palette_map.find(&mesh_ptr->material());
-			palette_it != data.material_palette_map.end()
-		) {
+		if (const auto palette_it = data.material_palette_map.find(&mesh_ptr->material()); palette_it != data.material_palette_map.end()) {
 			palette_idx = palette_it->second;
 		}
 
@@ -177,10 +186,25 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu
 
 	auto& tlas_inst_buf = d.tlas_per_frame[frame_index].instance_buffer();
 
-	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.tlas_update_descriptors[frame_index])
-		.buffer<source_instance_data>(gc_r.instance_buffer[frame_index], 0, gc_r.instance_buffer[frame_index].size())
-		.buffer<index_mapping>(d.mapping_buffers[frame_index], 0, mapping_bytes)
-		.buffer<tlas_instances>(tlas_inst_buf, 0, instance_count * 64)
+	gpu::descriptor_writer(
+		gpu_s.device->handle(),
+		d.tlas_update_descriptors[frame_index]
+	)
+		.buffer<source_instance_data>(
+			gc_r.instance_buffer[frame_index],
+			0,
+			gc_r.instance_buffer[frame_index].size()
+		)
+		.buffer<index_mapping>(
+			d.mapping_buffers[frame_index],
+			0,
+			mapping_bytes
+		)
+		.buffer<tlas_instances>(
+			tlas_inst_buf,
+			0,
+			instance_count * 64
+		)
 		.commit();
 
 	const gpu::typed_push_constants<push_constants> pc{

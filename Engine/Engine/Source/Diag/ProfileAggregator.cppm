@@ -445,8 +445,12 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 
 	const auto main_tid = trace::main_tid();
 
-	std::function<std::size_t(const trace::node&, int)> max_label_width = [&](const trace::node& n,
-																			  int depth) -> std::size_t {
+	std::function<std::size_t(
+		const trace::node&,
+		int
+	)>
+		max_label_width = [&](const trace::node& n,
+							  int depth) -> std::size_t {
 		if (depth > max_depth) {
 			return 0;
 		}
@@ -502,7 +506,14 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 
 		const std::string indent(static_cast<std::size_t>(depth) * 2, ' ');
 		const auto label = std::format("{}{}", indent, n.id.tag());
-		out << std::format("|{}| {:>10.2f:us}  tid:{:<3}  {:<{}}\n", bar, duration, n.trace_id, label, name_width);
+		out << std::format(
+			"|{}| {:>10.2f:us}  tid:{:<3}  {:<{}}\n",
+			bar,
+			duration,
+			n.trace_id,
+			label,
+			name_width
+		);
 
 		for (std::size_t i = 0; i < n.children_count; ++i) {
 			render(n.children_first[i], depth + 1);

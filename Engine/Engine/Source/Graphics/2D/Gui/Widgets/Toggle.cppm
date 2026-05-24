@@ -38,7 +38,8 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 		return false;
 	}
 
-	const id widget_id = ids::make(std::string(p.name));
+	const std::uint64_t name_key = stable_id(p.name);
+	const id widget_id = ids::make_from_key(name_key);
 
 	const float widget_height =
 		ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * ctx.style.widget_height_padding;
@@ -56,14 +57,17 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	}
 
 	bool toggled = false;
-	if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+	if (ctx.mouse_pressed_for(row_rect)) {
 		p.value = !p.value;
 		toggled = true;
 	}
 
 	const float label_width = content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
+	const ui_rect label_rect = ui_rect::from_position_size(
+		row_rect.top_left(),
+		{ label_width, widget_height }
+	);
 
 	ctx.queue_text({
 		.font = ctx.font,
@@ -81,14 +85,21 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	const float track_x = row_rect.left() + label_width;
 	const float track_y = row_rect.center().y() + track_height / 2.f;
 
-	const ui_rect track_rect = ui_rect::from_position_size({ track_x, track_y }, { track_width, track_height });
+	const ui_rect track_rect = ui_rect::from_position_size(
+		{ track_x, track_y },
+		{ track_width, track_height }
+	);
 
 	const vec4f track_target = p.value ? ctx.style.color_toggle_on : ctx.style.color_toggle_off;
-	const id track_anim_id = ids::make(std::string(p.name) + "##track");
+	constexpr std::uint64_t track_suffix_hash = stable_id("##track");
+	const id track_anim_id = ids::make_from_key(hash_combine(name_key, track_suffix_hash));
 
 	ctx.queue_sprite({
 		.rect = track_rect,
-		.color = ctx.animated_color(track_anim_id, track_target),
+		.color = ctx.animated_color(
+			track_anim_id,
+			track_target
+		),
 		.texture = ctx.blank_texture,
 		.corner_radius = track_height / 2.f
 	});
@@ -103,7 +114,10 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 
 	ctx.queue_sprite({
 		.rect = knob_rect,
-		.color = ctx.animated_color(widget_id, knob_target),
+		.color = ctx.animated_color(
+			widget_id,
+			knob_target
+		),
 		.texture = ctx.blank_texture,
 		.corner_radius = knob_size / 2.f
 	});

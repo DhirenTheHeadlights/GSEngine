@@ -129,7 +129,10 @@ export namespace gse::gui {
 }
 
 auto gse::gui::screen::body_rect(const style& sty, const vec2f viewport_size) const -> ui_rect {
-	return ui_rect::from_position_size({ 0.f, viewport_size.y() }, { viewport_size.x(), viewport_size.y() });
+	return ui_rect::from_position_size(
+		{ 0.f, viewport_size.y() },
+		{ viewport_size.x(), viewport_size.y() }
+	);
 }
 
 auto gse::gui::screen::draw_backdrop(draw_context& ctx, const vec2f viewport_size) const -> void {

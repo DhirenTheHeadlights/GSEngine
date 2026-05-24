@@ -7,6 +7,7 @@ import :geometry_collector;
 import :cull_compute_renderer;
 import :physics_transform_renderer;
 import :camera_system;
+import :render_targets;
 
 import gse.os;
 import gse.assets;
@@ -50,7 +51,7 @@ namespace gse::renderer::depth_prepass::meshlet {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
 		gpu::depth<true, true, gpu::compare_op::less>,
-		gpu::color_target<gpu::color_format::none>
+		gpu::color_targets<gpu::color_format::hdr>
 	>;
 }
 
@@ -76,10 +77,21 @@ auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::cont
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.meshlet_descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet::entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				meshlet::entry::pod
+			);
 
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.meshlet_descriptors[i])
-			.buffer<meshlet::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.meshlet_descriptors[i]
+		)
+			.buffer<meshlet::camera_ubo>(
+				d.camera_ubo_buffers[i],
+				0,
+				camera_ubo_size
+			)
 			.commit();
 	}
 
@@ -107,6 +119,10 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 		.proj = proj,
 		.inv_view = view.inverse(),
 		.inv_view_proj = (proj * view).inverse(),
+		.prev_view = cam_state.prev_view_matrix,
+		.prev_proj = cam_state.prev_projection_matrix,
+		.jitter_ndc = cam_state.jitter_ndc,
+		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 
@@ -114,13 +130,19 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 
 	auto meshlet_writer = gpu::make_push_writer(
 		*gpu_s.shader_registry,
-		gpu::context::device_handle(*gpu_s.device),
+		gpu_s.device->handle(),
 		gpu_s.device->descriptor_heap(),
 		meshlet::entry::pod
 	);
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.pipeline(d.meshlet_pipeline)
+		.color(
+			gpu::clear_color(
+				gpu::color_clear{ 0.0f, 0.0f, 0.0f, 0.0f },
+				gpu_s.render_graph->framebuffer_image<targets::velocity>()
+			)
+		)
 		.depth(gpu::clear_depth(gpu::depth_clear{ 1.0f }))
 		.after<cull_compute::system, physics_transform::system>();
 

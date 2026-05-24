@@ -117,6 +117,12 @@ export namespace gse::vulkan {
 			std::uint32_t image_index
 		) -> void;
 
+		[[nodiscard]]
+		auto wait_for_present(
+			std::uint64_t present_id,
+			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
+		) const -> gpu::result;
+
 		auto reset_swapchain() -> void;
 
 		[[nodiscard]] auto details() const -> const swap_chain_details&;

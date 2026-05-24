@@ -45,12 +45,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::transient_command_buffer::transient_command_buffer(
-	const vk::CommandBuffer cmd,
-	transient_command_pool* pool
-)
-	: m_cmd(cmd),
-	  m_pool(pool) {
+gse::vulkan::transient_command_buffer::transient_command_buffer(const vk::CommandBuffer cmd, transient_command_pool* pool)
+	: m_cmd(cmd), m_pool(pool) {
 }
 
 auto gse::vulkan::transient_command_buffer::handle() const -> gpu::handle<command_buffer> {

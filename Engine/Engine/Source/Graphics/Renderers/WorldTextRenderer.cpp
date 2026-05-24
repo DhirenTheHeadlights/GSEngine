@@ -43,7 +43,7 @@ namespace gse::renderer::world_text {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
-		gpu::color_target<gpu::color_format::hdr>,
+		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>,
 		gpu::blend<gpu::blend_preset::alpha_premultiplied>
 	>;
@@ -108,11 +108,25 @@ auto gse::renderer::world_text::build_labels_for_axis(std::vector<world_text_ver
 		const float text_width = f.width(text, world_scale);
 		const vec2f start{ -text_width * 0.5f, f.line_height(world_scale) * 0.5f };
 
-		const vec3<position> tick = along_x ? vec3<position>(offset, meters(0.f), meters(0.f))
-											: vec3<position>(meters(0.f), meters(0.f), offset);
+		const vec3<position> tick = along_x ? vec3<position>(
+												  offset,
+												  meters(0.f),
+												  meters(0.f)
+											  )
+											: vec3<position>(
+												  meters(0.f),
+												  meters(0.f),
+												  offset
+											  );
 
 		for (const auto& glyph : f.text_layout(text, start, world_scale)) {
-			append_glyph_quad(vertices, tick, glyph.screen_rect.top_left(), glyph.screen_rect.size(), glyph.uv_rect);
+			append_glyph_quad(
+				vertices,
+				tick,
+				glyph.screen_rect.top_left(),
+				glyph.screen_rect.size(),
+				glyph.uv_rect
+			);
 		}
 	}
 }
@@ -141,7 +155,12 @@ auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::dev
 
 auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.pipeline =
-		gpu::build_graphics_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+		gpu::build_graphics_program(
+			*gpu_s.device,
+			*gpu_s.shader_registry,
+			*gpu_s.bindless_textures,
+			entry::pod
+		);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
@@ -154,10 +173,21 @@ auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context
 			}
 		);
 		d.descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				entry::pod
+			);
 
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i])
-			.buffer<shaders::standard_3d::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.descriptors[i]
+		)
+			.buffer<shaders::standard_3d::camera_ubo>(
+				d.camera_ubo_buffers[i],
+				0,
+				camera_ubo_size
+			)
 			.commit();
 	}
 
@@ -178,7 +208,7 @@ auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_v
 	}
 
 	const auto& f = gui_d.gui_font.resolve();
-	if (!f.texture() || !f.texture()->bindless_slot()) {
+	if (!f.texture() || !f.texture()->bindless_slot().valid()) {
 		co_return;
 	}
 
@@ -205,6 +235,10 @@ auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_v
 		.proj = proj,
 		.inv_view = view.inverse(),
 		.inv_view_proj = (proj * view).inverse(),
+		.prev_view = cam_state.prev_view_matrix,
+		.prev_proj = cam_state.prev_projection_matrix,
+		.jitter_ndc = cam_state.jitter_ndc,
+		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 

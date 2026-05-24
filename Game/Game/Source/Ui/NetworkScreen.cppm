@@ -29,8 +29,7 @@ export namespace gs {
 }
 
 gs::network_screen::network_screen(const gse::network::data& net, gse::channel_writer channels)
-	: m_net(&net),
-	  m_channels(std::move(channels)) {
+	: m_net(&net), m_channels(std::move(channels)) {
 }
 
 auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void {
@@ -68,7 +67,11 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 			break;
 		case gse::network::client::state::connected:
 			ui.draw<gse::gui::text>({
-				.content = std::format("Status: Connected ({}/{})", net.connected_players, net.connected_max_players),
+				.content = std::format(
+					"Status: Connected ({}/{})",
+					net.connected_players,
+					net.connected_max_players
+				),
 			});
 			break;
 		default:
@@ -101,8 +104,7 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 
 	if (ui.draw<gse::gui::button>({
 			.text = "Connect",
-		}) &&
-		m_selected >= 0 && m_selected < static_cast<int>(list.size())) {
+		}) && m_selected >= 0 && m_selected < static_cast<int>(list.size())) {
 		const auto& pick = list[static_cast<std::size_t>(m_selected)];
 		m_channels.push<gse::network::connect_request>({
 			.options = {
@@ -119,8 +121,7 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 
 	if (ui.draw<gse::gui::button>({
 			.text = "Send Ping",
-		}) &&
-		net.connection_state == gse::network::client::state::connected) {
+		}) && net.connection_state == gse::network::client::state::connected) {
 		send_message(
 			gse::network::ping{
 				.sequence = ++m_ping_seq,

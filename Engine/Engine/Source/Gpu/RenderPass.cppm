@@ -31,7 +31,7 @@ export namespace gse::gpu {
 		id pass_kind{};
 		queue_type queue = queue_type::graphics;
 		const shader_program* primary_pipeline = nullptr;
-		std::optional<color_attachment> color;
+		std::vector<color_attachment> colors;
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
 		id chain_id;

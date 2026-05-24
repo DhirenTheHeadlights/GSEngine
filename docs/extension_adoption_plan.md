@@ -400,3 +400,279 @@ separate to do here.
 
 Total: roughly 800–1000 lines deletable, plus the layout enum collapse
 and several files reduced to thin pass-throughs.
+
+---
+
+10. VK_KHR_present_id + VK_KHR_present_wait  — DONE
+---------------------------------------------------
+
+Added after the original audit closed out, scoped as the next
+latency-tuning win:
+
+- Per-present monotonic `present_id` populated into
+  `VkPresentInfoKHR.pNext → VkPresentIdKHR` (Frame.cpp end_frame +
+  Queues.cppm `build_vk_present_info`).
+- `begin_frame` waits on the present_id from two frames ago via
+  `vkWaitForPresentKHR` (per-frame-slot ring of size
+  `max_frames_in_flight`). Wait happens *after* the existing
+  in-flight-fence wait, *before* the next acquire.
+- Frame ring reset to zeros on swapchain recreate and on
+  OOD/suboptimal present so we never wait on a stale ID owned by a
+  destroyed swapchain.
+- Both extensions enabled conditionally with feature
+  `presentWait` requiring `presentId`. Drivers without the
+  extensions keep the old fence-only wait path.
+
+Expected: ~1–2ms latency reduction on variable loads. The fence wait
+is still required (releases per-frame resources); present wait
+adds the actual presentation-timing signal on top.
+
+---
+
+11. Subgroup size control (Vulkan 1.3 core feature)  — DONE
+-----------------------------------------------------------
+
+Enabled `subgroupSizeControl` + `computeFullSubgroups` on
+`vulkan13_features` (no separate extension — both are core 1.3).
+Added per-shader hints reachable from the `gpu::compute_entry<...>`
+template:
+
+- `gpu::full_subgroups` — sets
+  `VK_SHADER_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT` on the
+  `VkShaderCreateInfoEXT`. Tells the compiler the workgroup size is a
+  multiple of the subgroup size, unlocking optimizations. Only safe
+  when the workgroup size is divisible by every possible subgroup
+  size on target hardware (32 on NVIDIA, 32 or 64 on AMD).
+- `gpu::required_subgroup_size<N>` — pNext-chains
+  `VkShaderRequiredSubgroupSizeCreateInfoEXT` to lock the subgroup
+  size. Use sparingly; only meaningful on AMD (wave32 vs wave64) and
+  only if profiling shows occupancy is a bottleneck.
+
+Plumbing path: marker → `compute_entry_pod.{required_subgroup_size,
+require_full_subgroups}` → `build_compute_program` →
+`shader_object_create_info` → `build_vk_shader_create_info` (chains
+the pNext when `required_subgroup_size` is set; OR's in the flag
+when `require_full_subgroups` is true) → `vkCreateShadersEXT`.
+
+Initial application: `BloomRenderer.cpp` `downsample_entry` and
+`upsample_entry` are 8×8 (64 invocations) workgroups — divisible by
+both 32 and 64, so `full_subgroups` is safe and lets the SPIR-V
+compiler avoid runtime "is the last subgroup partial?" branches.
+Expected: small but real (~few %) on bloom passes. Tune other shaders
+with the same marker as profiling identifies them.
+
+---
+
+12. VK_EXT_descriptor_heap — IN PROGRESS (Phase A foundation landed)
+--------------------------------------------------------------------
+
+Brand-new extension (spec_version=1) that replaces descriptor sets +
+pipeline layouts with a D3D12-style "two-heap" model: one resource
+heap (images, buffers, AS), one sampler heap. Shaders access via
+either explicit `ResourceDescriptorHeap[idx]` syntax or via per-shader
+binding-to-heap mappings.
+
+**Driver support verified**: RTX 5090 driver exposes the extension
+(`vulkaninfo` reports `descriptorHeap = true`, spec_version=1).
+AMD/Intel driver support not yet verified.
+
+### Properties on RTX 5090 (recorded for tuning)
+
+- `samplerHeapAlignment` / `resourceHeapAlignment`: 32 / 32 bytes
+- `maxSamplerHeapSize` / `maxResourceHeapSize`: 128 KB / 32 MB
+- `minSamplerHeapReservedRange` (no embedded): 512 B
+- `minResourceHeapReservedRange`: ~94 KB (`0x17A00`)
+- Descriptor sizes: sampler 32, image 32, buffer 16 (bytes)
+- `maxPushDataSize`: 256 B
+- `maxDescriptorHeapEmbeddedSamplers`: 2032
+- `sparseDescriptorHeaps`: true
+- `descriptorHeapCaptureReplay`: **false** — RenderDoc/Nsight captures
+  may not work cleanly with the new heaps. Real debugging concern.
+
+### Architecture decisions
+
+1. **Coexist with old descriptor_buffer system.** The new heap is
+   built alongside the existing `descriptor_heap` (`VK_EXT_descriptor_
+   buffer` wrapper). No renderer changes during Phase A. Old system
+   still serves all existing draws; new heap waits for migration in
+   Phase D.
+
+2. **Use partitioned single resource heap.** One `bindless_resource_
+   heap` (4 MB default, ~128 K image slots + ~16 K buffer slots) and
+   one `bindless_sampler_heap` (16 KB default, 512 slots). The
+   resource heap is internally partitioned: images first (32-byte
+   stride), buffers second (16-byte stride). Per-type slot allocators
+   return logical indices; engine translates to byte offsets when
+   writing descriptors.
+
+3. **Use `HEAP_WITH_PUSH_INDEX` mapping mode** (planned for Phase B).
+   Shaders keep their existing `[[vk::binding(N,M)]] Texture2D tex;`
+   declarations. Engine auto-generates a per-shader mapping struct
+   that translates `(set, binding)` → "read uint32 from push data at
+   offset X, that's the heap slot". This avoids rewriting every
+   shader to use explicit `ResourceDescriptorHeap[idx]` syntax.
+
+4. **Heaps owned by `gpu::context::data`.** Created conditionally when
+   `descriptor_heap_enabled()` is true. Both heaps reset per-frame
+   (deferred-release pattern, mirrors `bindless_texture_set`).
+
+5. **Driver-reserved range at start of each heap.** Engine slot 0
+   maps to byte offset `reserved_size`, not 0. Hidden inside the
+   allocator API — callers just see slot indices starting at 0.
+
+### Phase A — DONE
+
+Files added/changed:
+- `Engine/Engine/Source/Gpu/Vulkan/BindlessHeap.cppm` (new)
+  - `descriptor_heap_properties` + `query_descriptor_heap_properties()`
+  - `bindless_resource_heap` (4 MB, image+buffer slot allocators,
+    deferred release, `write_sampled_image` / `write_storage_image`
+    / `write_storage_buffer` / `write_uniform_buffer` APIs taking
+    `VkImageViewCreateInfo&` directly)
+  - `bindless_sampler_heap` (16 KB, takes `VkSamplerCreateInfo` at
+    allocate time)
+  - `bindless_heaps` aggregator that owns both + provides `bind(cmd)`
+- `Vulkan/Device.cpp` + `Vulkan/Device.cppm`: extension probe → query
+  feature → conditional enable → `descriptor_heap_enabled()` accessor
+- `Vulkan/Commands.cppm`: `bind_resource_heap`, `bind_sampler_heap`,
+  `push_data` wrappers around `vkCmdBindResourceHeapEXT` /
+  `vkCmdBindSamplerHeapEXT` / `vkCmdPushDataEXT`
+- `Context.cpp` + `Context.cppm`: own `std::unique_ptr<vulkan::bindless_
+  heaps>` in `gpu::context::data`; create in `run`, reset in
+  `shutdown`, tick in `begin_frame`
+
+### Remaining work (Phases B–E)
+
+**Phase B — Push-constant ABI for resource indices.** Define how a
+renderer passes its index struct: dedicated `gpu::push_indices<S>`
+spec on `compute_entry` / `graphics_entry`. Codegen emits a Slang
+struct + a `[[vk::push_constant]]` block. CPU side builds the struct
+each draw and calls `cmd.push_data(offset, span(&s, 1))`.
+
+**Phase C — Per-shader `VkShaderDescriptorSetAndBindingMappingInfoEXT`
+generation.** Walk each shader's spirv reflection, produce one
+`VkDescriptorSetAndBindingMappingEXT` per `(set, binding)` with
+`source = HEAP_WITH_PUSH_INDEX`, `heapOffset = image_range_offset OR
+buffer_range_offset`, `pushOffset = struct field offset`,
+`heapIndexStride = image_descriptor_size OR buffer_descriptor_size`.
+Chain into `VkShaderCreateInfoEXT::pNext`. Add a new field to
+`shader_object_create_info` for the mapping list.
+
+**Phase D — Migrate renderers one at a time.** Order:
+1. `BloomRenderer` (compute, 2 descriptors, simplest)
+2. `TonemapRenderer`, `SdfGridRenderer`, `WorldTextRenderer` (simple)
+3. `AtmosphereRenderer` (medium, multi-pass)
+4. `ForwardRenderer` (most bindings)
+5. `UiRenderer`, `PhysicsDebugRenderer`, `CloudRenderer`, etc.
+
+Each renderer: allocate bindless slots on resource creation; build
+the per-draw `PushIndices` struct; call `cmd.push_data` + dispatch.
+
+**Phase E — Delete dead descriptor machinery.** `descriptor_writer`,
+`descriptor_region`, `allocate_descriptors`, per-shader
+`family_layout` set machinery, transient descriptor sub-buffers.
+Keep `descriptor_buffer` itself for the *bindless_texture_set* OR
+migrate it to the new heap too (decide based on dev experience).
+
+### Open risks
+
+- **No RenderDoc support.** Debugging will rely on log lines +
+  Aftermath GPU dumps. Make sure assertions are loud.
+- **spec_version=1**. Driver bugs likely. Plan to file repros against
+  NVIDIA if behavior diverges from spec.
+- **`VkImageDescriptorInfoEXT` wants `VkImageViewCreateInfo*`, not a
+  `VkImageView` handle.** Current `vulkan::basic_image` does not
+  store its `VkImageViewCreateInfo`. Phase D will either: store the
+  create-info on `basic_image`, or have callers reconstruct it at
+  bindless registration time. Decided in Phase D, not Phase A.
+- **AMD support not verified.** Run `vulkaninfo` on an AMD machine
+  before declaring victory. Worst case: keep the old descriptor_buffer
+  path as a fallback for non-supporting drivers.
+
+### Overnight progress checkpoint (Phase A complete)
+
+What landed in this session:
+- Driver probe + `descriptor_heap_enabled()` accessor on
+  `vulkan::device`
+- `vulkan::bindless_resource_heap` + `vulkan::bindless_sampler_heap`
+  + `vulkan::bindless_heaps` aggregator (BindlessHeap.cppm, new)
+- `vulkan::commands::{bind_resource_heap, bind_sampler_heap,
+  push_data}` wrappers
+- `shader_object_create_info::bindless_mappings` field; pNext-chain
+  wiring in `build_vk_shader_create_info`
+- `gpu::context::data::bindless_heaps` (created conditionally,
+  ticked per-frame, reset on shutdown)
+- `:bindless_heap` partition registered in `Gpu.cppm`
+
+What's left (Phase B onward) before any renderer can use bindless:
+1. **Slang codegen for push-index struct.** A `gpu::push_indices<S>`
+   spec on `compute_entry` / `graphics_entry`; codegen emits a
+   `[[vk::push_constant]] struct PushIndices { ... }` and the
+   renderer fills it per draw.
+2. **Per-shader mapping generation.** Walk the spirv reflection
+   `used_bindings(...)` output. For each `(set, binding)`, synthesize
+   a `vk::DescriptorSetAndBindingMappingEXT` with `source =
+   HEAP_WITH_PUSH_INDEX`, `heapOffset = heap.image_range_offset()`
+   or `heap.buffer_range_offset()`, `pushOffset` from the struct
+   field offset, `heapIndexStride = image_stride()` or
+   `buffer_stride()`. Plumb into `shader_program_create_info` →
+   `shader_object_create_info::bindless_mappings`.
+3. **Image create-info plumbing.** `vk::ImageDescriptorInfoEXT` needs
+   the full `VkImageViewCreateInfo`, not a handle. Decide between:
+   (a) cache the create info on `basic_image`, or
+   (b) require callers to pass it to `bindless_heap.write_*` at
+   registration time.
+4. **Renderer migration starting with Bloom.** Allocate slots in
+   `system::run`, write descriptors, build `PushIndices` per draw,
+   call `cmd.push_data` before each `cmd.dispatch`. Resource heap
+   must be bound at the start of each command buffer (likely in
+   `render_graph` primary cmd record path).
+5. **Delete old descriptor_writer / region machinery once all
+   renderers migrated.**
+
+Risks not yet validated:
+- Direct `vk::Device::writeResourceDescriptorsEXT` call relies on
+  dynamic dispatcher being initialized. Existing
+  `descriptor_heap::descriptor()` uses the same pattern, so this
+  should work — first build will confirm.
+- Designated-initializer for the `ResourceDescriptorDataEXT` union
+  (with `VULKAN_HPP_NO_CONSTRUCTORS`). Should work in C++20+ aggregate
+  init; first build will confirm.
+- Driver bugs at spec_version=1. No way to know without trying.
+
+### Driver bug discovered — feature enable currently GATED OFF
+
+**Symptom**: Enabling `VkPhysicalDeviceDescriptorHeapFeaturesEXT::
+descriptorHeap = VK_TRUE` on NVIDIA RTX 5090 (driver as of 2026-05-24)
+causes `vkCreateImage` to crash with integer division by zero inside
+`nvoglv64.dll`, even when no descriptor-heap APIs are ever called. The
+mere presence of the feature flag poisons the driver's image-creation
+path.
+
+Stack:
+```
+nvoglv64.dll!00007ff906dc06fb()     <- DIV/0
+nvoglv64.dll!00007ff906dc1e87()
+nvoglv64.dll!00007ff906ddb833()
+...
+vkCreateImage
+gse::vulkan::device::create_image
+```
+
+**Mitigation (current)**: `Device.cpp` introduces
+`descriptor_heap_advertised` (extension + feature both reported by
+driver) but hardcodes `descriptor_heap_supported = false` so neither
+the extension nor the feature is enabled on the device. The log
+records that the driver advertises the feature but we've gated it off.
+
+All scaffolding (heap classes, command wrappers,
+`shader_object_create_info::bindless_mappings`, `bindless_heaps`
+ownership in `gpu::context::data`) remains built. Re-enable by
+deleting the `= false` line and using `descriptor_heap_advertised`
+directly once the driver bug is fixed (or if a newer NVIDIA driver
+ships before then).
+
+**Next steps deferred** until driver bug is fixed:
+- Phases B/C/D/E all blocked.
+- Track via NVIDIA developer support, or check vulkaninfo on a
+  new driver release every couple of weeks.

@@ -70,7 +70,12 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 		const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
 		d.convert_pipeline =
-			gpu::build_compute_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+			gpu::build_compute_program(
+				*gpu_s.device,
+				*gpu_s.shader_registry,
+				*gpu_s.bindless_textures,
+				entry::pod
+			);
 
 		d.capture_sampler = gpu::sampler::create(
 			gpu_s.device->allocator(),
@@ -93,7 +98,10 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 				}
 			);
 
-			d.rgba_slots[i] = gpu_s.bindless_textures->allocate(d.rgba_captures[i].view(), d.capture_sampler.native());
+			d.rgba_slots[i] = gpu_s.bindless_textures->allocate(
+				d.rgba_captures[i].view(),
+				d.capture_sampler.native()
+			);
 
 			d.y_planes[i] = gpu::image::create(
 				gpu_s.device->allocator(),
@@ -116,9 +124,16 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i]);
 
 			d.convert_descriptors[i] =
-				gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+				gpu::allocate_descriptors(
+					*gpu_s.shader_registry,
+					gpu_s.device->descriptor_heap(),
+					entry::pod
+				);
 
-			gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.convert_descriptors[i])
+			gpu::descriptor_writer(
+				gpu_s.device->handle(),
+				d.convert_descriptors[i]
+			)
 				.storage_image<output_y>(d.y_planes[i])
 				.storage_image<output_uv>(d.uv_planes[i])
 				.commit();
@@ -178,7 +193,10 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 					pixels[i + 3] = std::byte{ 0xFF };
 				}
 
-				const auto path = config::resource_path / "Screenshots" / std::format("screenshot_{}.png", timestamp);
+				const auto path = config::resource_path / "Screenshots" / std::format(
+																			  "screenshot_{}.png",
+																			  timestamp
+																		  );
 				std::filesystem::create_directories(path.parent_path());
 
 				image::write_png(path, w, h, 4, pixels.data());
@@ -230,7 +248,10 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 				d.clip_save_in_progress->store(true);
 
 				const auto path =
-					config::resource_path / "Clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
+					config::resource_path / "Clips" / std::format(
+														  "clip_{}.mp4",
+														  system_clock::timestamp_filename()
+													  );
 				std::filesystem::create_directories(path.parent_path());
 
 				task::post(
@@ -293,7 +314,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 	gpu::typed_push_constants<push_constants> convert_pc{
 		.data = {
 			.extent = ext,
-			.rgba_index = d.rgba_slots[frame_index] ? d.rgba_slots[frame_index].index : shaders::bindless::invalid_index,
+			.rgba_index = d.rgba_slots[frame_index].valid() ? d.rgba_slots[frame_index].index : shaders::bindless::invalid_index,
 		},
 		.stages = gpu::stage_flag::compute,
 	};

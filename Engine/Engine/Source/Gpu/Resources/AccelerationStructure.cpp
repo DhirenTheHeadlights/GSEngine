@@ -26,7 +26,10 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_h
 		.flags = gpu::build_acceleration_structure_flag::prefer_fast_build,
 		.mode = gpu::build_acceleration_structure_mode::build,
 		.dst = as_handle,
-		.geometries = std::span(&geometry, 1),
+		.geometries = std::span(
+			&geometry,
+			1
+		),
 		.scratch_address = aligned_scratch,
 	};
 
@@ -46,7 +49,10 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_h
 	vulkan::commands(cmd_handle)
 		.pipeline_barrier(
 			gpu::dependency_info{
-				.memory_barriers = std::span(&pre_barrier, 1)
+				.memory_barriers = std::span(
+					&pre_barrier,
+					1
+				)
 			}
 		);
 
@@ -61,11 +67,19 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_h
 	vulkan::commands(cmd_handle)
 		.pipeline_barrier(
 			gpu::dependency_info{
-				.memory_barriers = std::span(&barrier, 1)
+				.memory_barriers = std::span(
+					&barrier,
+					1
+				)
 			}
 		);
 
-	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(scratch));
+	co_await gpu::submit(
+		dev,
+		std::move(cmd),
+		gpu::queue_id::graphics
+	)
+		.retain(std::move(scratch));
 }
 auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> vulkan::as_instance {
 	vk::TransformMatrixKHR transform{};
@@ -117,7 +131,14 @@ auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -
 
 	dispatch(
 		dev,
-		gse::build_blas_async(dev, result.handle(), geometry, prim_count, sizes.build_scratch_size, scratch_alignment)
+		gse::build_blas_async(
+			dev,
+			result.handle(),
+			geometry,
+			prim_count,
+			sizes.build_scratch_size,
+			scratch_alignment
+		)
 	);
 
 	return result;
@@ -140,7 +161,10 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 			gpu::build_acceleration_structure_flag::allow_update,
 		.mode = gpu::build_acceleration_structure_mode::build,
 		.dst = as_handle,
-		.geometries = std::span(&geometry, 1),
+		.geometries = std::span(
+			&geometry,
+			1
+		),
 		.scratch_address = scratch_addr,
 	};
 
@@ -149,7 +173,13 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 	};
 	const gpu::acceleration_structure_build_range_info* range_ptr = &range;
 
-	vulkan::commands(cmd.handle()).build_acceleration_structures(build_info, std::span(&range_ptr, 1));
+	vulkan::commands(cmd.handle()).build_acceleration_structures(
+		build_info,
+		std::span(
+			&range_ptr,
+			1
+		)
+	);
 
 	const gpu::memory_barrier post_barrier{
 		.src_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
@@ -161,7 +191,10 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 	vulkan::commands(cmd.handle())
 		.pipeline_barrier(
 			gpu::dependency_info{
-				.memory_barriers = std::span(&post_barrier, 1)
+				.memory_barriers = std::span(
+					&post_barrier,
+					1
+				)
 			}
 		);
 
@@ -195,7 +228,10 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::spa
 	}
 
 	if (!packed_instances.empty()) {
-		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(vulkan::as_instance));
+		t.instance_buffer().host_write(
+			packed_instances.data(),
+			packed_instances.size() * sizeof(vulkan::as_instance)
+		);
 	}
 
 	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());
@@ -237,7 +273,10 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, vulkan::tlas& t, const std::spa
 		.flags = build_acceleration_structure_flag::prefer_fast_build | build_acceleration_structure_flag::allow_update,
 		.mode = build_acceleration_structure_mode::build,
 		.dst = t.handle(),
-		.geometries = std::span(&geometry, 1),
+		.geometries = std::span(
+			&geometry,
+			1
+		),
 		.scratch_address = scratch_addr,
 	};
 
@@ -269,7 +308,10 @@ auto gse::gpu::write_tlas_instances(vulkan::tlas& t, const std::span<const tlas_
 	}
 
 	if (!packed_instances.empty()) {
-		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(vulkan::as_instance));
+		t.instance_buffer().host_write(
+			packed_instances.data(),
+			packed_instances.size() * sizeof(vulkan::as_instance)
+		);
 	}
 }
 
@@ -321,7 +363,10 @@ auto gse::gpu::build_tlas_in_place(gpu::device& device, vulkan::tlas& t, const s
 		.flags = build_acceleration_structure_flag::prefer_fast_build | build_acceleration_structure_flag::allow_update,
 		.mode = build_acceleration_structure_mode::build,
 		.dst = t.handle(),
-		.geometries = std::span(&geometry, 1),
+		.geometries = std::span(
+			&geometry,
+			1
+		),
 		.scratch_address = scratch_addr,
 	};
 

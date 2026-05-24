@@ -124,9 +124,7 @@ auto gse::task::work_stealing_queue<T>::slot::value() const noexcept -> const T*
 
 template <typename T>
 gse::task::work_stealing_queue<T>::buffer::buffer(const std::size_t capacity)
-	: m_capacity(capacity),
-	  m_mask(capacity - 1),
-	  m_slots(std::make_unique<slot[]>(capacity)) {
+	: m_capacity(capacity), m_mask(capacity - 1), m_slots(std::make_unique<slot[]>(capacity)) {
 	assert((capacity & (capacity - 1)) == 0, "work_stealing_queue buffer capacity must be a power of two");
 }
 
@@ -153,7 +151,10 @@ auto gse::task::work_stealing_queue<T>::buffer::occupied(const std::size_t index
 template <typename T>
 auto gse::task::work_stealing_queue<T>::buffer::construct(const std::size_t index, T&& value) -> void {
 	auto& target = slot_at(index);
-	assert(!target.m_occupied.load(std::memory_order_acquire), "work_stealing_queue constructed into an occupied slot");
+	assert(
+		!target.m_occupied.load(std::memory_order_acquire),
+		"work_stealing_queue constructed into an occupied slot"
+	);
 	std::construct_at(target.value(), std::move(value));
 	target.m_occupied.store(true, std::memory_order_release);
 }
@@ -161,7 +162,10 @@ auto gse::task::work_stealing_queue<T>::buffer::construct(const std::size_t inde
 template <typename T>
 auto gse::task::work_stealing_queue<T>::buffer::take(const std::size_t index, T& out) -> void {
 	auto& source = slot_at(index);
-	assert(source.m_occupied.load(std::memory_order_acquire), "work_stealing_queue took from an empty slot");
+	assert(
+		source.m_occupied.load(std::memory_order_acquire),
+		"work_stealing_queue took from an empty slot"
+	);
 	out = std::move(*source.value());
 	std::destroy_at(source.value());
 	source.m_occupied.store(false, std::memory_order_release);
@@ -282,7 +286,10 @@ auto gse::task::work_stealing_queue<T>::rounded_capacity(std::size_t requested) 
 	requested = std::max<std::size_t>(requested, 2);
 	std::size_t result = 2;
 	while (result < requested) {
-		assert(result <= std::numeric_limits<std::size_t>::max() / 2, "work_stealing_queue capacity overflow");
+		assert(
+			result <= std::numeric_limits<std::size_t>::max() / 2,
+			"work_stealing_queue capacity overflow"
+		);
 		result *= 2;
 	}
 	return result;

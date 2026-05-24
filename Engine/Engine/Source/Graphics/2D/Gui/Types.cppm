@@ -3,6 +3,7 @@ export module gse.graphics:types;
 import std;
 
 import gse.math;
+import gse.os;
 import gse.core;
 import gse.time;
 
@@ -159,9 +160,47 @@ export namespace gse::gui {
 			vec2f position
 		) const -> bool;
 
+		[[nodiscard]] auto mouse_pressed_for(
+			const ui_rect& rect,
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]] auto mouse_released_for(
+			const ui_rect& rect,
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		auto consume_press(
+			mouse_button button = mouse_button::button_1
+		) const -> void;
+
+		auto consume_release(
+			mouse_button button = mouse_button::button_1
+		) const -> void;
+
+		[[nodiscard]] auto is_press_consumed(
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]] auto scroll_delta_for(
+			const ui_rect& rect
+		) const -> vec2f;
+
+		auto consume_scroll() const -> void;
+
+		[[nodiscard]] auto is_scroll_consumed() const -> bool;
+
+		[[nodiscard]] auto key_pressed_for(
+			key k
+		) const -> bool;
+
+		auto consume_key_press(
+			key k
+		) const -> void;
+
 		auto set_tooltip(
 			const id& widget_id,
-			const std::string& text
+			std::string_view text
 		) const -> void;
 
 		auto next_row(

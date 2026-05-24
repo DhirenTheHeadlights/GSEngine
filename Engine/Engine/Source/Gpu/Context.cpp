@@ -12,6 +12,7 @@ import :transient_pool;
 import :render_graph;
 import :render_pass;
 import :bindless;
+import :bindless_heap;
 import :shader_registry;
 
 import gse.os;
@@ -31,24 +32,20 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 	);
 	d.frame = frame::create(*d.device, *d.swapchain);
 	d.bindless_textures =
-		std::make_unique<bindless_texture_set>(d.device->vulkan_device(), d.device->descriptor_heap());
-	d.render_graph = std::make_unique<gpu::render_graph>(*d.device, *d.swapchain, *d.frame, d.bindless_textures.get());
-
-	d.device->transient().recorder().pre_frame([graph = d.render_graph.get()](handle<command_buffer> cmd) {
-		const image_barrier depth_init{
-			.src_stages = pipeline_stage_flag::top_of_pipe,
-			.src_access = {},
-			.dst_stages = pipeline_stage_flag::early_fragment_tests | pipeline_stage_flag::late_fragment_tests,
-			.dst_access = access_flag::depth_stencil_attachment_write | access_flag::depth_stencil_attachment_read,
-			.old_layout = image_layout::undefined,
-			.new_layout = image_layout::general,
-			.image = graph->depth_image().handle(),
-			.aspects = image_aspect_flag::depth,
-		};
-		vulkan::commands(cmd).pipeline_barrier(dependency_info{
-			.image_barriers = std::span(&depth_init, 1),
-		});
-	});
+		std::make_unique<bindless_texture_set>(
+			d.device->vulkan_device(),
+			d.device->descriptor_heap()
+		);
+	if (d.device->vulkan_device().descriptor_heap_enabled()) {
+		d.bindless_heaps = std::make_unique<vulkan::bindless_heaps>(d.device->vulkan_device());
+	}
+	d.render_graph = std::make_unique<gpu::render_graph>(
+		*d.device,
+		*d.swapchain,
+		*d.frame,
+		d.bindless_textures.get(),
+		d.bindless_heaps.get()
+	);
 
 	while (true) {
 		for (const auto& req : ctx.read_channel<gpu_resume_request>()) {
@@ -68,6 +65,7 @@ auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
 
 	d.device->wait_idle();
 
+	d.bindless_heaps.reset();
 	d.bindless_textures.reset();
 	d.render_graph.reset();
 	d.frame.reset();
@@ -82,6 +80,9 @@ auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::exp
 	if (result) {
 		d.device->descriptor_heap().begin_frame(result->frame_index);
 		d.bindless_textures->begin_frame(result->frame_index);
+		if (d.bindless_heaps) {
+			d.bindless_heaps->begin_frame();
+		}
 	}
 
 	return result;
@@ -139,8 +140,9 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
 		.record_ctx_slot = req.record_ctx_slot,
 	};
 
-	if (req.desc.color) {
-		p.color_output = to_color_output_info(*req.desc.color);
+	p.color_outputs.reserve(req.desc.colors.size());
+	for (const auto& c : req.desc.colors) {
+		p.color_outputs.push_back(to_color_output_info(c));
 	}
 
 	if (req.desc.depth) {
@@ -181,8 +183,4 @@ auto gse::gpu::context::on_swap_chain_recreate(const data& d, swap_chain_recreat
 
 auto gse::gpu::context::wait_idle(const data& d) -> void {
 	d.device->wait_idle();
-}
-
-auto gse::gpu::context::device_handle(const gpu::device& device) -> handle<vulkan::device> {
-	return device.vulkan_device().device_handle();
 }

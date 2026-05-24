@@ -40,6 +40,7 @@ export namespace gse::gpu {
 		std::span<const std::uint32_t> image_indices;
 		std::span<const present_mode> present_modes;
 		std::span<const gpu::handle<vulkan::fence>> release_fences;
+		std::span<const std::uint64_t> present_ids;
 	};
 }
 
@@ -151,6 +152,7 @@ namespace gse::vulkan {
 		std::vector<vk::Fence> release_fences;
 		std::optional<vk::SwapchainPresentModeInfoEXT> mode_info;
 		std::optional<vk::SwapchainPresentFenceInfoEXT> fence_info;
+		std::optional<vk::PresentIdKHR> present_id_info;
 	};
 
 	auto build_vk_present_info(
@@ -236,6 +238,14 @@ auto gse::vulkan::build_vk_present_info(const gpu::present_info& info, present_s
 		};
 		pnext_head = &*scratch.fence_info;
 	}
+	if (!info.present_ids.empty()) {
+		scratch.present_id_info = vk::PresentIdKHR{
+			.pNext = pnext_head,
+			.swapchainCount = static_cast<std::uint32_t>(info.present_ids.size()),
+			.pPresentIds = info.present_ids.data(),
+		};
+		pnext_head = &*scratch.present_id_info;
+	}
 
 	return vk::PresentInfoKHR{
 		.pNext = pnext_head,
@@ -280,19 +290,8 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
 	return indices;
 }
 
-gse::vulkan::queue::queue(
-	vk::raii::Queue&& graphics,
-	vk::raii::Queue&& present,
-	vk::raii::Queue&& compute,
-	const std::uint32_t graphics_family,
-	const std::uint32_t compute_family
-)
-	: m_graphics(std::move(graphics)),
-	  m_present(std::move(present)),
-	  m_compute(std::move(compute)),
-	  m_graphics_family_index(graphics_family),
-	  m_compute_family_index(compute_family),
-	  m_mutex(std::make_unique<std::recursive_mutex>()) {
+gse::vulkan::queue::queue(vk::raii::Queue&& graphics, vk::raii::Queue&& present, vk::raii::Queue&& compute, const std::uint32_t graphics_family, const std::uint32_t compute_family)
+	: m_graphics(std::move(graphics)), m_present(std::move(present)), m_compute(std::move(compute)), m_graphics_family_index(graphics_family), m_compute_family_index(compute_family), m_mutex(std::make_unique<std::recursive_mutex>()) {
 }
 
 auto gse::vulkan::queue::set_video_encode(vk::raii::Queue&& q, const std::uint32_t family) -> void {

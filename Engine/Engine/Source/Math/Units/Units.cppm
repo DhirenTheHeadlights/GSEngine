@@ -68,36 +68,31 @@ export namespace gse {
 	using position_t = internal::quantity_t<position_tag, T, U>;
 	using position = position_t<>;
 
-	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]]
-	current_position_tag {};
+	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]] current_position_tag {};
 
 	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^current_position_tag):])>
 	using current_position_t = internal::quantity_t<current_position_tag, T, U>;
 	using current_position = current_position_t<>;
 
-	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]]
-	previous_position_tag {};
+	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]] previous_position_tag {};
 
 	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^previous_position_tag):])>
 	using previous_position_t = internal::quantity_t<previous_position_tag, T, U>;
 	using previous_position = previous_position_t<>;
 
-	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]]
-	render_position_tag {};
+	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]] render_position_tag {};
 
 	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^render_position_tag):])>
 	using render_position_t = internal::quantity_t<render_position_tag, T, U>;
 	using render_position = render_position_t<>;
 
-	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]]
-	predicted_position_tag {};
+	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]] predicted_position_tag {};
 
 	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^predicted_position_tag):])>
 	using predicted_position_t = internal::quantity_t<predicted_position_tag, T, U>;
 	using predicted_position = predicted_position_t<>;
 
-	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]]
-	target_position_tag {};
+	struct [[= internal::quantity_child<^^position_tag, internal::quantity_semantic_kind::absolute>]] target_position_tag {};
 
 	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^target_position_tag):])>
 	using target_position_t = internal::quantity_t<target_position_tag, T, U>;
@@ -109,8 +104,7 @@ export namespace gse {
 	using offset_t = internal::quantity_t<offset_tag, T, U>;
 	using offset = offset_t<>;
 
-	struct [[= internal::quantity_child<^^displacement_tag, internal::quantity_semantic_kind::relative>]]
-	lever_arm_tag {};
+	struct [[= internal::quantity_child<^^displacement_tag, internal::quantity_semantic_kind::relative>]] lever_arm_tag {};
 
 	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^lever_arm_tag):])>
 	using lever_arm_t = internal::quantity_t<lever_arm_tag, T, U>;
@@ -223,8 +217,7 @@ export namespace gse {
 	using inverse_mass_t = internal::quantity_t<inverse_mass_tag, T, U>;
 	using inverse_mass = inverse_mass_t<>;
 
-	struct [[= internal::quantity_child<^^inverse_mass_tag, internal::quantity_semantic_kind::measurement>]]
-	linear_compliance_tag {};
+	struct [[= internal::quantity_child<^^inverse_mass_tag, internal::quantity_semantic_kind::measurement>]] linear_compliance_tag {};
 
 	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^linear_compliance_tag):])>
 	using linear_compliance_t = internal::quantity_t<linear_compliance_tag, T, U>;
@@ -408,8 +401,7 @@ export namespace gse {
 	using normal_speed_t = internal::quantity_t<normal_speed_tag, T, U>;
 	using normal_speed = normal_speed_t<>;
 
-	struct [[= internal::quantity_child<^^normal_speed_tag, internal::quantity_semantic_kind::relative>]]
-	closing_speed_tag {};
+	struct [[= internal::quantity_child<^^normal_speed_tag, internal::quantity_semantic_kind::relative>]] closing_speed_tag {};
 
 	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^closing_speed_tag):])>
 	using closing_speed_t = internal::quantity_t<closing_speed_tag, T, U>;
@@ -567,8 +559,7 @@ export namespace gse {
 	using inverse_inertia_t = internal::quantity_t<inverse_inertia_tag, T, U>;
 	using inverse_inertia = inverse_inertia_t<>;
 
-	struct [[= internal::quantity_child<^^inverse_inertia_tag, internal::quantity_semantic_kind::measurement>]]
-	angular_compliance_tag {};
+	struct [[= internal::quantity_child<^^inverse_inertia_tag, internal::quantity_semantic_kind::measurement>]] angular_compliance_tag {};
 
 	template <typename T = float, auto U = ([:internal::resolve_default_unit_info(^^angular_compliance_tag):])>
 	using angular_compliance_t = internal::quantity_t<angular_compliance_tag, T, U>;

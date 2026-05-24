@@ -12,8 +12,7 @@ import gse.diag;
 import gse.ecs;
 
 gse::gpu::request_pass_awaitable::request_pass_awaitable(const frame_context& ctx, render_pass_descriptor desc) noexcept
-	: m_ctx(std::addressof(ctx)),
-	  m_desc(std::move(desc)) {
+	: m_ctx(std::addressof(ctx)), m_desc(std::move(desc)) {
 	assert(
 		m_desc.pass_kind.exists(),
 		"render pass descriptor missing pass_kind; pass it via gpu::pass(ctx, trace_id<owner>()) or "
@@ -60,7 +59,7 @@ auto gse::gpu::pass_builder::pipeline(const gpu::shader_program& p) && -> pass_b
 }
 
 auto gse::gpu::pass_builder::color(color_attachment value) && -> pass_builder&& {
-	m_desc.color = value;
+	m_desc.colors.push_back(value);
 	return std::move(*this);
 }
 

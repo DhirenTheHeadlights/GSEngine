@@ -43,10 +43,6 @@ export namespace gs {
 	private:
 		[[nodiscard]] auto eased_progress() const -> float;
 
-		[[nodiscard]] auto target_width(
-			gse::vec2f viewport_size
-		) const -> float;
-
 		const gse::world_system::data* m_world;
 		const gse::network::data* m_net;
 		const gse::save::registry* m_save_reg;
@@ -56,22 +52,11 @@ export namespace gs {
 
 		static constexpr gse::time slide_duration = gse::milliseconds(220.f);
 		static constexpr float dim_max_alpha = 0.55f;
-		static constexpr float panel_max_width = 320.f;
 	};
 }
 
-gs::main_menu_screen::main_menu_screen(
-	const gse::world_system::data& world,
-	const gse::network::data& net,
-	const gse::save::registry& save_reg,
-	const crosshair_system::data& crosshair,
-	gse::channel_writer channels
-)
-	: m_world(&world),
-	  m_net(&net),
-	  m_save_reg(&save_reg),
-	  m_crosshair(&crosshair),
-	  m_channels(std::move(channels)) {
+gs::main_menu_screen::main_menu_screen(const gse::world_system::data& world, const gse::network::data& net, const gse::save::registry& save_reg, const crosshair_system::data& crosshair, gse::channel_writer channels)
+	: m_world(&world), m_net(&net), m_save_reg(&save_reg), m_crosshair(&crosshair), m_channels(std::move(channels)) {
 }
 
 auto gs::main_menu_screen::on_push() -> void {
@@ -94,20 +79,22 @@ auto gs::main_menu_screen::eased_progress() const -> float {
 	return 1.0f - inv * inv * inv;
 }
 
-auto gs::main_menu_screen::target_width(const gse::vec2f viewport_size) const -> float {
-	return std::min(panel_max_width, viewport_size.x() * 0.35f);
-}
-
-auto gs::main_menu_screen::body_rect(const gse::gui::style&, const gse::vec2f viewport_size) const -> gse::gui::ui_rect {
-	const float width = target_width(viewport_size);
+auto gs::main_menu_screen::body_rect(const gse::gui::style& sty, const gse::vec2f viewport_size) const -> gse::gui::ui_rect {
+	const float width = std::min(sty.side_panel_max_width, viewport_size.x() * 0.35f);
 	const float eased = eased_progress();
 	const float left = -width * (1.0f - eased);
-	return gse::gui::ui_rect::from_position_size({ left, viewport_size.y() }, { width, viewport_size.y() });
+	return gse::gui::ui_rect::from_position_size(
+		{ left, viewport_size.y() },
+		{ width, viewport_size.y() }
+	);
 }
 
 auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
 	const gse::gui::ui_rect full =
-		gse::gui::ui_rect::from_position_size({ 0.f, viewport_size.y() }, { viewport_size.x(), viewport_size.y() });
+		gse::gui::ui_rect::from_position_size(
+			{ 0.f, viewport_size.y() },
+			{ viewport_size.x(), viewport_size.y() }
+		);
 
 	ctx.sprites.push_back({
 		.rect = full,
@@ -131,8 +118,12 @@ auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse:
 		.layer = gse::render_layer::popup,
 	});
 
+	const float border_thickness = ctx.style.separator_thickness;
 	const gse::gui::ui_rect border =
-		gse::gui::ui_rect::from_position_size({ panel.right() - 1.f, panel.top() }, { 1.f, panel.height() });
+		gse::gui::ui_rect::from_position_size(
+			{ panel.right() - border_thickness, panel.top() },
+			{ border_thickness, panel.height() }
+		);
 	ctx.sprites.push_back({
 		.rect = border,
 		.color = ctx.style.color_border,

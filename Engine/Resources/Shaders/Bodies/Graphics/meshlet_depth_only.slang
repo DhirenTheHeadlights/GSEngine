@@ -55,6 +55,8 @@ void as_main(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID) {
 
 struct DepthOutput {
     precise float4 clip_pos : SV_Position;
+    precise float4 curr_clip_pos : TEXCOORD0;
+    precise float4 prev_clip_pos : TEXCOORD1;
 };
 
 [shader("mesh")]
@@ -79,8 +81,14 @@ void ms_main(
 
         MeshVertexOutput mv = compute_mesh_vertex(v, inst, view, proj);
 
+        precise float4 prev_world = mul(inst.prev_model_matrix, float4(v.position, 1.0));
+        precise float4 prev_view_pos = mul(prev_view, prev_world);
+        precise float4 prev_clip = mul(prev_proj, prev_view_pos);
+
         DepthOutput o;
         o.clip_pos = mv.clip_pos;
+        o.curr_clip_pos = mv.clip_pos;
+        o.prev_clip_pos = prev_clip;
         out_verts[v_idx] = o;
     }
 
@@ -90,5 +98,8 @@ void ms_main(
 }
 
 [shader("fragment")]
-void fs_main(DepthOutput input) {
+float2 fs_main(DepthOutput input) : SV_Target0 {
+    float2 curr_ndc = input.curr_clip_pos.xy / input.curr_clip_pos.w + jitter_ndc;
+    float2 prev_ndc = input.prev_clip_pos.xy / input.prev_clip_pos.w + prev_jitter_ndc;
+    return (curr_ndc - prev_ndc) * float2(0.5, -0.5);
 }

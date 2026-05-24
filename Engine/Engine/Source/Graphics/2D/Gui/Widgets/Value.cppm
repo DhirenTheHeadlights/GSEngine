@@ -135,7 +135,11 @@ auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T v
 	value_row<1>(
 		ctx,
 		name,
-		{ std::format("{:.2f} {}", gse::internal::value_in<decltype(Unit)>(value), std::string_view(Unit.unit_name)) }
+		{ std::format(
+			"{:.2f} {}",
+			gse::internal::value_in<decltype(Unit)>(value),
+			std::string_view(Unit.unit_name)
+		) }
 	);
 }
 
@@ -196,7 +200,10 @@ auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name,
 
 	const float label_width = content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
+	const ui_rect label_rect = ui_rect::from_position_size(
+		row_rect.top_left(),
+		{ label_width, widget_height }
+	);
 
 	ctx.queue_text({
 		.font = ctx.font,
@@ -214,7 +221,10 @@ auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name,
 	vec2f current_box_pos = { row_rect.left() + label_width, row_rect.top() };
 
 	for (const std::string& value_str : values) {
-		const ui_rect box_rect = ui_rect::from_position_size(current_box_pos, { value_box_width, widget_height });
+		const ui_rect box_rect = ui_rect::from_position_size(
+			current_box_pos,
+			{ value_box_width, widget_height }
+		);
 		value_box(ctx, value_str, box_rect);
 		current_box_pos.x() += value_box_width + ctx.style.padding;
 	}

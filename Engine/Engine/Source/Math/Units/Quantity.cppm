@@ -555,8 +555,7 @@ constexpr gse::internal::quantity<A, D, Tag, DefUnit>::operator A() const noexce
 
 template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 template <auto UnitObj>
-requires gse::internal::is_unit<decltype(UnitObj)> &&
-	gse::internal::valid_unit_for_quantity<decltype(UnitObj), gse::internal::quantity<A, D, Tag, DefUnit>>
+requires gse::internal::is_unit<decltype(UnitObj)> && gse::internal::valid_unit_for_quantity<decltype(UnitObj), gse::internal::quantity<A, D, Tag, DefUnit>>
 constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::as() const -> A {
 	return this->template as<decltype(UnitObj)>();
 }
@@ -1114,7 +1113,10 @@ template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 requires gse::internal::has_same_dimension_as<Q1, Q2>
 constexpr auto gse::fmod(const Q1& a, const Q2& b) -> Q1 {
 	return Q1(
-		std::fmod(internal::value_in<typename Q1::default_unit>(a), internal::value_in<typename Q1::default_unit>(b))
+		std::fmod(
+			internal::value_in<typename Q1::default_unit>(a),
+			internal::value_in<typename Q1::default_unit>(b)
+		)
 	);
 }
 

@@ -30,20 +30,41 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 		sc.registry().add_component<gse::free_camera::component>(
 			player_id,
 			{
-				.initial_position = gse::vec3<gse::position>(0.f, 2.f, 0.f),
+				.initial_position = gse::vec3<gse::position>(
+					0.f,
+					2.f,
+					0.f
+				),
 			}
 		);
 		return player_id;
 	});
 
-	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
+	constexpr auto floor_size = gse::vec3<gse::length>(
+		gse::meters(1000.f),
+		gse::meters(1.f),
+		gse::meters(1000.f)
+	);
 	s.spawn(
 		"Floor",
 		gs::static_box(
-			gse::vec3<gse::position>(0.f, -0.501f, 0.f),
+			gse::vec3<gse::position>(
+				0.f,
+				-0.501f,
+				0.f
+			),
 			floor_size,
-			gse::quat(1.f, 0.f, 0.f, 0.f),
-			gse::vec3f(0.08f, 0.08f, 0.09f),
+			gse::quat(
+				1.f,
+				0.f,
+				0.f,
+				0.f
+			),
+			gse::vec3f(
+				0.08f,
+				0.08f,
+				0.09f
+			),
 			0.45f,
 			0.0f
 		)
@@ -97,6 +118,24 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 			.max_force = gse::newtons(180.f),
 		}
 	);
+	s.registry().add_component<gse::physics::motor_component>(
+		humanoid_handle.bone_ids[11],
+		{
+			.velocity_drive_target = {},
+			.horizontal_only = true,
+			.requires_ground_contact = true,
+			.max_force = gse::newtons(0.f),
+		}
+	);
+	s.registry().add_component<gse::physics::motor_component>(
+		humanoid_handle.bone_ids[14],
+		{
+			.velocity_drive_target = {},
+			.horizontal_only = true,
+			.requires_ground_contact = true,
+			.max_force = gse::newtons(0.f),
+		}
+	);
 
 	const auto player_id = s.build("Player")
 		.with<gs::player::component>({
@@ -112,6 +151,10 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 
 	s.build("Scene Camera")
 		.with<gse::free_camera::component>({
-			.initial_position = gse::vec3<gse::position>(0.f, 5.f, 10.f),
+			.initial_position = gse::vec3<gse::position>(
+				0.f,
+				5.f,
+				10.f
+			),
 		});
 }

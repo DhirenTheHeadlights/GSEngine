@@ -36,14 +36,7 @@ export namespace gse {
 	};
 }
 
-gse::frame_context::frame_context(
-	state_registry& states,
-	resource_registry& resources_store,
-	channel_registry& channels_store,
-	channel_writer& channels,
-	task_graph& graph,
-	registry& reg
-)
+gse::frame_context::frame_context(state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, registry& reg)
 	: task_context{
 		  .states = states,
 		  .resources_store = resources_store,

@@ -35,8 +35,7 @@ export namespace gse::internal {
 	template <typename T>
 	constexpr float vec_unit_scale_v = []() consteval {
 		if constexpr (requires {
-						  { T::canonical_storage_scale() } -> std::convertible_to<float>;
-					  }) {
+						  { T::canonical_storage_scale() } -> std::convertible_to<float>; }) {
 			return T::canonical_storage_scale();
 		}
 		else {
@@ -144,10 +143,7 @@ export namespace gse {
 		);
 
 		template <typename U>
-		requires(
-			!std::same_as<T, U> && std::is_constructible_v<T, const U&> &&
-			!internal::is_vec_like<std::remove_cvref_t<U>>
-		)
+		requires(!std::same_as<T, U> && std::is_constructible_v<T, const U&> && !internal::is_vec_like<std::remove_cvref_t<U>>)
 		constexpr vec(const U& value) {
 			this->data.fill(T(value));
 		}
@@ -562,7 +558,10 @@ template <gse::internal::is_vec_element T, std::size_t N>
 auto gse::vec<T, N>::as_storage_span(this auto&& self) {
 	using qualified_storage =
 		std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const storage_type, storage_type>;
-	return std::span<qualified_storage, N>(reinterpret_cast<qualified_storage*>(self.data.data()), N);
+	return std::span<qualified_storage, N>(
+		reinterpret_cast<qualified_storage*>(self.data.data()),
+		N
+	);
 }
 
 template <gse::internal::is_vec_element T, std::size_t N>
@@ -684,7 +683,11 @@ template <typename Self, gse::internal::is_vec_element S>
 constexpr auto gse::vec<T, N>::operator*=(this Self& self, const S& rhs) -> Self&
 requires(gse::internal::are_multipliable<T, S> && std::same_as<gse::internal::mul_exposed_t<T, S>, T>)
 {
-	simd::mul_s(self.as_storage_span(), static_cast<storage_type>(internal::to_storage(rhs)), self.as_storage_span());
+	simd::mul_s(
+		self.as_storage_span(),
+		static_cast<storage_type>(internal::to_storage(rhs)),
+		self.as_storage_span()
+	);
 	return self;
 }
 
@@ -693,7 +696,11 @@ template <typename Self, gse::internal::is_vec_element S>
 constexpr auto gse::vec<T, N>::operator/=(this Self& self, const S& rhs) -> Self&
 requires(gse::internal::are_divisible<T, S> && std::same_as<gse::internal::div_exposed_t<T, S>, T>)
 {
-	simd::div_s(self.as_storage_span(), static_cast<storage_type>(internal::to_storage(rhs)), self.as_storage_span());
+	simd::div_s(
+		self.as_storage_span(),
+		static_cast<storage_type>(internal::to_storage(rhs)),
+		self.as_storage_span()
+	);
 	return self;
 }
 

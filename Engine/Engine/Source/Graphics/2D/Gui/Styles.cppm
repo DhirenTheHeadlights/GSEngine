@@ -3,6 +3,7 @@ export module gse.graphics:styles;
 import std;
 
 import gse.math;
+import gse.meta;
 
 export namespace gse::gui {
 	enum class theme {
@@ -12,6 +13,24 @@ export namespace gse::gui {
 		forest,
 		frost,
 		high_contrast,
+	};
+
+	struct style;
+
+	struct dp {
+		float value{};
+
+		[[nodiscard]] constexpr auto px(
+			const style& sty
+		) const -> float;
+	};
+
+	struct dp_vec {
+		vec2f value{};
+
+		[[nodiscard]] constexpr auto px(
+			const style& sty
+		) const -> vec2f;
 	};
 
 	struct style {
@@ -61,22 +80,47 @@ export namespace gse::gui {
 
 		vec4f color_shadow = { 0.f, 0.f, 0.f, 0.35f };
 
-		// Sizing
-		float padding = 12.f;
-		float title_bar_height = 32.f;
-		float resize_border_thickness = 8.f;
-		vec2f min_menu_size = { 200.f, 120.f };
-		float font_size = 16.f;
+		// Runtime-resolved scale factor (set by apply_scale, not a styled dimension)
+		float scale_factor = 1.f;
+
+		// Widget sizing (auto-scaled via [[= gse::scaled]] reflection in apply_scale)
+		[[= gse::scaled]] float padding = 12.f;
+		[[= gse::scaled]] float title_bar_height = 32.f;
+		[[= gse::scaled]] float resize_border_thickness = 8.f;
+		[[= gse::scaled]] vec2f min_menu_size = { 200.f, 120.f };
+		[[= gse::scaled]] float font_size = 16.f;
 		std::filesystem::path font;
 
-		float corner_radius = 6.f;
-		float corner_radius_menu = 10.f;
+		[[= gse::scaled]] float corner_radius = 6.f;
+		[[= gse::scaled]] float corner_radius_menu = 10.f;
 		float widget_height_padding = 0.7f;
-		float item_spacing = 4.f;
-		float section_spacing_above = 18.f;
-		float section_spacing_below = 10.f;
+		[[= gse::scaled]] float item_spacing = 4.f;
+		[[= gse::scaled]] float section_spacing_above = 18.f;
+		[[= gse::scaled]] float section_spacing_below = 10.f;
 		float section_header_size_mult = 1.30f;
-		float accent_bar_width = 3.f;
+		[[= gse::scaled]] float accent_bar_width = 3.f;
+
+		// Screen/card layout (referenced by SettingsScreen, MainMenuScreen, etc.)
+		[[= gse::scaled]] vec2f card_min_size = { 720.f, 480.f };
+		[[= gse::scaled]] vec2f card_max_size = { 1100.f, 760.f };
+		[[= gse::scaled]] vec2f card_margin = { 80.f, 60.f };
+		[[= gse::scaled]] float sidebar_width = 220.f;
+		[[= gse::scaled]] float header_height = 56.f;
+		[[= gse::scaled]] float footer_height = 64.f;
+		[[= gse::scaled]] float close_button_size = 28.f;
+		[[= gse::scaled]] float separator_thickness = 1.f;
+
+		// Buttons
+		[[= gse::scaled]] float button_height = 32.f;
+		[[= gse::scaled]] float button_min_width = 108.f;
+		[[= gse::scaled]] float accent_button_min_width = 132.f;
+		[[= gse::scaled]] float button_spacing = 8.f;
+
+		// Standalone panels
+		[[= gse::scaled]] float side_panel_max_width = 320.f;
+		[[= gse::scaled]] float progress_bar_max_width = 400.f;
+		[[= gse::scaled]] float progress_bar_height = 12.f;
+		[[= gse::scaled]] float preview_height = 160.f;
 
 		static constexpr auto midnight() -> style;
 		static constexpr auto eclipse() -> style;
@@ -408,4 +452,12 @@ constexpr auto gse::gui::style::from_theme(const theme t) -> style {
 		default:
 			return midnight();
 	}
+}
+
+constexpr auto gse::gui::dp::px(const style& sty) const -> float {
+	return value * sty.scale_factor;
+}
+
+constexpr auto gse::gui::dp_vec::px(const style& sty) const -> vec2f {
+	return value * sty.scale_factor;
 }

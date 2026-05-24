@@ -374,7 +374,12 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 
 	for (std::size_t i = 1; i < paths.size(); ++i) {
 		faces[i] = load(paths[i]);
-		assert(faces[i].size == required, "All cube faces must match size {}: {}", required, paths[i].string());
+		assert(
+			faces[i].size == required,
+			"All cube faces must match size {}: {}",
+			required,
+			paths[i].string()
+		);
 	}
 
 	return faces;

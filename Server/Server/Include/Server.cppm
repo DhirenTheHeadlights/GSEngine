@@ -105,14 +105,10 @@ gse::server<Components...>::server(const std::uint16_t port) : m_port(port) {
 
 template <typename... Components>
 auto gse::server<Components...>::initialize() -> void {
-	if (
-		!m_socket.bind(
-			network::address{
-				.ip = "0.0.0.0",
-				.port = m_port
-			}
-		)
-	) {
+	if (!m_socket.bind(network::address{
+			.ip = "0.0.0.0",
+			.port = m_port
+		})) {
 		std::println(std::cerr, "Server: Failed to bind socket to port {}", m_port);
 		return;
 	}
@@ -354,16 +350,20 @@ auto gse::server<Components...>::update(const world_system::data& w, registry& r
 					);
 				}
 			) ||
-			network::try_decode<network::input_frame>(stream, mid, [&](const auto& m) {
-				auto& cd = m_clients[pkt.from];
-				if (m.input_sequence <= cd.last_input_sequence) {
-					return;
-				}
+			network::try_decode<network::input_frame>(
+				stream,
+				mid,
+				[&](const auto& m) {
+					auto& cd = m_clients[pkt.from];
+					if (m.input_sequence <= cd.last_input_sequence) {
+						return;
+					}
 
-				cd.last_input_sequence = m.input_sequence;
-				cd.camera_yaw = gse::radians(m.camera_yaw);
-				network::apply_input_frame(cd.latest_input, m);
-			});
+					cd.last_input_sequence = m.input_sequence;
+					cd.camera_yaw = gse::radians(m.camera_yaw);
+					network::apply_input_frame(cd.latest_input, m);
+				}
+			);
 	}
 
 	std::optional<id> scene_requested_id;

@@ -89,6 +89,7 @@ export namespace gse::gui {
 			std::vector<renderer::text_command> text_commands;
 
 			std::vector<id> visible_menu_ids_last_frame;
+			std::unordered_map<std::uint64_t, id> name_to_menu_id;
 			vec2f previous_viewport_size;
 
 			tooltip_state tooltip;

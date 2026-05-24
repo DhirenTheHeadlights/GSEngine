@@ -200,8 +200,7 @@ struct gse::shaders::slang_type<gse::mat<T, Cols, Rows>> {
 };
 
 template <typename ColSpec, typename RowSpec, gse::shaders::has_slang_type T>
-struct gse::shaders::slang_type<gse::mixed_mat<ColSpec, RowSpec, T>>
-	: gse::shaders::slang_type<gse::mat<T, ColSpec::size, ColSpec::size>> {};
+struct gse::shaders::slang_type<gse::mixed_mat<ColSpec, RowSpec, T>> : gse::shaders::slang_type<gse::mat<T, ColSpec::size, ColSpec::size>> {};
 
 template <gse::shaders::has_slang_type T>
 struct gse::shaders::slang_type<gse::quat_t<T>> {
@@ -225,7 +224,11 @@ auto gse::shaders::emit_slang_struct() -> std::string {
 			);
 		}
 		else {
-			out += std::format("    public {} {};\n", slang_type<member_t>::name, std::meta::identifier_of(m));
+			out += std::format(
+				"    public {} {};\n",
+				slang_type<member_t>::name,
+				std::meta::identifier_of(m)
+			);
 		}
 	}
 	out += "};\n";
@@ -237,7 +240,11 @@ auto gse::shaders::emit_slang_enum() -> std::string {
 	std::string out = std::format("public enum class {} {{\n", std::meta::identifier_of(^^E));
 	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
 		out +=
-			std::format("    {} = {},\n", std::meta::identifier_of(e), static_cast<std::underlying_type_t<E>>([:e:]));
+			std::format(
+				"    {} = {},\n",
+				std::meta::identifier_of(e),
+				static_cast<std::underlying_type_t<E>>([:e:])
+			);
 	}
 	out += "};\n";
 	return out;
@@ -302,13 +309,28 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	using binding_t = [:find_binding_type(^^T):];
 	constexpr auto name = std::meta::identifier_of(^^T);
 	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
-		return std::format("public [[vk::binding({}, {})]] Sampler2D {}[];\n", binding_t::slot, binding_t::set, name);
+		return std::format(
+			"public [[vk::binding({}, {})]] Sampler2D {}[];\n",
+			binding_t::slot,
+			binding_t::set,
+			name
+		);
 	}
 	else if constexpr (has_annotation<sampler2d_tag>(^^T)) {
-		return std::format("public [[vk::binding({}, {})]] Sampler2D {};\n", binding_t::slot, binding_t::set, name);
+		return std::format(
+			"public [[vk::binding({}, {})]] Sampler2D {};\n",
+			binding_t::slot,
+			binding_t::set,
+			name
+		);
 	}
 	else if constexpr (has_annotation<sampler3d_tag>(^^T)) {
-		return std::format("public [[vk::binding({}, {})]] Sampler3D {};\n", binding_t::slot, binding_t::set, name);
+		return std::format(
+			"public [[vk::binding({}, {})]] Sampler3D {};\n",
+			binding_t::slot,
+			binding_t::set,
+			name
+		);
 	}
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {
 		return std::format(
@@ -377,7 +399,12 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	else if constexpr (requires { typename T::element; }) {
 		using element_t = typename T::element;
 		std::string out =
-			std::format("[[vk::binding({}, {})]]\npublic cbuffer {} {{\n", binding_t::slot, binding_t::set, name);
+			std::format(
+				"[[vk::binding({}, {})]]\npublic cbuffer {} {{\n",
+				binding_t::slot,
+				binding_t::set,
+				name
+			);
 		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^element_t, std::meta::access_context::unchecked()))) {
 			using member_t = [:std::meta::type_of(m):];
 			if constexpr (std::is_array_v<member_t>) {
@@ -391,7 +418,11 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 				);
 			}
 			else {
-				out += std::format("    public {} {};\n", slang_type<member_t>::name, std::meta::identifier_of(m));
+				out += std::format(
+					"    public {} {};\n",
+					slang_type<member_t>::name,
+					std::meta::identifier_of(m)
+				);
 			}
 		}
 		out += "};\n";
@@ -399,7 +430,12 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	}
 	else {
 		std::string out =
-			std::format("[[vk::binding({}, {})]]\npublic cbuffer {} {{\n", binding_t::slot, binding_t::set, name);
+			std::format(
+				"[[vk::binding({}, {})]]\npublic cbuffer {} {{\n",
+				binding_t::slot,
+				binding_t::set,
+				name
+			);
 		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			using member_t = [:std::meta::type_of(m):];
 			if constexpr (std::is_array_v<member_t>) {
@@ -413,7 +449,11 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 				);
 			}
 			else {
-				out += std::format("    public {} {};\n", slang_type<member_t>::name, std::meta::identifier_of(m));
+				out += std::format(
+					"    public {} {};\n",
+					slang_type<member_t>::name,
+					std::meta::identifier_of(m)
+				);
 			}
 		}
 		out += "};\n";

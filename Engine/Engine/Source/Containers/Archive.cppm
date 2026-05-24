@@ -165,9 +165,12 @@ export namespace gse {
 }
 
 consteval auto gse::is_archive_skipped(const std::meta::info member) -> bool {
-	return std::ranges::any_of(std::define_static_array(std::meta::annotations_of(member)), [](std::meta::info ann) {
-		return std::meta::type_of(ann) == ^^archive_skip;
-	});
+	return std::ranges::any_of(
+		std::define_static_array(std::meta::annotations_of(member)),
+		[](std::meta::info ann) {
+			return std::meta::type_of(ann) == ^^archive_skip;
+		}
+	);
 }
 
 gse::binary_writer::binary_writer(std::ofstream& stream) : m_stream(stream) {
@@ -237,7 +240,10 @@ auto gse::binary_writer::operator&(const raw_blob<T>& blob) -> binary_writer& {
 	const auto byte_size = static_cast<std::uint64_t>(blob.data.size() * sizeof(T));
 	m_stream.write(reinterpret_cast<const char*>(&byte_size), sizeof(byte_size));
 	if (byte_size > 0) {
-		m_stream.write(reinterpret_cast<const char*>(blob.data.data()), static_cast<std::streamsize>(byte_size));
+		m_stream.write(
+			reinterpret_cast<const char*>(blob.data.data()),
+			static_cast<std::streamsize>(byte_size)
+		);
 	}
 	return *this;
 }
@@ -261,13 +267,7 @@ auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
 gse::binary_reader::binary_reader(std::ifstream& stream) : m_stream(stream) {
 }
 
-gse::binary_reader::binary_reader(
-	std::ifstream& stream,
-	const std::uint32_t expected_magic,
-	const std::uint32_t expected_version,
-	std::string_view path,
-	const std::source_location& loc
-)
+gse::binary_reader::binary_reader(std::ifstream& stream, const std::uint32_t expected_magic, const std::uint32_t expected_version, std::string_view path, const std::source_location& loc)
 	: m_stream(stream) {
 	std::uint32_t magic = 0;
 	std::uint32_t version = 0;
@@ -356,7 +356,10 @@ auto gse::binary_reader::operator&(const raw_blob<T>& blob) -> binary_reader& {
 	m_stream.read(reinterpret_cast<char*>(&byte_size), sizeof(byte_size));
 	blob.data.resize(byte_size / sizeof(T));
 	if (byte_size > 0) {
-		m_stream.read(reinterpret_cast<char*>(blob.data.data()), static_cast<std::streamsize>(byte_size));
+		m_stream.read(
+			reinterpret_cast<char*>(blob.data.data()),
+			static_cast<std::streamsize>(byte_size)
+		);
 	}
 	return *this;
 }

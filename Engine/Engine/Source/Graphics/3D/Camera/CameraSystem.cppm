@@ -41,7 +41,12 @@ export namespace gse::camera {
 
 			[[= gse::shared]] gse::view_matrix view_matrix{};
 			[[= gse::shared]] gse::projection_matrix projection_matrix{};
+			[[= gse::shared]] gse::view_matrix prev_view_matrix{};
+			[[= gse::shared]] gse::projection_matrix prev_projection_matrix{};
+			[[= gse::shared]] vec2f jitter_ndc{};
+			[[= gse::shared]] vec2f prev_jitter_ndc{};
 
+			std::uint32_t jitter_index = 1;
 			vec2f viewport{ 1920.f, 1080.f };
 			bool ui_focus = false;
 		};

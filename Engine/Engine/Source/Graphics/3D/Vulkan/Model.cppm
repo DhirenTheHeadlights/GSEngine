@@ -26,6 +26,7 @@ export namespace gse {
 		std::size_t index;
 		spatial_matrix model_matrix;
 		spatial_matrix normal_matrix;
+		spatial_matrix prev_model_matrix;
 		vec3f color;
 	};
 
@@ -56,7 +57,10 @@ export namespace gse {
 		};
 
 		explicit model(const std::filesystem::path& path)
-			: identifiable(path, config::baked_resource_path),
+			: identifiable(
+				  path,
+				  config::baked_resource_path
+			  ),
 			  m_baked_model_path(path) {
 		}
 		explicit model(

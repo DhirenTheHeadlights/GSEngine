@@ -8,6 +8,7 @@ import :vulkan_image;
 import :vulkan_instance;
 import :vulkan_swapchain;
 import :device;
+import :image;
 
 import gse.core;
 import gse.containers;
@@ -94,9 +95,7 @@ auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const present_mo
 }
 
 gse::gpu::swap_chain::swap_chain(vulkan::swap_chain&& config, vulkan::image&& depth_image, device& dev)
-	: m_config(std::move(config)),
-	  m_depth_image(std::move(depth_image)),
-	  m_device(&dev) {
+	: m_config(std::move(config)), m_depth_image(std::move(depth_image)), m_device(&dev) {
 }
 
 auto gse::gpu::swap_chain::extent() const -> vec2u {
@@ -169,7 +168,7 @@ auto gse::gpu::swap_chain::config() const -> const vulkan::swap_chain& {
 }
 
 auto gse::gpu::create_swapchain_depth(device& dev, const vec2u extent) -> vulkan::image {
-	return vulkan::image::create(
+	auto img = vulkan::image::create(
 		dev.vulkan_device(),
 		image_desc{
 			.size = extent,
@@ -178,4 +177,6 @@ auto gse::gpu::create_swapchain_depth(device& dev, const vec2u extent) -> vulkan
 		},
 		"swapchain.depth"
 	);
+	gpu::transition_image_to(dev, img);
+	return img;
 }

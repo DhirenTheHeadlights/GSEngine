@@ -124,7 +124,16 @@ template <typename Pack>
 auto gse::network::match_and_apply_components(read_bitstream& s, const std::uint64_t id, auto&& on_upsert, auto&& on_remove) -> bool {
 	return [&]<typename... C>(type_pack<C...>) {
 		return (
-			(try_decode<component_upsert<C>>(s, id, on_upsert) || try_decode<component_remove<C>>(s, id, on_remove)) ||
+			(try_decode<component_upsert<C>>(
+				 s,
+				 id,
+				 on_upsert
+			 ) ||
+			 try_decode<component_remove<C>>(
+				 s,
+				 id,
+				 on_remove
+			 )) ||
 			...
 		);
 	}(Pack{});

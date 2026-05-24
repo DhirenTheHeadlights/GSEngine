@@ -274,14 +274,8 @@ auto gse::vulkan::scratch_offset_alignment(const device& dev) -> gpu::device_siz
 	return std::max<gpu::device_size>(as_props.minAccelerationStructureScratchOffsetAlignment, 1);
 }
 
-gse::vulkan::blas::blas(
-	buffer storage,
-	vk::raii::AccelerationStructureKHR handle,
-	const gpu::device_address device_address
-)
-	: m_storage(std::move(storage)),
-	  m_handle(std::move(handle)),
-	  m_device_address(device_address) {
+gse::vulkan::blas::blas(buffer storage, vk::raii::AccelerationStructureKHR handle, const gpu::device_address device_address)
+	: m_storage(std::move(storage)), m_handle(std::move(handle)), m_device_address(device_address) {
 }
 
 auto gse::vulkan::blas::create(device& dev, const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {
@@ -322,16 +316,8 @@ auto gse::vulkan::blas::valid() const -> bool {
 	return *m_handle != nullptr;
 }
 
-gse::vulkan::tlas::tlas(
-	buffer storage,
-	buffer scratch,
-	buffer instance_buffer,
-	vk::raii::AccelerationStructureKHR handle
-)
-	: m_storage(std::move(storage)),
-	  m_scratch(std::move(scratch)),
-	  m_instance_buffer(std::move(instance_buffer)),
-	  m_handle(std::move(handle)) {
+gse::vulkan::tlas::tlas(buffer storage, buffer scratch, buffer instance_buffer, vk::raii::AccelerationStructureKHR handle)
+	: m_storage(std::move(storage)), m_scratch(std::move(scratch)), m_instance_buffer(std::move(instance_buffer)), m_handle(std::move(handle)) {
 }
 
 auto gse::vulkan::tlas::create(device& dev, const std::uint32_t max_instances) -> tlas {
@@ -347,7 +333,11 @@ auto gse::vulkan::tlas::create(device& dev, const std::uint32_t max_instances) -
 	const auto alignment = scratch_offset_alignment(dev);
 	auto scratch = dev.create_buffer(
 		gpu::buffer_create_info{
-			.size = std::max(sizes.build_scratch_size, sizes.update_scratch_size) + alignment,
+			.size = std::max(
+						sizes.build_scratch_size,
+						sizes.update_scratch_size
+					) +
+				alignment,
 			.usage = gpu::buffer_flag::storage,
 		}
 	);

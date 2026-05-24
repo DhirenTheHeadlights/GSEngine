@@ -89,7 +89,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto active_bindings() const -> std::span<const gpu::binding_use>;
 
-		explicit operator bool() const;
+		[[nodiscard]] auto valid() const -> bool;
 
 	private:
 		shader_program(
@@ -116,26 +116,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::shader_program::shader_program(
-	vk::raii::PipelineLayout&& layout,
-	std::vector<shader_object>&& shaders,
-	std::vector<gpu::stage_flag>&& stages,
-	std::vector<gpu::handle<shader_object>>&& shader_handles,
-	gpu::dynamic_pipeline_state&& state,
-	const bool is_compute,
-	const bool is_mesh,
-	std::vector<std::uint32_t>&& auto_bound_sets,
-	std::vector<gpu::binding_use>&& active_bindings
-)
-	: m_layout(std::move(layout)),
-	  m_shaders(std::move(shaders)),
-	  m_stages(std::move(stages)),
-	  m_shader_handles(std::move(shader_handles)),
-	  m_state(std::move(state)),
-	  m_is_compute(is_compute),
-	  m_is_mesh(is_mesh),
-	  m_auto_bound_sets(std::move(auto_bound_sets)),
-	  m_active_bindings(std::move(active_bindings)) {
+gse::vulkan::shader_program::shader_program(vk::raii::PipelineLayout&& layout, std::vector<shader_object>&& shaders, std::vector<gpu::stage_flag>&& stages, std::vector<gpu::handle<shader_object>>&& shader_handles, gpu::dynamic_pipeline_state&& state, const bool is_compute, const bool is_mesh, std::vector<std::uint32_t>&& auto_bound_sets, std::vector<gpu::binding_use>&& active_bindings)
+	: m_layout(std::move(layout)), m_shaders(std::move(shaders)), m_stages(std::move(stages)), m_shader_handles(std::move(shader_handles)), m_state(std::move(state)), m_is_compute(is_compute), m_is_mesh(is_mesh), m_auto_bound_sets(std::move(auto_bound_sets)), m_active_bindings(std::move(active_bindings)) {
 }
 
 auto gse::vulkan::shader_program::create(const device& dev, const shader_program_create_info& info) -> shader_program {
@@ -161,12 +143,15 @@ auto gse::vulkan::shader_program::create(const device& dev, const shader_program
 
 	std::vector<shader_object> shaders = info.stages.size() == 1
 		? [&] {
-			std::vector<shader_object> single;
-			single.reserve(1);
-			single.emplace_back(shader_object::create(dev, info.stages[0]));
-			return single;
-		}()
-		: shader_object::create_linked(dev, info.stages);
+			  std::vector<shader_object> single;
+			  single.reserve(1);
+			  single.emplace_back(shader_object::create(dev, info.stages[0]));
+			  return single;
+		  }()
+		: shader_object::create_linked(
+			  dev,
+			  info.stages
+		  );
 
 	std::vector<gpu::stage_flag> stages;
 	stages.reserve(shaders.size());
@@ -185,8 +170,14 @@ auto gse::vulkan::shader_program::create(const device& dev, const shader_program
 		gpu::dynamic_pipeline_state{ info.state },
 		info.is_compute,
 		info.is_mesh,
-		std::vector<std::uint32_t>(info.auto_bound_sets.begin(), info.auto_bound_sets.end()),
-		std::vector<gpu::binding_use>(info.active_bindings.begin(), info.active_bindings.end())
+		std::vector<std::uint32_t>(
+			info.auto_bound_sets.begin(),
+			info.auto_bound_sets.end()
+		),
+		std::vector<gpu::binding_use>(
+			info.active_bindings.begin(),
+			info.active_bindings.end()
+		)
 	);
 }
 
@@ -226,6 +217,6 @@ auto gse::vulkan::shader_program::active_bindings() const -> std::span<const gpu
 	return m_active_bindings;
 }
 
-gse::vulkan::shader_program::operator bool() const {
+auto gse::vulkan::shader_program::valid() const -> bool {
 	return *m_layout != nullptr;
 }

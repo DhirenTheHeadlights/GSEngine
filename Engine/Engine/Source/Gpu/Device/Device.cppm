@@ -32,9 +32,11 @@ export namespace gse::gpu {
 
 		~device() override;
 
-		[[nodiscard]] auto allocator() -> vulkan::device&;
+		[[nodiscard]] auto handle() const -> gpu::handle<vulkan::device>;
 
-		[[nodiscard]] auto allocator() const -> const vulkan::device&;
+		[[nodiscard]] auto allocator(
+			this auto& self
+		) -> auto&;
 
 		[[nodiscard]] auto descriptor_heap(
 			this auto& self
@@ -74,23 +76,23 @@ export namespace gse::gpu {
 		};
 
 		auto begin_pass_marker(
-			handle<command_buffer> cmd,
+			gpu::handle<command_buffer> cmd,
 			pass_marker_domain domain,
 			pass_marker marker
 		) -> pass_marker_handle;
 
 		auto checkpoint_pass_marker(
-			handle<command_buffer> cmd,
+			gpu::handle<command_buffer> cmd,
 			pass_marker_handle handle
 		) -> void;
 
 		auto post_renderpass_pass_marker(
-			handle<command_buffer> cmd,
+			gpu::handle<command_buffer> cmd,
 			pass_marker_handle handle
 		) -> void;
 
 		auto end_pass_marker(
-			handle<command_buffer> cmd,
+			gpu::handle<command_buffer> cmd,
 			pass_marker_handle handle
 		) -> void;
 
@@ -153,6 +155,10 @@ export namespace gse::gpu {
 
 		std::array<pass_marker_ring, pass_marker_domain_count> m_pass_marker_rings;
 	};
+}
+
+auto gse::gpu::device::allocator(this auto& self) -> auto& {
+	return self.m_device_config;
 }
 
 auto gse::gpu::device::descriptor_heap(this auto& self) -> decltype(auto) {

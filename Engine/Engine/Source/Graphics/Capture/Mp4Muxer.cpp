@@ -203,8 +203,7 @@ namespace gse::renderer::capture::mp4 {
 }
 
 gse::renderer::capture::mp4::box_scope::box_scope(std::vector<std::byte>& out, const std::array<char, 4> type)
-	: m_out(out),
-	  m_length_offset(out.size()) {
+	: m_out(out), m_length_offset(out.size()) {
 	push_u32_be(m_out, 0);
 	push_fourcc(m_out, type);
 }
@@ -560,7 +559,18 @@ auto gse::renderer::capture::mp4::emit_stsd(std::vector<std::byte>& out, const v
 	push_u32_be(out, 1);
 
 	const auto sample_entry_type =
-		codec == gpu::video_codec::av1 ? fourcc('a', 'v', '0', '1') : fourcc('h', 'v', 'c', '1');
+		codec == gpu::video_codec::av1 ? fourcc(
+											 'a',
+											 'v',
+											 '0',
+											 '1'
+										 )
+									   : fourcc(
+											 'h',
+											 'v',
+											 'c',
+											 '1'
+										 );
 
 	box_scope visual(out, sample_entry_type);
 	for (int i = 0; i < 6; ++i) {
@@ -584,7 +594,18 @@ auto gse::renderer::capture::mp4::emit_stsd(std::vector<std::byte>& out, const v
 	push_u16_be(out, 0x0018);
 	push_u16_be(out, 0xFFFF);
 
-	const auto config_type = codec == gpu::video_codec::av1 ? fourcc('a', 'v', '1', 'C') : fourcc('h', 'v', 'c', 'C');
+	const auto config_type = codec == gpu::video_codec::av1 ? fourcc(
+																  'a',
+																  'v',
+																  '1',
+																  'C'
+															  )
+															: fourcc(
+																  'h',
+																  'v',
+																  'c',
+																  'C'
+															  );
 	box_scope config(out, config_type);
 	push_bytes(out, codec_config);
 }
@@ -686,7 +707,11 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 	}
 
 	if (!units.front().keyframe) {
-		log::println(log::level::warning, log::category::render, "mp4::mux snapshot does not begin with a keyframe");
+		log::println(
+			log::level::warning,
+			log::category::render,
+			"mp4::mux snapshot does not begin with a keyframe"
+		);
 		return false;
 	}
 
@@ -706,7 +731,11 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 	else {
 		const auto sets = collect_h265_parameter_sets(units.front().bytes);
 		if (sets.sps.empty() || sets.pps.empty()) {
-			log::println(log::level::warning, log::category::render, "mp4::mux could not locate H.265 SPS/PPS NALUs");
+			log::println(
+				log::level::warning,
+				log::category::render,
+				"mp4::mux could not locate H.265 SPS/PPS NALUs"
+			);
 			return false;
 		}
 		codec_config = build_hvcc(sets);
@@ -785,8 +814,14 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 		return false;
 	}
 
-	file.write(reinterpret_cast<const char*>(ftyp_bytes.data()), static_cast<std::streamsize>(ftyp_bytes.size()));
-	file.write(reinterpret_cast<const char*>(moov_bytes.data()), static_cast<std::streamsize>(moov_bytes.size()));
+	file.write(
+		reinterpret_cast<const char*>(ftyp_bytes.data()),
+		static_cast<std::streamsize>(ftyp_bytes.size())
+	);
+	file.write(
+		reinterpret_cast<const char*>(moov_bytes.data()),
+		static_cast<std::streamsize>(moov_bytes.size())
+	);
 
 	std::array<std::byte, 16> mdat_header{};
 	mdat_header[0] = std::byte{ 0 };
@@ -801,10 +836,16 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 	for (int i = 0; i < 8; ++i) {
 		mdat_header[8 + i] = std::byte{ static_cast<std::uint8_t>(mdat_total >> ((7 - i) * 8)) };
 	}
-	file.write(reinterpret_cast<const char*>(mdat_header.data()), static_cast<std::streamsize>(mdat_header.size()));
+	file.write(
+		reinterpret_cast<const char*>(mdat_header.data()),
+		static_cast<std::streamsize>(mdat_header.size())
+	);
 
 	for (const auto& u : units) {
-		file.write(reinterpret_cast<const char*>(u.bytes.data()), static_cast<std::streamsize>(u.bytes.size()));
+		file.write(
+			reinterpret_cast<const char*>(u.bytes.data()),
+			static_cast<std::streamsize>(u.bytes.size())
+		);
 	}
 
 	return static_cast<bool>(file);

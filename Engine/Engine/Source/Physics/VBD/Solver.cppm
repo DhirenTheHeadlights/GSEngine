@@ -307,7 +307,13 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 				const stiffness normal_floor = active_normal
 					? std::clamp<stiffness>(
-						  contact_effective_mass(ba, bb, r_aw, r_bw, c.normal) / h_squared,
+						  contact_effective_mass(
+							  ba,
+							  bb,
+							  r_aw,
+							  r_bw,
+							  c.normal
+						  ) / h_squared,
 						  base_floor,
 						  m_config.penalty_max
 					  )
@@ -316,13 +322,25 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				const std::array row_floor = {
 					normal_floor,
 					c.sticking ? std::clamp<stiffness>(
-									 contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_u) / h_squared,
+									 contact_effective_mass(
+										 ba,
+										 bb,
+										 r_aw,
+										 r_bw,
+										 c.tangent_u
+									 ) / h_squared,
 									 m_config.penalty_min,
 									 m_config.penalty_max
 								 )
 							   : m_config.penalty_min,
 					c.sticking ? std::clamp<stiffness>(
-									 contact_effective_mass(ba, bb, r_aw, r_bw, c.tangent_v) / h_squared,
+									 contact_effective_mass(
+										 ba,
+										 bb,
+										 r_aw,
+										 r_bw,
+										 c.tangent_v
+									 ) / h_squared,
 									 m_config.penalty_min,
 									 m_config.penalty_max
 								 )
@@ -331,11 +349,19 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 				for (int i = 0; i < 3; i++) {
 					if (m_config.post_stabilize) {
-						c.penalty[i] = std::clamp(c.penalty[i] * m_config.gamma, row_floor[i], m_config.penalty_max);
+						c.penalty[i] = std::clamp(
+							c.penalty[i] * m_config.gamma,
+							row_floor[i],
+							m_config.penalty_max
+						);
 					}
 					else {
 						c.lambda[i] *= m_config.alpha * m_config.gamma;
-						c.penalty[i] = std::clamp(c.penalty[i] * m_config.gamma, row_floor[i], m_config.penalty_max);
+						c.penalty[i] = std::clamp(
+							c.penalty[i] * m_config.gamma,
+							row_floor[i],
+							m_config.penalty_max
+						);
 					}
 				}
 			},
@@ -367,7 +393,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			joints_ref.size(),
 			32,
 			[&, this](std::size_t ji) {
-				compute_joint_c0(joints_ref[ji], m_bodies[joints_ref[ji].body_a], m_bodies[joints_ref[ji].body_b]);
+				compute_joint_c0(
+					joints_ref[ji],
+					m_bodies[joints_ref[ji].body_a],
+					m_bodies[joints_ref[ji].body_b]
+				);
 			},
 			trace_id<"vbd::joint_c0">()
 		);
@@ -524,8 +554,30 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				m_frozen_jacobians[ci] = {
 					.world_r_a = r_aw,
 					.world_r_b = r_bw,
-					.j_ang_a = { cross(r_aw, dirs[0]), cross(r_aw, dirs[1]), cross(r_aw, dirs[2]) },
-					.j_ang_b = { cross(r_bw, dirs[0]), cross(r_bw, dirs[1]), cross(r_bw, dirs[2]) },
+					.j_ang_a = { cross(
+									 r_aw,
+									 dirs[0]
+								 ),
+								 cross(
+									 r_aw,
+									 dirs[1]
+								 ),
+								 cross(
+									 r_aw,
+									 dirs[2]
+								 ) },
+					.j_ang_b = { cross(
+									 r_bw,
+									 dirs[0]
+								 ),
+								 cross(
+									 r_bw,
+									 dirs[1]
+								 ),
+								 cross(
+									 r_bw,
+									 dirs[2]
+								 ) },
 				};
 			},
 			trace_id<"vbd::frozen_jacobians">()
@@ -660,7 +712,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 					if (body.update_orientation) {
 						body.angular_velocity =
-							difference_axis_angle(body.old_orientation, body.predicted_orientation) / dt;
+							difference_axis_angle(
+								body.old_orientation,
+								body.predicted_orientation
+							) /
+							dt;
 					}
 				}
 			},
@@ -690,7 +746,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const velocity v_rel_after = dot(c.normal, va - vb);
 
 		const float speed_ratio =
-			std::clamp((-c.approach_speed - m_config.restitution_threshold) / m_config.restitution_threshold, 0.f, 1.f);
+			std::clamp(
+				(-c.approach_speed - m_config.restitution_threshold) / m_config.restitution_threshold,
+				0.f,
+				1.f
+			);
 		const velocity v_target = -c.restitution * speed_ratio * c.approach_speed;
 		const velocity dv = v_target - v_rel_after;
 
@@ -791,18 +851,38 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 	const vec3<predicted_position> p_b = body_b.predicted_position + frozen.world_r_b;
 	const vec3<displacement> d = p_a - p_b;
 
-	const vec3<gap> cn = { dot(constraint.normal, d) + m_config.collision_margin,
-						   dot(constraint.tangent_u, d),
-						   dot(constraint.tangent_v, d) };
+	const vec3<gap> cn = { dot(
+							   constraint.normal,
+							   d
+						   ) + m_config.collision_margin,
+						   dot(
+							   constraint.tangent_u,
+							   d
+						   ),
+						   dot(
+							   constraint.tangent_v,
+							   d
+						   ) };
 	const vec3<gap> c = cn - constraint.c0 * alpha;
 
 	const force friction_bound = abs(constraint.lambda[0]) * constraint.friction_coeff;
 
-	const force f0 = std::min<force>(constraint.penalty[0] * c[0] + constraint.lambda[0], force{});
+	const force f0 = std::min<force>(
+		constraint.penalty[0] * c[0] + constraint.lambda[0],
+		force{}
+	);
 	const force f1 =
-		std::clamp<force>(constraint.penalty[1] * c[1] + constraint.lambda[1], -friction_bound, friction_bound);
+		std::clamp<force>(
+			constraint.penalty[1] * c[1] + constraint.lambda[1],
+			-friction_bound,
+			friction_bound
+		);
 	const force f2 =
-		std::clamp<force>(constraint.penalty[2] * c[2] + constraint.lambda[2], -friction_bound, friction_bound);
+		std::clamp<force>(
+			constraint.penalty[2] * c[2] + constraint.lambda[2],
+			-friction_bound,
+			friction_bound
+		);
 
 	const float sign = is_a ? 1.f : -1.f;
 	const std::array dirs = { constraint.normal, constraint.tangent_u, constraint.tangent_v };
@@ -825,8 +905,16 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 
 		if (m_bodies[body_idx].update_orientation) {
 			m_solve_state[body_idx].angular_gradient += j_ang * f[i];
-			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.penalty[i] / rad;
-			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.penalty[i] / rad;
+			m_solve_state[body_idx].angular_hessian += outer_product(
+														   j_ang,
+														   j_ang
+													   ) *
+				constraint.penalty[i] / rad;
+			m_solve_state[body_idx].hessian_xtheta += outer_product(
+														  j_lin,
+														  j_ang
+													  ) *
+				constraint.penalty[i] / rad;
 		}
 	}
 }
@@ -875,10 +963,7 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 		const vec3<predicted_position> p_b = body_b.predicted_position + r_bw;
 		const vec3<displacement> d = p_a - p_b;
 
-		if (
-			const length normal_gap = dot(c.normal, d) + m_config.collision_margin;
-			normal_gap >= length{} && c.lambda[0] >= newtons(-1e-3f)
-		) {
+		if (const length normal_gap = dot(c.normal, d) + m_config.collision_margin; normal_gap >= length{} && c.lambda[0] >= newtons(-1e-3f)) {
 			continue;
 		}
 
@@ -1003,30 +1088,56 @@ auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
 			const vec3<predicted_position> pB = body_b.predicted_position + rBW;
 			const vec3<displacement> d = pA - pB;
 
-			const vec3<gap> cn = { dot(con.normal, d) + m_config.collision_margin,
-								   dot(con.tangent_u, d),
-								   dot(con.tangent_v, d) };
+			const vec3<gap> cn = { dot(
+									   con.normal,
+									   d
+								   ) + m_config.collision_margin,
+								   dot(
+									   con.tangent_u,
+									   d
+								   ),
+								   dot(
+									   con.tangent_v,
+									   d
+								   ) };
 			const vec3<gap> c = cn - con.c0 * alpha;
 
 			con.lambda[0] = std::min<force>(con.penalty[0] * c[0] + con.lambda[0], force{});
 
 			const force friction_bound = abs(con.lambda[0]) * con.friction_coeff;
 
-			con.lambda[1] = std::clamp<force>(con.penalty[1] * c[1] + con.lambda[1], -friction_bound, friction_bound);
-			con.lambda[2] = std::clamp<force>(con.penalty[2] * c[2] + con.lambda[2], -friction_bound, friction_bound);
+			con.lambda[1] = std::clamp<force>(
+				con.penalty[1] * c[1] + con.lambda[1],
+				-friction_bound,
+				friction_bound
+			);
+			con.lambda[2] = std::clamp<force>(
+				con.penalty[2] * c[2] + con.lambda[2],
+				-friction_bound,
+				friction_bound
+			);
 
 			if (con.lambda[0] < force{}) {
-				con.penalty[0] = std::min(con.penalty[0] + m_config.beta * abs(c[0]), m_config.penalty_max);
+				con.penalty[0] = std::min(
+					con.penalty[0] + m_config.beta * abs(c[0]),
+					m_config.penalty_max
+				);
 				const auto worker_idx = task::current_worker().value_or(0);
 				per_worker_max[worker_idx] = std::max<length>(per_worker_max[worker_idx], abs(c[0]));
 			}
 
 			if (friction_bound > newtons(1e-10f)) {
 				if (abs(con.lambda[1]) < friction_bound) {
-					con.penalty[1] = std::min(con.penalty[1] + m_config.beta * abs(c[1]), m_config.penalty_max);
+					con.penalty[1] = std::min(
+						con.penalty[1] + m_config.beta * abs(c[1]),
+						m_config.penalty_max
+					);
 				}
 				if (abs(con.lambda[2]) < friction_bound) {
-					con.penalty[2] = std::min(con.penalty[2] + m_config.beta * abs(c[2]), m_config.penalty_max);
+					con.penalty[2] = std::min(
+						con.penalty[2] + m_config.beta * abs(c[2]),
+						m_config.penalty_max
+					);
 				}
 			}
 		},
@@ -1076,8 +1187,16 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 		if (m_bodies[body_idx].update_orientation) {
 			m_solve_state[body_idx].angular_gradient += j_ang * fi;
-			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[0] / rad;
-			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[0] / rad;
+			m_solve_state[body_idx].angular_hessian += outer_product(
+														   j_ang,
+														   j_ang
+													   ) *
+				constraint.pos_penalty[0] / rad;
+			m_solve_state[body_idx].hessian_xtheta += outer_product(
+														  j_lin,
+														  j_ang
+													  ) *
+				constraint.pos_penalty[0] / rad;
 			accumulate_geometric_stiffness(m_solve_state[body_idx], r, d_hat, abs(fi));
 		}
 	}
@@ -1145,8 +1264,16 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			if (m_bodies[body_idx].update_orientation) {
 				m_solve_state[body_idx].angular_gradient += j_ang * fi;
 				m_solve_state[body_idx].angular_hessian +=
-					outer_product(j_ang, j_ang) * constraint.pos_penalty[k] / rad;
-				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k] / rad;
+					outer_product(
+						j_ang,
+						j_ang
+					) *
+					constraint.pos_penalty[k] / rad;
+				m_solve_state[body_idx].hessian_xtheta += outer_product(
+															  j_lin,
+															  j_ang
+														  ) *
+					constraint.pos_penalty[k] / rad;
 				accumulate_geometric_stiffness(m_solve_state[body_idx], r, dirs[k], abs(fi));
 			}
 		}
@@ -1163,7 +1290,11 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 					const vec3f j_ang = dirs[k] * (-sign);
 					m_solve_state[body_idx].angular_gradient += j_ang * f_ang;
-					m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.ang_penalty[k];
+					m_solve_state[body_idx].angular_hessian += outer_product(
+																   j_ang,
+																   j_ang
+															   ) *
+						constraint.ang_penalty[k];
 				}
 			}
 			else if (constraint.type == joint_type::universal) {
@@ -1173,7 +1304,11 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 				const vec3f j_twist = axis_a * (-sign);
 				m_solve_state[body_idx].angular_gradient += j_twist * f_twist;
-				m_solve_state[body_idx].angular_hessian += outer_product(j_twist, j_twist) * constraint.ang_penalty[0];
+				m_solve_state[body_idx].angular_hessian += outer_product(
+															   j_twist,
+															   j_twist
+														   ) *
+					constraint.ang_penalty[0];
 			}
 			else if (constraint.type == joint_type::ball) {
 				for (int k = 0; k < 3; ++k) {
@@ -1187,7 +1322,11 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 					const vec3f j_soft = axis_world * (-sign);
 					m_solve_state[body_idx].angular_gradient += j_soft * f_soft;
 					m_solve_state[body_idx].angular_hessian +=
-						outer_product(j_soft, j_soft) * constraint.soft_ang_stiffness[k];
+						outer_product(
+							j_soft,
+							j_soft
+						) *
+						constraint.soft_ang_stiffness[k];
 				}
 			}
 			else {
@@ -1212,10 +1351,18 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 				const vec3f j_ang_v = perp_v * (-sign);
 
 				m_solve_state[body_idx].angular_gradient += j_ang_u * f_u;
-				m_solve_state[body_idx].angular_hessian += outer_product(j_ang_u, j_ang_u) * constraint.ang_penalty[0];
+				m_solve_state[body_idx].angular_hessian += outer_product(
+															   j_ang_u,
+															   j_ang_u
+														   ) *
+					constraint.ang_penalty[0];
 
 				m_solve_state[body_idx].angular_gradient += j_ang_v * f_v;
-				m_solve_state[body_idx].angular_hessian += outer_product(j_ang_v, j_ang_v) * constraint.ang_penalty[1];
+				m_solve_state[body_idx].angular_hessian += outer_product(
+															   j_ang_v,
+															   j_ang_v
+														   ) *
+					constraint.ang_penalty[1];
 
 				if (constraint.limits_enabled) {
 					const angle twist = dot(axis_a, theta);
@@ -1237,19 +1384,33 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 					if (limit_active) {
 						const torque f_limit = constraint.limit_penalty * c_limit + constraint.limit_lambda;
 						const torque f_clamped =
-							(c_limit < angle{}) ? std::min(f_limit, torque{}) : std::max(f_limit, torque{});
+							(c_limit < angle{}) ? std::min(
+													  f_limit,
+													  torque{}
+												  )
+												: std::max(
+													  f_limit,
+													  torque{}
+												  );
 
 						const vec3f j_limit = axis_a * (-sign);
 						m_solve_state[body_idx].angular_gradient += j_limit * f_clamped;
 						m_solve_state[body_idx].angular_hessian +=
-							outer_product(j_limit, j_limit) * constraint.limit_penalty;
+							outer_product(
+								j_limit,
+								j_limit
+							) *
+							constraint.limit_penalty;
 					}
 				}
 			}
 		}
 	}
 	else if (constraint.type == joint_type::slider) {
-		const vec3f axis_w = normalize(rotate_vector(body_a.predicted_orientation, constraint.local_axis_a));
+		const vec3f axis_w = normalize(rotate_vector(
+			body_a.predicted_orientation,
+			constraint.local_axis_a
+		));
 		vec3f perp0 = cross(axis_w, axis_y);
 		if (magnitude(perp0) < 1e-6f) {
 			perp0 = cross(axis_w, axis_x);
@@ -1271,8 +1432,16 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			if (m_bodies[body_idx].update_orientation) {
 				m_solve_state[body_idx].angular_gradient += j_ang * fi;
 				m_solve_state[body_idx].angular_hessian +=
-					outer_product(j_ang, j_ang) * constraint.pos_penalty[k] / rad;
-				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k] / rad;
+					outer_product(
+						j_ang,
+						j_ang
+					) *
+					constraint.pos_penalty[k] / rad;
+				m_solve_state[body_idx].hessian_xtheta += outer_product(
+															  j_lin,
+															  j_ang
+														  ) *
+					constraint.pos_penalty[k] / rad;
 				accumulate_geometric_stiffness(m_solve_state[body_idx], r, perps[k], abs(fi));
 			}
 		}
@@ -1289,7 +1458,11 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 				const vec3f j_ang = dirs[k] * (-sign);
 				m_solve_state[body_idx].angular_gradient += j_ang * f_ang;
-				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.ang_penalty[k];
+				m_solve_state[body_idx].angular_hessian += outer_product(
+															   j_ang,
+															   j_ang
+														   ) *
+					constraint.ang_penalty[k];
 			}
 		}
 	}
@@ -1320,7 +1493,10 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 				per_worker_max[worker_idx].linear = std::max(per_worker_max[worker_idx].linear, abs(v));
 			};
 			auto track_angular = [&](const angle v) {
-				per_worker_max[worker_idx].angular = std::max(per_worker_max[worker_idx].angular, abs(v));
+				per_worker_max[worker_idx].angular = std::max(
+					per_worker_max[worker_idx].angular,
+					abs(v)
+				);
 			};
 
 			const vec3<lever_arm> r_aw = rotate_vector(body_a.predicted_orientation, j.local_anchor_a);
@@ -1333,7 +1509,10 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 				const length C = (magnitude(d) - j.target_distance) - j.pos_c0[0];
 				j.pos_lambda[0] = j.pos_penalty[0] * C + j.pos_lambda[0];
 				const stiffness penalty_cap = (j.compliance > inverse_mass{})
-					? std::min<stiffness>(1.f / (j.compliance * h_squared), m_config.penalty_max)
+					? std::min<stiffness>(
+						  1.f / (j.compliance * h_squared),
+						  m_config.penalty_max
+					  )
 					: m_config.penalty_max;
 				j.pos_penalty[0] = std::min(j.pos_penalty[0] + m_config.beta * abs(C), penalty_cap);
 				track_linear(C);
@@ -1343,7 +1522,10 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 				const length C = std::max(stretch, length{}) - j.pos_c0[0];
 				j.pos_lambda[0] = std::max(j.pos_penalty[0] * C + j.pos_lambda[0], force{});
 				const stiffness penalty_cap = (j.compliance > inverse_mass{})
-					? std::min<stiffness>(1.f / (j.compliance * h_squared), m_config.penalty_max)
+					? std::min<stiffness>(
+						  1.f / (j.compliance * h_squared),
+						  m_config.penalty_max
+					  )
 					: m_config.penalty_max;
 				j.pos_penalty[0] = std::min(j.pos_penalty[0] + m_config.beta * abs(C), penalty_cap);
 				track_linear(C);
@@ -1353,7 +1535,10 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 					constexpr std::array dirs = { axis_x, axis_y, axis_z };
 					const length c = dot(dirs[k], d) - j.pos_c0[k];
 					j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
-					j.pos_penalty[k] = std::min(j.pos_penalty[k] + m_config.beta * abs(c), m_config.penalty_max);
+					j.pos_penalty[k] = std::min(
+						j.pos_penalty[k] + m_config.beta * abs(c),
+						m_config.penalty_max
+					);
 					track_linear(c);
 				}
 
@@ -1370,7 +1555,10 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 						const angle c_ang = theta[k] - j.ang_c0[k];
 						j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
 						j.ang_penalty[k] =
-							std::min(j.ang_penalty[k] + m_config.ang_beta * abs(c_ang), m_config.ang_penalty_max);
+							std::min(
+								j.ang_penalty[k] + m_config.ang_beta * abs(c_ang),
+								m_config.ang_penalty_max
+							);
 						track_angular(c_ang);
 					}
 				}
@@ -1379,7 +1567,10 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 					const angle c_twist = dot(axis_a, theta) - j.ang_c0[0];
 					j.ang_lambda[0] = j.ang_penalty[0] * c_twist + j.ang_lambda[0];
 					j.ang_penalty[0] =
-						std::min(j.ang_penalty[0] + m_config.ang_beta * abs(c_twist), m_config.ang_penalty_max);
+						std::min(
+							j.ang_penalty[0] + m_config.ang_beta * abs(c_twist),
+							m_config.ang_penalty_max
+						);
 					track_angular(c_twist);
 				}
 				else {
@@ -1399,12 +1590,18 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 
 					j.ang_lambda[0] = j.ang_penalty[0] * c_u + j.ang_lambda[0];
 					j.ang_penalty[0] =
-						std::min(j.ang_penalty[0] + m_config.ang_beta * abs(c_u), m_config.ang_penalty_max);
+						std::min(
+							j.ang_penalty[0] + m_config.ang_beta * abs(c_u),
+							m_config.ang_penalty_max
+						);
 					track_angular(c_u);
 
 					j.ang_lambda[1] = j.ang_penalty[1] * c_v + j.ang_lambda[1];
 					j.ang_penalty[1] =
-						std::min(j.ang_penalty[1] + m_config.ang_beta * abs(c_v), m_config.ang_penalty_max);
+						std::min(
+							j.ang_penalty[1] + m_config.ang_beta * abs(c_v),
+							m_config.ang_penalty_max
+						);
 					track_angular(c_v);
 
 					if (j.limits_enabled) {
@@ -1414,16 +1611,28 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 
 						if (twist < lower) {
 							const angle c_limit = (twist - lower) - j.limit_c0;
-							j.limit_lambda = std::min<torque>(j.limit_penalty * c_limit + j.limit_lambda, torque{});
+							j.limit_lambda = std::min<torque>(
+								j.limit_penalty * c_limit + j.limit_lambda,
+								torque{}
+							);
 							j.limit_penalty =
-								std::min(j.limit_penalty + m_config.ang_beta * abs(c_limit), m_config.ang_penalty_max);
+								std::min(
+									j.limit_penalty + m_config.ang_beta * abs(c_limit),
+									m_config.ang_penalty_max
+								);
 							track_angular(c_limit);
 						}
 						else if (twist > upper) {
 							const angle c_limit = (twist - upper) - j.limit_c0;
-							j.limit_lambda = std::max<torque>(j.limit_penalty * c_limit + j.limit_lambda, torque{});
+							j.limit_lambda = std::max<torque>(
+								j.limit_penalty * c_limit + j.limit_lambda,
+								torque{}
+							);
 							j.limit_penalty =
-								std::min(j.limit_penalty + m_config.ang_beta * abs(c_limit), m_config.ang_penalty_max);
+								std::min(
+									j.limit_penalty + m_config.ang_beta * abs(c_limit),
+									m_config.ang_penalty_max
+								);
 							track_angular(c_limit);
 						}
 					}
@@ -1442,7 +1651,10 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 				for (int k = 0; k < 2; ++k) {
 					const length c = dot(perps[k], d) - j.pos_c0[k];
 					j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
-					j.pos_penalty[k] = std::min(j.pos_penalty[k] + m_config.beta * abs(c), m_config.penalty_max);
+					j.pos_penalty[k] = std::min(
+						j.pos_penalty[k] + m_config.beta * abs(c),
+						m_config.penalty_max
+					);
 					track_linear(c);
 				}
 
@@ -1454,7 +1666,10 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 					const angle c_ang = theta[k] - j.ang_c0[k];
 					j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
 					j.ang_penalty[k] =
-						std::min(j.ang_penalty[k] + m_config.ang_beta * abs(c_ang), m_config.ang_penalty_max);
+						std::min(
+							j.ang_penalty[k] + m_config.ang_beta * abs(c_ang),
+							m_config.ang_penalty_max
+						);
 					track_angular(c_ang);
 				}
 			}
@@ -1552,9 +1767,19 @@ auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const
 		}
 		const stiffness eff = contact_effective_mass(ba, bb, r_aw, r_bw, dir) / h_squared;
 		const stiffness pos_penalty_cap = (j.compliance > inverse_mass{})
-			? std::min<stiffness>(1.f / (j.compliance * h_squared), cfg.penalty_max)
+			? std::min<stiffness>(
+				  1.f / (j.compliance * h_squared),
+				  cfg.penalty_max
+			  )
 			: cfg.penalty_max;
-		j.pos_penalty[k] = std::clamp(std::max(j.pos_penalty[k] * cfg.gamma, eff), cfg.penalty_min, pos_penalty_cap);
+		j.pos_penalty[k] = std::clamp(
+			std::max(
+				j.pos_penalty[k] * cfg.gamma,
+				eff
+			),
+			cfg.penalty_min,
+			pos_penalty_cap
+		);
 	}
 
 	int num_ang_rows = 3;
@@ -1598,7 +1823,14 @@ auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const
 			inv_i_sum > per_kilogram_meter_squared(1e-10f) ? 1.f / inv_i_sum / h_squared / rad : cfg.ang_penalty_min;
 
 		j.ang_penalty[k] =
-			std::clamp(std::max(j.ang_penalty[k] * cfg.gamma, eff_ang), cfg.ang_penalty_min, cfg.ang_penalty_max);
+			std::clamp(
+				std::max(
+					j.ang_penalty[k] * cfg.gamma,
+					eff_ang
+				),
+				cfg.ang_penalty_min,
+				cfg.ang_penalty_max
+			);
 	}
 
 	if (j.limits_enabled) {
@@ -1615,7 +1847,14 @@ auto gse::vbd::warm_start_joint(joint_constraint& j, const body_state& ba, const
 			inv_i_sum > per_kilogram_meter_squared(1e-10f) ? 1.f / inv_i_sum / h_squared / rad : cfg.ang_penalty_min;
 
 		j.limit_penalty =
-			std::clamp(std::max(j.limit_penalty * cfg.gamma, eff_limit), cfg.ang_penalty_min, cfg.ang_penalty_max);
+			std::clamp(
+				std::max(
+					j.limit_penalty * cfg.gamma,
+					eff_limit
+				),
+				cfg.ang_penalty_min,
+				cfg.ang_penalty_max
+			);
 	}
 }
 

@@ -128,12 +128,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::command::command(
-	std::array<family_pool, gpu::queue_type_count> pools,
-	std::array<std::uint32_t, gpu::queue_type_count> families
-)
-	: m_pools(std::move(pools)),
-	  m_families(families) {
+gse::vulkan::command::command(std::array<family_pool, gpu::queue_type_count> pools, std::array<std::uint32_t, gpu::queue_type_count> families)
+	: m_pools(std::move(pools)), m_families(families) {
 }
 
 auto gse::vulkan::command::make_primary_pool(const device& device_data, const std::uint32_t family, const std::string_view label) -> family_pool {
@@ -209,12 +205,8 @@ auto gse::vulkan::command::frame_command_buffer(const gpu::queue_type queue, con
 	return std::bit_cast<gpu::handle<command_buffer>>(*pool.buffers[frame_index]);
 }
 
-gse::vulkan::worker_command_pools::worker_command_pools(
-	std::array<family_pools, gpu::queue_type_count> pools,
-	std::array<std::uint32_t, gpu::queue_type_count> families
-)
-	: m_pools(std::move(pools)),
-	  m_families(families) {
+gse::vulkan::worker_command_pools::worker_command_pools(std::array<family_pools, gpu::queue_type_count> pools, std::array<std::uint32_t, gpu::queue_type_count> families)
+	: m_pools(std::move(pools)), m_families(families) {
 }
 
 gse::vulkan::worker_command_pools::~worker_command_pools() = default;
@@ -228,7 +220,12 @@ auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_
 
 		vk::raii::CommandPool pool = device_data.raii_device().createCommandPool(pool_info);
 
-		const std::string pool_name = std::format("Worker {} Frame {} Command Pool ({})", worker, frame, label);
+		const std::string pool_name = std::format(
+			"Worker {} Frame {} Command Pool ({})",
+			worker,
+			frame,
+			label
+		);
 		const vk::DebugUtilsObjectNameInfoEXT pool_name_info{
 			.objectType = vk::ObjectType::eCommandPool,
 			.objectHandle = std::bit_cast<std::uint64_t>(*pool),
@@ -246,7 +243,13 @@ auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_
 
 		for (std::size_t i = 0; i < secondaries.size(); ++i) {
 			const std::string buffer_name =
-				std::format("Worker {} Frame {} Secondary {} ({})", worker, frame, i, label);
+				std::format(
+					"Worker {} Frame {} Secondary {} ({})",
+					worker,
+					frame,
+					i,
+					label
+				);
 			const vk::DebugUtilsObjectNameInfoEXT buffer_name_info{
 				.objectType = vk::ObjectType::eCommandBuffer,
 				.objectHandle = std::bit_cast<std::uint64_t>(*secondaries[i]),
@@ -286,7 +289,10 @@ auto gse::vulkan::worker_command_pools::create(const device& device_data, const 
 	pools[0] = build_family_pools(
 		device_data,
 		queue_families[0],
-		std::format("queue_{}", 0),
+		std::format(
+			"queue_{}",
+			0
+		),
 		worker_count,
 		secondaries_per_pool
 	);
@@ -302,7 +308,10 @@ auto gse::vulkan::worker_command_pools::create(const device& device_data, const 
 			pools[i] = build_family_pools(
 				device_data,
 				queue_families[i],
-				std::format("queue_{}", i),
+				std::format(
+					"queue_{}",
+					i
+				),
 				worker_count,
 				secondaries_per_pool
 			);

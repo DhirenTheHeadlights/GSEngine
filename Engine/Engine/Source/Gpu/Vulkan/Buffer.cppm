@@ -163,14 +163,8 @@ auto gse::vulkan::drain_dirty_buffers() -> void {
 }
 
 template <typename Device>
-gse::vulkan::basic_buffer<Device>::basic_buffer(
-	const gpu::handle<basic_buffer<device>> buffer,
-	basic_allocation<Device> allocation,
-	const gpu::device_size size
-)
-	: m_buffer(buffer),
-	  m_size(size),
-	  m_allocation(std::move(allocation)) {
+gse::vulkan::basic_buffer<Device>::basic_buffer(const gpu::handle<basic_buffer<device>> buffer, basic_allocation<Device> allocation, const gpu::device_size size)
+	: m_buffer(buffer), m_size(size), m_allocation(std::move(allocation)) {
 }
 
 template <typename Device>
@@ -198,10 +192,7 @@ gse::vulkan::basic_buffer<Device>::~basic_buffer() {
 
 template <typename Device>
 gse::vulkan::basic_buffer<Device>::basic_buffer(basic_buffer&& other) noexcept
-	: m_buffer(other.m_buffer),
-	  m_size(other.m_size),
-	  m_allocation(std::move(other.m_allocation)),
-	  m_host_dirty(other.m_host_dirty.load(std::memory_order_relaxed)) {
+	: m_buffer(other.m_buffer), m_size(other.m_size), m_allocation(std::move(other.m_allocation)), m_host_dirty(other.m_host_dirty.load(std::memory_order_relaxed)) {
 	other.m_buffer = {};
 	other.m_size = 0;
 	const bool was_dirty = other.m_host_dirty.exchange(false, std::memory_order_acq_rel);
@@ -224,7 +215,10 @@ auto gse::vulkan::basic_buffer<Device>::operator=(basic_buffer&& other) noexcept
 		m_buffer = other.m_buffer;
 		m_size = other.m_size;
 		m_allocation = std::move(other.m_allocation);
-		m_host_dirty.store(other.m_host_dirty.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		m_host_dirty.store(
+			other.m_host_dirty.load(std::memory_order_relaxed),
+			std::memory_order_relaxed
+		);
 		other.m_buffer = {};
 		other.m_size = 0;
 		const bool was_dirty = other.m_host_dirty.exchange(false, std::memory_order_acq_rel);
@@ -278,7 +272,11 @@ template <typename T>
 requires(!std::is_pointer_v<T>)
 auto gse::vulkan::basic_buffer<Device>::host_write(const T& src, const std::size_t offset) const -> void {
 	if constexpr (std::ranges::contiguous_range<T>) {
-		host_write(std::ranges::data(src), std::ranges::size(src) * sizeof(std::ranges::range_value_t<T>), offset);
+		host_write(
+			std::ranges::data(src),
+			std::ranges::size(src) * sizeof(std::ranges::range_value_t<T>),
+			offset
+		);
 	}
 	else {
 		static_assert(std::is_trivially_copyable_v<T>, "host_write requires a trivially copyable type");

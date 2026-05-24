@@ -367,14 +367,8 @@ auto gse::gpu::descriptor_heap::destroy_sub_buffer(sub_buffer& sb) -> void {
 	}
 }
 
-gse::gpu::descriptor_heap::descriptor_heap(
-	const vulkan::device& dev,
-	const descriptor_buffer_properties& props,
-	const gpu::device_size persistent_capacity,
-	const gpu::device_size transient_capacity_per_frame
-)
-	: m_device(*dev.raii_device()),
-	  m_props(props) {
+gse::gpu::descriptor_heap::descriptor_heap(const vulkan::device& dev, const descriptor_buffer_properties& props, const gpu::device_size persistent_capacity, const gpu::device_size transient_capacity_per_frame)
+	: m_device(*dev.raii_device()), m_props(props) {
 	m_persistent = create_sub_buffer(dev, persistent_capacity, "persistent");
 
 	const auto aligned_slice = transient_capacity_per_frame & ~(m_props.offset_alignment - 1);
@@ -511,7 +505,10 @@ auto gse::gpu::descriptor_heap::layout_size(const gpu::handle<vulkan::descriptor
 }
 
 auto gse::gpu::descriptor_heap::binding_offset(const gpu::handle<vulkan::descriptor_set_layout> layout, const std::uint32_t binding) const -> gpu::device_size {
-	return m_device.getDescriptorSetLayoutBindingOffsetEXT(std::bit_cast<vk::DescriptorSetLayout>(layout), binding);
+	return m_device.getDescriptorSetLayoutBindingOffsetEXT(
+		std::bit_cast<vk::DescriptorSetLayout>(layout),
+		binding
+	);
 }
 
 auto gse::gpu::descriptor_heap::buffer_address(const gpu::handle<vulkan::buffer> buffer) const -> device_address {
@@ -529,15 +526,8 @@ auto gse::gpu::descriptor_heap::align_up(const gpu::device_size value) const -> 
 	return (value + alignment - 1) & ~(alignment - 1);
 }
 
-gse::gpu::descriptor_set_writer::descriptor_set_writer(
-	descriptor_heap& heap,
-	gpu::handle<vulkan::descriptor_set_layout> layout,
-	const gpu::device_size layout_size,
-	std::vector<descriptor_binding_info> bindings
-)
-	: m_heap(&heap),
-	  m_layout_size(layout_size),
-	  m_bindings(std::move(bindings)) {
+gse::gpu::descriptor_set_writer::descriptor_set_writer(descriptor_heap& heap, gpu::handle<vulkan::descriptor_set_layout> layout, const gpu::device_size layout_size, std::vector<descriptor_binding_info> bindings)
+	: m_heap(&heap), m_layout_size(layout_size), m_bindings(std::move(bindings)) {
 }
 
 auto gse::gpu::descriptor_set_writer::begin(const std::uint32_t frame_index) -> descriptor_region {

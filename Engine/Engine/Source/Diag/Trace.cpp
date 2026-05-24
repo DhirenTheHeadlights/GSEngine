@@ -403,9 +403,13 @@ auto gse::trace::compute_self_time(frame_storage& fs, std::size_t i) -> void {
 	const auto segs_first = fs.segs_scratch.begin() + segs_base;
 	const auto segs_last = fs.segs_scratch.end();
 
-	std::ranges::sort(segs_first, segs_last, [](const frame_storage::seg& x, const frame_storage::seg& y) {
-		return x.a < y.a;
-	});
+	std::ranges::sort(
+		segs_first,
+		segs_last,
+		[](const frame_storage::seg& x, const frame_storage::seg& y) {
+			return x.a < y.a;
+		}
+	);
 
 	time_t<std::uint64_t> covered{};
 	frame_storage::seg cur = *segs_first;
@@ -518,7 +522,12 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		if (e.type != event_type::end) {
 			continue;
 		}
-		const auto it = std::ranges::lower_bound(spans, e.eid, {}, &std::pair<std::uint64_t, span_info>::first);
+		const auto it = std::ranges::lower_bound(
+			spans,
+			e.eid,
+			{},
+			&std::pair<std::uint64_t, span_info>::first
+		);
 		if (it != spans.end() && it->first == e.eid) {
 			it->second.t1 = e.ts;
 		}
@@ -562,7 +571,12 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		if (sp.parent == 0) {
 			continue;
 		}
-		const auto it = std::ranges::lower_bound(spans, sp.parent, {}, &std::pair<std::uint64_t, span_info>::first);
+		const auto it = std::ranges::lower_bound(
+			spans,
+			sp.parent,
+			{},
+			&std::pair<std::uint64_t, span_info>::first
+		);
 		if (it != spans.end() && it->first == sp.parent) {
 			parent_idx[i] = static_cast<std::uint32_t>(it - spans.begin());
 		}

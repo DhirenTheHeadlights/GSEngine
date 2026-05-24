@@ -23,7 +23,10 @@ import gse.meta;
 auto gse::gpu::device::create(const window::data& win, const bool validation_layers_enabled, vulkan::device::settings& device_cfg) -> std::unique_ptr<device> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
-	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), validation_layers_enabled);
+	auto instance = vulkan::instance::create(
+		window::vulkan_instance_extensions(),
+		validation_layers_enabled
+	);
 	instance.create_surface(win);
 
 	auto creation = vulkan::device::create(instance, device_cfg, aftermath_tracker);
@@ -33,7 +36,11 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 
 	auto command = vulkan::command::create(creation.device, queue_families);
 
-	auto worker_pools = vulkan::worker_command_pools::create(creation.device, queue_families, task::thread_count());
+	auto worker_pools = vulkan::worker_command_pools::create(
+		creation.device,
+		queue_families,
+		task::thread_count()
+	);
 
 	auto transient = transient_executor::create(
 		creation.device,
@@ -61,30 +68,8 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 	));
 }
 
-gse::gpu::device::device(
-	vulkan::aftermath&& aftermath_tracker,
-	vulkan::instance&& instance,
-	vulkan::device&& device,
-	vulkan::queue&& queue,
-	vulkan::command&& command,
-	vulkan::worker_command_pools&& worker_pools,
-	transient_executor&& transient,
-	std::unique_ptr<gpu::descriptor_heap> descriptor_heap,
-	descriptor_buffer_properties desc_buf_props,
-	image_format surface_format,
-	bool video_encode_enabled
-)
-	: m_aftermath(std::move(aftermath_tracker)),
-	  m_instance(std::move(instance)),
-	  m_device_config(std::move(device)),
-	  m_queue(std::move(queue)),
-	  m_command(std::move(command)),
-	  m_worker_pools(std::move(worker_pools)),
-	  m_transient(std::move(transient)),
-	  m_descriptor_heap(std::move(descriptor_heap)),
-	  m_descriptor_buffer_props(std::move(desc_buf_props)),
-	  m_surface_format(surface_format),
-	  m_video_encode_enabled(video_encode_enabled) {
+gse::gpu::device::device(vulkan::aftermath&& aftermath_tracker, vulkan::instance&& instance, vulkan::device&& device, vulkan::queue&& queue, vulkan::command&& command, vulkan::worker_command_pools&& worker_pools, transient_executor&& transient, std::unique_ptr<gpu::descriptor_heap> descriptor_heap, descriptor_buffer_properties desc_buf_props, image_format surface_format, bool video_encode_enabled)
+	: m_aftermath(std::move(aftermath_tracker)), m_instance(std::move(instance)), m_device_config(std::move(device)), m_queue(std::move(queue)), m_command(std::move(command)), m_worker_pools(std::move(worker_pools)), m_transient(std::move(transient)), m_descriptor_heap(std::move(descriptor_heap)), m_descriptor_buffer_props(std::move(desc_buf_props)), m_surface_format(surface_format), m_video_encode_enabled(video_encode_enabled) {
 	constexpr std::size_t slot_count = pass_marker_ring_size * 4;
 	constexpr std::size_t buffer_size = slot_count * sizeof(std::uint32_t);
 	const std::array<std::uint32_t, slot_count> zeros{};
@@ -97,7 +82,10 @@ gse::gpu::device::device(
 				.usage = gpu::buffer_flag::transfer_dst,
 			},
 			zeros.data(),
-			std::format("device.pass_checkpoint.{}", static_cast<pass_marker_domain>(di))
+			std::format(
+				"device.pass_checkpoint.{}",
+				static_cast<pass_marker_domain>(di)
+			)
 		);
 		ring.checkpoint_slots = std::bit_cast<const std::uint32_t*>(ring.checkpoint_buffer.host_read().data());
 	}
@@ -107,12 +95,8 @@ gse::gpu::device::~device() {
 	log::println(log::category::runtime, "Destroying Device");
 }
 
-auto gse::gpu::device::allocator() -> vulkan::device& {
-	return m_device_config;
-}
-
-auto gse::gpu::device::allocator() const -> const vulkan::device& {
-	return m_device_config;
+auto gse::gpu::device::handle() const -> gpu::handle<vulkan::device> {
+	return m_device_config.device_handle();
 }
 
 auto gse::gpu::device::surface_format() const -> image_format {
@@ -131,7 +115,7 @@ auto gse::gpu::device::timestamp_period() const -> float {
 	return m_device_config.timestamp_period();
 }
 
-auto gse::gpu::device::begin_pass_marker(const handle<command_buffer> cmd, const pass_marker_domain domain, const pass_marker marker) -> pass_marker_handle {
+auto gse::gpu::device::begin_pass_marker(const gpu::handle<command_buffer> cmd, const pass_marker_domain domain, const pass_marker marker) -> pass_marker_handle {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(domain)];
 	const auto seq = ring.seq.fetch_add(1, std::memory_order_relaxed);
 	ring.entries[seq % pass_marker_ring_size] = marker;
@@ -153,7 +137,7 @@ auto gse::gpu::device::begin_pass_marker(const handle<command_buffer> cmd, const
 	};
 }
 
-auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
+auto gse::gpu::device::checkpoint_pass_marker(const gpu::handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer.valid()) {
 		return;
@@ -169,7 +153,7 @@ auto gse::gpu::device::checkpoint_pass_marker(const handle<command_buffer> cmd, 
 	);
 }
 
-auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
+auto gse::gpu::device::post_renderpass_pass_marker(const gpu::handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer.valid()) {
 		return;
@@ -185,7 +169,7 @@ auto gse::gpu::device::post_renderpass_pass_marker(const handle<command_buffer> 
 	);
 }
 
-auto gse::gpu::device::end_pass_marker(const handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
+auto gse::gpu::device::end_pass_marker(const gpu::handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer.valid()) {
 		return;
@@ -202,10 +186,7 @@ auto gse::gpu::device::end_pass_marker(const handle<command_buffer> cmd, const p
 }
 
 auto gse::gpu::device::report_device_lost(const std::string_view operation) -> void {
-	if (
-		bool expected = false;
-		!m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)
-	) {
+	if (bool expected = false; !m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
 		return;
 	}
 
@@ -311,7 +292,11 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	}
 
 	if (!m_device_config.fault_enabled()) {
-		log::println(log::level::warning, log::category::vulkan, "VK_EXT_device_fault is unavailable on this device");
+		log::println(
+			log::level::warning,
+			log::category::vulkan,
+			"VK_EXT_device_fault is unavailable on this device"
+		);
 		return;
 	}
 

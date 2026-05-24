@@ -21,11 +21,16 @@ export namespace gse::shaders::common {
 		projection_matrix proj;
 		view_matrix inv_view;
 		inverse_projection_matrix inv_view_proj;
+		view_matrix prev_view;
+		projection_matrix prev_proj;
+		vec2f jitter_ndc;
+		vec2f prev_jitter_ndc;
 	};
 
 	struct [[= shader_struct]] instance_data {
 		spatial_matrix model_matrix;
 		spatial_matrix normal_matrix;
+		spatial_matrix prev_model_matrix;
 		std::uint32_t material_index;
 		vec3f tint;
 	};

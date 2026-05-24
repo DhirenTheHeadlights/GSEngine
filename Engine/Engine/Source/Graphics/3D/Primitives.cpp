@@ -38,12 +38,30 @@ auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
 		v.push_back({ d, n, { 0.0f, 1.0f } });
 	};
 
-	push_face({ h, neg_h, neg_h }, { neg_h, neg_h, neg_h }, { neg_h, h, neg_h }, { h, h, neg_h }, { 0, 0, -1 });
+	push_face(
+		{ h, neg_h, neg_h },
+		{ neg_h, neg_h, neg_h },
+		{ neg_h, h, neg_h },
+		{ h, h, neg_h },
+		{ 0, 0, -1 }
+	);
 	push_face({ neg_h, neg_h, h }, { h, neg_h, h }, { h, h, h }, { neg_h, h, h }, { 0, 0, 1 });
-	push_face({ neg_h, neg_h, neg_h }, { neg_h, neg_h, h }, { neg_h, h, h }, { neg_h, h, neg_h }, { -1, 0, 0 });
+	push_face(
+		{ neg_h, neg_h, neg_h },
+		{ neg_h, neg_h, h },
+		{ neg_h, h, h },
+		{ neg_h, h, neg_h },
+		{ -1, 0, 0 }
+	);
 	push_face({ h, neg_h, h }, { h, neg_h, neg_h }, { h, h, neg_h }, { h, h, h }, { 1, 0, 0 });
 	push_face({ neg_h, h, h }, { h, h, h }, { h, h, neg_h }, { neg_h, h, neg_h }, { 0, 1, 0 });
-	push_face({ neg_h, neg_h, neg_h }, { h, neg_h, neg_h }, { h, neg_h, h }, { neg_h, neg_h, h }, { 0, -1, 0 });
+	push_face(
+		{ neg_h, neg_h, neg_h },
+		{ h, neg_h, neg_h },
+		{ h, neg_h, h },
+		{ neg_h, neg_h, h },
+		{ 0, -1, 0 }
+	);
 
 	std::vector<std::uint32_t> idx;
 	idx.reserve(36);

@@ -73,7 +73,22 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 				b.pitch_down = gse::actions::add<"Orbit_Pitch_Down">(ctx.channels, gse::key::down);
 
 				const gse::quat initial_orientation = gse::normalize(
-					gse::quat(gse::vec3f(0.f, 1.f, 0.f), o.yaw) * gse::quat(gse::vec3f(1.f, 0.f, 0.f), o.pitch)
+					gse::quat(
+						gse::vec3f(
+							0.f,
+							1.f,
+							0.f
+						),
+						o.yaw
+					) *
+					gse::quat(
+						gse::vec3f(
+							1.f,
+							0.f,
+							0.f
+						),
+						o.pitch
+					)
 				);
 
 				ctx.add_component<gse::camera::follow_component>(
@@ -119,10 +134,34 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 					o.pitch -= gse::degrees(delta.y() * o.mouse_sensitivity);
 				}
 				else {
-					const float yaw_axis = (gse::actions::held(b.yaw_left, cs, as) ? 1.f : 0.f) -
-						(gse::actions::held(b.yaw_right, cs, as) ? 1.f : 0.f);
-					const float pitch_axis = (gse::actions::held(b.pitch_up, cs, as) ? 1.f : 0.f) -
-						(gse::actions::held(b.pitch_down, cs, as) ? 1.f : 0.f);
+					const float yaw_axis = (gse::actions::held(
+												b.yaw_left,
+												cs,
+												as
+											)
+												? 1.f
+												: 0.f) -
+						(gse::actions::held(
+							 b.yaw_right,
+							 cs,
+							 as
+						 )
+							 ? 1.f
+							 : 0.f);
+					const float pitch_axis = (gse::actions::held(
+												  b.pitch_up,
+												  cs,
+												  as
+											  )
+												  ? 1.f
+												  : 0.f) -
+						(gse::actions::held(
+							 b.pitch_down,
+							 cs,
+							 as
+						 )
+							 ? 1.f
+							 : 0.f);
 					o.yaw += gse::degrees(yaw_axis * o.arrow_speed * dt_seconds);
 					o.pitch += gse::degrees(pitch_axis * o.arrow_speed * dt_seconds);
 				}
@@ -136,7 +175,22 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 				o.distance = std::clamp(o.distance, o.min_distance, o.max_distance);
 
 				const gse::quat orientation = gse::normalize(
-					gse::quat(gse::vec3f(0.f, 1.f, 0.f), o.yaw) * gse::quat(gse::vec3f(1.f, 0.f, 0.f), o.pitch)
+					gse::quat(
+						gse::vec3f(
+							0.f,
+							1.f,
+							0.f
+						),
+						o.yaw
+					) *
+					gse::quat(
+						gse::vec3f(
+							1.f,
+							0.f,
+							0.f
+						),
+						o.pitch
+					)
 				);
 
 				gse::vec3<gse::position> target_pos;
@@ -169,7 +223,11 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 							continue;
 						}
 						const gse::physics::box_shape inflated{
-							.size = shape->size + gse::vec3<gse::displacement>(inflation, inflation, inflation)
+							.size = shape->size + gse::vec3<gse::displacement>(
+													  inflation,
+													  inflation,
+													  inflation
+												  )
 						};
 						body(gse::bounding_box(*col_tc, inflated));
 					}
@@ -195,7 +253,10 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 				if (o.collide_with_geometry && displacement_mag > gse::meters(1e-5f)) {
 					for_each_static_box([&](const gse::bounding_box& bb) {
 						if (const auto hit = gse::narrow_phase_collision::segment_obb_first_hit(bb, target_pos, desired_camera_pos)) {
-							const auto safe = std::max(hit->distance - o.collision_skin, gse::meters(0.f));
+							const auto safe = std::max(
+								hit->distance - o.collision_skin,
+								gse::meters(0.f)
+							);
 							const float factor = safe / displacement_mag;
 							if (factor < spring_factor) {
 								spring_factor = factor;

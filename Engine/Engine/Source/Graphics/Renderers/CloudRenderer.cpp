@@ -103,7 +103,7 @@ namespace gse::renderer::cloud {
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
-		gpu::color_target<gpu::color_format::hdr>,
+		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::blend<gpu::blend_preset::alpha>,
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>
 	>;
@@ -164,26 +164,55 @@ auto gse::renderer::cloud::recreate_cloud_target(const gpu::context::data& gpu_s
 }
 
 auto gse::renderer::cloud::write_shape_bake_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
-	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.shape_bake_descriptors)
+	gpu::descriptor_writer(
+		gpu_s.device->handle(),
+		d.shape_bake_descriptors
+	)
 		.storage_image<cloud_shape_out>(d.shape_noise)
 		.commit();
 }
 
 auto gse::renderer::cloud::write_detail_bake_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
-	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.detail_bake_descriptors)
+	gpu::descriptor_writer(
+		gpu_s.device->handle(),
+		d.detail_bake_descriptors
+	)
 		.storage_image<cloud_detail_out>(d.detail_noise)
 		.commit();
 }
 
 auto gse::renderer::cloud::write_raymarch_descriptors(shared_view<gpu::context> gpu_s, shared_view<atmosphere::system> atm, system::data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.raymarch_descriptors[i])
-			.buffer<atmosphere::atmosphere_ubo>(atm.atmosphere_ubo_buffer, 0, sizeof(atmosphere::atmosphere_data))
-			.buffer<cloud_ubo>(d.cloud_ubo_buffer, 0, sizeof(cloud_data))
-			.combined_image_sampler<transmittance_in>(atm.transmittance_lut, d.atmosphere_lut_sampler)
-			.combined_image_sampler<sky_view_in>(atm.sky_view_lut, d.sky_view_sampler)
-			.combined_image_sampler<cloud_shape_in>(d.shape_noise, d.noise_sampler)
-			.combined_image_sampler<cloud_detail_in>(d.detail_noise, d.noise_sampler)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.raymarch_descriptors[i]
+		)
+			.buffer<atmosphere::atmosphere_ubo>(
+				atm.atmosphere_ubo_buffer,
+				0,
+				sizeof(atmosphere::atmosphere_data)
+			)
+			.buffer<cloud_ubo>(
+				d.cloud_ubo_buffer,
+				0,
+				sizeof(cloud_data)
+			)
+			.combined_image_sampler<transmittance_in>(
+				atm.transmittance_lut,
+				d.atmosphere_lut_sampler
+			)
+			.combined_image_sampler<sky_view_in>(
+				atm.sky_view_lut,
+				d.sky_view_sampler
+			)
+			.combined_image_sampler<cloud_shape_in>(
+				d.shape_noise,
+				d.noise_sampler
+			)
+			.combined_image_sampler<cloud_detail_in>(
+				d.detail_noise,
+				d.noise_sampler
+			)
 			.storage_image<cloud_out>(d.cloud_target)
 			.commit();
 	}
@@ -191,8 +220,14 @@ auto gse::renderer::cloud::write_raymarch_descriptors(shared_view<gpu::context> 
 
 auto gse::renderer::cloud::write_composite_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.composite_descriptors[i])
-			.combined_image_sampler<cloud_in>(d.cloud_target, d.composite_sampler)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.composite_descriptors[i]
+		)
+			.combined_image_sampler<cloud_in>(
+				d.cloud_target,
+				d.composite_sampler
+			)
 			.commit();
 	}
 }
@@ -319,15 +354,29 @@ auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::dat
 		}
 	);
 
-	d.shape_bake_descriptors =
-		gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), shape_bake_entry::pod);
-	d.detail_bake_descriptors =
-		gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), detail_bake_entry::pod);
+	d.shape_bake_descriptors = gpu::allocate_descriptors(
+		*gpu_s.shader_registry,
+		gpu_s.device->descriptor_heap(),
+		shape_bake_entry::pod
+	);
+
+	d.detail_bake_descriptors = gpu::allocate_descriptors(
+		*gpu_s.shader_registry,
+		gpu_s.device->descriptor_heap(),
+		detail_bake_entry::pod
+	);
+
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.raymarch_descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), raymarch_entry::pod);
-		d.composite_descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), composite_entry::pod);
+		d.raymarch_descriptors[i] = gpu::allocate_descriptors(
+			*gpu_s.shader_registry,
+			gpu_s.device->descriptor_heap(),
+			raymarch_entry::pod
+		);
+		d.composite_descriptors[i] = gpu::allocate_descriptors(
+			*gpu_s.shader_registry,
+			gpu_s.device->descriptor_heap(),
+			composite_entry::pod
+		);
 	}
 
 	write_shape_bake_descriptors(gpu_s, d);
@@ -409,6 +458,7 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 	auto rec = co_await gpu::pass<cloud_raymarch_pass>(ctx)
 		.pipeline(d.raymarch_pipeline)
 		.after<atmosphere::sky_view_pass, detail_bake_pass>();
+
 	rec.bind_descriptors(d.raymarch_pipeline, d.raymarch_descriptors[frame_index]);
 	rec.push(
 		d.raymarch_pipeline,
@@ -432,6 +482,7 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
 		.after<atmosphere::sky_raster_pass, cloud_raymarch_pass>();
+
 	composite_rec.sample_image(d.cloud_target, gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.set_viewport(ext);
 	composite_rec.set_scissor(ext);
