@@ -60,7 +60,10 @@ auto gse::renderer::system::run(run_context& ctx, const gpu::context::data& gpu_
 		}
 
 		const auto window_size = window::viewport(window_s);
-		const auto new_viewport = vec2f(static_cast<float>(window_size.x()), static_cast<float>(window_size.y()));
+		const auto new_viewport = vec2f(
+			static_cast<float>(window_size.x()),
+			static_cast<float>(window_size.y())
+		);
 
 		if (new_viewport.x() > 0.f && new_viewport.y() > 0.f && (new_viewport.x() != d.last_viewport.x() || new_viewport.y() != d.last_viewport.y())) {
 			ctx.channels.push<camera::viewport_update>({

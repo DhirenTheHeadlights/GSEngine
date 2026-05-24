@@ -151,10 +151,7 @@ requires gse::network::is_read_mode_v<Mode>
 	for (auto& byte_out : data) {
 		for (int i = 0; i < 8; ++i) {
 			const auto byte_index = m_head_bits / 8;
-			if (
-				const auto bit_index = m_head_bits % 8;
-				(m_buffer[byte_index] & (std::byte{ 1 } << bit_index)) != std::byte{ 0 }
-			) {
+			if (const auto bit_index = m_head_bits % 8; (m_buffer[byte_index] & (std::byte{ 1 } << bit_index)) != std::byte{ 0 }) {
 				byte_out |= (std::byte{ 1 } << i);
 			}
 			++m_head_bits;

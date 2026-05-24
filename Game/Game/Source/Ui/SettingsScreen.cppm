@@ -43,45 +43,55 @@ export namespace gs {
 			gse::gui::nav& n
 		) const -> void;
 
+		auto draw_footer(
+			gse::gui::draw_context& ctx,
+			const gse::gui::ui_rect& rect
+		) -> void;
+
+		static auto draw_footer_button(
+			gse::gui::draw_context& ctx,
+			const gse::gui::ui_rect& rect,
+			std::string_view label,
+			bool enabled,
+			bool primary,
+			gse::id key
+		) -> bool;
+
+		struct footer_status_cache {
+			std::size_t pending = std::numeric_limits<std::size_t>::max();
+			std::size_t pending_restart = 0;
+			bool needs_restart = false;
+			std::string text;
+		};
+
 		const gse::save::registry* m_save_reg;
 		gse::channel_writer m_channels;
 		gse::settings::panel_state m_panel_state;
 		std::string m_selected_category;
 		std::vector<std::string> m_categories;
+		footer_status_cache m_footer_status;
 
-		static constexpr float max_card_width = 1100.f;
-		static constexpr float max_card_height = 760.f;
-		static constexpr float min_card_width = 720.f;
-		static constexpr float min_card_height = 480.f;
-		static constexpr float card_margin_x = 80.f;
-		static constexpr float card_margin_y = 60.f;
-		static constexpr float sidebar_width = 220.f;
-		static constexpr float header_height = 56.f;
 		static constexpr float backdrop_alpha = 0.55f;
-		static constexpr float close_button_size = 28.f;
 	};
 }
 
 gs::settings_screen::settings_screen(const gse::save::registry& save_reg, gse::channel_writer channels)
-	: m_save_reg(&save_reg),
-	  m_channels(std::move(channels)) {
+	: m_save_reg(&save_reg), m_channels(std::move(channels)) {
 }
 
 auto gs::settings_screen::title() const -> std::string_view {
 	return "Settings";
 }
 
-auto gs::settings_screen::body_rect(const gse::gui::style&, const gse::vec2f viewport_size) const -> gse::gui::ui_rect {
-	const float w = std::clamp(viewport_size.x() - card_margin_x * 2.f, min_card_width, max_card_width);
-	const float h = std::clamp(viewport_size.y() - card_margin_y * 2.f, min_card_height, max_card_height);
-	const float left = (viewport_size.x() - w) * 0.5f;
-	const float top = (viewport_size.y() + h) * 0.5f;
-	return gse::gui::ui_rect::from_position_size({ left, top }, { w, h });
+auto gs::settings_screen::body_rect(const gse::gui::style& sty, const gse::vec2f viewport_size) const -> gse::gui::ui_rect {
+	return gse::gui::layout::fit_card(viewport_size, sty.card_min_size, sty.card_max_size, sty.card_margin);
 }
 
 auto gs::settings_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
-	const gse::gui::ui_rect full =
-		gse::gui::ui_rect::from_position_size({ 0.f, viewport_size.y() }, { viewport_size.x(), viewport_size.y() });
+	const gse::gui::ui_rect full = gse::gui::ui_rect::from_position_size(
+		{ 0.f, viewport_size.y() },
+		{ viewport_size.x(), viewport_size.y() }
+	);
 
 	ctx.sprites.push_back({
 		.rect = full,
@@ -102,9 +112,10 @@ auto gs::settings_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::
 }
 
 auto gs::settings_screen::draw_close_button(gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect, gse::gui::nav& n) const -> void {
+	const auto& sty = ctx.style;
 	const gse::id close_id = gse::gui::ids::make("settings.close");
 	const bool hovered = rect.contains(ctx.input.mouse_position()) && ctx.input_available();
-	const gse::vec4f bg = hovered ? ctx.style.color_widget_hovered : gse::vec4f{ 0.f, 0.f, 0.f, 0.f };
+	const gse::vec4f bg = hovered ? sty.color_widget_hovered : gse::vec4f{ 0.f, 0.f, 0.f, 0.f };
 
 	ctx.queue_sprite({
 		.rect = rect,
@@ -114,49 +125,53 @@ auto gs::settings_screen::draw_close_button(gse::gui::draw_context& ctx, const g
 	});
 
 	const std::string glyph = "x";
-	const float glyph_size = ctx.style.font_size;
-	const float glyph_w = ctx.font->width(glyph, glyph_size);
-	const gse::vec4f glyph_color = hovered ? ctx.style.color_icon_hovered : ctx.style.color_icon;
+	const float glyph_w = ctx.font->width(glyph, sty.font_size);
+	const gse::vec4f glyph_color = hovered ? sty.color_icon_hovered : sty.color_icon;
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = glyph,
-		.position = { rect.center().x() - glyph_w * 0.5f, rect.center().y() + ctx.font->vertical_center_offset(glyph_size) },
-		.scale = glyph_size,
+		.position = { rect.center().x() - glyph_w * 0.5f, rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
 		.color = glyph_color,
 		.clip_rect = rect,
 	});
 
-	if (hovered && ctx.input.mouse_button_pressed(gse::mouse_button::button_1)) {
+	if (ctx.mouse_pressed_for(rect)) {
 		n.pop();
 	}
 }
 
 auto gs::settings_screen::draw_header(gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect, gse::gui::nav& n) const -> void {
-	const float title_size = ctx.style.font_size * 1.6f;
-	const float title_left = rect.left() + ctx.style.padding * 1.5f;
+	const auto& sty = ctx.style;
+	namespace lo = gse::gui::layout;
+
+	const float title_size = sty.font_size * 1.6f;
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = "Settings",
-		.position = { title_left, rect.center().y() + ctx.font->vertical_center_offset(title_size) },
+		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.font->vertical_center_offset(title_size) },
 		.scale = title_size,
-		.color = ctx.style.color_text,
+		.color = sty.color_text,
 		.clip_rect = rect,
 	});
 
-	const float close_pad = (rect.height() - close_button_size) * 0.5f;
-	const gse::gui::ui_rect close_rect = gse::gui::ui_rect::from_position_size(
-		{ rect.right() - close_button_size - close_pad, rect.top() - close_pad },
-		{ close_button_size, close_button_size }
+	const float close_pad = (rect.height() - sty.close_button_size) * 0.5f;
+	const gse::gui::ui_rect close_band = lo::inset_per_side(rect, close_pad, close_pad, close_pad, 0.f);
+	const gse::gui::ui_rect close_rect = lo::align_in(
+		close_band,
+		{ sty.close_button_size, sty.close_button_size },
+		lo::halign::end,
+		lo::valign::center
 	);
 	draw_close_button(ctx, close_rect, n);
 
 	const gse::gui::ui_rect separator = gse::gui::ui_rect::from_position_size(
-		{ rect.left() + ctx.style.padding, rect.bottom() },
-		{ rect.width() - ctx.style.padding * 2.f, 1.f }
+		{ rect.left() + sty.padding, rect.bottom() },
+		{ rect.width() - sty.padding * 2.f, sty.separator_thickness }
 	);
 	ctx.queue_sprite({
 		.rect = separator,
-		.color = ctx.style.color_separator,
+		.color = sty.color_separator,
 		.texture = ctx.blank_texture,
 	});
 }
@@ -187,39 +202,38 @@ auto gs::settings_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void
 	}
 
 	auto& ctx = ui.ctx;
+	const auto& sty = ctx.style;
+	namespace lo = gse::gui::layout;
+	using spec = lo::size_spec;
+
 	const gse::gui::ui_rect card = ctx.current_menu->rect;
 
-	const gse::gui::ui_rect header_rect =
-		gse::gui::ui_rect::from_position_size(card.top_left(), { card.width(), header_height });
-	const float body_top = card.top() - header_height;
-	const float body_height = card.height() - header_height;
-	const gse::gui::ui_rect sidebar_rect =
-		gse::gui::ui_rect::from_position_size({ card.left(), body_top }, { sidebar_width, body_height });
-	const gse::gui::ui_rect content_rect = gse::gui::ui_rect::from_position_size(
-		{ card.left() + sidebar_width, body_top },
-		{ card.width() - sidebar_width, body_height }
-	);
+	const auto [header, body, footer] = lo::split_vertical<3>(card, {
+		spec::px(sty.header_height),
+		spec::flex(),
+		spec::px(sty.footer_height),
+	});
 
-	draw_header(ctx, header_rect, n);
+	const auto [sidebar, content] = lo::split_horizontal<2>(body, {
+		spec::px(sty.sidebar_width),
+		spec::flex(),
+	});
+
+	draw_header(ctx, header, n);
 
 	const gse::gui::ui_rect vertical_sep = gse::gui::ui_rect::from_position_size(
-		{ card.left() + sidebar_width, body_top - ctx.style.padding },
-		{ 1.f, body_height - ctx.style.padding * 2.f }
+		{ body.left() + sty.sidebar_width, body.top() - sty.padding },
+		{ sty.separator_thickness, body.height() - sty.padding * 2.f }
 	);
 	ctx.queue_sprite({
 		.rect = vertical_sep,
-		.color = ctx.style.color_separator,
+		.color = sty.color_separator,
 		.texture = ctx.blank_texture,
 	});
 
-	const gse::gui::ui_rect saved_menu_rect = ctx.current_menu->rect;
-	const gse::vec2f saved_cursor = ctx.layout_cursor;
-
 	{
-		ctx.current_menu->rect = sidebar_rect;
-		ctx.layout_cursor = sidebar_rect.top_left();
-		ctx.layout_cursor.y() -= ctx.style.padding;
-
+		auto scope = lo::within(ctx, sidebar);
+		lo::skip(ctx, sty.padding);
 		for (const auto& cat : m_categories) {
 			const bool selected = m_selected_category == cat;
 			if (ui.draw<gse::gui::nav_item>({
@@ -232,14 +246,10 @@ auto gs::settings_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void
 	}
 
 	{
-		ctx.current_menu->rect = content_rect;
-		ctx.layout_cursor = content_rect.top_left();
-		ctx.layout_cursor.y() -= ctx.style.padding * 0.5f;
-
+		auto scope = lo::within(ctx, content);
+		lo::skip(ctx, sty.padding * 0.5f);
 		ui.scroll_region(
-			{
-				.id = "settings.content",
-			},
+			{ .id = "settings.content" },
 			[this](gse::gui::builder& b) {
 				gse::settings::panel(b, m_panel_state, m_channels, *m_save_reg, m_selected_category);
 				b.ctx.layout_cursor.y() -= b.ctx.style.padding * 2.f;
@@ -247,6 +257,129 @@ auto gs::settings_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void
 		);
 	}
 
-	ctx.current_menu->rect = saved_menu_rect;
-	ctx.layout_cursor = saved_cursor;
+	draw_footer(ctx, footer);
+}
+
+auto gs::settings_screen::draw_footer_button(gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect, const std::string_view label, const bool enabled, const bool primary, const gse::id key) -> bool {
+	const auto& sty = ctx.style;
+	const bool hovered = enabled && rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+
+	gse::vec4f base_color = primary ? sty.color_widget_active : sty.color_widget_background;
+	if (!enabled) {
+		base_color = sty.color_widget_background;
+		base_color.w() = base_color.w() * 0.4f;
+	}
+	gse::vec4f target_color = base_color;
+	if (hovered) {
+		target_color = primary ? sty.color_accent : sty.color_widget_hovered;
+	}
+
+	ctx.queue_sprite({
+		.rect = rect,
+		.color = ctx.animated_color(key, target_color),
+		.texture = ctx.blank_texture,
+		.corner_radius = sty.corner_radius,
+	});
+
+	const float text_width = ctx.font->width(label, sty.font_size);
+	const gse::vec4f text_color = enabled ? sty.color_text : sty.color_text_disabled;
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = std::string(label),
+		.position = { rect.center().x() - text_width / 2.f, rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = text_color,
+		.clip_rect = rect,
+	});
+
+	return enabled && ctx.mouse_pressed_for(rect);
+}
+
+auto gs::settings_screen::draw_footer(gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect) -> void {
+	const auto& sty = ctx.style;
+	namespace lo = gse::gui::layout;
+
+	const gse::gui::ui_rect separator = gse::gui::ui_rect::from_position_size(
+		{ rect.left() + sty.padding, rect.top() },
+		{ rect.width() - sty.padding * 2.f, sty.separator_thickness }
+	);
+	ctx.queue_sprite({
+		.rect = separator,
+		.color = sty.color_separator,
+		.texture = ctx.blank_texture,
+	});
+
+	const std::size_t pending = m_panel_state.pending_count();
+	const std::size_t pending_restart = m_panel_state.pending_restart_count();
+	const bool can_apply = pending > 0;
+	const bool needs_restart = m_panel_state.needs_restart();
+
+	if (pending != m_footer_status.pending || pending_restart != m_footer_status.pending_restart || needs_restart != m_footer_status.needs_restart) {
+		m_footer_status.pending = pending;
+		m_footer_status.pending_restart = pending_restart;
+		m_footer_status.needs_restart = needs_restart;
+		const std::string_view plural = pending == 1 ? "" : "s";
+		if (pending > 0 && needs_restart) {
+			m_footer_status.text = std::format("{} unsaved change{} - Restart required", pending, plural);
+		}
+		else if (pending_restart > 0) {
+			m_footer_status.text = std::format("{} unsaved change{} (restart required)", pending, plural);
+		}
+		else if (pending > 0) {
+			m_footer_status.text = std::format("{} unsaved change{}", pending, plural);
+		}
+		else if (needs_restart) {
+			m_footer_status.text = "Restart required to take effect";
+		}
+		else {
+			m_footer_status.text = "All settings saved";
+		}
+	}
+
+	const gse::vec4f status_color = (can_apply || needs_restart)
+		? sty.color_accent
+		: sty.color_text_secondary;
+	ctx.queue_text({
+		.font = ctx.font,
+		.text = m_footer_status.text,
+		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = status_color,
+		.clip_rect = rect,
+	});
+
+	const float vertical_inset = (rect.height() - sty.button_height) * 0.5f;
+	const gse::gui::ui_rect button_band = lo::inset_per_side(rect, vertical_inset, sty.padding, vertical_inset, sty.padding);
+	float cursor_x = button_band.right();
+
+	if (needs_restart) {
+		cursor_x -= sty.accent_button_min_width;
+		const gse::gui::ui_rect restart_rect = gse::gui::ui_rect::from_position_size(
+			{ cursor_x, button_band.top() },
+			{ sty.accent_button_min_width, sty.button_height }
+		);
+		if (draw_footer_button(ctx, restart_rect, "Restart Now", true, true, gse::gui::ids::make("settings.footer.restart"))) {
+			m_save_reg->trigger_restart();
+		}
+		cursor_x -= sty.button_spacing;
+	}
+
+	cursor_x -= sty.button_min_width;
+	const gse::gui::ui_rect apply_rect = gse::gui::ui_rect::from_position_size(
+		{ cursor_x, button_band.top() },
+		{ sty.button_min_width, sty.button_height }
+	);
+	if (draw_footer_button(ctx, apply_rect, "Apply", can_apply, true, gse::gui::ids::make("settings.footer.apply"))) {
+		m_panel_state.apply_all(m_channels);
+	}
+	cursor_x -= sty.button_spacing;
+
+	cursor_x -= sty.button_min_width;
+	const gse::gui::ui_rect discard_rect = gse::gui::ui_rect::from_position_size(
+		{ cursor_x, button_band.top() },
+		{ sty.button_min_width, sty.button_height }
+	);
+	if (draw_footer_button(ctx, discard_rect, "Discard", can_apply, false, gse::gui::ids::make("settings.footer.discard"))) {
+		m_panel_state.discard_all();
+	}
 }

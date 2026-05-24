@@ -11,7 +11,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Nominal forward step length at full input.">{}
 			]]
-			gse::displacement walk_step = gse::meters(0.20f);
+			gse::displacement walk_step = gse::meters(0.16f);
 
 			[[
 				= gse::settings::describe<"Nominal forward step length when sprinting.">{}
@@ -21,7 +21,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum forward step distance.">{}
 			]]
-			gse::displacement max_forward_step = gse::meters(0.35f);
+			gse::displacement max_forward_step = gse::meters(0.45f);
 
 			[[
 				= gse::settings::describe<"Maximum backward step distance.">{}
@@ -29,9 +29,19 @@ export namespace gs::locomotion {
 			gse::displacement max_backward_step = gse::meters(0.20f);
 
 			[[
+				= gse::settings::describe<"Maximum horizontal travel for one swing foot.">{}
+			]]
+			gse::displacement max_swing_reach = gse::meters(0.38f);
+
+			[[
 				= gse::settings::describe<"Forward capture-step clamp.">{}
 			]]
-			gse::displacement capture_step_limit = gse::meters(0.25f);
+			gse::displacement capture_step_limit = gse::meters(0.35f);
+
+			[[
+				= gse::settings::describe<"Scale applied to capture error before footstep planning.">{}
+			]]
+			float capture_step_gain = 0.6f;
 
 			[[
 				= gse::settings::describe<"Lateral capture-step clamp.">{}
@@ -65,29 +75,82 @@ namespace gs::locomotion {
 	auto plan_may_update(
 		const gait& g
 	) -> bool;
+	auto swing_foot_position(
+		const state& s,
+		leg swing_leg
+	) -> const gse::vec3<gse::position>&;
+	auto clamp_to_swing_reach(
+		const gse::vec3<gse::position>& target,
+		const gse::vec3<gse::position>& swing_foot,
+		const footstep_planner::data& d
+	) -> gse::vec3<gse::position>;
 }
 
 auto gs::locomotion::plan_may_update(const gait& g) -> bool {
-	return g.current == phase::idle || g.current == phase::weight_shift;
+	return g.current == phase::idle || g.current == phase::weight_shift ||
+		(g.current == phase::swing && phase_progress(g) <= 0.55f);
+}
+
+auto gs::locomotion::swing_foot_position(const state& s, const leg swing_leg) -> const gse::vec3<gse::position>& {
+	return swing_leg == leg::left ? s.foot_position_l : s.foot_position_r;
+}
+
+auto gs::locomotion::clamp_to_swing_reach(const gse::vec3<gse::position>& target, const gse::vec3<gse::position>& swing_foot, const footstep_planner::data& d) -> gse::vec3<gse::position> {
+	const auto delta = target - swing_foot;
+	const auto horizontal_distance = gse::hypot(delta.x(), delta.z());
+	if (horizontal_distance <= d.max_swing_reach || horizontal_distance <= gse::meters(0.001f)) {
+		return gse::vec3<gse::position>(target.x(), d.foot_ground_y, target.z());
+	}
+
+	const float scale = d.max_swing_reach / horizontal_distance;
+	return gse::vec3<gse::position>(
+		swing_foot.x() + delta.x() * scale,
+		d.foot_ground_y,
+		swing_foot.z() + delta.z() * scale
+	);
 }
 
 auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const intent& it, const skeleton_refs& r, const footstep_planner::data& d) -> gse::vec3<gse::position> {
 	const auto step_length = it.sprint ? d.sprint_step : d.walk_step;
 	const auto nominal_forward = step_length * it.forward;
 
-	const auto capture_forward = std::clamp(s.capture_forward, -d.capture_step_limit, d.capture_step_limit);
-	const auto capture_lateral = std::clamp(s.capture_right, -d.lateral_capture_limit, d.lateral_capture_limit);
+	const auto capture_forward = std::clamp(
+		s.capture_forward * d.capture_step_gain,
+		-d.capture_step_limit,
+		d.capture_step_limit
+	);
+	const auto capture_lateral = std::clamp(
+		s.capture_right,
+		-d.lateral_capture_limit,
+		d.lateral_capture_limit
+	);
 
-	const auto step_forward = std::clamp(nominal_forward + capture_forward, -d.max_backward_step, d.max_forward_step);
+	const auto step_forward = std::clamp(
+		nominal_forward + capture_forward,
+		-d.max_backward_step,
+		d.max_forward_step
+	);
 	const auto step_lateral = capture_lateral;
 
-	const auto forward_xz = gse::normalize(gse::vec3f(s.pelvis_forward.x(), 0.f, s.pelvis_forward.z()));
-	const auto right_xz = gse::normalize(gse::vec3f(s.pelvis_right.x(), 0.f, s.pelvis_right.z()));
+	const auto forward_xz = gse::normalize(gse::vec3f(
+		s.pelvis_forward.x(),
+		0.f,
+		s.pelvis_forward.z()
+	));
+	const auto right_xz = gse::normalize(gse::vec3f(
+		s.pelvis_right.x(),
+		0.f,
+		s.pelvis_right.z()
+	));
 
 	const auto hip_lateral = r.hip_offset_lateral * side_of(g.swing_leg);
 	const auto target = s.support_center + forward_xz * step_forward + right_xz * (hip_lateral + step_lateral);
 
-	return gse::vec3<gse::position>(target.x(), d.foot_ground_y, target.z());
+	return clamp_to_swing_reach(
+		gse::vec3<gse::position>(target.x(), d.foot_ground_y, target.z()),
+		swing_foot_position(s, g.swing_leg),
+		d
+	);
 }
 
 auto gs::locomotion::footstep_planner::run(gse::run_context& ctx, data& d) -> gse::async::task<> {

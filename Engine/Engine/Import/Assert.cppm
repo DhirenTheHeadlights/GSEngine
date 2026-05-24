@@ -13,8 +13,7 @@ export namespace gse {
 
 		template <typename T>
 		requires std::convertible_to<const T&, std::string_view>
-		consteval fmt_loc(const T& s, std::source_location l = std::source_location::current()) : fmt(s),
-																								  loc(l) {
+		consteval fmt_loc(const T& s, std::source_location l = std::source_location::current()) : fmt(s), loc(l) {
 		}
 	};
 

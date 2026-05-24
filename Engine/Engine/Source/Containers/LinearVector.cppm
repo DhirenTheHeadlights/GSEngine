@@ -113,8 +113,7 @@ export namespace gse {
 
 template <typename T>
 gse::linear_vector<T>::linear_vector(const size_type capacity)
-	: m_data(static_cast<T*>(operator new(capacity * sizeof(T), std::align_val_t{ alignof(T) }))),
-	  m_capacity(capacity) {
+	: m_data(static_cast<T*>(operator new(capacity * sizeof(T), std::align_val_t{ alignof(T) }))), m_capacity(capacity) {
 }
 
 template <typename T>
@@ -125,9 +124,7 @@ gse::linear_vector<T>::~linear_vector() {
 
 template <typename T>
 gse::linear_vector<T>::linear_vector(linear_vector&& other) noexcept
-	: m_data(other.m_data),
-	  m_size(other.m_size),
-	  m_capacity(other.m_capacity) {
+	: m_data(other.m_data), m_size(other.m_size), m_capacity(other.m_capacity) {
 	other.m_data = nullptr;
 	other.m_size = 0;
 	other.m_capacity = 0;

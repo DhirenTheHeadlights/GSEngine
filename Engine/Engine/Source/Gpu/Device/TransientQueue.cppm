@@ -97,24 +97,12 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::transient_queue::transient_queue(
-	queue_id id,
-	vulkan::queue_timeline&& timeline,
-	std::vector<vulkan::transient_command_pool>&& pools
-)
-	: m_id(id),
-	  m_timeline(std::move(timeline)),
-	  m_pools(std::move(pools)) {
+gse::gpu::transient_queue::transient_queue(queue_id id, vulkan::queue_timeline&& timeline, std::vector<vulkan::transient_command_pool>&& pools)
+	: m_id(id), m_timeline(std::move(timeline)), m_pools(std::move(pools)) {
 }
 
 gse::gpu::transient_queue::transient_queue(transient_queue&& other) noexcept
-	: m_id(other.m_id),
-	  m_timeline(std::move(other.m_timeline)),
-	  m_pools(std::move(other.m_pools)),
-	  m_next_value(other.m_next_value),
-	  m_progress(other.m_progress.load(std::memory_order_relaxed)),
-	  m_waiters(std::move(other.m_waiters)),
-	  m_mutex(std::move(other.m_mutex)) {
+	: m_id(other.m_id), m_timeline(std::move(other.m_timeline)), m_pools(std::move(other.m_pools)), m_next_value(other.m_next_value), m_progress(other.m_progress.load(std::memory_order_relaxed)), m_waiters(std::move(other.m_waiters)), m_mutex(std::move(other.m_mutex)) {
 }
 
 auto gse::gpu::transient_queue::operator=(transient_queue&& other) noexcept -> transient_queue& {

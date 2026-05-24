@@ -149,12 +149,15 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 			for (auto& v : dedup | std::views::values) {
 				d.available_servers.push_back(std::move(v));
 			}
-			std::ranges::sort(d.available_servers, [](const discovery_result& a, const discovery_result& b) {
-				if (a.name != b.name) {
-					return a.name < b.name;
+			std::ranges::sort(
+				d.available_servers,
+				[](const discovery_result& a, const discovery_result& b) {
+					if (a.name != b.name) {
+						return a.name < b.name;
+					}
+					return a.addr.port < b.addr.port;
 				}
-				return a.addr.port < b.addr.port;
-			});
+			);
 		}
 
 		if (!d.client_ptr) {
@@ -250,10 +253,14 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 						);
 					}
 				) ||
-				try_decode<server_info_response>(stream, msg.id, [&](const auto& m) {
-					d.connected_players = m.players;
-					d.connected_max_players = m.max_players;
-				});
+				try_decode<server_info_response>(
+					stream,
+					msg.id,
+					[&](const auto& m) {
+						d.connected_players = m.players;
+						d.connected_max_players = m.max_players;
+					}
+				);
 		});
 
 		for (auto& def : d.deferred) {

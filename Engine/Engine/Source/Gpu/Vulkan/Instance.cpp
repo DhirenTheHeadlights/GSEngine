@@ -16,9 +16,12 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	if (enable_validation) {
 		constexpr auto layer_name = "VK_LAYER_KHRONOS_validation";
 		const auto available = vk::enumerateInstanceLayerProperties();
-		const bool layer_present = std::ranges::any_of(available, [&](const vk::LayerProperties& p) {
-			return std::string_view(p.layerName) == layer_name;
-		});
+		const bool layer_present = std::ranges::any_of(
+			available,
+			[&](const vk::LayerProperties& p) {
+				return std::string_view(p.layerName) == layer_name;
+			}
+		);
 		if (layer_present) {
 			validation_layers.push_back(layer_name);
 		}
@@ -43,6 +46,28 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 
 	std::vector extensions(required_extensions.begin(), required_extensions.end());
 	extensions.push_back(vk::EXTDebugUtilsExtensionName);
+
+	const auto available_instance_extensions = vk::enumerateInstanceExtensionProperties();
+	const auto has_instance_extension = [&](const std::string_view name) {
+		return std::ranges::any_of(available_instance_extensions, [&](const auto& p) {
+			return std::string_view(p.extensionName) == name;
+		});
+	};
+
+	const auto already_enabled = [&](const std::string_view name) {
+		return std::ranges::any_of(extensions, [&](const char* e) {
+			return std::string_view(e) == name;
+		});
+	};
+
+	for (const auto* name : {
+			 vk::KHRGetSurfaceCapabilities2ExtensionName,
+			 vk::EXTSurfaceMaintenance1ExtensionName,
+		 }) {
+		if (has_instance_extension(name) && !already_enabled(name)) {
+			extensions.push_back(name);
+		}
+	}
 
 	auto debug_callback = [](const vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
 							 vk::DebugUtilsMessageTypeFlagsEXT message_type,
@@ -130,7 +155,12 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		);
 	}
 	catch (vk::SystemError& err) {
-		log::println(log::level::error, log::category::vulkan, "Failed to create Vulkan instance: {}", err.what());
+		log::println(
+			log::level::error,
+			log::category::vulkan,
+			"Failed to create Vulkan instance: {}",
+			err.what()
+		);
 		throw;
 	}
 
@@ -143,9 +173,18 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 			log::println(log::category::vulkan, "Debug Messenger Created Successfully!");
 		}
 		catch (vk::SystemError& err) {
-			log::println(log::level::error, log::category::vulkan, "Failed to create Debug Messenger: {}", err.what());
+			log::println(
+				log::level::error,
+				log::category::vulkan,
+				"Failed to create Debug Messenger: {}",
+				err.what()
+			);
 		}
 	}
 
-	return gse::vulkan::instance(std::move(context), std::move(instance), std::move(debug_messenger));
+	return gse::vulkan::instance(
+		std::move(context),
+		std::move(instance),
+		std::move(debug_messenger)
+	);
 }

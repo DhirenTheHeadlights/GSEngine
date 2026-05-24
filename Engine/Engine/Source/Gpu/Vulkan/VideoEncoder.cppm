@@ -243,7 +243,10 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 	};
 
 	vk::ExtensionProperties std_header_version{};
-	const auto name_len = std::min(probe_caps.std_header_name.size(), std_header_version.extensionName.size() - 1);
+	const auto name_len = std::min(
+		probe_caps.std_header_name.size(),
+		std_header_version.extensionName.size() - 1
+	);
 	std::ranges::copy_n(
 		probe_caps.std_header_name.begin(),
 		static_cast<std::ptrdiff_t>(name_len),
@@ -263,7 +266,11 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 
 	for (const auto& req : enc.m_session.getMemoryRequirements()) {
 		const auto mem_type =
-			find_memory_type(physical, req.memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+			find_memory_type(
+				physical,
+				req.memoryRequirements.memoryTypeBits,
+				vk::MemoryPropertyFlagBits::eDeviceLocal
+			);
 		auto mem = (*vk_dev).allocateMemory({
 			.allocationSize = req.memoryRequirements.size,
 			.memoryTypeIndex = mem_type
@@ -332,7 +339,13 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 
 	for (auto& entry : enc.m_dpb) {
 		auto [img, v, mem] =
-			create_nv12_image(vk_dev, physical, extent, vk::ImageUsageFlagBits::eVideoEncodeDpbKHR, profile_list);
+			create_nv12_image(
+				vk_dev,
+				physical,
+				extent,
+				vk::ImageUsageFlagBits::eVideoEncodeDpbKHR,
+				profile_list
+			);
 		entry.image = img;
 		entry.view = std::move(v);
 		entry.memory = mem;
@@ -391,7 +404,13 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 	enc.m_clock = {};
 
 	const auto* const codec_name = probe_caps.codec == video_codec::av1 ? "AV1" : "H.265";
-	log::println(log::category::vulkan, "Video encoder created: {} {}x{}", codec_name, extent.x(), extent.y());
+	log::println(
+		log::category::vulkan,
+		"Video encoder created: {} {}x{}",
+		codec_name,
+		extent.x(),
+		extent.y()
+	);
 
 	return enc;
 }
@@ -765,7 +784,10 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 	const submit_info submit{
 		.command_buffers = std::span(&cmd_submit, 1),
 	};
-	m_device->vulkan_queue().submit_video_encode(submit, std::bit_cast<handle<fence>>(*slot.fence));
+	m_device->vulkan_queue().submit_video_encode(
+		submit,
+		std::bit_cast<handle<fence>>(*slot.fence)
+	);
 	slot.submitted = true;
 	slot.has_output = true;
 
@@ -801,7 +823,15 @@ auto gse::gpu::video_encoder::read_bitstream(const std::uint32_t frame_slot) -> 
 	} feedback{};
 
 	const auto result =
-		(*vk_dev).getQueryPoolResults(*slot.query_pool, 0, 1, sizeof(feedback), &feedback, sizeof(feedback), {});
+		(*vk_dev).getQueryPoolResults(
+			*slot.query_pool,
+			0,
+			1,
+			sizeof(feedback),
+			&feedback,
+			sizeof(feedback),
+			{}
+		);
 
 	if (result != vk::Result::eSuccess) {
 		if (result != vk::Result::eNotReady) {

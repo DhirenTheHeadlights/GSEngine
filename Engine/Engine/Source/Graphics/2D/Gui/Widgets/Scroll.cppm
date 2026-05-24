@@ -43,10 +43,13 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 
 	const ui_rect visible_rect = ui_rect::from_position_size(
 		{ ctx.layout_cursor.x(), ctx.layout_cursor.y() },
-		{ available_width, std::max(0.f, available_height) }
+		{ available_width, std::max(
+							   0.f,
+							   available_height
+						   ) }
 	);
 
-	const std::uint64_t key = ids::hash_combine_string(ids::current_seed(), info.id);
+	const std::uint64_t key = hash_combine(ids::current_seed(), stable_id(info.id));
 	scroll_state& state = ctx.widget_scrolls[key];
 
 	const float saved_layout_y = ctx.layout_cursor.y();
@@ -63,8 +66,8 @@ auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_r
 	const vec2f mouse_pos = ctx.input.mouse_position();
 	const bool mouse_in_region = visible_rect.contains(mouse_pos);
 
-	if (mouse_in_region && max_scroll > 0.f) {
-		const float scroll_delta = ctx.input.scroll_delta().y();
+	if (max_scroll > 0.f) {
+		const float scroll_delta = ctx.scroll_delta_for(visible_rect).y();
 		if (std::abs(scroll_delta) > 0.001f) {
 			if (config.smooth_scrolling) {
 				state.target_offset -= scroll_delta * config.scroll_speed;
@@ -102,7 +105,10 @@ auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_r
 
 	const float scrollbar_track_height = visible_height;
 	const float scrollbar_height =
-		std::max(config.scrollbar_min_height, (visible_height / content_height) * scrollbar_track_height);
+		std::max(
+			config.scrollbar_min_height,
+			(visible_height / content_height) * scrollbar_track_height
+		);
 
 	const float scroll_ratio = state.offset / max_scroll;
 	const float scrollbar_travel = scrollbar_track_height - scrollbar_height;
@@ -120,7 +126,7 @@ auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_r
 
 	state.scrollbar_hovered = scrollbar_rect.contains(mouse_pos);
 
-	if (state.scrollbar_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+	if (ctx.mouse_pressed_for(scrollbar_rect)) {
 		state.scrollbar_held = true;
 		state.scrollbar_grab_offset = mouse_pos.y() - scrollbar_y;
 	}
@@ -138,7 +144,7 @@ auto gse::gui::run_scroll_end(draw_context& ctx, scroll_state& state, const ui_r
 		}
 	}
 
-	if (scrollbar_track_rect.contains(mouse_pos) && !scrollbar_rect.contains(mouse_pos) && ctx.input.mouse_button_pressed(mouse_button::button_1) && !state.scrollbar_held) {
+	if (!scrollbar_rect.contains(mouse_pos) && !state.scrollbar_held && ctx.mouse_pressed_for(scrollbar_track_rect)) {
 		const float click_ratio = (visible_rect.top() - mouse_pos.y()) / scrollbar_track_height;
 		const float new_offset = std::clamp(click_ratio, 0.f, 1.f) * max_scroll;
 		state.target_offset = new_offset;

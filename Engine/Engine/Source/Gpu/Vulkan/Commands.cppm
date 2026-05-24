@@ -156,6 +156,25 @@ export namespace gse::vulkan {
 			std::span<const gpu::stage_flag> stages
 		) const -> void;
 
+		auto bind_resource_heap(
+			gpu::device_address heap_address,
+			gpu::device_size heap_size,
+			gpu::device_size reserved_offset,
+			gpu::device_size reserved_size
+		) const -> void;
+
+		auto bind_sampler_heap(
+			gpu::device_address heap_address,
+			gpu::device_size heap_size,
+			gpu::device_size reserved_offset,
+			gpu::device_size reserved_size
+		) const -> void;
+
+		auto push_data(
+			std::uint32_t offset,
+			std::span<const std::byte> data
+		) const -> void;
+
 		auto push_constants(
 			gpu::handle<pipeline_layout> layout,
 			gpu::stage_flags stages,
@@ -544,6 +563,41 @@ auto gse::vulkan::commands::bind_shaders(const std::span<const gpu::stage_flag> 
 	raw().bindShadersEXT(vk_stages, vk_shaders);
 }
 
+auto gse::vulkan::commands::bind_resource_heap(const gpu::device_address heap_address, const gpu::device_size heap_size, const gpu::device_size reserved_offset, const gpu::device_size reserved_size) const -> void {
+	const vk::BindHeapInfoEXT info{
+		.heapRange = {
+			.address = heap_address,
+			.size = heap_size
+		},
+		.reservedRangeOffset = reserved_offset,
+		.reservedRangeSize = reserved_size,
+	};
+	raw().bindResourceHeapEXT(info);
+}
+
+auto gse::vulkan::commands::bind_sampler_heap(const gpu::device_address heap_address, const gpu::device_size heap_size, const gpu::device_size reserved_offset, const gpu::device_size reserved_size) const -> void {
+	const vk::BindHeapInfoEXT info{
+		.heapRange = {
+			.address = heap_address,
+			.size = heap_size
+		},
+		.reservedRangeOffset = reserved_offset,
+		.reservedRangeSize = reserved_size,
+	};
+	raw().bindSamplerHeapEXT(info);
+}
+
+auto gse::vulkan::commands::push_data(const std::uint32_t offset, const std::span<const std::byte> data) const -> void {
+	const vk::PushDataInfoEXT info{
+		.offset = offset,
+		.data = {
+			.address = data.data(),
+			.size = data.size(),
+		},
+	};
+	raw().pushDataEXT(info);
+}
+
 auto gse::vulkan::commands::unbind_shaders(const std::span<const gpu::stage_flag> stages) const -> void {
 	std::vector<vk::ShaderStageFlagBits> vk_stages;
 	vk_stages.reserve(stages.size());
@@ -556,7 +610,13 @@ auto gse::vulkan::commands::unbind_shaders(const std::span<const gpu::stage_flag
 }
 
 auto gse::vulkan::commands::push_constants(const gpu::handle<pipeline_layout> layout, const gpu::stage_flags stages, const std::uint32_t offset, const std::uint32_t size, const void* data) const -> void {
-	raw().pushConstants(std::bit_cast<vk::PipelineLayout>(layout), to_vk(stages), offset, size, data);
+	raw().pushConstants(
+		std::bit_cast<vk::PipelineLayout>(layout),
+		to_vk(stages),
+		offset,
+		size,
+		data
+	);
 }
 
 auto gse::vulkan::commands::bind_vertex_buffers(const std::uint32_t first_binding, const std::span<const gpu::handle<buffer>> buffers, const std::span<const gpu::device_size> offsets) const -> void {
@@ -604,7 +664,11 @@ auto gse::vulkan::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const
 }
 
 auto gse::vulkan::commands::copy_buffer(const gpu::handle<buffer> src, const gpu::handle<buffer> dst, const gpu::buffer_copy_region& region) const -> void {
-	raw().copyBuffer(std::bit_cast<vk::Buffer>(src), std::bit_cast<vk::Buffer>(dst), to_vk(region));
+	raw().copyBuffer(
+		std::bit_cast<vk::Buffer>(src),
+		std::bit_cast<vk::Buffer>(dst),
+		to_vk(region)
+	);
 }
 
 auto gse::vulkan::commands::fill_buffer(const gpu::handle<buffer> dst, const gpu::device_size offset, const gpu::device_size size, const std::uint32_t data) const -> void {

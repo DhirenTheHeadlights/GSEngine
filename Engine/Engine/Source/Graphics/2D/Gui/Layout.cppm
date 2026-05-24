@@ -179,8 +179,14 @@ auto gse::gui::layout::dock_space(const ui_rect& target_area) -> dock::space {
 	dock::space space;
 
 	const auto center = target_area.center();
-	const vec2f widget_size = { std::min(50.f, target_area.width() * 0.2f),
-								std::min(50.f, target_area.height() * 0.2f) };
+	const vec2f widget_size = { std::min(
+									50.f,
+									target_area.width() * 0.2f
+								),
+								std::min(
+									50.f,
+									target_area.height() * 0.2f
+								) };
 
 	const float half_widget_w = widget_size.x() / 2.f;
 	const float half_widget_h = widget_size.y() / 2.f;
@@ -193,36 +199,67 @@ auto gse::gui::layout::dock_space(const ui_rect& target_area) -> dock::space {
 
 	// Center
 	space.areas[0] = {
-		.rect = ui_rect::from_position_size(center_pos, widget_size),
+		.rect = ui_rect::from_position_size(
+			center_pos,
+			widget_size
+		),
 		.target = target_area,
 		.dock_location = dock::location::center
 	};
 
 	// Left
 	space.areas[1] = {
-		.rect = ui_rect::from_position_size(left_pos, widget_size),
-		.target = dock_target_rect(target_area, dock::location::left, 0.5f),
+		.rect = ui_rect::from_position_size(
+			left_pos,
+			widget_size
+		),
+		.target = dock_target_rect(
+			target_area,
+			dock::location::left,
+			0.5f
+		),
 		.dock_location = dock::location::left
 	};
 
 	// Right
 	space.areas[2] = {
-		.rect = ui_rect::from_position_size(right_pos, widget_size),
-		.target = dock_target_rect(target_area, dock::location::right, 0.5f),
+		.rect = ui_rect::from_position_size(
+			right_pos,
+			widget_size
+		),
+		.target = dock_target_rect(
+			target_area,
+			dock::location::right,
+			0.5f
+		),
 		.dock_location = dock::location::right
 	};
 
 	// Top
 	space.areas[3] = {
-		.rect = ui_rect::from_position_size(top_pos, widget_size),
-		.target = dock_target_rect(target_area, dock::location::top, 0.5f),
+		.rect = ui_rect::from_position_size(
+			top_pos,
+			widget_size
+		),
+		.target = dock_target_rect(
+			target_area,
+			dock::location::top,
+			0.5f
+		),
 		.dock_location = dock::location::top
 	};
 
 	// Bottom
 	space.areas[4] = {
-		.rect = ui_rect::from_position_size(bottom_pos, widget_size),
-		.target = dock_target_rect(target_area, dock::location::bottom, 0.5f),
+		.rect = ui_rect::from_position_size(
+			bottom_pos,
+			widget_size
+		),
+		.target = dock_target_rect(
+			target_area,
+			dock::location::bottom,
+			0.5f
+		),
 		.dock_location = dock::location::bottom
 	};
 
@@ -244,7 +281,10 @@ auto gse::gui::layout::dock_target_rect(const ui_rect& parent, const dock::locat
 				{ split_width, parent.height() }
 			);
 		case dock::location::top:
-			return ui_rect::from_position_size({ parent.left(), parent.top() }, { parent.width(), split_height });
+			return ui_rect::from_position_size(
+				{ parent.left(), parent.top() },
+				{ parent.width(), split_height }
+			);
 		case dock::location::bottom:
 			return ui_rect::from_position_size(
 				{ parent.left(), parent.top() - remaining_height },

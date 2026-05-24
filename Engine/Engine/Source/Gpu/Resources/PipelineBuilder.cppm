@@ -17,6 +17,7 @@ import :vulkan_shader_object;
 import :vulkan_shader_program;
 import :device;
 import :bindless;
+import :bindless_heap;
 import :descriptor_heap;
 import :descriptors;
 import :shader_codegen;
@@ -40,6 +41,8 @@ export namespace gse::gpu {
 		std::uint32_t threads_y = 1;
 		std::uint32_t threads_z = 1;
 		std::uint32_t push_constant_size = 0;
+		std::uint32_t required_subgroup_size = 0;
+		bool require_full_subgroups = false;
 		std::array<compute_param_pod, 8> params{};
 		std::size_t param_count = 0;
 		std::array<std::string_view, 4> helper_paths{};
@@ -65,7 +68,8 @@ export namespace gse::gpu {
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
-		const compute_entry_pod& pod
+		const compute_entry_pod& pod,
+		vulkan::bindless_heaps* heaps = nullptr
 	) -> shader_program;
 
 	enum class graphics_stage_kind : std::uint8_t {
@@ -82,6 +86,8 @@ export namespace gse::gpu {
 	};
 
 	struct graphics_entry_pod {
+		static constexpr std::size_t max_color_targets = 8;
+
 		std::string_view body_path;
 		std::string_view body_source;
 		std::string_view layout_name;
@@ -96,7 +102,8 @@ export namespace gse::gpu {
 		depth_state depth{};
 		blend_preset blend = blend_preset::none;
 		topology topology_value = topology::triangle_list;
-		color_format color = color_format::swapchain;
+		std::array<color_format, max_color_targets> colors{};
+		std::size_t color_count = 1;
 		depth_format depth_fmt = depth_format::d32_sfloat;
 		std::string (
 			*emit_push_constant_struct
@@ -117,7 +124,8 @@ export namespace gse::gpu {
 		device& dev,
 		shader_registry& registry,
 		bindless_texture_set& bindless,
-		const graphics_entry_pod& pod
+		const graphics_entry_pod& pod,
+		vulkan::bindless_heaps* heaps = nullptr
 	) -> shader_program;
 
 	[[nodiscard]]
@@ -162,6 +170,13 @@ export namespace gse::gpu {
 		static constexpr std::uint32_t z = Z;
 	};
 
+	template <std::uint32_t N>
+	struct required_subgroup_size {
+		static constexpr std::uint32_t value = N;
+	};
+
+	struct full_subgroups {};
+
 	template <typename T>
 	struct push_constant {
 		using type = T;
@@ -205,6 +220,18 @@ export namespace gse::gpu {
 
 	template <std::uint32_t X, std::uint32_t Y, std::uint32_t Z>
 	struct is_threads<threads<X, Y, Z>> : std::true_type {};
+
+	template <typename T>
+	struct is_required_subgroup_size : std::false_type {};
+
+	template <std::uint32_t N>
+	struct is_required_subgroup_size<required_subgroup_size<N>> : std::true_type {};
+
+	template <typename T>
+	struct is_full_subgroups : std::false_type {};
+
+	template <>
+	struct is_full_subgroups<full_subgroups> : std::true_type {};
 
 	template <typename T>
 	struct is_push_constant : std::false_type {};
@@ -260,6 +287,12 @@ export namespace gse::gpu {
 					e.threads_x = Spec::x;
 					e.threads_y = Spec::y;
 					e.threads_z = Spec::z;
+				}
+				else if constexpr (is_required_subgroup_size<Spec>::value) {
+					e.required_subgroup_size = Spec::value;
+				}
+				else if constexpr (is_full_subgroups<Spec>::value) {
+					e.require_full_subgroups = true;
 				}
 				else if constexpr (is_push_constant<Spec>::value) {
 					using T = typename Spec::type;
@@ -385,9 +418,9 @@ export namespace gse::gpu {
 		static constexpr topology value = T;
 	};
 
-	template <color_format F = color_format::swapchain>
-	struct color_target {
-		static constexpr color_format value = F;
+	template <color_format... Fs>
+	struct color_targets {
+		static constexpr std::array<color_format, sizeof...(Fs)> values{ Fs... };
 	};
 
 	template <depth_format F = depth_format::d32_sfloat>
@@ -436,9 +469,9 @@ export namespace gse::gpu {
 	struct is_primitive_topology<primitive_topology<Tv>> : std::true_type {};
 
 	template <typename T>
-	struct is_color_target : std::false_type {};
-	template <color_format F>
-	struct is_color_target<color_target<F>> : std::true_type {};
+	struct is_color_targets : std::false_type {};
+	template <color_format... Fs>
+	struct is_color_targets<color_targets<Fs...>> : std::true_type {};
 
 	template <typename T>
 	struct is_depth_target : std::false_type {};
@@ -490,8 +523,17 @@ export namespace gse::gpu {
 				else if constexpr (is_primitive_topology<Spec>::value) {
 					e.topology_value = Spec::value;
 				}
-				else if constexpr (is_color_target<Spec>::value) {
-					e.color = Spec::value;
+				else if constexpr (is_color_targets<Spec>::value) {
+					constexpr auto vals = Spec::values;
+					if constexpr (vals.size() == 1 && vals[0] == color_format::none) {
+						e.color_count = 0;
+					}
+					else {
+						for (std::size_t i = 0; i < vals.size(); ++i) {
+							e.colors[i] = vals[i];
+						}
+						e.color_count = vals.size();
+					}
 				}
 				else if constexpr (is_depth_target<Spec>::value) {
 					e.depth_fmt = Spec::value;
@@ -718,7 +760,11 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 	};
 
 	if (slang_failed(global->createSession(sdesc, out.session.writeRef())) || !out.session) {
-		log::println(log::level::error, log::category::assets, "Failed to create Slang session for pipeline builder");
+		log::println(
+			log::level::error,
+			log::category::assets,
+			"Failed to create Slang session for pipeline builder"
+		);
 		return owned_slang_session{};
 	}
 	return out;
@@ -728,7 +774,10 @@ auto gse::gpu::log_slang_diagnostics(slang::IBlob* diagnostics) -> void {
 	if (!diagnostics || diagnostics->getBufferSize() == 0) {
 		return;
 	}
-	const std::string message(static_cast<const char*>(diagnostics->getBufferPointer()), diagnostics->getBufferSize());
+	const std::string message(
+		static_cast<const char*>(diagnostics->getBufferPointer()),
+		diagnostics->getBufferSize()
+	);
 	log::println(log::level::error, log::category::assets, "{}", message);
 }
 
@@ -843,7 +892,12 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 	out.push_back('\n');
 
 	out.append("[shader(\"compute\")]\n");
-	out.append(std::format("[numthreads({}, {}, {})]\n", inputs.threads_x, inputs.threads_y, inputs.threads_z));
+	out.append(std::format(
+		"[numthreads({}, {}, {})]\n",
+		inputs.threads_x,
+		inputs.threads_y,
+		inputs.threads_z
+	));
 	out.append("void main(");
 
 	bool first = true;
@@ -1170,7 +1224,12 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 		if (slang_failed(program->getEntryPointCode(static_cast<SlangInt>(ep_indices[i]), 0, blob.writeRef(), diags.writeRef())) || !blob) {
 			log_slang_diagnostics(diags.get());
 			dump_wrapper_source();
-			assert(false, "Failed to get SPIR-V for graphics entry point '{}' in {}", stage_pod.entry_point, sanitized);
+			assert(
+				false,
+				"Failed to get SPIR-V for graphics entry point '{}' in {}",
+				stage_pod.entry_point,
+				sanitized
+			);
 		}
 
 		const auto byte_size = blob->getBufferSize();
@@ -1281,15 +1340,18 @@ auto gse::gpu::blend_preset_to_attachment_state(const blend_preset preset) -> st
 auto gse::gpu::next_stage_for(const stage_flag current, const std::span<const stage_flag> all_stages) -> stage_flags {
 	stage_flags result{};
 	switch (current) {
-		case stage_flag::vertex:
 		case stage_flag::task:
+			for (const auto s : all_stages) {
+				if (s == stage_flag::mesh) {
+					result |= stage_flag::mesh;
+				}
+			}
+			break;
+		case stage_flag::vertex:
 		case stage_flag::mesh:
 			for (const auto s : all_stages) {
 				if (s == stage_flag::fragment) {
 					result |= stage_flag::fragment;
-				}
-				if (current == stage_flag::task && s == stage_flag::mesh) {
-					result |= stage_flag::mesh;
 				}
 			}
 			break;
@@ -1300,7 +1362,7 @@ auto gse::gpu::next_stage_for(const stage_flag current, const std::span<const st
 	return result;
 }
 
-auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bindless_texture_set& bindless, const compute_entry_pod& pod) -> shader_program {
+auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bindless_texture_set& bindless, const compute_entry_pod& pod, vulkan::bindless_heaps* heaps) -> shader_program {
 	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
 	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
 
@@ -1364,9 +1426,18 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 			.set = use.set,
 			.slot = use.slot,
 			.access = use.access,
-			.type = lookup_descriptor_type(*family, use.set, use.slot),
+			.type = lookup_descriptor_type(
+				*family,
+				use.set,
+				use.slot
+			),
 			.stages = pipeline_stage_flag::compute_shader,
 		});
+	}
+
+	vulkan::bindless_mapping_result bindless_mappings;
+	if (heaps && dev.vulkan_device().descriptor_heap_enabled()) {
+		bindless_mappings = vulkan::build_bindless_mappings(active_bindings, *heaps);
 	}
 
 	const vulkan::shader_object_create_info stage_info{
@@ -1376,10 +1447,18 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 		.set_layouts = layouts,
 		.push_constant_range = push_range,
 		.next_stage = {},
+		.required_subgroup_size = pod.required_subgroup_size != 0
+			? std::optional<std::uint32_t>(pod.required_subgroup_size)
+			: std::nullopt,
+		.require_full_subgroups = pod.require_full_subgroups,
+		.bindless_mappings = bindless_mappings.mappings,
 	};
 
 	const vulkan::shader_program_create_info info{
-		.stages = std::span(&stage_info, 1),
+		.stages = std::span(
+			&stage_info,
+			1
+		),
 		.set_layouts = layouts,
 		.push_constant_range = push_range,
 		.auto_bound_sets = auto_bound_sets,
@@ -1392,7 +1471,7 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 	return vulkan::shader_program::create(dev.vulkan_device(), info);
 }
 
-auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bindless_texture_set& bindless, const graphics_entry_pod& pod) -> shader_program {
+auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bindless_texture_set& bindless, const graphics_entry_pod& pod, vulkan::bindless_heaps* heaps) -> shader_program {
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
 	assert(!pod.layout_name.empty(), "layout missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");
@@ -1431,8 +1510,6 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 		all_stages.push_back(s.flag);
 	}
 
-	std::vector<vulkan::shader_object_create_info> stage_infos;
-	stage_infos.reserve(program.stages.size());
 	bool is_mesh = false;
 	std::vector<binding_use> active_bindings;
 
@@ -1447,7 +1524,11 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 					.set = use.set,
 					.slot = use.slot,
 					.access = use.access,
-					.type = lookup_descriptor_type(*family, use.set, use.slot),
+					.type = lookup_descriptor_type(
+						*family,
+						use.set,
+						use.slot
+					),
 					.stages = stage_pipeline,
 				});
 			}
@@ -1458,21 +1539,34 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 				}
 			}
 		}
+		if (s.kind == graphics_stage_kind::amplification || s.kind == graphics_stage_kind::mesh) {
+			is_mesh = true;
+		}
+	}
+
+	vulkan::bindless_mapping_result bindless_mappings;
+	if (heaps && dev.vulkan_device().descriptor_heap_enabled()) {
+		bindless_mappings = vulkan::build_bindless_mappings(active_bindings, *heaps);
+	}
+
+	std::vector<vulkan::shader_object_create_info> stage_infos;
+	stage_infos.reserve(program.stages.size());
+	for (auto& s : program.stages) {
 		stage_infos.push_back({
 			.stage = s.flag,
 			.spirv = s.spirv,
 			.entry_point = "main",
 			.set_layouts = layouts,
 			.push_constant_range = push_range,
-			.next_stage = next_stage_for(s.flag, all_stages),
+			.next_stage = next_stage_for(
+				s.flag,
+				all_stages
+			),
+			.bindless_mappings = bindless_mappings.mappings,
 		});
-		if (s.kind == graphics_stage_kind::amplification || s.kind == graphics_stage_kind::mesh) {
-			is_mesh = true;
-		}
 	}
 
 	const auto [blend_enable, blend_eq, write_mask] = blend_preset_to_attachment_state(pod.blend);
-	const bool has_color = pod.color != color_format::none;
 
 	dynamic_pipeline_state state{
 		.topology = pod.topology_value,
@@ -1487,11 +1581,9 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 		.vertex_bindings = is_mesh ? std::vector<vertex_binding_desc>{} : program.vertex_bindings,
 		.vertex_attributes = is_mesh ? std::vector<vertex_attribute_desc>{} : program.vertex_attributes,
 	};
-	if (has_color) {
-		state.blend_enables = { static_cast<std::uint8_t>(blend_enable ? 1 : 0) };
-		state.blend_equations = { blend_eq };
-		state.color_write_masks = { write_mask };
-	}
+	state.blend_enables.assign(pod.color_count, static_cast<std::uint8_t>(blend_enable ? 1 : 0));
+	state.blend_equations.assign(pod.color_count, blend_eq);
+	state.color_write_masks.assign(pod.color_count, write_mask);
 
 	const vulkan::shader_program_create_info info{
 		.stages = stage_infos,

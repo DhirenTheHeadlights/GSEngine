@@ -70,9 +70,7 @@ export namespace gse::network {
 }
 
 gse::network::wan_directory_provider::wan_directory_provider(std::vector<gse::network::discovery_result> seed)
-	: m_seed(seed),
-	  m_published(seed),
-	  m_pending(std::move(seed)) {
+	: m_seed(seed), m_published(seed), m_pending(std::move(seed)) {
 }
 
 gse::network::wan_directory_provider::~wan_directory_provider() {
@@ -106,14 +104,10 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
 	}
 
 	udp_socket socket;
-	if (
-		!socket.bind(
-			address{
-				.ip = "0.0.0.0",
-				.port = 0
-			}
-		)
-	) {
+	if (!socket.bind(address{
+			.ip = "0.0.0.0",
+			.port = 0
+		})) {
 		return;
 	}
 
@@ -147,9 +141,13 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
 			(void)response_stream.read<packet_header>();
 			const auto msg_id = response_stream.read<std::uint64_t>();
 
-			try_decode<server_info_response>(response_stream, msg_id, [&](const server_info_response& resp) {
-				responses[received->from] = resp;
-			});
+			try_decode<server_info_response>(
+				response_stream,
+				msg_id,
+				[&](const server_info_response& resp) {
+					responses[received->from] = resp;
+				}
+			);
 		}
 	}
 

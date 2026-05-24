@@ -31,7 +31,14 @@ auto gse::network::extract_input_frame(const actions::state& state, const std::s
 
 	const auto pad = [wc](std::span<const std::uint64_t> src) {
 		std::vector<std::uint64_t> out(wc);
-		std::ranges::copy_n(src.begin(), std::min<std::size_t>(src.size(), wc), out.begin());
+		std::ranges::copy_n(
+			src.begin(),
+			std::min<std::size_t>(
+				src.size(),
+				wc
+			),
+			out.begin()
+		);
 		return out;
 	};
 

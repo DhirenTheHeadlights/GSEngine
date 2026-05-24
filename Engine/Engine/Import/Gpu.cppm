@@ -24,6 +24,7 @@ export import :vulkan_swapchain;
 export import :vulkan_commands;
 export import :vulkan_acceleration_structure;
 export import :descriptor_heap;
+export import :bindless_heap;
 export import :frame_resource_bin;
 export import :vulkan_transient_command_buffer;
 export import :vulkan_queue_timeline;

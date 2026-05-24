@@ -10,12 +10,14 @@ export namespace gse {
 	struct theme_color_tag {};
 	struct shared_tag {};
 	struct same_frame_channel_tag {};
+	struct scaled_tag {};
 
 	constexpr networked_tag networked{};
 	constexpr format_skip_tag format_skip{};
 	constexpr theme_color_tag theme_color{};
 	constexpr shared_tag shared{};
 	constexpr same_frame_channel_tag same_frame_channel{};
+	constexpr scaled_tag scaled{};
 
 	template <typename Tag>
 	consteval auto has_annotation(
@@ -34,15 +36,17 @@ export namespace gse {
 
 		consteval {
 			std::vector<std::meta::info> members;
-			const auto all = std::meta::nonstatic_data_members_of(^^Source, std::meta::access_context::unchecked());
+			const auto all = std::meta::nonstatic_data_members_of(
+				^^Source,
+				std::meta::access_context::unchecked()
+			);
 			for (auto m : all) {
 				if (has_annotation<Tag>(m)) {
 					auto m_type = std::meta::type_of(m);
 
 					bool has_nested = false;
 					if (std::meta::is_class_type(m_type) || std::meta::is_union_type(m_type)) {
-						for (auto sm :
-							 std::meta::nonstatic_data_members_of(m_type, std::meta::access_context::unchecked())) {
+						for (auto sm : std::meta::nonstatic_data_members_of(m_type, std::meta::access_context::unchecked())) {
 							if (has_annotation<Tag>(sm)) {
 								has_nested = true;
 								break;

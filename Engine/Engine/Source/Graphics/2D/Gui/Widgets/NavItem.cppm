@@ -40,7 +40,7 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 		return false;
 	}
 
-	const id widget_id = ids::make(std::string(p.text));
+	const id widget_id = ids::make(p.text);
 
 	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.8f;
 	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding * 0.5f, 0.f });
@@ -51,11 +51,10 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 	);
 
 	const bool hovered = row_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
-	const bool pressed = ctx.input.mouse_button_pressed(mouse_button::button_1);
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
 	interaction::mark_hot(hot, widget_id, hovered);
-	interaction::grab_active(active, widget_id, hovered && pressed);
+	interaction::grab_active(active, widget_id, ctx.mouse_pressed_for(row_rect));
 
 	vec4f target_bg{ 0.f, 0.f, 0.f, 0.f };
 	if (p.selected) {
@@ -71,7 +70,10 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 
 	ctx.queue_sprite({
 		.rect = row_rect,
-		.color = ctx.animated_color(widget_id, target_bg),
+		.color = ctx.animated_color(
+			widget_id,
+			target_bg
+		),
 		.texture = ctx.blank_texture,
 		.corner_radius = ctx.style.corner_radius,
 	});

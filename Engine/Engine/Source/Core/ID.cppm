@@ -15,8 +15,13 @@ namespace gse {
 export namespace gse {
 	class id;
 
-	consteval auto stable_id(
+	constexpr auto stable_id(
 		std::string_view tag
+	) -> uuid;
+
+	constexpr auto hash_combine(
+		uuid h,
+		uuid v
 	) -> uuid;
 
 	template <typename T>
@@ -194,11 +199,17 @@ export namespace gse {
 gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {
 }
 
-gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(relative_stem(path, {}))) {
+gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(relative_stem(
+																		 path,
+																		 {}
+																	 ))) {
 }
 
 gse::identifiable::identifiable(const std::filesystem::path& path, const std::filesystem::path& base)
-	: m_id(generate_id(relative_stem(path, base))) {
+	: m_id(generate_id(relative_stem(
+		  path,
+		  base
+	  ))) {
 }
 
 auto gse::identifiable::id() const -> gse::id {
@@ -567,13 +578,21 @@ auto gse::number(const std::string_view tag) -> uuid {
 	return it->second;
 }
 
-consteval auto gse::stable_id(const std::string_view tag) -> uuid {
+constexpr auto gse::stable_id(const std::string_view tag) -> uuid {
 	uuid h = 0xcbf29ce484222325ull;
 	for (const unsigned char c : tag) {
 		h ^= c;
 		h *= 1099511628211ull;
 	}
 	return h;
+}
+
+constexpr auto gse::hash_combine(uuid h, const uuid v) -> uuid {
+	h ^= v;
+	h += 0x9E3779B97F4A7C15ull;
+	h = (h ^ h >> 30) * 0xBF58476D1CE4E5B9ull;
+	h = (h ^ h >> 27) * 0x94D049BB133111EBull;
+	return h ^ h >> 31;
 }
 
 template <typename T>

@@ -6,6 +6,7 @@ import :forward_renderer;
 import :atmosphere_renderer;
 import :geometry_collector;
 import :depth_prepass_renderer;
+import :gi_probe_renderer;
 import :rt_shadow_renderer;
 import :light_culling_renderer;
 import :cull_compute_renderer;
@@ -74,6 +75,11 @@ namespace gse::renderer::forward {
 	]] aerial_perspective_in {};
 
 	struct [[
+		= shaders::binding<0, 8>{},
+		= shaders::sampler2d
+	]] gi_atlas {};
+
+	struct [[
 		= shaders::binding<1, 5>{},
 		= shaders::ssbo_readonly
 	]] instance_data_buffer {
@@ -89,6 +95,7 @@ namespace gse::renderer::forward {
 		material_palette,
 		aerial_perspective_in,
 		atmosphere::atmosphere_ubo,
+		gi_atlas,
 		shaders::meshlet::vertices_buffer,
 		shaders::meshlet::meshlets_buffer,
 		shaders::meshlet::meshlet_vertex_indices,
@@ -107,6 +114,12 @@ namespace gse::renderer::forward {
 		std::int32_t shadow_quality;
 		std::int32_t ao_quality;
 		std::int32_t reflection_quality;
+		vec3<position> gi_origin;
+		length gi_spacing;
+		vec3u gi_grid_dim;
+		float gi_intensity;
+		vec2f gi_atlas_size;
+		std::int32_t gi_enabled;
 	};
 
 	using meshlet_entry = gpu::graphics_entry<
@@ -114,17 +127,17 @@ namespace gse::renderer::forward {
 		gpu::layout<"forward_3d">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"Standard3D/meshlet_common">,
+		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/gi_probe_sample">,
 		gpu::amplification_stage<"as_main">,
 		gpu::mesh_stage<"ms_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<meshlet_push_constants>,
-		gpu::color_target<gpu::color_format::hdr>,
+		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>
 	>;
 }
 
-auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, const atmosphere::system::data& atm_state, data& d) -> async::task<> {
+auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, const atmosphere::system::data& atm_state, const gi_probe::system::data& gi_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
@@ -136,10 +149,20 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
 	constexpr std::size_t material_stride = sizeof(shaders::forward::material_data);
 	constexpr std::size_t light_buffer_size = light_stride * max_lights;
-	constexpr std::size_t material_buffer_size = material_stride * max_materials;
+	constexpr std::size_t material_buffer_size = material_stride * geometry_collector::system::data::max_materials;
 
 	d.light_staging.reserve(light_buffer_size);
-	d.material_staging.reserve(material_buffer_size);
+
+	d.gi_sampler = gpu::sampler::create(
+		gpu_s.device->allocator(),
+		{
+			.min = gpu::sampler_filter::linear,
+			.mag = gpu::sampler_filter::linear,
+			.address_u = gpu::sampler_address_mode::clamp_to_edge,
+			.address_v = gpu::sampler_address_mode::clamp_to_edge,
+			.address_w = gpu::sampler_address_mode::clamp_to_edge,
+		}
+	);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.camera_ubo_buffers[i] = gpu::buffer::create(
@@ -158,64 +181,92 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 			}
 		);
 
-		d.material_palette_buffers[i] = gpu::buffer::create(
-			gpu_s.device->allocator(),
-			{
-				.size = material_buffer_size,
-				.usage = gpu::buffer_flag::storage
-			}
-		);
-
 		d.descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), meshlet_entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				meshlet_entry::pod
+			);
 
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i])
-			.buffer<camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
-			.buffer<lights_ssbo>(d.light_buffers[i], 0, light_buffer_size)
-			.buffer<material_palette>(d.material_palette_buffers[i], 0, material_buffer_size)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.descriptors[i]
+		)
+			.buffer<camera_ubo>(
+				d.camera_ubo_buffers[i],
+				0,
+				camera_ubo_size
+			)
+			.buffer<lights_ssbo>(
+				d.light_buffers[i],
+				0,
+				light_buffer_size
+			)
+			.buffer<material_palette>(
+				gc_state.material_palette_buffers[i],
+				0,
+				material_buffer_size
+			)
 			.commit();
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		gpu::descriptor_writer writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i]);
+		gpu::descriptor_writer writer(gpu_s.device->handle(), d.descriptors[i]);
 
 		writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
 		writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
 			.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi])
-			.combined_image_sampler<aerial_perspective_in>(atm_state.ap_volume, atm_state.lut_sampler)
+			.combined_image_sampler<aerial_perspective_in>(
+				atm_state.ap_volume,
+				atm_state.lut_sampler
+			)
 			.buffer<atmosphere::atmosphere_ubo>(
 				atm_state.atmosphere_ubo_buffer,
 				0,
 				sizeof(atmosphere::atmosphere_data)
+			)
+			.combined_image_sampler<gi_atlas>(
+				gi_state.irradiance_atlas,
+				d.gi_sampler
 			);
 
 		writer.commit();
 	}
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&d, &lc_r, &rt_state, &atm_state, &gpu_s]() {
-		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-			const auto fi = static_cast<std::uint32_t>(i);
-			gpu::descriptor_writer writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i]);
+	gpu::context::on_swap_chain_recreate(
+		gpu_s,
+		[&d, &lc_r, &rt_state, &atm_state, &gi_state, &gpu_s]() {
+			for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+				const auto fi = static_cast<std::uint32_t>(i);
+				gpu::descriptor_writer writer(gpu_s.device->handle(), d.descriptors[i]);
 
-			writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
-			writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
-				.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi])
-				.combined_image_sampler<aerial_perspective_in>(atm_state.ap_volume, atm_state.lut_sampler)
-				.buffer<atmosphere::atmosphere_ubo>(
-					atm_state.atmosphere_ubo_buffer,
-					0,
-					sizeof(atmosphere::atmosphere_data)
-				);
+				writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
+				writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
+					.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi])
+					.combined_image_sampler<aerial_perspective_in>(
+						atm_state.ap_volume,
+						atm_state.lut_sampler
+					)
+					.buffer<atmosphere::atmosphere_ubo>(
+						atm_state.atmosphere_ubo_buffer,
+						0,
+						sizeof(atmosphere::atmosphere_data)
+					)
+					.combined_image_sampler<gi_atlas>(
+						gi_state.irradiance_atlas,
+						d.gi_sampler
+					);
 
-			writer.commit();
+				writer.commit();
+			}
 		}
-	});
+	);
 
 	co_return;
 }
 
-auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<geometry_collector::system> gc_r, shared_view<light_culling::system> lc_r, shared_view<atmosphere::system> atm_state) -> async::task<> {
+auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<geometry_collector::system> gc_r, shared_view<light_culling::system> lc_r, shared_view<atmosphere::system> atm_state, shared_view<gi_probe::system> gi_state) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -253,6 +304,10 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		.proj = proj,
 		.inv_view = view.inverse(),
 		.inv_view_proj = (proj * view).inverse(),
+		.prev_view = cam_state.prev_view_matrix,
+		.prev_proj = cam_state.prev_projection_matrix,
+		.jitter_ndc = cam_state.jitter_ndc,
+		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 
@@ -344,33 +399,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	}
 
 	if (light_count > 0) {
-		d.light_buffers[frame_index].host_write(staging.data(), light_count * sizeof(shaders::forward::light));
-	}
-
-	const auto material_count = std::min(data.material_palette_map.size(), max_materials);
-
-	if (material_count > 0) {
-		auto& mat_staging = d.material_staging;
-		mat_staging.assign(material_count * sizeof(shaders::forward::material_data), std::byte{ 0 });
-		auto* staging_materials = reinterpret_cast<shaders::forward::material_data*>(mat_staging.data());
-
-		for (const auto& [mat_ptr, idx] : data.material_palette_map) {
-			if (idx >= max_materials) {
-				continue;
-			}
-			const auto& diffuse = mat_ptr->diffuse_texture;
-			const auto diffuse_slot = diffuse.valid() ? diffuse->bindless_slot() : gpu::bindless_texture_slot{};
-			staging_materials[idx] = {
-				.base_color = mat_ptr->base_color,
-				.roughness = mat_ptr->roughness,
-				.metallic = mat_ptr->metallic,
-				.diffuse_index = diffuse_slot ? diffuse_slot.index : shaders::bindless::invalid_index,
-			};
-		}
-
-		d.material_palette_buffers[frame_index].host_write(
-			mat_staging.data(),
-			material_count * sizeof(shaders::forward::material_data)
+		d.light_buffers[frame_index].host_write(
+			staging.data(),
+			light_count * sizeof(shaders::forward::light)
 		);
 	}
 
@@ -384,10 +415,16 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 
 	auto meshlet_writer = gpu::make_push_writer(
 		*gpu_s.shader_registry,
-		gpu::context::device_handle(*gpu_s.device),
+		gpu_s.device->handle(),
 		gpu_s.device->descriptor_heap(),
 		meshlet_entry::pod
 	);
+
+	constexpr vec2f gi_atlas_size_v{
+		static_cast<float>(gi_probe::grid_dim.x() * gi_probe::probe_tile_size),
+		static_cast<float>(gi_probe::grid_dim.y() * gi_probe::grid_dim.z() * gi_probe::probe_tile_size),
+	};
+	const bool gi_enabled = gi_state.quality != gi_probe::quality_level::off;
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.pipeline(d.pipeline)
@@ -398,9 +435,11 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 			)
 		)
 		.depth(gpu::load_depth())
-		.after<rt_shadow::system, light_culling::system, depth_prepass::system, atmosphere::ap_compute_pass>();
+		.after<rt_shadow::system, light_culling::system, depth_prepass::system, atmosphere::ap_compute_pass, gi_probe::system>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
+
+	rec.sample_image(gi_state.irradiance_atlas, gpu::pipeline_stage_flag::fragment_shader);
 
 	if (!normal_batches.empty()) {
 		const auto& instance_buf = gc_r.instance_buffer[frame_index];
@@ -441,6 +480,12 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 					.shadow_quality = shadow_quality_i,
 					.ao_quality = ao_quality_i,
 					.reflection_quality = reflection_quality_i,
+					.gi_origin = gi_state.origin_world,
+					.gi_spacing = gi_state.spacing,
+					.gi_grid_dim = gi_probe::grid_dim,
+					.gi_intensity = gi_state.intensity,
+					.gi_atlas_size = gi_atlas_size_v,
+					.gi_enabled = gi_enabled ? 1 : 0,
 				},
 				.stages = gpu::stage_flag::task | gpu::stage_flag::mesh | gpu::stage_flag::fragment,
 			};

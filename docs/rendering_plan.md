@@ -1,6 +1,12 @@
 # GSEngine Rendering — Consolidated Plan
 
-Single source of truth for the rendering pipeline. Consolidates and replaces the previous forward+, RT lighting, and bindless renderer plan docs.
+Single source of truth for the rendering pipeline. Lifetime tracker of what ships, what's planned, what's out of scope.
+
+For workstream-specific deep dives, see:
+- [restir_plan.md](restir_plan.md) — phased ReSTIR (DI → GI → PT) rollout
+- [native_capture.md](native_capture.md) — Vulkan Video screenshot/clip system (shipped, kept as design record)
+- [extension_adoption_plan.md](extension_adoption_plan.md) — Vulkan extension audit
+- [vulkan_extensions.md](vulkan_extensions.md) — target hardware capability dump
 
 ---
 
@@ -11,13 +17,19 @@ Single source of truth for the rendering pipeline. Consolidates and replaces the
 │ Per-frame setup                                               │
 │  ├─ BLAS build/cache per unique mesh                          │
 │  ├─ TLAS rebuild from instance transforms                     │
-│  ├─ Material palette upload (per-unique-material flat_map)    │
-│  └─ Light data upload (camera-space + world-space)            │
+│  ├─ Material palette upload (geometry_collector-owned SSBO)   │
+│  ├─ Light data upload                                         │
+│  └─ Halton-23 jitter applied to projection (for TAA)          │
 ├───────────────────────────────────────────────────────────────┤
-│ Depth prepass (mesh shaders)                                  │
+│ Depth + velocity prepass (mesh shaders, MRT)                  │
 │  ├─ Task shader: meshlet frustum + backface-cone cull         │
-│  ├─ Mesh shader: emit meshlet triangles                       │
-│  └─ Output: depth (swapchain depth_image)                     │
+│  ├─ Mesh shader: emit meshlet triangles + curr/prev clip_pos  │
+│  └─ Output: depth (swapchain), velocity (r16g16_sfloat)       │
+├───────────────────────────────────────────────────────────────┤
+│ DDGI probe update (compute, RT)                               │
+│  ├─ 16×6×16 probes, camera-anchored                           │
+│  ├─ 64 rays/probe via inline RayQuery → material_palette      │
+│  └─ Output: 8×8 octahedral irradiance atlas (RGBA16F)         │
 ├───────────────────────────────────────────────────────────────┤
 │ Light culling (compute)                                       │
 │  ├─ 16×16 tile, samples depth                                 │
@@ -27,8 +39,25 @@ Single source of truth for the rendering pipeline. Consolidates and replaces the
 │  ├─ Cook-Torrance PBR (GGX + Smith + Fresnel-Schlick)         │
 │  ├─ Tile light lookup                                         │
 │  ├─ Inline RayQuery — shadows, AO, reflections                │
+│  ├─ DDGI atlas sample (trilinear + octahedral)                │
 │  ├─ Bindless texture sampling                                 │
+│  └─ Output: targets::hdr_color (RGBA16F)                      │
+├───────────────────────────────────────────────────────────────┤
+│ Atmosphere / clouds (composite into hdr_color via blend)      │
+├───────────────────────────────────────────────────────────────┤
+│ TAA (fullscreen fragment, MRT)                                │
+│  ├─ Read: hdr_color + velocity + history[prev]                │
+│  ├─ Neighborhood-clamped YCoCg blend, 2-frame warmup          │
+│  └─ Output: history[curr] + targets::post_taa_color           │
+├───────────────────────────────────────────────────────────────┤
+│ Bloom (compute, mip chain on post_taa_color)                  │
+├───────────────────────────────────────────────────────────────┤
+│ Tonemap (fragment, AgX)                                       │
+│  ├─ Reads: post_taa_color + bloom mips                        │
+│  ├─ Optional debug: velocity-buffer HSV viz                   │
 │  └─ Output: swapchain color (LDR, B8G8R8A8)                   │
+├───────────────────────────────────────────────────────────────┤
+│ UI / world-text overlays → swapchain                          │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,9 +68,10 @@ Single source of truth for the rendering pipeline. Consolidates and replaces the
 | Mesh shaders (task + mesh) | ✅ Done | `draw_mesh_tasks_indirect` in static path; skinned uses `draw_indirect` |
 | Meshlet bake (model compiler) | ✅ Done | `.gmdl` v4 / `.gsmdl` v2 |
 | Forward+ light culling | ✅ Done | 16×16 tiles, GPU-only |
-| Depth prepass | ✅ Done | Used for light culling + RT z-test |
-| PBR / Cook-Torrance | ✅ Done | Material palette on GPU, embedded in `.gmdl` |
-| Material palette (bindless-style) | ✅ Done | `StructuredBuffer<MaterialData>` |
+| Depth prepass | ✅ Done | MRT-extended for velocity output |
+| **Motion vector buffer** | ✅ Done | Depth prepass writes velocity to `targets::velocity` |
+| PBR / Cook-Torrance | ✅ Done | Material palette owned by `geometry_collector` |
+| Material palette | ✅ Done | `StructuredBuffer<material_data>` shared between forward + GI |
 | TLAS rebuild | ✅ Done | Per frame, instance custom_index = palette index |
 | RT shadows | ✅ Done | Quality: Off / Hard / Low / Medium / High |
 | RT AO | ✅ Done | Cosine-weighted hemisphere |
@@ -50,158 +80,148 @@ Single source of truth for the rendering pipeline. Consolidates and replaces the
 | Persistent / push / bindless descriptor sets | ✅ Done | Three-way split |
 | Auto pipeline-reflection resource tracking | ✅ Done | `bind_descriptors` populates `note_touched` |
 | Render graph multi-queue | ✅ Done | Graphics + compute with timeline semaphores |
-| Render graph topo sort + barrier emission | ✅ Done | Reads/writes data flow + explicit `after<T>` + `.in_chain<T>()` |
+| Render graph topo sort + barrier emission | ✅ Done | Reads/writes data flow + `after<T>` + `.in_chain<T>()` |
 | Transient image/buffer pool | ✅ Done | Alias-aware memory, per-frame slots |
-| Intra-frame alias barriers | ✅ Done | First-use barrier carries observed dst stages/access |
+| **MRT** (multi-render-target color attachments) | ✅ Done | Variadic `color_targets<F...>`, per-pass `color_outputs` vector |
 | Custom color/depth attachments | ✅ Done | Persistent or transient targets, per-pass inheritance format |
 | Native capture (screenshot/video) | ✅ Done | Vulkan Video encode |
-| HDR pipeline | ❌ Missing | Forward writes straight to LDR swapchain |
-| Tone mapping | ❌ Missing | — |
-| TAA + motion vectors | ❌ Missing | — |
-| Bloom | ❌ Missing | — |
-| FSR / temporal upscale | ❌ Missing | — |
-| RT global illumination (DDGI) | ❌ Missing | — |
-| Temporal denoising for RT | ❌ Missing | Currently relies on multi-ray averaging |
-| Visibility buffer | ❌ Deferred | Phase 4 of original plan; optional |
+| **HDR pipeline** | ✅ Done | Forward → `targets::hdr_color`, post-TAA → `targets::post_taa_color` |
+| **Tone mapping** | ✅ Done | AgX, fragment-based |
+| **TAA + Halton jitter + history** | ✅ Done | Per-frame jitter, ping-pong history, neighborhood clamp |
+| **Bloom** | ✅ Done | Mip chain on `post_taa_color`, one image per mip workaround |
+| **DDGI** | ✅ Done | 16×6×16 probes, 64 rays each, material-tinted hits |
+| **Camera-system shared prev matrices** | ✅ Done | `prev_view_matrix`, `prev_projection_matrix`, `prev_jitter_ndc` |
+| **Instance prev model matrix** | ✅ Done | Cached per (entity, model_index) in `geometry_collector` |
+| **mixed_mat type discipline** | ✅ Done | Bracket op deleted; use `at`/`set`/`transform_point` |
+| RT temporal denoiser | ❌ Missing | Cheap RT presets remain noisy without one |
+| ReSTIR DI | ❌ Planned | See [restir_plan.md](restir_plan.md) Phase 1 |
+| ReSTIR GI | ❌ Planned | See [restir_plan.md](restir_plan.md) Phase 2 |
+| ReSTIR PT | ❌ Deferred | See [restir_plan.md](restir_plan.md) Phase 3 |
+| FSR / temporal upscale | ❌ Missing | Reuses TAA's history infrastructure |
+| Bindless buffers (instance/material SSBOs) | ❌ Missing | Pure refactor; would unlock GPU-driven culling |
+| Subresource tracking in graph | ❌ Missing | Needed when bloom-style mip chains grow; "one image per mip" works around it for now |
+| Async transfer queue | ❌ Missing | Defer until profiler shows graphics-queue starvation |
+| DDGI: temporal accumulation | ❌ Missing | Atlas rewrites each frame instead of EMA-blending |
+| DDGI: distance/visibility atlas | ❌ Missing | Light leaks through thin walls; Chebyshev test would prevent |
+| DDGI: probe relocation | ❌ Missing | Probes can end up inside geometry |
+| DDGI: real hit normal | ❌ Missing | Uses `-ray_dir` placeholder; fetch from meshlet vertex buffer |
+| External denoiser integration (NRD / OIDN) | ❌ Missing | Prereq for ReSTIR; useful for current RT path too |
+| Visibility buffer | ❌ Deferred | Revisit if Nanite-style virtual geometry becomes a goal |
 
 ---
 
 ## Priority order
 
-Top to bottom = do first to last. Each item lists its main dependency.
+Top to bottom = do first to last.
 
-1. **HDR forward path** — landing this unblocks every item below.
-2. **Tone mapping pass** — requires (1).
-3. **Bloom** — requires (1) and subresource tracking in the graph.
-4. **Motion vector buffer (depth prepass MRT)** — requires (1); enables (5)–(7).
-5. **TAA** — requires (1), (4), cross-frame history.
-6. **FSR / temporal upscale** — requires (4), (5)'s history infrastructure.
-7. **RT temporal denoiser** — requires (4), (5)'s history. Big quality win.
-8. **DDGI** — independent, depends only on BLAS/TLAS + material palette (both shipped).
-9. **Bindless buffers (instance/material SSBOs in bindless set)** — pure cleanup; current sets work.
-10. **Async transfer queue** — defer until profiler shows graphics queue starvation.
-11. **Visibility buffer** — deferred indefinitely; revisit if Nanite-style LOD becomes a goal.
+1. **External denoiser integration** (NRD or OIDN). Prereq for ReSTIR; also improves current RT shadow/AO/reflection quality immediately.
+2. **DDGI hardening** — temporal accumulation + distance atlas + real hit normals. Lifts DDGI from "DDGI Lite" to shippable. ~250 LOC across the existing files.
+3. **ReSTIR DI** — see [restir_plan.md](restir_plan.md). Subsumes the inline shadow loop and unlocks 16K+ light counts.
+4. **RT temporal denoiser** (per effect) — only needed if ReSTIR doesn't subsume the relevant RT effect first. After ReSTIR DI ships, the shadow/AO inline paths become dead.
+5. **ReSTIR GI** — see [restir_plan.md](restir_plan.md). Competes with DDGI; keep DDGI as low-quality preset.
+6. **FSR / temporal upscale** — reuses TAA's history infrastructure. Cheap once TAA is in (which it is). Defer until there's a need to render below output resolution.
+7. **Bindless buffer tail** — material palette + instance data into bindless slots. Enables single-`drawIndexedIndirect` GPU-driven culling. Pure structural; no visible change.
+8. **Subresource tracking in graph** — only land when a second feature needs it (current bloom uses the "one image per mip" workaround).
+9. **Async transfer queue** — defer until profiler demands.
+10. **Visibility buffer** — deferred indefinitely.
 
 ---
 
 ## Detailed sections
 
-### 1. HDR forward path
+### 1. External denoiser integration
 
-**Goal:** forward shading writes to an offscreen HDR target instead of the swapchain. Tone mapping later resolves it to swapchain LDR.
+**Goal:** plumb a production denoiser (NVIDIA Real-Time Denoisers / NRD, or Intel Open Image Denoise / OIDN) over the existing RT signals.
 
-**Scope:**
-- Declare an HDR color image (e.g. `r16g16b16a16_sfloat`) via `gpu::transient_image` with `used_by = { forward_pass, tonemap_pass, … }`.
-- Forward pass's `.color({ … .transient_target = hdr })` instead of swapchain.
-- Tonemap pass reads `hdr` via `rec.resolve` + samples; writes swapchain.
+**Why now:** all of the planned ReSTIR work needs a denoiser pair to look good at 1 spp. Current RT shadow/AO is noisy on the cheap presets; a denoiser fixes both problems at once.
 
-**Status:** the API for this is in. ForwardRenderer still writes swapchain directly. Migration is one-renderer scope; no graph changes needed.
-
-**Files:**
-- `Engine/Engine/Source/Graphics/Renderers/ForwardRenderer.cpp` — change `.color(clear_color(...))` to use the HDR handle.
-- New: `Engine/Engine/Source/Graphics/Renderers/TonemapRenderer.cppm/.cpp`.
-- New shader: `Compute/tonemap.slang` (or fragment-based; either works).
-
-### 2. Tone mapping
-
-ACES or AgX. Compute-shader-based is simplest (reads HDR storage image, writes swapchain via storage image). Fragment-based is fine too — full-screen triangle. Either way, the pass reads `hdr` and writes `swapchain`.
-
-**Optional:** auto-exposure via compute histogram. Adds one compute pass before tonemap.
-
-### 3. Bloom
-
-Standard downsample / blur / upsample chain on the HDR target.
-
-**Blocker:** the render graph today emits barriers with `base_mip_level=0, level_count=1`. A pyramid pass that writes different mips of one image in sequence will false-conflict (graph sees same image pointer, same level=1 range, treats both as the whole image).
-
-**Two options:**
-- **Subresource tracking in the graph.** Extend `resource_ref` / `note_touched` to carry a mip-range + layer-range. Per-pass barrier emission emits the actual range. ~150-line graph diff.
-- **One image per mip level.** Cheap workaround — each mip is a separate transient. The pool will alias them since their lifetimes overlap only at the boundary. Slightly more bookkeeping in the bloom renderer; no graph diff.
-
-Recommended: workaround for first bloom landing; revisit subresource tracking when it bites a second feature.
-
-### 4. Motion vector buffer (MRT in depth prepass)
-
-**Goal:** depth prepass outputs depth + velocity in one pass.
-
-**Blocker:** the render graph today supports one color attachment per pass. `color_output_info` and the inheritance arrays are sized for one.
+**Recommendation:** NRD. It's purpose-built for ReSTIR-class signals and ships presets (ReBLUR for diffuse/specular, ReLAX for high-variance, SIGMA for shadows). Vulkan-compatible static lib.
 
 **Scope:**
-- Extend `color_output_info` to be a small vector (cap at e.g. 4).
-- Extend `color_attachment` user struct similarly, or take a span.
-- `inheritance.color_formats` grows from `array<vk::Format, 1>` to `vector<vk::Format>` per pass.
-- `begin_rendering` builds N attachment infos, one per color target.
+- Inputs NRD wants: HDR per-effect signals (shadow visibility, AO term, reflection color), normal+roughness G-buffer, depth, motion vectors.
+- We already produce motion vectors and depth.
+- Need to split inline RT in `meshlet_geometry.slang` into separate compute passes that output per-effect buffers (one pass per signal: shadow, AO, reflections).
+- Forward shader then samples the *denoised* per-effect buffers instead of doing the inline RT.
 
-~80-line graph diff. Worth doing before TAA needs it.
+**Estimated work:** ~2–3 weeks. Library integration + 3 compute passes + forward refactor.
 
-### 5. TAA + cross-frame history
+This is also the right time to delete the existing per-light RT shadow loop, since denoised shadows render with one ray total regardless of light count.
 
-Standard temporal accumulation. Reads previous-frame post-TAA color, current-frame HDR, motion vectors. Outputs accumulated HDR (becomes next frame's history).
+### 2. DDGI hardening
 
-**Cross-frame history pattern:** uses `per_frame_resource<gpu::image>` — explicitly NOT a transient. Frame N reads slot[N⊕1] while writing slot[N]. The graph already handles per-frame buffers identically; images are the same shape.
+DDGI as shipped is "DDGI Lite" — same architecture as the NVIDIA RTXGI library but missing key features. From cheapest to most invasive:
 
-Jittered projection (Halton-23) goes in the camera system.
+- **Real hit normal in the compute shader** (~50 LOC). Currently uses `-ray_dir` as the hit normal, which is a stand-in. Real fix: in `gi_probe_update.slang`, use `q.CommittedTriangleBarycentrics()` + `q.CommittedPrimitiveIndex()` + the meshlet vertex buffer to compute the actual normal. Requires binding the vertex buffer in the GI compute (already SSBO-bound in forward; same source).
+- **Temporal accumulation per probe texel** (~60 LOC). Single biggest visual win. Currently each frame's atlas write completely replaces the previous value. Change to EMA: `new_value = lerp(old_value, fresh_sample, 0.03)`. Requires sampling the *previous* atlas inside the compute shader (so atlas needs read+write storage_image usage, or sample previous via a sampler binding).
+- **Distance / visibility atlas** (~150 LOC). Second per-probe atlas (16×16 RG16F: mean, mean²). On forward sample, perform a Chebyshev visibility test (mean ± k·stddev vs. surface distance) and weight contributions. Kills the light-leak-through-walls artifact. Doubles atlas memory (still small in absolute terms).
+- **Probe classification** (~30 LOC). Skip probes whose rays are nearly all very short (probe inside geometry) or all very long (probe outside the scene). Saves compute.
+- **Probe relocation** (~80 LOC). Offset probes that landed inside geometry along the average miss direction. Fixes the worst per-probe artifacts.
 
-### 6. FSR / temporal upscale
+Order recommended: hit-normal → temporal accumulation → distance atlas. Stop there unless artifacts demand the last two.
 
-Same temporal history pattern as (5). Render forward at lower resolution, reconstruct at output resolution. Mostly a port of the FSR reference shader; no engine-level work beyond what (4) and (5) provide.
+### 3. ReSTIR DI / GI / PT
 
-### 7. RT temporal denoiser
+See [restir_plan.md](restir_plan.md). Three-phase rollout with explicit prerequisites, considerations, decision points.
 
-The cheap RT presets are noisy (1 ray/pixel for shadows at "Hard", 1 ray/pixel for AO at "Low"). Temporal denoising reprojects the previous frame's RT result by motion vectors and blends.
+Short summary:
 
-**Scope per RT effect** (shadows / AO / reflections):
-- Split inline RT out of the forward fragment shader into a dedicated compute pass that writes a per-effect output texture.
-- Denoiser pass: read current + previous (history), reproject, blend, clamp.
-- Forward fragment reads the denoised result instead of doing inline RT.
+- **Phase 1 (DI, ~800 LOC, 4–6 weeks):** replaces forward+ tile culling and inline shadow loop. Handles arbitrary light counts at constant cost.
+- **Phase 2 (GI, ~1200 LOC, 8–10 weeks):** full-resolution indirect diffuse. Competes with DDGI; keep DDGI as low preset.
+- **Phase 3 (PT, 6+ months):** path-traced reference quality in real time. Defer; revisit after 1 + 2 ship.
 
-This is a real refactor of the RT path. The inline-RT-in-forward-fragment model from `rt_lighting.md` is elegant for quality presets but doesn't denoise well. Worth doing once TAA infrastructure (motion vectors + history) is in place — they share most of the plumbing.
+Prerequisite for any phase: denoiser integration (§1) + per-pixel reservoir storage infrastructure.
 
-### 8. DDGI
+### 4. FSR / temporal upscale
 
-Probe-based diffuse GI. Independent of everything else above; needs BLAS/TLAS (shipped) and material palette (shipped).
+Render forward at lower resolution, reconstruct at output resolution using the existing TAA history.
 
-Carry over from `rt_lighting.md` Phase 3 unchanged:
+The infrastructure is in: jittered projection, motion vectors, ping-pong history. FSR is a port of the reference shader.
 
-- Uniform 3D probe grid, configurable spacing (1–4 m).
-- Per-probe 8×8 octahedral irradiance (`RGBA16F`) + 16×16 distance (`RG16F`).
-- Storage: 2D texture atlases.
-- Compute pass `probe_update` traces N rays/probe per frame, encodes to atlas.
-- Fragment samples 8 nearest probes, blends into ambient.
+**Scope:**
+- Render most of the pipeline at, e.g., 1280×720 (or 0.5–0.85 of swap-extent).
+- TAA / FSR pass upsamples to native swap-extent with the same neighborhood-clamp + history blend.
+- UI renders at native resolution.
 
-Quality presets:
+**Estimated work:** ~2 weeks. Mostly a shader port from FidelityFX SDK.
 
-| Preset | Rays/probe | Probes/frame | Spacing |
-|---|---|---|---|
-| Low | 64 | 1/8 | 4 m |
-| Medium | 128 | 1/4 | 2 m |
-| High | 256 | 1/2 | 1 m |
+Defer until there's a content reason to want sub-native render resolution. At current scene complexity it's not needed.
 
-New files:
-- `GIProbeRenderer.cppm` — probe grid + atlas management + compute dispatch.
-- `gi_probe_update.slang` — probe ray trace + irradiance encoding.
-- `gi_probe_sample.slang` — sampling helpers for forward shader.
+### 5. Bindless buffer tail
 
-### 9. Bindless buffer tail
+The texture half of bindless is shipped (`bindless_texture_set`, capacity 4096, retire queue). The buffer half isn't.
 
-Layer 1 + 2 of `bindless_renderer_plan.md` are landed (`bindless_texture_set`, capacity 4096, retire queue, broad renderer adoption).
+**Goal:** material palette and instance data become bindless `StructuredBuffer<T>` slots, accessed by 32-bit indices baked into draw streams. Removes the per-pass descriptor write for these resources.
 
-Remaining:
-- **Buffer-flavoured bindless service** — analogue of `bindless_texture_set` for `StructuredBuffer<T>` slots. Used by per-material data, per-instance data.
-- **Migrate `material_palette_buffers`** from per-frame UBO to a bindless `StructuredBuffer<material_data>` slot.
-- **Migrate instance data** similarly. Compute culling writes draw streams with packed `(instance_idx, material_idx)` directly; renderer becomes one `drawIndexedIndirect`.
+**Payoff:** GPU-driven rendering. Compute culling writes a single draw stream with packed `(instance_idx, material_idx)` per draw; the renderer becomes one `drawIndexedIndirect` call regardless of mesh count.
 
-Phase 4 of the bindless plan ("GPU-driven rendering — the actual payoff") is what this unlocks. Order: do (1)–(7) first since they unlock visible quality; bindless tail is a structural payoff that doesn't change pixels.
+**Scope:**
+- Buffer-flavoured bindless service — analogue of `bindless_texture_set`, slot-based registration.
+- Migrate `material_palette_buffers` (currently in geometry_collector) to a bindless slot.
+- Migrate `instance_buffer` similarly.
+- Compute culling shader writes one `draw_indexed_indirect_command` per visible mesh into a draw stream.
+- Forward renderer becomes a single indirect draw call.
 
-### 10. Render-graph hardening
+This is the original "Phase 4 of the bindless plan" — the actual payoff. Doesn't change pixels but cuts draw-call overhead substantially.
 
-Items that aren't blockers today but will be one day. Each is a self-contained graph change.
+**Estimated work:** 3–4 weeks. Touches the descriptor system, geometry_collector, forward renderer.
 
-- **Subresource tracking** — needed once bloom or mip-chain SSAO lands. Detail: `resource_ref` gains `mip_base/count, layer_base/count`; `note_touched` accepts them; barrier emission emits the actual range. ~150 lines.
-- **MRT** — needed for motion vectors. ~80 lines.
-- **Async transfer queue** — currently graphics + compute. TLAS rebuild + vertex uploads share the graphics queue. Defer until measurement shows graphics-queue starvation.
-- **Pass culling** — drop passes whose writes don't reach the swapchain (or any retained resource). Low priority.
-- **Graph viz dump** — debugging aid; no game-facing impact.
+### 6. Subresource tracking in graph
+
+Today the graph emits barriers with `base_mip_level=0, level_count=1`. Bloom works around this by allocating one image per mip; chains of dependent mip writes would false-conflict otherwise.
+
+**Trigger to actually do this:** when a second feature trips over the same limitation. Until then, the "one image per mip" workaround is fine.
+
+**Scope (when needed):** `resource_ref` gains `mip_base/count, layer_base/count`. `note_touched` accepts them. Barrier emission emits the actual range. ~150-line graph diff.
+
+### 7. Async transfer queue
+
+Today TLAS rebuild and vertex uploads share the graphics queue. The graph supports the queue split (graphics + compute); adding a transfer queue is mechanical.
+
+**Trigger:** profiler shows graphics-queue starvation during heavy upload frames. Until that's measurable, no point.
+
+### 8. Visibility buffer
+
+Deferred indefinitely. Revisit if/when Nanite-style virtual geometry becomes a goal. Mesh shaders + meshlet culling get us most of the way there for current scene complexity.
 
 ---
 
@@ -220,35 +240,48 @@ Use `in_chain` when the order matters but isn't data-derived — e.g. UI layerin
 ### Transient resources
 
 - **Within-frame intermediate**: `gpu::transient_image` / `gpu::transient_buffer`. Declared via `co_await`, lifetime hint via `used_by`. Pool aliases non-overlapping lifetimes.
-- **Cross-frame history**: `per_frame_resource<gpu::image>` — NOT a transient. Created at startup, double-buffered, lives across the whole session.
-- **Whole-session persistent**: plain `gpu::image` / `gpu::buffer` created at startup. For things like the depth_image, palettes, BLAS storage.
+- **Cross-frame history**: `per_frame_resource<gpu::image>` — NOT a transient. Created at startup, double-buffered, lives across the whole session. Used by TAA history; future ReSTIR reservoirs follow the same shape.
+- **Whole-session persistent**: plain `gpu::image` / `gpu::buffer` created at startup. For the depth_image, palettes, BLAS storage, DDGI atlas, TAA history images.
 
 ### Quality preset surface
 
-Each RT effect already has a quality enum in `ForwardRenderer.cppm`, push-constant-piped to the shader. New effects (TAA quality, GI quality, bloom strength) should follow the same pattern — quality enum + `save::register_property` + push-constant field + `get_*_config()` shader helper.
+Each RT effect has a quality enum in `ForwardRenderer.cppm` (and now `GiProbeRenderer.cppm`, `TaaRenderer.cppm`, `BloomRenderer.cppm`, `TonemapRenderer.cppm`), push-constant-piped to the shader. Settings are reflected via `[[= gse::settings::describe<...>]]` + optional `[[= gse::settings::range<...>]]` annotations. New effects should follow the same pattern — quality enum + `describe` annotation + push-constant field + per-quality config helper.
+
+### Type-safe matrix discipline
+
+`mixed_mat<ColSpec, RowSpec>` (the base of `view_matrix`, `projection_matrix`, etc.) has `operator[]` deleted. Element access goes through `at<C, R>()` (returns the unit-typed value) and `set<C, R>(val)` (takes a unit-typed value). Internal access in matrix methods uses `static_cast<const base&>(*this)[c][r]`. There's intentionally no public `raw()` escape hatch — if you need element-level math, do it on a `mat<T, N, N>` first and wrap in the typed type at the end (perspective() / orthographic() are the template).
+
+### Unit types in push constants
+
+Per project convention: unit types (`length`, `irradiance`, `position`, `vec3<position>`, etc.) are layout-compatible with their underlying float / float3. They can be used directly in `shaders::shader_struct` push constant types without conversion — the slang codegen emits them as float / float3 on the shader side. Never `static_cast` a unit type to float; just use it directly.
+
+Examples in the codebase: atmosphere's `sky_raster_push_constants` uses `vec3<irradiance>`, `atmosphere_length`; gi_probe's `push_constants` uses `vec3<position>`, `length`, `irradiance`.
 
 ---
 
 ## Out of scope (for now)
 
-- **Visibility buffer** (Phase 4 of original migration). Deferred; revisit if/when Nanite-style virtual geometry becomes a goal.
-- **Work graphs / cooperative matrices / Gaussian splatting** — listed in original Phase 6 as future-future. Not on the runway.
-- **Audio capture, network streaming, GIF support** — out of `native_capture.md` non-goals.
+- **Visibility buffer**. Revisit if/when Nanite-style virtual geometry becomes a goal.
+- **Work graphs / cooperative matrices / Gaussian splatting**. Not on the runway.
+- **Audio capture, network streaming, GIF support**. Per `native_capture.md` non-goals.
+- **Custom shift mappings for ReSTIR variants** (e.g., ReSTIR for our SDF tracer or VBD-driven physics). PhD-level math; explicitly research scope.
+- **Neural radiance caching with runtime training.** Tracked separately; 4–6+ month commitment, requires GPU intrinsics work and numerical-debugging stamina that AI agents are weak at.
 
 ---
 
-## Suggested PR slicing
+## Suggested PR slicing (remaining work, in priority order)
 
-The remaining work, broken into reviewable PRs:
+1. **NRD or OIDN integration** — denoiser standalone. Plumb HDR + motion vectors + depth, output denoised per-effect buffers. Doesn't need ReSTIR to test; point it at existing inline RT output for verification. ~2–3 weeks.
+2. **DDGI hardening** — real hit normals + temporal accumulation (one PR), then distance atlas (separate PR). ~1–2 weeks each.
+3. **Forward shader RT refactor** — split inline shadow/AO/reflection into separate compute passes feeding the denoiser. ~1 week. Sets up Phase 1 of ReSTIR.
+4. **ReSTIR DI initial + temporal** — barely works, proves the pipeline. ~2 weeks.
+5. **ReSTIR DI spatial reuse + bias correction** — DI complete. ~1–2 weeks.
+6. **Light list expansion (1024 → 16K+)** — exploits ReSTIR DI's scaling property.
+7. **Strip inline shadow loop from forward** — DI fully replaces it.
+8. **ReSTIR GI initial + temporal + spatial** — competes with DDGI; ~4–6 weeks.
+9. **DDGI ↔ ReSTIR GI quality-preset wiring** — they coexist as user-selectable indirect-diffuse paths.
+10. **Bindless buffer tail + GPU-driven culling** — pure structural; no visible change but real perf win.
+11. **Subresource tracking in graph** — only when a second feature trips over it.
+12. **FSR** — when sub-native rendering becomes valuable.
 
-1. **HDR forward + tone mapping** — one PR. Smallest unit that ships visible HDR.
-2. **MRT in graph + velocity buffer in depth prepass** — one PR. Pure plumbing, no quality change yet.
-3. **Bloom** — one PR using the "one image per mip" workaround; revisit subresource tracking later if it bites again.
-4. **TAA** — one PR. History buffer, projection jitter, neighborhood clamp.
-5. **FSR** — one PR after TAA, reuses history infrastructure.
-6. **RT denoiser** — one PR per effect (shadows / AO / reflections). Each splits inline RT out of forward fragment + adds a denoise pass.
-7. **DDGI** — one PR. Independent of post-process work, can run in parallel with anything above.
-8. **Bindless buffers (material palette)** — one PR. Pure refactor, no visible change.
-9. **Bindless buffers (instance data) + GPU-driven culling** — one PR. The actual draw-call fusion payoff.
-
-Items 1–3 are the critical path for any further visual quality work. Items 4–7 deliver the AAA-look gap. Items 8–9 are perf wins that don't change pixels.
+Items 1–3 are the critical path for any further RT-quality work. Items 4–9 deliver the modern "GI looks right" gap. Item 10 is the GPU-driven payoff. Items 11–12 are situational.

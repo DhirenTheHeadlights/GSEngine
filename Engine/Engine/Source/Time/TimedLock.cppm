@@ -42,15 +42,13 @@ export namespace gse {
 }
 
 template <typename T>
-gse::timed_lock<T>::timed_lock(const T& value, const time duration) : m_value(value),
-																	  m_duration(duration) {
+gse::timed_lock<T>::timed_lock(const T& value, const time duration) : m_value(value), m_duration(duration) {
 }
 
 template <typename T>
 template <typename... Args>
 gse::timed_lock<T>::timed_lock(const time duration, Args&&... args)
-	: m_value(std::forward<Args>(args)...),
-	  m_duration(duration) {
+	: m_value(std::forward<Args>(args)...), m_duration(duration) {
 }
 
 template <typename T>

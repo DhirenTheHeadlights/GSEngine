@@ -55,8 +55,7 @@ gse::scope_exit<F>::scope_exit(F&& f) noexcept(std::is_nothrow_move_constructibl
 
 template <class F>
 gse::scope_exit<F>::scope_exit(scope_exit&& other) noexcept(std::is_nothrow_move_constructible_v<F>)
-	: m_func(std::move(other.m_func)),
-	  m_active(other.m_active) {
+	: m_func(std::move(other.m_func)), m_active(other.m_active) {
 	other.m_active = false;
 }
 

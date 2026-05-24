@@ -35,30 +35,35 @@ export namespace gse::gpu {
 		resource_ref ref;
 	};
 
+	enum class descriptor_type : std::uint8_t;
+
 	struct descriptor_buffer_properties {
 		vk::DeviceSize offset_alignment = 0;
 		bool push_descriptors_supported = false;
 		bool bufferless_push_descriptors = false;
+		vk::DeviceSize sampler_descriptor_size = 0;
+		vk::DeviceSize combined_image_sampler_descriptor_size = 0;
+		vk::DeviceSize sampled_image_descriptor_size = 0;
+		vk::DeviceSize storage_image_descriptor_size = 0;
+		vk::DeviceSize uniform_buffer_descriptor_size = 0;
+		vk::DeviceSize storage_buffer_descriptor_size = 0;
+		vk::DeviceSize acceleration_structure_descriptor_size = 0;
+
+		[[nodiscard]] auto descriptor_size_for(
+			descriptor_type t
+		) const -> vk::DeviceSize;
 	};
 
 	enum class buffer_flag : std::uint32_t {
-		uniform [[= vk::BufferUsageFlagBits::eUniformBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] =
-			0x01,
-		storage [[= vk::BufferUsageFlagBits::eStorageBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] =
-			0x02,
-		indirect [[= vk::BufferUsageFlagBits::eIndirectBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] =
-			0x04,
+		uniform [[= vk::BufferUsageFlagBits::eUniformBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x01,
+		storage [[= vk::BufferUsageFlagBits::eStorageBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x02,
+		indirect [[= vk::BufferUsageFlagBits::eIndirectBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x04,
 		transfer_dst [[= vk::BufferUsageFlagBits::eTransferDst]] = 0x08,
 		vertex [[= vk::BufferUsageFlagBits::eVertexBuffer]] = 0x10,
 		index [[= vk::BufferUsageFlagBits::eIndexBuffer]] = 0x20,
 		transfer_src [[= vk::BufferUsageFlagBits::eTransferSrc]] = 0x40,
-		acceleration_structure_storage
-			[[= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR]] [[= vk::BufferUsageFlagBits::
-																				  eShaderDeviceAddress]] = 0x80,
-		acceleration_structure_build_input
-			[[= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR]] [[= vk::BufferUsageFlagBits::
-																							 eShaderDeviceAddress]] =
-				0x100,
+		acceleration_structure_storage [[= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x80,
+		acceleration_structure_build_input [[= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x100,
 		video_encode_dst [[= vk::BufferUsageFlagBits::eVideoEncodeDstKHR]] = 0x200,
 	};
 
@@ -230,6 +235,7 @@ export namespace gse::gpu {
 		r8g8_snorm [[= vk::Format::eR8G8Snorm]],
 		r8g8_unorm [[= vk::Format::eR8G8Unorm]],
 		r16g16b16a16_sfloat [[= vk::Format::eR16G16B16A16Sfloat]],
+		r16g16_sfloat [[= vk::Format::eR16G16Sfloat]],
 	};
 
 	enum class image_view_type : std::uint8_t {
@@ -1233,6 +1239,8 @@ auto gse::vulkan::to_vk(const gpu::image_format f) -> vk::Format {
 			return vk::Format::eR8G8Unorm;
 		case gpu::image_format::r16g16b16a16_sfloat:
 			return vk::Format::eR16G16B16A16Sfloat;
+		case gpu::image_format::r16g16_sfloat:
+			return vk::Format::eR16G16Sfloat;
 	}
 	std::unreachable();
 }
@@ -2008,4 +2016,24 @@ auto gse::vulkan::image_aspect_for(const gpu::image_format_value f) -> gpu::imag
 		return gpu::image_aspect_flag::depth;
 	}
 	return gpu::image_aspect_flag::color;
+}
+
+auto gse::gpu::descriptor_buffer_properties::descriptor_size_for(const descriptor_type t) const -> vk::DeviceSize {
+	switch (t) {
+		case descriptor_type::uniform_buffer:
+			return uniform_buffer_descriptor_size;
+		case descriptor_type::storage_buffer:
+			return storage_buffer_descriptor_size;
+		case descriptor_type::combined_image_sampler:
+			return combined_image_sampler_descriptor_size;
+		case descriptor_type::sampled_image:
+			return sampled_image_descriptor_size;
+		case descriptor_type::storage_image:
+			return storage_image_descriptor_size;
+		case descriptor_type::sampler:
+			return sampler_descriptor_size;
+		case descriptor_type::acceleration_structure:
+			return acceleration_structure_descriptor_size;
+	}
+	return 0;
 }

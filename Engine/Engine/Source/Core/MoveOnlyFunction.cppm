@@ -35,10 +35,7 @@ export namespace gse {
 		) noexcept;
 
 		template <typename F>
-		requires(
-			!std::same_as<std::remove_cvref_t<F>, move_only_function<R(Args...)>> &&
-			std::invocable<std::decay_t<F>&, Args...>
-		)
+		requires(!std::same_as<std::remove_cvref_t<F>, move_only_function<R(Args...)>> && std::invocable<std::decay_t<F>&, Args...>)
 		move_only_function(F&& f) {
 			using D = std::decay_t<F>;
 			if constexpr (fits_inline_v<D>) {
@@ -210,6 +207,9 @@ auto gse::move_only_function<R(Args...)>::invoke_address() const noexcept -> con
 
 template <typename R, typename... Args>
 auto gse::move_only_function<R(Args...)>::operator()(Args... args) -> R {
-	gse::assert(m_vtable != nullptr, "move_only_function invoked with null vtable (moved-from or default-constructed)");
+	gse::assert(
+		m_vtable != nullptr,
+		"move_only_function invoked with null vtable (moved-from or default-constructed)"
+	);
 	return m_vtable->invoke(m_buffer, std::forward<Args>(args)...);
 }

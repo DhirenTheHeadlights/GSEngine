@@ -58,14 +58,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::sync::sync(
-	std::vector<vk::raii::Semaphore>&& image_available_semaphores,
-	std::vector<vk::raii::Semaphore>&& render_finished_semaphores,
-	std::array<std::vector<vk::raii::Fence>, gpu::queue_type_count>&& in_flight_fences
-)
-	: m_image_available(std::move(image_available_semaphores)),
-	  m_render_finished(std::move(render_finished_semaphores)),
-	  m_in_flight(std::move(in_flight_fences)) {
+gse::vulkan::sync::sync(std::vector<vk::raii::Semaphore>&& image_available_semaphores, std::vector<vk::raii::Semaphore>&& render_finished_semaphores, std::array<std::vector<vk::raii::Fence>, gpu::queue_type_count>&& in_flight_fences)
+	: m_image_available(std::move(image_available_semaphores)), m_render_finished(std::move(render_finished_semaphores)), m_in_flight(std::move(in_flight_fences)) {
 }
 
 auto gse::vulkan::sync::create(const device& dev, const std::uint32_t image_count, const std::uint32_t frames_in_flight) -> sync {
@@ -93,7 +87,11 @@ auto gse::vulkan::sync::create(const device& dev, const std::uint32_t image_coun
 		}
 	}
 
-	return sync(std::move(image_available), std::move(render_finished), std::move(in_flight_fences));
+	return sync(
+		std::move(image_available),
+		std::move(render_finished),
+		std::move(in_flight_fences)
+	);
 }
 
 auto gse::vulkan::sync::image_available(const std::uint32_t frame_index) const -> gpu::handle<semaphore> {

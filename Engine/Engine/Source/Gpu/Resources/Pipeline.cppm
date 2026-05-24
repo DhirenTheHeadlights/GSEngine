@@ -22,5 +22,11 @@ export namespace gse::gpu {
 
 template <typename T>
 auto gse::gpu::typed_push_constants<T>::replay(const handle<command_buffer> cmd, const handle<pipeline_layout> layout) const -> void {
-	vulkan::commands{ cmd }.push_constants(layout, stages, 0, static_cast<std::uint32_t>(sizeof(T)), &data);
+	vulkan::commands{ cmd }.push_constants(
+		layout,
+		stages,
+		0,
+		static_cast<std::uint32_t>(sizeof(T)),
+		&data
+	);
 }

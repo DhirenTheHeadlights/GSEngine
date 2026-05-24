@@ -78,5 +78,7 @@ export namespace gse::gpu {
 		bool m_frame_in_progress = false;
 		device* m_device;
 		swap_chain* m_swapchain;
+		std::uint64_t m_next_present_id = 1;
+		std::array<std::uint64_t, vulkan::max_frames_in_flight> m_present_ids_in_flight{};
 	};
 }

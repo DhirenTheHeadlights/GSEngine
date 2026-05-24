@@ -68,8 +68,7 @@ auto gse::make_shared_view(const typename S::data& d) -> shared_view<S> {
 	using base_t = typename shared_fields_aggregate<typename S::data>::type;
 	constexpr auto members = std::define_static_array([] consteval {
 		std::vector<std::meta::info> result;
-		for (auto m :
-			 std::meta::nonstatic_data_members_of(^^typename S::data, std::meta::access_context::unchecked())) {
+		for (auto m : std::meta::nonstatic_data_members_of(^^typename S::data, std::meta::access_context::unchecked())) {
 			if (has_annotation<shared_tag>(m)) {
 				result.push_back(m);
 			}

@@ -195,28 +195,8 @@ namespace gse {
 	auto acquire_trace_id() -> id;
 }
 
-gse::run_context::run_context(
-	scheduler& sched,
-	state_registry& states,
-	resource_registry& resources_store,
-	channel_registry& channels_store,
-	channel_writer& channels,
-	task_graph& graph,
-	gse::registry& reg,
-	async::rw_mutex_registry& access_mutexes,
-	async::manual_event& resume_event,
-	async::manual_event& paused_event,
-	bool& is_in_update_loop,
-	bool& settled
-)
-	: task_context{ states, resources_store, channels_store, channels, graph, true },
-	  m_sched(sched),
-	  m_reg(reg),
-	  m_access_mutexes(access_mutexes),
-	  m_resume_event(resume_event),
-	  m_paused_event(paused_event),
-	  m_is_in_update_loop(is_in_update_loop),
-	  m_settled(settled) {
+gse::run_context::run_context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, gse::registry& reg, async::rw_mutex_registry& access_mutexes, async::manual_event& resume_event, async::manual_event& paused_event, bool& is_in_update_loop, bool& settled)
+	: task_context{ states, resources_store, channels_store, channels, graph, true }, m_sched(sched), m_reg(reg), m_access_mutexes(access_mutexes), m_resume_event(resume_event), m_paused_event(paused_event), m_is_in_update_loop(is_in_update_loop), m_settled(settled) {
 }
 
 auto gse::run_context::next_tick() -> async::task<> {
@@ -309,7 +289,10 @@ auto gse::make_locked_handle(access_token token, registry& reg, async::rw_mutex_
 
 template <typename Access>
 auto gse::access_trace_label() -> std::string {
-	return format_access_label(is_read_access_v<Access> ? "read" : "write", type_tag<access_element_t<Access>>());
+	return format_access_label(
+		is_read_access_v<Access> ? "read" : "write",
+		type_tag<access_element_t<Access>>()
+	);
 }
 
 template <typename... Accesses>
@@ -328,7 +311,12 @@ auto gse::run_context::acquire() -> async::task<std::tuple<Accesses...>> {
 	static const id tid = acquire_trace_id<Accesses...>();
 	co_await acquire_locks_in_sorted_order(m_access_mutexes, type_ids, fns, tid);
 	co_return std::tuple<Accesses...>{
-		make_locked_handle<Accesses>(access_token{}, m_reg, m_access_mutexes, &m_held_locks)...
+		make_locked_handle<Accesses>(
+			access_token{},
+			m_reg,
+			m_access_mutexes,
+			&m_held_locks
+		)...
 	};
 }
 

@@ -167,7 +167,10 @@ auto gse::gpu::compute_lifetime(const std::vector<id>& used_by, const std::span<
 }
 
 auto gse::gpu::greedy_color(const std::span<const lifetime_entry> intervals) -> std::vector<std::uint32_t> {
-	std::vector<std::uint32_t> colors(intervals.size(), std::numeric_limits<std::uint32_t>::max());
+	std::vector<std::uint32_t> colors(
+		intervals.size(),
+		std::numeric_limits<std::uint32_t>::max()
+	);
 
 	std::vector<std::size_t> order(intervals.size());
 	std::iota(order.begin(), order.end(), 0);
@@ -222,9 +225,7 @@ gse::gpu::transient_pool::~transient_pool() {
 }
 
 gse::gpu::transient_pool::transient_pool(transient_pool&& other) noexcept
-	: m_device(other.m_device),
-	  m_slots(std::move(other.m_slots)),
-	  m_current_frame(other.m_current_frame) {
+	: m_device(other.m_device), m_slots(std::move(other.m_slots)), m_current_frame(other.m_current_frame) {
 	other.m_device = nullptr;
 }
 
@@ -323,7 +324,10 @@ auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const s
 		block = {};
 	}
 
-	const auto type_index = vulkan_dev.find_memory_type_index(memory_type_mask, memory_property_flag::device_local);
+	const auto type_index = vulkan_dev.find_memory_type_index(
+		memory_type_mask,
+		memory_property_flag::device_local
+	);
 	block.memory = vulkan_dev.allocate_aliased_memory(required_size, type_index);
 	block.size = required_size;
 	block.memory_type_index = type_index;
@@ -434,14 +438,22 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 		const auto& req = image_requests[intervals[si.entry_index].request_index];
 
 		vulkan_dev.bind_image_memory(si.handle, slot.blocks[si.color].memory, 0);
-		const auto view_handle = vulkan_dev.create_image_view(si.handle, image_view_create_info_from(req.desc));
+		const auto view_info = image_view_create_info_from(req.desc);
+		const auto view_handle = vulkan_dev.create_image_view(
+			si.handle,
+			view_info
+		);
 
 		auto img = std::make_unique<gpu::image>(
 			si.handle,
 			view_handle,
 			static_cast<image_format_value>(req.desc.format),
 			vec3u{ req.desc.extent.x(), req.desc.extent.y(), 1 },
-			make_synthetic_allocation(vulkan_dev, req.desc.tag)
+			view_info,
+			make_synthetic_allocation(
+				vulkan_dev,
+				req.desc.tag
+			)
 		);
 
 		slot.images.emplace(
@@ -464,7 +476,10 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 
 		auto buf = std::make_unique<gpu::buffer>(
 			sb.handle,
-			make_synthetic_allocation(vulkan_dev, req.desc.tag),
+			make_synthetic_allocation(
+				vulkan_dev,
+				req.desc.tag
+			),
 			req.desc.size
 		);
 

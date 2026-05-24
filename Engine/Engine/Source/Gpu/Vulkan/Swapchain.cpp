@@ -20,14 +20,8 @@ auto gse::vulkan::pick_surface_format(const device& dev, const instance& inst) -
 	return pick_surface_format(dev.physical_device(), inst.raii_surface());
 }
 
-gse::vulkan::swap_chain_details::swap_chain_details(
-	gpu::surface_capabilities capabilities,
-	std::vector<gpu::surface_format>&& formats,
-	std::vector<gpu::present_mode>&& present_modes
-)
-	: m_capabilities(capabilities),
-	  m_formats(std::move(formats)),
-	  m_present_modes(std::move(present_modes)) {
+gse::vulkan::swap_chain_details::swap_chain_details(gpu::surface_capabilities capabilities, std::vector<gpu::surface_format>&& formats, std::vector<gpu::present_mode>&& present_modes)
+	: m_capabilities(capabilities), m_formats(std::move(formats)), m_present_modes(std::move(present_modes)) {
 }
 
 auto gse::vulkan::swap_chain_details::capabilities() const -> gpu::surface_capabilities {
@@ -42,26 +36,8 @@ auto gse::vulkan::swap_chain_details::present_modes() const -> std::span<const g
 	return m_present_modes;
 }
 
-gse::vulkan::swap_chain::swap_chain(
-	vk::raii::SwapchainKHR&& swap_chain,
-	const vk::SurfaceFormatKHR surface_format,
-	const vk::PresentModeKHR present_mode,
-	const vk::Extent2D extent,
-	std::vector<vk::Image>&& images,
-	std::vector<vk::raii::ImageView>&& image_views,
-	const vk::Format format,
-	swap_chain_details&& details,
-	std::vector<fence>&& release_fences
-)
-	: m_swap_chain(std::move(swap_chain)),
-	  m_surface_format(surface_format),
-	  m_present_mode(present_mode),
-	  m_extent(extent),
-	  m_images(std::move(images)),
-	  m_image_views(std::move(image_views)),
-	  m_format(format),
-	  m_details(std::move(details)),
-	  m_release_fences(std::move(release_fences)) {
+gse::vulkan::swap_chain::swap_chain(vk::raii::SwapchainKHR&& swap_chain, const vk::SurfaceFormatKHR surface_format, const vk::PresentModeKHR present_mode, const vk::Extent2D extent, std::vector<vk::Image>&& images, std::vector<vk::raii::ImageView>&& image_views, const vk::Format format, swap_chain_details&& details, std::vector<fence>&& release_fences)
+	: m_swap_chain(std::move(swap_chain)), m_surface_format(surface_format), m_present_mode(present_mode), m_extent(extent), m_images(std::move(images)), m_image_views(std::move(image_views)), m_format(format), m_details(std::move(details)), m_release_fences(std::move(release_fences)) {
 }
 
 auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const instance& instance_data, device& device_data, const gpu::handle<swap_chain> old_swapchain) -> swap_chain {
@@ -117,7 +93,11 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::pr
 									   static_cast<std::uint32_t>(framebuffer_size.y()) };
 
 		extent.width =
-			std::clamp(actual_extent.width, vk_capabilities.minImageExtent.width, vk_capabilities.maxImageExtent.width);
+			std::clamp(
+				actual_extent.width,
+				vk_capabilities.minImageExtent.width,
+				vk_capabilities.maxImageExtent.width
+			);
 
 		extent.height = std::clamp(
 			actual_extent.height,
@@ -167,11 +147,30 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::pr
 	create_info.presentMode = present_mode;
 	create_info.clipped = true;
 
-	const vk::SwapchainPresentModesCreateInfoEXT present_modes_create_info{
-		.presentModeCount = static_cast<std::uint32_t>(vk_present_modes.size()),
-		.pPresentModes = vk_present_modes.data(),
-	};
+	std::vector<vk::PresentModeKHR> compatible_present_modes;
 	if (device_data.swapchain_maintenance1_enabled()) {
+		const vk::SurfacePresentModeKHR present_mode_query{
+			.presentMode = present_mode
+		};
+		const vk::PhysicalDeviceSurfaceInfo2KHR surface_info{
+			.pNext = &present_mode_query,
+			.surface = *instance_data.raii_surface(),
+		};
+		vk::SurfacePresentModeCompatibilityKHR compat{};
+		vk::SurfaceCapabilities2KHR caps_chain{
+			.pNext = &compat
+		};
+		(void)device_data.physical_device().getSurfaceCapabilities2KHR(&surface_info, &caps_chain);
+		compatible_present_modes.resize(compat.presentModeCount);
+		compat.pPresentModes = compatible_present_modes.data();
+		(void)device_data.physical_device().getSurfaceCapabilities2KHR(&surface_info, &caps_chain);
+	}
+
+	const vk::SwapchainPresentModesCreateInfoEXT present_modes_create_info{
+		.presentModeCount = static_cast<std::uint32_t>(compatible_present_modes.size()),
+		.pPresentModes = compatible_present_modes.data(),
+	};
+	if (device_data.swapchain_maintenance1_enabled() && !compatible_present_modes.empty()) {
 		create_info.pNext = &present_modes_create_info;
 	}
 
@@ -191,7 +190,11 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::pr
 		gpu_present_modes.push_back(from_vk(m));
 	}
 
-	swap_chain_details details(from_vk(vk_capabilities), std::move(gpu_formats), std::move(gpu_present_modes));
+	swap_chain_details details(
+		from_vk(vk_capabilities),
+		std::move(gpu_formats),
+		std::move(gpu_present_modes)
+	);
 
 	auto vk_swap_chain = device_data.raii_device().createSwapchainKHR(create_info);
 	auto images = vk_swap_chain.getImages();
@@ -287,6 +290,10 @@ auto gse::vulkan::swap_chain::wait_release_fences(const device& dev) const -> vo
 
 auto gse::vulkan::swap_chain::reset_release_fence(const device& dev, const std::uint32_t image_index) -> void {
 	m_release_fences[image_index].reset(dev);
+}
+
+auto gse::vulkan::swap_chain::wait_for_present(const std::uint64_t present_id, const std::uint64_t timeout_ns) const -> gpu::result {
+	return from_vk(m_swap_chain.waitForPresent(present_id, timeout_ns));
 }
 
 auto gse::vulkan::swap_chain::reset_swapchain() -> void {

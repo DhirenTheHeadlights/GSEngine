@@ -45,7 +45,12 @@ template <>
 struct std::formatter<gse::resolution_info> : std::formatter<std::string> {
 	auto format(const gse::resolution_info& info, std::format_context& ctx) const {
 		return std::formatter<std::string>::format(
-			std::format("{}x{} @{}Hz", info.width, info.height, info.refresh_rate),
+			std::format(
+				"{}x{} @{}Hz",
+				info.width,
+				info.height,
+				info.refresh_rate
+			),
 			ctx
 		);
 	}
@@ -92,7 +97,10 @@ export namespace gse {
 			bool ui_focus = false;
 			int last_monitor_index = 0;
 
-			rect_t<vec2i> windowed_rect = rect_t<vec2i>::from_position_size({ 100, 100 }, { 1920, 1080 });
+			rect_t<vec2i> windowed_rect = rect_t<vec2i>::from_position_size(
+				{ 100, 100 },
+				{ 1920, 1080 }
+			);
 
 			task::concurrent_queue<input::event> input_events;
 		};

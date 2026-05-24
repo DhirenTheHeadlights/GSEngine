@@ -5,6 +5,7 @@ import std;
 import :atmosphere_renderer;
 import :geometry_collector;
 import :depth_prepass_renderer;
+import :gi_probe_renderer;
 import :rt_shadow_renderer;
 import :light_culling_renderer;
 import :cull_compute_renderer;
@@ -30,7 +31,6 @@ import gse.meta;
 
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;
-	constexpr std::size_t max_materials = 1024;
 
 	enum class shadow_quality_level : int {
 		off = 0,
@@ -80,10 +80,10 @@ export namespace gse::renderer::forward {
 
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 			per_frame_resource<gpu::buffer> light_buffers;
-			per_frame_resource<gpu::buffer> material_palette_buffers;
+
+			gpu::sampler gi_sampler;
 
 			linear_vector<std::byte> light_staging;
-			linear_vector<std::byte> material_staging;
 		};
 
 		static auto run(
@@ -93,6 +93,8 @@ export namespace gse::renderer::forward {
 			const rt_shadow::system::data& rt_state,
 			const light_culling::system::data& lc_r,
 			const atmosphere::system::data& atm_state,
+			const gi_probe::system::data& gi_state,
+			const geometry_collector::system::data& gc_state,
 			data& d
 		) -> async::task<>;
 
@@ -103,7 +105,8 @@ export namespace gse::renderer::forward {
 			shared_view<camera::system> cam_state,
 			shared_view<geometry_collector::system> gc_r,
 			shared_view<light_culling::system> lc_r,
-			shared_view<atmosphere::system> atm_state
+			shared_view<atmosphere::system> atm_state,
+			shared_view<gi_probe::system> gi_state
 		) -> async::task<>;
 	};
 }

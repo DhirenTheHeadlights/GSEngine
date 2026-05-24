@@ -87,9 +87,7 @@ export namespace gse {
 }
 
 template <typename T, gse::internal::is_quantity QPos, gse::internal::is_quantity QTgt>
-requires std::same_as<typename QPos::value_type, T> && std::same_as<typename QTgt::value_type, T> &&
-	gse::internal::same_unit_family_v<typename QPos::quantity_tag, gse::length_tag> &&
-	gse::internal::same_unit_family_v<typename QTgt::quantity_tag, gse::length_tag>
+requires std::same_as<typename QPos::value_type, T> && std::same_as<typename QTgt::value_type, T> && gse::internal::same_unit_family_v<typename QPos::quantity_tag, gse::length_tag> && gse::internal::same_unit_family_v<typename QTgt::quantity_tag, gse::length_tag>
 constexpr auto gse::look_at(const vec3<QPos>& position, const vec3<QTgt>& target, const vec3<T>& up) -> view_matrix {
 	const auto direction_axis = normalize(position - target);
 	const auto right_axis = normalize(cross(up, direction_axis));
@@ -140,8 +138,7 @@ constexpr auto gse::orthographic(length_t<T> left, length_t<T> right, length_t<T
 }
 
 template <typename T, gse::internal::is_quantity Q>
-requires std::same_as<typename Q::value_type, T> &&
-	gse::internal::same_unit_family_v<typename Q::quantity_tag, gse::length_tag>
+requires std::same_as<typename Q::value_type, T> && gse::internal::same_unit_family_v<typename Q::quantity_tag, gse::length_tag>
 constexpr auto gse::translate(const mat4<T>& matrix, const vec3<Q>& translation) -> mat4<T> {
 	return matrix *
 		mat4<T>{ { 1, 0, 0, 0 },

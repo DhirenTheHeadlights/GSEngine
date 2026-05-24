@@ -33,8 +33,16 @@ auto gse::camera::system::direction_relative_to_origin(const data& d, const vec3
 
 auto gse::camera::system::interpolate_target(const target& from, const target& to, const float t) -> target {
 	return {
-		.position = lerp(from.position, to.position, t),
-		.orientation = slerp(from.orientation, to.orientation, t),
+		.position = lerp(
+			from.position,
+			to.position,
+			t
+		),
+		.orientation = slerp(
+			from.orientation,
+			to.orientation,
+			t
+		),
 		.fov = from.fov + (to.fov - from.fov) * t,
 		.near_plane = from.near_plane + (to.near_plane - from.near_plane) * t,
 		.far_plane = from.far_plane + (to.far_plane - from.far_plane) * t
@@ -55,9 +63,33 @@ auto gse::camera::system::compute_projection_matrix(const target& t, const vec2f
 	return perspective(t.fov, aspect_ratio, t.near_plane, t.far_plane);
 }
 
+namespace gse::camera {
+	auto halton(std::uint32_t base, std::uint32_t index) -> float {
+		float f = 1.0f;
+		float r = 0.0f;
+		while (index > 0) {
+			f /= static_cast<float>(base);
+			r += f * static_cast<float>(index % base);
+			index /= base;
+		}
+		return r;
+	}
+
+	auto apply_jitter(projection_matrix& proj, const vec2f& jitter_ndc) -> void {
+		using elem_x = projection_matrix::element_t<2, 0>;
+		using elem_y = projection_matrix::element_t<2, 1>;
+		proj.set<2, 0>(proj.at<2, 0>() + elem_x(jitter_ndc.x()));
+		proj.set<2, 1>(proj.at<2, 1>() + elem_y(jitter_ndc.y()));
+	}
+}
+
 auto gse::camera::system::run(run_context& ctx, data& d) -> async::task<> {
 	d.view_matrix = compute_view_matrix(d.current);
 	d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
+	d.jitter_ndc = vec2f{ 0.f, 0.f };
+	d.prev_jitter_ndc = d.jitter_ndc;
+	d.prev_view_matrix = d.view_matrix;
+	d.prev_projection_matrix = d.projection_matrix;
 
 	while (true) {
 		const time dt = system_clock::dt();
@@ -136,8 +168,24 @@ auto gse::camera::system::run(run_context& ctx, data& d) -> async::task<> {
 		const vec3f forward = rotate_vector(d.current.orientation, vec3f(0.f, 0.f, -1.f));
 		d.yaw = radians(std::atan2(-forward.x(), -forward.z()));
 
+		d.prev_view_matrix = d.view_matrix;
+		d.prev_projection_matrix = d.projection_matrix;
+		d.prev_jitter_ndc = d.jitter_ndc;
 		d.view_matrix = compute_view_matrix(d.current);
 		d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
+
+		const float jitter_x = halton(2, d.jitter_index) - 0.5f;
+		const float jitter_y = halton(3, d.jitter_index) - 0.5f;
+		++d.jitter_index;
+		if (d.jitter_index >= 64) {
+			d.jitter_index = 1;
+		}
+
+		d.jitter_ndc = vec2f{
+			d.viewport.x() > 0.f ? jitter_x * 2.0f / d.viewport.x() : 0.f,
+			d.viewport.y() > 0.f ? jitter_y * 2.0f / d.viewport.y() : 0.f
+		};
+		apply_jitter(d.projection_matrix, d.jitter_ndc);
 
 		co_await ctx.next_tick();
 	}

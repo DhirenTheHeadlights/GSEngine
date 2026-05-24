@@ -45,13 +45,11 @@ void bloom_downsample(uint3 dispatch_id) {
     float3 l = bloom_in.SampleLevel(uv + src_texel * float2(-1,  1), 0).rgb;
     float3 m = bloom_in.SampleLevel(uv + src_texel * float2( 1,  1), 0).rgb;
 
-    bool karis = pc.use_karis_average != 0;
-
-    float3 inner = weighted_group(j, k, l, m, karis);
-    float3 top_left = weighted_group(a, b, d, e, karis);
-    float3 top_right = weighted_group(b, c, e, f, karis);
-    float3 bot_left = weighted_group(d, e, g, h, karis);
-    float3 bot_right = weighted_group(e, f, h, i, karis);
+    float3 inner = weighted_group(j, k, l, m, true);
+    float3 top_left = weighted_group(a, b, d, e, true);
+    float3 top_right = weighted_group(b, c, e, f, true);
+    float3 bot_left = weighted_group(d, e, g, h, true);
+    float3 bot_right = weighted_group(e, f, h, i, true);
 
     float3 result = inner * 0.5 + (top_left + top_right + bot_left + bot_right) * 0.125;
     bloom_out[dispatch_id.xy] = float4(result, 1.0);

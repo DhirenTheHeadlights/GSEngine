@@ -117,8 +117,22 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 				s.pelvis_position = pelvis_tc->position;
 				s.pelvis_orientation = pelvis_tc->orientation;
 				s.pelvis_velocity = pelvis_mc->current_velocity;
-				s.pelvis_forward = gse::rotate_vector(pelvis_tc->orientation, gse::vec3f(0.f, 0.f, -1.f));
-				s.pelvis_right = gse::rotate_vector(pelvis_tc->orientation, gse::vec3f(1.f, 0.f, 0.f));
+				s.pelvis_forward = gse::rotate_vector(
+					pelvis_tc->orientation,
+					gse::vec3f(
+						0.f,
+						0.f,
+						-1.f
+					)
+				);
+				s.pelvis_right = gse::rotate_vector(
+					pelvis_tc->orientation,
+					gse::vec3f(
+						1.f,
+						0.f,
+						0.f
+					)
+				);
 
 				s.foot_position_l = foot_l_tc->position;
 				s.foot_position_r = foot_r_tc->position;
@@ -147,9 +161,17 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 				s.com_world = pelvis_tc->position;
 
 				s.lean_world = gse::vec3<gse::displacement>(
-					excess_past_edge(s.com_world.x(), s.support_min.x(), s.support_max.x()),
+					excess_past_edge(
+						s.com_world.x(),
+						s.support_min.x(),
+						s.support_max.x()
+					),
 					gse::meters(0.f),
-					excess_past_edge(s.com_world.z(), s.support_min.z(), s.support_max.z())
+					excess_past_edge(
+						s.com_world.z(),
+						s.support_min.z(),
+						s.support_max.z()
+					)
 				);
 				s.velocity_world = gse::vec3<gse::velocity>(
 					pelvis_mc->current_velocity.x(),

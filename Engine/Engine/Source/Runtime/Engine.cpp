@@ -24,8 +24,7 @@ import gse.save;
 import gse.config;
 
 gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags)
-	: identifiable(name),
-	  m_flags(engine_flags) {
+	: identifiable(name), m_flags(engine_flags) {
 }
 
 auto gse::engine::initialize(const setup_fn& app_setup) -> void {
@@ -103,6 +102,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			add_system<renderer::physics_transform::system>();
 			add_system<renderer::depth_prepass::system>();
 			add_system<renderer::rt_shadow::system>();
+			add_system<renderer::gi_probe::system>();
 			add_system<renderer::light_culling::system>();
 			add_system<renderer::forward::system>();
 			add_system<renderer::sdf_grid::system>();
@@ -110,6 +110,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			add_system<renderer::physics_debug::system>();
 			add_system<renderer::atmosphere::system>();
 			add_system<renderer::cloud::system>();
+			add_system<renderer::taa::system>();
 			add_system<renderer::bloom::system>();
 			add_system<renderer::tonemap::system>();
 			add_system<renderer::capture::system>();
@@ -120,10 +121,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 				gse::asset::system_for<game_assets> assets{ *asset_state_ptr };
 
 				log::println(log::category::runtime, "boot: compile_non_boot_critical begin");
-				if (
-					const auto result = assets.compile_non_boot_critical();
-					result.success_count > 0 || result.failure_count > 0
-				) {
+				if (const auto result = assets.compile_non_boot_critical(); result.success_count > 0 || result.failure_count > 0) {
 					log::println(
 						result.failure_count > 0 ? log::level::warning : log::level::info,
 						log::category::assets,
@@ -142,7 +140,10 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 				}
 
 				m_boot_tasks_done.store(true, std::memory_order_release);
-				log::println(log::category::runtime, "boot: task::post complete, waiting for systems to settle");
+				log::println(
+					log::category::runtime,
+					"boot: task::post complete, waiting for systems to settle"
+				);
 			});
 		};
 	}
@@ -223,7 +224,11 @@ auto gse::engine::render() -> void {
 		frame_ok = result.has_value();
 
 		if (!result && result.error() == gpu::frame_status::device_lost) {
-			log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame Ã¢â‚¬â€ terminating");
+			log::println(
+				log::level::error,
+				log::category::vulkan,
+				"Device lost during begin_frame Ã¢â‚¬â€ terminating"
+			);
 			std::abort();
 		}
 	}
@@ -260,7 +265,10 @@ auto gse::engine::render() -> void {
 					if (m_frames_since_rendered >= 2) {
 						window::show(window_state);
 						m_window_shown = true;
-						log::println(log::category::runtime, "boot: window shown (loading screen on swapchain)");
+						log::println(
+							log::category::runtime,
+							"boot: window shown (loading screen on swapchain)"
+						);
 					}
 				}
 			}

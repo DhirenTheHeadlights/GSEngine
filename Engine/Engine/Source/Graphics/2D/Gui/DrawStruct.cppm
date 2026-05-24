@@ -26,10 +26,14 @@ export namespace gse::gui {
 
 template <typename T>
 auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, const std::string_view key_prefix) -> void {
+	const std::uint64_t prefix_hash = stable_id(key_prefix);
+
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
+			constexpr std::uint64_t label_hash = stable_id(label);
+			const std::uint64_t field_key = hash_combine(prefix_hash, label_hash);
 
 			if constexpr (has_annotation<settings::draw_with>(m)) {
 				constexpr auto dw = annotation_of<settings::draw_with, m>();
@@ -42,8 +46,7 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 				});
 			}
 			else if constexpr (settings::is_choice_v<F>) {
-				const std::string key = std::string(key_prefix) + "::" + std::string(label);
-				auto& dd_state = state.dropdowns[key];
+				auto& dd_state = state.dropdowns[field_key];
 				std::size_t idx = static_cast<std::size_t>(value.[:m:].value);
 				const auto r = b.draw<dropdown>({
 					.name = label,
@@ -57,8 +60,7 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 				}
 			}
 			else if constexpr (std::is_enum_v<F>) {
-				const std::string key = std::string(key_prefix) + "::" + std::string(label);
-				auto& dd_state = state.dropdowns[key];
+				auto& dd_state = state.dropdowns[field_key];
 
 				static const std::vector<std::string> options = [] {
 					std::vector<std::string> v;

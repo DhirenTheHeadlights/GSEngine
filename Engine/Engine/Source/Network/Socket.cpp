@@ -109,8 +109,7 @@ gse::network::udp_socket::~udp_socket() {
 }
 
 gse::network::udp_socket::udp_socket(udp_socket&& other) noexcept
-	: m_handle(other.m_handle),
-	  m_local_address(std::move(other.m_local_address)) {
+	: m_handle(other.m_handle), m_local_address(std::move(other.m_local_address)) {
 	other.m_handle = handle_invalid;
 }
 
@@ -134,7 +133,13 @@ auto gse::network::udp_socket::bind(const address& address) -> bool {
 	const native_socket s = to_native(m_handle);
 
 	int opt = 1;
-	::setsockopt(s, sockets::sol_socket, sockets::so_reuseaddr, reinterpret_cast<const char*>(&opt), sizeof(opt));
+	::setsockopt(
+		s,
+		sockets::sol_socket,
+		sockets::so_reuseaddr,
+		reinterpret_cast<const char*>(&opt),
+		sizeof(opt)
+	);
 
 	::sockaddr_in addr = make_sockaddr(address);
 
@@ -223,7 +228,14 @@ auto gse::network::udp_socket::receive_data(std::span<std::byte> buffer) const -
 	using recv_result_t = ::ssize_t;
 #endif
 
-	const recv_result_t r = ::recvfrom(s, buf, cap, 0, reinterpret_cast<::sockaddr*>(&src), &src_len);
+	const recv_result_t r = ::recvfrom(
+		s,
+		buf,
+		cap,
+		0,
+		reinterpret_cast<::sockaddr*>(&src),
+		&src_len
+	);
 	if (r == sockets::socket_error) {
 		return std::nullopt;
 	}

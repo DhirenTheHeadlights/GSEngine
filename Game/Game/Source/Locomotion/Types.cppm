@@ -95,7 +95,10 @@ export namespace gs::locomotion {
 		leg last_swing_leg = leg::left;
 		gse::vec3<gse::position> swing_start_foot;
 		gse::vec3<gse::position> swing_target_at_start;
+		gse::vec3<gse::position> planted_foot_l;
+		gse::vec3<gse::position> planted_foot_r;
 		bool swing_initialized = false;
+		bool planted_initialized = false;
 	};
 
 	auto other(

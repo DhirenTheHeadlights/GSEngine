@@ -133,6 +133,12 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto swapchain_maintenance1_enabled() const -> bool;
 
+		[[nodiscard]] auto present_id_enabled() const -> bool;
+
+		[[nodiscard]] auto present_wait_enabled() const -> bool;
+
+		[[nodiscard]] auto descriptor_heap_enabled() const -> bool;
+
 		auto wait_idle() const -> void;
 
 		[[nodiscard]] auto timestamp_period() const -> float;
@@ -246,6 +252,9 @@ export namespace gse::vulkan {
 			bool device_fault_vendor_binary_enabled,
 			bool host_image_copy_enabled,
 			bool swapchain_maintenance1_enabled,
+			bool present_id_enabled,
+			bool present_wait_enabled,
+			bool descriptor_heap_enabled,
 			std::uint32_t graphics_family,
 			std::uint32_t compute_family
 		);
@@ -263,7 +272,8 @@ export namespace gse::vulkan {
 			const vk::ImageViewCreateInfo& view_info,
 			const void* data,
 			std::string_view tag,
-			std::source_location loc
+			std::source_location loc,
+			gpu::image_view_create_info engine_view_info = {}
 		) -> basic_image<device>;
 
 		auto allocate(
@@ -318,6 +328,9 @@ export namespace gse::vulkan {
 		bool m_vendor_binary_fault_enabled = false;
 		bool m_host_image_copy_enabled = false;
 		bool m_swapchain_maintenance1_enabled = false;
+		bool m_present_id_enabled = false;
+		bool m_present_wait_enabled = false;
+		bool m_descriptor_heap_enabled = false;
 		std::array<std::uint32_t, gpu::queue_type_count> m_queue_families{};
 
 		std::unordered_map<pool_key, pool, pool_key_hash> m_pools;

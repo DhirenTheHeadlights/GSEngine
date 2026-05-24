@@ -68,8 +68,8 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 		return;
 	}
 
-	const std::string id_label = name + "##Input";
-	const id widget_id = ids::make(id_label);
+	constexpr std::uint64_t input_suffix_hash = stable_id("##Input");
+	const id widget_id = ids::make_from_key(hash_combine(stable_id(name), input_suffix_hash));
 
 	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
@@ -81,7 +81,10 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 
 	const float label_width = content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
+	const ui_rect label_rect = ui_rect::from_position_size(
+		row_rect.top_left(),
+		{ label_width, widget_height }
+	);
 
 	const ui_rect box_rect = ui_rect::from_position_size(
 		{ row_rect.left() + label_width, row_rect.top() },
@@ -139,7 +142,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		return best_k;
 	};
 
-	if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+	if (ctx.mouse_pressed_for(box_rect)) {
 		const bool shift = ctx.input.key_held(key::left_shift) || ctx.input.key_held(key::right_shift);
 		const float x_local = ctx.input.mouse_position().x() - box_rect.left();
 		const int i = pick_index_from_x(x_local);
@@ -215,19 +218,19 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			return i;
 		};
 
-		if (ctx.input.key_pressed(key::home)) {
+		if (ctx.key_pressed_for(key::home)) {
 			move_caret(0);
 		}
 
-		if (ctx.input.key_pressed(key::end)) {
+		if (ctx.key_pressed_for(key::end)) {
 			move_caret(static_cast<int>(buffer.size()));
 		}
 
-		if (ctx.input.key_pressed(key::left)) {
+		if (ctx.key_pressed_for(key::left)) {
 			move_caret(ctrl ? word_left(buffer, state.caret) : state.caret - 1);
 		}
 
-		if (ctx.input.key_pressed(key::right)) {
+		if (ctx.key_pressed_for(key::right)) {
 			move_caret(ctrl ? word_right(buffer, state.caret) : state.caret + 1);
 		}
 
@@ -259,13 +262,13 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.blink_on = true;
 		};
 
-		if (ctx.input.key_pressed(key::backspace)) {
+		if (ctx.key_pressed_for(key::backspace)) {
 			do_backspace();
 			state.rpt_active = true;
 			state.rpt_next_ms = system_clock::now<time>().as<milliseconds>() + 400;
 		}
 
-		if (ctx.input.key_pressed(key::del)) {
+		if (ctx.key_pressed_for(key::del)) {
 			do_delete();
 			state.rpt_active = true;
 			state.rpt_next_ms = system_clock::now<time>().as<milliseconds>() + 400;
@@ -311,7 +314,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.blink_on = !state.blink_on;
 		}
 
-		if (ctx.input.key_pressed(key::enter) || ctx.input.key_pressed(key::escape)) {
+		if (ctx.key_pressed_for(key::enter) || ctx.key_pressed_for(key::escape)) {
 			focus_widget_id = {};
 		}
 	}
@@ -330,12 +333,30 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	if (focused && has_sel(state)) {
 		auto [a, b] = sel_range(state);
-		const float ax = ctx.font->width(buffer.substr(0, a), ctx.style.font_size) - state.scroll_x;
-		const float bx = ctx.font->width(buffer.substr(0, b), ctx.style.font_size) - state.scroll_x;
+		const float ax = ctx.font->width(
+							 buffer.substr(
+								 0,
+								 a
+							 ),
+							 ctx.style.font_size
+						 ) -
+			state.scroll_x;
+		const float bx = ctx.font->width(
+							 buffer.substr(
+								 0,
+								 b
+							 ),
+							 ctx.style.font_size
+						 ) -
+			state.scroll_x;
 
 		const ui_rect sel_rect = ui_rect::from_position_size(
 			{ text_pos.x() + ax, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
-			{ std::max(1.f, bx - ax), ctx.style.font_size }
+			{ std::max(
+				  1.f,
+				  bx - ax
+			  ),
+			  ctx.style.font_size }
 		);
 
 		ctx.queue_sprite({
@@ -355,7 +376,14 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	});
 
 	if (focused && state.blink_on) {
-		const float cx = ctx.font->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
+		const float cx = ctx.font->width(
+							 buffer.substr(
+								 0,
+								 state.caret
+							 ),
+							 ctx.style.font_size
+						 ) -
+			state.scroll_x;
 		const ui_rect cursor_rect = ui_rect::from_position_size(
 			{ text_pos.x() + cx, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
 			{ 2.f, ctx.style.font_size }

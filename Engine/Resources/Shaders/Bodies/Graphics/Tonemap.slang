@@ -59,8 +59,26 @@ float3 agx_eotf(float3 val) {
     return mul(agx_output_mat, val);
 }
 
+float3 hsv_to_rgb(float h, float s, float v) {
+    float3 c = float3(h, s, v);
+    float4 k = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 p = abs(frac(c.xxx + k.xyz) * 6.0 - k.www);
+    return c.z * lerp(k.xxx, saturate(p - k.xxx), c.y);
+}
+
+float3 visualize_velocity(float2 v) {
+    float magnitude = saturate(length(v) * 50.0);
+    float angle = atan2(v.y, v.x) / (2.0 * 3.14159265) + 0.5;
+    return hsv_to_rgb(angle, 1.0, magnitude);
+}
+
 [shader("fragment")]
 float4 fs_main(VS_OUT input) : SV_Target {
+    if (pc.show_velocity != 0) {
+        float2 v = velocity_color.Sample(input.uv).rg;
+        return float4(visualize_velocity(v), 1.0);
+    }
+
     float3 hdr = hdr_color.Sample(input.uv).rgb;
     float3 bloom = bloom_color.Sample(input.uv).rgb;
     float3 combined = hdr + bloom * pc.bloom_intensity;

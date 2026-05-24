@@ -119,20 +119,8 @@ export namespace gse {
 }
 
 template <typename T, gse::access_mode M>
-gse::access<T, M>::access(
-	const span_type span,
-	const std::span<const id> owners,
-	const lookup_fn fn,
-	void* ctx,
-	async::rw_mutex* mutex,
-	std::atomic<int>* held_locks
-)
-	: m_span(span),
-	  m_owners(owners),
-	  m_lookup(fn),
-	  m_lookup_ctx(ctx),
-	  m_mutex(mutex),
-	  m_held_locks(held_locks) {
+gse::access<T, M>::access(const span_type span, const std::span<const id> owners, const lookup_fn fn, void* ctx, async::rw_mutex* mutex, std::atomic<int>* held_locks)
+	: m_span(span), m_owners(owners), m_lookup(fn), m_lookup_ctx(ctx), m_mutex(mutex), m_held_locks(held_locks) {
 	if (m_mutex && m_held_locks) {
 		m_held_locks->fetch_add(1, std::memory_order_acq_rel);
 	}
@@ -140,12 +128,14 @@ gse::access<T, M>::access(
 
 template <typename T, gse::access_mode M>
 gse::access<T, M>::access(access&& other) noexcept
-	: m_span(other.m_span),
-	  m_owners(other.m_owners),
-	  m_lookup(other.m_lookup),
-	  m_lookup_ctx(other.m_lookup_ctx),
-	  m_mutex(std::exchange(other.m_mutex, nullptr)),
-	  m_held_locks(std::exchange(other.m_held_locks, nullptr)) {
+	: m_span(other.m_span), m_owners(other.m_owners), m_lookup(other.m_lookup), m_lookup_ctx(other.m_lookup_ctx), m_mutex(std::exchange(
+																													  other.m_mutex,
+																													  nullptr
+																												  )),
+	  m_held_locks(std::exchange(
+		  other.m_held_locks,
+		  nullptr
+	  )) {
 }
 
 template <typename T, gse::access_mode M>

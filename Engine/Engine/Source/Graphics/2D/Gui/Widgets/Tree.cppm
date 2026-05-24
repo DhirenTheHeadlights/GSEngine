@@ -128,7 +128,7 @@ auto gse::gui::draw::tree_node_key(const T& t, const tree_ops<T>& ops, const std
 	}
 
 	const std::string_view lbl = ops.label ? ops.label(t) : std::string_view{};
-	return ids::hash_combine_string(tree_scope, lbl);
+	return hash_combine(tree_scope, stable_id(lbl));
 }
 
 template <typename T>
@@ -177,10 +177,9 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		selected = true;
 	}
 
-	const bool pressed = ctx.input.mouse_button_pressed(mouse_button::button_1);
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
-	interaction::grab_active(active_widget_id, row_widget_id, hovered && pressed);
+	interaction::grab_active(active_widget_id, row_widget_id, ctx.mouse_pressed_for(row_rect));
 
 	if (active_widget_id == row_widget_id) {
 		self_is_active = true;
@@ -206,13 +205,21 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		});
 
 		const float arrow_w = ctx.style.font_size;
-		const ui_rect arrow_rect = ui_rect::from_position_size(row_rect.top_left(), { arrow_w, row_height });
+		const ui_rect arrow_rect = ui_rect::from_position_size(
+			row_rect.top_left(),
+			{ arrow_w, row_height }
+		);
 
 		if (!leaf) {
 			ctx.queue_text({
 				.font = ctx.font,
 				.text = is_open ? "v" : ">",
-				.position = { arrow_rect.center().x() - ctx.font->width("v", ctx.style.font_size) * 0.5f, arrow_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+				.position = { arrow_rect.center().x() - ctx.font->width(
+															"v",
+															ctx.style.font_size
+														) *
+									  0.5f,
+							  arrow_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 				.scale = ctx.style.font_size,
 				.color = ctx.style.color_text,
 				.clip_rect = arrow_rect
@@ -222,7 +229,10 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		const std::string_view lbl = ops.label ? ops.label(t) : std::string_view{};
 
 		const float label_available_width =
-			std::max(0.0f, row_rect.width() - arrow_w - ctx.style.padding * 0.5f - opt.extra_right_padding);
+			std::max(
+				0.0f,
+				row_rect.width() - arrow_w - ctx.style.padding * 0.5f - opt.extra_right_padding
+			);
 
 		const ui_rect label_rect = ui_rect::from_position_size(
 			{ row_rect.left() + arrow_w + ctx.style.padding * 0.5f, row_rect.top() },
@@ -245,12 +255,12 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 
 	if (released && hovered) {
 		const ui_rect arrow_rect =
-			ui_rect::from_position_size(row_rect.top_left(), { ctx.style.font_size, row_height });
+			ui_rect::from_position_size(
+				row_rect.top_left(),
+				{ ctx.style.font_size, row_height }
+			);
 
-		if (
-			const bool clicked_arrow = arrow_rect.contains(mouse_pos);
-			!leaf && (opt.toggle_on_row_click || clicked_arrow)
-		) {
+		if (const bool clicked_arrow = arrow_rect.contains(mouse_pos); !leaf && (opt.toggle_on_row_click || clicked_arrow)) {
 			if (is_open) {
 				open_set.erase(key);
 			}
@@ -261,10 +271,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 		}
 
 		if (sel) {
-			if (
-				const bool ctrl = ctx.input.key_held(key::left_control) || ctx.input.key_held(key::right_control);
-				opt.multi_select || ctrl
-			) {
+			if (const bool ctrl = ctx.input.key_held(key::left_control) || ctx.input.key_held(key::right_control); opt.multi_select || ctrl) {
 				if (const auto it = sel->keys.find(key); it != sel->keys.end()) {
 					sel->keys.erase(it);
 				}
@@ -287,7 +294,16 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 
 	if (is_open && !leaf && ops.children) {
 		for (const std::span<const T> kids = ops.children(t); const T& ch : kids) {
-			children_are_active |= tree_node(ctx, ch, ops, opt, sel, tree_scope, level + 1, active_widget_id);
+			children_are_active |= tree_node(
+				ctx,
+				ch,
+				ops,
+				opt,
+				sel,
+				tree_scope,
+				level + 1,
+				active_widget_id
+			);
 		}
 	}
 

@@ -77,7 +77,11 @@ auto gs::spawn_bone(gse::scene& scene, const std::string& name, const gse::physi
 						},
 						.spec = {
 							.material = {
-								.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
+								.base_color = gse::vec3f(
+									0.85f,
+									0.7f,
+									0.55f
+								),
 								.roughness = 0.6f,
 							},
 							.size = shape.size,
@@ -96,7 +100,11 @@ auto gs::spawn_bone(gse::scene& scene, const std::string& name, const gse::physi
 						},
 						.spec = {
 							.material = {
-								.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
+								.base_color = gse::vec3f(
+									0.85f,
+									0.7f,
+									0.55f
+								),
 								.roughness = 0.6f,
 							},
 							.radius = shape.radius,
@@ -118,7 +126,11 @@ auto gs::spawn_bone(gse::scene& scene, const std::string& name, const gse::physi
 						},
 						.spec = {
 							.material = {
-								.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
+								.base_color = gse::vec3f(
+									0.85f,
+									0.7f,
+									0.55f
+								),
 								.roughness = 0.6f,
 							},
 							.size = bbox,
@@ -162,7 +174,11 @@ auto gs::spawn_skeleton(gse::scene& s, const gse::physics::skeleton& skel, const
 	handle.joint_ids.resize(skel.joints.size());
 	for (std::size_t j = 0; j < skel.joints.size(); ++j) {
 		const auto& joint = skel.joints[j];
-		handle.joint_ids[j] = s.build(std::format("{}.joint_{}", skel.name, j))
+		handle.joint_ids[j] = s.build(std::format(
+										  "{}.joint_{}",
+										  skel.name,
+										  j
+									  ))
 			.with<gse::physics::joint_spec>({
 				.entity_a = handle.bone_ids[joint.bone_a],
 				.entity_b = handle.bone_ids[joint.bone_b],
@@ -174,7 +190,11 @@ auto gs::spawn_skeleton(gse::scene& s, const gse::physics::skeleton& skel, const
 	handle.muscle_ids.resize(skel.muscles.size());
 	for (std::size_t m = 0; m < skel.muscles.size(); ++m) {
 		const auto& muscle = skel.muscles[m];
-		handle.muscle_ids[m] = s.build(std::format("{}.muscle_{}", skel.name, m))
+		handle.muscle_ids[m] = s.build(std::format(
+										   "{}.muscle_{}",
+										   skel.name,
+										   m
+									   ))
 			.with<gse::physics::joint_spec>({
 				.entity_a = handle.bone_ids[muscle.bone_a],
 				.entity_b = handle.bone_ids[muscle.bone_b],
@@ -182,6 +202,7 @@ auto gs::spawn_skeleton(gse::scene& s, const gse::physics::skeleton& skel, const
 					.anchor_a = muscle.anchor_a,
 					.anchor_b = muscle.anchor_b,
 					.rest_length = muscle.rest_length,
+					.max_force = muscle.max_force,
 				},
 			})
 			.with<gse::physics::muscle_component>({})

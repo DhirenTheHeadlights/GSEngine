@@ -86,25 +86,19 @@ auto gse::gpu::begin_transient_awaiter::await_resume() -> vulkan::transient_comm
 	auto cmd = m_queue->allocate_primary(m_gpu_device->vulkan_device(), *worker);
 	cmd.begin_one_time();
 	const auto marker =
-		m_gpu_device->begin_pass_marker(cmd.handle(), device::pass_marker_domain::transient, m_pass_marker);
+		m_gpu_device->begin_pass_marker(
+			cmd.handle(),
+			device::pass_marker_domain::transient,
+			m_pass_marker
+		);
 	m_gpu_device->checkpoint_pass_marker(cmd.handle(), marker);
 	m_gpu_device->post_renderpass_pass_marker(cmd.handle(), marker);
 	cmd.set_marker_seq(marker.seq);
 	return cmd;
 }
 
-gse::gpu::submission::submission(
-	gpu::device& gpu_dev,
-	vulkan::queue& queues,
-	transient_queue& queue,
-	frame_resource_bin& bin,
-	vulkan::transient_command_buffer&& cmd
-)
-	: m_gpu_device(&gpu_dev),
-	  m_queues(&queues),
-	  m_queue(&queue),
-	  m_bin(&bin),
-	  m_cmd(std::move(cmd)) {
+gse::gpu::submission::submission(gpu::device& gpu_dev, vulkan::queue& queues, transient_queue& queue, frame_resource_bin& bin, vulkan::transient_command_buffer&& cmd)
+	: m_gpu_device(&gpu_dev), m_queues(&queues), m_queue(&queue), m_bin(&bin), m_cmd(std::move(cmd)) {
 }
 
 template <typename T>
@@ -147,8 +141,14 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 			.command_buffer = m_cmd.handle(),
 		};
 		const submit_info info{
-			.command_buffers = std::span(&cmd_info, 1),
-			.signal_semaphores = std::span(&signal, 1),
+			.command_buffers = std::span(
+				&cmd_info,
+				1
+			),
+			.signal_semaphores = std::span(
+				&signal,
+				1
+			),
 		};
 
 		if (m_queue->id() == queue_id::graphics) {

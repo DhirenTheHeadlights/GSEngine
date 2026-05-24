@@ -85,7 +85,10 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	constexpr float hit_w = 6.0f;
 
 	auto handle_resize = [&](float& width, const float right_anchor_x, const float split_x, const int idx) {
-		const ui_rect hit_rect = ui_rect::from_position_size({ split_x - hit_w * 0.5f, header_y }, { hit_w, row_h });
+		const ui_rect hit_rect = ui_rect::from_position_size(
+			{ split_x - hit_w * 0.5f, header_y },
+			{ hit_w, row_h }
+		);
 
 		const bool hovered = hit_rect.contains(mouse_pos);
 
@@ -314,7 +317,14 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	{
 		auto region = scroll_region(ctx, body_info);
 		trace::set_finalize_paused(
-			draw::tree(ctx, std::span<const trace::node>(sorted_roots_buf), ops, options, &selection, active)
+			draw::tree(
+				ctx,
+				std::span<const trace::node>(sorted_roots_buf),
+				ops,
+				options,
+				&selection,
+				active
+			)
 		);
 	}
 }

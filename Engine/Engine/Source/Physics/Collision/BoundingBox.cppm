@@ -115,27 +115,31 @@ auto gse::collision_information::axis() const -> gse::axis {
 }
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::box_shape& shape)
-	: m_center(tc.position),
-	  m_orientation(tc.orientation),
-	  m_half_extents(shape.size.x() * 0.5f, shape.size.y() * 0.5f, shape.size.z() * 0.5f) {
+	: m_center(tc.position), m_orientation(tc.orientation), m_half_extents(
+																shape.size.x() * 0.5f,
+																shape.size.y() * 0.5f,
+																shape.size.z() * 0.5f
+															) {
 }
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::sphere_shape& shape)
-	: m_center(tc.position),
-	  m_orientation(tc.orientation),
-	  m_half_extents(shape.radius, shape.radius, shape.radius) {
+	: m_center(tc.position), m_orientation(tc.orientation), m_half_extents(
+																shape.radius,
+																shape.radius,
+																shape.radius
+															) {
 }
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc, const physics::capsule_shape& shape)
-	: m_center(tc.position),
-	  m_orientation(tc.orientation),
-	  m_half_extents(shape.radius, shape.half_height + shape.radius, shape.radius) {
+	: m_center(tc.position), m_orientation(tc.orientation), m_half_extents(
+																shape.radius,
+																shape.half_height + shape.radius,
+																shape.radius
+															) {
 }
 
 gse::bounding_box::bounding_box(const physics::transform_component& tc)
-	: m_center(tc.position),
-	  m_orientation(tc.orientation),
-	  m_half_extents{} {
+	: m_center(tc.position), m_orientation(tc.orientation), m_half_extents{} {
 }
 
 auto gse::bounding_box::aabb() const -> gse::aabb {

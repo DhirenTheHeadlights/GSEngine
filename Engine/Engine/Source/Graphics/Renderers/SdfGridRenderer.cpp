@@ -41,7 +41,7 @@ namespace gse::renderer::sdf_grid {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
-		gpu::color_target<gpu::color_format::hdr>,
+		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::depth<true, true, gpu::compare_op::less_or_equal>,
 		gpu::blend<gpu::blend_preset::alpha>
 	>;
@@ -49,7 +49,12 @@ namespace gse::renderer::sdf_grid {
 
 auto gse::renderer::sdf_grid::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.pipeline =
-		gpu::build_graphics_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+		gpu::build_graphics_program(
+			*gpu_s.device,
+			*gpu_s.shader_registry,
+			*gpu_s.bindless_textures,
+			entry::pod
+		);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
@@ -62,10 +67,21 @@ auto gse::renderer::sdf_grid::system::run(run_context& ctx, const gpu::context::
 			}
 		);
 		d.descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				entry::pod
+			);
 
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i])
-			.buffer<shaders::standard_3d::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.descriptors[i]
+		)
+			.buffer<shaders::standard_3d::camera_ubo>(
+				d.camera_ubo_buffers[i],
+				0,
+				camera_ubo_size
+			)
 			.commit();
 	}
 
@@ -90,6 +106,10 @@ auto gse::renderer::sdf_grid::system::frame(const frame_context& ctx, shared_vie
 		.proj = proj,
 		.inv_view = view.inverse(),
 		.inv_view_proj = (proj * view).inverse(),
+		.prev_view = cam_state.prev_view_matrix,
+		.prev_proj = cam_state.prev_projection_matrix,
+		.jitter_ndc = cam_state.jitter_ndc,
+		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 

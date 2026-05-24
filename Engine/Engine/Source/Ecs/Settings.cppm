@@ -122,7 +122,11 @@ auto gse::settings::write_settings_with_prefix(std::unordered_map<std::string, s
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
-			const std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
+			const std::string key = prefix.empty() ? std::string(name) : std::format(
+																			 "{}.{}",
+																			 prefix,
+																			 name
+																		 );
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
 				write_settings_with_prefix<F>(doc, category, key, value.[:m:]);
@@ -146,7 +150,11 @@ auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::stri
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
-			const std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
+			const std::string key = prefix.empty() ? std::string(name) : std::format(
+																			 "{}.{}",
+																			 prefix,
+																			 name
+																		 );
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
 				read_settings_with_prefix<F>(doc, category, key, value.[:m:]);
@@ -174,7 +182,11 @@ auto gse::settings::collect_settings_keys_with_prefix(std::vector<std::string>& 
 		if constexpr (meta::find_describe(m) != std::meta::info{}) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view name = meta::member_name(m);
-			std::string key = prefix.empty() ? std::string(name) : std::format("{}.{}", prefix, name);
+			std::string key = prefix.empty() ? std::string(name) : std::format(
+																	   "{}.{}",
+																	   prefix,
+																	   name
+																   );
 
 			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
 				collect_settings_keys_with_prefix<F>(out, key);

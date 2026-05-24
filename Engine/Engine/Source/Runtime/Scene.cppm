@@ -149,8 +149,7 @@ export namespace gse {
 }
 
 gse::scene_init_context::scene_init_context(const gse::id entity_id, registry* reg)
-	: m_entity_id(entity_id),
-	  m_registry(reg) {
+	: m_entity_id(entity_id), m_registry(reg) {
 }
 
 auto gse::scene_init_context::id() const -> gse::id {
@@ -188,8 +187,7 @@ auto gse::scene_init_context::try_component_write() -> T* {
 }
 
 gse::scene::scene(gse::registry& registry, const std::string_view name)
-	: identifiable(std::string(name)),
-	  m_registry(registry) {
+	: identifiable(std::string(name)), m_registry(registry) {
 }
 
 auto gse::scene::add_entity(const std::string& name) -> gse::id {
@@ -224,7 +222,10 @@ auto gse::scene::spawn(const std::string& name, Archetype&& archetype) -> gse::i
 	using arch_t = std::remove_cvref_t<Archetype>;
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^arch_t, std::meta::access_context::unchecked()))) {
 		using component_t = typename[:std::meta::type_of(m):];
-		m_registry.add_component<component_t>(id, std::forward_like<Archetype>(archetype.[:m:]));
+		m_registry.add_component<component_t>(
+			id,
+			std::forward_like<Archetype>(archetype.[:m:])
+		);
 	}
 	return id;
 }
@@ -284,9 +285,7 @@ auto gse::scene::push_init(const gse::id entity_id, init_fn fn) -> void {
 }
 
 gse::scene::builder::builder(const gse::id entity_id, scene* owner, gse::registry* reg)
-	: m_entity_id(entity_id),
-	  m_scene(owner),
-	  m_registry(reg) {
+	: m_entity_id(entity_id), m_scene(owner), m_registry(reg) {
 }
 
 template <typename T>

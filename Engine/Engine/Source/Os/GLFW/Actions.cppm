@@ -64,8 +64,7 @@ export namespace gse::actions {
 	class description : public identifiable {
 	public:
 		explicit description(const std::string_view name, const std::uint16_t bit_index)
-			: identifiable(name),
-			  m_bit_index(bit_index) {
+			: identifiable(name), m_bit_index(bit_index) {
 		}
 
 		auto bit_index() const -> std::uint16_t {
@@ -754,14 +753,20 @@ auto gse::actions::system::finalize_bindings(data& d) -> void {
 		d.axis1_ids_cache.push_back(k.axis);
 	}
 	std::ranges::sort(d.axis1_ids_cache);
-	d.axis1_ids_cache.erase(std::ranges::unique(d.axis1_ids_cache).begin(), d.axis1_ids_cache.end());
+	d.axis1_ids_cache.erase(
+		std::ranges::unique(d.axis1_ids_cache).begin(),
+		d.axis1_ids_cache.end()
+	);
 
 	d.axis2_ids_cache.clear();
 	for (const auto& [id, l, r, b, f, sc] : d.axis2_by_id.items()) {
 		d.axis2_ids_cache.push_back(static_cast<std::uint16_t>(id.number()));
 	}
 	std::ranges::sort(d.axis2_ids_cache);
-	d.axis2_ids_cache.erase(std::ranges::unique(d.axis2_ids_cache).begin(), d.axis2_ids_cache.end());
+	d.axis2_ids_cache.erase(
+		std::ranges::unique(d.axis2_ids_cache).begin(),
+		d.axis2_ids_cache.end()
+	);
 }
 
 auto gse::actions::system::add_description(data& d, const std::string_view tag, const id action_id) -> actions::description& {

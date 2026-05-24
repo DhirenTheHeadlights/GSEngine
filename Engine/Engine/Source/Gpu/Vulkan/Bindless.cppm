@@ -20,7 +20,7 @@ export namespace gse::gpu {
 		static constexpr std::uint32_t invalid_index = std::numeric_limits<std::uint32_t>::max();
 		std::uint32_t index = invalid_index;
 
-		explicit operator bool() const {
+		[[nodiscard]] auto valid() const -> bool {
 			return index != invalid_index;
 		}
 	};
@@ -75,13 +75,8 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::bindless_texture_set::bindless_texture_set(
-	const vulkan::device& device_cfg,
-	descriptor_heap& heap,
-	const std::uint32_t capacity
-)
-	: m_heap(&heap),
-	  m_capacity(capacity) {
+gse::gpu::bindless_texture_set::bindless_texture_set(const vulkan::device& device_cfg, descriptor_heap& heap, const std::uint32_t capacity)
+	: m_heap(&heap), m_capacity(capacity) {
 	const auto& device = device_cfg.raii_device();
 	const vk::DescriptorSetLayoutBinding binding{
 		.binding = 0,
@@ -118,7 +113,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(
 	const auto layout_handle = std::bit_cast<handle<vulkan::descriptor_set_layout>>(*m_layout);
 	m_binding_offset = heap.binding_offset(layout_handle, 0);
 	const auto layout_size = heap.layout_size(layout_handle);
-	m_descriptor_size = (layout_size - m_binding_offset) / capacity;
+	m_descriptor_size = heap.props().descriptor_size_for(descriptor_type::combined_image_sampler);
 	m_region = heap.allocate(layout_size);
 
 	const descriptor_get_info null_get{
@@ -131,7 +126,12 @@ gse::gpu::bindless_texture_set::bindless_texture_set(
 	};
 
 	for (std::uint32_t i = 0; i < capacity; ++i) {
-		m_heap->write_descriptor(m_region, m_binding_offset + i * m_descriptor_size, null_get, m_descriptor_size);
+		m_heap->write_descriptor(
+			m_region,
+			m_binding_offset + i * m_descriptor_size,
+			null_get,
+			m_descriptor_size
+		);
 	}
 
 	m_free_list.reserve(capacity);
@@ -168,7 +168,12 @@ auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> v
 		},
 	};
 
-	m_heap->write_descriptor(m_region, m_binding_offset + slot * m_descriptor_size, get_info, m_descriptor_size);
+	m_heap->write_descriptor(
+		m_region,
+		m_binding_offset + slot * m_descriptor_size,
+		get_info,
+		m_descriptor_size
+	);
 
 	return {
 		.index = slot
@@ -176,7 +181,7 @@ auto gse::gpu::bindless_texture_set::allocate(const handle<vulkan::image_view> v
 }
 
 auto gse::gpu::bindless_texture_set::release(const bindless_texture_slot slot) -> void {
-	if (!slot) {
+	if (!slot.valid()) {
 		return;
 	}
 	std::lock_guard lock(m_mutex);

@@ -55,6 +55,11 @@ export namespace gse::renderer::bloom {
 
 			std::array<per_frame_resource<gpu::descriptor_region>, max_mip_count> downsample_descriptors;
 			std::array<per_frame_resource<gpu::descriptor_region>, max_mip_count> upsample_descriptors;
+
+			vulkan::bindless_slot sampler_slot;
+			vulkan::bindless_slot hdr_slot;
+			std::array<vulkan::bindless_slot, max_mip_count> mip_down_storage_slots;
+			std::array<vulkan::bindless_slot, max_mip_count> mip_down_sampled_slots;
 		};
 
 		static auto run(

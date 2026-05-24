@@ -88,8 +88,7 @@ auto gse::vulkan::translate_result(const GFSDK_Aftermath_Result r) -> std::strin
 	return std::format("0x{:x}", static_cast<std::uint32_t>(r));
 }
 
-extern "C" void GFSDK_AFTERMATH_CALL
-gse_aftermath_gpu_crash_dump_cb(const void* dump, const std::uint32_t size, void* user) {
+extern "C" void GFSDK_AFTERMATH_CALL gse_aftermath_gpu_crash_dump_cb(const void* dump, const std::uint32_t size, void* user) {
 	auto* s = static_cast<gse::vulkan::aftermath::data*>(user);
 	if (s == nullptr) {
 		return;
@@ -97,7 +96,13 @@ gse_aftermath_gpu_crash_dump_cb(const void* dump, const std::uint32_t size, void
 	const auto seq = s->dump_counter++;
 	const auto stem = std::format("gse_{}_{}", gse::system_clock::timestamp_filename(), seq);
 	s->last_dump_stem = stem;
-	const auto path = gse::vulkan::write_dump_to_disk(s->cfg.dump_directory, stem, ".nv-gpudmp", dump, size);
+	const auto path = gse::vulkan::write_dump_to_disk(
+		s->cfg.dump_directory,
+		stem,
+		".nv-gpudmp",
+		dump,
+		size
+	);
 	gse::log::println(
 		gse::log::level::error,
 		gse::log::category::vulkan,
@@ -106,20 +111,21 @@ gse_aftermath_gpu_crash_dump_cb(const void* dump, const std::uint32_t size, void
 	);
 }
 
-extern "C" void GFSDK_AFTERMATH_CALL
-gse_aftermath_shader_debug_info_cb(const void* dump, const std::uint32_t size, void* user) {
+extern "C" void GFSDK_AFTERMATH_CALL gse_aftermath_shader_debug_info_cb(const void* dump, const std::uint32_t size, void* user) {
 	auto* s = static_cast<gse::vulkan::aftermath::data*>(user);
 	if (s == nullptr) {
 		return;
 	}
 	const auto stem = s->last_dump_stem.empty()
-		? std::format("gse_{}_shaderdebug", gse::system_clock::timestamp_filename())
+		? std::format(
+			  "gse_{}_shaderdebug",
+			  gse::system_clock::timestamp_filename()
+		  )
 		: s->last_dump_stem + "_shaderdebug";
 	gse::vulkan::write_dump_to_disk(s->cfg.shader_directory, stem, ".nvdbg", dump, size);
 }
 
-extern "C" void GFSDK_AFTERMATH_CALL
-gse_aftermath_crash_dump_description_cb(PFN_GFSDK_Aftermath_AddGpuCrashDumpDescription add_description, void*) {
+extern "C" void GFSDK_AFTERMATH_CALL gse_aftermath_crash_dump_description_cb(PFN_GFSDK_Aftermath_AddGpuCrashDumpDescription add_description, void*) {
 	add_description(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationName, "GSEngine");
 	add_description(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationVersion, "0.1.0");
 }
@@ -201,7 +207,10 @@ auto gse::vulkan::aftermath::required_device_extensions() const -> std::span<con
 	if (!available()) {
 		return {};
 	}
-	return std::span<const char* const>(k_required_device_extensions.data(), k_required_device_extensions.size());
+	return std::span<const char* const>(
+		k_required_device_extensions.data(),
+		k_required_device_extensions.size()
+	);
 }
 
 auto gse::vulkan::aftermath::device_create_info_pnext(void* next) -> void* {
@@ -262,6 +271,9 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 
 	std::ofstream out(path, std::ios::binary);
 	if (out) {
-		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+		out.write(
+			reinterpret_cast<const char*>(bytes.data()),
+			static_cast<std::streamsize>(bytes.size())
+		);
 	}
 }

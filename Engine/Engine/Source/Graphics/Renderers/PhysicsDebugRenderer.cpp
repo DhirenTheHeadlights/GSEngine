@@ -48,7 +48,7 @@ namespace gse::renderer::physics_debug {
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::rasterization<gpu::polygon_mode::line, gpu::cull_mode::none>,
-		gpu::color_target<gpu::color_format::hdr>,
+		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::depth<false, false>,
 		gpu::blend<gpu::blend_preset::alpha>,
 		gpu::primitive_topology<gpu::topology::line_list>
@@ -62,7 +62,7 @@ namespace gse::renderer::physics_debug {
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::rasterization<gpu::polygon_mode::line, gpu::cull_mode::none>,
-		gpu::color_target<gpu::color_format::hdr>,
+		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::depth<false, false>,
 		gpu::blend<gpu::blend_preset::alpha>,
 		gpu::primitive_topology<gpu::topology::line_list>
@@ -247,7 +247,13 @@ auto gse::renderer::physics_debug::build_contact_debug(const collision_informati
 		add_line(pz1, pz2, satisfaction_color, out_vertices);
 
 		constexpr length min_normal_len = meters(0.15f);
-		const length normal_len = std::max<length>(std::min<length>(penetration, meters(0.5f)), min_normal_len);
+		const length normal_len = std::max<length>(
+			std::min<length>(
+				penetration,
+				meters(0.5f)
+			),
+			min_normal_len
+		);
 		const auto normal_end = p + n * normal_len;
 		add_line(p, normal_end, normal_color, out_vertices);
 	}
@@ -282,7 +288,12 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 	);
 
 	d.pipeline_lines =
-		gpu::build_graphics_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, lines_entry::pod);
+		gpu::build_graphics_program(
+			*gpu_s.device,
+			*gpu_s.shader_registry,
+			*gpu_s.bindless_textures,
+			lines_entry::pod
+		);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
@@ -296,17 +307,40 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 		);
 
 		d.descriptors_box[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), instanced_entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				instanced_entry::pod
+			);
 		d.descriptors_sphere[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), instanced_entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				instanced_entry::pod
+			);
 		d.descriptors_capsule[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), instanced_entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				instanced_entry::pod
+			);
 
 		d.descriptors_lines[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), lines_entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				lines_entry::pod
+			);
 
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors_lines[i])
-			.buffer<shaders::standard_3d::camera_ubo>(d.camera_ubo_buffers[i], 0, camera_ubo_size)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.descriptors_lines[i]
+		)
+			.buffer<shaders::standard_3d::camera_ubo>(
+				d.camera_ubo_buffers[i],
+				0,
+				camera_ubo_size
+			)
 			.commit();
 	}
 
@@ -399,7 +433,10 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 				d.cpu_body_staging.resize(motions.size());
 				const auto motion_ids = motions.owner_ids();
 				const bool order_matches =
-					transforms.size() == motions.size() && std::ranges::equal(motion_ids, transforms.owner_ids());
+					transforms.size() == motions.size() && std::ranges::equal(
+															   motion_ids,
+															   transforms.owner_ids()
+														   );
 				for (std::size_t i = 0; i < motions.size(); ++i) {
 					const auto eid = motion_ids[i];
 					const auto* tc = order_matches ? std::addressof(transforms[i]) : transforms.find(eid);
@@ -496,6 +533,10 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 		.proj = proj,
 		.inv_view = view.inverse(),
 		.inv_view_proj = (proj * view).inverse(),
+		.prev_view = cam_state.prev_view_matrix,
+		.prev_proj = cam_state.prev_projection_matrix,
+		.jitter_ndc = cam_state.jitter_ndc,
+		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
 	d.camera_ubo_buffers[frame_index].host_write(camera);
 
@@ -524,11 +565,21 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 					return;
 				}
 				const auto bytes = instances.size() * sizeof(shape_instance);
-				ensure_buffer_capacity(*gpu_s.device, instance_buffer, capacity, bytes, gpu::buffer_flag::storage);
+				ensure_buffer_capacity(
+					*gpu_s.device,
+					instance_buffer,
+					capacity,
+					bytes,
+					gpu::buffer_flag::storage
+				);
 				instance_buffer.host_write(instances);
 			};
 
-		upload_instances(d.box_instances, d.box_instance_buffers[frame_index], d.box_instance_capacity[frame_index]);
+		upload_instances(
+			d.box_instances,
+			d.box_instance_buffers[frame_index],
+			d.box_instance_capacity[frame_index]
+		);
 		upload_instances(
 			d.sphere_instances,
 			d.sphere_instance_buffers[frame_index],
@@ -572,10 +623,25 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 			}
 			const auto count = static_cast<std::uint32_t>(instances.size());
 
-			gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), descriptor)
-				.buffer<shaders::standard_3d::camera_ubo>(d.camera_ubo_buffers[frame_index], 0, camera_ubo_size)
-				.buffer<body_data>(*body_buffer, 0, body_count_bytes)
-				.buffer<shape_instances>(instance_buffer, 0, count * sizeof(shape_instance))
+			gpu::descriptor_writer(
+				gpu_s.device->handle(),
+				descriptor
+			)
+				.buffer<shaders::standard_3d::camera_ubo>(
+					d.camera_ubo_buffers[frame_index],
+					0,
+					camera_ubo_size
+				)
+				.buffer<body_data>(
+					*body_buffer,
+					0,
+					body_count_bytes
+				)
+				.buffer<shape_instances>(
+					instance_buffer,
+					0,
+					count * sizeof(shape_instance)
+				)
 				.commit();
 
 			rec.bind_descriptors(d.pipeline_instanced, descriptor);

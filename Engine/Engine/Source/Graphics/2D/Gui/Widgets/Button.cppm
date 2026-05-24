@@ -54,11 +54,10 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 	);
 
 	const bool hovered = button_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
-	const bool pressed = ctx.input.mouse_button_pressed(mouse_button::button_1);
 	const bool released = ctx.input.mouse_button_released(mouse_button::button_1);
 
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
-	interaction::grab_active(active_widget_id, widget_id, hovered && pressed);
+	interaction::grab_active(active_widget_id, widget_id, ctx.mouse_pressed_for(button_rect));
 
 	vec4f target_color = ctx.style.color_widget_background;
 	if (active_widget_id == widget_id) {
@@ -70,7 +69,10 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 
 	ctx.queue_sprite({
 		.rect = button_rect,
-		.color = ctx.animated_color(widget_id, target_color),
+		.color = ctx.animated_color(
+			widget_id,
+			target_color
+		),
 		.texture = ctx.blank_texture,
 		.corner_radius = ctx.style.corner_radius
 	});

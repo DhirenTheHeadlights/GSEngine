@@ -20,6 +20,11 @@ export namespace gse::renderer::tonemap {
 			]]
 			float exposure = 1.0f;
 
+			[[
+				= gse::settings::describe<"Replace the final image with a hue/intensity visualization of the motion-vector buffer.">{}
+			]]
+			bool show_velocity = false;
+
 			gpu::shader_program pipeline;
 			gpu::sampler sampler;
 			per_frame_resource<gpu::descriptor_region> descriptors;

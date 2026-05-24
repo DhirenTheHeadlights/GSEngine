@@ -15,33 +15,29 @@ import gse.assets;
 import gse.log;
 
 gse::texture::texture(const std::filesystem::path& filepath)
-	: identifiable(filepath, config::baked_resource_path),
+	: identifiable(
+		  filepath,
+		  config::baked_resource_path
+	  ),
 	  m_image_data{
 		  .path = filepath
 	  } {
 }
 
 gse::texture::texture(const std::string_view name, const vec4f& color, const vec2u size)
-	: identifiable(name),
-	  m_image_data(image::load(color, size)) {
+	: identifiable(name), m_image_data(image::load(
+							  color,
+							  size
+						  )) {
 }
 
-gse::texture::texture(
-	const std::string_view name,
-	const std::vector<std::byte>& data,
-	const vec2u size,
-	const std::uint32_t channels,
-	const profile texture_profile
-)
-	: identifiable(name),
-	  m_image_data(
-		  image::data{
-			  .path = {},
-			  .size = size,
-			  .channels = channels,
-			  .pixels = data
-		  }
-	  ),
+gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const vec2u size, const std::uint32_t channels, const profile texture_profile)
+	: identifiable(name), m_image_data(image::data{
+							  .path = {},
+							  .size = size,
+							  .channels = channels,
+							  .pixels = data
+						  }),
 	  m_profile(texture_profile) {
 }
 
@@ -113,10 +109,18 @@ auto gse::texture::create_vulkan_resources(gpu::context::data& context, const pr
 			.format = gpu_format,
 			.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
 		},
-		std::format("texture:{}", id())
+		std::format(
+			"texture:{}",
+			id()
+		)
 	);
 
-	m_upload_token = gpu::upload_image_2d(*context.device, m_image, m_image_data.pixels.data(), data_size);
+	m_upload_token = gpu::upload_image_2d(
+		*context.device,
+		m_image,
+		m_image_data.pixels.data(),
+		data_size
+	);
 
 	constexpr auto clamp = gpu::sampler_address_mode::clamp_to_edge;
 	constexpr auto repeat = gpu::sampler_address_mode::repeat;

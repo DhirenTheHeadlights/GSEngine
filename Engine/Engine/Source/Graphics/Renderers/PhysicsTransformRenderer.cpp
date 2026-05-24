@@ -66,11 +66,20 @@ namespace gse::renderer::physics_transform {
 
 auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.pipeline =
-		gpu::build_compute_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+		gpu::build_compute_program(
+			*gpu_s.device,
+			*gpu_s.shader_registry,
+			*gpu_s.bindless_textures,
+			entry::pod
+		);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				entry::pod
+			);
 	}
 
 	d.initialized = true;
@@ -124,8 +133,15 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		co_return;
 	}
 
-	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[frame_index])
-		.buffer<body_data>(snapshot, 0, info.body_count * info.body_stride)
+	gpu::descriptor_writer(
+		gpu_s.device->handle(),
+		d.descriptors[frame_index]
+	)
+		.buffer<body_data>(
+			snapshot,
+			0,
+			info.body_count * info.body_stride
+		)
 		.buffer<mapping_data>(
 			d.mapping_buffers[frame_index],
 			0,

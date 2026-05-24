@@ -52,6 +52,11 @@ export namespace gse {
 			const mat<T, N, N>& raw
 		);
 
+		constexpr auto operator[](
+			this auto&,
+			std::size_t
+		) = delete;
+
 		template <std::size_t Col, std::size_t Row>
 		constexpr auto at() const -> element_t<Col, Row>;
 
@@ -103,13 +108,13 @@ constexpr gse::mixed_mat<ColSpec, RowSpec, T>::mixed_mat(const mat<T, N, N>& raw
 template <typename ColSpec, typename RowSpec, typename T>
 template <std::size_t Col, std::size_t Row>
 constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::at() const -> element_t<Col, Row> {
-	return element_t<Col, Row>((*this)[Col][Row]);
+	return element_t<Col, Row>(static_cast<const base&>(*this)[Col][Row]);
 }
 
 template <typename ColSpec, typename RowSpec, typename T>
 template <std::size_t Col, std::size_t Row>
 constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::set(element_t<Col, Row> val) -> void {
-	(*this)[Col][Row] = internal::to_storage(val);
+	static_cast<base&>(*this)[Col][Row] = internal::to_storage(val);
 }
 
 template <typename ColSpec, typename RowSpec, typename T>
@@ -129,10 +134,7 @@ template <typename ColSpec, typename RowSpec, typename T>
 template <gse::internal::is_quantity Q>
 requires(gse::internal::same_unit_family_v<typename Q::quantity_tag, typename ColSpec::template type<0>::quantity_tag>)
 constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::transform_point(const vec3<Q>& p) const -> vec3<row_t<0>>
-requires(
-	N == 4 && std::same_as<col_t<0>, col_t<1>> && std::same_as<col_t<1>, col_t<2>> &&
-	std::same_as<row_t<0>, row_t<1>> && std::same_as<row_t<1>, row_t<2>>
-)
+requires(N == 4 && std::same_as<col_t<0>, col_t<1>> && std::same_as<col_t<1>, col_t<2>> && std::same_as<row_t<0>, row_t<1>> && std::same_as<row_t<1>, row_t<2>>)
 {
 	const auto v4 = static_cast<const base&>(*this) *
 		vec4f{ internal::to_storage(p.x()), internal::to_storage(p.y()), internal::to_storage(p.z()), T(1) };

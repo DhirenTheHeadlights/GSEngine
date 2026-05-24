@@ -34,6 +34,7 @@ export namespace gse::physics {
 		vec3<displacement> anchor_a;
 		vec3<displacement> anchor_b;
 		length rest_length;
+		force max_force = newtons(3200.f);
 	};
 
 	struct skeleton {

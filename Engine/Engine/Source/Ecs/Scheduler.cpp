@@ -341,7 +341,11 @@ auto gse::scheduler::register_node(system_node node) -> void* {
 	}
 
 	auto combined_deps = node.run_state_deps;
-	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
+	combined_deps.insert(
+		combined_deps.end(),
+		node.frame_state_deps.begin(),
+		node.frame_state_deps.end()
+	);
 	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
 
 	const bool has_run = node.invoke_run_fn != nullptr;
@@ -398,10 +402,16 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 
 	if (!node.run_launched) {
 		node.run_launched = true;
-		node.run_task = wrap_run_task(node.invoke_run_fn(*node.tick_ctx, node.data.get()), [&node] {
-			node.settled = true;
-			node.paused_event->set();
-		});
+		node.run_task = wrap_run_task(
+			node.invoke_run_fn(
+				*node.tick_ctx,
+				node.data.get()
+			),
+			[&node] {
+				node.settled = true;
+				node.paused_event->set();
+			}
+		);
 		if (m_phase == scheduler_phase::boot) {
 			node.run_task.start();
 		}

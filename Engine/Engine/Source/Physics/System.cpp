@@ -177,7 +177,10 @@ auto gse::physics::system::collect_collision_objects(write<transform_component>&
 	objects.reserve(collision.size());
 	const auto collision_ids = collision.owner_ids();
 	const bool order_matches =
-		transform.size() == collision.size() && std::ranges::equal(collision_ids, transform.owner_ids());
+		transform.size() == collision.size() && std::ranges::equal(
+													collision_ids,
+													transform.owner_ids()
+												);
 	for (std::size_t i = 0; i < collision.size(); ++i) {
 		auto& cc = collision[i];
 		if (!cc.resolve_collisions) {
@@ -196,18 +199,7 @@ auto gse::physics::system::collect_collision_objects(write<transform_component>&
 	return objects;
 }
 
-auto gse::physics::system::add_scene_contacts_to_solver(
-	vbd::solver& solver,
-	vbd::contact_cache& contact_cache,
-	std::vector<collision_pair>& objects,
-	const flat_map<id, std::uint32_t>& id_to_body_index,
-	const bool update_scene_state,
-	write<transform_component>& transform,
-	write<motion_component>& motion,
-	write<collision_component>& collision,
-	write<collision_result_component>* results,
-	std::span<std::uint8_t> body_airborne
-) -> void {
+auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
 	trace::scope_guard sg{ trace_id<"vbd_cpu::broad_phase">() };
 
 	{
@@ -291,7 +283,12 @@ auto gse::physics::system::add_scene_contacts_to_solver(
 					}
 
 					auto manifold =
-						narrow_phase_collision::generate_shape_manifold(sd_a, sd_b, sat.normal, sat.separation);
+						narrow_phase_collision::generate_shape_manifold(
+							sd_a,
+							sd_b,
+							sat.normal,
+							sat.separation
+						);
 					if (manifold.point_count == 0) {
 						continue;
 					}
@@ -493,7 +490,14 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 					continue;
 				}
 				const auto handle =
-					system::create_joint(d, make_joint_definition(spec.entity_a, spec.entity_b, spec.config));
+					system::create_joint(
+						d,
+						make_joint_definition(
+							spec.entity_a,
+							spec.entity_b,
+							spec.config
+						)
+					);
 				d.joint_handles_by_entity[spec_owners[i]] = handle;
 				spec.resolved = true;
 			}
@@ -524,11 +528,7 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 			continue;
 		}
 
-		if (
-			auto solver_cfg = d.vbd_solver.config();
-			solver_cfg.iterations != static_cast<std::uint32_t>(d.solver_iterations) ||
-			solver_cfg.use_jacobi != d.use_jacobi || solver_cfg.jacobi_omega != d.jacobi_omega
-		) {
+		if (auto solver_cfg = d.vbd_solver.config(); solver_cfg.iterations != static_cast<std::uint32_t>(d.solver_iterations) || solver_cfg.use_jacobi != d.use_jacobi || solver_cfg.jacobi_omega != d.jacobi_omega) {
 			solver_cfg.iterations = static_cast<std::uint32_t>(d.solver_iterations);
 			solver_cfg.use_jacobi = d.use_jacobi;
 			solver_cfg.jacobi_omega = d.jacobi_omega;
@@ -574,24 +574,17 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 	}
 }
 
-auto gse::physics::system::update_vbd_gpu(
-	const int steps,
-	data& d,
-	write<transform_component>& transform,
-	write<motion_component>& motion,
-	read<motor_component>& motor,
-	write<collision_component>& collision,
-	write<collision_result_component>& results,
-	std::span<const impulse_request> impulses,
-	const time_t<float, seconds> dt,
-	channel_writer& channels
-) -> void {
+auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses, const time_t<float, seconds> dt, channel_writer& channels) -> void {
 	if (!d.gpu_buffers_created) {
 		return;
 	}
 
 	if (steps <= 0) {
-		d.gpu_pending_impulses.insert(d.gpu_pending_impulses.end(), impulses.begin(), impulses.end());
+		d.gpu_pending_impulses.insert(
+			d.gpu_pending_impulses.end(),
+			impulses.begin(),
+			impulses.end()
+		);
 		if (d.gpu_solver.body_count() > 0) {
 			channels.push<gpu_solver_frame_info>({
 				.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
@@ -607,10 +600,17 @@ auto gse::physics::system::update_vbd_gpu(
 	std::span<const impulse_request> step_impulses = impulses;
 	if (!d.gpu_pending_impulses.empty()) {
 		merged_impulses.reserve(d.gpu_pending_impulses.size() + impulses.size());
-		merged_impulses.insert(merged_impulses.end(), d.gpu_pending_impulses.begin(), d.gpu_pending_impulses.end());
+		merged_impulses.insert(
+			merged_impulses.end(),
+			d.gpu_pending_impulses.begin(),
+			d.gpu_pending_impulses.end()
+		);
 		merged_impulses.insert(merged_impulses.end(), impulses.begin(), impulses.end());
 		d.gpu_pending_impulses.clear();
-		step_impulses = std::span<const impulse_request>(merged_impulses.data(), merged_impulses.size());
+		step_impulses = std::span<const impulse_request>(
+			merged_impulses.data(),
+			merged_impulses.size()
+		);
 	}
 
 	{
@@ -716,7 +716,10 @@ auto gse::physics::system::update_vbd_gpu(
 
 		const auto build_motion_ids = motion.owner_ids();
 		const bool build_transform_order_matches =
-			transform.size() == body_count && std::ranges::equal(build_motion_ids, transform.owner_ids());
+			transform.size() == body_count && std::ranges::equal(
+												  build_motion_ids,
+												  transform.owner_ids()
+											  );
 		task::parallel_invoke_range(
 			0,
 			body_count,
@@ -754,7 +757,10 @@ auto gse::physics::system::update_vbd_gpu(
 					.sleep_counter = sc,
 					.accel_weight = 0.f,
 					.restitution = dyn ? dyn->restitution : 0.f,
-					.inv_inertia = inv_inertial_tensor(mc, tc->orientation),
+					.inv_inertia = inv_inertial_tensor(
+						mc,
+						tc->orientation
+					),
 				};
 				entity_ids[i] = eid;
 			},
@@ -774,7 +780,10 @@ auto gse::physics::system::update_vbd_gpu(
 		const auto& id_to_body_index_ref = d.id_to_body_index;
 		const auto collision_ids = collision.owner_ids();
 		const bool coll_transform_order_matches =
-			transform.size() == collision.size() && std::ranges::equal(collision_ids, transform.owner_ids());
+			transform.size() == collision.size() && std::ranges::equal(
+														collision_ids,
+														transform.owner_ids()
+													);
 		task::parallel_invoke_range(
 			0,
 			collision.size(),
@@ -954,7 +963,10 @@ auto gse::physics::system::update_vbd_gpu(
 			.impulses = std::move(gpu_impulses),
 			.solver_cfg = d.vbd_solver.config(),
 			.dt = dt * static_cast<float>(steps),
-			.steps = steps * std::max(d.physics_substeps, 1),
+			.steps = steps * std::max(
+								 d.physics_substeps,
+								 1
+							 ),
 			.refresh_joints = refresh_joints
 		});
 
@@ -971,16 +983,7 @@ auto gse::physics::system::update_vbd_gpu(
 	}
 }
 
-auto gse::physics::system::update_vbd(
-	const int steps,
-	data& d,
-	write<transform_component>& transform,
-	write<motion_component>& motion,
-	read<motor_component>& motor,
-	write<collision_component>& collision,
-	write<collision_result_component>& results,
-	std::span<const impulse_request> impulses
-) -> void {
+auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses) -> void {
 	trace::scope_guard sg_update{ trace_id<"vbd_cpu::update">() };
 
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
@@ -1023,7 +1026,10 @@ auto gse::physics::system::update_vbd(
 
 		const auto step_motion_ids = motion.owner_ids();
 		const bool step_transform_order_matches =
-			transform.size() == motion.size() && std::ranges::equal(step_motion_ids, transform.owner_ids());
+			transform.size() == motion.size() && std::ranges::equal(
+													 step_motion_ids,
+													 transform.owner_ids()
+												 );
 
 		{
 			task::parallel_invoke_range(
@@ -1065,7 +1071,10 @@ auto gse::physics::system::update_vbd(
 						.affected_by_gravity = (dyn && dyn->affected_by_gravity) ? 1u : 0u,
 						.sleep_counter = sc,
 						.restitution = dyn ? dyn->restitution : 0.f,
-						.inv_inertia = inv_inertial_tensor(mc, tc->orientation),
+						.inv_inertia = inv_inertial_tensor(
+							mc,
+							tc->orientation
+						),
 					};
 				},
 				trace::untraced
@@ -1208,7 +1217,10 @@ auto gse::physics::system::update_vbd(
 			trace::scope_guard sg{ trace_id<"vbd_cpu::writeback">() };
 			const auto result_motion_ids = motion.owner_ids();
 			const bool result_transform_order_matches =
-				transform.size() == motion.size() && std::ranges::equal(result_motion_ids, transform.owner_ids());
+				transform.size() == motion.size() && std::ranges::equal(
+														 result_motion_ids,
+														 transform.owner_ids()
+													 );
 			for (std::size_t i = 0; i < motion.size(); ++i) {
 				auto& mc = motion[i];
 				const auto eid = result_motion_ids[i];

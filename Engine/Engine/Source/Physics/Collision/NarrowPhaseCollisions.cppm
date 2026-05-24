@@ -477,8 +477,14 @@ auto gse::narrow_phase_collision::clip_polygon(const static_vector<clip_vertex, 
 				const float t = prev_dist / denom;
 				clip_vertex intersection{
 					.point = prev.point + (curr.point - prev.point) * t,
-					.reference_sides = shared_sides(prev.reference_sides, curr.reference_sides),
-					.incident_sides = shared_sides(prev.incident_sides, curr.incident_sides)
+					.reference_sides = shared_sides(
+						prev.reference_sides,
+						curr.reference_sides
+					),
+					.incident_sides = shared_sides(
+						prev.incident_sides,
+						curr.incident_sides
+					)
 				};
 				if (tag_reference_side) {
 					add_side(intersection.reference_sides, reference_side);
@@ -511,10 +517,7 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 	const auto info1 = find_best_face_info(bb1, n);
 	const auto info2 = find_best_face_info(bb2, -n);
 
-	if (
-		constexpr float reference_face_similarity_threshold = 0.85f;
-		std::max(info1.max_dot, info2.max_dot) < reference_face_similarity_threshold
-	) {
+	if (constexpr float reference_face_similarity_threshold = 0.85f; std::max(info1.max_dot, info2.max_dot) < reference_face_similarity_threshold) {
 		return std::nullopt;
 	}
 
@@ -590,10 +593,7 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 	polygon = clip_polygon(polygon, reference_plane, false, false, feature_side_none);
 
 	const float face_alignment = dot(reference_normal, -normalize(incident_info.normal));
-	if (
-		constexpr float slanted_face_alignment_threshold = 0.985f;
-		!polygon.empty() && face_alignment < slanted_face_alignment_threshold
-	) {
+	if (constexpr float slanted_face_alignment_threshold = 0.985f; !polygon.empty() && face_alignment < slanted_face_alignment_threshold) {
 		length max_incident_span = meters(0.f);
 		for (std::size_t i = 0; i < incident_info.vertices.size(); ++i) {
 			const length edge_length =
@@ -610,10 +610,7 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 
 		static_vector<clip_vertex, 9> filtered;
 		for (const auto& vertex : polygon) {
-			if (
-				const length dist = dot(reference_normal, vertex.point - reference_plane.point);
-				closest_plane_distance - dist <= contact_band
-			) {
+			if (const length dist = dot(reference_normal, vertex.point - reference_plane.point); closest_plane_distance - dist <= contact_band) {
 				filtered.push_back(vertex);
 			}
 		}
@@ -672,7 +669,10 @@ auto gse::narrow_phase_collision::should_replace_sat_choice(const sat_axis_choic
 	}
 
 	const length replace_threshold = best.overlap * sat_axis_relative_tolerance -
-		sat_axis_absolute_tolerance * std::max(extent_scale, meters(1e-3f));
+		sat_axis_absolute_tolerance * std::max(
+										  extent_scale,
+										  meters(1e-3f)
+									  );
 
 	return overlap < replace_threshold;
 }
@@ -695,7 +695,10 @@ auto gse::narrow_phase_collision::prefer_face_sat_axis(sat_axis_choice best, con
 	}
 
 	const length cross_replace_threshold = best_face.overlap * sat_axis_relative_tolerance -
-		sat_axis_absolute_tolerance * std::max(best_face.extent_scale, meters(1e-3f));
+		sat_axis_absolute_tolerance * std::max(
+										  best_face.extent_scale,
+										  meters(1e-3f)
+									  );
 
 	if (best.overlap >= cross_replace_threshold) {
 		return best_face;
@@ -745,7 +748,14 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
 	}
 	for (int i = 0; i < 3; ++i) {
 		for (int j = 0; j < 3; ++j) {
-			test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]), sat_axis_source::cross, length{});
+			test_axis(
+				cross(
+					bb1.obb().axes[i],
+					bb2.obb().axes[j]
+				),
+				sat_axis_source::cross,
+				length{}
+			);
 		}
 	}
 
@@ -877,15 +887,28 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 
 			const auto half_extents = bb.half_extents();
 			const auto box = bb.obb();
-			const std::array<length, 3> local = { dot(world_point - box.center, box.axes[0]),
-												  dot(world_point - box.center, box.axes[1]),
-												  dot(world_point - box.center, box.axes[2]) };
+			const std::array<length, 3> local = { dot(
+													  world_point - box.center,
+													  box.axes[0]
+												  ),
+												  dot(
+													  world_point - box.center,
+													  box.axes[1]
+												  ),
+												  dot(
+													  world_point - box.center,
+													  box.axes[2]
+												  ) };
 
 			const std::uint8_t axis_idx = face_index / 2;
 			const std::uint8_t u_axis = (axis_idx + 1) % 3;
 			const std::uint8_t v_axis = (axis_idx + 2) % 3;
 			const length tangent_scale = std::max(half_extents[u_axis], half_extents[v_axis]);
-			const length boundary_threshold = std::clamp(tangent_scale * 0.002f, meters(0.0005f), meters(0.01f));
+			const length boundary_threshold = std::clamp(
+				tangent_scale * 0.002f,
+				meters(0.0005f),
+				meters(0.01f)
+			);
 
 			detail result{
 				.face = face_index
@@ -944,34 +967,46 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 				manifold_candidate{
 					.position_on_a = position_on_a,
 					.position_on_b = position_on_b,
-					.feature = build_feature_from_clip_vertex(*clipped, vertex)
+					.feature = build_feature_from_clip_vertex(
+						*clipped,
+						vertex
+					)
 				}
 			);
 		}
 	}
 
 	const auto sort_origin = bb1.center();
-	std::ranges::sort(candidates, [&](const manifold_candidate& lhs, const manifold_candidate& rhs) {
-		const std::uint64_t lhs_key = pack_feature(lhs.feature);
-		const std::uint64_t rhs_key = pack_feature(rhs.feature);
-		if (lhs_key != rhs_key) {
-			return lhs_key < rhs_key;
-		}
+	std::ranges::sort(
+		candidates,
+		[&](const manifold_candidate& lhs, const manifold_candidate& rhs) {
+			const std::uint64_t lhs_key = pack_feature(lhs.feature);
+			const std::uint64_t rhs_key = pack_feature(rhs.feature);
+			if (lhs_key != rhs_key) {
+				return lhs_key < rhs_key;
+			}
 
-		const int lhs_u = quantize(dot(candidate_midpoint(lhs) - sort_origin, tangent_u));
-		const int rhs_u = quantize(dot(candidate_midpoint(rhs) - sort_origin, tangent_u));
-		if (lhs_u != rhs_u) {
-			return lhs_u < rhs_u;
-		}
+			const int lhs_u = quantize(dot(candidate_midpoint(lhs) - sort_origin, tangent_u));
+			const int rhs_u = quantize(dot(candidate_midpoint(rhs) - sort_origin, tangent_u));
+			if (lhs_u != rhs_u) {
+				return lhs_u < rhs_u;
+			}
 
-		const int lhs_v = quantize(dot(candidate_midpoint(lhs) - sort_origin, tangent_v));
-		const int rhs_v = quantize(dot(candidate_midpoint(rhs) - sort_origin, tangent_v));
-		if (lhs_v != rhs_v) {
-			return lhs_v < rhs_v;
-		}
+			const int lhs_v = quantize(dot(candidate_midpoint(lhs) - sort_origin, tangent_v));
+			const int rhs_v = quantize(dot(candidate_midpoint(rhs) - sort_origin, tangent_v));
+			if (lhs_v != rhs_v) {
+				return lhs_v < rhs_v;
+			}
 
-		return dot(candidate_midpoint(lhs) - sort_origin, normal) < dot(candidate_midpoint(rhs) - sort_origin, normal);
-	});
+			return dot(
+					   candidate_midpoint(lhs) - sort_origin,
+					   normal
+				   ) < dot(
+						   candidate_midpoint(rhs) - sort_origin,
+						   normal
+					   );
+		}
+	);
 
 	std::vector<manifold_candidate> unique_candidates;
 	unique_candidates.reserve(candidates.size());
@@ -1470,7 +1505,10 @@ auto gse::narrow_phase_collision::box_capsule_manifold(const bounding_box& bb, c
 				feature_id{
 					.type_a = feature_type::face,
 					.type_b = cap_type,
-					.index_a = classify_box_face(bb, normal),
+					.index_a = classify_box_face(
+						bb,
+						normal
+					),
 					.index_b = cap_index,
 				}
 		}
@@ -1605,7 +1643,14 @@ auto gse::narrow_phase_collision::generate_shape_manifold(const shape_data& a, c
 				})
 				.else_if_is([&](const physics::capsule_shape& hi_cap) {
 					const bounding_box hi_bb(*hi.tc);
-					manifold = box_capsule_manifold(lo_bb, hi_bb, hi_cap.half_height, hi_cap.radius, n, separation);
+					manifold = box_capsule_manifold(
+						lo_bb,
+						hi_bb,
+						hi_cap.half_height,
+						hi_cap.radius,
+						n,
+						separation
+					);
 				});
 		})
 		.else_if_is([&](const physics::sphere_shape& lo_sph) {

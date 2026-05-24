@@ -74,9 +74,30 @@ export namespace gse {
 
 template <gse::is_vec2 T>
 constexpr gse::rect_t<T>::rect_t(const min_max_params& p)
-	: m_min(std::min(p.min.x(), p.max.x()), std::min(p.min.y(), p.max.y())),
-	  m_max(std::max(p.min.x(), p.max.x()), std::max(p.min.y(), p.max.y())) {
-	assert(m_min.x() <= m_max.x() && m_min.y() <= m_max.y(), "Rectangle invariant failed after construction");
+	: m_min(
+		  std::min(
+			  p.min.x(),
+			  p.max.x()
+		  ),
+		  std::min(
+			  p.min.y(),
+			  p.max.y()
+		  )
+	  ),
+	  m_max(
+		  std::max(
+			  p.min.x(),
+			  p.max.x()
+		  ),
+		  std::max(
+			  p.min.y(),
+			  p.max.y()
+		  )
+	  ) {
+	assert(
+		m_min.x() <= m_max.x() && m_min.y() <= m_max.y(),
+		"Rectangle invariant failed after construction"
+	);
 }
 
 template <gse::is_vec2 T>
@@ -95,8 +116,22 @@ constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& si
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::bounding_box(const rect_t& a, const rect_t& b) -> rect_t {
 	return gse::rect_t<T>(min_max_params{
-		.min = T{ std::min(a.m_min.x(), b.m_min.x()), std::min(a.m_min.y(), b.m_min.y()) },
-		.max = T{ std::max(a.m_max.x(), b.m_max.x()), std::max(a.m_max.y(), b.m_max.y()) }
+		.min = T{ std::min(
+					  a.m_min.x(),
+					  b.m_min.x()
+				  ),
+				  std::min(
+					  a.m_min.y(),
+					  b.m_min.y()
+				  ) },
+		.max = T{ std::max(
+					  a.m_max.x(),
+					  b.m_max.x()
+				  ),
+				  std::max(
+					  a.m_max.y(),
+					  b.m_max.y()
+				  ) }
 	});
 }
 
@@ -193,8 +228,22 @@ constexpr auto gse::rect_t<T>::inset(const T& padding) const -> rect_t {
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::intersection(const rect_t& other) const -> rect_t {
-	const T new_min = { std::max(m_min.x(), other.m_min.x()), std::max(m_min.y(), other.m_min.y()) };
-	const T new_max = { std::min(m_max.x(), other.m_max.x()), std::min(m_max.y(), other.m_max.y()) };
+	const T new_min = { std::max(
+							m_min.x(),
+							other.m_min.x()
+						),
+						std::max(
+							m_min.y(),
+							other.m_min.y()
+						) };
+	const T new_max = { std::min(
+							m_max.x(),
+							other.m_max.x()
+						),
+						std::min(
+							m_max.y(),
+							other.m_max.y()
+						) };
 
 	if (new_min.x() > new_max.x() || new_min.y() > new_max.y()) {
 		return rect_t();

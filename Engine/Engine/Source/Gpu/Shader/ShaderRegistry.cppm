@@ -74,7 +74,10 @@ auto gse::gpu::shader_registry::register_family(std::string name, std::vector<sh
 		for (const auto& b : s.bindings) {
 			descs.push_back(b.desc);
 		}
-		family->owned_layouts[set_idx] = descriptor_set_layout::create(m_device->vulkan_device(), descs);
+		family->owned_layouts[set_idx] = descriptor_set_layout::create(
+			m_device->vulkan_device(),
+			descs
+		);
 	}
 
 	for (std::uint32_t i = 0; i <= max_set_index; ++i) {

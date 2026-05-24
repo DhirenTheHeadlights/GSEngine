@@ -74,11 +74,14 @@ auto gse::renderer::light_culling::system::tile_count(const data& d) -> vec2u {
 }
 
 auto gse::renderer::light_culling::system::update_depth_descriptor(const gpu::context::data& gpu_s, data& d) -> void {
-	if (d.depth_slot) {
+	if (d.depth_slot.valid()) {
 		gpu_s.bindless_textures->release(d.depth_slot);
 	}
 	d.depth_slot =
-		gpu_s.bindless_textures->allocate(gpu_s.render_graph->depth_image().view(), d.depth_sampler.native());
+		gpu_s.bindless_textures->allocate(
+			gpu_s.render_graph->depth_image().view(),
+			d.depth_sampler.native()
+		);
 }
 
 auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::context::data& gpu_s, data& d) -> void {
@@ -107,11 +110,30 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 			}
 		);
 
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.descriptors[i])
-			.buffer<culling_params>(d.culling_params_buffers[i], 0, sizeof(culling_params_data))
-			.buffer<lights>(d.light_buffers[i], 0, sizeof(shaders::forward::light) * max_lights)
-			.buffer<light_index_list>(d.light_index_list_buffers[i], 0, index_list_size)
-			.buffer<tile_light_table>(d.tile_light_table_buffers[i], 0, tile_table_size)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.descriptors[i]
+		)
+			.buffer<culling_params>(
+				d.culling_params_buffers[i],
+				0,
+				sizeof(culling_params_data)
+			)
+			.buffer<lights>(
+				d.light_buffers[i],
+				0,
+				sizeof(shaders::forward::light) * max_lights
+			)
+			.buffer<light_index_list>(
+				d.light_index_list_buffers[i],
+				0,
+				index_list_size
+			)
+			.buffer<tile_light_table>(
+				d.tile_light_table_buffers[i],
+				0,
+				tile_table_size
+			)
 			.commit();
 	}
 
@@ -120,11 +142,20 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 
 auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.pipeline =
-		gpu::build_compute_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, entry::pod);
+		gpu::build_compute_program(
+			*gpu_s.device,
+			*gpu_s.shader_registry,
+			*gpu_s.bindless_textures,
+			entry::pod
+		);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				entry::pod
+			);
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
@@ -276,7 +307,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 		.inv_proj = inv_proj,
 		.screen_size = vec2u{ extent.x(), extent.y() },
 		.num_lights = static_cast<std::uint32_t>(light_count),
-		.depth_index = d.depth_slot ? d.depth_slot.index : shaders::bindless::invalid_index,
+		.depth_index = d.depth_slot.valid() ? d.depth_slot.index : shaders::bindless::invalid_index,
 	};
 	d.culling_params_buffers[frame_index].host_write(params);
 

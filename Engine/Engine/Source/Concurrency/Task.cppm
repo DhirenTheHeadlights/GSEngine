@@ -432,7 +432,10 @@ auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t las
 			return;
 		}
 
-		const std::size_t workers = std::max<std::size_t>(1, worker_count_value.load(std::memory_order_acquire));
+		const std::size_t workers = std::max<std::size_t>(
+			1,
+			worker_count_value.load(std::memory_order_acquire)
+		);
 		const std::size_t chunk = compute_chunk_size(n, workers);
 
 		group g(id);
@@ -654,7 +657,10 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 		return;
 	}
 
-	const std::size_t workers = std::max<std::size_t>(1, worker_count_value.load(std::memory_order_acquire));
+	const std::size_t workers = std::max<std::size_t>(
+		1,
+		worker_count_value.load(std::memory_order_acquire)
+	);
 	const std::size_t chunk = compute_chunk_size(n, workers);
 
 	group g(id);

@@ -11,6 +11,7 @@ import :menu_stack;
 import :builder;
 import :types;
 import :styles;
+import :layout_ops;
 import :text_widget;
 import :loading;
 
@@ -73,7 +74,13 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	const std::uint32_t total = m_state->total();
 
 	if (m_log_timer.tick()) {
-		log::println(log::category::runtime, "loading_screen::build read done={} total={} phase=\"{}\"", done, total, phase);
+		log::println(
+			log::category::runtime,
+			"loading_screen::build read done={} total={} phase=\"{}\"",
+			done,
+			total,
+			phase
+		);
 	}
 
 	const std::string label = phase.empty() ? std::string("Loading...") : phase;
@@ -87,12 +94,9 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 		.color = ctx.style.color_text,
 	});
 
-	const float bar_width = std::min(400.f, body.width() * 0.6f);
-	const float bar_height = 12.f;
-	const ui_rect bar_outline = ui_rect::from_position_size(
-		{ center.x() - bar_width * 0.5f, center.y() + bar_height * 0.5f },
-		{ bar_width, bar_height }
-	);
+	const float bar_width = std::min(ctx.style.progress_bar_max_width, body.width() * 0.6f);
+	const float bar_height = ctx.style.progress_bar_height;
+	const ui_rect bar_outline = layout::centered(body, { bar_width, bar_height });
 
 	ctx.queue_sprite({
 		.rect = bar_outline,
@@ -101,9 +105,13 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 		.corner_radius = bar_height * 0.5f,
 	});
 
-	const float inset = 2.f;
+	const float inset = ctx.style.separator_thickness * 2.f;
 	const float fill_ratio =
-		total == 0 ? 0.f : std::clamp(static_cast<float>(done) / static_cast<float>(total), 0.f, 1.f);
+		total == 0 ? 0.f : std::clamp(
+							   static_cast<float>(done) / static_cast<float>(total),
+							   0.f,
+							   1.f
+						   );
 	const float fill_width = (bar_width - inset * 2.f) * fill_ratio;
 
 	if (fill_width > 0.f) {

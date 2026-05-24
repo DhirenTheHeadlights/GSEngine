@@ -39,9 +39,9 @@ export namespace gse::save {
 
 		auto entry_count() const -> std::size_t;
 
-		auto save_now() -> bool;
+		auto save_now() const -> bool;
 
-		auto trigger_restart() -> void;
+		auto trigger_restart() const -> void;
 
 		template <typename T>
 		[[nodiscard]]
@@ -134,9 +134,12 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 		entry.read(m_loaded, entry.category, entry.settings_ptr);
 	}
 
-	const auto match = std::ranges::find_if(m_entries, [&](const settings::register_settings_type& existing) {
-		return existing.category == entry.category && existing.settings_ptr == entry.settings_ptr;
-	});
+	const auto match = std::ranges::find_if(
+		m_entries,
+		[&](const settings::register_settings_type& existing) {
+			return existing.category == entry.category && existing.settings_ptr == entry.settings_ptr;
+		}
+	);
 
 	if (match != m_entries.end()) {
 		*match = std::move(entry);
@@ -149,7 +152,10 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 		}
 		for (const auto& key : entry.keys) {
 			assert(
-				std::ranges::find(existing.keys, key) == existing.keys.end(),
+				std::ranges::find(
+					existing.keys,
+					key
+				) == existing.keys.end(),
 				"settings field name collision: category=\"{}\" key=\"{}\" is declared by both {} and {}",
 				entry.category,
 				key,
@@ -167,14 +173,14 @@ auto gse::save::registry::entry_count() const -> std::size_t {
 	return m_entries.size();
 }
 
-auto gse::save::registry::save_now() -> bool {
+auto gse::save::registry::save_now() const -> bool {
 	if (m_auto_save_path.empty()) {
 		return false;
 	}
 	return save_to_file(m_auto_save_path);
 }
 
-auto gse::save::registry::trigger_restart() -> void {
+auto gse::save::registry::trigger_restart() const -> void {
 	save_now();
 	if (m_on_restart) {
 		m_on_restart();
@@ -221,7 +227,10 @@ auto gse::save::registry::parse(const std::string_view text) -> doc {
 	while (pos < text.size()) {
 		const std::size_t line_end = text.find('\n', pos);
 		const std::string_view line_raw =
-			text.substr(pos, line_end == std::string_view::npos ? text.size() - pos : line_end - pos);
+			text.substr(
+				pos,
+				line_end == std::string_view::npos ? text.size() - pos : line_end - pos
+			);
 		pos = line_end == std::string_view::npos ? text.size() : line_end + 1;
 
 		const auto line = trim(line_raw);

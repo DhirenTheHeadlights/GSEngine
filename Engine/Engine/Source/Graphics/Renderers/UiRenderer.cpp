@@ -152,7 +152,12 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 		sprite_entry::pod
 	);
 	d.text_pipeline =
-		gpu::build_graphics_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, msdf_entry::pod);
+		gpu::build_graphics_program(
+			*gpu_s.device,
+			*gpu_s.shader_registry,
+			*gpu_s.bindless_textures,
+			msdf_entry::pod
+		);
 
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
@@ -365,7 +370,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			return shaders::bindless::invalid_index;
 		}
 		const auto& slot = snapshot_s.slots[frame_index];
-		return slot ? slot.index : shaders::bindless::invalid_index;
+		return slot.valid() ? slot.index : shaders::bindless::invalid_index;
 	}();
 
 	gpu::typed_push_constants<sprite_push_constants> sprite_pc{
@@ -377,6 +382,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 		},
 		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
 	};
+
 	gpu::typed_push_constants<msdf_push_constants> text_pc{
 		.data = {
 			.projection = projection,
@@ -429,13 +435,13 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 		std::uint32_t tex_idx = 0;
 		bool has_texture = false;
 		if (type == command_type::sprite) {
-			if (texture.valid() && texture->bindless_slot()) {
+			if (texture.valid() && texture->bindless_slot().valid()) {
 				tex_idx = texture->bindless_slot().index;
 				has_texture = true;
 			}
 		}
 		else {
-			if (font.valid() && font->texture()->bindless_slot()) {
+			if (font.valid() && font->texture()->bindless_slot().valid()) {
 				tex_idx = font->texture()->bindless_slot().index;
 				has_texture = true;
 			}
@@ -467,8 +473,14 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			rec.set_scissor(
 				static_cast<std::int32_t>(left),
 				static_cast<std::int32_t>(window_size.y() - top),
-				static_cast<std::uint32_t>(std::max(0.0f, right - left)),
-				static_cast<std::uint32_t>(std::max(0.0f, top - bottom))
+				static_cast<std::uint32_t>(std::max(
+					0.0f,
+					right - left
+				)),
+				static_cast<std::uint32_t>(std::max(
+					0.0f,
+					top - bottom
+				))
 			);
 		}
 		else {

@@ -20,7 +20,7 @@ namespace gse::renderer::scene_snapshot {
 	template <typename GpuS>
 	auto recreate_resources(GpuS& gpu_s, system::data& d, const vec2u extent) -> void {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-			if (d.slots[i]) {
+			if (d.slots[i].valid()) {
 				gpu_s.bindless_textures->release(d.slots[i]);
 				d.slots[i] = {};
 			}
@@ -36,7 +36,10 @@ namespace gse::renderer::scene_snapshot {
 				}
 			);
 
-			d.slots[i] = gpu_s.bindless_textures->allocate(d.snapshots[i].view(), d.sampler.native());
+			d.slots[i] = gpu_s.bindless_textures->allocate(
+				d.snapshots[i].view(),
+				d.sampler.native()
+			);
 		}
 
 		d.current_extent = extent;

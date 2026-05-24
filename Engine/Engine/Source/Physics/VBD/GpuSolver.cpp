@@ -402,7 +402,10 @@ auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void
 		f.joint_buffer = gpu::buffer::create(
 			ctx.device->allocator(),
 			{
-				.size = std::max<std::size_t>(joint_buffer_size, 16),
+				.size = std::max<std::size_t>(
+					joint_buffer_size,
+					16
+				),
 				.usage = storage_src
 			}
 		);
@@ -491,17 +494,13 @@ auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void
 	m_buffers_created = true;
 }
 
-auto gse::vbd::gpu_solver::upload(
-	const std::span<const body_state> bodies,
-	const std::span<const velocity_motor_constraint> motors,
-	const std::span<const joint_constraint> joints,
-	const std::span<const impulse_constraint> impulses,
-	const solver_config& solver_cfg,
-	const time_step dt,
-	const int steps,
-	const bool refresh_joints
-) -> void {
-	assert(bodies.size() <= limits.max_bodies, "body count {} exceeds max_bodies {}", bodies.size(), limits.max_bodies);
+auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, const std::span<const velocity_motor_constraint> motors, const std::span<const joint_constraint> joints, const std::span<const impulse_constraint> impulses, const solver_config& solver_cfg, const time_step dt, const int steps, const bool refresh_joints) -> void {
+	assert(
+		bodies.size() <= limits.max_bodies,
+		"body count {} exceeds max_bodies {}",
+		bodies.size(),
+		limits.max_bodies
+	);
 	assert(
 		motors.size() <= limits.max_motors,
 		"motor count {} exceeds max_motors {}",
@@ -815,9 +814,16 @@ auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::conte
 
 	for (auto& f : m_frames) {
 		f.descriptors =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), predict_entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				predict_entry::pod
+			);
 
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), f.descriptors)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			f.descriptors
+		)
 			.buffer<body_data>(f.body_buffer)
 			.buffer<contact_data>(f.contact_buffer)
 			.buffer<motor_data>(f.motor_buffer)
@@ -899,7 +905,10 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 	};
 
 	const std::uint32_t body_workgroups = ceil_div(m_body_count, limits.workgroup_size);
-	const std::uint32_t reset_workgroups = ceil_div(std::max({ m_body_count, limits.max_contacts, limits.grid_table_size }), limits.workgroup_size);
+	const std::uint32_t reset_workgroups = ceil_div(
+		std::max({ m_body_count, limits.max_contacts, limits.grid_table_size }),
+		limits.workgroup_size
+	);
 	const std::uint32_t joint_workgroups = ceil_div(std::max(m_joint_count, 1u), limits.workgroup_size);
 	constexpr std::uint32_t num_colors = limits.max_colors;
 	const std::uint32_t num_iterations = m_solver_cfg.iterations;
@@ -1060,7 +1069,10 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				for (std::uint32_t color = 0; color < num_colors; ++color) {
 					color_pc.data.color_offset = color;
 					rec.push(m_compute.solve_color_pipeline, color_pc);
-					rec.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
+					rec.dispatch_indirect(
+						f.indirect_dispatch_buffer,
+						(2 + color) * 3 * sizeof(std::uint32_t)
+					);
 					if (color + 1 < num_colors) {
 						rec.barrier(gpu::barrier_scope::compute_to_compute);
 					}
@@ -1075,7 +1087,17 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			if (joint_count > 0) {
 				rec.bind(m_compute.update_joint_lambda_pipeline);
 				rec.bind_descriptors(m_compute.update_joint_lambda_pipeline, f.descriptors);
-				rec.push(m_compute.update_joint_lambda_pipeline, make_pc(0u, 0u, sub, it, solve_alpha, warm));
+				rec.push(
+					m_compute.update_joint_lambda_pipeline,
+					make_pc(
+						0u,
+						0u,
+						sub,
+						it,
+						solve_alpha,
+						warm
+					)
+				);
 				rec.dispatch(joint_workgroups, 1, 1);
 			}
 			rec.barrier(gpu::barrier_scope::compute_to_indirect);
@@ -1087,7 +1109,17 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.derive_velocities_pipeline);
 
 		rec.bind_descriptors(m_compute.derive_velocities_pipeline, f.descriptors);
-		rec.push(m_compute.derive_velocities_pipeline, make_pc(0u, 0u, sub, num_iterations, solve_alpha, warm));
+		rec.push(
+			m_compute.derive_velocities_pipeline,
+			make_pc(
+				0u,
+				0u,
+				sub,
+				num_iterations,
+				solve_alpha,
+				warm
+			)
+		);
 		rec.dispatch(body_workgroups, 1, 1);
 
 		rec = co_await gpu::pass<vbd_apply_restitution_stage>(ctx)
@@ -1116,7 +1148,17 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				.pipeline(m_compute.prepare_color_indirect_pipeline);
 
 			rec.bind_descriptors(m_compute.prepare_color_indirect_pipeline, f.descriptors);
-			rec.push(m_compute.prepare_color_indirect_pipeline, make_pc(0u, 0u, sub, num_iterations, 0.f, warm));
+			rec.push(
+				m_compute.prepare_color_indirect_pipeline,
+				make_pc(
+					0u,
+					0u,
+					sub,
+					num_iterations,
+					0.f,
+					warm
+				)
+			);
 			rec.dispatch(1, 1, 1);
 			rec.barrier(gpu::barrier_scope::compute_to_indirect);
 
@@ -1132,14 +1174,27 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 				rec.bind(m_compute.apply_jacobi_pipeline);
 				rec.bind_descriptors(m_compute.apply_jacobi_pipeline, f.descriptors);
-				rec.push(m_compute.apply_jacobi_pipeline, make_pc(0u, 0u, sub, num_iterations, 0.f, warm));
+				rec.push(
+					m_compute.apply_jacobi_pipeline,
+					make_pc(
+						0u,
+						0u,
+						sub,
+						num_iterations,
+						0.f,
+						warm
+					)
+				);
 				rec.dispatch(body_workgroups, 1, 1);
 			}
 			else {
 				for (std::uint32_t color = 0; color < num_colors; ++color) {
 					color_pc.data.color_offset = color;
 					rec.push(m_compute.solve_color_pipeline, color_pc);
-					rec.dispatch_indirect(f.indirect_dispatch_buffer, (2 + color) * 3 * sizeof(std::uint32_t));
+					rec.dispatch_indirect(
+						f.indirect_dispatch_buffer,
+						(2 + color) * 3 * sizeof(std::uint32_t)
+					);
 					if (color + 1 < num_colors) {
 						rec.barrier(gpu::barrier_scope::compute_to_compute);
 					}

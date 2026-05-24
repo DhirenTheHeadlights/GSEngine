@@ -20,8 +20,8 @@ namespace gse::gpu {
 }
 
 auto gse::gpu::transition_image_to(gpu::device& dev, vulkan::image& img) -> sync_token {
-	const auto fmt = static_cast<image_format>(img.format());
-	const bool is_depth = fmt == image_format::d32_sfloat;
+	const auto aspect_flags = vulkan::image_aspect_for(img.format());
+	const bool is_depth = aspect_flags.test(image_aspect_flag::depth);
 	const auto aspect = is_depth ? image_aspect_flag::depth : image_aspect_flag::color;
 
 	auto cmd_awaiter = begin_transient(dev, queue_id::graphics, "transient.image_transition");
@@ -88,11 +88,25 @@ auto gse::gpu::upload_image_2d(gpu::device& dev, vulkan::image& img, const void*
 	};
 
 	vulkan::commands(cmd.handle())
-		.copy_buffer_to_image(staging.handle(), img.handle(), image_layout::general, std::span(&region, 1));
+		.copy_buffer_to_image(
+			staging.handle(),
+			img.handle(),
+			image_layout::general,
+			std::span(
+				&region,
+				1
+			)
+		);
 
 	upload_post_barrier(cmd.handle(), img.handle(), 1);
 
-	return submit(dev, std::move(cmd), queue_id::graphics).retain(std::move(staging)).submit_sync();
+	return submit(
+			   dev,
+			   std::move(cmd),
+			   queue_id::graphics
+	)
+		.retain(std::move(staging))
+		.submit_sync();
 }
 
 auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const std::vector<const void*>& face_data, const std::size_t bytes_per_face) -> sync_token {
@@ -140,11 +154,22 @@ auto gse::gpu::upload_image_layers(gpu::device& dev, vulkan::image& img, const s
 	}
 
 	vulkan::commands(cmd.handle())
-		.copy_buffer_to_image(staging.handle(), img.handle(), image_layout::general, regions);
+		.copy_buffer_to_image(
+			staging.handle(),
+			img.handle(),
+			image_layout::general,
+			regions
+		);
 
 	upload_post_barrier(cmd.handle(), img.handle(), layer_count);
 
-	return submit(dev, std::move(cmd), queue_id::graphics).retain(std::move(staging)).submit_sync();
+	return submit(
+			   dev,
+			   std::move(cmd),
+			   queue_id::graphics
+	)
+		.retain(std::move(staging))
+		.submit_sync();
 }
 
 auto gse::transition_image_async(gpu::device& dev, gpu::handle<vulkan::image> img, gpu::image_aspect_flag aspect, std::uint32_t layers, bool is_depth) -> async::task<gpu::sync_token> {
@@ -215,12 +240,20 @@ auto gse::upload_image_2d_async(gpu::device& dev, vulkan::image& resource, const
 			staging.handle(),
 			resource.handle(),
 			gpu::image_layout::general,
-			std::span(&region, 1)
+			std::span(
+				&region,
+				1
+			)
 		);
 
 	gpu::upload_post_barrier(cmd.handle(), resource.handle(), 1);
 
-	co_return co_await submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(staging));
+	co_return co_await submit(
+		dev,
+		std::move(cmd),
+		gpu::queue_id::graphics
+	)
+		.retain(std::move(staging));
 }
 
 auto gse::upload_image_layers_async(gpu::device& dev, vulkan::image& resource, std::vector<const void*> face_data, std::size_t bytes_per_face, vec2u extent) -> async::task<gpu::sync_token> {
@@ -265,11 +298,21 @@ auto gse::upload_image_layers_async(gpu::device& dev, vulkan::image& resource, s
 	}
 
 	vulkan::commands(cmd.handle())
-		.copy_buffer_to_image(staging.handle(), resource.handle(), gpu::image_layout::general, regions);
+		.copy_buffer_to_image(
+			staging.handle(),
+			resource.handle(),
+			gpu::image_layout::general,
+			regions
+		);
 
 	gpu::upload_post_barrier(cmd.handle(), resource.handle(), layer_count);
 
-	co_return co_await submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(staging));
+	co_return co_await submit(
+		dev,
+		std::move(cmd),
+		gpu::queue_id::graphics
+	)
+		.retain(std::move(staging));
 }
 
 auto gse::gpu::upload_pre_barrier(const handle<command_buffer> cmd, const handle<vulkan::image> img, const std::uint32_t layer_count) -> void {
@@ -288,7 +331,10 @@ auto gse::gpu::upload_pre_barrier(const handle<command_buffer> cmd, const handle
 		.layer_count = layer_count,
 	};
 	vulkan::commands(cmd).pipeline_barrier(dependency_info{
-		.image_barriers = std::span(&barrier, 1),
+		.image_barriers = std::span(
+			&barrier,
+			1
+		),
 	});
 }
 
@@ -306,6 +352,9 @@ auto gse::gpu::upload_post_barrier(const handle<command_buffer> cmd, const handl
 		.layer_count = layer_count,
 	};
 	vulkan::commands(cmd).pipeline_barrier(dependency_info{
-		.image_barriers = std::span(&barrier, 1),
+		.image_barriers = std::span(
+			&barrier,
+			1
+		),
 	});
 }

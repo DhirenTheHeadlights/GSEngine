@@ -94,7 +94,22 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 				);
 
 				const quat initial_orientation =
-					normalize(quat(vec3f(0.f, 1.f, 0.f), c.yaw) * quat(vec3f(1.f, 0.f, 0.f), c.pitch));
+					normalize(quat(
+								  vec3f(
+									  0.f,
+									  1.f,
+									  0.f
+								  ),
+								  c.yaw
+							  ) *
+							  quat(
+								  vec3f(
+									  1.f,
+									  0.f,
+									  0.f
+								  ),
+								  c.pitch
+							  ));
 
 				ctx.add_component<camera::follow_component>(
 					owner_id,
@@ -133,11 +148,39 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 				}
 
 				const quat orientation =
-					normalize(quat(vec3f(0.f, 1.f, 0.f), c.yaw) * quat(vec3f(1.f, 0.f, 0.f), c.pitch));
+					normalize(quat(
+								  vec3f(
+									  0.f,
+									  1.f,
+									  0.f
+								  ),
+								  c.yaw
+							  ) *
+							  quat(
+								  vec3f(
+									  1.f,
+									  0.f,
+									  0.f
+								  ),
+								  c.pitch
+							  ));
 
 				const auto v = cs.axis2_v(static_cast<std::uint16_t>(b.move_axis_id.number()));
 				const float lift =
-					(actions::held(b.up, cs, as) ? 1.f : 0.f) - (actions::held(b.down, cs, as) ? 1.f : 0.f);
+					(actions::held(
+						 b.up,
+						 cs,
+						 as
+					 )
+						 ? 1.f
+						 : 0.f) -
+					(actions::held(
+						 b.down,
+						 cs,
+						 as
+					 )
+						 ? 1.f
+						 : 0.f);
 
 				const vec3f direction = rotate_vector(orientation, vec3f(v.x(), lift, v.y()));
 				cam_follow->orientation = orientation;
@@ -168,7 +211,11 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 						continue;
 					}
 					const physics::box_shape inflated{
-						.size = shape->size + vec3<displacement>(inflation, inflation, inflation)
+						.size = shape->size + vec3<displacement>(
+												  inflation,
+												  inflation,
+												  inflation
+											  )
 					};
 					const bounding_box bb(*col_tc, inflated);
 					const auto result = narrow_phase_collision::query_obb(bb, current_pos);
@@ -204,7 +251,11 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 							continue;
 						}
 						const physics::box_shape inflated{
-							.size = shape->size + vec3<displacement>(inflation, inflation, inflation)
+							.size = shape->size + vec3<displacement>(
+													  inflation,
+													  inflation,
+													  inflation
+												  )
 						};
 						const bounding_box bb(*col_tc, inflated);
 						if (const auto hit = narrow_phase_collision::segment_obb_first_hit(bb, current_pos, seg_end)) {

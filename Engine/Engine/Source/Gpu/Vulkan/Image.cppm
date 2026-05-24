@@ -32,6 +32,7 @@ export namespace gse::vulkan {
 			gpu::handle<image_view> view,
 			gpu::image_format_value format,
 			vec3u extent,
+			gpu::image_view_create_info view_info,
 			basic_allocation<Device> allocation
 		);
 
@@ -53,11 +54,14 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto extent() const -> vec3u;
 
+		[[nodiscard]] auto view_create_info() const -> const gpu::image_view_create_info&;
+
 	private:
 		gpu::handle<basic_image<device>> m_image;
 		gpu::handle<image_view> m_view;
 		gpu::image_format_value m_format = 0;
 		vec3u m_extent;
+		gpu::image_view_create_info m_view_info;
 		basic_allocation<Device> m_allocation;
 	};
 
@@ -65,18 +69,8 @@ export namespace gse::vulkan {
 }
 
 template <typename Device>
-gse::vulkan::basic_image<Device>::basic_image(
-	const gpu::handle<basic_image<device>> image,
-	const gpu::handle<image_view> view,
-	const gpu::image_format_value format,
-	const vec3u extent,
-	basic_allocation<Device> allocation
-)
-	: m_image(image),
-	  m_view(view),
-	  m_format(format),
-	  m_extent(extent),
-	  m_allocation(std::move(allocation)) {
+gse::vulkan::basic_image<Device>::basic_image(const gpu::handle<basic_image<device>> image, const gpu::handle<image_view> view, const gpu::image_format_value format, const vec3u extent, gpu::image_view_create_info view_info, basic_allocation<Device> allocation)
+	: m_image(image), m_view(view), m_format(format), m_extent(extent), m_view_info(view_info), m_allocation(std::move(allocation)) {
 }
 
 template <typename Device>
@@ -115,7 +109,14 @@ auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc
 		.layer_count = layers,
 	};
 
-	return dev.create_image(create_info, gpu::memory_property_flag::device_local, view_info, nullptr, tag, loc);
+	return dev.create_image(
+		create_info,
+		gpu::memory_property_flag::device_local,
+		view_info,
+		nullptr,
+		tag,
+		loc
+	);
 }
 
 template <typename Device>
@@ -132,11 +133,7 @@ gse::vulkan::basic_image<Device>::~basic_image() {
 
 template <typename Device>
 gse::vulkan::basic_image<Device>::basic_image(basic_image&& other) noexcept
-	: m_image(other.m_image),
-	  m_view(other.m_view),
-	  m_format(other.m_format),
-	  m_extent(other.m_extent),
-	  m_allocation(std::move(other.m_allocation)) {
+	: m_image(other.m_image), m_view(other.m_view), m_format(other.m_format), m_extent(other.m_extent), m_view_info(other.m_view_info), m_allocation(std::move(other.m_allocation)) {
 	other.m_image = {};
 	other.m_view = {};
 }
@@ -157,6 +154,7 @@ auto gse::vulkan::basic_image<Device>::operator=(basic_image&& other) noexcept -
 		m_view = other.m_view;
 		m_format = other.m_format;
 		m_extent = other.m_extent;
+		m_view_info = other.m_view_info;
 		m_allocation = std::move(other.m_allocation);
 		other.m_image = {};
 		other.m_view = {};
@@ -182,4 +180,9 @@ auto gse::vulkan::basic_image<Device>::format() const -> gpu::image_format_value
 template <typename Device>
 auto gse::vulkan::basic_image<Device>::extent() const -> vec3u {
 	return m_extent;
+}
+
+template <typename Device>
+auto gse::vulkan::basic_image<Device>::view_create_info() const -> const gpu::image_view_create_info& {
+	return m_view_info;
 }

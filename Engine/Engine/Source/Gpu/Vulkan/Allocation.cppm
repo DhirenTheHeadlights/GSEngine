@@ -72,24 +72,8 @@ export namespace gse::vulkan {
 }
 
 template <typename Allocator>
-gse::vulkan::basic_allocation<Allocator>::basic_allocation(
-	const std::uint64_t memory,
-	const gpu::device_size size,
-	const gpu::device_size offset,
-	void* mapped,
-	sub_allocation* owner,
-	Allocator* alloc,
-	const Allocator* device,
-	allocation_debug_info debug_info
-)
-	: m_memory(memory),
-	  m_size(size),
-	  m_offset(offset),
-	  m_mapped(mapped),
-	  m_owner(owner),
-	  m_allocator(alloc),
-	  m_device(device),
-	  m_debug_info(std::move(debug_info)) {
+gse::vulkan::basic_allocation<Allocator>::basic_allocation(const std::uint64_t memory, const gpu::device_size size, const gpu::device_size offset, void* mapped, sub_allocation* owner, Allocator* alloc, const Allocator* device, allocation_debug_info debug_info)
+	: m_memory(memory), m_size(size), m_offset(offset), m_mapped(mapped), m_owner(owner), m_allocator(alloc), m_device(device), m_debug_info(std::move(debug_info)) {
 }
 
 template <typename Allocator>
@@ -101,14 +85,7 @@ gse::vulkan::basic_allocation<Allocator>::~basic_allocation() {
 
 template <typename Allocator>
 gse::vulkan::basic_allocation<Allocator>::basic_allocation(basic_allocation&& other) noexcept
-	: m_memory(other.m_memory),
-	  m_size(other.m_size),
-	  m_offset(other.m_offset),
-	  m_mapped(other.m_mapped),
-	  m_owner(other.m_owner),
-	  m_allocator(other.m_allocator),
-	  m_device(other.m_device),
-	  m_debug_info(std::move(other.m_debug_info)) {
+	: m_memory(other.m_memory), m_size(other.m_size), m_offset(other.m_offset), m_mapped(other.m_mapped), m_owner(other.m_owner), m_allocator(other.m_allocator), m_device(other.m_device), m_debug_info(std::move(other.m_debug_info)) {
 	other.m_owner = nullptr;
 	other.m_allocator = nullptr;
 	other.m_device = nullptr;

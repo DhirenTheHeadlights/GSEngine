@@ -157,7 +157,10 @@ auto gse::gpu::allocate_descriptors(shader_registry& registry, descriptor_heap& 
 	const auto* family = registry.find_family(layout_name);
 	assert(family, "Shader family layout not registered: {}", layout_name);
 	constexpr auto persistent_idx = static_cast<std::uint32_t>(descriptor_set_type::persistent);
-	assert(persistent_idx < family->layout_handles.size(), "Family has no persistent descriptor set to allocate");
+	assert(
+		persistent_idx < family->layout_handles.size(),
+		"Family has no persistent descriptor set to allocate"
+	);
 
 	const auto set_layout = family->layout_handles[persistent_idx];
 	const auto size = heap.layout_size(set_layout);
@@ -179,37 +182,20 @@ auto gse::gpu::build_push_writer_from_family(descriptor_heap& heap, const family
 	const auto set_layout = family.layout_handles[push_idx];
 	const auto total_size = heap.layout_size(set_layout);
 
-	struct ordered_binding {
-		std::uint32_t binding;
-		std::uint32_t count;
-		device_size offset;
-		descriptor_type type;
-	};
-	std::vector<ordered_binding> ordered;
-	ordered.reserve(set_it->bindings.size());
-	for (const auto& b : set_it->bindings) {
-		ordered.push_back({
-			.binding = b.desc.binding,
-			.count = b.desc.count == 0 ? 1u : b.desc.count,
-			.offset = heap.binding_offset(set_layout, b.desc.binding),
-			.type = b.desc.type,
-		});
-	}
-	std::ranges::sort(ordered, {}, &ordered_binding::offset);
-
 	std::uint32_t max_binding = 0;
-	for (const auto& o : ordered) {
-		max_binding = std::max(max_binding, o.binding);
+	for (const auto& b : set_it->bindings) {
+		max_binding = std::max(max_binding, b.desc.binding);
 	}
 
 	std::vector<descriptor_binding_info> bindings(max_binding + 1);
-	for (std::size_t i = 0; i < ordered.size(); ++i) {
-		const auto end_offset = (i + 1 < ordered.size()) ? ordered[i + 1].offset : total_size;
-		const auto descriptor_size = (end_offset - ordered[i].offset) / ordered[i].count;
-		bindings[ordered[i].binding] = {
-			.offset = ordered[i].offset,
-			.descriptor_size = descriptor_size,
-			.type = ordered[i].type,
+	for (const auto& b : set_it->bindings) {
+		bindings[b.desc.binding] = {
+			.offset = heap.binding_offset(
+				set_layout,
+				b.desc.binding
+			),
+			.descriptor_size = heap.props().descriptor_size_for(b.desc.type),
+			.type = b.desc.type,
 		};
 	}
 
@@ -217,21 +203,12 @@ auto gse::gpu::build_push_writer_from_family(descriptor_heap& heap, const family
 }
 
 gse::gpu::descriptor_writer::descriptor_writer(const handle<vulkan::device> dev, descriptor_region& region)
-	: m_family(region.family),
-	  m_device(dev),
-	  m_region(&region) {
+	: m_family(region.family), m_device(dev), m_region(&region) {
 	assert(m_family, "descriptor_region was not allocated against a registered family");
 }
 
-gse::gpu::descriptor_writer::descriptor_writer(
-	shader_registry& registry,
-	const handle<vulkan::device> dev,
-	descriptor_heap& heap,
-	const std::string_view layout_name
-)
-	: m_family(registry.find_family(layout_name)),
-	  m_device(dev),
-	  m_mode(mode::push) {
+gse::gpu::descriptor_writer::descriptor_writer(shader_registry& registry, const handle<vulkan::device> dev, descriptor_heap& heap, const std::string_view layout_name)
+	: m_family(registry.find_family(layout_name)), m_device(dev), m_mode(mode::push) {
 	assert(m_family, "Shader family layout not registered: {}", layout_name);
 	m_push_writer = build_push_writer_from_family(heap, *m_family);
 }
@@ -349,34 +326,16 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 	const auto set_layout = m_family->layout_handles[persistent_idx];
 	const auto& region = *m_region;
 
-	struct ordered_binding {
-		std::uint32_t binding;
-		device_size offset;
-		std::uint32_t count;
-	};
-	std::vector<ordered_binding> ordered;
+	std::unordered_map<std::uint32_t, device_size> binding_sizes;
 	for (const auto& fs : m_family->sets) {
 		if (fs.type != descriptor_set_type::persistent) {
 			continue;
 		}
-		ordered.reserve(fs.bindings.size());
+		binding_sizes.reserve(fs.bindings.size());
 		for (const auto& b : fs.bindings) {
-			ordered.push_back({
-				.binding = b.desc.binding,
-				.offset = heap.binding_offset(set_layout, b.desc.binding),
-				.count = b.desc.count == 0 ? 1u : b.desc.count,
-			});
+			binding_sizes[b.desc.binding] = heap.props().descriptor_size_for(b.desc.type);
 		}
 		break;
-	}
-	std::ranges::sort(ordered, {}, &ordered_binding::offset);
-	const auto layout_size = heap.layout_size(set_layout);
-
-	std::unordered_map<std::uint32_t, device_size> binding_sizes;
-	binding_sizes.reserve(ordered.size());
-	for (std::size_t i = 0; i < ordered.size(); ++i) {
-		const auto end_offset = (i + 1 < ordered.size()) ? ordered[i + 1].offset : layout_size;
-		binding_sizes[ordered[i].binding] = (end_offset - ordered[i].offset) / ordered[i].count;
 	}
 
 	auto write_binding = [&](const std::uint32_t binding, const bool is_uniform) {
@@ -450,9 +409,12 @@ auto gse::gpu::descriptor_writer::commit() -> void {
 	m_as_infos.clear();
 
 	for (const auto& touched : m_touched) {
-		const auto it = std::ranges::find_if(m_region->resources, [&](const resource_slot& existing) {
-			return existing.slot == touched.slot;
-		});
+		const auto it = std::ranges::find_if(
+			m_region->resources,
+			[&](const resource_slot& existing) {
+				return existing.slot == touched.slot;
+			}
+		);
 		if (it == m_region->resources.end()) {
 			m_region->resources.push_back(touched);
 		}

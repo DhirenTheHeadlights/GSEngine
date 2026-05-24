@@ -61,15 +61,8 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::instance::instance(
-	vk::raii::Context&& context,
-	vk::raii::Instance&& instance,
-	vk::raii::DebugUtilsMessengerEXT&& debug_messenger
-)
-	: m_context(std::move(context)),
-	  m_instance(std::move(instance)),
-	  m_surface(nullptr),
-	  m_debug_messenger(std::move(debug_messenger)) {
+gse::vulkan::instance::instance(vk::raii::Context&& context, vk::raii::Instance&& instance, vk::raii::DebugUtilsMessengerEXT&& debug_messenger)
+	: m_context(std::move(context)), m_instance(std::move(instance)), m_surface(nullptr), m_debug_messenger(std::move(debug_messenger)) {
 }
 
 auto gse::vulkan::instance::create_surface(const window::data& win) -> void {

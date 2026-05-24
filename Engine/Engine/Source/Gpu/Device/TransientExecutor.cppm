@@ -72,8 +72,7 @@ export namespace gse::gpu {
 }
 
 gse::gpu::transient_executor::transient_executor(transient_queue&& graphics, transient_queue&& compute)
-	: m_graphics(std::move(graphics)),
-	  m_compute(std::move(compute)) {
+	: m_graphics(std::move(graphics)), m_compute(std::move(compute)) {
 }
 
 gse::gpu::transient_executor::~transient_executor() = default;

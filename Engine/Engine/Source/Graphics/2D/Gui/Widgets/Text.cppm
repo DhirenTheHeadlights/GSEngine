@@ -47,7 +47,10 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
 
 	const float label_width = name.empty() ? 0.f : content_rect.width() * 0.4f;
 
-	const ui_rect label_rect = ui_rect::from_position_size(row_rect.top_left(), { label_width, widget_height });
+	const ui_rect label_rect = ui_rect::from_position_size(
+		row_rect.top_left(),
+		{ label_width, widget_height }
+	);
 
 	const ui_rect value_rect = ui_rect::from_position_size(
 		{ row_rect.left() + label_width, row_rect.top() },

@@ -129,7 +129,7 @@ namespace gse::renderer::atmosphere {
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<sky_raster_push_constants>,
 		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
-		gpu::color_target<gpu::color_format::hdr>,
+		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::depth<true, false, gpu::compare_op::equal>
 	>;
 
@@ -213,26 +213,56 @@ auto gse::renderer::atmosphere::recreate_ap_volume(const gpu::context::data& gpu
 }
 
 auto gse::renderer::atmosphere::write_transmittance_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
-	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.transmittance_descriptors)
-		.buffer<atmosphere_ubo>(d.atmosphere_ubo_buffer, 0, sizeof(atmosphere_data))
+	gpu::descriptor_writer(
+		gpu_s.device->handle(),
+		d.transmittance_descriptors
+	)
+		.buffer<atmosphere_ubo>(
+			d.atmosphere_ubo_buffer,
+			0,
+			sizeof(atmosphere_data)
+		)
 		.storage_image<transmittance_out>(d.transmittance_lut)
 		.commit();
 }
 
 auto gse::renderer::atmosphere::write_multiscatter_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
-	gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.multiscatter_descriptors)
-		.buffer<atmosphere_ubo>(d.atmosphere_ubo_buffer, 0, sizeof(atmosphere_data))
-		.combined_image_sampler<transmittance_in>(d.transmittance_lut, d.lut_sampler)
+	gpu::descriptor_writer(
+		gpu_s.device->handle(),
+		d.multiscatter_descriptors
+	)
+		.buffer<atmosphere_ubo>(
+			d.atmosphere_ubo_buffer,
+			0,
+			sizeof(atmosphere_data)
+		)
+		.combined_image_sampler<transmittance_in>(
+			d.transmittance_lut,
+			d.lut_sampler
+		)
 		.storage_image<multiscatter_out>(d.multiscatter_lut)
 		.commit();
 }
 
 auto gse::renderer::atmosphere::write_sky_view_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.sky_view_descriptors[i])
-			.buffer<atmosphere_ubo>(d.atmosphere_ubo_buffer, 0, sizeof(atmosphere_data))
-			.combined_image_sampler<transmittance_in>(d.transmittance_lut, d.lut_sampler)
-			.combined_image_sampler<multiscatter_in>(d.multiscatter_lut, d.lut_sampler)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.sky_view_descriptors[i]
+		)
+			.buffer<atmosphere_ubo>(
+				d.atmosphere_ubo_buffer,
+				0,
+				sizeof(atmosphere_data)
+			)
+			.combined_image_sampler<transmittance_in>(
+				d.transmittance_lut,
+				d.lut_sampler
+			)
+			.combined_image_sampler<multiscatter_in>(
+				d.multiscatter_lut,
+				d.lut_sampler
+			)
 			.storage_image<sky_view_out>(d.sky_view_lut)
 			.commit();
 	}
@@ -240,20 +270,46 @@ auto gse::renderer::atmosphere::write_sky_view_descriptors(const gpu::context::d
 
 auto gse::renderer::atmosphere::write_sky_raster_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.sky_raster_descriptors[i])
-			.buffer<atmosphere_ubo>(d.atmosphere_ubo_buffer, 0, sizeof(atmosphere_data))
-			.combined_image_sampler<transmittance_in>(d.transmittance_lut, d.lut_sampler)
-			.combined_image_sampler<sky_view_in>(d.sky_view_lut, d.sky_view_sampler)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.sky_raster_descriptors[i]
+		)
+			.buffer<atmosphere_ubo>(
+				d.atmosphere_ubo_buffer,
+				0,
+				sizeof(atmosphere_data)
+			)
+			.combined_image_sampler<transmittance_in>(
+				d.transmittance_lut,
+				d.lut_sampler
+			)
+			.combined_image_sampler<sky_view_in>(
+				d.sky_view_lut,
+				d.sky_view_sampler
+			)
 			.commit();
 	}
 }
 
 auto gse::renderer::atmosphere::write_ap_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(gpu::context::device_handle(*gpu_s.device), d.ap_descriptors[i])
-			.buffer<atmosphere_ubo>(d.atmosphere_ubo_buffer, 0, sizeof(atmosphere_data))
-			.combined_image_sampler<transmittance_in>(d.transmittance_lut, d.lut_sampler)
-			.combined_image_sampler<multiscatter_in>(d.multiscatter_lut, d.lut_sampler)
+		gpu::descriptor_writer(
+			gpu_s.device->handle(),
+			d.ap_descriptors[i]
+		)
+			.buffer<atmosphere_ubo>(
+				d.atmosphere_ubo_buffer,
+				0,
+				sizeof(atmosphere_data)
+			)
+			.combined_image_sampler<transmittance_in>(
+				d.transmittance_lut,
+				d.lut_sampler
+			)
+			.combined_image_sampler<multiscatter_in>(
+				d.multiscatter_lut,
+				d.lut_sampler
+			)
 			.storage_image<ap_volume_out>(d.ap_volume)
 			.commit();
 	}
@@ -310,7 +366,12 @@ auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context
 		sky_raster_entry::pod
 	);
 	d.ap_pipeline =
-		gpu::build_compute_program(*gpu_s.device, *gpu_s.shader_registry, *gpu_s.bindless_textures, ap_entry::pod);
+		gpu::build_compute_program(
+			*gpu_s.device,
+			*gpu_s.shader_registry,
+			*gpu_s.bindless_textures,
+			ap_entry::pod
+		);
 
 	d.transmittance_lut = gpu::image::create(
 		gpu_s.device->allocator(),
@@ -375,16 +436,36 @@ auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context
 	);
 
 	d.transmittance_descriptors =
-		gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), transmittance_entry::pod);
+		gpu::allocate_descriptors(
+			*gpu_s.shader_registry,
+			gpu_s.device->descriptor_heap(),
+			transmittance_entry::pod
+		);
 	d.multiscatter_descriptors =
-		gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), multiscatter_entry::pod);
+		gpu::allocate_descriptors(
+			*gpu_s.shader_registry,
+			gpu_s.device->descriptor_heap(),
+			multiscatter_entry::pod
+		);
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		d.sky_view_descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), sky_view_entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				sky_view_entry::pod
+			);
 		d.sky_raster_descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), sky_raster_entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				sky_raster_entry::pod
+			);
 		d.ap_descriptors[i] =
-			gpu::allocate_descriptors(*gpu_s.shader_registry, gpu_s.device->descriptor_heap(), ap_entry::pod);
+			gpu::allocate_descriptors(
+				*gpu_s.shader_registry,
+				gpu_s.device->descriptor_heap(),
+				ap_entry::pod
+			);
 	}
 
 	write_transmittance_descriptors(gpu_s, d);
