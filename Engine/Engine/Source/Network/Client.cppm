@@ -57,9 +57,8 @@ export namespace gse::network {
 
 		auto current_state() const -> state;
 
-		template <typename T>
 		auto send(
-			const T& msg
+			const auto& msg
 		) -> void;
 
 		auto drain(
@@ -271,8 +270,7 @@ auto gse::network::client::current_state() const -> state {
 	return m_state.load(std::memory_order_relaxed);
 }
 
-template <typename T>
-auto gse::network::client::send(const T& msg) -> void {
+auto gse::network::client::send(const auto& msg) -> void {
 	std::array<std::byte, max_packet_size> buffer;
 
 	const packet_header header{

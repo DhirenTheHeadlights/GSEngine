@@ -26,6 +26,18 @@ export namespace gse::renderer::capture {
 
 	struct screenshot_request {};
 	struct save_clip_request {};
+	struct toggle_recording_request {};
+
+	struct recording_state {
+		std::thread thread;
+		std::mutex mutex;
+		std::condition_variable cv;
+		std::queue<gpu::encoded_unit> queue;
+		bool running = false;
+		std::atomic<bool> active{ false };
+		std::filesystem::path path;
+		std::chrono::steady_clock::time_point last_toggle{};
+	};
 
 	struct system {
 		struct [[= gse::settings::category<"Graphics">{}]] data {
@@ -38,6 +50,7 @@ export namespace gse::renderer::capture {
 
 			actions::handle screenshot_action;
 			actions::handle save_clip_action;
+			actions::handle toggle_recording_action;
 
 			gpu::shader_program convert_pipeline;
 			per_frame_resource<gpu::descriptor_region> convert_descriptors;
@@ -56,6 +69,8 @@ export namespace gse::renderer::capture {
 			ring clip_ring;
 			time applied_ring_budget = seconds(30.f);
 			bool first_ring_push_logged = false;
+
+			std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
 		};
 
 		static auto run(
@@ -71,5 +86,10 @@ export namespace gse::renderer::capture {
 			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
+
+		static auto shutdown(
+			shutdown_context& phase,
+			data& d
+		) -> void;
 	};
 }

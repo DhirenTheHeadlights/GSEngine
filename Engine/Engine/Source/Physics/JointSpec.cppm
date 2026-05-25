@@ -5,8 +5,8 @@ import std;
 import :system;
 
 import gse.core;
+import gse.ecs;
 import gse.math;
-import gse.meta;
 
 export namespace gse::physics {
 	using joint_config = std::variant<fixed_joint, distance_joint, hinge_joint, slider_joint, spring_joint, muscle_joint, ball_joint, universal_joint>;

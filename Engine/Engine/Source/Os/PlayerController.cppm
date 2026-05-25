@@ -4,7 +4,6 @@ import std;
 
 import gse.core;
 import gse.ecs;
-import gse.meta;
 
 export namespace gse {
 	struct player_controller {

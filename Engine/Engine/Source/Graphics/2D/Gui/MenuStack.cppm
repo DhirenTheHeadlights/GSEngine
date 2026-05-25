@@ -126,6 +126,10 @@ export namespace gse::gui {
 	struct set_manual_cursor_request {
 		bool show = false;
 	};
+
+	struct popout_toggle {
+		std::string category;
+	};
 }
 
 auto gse::gui::screen::body_rect(const style& sty, const vec2f viewport_size) const -> ui_rect {

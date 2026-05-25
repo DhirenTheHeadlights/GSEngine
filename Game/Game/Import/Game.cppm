@@ -5,7 +5,6 @@ import gse;
 export import :client;
 export import :client_ui;
 export import :controlled_joint;
-export import :crosshair_screen;
 export import :crosshair_system;
 export import :dev_spawn_system;
 export import :entity_builders;

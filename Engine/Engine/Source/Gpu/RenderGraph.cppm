@@ -17,6 +17,7 @@ import :swap_chain;
 import :frame;
 import :bindless;
 import :bindless_heap;
+import :pipeline_builder;
 import :transient_pool;
 import :image;
 
@@ -106,6 +107,13 @@ export namespace gse::gpu {
 			std::uint32_t x,
 			std::uint32_t y = 1,
 			std::uint32_t z = 1
+		) const -> void;
+
+		template <typename Entry>
+		auto dispatch(
+			const entry_push_constants_t<Entry>& pc,
+			const binding_args<entry_bindings_pack_t<Entry>>& args,
+			vec3u groups
 		) const -> void;
 
 		auto dispatch_indirect(
@@ -261,18 +269,28 @@ export namespace gse::gpu {
 		std::span<const gpu::auto_bind_entry> m_auto_binds;
 		render_pass_data* m_pass = nullptr;
 		const gpu::transient_pool* m_transient_pool = nullptr;
+		gpu::descriptor_heap* m_descriptor_heap = nullptr;
+		vulkan::bindless_heaps* m_bindless_heaps = nullptr;
 		std::vector<touched_resource> m_touched;
 		std::thread::id m_origin_thread;
 		vulkan::pipeline_state_cache m_state_cache;
+		bool m_descriptor_storage_valid = false;
+		bool m_bindless_heaps_valid = false;
 
 		recording_context(
 			commands cmd,
 			std::span<const gpu::auto_bind_entry> auto_binds,
 			render_pass_data* pass,
-			const gpu::transient_pool* transient_pool
+			const gpu::transient_pool* transient_pool,
+			gpu::descriptor_heap* descriptor_heap,
+			vulkan::bindless_heaps* bindless_heaps
 		);
 
 		auto check_active() const -> void;
+
+		auto ensure_descriptor_storage() -> void;
+
+		auto ensure_descriptor_heaps() -> void;
 
 		auto note_touched(
 			resource_ref ref,
@@ -425,8 +443,8 @@ namespace gse::gpu {
 	inline thread_local recording_context* tl_active_recording_context = nullptr;
 }
 
-gse::gpu::recording_context::recording_context(const commands cmd, const std::span<const gpu::auto_bind_entry> auto_binds, render_pass_data* pass, const gpu::transient_pool* transient_pool)
-	: m_cmd(cmd), m_auto_binds(auto_binds), m_pass(pass), m_transient_pool(transient_pool) {
+gse::gpu::recording_context::recording_context(const commands cmd, const std::span<const gpu::auto_bind_entry> auto_binds, render_pass_data* pass, const gpu::transient_pool* transient_pool, descriptor_heap* descriptor_heap, vulkan::bindless_heaps* bindless_heaps)
+	: m_cmd(cmd), m_auto_binds(auto_binds), m_pass(pass), m_transient_pool(transient_pool), m_descriptor_heap(descriptor_heap), m_bindless_heaps(bindless_heaps) {
 	if (m_cmd.valid()) {
 		assert(
 			tl_active_recording_context == nullptr,
@@ -450,7 +468,7 @@ namespace gse::gpu {
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_cmd(other.m_cmd), m_auto_binds(other.m_auto_binds), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_touched(std::move(other.m_touched)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache) {
+	: m_cmd(other.m_cmd), m_auto_binds(other.m_auto_binds), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_descriptor_heap(other.m_descriptor_heap), m_bindless_heaps(other.m_bindless_heaps), m_touched(std::move(other.m_touched)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_descriptor_storage_valid(other.m_descriptor_storage_valid), m_bindless_heaps_valid(other.m_bindless_heaps_valid) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
@@ -459,6 +477,10 @@ gse::gpu::recording_context::recording_context(recording_context&& other) noexce
 	other.m_auto_binds = {};
 	other.m_pass = nullptr;
 	other.m_transient_pool = nullptr;
+	other.m_descriptor_heap = nullptr;
+	other.m_bindless_heaps = nullptr;
+	other.m_descriptor_storage_valid = false;
+	other.m_bindless_heaps_valid = false;
 }
 
 auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
@@ -481,9 +503,13 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_auto_binds = other.m_auto_binds;
 		m_pass = other.m_pass;
 		m_transient_pool = other.m_transient_pool;
+		m_descriptor_heap = other.m_descriptor_heap;
+		m_bindless_heaps = other.m_bindless_heaps;
 		m_touched = std::move(other.m_touched);
 		m_origin_thread = other.m_origin_thread;
 		m_state_cache = other.m_state_cache;
+		m_descriptor_storage_valid = other.m_descriptor_storage_valid;
+		m_bindless_heaps_valid = other.m_bindless_heaps_valid;
 		if (tl_active_recording_context == &other) {
 			tl_active_recording_context = this;
 		}
@@ -492,6 +518,10 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		other.m_auto_binds = {};
 		other.m_pass = nullptr;
 		other.m_transient_pool = nullptr;
+		other.m_descriptor_heap = nullptr;
+		other.m_bindless_heaps = nullptr;
+		other.m_descriptor_storage_valid = false;
+		other.m_bindless_heaps_valid = false;
 	}
 	return *this;
 }
@@ -566,6 +596,26 @@ auto gse::gpu::recording_context::check_active() const -> void {
 		"worker. Recording onto a secondary from a thread that does not own its command pool is undefined; scope the "
 		"rec to end before any non-pass await."
 	);
+}
+
+auto gse::gpu::recording_context::ensure_descriptor_storage() -> void {
+	if (m_descriptor_storage_valid) {
+		return;
+	}
+	assert(m_descriptor_heap != nullptr, "recording_context has no descriptor buffer storage");
+	m_descriptor_heap->bind_descriptor_storage(m_cmd.native());
+	m_descriptor_storage_valid = true;
+	m_bindless_heaps_valid = false;
+}
+
+auto gse::gpu::recording_context::ensure_descriptor_heaps() -> void {
+	if (m_bindless_heaps_valid) {
+		return;
+	}
+	assert(m_bindless_heaps != nullptr, "shader_program uses descriptor heaps but no bindless heaps are available");
+	m_bindless_heaps->bind(m_cmd);
+	m_bindless_heaps_valid = true;
+	m_descriptor_storage_valid = false;
 }
 
 auto gse::gpu::recording_context::sample_image(const image& img, const gpu::pipeline_stage_flags stages) -> void {
@@ -938,6 +988,13 @@ auto gse::gpu::recording_context::dispatch(const std::uint32_t x, const std::uin
 	m_cmd.dispatch(x, y, z);
 }
 
+template <typename Entry>
+auto gse::gpu::recording_context::dispatch(const entry_push_constants_t<Entry>& pc, const binding_args<entry_bindings_pack_t<Entry>>& args, const vec3u groups) const -> void {
+	push_data(pc, 0);
+	push_data(args, sizeof(entry_push_constants_t<Entry>));
+	dispatch(groups.x(), groups.y(), groups.z());
+}
+
 auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std::size_t offset) -> void {
 	check_active();
 	note_touched(
@@ -1073,11 +1130,17 @@ auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 		apply_dynamic_state(p.state());
 	}
 
-	for (const auto set_idx : p.auto_bound_sets()) {
-		for (const auto& [auto_set_idx, region] : m_auto_binds) {
-			if (auto_set_idx == set_idx && region.valid()) {
-				region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_idx, region);
-				break;
+	if (p.uses_descriptor_heap()) {
+		ensure_descriptor_heaps();
+	}
+	else {
+		for (const auto set_idx : p.auto_bound_sets()) {
+			for (const auto& [auto_set_idx, region] : m_auto_binds) {
+				if (auto_set_idx == set_idx && region.valid()) {
+					ensure_descriptor_storage();
+					region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_idx, region);
+					break;
+				}
 			}
 		}
 	}
@@ -1085,6 +1148,7 @@ auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 
 auto gse::gpu::recording_context::bind_descriptors(const gpu::shader_program& p, const gpu::descriptor_region& region, const std::uint32_t set_index) -> void {
 	check_active();
+	assert(!p.uses_descriptor_heap(), "Cannot bind descriptor-buffer descriptors for a descriptor-heap shader_program");
 	assert(region.valid(), "Cannot bind null descriptor region");
 	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
 		if (set != set_index) {
@@ -1106,11 +1170,13 @@ auto gse::gpu::recording_context::bind_descriptors(const gpu::shader_program& p,
 		);
 		note_touched(it->ref, stages, barrier_access(type, access));
 	}
+	ensure_descriptor_storage();
 	region.heap->bind(m_cmd.native(), p.bind_point(), p.layout(), set_index, region);
 }
 
 auto gse::gpu::recording_context::commit(const gpu::descriptor_writer& writer, const gpu::shader_program& p, const std::uint32_t set_index) -> void {
 	check_active();
+	assert(!p.uses_descriptor_heap(), "Cannot commit descriptor-buffer descriptors for a descriptor-heap shader_program");
 	const auto written = writer.touched_resources();
 	for (const auto& [set, slot, access, type, stages] : p.active_bindings()) {
 		if (set != set_index) {
@@ -1132,6 +1198,7 @@ auto gse::gpu::recording_context::commit(const gpu::descriptor_writer& writer, c
 		);
 		note_touched(it->ref, stages, barrier_access(type, access));
 	}
+	ensure_descriptor_storage();
 	writer.native_writer().commit(m_cmd.native(), p.bind_point(), p.layout(), set_index);
 }
 
@@ -1572,11 +1639,14 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 				const gpu::commands sec_cmd(secondary);
 				sec_cmd.begin_secondary(inherit_info);
-				if (m_bindless_heaps) {
-					m_bindless_heaps->bind(sec_cmd);
-				}
-				m_device->descriptor_heap().bind_descriptor_storage(secondary);
-				recording_context rec{ sec_cmd, m_auto_binds, std::addressof(pass), std::addressof(m_transient_pool) };
+				recording_context rec{
+					sec_cmd,
+					m_auto_binds,
+					std::addressof(pass),
+					std::addressof(m_transient_pool),
+					std::addressof(m_device->descriptor_heap()),
+					m_bindless_heaps
+				};
 				if (pass.primary_pipeline) {
 					rec.bind(*pass.primary_pipeline);
 				}

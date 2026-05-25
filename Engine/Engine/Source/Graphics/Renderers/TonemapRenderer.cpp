@@ -68,7 +68,7 @@ auto gse::renderer::tonemap::rewrite_descriptors(const gpu::context::data& gpu_s
 	if (!hdr.handle()) {
 		return;
 	}
-	const auto& bloom_source = bloom_state.active_mip_count > 0 ? bloom_state.mips_down[0] : hdr;
+	const auto& bloom_source = bloom_state.active_mip_count > 0 ? bloom_state.mips_up[0].image() : hdr;
 	auto& velocity = gpu_s.render_graph->framebuffer_image<targets::velocity>();
 	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
 		gpu::descriptor_writer(
@@ -157,11 +157,11 @@ auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view
 	auto rec = co_await gpu::pass<system>(ctx)
 		.pipeline(d.pipeline)
 		.color(gpu::clear_color(gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f }))
-		.after<forward::system, physics_debug::system, sdf_grid::system, world_text::system, bloom::downsample_pass, depth_prepass::system, taa::system>();
+		.after<forward::system, physics_debug::system, sdf_grid::system, world_text::system, bloom::downsample_pass, bloom::upsample_pass, depth_prepass::system, taa::system>();
 
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::fragment_shader);
 	if (bloom_active) {
-		rec.sample_image(bloom_state.mips_down[0], gpu::pipeline_stage_flag::fragment_shader);
+		rec.sample_image(bloom_state.mips_up[0].image(), gpu::pipeline_stage_flag::fragment_shader);
 	}
 	if (d.show_velocity) {
 		rec.sample_image(

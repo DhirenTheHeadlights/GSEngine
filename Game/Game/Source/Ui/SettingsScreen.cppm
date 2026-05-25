@@ -248,13 +248,7 @@ auto gs::settings_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void
 	{
 		auto scope = lo::within(ctx, content);
 		lo::skip(ctx, sty.padding * 0.5f);
-		ui.scroll_region(
-			{ .id = "settings.content" },
-			[this](gse::gui::builder& b) {
-				gse::settings::panel(b, m_panel_state, m_channels, *m_save_reg, m_selected_category);
-				b.ctx.layout_cursor.y() -= b.ctx.style.padding * 2.f;
-			}
-		);
+		gse::settings::panel(ui, m_panel_state, m_channels, *m_save_reg, m_selected_category);
 	}
 
 	draw_footer(ctx, footer);

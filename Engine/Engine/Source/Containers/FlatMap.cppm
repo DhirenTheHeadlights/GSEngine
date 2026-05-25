@@ -20,10 +20,9 @@ export namespace gse {
 			std::initializer_list<value_type> init
 		);
 
-		template <typename Self>
 		[[nodiscard]]
 		auto at(
-			this Self& self,
+			this auto& self,
 			const Key& key
 		) -> decltype(auto);
 
@@ -31,10 +30,9 @@ export namespace gse {
 			const Key& key
 		) -> Value&;
 
-		template <typename Self>
 		[[nodiscard]]
 		auto find(
-			this Self& self,
+			this auto& self,
 			const Key& key
 		) -> decltype(auto);
 
@@ -71,14 +69,12 @@ export namespace gse {
 			const Key& key
 		) const -> bool;
 
-		template <typename Self>
 		[[nodiscard]] auto begin(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		[[nodiscard]] auto end(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
 		auto reserve(
@@ -111,8 +107,7 @@ gse::flat_map<Key, Value, Compare>::flat_map(std::initializer_list<value_type> i
 }
 
 template <typename Key, typename Value, typename Compare>
-template <typename Self>
-auto gse::flat_map<Key, Value, Compare>::at(this Self& self, const Key& key) -> decltype(auto) {
+auto gse::flat_map<Key, Value, Compare>::at(this auto& self, const Key& key) -> decltype(auto) {
 	auto it = self.lower(key);
 	assert(it != self.m_data.end() && it->first == key, "flat_map::at: key not found");
 	return (it->second);
@@ -129,8 +124,7 @@ auto gse::flat_map<Key, Value, Compare>::operator[](const Key& key) -> Value& {
 }
 
 template <typename Key, typename Value, typename Compare>
-template <typename Self>
-auto gse::flat_map<Key, Value, Compare>::find(this Self& self, const Key& key) -> decltype(auto) {
+auto gse::flat_map<Key, Value, Compare>::find(this auto& self, const Key& key) -> decltype(auto) {
 	auto it = self.lower(key);
 	if (it != self.m_data.end() && it->first == key) {
 		return it;
@@ -203,14 +197,12 @@ auto gse::flat_map<Key, Value, Compare>::contains(const Key& key) const -> bool 
 }
 
 template <typename Key, typename Value, typename Compare>
-template <typename Self>
-auto gse::flat_map<Key, Value, Compare>::begin(this Self& self) -> decltype(auto) {
+auto gse::flat_map<Key, Value, Compare>::begin(this auto& self) -> decltype(auto) {
 	return self.m_data.begin();
 }
 
 template <typename Key, typename Value, typename Compare>
-template <typename Self>
-auto gse::flat_map<Key, Value, Compare>::end(this Self& self) -> decltype(auto) {
+auto gse::flat_map<Key, Value, Compare>::end(this auto& self) -> decltype(auto) {
 	return self.m_data.end();
 }
 

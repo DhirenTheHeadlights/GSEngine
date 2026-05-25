@@ -19,7 +19,8 @@ export namespace gs {
 			data& d,
 			const gse::gui::system::data& gui_d,
 			const gse::window::data& window_d,
-			const crosshair_system::data& crosshair_d
+			const crosshair_system::data& crosshair_d,
+			const gse::renderer::capture::system::data& capture_d
 		) -> gse::async::task<>;
 	};
 }
@@ -30,6 +31,13 @@ namespace gs {
 		const gse::gui::system::data& gui_d,
 		const gse::window::data& window_d,
 		const crosshair_system::data& crosshair_d
+	) -> void;
+
+	auto push_recording_indicator(
+		gse::run_context& ctx,
+		const gse::gui::system::data& gui_d,
+		const gse::window::data& window_d,
+		const gse::renderer::capture::system::data& capture_d
 	) -> void;
 }
 
@@ -106,11 +114,41 @@ auto gs::push_crosshair(gse::run_context& ctx, const gse::gui::system::data& gui
 	}
 }
 
-auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::gui::system::data& gui_d, const gse::window::data& window_d, const crosshair_system::data& crosshair_d) -> gse::async::task<> {
+auto gs::push_recording_indicator(gse::run_context& ctx, const gse::gui::system::data& gui_d, const gse::window::data& window_d, const gse::renderer::capture::system::data& capture_d) -> void {
+	if (!capture_d.recording || !capture_d.recording->active.load()) {
+		return;
+	}
+	if (!gui_d.blank_texture.valid()) {
+		return;
+	}
+
+	const auto viewport = gse::vec2f(gse::window::viewport(window_d));
+	const float dot_size = 14.f;
+	const float margin = 24.f;
+	const gse::vec2f top_left{ viewport.x() - margin - dot_size, margin };
+
+	const auto t = gse::system_clock::now();
+	const auto pulse = 0.55f + 0.45f * gse::sin(t * 4.f);
+
+	ctx.channels.push<gse::renderer::sprite_command>({
+		.rect = gse::gui::ui_rect::from_position_size(
+			top_left,
+			{ dot_size, dot_size }
+		),
+		.color = { 0.9f, 0.1f, 0.1f, pulse },
+		.texture = gui_d.blank_texture,
+		.layer = gse::render_layer::overlay,
+		.corner_radius = dot_size * 0.5f,
+	});
+}
+
+auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::gui::system::data& gui_d, const gse::window::data& window_d, const crosshair_system::data& crosshair_d, const gse::renderer::capture::system::data& capture_d) -> gse::async::task<> {
 	while (true) {
 		if (gui_d.menu_stack.empty()) {
 			push_crosshair(ctx, gui_d, window_d, crosshair_d);
 		}
+
+		push_recording_indicator(ctx, gui_d, window_d, capture_d);
 
 		if (gui_d.show_dev_overlays) {
 			ctx.channels.push<gse::gui::menu_content>({

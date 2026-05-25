@@ -2,6 +2,7 @@ export module gse.gpu:vulkan_video_encoder;
 
 import std;
 import vulkan;
+import vulkan_video;
 
 import :aliases;
 import :handles;
@@ -321,10 +322,36 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 		});
 	}
 	else {
+		const auto bit_width_minus_1 = [](const std::uint32_t value) -> std::uint8_t {
+			return static_cast<std::uint8_t>(std::bit_width(value) - 1);
+		};
+
+		static vk::video::AV1ColorConfig color_config{
+			.flags = {
+				.color_range = 1,
+			},
+			.BitDepth = 8,
+			.subsampling_x = 1,
+			.subsampling_y = 1,
+			.color_primaries = vk::video::AV1ColorPrimaries::eBt709,
+			.transfer_characteristics = vk::video::AV1TransferCharacteristics::eBt709,
+			.matrix_coefficients = vk::video::AV1MatrixCoefficients::eBt709,
+			.chroma_sample_position = vk::video::AV1ChromaSamplePosition::eUnknown,
+		};
+
 		static vk::video::AV1SequenceHeader seq_header{
+			.flags = {
+				.enable_order_hint = 1,
+				.enable_cdef = 1,
+				.enable_restoration = 1,
+			},
 			.seq_profile = vk::video::AV1Profile::eMain,
+			.frame_width_bits_minus_1 = bit_width_minus_1(extent.x() - 1),
+			.frame_height_bits_minus_1 = bit_width_minus_1(extent.y() - 1),
 			.max_frame_width_minus_1 = static_cast<std::uint16_t>(extent.x() - 1),
-			.max_frame_height_minus_1 = static_cast<std::uint16_t>(extent.y() - 1)
+			.max_frame_height_minus_1 = static_cast<std::uint16_t>(extent.y() - 1),
+			.order_hint_bits_minus_1 = 7,
+			.pColorConfig = &color_config,
 		};
 
 		auto info = vk::VideoEncodeAV1SessionParametersCreateInfoKHR{
@@ -335,6 +362,34 @@ auto gse::gpu::video_encoder::create(device& dev, const vec2u extent, const enco
 			.pNext = &info,
 			.videoSession = *enc.m_session
 		});
+	}
+
+	{
+		const vk::VideoEncodeH265SessionParametersGetInfoKHR h265_get_info{
+			.writeStdVPS = vk::True,
+			.writeStdSPS = vk::True,
+			.writeStdPPS = vk::True
+		};
+		const vk::VideoEncodeSessionParametersGetInfoKHR get_info{
+			.pNext = probe_caps.codec == video_codec::h265 ? static_cast<const void*>(&h265_get_info) : nullptr,
+			.videoSessionParameters = *enc.m_params
+		};
+
+		std::size_t data_size = 0;
+		(void)(*vk_dev).getEncodedVideoSessionParametersKHR(&get_info, nullptr, &data_size, nullptr);
+		enc.m_stream_header.resize(data_size);
+		(void)(*vk_dev).getEncodedVideoSessionParametersKHR(
+			&get_info,
+			nullptr,
+			&data_size,
+			enc.m_stream_header.data()
+		);
+
+		log::println(
+			log::category::vulkan,
+			"video_encoder: extracted {} bytes of session-parameter bitstream",
+			enc.m_stream_header.size()
+		);
 	}
 
 	for (auto& entry : enc.m_dpb) {
@@ -548,6 +603,14 @@ auto gse::gpu::video_encoder::encode_frame(const std::uint32_t frame_slot, const
 	});
 
 	const bool is_keyframe = (m_frame_number % m_gop_size) == 0;
+	if (is_keyframe) {
+		log::println(
+			log::category::vulkan,
+			"encode_frame: scheduling keyframe at m_frame_number={} slot={}",
+			m_frame_number,
+			frame_slot
+		);
+	}
 	const auto dpb_index = static_cast<std::uint32_t>(m_frame_number % 2);
 	const auto ref_index = dpb_index ^ 1u;
 	auto& target_dpb = m_dpb[dpb_index];

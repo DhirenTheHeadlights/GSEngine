@@ -46,20 +46,14 @@ export namespace gse::renderer::bloom {
 
 			gpu::shader_program downsample_pipeline;
 			gpu::shader_program upsample_pipeline;
-			gpu::sampler bloom_sampler;
 
-			[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_down;
-			[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_up;
+			[[= gse::shared]] std::array<vulkan::bindless_image, max_mip_count> mips_down;
+			[[= gse::shared]] std::array<vulkan::bindless_image, max_mip_count> mips_up;
 			std::array<vec2u, max_mip_count> mip_extents{};
 			[[= gse::shared]] std::uint32_t active_mip_count = 0;
 
-			std::array<per_frame_resource<gpu::descriptor_region>, max_mip_count> downsample_descriptors;
-			std::array<per_frame_resource<gpu::descriptor_region>, max_mip_count> upsample_descriptors;
-
-			vulkan::bindless_slot sampler_slot;
-			vulkan::bindless_slot hdr_slot;
-			std::array<vulkan::bindless_slot, max_mip_count> mip_down_storage_slots;
-			std::array<vulkan::bindless_slot, max_mip_count> mip_down_sampled_slots;
+			vulkan::bindless_sampler sampler;
+			vulkan::bindless_image_view hdr_view;
 		};
 
 		static auto run(

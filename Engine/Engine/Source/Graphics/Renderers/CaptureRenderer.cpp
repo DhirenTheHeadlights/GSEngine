@@ -58,6 +58,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 
 	d.screenshot_action = register_action("Screenshot", key::f9);
 	d.save_clip_action = register_action("Save Clip", key::f10);
+	d.toggle_recording_action = register_action("Toggle Recording", key::f8);
 
 	if (!gpu_s.device->video_encode_enabled()) {
 		log::println(log::category::render, "Video encode not available, capture limited to screenshots");
@@ -156,6 +157,10 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 		if (actions::system::pressed(action_state, sys, d.save_clip_action)) {
 			ctx.channels.push<save_clip_request>({});
 		}
+		if (actions::system::pressed(action_state, sys, d.toggle_recording_action)) {
+			log::println(log::category::render, "toggle_recording_action edge detected in run()");
+			ctx.channels.push<toggle_recording_request>({});
+		}
 
 		co_await ctx.next_tick();
 	}
@@ -218,6 +223,20 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		if (auto unit = d.encoder.read_bitstream(frame_index)) {
 			const bool was_keyframe = unit->keyframe;
 			const auto byte_count = unit->bytes.size();
+
+			if (d.recording->active.load()) {
+				gpu::encoded_unit copy{
+					.bytes = unit->bytes,
+					.pts = unit->pts,
+					.keyframe = unit->keyframe
+				};
+				{
+					std::lock_guard lock(d.recording->mutex);
+					d.recording->queue.push(std::move(copy));
+				}
+				d.recording->cv.notify_one();
+			}
+
 			d.clip_ring.push(std::move(*unit));
 			if (!d.first_ring_push_logged) {
 				d.first_ring_push_logged = true;
@@ -232,12 +251,114 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		d.encoder.encode_frame(frame_index, d.y_planes[frame_index], d.uv_planes[frame_index]);
 	}
 
+	const auto toggle_requests = ctx.read_channel<toggle_recording_request>();
+	if (!toggle_requests.empty()) {
+		const auto now = std::chrono::steady_clock::now();
+		const auto since_last = now - d.recording->last_toggle;
+		log::println(
+			log::category::render,
+			"Toggle Recording: received {} request(s), {}ms since last toggle",
+			toggle_requests.size(),
+			std::chrono::duration_cast<std::chrono::milliseconds>(since_last).count()
+		);
+		if (since_last < std::chrono::milliseconds(300)) {
+			log::println(log::category::render, "Toggle Recording: debounced (within 300ms of last toggle)");
+		}
+		else if (!d.encode_active || !d.encoder.valid()) {
+			log::println(log::category::render, "Toggle Recording pressed but video capture is unavailable");
+			d.recording->last_toggle = now;
+		}
+		else if (d.recording->active.load()) {
+			d.recording->last_toggle = now;
+			d.recording->active.store(false);
+			{
+				std::lock_guard lock(d.recording->mutex);
+				d.recording->running = false;
+			}
+			d.recording->cv.notify_all();
+			if (d.recording->thread.joinable()) {
+				d.recording->thread.join();
+			}
+			log::println(
+				log::category::render,
+				"Recording stopped: {}",
+				d.recording->path.string()
+			);
+		}
+		else if (d.encoder.stream_header().empty()) {
+			log::println(
+				log::level::warning,
+				log::category::render,
+				"Toggle Recording: encoder stream_header not yet available, ignoring"
+			);
+		}
+		else {
+			d.recording->last_toggle = now;
+			const auto path = config::resource_path / "Recordings" / std::format(
+																		 "recording_{}.mp4",
+																		 system_clock::timestamp_filename()
+																	 );
+			std::filesystem::create_directories(path.parent_path());
+
+			auto live = mp4::live_muxer::open(path, { d.encoder.codec(), d.encoder.extent() }, d.encoder.stream_header());
+			if (!live) {
+				log::println(
+					log::level::warning,
+					log::category::render,
+					"Failed to open recording file at {}",
+					path.string()
+				);
+			}
+			else {
+				d.recording->path = path;
+				{
+					std::lock_guard lock(d.recording->mutex);
+					std::queue<gpu::encoded_unit> empty;
+					std::swap(d.recording->queue, empty);
+					d.recording->running = true;
+				}
+				d.recording->thread = std::thread(
+					[muxer = std::move(*live), state = d.recording.get()] mutable {
+						while (true) {
+							std::unique_lock lock(state->mutex);
+							state->cv.wait(lock, [&] { return !state->queue.empty() || !state->running; });
+							while (!state->queue.empty()) {
+								auto unit = std::move(state->queue.front());
+								state->queue.pop();
+								lock.unlock();
+								muxer.append(std::move(unit));
+								lock.lock();
+							}
+							if (!state->running) {
+								break;
+							}
+						}
+						muxer.close();
+					}
+				);
+				d.recording->active.store(true);
+				log::println(
+					log::category::render,
+					"Recording started: {}",
+					path.string()
+				);
+			}
+		}
+	}
+
 	if (!ctx.read_channel<save_clip_request>().empty()) {
 		if (!d.encode_active || !d.encoder.valid()) {
 			log::println(log::category::render, "Save Clip pressed but video capture is unavailable");
 		}
 		else if (d.clip_save_in_progress->load()) {
 			log::println(log::category::render, "Clip save already in progress, ignoring request");
+		}
+		else if (d.encoder.stream_header().empty()) {
+			log::println(
+				log::level::warning,
+				log::category::render,
+				"Save Clip: encoder stream_header not yet available, skipping"
+			);
 		}
 		else {
 			auto snapshot = d.clip_ring.snapshot_from_earliest_keyframe();
@@ -254,13 +375,19 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 													  );
 				std::filesystem::create_directories(path.parent_path());
 
+				std::vector<std::byte> stream_header_copy(
+					d.encoder.stream_header().begin(),
+					d.encoder.stream_header().end()
+				);
+
 				task::post(
 					[snap = std::move(snapshot),
 					 codec = d.encoder.codec(),
 					 extent = d.encoder.extent(),
+					 stream_header = std::move(stream_header_copy),
 					 path,
 					 flag = d.clip_save_in_progress.get()] mutable {
-						const auto ok = mp4::mux(snap, { codec, extent }, path);
+						const auto ok = mp4::mux(snap, { codec, extent }, stream_header, path);
 						if (ok) {
 							log::println(log::category::render, "Clip saved: {}", path.string());
 						}
@@ -341,4 +468,27 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		rec.push(d.convert_pipeline, convert_pc);
 		rec.dispatch((ext.x() + 15) / 16, (ext.y() + 15) / 16, 1);
 	}
+}
+
+auto gse::renderer::capture::system::shutdown(shutdown_context&, data& d) -> void {
+	if (!d.recording) {
+		return;
+	}
+	if (!d.recording->active.load()) {
+		return;
+	}
+	d.recording->active.store(false);
+	{
+		std::lock_guard lock(d.recording->mutex);
+		d.recording->running = false;
+	}
+	d.recording->cv.notify_all();
+	if (d.recording->thread.joinable()) {
+		d.recording->thread.join();
+	}
+	log::println(
+		log::category::render,
+		"Recording stopped on shutdown: {}",
+		d.recording->path.string()
+	);
 }

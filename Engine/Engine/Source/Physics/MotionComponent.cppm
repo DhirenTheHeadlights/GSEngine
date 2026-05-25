@@ -9,7 +9,6 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
-import gse.meta;
 
 export namespace gse::physics {
 	struct dynamic_body {

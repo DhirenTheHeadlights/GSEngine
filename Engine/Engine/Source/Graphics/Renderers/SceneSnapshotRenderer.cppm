@@ -7,7 +7,6 @@ import gse.core;
 import gse.concurrency;
 import gse.ecs;
 import gse.math;
-import gse.meta;
 
 export namespace gse::renderer::scene_snapshot {
 	struct system {

@@ -44,6 +44,24 @@ export namespace gse::settings {
 		void* channel_writer
 	);
 
+	using draw_page_thunk = void (
+			*
+	)(
+		void* gui_builder,
+		void* panel_state,
+		void* settings_ptr,
+		void* channel_writer
+	);
+
+	using draw_hot_fields_thunk = void (
+			*
+	)(
+		void* gui_builder,
+		void* panel_state,
+		void* settings_ptr,
+		void* channel_writer
+	);
+
 	struct register_settings_type {
 		std::string category;
 		id type_id;
@@ -52,11 +70,17 @@ export namespace gse::settings {
 		write_settings_thunk write = nullptr;
 		read_settings_thunk read = nullptr;
 		draw_settings_thunk draw = nullptr;
+		draw_page_thunk draw_page = nullptr;
+		draw_hot_fields_thunk draw_hot_fields = nullptr;
+		bool has_hot_fields = false;
 	};
 
 	template <typename S>
 	struct gui_draw_provider {
 		static constexpr draw_settings_thunk value = nullptr;
+		static constexpr draw_page_thunk page_value = nullptr;
+		static constexpr draw_hot_fields_thunk hot_value = nullptr;
+		static constexpr bool any_hot = false;
 	};
 
 	template <typename T>
@@ -228,5 +252,8 @@ auto gse::settings::build_settings_record(typename S::data& obj) -> register_set
 		.write = &write_settings_for<data_t>,
 		.read = &read_settings_for<data_t>,
 		.draw = gui_draw_provider<S>::value,
+		.draw_page = gui_draw_provider<S>::page_value,
+		.draw_hot_fields = gui_draw_provider<S>::hot_value,
+		.has_hot_fields = gui_draw_provider<S>::any_hot,
 	};
 }

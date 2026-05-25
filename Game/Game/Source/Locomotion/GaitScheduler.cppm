@@ -40,7 +40,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Swing progress before contact may end the swing.">{}
 			]]
-			float swing_contact_progress = 0.85f;
+			float swing_contact_progress = 0.90f;
 
 			[[
 				= gse::settings::describe<"Maximum horizontal foot-target error for accepting swing contact.">{}
@@ -53,6 +53,21 @@ export namespace gs::locomotion {
 			gse::time swing_timeout = gse::seconds(0.80f);
 
 			[[
+				= gse::settings::describe<"Swing progress before unstable posture may force planting.">{}
+			]]
+			float swing_drop_progress = 0.45f;
+
+			[[
+				= gse::settings::describe<"Forward capture limit for forcing a swing to plant.">{}
+			]]
+			gse::displacement swing_drop_capture_forward = gse::meters(0.38f);
+
+			[[
+				= gse::settings::describe<"Lateral capture limit for forcing a swing to plant.">{}
+			]]
+			gse::displacement swing_drop_capture_right = gse::meters(0.32f);
+
+			[[
 				= gse::settings::describe<"Capture-point magnitude that triggers a step from idle.">{}
 			]]
 			gse::displacement capture_step_threshold = gse::meters(0.06f);
@@ -61,6 +76,16 @@ export namespace gs::locomotion {
 				= gse::settings::describe<"Pelvis Y below which the character is declared fallen.">{}
 			]]
 			gse::position fall_pelvis_y_threshold = gse::meters(0.45f);
+
+			[[
+				= gse::settings::describe<"Minimum pelvis Y for releasing a swing from weight shift.">{}
+			]]
+			gse::position swing_pelvis_y_threshold = gse::meters(0.94f);
+
+			[[
+				= gse::settings::describe<"Minimum vertical pelvis velocity for releasing a swing from weight shift.">{}
+			]]
+			gse::velocity swing_vertical_velocity_limit = gse::meters_per_second(-0.20f);
 
 			[[
 				= gse::settings::describe<"Forward capture limit for allowing a swing from weight shift.">{}
@@ -113,6 +138,15 @@ namespace gs::locomotion {
 	) -> bool;
 	auto capture_demands_swing(
 		const state& s,
+		const gait_scheduler::data& d
+	) -> bool;
+	auto posture_safe_for_swing(
+		const state& s,
+		const gait_scheduler::data& d
+	) -> bool;
+	auto swing_drop_requested(
+		const state& s,
+		const gait& g,
 		const gait_scheduler::data& d
 	) -> bool;
 	auto foot_position(
@@ -180,8 +214,23 @@ auto gs::locomotion::capture_safe_for_swing(const state& s, const gait_scheduler
 }
 
 auto gs::locomotion::capture_demands_swing(const state& s, const gait_scheduler::data& d) -> bool {
-	return s.capture_forward > d.swing_capture_forward_limit &&
-		gse::abs(s.capture_right) <= d.swing_capture_right_limit;
+	const bool forward_recovery = s.capture_forward > d.swing_capture_forward_limit;
+	const bool backward_recovery = s.capture_forward < -d.swing_capture_backward_limit;
+	const bool lateral_recovery = gse::abs(s.capture_right) > d.swing_capture_right_limit;
+	return forward_recovery || backward_recovery || lateral_recovery;
+}
+
+auto gs::locomotion::posture_safe_for_swing(const state& s, const gait_scheduler::data& d) -> bool {
+	return s.pelvis_position.y() >= d.swing_pelvis_y_threshold &&
+		s.pelvis_velocity.y() >= d.swing_vertical_velocity_limit;
+}
+
+auto gs::locomotion::swing_drop_requested(const state& s, const gait& g, const gait_scheduler::data& d) -> bool {
+	const bool late_enough = phase_progress(g) >= d.swing_drop_progress;
+	const bool posture_failed = !posture_safe_for_swing(s, d);
+	const bool forward_runaway = s.capture_forward > d.swing_drop_capture_forward;
+	const bool lateral_runaway = gse::abs(s.capture_right) > d.swing_drop_capture_right;
+	return late_enough && (posture_failed || forward_runaway || lateral_runaway);
 }
 
 auto gs::locomotion::foot_position(const state& s, const leg which) -> const gse::vec3<gse::position>& {
@@ -244,9 +293,10 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 						}
 					}
 					gse::log::println(
-						"gait: owner={} ENTER FALLEN pelvis_y={:.2f} speed={:.2f} capture=(fwd={:+.3f},right={:+.3f})",
+						"gait: owner={} ENTER FALLEN pelvis_y={:.2f} pelvis_vy={:+.2f} speed={:.2f} capture=(fwd={:+.3f},right={:+.3f})",
 						owner.number(),
 						s->pelvis_position.y(),
+						s->pelvis_velocity.y(),
 						s->horizontal_speed,
 						s->capture_forward,
 						s->capture_right
@@ -272,10 +322,10 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 						break;
 
 					case phase::weight_shift:
-						if (g.phase_elapsed >= g.phase_duration && foot_grounded(*s, other(g.swing_leg))) {
+						if (g.phase_elapsed >= g.phase_duration && s->double_support) {
 							const bool capture_safe = capture_safe_for_swing(*s, d);
 							const bool recovery_step = capture_demands_swing(*s, d);
-							if (capture_safe || recovery_step) {
+							if (posture_safe_for_swing(*s, d) && (capture_safe || recovery_step)) {
 								begin_phase(g, phase::swing, cfg.swing_duration, recovery_step ? "capture" : "shift_done", owner);
 							}
 						}
@@ -286,9 +336,10 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 						const bool target_reached = !p || foot_target_reached(*s, *p, g.swing_leg, d);
 						const bool contact_allowed = phase_progress(g) >= d.swing_contact_progress;
 						const bool timed_out = g.phase_elapsed >= d.swing_timeout;
-						const bool plant_ready = timed_out || (swing_grounded && contact_allowed);
+						const bool drop_requested = swing_drop_requested(*s, g, d);
+						const bool plant_ready = timed_out || drop_requested || (swing_grounded && contact_allowed && target_reached);
 						if (plant_ready) {
-							const auto reason = target_reached ? "contact" : (timed_out ? "timed" : "grounded");
+							const auto reason = drop_requested ? "drop" : (target_reached ? "contact" : (timed_out ? "timed" : "grounded"));
 							begin_phase(
 								g,
 								phase::plant,
@@ -309,12 +360,15 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 								break;
 							}
 							g.swing_leg = other(g.swing_leg);
-							if (wants_step || support_transferred) {
+							if (support_transferred) {
+								begin_phase(g, phase::swing, cfg.swing_duration, "support", owner);
+							}
+							else if (wants_step) {
 								begin_phase(
 									g,
 									phase::weight_shift,
 									cfg.weight_shift_duration,
-									input_wants_step ? "input" : (capture_wants_step ? "capture" : "support"),
+									input_wants_step ? "input" : "capture",
 									owner
 								);
 							}
@@ -328,7 +382,8 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 				if (log_now) {
 					gse::log::println(
 						"gait: owner={} phase={} swing={} t={:.2f:s}/{:.2f:s} fallen={} "
-						"input=({:+.2f},{:+.2f},{:.2f}) capture=(fwd={:+.3f},right={:+.3f})",
+						"input=({:+.2f},{:+.2f},{:.2f}) capture=(fwd={:+.3f},right={:+.3f}) "
+						"pelvis=(y={:+.2f},vy={:+.2f})",
 						owner.number(),
 						g.current,
 						g.swing_leg,
@@ -339,7 +394,9 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 						it->strafe,
 						it->intensity,
 						s->capture_forward,
-						s->capture_right
+						s->capture_right,
+						s->pelvis_position.y(),
+						s->pelvis_velocity.y()
 					);
 				}
 			}

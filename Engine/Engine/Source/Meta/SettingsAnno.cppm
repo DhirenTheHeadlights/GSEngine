@@ -20,6 +20,8 @@ export namespace gse::settings {
 
 	struct restart_required {};
 	struct skip {};
+	struct hot_reloadable_tag {};
+	constexpr hot_reloadable_tag hot_reloadable{};
 
 	template <auto Min, auto Max>
 	struct range {
@@ -73,6 +75,11 @@ export namespace gse::meta {
 		std::meta::info m
 	) -> std::string_view;
 
+	consteval auto find_class_template_annotation(
+		std::meta::info m,
+		std::meta::info template_reflection
+	) -> std::meta::info;
+
 	consteval auto find_range(
 		std::meta::info m
 	) -> std::meta::info;
@@ -112,35 +119,25 @@ consteval auto gse::meta::member_name(const std::meta::info m) -> std::string_vi
 	return ident;
 }
 
-consteval auto gse::meta::find_range(const std::meta::info m) -> std::meta::info {
-	constexpr auto target = ^^settings::range;
-	for (auto ann : std::meta::annotations_of(m)) {
+consteval auto gse::meta::find_class_template_annotation(const std::meta::info m, const std::meta::info template_reflection) -> std::meta::info {
+	const auto deal_m = std::meta::dealias(m);
+	for (auto ann : std::meta::annotations_of(deal_m)) {
 		const auto t = std::meta::dealias(std::meta::type_of(ann));
-		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == target) {
+		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == template_reflection) {
 			return t;
 		}
 	}
 	return std::meta::info{};
+}
+
+consteval auto gse::meta::find_range(const std::meta::info m) -> std::meta::info {
+	return find_class_template_annotation(m, ^^settings::range);
 }
 
 consteval auto gse::meta::find_describe(const std::meta::info m) -> std::meta::info {
-	constexpr auto target = ^^settings::describe;
-	for (auto ann : std::meta::annotations_of(m)) {
-		const auto t = std::meta::dealias(std::meta::type_of(ann));
-		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == target) {
-			return t;
-		}
-	}
-	return std::meta::info{};
+	return find_class_template_annotation(m, ^^settings::describe);
 }
 
 consteval auto gse::meta::find_category(const std::meta::info m) -> std::meta::info {
-	constexpr auto target = ^^settings::category;
-	for (auto ann : std::meta::annotations_of(m)) {
-		const auto t = std::meta::dealias(std::meta::type_of(ann));
-		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == target) {
-			return t;
-		}
-	}
-	return std::meta::info{};
+	return find_class_template_annotation(m, ^^settings::category);
 }

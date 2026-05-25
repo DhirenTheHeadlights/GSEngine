@@ -224,13 +224,20 @@ auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f tar
 }
 
 gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const ui_rect& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept
-	: m_ctx(&ctx), m_state(&state), m_visible_rect(visible_rect), m_saved_layout_y(saved_layout_y), m_content_start_y(visible_rect.top() + state.offset), m_config(config), m_active(true) {
+	: m_ctx(&ctx), m_state(&state), m_visible_rect(visible_rect), m_saved_menu_rect(ctx.current_menu ? ctx.current_menu->rect : ui_rect{}), m_saved_layout_y(saved_layout_y), m_content_start_y(visible_rect.top() + state.offset), m_config(config), m_active(true) {
 	ctx.layout_cursor.y() = m_content_start_y;
 	ctx.clip_stack.push_back(visible_rect);
+	if (ctx.current_menu) {
+		const ui_rect shrunk = ui_rect({
+			.min = ctx.current_menu->rect.min(),
+			.max = { ctx.current_menu->rect.max().x() - config.scrollbar_width, ctx.current_menu->rect.max().y() }
+		});
+		ctx.current_menu->rect = shrunk;
+	}
 }
 
 gse::gui::scroll_handle::scroll_handle(scroll_handle&& other) noexcept
-	: m_ctx(other.m_ctx), m_state(other.m_state), m_visible_rect(other.m_visible_rect), m_saved_layout_y(other.m_saved_layout_y), m_content_start_y(other.m_content_start_y), m_config(other.m_config), m_active(other.m_active) {
+	: m_ctx(other.m_ctx), m_state(other.m_state), m_visible_rect(other.m_visible_rect), m_saved_menu_rect(other.m_saved_menu_rect), m_saved_layout_y(other.m_saved_layout_y), m_content_start_y(other.m_content_start_y), m_config(other.m_config), m_active(other.m_active) {
 	other.m_active = false;
 }
 
@@ -241,11 +248,15 @@ auto gse::gui::scroll_handle::operator=(scroll_handle&& other) noexcept -> scrol
 	if (m_active) {
 		run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_config);
 		m_ctx->clip_stack.pop_back();
+		if (m_ctx->current_menu) {
+			m_ctx->current_menu->rect = m_saved_menu_rect;
+		}
 		m_ctx->layout_cursor.y() = m_saved_layout_y - m_visible_rect.height() - m_ctx->style.padding;
 	}
 	m_ctx = other.m_ctx;
 	m_state = other.m_state;
 	m_visible_rect = other.m_visible_rect;
+	m_saved_menu_rect = other.m_saved_menu_rect;
 	m_saved_layout_y = other.m_saved_layout_y;
 	m_content_start_y = other.m_content_start_y;
 	m_config = other.m_config;
@@ -260,6 +271,9 @@ gse::gui::scroll_handle::~scroll_handle() noexcept {
 	}
 	run_scroll_end(*m_ctx, *m_state, m_visible_rect, m_content_start_y, m_config);
 	m_ctx->clip_stack.pop_back();
+	if (m_ctx->current_menu) {
+		m_ctx->current_menu->rect = m_saved_menu_rect;
+	}
 	m_ctx->layout_cursor.y() = m_saved_layout_y - m_visible_rect.height() - m_ctx->style.padding;
 }
 

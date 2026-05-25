@@ -30,15 +30,13 @@ export namespace gse {
 			handle h
 		) -> bool;
 
-		template <typename Self>
 		[[nodiscard]] auto get(
-			this Self& self,
+			this auto& self,
 			handle h
 		) -> decltype(auto);
 
-		template <typename Self>
 		auto operator[](
-			this Self& self,
+			this auto& self,
 			handle h
 		) -> decltype(auto);
 
@@ -50,14 +48,12 @@ export namespace gse {
 
 		[[nodiscard]] auto empty() const -> bool;
 
-		template <typename Self>
 		auto begin(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		auto end(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
 		auto clear() -> void;
@@ -124,15 +120,13 @@ auto gse::slot_map<T>::remove(const handle h) -> bool {
 }
 
 template <typename T>
-template <typename Self>
-auto gse::slot_map<T>::get(this Self& self, const handle h) -> decltype(auto) {
+auto gse::slot_map<T>::get(this auto& self, const handle h) -> decltype(auto) {
 	auto* result = self.is_valid(h) ? &self.m_data[self.m_indices[h.index].data_index] : nullptr;
 	return result;
 }
 
 template <typename T>
-template <typename Self>
-auto gse::slot_map<T>::operator[](this Self& self, const handle h) -> decltype(auto) {
+auto gse::slot_map<T>::operator[](this auto& self, const handle h) -> decltype(auto) {
 	gse::assert(self.is_valid(h), "slot_map: invalid or stale handle");
 	return self.m_data[self.m_indices[h.index].data_index];
 }
@@ -160,14 +154,12 @@ auto gse::slot_map<T>::empty() const -> bool {
 }
 
 template <typename T>
-template <typename Self>
-auto gse::slot_map<T>::begin(this Self& self) -> decltype(auto) {
+auto gse::slot_map<T>::begin(this auto& self) -> decltype(auto) {
 	return self.m_data.begin();
 }
 
 template <typename T>
-template <typename Self>
-auto gse::slot_map<T>::end(this Self& self) -> decltype(auto) {
+auto gse::slot_map<T>::end(this auto& self) -> decltype(auto) {
 	return self.m_data.end();
 }
 

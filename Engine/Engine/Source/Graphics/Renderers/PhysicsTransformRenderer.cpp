@@ -70,17 +70,9 @@ auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::
 			*gpu_s.device,
 			*gpu_s.shader_registry,
 			*gpu_s.bindless_textures,
-			entry::pod
+			entry::pod,
+			gpu_s.bindless_heaps.get()
 		);
-
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.descriptors[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				entry::pod
-			);
-	}
 
 	d.initialized = true;
 
@@ -112,9 +104,10 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		d.cached_mapping_count = data.physics_mapping_count;
 
 		if (d.mapping_buffer_size < required) {
-			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-				d.mapping_buffers[i] = gpu::buffer::create(
+			for (std::size_t i = 0; i < per_frame_resource<vulkan::bindless_buffer>::frames_in_flight; ++i) {
+				d.mapping_buffers[i] = vulkan::bindless_buffer::create(
 					gpu_s.device->allocator(),
+					*gpu_s.bindless_heaps,
 					{
 						.size = required,
 						.usage = gpu::buffer_flag::storage,
@@ -125,7 +118,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 			d.mapping_buffer_size = required;
 		}
 		else {
-			d.mapping_buffers[frame_index].host_write(data.physics_mappings.data(), required);
+			d.mapping_buffers[frame_index].buffer().host_write(data.physics_mappings.data(), required);
 		}
 	}
 
@@ -133,34 +126,20 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		co_return;
 	}
 
-	gpu::descriptor_writer(
-		gpu_s.device->handle(),
-		d.descriptors[frame_index]
-	)
-		.buffer<body_data>(
-			snapshot,
-			0,
-			info.body_count * info.body_stride
-		)
-		.buffer<mapping_data>(
-			d.mapping_buffers[frame_index],
-			0,
-			d.cached_mapping_count * sizeof(geometry_collector::physics_mapping_entry)
-		)
-		.buffer<instance_data_buffer>(
-			gc_r.instance_buffer[frame_index],
-			0,
-			gc_r.instance_buffer[frame_index].size()
-		)
-		.commit();
-
-	const gpu::typed_push_constants<push_constants> pc{
-		.data = {
-			.mapping_count = d.cached_mapping_count,
-			.body_count = info.body_count,
-		},
-		.stages = gpu::stage_flag::compute,
-	};
+	d.body_views[frame_index].rebind_storage(
+		gpu_s.device->allocator(),
+		*gpu_s.bindless_heaps,
+		snapshot,
+		0,
+		info.body_count * info.body_stride
+	);
+	d.instance_views[frame_index].rebind_storage(
+		gpu_s.device->allocator(),
+		*gpu_s.bindless_heaps,
+		gc_r.instance_buffer[frame_index],
+		0,
+		gc_r.instance_buffer[frame_index].size()
+	);
 
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
@@ -168,7 +147,16 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		.pipeline(d.pipeline)
 		.after<geometry_collector::system, vbd::vbd_state_copy_stage>();
 
-	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
-	rec.push(d.pipeline, pc);
-	rec.dispatch(workgroups, 1, 1);
+	rec.dispatch<entry>(
+		{
+			.mapping_count = d.cached_mapping_count,
+			.body_count = info.body_count,
+		},
+		{
+			.body_data = d.body_views[frame_index].slot(),
+			.mapping_data = d.mapping_buffers[frame_index].slot(),
+			.instance_data_buffer = d.instance_views[frame_index].slot(),
+		},
+		vec3u{ workgroups, 1u, 1u }
+	);
 }

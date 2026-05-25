@@ -200,6 +200,62 @@ namespace gse::renderer::capture::mp4 {
 		std::vector<std::byte>& moov,
 		std::uint64_t payload_offset
 	) -> void;
+
+	auto emit_ftyp_fragmented(
+		std::vector<std::byte>& out,
+		gpu::video_codec codec
+	) -> void;
+
+	auto emit_mvhd_unknown(
+		std::vector<std::byte>& out,
+		std::size_t& duration_offset_out
+	) -> void;
+
+	auto emit_tkhd_unknown(
+		std::vector<std::byte>& out,
+		vec2u extent,
+		std::size_t& duration_offset_out
+	) -> void;
+
+	auto emit_mdhd_unknown(
+		std::vector<std::byte>& out,
+		std::size_t& duration_offset_out
+	) -> void;
+
+	auto emit_stbl_empty(
+		std::vector<std::byte>& out,
+		vec2u extent,
+		gpu::video_codec codec,
+		std::span<const std::byte> codec_config
+	) -> void;
+
+	auto emit_mvex_trex(
+		std::vector<std::byte>& out
+	) -> void;
+
+	auto emit_fragment_moof(
+		std::vector<std::byte>& out,
+		std::uint32_t sequence,
+		std::uint64_t base_decode_time,
+		std::span<const gpu::encoded_unit> samples,
+		std::span<const std::uint32_t> durations,
+		std::uint32_t per_sample_prefix_bytes,
+		std::size_t& trun_data_offset_field
+	) -> void;
+
+	auto extract_codec_config(
+		gpu::video_codec codec,
+		std::span<const std::byte> keyframe_bytes
+	) -> std::optional<std::vector<std::byte>>;
+
+	auto sample_flags_for(
+		bool keyframe
+	) -> std::uint32_t;
+
+	auto compute_sample_durations(
+		std::span<const gpu::encoded_unit> samples,
+		std::uint32_t trailing_default
+	) -> std::vector<std::uint32_t>;
 }
 
 gse::renderer::capture::mp4::box_scope::box_scope(std::vector<std::byte>& out, const std::array<char, 4> type)
@@ -321,14 +377,86 @@ auto gse::renderer::capture::mp4::find_sequence_header_obu(std::span<const std::
 }
 
 auto gse::renderer::capture::mp4::build_av1c(std::span<const std::byte> sequence_header_obu) -> std::vector<std::byte> {
-	std::vector<std::byte> payload;
-	payload.reserve(4 + sequence_header_obu.size());
-	push_u8(payload, 0x81);
-	push_u8(payload, 0x00);
-	push_u8(payload, 0x0C);
-	push_u8(payload, 0x00);
-	push_bytes(payload, sequence_header_obu);
-	return payload;
+	struct av1_seq_info {
+		std::uint8_t seq_profile = 0;
+		std::uint8_t seq_level_idx_0 = 0;
+		std::uint8_t seq_tier_0 = 0;
+		std::uint8_t high_bitdepth = 0;
+		std::uint8_t twelve_bit = 0;
+		std::uint8_t monochrome = 0;
+		std::uint8_t chroma_subsampling_x = 1;
+		std::uint8_t chroma_subsampling_y = 1;
+		std::uint8_t chroma_sample_position = 0;
+	};
+
+	av1_seq_info info;
+
+	if (sequence_header_obu.size() >= 2) {
+		const auto obu_header = static_cast<std::uint8_t>(sequence_header_obu[0]);
+		const auto has_size = (obu_header >> 1) & 0x01;
+		std::size_t payload_offset = 1;
+		if (has_size) {
+			const auto leb = read_leb128(sequence_header_obu, 1);
+			if (leb) {
+				payload_offset = 1 + leb->bytes_consumed;
+			}
+		}
+
+		const auto payload_bytes = sequence_header_obu.subspan(payload_offset);
+
+		std::size_t bit_pos = 0;
+		const auto read_bits = [&](const int n) -> std::uint32_t {
+			std::uint32_t v = 0;
+			for (int i = 0; i < n; ++i) {
+				const auto byte_idx = bit_pos / 8;
+				const auto bit_idx = 7 - (bit_pos % 8);
+				if (byte_idx >= payload_bytes.size()) {
+					return v;
+				}
+				const auto bit = (static_cast<std::uint8_t>(payload_bytes[byte_idx]) >> bit_idx) & 1u;
+				v = (v << 1) | bit;
+				++bit_pos;
+			}
+			return v;
+		};
+
+		info.seq_profile = static_cast<std::uint8_t>(read_bits(3));
+		(void)read_bits(1);
+		const auto reduced_still = read_bits(1);
+
+		if (reduced_still) {
+			info.seq_level_idx_0 = static_cast<std::uint8_t>(read_bits(5));
+		}
+		else {
+			const auto timing_present = read_bits(1);
+			if (timing_present == 0) {
+				(void)read_bits(1);
+				(void)read_bits(5);
+				(void)read_bits(12);
+				info.seq_level_idx_0 = static_cast<std::uint8_t>(read_bits(5));
+				if (info.seq_level_idx_0 > 7) {
+					info.seq_tier_0 = static_cast<std::uint8_t>(read_bits(1));
+				}
+			}
+		}
+	}
+
+	std::vector<std::byte> result;
+	result.reserve(4 + sequence_header_obu.size());
+	push_u8(result, 0x81);
+	push_u8(result, static_cast<std::uint8_t>((info.seq_profile << 5) | (info.seq_level_idx_0 & 0x1Fu)));
+	push_u8(result, static_cast<std::uint8_t>(
+		(info.seq_tier_0 << 7) |
+		(info.high_bitdepth << 6) |
+		(info.twelve_bit << 5) |
+		(info.monochrome << 4) |
+		(info.chroma_subsampling_x << 3) |
+		(info.chroma_subsampling_y << 2) |
+		(info.chroma_sample_position & 0x03u)
+	));
+	push_u8(result, 0x00);
+	push_bytes(result, sequence_header_obu);
+	return result;
 }
 
 auto gse::renderer::capture::mp4::split_h265_nalus(std::span<const std::byte> bitstream) -> std::vector<h265_nalu> {
@@ -700,7 +828,7 @@ auto gse::renderer::capture::mp4::rewrite_co64_offset(std::vector<std::byte>& mo
 	}
 }
 
-auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> units, const track_info& track, const std::filesystem::path& out) -> bool {
+auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> units, const track_info& track, std::span<const std::byte> stream_header, const std::filesystem::path& out) -> bool {
 	if (units.empty()) {
 		log::println(log::level::warning, log::category::render, "mp4::mux called with empty units");
 		return false;
@@ -715,31 +843,16 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 		return false;
 	}
 
-	std::vector<std::byte> codec_config;
-	if (track.codec == gpu::video_codec::av1) {
-		const auto seq_header = find_sequence_header_obu(units.front().bytes);
-		if (!seq_header) {
-			log::println(
-				log::level::warning,
-				log::category::render,
-				"mp4::mux could not locate AV1 sequence header OBU"
-			);
-			return false;
-		}
-		codec_config = build_av1c(*seq_header);
+	const auto codec_config_opt = extract_codec_config(track.codec, stream_header);
+	if (!codec_config_opt) {
+		log::println(
+			log::level::warning,
+			log::category::render,
+			"mp4::mux stream_header missing codec parameters"
+		);
+		return false;
 	}
-	else {
-		const auto sets = collect_h265_parameter_sets(units.front().bytes);
-		if (sets.sps.empty() || sets.pps.empty()) {
-			log::println(
-				log::level::warning,
-				log::category::render,
-				"mp4::mux could not locate H.265 SPS/PPS NALUs"
-			);
-			return false;
-		}
-		codec_config = build_hvcc(sets);
-	}
+	const auto& codec_config = *codec_config_opt;
 
 	std::vector<std::uint32_t> sample_durations;
 	sample_durations.reserve(units.size());
@@ -849,4 +962,470 @@ auto gse::renderer::capture::mp4::mux(const std::span<const gpu::encoded_unit> u
 	}
 
 	return static_cast<bool>(file);
+}
+
+auto gse::renderer::capture::mp4::sample_flags_for(const bool keyframe) -> std::uint32_t {
+	if (keyframe) {
+		return 0x02000000u;
+	}
+	return 0x01010000u;
+}
+
+auto gse::renderer::capture::mp4::compute_sample_durations(
+	std::span<const gpu::encoded_unit> samples,
+	const std::uint32_t trailing_default
+) -> std::vector<std::uint32_t> {
+	std::vector<std::uint32_t> durations;
+	durations.reserve(samples.size());
+	for (std::size_t i = 0; i + 1 < samples.size(); ++i) {
+		const auto delta = samples[i + 1].pts - samples[i].pts;
+		const double us = static_cast<double>(delta.as<microseconds>());
+		const auto ticks = us < 1.0 ? 1u : static_cast<std::uint32_t>(us);
+		durations.push_back(ticks);
+	}
+	const auto trailing = durations.empty() ? trailing_default : durations.back();
+	durations.push_back(trailing);
+	return durations;
+}
+
+auto gse::renderer::capture::mp4::extract_codec_config(
+	const gpu::video_codec codec,
+	std::span<const std::byte> keyframe_bytes
+) -> std::optional<std::vector<std::byte>> {
+	if (codec == gpu::video_codec::av1) {
+		const auto seq = find_sequence_header_obu(keyframe_bytes);
+		if (!seq) {
+			log::println(
+				log::level::warning,
+				log::category::render,
+				"live_muxer could not locate AV1 sequence header OBU in first keyframe"
+			);
+			return std::nullopt;
+		}
+		return build_av1c(*seq);
+	}
+	const auto sets = collect_h265_parameter_sets(keyframe_bytes);
+	if (sets.sps.empty() || sets.pps.empty()) {
+		log::println(
+			log::level::warning,
+			log::category::render,
+			"live_muxer could not locate H.265 SPS/PPS in first keyframe"
+		);
+		return std::nullopt;
+	}
+	return build_hvcc(sets);
+}
+
+auto gse::renderer::capture::mp4::emit_ftyp_fragmented(std::vector<std::byte>& out, const gpu::video_codec codec) -> void {
+	box_scope ftyp(out, fourcc('f', 't', 'y', 'p'));
+	push_fourcc(out, fourcc('i', 's', 'o', '6'));
+	push_u32_be(out, 0x200);
+	push_fourcc(out, fourcc('i', 's', 'o', 'm'));
+	push_fourcc(out, fourcc('i', 's', 'o', '6'));
+	push_fourcc(out, fourcc('m', 's', 'd', 'h'));
+	push_fourcc(out, fourcc('m', 's', 'i', 'x'));
+	if (codec == gpu::video_codec::av1) {
+		push_fourcc(out, fourcc('a', 'v', '0', '1'));
+	}
+	else {
+		push_fourcc(out, fourcc('h', 'v', 'c', '1'));
+	}
+}
+
+auto gse::renderer::capture::mp4::emit_mvhd_unknown(std::vector<std::byte>& out, std::size_t& duration_offset_out) -> void {
+	box_scope mvhd(out, fourcc('m', 'v', 'h', 'd'));
+	push_u32_be(out, 0x01000000);
+	push_u64_be(out, 0);
+	push_u64_be(out, 0);
+	push_u32_be(out, timescale);
+	duration_offset_out = out.size();
+	push_u64_be(out, 0);
+	push_u32_be(out, 0x00010000);
+	push_u16_be(out, 0x0100);
+	push_u16_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0x00010000);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0x00010000);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0x40000000);
+	for (int i = 0; i < 6; ++i) {
+		push_u32_be(out, 0);
+	}
+	push_u32_be(out, 2);
+}
+
+auto gse::renderer::capture::mp4::emit_tkhd_unknown(std::vector<std::byte>& out, const vec2u extent, std::size_t& duration_offset_out) -> void {
+	box_scope tkhd(out, fourcc('t', 'k', 'h', 'd'));
+	push_u32_be(out, 0x01000007);
+	push_u64_be(out, 0);
+	push_u64_be(out, 0);
+	push_u32_be(out, 1);
+	push_u32_be(out, 0);
+	duration_offset_out = out.size();
+	push_u64_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u16_be(out, 0);
+	push_u16_be(out, 0);
+	push_u16_be(out, 0);
+	push_u16_be(out, 0);
+	push_u32_be(out, 0x00010000);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0x00010000);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0x40000000);
+	push_u32_be(out, extent.x() << 16);
+	push_u32_be(out, extent.y() << 16);
+}
+
+auto gse::renderer::capture::mp4::emit_mdhd_unknown(std::vector<std::byte>& out, std::size_t& duration_offset_out) -> void {
+	box_scope mdhd(out, fourcc('m', 'd', 'h', 'd'));
+	push_u32_be(out, 0x01000000);
+	push_u64_be(out, 0);
+	push_u64_be(out, 0);
+	push_u32_be(out, timescale);
+	duration_offset_out = out.size();
+	push_u64_be(out, 0);
+	push_u16_be(out, 0x55C4);
+	push_u16_be(out, 0);
+}
+
+auto gse::renderer::capture::mp4::emit_stbl_empty(
+	std::vector<std::byte>& out,
+	const vec2u extent,
+	const gpu::video_codec codec,
+	std::span<const std::byte> codec_config
+) -> void {
+	box_scope stbl(out, fourcc('s', 't', 'b', 'l'));
+	emit_stsd(out, extent, codec, codec_config);
+	{
+		box_scope stts(out, fourcc('s', 't', 't', 's'));
+		push_u32_be(out, 0);
+		push_u32_be(out, 0);
+	}
+	{
+		box_scope stsc(out, fourcc('s', 't', 's', 'c'));
+		push_u32_be(out, 0);
+		push_u32_be(out, 0);
+	}
+	{
+		box_scope stsz(out, fourcc('s', 't', 's', 'z'));
+		push_u32_be(out, 0);
+		push_u32_be(out, 0);
+		push_u32_be(out, 0);
+	}
+	{
+		box_scope stco(out, fourcc('s', 't', 'c', 'o'));
+		push_u32_be(out, 0);
+		push_u32_be(out, 0);
+	}
+}
+
+auto gse::renderer::capture::mp4::emit_mvex_trex(std::vector<std::byte>& out) -> void {
+	box_scope mvex(out, fourcc('m', 'v', 'e', 'x'));
+	box_scope trex(out, fourcc('t', 'r', 'e', 'x'));
+	push_u32_be(out, 0);
+	push_u32_be(out, 1);
+	push_u32_be(out, 1);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+	push_u32_be(out, 0);
+}
+
+auto gse::renderer::capture::mp4::emit_fragment_moof(
+	std::vector<std::byte>& out,
+	const std::uint32_t sequence,
+	const std::uint64_t base_decode_time,
+	std::span<const gpu::encoded_unit> samples,
+	std::span<const std::uint32_t> durations,
+	const std::uint32_t per_sample_prefix_bytes,
+	std::size_t& trun_data_offset_field
+) -> void {
+	box_scope moof(out, fourcc('m', 'o', 'o', 'f'));
+	{
+		box_scope mfhd(out, fourcc('m', 'f', 'h', 'd'));
+		push_u32_be(out, 0);
+		push_u32_be(out, sequence);
+	}
+	{
+		box_scope traf(out, fourcc('t', 'r', 'a', 'f'));
+		{
+			box_scope tfhd(out, fourcc('t', 'f', 'h', 'd'));
+			push_u32_be(out, 0x00020000);
+			push_u32_be(out, 1);
+		}
+		{
+			box_scope tfdt(out, fourcc('t', 'f', 'd', 't'));
+			push_u32_be(out, 0x01000000);
+			push_u64_be(out, base_decode_time);
+		}
+		{
+			box_scope trun(out, fourcc('t', 'r', 'u', 'n'));
+			push_u32_be(out, 0x00000701);
+			push_u32_be(out, static_cast<std::uint32_t>(samples.size()));
+			trun_data_offset_field = out.size();
+			push_u32_be(out, 0);
+			for (std::size_t i = 0; i < samples.size(); ++i) {
+				push_u32_be(out, durations[i]);
+				push_u32_be(out, static_cast<std::uint32_t>(samples[i].bytes.size()) + per_sample_prefix_bytes);
+				push_u32_be(out, sample_flags_for(samples[i].keyframe));
+			}
+		}
+	}
+}
+
+gse::renderer::capture::mp4::live_muxer::~live_muxer() {
+	close();
+}
+
+auto gse::renderer::capture::mp4::live_muxer::open(
+	const std::filesystem::path& path,
+	const track_info& track,
+	std::span<const std::byte> stream_header
+) -> std::optional<live_muxer> {
+	if (stream_header.empty()) {
+		log::println(
+			log::level::warning,
+			log::category::render,
+			"live_muxer::open called with empty stream_header"
+		);
+		return std::nullopt;
+	}
+
+	live_muxer m;
+	m.m_file.open(path, std::ios::binary);
+	if (!m.m_file) {
+		log::println(
+			log::level::warning,
+			log::category::render,
+			"live_muxer::open could not open file {}",
+			path.string()
+		);
+		return std::nullopt;
+	}
+	m.m_path = path;
+	m.m_track = track;
+
+	if (!m.write_init(stream_header)) {
+		m.m_file.close();
+		return std::nullopt;
+	}
+
+	return m;
+}
+
+auto gse::renderer::capture::mp4::live_muxer::valid() const -> bool {
+	return m_file.is_open() && m_file.good();
+}
+
+auto gse::renderer::capture::mp4::live_muxer::frame_count() const -> std::size_t {
+	return m_frames_total;
+}
+
+auto gse::renderer::capture::mp4::live_muxer::append(gpu::encoded_unit unit) -> void {
+	if (!valid()) {
+		return;
+	}
+
+	if (!m_first_keyframe_seen) {
+		if (!unit.keyframe) {
+			return;
+		}
+		m_first_keyframe_seen = true;
+		log::println(
+			log::category::render,
+			"live_muxer::append first keyframe ({} bytes)",
+			unit.bytes.size()
+		);
+	}
+
+	if (unit.keyframe && !m_pending.empty()) {
+		flush_fragment();
+	}
+
+	m_pending.push_back(std::move(unit));
+	++m_frames_total;
+}
+
+auto gse::renderer::capture::mp4::live_muxer::close() -> void {
+	if (!m_pending.empty()) {
+		flush_fragment();
+	}
+	if (m_init_written && m_sequence > 0 && m_file.is_open()) {
+		const auto write_u64_at = [&](const std::uint64_t offset, const std::uint64_t value) {
+			m_file.seekp(static_cast<std::streamoff>(offset));
+			std::array<std::byte, 8> bytes{};
+			for (int i = 0; i < 8; ++i) {
+				bytes[i] = std::byte{ static_cast<std::uint8_t>(value >> ((7 - i) * 8)) };
+			}
+			m_file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+		};
+		write_u64_at(m_mvhd_duration_offset, m_decode_time);
+		write_u64_at(m_tkhd_duration_offset, m_decode_time);
+		write_u64_at(m_mdhd_duration_offset, m_decode_time);
+		log::println(
+			log::category::render,
+			"live_muxer: patched duration={}us into mvhd/tkhd/mdhd in {}",
+			m_decode_time,
+			m_path.string()
+		);
+	}
+	if (m_file.is_open()) {
+		m_file.close();
+	}
+	if (m_sequence == 0 && !m_path.empty()) {
+		std::error_code ec;
+		std::filesystem::remove(m_path, ec);
+		log::println(
+			log::category::render,
+			"live_muxer: discarded empty file {} (no fragments written)",
+			m_path.string()
+		);
+		m_path.clear();
+	}
+}
+
+auto gse::renderer::capture::mp4::live_muxer::write_init(std::span<const std::byte> stream_header) -> bool {
+	const auto codec_config = extract_codec_config(m_track.codec, stream_header);
+	if (!codec_config) {
+		return false;
+	}
+
+	std::vector<std::byte> ftyp_bytes;
+	emit_ftyp_fragmented(ftyp_bytes, m_track.codec);
+
+	std::vector<std::byte> moov_bytes;
+	std::size_t mvhd_dur_offset = 0;
+	std::size_t tkhd_dur_offset = 0;
+	std::size_t mdhd_dur_offset = 0;
+	{
+		box_scope moov(moov_bytes, fourcc('m', 'o', 'o', 'v'));
+		emit_mvhd_unknown(moov_bytes, mvhd_dur_offset);
+		{
+			box_scope trak(moov_bytes, fourcc('t', 'r', 'a', 'k'));
+			emit_tkhd_unknown(moov_bytes, m_track.extent, tkhd_dur_offset);
+			{
+				box_scope mdia(moov_bytes, fourcc('m', 'd', 'i', 'a'));
+				emit_mdhd_unknown(moov_bytes, mdhd_dur_offset);
+				emit_hdlr(moov_bytes);
+				{
+					box_scope minf(moov_bytes, fourcc('m', 'i', 'n', 'f'));
+					emit_vmhd(moov_bytes);
+					emit_dinf(moov_bytes);
+					emit_stbl_empty(moov_bytes, m_track.extent, m_track.codec, *codec_config);
+				}
+			}
+		}
+		emit_mvex_trex(moov_bytes);
+	}
+
+	m_mvhd_duration_offset = ftyp_bytes.size() + mvhd_dur_offset;
+	m_tkhd_duration_offset = ftyp_bytes.size() + tkhd_dur_offset;
+	m_mdhd_duration_offset = ftyp_bytes.size() + mdhd_dur_offset;
+
+	m_file.write(
+		reinterpret_cast<const char*>(ftyp_bytes.data()),
+		static_cast<std::streamsize>(ftyp_bytes.size())
+	);
+	m_file.write(
+		reinterpret_cast<const char*>(moov_bytes.data()),
+		static_cast<std::streamsize>(moov_bytes.size())
+	);
+
+	if (!m_file) {
+		log::println(
+			log::level::warning,
+			log::category::render,
+			"live_muxer::write_init failed writing ftyp/moov"
+		);
+		return false;
+	}
+
+	m_init_written = true;
+	return true;
+}
+
+auto gse::renderer::capture::mp4::live_muxer::flush_fragment() -> void {
+	if (m_pending.empty() || !m_file.is_open()) {
+		return;
+	}
+
+	const auto durations = compute_sample_durations(m_pending, m_last_default_duration);
+	if (durations.size() >= 2) {
+		m_last_default_duration = durations[durations.size() - 2];
+	}
+
+	++m_sequence;
+
+	const std::uint32_t per_sample_prefix = m_track.codec == gpu::video_codec::av1 ? 2u : 0u;
+
+	std::vector<std::byte> moof_bytes;
+	std::size_t data_offset_field = 0;
+	emit_fragment_moof(moof_bytes, m_sequence, m_decode_time, m_pending, durations, per_sample_prefix, data_offset_field);
+
+	std::uint32_t mdat_payload_size = 0;
+	for (const auto& s : m_pending) {
+		mdat_payload_size += static_cast<std::uint32_t>(s.bytes.size()) + per_sample_prefix;
+	}
+	const auto mdat_total = mdat_payload_size + 8u;
+
+	const auto data_offset = static_cast<std::int32_t>(moof_bytes.size() + 8u);
+	moof_bytes[data_offset_field + 0] = std::byte{ static_cast<std::uint8_t>(data_offset >> 24) };
+	moof_bytes[data_offset_field + 1] = std::byte{ static_cast<std::uint8_t>(data_offset >> 16) };
+	moof_bytes[data_offset_field + 2] = std::byte{ static_cast<std::uint8_t>(data_offset >> 8) };
+	moof_bytes[data_offset_field + 3] = std::byte{ static_cast<std::uint8_t>(data_offset) };
+
+	m_file.write(
+		reinterpret_cast<const char*>(moof_bytes.data()),
+		static_cast<std::streamsize>(moof_bytes.size())
+	);
+
+	std::array<std::byte, 8> mdat_header{};
+	mdat_header[0] = std::byte{ static_cast<std::uint8_t>(mdat_total >> 24) };
+	mdat_header[1] = std::byte{ static_cast<std::uint8_t>(mdat_total >> 16) };
+	mdat_header[2] = std::byte{ static_cast<std::uint8_t>(mdat_total >> 8) };
+	mdat_header[3] = std::byte{ static_cast<std::uint8_t>(mdat_total) };
+	mdat_header[4] = std::byte{ 'm' };
+	mdat_header[5] = std::byte{ 'd' };
+	mdat_header[6] = std::byte{ 'a' };
+	mdat_header[7] = std::byte{ 't' };
+	m_file.write(
+		reinterpret_cast<const char*>(mdat_header.data()),
+		static_cast<std::streamsize>(mdat_header.size())
+	);
+
+	constexpr std::array<std::byte, 2> temporal_delimiter{
+		std::byte{ 0x12 },
+		std::byte{ 0x00 }
+	};
+	for (const auto& s : m_pending) {
+		if (m_track.codec == gpu::video_codec::av1) {
+			m_file.write(
+				reinterpret_cast<const char*>(temporal_delimiter.data()),
+				static_cast<std::streamsize>(temporal_delimiter.size())
+			);
+		}
+		m_file.write(
+			reinterpret_cast<const char*>(s.bytes.data()),
+			static_cast<std::streamsize>(s.bytes.size())
+		);
+	}
+
+	m_file.flush();
+
+	for (const auto d : durations) {
+		m_decode_time += d;
+	}
+
+	m_pending.clear();
 }

@@ -12,7 +12,6 @@ import gse.ecs;
 import gse.os;
 import gse.assets;
 import gse.gpu;
-import gse.meta;
 
 import :camera_data;
 import :camera_component;

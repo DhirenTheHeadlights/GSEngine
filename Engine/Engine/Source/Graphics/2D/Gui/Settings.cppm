@@ -18,6 +18,7 @@ import gse.save;
 import :types;
 import :ids;
 import :builder;
+import :menu_stack;
 import :toggle_widget;
 import :slider_widget;
 import :dropdown_widget;
@@ -167,12 +168,25 @@ export namespace gse::settings {
 		custom_draw_fn fn;
 	};
 
+	template <auto Fn>
+	struct page_drawer {
+		static constexpr auto value = Fn;
+	};
+
 	auto panel(
 		gui::builder& b,
 		panel_state& ps,
 		channel_writer& channels,
 		const save::registry& save_reg,
 		std::string_view category_filter = ""
+	) -> void;
+
+	template <has_settings S, bool HotOnly = false>
+	auto draw_fields(
+		gui::builder& b,
+		panel_state& ps,
+		const typename S::data& live,
+		channel_writer& channels
 	) -> void;
 
 	template <typename S>
@@ -185,8 +199,46 @@ export namespace gse::settings {
 	) -> void;
 
 	template <has_settings S>
+	auto draw_page_thunk_impl(
+		void* gui_builder,
+		void* panel_state,
+		void* settings_ptr,
+		void* channels_writer
+	) -> void;
+
+	template <has_settings S>
+	auto draw_hot_fields_thunk_impl(
+		void* gui_builder,
+		void* panel_state,
+		void* settings_ptr,
+		void* channels_writer
+	) -> void;
+
+	template <typename T>
+	consteval auto has_page_drawer() -> bool {
+		return meta::find_class_template_annotation(^^T, ^^page_drawer) != std::meta::info{};
+	}
+
+	template <typename T>
+	consteval auto has_hot_reloadable_fields() -> bool {
+		for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+			if (has_annotation<settings::hot_reloadable_tag>(m)) {
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+export namespace gse::settings {
+	template <has_settings S>
 	struct gui_draw_provider<S> {
 		static constexpr draw_settings_thunk value = &draw_struct_thunk<S>;
+		static constexpr draw_page_thunk page_value =
+			has_page_drawer<typename S::data>() ? &draw_page_thunk_impl<S> : nullptr;
+		static constexpr draw_hot_fields_thunk hot_value =
+			has_hot_reloadable_fields<typename S::data>() ? &draw_hot_fields_thunk_impl<S> : nullptr;
+		static constexpr bool any_hot = has_hot_reloadable_fields<typename S::data>();
 	};
 }
 
@@ -290,18 +342,56 @@ auto gse::settings::draw_enum_dropdown(gui::builder& b, panel_state& ps, const s
 
 template <typename S>
 auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, const std::string_view category, void* settings_ptr, void* channels_writer) -> void {
-	(void)channels_writer;
+	(void)category;
 	using data_t = typename S::data;
 	auto& b = *static_cast<gui::builder*>(gui_builder);
 	auto& ps = *static_cast<panel_state*>(panel_state_ptr);
 	const auto& live = *static_cast<const data_t*>(settings_ptr);
+	auto& channels = *static_cast<channel_writer*>(channels_writer);
+	draw_fields<S>(b, ps, live, channels);
+}
+
+template <gse::has_settings S>
+auto gse::settings::draw_page_thunk_impl(void* gui_builder, void* panel_state_ptr, void* settings_ptr, void* channels_writer) -> void {
+	using data_t = typename S::data;
+	auto& b = *static_cast<gui::builder*>(gui_builder);
+	auto& ps = *static_cast<panel_state*>(panel_state_ptr);
+	const auto& live = *static_cast<const data_t*>(settings_ptr);
+	auto& channels = *static_cast<channel_writer*>(channels_writer);
+
+	auto& pending = ps.template pending_for<S>(live).value;
+
+	if constexpr (has_page_drawer<data_t>()) {
+		constexpr auto ann = meta::find_class_template_annotation(^^data_t, ^^page_drawer);
+		using drawer_t = [:ann:];
+		constexpr auto fn = drawer_t::value;
+		fn(b, ps, live, pending, channels);
+	}
+}
+
+template <gse::has_settings S>
+auto gse::settings::draw_hot_fields_thunk_impl(void* gui_builder, void* panel_state_ptr, void* settings_ptr, void* channels_writer) -> void {
+	using data_t = typename S::data;
+	auto& b = *static_cast<gui::builder*>(gui_builder);
+	auto& ps = *static_cast<panel_state*>(panel_state_ptr);
+	const auto& live = *static_cast<const data_t*>(settings_ptr);
+	auto& channels = *static_cast<channel_writer*>(channels_writer);
+
+	draw_fields<S, true>(b, ps, live, channels);
+}
+
+template <gse::has_settings S, bool HotOnly>
+auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename S::data& live, channel_writer& channels) -> void {
+	using data_t = typename S::data;
 
 	auto& pend = ps.template pending_for<S>(live);
 
+	constexpr std::string_view category = category_of<data_t>();
 	const std::uint64_t category_hash = stable_id(category);
 
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked()))) {
-		if constexpr (meta::find_describe(m) != std::meta::info{}) {
+		if constexpr (meta::find_describe(m) != std::meta::info{}
+			&& (!HotOnly || has_annotation<settings::hot_reloadable_tag>(m))) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
 			using describe_t = [:meta::find_describe(m):];
@@ -314,6 +404,10 @@ auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, 
 
 			static const std::string display_label = pretty_label(label);
 			const std::uint64_t field_key = hash_combine(category_hash, label_hash);
+
+			if constexpr (has_annotation<settings::hot_reloadable_tag>(m)) {
+				pend.value.[:m:] = live.[:m:];
+			}
 
 			F& local_value = pend.value.[:m:];
 
@@ -534,18 +628,36 @@ auto gse::settings::draw_struct_thunk(void* gui_builder, void* panel_state_ptr, 
 			}();
 
 			if (is_modified) {
-				if constexpr (settings::is_choice_v<F>) {
-					pend.apply_fns[field_key] = [new_value = local_value.value](data_t& d) {
-						d.[:m:].value = new_value;
-					};
+				if constexpr (has_annotation<settings::hot_reloadable_tag>(m)) {
+					if constexpr (settings::is_choice_v<F>) {
+						channels.push<change_request<S>>({
+							.apply = [new_value = local_value.value](data_t& d) {
+								d.[:m:].value = new_value;
+							},
+						});
+					}
+					else if constexpr (std::is_copy_constructible_v<F>) {
+						channels.push<change_request<S>>({
+							.apply = [new_value = local_value](data_t& d) {
+								d.[:m:] = new_value;
+							},
+						});
+					}
 				}
-				else if constexpr (std::is_copy_constructible_v<F>) {
-					pend.apply_fns[field_key] = [new_value = local_value](data_t& d) {
-						d.[:m:] = new_value;
-					};
-				}
-				if constexpr (field_needs_restart) {
-					pend.restart_fields.insert(field_key);
+				else {
+					if constexpr (settings::is_choice_v<F>) {
+						pend.apply_fns[field_key] = [new_value = local_value.value](data_t& d) {
+							d.[:m:].value = new_value;
+						};
+					}
+					else if constexpr (std::is_copy_constructible_v<F>) {
+						pend.apply_fns[field_key] = [new_value = local_value](data_t& d) {
+							d.[:m:] = new_value;
+						};
+					}
+					if constexpr (field_needs_restart) {
+						pend.restart_fields.insert(field_key);
+					}
 				}
 			}
 			else {
@@ -680,17 +792,47 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& chan
 	std::ranges::sort(category_order);
 
 	for (const auto& cat : category_order) {
-		b.draw<gui::section>({
-			.title = cat,
-		});
-
+		const register_settings_type* page_entry = nullptr;
 		save_reg.for_each_entry([&](const register_settings_type& entry) {
-			if (entry.category != cat) {
+			if (page_entry || entry.category != cat) {
 				return;
 			}
-			if (entry.draw && entry.settings_ptr) {
-				entry.draw(&b, &ps, entry.category, entry.settings_ptr, &channels);
+			if (entry.draw_page && entry.settings_ptr) {
+				page_entry = &entry;
 			}
 		});
+
+		if (page_entry) {
+			page_entry->draw_page(&b, &ps, page_entry->settings_ptr, &channels);
+			continue;
+		}
+
+		bool category_has_hot = false;
+		save_reg.for_each_entry([&](const register_settings_type& entry) {
+			if (entry.category == cat && entry.has_hot_fields) {
+				category_has_hot = true;
+			}
+		});
+
+		b.scroll_region(
+			{ .id = cat },
+			[&](gui::builder& sub) {
+				sub.draw<gui::section>({
+					.title = cat,
+					.action_icon = category_has_hot ? std::string_view("\xE2\x86\x97 Live") : std::string_view{},
+					.on_action = category_has_hot ? std::function<void()>([&channels, cat] {
+						channels.push<gui::popout_toggle>({ .category = cat });
+					}) : std::function<void()>{},
+				});
+				save_reg.for_each_entry([&](const register_settings_type& entry) {
+					if (entry.category != cat) {
+						return;
+					}
+					if (entry.draw && entry.settings_ptr) {
+						entry.draw(&sub, &ps, entry.category, entry.settings_ptr, &channels);
+					}
+				});
+			}
+		);
 	}
 }

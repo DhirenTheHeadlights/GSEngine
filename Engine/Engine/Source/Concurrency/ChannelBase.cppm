@@ -9,6 +9,9 @@ import gse.meta;
 import gse.time;
 
 export namespace gse {
+	struct same_frame_channel_tag {};
+	constexpr same_frame_channel_tag same_frame_channel{};
+
 	template <typename T>
 	class channel {
 	public:

@@ -253,14 +253,219 @@ export namespace gse::vulkan {
 		std::unique_ptr<bindless_sampler_heap> m_sampler_heap;
 	};
 
+	class bindless_image final : public non_copyable {
+	public:
+		bindless_image() = default;
+
+		~bindless_image() override;
+
+		bindless_image(
+			bindless_image&&
+		) noexcept;
+
+		auto operator=(
+			bindless_image&&
+		) noexcept -> bindless_image&;
+
+		[[nodiscard]]
+		static auto create(
+			device& dev,
+			bindless_heaps& heaps,
+			const gpu::image_desc& desc,
+			std::string_view tag = ""
+		) -> bindless_image;
+
+		[[nodiscard]] auto image(
+			this auto& self
+		) -> auto&;
+
+		[[nodiscard]] auto storage_slot() const -> bindless_slot;
+
+		[[nodiscard]] auto sampled_slot() const -> bindless_slot;
+
+		[[nodiscard]] auto valid() const -> bool;
+
+	private:
+		bindless_image(
+			vulkan::image img,
+			bindless_resource_heap& heap,
+			bindless_slot storage,
+			bindless_slot sampled
+		);
+
+		auto release() -> void;
+
+		vulkan::image m_image;
+		bindless_resource_heap* m_heap = nullptr;
+		bindless_slot m_storage_slot;
+		bindless_slot m_sampled_slot;
+	};
+
+	class bindless_image_view final : public non_copyable {
+	public:
+		bindless_image_view() = default;
+
+		~bindless_image_view() override;
+
+		bindless_image_view(
+			bindless_image_view&&
+		) noexcept;
+
+		auto operator=(
+			bindless_image_view&&
+		) noexcept -> bindless_image_view&;
+
+		auto rebind_sampled(
+			bindless_heaps& heaps,
+			const image& img
+		) -> void;
+
+		auto clear() -> void;
+
+		[[nodiscard]] auto sampled_slot() const -> bindless_slot;
+
+		[[nodiscard]] auto valid() const -> bool;
+
+	private:
+		auto release() -> void;
+
+		bindless_resource_heap* m_heap = nullptr;
+		bindless_slot m_sampled_slot;
+	};
+
+	class bindless_sampler final : public non_copyable {
+	public:
+		bindless_sampler() = default;
+
+		~bindless_sampler() override;
+
+		bindless_sampler(
+			bindless_sampler&&
+		) noexcept;
+
+		auto operator=(
+			bindless_sampler&&
+		) noexcept -> bindless_sampler&;
+
+		[[nodiscard]]
+		static auto create(
+			bindless_heaps& heaps,
+			const gpu::sampler_desc& desc
+		) -> bindless_sampler;
+
+		[[nodiscard]] auto slot() const -> bindless_slot;
+
+		[[nodiscard]] auto valid() const -> bool;
+
+	private:
+		bindless_sampler(
+			bindless_sampler_heap& heap,
+			bindless_slot slot
+		);
+
+		auto release() -> void;
+
+		bindless_sampler_heap* m_heap = nullptr;
+		bindless_slot m_slot;
+	};
+
+	class bindless_buffer final : public non_copyable {
+	public:
+		bindless_buffer() = default;
+
+		~bindless_buffer() override;
+
+		bindless_buffer(
+			bindless_buffer&&
+		) noexcept;
+
+		auto operator=(
+			bindless_buffer&&
+		) noexcept -> bindless_buffer&;
+
+		[[nodiscard]]
+		static auto create(
+			device& dev,
+			bindless_heaps& heaps,
+			const gpu::buffer_desc& desc,
+			std::string_view tag = ""
+		) -> bindless_buffer;
+
+		[[nodiscard]] auto buffer(
+			this auto& self
+		) -> auto&;
+
+		[[nodiscard]] auto slot() const -> bindless_slot;
+
+		[[nodiscard]] auto valid() const -> bool;
+
+	private:
+		bindless_buffer(
+			vulkan::buffer buf,
+			bindless_resource_heap& heap,
+			bindless_slot slot
+		);
+
+		auto release() -> void;
+
+		vulkan::buffer m_buffer;
+		bindless_resource_heap* m_heap = nullptr;
+		bindless_slot m_slot;
+	};
+
+	class bindless_buffer_view final : public non_copyable {
+	public:
+		bindless_buffer_view() = default;
+
+		~bindless_buffer_view() override;
+
+		bindless_buffer_view(
+			bindless_buffer_view&&
+		) noexcept;
+
+		auto operator=(
+			bindless_buffer_view&&
+		) noexcept -> bindless_buffer_view&;
+
+		auto rebind_storage(
+			device& dev,
+			bindless_heaps& heaps,
+			const buffer& buf,
+			gpu::device_size offset = 0,
+			gpu::device_size size = gpu::whole_size
+		) -> void;
+
+		auto rebind_uniform(
+			device& dev,
+			bindless_heaps& heaps,
+			const buffer& buf,
+			gpu::device_size offset = 0,
+			gpu::device_size size = gpu::whole_size
+		) -> void;
+
+		auto clear() -> void;
+
+		[[nodiscard]] auto slot() const -> bindless_slot;
+
+		[[nodiscard]] auto valid() const -> bool;
+
+	private:
+		auto release() -> void;
+
+		bindless_resource_heap* m_heap = nullptr;
+		bindless_slot m_slot;
+	};
+
 	struct bindless_mapping_result {
 		std::vector<vk::DescriptorSetAndBindingMappingEXT> mappings;
 		std::uint32_t push_data_size = 0;
 	};
 
-	[[nodiscard]] auto build_bindless_mappings(
+	[[nodiscard]]
+	auto build_bindless_mappings(
 		std::span<const gpu::binding_use> bindings,
-		const bindless_heaps& heaps
+		const bindless_heaps& heaps,
+		std::uint32_t push_offset_start = 0
 	) -> bindless_mapping_result;
 }
 
@@ -764,7 +969,12 @@ auto gse::vulkan::bindless_sampler_heap::allocate_vk(const vk::SamplerCreateInfo
 	assert(!m_free_list.empty(), "bindless_sampler_heap: slots exhausted (capacity {})", m_capacity);
 	const auto slot = m_free_list.back();
 	m_free_list.pop_back();
-	log::println(log::category::vulkan, "bindless heap: allocate_sampler -> slot {} @ byte {:#x}", slot, m_reserved_size + slot * m_descriptor_size);
+	log::println(
+		log::category::vulkan,
+		"bindless heap: allocate_sampler -> slot {} @ byte {:#x}",
+		slot,
+		m_reserved_size + slot * m_descriptor_size
+	);
 
 	const auto byte_offset = m_reserved_size + slot * m_descriptor_size;
 	const vk::HostAddressRangeEXT dst{
@@ -903,17 +1113,20 @@ auto gse::vulkan::bindless_heaps::properties() const -> const descriptor_heap_pr
 	return m_props;
 }
 
-auto gse::vulkan::build_bindless_mappings(const std::span<const gpu::binding_use> bindings, const bindless_heaps& heaps) -> bindless_mapping_result {
+auto gse::vulkan::build_bindless_mappings(const std::span<const gpu::binding_use> bindings, const bindless_heaps& heaps, const std::uint32_t push_offset_start) -> bindless_mapping_result {
 	bindless_mapping_result result;
 	result.mappings.reserve(bindings.size());
 
 	std::vector<gpu::binding_use> sorted_bindings(bindings.begin(), bindings.end());
-	std::ranges::sort(sorted_bindings, [](const gpu::binding_use& a, const gpu::binding_use& b) {
-		if (a.set != b.set) {
-			return a.set < b.set;
+	std::ranges::sort(
+		sorted_bindings,
+		[](const gpu::binding_use& a, const gpu::binding_use& b) {
+			if (a.set != b.set) {
+				return a.set < b.set;
+			}
+			return a.slot < b.slot;
 		}
-		return a.slot < b.slot;
-	});
+	);
 
 	const auto& resource_heap = heaps.resource_heap();
 	const auto& sampler_heap = heaps.sampler_heap();
@@ -924,7 +1137,7 @@ auto gse::vulkan::build_bindless_mappings(const std::span<const gpu::binding_use
 	const auto sampler_offset = static_cast<std::uint32_t>(sampler_heap.reserved_size());
 	const auto sampler_stride = static_cast<std::uint32_t>(sampler_heap.sampler_stride());
 
-	std::uint32_t push_offset = 0;
+	std::uint32_t push_offset = push_offset_start;
 	for (const auto& b : sorted_bindings) {
 		vk::DescriptorMappingSourceDataEXT source_data{};
 		auto& pi = source_data.pushIndex;
@@ -1017,4 +1230,301 @@ auto gse::vulkan::build_bindless_mappings(const std::span<const gpu::binding_use
 	}
 
 	return result;
+}
+
+gse::vulkan::bindless_image::bindless_image(vulkan::image img, bindless_resource_heap& heap, const bindless_slot storage, const bindless_slot sampled)
+	: m_image(std::move(img)), m_heap(&heap), m_storage_slot(storage), m_sampled_slot(sampled) {
+}
+
+gse::vulkan::bindless_image::~bindless_image() {
+	release();
+}
+
+gse::vulkan::bindless_image::bindless_image(bindless_image&& other) noexcept
+	: m_image(std::move(other.m_image)), m_heap(other.m_heap), m_storage_slot(other.m_storage_slot), m_sampled_slot(other.m_sampled_slot) {
+	other.m_heap = nullptr;
+	other.m_storage_slot = {};
+	other.m_sampled_slot = {};
+}
+
+auto gse::vulkan::bindless_image::operator=(bindless_image&& other) noexcept -> bindless_image& {
+	if (this != &other) {
+		release();
+		m_image = std::move(other.m_image);
+		m_heap = other.m_heap;
+		m_storage_slot = other.m_storage_slot;
+		m_sampled_slot = other.m_sampled_slot;
+		other.m_heap = nullptr;
+		other.m_storage_slot = {};
+		other.m_sampled_slot = {};
+	}
+	return *this;
+}
+
+auto gse::vulkan::bindless_image::create(device& dev, bindless_heaps& heaps, const gpu::image_desc& desc, const std::string_view tag) -> bindless_image {
+	auto img = image::create(dev, desc, tag);
+	auto& heap = heaps.resource_heap();
+	const auto storage = heap.allocate_image();
+	heap.write_storage_image(storage, img);
+	const auto sampled = heap.allocate_image();
+	heap.write_sampled_image(sampled, img);
+	return bindless_image(std::move(img), heap, storage, sampled);
+}
+
+auto gse::vulkan::bindless_image::image(this auto& self) -> auto& {
+	return self.m_image;
+}
+
+auto gse::vulkan::bindless_image::storage_slot() const -> bindless_slot {
+	return m_storage_slot;
+}
+
+auto gse::vulkan::bindless_image::sampled_slot() const -> bindless_slot {
+	return m_sampled_slot;
+}
+
+auto gse::vulkan::bindless_image::valid() const -> bool {
+	return m_heap != nullptr;
+}
+
+auto gse::vulkan::bindless_image::release() -> void {
+	if (m_heap) {
+		m_heap->release_image(m_storage_slot);
+		m_heap->release_image(m_sampled_slot);
+	}
+	m_heap = nullptr;
+	m_storage_slot = {};
+	m_sampled_slot = {};
+}
+
+gse::vulkan::bindless_image_view::~bindless_image_view() {
+	release();
+}
+
+gse::vulkan::bindless_image_view::bindless_image_view(bindless_image_view&& other) noexcept
+	: m_heap(other.m_heap), m_sampled_slot(other.m_sampled_slot) {
+	other.m_heap = nullptr;
+	other.m_sampled_slot = {};
+}
+
+auto gse::vulkan::bindless_image_view::operator=(bindless_image_view&& other) noexcept -> bindless_image_view& {
+	if (this != &other) {
+		release();
+		m_heap = other.m_heap;
+		m_sampled_slot = other.m_sampled_slot;
+		other.m_heap = nullptr;
+		other.m_sampled_slot = {};
+	}
+	return *this;
+}
+
+auto gse::vulkan::bindless_image_view::rebind_sampled(bindless_heaps& heaps, const image& img) -> void {
+	auto& heap = heaps.resource_heap();
+	if (m_heap == nullptr) {
+		m_heap = &heap;
+		m_sampled_slot = heap.allocate_image();
+	}
+	assert(m_heap == &heap, "bindless_image_view: heap changed between rebinds");
+	heap.write_sampled_image(m_sampled_slot, img);
+}
+
+auto gse::vulkan::bindless_image_view::clear() -> void {
+	release();
+}
+
+auto gse::vulkan::bindless_image_view::sampled_slot() const -> bindless_slot {
+	return m_sampled_slot;
+}
+
+auto gse::vulkan::bindless_image_view::valid() const -> bool {
+	return m_heap != nullptr;
+}
+
+auto gse::vulkan::bindless_image_view::release() -> void {
+	if (m_heap) {
+		m_heap->release_image(m_sampled_slot);
+	}
+	m_heap = nullptr;
+	m_sampled_slot = {};
+}
+
+gse::vulkan::bindless_sampler::bindless_sampler(bindless_sampler_heap& heap, const bindless_slot slot)
+	: m_heap(&heap), m_slot(slot) {
+}
+
+gse::vulkan::bindless_sampler::~bindless_sampler() {
+	release();
+}
+
+gse::vulkan::bindless_sampler::bindless_sampler(bindless_sampler&& other) noexcept
+	: m_heap(other.m_heap), m_slot(other.m_slot) {
+	other.m_heap = nullptr;
+	other.m_slot = {};
+}
+
+auto gse::vulkan::bindless_sampler::operator=(bindless_sampler&& other) noexcept -> bindless_sampler& {
+	if (this != &other) {
+		release();
+		m_heap = other.m_heap;
+		m_slot = other.m_slot;
+		other.m_heap = nullptr;
+		other.m_slot = {};
+	}
+	return *this;
+}
+
+auto gse::vulkan::bindless_sampler::create(bindless_heaps& heaps, const gpu::sampler_desc& desc) -> bindless_sampler {
+	auto& heap = heaps.sampler_heap();
+	const auto slot = heap.allocate(desc);
+	return bindless_sampler(heap, slot);
+}
+
+auto gse::vulkan::bindless_sampler::slot() const -> bindless_slot {
+	return m_slot;
+}
+
+auto gse::vulkan::bindless_sampler::valid() const -> bool {
+	return m_heap != nullptr;
+}
+
+auto gse::vulkan::bindless_sampler::release() -> void {
+	if (m_heap) {
+		m_heap->release(m_slot);
+	}
+	m_heap = nullptr;
+	m_slot = {};
+}
+
+gse::vulkan::bindless_buffer::bindless_buffer(vulkan::buffer buf, bindless_resource_heap& heap, const bindless_slot slot)
+	: m_buffer(std::move(buf)), m_heap(&heap), m_slot(slot) {
+}
+
+gse::vulkan::bindless_buffer::~bindless_buffer() {
+	release();
+}
+
+gse::vulkan::bindless_buffer::bindless_buffer(bindless_buffer&& other) noexcept
+	: m_buffer(std::move(other.m_buffer)), m_heap(other.m_heap), m_slot(other.m_slot) {
+	other.m_heap = nullptr;
+	other.m_slot = {};
+}
+
+auto gse::vulkan::bindless_buffer::operator=(bindless_buffer&& other) noexcept -> bindless_buffer& {
+	if (this != &other) {
+		release();
+		m_buffer = std::move(other.m_buffer);
+		m_heap = other.m_heap;
+		m_slot = other.m_slot;
+		other.m_heap = nullptr;
+		other.m_slot = {};
+	}
+	return *this;
+}
+
+auto gse::vulkan::bindless_buffer::create(device& dev, bindless_heaps& heaps, const gpu::buffer_desc& desc, const std::string_view tag) -> bindless_buffer {
+	auto buf = buffer::create(dev, desc, tag);
+	auto& heap = heaps.resource_heap();
+	const auto address = dev.raii_device().getBufferAddress(vk::BufferDeviceAddressInfo{
+		.buffer = std::bit_cast<vk::Buffer>(buf.handle()),
+	});
+	const auto slot = heap.allocate_buffer();
+	if (desc.usage.test(gpu::buffer_flag::storage)) {
+		heap.write_storage_buffer(slot, address, buf.size_bytes());
+	}
+	else if (desc.usage.test(gpu::buffer_flag::uniform)) {
+		heap.write_uniform_buffer(slot, address, buf.size_bytes());
+	}
+	else {
+		assert(false, "bindless_buffer::create: buffer needs storage or uniform usage flag");
+	}
+	return bindless_buffer(std::move(buf), heap, slot);
+}
+
+auto gse::vulkan::bindless_buffer::buffer(this auto& self) -> auto& {
+	return self.m_buffer;
+}
+
+auto gse::vulkan::bindless_buffer::slot() const -> bindless_slot {
+	return m_slot;
+}
+
+auto gse::vulkan::bindless_buffer::valid() const -> bool {
+	return m_heap != nullptr;
+}
+
+auto gse::vulkan::bindless_buffer::release() -> void {
+	if (m_heap) {
+		m_heap->release_buffer(m_slot);
+	}
+	m_heap = nullptr;
+	m_slot = {};
+}
+
+gse::vulkan::bindless_buffer_view::~bindless_buffer_view() {
+	release();
+}
+
+gse::vulkan::bindless_buffer_view::bindless_buffer_view(bindless_buffer_view&& other) noexcept
+	: m_heap(other.m_heap), m_slot(other.m_slot) {
+	other.m_heap = nullptr;
+	other.m_slot = {};
+}
+
+auto gse::vulkan::bindless_buffer_view::operator=(bindless_buffer_view&& other) noexcept -> bindless_buffer_view& {
+	if (this != &other) {
+		release();
+		m_heap = other.m_heap;
+		m_slot = other.m_slot;
+		other.m_heap = nullptr;
+		other.m_slot = {};
+	}
+	return *this;
+}
+
+auto gse::vulkan::bindless_buffer_view::rebind_storage(device& dev, bindless_heaps& heaps, const buffer& buf, const gpu::device_size offset, const gpu::device_size size) -> void {
+	auto& heap = heaps.resource_heap();
+	if (m_heap == nullptr) {
+		m_heap = &heap;
+		m_slot = heap.allocate_buffer();
+	}
+	assert(m_heap == &heap, "bindless_buffer_view: heap changed between rebinds");
+	const auto base = dev.raii_device().getBufferAddress(vk::BufferDeviceAddressInfo{
+		.buffer = std::bit_cast<vk::Buffer>(buf.handle()),
+	});
+	const auto resolved_size = size == gpu::whole_size ? buf.size_bytes() - offset : size;
+	heap.write_storage_buffer(m_slot, base + offset, resolved_size);
+}
+
+auto gse::vulkan::bindless_buffer_view::rebind_uniform(device& dev, bindless_heaps& heaps, const buffer& buf, const gpu::device_size offset, const gpu::device_size size) -> void {
+	auto& heap = heaps.resource_heap();
+	if (m_heap == nullptr) {
+		m_heap = &heap;
+		m_slot = heap.allocate_buffer();
+	}
+	assert(m_heap == &heap, "bindless_buffer_view: heap changed between rebinds");
+	const auto base = dev.raii_device().getBufferAddress(vk::BufferDeviceAddressInfo{
+		.buffer = std::bit_cast<vk::Buffer>(buf.handle()),
+	});
+	const auto resolved_size = size == gpu::whole_size ? buf.size_bytes() - offset : size;
+	heap.write_uniform_buffer(m_slot, base + offset, resolved_size);
+}
+
+auto gse::vulkan::bindless_buffer_view::clear() -> void {
+	release();
+}
+
+auto gse::vulkan::bindless_buffer_view::slot() const -> bindless_slot {
+	return m_slot;
+}
+
+auto gse::vulkan::bindless_buffer_view::valid() const -> bool {
+	return m_heap != nullptr;
+}
+
+auto gse::vulkan::bindless_buffer_view::release() -> void {
+	if (m_heap) {
+		m_heap->release_buffer(m_slot);
+	}
+	m_heap = nullptr;
+	m_slot = {};
 }
