@@ -6,17 +6,24 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_CLANG_TAG = "clang-p2996-v1"
-CLANG_INSTALL_ROOT = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "clang-p2996"
+# Use home dir (not AppData) so Windows Store Python's VFS sandbox redirection
+# of %LOCALAPPDATA% doesn't cause cmake to disagree with Python on what exists.
+CLANG_INSTALL_ROOT = Path.home() / ".clang-p2996"
 
 
 def resolve_clang_root(tag):
+    # Prefer the canonical home-dir install location first — it is never VFS-redirected.
+    canonical = CLANG_INSTALL_ROOT / tag
+    if (canonical / "bin" / "clang-cl.exe").exists():
+        return canonical
+    # Fall back to CLANG_P2996_ROOT if set and valid.
     env_root = os.environ.get("CLANG_P2996_ROOT")
     if env_root:
         candidate = Path(env_root)
         if (candidate / "bin" / "clang-cl.exe").exists():
             return candidate
         print(f"warning: CLANG_P2996_ROOT={candidate} has no bin/clang-cl.exe, falling back to default")
-    return CLANG_INSTALL_ROOT / tag
+    return canonical
 
 
 def run(cmd, cwd=None, env=None):

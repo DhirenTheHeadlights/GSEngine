@@ -49,6 +49,9 @@ target_sources(VulkanModule PUBLIC
 target_compile_features(VulkanModule PUBLIC cxx_std_26)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
 target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
+if(TARGET __cmake_libcxx_std)
+    target_link_libraries(VulkanModule PUBLIC __cmake_libcxx_std)
+endif()
 
 add_library(MiniaudioImpl STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
 target_include_directories(MiniaudioImpl PRIVATE ${miniaudio_INCLUDE_DIR})
@@ -96,6 +99,9 @@ target_link_libraries(Engine PUBLIC
     MiniaudioImpl
     concurrentqueue::concurrentqueue
 )
+if(TARGET __cmake_libcxx_std)
+    target_link_libraries(Engine PUBLIC __cmake_libcxx_std)
+endif()
 
 if(TARGET unofficial::nsight-aftermath::nsight-aftermath)
     target_link_libraries(Engine PRIVATE unofficial::nsight-aftermath::nsight-aftermath)
