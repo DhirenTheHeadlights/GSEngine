@@ -59,35 +59,29 @@ export namespace gse {
 
 		[[nodiscard]] auto full() const -> bool;
 
-		template <typename Self>
 		[[nodiscard]] auto data(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		[[nodiscard]] auto begin(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		[[nodiscard]] auto end(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		auto operator[](
-			this Self& self,
+			this auto& self,
 			size_type i
 		) -> decltype(auto);
 
-		template <typename Self>
 		[[nodiscard]] auto back(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		[[nodiscard]] auto span(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
 	private:
@@ -206,39 +200,33 @@ auto gse::static_vector<T, N>::full() const -> bool {
 }
 
 template <typename T, std::size_t N>
-template <typename Self>
-auto gse::static_vector<T, N>::data(this Self& self) -> decltype(auto) {
+auto gse::static_vector<T, N>::data(this auto& self) -> decltype(auto) {
 	return self.slot(0);
 }
 
 template <typename T, std::size_t N>
-template <typename Self>
-auto gse::static_vector<T, N>::begin(this Self& self) -> decltype(auto) {
+auto gse::static_vector<T, N>::begin(this auto& self) -> decltype(auto) {
 	return self.slot(0);
 }
 
 template <typename T, std::size_t N>
-template <typename Self>
-auto gse::static_vector<T, N>::end(this Self& self) -> decltype(auto) {
+auto gse::static_vector<T, N>::end(this auto& self) -> decltype(auto) {
 	return self.slot(self.m_size);
 }
 
 template <typename T, std::size_t N>
-template <typename Self>
-auto gse::static_vector<T, N>::operator[](this Self& self, const size_type i) -> decltype(auto) {
+auto gse::static_vector<T, N>::operator[](this auto& self, const size_type i) -> decltype(auto) {
 	return *self.slot(i);
 }
 
 template <typename T, std::size_t N>
-template <typename Self>
-auto gse::static_vector<T, N>::back(this Self& self) -> decltype(auto) {
+auto gse::static_vector<T, N>::back(this auto& self) -> decltype(auto) {
 	gse::assert(self.m_size > 0, "back called on empty static_vector");
 	return *self.slot(self.m_size - 1);
 }
 
 template <typename T, std::size_t N>
-template <typename Self>
-auto gse::static_vector<T, N>::span(this Self& self) -> decltype(auto) {
+auto gse::static_vector<T, N>::span(this auto& self) -> decltype(auto) {
 	return std::span{ self.slot(0), self.m_size };
 }
 

@@ -4,21 +4,6 @@ import std;
 import gse.std_meta;
 
 export namespace gse {
-
-	struct networked_tag {};
-	struct format_skip_tag {};
-	struct theme_color_tag {};
-	struct shared_tag {};
-	struct same_frame_channel_tag {};
-	struct scaled_tag {};
-
-	constexpr networked_tag networked{};
-	constexpr format_skip_tag format_skip{};
-	constexpr theme_color_tag theme_color{};
-	constexpr shared_tag shared{};
-	constexpr same_frame_channel_tag same_frame_channel{};
-	constexpr scaled_tag scaled{};
-
 	template <typename Tag>
 	consteval auto has_annotation(
 		std::meta::info member

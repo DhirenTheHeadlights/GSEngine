@@ -192,7 +192,7 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 				if (log_now) {
 					gse::log::println(
 						"state_estimator: owner={} pelvis=({:+.2f},{:+.2f},{:+.2f}) "
-						"v=({:+.2f},{:+.2f}) feet_grounded=({},{}) double={} "
+						"v=({:+.2f},{:+.2f},{:+.2f}) feet_grounded=({},{}) double={} "
 						"support_x=[{:+.2f},{:+.2f}] support_z=[{:+.2f},{:+.2f}] center=({:+.2f},{:+.2f}) "
 						"lean_body=({:+.3f},{:+.3f}) v_body=({:+.2f},{:+.2f}) "
 						"capture=(fwd={:+.3f},right={:+.3f}) speed={:.2f}",
@@ -200,8 +200,9 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 						s.pelvis_position.x(),
 						s.pelvis_position.y(),
 						s.pelvis_position.z(),
-						s.velocity_world.x(),
-						s.velocity_world.z(),
+						s.pelvis_velocity.x(),
+						s.pelvis_velocity.y(),
+						s.pelvis_velocity.z(),
 						s.foot_grounded_l,
 						s.foot_grounded_r,
 						s.double_support,

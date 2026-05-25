@@ -41,7 +41,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Scale applied to capture error before footstep planning.">{}
 			]]
-			float capture_step_gain = 0.6f;
+			float capture_step_gain = 1.0f;
 
 			[[
 				= gse::settings::describe<"Lateral capture-step clamp.">{}
@@ -88,7 +88,7 @@ namespace gs::locomotion {
 
 auto gs::locomotion::plan_may_update(const gait& g) -> bool {
 	return g.current == phase::idle || g.current == phase::weight_shift ||
-		(g.current == phase::swing && phase_progress(g) <= 0.55f);
+		(g.current == phase::swing && phase_progress(g) <= 0.40f);
 }
 
 auto gs::locomotion::swing_foot_position(const state& s, const leg swing_leg) -> const gse::vec3<gse::position>& {

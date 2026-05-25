@@ -21,9 +21,9 @@ export namespace gse::renderer::cull_compute {
 			bool enabled = true;
 
 			gpu::shader_program pipeline;
-			per_frame_resource<gpu::descriptor_region> normal_descriptors;
-			per_frame_resource<gpu::buffer> frustum_buffer;
-			per_frame_resource<gpu::buffer> batch_info_buffer;
+			per_frame_resource<vulkan::bindless_buffer> frustum_buffer;
+			per_frame_resource<vulkan::bindless_buffer> batch_info_buffer;
+			per_frame_resource<vulkan::bindless_buffer_view> indirect_commands_views;
 		};
 
 		static auto run(

@@ -83,25 +83,21 @@ export namespace gse {
 			this Self& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		[[nodiscard]] auto begin(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		[[nodiscard]] auto end(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
-		template <typename Self>
 		auto operator[](
-			this Self& self,
+			this auto& self,
 			size_type i
 		) -> decltype(auto);
 
-		template <typename Self>
 		[[nodiscard]] auto span(
-			this Self& self
+			this auto& self
 		) -> decltype(auto);
 
 	private:
@@ -290,25 +286,21 @@ auto gse::linear_vector<T>::data(this Self& self) -> decltype(auto) {
 }
 
 template <typename T>
-template <typename Self>
-auto gse::linear_vector<T>::begin(this Self& self) -> decltype(auto) {
+auto gse::linear_vector<T>::begin(this auto& self) -> decltype(auto) {
 	return self.data();
 }
 
 template <typename T>
-template <typename Self>
-auto gse::linear_vector<T>::end(this Self& self) -> decltype(auto) {
+auto gse::linear_vector<T>::end(this auto& self) -> decltype(auto) {
 	return self.data() + self.m_size;
 }
 
 template <typename T>
-template <typename Self>
-auto gse::linear_vector<T>::operator[](this Self& self, const size_type i) -> decltype(auto) {
+auto gse::linear_vector<T>::operator[](this auto& self, const size_type i) -> decltype(auto) {
 	return self.data()[i];
 }
 
 template <typename T>
-template <typename Self>
-auto gse::linear_vector<T>::span(this Self& self) -> decltype(auto) {
+auto gse::linear_vector<T>::span(this auto& self) -> decltype(auto) {
 	return std::span{ self.data(), self.m_size };
 }

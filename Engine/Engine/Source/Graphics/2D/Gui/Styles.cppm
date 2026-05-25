@@ -3,7 +3,11 @@ export module gse.graphics:styles;
 import std;
 
 import gse.math;
-import gse.meta;
+
+export namespace gse {
+	struct scaled_tag {};
+	constexpr scaled_tag scaled{};
+}
 
 export namespace gse::gui {
 	enum class theme {

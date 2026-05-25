@@ -3,8 +3,6 @@ export module gs:main_menu_screen;
 import std;
 import gse;
 
-import :crosshair_screen;
-import :crosshair_system;
 import :network_screen;
 import :settings_screen;
 
@@ -15,7 +13,6 @@ export namespace gs {
 			const gse::world_system::data& world,
 			const gse::network::data& net,
 			const gse::save::registry& save_reg,
-			const crosshair_system::data& crosshair,
 			gse::channel_writer channels
 		);
 
@@ -46,7 +43,6 @@ export namespace gs {
 		const gse::world_system::data* m_world;
 		const gse::network::data* m_net;
 		const gse::save::registry* m_save_reg;
-		const crosshair_system::data* m_crosshair;
 		gse::channel_writer m_channels;
 		gse::clock m_opened_at;
 
@@ -55,8 +51,8 @@ export namespace gs {
 	};
 }
 
-gs::main_menu_screen::main_menu_screen(const gse::world_system::data& world, const gse::network::data& net, const gse::save::registry& save_reg, const crosshair_system::data& crosshair, gse::channel_writer channels)
-	: m_world(&world), m_net(&net), m_save_reg(&save_reg), m_crosshair(&crosshair), m_channels(std::move(channels)) {
+gs::main_menu_screen::main_menu_screen(const gse::world_system::data& world, const gse::network::data& net, const gse::save::registry& save_reg, gse::channel_writer channels)
+	: m_world(&world), m_net(&net), m_save_reg(&save_reg), m_channels(std::move(channels)) {
 }
 
 auto gs::main_menu_screen::on_push() -> void {
@@ -162,16 +158,6 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 		m_channels.push<gse::gui::push_screen_request>({
 			.factory = [net = m_net, channels = m_channels] {
 				return std::make_unique<network_screen>(*net, channels);
-			},
-		});
-	}
-
-	if (ui.draw<gse::gui::button>({
-			.text = "Crosshair"
-		})) {
-		m_channels.push<gse::gui::push_screen_request>({
-			.factory = [save_reg = m_save_reg, crosshair = m_crosshair, channels = m_channels] {
-				return std::make_unique<crosshair_screen>(*save_reg, *crosshair, channels);
 			},
 		});
 	}

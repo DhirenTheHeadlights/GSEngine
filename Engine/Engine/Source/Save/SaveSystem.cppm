@@ -32,9 +32,8 @@ export namespace gse::save {
 			settings::register_settings_type entry
 		) -> void;
 
-		template <typename Fn>
 		auto for_each_entry(
-			Fn&& fn
+			auto&& fn
 		) const -> void;
 
 		auto entry_count() const -> std::size_t;
@@ -88,8 +87,7 @@ export namespace gse::save {
 	};
 }
 
-template <typename Fn>
-auto gse::save::registry::for_each_entry(Fn&& fn) const -> void {
+auto gse::save::registry::for_each_entry(auto&& fn) const -> void {
 	std::lock_guard lock(m_entries_mutex);
 	for (const auto& entry : m_entries) {
 		fn(entry);

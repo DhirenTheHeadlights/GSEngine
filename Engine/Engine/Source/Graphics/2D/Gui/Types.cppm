@@ -247,6 +247,7 @@ export namespace gse::gui {
 		draw_context* m_ctx = nullptr;
 		scroll_state* m_state = nullptr;
 		ui_rect m_visible_rect;
+		ui_rect m_saved_menu_rect;
 		float m_saved_layout_y = 0.f;
 		float m_content_start_y = 0.f;
 		scroll_config m_config{};

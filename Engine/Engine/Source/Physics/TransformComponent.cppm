@@ -6,7 +6,6 @@ import gse.core;
 import gse.containers;
 import gse.ecs;
 import gse.math;
-import gse.meta;
 
 export namespace gse::physics {
 	struct transform_component {

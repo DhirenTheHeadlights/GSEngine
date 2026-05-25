@@ -153,8 +153,7 @@ export namespace gse::vbd {
 	};
 }
 
-template <typename Self>
-auto gse::vbd::solver::graph(this Self&& self) -> auto& {
+auto gse::vbd::solver::graph(this auto&& self) -> auto& {
 	return self.m_graph;
 }
 

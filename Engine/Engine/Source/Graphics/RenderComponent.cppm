@@ -8,7 +8,6 @@ import :model;
 import gse.core;
 import gse.ecs;
 import gse.math;
-import gse.meta;
 
 export namespace gse {
 	struct render_component {

@@ -34,6 +34,7 @@ export import :loading;
 export import :loading_screen;
 export import :material;
 export import :menu_stack;
+export import :popout_system;
 export import :mesh;
 export import :model;
 export import :mp4_muxer;

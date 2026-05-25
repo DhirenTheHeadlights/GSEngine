@@ -4,6 +4,11 @@ import std;
 import gse.std_meta;
 import gse.meta;
 
+export namespace gse {
+	struct shared_tag {};
+	constexpr shared_tag shared{};
+}
+
 namespace gse {
 	template <typename Data>
 	struct shared_fields_aggregate {

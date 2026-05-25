@@ -3,8 +3,8 @@ export module gse.graphics:primitive_specs;
 import std;
 
 import gse.core;
+import gse.ecs;
 import gse.math;
-import gse.meta;
 
 export namespace gse {
 	struct material_spec {

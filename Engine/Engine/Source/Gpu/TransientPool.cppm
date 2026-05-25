@@ -18,7 +18,6 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 import gse.math;
-import gse.meta;
 
 export namespace gse::gpu {
 	struct transient_image_desc {

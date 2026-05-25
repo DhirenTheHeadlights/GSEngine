@@ -7,6 +7,9 @@ import gse.core;
 import gse.meta;
 
 export namespace gse {
+	struct networked_tag {};
+	constexpr networked_tag networked{};
+
 	template <typename T>
 	using network_data_t = project_by_annotation<T, networked_tag>;
 

@@ -5,6 +5,11 @@ import gse.std_meta;
 
 import :annotations;
 
+export namespace gse {
+	struct format_skip_tag {};
+	constexpr format_skip_tag format_skip{};
+}
+
 namespace gse::internal {
 	consteval auto is_user_namespace(
 		std::meta::info type

@@ -19,6 +19,8 @@ export namespace gse::gui {
 		struct params {
 			std::string_view title;
 			std::string_view subtitle = {};
+			std::string_view action_icon = {};
+			std::function<void()> on_action = {};
 		};
 		static auto draw(
 			const draw_context& ctx,
@@ -30,7 +32,7 @@ export namespace gse::gui {
 	};
 }
 
-auto gse::gui::section::draw(const draw_context& ctx, const params p, id&, id&, id&) -> void {
+auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -> void {
 	if (!ctx.current_menu) {
 		return;
 	}
@@ -69,6 +71,39 @@ auto gse::gui::section::draw(const draw_context& ctx, const params p, id&, id&, 
 		.color = sty.color_section_header,
 		.clip_rect = content_rect,
 	});
+
+	if (p.on_action && !p.action_icon.empty()) {
+		const float icon_w = ctx.font->width(p.action_icon, sty.font_size) + sty.padding;
+		const float action_height = bar_height;
+		const ui_rect action_rect = ui_rect::from_position_size(
+			{ content_rect.right() - icon_w, title_top },
+			{ icon_w, action_height }
+		);
+
+		const bool hovered = action_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+		const vec4f bg = hovered ? sty.color_widget_hovered : sty.color_widget_background;
+
+		ctx.queue_sprite({
+			.rect = action_rect,
+			.color = bg,
+			.texture = ctx.blank_texture,
+			.corner_radius = sty.corner_radius,
+		});
+
+		const float icon_text_w = ctx.font->width(p.action_icon, sty.font_size);
+		ctx.queue_text({
+			.font = ctx.font,
+			.text = std::string(p.action_icon),
+			.position = { action_rect.center().x() - icon_text_w * 0.5f, action_rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
+			.scale = sty.font_size,
+			.color = hovered ? sty.color_text : sty.color_text_secondary,
+			.clip_rect = action_rect,
+		});
+
+		if (ctx.mouse_pressed_for(action_rect)) {
+			p.on_action();
+		}
+	}
 
 	if (!p.subtitle.empty()) {
 		lo::skip(ctx, sty.item_spacing);

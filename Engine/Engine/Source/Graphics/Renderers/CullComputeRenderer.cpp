@@ -62,13 +62,15 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 			*gpu_s.device,
 			*gpu_s.shader_registry,
 			*gpu_s.bindless_textures,
-			entry::pod
+			entry::pod,
+			gpu_s.bindless_heaps.get()
 		);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::bindless_buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
-		d.frustum_buffer[i] = gpu::buffer::create(
+		d.frustum_buffer[i] = vulkan::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = frustum_size,
 				.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
@@ -76,34 +78,20 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 		);
 
 		constexpr std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * sizeof(batch_info);
-		d.batch_info_buffer[i] = gpu::buffer::create(
+		d.batch_info_buffer[i] = vulkan::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = batch_info_size,
 				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 			}
 		);
-	}
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.normal_descriptors[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				entry::pod
-			);
-	}
-
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer normal_writer(gpu_s.device->handle(), d.normal_descriptors[i]);
-		normal_writer.buffer<frustum_ubo>(
-						 d.frustum_buffer[i],
-						 0,
-						 sizeof(std::array<vec4f, 6>)
-		)
-			.buffer<batches>(d.batch_info_buffer[i])
-			.buffer<indirect_commands>(gc_r.normal_indirect_commands_buffer[i])
-			.commit();
+		d.indirect_commands_views[i].rebind_storage(
+			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
+			gc_r.normal_indirect_commands_buffer[i]
+		);
 	}
 
 	co_return;
@@ -134,7 +122,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<
 
 	const view_projection_matrix view_proj = data.proj * data.view;
 	const auto planes = extract_frustum_planes(view_proj);
-	d.frustum_buffer[frame_index].host_write(planes);
+	d.frustum_buffer[frame_index].buffer().host_write(planes);
 
 	using batch_info = renderer::cull_compute::batch_info;
 	std::vector<batch_info> batch_staging(normal_count);
@@ -150,7 +138,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<
 	}
 
 	if (!batch_staging.empty()) {
-		d.batch_info_buffer[frame_index].host_write(
+		d.batch_info_buffer[frame_index].buffer().host_write(
 			batch_staging.data(),
 			batch_staging.size() * sizeof(batch_info)
 		);
@@ -158,14 +146,16 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<
 
 	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.pipeline);
 
-	rec.bind_descriptors(d.pipeline, d.normal_descriptors[frame_index]);
-	const gpu::typed_push_constants<push_constants> pc{
-		.data = {
+	rec.dispatch<entry>(
+		{
 			.batch_offset = 0,
 			.indirect_stride = static_cast<std::uint32_t>(sizeof(gpu::draw_mesh_tasks_indirect_command)),
 		},
-		.stages = gpu::stage_flag::compute,
-	};
-	rec.push(d.pipeline, pc);
-	rec.dispatch(normal_count, 1, 1);
+		{
+			.frustum_ubo = d.frustum_buffer[frame_index].slot(),
+			.batches = d.batch_info_buffer[frame_index].slot(),
+			.indirect_commands = d.indirect_commands_views[frame_index].slot(),
+		},
+		vec3u{ normal_count, 1u, 1u }
+	);
 }

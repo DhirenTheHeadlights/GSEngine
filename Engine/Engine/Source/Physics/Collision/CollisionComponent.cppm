@@ -7,7 +7,6 @@ import :bounding_box;
 import gse.core;
 import gse.ecs;
 import gse.math;
-import gse.meta;
 
 export namespace gse::physics {
 	struct collision_component {

@@ -26,6 +26,74 @@ import :shader_registry;
 import :spirv_reflect;
 
 export namespace gse::gpu {
+	struct combined_sampler_arg {
+		vulkan::bindless_slot image;
+		vulkan::bindless_slot sampler;
+	};
+
+	template <typename T>
+	constexpr auto descriptor_type_v = shaders::descriptor_type_of<T>();
+
+	consteval auto binding_arg_type(
+		std::meta::info t
+	) -> std::meta::info;
+
+	template <typename Pack>
+	struct binding_args_aggregate {
+		struct type;
+
+		consteval {
+			std::vector<std::meta::info> members;
+			constexpr auto pack_types = []<typename... Ts>(type_pack<Ts...>) {
+				return std::array{ ^^Ts... };
+			}(Pack{});
+			for (const auto t : pack_types) {
+				members.push_back(std::meta::data_member_spec(
+					binding_arg_type(t),
+					{
+						.name = std::meta::identifier_of(t),
+					}
+				));
+			}
+			std::meta::define_aggregate(^^type, members);
+		}
+	};
+
+	template <typename Pack>
+	using binding_args = typename binding_args_aggregate<Pack>::type;
+
+	template <typename... Packs>
+	struct bindings;
+
+	template <typename T>
+	struct push_constant;
+
+	template <typename Entry>
+	consteval auto entry_bindings_pack_info() -> std::meta::info {
+		for (const auto a : std::meta::template_arguments_of(^^Entry)) {
+			if (std::meta::has_template_arguments(a) && std::meta::template_of(a) == ^^bindings) {
+				return std::meta::template_arguments_of(a)[0];
+			}
+		}
+		return {};
+	}
+
+	template <typename Entry>
+	consteval auto entry_push_constants_info() -> std::meta::info {
+		for (const auto a : std::meta::template_arguments_of(^^Entry)) {
+			if (std::meta::has_template_arguments(a) && std::meta::template_of(a) == ^^push_constant) {
+				return std::meta::template_arguments_of(a)[0];
+			}
+		}
+		return {};
+	}
+
+	template <typename Entry>
+	using entry_bindings_pack_t = [: entry_bindings_pack_info<Entry>() :];
+
+	template <typename Entry>
+	using entry_push_constants_t = [: entry_push_constants_info<Entry>() :];
+
 	struct compute_param_pod {
 		std::string_view name;
 		std::string_view slang_type;
@@ -816,6 +884,14 @@ auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_bod
 	return result;
 }
 
+consteval auto gse::gpu::binding_arg_type(const std::meta::info t) -> std::meta::info {
+	const auto dt = std::meta::extract<descriptor_type>(std::meta::substitute(^^descriptor_type_v, { t }));
+	if (dt == descriptor_type::combined_image_sampler) {
+		return ^^combined_sampler_arg;
+	}
+	return ^^vulkan::bindless_slot;
+}
+
 auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
 	const auto full_path = config::resource_path / "Shaders" / "Bodies" / (std::string(body_path) + ".slang");
 	std::ifstream in(full_path, std::ios::binary);
@@ -1437,7 +1513,7 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 
 	vulkan::bindless_mapping_result bindless_mappings;
 	if (heaps && dev.vulkan_device().descriptor_heap_enabled()) {
-		bindless_mappings = vulkan::build_bindless_mappings(active_bindings, *heaps);
+		bindless_mappings = vulkan::build_bindless_mappings(active_bindings, *heaps, pod.push_constant_size);
 	}
 
 	const vulkan::shader_object_create_info stage_info{
@@ -1466,6 +1542,7 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 		.state = {},
 		.is_compute = true,
 		.is_mesh = false,
+		.uses_descriptor_heap = !bindless_mappings.mappings.empty(),
 	};
 
 	return vulkan::shader_program::create(dev.vulkan_device(), info);
@@ -1546,7 +1623,7 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 
 	vulkan::bindless_mapping_result bindless_mappings;
 	if (heaps && dev.vulkan_device().descriptor_heap_enabled()) {
-		bindless_mappings = vulkan::build_bindless_mappings(active_bindings, *heaps);
+		bindless_mappings = vulkan::build_bindless_mappings(active_bindings, *heaps, pod.push_constant_size);
 	}
 
 	std::vector<vulkan::shader_object_create_info> stage_infos;
@@ -1594,6 +1671,7 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 		.state = std::move(state),
 		.is_compute = false,
 		.is_mesh = is_mesh,
+		.uses_descriptor_heap = !bindless_mappings.mappings.empty(),
 	};
 
 	return vulkan::shader_program::create(dev.vulkan_device(), info);

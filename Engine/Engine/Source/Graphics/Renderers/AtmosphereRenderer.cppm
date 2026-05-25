@@ -52,38 +52,44 @@ export namespace gse::renderer::atmosphere {
 		struct [[= gse::settings::category<"Atmosphere">{}]] data {
 			[[
 				= gse::settings::describe<"Sun azimuth (degrees from +X around +Y)">{},
-				= gse::settings::range<0.f, 360.f>{}
+				= gse::settings::range<0.f, 360.f>{},
+				= gse::settings::hot_reloadable
 			]]
 			angle sun_azimuth = degrees(45.0f);
 
 			[[
 				= gse::settings::describe<"Sun elevation above horizon (degrees)">{},
-				= gse::settings::range<-90.f, 90.f>{}
+				= gse::settings::range<-90.f, 90.f>{},
+				= gse::settings::hot_reloadable
 			]]
 			angle sun_elevation = degrees(60.0f);
 
 			[[
 				= gse::settings::describe<"Sun radiant intensity (W/m^2)">{},
-				= gse::shared
+				= gse::shared,
+				= gse::settings::hot_reloadable
 			]]
 			irradiance sun_intensity = watts_per_square_meter(1.6f);
 
 			[[
 				= gse::settings::describe<"Sun color tint applied to direct lighting and the sun disk">{},
-				= gse::shared
+				= gse::shared,
+				= gse::settings::hot_reloadable
 			]]
 			vec3f sun_color = { 1.0f, 0.9f, 0.75f };
 
 			[[
 				= gse::settings::describe<"Sun disk angular radius (degrees)">{},
-				= gse::settings::range<0.1f, 5.f>{}
+				= gse::settings::range<0.1f, 5.f>{},
+				= gse::settings::hot_reloadable
 			]]
 			angle sun_angular_radius = degrees(1.5f);
 
 			[[
 				= gse::settings::describe<"Sun ambient term applied to surfaces not directly lit by the sun.">{},
 				= gse::settings::range<0.f, 1.f>{},
-				= gse::shared
+				= gse::shared,
+				= gse::settings::hot_reloadable
 			]]
 			float sun_ambient_strength = 0.1f;
 

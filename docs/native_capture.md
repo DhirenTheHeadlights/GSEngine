@@ -1,6 +1,6 @@
 # Native Capture — Scope of Work (Locked In)
 
-> **Status (kept as design record): ✅ shipped.** The Vulkan-Video-encoded screenshot + rolling-clip + continuous-recording pipeline described below is live as `renderer::capture::system`. Source: `Engine/Engine/Source/Graphics/Renderers/CaptureRenderer.{cppm,cpp}` + `Graphics/Capture/`. This doc remains as the locked-in design spec for future reference.
+> **Status:** Phases 0–3 code-complete. F9 (screenshots) is shipped and validated. F10/F11 (clip save, continuous record) are code-complete, gated on `video_encode_enabled()`, and pending hardware validation on a GPU/driver that actually exposes `VideoEncodeKHR` (Intel Arc 140V exposes decode only). Phase 4 (polish: settings UI, toasts, codec selector, perf measurement) not started. Source: `Engine/Engine/Source/Graphics/Renderers/CaptureRenderer.{cppm,cpp}` + `Graphics/Capture/`.
 
 ## Overview
 
@@ -288,10 +288,30 @@ Registration:
 - F10: walk back to keyframe, mux, write on worker thread.
 - **Deliverable:** F10 produces a playable MP4 of the last N seconds.
 
-### Phase 3 — Continuous recording (F11)
-- Fragmented MP4 muxer mode (crash-safe).
-- F11 toggles tee: coded units flow to both ring buffer and live muxer.
-- **Deliverable:** F11 produces a growing MP4 file, playable even if the engine crashes mid-recording.
+### Phase 3 — Continuous recording (F11) — CODE COMPLETE
+
+**What was built:**
+
+Muxer:
+- [Mp4Muxer.cppm](../Engine/Engine/Source/Graphics/Capture/Mp4Muxer.cppm) — added `mp4::live_muxer` (`open` / `append` / `close`) alongside the existing one-shot `mux()`. Single file rather than a separate `Mp4LiveMuxer.cppm` so the byte-emitter helpers (`box_scope`, `push_*`, `build_av1c`/`build_hvcc`, `find_sequence_header_obu`, `collect_h265_parameter_sets`) stay naturally shared.
+- [Mp4Muxer.cpp](../Engine/Engine/Source/Graphics/Capture/Mp4Muxer.cpp) — new emitters: `emit_ftyp_fragmented` (brands `iso6`/`msdh`/`msix` + codec), `emit_mvhd_unknown`/`emit_tkhd_unknown`/`emit_mdhd_unknown` (duration=0), `emit_stbl_empty` (sample table with codec config but zero-entry stts/stsc/stsz/stco), `emit_mvex_trex` (default sample defaults, track_ID=1), and `emit_fragment_moof` (mfhd seq + traf with tfhd `default-base-is-moof` flag + 64-bit tfdt + trun with per-sample duration/size/flags). `sample_flags_for` maps keyframe bool to the ISO sample_flags 32-bit bitfield (depends_on=2 / non_sync=0 for keyframes, depends_on=1 / non_sync=1 for inter). `compute_sample_durations` derives per-sample durations from PTS deltas, trailing sample inherits the previous.
+
+`live_muxer` lifecycle:
+- `open(path, track)` opens the file but defers writing `ftyp+moov` until the first keyframe arrives (codec config is extracted from the first keyframe's bitstream, same as static `mux()`).
+- `append(unit)` buffers samples in `m_pending`. On keyframe arrival with a non-empty buffer it calls `flush_fragment()` which emits one `(moof, mdat)` pair to disk and bumps `m_decode_time`. Result: one fragment per GOP (≈1 s at our 1-sec keyframe interval), each independently decodable.
+- `close()` flushes any pending samples as a final fragment, then closes the file.
+
+Crash safety: every `(moof, mdat)` is self-contained and `tfdt` carries absolute decode time, so the file is playable up to the last completed fragment. Worst-case data loss on crash: ≤1 GOP (~1 s) of unflushed buffer.
+
+Renderer:
+- [CaptureRenderer.cppm](../Engine/Engine/Source/Graphics/Renderers/CaptureRenderer.cppm) — added `toggle_recording_request`, `recording_state` (thread + mutex + cv + queue + running flag + atomic active flag + path), held on `data` via `std::unique_ptr<recording_state>` to match the existing `unique_ptr<atomic>` pattern. Added `actions::handle toggle_recording_action`.
+- [CaptureRenderer.cpp](../Engine/Engine/Source/Graphics/Renderers/CaptureRenderer.cpp) — F11 registered in `run()`; tee added at the `encoder.read_bitstream()` site (when `recording->active` is set, the unit is cloned into the recording queue before being moved into the clip ring); toggle handler in `frame()` opens the live muxer and spawns the worker thread on first press, signals + joins on second press; new `shutdown(shutdown_context&, data&)` cleanly drains and finalizes the file on engine exit.
+
+Worker thread: long-lived `std::thread`, owns the `live_muxer` by move, drains the mpsc queue via mutex+cv. Stops when `running=false` is set under the mutex and the cv is notified. Disk I/O isolated from the render thread.
+
+**Deliverable (pending hardware validation):** F11 produces a fragmented MP4 file, playable up to the last fully-written GOP if the engine crashes mid-record.
+
+**Deferred to Phase 4:** on-screen recording indicator, `is_capturing()` UI self-hide, codec/bitrate settings exposure.
 
 ### Phase 4 — Polish
 - Settings UI panel (source mode toggle, resolution cap, ring length, bitrate).
