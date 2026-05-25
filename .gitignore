@@ -26,7 +26,10 @@ __pycache__/
 # Generated resources / configs
 /resources
 /Engine/Resources/Misc
+/Engine/Resources/Recordings
+/Engine/Resources/Screenshots
 *.ini
+*.log
 
 # Claude
 /.claude

@@ -1,14 +1,26 @@
 import argparse
+import json
 import os
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
-DEFAULT_CLANG_TAG = "clang-p2996-v1"
+LATEST_RELEASE_URL = "https://api.github.com/repos/DhirenTheHeadlights/GSEngine/releases/latest"
 # Use home dir (not AppData) so Windows Store Python's VFS sandbox redirection
 # of %LOCALAPPDATA% doesn't cause cmake to disagree with Python on what exists.
 CLANG_INSTALL_ROOT = Path.home() / ".clang-p2996"
+
+
+def resolve_latest_clang_tag():
+    print(f"Resolving latest clang-p2996 release tag from {LATEST_RELEASE_URL}")
+    req = urllib.request.Request(LATEST_RELEASE_URL, headers={"Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req) as response:
+        data = json.load(response)
+    tag = data["tag_name"]
+    print(f"Latest release: {tag}")
+    return tag
 
 
 def resolve_clang_root(tag):
@@ -64,7 +76,7 @@ def main():
     parser.add_argument("--skip-libcxx", action="store_true", help="Skip libc++ build")
     parser.add_argument("--skip-compiler-rt", action="store_true", help="Skip compiler-rt (ASAN runtime) build")
     parser.add_argument("--update-vcpkg", action="store_true", help="Pull latest vcpkg master after submodule init")
-    parser.add_argument("--clang-tag", default=DEFAULT_CLANG_TAG, help="clang-p2996 release tag")
+    parser.add_argument("--clang-tag", default=None, help="clang-p2996 release tag (default: latest GitHub release)")
     parser.add_argument("--persist", action="store_true", help="Persist CLANG_P2996_ROOT via setx")
     parser.add_argument("--force-libcxx", action="store_true", help="Rebuild libc++ even if already installed")
     parser.add_argument("--force-compiler-rt", action="store_true", help="Rebuild compiler-rt even if already installed")
@@ -74,6 +86,9 @@ def main():
         update_submodules()
         if args.update_vcpkg:
             update_vcpkg()
+
+    if args.clang_tag is None:
+        args.clang_tag = resolve_latest_clang_tag()
 
     clang_root = resolve_clang_root(args.clang_tag)
 
