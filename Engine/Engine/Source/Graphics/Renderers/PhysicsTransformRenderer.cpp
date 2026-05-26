@@ -69,9 +69,8 @@ auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::
 		gpu::build_compute_program(
 			*gpu_s.device,
 			*gpu_s.shader_registry,
-			*gpu_s.bindless_textures,
-			entry::pod,
-			gpu_s.bindless_heaps.get()
+			*gpu_s.bindless_heaps,
+			entry::pod
 		);
 
 	d.initialized = true;
@@ -104,8 +103,8 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		d.cached_mapping_count = data.physics_mapping_count;
 
 		if (d.mapping_buffer_size < required) {
-			for (std::size_t i = 0; i < per_frame_resource<vulkan::bindless_buffer>::frames_in_flight; ++i) {
-				d.mapping_buffers[i] = vulkan::bindless_buffer::create(
+			for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
+				d.mapping_buffers[i] = gpu::bindless_buffer::create(
 					gpu_s.device->allocator(),
 					*gpu_s.bindless_heaps,
 					{
@@ -133,13 +132,6 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		0,
 		info.body_count * info.body_stride
 	);
-	d.instance_views[frame_index].rebind_storage(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
-		gc_r.instance_buffer[frame_index],
-		0,
-		gc_r.instance_buffer[frame_index].size()
-	);
 
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
@@ -155,7 +147,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		{
 			.body_data = d.body_views[frame_index].slot(),
 			.mapping_data = d.mapping_buffers[frame_index].slot(),
-			.instance_data_buffer = d.instance_views[frame_index].slot(),
+			.instance_data_buffer = gc_r.instance_buffer[frame_index].slot(),
 		},
 		vec3u{ workgroups, 1u, 1u }
 	);

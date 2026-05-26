@@ -123,19 +123,29 @@ auto gs::push_recording_indicator(gse::run_context& ctx, const gse::gui::system:
 	}
 
 	const auto viewport = gse::vec2f(gse::window::viewport(window_d));
-	const float dot_size = 14.f;
+	const float dot_size = 28.f;
 	const float margin = 24.f;
-	const gse::vec2f top_left{ viewport.x() - margin - dot_size, margin };
+	const gse::vec2f top_left{ viewport.x() - margin - dot_size, viewport.y() - margin };
 
 	const auto t = gse::system_clock::now();
 	const auto pulse = 0.55f + 0.45f * gse::sin(t * 4.f);
 
+	const auto rect = gse::gui::ui_rect::from_position_size(
+		top_left,
+		{ dot_size, dot_size }
+	);
+
 	ctx.channels.push<gse::renderer::sprite_command>({
-		.rect = gse::gui::ui_rect::from_position_size(
-			top_left,
-			{ dot_size, dot_size }
-		),
-		.color = { 0.9f, 0.1f, 0.1f, pulse },
+		.rect = rect.inset({ -2.f, -2.f }),
+		.color = { 1.f, 1.f, 1.f, 0.9f },
+		.texture = gui_d.blank_texture,
+		.layer = gse::render_layer::overlay,
+		.corner_radius = (dot_size + 4.f) * 0.5f,
+	});
+
+	ctx.channels.push<gse::renderer::sprite_command>({
+		.rect = rect,
+		.color = { 0.95f, 0.15f, 0.15f, pulse },
 		.texture = gui_d.blank_texture,
 		.layer = gse::render_layer::overlay,
 		.corner_radius = dot_size * 0.5f,

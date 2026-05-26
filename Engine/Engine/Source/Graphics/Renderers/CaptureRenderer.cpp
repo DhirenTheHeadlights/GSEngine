@@ -58,89 +58,76 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 
 	d.screenshot_action = register_action("Screenshot", key::f9);
 	d.save_clip_action = register_action("Save Clip", key::f10);
-	d.toggle_recording_action = register_action("Toggle Recording", key::f8);
+	d.toggle_recording_action = register_action("Toggle Recording", key::p);
 
+	const auto ext = gpu_s.render_graph->extent();
+	auto encoder = gpu_s.device->make_video_encoder(ext);
 	if (!gpu_s.device->video_encode_enabled()) {
 		log::println(log::category::render, "Video encode not available, capture limited to screenshots");
 	}
-	else if (const auto caps = gpu::video_encoder::probe(*gpu_s.device); !caps.available) {
+	else if (!encoder) {
 		log::println(log::category::render, "Video encode probe failed, capture limited to screenshots");
 	}
 	else {
-		const auto ext = gpu_s.render_graph->extent();
 		const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
 		d.convert_pipeline =
 			gpu::build_compute_program(
 				*gpu_s.device,
 				*gpu_s.shader_registry,
-				*gpu_s.bindless_textures,
+				*gpu_s.bindless_heaps,
 				entry::pod
 			);
 
-		d.capture_sampler = gpu::sampler::create(
-			gpu_s.device->allocator(),
-			{
-				.min = gpu::sampler_filter::nearest,
-				.mag = gpu::sampler_filter::nearest,
-				.address_u = gpu::sampler_address_mode::clamp_to_edge,
-				.address_v = gpu::sampler_address_mode::clamp_to_edge,
-				.address_w = gpu::sampler_address_mode::clamp_to_edge,
-			}
-		);
+		constexpr gpu::sampler_desc capture_sampler_desc{
+			.min = gpu::sampler_filter::nearest,
+			.mag = gpu::sampler_filter::nearest,
+			.address_u = gpu::sampler_address_mode::clamp_to_edge,
+			.address_v = gpu::sampler_address_mode::clamp_to_edge,
+			.address_w = gpu::sampler_address_mode::clamp_to_edge,
+		};
 
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
 			d.rgba_captures[i] = gpu::image::create(
 				gpu_s.device->allocator(),
 				{
 					.size = ext,
-					.format = gpu::image_format::r8g8b8a8_srgb,
+					.format = gpu::image_format::r8g8b8a8_unorm,
 					.usage = gpu::image_flag::sampled | gpu::image_flag::transfer_dst,
 				}
 			);
 
 			d.rgba_slots[i] = gpu_s.bindless_textures->allocate(
-				d.rgba_captures[i].view(),
-				d.capture_sampler.native()
+				d.rgba_captures[i],
+				capture_sampler_desc
 			);
 
-			d.y_planes[i] = gpu::image::create(
+			d.y_planes[i] = gpu::bindless_image::create(
 				gpu_s.device->allocator(),
+				*gpu_s.bindless_heaps,
 				{
 					.size = ext,
 					.format = gpu::image_format::r8_unorm,
 					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-				}
+				},
+				"capture.y_plane"
 			);
-			gpu::transition_image_to(*gpu_s.device, d.y_planes[i]);
+			gpu::transition_image_to(*gpu_s.device, d.y_planes[i].image());
 
-			d.uv_planes[i] = gpu::image::create(
+			d.uv_planes[i] = gpu::bindless_image::create(
 				gpu_s.device->allocator(),
+				*gpu_s.bindless_heaps,
 				{
 					.size = half_ext,
 					.format = gpu::image_format::r8g8_unorm,
 					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
-				}
+				},
+				"capture.uv_plane"
 			);
-			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i]);
-
-			d.convert_descriptors[i] =
-				gpu::allocate_descriptors(
-					*gpu_s.shader_registry,
-					gpu_s.device->descriptor_heap(),
-					entry::pod
-				);
-
-			gpu::descriptor_writer(
-				gpu_s.device->handle(),
-				d.convert_descriptors[i]
-			)
-				.storage_image<output_y>(d.y_planes[i])
-				.storage_image<output_uv>(d.uv_planes[i])
-				.commit();
+			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i].image());
 		}
 
-		d.encoder = gpu::video_encoder::create(*gpu_s.device, ext, caps);
+		d.encoder = std::move(*encoder);
 
 		d.clip_ring.set_budget(d.ring_budget);
 		d.applied_ring_budget = d.ring_budget;
@@ -248,7 +235,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 				);
 			}
 		}
-		d.encoder.encode_frame(frame_index, d.y_planes[frame_index], d.uv_planes[frame_index]);
+		d.encoder.encode_frame(frame_index, d.y_planes[frame_index].image().handle(), d.uv_planes[frame_index].image().handle());
 	}
 
 	const auto toggle_requests = ctx.read_channel<toggle_recording_request>();
@@ -438,15 +425,12 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	gpu::typed_push_constants<push_constants> convert_pc{
-		.data = {
-			.extent = ext,
-			.rgba_index = d.rgba_slots[frame_index].valid() ? d.rgba_slots[frame_index].index : shaders::bindless::invalid_index,
-		},
-		.stages = gpu::stage_flag::compute,
+	const push_constants convert_pc{
+		.extent = ext,
+		.rgba_index = d.rgba_slots[frame_index].valid() ? d.rgba_slots[frame_index].index : shaders::bindless::invalid_index,
 	};
 
-	auto rec = co_await gpu::pass<system>(ctx).after<ui::system>();
+	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.convert_pipeline).after<ui::system>();
 
 	if (do_screenshot) {
 		rec.capture_swapchain(*gpu_s.swapchain, *gpu_s.frame, staging);
@@ -463,10 +447,14 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 			vec2u{ capture_extent.x(), capture_extent.y() }
 		);
 		rec.sample_image(d.rgba_captures[frame_index], gpu::pipeline_stage_flag::compute_shader);
-		rec.bind(d.convert_pipeline);
-		rec.bind_descriptors(d.convert_pipeline, d.convert_descriptors[frame_index]);
-		rec.push(d.convert_pipeline, convert_pc);
-		rec.dispatch((ext.x() + 15) / 16, (ext.y() + 15) / 16, 1);
+		rec.dispatch<entry>(
+			convert_pc,
+			{
+				.output_y = d.y_planes[frame_index].storage_slot(),
+				.output_uv = d.uv_planes[frame_index].storage_slot(),
+			},
+			vec3u{ (ext.x() + 15) / 16, (ext.y() + 15) / 16, 1 }
+		);
 	}
 }
 

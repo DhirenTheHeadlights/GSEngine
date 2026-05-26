@@ -148,26 +148,20 @@ export namespace gse::renderer::cloud {
 			gpu::shader_program raymarch_pipeline;
 			gpu::shader_program composite_pipeline;
 
-			gpu::image shape_noise;
-			gpu::image detail_noise;
-			gpu::image cloud_target;
+			gpu::bindless_image shape_noise;
+			gpu::bindless_image detail_noise;
+			gpu::bindless_image cloud_target;
 
-			gpu::sampler noise_sampler;
-			gpu::sampler atmosphere_lut_sampler;
-			gpu::sampler sky_view_sampler;
-			gpu::sampler composite_sampler;
+			gpu::bindless_sampler noise_sampler;
+			gpu::bindless_sampler atmosphere_lut_sampler;
+			gpu::bindless_sampler sky_view_sampler;
+			gpu::bindless_sampler composite_sampler;
 
-			gpu::buffer cloud_ubo_buffer;
-
-			gpu::descriptor_region shape_bake_descriptors;
-			gpu::descriptor_region detail_bake_descriptors;
-			per_frame_resource<gpu::descriptor_region> raymarch_descriptors;
-			per_frame_resource<gpu::descriptor_region> composite_descriptors;
+			gpu::bindless_buffer cloud_ubo_buffer;
 
 			vec2u cloud_target_extent{ 0, 0 };
 			std::uint32_t frame_counter = 0;
 			bool noises_ready = false;
-			bool raymarch_descriptors_ready = false;
 		};
 
 		static auto run(

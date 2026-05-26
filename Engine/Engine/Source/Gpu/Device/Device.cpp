@@ -4,23 +4,15 @@ import std;
 
 import :aliases;
 import :device;
-import :descriptor_heap;
-import :types;
 
-import :vulkan_buffer;
-import :vulkan_command_pools;
-import :vulkan_commands;
-import :vulkan_device;
-import :vulkan_instance;
-import :vulkan_queues;
-import :vulkan_swapchain;
+import gse.vulkan;
 
 import gse.os;
 import gse.log;
 import gse.concurrency;
 import gse.meta;
 
-auto gse::gpu::device::create(const window::data& win, const bool validation_layers_enabled, vulkan::device::settings& device_cfg) -> std::unique_ptr<device> {
+auto gse::gpu::device::create(const window::data& win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
 	auto instance = vulkan::instance::create(
@@ -42,34 +34,31 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 		task::thread_count()
 	);
 
-	auto transient = transient_executor::create(
-		creation.device,
-		creation.queue.graphics_family_index(),
-		creation.queue.compute_family_index(),
-		task::thread_count()
-	);
-
-	auto desc_heap = std::make_unique<gpu::descriptor_heap>(creation.device, creation.desc_buf_props);
-
 	const auto surface_format = vulkan::pick_surface_format(creation.device, instance);
 
-	return std::unique_ptr<device>(new device(
+	auto dev = std::unique_ptr<device>(new device(
 		std::move(aftermath_tracker),
 		std::move(instance),
 		std::move(creation.device),
 		std::move(creation.queue),
 		std::move(command),
 		std::move(worker_pools),
-		std::move(transient),
-		std::move(desc_heap),
-		std::move(creation.desc_buf_props),
 		surface_format,
 		creation.video_encode_enabled
 	));
+
+	dev->m_transient = transient_executor::create(
+		dev->m_device_config,
+		dev->m_device_config.queue_family(queue_type::graphics),
+		dev->m_device_config.queue_family(queue_type::compute),
+		task::thread_count()
+	);
+
+	return dev;
 }
 
-gse::gpu::device::device(vulkan::aftermath&& aftermath_tracker, vulkan::instance&& instance, vulkan::device&& device, vulkan::queue&& queue, vulkan::command&& command, vulkan::worker_command_pools&& worker_pools, transient_executor&& transient, std::unique_ptr<gpu::descriptor_heap> descriptor_heap, descriptor_buffer_properties desc_buf_props, image_format surface_format, bool video_encode_enabled)
-	: m_aftermath(std::move(aftermath_tracker)), m_instance(std::move(instance)), m_device_config(std::move(device)), m_queue(std::move(queue)), m_command(std::move(command)), m_worker_pools(std::move(worker_pools)), m_transient(std::move(transient)), m_descriptor_heap(std::move(descriptor_heap)), m_descriptor_buffer_props(std::move(desc_buf_props)), m_surface_format(surface_format), m_video_encode_enabled(video_encode_enabled) {
+gse::gpu::device::device(vulkan::aftermath&& aftermath_tracker, vulkan::instance&& instance, vulkan::device&& device, vulkan::queue&& queue, vulkan::command&& command, vulkan::worker_command_pools&& worker_pools, image_format surface_format, bool video_encode_enabled)
+	: m_aftermath(std::move(aftermath_tracker)), m_instance(std::move(instance)), m_device_config(std::move(device)), m_queue(std::move(queue)), m_command(std::move(command)), m_worker_pools(std::move(worker_pools)), m_surface_format(surface_format), m_video_encode_enabled(video_encode_enabled) {
 	constexpr std::size_t slot_count = pass_marker_ring_size * 4;
 	constexpr std::size_t buffer_size = slot_count * sizeof(std::uint32_t);
 	const std::array<std::uint32_t, slot_count> zeros{};
@@ -123,7 +112,7 @@ auto gse::gpu::device::begin_pass_marker(const gpu::handle<command_buffer> cmd, 
 	if (ring.checkpoint_buffer.valid()) {
 		const auto slot = seq % pass_marker_ring_size;
 		const auto offset = slot * 4 * sizeof(std::uint32_t);
-		vulkan::commands(cmd).fill_buffer(
+		commands(cmd).fill_buffer(
 			ring.checkpoint_buffer.handle(),
 			offset,
 			sizeof(std::uint32_t),
@@ -145,7 +134,7 @@ auto gse::gpu::device::checkpoint_pass_marker(const gpu::handle<command_buffer> 
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + sizeof(std::uint32_t);
-	vulkan::commands(cmd).fill_buffer(
+	commands(cmd).fill_buffer(
 		ring.checkpoint_buffer.handle(),
 		offset,
 		sizeof(std::uint32_t),
@@ -161,7 +150,7 @@ auto gse::gpu::device::post_renderpass_pass_marker(const gpu::handle<command_buf
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + 2 * sizeof(std::uint32_t);
-	vulkan::commands(cmd).fill_buffer(
+	commands(cmd).fill_buffer(
 		ring.checkpoint_buffer.handle(),
 		offset,
 		sizeof(std::uint32_t),
@@ -177,7 +166,7 @@ auto gse::gpu::device::end_pass_marker(const gpu::handle<command_buffer> cmd, co
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + 3 * sizeof(std::uint32_t);
-	vulkan::commands(cmd).fill_buffer(
+	commands(cmd).fill_buffer(
 		ring.checkpoint_buffer.handle(),
 		offset,
 		sizeof(std::uint32_t),
@@ -369,24 +358,106 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	}
 }
 
-auto gse::gpu::device::vulkan_queue() -> vulkan::queue& {
-	return m_queue;
+auto gse::gpu::device::frame_command_buffer(const queue_type queue, const std::uint32_t frame_index) const -> gpu::handle<command_buffer> {
+	return m_command.frame_command_buffer(queue, frame_index);
 }
 
-auto gse::gpu::device::vulkan_command() -> vulkan::command& {
-	return m_command;
+auto gse::gpu::device::submit(const queue_type queue, const submit_info& info, const gpu::handle<fence> signal_fence) -> void {
+	m_queue.submit(queue, info, signal_fence);
 }
 
-auto gse::gpu::device::worker_command_pools() -> vulkan::worker_command_pools& {
-	return m_worker_pools;
+auto gse::gpu::device::present(const present_info& info) -> result {
+	return m_queue.present(info);
+}
+
+auto gse::gpu::device::wait_for_fence(const gpu::handle<fence> f, const std::uint64_t timeout_ns) const -> result {
+	return vulkan::wait_for_fence(m_device_config, f, timeout_ns);
+}
+
+auto gse::gpu::device::reset_fence(const gpu::handle<fence> f) const -> void {
+	vulkan::reset_fence(m_device_config, f);
+}
+
+auto gse::gpu::device::reset_worker_command_pools(const std::uint32_t frame_index) -> void {
+	m_worker_pools.reset_frame(frame_index);
+}
+
+auto gse::gpu::device::acquire_worker_command_buffer(const queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::handle<command_buffer> {
+	return m_worker_pools.acquire_secondary(queue, worker_index, frame_index);
+}
+
+auto gse::gpu::device::make_video_encoder(const vec2u extent) -> std::optional<video_encoder> {
+	if (!m_video_encode_enabled) {
+		return std::nullopt;
+	}
+	const auto caps = video_encoder::probe(m_device_config, m_queue);
+	if (!caps.available) {
+		return std::nullopt;
+	}
+	return video_encoder::create(m_device_config, m_queue, extent, caps);
+}
+
+auto gse::gpu::device::create_image_unbound(const image_create_info& info) const -> std::pair<gpu::handle<image>, memory_requirements> {
+	return m_device_config.create_image_unbound(info);
+}
+
+auto gse::gpu::device::create_buffer_unbound(const buffer_create_info& info) const -> std::pair<gpu::handle<buffer>, memory_requirements> {
+	return m_device_config.create_buffer_unbound(info);
+}
+
+auto gse::gpu::device::bind_image_memory(const gpu::handle<image> img, const device_memory_handle mem, const device_size offset) const -> void {
+	m_device_config.bind_image_memory(img, mem, offset);
+}
+
+auto gse::gpu::device::bind_buffer_memory(const gpu::handle<buffer> buf, const device_memory_handle mem, const device_size offset) const -> void {
+	m_device_config.bind_buffer_memory(buf, mem, offset);
+}
+
+auto gse::gpu::device::create_image_view(const gpu::handle<image> img, const image_view_create_info& info) const -> gpu::handle<image_view> {
+	return m_device_config.create_image_view(img, info);
+}
+
+auto gse::gpu::device::allocate_aliased_memory(const device_size size, const std::uint32_t memory_type_index) const -> device_memory_handle {
+	return m_device_config.allocate_aliased_memory(size, memory_type_index);
+}
+
+auto gse::gpu::device::free_aliased_memory(const device_memory_handle mem) const -> void {
+	m_device_config.free_aliased_memory(mem);
+}
+
+auto gse::gpu::device::find_memory_type_index(const std::uint32_t type_bits, const memory_property_flags required) const -> std::uint32_t {
+	return m_device_config.find_memory_type_index(type_bits, required);
+}
+
+auto gse::gpu::device::make_aliased_image(const gpu::handle<image> img_handle, const gpu::handle<image_view> view_handle, const image_format format, const vec3u extent, const image_view_create_info& view_info, const std::string_view tag) -> std::unique_ptr<image> {
+	return std::make_unique<image>(
+		img_handle,
+		view_handle,
+		static_cast<image_format_value>(format),
+		extent,
+		view_info,
+		vulkan::basic_allocation<vulkan::device>{
+			0, 0, 0, nullptr, nullptr, nullptr,
+			std::addressof(m_device_config),
+			vulkan::allocation_debug_info{ .tag = std::string(tag) },
+		}
+	);
+}
+
+auto gse::gpu::device::make_aliased_buffer(const gpu::handle<buffer> buf_handle, const device_size size, const std::string_view tag) -> std::unique_ptr<buffer> {
+	return std::make_unique<buffer>(
+		buf_handle,
+		vulkan::basic_allocation<vulkan::device>{
+			0, 0, 0, nullptr, nullptr, nullptr,
+			std::addressof(m_device_config),
+			vulkan::allocation_debug_info{ .tag = std::string(tag) },
+		},
+		size
+	);
 }
 
 auto gse::gpu::device::transient() -> transient_executor& {
-	return m_transient;
-}
-
-auto gse::gpu::device::descriptor_buffer_props() const -> const descriptor_buffer_properties& {
-	return m_descriptor_buffer_props;
+	return *m_transient;
 }
 
 auto gse::gpu::device::video_encode_enabled() const -> bool {

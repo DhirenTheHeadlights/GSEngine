@@ -17,6 +17,14 @@ import gse.math;
 import gse.meta;
 
 namespace gse::renderer::scene_snapshot {
+	constexpr gpu::sampler_desc snapshot_sampler_desc{
+		.min = gpu::sampler_filter::linear,
+		.mag = gpu::sampler_filter::linear,
+		.address_u = gpu::sampler_address_mode::clamp_to_edge,
+		.address_v = gpu::sampler_address_mode::clamp_to_edge,
+		.address_w = gpu::sampler_address_mode::clamp_to_edge,
+	};
+
 	template <typename GpuS>
 	auto recreate_resources(GpuS& gpu_s, system::data& d, const vec2u extent) -> void {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
@@ -37,8 +45,8 @@ namespace gse::renderer::scene_snapshot {
 			);
 
 			d.slots[i] = gpu_s.bindless_textures->allocate(
-				d.snapshots[i].view(),
-				d.sampler.native()
+				d.snapshots[i],
+				snapshot_sampler_desc
 			);
 		}
 
@@ -48,17 +56,6 @@ namespace gse::renderer::scene_snapshot {
 }
 
 auto gse::renderer::scene_snapshot::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.sampler = gpu::sampler::create(
-		gpu_s.device->allocator(),
-		{
-			.min = gpu::sampler_filter::linear,
-			.mag = gpu::sampler_filter::linear,
-			.address_u = gpu::sampler_address_mode::clamp_to_edge,
-			.address_v = gpu::sampler_address_mode::clamp_to_edge,
-			.address_w = gpu::sampler_address_mode::clamp_to_edge,
-		}
-	);
-
 	const auto initial_extent = gpu_s.render_graph->extent();
 	if (initial_extent.x() > 0 && initial_extent.y() > 0) {
 		recreate_resources(gpu_s, d, initial_extent);

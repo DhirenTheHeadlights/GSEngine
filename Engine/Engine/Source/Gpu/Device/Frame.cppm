@@ -2,22 +2,17 @@ export module gse.gpu:frame;
 
 import std;
 
-import :transient_executor;
-import :vulkan_command_pools;
-import :vulkan_device;
-import :vulkan_queues;
-import :vulkan_swapchain;
-import :vulkan_sync;
+import :aliases;
 import :device;
 import :swap_chain;
-import :types;
+
 import gse.os;
 import gse.core;
 
 export namespace gse::gpu {
 	struct queue_submission {
 		queue_type queue = queue_type::graphics;
-		handle<vulkan::command_buffer> command_buffer;
+		handle<command_buffer> command_buffer;
 		std::vector<semaphore_submit_info> waits;
 		std::vector<semaphore_submit_info> signals;
 	};
@@ -29,13 +24,6 @@ export namespace gse::gpu {
 			swap_chain& sc
 		) -> std::unique_ptr<frame>;
 
-		frame(
-			vulkan::sync&& sync,
-			std::uint32_t image_index,
-			device& dev,
-			swap_chain& sc
-		);
-
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
 
 		[[nodiscard]] auto image_index() const -> std::uint32_t;
@@ -43,7 +31,7 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto command_buffer(
 			queue_type queue = queue_type::graphics
-		) const -> handle<vulkan::command_buffer>;
+		) const -> handle<command_buffer>;
 
 		[[nodiscard]] auto frame_in_progress() const -> bool;
 
@@ -58,27 +46,34 @@ export namespace gse::gpu {
 		) -> void;
 
 		auto set_sync(
-			vulkan::sync&& sync
+			sync&& s
 		) -> void;
 
 	private:
+		frame(
+			sync&& s,
+			std::uint32_t image_index,
+			device& dev,
+			swap_chain& sc
+		);
+
 		auto recreate_resources(
 			const window::data& win
 		) -> void;
 
 		static auto create_sync_objects(
-			const vulkan::device& device_data,
-			const vulkan::swap_chain& swap_chain_data
-		) -> vulkan::sync;
+			device& dev,
+			const swap_chain& sc
+		) -> sync;
 
-		vulkan::sync m_sync;
+		sync m_sync;
 		std::uint32_t m_image_index = 0;
-		std::array<handle<vulkan::command_buffer>, queue_type_count> m_command_buffers{};
+		std::array<handle<gpu::command_buffer>, queue_type_count> m_command_buffers{};
 		std::uint32_t m_current_frame = 0;
 		bool m_frame_in_progress = false;
 		device* m_device;
 		swap_chain* m_swapchain;
 		std::uint64_t m_next_present_id = 1;
-		std::array<std::uint64_t, vulkan::max_frames_in_flight> m_present_ids_in_flight{};
+		std::array<std::uint64_t, max_frames_in_flight> m_present_ids_in_flight{};
 	};
 }

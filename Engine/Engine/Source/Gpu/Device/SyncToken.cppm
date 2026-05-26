@@ -2,8 +2,7 @@ export module gse.gpu:sync_token;
 
 import std;
 
-import :transient_queue;
-import :vulkan_device;
+import :aliases;
 
 export namespace gse::gpu {
 	class sync_token {
@@ -18,10 +17,6 @@ export namespace gse::gpu {
 		[[nodiscard]] auto valid() const -> bool;
 
 		[[nodiscard]] auto ready() const -> bool;
-
-		auto wait(
-			const vulkan::device& device
-		) const -> void;
 
 		[[nodiscard]] auto operator co_await() const noexcept;
 
@@ -56,13 +51,6 @@ auto gse::gpu::sync_token::ready() const -> bool {
 		return true;
 	}
 	return m_queue->reached(m_value);
-}
-
-auto gse::gpu::sync_token::wait(const vulkan::device& device) const -> void {
-	if (!m_queue) {
-		return;
-	}
-	m_queue->wait_until(device, m_value);
 }
 
 auto gse::gpu::sync_token::operator co_await() const noexcept {

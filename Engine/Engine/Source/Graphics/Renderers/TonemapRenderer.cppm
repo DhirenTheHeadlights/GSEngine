@@ -26,8 +26,9 @@ export namespace gse::renderer::tonemap {
 			bool show_velocity = false;
 
 			gpu::shader_program pipeline;
-			gpu::sampler sampler;
-			per_frame_resource<gpu::descriptor_region> descriptors;
+			gpu::bindless_sampler sampler;
+			gpu::bindless_image_view hdr_view;
+			gpu::bindless_image_view velocity_view;
 		};
 
 		static auto run(

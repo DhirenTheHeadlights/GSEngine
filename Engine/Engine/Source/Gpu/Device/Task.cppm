@@ -2,16 +2,9 @@ export module gse.gpu:gpu_task;
 
 import std;
 
+import :aliases;
 import :device;
-import :frame_resource_bin;
-import :handles;
 import :sync_token;
-import :transient_queue;
-import :types;
-import :vulkan_device;
-import :vulkan_queues;
-import :vulkan_transient_command_buffer;
-import :vulkan_transient_command_pool;
 
 import gse.assert;
 import gse.concurrency;
@@ -32,17 +25,16 @@ export namespace gse::gpu {
 			std::coroutine_handle<>
 		) noexcept -> bool;
 
-		auto await_resume() -> vulkan::transient_command_buffer;
+		auto await_resume() -> transient_command_buffer;
 	};
 
 	class submission {
 	public:
 		submission(
 			gpu::device& gpu_dev,
-			vulkan::queue& queues,
 			transient_queue& queue,
 			frame_resource_bin& bin,
-			vulkan::transient_command_buffer&& cmd
+			transient_command_buffer&& cmd
 		);
 
 		template <typename T>
@@ -62,10 +54,9 @@ export namespace gse::gpu {
 
 	private:
 		gpu::device* m_gpu_device;
-		vulkan::queue* m_queues;
 		transient_queue* m_queue;
 		frame_resource_bin* m_bin;
-		vulkan::transient_command_buffer m_cmd;
+		transient_command_buffer m_cmd;
 		std::vector<move_only_function<void()>> m_pending_retains;
 		std::uint64_t m_value = 0;
 		bool m_submitted = false;
@@ -80,10 +71,10 @@ auto gse::gpu::begin_transient_awaiter::await_suspend(std::coroutine_handle<>) n
 	return false;
 }
 
-auto gse::gpu::begin_transient_awaiter::await_resume() -> vulkan::transient_command_buffer {
+auto gse::gpu::begin_transient_awaiter::await_resume() -> transient_command_buffer {
 	const auto worker = task::current_worker();
 	assert(worker.has_value(), "begin_transient must be co_awaited from a task worker thread");
-	auto cmd = m_queue->allocate_primary(m_gpu_device->vulkan_device(), *worker);
+	auto cmd = m_queue->allocate_primary(*worker);
 	cmd.begin_one_time();
 	const auto marker =
 		m_gpu_device->begin_pass_marker(
@@ -97,8 +88,8 @@ auto gse::gpu::begin_transient_awaiter::await_resume() -> vulkan::transient_comm
 	return cmd;
 }
 
-gse::gpu::submission::submission(gpu::device& gpu_dev, vulkan::queue& queues, transient_queue& queue, frame_resource_bin& bin, vulkan::transient_command_buffer&& cmd)
-	: m_gpu_device(&gpu_dev), m_queues(&queues), m_queue(&queue), m_bin(&bin), m_cmd(std::move(cmd)) {
+gse::gpu::submission::submission(gpu::device& gpu_dev, transient_queue& queue, frame_resource_bin& bin, transient_command_buffer&& cmd)
+	: m_gpu_device(&gpu_dev), m_queue(&queue), m_bin(&bin), m_cmd(std::move(cmd)) {
 }
 
 template <typename T>
@@ -151,12 +142,10 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 			),
 		};
 
-		if (m_queue->id() == queue_id::graphics) {
-			m_queues->submit_graphics(info);
-		}
-		else {
-			m_queues->submit_compute(info);
-		}
+		m_gpu_device->submit(
+			m_queue->id() == queue_id::graphics ? queue_type::graphics : queue_type::compute,
+			info
+		);
 	}
 	m_submitted = true;
 

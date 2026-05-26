@@ -318,33 +318,39 @@ auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::
 		system::data::max_materials * sizeof(shaders::forward::material_data);
 	d.material_staging.reserve(material_buffer_size);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t instance_buffer_size =
 			system::data::max_instances * sizeof(shaders::common::instance_data);
-		d.instance_buffer[i] = gpu::buffer::create(
+		d.instance_buffer[i] = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = instance_buffer_size,
 				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
-			}
+			},
+			"gc_instance_buffer"
 		);
 
 		constexpr std::size_t normal_indirect_buffer_size =
 			render_data::max_batches * sizeof(gpu::draw_mesh_tasks_indirect_command);
-		d.normal_indirect_commands_buffer[i] = gpu::buffer::create(
+		d.normal_indirect_commands_buffer[i] = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = normal_indirect_buffer_size,
 				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
-			}
+			},
+			"gc_indirect_commands"
 		);
 
-		d.material_palette_buffers[i] = gpu::buffer::create(
+		d.material_palette_buffers[i] = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = material_buffer_size,
 				.usage = gpu::buffer_flag::storage
-			}
+			},
+			"gc_material_palette"
 		);
 	}
 
@@ -425,7 +431,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	if (!data.instance_staging.empty()) {
-		d.instance_buffer[frame_index].host_write(data.instance_staging);
+		d.instance_buffer[frame_index].buffer().host_write(data.instance_staging);
 	}
 
 	if (!data.normal_batches.empty()) {
@@ -443,7 +449,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 		}
 
 		if (!normal_indirect_commands.empty()) {
-			d.normal_indirect_commands_buffer[frame_index].host_write(normal_indirect_commands);
+			d.normal_indirect_commands_buffer[frame_index].buffer().host_write(normal_indirect_commands);
 		}
 	}
 
@@ -467,7 +473,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 			};
 		}
 
-		d.material_palette_buffers[frame_index].host_write(
+		d.material_palette_buffers[frame_index].buffer().host_write(
 			mat_staging.data(),
 			material_count * sizeof(shaders::forward::material_data)
 		);

@@ -7,7 +7,6 @@ import gse.concurrency;
 import gse.diag;
 import gse.ecs;
 
-import :types;
 import :transient_pool;
 import :render_graph;
 

@@ -175,22 +175,17 @@ export namespace gse::renderer::atmosphere {
 			gpu::shader_program sky_raster_pipeline;
 			gpu::shader_program ap_pipeline;
 
-			[[= gse::shared]] gpu::image transmittance_lut;
-			gpu::image multiscatter_lut;
-			[[= gse::shared]] gpu::image sky_view_lut;
-			gpu::image ap_volume;
+			[[= gse::shared]] gpu::bindless_image transmittance_lut;
+			gpu::bindless_image multiscatter_lut;
+			[[= gse::shared]] gpu::bindless_image sky_view_lut;
+			[[= gse::shared]] gpu::bindless_image ap_volume;
 			vec3u ap_volume_extent{ 32, 32, 32 };
 
 			gpu::sampler lut_sampler;
-			gpu::sampler sky_view_sampler;
+			[[= gse::shared]] gpu::bindless_sampler lut_sampler_bindless;
+			gpu::bindless_sampler sky_view_sampler_bindless;
 
-			[[= gse::shared]] gpu::buffer atmosphere_ubo_buffer;
-
-			gpu::descriptor_region transmittance_descriptors;
-			gpu::descriptor_region multiscatter_descriptors;
-			per_frame_resource<gpu::descriptor_region> sky_view_descriptors;
-			per_frame_resource<gpu::descriptor_region> sky_raster_descriptors;
-			per_frame_resource<gpu::descriptor_region> ap_descriptors;
+			[[= gse::shared]] gpu::bindless_buffer atmosphere_ubo_buffer;
 
 			bool luts_ready = false;
 		};

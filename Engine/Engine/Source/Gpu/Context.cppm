@@ -2,9 +2,6 @@ export module gse.gpu:context;
 
 import std;
 
-import :types;
-import :vulkan_device;
-import :descriptor_heap;
 import :shader_registry;
 import :device;
 import :swap_chain;
@@ -13,7 +10,6 @@ import :transient_pool;
 import :render_graph;
 import :render_pass;
 import :bindless;
-import :bindless_heap;
 
 import gse.os;
 
@@ -39,7 +35,7 @@ export namespace gse::gpu {
 			[[
 				= gse::settings::describe<"Vulkan device tracking and naming options.">{}
 			]]
-			vulkan::device::settings device_settings;
+			gpu::device_settings device_settings;
 
 			[[= gse::shared]] std::unique_ptr<gpu::device> device;
 			[[= gse::shared]] std::unique_ptr<gpu::shader_registry> shader_registry;
@@ -47,7 +43,7 @@ export namespace gse::gpu {
 			[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
 			[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
 			[[= gse::shared]] std::unique_ptr<bindless_texture_set> bindless_textures;
-			[[= gse::shared]] std::unique_ptr<vulkan::bindless_heaps> bindless_heaps;
+			[[= gse::shared]] std::unique_ptr<gpu::bindless_heaps> bindless_heaps;
 			[[= gse::shared]] concurrency::frame_scheduler scheduler;
 		};
 

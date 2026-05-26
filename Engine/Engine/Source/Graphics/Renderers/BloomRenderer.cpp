@@ -129,7 +129,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const gpu::context::data& gpu_s, s
 		d.mips_down[i] = {};
 		d.mips_up[i] = {};
 		if (i < count) {
-			d.mips_down[i] = vulkan::bindless_image::create(
+			d.mips_down[i] = gpu::bindless_image::create(
 				gpu_s.device->allocator(),
 				*gpu_s.bindless_heaps,
 				{
@@ -143,7 +143,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const gpu::context::data& gpu_s, s
 				)
 			);
 			gpu::transition_image_to(*gpu_s.device, d.mips_down[i].image());
-			d.mips_up[i] = vulkan::bindless_image::create(
+			d.mips_up[i] = gpu::bindless_image::create(
 				gpu_s.device->allocator(),
 				*gpu_s.bindless_heaps,
 				{
@@ -176,19 +176,17 @@ auto gse::renderer::bloom::system::run(run_context& ctx, const gpu::context::dat
 	d.downsample_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
-		downsample_entry::pod,
-		gpu_s.bindless_heaps.get()
+		*gpu_s.bindless_heaps,
+		downsample_entry::pod
 	);
 	d.upsample_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
-		upsample_entry::pod,
-		gpu_s.bindless_heaps.get()
+		*gpu_s.bindless_heaps,
+		upsample_entry::pod
 	);
 
-	d.sampler = vulkan::bindless_sampler::create(
+	d.sampler = gpu::bindless_sampler::create(
 		*gpu_s.bindless_heaps,
 		gpu::sampler_desc{
 			.min = gpu::sampler_filter::linear,

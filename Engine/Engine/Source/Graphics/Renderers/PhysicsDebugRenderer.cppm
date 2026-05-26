@@ -39,12 +39,7 @@ export namespace gse::renderer::physics_debug {
 			gpu::shader_program pipeline_instanced;
 			gpu::shader_program pipeline_lines;
 
-			per_frame_resource<gpu::descriptor_region> descriptors_box;
-			per_frame_resource<gpu::descriptor_region> descriptors_sphere;
-			per_frame_resource<gpu::descriptor_region> descriptors_capsule;
-			per_frame_resource<gpu::descriptor_region> descriptors_lines;
-
-			per_frame_resource<gpu::buffer> camera_ubo_buffers;
+			per_frame_resource<gpu::bindless_buffer> camera_ubo_buffers;
 
 			gpu::buffer unit_box_vb;
 			gpu::buffer unit_sphere_vb;
@@ -53,13 +48,13 @@ export namespace gse::renderer::physics_debug {
 			std::uint32_t unit_sphere_vert_count = 0;
 			std::uint32_t unit_capsule_vert_count = 0;
 
-			per_frame_resource<gpu::buffer> cpu_body_buffers;
+			per_frame_resource<gpu::bindless_buffer> cpu_body_buffers;
 			per_frame_resource<std::size_t> cpu_body_capacity;
 			std::vector<vbd::body_state> cpu_body_staging;
 
-			per_frame_resource<gpu::buffer> box_instance_buffers;
-			per_frame_resource<gpu::buffer> sphere_instance_buffers;
-			per_frame_resource<gpu::buffer> capsule_instance_buffers;
+			per_frame_resource<gpu::bindless_buffer> box_instance_buffers;
+			per_frame_resource<gpu::bindless_buffer> sphere_instance_buffers;
+			per_frame_resource<gpu::bindless_buffer> capsule_instance_buffers;
 			per_frame_resource<std::size_t> box_instance_capacity;
 			per_frame_resource<std::size_t> sphere_instance_capacity;
 			per_frame_resource<std::size_t> capsule_instance_capacity;

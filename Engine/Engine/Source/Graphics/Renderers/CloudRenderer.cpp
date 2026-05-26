@@ -108,32 +108,43 @@ namespace gse::renderer::cloud {
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>
 	>;
 
+	constexpr gpu::sampler_desc noise_sampler_desc{
+		.min = gpu::sampler_filter::linear,
+		.mag = gpu::sampler_filter::linear,
+		.address_u = gpu::sampler_address_mode::repeat,
+		.address_v = gpu::sampler_address_mode::repeat,
+		.address_w = gpu::sampler_address_mode::repeat,
+	};
+
+	constexpr gpu::sampler_desc atmosphere_lut_sampler_desc{
+		.min = gpu::sampler_filter::linear,
+		.mag = gpu::sampler_filter::linear,
+		.address_u = gpu::sampler_address_mode::clamp_to_edge,
+		.address_v = gpu::sampler_address_mode::clamp_to_edge,
+		.address_w = gpu::sampler_address_mode::clamp_to_edge,
+	};
+
+	constexpr gpu::sampler_desc sky_view_sampler_desc{
+		.min = gpu::sampler_filter::linear,
+		.mag = gpu::sampler_filter::linear,
+		.address_u = gpu::sampler_address_mode::repeat,
+		.address_v = gpu::sampler_address_mode::clamp_to_edge,
+		.address_w = gpu::sampler_address_mode::clamp_to_edge,
+	};
+
+	constexpr gpu::sampler_desc composite_sampler_desc{
+		.min = gpu::sampler_filter::linear,
+		.mag = gpu::sampler_filter::linear,
+		.address_u = gpu::sampler_address_mode::clamp_to_edge,
+		.address_v = gpu::sampler_address_mode::clamp_to_edge,
+		.address_w = gpu::sampler_address_mode::clamp_to_edge,
+	};
+
 	auto compute_cloud_target_extent(
 		vec2u screen_extent
 	) -> vec2u;
 
 	auto recreate_cloud_target(
-		const gpu::context::data& gpu_s,
-		system::data& d
-	) -> void;
-
-	auto write_shape_bake_descriptors(
-		const gpu::context::data& gpu_s,
-		system::data& d
-	) -> void;
-
-	auto write_detail_bake_descriptors(
-		const gpu::context::data& gpu_s,
-		system::data& d
-	) -> void;
-
-	auto write_raymarch_descriptors(
-		shared_view<gpu::context> gpu_s,
-		shared_view<atmosphere::system> atm,
-		system::data& d
-	) -> void;
-
-	auto write_composite_descriptors(
 		const gpu::context::data& gpu_s,
 		system::data& d
 	) -> void;
@@ -151,8 +162,9 @@ auto gse::renderer::cloud::compute_cloud_target_extent(const vec2u screen_extent
 
 auto gse::renderer::cloud::recreate_cloud_target(const gpu::context::data& gpu_s, system::data& d) -> void {
 	d.cloud_target_extent = compute_cloud_target_extent(gpu_s.render_graph->extent());
-	d.cloud_target = gpu::image::create(
+	d.cloud_target = gpu::bindless_image::create(
 		gpu_s.device->allocator(),
+		*gpu_s.bindless_heaps,
 		{
 			.size = d.cloud_target_extent,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
@@ -160,76 +172,7 @@ auto gse::renderer::cloud::recreate_cloud_target(const gpu::context::data& gpu_s
 		},
 		"cloud_target"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.cloud_target);
-}
-
-auto gse::renderer::cloud::write_shape_bake_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
-	gpu::descriptor_writer(
-		gpu_s.device->handle(),
-		d.shape_bake_descriptors
-	)
-		.storage_image<cloud_shape_out>(d.shape_noise)
-		.commit();
-}
-
-auto gse::renderer::cloud::write_detail_bake_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
-	gpu::descriptor_writer(
-		gpu_s.device->handle(),
-		d.detail_bake_descriptors
-	)
-		.storage_image<cloud_detail_out>(d.detail_noise)
-		.commit();
-}
-
-auto gse::renderer::cloud::write_raymarch_descriptors(shared_view<gpu::context> gpu_s, shared_view<atmosphere::system> atm, system::data& d) -> void {
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(
-			gpu_s.device->handle(),
-			d.raymarch_descriptors[i]
-		)
-			.buffer<atmosphere::atmosphere_ubo>(
-				atm.atmosphere_ubo_buffer,
-				0,
-				sizeof(atmosphere::atmosphere_data)
-			)
-			.buffer<cloud_ubo>(
-				d.cloud_ubo_buffer,
-				0,
-				sizeof(cloud_data)
-			)
-			.combined_image_sampler<transmittance_in>(
-				atm.transmittance_lut,
-				d.atmosphere_lut_sampler
-			)
-			.combined_image_sampler<sky_view_in>(
-				atm.sky_view_lut,
-				d.sky_view_sampler
-			)
-			.combined_image_sampler<cloud_shape_in>(
-				d.shape_noise,
-				d.noise_sampler
-			)
-			.combined_image_sampler<cloud_detail_in>(
-				d.detail_noise,
-				d.noise_sampler
-			)
-			.storage_image<cloud_out>(d.cloud_target)
-			.commit();
-	}
-}
-
-auto gse::renderer::cloud::write_composite_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(
-			gpu_s.device->handle(),
-			d.composite_descriptors[i]
-		)
-			.combined_image_sampler<cloud_in>(
-				d.cloud_target,
-				d.composite_sampler
-			)
-			.commit();
-	}
+	gpu::transition_image_to(*gpu_s.device, d.cloud_target.image());
 }
 
 auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data {
@@ -256,30 +199,31 @@ auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::dat
 	d.shape_bake_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
+		*gpu_s.bindless_heaps,
 		shape_bake_entry::pod
 	);
 	d.detail_bake_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
+		*gpu_s.bindless_heaps,
 		detail_bake_entry::pod
 	);
 	d.raymarch_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
+		*gpu_s.bindless_heaps,
 		raymarch_entry::pod
 	);
 	d.composite_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
+		*gpu_s.bindless_heaps,
 		composite_entry::pod
 	);
 
-	d.shape_noise = gpu::image::create(
+	d.shape_noise = gpu::bindless_image::create(
 		gpu_s.device->allocator(),
+		*gpu_s.bindless_heaps,
 		{
 			.size = vec2u{ shape_noise_size.x(), shape_noise_size.y() },
 			.depth = shape_noise_size.z(),
@@ -289,8 +233,9 @@ auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::dat
 		},
 		"cloud_shape_noise"
 	);
-	d.detail_noise = gpu::image::create(
+	d.detail_noise = gpu::bindless_image::create(
 		gpu_s.device->allocator(),
+		*gpu_s.bindless_heaps,
 		{
 			.size = vec2u{ detail_noise_size.x(), detail_noise_size.y() },
 			.depth = detail_noise_size.z(),
@@ -300,93 +245,28 @@ auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::dat
 		},
 		"cloud_detail_noise"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.shape_noise);
-	gpu::transition_image_to(*gpu_s.device, d.detail_noise);
+	gpu::transition_image_to(*gpu_s.device, d.shape_noise.image());
+	gpu::transition_image_to(*gpu_s.device, d.detail_noise.image());
 
 	recreate_cloud_target(gpu_s, d);
 
-	d.cloud_ubo_buffer = gpu::buffer::create(
+	d.cloud_ubo_buffer = gpu::bindless_buffer::create(
 		gpu_s.device->allocator(),
+		*gpu_s.bindless_heaps,
 		{
 			.size = sizeof(cloud_data),
 			.usage = gpu::buffer_flag::uniform,
-		}
+		},
+		"cloud_ubo"
 	);
 
-	d.noise_sampler = gpu::sampler::create(
-		gpu_s.device->allocator(),
-		{
-			.min = gpu::sampler_filter::linear,
-			.mag = gpu::sampler_filter::linear,
-			.address_u = gpu::sampler_address_mode::repeat,
-			.address_v = gpu::sampler_address_mode::repeat,
-			.address_w = gpu::sampler_address_mode::repeat,
-		}
-	);
-	d.atmosphere_lut_sampler = gpu::sampler::create(
-		gpu_s.device->allocator(),
-		{
-			.min = gpu::sampler_filter::linear,
-			.mag = gpu::sampler_filter::linear,
-			.address_u = gpu::sampler_address_mode::clamp_to_edge,
-			.address_v = gpu::sampler_address_mode::clamp_to_edge,
-			.address_w = gpu::sampler_address_mode::clamp_to_edge,
-		}
-	);
-	d.sky_view_sampler = gpu::sampler::create(
-		gpu_s.device->allocator(),
-		{
-			.min = gpu::sampler_filter::linear,
-			.mag = gpu::sampler_filter::linear,
-			.address_u = gpu::sampler_address_mode::repeat,
-			.address_v = gpu::sampler_address_mode::clamp_to_edge,
-			.address_w = gpu::sampler_address_mode::clamp_to_edge,
-		}
-	);
-	d.composite_sampler = gpu::sampler::create(
-		gpu_s.device->allocator(),
-		{
-			.min = gpu::sampler_filter::linear,
-			.mag = gpu::sampler_filter::linear,
-			.address_u = gpu::sampler_address_mode::clamp_to_edge,
-			.address_v = gpu::sampler_address_mode::clamp_to_edge,
-			.address_w = gpu::sampler_address_mode::clamp_to_edge,
-		}
-	);
-
-	d.shape_bake_descriptors = gpu::allocate_descriptors(
-		*gpu_s.shader_registry,
-		gpu_s.device->descriptor_heap(),
-		shape_bake_entry::pod
-	);
-
-	d.detail_bake_descriptors = gpu::allocate_descriptors(
-		*gpu_s.shader_registry,
-		gpu_s.device->descriptor_heap(),
-		detail_bake_entry::pod
-	);
-
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.raymarch_descriptors[i] = gpu::allocate_descriptors(
-			*gpu_s.shader_registry,
-			gpu_s.device->descriptor_heap(),
-			raymarch_entry::pod
-		);
-		d.composite_descriptors[i] = gpu::allocate_descriptors(
-			*gpu_s.shader_registry,
-			gpu_s.device->descriptor_heap(),
-			composite_entry::pod
-		);
-	}
-
-	write_shape_bake_descriptors(gpu_s, d);
-	write_detail_bake_descriptors(gpu_s, d);
-	write_composite_descriptors(gpu_s, d);
+	d.noise_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, noise_sampler_desc);
+	d.atmosphere_lut_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, atmosphere_lut_sampler_desc);
+	d.sky_view_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, sky_view_sampler_desc);
+	d.composite_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, composite_sampler_desc);
 
 	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &d]() {
 		recreate_cloud_target(gpu_s, d);
-		write_composite_descriptors(gpu_s, d);
-		d.raymarch_descriptors_ready = false;
 	});
 
 	co_return;
@@ -397,23 +277,16 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 		co_return;
 	}
 
-	if (!d.cloud_target.handle()) {
+	if (!d.cloud_target.valid()) {
 		co_return;
 	}
 
-	if (!atm_state.atmosphere_ubo_buffer.handle()) {
+	if (!atm_state.atmosphere_ubo_buffer.valid()) {
 		co_return;
 	}
-
-	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	const cloud_data shader_payload = build_cloud_data(d);
-	d.cloud_ubo_buffer.host_write(shader_payload);
-
-	if (!d.raymarch_descriptors_ready) {
-		write_raymarch_descriptors(gpu_s, atm_state, d);
-		d.raymarch_descriptors_ready = true;
-	}
+	d.cloud_ubo_buffer.buffer().host_write(shader_payload);
 
 	if (!d.noises_ready) {
 		const auto shape_groups = vec3u{
@@ -428,12 +301,20 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 		};
 
 		auto rec = co_await gpu::pass<shape_bake_pass>(ctx).pipeline(d.shape_bake_pipeline);
-		rec.bind_descriptors(d.shape_bake_pipeline, d.shape_bake_descriptors);
-		rec.dispatch(shape_groups.x(), shape_groups.y(), shape_groups.z());
+		rec.dispatch<shape_bake_entry>(
+			{
+				.cloud_shape_out = d.shape_noise.storage_slot(),
+			},
+			shape_groups
+		);
 
 		rec = co_await gpu::pass<detail_bake_pass>(ctx).pipeline(d.detail_bake_pipeline).after<shape_bake_pass>();
-		rec.bind_descriptors(d.detail_bake_pipeline, d.detail_bake_descriptors);
-		rec.dispatch(detail_groups.x(), detail_groups.y(), detail_groups.z());
+		rec.dispatch<detail_bake_entry>(
+			{
+				.cloud_detail_out = d.detail_noise.storage_slot(),
+			},
+			detail_groups
+		);
 
 		d.noises_ready = true;
 	}
@@ -459,22 +340,26 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 		.pipeline(d.raymarch_pipeline)
 		.after<atmosphere::sky_view_pass, detail_bake_pass>();
 
-	rec.bind_descriptors(d.raymarch_pipeline, d.raymarch_descriptors[frame_index]);
-	rec.push(
-		d.raymarch_pipeline,
-		gpu::typed_push_constants<cloud_push_constants>{
-			.data = {
-				.inv_view_proj = inv_view_proj,
-				.sun_direction = atm_state.sun_direction,
-				.camera_altitude = atm_state.camera_altitude,
-				.sun_irradiance = sun_irradiance,
-				.frame_index = static_cast<float>(d.frame_counter),
-				.wind_offset = d.wind_offset,
-			},
-			.stages = gpu::stage_flag::compute,
-		}
+	rec.dispatch<raymarch_entry>(
+		{
+			.inv_view_proj = inv_view_proj,
+			.sun_direction = atm_state.sun_direction,
+			.camera_altitude = atm_state.camera_altitude,
+			.sun_irradiance = sun_irradiance,
+			.frame_index = static_cast<float>(d.frame_counter),
+			.wind_offset = d.wind_offset,
+		},
+		{
+			.transmittance_in = { atm_state.transmittance_lut.sampled_slot(), d.atmosphere_lut_sampler.slot() },
+			.sky_view_in = { atm_state.sky_view_lut.sampled_slot(), d.sky_view_sampler.slot() },
+			.cloud_shape_in = { d.shape_noise.sampled_slot(), d.noise_sampler.slot() },
+			.cloud_detail_in = { d.detail_noise.sampled_slot(), d.noise_sampler.slot() },
+			.cloud_out = d.cloud_target.storage_slot(),
+			.cloud_ubo = d.cloud_ubo_buffer.slot(),
+			.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
+		},
+		vec3u{ raymarch_groups.x(), raymarch_groups.y(), 1 }
 	);
-	rec.dispatch(raymarch_groups.x(), raymarch_groups.y(), 1);
 
 	const auto ext = gpu_s.render_graph->extent();
 	auto composite_rec = co_await gpu::pass<cloud_composite_pass>(ctx)
@@ -483,9 +368,13 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 		.depth(gpu::load_depth())
 		.after<atmosphere::sky_raster_pass, cloud_raymarch_pass>();
 
-	composite_rec.sample_image(d.cloud_target, gpu::pipeline_stage_flag::fragment_shader);
+	composite_rec.sample_image(d.cloud_target.image(), gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.set_viewport(ext);
 	composite_rec.set_scissor(ext);
-	composite_rec.bind_descriptors(d.composite_pipeline, d.composite_descriptors[frame_index]);
+	composite_rec.push_bindings<composite_entry>(
+		{
+			.cloud_in = { d.cloud_target.sampled_slot(), d.composite_sampler.slot() },
+		}
+	);
 	composite_rec.draw(3);
 }

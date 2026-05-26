@@ -1,17 +1,10 @@
-float3 srgb_to_linear(float3 c) {
-    return select(c <= 0.04045,
-                  c / 12.92,
-                  pow((c + 0.055) / 1.055, 2.4));
-}
-
 void rgba_to_nv12(uint3 dispatch_id) {
     uint2 pixel = dispatch_id.xy;
     if (pixel.x >= pc.extent.x || pixel.y >= pc.extent.y) return;
     if (pc.rgba_index == 0xFFFFFFFFu) return;
 
     float2 uv = (float2(pixel) + 0.5) / float2(pc.extent);
-    float4 rgba = textures[NonUniformResourceIndex(pc.rgba_index)].SampleLevel(uv, 0);
-    float3 rgb = srgb_to_linear(rgba.rgb);
+    float3 rgb = textures[NonUniformResourceIndex(pc.rgba_index)].SampleLevel(uv, 0).rgb;
 
     float luma = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
     output_y[pixel] = saturate(luma);

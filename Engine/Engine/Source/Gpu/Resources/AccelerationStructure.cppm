@@ -1,17 +1,11 @@
 export module gse.gpu:acceleration_structure;
 
 import std;
-import vulkan;
 
+import :aliases;
 import :device;
 import :gpu_task;
-import :handles;
 import :transient_api;
-import :types;
-import :vulkan_acceleration_structure;
-import :vulkan_buffer;
-import :vulkan_commands;
-import :vulkan_device;
 import :render_graph;
 
 import gse.core;
@@ -20,10 +14,10 @@ import gse.math;
 
 export namespace gse::gpu {
 	struct blas_geometry_desc {
-		const vulkan::buffer* vertex_buffer = nullptr;
+		const buffer* vertex_buffer = nullptr;
 		std::uint32_t vertex_count = 0;
 		std::uint32_t vertex_stride = 0;
-		const vulkan::buffer* index_buffer = nullptr;
+		const buffer* index_buffer = nullptr;
 		std::uint32_t index_count = 0;
 	};
 
@@ -39,28 +33,28 @@ export namespace gse::gpu {
 	auto build_blas(
 		gpu::device& device,
 		const blas_geometry_desc& desc
-	) -> vulkan::blas;
+	) -> blas;
 
 	auto build_tlas(
 		gpu::device& device,
 		std::uint32_t max_instances
-	) -> vulkan::tlas;
+	) -> tlas;
 
 	auto rebuild_tlas(
 		gpu::device& device,
-		vulkan::tlas& t,
+		tlas& t,
 		std::span<const tlas_instance_desc> instances,
 		gpu::recording_context& rec
 	) -> void;
 
 	auto write_tlas_instances(
-		vulkan::tlas& t,
+		tlas& t,
 		std::span<const tlas_instance_desc> instances
 	) -> void;
 
 	auto build_tlas_in_place(
 		gpu::device& device,
-		vulkan::tlas& t,
+		tlas& t,
 		std::uint32_t instance_count,
 		gpu::recording_context& rec
 	) -> void;
@@ -69,7 +63,7 @@ export namespace gse::gpu {
 namespace gse {
 	auto to_packed_instance(
 		const gpu::tlas_instance_desc& inst
-	) -> vulkan::as_instance;
+	) -> gpu::as_instance;
 
 	auto build_blas_async(
 		gpu::device& dev,

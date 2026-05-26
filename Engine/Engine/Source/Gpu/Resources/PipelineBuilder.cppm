@@ -10,29 +10,24 @@ import gse.config;
 import gse.slang;
 
 import :aliases;
-import :handles;
-import :types;
-import :vulkan_device;
-import :vulkan_shader_object;
-import :vulkan_shader_program;
+import gse.vulkan;
 import :device;
 import :bindless;
-import :bindless_heap;
-import :descriptor_heap;
-import :descriptors;
 import :shader_codegen;
 import :shader_markers;
 import :shader_registry;
-import :spirv_reflect;
 
 export namespace gse::gpu {
 	struct combined_sampler_arg {
-		vulkan::bindless_slot image;
-		vulkan::bindless_slot sampler;
+		bindless_slot image;
+		bindless_slot sampler;
 	};
 
 	template <typename T>
 	constexpr auto descriptor_type_v = shaders::descriptor_type_of<T>();
+
+	template <typename T>
+	constexpr auto descriptor_count_v = shaders::descriptor_count_of<T>();
 
 	consteval auto binding_arg_type(
 		std::meta::info t
@@ -43,15 +38,38 @@ export namespace gse::gpu {
 		struct type;
 
 		consteval {
-			std::vector<std::meta::info> members;
+			struct sortable {
+				std::meta::info t;
+				std::uint32_t set;
+				std::uint32_t slot;
+			};
+			std::vector<sortable> entries;
 			constexpr auto pack_types = []<typename... Ts>(type_pack<Ts...>) {
 				return std::array{ ^^Ts... };
 			}(Pack{});
 			for (const auto t : pack_types) {
+				const auto count = std::meta::extract<std::uint32_t>(std::meta::substitute(^^descriptor_count_v, { t }));
+				if (count > 1) {
+					continue;
+				}
+				const auto bt = shaders::find_binding_type(t);
+				const auto targs = std::meta::template_arguments_of(bt);
+				const auto set = std::meta::extract<std::uint32_t>(targs[0]);
+				const auto slot = std::meta::extract<std::uint32_t>(targs[1]);
+				entries.push_back({ t, set, slot });
+			}
+			std::ranges::sort(entries, [](const sortable& a, const sortable& b) {
+				if (a.set != b.set) {
+					return a.set < b.set;
+				}
+				return a.slot < b.slot;
+			});
+			std::vector<std::meta::info> members;
+			for (const auto& e : entries) {
 				members.push_back(std::meta::data_member_spec(
-					binding_arg_type(t),
+					binding_arg_type(e.t),
 					{
-						.name = std::meta::identifier_of(t),
+						.name = std::meta::identifier_of(e.t),
 					}
 				));
 			}
@@ -135,9 +153,8 @@ export namespace gse::gpu {
 	auto build_compute_program(
 		device& dev,
 		shader_registry& registry,
-		bindless_texture_set& bindless,
-		const compute_entry_pod& pod,
-		vulkan::bindless_heaps* heaps = nullptr
+		bindless_heaps& heaps,
+		const compute_entry_pod& pod
 	) -> shader_program;
 
 	enum class graphics_stage_kind : std::uint8_t {
@@ -191,30 +208,9 @@ export namespace gse::gpu {
 	auto build_graphics_program(
 		device& dev,
 		shader_registry& registry,
-		bindless_texture_set& bindless,
-		const graphics_entry_pod& pod,
-		vulkan::bindless_heaps* heaps = nullptr
+		bindless_heaps& heaps,
+		const graphics_entry_pod& pod
 	) -> shader_program;
-
-	[[nodiscard]]
-	auto allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const compute_entry_pod& pod, const std::source_location& loc = std::source_location::current()) -> descriptor_region {
-		return allocate_descriptors(registry, heap, pod.layout_name, loc);
-	}
-
-	[[nodiscard]]
-	auto allocate_descriptors(shader_registry& registry, descriptor_heap& heap, const graphics_entry_pod& pod, const std::source_location& loc = std::source_location::current()) -> descriptor_region {
-		return allocate_descriptors(registry, heap, pod.layout_name, loc);
-	}
-
-	[[nodiscard]]
-	auto make_push_writer(shader_registry& registry, handle<vulkan::device> dev, descriptor_heap& heap, const compute_entry_pod& pod) -> descriptor_writer {
-		return descriptor_writer(registry, dev, heap, pod.layout_name);
-	}
-
-	[[nodiscard]]
-	auto make_push_writer(shader_registry& registry, handle<vulkan::device> dev, descriptor_heap& heap, const graphics_entry_pod& pod) -> descriptor_writer {
-		return descriptor_writer(registry, dev, heap, pod.layout_name);
-	}
 
 	template <fixed_string V>
 	struct body_path {
@@ -645,20 +641,6 @@ export namespace gse::gpu {
 }
 
 namespace gse::gpu {
-	auto lookup_descriptor_type(const family_layout& family, const std::uint32_t set, const std::uint32_t slot) -> descriptor_type {
-		for (const auto& fs : family.sets) {
-			if (static_cast<std::uint32_t>(fs.type) != set) {
-				continue;
-			}
-			for (const auto& b : fs.bindings) {
-				if (b.desc.binding == slot) {
-					return b.desc.type;
-				}
-			}
-		}
-		return descriptor_type::storage_buffer;
-	}
-
 	auto to_pipeline_stage(const stage_flag s) -> pipeline_stage_flag {
 		switch (s) {
 			case stage_flag::vertex:
@@ -889,7 +871,7 @@ consteval auto gse::gpu::binding_arg_type(const std::meta::info t) -> std::meta:
 	if (dt == descriptor_type::combined_image_sampler) {
 		return ^^combined_sampler_arg;
 	}
-	return ^^vulkan::bindless_slot;
+	return ^^bindless_slot;
 }
 
 auto gse::gpu::load_body_file(const std::string_view body_path) -> std::string {
@@ -1438,7 +1420,7 @@ auto gse::gpu::next_stage_for(const stage_flag current, const std::span<const st
 	return result;
 }
 
-auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bindless_texture_set& bindless, const compute_entry_pod& pod, vulkan::bindless_heaps* heaps) -> shader_program {
+auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bindless_heaps& heaps, const compute_entry_pod& pod) -> shader_program {
 	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
 	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
 
@@ -1454,14 +1436,18 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 	inputs.emit_types = pod.emit_types;
 	inputs.emit_bindings = pod.emit_bindings;
 	inputs.helper_paths.reserve(pod.helper_count);
+
 	for (std::size_t i = 0; i < pod.helper_count; ++i) {
 		inputs.helper_paths.emplace_back(pod.helper_paths[i]);
 	}
+
 	inputs.call_names.reserve(pod.call_count);
 	for (std::size_t i = 0; i < pod.call_count; ++i) {
 		inputs.call_names.emplace_back(pod.call_names[i]);
 	}
+
 	inputs.params.reserve(pod.param_count);
+
 	for (std::size_t i = 0; i < pod.param_count; ++i) {
 		inputs.params.push_back({
 			.name = std::string(pod.params[i].name),
@@ -1480,12 +1466,6 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 	assert(family, "Shader family layout not registered: {}", pod.layout_name);
 
 	auto layouts = family->layout_handles;
-	constexpr auto bindless_idx = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
-	std::vector<std::uint32_t> auto_bound_sets;
-	if (layouts.size() > bindless_idx) {
-		layouts[bindless_idx] = bindless.layout_handle();
-		auto_bound_sets.push_back(bindless_idx);
-	}
 
 	std::optional<push_constant_range> push_range;
 	if (pod.push_constant_size > 0) {
@@ -1496,25 +1476,21 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 		};
 	}
 
-	std::vector<binding_use> active_bindings;
-	for (const auto& use : used_bindings(spirv)) {
-		active_bindings.push_back({
-			.set = use.set,
-			.slot = use.slot,
-			.access = use.access,
-			.type = lookup_descriptor_type(
-				*family,
-				use.set,
-				use.slot
-			),
-			.stages = pipeline_stage_flag::compute_shader,
-		});
+	std::vector<binding_use> pack_bindings;
+	for (const auto& fs : family->sets) {
+		for (const auto& b : fs.bindings) {
+			pack_bindings.push_back({
+				.set = static_cast<std::uint32_t>(fs.type),
+				.slot = b.desc.binding,
+				.count = b.desc.count,
+				.access = b.desc.access,
+				.type = b.desc.type,
+				.stages = pipeline_stage_flag::compute_shader,
+			});
+		}
 	}
 
-	vulkan::bindless_mapping_result bindless_mappings;
-	if (heaps && dev.vulkan_device().descriptor_heap_enabled()) {
-		bindless_mappings = vulkan::build_bindless_mappings(active_bindings, *heaps, pod.push_constant_size);
-	}
+	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, heaps, pod.push_constant_size);
 
 	const vulkan::shader_object_create_info stage_info{
 		.stage = stage_flag::compute,
@@ -1537,26 +1513,22 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 		),
 		.set_layouts = layouts,
 		.push_constant_range = push_range,
-		.auto_bound_sets = auto_bound_sets,
-		.active_bindings = active_bindings,
 		.state = {},
 		.is_compute = true,
 		.is_mesh = false,
-		.uses_descriptor_heap = !bindless_mappings.mappings.empty(),
 	};
 
-	return vulkan::shader_program::create(dev.vulkan_device(), info);
+	return shader_program::create(dev.vulkan_device(), info);
 }
 
-auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bindless_texture_set& bindless, const graphics_entry_pod& pod, vulkan::bindless_heaps* heaps) -> shader_program {
+auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bindless_heaps& heaps, const graphics_entry_pod& pod) -> shader_program {
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
 	assert(!pod.layout_name.empty(), "layout missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");
 	assert(pod.build_family_sets_fn, "bindings missing on graphics entry");
 	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
 
-	const std::string body_source =
-		pod.body_source.empty() ? load_body_file(pod.body_path) : std::string(pod.body_source);
+	const std::string body_source = pod.body_source.empty() ? load_body_file(pod.body_path) : std::string(pod.body_source);
 	const auto parsed = parse_body_file(body_source);
 	const auto wrapper_source = build_graphics_wrapper_source(pod, parsed);
 	auto program = compile_graphics_program(pod, wrapper_source);
@@ -1565,12 +1537,6 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 	assert(family, "Shader family layout not registered: {}", pod.layout_name);
 
 	auto layouts = family->layout_handles;
-	constexpr auto bindless_idx = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
-	std::vector<std::uint32_t> auto_bound_sets;
-	if (layouts.size() > bindless_idx) {
-		layouts[bindless_idx] = bindless.layout_handle();
-		auto_bound_sets.push_back(bindless_idx);
-	}
 
 	std::optional<push_constant_range> push_range;
 	if (pod.push_constant_size > 0) {
@@ -1588,43 +1554,32 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 	}
 
 	bool is_mesh = false;
-	std::vector<binding_use> active_bindings;
-
 	for (auto& s : program.stages) {
-		const auto stage_pipeline = to_pipeline_stage(s.flag);
-		for (const auto& use : used_bindings(s.spirv)) {
-			const auto it = std::ranges::find_if(active_bindings, [&](const binding_use& existing) {
-				return existing.set == use.set && existing.slot == use.slot;
-			});
-			if (it == active_bindings.end()) {
-				active_bindings.push_back({
-					.set = use.set,
-					.slot = use.slot,
-					.access = use.access,
-					.type = lookup_descriptor_type(
-						*family,
-						use.set,
-						use.slot
-					),
-					.stages = stage_pipeline,
-				});
-			}
-			else {
-				it->stages |= stage_pipeline;
-				if (use.access == descriptor_access::read_write) {
-					it->access = descriptor_access::read_write;
-				}
-			}
-		}
 		if (s.kind == graphics_stage_kind::amplification || s.kind == graphics_stage_kind::mesh) {
 			is_mesh = true;
 		}
 	}
 
-	vulkan::bindless_mapping_result bindless_mappings;
-	if (heaps && dev.vulkan_device().descriptor_heap_enabled()) {
-		bindless_mappings = vulkan::build_bindless_mappings(active_bindings, *heaps, pod.push_constant_size);
+	pipeline_stage_flags all_pipeline_stages{};
+	for (const auto s : all_stages) {
+		all_pipeline_stages |= to_pipeline_stage(s);
 	}
+
+	std::vector<binding_use> pack_bindings;
+	for (const auto& fs : family->sets) {
+		for (const auto& b : fs.bindings) {
+			pack_bindings.push_back({
+				.set = static_cast<std::uint32_t>(fs.type),
+				.slot = b.desc.binding,
+				.count = b.desc.count,
+				.access = b.desc.access,
+				.type = b.desc.type,
+				.stages = all_pipeline_stages,
+			});
+		}
+	}
+
+	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, heaps, pod.push_constant_size);
 
 	std::vector<vulkan::shader_object_create_info> stage_infos;
 	stage_infos.reserve(program.stages.size());
@@ -1658,6 +1613,7 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 		.vertex_bindings = is_mesh ? std::vector<vertex_binding_desc>{} : program.vertex_bindings,
 		.vertex_attributes = is_mesh ? std::vector<vertex_attribute_desc>{} : program.vertex_attributes,
 	};
+	
 	state.blend_enables.assign(pod.color_count, static_cast<std::uint8_t>(blend_enable ? 1 : 0));
 	state.blend_equations.assign(pod.color_count, blend_eq);
 	state.color_write_masks.assign(pod.color_count, write_mask);
@@ -1666,13 +1622,10 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 		.stages = stage_infos,
 		.set_layouts = layouts,
 		.push_constant_range = push_range,
-		.auto_bound_sets = auto_bound_sets,
-		.active_bindings = active_bindings,
 		.state = std::move(state),
 		.is_compute = false,
 		.is_mesh = is_mesh,
-		.uses_descriptor_heap = !bindless_mappings.mappings.empty(),
 	};
 
-	return vulkan::shader_program::create(dev.vulkan_device(), info);
+	return shader_program::create(dev.vulkan_device(), info);
 }

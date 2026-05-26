@@ -56,38 +56,20 @@ namespace gse::renderer::tonemap {
 		gpu::depth_target<gpu::depth_format::none>
 	>;
 
-	auto rewrite_descriptors(
+	auto rebind_views(
 		const gpu::context::data& gpu_s,
-		const bloom::system::data& bloom_state,
 		system::data& d
 	) -> void;
 }
 
-auto gse::renderer::tonemap::rewrite_descriptors(const gpu::context::data& gpu_s, const bloom::system::data& bloom_state, system::data& d) -> void {
+auto gse::renderer::tonemap::rebind_views(const gpu::context::data& gpu_s, system::data& d) -> void {
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::post_taa_color>();
-	if (!hdr.handle()) {
-		return;
+	if (hdr.handle()) {
+		d.hdr_view.rebind_sampled(*gpu_s.bindless_heaps, hdr);
 	}
-	const auto& bloom_source = bloom_state.active_mip_count > 0 ? bloom_state.mips_up[0].image() : hdr;
 	auto& velocity = gpu_s.render_graph->framebuffer_image<targets::velocity>();
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		gpu::descriptor_writer(
-			gpu_s.device->handle(),
-			d.descriptors[i]
-		)
-			.combined_image_sampler<hdr_color>(
-				hdr,
-				d.sampler
-			)
-			.combined_image_sampler<bloom_color>(
-				bloom_source,
-				d.sampler
-			)
-			.combined_image_sampler<velocity_color>(
-				velocity,
-				d.sampler
-			)
-			.commit();
+	if (velocity.handle()) {
+		d.velocity_view.rebind_sampled(*gpu_s.bindless_heaps, velocity);
 	}
 }
 
@@ -96,12 +78,12 @@ auto gse::renderer::tonemap::system::run(run_context& ctx, const gpu::context::d
 		gpu::build_graphics_program(
 			*gpu_s.device,
 			*gpu_s.shader_registry,
-			*gpu_s.bindless_textures,
+			*gpu_s.bindless_heaps,
 			entry::pod
 		);
 
-	d.sampler = gpu::sampler::create(
-		gpu_s.device->allocator(),
+	d.sampler = gpu::bindless_sampler::create(
+		*gpu_s.bindless_heaps,
 		{
 			.min = gpu::sampler_filter::linear,
 			.mag = gpu::sampler_filter::linear,
@@ -111,19 +93,10 @@ auto gse::renderer::tonemap::system::run(run_context& ctx, const gpu::context::d
 		}
 	);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.descriptors[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				entry::pod
-			);
-	}
+	rebind_views(gpu_s, d);
 
-	rewrite_descriptors(gpu_s, bloom_state, d);
-
-	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &bloom_state, &d]() {
-		rewrite_descriptors(gpu_s, bloom_state, d);
+	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &d]() {
+		rebind_views(gpu_s, d);
 	});
 
 	co_return;
@@ -139,20 +112,14 @@ auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view
 		co_return;
 	}
 
-	const auto frame_index = gpu_s.render_graph->current_frame();
 	const auto ext = gpu_s.render_graph->extent();
 
 	const bool bloom_active =
 		bloom_state.bloom_quality != bloom::quality_level::off && bloom_state.active_mip_count > 0;
 
-	const gpu::typed_push_constants<push_constants> pc{
-		.data = {
-			.exposure = d.exposure,
-			.bloom_intensity = bloom_active ? bloom_state.bloom_intensity : 0.0f,
-			.show_velocity = d.show_velocity ? 1u : 0u,
-		},
-		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
-	};
+	const auto bloom_slot = bloom_active
+		? bloom_state.mips_up[0].sampled_slot()
+		: d.hdr_view.sampled_slot();
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.pipeline(d.pipeline)
@@ -171,7 +138,17 @@ auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view
 	}
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
-	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
-	rec.push(d.pipeline, pc);
+	rec.push_bindings<entry>(
+		{
+			.exposure = d.exposure,
+			.bloom_intensity = bloom_active ? bloom_state.bloom_intensity : 0.0f,
+			.show_velocity = d.show_velocity ? 1u : 0u,
+		},
+		{
+			.hdr_color = { d.hdr_view.sampled_slot(), d.sampler.slot() },
+			.bloom_color = { bloom_slot, d.sampler.slot() },
+			.velocity_color = { d.velocity_view.sampled_slot(), d.sampler.slot() },
+		}
+	);
 	rec.draw(3);
 }

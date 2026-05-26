@@ -148,14 +148,14 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 	d.sprite_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
+		*gpu_s.bindless_heaps,
 		sprite_entry::pod
 	);
 	d.text_pipeline =
 		gpu::build_graphics_program(
 			*gpu_s.device,
 			*gpu_s.shader_registry,
-			*gpu_s.bindless_textures,
+			*gpu_s.bindless_heaps,
 			msdf_entry::pod
 		);
 
@@ -373,28 +373,22 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 		return slot.valid() ? slot.index : shaders::bindless::invalid_index;
 	}();
 
-	gpu::typed_push_constants<sprite_push_constants> sprite_pc{
-		.data = {
-			.projection = projection,
-			.tex_idx = 0,
-			.snapshot_tex_idx = shaders::bindless::invalid_index,
-			.inv_screen_size = inv_screen_size
-		},
-		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
+	sprite_push_constants sprite_pc{
+		.projection = projection,
+		.tex_idx = 0,
+		.snapshot_tex_idx = shaders::bindless::invalid_index,
+		.inv_screen_size = inv_screen_size,
 	};
 
-	gpu::typed_push_constants<msdf_push_constants> text_pc{
-		.data = {
-			.projection = projection,
-			.unit_range = {},
-			.depth = 0.0f,
-			.tex_idx = 0,
-			.shadow_color = vec3f{ 0.f, 0.f, 0.f },
-			.shadow_offset_px = 1.0f,
-			.shadow_softness = 0.7f,
-			.shadow_strength = 0.45f,
-		},
-		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
+	msdf_push_constants text_pc{
+		.projection = projection,
+		.unit_range = {},
+		.depth = 0.0f,
+		.tex_idx = 0,
+		.shadow_color = vec3f{ 0.f, 0.f, 0.f },
+		.shadow_offset_px = 1.0f,
+		.shadow_softness = 0.7f,
+		.shadow_strength = 0.45f,
 	};
 
 	const vec2u ext_size{ width, height };
@@ -452,17 +446,17 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 		}
 
 		if (type == command_type::sprite) {
-			sprite_pc.data.tex_idx = tex_idx;
-			sprite_pc.data.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
-			rec.push(d.sprite_pipeline, sprite_pc);
+			sprite_pc.tex_idx = tex_idx;
+			sprite_pc.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
+			rec.push_bindings<sprite_entry>(sprite_pc, {});
 		}
 		else {
 			const auto atlas_size = font->texture()->image_data().size;
 			const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);
 			const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
-			text_pc.data.unit_range = { font->pixel_range() / atlas_w, font->pixel_range() / atlas_h };
-			text_pc.data.tex_idx = tex_idx;
-			rec.push(d.text_pipeline, text_pc);
+			text_pc.unit_range = { font->pixel_range() / atlas_w, font->pixel_range() / atlas_h };
+			text_pc.tex_idx = tex_idx;
+			rec.push_bindings<msdf_entry>(text_pc, {});
 		}
 
 		if (clip_rect) {

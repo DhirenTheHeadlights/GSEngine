@@ -2,13 +2,9 @@ export module gse.gpu:transient_api;
 
 import std;
 
+import :aliases;
 import :device;
-import :frame_resource_bin;
 import :gpu_task;
-import :transient_executor;
-import :vulkan_device;
-import :vulkan_queues;
-import :vulkan_transient_command_buffer;
 
 import gse.concurrency;
 import gse.core;
@@ -24,7 +20,7 @@ export namespace gse::gpu {
 	[[nodiscard]]
 	auto submit(
 		gpu::device& dev,
-		vulkan::transient_command_buffer&& cmd,
+		transient_command_buffer&& cmd,
 		queue_id id
 	) -> submission;
 
@@ -45,10 +41,9 @@ auto gse::gpu::begin_transient(gpu::device& dev, const queue_id id, const std::s
 	};
 }
 
-auto gse::gpu::submit(gpu::device& dev, vulkan::transient_command_buffer&& cmd, const queue_id id) -> submission {
+auto gse::gpu::submit(gpu::device& dev, transient_command_buffer&& cmd, const queue_id id) -> submission {
 	return submission(
 		dev,
-		dev.vulkan_queue(),
 		dev.transient().queue(id),
 		dev.transient().bin(),
 		std::move(cmd)

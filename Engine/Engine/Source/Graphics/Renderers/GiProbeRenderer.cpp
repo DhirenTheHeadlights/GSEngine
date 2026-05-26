@@ -69,10 +69,9 @@ namespace gse::renderer::gi_probe {
 		system::data& d
 	) -> void;
 
-	auto rewrite_descriptors(
+	auto rebind_tlas_views(
 		const gpu::context::data& gpu_s,
 		const rt_shadow::system::data& rt_state,
-		const geometry_collector::system::data& gc_state,
 		system::data& d
 	) -> void;
 }
@@ -86,8 +85,9 @@ auto gse::renderer::gi_probe::atlas_extent() -> vec2u {
 
 auto gse::renderer::gi_probe::recreate_atlas(const gpu::context::data& gpu_s, system::data& d) -> void {
 	const auto ext = atlas_extent();
-	d.irradiance_atlas = gpu::image::create(
+	d.irradiance_atlas = gpu::bindless_image::create(
 		gpu_s.device->allocator(),
+		*gpu_s.bindless_heaps,
 		{
 			.size = ext,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
@@ -95,22 +95,17 @@ auto gse::renderer::gi_probe::recreate_atlas(const gpu::context::data& gpu_s, sy
 		},
 		"gi_irradiance_atlas"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.irradiance_atlas);
+	gpu::transition_image_to(*gpu_s.device, d.irradiance_atlas.image());
 }
 
-auto gse::renderer::gi_probe::rewrite_descriptors(const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, const geometry_collector::system::data& gc_state, system::data& d) -> void {
-	constexpr std::size_t material_buffer_size =
-		geometry_collector::system::data::max_materials * sizeof(shaders::forward::material_data);
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
+auto gse::renderer::gi_probe::rebind_tlas_views(const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, system::data& d) -> void {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_tlas_view>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		gpu::descriptor_writer writer(
-			gpu_s.device->handle(),
-			d.update_descriptors[i]
+		d.tlas_views[i].rebind(
+			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
+			(*rt_state.tlas_ptrs[fi]).handle()
 		);
-		writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
-		writer.storage_image<irradiance_atlas_out>(d.irradiance_atlas);
-		writer.buffer<material_palette>(gc_state.material_palette_buffers[fi], 0, material_buffer_size);
-		writer.commit();
 	}
 }
 
@@ -119,24 +114,15 @@ auto gse::renderer::gi_probe::system::run(run_context& ctx, const gpu::context::
 		gpu::build_compute_program(
 			*gpu_s.device,
 			*gpu_s.shader_registry,
-			*gpu_s.bindless_textures,
+			*gpu_s.bindless_heaps,
 			entry::pod
 		);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.update_descriptors[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				entry::pod
-			);
-	}
-
 	recreate_atlas(gpu_s, d);
-	rewrite_descriptors(gpu_s, rt_state, gc_state, d);
+	rebind_tlas_views(gpu_s, rt_state, d);
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &rt_state, &gc_state, &d]() {
-		rewrite_descriptors(gpu_s, rt_state, gc_state, d);
+	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &rt_state, &d]() {
+		rebind_tlas_views(gpu_s, rt_state, d);
 	});
 
 	co_return;
@@ -151,7 +137,7 @@ auto gse::renderer::gi_probe::system::frame(frame_context& ctx, shared_view<gpu:
 		co_return;
 	}
 
-	if (!d.irradiance_atlas.handle()) {
+	if (!d.irradiance_atlas.valid()) {
 		co_return;
 	}
 
@@ -168,8 +154,12 @@ auto gse::renderer::gi_probe::system::frame(frame_context& ctx, shared_view<gpu:
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	const gpu::typed_push_constants<push_constants> pc{
-		.data = {
+	auto rec = co_await gpu::pass<system>(ctx)
+		.pipeline(d.update_pipeline)
+		.after<rt_shadow::system>();
+
+	rec.dispatch<entry>(
+		{
 			.origin_world = d.origin_world,
 			.spacing = d.spacing,
 			.grid_dim_uniform = grid_dim,
@@ -181,16 +171,13 @@ auto gse::renderer::gi_probe::system::frame(frame_context& ctx, shared_view<gpu:
 			.sky_color = vec3f{ 0.5f, 0.7f, 1.0f },
 			.intensity = d.intensity,
 		},
-		.stages = gpu::stage_flag::compute,
-	};
-
-	auto rec = co_await gpu::pass<system>(ctx)
-		.pipeline(d.update_pipeline)
-		.after<rt_shadow::system>();
-
-	rec.bind_descriptors(d.update_pipeline, d.update_descriptors[frame_index]);
-	rec.push(d.update_pipeline, pc);
-	rec.dispatch(grid_dim.x(), grid_dim.y(), grid_dim.z());
+		{
+			.scene_tlas = d.tlas_views[frame_index].slot(),
+			.irradiance_atlas_out = d.irradiance_atlas.storage_slot(),
+			.material_palette = gc_r.material_palette_buffers[frame_index].slot(),
+		},
+		grid_dim
+	);
 
 	++d.frame_counter;
 }
