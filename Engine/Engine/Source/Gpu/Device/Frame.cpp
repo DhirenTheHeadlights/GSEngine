@@ -3,28 +3,20 @@ module gse.gpu;
 import std;
 
 import :frame;
-import :transient_executor;
-import :vulkan_command_pools;
-import :vulkan_commands;
-import :vulkan_device;
-import :vulkan_queues;
-import :vulkan_swapchain;
-import :vulkan_sync;
 import :device;
 import :swap_chain;
-import :types;
 
 import gse.os;
 import gse.assert;
 import gse.diag;
 
 auto gse::gpu::frame::create(device& dev, swap_chain& sc) -> std::unique_ptr<frame> {
-	auto sync = create_sync_objects(dev.vulkan_device(), sc.config());
-	return std::make_unique<frame>(std::move(sync), 0, dev, sc);
+	auto s = create_sync_objects(dev, sc);
+	return std::unique_ptr<frame>(new frame(std::move(s), 0, dev, sc));
 }
 
-gse::gpu::frame::frame(vulkan::sync&& sync, const std::uint32_t image_index, device& dev, swap_chain& sc)
-	: m_sync(std::move(sync)), m_image_index(image_index), m_device(&dev), m_swapchain(&sc) {
+gse::gpu::frame::frame(sync&& s, const std::uint32_t image_index, device& dev, swap_chain& sc)
+	: m_sync(std::move(s)), m_image_index(image_index), m_device(&dev), m_swapchain(&sc) {
 }
 
 auto gse::gpu::frame::current_frame() const -> std::uint32_t {
@@ -35,7 +27,7 @@ auto gse::gpu::frame::image_index() const -> std::uint32_t {
 	return m_image_index;
 }
 
-auto gse::gpu::frame::command_buffer(const queue_type queue) const -> handle<vulkan::command_buffer> {
+auto gse::gpu::frame::command_buffer(const queue_type queue) const -> handle<gpu::command_buffer> {
 	return m_command_buffers[static_cast<std::size_t>(queue)];
 }
 
@@ -43,35 +35,33 @@ auto gse::gpu::frame::frame_in_progress() const -> bool {
 	return m_frame_in_progress;
 }
 
-auto gse::gpu::frame::set_sync(vulkan::sync&& sync) -> void {
-	m_sync = std::move(sync);
+auto gse::gpu::frame::set_sync(sync&& s) -> void {
+	m_sync = std::move(s);
 }
 
 auto gse::gpu::frame::recreate_resources(const window::data& win) -> void {
 	const auto requested_size = window::viewport(win);
 	const auto requested_mode = present_mode_from_setting_index(win.current_present_mode_index);
 	const auto current_extent = m_swapchain->extent();
-	const auto current_mode = m_swapchain->config().present_mode();
+	const auto current_mode = m_swapchain->present_mode();
 
 	const bool size_unchanged = current_extent.x() == static_cast<std::uint32_t>(requested_size.x()) &&
 		current_extent.y() == static_cast<std::uint32_t>(requested_size.y());
 
-	if (m_device->vulkan_device().swapchain_maintenance1_enabled() && size_unchanged && current_mode != requested_mode) {
-		m_swapchain->config().set_present_mode(requested_mode);
+	if (size_unchanged && current_mode != requested_mode) {
+		m_swapchain->set_present_mode(requested_mode);
 		return;
 	}
 
 	m_device->wait_idle();
 	m_swapchain->recreate(requested_size, requested_mode);
-	m_sync = create_sync_objects(m_device->vulkan_device(), m_swapchain->config());
+	m_sync = create_sync_objects(*m_device, *m_swapchain);
 	m_swapchain->notify_recreated();
 	m_present_ids_in_flight.fill(0);
 	m_device->wait_idle();
 }
 
 auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, frame_status> {
-	auto& dev = m_device->vulkan_device();
-
 	m_frame_in_progress = false;
 
 	if (window::minimized(win)) {
@@ -82,8 +72,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		trace::scope_guard sg{ trace_id<"begin_frame::wait_fence">() };
 		for (std::size_t i = 0; i < queue_type_count; ++i) {
 			const auto fence_result =
-				vulkan::wait_for_fence(
-					dev,
+				m_device->wait_for_fence(
 					m_sync.in_flight_fence(
 						static_cast<queue_type>(i),
 						m_current_frame
@@ -92,36 +81,34 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 			assert(fence_result == result::success, "Failed to wait for in-flight fence!");
 		}
 	}
-	catch (const vk::DeviceLostError&) {
+	catch (const device_lost_error&) {
 		m_device->report_device_lost(std::format("begin_frame waitForFences (frame {})", m_current_frame));
 		return std::unexpected(frame_status::device_lost);
 	}
 
-	if (dev.present_wait_enabled()) {
-		const auto prior_present_id = m_present_ids_in_flight[m_current_frame];
-		if (prior_present_id != 0) {
-			trace::scope_guard sg{ trace_id<"begin_frame::wait_present">() };
-			try {
-				const auto present_wait_result = m_swapchain->config().wait_for_present(prior_present_id);
-				assert(
-					present_wait_result == result::success || present_wait_result == result::suboptimal_khr,
-					"vkWaitForPresentKHR returned unexpected status"
-				);
-			}
-			catch (const vk::OutOfDateKHRError&) {
-			}
-			catch (const vk::DeviceLostError&) {
-				m_device->report_device_lost(std::format("waitForPresentKHR (frame {})", m_current_frame));
-				return std::unexpected(frame_status::device_lost);
-			}
+	const auto prior_present_id = m_present_ids_in_flight[m_current_frame];
+	if (prior_present_id != 0) {
+		trace::scope_guard sg{ trace_id<"begin_frame::wait_present">() };
+		try {
+			const auto present_wait_result = m_swapchain->wait_for_present(prior_present_id);
+			assert(
+				present_wait_result == result::success || present_wait_result == result::suboptimal_khr,
+				"vkWaitForPresentKHR returned unexpected status"
+			);
+		}
+		catch (const out_of_date_error&) {
+		}
+		catch (const device_lost_error&) {
+			m_device->report_device_lost(std::format("waitForPresentKHR (frame {})", m_current_frame));
+			return std::unexpected(frame_status::device_lost);
 		}
 	}
 
 	try {
 		trace::scope_guard sg{ trace_id<"begin_frame::transient">() };
-		m_device->transient().begin_frame(dev);
+		m_device->transient().begin_frame();
 	}
-	catch (const vk::DeviceLostError&) {
+	catch (const device_lost_error&) {
 		m_device->report_device_lost(std::format("transient begin_frame (frame {})", m_current_frame));
 		return std::unexpected(frame_status::device_lost);
 	}
@@ -136,18 +123,14 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 
 	try {
 		trace::scope_guard sg{ trace_id<"begin_frame::acquire">() };
-		const auto acquired = vulkan::acquire_next_image(
-			dev,
-			m_swapchain->config().handle(),
-			m_sync.image_available(m_current_frame)
-		);
+		const auto acquired = m_swapchain->acquire(m_sync.image_available(m_current_frame));
 		acquire_status = acquired.result;
 		acquired_image_index = acquired.image_index;
 	}
-	catch (const vk::OutOfDateKHRError&) {
+	catch (const out_of_date_error&) {
 		acquire_status = result::error_out_of_date_khr;
 	}
-	catch (const vk::DeviceLostError&) {
+	catch (const device_lost_error&) {
 		m_device->report_device_lost(std::format("acquireNextImage2KHR (frame {})", m_current_frame));
 		return std::unexpected(frame_status::device_lost);
 	}
@@ -164,25 +147,23 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 
 	trace::scope_guard sg_setup{ trace_id<"begin_frame::setup">() };
 
-	vulkan::reset_fence(dev, m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
+	m_device->reset_fence(m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
 
 	m_image_index = acquired_image_index;
 
-	if (m_device->vulkan_device().swapchain_maintenance1_enabled()) {
-		const auto release_fence = m_swapchain->config().release_fence(m_image_index);
-		const auto release_result = vulkan::wait_for_fence(dev, release_fence);
-		assert(release_result == result::success, "Failed to wait for swapchain release fence!");
-	}
+	const auto release_fence = m_swapchain->release_fence(m_image_index);
+	const auto release_result = m_device->wait_for_fence(release_fence);
+	assert(release_result == result::success, "Failed to wait for swapchain release fence!");
 
 	for (std::size_t i = 0; i < queue_type_count; ++i) {
 		m_command_buffers[i] =
-			m_device->vulkan_command().frame_command_buffer(
+			m_device->frame_command_buffer(
 				static_cast<queue_type>(i),
 				m_current_frame
 			);
 	}
 
-	const vulkan::commands cmd_main{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
+	const commands cmd_main{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
 	cmd_main.reset();
 	cmd_main.begin();
 
@@ -244,7 +225,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	const auto graphics_cb = m_command_buffers[static_cast<std::size_t>(queue_type::graphics)];
 	m_device->transient().recorder().run_post_frame(graphics_cb);
 
-	const vulkan::commands cmd_tail{ graphics_cb };
+	const commands cmd_tail{ graphics_cb };
 
 	const image_barrier present_barrier{
 		.src_stages = pipeline_stage_flag::color_attachment_output,
@@ -277,8 +258,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 			continue;
 		}
 		if (last_idx_per_queue[qi] != static_cast<std::size_t>(-1)) {
-			vulkan::reset_fence(
-				m_device->vulkan_device(),
+			m_device->reset_fence(
 				m_sync.in_flight_fence(
 					static_cast<queue_type>(qi),
 					m_current_frame
@@ -308,17 +288,17 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 					),
 					.signal_semaphores = sub.signals,
 				};
-				m_device->vulkan_queue().submit(
+				m_device->submit(
 					sub.queue,
 					submit,
 					last_for_queue ? m_sync.in_flight_fence(
 										 sub.queue,
 										 m_current_frame
 									 )
-								   : handle<vulkan::fence>{}
+								   : handle<fence>{}
 				);
 			}
-			catch (const vk::DeviceLostError&) {
+			catch (const device_lost_error&) {
 				m_device->report_device_lost(
 					std::format(
 						"aux submit (frame {}, image {})",
@@ -365,17 +345,16 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 					1
 				),
 			};
-			m_device->vulkan_queue()
-				.submit(
+			m_device->submit(
+				queue_type::graphics,
+				submit,
+				m_sync.in_flight_fence(
 					queue_type::graphics,
-					submit,
-					m_sync.in_flight_fence(
-						queue_type::graphics,
-						m_current_frame
-					)
-				);
+					m_current_frame
+				)
+			);
 		}
-		catch (const vk::DeviceLostError&) {
+		catch (const device_lost_error&) {
 			m_device->report_device_lost(std::format(
 				"submit2 (frame {}, image {})",
 				m_current_frame,
@@ -386,58 +365,18 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	}
 
 	const handle<semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
-	const handle<vulkan::swap_chain> swapchain_handle = m_swapchain->config().handle();
-	const auto current_present_mode = m_swapchain->config().present_mode();
-	const auto maintenance1 = m_device->vulkan_device().swapchain_maintenance1_enabled();
-	const auto present_id_enabled = m_device->vulkan_device().present_id_enabled();
-	handle<vulkan::fence> release_fence_handle{};
-	if (maintenance1) {
-		m_swapchain->config().reset_release_fence(m_device->vulkan_device(), m_image_index);
-		release_fence_handle = m_swapchain->config().release_fence(m_image_index);
-	}
-
-	const std::uint64_t present_id = present_id_enabled ? m_next_present_id++ : 0;
-
-	const present_info present_info{
-		.wait_semaphores = std::span(
-			&render_finished_handle,
-			1
-		),
-		.swapchains = std::span(
-			&swapchain_handle,
-			1
-		),
-		.image_indices = std::span(
-			&m_image_index,
-			1
-		),
-		.present_modes = maintenance1 ? std::span(
-											&current_present_mode,
-											1
-										)
-									  : std::span<const present_mode>{},
-		.release_fences = maintenance1 ? std::span(
-											 &release_fence_handle,
-											 1
-										 )
-									   : std::span<const handle<vulkan::fence>>{},
-		.present_ids = present_id_enabled ? std::span(
-												&present_id,
-												1
-											)
-										  : std::span<const std::uint64_t>{},
-	};
+	const std::uint64_t present_id = m_next_present_id++;
 
 	result present_result;
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::present">() };
 		try {
-			present_result = m_device->vulkan_queue().present(present_info);
+			present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id);
 		}
-		catch (const vk::OutOfDateKHRError&) {
+		catch (const out_of_date_error&) {
 			present_result = result::error_out_of_date_khr;
 		}
-		catch (const vk::DeviceLostError&) {
+		catch (const device_lost_error&) {
 			m_device->report_device_lost(
 				std::format(
 					"presentKHR (frame {}, image {})",
@@ -455,15 +394,13 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 	}
 	else {
 		assert(present_result == result::success, "Failed to present swap chain image!");
-		if (present_id_enabled) {
-			m_present_ids_in_flight[m_current_frame] = present_id;
-		}
+		m_present_ids_in_flight[m_current_frame] = present_id;
 	}
 
-	m_current_frame = (m_current_frame + 1) % vulkan::max_frames_in_flight;
+	m_current_frame = (m_current_frame + 1) % max_frames_in_flight;
 	m_frame_in_progress = false;
 }
 
-auto gse::gpu::frame::create_sync_objects(const vulkan::device& device_data, const vulkan::swap_chain& swap_chain_data) -> vulkan::sync {
-	return vulkan::sync::create(device_data, swap_chain_data.image_count());
+auto gse::gpu::frame::create_sync_objects(device& dev, const swap_chain& sc) -> sync {
+	return sync::create(dev.vulkan_device(), sc.image_count());
 }

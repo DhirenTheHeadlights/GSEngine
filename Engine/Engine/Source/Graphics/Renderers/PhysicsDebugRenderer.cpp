@@ -37,6 +37,7 @@ namespace gse::renderer::physics_debug {
 	};
 
 	using instanced_shader_binding_types = type_pack<shaders::standard_3d::camera_ubo, body_data, shape_instances>;
+	using lines_shader_binding_types = type_pack<shaders::standard_3d::camera_ubo>;
 	using shader_types = type_pack<shape_instance>;
 
 	using instanced_entry = gpu::graphics_entry<
@@ -56,9 +57,9 @@ namespace gse::renderer::physics_debug {
 
 	using lines_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/physics_debug">,
-		gpu::layout<"standard_3d">,
+		gpu::layout<"physics_debug_lines">,
 		gpu::types<shaders::common::shader_types>,
-		gpu::bindings<shaders::standard_3d::shader_binding_types>,
+		gpu::bindings<lines_shader_binding_types>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::rasterization<gpu::polygon_mode::line, gpu::cull_mode::none>,
@@ -91,12 +92,22 @@ namespace gse::renderer::physics_debug {
 		std::vector<debug_vertex>& out_vertices
 	) -> void;
 
-	auto ensure_buffer_capacity(
+	auto ensure_vertex_capacity(
 		gpu::device& device,
 		gpu::buffer& buffer,
 		std::size_t& capacity,
 		std::size_t required_bytes,
 		gpu::buffer_flag usage
+	) -> void;
+
+	auto ensure_bindless_buffer_capacity(
+		gpu::device& device,
+		gpu::bindless_heaps& heaps,
+		gpu::bindless_buffer& buffer,
+		std::size_t& capacity,
+		std::size_t required_bytes,
+		gpu::buffer_flag usage,
+		std::string_view tag
 	) -> void;
 }
 
@@ -259,7 +270,7 @@ auto gse::renderer::physics_debug::build_contact_debug(const collision_informati
 	}
 }
 
-auto gse::renderer::physics_debug::ensure_buffer_capacity(gpu::device& device, gpu::buffer& buffer, std::size_t& capacity, const std::size_t required_bytes, const gpu::buffer_flag usage) -> void {
+auto gse::renderer::physics_debug::ensure_vertex_capacity(gpu::device& device, gpu::buffer& buffer, std::size_t& capacity, const std::size_t required_bytes, const gpu::buffer_flag usage) -> void {
 	if (required_bytes <= capacity && buffer.valid()) {
 		return;
 	}
@@ -279,11 +290,33 @@ auto gse::renderer::physics_debug::ensure_buffer_capacity(gpu::device& device, g
 	);
 }
 
+auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& device, gpu::bindless_heaps& heaps, gpu::bindless_buffer& buffer, std::size_t& capacity, const std::size_t required_bytes, const gpu::buffer_flag usage, const std::string_view tag) -> void {
+	if (required_bytes <= capacity && buffer.valid()) {
+		return;
+	}
+	if (buffer.valid()) {
+		buffer = {};
+	}
+	capacity = std::max<std::size_t>(capacity, 4096);
+	while (capacity < required_bytes) {
+		capacity *= 2;
+	}
+	buffer = gpu::bindless_buffer::create(
+		device.allocator(),
+		heaps,
+		{
+			.size = capacity,
+			.usage = usage
+		},
+		tag
+	);
+}
+
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const physics::system::data& ps) -> async::task<> {
 	d.pipeline_instanced = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
+		*gpu_s.bindless_heaps,
 		instanced_entry::pod
 	);
 
@@ -291,57 +324,22 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 		gpu::build_graphics_program(
 			*gpu_s.device,
 			*gpu_s.shader_registry,
-			*gpu_s.bindless_textures,
+			*gpu_s.bindless_heaps,
 			lines_entry::pod
 		);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::buffer::create(
+	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
+		d.camera_ubo_buffers[i] = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = camera_ubo_size,
 				.usage = gpu::buffer_flag::uniform
-			}
+			},
+			"physics_debug.camera_ubo"
 		);
-
-		d.descriptors_box[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				instanced_entry::pod
-			);
-		d.descriptors_sphere[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				instanced_entry::pod
-			);
-		d.descriptors_capsule[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				instanced_entry::pod
-			);
-
-		d.descriptors_lines[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				lines_entry::pod
-			);
-
-		gpu::descriptor_writer(
-			gpu_s.device->handle(),
-			d.descriptors_lines[i]
-		)
-			.buffer<shaders::standard_3d::camera_ubo>(
-				d.camera_ubo_buffers[i],
-				0,
-				camera_ubo_size
-			)
-			.commit();
 	}
 
 	{
@@ -538,63 +536,71 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 		.jitter_ndc = cam_state.jitter_ndc,
 		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
-	d.camera_ubo_buffers[frame_index].host_write(camera);
+	d.camera_ubo_buffers[frame_index].buffer().host_write(camera);
 
 	const auto ext = gpu_s.render_graph->extent();
-	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
-	const gpu::buffer* body_buffer = nullptr;
-	std::size_t body_count_bytes = 0;
+	const bool draw_shapes = has_shape_instances && !d.cpu_body_staging.empty();
 
-	if (has_shape_instances && !d.cpu_body_staging.empty()) {
+	if (!draw_shapes && !has_lines) {
+		co_return;
+	}
+
+	if (draw_shapes) {
 		const auto body_count = static_cast<std::uint32_t>(d.cpu_body_staging.size());
-		body_count_bytes = body_count * sizeof(vbd::body_state);
-		ensure_buffer_capacity(
+		const auto body_bytes = body_count * sizeof(vbd::body_state);
+		ensure_bindless_buffer_capacity(
 			*gpu_s.device,
+			*gpu_s.bindless_heaps,
 			d.cpu_body_buffers[frame_index],
 			d.cpu_body_capacity[frame_index],
-			body_count_bytes,
-			gpu::buffer_flag::storage
+			body_bytes,
+			gpu::buffer_flag::storage,
+			"physics_debug.cpu_body"
 		);
-		d.cpu_body_buffers[frame_index].host_write(d.cpu_body_staging);
-		body_buffer = &d.cpu_body_buffers[frame_index];
+		d.cpu_body_buffers[frame_index].buffer().host_write(d.cpu_body_staging);
 
 		const auto upload_instances =
-			[&](std::vector<shape_instance>& instances, gpu::buffer& instance_buffer, std::size_t& capacity) {
+			[&](std::vector<shape_instance>& instances, gpu::bindless_buffer& instance_buffer, std::size_t& capacity, const std::string_view tag) {
 				if (instances.empty()) {
 					return;
 				}
 				const auto bytes = instances.size() * sizeof(shape_instance);
-				ensure_buffer_capacity(
+				ensure_bindless_buffer_capacity(
 					*gpu_s.device,
+					*gpu_s.bindless_heaps,
 					instance_buffer,
 					capacity,
 					bytes,
-					gpu::buffer_flag::storage
+					gpu::buffer_flag::storage,
+					tag
 				);
-				instance_buffer.host_write(instances);
+				instance_buffer.buffer().host_write(instances);
 			};
 
 		upload_instances(
 			d.box_instances,
 			d.box_instance_buffers[frame_index],
-			d.box_instance_capacity[frame_index]
+			d.box_instance_capacity[frame_index],
+			"physics_debug.box_instances"
 		);
 		upload_instances(
 			d.sphere_instances,
 			d.sphere_instance_buffers[frame_index],
-			d.sphere_instance_capacity[frame_index]
+			d.sphere_instance_capacity[frame_index],
+			"physics_debug.sphere_instances"
 		);
 		upload_instances(
 			d.capsule_instances,
 			d.capsule_instance_buffers[frame_index],
-			d.capsule_instance_capacity[frame_index]
+			d.capsule_instance_capacity[frame_index],
+			"physics_debug.capsule_instances"
 		);
 	}
 
 	if (has_lines) {
 		const auto bytes = d.line_vertices.size() * sizeof(debug_vertex);
-		ensure_buffer_capacity(
+		ensure_vertex_capacity(
 			*gpu_s.device,
 			d.line_vertex_buffers[frame_index],
 			d.line_vertex_capacity[frame_index],
@@ -610,41 +616,24 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
-	if (body_buffer != nullptr) {
+	if (draw_shapes) {
 		rec.bind(d.pipeline_instanced);
 
 		const auto draw_shape = [&](const std::vector<shape_instance>& instances,
-									const gpu::buffer& instance_buffer,
+									const gpu::bindless_buffer& instance_buffer,
 									const gpu::buffer& unit_vb,
-									std::uint32_t unit_vert_count,
-									gpu::descriptor_region& descriptor) {
+									std::uint32_t unit_vert_count) {
 			if (instances.empty()) {
 				return;
 			}
 			const auto count = static_cast<std::uint32_t>(instances.size());
-
-			gpu::descriptor_writer(
-				gpu_s.device->handle(),
-				descriptor
-			)
-				.buffer<shaders::standard_3d::camera_ubo>(
-					d.camera_ubo_buffers[frame_index],
-					0,
-					camera_ubo_size
-				)
-				.buffer<body_data>(
-					*body_buffer,
-					0,
-					body_count_bytes
-				)
-				.buffer<shape_instances>(
-					instance_buffer,
-					0,
-					count * sizeof(shape_instance)
-				)
-				.commit();
-
-			rec.bind_descriptors(d.pipeline_instanced, descriptor);
+			rec.push_bindings<instanced_entry>(
+				{
+					.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
+					.body_data = d.cpu_body_buffers[frame_index].slot(),
+					.shape_instances = instance_buffer.slot(),
+				}
+			);
 			rec.bind_vertex(unit_vb);
 			rec.draw(unit_vert_count, count);
 		};
@@ -653,28 +642,29 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 			d.box_instances,
 			d.box_instance_buffers[frame_index],
 			d.unit_box_vb,
-			d.unit_box_vert_count,
-			d.descriptors_box[frame_index]
+			d.unit_box_vert_count
 		);
 		draw_shape(
 			d.sphere_instances,
 			d.sphere_instance_buffers[frame_index],
 			d.unit_sphere_vb,
-			d.unit_sphere_vert_count,
-			d.descriptors_sphere[frame_index]
+			d.unit_sphere_vert_count
 		);
 		draw_shape(
 			d.capsule_instances,
 			d.capsule_instance_buffers[frame_index],
 			d.unit_capsule_vb,
-			d.unit_capsule_vert_count,
-			d.descriptors_capsule[frame_index]
+			d.unit_capsule_vert_count
 		);
 	}
 
 	if (has_lines) {
 		rec.bind(d.pipeline_lines);
-		rec.bind_descriptors(d.pipeline_lines, d.descriptors_lines[frame_index]);
+		rec.push_bindings<lines_entry>(
+			{
+				.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
+			}
+		);
 		rec.bind_vertex(d.line_vertex_buffers[frame_index]);
 		rec.draw(static_cast<std::uint32_t>(d.line_vertices.size()));
 	}

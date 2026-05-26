@@ -2,12 +2,6 @@ export module gse.gpu:transient_pool;
 
 import std;
 
-import :handles;
-import :types;
-import :vulkan_image;
-import :vulkan_buffer;
-import :vulkan_device;
-import :vulkan_allocation;
 import :aliases;
 import :device;
 
@@ -141,7 +135,7 @@ export namespace gse::gpu {
 
 	private:
 		struct memory_block {
-			vulkan::device_memory_handle memory;
+			device_memory_handle memory;
 			gpu::device_size size = 0;
 			std::uint32_t memory_type_index = 0;
 		};

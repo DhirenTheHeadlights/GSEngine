@@ -3,22 +3,15 @@ export module gse.gpu:device;
 import std;
 
 import :aliases;
-import :transient_executor;
-import :vulkan_aftermath;
-import :vulkan_buffer;
-import :vulkan_command_pools;
-import :vulkan_device;
-import :vulkan_instance;
-import :vulkan_queues;
-import :descriptor_heap;
-import :types;
 
+import gse.vulkan;
 import gse.assert;
 import gse.os;
 import gse.core;
 import gse.containers;
 import gse.concurrency;
 import gse.save;
+import gse.math;
 
 export namespace gse::gpu {
 	class device final : public non_copyable {
@@ -27,7 +20,7 @@ export namespace gse::gpu {
 		static auto create(
 			const window::data& win,
 			bool validation_layers_enabled,
-			vulkan::device::settings& device_cfg
+			gpu::device_settings& device_cfg
 		) -> std::unique_ptr<device>;
 
 		~device() override;
@@ -37,10 +30,6 @@ export namespace gse::gpu {
 		[[nodiscard]] auto allocator(
 			this auto& self
 		) -> auto&;
-
-		[[nodiscard]] auto descriptor_heap(
-			this auto& self
-		) -> decltype(auto);
 
 		[[nodiscard]] auto surface_format() const -> image_format;
 
@@ -104,15 +93,99 @@ export namespace gse::gpu {
 			this auto& self
 		) -> auto&;
 
-		[[nodiscard]] auto vulkan_queue() -> vulkan::queue&;
+		[[nodiscard]] auto frame_command_buffer(
+			queue_type queue,
+			std::uint32_t frame_index
+		) const -> gpu::handle<command_buffer>;
 
-		[[nodiscard]] auto vulkan_command() -> vulkan::command&;
+		auto submit(
+			queue_type queue,
+			const submit_info& info,
+			gpu::handle<fence> signal_fence = {}
+		) -> void;
 
-		[[nodiscard]] auto worker_command_pools() -> vulkan::worker_command_pools&;
+		[[nodiscard]] auto present(
+			const present_info& info
+		) -> result;
+
+		[[nodiscard]] auto wait_for_fence(
+			gpu::handle<fence> f,
+			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
+		) const -> result;
+
+		auto reset_fence(
+			gpu::handle<fence> f
+		) const -> void;
+
+		auto reset_worker_command_pools(
+			std::uint32_t frame_index
+		) -> void;
+
+		[[nodiscard]] auto acquire_worker_command_buffer(
+			queue_type queue,
+			std::size_t worker_index,
+			std::uint32_t frame_index
+		) -> gpu::handle<command_buffer>;
+
+		[[nodiscard]] auto make_video_encoder(
+			vec2u extent
+		) -> std::optional<video_encoder>;
+
+		[[nodiscard]] auto create_image_unbound(
+			const image_create_info& info
+		) const -> std::pair<gpu::handle<image>, memory_requirements>;
+
+		[[nodiscard]] auto create_buffer_unbound(
+			const buffer_create_info& info
+		) const -> std::pair<gpu::handle<buffer>, memory_requirements>;
+
+		auto bind_image_memory(
+			gpu::handle<image> img,
+			device_memory_handle mem,
+			device_size offset
+		) const -> void;
+
+		auto bind_buffer_memory(
+			gpu::handle<buffer> buf,
+			device_memory_handle mem,
+			device_size offset
+		) const -> void;
+
+		[[nodiscard]] auto create_image_view(
+			gpu::handle<image> img,
+			const image_view_create_info& info
+		) const -> gpu::handle<image_view>;
+
+		[[nodiscard]] auto allocate_aliased_memory(
+			device_size size,
+			std::uint32_t memory_type_index
+		) const -> device_memory_handle;
+
+		auto free_aliased_memory(
+			device_memory_handle mem
+		) const -> void;
+
+		[[nodiscard]] auto find_memory_type_index(
+			std::uint32_t type_bits,
+			memory_property_flags required
+		) const -> std::uint32_t;
+
+		[[nodiscard]] auto make_aliased_image(
+			gpu::handle<image> img_handle,
+			gpu::handle<image_view> view_handle,
+			image_format format,
+			vec3u extent,
+			const image_view_create_info& view_info,
+			std::string_view tag
+		) -> std::unique_ptr<image>;
+
+		[[nodiscard]] auto make_aliased_buffer(
+			gpu::handle<buffer> buf_handle,
+			device_size size,
+			std::string_view tag
+		) -> std::unique_ptr<buffer>;
 
 		[[nodiscard]] auto transient() -> transient_executor&;
-
-		[[nodiscard]] auto descriptor_buffer_props() const -> const descriptor_buffer_properties&;
 
 		[[nodiscard]] auto video_encode_enabled() const -> bool;
 
@@ -124,9 +197,6 @@ export namespace gse::gpu {
 			vulkan::queue&& queue,
 			vulkan::command&& command,
 			vulkan::worker_command_pools&& worker_pools,
-			transient_executor&& transient,
-			std::unique_ptr<gpu::descriptor_heap> descriptor_heap,
-			descriptor_buffer_properties desc_buf_props,
 			image_format surface_format,
 			bool video_encode_enabled
 		);
@@ -137,9 +207,7 @@ export namespace gse::gpu {
 		vulkan::queue m_queue;
 		vulkan::command m_command;
 		vulkan::worker_command_pools m_worker_pools;
-		transient_executor m_transient;
-		std::unique_ptr<gpu::descriptor_heap> m_descriptor_heap;
-		descriptor_buffer_properties m_descriptor_buffer_props;
+		std::unique_ptr<transient_executor> m_transient;
 		image_format m_surface_format;
 		std::atomic<bool> m_device_lost_reported = false;
 		bool m_video_encode_enabled = false;
@@ -149,7 +217,7 @@ export namespace gse::gpu {
 		struct pass_marker_ring {
 			std::array<pass_marker, pass_marker_ring_size> entries{};
 			std::atomic<std::uint64_t> seq{ 1 };
-			vulkan::buffer checkpoint_buffer;
+			buffer checkpoint_buffer;
 			const std::uint32_t* checkpoint_slots = nullptr;
 		};
 
@@ -159,10 +227,6 @@ export namespace gse::gpu {
 
 auto gse::gpu::device::allocator(this auto& self) -> auto& {
 	return self.m_device_config;
-}
-
-auto gse::gpu::device::descriptor_heap(this auto& self) -> decltype(auto) {
-	return (*self.m_descriptor_heap);
 }
 
 auto gse::gpu::device::vulkan_instance(this auto& self) -> auto& {

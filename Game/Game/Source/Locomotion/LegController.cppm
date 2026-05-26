@@ -18,7 +18,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Peak knee bend during swing midphase (radians, negative = lift foot).">{}
 			]]
-			gse::angle swing_knee_lift = gse::radians(-1.25f);
+			gse::angle swing_knee_lift = gse::radians(-1.15f);
 
 			[[
 				= gse::settings::describe<"Lift height of swing foot at midphase.">{}
@@ -28,7 +28,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Time used for swing-foot lift and descent.">{}
 			]]
-			gse::time swing_trajectory_duration = gse::seconds(0.65f);
+			gse::time swing_trajectory_duration = gse::seconds(0.48f);
 
 			[[
 				= gse::settings::describe<"Clamp range on stance hip target.">{}
@@ -46,6 +46,16 @@ export namespace gs::locomotion {
 			gse::position stance_foot_ground_y = gse::meters(0.025f);
 
 			[[
+				= gse::settings::describe<"Maximum horizontal swing-foot travel while planting before contact.">{}
+			]]
+			gse::displacement plant_horizontal_reach = gse::meters(0.16f);
+
+			[[
+				= gse::settings::describe<"Distance below ground used as the active plant target before contact.">{}
+			]]
+			gse::displacement plant_foot_sink = gse::meters(0.08f);
+
+			[[
 				= gse::settings::describe<"Forward capture limit for releasing the swing leg during weight shift.">{}
 			]]
 			gse::displacement weight_shift_capture_forward_limit = gse::meters(0.28f);
@@ -60,9 +70,9 @@ export namespace gs::locomotion {
 			]]
 			gse::displacement weight_shift_capture_right_limit = gse::meters(0.24f);
 
-			[[= gse::settings::describe<"Leg joint position gain.">{}]] float joint_gain = 24.f;
+			[[= gse::settings::describe<"Leg joint position gain.">{}]] float joint_gain = 30.f;
 
-			[[= gse::settings::describe<"Leg joint velocity damping.">{}]] float joint_damping = 4.f;
+			[[= gse::settings::describe<"Leg joint velocity damping.">{}]] float joint_damping = 6.f;
 
 			[[
 				= gse::settings::describe<"Grounded foot anchor velocity gain.">{}
@@ -143,6 +153,18 @@ namespace gs::locomotion {
 		const gse::vec3<gse::position>& foot,
 		const leg_controller::data& d
 	) -> gse::vec3<gse::position>;
+	auto plant_contact_target(
+		const gse::vec3<gse::position>& current,
+		const gse::vec3<gse::position>& planned,
+		const leg_controller::data& d
+	) -> gse::vec3<gse::position>;
+	auto clamp_foot_to_leg_reach(
+		const gse::vec3<gse::position>& hip_world,
+		const gse::vec3<gse::position>& target,
+		const gse::quat& pelvis_orientation,
+		gse::length thigh_length,
+		gse::length shin_length
+	) -> gse::vec3<gse::position>;
 	auto compute_swing(
 		leg which,
 		const state& s,
@@ -218,6 +240,56 @@ auto gs::locomotion::grounded_foot_position(const gse::vec3<gse::position>& foot
 	return gse::vec3<gse::position>(foot.x(), d.stance_foot_ground_y, foot.z());
 }
 
+auto gs::locomotion::plant_contact_target(const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& planned, const leg_controller::data& d) -> gse::vec3<gse::position> {
+	const auto grounded_current = grounded_foot_position(current, d);
+	const auto grounded_planned = grounded_foot_position(planned, d);
+	const auto delta = grounded_planned - grounded_current;
+	const auto horizontal_distance = gse::hypot(delta.x(), delta.z());
+	const auto plant_y = d.stance_foot_ground_y - d.plant_foot_sink;
+	if (horizontal_distance <= d.plant_horizontal_reach || horizontal_distance <= gse::meters(0.001f)) {
+		return gse::vec3<gse::position>(grounded_planned.x(), plant_y, grounded_planned.z());
+	}
+
+	const float scale = d.plant_horizontal_reach / horizontal_distance;
+	return gse::vec3<gse::position>(
+		grounded_current.x() + delta.x() * scale,
+		plant_y,
+		grounded_current.z() + delta.z() * scale
+	);
+}
+
+auto gs::locomotion::clamp_foot_to_leg_reach(const gse::vec3<gse::position>& hip_world, const gse::vec3<gse::position>& target, const gse::quat& pelvis_orientation, const gse::length thigh_length, const gse::length shin_length) -> gse::vec3<gse::position> {
+	const auto rel_world = target - hip_world;
+	const auto rel_body = gse::inverse_rotate_vector(pelvis_orientation, rel_world);
+	const gse::length sagittal = -rel_body.z();
+	const gse::length drop = -rel_body.y();
+	const auto max_reach = thigh_length + shin_length - gse::meters(0.03f);
+	const auto drop_abs = gse::abs(drop);
+
+	if (drop_abs >= max_reach) {
+		const auto clamped_drop = std::clamp(drop, -max_reach, max_reach);
+		const auto clamped_rel_body = gse::vec3<gse::displacement>(
+			rel_body.x(),
+			-clamped_drop,
+			gse::meters(0.f)
+		);
+		return hip_world + gse::rotate_vector(pelvis_orientation, clamped_rel_body);
+	}
+
+	const auto max_sagittal = gse::sqrt(max_reach * max_reach - drop * drop);
+	if (gse::abs(sagittal) <= max_sagittal) {
+		return target;
+	}
+
+	const auto clamped_sagittal = std::clamp<gse::length>(sagittal, -max_sagittal, max_sagittal);
+	const auto clamped_rel_body = gse::vec3<gse::displacement>(
+		rel_body.x(),
+		rel_body.y(),
+		-clamped_sagittal
+	);
+	return hip_world + gse::rotate_vector(pelvis_orientation, clamped_rel_body);
+}
+
 auto gs::locomotion::stance_foot_target(const leg which, const leg_context& ctx, const leg_controller::data& d) -> gse::vec3<gse::position> {
 	return grounded_foot_position(planted_foot_position(which, ctx), d);
 }
@@ -262,14 +334,22 @@ auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& 
 	if (g.current == phase::plant) {
 		target_foot = foot_is_grounded(which, s) && p.target_valid ?
 			grounded_foot_position(p.foot_target_world, d) :
-			grounded_foot_position(current_foot_position(which, s), d);
+			(p.target_valid ?
+				 plant_contact_target(current_foot_position(which, s), p.foot_target_world, d) :
+				 grounded_foot_position(current_foot_position(which, s), d));
 	}
 	const float t = swing_trajectory_progress(g, d);
 	const float trajectory_t = g.current == phase::plant ? 1.f : t;
 	const auto lift = g.current == phase::plant ? gse::displacement{} : d.swing_lift_height;
 
-	const auto desired_foot = compute_swing_foot(start_foot, target_foot, trajectory_t, lift);
 	const auto hip_world = hip_world_position(s, r, which);
+	const auto desired_foot = clamp_foot_to_leg_reach(
+		hip_world,
+		compute_swing_foot(start_foot, target_foot, trajectory_t, lift),
+		s.pelvis_orientation,
+		r.thigh_length,
+		r.shin_length
+	);
 	const auto ik = solve_leg_ik(
 		hip_world,
 		desired_foot,

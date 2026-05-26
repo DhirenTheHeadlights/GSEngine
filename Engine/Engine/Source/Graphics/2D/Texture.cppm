@@ -63,8 +63,6 @@ export namespace gse {
 
 		auto gpu_image() const -> const gpu::image&;
 
-		auto gpu_sampler() const -> const gpu::sampler&;
-
 		auto image_data() const -> const image::data&;
 
 		[[nodiscard]] auto bindless_slot() const -> gpu::bindless_texture_slot;
@@ -78,7 +76,6 @@ export namespace gse {
 		) -> void;
 
 		gpu::image m_image;
-		gpu::sampler m_sampler;
 		gpu::bindless_texture_slot m_bindless_slot;
 		image::data m_image_data;
 		profile m_profile = profile::generic_repeat;

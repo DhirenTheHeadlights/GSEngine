@@ -681,7 +681,7 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 	const auto knee_thigh_back_z = -thigh.size.z() * 0.9f;
 	const auto knee_shin_front_z = shin.size.z() * 0.9f;
 	const auto knee_shin_back_z = -shin.size.z() * 0.9f;
-	const auto leg_muscle_max_force = gse::newtons(6400.f);
+	const auto leg_muscle_max_force = gse::newtons(9000.f);
 
 	add_muscle_pair(
 		1,

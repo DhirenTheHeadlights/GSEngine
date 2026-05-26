@@ -3,11 +3,8 @@ export module gse.gpu:shader_registry;
 import std;
 
 import :aliases;
-import :handles;
-import :types;
 import :device;
 import :shader_codegen;
-import :vulkan_descriptor_set_layout;
 
 import gse.log;
 import gse.core;

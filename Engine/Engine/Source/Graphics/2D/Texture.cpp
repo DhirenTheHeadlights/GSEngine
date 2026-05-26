@@ -61,15 +61,10 @@ auto gse::texture::load(asset::load_ctx& ctx) -> async::task<> {
 auto gse::texture::unload() -> void {
 	m_image_data = {};
 	m_image = {};
-	m_sampler = {};
 }
 
 auto gse::texture::gpu_image() const -> const gpu::image& {
 	return m_image;
-}
-
-auto gse::texture::gpu_sampler() const -> const gpu::sampler& {
-	return m_sampler;
 }
 
 auto gse::texture::image_data() const -> const image::data& {
@@ -118,8 +113,7 @@ auto gse::texture::create_vulkan_resources(gpu::context::data& context, const pr
 	m_upload_token = gpu::upload_image_2d(
 		*context.device,
 		m_image,
-		m_image_data.pixels.data(),
-		data_size
+		m_image_data.pixels.data()
 	);
 
 	constexpr auto clamp = gpu::sampler_address_mode::clamp_to_edge;
@@ -161,9 +155,8 @@ auto gse::texture::create_vulkan_resources(gpu::context::data& context, const pr
 			desc.address_w = clamp;
 			break;
 	}
-	m_sampler = gpu::sampler::create(context.device->vulkan_device(), desc);
 
-	m_bindless_slot = context.bindless_textures->allocate(m_image.view(), m_sampler.native());
+	m_bindless_slot = context.bindless_textures->allocate(m_image, desc);
 
 	m_image_data.pixels.clear();
 	m_image_data.pixels.shrink_to_fit();

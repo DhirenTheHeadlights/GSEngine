@@ -61,18 +61,9 @@ auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context:
 		gpu::build_compute_program(
 			*gpu_s.device,
 			*gpu_s.shader_registry,
-			*gpu_s.bindless_textures,
+			*gpu_s.bindless_heaps,
 			entry::pod
 		);
-
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.tlas_update_descriptors[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				entry::pod
-			);
-	}
 
 	co_return;
 }
@@ -170,9 +161,10 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu
 
 	const auto mapping_bytes = instance_count * sizeof(std::uint32_t);
 	if (d.mapping_buffer_capacity < mapping_bytes) {
-		for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-			d.mapping_buffers[i] = gpu::buffer::create(
+		for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
+			d.mapping_buffers[i] = gpu::bindless_buffer::create(
 				gpu_s.device->allocator(),
+				*gpu_s.bindless_heaps,
 				{
 					.size = mapping_bytes,
 					.usage = gpu::buffer_flag::storage
@@ -182,47 +174,35 @@ auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu
 		d.mapping_buffer_capacity = mapping_bytes;
 	}
 
-	d.mapping_buffers[frame_index].host_write(mapping.data(), mapping_bytes);
+	d.mapping_buffers[frame_index].buffer().host_write(mapping.data(), mapping_bytes);
 
 	auto& tlas_inst_buf = d.tlas_per_frame[frame_index].instance_buffer();
 
-	gpu::descriptor_writer(
-		gpu_s.device->handle(),
-		d.tlas_update_descriptors[frame_index]
-	)
-		.buffer<source_instance_data>(
-			gc_r.instance_buffer[frame_index],
-			0,
-			gc_r.instance_buffer[frame_index].size()
-		)
-		.buffer<index_mapping>(
-			d.mapping_buffers[frame_index],
-			0,
-			mapping_bytes
-		)
-		.buffer<tlas_instances>(
-			tlas_inst_buf,
-			0,
-			instance_count * 64
-		)
-		.commit();
-
-	const gpu::typed_push_constants<push_constants> pc{
-		.data = {
-			.count = instance_count,
-			.instance_stride = static_cast<std::uint32_t>(sizeof(shaders::common::instance_data)),
-			.model_matrix_offset = 0,
-		},
-		.stages = gpu::stage_flag::compute,
-	};
+	d.tlas_instance_views[frame_index].rebind_storage(
+		gpu_s.device->allocator(),
+		*gpu_s.bindless_heaps,
+		tlas_inst_buf,
+		0,
+		instance_count * 64
+	);
 
 	const std::uint32_t workgroups = (instance_count + 63) / 64;
 
 	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.tlas_update_pipeline).after<geometry_collector::system>();
 
 	rec.barrier(gpu::barrier_scope::transfer_to_compute);
-	rec.bind_descriptors(d.tlas_update_pipeline, d.tlas_update_descriptors[frame_index]);
-	rec.push(d.tlas_update_pipeline, pc);
-	rec.dispatch(workgroups, 1, 1);
+	rec.dispatch<entry>(
+		{
+			.count = instance_count,
+			.instance_stride = static_cast<std::uint32_t>(sizeof(shaders::common::instance_data)),
+			.model_matrix_offset = 0,
+		},
+		{
+			.source_instance_data = gc_r.instance_buffer[frame_index].slot(),
+			.index_mapping = d.mapping_buffers[frame_index].slot(),
+			.tlas_instances = d.tlas_instance_views[frame_index].slot(),
+		},
+		vec3u{ workgroups, 1u, 1u }
+	);
 	gpu::build_tlas_in_place(*gpu_s.device, d.tlas_per_frame[frame_index], instance_count, rec);
 }

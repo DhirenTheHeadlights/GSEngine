@@ -1,17 +1,16 @@
-export module gse.gpu:transient_executor;
+export module gse.vulkan:transient_executor;
 
 import std;
 
+import :device;
 import :frame_recorder;
 import :frame_resource_bin;
-import :handles;
-import :vulkan_device;
 import :transient_queue;
 
 import gse.concurrency;
 import gse.core;
 
-export namespace gse::gpu {
+export namespace gse::vulkan {
 	class transient_executor final : public non_copyable {
 	public:
 		~transient_executor();
@@ -26,11 +25,11 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		static auto create(
-			const vulkan::device& device,
+			const device& dev,
 			std::uint32_t graphics_family,
 			std::uint32_t compute_family,
 			std::size_t worker_count
-		) -> transient_executor;
+		) -> std::unique_ptr<transient_executor>;
 
 		[[nodiscard]] auto recorder(
 			this auto& self
@@ -48,13 +47,9 @@ export namespace gse::gpu {
 			async::task<> task
 		) -> void;
 
-		auto begin_frame(
-			const vulkan::device& device
-		) -> void;
+		auto begin_frame() -> void;
 
-		auto wait_idle(
-			const vulkan::device& device
-		) -> void;
+		auto wait_idle() -> void;
 
 	private:
 		transient_executor(
@@ -71,27 +66,27 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::transient_executor::transient_executor(transient_queue&& graphics, transient_queue&& compute)
+gse::vulkan::transient_executor::transient_executor(transient_queue&& graphics, transient_queue&& compute)
 	: m_graphics(std::move(graphics)), m_compute(std::move(compute)) {
 }
 
-gse::gpu::transient_executor::~transient_executor() = default;
+gse::vulkan::transient_executor::~transient_executor() = default;
 
-auto gse::gpu::transient_executor::create(const vulkan::device& device, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count) -> transient_executor {
-	auto graphics = transient_queue::create(device, queue_id::graphics, graphics_family, worker_count);
-	auto compute = transient_queue::create(device, queue_id::compute, compute_family, worker_count);
-	return transient_executor(std::move(graphics), std::move(compute));
+auto gse::vulkan::transient_executor::create(const device& dev, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count) -> std::unique_ptr<transient_executor> {
+	auto graphics = transient_queue::create(dev, queue_id::graphics, graphics_family, worker_count);
+	auto compute = transient_queue::create(dev, queue_id::compute, compute_family, worker_count);
+	return std::unique_ptr<transient_executor>(new transient_executor(std::move(graphics), std::move(compute)));
 }
 
-auto gse::gpu::transient_executor::recorder(this auto& self) -> auto& {
+auto gse::vulkan::transient_executor::recorder(this auto& self) -> auto& {
 	return self.m_recorder;
 }
 
-auto gse::gpu::transient_executor::bin(this auto& self) -> auto& {
+auto gse::vulkan::transient_executor::bin(this auto& self) -> auto& {
 	return self.m_bin;
 }
 
-auto gse::gpu::transient_executor::queue(const queue_id id) -> transient_queue& {
+auto gse::vulkan::transient_executor::queue(const queue_id id) -> transient_queue& {
 	switch (id) {
 		case queue_id::graphics: {
 			return m_graphics;
@@ -103,14 +98,14 @@ auto gse::gpu::transient_executor::queue(const queue_id id) -> transient_queue& 
 	return m_graphics;
 }
 
-auto gse::gpu::transient_executor::detach(async::task<> task) -> void {
+auto gse::vulkan::transient_executor::detach(async::task<> task) -> void {
 	std::lock_guard lock(*m_detached_mutex);
 	m_detached.push_back(std::move(task));
 }
 
-auto gse::gpu::transient_executor::begin_frame(const vulkan::device& device) -> void {
-	const auto graphics_progress = m_graphics.poll(device);
-	const auto compute_progress = m_compute.poll(device);
+auto gse::vulkan::transient_executor::begin_frame() -> void {
+	const auto graphics_progress = m_graphics.poll();
+	const auto compute_progress = m_compute.poll();
 
 	const std::array<queue_progress, queue_id_count> progress{
 		queue_progress{
@@ -133,9 +128,9 @@ auto gse::gpu::transient_executor::begin_frame(const vulkan::device& device) -> 
 	}
 }
 
-auto gse::gpu::transient_executor::wait_idle(const vulkan::device& device) -> void {
-	m_graphics.wait_idle(device);
-	m_compute.wait_idle(device);
+auto gse::vulkan::transient_executor::wait_idle() -> void {
+	m_graphics.wait_idle();
+	m_compute.wait_idle();
 	{
 		std::lock_guard lock(*m_detached_mutex);
 		m_detached.clear();

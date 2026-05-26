@@ -28,15 +28,14 @@ export namespace gse::renderer::light_culling {
 			vec2u current_extent{};
 
 			gpu::shader_program pipeline;
-			per_frame_resource<gpu::descriptor_region> descriptors;
 
-			per_frame_resource<gpu::buffer> culling_params_buffers;
-			per_frame_resource<gpu::buffer> light_buffers;
-			[[= gse::shared]] per_frame_resource<gpu::buffer> light_index_list_buffers;
-			[[= gse::shared]] per_frame_resource<gpu::buffer> tile_light_table_buffers;
+			per_frame_resource<gpu::bindless_buffer> culling_params_buffers;
+			per_frame_resource<gpu::bindless_buffer> light_buffers;
+			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> light_index_list_buffers;
+			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> tile_light_table_buffers;
 
-			gpu::sampler depth_sampler;
-			gpu::bindless_texture_slot depth_slot;
+			gpu::bindless_sampler depth_sampler;
+			gpu::bindless_image_view depth_view;
 		};
 
 		static auto run(

@@ -3,8 +3,7 @@ module gse.gpu;
 import std;
 
 import :context;
-import :vulkan_buffer;
-import :vulkan_device;
+import gse.vulkan;
 import :device;
 import :swap_chain;
 import :frame;
@@ -12,7 +11,6 @@ import :transient_pool;
 import :render_graph;
 import :render_pass;
 import :bindless;
-import :bindless_heap;
 import :shader_registry;
 
 import gse.os;
@@ -31,14 +29,8 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 		*d.device
 	);
 	d.frame = frame::create(*d.device, *d.swapchain);
-	d.bindless_textures =
-		std::make_unique<bindless_texture_set>(
-			d.device->vulkan_device(),
-			d.device->descriptor_heap()
-		);
-	if (d.device->vulkan_device().descriptor_heap_enabled()) {
-		d.bindless_heaps = std::make_unique<vulkan::bindless_heaps>(d.device->vulkan_device());
-	}
+	d.bindless_heaps = std::make_unique<bindless_heaps>(d.device->vulkan_device());
+	d.bindless_textures = std::make_unique<bindless_texture_set>(*d.bindless_heaps);
 	d.render_graph = std::make_unique<gpu::render_graph>(
 		*d.device,
 		*d.swapchain,
@@ -65,8 +57,8 @@ auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
 
 	d.device->wait_idle();
 
-	d.bindless_heaps.reset();
 	d.bindless_textures.reset();
+	d.bindless_heaps.reset();
 	d.render_graph.reset();
 	d.frame.reset();
 	d.swapchain.reset();
@@ -78,11 +70,8 @@ auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::exp
 	auto result = d.frame->begin(window_s);
 
 	if (result) {
-		d.device->descriptor_heap().begin_frame(result->frame_index);
 		d.bindless_textures->begin_frame(result->frame_index);
-		if (d.bindless_heaps) {
-			d.bindless_heaps->begin_frame();
-		}
+		d.bindless_heaps->begin_frame();
 	}
 
 	return result;

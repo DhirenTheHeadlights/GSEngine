@@ -5,7 +5,7 @@ import std;
 import gse.concurrency;
 
 auto gse::upload_to_buffers_async(gpu::device& dev, std::vector<upload_entry> entries) -> async::task<gpu::sync_token> {
-	std::vector<vulkan::buffer> stagings;
+	std::vector<gpu::buffer> stagings;
 	stagings.reserve(entries.size());
 	for (const auto& e : entries) {
 		stagings.push_back(dev.allocator().create_buffer(
@@ -20,7 +20,7 @@ auto gse::upload_to_buffers_async(gpu::device& dev, std::vector<upload_entry> en
 	auto cmd = co_await begin_transient(dev, gpu::queue_id::graphics, "transient.buffer_upload");
 
 	for (std::size_t i = 0; i < entries.size(); ++i) {
-		vulkan::commands(cmd.handle())
+		gpu::commands(cmd.handle())
 			.copy_buffer(
 				stagings[i].handle(),
 				entries[i].dst,
@@ -45,7 +45,7 @@ auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_
 		return {};
 	}
 
-	std::vector<vulkan::buffer> stagings;
+	std::vector<gpu::buffer> stagings;
 	stagings.reserve(uploads.size());
 	for (const auto& u : uploads) {
 		stagings.push_back(dev.allocator().create_buffer(
@@ -61,7 +61,7 @@ auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_
 	auto cmd = cmd_awaiter.await_resume();
 
 	for (std::size_t i = 0; i < uploads.size(); ++i) {
-		vulkan::commands(cmd.handle())
+		commands(cmd.handle())
 			.copy_buffer(
 				stagings[i].handle(),
 				uploads[i].dst->handle(),

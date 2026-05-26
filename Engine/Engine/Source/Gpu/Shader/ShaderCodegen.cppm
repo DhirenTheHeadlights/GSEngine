@@ -1,9 +1,11 @@
 export module gse.gpu:shader_codegen;
 
 import std;
+
 import gse.std_meta;
 import gse.math;
 import gse.meta;
+import gse.containers;
 
 import :aliases;
 
@@ -35,6 +37,8 @@ export namespace gse::shaders {
 	constexpr rw_byte_address_buffer_tag rw_byte_address_buffer{};
 	constexpr storage_image_tag storage_image{};
 	constexpr storage_image_3d_tag storage_image_3d{};
+
+	constexpr std::uint32_t bindless_texture_capacity = 2048;
 
 	template <std::uint32_t Set, std::uint32_t Slot>
 	struct binding {
@@ -551,7 +555,7 @@ consteval auto gse::shaders::descriptor_type_of() -> gpu::descriptor_type {
 template <gse::shaders::is_shader_binding T>
 consteval auto gse::shaders::descriptor_count_of() -> std::uint32_t {
 	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
-		return 0;
+		return bindless_texture_capacity;
 	}
 	else {
 		return 1;

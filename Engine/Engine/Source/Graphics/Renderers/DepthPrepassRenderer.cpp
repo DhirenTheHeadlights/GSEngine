@@ -59,40 +59,22 @@ auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::cont
 	d.meshlet_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
+		*gpu_s.bindless_heaps,
 		meshlet::entry::pod
 	);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::buffer::create(
+	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
+		d.camera_ubo_buffers[i] = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = camera_ubo_size,
 				.usage = gpu::buffer_flag::uniform
-			}
+			},
+			"depth_prepass.camera_ubo"
 		);
-	}
-
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.meshlet_descriptors[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				meshlet::entry::pod
-			);
-
-		gpu::descriptor_writer(
-			gpu_s.device->handle(),
-			d.meshlet_descriptors[i]
-		)
-			.buffer<meshlet::camera_ubo>(
-				d.camera_ubo_buffers[i],
-				0,
-				camera_ubo_size
-			)
-			.commit();
 	}
 
 	co_return;
@@ -124,16 +106,9 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 		.jitter_ndc = cam_state.jitter_ndc,
 		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
-	d.camera_ubo_buffers[frame_index].host_write(camera);
+	d.camera_ubo_buffers[frame_index].buffer().host_write(camera);
 
 	const auto ext = gpu_s.render_graph->extent();
-
-	auto meshlet_writer = gpu::make_push_writer(
-		*gpu_s.shader_registry,
-		gpu_s.device->handle(),
-		gpu_s.device->descriptor_heap(),
-		meshlet::entry::pod
-	);
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.pipeline(d.meshlet_pipeline)
@@ -149,45 +124,49 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
-	if (!data.normal_batches.empty()) {
-		rec.bind_descriptors(d.meshlet_pipeline, d.meshlet_descriptors[frame_index]);
+	if (data.normal_batches.empty()) {
+		co_return;
+	}
 
-		const auto& instance_buf = gc_r.instance_buffer[frame_index];
+	const auto camera_slot = d.camera_ubo_buffers[frame_index].slot();
+	const auto instance_slot = gc_r.instance_buffer[frame_index].slot();
 
-		for (std::size_t i = 0; i < data.normal_batches.size(); ++i) {
-			const auto& batch = data.normal_batches[i];
-			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
-			if (!mesh.has_meshlets()) {
-				continue;
-			}
-
-			if (!mesh.upload_token().ready()) {
-				continue;
-			}
-
-			meshlet_writer.begin(frame_index);
-			mesh.meshlet_gpu().bind(meshlet_writer);
-			meshlet_writer.buffer<meshlet::instance_data_buffer>(instance_buf);
-			rec.commit(meshlet_writer, d.meshlet_pipeline, 1);
-
-			const std::uint32_t meshlet_count = mesh.meshlet_count();
-
-			const gpu::typed_push_constants<meshlet::push_constants> pc{
-				.data = {
-					.meshlet_offset = 0,
-					.meshlet_count = meshlet_count,
-					.first_instance = batch.first_instance,
-				},
-				.stages = gpu::stage_flag::task | gpu::stage_flag::mesh | gpu::stage_flag::fragment,
-			};
-			rec.push(d.meshlet_pipeline, pc);
-
-			rec.draw_mesh_tasks_indirect(
-				gc_r.normal_indirect_commands_buffer[frame_index],
-				i * sizeof(gpu::draw_mesh_tasks_indirect_command),
-				1,
-				sizeof(gpu::draw_mesh_tasks_indirect_command)
-			);
+	for (std::size_t i = 0; i < data.normal_batches.size(); ++i) {
+		const auto& batch = data.normal_batches[i];
+		const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+		if (!mesh.has_meshlets()) {
+			continue;
 		}
+
+		if (!mesh.upload_token().ready()) {
+			continue;
+		}
+
+		const auto& ml = mesh.meshlet_gpu();
+		const std::uint32_t meshlet_count = mesh.meshlet_count();
+
+		rec.push_bindings<meshlet::entry>(
+			{
+				.meshlet_offset = 0,
+				.meshlet_count = meshlet_count,
+				.first_instance = batch.first_instance,
+			},
+			{
+				.camera_ubo = camera_slot,
+				.vertices_buffer = ml.vertex_storage.slot(),
+				.meshlets_buffer = ml.descriptors.slot(),
+				.meshlet_vertex_indices = ml.vertices.slot(),
+				.meshlet_triangles = ml.triangles.slot(),
+				.meshlet_bounds_buffer = ml.bounds.slot(),
+				.instance_data_buffer = instance_slot,
+			}
+		);
+
+		rec.draw_mesh_tasks_indirect(
+			gc_r.normal_indirect_commands_buffer[frame_index].buffer(),
+			i * sizeof(gpu::draw_mesh_tasks_indirect_command),
+			1,
+			sizeof(gpu::draw_mesh_tasks_indirect_command)
+		);
 	}
 }

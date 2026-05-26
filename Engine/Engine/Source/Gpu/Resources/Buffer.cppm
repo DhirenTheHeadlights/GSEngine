@@ -2,14 +2,10 @@ export module gse.gpu:buffer;
 
 import std;
 
-import :handles;
+import :aliases;
 import :gpu_task;
 import :sync_token;
 import :transient_api;
-import :types;
-import :vulkan_device;
-import :vulkan_buffer;
-import :vulkan_commands;
 import :device;
 
 import gse.core;
@@ -19,15 +15,8 @@ import gse.concurrency;
 import gse.diag;
 
 export namespace gse::gpu {
-	struct descriptor_buffer_binding {
-		std::uint32_t binding = 0;
-		const vulkan::buffer* buf = nullptr;
-		std::size_t offset = 0;
-		std::size_t range = 0;
-	};
-
 	struct buffer_upload {
-		const vulkan::buffer* dst = nullptr;
+		const buffer* dst = nullptr;
 		const void* data = nullptr;
 		std::size_t size = 0;
 		std::size_t dst_offset = 0;
@@ -41,7 +30,7 @@ export namespace gse::gpu {
 
 namespace gse {
 	struct upload_entry {
-		gpu::handle<vulkan::buffer> dst;
+		gpu::handle<gpu::buffer> dst;
 		const void* data;
 		gpu::device_size size;
 		gpu::device_size offset;

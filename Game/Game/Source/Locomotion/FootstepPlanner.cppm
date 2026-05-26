@@ -84,6 +84,11 @@ namespace gs::locomotion {
 		const gse::vec3<gse::position>& swing_foot,
 		const footstep_planner::data& d
 	) -> gse::vec3<gse::position>;
+	auto step_forward_with_capture(
+		gse::displacement nominal_forward,
+		gse::displacement capture_forward,
+		const footstep_planner::data& d
+	) -> gse::displacement;
 }
 
 auto gs::locomotion::plan_may_update(const gait& g) -> bool {
@@ -110,6 +115,23 @@ auto gs::locomotion::clamp_to_swing_reach(const gse::vec3<gse::position>& target
 	);
 }
 
+auto gs::locomotion::step_forward_with_capture(const gse::displacement nominal_forward, const gse::displacement capture_forward, const footstep_planner::data& d) -> gse::displacement {
+	const auto conflict_threshold = d.walk_step * 0.5f;
+	const bool forward_input_back_capture =
+		nominal_forward > gse::meters(0.f) && capture_forward < -conflict_threshold;
+	const bool backward_input_forward_capture =
+		nominal_forward < gse::meters(0.f) && capture_forward > conflict_threshold;
+	const auto requested_forward =
+		forward_input_back_capture || backward_input_forward_capture ?
+			capture_forward :
+			nominal_forward + capture_forward;
+	return std::clamp(
+		requested_forward,
+		-d.max_backward_step,
+		d.max_forward_step
+	);
+}
+
 auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const intent& it, const skeleton_refs& r, const footstep_planner::data& d) -> gse::vec3<gse::position> {
 	const auto step_length = it.sprint ? d.sprint_step : d.walk_step;
 	const auto nominal_forward = step_length * it.forward;
@@ -125,11 +147,7 @@ auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const inten
 		d.lateral_capture_limit
 	);
 
-	const auto step_forward = std::clamp(
-		nominal_forward + capture_forward,
-		-d.max_backward_step,
-		d.max_forward_step
-	);
+	const auto step_forward = step_forward_with_capture(nominal_forward, capture_forward, d);
 	const auto step_lateral = capture_lateral;
 
 	const auto forward_xz = gse::normalize(gse::vec3f(

@@ -3,13 +3,7 @@ module gse.gpu;
 import std;
 
 import :transient_pool;
-import :vulkan_image;
-import :vulkan_buffer;
-import :vulkan_device;
-import :vulkan_allocation;
 import :device;
-import :types;
-import :handles;
 import :aliases;
 
 import gse.assert;
@@ -53,11 +47,6 @@ namespace gse::gpu {
 	auto greedy_color(
 		std::span<const lifetime_entry> intervals
 	) -> std::vector<std::uint32_t>;
-
-	auto make_synthetic_allocation(
-		vulkan::device& dev,
-		std::string_view tag
-	) -> vulkan::basic_allocation<vulkan::device>;
 }
 
 auto gse::gpu::allocate_transient_key() -> std::uint64_t {
@@ -119,21 +108,6 @@ auto gse::gpu::image_view_create_info_from(const transient_image_desc& desc) -> 
 		.level_count = 1,
 		.base_array_layer = 0,
 		.layer_count = 1,
-	};
-}
-
-auto gse::gpu::make_synthetic_allocation(vulkan::device& dev, const std::string_view tag) -> vulkan::basic_allocation<vulkan::device> {
-	return {
-		0,
-		0,
-		0,
-		nullptr,
-		nullptr,
-		nullptr,
-		std::addressof(dev),
-		vulkan::allocation_debug_info{
-			.tag = std::string(tag)
-		},
 	};
 }
 
@@ -251,10 +225,9 @@ auto gse::gpu::transient_pool::free_slot_resources(frame_state& slot) -> void {
 }
 
 auto gse::gpu::transient_pool::free_slot_memory(frame_state& slot) -> void {
-	auto& vulkan_dev = m_device->vulkan_device();
 	for (auto& block : slot.blocks) {
 		if (block.memory) {
-			vulkan_dev.free_aliased_memory(block.memory);
+			m_device->free_aliased_memory(block.memory);
 		}
 	}
 	slot.blocks.clear();
@@ -310,7 +283,6 @@ auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const s
 	}
 
 	auto& block = slot.blocks[color];
-	auto& vulkan_dev = m_device->vulkan_device();
 
 	const bool type_compatible = block.memory && (memory_type_mask & (1u << block.memory_type_index)) != 0;
 	const bool size_ok = block.memory && block.size >= required_size;
@@ -320,15 +292,15 @@ auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const s
 	}
 
 	if (block.memory) {
-		vulkan_dev.free_aliased_memory(block.memory);
+		m_device->free_aliased_memory(block.memory);
 		block = {};
 	}
 
-	const auto type_index = vulkan_dev.find_memory_type_index(
+	const auto type_index = m_device->find_memory_type_index(
 		memory_type_mask,
 		memory_property_flag::device_local
 	);
-	block.memory = vulkan_dev.allocate_aliased_memory(required_size, type_index);
+	block.memory = m_device->allocate_aliased_memory(required_size, type_index);
 	block.size = required_size;
 	block.memory_type_index = type_index;
 }
@@ -341,8 +313,6 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 	if (image_requests.empty() && buffer_requests.empty()) {
 		return;
 	}
-
-	auto& vulkan_dev = m_device->vulkan_device();
 
 	std::vector<lifetime_entry> intervals;
 	intervals.reserve(image_requests.size() + buffer_requests.size());
@@ -375,12 +345,12 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 	std::vector<color_aggregate> aggregates;
 
 	struct staged_image {
-		gpu::handle<vulkan::image> handle;
+		gpu::handle<image> handle;
 		std::uint32_t color = 0;
 		std::size_t entry_index = 0;
 	};
 	struct staged_buffer {
-		gpu::handle<vulkan::buffer> handle;
+		gpu::handle<buffer> handle;
 		std::uint32_t color = 0;
 		std::size_t entry_index = 0;
 	};
@@ -396,7 +366,7 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 
 		if (intervals[e].is_image) {
 			const auto& req = image_requests[intervals[e].request_index];
-			const auto [img_handle, reqs] = vulkan_dev.create_image_unbound(image_create_info_from(req.desc));
+			const auto [img_handle, reqs] = m_device->create_image_unbound(image_create_info_from(req.desc));
 
 			aggregates[color].size = std::max(aggregates[color].size, reqs.size);
 			aggregates[color].type_mask &= reqs.memory_type_bits;
@@ -409,7 +379,7 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 		}
 		else {
 			const auto& req = buffer_requests[intervals[e].request_index];
-			const auto [buf_handle, reqs] = vulkan_dev.create_buffer_unbound({
+			const auto [buf_handle, reqs] = m_device->create_buffer_unbound({
 				.size = req.desc.size,
 				.usage = req.desc.usage,
 			});
@@ -437,23 +407,17 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 	for (const auto& si : staged_images) {
 		const auto& req = image_requests[intervals[si.entry_index].request_index];
 
-		vulkan_dev.bind_image_memory(si.handle, slot.blocks[si.color].memory, 0);
+		m_device->bind_image_memory(si.handle, slot.blocks[si.color].memory, 0);
 		const auto view_info = image_view_create_info_from(req.desc);
-		const auto view_handle = vulkan_dev.create_image_view(
-			si.handle,
-			view_info
-		);
+		const auto view_handle = m_device->create_image_view(si.handle, view_info);
 
-		auto img = std::make_unique<gpu::image>(
+		auto img = m_device->make_aliased_image(
 			si.handle,
 			view_handle,
-			static_cast<image_format_value>(req.desc.format),
+			req.desc.format,
 			vec3u{ req.desc.extent.x(), req.desc.extent.y(), 1 },
 			view_info,
-			make_synthetic_allocation(
-				vulkan_dev,
-				req.desc.tag
-			)
+			req.desc.tag
 		);
 
 		slot.images.emplace(
@@ -472,16 +436,9 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 	for (const auto& sb : staged_buffers) {
 		const auto& req = buffer_requests[intervals[sb.entry_index].request_index];
 
-		vulkan_dev.bind_buffer_memory(sb.handle, slot.blocks[sb.color].memory, 0);
+		m_device->bind_buffer_memory(sb.handle, slot.blocks[sb.color].memory, 0);
 
-		auto buf = std::make_unique<gpu::buffer>(
-			sb.handle,
-			make_synthetic_allocation(
-				vulkan_dev,
-				req.desc.tag
-			),
-			req.desc.size
-		);
+		auto buf = m_device->make_aliased_buffer(sb.handle, req.desc.size, req.desc.tag);
 
 		slot.buffers.emplace(
 			req.handle.key,

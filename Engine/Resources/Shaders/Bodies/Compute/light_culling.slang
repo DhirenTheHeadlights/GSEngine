@@ -89,9 +89,9 @@ void light_culling(uint3 group_id, uint3 group_thread_id, uint group_index) {
     GroupMemoryBarrierWithGroupSync();
 
     float depth = 1.0;
-    if (pixel.x < screen_size.x && pixel.y < screen_size.y && depth_index != 0xFFFFFFFFu) {
+    if (pixel.x < screen_size.x && pixel.y < screen_size.y) {
         float2 uv = screen_uv(float2(pixel) + 0.5);
-        depth = textures[NonUniformResourceIndex(depth_index)].SampleLevel(uv, 0).r;
+        depth = depth_texture.SampleLevel(uv, 0).r;
     }
 
     if (depth < 1.0 - 1e-5) {

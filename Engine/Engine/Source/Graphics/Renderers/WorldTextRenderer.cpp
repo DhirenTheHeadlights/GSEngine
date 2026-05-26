@@ -34,11 +34,13 @@ namespace gse::renderer::world_text {
 		vec2f tex_coord;
 	};
 
+	using world_text_bindings = type_pack<shaders::standard_3d::camera_ubo, shaders::bindless::textures>;
+
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/WorldText">,
-		gpu::layout<"standard_3d">,
+		gpu::layout<"world_text">,
 		gpu::types<shaders::common::shader_types>,
-		gpu::bindings<shaders::standard_3d::shader_binding_types>,
+		gpu::bindings<world_text_bindings>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
@@ -158,37 +160,22 @@ auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context
 		gpu::build_graphics_program(
 			*gpu_s.device,
 			*gpu_s.shader_registry,
-			*gpu_s.bindless_textures,
+			*gpu_s.bindless_heaps,
 			entry::pod
 		);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::buffer::create(
+	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
+		d.camera_ubo_buffers[i] = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = camera_ubo_size,
 				.usage = gpu::buffer_flag::uniform
-			}
+			},
+			"world_text.camera_ubo"
 		);
-		d.descriptors[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				entry::pod
-			);
-
-		gpu::descriptor_writer(
-			gpu_s.device->handle(),
-			d.descriptors[i]
-		)
-			.buffer<shaders::standard_3d::camera_ubo>(
-				d.camera_ubo_buffers[i],
-				0,
-				camera_ubo_size
-			)
-			.commit();
 	}
 
 	co_return;
@@ -240,25 +227,12 @@ auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_v
 		.jitter_ndc = cam_state.jitter_ndc,
 		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
-	d.camera_ubo_buffers[frame_index].host_write(camera);
+	d.camera_ubo_buffers[frame_index].buffer().host_write(camera);
 
 	const auto atlas_size = f.texture()->image_data().size;
 	const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);
 	const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
 	const vec2f unit_range{ f.pixel_range() / atlas_w, f.pixel_range() / atlas_h };
-
-	const gpu::typed_push_constants<push_constants> pc{
-		.data = {
-			.color = grid_d.label_color,
-			.unit_range = unit_range,
-			.tex_idx = f.texture()->bindless_slot().index,
-			.shadow_color = vec3f{ 0.f, 0.f, 0.f },
-			.shadow_offset_px = 1.5f,
-			.shadow_softness = 0.6f,
-			.shadow_strength = 0.55f,
-		},
-		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
-	};
 
 	const auto ext = gpu_s.render_graph->extent();
 	const auto vertex_count = static_cast<std::uint32_t>(vertices.size());
@@ -271,8 +245,20 @@ auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_v
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
-	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
-	rec.push(d.pipeline, pc);
+	rec.push_bindings<entry>(
+		{
+			.color = grid_d.label_color,
+			.unit_range = unit_range,
+			.tex_idx = f.texture()->bindless_slot().index,
+			.shadow_color = vec3f{ 0.f, 0.f, 0.f },
+			.shadow_offset_px = 1.5f,
+			.shadow_softness = 0.6f,
+			.shadow_strength = 0.55f,
+		},
+		{
+			.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
+		}
+	);
 	rec.bind_vertex(d.vertex_buffers[frame_index]);
 	rec.draw(vertex_count);
 }

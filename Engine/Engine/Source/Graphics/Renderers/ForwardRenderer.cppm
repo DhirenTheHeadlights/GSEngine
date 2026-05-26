@@ -76,12 +76,12 @@ export namespace gse::renderer::forward {
 			reflection_quality_level reflection_quality = reflection_quality_level::medium;
 
 			gpu::shader_program pipeline;
-			per_frame_resource<gpu::descriptor_region> descriptors;
 
-			per_frame_resource<gpu::buffer> camera_ubo_buffers;
-			per_frame_resource<gpu::buffer> light_buffers;
+			per_frame_resource<gpu::bindless_buffer> camera_ubo_buffers;
+			per_frame_resource<gpu::bindless_buffer> light_buffers;
+			per_frame_resource<gpu::bindless_tlas_view> tlas_views;
 
-			gpu::sampler gi_sampler;
+			gpu::bindless_sampler gi_sampler;
 
 			linear_vector<std::byte> light_staging;
 		};

@@ -53,12 +53,10 @@ export namespace gse::renderer::capture {
 			actions::handle toggle_recording_action;
 
 			gpu::shader_program convert_pipeline;
-			per_frame_resource<gpu::descriptor_region> convert_descriptors;
 			per_frame_resource<gpu::image> rgba_captures;
-			per_frame_resource<gpu::image> y_planes;
-			per_frame_resource<gpu::image> uv_planes;
+			per_frame_resource<gpu::bindless_image> y_planes;
+			per_frame_resource<gpu::bindless_image> uv_planes;
 			std::array<gpu::bindless_texture_slot, per_frame_resource<gpu::image>::frames_in_flight> rgba_slots;
-			gpu::sampler capture_sampler;
 			bool encode_active = false;
 
 			per_frame_resource<pending_screenshot> screenshots;

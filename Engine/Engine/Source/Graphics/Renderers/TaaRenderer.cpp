@@ -62,7 +62,7 @@ namespace gse::renderer::taa {
 		system::data& d
 	) -> void;
 
-	auto rewrite_descriptors(
+	auto rebind_views(
 		const gpu::context::data& gpu_s,
 		system::data& d
 	) -> void;
@@ -74,6 +74,9 @@ auto gse::renderer::taa::recreate_history(const gpu::context::data& gpu_s, syste
 	if (extent.x() == 0 || extent.y() == 0) {
 		for (auto& image : d.history) {
 			image = {};
+		}
+		for (auto& view : d.history_views) {
+			view.clear();
 		}
 		return;
 	}
@@ -91,37 +94,18 @@ auto gse::renderer::taa::recreate_history(const gpu::context::data& gpu_s, syste
 			)
 		);
 		gpu::transition_image_to(*gpu_s.device, d.history[i]);
+		d.history_views[i].rebind_sampled(*gpu_s.bindless_heaps, d.history[i]);
 	}
 }
 
-auto gse::renderer::taa::rewrite_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::taa::rebind_views(const gpu::context::data& gpu_s, system::data& d) -> void {
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::hdr_color>();
-	if (!hdr.handle()) {
-		return;
+	if (hdr.handle()) {
+		d.hdr_view.rebind_sampled(*gpu_s.bindless_heaps, hdr);
 	}
 	auto& velocity = gpu_s.render_graph->framebuffer_image<targets::velocity>();
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		const auto& prev = d.history[1u - i];
-		if (!prev.handle()) {
-			continue;
-		}
-		gpu::descriptor_writer(
-			gpu_s.device->handle(),
-			d.descriptors[i]
-		)
-			.combined_image_sampler<hdr_color>(
-				hdr,
-				d.sampler
-			)
-			.combined_image_sampler<velocity_color>(
-				velocity,
-				d.sampler
-			)
-			.combined_image_sampler<history_color>(
-				prev,
-				d.sampler
-			)
-			.commit();
+	if (velocity.handle()) {
+		d.velocity_view.rebind_sampled(*gpu_s.bindless_heaps, velocity);
 	}
 }
 
@@ -130,12 +114,12 @@ auto gse::renderer::taa::system::run(run_context& ctx, const gpu::context::data&
 		gpu::build_graphics_program(
 			*gpu_s.device,
 			*gpu_s.shader_registry,
-			*gpu_s.bindless_textures,
+			*gpu_s.bindless_heaps,
 			entry::pod
 		);
 
-	d.sampler = gpu::sampler::create(
-		gpu_s.device->allocator(),
+	d.sampler = gpu::bindless_sampler::create(
+		*gpu_s.bindless_heaps,
 		{
 			.min = gpu::sampler_filter::linear,
 			.mag = gpu::sampler_filter::linear,
@@ -145,21 +129,12 @@ auto gse::renderer::taa::system::run(run_context& ctx, const gpu::context::data&
 		}
 	);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.descriptors[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				entry::pod
-			);
-	}
-
 	recreate_history(gpu_s, d);
-	rewrite_descriptors(gpu_s, d);
+	rebind_views(gpu_s, d);
 
 	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &d]() {
 		recreate_history(gpu_s, d);
-		rewrite_descriptors(gpu_s, d);
+		rebind_views(gpu_s, d);
 	});
 
 	co_return;
@@ -182,14 +157,6 @@ auto gse::renderer::taa::system::frame(const frame_context& ctx, shared_view<gpu
 
 	const auto ext = gpu_s.render_graph->extent();
 	const bool history_ready = d.taa_enabled && d.frames_since_history_invalid >= 2;
-	const gpu::typed_push_constants<push_constants> pc{
-		.data = {
-			.blend_alpha = d.blend_alpha,
-			.taa_enabled = history_ready ? 1u : 0u,
-			.inv_extent = vec2f{ 1.0f / static_cast<float>(ext.x()), 1.0f / static_cast<float>(ext.y()) },
-		},
-		.stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment,
-	};
 	++d.frames_since_history_invalid;
 
 	auto rec = co_await gpu::pass<system>(ctx)
@@ -212,7 +179,17 @@ auto gse::renderer::taa::system::frame(const frame_context& ctx, shared_view<gpu
 	rec.sample_image(d.history[1u - frame_index], gpu::pipeline_stage_flag::fragment_shader);
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
-	rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
-	rec.push(d.pipeline, pc);
+	rec.push_bindings<entry>(
+		{
+			.blend_alpha = d.blend_alpha,
+			.taa_enabled = history_ready ? 1u : 0u,
+			.inv_extent = vec2f{ 1.0f / static_cast<float>(ext.x()), 1.0f / static_cast<float>(ext.y()) },
+		},
+		{
+			.hdr_color = { d.hdr_view.sampled_slot(), d.sampler.slot() },
+			.velocity_color = { d.velocity_view.sampled_slot(), d.sampler.slot() },
+			.history_color = { d.history_views[1u - frame_index].sampled_slot(), d.sampler.slot() },
+		}
+	);
 	rec.draw(3);
 }

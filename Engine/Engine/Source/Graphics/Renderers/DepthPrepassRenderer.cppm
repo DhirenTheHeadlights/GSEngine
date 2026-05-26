@@ -22,9 +22,8 @@ export namespace gse::renderer::depth_prepass {
 	struct system {
 		struct data {
 			gpu::shader_program meshlet_pipeline;
-			per_frame_resource<gpu::descriptor_region> meshlet_descriptors;
 
-			per_frame_resource<gpu::buffer> camera_ubo_buffers;
+			per_frame_resource<gpu::bindless_buffer> camera_ubo_buffers;
 		};
 
 		static auto run(

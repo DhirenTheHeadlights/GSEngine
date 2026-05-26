@@ -27,9 +27,10 @@ export namespace gse::renderer::rt_shadow {
 			per_frame_resource<linear_vector<gpu::tlas_instance_desc>> instances;
 
 			gpu::shader_program tlas_update_pipeline;
-			per_frame_resource<gpu::descriptor_region> tlas_update_descriptors;
-			per_frame_resource<gpu::buffer> mapping_buffers;
+			per_frame_resource<gpu::bindless_buffer> mapping_buffers;
 			std::size_t mapping_buffer_capacity = 0;
+
+			per_frame_resource<gpu::bindless_buffer_view> tlas_instance_views;
 		};
 
 		static auto run(

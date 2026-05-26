@@ -135,26 +135,41 @@ namespace gse::renderer::forward {
 		gpu::color_targets<gpu::color_format::hdr>,
 		gpu::depth<true, false, gpu::compare_op::less_or_equal>
 	>;
+
+	auto rebind_tlas_views(
+		const gpu::context::data& gpu_s,
+		const rt_shadow::system::data& rt_state,
+		system::data& d
+	) -> void;
+}
+
+auto gse::renderer::forward::rebind_tlas_views(const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, system::data& d) -> void {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_tlas_view>::frames_in_flight; ++i) {
+		const auto fi = static_cast<std::uint32_t>(i);
+		d.tlas_views[i].rebind(
+			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
+			(*rt_state.tlas_ptrs[fi]).handle()
+		);
+	}
 }
 
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, const atmosphere::system::data& atm_state, const gi_probe::system::data& gi_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
 		*gpu_s.shader_registry,
-		*gpu_s.bindless_textures,
+		*gpu_s.bindless_heaps,
 		meshlet_entry::pod
 	);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
-	constexpr std::size_t material_stride = sizeof(shaders::forward::material_data);
 	constexpr std::size_t light_buffer_size = light_stride * max_lights;
-	constexpr std::size_t material_buffer_size = material_stride * geometry_collector::system::data::max_materials;
 
 	d.light_staging.reserve(light_buffer_size);
 
-	d.gi_sampler = gpu::sampler::create(
-		gpu_s.device->allocator(),
+	d.gi_sampler = gpu::bindless_sampler::create(
+		*gpu_s.bindless_heaps,
 		{
 			.min = gpu::sampler_filter::linear,
 			.mag = gpu::sampler_filter::linear,
@@ -164,102 +179,34 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 		}
 	);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::buffer::create(
+	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
+		d.camera_ubo_buffers[i] = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = camera_ubo_size,
 				.usage = gpu::buffer_flag::uniform
-			}
+			},
+			"forward.camera_ubo"
 		);
 
-		d.light_buffers[i] = gpu::buffer::create(
+		d.light_buffers[i] = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = light_buffer_size,
 				.usage = gpu::buffer_flag::storage
-			}
+			},
+			"forward.lights"
 		);
-
-		d.descriptors[i] =
-			gpu::allocate_descriptors(
-				*gpu_s.shader_registry,
-				gpu_s.device->descriptor_heap(),
-				meshlet_entry::pod
-			);
-
-		gpu::descriptor_writer(
-			gpu_s.device->handle(),
-			d.descriptors[i]
-		)
-			.buffer<camera_ubo>(
-				d.camera_ubo_buffers[i],
-				0,
-				camera_ubo_size
-			)
-			.buffer<lights_ssbo>(
-				d.light_buffers[i],
-				0,
-				light_buffer_size
-			)
-			.buffer<material_palette>(
-				gc_state.material_palette_buffers[i],
-				0,
-				material_buffer_size
-			)
-			.commit();
 	}
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-		const auto fi = static_cast<std::uint32_t>(i);
-		gpu::descriptor_writer writer(gpu_s.device->handle(), d.descriptors[i]);
-
-		writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
-		writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
-			.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi])
-			.combined_image_sampler<aerial_perspective_in>(
-				atm_state.ap_volume,
-				atm_state.lut_sampler
-			)
-			.buffer<atmosphere::atmosphere_ubo>(
-				atm_state.atmosphere_ubo_buffer,
-				0,
-				sizeof(atmosphere::atmosphere_data)
-			)
-			.combined_image_sampler<gi_atlas>(
-				gi_state.irradiance_atlas,
-				d.gi_sampler
-			);
-
-		writer.commit();
-	}
+	rebind_tlas_views(gpu_s, rt_state, d);
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&d, &lc_r, &rt_state, &atm_state, &gi_state, &gpu_s]() {
-			for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_region>::frames_in_flight; ++i) {
-				const auto fi = static_cast<std::uint32_t>(i);
-				gpu::descriptor_writer writer(gpu_s.device->handle(), d.descriptors[i]);
-
-				writer.acceleration_structure<scene_tlas>((*rt_state.tlas_ptrs[fi]).handle());
-				writer.buffer<light_index_list>(lc_r.light_index_list_buffers[fi])
-					.buffer<tile_light_table>(lc_r.tile_light_table_buffers[fi])
-					.combined_image_sampler<aerial_perspective_in>(
-						atm_state.ap_volume,
-						atm_state.lut_sampler
-					)
-					.buffer<atmosphere::atmosphere_ubo>(
-						atm_state.atmosphere_ubo_buffer,
-						0,
-						sizeof(atmosphere::atmosphere_data)
-					)
-					.combined_image_sampler<gi_atlas>(
-						gi_state.irradiance_atlas,
-						d.gi_sampler
-					);
-
-				writer.commit();
-			}
+		[&gpu_s, &rt_state, &d]() {
+			rebind_tlas_views(gpu_s, rt_state, d);
 		}
 	);
 
@@ -309,7 +256,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		.jitter_ndc = cam_state.jitter_ndc,
 		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
-	d.camera_ubo_buffers[frame_index].host_write(camera);
+	d.camera_ubo_buffers[frame_index].buffer().host_write(camera);
 
 	auto dir_chunk = ctx.components<directional_light_component>();
 	auto spot_chunk = ctx.components<spot_light_component>();
@@ -399,7 +346,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	}
 
 	if (light_count > 0) {
-		d.light_buffers[frame_index].host_write(
+		d.light_buffers[frame_index].buffer().host_write(
 			staging.data(),
 			light_count * sizeof(shaders::forward::light)
 		);
@@ -412,13 +359,6 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	const int shadow_quality_i = static_cast<int>(d.shadow_quality);
 	const int ao_quality_i = static_cast<int>(d.ao_quality);
 	const int reflection_quality_i = static_cast<int>(d.reflection_quality);
-
-	auto meshlet_writer = gpu::make_push_writer(
-		*gpu_s.shader_registry,
-		gpu_s.device->handle(),
-		gpu_s.device->descriptor_heap(),
-		meshlet_entry::pod
-	);
 
 	constexpr vec2f gi_atlas_size_v{
 		static_cast<float>(gi_probe::grid_dim.x() * gi_probe::probe_tile_size),
@@ -439,64 +379,86 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
-	rec.sample_image(gi_state.irradiance_atlas, gpu::pipeline_stage_flag::fragment_shader);
+	rec.sample_image(gi_state.irradiance_atlas.image(), gpu::pipeline_stage_flag::fragment_shader);
 
-	if (!normal_batches.empty()) {
-		const auto& instance_buf = gc_r.instance_buffer[frame_index];
+	if (normal_batches.empty()) {
+		co_return;
+	}
 
-		bool descriptors_bound = false;
+	const auto camera_ubo_slot = d.camera_ubo_buffers[frame_index].slot();
+	const auto lights_slot = d.light_buffers[frame_index].slot();
+	const auto tlas_slot = d.tlas_views[frame_index].slot();
+	const auto light_index_list_slot = lc_r.light_index_list_buffers[frame_index].slot();
+	const auto tile_light_table_slot = lc_r.tile_light_table_buffers[frame_index].slot();
+	const auto material_palette_slot = gc_r.material_palette_buffers[frame_index].slot();
+	const auto atmosphere_ubo_slot = atm_state.atmosphere_ubo_buffer.slot();
+	const auto instance_data_slot = gc_r.instance_buffer[frame_index].slot();
 
-		for (std::size_t i = 0; i < normal_batches.size(); ++i) {
-			const auto& batch = normal_batches[i];
-			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+	const gpu::combined_sampler_arg aerial_perspective_arg{
+		.image = atm_state.ap_volume.sampled_slot(),
+		.sampler = atm_state.lut_sampler_bindless.slot(),
+	};
+	const gpu::combined_sampler_arg gi_atlas_arg{
+		.image = gi_state.irradiance_atlas.sampled_slot(),
+		.sampler = d.gi_sampler.slot(),
+	};
 
-			if (!mesh.has_meshlets()) {
-				continue;
-			}
+	for (std::size_t i = 0; i < normal_batches.size(); ++i) {
+		const auto& batch = normal_batches[i];
+		const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-			if (!mesh.upload_token().ready()) {
-				continue;
-			}
-
-			if (!descriptors_bound) {
-				rec.bind_descriptors(d.pipeline, d.descriptors[frame_index]);
-				descriptors_bound = true;
-			}
-
-			meshlet_writer.begin(frame_index);
-			mesh.meshlet_gpu().bind(meshlet_writer);
-			meshlet_writer.buffer<instance_data_buffer>(instance_buf);
-			rec.commit(meshlet_writer, d.pipeline, 1);
-
-			const std::uint32_t meshlet_count = mesh.meshlet_count();
-
-			const gpu::typed_push_constants<meshlet_push_constants> pc{
-				.data = {
-					.meshlet_offset = 0,
-					.meshlet_count = meshlet_count,
-					.first_instance = batch.first_instance,
-					.num_lights = num_lights_i,
-					.screen_size = vec2u{ ext.x(), ext.y() },
-					.shadow_quality = shadow_quality_i,
-					.ao_quality = ao_quality_i,
-					.reflection_quality = reflection_quality_i,
-					.gi_origin = gi_state.origin_world,
-					.gi_spacing = gi_state.spacing,
-					.gi_grid_dim = gi_probe::grid_dim,
-					.gi_intensity = gi_state.intensity,
-					.gi_atlas_size = gi_atlas_size_v,
-					.gi_enabled = gi_enabled ? 1 : 0,
-				},
-				.stages = gpu::stage_flag::task | gpu::stage_flag::mesh | gpu::stage_flag::fragment,
-			};
-			rec.push(d.pipeline, pc);
-
-			rec.draw_mesh_tasks_indirect(
-				gc_r.normal_indirect_commands_buffer[frame_index],
-				i * sizeof(gpu::draw_mesh_tasks_indirect_command),
-				1,
-				sizeof(gpu::draw_mesh_tasks_indirect_command)
-			);
+		if (!mesh.has_meshlets()) {
+			continue;
 		}
+
+		if (!mesh.upload_token().ready()) {
+			continue;
+		}
+
+		const auto& ml = mesh.meshlet_gpu();
+		const std::uint32_t meshlet_count = mesh.meshlet_count();
+
+		rec.push_bindings<meshlet_entry>(
+			{
+				.meshlet_offset = 0,
+				.meshlet_count = meshlet_count,
+				.first_instance = batch.first_instance,
+				.num_lights = num_lights_i,
+				.screen_size = vec2u{ ext.x(), ext.y() },
+				.shadow_quality = shadow_quality_i,
+				.ao_quality = ao_quality_i,
+				.reflection_quality = reflection_quality_i,
+				.gi_origin = gi_state.origin_world,
+				.gi_spacing = gi_state.spacing,
+				.gi_grid_dim = gi_probe::grid_dim,
+				.gi_intensity = gi_state.intensity,
+				.gi_atlas_size = gi_atlas_size_v,
+				.gi_enabled = gi_enabled ? 1 : 0,
+			},
+			{
+				.camera_ubo = camera_ubo_slot,
+				.lights_ssbo = lights_slot,
+				.scene_tlas = tlas_slot,
+				.light_index_list = light_index_list_slot,
+				.tile_light_table = tile_light_table_slot,
+				.material_palette = material_palette_slot,
+				.aerial_perspective_in = aerial_perspective_arg,
+				.atmosphere_ubo = atmosphere_ubo_slot,
+				.gi_atlas = gi_atlas_arg,
+				.vertices_buffer = ml.vertex_storage.slot(),
+				.meshlets_buffer = ml.descriptors.slot(),
+				.meshlet_vertex_indices = ml.vertices.slot(),
+				.meshlet_triangles = ml.triangles.slot(),
+				.meshlet_bounds_buffer = ml.bounds.slot(),
+				.instance_data_buffer = instance_data_slot,
+			}
+		);
+
+		rec.draw_mesh_tasks_indirect(
+			gc_r.normal_indirect_commands_buffer[frame_index].buffer(),
+			i * sizeof(gpu::draw_mesh_tasks_indirect_command),
+			1,
+			sizeof(gpu::draw_mesh_tasks_indirect_command)
+		);
 	}
 }
