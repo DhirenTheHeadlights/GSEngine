@@ -91,7 +91,10 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 		}
 	}
 
-	auto calculate_group_bounds = [](id_mapped_collection<menu>& input_menus, const id root_id) -> ui_rect {
+	auto calculate_group_bounds = [](
+		id_mapped_collection<menu>& input_menus,
+		const id root_id
+	) -> ui_rect {
 		const menu* root = input_menus.try_get(root_id);
 
 		if (!root) {

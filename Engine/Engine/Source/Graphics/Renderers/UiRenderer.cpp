@@ -22,7 +22,16 @@ import gse.ecs;
 import gse.math;
 
 namespace gse::renderer::ui {
-	using shader_binding_types = type_pack<shaders::bindless::textures>;
+	struct [[
+		= shaders::binding<0, 0>{},
+		= shaders::ssbo_readonly
+	]] vertex_buffer {
+		using element = vertex;
+	};
+
+	using shader_binding_types = type_pack<vertex_buffer, shaders::bindless::textures>;
+
+	using shader_types = type_pack<vertex>;
 
 	struct [[= shaders::shader_struct]] sprite_push_constants {
 		projection_matrix projection;
@@ -33,7 +42,7 @@ namespace gse::renderer::ui {
 
 	using sprite_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/sprite">,
-		gpu::layout<"standard_2d">,
+		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -57,7 +66,7 @@ namespace gse::renderer::ui {
 
 	using msdf_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/msdf">,
-		gpu::layout<"standard_2d">,
+		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -147,14 +156,12 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.sprite_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		sprite_entry::pod
 	);
 	d.text_pipeline =
 		gpu::build_graphics_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			msdf_entry::pod
 		);
@@ -163,11 +170,12 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
 	for (auto& [vertex_buffer, index_buffer] : d.gpu_frames) {
-		vertex_buffer = gpu::buffer::create(
+		vertex_buffer = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
+			*gpu_s.bindless_heaps,
 			{
 				.size = vertex_buffer_size,
-				.usage = gpu::buffer_flag::vertex,
+				.usage = gpu::buffer_flag::storage,
 			}
 		);
 
@@ -243,24 +251,27 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 			});
 		}
 
-		std::ranges::stable_sort(unified, [](const unified_command& a, const unified_command& b) {
-			if (a.layer != b.layer) {
-				return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
-			}
+		std::ranges::stable_sort(
+			unified,
+			[](const unified_command& a, const unified_command& b) {
+				if (a.layer != b.layer) {
+					return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
+				}
 
-			if (a.z_order != b.z_order) {
-				return a.z_order < b.z_order;
-			}
+				if (a.z_order != b.z_order) {
+					return a.z_order < b.z_order;
+				}
 
-			if (a.type != b.type) {
-				return a.type < b.type;
-			}
+				if (a.type != b.type) {
+					return a.type < b.type;
+				}
 
-			if (a.type == command_type::sprite) {
-				return a.texture.id().number() < b.texture.id().number();
+				if (a.type == command_type::sprite) {
+					return a.texture.id().number() < b.texture.id().number();
+				}
+				return a.font.id().number() < b.font.id().number();
 			}
-			return a.font.id().number() < b.font.id().number();
-		});
+		);
 
 		auto current_type = command_type::sprite;
 		resource::handle<texture> current_texture;
@@ -345,7 +356,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 	const auto frame_index = gpu_s.render_graph->current_frame();
 	auto& [vertex_buffer, index_buffer] = d.gpu_frames[frame_index];
 
-	vertex_buffer.host_write(vertices);
+	vertex_buffer.buffer().host_write(vertices);
 	index_buffer.host_write(indices);
 
 	const auto ext = gpu_s.render_graph->extent();
@@ -401,7 +412,6 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 		rec.sample_image(snapshot_s.snapshots[frame_index], gpu::pipeline_stage_flag::fragment_shader);
 	}
 
-	rec.bind_vertex(vertex_buffer);
 	rec.bind_index(index_buffer);
 
 	rec.set_viewport(ext_size);
@@ -450,7 +460,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			sprite_pc.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
 			rec.push_bindings<sprite_entry>(
 				sprite_pc,
-				{}
+				{ .vertex_buffer = vertex_buffer.slot() }
 			);
 		}
 		else {
@@ -461,7 +471,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			text_pc.tex_idx = tex_idx;
 			rec.push_bindings<msdf_entry>(
 				text_pc,
-				{}
+				{ .vertex_buffer = vertex_buffer.slot() }
 			);
 		}
 

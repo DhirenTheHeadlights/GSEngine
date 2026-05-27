@@ -10,6 +10,7 @@ import :bindless;
 import :pipeline_builder;
 import :transient_pool;
 import :image;
+import :pass_recorder;
 
 import gse.assert;
 import gse.core;
@@ -152,11 +153,6 @@ export namespace gse::gpu {
 			const gpu::shader_program& p
 		) -> void;
 
-		auto bind_vertex(
-			const buffer& buf,
-			std::size_t offset = 0
-		) -> void;
-
 		auto bind_index(
 			const buffer& buf,
 			gpu::index_type type = gpu::index_type::uint32,
@@ -254,7 +250,7 @@ export namespace gse::gpu {
 			gpu::access_flags access = {};
 		};
 
-		gpu::commands m_cmd;
+		gpu::pass_recorder m_recorder;
 		render_pass_data* m_pass = nullptr;
 		const gpu::transient_pool* m_transient_pool = nullptr;
 		bindless_heaps* m_bindless_heaps = nullptr;
@@ -264,7 +260,7 @@ export namespace gse::gpu {
 		bool m_bindless_heaps_valid = false;
 
 		recording_context(
-			commands cmd,
+			pass_recorder rec,
 			render_pass_data* pass,
 			const gpu::transient_pool* transient_pool,
 			bindless_heaps* heaps
@@ -424,9 +420,9 @@ namespace gse::gpu {
 	inline thread_local recording_context* tl_active_recording_context = nullptr;
 }
 
-gse::gpu::recording_context::recording_context(const commands cmd, render_pass_data* pass, const gpu::transient_pool* transient_pool, bindless_heaps* heaps)
-	: m_cmd(cmd), m_pass(pass), m_transient_pool(transient_pool), m_bindless_heaps(heaps) {
-	if (m_cmd.valid()) {
+gse::gpu::recording_context::recording_context(pass_recorder rec, render_pass_data* pass, const gpu::transient_pool* transient_pool, bindless_heaps* heaps)
+	: m_recorder(rec), m_pass(pass), m_transient_pool(transient_pool), m_bindless_heaps(heaps) {
+	if (m_recorder.valid()) {
 		assert(
 			tl_active_recording_context == nullptr,
 			"another recording_context is still active on this worker thread; a prior coroutine held its rec across a "
@@ -438,12 +434,12 @@ gse::gpu::recording_context::recording_context(const commands cmd, render_pass_d
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_cmd(other.m_cmd), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_bindless_heaps(other.m_bindless_heaps), m_touched(std::move(other.m_touched)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid) {
+	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_bindless_heaps(other.m_bindless_heaps), m_touched(std::move(other.m_touched)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
 	other.m_state_cache.invalidate();
-	other.m_cmd = commands{};
+	other.m_recorder = pass_recorder{};
 	other.m_pass = nullptr;
 	other.m_transient_pool = nullptr;
 	other.m_bindless_heaps = nullptr;
@@ -452,7 +448,7 @@ gse::gpu::recording_context::recording_context(recording_context&& other) noexce
 
 auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept -> recording_context& {
 	if (this != &other) {
-		if (m_cmd.valid()) {
+		if (m_recorder.valid()) {
 			assert(
 				std::this_thread::get_id() == m_origin_thread,
 				"recording_context's secondary command buffer is being ended on a thread other than its origin. "
@@ -461,12 +457,12 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 				"resumed on a different worker. Scope the rec to end before any non-pass await."
 			);
 			finalize_pass();
-			m_cmd.end();
+			m_recorder.end();
 		}
 		if (tl_active_recording_context == this) {
 			tl_active_recording_context = nullptr;
 		}
-		m_cmd = other.m_cmd;
+		m_recorder = other.m_recorder;
 		m_pass = other.m_pass;
 		m_transient_pool = other.m_transient_pool;
 		m_bindless_heaps = other.m_bindless_heaps;
@@ -478,7 +474,7 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 			tl_active_recording_context = this;
 		}
 		other.m_state_cache.invalidate();
-		other.m_cmd = commands{};
+		other.m_recorder = pass_recorder{};
 		other.m_pass = nullptr;
 		other.m_transient_pool = nullptr;
 		other.m_bindless_heaps = nullptr;
@@ -512,7 +508,7 @@ auto gse::gpu::recording_context::resolve(const transient_buffer_handle h) const
 }
 
 gse::gpu::recording_context::~recording_context() {
-	if (m_cmd.valid()) {
+	if (m_recorder.valid()) {
 		assert(
 			std::this_thread::get_id() == m_origin_thread,
 			"recording_context's secondary command buffer is being ended on a thread other than its origin. "
@@ -520,7 +516,7 @@ gse::gpu::recording_context::~recording_context() {
 			"resumed on a different worker. Scope the rec to end before any non-pass await."
 		);
 		finalize_pass();
-		m_cmd.end();
+		m_recorder.end();
 	}
 	if (tl_active_recording_context == this) {
 		tl_active_recording_context = nullptr;
@@ -529,22 +525,22 @@ gse::gpu::recording_context::~recording_context() {
 
 auto gse::gpu::recording_context::finalize_active_on_current_thread() noexcept -> void {
 	auto* active = tl_active_recording_context;
-	if (active != nullptr && active->m_cmd.valid()) {
+	if (active != nullptr && active->m_recorder.valid()) {
 		assert(
 			std::this_thread::get_id() == active->m_origin_thread,
 			"finalize_active_on_current_thread invoked on a thread that does not own the active rec's secondary; "
 			"tl_active_recording_context was corrupted (probably by a rec being held across a non-pass co_await)."
 		);
 		active->finalize_pass();
-		active->m_cmd.end();
-		active->m_cmd = commands{};
+		active->m_recorder.end();
+		active->m_recorder = pass_recorder{};
 	}
 	tl_active_recording_context = nullptr;
 }
 
 auto gse::gpu::recording_context::check_active() const -> void {
 	assert(
-		m_cmd.valid(),
+		m_recorder.valid(),
 		"recording_context method called after the pass's secondary was finalized. This happens when the previous rec "
 		"was implicitly closed by a subsequent `co_await gpu::pass(...)` (each new pass await closes the prior rec on "
 		"the suspending thread to keep VkCommandPool access single-threaded). Use only the rec returned by the most "
@@ -564,7 +560,20 @@ auto gse::gpu::recording_context::ensure_descriptor_heaps() -> void {
 		return;
 	}
 	assert(m_bindless_heaps != nullptr, "recording_context has no bindless heaps");
-	m_bindless_heaps->bind(m_cmd);
+	const auto& resource_h = m_bindless_heaps->resource_heap();
+	m_recorder.bind_resource_heap(
+		resource_h.buffer_address(),
+		resource_h.buffer_size(),
+		resource_h.reserved_offset(),
+		resource_h.reserved_size()
+	);
+	const auto& sampler_h = m_bindless_heaps->sampler_heap();
+	m_recorder.bind_sampler_heap(
+		sampler_h.buffer_address(),
+		sampler_h.buffer_size(),
+		sampler_h.reserved_offset(),
+		sampler_h.reserved_size()
+	);
 	m_bindless_heaps_valid = true;
 }
 
@@ -637,7 +646,7 @@ auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& d
 		gpu::pipeline_stage_flag::copy,
 		gpu::access_flag::transfer_write
 	);
-	m_cmd.copy_buffer(
+	m_recorder.copy_buffer(
 		src.handle(),
 		dst.handle(),
 		gpu::buffer_copy_region{
@@ -658,7 +667,7 @@ auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size
 		gpu::pipeline_stage_flag::copy,
 		gpu::access_flag::transfer_write
 	);
-	m_cmd.fill_buffer(dst.handle(), offset, size, data);
+	m_recorder.fill_buffer(dst.handle(), offset, size, data);
 }
 
 auto gse::gpu::recording_context::barrier(const gpu::barrier_scope scope) const -> void {
@@ -727,7 +736,7 @@ auto gse::gpu::recording_context::barrier(const gpu::barrier_scope scope) const 
 	const gpu::dependency_info dep{
 		.memory_barriers = std::span(&mb, 1)
 	};
-	m_cmd.pipeline_barrier(dep);
+	m_recorder.pipeline_barrier(dep);
 }
 
 auto gse::gpu::recording_context::build_acceleration_structure(const gpu::acceleration_structure_build_geometry_info& build_info, const std::span<const gpu::acceleration_structure_build_range_info* const> range_infos) -> void {
@@ -740,12 +749,12 @@ auto gse::gpu::recording_context::build_acceleration_structure(const gpu::accele
 		gpu::pipeline_stage_flag::acceleration_structure_build,
 		gpu::access_flag::acceleration_structure_read | gpu::access_flag::acceleration_structure_write
 	);
-	m_cmd.build_acceleration_structures(build_info, range_infos);
+	m_recorder.build_acceleration_structures(build_info, range_infos);
 }
 
 auto gse::gpu::recording_context::pipeline_barrier(const gpu::dependency_info& dep) const -> void {
 	check_active();
-	m_cmd.pipeline_barrier(dep);
+	m_recorder.pipeline_barrier(dep);
 }
 
 auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapchain, const gpu::frame& frame, const buffer& dst) const -> void {
@@ -762,7 +771,7 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 		.image = gpu_image,
 		.aspects = gpu::image_aspect_flag::color,
 	};
-	m_cmd.pipeline_barrier(
+	m_recorder.pipeline_barrier(
 		gpu::dependency_info{
 			.image_barriers = std::span(&to_transfer, 1)
 		}
@@ -781,9 +790,8 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 		.image_offset = vec3i{ 0, 0, 0 },
 		.image_extent = vec3u{ ext.x(), ext.y(), 1 },
 	};
-	m_cmd.copy_image_to_buffer(
+	m_recorder.copy_image_to_buffer(
 		gpu_image,
-		gpu::image_layout::general,
 		dst_buffer,
 		std::span(
 			&gpu_region,
@@ -799,9 +807,12 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 		.image = gpu_image,
 		.aspects = gpu::image_aspect_flag::color,
 	};
-	m_cmd.pipeline_barrier(
+	m_recorder.pipeline_barrier(
 		gpu::dependency_info{
-			.image_barriers = std::span(&back_to_color, 1)
+			.image_barriers = std::span(
+				&back_to_color,
+				1
+			)
 		}
 	);
 }
@@ -825,14 +836,13 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 		.src_access = {},
 		.dst_stages = gpu::pipeline_stage_flag::transfer,
 		.dst_access = gpu::access_flag::transfer_write,
-		.old_layout = gpu::image_layout::undefined,
-		.new_layout = gpu::image_layout::general,
+		.discard_contents = true,
 		.image = dst.handle(),
 		.aspects = gpu::image_aspect_flag::color,
 	};
 
 	const std::array pre_barriers = { src_to_transfer, dst_to_transfer };
-	m_cmd.pipeline_barrier(
+	m_recorder.pipeline_barrier(
 		gpu::dependency_info{
 			.image_barriers = pre_barriers
 		}
@@ -860,11 +870,9 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 			vec3i{ static_cast<int>(dst_extent.x()), static_cast<int>(dst_extent.y()), 1 },
 		},
 	};
-	m_cmd.blit_image(
+	m_recorder.blit_image(
 		src_image,
-		gpu::image_layout::general,
 		dst.handle(),
-		gpu::image_layout::general,
 		gpu_region,
 		gpu::sampler_filter::nearest
 	);
@@ -888,7 +896,7 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 	};
 
 	const std::array post_barriers = { src_back, dst_to_read };
-	m_cmd.pipeline_barrier(
+	m_recorder.pipeline_barrier(
 		gpu::dependency_info{
 			.image_barriers = post_barriers
 		}
@@ -897,7 +905,7 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 
 auto gse::gpu::recording_context::set_viewport(const float x, const float y, const float width, const float height, const float min_depth, const float max_depth) const -> void {
 	check_active();
-	m_cmd.set_viewport(
+	m_recorder.set_viewport(
 		gpu::viewport{
 			.x = x,
 			.y = y,
@@ -915,27 +923,27 @@ auto gse::gpu::recording_context::set_scissor(const std::int32_t x, const std::i
 		.min = vec2i{ x, y },
 		.max = vec2i{ x + static_cast<int>(width), y + static_cast<int>(height) },
 	} };
-	m_cmd.set_scissor(sc);
+	m_recorder.set_scissor(sc);
 }
 
 auto gse::gpu::recording_context::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) const -> void {
 	check_active();
-	m_cmd.draw(vertex_count, instance_count, first_vertex, first_instance);
+	m_recorder.draw(vertex_count, instance_count, first_vertex, first_instance);
 }
 
 auto gse::gpu::recording_context::draw_indexed(const std::uint32_t index_count, const std::uint32_t instance_count, const std::uint32_t first_index, const std::int32_t vertex_offset, const std::uint32_t first_instance) const -> void {
 	check_active();
-	m_cmd.draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance);
+	m_recorder.draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance);
 }
 
 auto gse::gpu::recording_context::draw_mesh_tasks(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
 	check_active();
-	m_cmd.draw_mesh_tasks(x, y, z);
+	m_recorder.draw_mesh_tasks(x, y, z);
 }
 
 auto gse::gpu::recording_context::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) const -> void {
 	check_active();
-	m_cmd.dispatch(x, y, z);
+	m_recorder.dispatch(x, y, z);
 }
 
 template <typename Entry>
@@ -972,7 +980,7 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 		gpu::pipeline_stage_flag::draw_indirect,
 		gpu::access_flag::indirect_command_read
 	);
-	m_cmd.dispatch_indirect(buf.handle(), static_cast<gpu::device_size>(offset));
+	m_recorder.dispatch_indirect(buf.handle(), static_cast<gpu::device_size>(offset));
 }
 
 template <typename T>
@@ -982,7 +990,7 @@ auto gse::gpu::recording_context::push_data(const T& value, const std::uint32_t 
 		reinterpret_cast<const std::byte*>(std::addressof(value)),
 		sizeof(T)
 	);
-	m_cmd.push_data(offset, bytes);
+	m_recorder.push_data(offset, bytes);
 }
 
 auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
@@ -995,7 +1003,7 @@ auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::si
 		gpu::pipeline_stage_flag::draw_indirect,
 		gpu::access_flag::indirect_command_read
 	);
-	m_cmd.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
+	m_recorder.draw_indexed_indirect(buf.handle(), offset, draw_count, stride);
 }
 
 auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, const std::size_t offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
@@ -1008,26 +1016,7 @@ auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, co
 		gpu::pipeline_stage_flag::draw_indirect,
 		gpu::access_flag::indirect_command_read
 	);
-	m_cmd.draw_mesh_tasks_indirect(buf.handle(), offset, draw_count, stride);
-}
-
-auto gse::gpu::recording_context::bind_vertex(const buffer& buf, const std::size_t offset) -> void {
-	check_active();
-	note_touched(
-		{
-			.ptr = std::addressof(buf),
-			.type = resource_type::buffer,
-		},
-		gpu::pipeline_stage_flag::vertex_attribute_input,
-		gpu::access_flag::vertex_attribute_read
-	);
-	const gpu::handle<buffer> buffers[]{ buf.handle() };
-	const gpu::device_size offsets[]{ offset };
-	m_cmd.bind_vertex_buffers(
-		0,
-		std::span<const gpu::handle<buffer>>(buffers),
-		std::span<const gpu::device_size>(offsets)
-	);
+	m_recorder.draw_mesh_tasks_indirect(buf.handle(), offset, draw_count, stride);
 }
 
 auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index_type type, const std::size_t offset) -> void {
@@ -1040,12 +1029,12 @@ auto gse::gpu::recording_context::bind_index(const buffer& buf, const gpu::index
 		gpu::pipeline_stage_flag::index_input,
 		gpu::access_flag::index_read
 	);
-	m_cmd.bind_index_buffer_2(buf.handle(), offset, gpu::whole_size, type);
+	m_recorder.bind_index_buffer_2(buf.handle(), offset, gpu::whole_size, type);
 }
 
 auto gse::gpu::recording_context::set_viewport(const vec2u extent) const -> void {
 	check_active();
-	m_cmd.set_viewport(
+	m_recorder.set_viewport(
 		gpu::viewport{
 			.x = 0.0f,
 			.y = 0.0f,
@@ -1063,14 +1052,14 @@ auto gse::gpu::recording_context::set_scissor(const vec2u extent) const -> void 
 		.min = vec2i{ 0, 0 },
 		.max = vec2i{ static_cast<int>(extent.x()), static_cast<int>(extent.y()) },
 	} };
-	m_cmd.set_scissor(sc);
+	m_recorder.set_scissor(sc);
 }
 
 auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 	check_active();
 
 	if (p.is_compute()) {
-		m_cmd.bind_shaders(p.stages(), p.shader_handles());
+		m_recorder.bind_shaders(p.stages(), p.shader_handles());
 	}
 	else {
 		constexpr std::array all_graphics_stages = {
@@ -1090,7 +1079,7 @@ auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 				}
 			}
 		}
-		m_cmd.bind_shaders(all_graphics_stages, bound);
+		m_recorder.bind_shaders(all_graphics_stages, bound);
 		apply_dynamic_state(p.state());
 	}
 
@@ -1099,81 +1088,80 @@ auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 
 auto gse::gpu::recording_context::apply_dynamic_state(const gpu::dynamic_pipeline_state& s) -> void {
 	if (!m_state_cache.topology || *m_state_cache.topology != s.topology) {
-		m_cmd.set_topology(s.topology);
+		m_recorder.set_topology(s.topology);
 		m_state_cache.topology = s.topology;
 	}
 	if (!m_state_cache.polygon_mode || *m_state_cache.polygon_mode != s.polygon) {
-		m_cmd.set_polygon_mode(s.polygon);
+		m_recorder.set_polygon_mode(s.polygon);
 		m_state_cache.polygon_mode = s.polygon;
 	}
 	if (!m_state_cache.cull_mode || *m_state_cache.cull_mode != s.cull) {
-		m_cmd.set_cull_mode(s.cull);
+		m_recorder.set_cull_mode(s.cull);
 		m_state_cache.cull_mode = s.cull;
 	}
 	if (!m_state_cache.front_face || *m_state_cache.front_face != s.front) {
-		m_cmd.set_front_face(s.front);
+		m_recorder.set_front_face(s.front);
 		m_state_cache.front_face = s.front;
 	}
 	if (!m_state_cache.depth_test_enable || *m_state_cache.depth_test_enable != s.depth.test) {
-		m_cmd.set_depth_test_enable(s.depth.test);
+		m_recorder.set_depth_test_enable(s.depth.test);
 		m_state_cache.depth_test_enable = s.depth.test;
 	}
 	if (!m_state_cache.depth_write_enable || *m_state_cache.depth_write_enable != s.depth.write) {
-		m_cmd.set_depth_write_enable(s.depth.write);
+		m_recorder.set_depth_write_enable(s.depth.write);
 		m_state_cache.depth_write_enable = s.depth.write;
 	}
 	if (!m_state_cache.depth_compare_op || *m_state_cache.depth_compare_op != s.depth.compare) {
-		m_cmd.set_depth_compare_op(s.depth.compare);
+		m_recorder.set_depth_compare_op(s.depth.compare);
 		m_state_cache.depth_compare_op = s.depth.compare;
 	}
 	if (!m_state_cache.depth_bias_enable || *m_state_cache.depth_bias_enable != s.depth_bias_enable) {
-		m_cmd.set_depth_bias_enable(s.depth_bias_enable);
+		m_recorder.set_depth_bias_enable(s.depth_bias_enable);
 		m_state_cache.depth_bias_enable = s.depth_bias_enable;
 	}
 	if (s.depth_bias_enable) {
-		m_cmd.set_depth_bias(s.depth_bias_constant, s.depth_bias_clamp, s.depth_bias_slope);
+		m_recorder.set_depth_bias(s.depth_bias_constant, s.depth_bias_clamp, s.depth_bias_slope);
 	}
 	if (!m_state_cache.depth_clamp_enable || *m_state_cache.depth_clamp_enable != s.depth_clamp_enable) {
-		m_cmd.set_depth_clamp_enable(s.depth_clamp_enable);
+		m_recorder.set_depth_clamp_enable(s.depth_clamp_enable);
 		m_state_cache.depth_clamp_enable = s.depth_clamp_enable;
 	}
 	if (!m_state_cache.rasterizer_discard_enable || *m_state_cache.rasterizer_discard_enable != s.rasterizer_discard_enable) {
-		m_cmd.set_rasterizer_discard_enable(s.rasterizer_discard_enable);
+		m_recorder.set_rasterizer_discard_enable(s.rasterizer_discard_enable);
 		m_state_cache.rasterizer_discard_enable = s.rasterizer_discard_enable;
 	}
 	if (!m_state_cache.primitive_restart_enable || *m_state_cache.primitive_restart_enable != s.primitive_restart_enable) {
-		m_cmd.set_primitive_restart_enable(s.primitive_restart_enable);
+		m_recorder.set_primitive_restart_enable(s.primitive_restart_enable);
 		m_state_cache.primitive_restart_enable = s.primitive_restart_enable;
 	}
 	if (!m_state_cache.alpha_to_coverage_enable || *m_state_cache.alpha_to_coverage_enable != s.alpha_to_coverage_enable) {
-		m_cmd.set_alpha_to_coverage_enable(s.alpha_to_coverage_enable);
+		m_recorder.set_alpha_to_coverage_enable(s.alpha_to_coverage_enable);
 		m_state_cache.alpha_to_coverage_enable = s.alpha_to_coverage_enable;
 	}
 	if (!m_state_cache.alpha_to_one_enable || *m_state_cache.alpha_to_one_enable != s.alpha_to_one_enable) {
-		m_cmd.set_alpha_to_one_enable(s.alpha_to_one_enable);
+		m_recorder.set_alpha_to_one_enable(s.alpha_to_one_enable);
 		m_state_cache.alpha_to_one_enable = s.alpha_to_one_enable;
 	}
 	if (!m_state_cache.logic_op_enable || *m_state_cache.logic_op_enable != s.logic_op_enable) {
-		m_cmd.set_logic_op_enable(s.logic_op_enable);
+		m_recorder.set_logic_op_enable(s.logic_op_enable);
 		m_state_cache.logic_op_enable = s.logic_op_enable;
 	}
 
-	m_cmd.set_rasterization_samples(s.samples);
-	m_cmd.set_sample_mask(s.samples, s.sample_mask);
-	m_cmd.set_depth_bounds_test_enable(false);
-	m_cmd.set_stencil_test_enable(false);
-	m_cmd.set_line_width(1.0f);
+	m_recorder.set_rasterization_samples(s.samples);
+	m_recorder.set_sample_mask(s.samples, s.sample_mask);
+	m_recorder.set_depth_bounds_test_enable(false);
+	m_recorder.set_stencil_test_enable(false);
+	m_recorder.set_line_width(1.0f);
 
 	if (!s.blend_enables.empty()) {
-		m_cmd.set_color_blend_enable(0, s.blend_enables);
+		m_recorder.set_color_blend_enable(0, s.blend_enables);
 	}
 	if (!s.blend_equations.empty()) {
-		m_cmd.set_color_blend_equation(0, s.blend_equations);
+		m_recorder.set_color_blend_equation(0, s.blend_equations);
 	}
 	if (!s.color_write_masks.empty()) {
-		m_cmd.set_color_write_mask(0, s.color_write_masks);
+		m_recorder.set_color_write_mask(0, s.color_write_masks);
 	}
-	m_cmd.set_vertex_input(s.vertex_bindings, s.vertex_attributes);
 }
 
 namespace gse::gpu {
@@ -1883,14 +1871,16 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			return static_cast<bool>(a & write_mask);
 		};
 
-		auto append_barrier_for_resource = [&](const resource_ref& resource,
-											   const gpu::pipeline_stage_flags src_stages,
-											   const gpu::access_flags src_access,
-											   const gpu::pipeline_stage_flags dst_stages,
-											   const gpu::access_flags dst_access,
-											   std::vector<gpu::memory_barrier>& memory_out,
-											   std::vector<gpu::buffer_barrier>& buffer_out,
-											   std::vector<gpu::image_barrier>& image_out) {
+		auto append_barrier_for_resource = [&](
+			const resource_ref& resource,
+			const gpu::pipeline_stage_flags src_stages,
+			const gpu::access_flags src_access,
+			const gpu::pipeline_stage_flags dst_stages,
+			const gpu::access_flags dst_access,
+			std::vector<gpu::memory_barrier>& memory_out,
+			std::vector<gpu::buffer_barrier>& buffer_out,
+			std::vector<gpu::image_barrier>& image_out
+		) {
 			if (!access_has_write(src_access) && !access_has_write(dst_access) && src_stages.bits() == dst_stages.bits()) {
 				return;
 			}
@@ -1931,7 +1921,10 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 		};
 
-		auto append_host_dirty_barriers = [&](const render_pass_data& p, std::vector<gpu::buffer_barrier>& out) {
+		auto append_host_dirty_barriers = [&](
+			const render_pass_data& p,
+			std::vector<gpu::buffer_barrier>& out
+		) {
 			auto walk = [&](const std::vector<resource_usage>& list) {
 				for (const auto& [resource, stage, access] : list) {
 					if (resource.type != resource_type::buffer || !resource.ptr) {
@@ -1966,11 +1959,13 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		std::array<std::unordered_map<const void*, prev_use_record>, gpu::queue_type_count> latest_writes;
 		std::array<std::unordered_map<const void*, std::vector<prev_use_record>>, gpu::queue_type_count> reads_since_write;
 
-		auto append_prev_pass_barriers = [&](const render_pass_data& cur,
-											 const gpu::queue_type cur_queue,
-											 std::vector<gpu::memory_barrier>& memory_out,
-											 std::vector<gpu::buffer_barrier>& buffer_out,
-											 std::vector<gpu::image_barrier>& image_out) {
+		auto append_prev_pass_barriers = [&](
+			const render_pass_data& cur,
+			const gpu::queue_type cur_queue,
+			std::vector<gpu::memory_barrier>& memory_out,
+			std::vector<gpu::buffer_barrier>& buffer_out,
+			std::vector<gpu::image_barrier>& image_out
+		) {
 			auto& latest = latest_writes[static_cast<std::size_t>(cur_queue)];
 			auto& reads = reads_since_write[static_cast<std::size_t>(cur_queue)];
 
@@ -2075,8 +2070,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					.src_access = gpu::access_flag::memory_write,
 					.dst_stages = first_stages,
 					.dst_access = first_access,
-					.old_layout = gpu::image_layout::undefined,
-					.new_layout = gpu::image_layout::general,
+					.discard_contents = true,
 					.image = info.resource->handle(),
 					.aspects = info.aspects,
 					.base_mip_level = 0,
@@ -2237,7 +2231,6 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					color_attachments.push_back(
 						gpu::rendering_attachment_info{
 							.image_view = color_view,
-							.layout = gpu::image_layout::general,
 							.load = op,
 							.store = gpu::store_op::store,
 							.color_clear_value = info.clear_value,
@@ -2265,7 +2258,6 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 					depth_att = gpu::rendering_attachment_info{
 						.image_view = depth_view,
-						.layout = gpu::image_layout::general,
 						.load = op,
 						.store = gpu::store_op::store,
 						.depth_clear_value = info.clear_value,

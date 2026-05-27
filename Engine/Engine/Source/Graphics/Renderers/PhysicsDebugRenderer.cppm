@@ -16,7 +16,7 @@ import gse.assets;
 import :camera_system;
 
 namespace gse::renderer::physics_debug {
-	struct debug_vertex {
+	struct [[= shaders::shader_struct]] debug_vertex {
 		vec3<position> position;
 		vec3f color;
 	};
@@ -41,9 +41,9 @@ export namespace gse::renderer::physics_debug {
 
 			per_frame_resource<gpu::bindless_buffer> camera_ubo_buffers;
 
-			gpu::buffer unit_box_vb;
-			gpu::buffer unit_sphere_vb;
-			gpu::buffer unit_capsule_vb;
+			gpu::bindless_buffer unit_box_vb;
+			gpu::bindless_buffer unit_sphere_vb;
+			gpu::bindless_buffer unit_capsule_vb;
 			std::uint32_t unit_box_vert_count = 0;
 			std::uint32_t unit_sphere_vert_count = 0;
 			std::uint32_t unit_capsule_vert_count = 0;
@@ -62,7 +62,7 @@ export namespace gse::renderer::physics_debug {
 			std::vector<shape_instance> sphere_instances;
 			std::vector<shape_instance> capsule_instances;
 
-			per_frame_resource<gpu::buffer> line_vertex_buffers;
+			per_frame_resource<gpu::bindless_buffer> line_vertex_buffers;
 			per_frame_resource<std::size_t> line_vertex_capacity;
 			std::vector<debug_vertex> line_vertices;
 		};

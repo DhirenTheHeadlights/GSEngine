@@ -36,7 +36,6 @@ namespace gse::renderer::sdf_grid {
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/SdfGrid">,
-		gpu::layout<"sdf_grid">,
 		gpu::types<shaders::common::shader_types>,
 		gpu::bindings<sdf_grid_bindings>,
 		gpu::vertex_stage<"vs_main">,
@@ -53,7 +52,6 @@ auto gse::renderer::sdf_grid::system::run(run_context& ctx, const gpu::context::
 	d.pipeline =
 		gpu::build_graphics_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			entry::pod
 		);

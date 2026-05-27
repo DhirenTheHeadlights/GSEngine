@@ -62,9 +62,9 @@ namespace gse::renderer::bloom {
 	using downsample_bindings = type_pack<bloom_in, bloom_out>;
 	using upsample_bindings = type_pack<bloom_up_in, bloom_up_dn, bloom_up_out>;
 
-	using downsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_downsample">, gpu::layout<"bloom_downsample">, gpu::bindings<downsample_bindings>, gpu::push_constant<downsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using downsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_downsample">, gpu::bindings<downsample_bindings>, gpu::push_constant<downsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
-	using upsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_upsample">, gpu::layout<"bloom_upsample">, gpu::bindings<upsample_bindings>, gpu::push_constant<upsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using upsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_upsample">, gpu::bindings<upsample_bindings>, gpu::push_constant<upsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
 	auto mips_for_quality(
 		quality_level q
@@ -175,13 +175,11 @@ auto gse::renderer::bloom::rewrite_descriptors(const gpu::context::data& gpu_s, 
 auto gse::renderer::bloom::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.downsample_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		downsample_entry::pod
 	);
 	d.upsample_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		upsample_entry::pod
 	);
@@ -200,10 +198,13 @@ auto gse::renderer::bloom::system::run(run_context& ctx, const gpu::context::dat
 	recreate_mip_chain(gpu_s, d);
 	rewrite_descriptors(gpu_s, d);
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &d]() {
-		recreate_mip_chain(gpu_s, d);
-		rewrite_descriptors(gpu_s, d);
-	});
+	gpu::context::on_swap_chain_recreate(
+		gpu_s,
+		[&gpu_s, &d]() {
+			recreate_mip_chain(gpu_s, d);
+			rewrite_descriptors(gpu_s, d);
+		}
+	);
 
 	co_return;
 }

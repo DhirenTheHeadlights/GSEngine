@@ -341,12 +341,14 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		.mass = foot.mass,
 	});
 
-	auto add_hinge = [&](std::uint16_t a,
-						 std::uint16_t b,
-						 const gse::vec3<gse::displacement>& anchor_a,
-						 const gse::vec3<gse::displacement>& anchor_b,
-						 const gse::vec3f& axis,
-						 std::optional<std::pair<gse::angle, gse::angle>> limits = std::nullopt) {
+	auto add_hinge = [&](
+		std::uint16_t a,
+		std::uint16_t b,
+		const gse::vec3<gse::displacement>& anchor_a,
+		const gse::vec3<gse::displacement>& anchor_b,
+		const gse::vec3f& axis,
+		std::optional<std::pair<gse::angle, gse::angle>> limits = std::nullopt
+	) {
 		s.joints.push_back({
 			.bone_a = a,
 			.bone_b = b,
@@ -359,10 +361,12 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		});
 	};
 
-	auto add_fixed = [&](std::uint16_t a,
-						 std::uint16_t b,
-						 const gse::vec3<gse::displacement>& anchor_a,
-						 const gse::vec3<gse::displacement>& anchor_b) {
+	auto add_fixed = [&](
+		std::uint16_t a,
+		std::uint16_t b,
+		const gse::vec3<gse::displacement>& anchor_a,
+		const gse::vec3<gse::displacement>& anchor_b
+	) {
 		s.joints.push_back({
 			.bone_a = a,
 			.bone_b = b,
@@ -373,11 +377,13 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 		});
 	};
 
-	auto add_ball = [&](std::uint16_t a,
-						std::uint16_t b,
-						const gse::vec3<gse::displacement>& anchor_a,
-						const gse::vec3<gse::displacement>& anchor_b,
-						const gse::vec3<gse::angular_stiffness>& rest_stiffness = {}) {
+	auto add_ball = [&](
+		std::uint16_t a,
+		std::uint16_t b,
+		const gse::vec3<gse::displacement>& anchor_a,
+		const gse::vec3<gse::displacement>& anchor_b,
+		const gse::vec3<gse::angular_stiffness>& rest_stiffness = {}
+	) {
 		s.joints.push_back({
 			.bone_a = a,
 			.bone_b = b,
@@ -625,13 +631,15 @@ auto gs::humanoid_rig_default() -> humanoid_rig {
 	}
 
 	auto add_muscle_pair =
-		[&](std::uint16_t a,
-			std::uint16_t b,
-			const gse::vec3<gse::displacement>& flexor_anchor_a,
-			const gse::vec3<gse::displacement>& flexor_anchor_b,
-			const gse::vec3<gse::displacement>& extensor_anchor_a,
-			const gse::vec3<gse::displacement>& extensor_anchor_b,
-			const gse::force max_force = gse::newtons(3200.f)) -> std::pair<std::uint16_t, std::uint16_t> {
+		[&](
+		std::uint16_t a,
+		std::uint16_t b,
+		const gse::vec3<gse::displacement>& flexor_anchor_a,
+		const gse::vec3<gse::displacement>& flexor_anchor_b,
+		const gse::vec3<gse::displacement>& extensor_anchor_a,
+		const gse::vec3<gse::displacement>& extensor_anchor_b,
+		const gse::force max_force = gse::newtons(3200.f)
+	) -> std::pair<std::uint16_t, std::uint16_t> {
 		const auto flex_rest =
 			gse::magnitude((bone_world_offset[a] + flexor_anchor_a) - (bone_world_offset[b] + flexor_anchor_b));
 		const auto ext_rest =

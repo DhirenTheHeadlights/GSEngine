@@ -84,7 +84,12 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	const float header_y = ctx.layout_cursor.y();
 	constexpr float hit_w = 6.0f;
 
-	auto handle_resize = [&](float& width, const float right_anchor_x, const float split_x, const int idx) {
+	auto handle_resize = [&](
+		float& width,
+		const float right_anchor_x,
+		const float split_x,
+		const int idx
+	) {
 		const ui_rect hit_rect = ui_rect::from_position_size(
 			{ split_x - hit_w * 0.5f, header_y },
 			{ hit_w, row_h }
@@ -180,7 +185,11 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	};
 
 	const auto flatten_hidden =
-		[](auto& self, std::span<const trace::node> input, std::vector<trace::node>& out) -> void {
+		[](
+		auto& self,
+		std::span<const trace::node> input,
+		std::vector<trace::node>& out
+	) -> void {
 		for (const auto& n : input) {
 			if (trace::is_hidden(n.id)) {
 				self(
@@ -234,9 +243,12 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 					vec
 				);
 				if (n.id != gpu_root_id) {
-					std::ranges::sort(vec, [](const trace::node& a, const trace::node& b) {
-						return (a.stop - a.start) > (b.stop - b.start);
-					});
+					std::ranges::sort(
+						vec,
+						[](const trace::node& a, const trace::node& b) {
+							return (a.stop - a.start) > (b.stop - b.start);
+						}
+					);
 				}
 			}
 			return vec;
@@ -251,7 +263,14 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 			return n.children_count == 0;
 		},
 		.custom_draw =
-			[=](const trace::node& n, const draw_context& draw_ctx, const ui_rect& row, bool, bool, int) {
+			[=](
+		const trace::node& n,
+		const draw_context& draw_ctx,
+		const ui_rect& row,
+		bool,
+		bool,
+		int
+	) {
 				const bool has_cpu_timing = n.stop > n.start;
 				const double dur_ns =
 					has_cpu_timing ? static_cast<double>(static_cast<std::uint64_t>(n.stop - n.start)) : 0.0;
@@ -259,7 +278,12 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 				const double pct_frame = (frame_ns > 0.0 && has_cpu_timing) ? (dur_ns / frame_ns) * 100.0 : 0.0;
 
 				auto to_fixed =
-					[](const double v, char* buf, const std::size_t len, const int prec) -> std::string_view {
+					[](
+					const double v,
+					char* buf,
+					const std::size_t len,
+					const int prec
+				) -> std::string_view {
 					auto [p, ec] = std::to_chars(buf, buf + len, v, std::chars_format::fixed, prec);
 					return ec == std::errc{} ? std::string_view{ buf, static_cast<std::size_t>(p - buf) }
 											 : std::string_view{};

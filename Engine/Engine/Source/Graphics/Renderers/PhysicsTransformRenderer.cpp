@@ -54,7 +54,6 @@ namespace gse::renderer::physics_transform {
 
 	using entry = gpu::compute_entry<
 		gpu::body_path<"Compute/physics_instance_transform">,
-		gpu::layout<"physics_instance_transform">,
 		gpu::types<shaders::common::shader_types, vbd::shader_types, shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
@@ -68,7 +67,6 @@ auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::
 	d.pipeline =
 		gpu::build_compute_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			entry::pod
 		);

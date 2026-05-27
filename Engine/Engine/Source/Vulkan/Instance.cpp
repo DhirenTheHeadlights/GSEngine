@@ -49,15 +49,21 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 
 	const auto available_instance_extensions = vk::enumerateInstanceExtensionProperties();
 	const auto has_instance_extension = [&](const std::string_view name) {
-		return std::ranges::any_of(available_instance_extensions, [&](const auto& p) {
-			return std::string_view(p.extensionName) == name;
-		});
+		return std::ranges::any_of(
+			available_instance_extensions,
+			[&](const auto& p) {
+				return std::string_view(p.extensionName) == name;
+			}
+		);
 	};
 
 	const auto already_enabled = [&](const std::string_view name) {
-		return std::ranges::any_of(extensions, [&](const char* e) {
-			return std::string_view(e) == name;
-		});
+		return std::ranges::any_of(
+			extensions,
+			[&](const char* e) {
+				return std::string_view(e) == name;
+			}
+		);
 	};
 
 	for (const auto* name : {
@@ -69,10 +75,12 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		}
 	}
 
-	auto debug_callback = [](const vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
-							 vk::DebugUtilsMessageTypeFlagsEXT message_type,
-							 const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
-							 void* user_data) -> vk::Bool32 {
+	auto debug_callback = [](
+		const vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+		vk::DebugUtilsMessageTypeFlagsEXT message_type,
+		const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
+		void* user_data
+	) -> vk::Bool32 {
 		if (message_severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose) {
 			return vk::False;
 		}

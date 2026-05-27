@@ -53,14 +53,13 @@ namespace gse::renderer::cull_compute {
 	using shader_binding_types = type_pack<frustum_ubo, batches, indirect_commands>;
 	using shader_types = type_pack<frustum_data, batch_info>;
 
-	using entry = gpu::compute_entry<gpu::body_path<"Compute/cull_instances">, gpu::layout<"cull_instances">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::threads<1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::group_id>>;
+	using entry = gpu::compute_entry<gpu::body_path<"Compute/cull_instances">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::threads<1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::group_id>>;
 }
 
 auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
 	d.pipeline =
 		gpu::build_compute_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			entry::pod
 		);

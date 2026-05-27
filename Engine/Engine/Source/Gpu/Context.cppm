@@ -2,7 +2,6 @@ export module gse.gpu:context;
 
 import std;
 
-import :shader_registry;
 import :device;
 import :swap_chain;
 import :frame;
@@ -38,7 +37,6 @@ export namespace gse::gpu {
 			gpu::device_settings device_settings;
 
 			[[= gse::shared]] std::unique_ptr<gpu::device> device;
-			[[= gse::shared]] std::unique_ptr<gpu::shader_registry> shader_registry;
 			[[= gse::shared]] std::unique_ptr<swap_chain> swapchain;
 			[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
 			[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;

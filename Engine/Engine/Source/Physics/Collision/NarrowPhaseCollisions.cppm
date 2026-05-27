@@ -867,7 +867,11 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 	};
 
 	const auto derive_fallback_feature = [&](const vec3<position>& point) -> feature_id {
-		const auto classify = [](const bounding_box& bb, const vec3f& support_dir, const vec3<position>& world_point) {
+		const auto classify = [](
+			const bounding_box& bb,
+			const vec3f& support_dir,
+			const vec3<position>& world_point
+		) {
 			struct detail {
 				feature_type type = feature_type::face;
 				std::uint8_t face = 0;
@@ -983,7 +987,10 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 	const auto sort_origin = bb1.center();
 	std::ranges::sort(
 		candidates,
-		[&](const manifold_candidate& lhs, const manifold_candidate& rhs) {
+		[&](
+		const manifold_candidate& lhs,
+		const manifold_candidate& rhs
+	) {
 			const std::uint64_t lhs_key = pack_feature(lhs.feature);
 			const std::uint64_t rhs_key = pack_feature(rhs.feature);
 			if (lhs_key != rhs_key) {

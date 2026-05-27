@@ -99,9 +99,12 @@ export namespace gse {
 
 template <typename Key, typename Value, typename Compare>
 gse::flat_map<Key, Value, Compare>::flat_map(std::initializer_list<value_type> init) : m_data(init) {
-	std::ranges::sort(m_data, [this](const value_type& a, const value_type& b) {
-		return m_compare(a.first, b.first);
-	});
+	std::ranges::sort(
+		m_data,
+		[this](const value_type& a, const value_type& b) {
+			return m_compare(a.first, b.first);
+		}
+	);
 }
 
 template <typename Key, typename Value, typename Compare>

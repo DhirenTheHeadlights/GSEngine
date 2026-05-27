@@ -19,6 +19,18 @@ import gse.math;
 import gse.meta;
 
 namespace gse::renderer::world_text {
+	struct [[= shaders::shader_struct]] world_text_vertex {
+		vec3<position> position;
+		vec2f tex_coord;
+	};
+
+	struct [[
+		= shaders::binding<0, 1>{},
+		= shaders::ssbo_readonly
+	]] world_text_vertex_buffer {
+		using element = world_text_vertex;
+	};
+
 	struct [[= shaders::shader_struct]] push_constants {
 		vec3f color;
 		vec2f unit_range;
@@ -29,17 +41,12 @@ namespace gse::renderer::world_text {
 		float shadow_strength;
 	};
 
-	struct world_text_vertex {
-		vec3<position> position;
-		vec2f tex_coord;
-	};
-
-	using world_text_bindings = type_pack<shaders::standard_3d::camera_ubo, shaders::bindless::textures>;
+	using world_text_bindings = type_pack<shaders::standard_3d::camera_ubo, world_text_vertex_buffer, shaders::bindless::textures>;
+	using world_text_shader_types = type_pack<world_text_vertex>;
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/WorldText">,
-		gpu::layout<"world_text">,
-		gpu::types<shaders::common::shader_types>,
+		gpu::types<shaders::common::shader_types, world_text_shader_types>,
 		gpu::bindings<world_text_bindings>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -70,6 +77,7 @@ namespace gse::renderer::world_text {
 	auto ensure_vertex_capacity(
 		system::data& d,
 		gpu::device& device,
+		gpu::bindless_heaps& heaps,
 		std::size_t frame_index,
 		std::size_t required
 	) -> void;
@@ -133,7 +141,7 @@ auto gse::renderer::world_text::build_labels_for_axis(std::vector<world_text_ver
 	}
 }
 
-auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::device& device, const std::size_t frame_index, const std::size_t required) -> void {
+auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::device& device, gpu::bindless_heaps& heaps, const std::size_t frame_index, const std::size_t required) -> void {
 	auto& cap = d.vertex_capacities[frame_index];
 	auto& buf = d.vertex_buffers[frame_index];
 	if (required <= cap && buf.valid()) {
@@ -146,12 +154,14 @@ auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::dev
 	while (cap < required) {
 		cap *= 2;
 	}
-	buf = gpu::buffer::create(
+	buf = gpu::bindless_buffer::create(
 		device.allocator(),
+		heaps,
 		{
 			.size = cap * sizeof(world_text_vertex),
-			.usage = gpu::buffer_flag::vertex
-		}
+			.usage = gpu::buffer_flag::storage
+		},
+		"world_text.vertex"
 	);
 }
 
@@ -159,7 +169,6 @@ auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context
 	d.pipeline =
 		gpu::build_graphics_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			entry::pod
 		);
@@ -212,8 +221,8 @@ auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_v
 	}
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
-	ensure_vertex_capacity(d, *gpu_s.device, frame_index, vertices.size());
-	d.vertex_buffers[frame_index].host_write(vertices);
+	ensure_vertex_capacity(d, *gpu_s.device, *gpu_s.bindless_heaps, frame_index, vertices.size());
+	d.vertex_buffers[frame_index].buffer().host_write(vertices);
 
 	const auto view = cam_state.view_matrix;
 	const auto proj = cam_state.projection_matrix;
@@ -257,8 +266,8 @@ auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_v
 		},
 		{
 			.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
+			.world_text_vertex_buffer = d.vertex_buffers[frame_index].slot(),
 		}
 	);
-	rec.bind_vertex(d.vertex_buffers[frame_index]);
 	rec.draw(vertex_count);
 }

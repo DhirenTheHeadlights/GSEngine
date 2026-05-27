@@ -82,6 +82,18 @@ export namespace gse::shaders {
 	template <is_shader_constant_block T>
 	auto emit_slang_constants() -> std::string;
 
+	template <typename T>
+	auto emit_slang_specialization_constants() -> std::string;
+
+	struct spec_constant_entry {
+		std::uint32_t constant_id = 0;
+		std::uint32_t offset = 0;
+		std::uint32_t size = 0;
+	};
+
+	template <typename T>
+	auto build_spec_constant_entries() -> std::vector<spec_constant_entry>;
+
 	template <is_shader_binding T>
 	auto emit_slang_binding() -> std::string;
 
@@ -123,6 +135,11 @@ export namespace gse::shaders {
 	template <typename Pack>
 	auto emit_pack_bindings() -> std::string;
 }
+
+template <>
+struct gse::shaders::slang_type<bool> {
+	static constexpr std::string_view name = "bool";
+};
 
 template <>
 struct gse::shaders::slang_type<float> {
@@ -296,6 +313,41 @@ auto gse::shaders::emit_slang_constants() -> std::string {
 		);
 	}
 	return out;
+}
+
+template <typename T>
+auto gse::shaders::emit_slang_specialization_constants() -> std::string {
+	std::string out;
+	std::uint32_t idx = 0;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		using member_t = [:std::meta::type_of(m):];
+		constexpr member_t v = T{}.[:m:];
+		out += std::format(
+			"[[vk::constant_id({})]] public const {} {} = {};\n",
+			idx,
+			slang_type<member_t>::name,
+			std::meta::identifier_of(m),
+			format_slang_literal(v)
+		);
+		++idx;
+	}
+	return out;
+}
+
+template <typename T>
+auto gse::shaders::build_spec_constant_entries() -> std::vector<spec_constant_entry> {
+	std::vector<spec_constant_entry> entries;
+	std::uint32_t idx = 0;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		using member_t = [:std::meta::type_of(m):];
+		entries.push_back({
+			.constant_id = idx,
+			.offset = std::meta::offset_of_v<m>,
+			.size = static_cast<std::uint32_t>(sizeof(member_t)),
+		});
+		++idx;
+	}
+	return entries;
 }
 
 consteval auto gse::shaders::find_binding_type(const std::meta::info m) -> std::meta::info {
@@ -585,9 +637,12 @@ namespace gse::shaders {
 		constexpr gpu::stage_flags all_stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment |
 			gpu::stage_flag::compute | gpu::stage_flag::task | gpu::stage_flag::mesh;
 
-		auto it = std::ranges::find_if(sets, [&](const family_set& s) {
-			return s.type == set_type;
-		});
+		auto it = std::ranges::find_if(
+			sets,
+			[&](const family_set& s) {
+				return s.type == set_type;
+			}
+		);
 		if (it == sets.end()) {
 			sets.push_back(
 				family_set{
@@ -629,9 +684,12 @@ auto gse::shaders::build_combined_family_sets() -> std::vector<family_set> {
 	std::vector<family_set> result;
 	auto merge_into = [&](std::vector<family_set> src) {
 		for (auto& s : src) {
-			auto it = std::ranges::find_if(result, [&](const family_set& d) {
-				return d.type == s.type;
-			});
+			auto it = std::ranges::find_if(
+				result,
+				[&](const family_set& d) {
+					return d.type == s.type;
+				}
+			);
 			if (it == result.end()) {
 				result.push_back(std::move(s));
 			}

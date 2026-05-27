@@ -148,9 +148,12 @@ auto gse::gpu::greedy_color(const std::span<const lifetime_entry> intervals) -> 
 
 	std::vector<std::size_t> order(intervals.size());
 	std::iota(order.begin(), order.end(), 0);
-	std::ranges::sort(order, [&](const std::size_t a, const std::size_t b) {
-		return intervals[a].first_pass < intervals[b].first_pass;
-	});
+	std::ranges::sort(
+		order,
+		[&](const std::size_t a, const std::size_t b) {
+			return intervals[a].first_pass < intervals[b].first_pass;
+		}
+	);
 
 	struct color_state {
 		std::uint32_t last_end = 0;

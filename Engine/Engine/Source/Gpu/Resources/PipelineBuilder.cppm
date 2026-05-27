@@ -15,7 +15,6 @@ import :device;
 import :bindless;
 import :shader_codegen;
 import :shader_markers;
-import :shader_registry;
 
 export namespace gse::gpu {
 	struct combined_sampler_arg {
@@ -62,12 +61,15 @@ export namespace gse::gpu {
 				const auto slot = std::meta::extract<std::uint32_t>(targs[1]);
 				entries.push_back({ t, set, slot });
 			}
-			std::ranges::sort(entries, [](const sortable& a, const sortable& b) {
-				if (a.set != b.set) {
-					return a.set < b.set;
+			std::ranges::sort(
+				entries,
+				[](const sortable& a, const sortable& b) {
+					if (a.set != b.set) {
+						return a.set < b.set;
+					}
+					return a.slot < b.slot;
 				}
-				return a.slot < b.slot;
-			});
+			);
 			std::vector<std::meta::info> members;
 			for (const auto& e : entries) {
 				members.push_back(std::meta::data_member_spec(
@@ -126,7 +128,6 @@ export namespace gse::gpu {
 	struct compute_entry_pod {
 		std::string_view body_path;
 		std::string_view body_source;
-		std::string_view layout_name;
 		std::uint32_t threads_x = 1;
 		std::uint32_t threads_y = 1;
 		std::uint32_t threads_z = 1;
@@ -139,6 +140,7 @@ export namespace gse::gpu {
 		std::size_t helper_count = 0;
 		std::array<std::string_view, 8> call_names{};
 		std::size_t call_count = 0;
+		std::uint32_t spec_data_size = 0;
 		std::string (
 			*emit_push_constant_struct
 		)() = nullptr;
@@ -148,6 +150,12 @@ export namespace gse::gpu {
 		std::string (
 			*emit_bindings
 		)() = nullptr;
+		std::string (
+			*emit_spec_decls
+		)() = nullptr;
+		std::vector<shaders::spec_constant_entry> (
+			*build_spec_entries_fn
+		)() = nullptr;
 		std::vector<shaders::family_set> (
 			*build_family_sets_fn
 		)() = nullptr;
@@ -156,9 +164,9 @@ export namespace gse::gpu {
 	[[nodiscard]]
 	auto build_compute_program(
 		device& dev,
-		shader_registry& registry,
 		bindless_heaps& heaps,
-		const compute_entry_pod& pod
+		const compute_entry_pod& pod,
+		std::span<const std::byte> spec_data = {}
 	) -> shader_program;
 
 	enum class graphics_stage_kind : std::uint8_t {
@@ -179,7 +187,6 @@ export namespace gse::gpu {
 
 		std::string_view body_path;
 		std::string_view body_source;
-		std::string_view layout_name;
 		std::string_view push_constant_type_name;
 		std::uint32_t push_constant_size = 0;
 		std::uint32_t push_constant_stages = 0;
@@ -194,6 +201,7 @@ export namespace gse::gpu {
 		std::array<color_format, max_color_targets> colors{};
 		std::size_t color_count = 1;
 		depth_format depth_fmt = depth_format::d32_sfloat;
+		std::uint32_t spec_data_size = 0;
 		std::string (
 			*emit_push_constant_struct
 		)() = nullptr;
@@ -203,6 +211,12 @@ export namespace gse::gpu {
 		std::string (
 			*emit_bindings
 		)() = nullptr;
+		std::string (
+			*emit_spec_decls
+		)() = nullptr;
+		std::vector<shaders::spec_constant_entry> (
+			*build_spec_entries_fn
+		)() = nullptr;
 		std::vector<shaders::family_set> (
 			*build_family_sets_fn
 		)() = nullptr;
@@ -211,10 +225,15 @@ export namespace gse::gpu {
 	[[nodiscard]]
 	auto build_graphics_program(
 		device& dev,
-		shader_registry& registry,
 		bindless_heaps& heaps,
-		const graphics_entry_pod& pod
+		const graphics_entry_pod& pod,
+		std::span<const std::byte> spec_data = {}
 	) -> shader_program;
+
+	template <typename T>
+	auto as_spec_data(
+		const T& value
+	) -> std::span<const std::byte>;
 
 	template <fixed_string V>
 	struct body_path {
@@ -223,11 +242,6 @@ export namespace gse::gpu {
 
 	template <fixed_string V>
 	struct body_inline {
-		static constexpr std::string_view value = V;
-	};
-
-	template <fixed_string V>
-	struct layout {
 		static constexpr std::string_view value = V;
 	};
 
@@ -247,6 +261,11 @@ export namespace gse::gpu {
 
 	template <typename T>
 	struct push_constant {
+		using type = T;
+	};
+
+	template <typename T>
+	struct spec_constants {
 		using type = T;
 	};
 
@@ -278,12 +297,6 @@ export namespace gse::gpu {
 	struct is_body_inline<body_inline<V>> : std::true_type {};
 
 	template <typename T>
-	struct is_layout : std::false_type {};
-
-	template <fixed_string V>
-	struct is_layout<layout<V>> : std::true_type {};
-
-	template <typename T>
 	struct is_threads : std::false_type {};
 
 	template <std::uint32_t X, std::uint32_t Y, std::uint32_t Z>
@@ -306,6 +319,12 @@ export namespace gse::gpu {
 
 	template <typename T>
 	struct is_push_constant<push_constant<T>> : std::true_type {};
+
+	template <typename T>
+	struct is_spec_constants : std::false_type {};
+
+	template <typename T>
+	struct is_spec_constants<spec_constants<T>> : std::true_type {};
 
 	template <typename T>
 	struct is_system_values : std::false_type {};
@@ -348,9 +367,6 @@ export namespace gse::gpu {
 				else if constexpr (is_body_inline<Spec>::value) {
 					e.body_source = Spec::value;
 				}
-				else if constexpr (is_layout<Spec>::value) {
-					e.layout_name = Spec::value;
-				}
 				else if constexpr (is_threads<Spec>::value) {
 					e.threads_x = Spec::x;
 					e.threads_y = Spec::y;
@@ -373,6 +389,16 @@ export namespace gse::gpu {
 					};
 					e.emit_push_constant_struct = +[]() -> std::string {
 						return shaders::emit_slang_struct<T>();
+					};
+				}
+				else if constexpr (is_spec_constants<Spec>::value) {
+					using T = typename Spec::type;
+					e.spec_data_size = static_cast<std::uint32_t>(sizeof(T));
+					e.emit_spec_decls = +[]() -> std::string {
+						return shaders::emit_slang_specialization_constants<T>();
+					};
+					e.build_spec_entries_fn = +[]() -> std::vector<shaders::spec_constant_entry> {
+						return shaders::build_spec_constant_entries<T>();
 					};
 				}
 				else if constexpr (is_system_values<Spec>::value) {
@@ -557,15 +583,22 @@ export namespace gse::gpu {
 				else if constexpr (is_body_inline<Spec>::value) {
 					e.body_source = Spec::value;
 				}
-				else if constexpr (is_layout<Spec>::value) {
-					e.layout_name = Spec::value;
-				}
 				else if constexpr (is_push_constant<Spec>::value) {
 					using T = typename Spec::type;
 					e.push_constant_size = static_cast<std::uint32_t>(sizeof(T));
 					e.push_constant_type_name = shaders::slang_type<T>::name;
 					e.emit_push_constant_struct = +[]() -> std::string {
 						return shaders::emit_slang_struct<T>();
+					};
+				}
+				else if constexpr (is_spec_constants<Spec>::value) {
+					using T = typename Spec::type;
+					e.spec_data_size = static_cast<std::uint32_t>(sizeof(T));
+					e.emit_spec_decls = +[]() -> std::string {
+						return shaders::emit_slang_specialization_constants<T>();
+					};
+					e.build_spec_entries_fn = +[]() -> std::vector<shaders::spec_constant_entry> {
+						return shaders::build_spec_constant_entries<T>();
 					};
 				}
 				else if constexpr (is_vertex_stage<Spec>::value || is_fragment_stage<Spec>::value || is_amplification_stage<Spec>::value || is_mesh_stage<Spec>::value) {
@@ -673,7 +706,6 @@ namespace gse::gpu {
 		std::uint32_t threads_x = 1;
 		std::uint32_t threads_y = 1;
 		std::uint32_t threads_z = 1;
-		std::string layout_name;
 		std::string body_path;
 		std::string inline_source;
 		std::vector<std::string> helper_paths;
@@ -687,6 +719,9 @@ namespace gse::gpu {
 		)() = nullptr;
 		std::string (
 			*emit_bindings
+		)() = nullptr;
+		std::string (
+			*emit_spec_decls
 		)() = nullptr;
 	};
 
@@ -742,8 +777,6 @@ namespace gse::gpu {
 
 	struct compiled_graphics_program {
 		std::vector<graphics_stage_compile_result> stages;
-		std::vector<vertex_attribute_desc> vertex_attributes;
-		std::vector<vertex_binding_desc> vertex_bindings;
 	};
 
 	auto build_graphics_wrapper_source(
@@ -937,6 +970,11 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 		out.push_back('\n');
 	}
 
+	if (inputs.emit_spec_decls) {
+		out.append(inputs.emit_spec_decls());
+		out.push_back('\n');
+	}
+
 	for (const auto& p : inputs.params) {
 		if (p.is_function_param) {
 			continue;
@@ -1102,6 +1140,11 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 		out.push_back('\n');
 	}
 
+	if (pod.emit_spec_decls) {
+		out.append(pod.emit_spec_decls());
+		out.push_back('\n');
+	}
+
 	if (pod.push_constant_size > 0) {
 		out.append("[[vk::push_constant]]\nConstantBuffer<");
 		out.append(pod.push_constant_type_name);
@@ -1120,84 +1163,6 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 
 	out.append(parsed.body);
 	return out;
-}
-
-namespace gse::gpu {
-	auto to_vertex_format_from_slang(slang::TypeReflection* ty) -> vertex_format {
-		if (!ty) {
-			return vertex_format::r32_sfloat;
-		}
-		const auto scalar = ty->getScalarType();
-		const auto rows = ty->getRowCount();
-		const auto cols = ty->getColumnCount();
-		const auto elements = (rows == 0 ? 1u : rows) * (cols == 0 ? 1u : cols);
-		using k = slang::TypeReflection::ScalarType;
-		if (scalar == k::Float32) {
-			switch (elements) {
-				case 1:
-					return vertex_format::r32_sfloat;
-				case 2:
-					return vertex_format::r32g32_sfloat;
-				case 3:
-					return vertex_format::r32g32b32_sfloat;
-				case 4:
-					return vertex_format::r32g32b32a32_sfloat;
-				default:
-					return vertex_format::r32g32b32_sfloat;
-			}
-		}
-		if (scalar == k::Int32) {
-			switch (elements) {
-				case 1:
-					return vertex_format::r32_sint;
-				case 2:
-					return vertex_format::r32g32_sint;
-				case 3:
-					return vertex_format::r32g32b32_sint;
-				case 4:
-					return vertex_format::r32g32b32a32_sint;
-				default:
-					return vertex_format::r32g32b32_sint;
-			}
-		}
-		if (scalar == k::UInt32) {
-			switch (elements) {
-				case 1:
-					return vertex_format::r32_uint;
-				case 2:
-					return vertex_format::r32g32_uint;
-				case 3:
-					return vertex_format::r32g32b32_uint;
-				case 4:
-					return vertex_format::r32g32b32a32_uint;
-				default:
-					return vertex_format::r32g32b32_uint;
-			}
-		}
-		return vertex_format::r32_sfloat;
-	}
-
-	auto byte_size_of_vertex_format(vertex_format fmt) -> std::uint32_t {
-		switch (fmt) {
-			case vertex_format::r32_sfloat:
-			case vertex_format::r32_sint:
-			case vertex_format::r32_uint:
-				return 4;
-			case vertex_format::r32g32_sfloat:
-			case vertex_format::r32g32_sint:
-			case vertex_format::r32g32_uint:
-				return 8;
-			case vertex_format::r32g32b32_sfloat:
-			case vertex_format::r32g32b32_sint:
-			case vertex_format::r32g32b32_uint:
-				return 12;
-			case vertex_format::r32g32b32a32_sfloat:
-			case vertex_format::r32g32b32a32_sint:
-			case vertex_format::r32g32b32a32_uint:
-				return 16;
-		}
-		return 4;
-	}
 }
 
 auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std::string_view wrapper_source) -> compiled_graphics_program {
@@ -1308,50 +1273,6 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 			.entry_point = std::string(stage_pod.entry_point),
 			.spirv = std::move(spirv),
 		});
-
-		if (stage_pod.kind == graphics_stage_kind::vertex) {
-			auto* layout_reflection = program->getLayout();
-			if (layout_reflection && static_cast<std::size_t>(layout_reflection->getEntryPointCount()) > ep_indices[i]) {
-				auto* ep_layout = layout_reflection->getEntryPointByIndex(static_cast<SlangInt>(ep_indices[i]));
-				auto* scope_vl = ep_layout ? ep_layout->getVarLayout() : nullptr;
-				auto* scope_tl = scope_vl ? scope_vl->getTypeLayout() : nullptr;
-				if (scope_tl && scope_tl->getKind() == slang::TypeReflection::Kind::Struct) {
-					std::uint32_t offset = 0;
-					std::uint32_t next_location = 0;
-					for (int j = 0; j < scope_tl->getFieldCount(); ++j) {
-						auto* vl = scope_tl->getFieldByIndex(j);
-						if (!vl) {
-							continue;
-						}
-						if (const char* sem = vl->getSemanticName()) {
-							if (!std::strncmp(sem, "SV_", 3)) {
-								continue;
-							}
-						}
-						auto* tl = vl->getTypeLayout();
-						if (!tl) {
-							continue;
-						}
-						const auto fmt = to_vertex_format_from_slang(tl->getType());
-						const auto attr_size = byte_size_of_vertex_format(fmt);
-						result.vertex_attributes.push_back({
-							.location = next_location++,
-							.binding = 0,
-							.format = fmt,
-							.offset = offset,
-						});
-						offset += attr_size;
-					}
-					if (offset > 0) {
-						result.vertex_bindings.push_back({
-							.binding = 0,
-							.stride = offset,
-							.per_instance = false,
-						});
-					}
-				}
-			}
-		}
 	}
 
 	return result;
@@ -1428,14 +1349,62 @@ auto gse::gpu::next_stage_for(const stage_flag current, const std::span<const st
 	return result;
 }
 
-auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bindless_heaps& heaps, const compute_entry_pod& pod) -> shader_program {
+namespace gse::gpu {
+	struct compiled_program_layouts {
+		std::vector<descriptor_set_layout> owned;
+		std::vector<handle<descriptor_set_layout>> handles;
+	};
+
+	auto build_program_layouts(
+		const device& dev,
+		const std::vector<shaders::family_set>& sets
+	) -> compiled_program_layouts;
+}
+
+auto gse::gpu::build_program_layouts(const device& dev, const std::vector<shaders::family_set>& sets) -> compiled_program_layouts {
+	compiled_program_layouts result;
+
+	std::uint32_t max_set_index = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
+	for (const auto& s : sets) {
+		max_set_index = std::max(max_set_index, static_cast<std::uint32_t>(s.type));
+	}
+
+	result.owned.resize(max_set_index + 1);
+
+	for (const auto& s : sets) {
+		const auto set_idx = static_cast<std::uint32_t>(s.type);
+		std::vector<descriptor_binding_desc> descs;
+		descs.reserve(s.bindings.size());
+		for (const auto& b : s.bindings) {
+			descs.push_back(b.desc);
+		}
+		result.owned[set_idx] = descriptor_set_layout::create(dev.vulkan_device(), descs);
+	}
+
+	for (std::uint32_t i = 0; i <= max_set_index; ++i) {
+		if (!result.owned[i].valid()) {
+			result.owned[i] = descriptor_set_layout::create(
+				dev.vulkan_device(),
+				{}
+			);
+		}
+	}
+
+	result.handles.reserve(result.owned.size());
+	for (const auto& l : result.owned) {
+		result.handles.push_back(l.handle());
+	}
+	return result;
+}
+
+auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const compute_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
 	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
-	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
+	assert(spec_data.empty() || spec_data.size() == pod.spec_data_size, "spec_data size mismatch with entry's spec_constants<T>");
+	const auto family_sets = pod.build_family_sets_fn();
 
 	shader_compile_inputs inputs;
 	inputs.body_path = std::string(pod.body_path);
 	inputs.inline_source = std::string(pod.body_source);
-	inputs.layout_name = std::string(pod.layout_name);
 	inputs.threads_x = pod.threads_x;
 	inputs.threads_y = pod.threads_y;
 	inputs.threads_z = pod.threads_z;
@@ -1443,6 +1412,7 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 	inputs.emit_push_constant_struct = pod.emit_push_constant_struct;
 	inputs.emit_types = pod.emit_types;
 	inputs.emit_bindings = pod.emit_bindings;
+	inputs.emit_spec_decls = pod.emit_spec_decls;
 	inputs.helper_paths.reserve(pod.helper_count);
 
 	for (std::size_t i = 0; i < pod.helper_count; ++i) {
@@ -1470,10 +1440,8 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 	const auto wrapper_source = build_compute_wrapper_source(inputs, parsed);
 	const auto spirv = compile_compute_spirv(inputs, wrapper_source);
 
-	const auto* family = registry.find_family(pod.layout_name);
-	assert(family, "Shader family layout not registered: {}", pod.layout_name);
-
-	auto layouts = family->layout_handles;
+	const auto program_layouts = build_program_layouts(dev, family_sets);
+	const auto& layouts = program_layouts.handles;
 
 	std::optional<push_constant_range> push_range;
 	if (pod.push_constant_size > 0) {
@@ -1485,7 +1453,7 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 	}
 
 	std::vector<binding_use> pack_bindings;
-	for (const auto& fs : family->sets) {
+	for (const auto& fs : family_sets) {
 		for (const auto& b : fs.bindings) {
 			pack_bindings.push_back({
 				.set = static_cast<std::uint32_t>(fs.type),
@@ -1504,6 +1472,19 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 		pod.push_constant_size
 	);
 
+	std::vector<vulkan::specialization_entry> vk_spec_entries;
+	if (pod.build_spec_entries_fn && !spec_data.empty()) {
+		const auto entries = pod.build_spec_entries_fn();
+		vk_spec_entries.reserve(entries.size());
+		for (const auto& e : entries) {
+			vk_spec_entries.push_back({
+				.constant_id = e.constant_id,
+				.offset = e.offset,
+				.size = e.size,
+			});
+		}
+	}
+
 	const vulkan::shader_object_create_info stage_info{
 		.stage = stage_flag::compute,
 		.spirv = spirv,
@@ -1516,6 +1497,8 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 			: std::nullopt,
 		.require_full_subgroups = pod.require_full_subgroups,
 		.bindless_mappings = bindless_mappings.mappings,
+		.spec_entries = vk_spec_entries,
+		.spec_data = spec_data,
 	};
 
 	const vulkan::shader_program_create_info info{
@@ -1533,22 +1516,20 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 	return shader_program::create(dev.vulkan_device(), info);
 }
 
-auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bindless_heaps& heaps, const graphics_entry_pod& pod) -> shader_program {
+auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const graphics_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
-	assert(!pod.layout_name.empty(), "layout missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");
 	assert(pod.build_family_sets_fn, "bindings missing on graphics entry");
-	registry.register_family(std::string(pod.layout_name), pod.build_family_sets_fn());
+	assert(spec_data.empty() || spec_data.size() == pod.spec_data_size, "spec_data size mismatch with entry's spec_constants<T>");
+	const auto family_sets = pod.build_family_sets_fn();
 
 	const std::string body_source = pod.body_source.empty() ? load_body_file(pod.body_path) : std::string(pod.body_source);
 	const auto parsed = parse_body_file(body_source);
 	const auto wrapper_source = build_graphics_wrapper_source(pod, parsed);
 	auto program = compile_graphics_program(pod, wrapper_source);
 
-	const auto* family = registry.find_family(pod.layout_name);
-	assert(family, "Shader family layout not registered: {}", pod.layout_name);
-
-	auto layouts = family->layout_handles;
+	const auto program_layouts = build_program_layouts(dev, family_sets);
+	const auto& layouts = program_layouts.handles;
 
 	std::optional<push_constant_range> push_range;
 	if (pod.push_constant_size > 0) {
@@ -1578,7 +1559,7 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 	}
 
 	std::vector<binding_use> pack_bindings;
-	for (const auto& fs : family->sets) {
+	for (const auto& fs : family_sets) {
 		for (const auto& b : fs.bindings) {
 			pack_bindings.push_back({
 				.set = static_cast<std::uint32_t>(fs.type),
@@ -1597,6 +1578,19 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 		pod.push_constant_size
 	);
 
+	std::vector<vulkan::specialization_entry> vk_spec_entries;
+	if (pod.build_spec_entries_fn && !spec_data.empty()) {
+		const auto entries = pod.build_spec_entries_fn();
+		vk_spec_entries.reserve(entries.size());
+		for (const auto& e : entries) {
+			vk_spec_entries.push_back({
+				.constant_id = e.constant_id,
+				.offset = e.offset,
+				.size = e.size,
+			});
+		}
+	}
+
 	std::vector<vulkan::shader_object_create_info> stage_infos;
 	stage_infos.reserve(program.stages.size());
 	for (auto& s : program.stages) {
@@ -1611,6 +1605,8 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 				all_stages
 			),
 			.bindless_mappings = bindless_mappings.mappings,
+			.spec_entries = vk_spec_entries,
+			.spec_data = spec_data,
 		});
 	}
 
@@ -1626,8 +1622,6 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 		.depth_bias_constant = pod.rasterization.depth_bias_constant,
 		.depth_bias_clamp = pod.rasterization.depth_bias_clamp,
 		.depth_bias_slope = pod.rasterization.depth_bias_slope,
-		.vertex_bindings = is_mesh ? std::vector<vertex_binding_desc>{} : program.vertex_bindings,
-		.vertex_attributes = is_mesh ? std::vector<vertex_attribute_desc>{} : program.vertex_attributes,
 	};
 
 	state.blend_enables.assign(pod.color_count, static_cast<std::uint8_t>(blend_enable ? 1 : 0));
@@ -1644,4 +1638,9 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 	};
 
 	return shader_program::create(dev.vulkan_device(), info);
+}
+
+template <typename T>
+auto gse::gpu::as_spec_data(const T& value) -> std::span<const std::byte> {
+	return std::span<const std::byte>(reinterpret_cast<const std::byte*>(&value), sizeof(T));
 }

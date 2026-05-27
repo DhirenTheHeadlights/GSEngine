@@ -125,9 +125,12 @@ auto gse::vulkan::transient_executor::begin_frame() -> void {
 
 	{
 		std::lock_guard lock(*m_detached_mutex);
-		std::erase_if(m_detached, [](const async::task<>& t) {
-			return t.done();
-		});
+		std::erase_if(
+			m_detached,
+			[](const async::task<>& t) {
+				return t.done();
+			}
+		);
 	}
 }
 

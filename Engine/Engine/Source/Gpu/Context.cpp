@@ -11,7 +11,6 @@ import :transient_pool;
 import :render_graph;
 import :render_pass;
 import :bindless;
-import :shader_registry;
 
 import gse.os;
 import gse.core;
@@ -22,7 +21,6 @@ import gse.log;
 
 auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data& d) -> async::task<> {
 	d.device = device::create(window_s, d.validation_layers_enabled, d.device_settings);
-	d.shader_registry = std::make_unique<gpu::shader_registry>(*d.device);
 	d.swapchain = swap_chain::create(
 		window::viewport(window_s),
 		present_mode_from_setting_index(window_s.current_present_mode_index),
@@ -62,7 +60,6 @@ auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
 	d.render_graph.reset();
 	d.frame.reset();
 	d.swapchain.reset();
-	d.shader_registry.reset();
 	d.device.reset();
 }
 

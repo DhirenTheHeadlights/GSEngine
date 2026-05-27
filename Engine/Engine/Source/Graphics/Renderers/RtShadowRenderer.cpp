@@ -42,7 +42,7 @@ namespace gse::renderer::rt_shadow {
 
 	using shader_binding_types = type_pack<source_instance_data, index_mapping, tlas_instances>;
 
-	using entry = gpu::compute_entry<gpu::body_path<"Compute/tlas_transform_update">, gpu::layout<"tlas_transform_update">, gpu::bindings<shader_binding_types>, gpu::threads<64>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using entry = gpu::compute_entry<gpu::body_path<"Compute/tlas_transform_update">, gpu::bindings<shader_binding_types>, gpu::threads<64>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
 auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
@@ -60,7 +60,6 @@ auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context:
 	d.tlas_update_pipeline =
 		gpu::build_compute_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			entry::pod
 		);

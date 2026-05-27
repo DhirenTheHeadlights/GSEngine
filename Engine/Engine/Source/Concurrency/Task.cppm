@@ -535,9 +535,12 @@ auto gse::task::wait_idle() -> void {
 	}
 
 	std::unique_lock lk(idle_mutex);
-	idle_cv.wait(lk, [] {
-		return likely_idle();
-	});
+	idle_cv.wait(
+		lk,
+		[] {
+			return likely_idle();
+		}
+	);
 }
 
 auto gse::task::try_run_one() -> bool {

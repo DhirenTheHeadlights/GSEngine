@@ -48,7 +48,7 @@ namespace gse::renderer::ui {
 		text
 	};
 
-	struct vertex {
+	struct [[= shaders::shader_struct]] vertex {
 		vec2f position;
 		vec2f uv;
 		vec4f color;
@@ -115,7 +115,7 @@ namespace gse::renderer::ui {
 
 export namespace gse::renderer::ui {
 	struct frame_resources {
-		gpu::buffer vertex_buffer;
+		gpu::bindless_buffer vertex_buffer;
 		gpu::buffer index_buffer;
 	};
 

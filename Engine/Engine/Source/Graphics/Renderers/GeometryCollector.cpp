@@ -217,7 +217,10 @@ auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_que
 	trace::scope_guard sg{ trace_id<"geom_collect::sort">() };
 	std::ranges::sort(
 		out,
-		[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
+		[](
+		const owned_render_queue_entry& a,
+		const owned_render_queue_entry& b
+	) {
 			const auto ma = a.entry.model.id();
 			const auto mb = b.entry.model.id();
 
@@ -246,7 +249,12 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 		[](const normal_batch_key& key) -> const mesh& {
 			return key.model_ptr->meshes()[key.mesh_index];
 		},
-		[](vec3<length>& mn, vec3<length>& mx, std::span<const owned_render_queue_entry> batch, const mesh& m) {
+		[](
+		vec3<length>& mn,
+		vec3<length>& mx,
+		std::span<const owned_render_queue_entry> batch,
+		const mesh& m
+	) {
 			if (std::ranges::any_of(batch, [](const owned_render_queue_entry& q) {
 					return q.body_index != owned_render_queue_entry::invalid_body_index;
 				})) {
@@ -289,10 +297,12 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 				);
 			}
 		},
-		[&](const owned_render_queue_entry& q,
-			const normal_batch_key& key,
-			std::uint32_t mat_idx,
-			std::uint32_t instance_index) {
+		[&](
+		const owned_render_queue_entry& q,
+		const normal_batch_key& key,
+		std::uint32_t mat_idx,
+		std::uint32_t instance_index
+	) {
 			const auto& entry = q.entry;
 			write_instance(
 				data.instance_staging,
@@ -400,9 +410,12 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 	result.reserve(data.render_queue.size());
 
 	for (const auto& queue_entry : data.render_queue) {
-		const bool excluded = std::ranges::any_of(exclude_ids, [&](const id& ex) {
-			return ex == queue_entry.owner;
-		});
+		const bool excluded = std::ranges::any_of(
+			exclude_ids,
+			[&](const id& ex) {
+				return ex == queue_entry.owner;
+			}
+		);
 
 		if (!excluded) {
 			result.push_back(queue_entry.entry);

@@ -46,7 +46,6 @@ namespace gse::renderer::tonemap {
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/Tonemap">,
-		gpu::layout<"tonemap">,
 		gpu::bindings<shader_binding_types>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -77,7 +76,6 @@ auto gse::renderer::tonemap::system::run(run_context& ctx, const gpu::context::d
 	d.pipeline =
 		gpu::build_graphics_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			entry::pod
 		);
@@ -95,9 +93,12 @@ auto gse::renderer::tonemap::system::run(run_context& ctx, const gpu::context::d
 
 	rebind_views(gpu_s, d);
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &d]() {
-		rebind_views(gpu_s, d);
-	});
+	gpu::context::on_swap_chain_recreate(
+		gpu_s,
+		[&gpu_s, &d]() {
+			rebind_views(gpu_s, d);
+		}
+	);
 
 	co_return;
 }

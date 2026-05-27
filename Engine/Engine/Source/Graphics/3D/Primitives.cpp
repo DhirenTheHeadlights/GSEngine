@@ -27,11 +27,13 @@ auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
 	std::vector<vertex> v;
 	v.reserve(24);
 
-	auto push_face = [&](const vec3<length>& a,
-						 const vec3<length>& b,
-						 const vec3<length>& c,
-						 const vec3<length>& d,
-						 const vec3f& n) {
+	auto push_face = [&](
+		const vec3<length>& a,
+		const vec3<length>& b,
+		const vec3<length>& c,
+		const vec3<length>& d,
+		const vec3f& n
+	) {
 		v.push_back({ a, n, { 0.0f, 0.0f } });
 		v.push_back({ b, n, { 1.0f, 0.0f } });
 		v.push_back({ c, n, { 1.0f, 1.0f } });

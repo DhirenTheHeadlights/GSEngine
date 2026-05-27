@@ -176,13 +176,16 @@ auto gse::vulkan::transient_queue::poll() -> std::uint64_t {
 	{
 		std::lock_guard lock(*m_mutex);
 		m_progress.store(reached_value, std::memory_order_release);
-		std::erase_if(m_waiters, [&](const waiter& w) {
-			if (w.m_value <= reached_value) {
-				ready.push_back(w.m_handle);
-				return true;
+		std::erase_if(
+			m_waiters,
+			[&](const waiter& w) {
+				if (w.m_value <= reached_value) {
+					ready.push_back(w.m_handle);
+					return true;
+				}
+				return false;
 			}
-			return false;
-		});
+		);
 	}
 
 	for (auto handle : ready) {
@@ -206,13 +209,16 @@ auto gse::vulkan::transient_queue::wait_until(const std::uint64_t value) -> void
 			m_progress.store(value, std::memory_order_release);
 		}
 		const auto progress_snapshot = m_progress.load(std::memory_order_relaxed);
-		std::erase_if(m_waiters, [&](const waiter& w) {
-			if (w.m_value <= progress_snapshot) {
-				ready.push_back(w.m_handle);
-				return true;
+		std::erase_if(
+			m_waiters,
+			[&](const waiter& w) {
+				if (w.m_value <= progress_snapshot) {
+					ready.push_back(w.m_handle);
+					return true;
+				}
+				return false;
 			}
-			return false;
-		});
+		);
 	}
 	for (auto handle : ready) {
 		handle.resume();

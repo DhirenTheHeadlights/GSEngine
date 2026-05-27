@@ -371,9 +371,12 @@ auto gse::resource::loader<R>::slot_ptr(this auto&& self, const id id) {
 
 template <typename R>
 auto gse::resource::loader<R>::reap_done_tasks() -> void {
-	std::erase_if(m_in_flight, [](const async::task<>& t) {
-		return t.done();
-	});
+	std::erase_if(
+		m_in_flight,
+		[](const async::task<>& t) {
+			return t.done();
+		}
+	);
 }
 
 template <typename R>

@@ -124,7 +124,6 @@ namespace gse::renderer::forward {
 
 	using meshlet_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/meshlet_geometry">,
-		gpu::layout<"forward_3d">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/gi_probe_sample">,
@@ -157,7 +156,6 @@ auto gse::renderer::forward::rebind_tlas_views(const gpu::context::data& gpu_s, 
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, const atmosphere::system::data& atm_state, const gi_probe::system::data& gi_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		meshlet_entry::pod
 	);

@@ -233,15 +233,18 @@ auto gse::engine::render() -> void {
 		}
 	}
 
-	m_scheduler.render(frame_ok, [this, gpu_state] {
-		if (gpu_state) {
-			gpu_state->scheduler.flush();
-			{
-				trace::scope_guard sg{ trace_id<"render::graph_execute">() };
-				gpu::context::execute_frame(*gpu_state, m_scheduler);
+	m_scheduler.render(
+		frame_ok,
+		[this, gpu_state] {
+			if (gpu_state) {
+				gpu_state->scheduler.flush();
+				{
+					trace::scope_guard sg{ trace_id<"render::graph_execute">() };
+					gpu::context::execute_frame(*gpu_state, m_scheduler);
+				}
 			}
 		}
-	});
+	);
 
 	if (frame_ok && gpu_state) {
 		{

@@ -49,6 +49,8 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto size() const -> gpu::device_size;
 
+		[[nodiscard]] auto device_address() const -> gpu::device_address;
+
 		auto host_write(
 			const void* data,
 			std::size_t bytes,
@@ -65,6 +67,11 @@ export namespace gse::vulkan {
 		auto host_zero() const -> void;
 
 		[[nodiscard]] auto host_read() const -> std::span<const std::byte>;
+
+		template <typename T = std::byte>
+		[[nodiscard]] auto mapped() const -> T*;
+
+		auto mark_host_dirty() const noexcept -> void;
 
 		[[nodiscard]] auto host_dirty() const noexcept -> bool;
 
@@ -246,6 +253,11 @@ auto gse::vulkan::basic_buffer<Device>::size() const -> gpu::device_size {
 }
 
 template <typename Device>
+auto gse::vulkan::basic_buffer<Device>::device_address() const -> gpu::device_address {
+	return m_allocation.device()->buffer_device_address(m_buffer);
+}
+
+template <typename Device>
 auto gse::vulkan::basic_buffer<Device>::valid() const -> bool {
 	return static_cast<bool>(m_buffer);
 }
@@ -298,6 +310,20 @@ template <typename Device>
 auto gse::vulkan::basic_buffer<Device>::host_read() const -> std::span<const std::byte> {
 	assert(m_allocation.mapped(), "Buffer must be persistently mapped to host_read");
 	return std::span<const std::byte>(m_allocation.mapped(), m_size);
+}
+
+template <typename Device>
+template <typename T>
+auto gse::vulkan::basic_buffer<Device>::mapped() const -> T* {
+	return reinterpret_cast<T*>(m_allocation.mapped());
+}
+
+template <typename Device>
+auto gse::vulkan::basic_buffer<Device>::mark_host_dirty() const noexcept -> void {
+	const bool was_dirty = m_host_dirty.exchange(true, std::memory_order_acq_rel);
+	if (!was_dirty) {
+		register_dirty_buffer(this);
+	}
 }
 
 template <typename Device>

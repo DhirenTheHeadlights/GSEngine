@@ -281,9 +281,12 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 				cam_follow->orientation = orientation;
 			}
 
-			std::erase_if(d.bindings_by_owner, [&orbits](const auto& entry) {
-				return !orbits.find(entry.first);
-			});
+			std::erase_if(
+				d.bindings_by_owner,
+				[&orbits](const auto& entry) {
+					return !orbits.find(entry.first);
+				}
+			);
 		}
 
 		co_await ctx.next_tick();

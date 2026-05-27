@@ -42,7 +42,6 @@ export namespace gse::gpu {
 		storage [[= vk::BufferUsageFlagBits::eStorageBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x02,
 		indirect [[= vk::BufferUsageFlagBits::eIndirectBuffer]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x04,
 		transfer_dst [[= vk::BufferUsageFlagBits::eTransferDst]] = 0x08,
-		vertex [[= vk::BufferUsageFlagBits::eVertexBuffer]] = 0x10,
 		index [[= vk::BufferUsageFlagBits::eIndexBuffer]] = 0x20,
 		transfer_src [[= vk::BufferUsageFlagBits::eTransferSrc]] = 0x40,
 		acceleration_structure_storage [[= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR]] [[= vk::BufferUsageFlagBits::eShaderDeviceAddress]] = 0x80,
@@ -242,13 +241,6 @@ export namespace gse::gpu {
 		return image_usage(a) | b;
 	}
 
-	enum class image_layout : std::uint8_t {
-		undefined [[= vk::ImageLayout::eUndefined]],
-		general [[= vk::ImageLayout::eGeneral]],
-		present_src [[= vk::ImageLayout::ePresentSrcKHR]],
-		video_encode_src [[= vk::ImageLayout::eVideoEncodeSrcKHR]],
-	};
-
 	struct image_desc {
 		vec2u size = { 1, 1 };
 		std::uint32_t depth = 1;
@@ -361,19 +353,6 @@ export namespace gse::gpu {
 		r32g32_uint [[= vk::Format::eR32G32Uint]],
 		r32g32b32_uint [[= vk::Format::eR32G32B32Uint]],
 		r32g32b32a32_uint [[= vk::Format::eR32G32B32A32Uint]],
-	};
-
-	struct vertex_binding_desc {
-		std::uint32_t binding = 0;
-		std::uint32_t stride = 0;
-		bool per_instance = false;
-	};
-
-	struct vertex_attribute_desc {
-		std::uint32_t location = 0;
-		std::uint32_t binding = 0;
-		vertex_format format = vertex_format::r32_sfloat;
-		std::uint32_t offset = 0;
 	};
 
 	struct descriptor_binding_desc {
@@ -851,10 +830,6 @@ export namespace gse::vulkan {
 	) -> vk::ImageViewType;
 
 	auto to_vk(
-		gpu::image_layout l
-	) -> vk::ImageLayout;
-
-	auto to_vk(
 		gpu::index_type t
 	) -> vk::IndexType;
 
@@ -1241,20 +1216,6 @@ auto gse::vulkan::to_vk(const gpu::image_view_type t) -> vk::ImageViewType {
 	std::unreachable();
 }
 
-auto gse::vulkan::to_vk(const gpu::image_layout l) -> vk::ImageLayout {
-	switch (l) {
-		case gpu::image_layout::undefined:
-			return vk::ImageLayout::eUndefined;
-		case gpu::image_layout::general:
-			return vk::ImageLayout::eGeneral;
-		case gpu::image_layout::present_src:
-			return vk::ImageLayout::ePresentSrcKHR;
-		case gpu::image_layout::video_encode_src:
-			return vk::ImageLayout::eVideoEncodeSrcKHR;
-	}
-	std::unreachable();
-}
-
 auto gse::vulkan::to_vk(const gpu::index_type t) -> vk::IndexType {
 	switch (t) {
 		case gpu::index_type::uint16:
@@ -1482,9 +1443,6 @@ auto gse::vulkan::to_vk(const gpu::buffer_usage fls) -> vk::BufferUsageFlags {
 	}
 	if (fls.test(gpu::buffer_flag::transfer_dst)) {
 		result |= vk::BufferUsageFlagBits::eTransferDst;
-	}
-	if (fls.test(gpu::buffer_flag::vertex)) {
-		result |= vk::BufferUsageFlagBits::eVertexBuffer;
 	}
 	if (fls.test(gpu::buffer_flag::index)) {
 		result |= vk::BufferUsageFlagBits::eIndexBuffer;

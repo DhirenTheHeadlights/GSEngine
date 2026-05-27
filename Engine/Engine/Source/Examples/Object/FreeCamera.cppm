@@ -285,9 +285,12 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 				cam_follow->position = current_pos;
 			}
 
-			std::erase_if(d.bindings_by_owner, [&cameras](const auto& entry) -> auto {
-				return !cameras.find(entry.first);
-			});
+			std::erase_if(
+				d.bindings_by_owner,
+				[&cameras](const auto& entry) -> auto {
+					return !cameras.find(entry.first);
+				}
+			);
 		}
 
 		co_await ctx.next_tick();

@@ -42,7 +42,6 @@ namespace gse::renderer::depth_prepass::meshlet {
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/meshlet_depth_only">,
-		gpu::layout<"meshlet_depth_only">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"Standard3D/meshlet_common">,
@@ -58,7 +57,6 @@ namespace gse::renderer::depth_prepass::meshlet {
 auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.meshlet_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		meshlet::entry::pod
 	);

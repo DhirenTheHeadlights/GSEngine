@@ -103,9 +103,9 @@ export namespace gse::renderer {
 		frustum_planes planes;
 
 		auto at = [&]<std::size_t C, std::size_t R>(
-					  std::integral_constant<std::size_t, C>,
-					  std::integral_constant<std::size_t, R>
-				  ) {
+			std::integral_constant<std::size_t, C>,
+			std::integral_constant<std::size_t, R>
+		) {
 			return internal::to_storage(vp.at<C, R>());
 		};
 

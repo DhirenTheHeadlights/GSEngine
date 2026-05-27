@@ -151,7 +151,10 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 			}
 			std::ranges::sort(
 				d.available_servers,
-				[](const discovery_result& a, const discovery_result& b) {
+				[](
+				const discovery_result& a,
+				const discovery_result& b
+			) {
 					if (a.name != b.name) {
 						return a.name < b.name;
 					}

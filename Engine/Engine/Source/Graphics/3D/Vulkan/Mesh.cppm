@@ -141,7 +141,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		ctx.device->allocator(),
 		{
 			.size = vertex_buffer_size,
-			.usage = gpu::buffer_flag::vertex | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
+			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
 				gpu::buffer_flag::acceleration_structure_build_input
 		},
 		"mesh.vertex"
