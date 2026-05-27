@@ -34,6 +34,10 @@ namespace gse::physics {
 		id b,
 		const joint_config& config
 	) -> joint_definition;
+
+	auto clear_runtime_state(
+		system::data& d
+	) -> void;
 }
 
 auto gse::physics::make_joint_definition(const id a, const id b, const joint_config& config) -> joint_definition {
@@ -124,6 +128,23 @@ auto gse::physics::make_joint_definition(const id a, const id b, const joint_con
 			};
 		});
 	return result;
+}
+
+auto gse::physics::clear_runtime_state(system::data& d) -> void {
+	d.joints.clear();
+	d.contact_cache.clear();
+	d.sleep_counters.clear();
+	d.gpu_joints_dirty = true;
+	d.gpu_uploaded_body_count = 0;
+	d.gpu_uploaded_joint_count = 0;
+	d.id_to_body_index.clear();
+	d.joint_handles_by_entity.clear();
+	d.gpu_pending_impulses.clear();
+	d.body_airborne.clear();
+	d.body_sleeping.clear();
+	d.gpu_stats = {};
+	d.vbd_solver.begin_frame(std::span<const vbd::body_state>{}, d.contact_cache);
+	d.vbd_solver.seed_previous_velocities(std::span<const vec3<velocity>>{});
 }
 
 auto gse::physics::system::create_joint(data& d, const joint_definition& def) -> joint_handle {
@@ -555,7 +576,10 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 
 			const auto impulses = ctx.read_channel<impulse_request>();
 
-			if (d.use_gpu_solver) {
+			if (motion.empty() && collision.empty() && motor.empty()) {
+				clear_runtime_state(d);
+			}
+			else if (d.use_gpu_solver) {
 				trace::scope_guard sg{ trace_id<"physics::tick_gpu">() };
 				update_vbd_gpu(
 					steps,

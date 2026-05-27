@@ -11,4 +11,5 @@ export import :enums;
 export import :parse;
 export import :scalar;
 export import :settings_anno;
+export import :args;
 export import :type_name;

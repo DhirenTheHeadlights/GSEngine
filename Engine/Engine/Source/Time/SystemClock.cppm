@@ -25,6 +25,10 @@ export namespace gse::system_clock {
 
 	auto fixed_steps_this_frame() -> int;
 
+	auto set_fixed_step_override(
+		std::optional<int> steps
+	) -> void;
+
 	auto fps() -> std::uint32_t;
 
 	auto timestamp_filename() -> std::string;
@@ -37,6 +41,7 @@ namespace gse::system_clock {
 	internal_time delta_time{};
 	internal_time frame_rate_update_time{};
 	internal_time fixed_accumulator{};
+	std::optional<int> fixed_step_override;
 
 	constexpr internal_time fps_report_interval = seconds(1.0);
 	constexpr internal_time const_update_time = milliseconds(16.6667);
@@ -46,19 +51,23 @@ namespace gse::system_clock {
 	std::uint32_t frame_count = 0;
 	std::uint32_t frame_rate_count = 0;
 	int fixed_steps_count = 0;
+
+	auto update_frame_rate(
+		internal_time elapsed
+	) -> void;
 }
 
 auto gse::system_clock::update() -> void {
-	delta_time = gse::quantity_cast<internal_time>(dt_clock.reset<double>());
-
-	frame_count++;
-	frame_rate_update_time += delta_time;
-
-	if (frame_rate_update_time >= fps_report_interval) {
-		frame_rate_count = static_cast<std::uint32_t>(frame_count / frame_rate_update_time.as<seconds>());
-		frame_count = 0;
-		frame_rate_update_time -= fps_report_interval;
+	if (fixed_step_override.has_value()) {
+		fixed_steps_count = std::max(0, *fixed_step_override);
+		delta_time = const_update_time * fixed_steps_count;
+		fixed_accumulator = internal_time{};
+		update_frame_rate(delta_time);
+		return;
 	}
+
+	delta_time = gse::quantity_cast<internal_time>(dt_clock.reset<double>());
+	update_frame_rate(delta_time);
 
 	fixed_accumulator += std::min(delta_time, max_render_step);
 	fixed_steps_count = 0;
@@ -69,6 +78,17 @@ auto gse::system_clock::update() -> void {
 	if (fixed_steps_count > max_fixed_steps) {
 		fixed_accumulator = internal_time{};
 		fixed_steps_count = max_fixed_steps;
+	}
+}
+
+auto gse::system_clock::update_frame_rate(const internal_time elapsed) -> void {
+	frame_count++;
+	frame_rate_update_time += elapsed;
+
+	if (frame_rate_update_time >= fps_report_interval) {
+		frame_rate_count = static_cast<std::uint32_t>(frame_count / frame_rate_update_time.as<seconds>());
+		frame_count = 0;
+		frame_rate_update_time -= fps_report_interval;
 	}
 }
 
@@ -94,6 +114,10 @@ auto gse::system_clock::fixed_dt() -> Q {
 
 auto gse::system_clock::fixed_steps_this_frame() -> int {
 	return fixed_steps_count;
+}
+
+auto gse::system_clock::set_fixed_step_override(const std::optional<int> steps) -> void {
+	fixed_step_override = steps;
 }
 
 auto gse::system_clock::fps() -> std::uint32_t {

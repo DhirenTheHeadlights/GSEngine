@@ -4,6 +4,22 @@ import std;
 import gse.std_meta;
 
 export namespace gse {
+	template <auto V>
+	struct at_least {
+		static constexpr auto value = V;
+	};
+
+	template <auto V>
+	struct at_most {
+		static constexpr auto value = V;
+	};
+
+	template <auto Lo, auto Hi>
+	struct within {
+		static constexpr auto min = Lo;
+		static constexpr auto max = Hi;
+	};
+
 	template <typename Tag>
 	consteval auto has_annotation(
 		std::meta::info member

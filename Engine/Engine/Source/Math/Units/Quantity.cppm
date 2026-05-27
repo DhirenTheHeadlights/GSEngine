@@ -776,12 +776,50 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 export template <typename A, typename Dim, typename Tag, typename Unit>
 struct gse::parser<gse::internal::quantity<A, Dim, Tag, Unit>> {
 	static auto parse(std::string_view raw, gse::internal::quantity<A, Dim, Tag, Unit>& out) -> bool {
+		while (!raw.empty() && (raw.front() == ' ' || raw.front() == '\t')) {
+			raw.remove_prefix(1);
+		}
+
+		const auto* first = raw.data();
+		const auto* last = first + raw.size();
+
 		A tmp{};
-		if (!gse::parse(raw, tmp)) {
+		const auto num_result = std::from_chars(first, last, tmp);
+		if (num_result.ec != std::errc{}) {
 			return false;
 		}
-		out = gse::internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(tmp);
-		return true;
+
+		std::string_view suffix(num_result.ptr, last);
+		while (!suffix.empty() && (suffix.front() == ' ' || suffix.front() == '\t')) {
+			suffix.remove_prefix(1);
+		}
+		while (!suffix.empty() && (suffix.back() == ' ' || suffix.back() == '\t')) {
+			suffix.remove_suffix(1);
+		}
+
+		if constexpr (gse::internal::has_unit_list<Tag>) {
+			gse::assert(!suffix.empty(), "Quantity value '{}' is missing a unit suffix", raw);
+
+			bool matched = false;
+			gse::internal::dispatch_named_unit(
+				gse::internal::quantity_units<Tag>::units,
+				suffix,
+				[&](const auto& u) {
+					using U = std::remove_cvref_t<decltype(u)>;
+					out = gse::internal::quantity<A, Dim, Tag, Unit>::template from<U>(tmp);
+					matched = true;
+				}
+			);
+			gse::assert(matched, "Quantity value '{}' uses unknown unit suffix '{}'", raw, suffix);
+			return matched;
+		}
+
+		if (suffix.empty()) {
+			out = gse::internal::quantity<A, Dim, Tag, Unit>::template from<Unit>(tmp);
+			return true;
+		}
+
+		return false;
 	}
 };
 

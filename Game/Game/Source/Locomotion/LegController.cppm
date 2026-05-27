@@ -189,6 +189,7 @@ namespace gs::locomotion {
 	auto foot_anchor_velocity(
 		const gse::vec3<gse::position>& current,
 		const gse::vec3<gse::position>& target,
+		bool include_vertical,
 		const leg_controller::data& d
 	) -> gse::vec3<gse::velocity>;
 	auto write_foot_motor(
@@ -196,6 +197,8 @@ namespace gs::locomotion {
 		const gse::vec3<gse::position>& current,
 		const gse::vec3<gse::position>& target,
 		bool active,
+		bool requires_ground_contact,
+		bool include_vertical,
 		gse::write<gse::physics::motor_component>& motors,
 		const leg_controller::data& d
 	) -> void;
@@ -330,18 +333,19 @@ auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& 
 
 	const auto start_foot =
 		ctx.swing_initialized ? ctx.swing_start_foot : (which == leg::left ? s.foot_position_l : s.foot_position_r);
-	auto target_foot = p.target_valid ? p.foot_target_world : start_foot;
+	const bool target_matches = p.target_valid && p.swing_leg == which;
+	auto target_foot = target_matches ? p.foot_target_world : start_foot;
 	if (g.current == phase::plant) {
 		target_foot = foot_is_grounded(
 						  which,
 						  s
 					  ) &&
-				p.target_valid
+				target_matches
 			? grounded_foot_position(
 				  p.foot_target_world,
 				  d
 			  )
-			: (p.target_valid ? plant_contact_target(
+			: (target_matches ? plant_contact_target(
 									current_foot_position(
 										which,
 										s
@@ -407,11 +411,15 @@ auto gs::locomotion::write_targets(const skeleton_refs& r, const leg_joint_targe
 	apply(r.knee_r_joint_id, targets.knee_r);
 }
 
-auto gs::locomotion::foot_anchor_velocity(const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const leg_controller::data& d) -> gse::vec3<gse::velocity> {
+auto gs::locomotion::foot_anchor_velocity(const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const bool include_vertical, const leg_controller::data& d) -> gse::vec3<gse::velocity> {
 	const auto delta = target - current;
+	auto vertical = gse::meters_per_second(0.f);
+	if (include_vertical && delta.y() < gse::meters(0.f)) {
+		vertical = gse::meters_per_second(1.f) * (d.foot_anchor_gain * delta.y());
+	}
 	auto result = gse::vec3<gse::velocity>(
 		gse::meters_per_second(1.f) * (d.foot_anchor_gain * delta.x()),
-		gse::meters_per_second(0.f),
+		vertical,
 		gse::meters_per_second(1.f) * (d.foot_anchor_gain * delta.z())
 	);
 
@@ -422,16 +430,16 @@ auto gs::locomotion::foot_anchor_velocity(const gse::vec3<gse::position>& curren
 	return result;
 }
 
-auto gs::locomotion::write_foot_motor(const gse::id foot_id, const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const bool active, gse::write<gse::physics::motor_component>& motors, const leg_controller::data& d) -> void {
+auto gs::locomotion::write_foot_motor(const gse::id foot_id, const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const bool active, const bool requires_ground_contact, const bool include_vertical, gse::write<gse::physics::motor_component>& motors, const leg_controller::data& d) -> void {
 	if (auto* motor = motors.find(foot_id)) {
-		motor->horizontal_only = true;
-		motor->requires_ground_contact = true;
+		motor->horizontal_only = !include_vertical;
+		motor->requires_ground_contact = requires_ground_contact;
 		if (!active) {
 			motor->velocity_drive_target = {};
 			motor->max_force = gse::newtons(0.f);
 			return;
 		}
-		motor->velocity_drive_target = foot_anchor_velocity(current, target, d);
+		motor->velocity_drive_target = foot_anchor_velocity(current, target, include_vertical, d);
 		motor->max_force = d.foot_anchor_max_force;
 	}
 }
@@ -542,29 +550,54 @@ auto gs::locomotion::leg_controller::run(gse::run_context& ctx, data& d) -> gse:
 				}
 
 				write_targets(*r, targets, ctrls, controllers_active, d);
+				const bool left_planting =
+					g->current == phase::plant && g->swing_leg == leg::left && !s->foot_grounded_l && p->target_valid &&
+					p->swing_leg == leg::left;
+				const bool right_planting =
+					g->current == phase::plant && g->swing_leg == leg::right && !s->foot_grounded_r && p->target_valid &&
+					p->swing_leg == leg::right;
+				const bool left_swinging =
+					g->current == phase::swing && g->swing_leg == leg::left && p->target_valid && p->swing_leg == leg::left;
+				const bool right_swinging =
+					g->current == phase::swing && g->swing_leg == leg::right && p->target_valid && p->swing_leg == leg::right;
+				const bool swing_descending = g->current == phase::swing && phase_progress(*g) >= 0.5f;
+				const bool left_stance = g->current != phase::swing || g->swing_leg != leg::left;
+				const bool right_stance = g->current != phase::swing || g->swing_leg != leg::right;
+				const bool left_airborne_stance = left_stance && !s->foot_grounded_l && !left_planting;
+				const bool right_airborne_stance = right_stance && !s->foot_grounded_r && !right_planting;
 				const bool left_anchor_active =
-					controllers_active && s->foot_grounded_l && (g->current != phase::swing || g->swing_leg != leg::left);
+					controllers_active && ((s->foot_grounded_l && left_stance) || left_planting || left_airborne_stance || left_swinging);
 				const bool right_anchor_active =
-					controllers_active && s->foot_grounded_r && (g->current != phase::swing || g->swing_leg != leg::right);
+					controllers_active && ((s->foot_grounded_r && right_stance) || right_planting || right_airborne_stance || right_swinging);
+				const auto left_anchor_target = left_planting || left_swinging
+					? grounded_foot_position(p->foot_target_world, d)
+					: grounded_foot_position(
+						  cctx.planted_foot_l,
+						  d
+					  );
+				const auto right_anchor_target = right_planting || right_swinging
+					? grounded_foot_position(p->foot_target_world, d)
+					: grounded_foot_position(
+						  cctx.planted_foot_r,
+						  d
+					  );
 				write_foot_motor(
 					r->foot_l_id,
 					s->foot_position_l,
-					grounded_foot_position(
-						cctx.planted_foot_l,
-						d
-					),
+					left_anchor_target,
 					left_anchor_active,
+					!(left_planting || left_airborne_stance || left_swinging),
+					left_planting || left_airborne_stance || (left_swinging && swing_descending),
 					motors,
 					d
 				);
 				write_foot_motor(
 					r->foot_r_id,
 					s->foot_position_r,
-					grounded_foot_position(
-						cctx.planted_foot_r,
-						d
-					),
+					right_anchor_target,
 					right_anchor_active,
+					!(right_planting || right_airborne_stance || right_swinging),
+					right_planting || right_airborne_stance || (right_swinging && swing_descending),
 					motors,
 					d
 				);

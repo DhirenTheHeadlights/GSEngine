@@ -23,8 +23,8 @@ import gse.log;
 import gse.save;
 import gse.config;
 
-gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags)
-	: identifiable(name), m_flags(engine_flags) {
+gse::engine::engine(const engine_config& config)
+	: identifiable(config.title), m_config(config) {
 }
 
 auto gse::engine::initialize(const setup_fn& app_setup) -> void {
@@ -44,7 +44,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.register_external_resource<save::registry>(&m_save);
 	m_scheduler.register_external_resource<primitives::data>(&m_primitives);
 
-	if (m_flags.test(engine_flag::render)) {
+	if (m_config.render) {
 		add_system<input::system>();
 		add_system<actions::system>();
 		add_system<world_system>();
