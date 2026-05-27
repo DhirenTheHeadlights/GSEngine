@@ -361,9 +361,12 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 		);
 	}
 
-	const auto hot_is_ours = std::ranges::any_of(box_ids, [&](const id b) {
-		return b == hot_widget_id;
-	});
+	const auto hot_is_ours = std::ranges::any_of(
+		box_ids,
+		[&](const id b) {
+			return b == hot_widget_id;
+		}
+	);
 
 	interaction::grab_active(
 		active_widget_id,

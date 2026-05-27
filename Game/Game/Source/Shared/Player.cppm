@@ -335,9 +335,12 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 				}
 			}
 
-			std::erase_if(d.bindings_by_owner, [&players](const auto& entry) {
-				return !players.find(entry.first);
-			});
+			std::erase_if(
+				d.bindings_by_owner,
+				[&players](const auto& entry) {
+					return !players.find(entry.first);
+				}
+			);
 		}
 
 		co_await ctx.next_tick();

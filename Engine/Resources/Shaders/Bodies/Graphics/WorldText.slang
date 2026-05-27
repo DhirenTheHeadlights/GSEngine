@@ -4,13 +4,11 @@ struct VS_OUT {
 };
 
 [shader("vertex")]
-VS_OUT vs_main(
-    float3 in_position  : POSITION,
-    float2 in_tex_coord : TEXCOORD0
-) {
+VS_OUT vs_main(uint vid : SV_VertexID) {
+    world_text_vertex v = world_text_vertex_buffer[vid];
     VS_OUT output;
-    output.clip_pos = mul(proj, mul(view, float4(in_position, 1.0)));
-    output.tex_coord = in_tex_coord;
+    output.clip_pos = mul(proj, mul(view, float4(v.position, 1.0)));
+    output.tex_coord = v.tex_coord;
     return output;
 }
 

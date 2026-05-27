@@ -90,7 +90,6 @@ namespace gse::renderer::atmosphere {
 
 	using transmittance_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/atmosphere_transmittance">,
-		gpu::layout<"atmosphere_transmittance">,
 		gpu::types<atmosphere_types>,
 		gpu::bindings<transmittance_bindings>,
 		gpu::helpers<"Atmosphere/atmosphere_common">,
@@ -100,7 +99,6 @@ namespace gse::renderer::atmosphere {
 
 	using multiscatter_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/atmosphere_multiscatter">,
-		gpu::layout<"atmosphere_multiscatter">,
 		gpu::types<atmosphere_types>,
 		gpu::bindings<multiscatter_bindings>,
 		gpu::helpers<"Atmosphere/atmosphere_common">,
@@ -110,7 +108,6 @@ namespace gse::renderer::atmosphere {
 
 	using sky_view_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/atmosphere_sky_view">,
-		gpu::layout<"atmosphere_sky_view">,
 		gpu::types<atmosphere_types>,
 		gpu::bindings<sky_view_bindings>,
 		gpu::helpers<"Atmosphere/atmosphere_common">,
@@ -121,7 +118,6 @@ namespace gse::renderer::atmosphere {
 
 	using sky_raster_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/AtmosphereSky">,
-		gpu::layout<"atmosphere_sky_raster">,
 		gpu::types<atmosphere_types>,
 		gpu::bindings<sky_raster_bindings>,
 		gpu::helpers<"Atmosphere/atmosphere_common">,
@@ -135,7 +131,6 @@ namespace gse::renderer::atmosphere {
 
 	using ap_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/atmosphere_aerial_perspective">,
-		gpu::layout<"atmosphere_aerial_perspective">,
 		gpu::types<atmosphere_types>,
 		gpu::bindings<ap_bindings>,
 		gpu::helpers<"Atmosphere/atmosphere_common">,
@@ -232,32 +227,27 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const system::data& d) -> 
 auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.transmittance_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		transmittance_entry::pod
 	);
 	d.multiscatter_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		multiscatter_entry::pod
 	);
 	d.sky_view_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		sky_view_entry::pod
 	);
 	d.sky_raster_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		sky_raster_entry::pod
 	);
 	d.ap_pipeline =
 		gpu::build_compute_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			ap_entry::pod
 		);
@@ -315,9 +305,12 @@ auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context
 		sky_view_sampler_desc
 	);
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &d]() {
-		recreate_ap_volume(gpu_s, d);
-	});
+	gpu::context::on_swap_chain_recreate(
+		gpu_s,
+		[&gpu_s, &d]() {
+			recreate_ap_volume(gpu_s, d);
+		}
+	);
 
 	co_return;
 }

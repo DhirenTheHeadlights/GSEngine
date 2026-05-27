@@ -4,7 +4,8 @@ struct VS_OUTPUT {
 };
 
 [shader("vertex")]
-VS_OUTPUT vs_main(float4 in_unit_pos : POSITION, uint instance_id : SV_InstanceID) {
+VS_OUTPUT vs_main(uint vid : SV_VertexID, uint instance_id : SV_InstanceID) {
+    float4 in_unit_pos = shape_vertex_buffer[vid];
     VS_OUTPUT output;
 
     shape_instance inst = shape_instances[instance_id];

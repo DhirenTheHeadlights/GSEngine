@@ -163,7 +163,10 @@ auto gse::model::center_of_mass() const -> vec3<length> {
 }
 
 auto gse::model::uploads_ready() const -> bool {
-	return std::ranges::all_of(m_meshes, [](const mesh& m) {
-		return m.upload_token().ready() && m.material().textures_ready();
-	});
+	return std::ranges::all_of(
+		m_meshes,
+		[](const mesh& m) {
+			return m.upload_token().ready() && m.material().textures_ready();
+		}
+	);
 }

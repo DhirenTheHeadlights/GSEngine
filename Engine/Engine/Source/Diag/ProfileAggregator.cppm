@@ -183,9 +183,12 @@ auto gse::profile::top_n(const std::size_t n, const bool gpu) -> std::vector<ent
 		out.push_back(e);
 	}
 
-	std::ranges::sort(out, [](const entry& a, const entry& b) {
-		return a.ema > b.ema;
-	});
+	std::ranges::sort(
+		out,
+		[](const entry& a, const entry& b) {
+			return a.ema > b.ema;
+		}
+	);
 
 	if (out.size() > n) {
 		out.resize(n);
@@ -241,13 +244,19 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 			const double calls = frames > 0 ? static_cast<double>(e.sample_count) / static_cast<double>(frames) : 0.0;
 			out.push_back({ &e, e.ema * calls, calls });
 		}
-		std::ranges::sort(out, [](const row_view& a, const row_view& b) {
-			return a.per_frame > b.per_frame;
-		});
+		std::ranges::sort(
+			out,
+			[](const row_view& a, const row_view& b) {
+				return a.per_frame > b.per_frame;
+			}
+		);
 		return out;
 	};
 
-	const auto write_section = [&out, frame_time](const std::string_view title, const std::vector<row_view>& rows) {
+	const auto write_section = [&out, frame_time](
+		const std::string_view title,
+		const std::vector<row_view>& rows
+	) {
 		std::size_t tag_width = std::string_view("tag").size();
 		for (const auto& [e, per_frame, calls_per_frame] : rows) {
 			tag_width = std::max(tag_width, e->id.tag().size());
@@ -350,9 +359,12 @@ auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<
 			sorted.push_back(&e);
 		}
 	}
-	std::ranges::sort(sorted, [](const entry* a, const entry* b) {
-		return a->ema * static_cast<double>(a->sample_count) > b->ema * static_cast<double>(b->sample_count);
-	});
+	std::ranges::sort(
+		sorted,
+		[](const entry* a, const entry* b) {
+			return a->ema * static_cast<double>(a->sample_count) > b->ema * static_cast<double>(b->sample_count);
+		}
+	);
 
 	out << "--- Worker tag thread breakdown (where each tag actually ran) ---\n";
 	out << std::format("main tid = {}.  Counts shown are samples per frame on each thread.\n\n", main_tid);
@@ -390,9 +402,12 @@ auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<
 				worker_per_frame += per;
 			}
 		}
-		std::ranges::sort(tids, [](const auto& a, const auto& b) {
-			return a.second > b.second;
-		});
+		std::ranges::sort(
+			tids,
+			[](const auto& a, const auto& b) {
+				return a.second > b.second;
+			}
+		);
 
 		std::string tid_breakdown;
 		const std::size_t tid_show = std::min<std::size_t>(6, tids.size());
@@ -449,8 +464,10 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 		const trace::node&,
 		int
 	)>
-		max_label_width = [&](const trace::node& n,
-							  int depth) -> std::size_t {
+		max_label_width = [&](
+		const trace::node& n,
+		int depth
+	) -> std::size_t {
 		if (depth > max_depth) {
 			return 0;
 		}
@@ -474,7 +491,10 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 		total_us / static_cast<double>(bar_width)
 	);
 
-	std::function<void(const trace::node&, int)> render = [&](const trace::node& n, int depth) {
+	std::function<void(const trace::node&, int)> render = [&](
+		const trace::node& n,
+		int depth
+	) {
 		if (depth > max_depth) {
 			return;
 		}
@@ -525,9 +545,12 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 	for (const auto& r : roots) {
 		sorted_roots.push_back(&r);
 	}
-	std::ranges::sort(sorted_roots, [](const trace::node* a, const trace::node* b) {
-		return a->start < b->start;
-	});
+	std::ranges::sort(
+		sorted_roots,
+		[](const trace::node* a, const trace::node* b) {
+			return a->start < b->start;
+		}
+	);
 
 	for (const auto* r : sorted_roots) {
 		render(*r, 0);

@@ -212,7 +212,11 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 
 	std::vector<std::string> violations;
 
-	auto check_deps = [&](const std::span<const id> deps, const id source, const std::string_view phase_tag) {
+	auto check_deps = [&](
+		const std::span<const id> deps,
+		const id source,
+		const std::string_view phase_tag
+	) {
 		for (const id& dep : deps) {
 			if (!registered.contains(dep)) {
 				violations.push_back(

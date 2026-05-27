@@ -446,12 +446,15 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 	};
 
 	auto sort_by_layer = [](auto& commands) {
-		std::ranges::stable_sort(commands, [](const auto& a, const auto& b) {
-			if (a.layer != b.layer) {
-				return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
+		std::ranges::stable_sort(
+			commands,
+			[](const auto& a, const auto& b) {
+				if (a.layer != b.layer) {
+					return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
+				}
+				return a.z_order < b.z_order;
 			}
-			return a.z_order < b.z_order;
-		});
+		);
 	};
 
 	if (!already_sorted(d.sprite_commands)) {
@@ -967,49 +970,73 @@ auto gse::gui::system::handle_idle_state(data& d, const gse::input::state& input
 	};
 
 	const std::array<resize_rule, 8> resize_rules = { {
-		{ [style](const ui_rect& r, const vec2f& p) {
+		{ [style](
+		const ui_rect& r,
+		const vec2f& p
+	) {
 			 const float t = style.resize_border_thickness;
 			 return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.left()) < t;
 		 },
 		  resize_handle::top_left,
 		  cursor::style::resize_nw },
-		{ [style](const ui_rect& r, const vec2f& p) {
+		{ [style](
+		const ui_rect& r,
+		const vec2f& p
+	) {
 			 const float t = style.resize_border_thickness;
 			 return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.right()) < t;
 		 },
 		  resize_handle::top_right,
 		  cursor::style::resize_ne },
-		{ [style](const ui_rect& r, const vec2f& p) {
+		{ [style](
+		const ui_rect& r,
+		const vec2f& p
+	) {
 			 const float t = style.resize_border_thickness;
 			 return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.left()) < t;
 		 },
 		  resize_handle::bottom_left,
 		  cursor::style::resize_sw },
-		{ [style](const ui_rect& r, const vec2f& p) {
+		{ [style](
+		const ui_rect& r,
+		const vec2f& p
+	) {
 			 const float t = style.resize_border_thickness;
 			 return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.right()) < t;
 		 },
 		  resize_handle::bottom_right,
 		  cursor::style::resize_se },
-		{ [style](const ui_rect& r, const vec2f& p) {
+		{ [style](
+		const ui_rect& r,
+		const vec2f& p
+	) {
 			 const float t = style.resize_border_thickness;
 			 return std::abs(p.x() - r.left()) < t && p.y() <= r.top() + t && p.y() >= r.bottom() - t;
 		 },
 		  resize_handle::left,
 		  cursor::style::resize_w },
-		{ [style](const ui_rect& r, const vec2f& p) {
+		{ [style](
+		const ui_rect& r,
+		const vec2f& p
+	) {
 			 const float t = style.resize_border_thickness;
 			 return std::abs(p.x() - r.right()) < t && p.y() <= r.top() + t && p.y() >= r.bottom() - t;
 		 },
 		  resize_handle::right,
 		  cursor::style::resize_e },
-		{ [style](const ui_rect& r, const vec2f& p) {
+		{ [style](
+		const ui_rect& r,
+		const vec2f& p
+	) {
 			 const float t = style.resize_border_thickness;
 			 return std::abs(p.y() - r.top()) < t && p.x() >= r.left() - t && p.x() <= r.right() + t;
 		 },
 		  resize_handle::top,
 		  cursor::style::resize_n },
-		{ [style](const ui_rect& r, const vec2f& p) {
+		{ [style](
+		const ui_rect& r,
+		const vec2f& p
+	) {
 			 const float t = style.resize_border_thickness;
 			 return std::abs(p.y() - r.bottom()) < t && p.x() >= r.left() - t && p.x() <= r.right() + t;
 		 },

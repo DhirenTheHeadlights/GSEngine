@@ -9,6 +9,20 @@ export namespace gse {
 		std::meta::info member
 	) -> bool;
 
+	consteval auto first_annotation_of_type(
+		std::meta::info enumerator,
+		std::meta::info annotation_type
+	) -> std::meta::info;
+
+	template <typename E>
+	consteval auto first_annotated_enumerator() -> std::meta::info;
+
+	template <typename E>
+	consteval auto first_enumerator_has_annotation() -> bool;
+
+	template <typename E>
+	consteval auto any_enumerator_has_annotation() -> bool;
+
 	template <typename Source, typename Tag>
 	struct project_holder;
 
@@ -78,6 +92,51 @@ consteval auto gse::has_annotation(const std::meta::info member) -> bool {
 		const auto ann_type = std::meta::remove_cvref(std::meta::dealias(std::meta::type_of(ann)));
 		if (std::meta::is_same_type(ann_type, tag_type)) {
 			return true;
+		}
+	}
+	return false;
+}
+
+consteval auto gse::first_annotation_of_type(const std::meta::info enumerator, const std::meta::info annotation_type) -> std::meta::info {
+	for (std::meta::info ann : std::meta::annotations_of(enumerator)) {
+		if (std::meta::type_of(ann) == annotation_type) {
+			return ann;
+		}
+	}
+	return {};
+}
+
+template <typename E>
+consteval auto gse::first_annotated_enumerator() -> std::meta::info {
+	if constexpr (std::is_enum_v<E>) {
+		for (auto e : std::meta::enumerators_of(^^E)) {
+			if (!std::meta::annotations_of(e).empty()) {
+				return e;
+			}
+		}
+	}
+	return {};
+}
+
+template <typename E>
+consteval auto gse::first_enumerator_has_annotation() -> bool {
+	if constexpr (std::is_enum_v<E>) {
+		auto enums = std::meta::enumerators_of(^^E);
+		if (enums.empty()) {
+			return false;
+		}
+		return !std::meta::annotations_of(enums[0]).empty();
+	}
+	return false;
+}
+
+template <typename E>
+consteval auto gse::any_enumerator_has_annotation() -> bool {
+	if constexpr (std::is_enum_v<E>) {
+		for (auto e : std::meta::enumerators_of(^^E)) {
+			if (!std::meta::annotations_of(e).empty()) {
+				return true;
+			}
 		}
 	}
 	return false;

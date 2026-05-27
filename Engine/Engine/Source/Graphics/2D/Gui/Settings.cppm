@@ -126,10 +126,12 @@ export namespace gse::settings {
 		static const std::vector<quantity_unit_op<Q>> ops = [] {
 			std::vector<quantity_unit_op<Q>> result;
 			constexpr auto units_tuple = gse::internal::quantity_units<unit_family_tag_t<Q>>::units;
-			std::apply([&result](const auto&... us) {
-				(result.push_back(make_unit_op<Q, std::remove_cvref_t<decltype(us)>>()), ...);
-			},
-					   units_tuple);
+			std::apply(
+				[&result](const auto&... us) {
+					(result.push_back(make_unit_op<Q, std::remove_cvref_t<decltype(us)>>()), ...);
+				},
+				units_tuple
+			);
 			return result;
 		}();
 		return ops;
@@ -141,17 +143,19 @@ export namespace gse::settings {
 		constexpr auto units_tuple = gse::internal::quantity_units<unit_family_tag_t<Q>>::units;
 		std::size_t result = 0;
 		std::size_t cursor = 0;
-		std::apply([&](const auto&... us) {
-			auto visit = [&](auto unit_inst) {
-				using U = std::remove_cvref_t<decltype(unit_inst)>;
-				if (std::is_same_v<DefaultU, U>) {
-					result = cursor;
-				}
-				++cursor;
-			};
-			(visit(us), ...);
-		},
-				   units_tuple);
+		std::apply(
+			[&](const auto&... us) {
+				auto visit = [&](auto unit_inst) {
+					using U = std::remove_cvref_t<decltype(unit_inst)>;
+					if (std::is_same_v<DefaultU, U>) {
+						result = cursor;
+					}
+					++cursor;
+				};
+				(visit(us), ...);
+			},
+			units_tuple
+		);
 		return result;
 	}
 

@@ -46,9 +46,12 @@ auto gse::renderer::capture::ring::push(gpu::encoded_unit unit) -> void {
 }
 
 auto gse::renderer::capture::ring::snapshot_from_earliest_keyframe() const -> std::vector<gpu::encoded_unit> {
-	const auto first_keyframe = std::ranges::find_if(m_units, [](const gpu::encoded_unit& u) {
-		return u.keyframe;
-	});
+	const auto first_keyframe = std::ranges::find_if(
+		m_units,
+		[](const gpu::encoded_unit& u) {
+			return u.keyframe;
+		}
+	);
 
 	if (first_keyframe == m_units.end()) {
 		return {};

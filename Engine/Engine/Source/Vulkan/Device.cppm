@@ -177,6 +177,11 @@ export namespace gse::vulkan {
 			gpu::handle<buffer> buffer
 		) const -> void;
 
+		[[nodiscard]]
+		auto buffer_device_address(
+			gpu::handle<buffer> buffer
+		) const -> gpu::device_address;
+
 		auto destroy_image(
 			gpu::handle<image> image
 		) const -> void;

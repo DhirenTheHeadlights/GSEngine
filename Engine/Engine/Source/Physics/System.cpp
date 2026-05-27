@@ -204,9 +204,12 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 
 	{
 		trace::scope_guard sg_sort{ trace_id<"vbd_cpu::broad_phase::sort">() };
-		std::ranges::sort(objects, [](const collision_pair& a, const collision_pair& b) {
-			return a.box.min.x() < b.box.min.x();
-		});
+		std::ranges::sort(
+			objects,
+			[](const collision_pair& a, const collision_pair& b) {
+				return a.box.min.x() < b.box.min.x();
+			}
+		);
 	}
 
 	const auto margin = solver.config().speculative_margin;

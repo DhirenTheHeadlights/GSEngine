@@ -30,8 +30,7 @@ export namespace gse::gpu {
 
 		auto allocate(
 			const image& img,
-			const sampler_desc& desc,
-			image_layout layout = image_layout::general
+			const sampler_desc& desc
 		) -> bindless_texture_slot;
 
 		auto release(
@@ -75,7 +74,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(bindless_heaps& bindless_he
 
 gse::gpu::bindless_texture_set::~bindless_texture_set() = default;
 
-auto gse::gpu::bindless_texture_set::allocate(const image& img, const sampler_desc& desc, const image_layout layout) -> bindless_texture_slot {
+auto gse::gpu::bindless_texture_set::allocate(const image& img, const sampler_desc& desc) -> bindless_texture_slot {
 	std::lock_guard lock(m_mutex);
 
 	assert(!m_free_list.empty(), "Bindless texture set exhausted (capacity {})", m_capacity);
@@ -87,8 +86,7 @@ auto gse::gpu::bindless_texture_set::allocate(const image& img, const sampler_de
 		{
 			.index = slot
 		},
-		img,
-		layout
+		img
 	);
 	m_bindless_heaps->sampler_heap().write_texture_sampler(slot, desc);
 
@@ -112,11 +110,14 @@ auto gse::gpu::bindless_texture_set::begin_frame(const std::uint32_t) -> void {
 	std::lock_guard lock(m_mutex);
 	++m_frame_counter;
 
-	std::erase_if(m_pending_releases, [this](const pending_release& p) {
-		if (m_frame_counter >= p.retire_after) {
-			m_free_list.push_back(p.slot);
-			return true;
+	std::erase_if(
+		m_pending_releases,
+		[this](const pending_release& p) {
+			if (m_frame_counter >= p.retire_after) {
+				m_free_list.push_back(p.slot);
+				return true;
+			}
+			return false;
 		}
-		return false;
-	});
+	);
 }

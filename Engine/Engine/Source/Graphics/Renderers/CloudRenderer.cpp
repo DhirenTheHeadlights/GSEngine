@@ -81,13 +81,12 @@ namespace gse::renderer::cloud {
 	using raymarch_bindings = type_pack<atmosphere::atmosphere_ubo, cloud_ubo, transmittance_in, sky_view_in, cloud_shape_in, cloud_detail_in, cloud_out>;
 	using composite_bindings = type_pack<cloud_in>;
 
-	using shape_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_shape_bake">, gpu::layout<"cloud_shape_bake">, gpu::bindings<shape_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using shape_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_shape_bake">, gpu::bindings<shape_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
-	using detail_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_detail_bake">, gpu::layout<"cloud_detail_bake">, gpu::bindings<detail_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using detail_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_detail_bake">, gpu::bindings<detail_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
 	using raymarch_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/cloud_raymarch">,
-		gpu::layout<"cloud_raymarch">,
 		gpu::types<cloud_types>,
 		gpu::bindings<raymarch_bindings>,
 		gpu::helpers<"Atmosphere/atmosphere_common", "Clouds/cloud_common">,
@@ -98,7 +97,6 @@ namespace gse::renderer::cloud {
 
 	using composite_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/CloudComposite">,
-		gpu::layout<"cloud_composite">,
 		gpu::bindings<composite_bindings>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -198,25 +196,21 @@ auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data
 auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.shape_bake_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		shape_bake_entry::pod
 	);
 	d.detail_bake_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		detail_bake_entry::pod
 	);
 	d.raymarch_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		raymarch_entry::pod
 	);
 	d.composite_pipeline = gpu::build_graphics_program(
 		*gpu_s.device,
-		*gpu_s.shader_registry,
 		*gpu_s.bindless_heaps,
 		composite_entry::pod
 	);
@@ -268,9 +262,12 @@ auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::dat
 	d.sky_view_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, sky_view_sampler_desc);
 	d.composite_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, composite_sampler_desc);
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &d]() {
-		recreate_cloud_target(gpu_s, d);
-	});
+	gpu::context::on_swap_chain_recreate(
+		gpu_s,
+		[&gpu_s, &d]() {
+			recreate_cloud_target(gpu_s, d);
+		}
+	);
 
 	co_return;
 }

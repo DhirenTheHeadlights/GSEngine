@@ -109,18 +109,21 @@ auto gse::network::remote_peer::process_acks(const std::uint32_t ack, const std:
 		return;
 	}
 
-	std::erase_if(m_pending_reliable, [ack, ack_bits](const pending_reliable_message& msg) {
-		if (msg.sequence == ack) {
-			return true;
-		}
-		if (msg.sequence < ack) {
-			const std::uint32_t diff = ack - msg.sequence;
-			if (diff <= 32 && (ack_bits & (1u << (diff - 1))) != 0) {
+	std::erase_if(
+		m_pending_reliable,
+		[ack, ack_bits](const pending_reliable_message& msg) {
+			if (msg.sequence == ack) {
 				return true;
 			}
+			if (msg.sequence < ack) {
+				const std::uint32_t diff = ack - msg.sequence;
+				if (diff <= 32 && (ack_bits & (1u << (diff - 1))) != 0) {
+					return true;
+				}
+			}
+			return false;
 		}
-		return false;
-	});
+	);
 }
 
 auto gse::network::remote_peer::messages_to_resend(const std::uint32_t retry_interval_ms) -> std::vector<pending_reliable_message*> {

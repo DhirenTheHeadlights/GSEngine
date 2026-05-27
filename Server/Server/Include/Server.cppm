@@ -274,29 +274,33 @@ auto gse::server<Components...>::update(const world_system::data& w, registry& r
 				continue;
 			}
 
-			network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
-				constexpr std::uint8_t max_players = 8;
-				if (m_clients.size() >= max_players) {
+			network::try_decode<network::connection_request>(
+				stream,
+				mid,
+				[&](const auto&) {
+					constexpr std::uint8_t max_players = 8;
+					if (m_clients.size() >= max_players) {
+						std::println(
+							"Client [{}:{}] failed to connect (server full: {}/{})",
+							pkt.from.ip,
+							pkt.from.port,
+							m_clients.size(),
+							max_players
+						);
+						return;
+					}
+
+					m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
+					accept_connection(w, reg, pkt.from);
 					std::println(
-						"Client [{}:{}] failed to connect (server full: {}/{})",
+						"Client [{}:{}] connected ({}/{})",
 						pkt.from.ip,
 						pkt.from.port,
 						m_clients.size(),
 						max_players
 					);
-					return;
 				}
-
-				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
-				accept_connection(w, reg, pkt.from);
-				std::println(
-					"Client [{}:{}] connected ({}/{})",
-					pkt.from.ip,
-					pkt.from.port,
-					m_clients.size(),
-					max_players
-				);
-			});
+			);
 
 			continue;
 		}

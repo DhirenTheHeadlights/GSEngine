@@ -102,15 +102,21 @@ auto gse::file_watcher::watch_directory(const std::filesystem::path& directory, 
 auto gse::file_watcher::unwatch(const std::filesystem::path& path) -> void {
 	std::lock_guard lock(m_mutex);
 
-	std::erase_if(m_watches, [&](const watch_entry& entry) {
-		return entry.path == path;
-	});
+	std::erase_if(
+		m_watches,
+		[&](const watch_entry& entry) {
+			return entry.path == path;
+		}
+	);
 
 	if (std::filesystem::is_directory(path)) {
-		std::erase_if(m_directory_files, [&](const auto& pair) {
-			auto [file_path, _] = pair;
-			return file_path.string().starts_with(path.string());
-		});
+		std::erase_if(
+			m_directory_files,
+			[&](const auto& pair) {
+				auto [file_path, _] = pair;
+				return file_path.string().starts_with(path.string());
+			}
+		);
 	}
 }
 

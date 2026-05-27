@@ -34,8 +34,6 @@ export namespace gse::gpu {
 		std::vector<std::uint8_t> blend_enables;
 		std::vector<color_blend_equation> blend_equations;
 		std::vector<color_component_flags> color_write_masks;
-		std::vector<vertex_binding_desc> vertex_bindings;
-		std::vector<vertex_attribute_desc> vertex_attributes;
 	};
 }
 

@@ -77,8 +77,7 @@ export namespace gse::vulkan {
 
 		auto write_sampled_image(
 			bindless_slot slot,
-			const image& img,
-			gpu::image_layout layout = gpu::image_layout::general
+			const image& img
 		) -> void;
 
 		auto write_storage_image(
@@ -88,8 +87,7 @@ export namespace gse::vulkan {
 
 		auto write_texture(
 			bindless_slot slot,
-			const image& img,
-			gpu::image_layout layout = gpu::image_layout::general
+			const image& img
 		) -> void;
 
 		auto write_storage_buffer(
@@ -144,8 +142,7 @@ export namespace gse::vulkan {
 	private:
 		auto write_sampled_image_vk(
 			bindless_slot slot,
-			const vk::ImageViewCreateInfo& view_info,
-			gpu::image_layout layout
+			const vk::ImageViewCreateInfo& view_info
 		) -> void;
 
 		auto write_storage_image_vk(
@@ -155,8 +152,7 @@ export namespace gse::vulkan {
 
 		auto write_texture_vk(
 			bindless_slot slot,
-			const vk::ImageViewCreateInfo& view_info,
-			gpu::image_layout layout
+			const vk::ImageViewCreateInfo& view_info
 		) -> void;
 
 		auto write_resource(
@@ -279,10 +275,6 @@ export namespace gse::vulkan {
 		);
 
 		~bindless_heaps() override = default;
-
-		auto bind(
-			const commands& cmd
-		) const -> void;
 
 		auto begin_frame() -> void;
 
@@ -853,11 +845,11 @@ auto gse::vulkan::bindless_resource_heap::write_resource(const gpu::device_size 
 	);
 }
 
-auto gse::vulkan::bindless_resource_heap::write_sampled_image_vk(const bindless_slot slot, const vk::ImageViewCreateInfo& view_info, const gpu::image_layout layout) -> void {
+auto gse::vulkan::bindless_resource_heap::write_sampled_image_vk(const bindless_slot slot, const vk::ImageViewCreateInfo& view_info) -> void {
 	assert(slot.valid(), "bindless_resource_heap::write_sampled_image_vk: invalid slot");
 	const vk::ImageDescriptorInfoEXT img{
 		.pView = &view_info,
-		.layout = to_vk(layout),
+		.layout = vk::ImageLayout::eGeneral,
 	};
 	const vk::ResourceDescriptorInfoEXT info{
 		.type = vk::DescriptorType::eSampledImage,
@@ -885,11 +877,11 @@ auto gse::vulkan::bindless_resource_heap::write_storage_image_vk(const bindless_
 	write_resource(offset, info, m_image_stride);
 }
 
-auto gse::vulkan::bindless_resource_heap::write_texture_vk(const bindless_slot slot, const vk::ImageViewCreateInfo& view_info, const gpu::image_layout layout) -> void {
+auto gse::vulkan::bindless_resource_heap::write_texture_vk(const bindless_slot slot, const vk::ImageViewCreateInfo& view_info) -> void {
 	assert(slot.valid(), "bindless_resource_heap::write_texture_vk: invalid slot");
 	const vk::ImageDescriptorInfoEXT img{
 		.pView = &view_info,
-		.layout = to_vk(layout),
+		.layout = vk::ImageLayout::eGeneral,
 	};
 	const vk::ResourceDescriptorInfoEXT info{
 		.type = vk::DescriptorType::eSampledImage,
@@ -925,9 +917,9 @@ auto gse::vulkan::synthesize_view_info(const image& img) -> vk::ImageViewCreateI
 	};
 }
 
-auto gse::vulkan::bindless_resource_heap::write_sampled_image(const bindless_slot slot, const image& img, const gpu::image_layout layout) -> void {
+auto gse::vulkan::bindless_resource_heap::write_sampled_image(const bindless_slot slot, const image& img) -> void {
 	const auto view_info = synthesize_view_info(img);
-	write_sampled_image_vk(slot, view_info, layout);
+	write_sampled_image_vk(slot, view_info);
 }
 
 auto gse::vulkan::bindless_resource_heap::write_storage_image(const bindless_slot slot, const image& img) -> void {
@@ -935,9 +927,9 @@ auto gse::vulkan::bindless_resource_heap::write_storage_image(const bindless_slo
 	write_storage_image_vk(slot, view_info);
 }
 
-auto gse::vulkan::bindless_resource_heap::write_texture(const bindless_slot slot, const image& img, const gpu::image_layout layout) -> void {
+auto gse::vulkan::bindless_resource_heap::write_texture(const bindless_slot slot, const image& img) -> void {
 	const auto view_info = synthesize_view_info(img);
-	write_texture_vk(slot, view_info, layout);
+	write_texture_vk(slot, view_info);
 }
 
 auto gse::vulkan::bindless_resource_heap::write_storage_buffer(const bindless_slot slot, const gpu::device_address address, const gpu::device_size size) -> void {
@@ -1024,27 +1016,36 @@ auto gse::vulkan::bindless_resource_heap::release_buffer(const bindless_slot slo
 auto gse::vulkan::bindless_resource_heap::begin_frame() -> void {
 	std::lock_guard lock(m_mutex);
 	++m_frame_counter;
-	std::erase_if(m_image_pending, [this](const pending_release& p) {
-		if (m_frame_counter >= p.retire_after) {
-			m_image_free_list.push_back(p.slot);
-			return true;
+	std::erase_if(
+		m_image_pending,
+		[this](const pending_release& p) {
+			if (m_frame_counter >= p.retire_after) {
+				m_image_free_list.push_back(p.slot);
+				return true;
+			}
+			return false;
 		}
-		return false;
-	});
-	std::erase_if(m_texture_pending, [this](const pending_release& p) {
-		if (m_frame_counter >= p.retire_after) {
-			m_texture_free_list.push_back(p.slot);
-			return true;
+	);
+	std::erase_if(
+		m_texture_pending,
+		[this](const pending_release& p) {
+			if (m_frame_counter >= p.retire_after) {
+				m_texture_free_list.push_back(p.slot);
+				return true;
+			}
+			return false;
 		}
-		return false;
-	});
-	std::erase_if(m_buffer_pending, [this](const pending_release& p) {
-		if (m_frame_counter >= p.retire_after) {
-			m_buffer_free_list.push_back(p.slot);
-			return true;
+	);
+	std::erase_if(
+		m_buffer_pending,
+		[this](const pending_release& p) {
+			if (m_frame_counter >= p.retire_after) {
+				m_buffer_free_list.push_back(p.slot);
+				return true;
+			}
+			return false;
 		}
-		return false;
-	});
+	);
 }
 
 auto gse::vulkan::bindless_resource_heap::buffer_address() const -> gpu::device_address {
@@ -1223,13 +1224,16 @@ auto gse::vulkan::bindless_sampler_heap::release(const bindless_slot slot) -> vo
 auto gse::vulkan::bindless_sampler_heap::begin_frame() -> void {
 	std::lock_guard lock(m_mutex);
 	++m_frame_counter;
-	std::erase_if(m_pending, [this](const pending_release& p) {
-		if (m_frame_counter >= p.retire_after) {
-			m_free_list.push_back(p.slot);
-			return true;
+	std::erase_if(
+		m_pending,
+		[this](const pending_release& p) {
+			if (m_frame_counter >= p.retire_after) {
+				m_free_list.push_back(p.slot);
+				return true;
+			}
+			return false;
 		}
-		return false;
-	});
+	);
 }
 
 auto gse::vulkan::bindless_sampler_heap::buffer_address() const -> gpu::device_address {
@@ -1276,21 +1280,6 @@ gse::vulkan::bindless_heaps::bindless_heaps(const device& dev, const std::uint32
 	  )) {
 }
 
-auto gse::vulkan::bindless_heaps::bind(const commands& cmd) const -> void {
-	cmd.bind_resource_heap(
-		m_resource_heap->buffer_address(),
-		m_resource_heap->buffer_size(),
-		m_resource_heap->reserved_offset(),
-		m_resource_heap->reserved_size()
-	);
-	cmd.bind_sampler_heap(
-		m_sampler_heap->buffer_address(),
-		m_sampler_heap->buffer_size(),
-		m_sampler_heap->reserved_offset(),
-		m_sampler_heap->reserved_size()
-	);
-}
-
 auto gse::vulkan::bindless_heaps::begin_frame() -> void {
 	m_resource_heap->begin_frame();
 	m_sampler_heap->begin_frame();
@@ -1323,7 +1312,10 @@ auto gse::vulkan::build_bindless_mappings(const std::span<const gpu::binding_use
 	std::vector<gpu::binding_use> sorted_bindings(bindings.begin(), bindings.end());
 	std::ranges::sort(
 		sorted_bindings,
-		[](const gpu::binding_use& a, const gpu::binding_use& b) {
+		[](
+		const gpu::binding_use& a,
+		const gpu::binding_use& b
+	) {
 			if (a.set != b.set) {
 				return a.set < b.set;
 			}
@@ -1351,11 +1343,17 @@ auto gse::vulkan::build_bindless_mappings(const std::span<const gpu::binding_use
 
 		if (is_array) {
 			auto& co = source_data.constantOffset;
-			const auto write_resource_fields = [&](const std::uint32_t heap_off, const std::uint32_t stride) {
+			const auto write_resource_fields = [&](
+				const std::uint32_t heap_off,
+				const std::uint32_t stride
+			) {
 				co.heapOffset = heap_off;
 				co.heapArrayStride = stride;
 			};
-			const auto write_sampler_fields = [&](const std::uint32_t heap_off, const std::uint32_t stride) {
+			const auto write_sampler_fields = [&](
+				const std::uint32_t heap_off,
+				const std::uint32_t stride
+			) {
 				co.samplerHeapOffset = heap_off;
 				co.samplerHeapArrayStride = stride;
 			};

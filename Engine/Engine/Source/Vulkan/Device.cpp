@@ -213,9 +213,12 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 
 	const auto available_extensions = physical_device.enumerateDeviceExtensionProperties();
 	const auto supports_extension = [&](const char* extension_name) {
-		return std::ranges::any_of(available_extensions, [&](const auto& extension) {
-			return std::strcmp(extension.extensionName.data(), extension_name) == 0;
-		});
+		return std::ranges::any_of(
+			available_extensions,
+			[&](const auto& extension) {
+				return std::strcmp(extension.extensionName.data(), extension_name) == 0;
+			}
+		);
 	};
 
 	assert(supports_extension(vk::EXTShaderObjectExtensionName), "VK_EXT_shader_object is required");
@@ -893,6 +896,12 @@ auto gse::vulkan::device::tracking_enabled() const -> bool {
 
 auto gse::vulkan::device::destroy_buffer(const gpu::handle<buffer> buffer) const -> void {
 	(*m_device).destroyBuffer(std::bit_cast<vk::Buffer>(buffer), nullptr);
+}
+
+auto gse::vulkan::device::buffer_device_address(const gpu::handle<buffer> buffer) const -> gpu::device_address {
+	return (*m_device).getBufferAddress(vk::BufferDeviceAddressInfo{
+		.buffer = std::bit_cast<vk::Buffer>(buffer),
+	});
 }
 
 auto gse::vulkan::device::destroy_image(const gpu::handle<image> image) const -> void {

@@ -54,7 +54,6 @@ namespace gse::renderer::gi_probe {
 
 	using entry = gpu::compute_entry<
 		gpu::body_path<"Compute/gi_probe_update">,
-		gpu::layout<"gi_probe_update">,
 		gpu::types<shaders::forward::shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::threads<rays_per_probe>,
@@ -113,7 +112,6 @@ auto gse::renderer::gi_probe::system::run(run_context& ctx, const gpu::context::
 	d.update_pipeline =
 		gpu::build_compute_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			entry::pod
 		);
@@ -121,9 +119,12 @@ auto gse::renderer::gi_probe::system::run(run_context& ctx, const gpu::context::
 	recreate_atlas(gpu_s, d);
 	rebind_tlas_views(gpu_s, rt_state, d);
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &rt_state, &d]() {
-		rebind_tlas_views(gpu_s, rt_state, d);
-	});
+	gpu::context::on_swap_chain_recreate(
+		gpu_s,
+		[&gpu_s, &rt_state, &d]() {
+			rebind_tlas_views(gpu_s, rt_state, d);
+		}
+	);
 
 	co_return;
 }

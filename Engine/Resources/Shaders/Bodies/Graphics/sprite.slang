@@ -8,21 +8,15 @@ struct VS_OUTPUT {
 };
 
 [shader("vertex")]
-VS_OUTPUT vs_main(
-    float2 in_position      : POSITION,
-    float2 in_tex_coord     : TEXCOORD0,
-    float4 in_color         : COLOR0,
-    float2 in_local_pos     : TEXCOORD1,
-    float2 in_half_size     : TEXCOORD2,
-    float  in_corner_radius : TEXCOORD3
-) {
+VS_OUTPUT vs_main(uint vid : SV_VertexID) {
+    vertex v = vertex_buffer[vid];
     VS_OUTPUT output;
-    output.clip_pos = mul(pc.projection, float4(in_position, 0.0, 1.0));
-    output.tex_coord = in_tex_coord;
-    output.color = in_color;
-    output.local_pos = in_local_pos;
-    output.half_size = in_half_size;
-    output.corner_radius = in_corner_radius;
+    output.clip_pos = mul(pc.projection, float4(v.position, 0.0, 1.0));
+    output.tex_coord = v.uv;
+    output.color = v.color;
+    output.local_pos = v.local_pos;
+    output.half_size = v.half_size;
+    output.corner_radius = v.corner_radius;
     return output;
 }
 

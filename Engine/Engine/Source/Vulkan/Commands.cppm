@@ -53,8 +53,7 @@ export namespace gse::gpu {
 		access_flags src_access;
 		pipeline_stage_flags dst_stages;
 		access_flags dst_access;
-		image_layout old_layout = image_layout::general;
-		image_layout new_layout = image_layout::general;
+		bool discard_contents = false;
 		gpu::handle<vulkan::image> image;
 		image_aspect_flags aspects;
 		std::uint32_t base_mip_level = 0;
@@ -71,7 +70,6 @@ export namespace gse::gpu {
 
 	struct rendering_attachment_info {
 		gpu::handle<vulkan::image_view> image_view;
-		image_layout layout = image_layout::general;
 		load_op load = load_op::dont_care;
 		store_op store = store_op::dont_care;
 		color_clear color_clear_value;
@@ -181,12 +179,6 @@ export namespace gse::vulkan {
 			std::uint32_t offset,
 			std::uint32_t size,
 			const void* data
-		) const -> void;
-
-		auto bind_vertex_buffers(
-			std::uint32_t first_binding,
-			std::span<const gpu::handle<buffer>> buffers,
-			std::span<const gpu::device_size> offsets
 		) const -> void;
 
 		auto bind_index_buffer_2(
@@ -324,11 +316,6 @@ export namespace gse::vulkan {
 			std::array<float, 4> constants
 		) const -> void;
 
-		auto set_vertex_input(
-			std::span<const gpu::vertex_binding_desc> bindings,
-			std::span<const gpu::vertex_attribute_desc> attributes
-		) const -> void;
-
 		auto copy_buffer(
 			gpu::handle<buffer> src,
 			gpu::handle<buffer> dst,
@@ -345,32 +332,32 @@ export namespace gse::vulkan {
 		auto copy_buffer_to_image(
 			gpu::handle<buffer> src,
 			gpu::handle<image> dst,
-			gpu::image_layout dst_layout,
 			std::span<const gpu::buffer_image_copy_region> regions
 		) const -> void;
 
 		auto copy_image_to_buffer(
 			gpu::handle<image> src,
-			gpu::image_layout src_layout,
 			gpu::handle<buffer> dst,
 			std::span<const gpu::buffer_image_copy_region> regions
 		) const -> void;
 
 		auto blit_image(
 			gpu::handle<image> src,
-			gpu::image_layout src_layout,
 			gpu::handle<image> dst,
-			gpu::image_layout dst_layout,
 			const gpu::image_blit_region& region,
 			gpu::sampler_filter filter
 		) const -> void;
 
 		auto copy_image(
 			gpu::handle<image> src,
-			gpu::image_layout src_layout,
 			gpu::handle<image> dst,
-			gpu::image_layout dst_layout,
 			const gpu::image_copy_region& region
+		) const -> void;
+
+		auto release_swapchain_image_to_present(
+			gpu::handle<image> img,
+			gpu::pipeline_stage_flags src_stages,
+			gpu::access_flags src_access
 		) const -> void;
 
 		auto draw(
@@ -618,20 +605,6 @@ auto gse::vulkan::commands::push_constants(const gpu::handle<pipeline_layout> la
 	);
 }
 
-auto gse::vulkan::commands::bind_vertex_buffers(const std::uint32_t first_binding, const std::span<const gpu::handle<buffer>> buffers, const std::span<const gpu::device_size> offsets) const -> void {
-	std::vector<vk::Buffer> vk_buffers;
-	vk_buffers.reserve(buffers.size());
-	for (const auto h : buffers) {
-		vk_buffers.push_back(std::bit_cast<vk::Buffer>(h));
-	}
-	raw().bindVertexBuffers(
-		first_binding,
-		static_cast<std::uint32_t>(vk_buffers.size()),
-		vk_buffers.data(),
-		offsets.data()
-	);
-}
-
 auto gse::vulkan::commands::bind_index_buffer_2(const gpu::handle<buffer> buffer, const gpu::device_size offset, const gpu::device_size size, const gpu::index_type type) const -> void {
 	raw().bindIndexBuffer2KHR(std::bit_cast<vk::Buffer>(buffer), offset, size, to_vk(type));
 }
@@ -674,7 +647,7 @@ auto gse::vulkan::commands::fill_buffer(const gpu::handle<buffer> dst, const gpu
 	raw().fillBuffer(std::bit_cast<vk::Buffer>(dst), offset, size, data);
 }
 
-auto gse::vulkan::commands::copy_buffer_to_image(const gpu::handle<buffer> src, const gpu::handle<image> dst, const gpu::image_layout dst_layout, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
+auto gse::vulkan::commands::copy_buffer_to_image(const gpu::handle<buffer> src, const gpu::handle<image> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
 	std::vector<vk::BufferImageCopy> vk_regions;
 	vk_regions.reserve(regions.size());
 	for (const auto& r : regions) {
@@ -683,12 +656,12 @@ auto gse::vulkan::commands::copy_buffer_to_image(const gpu::handle<buffer> src, 
 	raw().copyBufferToImage(
 		std::bit_cast<vk::Buffer>(src),
 		std::bit_cast<vk::Image>(dst),
-		to_vk(dst_layout),
+		vk::ImageLayout::eGeneral,
 		vk_regions
 	);
 }
 
-auto gse::vulkan::commands::copy_image_to_buffer(const gpu::handle<image> src, const gpu::image_layout src_layout, const gpu::handle<buffer> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
+auto gse::vulkan::commands::copy_image_to_buffer(const gpu::handle<image> src, const gpu::handle<buffer> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
 	std::vector<vk::BufferImageCopy> vk_regions;
 	vk_regions.reserve(regions.size());
 	for (const auto& r : regions) {
@@ -696,31 +669,57 @@ auto gse::vulkan::commands::copy_image_to_buffer(const gpu::handle<image> src, c
 	}
 	raw().copyImageToBuffer(
 		std::bit_cast<vk::Image>(src),
-		to_vk(src_layout),
+		vk::ImageLayout::eGeneral,
 		std::bit_cast<vk::Buffer>(dst),
 		vk_regions
 	);
 }
 
-auto gse::vulkan::commands::blit_image(const gpu::handle<image> src, const gpu::image_layout src_layout, const gpu::handle<image> dst, const gpu::image_layout dst_layout, const gpu::image_blit_region& region, const gpu::sampler_filter filter) const -> void {
+auto gse::vulkan::commands::blit_image(const gpu::handle<image> src, const gpu::handle<image> dst, const gpu::image_blit_region& region, const gpu::sampler_filter filter) const -> void {
 	raw().blitImage(
 		std::bit_cast<vk::Image>(src),
-		to_vk(src_layout),
+		vk::ImageLayout::eGeneral,
 		std::bit_cast<vk::Image>(dst),
-		to_vk(dst_layout),
+		vk::ImageLayout::eGeneral,
 		to_vk(region),
 		to_vk(filter)
 	);
 }
 
-auto gse::vulkan::commands::copy_image(const gpu::handle<image> src, const gpu::image_layout src_layout, const gpu::handle<image> dst, const gpu::image_layout dst_layout, const gpu::image_copy_region& region) const -> void {
+auto gse::vulkan::commands::copy_image(const gpu::handle<image> src, const gpu::handle<image> dst, const gpu::image_copy_region& region) const -> void {
 	raw().copyImage(
 		std::bit_cast<vk::Image>(src),
-		to_vk(src_layout),
+		vk::ImageLayout::eGeneral,
 		std::bit_cast<vk::Image>(dst),
-		to_vk(dst_layout),
+		vk::ImageLayout::eGeneral,
 		to_vk(region)
 	);
+}
+
+auto gse::vulkan::commands::release_swapchain_image_to_present(const gpu::handle<image> img, const gpu::pipeline_stage_flags src_stages, const gpu::access_flags src_access) const -> void {
+	const vk::ImageMemoryBarrier2 barrier{
+		.srcStageMask = to_vk(src_stages),
+		.srcAccessMask = to_vk(src_access),
+		.dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
+		.dstAccessMask = {},
+		.oldLayout = vk::ImageLayout::eGeneral,
+		.newLayout = vk::ImageLayout::ePresentSrcKHR,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = std::bit_cast<vk::Image>(img),
+		.subresourceRange = {
+			.aspectMask = vk::ImageAspectFlagBits::eColor,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 1,
+		},
+	};
+	const vk::DependencyInfo dep{
+		.imageMemoryBarrierCount = 1,
+		.pImageMemoryBarriers = &barrier,
+	};
+	raw().pipelineBarrier2(dep);
 }
 
 auto gse::vulkan::commands::draw(const std::uint32_t vertex_count, const std::uint32_t instance_count, const std::uint32_t first_vertex, const std::uint32_t first_instance) const -> void {
@@ -825,7 +824,7 @@ auto gse::vulkan::build_vk_attachment(const gpu::rendering_attachment_info& att,
 	}
 	return vk::RenderingAttachmentInfo{
 		.imageView = std::bit_cast<vk::ImageView>(att.image_view),
-		.imageLayout = to_vk(att.layout),
+		.imageLayout = vk::ImageLayout::eGeneral,
 		.loadOp = to_vk(att.load),
 		.storeOp = to_vk(att.store),
 		.clearValue = clear,
@@ -898,8 +897,8 @@ auto gse::vulkan::build_vk_dependency_info(const gpu::dependency_info& dep, depe
 				.srcAccessMask = to_vk(b.src_access),
 				.dstStageMask = to_vk(b.dst_stages),
 				.dstAccessMask = to_vk(b.dst_access),
-				.oldLayout = to_vk(b.old_layout),
-				.newLayout = to_vk(b.new_layout),
+				.oldLayout = b.discard_contents ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral,
+				.newLayout = vk::ImageLayout::eGeneral,
 				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
 				.image = std::bit_cast<vk::Image>(b.image),
@@ -1038,30 +1037,4 @@ auto gse::vulkan::commands::set_color_write_mask(const std::uint32_t first_attac
 
 auto gse::vulkan::commands::set_blend_constants(const std::array<float, 4> constants) const -> void {
 	raw().setBlendConstants(constants.data());
-}
-
-auto gse::vulkan::commands::set_vertex_input(const std::span<const gpu::vertex_binding_desc> bindings, const std::span<const gpu::vertex_attribute_desc> attributes) const -> void {
-	std::vector<vk::VertexInputBindingDescription2EXT> vk_bindings;
-	vk_bindings.reserve(bindings.size());
-	for (const auto& b : bindings) {
-		vk_bindings.push_back({
-			.binding = b.binding,
-			.stride = b.stride,
-			.inputRate = b.per_instance ? vk::VertexInputRate::eInstance : vk::VertexInputRate::eVertex,
-			.divisor = 1,
-		});
-	}
-
-	std::vector<vk::VertexInputAttributeDescription2EXT> vk_attributes;
-	vk_attributes.reserve(attributes.size());
-	for (const auto& a : attributes) {
-		vk_attributes.push_back({
-			.location = a.location,
-			.binding = a.binding,
-			.format = to_vk(a.format),
-			.offset = a.offset,
-		});
-	}
-
-	raw().setVertexInputEXT(vk_bindings, vk_attributes);
 }

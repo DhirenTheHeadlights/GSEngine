@@ -248,9 +248,12 @@ auto gse::acquire_locks_in_sorted_order(async::rw_mutex_registry& mutexes, const
 		order,
 		std::size_t{ 0 }
 	);
-	std::ranges::sort(order, [type_ids](const std::size_t a, const std::size_t b) {
-		return type_ids[a] < type_ids[b];
-	});
+	std::ranges::sort(
+		order,
+		[type_ids](const std::size_t a, const std::size_t b) {
+			return type_ids[a] < type_ids[b];
+		}
+	);
 
 	const auto key = trace::allocate_async_key();
 	trace::begin_async(trace_id, key);

@@ -406,7 +406,10 @@ auto gse::trace::compute_self_time(frame_storage& fs, std::size_t i) -> void {
 	std::ranges::sort(
 		segs_first,
 		segs_last,
-		[](const frame_storage::seg& x, const frame_storage::seg& y) {
+		[](
+		const frame_storage::seg& x,
+		const frame_storage::seg& y
+	) {
 			return x.a < y.a;
 		}
 	);
@@ -486,12 +489,15 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		}
 	}
 
-	std::ranges::sort(fs.merged, [](const event& a, const event& b) {
-		if (a.ts != b.ts) {
-			return a.ts < b.ts;
+	std::ranges::sort(
+		fs.merged,
+		[](const event& a, const event& b) {
+			if (a.ts != b.ts) {
+				return a.ts < b.ts;
+			}
+			return static_cast<int>(a.type) < static_cast<int>(b.type);
 		}
-		return static_cast<int>(a.type) < static_cast<int>(b.type);
-	});
+	);
 
 	auto& spans = fs.spans_scratch;
 	spans.clear();

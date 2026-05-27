@@ -42,11 +42,14 @@ namespace gse::renderer::capture {
 
 	using shader_binding_types = type_pack<output_y, output_uv, shaders::bindless::textures>;
 
-	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::layout<"rgba_to_nv12">, gpu::bindings<shader_binding_types>, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::bindings<shader_binding_types>, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
 auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const actions::system::data& sys, data& d) -> async::task<> {
-	const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
+	const auto register_action = [&](
+		const std::string_view name,
+		const key default_key
+	) -> actions::handle {
 		const id action_id = generate_id(name);
 		ctx.channels.push<actions::add_action_request>({
 			.name = std::string(name),
@@ -74,7 +77,6 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 		d.convert_pipeline =
 			gpu::build_compute_program(
 				*gpu_s.device,
-				*gpu_s.shader_registry,
 				*gpu_s.bindless_heaps,
 				entry::pod
 			);
@@ -316,9 +318,12 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 					[muxer = std::move(*live), state = d.recording.get()] mutable {
 						while (true) {
 							std::unique_lock lock(state->mutex);
-							state->cv.wait(lock, [&] {
-								return !state->queue.empty() || !state->running;
-							});
+							state->cv.wait(
+								lock,
+								[&] {
+									return !state->queue.empty() || !state->running;
+								}
+							);
 							while (!state->queue.empty()) {
 								auto unit = std::move(state->queue.front());
 								state->queue.pop();

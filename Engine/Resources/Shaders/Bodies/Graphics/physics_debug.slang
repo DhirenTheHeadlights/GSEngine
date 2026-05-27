@@ -4,13 +4,14 @@ struct VS_OUTPUT {
 };
 
 [shader("vertex")]
-VS_OUTPUT vs_main(float3 in_position : POSITION, float3 in_color : COLOR) {
+VS_OUTPUT vs_main(uint vid : SV_VertexID) {
+    debug_vertex v = line_vertex_buffer[vid];
     VS_OUTPUT output;
 
-    float4 world_pos = float4(in_position, 1.0);
+    float4 world_pos = float4(v.position, 1.0);
     float4 view_pos  = mul(view, world_pos);
     output.clip_pos  = mul(proj, view_pos);
-    output.color     = in_color;
+    output.color     = v.color;
 
     return output;
 }

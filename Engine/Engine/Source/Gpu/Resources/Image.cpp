@@ -25,8 +25,7 @@ auto gse::gpu::transition_image_to(gpu::device& dev, image& img) -> sync_token {
 		.src_access = {},
 		.dst_stages = dst_stages,
 		.dst_access = dst_access,
-		.old_layout = image_layout::undefined,
-		.new_layout = image_layout::general,
+		.discard_contents = true,
 		.image = img.handle(),
 		.aspects = aspect,
 	};

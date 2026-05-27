@@ -86,6 +86,7 @@ export namespace gs::locomotion {
 
 	struct plan {
 		gse::vec3<gse::position> foot_target_world;
+		leg swing_leg = leg::left;
 		bool target_valid = false;
 		bool locked = false;
 	};

@@ -197,7 +197,6 @@ namespace gse::vbd {
 	template <fixed_string BodyPath>
 	using vbd_compute = gpu::compute_entry<
 		gpu::body_path<BodyPath>,
-		gpu::layout<"vbd_physics">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
@@ -223,7 +222,6 @@ namespace gse::vbd {
 
 	using collision_build_adjacency_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/collision_build_adjacency">,
-		gpu::layout<"vbd_physics">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
@@ -234,7 +232,6 @@ namespace gse::vbd {
 
 	using collision_build_coloring_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/collision_build_coloring">,
-		gpu::layout<"vbd_physics">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
@@ -243,11 +240,10 @@ namespace gse::vbd {
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
 	>;
 
-	using prepare_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_indirect">, gpu::layout<"vbd_physics">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::helpers<"VBDPhysics/vbd_shared">, gpu::threads<1>, gpu::push_constant<vbd_push_constants>>;
+	using prepare_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_indirect">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::helpers<"VBDPhysics/vbd_shared">, gpu::threads<1>, gpu::push_constant<vbd_push_constants>>;
 
 	using prepare_contact_indirect_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_prepare_contact_indirect">,
-		gpu::layout<"vbd_physics">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
@@ -257,7 +253,6 @@ namespace gse::vbd {
 
 	using prepare_color_indirect_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_prepare_color_indirect">,
-		gpu::layout<"vbd_physics">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
@@ -739,14 +734,13 @@ auto gse::vbd::gpu_solver::latest_snapshot_slot() const -> std::uint32_t {
 }
 
 auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::context::data& gpu_s) -> async::task<> {
-	while (!gpu_s.device || !gpu_s.shader_registry || !gpu_s.bindless_heaps) {
+	while (!gpu_s.device || !gpu_s.bindless_heaps) {
 		co_await ctx.next_tick();
 	}
 
 	const auto build = [&](const auto& pod) {
 		return gpu::build_compute_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			pod
 		);
@@ -819,7 +813,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 		return (a + b - 1) / b;
 	};
 
-	auto make_pc = [this, sub_dt, h_squared](const std::uint32_t color_offset, const std::uint32_t color_count, const std::uint32_t substep, const std::uint32_t iteration, const float current_alpha, const std::uint32_t warm_start_count) {
+	auto make_pc = [this, sub_dt, h_squared](
+		const std::uint32_t color_offset,
+		const std::uint32_t color_count,
+		const std::uint32_t substep,
+		const std::uint32_t iteration,
+		const float current_alpha,
+		const std::uint32_t warm_start_count
+	) {
 		return vbd_push_constants{
 			.cfg = m_solver_cfg,
 			.body_count = m_body_count,

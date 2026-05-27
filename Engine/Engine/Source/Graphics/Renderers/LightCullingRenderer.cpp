@@ -65,7 +65,6 @@ namespace gse::renderer::light_culling {
 
 	using entry = gpu::compute_entry<
 		gpu::body_path<"Compute/light_culling">,
-		gpu::layout<"light_culling">,
 		gpu::types<shaders::forward::shader_types, shader_types>,
 		gpu::bindings<shader_binding_types>,
 		gpu::threads<16, 16, 1>,
@@ -117,7 +116,6 @@ auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::cont
 	d.pipeline =
 		gpu::build_compute_program(
 			*gpu_s.device,
-			*gpu_s.shader_registry,
 			*gpu_s.bindless_heaps,
 			entry::pod
 		);
@@ -157,9 +155,12 @@ auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::cont
 
 	rebuild_tile_buffers(gpu_s, d);
 
-	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &d]() {
-		rebuild_tile_buffers(gpu_s, d);
-	});
+	gpu::context::on_swap_chain_recreate(
+		gpu_s,
+		[&gpu_s, &d]() {
+			rebuild_tile_buffers(gpu_s, d);
+		}
+	);
 
 	co_return;
 }

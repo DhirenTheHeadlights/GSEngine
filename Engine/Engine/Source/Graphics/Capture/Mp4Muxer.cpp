@@ -544,7 +544,10 @@ auto gse::renderer::capture::mp4::build_hvcc(const h265_parameter_sets& sets) ->
 	}
 	push_u8(payload, array_count);
 
-	const auto emit_array = [&](const std::uint8_t nal_type, const std::vector<std::vector<std::byte>>& units) {
+	const auto emit_array = [&](
+		const std::uint8_t nal_type,
+		const std::vector<std::vector<std::byte>>& units
+	) {
 		if (units.empty()) {
 			return;
 		}

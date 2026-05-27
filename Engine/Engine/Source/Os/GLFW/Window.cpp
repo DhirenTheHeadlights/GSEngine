@@ -253,99 +253,120 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 
 	glfwSetWindowUserPointer(d.handle, &d);
 
-	glfwSetKeyCallback(d.handle, [](GLFWwindow* w, const int key, int, const int action, int) {
-		auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
-		if (!self) {
-			return;
+	glfwSetKeyCallback(
+		d.handle,
+		[](GLFWwindow* w, const int key, int, const int action, int) {
+			auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
+			if (!self) {
+				return;
+			}
+			const auto mapped = to_input_key(key);
+			if (!mapped) {
+				return;
+			}
+			if (action == glfw::press) {
+				self->input_events.push(
+					input::key_pressed{
+						.key_code = *mapped
+					}
+				);
+			}
+			else if (action == glfw::release) {
+				self->input_events.push(
+					input::key_released{
+						.key_code = *mapped
+					}
+				);
+			}
 		}
-		const auto mapped = to_input_key(key);
-		if (!mapped) {
-			return;
-		}
-		if (action == glfw::press) {
-			self->input_events.push(
-				input::key_pressed{
-					.key_code = *mapped
-				}
-			);
-		}
-		else if (action == glfw::release) {
-			self->input_events.push(
-				input::key_released{
-					.key_code = *mapped
-				}
-			);
-		}
-	});
+	);
 
-	glfwSetMouseButtonCallback(d.handle, [](GLFWwindow* w, const int button, const int action, int) {
-		auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
-		if (!self) {
-			return;
+	glfwSetMouseButtonCallback(
+		d.handle,
+		[](GLFWwindow* w, const int button, const int action, int) {
+			auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
+			if (!self) {
+				return;
+			}
+			const auto mapped = to_input_mouse_button(button);
+			if (!mapped) {
+				return;
+			}
+			double x = 0.0;
+			double y = 0.0;
+			glfwGetCursorPos(w, &x, &y);
+			if (action == glfw::press) {
+				self->input_events.push(input::mouse_button_pressed{ *mapped, x, y });
+			}
+			else if (action == glfw::release) {
+				self->input_events.push(input::mouse_button_released{ *mapped, x, y });
+			}
 		}
-		const auto mapped = to_input_mouse_button(button);
-		if (!mapped) {
-			return;
-		}
-		double x = 0.0;
-		double y = 0.0;
-		glfwGetCursorPos(w, &x, &y);
-		if (action == glfw::press) {
-			self->input_events.push(input::mouse_button_pressed{ *mapped, x, y });
-		}
-		else if (action == glfw::release) {
-			self->input_events.push(input::mouse_button_released{ *mapped, x, y });
-		}
-	});
+	);
 
-	glfwSetCursorPosCallback(d.handle, [](GLFWwindow* w, double xpos, double ypos) {
-		auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
-		if (!self) {
-			return;
-		}
-
-		if (self->ui_focus) {
-			const auto dims = window::viewport(*self);
-			const double clamped_x = std::clamp(xpos, 0.0, static_cast<double>(dims.x()));
-			const double clamped_y = std::clamp(ypos, 0.0, static_cast<double>(dims.y()));
-
-			if (clamped_x != xpos || clamped_y != ypos) {
-				glfwSetCursorPos(w, clamped_x, clamped_y);
+	glfwSetCursorPosCallback(
+		d.handle,
+		[](GLFWwindow* w, double xpos, double ypos) {
+			auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
+			if (!self) {
+				return;
 			}
 
-			const double inverted_y = static_cast<double>(dims.y()) - clamped_y;
-			self->input_events.push(input::mouse_moved{ clamped_x, inverted_y });
-		}
-		else {
-			self->input_events.push(input::mouse_moved{ xpos, ypos });
-		}
-	});
+			if (self->ui_focus) {
+				const auto dims = window::viewport(*self);
+				const double clamped_x = std::clamp(xpos, 0.0, static_cast<double>(dims.x()));
+				const double clamped_y = std::clamp(ypos, 0.0, static_cast<double>(dims.y()));
 
-	glfwSetScrollCallback(d.handle, [](GLFWwindow* w, const double xoffset, const double yoffset) {
-		if (auto* self = static_cast<data*>(glfwGetWindowUserPointer(w))) {
-			self->input_events.push(input::mouse_scrolled{ xoffset, yoffset });
-		}
-	});
+				if (clamped_x != xpos || clamped_y != ypos) {
+					glfwSetCursorPos(w, clamped_x, clamped_y);
+				}
 
-	glfwSetCharCallback(d.handle, [](GLFWwindow* w, const unsigned int codepoint) {
-		if (auto* self = static_cast<data*>(glfwGetWindowUserPointer(w))) {
-			self->input_events.push(input::text_entered{ codepoint });
+				const double inverted_y = static_cast<double>(dims.y()) - clamped_y;
+				self->input_events.push(input::mouse_moved{ clamped_x, inverted_y });
+			}
+			else {
+				self->input_events.push(input::mouse_moved{ xpos, ypos });
+			}
 		}
-	});
+	);
 
-	glfwSetWindowFocusCallback(d.handle, [](GLFWwindow* w, const int focused) {
-		auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
-		if (!self) {
-			return;
+	glfwSetScrollCallback(
+		d.handle,
+		[](GLFWwindow* w, const double xoffset, const double yoffset) {
+			if (auto* self = static_cast<data*>(glfwGetWindowUserPointer(w))) {
+				self->input_events.push(input::mouse_scrolled{ xoffset, yoffset });
+			}
 		}
-		self->focused = (focused == glfw::true_);
-	});
+	);
 
-	glfwSetFramebufferSizeCallback(d.handle, [](GLFWwindow* w, const int, const int) {
-		if (auto* self = static_cast<data*>(glfwGetWindowUserPointer(w))) {
-			self->framebuffer_resized = true;
+	glfwSetCharCallback(
+		d.handle,
+		[](GLFWwindow* w, const unsigned int codepoint) {
+			if (auto* self = static_cast<data*>(glfwGetWindowUserPointer(w))) {
+				self->input_events.push(input::text_entered{ codepoint });
+			}
 		}
-	});
+	);
+
+	glfwSetWindowFocusCallback(
+		d.handle,
+		[](GLFWwindow* w, const int focused) {
+			auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
+			if (!self) {
+				return;
+			}
+			self->focused = (focused == glfw::true_);
+		}
+	);
+
+	glfwSetFramebufferSizeCallback(
+		d.handle,
+		[](GLFWwindow* w, const int, const int) {
+			if (auto* self = static_cast<data*>(glfwGetWindowUserPointer(w))) {
+				self->framebuffer_resized = true;
+			}
+		}
+	);
 
 	const int cursor_mode = d.mouse_visible ? glfw::cursor_normal : glfw::cursor_disabled;
 	glfwSetInputMode(d.handle, glfw::cursor, cursor_mode);

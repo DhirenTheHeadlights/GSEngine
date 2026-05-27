@@ -172,8 +172,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		.src_access = {},
 		.dst_stages = pipeline_stage_flag::color_attachment_output,
 		.dst_access = access_flag::color_attachment_write | access_flag::color_attachment_read,
-		.old_layout = image_layout::undefined,
-		.new_layout = image_layout::general,
+		.discard_contents = true,
 		.image = m_swapchain->image(m_image_index),
 		.aspects = image_aspect_flag::color,
 	};
@@ -227,20 +226,10 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 
 	const commands cmd_tail{ graphics_cb };
 
-	const image_barrier present_barrier{
-		.src_stages = pipeline_stage_flag::color_attachment_output,
-		.src_access = access_flag::color_attachment_write,
-		.dst_stages = pipeline_stage_flag::bottom_of_pipe,
-		.dst_access = {},
-		.old_layout = image_layout::general,
-		.new_layout = image_layout::present_src,
-		.image = m_swapchain->image(m_image_index),
-		.aspects = image_aspect_flag::color,
-	};
-	cmd_tail.pipeline_barrier(
-		dependency_info{
-			.image_barriers = std::span(&present_barrier, 1)
-		}
+	cmd_tail.release_swapchain_image_to_present(
+		m_swapchain->image(m_image_index),
+		pipeline_stage_flag::color_attachment_output,
+		access_flag::color_attachment_write
 	);
 
 	{

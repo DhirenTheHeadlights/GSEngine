@@ -46,7 +46,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Lateral capture-step clamp.">{}
 			]]
-			gse::displacement lateral_capture_limit = gse::meters(0.25f);
+			gse::displacement lateral_capture_limit = gse::meters(0.16f);
 
 			[[
 				= gse::settings::describe<"Foot center Y when planted on the ground.">{}
@@ -73,7 +73,8 @@ namespace gs::locomotion {
 	) -> gse::vec3<gse::position>;
 
 	auto plan_may_update(
-		const gait& g
+		const gait& g,
+		const plan& p
 	) -> bool;
 	auto swing_foot_position(
 		const state& s,
@@ -91,9 +92,9 @@ namespace gs::locomotion {
 	) -> gse::displacement;
 }
 
-auto gs::locomotion::plan_may_update(const gait& g) -> bool {
+auto gs::locomotion::plan_may_update(const gait& g, const plan& p) -> bool {
 	return g.current == phase::idle || g.current == phase::weight_shift ||
-		(g.current == phase::swing && phase_progress(g) <= 0.40f);
+		(g.current == phase::swing && (!p.target_valid || p.swing_leg != g.swing_leg));
 }
 
 auto gs::locomotion::swing_foot_position(const state& s, const leg swing_leg) -> const gse::vec3<gse::position>& {
@@ -209,9 +210,10 @@ auto gs::locomotion::footstep_planner::run(gse::run_context& ctx, data& d) -> gs
 					continue;
 				}
 
-				const bool update = plan_may_update(*g);
+				const bool update = plan_may_update(*g, p);
 				if (update) {
 					p.foot_target_world = plan_foot_target(*s, *g, *it, *r, d);
+					p.swing_leg = g->swing_leg;
 					p.target_valid = true;
 					p.locked = false;
 				}
@@ -221,11 +223,12 @@ auto gs::locomotion::footstep_planner::run(gse::run_context& ctx, data& d) -> gs
 
 				if (log_now) {
 					gse::log::println(
-						"footstep_planner: owner={} phase={} swing={} target=({:+.2f},{:+.2f},{:+.2f}) "
+						"footstep_planner: owner={} phase={} swing={} planned={} target=({:+.2f},{:+.2f},{:+.2f}) "
 						"locked={} input_fwd={:+.2f} capture=(fwd={:+.3f},right={:+.3f})",
 						owner.number(),
 						g->current,
 						g->swing_leg,
+						p.swing_leg,
 						p.foot_target_world.x(),
 						p.foot_target_world.y(),
 						p.foot_target_world.z(),

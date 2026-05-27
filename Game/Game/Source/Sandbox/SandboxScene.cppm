@@ -16,7 +16,10 @@ export namespace gs {
 }
 
 auto gs::sandbox_scene_setup(gse::scene& s) -> void {
-	s.set_player_factory([next_id = 0u](gse::scene& sc, std::optional<gse::id> server_id) mutable -> gse::id {
+	s.set_player_factory([next_id = 0u](
+		gse::scene& sc,
+		std::optional<gse::id> server_id
+	) mutable -> gse::id {
 		gse::id player_id;
 		if (server_id) {
 			player_id = gse::find_or_generate_id(server_id->number());
