@@ -83,7 +83,13 @@ auto gse::gpu::bindless_texture_set::allocate(const image& img, const sampler_de
 	const auto slot = m_free_list.back();
 	m_free_list.pop_back();
 
-	m_bindless_heaps->resource_heap().write_texture({ .index = slot }, img, layout);
+	m_bindless_heaps->resource_heap().write_texture(
+		{
+			.index = slot
+		},
+		img,
+		layout
+	);
 	m_bindless_heaps->sampler_heap().write_texture_sampler(slot, desc);
 
 	return {

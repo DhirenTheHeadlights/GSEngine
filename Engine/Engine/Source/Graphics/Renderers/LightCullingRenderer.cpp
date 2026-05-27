@@ -265,7 +265,10 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 	}
 
 	if (light_count > 0) {
-		light_alloc.buffer().host_write(lights.data(), light_count * sizeof(shaders::forward::light));
+		light_alloc.buffer().host_write(
+			lights.data(),
+			light_count * sizeof(shaders::forward::light)
+		);
 	}
 
 	const culling_params_data params{

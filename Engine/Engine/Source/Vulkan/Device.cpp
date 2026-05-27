@@ -219,13 +219,19 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	};
 
 	assert(supports_extension(vk::EXTShaderObjectExtensionName), "VK_EXT_shader_object is required");
-	assert(supports_extension(vk::EXTExtendedDynamicState3ExtensionName), "VK_EXT_extended_dynamic_state3 is required");
-	assert(supports_extension(vk::EXTVertexInputDynamicStateExtensionName), "VK_EXT_vertex_input_dynamic_state is required");
+	assert(
+		supports_extension(vk::EXTExtendedDynamicState3ExtensionName),
+		"VK_EXT_extended_dynamic_state3 is required"
+	);
+	assert(
+		supports_extension(vk::EXTVertexInputDynamicStateExtensionName),
+		"VK_EXT_vertex_input_dynamic_state is required"
+	);
 	assert(supports_extension(vk::EXTDescriptorHeapExtensionName), "VK_EXT_descriptor_heap is required");
 	assert(
 		supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
-		supports_extension(vk::KHRAccelerationStructureExtensionName) &&
-		supports_extension(vk::KHRRayQueryExtensionName),
+			supports_extension(vk::KHRAccelerationStructureExtensionName) &&
+			supports_extension(vk::KHRRayQueryExtensionName),
 		"Ray tracing extensions are required"
 	);
 
@@ -279,12 +285,30 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	const bool device_fault_vendor_binary_supported = device_fault_supported && fault_query.deviceFaultVendorBinary;
 	const bool av1_encode_supported = video_encode_extensions_available && supports_extension(vk::KHRVideoEncodeAv1ExtensionName);
 
-	assert(supports_extension(vk::EXTRobustness2ExtensionName) && robustness2_query.robustBufferAccess2, "VK_EXT_robustness2 is required");
-	assert(supports_extension(vk::KHRUnifiedImageLayoutsExtensionName) && unified_layouts_query.unifiedImageLayouts, "VK_KHR_unified_image_layouts is required");
-	assert(supports_extension(vk::EXTHostImageCopyExtensionName) && host_image_copy_query.hostImageCopy, "VK_EXT_host_image_copy is required");
-	assert(supports_extension(vk::EXTSwapchainMaintenance1ExtensionName) && swapchain_maintenance1_query.swapchainMaintenance1, "VK_EXT_swapchain_maintenance1 is required");
-	assert(supports_extension(vk::KHRPresentIdExtensionName) && present_id_query.presentId, "VK_KHR_present_id is required");
-	assert(supports_extension(vk::KHRPresentWaitExtensionName) && present_wait_query.presentWait, "VK_KHR_present_wait is required");
+	assert(
+		supports_extension(vk::EXTRobustness2ExtensionName) && robustness2_query.robustBufferAccess2,
+		"VK_EXT_robustness2 is required"
+	);
+	assert(
+		supports_extension(vk::KHRUnifiedImageLayoutsExtensionName) && unified_layouts_query.unifiedImageLayouts,
+		"VK_KHR_unified_image_layouts is required"
+	);
+	assert(
+		supports_extension(vk::EXTHostImageCopyExtensionName) && host_image_copy_query.hostImageCopy,
+		"VK_EXT_host_image_copy is required"
+	);
+	assert(
+		supports_extension(vk::EXTSwapchainMaintenance1ExtensionName) && swapchain_maintenance1_query.swapchainMaintenance1,
+		"VK_EXT_swapchain_maintenance1 is required"
+	);
+	assert(
+		supports_extension(vk::KHRPresentIdExtensionName) && present_id_query.presentId,
+		"VK_KHR_present_id is required"
+	);
+	assert(
+		supports_extension(vk::KHRPresentWaitExtensionName) && present_wait_query.presentWait,
+		"VK_KHR_present_wait is required"
+	);
 
 	vk::PhysicalDeviceMemoryPriorityFeaturesEXT memory_priority_features{
 		.memoryPriority = vk::True,
@@ -397,7 +421,9 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 		.supported = device_fault_supported,
 	};
 	optional_feature<vk::PhysicalDeviceVideoEncodeAV1FeaturesKHR> av1_encode{
-		.features = { .videoEncodeAV1 = vk::True },
+		.features = {
+			.videoEncodeAV1 = vk::True
+		},
 		.supported = av1_encode_supported,
 	};
 
@@ -1115,11 +1141,20 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 
 		const auto next_it = list.erase(best_sub_it);
 		if (prefix_size) {
-			list.insert(next_it, { sub.offset, prefix_size, false });
+			list.insert(
+				next_it,
+				{ sub.offset, prefix_size, false }
+			);
 		}
-		const auto owner_it = list.insert(next_it, { best_aligned_offset, requirements.size, true });
+		const auto owner_it = list.insert(
+			next_it,
+			{ best_aligned_offset, requirements.size, true }
+		);
 		if (suffix_size) {
-			list.insert(next_it, { best_aligned_offset + requirements.size, suffix_size, false });
+			list.insert(
+				next_it,
+				{ best_aligned_offset + requirements.size, suffix_size, false }
+			);
 		}
 
 		allocation_debug_info debug_info;
@@ -1162,7 +1197,12 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 	auto& new_block = blocks.back();
 
 	if (properties & vk::MemoryPropertyFlagBits::eHostVisible) {
-		new_block.mapped = (*m_device).mapMemory(new_block.memory, 0, new_block.size, {});
+		new_block.mapped = (*m_device).mapMemory(
+			new_block.memory,
+			0,
+			new_block.size,
+			{}
+		);
 	}
 
 	const vk::DeviceSize prefix_size = aligned_offset;
@@ -1329,4 +1369,3 @@ auto gse::vulkan::device::pool_key_hash::operator()(const pool_key& key) const n
 	const auto address_hash = std::hash<bool>()(key.device_address);
 	return memory_hash ^ (props_hash << 1) ^ (address_hash << 2);
 }
-

@@ -916,7 +916,11 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 
 			auto boundary_distance = [&](const std::uint8_t axis) -> length {
 				const length half_extent = half_extents[axis];
-				return half_extent - std::clamp(abs(local[axis]), length{}, half_extent);
+				return half_extent - std::clamp(
+										 abs(local[axis]),
+										 length{},
+										 half_extent
+									 );
 			};
 
 			if (boundary_distance(u_axis) <= boundary_threshold) {

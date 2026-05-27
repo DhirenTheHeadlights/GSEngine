@@ -267,7 +267,10 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		max_lights
 	);
 	auto& staging = d.light_staging;
-	staging.assign(total_lights * sizeof(shaders::forward::light), std::byte{ 0 });
+	staging.assign(
+		total_lights * sizeof(shaders::forward::light),
+		std::byte{ 0 }
+	);
 	auto* staging_lights = reinterpret_cast<shaders::forward::light*>(staging.data());
 	std::size_t light_count = 0;
 

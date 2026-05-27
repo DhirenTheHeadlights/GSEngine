@@ -689,7 +689,12 @@ auto gse::vulkan::allocate_heap_memory(const device& dev, const gpu::device_size
 
 	mem.memory = vk_device.allocateMemory(alloc_info, nullptr);
 	vk_device.bindBufferMemory(mem.buffer, mem.memory, 0);
-	mem.mapped = static_cast<std::byte*>(vk_device.mapMemory(mem.memory, 0, size, {}));
+	mem.mapped = static_cast<std::byte*>(vk_device.mapMemory(
+		mem.memory,
+		0,
+		size,
+		{}
+	));
 	mem.address = vk_device.getBufferAddress(vk::BufferDeviceAddressInfo{
 		.buffer = mem.buffer
 	});

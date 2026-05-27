@@ -412,7 +412,14 @@ template <typename T>
 auto gse::registry::acquire_read(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> read<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
-		return read<T>({}, {}, nullptr, nullptr, mutex, held_locks);
+		return read<T>(
+			{},
+			{},
+			nullptr,
+			nullptr,
+			mutex,
+			held_locks
+		);
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> const T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
@@ -424,7 +431,14 @@ template <typename T>
 auto gse::registry::acquire_write(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> write<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
-		return write<T>({}, {}, nullptr, nullptr, mutex, held_locks);
+		return write<T>(
+			{},
+			{},
+			nullptr,
+			nullptr,
+			mutex,
+			held_locks
+		);
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);

@@ -274,7 +274,10 @@ auto gse::gui::layout::dock_target_rect(const ui_rect& parent, const dock::locat
 
 	switch (location) {
 		case dock::location::left:
-			return ui_rect::from_position_size(parent.top_left(), { split_width, parent.height() });
+			return ui_rect::from_position_size(
+				parent.top_left(),
+				{ split_width, parent.height() }
+			);
 		case dock::location::right:
 			return ui_rect::from_position_size(
 				{ parent.left() + remaining_width, parent.top() },
@@ -309,16 +312,25 @@ auto gse::gui::layout::remaining_rect_for_parent(const ui_rect& parent, const do
 				{ remaining_width, parent.height() }
 			);
 		case dock::location::right:
-			return ui_rect::from_position_size(parent.top_left(), { remaining_width, parent.height() });
+			return ui_rect::from_position_size(
+				parent.top_left(),
+				{ remaining_width, parent.height() }
+			);
 		case dock::location::top:
 			return ui_rect::from_position_size(
 				{ parent.left(), parent.top() - split_height },
 				{ parent.width(), remaining_height }
 			);
 		case dock::location::bottom:
-			return ui_rect::from_position_size(parent.top_left(), { parent.width(), remaining_height });
+			return ui_rect::from_position_size(
+				parent.top_left(),
+				{ parent.width(), remaining_height }
+			);
 		case dock::location::center:
 		default:
-			return ui_rect::from_position_size(parent.top_left(), { 0.f, 0.f });
+			return ui_rect::from_position_size(
+				parent.top_left(),
+				{ 0.f, 0.f }
+			);
 	}
 }

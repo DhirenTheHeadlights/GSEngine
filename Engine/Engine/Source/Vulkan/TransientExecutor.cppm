@@ -75,7 +75,10 @@ gse::vulkan::transient_executor::~transient_executor() = default;
 auto gse::vulkan::transient_executor::create(const device& dev, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count) -> std::unique_ptr<transient_executor> {
 	auto graphics = transient_queue::create(dev, queue_id::graphics, graphics_family, worker_count);
 	auto compute = transient_queue::create(dev, queue_id::compute, compute_family, worker_count);
-	return std::unique_ptr<transient_executor>(new transient_executor(std::move(graphics), std::move(compute)));
+	return std::unique_ptr<transient_executor>(new transient_executor(
+		std::move(graphics),
+		std::move(compute)
+	));
 }
 
 auto gse::vulkan::transient_executor::recorder(this auto& self) -> auto& {

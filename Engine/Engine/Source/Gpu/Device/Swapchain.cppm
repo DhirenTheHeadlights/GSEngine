@@ -47,12 +47,14 @@ export namespace gse::gpu {
 			std::uint32_t index
 		) const -> handle<gpu::image_view>;
 
-		[[nodiscard]] auto acquire(
+		[[nodiscard]]
+		auto acquire(
 			handle<semaphore> wait_semaphore,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
 		) const -> vulkan::acquire_next_image_result;
 
-		[[nodiscard]] auto present(
+		[[nodiscard]]
+		auto present(
 			handle<semaphore> wait_semaphore,
 			std::uint32_t image_index,
 			std::uint64_t present_id
@@ -68,7 +70,8 @@ export namespace gse::gpu {
 			std::uint32_t image_index
 		) -> void;
 
-		[[nodiscard]] auto wait_for_present(
+		[[nodiscard]]
+		auto wait_for_present(
 			std::uint64_t present_id,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
 		) const -> result;
@@ -118,7 +121,11 @@ auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const gpu::prese
 		dev.vulkan_device()
 	);
 	auto depth = create_swapchain_depth(dev, config.extent());
-	return std::unique_ptr<swap_chain>(new swap_chain(std::move(config), std::move(depth), dev));
+	return std::unique_ptr<swap_chain>(new swap_chain(
+		std::move(config),
+		std::move(depth),
+		dev
+	));
 }
 
 gse::gpu::swap_chain::swap_chain(vulkan::swap_chain&& config, gpu::image&& depth_image, device& dev)
@@ -158,7 +165,12 @@ auto gse::gpu::swap_chain::image_view(const std::uint32_t index) const -> handle
 }
 
 auto gse::gpu::swap_chain::acquire(const handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> vulkan::acquire_next_image_result {
-	return vulkan::acquire_next_image(m_device->vulkan_device(), m_config.handle(), wait_semaphore, timeout_ns);
+	return vulkan::acquire_next_image(
+		m_device->vulkan_device(),
+		m_config.handle(),
+		wait_semaphore,
+		timeout_ns
+	);
 }
 
 auto gse::gpu::swap_chain::present(const handle<semaphore> wait_semaphore, const std::uint32_t image_index, const std::uint64_t present_id) -> result {
@@ -169,12 +181,30 @@ auto gse::gpu::swap_chain::present(const handle<semaphore> wait_semaphore, const
 	const auto release_fence_handle = m_config.release_fence(image_index);
 
 	const present_info info{
-		.wait_semaphores = std::span(&wait_semaphore, 1),
-		.swapchains = std::span(&swapchain_handle, 1),
-		.image_indices = std::span(&image_index, 1),
-		.present_modes = std::span(&current_present_mode, 1),
-		.release_fences = std::span(&release_fence_handle, 1),
-		.present_ids = std::span(&present_id, 1),
+		.wait_semaphores = std::span(
+			&wait_semaphore,
+			1
+		),
+		.swapchains = std::span(
+			&swapchain_handle,
+			1
+		),
+		.image_indices = std::span(
+			&image_index,
+			1
+		),
+		.present_modes = std::span(
+			&current_present_mode,
+			1
+		),
+		.release_fences = std::span(
+			&release_fence_handle,
+			1
+		),
+		.present_ids = std::span(
+			&present_id,
+			1
+		),
 	};
 
 	return m_device->present(info);

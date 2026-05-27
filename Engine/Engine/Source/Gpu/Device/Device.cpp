@@ -437,9 +437,16 @@ auto gse::gpu::device::make_aliased_image(const gpu::handle<image> img_handle, c
 		extent,
 		view_info,
 		vulkan::basic_allocation<vulkan::device>{
-			0, 0, 0, nullptr, nullptr, nullptr,
+			0,
+			0,
+			0,
+			nullptr,
+			nullptr,
+			nullptr,
 			std::addressof(m_device_config),
-			vulkan::allocation_debug_info{ .tag = std::string(tag) },
+			vulkan::allocation_debug_info{
+				.tag = std::string(tag)
+			},
 		}
 	);
 }
@@ -448,9 +455,16 @@ auto gse::gpu::device::make_aliased_buffer(const gpu::handle<buffer> buf_handle,
 	return std::make_unique<buffer>(
 		buf_handle,
 		vulkan::basic_allocation<vulkan::device>{
-			0, 0, 0, nullptr, nullptr, nullptr,
+			0,
+			0,
+			0,
+			nullptr,
+			nullptr,
+			nullptr,
 			std::addressof(m_device_config),
-			vulkan::allocation_debug_info{ .tag = std::string(tag) },
+			vulkan::allocation_debug_info{
+				.tag = std::string(tag)
+			},
 		},
 		size
 	);

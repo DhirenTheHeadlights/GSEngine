@@ -705,8 +705,7 @@ auto gse::gui::system::apply_scale(const data& d, style sty, const float viewpor
 
 	sty.scale_factor = final_scale;
 
-	template for (constexpr auto m : std::define_static_array(
-		std::meta::nonstatic_data_members_of(^^style, std::meta::access_context::unchecked()))) {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^style, std::meta::access_context::unchecked()))) {
 		if constexpr (has_annotation<scaled_tag>(m)) {
 			sty.[:m:] *= final_scale;
 		}
@@ -889,7 +888,10 @@ auto gse::gui::system::draw_tab_bar(data& d, const gse::input::state& input_stat
 		const std::string& tab_name = current_menu.tab_contents[i];
 		const bool is_active = (i == current_menu.active_tab_index);
 
-		const ui_rect tab_rect = ui_rect::from_position_size({ tab_x, tab_top }, { tab_width, tab_height });
+		const ui_rect tab_rect = ui_rect::from_position_size(
+			{ tab_x, tab_top },
+			{ tab_width, tab_height }
+		);
 
 		const bool is_hovered = tab_rect.contains(mouse_pos);
 

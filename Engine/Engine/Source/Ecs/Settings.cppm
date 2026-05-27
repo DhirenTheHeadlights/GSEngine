@@ -192,12 +192,22 @@ auto gse::settings::read_settings_with_prefix(const std::unordered_map<std::stri
 
 template <typename T>
 auto gse::settings::write_settings_for(std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, const void* settings_ptr) -> void {
-	write_settings_with_prefix<T>(doc, category, {}, *static_cast<const T*>(settings_ptr));
+	write_settings_with_prefix<T>(
+		doc,
+		category,
+		{},
+		*static_cast<const T*>(settings_ptr)
+	);
 }
 
 template <typename T>
 auto gse::settings::read_settings_for(const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& doc, const std::string_view category, void* settings_ptr) -> void {
-	read_settings_with_prefix<T>(doc, category, {}, *static_cast<T*>(settings_ptr));
+	read_settings_with_prefix<T>(
+		doc,
+		category,
+		{},
+		*static_cast<T*>(settings_ptr)
+	);
 }
 
 template <typename T>
@@ -225,7 +235,10 @@ auto gse::settings::collect_settings_keys_with_prefix(std::vector<std::string>& 
 template <typename T>
 auto gse::settings::collect_settings_keys() -> std::vector<std::string> {
 	std::vector<std::string> out;
-	collect_settings_keys_with_prefix<T>(out, {});
+	collect_settings_keys_with_prefix<T>(
+		out,
+		{}
+	);
 	return out;
 }
 

@@ -321,10 +321,13 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 	const float widget_height = ctx.font->line_height(sty.font_size) + sty.padding * 0.5f;
 	const ui_rect row_rect = lo::reserve_row(ctx, widget_height, sty.padding);
 
-	const auto [label_rect, value_area] = lo::split_horizontal<2>(row_rect, {
-		spec::ratio(0.4f),
-		spec::flex(),
-	});
+	const auto [label_rect, value_area] = lo::split_horizontal<2>(
+		row_rect,
+		{
+			spec::ratio(0.4f),
+			spec::flex(),
+		}
+	);
 
 	ctx.queue_text({
 		.font = ctx.font,

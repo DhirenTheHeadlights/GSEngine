@@ -244,7 +244,10 @@ auto gse::acquire_locks_in_sorted_order(async::rw_mutex_registry& mutexes, const
 
 	std::array<std::size_t, max_arity> order_buf{};
 	const std::span order(order_buf.data(), count);
-	std::ranges::iota(order, std::size_t{ 0 });
+	std::ranges::iota(
+		order,
+		std::size_t{ 0 }
+	);
 	std::ranges::sort(order, [type_ids](const std::size_t a, const std::size_t b) {
 		return type_ids[a] < type_ids[b];
 	});

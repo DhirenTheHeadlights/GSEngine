@@ -93,7 +93,8 @@ export namespace gse::gpu {
 			this auto& self
 		) -> auto&;
 
-		[[nodiscard]] auto frame_command_buffer(
+		[[nodiscard]]
+		auto frame_command_buffer(
 			queue_type queue,
 			std::uint32_t frame_index
 		) const -> gpu::handle<command_buffer>;
@@ -108,7 +109,8 @@ export namespace gse::gpu {
 			const present_info& info
 		) -> result;
 
-		[[nodiscard]] auto wait_for_fence(
+		[[nodiscard]]
+		auto wait_for_fence(
 			gpu::handle<fence> f,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
 		) const -> result;
@@ -121,7 +123,8 @@ export namespace gse::gpu {
 			std::uint32_t frame_index
 		) -> void;
 
-		[[nodiscard]] auto acquire_worker_command_buffer(
+		[[nodiscard]]
+		auto acquire_worker_command_buffer(
 			queue_type queue,
 			std::size_t worker_index,
 			std::uint32_t frame_index
@@ -131,11 +134,13 @@ export namespace gse::gpu {
 			vec2u extent
 		) -> std::optional<video_encoder>;
 
-		[[nodiscard]] auto create_image_unbound(
+		[[nodiscard]]
+		auto create_image_unbound(
 			const image_create_info& info
 		) const -> std::pair<gpu::handle<image>, memory_requirements>;
 
-		[[nodiscard]] auto create_buffer_unbound(
+		[[nodiscard]]
+		auto create_buffer_unbound(
 			const buffer_create_info& info
 		) const -> std::pair<gpu::handle<buffer>, memory_requirements>;
 
@@ -151,12 +156,14 @@ export namespace gse::gpu {
 			device_size offset
 		) const -> void;
 
-		[[nodiscard]] auto create_image_view(
+		[[nodiscard]]
+		auto create_image_view(
 			gpu::handle<image> img,
 			const image_view_create_info& info
 		) const -> gpu::handle<image_view>;
 
-		[[nodiscard]] auto allocate_aliased_memory(
+		[[nodiscard]]
+		auto allocate_aliased_memory(
 			device_size size,
 			std::uint32_t memory_type_index
 		) const -> device_memory_handle;
@@ -165,12 +172,14 @@ export namespace gse::gpu {
 			device_memory_handle mem
 		) const -> void;
 
-		[[nodiscard]] auto find_memory_type_index(
+		[[nodiscard]]
+		auto find_memory_type_index(
 			std::uint32_t type_bits,
 			memory_property_flags required
 		) const -> std::uint32_t;
 
-		[[nodiscard]] auto make_aliased_image(
+		[[nodiscard]]
+		auto make_aliased_image(
 			gpu::handle<image> img_handle,
 			gpu::handle<image_view> view_handle,
 			image_format format,
@@ -179,7 +188,8 @@ export namespace gse::gpu {
 			std::string_view tag
 		) -> std::unique_ptr<image>;
 
-		[[nodiscard]] auto make_aliased_buffer(
+		[[nodiscard]]
+		auto make_aliased_buffer(
 			gpu::handle<buffer> buf_handle,
 			device_size size,
 			std::string_view tag

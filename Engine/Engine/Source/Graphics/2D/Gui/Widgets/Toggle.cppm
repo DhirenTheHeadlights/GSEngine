@@ -108,7 +108,10 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 	const float knob_x = p.value ? track_x + track_width - knob_size - knob_padding : track_x + knob_padding;
 	const float knob_y = track_y - knob_padding;
 
-	const ui_rect knob_rect = ui_rect::from_position_size({ knob_x, knob_y }, { knob_size, knob_size });
+	const ui_rect knob_rect = ui_rect::from_position_size(
+		{ knob_x, knob_y },
+		{ knob_size, knob_size }
+	);
 
 	const vec4f knob_target = hovered ? ctx.style.color_handle_hovered : ctx.style.color_handle;
 

@@ -236,7 +236,9 @@ auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<g
 		}
 		const auto source_slot = (i == 0) ? d.hdr_view.sampled_slot() : d.mips_down[i - 1].sampled_slot();
 		rec.dispatch<downsample_entry>(
-			{ .use_karis_average = i == 0 ? 1u : 0u },
+			{
+				.use_karis_average = i == 0 ? 1u : 0u
+			},
 			{
 				.bloom_in = { source_slot, d.sampler.slot() },
 				.bloom_out = d.mips_down[i].storage_slot(),
@@ -267,7 +269,9 @@ auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<g
 		}
 		const auto up_source = (i + 1 == count - 1) ? d.mips_down[count - 1].sampled_slot() : d.mips_up[i + 1].sampled_slot();
 		up_rec.dispatch<upsample_entry>(
-			{ .radius = d.bloom_radius },
+			{
+				.radius = d.bloom_radius
+			},
 			{
 				.bloom_up_in = { up_source, d.sampler.slot() },
 				.bloom_up_dn = { d.mips_down[i].sampled_slot(), d.sampler.slot() },

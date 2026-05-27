@@ -453,10 +453,16 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 		}
 	}
 
-	const auto material_count = std::min(data.material_palette_map.size(), system::data::max_materials);
+	const auto material_count = std::min(
+		data.material_palette_map.size(),
+		system::data::max_materials
+	);
 	if (material_count > 0) {
 		auto& mat_staging = d.material_staging;
-		mat_staging.assign(material_count * sizeof(shaders::forward::material_data), std::byte{ 0 });
+		mat_staging.assign(
+			material_count * sizeof(shaders::forward::material_data),
+			std::byte{ 0 }
+		);
 		auto* staging_materials = reinterpret_cast<shaders::forward::material_data*>(mat_staging.data());
 
 		for (const auto& [mat_ptr, idx] : data.material_palette_map) {

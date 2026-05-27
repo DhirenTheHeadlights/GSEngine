@@ -78,7 +78,7 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_h
 		std::move(cmd),
 		gpu::queue_id::graphics
 	)
-	.retain(std::move(scratch));
+		.retain(std::move(scratch));
 }
 auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> gpu::as_instance {
 	return vulkan::pack_instance(
@@ -274,7 +274,10 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const 
 	};
 	const acceleration_structure_build_range_info* range_ptr = &range;
 
-	rec.build_acceleration_structure(build_info, { &range_ptr, 1 });
+	rec.build_acceleration_structure(
+		build_info,
+		{ &range_ptr, 1 }
+	);
 
 	const memory_barrier barrier{
 		.src_stages = pipeline_stage_flag::acceleration_structure_build,
@@ -364,7 +367,10 @@ auto gse::gpu::build_tlas_in_place(gpu::device& device, tlas& t, const std::uint
 	};
 	const acceleration_structure_build_range_info* range_ptr = &range;
 
-	rec.build_acceleration_structure(build_info, { &range_ptr, 1 });
+	rec.build_acceleration_structure(
+		build_info,
+		{ &range_ptr, 1 }
+	);
 
 	const memory_barrier post_barrier{
 		.src_stages = pipeline_stage_flag::acceleration_structure_build,

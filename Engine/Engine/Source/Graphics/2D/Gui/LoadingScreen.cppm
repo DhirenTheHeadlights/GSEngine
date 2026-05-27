@@ -96,7 +96,10 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 
 	const float bar_width = std::min(ctx.style.progress_bar_max_width, body.width() * 0.6f);
 	const float bar_height = ctx.style.progress_bar_height;
-	const ui_rect bar_outline = layout::centered(body, { bar_width, bar_height });
+	const ui_rect bar_outline = layout::centered(
+		body,
+		{ bar_width, bar_height }
+	);
 
 	ctx.queue_sprite({
 		.rect = bar_outline,

@@ -627,13 +627,11 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 				return;
 			}
 			const auto count = static_cast<std::uint32_t>(instances.size());
-			rec.push_bindings<instanced_entry>(
-				{
-					.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
-					.body_data = d.cpu_body_buffers[frame_index].slot(),
-					.shape_instances = instance_buffer.slot(),
-				}
-			);
+			rec.push_bindings<instanced_entry>({
+				.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
+				.body_data = d.cpu_body_buffers[frame_index].slot(),
+				.shape_instances = instance_buffer.slot(),
+			});
 			rec.bind_vertex(unit_vb);
 			rec.draw(unit_vert_count, count);
 		};
@@ -660,11 +658,9 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 
 	if (has_lines) {
 		rec.bind(d.pipeline_lines);
-		rec.push_bindings<lines_entry>(
-			{
-				.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
-			}
-		);
+		rec.push_bindings<lines_entry>({
+			.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
+		});
 		rec.bind_vertex(d.line_vertex_buffers[frame_index]);
 		rec.draw(static_cast<std::uint32_t>(d.line_vertices.size()));
 	}

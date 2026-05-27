@@ -235,7 +235,11 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 				);
 			}
 		}
-		d.encoder.encode_frame(frame_index, d.y_planes[frame_index].image().handle(), d.uv_planes[frame_index].image().handle());
+		d.encoder.encode_frame(
+			frame_index,
+			d.y_planes[frame_index].image().handle(),
+			d.uv_planes[frame_index].image().handle()
+		);
 	}
 
 	const auto toggle_requests = ctx.read_channel<toggle_recording_request>();
@@ -287,7 +291,11 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 																	 );
 			std::filesystem::create_directories(path.parent_path());
 
-			auto live = mp4::live_muxer::open(path, { d.encoder.codec(), d.encoder.extent() }, d.encoder.stream_header());
+			auto live = mp4::live_muxer::open(
+				path,
+				{ d.encoder.codec(), d.encoder.extent() },
+				d.encoder.stream_header()
+			);
 			if (!live) {
 				log::println(
 					log::level::warning,
@@ -308,7 +316,9 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 					[muxer = std::move(*live), state = d.recording.get()] mutable {
 						while (true) {
 							std::unique_lock lock(state->mutex);
-							state->cv.wait(lock, [&] { return !state->queue.empty() || !state->running; });
+							state->cv.wait(lock, [&] {
+								return !state->queue.empty() || !state->running;
+							});
 							while (!state->queue.empty()) {
 								auto unit = std::move(state->queue.front());
 								state->queue.pop();
@@ -374,7 +384,12 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 					 stream_header = std::move(stream_header_copy),
 					 path,
 					 flag = d.clip_save_in_progress.get()] mutable {
-						const auto ok = mp4::mux(snap, { codec, extent }, stream_header, path);
+						const auto ok = mp4::mux(
+							snap,
+							{ codec, extent },
+							stream_header,
+							path
+						);
 						if (ok) {
 							log::println(log::category::render, "Clip saved: {}", path.string());
 						}
