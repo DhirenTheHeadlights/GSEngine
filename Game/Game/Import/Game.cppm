@@ -2,6 +2,7 @@ export module gs;
 
 import gse;
 
+export import :balance_controller;
 export import :client;
 export import :client_ui;
 export import :controlled_joint;
@@ -13,6 +14,7 @@ export import :gait_scheduler;
 export import :humanoid_skeleton;
 export import :leg_controller;
 export import :leg_ik;
+export import :locomotion_smoke;
 export import :locomotion_types;
 export import :main_menu_screen;
 export import :network_screen;

@@ -16,18 +16,10 @@ import gse.stacktrace;
 import :engine;
 
 export namespace gse {
-	struct engine_config {
-		std::string title = "GSEngine Application";
-		std::optional<vec2f> size = std::nullopt;
-		bool resizable = true;
-		bool fullscreen = false;
-	};
-
 	using app_setup_fn = std::function<void(engine&)>;
 
 	auto start(
 		app_setup_fn setup,
-		flags<engine_flag> engine_flags = flags<engine_flag>{ engine_flag::create_window } | engine_flag::render,
 		const engine_config& config = {}
 	) -> void;
 
@@ -42,7 +34,7 @@ auto gse::shutdown() -> void {
 	should_shutdown.store(true, std::memory_order_release);
 }
 
-auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const engine_config& config) -> void {
+auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 	install_crash_handlers();
 
 	std::set_terminate([] {
@@ -84,7 +76,7 @@ auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const
 
 	should_shutdown.store(false, std::memory_order_relaxed);
 
-	engine e(config.title, engine_flags);
+	engine e(config);
 	log::println(log::level::info, "Starting GSEngine...");
 
 	task::start([&] {
@@ -103,7 +95,7 @@ auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const
 		while (!should_shutdown.load(std::memory_order_acquire)) {
 			{
 				trace::scope_guard sg{ loop_id };
-				if (engine_flags.test(engine_flag::create_window)) {
+				if (config.create_window) {
 					{
 						trace::scope_guard sg{ poll_id };
 						window::poll_events();
@@ -122,7 +114,7 @@ auto gse::start(app_setup_fn setup, const flags<engine_flag> engine_flags, const
 						e.update();
 					}
 
-					if (engine_flags.test(engine_flag::render)) {
+					if (config.render) {
 						{
 							trace::scope_guard sg{ render_id };
 							e.render();

@@ -255,6 +255,9 @@ auto gse::scene::set_active(const bool is_active) -> void {
 		for (const auto& id : m_entities) {
 			m_registry.remove(id);
 		}
+		m_entities.clear();
+		m_queue.clear();
+		m_pending_inits.clear();
 	}
 
 	m_is_active = is_active;

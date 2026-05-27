@@ -22,9 +22,10 @@ import :scene;
 import :world_system;
 
 export namespace gse {
-	enum class engine_flag : std::uint8_t {
-		create_window = 1 << 0,
-		render = 1 << 1,
+	struct engine_config {
+		std::string title = "GSEngine Application";
+		bool create_window = true;
+		bool render = true;
 	};
 
 	class engine : public identifiable {
@@ -32,8 +33,7 @@ export namespace gse {
 		using setup_fn = std::function<void(engine&)>;
 
 		engine(
-			const std::string& name,
-			flags<engine_flag> engine_flags
+			const engine_config& config
 		);
 
 		auto initialize(
@@ -58,7 +58,7 @@ export namespace gse {
 		) -> system_handle<S>;
 
 	private:
-		flags<engine_flag> m_flags;
+		engine_config m_config;
 		scheduler m_scheduler;
 		save::registry m_save;
 		primitives::data m_primitives;
