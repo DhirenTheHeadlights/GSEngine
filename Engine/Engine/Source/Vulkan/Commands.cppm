@@ -490,7 +490,11 @@ auto gse::vulkan::commands::write_timestamp(const gpu::pipeline_stage_flags stag
 }
 
 auto gse::vulkan::commands::begin_query(const gpu::handle<query_pool> pool, const std::uint32_t query_index) const -> void {
-	raw().beginQuery(std::bit_cast<vk::QueryPool>(pool), query_index, {});
+	raw().beginQuery(
+		std::bit_cast<vk::QueryPool>(pool),
+		query_index,
+		{}
+	);
 }
 
 auto gse::vulkan::commands::end_query(const gpu::handle<query_pool> pool, const std::uint32_t query_index) const -> void {

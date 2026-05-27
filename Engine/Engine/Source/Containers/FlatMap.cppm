@@ -20,8 +20,7 @@ export namespace gse {
 			std::initializer_list<value_type> init
 		);
 
-		[[nodiscard]]
-		auto at(
+		[[nodiscard]] auto at(
 			this auto& self,
 			const Key& key
 		) -> decltype(auto);
@@ -30,8 +29,7 @@ export namespace gse {
 			const Key& key
 		) -> Value&;
 
-		[[nodiscard]]
-		auto find(
+		[[nodiscard]] auto find(
 			this auto& self,
 			const Key& key
 		) -> decltype(auto);
@@ -119,7 +117,10 @@ auto gse::flat_map<Key, Value, Compare>::operator[](const Key& key) -> Value& {
 	if (it != m_data.end() && it->first == key) {
 		return it->second;
 	}
-	it = m_data.insert(it, { key, Value{} });
+	it = m_data.insert(
+		it,
+		{ key, Value{} }
+	);
 	return it->second;
 }
 
@@ -157,7 +158,12 @@ auto gse::flat_map<Key, Value, Compare>::emplace(const Key& key, Args&&... args)
 	if (it != m_data.end() && it->first == key) {
 		return { it, false };
 	}
-	return { m_data.emplace(it, key, Value{ std::forward<Args>(args)... }), true };
+	return { m_data.emplace(
+				 it,
+				 key,
+				 Value{ std::forward<Args>(args)... }
+			 ),
+			 true };
 }
 
 template <typename Key, typename Value, typename Compare>
@@ -215,7 +221,12 @@ template <typename Key, typename Value, typename Compare>
 auto gse::flat_map<Key, Value, Compare>::assign_unsorted(std::vector<value_type> values) -> void {
 	m_data = std::move(values);
 	std::ranges::sort(m_data, m_compare, &value_type::first);
-	const auto dup_begin = std::ranges::unique(m_data, {}, &value_type::first).begin();
+	const auto dup_begin = std::ranges::unique(
+							   m_data,
+							   {},
+							   &value_type::first
+	)
+		.begin();
 	m_data.erase(dup_begin, m_data.end());
 }
 

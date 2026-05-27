@@ -104,11 +104,26 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 		}
 	);
 
-	s.registry().add_component<gs::locomotion::intent>(pelvis_id, {});
-	s.registry().add_component<gs::locomotion::state>(pelvis_id, {});
-	s.registry().add_component<gs::locomotion::gait>(pelvis_id, {});
-	s.registry().add_component<gs::locomotion::plan>(pelvis_id, {});
-	s.registry().add_component<gs::locomotion::leg_context>(pelvis_id, {});
+	s.registry().add_component<gs::locomotion::intent>(
+		pelvis_id,
+		{}
+	);
+	s.registry().add_component<gs::locomotion::state>(
+		pelvis_id,
+		{}
+	);
+	s.registry().add_component<gs::locomotion::gait>(
+		pelvis_id,
+		{}
+	);
+	s.registry().add_component<gs::locomotion::plan>(
+		pelvis_id,
+		{}
+	);
+	s.registry().add_component<gs::locomotion::leg_context>(
+		pelvis_id,
+		{}
+	);
 	s.registry().add_component<gse::physics::motor_component>(
 		pelvis_id,
 		{

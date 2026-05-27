@@ -725,8 +725,16 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 		auto format_default = [&] {
 			it = value_fmt.format(gse::internal::value_in<Unit>(q), ctx);
 			if constexpr (!std::same_as<Unit, gse::internal::no_default_unit>) {
-				it = std::ranges::copy(std::string_view{ " " }, it).out;
-				it = std::ranges::copy(std::string_view{ Unit::unit_name }, it).out;
+				it = std::ranges::copy(
+						 std::string_view{ " " },
+						 it
+				)
+					.out;
+				it = std::ranges::copy(
+						 std::string_view{ Unit::unit_name },
+						 it
+				)
+					.out;
 			}
 		};
 
@@ -743,8 +751,16 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 				[&](auto unit_const) {
 					using U = std::remove_cvref_t<decltype(unit_const)>;
 					it = value_fmt.format(gse::internal::value_in<U>(q), ctx);
-					it = std::ranges::copy(std::string_view{ " " }, it).out;
-					it = std::ranges::copy(std::string_view{ U::unit_name }, it).out;
+					it = std::ranges::copy(
+							 std::string_view{ " " },
+							 it
+					)
+						.out;
+					it = std::ranges::copy(
+							 std::string_view{ U::unit_name },
+							 it
+					)
+						.out;
 				}
 			);
 		}

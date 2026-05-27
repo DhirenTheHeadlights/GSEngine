@@ -160,12 +160,14 @@ export namespace gse::gui {
 			vec2f position
 		) const -> bool;
 
-		[[nodiscard]] auto mouse_pressed_for(
+		[[nodiscard]]
+		auto mouse_pressed_for(
 			const ui_rect& rect,
 			mouse_button button = mouse_button::button_1
 		) const -> bool;
 
-		[[nodiscard]] auto mouse_released_for(
+		[[nodiscard]]
+		auto mouse_released_for(
 			const ui_rect& rect,
 			mouse_button button = mouse_button::button_1
 		) const -> bool;

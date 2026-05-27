@@ -614,9 +614,13 @@ auto gse::shaders::build_family_sets(Pack) -> std::vector<family_set> {
 	[&]<typename... Ts>(type_pack<Ts...>) {
 		(append_family_binding<Ts>(sets), ...);
 	}(Pack{});
-	std::ranges::sort(sets, {}, [](const family_set& s) {
-		return static_cast<std::uint32_t>(s.type);
-	});
+	std::ranges::sort(
+		sets,
+		{},
+		[](const family_set& s) {
+			return static_cast<std::uint32_t>(s.type);
+		}
+	);
 	return sets;
 }
 
@@ -639,9 +643,13 @@ auto gse::shaders::build_combined_family_sets() -> std::vector<family_set> {
 		}
 	};
 	(merge_into(build_family_sets(Packs{})), ...);
-	std::ranges::sort(result, {}, [](const family_set& s) {
-		return static_cast<std::uint32_t>(s.type);
-	});
+	std::ranges::sort(
+		result,
+		{},
+		[](const family_set& s) {
+			return static_cast<std::uint32_t>(s.type);
+		}
+	);
 	return result;
 }
 

@@ -177,7 +177,10 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 		int h = 0;
 		glfwGetWindowPos(d.handle, &x, &y);
 		glfwGetWindowSize(d.handle, &w, &h);
-		d.windowed_rect = rect_t<vec2i>::from_position_size({ x, y }, { w, h });
+		d.windowed_rect = rect_t<vec2i>::from_position_size(
+			{ x, y },
+			{ w, h }
+		);
 	}
 
 	d.current_display_mode = mode;

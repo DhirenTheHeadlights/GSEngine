@@ -725,7 +725,11 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 		});
 	}
 
-	slot.cmd.beginQuery(*slot.query_pool, 0, {});
+	slot.cmd.beginQuery(
+		*slot.query_pool,
+		0,
+		{}
+	);
 
 	if (m_codec == video_codec::h265) {
 		vk::video::EncodeH265ReferenceListsInfo ref_lists{};

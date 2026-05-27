@@ -85,7 +85,6 @@ auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::conte
 				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 			}
 		);
-
 	}
 
 	co_return;

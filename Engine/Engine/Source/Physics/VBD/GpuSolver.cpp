@@ -629,7 +629,10 @@ auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, cons
 
 	if (upload_joint_buffer) {
 		m_joint_count = 0;
-		m_upload_joints.assign(joints.size(), joint_constraint{});
+		m_upload_joints.assign(
+			joints.size(),
+			joint_constraint{}
+		);
 
 		const time_step sub_dt = dt / static_cast<float>(std::max(m_steps, 1u));
 		const time_squared h_squared = sub_dt * sub_dt;
@@ -867,7 +870,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.collision_reset_pipeline);
 
 		rec.dispatch<collision_reset_entry>(
-			make_pc(0u, 0u, sub, 0u, 0.f, warm),
+			make_pc(
+				0u,
+				0u,
+				sub,
+				0u,
+				0.f,
+				warm
+			),
 			bindings,
 			vec3u{ reset_workgroups, 1u, 1u }
 		);
@@ -878,7 +888,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.collision_grid_build_pipeline);
 
 		rec.dispatch<collision_grid_build_entry>(
-			make_pc(0u, 0u, sub, 0u, 0.f, warm),
+			make_pc(
+				0u,
+				0u,
+				sub,
+				0u,
+				0.f,
+				warm
+			),
 			bindings,
 			vec3u{ body_workgroups, 1u, 1u }
 		);
@@ -889,7 +906,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.collision_broad_phase_pipeline);
 
 		rec.dispatch<collision_broad_phase_entry>(
-			make_pc(0u, 0u, sub, 0u, 0.f, warm),
+			make_pc(
+				0u,
+				0u,
+				sub,
+				0u,
+				0.f,
+				warm
+			),
 			bindings,
 			vec3u{ body_workgroups, 1u, 1u }
 		);
@@ -900,7 +924,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.prepare_indirect_pipeline);
 
 		rec.dispatch<prepare_indirect_entry>(
-			make_pc(0u, 0u, sub, 0u, 0.f, warm),
+			make_pc(
+				0u,
+				0u,
+				sub,
+				0u,
+				0.f,
+				warm
+			),
 			bindings,
 			vec3u{ 1u, 1u, 1u }
 		);
@@ -910,7 +941,17 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.in_chain<vbd_solve_chain>()
 			.pipeline(m_compute.collision_narrow_phase_pipeline);
 
-		rec.push_bindings<collision_narrow_phase_entry>(make_pc(0u, 0u, sub, 0u, 0.f, warm), bindings);
+		rec.push_bindings<collision_narrow_phase_entry>(
+			make_pc(
+				0u,
+				0u,
+				sub,
+				0u,
+				0.f,
+				warm
+			),
+			bindings
+		);
 		rec.dispatch_indirect(f.indirect_dispatch_buffer.buffer(), 0);
 
 		rec = co_await gpu::pass<vbd_prepare_contact_indirect_stage>(ctx)
@@ -919,7 +960,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.prepare_contact_indirect_pipeline);
 
 		rec.dispatch<prepare_contact_indirect_entry>(
-			make_pc(0u, 0u, sub, 0u, 0.f, warm),
+			make_pc(
+				0u,
+				0u,
+				sub,
+				0u,
+				0.f,
+				warm
+			),
 			bindings,
 			vec3u{ 1u, 1u, 1u }
 		);
@@ -930,7 +978,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.collision_build_adjacency_pipeline);
 
 		rec.dispatch<collision_build_adjacency_entry>(
-			make_pc(0u, 0u, sub, 0u, 0.f, warm),
+			make_pc(
+				0u,
+				0u,
+				sub,
+				0u,
+				0.f,
+				warm
+			),
 			bindings,
 			vec3u{ 1u, 1u, 1u }
 		);
@@ -942,7 +997,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				.pipeline(m_compute.collision_build_coloring_pipeline);
 
 			rec.dispatch<collision_build_coloring_entry>(
-				make_pc(0u, 0u, sub, 0u, 0.f, warm),
+				make_pc(
+					0u,
+					0u,
+					sub,
+					0u,
+					0.f,
+					warm
+				),
 				bindings,
 				vec3u{ 1u, 1u, 1u }
 			);
@@ -954,7 +1016,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				.pipeline(m_compute.prepare_color_indirect_pipeline);
 
 			rec.dispatch<prepare_color_indirect_entry>(
-				make_pc(0u, 0u, sub, 0u, 0.f, warm),
+				make_pc(
+					0u,
+					0u,
+					sub,
+					0u,
+					0.f,
+					warm
+				),
 				bindings,
 				vec3u{ 1u, 1u, 1u }
 			);
@@ -969,7 +1038,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				.pipeline(m_compute.apply_impulses_pipeline);
 
 			rec.dispatch<apply_impulses_entry>(
-				make_pc(0u, 0u, sub, 0u, 0.f, warm),
+				make_pc(
+					0u,
+					0u,
+					sub,
+					0u,
+					0.f,
+					warm
+				),
 				bindings,
 				vec3u{ impulse_workgroups, 1u, 1u }
 			);
@@ -981,7 +1057,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.predict_pipeline);
 
 		rec.dispatch<predict_entry>(
-			make_pc(0u, 0u, sub, 0u, 0.f, warm),
+			make_pc(
+				0u,
+				0u,
+				sub,
+				0u,
+				0.f,
+				warm
+			),
 			bindings,
 			vec3u{ body_workgroups, 1u, 1u }
 		);
@@ -1009,7 +1092,17 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				rec.barrier(gpu::barrier_scope::compute_to_compute);
 
 				rec.bind(m_compute.apply_jacobi_pipeline);
-				rec.push_bindings<apply_jacobi_entry>(make_pc(0u, 0u, sub, it, solve_alpha, warm), bindings);
+				rec.push_bindings<apply_jacobi_entry>(
+					make_pc(
+						0u,
+						0u,
+						sub,
+						it,
+						solve_alpha,
+						warm
+					),
+					bindings
+				);
 				rec.dispatch(body_workgroups, 1, 1);
 				rec.barrier(gpu::barrier_scope::compute_to_compute);
 			}
@@ -1029,12 +1122,29 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			}
 
 			rec.bind(m_compute.update_lambda_pipeline);
-			rec.push_bindings<update_lambda_entry>(make_pc(0u, 0u, sub, it, solve_alpha, warm), bindings);
+			rec.push_bindings<update_lambda_entry>(
+				make_pc(
+					0u,
+					0u,
+					sub,
+					it,
+					solve_alpha,
+					warm
+				),
+				bindings
+			);
 			rec.dispatch_indirect(f.indirect_dispatch_buffer.buffer(), 3 * sizeof(std::uint32_t));
 			if (joint_count > 0) {
 				rec.bind(m_compute.update_joint_lambda_pipeline);
 				rec.push_bindings<update_joint_lambda_entry>(
-					make_pc(0u, 0u, sub, it, solve_alpha, warm),
+					make_pc(
+						0u,
+						0u,
+						sub,
+						it,
+						solve_alpha,
+						warm
+					),
 					bindings
 				);
 				rec.dispatch(joint_workgroups, 1, 1);
@@ -1048,7 +1158,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.derive_velocities_pipeline);
 
 		rec.dispatch<derive_velocities_entry>(
-			make_pc(0u, 0u, sub, num_iterations, solve_alpha, warm),
+			make_pc(
+				0u,
+				0u,
+				sub,
+				num_iterations,
+				solve_alpha,
+				warm
+			),
 			bindings,
 			vec3u{ body_workgroups, 1u, 1u }
 		);
@@ -1063,7 +1180,10 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 		for (std::uint32_t color = 0; color < num_colors; ++color) {
 			restitution_pc.color_offset = color;
 			rec.push_bindings<apply_restitution_entry>(restitution_pc, bindings);
-			rec.dispatch_indirect(f.indirect_dispatch_buffer.buffer(), (2 + color) * 3 * sizeof(std::uint32_t));
+			rec.dispatch_indirect(
+				f.indirect_dispatch_buffer.buffer(),
+				(2 + color) * 3 * sizeof(std::uint32_t)
+			);
 
 			if (color + 1 < num_colors) {
 				rec.barrier(gpu::barrier_scope::compute_to_compute);
@@ -1077,7 +1197,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 				.pipeline(m_compute.prepare_color_indirect_pipeline);
 
 			rec.dispatch<prepare_color_indirect_entry>(
-				make_pc(0u, 0u, sub, num_iterations, 0.f, warm),
+				make_pc(
+					0u,
+					0u,
+					sub,
+					num_iterations,
+					0.f,
+					warm
+				),
 				bindings,
 				vec3u{ 1u, 1u, 1u }
 			);
@@ -1094,7 +1221,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 
 				rec.bind(m_compute.apply_jacobi_pipeline);
 				rec.push_bindings<apply_jacobi_entry>(
-					make_pc(0u, 0u, sub, num_iterations, 0.f, warm),
+					make_pc(
+						0u,
+						0u,
+						sub,
+						num_iterations,
+						0.f,
+						warm
+					),
 					bindings
 				);
 				rec.dispatch(body_workgroups, 1, 1);
@@ -1120,7 +1254,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(frame_context& ctx) -> async::task<>
 			.pipeline(m_compute.finalize_pipeline);
 
 		rec.dispatch<finalize_entry>(
-			make_pc(0u, 0u, sub, 0u, 0.f, warm),
+			make_pc(
+				0u,
+				0u,
+				sub,
+				0u,
+				0.f,
+				warm
+			),
 			bindings,
 			vec3u{ body_workgroups, 1u, 1u }
 		);

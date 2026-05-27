@@ -448,7 +448,10 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 		if (type == command_type::sprite) {
 			sprite_pc.tex_idx = tex_idx;
 			sprite_pc.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
-			rec.push_bindings<sprite_entry>(sprite_pc, {});
+			rec.push_bindings<sprite_entry>(
+				sprite_pc,
+				{}
+			);
 		}
 		else {
 			const auto atlas_size = font->texture()->image_data().size;
@@ -456,7 +459,10 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
 			text_pc.unit_range = { font->pixel_range() / atlas_w, font->pixel_range() / atlas_h };
 			text_pc.tex_idx = tex_idx;
-			rec.push_bindings<msdf_entry>(text_pc, {});
+			rec.push_bindings<msdf_entry>(
+				text_pc,
+				{}
+			);
 		}
 
 		if (clip_rect) {

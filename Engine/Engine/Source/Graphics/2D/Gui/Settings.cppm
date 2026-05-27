@@ -390,8 +390,7 @@ auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename
 	const std::uint64_t category_hash = stable_id(category);
 
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked()))) {
-		if constexpr (meta::find_describe(m) != std::meta::info{}
-			&& (!HotOnly || has_annotation<settings::hot_reloadable_tag>(m))) {
+		if constexpr (meta::find_describe(m) != std::meta::info{} && (!HotOnly || has_annotation<settings::hot_reloadable_tag>(m))) {
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
 			using describe_t = [:meta::find_describe(m):];
@@ -815,14 +814,19 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& chan
 		});
 
 		b.scroll_region(
-			{ .id = cat },
+			{
+				.id = cat
+			},
 			[&](gui::builder& sub) {
 				sub.draw<gui::section>({
 					.title = cat,
 					.action_icon = category_has_hot ? std::string_view("\xE2\x86\x97 Live") : std::string_view{},
 					.on_action = category_has_hot ? std::function<void()>([&channels, cat] {
-						channels.push<gui::popout_toggle>({ .category = cat });
-					}) : std::function<void()>{},
+						channels.push<gui::popout_toggle>({
+							.category = cat
+						});
+					})
+												  : std::function<void()>{},
 				});
 				save_reg.for_each_entry([&](const register_settings_type& entry) {
 					if (entry.category != cat) {

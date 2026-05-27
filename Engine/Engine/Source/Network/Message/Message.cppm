@@ -148,7 +148,10 @@ auto gse::network::write(write_bitstream& s, const T& msg) -> void {
 template <gse::network::is_network_message T, typename Fn>
 auto gse::network::try_decode(read_bitstream& s, std::uint64_t id, Fn&& on_decode) -> bool {
 	if (id == message_id_v<T>) {
-		T m = decode(s, std::type_identity<T>{});
+		T m = decode(
+			s,
+			std::type_identity<T>{}
+		);
 		std::invoke(std::forward<Fn>(on_decode), m);
 		return true;
 	}

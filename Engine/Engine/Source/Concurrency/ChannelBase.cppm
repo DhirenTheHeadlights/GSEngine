@@ -200,7 +200,10 @@ auto gse::same_frame_typed_channel<T>::flip() -> void {
 template <typename T>
 auto gse::same_frame_typed_channel<T>::drain() -> std::vector<T> {
 	std::lock_guard lock(mutex);
-	return std::exchange(data, {});
+	return std::exchange(
+		data,
+		{}
+	);
 }
 
 template <typename T>

@@ -114,7 +114,10 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
 	std::array<std::byte, 64> request_buffer;
 	write_bitstream request_stream(request_buffer);
 	request_stream.write(packet_header{});
-	write(request_stream, server_info_request{});
+	write(
+		request_stream,
+		server_info_request{}
+	);
 
 	const packet request_pkt{
 		.data = reinterpret_cast<std::uint8_t*>(request_buffer.data()),

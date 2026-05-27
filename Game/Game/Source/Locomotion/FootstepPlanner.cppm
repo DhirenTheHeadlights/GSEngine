@@ -122,9 +122,7 @@ auto gs::locomotion::step_forward_with_capture(const gse::displacement nominal_f
 	const bool backward_input_forward_capture =
 		nominal_forward < gse::meters(0.f) && capture_forward > conflict_threshold;
 	const auto requested_forward =
-		forward_input_back_capture || backward_input_forward_capture ?
-			capture_forward :
-			nominal_forward + capture_forward;
+		forward_input_back_capture || backward_input_forward_capture ? capture_forward : nominal_forward + capture_forward;
 	return std::clamp(
 		requested_forward,
 		-d.max_backward_step,
@@ -165,8 +163,15 @@ auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const inten
 	const auto target = s.support_center + forward_xz * step_forward + right_xz * (hip_lateral + step_lateral);
 
 	return clamp_to_swing_reach(
-		gse::vec3<gse::position>(target.x(), d.foot_ground_y, target.z()),
-		swing_foot_position(s, g.swing_leg),
+		gse::vec3<gse::position>(
+			target.x(),
+			d.foot_ground_y,
+			target.z()
+		),
+		swing_foot_position(
+			s,
+			g.swing_leg
+		),
 		d
 	);
 }

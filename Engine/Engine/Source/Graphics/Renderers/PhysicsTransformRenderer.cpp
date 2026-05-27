@@ -117,7 +117,10 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 			d.mapping_buffer_size = required;
 		}
 		else {
-			d.mapping_buffers[frame_index].buffer().host_write(data.physics_mappings.data(), required);
+			d.mapping_buffers[frame_index].buffer().host_write(
+				data.physics_mappings.data(),
+				required
+			);
 		}
 	}
 

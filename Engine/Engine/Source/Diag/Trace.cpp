@@ -516,7 +516,11 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		}
 	}
 
-	std::ranges::sort(spans, {}, &std::pair<std::uint64_t, span_info>::first);
+	std::ranges::sort(
+		spans,
+		{},
+		&std::pair<std::uint64_t, span_info>::first
+	);
 
 	for (const auto& e : fs.merged) {
 		if (e.type != event_type::end) {

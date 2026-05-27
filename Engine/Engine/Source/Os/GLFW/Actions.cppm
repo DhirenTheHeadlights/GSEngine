@@ -521,7 +521,10 @@ auto gse::actions::state::reset_axes(const std::span<const std::uint16_t> axes1,
 
 auto gse::actions::state::clear_all_axes() -> void {
 	std::ranges::fill(m_axes1, 0.f);
-	std::ranges::fill(m_axes2, axis{});
+	std::ranges::fill(
+		m_axes2,
+		axis{}
+	);
 }
 
 auto gse::actions::state::set_held(const std::uint16_t bit_index, const bool on, const std::size_t count) -> void {
@@ -554,7 +557,10 @@ auto gse::actions::state::ensure_axis1_capacity(const std::uint16_t id) -> void 
 
 auto gse::actions::state::ensure_axis2_capacity(const std::uint16_t id) -> void {
 	if (id >= m_axes2.size()) {
-		m_axes2.resize(static_cast<std::size_t>(id) + 1, {});
+		m_axes2.resize(
+			static_cast<std::size_t>(id) + 1,
+			{}
+		);
 	}
 }
 

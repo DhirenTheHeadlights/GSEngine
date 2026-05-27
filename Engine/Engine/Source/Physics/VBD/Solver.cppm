@@ -406,7 +406,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	const vec3<acceleration> gravity = { meters_per_second_squared(0.f), -gravity_mag, meters_per_second_squared(0.f) };
 
 	if (m_prev_velocity.size() != m_bodies.size()) {
-		m_prev_velocity.assign(m_bodies.size(), vec3<velocity>{});
+		m_prev_velocity.assign(
+			m_bodies.size(),
+			vec3<velocity>{}
+		);
 		m_accel_weight.assign(m_bodies.size(), 0.f);
 	}
 
@@ -1101,7 +1104,10 @@ auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
 								   ) };
 			const vec3<gap> c = cn - con.c0 * alpha;
 
-			con.lambda[0] = std::min<force>(con.penalty[0] * c[0] + con.lambda[0], force{});
+			con.lambda[0] = std::min<force>(
+				con.penalty[0] * c[0] + con.lambda[0],
+				force{}
+			);
 
 			const force friction_bound = abs(con.lambda[0]) * con.friction_coeff;
 
@@ -1208,8 +1214,14 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 		constexpr float max_contraction = 0.45f;
 		const length active_target = constraint.target_distance * (1.f - max_contraction * constraint.activation);
-		const length active_err = std::max(d_mag - active_target, length{});
-		const auto passive_err = std::max<length>(d_mag - constraint.target_distance, length{});
+		const length active_err = std::max(
+			d_mag - active_target,
+			length{}
+		);
+		const auto passive_err = std::max<length>(
+			d_mag - constraint.target_distance,
+			length{}
+		);
 
 		constexpr stiffness active_K_max = newtons_per_meter(200000.f);
 		const stiffness active_K = active_K_max * constraint.activation;
@@ -1226,7 +1238,10 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 		if (constraint.damping > 0.f) {
 			fi += (active_K + passive_K) * v_rel * dt * constraint.damping;
 		}
-		fi = std::max(fi, force{});
+		fi = std::max(
+			fi,
+			force{}
+		);
 		if (constraint.max_force > force{}) {
 			fi = std::min(fi, constraint.max_force);
 		}
@@ -1518,8 +1533,15 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_d
 			}
 			else if (j.type == joint_type::muscle) {
 				const length stretch = magnitude(d) - j.target_distance;
-				const length C = std::max(stretch, length{}) - j.pos_c0[0];
-				j.pos_lambda[0] = std::max(j.pos_penalty[0] * C + j.pos_lambda[0], force{});
+				const length C = std::max(
+									 stretch,
+									 length{}
+								 ) -
+					j.pos_c0[0];
+				j.pos_lambda[0] = std::max(
+					j.pos_penalty[0] * C + j.pos_lambda[0],
+					force{}
+				);
 				const stiffness penalty_cap = (j.compliance > inverse_mass{})
 					? std::min<stiffness>(
 						  1.f / (j.compliance * h_squared),
@@ -1869,7 +1891,10 @@ auto gse::vbd::compute_joint_c0(joint_constraint& j, const body_state& ba, const
 
 	if (j.type == joint_type::muscle) {
 		const length stretch = magnitude(d) - j.target_distance;
-		j.pos_c0[0] = std::max(stretch, length{});
+		j.pos_c0[0] = std::max(
+			stretch,
+			length{}
+		);
 		return;
 	}
 

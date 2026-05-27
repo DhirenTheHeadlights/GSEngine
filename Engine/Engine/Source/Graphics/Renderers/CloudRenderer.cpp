@@ -261,7 +261,10 @@ auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::dat
 	);
 
 	d.noise_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, noise_sampler_desc);
-	d.atmosphere_lut_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, atmosphere_lut_sampler_desc);
+	d.atmosphere_lut_sampler = gpu::bindless_sampler::create(
+		*gpu_s.bindless_heaps,
+		atmosphere_lut_sampler_desc
+	);
 	d.sky_view_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, sky_view_sampler_desc);
 	d.composite_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, composite_sampler_desc);
 
@@ -371,10 +374,8 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 	composite_rec.sample_image(d.cloud_target.image(), gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.set_viewport(ext);
 	composite_rec.set_scissor(ext);
-	composite_rec.push_bindings<composite_entry>(
-		{
-			.cloud_in = { d.cloud_target.sampled_slot(), d.composite_sampler.slot() },
-		}
-	);
+	composite_rec.push_bindings<composite_entry>({
+		.cloud_in = { d.cloud_target.sampled_slot(), d.composite_sampler.slot() },
+	});
 	composite_rec.draw(3);
 }

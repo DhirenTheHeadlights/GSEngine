@@ -123,10 +123,18 @@ namespace gse::gui::draw {
 template <gse::is_arithmetic T>
 auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T value) -> void {
 	if constexpr (std::is_floating_point_v<T>) {
-		value_row<1>(ctx, name, { std::format("{:.2f}", value) });
+		value_row<1>(
+			ctx,
+			name,
+			{ std::format("{:.2f}", value) }
+		);
 	}
 	else {
-		value_row<1>(ctx, name, { std::format("{}", value) });
+		value_row<1>(
+			ctx,
+			name,
+			{ std::format("{}", value) }
+		);
 	}
 }
 

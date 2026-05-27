@@ -310,7 +310,10 @@ auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context
 
 	d.lut_sampler = gpu::sampler::create(gpu_s.device->allocator(), lut_sampler_desc);
 	d.lut_sampler_bindless = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, lut_sampler_desc);
-	d.sky_view_sampler_bindless = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, sky_view_sampler_desc);
+	d.sky_view_sampler_bindless = gpu::bindless_sampler::create(
+		*gpu_s.bindless_heaps,
+		sky_view_sampler_desc
+	);
 
 	gpu::context::on_swap_chain_recreate(gpu_s, [&gpu_s, &d]() {
 		recreate_ap_volume(gpu_s, d);

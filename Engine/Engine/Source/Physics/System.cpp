@@ -349,7 +349,10 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 							init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
 
 							const vec3<force> cached_normal_force = cached->normal * cached->lambda[0];
-							init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), force{});
+							init_lambda[0] = std::min(
+								dot(cached_normal_force, constraint_normal),
+								force{}
+							);
 						}
 
 						if (reuse_cached_tangent) {
@@ -1081,7 +1084,10 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 			);
 		}
 
-		std::ranges::fill(d.body_airborne, std::uint8_t{ 1 });
+		std::ranges::fill(
+			d.body_airborne,
+			std::uint8_t{ 1 }
+		);
 
 		for (collision_result_component& res : results) {
 			res.colliding = false;

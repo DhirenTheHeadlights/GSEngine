@@ -978,7 +978,10 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 template <typename T>
 auto gse::gpu::recording_context::push_data(const T& value, const std::uint32_t offset) const -> void {
 	check_active();
-	const auto bytes = std::span(reinterpret_cast<const std::byte*>(std::addressof(value)), sizeof(T));
+	const auto bytes = std::span(
+		reinterpret_cast<const std::byte*>(std::addressof(value)),
+		sizeof(T)
+	);
 	m_cmd.push_data(offset, bytes);
 }
 

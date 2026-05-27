@@ -147,7 +147,10 @@ requires gse::network::is_read_mode_v<Mode>
 		return;
 	}
 
-	std::ranges::fill(data, std::byte{ 0 });
+	std::ranges::fill(
+		data,
+		std::byte{ 0 }
+	);
 	for (auto& byte_out : data) {
 		for (int i = 0; i < 8; ++i) {
 			const auto byte_index = m_head_bits / 8;

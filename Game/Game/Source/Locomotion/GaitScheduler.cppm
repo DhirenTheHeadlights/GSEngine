@@ -363,7 +363,13 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 								if (recovery_swing) {
 									g.swing_leg = capture_recovery_leg(*s, d, g.swing_leg);
 								}
-								begin_phase(g, phase::swing, cfg.swing_duration, recovery_swing ? "capture" : "shift_done", owner);
+								begin_phase(
+									g,
+									phase::swing,
+									cfg.swing_duration,
+									recovery_swing ? "capture" : "shift_done",
+									owner
+								);
 							}
 						}
 						break;
@@ -393,7 +399,10 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 							const bool swing_grounded = foot_grounded(*s, g.swing_leg);
 							const bool stance_grounded = foot_grounded(*s, other(g.swing_leg));
 							const bool support_transferred = swing_grounded && !stance_grounded;
-							const bool support_swing_safe = support_transferred && posture_allows_recovery_swing(*s, d);
+							const bool support_swing_safe = support_transferred && posture_allows_recovery_swing(
+																					   *s,
+																					   d
+																				   );
 							const leg next_swing_leg = other(g.swing_leg);
 							if (!s->double_support && !support_swing_safe) {
 								break;

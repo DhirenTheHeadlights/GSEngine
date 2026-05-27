@@ -97,13 +97,17 @@ auto gs::crosshair_system::draw_settings_page(gse::gui::builder& b, gse::setting
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
-	b.draw<gse::gui::section>({ .title = "Crosshair" });
+	b.draw<gse::gui::section>({
+		.title = "Crosshair"
+	});
 
 	const gse::gui::ui_rect preview = lo::reserve_row(ctx, sty.preview_height, sty.padding);
 	draw_preview(ctx, preview, pending);
 
 	b.scroll_region(
-		{ .id = "crosshair.fields" },
+		{
+			.id = "crosshair.fields"
+		},
 		[&](gse::gui::builder& sub) {
 			gse::settings::draw_fields<crosshair_system>(sub, ps, live, channels);
 		}
@@ -122,22 +126,34 @@ auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const
 	});
 
 	ctx.queue_sprite({
-		.rect = gse::gui::ui_rect::from_position_size(rect.top_left(), { rect.width(), border }),
+		.rect = gse::gui::ui_rect::from_position_size(
+			rect.top_left(),
+			{ rect.width(), border }
+		),
 		.color = border_color,
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
-		.rect = gse::gui::ui_rect::from_position_size({ rect.left(), rect.bottom() + border }, { rect.width(), border }),
+		.rect = gse::gui::ui_rect::from_position_size(
+			{ rect.left(), rect.bottom() + border },
+			{ rect.width(), border }
+		),
 		.color = border_color,
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
-		.rect = gse::gui::ui_rect::from_position_size(rect.top_left(), { border, rect.height() }),
+		.rect = gse::gui::ui_rect::from_position_size(
+			rect.top_left(),
+			{ border, rect.height() }
+		),
 		.color = border_color,
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
-		.rect = gse::gui::ui_rect::from_position_size({ rect.right() - border, rect.top() }, { border, rect.height() }),
+		.rect = gse::gui::ui_rect::from_position_size(
+			{ rect.right() - border, rect.top() },
+			{ border, rect.height() }
+		),
 		.color = border_color,
 		.texture = ctx.blank_texture,
 	});

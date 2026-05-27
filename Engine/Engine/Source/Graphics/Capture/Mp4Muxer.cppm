@@ -33,7 +33,8 @@ export namespace gse::renderer::capture::mp4 {
 
 		~live_muxer();
 
-		[[nodiscard]] static auto open(
+		[[nodiscard]]
+		static auto open(
 			const std::filesystem::path& path,
 			const track_info& track,
 			std::span<const std::byte> stream_header

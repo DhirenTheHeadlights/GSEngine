@@ -91,7 +91,10 @@ auto gse::network::apply_input_frame(actions::state& target, const input_frame& 
 	}
 
 	for (const auto& [id, x, y] : m.axes2) {
-		target.set_axis2(id, actions::axis{ x, y });
+		target.set_axis2(
+			id,
+			actions::axis{ x, y }
+		);
 	}
 
 	target.set_camera_yaw(gse::radians(m.camera_yaw));

@@ -48,7 +48,11 @@ export namespace gse::gpu {
 				return std::array{ ^^Ts... };
 			}(Pack{});
 			for (const auto t : pack_types) {
-				const auto count = std::meta::extract<std::uint32_t>(std::meta::substitute(^^descriptor_count_v, { t }));
+				const auto count = std::meta::extract<std::uint32_t>(std::meta::substitute(
+					^^descriptor_count_v,
+					{
+						t }
+				));
 				if (count > 1) {
 					continue;
 				}
@@ -107,10 +111,10 @@ export namespace gse::gpu {
 	}
 
 	template <typename Entry>
-	using entry_bindings_pack_t = [: entry_bindings_pack_info<Entry>() :];
+	using entry_bindings_pack_t = [:entry_bindings_pack_info<Entry>():];
 
 	template <typename Entry>
-	using entry_push_constants_t = [: entry_push_constants_info<Entry>() :];
+	using entry_push_constants_t = [:entry_push_constants_info<Entry>():];
 
 	struct compute_param_pod {
 		std::string_view name;
@@ -867,7 +871,11 @@ auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_bod
 }
 
 consteval auto gse::gpu::binding_arg_type(const std::meta::info t) -> std::meta::info {
-	const auto dt = std::meta::extract<descriptor_type>(std::meta::substitute(^^descriptor_type_v, { t }));
+	const auto dt = std::meta::extract<descriptor_type>(std::meta::substitute(
+		^^descriptor_type_v,
+		{
+			t }
+	));
 	if (dt == descriptor_type::combined_image_sampler) {
 		return ^^combined_sampler_arg;
 	}
@@ -1490,7 +1498,11 @@ auto gse::gpu::build_compute_program(device& dev, shader_registry& registry, bin
 		}
 	}
 
-	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, heaps, pod.push_constant_size);
+	const auto bindless_mappings = vulkan::build_bindless_mappings(
+		pack_bindings,
+		heaps,
+		pod.push_constant_size
+	);
 
 	const vulkan::shader_object_create_info stage_info{
 		.stage = stage_flag::compute,
@@ -1579,7 +1591,11 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 		}
 	}
 
-	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, heaps, pod.push_constant_size);
+	const auto bindless_mappings = vulkan::build_bindless_mappings(
+		pack_bindings,
+		heaps,
+		pod.push_constant_size
+	);
 
 	std::vector<vulkan::shader_object_create_info> stage_infos;
 	stage_infos.reserve(program.stages.size());
@@ -1613,7 +1629,7 @@ auto gse::gpu::build_graphics_program(device& dev, shader_registry& registry, bi
 		.vertex_bindings = is_mesh ? std::vector<vertex_binding_desc>{} : program.vertex_bindings,
 		.vertex_attributes = is_mesh ? std::vector<vertex_attribute_desc>{} : program.vertex_attributes,
 	};
-	
+
 	state.blend_enables.assign(pod.color_count, static_cast<std::uint8_t>(blend_enable ? 1 : 0));
 	state.blend_equations.assign(pod.color_count, blend_eq);
 	state.color_write_masks.assign(pod.color_count, write_mask);
