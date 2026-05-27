@@ -3,13 +3,20 @@ export module gse.graphics:model;
 import std;
 
 import :mesh;
-import :material;
 
-import gse.utility;
-import gse.platform;
-import gse.physics;
+import gse.config;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
+import gse.os;
+import gse.assets;
+import gse.gpu;
 import gse.math;
 import gse.assert;
+import gse.log;
 
 export namespace gse {
 	class model;
@@ -17,43 +24,61 @@ export namespace gse {
 	struct render_queue_entry {
 		resource::handle<model> model;
 		std::size_t index;
-		mat4f model_matrix;
-		mat4f normal_matrix;
+		spatial_matrix model_matrix;
+		spatial_matrix normal_matrix;
+		spatial_matrix prev_model_matrix;
 		vec3f color;
-	};
-
-	class model_instance {
-	public:
-		explicit model_instance(const resource::handle<model>& model_handle) : m_model_handle(model_handle) {}
-
-		auto update(const physics::motion_component& mc, const physics::collision_component& cc) -> void;
-
-		auto render_queue_entries() const -> std::span<const render_queue_entry>;
-		auto handle() const -> const resource::handle<model>&;
-	private:
-		std::vector<render_queue_entry> m_render_queue_entries;
-		resource::handle<model> m_model_handle;
-
-		vec3<length> m_position;
-		quat m_rotation;
-		vec3f m_scale = { 1.f, 1.f, 1.f };
-		bool m_is_dirty = true;
-		std::size_t m_cached_mesh_count = 0;
 	};
 
 	class model : public identifiable {
 	public:
-		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
-		explicit model(std::string_view name, std::vector<mesh_data> meshes);
+		struct material_baked {
+			vec3f base_color = vec3f(1.0f);
+			float roughness = 0.5f;
+			float metallic = 0.0f;
+			std::string albedo_file;
+			std::string normal_file;
+			std::string rm_file;
+		};
 
-		auto load(gpu::context& context) -> void;
+		struct mesh_baked {
+			material_baked material;
+			raw_blob_owned<vertex> vertices;
+			raw_blob_owned<std::uint32_t> indices;
+		};
+
+		struct [[
+			= asset_format::baked_ext<".gmdl">{},
+			= asset_format::baked_dir<"Models">{},
+			= asset_format::magic<0x474D444C>{},
+			= asset_format::version<4>{}
+		]] baked {
+			std::vector<mesh_baked> meshes;
+		};
+
+		explicit model(const std::filesystem::path& path)
+			: identifiable(
+				  path,
+				  config::baked_resource_path
+			  ),
+			  m_baked_model_path(path) {
+		}
+		explicit model(
+			std::string_view name,
+			std::vector<mesh_data> meshes
+		);
+
+		auto load(
+			asset::load_ctx& ctx
+		) -> async::task<>;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;
 		auto center_of_mass() const -> vec3<length>;
-	private:
-		friend class model_instance;
 
+		auto uploads_ready() const -> bool;
+
+	private:
 		std::vector<mesh> m_meshes;
 		std::filesystem::path m_baked_model_path;
 		vec3<length> m_center_of_mass;
@@ -67,56 +92,56 @@ gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : 
 	}
 }
 
-auto gse::model::load(gpu::context& context) -> void {
+auto gse::model::load(asset::load_ctx& ctx) -> async::task<> {
 	if (!m_baked_model_path.empty()) {
 		m_meshes.clear();
 
-		std::ifstream in_file(m_baked_model_path, std::ios::binary);
-		assert(in_file.is_open(), std::source_location::current(), "Failed to open baked model file for reading.");
-
-		std::uint32_t magic, version;
-		in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-		in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
-
-		std::uint64_t mesh_count;
-		in_file.read(reinterpret_cast<char*>(&mesh_count), sizeof(mesh_count));
-		m_meshes.reserve(mesh_count);
+		model::baked baked{};
+		if (!load_baked(m_baked_model_path, baked)) {
+			co_return;
+		}
 
 		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
-		const auto material_dir = config::baked_resource_path / "Materials" / model_relative.parent_path();
+		auto texture_dir = model_relative.parent_path().string();
+		std::ranges::replace(texture_dir, '\\', '/');
+		if (texture_dir.starts_with("Models/")) {
+			texture_dir = "Textures/" + texture_dir.substr(7);
+		}
 
-		for (std::uint64_t i = 0; i < mesh_count; ++i) {
-			std::uint64_t mat_name_len;
-			in_file.read(reinterpret_cast<char*>(&mat_name_len), sizeof(mat_name_len));
-			std::string material_name(mat_name_len, '\0');
-			in_file.read(&material_name[0], mat_name_len);
+		m_meshes.reserve(baked.meshes.size());
+		for (auto& mb : baked.meshes) {
+			gse::material mat;
+			mat.base_color = mb.material.base_color;
+			mat.roughness = mb.material.roughness;
+			mat.metallic = mb.material.metallic;
 
-			const auto material_path = material_dir / (material_name + ".gmat");
-			resource::handle<material> material_handle;
-			if (std::filesystem::exists(material_path)) {
-				material_handle = context.queue<material>(material_path.string());
+			if (!mb.material.albedo_file.empty()) {
+				auto stem = std::filesystem::path(mb.material.albedo_file).stem().string();
+				mat.diffuse_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
+			}
+			if (!mb.material.normal_file.empty()) {
+				auto stem = std::filesystem::path(mb.material.normal_file).stem().string();
+				mat.normal_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
+			}
+			if (!mb.material.rm_file.empty()) {
+				auto stem = std::filesystem::path(mb.material.rm_file).stem().string();
+				mat.specular_texture = asset::get<texture>(ctx.assets, texture_dir + "/" + stem);
 			}
 
-			std::uint64_t vertex_count;
-			in_file.read(reinterpret_cast<char*>(&vertex_count), sizeof(vertex_count));
-			std::vector<vertex> vertices(vertex_count);
-			in_file.read(reinterpret_cast<char*>(vertices.data()), vertex_count * sizeof(vertex));
-
-			std::vector<std::uint32_t> indices(vertex_count);
-			std::iota(indices.begin(), indices.end(), 0);
-
-			m_meshes.emplace_back(std::move(vertices), std::move(indices), material_handle);
+			m_meshes.emplace_back(
+				mesh_data{
+					.vertices = std::move(mb.vertices.storage),
+					.indices = std::move(mb.indices.storage),
+					.material = std::move(mat),
+				}
+			);
 		}
 	}
 
-	context.queue_gpu_command<model>(
-		this, 
-		[](gpu::context& ctx, model& self) {
-			for (auto& mesh : self.m_meshes) {
-				mesh.initialize(ctx.config());
-			}
-		}
-	);
+	auto& gpu_s = co_await gpu::on_gpu(ctx.channels);
+	for (auto& mesh : m_meshes) {
+		mesh.initialize(gpu_s);
+	}
 
 	vec3<length> sum;
 	for (const auto& mesh : m_meshes) {
@@ -137,73 +162,11 @@ auto gse::model::center_of_mass() const -> vec3<length> {
 	return m_center_of_mass;
 }
 
-auto gse::model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc) -> void {
-	m_position = mc.render_position;
-	m_rotation = mc.render_orientation;
-	m_scale = { cc.bounding_box.size().x().as<meters>(), cc.bounding_box.size().y().as<meters>(), cc.bounding_box.size().z().as<meters>() };
-	m_is_dirty = true;
-
-	if (!m_model_handle.valid()) {
-		m_render_queue_entries.clear();
-		m_cached_mesh_count = 0;
-	}
-	else {
-		const auto* resolved = m_model_handle.resolve();
-		const std::size_t mesh_count = resolved ? resolved->meshes().size() : 0;
-
-		if (mesh_count == 0) {
-			m_render_queue_entries.clear();
-			m_cached_mesh_count = 0;
+auto gse::model::uploads_ready() const -> bool {
+	return std::ranges::all_of(
+		m_meshes,
+		[](const mesh& m) {
+			return m.upload_token().ready() && m.material().textures_ready();
 		}
-		else {
-			if (m_render_queue_entries.size() != mesh_count || m_cached_mesh_count != mesh_count) {
-				m_render_queue_entries.clear();
-				m_render_queue_entries.reserve(mesh_count);
-
-				for (std::size_t i = 0; i < mesh_count; ++i) {
-					m_render_queue_entries.emplace_back(
-						render_queue_entry{
-							.model = m_model_handle,
-							.index = i,
-							.model_matrix = mat4f(1.0f),
-							.normal_matrix = mat4f(1.0f),
-							.color = vec3f(1.0f)
-						}
-					);
-				}
-
-				m_cached_mesh_count = mesh_count;
-				m_is_dirty = true;
-			}
-		}
-	}
-
-	if (!m_is_dirty || m_render_queue_entries.empty() || !m_model_handle.valid()) {
-		return;
-	}
-
-	const auto* mdl = m_model_handle.resolve();
-	const vec3 center_of_mass = mdl->center_of_mass();
-
-	const mat4f scale_mat             = scale(mat4f(1.0f), m_scale);
-	const mat4f rot_mat               = m_rotation;
-	const mat4f trans_mat             = translate(mat4f(1.0f), m_position);
-	const mat4f pivot_correction_mat  = translate(mat4f(1.0f), -center_of_mass);
-	const mat4f final_model_matrix    = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
-	const mat4f normal_matrix         = final_model_matrix.inverse().transpose();
-
-	for (auto& entry : m_render_queue_entries) {
-		entry.model_matrix  = final_model_matrix;
-		entry.normal_matrix = normal_matrix;
-	}
-
-	m_is_dirty = false;
-}
-
-auto gse::model_instance::render_queue_entries() const -> std::span<const render_queue_entry> {
-	return m_render_queue_entries;
-}
-
-auto gse::model_instance::handle() const -> const resource::handle<model>& {
-	return m_model_handle;
+	);
 }

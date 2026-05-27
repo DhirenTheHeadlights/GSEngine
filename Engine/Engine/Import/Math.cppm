@@ -5,16 +5,20 @@ import std;
 export import :dimension;
 export import :matrix;
 export import :matrix_math;
+export import :primitive_math_shared;
 export import :quat;
 export import :quat_math;
 export import :quant;
 export import :rectangle;
 export import :circle;
 export import :segment;
-export import :unit_display;
+export import :simd;
 export import :units;
 export import :vector;
 export import :vector_math;
+export import :mixed_vec;
+export import :mixed_mat;
+export import :matrix_types;
 
 export namespace gse {
 	template <typename T>
@@ -41,7 +45,9 @@ export namespace gse {
 
 namespace gse {
 	std::random_device random_device;
-	std::mt19937 generator(random_device());
+	std::mt19937 generator(
+		random_device()
+	);
 }
 
 template <gse::is_arithmetic NumberType>
@@ -67,4 +73,3 @@ auto gse::random_value(const NumberType& max) -> NumberType {
 		return dis(generator);
 	}
 }
-

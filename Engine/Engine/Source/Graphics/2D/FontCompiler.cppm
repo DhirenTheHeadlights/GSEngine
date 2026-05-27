@@ -1,193 +1,280 @@
-module;
-
-#include <msdfgen.h>
-#include <freetype/freetype.h>
-#include "ext/import-font.h"
-
 export module gse.graphics:font_compiler;
 
 import std;
 
-import gse.platform;
+import gse.os;
+import gse.config;
+import gse.assets;
+import gse.gpu;
 import gse.assert;
+import gse.log;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
+import gse.freetype;
+import gse.msdfgen;
 
 import :font;
 
-export template<>
-struct gse::asset_compiler<gse::font> {
-    static auto source_extensions() -> std::vector<std::string> {
-        return { ".ttf", ".otf" };
-    }
+export namespace gse {
 
-    static auto baked_extension() -> std::string {
-        return ".gfont";
-    }
+	auto bake(
+		const std::filesystem::path& src,
+		font::baked& out
+	) -> bool;
+}
 
-    static auto source_directory() -> std::string {
-        return "Fonts";
-    }
+auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
+	FT_Library ft_lib;
+	if (FT_Init_FreeType(&ft_lib)) {
+		log::println(log::level::error, log::category::assets, "Failed to initialize FreeType");
+		return false;
+	}
 
-    static auto baked_directory() -> std::string {
-        return "Fonts";
-    }
+	FT_Face ft_face;
+	if (FT_New_Face(ft_lib, src.string().c_str(), 0, &ft_face)) {
+		log::println(
+			log::level::error,
+			log::category::assets,
+			"Failed to load font face from '{}'",
+			src.string()
+		);
+		FT_Done_FreeType(ft_lib);
+		return false;
+	}
 
-    static auto compile_one(
-        const std::filesystem::path& source,
-        const std::filesystem::path& destination
-    ) -> bool {
-        FT_Library ft_lib;
-        if (FT_Init_FreeType(&ft_lib)) {
-            std::println(stderr, "Error: Failed to initialize FreeType.");
-            return false;
-        }
+	msdfgen::FreetypeHandle* ft_handle = msdfgen::initializeFreetype();
+	msdfgen::FontHandle* font_handle = loadFont(ft_handle, src.string().c_str());
+	if (!font_handle) {
+		log::println(
+			log::level::error,
+			log::category::assets,
+			"Failed to load font into msdfgen: {}",
+			src.string()
+		);
+		FT_Done_Face(ft_face);
+		FT_Done_FreeType(ft_lib);
+		msdfgen::deinitializeFreetype(ft_handle);
+		return false;
+	}
 
-        FT_Face ft_face;
-        if (FT_New_Face(ft_lib, source.string().c_str(), 0, &ft_face)) {
-            std::println(stderr, "Error: Failed to load font face from '{}'.", source.string());
-            FT_Done_FreeType(ft_lib);
-            return false;
-        }
+	msdfgen::FontMetrics font_metrics{};
+	getFontMetrics(font_metrics, font_handle, msdfgen_consts::em_normalized);
 
-        constexpr int pixel_size = 64;
-        FT_Set_Pixel_Sizes(ft_face, 0, pixel_size);
+	std::vector<char32_t> codepoints;
+	codepoints.reserve(128);
+	for (char32_t cp = 0x20; cp <= 0x7E; ++cp) {
+		codepoints.push_back(cp);
+	}
+	codepoints.push_back(0x25B2);
+	codepoints.push_back(0x25BC);
 
-        const float ascender = static_cast<float>(ft_face->size->metrics.ascender) / 64.0f / pixel_size;
-        const float descender = static_cast<float>(ft_face->size->metrics.descender) / 64.0f / pixel_size;
+	const int glyph_count = static_cast<int>(codepoints.size());
+	constexpr int cell = 160;
+	constexpr int atlas_cols = 16;
+	const int atlas_rows = (glyph_count + atlas_cols - 1) / atlas_cols;
+	const int atlas_width = atlas_cols * cell;
+	const int atlas_height = atlas_rows * cell;
 
-        msdfgen::FreetypeHandle* ft_handle = msdfgen::initializeFreetype();
-        msdfgen::FontHandle* font_handle = loadFont(ft_handle, source.string().c_str());
-        if (!font_handle) {
-            std::println(stderr, "Error: Failed to load font into msdfgen: {}", source.string());
-            FT_Done_Face(ft_face);
-            FT_Done_FreeType(ft_lib);
-            return false;
-        }
+	constexpr float pixel_range = 8.0f;
+	constexpr double scale = 128.0;
+	constexpr double pixel_range_em = pixel_range / scale;
+	constexpr double cell_em = static_cast<double>(cell) / scale;
 
-        constexpr int first_char = 32, last_char = 126;
-        constexpr int glyph_count = last_char - first_char + 1;
-        constexpr float glyph_cell_size = 64.f, padding = 8.f;
+	msdfgen::ErrorCorrectionConfig error_correction;
+	error_correction.mode = msdfgen_consts::edge_priority;
+	error_correction.distanceCheckMode = msdfgen_consts::always_check_distance;
 
-        constexpr int atlas_cols = 16;
-        const int atlas_rows = static_cast<int>(std::ceil(glyph_count / static_cast<float>(atlas_cols)));
-        const int atlas_width = atlas_cols * static_cast<int>(glyph_cell_size);
-        const int atlas_height = atlas_rows * static_cast<int>(glyph_cell_size);
+	constexpr std::uint32_t channels = 4;
+	std::vector<std::byte> atlas_data(
+		static_cast<std::size_t>(atlas_width) * atlas_height * channels,
+		std::byte{ 0 }
+	);
+	std::unordered_map<char32_t, glyph> glyphs;
 
-        std::vector<unsigned char> atlas_data(static_cast<std::size_t>(atlas_width) * atlas_height * 3, 0);
-        std::unordered_map<char, glyph> glyphs;
-        const msdfgen::Range pixel_range(4.0);
-        int glyph_index = 0;
+	const double units_per_em = std::max<double>(ft_face->units_per_EM, 1);
 
-        for (int c = first_char; c <= last_char; ++c, ++glyph_index) {
-            msdfgen::Shape shape;
-            if (!loadGlyph(shape, font_handle, c)) continue;
+	int baked_count = 0;
+	int skipped_count = 0;
 
-            shape.normalize();
-            edgeColoringSimple(shape, 3.0);
-            msdfgen::Bitmap<float, 3> msdf_bitmap(glyph_cell_size, glyph_cell_size);
+	for (int glyph_index = 0; glyph_index < glyph_count; ++glyph_index) {
+		const char32_t cp = codepoints[glyph_index];
+		const int col = glyph_index % atlas_cols;
+		const int row = glyph_index / atlas_cols;
+		const int cell_x = col * cell;
+		const int cell_y = row * cell;
 
-            const double shape_w = shape.getBounds().r - shape.getBounds().l;
-            const double shape_h = shape.getBounds().t - shape.getBounds().b;
-            const double scale = std::min((glyph_cell_size - padding) / shape_w, (glyph_cell_size - padding) / shape_h);
-            const double tx = -shape.getBounds().l + (glyph_cell_size / scale - shape_w) / 2.0;
-            const double ty = -shape.getBounds().b + (glyph_cell_size / scale - shape_h) / 2.0;
+		FT_Load_Glyph(
+			ft_face,
+			FT_Get_Char_Index(
+				ft_face,
+				static_cast<FT_UInt>(cp)
+			),
+			freetype_load_no_scale
+		);
+		const FT_GlyphSlot ft_glyph = ft_face->glyph;
+		const float x_advance_em = static_cast<float>(ft_glyph->advance.x / units_per_em);
+		const auto ft_index = FT_Get_Char_Index(ft_face, static_cast<FT_UInt>(cp));
 
-            generateMSDF(msdf_bitmap, shape, pixel_range, { scale, scale }, { tx, ty });
+		msdfgen::Shape shape;
+		const bool loaded =
+			msdfgen::loadGlyph(
+				shape,
+				font_handle,
+				static_cast<msdfgen::unicode_t>(cp),
+				msdfgen_consts::em_normalized
+			);
 
-            for (int y = 0; y < msdf_bitmap.height(); ++y) {
-                for (int x = 0; x < msdf_bitmap.width(); ++x) {
-                    const int atlas_x = glyph_index % atlas_cols * glyph_cell_size + x;
-                    const int atlas_y = glyph_index / atlas_cols * glyph_cell_size + y;
-                    const int idx = (atlas_y * atlas_width + atlas_x) * 3;
-                    atlas_data[idx + 0] = static_cast<unsigned char>(std::clamp(msdf_bitmap(x, y)[0], 0.f, 1.f) * 255.f);
-                    atlas_data[idx + 1] = static_cast<unsigned char>(std::clamp(msdf_bitmap(x, y)[1], 0.f, 1.f) * 255.f);
-                    atlas_data[idx + 2] = static_cast<unsigned char>(std::clamp(msdf_bitmap(x, y)[2], 0.f, 1.f) * 255.f);
-                }
-            }
+		bool has_geometry = loaded && !shape.contours.empty();
+		if (has_geometry) {
+			shape.normalize();
+			shape.orientContours();
+		}
 
-            FT_Load_Char(ft_face, c, FT_LOAD_DEFAULT);
-            const FT_GlyphSlot ft_glyph = ft_face->glyph;
-            glyphs[static_cast<char>(c)] = {
-                .ft_glyph_index = static_cast<float>(ft_glyph->glyph_index),
-                .u0 = (glyph_index % atlas_cols * glyph_cell_size) / atlas_width,
-                .v0 = (glyph_index / atlas_cols * glyph_cell_size) / atlas_height,
-                .u1 = (glyph_index % atlas_cols * glyph_cell_size + glyph_cell_size) / atlas_width,
-                .v1 = (glyph_index / atlas_cols * glyph_cell_size + glyph_cell_size) / atlas_height,
-                .width = (static_cast<float>(ft_glyph->metrics.width) / 64.0f) / pixel_size,
-                .height = (static_cast<float>(ft_glyph->metrics.height) / 64.0f) / pixel_size,
-                .x_offset = (static_cast<float>(ft_glyph->metrics.horiBearingX) / 64.0f) / pixel_size,
-                .y_offset = (static_cast<float>(ft_glyph->metrics.horiBearingY) / 64.0f) / pixel_size,
-                .x_advance = (static_cast<float>(ft_glyph->advance.x) / 64.0f) / pixel_size,
-                .shape_w = static_cast<float>(shape_w),
-                .shape_h = static_cast<float>(shape_h)
-            };
-        }
+		const auto bounds = shape.getBounds();
+		const double shape_w = bounds.r - bounds.l;
+		const double shape_h = bounds.t - bounds.b;
+		const bool valid_bounds = has_geometry && shape_w > 0.0 && shape_h > 0.0;
 
-        destroyFont(font_handle);
-        deinitializeFreetype(ft_handle);
-        FT_Done_Face(ft_face);
-        FT_Done_FreeType(ft_lib);
+		if (!valid_bounds) {
+			if (cp != U' ') {
+				log::println(
+					log::level::warning,
+					log::category::assets,
+					"font bake [{}]: codepoint U+{:04X} has no usable geometry (loaded={}, contours={}, w={}, h={})",
+					src.filename().string(),
+					static_cast<unsigned>(cp),
+					loaded,
+					shape.contours.size(),
+					shape_w,
+					shape_h
+				);
+				++skipped_count;
+			}
 
-        std::filesystem::create_directories(destination.parent_path());
-        std::ofstream out_file(destination, std::ios::binary);
-        if (!out_file.is_open()) {
-            std::println(stderr, "Error: Failed to open baked font file for writing: {}", destination.string());
-            return false;
-        }
+			glyphs[cp] = glyph(
+				glyph::info{
+					.ft_glyph_index = ft_index,
+					.atlas_uv = {},
+					.plane_bounds = {},
+					.x_advance = x_advance_em,
+				}
+			);
+			continue;
+		}
 
-        constexpr std::uint32_t magic = 0x47464E54;
-        constexpr std::uint32_t version = 1;
-        out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-        out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+		const double padded_w = shape_w + 2.0 * pixel_range_em;
+		const double padded_h = shape_h + 2.0 * pixel_range_em;
 
-        const std::string relative_src_str = source.lexically_relative(config::resource_path).string();
-        std::uint64_t path_len = relative_src_str.length();
-        out_file.write(reinterpret_cast<const char*>(&path_len), sizeof(path_len));
-        out_file.write(relative_src_str.c_str(), path_len);
+		if (padded_w > cell_em || padded_h > cell_em) {
+			log::println(
+				log::level::warning,
+				log::category::assets,
+				"font bake [{}]: codepoint U+{:04X} padded extent ({}x{} em) exceeds cell ({} em); clipping may occur",
+				src.filename().string(),
+				static_cast<unsigned>(cp),
+				padded_w,
+				padded_h,
+				cell_em
+			);
+		}
 
-        out_file.write(reinterpret_cast<const char*>(&ascender), sizeof(ascender));
-        out_file.write(reinterpret_cast<const char*>(&descender), sizeof(descender));
+		const double translate_x = cell_em * 0.5 - (bounds.l + shape_w * 0.5);
+		const double translate_y = cell_em * 0.5 - (bounds.b + shape_h * 0.5);
 
-        constexpr uint32_t channels = 4;
-        std::vector<std::byte> rgba_data(static_cast<size_t>(atlas_width) * atlas_height * channels);
-        for (int i = 0; i < atlas_width * atlas_height; ++i) {
-            rgba_data[static_cast<size_t>(i) * 4 + 0] = static_cast<std::byte>(atlas_data[static_cast<size_t>(i) * 3 + 0]);
-            rgba_data[static_cast<size_t>(i) * 4 + 1] = static_cast<std::byte>(atlas_data[static_cast<size_t>(i) * 3 + 1]);
-            rgba_data[static_cast<size_t>(i) * 4 + 2] = static_cast<std::byte>(atlas_data[static_cast<size_t>(i) * 3 + 2]);
-            rgba_data[static_cast<size_t>(i) * 4 + 3] = static_cast<std::byte>(255);
-        }
+		msdfgen::edgeColoringByDistance(shape, 3.0);
+		msdfgen::Bitmap<float, 4> mtsdf(cell, cell);
+		msdfgen::generateMTSDF(
+			mtsdf,
+			shape,
+			msdfgen::Range(pixel_range_em),
+			msdfgen::Vector2{ scale, scale },
+			msdfgen::Vector2{ translate_x, translate_y },
+			error_correction
+		);
 
-        const std::uint32_t u_atlas_width = atlas_width, u_atlas_height = atlas_height;
-        out_file.write(reinterpret_cast<const char*>(&u_atlas_width), sizeof(u_atlas_width));
-        out_file.write(reinterpret_cast<const char*>(&u_atlas_height), sizeof(u_atlas_height));
-        out_file.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
-        std::uint64_t data_size = rgba_data.size();
-        out_file.write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
-        out_file.write(reinterpret_cast<const char*>(rgba_data.data()), data_size);
+		for (int y = 0; y < cell; ++y) {
+			for (int x = 0; x < cell; ++x) {
+				const int atlas_x = cell_x + x;
+				const int atlas_y = cell_y + (cell - 1 - y);
+				const std::size_t idx = (static_cast<std::size_t>(atlas_y) * atlas_width + atlas_x) * channels;
+				const auto* px = mtsdf(x, y);
+				atlas_data[idx + 0] = static_cast<std::byte>(std::clamp(px[0], 0.f, 1.f) * 255.f);
+				atlas_data[idx + 1] = static_cast<std::byte>(std::clamp(px[1], 0.f, 1.f) * 255.f);
+				atlas_data[idx + 2] = static_cast<std::byte>(std::clamp(px[2], 0.f, 1.f) * 255.f);
+				atlas_data[idx + 3] = static_cast<std::byte>(std::clamp(px[3], 0.f, 1.f) * 255.f);
+			}
+		}
 
-        std::uint64_t glyph_map_size = glyphs.size();
-        out_file.write(reinterpret_cast<const char*>(&glyph_map_size), sizeof(glyph_map_size));
-        for (const auto& [ch, glyph_data] : glyphs) {
-            out_file.write(&ch, sizeof(ch));
-            out_file.write(reinterpret_cast<const char*>(&glyph_data), sizeof(glyph_data));
-        }
+		const double quad_cell_x = (cell_em - padded_w) * 0.5 * scale;
+		const double quad_cell_y_top = (cell_em - padded_h) * 0.5 * scale;
+		const double quad_w_atlas = padded_w * scale;
+		const double quad_h_atlas = padded_h * scale;
 
-        std::println("Font compiled: {}", destination.filename().string());
-        return true;
-    }
+		const vec4f atlas_uv{
+			static_cast<float>((cell_x + quad_cell_x) / atlas_width),
+			static_cast<float>((cell_y + quad_cell_y_top) / atlas_height),
+			static_cast<float>(quad_w_atlas / atlas_width),
+			static_cast<float>(quad_h_atlas / atlas_height),
+		};
 
-    static auto needs_recompile(
-        const std::filesystem::path& source,
-        const std::filesystem::path& destination
-    ) -> bool {
-        if (!std::filesystem::exists(destination)) {
-            return true;
-        }
-        return std::filesystem::last_write_time(source) > std::filesystem::last_write_time(destination);
-    }
+		const vec4f plane_bounds{
+			static_cast<float>(bounds.l - pixel_range_em),
+			static_cast<float>(bounds.b - pixel_range_em),
+			static_cast<float>(padded_w),
+			static_cast<float>(padded_h),
+		};
 
-    static auto dependencies(
-        const std::filesystem::path&
-    ) -> std::vector<std::filesystem::path> {
-        return {};
-    }
-};
+		glyphs[cp] = glyph(
+			glyph::info{
+				.ft_glyph_index = ft_index,
+				.atlas_uv = atlas_uv,
+				.plane_bounds = plane_bounds,
+				.x_advance = x_advance_em,
+			}
+		);
+		++baked_count;
+	}
+
+	log::println(
+		log::level::info,
+		log::category::assets,
+		"font bake [{}]: baked={}, skipped(non-space)={}, atlas={}x{} ({} bytes)",
+		src.filename().string(),
+		baked_count,
+		skipped_count,
+		atlas_width,
+		atlas_height,
+		atlas_data.size()
+	);
+
+	const auto debug_atlas_path = config::baked_resource_path / "Fonts" / (src.stem().string() + "_atlas_debug.png");
+	if (!image::write_png(debug_atlas_path, static_cast<std::uint32_t>(atlas_width), static_cast<std::uint32_t>(atlas_height), channels, atlas_data.data())) {
+		log::println(
+			log::level::warning,
+			log::category::assets,
+			"font bake [{}]: failed to write debug atlas PNG to {}",
+			src.filename().string(),
+			debug_atlas_path.string()
+		);
+	}
+
+	destroyFont(font_handle);
+	deinitializeFreetype(ft_handle);
+	FT_Done_Face(ft_face);
+	FT_Done_FreeType(ft_lib);
+
+	out.source_path_relative = src.lexically_relative(config::resource_path).string();
+	out.ascender = static_cast<float>(font_metrics.ascenderY);
+	out.descender = static_cast<float>(font_metrics.descenderY);
+	out.pixel_range = pixel_range;
+	out.atlas_width = static_cast<std::uint32_t>(atlas_width);
+	out.atlas_height = static_cast<std::uint32_t>(atlas_height);
+	out.channels = channels;
+	out.rgba.storage = std::move(atlas_data);
+	out.glyphs = std::move(glyphs);
+	return true;
+}

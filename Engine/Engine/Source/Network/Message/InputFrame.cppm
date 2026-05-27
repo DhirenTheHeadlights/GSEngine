@@ -4,39 +4,28 @@ import std;
 
 import :message;
 
+import gse.math;
+import gse.time;
+
 export namespace gse::network {
-    struct input_frame_header {
-        std::uint32_t input_sequence = 0;
-        std::uint32_t client_time_ms = 0;
-        std::uint16_t action_word_count = 0;
-        std::uint16_t axes1_count = 0;
-        std::uint16_t axes2_count = 0;
-        float camera_yaw = 0.f;  // Camera facing direction in radians
-    };
+	struct axes1_pair {
+		std::uint16_t id;
+		float value;
+	};
 
-    constexpr auto message_id(
-        std::type_identity<input_frame_header>
-    ) -> std::uint16_t;
+	struct axes2_pair {
+		std::uint16_t id;
+		float x, y;
+	};
 
-    auto encode(
-        bitstream& s,
-        const input_frame_header& header
-	) -> void;
-
-    auto decode(
-        bitstream& s,
-        std::type_identity<input_frame_header>
-	) -> input_frame_header;
-}
-
-constexpr auto gse::network::message_id(std::type_identity<input_frame_header>) -> std::uint16_t {
-    return 0x0006;
-}
-
-auto gse::network::encode(bitstream& s, const input_frame_header& header) -> void {
-	s.write(header);
-}
-
-auto gse::network::decode(bitstream& s, std::type_identity<input_frame_header>) -> input_frame_header {
-	return s.read<input_frame_header>();
+	struct [[= network_message{}]] input_frame {
+		std::uint32_t input_sequence = 0;
+		time_t<std::uint32_t, milliseconds> client_time = {};
+		float camera_yaw = 0.f;
+		std::vector<std::uint64_t> pressed;
+		std::vector<std::uint64_t> released;
+		std::vector<std::uint64_t> held;
+		std::vector<axes1_pair> axes1;
+		std::vector<axes2_pair> axes2;
+	};
 }

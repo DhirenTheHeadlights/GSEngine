@@ -3,107 +3,99 @@ export module gse.network:actions;
 import std;
 
 import gse.math;
-import gse.platform;
+import gse.os;
+import gse.time;
 
-import :socket;
-import :remote_peer;
-import :packet_header;
-import :bitstream;
-import :message;
 import :input_frame;
 
 export namespace gse::network {
-	struct axes1_pair {
-		std::uint16_t id;
-		float value;
-	};
-
-	struct axes2_pair {
-		std::uint16_t id;
-		float x, y;
-	};
-
-	auto send_input_frame(
-		const udp_socket& socket,
-		remote_peer& peer,
-		std::array<std::byte, max_packet_size>& buffer,
-		std::uint32_t input_sequence,
+	auto extract_input_frame(
 		const actions::state& state,
 		std::span<const std::uint16_t> axes1_ids,
 		std::span<const std::uint16_t> axes2_ids,
+		std::uint32_t input_sequence,
 		angle camera_yaw = {}
+	) -> input_frame;
+
+	auto apply_input_frame(
+		actions::state& target,
+		const input_frame& m
 	) -> void;
 }
 
-auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer, std::array<std::byte, max_packet_size>& buffer, const std::uint32_t input_sequence, const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const angle camera_yaw) -> void {
+auto gse::network::extract_input_frame(const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const std::uint32_t input_sequence, const angle camera_yaw) -> input_frame {
 	const auto& pm = state.pressed_mask();
 	const auto& rm = state.released_mask();
 	const auto& hm = state.held_mask();
-	const auto wc = static_cast<std::uint16_t>(std::max({ pm.word_count(), rm.word_count(), hm.word_count() }));
+	const auto wc = std::max({ pm.word_count(), rm.word_count(), hm.word_count() });
 
-	auto a1 = axes1_ids
-		| std::views::transform([&](auto id) { return axes1_pair{ id, state.axis1(id) }; })
-		| std::views::filter([](const auto& p) { return p.value != 0.f; })
-		| std::ranges::to<std::vector>();
+	const auto pad = [wc](std::span<const std::uint64_t> src) {
+		std::vector<std::uint64_t> out(wc);
+		std::ranges::copy_n(
+			src.begin(),
+			std::min<std::size_t>(
+				src.size(),
+				wc
+			),
+			out.begin()
+		);
+		return out;
+	};
 
-	auto a2 = axes2_ids
-		| std::views::transform([&](auto id) -> axes2_pair {
+	const auto build_axes1 = [&](auto id) {
+		return axes1_pair{
+			.id = id,
+			.value = state.axis1(id),
+		};
+	};
+
+	const auto axes1_active = [](const axes1_pair& p) {
+		return p.value != 0.f;
+	};
+
+	const auto build_axes2 = [&](auto id) -> axes2_pair {
 		const auto v = state.axis2_v(id);
-		return { id, v.x(), v.y() };
-			})
-		| std::views::filter([](const auto& p) { return p.x != 0.f || p.y != 0.f; })
-		| std::ranges::to<std::vector>();
-
-	bitstream s(buffer);
-
-	const packet_header ph{
-		.sequence = ++peer.sequence(),
-		.ack = peer.remote_ack_sequence(),
-		.ack_bits = peer.remote_ack_bitfield()
+		return {
+			.id = id,
+			.x = v.x(),
+			.y = v.y(),
+		};
 	};
-	s.write(ph);
 
-	const input_frame_header hdr{
+	const auto axes2_active = [](const axes2_pair& p) {
+		return p.x != 0.f || p.y != 0.f;
+	};
+
+	return input_frame{
 		.input_sequence = input_sequence,
-		.client_time_ms = system_clock::now<time_t<std::uint32_t>>().as<milliseconds>(),
-		.action_word_count = wc,
-		.axes1_count = static_cast<std::uint16_t>(a1.size()),
-		.axes2_count = static_cast<std::uint16_t>(a2.size()),
-		.camera_yaw = camera_yaw.as<radians>()
+		.client_time = system_clock::now<time_t<std::uint32_t, milliseconds>>(),
+		.camera_yaw = static_cast<float>(camera_yaw),
+		.pressed = pad(pm.words()),
+		.released = pad(rm.words()),
+		.held = pad(hm.words()),
+		.axes1 = axes1_ids | std::views::transform(build_axes1) | std::views::filter(axes1_active) |
+			std::ranges::to<std::vector>(),
+		.axes2 = axes2_ids | std::views::transform(build_axes2) | std::views::filter(axes2_active) |
+			std::ranges::to<std::vector>(),
 	};
-	write(s, hdr);
+}
 
-	const auto& pw = pm.words();
-	const auto& rw = rm.words();
-	const auto& hw = hm.words();
+auto gse::network::apply_input_frame(actions::state& target, const input_frame& m) -> void {
+	target.begin_frame();
+	target.ensure_capacity(m.pressed.size() * 64);
+	target.load_state(m.pressed, m.released, m.held);
+	target.clear_all_axes();
 
-	for (std::size_t i = 0; i < wc; ++i) {
-		const std::uint64_t w = (i < pw.size()) ? pw[i] : 0ull;
-		s.write(w);
-	}
-	for (std::size_t i = 0; i < wc; ++i) {
-		const std::uint64_t w = (i < rw.size()) ? rw[i] : 0ull;
-		s.write(w);
-	}
-	for (std::size_t i = 0; i < wc; ++i) {
-		const std::uint64_t w = (i < hw.size()) ? hw[i] : 0ull;
-		s.write(w);
+	for (const auto& [id, value] : m.axes1) {
+		target.set_axis1(id, value);
 	}
 
-	if (!a1.empty()) {
-		s.write(std::as_bytes(std::span{ a1.data(), a1.size() }));
-	}
-	if (!a2.empty()) {
-		s.write(std::as_bytes(std::span{ a2.data(), a2.size() }));
+	for (const auto& [id, x, y] : m.axes2) {
+		target.set_axis2(
+			id,
+			actions::axis{ x, y }
+		);
 	}
 
-	const packet pkt{
-		.data = reinterpret_cast<std::uint8_t*>(buffer.data()),
-		.size = s.bytes_written()
-	};
-
-	if (socket.send_data(pkt, peer.addr()) == socket_state::error) {
-		std::println("[Network Warning] Failed to send input frame from client to {}", peer.addr().ip);
-		return;
-	}
+	target.set_camera_yaw(gse::radians(m.camera_yaw));
 }
