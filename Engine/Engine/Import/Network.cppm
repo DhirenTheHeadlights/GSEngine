@@ -1,17 +1,17 @@
-module;
-
-#include <iostream>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-
-#pragma comment(lib, "Ws2_32.lib")
-
 export module gse.network;
 
 import std;
-import gse.utility;
-import gse.physics;
+
+import gse.core;
+import gse.containers;
+import gse.math;
+import gse.meta;
+import gse.concurrency;
+import gse.ecs;
+import gse.assets;
+import gse.os;
 import gse.graphics;
+import gse.physics;
 
 export import :actions;
 export import :remote_peer;
@@ -38,293 +38,250 @@ export namespace gse::network {
 		bool allow_handoff = false;
 	};
 
-	struct key_hash {
-		auto operator()(const address& a) const noexcept -> size_t {
-			return std::hash<std::string>{}(a.ip) ^ (static_cast<size_t>(a.port) << 1);
-		}
+	struct connect_request {
+		using result_type = bool;
+		connection_options options;
+		channel_promise<bool> promise;
 	};
 
-	struct key_eq {
-		auto operator()(const address& a, const address& b) const noexcept -> bool {
-			return a.ip == b.ip && a.port == b.port;
-		}
+	struct disconnect_request {};
+
+	struct add_provider_request {
+		std::shared_ptr<discovery_provider> provider;
 	};
 
-	class system_state {
-	public:
-		system_state() = default;
+	struct clear_providers_request {};
 
-		auto add_discovery_provider(
-			std::unique_ptr<discovery_provider> p
-		) -> void;
+	struct refresh_servers_request {
+		time_t<std::uint32_t> timeout = milliseconds(350);
+	};
 
-		auto clear_discovery_providers(
-		) -> void;
+	struct send_request {
+		std::function<void(client&)> action;
+	};
 
-		auto refresh_servers(
-			time_t<std::uint32_t> timeout = milliseconds(350)
-		) -> void;
-
-		auto servers(
-		) const -> std::span<const discovery_result>;
-
-		auto connect(
-			const connection_options& options
-		) -> bool;
-
-		auto connect(
-			const discovery_result& pick,
-			const std::optional<address>& local = std::nullopt,
-			time_t<std::uint32_t> timeout = seconds(5),
-			time_t<std::uint32_t> retry = seconds(1)
-		) -> bool;
-
-		auto disconnect(
-		) -> void;
-
-		auto current_state(
-		) const -> client::state;
-
-		template <typename T>
-		auto send(
-			const T& m
-		) -> void;
-
-		auto drain(
-			const std::function<void(inbox_message&)>& handler,
-			time_t<std::uint32_t> timeout = milliseconds(0)
-		) -> void;
-
-		std::unique_ptr<client> client_ptr;
-		std::vector<std::unique_ptr<discovery_provider>> providers;
+	struct data {
+		client::state connection_state = client::state::disconnected;
 		std::vector<discovery_result> available_servers;
-		std::mutex user_inbox_mutex;
-		std::vector<inbox_message> user_inbox;
-		std::vector<std::move_only_function<void(registry&)>> deferred;
+		std::uint8_t connected_players = 0;
+		std::uint8_t connected_max_players = 0;
+		std::unique_ptr<client> client_ptr;
+		std::vector<std::shared_ptr<discovery_provider>> providers;
+		std::vector<gse::move_only_function<void(run_context&)>> deferred;
 	};
 
+	using engine_components =
+		type_pack<physics::motion_component, physics::collision_component, render_component, player_controller>;
+
+	template <typename... Components>
 	struct system {
-		static auto initialize(initialize_phase& phase, system_state& s) -> void;
-		static auto update(const update_phase& phase, system_state& s) -> void;
-		static auto shutdown(shutdown_phase& phase, system_state& s) -> void;
+		using data = network::data;
+
+		static auto run(
+			run_context& ctx,
+			const asset::data& assets_d,
+			data& d,
+			const actions::system::data& actions_d,
+			const camera::system::data& cam_d
+		) -> async::task<>;
+
+		static auto shutdown(
+			shutdown_context& phase,
+			data& d
+		) -> void;
 	};
+
+	template <typename Pack>
+	using system_for = typename Pack::template apply<system>;
 }
 
-auto gse::network::system::initialize(initialize_phase&, system_state&) -> void {
-	// WinSock initialization handled by static initializer in Socket.cppm
+template <typename... Components>
+auto gse::network::system<Components...>::shutdown(shutdown_context&, data& d) -> void {
+	d.client_ptr.reset();
 }
 
-auto gse::network::system::shutdown(shutdown_phase&, system_state& s) -> void {
-	s.client_ptr.reset();
-	// WinSock cleanup handled by static initializer destructor in Socket.cppm
-}
+template <typename... Components>
+auto gse::network::system<Components...>::run(run_context& ctx, const asset::data& assets_d, data& d, const actions::system::data& actions_d, const camera::system::data& cam_d) -> async::task<> {
+	(ctx.template ensure_storage<Components>(), ...);
 
-auto gse::network::system::update(const update_phase& phase, system_state& s) -> void {
-	if (!s.client_ptr) {
-		return;
-	}
+	while (true) {
+		for (const auto& req : ctx.read_channel<connect_request>()) {
+			if (!d.client_ptr) {
+				const address bind = req.options.local_bind.value_or(
+					address{
+						.ip = "0.0.0.0",
+						.port = 0,
+					}
+				);
+				d.client_ptr = std::make_unique<client>(bind, req.options.addr);
+			}
+			req.promise.fulfill(d.client_ptr->connect(req.options.timeout, req.options.retry));
+		}
 
-	const auto* renderer_state = phase.try_state_of<renderer::state>();
+		for (const auto& _ : ctx.read_channel<disconnect_request>()) {
+			d.client_ptr.reset();
+		}
 
-	s.client_ptr->drain([&s, renderer_state](inbox_message& msg) {
-		if (auto* rep = std::get_if<replication_message>(&msg)) {
-			const std::span data(rep->payload);
-			bitstream stream(data);
+		for (const auto& req : ctx.read_channel<add_provider_request>()) {
+			d.providers.emplace_back(req.provider);
+		}
 
-			match_and_apply_components(
+		for (const auto& _ : ctx.read_channel<clear_providers_request>()) {
+			d.providers.clear();
+			d.available_servers.clear();
+		}
+
+		for (const auto& req : ctx.read_channel<refresh_servers_request>()) {
+			std::unordered_map<address, discovery_result> dedup;
+			for (const auto& p : d.providers) {
+				p->refresh(req.timeout);
+				for (const auto& result : p->results()) {
+					if (auto it = dedup.find(result.addr); it == dedup.end()) {
+						dedup.emplace(result.addr, result);
+					}
+					else if (result.build >= it->second.build) {
+						it->second = result;
+					}
+				}
+			}
+			d.available_servers.clear();
+			d.available_servers.reserve(dedup.size());
+			for (auto& v : dedup | std::views::values) {
+				d.available_servers.push_back(std::move(v));
+			}
+			std::ranges::sort(
+				d.available_servers,
+				[](
+				const discovery_result& a,
+				const discovery_result& b
+			) {
+					if (a.name != b.name) {
+						return a.name < b.name;
+					}
+					return a.addr.port < b.addr.port;
+				}
+			);
+		}
+
+		if (!d.client_ptr) {
+			d.connection_state = client::state::disconnected;
+			co_await ctx.next_tick();
+			continue;
+		}
+
+		for (const auto& req : ctx.read_channel<send_request>()) {
+			req.action(*d.client_ptr);
+		}
+
+		d.client_ptr->drain([&ctx, &d, &assets_d](raw_message& msg) {
+			read_bitstream stream(msg.payload);
+
+			const bool is_component = match_and_apply_components<type_pack<Components...>>(
 				stream,
-				rep->id,
+				msg.id,
 				[&]<typename T>(const component_upsert<T>& m) {
-					if constexpr (std::is_same_v<T, render_component>) {
-						auto fixed_data = m.data;
-
-						if (renderer_state) {
-							for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
-								const auto res_id = fixed_data.models[i].id();
-								fixed_data.models[i] = renderer_state->try_get<model>(res_id);
-							}
-
-							for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
-								const auto res_id = fixed_data.skinned_models[i].id();
-								fixed_data.skinned_models[i] = renderer_state->try_get<skinned_model>(res_id);
-							}
-						}
-
-						s.deferred.push_back([entity = m.owner_id, data = std::move(fixed_data)](registry& r) {
-							r.ensure_exists(entity);
-							r.add_deferred_action(entity, [entity, data](registry& reg) -> bool {
-								if (!reg.active(entity)) {
-									reg.ensure_active(entity);
-									return false;
-								}
-								if (auto* c = reg.try_linked_object_write<T>(entity)) {
-									c->networked_data() = data;
-									return true;
-								}
-								auto* c = reg.add_component<T>(entity, data);
-								c->networked_data() = data;
-								return true;
-							});
-						});
-					}
-					else {
-						s.deferred.push_back([entity = m.owner_id, data = m.data](registry& r) {
-							r.ensure_exists(entity);
-							r.add_deferred_action(entity, [entity, data](registry& reg) -> bool {
-								if (!reg.active(entity)) {
-									reg.ensure_active(entity);
-									return false;
-								}
-								if (auto* c = reg.try_linked_object_write<T>(entity)) {
-									c->networked_data() = data;
-									return true;
-								}
-								auto* c = reg.add_component<T>(entity, data);
-								c->networked_data() = data;
-								return true;
-							});
-						});
-					}
+					d.deferred.push_back([entity = m.owner_id, payload = m.data, &assets_d](run_context& ctx) {
+						ctx.ensure_active(entity);
+						auto* c = ctx.add_component<T>(entity);
+						apply_networked(*c, payload);
+						asset::resolve_handles(*c, assets_d);
+					});
 				},
 				[&]<typename T>(const component_remove<T>& m) {
 					if (!m.owner_id.exists()) {
 						return;
 					}
-					s.deferred.push_back([entity = m.owner_id](registry& r) {
-						r.add_deferred_action(entity, [entity](registry& reg) -> bool {
-							if constexpr (std::is_same_v<T, player_controller>) {
-								if (reg.exists(entity)) {
-									reg.remove(entity);
-								}
-							} else {
-								reg.remove_link<T>(entity);
+					d.deferred.push_back([entity = m.owner_id](run_context& ctx) {
+						if constexpr (std::is_same_v<T, player_controller>) {
+							if (ctx.exists(entity)) {
+								ctx.remove(entity);
 							}
-							return true;
-						});
+						}
+						else {
+							ctx.remove_component<T>(entity);
+						}
 					});
 				}
 			);
 
-			return;
-		}
-
-		{
-			std::lock_guard lk(s.user_inbox_mutex);
-			s.user_inbox.emplace_back(msg);
-		}
-	});
-
-	for (auto& d : s.deferred) {
-		d(*phase.registry.reg);
-	}
-	s.deferred.clear();
-
-	if (s.client_ptr->current_state() == client::state::connected) {
-		if (const auto* actions_state = phase.try_state_of<actions::system_state>()) {
-			angle yaw;
-			if (const auto* cam_state = phase.try_state_of<camera::state>()) {
-				yaw = cam_state->yaw;
+			if (is_component) {
+				return;
 			}
-			s.client_ptr->push_input(
-				actions_state->current_state(),
-				actions_state->axis1_ids(),
-				actions_state->axis2_ids(),
-				yaw
+
+			try_decode<connection_accepted>(
+				stream,
+				msg.id,
+				[&](const auto& m) {
+					ctx.channels.push<set_networked_request>({
+						.value = true,
+					});
+					ctx.channels.push<set_authoritative_request>({
+						.value = false,
+					});
+					ctx.channels.push<set_local_controller_id_request>({
+						.controller_id = m.controller_id,
+					});
+					ctx.channels.push<deactivate_active_scene_request>({});
+					d.client_ptr->send(server_info_request{});
+					d.client_ptr->send(
+						pong{
+							.sequence = 0,
+						}
+					);
+				}
+			) ||
+				try_decode<notify_scene_change>(
+					stream,
+					msg.id,
+					[&](const auto& m) {
+						ctx.channels.push<activate_scene_request>({
+							.scene_id = m.scene_id,
+						});
+						std::println("Switched to scene: {}", m.scene_id);
+						d.client_ptr->send(
+							pong{
+								.sequence = 0,
+							}
+						);
+					}
+				) ||
+				try_decode<ping>(
+					stream,
+					msg.id,
+					[&](const auto& m) {
+						d.client_ptr->send(
+							pong{
+								.sequence = m.sequence,
+							}
+						);
+					}
+				) ||
+				try_decode<server_info_response>(
+					stream,
+					msg.id,
+					[&](const auto& m) {
+						d.connected_players = m.players;
+						d.connected_max_players = m.max_players;
+					}
+				);
+		});
+
+		for (auto& def : d.deferred) {
+			def(ctx);
+		}
+		d.deferred.clear();
+
+		d.connection_state = d.client_ptr->current_state();
+
+		if (d.connection_state == client::state::connected) {
+			d.client_ptr->push_input(
+				actions::system::current_state(actions_d),
+				actions::system::axis1_ids(actions_d),
+				actions::system::axis2_ids(actions_d),
+				cam_d.yaw
 			);
 		}
-	}
-}
 
-auto gse::network::system_state::add_discovery_provider(std::unique_ptr<discovery_provider> p) -> void {
-	providers.emplace_back(std::move(p));
-}
-
-auto gse::network::system_state::clear_discovery_providers() -> void {
-	providers.clear();
-	available_servers.clear();
-}
-
-auto gse::network::system_state::refresh_servers(const time_t<std::uint32_t> timeout) -> void {
-	std::unordered_map<address, discovery_result, key_hash, key_eq> dedup;
-	for (const auto& p : providers) {
-		p->refresh(timeout);
-		for (const auto& r : p->results()) {
-			if (auto it = dedup.find(r.addr); it == dedup.end()) {
-				dedup.emplace(r.addr, r);
-			}
-			else if (r.build >= it->second.build) {
-				it->second = r;
-			}
-		}
-	}
-	available_servers.clear();
-	available_servers.reserve(dedup.size());
-	for (auto& v : dedup | std::views::values) {
-		available_servers.push_back(std::move(v));
-	}
-	std::ranges::sort(available_servers, [](const discovery_result& a, const discovery_result& b) {
-		if (a.name != b.name) {
-			return a.name < b.name;
-		}
-		return a.addr.port < b.addr.port;
-	});
-}
-
-auto gse::network::system_state::servers() const -> std::span<const discovery_result> {
-	return available_servers;
-}
-
-auto gse::network::system_state::connect(const connection_options& options) -> bool {
-	if (!client_ptr) {
-		const address bind = options.local_bind.value_or(address{
-			.ip = "0.0.0.0",
-			.port = 0
-		});
-		client_ptr = std::make_unique<client>(bind, options.addr);
-	}
-	return client_ptr->connect(options.timeout, options.retry);
-}
-
-auto gse::network::system_state::connect(const discovery_result& pick, const std::optional<address>& local, const time_t<std::uint32_t> timeout, const time_t<std::uint32_t> retry) -> bool {
-	const connection_options co{
-		.addr = pick.addr,
-		.local_bind = local,
-		.timeout = timeout,
-		.retry = retry
-	};
-	return connect(co);
-}
-
-auto gse::network::system_state::disconnect() -> void {
-	client_ptr.reset();
-}
-
-auto gse::network::system_state::current_state() const -> client::state {
-	if (client_ptr) {
-		return client_ptr->current_state();
-	}
-	return client::state::disconnected;
-}
-
-auto gse::network::system_state::drain(const std::function<void(inbox_message&)>& handler, time_t<std::uint32_t>) -> void {
-	std::vector<inbox_message> batch;
-
-	{
-		std::lock_guard lk(user_inbox_mutex);
-		if (user_inbox.empty()) {
-			return;
-		}
-		batch.swap(user_inbox);
-	}
-
-	for (auto& m : batch) {
-		handler(m);
-	}
-}
-
-template <typename T>
-auto gse::network::system_state::send(const T& m) -> void {
-	if (client_ptr) {
-		client_ptr->send(m);
+		co_await ctx.next_tick();
 	}
 }

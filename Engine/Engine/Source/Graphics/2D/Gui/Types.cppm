@@ -3,12 +3,16 @@ export module gse.graphics:types;
 import std;
 
 import gse.math;
-import gse.utility;
+import gse.os;
+import gse.core;
+import gse.time;
 
 import :font;
 import :texture;
 import :ui_renderer;
 import :styles;
+import :render_layer;
+import :input_layers;
 
 export namespace gse::gui {
 	using ui_rect = rect_t<vec2f>;
@@ -35,6 +39,31 @@ export namespace gse::gui {
 
 		static constexpr time show_delay = seconds(0.5f);
 	};
+
+	struct scroll_state {
+		float offset = 0.f;
+		float velocity = 0.f;
+		float target_offset = 0.f;
+		float content_height = 0.f;
+		bool scrollbar_held = false;
+		bool scrollbar_hovered = false;
+		float scrollbar_grab_offset = 0.f;
+	};
+
+	struct scroll_config {
+		float scrollbar_width = 8.f;
+		float scrollbar_min_height = 20.f;
+		float scroll_speed = 40.f;
+		float smooth_factor = 0.15f;
+		bool auto_hide_scrollbar = true;
+		bool smooth_scrolling = true;
+	};
+
+	struct scroll_region_info {
+		std::string_view id;
+		vec2f size{ 0.f, 0.f };
+		scroll_config config{};
+	};
 }
 
 namespace gse::gui::dock {
@@ -51,10 +80,14 @@ namespace gse::gui::dock {
 		ui_rect rect;
 		ui_rect target;
 		location dock_location = location::none;
+
+		~area() noexcept = default;
 	};
 
 	struct space {
 		std::array<area, 5> areas;
+
+		~space() noexcept = default;
 	};
 }
 
@@ -97,12 +130,16 @@ export namespace gse::gui {
 		vec2f& layout_cursor;
 		std::vector<renderer::sprite_command>& sprites;
 		std::vector<renderer::text_command>& texts;
+		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
+		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
 
 		render_layer current_layer = render_layer::content;
 		std::uint32_t current_z_order = 0;
 
 		render_layer input_layer = render_layer::content;
+		class input_layer* hit_regions = nullptr;
 		tooltip_state* tooltip = nullptr;
+		std::vector<ui_rect> clip_stack;
 
 		auto queue_sprite(
 			renderer::sprite_command cmd
@@ -112,14 +149,117 @@ export namespace gse::gui {
 			renderer::text_command cmd
 		) const -> void;
 
-		[[nodiscard]] auto input_available(
+		auto register_hit_region(
+			render_layer layer,
+			const ui_rect& rect
+		) const -> void;
+
+		[[nodiscard]] auto input_available() const -> bool;
+
+		[[nodiscard]] auto input_available_at(
+			vec2f position
 		) const -> bool;
+
+		[[nodiscard]]
+		auto mouse_pressed_for(
+			const ui_rect& rect,
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]]
+		auto mouse_released_for(
+			const ui_rect& rect,
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		auto consume_press(
+			mouse_button button = mouse_button::button_1
+		) const -> void;
+
+		auto consume_release(
+			mouse_button button = mouse_button::button_1
+		) const -> void;
+
+		[[nodiscard]] auto is_press_consumed(
+			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]] auto scroll_delta_for(
+			const ui_rect& rect
+		) const -> vec2f;
+
+		auto consume_scroll() const -> void;
+
+		[[nodiscard]] auto is_scroll_consumed() const -> bool;
+
+		[[nodiscard]] auto key_pressed_for(
+			key k
+		) const -> bool;
+
+		auto consume_key_press(
+			key k
+		) const -> void;
 
 		auto set_tooltip(
 			const id& widget_id,
-			const std::string& text
+			std::string_view text
 		) const -> void;
+
+		auto next_row(
+			float height_multiplier = 1.f
+		) const -> ui_rect;
+
+		auto animated_color(
+			const id& widget_id,
+			vec4f target,
+			float speed = 10.f
+		) const -> vec4f;
+
+		[[nodiscard]] auto current_clip() const -> std::optional<ui_rect>;
 	};
+
+	struct scroll_handle : non_copyable {
+		scroll_handle() noexcept = default;
+
+		scroll_handle(
+			draw_context& ctx,
+			scroll_state& state,
+			const ui_rect& visible_rect,
+			float saved_layout_y,
+			const scroll_config& config
+		) noexcept;
+
+		scroll_handle(
+			scroll_handle&& other
+		) noexcept;
+
+		auto operator=(
+			scroll_handle&& other
+		) noexcept -> scroll_handle&;
+
+		~scroll_handle() noexcept;
+
+		[[nodiscard]] auto valid() const -> bool;
+
+		[[nodiscard]] auto visible_rect() const -> const ui_rect&;
+
+		[[nodiscard]] auto offset() const -> float;
+
+	private:
+		draw_context* m_ctx = nullptr;
+		scroll_state* m_state = nullptr;
+		ui_rect m_visible_rect;
+		ui_rect m_saved_menu_rect;
+		float m_saved_layout_y = 0.f;
+		float m_content_start_y = 0.f;
+		scroll_config m_config{};
+		bool m_active = false;
+	};
+
+	[[nodiscard]] auto scroll_region(
+		draw_context& ctx,
+		const scroll_region_info& info
+	) -> scroll_handle;
 }
 
 namespace gse::gui::states {
@@ -149,46 +289,22 @@ namespace gse::gui::states {
 }
 
 namespace gse::gui {
-	using state = std::variant<
-		states::idle,
-		states::dragging,
-		states::resizing,
-		states::resizing_divider,
-		states::pending_drag
-	>;
-}
+	struct state {
+		using value_type = std::
+			variant<states::idle, states::dragging, states::resizing, states::resizing_divider, states::pending_drag>;
 
-gse::gui::menu::menu(std::string_view tag, const menu_data& data)
-	: identifiable(tag)
-	, identifiable_owned(data.parent_id)
-	, rect(data.rect)
-	, dock_split_ratio(data.dock_split_ratio)
-	, docked_to(data.docked_to) {
-	tab_contents.emplace_back(tag);
-}
+		value_type v;
 
-auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const -> void {
-	cmd.layer = current_layer;
-	cmd.z_order = current_z_order;
-	sprites.push_back(std::move(cmd));
-}
+		template <typename T>
+		requires(!std::same_as<std::remove_cvref_t<T>, state>) && std::constructible_from<value_type, T&&>
+		state(T&& x) : v(std::forward<T>(x)) {
+		}
 
-auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> void {
-	cmd.layer = current_layer;
-	cmd.z_order = current_z_order;
-	texts.push_back(std::move(cmd));
-}
-
-auto gse::gui::draw_context::input_available() const -> bool {
-	return static_cast<std::uint8_t>(current_layer) >= static_cast<std::uint8_t>(input_layer);
-}
-
-auto gse::gui::draw_context::set_tooltip(const id& widget_id, const std::string& text) const -> void {
-	if (!tooltip || text.empty()) {
-		return;
-	}
-
-	tooltip->pending_widget_id = widget_id;
-	tooltip->text = text;
-	tooltip->position = input.mouse_position();
+		template <typename T>
+		requires(!std::same_as<std::remove_cvref_t<T>, state>) && std::assignable_from<value_type&, T&&>
+		auto operator=(T&& x) -> state& {
+			v = std::forward<T>(x);
+			return *this;
+		}
+	};
 }

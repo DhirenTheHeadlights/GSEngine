@@ -1,304 +1,467 @@
 export module gse.graphics:styles;
 
 import std;
-	
+
 import gse.math;
 
+export namespace gse {
+	struct scaled_tag {};
+	constexpr scaled_tag scaled{};
+}
+
 export namespace gse::gui {
-    enum class theme {
-        dark,
-        darker,
-        light,
-        high_contrast
-    };
+	enum class theme {
+		midnight,
+		eclipse,
+		ember,
+		forest,
+		frost,
+		high_contrast,
+	};
+
+	struct style;
+
+	struct dp {
+		float value{};
+
+		[[nodiscard]] constexpr auto px(
+			const style& sty
+		) const -> float;
+	};
+
+	struct dp_vec {
+		vec2f value{};
+
+		[[nodiscard]] constexpr auto px(
+			const style& sty
+		) const -> vec2f;
+	};
 
 	struct style {
-		// Window chrome
-		vec4f color_title_bar = { 0.18f, 0.18f, 0.20f, 0.95f };
-		vec4f color_title_bar_inactive = { 0.12f, 0.12f, 0.14f, 0.95f };
-		vec4f color_menu_body = { 0.10f, 0.10f, 0.12f, 0.98f };
-		vec4f color_menu_bar = { 0.08f, 0.08f, 0.10f, 1.0f };
-		vec4f color_border = { 0.06f, 0.06f, 0.08f, 1.0f };
+		// Menu chrome
+		vec4f color_title_bar = { 0.10f, 0.12f, 0.18f, 1.0f };
+		vec4f color_title_bar_inactive = { 0.07f, 0.08f, 0.13f, 1.0f };
+		vec4f color_menu_body = { 0.08f, 0.10f, 0.15f, 0.92f };
+		vec4f color_panel_alt = { 0.06f, 0.07f, 0.11f, 0.96f };
+		vec4f color_border = { 0.20f, 0.24f, 0.34f, 1.0f };
+		vec4f color_separator = { 0.16f, 0.18f, 0.26f, 1.0f };
 
 		// Text
-		vec4f color_text = { 0.92f, 0.92f, 0.94f, 1.0f };
-		vec4f color_text_secondary = { 0.6f, 0.6f, 0.62f, 1.0f };
-		vec4f color_text_disabled = { 0.5f, 0.5f, 0.52f, 1.0f };
+		vec4f color_text = { 0.96f, 0.97f, 0.99f, 1.0f };
+		vec4f color_text_secondary = { 0.66f, 0.70f, 0.80f, 1.0f };
+		vec4f color_text_disabled = { 0.40f, 0.43f, 0.50f, 1.0f };
+		vec4f color_section_header = { 0.96f, 0.97f, 0.99f, 1.0f };
 
 		// Icons
-		vec4f color_icon = { 0.7f, 0.7f, 0.72f, 1.0f };
+		vec4f color_icon = { 0.70f, 0.74f, 0.84f, 1.0f };
 		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-		// Interactive widget states (buttons, selectables, tree rows)
-		vec4f color_widget_background = { 0.22f, 0.22f, 0.24f, 1.0f };
-		vec4f color_widget_hovered = { 0.30f, 0.30f, 0.34f, 1.0f };
-		vec4f color_widget_active = { 0.24f, 0.52f, 0.88f, 1.0f };
-		vec4f color_widget_selected = { 0.24f, 0.52f, 0.88f, 0.85f };
+		// Interactive widget states
+		vec4f color_widget_background = { 0.12f, 0.15f, 0.22f, 1.0f };
+		vec4f color_widget_hovered = { 0.18f, 0.22f, 0.32f, 1.0f };
+		vec4f color_widget_active = { 0.26f, 0.86f, 0.84f, 1.0f };
+		vec4f color_widget_selected = { 0.26f, 0.86f, 0.84f, 0.32f };
 
-		// Sliders
-		vec4f color_slider_fill = { 0.24f, 0.52f, 0.88f, 0.9f };
+		// Accent (primary theme color: drives sliders, toggle-on, selections, section bars)
+		vec4f color_accent = { 0.26f, 0.86f, 0.84f, 1.0f };
+		vec4f color_accent_dim = { 0.26f, 0.86f, 0.84f, 0.30f };
 
-		// Toggle switches
-		vec4f color_toggle_on = { 0.2f, 0.65f, 0.35f, 1.0f };
-		vec4f color_toggle_off = { 0.28f, 0.28f, 0.30f, 1.0f };
-
-		// Knobs/handles (for toggles, sliders)
-		vec4f color_handle = { 0.92f, 0.92f, 0.94f, 1.0f };
+		// Sliders / toggles
+		vec4f color_slider_fill = { 0.26f, 0.86f, 0.84f, 1.0f };
+		vec4f color_toggle_on = { 0.26f, 0.86f, 0.84f, 1.0f };
+		vec4f color_toggle_off = { 0.22f, 0.25f, 0.34f, 1.0f };
+		vec4f color_handle = { 0.96f, 0.97f, 0.99f, 1.0f };
 		vec4f color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-		// Input fields
-		vec4f color_input_background = { 0.08f, 0.08f, 0.10f, 1.0f };
-		vec4f color_selection = { 0.24f, 0.52f, 0.88f, 0.45f };
-		vec4f color_caret = { 0.92f, 0.92f, 0.94f, 1.0f };
+		// Inputs
+		vec4f color_input_background = { 0.06f, 0.08f, 0.12f, 1.0f };
+		vec4f color_selection = { 0.26f, 0.86f, 0.84f, 0.40f };
+		vec4f color_caret = { 0.96f, 0.97f, 0.99f, 1.0f };
 
-		// Docking system
-		vec4f color_dock_preview = { 0.24f, 0.52f, 0.88f, 0.35f };
-		vec4f color_dock_tab_active = { 0.24f, 0.52f, 0.88f, 0.6f };
+		// Docking
+		vec4f color_dock_preview = { 0.26f, 0.86f, 0.84f, 0.35f };
+		vec4f color_dock_tab_active = { 0.26f, 0.86f, 0.84f, 0.6f };
 
-		// Sizing
-		float padding = 10.f;
-		float title_bar_height = 30.f;
-		float resize_border_thickness = 8.f;
-		vec2f min_menu_size = { 150.f, 100.f };
-		float font_size = 16.f;
-		float menu_bar_height = 32.f;
+		vec4f color_shadow = { 0.f, 0.f, 0.f, 0.35f };
+
+		// Runtime-resolved scale factor (set by apply_scale, not a styled dimension)
+		float scale_factor = 1.f;
+
+		// Widget sizing (auto-scaled via [[= gse::scaled]] reflection in apply_scale)
+		[[= gse::scaled]] float padding = 12.f;
+		[[= gse::scaled]] float title_bar_height = 32.f;
+		[[= gse::scaled]] float resize_border_thickness = 8.f;
+		[[= gse::scaled]] vec2f min_menu_size = { 200.f, 120.f };
+		[[= gse::scaled]] float font_size = 16.f;
 		std::filesystem::path font;
 
-		static constexpr auto dark() -> style;
-		static constexpr auto darker() -> style;
-		static constexpr auto light() -> style;
+		[[= gse::scaled]] float corner_radius = 6.f;
+		[[= gse::scaled]] float corner_radius_menu = 10.f;
+		float widget_height_padding = 0.7f;
+		[[= gse::scaled]] float item_spacing = 4.f;
+		[[= gse::scaled]] float section_spacing_above = 18.f;
+		[[= gse::scaled]] float section_spacing_below = 10.f;
+		float section_header_size_mult = 1.30f;
+		[[= gse::scaled]] float accent_bar_width = 3.f;
+
+		// Screen/card layout (referenced by SettingsScreen, MainMenuScreen, etc.)
+		[[= gse::scaled]] vec2f card_min_size = { 720.f, 480.f };
+		[[= gse::scaled]] vec2f card_max_size = { 1100.f, 760.f };
+		[[= gse::scaled]] vec2f card_margin = { 80.f, 60.f };
+		[[= gse::scaled]] float sidebar_width = 220.f;
+		[[= gse::scaled]] float header_height = 56.f;
+		[[= gse::scaled]] float footer_height = 64.f;
+		[[= gse::scaled]] float close_button_size = 28.f;
+		[[= gse::scaled]] float separator_thickness = 1.f;
+
+		// Buttons
+		[[= gse::scaled]] float button_height = 32.f;
+		[[= gse::scaled]] float button_min_width = 108.f;
+		[[= gse::scaled]] float accent_button_min_width = 132.f;
+		[[= gse::scaled]] float button_spacing = 8.f;
+
+		// Standalone panels
+		[[= gse::scaled]] float side_panel_max_width = 320.f;
+		[[= gse::scaled]] float progress_bar_max_width = 400.f;
+		[[= gse::scaled]] float progress_bar_height = 12.f;
+		[[= gse::scaled]] float preview_height = 160.f;
+
+		static constexpr auto midnight() -> style;
+		static constexpr auto eclipse() -> style;
+		static constexpr auto ember() -> style;
+		static constexpr auto forest() -> style;
+		static constexpr auto frost() -> style;
 		static constexpr auto high_contrast() -> style;
 
-		static constexpr auto from_theme(theme t) -> style;
+		static constexpr auto from_theme(
+			theme t
+		) -> style;
 	};
 }
 
-constexpr auto gse::gui::style::dark() -> style {
-    return style{
-        // Window chrome
-        .color_title_bar = { 0.18f, 0.18f, 0.20f, 0.95f },
-        .color_title_bar_inactive = { 0.12f, 0.12f, 0.14f, 0.95f },
-        .color_menu_body = { 0.10f, 0.10f, 0.12f, 0.01f },
-        .color_menu_bar = { 0.08f, 0.08f, 0.10f, 1.0f },
-        .color_border = { 0.06f, 0.06f, 0.08f, 1.0f },
-
-        // Text
-        .color_text = { 0.92f, 0.92f, 0.94f, 1.0f },
-        .color_text_secondary = { 0.6f, 0.6f, 0.62f, 1.0f },
-        .color_text_disabled = { 0.4f, 0.4f, 0.42f, 1.0f },
-
-        // Icons
-        .color_icon = { 0.7f, 0.7f, 0.72f, 1.0f },
-        .color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-
-        // Interactive widgets
-        .color_widget_background = { 0.22f, 0.22f, 0.24f, 0.9f },
-        .color_widget_hovered = { 0.30f, 0.30f, 0.34f, 0.95f },
-        .color_widget_active = { 0.24f, 0.52f, 0.88f, 1.0f },
-        .color_widget_selected = { 0.24f, 0.52f, 0.88f, 0.85f },
-
-        // Sliders
-        .color_slider_fill = { 0.24f, 0.52f, 0.88f, 0.9f },
-
-        // Toggles
-        .color_toggle_on = { 0.2f, 0.65f, 0.35f, 1.0f },
-        .color_toggle_off = { 0.28f, 0.28f, 0.30f, 1.0f },
-
-        // Handles
-        .color_handle = { 0.92f, 0.92f, 0.94f, 1.0f },
-        .color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-
-        // Input fields
-        .color_input_background = { 0.08f, 0.08f, 0.10f, 1.0f },
-        .color_selection = { 0.24f, 0.52f, 0.88f, 0.45f },
-        .color_caret = { 0.92f, 0.92f, 0.94f, 1.0f },
-
-        // Docking
-        .color_dock_preview = { 0.24f, 0.52f, 0.88f, 0.35f },
-        .color_dock_tab_active = { 0.24f, 0.52f, 0.88f, 0.6f },
-
-        // Sizing
-        .padding = 10.f,
-        .title_bar_height = 30.f,
-        .resize_border_thickness = 8.f,
-        .min_menu_size = { 150.f, 100.f },
-        .font_size = 16.f,
-        .menu_bar_height = 32.f,
-        .font = {}
-    };
+constexpr auto gse::gui::style::midnight() -> style {
+	constexpr vec4f accent{ 0.26f, 0.86f, 0.84f, 1.0f };
+	constexpr vec4f accent_dim{ 0.26f, 0.86f, 0.84f, 0.30f };
+	return style{
+		.color_title_bar = { 0.10f, 0.12f, 0.18f, 1.0f },
+		.color_title_bar_inactive = { 0.07f, 0.08f, 0.13f, 1.0f },
+		.color_menu_body = { 0.08f, 0.10f, 0.15f, 0.96f },
+		.color_panel_alt = { 0.06f, 0.07f, 0.11f, 0.98f },
+		.color_border = { 0.20f, 0.24f, 0.34f, 1.0f },
+		.color_separator = { 0.14f, 0.17f, 0.24f, 1.0f },
+		.color_text = { 0.96f, 0.97f, 0.99f, 1.0f },
+		.color_text_secondary = { 0.66f, 0.70f, 0.80f, 1.0f },
+		.color_text_disabled = { 0.40f, 0.43f, 0.50f, 1.0f },
+		.color_section_header = { 0.96f, 0.97f, 0.99f, 1.0f },
+		.color_icon = { 0.70f, 0.74f, 0.84f, 1.0f },
+		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_widget_background = { 0.12f, 0.15f, 0.22f, 1.0f },
+		.color_widget_hovered = { 0.18f, 0.22f, 0.32f, 1.0f },
+		.color_widget_active = accent,
+		.color_widget_selected = accent_dim,
+		.color_accent = accent,
+		.color_accent_dim = accent_dim,
+		.color_slider_fill = accent,
+		.color_toggle_on = accent,
+		.color_toggle_off = { 0.22f, 0.25f, 0.34f, 1.0f },
+		.color_handle = { 0.96f, 0.97f, 0.99f, 1.0f },
+		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_input_background = { 0.06f, 0.08f, 0.12f, 1.0f },
+		.color_selection = { accent.x(), accent.y(), accent.z(), 0.40f },
+		.color_caret = { 0.96f, 0.97f, 0.99f, 1.0f },
+		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.35f },
+		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.6f },
+		.color_shadow = { 0.f, 0.f, 0.f, 0.40f },
+		.padding = 12.f,
+		.title_bar_height = 32.f,
+		.resize_border_thickness = 8.f,
+		.min_menu_size = { 200.f, 120.f },
+		.font_size = 16.f,
+		.font = {},
+		.corner_radius = 6.f,
+		.corner_radius_menu = 10.f,
+		.widget_height_padding = 0.7f,
+		.item_spacing = 4.f,
+		.section_spacing_above = 18.f,
+		.section_spacing_below = 10.f,
+		.section_header_size_mult = 1.30f,
+		.accent_bar_width = 3.f,
+	};
 }
 
-constexpr auto gse::gui::style::darker() -> style {
-    return style{
-        // Window chrome - fully opaque, darker
-        .color_title_bar = { 0.12f, 0.12f, 0.14f, 1.0f },
-        .color_title_bar_inactive = { 0.08f, 0.08f, 0.10f, 1.0f },
-        .color_menu_body = { 0.06f, 0.06f, 0.07f, 1.0f },
-        .color_menu_bar = { 0.04f, 0.04f, 0.05f, 1.0f },
-        .color_border = { 0.02f, 0.02f, 0.03f, 1.0f },
-
-        // Text
-        .color_text = { 0.88f, 0.88f, 0.90f, 1.0f },
-        .color_text_secondary = { 0.55f, 0.55f, 0.58f, 1.0f },
-        .color_text_disabled = { 0.35f, 0.35f, 0.38f, 1.0f },
-
-        // Icons
-        .color_icon = { 0.6f, 0.6f, 0.62f, 1.0f },
-        .color_icon_hovered = { 0.95f, 0.95f, 0.97f, 1.0f },
-
-        // Interactive widgets - fully opaque
-        .color_widget_background = { 0.14f, 0.14f, 0.16f, 1.0f },
-        .color_widget_hovered = { 0.20f, 0.20f, 0.23f, 1.0f },
-        .color_widget_active = { 0.20f, 0.45f, 0.78f, 1.0f },
-        .color_widget_selected = { 0.20f, 0.45f, 0.78f, 1.0f },
-
-        // Sliders
-        .color_slider_fill = { 0.20f, 0.45f, 0.78f, 1.0f },
-
-        // Toggles
-        .color_toggle_on = { 0.18f, 0.55f, 0.30f, 1.0f },
-        .color_toggle_off = { 0.20f, 0.20f, 0.22f, 1.0f },
-
-        // Handles
-        .color_handle = { 0.85f, 0.85f, 0.87f, 1.0f },
-        .color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-
-        // Input fields
-        .color_input_background = { 0.04f, 0.04f, 0.05f, 1.0f },
-        .color_selection = { 0.20f, 0.45f, 0.78f, 0.5f },
-        .color_caret = { 0.88f, 0.88f, 0.90f, 1.0f },
-
-        // Docking
-        .color_dock_preview = { 0.20f, 0.45f, 0.78f, 0.4f },
-        .color_dock_tab_active = { 0.20f, 0.45f, 0.78f, 0.7f },
-
-        // Sizing
-        .padding = 10.f,
-        .title_bar_height = 30.f,
-        .resize_border_thickness = 8.f,
-        .min_menu_size = { 150.f, 100.f },
-        .font_size = 16.f,
-        .menu_bar_height = 32.f,
-        .font = {}
-    };
+constexpr auto gse::gui::style::eclipse() -> style {
+	constexpr vec4f accent{ 0.92f, 0.38f, 0.82f, 1.0f };
+	constexpr vec4f accent_dim{ 0.92f, 0.38f, 0.82f, 0.28f };
+	return style{
+		.color_title_bar = { 0.04f, 0.04f, 0.06f, 1.0f },
+		.color_title_bar_inactive = { 0.02f, 0.02f, 0.03f, 1.0f },
+		.color_menu_body = { 0.03f, 0.03f, 0.05f, 0.97f },
+		.color_panel_alt = { 0.02f, 0.02f, 0.03f, 0.98f },
+		.color_border = { 0.16f, 0.12f, 0.18f, 1.0f },
+		.color_separator = { 0.10f, 0.08f, 0.12f, 1.0f },
+		.color_text = { 0.95f, 0.93f, 0.96f, 1.0f },
+		.color_text_secondary = { 0.62f, 0.58f, 0.66f, 1.0f },
+		.color_text_disabled = { 0.36f, 0.34f, 0.40f, 1.0f },
+		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
+		.color_icon = { 0.70f, 0.66f, 0.74f, 1.0f },
+		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_widget_background = { 0.07f, 0.07f, 0.10f, 1.0f },
+		.color_widget_hovered = { 0.12f, 0.10f, 0.16f, 1.0f },
+		.color_widget_active = accent,
+		.color_widget_selected = accent_dim,
+		.color_accent = accent,
+		.color_accent_dim = accent_dim,
+		.color_slider_fill = accent,
+		.color_toggle_on = accent,
+		.color_toggle_off = { 0.14f, 0.12f, 0.16f, 1.0f },
+		.color_handle = { 0.95f, 0.93f, 0.96f, 1.0f },
+		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_input_background = { 0.02f, 0.02f, 0.03f, 1.0f },
+		.color_selection = { accent.x(), accent.y(), accent.z(), 0.40f },
+		.color_caret = { 0.95f, 0.93f, 0.96f, 1.0f },
+		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.35f },
+		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.6f },
+		.color_shadow = { 0.f, 0.f, 0.f, 0.50f },
+		.padding = 12.f,
+		.title_bar_height = 32.f,
+		.resize_border_thickness = 8.f,
+		.min_menu_size = { 200.f, 120.f },
+		.font_size = 16.f,
+		.font = {},
+		.corner_radius = 6.f,
+		.corner_radius_menu = 10.f,
+		.widget_height_padding = 0.7f,
+		.item_spacing = 4.f,
+		.section_spacing_above = 18.f,
+		.section_spacing_below = 10.f,
+		.section_header_size_mult = 1.30f,
+		.accent_bar_width = 3.f,
+	};
 }
 
-constexpr auto gse::gui::style::light() -> style {
-    return style{
-        // Window chrome
-        .color_title_bar = { 0.85f, 0.85f, 0.87f, 1.0f },
-        .color_title_bar_inactive = { 0.78f, 0.78f, 0.80f, 1.0f },
-        .color_menu_body = { 0.94f, 0.94f, 0.95f, 1.0f },
-        .color_menu_bar = { 0.90f, 0.90f, 0.92f, 1.0f },
-        .color_border = { 0.75f, 0.75f, 0.78f, 1.0f },
+constexpr auto gse::gui::style::ember() -> style {
+	constexpr vec4f accent{ 0.98f, 0.62f, 0.20f, 1.0f };
+	constexpr vec4f accent_dim{ 0.98f, 0.62f, 0.20f, 0.28f };
+	return style{
+		.color_title_bar = { 0.15f, 0.12f, 0.10f, 1.0f },
+		.color_title_bar_inactive = { 0.10f, 0.08f, 0.07f, 1.0f },
+		.color_menu_body = { 0.12f, 0.10f, 0.08f, 0.96f },
+		.color_panel_alt = { 0.09f, 0.07f, 0.06f, 0.98f },
+		.color_border = { 0.36f, 0.26f, 0.18f, 1.0f },
+		.color_separator = { 0.22f, 0.17f, 0.12f, 1.0f },
+		.color_text = { 0.98f, 0.94f, 0.88f, 1.0f },
+		.color_text_secondary = { 0.74f, 0.68f, 0.60f, 1.0f },
+		.color_text_disabled = { 0.46f, 0.42f, 0.38f, 1.0f },
+		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
+		.color_icon = { 0.78f, 0.72f, 0.64f, 1.0f },
+		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_widget_background = { 0.17f, 0.14f, 0.11f, 1.0f },
+		.color_widget_hovered = { 0.23f, 0.19f, 0.15f, 1.0f },
+		.color_widget_active = accent,
+		.color_widget_selected = accent_dim,
+		.color_accent = accent,
+		.color_accent_dim = accent_dim,
+		.color_slider_fill = accent,
+		.color_toggle_on = accent,
+		.color_toggle_off = { 0.26f, 0.22f, 0.18f, 1.0f },
+		.color_handle = { 0.98f, 0.94f, 0.88f, 1.0f },
+		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_input_background = { 0.08f, 0.06f, 0.05f, 1.0f },
+		.color_selection = { accent.x(), accent.y(), accent.z(), 0.40f },
+		.color_caret = { 0.98f, 0.94f, 0.88f, 1.0f },
+		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.35f },
+		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.6f },
+		.color_shadow = { 0.f, 0.f, 0.f, 0.40f },
+		.padding = 12.f,
+		.title_bar_height = 32.f,
+		.resize_border_thickness = 8.f,
+		.min_menu_size = { 200.f, 120.f },
+		.font_size = 16.f,
+		.font = {},
+		.corner_radius = 6.f,
+		.corner_radius_menu = 10.f,
+		.widget_height_padding = 0.7f,
+		.item_spacing = 4.f,
+		.section_spacing_above = 18.f,
+		.section_spacing_below = 10.f,
+		.section_header_size_mult = 1.30f,
+		.accent_bar_width = 3.f,
+	};
+}
 
-        // Text
-        .color_text = { 0.10f, 0.10f, 0.12f, 1.0f },
-        .color_text_secondary = { 0.40f, 0.40f, 0.42f, 1.0f },
-        .color_text_disabled = { 0.60f, 0.60f, 0.62f, 1.0f },
+constexpr auto gse::gui::style::forest() -> style {
+	constexpr vec4f accent{ 0.42f, 0.92f, 0.62f, 1.0f };
+	constexpr vec4f accent_dim{ 0.42f, 0.92f, 0.62f, 0.28f };
+	return style{
+		.color_title_bar = { 0.07f, 0.12f, 0.10f, 1.0f },
+		.color_title_bar_inactive = { 0.05f, 0.08f, 0.07f, 1.0f },
+		.color_menu_body = { 0.06f, 0.10f, 0.08f, 0.96f },
+		.color_panel_alt = { 0.04f, 0.07f, 0.06f, 0.98f },
+		.color_border = { 0.16f, 0.28f, 0.22f, 1.0f },
+		.color_separator = { 0.10f, 0.18f, 0.14f, 1.0f },
+		.color_text = { 0.94f, 0.97f, 0.94f, 1.0f },
+		.color_text_secondary = { 0.66f, 0.74f, 0.68f, 1.0f },
+		.color_text_disabled = { 0.40f, 0.46f, 0.42f, 1.0f },
+		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
+		.color_icon = { 0.70f, 0.78f, 0.72f, 1.0f },
+		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_widget_background = { 0.10f, 0.16f, 0.12f, 1.0f },
+		.color_widget_hovered = { 0.14f, 0.22f, 0.17f, 1.0f },
+		.color_widget_active = accent,
+		.color_widget_selected = accent_dim,
+		.color_accent = accent,
+		.color_accent_dim = accent_dim,
+		.color_slider_fill = accent,
+		.color_toggle_on = accent,
+		.color_toggle_off = { 0.16f, 0.22f, 0.18f, 1.0f },
+		.color_handle = { 0.94f, 0.97f, 0.94f, 1.0f },
+		.color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_input_background = { 0.05f, 0.08f, 0.06f, 1.0f },
+		.color_selection = { accent.x(), accent.y(), accent.z(), 0.40f },
+		.color_caret = { 0.94f, 0.97f, 0.94f, 1.0f },
+		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.35f },
+		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.6f },
+		.color_shadow = { 0.f, 0.f, 0.f, 0.40f },
+		.padding = 12.f,
+		.title_bar_height = 32.f,
+		.resize_border_thickness = 8.f,
+		.min_menu_size = { 200.f, 120.f },
+		.font_size = 16.f,
+		.font = {},
+		.corner_radius = 6.f,
+		.corner_radius_menu = 10.f,
+		.widget_height_padding = 0.7f,
+		.item_spacing = 4.f,
+		.section_spacing_above = 18.f,
+		.section_spacing_below = 10.f,
+		.section_header_size_mult = 1.30f,
+		.accent_bar_width = 3.f,
+	};
+}
 
-        // Icons
-        .color_icon = { 0.35f, 0.35f, 0.38f, 1.0f },
-        .color_icon_hovered = { 0.10f, 0.10f, 0.12f, 1.0f },
-
-        // Interactive widgets
-        .color_widget_background = { 0.82f, 0.82f, 0.84f, 1.0f },
-        .color_widget_hovered = { 0.75f, 0.75f, 0.78f, 1.0f },
-        .color_widget_active = { 0.30f, 0.58f, 0.92f, 1.0f },
-        .color_widget_selected = { 0.30f, 0.58f, 0.92f, 0.9f },
-
-        // Sliders
-        .color_slider_fill = { 0.30f, 0.58f, 0.92f, 1.0f },
-
-        // Toggles
-        .color_toggle_on = { 0.25f, 0.72f, 0.40f, 1.0f },
-        .color_toggle_off = { 0.70f, 0.70f, 0.72f, 1.0f },
-
-        // Handles
-        .color_handle = { 1.0f, 1.0f, 1.0f, 1.0f },
-        .color_handle_hovered = { 0.95f, 0.95f, 0.97f, 1.0f },
-
-        // Input fields
-        .color_input_background = { 1.0f, 1.0f, 1.0f, 1.0f },
-        .color_selection = { 0.30f, 0.58f, 0.92f, 0.35f },
-        .color_caret = { 0.10f, 0.10f, 0.12f, 1.0f },
-
-        // Docking
-        .color_dock_preview = { 0.30f, 0.58f, 0.92f, 0.3f },
-        .color_dock_tab_active = { 0.30f, 0.58f, 0.92f, 0.5f },
-
-        // Sizing
-        .padding = 10.f,
-        .title_bar_height = 30.f,
-        .resize_border_thickness = 8.f,
-        .min_menu_size = { 150.f, 100.f },
-        .font_size = 16.f,
-        .menu_bar_height = 32.f,
-        .font = {}
-    };
+constexpr auto gse::gui::style::frost() -> style {
+	constexpr vec4f accent{ 0.20f, 0.50f, 0.95f, 1.0f };
+	constexpr vec4f accent_dim{ 0.20f, 0.50f, 0.95f, 0.20f };
+	return style{
+		.color_title_bar = { 0.96f, 0.97f, 0.99f, 1.0f },
+		.color_title_bar_inactive = { 0.88f, 0.90f, 0.93f, 1.0f },
+		.color_menu_body = { 0.97f, 0.98f, 0.99f, 0.98f },
+		.color_panel_alt = { 0.93f, 0.95f, 0.97f, 1.0f },
+		.color_border = { 0.78f, 0.82f, 0.88f, 1.0f },
+		.color_separator = { 0.88f, 0.91f, 0.94f, 1.0f },
+		.color_text = { 0.10f, 0.12f, 0.18f, 1.0f },
+		.color_text_secondary = { 0.40f, 0.45f, 0.55f, 1.0f },
+		.color_text_disabled = { 0.62f, 0.66f, 0.72f, 1.0f },
+		.color_section_header = { 0.08f, 0.12f, 0.20f, 1.0f },
+		.color_icon = { 0.35f, 0.40f, 0.50f, 1.0f },
+		.color_icon_hovered = { 0.05f, 0.08f, 0.15f, 1.0f },
+		.color_widget_background = { 0.90f, 0.93f, 0.97f, 1.0f },
+		.color_widget_hovered = { 0.82f, 0.87f, 0.94f, 1.0f },
+		.color_widget_active = accent,
+		.color_widget_selected = accent_dim,
+		.color_accent = accent,
+		.color_accent_dim = accent_dim,
+		.color_slider_fill = accent,
+		.color_toggle_on = accent,
+		.color_toggle_off = { 0.78f, 0.82f, 0.88f, 1.0f },
+		.color_handle = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_handle_hovered = { 0.97f, 0.98f, 1.0f, 1.0f },
+		.color_input_background = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_selection = { accent.x(), accent.y(), accent.z(), 0.30f },
+		.color_caret = { 0.10f, 0.12f, 0.18f, 1.0f },
+		.color_dock_preview = { accent.x(), accent.y(), accent.z(), 0.30f },
+		.color_dock_tab_active = { accent.x(), accent.y(), accent.z(), 0.55f },
+		.color_shadow = { 0.10f, 0.12f, 0.18f, 0.18f },
+		.padding = 12.f,
+		.title_bar_height = 32.f,
+		.resize_border_thickness = 8.f,
+		.min_menu_size = { 200.f, 120.f },
+		.font_size = 16.f,
+		.font = {},
+		.corner_radius = 6.f,
+		.corner_radius_menu = 10.f,
+		.widget_height_padding = 0.7f,
+		.item_spacing = 4.f,
+		.section_spacing_above = 18.f,
+		.section_spacing_below = 10.f,
+		.section_header_size_mult = 1.30f,
+		.accent_bar_width = 3.f,
+	};
 }
 
 constexpr auto gse::gui::style::high_contrast() -> style {
-    return style{
-        // Window chrome - pure black
-        .color_title_bar = { 0.0f, 0.0f, 0.0f, 1.0f },
-        .color_title_bar_inactive = { 0.0f, 0.0f, 0.0f, 1.0f },
-        .color_menu_body = { 0.0f, 0.0f, 0.0f, 1.0f },
-        .color_menu_bar = { 0.0f, 0.0f, 0.0f, 1.0f },
-        .color_border = { 1.0f, 1.0f, 1.0f, 1.0f },
-
-        // Text - pure white
-        .color_text = { 1.0f, 1.0f, 1.0f, 1.0f },
-        .color_text_secondary = { 0.8f, 0.8f, 0.8f, 1.0f },
-        .color_text_disabled = { 0.5f, 0.5f, 0.5f, 1.0f },
-
-        // Icons
-        .color_icon = { 1.0f, 1.0f, 1.0f, 1.0f },
-        .color_icon_hovered = { 1.0f, 1.0f, 0.0f, 1.0f },
-
-        // Interactive widgets - high contrast yellow/cyan accents
-        .color_widget_background = { 0.0f, 0.0f, 0.0f, 1.0f },
-        .color_widget_hovered = { 0.2f, 0.2f, 0.0f, 1.0f },
-        .color_widget_active = { 0.0f, 1.0f, 1.0f, 1.0f },
-        .color_widget_selected = { 1.0f, 1.0f, 0.0f, 1.0f },
-
-        // Sliders
-        .color_slider_fill = { 0.0f, 1.0f, 1.0f, 1.0f },
-
-        // Toggles
-        .color_toggle_on = { 0.0f, 1.0f, 0.0f, 1.0f },
-        .color_toggle_off = { 0.3f, 0.3f, 0.3f, 1.0f },
-
-        // Handles
-        .color_handle = { 1.0f, 1.0f, 1.0f, 1.0f },
-        .color_handle_hovered = { 1.0f, 1.0f, 0.0f, 1.0f },
-
-        // Input fields
-        .color_input_background = { 0.0f, 0.0f, 0.0f, 1.0f },
-        .color_selection = { 0.0f, 0.5f, 1.0f, 0.6f },
-        .color_caret = { 1.0f, 1.0f, 1.0f, 1.0f },
-
-        // Docking
-        .color_dock_preview = { 1.0f, 1.0f, 0.0f, 0.5f },
-        .color_dock_tab_active = { 1.0f, 1.0f, 0.0f, 0.8f },
-
-        // Sizing
-        .padding = 12.f,
-        .title_bar_height = 32.f,
-        .resize_border_thickness = 10.f,
-        .min_menu_size = { 150.f, 100.f },
-        .font_size = 18.f,
-        .menu_bar_height = 36.f,
-        .font = {}
-    };
+	constexpr vec4f accent{ 1.0f, 0.92f, 0.0f, 1.0f };
+	constexpr vec4f accent_dim{ 1.0f, 0.92f, 0.0f, 0.32f };
+	return style{
+		.color_title_bar = { 0.0f, 0.0f, 0.0f, 1.0f },
+		.color_title_bar_inactive = { 0.0f, 0.0f, 0.0f, 1.0f },
+		.color_menu_body = { 0.0f, 0.0f, 0.0f, 1.0f },
+		.color_panel_alt = { 0.05f, 0.05f, 0.05f, 1.0f },
+		.color_border = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_separator = { 0.6f, 0.6f, 0.6f, 1.0f },
+		.color_text = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_text_secondary = { 0.82f, 0.82f, 0.82f, 1.0f },
+		.color_text_disabled = { 0.5f, 0.5f, 0.5f, 1.0f },
+		.color_section_header = accent,
+		.color_icon = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_icon_hovered = accent,
+		.color_widget_background = { 0.0f, 0.0f, 0.0f, 1.0f },
+		.color_widget_hovered = { 0.25f, 0.25f, 0.0f, 1.0f },
+		.color_widget_active = accent,
+		.color_widget_selected = accent_dim,
+		.color_accent = accent,
+		.color_accent_dim = accent_dim,
+		.color_slider_fill = accent,
+		.color_toggle_on = { 0.0f, 1.0f, 0.0f, 1.0f },
+		.color_toggle_off = { 0.3f, 0.3f, 0.3f, 1.0f },
+		.color_handle = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_handle_hovered = accent,
+		.color_input_background = { 0.0f, 0.0f, 0.0f, 1.0f },
+		.color_selection = { 0.0f, 0.5f, 1.0f, 0.6f },
+		.color_caret = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.color_dock_preview = { 1.0f, 0.92f, 0.0f, 0.5f },
+		.color_dock_tab_active = { 1.0f, 0.92f, 0.0f, 0.8f },
+		.color_shadow = { 0.f, 0.f, 0.f, 0.5f },
+		.padding = 14.f,
+		.title_bar_height = 36.f,
+		.resize_border_thickness = 10.f,
+		.min_menu_size = { 200.f, 120.f },
+		.font_size = 18.f,
+		.font = {},
+		.corner_radius = 0.f,
+		.corner_radius_menu = 0.f,
+		.widget_height_padding = 0.8f,
+		.item_spacing = 6.f,
+		.section_spacing_above = 22.f,
+		.section_spacing_below = 12.f,
+		.section_header_size_mult = 1.40f,
+		.accent_bar_width = 4.f,
+	};
 }
 
 constexpr auto gse::gui::style::from_theme(const theme t) -> style {
-    switch (t) {
-        case theme::dark:          return dark();
-        case theme::darker:        return darker();
-        case theme::light:         return light();
-        case theme::high_contrast: return high_contrast();
-        default:                   return dark();
-    }
+	switch (t) {
+		case theme::midnight:
+			return midnight();
+		case theme::eclipse:
+			return eclipse();
+		case theme::ember:
+			return ember();
+		case theme::forest:
+			return forest();
+		case theme::frost:
+			return frost();
+		case theme::high_contrast:
+			return high_contrast();
+		default:
+			return midnight();
+	}
+}
+
+constexpr auto gse::gui::dp::px(const style& sty) const -> float {
+	return value * sty.scale_factor;
+}
+
+constexpr auto gse::gui::dp_vec::px(const style& sty) const -> vec2f {
+	return value * sty.scale_factor;
 }

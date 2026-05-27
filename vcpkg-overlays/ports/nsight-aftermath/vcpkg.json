@@ -1,0 +1,8 @@
+{
+  "name": "nsight-aftermath",
+  "version-string": "2025.1.0",
+  "description": "NVIDIA Nsight Aftermath SDK (GPU crash dump support). User-supplied via the NSIGHT_AFTERMATH_SDK environment variable, since the SDK is gated behind NVIDIA's developer portal.",
+  "homepage": "https://developer.nvidia.com/nsight-aftermath",
+  "license": null,
+  "supports": "(windows | linux) & x64"
+}

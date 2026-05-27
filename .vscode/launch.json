@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug GoonSquad",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "cwd": "${workspaceFolder}",
+      "args": [],
+      "stopAtEntry": false,
+      "console": "integratedTerminal",
+      "environment": [
+        { "name": "VK_LAYER_PATH", "value": "${env:VULKAN_SDK}\\Bin" },
+        { "name": "PATH",          "value": "${env:VULKAN_SDK}\\Bin;${env:PATH}" }
+      ]
+    }
+  ]
+}

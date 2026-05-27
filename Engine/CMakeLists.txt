@@ -1,31 +1,26 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 4.2)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine LANGUAGES CXX)
 
-# Local toml++ with MSVC C++20 modules fix (depth_counter_scope destructor called twice bug)
-set(TOMLPLUSPLUS_BUILD_MODULES ON CACHE BOOL "" FORCE)
-# Workaround for MSVC module compatibility - VS 2026 still has the noexcept(noexcept(...)) bug
-add_compile_definitions(TOML_DISABLE_NOEXCEPT_NOEXCEPT=1)
-add_subdirectory(External/tomlplusplus)
-
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
+list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
+
+file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp")
+list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
 
 add_library(Engine)
 
 target_sources(Engine
-    PRIVATE
-        ${ENGINE_MODULES}
-)
-
-target_sources(Engine
-    PRIVATE
+    PUBLIC
         FILE_SET gse_modules TYPE CXX_MODULES
         BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine" "${CMAKE_CURRENT_BINARY_DIR}/Engine"
         FILES ${ENGINE_MODULES}
 )
+
+target_sources(Engine PRIVATE ${ENGINE_IMPLS})
 
 target_sources(Engine
     PUBLIC
@@ -35,12 +30,14 @@ target_sources(Engine
 )
 
 find_package(glfw3 CONFIG REQUIRED)
-find_package(Stb REQUIRED)
+find_package(PNG REQUIRED)
+find_package(JPEG REQUIRED)
 find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
-find_package(TBB CONFIG REQUIRED)
+find_package(concurrentqueue CONFIG REQUIRED)
 find_package(Vulkan)
+find_package(unofficial-nsight-aftermath CONFIG QUIET)
 
 add_library(VulkanModule STATIC)
 target_sources(VulkanModule PUBLIC
@@ -49,9 +46,15 @@ target_sources(VulkanModule PUBLIC
     FILES
         ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
         ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm)
-target_compile_features(VulkanModule PUBLIC cxx_std_23)
+target_compile_features(VulkanModule PUBLIC cxx_std_26)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
 target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
+if(TARGET __cmake_libcxx_std)
+    target_link_libraries(VulkanModule PUBLIC __cmake_libcxx_std)
+endif()
+
+add_library(MiniaudioImpl STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
+target_include_directories(MiniaudioImpl PRIVATE ${miniaudio_INCLUDE_DIR})
 
 set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
 
@@ -75,8 +78,8 @@ endif()
 
 target_include_directories(Engine
     PUBLIC
-        ${Stb_INCLUDE_DIR}
         ${miniaudio_INCLUDE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/External
 )
 
 if(HAVE_SLANG_PACKAGE)
@@ -90,10 +93,23 @@ target_link_libraries(Engine PUBLIC
     glfw
     Freetype::Freetype
     msdfgen::msdfgen
-    tomlplusplus_modules
     VulkanModule
-    TBB::tbb
+    PNG::PNG
+    JPEG::JPEG
+    MiniaudioImpl
+    concurrentqueue::concurrentqueue
 )
+if(TARGET __cmake_libcxx_std)
+    target_link_libraries(Engine PUBLIC __cmake_libcxx_std)
+endif()
+
+if(TARGET unofficial::nsight-aftermath::nsight-aftermath)
+    target_link_libraries(Engine PRIVATE unofficial::nsight-aftermath::nsight-aftermath)
+    target_compile_definitions(Engine PRIVATE GSE_HAVE_AFTERMATH=1)
+    message(STATUS "Nsight Aftermath SDK found; GPU crash dumps enabled")
+else()
+    message(STATUS "Nsight Aftermath SDK not found; GPU crash dumps disabled (enable with vcpkg feature 'aftermath' and NSIGHT_AFTERMATH_SDK env var)")
+endif()
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
@@ -104,16 +120,3 @@ configure_file(
     @ONLY
 )
 
-if (MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-
-    add_compile_options(/arch:AVX2)
-    add_compile_options(/MP)
-    add_compile_options(/Zm500)
-
-    set(EXTERNAL_TARGETS VulkanModule tomlplusplus_modules)
-    foreach(target ${EXTERNAL_TARGETS})
-        set_property(TARGET ${target} PROPERTY FOLDER "External")
-    endforeach()
-endif()

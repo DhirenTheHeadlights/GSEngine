@@ -4,19 +4,35 @@ import std;
 
 import :bounding_box;
 
-import gse.utility;
+import gse.core;
+import gse.ecs;
+import gse.math;
 
 export namespace gse::physics {
-	enum class shape_type : std::uint8_t { box, sphere, capsule };
-
-	struct collision_component_data {
-		bounding_box bounding_box;
-		collision_information collision_information;
-		shape_type shape = shape_type::box;
-		length shape_radius = {};
-		length shape_half_height = {};
-		bool resolve_collisions = true;
+	struct collision_component {
+		[[= networked]] std::variant<box_shape, sphere_shape, capsule_shape> shape = box_shape{};
+		[[= networked]] bool resolve_collisions = true;
 	};
 
-	using collision_component = component<collision_component_data>;
+	struct collision_result_component : collision_information {};
+
+	auto world_aabb_of(
+		const transform_component& tc,
+		const collision_component& cc
+	) -> aabb;
+}
+
+auto gse::physics::world_aabb_of(const transform_component& tc, const collision_component& cc) -> aabb {
+	aabb result;
+	gse::match(cc.shape)
+		.if_is([&](const box_shape& s) {
+			result = bounding_box(tc, s).aabb();
+		})
+		.else_if_is([&](const sphere_shape& s) {
+			result = bounding_box(tc, s).aabb();
+		})
+		.else_if_is([&](const capsule_shape& s) {
+			result = bounding_box(tc, s).aabb();
+		});
+	return result;
 }

@@ -2,30 +2,19 @@ export module gse.graphics:point_light;
 
 import std;
 
-import :cube_map;
-
 import gse.math;
-import gse.utility;
+import gse.core;
+import gse.ecs;
 
 export namespace gse {
-	struct point_light_data {
+	struct point_light_component {
 		vec3f color;
-		float intensity = 1.0f;
-		vec3<length> position;
-		float constant = 1.0f; 
-		float linear = 0.09f; 
-		float quadratic = 0.032f; 
+		irradiance intensity = watts_per_square_meter(1.0f);
+		vec3<position> position;
+		float constant = 1.0f;
+		inverse_length linear = per_meter(0.09f);
+		float quadratic = 0.032f;
 		float ambient_strength = 0.025f;
-		std::vector<id> ignore_list_ids;
-		length near_plane = meters(0.1f);
-		length far_plane = meters(10000.f);
-	};
-
-	struct point_light_component : component<point_light_data> {
-		point_light_component(const id owner_id, const point_light_data& data = {}) : component(owner_id, data) {}
-
-		auto debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void {
-
-		}
+		length source_radius = meters(0.5f);
 	};
 }

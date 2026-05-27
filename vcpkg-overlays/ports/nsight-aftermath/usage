@@ -1,0 +1,8 @@
+nsight-aftermath provides an imported SHARED target:
+
+    find_package(unofficial-nsight-aftermath CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE unofficial::nsight-aftermath::nsight-aftermath)
+
+The SDK itself is not redistributed by this port. Set the NSIGHT_AFTERMATH_SDK
+environment variable to the extracted SDK root (the directory containing
+'include' and 'lib') before running vcpkg.

@@ -3,84 +3,219 @@ export module gs:client_ui;
 import std;
 import gse;
 
+import :crosshair_system;
+import :dev_spawn_system;
+
 export namespace gs {
-	class client_ui final : public gse::hook<gse::engine> {
-	public:
-		using hook::hook;
+	struct client_ui_system {
+		struct data {
+			std::string buff;
+			gse::gui::text_input_state buff_state;
+			float slider_f = 0.f;
+		};
 
-		auto update() -> void override {
-			if (gse::keyboard::pressed(gse::key::escape)) {
-				gse::shutdown();
-			}
-
-			if (gse::keyboard::pressed(gse::key::n) || gse::mouse::pressed(gse::mouse_button::button_3)) {
-				m_show_cross_hair = !m_show_cross_hair;
-			}
-		}
-
-		auto render() -> void override {
-			gse::gui::start(
-				"Test",
-				[&] {
-					gse::gui::value("FPS", gse::system_clock::fps());
-					gse::gui::value("Test Value", 42);
-					gse::gui::value("Test Quantity", gse::meters(5.0f));
-					gse::gui::vec("Test Vec", gse::vec3<gse::length>(1.f, 2.f, 3.f));
-					gse::gui::vec("Mouse Position", gse::mouse::position());
-					gse::gui::input("Input Test", m_buff);
-					gse::gui::slider("Slider Test", m_slider_value, gse::meters(0.0f), gse::meters(10.0f));
-					gse::gui::slider("Vec Slider Test", m_vec_value, gse::vec3<gse::length>(gse::meters(0.f)), gse::vec3<gse::length>(gse::meters(10.f)));
-				}
-			);
-
-			gse::gui::start(
-				"Profiler",
-				[] {
-					gse::gui::profiler();
-				}
-			);
-
-			if (const auto* pds = gse::try_state_of<gse::renderer::physics_debug::state>()) {
-				if (pds->enabled) {
-					const auto& [
-						body_count, 
-						sleeping_count,
-						contact_count,
-						motor_count,
-						colliding_pairs,
-						solve_time,
-						max_linear_speed,
-						max_angular_speed,
-						max_penetration,
-						gpu_solver_active
-					] = pds->latest_stats;
-
-					gse::gui::start(
-						"Physics Debug",
-						[&] {
-							gse::gui::value("Bodies", body_count);
-							gse::gui::value("Sleeping", sleeping_count);
-							gse::gui::value("Colliding Pairs", colliding_pairs);
-							gse::gui::value("Max Penetration", max_penetration);
-							gse::gui::value("Max Linear Speed", max_linear_speed);
-							gse::gui::value("Max Angular Speed", max_angular_speed);
-							if (gpu_solver_active) {
-								gse::gui::value("GPU Contacts", contact_count);
-								gse::gui::value("GPU Motors", motor_count);
-								gse::gui::value("GPU Solve Time", in<gse::milliseconds>(solve_time));
-							}
-						}
-					);
-				}
-			}
-
-			gse::set_ui_focus(m_show_cross_hair);
-		}
-
-	private:
-		bool m_show_cross_hair = false;
-		std::string m_buff;
-		gse::length m_slider_value = gse::meters(0.0f);
-		gse::vec3<gse::length> m_vec_value = { gse::meters(1.f), gse::meters(2.f), gse::meters(3.f) };
+		static auto run(
+			gse::run_context& ctx,
+			data& d,
+			const gse::gui::system::data& gui_d,
+			const gse::window::data& window_d,
+			const crosshair_system::data& crosshair_d,
+			const gse::renderer::capture::system::data& capture_d
+		) -> gse::async::task<>;
 	};
+}
+
+namespace gs {
+	auto push_crosshair(
+		gse::run_context& ctx,
+		const gse::gui::system::data& gui_d,
+		const gse::window::data& window_d,
+		const crosshair_system::data& crosshair_d
+	) -> void;
+
+	auto push_recording_indicator(
+		gse::run_context& ctx,
+		const gse::gui::system::data& gui_d,
+		const gse::window::data& window_d,
+		const gse::renderer::capture::system::data& capture_d
+	) -> void;
+}
+
+auto gs::push_crosshair(gse::run_context& ctx, const gse::gui::system::data& gui_d, const gse::window::data& window_d, const crosshair_system::data& crosshair_d) -> void {
+	if (!crosshair_d.show) {
+		return;
+	}
+	if (!gui_d.blank_texture.valid()) {
+		return;
+	}
+
+	const auto viewport = gse::vec2f(gse::window::viewport(window_d));
+	const gse::vec2f center = { viewport.x() * 0.5f, viewport.y() * 0.5f };
+	const gse::vec4f color = { crosshair_d.color_r, crosshair_d.color_g, crosshair_d.color_b, crosshair_d.opacity };
+	const gse::vec4f outline_color = { 0.f, 0.f, 0.f, crosshair_d.outline_opacity };
+
+	const float arm = crosshair_d.arm_length;
+	const float thickness = crosshair_d.arm_thickness;
+	const float gap = crosshair_d.gap;
+	const float outline = crosshair_d.outline_thickness;
+
+	const auto push_arm = [&](const gse::gui::ui_rect& r) {
+		if (outline > 0.f) {
+			ctx.channels.push<gse::renderer::sprite_command>({
+				.rect = r.inset({ -outline, -outline }),
+				.color = outline_color,
+				.texture = gui_d.blank_texture,
+				.layer = gse::render_layer::overlay,
+			});
+		}
+		ctx.channels.push<gse::renderer::sprite_command>({
+			.rect = r,
+			.color = color,
+			.texture = gui_d.blank_texture,
+			.layer = gse::render_layer::overlay,
+		});
+	};
+
+	if (arm > 0.f) {
+		push_arm(
+			gse::gui::ui_rect::from_position_size(
+				{ center.x() - gap - arm, center.y() + thickness * 0.5f },
+				{ arm, thickness }
+			)
+		);
+		push_arm(
+			gse::gui::ui_rect::from_position_size(
+				{ center.x() + gap, center.y() + thickness * 0.5f },
+				{ arm, thickness }
+			)
+		);
+		push_arm(
+			gse::gui::ui_rect::from_position_size(
+				{ center.x() - thickness * 0.5f, center.y() + gap + arm },
+				{ thickness, arm }
+			)
+		);
+		push_arm(
+			gse::gui::ui_rect::from_position_size(
+				{ center.x() - thickness * 0.5f, center.y() - gap },
+				{ thickness, arm }
+			)
+		);
+	}
+
+	if (crosshair_d.show_dot) {
+		const float dot = crosshair_d.dot_size;
+		push_arm(
+			gse::gui::ui_rect::from_position_size(
+				{ center.x() - dot * 0.5f, center.y() + dot * 0.5f },
+				{ dot, dot }
+			)
+		);
+	}
+}
+
+auto gs::push_recording_indicator(gse::run_context& ctx, const gse::gui::system::data& gui_d, const gse::window::data& window_d, const gse::renderer::capture::system::data& capture_d) -> void {
+	if (!capture_d.recording || !capture_d.recording->active.load()) {
+		return;
+	}
+	if (!gui_d.blank_texture.valid()) {
+		return;
+	}
+
+	const auto viewport = gse::vec2f(gse::window::viewport(window_d));
+	const float dot_size = 28.f;
+	const float margin = 24.f;
+	const gse::vec2f top_left{ viewport.x() - margin - dot_size, viewport.y() - margin };
+
+	const auto t = gse::system_clock::now();
+	const auto pulse = 0.55f + 0.45f * gse::sin(t * 4.f);
+
+	const auto rect = gse::gui::ui_rect::from_position_size(
+		top_left,
+		{ dot_size, dot_size }
+	);
+
+	ctx.channels.push<gse::renderer::sprite_command>({
+		.rect = rect.inset({ -2.f, -2.f }),
+		.color = { 1.f, 1.f, 1.f, 0.9f },
+		.texture = gui_d.blank_texture,
+		.layer = gse::render_layer::overlay,
+		.corner_radius = (dot_size + 4.f) * 0.5f,
+	});
+
+	ctx.channels.push<gse::renderer::sprite_command>({
+		.rect = rect,
+		.color = { 0.95f, 0.15f, 0.15f, pulse },
+		.texture = gui_d.blank_texture,
+		.layer = gse::render_layer::overlay,
+		.corner_radius = dot_size * 0.5f,
+	});
+}
+
+auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::gui::system::data& gui_d, const gse::window::data& window_d, const crosshair_system::data& crosshair_d, const gse::renderer::capture::system::data& capture_d) -> gse::async::task<> {
+	while (true) {
+		if (gui_d.menu_stack.empty()) {
+			push_crosshair(ctx, gui_d, window_d, crosshair_d);
+		}
+
+		push_recording_indicator(ctx, gui_d, window_d, capture_d);
+
+		if (gui_d.show_dev_overlays) {
+			ctx.channels.push<gse::gui::menu_content>({
+				.menu = "Test",
+				.build = [&](gse::gui::builder& ui) {
+					ui.draw<gse::gui::value<float>>({
+						.name = "FPS",
+						.val = static_cast<float>(gse::system_clock::fps()),
+					});
+					ui.draw<gse::gui::value<int>>({
+						.name = "Test Value",
+						.val = 42,
+					});
+					ui.draw<gse::gui::text>({
+						.content = std::format(
+							"Test Quantity: {:.2f}",
+							gse::meters(5.0f)
+						),
+					});
+					ui.draw<gse::gui::text_input>({
+						.name = "Input Test",
+						.buffer = d.buff,
+						.state = d.buff_state,
+					});
+					ui.draw<gse::gui::slider<float>>({
+						.name = "Slider Test",
+						.value = d.slider_f,
+						.min = 0.f,
+						.max = 10.f,
+					});
+				},
+			});
+
+			ctx.channels.push<gse::gui::menu_content>({
+				.menu = "Profiler",
+				.build = [](gse::gui::builder& ui) {
+					ui.draw<gse::gui::profiler>();
+				},
+			});
+
+			ctx.channels.push<gse::gui::menu_content>({
+				.menu = "Dev Spawn",
+				.build = [&](gse::gui::builder& ui) {
+					if (ui.draw<gse::gui::button>({
+							.text = "Physics Stress Test (F5)"
+						})) {
+						ctx.channels.push<gs::spawn_stress_request>({});
+					}
+					if (ui.draw<gse::gui::button>({
+							.text = "Joint Test (F6)"
+						})) {
+						ctx.channels.push<gs::spawn_joints_request>({});
+					}
+				},
+			});
+		}
+
+		co_await ctx.next_tick();
+	}
 }

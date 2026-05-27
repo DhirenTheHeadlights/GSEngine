@@ -3,32 +3,22 @@ export module gse.graphics:spot_light;
 import std;
 
 import gse.math;
-import gse.utility;
-
+import gse.core;
+import gse.ecs;
 import :gui;
 
 export namespace gse {
-	struct spot_light_data {
+	struct spot_light_component {
 		vec3f color;
-		float intensity = 1.0f;
-		vec3<length> position;
+		irradiance intensity = watts_per_square_meter(1.0f);
+		vec3<position> position;
 		vec3f direction;
 		float constant = 1.0f;
-		float linear = 0.09f;
+		inverse_length linear = per_meter(0.09f);
 		float quadratic = 0.032f;
 		angle cut_off;
 		angle outer_cut_off;
 		float ambient_strength = 0.025f;
-		length near_plane = meters(0.1f);
-		length far_plane = meters(10000.f);
-		std::vector<id> ignore_list_ids;
-	};
-
-	struct spot_light_component : component<spot_light_data> {
-		explicit spot_light_component(const id owner_id, const spot_light_data& data = {}) : component(owner_id, data) {}
-
-		auto debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void {
-			
-		}
+		length source_radius = meters(0.3f);
 	};
 }

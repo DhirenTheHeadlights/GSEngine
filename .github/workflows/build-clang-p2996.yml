@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish (e.g. clang-p2996-v1)"
-        required: true
+        description: "Release tag to publish (leave blank to auto-generate clang-p2996-vN+1)"
+        required: false
       sha:
         description: "clang-p2996 commit SHA to pin (leave blank for branch tip)"
         required: false
@@ -17,9 +17,69 @@ on:
         description: "Create release as draft"
         required: false
         default: "true"
+  schedule:
+    - cron: '0 6 * * 1'
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      skip: ${{ steps.r.outputs.skip }}
+      tag: ${{ steps.r.outputs.tag }}
+      sha: ${{ steps.r.outputs.sha }}
+      branch: ${{ steps.r.outputs.branch }}
+      draft: ${{ steps.r.outputs.draft }}
+    steps:
+      - id: r
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SHA: ${{ inputs.sha }}
+          INPUT_BRANCH: ${{ inputs.branch }}
+          INPUT_DRAFT: ${{ inputs.draft }}
+        run: |
+          set -euo pipefail
+          branch="${INPUT_BRANCH:-p2996}"
+          sha="${INPUT_SHA:-}"
+          if [[ -z "$sha" ]]; then
+            sha=$(gh api "repos/bloomberg/clang-p2996/commits/$branch" --jq .sha)
+          fi
+          short_sha="${sha:0:12}"
+
+          skip=false
+          if latest_body=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .body 2>/dev/null); then
+            if printf '%s' "$latest_body" | grep -q "$short_sha"; then
+              echo "Branch tip $short_sha already published in latest release; skipping"
+              skip=true
+            fi
+          fi
+
+          tag="${INPUT_TAG:-}"
+          if [[ -z "$tag" ]]; then
+            max=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[].tag_name' \
+              | sed -nE 's/^clang-p2996-v([0-9]+)$/\1/p' \
+              | sort -n | tail -1)
+            max=${max:-0}
+            tag="clang-p2996-v$((max + 1))"
+          fi
+
+          draft="${INPUT_DRAFT:-false}"
+
+          {
+            echo "skip=$skip"
+            echo "branch=$branch"
+            echo "sha=$sha"
+            echo "tag=$tag"
+            echo "draft=$draft"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "resolved: branch=$branch sha=$sha tag=$tag draft=$draft skip=$skip"
+
   build:
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
     runs-on: windows-latest
     timeout-minutes: 360
     permissions:
@@ -55,11 +115,7 @@ jobs:
         env:
           CMAKE_BUILD_PARALLEL_LEVEL: "4"
         run: |
-          $script_args = @("scripts/build_clang_p2996.py", "--branch", "${{ inputs.branch }}", "--link-jobs", "1")
-          if ("${{ inputs.sha }}") {
-            $script_args += @("--sha", "${{ inputs.sha }}")
-          }
-          python @script_args
+          python scripts/build_clang_p2996.py --branch "${{ needs.resolve.outputs.branch }}" --sha "${{ needs.resolve.outputs.sha }}" --link-jobs 1
 
       - name: Compute artifact SHA256
         id: hash
@@ -78,19 +134,19 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag }}
-          name: ${{ inputs.tag }}
-          draft: ${{ inputs.draft == 'true' }}
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: ${{ needs.resolve.outputs.tag }}
+          draft: ${{ needs.resolve.outputs.draft == 'true' }}
           files: dist/clang-p2996-windows-x64.zip
           body: |
             Prebuilt `clang-p2996` toolchain for Windows x64.
 
-            - Branch: `${{ inputs.branch }}`
-            - SHA input: `${{ inputs.sha || 'branch tip' }}`
+            - Branch: `${{ needs.resolve.outputs.branch }}`
+            - SHA: `${{ needs.resolve.outputs.sha }}`
             - SHA256: `${{ steps.hash.outputs.sha256 }}`
 
             ## Install
 
             ```
-            python scripts/install_clang_p2996.py --tag ${{ inputs.tag }} --sha256 ${{ steps.hash.outputs.sha256 }} --persist
+            python scripts/install_clang_p2996.py --tag ${{ needs.resolve.outputs.tag }} --sha256 ${{ steps.hash.outputs.sha256 }} --persist
             ```
