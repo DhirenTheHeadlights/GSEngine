@@ -348,5 +348,5 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 }
 
 auto gse::gpu::frame::create_sync_objects(device& dev, const swap_chain& sc) -> sync {
-	return sync::create(dev.vulkan_device(), sc.image_count());
+	return dev.create_sync(sc.image_count());
 }

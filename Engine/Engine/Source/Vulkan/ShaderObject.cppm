@@ -5,7 +5,6 @@ import vulkan;
 
 import :handles;
 import :types;
-import :descriptor_set_layout;
 import :device;
 
 import gse.core;
@@ -21,8 +20,6 @@ export namespace gse::vulkan {
 		gpu::stage_flag stage = gpu::stage_flag::vertex;
 		std::span<const std::uint32_t> spirv;
 		std::string_view entry_point = "main";
-		std::span<const gpu::handle<descriptor_set_layout>> set_layouts;
-		std::optional<gpu::push_constant_range> push_constant_range;
 		gpu::stage_flags next_stage = {};
 		std::optional<std::uint32_t> required_subgroup_size;
 		bool require_full_subgroups = false;
@@ -82,8 +79,6 @@ namespace gse::vulkan {
 
 	auto build_vk_shader_create_info(
 		const shader_object_create_info& info,
-		std::vector<vk::DescriptorSetLayout>& set_layouts_scratch,
-		std::vector<vk::PushConstantRange>& push_constants_scratch,
 		std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>& subgroup_size_scratch,
 		std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>& mapping_scratch,
 		shader_spec_scratch& spec_scratch,
@@ -96,15 +91,11 @@ gse::vulkan::shader_object::shader_object(vk::raii::ShaderEXT&& shader, const gp
 }
 
 auto gse::vulkan::shader_object::create(const device& dev, const shader_object_create_info& info) -> shader_object {
-	std::vector<vk::DescriptorSetLayout> set_layouts_scratch;
-	std::vector<vk::PushConstantRange> push_constants_scratch;
 	std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT> subgroup_size_scratch;
 	std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT> mapping_scratch;
 	shader_spec_scratch spec_scratch;
 	const auto vk_info = build_vk_shader_create_info(
 		info,
-		set_layouts_scratch,
-		push_constants_scratch,
 		subgroup_size_scratch,
 		mapping_scratch,
 		spec_scratch,
@@ -116,8 +107,6 @@ auto gse::vulkan::shader_object::create(const device& dev, const shader_object_c
 }
 
 auto gse::vulkan::shader_object::create_linked(const device& dev, const std::span<const shader_object_create_info> infos) -> std::vector<shader_object> {
-	std::vector<std::vector<vk::DescriptorSetLayout>> set_layouts_scratch(infos.size());
-	std::vector<std::vector<vk::PushConstantRange>> push_constants_scratch(infos.size());
 	std::vector<std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>> subgroup_size_scratch(infos.size());
 	std::vector<std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>> mapping_scratch(infos.size());
 	std::vector<shader_spec_scratch> spec_scratch(infos.size());
@@ -127,8 +116,6 @@ auto gse::vulkan::shader_object::create_linked(const device& dev, const std::spa
 		vk_infos.push_back(
 			build_vk_shader_create_info(
 				infos[i],
-				set_layouts_scratch[i],
-				push_constants_scratch[i],
 				subgroup_size_scratch[i],
 				mapping_scratch[i],
 				spec_scratch[i],
@@ -158,28 +145,10 @@ auto gse::vulkan::shader_object::valid() const -> bool {
 	return *m_shader != nullptr;
 }
 
-auto gse::vulkan::build_vk_shader_create_info(const shader_object_create_info& info, std::vector<vk::DescriptorSetLayout>& set_layouts_scratch, std::vector<vk::PushConstantRange>& push_constants_scratch, std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>& subgroup_size_scratch, std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>& mapping_scratch, shader_spec_scratch& spec_scratch, const vk::ShaderCreateFlagsEXT extra_flags) -> vk::ShaderCreateInfoEXT {
-	const bool descriptor_heap_mode = !info.bindless_mappings.empty();
-
-	set_layouts_scratch.clear();
-	if (!descriptor_heap_mode) {
-		set_layouts_scratch.reserve(info.set_layouts.size());
-		for (const auto h : info.set_layouts) {
-			set_layouts_scratch.push_back(std::bit_cast<vk::DescriptorSetLayout>(h));
-		}
-	}
-
-	push_constants_scratch.clear();
-	if (!descriptor_heap_mode && info.push_constant_range.has_value()) {
-		push_constants_scratch.push_back(to_vk(*info.push_constant_range));
-	}
-
-	auto flags = extra_flags;
+auto gse::vulkan::build_vk_shader_create_info(const shader_object_create_info& info, std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>& subgroup_size_scratch, std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>& mapping_scratch, shader_spec_scratch& spec_scratch, const vk::ShaderCreateFlagsEXT extra_flags) -> vk::ShaderCreateInfoEXT {
+	auto flags = extra_flags | vk::ShaderCreateFlagBitsEXT::eDescriptorHeap;
 	if (info.require_full_subgroups) {
 		flags |= vk::ShaderCreateFlagBitsEXT::eRequireFullSubgroups;
-	}
-	if (descriptor_heap_mode) {
-		flags |= vk::ShaderCreateFlagBitsEXT::eDescriptorHeap;
 	}
 
 	subgroup_size_scratch.reset();
@@ -228,10 +197,6 @@ auto gse::vulkan::build_vk_shader_create_info(const shader_object_create_info& i
 		.codeSize = info.spirv.size_bytes(),
 		.pCode = info.spirv.data(),
 		.pName = info.entry_point.data(),
-		.setLayoutCount = static_cast<std::uint32_t>(set_layouts_scratch.size()),
-		.pSetLayouts = set_layouts_scratch.data(),
-		.pushConstantRangeCount = static_cast<std::uint32_t>(push_constants_scratch.size()),
-		.pPushConstantRanges = push_constants_scratch.data(),
 		.pSpecializationInfo = spec_scratch.info.has_value() ? &*spec_scratch.info : nullptr,
 	};
 }

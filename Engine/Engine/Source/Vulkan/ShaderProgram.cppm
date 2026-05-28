@@ -5,42 +5,15 @@ import vulkan;
 
 import :handles;
 import :types;
-import :descriptor_set_layout;
 import :device;
 import :pipeline_layout;
 import :shader_object;
 
 import gse.core;
 
-export namespace gse::gpu {
-	struct dynamic_pipeline_state {
-		topology topology = topology::triangle_list;
-		polygon_mode polygon = polygon_mode::fill;
-		cull_mode cull = cull_mode::back;
-		front_face front = front_face::counter_clockwise;
-		depth_state depth;
-		bool depth_bias_enable = false;
-		float depth_bias_constant = 0.0f;
-		float depth_bias_clamp = 0.0f;
-		float depth_bias_slope = 0.0f;
-		bool rasterizer_discard_enable = false;
-		bool primitive_restart_enable = false;
-		bool depth_clamp_enable = false;
-		bool alpha_to_coverage_enable = false;
-		bool alpha_to_one_enable = false;
-		bool logic_op_enable = false;
-		sample_count samples = sample_count::e1;
-		std::uint32_t sample_mask = 0xFFFFFFFFu;
-		std::vector<std::uint8_t> blend_enables;
-		std::vector<color_blend_equation> blend_equations;
-		std::vector<color_component_flags> color_write_masks;
-	};
-}
-
 export namespace gse::vulkan {
 	struct shader_program_create_info {
 		std::span<const shader_object_create_info> stages;
-		std::span<const gpu::handle<descriptor_set_layout>> set_layouts;
 		std::optional<gpu::push_constant_range> push_constant_range;
 		gpu::dynamic_pipeline_state state;
 		bool is_compute = false;
@@ -109,12 +82,6 @@ gse::vulkan::shader_program::shader_program(vk::raii::PipelineLayout&& layout, s
 }
 
 auto gse::vulkan::shader_program::create(const device& dev, const shader_program_create_info& info) -> shader_program {
-	std::vector<vk::DescriptorSetLayout> vk_set_layouts;
-	vk_set_layouts.reserve(info.set_layouts.size());
-	for (const auto h : info.set_layouts) {
-		vk_set_layouts.push_back(std::bit_cast<vk::DescriptorSetLayout>(h));
-	}
-
 	std::optional<vk::PushConstantRange> vk_pc_range;
 	if (info.push_constant_range.has_value()) {
 		vk_pc_range = to_vk(*info.push_constant_range);
@@ -123,8 +90,6 @@ auto gse::vulkan::shader_program::create(const device& dev, const shader_program
 	const std::uint32_t pc_count = vk_pc_range.has_value() ? 1u : 0u;
 
 	vk::raii::PipelineLayout layout = dev.raii_device().createPipelineLayout({
-		.setLayoutCount = static_cast<std::uint32_t>(vk_set_layouts.size()),
-		.pSetLayouts = vk_set_layouts.data(),
 		.pushConstantRangeCount = pc_count,
 		.pPushConstantRanges = pc_ptr,
 	});

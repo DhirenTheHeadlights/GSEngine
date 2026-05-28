@@ -114,12 +114,7 @@ namespace gse::gpu {
 }
 
 auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, device& dev) -> std::unique_ptr<swap_chain> {
-	auto config = vulkan::swap_chain::create(
-		framebuffer_size,
-		preferred_present_mode,
-		dev.vulkan_instance(),
-		dev.vulkan_device()
-	);
+	auto config = dev.create_swapchain_backend(framebuffer_size, preferred_present_mode);
 	auto depth = create_swapchain_depth(dev, config.extent());
 	return std::unique_ptr<swap_chain>(new swap_chain(std::move(config), std::move(depth), dev));
 }
@@ -161,7 +156,7 @@ auto gse::gpu::swap_chain::image_view(const std::uint32_t index) const -> handle
 }
 
 auto gse::gpu::swap_chain::acquire(const handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> vulkan::acquire_next_image_result {
-	return vulkan::acquire_next_image(m_device->vulkan_device(), m_config.handle(), wait_semaphore, timeout_ns);
+	return m_device->acquire_swapchain_image(m_config.handle(), wait_semaphore, timeout_ns);
 }
 
 auto gse::gpu::swap_chain::present(const handle<semaphore> wait_semaphore, const std::uint32_t image_index, const std::uint64_t present_id) -> result {
@@ -188,11 +183,11 @@ auto gse::gpu::swap_chain::release_fence(const std::uint32_t image_index) const 
 }
 
 auto gse::gpu::swap_chain::wait_release_fences() -> void {
-	m_config.wait_release_fences(m_device->vulkan_device());
+	m_device->wait_swapchain_release_fences(m_config);
 }
 
 auto gse::gpu::swap_chain::reset_release_fence(const std::uint32_t image_index) -> void {
-	m_config.reset_release_fence(m_device->vulkan_device(), image_index);
+	m_device->reset_swapchain_release_fence(m_config, image_index);
 }
 
 auto gse::gpu::swap_chain::wait_for_present(const std::uint64_t present_id, const std::uint64_t timeout_ns) const -> result {
@@ -216,22 +211,15 @@ auto gse::gpu::swap_chain::notify_recreated() -> void {
 auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode) -> void {
 	m_depth_image = {};
 
-	m_config.wait_release_fences(m_device->vulkan_device());
+	m_device->wait_swapchain_release_fences(m_config);
 	const auto old_handle = m_config.handle();
-	m_config = vulkan::swap_chain::create(
-		framebuffer_size,
-		preferred_present_mode,
-		m_device->vulkan_instance(),
-		m_device->vulkan_device(),
-		old_handle
-	);
+	m_config = m_device->create_swapchain_backend(framebuffer_size, preferred_present_mode, old_handle);
 
 	m_depth_image = create_swapchain_depth(*m_device, m_config.extent());
 }
 
 auto gse::gpu::create_swapchain_depth(device& dev, const vec2u extent) -> image {
-	auto img = image::create(
-		dev.vulkan_device(),
+	auto img = dev.create_image(
 		image_desc{
 			.size = extent,
 			.format = image_format::d32_sfloat,

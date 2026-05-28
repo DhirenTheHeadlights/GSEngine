@@ -1148,7 +1148,7 @@ gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapc
 	: m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_bindless(bindless), m_bindless_heaps(heaps), m_transient_pool(device) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 	for (auto& q : m_queue_states) {
-		q.timeline = gpu::semaphore::create_timeline(device.vulkan_device(), 0);
+		q.timeline = device.create_timeline_semaphore(0);
 	}
 	swapchain.on_recreate([this] {
 		recreate_framebuffer_images();
@@ -1208,15 +1208,10 @@ auto gse::gpu::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) 
 
 auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
 	if (!slot.timestamp_pool.valid()) {
-		slot.timestamp_pool = gpu::query_pool::create_timestamp(m_device->vulkan_device(), max_profiled_passes * 2 + 1);
+		slot.timestamp_pool = m_device->create_timestamp_query_pool(max_profiled_passes * 2 + 1);
 	}
 	if (allow_stats && !slot.stats_pool.valid()) {
-		slot.stats_pool =
-			gpu::query_pool::create_pipeline_stats(
-				m_device->vulkan_device(),
-				max_profiled_passes,
-				profile_stats_flags
-			);
+		slot.stats_pool = m_device->create_pipeline_stats_query_pool(max_profiled_passes, profile_stats_flags);
 	}
 }
 
@@ -1361,7 +1356,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	m_device->reset_worker_command_pools(frame_idx);
-	const auto color_format_value = vulkan::format_value(m_swapchain->format());
+	const auto color_format_value = gpu::format_value(m_swapchain->format());
 
 	auto resolve_color_target = [&](const color_output_info& info) -> const image* {
 		if (info.transient_target) {
@@ -1429,7 +1424,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				}
 
 				const auto depth_attach_format =
-					depth_target ? depth_target->format() : vulkan::format_value(gpu::image_format::d32_sfloat);
+					depth_target ? depth_target->format() : gpu::format_value(gpu::image_format::d32_sfloat);
 
 				const gpu::secondary_inheritance_info inherit_info{
 					.render_pass_continue = is_graphics_pass,
@@ -1811,7 +1806,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		trace::scope_guard sg{ gse::trace_id<"graph::record_replay">() };
 
 		auto aspect_for_image = [](const image& img) -> gpu::image_aspect_flags {
-			return vulkan::image_aspect_for(img.format());
+			return gpu::image_aspect_for(img.format());
 		};
 
 		auto access_has_write = [](const gpu::access_flags a) -> bool {

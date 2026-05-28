@@ -1331,54 +1331,6 @@ auto gse::gpu::next_stage_for(const stage_flag current, const std::span<const st
 	return result;
 }
 
-namespace gse::gpu {
-	struct compiled_program_layouts {
-		std::vector<descriptor_set_layout> owned;
-		std::vector<handle<descriptor_set_layout>> handles;
-	};
-
-	auto build_program_layouts(
-		const device& dev,
-		const std::vector<shaders::family_set>& sets
-	) -> compiled_program_layouts;
-}
-
-auto gse::gpu::build_program_layouts(const device& dev, const std::vector<shaders::family_set>& sets) -> compiled_program_layouts {
-	compiled_program_layouts result;
-
-	std::uint32_t max_set_index = static_cast<std::uint32_t>(descriptor_set_type::bind_less);
-	for (const auto& s : sets) {
-		max_set_index = std::max(max_set_index, static_cast<std::uint32_t>(s.type));
-	}
-
-	result.owned.resize(max_set_index + 1);
-
-	for (const auto& s : sets) {
-		const auto set_idx = static_cast<std::uint32_t>(s.type);
-		std::vector<descriptor_binding_desc> descs;
-		descs.reserve(s.bindings.size());
-		for (const auto& b : s.bindings) {
-			descs.push_back(b.desc);
-		}
-		result.owned[set_idx] = descriptor_set_layout::create(dev.vulkan_device(), descs);
-	}
-
-	for (std::uint32_t i = 0; i <= max_set_index; ++i) {
-		if (!result.owned[i].valid()) {
-			result.owned[i] = descriptor_set_layout::create(
-				dev.vulkan_device(),
-				{}
-			);
-		}
-	}
-
-	result.handles.reserve(result.owned.size());
-	for (const auto& l : result.owned) {
-		result.handles.push_back(l.handle());
-	}
-	return result;
-}
-
 auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const compute_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
 	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
 	assert(
@@ -1425,9 +1377,6 @@ auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const c
 	const auto wrapper_source = build_compute_wrapper_source(inputs, parsed);
 	const auto spirv = compile_compute_spirv(inputs, wrapper_source);
 
-	const auto program_layouts = build_program_layouts(dev, family_sets);
-	const auto& layouts = program_layouts.handles;
-
 	std::optional<push_constant_range> push_range;
 	if (pod.push_constant_size > 0) {
 		push_range = push_constant_range{
@@ -1441,7 +1390,7 @@ auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const c
 	for (const auto& fs : family_sets) {
 		for (const auto& b : fs.bindings) {
 			pack_bindings.push_back({
-				.set = static_cast<std::uint32_t>(fs.type),
+				.set = fs.set_index,
 				.slot = b.desc.binding,
 				.count = b.desc.count,
 				.access = b.desc.access,
@@ -1470,8 +1419,6 @@ auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const c
 		.stage = stage_flag::compute,
 		.spirv = spirv,
 		.entry_point = "main",
-		.set_layouts = layouts,
-		.push_constant_range = push_range,
 		.next_stage = {},
 		.required_subgroup_size = pod.required_subgroup_size != 0
 			? std::optional<std::uint32_t>(pod.required_subgroup_size)
@@ -1484,14 +1431,13 @@ auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const c
 
 	const vulkan::shader_program_create_info info{
 		.stages = std::span(&stage_info, 1),
-		.set_layouts = layouts,
 		.push_constant_range = push_range,
 		.state = {},
 		.is_compute = true,
 		.is_mesh = false,
 	};
 
-	return shader_program::create(dev.vulkan_device(), info);
+	return dev.create_shader_program(info);
 }
 
 auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const graphics_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
@@ -1508,9 +1454,6 @@ auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const 
 	const auto parsed = parse_body_file(body_source);
 	const auto wrapper_source = build_graphics_wrapper_source(pod, parsed);
 	auto program = compile_graphics_program(pod, wrapper_source);
-
-	const auto program_layouts = build_program_layouts(dev, family_sets);
-	const auto& layouts = program_layouts.handles;
 
 	std::optional<push_constant_range> push_range;
 	if (pod.push_constant_size > 0) {
@@ -1543,7 +1486,7 @@ auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const 
 	for (const auto& fs : family_sets) {
 		for (const auto& b : fs.bindings) {
 			pack_bindings.push_back({
-				.set = static_cast<std::uint32_t>(fs.type),
+				.set = fs.set_index,
 				.slot = b.desc.binding,
 				.count = b.desc.count,
 				.access = b.desc.access,
@@ -1575,8 +1518,6 @@ auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const 
 			.stage = s.flag,
 			.spirv = s.spirv,
 			.entry_point = "main",
-			.set_layouts = layouts,
-			.push_constant_range = push_range,
 			.next_stage = next_stage_for(s.flag, all_stages),
 			.bindless_mappings = bindless_mappings.mappings,
 			.spec_entries = vk_spec_entries,
@@ -1604,14 +1545,13 @@ auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const 
 
 	const vulkan::shader_program_create_info info{
 		.stages = stage_infos,
-		.set_layouts = layouts,
 		.push_constant_range = push_range,
 		.state = std::move(state),
 		.is_compute = false,
 		.is_mesh = is_mesh,
 	};
 
-	return shader_program::create(dev.vulkan_device(), info);
+	return dev.create_shader_program(info);
 }
 
 template <typename T>
