@@ -11,31 +11,6 @@ import :shader_object;
 
 import gse.core;
 
-export namespace gse::gpu {
-	struct dynamic_pipeline_state {
-		topology topology = topology::triangle_list;
-		polygon_mode polygon = polygon_mode::fill;
-		cull_mode cull = cull_mode::back;
-		front_face front = front_face::counter_clockwise;
-		depth_state depth;
-		bool depth_bias_enable = false;
-		float depth_bias_constant = 0.0f;
-		float depth_bias_clamp = 0.0f;
-		float depth_bias_slope = 0.0f;
-		bool rasterizer_discard_enable = false;
-		bool primitive_restart_enable = false;
-		bool depth_clamp_enable = false;
-		bool alpha_to_coverage_enable = false;
-		bool alpha_to_one_enable = false;
-		bool logic_op_enable = false;
-		sample_count samples = sample_count::e1;
-		std::uint32_t sample_mask = 0xFFFFFFFFu;
-		std::vector<std::uint8_t> blend_enables;
-		std::vector<color_blend_equation> blend_equations;
-		std::vector<color_component_flags> color_write_masks;
-	};
-}
-
 export namespace gse::vulkan {
 	struct shader_program_create_info {
 		std::span<const shader_object_create_info> stages;

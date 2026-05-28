@@ -58,6 +58,11 @@ export namespace gse::gpu {
 		std::uint32_t instance_count,
 		gpu::recording_context& rec
 	) -> void;
+
+	[[nodiscard]]
+	auto pack_instance(
+		const tlas_instance_desc& inst
+	) -> as_instance;
 }
 
 namespace gse {

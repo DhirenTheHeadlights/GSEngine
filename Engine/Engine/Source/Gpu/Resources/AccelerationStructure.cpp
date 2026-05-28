@@ -5,17 +5,14 @@ import std;
 import gse.concurrency;
 
 auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_handle as_handle, gpu::acceleration_structure_geometry geometry, const std::uint32_t prim_count, const gpu::device_size scratch_size, const gpu::device_size scratch_alignment) -> async::task<> {
-	auto& dev_cfg = dev.vulkan_device();
-
-	auto scratch = dev_cfg.create_buffer(
+	auto scratch = dev.create_buffer(
 		gpu::buffer_create_info{
 			.size = scratch_size + scratch_alignment,
 			.usage = gpu::buffer_flag::storage,
-		},
-		nullptr
+		}
 	);
 
-	const auto scratch_addr = vulkan::buffer_device_address(dev_cfg, scratch.handle());
+	const auto scratch_addr = scratch.device_address();
 	const gpu::device_address aligned_scratch = (scratch_addr + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
 	auto cmd = co_await gpu::begin_transient(dev, gpu::queue_id::graphics, "transient.blas_build");
@@ -80,7 +77,7 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_h
 	)
 		.retain(std::move(scratch));
 }
-auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> gpu::as_instance {
+auto gse::gpu::pack_instance(const tlas_instance_desc& inst) -> as_instance {
 	return vulkan::pack_instance(
 		inst.transform,
 		inst.custom_index,
@@ -91,12 +88,13 @@ auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> gpu::as_ins
 	);
 }
 
-auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -> blas {
-	auto& dev = device;
-	auto& dev_cfg = dev.vulkan_device();
+auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> gpu::as_instance {
+	return gpu::pack_instance(inst);
+}
 
-	const auto vertex_addr = vulkan::buffer_device_address(dev_cfg, desc.vertex_buffer->handle());
-	const auto index_addr = vulkan::buffer_device_address(dev_cfg, desc.index_buffer->handle());
+auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -> blas {
+	const auto vertex_addr = desc.vertex_buffer->device_address();
+	const auto index_addr = desc.index_buffer->device_address();
 
 	const acceleration_structure_geometry geometry{
 		.type = acceleration_structure_geometry_type::triangles,
@@ -113,15 +111,15 @@ auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -
 
 	const std::uint32_t prim_count = desc.index_count / 3;
 
-	auto result = blas::create(dev_cfg, geometry, prim_count);
+	auto result = device.create_blas(geometry, prim_count);
 
-	const auto sizes = vulkan::query_blas_build_sizes(dev_cfg, geometry, prim_count);
-	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);
+	const auto sizes = device.query_blas_build_sizes(geometry, prim_count);
+	const auto scratch_alignment = device.acceleration_structure_scratch_alignment();
 
 	dispatch(
-		dev,
+		device,
 		gse::build_blas_async(
-			dev,
+			device,
 			result.handle(),
 			geometry,
 			prim_count,
@@ -191,29 +189,23 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 }
 
 auto gse::gpu::build_tlas(gpu::device& device, const std::uint32_t max_instances) -> tlas {
-	auto t = tlas::create(device.vulkan_device(), max_instances);
+	auto t = device.create_tlas(max_instances);
 
-	auto& dev = device;
-	const auto& dev_cfg = dev.vulkan_device();
-
-	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());
-	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);
-	const auto scratch_raw = vulkan::buffer_device_address(dev_cfg, t.scratch_buffer().handle());
+	const auto instance_addr = t.instance_buffer().device_address();
+	const auto scratch_alignment = device.acceleration_structure_scratch_alignment();
+	const auto scratch_raw = t.scratch_buffer().device_address();
 	const device_address scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
-	dispatch(dev, build_tlas_initial_empty_async(dev, t.handle(), instance_addr, scratch_addr));
+	dispatch(device, build_tlas_initial_empty_async(device, t.handle(), instance_addr, scratch_addr));
 
 	return t;
 }
 
 auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const tlas_instance_desc> instances, recording_context& rec) -> void {
-	auto& dev = device;
-	const auto& dev_cfg = dev.vulkan_device();
-
 	std::vector<as_instance> packed_instances;
 	packed_instances.reserve(instances.size());
 	for (const auto& inst : instances) {
-		packed_instances.push_back(to_packed_instance(inst));
+		packed_instances.push_back(pack_instance(inst));
 	}
 
 	if (!packed_instances.empty()) {
@@ -223,9 +215,9 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const 
 		);
 	}
 
-	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());
-	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);
-	const auto scratch_raw = vulkan::buffer_device_address(dev_cfg, t.scratch_buffer().handle());
+	const auto instance_addr = t.instance_buffer().device_address();
+	const auto scratch_alignment = device.acceleration_structure_scratch_alignment();
+	const auto scratch_raw = t.scratch_buffer().device_address();
 	const device_address scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
 	const std::array pre_barriers{
@@ -296,7 +288,7 @@ auto gse::gpu::write_tlas_instances(tlas& t, const std::span<const tlas_instance
 	std::vector<as_instance> packed_instances;
 	packed_instances.reserve(instances.size());
 	for (const auto& inst : instances) {
-		packed_instances.push_back(to_packed_instance(inst));
+		packed_instances.push_back(pack_instance(inst));
 	}
 
 	if (!packed_instances.empty()) {
@@ -308,11 +300,9 @@ auto gse::gpu::write_tlas_instances(tlas& t, const std::span<const tlas_instance
 }
 
 auto gse::gpu::build_tlas_in_place(gpu::device& device, tlas& t, const std::uint32_t instance_count, recording_context& rec) -> void {
-	const auto& dev_cfg = device.vulkan_device();
-
-	const auto instance_addr = vulkan::buffer_device_address(dev_cfg, t.instance_buffer().handle());
-	const auto scratch_alignment = vulkan::scratch_offset_alignment(dev_cfg);
-	const auto scratch_raw = vulkan::buffer_device_address(dev_cfg, t.scratch_buffer().handle());
+	const auto instance_addr = t.instance_buffer().device_address();
+	const auto scratch_alignment = device.acceleration_structure_scratch_alignment();
+	const auto scratch_raw = t.scratch_buffer().device_address();
 	const device_address scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
 	const std::array pre_barriers{

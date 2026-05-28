@@ -1459,7 +1459,7 @@ auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const c
 		.is_mesh = false,
 	};
 
-	return shader_program::create(dev.vulkan_device(), info);
+	return dev.create_shader_program(info);
 }
 
 auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const graphics_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
@@ -1577,7 +1577,7 @@ auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const 
 		.is_mesh = is_mesh,
 	};
 
-	return shader_program::create(dev.vulkan_device(), info);
+	return dev.create_shader_program(info);
 }
 
 template <typename T>
