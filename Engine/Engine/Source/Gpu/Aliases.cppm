@@ -2,7 +2,8 @@ export module gse.gpu:aliases;
 
 import std;
 
-export import gse.vulkan;
+export import gse.gpu_types;
+import gse.vulkan;
 
 export namespace gse::gpu {
 	using blas = vulkan::blas;
@@ -25,7 +26,10 @@ export namespace gse::gpu {
 	constexpr std::uint32_t max_frames_in_flight = vulkan::max_frames_in_flight;
 	using image_view = vulkan::image_view;
 	using shader_object = vulkan::shader_object;
+	using shader_object_create_info = vulkan::shader_object_create_info;
 	using shader_program = vulkan::shader_program;
+	using shader_program_create_info = vulkan::shader_program_create_info;
+	using acceleration_structure_build_sizes = vulkan::acceleration_structure_build_sizes;
 	using video_encoder = vulkan::video_encoder;
 	using video_codec = vulkan::video_codec;
 	using encode_capabilities = vulkan::encode_capabilities;

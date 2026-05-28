@@ -5,8 +5,16 @@ import std;
 import gse.concurrency;
 import gse.math;
 
+auto gse::gpu::image_aspect_for(const image_format_value f) -> image_aspect_flags {
+	return vulkan::image_aspect_for(f);
+}
+
+auto gse::gpu::format_value(const image_format f) -> image_format_value {
+	return vulkan::format_value(f);
+}
+
 auto gse::gpu::transition_image_to(gpu::device& dev, image& img) -> sync_token {
-	const auto aspect_flags = vulkan::image_aspect_for(img.format());
+	const auto aspect_flags = gpu::image_aspect_for(img.format());
 	const bool is_depth = aspect_flags.test(image_aspect_flag::depth);
 	const auto aspect = is_depth ? image_aspect_flag::depth : image_aspect_flag::color;
 
@@ -42,6 +50,6 @@ auto gse::gpu::upload_image_2d(gpu::device& dev, image& img, const void* pixel_d
 	const auto extent3 = img.extent();
 	const vec2u extent2{ extent3.x(), extent3.y() };
 	const void* ptrs[] = { pixel_data };
-	vulkan::host_upload_image_layers(dev.vulkan_device(), img.handle(), ptrs, extent2);
+	dev.host_upload_image_layers(img.handle(), ptrs, extent2);
 	return {};
 }

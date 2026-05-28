@@ -97,8 +97,7 @@ auto gse::texture::create_vulkan_resources(gpu::context::data& context, const pr
 		: channels == 1 ? gpu::image_format::r8_unorm
 						: (use_linear ? gpu::image_format::r8g8b8_unorm : gpu::image_format::r8g8b8_srgb);
 
-	m_image = gpu::image::create(
-		context.device->vulkan_device(),
+	m_image = context.device->create_image(
 		{
 			.size = { width, height },
 			.format = gpu_format,
