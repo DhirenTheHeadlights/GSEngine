@@ -6,7 +6,6 @@ import vulkan;
 import :handles;
 import :types;
 import :device;
-import :descriptor_set_layout;
 
 import gse.core;
 
@@ -28,7 +27,6 @@ export namespace gse::vulkan {
 		[[nodiscard]]
 		static auto create(
 			const device& dev,
-			std::span<const gpu::handle<descriptor_set_layout>> set_layouts,
 			std::span<const gpu::push_constant_range> push_ranges
 		) -> pipeline_layout;
 
@@ -50,13 +48,7 @@ export namespace gse::vulkan {
 gse::vulkan::pipeline_layout::pipeline_layout(vk::raii::PipelineLayout&& layout) : m_layout(std::move(layout)) {
 }
 
-auto gse::vulkan::pipeline_layout::create(const device& dev, const std::span<const gpu::handle<descriptor_set_layout>> set_layouts, const std::span<const gpu::push_constant_range> push_ranges) -> pipeline_layout {
-	std::vector<vk::DescriptorSetLayout> vk_layouts;
-	vk_layouts.reserve(set_layouts.size());
-	for (const auto h : set_layouts) {
-		vk_layouts.push_back(std::bit_cast<vk::DescriptorSetLayout>(h));
-	}
-
+auto gse::vulkan::pipeline_layout::create(const device& dev, const std::span<const gpu::push_constant_range> push_ranges) -> pipeline_layout {
 	std::vector<vk::PushConstantRange> vk_ranges;
 	vk_ranges.reserve(push_ranges.size());
 	for (const auto& r : push_ranges) {
@@ -68,8 +60,6 @@ auto gse::vulkan::pipeline_layout::create(const device& dev, const std::span<con
 	}
 
 	const vk::PipelineLayoutCreateInfo info{
-		.setLayoutCount = static_cast<std::uint32_t>(vk_layouts.size()),
-		.pSetLayouts = vk_layouts.data(),
 		.pushConstantRangeCount = static_cast<std::uint32_t>(vk_ranges.size()),
 		.pPushConstantRanges = vk_ranges.data(),
 	};

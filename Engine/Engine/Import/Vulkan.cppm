@@ -11,7 +11,6 @@ export import :pipeline_layout;
 export import :fence;
 export import :semaphore;
 export import :query_pool;
-export import :descriptor_set_layout;
 export import :shader_object;
 export import :shader_program;
 export import :instance;

@@ -5,7 +5,6 @@ import vulkan;
 
 import :handles;
 import :types;
-import :descriptor_set_layout;
 import :device;
 import :pipeline_layout;
 import :shader_object;
@@ -40,7 +39,6 @@ export namespace gse::gpu {
 export namespace gse::vulkan {
 	struct shader_program_create_info {
 		std::span<const shader_object_create_info> stages;
-		std::span<const gpu::handle<descriptor_set_layout>> set_layouts;
 		std::optional<gpu::push_constant_range> push_constant_range;
 		gpu::dynamic_pipeline_state state;
 		bool is_compute = false;
@@ -109,12 +107,6 @@ gse::vulkan::shader_program::shader_program(vk::raii::PipelineLayout&& layout, s
 }
 
 auto gse::vulkan::shader_program::create(const device& dev, const shader_program_create_info& info) -> shader_program {
-	std::vector<vk::DescriptorSetLayout> vk_set_layouts;
-	vk_set_layouts.reserve(info.set_layouts.size());
-	for (const auto h : info.set_layouts) {
-		vk_set_layouts.push_back(std::bit_cast<vk::DescriptorSetLayout>(h));
-	}
-
 	std::optional<vk::PushConstantRange> vk_pc_range;
 	if (info.push_constant_range.has_value()) {
 		vk_pc_range = to_vk(*info.push_constant_range);
@@ -123,8 +115,6 @@ auto gse::vulkan::shader_program::create(const device& dev, const shader_program
 	const std::uint32_t pc_count = vk_pc_range.has_value() ? 1u : 0u;
 
 	vk::raii::PipelineLayout layout = dev.raii_device().createPipelineLayout({
-		.setLayoutCount = static_cast<std::uint32_t>(vk_set_layouts.size()),
-		.pSetLayouts = vk_set_layouts.data(),
 		.pushConstantRangeCount = pc_count,
 		.pPushConstantRanges = pc_ptr,
 	});

@@ -363,12 +363,6 @@ export namespace gse::gpu {
 		descriptor_access access = descriptor_access::read;
 	};
 
-	enum class descriptor_set_type : std::uint8_t {
-		persistent = 0,
-		push = 1,
-		bind_less = 2
-	};
-
 	struct acceleration_structure_handle {
 		std::uint64_t value = 0;
 
