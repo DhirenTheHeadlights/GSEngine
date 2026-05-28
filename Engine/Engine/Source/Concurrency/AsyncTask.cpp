@@ -155,11 +155,7 @@ auto gse::async::yield_to_worker_t::await_ready() const noexcept -> bool {
 
 auto gse::async::yield_to_worker_t::await_suspend(std::coroutine_handle<> h) const -> void {
 	if (!h) {
-		log::println(
-			log::level::error,
-			log::category::task,
-			"yield_to_worker: empty handle from coroutine machinery"
-		);
+		log::println(log::level::error, log::category::task, "yield_to_worker: empty handle from coroutine machinery");
 		return;
 	}
 	gse::task::post(

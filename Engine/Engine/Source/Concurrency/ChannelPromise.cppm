@@ -75,8 +75,7 @@ export namespace gse {
 	template <typename T>
 	concept promiseable = requires(T t) {
 		typename T::result_type;
-		{ t.promise } -> std::same_as<channel_promise<typename T::result_type>&>;
-	};
+		{ t.promise } -> std::same_as<channel_promise<typename T::result_type>&>; };
 }
 
 template <typename T>

@@ -596,13 +596,7 @@ auto gse::vulkan::commands::unbind_shaders(const std::span<const gpu::stage_flag
 }
 
 auto gse::vulkan::commands::push_constants(const gpu::handle<pipeline_layout> layout, const gpu::stage_flags stages, const std::uint32_t offset, const std::uint32_t size, const void* data) const -> void {
-	raw().pushConstants(
-		std::bit_cast<vk::PipelineLayout>(layout),
-		to_vk(stages),
-		offset,
-		size,
-		data
-	);
+	raw().pushConstants(std::bit_cast<vk::PipelineLayout>(layout), to_vk(stages), offset, size, data);
 }
 
 auto gse::vulkan::commands::bind_index_buffer_2(const gpu::handle<buffer> buffer, const gpu::device_size offset, const gpu::device_size size, const gpu::index_type type) const -> void {
@@ -636,11 +630,7 @@ auto gse::vulkan::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const
 }
 
 auto gse::vulkan::commands::copy_buffer(const gpu::handle<buffer> src, const gpu::handle<buffer> dst, const gpu::buffer_copy_region& region) const -> void {
-	raw().copyBuffer(
-		std::bit_cast<vk::Buffer>(src),
-		std::bit_cast<vk::Buffer>(dst),
-		to_vk(region)
-	);
+	raw().copyBuffer(std::bit_cast<vk::Buffer>(src), std::bit_cast<vk::Buffer>(dst), to_vk(region));
 }
 
 auto gse::vulkan::commands::fill_buffer(const gpu::handle<buffer> dst, const gpu::device_size offset, const gpu::device_size size, const std::uint32_t data) const -> void {

@@ -214,12 +214,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 			ctx.queue_text({
 				.font = ctx.font,
 				.text = is_open ? "v" : ">",
-				.position = { arrow_rect.center().x() - ctx.font->width(
-															"v",
-															ctx.style.font_size
-														) *
-									  0.5f,
-							  arrow_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
+				.position = { arrow_rect.center().x() - ctx.font->width("v", ctx.style.font_size) * 0.5f, arrow_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
 				.scale = ctx.style.font_size,
 				.color = ctx.style.color_text,
 				.clip_rect = arrow_rect
@@ -254,11 +249,10 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 	}
 
 	if (released && hovered) {
-		const ui_rect arrow_rect =
-			ui_rect::from_position_size(
-				row_rect.top_left(),
-				{ ctx.style.font_size, row_height }
-			);
+		const ui_rect arrow_rect = ui_rect::from_position_size(
+			row_rect.top_left(),
+			{ ctx.style.font_size, row_height }
+		);
 
 		if (const bool clicked_arrow = arrow_rect.contains(mouse_pos); !leaf && (opt.toggle_on_row_click || clicked_arrow)) {
 			if (is_open) {
@@ -294,16 +288,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 
 	if (is_open && !leaf && ops.children) {
 		for (const std::span<const T> kids = ops.children(t); const T& ch : kids) {
-			children_are_active |= tree_node(
-				ctx,
-				ch,
-				ops,
-				opt,
-				sel,
-				tree_scope,
-				level + 1,
-				active_widget_id
-			);
+			children_are_active |= tree_node(ctx, ch, ops, opt, sel, tree_scope, level + 1, active_widget_id);
 		}
 	}
 

@@ -361,12 +361,7 @@ constexpr auto gse::max(const V1& a, const V2& b) {
 template <gse::is_vec V>
 constexpr auto gse::clamp(const V& v, const V& min_v, const V& max_v) -> V {
 	V out{};
-	simd::clamp(
-		v.as_storage_span(),
-		min_v.as_storage_span(),
-		max_v.as_storage_span(),
-		out.as_storage_span()
-	);
+	simd::clamp(v.as_storage_span(), min_v.as_storage_span(), max_v.as_storage_span(), out.as_storage_span());
 	return out;
 }
 

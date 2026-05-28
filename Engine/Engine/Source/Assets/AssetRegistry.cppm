@@ -260,11 +260,7 @@ auto gse::asset::registry::shutdown(shutdown_context&, data& d) -> void {
 template <typename T>
 auto gse::asset::add_loader(data& d) -> resource::loader<T>* {
 	const auto type_id = id_of<T>();
-	assert(
-		!d.resource_loaders.contains(type_id),
-		"Resource loader for type {} already exists.",
-		type_tag<T>()
-	);
+	assert(!d.resource_loaders.contains(type_id), "Resource loader for type {} already exists.", type_tag<T>());
 
 	auto new_loader = std::make_unique<resource::loader<T>>(d);
 	auto* loader_ptr = new_loader.get();
@@ -295,13 +291,7 @@ auto gse::asset::try_get(const data& d, const std::string& filename) -> resource
 
 template <typename T, typename... Args>
 auto gse::asset::queue(data& d, const std::string& name, Args&&... args) -> resource::handle<T> {
-	return loader_for<T>(d)->enqueue(
-		name,
-		std::make_unique<T>(
-			name,
-			std::forward<Args>(args)...
-		)
-	);
+	return loader_for<T>(d)->enqueue(name, std::make_unique<T>(name, std::forward<Args>(args)...));
 }
 
 template <typename T>
@@ -320,21 +310,15 @@ auto gse::asset::loader_for(const data& d) -> resource::loader<T>* {
 }
 
 auto gse::asset::loader_base_for(const data& d, const id type_id) -> resource::loader_base* {
-	assert(
-		d.resource_loaders.contains(type_id),
-		"Resource loader for id {} does not exist.",
-		type_id.number()
-	);
+	assert(d.resource_loaders.contains(type_id), "Resource loader for id {} does not exist.", type_id.number());
 	return d.resource_loaders.at(type_id).get();
 }
 
 template <typename T>
 auto gse::asset::load(run_context& ctx, const std::string_view path) -> async::task<resource::handle<T>> {
 	auto* assets_ptr = static_cast<data*>(ctx.states.state_ptr(id_of<registry>()));
-	assert(
-		assets_ptr != nullptr,
-		"asset::load: asset::registry must be added before any system that calls asset::load"
-	);
+	assert(assets_ptr != nullptr,
+		   "asset::load: asset::registry must be added before any system that calls asset::load");
 	auto& assets = *assets_ptr;
 	auto handle = get<T>(assets, std::string(path));
 
@@ -489,11 +473,7 @@ auto gse::resource::loader<R>::queue_by_path(const std::filesystem::path& baked_
 	auto temp_resource = std::make_unique<R>(baked_path);
 	const id resource_id = temp_resource->id();
 
-	auto slot = std::make_unique<resource_slot<R>>(
-		std::move(temp_resource),
-		state::queued,
-		baked_path
-	);
+	auto slot = std::make_unique<resource_slot<R>>(std::move(temp_resource), state::queued, baked_path);
 	if (m_resources.add(resource_id, std::move(slot))) {
 		m_path_to_id[baked_path] = resource_id;
 	}
@@ -576,11 +556,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid) -> async::task<> {
 	s->version.fetch_add(1, std::memory_order_release);
 	s->current_state.store(state::loaded, std::memory_order_release);
 
-	log::println(
-		log::category::assets,
-		"Hot reload reloaded resource: {}",
-		path.filename().string()
-	);
+	log::println(log::category::assets, "Hot reload reloaded resource: {}", path.filename().string());
 }
 
 template <typename R>

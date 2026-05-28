@@ -57,11 +57,7 @@ export namespace gse {
 		};
 
 		explicit model(const std::filesystem::path& path)
-			: identifiable(
-				  path,
-				  config::baked_resource_path
-			  ),
-			  m_baked_model_path(path) {
+			: identifiable(path, config::baked_resource_path), m_baked_model_path(path) {
 		}
 		explicit model(
 			std::string_view name,

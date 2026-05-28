@@ -107,12 +107,10 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 	while (true) {
 		for (const auto& req : ctx.read_channel<connect_request>()) {
 			if (!d.client_ptr) {
-				const address bind = req.options.local_bind.value_or(
-					address{
-						.ip = "0.0.0.0",
-						.port = 0,
-					}
-				);
+				const address bind = req.options.local_bind.value_or(address{
+					.ip = "0.0.0.0",
+					.port = 0,
+				});
 				d.client_ptr = std::make_unique<client>(bind, req.options.addr);
 			}
 			req.promise.fulfill(d.client_ptr->connect(req.options.timeout, req.options.retry));
@@ -151,10 +149,7 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 			}
 			std::ranges::sort(
 				d.available_servers,
-				[](
-				const discovery_result& a,
-				const discovery_result& b
-			) {
+				[](const discovery_result& a, const discovery_result& b) {
 					if (a.name != b.name) {
 						return a.name < b.name;
 					}
@@ -223,11 +218,9 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 					});
 					ctx.channels.push<deactivate_active_scene_request>({});
 					d.client_ptr->send(server_info_request{});
-					d.client_ptr->send(
-						pong{
-							.sequence = 0,
-						}
-					);
+					d.client_ptr->send(pong{
+						.sequence = 0,
+					});
 				}
 			) ||
 				try_decode<notify_scene_change>(
@@ -238,22 +231,18 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 							.scene_id = m.scene_id,
 						});
 						std::println("Switched to scene: {}", m.scene_id);
-						d.client_ptr->send(
-							pong{
-								.sequence = 0,
-							}
-						);
+						d.client_ptr->send(pong{
+							.sequence = 0,
+						});
 					}
 				) ||
 				try_decode<ping>(
 					stream,
 					msg.id,
 					[&](const auto& m) {
-						d.client_ptr->send(
-							pong{
-								.sequence = m.sequence,
-							}
-						);
+						d.client_ptr->send(pong{
+							.sequence = m.sequence,
+						});
 					}
 				) ||
 				try_decode<server_info_response>(

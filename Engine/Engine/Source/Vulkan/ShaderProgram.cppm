@@ -129,17 +129,13 @@ auto gse::vulkan::shader_program::create(const device& dev, const shader_program
 		.pPushConstantRanges = pc_ptr,
 	});
 
-	std::vector<shader_object> shaders = info.stages.size() == 1
-		? [&] {
-			  std::vector<shader_object> single;
-			  single.reserve(1);
-			  single.emplace_back(shader_object::create(dev, info.stages[0]));
-			  return single;
-		  }()
-		: shader_object::create_linked(
-			  dev,
-			  info.stages
-		  );
+	std::vector<shader_object> shaders = info.stages.size() == 1 ? [&] {
+		std::vector<shader_object> single;
+		single.reserve(1);
+		single.emplace_back(shader_object::create(dev, info.stages[0]));
+		return single;
+	}()
+																 : shader_object::create_linked(dev, info.stages);
 
 	std::vector<gpu::stage_flag> stages;
 	stages.reserve(shaders.size());

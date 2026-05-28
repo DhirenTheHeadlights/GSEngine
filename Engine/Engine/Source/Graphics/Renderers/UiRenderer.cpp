@@ -154,17 +154,8 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 }
 
 auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.sprite_pipeline = gpu::build_graphics_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		sprite_entry::pod
-	);
-	d.text_pipeline =
-		gpu::build_graphics_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			msdf_entry::pod
-		);
+	d.sprite_pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, sprite_entry::pod);
+	d.text_pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, msdf_entry::pod);
 
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
@@ -460,7 +451,9 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			sprite_pc.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
 			rec.push_bindings<sprite_entry>(
 				sprite_pc,
-				{ .vertex_buffer = vertex_buffer.slot() }
+				{
+					.vertex_buffer = vertex_buffer.slot()
+				}
 			);
 		}
 		else {
@@ -471,7 +464,9 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			text_pc.tex_idx = tex_idx;
 			rec.push_bindings<msdf_entry>(
 				text_pc,
-				{ .vertex_buffer = vertex_buffer.slot() }
+				{
+					.vertex_buffer = vertex_buffer.slot()
+				}
 			);
 		}
 
@@ -483,14 +478,8 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			rec.set_scissor(
 				static_cast<std::int32_t>(left),
 				static_cast<std::int32_t>(window_size.y() - top),
-				static_cast<std::uint32_t>(std::max(
-					0.0f,
-					right - left
-				)),
-				static_cast<std::uint32_t>(std::max(
-					0.0f,
-					top - bottom
-				))
+				static_cast<std::uint32_t>(std::max(0.0f, right - left)),
+				static_cast<std::uint32_t>(std::max(0.0f, top - bottom))
 			);
 		}
 		else {

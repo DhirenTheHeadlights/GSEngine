@@ -100,21 +100,12 @@ auto gse::renderer::gi_probe::recreate_atlas(const gpu::context::data& gpu_s, sy
 auto gse::renderer::gi_probe::rebind_tlas_views(const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, system::data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_tlas_view>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		d.tlas_views[i].rebind(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
-			(*rt_state.tlas_ptrs[fi]).handle()
-		);
+		d.tlas_views[i].rebind(gpu_s.device->allocator(), *gpu_s.bindless_heaps, (*rt_state.tlas_ptrs[fi]).handle());
 	}
 }
 
 auto gse::renderer::gi_probe::system::run(run_context& ctx, const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
-	d.update_pipeline =
-		gpu::build_compute_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			entry::pod
-		);
+	d.update_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
 
 	recreate_atlas(gpu_s, d);
 	rebind_tlas_views(gpu_s, rt_state, d);
@@ -147,17 +138,11 @@ auto gse::renderer::gi_probe::system::frame(frame_context& ctx, shared_view<gpu:
 
 	const length half_x = (static_cast<float>(grid_dim.x() - 1) * 0.5f) * d.spacing;
 	const length half_z = (static_cast<float>(grid_dim.z() - 1) * 0.5f) * d.spacing;
-	d.origin_world = vec3<position>(
-		cam_world.x() - half_x,
-		meters(1.0f),
-		cam_world.z() - half_z
-	);
+	d.origin_world = vec3<position>(cam_world.x() - half_x, meters(1.0f), cam_world.z() - half_z);
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	auto rec = co_await gpu::pass<system>(ctx)
-		.pipeline(d.update_pipeline)
-		.after<rt_shadow::system>();
+	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.update_pipeline).after<rt_shadow::system>();
 
 	rec.dispatch<entry>(
 		{

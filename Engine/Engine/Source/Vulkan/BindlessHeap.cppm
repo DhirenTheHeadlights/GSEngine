@@ -736,12 +736,7 @@ gse::vulkan::bindless_resource_heap::bindless_resource_heap(const device& dev, c
 		props.max_resource_heap_size
 	);
 
-	auto mem = allocate_heap_memory(
-		dev,
-		m_size,
-		vk::BufferUsageFlagBits::eDescriptorHeapEXT,
-		"bindless_resource_heap"
-	);
+	auto mem = allocate_heap_memory(dev, m_size, vk::BufferUsageFlagBits::eDescriptorHeapEXT, "bindless_resource_heap");
 	m_buffer = mem.buffer;
 	m_memory = mem.memory;
 	m_address = mem.address;
@@ -786,11 +781,7 @@ gse::vulkan::bindless_resource_heap::~bindless_resource_heap() {
 
 auto gse::vulkan::bindless_resource_heap::allocate_image() -> bindless_slot {
 	std::lock_guard lock(m_mutex);
-	assert(
-		!m_image_free_list.empty(),
-		"bindless_resource_heap: image slots exhausted (capacity {})",
-		m_image_capacity
-	);
+	assert(!m_image_free_list.empty(), "bindless_resource_heap: image slots exhausted (capacity {})", m_image_capacity);
 	const auto slot = m_image_free_list.back();
 	m_image_free_list.pop_back();
 	log::println(
@@ -838,11 +829,9 @@ auto gse::vulkan::bindless_resource_heap::write_resource(const gpu::device_size 
 		.size = static_cast<std::size_t>(descriptor_size),
 	};
 	const auto result = m_device.writeResourceDescriptorsEXT(1, &info, &dst);
-	assert(
-		result == vk::Result::eSuccess,
-		"vkWriteResourceDescriptorsEXT failed: {}",
-		static_cast<std::int32_t>(result)
-	);
+	assert(result == vk::Result::eSuccess,
+		   "vkWriteResourceDescriptorsEXT failed: {}",
+		   static_cast<std::int32_t>(result));
 }
 
 auto gse::vulkan::bindless_resource_heap::write_sampled_image_vk(const bindless_slot slot, const vk::ImageViewCreateInfo& view_info) -> void {
@@ -1098,12 +1087,7 @@ gse::vulkan::bindless_sampler_heap::bindless_sampler_heap(const device& dev, con
 		props.max_sampler_heap_size
 	);
 
-	auto mem = allocate_heap_memory(
-		dev,
-		m_size,
-		vk::BufferUsageFlagBits::eDescriptorHeapEXT,
-		"bindless_sampler_heap"
-	);
+	auto mem = allocate_heap_memory(dev, m_size, vk::BufferUsageFlagBits::eDescriptorHeapEXT, "bindless_sampler_heap");
 	m_buffer = mem.buffer;
 	m_memory = mem.memory;
 	m_address = mem.address;
@@ -1142,11 +1126,8 @@ auto gse::vulkan::bindless_sampler_heap::write_vk(const gpu::device_size byte_of
 		.size = static_cast<std::size_t>(m_descriptor_size),
 	};
 	const auto result = m_device.writeSamplerDescriptorsEXT(1, &sampler_info, &dst);
-	assert(
-		result == vk::Result::eSuccess,
-		"vkWriteSamplerDescriptorsEXT failed: {}",
-		static_cast<std::int32_t>(result)
-	);
+	assert(result == vk::Result::eSuccess, "vkWriteSamplerDescriptorsEXT failed: {}",
+		   static_cast<std::int32_t>(result));
 }
 
 auto gse::vulkan::bindless_sampler_heap::allocate_vk(const vk::SamplerCreateInfo& sampler_info) -> bindless_slot {
@@ -1265,19 +1246,7 @@ auto gse::vulkan::bindless_sampler_heap::sampler_stride() const -> gpu::device_s
 }
 
 gse::vulkan::bindless_heaps::bindless_heaps(const device& dev, const std::uint32_t texture_capacity, const std::uint32_t image_capacity, const std::uint32_t buffer_capacity, const std::uint32_t sampler_capacity)
-	: m_props(query_descriptor_heap_properties(dev.physical_device())), m_resource_heap(std::make_unique<bindless_resource_heap>(
-																			dev,
-																			m_props,
-																			texture_capacity,
-																			image_capacity,
-																			buffer_capacity
-																		)),
-	  m_sampler_heap(std::make_unique<bindless_sampler_heap>(
-		  dev,
-		  m_props,
-		  texture_capacity,
-		  sampler_capacity
-	  )) {
+	: m_props(query_descriptor_heap_properties(dev.physical_device())), m_resource_heap(std::make_unique<bindless_resource_heap>(dev, m_props, texture_capacity, image_capacity, buffer_capacity)), m_sampler_heap(std::make_unique<bindless_sampler_heap>(dev, m_props, texture_capacity, sampler_capacity)) {
 }
 
 auto gse::vulkan::bindless_heaps::begin_frame() -> void {
@@ -1312,10 +1281,7 @@ auto gse::vulkan::build_bindless_mappings(const std::span<const gpu::binding_use
 	std::vector<gpu::binding_use> sorted_bindings(bindings.begin(), bindings.end());
 	std::ranges::sort(
 		sorted_bindings,
-		[](
-		const gpu::binding_use& a,
-		const gpu::binding_use& b
-	) {
+		[](const gpu::binding_use& a, const gpu::binding_use& b) {
 			if (a.set != b.set) {
 				return a.set < b.set;
 			}
@@ -1343,17 +1309,11 @@ auto gse::vulkan::build_bindless_mappings(const std::span<const gpu::binding_use
 
 		if (is_array) {
 			auto& co = source_data.constantOffset;
-			const auto write_resource_fields = [&](
-				const std::uint32_t heap_off,
-				const std::uint32_t stride
-			) {
+			const auto write_resource_fields = [&](const std::uint32_t heap_off, const std::uint32_t stride) {
 				co.heapOffset = heap_off;
 				co.heapArrayStride = stride;
 			};
-			const auto write_sampler_fields = [&](
-				const std::uint32_t heap_off,
-				const std::uint32_t stride
-			) {
+			const auto write_sampler_fields = [&](const std::uint32_t heap_off, const std::uint32_t stride) {
 				co.samplerHeapOffset = heap_off;
 				co.samplerHeapArrayStride = stride;
 			};

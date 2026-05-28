@@ -94,10 +94,7 @@ auto gse::gui::activate_popout(popout_system::data& d, const gse::save::registry
 	popout_system::active_popout popout{
 		.menu_name = make_popout_menu_name(cat_view),
 		.menu_id = {},
-		.entry = find_hot_entry(
-			save_reg,
-			cat_view
-		),
+		.entry = find_hot_entry(save_reg, cat_view),
 	};
 	popout.menu_id = find_or_generate_id(popout.menu_name);
 	const auto [it, _] = d.active.emplace(std::move(category), std::move(popout));

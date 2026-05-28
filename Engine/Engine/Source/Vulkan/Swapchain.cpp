@@ -190,11 +190,7 @@ auto gse::vulkan::swap_chain::create(const vec2i framebuffer_size, const gpu::pr
 		gpu_present_modes.push_back(from_vk(m));
 	}
 
-	swap_chain_details details(
-		from_vk(vk_capabilities),
-		std::move(gpu_formats),
-		std::move(gpu_present_modes)
-	);
+	swap_chain_details details(from_vk(vk_capabilities), std::move(gpu_formats), std::move(gpu_present_modes));
 
 	auto vk_swap_chain = device_data.raii_device().createSwapchainKHR(create_info);
 	auto images = vk_swap_chain.getImages();

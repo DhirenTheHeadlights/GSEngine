@@ -36,12 +36,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 
 	FT_Face ft_face;
 	if (FT_New_Face(ft_lib, src.string().c_str(), 0, &ft_face)) {
-		log::println(
-			log::level::error,
-			log::category::assets,
-			"Failed to load font face from '{}'",
-			src.string()
-		);
+		log::println(log::level::error, log::category::assets, "Failed to load font face from '{}'", src.string());
 		FT_Done_FreeType(ft_lib);
 		return false;
 	}
@@ -49,12 +44,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 	msdfgen::FreetypeHandle* ft_handle = msdfgen::initializeFreetype();
 	msdfgen::FontHandle* font_handle = loadFont(ft_handle, src.string().c_str());
 	if (!font_handle) {
-		log::println(
-			log::level::error,
-			log::category::assets,
-			"Failed to load font into msdfgen: {}",
-			src.string()
-		);
+		log::println(log::level::error, log::category::assets, "Failed to load font into msdfgen: {}", src.string());
 		FT_Done_Face(ft_face);
 		FT_Done_FreeType(ft_lib);
 		msdfgen::deinitializeFreetype(ft_handle);
@@ -107,14 +97,7 @@ auto gse::bake(const std::filesystem::path& src, font::baked& out) -> bool {
 		const int cell_x = col * cell;
 		const int cell_y = row * cell;
 
-		FT_Load_Glyph(
-			ft_face,
-			FT_Get_Char_Index(
-				ft_face,
-				static_cast<FT_UInt>(cp)
-			),
-			freetype_load_no_scale
-		);
+		FT_Load_Glyph(ft_face, FT_Get_Char_Index(ft_face, static_cast<FT_UInt>(cp)), freetype_load_no_scale);
 		const FT_GlyphSlot ft_glyph = ft_face->glyph;
 		const float x_advance_em = static_cast<float>(ft_glyph->advance.x / units_per_em);
 		const auto ft_index = FT_Get_Char_Index(ft_face, static_cast<FT_UInt>(cp));

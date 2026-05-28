@@ -207,9 +207,6 @@ auto gse::move_only_function<R(Args...)>::invoke_address() const noexcept -> con
 
 template <typename R, typename... Args>
 auto gse::move_only_function<R(Args...)>::operator()(Args... args) -> R {
-	gse::assert(
-		m_vtable != nullptr,
-		"move_only_function invoked with null vtable (moved-from or default-constructed)"
-	);
+	gse::assert(m_vtable != nullptr, "move_only_function invoked with null vtable (moved-from or default-constructed)");
 	return m_vtable->invoke(m_buffer, std::forward<Args>(args)...);
 }

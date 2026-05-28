@@ -222,19 +222,14 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 	};
 
 	assert(supports_extension(vk::EXTShaderObjectExtensionName), "VK_EXT_shader_object is required");
-	assert(
-		supports_extension(vk::EXTExtendedDynamicState3ExtensionName),
-		"VK_EXT_extended_dynamic_state3 is required"
-	);
+	assert(supports_extension(vk::EXTExtendedDynamicState3ExtensionName), "VK_EXT_extended_dynamic_state3 is required");
 	assert(
 		supports_extension(vk::EXTVertexInputDynamicStateExtensionName),
 		"VK_EXT_vertex_input_dynamic_state is required"
 	);
 	assert(supports_extension(vk::EXTDescriptorHeapExtensionName), "VK_EXT_descriptor_heap is required");
 	assert(
-		supports_extension(vk::KHRDeferredHostOperationsExtensionName) &&
-			supports_extension(vk::KHRAccelerationStructureExtensionName) &&
-			supports_extension(vk::KHRRayQueryExtensionName),
+		supports_extension(vk::KHRDeferredHostOperationsExtensionName) && supports_extension(vk::KHRAccelerationStructureExtensionName) && supports_extension(vk::KHRRayQueryExtensionName),
 		"Ray tracing extensions are required"
 	);
 
@@ -536,10 +531,7 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 
 	if (video_encode_extensions_available) {
 		result.queue.set_video_encode(
-			result.device.raii_device().getQueue(
-				families.video_encode_family.value(),
-				0
-			),
+			result.device.raii_device().getQueue(families.video_encode_family.value(), 0),
 			families.video_encode_family.value()
 		);
 		log::println(
@@ -682,21 +674,14 @@ auto gse::vulkan::device::create_buffer(const vk::BufferCreateInfo& buffer_info,
 
 	assert(success, "Failed to allocate memory for buffer after trying all preferences.");
 
-	(*m_device).bindBufferMemory(
-		buffer,
-		std::bit_cast<vk::DeviceMemory>(alloc.memory()),
-		alloc.offset()
-	);
+	(*m_device).bindBufferMemory(buffer, std::bit_cast<vk::DeviceMemory>(alloc.memory()), alloc.offset());
 
 	if ((m_settings && m_settings->name_resources)) {
 		const auto& debug_info = alloc.debug_info();
 		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().string();
 		const auto name = debug_info.tag.empty()
-			? std::format(
-				  "Buffer ({}:{})",
-				  file,
-				  debug_info.creation_location.line()
-			  )
+			? std::format("Buffer ({}:{})", file,
+						  debug_info.creation_location.line())
 			: std::format(
 				  "Buffer '{}' ({}:{})",
 				  debug_info.tag,
@@ -755,11 +740,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 
 	basic_allocation<device> alloc = std::move(*expected_alloc);
 
-	(*m_device).bindImageMemory(
-		image,
-		std::bit_cast<vk::DeviceMemory>(alloc.memory()),
-		alloc.offset()
-	);
+	(*m_device).bindImageMemory(image, std::bit_cast<vk::DeviceMemory>(alloc.memory()), alloc.offset());
 
 	if (data && alloc.mapped()) {
 		gse::memcpy(alloc.mapped(), data, requirements.size);
@@ -797,11 +778,7 @@ auto gse::vulkan::device::create_image(const vk::ImageCreateInfo& info, const vk
 		const auto& debug_info = alloc.debug_info();
 		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().string();
 		const auto image_name = debug_info.tag.empty()
-			? std::format(
-				  "Image ({}:{})",
-				  file,
-				  debug_info.creation_location.line()
-			  )
+			? std::format("Image ({}:{})", file, debug_info.creation_location.line())
 			: std::format(
 				  "Image '{}' ({}:{})",
 				  debug_info.tag,
@@ -955,19 +932,11 @@ auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& i
 }
 
 auto gse::vulkan::device::bind_image_memory(const gpu::handle<image> img, const device_memory_handle mem, const gpu::device_size offset) const -> void {
-	(*m_device).bindImageMemory(
-		std::bit_cast<vk::Image>(img),
-		std::bit_cast<vk::DeviceMemory>(mem.value),
-		offset
-	);
+	(*m_device).bindImageMemory(std::bit_cast<vk::Image>(img), std::bit_cast<vk::DeviceMemory>(mem.value), offset);
 }
 
 auto gse::vulkan::device::bind_buffer_memory(const gpu::handle<buffer> buf, const device_memory_handle mem, const gpu::device_size offset) const -> void {
-	(*m_device).bindBufferMemory(
-		std::bit_cast<vk::Buffer>(buf),
-		std::bit_cast<vk::DeviceMemory>(mem.value),
-		offset
-	);
+	(*m_device).bindBufferMemory(std::bit_cast<vk::Buffer>(buf), std::bit_cast<vk::DeviceMemory>(mem.value), offset);
 }
 
 auto gse::vulkan::device::create_image_view(const gpu::handle<image> img, const gpu::image_view_create_info& info) const -> gpu::handle<image_view> {
@@ -1119,8 +1088,7 @@ auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, c
 					continue;
 				}
 
-				const vk::DeviceSize aligned_offset =
-					(it->offset + requirements.alignment - 1) & ~(requirements.alignment - 1);
+				const vk::DeviceSize aligned_offset = (it->offset + requirements.alignment - 1) & ~(requirements.alignment - 1);
 				if (aligned_offset + requirements.size > it->offset + it->size) {
 					continue;
 				}
@@ -1283,11 +1251,7 @@ auto gse::vulkan::device::clean_up() -> void {
 		);
 
 		if ((m_settings && m_settings->tracking_enabled) && !m_live_allocations.empty()) {
-			log::println(
-				log::level::error,
-				log::category::vulkan_memory,
-				"Tracked allocations still alive:"
-			);
+			log::println(log::level::error, log::category::vulkan_memory, "Tracked allocations still alive:");
 			for (const auto& [id, debug] : m_live_allocations) {
 				log::println(
 					log::level::error,

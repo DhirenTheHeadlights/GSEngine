@@ -58,10 +58,7 @@ auto gse::renderer::capture::ring::snapshot_from_earliest_keyframe() const -> st
 	}
 
 	std::vector<gpu::encoded_unit> snapshot;
-	snapshot.reserve(static_cast<std::size_t>(std::ranges::distance(
-		first_keyframe,
-		m_units.end()
-	)));
+	snapshot.reserve(static_cast<std::size_t>(std::ranges::distance(first_keyframe, m_units.end())));
 
 	for (auto it = first_keyframe; it != m_units.end(); ++it) {
 		snapshot.push_back({

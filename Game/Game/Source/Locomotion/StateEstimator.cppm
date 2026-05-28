@@ -70,12 +70,13 @@ auto gs::locomotion::reset_state(state& s) -> void {
 auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse::async::task<> {
 	while (true) {
 		{
-			auto [refs, states, transforms, motions, collisions] = co_await ctx.acquire_with(
+			auto [refs, states, transforms, motions, collisions, gaits] = co_await ctx.acquire_with(
 				gse::read_v<skeleton_refs>,
 				gse::write_v<state>,
 				gse::read_v<gse::physics::transform_component>,
 				gse::read_v<gse::physics::motion_component>,
-				gse::read_v<gse::physics::collision_component>
+				gse::read_v<gse::physics::collision_component>,
+				gse::read_v<gait>
 			);
 
 			const bool log_now = d.log_timer.tick();
@@ -95,6 +96,7 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 				const auto* foot_r_tc = transforms.find(r->foot_r_id);
 				const auto* foot_l_cc = collisions.find(r->foot_l_id);
 				const auto* foot_r_cc = collisions.find(r->foot_r_id);
+				const auto* g = gaits.find(owner);
 
 				if (!pelvis_tc || !pelvis_mc || !foot_l_tc || !foot_r_tc || !foot_l_cc || !foot_r_cc) {
 					reset_state(s);
@@ -117,22 +119,8 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 				s.pelvis_position = pelvis_tc->position;
 				s.pelvis_orientation = pelvis_tc->orientation;
 				s.pelvis_velocity = pelvis_mc->current_velocity;
-				s.pelvis_forward = gse::rotate_vector(
-					pelvis_tc->orientation,
-					gse::vec3f(
-						0.f,
-						0.f,
-						-1.f
-					)
-				);
-				s.pelvis_right = gse::rotate_vector(
-					pelvis_tc->orientation,
-					gse::vec3f(
-						1.f,
-						0.f,
-						0.f
-					)
-				);
+				s.pelvis_forward = gse::rotate_vector(pelvis_tc->orientation, gse::vec3f(0.f, 0.f, -1.f));
+				s.pelvis_right = gse::rotate_vector(pelvis_tc->orientation, gse::vec3f(1.f, 0.f, 0.f));
 
 				s.foot_position_l = foot_l_tc->position;
 				s.foot_position_r = foot_r_tc->position;
@@ -144,7 +132,16 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 				s.foot_grounded_r = r_aabb.min.y() <= contact_y;
 				s.any_foot_grounded = s.foot_grounded_l || s.foot_grounded_r;
 				s.double_support = s.foot_grounded_l && s.foot_grounded_r;
-				if (s.double_support || !s.any_foot_grounded) {
+				const bool swing_support = g && g->current == phase::swing;
+				if (swing_support && g->swing_leg == leg::right) {
+					s.support_min = l_aabb.min;
+					s.support_max = l_aabb.max;
+				}
+				else if (swing_support && g->swing_leg == leg::left) {
+					s.support_min = r_aabb.min;
+					s.support_max = r_aabb.max;
+				}
+				else if (s.double_support || !s.any_foot_grounded) {
 					s.support_min = gse::min(l_aabb.min, r_aabb.min);
 					s.support_max = gse::max(l_aabb.max, r_aabb.max);
 				}
@@ -161,17 +158,9 @@ auto gs::locomotion::state_estimator::run(gse::run_context& ctx, data& d) -> gse
 				s.com_world = pelvis_tc->position;
 
 				s.lean_world = gse::vec3<gse::displacement>(
-					excess_past_edge(
-						s.com_world.x(),
-						s.support_min.x(),
-						s.support_max.x()
-					),
+					excess_past_edge(s.com_world.x(), s.support_min.x(), s.support_max.x()),
 					gse::meters(0.f),
-					excess_past_edge(
-						s.com_world.z(),
-						s.support_min.z(),
-						s.support_max.z()
-					)
+					excess_past_edge(s.com_world.z(), s.support_min.z(), s.support_max.z())
 				);
 				s.velocity_world = gse::vec3<gse::velocity>(
 					pelvis_mc->current_velocity.x(),

@@ -137,10 +137,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const gpu::context::data& gpu_s, s
 					.format = gpu::image_format::r16g16b16a16_sfloat,
 					.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
 				},
-				std::format(
-					"bloom_down_{}",
-					i
-				)
+				std::format("bloom_down_{}", i)
 			);
 			gpu::transition_image_to(*gpu_s.device, d.mips_down[i].image());
 			d.mips_up[i] = gpu::bindless_image::create(
@@ -151,10 +148,7 @@ auto gse::renderer::bloom::recreate_mip_chain(const gpu::context::data& gpu_s, s
 					.format = gpu::image_format::r16g16b16a16_sfloat,
 					.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
 				},
-				std::format(
-					"bloom_up_{}",
-					i
-				)
+				std::format("bloom_up_{}", i)
 			);
 			gpu::transition_image_to(*gpu_s.device, d.mips_up[i].image());
 		}
@@ -173,16 +167,8 @@ auto gse::renderer::bloom::rewrite_descriptors(const gpu::context::data& gpu_s, 
 }
 
 auto gse::renderer::bloom::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.downsample_pipeline = gpu::build_compute_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		downsample_entry::pod
-	);
-	d.upsample_pipeline = gpu::build_compute_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		upsample_entry::pod
-	);
+	d.downsample_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, downsample_entry::pod);
+	d.upsample_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, upsample_entry::pod);
 
 	d.sampler = gpu::bindless_sampler::create(
 		*gpu_s.bindless_heaps,
@@ -256,9 +242,7 @@ auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<g
 		co_return;
 	}
 
-	auto up_rec = co_await gpu::pass<upsample_pass>(ctx)
-		.pipeline(d.upsample_pipeline)
-		.after<downsample_pass>();
+	auto up_rec = co_await gpu::pass<upsample_pass>(ctx).pipeline(d.upsample_pipeline).after<downsample_pass>();
 
 	for (std::uint32_t i = 0; i < count; ++i) {
 		up_rec.sample_image(d.mips_down[i].image(), gpu::pipeline_stage_flag::compute_shader);

@@ -35,7 +35,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Walking plant phase duration.">{}
 			]]
-			gse::time plant_duration = gse::seconds(0.12f);
+			gse::time plant_duration = gse::seconds(0.24f);
 
 			[[
 				= gse::settings::describe<"Swing progress before contact may end the swing.">{}
@@ -55,7 +55,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Swing progress before unstable posture may force planting.">{}
 			]]
-			float swing_drop_progress = 0.75f;
+			float swing_drop_progress = 0.90f;
 
 			[[
 				= gse::settings::describe<"Forward capture limit for forcing a swing to plant.">{}
@@ -383,13 +383,7 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 						const bool plant_ready = timed_out || drop_requested || (swing_grounded && contact_allowed && target_reached);
 						if (plant_ready) {
 							const auto reason = drop_requested ? "drop" : (target_reached ? "contact" : (timed_out ? "timed" : "grounded"));
-							begin_phase(
-								g,
-								phase::plant,
-								cfg.plant_duration,
-								reason,
-								owner
-							);
+							begin_phase(g, phase::plant, cfg.plant_duration, reason, owner);
 						}
 						break;
 					}
@@ -399,23 +393,15 @@ auto gs::locomotion::gait_scheduler::run(gse::run_context& ctx, data& d) -> gse:
 							const bool swing_grounded = foot_grounded(*s, g.swing_leg);
 							const bool stance_grounded = foot_grounded(*s, other(g.swing_leg));
 							const bool support_transferred = swing_grounded && !stance_grounded;
-							const bool support_swing_safe = support_transferred && posture_allows_recovery_swing(
-																						   *s,
-																						   d
-																					   );
+							const bool support_swing_safe = support_transferred && posture_allows_recovery_swing(*s, d);
 							const leg next_swing_leg = other(g.swing_leg);
 							if (!s->double_support && !support_swing_safe) {
 								break;
 							}
 							if (capture_demands_swing(*s, d) && posture_allows_recovery_swing(*s, d)) {
-								g.swing_leg = capture_recovery_leg(*s, d, next_swing_leg);
-								begin_phase(
-									g,
-									phase::weight_shift,
-									cfg.weight_shift_duration,
-									"capture",
-									owner
-								);
+								const leg recovery_leg = capture_recovery_leg(*s, d, next_swing_leg);
+								g.swing_leg = recovery_leg == g.swing_leg ? next_swing_leg : recovery_leg;
+								begin_phase(g, phase::swing, cfg.swing_duration, "capture", owner);
 							}
 							else if (capture_demands_swing(*s, d)) {
 								break;

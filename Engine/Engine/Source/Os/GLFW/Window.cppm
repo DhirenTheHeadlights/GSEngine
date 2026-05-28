@@ -45,12 +45,7 @@ template <>
 struct std::formatter<gse::resolution_info> : std::formatter<std::string> {
 	auto format(const gse::resolution_info& info, std::format_context& ctx) const {
 		return std::formatter<std::string>::format(
-			std::format(
-				"{}x{} @{}Hz",
-				info.width,
-				info.height,
-				info.refresh_rate
-			),
+			std::format("{}x{} @{}Hz", info.width, info.height, info.refresh_rate),
 			ctx
 		);
 	}

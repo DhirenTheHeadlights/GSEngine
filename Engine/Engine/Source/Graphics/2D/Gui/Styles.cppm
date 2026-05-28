@@ -57,7 +57,7 @@ export namespace gse::gui {
 		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 		// Interactive widget states
-		vec4f color_widget_background = { 0.12f, 0.15f, 0.22f, 1.0f };
+		vec4f color_widget_background = { 0.12f, 0.15f, 0.22f, 0.02f };
 		vec4f color_widget_hovered = { 0.18f, 0.22f, 0.32f, 1.0f };
 		vec4f color_widget_active = { 0.26f, 0.86f, 0.84f, 1.0f };
 		vec4f color_widget_selected = { 0.26f, 0.86f, 0.84f, 0.32f };
@@ -155,7 +155,7 @@ constexpr auto gse::gui::style::midnight() -> style {
 		.color_section_header = { 0.96f, 0.97f, 0.99f, 1.0f },
 		.color_icon = { 0.70f, 0.74f, 0.84f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.12f, 0.15f, 0.22f, 1.0f },
+		.color_widget_background = { 0.12f, 0.15f, 0.22f, 0.02f },
 		.color_widget_hovered = { 0.18f, 0.22f, 0.32f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
@@ -205,7 +205,7 @@ constexpr auto gse::gui::style::eclipse() -> style {
 		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
 		.color_icon = { 0.70f, 0.66f, 0.74f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.07f, 0.07f, 0.10f, 1.0f },
+		.color_widget_background = { 0.07f, 0.07f, 0.10f, 0.02f },
 		.color_widget_hovered = { 0.12f, 0.10f, 0.16f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
@@ -255,7 +255,7 @@ constexpr auto gse::gui::style::ember() -> style {
 		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
 		.color_icon = { 0.78f, 0.72f, 0.64f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.17f, 0.14f, 0.11f, 1.0f },
+		.color_widget_background = { 0.17f, 0.14f, 0.11f, 0.02f },
 		.color_widget_hovered = { 0.23f, 0.19f, 0.15f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
@@ -305,7 +305,7 @@ constexpr auto gse::gui::style::forest() -> style {
 		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
 		.color_icon = { 0.70f, 0.78f, 0.72f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.10f, 0.16f, 0.12f, 1.0f },
+		.color_widget_background = { 0.10f, 0.16f, 0.12f, 0.02f },
 		.color_widget_hovered = { 0.14f, 0.22f, 0.17f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
@@ -355,7 +355,7 @@ constexpr auto gse::gui::style::frost() -> style {
 		.color_section_header = { 0.08f, 0.12f, 0.20f, 1.0f },
 		.color_icon = { 0.35f, 0.40f, 0.50f, 1.0f },
 		.color_icon_hovered = { 0.05f, 0.08f, 0.15f, 1.0f },
-		.color_widget_background = { 0.90f, 0.93f, 0.97f, 1.0f },
+		.color_widget_background = { 0.90f, 0.93f, 0.97f, 0.02f },
 		.color_widget_hovered = { 0.82f, 0.87f, 0.94f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
@@ -405,7 +405,7 @@ constexpr auto gse::gui::style::high_contrast() -> style {
 		.color_section_header = accent,
 		.color_icon = { 1.0f, 1.0f, 1.0f, 1.0f },
 		.color_icon_hovered = accent,
-		.color_widget_background = { 0.0f, 0.0f, 0.0f, 1.0f },
+		.color_widget_background = { 0.0f, 0.0f, 0.0f, 0.02f },
 		.color_widget_hovered = { 0.25f, 0.25f, 0.0f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,

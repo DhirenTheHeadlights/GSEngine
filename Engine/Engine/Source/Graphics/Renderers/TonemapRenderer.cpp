@@ -73,12 +73,7 @@ auto gse::renderer::tonemap::rebind_views(const gpu::context::data& gpu_s, syste
 }
 
 auto gse::renderer::tonemap::system::run(run_context& ctx, const gpu::context::data& gpu_s, const bloom::system::data& bloom_state, data& d) -> async::task<> {
-	d.pipeline =
-		gpu::build_graphics_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			entry::pod
-		);
+	d.pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
 
 	d.sampler = gpu::bindless_sampler::create(
 		*gpu_s.bindless_heaps,
@@ -115,12 +110,9 @@ auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	const bool bloom_active =
-		bloom_state.bloom_quality != bloom::quality_level::off && bloom_state.active_mip_count > 0;
+	const bool bloom_active = bloom_state.bloom_quality != bloom::quality_level::off && bloom_state.active_mip_count > 0;
 
-	const auto bloom_slot = bloom_active
-		? bloom_state.mips_up[0].sampled_slot()
-		: d.hdr_view.sampled_slot();
+	const auto bloom_slot = bloom_active ? bloom_state.mips_up[0].sampled_slot() : d.hdr_view.sampled_slot();
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.pipeline(d.pipeline)

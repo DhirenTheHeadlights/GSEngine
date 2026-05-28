@@ -64,12 +64,7 @@ namespace gse::renderer::physics_transform {
 }
 
 auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.pipeline =
-		gpu::build_compute_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			entry::pod
-		);
+	d.pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
 
 	d.initialized = true;
 
@@ -115,10 +110,7 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 			d.mapping_buffer_size = required;
 		}
 		else {
-			d.mapping_buffers[frame_index].buffer().host_write(
-				data.physics_mappings.data(),
-				required
-			);
+			d.mapping_buffers[frame_index].buffer().host_write(data.physics_mappings.data(), required);
 		}
 	}
 

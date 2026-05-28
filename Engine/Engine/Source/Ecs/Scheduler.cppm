@@ -65,10 +65,7 @@ export namespace gse {
 		) -> void;
 
 		auto set_advance_hook(
-			std::function<void(
-				id system_id,
-				std::string_view phase
-			)> fn
+			std::function<void(id system_id, std::string_view phase)> fn
 		) -> void;
 
 		auto set_settings_register_hook(

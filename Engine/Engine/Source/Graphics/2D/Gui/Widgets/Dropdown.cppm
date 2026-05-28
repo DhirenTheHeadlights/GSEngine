@@ -106,17 +106,9 @@ export namespace gse::gui {
 			dropdown_config config = {};
 		};
 		static auto draw(const draw_context& ctx, const params& p, id& hot, id& active, id&) -> dropdown_result {
-			auto r =
-				draw::dropdown(
-					ctx,
-					std::string(p.name),
-					p.current_index,
-					p.options,
-					p.state,
-					hot,
-					active,
-					p.config
-				);
+			auto r = draw::dropdown(ctx, std::string(p.name), p.current_index, p.options, p.state, hot,
+									active,
+									p.config);
 			if (r.changed) {
 				p.current_index = r.new_index;
 			}
@@ -512,10 +504,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 				.layer = render_layer::modal
 			});
 
-			const float scrollbar_height = std::max(
-				20.f,
-				(visible_height / total_content_height) * visible_height
-			);
+			const float scrollbar_height = std::max(20.f, (visible_height / total_content_height) * visible_height);
 			const float scroll_ratio = max_scroll > 0.f ? state.scroll.offset / max_scroll : 0.f;
 			const float scrollbar_travel = visible_height - scrollbar_height;
 			const float scrollbar_y = scrollbar_track.top() - scroll_ratio * scrollbar_travel;

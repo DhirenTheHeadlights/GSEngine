@@ -253,10 +253,7 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 		return out;
 	};
 
-	const auto write_section = [&out, frame_time](
-		const std::string_view title,
-		const std::vector<row_view>& rows
-	) {
+	const auto write_section = [&out, frame_time](const std::string_view title, const std::vector<row_view>& rows) {
 		std::size_t tag_width = std::string_view("tag").size();
 		for (const auto& [e, per_frame, calls_per_frame] : rows) {
 			tag_width = std::max(tag_width, e->id.tag().size());
@@ -374,14 +371,8 @@ auto gse::profile::write_thread_breakdown(std::ofstream& out, const std::vector<
 		tag_width = std::max(tag_width, e->id.tag().size());
 	}
 
-	out << std::format(
-		"{:<{}}  {:>10}  {:>10}  {:>40}\n",
-		"tag",
-		tag_width,
-		"main/f",
-		"worker/f",
-		"per-tid /f (top 6)"
-	);
+	out << std::format("{:<{}}  {:>10}  {:>10}  {:>40}\n", "tag", tag_width, "main/f", "worker/f",
+					   "per-tid /f (top 6)");
 	out << std::string(tag_width + 2 + 10 + 2 + 10 + 2 + 40, '-') << '\n';
 
 	const std::size_t max_to_show = std::min<std::size_t>(20, sorted.size());
@@ -460,11 +451,7 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 
 	const auto main_tid = trace::main_tid();
 
-	std::function<std::size_t(
-		const trace::node&,
-		int
-	)>
-		max_label_width = [&](
+	std::function<std::size_t(const trace::node&, int)> max_label_width = [&](
 		const trace::node& n,
 		int depth
 	) -> std::size_t {
@@ -491,10 +478,7 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 		total_us / static_cast<double>(bar_width)
 	);
 
-	std::function<void(const trace::node&, int)> render = [&](
-		const trace::node& n,
-		int depth
-	) {
+	std::function<void(const trace::node&, int)> render = [&](const trace::node& n, int depth) {
 		if (depth > max_depth) {
 			return;
 		}
@@ -510,8 +494,7 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 		const double dur_us = duration.as<gse::microseconds>();
 
 		std::size_t col_start = static_cast<std::size_t>((offset_us / total_us) * static_cast<double>(bar_width));
-		std::size_t col_end =
-			static_cast<std::size_t>(((offset_us + dur_us) / total_us) * static_cast<double>(bar_width));
+		std::size_t col_end = static_cast<std::size_t>(((offset_us + dur_us) / total_us) * static_cast<double>(bar_width));
 		col_start = std::min(col_start, bar_width - 1);
 		col_end = std::min(col_end, bar_width);
 		if (col_end <= col_start) {
@@ -526,14 +509,7 @@ auto gse::profile::write_dag(std::ofstream& out) -> void {
 
 		const std::string indent(static_cast<std::size_t>(depth) * 2, ' ');
 		const auto label = std::format("{}{}", indent, n.id.tag());
-		out << std::format(
-			"|{}| {:>10.2f:us}  tid:{:<3}  {:<{}}\n",
-			bar,
-			duration,
-			n.trace_id,
-			label,
-			name_width
-		);
+		out << std::format("|{}| {:>10.2f:us}  tid:{:<3}  {:<{}}\n", bar, duration, n.trace_id, label, name_width);
 
 		for (std::size_t i = 0; i < n.children_count; ++i) {
 			render(n.children_first[i], depth + 1);

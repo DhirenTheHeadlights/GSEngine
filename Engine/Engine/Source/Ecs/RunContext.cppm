@@ -295,10 +295,7 @@ auto gse::make_locked_handle(access_token token, registry& reg, async::rw_mutex_
 
 template <typename Access>
 auto gse::access_trace_label() -> std::string {
-	return format_access_label(
-		is_read_access_v<Access> ? "read" : "write",
-		type_tag<access_element_t<Access>>()
-	);
+	return format_access_label(is_read_access_v<Access> ? "read" : "write", type_tag<access_element_t<Access>>());
 }
 
 template <typename... Accesses>

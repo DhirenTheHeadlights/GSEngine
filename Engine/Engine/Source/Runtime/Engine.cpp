@@ -140,10 +140,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 				}
 
 				m_boot_tasks_done.store(true, std::memory_order_release);
-				log::println(
-					log::category::runtime,
-					"boot: task::post complete, waiting for systems to settle"
-				);
+				log::println(log::category::runtime, "boot: task::post complete, waiting for systems to settle");
 			});
 		};
 	}
@@ -268,10 +265,7 @@ auto gse::engine::render() -> void {
 					if (m_frames_since_rendered >= 2) {
 						window::show(window_state);
 						m_window_shown = true;
-						log::println(
-							log::category::runtime,
-							"boot: window shown (loading screen on swapchain)"
-						);
+						log::println(log::category::runtime, "boot: window shown (loading screen on swapchain)");
 					}
 				}
 			}

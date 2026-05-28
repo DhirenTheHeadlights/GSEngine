@@ -46,10 +46,7 @@ namespace gse::renderer::capture {
 }
 
 auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const actions::system::data& sys, data& d) -> async::task<> {
-	const auto register_action = [&](
-		const std::string_view name,
-		const key default_key
-	) -> actions::handle {
+	const auto register_action = [&](const std::string_view name, const key default_key) -> actions::handle {
 		const id action_id = generate_id(name);
 		ctx.channels.push<actions::add_action_request>({
 			.name = std::string(name),
@@ -74,12 +71,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 	else {
 		const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
-		d.convert_pipeline =
-			gpu::build_compute_program(
-				*gpu_s.device,
-				*gpu_s.bindless_heaps,
-				entry::pod
-			);
+		d.convert_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
 
 		constexpr gpu::sampler_desc capture_sampler_desc{
 			.min = gpu::sampler_filter::nearest,
@@ -99,10 +91,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 				}
 			);
 
-			d.rgba_slots[i] = gpu_s.bindless_textures->allocate(
-				d.rgba_captures[i],
-				capture_sampler_desc
-			);
+			d.rgba_slots[i] = gpu_s.bindless_textures->allocate(d.rgba_captures[i], capture_sampler_desc);
 
 			d.y_planes[i] = gpu::bindless_image::create(
 				gpu_s.device->allocator(),
@@ -187,10 +176,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 					pixels[i + 3] = std::byte{ 0xFF };
 				}
 
-				const auto path = config::resource_path / "Screenshots" / std::format(
-																			  "screenshot_{}.png",
-																			  timestamp
-																		  );
+				const auto path = config::resource_path / "Screenshots" / std::format("screenshot_{}.png", timestamp);
 				std::filesystem::create_directories(path.parent_path());
 
 				image::write_png(path, w, h, 4, pixels.data());
@@ -272,11 +258,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 			if (d.recording->thread.joinable()) {
 				d.recording->thread.join();
 			}
-			log::println(
-				log::category::render,
-				"Recording stopped: {}",
-				d.recording->path.string()
-			);
+			log::println(log::category::render, "Recording stopped: {}", d.recording->path.string());
 		}
 		else if (d.encoder.stream_header().empty()) {
 			log::println(
@@ -287,10 +269,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		}
 		else {
 			d.recording->last_toggle = now;
-			const auto path = config::resource_path / "Recordings" / std::format(
-																		 "recording_{}.mp4",
-																		 system_clock::timestamp_filename()
-																	 );
+			const auto path = config::resource_path / "Recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename());
 			std::filesystem::create_directories(path.parent_path());
 
 			auto live = mp4::live_muxer::open(
@@ -314,36 +293,30 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 					std::swap(d.recording->queue, empty);
 					d.recording->running = true;
 				}
-				d.recording->thread = std::thread(
-					[muxer = std::move(*live), state = d.recording.get()] mutable {
-						while (true) {
-							std::unique_lock lock(state->mutex);
-							state->cv.wait(
-								lock,
-								[&] {
-									return !state->queue.empty() || !state->running;
-								}
-							);
-							while (!state->queue.empty()) {
-								auto unit = std::move(state->queue.front());
-								state->queue.pop();
-								lock.unlock();
-								muxer.append(std::move(unit));
-								lock.lock();
+				d.recording->thread = std::thread([muxer = std::move(*live), state = d.recording.get()] mutable {
+					while (true) {
+						std::unique_lock lock(state->mutex);
+						state->cv.wait(
+							lock,
+							[&] {
+								return !state->queue.empty() || !state->running;
 							}
-							if (!state->running) {
-								break;
-							}
+						);
+						while (!state->queue.empty()) {
+							auto unit = std::move(state->queue.front());
+							state->queue.pop();
+							lock.unlock();
+							muxer.append(std::move(unit));
+							lock.lock();
 						}
-						muxer.close();
+						if (!state->running) {
+							break;
+						}
 					}
-				);
+					muxer.close();
+				});
 				d.recording->active.store(true);
-				log::println(
-					log::category::render,
-					"Recording started: {}",
-					path.string()
-				);
+				log::println(log::category::render, "Recording started: {}", path.string());
 			}
 		}
 	}
@@ -371,10 +344,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 				d.clip_save_in_progress->store(true);
 
 				const auto path =
-					config::resource_path / "Clips" / std::format(
-														  "clip_{}.mp4",
-														  system_clock::timestamp_filename()
-													  );
+					config::resource_path / "Clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
 				std::filesystem::create_directories(path.parent_path());
 
 				std::vector<std::byte> stream_header_copy(
@@ -494,9 +464,5 @@ auto gse::renderer::capture::system::shutdown(shutdown_context&, data& d) -> voi
 	if (d.recording->thread.joinable()) {
 		d.recording->thread.join();
 	}
-	log::println(
-		log::category::render,
-		"Recording stopped on shutdown: {}",
-		d.recording->path.string()
-	);
+	log::println(log::category::render, "Recording stopped on shutdown: {}", d.recording->path.string());
 }

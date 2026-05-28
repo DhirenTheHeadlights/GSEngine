@@ -73,8 +73,5 @@ auto gse::vulkan::queue_timeline::wait_until(const device& device, const std::ui
 		.pSemaphores = &*m_semaphore,
 		.pValues = &value,
 	};
-	(void)device.raii_device().waitSemaphores(
-		wait_info,
-		std::numeric_limits<std::uint64_t>::max()
-	);
+	(void)device.raii_device().waitSemaphores(wait_info, std::numeric_limits<std::uint64_t>::max());
 }

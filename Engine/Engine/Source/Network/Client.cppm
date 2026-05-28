@@ -154,20 +154,12 @@ auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const ti
 	}
 
 	if (!m_socket.valid()) {
-		log::println(
-			log::level::error,
-			log::category::network,
-			"Client cannot connect because the socket is not valid"
-		);
+		log::println(log::level::error, log::category::network,
+					 "Client cannot connect because the socket is not valid");
 		return false;
 	}
 
-	log::println(
-		log::category::network,
-		"Client connecting to {}:{}...",
-		m_server.addr().ip,
-		m_server.addr().port
-	);
+	log::println(log::category::network, "Client connecting to {}:{}...", m_server.addr().ip, m_server.addr().port);
 	send(connection_request{});
 
 	m_state = state::connecting;
@@ -209,12 +201,7 @@ auto gse::network::client::tick() -> void {
 		const auto id = stream.read<std::uint64_t>();
 
 		if (m_state.load(std::memory_order_relaxed) == state::connecting && id == message_id_v<connection_accepted>) {
-			log::println(
-				log::category::network,
-				"Client connected to {}:{}",
-				m_server.addr().ip,
-				m_server.addr().port
-			);
+			log::println(log::category::network, "Client connected to {}:{}", m_server.addr().ip, m_server.addr().port);
 			m_state = state::connected;
 		}
 
@@ -225,12 +212,10 @@ auto gse::network::client::tick() -> void {
 		}
 
 		std::lock_guard lk(m_inbox_mutex);
-		m_inbox.emplace_back(
-			raw_message{
-				.id = id,
-				.payload = std::move(payload),
-			}
-		);
+		m_inbox.emplace_back(raw_message{
+			.id = id,
+			.payload = std::move(payload),
+		});
 	}
 
 	if (current == state::connected && m_input_clock.elapsed<std::uint32_t>() > milliseconds(16u)) {
@@ -250,13 +235,15 @@ auto gse::network::client::tick() -> void {
 		}
 
 		if (m_has_last_input) {
-			send(extract_input_frame(
-				m_last_input.state,
-				m_last_input.axis1_ids,
-				m_last_input.axis2_ids,
-				++m_input_sequence,
-				m_last_input.camera_yaw
-			));
+			send(
+				extract_input_frame(
+					m_last_input.state,
+					m_last_input.axis1_ids,
+					m_last_input.axis2_ids,
+					++m_input_sequence,
+					m_last_input.camera_yaw
+				)
+			);
 			m_input_clock.reset();
 
 			if (!next) {

@@ -77,40 +77,30 @@ auto gs::push_crosshair(gse::run_context& ctx, const gse::gui::system::data& gui
 	};
 
 	if (arm > 0.f) {
-		push_arm(
-			gse::gui::ui_rect::from_position_size(
-				{ center.x() - gap - arm, center.y() + thickness * 0.5f },
-				{ arm, thickness }
-			)
-		);
-		push_arm(
-			gse::gui::ui_rect::from_position_size(
-				{ center.x() + gap, center.y() + thickness * 0.5f },
-				{ arm, thickness }
-			)
-		);
-		push_arm(
-			gse::gui::ui_rect::from_position_size(
-				{ center.x() - thickness * 0.5f, center.y() + gap + arm },
-				{ thickness, arm }
-			)
-		);
-		push_arm(
-			gse::gui::ui_rect::from_position_size(
-				{ center.x() - thickness * 0.5f, center.y() - gap },
-				{ thickness, arm }
-			)
-		);
+		push_arm(gse::gui::ui_rect::from_position_size(
+			{ center.x() - gap - arm, center.y() + thickness * 0.5f },
+			{ arm, thickness }
+		));
+		push_arm(gse::gui::ui_rect::from_position_size(
+			{ center.x() + gap, center.y() + thickness * 0.5f },
+			{ arm, thickness }
+		));
+		push_arm(gse::gui::ui_rect::from_position_size(
+			{ center.x() - thickness * 0.5f, center.y() + gap + arm },
+			{ thickness, arm }
+		));
+		push_arm(gse::gui::ui_rect::from_position_size(
+			{ center.x() - thickness * 0.5f, center.y() - gap },
+			{ thickness, arm }
+		));
 	}
 
 	if (crosshair_d.show_dot) {
 		const float dot = crosshair_d.dot_size;
-		push_arm(
-			gse::gui::ui_rect::from_position_size(
-				{ center.x() - dot * 0.5f, center.y() + dot * 0.5f },
-				{ dot, dot }
-			)
-		);
+		push_arm(gse::gui::ui_rect::from_position_size(
+			{ center.x() - dot * 0.5f, center.y() + dot * 0.5f },
+			{ dot, dot }
+		));
 	}
 }
 
@@ -173,10 +163,7 @@ auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::gui::s
 						.val = 42,
 					});
 					ui.draw<gse::gui::text>({
-						.content = std::format(
-							"Test Quantity: {:.2f}",
-							gse::meters(5.0f)
-						),
+						.content = std::format("Test Quantity: {:.2f}", gse::meters(5.0f)),
 					});
 					ui.draw<gse::gui::text_input>({
 						.name = "Input Test",

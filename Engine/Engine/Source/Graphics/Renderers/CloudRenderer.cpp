@@ -194,26 +194,10 @@ auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data
 }
 
 auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.shape_bake_pipeline = gpu::build_compute_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		shape_bake_entry::pod
-	);
-	d.detail_bake_pipeline = gpu::build_compute_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		detail_bake_entry::pod
-	);
-	d.raymarch_pipeline = gpu::build_compute_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		raymarch_entry::pod
-	);
-	d.composite_pipeline = gpu::build_graphics_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		composite_entry::pod
-	);
+	d.shape_bake_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, shape_bake_entry::pod);
+	d.detail_bake_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, detail_bake_entry::pod);
+	d.raymarch_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, raymarch_entry::pod);
+	d.composite_pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, composite_entry::pod);
 
 	d.shape_noise = gpu::bindless_image::create(
 		gpu_s.device->allocator(),
@@ -255,10 +239,7 @@ auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::dat
 	);
 
 	d.noise_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, noise_sampler_desc);
-	d.atmosphere_lut_sampler = gpu::bindless_sampler::create(
-		*gpu_s.bindless_heaps,
-		atmosphere_lut_sampler_desc
-	);
+	d.atmosphere_lut_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, atmosphere_lut_sampler_desc);
 	d.sky_view_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, sky_view_sampler_desc);
 	d.composite_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, composite_sampler_desc);
 

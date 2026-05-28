@@ -406,10 +406,7 @@ auto gse::trace::compute_self_time(frame_storage& fs, std::size_t i) -> void {
 	std::ranges::sort(
 		segs_first,
 		segs_last,
-		[](
-		const frame_storage::seg& x,
-		const frame_storage::seg& y
-	) {
+		[](const frame_storage::seg& x, const frame_storage::seg& y) {
 			return x.a < y.a;
 		}
 	);

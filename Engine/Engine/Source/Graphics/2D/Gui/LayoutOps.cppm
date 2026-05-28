@@ -288,16 +288,8 @@ auto gse::gui::layout::centered(const ui_rect& parent, const vec2f child_size) -
 }
 
 auto gse::gui::layout::fit_card(const vec2f viewport_size, const vec2f min_size, const vec2f max_size, const vec2f margin) -> ui_rect {
-	const float w = std::clamp(
-		viewport_size.x() - margin.x() * 2.f,
-		min_size.x(),
-		max_size.x()
-	);
-	const float h = std::clamp(
-		viewport_size.y() - margin.y() * 2.f,
-		min_size.y(),
-		max_size.y()
-	);
+	const float w = std::clamp(viewport_size.x() - margin.x() * 2.f, min_size.x(), max_size.x());
+	const float h = std::clamp(viewport_size.y() - margin.y() * 2.f, min_size.y(), max_size.y());
 	const float left = (viewport_size.x() - w) * 0.5f;
 	const float top = (viewport_size.y() + h) * 0.5f;
 	return ui_rect::from_position_size(

@@ -139,28 +139,23 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> gpu::render_pass_data {
 }
 
 auto gse::gpu::context::execute_frame(data& d, scheduler& s) -> void {
-	d.render_graph->execute(
-		frame_request_drain{
-			.drain_passes =
-				[&s] {
-					auto requests = s.drain_channel<render_pass_request>();
-					std::vector<render_pass_data> passes;
-					passes.reserve(requests.size());
-					for (auto& req : requests) {
-						passes.push_back(to_pass_data(std::move(req)));
-					}
-					return passes;
-				},
-			.drain_images =
-				[&s] {
-					return s.drain_channel<transient_image_request>();
-				},
-			.drain_buffers =
-				[&s] {
-					return s.drain_channel<transient_buffer_request>();
-				},
-		}
-	);
+	d.render_graph->execute(frame_request_drain{
+		.drain_passes = [&s] {
+			auto requests = s.drain_channel<render_pass_request>();
+			std::vector<render_pass_data> passes;
+			passes.reserve(requests.size());
+			for (auto& req : requests) {
+				passes.push_back(to_pass_data(std::move(req)));
+			}
+			return passes;
+		},
+		.drain_images = [&s] {
+			return s.drain_channel<transient_image_request>();
+		},
+		.drain_buffers = [&s] {
+			return s.drain_channel<transient_buffer_request>();
+		},
+	});
 }
 
 auto gse::gpu::context::on_swap_chain_recreate(const data& d, swap_chain_recreate_callback callback) -> void {

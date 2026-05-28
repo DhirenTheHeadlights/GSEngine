@@ -42,12 +42,7 @@ auto gse::gpu::begin_transient(gpu::device& dev, const queue_id id, const std::s
 }
 
 auto gse::gpu::submit(gpu::device& dev, transient_command_buffer&& cmd, const queue_id id) -> submission {
-	return submission(
-		dev,
-		dev.transient().queue(id),
-		dev.transient().bin(),
-		std::move(cmd)
-	);
+	return submission(dev, dev.transient().queue(id), dev.transient().bin(), std::move(cmd));
 }
 
 auto gse::gpu::dispatch(gpu::device& dev, async::task<> task) -> void {

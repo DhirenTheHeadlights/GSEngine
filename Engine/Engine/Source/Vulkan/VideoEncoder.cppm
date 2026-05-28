@@ -244,10 +244,7 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 	};
 
 	vk::ExtensionProperties std_header_version{};
-	const auto name_len = std::min(
-		probe_caps.std_header_name.size(),
-		std_header_version.extensionName.size() - 1
-	);
+	const auto name_len = std::min(probe_caps.std_header_name.size(), std_header_version.extensionName.size() - 1);
 	std::ranges::copy_n(
 		probe_caps.std_header_name.begin(),
 		static_cast<std::ptrdiff_t>(name_len),
@@ -378,12 +375,7 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 		std::size_t data_size = 0;
 		(void)(*vk_dev).getEncodedVideoSessionParametersKHR(&get_info, nullptr, &data_size, nullptr);
 		enc.m_stream_header.resize(data_size);
-		(void)(*vk_dev).getEncodedVideoSessionParametersKHR(
-			&get_info,
-			nullptr,
-			&data_size,
-			enc.m_stream_header.data()
-		);
+		(void)(*vk_dev).getEncodedVideoSessionParametersKHR(&get_info, nullptr, &data_size, enc.m_stream_header.data());
 
 		log::println(
 			log::category::vulkan,
@@ -459,13 +451,7 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 	enc.m_clock = {};
 
 	const auto* const codec_name = probe_caps.codec == video_codec::av1 ? "AV1" : "H.265";
-	log::println(
-		log::category::vulkan,
-		"Video encoder created: {} {}x{}",
-		codec_name,
-		extent.x(),
-		extent.y()
-	);
+	log::println(log::category::vulkan, "Video encoder created: {} {}x{}", codec_name, extent.x(), extent.y());
 
 	return enc;
 }
@@ -665,8 +651,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 		.pStdReferenceInfo = ref_h265_std
 	};
 
-	const void* setup_dpb_pnext =
-		m_codec == video_codec::av1 ? static_cast<const void*>(&setup_av1_dpb) : &setup_h265_dpb;
+	const void* setup_dpb_pnext = m_codec == video_codec::av1 ? static_cast<const void*>(&setup_av1_dpb) : &setup_h265_dpb;
 	const void* ref_dpb_pnext = !use_reference
 		? nullptr
 		: (m_codec == video_codec::av1 ? static_cast<const void*>(&ref_av1_dpb) : &ref_h265_dpb);
@@ -854,10 +839,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	const gpu::submit_info submit{
 		.command_buffers = std::span(&cmd_submit, 1),
 	};
-	m_queue->submit_video_encode(
-		submit,
-		std::bit_cast<gpu::handle<fence>>(*slot.fence)
-	);
+	m_queue->submit_video_encode(submit, std::bit_cast<gpu::handle<fence>>(*slot.fence));
 	slot.submitted = true;
 	slot.has_output = true;
 

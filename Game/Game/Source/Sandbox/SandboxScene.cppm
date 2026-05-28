@@ -16,10 +16,7 @@ export namespace gs {
 }
 
 auto gs::sandbox_scene_setup(gse::scene& s) -> void {
-	s.set_player_factory([next_id = 0u](
-		gse::scene& sc,
-		std::optional<gse::id> server_id
-	) mutable -> gse::id {
+	s.set_player_factory([next_id = 0u](gse::scene& sc, std::optional<gse::id> server_id) mutable -> gse::id {
 		gse::id player_id;
 		if (server_id) {
 			player_id = gse::find_or_generate_id(server_id->number());
@@ -33,41 +30,20 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 		sc.registry().add_component<gse::free_camera::component>(
 			player_id,
 			{
-				.initial_position = gse::vec3<gse::position>(
-					0.f,
-					2.f,
-					0.f
-				),
+				.initial_position = gse::vec3<gse::position>(0.f, 2.f, 0.f),
 			}
 		);
 		return player_id;
 	});
 
-	constexpr auto floor_size = gse::vec3<gse::length>(
-		gse::meters(1000.f),
-		gse::meters(1.f),
-		gse::meters(1000.f)
-	);
+	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
 	s.spawn(
 		"Floor",
 		gs::static_box(
-			gse::vec3<gse::position>(
-				0.f,
-				-0.501f,
-				0.f
-			),
+			gse::vec3<gse::position>(0.f, -0.501f, 0.f),
 			floor_size,
-			gse::quat(
-				1.f,
-				0.f,
-				0.f,
-				0.f
-			),
-			gse::vec3f(
-				0.08f,
-				0.08f,
-				0.09f
-			),
+			gse::quat(1.f, 0.f, 0.f, 0.f),
+			gse::vec3f(0.08f, 0.08f, 0.09f),
 			0.45f,
 			0.0f
 		)
@@ -162,17 +138,12 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 		})
 		.identify();
 
-	s.build("Orbit Camera")
-		.with<gs::orbit_camera::component>({
-			.target = player_id,
-		});
+	s.build("Orbit Camera").with<gs::orbit_camera::component>({
+		.target = player_id,
+	});
 
 	s.build("Scene Camera")
 		.with<gse::free_camera::component>({
-			.initial_position = gse::vec3<gse::position>(
-				0.f,
-				5.f,
-				10.f
-			),
+			.initial_position = gse::vec3<gse::position>(0.f, 5.f, 10.f),
 		});
 }

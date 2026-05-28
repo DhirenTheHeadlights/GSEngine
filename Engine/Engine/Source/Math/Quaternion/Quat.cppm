@@ -125,10 +125,7 @@ constexpr gse::quaternion<T>::quaternion(const vec<T, 3>& axis, angle_t<T> angle
 }
 
 template <gse::internal::is_arithmetic T>
-constexpr gse::quaternion<T>::quaternion(angle_t<T> angle, const vec<T, 3>& axis) : quaternion(
-																						axis,
-																						angle
-																					) {
+constexpr gse::quaternion<T>::quaternion(angle_t<T> angle, const vec<T, 3>& axis) : quaternion(axis, angle) {
 }
 
 template <gse::internal::is_arithmetic T>
@@ -180,14 +177,8 @@ constexpr auto gse::quaternion<T>::euler_angles() const -> vec3<angle_t<T>> {
 	}
 	else {
 		angle_y = radians(std::asin(sinp));
-		angle_x = radians(std::atan2(
-			T(2) * (s() * x() + y() * z()),
-			T(1) - T(2) * (x() * x() + y() * y())
-		));
-		angle_z = radians(std::atan2(
-			T(2) * (s() * z() + x() * y()),
-			T(1) - T(2) * (y() * y() + z() * z())
-		));
+		angle_x = radians(std::atan2(T(2) * (s() * x() + y() * z()), T(1) - T(2) * (x() * x() + y() * y())));
+		angle_z = radians(std::atan2(T(2) * (s() * z() + x() * y()), T(1) - T(2) * (y() * y() + z() * z())));
 	}
 
 	return { angle_x, angle_y, angle_z };

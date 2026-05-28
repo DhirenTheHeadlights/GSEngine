@@ -109,14 +109,7 @@ auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc
 		.layer_count = layers,
 	};
 
-	return dev.create_image(
-		create_info,
-		gpu::memory_property_flag::device_local,
-		view_info,
-		nullptr,
-		tag,
-		loc
-	);
+	return dev.create_image(create_info, gpu::memory_property_flag::device_local, view_info, nullptr, tag, loc);
 }
 
 template <typename Device>

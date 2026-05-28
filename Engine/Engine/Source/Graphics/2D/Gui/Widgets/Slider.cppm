@@ -104,15 +104,7 @@ export namespace gse::gui {
 			T max;
 		};
 		static auto draw(draw_context& ctx, params p, id& hot, id& active, id&) -> void {
-			draw::slider<T, Unit>(
-				ctx,
-				std::string(p.name),
-				p.value,
-				p.min,
-				p.max,
-				hot,
-				active
-			);
+			draw::slider<T, Unit>(ctx, std::string(p.name), p.value, p.min, p.max, hot, active);
 		}
 	};
 
@@ -126,15 +118,7 @@ export namespace gse::gui {
 			vec<T, N> max;
 		};
 		static auto draw(draw_context& ctx, params p, id& hot, id& active, id&) -> void {
-			draw::slider<T, N>(
-				ctx,
-				std::string(p.name),
-				p.value,
-				p.min,
-				p.max,
-				hot,
-				active
-			);
+			draw::slider<T, N>(ctx, std::string(p.name), p.value, p.min, p.max, hot, active);
 		}
 	};
 }
@@ -178,15 +162,7 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T&
 	const std::array min_values = { min };
 	const std::array max_values = { max };
 	const std::string name_with_unit = name + " (" + std::string(Unit.unit_name) + ")";
-	slider_row<T, 1>(
-		ctx,
-		name_with_unit,
-		value_ptrs,
-		min_values,
-		max_values,
-		hot_widget_id,
-		active_widget_id
-	);
+	slider_row<T, 1>(ctx, name_with_unit, value_ptrs, min_values, max_values, hot_widget_id, active_widget_id);
 }
 
 template <typename T, std::size_t N>
@@ -218,15 +194,7 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gs
 	}
 
 	const std::string name_with_unit = name + " (" + std::string(Unit.unit_name) + ")";
-	slider_row<T, N>(
-		ctx,
-		name_with_unit,
-		value_ptrs,
-		min_values,
-		max_values,
-		hot_widget_id,
-		active_widget_id
-	);
+	slider_row<T, N>(ctx, name_with_unit, value_ptrs, min_values, max_values, hot_widget_id, active_widget_id);
 }
 
 template <typename T>
@@ -273,11 +241,10 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
 		fill_ratio = static_cast<float>(value_u - min_u) / static_cast<float>(range_u);
 	}
 
-	const ui_rect fill_rect =
-		ui_rect::from_position_size(
-			rect.top_left(),
-			{ rect.width() * fill_ratio, rect.height() }
-		);
+	const ui_rect fill_rect = ui_rect::from_position_size(
+		rect.top_left(),
+		{ rect.width() * fill_ratio, rect.height() }
+	);
 
 	ctx.queue_sprite({
 		.rect = fill_rect,
@@ -368,11 +335,7 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 		}
 	);
 
-	interaction::grab_active(
-		active_widget_id,
-		hot_widget_id,
-		hot_is_ours && ctx.mouse_pressed_for(value_area)
-	);
+	interaction::grab_active(active_widget_id, hot_widget_id, hot_is_ours && ctx.mouse_pressed_for(value_area));
 
 	interaction::release_active(
 		active_widget_id,

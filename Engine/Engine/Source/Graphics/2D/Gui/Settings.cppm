@@ -483,10 +483,7 @@ auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename
 					for (const auto& op : ops) {
 						dim_state.unit_names.push_back(op.name);
 					}
-					buffer = std::format(
-						"{}",
-						ops[dim_state.selected_unit_index].to_value(local_value)
-					);
+					buffer = std::format("{}", ops[dim_state.selected_unit_index].to_value(local_value));
 					dim_state.initialized = true;
 				}
 
@@ -528,10 +525,7 @@ auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename
 							.clip_rect = label_rect,
 						});
 
-						const gse::id input_id = gse::gui::ids::make_from_key(hash_combine(
-							category_hash,
-							input_suffix_hash
-						));
+						const gse::id input_id = gse::gui::ids::make_from_key(hash_combine(category_hash, input_suffix_hash));
 						gse::gui::draw::text_input_in_rect(
 							ctx,
 							input_id,
@@ -545,10 +539,7 @@ auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename
 						const std::size_t prev_index = dim_state.selected_unit_index;
 						const auto dd_result = gse::gui::draw::dropdown_in_rect_keyed(
 							ctx,
-							hash_combine(
-								category_hash,
-								unit_suffix_hash
-							),
+							hash_combine(category_hash, unit_suffix_hash),
 							dim_state.selected_unit_index,
 							dim_state.unit_names,
 							dim_state.dropdown_state,
@@ -700,10 +691,7 @@ auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename
 						{ content_rect.width(), widget_height }
 					);
 					if (row_rect.contains(b.ctx.input.mouse_position()) && b.ctx.input_available()) {
-						const gse::id tooltip_id = gui::ids::make_from_key(hash_combine(
-							category_hash,
-							tooltip_suffix_hash
-						));
+						const gse::id tooltip_id = gui::ids::make_from_key(hash_combine(category_hash, tooltip_suffix_hash));
 						b.ctx.set_tooltip(tooltip_id, describe_text);
 					}
 				}

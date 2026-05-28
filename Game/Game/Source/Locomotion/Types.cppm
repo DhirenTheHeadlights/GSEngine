@@ -99,6 +99,7 @@ export namespace gs::locomotion {
 		gse::vec3<gse::position> planted_foot_l;
 		gse::vec3<gse::position> planted_foot_r;
 		bool swing_initialized = false;
+		bool plant_initialized = false;
 		bool planted_initialized = false;
 	};
 

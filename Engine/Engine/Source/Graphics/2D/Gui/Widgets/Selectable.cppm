@@ -74,10 +74,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
 
 	ctx.queue_sprite({
 		.rect = row_rect,
-		.color = ctx.animated_color(
-			widget_id,
-			target_color
-		),
+		.color = ctx.animated_color(widget_id, target_color),
 		.texture = ctx.blank_texture,
 		.corner_radius = ctx.style.corner_radius
 	});

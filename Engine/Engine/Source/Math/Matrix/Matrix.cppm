@@ -15,8 +15,7 @@ export namespace gse::internal {
 		typename M::value_type;
 		{ M::extent_cols } -> std::convertible_to<std::size_t>;
 		{ M::extent_rows } -> std::convertible_to<std::size_t>;
-		{ m[0] };
-	};
+		{ m[0] }; };
 }
 
 export namespace gse {
@@ -95,42 +94,28 @@ export namespace gse {
 			this const Self& self,
 			const mat<E2, C2, R2>& rhs
 		)
-		requires(
-			Cols == C2 && Rows == R2 &&
-			gse::internal::are_addable<Element, E2>
-		);
+		requires(Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2>);
 
 		template <typename Self, internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 		constexpr auto operator-(
 			this const Self& self,
 			const mat<E2, C2, R2>& rhs
 		)
-		requires(
-			Cols == C2 && Rows == R2 &&
-			gse::internal::are_subtractable<Element, E2>
-		);
+		requires(Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2>);
 
 		template <typename Self, internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 		constexpr auto operator+=(
 			this Self& self,
 			const mat<E2, C2, R2>& rhs
 		) -> Self&
-		requires(
-			Cols == C2 && Rows == R2 &&
-			gse::internal::are_addable<Element, E2> &&
-			std::same_as<internal::add_exposed_t<Element, E2>, Element>
-		);
+		requires(Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2> && std::same_as<internal::add_exposed_t<Element, E2>, Element>);
 
 		template <typename Self, internal::is_vec_element E2, std::size_t C2, std::size_t R2>
 		constexpr auto operator-=(
 			this Self& self,
 			const mat<E2, C2, R2>& rhs
 		) -> Self&
-		requires(
-			Cols == C2 && Rows == R2 &&
-			gse::internal::are_subtractable<Element, E2> &&
-			std::same_as<internal::sub_exposed_t<Element, E2>, Element>
-		);
+		requires(Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2> && std::same_as<internal::sub_exposed_t<Element, E2>, Element>);
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator*(
@@ -151,20 +136,14 @@ export namespace gse {
 			this Self& self,
 			const S& rhs
 		) -> Self&
-		requires(
-			gse::internal::are_multipliable<Element, S> &&
-			std::same_as<internal::mul_exposed_t<Element, S>, Element>
-		);
+		requires(gse::internal::are_multipliable<Element, S> && std::same_as<internal::mul_exposed_t<Element, S>, Element>);
 
 		template <typename Self, internal::is_vec_element S>
 		constexpr auto operator/=(
 			this Self& self,
 			const S& rhs
 		) -> Self&
-		requires(
-			gse::internal::are_divisible<Element, S> &&
-			std::same_as<internal::div_exposed_t<Element, S>, Element>
-		);
+		requires(gse::internal::are_divisible<Element, S> && std::same_as<internal::div_exposed_t<Element, S>, Element>);
 
 		template <typename Self>
 		constexpr auto operator-(
@@ -426,270 +405,37 @@ constexpr auto gse::mat<Element, Cols, Rows>::determinant() const -> value_type 
 		return r(0, 0) * r(1, 1) - r(1, 0) * r(0, 1);
 	}
 	else if constexpr (Cols == 3) {
-		return r(
-				   0,
-				   0
-			   ) *
-			(r(
-				 1,
-				 1
-			 ) * r(
-					 2,
-					 2
-				 ) -
-			 r(
-				 2,
-				 1
-			 ) * r(
-					 1,
-					 2
-				 )) -
-			r(
-				1,
-				0
-			) *
-			(r(
-				 0,
-				 1
-			 ) * r(
-					 2,
-					 2
-				 ) -
-			 r(
-				 2,
-				 1
-			 ) * r(
-					 0,
-					 2
-				 )) +
-			r(
-				2,
-				0
-			) *
-			(r(
-				 0,
-				 1
-			 ) * r(
-					 1,
-					 2
-				 ) -
-			 r(
-				 1,
-				 1
-			 ) * r(
-					 0,
-					 2
-				 ));
+		return r(0, 0) *
+			(r(1, 1) * r(2, 2) -
+			 r(2, 1) * r(1, 2)) -
+			r(1, 0) *
+			(r(0, 1) * r(2, 2) -
+			 r(2, 1) * r(0, 2)) +
+			r(2, 0) *
+			(r(0, 1) * r(1, 2) -
+			 r(1, 1) * r(0, 2));
 	}
 	else if constexpr (Cols == 4) {
-		const value_type c0 = r(
-								  1,
-								  1
-							  ) *
-				(r(
-					 2,
-					 2
-				 ) * r(
-						 3,
-						 3
-					 ) -
-				 r(
-					 3,
-					 2
-				 ) * r(
-						 2,
-						 3
-					 )) -
-			r(
-				1,
-				2
-			) * (r(
-					 2,
-					 1
-				 ) * r(
-						 3,
-						 3
-					 ) -
-				 r(
-					 3,
-					 1
-				 ) * r(
-						 2,
-						 3
-					 )) +
-			r(
-				1,
-				3
-			) * (r(
-					 2,
-					 1
-				 ) * r(
-						 3,
-						 2
-					 ) -
-				 r(
-					 3,
-					 1
-				 ) * r(
-						 2,
-						 2
-					 ));
-		const value_type c1 = r(
-								  1,
-								  0
-							  ) *
-				(r(
-					 2,
-					 2
-				 ) * r(
-						 3,
-						 3
-					 ) -
-				 r(
-					 3,
-					 2
-				 ) * r(
-						 2,
-						 3
-					 )) -
-			r(
-				1,
-				2
-			) * (r(
-					 2,
-					 0
-				 ) * r(
-						 3,
-						 3
-					 ) -
-				 r(
-					 3,
-					 0
-				 ) * r(
-						 2,
-						 3
-					 )) +
-			r(
-				1,
-				3
-			) * (r(
-					 2,
-					 0
-				 ) * r(
-						 3,
-						 2
-					 ) -
-				 r(
-					 3,
-					 0
-				 ) * r(
-						 2,
-						 2
-					 ));
-		const value_type c2 = r(
-								  1,
-								  0
-							  ) *
-				(r(
-					 2,
-					 1
-				 ) * r(
-						 3,
-						 3
-					 ) -
-				 r(
-					 3,
-					 1
-				 ) * r(
-						 2,
-						 3
-					 )) -
-			r(
-				1,
-				1
-			) * (r(
-					 2,
-					 0
-				 ) * r(
-						 3,
-						 3
-					 ) -
-				 r(
-					 3,
-					 0
-				 ) * r(
-						 2,
-						 3
-					 )) +
-			r(
-				1,
-				3
-			) * (r(
-					 2,
-					 0
-				 ) * r(
-						 3,
-						 1
-					 ) -
-				 r(
-					 3,
-					 0
-				 ) * r(
-						 2,
-						 1
-					 ));
-		const value_type c3 = r(
-								  1,
-								  0
-							  ) *
-				(r(
-					 2,
-					 1
-				 ) * r(
-						 3,
-						 2
-					 ) -
-				 r(
-					 3,
-					 1
-				 ) * r(
-						 2,
-						 2
-					 )) -
-			r(
-				1,
-				1
-			) * (r(
-					 2,
-					 0
-				 ) * r(
-						 3,
-						 2
-					 ) -
-				 r(
-					 3,
-					 0
-				 ) * r(
-						 2,
-						 2
-					 )) +
-			r(
-				1,
-				2
-			) * (r(
-					 2,
-					 0
-				 ) * r(
-						 3,
-						 1
-					 ) -
-				 r(
-					 3,
-					 0
-				 ) * r(
-						 2,
-						 1
-					 ));
+		const value_type c0 = r(1, 1) *
+				(r(2, 2) * r(3, 3) -
+				 r(3, 2) * r(2, 3)) -
+			r(1, 2) * (r(2, 1) * r(3, 3) - r(3, 1) * r(2, 3)) +
+			r(1, 3) * (r(2, 1) * r(3, 2) - r(3, 1) * r(2, 2));
+		const value_type c1 = r(1, 0) *
+				(r(2, 2) * r(3, 3) -
+				 r(3, 2) * r(2, 3)) -
+			r(1, 2) * (r(2, 0) * r(3, 3) - r(3, 0) * r(2, 3)) +
+			r(1, 3) * (r(2, 0) * r(3, 2) - r(3, 0) * r(2, 2));
+		const value_type c2 = r(1, 0) *
+				(r(2, 1) * r(3, 3) -
+				 r(3, 1) * r(2, 3)) -
+			r(1, 1) * (r(2, 0) * r(3, 3) - r(3, 0) * r(2, 3)) +
+			r(1, 3) * (r(2, 0) * r(3, 1) - r(3, 0) * r(2, 1));
+		const value_type c3 = r(1, 0) *
+				(r(2, 1) * r(3, 2) -
+				 r(3, 1) * r(2, 2)) -
+			r(1, 1) * (r(2, 0) * r(3, 2) - r(3, 0) * r(2, 2)) +
+			r(1, 2) * (r(2, 0) * r(3, 1) - r(3, 0) * r(2, 1));
 		return r(0, 0) * c0 - r(0, 1) * c1 + r(0, 2) * c2 - r(0, 3) * c3;
 	}
 	else {
@@ -751,11 +497,7 @@ requires(Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2>)
 	using R = internal::add_exposed_t<Element, E2>;
 	std::conditional_t<std::same_as<R, Element>, Self, mat<R, Cols, Rows>> out{};
 	for (std::size_t c = 0; c < Cols; ++c) {
-		simd::add(
-			self.data[c].as_storage_span(),
-			rhs.data[c].as_storage_span(),
-			out.data[c].as_storage_span()
-		);
+		simd::add(self.data[c].as_storage_span(), rhs.data[c].as_storage_span(), out.data[c].as_storage_span());
 	}
 	return out;
 }
@@ -768,11 +510,7 @@ requires(Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2
 	using R = internal::sub_exposed_t<Element, E2>;
 	std::conditional_t<std::same_as<R, Element>, Self, mat<R, Cols, Rows>> out{};
 	for (std::size_t c = 0; c < Cols; ++c) {
-		simd::sub(
-			self.data[c].as_storage_span(),
-			rhs.data[c].as_storage_span(),
-			out.data[c].as_storage_span()
-		);
+		simd::sub(self.data[c].as_storage_span(), rhs.data[c].as_storage_span(), out.data[c].as_storage_span());
 	}
 	return out;
 }
@@ -783,11 +521,7 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator+=(this Self& self, const 
 requires(Cols == C2 && Rows == R2 && gse::internal::are_addable<Element, E2> && std::same_as<internal::add_exposed_t<Element, E2>, Element>)
 {
 	for (std::size_t c = 0; c < Cols; ++c) {
-		simd::add(
-			self.data[c].as_storage_span(),
-			rhs.data[c].as_storage_span(),
-			self.data[c].as_storage_span()
-		);
+		simd::add(self.data[c].as_storage_span(), rhs.data[c].as_storage_span(), self.data[c].as_storage_span());
 	}
 	return self;
 }
@@ -798,11 +532,7 @@ constexpr auto gse::mat<Element, Cols, Rows>::operator-=(this Self& self, const 
 requires(Cols == C2 && Rows == R2 && gse::internal::are_subtractable<Element, E2> && std::same_as<internal::sub_exposed_t<Element, E2>, Element>)
 {
 	for (std::size_t c = 0; c < Cols; ++c) {
-		simd::sub(
-			self.data[c].as_storage_span(),
-			rhs.data[c].as_storage_span(),
-			self.data[c].as_storage_span()
-		);
+		simd::sub(self.data[c].as_storage_span(), rhs.data[c].as_storage_span(), self.data[c].as_storage_span());
 	}
 	return self;
 }
@@ -864,11 +594,7 @@ template <typename Self>
 constexpr auto gse::mat<Element, Cols, Rows>::operator-(this const Self& self) -> Self {
 	Self out{};
 	for (std::size_t c = 0; c < Cols; ++c) {
-		simd::mul_s(
-			self.data[c].as_storage_span(),
-			static_cast<value_type>(-1),
-			out.data[c].as_storage_span()
-		);
+		simd::mul_s(self.data[c].as_storage_span(), static_cast<value_type>(-1), out.data[c].as_storage_span());
 	}
 	return out;
 }

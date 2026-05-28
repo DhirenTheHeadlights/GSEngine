@@ -223,12 +223,7 @@ auto gs::locomotion::finish_trial(gse::run_context& ctx, smoke_test::data& d, co
 
 	if (d.trial >= d.config.trials) {
 		d.stage = smoke_stage::done;
-		gse::log::println(
-			"locomotion_smoke: complete trials={} passed={} failed={}",
-			d.trial,
-			d.passed,
-			d.failed
-		);
+		gse::log::println("locomotion_smoke: complete trials={} passed={} failed={}", d.trial, d.passed, d.failed);
 		gse::shutdown();
 		return;
 	}

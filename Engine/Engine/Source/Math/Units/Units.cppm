@@ -203,8 +203,7 @@ namespace gse::internal {
 
 	template <>
 	struct quantity_units<gse::mass_tag> {
-		static constexpr auto units =
-			std::tuple{ gse::kilograms, gse::grams, gse::milligrams, gse::pounds, gse::ounces };
+		static constexpr auto units = std::tuple{ gse::kilograms, gse::grams, gse::milligrams, gse::pounds, gse::ounces };
 	};
 }
 
@@ -417,8 +416,7 @@ namespace gse::internal {
 
 	template <>
 	struct quantity_units<gse::velocity_tag> {
-		static constexpr auto units =
-			std::tuple{ gse::meters_per_second, gse::kilometers_per_hour, gse::miles_per_hour };
+		static constexpr auto units = std::tuple{ gse::meters_per_second, gse::kilometers_per_hour, gse::miles_per_hour };
 	};
 }
 

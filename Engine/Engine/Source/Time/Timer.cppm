@@ -37,13 +37,7 @@ gse::scoped_timer::~scoped_timer() {
 	if (!m_completed) {
 		const auto elapsed_time = elapsed<float>().as<milliseconds>();
 		if (m_print) {
-			log::println(
-				log::level::debug,
-				log::category::runtime,
-				"Timer '{}' took {}",
-				m_name,
-				elapsed_time
-			);
+			log::println(log::level::debug, log::category::runtime, "Timer '{}' took {}", m_name, elapsed_time);
 		}
 	}
 }

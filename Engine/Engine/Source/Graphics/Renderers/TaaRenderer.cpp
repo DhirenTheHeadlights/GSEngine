@@ -87,10 +87,7 @@ auto gse::renderer::taa::recreate_history(const gpu::context::data& gpu_s, syste
 				.format = gpu::image_format::r16g16b16a16_sfloat,
 				.usage = gpu::image_flag::color_attachment | gpu::image_flag::sampled,
 			},
-			std::format(
-				"taa_history_{}",
-				i
-			)
+			std::format("taa_history_{}", i)
 		);
 		gpu::transition_image_to(*gpu_s.device, d.history[i]);
 		d.history_views[i].rebind_sampled(*gpu_s.bindless_heaps, d.history[i]);
@@ -109,12 +106,7 @@ auto gse::renderer::taa::rebind_views(const gpu::context::data& gpu_s, system::d
 }
 
 auto gse::renderer::taa::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.pipeline =
-		gpu::build_graphics_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			entry::pod
-		);
+	d.pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
 
 	d.sampler = gpu::bindless_sampler::create(
 		*gpu_s.bindless_heaps,

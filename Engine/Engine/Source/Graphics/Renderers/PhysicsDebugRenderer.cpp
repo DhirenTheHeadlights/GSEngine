@@ -271,13 +271,7 @@ auto gse::renderer::physics_debug::build_contact_debug(const collision_informati
 		add_line(pz1, pz2, satisfaction_color, out_vertices);
 
 		constexpr length min_normal_len = meters(0.15f);
-		const length normal_len = std::max<length>(
-			std::min<length>(
-				penetration,
-				meters(0.5f)
-			),
-			min_normal_len
-		);
+		const length normal_len = std::max<length>(std::min<length>(penetration, meters(0.5f)), min_normal_len);
 		const auto normal_end = p + n * normal_len;
 		add_line(p, normal_end, normal_color, out_vertices);
 	}
@@ -326,18 +320,9 @@ auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& 
 }
 
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const physics::system::data& ps) -> async::task<> {
-	d.pipeline_instanced = gpu::build_graphics_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		instanced_entry::pod
-	);
+	d.pipeline_instanced = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, instanced_entry::pod);
 
-	d.pipeline_lines =
-		gpu::build_graphics_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			lines_entry::pod
-		);
+	d.pipeline_lines = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, lines_entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
@@ -424,8 +409,7 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 			std::unordered_map<id, std::uint32_t> body_index_map;
 			const vbd::body_state* snapshot_states = nullptr;
 			std::uint32_t snapshot_body_count = 0;
-			const bool use_snapshot =
-				ps.use_gpu_solver && ps.gpu_solver.buffers_created() && ps.gpu_solver.body_count() > 0;
+			const bool use_snapshot = ps.use_gpu_solver && ps.gpu_solver.buffers_created() && ps.gpu_solver.body_count() > 0;
 
 			if (use_snapshot) {
 				const auto safe_slot = 1u - ps.gpu_solver.latest_snapshot_slot();
@@ -448,10 +432,7 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 				d.cpu_body_staging.resize(motions.size());
 				const auto motion_ids = motions.owner_ids();
 				const bool order_matches =
-					transforms.size() == motions.size() && std::ranges::equal(
-															   motion_ids,
-															   transforms.owner_ids()
-														   );
+					transforms.size() == motions.size() && std::ranges::equal(motion_ids, transforms.owner_ids());
 				for (std::size_t i = 0; i < motions.size(); ++i) {
 					const auto eid = motion_ids[i];
 					const auto* tc = order_matches ? std::addressof(transforms[i]) : transforms.find(eid);
@@ -662,18 +643,11 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 			rec.draw(unit_vert_count, count);
 		};
 
-		draw_shape(
-			d.box_instances,
-			d.box_instance_buffers[frame_index],
-			d.unit_box_vb,
-			d.unit_box_vert_count
-		);
-		draw_shape(
-			d.sphere_instances,
-			d.sphere_instance_buffers[frame_index],
-			d.unit_sphere_vb,
-			d.unit_sphere_vert_count
-		);
+		draw_shape(d.box_instances, d.box_instance_buffers[frame_index], d.unit_box_vb, d.unit_box_vert_count);
+		draw_shape(d.sphere_instances,
+				   d.sphere_instance_buffers[frame_index],
+				   d.unit_sphere_vb,
+				   d.unit_sphere_vert_count);
 		draw_shape(
 			d.capsule_instances,
 			d.capsule_instance_buffers[frame_index],

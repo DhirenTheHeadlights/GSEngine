@@ -36,11 +36,15 @@ export {
 	using ::jpeg_std_error;
 
 	inline auto jpeg_create_decompress_wrap(j_decompress_ptr cinfo) -> void {
-		jpeg_create_decompress(cinfo);
+		jpeg_create_decompress(
+			cinfo
+		);
 	}
 
 	inline auto jpeg_create_compress_wrap(j_compress_ptr cinfo) -> void {
-		jpeg_create_compress(cinfo);
+		jpeg_create_compress(
+			cinfo
+		);
 	}
 
 	inline constexpr int jpeg_true = TRUE;

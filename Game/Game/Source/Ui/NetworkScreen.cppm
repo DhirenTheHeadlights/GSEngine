@@ -122,11 +122,9 @@ auto gs::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void 
 	if (ui.draw<gse::gui::button>({
 			.text = "Send Ping",
 		}) && net.connection_state == gse::network::client::state::connected) {
-		send_message(
-			gse::network::ping{
-				.sequence = ++m_ping_seq,
-			}
-		);
+		send_message(gse::network::ping{
+			.sequence = ++m_ping_seq,
+		});
 	}
 }
 

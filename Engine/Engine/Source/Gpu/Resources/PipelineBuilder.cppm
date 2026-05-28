@@ -454,8 +454,7 @@ export namespace gse::gpu {
 			(apply.template operator()<Specs>(), ...);
 			if (e.call_count == 0 && !e.body_path.empty()) {
 				const auto slash = e.body_path.find_last_of('/');
-				e.call_names[e.call_count++] =
-					(slash == std::string_view::npos) ? e.body_path : e.body_path.substr(slash + 1);
+				e.call_names[e.call_count++] = (slash == std::string_view::npos) ? e.body_path : e.body_path.substr(slash + 1);
 			}
 			return e;
 		}();
@@ -847,11 +846,7 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 	};
 
 	if (slang_failed(global->createSession(sdesc, out.session.writeRef())) || !out.session) {
-		log::println(
-			log::level::error,
-			log::category::assets,
-			"Failed to create Slang session for pipeline builder"
-		);
+		log::println(log::level::error, log::category::assets, "Failed to create Slang session for pipeline builder");
 		return owned_slang_session{};
 	}
 	return out;
@@ -861,10 +856,7 @@ auto gse::gpu::log_slang_diagnostics(slang::IBlob* diagnostics) -> void {
 	if (!diagnostics || diagnostics->getBufferSize() == 0) {
 		return;
 	}
-	const std::string message(
-		static_cast<const char*>(diagnostics->getBufferPointer()),
-		diagnostics->getBufferSize()
-	);
+	const std::string message(static_cast<const char*>(diagnostics->getBufferPointer()), diagnostics->getBufferSize());
 	log::println(log::level::error, log::category::assets, "{}", message);
 }
 
@@ -996,12 +988,7 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 	out.push_back('\n');
 
 	out.append("[shader(\"compute\")]\n");
-	out.append(std::format(
-		"[numthreads({}, {}, {})]\n",
-		inputs.threads_x,
-		inputs.threads_y,
-		inputs.threads_z
-	));
+	out.append(std::format("[numthreads({}, {}, {})]\n", inputs.threads_x, inputs.threads_y, inputs.threads_z));
 	out.append("void main(");
 
 	bool first = true;
@@ -1255,12 +1242,7 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 		if (slang_failed(program->getEntryPointCode(static_cast<SlangInt>(ep_indices[i]), 0, blob.writeRef(), diags.writeRef())) || !blob) {
 			log_slang_diagnostics(diags.get());
 			dump_wrapper_source();
-			assert(
-				false,
-				"Failed to get SPIR-V for graphics entry point '{}' in {}",
-				stage_pod.entry_point,
-				sanitized
-			);
+			assert(false, "Failed to get SPIR-V for graphics entry point '{}' in {}", stage_pod.entry_point, sanitized);
 		}
 
 		const auto byte_size = blob->getBufferSize();
@@ -1399,7 +1381,10 @@ auto gse::gpu::build_program_layouts(const device& dev, const std::vector<shader
 
 auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const compute_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
 	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
-	assert(spec_data.empty() || spec_data.size() == pod.spec_data_size, "spec_data size mismatch with entry's spec_constants<T>");
+	assert(
+		spec_data.empty() || spec_data.size() == pod.spec_data_size,
+		"spec_data size mismatch with entry's spec_constants<T>"
+	);
 	const auto family_sets = pod.build_family_sets_fn();
 
 	shader_compile_inputs inputs;
@@ -1466,11 +1451,7 @@ auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const c
 		}
 	}
 
-	const auto bindless_mappings = vulkan::build_bindless_mappings(
-		pack_bindings,
-		heaps,
-		pod.push_constant_size
-	);
+	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, heaps, pod.push_constant_size);
 
 	std::vector<vulkan::specialization_entry> vk_spec_entries;
 	if (pod.build_spec_entries_fn && !spec_data.empty()) {
@@ -1502,10 +1483,7 @@ auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const c
 	};
 
 	const vulkan::shader_program_create_info info{
-		.stages = std::span(
-			&stage_info,
-			1
-		),
+		.stages = std::span(&stage_info, 1),
 		.set_layouts = layouts,
 		.push_constant_range = push_range,
 		.state = {},
@@ -1520,7 +1498,10 @@ auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const 
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");
 	assert(pod.build_family_sets_fn, "bindings missing on graphics entry");
-	assert(spec_data.empty() || spec_data.size() == pod.spec_data_size, "spec_data size mismatch with entry's spec_constants<T>");
+	assert(
+		spec_data.empty() || spec_data.size() == pod.spec_data_size,
+		"spec_data size mismatch with entry's spec_constants<T>"
+	);
 	const auto family_sets = pod.build_family_sets_fn();
 
 	const std::string body_source = pod.body_source.empty() ? load_body_file(pod.body_path) : std::string(pod.body_source);
@@ -1572,11 +1553,7 @@ auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const 
 		}
 	}
 
-	const auto bindless_mappings = vulkan::build_bindless_mappings(
-		pack_bindings,
-		heaps,
-		pod.push_constant_size
-	);
+	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, heaps, pod.push_constant_size);
 
 	std::vector<vulkan::specialization_entry> vk_spec_entries;
 	if (pod.build_spec_entries_fn && !spec_data.empty()) {
@@ -1600,10 +1577,7 @@ auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const 
 			.entry_point = "main",
 			.set_layouts = layouts,
 			.push_constant_range = push_range,
-			.next_stage = next_stage_for(
-				s.flag,
-				all_stages
-			),
+			.next_stage = next_stage_for(s.flag, all_stages),
 			.bindless_mappings = bindless_mappings.mappings,
 			.spec_entries = vk_spec_entries,
 			.spec_data = spec_data,

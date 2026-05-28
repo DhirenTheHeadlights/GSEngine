@@ -220,12 +220,7 @@ auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_
 
 		vk::raii::CommandPool pool = device_data.raii_device().createCommandPool(pool_info);
 
-		const std::string pool_name = std::format(
-			"Worker {} Frame {} Command Pool ({})",
-			worker,
-			frame,
-			label
-		);
+		const std::string pool_name = std::format("Worker {} Frame {} Command Pool ({})", worker, frame, label);
 		const vk::DebugUtilsObjectNameInfoEXT pool_name_info{
 			.objectType = vk::ObjectType::eCommandPool,
 			.objectHandle = std::bit_cast<std::uint64_t>(*pool),
@@ -242,14 +237,8 @@ auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_
 		std::vector<vk::raii::CommandBuffer> secondaries = device_data.raii_device().allocateCommandBuffers(alloc_info);
 
 		for (std::size_t i = 0; i < secondaries.size(); ++i) {
-			const std::string buffer_name =
-				std::format(
-					"Worker {} Frame {} Secondary {} ({})",
-					worker,
-					frame,
-					i,
-					label
-				);
+			const std::string buffer_name = std::format("Worker {} Frame {} Secondary {} ({})", worker, frame, i,
+														label);
 			const vk::DebugUtilsObjectNameInfoEXT buffer_name_info{
 				.objectType = vk::ObjectType::eCommandBuffer,
 				.objectHandle = std::bit_cast<std::uint64_t>(*secondaries[i]),
@@ -289,10 +278,7 @@ auto gse::vulkan::worker_command_pools::create(const device& device_data, const 
 	pools[0] = build_family_pools(
 		device_data,
 		queue_families[0],
-		std::format(
-			"queue_{}",
-			0
-		),
+		std::format("queue_{}", 0),
 		worker_count,
 		secondaries_per_pool
 	);
@@ -308,10 +294,7 @@ auto gse::vulkan::worker_command_pools::create(const device& device_data, const 
 			pools[i] = build_family_pools(
 				device_data,
 				queue_families[i],
-				std::format(
-					"queue_{}",
-					i
-				),
+				std::format("queue_{}", i),
 				worker_count,
 				secondaries_per_pool
 			);

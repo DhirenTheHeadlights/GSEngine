@@ -145,20 +145,12 @@ namespace gse::renderer::forward {
 auto gse::renderer::forward::rebind_tlas_views(const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, system::data& d) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_tlas_view>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		d.tlas_views[i].rebind(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
-			(*rt_state.tlas_ptrs[fi]).handle()
-		);
+		d.tlas_views[i].rebind(gpu_s.device->allocator(), *gpu_s.bindless_heaps, (*rt_state.tlas_ptrs[fi]).handle());
 	}
 }
 
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, const atmosphere::system::data& atm_state, const gi_probe::system::data& gi_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
-	d.pipeline = gpu::build_graphics_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		meshlet_entry::pod
-	);
+	d.pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, meshlet_entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
@@ -226,13 +218,9 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 					gpu_s.render_graph->framebuffer_image<targets::hdr_color>()
 				)
 			)
-			.depth(
-				gpu::clear_depth(
-					gpu::depth_clear{
-						.depth = 1.0f
-					}
-				)
-			);
+			.depth(gpu::clear_depth(gpu::depth_clear{
+				.depth = 1.0f
+			}));
 		rec.set_viewport(ext);
 		rec.set_scissor(ext);
 		co_return;
@@ -260,10 +248,8 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	auto spot_chunk = ctx.components<spot_light_component>();
 	auto point_chunk = ctx.components<point_light_component>();
 
-	const std::size_t total_lights = std::min(
-		dir_chunk.size() + spot_chunk.size() + point_chunk.size() + 1u,
-		max_lights
-	);
+	const std::size_t total_lights = std::min(dir_chunk.size() + spot_chunk.size() + point_chunk.size() + 1u,
+											  max_lights);
 	auto& staging = d.light_staging;
 	staging.assign(
 		total_lights * sizeof(shaders::forward::light),
@@ -347,10 +333,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	}
 
 	if (light_count > 0) {
-		d.light_buffers[frame_index].buffer().host_write(
-			staging.data(),
-			light_count * sizeof(shaders::forward::light)
-		);
+		d.light_buffers[frame_index].buffer().host_write(staging.data(), light_count * sizeof(shaders::forward::light));
 	}
 
 	const auto& normal_batches = data.normal_batches;

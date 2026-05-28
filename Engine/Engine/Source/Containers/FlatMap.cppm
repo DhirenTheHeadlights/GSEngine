@@ -46,8 +46,7 @@ export namespace gse {
 		auto emplace(
 			const Key& key,
 			Args&&... args
-		) -> std::
-			pair<iterator, bool>;
+		) -> std::pair<iterator, bool>;
 
 		auto erase(
 			const Key& key
@@ -225,9 +224,9 @@ auto gse::flat_map<Key, Value, Compare>::assign_unsorted(std::vector<value_type>
 	m_data = std::move(values);
 	std::ranges::sort(m_data, m_compare, &value_type::first);
 	const auto dup_begin = std::ranges::unique(
-							   m_data,
-							   {},
-							   &value_type::first
+		m_data,
+		{},
+		&value_type::first
 	)
 		.begin();
 	m_data.erase(dup_begin, m_data.end());

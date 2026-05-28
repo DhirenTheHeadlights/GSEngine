@@ -36,12 +36,7 @@ export namespace gs {
 		const gse::vec3<gse::position>& position,
 		const gse::vec3<gse::length>& size,
 		gse::mass m = gse::kilograms(1000.f),
-		const gse::quat& orientation = gse::quat(
-			1.f,
-			0.f,
-			0.f,
-			0.f
-		),
+		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f),
 		float roughness = 0.5f,
 		float metallic = 0.0f
 	) -> box_archetype;
@@ -61,17 +56,8 @@ export namespace gs {
 	auto static_box(
 		const gse::vec3<gse::position>& position,
 		const gse::vec3<gse::length>& size,
-		const gse::quat& orientation = gse::quat(
-			1.f,
-			0.f,
-			0.f,
-			0.f
-		),
-		const gse::vec3f& base_color = gse::vec3f(
-			0.5f,
-			0.5f,
-			0.5f
-		),
+		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f),
+		const gse::vec3f& base_color = gse::vec3f(0.5f, 0.5f, 0.5f),
 		float roughness = 0.8f,
 		float metallic = 0.0f
 	) -> box_archetype;
@@ -79,12 +65,7 @@ export namespace gs {
 	auto static_collider(
 		const gse::vec3<gse::position>& position,
 		const gse::vec3<gse::length>& size,
-		const gse::quat& orientation = gse::quat(
-			1.f,
-			0.f,
-			0.f,
-			0.f
-		)
+		const gse::quat& orientation = gse::quat(1.f, 0.f, 0.f, 0.f)
 	) -> static_collider_archetype;
 }
 
@@ -110,18 +91,9 @@ auto gs::box(const gse::vec3<gse::position>& position, const gse::vec3<gse::leng
 		.spec = {
 			.material = {
 				.base_color = gse::vec3f(
-					gse::random_value(
-						0.3f,
-						1.0f
-					),
-					gse::random_value(
-						0.3f,
-						1.0f
-					),
-					gse::random_value(
-						0.3f,
-						1.0f
-					)
+					gse::random_value(0.3f, 1.0f),
+					gse::random_value(0.3f, 1.0f),
+					gse::random_value(0.3f, 1.0f)
 				),
 				.roughness = roughness,
 				.metallic = metallic,

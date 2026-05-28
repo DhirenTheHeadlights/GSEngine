@@ -150,10 +150,7 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 		}
 		for (const auto& key : entry.keys) {
 			assert(
-				std::ranges::find(
-					existing.keys,
-					key
-				) == existing.keys.end(),
+				std::ranges::find(existing.keys, key) == existing.keys.end(),
 				"settings field name collision: category=\"{}\" key=\"{}\" is declared by both {} and {}",
 				entry.category,
 				key,
@@ -281,12 +278,8 @@ auto gse::save::registry::emit(const doc& d) -> std::string {
 
 auto gse::save::registry::load_from_file(const std::filesystem::path& path) -> bool {
 	if (!std::filesystem::exists(path)) {
-		log::println(
-			log::level::warning,
-			log::category::save_system,
-			"Settings file does not exist: {}",
-			path.string()
-		);
+		log::println(log::level::warning, log::category::save_system, "Settings file does not exist: {}",
+					 path.string());
 		return false;
 	}
 
