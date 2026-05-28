@@ -101,7 +101,7 @@ auto gse::vulkan::reset_fence(const device& dev, const gpu::handle<fence> fence)
 	dev.raii_device().resetFences(std::bit_cast<vk::Fence>(fence));
 }
 
-auto gse::vulkan::acquire_next_image(const device& dev, const gpu::handle<swap_chain> swapchain, const gpu::handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) -> acquire_next_image_result {
+auto gse::vulkan::acquire_next_image(const device& dev, const gpu::handle<swap_chain> swapchain, const gpu::handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) -> gpu::acquire_next_image_result {
 	const vk::AcquireNextImageInfoKHR info{
 		.swapchain = std::bit_cast<vk::SwapchainKHR>(swapchain),
 		.timeout = timeout_ns,
@@ -889,7 +889,7 @@ auto gse::vulkan::device::destroy_image_view(const gpu::handle<image_view> view)
 	(*m_device).destroyImageView(std::bit_cast<vk::ImageView>(view), nullptr);
 }
 
-auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<image>, memory_requirements> {
+auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& info) const -> std::pair<gpu::handle<image>, gpu::memory_requirements> {
 	const vk::ImageCreateInfo vk_info{
 		.flags = to_vk(info.flags),
 		.imageType = to_vk(info.type),
@@ -905,7 +905,7 @@ auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& inf
 	const auto reqs = (*m_device).getImageMemoryRequirements(vk_image);
 	return {
 		std::bit_cast<gpu::handle<image>>(vk_image),
-		memory_requirements{
+		gpu::memory_requirements{
 			.size = reqs.size,
 			.alignment = reqs.alignment,
 			.memory_type_bits = reqs.memoryTypeBits,
@@ -913,7 +913,7 @@ auto gse::vulkan::device::create_image_unbound(const gpu::image_create_info& inf
 	};
 }
 
-auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& info) const -> std::pair<gpu::handle<buffer>, memory_requirements> {
+auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& info) const -> std::pair<gpu::handle<buffer>, gpu::memory_requirements> {
 	const vk::BufferCreateInfo vk_info{
 		.pNext = info.pnext,
 		.size = info.size,
@@ -923,7 +923,7 @@ auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& i
 	const auto reqs = (*m_device).getBufferMemoryRequirements(vk_buffer);
 	return {
 		std::bit_cast<gpu::handle<buffer>>(vk_buffer),
-		memory_requirements{
+		gpu::memory_requirements{
 			.size = reqs.size,
 			.alignment = reqs.alignment,
 			.memory_type_bits = reqs.memoryTypeBits,
@@ -931,11 +931,11 @@ auto gse::vulkan::device::create_buffer_unbound(const gpu::buffer_create_info& i
 	};
 }
 
-auto gse::vulkan::device::bind_image_memory(const gpu::handle<image> img, const device_memory_handle mem, const gpu::device_size offset) const -> void {
+auto gse::vulkan::device::bind_image_memory(const gpu::handle<image> img, const gpu::device_memory_handle mem, const gpu::device_size offset) const -> void {
 	(*m_device).bindImageMemory(std::bit_cast<vk::Image>(img), std::bit_cast<vk::DeviceMemory>(mem.value), offset);
 }
 
-auto gse::vulkan::device::bind_buffer_memory(const gpu::handle<buffer> buf, const device_memory_handle mem, const gpu::device_size offset) const -> void {
+auto gse::vulkan::device::bind_buffer_memory(const gpu::handle<buffer> buf, const gpu::device_memory_handle mem, const gpu::device_size offset) const -> void {
 	(*m_device).bindBufferMemory(std::bit_cast<vk::Buffer>(buf), std::bit_cast<vk::DeviceMemory>(mem.value), offset);
 }
 
@@ -956,7 +956,7 @@ auto gse::vulkan::device::create_image_view(const gpu::handle<image> img, const 
 	return std::bit_cast<gpu::handle<image_view>>(vk_view);
 }
 
-auto gse::vulkan::device::allocate_aliased_memory(const gpu::device_size size, const std::uint32_t memory_type_index) const -> device_memory_handle {
+auto gse::vulkan::device::allocate_aliased_memory(const gpu::device_size size, const std::uint32_t memory_type_index) const -> gpu::device_memory_handle {
 	const vk::MemoryAllocateInfo alloc_info{
 		.allocationSize = size,
 		.memoryTypeIndex = memory_type_index,
@@ -967,7 +967,7 @@ auto gse::vulkan::device::allocate_aliased_memory(const gpu::device_size size, c
 	};
 }
 
-auto gse::vulkan::device::free_aliased_memory(const device_memory_handle mem) const -> void {
+auto gse::vulkan::device::free_aliased_memory(const gpu::device_memory_handle mem) const -> void {
 	if (!mem) {
 		return;
 	}

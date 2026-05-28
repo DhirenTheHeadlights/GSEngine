@@ -134,7 +134,7 @@ export namespace gse::gpu {
 			gpu::handle<vulkan::swap_chain> swapchain,
 			gpu::handle<semaphore> wait_semaphore,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
-		) const -> vulkan::acquire_next_image_result;
+		) const -> gpu::acquire_next_image_result;
 
 		auto wait_swapchain_release_fences(
 			const vulkan::swap_chain& sc
@@ -359,7 +359,7 @@ auto gse::gpu::device::create_swapchain_backend(const vec2i framebuffer_size, co
 	return vulkan::swap_chain::create(framebuffer_size, mode, m_instance, m_device_config, old_handle);
 }
 
-auto gse::gpu::device::acquire_swapchain_image(const gpu::handle<vulkan::swap_chain> swapchain, const gpu::handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> vulkan::acquire_next_image_result {
+auto gse::gpu::device::acquire_swapchain_image(const gpu::handle<vulkan::swap_chain> swapchain, const gpu::handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
 	return vulkan::acquire_next_image(m_device_config, swapchain, wait_semaphore, timeout_ns);
 }
 
