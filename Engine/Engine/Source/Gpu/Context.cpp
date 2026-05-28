@@ -27,7 +27,7 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 		*d.device
 	);
 	d.frame = frame::create(*d.device, *d.swapchain);
-	d.bindless_heaps = std::make_unique<bindless_heaps>(d.device->vulkan_device());
+	d.bindless_heaps = d.device->create_bindless_heaps();
 	d.bindless_textures = std::make_unique<bindless_texture_set>(*d.bindless_heaps);
 	d.render_graph = std::make_unique<gpu::render_graph>(
 		*d.device,

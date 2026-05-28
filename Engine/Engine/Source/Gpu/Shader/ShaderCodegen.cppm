@@ -107,7 +107,7 @@ export namespace gse::shaders {
 	};
 
 	struct family_set {
-		gpu::descriptor_set_type type = gpu::descriptor_set_type::persistent;
+		std::uint32_t set_index = 0;
 		std::vector<family_binding> bindings;
 	};
 
@@ -599,19 +599,18 @@ namespace gse::shaders {
 		constexpr auto desc_type = descriptor_type_of<T>();
 		constexpr auto count = descriptor_count_of<T>();
 		constexpr auto access = descriptor_access_of<T>();
-		constexpr auto set_type = static_cast<gpu::descriptor_set_type>(set_idx);
 		constexpr gpu::stage_flags all_stages = gpu::stage_flag::vertex | gpu::stage_flag::fragment |
 			gpu::stage_flag::compute | gpu::stage_flag::task | gpu::stage_flag::mesh;
 
 		auto it = std::ranges::find_if(
 			sets,
 			[&](const family_set& s) {
-				return s.type == set_type;
+				return s.set_index == set_idx;
 			}
 		);
 		if (it == sets.end()) {
 			sets.push_back(family_set{
-				.type = set_type
+				.set_index = set_idx
 			});
 			it = sets.end() - 1;
 		}
@@ -637,7 +636,7 @@ auto gse::shaders::build_family_sets(Pack) -> std::vector<family_set> {
 		sets,
 		{},
 		[](const family_set& s) {
-			return static_cast<std::uint32_t>(s.type);
+			return s.set_index;
 		}
 	);
 	return sets;
@@ -651,7 +650,7 @@ auto gse::shaders::build_combined_family_sets() -> std::vector<family_set> {
 			auto it = std::ranges::find_if(
 				result,
 				[&](const family_set& d) {
-					return d.type == s.type;
+					return d.set_index == s.set_index;
 				}
 			);
 			if (it == result.end()) {
@@ -669,7 +668,7 @@ auto gse::shaders::build_combined_family_sets() -> std::vector<family_set> {
 		result,
 		{},
 		[](const family_set& s) {
-			return static_cast<std::uint32_t>(s.type);
+			return s.set_index;
 		}
 	);
 	return result;

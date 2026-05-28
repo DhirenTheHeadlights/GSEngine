@@ -85,13 +85,105 @@ export namespace gse::gpu {
 			pass_marker_handle handle
 		) -> void;
 
-		[[nodiscard]] auto vulkan_instance(
-			this auto& self
-		) -> auto&;
+		[[nodiscard]]
+		auto create_shader_program(
+			const shader_program_create_info& info
+		) const -> shader_program;
 
-		[[nodiscard]] auto vulkan_device(
-			this auto& self
-		) -> auto&;
+		[[nodiscard]]
+		auto create_sync(
+			std::uint32_t image_count,
+			std::uint32_t frames_in_flight = max_frames_in_flight
+		) const -> sync;
+
+		[[nodiscard]]
+		auto create_timeline_semaphore(
+			std::uint64_t initial_value
+		) const -> semaphore;
+
+		[[nodiscard]]
+		auto create_timestamp_query_pool(
+			std::uint32_t capacity,
+			std::string_view label = {}
+		) const -> query_pool;
+
+		[[nodiscard]]
+		auto create_pipeline_stats_query_pool(
+			std::uint32_t capacity,
+			pipeline_statistic_flags statistics,
+			std::string_view label = {}
+		) const -> query_pool;
+
+		[[nodiscard]]
+		auto create_bindless_heaps(
+			std::uint32_t texture_capacity = 2048,
+			std::uint32_t image_capacity = 65536,
+			std::uint32_t buffer_capacity = 16384,
+			std::uint32_t sampler_capacity = 512
+		) const -> std::unique_ptr<bindless_heaps>;
+
+		[[nodiscard]]
+		auto create_swapchain_backend(
+			vec2i framebuffer_size,
+			present_mode mode,
+			gpu::handle<vulkan::swap_chain> old_handle = {}
+		) -> vulkan::swap_chain;
+
+		[[nodiscard]]
+		auto acquire_swapchain_image(
+			gpu::handle<vulkan::swap_chain> swapchain,
+			gpu::handle<semaphore> wait_semaphore,
+			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
+		) const -> vulkan::acquire_next_image_result;
+
+		auto wait_swapchain_release_fences(
+			const vulkan::swap_chain& sc
+		) const -> void;
+
+		auto reset_swapchain_release_fence(
+			vulkan::swap_chain& sc,
+			std::uint32_t image_index
+		) const -> void;
+
+		[[nodiscard]]
+		auto create_blas(
+			const acceleration_structure_geometry& geometry,
+			std::uint32_t prim_count
+		) -> blas;
+
+		[[nodiscard]]
+		auto create_tlas(
+			std::uint32_t max_instances
+		) -> tlas;
+
+		[[nodiscard]]
+		auto query_blas_build_sizes(
+			const acceleration_structure_geometry& geometry,
+			std::uint32_t prim_count
+		) const -> acceleration_structure_build_sizes;
+
+		[[nodiscard]]
+		auto acceleration_structure_scratch_alignment() const -> device_size;
+
+		auto host_upload_image_layers(
+			gpu::handle<image> img,
+			std::span<const void* const> layer_pointers,
+			vec2u extent
+		) const -> void;
+
+		[[nodiscard]]
+		auto create_buffer(
+			const buffer_create_info& info,
+			const void* data = nullptr,
+			std::string_view tag = "",
+			const std::source_location& loc = std::source_location::current()
+		) -> buffer;
+
+		[[nodiscard]]
+		auto create_image(
+			const image_desc& desc,
+			std::string_view tag = ""
+		) -> image;
 
 		[[nodiscard]]
 		auto frame_command_buffer(
@@ -239,10 +331,70 @@ auto gse::gpu::device::allocator(this auto& self) -> auto& {
 	return self.m_device_config;
 }
 
-auto gse::gpu::device::vulkan_instance(this auto& self) -> auto& {
-	return self.m_instance;
+auto gse::gpu::device::create_shader_program(const shader_program_create_info& info) const -> shader_program {
+	return shader_program::create(m_device_config, info);
 }
 
-auto gse::gpu::device::vulkan_device(this auto& self) -> auto& {
-	return self.m_device_config;
+auto gse::gpu::device::create_sync(const std::uint32_t image_count, const std::uint32_t frames_in_flight) const -> sync {
+	return sync::create(m_device_config, image_count, frames_in_flight);
+}
+
+auto gse::gpu::device::create_timeline_semaphore(const std::uint64_t initial_value) const -> semaphore {
+	return semaphore::create_timeline(m_device_config, initial_value);
+}
+
+auto gse::gpu::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) const -> query_pool {
+	return query_pool::create_timestamp(m_device_config, capacity, label);
+}
+
+auto gse::gpu::device::create_pipeline_stats_query_pool(const std::uint32_t capacity, const pipeline_statistic_flags statistics, const std::string_view label) const -> query_pool {
+	return query_pool::create_pipeline_stats(m_device_config, capacity, statistics, label);
+}
+
+auto gse::gpu::device::create_bindless_heaps(const std::uint32_t texture_capacity, const std::uint32_t image_capacity, const std::uint32_t buffer_capacity, const std::uint32_t sampler_capacity) const -> std::unique_ptr<bindless_heaps> {
+	return std::make_unique<bindless_heaps>(m_device_config, texture_capacity, image_capacity, buffer_capacity, sampler_capacity);
+}
+
+auto gse::gpu::device::create_swapchain_backend(const vec2i framebuffer_size, const present_mode mode, const gpu::handle<vulkan::swap_chain> old_handle) -> vulkan::swap_chain {
+	return vulkan::swap_chain::create(framebuffer_size, mode, m_instance, m_device_config, old_handle);
+}
+
+auto gse::gpu::device::acquire_swapchain_image(const gpu::handle<vulkan::swap_chain> swapchain, const gpu::handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> vulkan::acquire_next_image_result {
+	return vulkan::acquire_next_image(m_device_config, swapchain, wait_semaphore, timeout_ns);
+}
+
+auto gse::gpu::device::wait_swapchain_release_fences(const vulkan::swap_chain& sc) const -> void {
+	sc.wait_release_fences(m_device_config);
+}
+
+auto gse::gpu::device::reset_swapchain_release_fence(vulkan::swap_chain& sc, const std::uint32_t image_index) const -> void {
+	sc.reset_release_fence(m_device_config, image_index);
+}
+
+auto gse::gpu::device::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {
+	return blas::create(m_device_config, geometry, prim_count);
+}
+
+auto gse::gpu::device::create_tlas(const std::uint32_t max_instances) -> tlas {
+	return tlas::create(m_device_config, max_instances);
+}
+
+auto gse::gpu::device::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) const -> acceleration_structure_build_sizes {
+	return vulkan::query_blas_build_sizes(m_device_config, geometry, prim_count);
+}
+
+auto gse::gpu::device::acceleration_structure_scratch_alignment() const -> device_size {
+	return vulkan::scratch_offset_alignment(m_device_config);
+}
+
+auto gse::gpu::device::host_upload_image_layers(const gpu::handle<image> img, const std::span<const void* const> layer_pointers, const vec2u extent) const -> void {
+	vulkan::host_upload_image_layers(m_device_config, img, layer_pointers, extent);
+}
+
+auto gse::gpu::device::create_buffer(const buffer_create_info& info, const void* data, const std::string_view tag, const std::source_location& loc) -> buffer {
+	return m_device_config.create_buffer(info, data, tag, loc);
+}
+
+auto gse::gpu::device::create_image(const image_desc& desc, const std::string_view tag) -> image {
+	return image::create(m_device_config, desc, tag);
 }
