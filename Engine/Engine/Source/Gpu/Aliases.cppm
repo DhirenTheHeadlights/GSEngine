@@ -15,8 +15,6 @@ export namespace gse::gpu {
 	using fence = vulkan::fence;
 	using semaphore = vulkan::semaphore;
 	using sync = vulkan::sync;
-	using device_memory_handle = vulkan::device_memory_handle;
-	using memory_requirements = vulkan::memory_requirements;
 	using query_pool = vulkan::query_pool;
 	using pipeline_layout = vulkan::pipeline_layout;
 	using command_buffer = vulkan::command_buffer;
@@ -29,7 +27,6 @@ export namespace gse::gpu {
 	using shader_object_create_info = vulkan::shader_object_create_info;
 	using shader_program = vulkan::shader_program;
 	using shader_program_create_info = vulkan::shader_program_create_info;
-	using acceleration_structure_build_sizes = vulkan::acceleration_structure_build_sizes;
 	using video_encoder = vulkan::video_encoder;
 	using video_codec = vulkan::video_codec;
 	using encode_capabilities = vulkan::encode_capabilities;

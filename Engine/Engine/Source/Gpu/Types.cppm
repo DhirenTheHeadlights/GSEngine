@@ -801,4 +801,33 @@ export namespace gse::gpu {
 		std::vector<color_blend_equation> blend_equations;
 		std::vector<color_component_flags> color_write_masks;
 	};
+
+	struct memory_requirements {
+		device_size size = 0;
+		device_size alignment = 0;
+		std::uint32_t memory_type_bits = 0;
+	};
+
+	struct device_memory_handle {
+		std::uint64_t value = 0;
+
+		constexpr auto operator==(
+			const device_memory_handle&
+		) const -> bool = default;
+
+		explicit constexpr operator bool() const {
+			return value != 0;
+		}
+	};
+
+	struct acquire_next_image_result {
+		gse::gpu::result result = gse::gpu::result::error_unknown;
+		std::uint32_t image_index = 0;
+	};
+
+	struct acceleration_structure_build_sizes {
+		device_size acceleration_structure_size = 0;
+		device_size build_scratch_size = 0;
+		device_size update_scratch_size = 0;
+	};
 }

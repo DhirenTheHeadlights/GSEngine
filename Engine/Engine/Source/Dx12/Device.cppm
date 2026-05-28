@@ -12,35 +12,6 @@ import :accel;
 import :bindless;
 
 export namespace gse::dx12 {
-	struct memory_requirements {
-		gpu::device_size size = 0;
-		gpu::device_size alignment = 0;
-		std::uint32_t memory_type_bits = 0;
-	};
-
-	struct device_memory_handle {
-		std::uint64_t value = 0;
-
-		constexpr auto operator==(
-			const device_memory_handle&
-		) const -> bool = default;
-
-		explicit constexpr operator bool() const {
-			return value != 0;
-		}
-	};
-
-	struct acquire_next_image_result {
-		gpu::result result = gpu::result::error_unknown;
-		std::uint32_t image_index = 0;
-	};
-
-	struct acceleration_structure_build_sizes {
-		gpu::device_size acceleration_structure_size = 0;
-		gpu::device_size build_scratch_size = 0;
-		gpu::device_size update_scratch_size = 0;
-	};
-
 	class device final : public non_copyable {
 	public:
 		device() = default;
@@ -104,31 +75,31 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto create_buffer_unbound(
 			const gpu::buffer_create_info& info
-		) const -> std::pair<gpu::handle<buffer>, memory_requirements>;
+		) const -> std::pair<gpu::handle<buffer>, gpu::memory_requirements>;
 
 		[[nodiscard]] auto create_image_unbound(
 			const gpu::image_create_info& info
-		) const -> std::pair<gpu::handle<image>, memory_requirements>;
+		) const -> std::pair<gpu::handle<image>, gpu::memory_requirements>;
 
 		auto bind_buffer_memory(
 			gpu::handle<buffer> buf,
-			device_memory_handle mem,
+			gpu::device_memory_handle mem,
 			gpu::device_size offset
 		) const -> void;
 
 		auto bind_image_memory(
 			gpu::handle<image> img,
-			device_memory_handle mem,
+			gpu::device_memory_handle mem,
 			gpu::device_size offset
 		) const -> void;
 
 		[[nodiscard]] auto allocate_aliased_memory(
 			gpu::device_size size,
 			std::uint32_t memory_type_index
-		) const -> device_memory_handle;
+		) const -> gpu::device_memory_handle;
 
 		auto free_aliased_memory(
-			device_memory_handle mem
+			gpu::device_memory_handle mem
 		) const -> void;
 
 		[[nodiscard]] auto find_memory_type_index(
@@ -181,7 +152,7 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto query_blas_build_sizes(
 			const gpu::acceleration_structure_geometry& geometry,
 			std::uint32_t prim_count
-		) const -> acceleration_structure_build_sizes;
+		) const -> gpu::acceleration_structure_build_sizes;
 
 		[[nodiscard]] auto acceleration_structure_scratch_alignment() const -> gpu::device_size;
 
@@ -240,25 +211,25 @@ auto gse::dx12::device::destroy_image(const gpu::handle<image>) const -> void {
 auto gse::dx12::device::destroy_image_view(const gpu::handle<image_view>) const -> void {
 }
 
-auto gse::dx12::device::create_buffer_unbound(const gpu::buffer_create_info&) const -> std::pair<gpu::handle<buffer>, memory_requirements> {
+auto gse::dx12::device::create_buffer_unbound(const gpu::buffer_create_info&) const -> std::pair<gpu::handle<buffer>, gpu::memory_requirements> {
 	return {};
 }
 
-auto gse::dx12::device::create_image_unbound(const gpu::image_create_info&) const -> std::pair<gpu::handle<image>, memory_requirements> {
+auto gse::dx12::device::create_image_unbound(const gpu::image_create_info&) const -> std::pair<gpu::handle<image>, gpu::memory_requirements> {
 	return {};
 }
 
-auto gse::dx12::device::bind_buffer_memory(const gpu::handle<buffer>, const device_memory_handle, const gpu::device_size) const -> void {
+auto gse::dx12::device::bind_buffer_memory(const gpu::handle<buffer>, const gpu::device_memory_handle, const gpu::device_size) const -> void {
 }
 
-auto gse::dx12::device::bind_image_memory(const gpu::handle<image>, const device_memory_handle, const gpu::device_size) const -> void {
+auto gse::dx12::device::bind_image_memory(const gpu::handle<image>, const gpu::device_memory_handle, const gpu::device_size) const -> void {
 }
 
-auto gse::dx12::device::allocate_aliased_memory(const gpu::device_size, const std::uint32_t) const -> device_memory_handle {
+auto gse::dx12::device::allocate_aliased_memory(const gpu::device_size, const std::uint32_t) const -> gpu::device_memory_handle {
 	return {};
 }
 
-auto gse::dx12::device::free_aliased_memory(const device_memory_handle) const -> void {
+auto gse::dx12::device::free_aliased_memory(const gpu::device_memory_handle) const -> void {
 }
 
 auto gse::dx12::device::find_memory_type_index(const std::uint32_t, const gpu::memory_property_flags) const -> std::uint32_t {
@@ -296,7 +267,7 @@ auto gse::dx12::device::create_tlas(const std::uint32_t) -> tlas {
 	return {};
 }
 
-auto gse::dx12::device::query_blas_build_sizes(const gpu::acceleration_structure_geometry&, const std::uint32_t) const -> acceleration_structure_build_sizes {
+auto gse::dx12::device::query_blas_build_sizes(const gpu::acceleration_structure_geometry&, const std::uint32_t) const -> gpu::acceleration_structure_build_sizes {
 	return {};
 }
 

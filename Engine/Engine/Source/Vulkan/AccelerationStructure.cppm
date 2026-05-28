@@ -14,12 +14,6 @@ import gse.math;
 export namespace gse::vulkan {
 	using as_instance = vk::AccelerationStructureInstanceKHR;
 
-	struct acceleration_structure_build_sizes {
-		gpu::device_size acceleration_structure_size = 0;
-		gpu::device_size build_scratch_size = 0;
-		gpu::device_size update_scratch_size = 0;
-	};
-
 	[[nodiscard]]
 	auto buffer_device_address(
 		const device& dev,
@@ -41,7 +35,7 @@ export namespace gse::vulkan {
 		const device& dev,
 		const gpu::acceleration_structure_geometry& geometry,
 		std::uint32_t prim_count
-	) -> acceleration_structure_build_sizes;
+	) -> gpu::acceleration_structure_build_sizes;
 
 	[[nodiscard]]
 	auto acceleration_structure_address_from_handle(
@@ -159,7 +153,7 @@ namespace gse::vulkan {
 	auto query_tlas_build_sizes(
 		const device& dev,
 		std::uint32_t max_instances
-	) -> acceleration_structure_build_sizes;
+	) -> gpu::acceleration_structure_build_sizes;
 }
 
 auto gse::vulkan::to_vk_geometry(const gpu::acceleration_structure_geometry& g) -> vk::AccelerationStructureGeometryKHR {
@@ -225,7 +219,7 @@ auto gse::vulkan::pack_instance(const mat4f& transform, const std::uint32_t cust
 	};
 }
 
-auto gse::vulkan::query_blas_build_sizes(const device& dev, const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> acceleration_structure_build_sizes {
+auto gse::vulkan::query_blas_build_sizes(const device& dev, const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> gpu::acceleration_structure_build_sizes {
 	const auto vk_geometry = to_vk_geometry(geometry);
 	const vk::AccelerationStructureBuildGeometryInfoKHR sizing_info{
 		.type = vk::AccelerationStructureTypeKHR::eBottomLevel,
@@ -246,7 +240,7 @@ auto gse::vulkan::query_blas_build_sizes(const device& dev, const gpu::accelerat
 	};
 }
 
-auto gse::vulkan::query_tlas_build_sizes(const device& dev, const std::uint32_t max_instances) -> acceleration_structure_build_sizes {
+auto gse::vulkan::query_tlas_build_sizes(const device& dev, const std::uint32_t max_instances) -> gpu::acceleration_structure_build_sizes {
 	constexpr vk::AccelerationStructureGeometryInstancesDataKHR instances_data{
 		.arrayOfPointers = vk::False,
 	};

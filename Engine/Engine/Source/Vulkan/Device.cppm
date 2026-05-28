@@ -24,24 +24,6 @@ import gse.log;
 export namespace gse::vulkan {
 	class device;
 
-	struct memory_requirements {
-		gpu::device_size size = 0;
-		gpu::device_size alignment = 0;
-		std::uint32_t memory_type_bits = 0;
-	};
-
-	struct device_memory_handle {
-		std::uint64_t value = 0;
-
-		constexpr auto operator==(
-			const device_memory_handle&
-		) const -> bool = default;
-
-		explicit constexpr operator bool() const {
-			return value != 0;
-		}
-	};
-
 	auto host_transition_image_to_general(
 		const device& dev,
 		gpu::handle<image> img,
@@ -68,18 +50,13 @@ export namespace gse::vulkan {
 		gpu::handle<fence> fence
 	) -> void;
 
-	struct acquire_next_image_result {
-		gpu::result result = gpu::result::error_unknown;
-		std::uint32_t image_index = 0;
-	};
-
 	[[nodiscard]]
 	auto acquire_next_image(
 		const device& dev,
 		gpu::handle<swap_chain> swapchain,
 		gpu::handle<semaphore> wait_semaphore,
 		std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
-	) -> acquire_next_image_result;
+	) -> gpu::acquire_next_image_result;
 
 	struct device_creation_result;
 
@@ -197,22 +174,22 @@ export namespace gse::vulkan {
 		[[nodiscard]]
 		auto create_image_unbound(
 			const gpu::image_create_info& info
-		) const -> std::pair<gpu::handle<image>, memory_requirements>;
+		) const -> std::pair<gpu::handle<image>, gpu::memory_requirements>;
 
 		[[nodiscard]]
 		auto create_buffer_unbound(
 			const gpu::buffer_create_info& info
-		) const -> std::pair<gpu::handle<buffer>, memory_requirements>;
+		) const -> std::pair<gpu::handle<buffer>, gpu::memory_requirements>;
 
 		auto bind_image_memory(
 			gpu::handle<image> img,
-			device_memory_handle mem,
+			gpu::device_memory_handle mem,
 			gpu::device_size offset
 		) const -> void;
 
 		auto bind_buffer_memory(
 			gpu::handle<buffer> buf,
-			device_memory_handle mem,
+			gpu::device_memory_handle mem,
 			gpu::device_size offset
 		) const -> void;
 
@@ -226,10 +203,10 @@ export namespace gse::vulkan {
 		auto allocate_aliased_memory(
 			gpu::device_size size,
 			std::uint32_t memory_type_index
-		) const -> device_memory_handle;
+		) const -> gpu::device_memory_handle;
 
 		auto free_aliased_memory(
-			device_memory_handle mem
+			gpu::device_memory_handle mem
 		) const -> void;
 
 		[[nodiscard]]

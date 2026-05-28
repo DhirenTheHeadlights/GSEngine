@@ -51,7 +51,7 @@ export namespace gse::gpu {
 		auto acquire(
 			handle<semaphore> wait_semaphore,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
-		) const -> vulkan::acquire_next_image_result;
+		) const -> gpu::acquire_next_image_result;
 
 		[[nodiscard]]
 		auto present(
@@ -155,7 +155,7 @@ auto gse::gpu::swap_chain::image_view(const std::uint32_t index) const -> handle
 	return m_config.image_view(index);
 }
 
-auto gse::gpu::swap_chain::acquire(const handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> vulkan::acquire_next_image_result {
+auto gse::gpu::swap_chain::acquire(const handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
 	return m_device->acquire_swapchain_image(m_config.handle(), wait_semaphore, timeout_ns);
 }
 
