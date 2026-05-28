@@ -66,6 +66,8 @@ export import :settings;
 export import :slider_widget;
 export import :spot_light;
 export import :styles;
+export import :text_area_widget;
+export import :text_buffer;
 export import :text_widget;
 export import :texture;
 export import :texture_compiler;
