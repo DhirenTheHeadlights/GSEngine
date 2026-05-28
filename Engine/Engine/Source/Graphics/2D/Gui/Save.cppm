@@ -118,10 +118,7 @@ auto gse::gui::split(const std::string_view text, const char sep) -> std::vector
 	std::size_t start = 0;
 	while (start <= text.size()) {
 		const std::size_t end = text.find(sep, start);
-		const auto piece = end == std::string_view::npos ? text.substr(start) : text.substr(
-																					start,
-																					end - start
-																				);
+		const auto piece = end == std::string_view::npos ? text.substr(start) : text.substr(start, end - start);
 		if (!piece.empty()) {
 			out.emplace_back(piece);
 		}

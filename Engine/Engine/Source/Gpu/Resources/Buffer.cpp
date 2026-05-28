@@ -32,12 +32,7 @@ auto gse::upload_to_buffers_async(gpu::device& dev, std::vector<upload_entry> en
 			);
 	}
 
-	co_return co_await submit(
-		dev,
-		std::move(cmd),
-		gpu::queue_id::graphics
-	)
-		.retain(std::move(stagings));
+	co_return co_await submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(stagings));
 }
 
 auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_upload> uploads) -> sync_token {
@@ -73,11 +68,5 @@ auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_
 			);
 	}
 
-	return submit(
-			   dev,
-			   std::move(cmd),
-			   queue_id::graphics
-	)
-		.retain(std::move(stagings))
-		.submit_sync();
+	return submit(dev, std::move(cmd), queue_id::graphics).retain(std::move(stagings)).submit_sync();
 }

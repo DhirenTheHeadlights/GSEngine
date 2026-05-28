@@ -29,12 +29,7 @@ namespace gse::audio {
 auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool {
 	std::ifstream file(src, std::ios::binary | std::ios::ate);
 	if (!file.is_open()) {
-		log::println(
-			log::level::warning,
-			log::category::assets,
-			"Failed to open audio source: {}",
-			src.string()
-		);
+		log::println(log::level::warning, log::category::assets, "Failed to open audio source: {}", src.string());
 		return false;
 	}
 	const auto size = file.tellg();
@@ -45,11 +40,7 @@ auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool
 }
 
 gse::audio_clip::audio_clip(const std::filesystem::path& filepath)
-	: identifiable(
-		  filepath,
-		  config::baked_resource_path
-	  ),
-	  m_path(filepath) {
+	: identifiable(filepath, config::baked_resource_path), m_path(filepath) {
 }
 
 auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
@@ -120,12 +111,7 @@ auto gse::audio::system::allocate_voice(data& d, const audio_clip& clip, const b
 	active = true;
 
 	const ma_decoder_config cfg = ma_decoder_config_init(ma_format_value_f32, 0, 0);
-	auto result = ma_decoder_init_memory(
-		clip.data().data(),
-		clip.data().size(),
-		&cfg,
-		&decoder
-	);
+	auto result = ma_decoder_init_memory(clip.data().data(), clip.data().size(), &cfg, &decoder);
 	assert(result == ma_result_success, "Failed to init audio decoder");
 
 	result = ma_sound_init_from_data_source(&d.engine->inner, &decoder, 0, nullptr, &sound);
@@ -163,10 +149,7 @@ auto gse::audio::system::run(run_context& ctx, data& d) -> async::task<> {
 	const auto result = ma_engine_init(&cfg, &d.engine->inner);
 	assert(result == ma_result_success, "Failed to initialize audio engine");
 	d.engine_initialized = true;
-	ma_engine_set_volume(
-		&d.engine->inner,
-		d.master_vol.value(percentage<float>::bound::zero_to_one)
-	);
+	ma_engine_set_volume(&d.engine->inner, d.master_vol.value(percentage<float>::bound::zero_to_one));
 
 	while (true) {
 		for (const auto& req : ctx.read_channel<play_request>()) {
@@ -204,10 +187,7 @@ auto gse::audio::system::run(run_context& ctx, data& d) -> async::task<> {
 		for (const auto& req : ctx.read_channel<set_master_volume_request>()) {
 			d.master_vol = req.vol;
 			if (d.engine_initialized) {
-				ma_engine_set_volume(
-					&d.engine->inner,
-					req.vol.value(percentage<float>::bound::zero_to_one)
-				);
+				ma_engine_set_volume(&d.engine->inner, req.vol.value(percentage<float>::bound::zero_to_one));
 			}
 		}
 

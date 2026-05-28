@@ -109,12 +109,9 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	});
 
 	const float inset = ctx.style.separator_thickness * 2.f;
-	const float fill_ratio =
-		total == 0 ? 0.f : std::clamp(
-							   static_cast<float>(done) / static_cast<float>(total),
-							   0.f,
-							   1.f
-						   );
+	const float fill_ratio = total == 0 ? 0.f : std::clamp(static_cast<float>(done) / static_cast<float>(total),
+														   0.f,
+														   1.f);
 	const float fill_width = (bar_width - inset * 2.f) * fill_ratio;
 
 	if (fill_width > 0.f) {

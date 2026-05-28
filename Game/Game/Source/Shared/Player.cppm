@@ -124,22 +124,8 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 
 				auto& p = players[i];
 				const gse::quat initial_orientation = gse::normalize(
-					gse::quat(
-						gse::vec3f(
-							0.f,
-							1.f,
-							0.f
-						),
-						p.yaw
-					) *
-					gse::quat(
-						gse::vec3f(
-							1.f,
-							0.f,
-							0.f
-						),
-						p.pitch
-					)
+					gse::quat(gse::vec3f(0.f, 1.f, 0.f), p.yaw) *
+					gse::quat(gse::vec3f(1.f, 0.f, 0.f), p.pitch)
 				);
 
 				ctx.add_component<gse::camera::follow_component>(
@@ -176,11 +162,8 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 						d.camera_level = std::max(0, d.camera_level - 1);
 					}
 					else if (scroll.y() < 0.f) {
-						d.camera_level =
-							std::min(
-								static_cast<int>(camera_distance_levels_m.size()) - 1,
-								d.camera_level + 1
-							);
+						d.camera_level = std::min(static_cast<int>(camera_distance_levels_m.size()) - 1,
+												  d.camera_level + 1);
 					}
 				}
 
@@ -231,32 +214,10 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 					);
 					const gse::length distance = gse::meters(camera_distance_levels_m[level]);
 					const gse::quat camera_orientation = gse::normalize(
-						gse::quat(
-							gse::vec3f(
-								0.f,
-								1.f,
-								0.f
-							),
-							p.yaw
-						) *
-						gse::quat(
-							gse::vec3f(
-								1.f,
-								0.f,
-								0.f
-							),
-							p.pitch
-						)
+						gse::quat(gse::vec3f(0.f, 1.f, 0.f), p.yaw) *
+						gse::quat(gse::vec3f(1.f, 0.f, 0.f), p.pitch)
 					);
-					const gse::vec3f camera_forward =
-						gse::rotate_vector(
-							camera_orientation,
-							gse::vec3f(
-								0.f,
-								0.f,
-								-1.f
-							)
-						);
+					const gse::vec3f camera_forward = gse::rotate_vector(camera_orientation, gse::vec3f(0.f, 0.f, -1.f));
 					const auto target_pos = pelvis_tc->position;
 					const auto inflation = p.collision_radius * 2.f;
 					const auto for_each_static_box = [&](auto body) {
@@ -276,11 +237,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 								continue;
 							}
 							const gse::physics::box_shape inflated{
-								.size = shape->size + gse::vec3<gse::displacement>(
-														  inflation,
-														  inflation,
-														  inflation
-													  )
+								.size = shape->size + gse::vec3<gse::displacement>(inflation, inflation, inflation)
 							};
 							body(gse::bounding_box(*col_tc, inflated));
 						}
@@ -306,10 +263,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 					if (p.collide_with_geometry && displacement_mag > gse::meters(1e-5f)) {
 						for_each_static_box([&](const gse::bounding_box& bb) {
 							if (const auto hit = gse::narrow_phase_collision::segment_obb_first_hit(bb, target_pos, desired_camera_pos)) {
-								const auto safe = std::max(
-									hit->distance - p.collision_skin,
-									gse::meters(0.f)
-								);
+								const auto safe = std::max(hit->distance - p.collision_skin, gse::meters(0.f));
 								const float factor = safe / displacement_mag;
 								if (factor < spring_factor) {
 									spring_factor = factor;

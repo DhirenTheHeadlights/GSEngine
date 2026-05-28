@@ -96,13 +96,7 @@ extern "C" void GFSDK_AFTERMATH_CALL gse_aftermath_gpu_crash_dump_cb(const void*
 	const auto seq = s->dump_counter++;
 	const auto stem = std::format("gse_{}_{}", gse::system_clock::timestamp_filename(), seq);
 	s->last_dump_stem = stem;
-	const auto path = gse::vulkan::write_dump_to_disk(
-		s->cfg.dump_directory,
-		stem,
-		".nv-gpudmp",
-		dump,
-		size
-	);
+	const auto path = gse::vulkan::write_dump_to_disk(s->cfg.dump_directory, stem, ".nv-gpudmp", dump, size);
 	gse::log::println(
 		gse::log::level::error,
 		gse::log::category::vulkan,
@@ -207,10 +201,7 @@ auto gse::vulkan::aftermath::required_device_extensions() const -> std::span<con
 	if (!available()) {
 		return {};
 	}
-	return std::span<const char* const>(
-		k_required_device_extensions.data(),
-		k_required_device_extensions.size()
-	);
+	return std::span<const char* const>(k_required_device_extensions.data(), k_required_device_extensions.size());
 }
 
 auto gse::vulkan::aftermath::device_create_info_pnext(void* next) -> void* {
@@ -271,9 +262,6 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 
 	std::ofstream out(path, std::ios::binary);
 	if (out) {
-		out.write(
-			reinterpret_cast<const char*>(bytes.data()),
-			static_cast<std::streamsize>(bytes.size())
-		);
+		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
 }

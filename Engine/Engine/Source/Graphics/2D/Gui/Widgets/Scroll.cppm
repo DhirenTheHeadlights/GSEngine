@@ -43,10 +43,7 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 
 	const ui_rect visible_rect = ui_rect::from_position_size(
 		{ ctx.layout_cursor.x(), ctx.layout_cursor.y() },
-		{ available_width, std::max(
-							   0.f,
-							   available_height
-						   ) }
+		{ available_width, std::max(0.f, available_height) }
 	);
 
 	const std::uint64_t key = hash_combine(ids::current_seed(), stable_id(info.id));

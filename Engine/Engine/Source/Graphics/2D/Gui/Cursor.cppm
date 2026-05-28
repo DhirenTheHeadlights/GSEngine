@@ -82,8 +82,7 @@ auto gse::cursor::render_to(const asset::data& assets, std::vector<renderer::spr
 			draw_line(
 				commands,
 				{
-					.line = { { mouse_pos.x() - half_len, mouse_pos.y() },
-							  { mouse_pos.x() + half_len, mouse_pos.y() } },
+					.line = { { mouse_pos.x() - half_len, mouse_pos.y() }, { mouse_pos.x() + half_len, mouse_pos.y() } },
 					.thickness = thickness,
 					.color = color,
 					.texture = blank_texture
@@ -92,8 +91,7 @@ auto gse::cursor::render_to(const asset::data& assets, std::vector<renderer::spr
 			draw_line(
 				commands,
 				{
-					.line = { { mouse_pos.x(), mouse_pos.y() - half_len },
-							  { mouse_pos.x(), mouse_pos.y() + half_len } },
+					.line = { { mouse_pos.x(), mouse_pos.y() - half_len }, { mouse_pos.x(), mouse_pos.y() + half_len } },
 					.thickness = thickness,
 					.color = color,
 					.texture = blank_texture

@@ -292,13 +292,11 @@ auto gse::server<Components...>::update(const world_system::data& w, registry& r
 
 					m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
 					accept_connection(w, reg, pkt.from);
-					std::println(
-						"Client [{}:{}] connected ({}/{})",
-						pkt.from.ip,
-						pkt.from.port,
-						m_clients.size(),
-						max_players
-					);
+					std::println("Client [{}:{}] connected ({}/{})",
+								 pkt.from.ip,
+								 pkt.from.port,
+								 m_clients.size(),
+								 max_players);
 				}
 			);
 

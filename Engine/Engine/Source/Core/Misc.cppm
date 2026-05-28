@@ -30,8 +30,7 @@ export namespace gse {
 	template <typename T>
 	concept contiguous_byte_source = requires(const T& c) {
 		std::ranges::data(c);
-		std::ranges::size(c);
-	};
+		std::ranges::size(c); };
 
 	auto scope(
 		const std::function<void()>& in_scope

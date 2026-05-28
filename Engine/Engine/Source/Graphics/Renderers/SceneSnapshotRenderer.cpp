@@ -44,10 +44,7 @@ namespace gse::renderer::scene_snapshot {
 				}
 			);
 
-			d.slots[i] = gpu_s.bindless_textures->allocate(
-				d.snapshots[i],
-				snapshot_sampler_desc
-			);
+			d.slots[i] = gpu_s.bindless_textures->allocate(d.snapshots[i], snapshot_sampler_desc);
 		}
 
 		d.current_extent = extent;

@@ -49,20 +49,12 @@ auto gse::renderer::rt_shadow::system::run(run_context& ctx, const gpu::context:
 	log::println(log::category::render, "RT shadow: initialized");
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
-		d.tlas_per_frame[i] = gpu::build_tlas(
-			*gpu_s.device,
-			geometry_collector::system::data::max_instances
-		);
+		d.tlas_per_frame[i] = gpu::build_tlas(*gpu_s.device, geometry_collector::system::data::max_instances);
 		d.tlas_ptrs[i] = &d.tlas_per_frame[i];
 		d.instances[i].reserve(geometry_collector::system::data::max_instances);
 	}
 
-	d.tlas_update_pipeline =
-		gpu::build_compute_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			entry::pod
-		);
+	d.tlas_update_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
 
 	co_return;
 }

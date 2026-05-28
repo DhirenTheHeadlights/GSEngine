@@ -84,12 +84,7 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	const float header_y = ctx.layout_cursor.y();
 	constexpr float hit_w = 6.0f;
 
-	auto handle_resize = [&](
-		float& width,
-		const float right_anchor_x,
-		const float split_x,
-		const int idx
-	) {
+	auto handle_resize = [&](float& width, const float right_anchor_x, const float split_x, const int idx) {
 		const ui_rect hit_rect = ui_rect::from_position_size(
 			{ split_x - hit_w * 0.5f, header_y },
 			{ hit_w, row_h }
@@ -184,12 +179,8 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		return (a.stop - a.start) > (b.stop - b.start);
 	};
 
-	const auto flatten_hidden =
-		[](
-		auto& self,
-		std::span<const trace::node> input,
-		std::vector<trace::node>& out
-	) -> void {
+	const auto flatten_hidden = [](auto& self, std::span<const trace::node> input,
+								   std::vector<trace::node>& out) -> void {
 		for (const auto& n : input) {
 			if (trace::is_hidden(n.id)) {
 				self(
@@ -213,11 +204,9 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 	static std::vector<trace::node> gpu_children_buf;
 	gpu_children_buf.clear();
 	for (const auto& e : profile::top_n(32, true)) {
-		gpu_children_buf.push_back(
-			trace::node{
-				.id = e.id
-			}
-		);
+		gpu_children_buf.push_back(trace::node{
+			.id = e.id
+		});
 	}
 
 	if (!gpu_children_buf.empty()) {
@@ -272,21 +261,13 @@ auto gse::gui::profiler::draw(draw_context& ctx, id&, id& active, id&) -> void {
 		int
 	) {
 				const bool has_cpu_timing = n.stop > n.start;
-				const double dur_ns =
-					has_cpu_timing ? static_cast<double>(static_cast<std::uint64_t>(n.stop - n.start)) : 0.0;
+				const double dur_ns = has_cpu_timing ? static_cast<double>(static_cast<std::uint64_t>(n.stop - n.start)) : 0.0;
 				const double self_ns = has_cpu_timing ? static_cast<double>(static_cast<std::uint64_t>(n.self)) : 0.0;
 				const double pct_frame = (frame_ns > 0.0 && has_cpu_timing) ? (dur_ns / frame_ns) * 100.0 : 0.0;
 
-				auto to_fixed =
-					[](
-					const double v,
-					char* buf,
-					const std::size_t len,
-					const int prec
-				) -> std::string_view {
+				auto to_fixed = [](const double v, char* buf, const std::size_t len, const int prec) -> std::string_view {
 					auto [p, ec] = std::to_chars(buf, buf + len, v, std::chars_format::fixed, prec);
-					return ec == std::errc{} ? std::string_view{ buf, static_cast<std::size_t>(p - buf) }
-											 : std::string_view{};
+					return ec == std::errc{} ? std::string_view{ buf, static_cast<std::size_t>(p - buf) } : std::string_view{};
 				};
 
 				char buf[32];

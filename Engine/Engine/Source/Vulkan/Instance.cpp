@@ -156,19 +156,12 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 
 	try {
 		instance = vk::raii::Instance(context, create_info);
-		log::println(
-			log::category::vulkan,
-			"Vulkan Instance Created{}!",
-			enable_validation ? " with validation layers" : ""
-		);
+		log::println(log::category::vulkan,
+					 "Vulkan Instance Created{}!",
+					 enable_validation ? " with validation layers" : "");
 	}
 	catch (vk::SystemError& err) {
-		log::println(
-			log::level::error,
-			log::category::vulkan,
-			"Failed to create Vulkan instance: {}",
-			err.what()
-		);
+		log::println(log::level::error, log::category::vulkan, "Failed to create Vulkan instance: {}", err.what());
 		throw;
 	}
 
@@ -181,18 +174,9 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 			log::println(log::category::vulkan, "Debug Messenger Created Successfully!");
 		}
 		catch (vk::SystemError& err) {
-			log::println(
-				log::level::error,
-				log::category::vulkan,
-				"Failed to create Debug Messenger: {}",
-				err.what()
-			);
+			log::println(log::level::error, log::category::vulkan, "Failed to create Debug Messenger: {}", err.what());
 		}
 	}
 
-	return gse::vulkan::instance(
-		std::move(context),
-		std::move(instance),
-		std::move(debug_messenger)
-	);
+	return gse::vulkan::instance(std::move(context), std::move(instance), std::move(debug_messenger));
 }

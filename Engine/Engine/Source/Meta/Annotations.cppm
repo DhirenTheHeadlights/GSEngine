@@ -51,10 +51,7 @@ export namespace gse {
 
 		consteval {
 			std::vector<std::meta::info> members;
-			const auto all = std::meta::nonstatic_data_members_of(
-				^^Source,
-				std::meta::access_context::unchecked()
-			);
+			const auto all = std::meta::nonstatic_data_members_of(^^Source, std::meta::access_context::unchecked());
 			for (auto m : all) {
 				if (has_annotation<Tag>(m)) {
 					auto m_type = std::meta::type_of(m);
@@ -78,14 +75,12 @@ export namespace gse {
 						);
 					}
 
-					members.push_back(
-						std::meta::data_member_spec(
-							m_type,
-							{
-								.name = std::meta::identifier_of(m),
-							}
-						)
-					);
+					members.push_back(std::meta::data_member_spec(
+						m_type,
+						{
+							.name = std::meta::identifier_of(m),
+						}
+					));
 				}
 			}
 			std::meta::define_aggregate(^^type, members);

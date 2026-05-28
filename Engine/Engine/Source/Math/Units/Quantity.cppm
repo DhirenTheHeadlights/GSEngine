@@ -271,8 +271,7 @@ namespace gse::internal {
 		typename std::remove_cvref_t<T>::quantity_tag;
 		{ std::remove_cvref_t<T>::unit_name } -> std::convertible_to<std::string_view>;
 		typename std::remove_cvref_t<T>::conversion_ratio;
-		requires is_ratio<typename std::remove_cvref_t<T>::conversion_ratio>;
-	};
+		requires is_ratio<typename std::remove_cvref_t<T>::conversion_ratio>; };
 
 	struct generic_quantity_tag {};
 	using no_default_unit = unit<generic_quantity_tag, std::ratio<1>, "no_default_unit">;
@@ -467,15 +466,13 @@ namespace gse::internal {
 		constexpr static auto canonical_storage_scale() -> float;
 
 		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
-		requires has_same_dimensions<Dimensions, Dim2> &&
-			same_unit_family_v<QuantityTagType, Tag2>
+		requires has_same_dimensions<Dimensions, Dim2> && same_unit_family_v<QuantityTagType, Tag2>
 		constexpr auto operator<=>(
 			const quantity<T2, Dim2, Tag2, Unit2>& other
 		) const;
 
 		template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
-		requires has_same_dimensions<Dimensions, Dim2> &&
-			same_unit_family_v<QuantityTagType, Tag2>
+		requires has_same_dimensions<Dimensions, Dim2> && same_unit_family_v<QuantityTagType, Tag2>
 		constexpr auto operator==(
 			const quantity<T2, Dim2, Tag2, Unit2>& other
 		) const -> bool;
@@ -842,8 +839,7 @@ export namespace gse::internal {
 		typename std::remove_cvref_t<Q>::value_type;
 		typename std::remove_cvref_t<Q>::dimension;
 		typename std::remove_cvref_t<Q>::quantity_tag;
-		typename std::remove_cvref_t<Q>::default_unit;
-	};
+		typename std::remove_cvref_t<Q>::default_unit; };
 
 	template <typename Q1, typename Q2>
 	concept has_same_dimension_as = is_quantity<Q1> && is_quantity<Q2> &&
@@ -1201,9 +1197,7 @@ export namespace gse {
 	template <internal::is_quantity Q>
 	constexpr auto sqrt(const Q& q) {
 		using result_d = decltype(internal::dim_sqrt(typename Q::dimension()));
-		return internal::generic_quantity<typename Q::value_type, result_d>(
-			std::sqrt(internal::value_in<typename Q::default_unit>(q))
-		);
+		return internal::generic_quantity<typename Q::value_type, result_d>(std::sqrt(internal::value_in<typename Q::default_unit>(q)));
 	}
 
 	template <internal::is_quantity Q>

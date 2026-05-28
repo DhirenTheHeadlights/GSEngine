@@ -37,8 +37,7 @@ concept simd_val = is_int32<T> || is_float<T> || is_double<T>;
 template <typename T>
 concept span = requires {
 	typename T::element_type;
-	requires std::is_same_v<std::remove_cvref_t<T>, std::span<typename T::element_type, T::extent>>;
-};
+	requires std::is_same_v<std::remove_cvref_t<T>, std::span<typename T::element_type, T::extent>>; };
 
 namespace gse::simd {
 	auto cpuid_call(
@@ -728,10 +727,7 @@ auto gse::simd::clamp(const span auto& v, const span auto& min_v, const span aut
 
 	if constexpr (is_float<type>) {
 		if (support::avx && size == 8) {
-			const __m256 temp = _mm256_min_ps(
-				_mm256_loadu_ps(v.data()),
-				_mm256_loadu_ps(max_v.data())
-			);
+			const __m256 temp = _mm256_min_ps(_mm256_loadu_ps(v.data()), _mm256_loadu_ps(max_v.data()));
 			_mm256_storeu_ps(result.data(), _mm256_max_ps(temp, _mm256_loadu_ps(min_v.data())));
 		}
 		else if (support::sse && size == 4) {
@@ -741,10 +737,7 @@ auto gse::simd::clamp(const span auto& v, const span auto& min_v, const span aut
 	}
 	else if constexpr (is_double<type>) {
 		if (support::avx && size == 4) {
-			const __m256d temp = _mm256_min_pd(
-				_mm256_loadu_pd(v.data()),
-				_mm256_loadu_pd(max_v.data())
-			);
+			const __m256d temp = _mm256_min_pd(_mm256_loadu_pd(v.data()), _mm256_loadu_pd(max_v.data()));
 			_mm256_storeu_pd(result.data(), _mm256_max_pd(temp, _mm256_loadu_pd(min_v.data())));
 		}
 		else if (support::sse2 && size == 2) {

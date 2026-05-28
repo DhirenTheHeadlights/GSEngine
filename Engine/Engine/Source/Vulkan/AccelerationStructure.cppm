@@ -365,10 +365,7 @@ auto gse::vulkan::tlas::create(device& dev, const std::uint32_t max_instances) -
 	const auto alignment = scratch_offset_alignment(dev);
 	auto scratch = dev.create_buffer(
 		gpu::buffer_create_info{
-			.size = std::max(
-						sizes.build_scratch_size,
-						sizes.update_scratch_size
-					) +
+			.size = std::max(sizes.build_scratch_size, sizes.update_scratch_size) +
 				alignment,
 			.usage = gpu::buffer_flag::storage,
 		}

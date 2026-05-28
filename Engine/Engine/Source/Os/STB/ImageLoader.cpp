@@ -205,9 +205,7 @@ auto gse::image::read_jpeg_file(const std::filesystem::path& path, const bool fo
 				unsigned char* row_ptr = row.data();
 				jpeg_read_scanlines(&cinfo, &row_ptr, 1);
 				const auto y = cinfo.output_scanline - 1;
-				auto* dst = reinterpret_cast<unsigned char*>(
-					pixels.data() + static_cast<std::size_t>(y) * width * dst_channels
-				);
+				auto* dst = reinterpret_cast<unsigned char*>(pixels.data() + static_cast<std::size_t>(y) * width * dst_channels);
 				if (force_rgba) {
 					for (std::uint32_t x = 0; x < width; ++x) {
 						dst[x * 4 + 0] = row[x * src_channels + 0];
@@ -374,12 +372,7 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 
 	for (std::size_t i = 1; i < paths.size(); ++i) {
 		faces[i] = load(paths[i]);
-		assert(
-			faces[i].size == required,
-			"All cube faces must match size {}: {}",
-			required,
-			paths[i].string()
-		);
+		assert(faces[i].size == required, "All cube faces must match size {}: {}", required, paths[i].string());
 	}
 
 	return faces;

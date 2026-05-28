@@ -132,20 +132,11 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 			.command_buffer = m_cmd.handle(),
 		};
 		const submit_info info{
-			.command_buffers = std::span(
-				&cmd_info,
-				1
-			),
-			.signal_semaphores = std::span(
-				&signal,
-				1
-			),
+			.command_buffers = std::span(&cmd_info, 1),
+			.signal_semaphores = std::span(&signal, 1),
 		};
 
-		m_gpu_device->submit(
-			m_queue->id() == queue_id::graphics ? queue_type::graphics : queue_type::compute,
-			info
-		);
+		m_gpu_device->submit(m_queue->id() == queue_id::graphics ? queue_type::graphics : queue_type::compute, info);
 	}
 	m_submitted = true;
 

@@ -6,8 +6,7 @@ export namespace gse::internal {
 	template <typename T>
 	concept is_ratio = requires {
 		{ T::num } -> std::convertible_to<std::intmax_t>;
-		{ T::den } -> std::convertible_to<std::intmax_t>;
-	};
+		{ T::den } -> std::convertible_to<std::intmax_t>; };
 
 	template <is_ratio L, is_ratio T, is_ratio M, is_ratio A = std::ratio<0>>
 	struct dim {
@@ -26,8 +25,7 @@ export namespace gse::internal {
 		requires is_ratio<typename D::length>;
 		requires is_ratio<typename D::time>;
 		requires is_ratio<typename D::mass>;
-		requires is_ratio<typename D::angle>;
-	};
+		requires is_ratio<typename D::angle>; };
 
 	template <is_dimension D1, is_dimension D2>
 	constexpr auto operator*(D1, D2) -> dim<std::ratio_add<typename D1::length, typename D2::length>, std::ratio_add<typename D1::time, typename D2::time>, std::ratio_add<typename D1::mass, typename D2::mass>, std::ratio_add<typename D1::angle, typename D2::angle>> {

@@ -70,10 +70,7 @@ auto gse::gui::nav_item::draw(const draw_context& ctx, const params& p, id& hot,
 
 	ctx.queue_sprite({
 		.rect = row_rect,
-		.color = ctx.animated_color(
-			widget_id,
-			target_bg
-		),
+		.color = ctx.animated_color(widget_id, target_bg),
 		.texture = ctx.blank_texture,
 		.corner_radius = ctx.style.corner_radius,
 	});

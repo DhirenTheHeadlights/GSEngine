@@ -225,32 +225,13 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const system::data& d) -> 
 }
 
 auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.transmittance_pipeline = gpu::build_compute_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		transmittance_entry::pod
-	);
-	d.multiscatter_pipeline = gpu::build_compute_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		multiscatter_entry::pod
-	);
-	d.sky_view_pipeline = gpu::build_compute_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		sky_view_entry::pod
-	);
-	d.sky_raster_pipeline = gpu::build_graphics_program(
-		*gpu_s.device,
-		*gpu_s.bindless_heaps,
-		sky_raster_entry::pod
-	);
-	d.ap_pipeline =
-		gpu::build_compute_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			ap_entry::pod
-		);
+	d.transmittance_pipeline = gpu::build_compute_program(*gpu_s.device,
+														  *gpu_s.bindless_heaps,
+														  transmittance_entry::pod);
+	d.multiscatter_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, multiscatter_entry::pod);
+	d.sky_view_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, sky_view_entry::pod);
+	d.sky_raster_pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, sky_raster_entry::pod);
+	d.ap_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, ap_entry::pod);
 
 	d.transmittance_lut = gpu::bindless_image::create(
 		gpu_s.device->allocator(),
@@ -300,10 +281,7 @@ auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context
 
 	d.lut_sampler = gpu::sampler::create(gpu_s.device->allocator(), lut_sampler_desc);
 	d.lut_sampler_bindless = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, lut_sampler_desc);
-	d.sky_view_sampler_bindless = gpu::bindless_sampler::create(
-		*gpu_s.bindless_heaps,
-		sky_view_sampler_desc
-	);
+	d.sky_view_sampler_bindless = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, sky_view_sampler_desc);
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,

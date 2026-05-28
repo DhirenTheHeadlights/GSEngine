@@ -18,8 +18,7 @@ export namespace gse {
 namespace gse {
 	template <typename T>
 	concept arg_value_parseable = requires(std::string_view raw, T v) {
-		{ parser<T>::parse(raw, v) } -> std::same_as<bool>;
-	};
+		{ parser<T>::parse(raw, v) } -> std::same_as<bool>; };
 
 	auto build_arg_flag(
 		std::string_view prefix,
@@ -59,7 +58,7 @@ auto gse::apply_arg_clamps(T& value) -> void {
 	{
 		constexpr auto ann = meta::find_class_template_annotation(Member, ^^at_least);
 		if constexpr (ann != std::meta::info{}) {
-			constexpr auto lo = [:ann:]::value;
+			constexpr auto lo = [:ann:] ::value;
 			if (value < lo) {
 				value = lo;
 			}
@@ -68,7 +67,7 @@ auto gse::apply_arg_clamps(T& value) -> void {
 	{
 		constexpr auto ann = meta::find_class_template_annotation(Member, ^^at_most);
 		if constexpr (ann != std::meta::info{}) {
-			constexpr auto hi = [:ann:]::value;
+			constexpr auto hi = [:ann:] ::value;
 			if (value > hi) {
 				value = hi;
 			}
@@ -77,8 +76,8 @@ auto gse::apply_arg_clamps(T& value) -> void {
 	{
 		constexpr auto ann = meta::find_class_template_annotation(Member, ^^within);
 		if constexpr (ann != std::meta::info{}) {
-			constexpr auto lo = [:ann:]::min;
-			constexpr auto hi = [:ann:]::max;
+			constexpr auto lo = [:ann:] ::min;
+			constexpr auto hi = [:ann:] ::max;
 			if (value < lo) {
 				value = lo;
 			}
@@ -139,7 +138,13 @@ auto gse::parse_args(const int argc, char** argv) -> Config {
 	int i = 1;
 	while (i < argc) {
 		const int prev = i;
-		try_match_arg(result, {}, argc, argv, i);
+		try_match_arg(
+			result,
+			{},
+			argc,
+			argv,
+			i
+		);
 		if (i == prev) {
 			++i;
 		}

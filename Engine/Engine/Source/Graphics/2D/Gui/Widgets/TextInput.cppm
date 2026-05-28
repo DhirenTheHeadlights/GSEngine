@@ -333,29 +333,12 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	if (focused && has_sel(state)) {
 		auto [a, b] = sel_range(state);
-		const float ax = ctx.font->width(
-							 buffer.substr(
-								 0,
-								 a
-							 ),
-							 ctx.style.font_size
-						 ) -
-			state.scroll_x;
-		const float bx = ctx.font->width(
-							 buffer.substr(
-								 0,
-								 b
-							 ),
-							 ctx.style.font_size
-						 ) -
-			state.scroll_x;
+		const float ax = ctx.font->width(buffer.substr(0, a), ctx.style.font_size) - state.scroll_x;
+		const float bx = ctx.font->width(buffer.substr(0, b), ctx.style.font_size) - state.scroll_x;
 
 		const ui_rect sel_rect = ui_rect::from_position_size(
 			{ text_pos.x() + ax, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
-			{ std::max(
-				  1.f,
-				  bx - ax
-			  ),
+			{ std::max(1.f, bx - ax),
 			  ctx.style.font_size }
 		);
 
@@ -376,14 +359,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	});
 
 	if (focused && state.blink_on) {
-		const float cx = ctx.font->width(
-							 buffer.substr(
-								 0,
-								 state.caret
-							 ),
-							 ctx.style.font_size
-						 ) -
-			state.scroll_x;
+		const float cx = ctx.font->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
 		const ui_rect cursor_rect = ui_rect::from_position_size(
 			{ text_pos.x() + cx, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
 			{ 2.f, ctx.style.font_size }

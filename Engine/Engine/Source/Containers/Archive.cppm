@@ -240,10 +240,7 @@ auto gse::binary_writer::operator&(const raw_blob<T>& blob) -> binary_writer& {
 	const auto byte_size = static_cast<std::uint64_t>(blob.data.size() * sizeof(T));
 	m_stream.write(reinterpret_cast<const char*>(&byte_size), sizeof(byte_size));
 	if (byte_size > 0) {
-		m_stream.write(
-			reinterpret_cast<const char*>(blob.data.data()),
-			static_cast<std::streamsize>(byte_size)
-		);
+		m_stream.write(reinterpret_cast<const char*>(blob.data.data()), static_cast<std::streamsize>(byte_size));
 	}
 	return *this;
 }
@@ -356,10 +353,7 @@ auto gse::binary_reader::operator&(const raw_blob<T>& blob) -> binary_reader& {
 	m_stream.read(reinterpret_cast<char*>(&byte_size), sizeof(byte_size));
 	blob.data.resize(byte_size / sizeof(T));
 	if (byte_size > 0) {
-		m_stream.read(
-			reinterpret_cast<char*>(blob.data.data()),
-			static_cast<std::streamsize>(byte_size)
-		);
+		m_stream.read(reinterpret_cast<char*>(blob.data.data()), static_cast<std::streamsize>(byte_size));
 	}
 	return *this;
 }

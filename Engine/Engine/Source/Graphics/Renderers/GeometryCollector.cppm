@@ -37,54 +37,14 @@ export namespace gse::renderer {
 	}
 
 	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
-		const std::array corners = { vec4<length>(
-										 local_min.x(),
-										 local_min.y(),
-										 local_min.z(),
-										 meters(1.0f)
-									 ),
-									 vec4<length>(
-										 local_max.x(),
-										 local_min.y(),
-										 local_min.z(),
-										 meters(1.0f)
-									 ),
-									 vec4<length>(
-										 local_min.x(),
-										 local_max.y(),
-										 local_min.z(),
-										 meters(1.0f)
-									 ),
-									 vec4<length>(
-										 local_max.x(),
-										 local_max.y(),
-										 local_min.z(),
-										 meters(1.0f)
-									 ),
-									 vec4<length>(
-										 local_min.x(),
-										 local_min.y(),
-										 local_max.z(),
-										 meters(1.0f)
-									 ),
-									 vec4<length>(
-										 local_max.x(),
-										 local_min.y(),
-										 local_max.z(),
-										 meters(1.0f)
-									 ),
-									 vec4<length>(
-										 local_min.x(),
-										 local_max.y(),
-										 local_max.z(),
-										 meters(1.0f)
-									 ),
-									 vec4<length>(
-										 local_max.x(),
-										 local_max.y(),
-										 local_max.z(),
-										 meters(1.0f)
-									 ) };
+		const std::array corners = { vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
+									 vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
+									 vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
+									 vec4<length>(local_max.x(), local_max.y(), local_min.z(), meters(1.0f)),
+									 vec4<length>(local_min.x(), local_min.y(), local_max.z(), meters(1.0f)),
+									 vec4<length>(local_max.x(), local_min.y(), local_max.z(), meters(1.0f)),
+									 vec4<length>(local_min.x(), local_max.y(), local_max.z(), meters(1.0f)),
+									 vec4<length>(local_max.x(), local_max.y(), local_max.z(), meters(1.0f)) };
 
 		vec3 world_min(meters(std::numeric_limits<float>::max()));
 		vec3 world_max(meters(std::numeric_limits<float>::lowest()));
@@ -118,174 +78,12 @@ export namespace gse::renderer {
 		constexpr auto r2 = std::integral_constant<std::size_t, 2>{};
 		constexpr auto r3 = std::integral_constant<std::size_t, 3>{};
 
-		planes[0] = { at(
-						  c0,
-						  r3
-					  ) + at(
-							  c0,
-							  r0
-						  ),
-					  at(
-						  c1,
-						  r3
-					  ) + at(
-							  c1,
-							  r0
-						  ),
-					  at(
-						  c2,
-						  r3
-					  ) + at(
-							  c2,
-							  r0
-						  ),
-					  at(
-						  c3,
-						  r3
-					  ) + at(
-							  c3,
-							  r0
-						  ) };
-		planes[1] = { at(
-						  c0,
-						  r3
-					  ) - at(
-							  c0,
-							  r0
-						  ),
-					  at(
-						  c1,
-						  r3
-					  ) - at(
-							  c1,
-							  r0
-						  ),
-					  at(
-						  c2,
-						  r3
-					  ) - at(
-							  c2,
-							  r0
-						  ),
-					  at(
-						  c3,
-						  r3
-					  ) - at(
-							  c3,
-							  r0
-						  ) };
-		planes[2] = { at(
-						  c0,
-						  r3
-					  ) + at(
-							  c0,
-							  r1
-						  ),
-					  at(
-						  c1,
-						  r3
-					  ) + at(
-							  c1,
-							  r1
-						  ),
-					  at(
-						  c2,
-						  r3
-					  ) + at(
-							  c2,
-							  r1
-						  ),
-					  at(
-						  c3,
-						  r3
-					  ) + at(
-							  c3,
-							  r1
-						  ) };
-		planes[3] = { at(
-						  c0,
-						  r3
-					  ) - at(
-							  c0,
-							  r1
-						  ),
-					  at(
-						  c1,
-						  r3
-					  ) - at(
-							  c1,
-							  r1
-						  ),
-					  at(
-						  c2,
-						  r3
-					  ) - at(
-							  c2,
-							  r1
-						  ),
-					  at(
-						  c3,
-						  r3
-					  ) - at(
-							  c3,
-							  r1
-						  ) };
-		planes[4] = { at(
-						  c0,
-						  r3
-					  ) + at(
-							  c0,
-							  r2
-						  ),
-					  at(
-						  c1,
-						  r3
-					  ) + at(
-							  c1,
-							  r2
-						  ),
-					  at(
-						  c2,
-						  r3
-					  ) + at(
-							  c2,
-							  r2
-						  ),
-					  at(
-						  c3,
-						  r3
-					  ) + at(
-							  c3,
-							  r2
-						  ) };
-		planes[5] = { at(
-						  c0,
-						  r3
-					  ) - at(
-							  c0,
-							  r2
-						  ),
-					  at(
-						  c1,
-						  r3
-					  ) - at(
-							  c1,
-							  r2
-						  ),
-					  at(
-						  c2,
-						  r3
-					  ) - at(
-							  c2,
-							  r2
-						  ),
-					  at(
-						  c3,
-						  r3
-					  ) - at(
-							  c3,
-							  r2
-						  ) };
+		planes[0] = { at(c0, r3) + at(c0, r0), at(c1, r3) + at(c1, r0), at(c2, r3) + at(c2, r0), at(c3, r3) + at(c3, r0) };
+		planes[1] = { at(c0, r3) - at(c0, r0), at(c1, r3) - at(c1, r0), at(c2, r3) - at(c2, r0), at(c3, r3) - at(c3, r0) };
+		planes[2] = { at(c0, r3) + at(c0, r1), at(c1, r3) + at(c1, r1), at(c2, r3) + at(c2, r1), at(c3, r3) + at(c3, r1) };
+		planes[3] = { at(c0, r3) - at(c0, r1), at(c1, r3) - at(c1, r1), at(c2, r3) - at(c2, r1), at(c3, r3) - at(c3, r1) };
+		planes[4] = { at(c0, r3) + at(c0, r2), at(c1, r3) + at(c1, r2), at(c2, r3) + at(c2, r2), at(c3, r3) + at(c3, r2) };
+		planes[5] = { at(c0, r3) - at(c0, r2), at(c1, r3) - at(c1, r2), at(c2, r3) - at(c2, r2), at(c3, r3) - at(c3, r2) };
 
 		for (auto& plane : planes) {
 			if (const float length = magnitude(plane); length > 0.0f) {

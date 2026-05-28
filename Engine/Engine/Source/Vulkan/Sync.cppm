@@ -87,11 +87,7 @@ auto gse::vulkan::sync::create(const device& dev, const std::uint32_t image_coun
 		}
 	}
 
-	return sync(
-		std::move(image_available),
-		std::move(render_finished),
-		std::move(in_flight_fences)
-	);
+	return sync(std::move(image_available), std::move(render_finished), std::move(in_flight_fences));
 }
 
 auto gse::vulkan::sync::image_available(const std::uint32_t frame_index) const -> gpu::handle<semaphore> {

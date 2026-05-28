@@ -118,25 +118,11 @@ auto gse::renderer::world_text::build_labels_for_axis(std::vector<world_text_ver
 		const float text_width = f.width(text, world_scale);
 		const vec2f start{ -text_width * 0.5f, f.line_height(world_scale) * 0.5f };
 
-		const vec3<position> tick = along_x ? vec3<position>(
-												  offset,
-												  meters(0.f),
-												  meters(0.f)
-											  )
-											: vec3<position>(
-												  meters(0.f),
-												  meters(0.f),
-												  offset
-											  );
+		const vec3<position> tick = along_x ? vec3<position>(offset, meters(0.f), meters(0.f))
+											: vec3<position>(meters(0.f), meters(0.f), offset);
 
 		for (const auto& glyph : f.text_layout(text, start, world_scale)) {
-			append_glyph_quad(
-				vertices,
-				tick,
-				glyph.screen_rect.top_left(),
-				glyph.screen_rect.size(),
-				glyph.uv_rect
-			);
+			append_glyph_quad(vertices, tick, glyph.screen_rect.top_left(), glyph.screen_rect.size(), glyph.uv_rect);
 		}
 	}
 }
@@ -166,12 +152,7 @@ auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::dev
 }
 
 auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.pipeline =
-		gpu::build_graphics_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			entry::pod
-		);
+	d.pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 

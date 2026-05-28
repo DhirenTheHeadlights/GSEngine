@@ -96,10 +96,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 
 	ctx.queue_sprite({
 		.rect = track_rect,
-		.color = ctx.animated_color(
-			track_anim_id,
-			track_target
-		),
+		.color = ctx.animated_color(track_anim_id, track_target),
 		.texture = ctx.blank_texture,
 		.corner_radius = track_height / 2.f
 	});
@@ -117,10 +114,7 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 
 	ctx.queue_sprite({
 		.rect = knob_rect,
-		.color = ctx.animated_color(
-			widget_id,
-			knob_target
-		),
+		.color = ctx.animated_color(widget_id, knob_target),
 		.texture = ctx.blank_texture,
 		.corner_radius = knob_size / 2.f
 	});

@@ -390,12 +390,9 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 
 	for (auto it = first; it != last; ++it) {
 		if (!*it) {
-			log::println(
-				log::level::error,
-				log::category::task,
-				"post_range: null job in input range (trace_id={})",
-				id
-			);
+			log::println(log::level::error, log::category::task,
+						 "post_range: null job in input range (trace_id={})",
+						 id);
 		}
 		const auto key = async_key_for(&*it);
 		trace::begin_async(id, key);
@@ -432,10 +429,7 @@ auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t las
 			return;
 		}
 
-		const std::size_t workers = std::max<std::size_t>(
-			1,
-			worker_count_value.load(std::memory_order_acquire)
-		);
+		const std::size_t workers = std::max<std::size_t>(1, worker_count_value.load(std::memory_order_acquire));
 		const std::size_t chunk = compute_chunk_size(n, workers);
 
 		group g(id);
@@ -660,10 +654,7 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 		return;
 	}
 
-	const std::size_t workers = std::max<std::size_t>(
-		1,
-		worker_count_value.load(std::memory_order_acquire)
-	);
+	const std::size_t workers = std::max<std::size_t>(1, worker_count_value.load(std::memory_order_acquire));
 	const std::size_t chunk = compute_chunk_size(n, workers);
 
 	group g(id);
@@ -782,12 +773,8 @@ auto gse::task::worker_loop(const std::stop_token& st, std::size_t index) -> voi
 
 auto gse::task::submit_async(job j, const id trace_id, const std::uint64_t parent_eid) -> void {
 	if (!j) {
-		log::println(
-			log::level::error,
-			log::category::task,
-			"submit_async: null job submitted (trace_id={})",
-			trace_id
-		);
+		log::println(log::level::error, log::category::task, "submit_async: null job submitted (trace_id={})",
+					 trace_id);
 	}
 	in_flight.fetch_add(1, std::memory_order_relaxed);
 

@@ -15,10 +15,7 @@ import gse.meta;
 auto gse::gpu::device::create(const window::data& win, const bool validation_layers_enabled, gpu::device_settings& device_cfg) -> std::unique_ptr<device> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
-	auto instance = vulkan::instance::create(
-		window::vulkan_instance_extensions(),
-		validation_layers_enabled
-	);
+	auto instance = vulkan::instance::create(window::vulkan_instance_extensions(), validation_layers_enabled);
 	instance.create_surface(win);
 
 	auto creation = vulkan::device::create(instance, device_cfg, aftermath_tracker);
@@ -28,11 +25,7 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 
 	auto command = vulkan::command::create(creation.device, queue_families);
 
-	auto worker_pools = vulkan::worker_command_pools::create(
-		creation.device,
-		queue_families,
-		task::thread_count()
-	);
+	auto worker_pools = vulkan::worker_command_pools::create(creation.device, queue_families, task::thread_count());
 
 	const auto surface_format = vulkan::pick_surface_format(creation.device, instance);
 
@@ -112,12 +105,13 @@ auto gse::gpu::device::begin_pass_marker(const gpu::handle<command_buffer> cmd, 
 	if (ring.checkpoint_buffer.valid()) {
 		const auto slot = seq % pass_marker_ring_size;
 		const auto offset = slot * 4 * sizeof(std::uint32_t);
-		commands(cmd).fill_buffer(
-			ring.checkpoint_buffer.handle(),
-			offset,
-			sizeof(std::uint32_t),
-			static_cast<std::uint32_t>(seq)
-		);
+		commands(cmd)
+			.fill_buffer(
+				ring.checkpoint_buffer.handle(),
+				offset,
+				sizeof(std::uint32_t),
+				static_cast<std::uint32_t>(seq)
+			);
 	}
 
 	return pass_marker_handle{
@@ -134,12 +128,13 @@ auto gse::gpu::device::checkpoint_pass_marker(const gpu::handle<command_buffer> 
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + sizeof(std::uint32_t);
-	commands(cmd).fill_buffer(
-		ring.checkpoint_buffer.handle(),
-		offset,
-		sizeof(std::uint32_t),
-		static_cast<std::uint32_t>(handle.seq)
-	);
+	commands(cmd)
+		.fill_buffer(
+			ring.checkpoint_buffer.handle(),
+			offset,
+			sizeof(std::uint32_t),
+			static_cast<std::uint32_t>(handle.seq)
+		);
 }
 
 auto gse::gpu::device::post_renderpass_pass_marker(const gpu::handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
@@ -150,12 +145,13 @@ auto gse::gpu::device::post_renderpass_pass_marker(const gpu::handle<command_buf
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + 2 * sizeof(std::uint32_t);
-	commands(cmd).fill_buffer(
-		ring.checkpoint_buffer.handle(),
-		offset,
-		sizeof(std::uint32_t),
-		static_cast<std::uint32_t>(handle.seq)
-	);
+	commands(cmd)
+		.fill_buffer(
+			ring.checkpoint_buffer.handle(),
+			offset,
+			sizeof(std::uint32_t),
+			static_cast<std::uint32_t>(handle.seq)
+		);
 }
 
 auto gse::gpu::device::end_pass_marker(const gpu::handle<command_buffer> cmd, const pass_marker_handle handle) -> void {
@@ -166,12 +162,13 @@ auto gse::gpu::device::end_pass_marker(const gpu::handle<command_buffer> cmd, co
 
 	const auto slot = handle.seq % pass_marker_ring_size;
 	const auto offset = slot * 4 * sizeof(std::uint32_t) + 3 * sizeof(std::uint32_t);
-	commands(cmd).fill_buffer(
-		ring.checkpoint_buffer.handle(),
-		offset,
-		sizeof(std::uint32_t),
-		static_cast<std::uint32_t>(handle.seq)
-	);
+	commands(cmd)
+		.fill_buffer(
+			ring.checkpoint_buffer.handle(),
+			offset,
+			sizeof(std::uint32_t),
+			static_cast<std::uint32_t>(handle.seq)
+		);
 }
 
 auto gse::gpu::device::report_device_lost(const std::string_view operation) -> void {
@@ -281,11 +278,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 	}
 
 	if (!m_device_config.fault_enabled()) {
-		log::println(
-			log::level::warning,
-			log::category::vulkan,
-			"VK_EXT_device_fault is unavailable on this device"
-		);
+		log::println(log::level::warning, log::category::vulkan, "VK_EXT_device_fault is unavailable on this device");
 		return;
 	}
 

@@ -155,10 +155,7 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 	const auto render_size = render.size();
 	const auto render_ids = render.owner_ids();
 	const bool transform_order_matches =
-		render_size == transform.size() && std::ranges::equal(
-											   render_ids,
-											   transform.owner_ids()
-										   );
+		render_size == transform.size() && std::ranges::equal(render_ids, transform.owner_ids());
 
 	for (std::size_t i = 0; i < render_size; ++i) {
 		auto& component = render[i];
@@ -188,11 +185,7 @@ auto gse::renderer::geometry_collector::collect_static(write<render_component>& 
 			}
 			const auto& mdl = component.models[j].resolve();
 			const auto [model_matrix, normal_matrix] =
-				compute_render_transform(
-					*tc,
-					mdl.center_of_mass(),
-					component.sizes[j]
-				);
+				compute_render_transform(*tc, mdl.center_of_mass(), component.sizes[j]);
 			const auto prev_model_matrix = entity_prev[j].value_or(model_matrix);
 			entity_prev[j] = model_matrix;
 			for (std::size_t mi = 0; mi < mdl.meshes().size(); ++mi) {
@@ -217,10 +210,7 @@ auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_que
 	trace::scope_guard sg{ trace_id<"geom_collect::sort">() };
 	std::ranges::sort(
 		out,
-		[](
-		const owned_render_queue_entry& a,
-		const owned_render_queue_entry& b
-	) {
+		[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
 			const auto ma = a.entry.model.id();
 			const auto mb = b.entry.model.id();
 
@@ -268,32 +258,14 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 			for (const auto& q : batch) {
 				const auto [inst_min, inst_max] = transform_aabb(local_min, local_max, q.entry.model_matrix);
 				mn = vec3<length>(
-					std::min(
-						mn.x(),
-						inst_min.x()
-					),
-					std::min(
-						mn.y(),
-						inst_min.y()
-					),
-					std::min(
-						mn.z(),
-						inst_min.z()
-					)
+					std::min(mn.x(), inst_min.x()),
+					std::min(mn.y(), inst_min.y()),
+					std::min(mn.z(), inst_min.z())
 				);
 				mx = vec3<length>(
-					std::max(
-						mx.x(),
-						inst_max.x()
-					),
-					std::max(
-						mx.y(),
-						inst_max.y()
-					),
-					std::max(
-						mx.z(),
-						inst_max.z()
-					)
+					std::max(mx.x(), inst_max.x()),
+					std::max(mx.y(), inst_max.y()),
+					std::max(mx.z(), inst_max.z())
 				);
 			}
 		},
@@ -324,13 +296,11 @@ auto gse::renderer::geometry_collector::build_normal_batches(render_data& data, 
 }
 
 auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::context::data& gpu_s, system::data& d) -> async::task<> {
-	constexpr std::size_t material_buffer_size =
-		system::data::max_materials * sizeof(shaders::forward::material_data);
+	constexpr std::size_t material_buffer_size = system::data::max_materials * sizeof(shaders::forward::material_data);
 	d.material_staging.reserve(material_buffer_size);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-		constexpr std::size_t instance_buffer_size =
-			system::data::max_instances * sizeof(shaders::common::instance_data);
+		constexpr std::size_t instance_buffer_size = system::data::max_instances * sizeof(shaders::common::instance_data);
 		d.instance_buffer[i] = gpu::bindless_buffer::create(
 			gpu_s.device->allocator(),
 			*gpu_s.bindless_heaps,
@@ -373,11 +343,10 @@ auto gse::renderer::geometry_collector::tick(run_context& ctx, system::data& d, 
 
 	auto body_index_map = read_body_index_map(ctx);
 
-	auto [render, transform] =
-		co_await ctx.acquire_with(
-			write_v<render_component>,
-			read_v<physics::transform_component>
-		);
+	auto [render, transform] = co_await ctx.acquire_with(
+		write_v<render_component>,
+		read_v<physics::transform_component>
+	);
 
 	if (render.empty()) {
 		co_return;
@@ -466,10 +435,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 		}
 	}
 
-	const auto material_count = std::min(
-		data.material_palette_map.size(),
-		system::data::max_materials
-	);
+	const auto material_count = std::min(data.material_palette_map.size(), system::data::max_materials);
 	if (material_count > 0) {
 		auto& mat_staging = d.material_staging;
 		mat_staging.assign(

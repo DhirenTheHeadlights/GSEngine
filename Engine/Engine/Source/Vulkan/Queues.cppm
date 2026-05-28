@@ -265,12 +265,10 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
 	queue_family indices;
 	const auto queue_families = device.getQueueFamilyProperties();
 	for (std::uint32_t i = 0; i < queue_families.size(); i++) {
-		log::println(
-			log::category::vulkan,
-			"Queue family {}: flags = {}",
-			i,
-			vk::to_string(queue_families[i].queueFlags)
-		);
+		log::println(log::category::vulkan,
+					 "Queue family {}: flags = {}",
+					 i,
+					 vk::to_string(queue_families[i].queueFlags));
 		if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
 			indices.graphics_family = i;
 		}

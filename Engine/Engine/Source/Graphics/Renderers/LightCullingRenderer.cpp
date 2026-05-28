@@ -58,8 +58,7 @@ namespace gse::renderer::light_culling {
 		using element = vec2u;
 	};
 
-	using shader_binding_types =
-		type_pack<depth_texture, culling_params, lights, light_index_list, tile_light_table>;
+	using shader_binding_types = type_pack<depth_texture, culling_params, lights, light_index_list, tile_light_table>;
 
 	using shader_types = type_pack<culling_params_data>;
 
@@ -113,12 +112,7 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 }
 
 auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.pipeline =
-		gpu::build_compute_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			entry::pod
-		);
+	d.pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
 		d.culling_params_buffers[i] = gpu::bindless_buffer::create(
@@ -266,10 +260,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 	}
 
 	if (light_count > 0) {
-		light_alloc.buffer().host_write(
-			lights.data(),
-			light_count * sizeof(shaders::forward::light)
-		);
+		light_alloc.buffer().host_write(lights.data(), light_count * sizeof(shaders::forward::light));
 	}
 
 	const culling_params_data params{

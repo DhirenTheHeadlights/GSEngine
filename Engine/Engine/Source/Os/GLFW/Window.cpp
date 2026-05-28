@@ -73,12 +73,7 @@ auto gse::refresh_monitor_settings(window::data& d) -> void {
 
 	d.monitor.options.clear();
 	for (const auto& monitor : monitors) {
-		d.monitor.options.push_back(std::format(
-			"{}: {}x{}",
-			monitor.name,
-			monitor.width,
-			monitor.height
-		));
+		d.monitor.options.push_back(std::format("{}: {}x{}", monitor.name, monitor.width, monitor.height));
 	}
 
 	if (d.monitor.value < 0 || d.monitor.value >= static_cast<int>(monitors.size())) {
@@ -242,13 +237,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwWindowHint(glfw::visible, glfw::false_);
 
 	const auto initial_size = d.windowed_rect.size();
-	d.handle = glfwCreateWindow(
-		initial_size.x(),
-		initial_size.y(),
-		d.title.c_str(),
-		nullptr,
-		nullptr
-	);
+	d.handle = glfwCreateWindow(initial_size.x(), initial_size.y(), d.title.c_str(), nullptr, nullptr);
 	assert(d.handle, "Failed to create GLFW window!");
 
 	glfwSetWindowUserPointer(d.handle, &d);
@@ -265,18 +254,14 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 				return;
 			}
 			if (action == glfw::press) {
-				self->input_events.push(
-					input::key_pressed{
-						.key_code = *mapped
-					}
-				);
+				self->input_events.push(input::key_pressed{
+					.key_code = *mapped
+				});
 			}
 			else if (action == glfw::release) {
-				self->input_events.push(
-					input::key_released{
-						.key_code = *mapped
-					}
-				);
+				self->input_events.push(input::key_released{
+					.key_code = *mapped
+				});
 			}
 		}
 	);
@@ -507,10 +492,7 @@ auto gse::window::enumerate_monitors() -> std::vector<monitor_info> {
 		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
 		result.push_back({
-			.name = name ? name : std::format(
-									  "Monitor {}",
-									  i + 1
-								  ),
+			.name = name ? name : std::format("Monitor {}", i + 1),
 			.width = mode ? mode->width : 0,
 			.height = mode ? mode->height : 0,
 			.refresh_rate = mode ? mode->refreshRate : 0,

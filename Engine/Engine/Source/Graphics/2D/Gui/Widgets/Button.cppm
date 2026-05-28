@@ -69,10 +69,7 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 
 	ctx.queue_sprite({
 		.rect = button_rect,
-		.color = ctx.animated_color(
-			widget_id,
-			target_color
-		),
+		.color = ctx.animated_color(widget_id, target_color),
 		.texture = ctx.blank_texture,
 		.corner_radius = ctx.style.corner_radius
 	});

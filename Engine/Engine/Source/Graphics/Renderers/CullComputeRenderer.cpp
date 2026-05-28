@@ -57,12 +57,7 @@ namespace gse::renderer::cull_compute {
 }
 
 auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
-	d.pipeline =
-		gpu::build_compute_program(
-			*gpu_s.device,
-			*gpu_s.bindless_heaps,
-			entry::pod
-		);
+	d.pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);

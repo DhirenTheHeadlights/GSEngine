@@ -133,23 +133,14 @@ auto gse::network::udp_socket::bind(const address& address) -> bool {
 	const native_socket s = to_native(m_handle);
 
 	int opt = 1;
-	::setsockopt(
-		s,
-		sockets::sol_socket,
-		sockets::so_reuseaddr,
-		reinterpret_cast<const char*>(&opt),
-		sizeof(opt)
-	);
+	::setsockopt(s, sockets::sol_socket, sockets::so_reuseaddr, reinterpret_cast<const char*>(&opt), sizeof(opt));
 
 	::sockaddr_in addr = make_sockaddr(address);
 
 	if (::bind(s, reinterpret_cast<::sockaddr*>(&addr), sizeof(addr)) == sockets::socket_error) {
-		log::println(
-			log::level::error,
-			log::category::network,
-			"Failed to bind socket: error {}",
-			sockets::last_error()
-		);
+		log::println(log::level::error, log::category::network,
+					 "Failed to bind socket: error {}",
+					 sockets::last_error());
 		sockets::close_socket(s);
 		m_handle = handle_invalid;
 		return false;
@@ -228,14 +219,7 @@ auto gse::network::udp_socket::receive_data(std::span<std::byte> buffer) const -
 	using recv_result_t = ::ssize_t;
 #endif
 
-	const recv_result_t r = ::recvfrom(
-		s,
-		buf,
-		cap,
-		0,
-		reinterpret_cast<::sockaddr*>(&src),
-		&src_len
-	);
+	const recv_result_t r = ::recvfrom(s, buf, cap, 0, reinterpret_cast<::sockaddr*>(&src), &src_len);
 	if (r == sockets::socket_error) {
 		return std::nullopt;
 	}

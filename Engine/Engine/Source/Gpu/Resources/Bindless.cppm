@@ -65,11 +65,7 @@ gse::gpu::bindless_texture_set::bindless_texture_set(bindless_heaps& bindless_he
 		m_free_list.push_back(capacity - 1 - i);
 	}
 
-	log::println(
-		log::category::vulkan,
-		"Bindless texture set created: capacity {}",
-		capacity
-	);
+	log::println(log::category::vulkan, "Bindless texture set created: capacity {}", capacity);
 }
 
 gse::gpu::bindless_texture_set::~bindless_texture_set() = default;

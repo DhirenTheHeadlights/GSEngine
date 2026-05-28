@@ -222,10 +222,7 @@ auto gse::scene::spawn(const std::string& name, Archetype&& archetype) -> gse::i
 	using arch_t = std::remove_cvref_t<Archetype>;
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^arch_t, std::meta::access_context::unchecked()))) {
 		using component_t = typename[:std::meta::type_of(m):];
-		m_registry.add_component<component_t>(
-			id,
-			std::forward_like<Archetype>(archetype.[:m:])
-		);
+		m_registry.add_component<component_t>(id, std::forward_like<Archetype>(archetype.[:m:]));
 	}
 	return id;
 }

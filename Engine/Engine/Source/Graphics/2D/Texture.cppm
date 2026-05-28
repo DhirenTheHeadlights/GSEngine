@@ -43,8 +43,7 @@ export namespace gse {
 		texture(
 			std::string_view name,
 			const vec4f& color,
-			vec2u size = { 1,
-						   1 }
+			vec2u size = { 1, 1 }
 		);
 
 		texture(

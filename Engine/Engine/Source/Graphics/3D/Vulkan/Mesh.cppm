@@ -449,16 +449,8 @@ auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std:
 
 		const auto bounds = compute_bounds(desc);
 
-		result.vertex_indices.insert(
-			result.vertex_indices.end(),
-			current_vertices.begin(),
-			current_vertices.end()
-		);
-		result.triangles.insert(
-			result.triangles.end(),
-			current_triangles.begin(),
-			current_triangles.end()
-		);
+		result.vertex_indices.insert(result.vertex_indices.end(), current_vertices.begin(), current_vertices.end());
+		result.triangles.insert(result.triangles.end(), current_triangles.begin(), current_triangles.end());
 		result.descriptors.push_back(desc);
 		result.bounds.push_back(bounds);
 

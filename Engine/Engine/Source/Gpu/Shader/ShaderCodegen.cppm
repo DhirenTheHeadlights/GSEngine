@@ -55,8 +55,7 @@ export namespace gse::shaders {
 
 	template <typename T>
 	concept has_slang_type = requires {
-		{ slang_type<T>::name } -> std::convertible_to<std::string_view>;
-	};
+		{ slang_type<T>::name } -> std::convertible_to<std::string_view>; };
 
 	template <typename T>
 	concept is_shader_struct = has_annotation<shader_struct_tag>(^^T);
@@ -209,8 +208,7 @@ namespace gse::shaders {
 template <gse::shaders::has_slang_type T, std::size_t N>
 requires(N >= 2 && N <= 4)
 struct gse::shaders::slang_type<gse::vec<T, N>> {
-	static constexpr std::string_view name{ vec_name_storage<T, N>::value.data(),
-											vec_name_storage<T, N>::value.size() };
+	static constexpr std::string_view name{ vec_name_storage<T, N>::value.data(), vec_name_storage<T, N>::value.size() };
 };
 
 template <gse::shaders::has_slang_type T, std::size_t Cols, std::size_t Rows>
@@ -225,8 +223,7 @@ struct gse::shaders::slang_type<gse::mixed_mat<ColSpec, RowSpec, T>> : gse::shad
 
 template <gse::shaders::has_slang_type T>
 struct gse::shaders::slang_type<gse::quat_t<T>> {
-	static constexpr std::string_view name{ vec_name_storage<T, 4>::value.data(),
-											vec_name_storage<T, 4>::value.size() };
+	static constexpr std::string_view name{ vec_name_storage<T, 4>::value.data(), vec_name_storage<T, 4>::value.size() };
 };
 
 template <gse::shaders::is_shader_struct T>
@@ -245,11 +242,7 @@ auto gse::shaders::emit_slang_struct() -> std::string {
 			);
 		}
 		else {
-			out += std::format(
-				"    public {} {};\n",
-				slang_type<member_t>::name,
-				std::meta::identifier_of(m)
-			);
+			out += std::format("    public {} {};\n", slang_type<member_t>::name, std::meta::identifier_of(m));
 		}
 	}
 	out += "};\n";
@@ -260,12 +253,8 @@ template <gse::shaders::is_shader_enum E>
 auto gse::shaders::emit_slang_enum() -> std::string {
 	std::string out = std::format("public enum class {} {{\n", std::meta::identifier_of(^^E));
 	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
-		out +=
-			std::format(
-				"    {} = {},\n",
-				std::meta::identifier_of(e),
-				static_cast<std::underlying_type_t<E>>([:e:])
-			);
+		out += std::format("    {} = {},\n", std::meta::identifier_of(e),
+						   static_cast<std::underlying_type_t<E>>([:e:]));
 	}
 	out += "};\n";
 	return out;
@@ -365,28 +354,13 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	using binding_t = [:find_binding_type(^^T):];
 	constexpr auto name = std::meta::identifier_of(^^T);
 	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
-		return std::format(
-			"public [[vk::binding({}, {})]] Sampler2D {}[];\n",
-			binding_t::slot,
-			binding_t::set,
-			name
-		);
+		return std::format("public [[vk::binding({}, {})]] Sampler2D {}[];\n", binding_t::slot, binding_t::set, name);
 	}
 	else if constexpr (has_annotation<sampler2d_tag>(^^T)) {
-		return std::format(
-			"public [[vk::binding({}, {})]] Sampler2D {};\n",
-			binding_t::slot,
-			binding_t::set,
-			name
-		);
+		return std::format("public [[vk::binding({}, {})]] Sampler2D {};\n", binding_t::slot, binding_t::set, name);
 	}
 	else if constexpr (has_annotation<sampler3d_tag>(^^T)) {
-		return std::format(
-			"public [[vk::binding({}, {})]] Sampler3D {};\n",
-			binding_t::slot,
-			binding_t::set,
-			name
-		);
+		return std::format("public [[vk::binding({}, {})]] Sampler3D {};\n", binding_t::slot, binding_t::set, name);
 	}
 	else if constexpr (has_annotation<tlas_tag>(^^T)) {
 		return std::format(
@@ -474,11 +448,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 				);
 			}
 			else {
-				out += std::format(
-					"    public {} {};\n",
-					slang_type<member_t>::name,
-					std::meta::identifier_of(m)
-				);
+				out += std::format("    public {} {};\n", slang_type<member_t>::name, std::meta::identifier_of(m));
 			}
 		}
 		out += "};\n";
@@ -505,11 +475,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 				);
 			}
 			else {
-				out += std::format(
-					"    public {} {};\n",
-					slang_type<member_t>::name,
-					std::meta::identifier_of(m)
-				);
+				out += std::format("    public {} {};\n", slang_type<member_t>::name, std::meta::identifier_of(m));
 			}
 		}
 		out += "};\n";
@@ -644,11 +610,9 @@ namespace gse::shaders {
 			}
 		);
 		if (it == sets.end()) {
-			sets.push_back(
-				family_set{
-					.type = set_type
-				}
-			);
+			sets.push_back(family_set{
+				.type = set_type
+			});
 			it = sets.end() - 1;
 		}
 		it->bindings.push_back(family_binding{

@@ -73,11 +73,7 @@ auto gse::glyph::x_advance() const -> float {
 }
 
 gse::font::font(const std::filesystem::path& path)
-	: identifiable(
-		  path,
-		  config::baked_resource_path
-	  ),
-	  m_baked_path(path) {
+	: identifiable(path, config::baked_resource_path), m_baked_path(path) {
 	assert(exists(path), "Font file '{}' does not exist.", path.string());
 }
 
@@ -104,10 +100,7 @@ auto gse::font::load(asset::load_ctx& ctx) -> async::task<> {
 	m_glyphs = std::move(baked.glyphs);
 
 	m_texture = std::make_unique<gse::texture>(
-		std::format(
-			"msdf_font_atlas_{}",
-			m_baked_path.stem().string()
-		),
+		std::format("msdf_font_atlas_{}", m_baked_path.stem().string()),
 		baked.rgba.storage,
 		vec2u{ baked.atlas_width, baked.atlas_height },
 		baked.channels,
@@ -119,12 +112,7 @@ auto gse::font::load(asset::load_ctx& ctx) -> async::task<> {
 	assert(FT_Init_FreeType(&m_ft) == 0, "Failed to initialize FreeType.");
 
 	assert(
-		FT_New_Face(
-			m_ft,
-			source_font_path.string().c_str(),
-			0,
-			&m_face
-		) == 0,
+		FT_New_Face(m_ft, source_font_path.string().c_str(), 0, &m_face) == 0,
 		"Failed to load source font face for kerning."
 	);
 
@@ -216,10 +204,7 @@ auto gse::font::text_layout(const std::string_view text, const vec2f start, cons
 
 			positioned_glyphs.emplace_back(
 				positioned_glyph{
-					.screen_rect = rect_t<vec2f>::from_position_size(
-						top_left,
-						size
-					),
+					.screen_rect = rect_t<vec2f>::from_position_size(top_left, size),
 					.uv_rect = g.atlas_uv(),
 				}
 			);

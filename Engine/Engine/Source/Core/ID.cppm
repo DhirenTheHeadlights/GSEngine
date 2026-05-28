@@ -199,17 +199,11 @@ export namespace gse {
 gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {
 }
 
-gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(relative_stem(
-																		 path,
-																		 {}
-																	 ))) {
+gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(relative_stem(path, {}))) {
 }
 
 gse::identifiable::identifiable(const std::filesystem::path& path, const std::filesystem::path& base)
-	: m_id(generate_id(relative_stem(
-		  path,
-		  base
-	  ))) {
+	: m_id(generate_id(relative_stem(path, base))) {
 }
 
 auto gse::identifiable::id() const -> gse::id {

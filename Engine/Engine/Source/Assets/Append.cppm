@@ -24,8 +24,7 @@ namespace gse::assets {
 
 	template <typename Head, typename... Rest>
 	struct flatten<Head, Rest...> {
-		using type =
-			typename type_pack_concat<typename as_type_pack<Head>::type, typename flatten<Rest...>::type>::type;
+		using type = typename type_pack_concat<typename as_type_pack<Head>::type, typename flatten<Rest...>::type>::type;
 	};
 }
 

@@ -141,10 +141,7 @@ auto gse::gpu::compute_lifetime(const std::vector<id>& used_by, const std::span<
 }
 
 auto gse::gpu::greedy_color(const std::span<const lifetime_entry> intervals) -> std::vector<std::uint32_t> {
-	std::vector<std::uint32_t> colors(
-		intervals.size(),
-		std::numeric_limits<std::uint32_t>::max()
-	);
+	std::vector<std::uint32_t> colors(intervals.size(), std::numeric_limits<std::uint32_t>::max());
 
 	std::vector<std::size_t> order(intervals.size());
 	std::iota(order.begin(), order.end(), 0);
@@ -299,10 +296,7 @@ auto gse::gpu::transient_pool::ensure_block_for_color(frame_state& slot, const s
 		block = {};
 	}
 
-	const auto type_index = m_device->find_memory_type_index(
-		memory_type_mask,
-		memory_property_flag::device_local
-	);
+	const auto type_index = m_device->find_memory_type_index(memory_type_mask, memory_property_flag::device_local);
 	block.memory = m_device->allocate_aliased_memory(required_size, type_index);
 	block.size = required_size;
 	block.memory_type_index = type_index;

@@ -128,14 +128,7 @@ gse::access<T, M>::access(const span_type span, const std::span<const id> owners
 
 template <typename T, gse::access_mode M>
 gse::access<T, M>::access(access&& other) noexcept
-	: m_span(other.m_span), m_owners(other.m_owners), m_lookup(other.m_lookup), m_lookup_ctx(other.m_lookup_ctx), m_mutex(std::exchange(
-																													  other.m_mutex,
-																													  nullptr
-																												  )),
-	  m_held_locks(std::exchange(
-		  other.m_held_locks,
-		  nullptr
-	  )) {
+	: m_span(other.m_span), m_owners(other.m_owners), m_lookup(other.m_lookup), m_lookup_ctx(other.m_lookup_ctx), m_mutex(std::exchange(other.m_mutex, nullptr)), m_held_locks(std::exchange(other.m_held_locks, nullptr)) {
 }
 
 template <typename T, gse::access_mode M>

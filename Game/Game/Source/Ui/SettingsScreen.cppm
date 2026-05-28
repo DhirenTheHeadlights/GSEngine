@@ -84,12 +84,7 @@ auto gs::settings_screen::title() const -> std::string_view {
 }
 
 auto gs::settings_screen::body_rect(const gse::gui::style& sty, const gse::vec2f viewport_size) const -> gse::gui::ui_rect {
-	return gse::gui::layout::fit_card(
-		viewport_size,
-		sty.card_min_size,
-		sty.card_max_size,
-		sty.card_margin
-	);
+	return gse::gui::layout::fit_card(viewport_size, sty.card_min_size, sty.card_max_size, sty.card_margin);
 }
 
 auto gs::settings_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
@@ -124,10 +119,7 @@ auto gs::settings_screen::draw_close_button(gse::gui::draw_context& ctx, const g
 
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = ctx.animated_color(
-			close_id,
-			bg
-		),
+		.color = ctx.animated_color(close_id, bg),
 		.texture = ctx.blank_texture,
 		.corner_radius = rect.width() * 0.5f,
 	});
@@ -284,10 +276,7 @@ auto gs::settings_screen::draw_footer_button(gse::gui::draw_context& ctx, const 
 
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = ctx.animated_color(
-			key,
-			target_color
-		),
+		.color = ctx.animated_color(key, target_color),
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
@@ -347,9 +336,7 @@ auto gs::settings_screen::draw_footer(gse::gui::draw_context& ctx, const gse::gu
 		}
 	}
 
-	const gse::vec4f status_color = (can_apply || needs_restart)
-		? sty.color_accent
-		: sty.color_text_secondary;
+	const gse::vec4f status_color = (can_apply || needs_restart) ? sty.color_accent : sty.color_text_secondary;
 	ctx.queue_text({
 		.font = ctx.font,
 		.text = m_footer_status.text,
@@ -360,13 +347,11 @@ auto gs::settings_screen::draw_footer(gse::gui::draw_context& ctx, const gse::gu
 	});
 
 	const float vertical_inset = (rect.height() - sty.button_height) * 0.5f;
-	const gse::gui::ui_rect button_band = lo::inset_per_side(
-		rect,
-		vertical_inset,
-		sty.padding,
-		vertical_inset,
-		sty.padding
-	);
+	const gse::gui::ui_rect button_band = lo::inset_per_side(rect,
+															 vertical_inset,
+															 sty.padding,
+															 vertical_inset,
+															 sty.padding);
 	float cursor_x = button_band.right();
 
 	if (needs_restart) {

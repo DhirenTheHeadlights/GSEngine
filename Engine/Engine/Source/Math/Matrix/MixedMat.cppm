@@ -73,8 +73,7 @@ export namespace gse {
 		requires std::same_as<typename OtherRow::template type<0>, typename ColSpec::template type<0>>
 		constexpr auto operator*(
 			const mixed_mat<OtherCol, OtherRow, T>& rhs
-		) const
-			-> mixed_mat<OtherCol, RowSpec, T>;
+		) const -> mixed_mat<OtherCol, RowSpec, T>;
 
 		template <internal::is_quantity Q>
 		requires(internal::same_unit_family_v<typename Q::quantity_tag, typename ColSpec::template type<0>::quantity_tag>)

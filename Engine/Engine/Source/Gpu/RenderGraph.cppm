@@ -771,11 +771,9 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 		.image = gpu_image,
 		.aspects = gpu::image_aspect_flag::color,
 	};
-	m_recorder.pipeline_barrier(
-		gpu::dependency_info{
-			.image_barriers = std::span(&to_transfer, 1)
-		}
-	);
+	m_recorder.pipeline_barrier(gpu::dependency_info{
+		.image_barriers = std::span(&to_transfer, 1)
+	});
 
 	const gpu::buffer_image_copy_region gpu_region{
 		.buffer_offset = 0,
@@ -790,14 +788,7 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 		.image_offset = vec3i{ 0, 0, 0 },
 		.image_extent = vec3u{ ext.x(), ext.y(), 1 },
 	};
-	m_recorder.copy_image_to_buffer(
-		gpu_image,
-		dst_buffer,
-		std::span(
-			&gpu_region,
-			1
-		)
-	);
+	m_recorder.copy_image_to_buffer(gpu_image, dst_buffer, std::span(&gpu_region, 1));
 
 	const gpu::image_barrier back_to_color{
 		.src_stages = gpu::pipeline_stage_flag::transfer,
@@ -807,14 +798,9 @@ auto gse::gpu::recording_context::capture_swapchain(const gpu::swap_chain& swapc
 		.image = gpu_image,
 		.aspects = gpu::image_aspect_flag::color,
 	};
-	m_recorder.pipeline_barrier(
-		gpu::dependency_info{
-			.image_barriers = std::span(
-				&back_to_color,
-				1
-			)
-		}
-	);
+	m_recorder.pipeline_barrier(gpu::dependency_info{
+		.image_barriers = std::span(&back_to_color, 1)
+	});
 }
 
 auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain& swapchain, const gpu::frame& frame, const image& dst, const vec2u dst_extent) const -> void {
@@ -842,11 +828,9 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 	};
 
 	const std::array pre_barriers = { src_to_transfer, dst_to_transfer };
-	m_recorder.pipeline_barrier(
-		gpu::dependency_info{
-			.image_barriers = pre_barriers
-		}
-	);
+	m_recorder.pipeline_barrier(gpu::dependency_info{
+		.image_barriers = pre_barriers
+	});
 
 	const gpu::image_blit_region gpu_region{
 		.src_subresource = {
@@ -870,12 +854,7 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 			vec3i{ static_cast<int>(dst_extent.x()), static_cast<int>(dst_extent.y()), 1 },
 		},
 	};
-	m_recorder.blit_image(
-		src_image,
-		dst.handle(),
-		gpu_region,
-		gpu::sampler_filter::nearest
-	);
+	m_recorder.blit_image(src_image, dst.handle(), gpu_region, gpu::sampler_filter::nearest);
 
 	const gpu::image_barrier src_back{
 		.src_stages = gpu::pipeline_stage_flag::transfer,
@@ -896,11 +875,9 @@ auto gse::gpu::recording_context::blit_swapchain_to_image(const gpu::swap_chain&
 	};
 
 	const std::array post_barriers = { src_back, dst_to_read };
-	m_recorder.pipeline_barrier(
-		gpu::dependency_info{
-			.image_barriers = post_barriers
-		}
-	);
+	m_recorder.pipeline_barrier(gpu::dependency_info{
+		.image_barriers = post_barriers
+	});
 }
 
 auto gse::gpu::recording_context::set_viewport(const float x, const float y, const float width, const float height, const float min_depth, const float max_depth) const -> void {
@@ -986,10 +963,7 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 template <typename T>
 auto gse::gpu::recording_context::push_data(const T& value, const std::uint32_t offset) const -> void {
 	check_active();
-	const auto bytes = std::span(
-		reinterpret_cast<const std::byte*>(std::addressof(value)),
-		sizeof(T)
-	);
+	const auto bytes = std::span(reinterpret_cast<const std::byte*>(std::addressof(value)), sizeof(T));
 	m_recorder.push_data(offset, bytes);
 }
 
@@ -1210,10 +1184,7 @@ auto gse::gpu::render_graph::register_framebuffer_image(const id name, const fra
 	if (!slot) {
 		slot = std::make_unique<registered_image>(registered_image{
 			.desc = desc,
-			.img = create_framebuffer_image(
-				desc,
-				name.tag()
-			),
+			.img = create_framebuffer_image(desc, name.tag()),
 		});
 	}
 	return slot->img;
@@ -1237,10 +1208,7 @@ auto gse::gpu::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) 
 
 auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
 	if (!slot.timestamp_pool.valid()) {
-		slot.timestamp_pool = gpu::query_pool::create_timestamp(
-			m_device->vulkan_device(),
-			max_profiled_passes * 2 + 1
-		);
+		slot.timestamp_pool = gpu::query_pool::create_timestamp(m_device->vulkan_device(), max_profiled_passes * 2 + 1);
 	}
 	if (allow_stats && !slot.stats_pool.valid()) {
 		slot.stats_pool =
@@ -1259,11 +1227,7 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 
 	const std::uint32_t timestamp_count = slot.pass_count * 2 + 1;
 	const auto [ts_status, timestamps] =
-		slot.timestamp_pool.results<std::uint64_t>(
-			0,
-			timestamp_count,
-			sizeof(std::uint64_t)
-		);
+		slot.timestamp_pool.results<std::uint64_t>(0, timestamp_count, sizeof(std::uint64_t));
 
 	if (ts_status != gpu::query_status::success) {
 		slot.results_valid = false;
@@ -1291,11 +1255,7 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 	if (slot.stats_issued) {
 		constexpr std::uint32_t stats_per_pass = 4;
 		const auto [stats_status, stats] =
-			slot.stats_pool.results<std::uint64_t>(
-				0,
-				slot.pass_count,
-				sizeof(std::uint64_t) * stats_per_pass
-			);
+			slot.stats_pool.results<std::uint64_t>(0, slot.pass_count, sizeof(std::uint64_t) * stats_per_pass);
 
 		if (stats_status == gpu::query_status::success) {
 			static constexpr std::array<const char*, stats_per_pass> labels{ ":ia_verts",
@@ -1480,12 +1440,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 				const gpu::commands sec_cmd(secondary);
 				sec_cmd.begin_secondary(inherit_info);
-				recording_context rec{
-					sec_cmd,
-					std::addressof(pass),
-					std::addressof(m_transient_pool),
-					m_bindless_heaps
-				};
+				recording_context rec{ sec_cmd, std::addressof(pass), std::addressof(m_transient_pool), m_bindless_heaps };
 				if (pass.primary_pipeline) {
 					rec.bind(*pass.primary_pipeline);
 				}
@@ -1567,11 +1522,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		);
 
 		round_start = passes.size();
-		passes.insert(
-			passes.end(),
-			std::make_move_iterator(more.begin()),
-			std::make_move_iterator(more.end())
-		);
+		passes.insert(passes.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
 	}
 
 	std::array<bool, gpu::queue_type_count> queue_has_work{};
@@ -1921,10 +1872,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 		};
 
-		auto append_host_dirty_barriers = [&](
-			const render_pass_data& p,
-			std::vector<gpu::buffer_barrier>& out
-		) {
+		auto append_host_dirty_barriers = [&](const render_pass_data& p, std::vector<gpu::buffer_barrier>& out) {
 			auto walk = [&](const std::vector<resource_usage>& list) {
 				for (const auto& [resource, stage, access] : list) {
 					if (resource.type != resource_type::buffer || !resource.ptr) {
@@ -2159,8 +2107,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			const bool profile_pass = timestamps_enabled && target_slot.pass_count < max_profiled_passes;
 			const std::uint32_t pass_index = target_slot.pass_count;
 			const bool is_graphics_pass = !pass.color_outputs.empty() || pass.depth_output;
-			const bool issue_stats =
-				profile_pass && stats_enabled && is_graphics_pass && queue == gpu::queue_type::graphics;
+			const bool issue_stats = profile_pass && stats_enabled && is_graphics_pass && queue == gpu::queue_type::graphics;
 
 			const auto marker_domain = (queue == gpu::queue_type::graphics)
 				? gpu::device::pass_marker_domain::graphics_queue
