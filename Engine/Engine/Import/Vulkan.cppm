@@ -20,7 +20,6 @@ export import :device;
 export import :queues;
 export import :command_pools;
 export import :sync;
-export import :swapchain;
 export import :commands;
 export import :acceleration_structure;
 export import :transient_command_buffer;

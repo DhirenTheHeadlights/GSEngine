@@ -123,11 +123,11 @@ export namespace gse::gpu {
 		) const -> std::unique_ptr<bindless_heaps>;
 
 		[[nodiscard]]
-		auto create_swapchain_backend(
+		auto create_swapchain(
 			vec2i framebuffer_size,
 			present_mode mode,
 			gpu::swap_chain_handle old_handle = {}
-		) -> vulkan::swap_chain;
+		) -> swap_chain_info;
 
 		[[nodiscard]]
 		auto acquire_swapchain_image(
@@ -137,13 +137,25 @@ export namespace gse::gpu {
 		) const -> gpu::acquire_next_image_result;
 
 		auto wait_swapchain_release_fences(
-			const vulkan::swap_chain& sc
+			gpu::swap_chain_handle swapchain
 		) const -> void;
 
 		auto reset_swapchain_release_fence(
-			vulkan::swap_chain& sc,
+			gpu::swap_chain_handle swapchain,
 			std::uint32_t image_index
 		) const -> void;
+
+		[[nodiscard]] auto swapchain_release_fence(
+			gpu::swap_chain_handle swapchain,
+			std::uint32_t image_index
+		) const -> gpu::fence_handle;
+
+		[[nodiscard]]
+		auto swapchain_wait_for_present(
+			gpu::swap_chain_handle swapchain,
+			std::uint64_t present_id,
+			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
+		) const -> result;
 
 		[[nodiscard]]
 		auto create_blas(
@@ -354,20 +366,28 @@ auto gse::gpu::device::create_bindless_heaps(const std::uint32_t texture_capacit
 	return std::make_unique<bindless_heaps>(m_device_config, texture_capacity, image_capacity, buffer_capacity, sampler_capacity);
 }
 
-auto gse::gpu::device::create_swapchain_backend(const vec2i framebuffer_size, const present_mode mode, const gpu::swap_chain_handle old_handle) -> vulkan::swap_chain {
-	return vulkan::swap_chain::create(framebuffer_size, mode, m_instance, m_device_config, old_handle);
+auto gse::gpu::device::create_swapchain(const vec2i framebuffer_size, const present_mode mode, const gpu::swap_chain_handle old_handle) -> swap_chain_info {
+	return m_device_config.create_swap_chain(framebuffer_size, mode, old_handle);
 }
 
 auto gse::gpu::device::acquire_swapchain_image(const gpu::swap_chain_handle swapchain, const gpu::semaphore_handle wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
 	return m_device_config.acquire_next_image(swapchain, wait_semaphore, timeout_ns);
 }
 
-auto gse::gpu::device::wait_swapchain_release_fences(const vulkan::swap_chain& sc) const -> void {
-	sc.wait_release_fences(m_device_config);
+auto gse::gpu::device::wait_swapchain_release_fences(const gpu::swap_chain_handle swapchain) const -> void {
+	m_device_config.wait_swapchain_release_fences(swapchain);
 }
 
-auto gse::gpu::device::reset_swapchain_release_fence(vulkan::swap_chain& sc, const std::uint32_t image_index) const -> void {
-	sc.reset_release_fence(m_device_config, image_index);
+auto gse::gpu::device::reset_swapchain_release_fence(const gpu::swap_chain_handle swapchain, const std::uint32_t image_index) const -> void {
+	m_device_config.reset_swapchain_release_fence(swapchain, image_index);
+}
+
+auto gse::gpu::device::swapchain_release_fence(const gpu::swap_chain_handle swapchain, const std::uint32_t image_index) const -> gpu::fence_handle {
+	return m_device_config.swapchain_release_fence(swapchain, image_index);
+}
+
+auto gse::gpu::device::swapchain_wait_for_present(const gpu::swap_chain_handle swapchain, const std::uint64_t present_id, const std::uint64_t timeout_ns) const -> result {
+	return m_device_config.swapchain_wait_for_present(swapchain, present_id, timeout_ns);
 }
 
 auto gse::gpu::device::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {

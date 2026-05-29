@@ -852,6 +852,15 @@ export namespace gse::gpu {
 		std::uint32_t image_index = 0;
 	};
 
+	struct swap_chain_info {
+		swap_chain_handle handle;
+		vec2u extent;
+		image_format format = image_format::d32_sfloat;
+		gse::gpu::present_mode present_mode = gse::gpu::present_mode::fifo;
+		std::vector<image_handle> images;
+		std::vector<image_view_handle> image_views;
+	};
+
 	struct acceleration_structure_build_sizes {
 		device_size acceleration_structure_size = 0;
 		device_size build_scratch_size = 0;
