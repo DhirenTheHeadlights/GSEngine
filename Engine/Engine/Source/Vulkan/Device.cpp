@@ -116,12 +116,266 @@ auto gse::vulkan::device::acquire_next_image(const gpu::swap_chain_handle swapch
 	};
 }
 
+auto gse::vulkan::device::create_swap_chain(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const gpu::swap_chain_handle old_swapchain) -> gpu::swap_chain_info {
+	const auto vk_surface = std::bit_cast<vk::SurfaceKHR>(m_surface);
+	const auto vk_phys = std::bit_cast<vk::PhysicalDevice>(m_physical_device.handle());
+	const auto vk_capabilities = vk_phys.getSurfaceCapabilitiesKHR(vk_surface);
+	auto vk_formats = vk_phys.getSurfaceFormatsKHR(vk_surface);
+	auto vk_present_modes = vk_phys.getSurfacePresentModesKHR(vk_surface);
+
+	vk::SurfaceFormatKHR surface_format;
+	for (const auto& available_format : vk_formats) {
+		if (available_format.format == vk::Format::eB8G8R8A8Srgb && available_format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+			surface_format = available_format;
+			break;
+		}
+		surface_format = vk_formats[0];
+	}
+
+	const auto requested_present_mode = to_vk(preferred_present_mode);
+	auto present_mode = vk::PresentModeKHR::eFifo;
+	for (const auto& mode : vk_present_modes) {
+		if (mode == requested_present_mode) {
+			present_mode = mode;
+			break;
+		}
+	}
+
+	auto mode_name = [](vk::PresentModeKHR m) -> std::string_view {
+		switch (m) {
+			case vk::PresentModeKHR::eImmediate:
+				return "Immediate";
+			case vk::PresentModeKHR::eMailbox:
+				return "Mailbox";
+			case vk::PresentModeKHR::eFifo:
+				return "FIFO (VSync)";
+			case vk::PresentModeKHR::eFifoRelaxed:
+				return "FIFO Relaxed";
+			default:
+				return "Unknown";
+		}
+	};
+	log::println(
+		log::category::vulkan,
+		"Present mode: requested {}, granted {}",
+		mode_name(requested_present_mode),
+		mode_name(present_mode)
+	);
+
+	vk::Extent2D extent;
+	if (vk_capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
+		extent = vk_capabilities.currentExtent;
+	}
+	else {
+		vk::Extent2D actual_extent = { static_cast<std::uint32_t>(framebuffer_size.x()),
+									   static_cast<std::uint32_t>(framebuffer_size.y()) };
+
+		extent.width =
+			std::clamp(
+				actual_extent.width,
+				vk_capabilities.minImageExtent.width,
+				vk_capabilities.maxImageExtent.width
+			);
+
+		extent.height = std::clamp(
+			actual_extent.height,
+			vk_capabilities.minImageExtent.height,
+			vk_capabilities.maxImageExtent.height
+		);
+	}
+
+	std::uint32_t image_count = vk_capabilities.minImageCount + 2;
+	if (vk_capabilities.maxImageCount > 0 && image_count > vk_capabilities.maxImageCount) {
+		image_count = vk_capabilities.maxImageCount;
+	}
+
+	log::println(
+		log::category::vulkan,
+		"Swapchain image count: requested {}, min {}, max {}",
+		image_count,
+		vk_capabilities.minImageCount,
+		vk_capabilities.maxImageCount
+	);
+
+	vk::SwapchainCreateInfoKHR create_info{
+		.flags = {},
+		.surface = vk_surface,
+		.minImageCount = image_count,
+		.imageFormat = surface_format.format,
+		.imageColorSpace = surface_format.colorSpace,
+		.imageExtent = extent,
+		.imageArrayLayers = 1,
+		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc
+	};
+
+	const auto families = find_queue_families(m_physical_device, m_surface);
+	const std::uint32_t queue_family_indices[] = { families.graphics_family.value(), families.present_family.value() };
+
+	if (families.graphics_family != families.present_family) {
+		create_info.imageSharingMode = vk::SharingMode::eConcurrent;
+		create_info.queueFamilyIndexCount = 2;
+		create_info.pQueueFamilyIndices = queue_family_indices;
+	}
+	else {
+		create_info.imageSharingMode = vk::SharingMode::eExclusive;
+	}
+
+	create_info.preTransform = vk_capabilities.currentTransform;
+	create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+	create_info.presentMode = present_mode;
+	create_info.clipped = true;
+
+	std::vector<vk::PresentModeKHR> compatible_present_modes;
+	{
+		const vk::SurfacePresentModeKHR present_mode_query{
+			.presentMode = present_mode
+		};
+		const vk::PhysicalDeviceSurfaceInfo2KHR surface_info{
+			.pNext = &present_mode_query,
+			.surface = vk_surface,
+		};
+		vk::SurfacePresentModeCompatibilityKHR compat{};
+		vk::SurfaceCapabilities2KHR caps_chain{
+			.pNext = &compat
+		};
+		(void)vk_phys.getSurfaceCapabilities2KHR(&surface_info, &caps_chain);
+		compatible_present_modes.resize(compat.presentModeCount);
+		compat.pPresentModes = compatible_present_modes.data();
+		(void)vk_phys.getSurfaceCapabilities2KHR(&surface_info, &caps_chain);
+	}
+
+	const vk::SwapchainPresentModesCreateInfoEXT present_modes_create_info{
+		.presentModeCount = static_cast<std::uint32_t>(compatible_present_modes.size()),
+		.pPresentModes = compatible_present_modes.data(),
+	};
+	if (!compatible_present_modes.empty()) {
+		create_info.pNext = &present_modes_create_info;
+	}
+
+	if (old_swapchain) {
+		create_info.oldSwapchain = std::bit_cast<vk::SwapchainKHR>(old_swapchain);
+	}
+
+	auto vk_swap_chain = raii_device().createSwapchainKHR(create_info);
+	auto images = vk_swap_chain.getImages();
+	auto format = surface_format.format;
+
+	std::vector<vk::raii::ImageView> image_views;
+	image_views.reserve(images.size());
+
+	for (const auto& img : images) {
+		vk::ImageViewCreateInfo iv_create_info{
+			.flags = {},
+			.image = img,
+			.viewType = vk::ImageViewType::e2D,
+			.format = format,
+			.components = {},
+			.subresourceRange = {
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1
+			}
+		};
+		image_views.emplace_back(raii_device(), iv_create_info);
+	}
+
+	std::vector<vk::raii::Fence> release_fences;
+	release_fences.reserve(images.size());
+	for (std::size_t i = 0; i < images.size(); ++i) {
+		release_fences.emplace_back(raii_device().createFence(vk::FenceCreateInfo{ .flags = vk::FenceCreateFlagBits::eSignaled }));
+	}
+
+	const auto handle = std::bit_cast<gpu::swap_chain_handle>(*vk_swap_chain);
+
+	gpu::swap_chain_info info{
+		.handle = handle,
+		.extent = { extent.width, extent.height },
+		.format = from_vk(format),
+		.present_mode = from_vk(present_mode),
+	};
+	info.images.reserve(images.size());
+	for (const auto& img : images) {
+		info.images.push_back(std::bit_cast<gpu::image_handle>(img));
+	}
+	info.image_views.reserve(image_views.size());
+	for (const auto& view : image_views) {
+		info.image_views.push_back(std::bit_cast<gpu::image_view_handle>(*view));
+	}
+
+	{
+		std::lock_guard lock(m_mutex);
+		m_swapchains.live.emplace(
+			handle.value,
+			swap_chain_resources{
+				.swapchain = std::move(vk_swap_chain),
+				.image_views = std::move(image_views),
+				.release_fences = std::move(release_fences),
+			}
+		);
+		if (old_swapchain) {
+			m_swapchains.retire(old_swapchain.value, m_resource_frame + max_frames_in_flight);
+		}
+	}
+
+	return info;
+}
+
+auto gse::vulkan::device::wait_swapchain_release_fences(const gpu::swap_chain_handle swapchain) const -> void {
+	const auto it = m_swapchains.live.find(swapchain.value);
+	if (it == m_swapchains.live.end()) {
+		return;
+	}
+	for (const auto& release_fence : it->second.release_fences) {
+		(void)wait_for_fence(std::bit_cast<gpu::fence_handle>(*release_fence));
+	}
+}
+
+auto gse::vulkan::device::reset_swapchain_release_fence(const gpu::swap_chain_handle swapchain, const std::uint32_t image_index) const -> void {
+	const auto it = m_swapchains.live.find(swapchain.value);
+	if (it == m_swapchains.live.end()) {
+		return;
+	}
+	reset_fence(std::bit_cast<gpu::fence_handle>(*it->second.release_fences[image_index]));
+}
+
+auto gse::vulkan::device::swapchain_release_fence(const gpu::swap_chain_handle swapchain, const std::uint32_t image_index) const -> gpu::fence_handle {
+	const auto it = m_swapchains.live.find(swapchain.value);
+	if (it == m_swapchains.live.end()) {
+		return {};
+	}
+	return std::bit_cast<gpu::fence_handle>(*it->second.release_fences[image_index]);
+}
+
+auto gse::vulkan::device::swapchain_wait_for_present(const gpu::swap_chain_handle swapchain, const std::uint64_t present_id, const std::uint64_t timeout_ns) const -> gpu::result {
+	const auto it = m_swapchains.live.find(swapchain.value);
+	if (it == m_swapchains.live.end()) {
+		return gpu::result::error_unknown;
+	}
+	return from_vk(it->second.swapchain.waitForPresent(present_id, timeout_ns));
+}
+
+auto gse::vulkan::pick_surface_format(const physical_device& physical_device, const gpu::surface surface) -> gpu::image_format {
+	const auto formats = std::bit_cast<vk::PhysicalDevice>(physical_device.handle()).getSurfaceFormatsKHR(std::bit_cast<vk::SurfaceKHR>(surface));
+	for (const auto& [format, colorSpace] : formats) {
+		if (format == vk::Format::eB8G8R8A8Srgb && colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+			return from_vk(format);
+		}
+	}
+	return from_vk(formats[0].format);
+}
+
+auto gse::vulkan::pick_surface_format(const device& dev, const instance& inst) -> gpu::image_format {
+	return pick_surface_format(dev.physical_device(), inst.surface());
+}
+
 gse::vulkan::device::~device() {
 	clean_up();
 }
 
 gse::vulkan::device::device(device&& other) noexcept
-	: m_physical_device(std::move(other.m_physical_device)), m_device(std::move(other.m_device)), m_fault_enabled(other.m_fault_enabled), m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled), m_queue_families(other.m_queue_families), m_pools(std::move(other.m_pools)), m_live_allocation_count(other.m_live_allocation_count.load()), m_next_allocation_id(other.m_next_allocation_id.load()), m_cleaned_up(other.m_cleaned_up), m_settings(other.m_settings), m_live_allocations(std::move(other.m_live_allocations)) {
+	: m_physical_device(std::move(other.m_physical_device)), m_device(std::move(other.m_device)), m_fault_enabled(other.m_fault_enabled), m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled), m_queue_families(other.m_queue_families), m_surface(other.m_surface), m_pools(std::move(other.m_pools)), m_live_allocation_count(other.m_live_allocation_count.load()), m_next_allocation_id(other.m_next_allocation_id.load()), m_cleaned_up(other.m_cleaned_up), m_settings(other.m_settings), m_live_allocations(std::move(other.m_live_allocations)) {
 }
 
 auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
@@ -132,6 +386,7 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 		m_fault_enabled = other.m_fault_enabled;
 		m_vendor_binary_fault_enabled = other.m_vendor_binary_fault_enabled;
 		m_queue_families = other.m_queue_families;
+		m_surface = other.m_surface;
 		m_pools = std::move(other.m_pools);
 		m_live_allocation_count = other.m_live_allocation_count.load();
 		m_next_allocation_id = other.m_next_allocation_id.load();
@@ -526,7 +781,8 @@ auto gse::vulkan::device::create(const instance& instance_data, device::settings
 			device_fault_supported,
 			device_fault_vendor_binary_supported,
 			families.graphics_family.value(),
-			families.compute_family.value()
+			families.compute_family.value(),
+			instance_data.surface()
 		),
 		.queue = queue(
 			graphics_queue,
@@ -942,29 +1198,33 @@ auto gse::vulkan::device::retire(const gpu::image_handle image) -> void {
 
 auto gse::vulkan::device::retire(const gpu::acceleration_structure acceleration_structure) -> void {
 	std::lock_guard lock(m_mutex);
-	m_retired_acceleration_structures.push_back({ acceleration_structure.value, m_resource_frame + max_frames_in_flight });
+	m_acceleration_structures.retire(acceleration_structure.value, m_resource_frame + max_frames_in_flight);
 }
 
 auto gse::vulkan::device::retire(const gpu::semaphore_handle semaphore) -> void {
 	std::lock_guard lock(m_mutex);
-	m_retired_semaphores.push_back({ semaphore.value, m_resource_frame + max_frames_in_flight });
+	m_semaphores.retire(semaphore.value, m_resource_frame + max_frames_in_flight);
 }
 
-auto gse::vulkan::device::destroy_acceleration_structure(const gpu::acceleration_structure acceleration_structure) -> void {
-	std::lock_guard lock(m_mutex);
-	m_live_acceleration_structures.erase(acceleration_structure.value);
+template <typename T>
+auto gse::vulkan::retiring_pool<T>::retire(const std::uint64_t key, const std::uint64_t retire_after) -> void {
+	retired.push_back({ key, retire_after });
 }
 
-auto gse::vulkan::device::destroy_semaphore(const gpu::semaphore_handle semaphore) -> void {
-	std::lock_guard lock(m_mutex);
-	m_live_semaphores.erase(semaphore.value);
+template <typename T>
+auto gse::vulkan::retiring_pool<T>::collect(const std::uint64_t frame) -> void {
+	std::erase_if(retired, [&](const retired_resource& r) {
+		if (frame >= r.retire_after) {
+			live.erase(r.value);
+			return true;
+		}
+		return false;
+	});
 }
 
 auto gse::vulkan::device::collect_garbage() -> void {
 	std::vector<std::uint64_t> buffers;
 	std::vector<std::uint64_t> images;
-	std::vector<std::uint64_t> acceleration_structures;
-	std::vector<std::uint64_t> semaphores;
 	{
 		std::lock_guard lock(m_mutex);
 		++m_resource_frame;
@@ -982,32 +1242,15 @@ auto gse::vulkan::device::collect_garbage() -> void {
 			}
 			return false;
 		});
-		std::erase_if(m_retired_acceleration_structures, [&](const retired_resource& r) {
-			if (m_resource_frame >= r.retire_after) {
-				acceleration_structures.push_back(r.value);
-				return true;
-			}
-			return false;
-		});
-		std::erase_if(m_retired_semaphores, [&](const retired_resource& r) {
-			if (m_resource_frame >= r.retire_after) {
-				semaphores.push_back(r.value);
-				return true;
-			}
-			return false;
-		});
+		m_acceleration_structures.collect(m_resource_frame);
+		m_semaphores.collect(m_resource_frame);
+		m_swapchains.collect(m_resource_frame);
 	}
 	for (const auto value : buffers) {
 		destroy_buffer(std::bit_cast<gpu::buffer_handle>(value));
 	}
 	for (const auto value : images) {
 		destroy_image(std::bit_cast<gpu::image_handle>(value));
-	}
-	for (const auto value : acceleration_structures) {
-		destroy_acceleration_structure(std::bit_cast<gpu::acceleration_structure>(value));
-	}
-	for (const auto value : semaphores) {
-		destroy_semaphore(std::bit_cast<gpu::semaphore_handle>(value));
 	}
 }
 
@@ -1191,10 +1434,11 @@ auto gse::vulkan::device::free_allocation(const allocation& alloc) -> void {
 	}
 }
 
-gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::Device&& device, device::settings& cfg, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled, const std::uint32_t graphics_family, const std::uint32_t compute_family)
+gse::vulkan::device::device(class physical_device&& physical_device, vk::raii::Device&& device, device::settings& cfg, const bool device_fault_enabled, const bool device_fault_vendor_binary_enabled, const std::uint32_t graphics_family, const std::uint32_t compute_family, const gpu::surface surface)
 	: m_physical_device(std::move(physical_device)), m_device(std::move(device)), m_fault_enabled(device_fault_enabled), m_vendor_binary_fault_enabled(device_fault_vendor_binary_enabled), m_settings(&cfg) {
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::graphics)] = graphics_family;
 	m_queue_families[static_cast<std::size_t>(gpu::queue_type::compute)] = compute_family;
+	m_surface = surface;
 }
 
 auto gse::vulkan::device::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<allocation, std::string> {
@@ -1366,8 +1610,9 @@ auto gse::vulkan::device::clean_up() -> void {
 		return;
 	}
 
-	m_live_acceleration_structures.clear();
-	m_live_semaphores.clear();
+	m_acceleration_structures.live.clear();
+	m_semaphores.live.clear();
+	m_swapchains.live.clear();
 
 	for (auto& [handle, alloc] : m_live_buffers) {
 		(*m_device).destroyBuffer(std::bit_cast<vk::Buffer>(handle), nullptr);
@@ -1605,7 +1850,7 @@ auto gse::vulkan::device::create_acceleration_structure(const gpu::buffer_handle
 	});
 	const auto handle = std::bit_cast<gpu::acceleration_structure>(*acceleration_structure);
 	std::lock_guard lock(m_mutex);
-	m_live_acceleration_structures.emplace(handle.value, std::move(acceleration_structure));
+	m_acceleration_structures.live.emplace(handle.value, std::move(acceleration_structure));
 	return handle;
 }
 
@@ -1623,7 +1868,7 @@ auto gse::vulkan::device::create_semaphore() -> gpu::semaphore_handle {
 	auto semaphore = raii_device().createSemaphore(vk::SemaphoreCreateInfo{});
 	const auto handle = std::bit_cast<gpu::semaphore_handle>(*semaphore);
 	std::lock_guard lock(m_mutex);
-	m_live_semaphores.emplace(handle.value, std::move(semaphore));
+	m_semaphores.live.emplace(handle.value, std::move(semaphore));
 	return handle;
 }
 
@@ -1637,7 +1882,7 @@ auto gse::vulkan::device::create_timeline_semaphore(const std::uint64_t initial_
 	});
 	const auto handle = std::bit_cast<gpu::semaphore_handle>(*semaphore);
 	std::lock_guard lock(m_mutex);
-	m_live_semaphores.emplace(handle.value, std::move(semaphore));
+	m_semaphores.live.emplace(handle.value, std::move(semaphore));
 	return handle;
 }
 

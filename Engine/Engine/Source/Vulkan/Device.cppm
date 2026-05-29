@@ -22,6 +22,23 @@ import gse.diag;
 import gse.meta;
 import gse.log;
 
+namespace gse::vulkan {
+	struct retired_resource {
+		std::uint64_t value = 0;
+		std::uint64_t retire_after = 0;
+	};
+
+	template <typename T>
+	struct retiring_pool {
+		std::unordered_map<std::uint64_t, T> live;
+		std::vector<retired_resource> retired;
+
+		auto retire(std::uint64_t key, std::uint64_t retire_after) -> void;
+
+		auto collect(std::uint64_t frame) -> void;
+	};
+}
+
 export namespace gse::vulkan {
 	class blas;
 	class tlas;
@@ -143,14 +160,6 @@ export namespace gse::vulkan {
 			gpu::semaphore_handle semaphore
 		) -> void;
 
-		auto destroy_acceleration_structure(
-			gpu::acceleration_structure acceleration_structure
-		) -> void;
-
-		auto destroy_semaphore(
-			gpu::semaphore_handle semaphore
-		) -> void;
-
 		auto collect_garbage() -> void;
 
 		[[nodiscard]]
@@ -238,6 +247,35 @@ export namespace gse::vulkan {
 		) const -> gpu::acquire_next_image_result;
 
 		[[nodiscard]]
+		auto create_swap_chain(
+			vec2i framebuffer_size,
+			gpu::present_mode preferred_present_mode,
+			gpu::swap_chain_handle old_swapchain = {}
+		) -> gpu::swap_chain_info;
+
+		auto wait_swapchain_release_fences(
+			gpu::swap_chain_handle swapchain
+		) const -> void;
+
+		auto reset_swapchain_release_fence(
+			gpu::swap_chain_handle swapchain,
+			std::uint32_t image_index
+		) const -> void;
+
+		[[nodiscard]]
+		auto swapchain_release_fence(
+			gpu::swap_chain_handle swapchain,
+			std::uint32_t image_index
+		) const -> gpu::fence_handle;
+
+		[[nodiscard]]
+		auto swapchain_wait_for_present(
+			gpu::swap_chain_handle swapchain,
+			std::uint64_t present_id,
+			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
+		) const -> gpu::result;
+
+		[[nodiscard]]
 		auto create_blas(
 			const gpu::acceleration_structure_geometry& geometry,
 			std::uint32_t prim_count
@@ -286,7 +324,8 @@ export namespace gse::vulkan {
 			bool device_fault_enabled,
 			bool device_fault_vendor_binary_enabled,
 			std::uint32_t graphics_family,
-			std::uint32_t compute_family
+			std::uint32_t compute_family,
+			gpu::surface surface
 		);
 
 		auto create_buffer(
@@ -312,8 +351,7 @@ export namespace gse::vulkan {
 			std::string_view tag = "",
 			std::source_location loc = std::source_location::current(),
 			bool device_address = false
-		) -> std::
-			expected<allocation, std::string>;
+		) -> std::expected<allocation, std::string>;
 
 		auto clean_up() -> void;
 
@@ -375,6 +413,7 @@ export namespace gse::vulkan {
 		bool m_fault_enabled = false;
 		bool m_vendor_binary_fault_enabled = false;
 		std::array<std::uint32_t, gpu::queue_type_count> m_queue_families{};
+		gpu::surface m_surface;
 
 		std::unordered_map<pool_key, pool, pool_key_hash> m_pools;
 		std::mutex m_mutex;
@@ -391,19 +430,19 @@ export namespace gse::vulkan {
 			gpu::image_view_handle view;
 		};
 
-		struct retired_resource {
-			std::uint64_t value = 0;
-			std::uint64_t retire_after = 0;
+		struct swap_chain_resources {
+			vk::raii::SwapchainKHR swapchain = nullptr;
+			std::vector<vk::raii::ImageView> image_views;
+			std::vector<vk::raii::Fence> release_fences;
 		};
 
 		std::unordered_map<std::uint64_t, allocation> m_live_buffers;
 		std::unordered_map<std::uint64_t, live_image> m_live_images;
 		std::vector<retired_resource> m_retired_buffers;
 		std::vector<retired_resource> m_retired_images;
-		std::unordered_map<std::uint64_t, vk::raii::AccelerationStructureKHR> m_live_acceleration_structures;
-		std::vector<retired_resource> m_retired_acceleration_structures;
-		std::unordered_map<std::uint64_t, vk::raii::Semaphore> m_live_semaphores;
-		std::vector<retired_resource> m_retired_semaphores;
+		retiring_pool<vk::raii::AccelerationStructureKHR> m_acceleration_structures;
+		retiring_pool<vk::raii::Semaphore> m_semaphores;
+		retiring_pool<swap_chain_resources> m_swapchains;
 		std::uint64_t m_resource_frame = 0;
 	};
 
@@ -413,6 +452,16 @@ export namespace gse::vulkan {
 		queue_family families;
 		bool video_encode_enabled = false;
 	};
+
+	[[nodiscard]] auto pick_surface_format(
+		const physical_device& physical_device,
+		gpu::surface surface
+	) -> gpu::image_format;
+
+	[[nodiscard]] auto pick_surface_format(
+		const device& dev,
+		const instance& inst
+	) -> gpu::image_format;
 }
 
 auto gse::vulkan::device::physical_device(this auto&& self) -> auto& {

@@ -11,7 +11,6 @@ import gse.containers;
 import gse.time;
 import gse.concurrency;
 import gse.diag;
-import gse.vulkan;
 import gse.math;
 import gse.log;
 
@@ -94,12 +93,12 @@ export namespace gse::gpu {
 
 	private:
 		swap_chain(
-			vulkan::swap_chain&& config,
+			swap_chain_info&& info,
 			gpu::image&& depth_image,
 			device& dev
 		);
 
-		vulkan::swap_chain m_config;
+		swap_chain_info m_info;
 		gpu::image m_depth_image;
 		device* m_device;
 		std::vector<recreate_callback> m_recreate_callbacks;
@@ -114,57 +113,57 @@ namespace gse::gpu {
 }
 
 auto gse::gpu::swap_chain::create(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, device& dev) -> std::unique_ptr<swap_chain> {
-	auto config = dev.create_swapchain_backend(framebuffer_size, preferred_present_mode);
-	auto depth = create_swapchain_depth(dev, config.extent());
-	return std::unique_ptr<swap_chain>(new swap_chain(std::move(config), std::move(depth), dev));
+	auto info = dev.create_swapchain(framebuffer_size, preferred_present_mode);
+	auto depth = create_swapchain_depth(dev, info.extent);
+	return std::unique_ptr<swap_chain>(new swap_chain(std::move(info), std::move(depth), dev));
 }
 
-gse::gpu::swap_chain::swap_chain(vulkan::swap_chain&& config, gpu::image&& depth_image, device& dev)
-	: m_config(std::move(config)), m_depth_image(std::move(depth_image)), m_device(&dev) {
+gse::gpu::swap_chain::swap_chain(swap_chain_info&& info, gpu::image&& depth_image, device& dev)
+	: m_info(std::move(info)), m_depth_image(std::move(depth_image)), m_device(&dev) {
 }
 
 auto gse::gpu::swap_chain::extent() const -> vec2u {
-	return m_config.extent();
+	return m_info.extent;
 }
 
 auto gse::gpu::swap_chain::image_count() const -> std::uint32_t {
-	return m_config.image_count();
+	return static_cast<std::uint32_t>(m_info.images.size());
 }
 
 auto gse::gpu::swap_chain::format() const -> image_format {
-	return m_config.format();
+	return m_info.format;
 }
 
 auto gse::gpu::swap_chain::is_bgra() const -> bool {
-	return m_config.format() == image_format::b8g8r8a8_srgb || m_config.format() == image_format::b8g8r8a8_unorm;
+	return m_info.format == image_format::b8g8r8a8_srgb || m_info.format == image_format::b8g8r8a8_unorm;
 }
 
 auto gse::gpu::swap_chain::present_mode() const -> gpu::present_mode {
-	return m_config.present_mode();
+	return m_info.present_mode;
 }
 
 auto gse::gpu::swap_chain::set_present_mode(const gpu::present_mode mode) -> void {
-	m_config.set_present_mode(mode);
+	m_info.present_mode = mode;
 }
 
 auto gse::gpu::swap_chain::image(const std::uint32_t index) const -> image_handle {
-	return m_config.image(index);
+	return m_info.images[index];
 }
 
 auto gse::gpu::swap_chain::image_view(const std::uint32_t index) const -> image_view_handle {
-	return m_config.image_view(index);
+	return m_info.image_views[index];
 }
 
 auto gse::gpu::swap_chain::acquire(const semaphore_handle wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
-	return m_device->acquire_swapchain_image(m_config.handle(), wait_semaphore, timeout_ns);
+	return m_device->acquire_swapchain_image(m_info.handle, wait_semaphore, timeout_ns);
 }
 
 auto gse::gpu::swap_chain::present(const semaphore_handle wait_semaphore, const std::uint32_t image_index, const std::uint64_t present_id) -> result {
 	reset_release_fence(image_index);
 
-	const auto swapchain_handle = m_config.handle();
-	const auto current_present_mode = m_config.present_mode();
-	const auto release_fence_handle = m_config.release_fence(image_index);
+	const auto swapchain_handle = m_info.handle;
+	const auto current_present_mode = m_info.present_mode;
+	const auto release_fence_handle = m_device->swapchain_release_fence(m_info.handle, image_index);
 
 	const present_info info{
 		.wait_semaphores = std::span(&wait_semaphore, 1),
@@ -179,19 +178,19 @@ auto gse::gpu::swap_chain::present(const semaphore_handle wait_semaphore, const 
 }
 
 auto gse::gpu::swap_chain::release_fence(const std::uint32_t image_index) const -> fence_handle {
-	return m_config.release_fence(image_index);
+	return m_device->swapchain_release_fence(m_info.handle, image_index);
 }
 
 auto gse::gpu::swap_chain::wait_release_fences() -> void {
-	m_device->wait_swapchain_release_fences(m_config);
+	m_device->wait_swapchain_release_fences(m_info.handle);
 }
 
 auto gse::gpu::swap_chain::reset_release_fence(const std::uint32_t image_index) -> void {
-	m_device->reset_swapchain_release_fence(m_config, image_index);
+	m_device->reset_swapchain_release_fence(m_info.handle, image_index);
 }
 
 auto gse::gpu::swap_chain::wait_for_present(const std::uint64_t present_id, const std::uint64_t timeout_ns) const -> result {
-	return m_config.wait_for_present(present_id, timeout_ns);
+	return m_device->swapchain_wait_for_present(m_info.handle, present_id, timeout_ns);
 }
 
 auto gse::gpu::swap_chain::depth_image(this auto& self) -> auto& {
@@ -211,11 +210,11 @@ auto gse::gpu::swap_chain::notify_recreated() -> void {
 auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode) -> void {
 	m_depth_image = {};
 
-	m_device->wait_swapchain_release_fences(m_config);
-	const auto old_handle = m_config.handle();
-	m_config = m_device->create_swapchain_backend(framebuffer_size, preferred_present_mode, old_handle);
+	m_device->wait_swapchain_release_fences(m_info.handle);
+	const auto old_handle = m_info.handle;
+	m_info = m_device->create_swapchain(framebuffer_size, preferred_present_mode, old_handle);
 
-	m_depth_image = create_swapchain_depth(*m_device, m_config.extent());
+	m_depth_image = create_swapchain_depth(*m_device, m_info.extent);
 }
 
 auto gse::gpu::create_swapchain_depth(device& dev, const vec2u extent) -> image {
