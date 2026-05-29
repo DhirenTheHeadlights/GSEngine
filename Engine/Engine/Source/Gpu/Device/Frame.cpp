@@ -27,7 +27,7 @@ auto gse::gpu::frame::image_index() const -> std::uint32_t {
 	return m_image_index;
 }
 
-auto gse::gpu::frame::command_buffer(const queue_type queue) const -> handle<gpu::command_buffer> {
+auto gse::gpu::frame::command_buffer(const queue_type queue) const -> command_buffer_handle {
 	return m_command_buffers[static_cast<std::size_t>(queue)];
 }
 
@@ -262,7 +262,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 					sub.queue,
 					submit,
 					last_for_queue ? m_sync.in_flight_fence(sub.queue, m_current_frame)
-								   : handle<fence>{}
+								   : fence_handle{}
 				);
 			}
 			catch (const device_lost_error&) {
@@ -315,7 +315,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 		}
 	}
 
-	const handle<semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
+	const semaphore_handle render_finished_handle = m_sync.render_finished(m_image_index);
 	const std::uint64_t present_id = m_next_present_id++;
 
 	result present_result;

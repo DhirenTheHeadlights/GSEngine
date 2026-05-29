@@ -30,7 +30,7 @@ export namespace gse::gpu {
 
 namespace gse {
 	struct upload_entry {
-		gpu::handle<gpu::buffer> dst;
+		gpu::buffer_handle dst;
 		const void* data;
 		gpu::device_size size;
 		gpu::device_size offset;

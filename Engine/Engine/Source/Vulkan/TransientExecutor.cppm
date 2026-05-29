@@ -25,7 +25,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]]
 		static auto create(
-			const device& dev,
+			device& dev,
 			std::uint32_t graphics_family,
 			std::uint32_t compute_family,
 			std::size_t worker_count
@@ -72,7 +72,7 @@ gse::vulkan::transient_executor::transient_executor(transient_queue&& graphics, 
 
 gse::vulkan::transient_executor::~transient_executor() = default;
 
-auto gse::vulkan::transient_executor::create(const device& dev, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count) -> std::unique_ptr<transient_executor> {
+auto gse::vulkan::transient_executor::create(device& dev, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count) -> std::unique_ptr<transient_executor> {
 	auto graphics = transient_queue::create(dev, queue_id::graphics, graphics_family, worker_count);
 	auto compute = transient_queue::create(dev, queue_id::compute, compute_family, worker_count);
 	return std::unique_ptr<transient_executor>(new transient_executor(std::move(graphics), std::move(compute)));

@@ -137,8 +137,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 
 	constexpr auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
 
-	m_vertex_buffer = gpu::buffer::create(
-		ctx.device->allocator(),
+	m_vertex_buffer = ctx.device->allocator().create_buffer(
 		{
 			.size = vertex_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
@@ -147,8 +146,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		"mesh.vertex"
 	);
 
-	m_index_buffer = gpu::buffer::create(
-		ctx.device->allocator(),
+	m_index_buffer = ctx.device->allocator().create_buffer(
 		{
 			.size = index_buffer_size,
 			.usage = gpu::buffer_flag::index | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |

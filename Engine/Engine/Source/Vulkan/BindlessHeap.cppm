@@ -7,6 +7,7 @@ import :handles;
 import :types;
 import :buffer;
 import :device;
+import :physical_device;
 import :image;
 import :sampler;
 import :commands;
@@ -37,7 +38,7 @@ export namespace gse::vulkan {
 
 	[[nodiscard]]
 	auto query_descriptor_heap_properties(
-		const vk::raii::PhysicalDevice& physical_device
+		const physical_device& physical_device
 	) -> descriptor_heap_properties;
 
 	enum class bindless_resource_kind : std::uint8_t {
@@ -278,13 +279,13 @@ export namespace gse::vulkan {
 
 		auto begin_frame() -> void;
 
-		[[nodiscard]] auto resource_heap() -> bindless_resource_heap&;
+		[[nodiscard]] auto resource_heap(
+			this auto& self
+		) -> auto&;
 
-		[[nodiscard]] auto sampler_heap() -> bindless_sampler_heap&;
-
-		[[nodiscard]] auto resource_heap() const -> const bindless_resource_heap&;
-
-		[[nodiscard]] auto sampler_heap() const -> const bindless_sampler_heap&;
+		[[nodiscard]] auto sampler_heap(
+			this auto& self
+		) -> auto&;
 
 		[[nodiscard]] auto properties() const -> const descriptor_heap_properties&;
 
@@ -514,7 +515,7 @@ export namespace gse::vulkan {
 		auto rebind(
 			device& dev,
 			bindless_heaps& heaps,
-			gpu::acceleration_structure_handle as_handle
+			gpu::acceleration_structure as_handle
 		) -> void;
 
 		auto clear() -> void;
@@ -569,8 +570,8 @@ namespace gse::vulkan {
 	) -> gpu::device_size;
 }
 
-auto gse::vulkan::query_descriptor_heap_properties(const vk::raii::PhysicalDevice& physical_device) -> descriptor_heap_properties {
-	const auto chain = physical_device
+auto gse::vulkan::query_descriptor_heap_properties(const physical_device& physical_device) -> descriptor_heap_properties {
+	const auto chain = std::bit_cast<vk::PhysicalDevice>(physical_device.handle())
 		.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
 	const auto& dh = chain.get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
 
@@ -631,7 +632,7 @@ auto gse::vulkan::align_up_to(const gpu::device_size value, const gpu::device_si
 }
 
 auto gse::vulkan::allocate_heap_memory(const device& dev, const gpu::device_size size, const vk::BufferUsageFlags usage, const std::string_view tag) -> bindless_heap_memory {
-	const vk::PhysicalDevice physical_device = *dev.physical_device();
+	const vk::PhysicalDevice physical_device = std::bit_cast<vk::PhysicalDevice>(dev.physical_device().handle());
 	const vk::Device vk_device = *dev.raii_device();
 
 	const vk::BufferCreateInfo buffer_info{
@@ -1254,20 +1255,12 @@ auto gse::vulkan::bindless_heaps::begin_frame() -> void {
 	m_sampler_heap->begin_frame();
 }
 
-auto gse::vulkan::bindless_heaps::resource_heap() -> bindless_resource_heap& {
-	return *m_resource_heap;
+auto gse::vulkan::bindless_heaps::resource_heap(this auto& self) -> auto& {
+	return std::forward_like<decltype(self)>(*self.m_resource_heap);
 }
 
-auto gse::vulkan::bindless_heaps::sampler_heap() -> bindless_sampler_heap& {
-	return *m_sampler_heap;
-}
-
-auto gse::vulkan::bindless_heaps::resource_heap() const -> const bindless_resource_heap& {
-	return *m_resource_heap;
-}
-
-auto gse::vulkan::bindless_heaps::sampler_heap() const -> const bindless_sampler_heap& {
-	return *m_sampler_heap;
+auto gse::vulkan::bindless_heaps::sampler_heap(this auto& self) -> auto& {
+	return std::forward_like<decltype(self)>(*self.m_sampler_heap);
 }
 
 auto gse::vulkan::bindless_heaps::properties() const -> const descriptor_heap_properties& {
@@ -1500,7 +1493,7 @@ auto gse::vulkan::bindless_image::operator=(bindless_image&& other) noexcept -> 
 }
 
 auto gse::vulkan::bindless_image::create(device& dev, bindless_heaps& heaps, const gpu::image_desc& desc, const std::string_view tag) -> bindless_image {
-	auto img = image::create(dev, desc, tag);
+	auto img = dev.create_image(desc, tag);
 	auto& heap = heaps.resource_heap();
 	const auto storage = heap.allocate_image();
 	heap.write_storage_image(storage, img);
@@ -1660,7 +1653,7 @@ auto gse::vulkan::bindless_buffer::operator=(bindless_buffer&& other) noexcept -
 }
 
 auto gse::vulkan::bindless_buffer::create(device& dev, bindless_heaps& heaps, const gpu::buffer_desc& desc, const std::string_view tag) -> bindless_buffer {
-	auto buf = buffer::create(dev, desc, tag);
+	auto buf = dev.create_buffer(desc, tag);
 	auto& heap = heaps.resource_heap();
 	const auto address = dev.raii_device().getBufferAddress(vk::BufferDeviceAddressInfo{
 		.buffer = std::bit_cast<vk::Buffer>(buf.handle()),
@@ -1788,7 +1781,7 @@ auto gse::vulkan::bindless_tlas_view::operator=(bindless_tlas_view&& other) noex
 	return *this;
 }
 
-auto gse::vulkan::bindless_tlas_view::rebind(device& dev, bindless_heaps& heaps, const gpu::acceleration_structure_handle as_handle) -> void {
+auto gse::vulkan::bindless_tlas_view::rebind(device& dev, bindless_heaps& heaps, const gpu::acceleration_structure as_handle) -> void {
 	auto& heap = heaps.resource_heap();
 	if (m_heap == nullptr) {
 		m_heap = &heap;

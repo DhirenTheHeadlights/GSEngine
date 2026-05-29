@@ -1042,7 +1042,7 @@ auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 			gpu::stage_flag::task,
 			gpu::stage_flag::mesh,
 		};
-		std::array<gpu::handle<shader_object>, 4> bound{};
+		std::array<gpu::shader_object_handle, 4> bound{};
 		const auto stages = p.stages();
 		const auto handles = p.shader_handles();
 		for (std::size_t i = 0; i < all_graphics_stages.size(); ++i) {
@@ -1160,8 +1160,7 @@ auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_de
 	if (ext.x() == 0 || ext.y() == 0) {
 		return {};
 	}
-	auto img = gpu::image::create(
-		m_device->allocator(),
+	auto img = m_device->allocator().create_image(
 		gpu::image_desc{
 			.size = ext,
 			.format = desc.format,
@@ -1311,7 +1310,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	}
 
 	const auto frame_idx = m_frame->current_frame();
-	std::array<gpu::handle<command_buffer>, gpu::queue_type_count> primary_handles;
+	std::array<gpu::command_buffer_handle, gpu::queue_type_count> primary_handles;
 	std::array<gpu::commands, gpu::queue_type_count> primary_buffers;
 	for (std::size_t qi = 0; qi < gpu::queue_type_count; ++qi) {
 		primary_handles[qi] = m_frame->command_buffer(static_cast<gpu::queue_type>(qi));
@@ -1395,7 +1394,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		return effective_queue(passes[pi].queue);
 	};
 
-	std::vector<gpu::handle<command_buffer>> pass_secondaries;
+	std::vector<gpu::command_buffer_handle> pass_secondaries;
 
 	auto record_range = [&](const std::size_t start, const std::size_t end) {
 		task::parallel_invoke_range(
@@ -1526,7 +1525,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		queue_has_work[static_cast<std::size_t>(effective_queue(p.queue))] = true;
 	}
 
-	auto open_primary = [](const gpu::handle<command_buffer> handle) {
+	auto open_primary = [](const gpu::command_buffer_handle handle) {
 		const gpu::commands cmd(handle);
 		cmd.reset();
 		cmd.begin();
@@ -2157,7 +2156,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					const auto op = info.op;
 					const auto* color_target = resolve_color_target(info);
 
-					gpu::handle<image_view> color_view;
+					gpu::image_view_handle color_view;
 					if (color_target) {
 						color_view = color_target->view();
 						if (!extent_set) {
@@ -2185,7 +2184,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					const auto op = info.op;
 					const auto* depth_target = resolve_depth_target(info);
 
-					gpu::handle<image_view> depth_view;
+					gpu::image_view_handle depth_view;
 					if (depth_target) {
 						depth_view = depth_target->view();
 						if (!extent_set) {

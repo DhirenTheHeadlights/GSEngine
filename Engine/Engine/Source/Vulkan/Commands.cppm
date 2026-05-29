@@ -13,9 +13,6 @@ import gse.math;
 
 export namespace gse::vulkan {
 	struct command_buffer;
-	class pipeline_layout;
-	class query_pool;
-	class shader_object;
 
 	struct pipeline_state_cache {
 		std::optional<gpu::topology> topology;
@@ -43,7 +40,7 @@ export namespace gse::gpu {
 		access_flags src_access;
 		pipeline_stage_flags dst_stages;
 		access_flags dst_access;
-		gpu::handle<vulkan::buffer> buffer;
+		gpu::buffer_handle buffer;
 		device_size offset = 0;
 		device_size size = 0;
 	};
@@ -54,7 +51,7 @@ export namespace gse::gpu {
 		pipeline_stage_flags dst_stages;
 		access_flags dst_access;
 		bool discard_contents = false;
-		gpu::handle<vulkan::image> image;
+		gpu::image_handle image;
 		image_aspect_flags aspects;
 		std::uint32_t base_mip_level = 0;
 		std::uint32_t level_count = 1;
@@ -69,7 +66,7 @@ export namespace gse::gpu {
 	};
 
 	struct rendering_attachment_info {
-		gpu::handle<vulkan::image_view> image_view;
+		gpu::image_view_handle image_view;
 		load_op load = load_op::dont_care;
 		store_op store = store_op::dont_care;
 		color_clear color_clear_value;
@@ -92,10 +89,10 @@ export namespace gse::vulkan {
 		commands() = default;
 
 		commands(
-			gpu::handle<command_buffer> cmd
+			gpu::command_buffer_handle cmd
 		);
 
-		[[nodiscard]] auto native() const -> gpu::handle<command_buffer>;
+		[[nodiscard]] auto native() const -> gpu::command_buffer_handle;
 
 		[[nodiscard]] auto valid() const -> bool;
 
@@ -110,7 +107,7 @@ export namespace gse::vulkan {
 		auto reset() const -> void;
 
 		auto execute_commands(
-			gpu::handle<command_buffer> secondary
+			gpu::command_buffer_handle secondary
 		) const -> void;
 
 		auto begin_rendering(
@@ -124,30 +121,30 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto reset_query_pool(
-			gpu::handle<query_pool> pool,
+			gpu::query_pool_handle pool,
 			std::uint32_t first_query,
 			std::uint32_t query_count
 		) const -> void;
 
 		auto write_timestamp(
 			gpu::pipeline_stage_flags stage,
-			gpu::handle<query_pool> pool,
+			gpu::query_pool_handle pool,
 			std::uint32_t query_index
 		) const -> void;
 
 		auto begin_query(
-			gpu::handle<query_pool> pool,
+			gpu::query_pool_handle pool,
 			std::uint32_t query_index
 		) const -> void;
 
 		auto end_query(
-			gpu::handle<query_pool> pool,
+			gpu::query_pool_handle pool,
 			std::uint32_t query_index
 		) const -> void;
 
 		auto bind_shaders(
 			std::span<const gpu::stage_flag> stages,
-			std::span<const gpu::handle<shader_object>> shaders
+			std::span<const gpu::shader_object_handle> shaders
 		) const -> void;
 
 		auto unbind_shaders(
@@ -174,7 +171,7 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto push_constants(
-			gpu::handle<pipeline_layout> layout,
+			gpu::pipeline_layout_handle layout,
 			gpu::stage_flags stages,
 			std::uint32_t offset,
 			std::uint32_t size,
@@ -182,14 +179,14 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto bind_index_buffer_2(
-			gpu::handle<buffer> buffer,
+			gpu::buffer_handle buffer,
 			gpu::device_size offset,
 			gpu::device_size size,
 			gpu::index_type type
 		) const -> void;
 
 		auto draw_indexed_indirect(
-			gpu::handle<buffer> buffer,
+			gpu::buffer_handle buffer,
 			gpu::device_size offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
@@ -202,7 +199,7 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto dispatch_indirect(
-			gpu::handle<buffer> buffer,
+			gpu::buffer_handle buffer,
 			gpu::device_size offset
 		) const -> void;
 
@@ -317,45 +314,45 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto copy_buffer(
-			gpu::handle<buffer> src,
-			gpu::handle<buffer> dst,
+			gpu::buffer_handle src,
+			gpu::buffer_handle dst,
 			const gpu::buffer_copy_region& region
 		) const -> void;
 
 		auto fill_buffer(
-			gpu::handle<buffer> dst,
+			gpu::buffer_handle dst,
 			gpu::device_size offset,
 			gpu::device_size size,
 			std::uint32_t data
 		) const -> void;
 
 		auto copy_buffer_to_image(
-			gpu::handle<buffer> src,
-			gpu::handle<image> dst,
+			gpu::buffer_handle src,
+			gpu::image_handle dst,
 			std::span<const gpu::buffer_image_copy_region> regions
 		) const -> void;
 
 		auto copy_image_to_buffer(
-			gpu::handle<image> src,
-			gpu::handle<buffer> dst,
+			gpu::image_handle src,
+			gpu::buffer_handle dst,
 			std::span<const gpu::buffer_image_copy_region> regions
 		) const -> void;
 
 		auto blit_image(
-			gpu::handle<image> src,
-			gpu::handle<image> dst,
+			gpu::image_handle src,
+			gpu::image_handle dst,
 			const gpu::image_blit_region& region,
 			gpu::sampler_filter filter
 		) const -> void;
 
 		auto copy_image(
-			gpu::handle<image> src,
-			gpu::handle<image> dst,
+			gpu::image_handle src,
+			gpu::image_handle dst,
 			const gpu::image_copy_region& region
 		) const -> void;
 
 		auto release_swapchain_image_to_present(
-			gpu::handle<image> img,
+			gpu::image_handle img,
 			gpu::pipeline_stage_flags src_stages,
 			gpu::access_flags src_access
 		) const -> void;
@@ -382,7 +379,7 @@ export namespace gse::vulkan {
 		) const -> void;
 
 		auto draw_mesh_tasks_indirect(
-			gpu::handle<buffer> buffer,
+			gpu::buffer_handle buffer,
 			gpu::device_size offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
@@ -396,14 +393,14 @@ export namespace gse::vulkan {
 	private:
 		[[nodiscard]] auto raw() const -> vk::CommandBuffer;
 
-		gpu::handle<command_buffer> m_cmd;
+		gpu::command_buffer_handle m_cmd;
 	};
 }
 
-gse::vulkan::commands::commands(const gpu::handle<command_buffer> cmd) : m_cmd(cmd) {
+gse::vulkan::commands::commands(const gpu::command_buffer_handle cmd) : m_cmd(cmd) {
 }
 
-auto gse::vulkan::commands::native() const -> gpu::handle<command_buffer> {
+auto gse::vulkan::commands::native() const -> gpu::command_buffer_handle {
 	return m_cmd;
 }
 
@@ -463,20 +460,20 @@ auto gse::vulkan::commands::reset() const -> void {
 	raw().reset();
 }
 
-auto gse::vulkan::commands::execute_commands(const gpu::handle<command_buffer> secondary) const -> void {
+auto gse::vulkan::commands::execute_commands(const gpu::command_buffer_handle secondary) const -> void {
 	const vk::CommandBuffer cb = std::bit_cast<vk::CommandBuffer>(secondary);
 	raw().executeCommands(cb);
 }
 
-auto gse::vulkan::commands::reset_query_pool(const gpu::handle<query_pool> pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {
+auto gse::vulkan::commands::reset_query_pool(const gpu::query_pool_handle pool, const std::uint32_t first_query, const std::uint32_t query_count) const -> void {
 	raw().resetQueryPool(std::bit_cast<vk::QueryPool>(pool), first_query, query_count);
 }
 
-auto gse::vulkan::commands::write_timestamp(const gpu::pipeline_stage_flags stage, const gpu::handle<query_pool> pool, const std::uint32_t query_index) const -> void {
+auto gse::vulkan::commands::write_timestamp(const gpu::pipeline_stage_flags stage, const gpu::query_pool_handle pool, const std::uint32_t query_index) const -> void {
 	raw().writeTimestamp2(to_vk(stage), std::bit_cast<vk::QueryPool>(pool), query_index);
 }
 
-auto gse::vulkan::commands::begin_query(const gpu::handle<query_pool> pool, const std::uint32_t query_index) const -> void {
+auto gse::vulkan::commands::begin_query(const gpu::query_pool_handle pool, const std::uint32_t query_index) const -> void {
 	raw().beginQuery(
 		std::bit_cast<vk::QueryPool>(pool),
 		query_index,
@@ -484,7 +481,7 @@ auto gse::vulkan::commands::begin_query(const gpu::handle<query_pool> pool, cons
 	);
 }
 
-auto gse::vulkan::commands::end_query(const gpu::handle<query_pool> pool, const std::uint32_t query_index) const -> void {
+auto gse::vulkan::commands::end_query(const gpu::query_pool_handle pool, const std::uint32_t query_index) const -> void {
 	raw().endQuery(std::bit_cast<vk::QueryPool>(pool), query_index);
 }
 
@@ -533,7 +530,7 @@ auto gse::vulkan::commands::pipeline_barrier(const gpu::dependency_info& dep) co
 	raw().pipelineBarrier2(vk_dep);
 }
 
-auto gse::vulkan::commands::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::handle<shader_object>> shaders) const -> void {
+auto gse::vulkan::commands::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::shader_object_handle> shaders) const -> void {
 	std::vector<vk::ShaderStageFlagBits> vk_stages;
 	vk_stages.reserve(stages.size());
 	for (const auto s : stages) {
@@ -595,15 +592,15 @@ auto gse::vulkan::commands::unbind_shaders(const std::span<const gpu::stage_flag
 	raw().bindShadersEXT(vk_stages, vk_shaders);
 }
 
-auto gse::vulkan::commands::push_constants(const gpu::handle<pipeline_layout> layout, const gpu::stage_flags stages, const std::uint32_t offset, const std::uint32_t size, const void* data) const -> void {
+auto gse::vulkan::commands::push_constants(const gpu::pipeline_layout_handle layout, const gpu::stage_flags stages, const std::uint32_t offset, const std::uint32_t size, const void* data) const -> void {
 	raw().pushConstants(std::bit_cast<vk::PipelineLayout>(layout), to_vk(stages), offset, size, data);
 }
 
-auto gse::vulkan::commands::bind_index_buffer_2(const gpu::handle<buffer> buffer, const gpu::device_size offset, const gpu::device_size size, const gpu::index_type type) const -> void {
+auto gse::vulkan::commands::bind_index_buffer_2(const gpu::buffer_handle buffer, const gpu::device_size offset, const gpu::device_size size, const gpu::index_type type) const -> void {
 	raw().bindIndexBuffer2KHR(std::bit_cast<vk::Buffer>(buffer), offset, size, to_vk(type));
 }
 
-auto gse::vulkan::commands::draw_indexed_indirect(const gpu::handle<buffer> buffer, const gpu::device_size offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+auto gse::vulkan::commands::draw_indexed_indirect(const gpu::buffer_handle buffer, const gpu::device_size offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
 	raw().drawIndexedIndirect(std::bit_cast<vk::Buffer>(buffer), offset, draw_count, stride);
 }
 
@@ -611,7 +608,7 @@ auto gse::vulkan::commands::dispatch(const std::uint32_t x, const std::uint32_t 
 	raw().dispatch(x, y, z);
 }
 
-auto gse::vulkan::commands::dispatch_indirect(const gpu::handle<buffer> buffer, const gpu::device_size offset) const -> void {
+auto gse::vulkan::commands::dispatch_indirect(const gpu::buffer_handle buffer, const gpu::device_size offset) const -> void {
 	raw().dispatchIndirect(std::bit_cast<vk::Buffer>(buffer), offset);
 }
 
@@ -629,15 +626,15 @@ auto gse::vulkan::commands::set_scissor(const gse::rect_t<vec2i>& scissor) const
 	raw().setScissorWithCount(rect);
 }
 
-auto gse::vulkan::commands::copy_buffer(const gpu::handle<buffer> src, const gpu::handle<buffer> dst, const gpu::buffer_copy_region& region) const -> void {
+auto gse::vulkan::commands::copy_buffer(const gpu::buffer_handle src, const gpu::buffer_handle dst, const gpu::buffer_copy_region& region) const -> void {
 	raw().copyBuffer(std::bit_cast<vk::Buffer>(src), std::bit_cast<vk::Buffer>(dst), to_vk(region));
 }
 
-auto gse::vulkan::commands::fill_buffer(const gpu::handle<buffer> dst, const gpu::device_size offset, const gpu::device_size size, const std::uint32_t data) const -> void {
+auto gse::vulkan::commands::fill_buffer(const gpu::buffer_handle dst, const gpu::device_size offset, const gpu::device_size size, const std::uint32_t data) const -> void {
 	raw().fillBuffer(std::bit_cast<vk::Buffer>(dst), offset, size, data);
 }
 
-auto gse::vulkan::commands::copy_buffer_to_image(const gpu::handle<buffer> src, const gpu::handle<image> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
+auto gse::vulkan::commands::copy_buffer_to_image(const gpu::buffer_handle src, const gpu::image_handle dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
 	std::vector<vk::BufferImageCopy> vk_regions;
 	vk_regions.reserve(regions.size());
 	for (const auto& r : regions) {
@@ -651,7 +648,7 @@ auto gse::vulkan::commands::copy_buffer_to_image(const gpu::handle<buffer> src, 
 	);
 }
 
-auto gse::vulkan::commands::copy_image_to_buffer(const gpu::handle<image> src, const gpu::handle<buffer> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
+auto gse::vulkan::commands::copy_image_to_buffer(const gpu::image_handle src, const gpu::buffer_handle dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
 	std::vector<vk::BufferImageCopy> vk_regions;
 	vk_regions.reserve(regions.size());
 	for (const auto& r : regions) {
@@ -665,7 +662,7 @@ auto gse::vulkan::commands::copy_image_to_buffer(const gpu::handle<image> src, c
 	);
 }
 
-auto gse::vulkan::commands::blit_image(const gpu::handle<image> src, const gpu::handle<image> dst, const gpu::image_blit_region& region, const gpu::sampler_filter filter) const -> void {
+auto gse::vulkan::commands::blit_image(const gpu::image_handle src, const gpu::image_handle dst, const gpu::image_blit_region& region, const gpu::sampler_filter filter) const -> void {
 	raw().blitImage(
 		std::bit_cast<vk::Image>(src),
 		vk::ImageLayout::eGeneral,
@@ -676,7 +673,7 @@ auto gse::vulkan::commands::blit_image(const gpu::handle<image> src, const gpu::
 	);
 }
 
-auto gse::vulkan::commands::copy_image(const gpu::handle<image> src, const gpu::handle<image> dst, const gpu::image_copy_region& region) const -> void {
+auto gse::vulkan::commands::copy_image(const gpu::image_handle src, const gpu::image_handle dst, const gpu::image_copy_region& region) const -> void {
 	raw().copyImage(
 		std::bit_cast<vk::Image>(src),
 		vk::ImageLayout::eGeneral,
@@ -686,7 +683,7 @@ auto gse::vulkan::commands::copy_image(const gpu::handle<image> src, const gpu::
 	);
 }
 
-auto gse::vulkan::commands::release_swapchain_image_to_present(const gpu::handle<image> img, const gpu::pipeline_stage_flags src_stages, const gpu::access_flags src_access) const -> void {
+auto gse::vulkan::commands::release_swapchain_image_to_present(const gpu::image_handle img, const gpu::pipeline_stage_flags src_stages, const gpu::access_flags src_access) const -> void {
 	const vk::ImageMemoryBarrier2 barrier{
 		.srcStageMask = to_vk(src_stages),
 		.srcAccessMask = to_vk(src_access),
@@ -724,7 +721,7 @@ auto gse::vulkan::commands::draw_mesh_tasks(const std::uint32_t x, const std::ui
 	raw().drawMeshTasksEXT(x, y, z);
 }
 
-auto gse::vulkan::commands::draw_mesh_tasks_indirect(const gpu::handle<buffer> buffer, const gpu::device_size offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+auto gse::vulkan::commands::draw_mesh_tasks_indirect(const gpu::buffer_handle buffer, const gpu::device_size offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
 	raw().drawMeshTasksIndirectEXT(std::bit_cast<vk::Buffer>(buffer), offset, draw_count, stride);
 }
 

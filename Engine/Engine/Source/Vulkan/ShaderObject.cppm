@@ -54,7 +54,7 @@ export namespace gse::vulkan {
 			std::span<const shader_object_create_info> infos
 		) -> std::vector<shader_object>;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<shader_object>;
+		[[nodiscard]] auto handle() const -> gpu::shader_object_handle;
 
 		[[nodiscard]] auto stage() const -> gpu::stage_flag;
 
@@ -133,8 +133,8 @@ auto gse::vulkan::shader_object::create_linked(const device& dev, const std::spa
 	return result;
 }
 
-auto gse::vulkan::shader_object::handle() const -> gpu::handle<shader_object> {
-	return std::bit_cast<gpu::handle<shader_object>>(*m_shader);
+auto gse::vulkan::shader_object::handle() const -> gpu::shader_object_handle {
+	return std::bit_cast<gpu::shader_object_handle>(*m_shader);
 }
 
 auto gse::vulkan::shader_object::stage() const -> gpu::stage_flag {

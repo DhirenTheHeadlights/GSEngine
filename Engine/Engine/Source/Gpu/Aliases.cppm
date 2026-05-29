@@ -22,7 +22,6 @@ export namespace gse::gpu {
 	using commands = vulkan::commands;
 	using pipeline_state_cache = vulkan::pipeline_state_cache;
 	constexpr std::uint32_t max_frames_in_flight = vulkan::max_frames_in_flight;
-	using image_view = vulkan::image_view;
 	using shader_object = vulkan::shader_object;
 	using shader_object_create_info = vulkan::shader_object_create_info;
 	using shader_program = vulkan::shader_program;

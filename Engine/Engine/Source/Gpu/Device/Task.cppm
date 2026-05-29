@@ -140,9 +140,7 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 	}
 	m_submitted = true;
 
-	if (auto* pool = m_cmd.origin_pool()) {
-		pool->mark_in_use_until(m_value);
-	}
+	m_queue->mark_in_use(m_cmd.worker_index(), m_value);
 
 	for (auto& fn : m_pending_retains) {
 		fn();

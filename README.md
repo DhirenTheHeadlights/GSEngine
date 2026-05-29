@@ -8,30 +8,39 @@ below. Don't actually submit the issue.
 -->
 <!-- <video src="PASTE_HERO_CLIP_URL_HERE" autoplay muted loop playsinline width="100%"></video> -->
 
-GSEngine is a modular game engine written in modern C++ with C++26 reflection. Originally created for a 3D shooter, the architecture is flexible enough to support many genres. Peruse the [wiki](https://github.com/DhirenTheHeadlights/GSEngine/wiki) to get started with GSEngine.
+GSEngine is a game engine written in modern C++ with C++26 reflection. It began as the foundation for a 3D shooter, but nothing in it is tied to that genre. The [wiki](https://github.com/DhirenTheHeadlights/GSEngine/wiki) is the best place to start.
 
 Targets Windows only (clang + libc++ + Vulkan).
 
 ## Features
 
 **Rendering**
-- Forward+ light culling with bindless dispatch (`VK_EXT_shader_object`, no pre-baked pipelines)
-- HDR scene-color pipeline with full AgX tonemap and 7-mip bloom (Karis average + tent upsample)
-- Five-pass atmosphere LUT chain (transmittance / multiscatter / sky-view / aerial-perspective volume / sky raster) in canonical kilometers
-- Volumetric clouds: 128³ Worley/Perlin-Worley FBM shape + 32³ detail, half-res raymarch with dual Henyey-Greenstein + Beer-Powder
-- MSDF/MTSDF text with split alpha channels (no premultiplied darkening)
+- Bindless Forward+ light culling
+- Mesh-shader meshlet pipeline with GPU culling
+- Hardware ray tracing — RT shadows and GI probes
+- HDR pipeline with AgX tonemapping and bloom
+- Physically-based atmosphere and sky
+- Volumetric clouds
+- Temporal anti-aliasing
+- MSDF/MTSDF text rendering
+- Hardware-accelerated H.265/AV1 capture
 
 **Physics**
-- VBD (Vertex Block Descent) GPU solver with reflection-emitted Slang constant blocks
-- Speculative-margin SAT narrow-phase with clipped face contacts
-- Physics-driven humanoid skeletons: separate state estimator / gait scheduler / footstep planner / leg IK / balance controller
-- Camera is physics-aware — pelvis spring-displaces out of static OBBs before segment-cast
+- GPU-driven rigid-body pipeline — broad phase, narrow phase, solve, and transform writeback, all dispatched on-device
+- VBD (Vertex Block Descent) solver with graph-colored parallel constraint solving
+- Spatial-hash broad phase and SAT narrow-phase collision
+- Joints from hinge/ball/universal to activation-driven muscles
+- Physics-driven humanoid locomotion
+- Physics-aware camera
 
 **Engine**
-- C++26 reflection drives ECS system registration, settings panels, shader bindings, and Slang type emission
-- Async render graph with per-queue resource tracking and O(reads+writes) cross-pass barrier insertion
-- Custom in-tree clang-tidy checks (no-anonymous-namespace, no-get-prefix, redundant-namespace-qualifier stripping, concept-in-template-param, etc.)
-- Strongly-typed units (`length`, `velocity`, `force`, etc.) layout-compatible with `float` — passable directly to GPU push constants
+- C++26 reflection drives ECS registration, Slang shader/type emission, serialization, asset formats, networking, and a hot-reloadable settings UI
+- Compile-time dimensional analysis — `length / time` is a `velocity`, `length + time` is a compile error
+- Coroutine async on a lock-free work-stealing scheduler
+- Async render graph with automatic barrier insertion
+- Backend-agnostic RHI (Vulkan today, DX12 in progress)
+- Built entirely from C++ modules
+- Custom in-tree clang-tidy checks
 
 ### Atmosphere & volumetric clouds
 
@@ -49,7 +58,7 @@ R16G16B16A16 scene target end-to-end; AgX with input matrix → log-EV remap →
 
 <!-- <video src="PASTE_CLIP_URL_HERE" autoplay muted loop playsinline width="100%"></video> -->
 
-No skeletal animation playback — the character's pose comes out of a balance controller driving a pelvis `motor_component` from the support polygon and capture point. Push it, knock it, slope it; it catches.
+No skeletal animation playback — the character's pose comes out of a balance controller driving a pelvis `motor_component` from the support polygon and capture point. Shove it or stand it on a slope and it keeps its balance.
 
 ### VBD physics solver
 

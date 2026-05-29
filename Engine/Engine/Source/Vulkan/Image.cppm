@@ -4,51 +4,36 @@ import std;
 
 import :types;
 import :handles;
-import :allocation;
 
-import gse.assert;
 import gse.core;
 import gse.math;
 
 export namespace gse::vulkan {
-	class device;
-	struct image_view;
-
-	template <typename Device>
-	class basic_image final : public non_copyable {
+	class image final : public non_copyable {
 	public:
-		basic_image() = default;
+		image() = default;
 
-		[[nodiscard]]
-		static auto create(
-			Device& dev,
-			const gpu::image_desc& desc,
-			std::string_view tag = "",
-			const std::source_location& loc = std::source_location::current()
-		) -> basic_image;
+		~image() override = default;
 
-		basic_image(
-			gpu::handle<basic_image<device>> image,
-			gpu::handle<image_view> view,
+		image(
+			gpu::image_handle image,
+			gpu::image_view_handle view,
 			gpu::image_format_value format,
 			vec3u extent,
-			gpu::image_view_create_info view_info,
-			basic_allocation<Device> allocation
+			gpu::image_view_create_info view_info
 		);
 
-		~basic_image() override;
-
-		basic_image(
-			basic_image&& other
-		) noexcept;
+		image(
+			image&&
+		) noexcept = default;
 
 		auto operator=(
-			basic_image&& other
-		) noexcept -> basic_image&;
+			image&&
+		) noexcept -> image& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<basic_image<device>>;
+		[[nodiscard]] auto handle() const -> gpu::image_handle;
 
-		[[nodiscard]] auto view() const -> gpu::handle<image_view>;
+		[[nodiscard]] auto view() const -> gpu::image_view_handle;
 
 		[[nodiscard]] auto format() const -> gpu::image_format_value;
 
@@ -56,126 +41,41 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto view_create_info() const -> const gpu::image_view_create_info&;
 
+		[[nodiscard]] auto valid() const -> bool;
+
 	private:
-		gpu::handle<basic_image<device>> m_image;
-		gpu::handle<image_view> m_view;
+		gpu::image_handle m_image;
+		gpu::image_view_handle m_view;
 		gpu::image_format_value m_format = 0;
 		vec3u m_extent;
 		gpu::image_view_create_info m_view_info;
-		basic_allocation<Device> m_allocation;
 	};
-
-	using image = basic_image<device>;
 }
 
-template <typename Device>
-gse::vulkan::basic_image<Device>::basic_image(const gpu::handle<basic_image<device>> image, const gpu::handle<image_view> view, const gpu::image_format_value format, const vec3u extent, gpu::image_view_create_info view_info, basic_allocation<Device> allocation)
-	: m_image(image), m_view(view), m_format(format), m_extent(extent), m_view_info(view_info), m_allocation(std::move(allocation)) {
+gse::vulkan::image::image(const gpu::image_handle image, const gpu::image_view_handle view, const gpu::image_format_value format, const vec3u extent, gpu::image_view_create_info view_info)
+	: m_image(image), m_view(view), m_format(format), m_extent(extent), m_view_info(view_info) {
 }
 
-template <typename Device>
-auto gse::vulkan::basic_image<Device>::create(Device& dev, const gpu::image_desc& desc, const std::string_view tag, const std::source_location& loc) -> basic_image {
-	const bool is_depth = desc.format == gpu::image_format::d32_sfloat;
-	const bool is_cube = desc.view == gpu::image_view_type::cube;
-	const bool is_3d = desc.view == gpu::image_view_type::e3d;
-	const std::uint32_t layers = is_cube ? 6u : 1u;
-	const gpu::image_type type = is_3d ? gpu::image_type::e3d : gpu::image_type::e2d;
-	const std::uint32_t z_extent = is_3d ? desc.depth : 1u;
-
-	auto usage = desc.usage;
-	if (usage.test(gpu::image_flag::transfer_dst)) {
-		usage |= gpu::image_flag::host_transfer;
-	}
-
-	const gpu::image_create_info create_info{
-		.flags =
-			is_cube ? gpu::image_create_flags{ gpu::image_create_flag::cube_compatible } : gpu::image_create_flags{},
-		.type = type,
-		.format = desc.format,
-		.extent = vec3u{ desc.size.x(), desc.size.y(), z_extent },
-		.mip_levels = 1,
-		.array_layers = layers,
-		.samples = gpu::sample_count::e1,
-		.usage = usage,
-	};
-	const gpu::image_view_create_info view_info{
-		.format = desc.format,
-		.view_type = desc.view,
-		.aspects = is_depth ? gpu::image_aspect_flags{ gpu::image_aspect_flag::depth }
-							: gpu::image_aspect_flags{ gpu::image_aspect_flag::color },
-		.base_mip_level = 0,
-		.level_count = 1,
-		.base_array_layer = 0,
-		.layer_count = layers,
-	};
-
-	return dev.create_image(create_info, gpu::memory_property_flag::device_local, view_info, nullptr, tag, loc);
-}
-
-template <typename Device>
-gse::vulkan::basic_image<Device>::~basic_image() {
-	if (m_allocation.device()) {
-		if (m_view) {
-			m_allocation.device()->destroy_image_view(m_view);
-		}
-		if (m_image) {
-			m_allocation.device()->destroy_image(m_image);
-		}
-	}
-}
-
-template <typename Device>
-gse::vulkan::basic_image<Device>::basic_image(basic_image&& other) noexcept
-	: m_image(other.m_image), m_view(other.m_view), m_format(other.m_format), m_extent(other.m_extent), m_view_info(other.m_view_info), m_allocation(std::move(other.m_allocation)) {
-	other.m_image = {};
-	other.m_view = {};
-}
-
-template <typename Device>
-auto gse::vulkan::basic_image<Device>::operator=(basic_image&& other) noexcept -> basic_image& {
-	if (this != &other) {
-		if (m_allocation.device()) {
-			if (m_view) {
-				m_allocation.device()->destroy_image_view(m_view);
-			}
-			if (m_image) {
-				m_allocation.device()->destroy_image(m_image);
-			}
-		}
-
-		m_image = other.m_image;
-		m_view = other.m_view;
-		m_format = other.m_format;
-		m_extent = other.m_extent;
-		m_view_info = other.m_view_info;
-		m_allocation = std::move(other.m_allocation);
-		other.m_image = {};
-		other.m_view = {};
-	}
-	return *this;
-}
-
-template <typename Device>
-auto gse::vulkan::basic_image<Device>::handle() const -> gpu::handle<basic_image<device>> {
+auto gse::vulkan::image::handle() const -> gpu::image_handle {
 	return m_image;
 }
 
-template <typename Device>
-auto gse::vulkan::basic_image<Device>::view() const -> gpu::handle<image_view> {
+auto gse::vulkan::image::view() const -> gpu::image_view_handle {
 	return m_view;
 }
 
-template <typename Device>
-auto gse::vulkan::basic_image<Device>::format() const -> gpu::image_format_value {
+auto gse::vulkan::image::format() const -> gpu::image_format_value {
 	return m_format;
 }
 
-template <typename Device>
-auto gse::vulkan::basic_image<Device>::extent() const -> vec3u {
+auto gse::vulkan::image::extent() const -> vec3u {
 	return m_extent;
 }
 
-template <typename Device>
-auto gse::vulkan::basic_image<Device>::view_create_info() const -> const gpu::image_view_create_info& {
+auto gse::vulkan::image::view_create_info() const -> const gpu::image_view_create_info& {
 	return m_view_info;
+}
+
+auto gse::vulkan::image::valid() const -> bool {
+	return static_cast<bool>(m_image);
 }

@@ -288,8 +288,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(gpu::device& device, g
 	while (capacity < required_bytes) {
 		capacity *= 2;
 	}
-	buffer = gpu::buffer::create(
-		device.allocator(),
+	buffer = device.allocator().create_buffer(
 		{
 			.size = capacity,
 			.usage = usage

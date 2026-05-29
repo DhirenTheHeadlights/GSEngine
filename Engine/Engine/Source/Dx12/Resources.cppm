@@ -23,7 +23,7 @@ export namespace gse::dx12 {
 			buffer&&
 		) noexcept -> buffer& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<buffer>;
+		[[nodiscard]] auto handle() const -> gpu::buffer_handle;
 
 		[[nodiscard]] auto size_bytes() const -> gpu::device_size;
 
@@ -60,7 +60,7 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::handle<buffer> m_handle;
+		gpu::buffer_handle m_handle;
 		gpu::device_size m_size = 0;
 	};
 
@@ -78,9 +78,9 @@ export namespace gse::dx12 {
 			image&&
 		) noexcept -> image& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<image>;
+		[[nodiscard]] auto handle() const -> gpu::image_handle;
 
-		[[nodiscard]] auto view() const -> gpu::handle<image_view>;
+		[[nodiscard]] auto view() const -> gpu::image_view_handle;
 
 		[[nodiscard]] auto format() const -> gpu::image_format_value;
 
@@ -91,8 +91,8 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::handle<image> m_handle;
-		gpu::handle<image_view> m_view;
+		gpu::image_handle m_handle;
+		gpu::image_view_handle m_view;
 		gpu::image_format_value m_format = 0;
 		vec3u m_extent;
 		gpu::image_view_create_info m_view_info;
@@ -114,16 +114,16 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto native(
 			this const sampler& self
-		) -> gpu::handle<sampler>;
+		) -> gpu::sampler_handle;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::handle<sampler> m_handle;
+		gpu::sampler_handle m_handle;
 	};
 }
 
-auto gse::dx12::buffer::handle() const -> gpu::handle<buffer> {
+auto gse::dx12::buffer::handle() const -> gpu::buffer_handle {
 	return m_handle;
 }
 
@@ -173,11 +173,11 @@ auto gse::dx12::buffer::valid() const -> bool {
 	return false;
 }
 
-auto gse::dx12::image::handle() const -> gpu::handle<image> {
+auto gse::dx12::image::handle() const -> gpu::image_handle {
 	return m_handle;
 }
 
-auto gse::dx12::image::view() const -> gpu::handle<image_view> {
+auto gse::dx12::image::view() const -> gpu::image_view_handle {
 	return m_view;
 }
 
@@ -197,7 +197,7 @@ auto gse::dx12::image::valid() const -> bool {
 	return false;
 }
 
-auto gse::dx12::sampler::native(this const sampler& self) -> gpu::handle<sampler> {
+auto gse::dx12::sampler::native(this const sampler& self) -> gpu::sampler_handle {
 	return self.m_handle;
 }
 

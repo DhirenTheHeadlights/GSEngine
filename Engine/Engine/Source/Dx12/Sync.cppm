@@ -24,12 +24,12 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto handle(
 			this const semaphore& self
-		) -> gpu::handle<semaphore>;
+		) -> gpu::semaphore_handle;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::handle<semaphore> m_handle;
+		gpu::semaphore_handle m_handle;
 	};
 
 	class sync final : public non_copyable {
@@ -48,16 +48,16 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto image_available(
 			std::uint32_t frame_index
-		) const -> gpu::handle<semaphore>;
+		) const -> gpu::semaphore_handle;
 
 		[[nodiscard]] auto render_finished(
 			std::uint32_t image_index
-		) const -> gpu::handle<semaphore>;
+		) const -> gpu::semaphore_handle;
 
 		[[nodiscard]] auto in_flight_fence(
 			gpu::queue_type queue,
 			std::uint32_t frame_index
-		) const -> gpu::handle<fence>;
+		) const -> gpu::fence_handle;
 	};
 
 	class query_pool final : public non_copyable {
@@ -76,7 +76,7 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto handle(
 			this const query_pool& self
-		) -> gpu::handle<query_pool>;
+		) -> gpu::query_pool_handle;
 
 		[[nodiscard]] auto valid() const -> bool;
 
@@ -89,11 +89,11 @@ export namespace gse::dx12 {
 		) const -> std::pair<gpu::query_status, std::vector<T>>;
 
 	private:
-		gpu::handle<query_pool> m_handle;
+		gpu::query_pool_handle m_handle;
 	};
 }
 
-auto gse::dx12::semaphore::handle(this const semaphore& self) -> gpu::handle<semaphore> {
+auto gse::dx12::semaphore::handle(this const semaphore& self) -> gpu::semaphore_handle {
 	return self.m_handle;
 }
 
@@ -101,19 +101,19 @@ auto gse::dx12::semaphore::valid() const -> bool {
 	return false;
 }
 
-auto gse::dx12::sync::image_available(const std::uint32_t) const -> gpu::handle<semaphore> {
+auto gse::dx12::sync::image_available(const std::uint32_t) const -> gpu::semaphore_handle {
 	return {};
 }
 
-auto gse::dx12::sync::render_finished(const std::uint32_t) const -> gpu::handle<semaphore> {
+auto gse::dx12::sync::render_finished(const std::uint32_t) const -> gpu::semaphore_handle {
 	return {};
 }
 
-auto gse::dx12::sync::in_flight_fence(const gpu::queue_type, const std::uint32_t) const -> gpu::handle<fence> {
+auto gse::dx12::sync::in_flight_fence(const gpu::queue_type, const std::uint32_t) const -> gpu::fence_handle {
 	return {};
 }
 
-auto gse::dx12::query_pool::handle(this const query_pool& self) -> gpu::handle<query_pool> {
+auto gse::dx12::query_pool::handle(this const query_pool& self) -> gpu::query_pool_handle {
 	return self.m_handle;
 }
 

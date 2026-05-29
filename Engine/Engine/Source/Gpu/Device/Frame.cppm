@@ -12,7 +12,7 @@ import gse.core;
 export namespace gse::gpu {
 	struct queue_submission {
 		queue_type queue = queue_type::graphics;
-		handle<command_buffer> command_buffer;
+		command_buffer_handle command_buffer;
 		std::vector<semaphore_submit_info> waits;
 		std::vector<semaphore_submit_info> signals;
 	};
@@ -31,7 +31,7 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto command_buffer(
 			queue_type queue = queue_type::graphics
-		) const -> handle<command_buffer>;
+		) const -> command_buffer_handle;
 
 		[[nodiscard]] auto frame_in_progress() const -> bool;
 
@@ -68,7 +68,7 @@ export namespace gse::gpu {
 
 		sync m_sync;
 		std::uint32_t m_image_index = 0;
-		std::array<handle<gpu::command_buffer>, queue_type_count> m_command_buffers{};
+		std::array<command_buffer_handle, queue_type_count> m_command_buffers{};
 		std::uint32_t m_current_frame = 0;
 		bool m_frame_in_progress = false;
 		device* m_device;

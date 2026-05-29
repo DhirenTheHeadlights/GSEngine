@@ -11,6 +11,7 @@ import :fence;
 import :image;
 import :device;
 import :instance;
+import :physical_device;
 import :queues;
 
 import gse.core;
@@ -20,8 +21,8 @@ import gse.math;
 export namespace gse::vulkan {
 	[[nodiscard]]
 	auto pick_surface_format(
-		const vk::raii::PhysicalDevice& physical_device,
-		const vk::raii::SurfaceKHR& surface
+		const physical_device& physical_device,
+		gpu::surface surface
 	) -> gpu::image_format;
 
 	[[nodiscard]] auto pick_surface_format(
@@ -77,10 +78,10 @@ export namespace gse::vulkan {
 			gpu::present_mode preferred_present_mode,
 			const instance& instance_data,
 			device& device_data,
-			gpu::handle<swap_chain> old_swapchain = {}
+			gpu::swap_chain_handle old_swapchain = {}
 		) -> swap_chain;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<swap_chain>;
+		[[nodiscard]] auto handle() const -> gpu::swap_chain_handle;
 
 		[[nodiscard]] auto extent() const -> vec2u;
 
@@ -94,11 +95,11 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto image(
 			std::uint32_t index
-		) const -> gpu::handle<image>;
+		) const -> gpu::image_handle;
 
 		[[nodiscard]] auto image_view(
 			std::uint32_t index
-		) const -> gpu::handle<image_view>;
+		) const -> gpu::image_view_handle;
 
 		auto set_present_mode(
 			gpu::present_mode mode
@@ -106,7 +107,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto release_fence(
 			std::uint32_t image_index
-		) const -> gpu::handle<fence>;
+		) const -> gpu::fence_handle;
 
 		auto wait_release_fences(
 			const device& dev

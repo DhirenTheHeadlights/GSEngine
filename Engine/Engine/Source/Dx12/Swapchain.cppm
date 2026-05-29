@@ -26,7 +26,7 @@ export namespace gse::dx12 {
 			swap_chain&&
 		) noexcept -> swap_chain& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<swap_chain>;
+		[[nodiscard]] auto handle() const -> gpu::swap_chain_handle;
 
 		[[nodiscard]] auto extent() const -> vec2u;
 
@@ -42,15 +42,15 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto image(
 			std::uint32_t index
-		) const -> gpu::handle<dx12::image>;
+		) const -> gpu::image_handle;
 
 		[[nodiscard]] auto image_view(
 			std::uint32_t index
-		) const -> gpu::handle<dx12::image_view>;
+		) const -> gpu::image_view_handle;
 
 		[[nodiscard]] auto release_fence(
 			std::uint32_t image_index
-		) const -> gpu::handle<fence>;
+		) const -> gpu::fence_handle;
 
 		[[nodiscard]] auto wait_for_present(
 			std::uint64_t present_id,
@@ -67,13 +67,13 @@ export namespace gse::dx12 {
 		) -> void;
 
 	private:
-		gpu::handle<swap_chain> m_handle;
+		gpu::swap_chain_handle m_handle;
 		vec2u m_extent;
 		gpu::present_mode m_present_mode = gpu::present_mode::fifo;
 	};
 }
 
-auto gse::dx12::swap_chain::handle() const -> gpu::handle<swap_chain> {
+auto gse::dx12::swap_chain::handle() const -> gpu::swap_chain_handle {
 	return m_handle;
 }
 
@@ -97,15 +97,15 @@ auto gse::dx12::swap_chain::set_present_mode(const gpu::present_mode mode) -> vo
 	m_present_mode = mode;
 }
 
-auto gse::dx12::swap_chain::image(const std::uint32_t) const -> gpu::handle<dx12::image> {
+auto gse::dx12::swap_chain::image(const std::uint32_t) const -> gpu::image_handle {
 	return {};
 }
 
-auto gse::dx12::swap_chain::image_view(const std::uint32_t) const -> gpu::handle<dx12::image_view> {
+auto gse::dx12::swap_chain::image_view(const std::uint32_t) const -> gpu::image_view_handle {
 	return {};
 }
 
-auto gse::dx12::swap_chain::release_fence(const std::uint32_t) const -> gpu::handle<fence> {
+auto gse::dx12::swap_chain::release_fence(const std::uint32_t) const -> gpu::fence_handle {
 	return {};
 }
 

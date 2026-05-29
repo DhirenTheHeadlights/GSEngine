@@ -22,12 +22,12 @@ export namespace gse::dx12 {
 			blas&&
 		) noexcept -> blas& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::acceleration_structure_handle;
+		[[nodiscard]] auto handle() const -> gpu::acceleration_structure;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::acceleration_structure_handle m_handle;
+		gpu::acceleration_structure m_handle;
 	};
 
 	class tlas final : public non_copyable {
@@ -44,7 +44,7 @@ export namespace gse::dx12 {
 			tlas&&
 		) noexcept -> tlas& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::acceleration_structure_handle;
+		[[nodiscard]] auto handle() const -> gpu::acceleration_structure;
 
 		[[nodiscard]] auto instance_buffer(
 			this auto& self
@@ -57,13 +57,13 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::acceleration_structure_handle m_handle;
+		gpu::acceleration_structure m_handle;
 		buffer m_instance_buffer;
 		buffer m_scratch_buffer;
 	};
 }
 
-auto gse::dx12::blas::handle() const -> gpu::acceleration_structure_handle {
+auto gse::dx12::blas::handle() const -> gpu::acceleration_structure {
 	return m_handle;
 }
 
@@ -71,7 +71,7 @@ auto gse::dx12::blas::valid() const -> bool {
 	return false;
 }
 
-auto gse::dx12::tlas::handle() const -> gpu::acceleration_structure_handle {
+auto gse::dx12::tlas::handle() const -> gpu::acceleration_structure {
 	return m_handle;
 }
 
