@@ -41,7 +41,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto handle(
 			this const query_pool& self
-		) -> gpu::handle<query_pool>;
+		) -> gpu::query_pool_handle;
 
 		[[nodiscard]] auto valid() const -> bool;
 
@@ -110,8 +110,8 @@ auto gse::vulkan::query_pool::create_pipeline_stats(const device& dev, const std
 	return query_pool(std::move(pool));
 }
 
-auto gse::vulkan::query_pool::handle(this const query_pool& self) -> gpu::handle<query_pool> {
-	return std::bit_cast<gpu::handle<query_pool>>(*self.m_pool);
+auto gse::vulkan::query_pool::handle(this const query_pool& self) -> gpu::query_pool_handle {
+	return std::bit_cast<gpu::query_pool_handle>(*self.m_pool);
 }
 
 auto gse::vulkan::query_pool::valid() const -> bool {

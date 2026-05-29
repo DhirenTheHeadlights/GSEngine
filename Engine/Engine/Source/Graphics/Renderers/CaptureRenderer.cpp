@@ -82,8 +82,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 		};
 
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-			d.rgba_captures[i] = gpu::image::create(
-				gpu_s.device->allocator(),
+			d.rgba_captures[i] = gpu_s.device->allocator().create_image(
 				{
 					.size = ext,
 					.format = gpu::image_format::r8g8b8a8_unorm,
@@ -388,8 +387,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		const auto ext = gpu_s.render_graph->extent();
 
 		if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging.valid() || staging.size() < needed) {
-			staging = gpu::buffer::create(
-				gpu_s.device->allocator(),
+			staging = gpu_s.device->allocator().create_buffer(
 				{
 					.size = needed,
 					.usage = gpu::buffer_flag::transfer_dst,

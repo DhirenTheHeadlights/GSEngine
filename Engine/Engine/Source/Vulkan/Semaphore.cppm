@@ -1,7 +1,6 @@
 export module gse.vulkan:semaphore;
 
 import std;
-import vulkan;
 
 import :handles;
 import :device;
@@ -13,64 +12,82 @@ export namespace gse::vulkan {
 	public:
 		semaphore() = default;
 
-		~semaphore() override = default;
+		~semaphore() override;
 
 		semaphore(
-			semaphore&&
-		) noexcept = default;
+			semaphore&& other
+		) noexcept;
 
 		auto operator=(
-			semaphore&&
-		) noexcept -> semaphore& = default;
+			semaphore&& other
+		) noexcept -> semaphore&;
 
 		[[nodiscard]] static auto create_binary(
-			const device& dev
+			device& dev
 		) -> semaphore;
 
 		[[nodiscard]]
 		static auto create_timeline(
-			const device& dev,
+			device& dev,
 			std::uint64_t initial_value
 		) -> semaphore;
 
-		[[nodiscard]] auto handle(
-			this const semaphore& self
-		) -> gpu::handle<semaphore>;
+		[[nodiscard]] auto handle() const -> gpu::semaphore_handle;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		explicit semaphore(
-			vk::raii::Semaphore&& semaphore
+		semaphore(
+			device& dev,
+			gpu::semaphore_handle handle
 		);
 
-		vk::raii::Semaphore m_semaphore = nullptr;
+		device* m_device = nullptr;
+		gpu::semaphore_handle m_semaphore;
 	};
 }
 
-gse::vulkan::semaphore::semaphore(vk::raii::Semaphore&& semaphore) : m_semaphore(std::move(semaphore)) {
+gse::vulkan::semaphore::semaphore(device& dev, const gpu::semaphore_handle handle)
+	: m_device(&dev), m_semaphore(handle) {
 }
 
-auto gse::vulkan::semaphore::create_binary(const device& dev) -> semaphore {
-	constexpr vk::SemaphoreCreateInfo info{};
-	return semaphore(dev.raii_device().createSemaphore(info));
+gse::vulkan::semaphore::~semaphore() {
+	if (m_device && m_semaphore) {
+		m_device->retire(m_semaphore);
+	}
 }
 
-auto gse::vulkan::semaphore::create_timeline(const device& dev, const std::uint64_t initial_value) -> semaphore {
-	const vk::SemaphoreTypeCreateInfo type_info{
-		.semaphoreType = vk::SemaphoreType::eTimeline,
-		.initialValue = initial_value,
-	};
-	const vk::SemaphoreCreateInfo info{
-		.pNext = &type_info,
-	};
-	return semaphore(dev.raii_device().createSemaphore(info));
+gse::vulkan::semaphore::semaphore(semaphore&& other) noexcept
+	: m_device(other.m_device), m_semaphore(other.m_semaphore) {
+	other.m_device = nullptr;
+	other.m_semaphore = {};
 }
 
-auto gse::vulkan::semaphore::handle(this const semaphore& self) -> gpu::handle<semaphore> {
-	return std::bit_cast<gpu::handle<semaphore>>(*self.m_semaphore);
+auto gse::vulkan::semaphore::operator=(semaphore&& other) noexcept -> semaphore& {
+	if (this != &other) {
+		if (m_device && m_semaphore) {
+			m_device->retire(m_semaphore);
+		}
+		m_device = other.m_device;
+		m_semaphore = other.m_semaphore;
+		other.m_device = nullptr;
+		other.m_semaphore = {};
+	}
+	return *this;
+}
+
+auto gse::vulkan::semaphore::create_binary(device& dev) -> semaphore {
+	return semaphore(dev, dev.create_semaphore());
+}
+
+auto gse::vulkan::semaphore::create_timeline(device& dev, const std::uint64_t initial_value) -> semaphore {
+	return semaphore(dev, dev.create_timeline_semaphore(initial_value));
+}
+
+auto gse::vulkan::semaphore::handle() const -> gpu::semaphore_handle {
+	return m_semaphore;
 }
 
 auto gse::vulkan::semaphore::valid() const -> bool {
-	return *m_semaphore != nullptr;
+	return static_cast<bool>(m_semaphore);
 }

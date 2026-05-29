@@ -11,6 +11,7 @@ import :buffer;
 import :fence;
 import :image;
 import :device;
+import :physical_device;
 import :queues;
 
 import gse.core;
@@ -67,8 +68,8 @@ export namespace gse::vulkan {
 
 		auto encode_frame(
 			std::uint32_t frame_slot,
-			gpu::handle<image> y_plane,
-			gpu::handle<image> uv_plane
+			gpu::image_handle y_plane,
+			gpu::image_handle uv_plane
 		) -> void;
 
 		auto wait(
@@ -93,7 +94,7 @@ export namespace gse::vulkan {
 			vk::raii::CommandBuffer cmd = nullptr;
 			vk::raii::Fence fence = nullptr;
 			vk::raii::QueryPool query_pool = nullptr;
-			vulkan::basic_buffer<vulkan::device> bitstream;
+			vulkan::buffer bitstream;
 			vk::Image nv12_image = nullptr;
 			vk::raii::ImageView nv12_view = nullptr;
 			vk::DeviceMemory nv12_memory = nullptr;
@@ -161,7 +162,7 @@ namespace gse::vulkan {
 
 	auto create_nv12_image(
 		const vk::raii::Device& device,
-		const vk::raii::PhysicalDevice& physical_device,
+		const physical_device& physical_device,
 		vec2u extent,
 		vk::ImageUsageFlags usage,
 		const vk::VideoProfileListInfoKHR& profile_list
@@ -169,7 +170,7 @@ namespace gse::vulkan {
 		tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory>;
 
 	auto find_memory_type(
-		const vk::raii::PhysicalDevice& physical_device,
+		const physical_device& physical_device,
 		std::uint32_t type_bits,
 		vk::MemoryPropertyFlags properties
 	) -> std::uint32_t;
@@ -189,12 +190,12 @@ auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> encode_capabili
 		try {
 			vk::VideoCapabilitiesKHR caps;
 			if (codec == video_codec::av1) {
-				caps = physical
+				caps = std::bit_cast<vk::PhysicalDevice>(physical.handle())
 					.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeAV1CapabilitiesKHR>(chain.profile)
 					.get<vk::VideoCapabilitiesKHR>();
 			}
 			else {
-				caps = physical
+				caps = std::bit_cast<vk::PhysicalDevice>(physical.handle())
 					.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeH265CapabilitiesKHR>(chain.profile)
 					.get<vk::VideoCapabilitiesKHR>();
 			}
@@ -427,12 +428,11 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 		});
 
 		slot.bitstream = dev.create_buffer(
-			gpu::buffer_create_info{
+			gpu::buffer_desc{
 				.size = bitstream_buffer_size,
 				.usage = gpu::buffer_flag::video_encode_dst,
 				.pnext = &profile_list
 			},
-			nullptr,
 			"encode_bitstream"
 		);
 
@@ -456,7 +456,7 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 	return enc;
 }
 
-auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, const gpu::handle<image> y_plane, const gpu::handle<image> uv_plane) -> void {
+auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, const gpu::image_handle y_plane, const gpu::image_handle uv_plane) -> void {
 	auto& slot = m_slots[frame_slot];
 	const auto& vk_dev = m_device->raii_device();
 
@@ -834,12 +834,12 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	slot.last_was_keyframe = is_keyframe;
 
 	const gpu::command_buffer_submit_info cmd_submit{
-		.command_buffer = std::bit_cast<gpu::handle<command_buffer>>(*slot.cmd),
+		.command_buffer = std::bit_cast<gpu::command_buffer_handle>(*slot.cmd),
 	};
 	const gpu::submit_info submit{
 		.command_buffers = std::span(&cmd_submit, 1),
 	};
-	m_queue->submit_video_encode(submit, std::bit_cast<gpu::handle<fence>>(*slot.fence));
+	m_queue->submit_video_encode(submit, std::bit_cast<gpu::fence_handle>(*slot.fence));
 	slot.submitted = true;
 	slot.has_output = true;
 
@@ -991,7 +991,7 @@ auto gse::vulkan::build_profile(profile_chain& chain, const video_codec codec) -
 	chain.profile.pNext = &chain.usage;
 }
 
-auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const vk::raii::PhysicalDevice& physical_device, vec2u extent, vk::ImageUsageFlags usage, const vk::VideoProfileListInfoKHR& profile_list) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory> {
+auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const physical_device& physical_device, vec2u extent, vk::ImageUsageFlags usage, const vk::VideoProfileListInfoKHR& profile_list) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory> {
 	auto image = (*device).createImage({
 		.pNext = &profile_list,
 		.imageType = vk::ImageType::e2D,
@@ -1006,7 +1006,7 @@ auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const vk::ra
 	});
 
 	const auto mem_reqs = (*device).getImageMemoryRequirements(image);
-	const auto mem_props = physical_device.getMemoryProperties();
+	const auto mem_props = physical_device.memory_properties();
 
 	std::uint32_t mem_type = 0;
 	for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
@@ -1033,8 +1033,8 @@ auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const vk::ra
 	return { image, std::move(view), memory };
 }
 
-auto gse::vulkan::find_memory_type(const vk::raii::PhysicalDevice& physical_device, std::uint32_t type_bits, vk::MemoryPropertyFlags properties) -> std::uint32_t {
-	const auto mem_props = physical_device.getMemoryProperties();
+auto gse::vulkan::find_memory_type(const physical_device& physical_device, std::uint32_t type_bits, vk::MemoryPropertyFlags properties) -> std::uint32_t {
+	const auto mem_props = physical_device.memory_properties();
 	for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
 		if ((type_bits & (1u << i)) && (mem_props.memoryTypes[i].propertyFlags & properties) == properties) {
 			return i;

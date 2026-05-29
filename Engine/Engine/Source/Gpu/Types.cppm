@@ -29,6 +29,38 @@ export namespace gse::gpu {
 
 	constexpr device_size whole_size = ~static_cast<device_size>(0);
 
+	struct buffer_tag {};
+	struct image_tag {};
+	struct image_view_tag {};
+	struct sampler_tag {};
+	struct semaphore_tag {};
+	struct fence_tag {};
+	struct command_buffer_tag {};
+	struct queue_tag {};
+	struct swap_chain_tag {};
+	struct query_pool_tag {};
+	struct shader_object_tag {};
+	struct pipeline_layout_tag {};
+	struct device_tag {};
+	struct physical_device_tag {};
+	struct surface_tag {};
+
+	using buffer_handle = handle<buffer_tag>;
+	using image_handle = handle<image_tag>;
+	using image_view_handle = handle<image_view_tag>;
+	using sampler_handle = handle<sampler_tag>;
+	using semaphore_handle = handle<semaphore_tag>;
+	using fence_handle = handle<fence_tag>;
+	using command_buffer_handle = handle<command_buffer_tag>;
+	using queue_handle = handle<queue_tag>;
+	using swap_chain_handle = handle<swap_chain_tag>;
+	using query_pool_handle = handle<query_pool_tag>;
+	using shader_object_handle = handle<shader_object_tag>;
+	using pipeline_layout_handle = handle<pipeline_layout_tag>;
+	using device_handle = handle<device_tag>;
+	using physical_device_handle = handle<physical_device_tag>;
+	using surface = handle<surface_tag>;
+
 	enum class resource_type : std::uint8_t {
 		buffer,
 		image,
@@ -70,9 +102,10 @@ export namespace gse::gpu {
 	}
 
 	struct buffer_desc {
-		std::size_t size = 0;
+		device_size size = 0;
 		buffer_usage usage = buffer_flag::storage;
 		const void* data = nullptr;
+		const void* pnext = nullptr;
 	};
 
 	enum class cull_mode : std::uint8_t {
@@ -378,7 +411,7 @@ export namespace gse::gpu {
 		descriptor_access access = descriptor_access::read;
 	};
 
-	struct acceleration_structure_handle {
+	struct acceleration_structure {
 		std::uint64_t value = 0;
 
 		explicit operator bool() const {
@@ -449,7 +482,7 @@ export namespace gse::gpu {
 		acceleration_structure_type type = acceleration_structure_type::bottom_level;
 		build_acceleration_structure_flags flags;
 		build_acceleration_structure_mode mode = build_acceleration_structure_mode::build;
-		acceleration_structure_handle dst;
+		acceleration_structure dst;
 		std::span<const acceleration_structure_geometry> geometries;
 		device_address scratch_address = 0;
 	};
@@ -702,12 +735,6 @@ export namespace gse::gpu {
 		dont_care,
 	};
 
-	struct buffer_create_info {
-		device_size size = 0;
-		buffer_usage usage = buffer_flag::storage;
-		const void* pnext = nullptr;
-	};
-
 	enum class image_create_flag : std::uint8_t {
 		cube_compatible = 1 << 0,
 	};
@@ -808,11 +835,11 @@ export namespace gse::gpu {
 		std::uint32_t memory_type_bits = 0;
 	};
 
-	struct device_memory_handle {
+	struct device_memory {
 		std::uint64_t value = 0;
 
 		constexpr auto operator==(
-			const device_memory_handle&
+			const device_memory&
 		) const -> bool = default;
 
 		explicit constexpr operator bool() const {

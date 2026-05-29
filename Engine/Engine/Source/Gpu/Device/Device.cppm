@@ -25,7 +25,7 @@ export namespace gse::gpu {
 
 		~device() override;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<vulkan::device>;
+		[[nodiscard]] auto handle() const -> gpu::device_handle;
 
 		[[nodiscard]] auto allocator(
 			this auto& self
@@ -65,23 +65,23 @@ export namespace gse::gpu {
 		};
 
 		auto begin_pass_marker(
-			gpu::handle<command_buffer> cmd,
+			gpu::command_buffer_handle cmd,
 			pass_marker_domain domain,
 			pass_marker marker
 		) -> pass_marker_handle;
 
 		auto checkpoint_pass_marker(
-			gpu::handle<command_buffer> cmd,
+			gpu::command_buffer_handle cmd,
 			pass_marker_handle handle
 		) -> void;
 
 		auto post_renderpass_pass_marker(
-			gpu::handle<command_buffer> cmd,
+			gpu::command_buffer_handle cmd,
 			pass_marker_handle handle
 		) -> void;
 
 		auto end_pass_marker(
-			gpu::handle<command_buffer> cmd,
+			gpu::command_buffer_handle cmd,
 			pass_marker_handle handle
 		) -> void;
 
@@ -94,12 +94,12 @@ export namespace gse::gpu {
 		auto create_sync(
 			std::uint32_t image_count,
 			std::uint32_t frames_in_flight = max_frames_in_flight
-		) const -> sync;
+		) -> sync;
 
 		[[nodiscard]]
 		auto create_timeline_semaphore(
 			std::uint64_t initial_value
-		) const -> semaphore;
+		) -> semaphore;
 
 		[[nodiscard]]
 		auto create_timestamp_query_pool(
@@ -126,13 +126,13 @@ export namespace gse::gpu {
 		auto create_swapchain_backend(
 			vec2i framebuffer_size,
 			present_mode mode,
-			gpu::handle<vulkan::swap_chain> old_handle = {}
+			gpu::swap_chain_handle old_handle = {}
 		) -> vulkan::swap_chain;
 
 		[[nodiscard]]
 		auto acquire_swapchain_image(
-			gpu::handle<vulkan::swap_chain> swapchain,
-			gpu::handle<semaphore> wait_semaphore,
+			gpu::swap_chain_handle swapchain,
+			gpu::semaphore_handle wait_semaphore,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
 		) const -> gpu::acquire_next_image_result;
 
@@ -166,15 +166,14 @@ export namespace gse::gpu {
 		auto acceleration_structure_scratch_alignment() const -> device_size;
 
 		auto host_upload_image_layers(
-			gpu::handle<image> img,
+			gpu::image_handle img,
 			std::span<const void* const> layer_pointers,
 			vec2u extent
 		) const -> void;
 
 		[[nodiscard]]
 		auto create_buffer(
-			const buffer_create_info& info,
-			const void* data = nullptr,
+			const buffer_desc& desc,
 			std::string_view tag = "",
 			const std::source_location& loc = std::source_location::current()
 		) -> buffer;
@@ -189,12 +188,12 @@ export namespace gse::gpu {
 		auto frame_command_buffer(
 			queue_type queue,
 			std::uint32_t frame_index
-		) const -> gpu::handle<command_buffer>;
+		) const -> gpu::command_buffer_handle;
 
 		auto submit(
 			queue_type queue,
 			const submit_info& info,
-			gpu::handle<fence> signal_fence = {}
+			gpu::fence_handle signal_fence = {}
 		) -> void;
 
 		[[nodiscard]] auto present(
@@ -203,12 +202,12 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto wait_for_fence(
-			gpu::handle<fence> f,
+			gpu::fence_handle f,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
 		) const -> result;
 
 		auto reset_fence(
-			gpu::handle<fence> f
+			gpu::fence_handle f
 		) const -> void;
 
 		auto reset_worker_command_pools(
@@ -220,7 +219,7 @@ export namespace gse::gpu {
 			queue_type queue,
 			std::size_t worker_index,
 			std::uint32_t frame_index
-		) -> gpu::handle<command_buffer>;
+		) -> gpu::command_buffer_handle;
 
 		[[nodiscard]] auto make_video_encoder(
 			vec2u extent
@@ -229,39 +228,39 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto create_image_unbound(
 			const image_create_info& info
-		) const -> std::pair<gpu::handle<image>, memory_requirements>;
+		) const -> std::pair<gpu::image_handle, memory_requirements>;
 
 		[[nodiscard]]
 		auto create_buffer_unbound(
-			const buffer_create_info& info
-		) const -> std::pair<gpu::handle<buffer>, memory_requirements>;
+			const buffer_desc& info
+		) const -> std::pair<gpu::buffer_handle, memory_requirements>;
 
 		auto bind_image_memory(
-			gpu::handle<image> img,
-			device_memory_handle mem,
+			gpu::image_handle img,
+			device_memory mem,
 			device_size offset
 		) const -> void;
 
 		auto bind_buffer_memory(
-			gpu::handle<buffer> buf,
-			device_memory_handle mem,
+			gpu::buffer_handle buf,
+			device_memory mem,
 			device_size offset
 		) const -> void;
 
 		[[nodiscard]]
 		auto create_image_view(
-			gpu::handle<image> img,
+			gpu::image_handle img,
 			const image_view_create_info& info
-		) const -> gpu::handle<image_view>;
+		) const -> gpu::image_view_handle;
 
 		[[nodiscard]]
 		auto allocate_aliased_memory(
 			device_size size,
 			std::uint32_t memory_type_index
-		) const -> device_memory_handle;
+		) const -> device_memory;
 
 		auto free_aliased_memory(
-			device_memory_handle mem
+			device_memory mem
 		) const -> void;
 
 		[[nodiscard]]
@@ -272,8 +271,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto make_aliased_image(
-			gpu::handle<image> img_handle,
-			gpu::handle<image_view> view_handle,
+			gpu::image_handle img_handle,
+			gpu::image_view_handle view_handle,
 			image_format format,
 			vec3u extent,
 			const image_view_create_info& view_info,
@@ -282,7 +281,7 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto make_aliased_buffer(
-			gpu::handle<buffer> buf_handle,
+			gpu::buffer_handle buf_handle,
 			device_size size,
 			std::string_view tag
 		) -> std::unique_ptr<buffer>;
@@ -335,11 +334,11 @@ auto gse::gpu::device::create_shader_program(const shader_program_create_info& i
 	return shader_program::create(m_device_config, info);
 }
 
-auto gse::gpu::device::create_sync(const std::uint32_t image_count, const std::uint32_t frames_in_flight) const -> sync {
+auto gse::gpu::device::create_sync(const std::uint32_t image_count, const std::uint32_t frames_in_flight) -> sync {
 	return sync::create(m_device_config, image_count, frames_in_flight);
 }
 
-auto gse::gpu::device::create_timeline_semaphore(const std::uint64_t initial_value) const -> semaphore {
+auto gse::gpu::device::create_timeline_semaphore(const std::uint64_t initial_value) -> semaphore {
 	return semaphore::create_timeline(m_device_config, initial_value);
 }
 
@@ -355,12 +354,12 @@ auto gse::gpu::device::create_bindless_heaps(const std::uint32_t texture_capacit
 	return std::make_unique<bindless_heaps>(m_device_config, texture_capacity, image_capacity, buffer_capacity, sampler_capacity);
 }
 
-auto gse::gpu::device::create_swapchain_backend(const vec2i framebuffer_size, const present_mode mode, const gpu::handle<vulkan::swap_chain> old_handle) -> vulkan::swap_chain {
+auto gse::gpu::device::create_swapchain_backend(const vec2i framebuffer_size, const present_mode mode, const gpu::swap_chain_handle old_handle) -> vulkan::swap_chain {
 	return vulkan::swap_chain::create(framebuffer_size, mode, m_instance, m_device_config, old_handle);
 }
 
-auto gse::gpu::device::acquire_swapchain_image(const gpu::handle<vulkan::swap_chain> swapchain, const gpu::handle<semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
-	return vulkan::acquire_next_image(m_device_config, swapchain, wait_semaphore, timeout_ns);
+auto gse::gpu::device::acquire_swapchain_image(const gpu::swap_chain_handle swapchain, const gpu::semaphore_handle wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
+	return m_device_config.acquire_next_image(swapchain, wait_semaphore, timeout_ns);
 }
 
 auto gse::gpu::device::wait_swapchain_release_fences(const vulkan::swap_chain& sc) const -> void {
@@ -372,29 +371,29 @@ auto gse::gpu::device::reset_swapchain_release_fence(vulkan::swap_chain& sc, con
 }
 
 auto gse::gpu::device::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {
-	return blas::create(m_device_config, geometry, prim_count);
+	return m_device_config.create_blas(geometry, prim_count);
 }
 
 auto gse::gpu::device::create_tlas(const std::uint32_t max_instances) -> tlas {
-	return tlas::create(m_device_config, max_instances);
+	return m_device_config.create_tlas(max_instances);
 }
 
 auto gse::gpu::device::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) const -> acceleration_structure_build_sizes {
-	return vulkan::query_blas_build_sizes(m_device_config, geometry, prim_count);
+	return m_device_config.query_blas_build_sizes(geometry, prim_count);
 }
 
 auto gse::gpu::device::acceleration_structure_scratch_alignment() const -> device_size {
-	return vulkan::scratch_offset_alignment(m_device_config);
+	return m_device_config.acceleration_structure_scratch_alignment();
 }
 
-auto gse::gpu::device::host_upload_image_layers(const gpu::handle<image> img, const std::span<const void* const> layer_pointers, const vec2u extent) const -> void {
-	vulkan::host_upload_image_layers(m_device_config, img, layer_pointers, extent);
+auto gse::gpu::device::host_upload_image_layers(const gpu::image_handle img, const std::span<const void* const> layer_pointers, const vec2u extent) const -> void {
+	m_device_config.host_upload_image_layers(img, layer_pointers, extent);
 }
 
-auto gse::gpu::device::create_buffer(const buffer_create_info& info, const void* data, const std::string_view tag, const std::source_location& loc) -> buffer {
-	return m_device_config.create_buffer(info, data, tag, loc);
+auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
+	return m_device_config.create_buffer(desc, tag, loc);
 }
 
 auto gse::gpu::device::create_image(const image_desc& desc, const std::string_view tag) -> image {
-	return image::create(m_device_config, desc, tag);
+	return m_device_config.create_image(desc, tag);
 }

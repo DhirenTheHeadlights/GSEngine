@@ -43,7 +43,7 @@ export namespace gse::vulkan {
 		auto frame_command_buffer(
 			gpu::queue_type queue,
 			std::uint32_t frame_index
-		) const -> gpu::handle<command_buffer>;
+		) const -> gpu::command_buffer_handle;
 
 	private:
 		struct family_pool {
@@ -95,7 +95,7 @@ export namespace gse::vulkan {
 			gpu::queue_type queue,
 			std::size_t worker_index,
 			std::uint32_t frame_index
-		) -> gpu::handle<command_buffer>;
+		) -> gpu::command_buffer_handle;
 
 		[[nodiscard]] auto worker_count() const -> std::size_t;
 
@@ -199,10 +199,10 @@ auto gse::vulkan::command::family_index(const gpu::queue_type queue) const -> st
 	return m_families[static_cast<std::size_t>(queue)];
 }
 
-auto gse::vulkan::command::frame_command_buffer(const gpu::queue_type queue, const std::uint32_t frame_index) const -> gpu::handle<command_buffer> {
+auto gse::vulkan::command::frame_command_buffer(const gpu::queue_type queue, const std::uint32_t frame_index) const -> gpu::command_buffer_handle {
 	const auto idx = static_cast<std::size_t>(queue);
 	const auto& pool = *m_pools[idx].pool ? m_pools[idx] : m_pools[0];
-	return std::bit_cast<gpu::handle<command_buffer>>(*pool.buffers[frame_index]);
+	return std::bit_cast<gpu::command_buffer_handle>(*pool.buffers[frame_index]);
 }
 
 gse::vulkan::worker_command_pools::worker_command_pools(std::array<family_pools, gpu::queue_type_count> pools, std::array<std::uint32_t, gpu::queue_type_count> families)
@@ -321,7 +321,7 @@ auto gse::vulkan::worker_command_pools::reset_frame(const std::uint32_t frame_in
 	}
 }
 
-auto gse::vulkan::worker_command_pools::acquire_secondary(const gpu::queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::handle<command_buffer> {
+auto gse::vulkan::worker_command_pools::acquire_secondary(const gpu::queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> gpu::command_buffer_handle {
 	const auto idx = static_cast<std::size_t>(queue);
 	auto& family = m_pools[idx].per_worker.empty() ? m_pools[0] : m_pools[idx];
 
@@ -342,7 +342,7 @@ auto gse::vulkan::worker_command_pools::acquire_secondary(const gpu::queue_type 
 		slot.secondaries.size()
 	);
 
-	return std::bit_cast<gpu::handle<command_buffer>>(*slot.secondaries[slot.used++]);
+	return std::bit_cast<gpu::command_buffer_handle>(*slot.secondaries[slot.used++]);
 }
 
 auto gse::vulkan::worker_command_pools::worker_count() const -> std::size_t {

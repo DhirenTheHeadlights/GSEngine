@@ -9,11 +9,11 @@ auto gse::upload_to_buffers_async(gpu::device& dev, std::vector<upload_entry> en
 	stagings.reserve(entries.size());
 	for (const auto& e : entries) {
 		stagings.push_back(dev.allocator().create_buffer(
-			gpu::buffer_create_info{
+			gpu::buffer_desc{
 				.size = e.size,
 				.usage = gpu::buffer_flag::transfer_src,
-			},
-			e.data
+				.data = e.data,
+			}
 		));
 	}
 
@@ -44,11 +44,11 @@ auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_
 	stagings.reserve(uploads.size());
 	for (const auto& u : uploads) {
 		stagings.push_back(dev.allocator().create_buffer(
-			buffer_create_info{
+			buffer_desc{
 				.size = u.size,
 				.usage = buffer_flag::transfer_src,
-			},
-			u.data
+				.data = u.data,
+			}
 		));
 	}
 

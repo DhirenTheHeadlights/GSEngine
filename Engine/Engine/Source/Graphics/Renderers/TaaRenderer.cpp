@@ -80,8 +80,7 @@ auto gse::renderer::taa::recreate_history(const gpu::context::data& gpu_s, syste
 		return;
 	}
 	for (std::size_t i = 0; i < d.history.size(); ++i) {
-		d.history[i] = gpu::image::create(
-			gpu_s.device->allocator(),
+		d.history[i] = gpu_s.device->allocator().create_image(
 			{
 				.size = extent,
 				.format = gpu::image_format::r16g16b16a16_sfloat,

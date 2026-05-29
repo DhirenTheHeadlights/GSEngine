@@ -170,8 +170,7 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 			}
 		);
 
-		index_buffer = gpu::buffer::create(
-			gpu_s.device->allocator(),
+		index_buffer = gpu_s.device->allocator().create_buffer(
 			{
 				.size = index_buffer_size,
 				.usage = gpu::buffer_flag::index,

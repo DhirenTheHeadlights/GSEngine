@@ -2,6 +2,7 @@ export module gse.vulkan;
 
 export import :handles;
 export import :types;
+export import :physical_device;
 export import :errors;
 export import :allocation;
 export import :buffer;

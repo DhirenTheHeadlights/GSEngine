@@ -72,7 +72,7 @@ namespace gse {
 
 	auto build_blas_async(
 		gpu::device& dev,
-		gpu::acceleration_structure_handle as_handle,
+		gpu::acceleration_structure as_handle,
 		gpu::acceleration_structure_geometry geometry,
 		std::uint32_t prim_count,
 		gpu::device_size scratch_size,
@@ -81,7 +81,7 @@ namespace gse {
 
 	auto build_tlas_initial_empty_async(
 		gpu::device& dev,
-		gpu::acceleration_structure_handle as_handle,
+		gpu::acceleration_structure as_handle,
 		gpu::device_address instance_addr,
 		gpu::device_address scratch_addr
 	) -> async::task<>;

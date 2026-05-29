@@ -6,26 +6,20 @@ import vulkan;
 import :handles;
 import :types;
 import :commands;
+import :physical_device;
 
 import gse.core;
 import gse.log;
 
-export namespace gse::vulkan {
-	class fence;
-	class semaphore;
-	class swap_chain;
-	class device;
-}
-
 export namespace gse::gpu {
 	struct semaphore_submit_info {
-		gpu::handle<vulkan::semaphore> semaphore;
+		gpu::semaphore_handle semaphore;
 		std::uint64_t value = 0;
 		pipeline_stage_flags stages;
 	};
 
 	struct command_buffer_submit_info {
-		gpu::handle<vulkan::command_buffer> command_buffer;
+		gpu::command_buffer_handle command_buffer;
 	};
 
 	struct submit_info {
@@ -35,11 +29,11 @@ export namespace gse::gpu {
 	};
 
 	struct present_info {
-		std::span<const gpu::handle<vulkan::semaphore>> wait_semaphores;
-		std::span<const gpu::handle<vulkan::swap_chain>> swapchains;
+		std::span<const gpu::semaphore_handle> wait_semaphores;
+		std::span<const gpu::swap_chain_handle> swapchains;
 		std::span<const std::uint32_t> image_indices;
 		std::span<const present_mode> present_modes;
-		std::span<const gpu::handle<vulkan::fence>> release_fences;
+		std::span<const gpu::fence_handle> release_fences;
 		std::span<const std::uint64_t> present_ids;
 	};
 }
@@ -56,6 +50,16 @@ export namespace gse::vulkan {
 
 	class queue : public non_copyable {
 	public:
+		queue(
+			gpu::queue_handle graphics,
+			gpu::queue_handle present,
+			gpu::queue_handle compute,
+			std::uint32_t graphics_family,
+			std::uint32_t compute_family,
+			gpu::queue_handle video_encode = {},
+			std::optional<std::uint32_t> video_encode_family = std::nullopt
+		);
+
 		~queue() = default;
 
 		queue(
@@ -77,22 +81,22 @@ export namespace gse::vulkan {
 		auto submit(
 			gpu::queue_type queue,
 			const gpu::submit_info& info,
-			gpu::handle<fence> signal_fence = {}
+			gpu::fence_handle signal_fence = {}
 		) -> void;
 
 		auto submit_graphics(
 			const gpu::submit_info& info,
-			gpu::handle<fence> signal_fence = {}
+			gpu::fence_handle signal_fence = {}
 		) -> void;
 
 		auto submit_compute(
 			const gpu::submit_info& info,
-			gpu::handle<fence> signal_fence = {}
+			gpu::fence_handle signal_fence = {}
 		) -> void;
 
 		auto submit_video_encode(
 			const gpu::submit_info& info,
-			gpu::handle<fence> signal_fence = {}
+			gpu::fence_handle signal_fence = {}
 		) -> void;
 
 		[[nodiscard]] auto present(
@@ -100,29 +104,14 @@ export namespace gse::vulkan {
 		) -> gpu::result;
 
 	private:
-		friend class device;
-
-		queue(
-			vk::raii::Queue&& graphics,
-			vk::raii::Queue&& present,
-			vk::raii::Queue&& compute,
-			std::uint32_t graphics_family,
-			std::uint32_t compute_family
-		);
-
-		auto set_video_encode(
-			vk::raii::Queue&& q,
-			std::uint32_t family
-		) -> void;
-
-		vk::raii::Queue m_graphics;
-		vk::raii::Queue m_present;
-		vk::raii::Queue m_compute;
+		gpu::queue_handle m_graphics;
+		gpu::queue_handle m_present;
+		gpu::queue_handle m_compute;
 		std::uint32_t m_graphics_family_index = 0;
 		std::uint32_t m_compute_family_index = 0;
 		std::unique_ptr<std::recursive_mutex> m_mutex;
 
-		vk::raii::Queue m_video_encode{ nullptr };
+		gpu::queue_handle m_video_encode;
 		std::optional<std::uint32_t> m_video_encode_family_index;
 	};
 }
@@ -130,8 +119,8 @@ export namespace gse::vulkan {
 namespace gse::vulkan {
 	[[nodiscard]]
 	auto find_queue_families(
-		const vk::raii::PhysicalDevice& device,
-		const vk::raii::SurfaceKHR& surface
+		const physical_device& device,
+		gpu::surface surface
 	) -> queue_family;
 
 	struct submit_scratch {
@@ -261,9 +250,10 @@ auto gse::vulkan::queue_family::complete() const -> bool {
 	return graphics_family.has_value() && present_family.has_value() && compute_family.has_value();
 }
 
-auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, const vk::raii::SurfaceKHR& surface) -> queue_family {
+auto gse::vulkan::find_queue_families(const physical_device& device, const gpu::surface surface) -> queue_family {
+	const auto vk_device = std::bit_cast<vk::PhysicalDevice>(device.handle());
 	queue_family indices;
-	const auto queue_families = device.getQueueFamilyProperties();
+	const auto queue_families = vk_device.getQueueFamilyProperties();
 	for (std::uint32_t i = 0; i < queue_families.size(); i++) {
 		log::println(log::category::vulkan,
 					 "Queue family {}: flags = {}",
@@ -272,7 +262,7 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
 		if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
 			indices.graphics_family = i;
 		}
-		if (device.getSurfaceSupportKHR(i, surface)) {
+		if (vk_device.getSurfaceSupportKHR(i, std::bit_cast<vk::SurfaceKHR>(surface))) {
 			indices.present_family = i;
 		}
 		if ((queue_families[i].queueFlags & vk::QueueFlagBits::eCompute) && !(queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
@@ -288,13 +278,8 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
 	return indices;
 }
 
-gse::vulkan::queue::queue(vk::raii::Queue&& graphics, vk::raii::Queue&& present, vk::raii::Queue&& compute, const std::uint32_t graphics_family, const std::uint32_t compute_family)
-	: m_graphics(std::move(graphics)), m_present(std::move(present)), m_compute(std::move(compute)), m_graphics_family_index(graphics_family), m_compute_family_index(compute_family), m_mutex(std::make_unique<std::recursive_mutex>()) {
-}
-
-auto gse::vulkan::queue::set_video_encode(vk::raii::Queue&& q, const std::uint32_t family) -> void {
-	m_video_encode = std::move(q);
-	m_video_encode_family_index = family;
+gse::vulkan::queue::queue(const gpu::queue_handle graphics, const gpu::queue_handle present, const gpu::queue_handle compute, const std::uint32_t graphics_family, const std::uint32_t compute_family, const gpu::queue_handle video_encode, const std::optional<std::uint32_t> video_encode_family)
+	: m_graphics(graphics), m_present(present), m_compute(compute), m_graphics_family_index(graphics_family), m_compute_family_index(compute_family), m_mutex(std::make_unique<std::recursive_mutex>()), m_video_encode(video_encode), m_video_encode_family_index(video_encode_family) {
 }
 
 auto gse::vulkan::queue::has_video_encode() const -> bool {
@@ -313,7 +298,7 @@ auto gse::vulkan::queue::video_encode_family_index() const -> std::optional<std:
 	return m_video_encode_family_index;
 }
 
-auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_info& info, const gpu::handle<fence> signal_fence) -> void {
+auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
 	switch (queue) {
 		case gpu::queue_type::graphics:
 			submit_graphics(info, signal_fence);
@@ -324,30 +309,30 @@ auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_i
 	}
 }
 
-auto gse::vulkan::queue::submit_graphics(const gpu::submit_info& info, const gpu::handle<fence> signal_fence) -> void {
+auto gse::vulkan::queue::submit_graphics(const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
-	m_graphics.submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
+	std::bit_cast<vk::Queue>(m_graphics).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
 }
 
-auto gse::vulkan::queue::submit_compute(const gpu::submit_info& info, const gpu::handle<fence> signal_fence) -> void {
+auto gse::vulkan::queue::submit_compute(const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
-	m_compute.submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
+	std::bit_cast<vk::Queue>(m_compute).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
 }
 
-auto gse::vulkan::queue::submit_video_encode(const gpu::submit_info& info, const gpu::handle<fence> signal_fence) -> void {
+auto gse::vulkan::queue::submit_video_encode(const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
-	m_video_encode.submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
+	std::bit_cast<vk::Queue>(m_video_encode).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
 }
 
 auto gse::vulkan::queue::present(const gpu::present_info& info) -> gpu::result {
 	std::lock_guard lock(*m_mutex);
 	present_scratch scratch;
 	const auto vk_info = build_vk_present_info(info, scratch);
-	return from_vk(m_present.presentKHR(vk_info));
+	return from_vk(std::bit_cast<vk::Queue>(m_present).presentKHR(vk_info));
 }

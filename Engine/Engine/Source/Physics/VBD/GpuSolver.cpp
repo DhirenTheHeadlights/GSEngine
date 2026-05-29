@@ -446,8 +446,7 @@ auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void
 			"vbd.grid"
 		);
 
-		f.physics_snapshot_buffer = gpu::buffer::create(
-			ctx.device->allocator(),
+		f.physics_snapshot_buffer = ctx.device->allocator().create_buffer(
 			{
 				.size = limits.max_bodies * sizeof(body_state),
 				.usage = storage_dst
@@ -500,8 +499,7 @@ auto gse::vbd::gpu_solver::create_buffers(const gpu::context::data& ctx) -> void
 		f.grounded_buffer.buffer().host_zero();
 		f.grounded_buffer.buffer().clear_host_dirty();
 
-		f.grounded_readback_buffer = gpu::buffer::create(
-			ctx.device->allocator(),
+		f.grounded_readback_buffer = ctx.device->allocator().create_buffer(
 			{
 				.size = limits.max_grounded_uints * sizeof(std::uint32_t),
 				.usage = storage_dst

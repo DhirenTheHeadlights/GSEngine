@@ -3,8 +3,8 @@ export module gse.vulkan:transient_command_pool;
 import std;
 import vulkan;
 
+import :handles;
 import :device;
-import :transient_command_buffer;
 
 import gse.core;
 
@@ -31,7 +31,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto allocate_primary(
 			const device& device
-		) -> transient_command_buffer;
+		) -> gpu::command_buffer_handle;
 
 		auto try_reset(
 			std::uint64_t queue_progress
@@ -68,7 +68,7 @@ auto gse::vulkan::transient_command_pool::create(const device& device, const std
 	return transient_command_pool(device.raii_device().createCommandPool(pool_info));
 }
 
-auto gse::vulkan::transient_command_pool::allocate_primary(const device& device) -> transient_command_buffer {
+auto gse::vulkan::transient_command_pool::allocate_primary(const device& device) -> gpu::command_buffer_handle {
 	if (m_used == m_owned_cbs.size()) {
 		const vk::CommandBufferAllocateInfo alloc_info{
 			.commandPool = *m_pool,
@@ -80,8 +80,7 @@ auto gse::vulkan::transient_command_pool::allocate_primary(const device& device)
 			m_owned_cbs.push_back(std::move(cb));
 		}
 	}
-	const auto cb_handle = *m_owned_cbs[m_used++];
-	return transient_command_buffer(cb_handle, this);
+	return std::bit_cast<gpu::command_buffer_handle>(*m_owned_cbs[m_used++]);
 }
 
 auto gse::vulkan::transient_command_pool::try_reset(const std::uint64_t queue_progress) -> void {

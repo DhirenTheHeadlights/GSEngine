@@ -35,8 +35,7 @@ namespace gse::renderer::scene_snapshot {
 		}
 
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-			d.snapshots[i] = gpu::image::create(
-				gpu_s.device->allocator(),
+			d.snapshots[i] = gpu_s.device->allocator().create_image(
 				{
 					.size = extent,
 					.format = gpu_s.swapchain->format(),

@@ -64,6 +64,8 @@ auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
 }
 
 auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::expected<frame_token, frame_status> {
+	d.device->allocator().collect_garbage();
+
 	auto result = d.frame->begin(window_s);
 
 	if (result) {
@@ -78,7 +80,6 @@ auto gse::gpu::context::end_frame(data& d, window::data& window_s) -> void {
 	auto aux_subs = d.render_graph->take_aux_submissions();
 	auto graphics_waits = d.render_graph->take_graphics_extra_waits();
 	d.frame->end(window_s, aux_subs, graphics_waits);
-	vulkan::drain_dirty_buffers();
 }
 
 namespace gse::gpu {

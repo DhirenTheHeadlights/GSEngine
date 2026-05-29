@@ -31,7 +31,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto native(
 			this const sampler& self
-		) -> gpu::handle<sampler>;
+		) -> gpu::sampler_handle;
 
 		[[nodiscard]] auto valid() const -> bool;
 
@@ -69,8 +69,8 @@ auto gse::vulkan::sampler::create(const device& dev, const gpu::sampler_desc& de
 	return sampler(dev.raii_device().createSampler(info));
 }
 
-auto gse::vulkan::sampler::native(this const sampler& self) -> gpu::handle<sampler> {
-	return std::bit_cast<gpu::handle<sampler>>(*self.m_sampler);
+auto gse::vulkan::sampler::native(this const sampler& self) -> gpu::sampler_handle {
+	return std::bit_cast<gpu::sampler_handle>(*self.m_sampler);
 }
 
 auto gse::vulkan::sampler::valid() const -> bool {

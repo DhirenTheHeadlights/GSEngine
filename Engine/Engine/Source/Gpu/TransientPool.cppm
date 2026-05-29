@@ -135,7 +135,7 @@ export namespace gse::gpu {
 
 	private:
 		struct memory_block {
-			device_memory_handle memory;
+			device_memory memory;
 			gpu::device_size size = 0;
 			std::uint32_t memory_type_index = 0;
 		};

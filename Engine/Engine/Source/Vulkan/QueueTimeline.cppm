@@ -1,7 +1,6 @@
 export module gse.vulkan:queue_timeline;
 
 import std;
-import vulkan;
 
 import :handles;
 import :device;
@@ -13,65 +12,80 @@ export namespace gse::vulkan {
 	public:
 		queue_timeline() = default;
 
-		~queue_timeline() = default;
+		~queue_timeline() override;
 
 		queue_timeline(
-			queue_timeline&&
-		) noexcept = default;
+			queue_timeline&& other
+		) noexcept;
 
 		auto operator=(
-			queue_timeline&&
-		) noexcept -> queue_timeline& = default;
+			queue_timeline&& other
+		) noexcept -> queue_timeline&;
 
 		[[nodiscard]] static auto create(
-			const device& device
+			device& device
 		) -> queue_timeline;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<semaphore>;
+		[[nodiscard]] auto handle() const -> gpu::semaphore_handle;
 
 		[[nodiscard]] auto read() const -> std::uint64_t;
 
 		auto wait_until(
-			const device& device,
 			std::uint64_t value
 		) const -> void;
 
 	private:
-		explicit queue_timeline(
-			vk::raii::Semaphore&& semaphore
+		queue_timeline(
+			device& device,
+			gpu::semaphore_handle handle
 		);
 
-		vk::raii::Semaphore m_semaphore{ nullptr };
+		device* m_device = nullptr;
+		gpu::semaphore_handle m_semaphore;
 	};
 }
 
-gse::vulkan::queue_timeline::queue_timeline(vk::raii::Semaphore&& semaphore) : m_semaphore(std::move(semaphore)) {
+gse::vulkan::queue_timeline::queue_timeline(device& device, const gpu::semaphore_handle handle)
+	: m_device(&device), m_semaphore(handle) {
 }
 
-auto gse::vulkan::queue_timeline::create(const device& device) -> queue_timeline {
-	const vk::SemaphoreTypeCreateInfo type_info{
-		.semaphoreType = vk::SemaphoreType::eTimeline,
-		.initialValue = 0,
-	};
-	const vk::SemaphoreCreateInfo sem_info{
-		.pNext = &type_info,
-	};
-	return queue_timeline(device.raii_device().createSemaphore(sem_info));
+gse::vulkan::queue_timeline::~queue_timeline() {
+	if (m_device && m_semaphore) {
+		m_device->retire(m_semaphore);
+	}
 }
 
-auto gse::vulkan::queue_timeline::handle() const -> gpu::handle<semaphore> {
-	return std::bit_cast<gpu::handle<semaphore>>(*m_semaphore);
+gse::vulkan::queue_timeline::queue_timeline(queue_timeline&& other) noexcept
+	: m_device(other.m_device), m_semaphore(other.m_semaphore) {
+	other.m_device = nullptr;
+	other.m_semaphore = {};
+}
+
+auto gse::vulkan::queue_timeline::operator=(queue_timeline&& other) noexcept -> queue_timeline& {
+	if (this != &other) {
+		if (m_device && m_semaphore) {
+			m_device->retire(m_semaphore);
+		}
+		m_device = other.m_device;
+		m_semaphore = other.m_semaphore;
+		other.m_device = nullptr;
+		other.m_semaphore = {};
+	}
+	return *this;
+}
+
+auto gse::vulkan::queue_timeline::create(device& device) -> queue_timeline {
+	return queue_timeline(device, device.create_timeline_semaphore(0));
+}
+
+auto gse::vulkan::queue_timeline::handle() const -> gpu::semaphore_handle {
+	return m_semaphore;
 }
 
 auto gse::vulkan::queue_timeline::read() const -> std::uint64_t {
-	return m_semaphore.getCounterValue();
+	return m_device->semaphore_counter_value(m_semaphore);
 }
 
-auto gse::vulkan::queue_timeline::wait_until(const device& device, const std::uint64_t value) const -> void {
-	const vk::SemaphoreWaitInfo wait_info{
-		.semaphoreCount = 1,
-		.pSemaphores = &*m_semaphore,
-		.pValues = &value,
-	};
-	(void)device.raii_device().waitSemaphores(wait_info, std::numeric_limits<std::uint64_t>::max());
+auto gse::vulkan::queue_timeline::wait_until(const std::uint64_t value) const -> void {
+	m_device->wait_semaphore(m_semaphore, value);
 }

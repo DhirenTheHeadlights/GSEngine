@@ -40,11 +40,11 @@ export namespace gse::vulkan {
 			const shader_program_create_info& info
 		) -> shader_program;
 
-		[[nodiscard]] auto layout() const -> gpu::handle<pipeline_layout>;
+		[[nodiscard]] auto layout() const -> gpu::pipeline_layout_handle;
 
 		[[nodiscard]] auto stages() const -> std::span<const gpu::stage_flag>;
 
-		[[nodiscard]] auto shader_handles() const -> std::span<const gpu::handle<shader_object>>;
+		[[nodiscard]] auto shader_handles() const -> std::span<const gpu::shader_object_handle>;
 
 		[[nodiscard]] auto state() const -> const gpu::dynamic_pipeline_state&;
 
@@ -61,7 +61,7 @@ export namespace gse::vulkan {
 			vk::raii::PipelineLayout&& layout,
 			std::vector<shader_object>&& shaders,
 			std::vector<gpu::stage_flag>&& stages,
-			std::vector<gpu::handle<shader_object>>&& shader_handles,
+			std::vector<gpu::shader_object_handle>&& shader_handles,
 			gpu::dynamic_pipeline_state&& state,
 			bool is_compute,
 			bool is_mesh
@@ -70,14 +70,14 @@ export namespace gse::vulkan {
 		vk::raii::PipelineLayout m_layout = nullptr;
 		std::vector<shader_object> m_shaders;
 		std::vector<gpu::stage_flag> m_stages;
-		std::vector<gpu::handle<shader_object>> m_shader_handles;
+		std::vector<gpu::shader_object_handle> m_shader_handles;
 		gpu::dynamic_pipeline_state m_state;
 		bool m_is_compute = false;
 		bool m_is_mesh = false;
 	};
 }
 
-gse::vulkan::shader_program::shader_program(vk::raii::PipelineLayout&& layout, std::vector<shader_object>&& shaders, std::vector<gpu::stage_flag>&& stages, std::vector<gpu::handle<shader_object>>&& shader_handles, gpu::dynamic_pipeline_state&& state, const bool is_compute, const bool is_mesh)
+gse::vulkan::shader_program::shader_program(vk::raii::PipelineLayout&& layout, std::vector<shader_object>&& shaders, std::vector<gpu::stage_flag>&& stages, std::vector<gpu::shader_object_handle>&& shader_handles, gpu::dynamic_pipeline_state&& state, const bool is_compute, const bool is_mesh)
 	: m_layout(std::move(layout)), m_shaders(std::move(shaders)), m_stages(std::move(stages)), m_shader_handles(std::move(shader_handles)), m_state(std::move(state)), m_is_compute(is_compute), m_is_mesh(is_mesh) {
 }
 
@@ -104,7 +104,7 @@ auto gse::vulkan::shader_program::create(const device& dev, const shader_program
 
 	std::vector<gpu::stage_flag> stages;
 	stages.reserve(shaders.size());
-	std::vector<gpu::handle<shader_object>> shader_handles;
+	std::vector<gpu::shader_object_handle> shader_handles;
 	shader_handles.reserve(shaders.size());
 	for (const auto& s : shaders) {
 		stages.push_back(s.stage());
@@ -122,15 +122,15 @@ auto gse::vulkan::shader_program::create(const device& dev, const shader_program
 	);
 }
 
-auto gse::vulkan::shader_program::layout() const -> gpu::handle<pipeline_layout> {
-	return std::bit_cast<gpu::handle<pipeline_layout>>(*m_layout);
+auto gse::vulkan::shader_program::layout() const -> gpu::pipeline_layout_handle {
+	return std::bit_cast<gpu::pipeline_layout_handle>(*m_layout);
 }
 
 auto gse::vulkan::shader_program::stages() const -> std::span<const gpu::stage_flag> {
 	return m_stages;
 }
 
-auto gse::vulkan::shader_program::shader_handles() const -> std::span<const gpu::handle<shader_object>> {
+auto gse::vulkan::shader_program::shader_handles() const -> std::span<const gpu::shader_object_handle> {
 	return m_shader_handles;
 }
 

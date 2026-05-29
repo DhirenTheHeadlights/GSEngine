@@ -4,9 +4,9 @@ import std;
 
 import gse.concurrency;
 
-auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure_handle as_handle, gpu::acceleration_structure_geometry geometry, const std::uint32_t prim_count, const gpu::device_size scratch_size, const gpu::device_size scratch_alignment) -> async::task<> {
+auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure as_handle, gpu::acceleration_structure_geometry geometry, const std::uint32_t prim_count, const gpu::device_size scratch_size, const gpu::device_size scratch_alignment) -> async::task<> {
 	auto scratch = dev.create_buffer(
-		gpu::buffer_create_info{
+		gpu::buffer_desc{
 			.size = scratch_size + scratch_alignment,
 			.usage = gpu::buffer_flag::storage,
 		}
@@ -111,7 +111,7 @@ auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -
 	return result;
 }
 
-auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::acceleration_structure_handle as_handle, const gpu::device_address instance_addr, const gpu::device_address scratch_addr) -> async::task<> {
+auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::acceleration_structure as_handle, const gpu::device_address instance_addr, const gpu::device_address scratch_addr) -> async::task<> {
 	auto cmd = co_await gpu::begin_transient(dev, gpu::queue_id::graphics, "transient.tlas_initial_build");
 
 	const gpu::acceleration_structure_geometry geometry{

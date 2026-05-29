@@ -28,18 +28,9 @@ export namespace gse::vulkan {
 			bool start_signaled
 		) -> fence;
 
-		auto wait(
-			const device& dev,
-			std::uint64_t timeout_ns
-		) const -> bool;
-
-		auto reset(
-			const device& dev
-		) -> void;
-
 		[[nodiscard]] auto handle(
 			this const fence& self
-		) -> gpu::handle<fence>;
+		) -> gpu::fence_handle;
 
 		[[nodiscard]] auto valid() const -> bool;
 
@@ -62,17 +53,8 @@ auto gse::vulkan::fence::create(const device& dev, const bool start_signaled) ->
 	return fence(dev.raii_device().createFence(info));
 }
 
-auto gse::vulkan::fence::wait(const device& dev, const std::uint64_t timeout_ns) const -> bool {
-	const auto result = dev.raii_device().waitForFences(*m_fence, vk::True, timeout_ns);
-	return result == vk::Result::eSuccess;
-}
-
-auto gse::vulkan::fence::reset(const device& dev) -> void {
-	dev.raii_device().resetFences(*m_fence);
-}
-
-auto gse::vulkan::fence::handle(this const fence& self) -> gpu::handle<fence> {
-	return std::bit_cast<gpu::handle<fence>>(*self.m_fence);
+auto gse::vulkan::fence::handle(this const fence& self) -> gpu::fence_handle {
+	return std::bit_cast<gpu::fence_handle>(*self.m_fence);
 }
 
 auto gse::vulkan::fence::valid() const -> bool {

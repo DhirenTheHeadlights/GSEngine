@@ -22,14 +22,14 @@ export namespace gse::dx12 {
 			shader_object&&
 		) noexcept -> shader_object& = default;
 
-		[[nodiscard]] auto handle() const -> gpu::handle<shader_object>;
+		[[nodiscard]] auto handle() const -> gpu::shader_object_handle;
 
 		[[nodiscard]] auto stage() const -> gpu::stage_flag;
 
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::handle<shader_object> m_handle;
+		gpu::shader_object_handle m_handle;
 		gpu::stage_flag m_stage = gpu::stage_flag::vertex;
 	};
 
@@ -47,11 +47,11 @@ export namespace gse::dx12 {
 			shader_program&&
 		) noexcept -> shader_program& = default;
 
-		[[nodiscard]] auto layout() const -> gpu::handle<pipeline_layout>;
+		[[nodiscard]] auto layout() const -> gpu::pipeline_layout_handle;
 
 		[[nodiscard]] auto stages() const -> std::span<const gpu::stage_flag>;
 
-		[[nodiscard]] auto shader_handles() const -> std::span<const gpu::handle<shader_object>>;
+		[[nodiscard]] auto shader_handles() const -> std::span<const gpu::shader_object_handle>;
 
 		[[nodiscard]] auto state() const -> const gpu::dynamic_pipeline_state&;
 
@@ -64,16 +64,16 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::handle<pipeline_layout> m_layout;
+		gpu::pipeline_layout_handle m_layout;
 		std::vector<gpu::stage_flag> m_stages;
-		std::vector<gpu::handle<shader_object>> m_shader_handles;
+		std::vector<gpu::shader_object_handle> m_shader_handles;
 		gpu::dynamic_pipeline_state m_state;
 		bool m_is_compute = false;
 		bool m_is_mesh = false;
 	};
 }
 
-auto gse::dx12::shader_object::handle() const -> gpu::handle<shader_object> {
+auto gse::dx12::shader_object::handle() const -> gpu::shader_object_handle {
 	return m_handle;
 }
 
@@ -85,7 +85,7 @@ auto gse::dx12::shader_object::valid() const -> bool {
 	return false;
 }
 
-auto gse::dx12::shader_program::layout() const -> gpu::handle<pipeline_layout> {
+auto gse::dx12::shader_program::layout() const -> gpu::pipeline_layout_handle {
 	return m_layout;
 }
 
@@ -93,7 +93,7 @@ auto gse::dx12::shader_program::stages() const -> std::span<const gpu::stage_fla
 	return m_stages;
 }
 
-auto gse::dx12::shader_program::shader_handles() const -> std::span<const gpu::handle<shader_object>> {
+auto gse::dx12::shader_program::shader_handles() const -> std::span<const gpu::shader_object_handle> {
 	return m_shader_handles;
 }
 

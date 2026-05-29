@@ -32,7 +32,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto handle(
 			this const pipeline_layout& self
-		) -> gpu::handle<pipeline_layout>;
+		) -> gpu::pipeline_layout_handle;
 
 		[[nodiscard]] auto valid() const -> bool;
 
@@ -66,8 +66,8 @@ auto gse::vulkan::pipeline_layout::create(const device& dev, const std::span<con
 	return pipeline_layout(dev.raii_device().createPipelineLayout(info));
 }
 
-auto gse::vulkan::pipeline_layout::handle(this const pipeline_layout& self) -> gpu::handle<pipeline_layout> {
-	return std::bit_cast<gpu::handle<pipeline_layout>>(*self.m_layout);
+auto gse::vulkan::pipeline_layout::handle(this const pipeline_layout& self) -> gpu::pipeline_layout_handle {
+	return std::bit_cast<gpu::pipeline_layout_handle>(*self.m_layout);
 }
 
 auto gse::vulkan::pipeline_layout::valid() const -> bool {

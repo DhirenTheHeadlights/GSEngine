@@ -34,7 +34,7 @@ export namespace gse::vulkan {
 
 		[[nodiscard]]
 		static auto create(
-			const device& dev,
+			device& dev,
 			queue_id id,
 			std::uint32_t family,
 			std::size_t worker_count
@@ -50,11 +50,16 @@ export namespace gse::vulkan {
 			std::uint64_t value
 		) const -> bool;
 
-		[[nodiscard]] auto timeline_handle() const -> gpu::handle<semaphore>;
+		[[nodiscard]] auto timeline_handle() const -> gpu::semaphore_handle;
 
 		[[nodiscard]] auto allocate_primary(
 			std::size_t worker_idx
 		) -> transient_command_buffer;
+
+		auto mark_in_use(
+			std::size_t worker_idx,
+			std::uint64_t value
+		) -> void;
 
 		auto park(
 			std::uint64_t value,
@@ -115,7 +120,7 @@ auto gse::vulkan::transient_queue::operator=(transient_queue&& other) noexcept -
 	return *this;
 }
 
-auto gse::vulkan::transient_queue::create(const device& dev, const queue_id id, const std::uint32_t family, const std::size_t worker_count) -> transient_queue {
+auto gse::vulkan::transient_queue::create(device& dev, const queue_id id, const std::uint32_t family, const std::size_t worker_count) -> transient_queue {
 	std::vector<transient_command_pool> pools;
 	pools.reserve(worker_count);
 	for (std::size_t i = 0; i < worker_count; ++i) {
@@ -145,7 +150,7 @@ auto gse::vulkan::transient_queue::reached(const std::uint64_t value) const -> b
 	return m_progress.load(std::memory_order_acquire) >= value;
 }
 
-auto gse::vulkan::transient_queue::timeline_handle() const -> gpu::handle<semaphore> {
+auto gse::vulkan::transient_queue::timeline_handle() const -> gpu::semaphore_handle {
 	return m_timeline.handle();
 }
 
@@ -158,7 +163,11 @@ auto gse::vulkan::transient_queue::allocate_primary(const std::size_t worker_idx
 	);
 	auto& pool = m_pools[worker_idx];
 	pool.try_reset(m_progress.load(std::memory_order_acquire));
-	return pool.allocate_primary(*m_device);
+	return transient_command_buffer(pool.allocate_primary(*m_device), worker_idx);
+}
+
+auto gse::vulkan::transient_queue::mark_in_use(const std::size_t worker_idx, const std::uint64_t value) -> void {
+	m_pools[worker_idx].mark_in_use_until(value);
 }
 
 auto gse::vulkan::transient_queue::park(const std::uint64_t value, std::coroutine_handle<> handle) -> void {
@@ -199,7 +208,7 @@ auto gse::vulkan::transient_queue::wait_until(const std::uint64_t value) -> void
 	if (m_progress.load(std::memory_order_acquire) >= value) {
 		return;
 	}
-	m_timeline.wait_until(*m_device, value);
+	m_timeline.wait_until(value);
 
 	std::vector<std::coroutine_handle<>> ready;
 	{
