@@ -1642,7 +1642,7 @@ auto gse::vulkan::device::create_timeline_semaphore(const std::uint64_t initial_
 }
 
 auto gse::vulkan::device::semaphore_counter_value(const gpu::semaphore_handle semaphore) const -> std::uint64_t {
-	return raii_device().getSemaphoreCounterValue(std::bit_cast<vk::Semaphore>(semaphore));
+	return (*m_device).getSemaphoreCounterValue(std::bit_cast<vk::Semaphore>(semaphore));
 }
 
 auto gse::vulkan::device::wait_semaphore(const gpu::semaphore_handle semaphore, const std::uint64_t value) const -> void {
