@@ -1221,7 +1221,12 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 				}
 				const auto& bs = result_bodies[i];
 				const auto* dyn = std::get_if<dynamic_body>(&mc.body);
+				if (is_static(mc)) {
+					continue;
+				}
 				if (!dyn) {
+					tc->position = bs.position;
+					tc->orientation = bs.orientation;
 					continue;
 				}
 

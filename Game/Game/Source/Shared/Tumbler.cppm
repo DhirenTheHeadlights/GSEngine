@@ -30,6 +30,7 @@ auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 
 			const int steps = gse::system_clock::fixed_steps_this_frame();
 			const auto step_dt = gse::system_clock::fixed_dt<gse::time>();
+			const float frame_step_count = static_cast<float>(steps);
 
 			const auto tumbler_ids = tumblers.owner_ids();
 			for (std::size_t i = 0; i < tumblers.size(); ++i) {
@@ -40,8 +41,6 @@ auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 				if (!motion || !transform) {
 					continue;
 				}
-
-				t.phase += t.angular_speed * step_dt * static_cast<float>(steps);
 
 				const gse::quat world_rot(t.axis, t.phase);
 				const auto world_offset = gse::rotate_vector(world_rot, t.local_offset);
@@ -56,6 +55,8 @@ auto gs::tumbler::system::run(gse::run_context& ctx) -> gse::async::task<> {
 				transform->orientation = world_rot;
 				motion->current_velocity = lin_vel;
 				motion->angular_velocity = ang_vel;
+
+				t.phase += t.angular_speed * step_dt * frame_step_count;
 			}
 		}
 
