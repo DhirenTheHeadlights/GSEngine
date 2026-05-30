@@ -59,12 +59,12 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
 	interaction::mark_hot(hot_widget_id, widget_id, hovered);
 	interaction::grab_active(active_widget_id, widget_id, ctx.mouse_pressed_for(button_rect));
 
-	vec4f target_color = ctx.style.color_widget_background;
+	vec4f target_color = ctx.style.color_button_background;
 	if (active_widget_id == widget_id) {
 		target_color = ctx.style.color_widget_active;
 	}
 	else if (hot_widget_id == widget_id) {
-		target_color = ctx.style.color_widget_hovered;
+		target_color = ctx.style.color_button_hovered;
 	}
 
 	ctx.queue_sprite({

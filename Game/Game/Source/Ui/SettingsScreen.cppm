@@ -264,14 +264,14 @@ auto gs::settings_screen::draw_footer_button(gse::gui::draw_context& ctx, const 
 	const auto& sty = ctx.style;
 	const bool hovered = enabled && rect.contains(ctx.input.mouse_position()) && ctx.input_available();
 
-	gse::vec4f base_color = primary ? sty.color_widget_active : sty.color_widget_background;
+	gse::vec4f base_color = primary ? sty.color_widget_active : sty.color_button_background;
 	if (!enabled) {
-		base_color = sty.color_widget_background;
+		base_color = sty.color_button_background;
 		base_color.w() = base_color.w() * 0.4f;
 	}
 	gse::vec4f target_color = base_color;
 	if (hovered) {
-		target_color = primary ? sty.color_accent : sty.color_widget_hovered;
+		target_color = primary ? sty.color_accent : sty.color_button_hovered;
 	}
 
 	ctx.queue_sprite({

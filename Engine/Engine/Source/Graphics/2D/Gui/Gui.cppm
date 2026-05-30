@@ -104,6 +104,8 @@ export namespace gse::gui {
 			std::optional<menu> screen_surface;
 			bool manual_cursor = false;
 
+			std::vector<id> pending_popout_close_ids;
+
 			static constexpr time update_interval = seconds(30.f);
 		};
 

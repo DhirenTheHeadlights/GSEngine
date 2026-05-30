@@ -190,41 +190,7 @@ A subtle side effect of the default setup is worth documenting: libc++ is built 
 
 `vcpkg.json` is standard manifest mode. No unusual flags — all entries use default features.
 
-## 9. The `hypotf` / `ldexpf` shim (`Engine/Modules/MathShims.cpp`)
-
-Libc++'s `<__math/...>` headers call bare `::hypotf(x, y)` and `::ldexpf(x, n)`. But ucrt's `<math.h>` declares these as inline wrappers around `_hypotf` / a cast through `ldexp` — meaning the real exported symbols are `_hypotf` and `ldexp`, while `hypotf` / `ldexpf` only exist when `<math.h>` is included and the inline is emitted.
-
-When `import std;` compiles libc++ into a module BMI, those bare calls end up as unresolved external symbol references at link time.
-
-Fix: a tiny TU that provides the symbols directly (no `<math.h>` include, to avoid redefinition with the inline):
-
-```cpp
-extern "C" {
-    float _hypotf(float, float);
-    double ldexp(double, int);
-
-    float hypotf(float x, float y) {
-        return _hypotf(x, y);
-    }
-    float ldexpf(float x, int n) {
-        return static_cast<float>(ldexp(static_cast<double>(x), n));
-    }
-}
-```
-
-Things that do **not** work as alternatives:
-- `-fno-builtin-hypotf -fno-builtin-ldexpf` — that flag only stops the optimizer from auto-recognizing math patterns; it doesn't suppress direct source-level calls.
-- Including `<math.h>` in the shim — triggers redefinition against ucrt's inline.
-
-The shim is added via `target_sources(Engine PRIVATE Modules/MathShims.cpp)`.
-
-## 10. Vulkan-Hpp dynamic dispatch storage (`Engine/Modules/VulkanDispatch.cpp`)
-
-`VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE` must live in exactly one TU. Ours is in `Engine/Modules/VulkanDispatch.cpp`, attached to the `VulkanModule` target. Don't put it in a module interface — it needs to be a plain object file so the linker finds it once.
-
----
-
-## 11. clang-p2996 codegen crash — `std::ranges::sort` with member-pointer projection
+## 9. clang-p2996 codegen crash — `std::ranges::sort` with member-pointer projection
 
 Not strictly toolchain, but worth recording because it ate a full debug session: at `-O3` with reflection flags on, compiling a function in a module purview that contains:
 

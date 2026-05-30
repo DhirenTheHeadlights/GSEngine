@@ -819,6 +819,24 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, channel_writer& chan
 						});
 					})
 												  : std::function<void()>{},
+					.secondary_action_icon = "\xE2\x86\xBA Reset",
+					.on_secondary_action = [&channels, &save_reg, &ps, cat] {
+						save_reg.for_each_entry([&](const register_settings_type& entry) {
+							if (entry.category != cat) {
+								return;
+							}
+							if (entry.reset_to_defaults) {
+								entry.reset_to_defaults(&channels);
+							}
+							ps.pending_by_type.erase(entry.type_id);
+						});
+						ps.input_buffers.clear();
+						ps.input_states.clear();
+						for (auto& state : std::views::values(ps.dimensioned_states)) {
+							state.initialized = false;
+							state.input_state = {};
+						}
+					},
 				});
 				save_reg.for_each_entry([&](const register_settings_type& entry) {
 					if (entry.category != cat) {
