@@ -21,6 +21,8 @@ export namespace gse::gui {
 			std::string_view subtitle = {};
 			std::string_view action_icon = {};
 			std::function<void()> on_action = {};
+			std::string_view secondary_action_icon = {};
+			std::function<void()> on_secondary_action = {};
 		};
 		static auto draw(
 			const draw_context& ctx,
@@ -72,11 +74,16 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 		.clip_rect = content_rect,
 	});
 
-	if (p.on_action && !p.action_icon.empty()) {
-		const float icon_w = ctx.font->width(p.action_icon, sty.font_size) + sty.padding;
-		const float action_height = bar_height;
+	const float action_height = bar_height;
+	float action_cursor_x = content_rect.right();
+
+	auto draw_action = [&](const std::string_view icon, const std::function<void()>& on_click) {
+		if (!on_click || icon.empty()) {
+			return;
+		}
+		const float icon_w = ctx.font->width(icon, sty.font_size) + sty.padding;
 		const ui_rect action_rect = ui_rect::from_position_size(
-			{ content_rect.right() - icon_w, title_top },
+			{ action_cursor_x - icon_w, title_top },
 			{ icon_w, action_height }
 		);
 
@@ -90,10 +97,10 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 			.corner_radius = sty.corner_radius,
 		});
 
-		const float icon_text_w = ctx.font->width(p.action_icon, sty.font_size);
+		const float icon_text_w = ctx.font->width(icon, sty.font_size);
 		ctx.queue_text({
 			.font = ctx.font,
-			.text = std::string(p.action_icon),
+			.text = std::string(icon),
 			.position = { action_rect.center().x() - icon_text_w * 0.5f, action_rect.center().y() + ctx.font->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
 			.color = hovered ? sty.color_text : sty.color_text_secondary,
@@ -101,9 +108,14 @@ auto gse::gui::section::draw(const draw_context& ctx, params p, id&, id&, id&) -
 		});
 
 		if (ctx.mouse_pressed_for(action_rect)) {
-			p.on_action();
+			on_click();
 		}
-	}
+
+		action_cursor_x -= icon_w + sty.padding * 0.5f;
+	};
+
+	draw_action(p.action_icon, p.on_action);
+	draw_action(p.secondary_action_icon, p.on_secondary_action);
 
 	if (!p.subtitle.empty()) {
 		lo::skip(ctx, sty.item_spacing);

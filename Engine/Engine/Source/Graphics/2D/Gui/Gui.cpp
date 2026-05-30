@@ -18,6 +18,7 @@ import :styles;
 import :builder;
 import :menu_stack;
 import :render_layer;
+import :interaction;
 
 import gse.os;
 import gse.config;
@@ -32,6 +33,23 @@ import gse.ecs;
 import gse.math;
 import gse.meta;
 import gse.save;
+
+namespace gse::gui {
+	[[nodiscard]] auto popout_close_button_rect(
+		const ui_rect& title_bar_rect,
+		const style& sty
+	) -> ui_rect;
+}
+
+auto gse::gui::popout_close_button_rect(const ui_rect& title_bar_rect, const style& sty) -> ui_rect {
+	const float button_size = std::min(sty.close_button_size, sty.title_bar_height);
+	const float vertical_pad = std::max(0.f, (sty.title_bar_height - button_size) * 0.5f);
+	const float horizontal_pad = vertical_pad;
+	return ui_rect::from_position_size(
+		{ title_bar_rect.right() - button_size - horizontal_pad, title_bar_rect.top() - vertical_pad },
+		{ button_size, button_size }
+	);
+}
 
 auto gse::gui::system::init_body(run_context& ctx, const window::data& window_s, asset::data& assets, data& d) -> async::task<> {
 	d.font.options = asset::enumerate_resources<font>();
@@ -289,7 +307,9 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 				d.sprite_commands.push_back({
 					.rect = area.target,
 					.color = d.fstate.sty.color_dock_preview,
-					.texture = d.blank_texture
+					.texture = d.blank_texture,
+					.layer = render_layer::overlay,
+					.z_order = 10,
 				});
 				break;
 			}
@@ -299,7 +319,9 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 			d.sprite_commands.push_back({
 				.rect = area.rect,
 				.color = d.fstate.sty.color_dock_preview,
-				.texture = d.blank_texture
+				.texture = d.blank_texture,
+				.layer = render_layer::overlay,
+				.z_order = 11,
 			});
 		}
 	}
@@ -327,6 +349,58 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 
 	for (const auto& content : ctx.read_channel<menu_content>()) {
 		process_menu(d, input_st, content.menu, content.layer, content.build);
+	}
+
+	for (const id& menu_id : d.pending_popout_close_ids) {
+		const menu* m = d.menus.try_get(menu_id);
+		if (!m) {
+			continue;
+		}
+		const std::string_view category = popout_category_from_tag(m->id().tag());
+		if (!category.empty()) {
+			ctx.channels.push<popout_toggle>({ .category = std::string(category) });
+		}
+	}
+	d.pending_popout_close_ids.clear();
+
+	for (const auto& req : ctx.read_channel<popout_closed>()) {
+		id host_id;
+		for (const menu& m : d.menus.items()) {
+			if (std::ranges::find(m.tab_contents, req.menu_name) != m.tab_contents.end()) {
+				host_id = m.id();
+				break;
+			}
+		}
+		if (!host_id.exists()) {
+			continue;
+		}
+
+		menu* host = d.menus.try_get(host_id);
+		if (!host) {
+			continue;
+		}
+		const auto tab_it = std::ranges::find(host->tab_contents, req.menu_name);
+		const auto removed_idx = static_cast<std::uint32_t>(std::distance(host->tab_contents.begin(), tab_it));
+		host->tab_contents.erase(tab_it);
+
+		const bool host_has_children = std::ranges::any_of(d.menus.items(), [host_id](const menu& m) {
+			return m.owner_id() == host_id;
+		});
+
+		if (host->tab_contents.empty() && !host_has_children) {
+			if (host->docked_to != dock::location::none) {
+				layout::undock(d.menus, host_id);
+			}
+			d.menus.remove(host_id);
+		}
+		else if (!host->tab_contents.empty()) {
+			if (host->active_tab_index >= host->tab_contents.size()) {
+				host->active_tab_index = static_cast<std::uint32_t>(host->tab_contents.size() - 1);
+			}
+			else if (host->active_tab_index > removed_idx) {
+				host->active_tab_index -= 1;
+			}
+		}
 	}
 
 	if (d.tooltip.pending_widget_id.exists()) {
@@ -776,6 +850,51 @@ auto gse::gui::system::draw_menu_chrome(data& d, const gse::input::state& input_
 			});
 		}
 	}
+
+	if (is_popout_menu_tag(current_menu.id().tag())) {
+		const ui_rect close_rect = popout_close_button_rect(title_bar_rect, sty);
+		const vec2f mouse_pos = input_state.mouse_position();
+		const bool hovered = close_rect.contains(mouse_pos);
+		const bool pressed = input_state.mouse_button_pressed(mouse_button::button_1);
+		const bool released = input_state.mouse_button_released(mouse_button::button_1);
+
+		const id close_id = ids::make_from_key(
+			hash_combine(current_menu.id().number(), stable_id("popout_close"))
+		);
+		interaction::mark_hot(d.hot_widget_id, close_id, hovered);
+		interaction::grab_active(d.active_widget_id, close_id, hovered && pressed);
+		const bool click = interaction::release_active(d.active_widget_id, close_id, released) && hovered;
+
+		const vec4f bg_color = hovered ? sty.color_widget_hovered : vec4f{ 0.f, 0.f, 0.f, 0.f };
+		d.sprite_commands.push_back({
+			.rect = close_rect,
+			.color = bg_color,
+			.texture = d.blank_texture,
+			.layer = layer,
+			.z_order = 1,
+			.corner_radius = close_rect.width() * 0.5f,
+		});
+
+		if (d.gui_font.valid()) {
+			const std::string glyph = "x";
+			const float glyph_w = d.gui_font->width(glyph, sty.font_size);
+			const vec4f glyph_color = hovered ? sty.color_icon_hovered : sty.color_icon;
+			d.text_commands.push_back({
+				.font = d.gui_font,
+				.text = glyph,
+				.position = { close_rect.center().x() - glyph_w * 0.5f, close_rect.center().y() + d.gui_font->vertical_center_offset(sty.font_size) },
+				.scale = sty.font_size,
+				.color = glyph_color,
+				.clip_rect = close_rect,
+				.layer = layer,
+				.z_order = 2,
+			});
+		}
+
+		if (click) {
+			d.pending_popout_close_ids.push_back(current_menu.id());
+		}
+	}
 }
 
 auto gse::gui::system::draw_tab_bar(data& d, const gse::input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect, const render_layer layer) -> void {
@@ -935,6 +1054,11 @@ auto gse::gui::system::draw_tab_bar(data& d, const gse::input::state& input_stat
 }
 
 auto gse::gui::system::handle_idle_state(data& d, const gse::input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
+	if (!d.menu_stack.empty() || d.active_widget_id.exists()) {
+		set_style(cursor::style::arrow);
+		return states::idle{};
+	}
+
 	struct interaction_candidate {
 		std::variant<states::resizing, states::dragging, states::resizing_divider, states::pending_drag> future_state;
 		cursor::style cursor;
@@ -1161,6 +1285,13 @@ auto gse::gui::system::handle_idle_state(data& d, const gse::input::state& input
 			);
 
 			if (title_bar_rect.contains(mouse_position)) {
+				if (is_popout_menu_tag(current_menu.id().tag())) {
+					const ui_rect close_rect = popout_close_button_rect(title_bar_rect, style);
+					if (close_rect.contains(mouse_position)) {
+						return std::nullopt;
+					}
+				}
+
 				std::optional<std::uint32_t> clicked_tab;
 
 				if (current_menu.tab_contents.size() > 1) {
