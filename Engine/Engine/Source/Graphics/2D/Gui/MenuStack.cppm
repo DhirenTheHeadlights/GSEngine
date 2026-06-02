@@ -130,6 +130,31 @@ export namespace gse::gui {
 	struct popout_toggle {
 		std::string category;
 	};
+
+	struct popout_closed {
+		std::string menu_name;
+	};
+
+	constexpr std::string_view popout_menu_prefix = "live::";
+
+	[[nodiscard]] auto is_popout_menu_tag(
+		std::string_view tag
+	) -> bool;
+
+	[[nodiscard]] auto popout_category_from_tag(
+		std::string_view tag
+	) -> std::string_view;
+}
+
+auto gse::gui::is_popout_menu_tag(const std::string_view tag) -> bool {
+	return tag.starts_with(popout_menu_prefix);
+}
+
+auto gse::gui::popout_category_from_tag(const std::string_view tag) -> std::string_view {
+	if (!tag.starts_with(popout_menu_prefix)) {
+		return {};
+	}
+	return tag.substr(popout_menu_prefix.size());
 }
 
 auto gse::gui::screen::body_rect(const style& sty, const vec2f viewport_size) const -> ui_rect {
