@@ -66,7 +66,7 @@ export namespace gse::gui {
 	};
 }
 
-namespace gse::gui::dock {
+export namespace gse::gui::dock {
 	enum class location {
 		none,
 		center,
@@ -117,6 +117,7 @@ export namespace gse::gui {
 		dock::location docked_to = dock::location::none;
 		std::vector<std::string> tab_contents;
 		std::uint32_t active_tab_index = 0;
+		std::uint32_t z_order = 0;
 		bool was_begun_this_frame = false;
 		bool was_visible_last_frame = false;
 	};

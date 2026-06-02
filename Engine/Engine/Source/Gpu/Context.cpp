@@ -36,6 +36,7 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 		d.bindless_textures.get(),
 		d.bindless_heaps.get()
 	);
+	d.render_graph->set_swapchain_clear(d.swapchain_clear);
 
 	while (true) {
 		for (const auto& req : ctx.read_channel<gpu_resume_request>()) {
