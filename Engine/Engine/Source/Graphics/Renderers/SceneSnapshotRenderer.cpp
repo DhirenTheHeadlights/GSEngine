@@ -53,7 +53,7 @@ namespace gse::renderer::scene_snapshot {
 
 auto gse::renderer::scene_snapshot::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	const auto initial_extent = gpu_s.render_graph->extent();
-	if (initial_extent.x() > 0 && initial_extent.y() > 0) {
+	if (d.enabled && initial_extent.x() > 0 && initial_extent.y() > 0) {
 		recreate_resources(gpu_s, d, initial_extent);
 	}
 
@@ -64,6 +64,10 @@ auto gse::renderer::scene_snapshot::system::run(run_context& ctx, const gpu::con
 
 auto gse::renderer::scene_snapshot::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
+		co_return;
+	}
+
+	if (!d.enabled) {
 		co_return;
 	}
 

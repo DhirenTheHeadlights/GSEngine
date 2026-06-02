@@ -2,6 +2,7 @@ export module gse.os:window;
 
 import std;
 import vulkan;
+
 import gse.glfw;
 
 import :input_events;
@@ -19,6 +20,15 @@ import gse.meta;
 export namespace gse {
 	struct ui_focus_request {
 		bool focus = false;
+	};
+
+	struct window_minimize_request {};
+
+	struct window_toggle_maximize_request {};
+
+	struct window_chrome_metrics_request {
+		int caption_height = 0;
+		int controls_width = 0;
 	};
 
 	struct monitor_info {
@@ -90,7 +100,16 @@ export namespace gse {
 			bool focused = true;
 			bool framebuffer_resized = false;
 			bool ui_focus = false;
+			bool decorated = true;
+			bool maximized = false;
 			int last_monitor_index = 0;
+			vec2i position{ 0, 0 };
+			vec2i size{ 0, 0 };
+			bool cmd_minimize = false;
+			bool cmd_toggle_maximize = false;
+			bool native_frame = false;
+			int chrome_caption_height = 0;
+			int chrome_controls_width = 0;
 
 			rect_t<vec2i> windowed_rect = rect_t<vec2i>::from_position_size(
 				{ 100, 100 },
@@ -111,6 +130,16 @@ export namespace gse {
 		) -> void;
 
 		static auto poll_events() -> void;
+
+		static auto apply_commands(
+			data& d
+		) -> void;
+
+		static auto install_native_frame(
+			GLFWwindow* handle,
+			const int* caption_height,
+			const int* controls_width
+		) -> void;
 
 		[[nodiscard]] static auto is_open(
 			const data& d

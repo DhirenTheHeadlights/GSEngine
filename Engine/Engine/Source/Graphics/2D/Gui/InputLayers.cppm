@@ -26,15 +26,13 @@ export namespace gse::gui {
 
 		auto register_hit_region(
 			render_layer layer,
+			std::uint32_t z_order,
 			const ui_rect& rect
 		) -> void;
 
-		[[nodiscard]] auto input_layer_at(
-			vec2f position
-		) const -> render_layer;
-
 		[[nodiscard]] auto input_available_at(
 			render_layer widget_layer,
+			std::uint32_t widget_z,
 			vec2f position
 		) const -> bool;
 
@@ -67,11 +65,20 @@ export namespace gse::gui {
 		) const -> bool;
 
 	private:
+		struct hit_region {
+			std::uint32_t z_order = 0;
+			ui_rect rect;
+		};
+
+		[[nodiscard]] auto topmost_at(
+			vec2f position
+		) const -> std::pair<std::uint8_t, std::uint32_t>;
+
 		static constexpr std::size_t k_layer_count = 7;
 		static constexpr std::size_t k_button_count = 8;
 
-		std::array<std::vector<ui_rect>, k_layer_count> m_current_regions;
-		std::array<std::vector<ui_rect>, k_layer_count> m_previous_regions;
+		std::array<std::vector<hit_region>, k_layer_count> m_current_regions;
+		std::array<std::vector<hit_region>, k_layer_count> m_previous_regions;
 		std::array<bool, k_button_count> m_press_consumed{};
 		std::array<bool, k_button_count> m_release_consumed{};
 		bool m_scroll_consumed = false;
@@ -100,26 +107,35 @@ auto gse::gui::input_layer::begin_frame() -> void {
 	m_consumed_keys.clear();
 }
 
-auto gse::gui::input_layer::register_hit_region(const render_layer layer, const ui_rect& rect) -> void {
+auto gse::gui::input_layer::register_hit_region(const render_layer layer, const std::uint32_t z_order, const ui_rect& rect) -> void {
 	if (const auto index = static_cast<std::size_t>(layer); index < m_current_regions.size()) {
-		m_current_regions[index].push_back(rect);
+		m_current_regions[index].push_back({ z_order, rect });
 	}
 }
 
-auto gse::gui::input_layer::input_layer_at(const vec2f position) const -> render_layer {
+auto gse::gui::input_layer::topmost_at(const vec2f position) const -> std::pair<std::uint8_t, std::uint32_t> {
 	for (int i = static_cast<int>(m_previous_regions.size()) - 1; i >= 0; --i) {
-		for (const auto& rect : m_previous_regions[i]) {
-			if (rect.contains(position)) {
-				return static_cast<render_layer>(i);
+		std::uint32_t best_z = 0;
+		bool found = false;
+		for (const auto& region : m_previous_regions[i]) {
+			if (region.rect.contains(position)) {
+				found = true;
+				best_z = std::max(best_z, region.z_order);
 			}
 		}
+		if (found) {
+			return { static_cast<std::uint8_t>(i), best_z };
+		}
 	}
-	return render_layer::background;
+	return { static_cast<std::uint8_t>(render_layer::background), 0 };
 }
 
-auto gse::gui::input_layer::input_available_at(const render_layer widget_layer, const vec2f position) const -> bool {
-	const auto topmost = input_layer_at(position);
-	return static_cast<std::uint8_t>(widget_layer) >= static_cast<std::uint8_t>(topmost);
+auto gse::gui::input_layer::input_available_at(const render_layer widget_layer, const std::uint32_t widget_z, const vec2f position) const -> bool {
+	const auto [top_layer, top_z] = topmost_at(position);
+	if (const auto wl = static_cast<std::uint8_t>(widget_layer); wl != top_layer) {
+		return wl > top_layer;
+	}
+	return widget_z >= top_z;
 }
 
 auto gse::gui::input_layer::consume_press(const mouse_button button) -> void {
