@@ -26,6 +26,9 @@ export namespace gse {
 		std::string title = "GSEngine Application";
 		bool create_window = true;
 		bool render = true;
+		bool render_world = true;
+		bool custom_chrome = false;
+		bool scale_ui_with_resolution = true;
 	};
 
 	class engine : public identifiable {
@@ -51,6 +54,10 @@ export namespace gse {
 		auto registry() -> gse::registry&;
 
 		auto world() -> world_system::data&;
+
+		auto window_should_close() -> bool;
+
+		auto pump_window() -> void;
 
 		template <typename S, typename... Args>
 		auto add_system(

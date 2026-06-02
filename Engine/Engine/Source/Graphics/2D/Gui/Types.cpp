@@ -57,7 +57,7 @@ auto gse::gui::draw_context::current_clip() const -> std::optional<ui_rect> {
 
 auto gse::gui::draw_context::register_hit_region(const render_layer layer, const ui_rect& rect) const -> void {
 	if (hit_regions) {
-		hit_regions->register_hit_region(layer, rect);
+		hit_regions->register_hit_region(layer, current_z_order, rect);
 	}
 }
 
@@ -72,7 +72,7 @@ auto gse::gui::draw_context::input_available_at(const vec2f position) const -> b
 	if (!hit_regions) {
 		return true;
 	}
-	return hit_regions->input_available_at(current_layer, position);
+	return hit_regions->input_available_at(current_layer, current_z_order, position);
 }
 
 auto gse::gui::draw_context::mouse_pressed_for(const ui_rect& rect, const mouse_button button) const -> bool {

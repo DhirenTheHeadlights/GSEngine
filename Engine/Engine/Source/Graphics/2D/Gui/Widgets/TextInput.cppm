@@ -21,10 +21,10 @@ export namespace gse::gui {
 		int caret = 0;
 		int anchor = 0;
 		float scroll_x = 0.f;
-		double blink_ms = 0.0;
+		time last_blink{};
 		bool blink_on = true;
 		bool rpt_active = false;
-		double rpt_next_ms = 0.0;
+		time rpt_next{};
 	};
 }
 
@@ -154,7 +154,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.caret = state.anchor = std::clamp(i, 0, static_cast<int>(buffer.size()));
 		}
 
-		state.blink_ms = system_clock::now<time>().as<milliseconds>();
+		state.last_blink = system_clock::now<time>();
 		state.blink_on = true;
 	}
 
@@ -177,7 +177,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			buffer.insert(state.caret, entered);
 			state.caret += static_cast<int>(entered.size());
 			state.anchor = state.caret;
-			state.blink_ms = system_clock::now<time>().as<milliseconds>();
+			state.last_blink = system_clock::now<time>();
 			state.blink_on = true;
 		}
 
@@ -192,7 +192,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			else {
 				state.caret = state.anchor = new_i;
 			}
-			state.blink_ms = system_clock::now<time>().as<milliseconds>();
+			state.last_blink = system_clock::now<time>();
 			state.blink_on = true;
 		};
 
@@ -245,7 +245,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 				--state.caret;
 				state.anchor = state.caret;
 			}
-			state.blink_ms = system_clock::now<time>().as<milliseconds>();
+			state.last_blink = system_clock::now<time>();
 			state.blink_on = true;
 		};
 
@@ -258,31 +258,31 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			else if (state.caret < static_cast<int>(buffer.size())) {
 				buffer.erase(state.caret, 1);
 			}
-			state.blink_ms = system_clock::now<time>().as<milliseconds>();
+			state.last_blink = system_clock::now<time>();
 			state.blink_on = true;
 		};
 
 		if (ctx.key_pressed_for(key::backspace)) {
 			do_backspace();
 			state.rpt_active = true;
-			state.rpt_next_ms = system_clock::now<time>().as<milliseconds>() + 400;
+			state.rpt_next = system_clock::now<time>() + milliseconds(400);
 		}
 
 		if (ctx.key_pressed_for(key::del)) {
 			do_delete();
 			state.rpt_active = true;
-			state.rpt_next_ms = system_clock::now<time>().as<milliseconds>() + 400;
+			state.rpt_next = system_clock::now<time>() + milliseconds(400);
 		}
 
 		if (state.rpt_active && (ctx.input.key_held(key::backspace) || ctx.input.key_held(key::del))) {
-			if (const double t = system_clock::now<time>().as<milliseconds>(); t >= state.rpt_next_ms) {
+			if (const auto t = system_clock::now<time>(); t >= state.rpt_next) {
 				if (ctx.input.key_held(key::backspace)) {
 					do_backspace();
 				}
 				if (ctx.input.key_held(key::del)) {
 					do_delete();
 				}
-				state.rpt_next_ms = t + 33;
+				state.rpt_next = t + milliseconds(33);
 			}
 		}
 		else {
@@ -309,8 +309,8 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.scroll_x = 0.f;
 		}
 
-		if (const double t = system_clock::now<time>().as<milliseconds>(); t - state.blink_ms > 500.0) {
-			state.blink_ms = t;
+		if (const auto t = system_clock::now<time>(); t - state.last_blink > milliseconds(500)) {
+			state.last_blink = t;
 			state.blink_on = !state.blink_on;
 		}
 
