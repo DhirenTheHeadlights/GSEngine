@@ -329,6 +329,11 @@ export namespace gse::gpu {
 			bool enabled
 		) -> void;
 
+		auto set_swapchain_clear(
+			gpu::color_clear value,
+			load_op op = load_op::clear
+		) -> void;
+
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
 
 		[[nodiscard]] auto extent() const -> vec2u;
@@ -413,6 +418,8 @@ export namespace gse::gpu {
 		std::vector<gpu::queue_submission> m_pending_aux_submissions;
 		std::vector<gpu::semaphore_submit_info> m_pending_graphics_extra_waits;
 		std::set<std::pair<id, id>> m_warned_ambiguous_pairs;
+		gpu::color_clear m_swapchain_clear{};
+		load_op m_swapchain_load = load_op::clear;
 	};
 }
 
@@ -1205,6 +1212,11 @@ auto gse::gpu::render_graph::set_gpu_pipeline_stats_enabled(const bool enabled) 
 	m_gpu_pipeline_stats_enabled.store(enabled, std::memory_order_relaxed);
 }
 
+auto gse::gpu::render_graph::set_swapchain_clear(const gpu::color_clear value, const load_op op) -> void {
+	m_swapchain_clear = value;
+	m_swapchain_load = op;
+}
+
 auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
 	if (!slot.timestamp_pool.valid()) {
 		slot.timestamp_pool = m_device->create_timestamp_query_pool(max_profiled_passes * 2 + 1);
@@ -1765,6 +1777,25 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 
 			assert(false, "render_graph: cyclic pass dependency graph:\n  {}", cycle_str);
+		}
+	}
+
+	{
+		bool swapchain_cleared = false;
+		for (const auto pi : sorted) {
+			for (auto& info : passes[pi].color_outputs) {
+				if (resolve_color_target(info) != nullptr) {
+					continue;
+				}
+				if (swapchain_cleared) {
+					info.op = load_op::load;
+				}
+				else {
+					info.op = m_swapchain_load;
+					info.clear_value = m_swapchain_clear;
+					swapchain_cleared = true;
+				}
+			}
 		}
 	}
 

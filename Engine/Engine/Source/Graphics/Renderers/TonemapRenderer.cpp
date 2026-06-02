@@ -116,7 +116,7 @@ auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.pipeline(d.pipeline)
-		.color(gpu::clear_color(gpu::color_clear{ 0.0f, 0.0f, 0.0f, 1.0f }))
+		.color(gpu::load_color())
 		.after<forward::system, physics_debug::system, sdf_grid::system, world_text::system, bloom::downsample_pass, bloom::upsample_pass, depth_prepass::system, taa::system>();
 
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::fragment_shader);
