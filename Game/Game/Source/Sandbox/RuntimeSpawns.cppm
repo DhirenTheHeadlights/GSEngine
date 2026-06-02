@@ -5,6 +5,7 @@ import gse;
 
 import :entity_builders;
 import :humanoid_skeleton;
+import :piston;
 import :skeleton_spawn;
 import :test_skeletons;
 import :tumbler;
@@ -94,6 +95,26 @@ namespace gs {
 	) -> void;
 
 	auto spawn_humanoid_test(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
+
+	auto spawn_sphere_stack(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
+
+	auto spawn_corner_drop(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
+
+	auto spawn_elevator(
+		gse::scene& s,
+		const gse::vec3<gse::position>& origin
+	) -> void;
+
+	auto spawn_vise(
 		gse::scene& s,
 		const gse::vec3<gse::position>& origin
 	) -> void;
@@ -579,6 +600,146 @@ auto gs::spawn_pendulum_chain(gse::scene& s, const gse::vec3<gse::position>& ori
 	}
 }
 
+auto gs::spawn_sphere_stack(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
+	constexpr int stack_count = 8;
+	constexpr float radius = 0.5f;
+	constexpr float spacing = radius * 2.f + 0.02f;
+
+	for (int i = 0; i < stack_count; ++i) {
+		const auto pos = origin + gse::vec3<gse::length>(
+			0.f,
+			radius + spacing * static_cast<float>(i),
+			0.f
+		);
+		s.spawn(
+			std::format("Sphere Stack {}", i),
+			gs::sphere(pos, gse::meters(radius), gse::sphere_lod::mid)
+		);
+	}
+}
+
+auto gs::spawn_corner_drop(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
+	s.spawn(
+		"Corner Drop Plate",
+		gs::static_box(
+			origin + gse::vec3<gse::length>(0.f, 0.25f, 0.f),
+			gse::vec3<gse::length>(6.f, 0.5f, 6.f)
+		)
+	);
+
+	const auto tilt = gse::quat(gse::axis_x, gse::degrees(45.f)) * gse::quat(gse::axis_z, gse::degrees(35.264f));
+	s.spawn(
+		"Corner Drop Box",
+		gs::box(
+			origin + gse::vec3<gse::length>(0.f, 8.f, 0.f),
+			gse::vec3<gse::length>(gse::meters(1.f)),
+			gse::kilograms(20.f),
+			tilt
+		)
+	);
+}
+
+auto gs::spawn_elevator(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
+	constexpr float platform_size = 3.f;
+	constexpr float platform_height = 0.3f;
+	constexpr float platform_y = 3.f;
+	constexpr float oscillation_amplitude = 2.5f;
+	constexpr float frequency_hz = 0.4f;
+	const float omega_value = 2.f * std::numbers::pi_v<float> * frequency_hz;
+
+	const auto platform_origin = origin + gse::vec3<gse::length>(0.f, platform_y, 0.f);
+	auto platform_arch = gs::box(
+		platform_origin,
+		gse::vec3<gse::length>(platform_size, platform_height, platform_size),
+		gse::kilograms(10000.f)
+	);
+	platform_arch.motion.body = gse::physics::kinematic_body{};
+
+	const auto platform_id = s.spawn("Elevator Platform", std::move(platform_arch));
+	s.registry().add_component<gs::piston::component>(
+		platform_id,
+		{
+			.center = platform_origin,
+			.amplitude = gse::vec3<gse::length>(0.f, oscillation_amplitude, 0.f),
+			.omega = gse::radians_per_second(omega_value),
+		}
+	);
+
+	constexpr int grid = 3;
+	constexpr float box_size = 0.5f;
+	constexpr float box_spacing = 0.7f;
+	for (int i = 0; i < grid; ++i) {
+		for (int j = 0; j < grid; ++j) {
+			const auto pos = platform_origin + gse::vec3<gse::length>(
+				-box_spacing + static_cast<float>(i) * box_spacing,
+				platform_height * 0.5f + box_size * 0.5f + 0.05f,
+				-box_spacing + static_cast<float>(j) * box_spacing
+			);
+			s.spawn(
+				std::format("Elevator Box {}{}", i, j),
+				gs::box(pos, gse::vec3<gse::length>(gse::meters(box_size)), gse::kilograms(2.f))
+			);
+		}
+	}
+}
+
+auto gs::spawn_vise(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
+	constexpr float floor_thickness = 1.f;
+	constexpr float wall_thickness = 0.3f;
+	constexpr float wall_height = 3.f;
+	constexpr float wall_depth = 2.f;
+	constexpr float wall_center_offset = 1.0f;
+	constexpr float wall_amplitude = 0.7f;
+	constexpr float frequency_hz = 0.3f;
+	const float omega_value = 2.f * std::numbers::pi_v<float> * frequency_hz;
+
+	s.spawn(
+		"Vise Floor",
+		gs::static_box(
+			origin + gse::vec3<gse::length>(0.f, floor_thickness * 0.5f, 0.f),
+			gse::vec3<gse::length>(6.f, floor_thickness, wall_depth + 2.f)
+		)
+	);
+
+	constexpr std::array<std::pair<std::string_view, float>, 2> wall_defs = {
+		std::pair{ std::string_view{"Right"}, 1.f },
+		std::pair{ std::string_view{"Left"}, -1.f },
+	};
+
+	for (const auto& [name, sign] : wall_defs) {
+		const auto wall_center = origin + gse::vec3<gse::length>(
+			sign * wall_center_offset,
+			floor_thickness + wall_height * 0.5f,
+			0.f
+		);
+		auto wall_arch = gs::box(
+			wall_center,
+			gse::vec3<gse::length>(wall_thickness, wall_height, wall_depth),
+			gse::kilograms(10000.f)
+		);
+		wall_arch.motion.body = gse::physics::kinematic_body{};
+
+		const auto wall_id = s.spawn(std::format("Vise {} Wall", name), std::move(wall_arch));
+		s.registry().add_component<gs::piston::component>(
+			wall_id,
+			{
+				.center = wall_center,
+				.amplitude = gse::vec3<gse::length>(-sign * wall_amplitude, 0.f, 0.f),
+				.omega = gse::radians_per_second(omega_value),
+			}
+		);
+	}
+
+	s.spawn(
+		"Vise Box",
+		gs::box(
+			origin + gse::vec3<gse::length>(0.f, floor_thickness + 0.3f, 0.f),
+			gse::vec3<gse::length>(gse::meters(0.5f)),
+			gse::kilograms(5.f)
+		)
+	);
+}
+
 auto gs::spawn_physics_stress(gse::scene& s) -> void {
 	spawn_inverted_mass_pyramid(s, gse::vec3<gse::position>(-15.f, 0.f, 0.f));
 	spawn_domino_chain(s, gse::vec3<gse::position>(-8.f, 0.f, -10.f));
@@ -590,6 +751,11 @@ auto gs::spawn_physics_stress(gse::scene& s) -> void {
 
 	spawn_tumbler(s, 0, gse::vec3<gse::position>(-12.f, 10.f, 24.f), gse::axis_z, gse::radians_per_second(0.6f));
 	spawn_tumbler(s, 1, gse::vec3<gse::position>(12.f, 10.f, 24.f), gse::axis_x, gse::radians_per_second(0.5f));
+
+	spawn_sphere_stack(s, gse::vec3<gse::position>(30.f, 0.f, 5.f));
+	spawn_corner_drop(s, gse::vec3<gse::position>(30.f, 0.f, 15.f));
+	spawn_elevator(s, gse::vec3<gse::position>(-30.f, 0.f, 10.f));
+	spawn_vise(s, gse::vec3<gse::position>(0.f, 0.f, 30.f));
 
 	s.spawn("Bouncy Sphere", gs::sphere(gse::vec3<gse::position>(-15.f, 8.f, 0.f), gse::meters(1.f)));
 }

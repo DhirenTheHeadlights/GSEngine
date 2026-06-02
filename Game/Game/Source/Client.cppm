@@ -8,6 +8,7 @@ import :footstep_planner;
 import :gait_scheduler;
 import :leg_controller;
 import :orbit_camera;
+import :piston;
 import :player;
 import :pose_driver;
 import :state_estimator;
@@ -25,6 +26,7 @@ auto gs::client_system::run(gse::run_context& ctx) -> gse::async::task<> {
 	ctx.add_system<gs::player::system>();
 	ctx.add_system<gs::orbit_camera::system>();
 	ctx.add_system<gs::tumbler::system>();
+	ctx.add_system<gs::piston::system>();
 	ctx.add_system<gs::locomotion::state_estimator>();
 	ctx.add_system<gs::locomotion::gait_scheduler>();
 	ctx.add_system<gs::locomotion::footstep_planner>();
