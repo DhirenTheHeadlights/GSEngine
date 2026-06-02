@@ -3,6 +3,7 @@ module gse.os;
 import std;
 import vulkan;
 import gse.glfw;
+import gse.win32;
 
 import :keys;
 import :input_events;
@@ -235,6 +236,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwWindowHint(glfw::resizable, glfw::true_);
 	glfwWindowHint(glfw::focus_on_show, glfw::true_);
 	glfwWindowHint(glfw::visible, glfw::false_);
+	glfwWindowHint(glfw::decorated, d.decorated ? glfw::true_ : glfw::false_);
 
 	const auto initial_size = d.windowed_rect.size();
 	d.handle = glfwCreateWindow(initial_size.x(), initial_size.y(), d.title.c_str(), nullptr, nullptr);
@@ -366,9 +368,26 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 
 	glfwFocusWindow(d.handle);
 
+	if (d.native_frame) {
+		install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width);
+	}
+
 	while (true) {
 		for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
 			set_ui_focus(d, focus);
+		}
+
+		for ([[maybe_unused]] const auto& req : ctx.read_channel<window_minimize_request>()) {
+			d.cmd_minimize = true;
+		}
+
+		for ([[maybe_unused]] const auto& req : ctx.read_channel<window_toggle_maximize_request>()) {
+			d.cmd_toggle_maximize = true;
+		}
+
+		for (const auto& req : ctx.read_channel<window_chrome_metrics_request>()) {
+			d.chrome_caption_height = req.caption_height;
+			d.chrome_controls_width = req.controls_width;
 		}
 
 		if (d.monitor.value != d.last_monitor_index) {
@@ -407,6 +426,145 @@ auto gse::window::shutdown(shutdown_context&, data& d) -> void {
 
 auto gse::window::poll_events() -> void {
 	glfwPollEvents();
+}
+
+auto gse::window::apply_commands(data& d) -> void {
+	if (!d.handle) {
+		return;
+	}
+
+	if (d.cmd_minimize) {
+		glfwIconifyWindow(d.handle);
+		d.cmd_minimize = false;
+	}
+
+	if (d.cmd_toggle_maximize) {
+		if (glfwGetWindowAttrib(d.handle, glfw::maximized)) {
+			glfwRestoreWindow(d.handle);
+		}
+		else {
+			glfwMaximizeWindow(d.handle);
+		}
+		d.cmd_toggle_maximize = false;
+	}
+
+	int win_x = 0;
+	int win_y = 0;
+	int win_w = 0;
+	int win_h = 0;
+	glfwGetWindowPos(d.handle, &win_x, &win_y);
+	glfwGetWindowSize(d.handle, &win_w, &win_h);
+	d.position = vec2i{ win_x, win_y };
+	d.size = vec2i{ win_w, win_h };
+	d.maximized = glfwGetWindowAttrib(d.handle, glfw::maximized) != 0;
+}
+
+#ifdef _WIN32
+namespace gse {
+	using namespace gse::win32;
+
+	struct native_frame_state {
+		WNDPROC original_proc = nullptr;
+		const int* caption_height = nullptr;
+		const int* controls_width = nullptr;
+	};
+
+	LRESULT native_frame_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+		auto* state = static_cast<native_frame_state*>(GetPropW(hwnd, L"gse_native_frame"));
+		if (state == nullptr) {
+			return DefWindowProcW(hwnd, msg, wparam, lparam);
+		}
+
+		if (msg == wm_nccalcsize && wparam != 0) {
+			if (IsZoomed(hwnd)) {
+				if (const HMONITOR monitor = MonitorFromWindow(hwnd, monitor_default_to_nearest)) {
+					MONITORINFO info{};
+					info.cbSize = sizeof(info);
+					if (GetMonitorInfoW(monitor, &info)) {
+						reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam)->rgrc[0] = info.rcWork;
+					}
+				}
+			}
+			return 0;
+		}
+
+		if (msg == wm_nchittest) {
+			POINT cursor{ get_x_lparam(lparam), get_y_lparam(lparam) };
+			ScreenToClient(hwnd, &cursor);
+			RECT client{};
+			GetClientRect(hwnd, &client);
+
+			constexpr int border = 8;
+			const bool left = cursor.x < border;
+			const bool right = cursor.x >= client.right - border;
+			const bool top = cursor.y < border;
+			const bool bottom = cursor.y >= client.bottom - border;
+
+			if (!IsZoomed(hwnd)) {
+				if (top && left) {
+					return ht_top_left;
+				}
+				if (top && right) {
+					return ht_top_right;
+				}
+				if (bottom && left) {
+					return ht_bottom_left;
+				}
+				if (bottom && right) {
+					return ht_bottom_right;
+				}
+				if (left) {
+					return ht_left;
+				}
+				if (right) {
+					return ht_right;
+				}
+				if (top) {
+					return ht_top;
+				}
+				if (bottom) {
+					return ht_bottom;
+				}
+			}
+
+			const int caption = state->caption_height ? *state->caption_height : 0;
+			const int controls = state->controls_width ? *state->controls_width : 0;
+			if (cursor.y < caption) {
+				if (cursor.x >= client.right - controls) {
+					return ht_client;
+				}
+				return ht_caption;
+			}
+			return ht_client;
+		}
+
+		return CallWindowProcW(state->original_proc, hwnd, msg, wparam, lparam);
+	}
+}
+#endif
+
+auto gse::window::install_native_frame(GLFWwindow* handle, const int* caption_height, const int* controls_width) -> void {
+#ifdef _WIN32
+	using namespace gse::win32;
+
+	const HWND hwnd = glfwGetWin32Window(handle);
+	if (hwnd == nullptr) {
+		return;
+	}
+
+	auto* state = new native_frame_state{};
+	state->caption_height = caption_height;
+	state->controls_width = controls_width;
+	state->original_proc = reinterpret_cast<WNDPROC>(
+		SetWindowLongPtrW(hwnd, gwlp_wndproc, reinterpret_cast<LONG_PTR>(&native_frame_proc))
+	);
+	SetPropW(hwnd, L"gse_native_frame", state);
+	SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, swp_frame_changed | swp_no_move | swp_no_size | swp_no_zorder | swp_no_activate);
+#else
+	(void)handle;
+	(void)caption_height;
+	(void)controls_width;
+#endif
 }
 
 auto gse::window::is_open(const data& d) -> bool {

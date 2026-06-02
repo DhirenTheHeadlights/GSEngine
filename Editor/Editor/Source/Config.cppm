@@ -32,9 +32,8 @@ export namespace ide {
 			[[= gse::settings::describe<"Highlight the current line.">{}]]
 			bool highlight_current_line = true;
 
-			[[= gse::settings::describe<"Caret blink interval in milliseconds (0 disables blinking).">{},
-				= gse::settings::range<0, 2000>{}]]
-			int caret_blink_ms = 500;
+			[[= gse::settings::describe<"Caret blink interval (0 disables blinking).">{}]]
+			gse::time caret_blink = gse::milliseconds(500);
 
 			[[= gse::settings::describe<"Path to the clangd executable used for C++ intelligence.">{}]]
 			std::string clangd_path = "clangd";

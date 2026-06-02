@@ -100,6 +100,12 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 						trace::scope_guard sg{ poll_id };
 						window::poll_events();
 					}
+
+					e.pump_window();
+
+					if (e.window_should_close()) {
+						gse::shutdown();
+					}
 				}
 
 				{

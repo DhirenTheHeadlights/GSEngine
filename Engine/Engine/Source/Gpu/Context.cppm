@@ -43,6 +43,8 @@ export namespace gse::gpu {
 			[[= gse::shared]] std::unique_ptr<bindless_texture_set> bindless_textures;
 			[[= gse::shared]] std::unique_ptr<gpu::bindless_heaps> bindless_heaps;
 			[[= gse::shared]] concurrency::frame_scheduler scheduler;
+
+			gpu::color_clear swapchain_clear{};
 		};
 
 		using swap_chain_recreate_callback = std::function<void()>;

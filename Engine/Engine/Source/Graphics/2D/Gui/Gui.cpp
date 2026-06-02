@@ -154,9 +154,10 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 			const float scale_x = current_viewport_size.x() / d.previous_viewport_size.x();
 			const float scale_y = new_usable_height / old_usable_height;
 
+			const float top_inset = d.reserve_top_bar ? d.fstate.sty.title_bar_height : 0.f;
 			const ui_rect new_screen_rect = ui_rect::from_position_size(
-				{ 0.f, new_usable_height },
-				{ current_viewport_size.x(), new_usable_height }
+				{ 0.f, new_usable_height - top_inset },
+				{ current_viewport_size.x(), new_usable_height - top_inset }
 			);
 
 			for (menu& m : d.menus.items()) {
@@ -221,7 +222,7 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 
 	d.hot_widget_id = {};
 
-	d.input_layer_render = !d.menu_stack.empty() ? render_layer::popup : render_layer::content;
+	d.input_layer_render = d.menu_stack.captures_input() ? render_layer::popup : render_layer::content;
 
 	d.name_to_menu_id.clear();
 	for (menu& m : d.menus.items()) {
@@ -289,7 +290,8 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 				d.sprite_commands.push_back({
 					.rect = area.target,
 					.color = d.fstate.sty.color_dock_preview,
-					.texture = d.blank_texture
+					.texture = d.blank_texture,
+					.layer = render_layer::overlay
 				});
 				break;
 			}
@@ -299,7 +301,8 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 			d.sprite_commands.push_back({
 				.rect = area.rect,
 				.color = d.fstate.sty.color_dock_preview,
-				.texture = d.blank_texture
+				.texture = d.blank_texture,
+				.layer = render_layer::overlay
 			});
 		}
 	}
@@ -396,7 +399,7 @@ auto gse::gui::system::update_body(run_context& ctx, const window::data& window_
 
 	d.tooltip.pending_widget_id.reset();
 
-	if (window_s.ui_focus) {
+	if (window_s.ui_focus && !window_s.mouse_visible) {
 		cursor::render_to(assets_s, d.sprite_commands, input_st.mouse_position());
 	}
 
@@ -475,6 +478,24 @@ auto gse::gui::system::process_menu(data& d, const gse::input::state& input_stat
 	}
 
 	menu& current_menu = *d.current_menu;
+	if (current_menu.z_order == 0) {
+		current_menu.z_order = d.next_z_order++;
+	}
+	const std::uint32_t menu_z = current_menu.z_order;
+	const std::size_t sprite_start = d.sprite_commands.size();
+	const std::size_t text_start = d.text_commands.size();
+	auto stamp_z = [&] {
+		for (std::size_t i = sprite_start; i < d.sprite_commands.size(); ++i) {
+			if (d.sprite_commands[i].z_order == 0) {
+				d.sprite_commands[i].z_order = menu_z;
+			}
+		}
+		for (std::size_t i = text_start; i < d.text_commands.size(); ++i) {
+			if (d.text_commands[i].z_order == 0) {
+				d.text_commands[i].z_order = menu_z;
+			}
+		}
+	};
 
 	if (!current_menu.chrome_drawn_this_frame) {
 		draw_menu_chrome(d, input_state, current_menu, layer);
@@ -487,12 +508,21 @@ auto gse::gui::system::process_menu(data& d, const gse::input::state& input_stat
 		 static_cast<std::ptrdiff_t>(current_menu.active_tab_index));
 
 	if (!is_active_tab) {
+		stamp_z();
 		end_menu(d);
 		return;
 	}
 
 	const style& sty = d.fstate.sty;
 	const ui_rect display_rect = calculate_display_rect(d, current_menu);
+
+	d.input_layers_data.register_hit_region(layer, menu_z, display_rect);
+
+	if (input_state.mouse_button_pressed(mouse_button::button_1) &&
+		display_rect.contains(input_state.mouse_position()) &&
+		d.input_layers_data.input_available_at(layer, menu_z, input_state.mouse_position())) {
+		current_menu.z_order = d.next_z_order++;
+	}
 
 	const ui_rect body_rect = ui_rect::from_position_size(
 		{ display_rect.left(), display_rect.top() - sty.title_bar_height },
@@ -528,6 +558,7 @@ auto gse::gui::system::process_menu(data& d, const gse::input::state& input_stat
 		.widget_anim_colors = d.widget_anim_colors,
 		.widget_scrolls = d.widget_scrolls,
 		.current_layer = layer,
+		.current_z_order = menu_z,
 		.input_layer = d.input_layer_render,
 		.hit_regions = &d.input_layers_data,
 		.tooltip = &d.tooltip,
@@ -547,6 +578,7 @@ auto gse::gui::system::process_menu(data& d, const gse::input::state& input_stat
 	build(b);
 	d.context = nullptr;
 
+	stamp_z();
 	end_menu(d);
 }
 
@@ -660,9 +692,10 @@ auto gse::gui::system::process_screen(data& d, const gse::input::state& input_st
 
 auto gse::gui::system::usable_screen_rect(data& d, const window::data& window_s) -> ui_rect {
 	const auto viewport_size = vec2f(window::viewport(window_s));
+	const float top_inset = d.reserve_top_bar ? d.fstate.sty.title_bar_height : 0.f;
 	return ui_rect::from_position_size(
-		{ 0.f, viewport_size.y() },
-		{ viewport_size.x(), viewport_size.y() }
+		{ 0.f, viewport_size.y() - top_inset },
+		{ viewport_size.x(), viewport_size.y() - top_inset }
 	);
 }
 
@@ -680,7 +713,7 @@ auto gse::gui::system::calculate_display_rect(data& d, const menu& m) -> ui_rect
 
 auto gse::gui::system::apply_scale(const data& d, style sty, const float viewport_height) -> style {
 	constexpr float reference_height = 1080.f;
-	const float base_scale = viewport_height / reference_height;
+	const float base_scale = d.scale_with_resolution ? viewport_height / reference_height : 1.f;
 	const float final_scale = base_scale * d.ui_scale;
 
 	sty.scale_factor = final_scale;
