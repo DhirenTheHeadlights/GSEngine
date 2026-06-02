@@ -64,6 +64,10 @@ export namespace gse::gui {
 			]]
 			bool show_dev_overlays = false;
 
+			bool scale_with_resolution = true;
+			bool reserve_top_bar = false;
+			std::uint32_t next_z_order = 1;
+
 			id_mapped_collection<menu> menus;
 			menu* current_menu = nullptr;
 

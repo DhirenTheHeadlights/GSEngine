@@ -19,6 +19,7 @@ export namespace gse::renderer::scene_snapshot {
 			[[= gse::shared]] bool ready = false;
 
 			vec2u current_extent{ 0, 0 };
+			bool enabled = true;
 		};
 
 		static auto run(

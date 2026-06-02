@@ -48,14 +48,28 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		add_system<input::system>();
 		add_system<actions::system>();
 		add_system<world_system>();
+
 		auto win = add_system<window>();
 		win->title = std::string(id().tag());
-		add_system<gpu::context>();
+		if (m_config.custom_chrome) {
+			win->native_frame = true;
+			win->mouse_visible = true;
+		}
+
+		auto gpu = add_system<gpu::context>();
+		gpu->swapchain_clear = m_config.render_world ? gpu::color_clear{} : gpu::color_clear{ 0.05f, 0.05f, 0.06f, 1.0f };
+
 		add_system<asset::registry>();
 		add_system<renderer::system>();
-		add_system<renderer::scene_snapshot::system>();
+
+		auto snapshot = add_system<renderer::scene_snapshot::system>();
+		snapshot->enabled = m_config.render_world;
+
 		add_system<renderer::ui::system>();
-		add_system<gui::system>();
+
+		auto gui = add_system<gui::system>();
+		gui->scale_with_resolution = m_config.scale_ui_with_resolution;
+		gui->reserve_top_bar = m_config.custom_chrome;
 
 		auto& asset_state = m_scheduler.state<asset::data>();
 		using game_assets = gse::assets::append<graphics::asset_types, audio::asset_types>;
@@ -96,24 +110,28 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 			add_system<physics::system>();
 			add_system<camera::system>();
-			add_system<primitive_resolver::system>();
-			add_system<renderer::geometry_collector::system>();
-			add_system<renderer::cull_compute::system>();
-			add_system<renderer::physics_transform::system>();
-			add_system<renderer::depth_prepass::system>();
-			add_system<renderer::rt_shadow::system>();
-			add_system<renderer::gi_probe::system>();
-			add_system<renderer::light_culling::system>();
-			add_system<renderer::forward::system>();
-			add_system<renderer::sdf_grid::system>();
-			add_system<renderer::world_text::system>();
-			add_system<renderer::physics_debug::system>();
-			add_system<renderer::atmosphere::system>();
-			add_system<renderer::cloud::system>();
-			add_system<renderer::taa::system>();
-			add_system<renderer::bloom::system>();
-			add_system<renderer::tonemap::system>();
-			add_system<renderer::capture::system>();
+
+			if (m_config.render_world) {
+				add_system<primitive_resolver::system>();
+				add_system<renderer::geometry_collector::system>();
+				add_system<renderer::cull_compute::system>();
+				add_system<renderer::physics_transform::system>();
+				add_system<renderer::depth_prepass::system>();
+				add_system<renderer::rt_shadow::system>();
+				add_system<renderer::gi_probe::system>();
+				add_system<renderer::light_culling::system>();
+				add_system<renderer::forward::system>();
+				add_system<renderer::sdf_grid::system>();
+				add_system<renderer::world_text::system>();
+				add_system<renderer::physics_debug::system>();
+				add_system<renderer::atmosphere::system>();
+				add_system<renderer::cloud::system>();
+				add_system<renderer::taa::system>();
+				add_system<renderer::bloom::system>();
+				add_system<renderer::tonemap::system>();
+				add_system<renderer::capture::system>();
+			}
+
 			add_system<audio::system>();
 
 			task::post([this, app_setup, asset_state_ptr] {
@@ -135,7 +153,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 				if (app_setup) {
 					log::println(log::category::runtime, "boot: app_setup begin");
-					app_setup(*this);
+					app_setup(
+						*this
+					);
 					log::println(log::category::runtime, "boot: app_setup end");
 				}
 
@@ -156,7 +176,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		add_system<physics::system>();
 
 		if (app_setup) {
-			app_setup(*this);
+			app_setup(
+				*this
+			);
 		}
 
 		m_scheduler.initialize();
@@ -300,4 +322,15 @@ auto gse::engine::registry() -> gse::registry& {
 
 auto gse::engine::world() -> world_system::data& {
 	return m_scheduler.state<world_system::data>();
+}
+
+auto gse::engine::window_should_close() -> bool {
+	auto* window_state = m_scheduler.try_state_of<window::data>();
+	return window_state && !window::is_open(*window_state);
+}
+
+auto gse::engine::pump_window() -> void {
+	if (auto* window_state = m_scheduler.try_state_of<window::data>()) {
+		window::apply_commands(*window_state);
+	}
 }

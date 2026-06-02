@@ -11,6 +11,9 @@ auto main() -> int {
 		},
 		{
 			.title = "GSEditor",
+			.render_world = false,
+			.custom_chrome = true,
+			.scale_ui_with_resolution = false,
 		}
 	);
 	return 0;
