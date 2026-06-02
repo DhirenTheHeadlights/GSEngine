@@ -389,7 +389,25 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			64,
 			[&, this](std::size_t i) {
 				auto& body = m_bodies[i];
-				if (body.locked || body.sleeping()) {
+				if (body.locked) {
+					m_accel_weight[i] = 0.f;
+					m_prev_velocity[i] = body.velocity;
+					body.old_position = body.position;
+					body.old_orientation = body.orientation;
+					body.predicted_position = body.position + body.velocity * dt;
+					const vec3<angle> aa = body.angular_velocity * dt;
+					if (magnitude(aa) > radians(1e-7f)) {
+						body.predicted_orientation = normalize(from_axis_angle_vector(aa) * body.orientation);
+					}
+					else {
+						body.predicted_orientation = body.orientation;
+					}
+					body.inertia_target = body.predicted_position;
+					body.angular_inertia_target = body.predicted_orientation;
+					body.motor_target = body.predicted_position;
+					return;
+				}
+				if (body.sleeping()) {
 					m_accel_weight[i] = 0.f;
 					m_prev_velocity[i] = body.velocity;
 					body.predicted_position = body.position;
@@ -734,7 +752,12 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			128,
 			[&, this](std::size_t i) {
 				auto& body = m_bodies[i];
-				if (body.locked || body.sleeping()) {
+				if (body.sleeping()) {
+					return;
+				}
+				if (body.locked) {
+					body.position = body.predicted_position;
+					body.orientation = body.predicted_orientation;
 					return;
 				}
 

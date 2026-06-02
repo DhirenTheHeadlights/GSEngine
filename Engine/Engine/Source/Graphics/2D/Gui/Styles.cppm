@@ -39,12 +39,12 @@ export namespace gse::gui {
 
 	struct style {
 		// Menu chrome
-		vec4f color_title_bar = { 0.10f, 0.12f, 0.18f, 1.0f };
-		vec4f color_title_bar_inactive = { 0.07f, 0.08f, 0.13f, 1.0f };
-		vec4f color_menu_body = { 0.08f, 0.10f, 0.15f, 0.92f };
-		vec4f color_panel_alt = { 0.06f, 0.07f, 0.11f, 0.96f };
-		vec4f color_border = { 0.20f, 0.24f, 0.34f, 1.0f };
-		vec4f color_separator = { 0.16f, 0.18f, 0.26f, 1.0f };
+		vec4f color_title_bar = { 0.10f, 0.14f, 0.20f, 0.55f };
+		vec4f color_title_bar_inactive = { 0.07f, 0.10f, 0.14f, 0.55f };
+		vec4f color_menu_body = { 0.08f, 0.12f, 0.16f, 0.15f };
+		vec4f color_panel_alt = { 0.06f, 0.10f, 0.14f, 0.25f };
+		vec4f color_border = { 0.22f, 0.32f, 0.42f, 1.0f };
+		vec4f color_separator = { 0.18f, 0.26f, 0.32f, 1.0f };
 
 		// Text
 		vec4f color_text = { 0.96f, 0.97f, 0.99f, 1.0f };
@@ -57,10 +57,14 @@ export namespace gse::gui {
 		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 		// Interactive widget states
-		vec4f color_widget_background = { 0.12f, 0.15f, 0.22f, 0.02f };
-		vec4f color_widget_hovered = { 0.18f, 0.22f, 0.32f, 1.0f };
+		vec4f color_widget_background = { 0.10f, 0.16f, 0.22f, 1.0f };
+		vec4f color_widget_hovered = { 0.14f, 0.24f, 0.32f, 1.0f };
 		vec4f color_widget_active = { 0.26f, 0.86f, 0.84f, 1.0f };
 		vec4f color_widget_selected = { 0.26f, 0.86f, 0.84f, 0.32f };
+
+		// Buttons (distinct from passive widget surfaces so CTAs read as clickable)
+		vec4f color_button_background = { 0.14f, 0.30f, 0.36f, 1.0f };
+		vec4f color_button_hovered = { 0.20f, 0.44f, 0.50f, 1.0f };
 
 		// Accent (primary theme color: drives sliders, toggle-on, selections, section bars)
 		vec4f color_accent = { 0.26f, 0.86f, 0.84f, 1.0f };
@@ -143,22 +147,24 @@ constexpr auto gse::gui::style::midnight() -> style {
 	constexpr vec4f accent{ 0.26f, 0.86f, 0.84f, 1.0f };
 	constexpr vec4f accent_dim{ 0.26f, 0.86f, 0.84f, 0.30f };
 	return style{
-		.color_title_bar = { 0.10f, 0.12f, 0.18f, 1.0f },
-		.color_title_bar_inactive = { 0.07f, 0.08f, 0.13f, 1.0f },
-		.color_menu_body = { 0.08f, 0.10f, 0.15f, 0.96f },
-		.color_panel_alt = { 0.06f, 0.07f, 0.11f, 0.98f },
-		.color_border = { 0.20f, 0.24f, 0.34f, 1.0f },
-		.color_separator = { 0.14f, 0.17f, 0.24f, 1.0f },
+		.color_title_bar = { 0.10f, 0.14f, 0.20f, 0.55f },
+		.color_title_bar_inactive = { 0.07f, 0.10f, 0.14f, 0.55f },
+		.color_menu_body = { 0.08f, 0.12f, 0.16f, 0.15f },
+		.color_panel_alt = { 0.06f, 0.10f, 0.14f, 0.25f },
+		.color_border = { 0.22f, 0.32f, 0.42f, 1.0f },
+		.color_separator = { 0.16f, 0.26f, 0.32f, 1.0f },
 		.color_text = { 0.96f, 0.97f, 0.99f, 1.0f },
 		.color_text_secondary = { 0.66f, 0.70f, 0.80f, 1.0f },
 		.color_text_disabled = { 0.40f, 0.43f, 0.50f, 1.0f },
 		.color_section_header = { 0.96f, 0.97f, 0.99f, 1.0f },
 		.color_icon = { 0.70f, 0.74f, 0.84f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.12f, 0.15f, 0.22f, 0.02f },
-		.color_widget_hovered = { 0.18f, 0.22f, 0.32f, 1.0f },
+		.color_widget_background = { 0.10f, 0.18f, 0.24f, 1.0f },
+		.color_widget_hovered = { 0.16f, 0.28f, 0.36f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
+		.color_button_background = { 0.14f, 0.32f, 0.36f, 1.0f },
+		.color_button_hovered = { 0.20f, 0.46f, 0.50f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
 		.color_slider_fill = accent,
@@ -193,22 +199,24 @@ constexpr auto gse::gui::style::eclipse() -> style {
 	constexpr vec4f accent{ 0.92f, 0.38f, 0.82f, 1.0f };
 	constexpr vec4f accent_dim{ 0.92f, 0.38f, 0.82f, 0.28f };
 	return style{
-		.color_title_bar = { 0.04f, 0.04f, 0.06f, 1.0f },
-		.color_title_bar_inactive = { 0.02f, 0.02f, 0.03f, 1.0f },
-		.color_menu_body = { 0.03f, 0.03f, 0.05f, 0.97f },
-		.color_panel_alt = { 0.02f, 0.02f, 0.03f, 0.98f },
-		.color_border = { 0.16f, 0.12f, 0.18f, 1.0f },
-		.color_separator = { 0.10f, 0.08f, 0.12f, 1.0f },
+		.color_title_bar = { 0.08f, 0.04f, 0.10f, 0.55f },
+		.color_title_bar_inactive = { 0.04f, 0.02f, 0.05f, 0.55f },
+		.color_menu_body = { 0.06f, 0.03f, 0.08f, 0.15f },
+		.color_panel_alt = { 0.04f, 0.02f, 0.06f, 0.25f },
+		.color_border = { 0.32f, 0.16f, 0.36f, 1.0f },
+		.color_separator = { 0.22f, 0.10f, 0.26f, 1.0f },
 		.color_text = { 0.95f, 0.93f, 0.96f, 1.0f },
 		.color_text_secondary = { 0.62f, 0.58f, 0.66f, 1.0f },
 		.color_text_disabled = { 0.36f, 0.34f, 0.40f, 1.0f },
 		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
 		.color_icon = { 0.70f, 0.66f, 0.74f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.07f, 0.07f, 0.10f, 0.02f },
-		.color_widget_hovered = { 0.12f, 0.10f, 0.16f, 1.0f },
+		.color_widget_background = { 0.14f, 0.07f, 0.18f, 1.0f },
+		.color_widget_hovered = { 0.24f, 0.10f, 0.30f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
+		.color_button_background = { 0.26f, 0.10f, 0.26f, 1.0f },
+		.color_button_hovered = { 0.40f, 0.16f, 0.40f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
 		.color_slider_fill = accent,
@@ -243,22 +251,24 @@ constexpr auto gse::gui::style::ember() -> style {
 	constexpr vec4f accent{ 0.98f, 0.62f, 0.20f, 1.0f };
 	constexpr vec4f accent_dim{ 0.98f, 0.62f, 0.20f, 0.28f };
 	return style{
-		.color_title_bar = { 0.15f, 0.12f, 0.10f, 1.0f },
-		.color_title_bar_inactive = { 0.10f, 0.08f, 0.07f, 1.0f },
-		.color_menu_body = { 0.12f, 0.10f, 0.08f, 0.96f },
-		.color_panel_alt = { 0.09f, 0.07f, 0.06f, 0.98f },
-		.color_border = { 0.36f, 0.26f, 0.18f, 1.0f },
-		.color_separator = { 0.22f, 0.17f, 0.12f, 1.0f },
+		.color_title_bar = { 0.20f, 0.14f, 0.10f, 0.55f },
+		.color_title_bar_inactive = { 0.14f, 0.10f, 0.07f, 0.55f },
+		.color_menu_body = { 0.14f, 0.10f, 0.07f, 0.15f },
+		.color_panel_alt = { 0.12f, 0.08f, 0.06f, 0.25f },
+		.color_border = { 0.44f, 0.28f, 0.15f, 1.0f },
+		.color_separator = { 0.32f, 0.22f, 0.13f, 1.0f },
 		.color_text = { 0.98f, 0.94f, 0.88f, 1.0f },
 		.color_text_secondary = { 0.74f, 0.68f, 0.60f, 1.0f },
 		.color_text_disabled = { 0.46f, 0.42f, 0.38f, 1.0f },
 		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
 		.color_icon = { 0.78f, 0.72f, 0.64f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.17f, 0.14f, 0.11f, 0.02f },
-		.color_widget_hovered = { 0.23f, 0.19f, 0.15f, 1.0f },
+		.color_widget_background = { 0.24f, 0.16f, 0.10f, 1.0f },
+		.color_widget_hovered = { 0.34f, 0.22f, 0.13f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
+		.color_button_background = { 0.36f, 0.22f, 0.10f, 1.0f },
+		.color_button_hovered = { 0.52f, 0.32f, 0.14f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
 		.color_slider_fill = accent,
@@ -293,22 +303,24 @@ constexpr auto gse::gui::style::forest() -> style {
 	constexpr vec4f accent{ 0.42f, 0.92f, 0.62f, 1.0f };
 	constexpr vec4f accent_dim{ 0.42f, 0.92f, 0.62f, 0.28f };
 	return style{
-		.color_title_bar = { 0.07f, 0.12f, 0.10f, 1.0f },
-		.color_title_bar_inactive = { 0.05f, 0.08f, 0.07f, 1.0f },
-		.color_menu_body = { 0.06f, 0.10f, 0.08f, 0.96f },
-		.color_panel_alt = { 0.04f, 0.07f, 0.06f, 0.98f },
-		.color_border = { 0.16f, 0.28f, 0.22f, 1.0f },
-		.color_separator = { 0.10f, 0.18f, 0.14f, 1.0f },
+		.color_title_bar = { 0.08f, 0.16f, 0.12f, 0.55f },
+		.color_title_bar_inactive = { 0.05f, 0.11f, 0.08f, 0.55f },
+		.color_menu_body = { 0.06f, 0.12f, 0.09f, 0.15f },
+		.color_panel_alt = { 0.05f, 0.10f, 0.07f, 0.25f },
+		.color_border = { 0.18f, 0.38f, 0.26f, 1.0f },
+		.color_separator = { 0.14f, 0.28f, 0.20f, 1.0f },
 		.color_text = { 0.94f, 0.97f, 0.94f, 1.0f },
 		.color_text_secondary = { 0.66f, 0.74f, 0.68f, 1.0f },
 		.color_text_disabled = { 0.40f, 0.46f, 0.42f, 1.0f },
 		.color_section_header = { accent.x(), accent.y(), accent.z(), 1.0f },
 		.color_icon = { 0.70f, 0.78f, 0.72f, 1.0f },
 		.color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f },
-		.color_widget_background = { 0.10f, 0.16f, 0.12f, 0.02f },
-		.color_widget_hovered = { 0.14f, 0.22f, 0.17f, 1.0f },
+		.color_widget_background = { 0.10f, 0.24f, 0.16f, 1.0f },
+		.color_widget_hovered = { 0.14f, 0.34f, 0.22f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
+		.color_button_background = { 0.14f, 0.34f, 0.22f, 1.0f },
+		.color_button_hovered = { 0.22f, 0.50f, 0.32f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
 		.color_slider_fill = accent,
@@ -343,22 +355,24 @@ constexpr auto gse::gui::style::frost() -> style {
 	constexpr vec4f accent{ 0.20f, 0.50f, 0.95f, 1.0f };
 	constexpr vec4f accent_dim{ 0.20f, 0.50f, 0.95f, 0.20f };
 	return style{
-		.color_title_bar = { 0.96f, 0.97f, 0.99f, 1.0f },
-		.color_title_bar_inactive = { 0.88f, 0.90f, 0.93f, 1.0f },
-		.color_menu_body = { 0.97f, 0.98f, 0.99f, 0.98f },
-		.color_panel_alt = { 0.93f, 0.95f, 0.97f, 1.0f },
-		.color_border = { 0.78f, 0.82f, 0.88f, 1.0f },
-		.color_separator = { 0.88f, 0.91f, 0.94f, 1.0f },
+		.color_title_bar = { 0.90f, 0.94f, 0.99f, 0.55f },
+		.color_title_bar_inactive = { 0.84f, 0.88f, 0.94f, 0.55f },
+		.color_menu_body = { 0.94f, 0.96f, 0.99f, 0.15f },
+		.color_panel_alt = { 0.90f, 0.93f, 0.97f, 0.25f },
+		.color_border = { 0.62f, 0.74f, 0.92f, 1.0f },
+		.color_separator = { 0.78f, 0.86f, 0.96f, 1.0f },
 		.color_text = { 0.10f, 0.12f, 0.18f, 1.0f },
 		.color_text_secondary = { 0.40f, 0.45f, 0.55f, 1.0f },
 		.color_text_disabled = { 0.62f, 0.66f, 0.72f, 1.0f },
 		.color_section_header = { 0.08f, 0.12f, 0.20f, 1.0f },
 		.color_icon = { 0.35f, 0.40f, 0.50f, 1.0f },
 		.color_icon_hovered = { 0.05f, 0.08f, 0.15f, 1.0f },
-		.color_widget_background = { 0.90f, 0.93f, 0.97f, 0.02f },
-		.color_widget_hovered = { 0.82f, 0.87f, 0.94f, 1.0f },
+		.color_widget_background = { 0.84f, 0.91f, 0.99f, 1.0f },
+		.color_widget_hovered = { 0.72f, 0.84f, 0.96f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
+		.color_button_background = { 0.74f, 0.86f, 0.99f, 1.0f },
+		.color_button_hovered = { 0.56f, 0.76f, 0.97f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
 		.color_slider_fill = accent,
@@ -405,10 +419,12 @@ constexpr auto gse::gui::style::high_contrast() -> style {
 		.color_section_header = accent,
 		.color_icon = { 1.0f, 1.0f, 1.0f, 1.0f },
 		.color_icon_hovered = accent,
-		.color_widget_background = { 0.0f, 0.0f, 0.0f, 0.02f },
+		.color_widget_background = { 0.0f, 0.0f, 0.0f, 1.0f },
 		.color_widget_hovered = { 0.25f, 0.25f, 0.0f, 1.0f },
 		.color_widget_active = accent,
 		.color_widget_selected = accent_dim,
+		.color_button_background = { 0.0f, 0.0f, 0.0f, 1.0f },
+		.color_button_hovered = { 0.35f, 0.32f, 0.0f, 1.0f },
 		.color_accent = accent,
 		.color_accent_dim = accent_dim,
 		.color_slider_fill = accent,

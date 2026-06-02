@@ -18,16 +18,16 @@ import :gui;
 
 export namespace gse::gui {
 	struct popout_system {
-		struct active_popout {
+		struct popout_entry {
 			std::string menu_name;
 			id menu_id;
 			const gse::settings::register_settings_type* entry = nullptr;
+			bool active = true;
 		};
 
 		struct data {
-			std::unordered_map<std::string, active_popout> active;
+			std::unordered_map<std::string, popout_entry> popouts;
 			gse::settings::panel_state panel_state;
-			bool initialized = false;
 		};
 
 		static auto run(
@@ -37,19 +37,12 @@ export namespace gse::gui {
 			const gse::save::registry& save_reg
 		) -> gse::async::task<>;
 	};
-
-	constexpr std::string_view popout_menu_prefix = "live::";
 }
 
 namespace gse::gui {
 	[[nodiscard]] auto make_popout_menu_name(
 		std::string_view category
 	) -> std::string;
-
-	[[nodiscard]]
-	auto extract_popout_category(
-		std::string_view menu_name
-	) -> std::optional<std::string_view>;
 
 	[[nodiscard]]
 	auto find_hot_entry(
@@ -61,7 +54,7 @@ namespace gse::gui {
 		popout_system::data& d,
 		const gse::save::registry& save_reg,
 		std::string category
-	) -> popout_system::active_popout*;
+	) -> popout_system::popout_entry*;
 }
 
 auto gse::gui::make_popout_menu_name(const std::string_view category) -> std::string {
@@ -70,13 +63,6 @@ auto gse::gui::make_popout_menu_name(const std::string_view category) -> std::st
 	out.append(popout_menu_prefix);
 	out.append(category);
 	return out;
-}
-
-auto gse::gui::extract_popout_category(const std::string_view menu_name) -> std::optional<std::string_view> {
-	if (!menu_name.starts_with(popout_menu_prefix)) {
-		return std::nullopt;
-	}
-	return menu_name.substr(popout_menu_prefix.size());
 }
 
 auto gse::gui::find_hot_entry(const gse::save::registry& save_reg, const std::string_view category) -> const gse::settings::register_settings_type* {
@@ -89,32 +75,34 @@ auto gse::gui::find_hot_entry(const gse::save::registry& save_reg, const std::st
 	return found;
 }
 
-auto gse::gui::activate_popout(popout_system::data& d, const gse::save::registry& save_reg, std::string category) -> popout_system::active_popout* {
+auto gse::gui::activate_popout(popout_system::data& d, const gse::save::registry& save_reg, std::string category) -> popout_system::popout_entry* {
+	if (const auto it = d.popouts.find(category); it != d.popouts.end()) {
+		it->second.active = true;
+		if (!it->second.entry) {
+			it->second.entry = find_hot_entry(save_reg, category);
+		}
+		return &it->second;
+	}
 	const auto cat_view = std::string_view{ category };
-	popout_system::active_popout popout{
+	popout_system::popout_entry entry{
 		.menu_name = make_popout_menu_name(cat_view),
 		.menu_id = {},
 		.entry = find_hot_entry(save_reg, cat_view),
+		.active = true,
 	};
-	popout.menu_id = find_or_generate_id(popout.menu_name);
-	const auto [it, _] = d.active.emplace(std::move(category), std::move(popout));
+	entry.menu_id = find_or_generate_id(entry.menu_name);
+	const auto [it, _] = d.popouts.emplace(std::move(category), std::move(entry));
 	return &it->second;
 }
 
 auto gse::gui::popout_system::run(gse::run_context& ctx, data& d, const system::data& gui_d, const gse::save::registry& save_reg) -> gse::async::task<> {
 	while (true) {
-		if (!d.initialized) {
-			for (const auto& m : gui_d.menus.items()) {
-				if (const auto cat = extract_popout_category(m.id().tag())) {
-					activate_popout(d, save_reg, std::string(*cat));
-				}
-			}
-			d.initialized = true;
-		}
-
 		for (const auto& req : ctx.read_channel<popout_toggle>()) {
-			if (const auto it = d.active.find(req.category); it != d.active.end()) {
-				d.active.erase(it);
+			auto it = d.popouts.find(req.category);
+			const bool was_active = it != d.popouts.end() && it->second.active;
+			if (was_active) {
+				it->second.active = false;
+				ctx.channels.push<popout_closed>({ .menu_name = it->second.menu_name });
 			}
 			else {
 				activate_popout(d, save_reg, req.category);
@@ -128,7 +116,28 @@ auto gse::gui::popout_system::run(gse::run_context& ctx, data& d, const system::
 			}
 		}
 
-		for (auto& [cat, popout] : d.active) {
+		auto try_activate_candidate = [&](const std::string_view candidate) {
+			if (!is_popout_menu_tag(candidate)) {
+				return;
+			}
+			std::string category(popout_category_from_tag(candidate));
+			if (d.popouts.contains(category)) {
+				return;
+			}
+			activate_popout(d, save_reg, std::move(category));
+		};
+
+		for (const auto& m : gui_d.menus.items()) {
+			try_activate_candidate(m.id().tag());
+			for (const std::string& tab : m.tab_contents) {
+				try_activate_candidate(tab);
+			}
+		}
+
+		for (auto& [cat, popout] : d.popouts) {
+			if (!popout.active) {
+				continue;
+			}
 			if (!popout.entry) {
 				popout.entry = find_hot_entry(save_reg, cat);
 				if (!popout.entry) {

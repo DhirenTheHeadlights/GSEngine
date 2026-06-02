@@ -6,6 +6,8 @@ import gse.std_meta;
 import gse.core;
 import gse.meta;
 
+import :registries;
+
 export namespace gse::settings {
 	template <typename S>
 	struct change_request {
@@ -62,6 +64,12 @@ export namespace gse::settings {
 		void* channel_writer
 	);
 
+	using reset_to_defaults_thunk = void (
+			*
+	)(
+		void* channel_writer
+	);
+
 	struct register_settings_type {
 		std::string category;
 		id type_id;
@@ -72,6 +80,7 @@ export namespace gse::settings {
 		draw_settings_thunk draw = nullptr;
 		draw_page_thunk draw_page = nullptr;
 		draw_hot_fields_thunk draw_hot_fields = nullptr;
+		reset_to_defaults_thunk reset_to_defaults = nullptr;
 		bool has_hot_fields = false;
 	};
 
@@ -132,6 +141,11 @@ export namespace gse::settings {
 
 	template <typename T>
 	consteval auto category_of() -> std::string_view;
+
+	template <typename S>
+	auto reset_to_defaults_for(
+		void* channel_writer_ptr
+	) -> void;
 
 	template <typename S>
 	auto build_settings_record(
@@ -242,6 +256,28 @@ consteval auto gse::settings::category_of() -> std::string_view {
 }
 
 template <typename S>
+auto gse::settings::reset_to_defaults_for(void* channel_writer_ptr) -> void {
+	using data_t = typename S::data;
+	auto& channels = *static_cast<channel_writer*>(channel_writer_ptr);
+	channels.push<change_request<S>>({
+		.apply = [](data_t& d) {
+			data_t defaults{};
+			template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^data_t, std::meta::access_context::unchecked()))) {
+				if constexpr (meta::find_describe(m) != std::meta::info{}) {
+					using F = [:std::meta::type_of(m):];
+					if constexpr (is_choice_v<F>) {
+						d.[:m:].value = defaults.[:m:].value;
+					}
+					else {
+						d.[:m:] = defaults.[:m:];
+					}
+				}
+			}
+		},
+	});
+}
+
+template <typename S>
 auto gse::settings::build_settings_record(typename S::data& obj) -> register_settings_type {
 	using data_t = typename S::data;
 	return {
@@ -254,6 +290,7 @@ auto gse::settings::build_settings_record(typename S::data& obj) -> register_set
 		.draw = gui_draw_provider<S>::value,
 		.draw_page = gui_draw_provider<S>::page_value,
 		.draw_hot_fields = gui_draw_provider<S>::hot_value,
+		.reset_to_defaults = &reset_to_defaults_for<S>,
 		.has_hot_fields = gui_draw_provider<S>::any_hot,
 	};
 }
