@@ -2,7 +2,6 @@ export module gse.gpu:shader_codegen;
 
 import std;
 
-import gse.std_meta;
 import gse.math;
 import gse.meta;
 import gse.containers;

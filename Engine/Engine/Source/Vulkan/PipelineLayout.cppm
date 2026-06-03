@@ -12,9 +12,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class pipeline_layout final : public non_copyable {
 	public:
-		pipeline_layout() = default;
-
-		~pipeline_layout() override = default;
+		pipeline_layout() {}
+		~pipeline_layout() = default;
 
 		pipeline_layout(
 			pipeline_layout&&

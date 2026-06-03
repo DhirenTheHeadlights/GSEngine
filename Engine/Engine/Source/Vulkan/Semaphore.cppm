@@ -10,9 +10,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class semaphore final : public non_copyable {
 	public:
-		semaphore() = default;
-
-		~semaphore() override;
+		semaphore() {}
+		~semaphore();
 
 		semaphore(
 			semaphore&& other

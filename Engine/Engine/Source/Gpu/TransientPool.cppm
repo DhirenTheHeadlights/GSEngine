@@ -98,7 +98,7 @@ export namespace gse::gpu {
 			gpu::device& dev
 		);
 
-		~transient_pool() override;
+		~transient_pool();
 
 		transient_pool(
 			transient_pool&& other

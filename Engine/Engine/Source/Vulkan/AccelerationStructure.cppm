@@ -31,15 +31,14 @@ export namespace gse::vulkan {
 
 	class blas final : public non_copyable {
 	public:
-		blas() = default;
-
+		blas() {}
 		blas(
 			buffer storage,
 			gpu::acceleration_structure acceleration_structure,
 			gpu::device_address device_address
 		);
 
-		~blas() override = default;
+		~blas() = default;
 
 		blas(
 			blas&&
@@ -63,8 +62,7 @@ export namespace gse::vulkan {
 
 	class tlas final : public non_copyable {
 	public:
-		tlas() = default;
-
+		tlas() {}
 		tlas(
 			buffer storage,
 			buffer scratch,
@@ -72,7 +70,7 @@ export namespace gse::vulkan {
 			gpu::acceleration_structure acceleration_structure
 		);
 
-		~tlas() override = default;
+		~tlas() = default;
 
 		tlas(
 			tlas&&

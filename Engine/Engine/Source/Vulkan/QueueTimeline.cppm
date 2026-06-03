@@ -10,9 +10,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class queue_timeline final : public non_copyable {
 	public:
-		queue_timeline() = default;
-
-		~queue_timeline() override;
+		queue_timeline() {}
+		~queue_timeline();
 
 		queue_timeline(
 			queue_timeline&& other

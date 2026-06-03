@@ -12,8 +12,7 @@ export namespace gse::vulkan {
 
 	class frame_recorder final : public non_copyable {
 	public:
-		frame_recorder() = default;
-
+		frame_recorder() {}
 		~frame_recorder();
 
 		frame_recorder(

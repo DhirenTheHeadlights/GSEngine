@@ -7,9 +7,11 @@ project(Engine LANGUAGES CXX)
 
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
+list(FILTER ENGINE_MODULES EXCLUDE REGEX "/(Source/Dx12|Import/Dx12\\.cppm)")
 
 file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp")
 list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
+list(FILTER ENGINE_IMPLS EXCLUDE REGEX "/Source/Dx12/")
 
 add_library(Engine)
 
@@ -35,7 +37,6 @@ find_package(JPEG REQUIRED)
 find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
-find_package(concurrentqueue CONFIG REQUIRED)
 find_package(Vulkan)
 find_package(unofficial-nsight-aftermath CONFIG QUIET)
 
@@ -49,9 +50,6 @@ target_sources(VulkanModule PUBLIC
 target_compile_features(VulkanModule PUBLIC cxx_std_26)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
 target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
-if(TARGET __cmake_libcxx_std)
-    target_link_libraries(VulkanModule PUBLIC __cmake_libcxx_std)
-endif()
 
 add_library(MiniaudioImpl STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
 target_include_directories(MiniaudioImpl PRIVATE ${miniaudio_INCLUDE_DIR})
@@ -97,11 +95,7 @@ target_link_libraries(Engine PUBLIC
     PNG::PNG
     JPEG::JPEG
     MiniaudioImpl
-    concurrentqueue::concurrentqueue
 )
-if(TARGET __cmake_libcxx_std)
-    target_link_libraries(Engine PUBLIC __cmake_libcxx_std)
-endif()
 
 if(TARGET unofficial::nsight-aftermath::nsight-aftermath)
     target_link_libraries(Engine PRIVATE unofficial::nsight-aftermath::nsight-aftermath)

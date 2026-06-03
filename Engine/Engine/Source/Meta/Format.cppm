@@ -1,7 +1,6 @@
 export module gse.meta:format;
 
 import std;
-import gse.std_meta;
 
 import :annotations;
 

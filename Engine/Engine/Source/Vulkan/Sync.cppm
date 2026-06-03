@@ -14,7 +14,7 @@ export namespace gse::vulkan {
 
 	class sync : public non_copyable {
 	public:
-		~sync() override;
+		~sync();
 
 		sync(
 			sync&& other

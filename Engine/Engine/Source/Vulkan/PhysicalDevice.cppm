@@ -11,13 +11,12 @@ import gse.core;
 export namespace gse::vulkan {
 	class physical_device : public non_copyable {
 	public:
-		physical_device() = default;
-
+		physical_device() {}
 		explicit physical_device(
 			vk::raii::PhysicalDevice&& device
 		);
 
-		~physical_device() override = default;
+		~physical_device() = default;
 
 		physical_device(
 			physical_device&&

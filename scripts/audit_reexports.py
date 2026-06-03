@@ -1,6 +1,6 @@
 import json, glob, os, collections, sys
 
-BUILD = sys.argv[1] if len(sys.argv) > 1 else r"out/build/x64-clang-p2996-libcxx-Release-trace"
+BUILD = sys.argv[1] if len(sys.argv) > 1 else r"out/build"
 
 module_of = {}
 sources = {}

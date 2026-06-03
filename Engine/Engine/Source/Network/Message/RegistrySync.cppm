@@ -16,7 +16,6 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
-import gse.std_meta;
 import gse.meta;
 
 export namespace gse::network {

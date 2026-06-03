@@ -1,6 +1,7 @@
 module;
 
 #ifdef _WIN32
+#include <x86intrin.h>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>

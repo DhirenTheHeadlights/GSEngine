@@ -13,7 +13,7 @@ export namespace gse::task {
 			std::size_t initial_capacity = 256
 		);
 
-		~work_stealing_queue() override;
+		~work_stealing_queue();
 
 		auto push(
 			T value
@@ -47,7 +47,7 @@ export namespace gse::task {
 				std::size_t capacity
 			);
 
-			~buffer() override;
+			~buffer();
 
 			[[nodiscard]] auto capacity() const noexcept -> std::size_t;
 

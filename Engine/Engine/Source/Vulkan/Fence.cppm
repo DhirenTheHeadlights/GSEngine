@@ -11,9 +11,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class fence final : public non_copyable {
 	public:
-		fence() = default;
-
-		~fence() override = default;
+		fence() {}
+		~fence() = default;
 
 		fence(
 			fence&&

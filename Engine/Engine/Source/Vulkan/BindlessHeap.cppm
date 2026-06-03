@@ -68,7 +68,7 @@ export namespace gse::vulkan {
 			std::uint32_t buffer_capacity = 16384
 		);
 
-		~bindless_resource_heap() override;
+		~bindless_resource_heap();
 
 		[[nodiscard]] auto allocate_image() -> bindless_slot;
 
@@ -201,7 +201,7 @@ export namespace gse::vulkan {
 			std::uint32_t capacity = 512
 		);
 
-		~bindless_sampler_heap() override;
+		~bindless_sampler_heap();
 
 		[[nodiscard]] auto allocate(
 			const gpu::sampler_desc& desc
@@ -275,7 +275,7 @@ export namespace gse::vulkan {
 			std::uint32_t sampler_capacity = 512
 		);
 
-		~bindless_heaps() override = default;
+		~bindless_heaps() = default;
 
 		auto begin_frame() -> void;
 
@@ -297,9 +297,8 @@ export namespace gse::vulkan {
 
 	class bindless_image final : public non_copyable {
 	public:
-		bindless_image() = default;
-
-		~bindless_image() override;
+		bindless_image() {}
+		~bindless_image();
 
 		bindless_image(
 			bindless_image&&
@@ -345,9 +344,8 @@ export namespace gse::vulkan {
 
 	class bindless_image_view final : public non_copyable {
 	public:
-		bindless_image_view() = default;
-
-		~bindless_image_view() override;
+		bindless_image_view() {}
+		~bindless_image_view();
 
 		bindless_image_view(
 			bindless_image_view&&
@@ -377,9 +375,8 @@ export namespace gse::vulkan {
 
 	class bindless_sampler final : public non_copyable {
 	public:
-		bindless_sampler() = default;
-
-		~bindless_sampler() override;
+		bindless_sampler() {}
+		~bindless_sampler();
 
 		bindless_sampler(
 			bindless_sampler&&
@@ -413,9 +410,8 @@ export namespace gse::vulkan {
 
 	class bindless_buffer final : public non_copyable {
 	public:
-		bindless_buffer() = default;
-
-		~bindless_buffer() override;
+		bindless_buffer() {}
+		~bindless_buffer();
 
 		bindless_buffer(
 			bindless_buffer&&
@@ -457,9 +453,8 @@ export namespace gse::vulkan {
 
 	class bindless_buffer_view final : public non_copyable {
 	public:
-		bindless_buffer_view() = default;
-
-		~bindless_buffer_view() override;
+		bindless_buffer_view() {}
+		~bindless_buffer_view();
 
 		bindless_buffer_view(
 			bindless_buffer_view&&
@@ -500,9 +495,8 @@ export namespace gse::vulkan {
 
 	class bindless_tlas_view final : public non_copyable {
 	public:
-		bindless_tlas_view() = default;
-
-		~bindless_tlas_view() override;
+		bindless_tlas_view() {}
+		~bindless_tlas_view();
 
 		bindless_tlas_view(
 			bindless_tlas_view&&

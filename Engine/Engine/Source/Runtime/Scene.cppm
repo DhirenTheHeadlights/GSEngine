@@ -1,7 +1,6 @@
 export module gse.runtime:scene;
 
 import std;
-import gse.std_meta;
 
 import gse.assert;
 import gse.core;

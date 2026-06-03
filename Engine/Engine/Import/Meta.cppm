@@ -1,6 +1,5 @@
 export module gse.meta;
 
-export import gse.std_meta;
 
 export import :fixed_string;
 export import :variant_match;

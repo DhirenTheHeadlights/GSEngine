@@ -13,27 +13,24 @@ export namespace gse::dx12 {
 
 	class bindless_resource_heap final : public non_copyable, non_movable {
 	public:
-		bindless_resource_heap() = default;
-
-		~bindless_resource_heap() override = default;
+		bindless_resource_heap() {}
+		~bindless_resource_heap() = default;
 
 		auto begin_frame() -> void;
 	};
 
 	class bindless_sampler_heap final : public non_copyable, non_movable {
 	public:
-		bindless_sampler_heap() = default;
-
-		~bindless_sampler_heap() override = default;
+		bindless_sampler_heap() {}
+		~bindless_sampler_heap() = default;
 
 		auto begin_frame() -> void;
 	};
 
 	class bindless_heaps final : public non_copyable, non_movable {
 	public:
-		bindless_heaps() = default;
-
-		~bindless_heaps() override = default;
+		bindless_heaps() {}
+		~bindless_heaps() = default;
 
 		auto begin_frame() -> void;
 

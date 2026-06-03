@@ -19,8 +19,7 @@ export namespace gse::vulkan {
 
 	class frame_resource_bin final : public non_copyable {
 	public:
-		frame_resource_bin() = default;
-
+		frame_resource_bin() {}
 		~frame_resource_bin();
 
 		frame_resource_bin(

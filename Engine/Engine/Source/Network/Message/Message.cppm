@@ -1,7 +1,6 @@
 export module gse.network:message;
 
 import std;
-import gse.std_meta;
 import gse.meta;
 import gse.core;
 

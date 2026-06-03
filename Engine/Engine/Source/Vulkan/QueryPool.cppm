@@ -12,9 +12,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class query_pool final : public non_copyable {
 	public:
-		query_pool() = default;
-
-		~query_pool() override = default;
+		query_pool() {}
+		~query_pool() = default;
 
 		query_pool(
 			query_pool&&

@@ -1,7 +1,6 @@
 export module gse.math:quant;
 
 import std;
-import gse.std_meta;
 
 import gse.assert;
 import gse.meta;
@@ -477,7 +476,7 @@ namespace gse::internal {
 			const quantity<T2, Dim2, Tag2, Unit2>& other
 		) const -> bool;
 
-		// Public only because clang p2996 requires structural types for NTTP, and
+		// Public only because P2996 requires structural types for NTTP, and
 		// structural types must have all non-static data members public. Once that
 		// constraint relaxes, move this back to `protected`. Do not assign directly.
 		ArithmeticType m_val = static_cast<ArithmeticType>(0);

@@ -44,8 +44,7 @@ export namespace gse::vulkan {
 
 	class video_encoder final : public non_copyable {
 	public:
-		video_encoder() = default;
-
+		video_encoder() {}
 		video_encoder(
 			video_encoder&&
 		) noexcept = default;

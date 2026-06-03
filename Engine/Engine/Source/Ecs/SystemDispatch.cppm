@@ -2,7 +2,6 @@ export module gse.ecs:system_dispatch;
 
 import std;
 
-import gse.std_meta;
 import gse.core;
 import gse.concurrency;
 import gse.diag;

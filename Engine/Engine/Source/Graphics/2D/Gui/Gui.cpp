@@ -1,7 +1,6 @@
 module gse.graphics;
 
 import std;
-import gse.std_meta;
 
 import :gui;
 import :types;
