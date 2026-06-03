@@ -30,9 +30,8 @@ export namespace gse::vulkan {
 
 	class shader_object final : public non_copyable {
 	public:
-		shader_object() = default;
-
-		~shader_object() override = default;
+		shader_object() {}
+		~shader_object() = default;
 
 		shader_object(
 			shader_object&&

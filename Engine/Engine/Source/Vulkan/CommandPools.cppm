@@ -19,7 +19,7 @@ import gse.log;
 export namespace gse::vulkan {
 	class command : public non_copyable {
 	public:
-		~command() override = default;
+		~command() = default;
 
 		command(
 			command&&
@@ -68,7 +68,7 @@ export namespace gse::vulkan {
 
 	class worker_command_pools : public non_copyable {
 	public:
-		~worker_command_pools() override;
+		~worker_command_pools();
 
 		worker_command_pools(
 			worker_command_pools&&

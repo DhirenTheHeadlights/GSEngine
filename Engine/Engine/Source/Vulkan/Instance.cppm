@@ -14,7 +14,7 @@ import gse.os;
 export namespace gse::vulkan {
 	class instance : public non_copyable {
 	public:
-		~instance() override = default;
+		~instance() = default;
 
 		instance(
 			instance&&

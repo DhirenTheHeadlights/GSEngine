@@ -1,7 +1,6 @@
 export module gse.containers:archive;
 
 import std;
-import gse.std_meta;
 import gse.assert;
 
 import :static_vector;

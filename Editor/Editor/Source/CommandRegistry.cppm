@@ -2,7 +2,6 @@ export module ide:command_registry;
 
 import std;
 import gse;
-import gse.std_meta;
 
 import :annotations;
 

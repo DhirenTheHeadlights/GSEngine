@@ -2,7 +2,6 @@ export module gse.core:id;
 
 import std;
 
-import gse.std_meta;
 import gse.meta;
 
 import gse.assert;

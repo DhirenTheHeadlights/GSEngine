@@ -11,8 +11,7 @@ import gse.core;
 export namespace gse::vulkan {
 	class transient_command_pool final : public non_copyable {
 	public:
-		transient_command_pool() = default;
-
+		transient_command_pool() {}
 		~transient_command_pool() = default;
 
 		transient_command_pool(

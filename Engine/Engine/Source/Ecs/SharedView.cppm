@@ -1,7 +1,6 @@
 export module gse.ecs:shared_view;
 
 import std;
-import gse.std_meta;
 import gse.meta;
 
 export namespace gse {

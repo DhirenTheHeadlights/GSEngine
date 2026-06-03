@@ -1,5 +1,4 @@
 {
-  "clangd.path": "${env:CLANG_P2996_ROOT}/bin/clangd.exe",
   "clangd.arguments": [
     "--background-index",
     "--header-insertion=never",
@@ -18,7 +17,6 @@
     "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
     "editor.formatOnSave": true
   },
-  "cmake.environmentSetupScript": "${workspaceFolder}/scripts/vsdev_env.bat",
   "cmake.debugConfig": {
     "environment": [
       {

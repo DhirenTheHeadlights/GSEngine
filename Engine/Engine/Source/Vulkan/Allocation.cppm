@@ -23,7 +23,7 @@ export namespace gse::vulkan {
 	public:
 		allocation() = default;
 
-		~allocation() override = default;
+		~allocation() = default;
 
 		allocation(
 			allocation&&

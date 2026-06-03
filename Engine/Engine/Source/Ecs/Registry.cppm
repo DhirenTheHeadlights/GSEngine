@@ -75,7 +75,7 @@ export namespace gse {
 
 	class registry final : public non_copyable {
 	public:
-		~registry() override = default;
+		~registry() = default;
 
 		auto create(
 			std::string_view name

@@ -1,7 +1,6 @@
 export module gse.assets:asset_format;
 
 import std;
-import gse.std_meta;
 import gse.meta;
 import gse.containers;
 

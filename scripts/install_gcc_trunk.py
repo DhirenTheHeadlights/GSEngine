@@ -2,32 +2,45 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
 
-RELEASE_URL = "https://github.com/DhirenTheHeadlights/GSEngine/releases/download/{tag}/clang-p2996-windows-x64.zip"
-LATEST_RELEASE_URL = "https://api.github.com/repos/DhirenTheHeadlights/GSEngine/releases/latest"
-ENV_VAR = "CLANG_P2996_ROOT"
-
-
-def resolve_latest_tag() -> str:
-    print(f"Resolving latest clang-p2996 release tag from {LATEST_RELEASE_URL}")
-    req = urllib.request.Request(LATEST_RELEASE_URL, headers={"Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req) as response:
-        data = json.load(response)
-    tag = data["tag_name"]
-    print(f"Latest release: {tag}")
-    return tag
+REPO = "DhirenTheHeadlights/GSEngine"
+RELEASE_URL = f"https://github.com/{REPO}/releases/download/{{tag}}/gcc-trunk-windows-x64.zip"
+RELEASES_API = f"https://api.github.com/repos/{REPO}/releases?per_page=100"
+ENV_VAR = "MINGW_ROOT"
+TAG_RE = re.compile(r"^gcc-trunk-v(\d+)$")
 
 # Install under the user home directory (not AppData) so Windows Store Python's
 # VFS sandbox redirection of %LOCALAPPDATA% doesn't cause cmake to see a different
 # filesystem view than the Python process does.
-INSTALL_ROOT = Path.home() / ".clang-p2996"
+INSTALL_ROOT = Path.home() / ".gcc-trunk"
+
+
+def resolve_latest_tag() -> str:
+    # Filter to gcc-trunk-v* and pick the highest N. Do NOT use /releases/latest:
+    # this repo also publishes clang-p2996-* releases, and "latest" is across all
+    # release kinds, so it could hand back a Clang tag.
+    print(f"Resolving latest gcc-trunk release tag from {RELEASES_API}")
+    req = urllib.request.Request(RELEASES_API, headers={"Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req) as response:
+        data = json.load(response)
+    best = None
+    for rel in data:
+        m = TAG_RE.match(rel.get("tag_name", ""))
+        if m and not rel.get("draft", False):
+            n = int(m.group(1))
+            if best is None or n > best[0]:
+                best = (n, rel["tag_name"])
+    if best is None:
+        raise SystemExit("No gcc-trunk-v* release found. Publish one or pass --tag.")
+    print(f"Latest release: {best[1]}")
+    return best[1]
 
 
 def install_path(tag: str) -> Path:
@@ -35,7 +48,7 @@ def install_path(tag: str) -> Path:
 
 
 def already_installed(tag: str) -> bool:
-    return (install_path(tag) / "bin" / "clang-cl.exe").exists()
+    return (install_path(tag) / "bin" / "g++.exe").exists()
 
 
 def download(url: str, dest: Path) -> None:
@@ -71,8 +84,8 @@ def persist_env_var(name: str, value: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Download and install prebuilt clang-p2996 toolchain")
-    parser.add_argument("--tag", default=None, help="Release tag to install (default: latest GitHub release)")
+    parser = argparse.ArgumentParser(description="Download and install the prebuilt native-Windows GCC trunk toolchain")
+    parser.add_argument("--tag", default=None, help="Release tag to install (default: latest gcc-trunk-v* release)")
     parser.add_argument("--sha256", help="Expected SHA256 of the zip")
     parser.add_argument("--persist", action="store_true", help=f"Persist {ENV_VAR} via setx")
     parser.add_argument("--force", action="store_true", help="Reinstall even if already present")
@@ -98,10 +111,10 @@ def main() -> None:
     if args.persist:
         persist_env_var(ENV_VAR, str(target))
     else:
-        print(f"\nTo use this toolchain:")
+        print("\nTo use this toolchain:")
         print(f"  set {ENV_VAR}={target}    (cmd)")
         print(f"  $env:{ENV_VAR} = '{target}'  (PowerShell)")
-        print(f"Or re-run with --persist to set it permanently on Windows.")
+        print("Or re-run with --persist to set it permanently on Windows.")
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ namespace gse::renderer::capture::mp4 {
 			std::array<char, 4> type
 		);
 
-		~box_scope() override;
+		~box_scope();
 
 	private:
 		std::vector<std::byte>& m_out;

@@ -12,9 +12,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class sampler final : public non_copyable {
 	public:
-		sampler() = default;
-
-		~sampler() override = default;
+		sampler() {}
+		~sampler() = default;
 
 		sampler(
 			sampler&&

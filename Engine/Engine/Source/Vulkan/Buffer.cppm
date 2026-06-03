@@ -12,9 +12,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class buffer final : public non_copyable {
 	public:
-		buffer() = default;
-
-		~buffer() override = default;
+		buffer() {}
+		~buffer() = default;
 
 		buffer(
 			gpu::buffer_handle buffer,

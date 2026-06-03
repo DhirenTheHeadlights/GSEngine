@@ -23,7 +23,7 @@ export namespace gse::gpu {
 			gpu::device_settings& device_cfg
 		) -> std::unique_ptr<device>;
 
-		~device() override;
+		~device();
 
 		[[nodiscard]] auto handle() const -> gpu::device_handle;
 

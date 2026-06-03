@@ -22,9 +22,8 @@ export namespace gse::vulkan {
 
 	class shader_program final : public non_copyable {
 	public:
-		shader_program() = default;
-
-		~shader_program() override = default;
+		shader_program() {}
+		~shader_program() = default;
 
 		shader_program(
 			shader_program&&

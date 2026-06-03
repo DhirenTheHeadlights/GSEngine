@@ -1,7 +1,6 @@
 export module gse.graphics:texture;
 
 import std;
-import gse.std_meta;
 
 import gse.core;
 import gse.math;

@@ -1,7 +1,6 @@
 export module gse.meta:parse;
 
 import std;
-import gse.std_meta;
 
 import :enums;
 
@@ -16,7 +15,7 @@ export namespace gse {
 	) -> bool;
 }
 
-export template <>
+template <>
 struct gse::parser<bool> {
 	static auto parse(
 		std::string_view raw,
@@ -24,7 +23,7 @@ struct gse::parser<bool> {
 	) -> bool;
 };
 
-export template <>
+template <>
 struct gse::parser<std::string> {
 	static auto parse(
 		std::string_view raw,

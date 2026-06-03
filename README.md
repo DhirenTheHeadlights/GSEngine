@@ -10,7 +10,7 @@ below. Don't actually submit the issue.
 
 GSEngine is a game engine written in modern C++ with C++26 reflection. It began as the foundation for a 3D shooter, but nothing in it is tied to that genre. The [wiki](https://github.com/DhirenTheHeadlights/GSEngine/wiki) is the best place to start.
 
-Targets Windows only (clang + libc++ + Vulkan).
+Targets Windows (Vulkan).
 
 ## Features
 
@@ -74,50 +74,52 @@ Bindless point/spot lights tile-culled on the compute queue; renderer dispatches
 
 ## System Prerequisites
 
-The bootstrap script handles the toolchain (clang-p2996, libc++, compiler-rt, vcpkg deps) but you need these on your system first:
-
 | Tool                       | Version   |
 |----------------------------|-----------|
-| Python                     | 3.11+     |
 | Git                        | 2.45+     |
-| CMake                      | 4.0+      |
+| CMake                      | 3.28+     |
 | Ninja                      | 1.11+     |
-| Visual Studio Build Tools  | 2022/2026 (with **C++ workload + Windows 11 SDK**) |
+| MinGW-w64 GCC              | 16.1+ (UCRT)  |
 | Vulkan SDK                 | 1.4+      |
 
-Visual Studio Build Tools are required even though we use clang — they provide the Windows CRT (`vcruntime`/`ucrt`), the Windows SDK headers/libs, `link.exe`/`mt.exe`, and the `vcvars64.bat` environment that clang needs to find them.
+Two ways to get the toolchain:
+
+**WinLibs prebuilt (fast, but currently stuck on 16.1.0 which has a known module-loading bug for this codebase — see [GCC PR 122785](https://www.mail-archive.com/gcc-bugs@gcc.gnu.org/msg885994.html)):**
+Grab the UCRT + POSIX threads, GCC 16.1.0+ archive from [WinLibs](https://winlibs.com/). Unzip somewhere stable and point `MINGW_ROOT` at it:
+```powershell
+$env:MINGW_ROOT = "C:\mingw64"
+```
+
+**Trunk build (slow but has the fix):**
+```powershell
+python scripts/build_gcc_trunk.py --persist
+```
+Downloads MSYS2 into `.msys2/`, clones GCC trunk, builds, installs to `~/.gcc-trunk/<sha>/`, and `setx`'s `MINGW_ROOT`. First run takes 2-4 hours and ~10 GB of disk; subsequent rebuilds reuse `.msys2/` and the GCC source clone. Pin a specific commit with `--sha <hash>`.
+
+Persist `MINGW_ROOT` so CMake picks it up across shells:
+```powershell
+[Environment]::SetEnvironmentVariable("MINGW_ROOT", "C:\path\to\gcc", "User")
+```
 
 ## Quick Start
 
 ```
 git clone <repo>
-python bootstrap.py --persist
-cmake --preset x64-clang-p2996-libcxx-Release
-cmake --build --preset x64-clang-p2996-libcxx-Release
+git submodule update --init --recursive
+cmake --preset x64-mingw-gcc-Release
+cmake --build --preset x64-mingw-gcc-Release
 ```
 
-`bootstrap.py` runs:
-1. `git submodule update --init --recursive` (fetches vcpkg)
-2. `scripts/install_clang_p2996.py` — downloads the prebuilt clang-p2996 release to `~/.clang-p2996/<tag>` and sets `CLANG_P2996_ROOT`. Resolves the latest GitHub release automatically; pin with `--clang-tag clang-p2996-vN`.
-3. `scripts/build_libcxx_p2996.py` — clones the libc++ source and builds it against the MSVC ABI, installing into the same clang dir.
-4. `scripts/build_compiler_rt_p2996.py` — builds compiler-rt (ASAN runtime) into the same clang dir.
-
-vcpkg's manifest mode (`vcpkg.json`) auto-installs dependencies when CMake configures.
-
-Skip flags: `--skip-submodules`, `--skip-clang`, `--skip-libcxx`, `--skip-compiler-rt`. Force rebuilds with `--force-libcxx` / `--force-compiler-rt`. Re-running is idempotent — installed steps detect their artifacts and skip.
-
-Run all of this from an **x64 Native Tools Command Prompt** (or **Developer PowerShell for VS**) so vcvars is loaded.
+vcpkg's manifest mode (`vcpkg.json`) auto-installs dependencies when CMake configures. First configure rebuilds the dep tree under the MinGW triplet — expect 30-60 minutes.
 
 ### Available presets
 
-| Preset                                          | Use                                            |
-|-------------------------------------------------|------------------------------------------------|
-| `x64-clang-p2996-libcxx-Debug`                  | Day-to-day debug build                         |
-| `x64-clang-p2996-libcxx-Release`                | Optimized release                              |
-| `x64-clang-p2996-libcxx-RelWithDebInfo`         | Release with debug info (profiling)            |
-| `x64-clang-p2996-libcxx-Debug-asan`             | Debug + AddressSanitizer (needs compiler-rt)   |
-| `x64-clang-p2996-libcxx-{Release,Debug}-trace`  | `-ftime-trace` + `-print-stats` for compile profiling |
-| `linux-gcc-trunk-Debug`                         | WSL/Linux GCC trunk build                      |
+| Preset                          | Use                                       |
+|---------------------------------|-------------------------------------------|
+| `x64-mingw-gcc-Debug`           | Day-to-day debug build                    |
+| `x64-mingw-gcc-Release`         | Optimized release                         |
+| `x64-mingw-gcc-RelWithDebInfo`  | Release with debug info (profiling)       |
+| `x64-mingw-gcc-Debug-asan`      | Debug + AddressSanitizer                  |
 
 ## Dependencies (vcpkg manifest)
 
@@ -133,21 +135,9 @@ Listed in `vcpkg.json` and auto-installed at configure time:
 - [msdfgen](https://github.com/Chlumsky/msdfgen) — multi-channel SDF font generation
 - [nsight-aftermath](https://developer.nvidia.com/nsight-aftermath) — GPU crash dumps (NVIDIA)
 
-## clang-p2996 Toolchain
+## In-tree clang-tidy Checks
 
-This project is built with a fork of Clang that includes preview support for [P2996 reflection](https://github.com/bloomberg/clang-p2996). `bootstrap.py` downloads the prebuilt artifact; `scripts/install_clang_p2996.py` is the same step run standalone.
-
-Both scripts auto-resolve the [latest GSEngine release](https://github.com/DhirenTheHeadlights/GSEngine/releases) by default. A [weekly CI job](.github/workflows/build-clang-p2996.yml) builds from the upstream `p2996` branch tip and rolls the default release forward.
-
-The toolchain also ships custom in-tree clang-tidy checks (`scripts/gse_tidy_checks/`) — no-anonymous-namespace, no-get-prefix, redundant-namespace-qualifier stripping, concept-in-template-param, etc. — that get stitched into `clang-tidy` at build time.
-
-To build the clang toolchain locally run from an **x64 Native Tools Command Prompt**:
-
-```
-python scripts/build_clang_p2996.py --sha <commit>
-```
-
-Useful flags: `--tools-only` (rebuild clangd + clang-tidy + clang-format without touching the compiler), `--clangd-only`, `--link-jobs N` (cap parallel link memory).
+`scripts/gse_tidy_checks/` ships custom checks — no-anonymous-namespace, no-get-prefix, redundant-namespace-qualifier stripping, concept-in-template-param, etc. — built against clang's libtooling and stitched into `clang-tidy`.
 
 ## Code Style
 

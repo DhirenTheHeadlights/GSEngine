@@ -1,7 +1,6 @@
 export module gse.concurrency:task;
 
 import std;
-import gse.std_meta;
 
 import gse.core;
 import gse.diag;
@@ -87,7 +86,7 @@ export namespace gse::task {
 			id label = trace::loc_id<trace::current_loc_tag()>()
 		);
 
-		~group() noexcept override;
+		~group() noexcept;
 
 		auto post(
 			job j,
