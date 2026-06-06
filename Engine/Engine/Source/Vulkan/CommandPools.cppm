@@ -19,7 +19,7 @@ import gse.log;
 export namespace gse::vulkan {
 	class command : public non_copyable {
 	public:
-		~command() override = default;
+		~command() = default;
 
 		command(
 			command&&
@@ -68,7 +68,7 @@ export namespace gse::vulkan {
 
 	class worker_command_pools : public non_copyable {
 	public:
-		~worker_command_pools() override;
+		~worker_command_pools();
 
 		worker_command_pools(
 			worker_command_pools&&
@@ -137,7 +137,8 @@ auto gse::vulkan::command::make_primary_pool(const device& device_data, const st
 		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
 		.queueFamilyIndex = family,
 	};
-	vk::raii::CommandPool pool = device_data.raii_device().createCommandPool(pool_info);
+	auto [pool_result, pool] = device_data.raii_device().createCommandPool(pool_info);
+	assert(pool_result == vk::Result::eSuccess, "failed to create command pool: {}", vk::to_string(pool_result));
 
 	const std::string pool_name = std::format("Primary Command Pool ({})", label);
 	const vk::DebugUtilsObjectNameInfoEXT pool_name_info{
@@ -153,7 +154,8 @@ auto gse::vulkan::command::make_primary_pool(const device& device_data, const st
 		.commandBufferCount = max_frames_in_flight,
 	};
 
-	std::vector<vk::raii::CommandBuffer> buffers = device_data.raii_device().allocateCommandBuffers(alloc_info);
+	auto [buffers_result, buffers] = device_data.raii_device().allocateCommandBuffers(alloc_info);
+	assert(buffers_result == vk::Result::eSuccess, "failed to allocate command buffers: {}", vk::to_string(buffers_result));
 
 	for (std::uint32_t i = 0; i < buffers.size(); ++i) {
 		const std::string name = std::format("Primary Command Buffer ({}) frame={}", label, i);
@@ -218,7 +220,8 @@ auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_
 			.queueFamilyIndex = family,
 		};
 
-		vk::raii::CommandPool pool = device_data.raii_device().createCommandPool(pool_info);
+		auto [pool_result, pool] = device_data.raii_device().createCommandPool(pool_info);
+		assert(pool_result == vk::Result::eSuccess, "failed to create command pool: {}", vk::to_string(pool_result));
 
 		const std::string pool_name = std::format("Worker {} Frame {} Command Pool ({})", worker, frame, label);
 		const vk::DebugUtilsObjectNameInfoEXT pool_name_info{
@@ -234,7 +237,8 @@ auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_
 			.commandBufferCount = static_cast<std::uint32_t>(secondaries_per_pool),
 		};
 
-		std::vector<vk::raii::CommandBuffer> secondaries = device_data.raii_device().allocateCommandBuffers(alloc_info);
+		auto [secondaries_result, secondaries] = device_data.raii_device().allocateCommandBuffers(alloc_info);
+		assert(secondaries_result == vk::Result::eSuccess, "failed to allocate secondary command buffers: {}", vk::to_string(secondaries_result));
 
 		for (std::size_t i = 0; i < secondaries.size(); ++i) {
 			const std::string buffer_name = std::format("Worker {} Frame {} Secondary {} ({})", worker, frame, i,

@@ -10,9 +10,8 @@ import :resources;
 export namespace gse::dx12 {
 	class blas final : public non_copyable {
 	public:
-		blas() = default;
-
-		~blas() override = default;
+		blas() {}
+		~blas() = default;
 
 		blas(
 			blas&&
@@ -32,9 +31,8 @@ export namespace gse::dx12 {
 
 	class tlas final : public non_copyable {
 	public:
-		tlas() = default;
-
-		~tlas() override = default;
+		tlas() {}
+		~tlas() = default;
 
 		tlas(
 			tlas&&

@@ -1,6 +1,10 @@
-module gse.graphics;
+module gse.graphics:camera_system_impl;
 
 import std;
+
+import :camera_system;
+import :camera_data;
+import :camera_component;
 
 import gse.math;
 import gse.core;
@@ -13,9 +17,6 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 
-import :camera_data;
-import :camera_component;
-import :camera_system;
 
 auto gse::camera::system::position(const data& d) -> vec3<gse::position> {
 	return d.current.position;
@@ -159,6 +160,11 @@ auto gse::camera::system::run(run_context& ctx, data& d) -> async::task<> {
 
 		const vec3f forward = rotate_vector(d.current.orientation, vec3f(0.f, 0.f, -1.f));
 		d.yaw = radians(std::atan2(-forward.x(), -forward.z()));
+		if (!ctx.read_channel<camera_yaw_request>().empty()) {
+			ctx.channels.push<camera_yaw_response>({
+				.yaw = d.yaw,
+			});
+		}
 
 		d.prev_view_matrix = d.view_matrix;
 		d.prev_projection_matrix = d.projection_matrix;

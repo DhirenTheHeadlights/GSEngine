@@ -1,9 +1,10 @@
-module gse.graphics;
+module gse.graphics:physics_transform_renderer_impl;
 
 import std;
 
 import :physics_transform_renderer;
 import :geometry_collector;
+
 
 import gse.os;
 import gse.assets;

@@ -1,12 +1,13 @@
-module gse.graphics;
+module gse.graphics:primitive_resolver_impl;
 
 import std;
 
-import :model;
 import :primitive_resolver;
+import :model;
 import :primitive_specs;
 import :primitives;
 import :render_component;
+
 
 import gse.concurrency;
 import gse.core;

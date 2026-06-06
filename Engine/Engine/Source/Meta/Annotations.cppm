@@ -1,7 +1,6 @@
 export module gse.meta:annotations;
 
 import std;
-import gse.std_meta;
 
 export namespace gse {
 	template <auto V>

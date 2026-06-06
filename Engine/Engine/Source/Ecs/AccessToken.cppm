@@ -45,7 +45,7 @@ export namespace gse {
 			id
 		);
 
-		~access() override;
+		~access();
 
 		access() = delete;
 

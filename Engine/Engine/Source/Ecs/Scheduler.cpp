@@ -1,6 +1,16 @@
-module gse.ecs;
+module gse.ecs:scheduler_impl;
 
 import std;
+
+import :scheduler;
+import :phase_context;
+import :registries;
+import :run_context;
+import :settings;
+import :frame_context;
+import :system_node;
+import :system_dispatch;
+import :registry;
 
 import gse.assert;
 import gse.core;
@@ -46,6 +56,15 @@ auto gse::scheduler::snapshot_all_states() -> void {
 }
 
 namespace gse {
+	struct wait_section_info {
+		id section_id;
+		time budget;
+	};
+
+	auto wait_section_for(
+		wait_phase phase
+	) -> wait_section_info;
+
 	auto run_node_frame(
 		frame_context& ctx,
 		system_node& node
@@ -433,20 +452,20 @@ auto gse::scheduler::advance_one_run_system(system_node& node) -> async::task<> 
 	}
 }
 
+auto gse::wait_section_for(const wait_phase phase) -> wait_section_info {
+	if (phase == wait_phase::init) {
+		return { trace_id<"sched::wait::init">(), milliseconds(2000.f) };
+	}
+	if (phase == wait_phase::frame) {
+		return { trace_id<"sched::wait::frame">(), milliseconds(250.f) };
+	}
+	return { trace_id<"sched::wait::update">(), milliseconds(500.f) };
+}
+
 auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const wait_phase phase) -> void {
 	if (tasks.empty()) {
 		return;
 	}
-
-	const auto budget = [phase] {
-		if (phase == wait_phase::init) {
-			return milliseconds(2000.f);
-		}
-		if (phase == wait_phase::frame) {
-			return milliseconds(250.f);
-		}
-		return milliseconds(500.f);
-	}();
 
 	std::atomic<bool> done_flag{ false };
 	auto wrapper = [&]() -> async::task<> {
@@ -456,20 +475,22 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 	auto w = wrapper();
 	w.start();
 
+	const auto [section_id, budget] = wait_section_for(phase);
+	watchdog::section watch{ section_id, budget };
+
 	clock wait_clock;
-	auto next_dump_at = budget;
+	auto seen_pulse = watchdog::dump_pulse();
 	int dump_count = 0;
 
 	while (!done_flag.load(std::memory_order_acquire)) {
 		if (!task::try_run_one()) {
 			std::this_thread::yield();
 		}
-		const auto elapsed = wait_clock.elapsed<float>();
-		if (elapsed >= next_dump_at) {
+		if (const auto pulse = watchdog::dump_pulse(); pulse != seen_pulse) {
+			seen_pulse = pulse;
 			++dump_count;
-			log_stall_state(phase, elapsed, dump_count);
+			log_stall_state(phase, wait_clock.elapsed<float>(), dump_count);
 			log::flush();
-			next_dump_at = elapsed + budget;
 		}
 	}
 	while (!w.done()) {

@@ -1,10 +1,11 @@
-module gse.graphics;
+module gse.graphics:rt_shadow_renderer_impl;
 
 import std;
 
 import :rt_shadow_renderer;
 import :geometry_collector;
 import :mesh;
+
 
 import gse.os;
 import gse.assets;

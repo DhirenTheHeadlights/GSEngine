@@ -1,9 +1,10 @@
-module gse.graphics;
+module gse.graphics:font_impl;
 
 import std;
 
 import :font;
 import :texture;
+
 
 import gse.math;
 import gse.gpu;

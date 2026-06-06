@@ -12,9 +12,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class pipeline_layout final : public non_copyable {
 	public:
-		pipeline_layout() = default;
-
-		~pipeline_layout() override = default;
+		pipeline_layout() {}
+		~pipeline_layout() = default;
 
 		pipeline_layout(
 			pipeline_layout&&
@@ -28,7 +27,7 @@ export namespace gse::vulkan {
 		static auto create(
 			const device& dev,
 			std::span<const gpu::push_constant_range> push_ranges
-		) -> pipeline_layout;
+		) -> gpu::expected<pipeline_layout>;
 
 		[[nodiscard]] auto handle(
 			this const pipeline_layout& self
@@ -48,7 +47,7 @@ export namespace gse::vulkan {
 gse::vulkan::pipeline_layout::pipeline_layout(vk::raii::PipelineLayout&& layout) : m_layout(std::move(layout)) {
 }
 
-auto gse::vulkan::pipeline_layout::create(const device& dev, const std::span<const gpu::push_constant_range> push_ranges) -> pipeline_layout {
+auto gse::vulkan::pipeline_layout::create(const device& dev, const std::span<const gpu::push_constant_range> push_ranges) -> gpu::expected<pipeline_layout> {
 	std::vector<vk::PushConstantRange> vk_ranges;
 	vk_ranges.reserve(push_ranges.size());
 	for (const auto& r : push_ranges) {
@@ -63,7 +62,11 @@ auto gse::vulkan::pipeline_layout::create(const device& dev, const std::span<con
 		.pushConstantRangeCount = static_cast<std::uint32_t>(vk_ranges.size()),
 		.pPushConstantRanges = vk_ranges.data(),
 	};
-	return pipeline_layout(dev.raii_device().createPipelineLayout(info));
+	auto [result, layout] = dev.raii_device().createPipelineLayout(info);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(result));
+	}
+	return pipeline_layout(std::move(layout));
 }
 
 auto gse::vulkan::pipeline_layout::handle(this const pipeline_layout& self) -> gpu::pipeline_layout_handle {

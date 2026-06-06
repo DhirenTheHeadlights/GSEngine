@@ -1,7 +1,6 @@
 export module gse.meta:type_name;
 
 import std;
-import gse.std_meta;
 
 export namespace gse::meta {
 	template <typename T>

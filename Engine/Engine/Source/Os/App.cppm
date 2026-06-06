@@ -1,9 +1,7 @@
 module;
 
 #ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <Windows.h>
+#include <x86intrin.h>
 #else
 #include <unistd.h>
 #endif
@@ -12,20 +10,24 @@ export module gse.os:app;
 
 import std;
 
+import gse.win32;
+
 export namespace gse::app {
 	auto restart() -> void;
 }
 
 auto gse::app::restart() -> void {
 #ifdef _WIN32
-	wchar_t path[MAX_PATH];
-	GetModuleFileNameW(nullptr, path, MAX_PATH);
+	using namespace gse::win32;
+
+	wchar_t path[max_path];
+	GetModuleFileNameW(nullptr, path, max_path);
 
 	STARTUPINFOW si{};
 	si.cb = sizeof(si);
 	PROCESS_INFORMATION pi{};
 
-	if (CreateProcessW(path, GetCommandLineW(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+	if (CreateProcessW(path, GetCommandLineW(), nullptr, nullptr, 0, 0, nullptr, nullptr, &si, &pi)) {
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
 		ExitProcess(0);

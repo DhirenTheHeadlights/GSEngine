@@ -12,9 +12,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class buffer final : public non_copyable {
 	public:
-		buffer() = default;
-
-		~buffer() override = default;
+		buffer() {}
+		~buffer() = default;
 
 		buffer(
 			gpu::buffer_handle buffer,
@@ -68,7 +67,12 @@ export namespace gse::vulkan {
 		[[nodiscard]] auto valid() const -> bool;
 
 	private:
-		gpu::buffer_handle m_buffer;
+		// NOTE: written as handle<buffer_tag> directly, NOT the gpu::buffer_handle alias.
+		// A by-value member typed via an alias-to-a-template-instantiation imported from
+		// another module (gse.gpu_types) segfaults cc1plus under -freflection when this
+		// struct is materialized by value in a consumer. Using the underlying type directly
+		// (or a locally-defined alias) avoids it. See memory: gcc-modules-byvalue-buffer-ice.
+		gpu::handle<gpu::buffer_tag> m_buffer;
 		gpu::device_size m_size = 0;
 		gpu::device_address m_address = 0;
 		std::byte* m_mapped = nullptr;

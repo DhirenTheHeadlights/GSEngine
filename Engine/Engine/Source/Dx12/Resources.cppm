@@ -11,9 +11,8 @@ export namespace gse::dx12 {
 
 	class buffer final : public non_copyable {
 	public:
-		buffer() = default;
-
-		~buffer() override = default;
+		buffer() {}
+		~buffer() = default;
 
 		buffer(
 			buffer&&
@@ -66,9 +65,8 @@ export namespace gse::dx12 {
 
 	class image final : public non_copyable {
 	public:
-		image() = default;
-
-		~image() override = default;
+		image() {}
+		~image() = default;
 
 		image(
 			image&&
@@ -100,9 +98,8 @@ export namespace gse::dx12 {
 
 	class sampler final : public non_copyable {
 	public:
-		sampler() = default;
-
-		~sampler() override = default;
+		sampler() {}
+		~sampler() = default;
 
 		sampler(
 			sampler&&

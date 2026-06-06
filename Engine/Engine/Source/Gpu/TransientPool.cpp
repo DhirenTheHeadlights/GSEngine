@@ -1,4 +1,4 @@
-module gse.gpu;
+module gse.gpu:transient_pool_impl;
 
 import std;
 

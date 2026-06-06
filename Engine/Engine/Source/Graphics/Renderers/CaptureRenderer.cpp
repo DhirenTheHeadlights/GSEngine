@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:capture_renderer_impl;
 
 import std;
 
@@ -7,9 +7,12 @@ import :ui_renderer;
 import :capture_ring;
 import :mp4_muxer;
 import :settings;
+import :shared_shaders;
+
 
 import gse.os;
 import gse.assets;
+import gse.config;
 import gse.gpu;
 import gse.core;
 import gse.concurrency;

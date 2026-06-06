@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:world_text_renderer_impl;
 
 import std;
 
@@ -9,6 +9,7 @@ import :camera_system;
 import :gui;
 import :font;
 import :render_targets;
+
 
 import gse.gpu;
 import gse.core;

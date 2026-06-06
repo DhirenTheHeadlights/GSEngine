@@ -124,7 +124,7 @@ auto gse::vulkan::transient_queue::create(device& dev, const queue_id id, const 
 	std::vector<transient_command_pool> pools;
 	pools.reserve(worker_count);
 	for (std::size_t i = 0; i < worker_count; ++i) {
-		pools.push_back(transient_command_pool::create(dev, family));
+		pools.push_back(gpu::must(transient_command_pool::create(dev, family)));
 	}
 	return transient_queue(id, queue_timeline::create(dev), std::move(pools), dev);
 }

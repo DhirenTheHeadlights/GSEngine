@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document catalogs opportunities to apply C++26 static reflection (P2996, via the Bloomberg clang-p2996 fork) across GSEngine. It is split into two parts:
+This document catalogs opportunities to apply C++26 static reflection (P2996) across GSEngine. It is split into two parts:
 
 - **Part I — Tactical Opportunities.** Existing code, ranked S/A/B/C, each a concrete refactor that deletes boilerplate or prevents a drift bug.
 - **Part II — Architectural Reshapes.** How new systems should be structured going forward. Design philosophy, not a migration plan.
@@ -187,7 +187,7 @@ Confirmed by grep: nobody uses the `_t<T, U>` template form — all 100% of call
 consteval { emit_quantity_aliases<^^gse>(); }
 ```
 
-The scan finds every `quantity_spec`-annotated tag in the `gse` namespace and injects both aliases via `queue_injection`. Fallback if the clang-p2996 build rejects alias-template injection: replace with a single generic `quantity_t<Tag>` helper and one `using foo = quantity_t<foo_tag>;` line per quantity — still kills 2 of the 3 alias lines.
+The scan finds every `quantity_spec`-annotated tag in the `gse` namespace and injects both aliases via `queue_injection`. Fallback if the compiler rejects alias-template injection: replace with a single generic `quantity_t<Tag>` helper and one `using foo = quantity_t<foo_tag>;` line per quantity — still kills 2 of the 3 alias lines.
 
 #### 2e. Tag recovery via reflected dim→tag index (capability)
 
@@ -826,11 +826,11 @@ Reflect over the struct to build: TOML reader/writer, ImGui renderer, dirty trac
 
 **Dependency note — tomlplusplus was dropped.**
 
-Originally this section recommended keeping tomlplusplus. That recommendation was overturned: during the clang-p2996 / libc++ migration, tomlplusplus's precompiled `.lib` (MSVC-STL-mangled template instantiations on `std::string_view` / `std::string`) produced unresolvable link symbols against the engine's libc++-mangled call sites. Fixing via triplet gymnastics wasn't worth it; replacing the library was.
+Originally this section recommended keeping tomlplusplus. That recommendation was overturned: during the migration to a non-MSVC STL, tomlplusplus's precompiled `.lib` (MSVC-STL-mangled template instantiations on `std::string_view` / `std::string`) produced unresolvable link symbols against the engine's call sites. Fixing via triplet gymnastics wasn't worth it; replacing the library was.
 
 The replacement lives at `Engine/Engine/Source/Core/Utility/Toml.cppm` (`gse.utility:toml` partition): a ~620-line hand-rolled module exposing `gse::toml::value`, `parse()` returning `std::expected<value, parse_error>`, `emit()`, and reflection-based `to_toml<T>` / `from_toml<T>` that walk `nonstatic_data_members_of`. Handles the TOML subset the engine actually used (section headers, `[[array]]`, bare + quoted keys, scalars, inline arrays). Quote-substitution hack at the old `Save.cppm:96,118` is gone.
 
-The same ABI-mismatch pattern that killed toml++ also hit TBB's `concurrent_bounded_queue<std::function<void()>>` (`std::function` layout differs between libc++ and MSVC STL → heap corruption inside TBB's compiled runtime). After surveying remaining TBB usage, the whole dep was dropped: the queue was swapped for moodycamel's header-only `concurrentqueue`, and `parallel_for` / `task_arena` were rolled into an in-engine thread pool (`Engine/Engine/Source/Core/Utility/Concurrency/Task.cppm`). TBB is no longer linked; `vcpkg.json` and `Engine/CMakeLists.txt` reflect this.
+The same ABI-mismatch pattern that killed toml++ also hit TBB's `concurrent_bounded_queue<std::function<void()>>` (`std::function` layout differs across STL implementations → heap corruption inside TBB's compiled runtime). After surveying remaining TBB usage, the whole dep was dropped: the queue was swapped for moodycamel's header-only `concurrentqueue`, and `parallel_for` / `task_arena` were rolled into an in-engine thread pool (`Engine/Engine/Source/Core/Utility/Concurrency/Task.cppm`). TBB is no longer linked; `vcpkg.json` and `Engine/CMakeLists.txt` reflect this.
 
 **Rule of thumb for future deps:** prebuilt `.lib` with templated surface that takes user STL types by value/reference = danger. Everything else interop's fine via vcruntime ABI.
 
@@ -1504,6 +1504,5 @@ Flagged during exploration but not worth the reflection effort:
 ## References
 
 - P2996 working paper: *Reflection for C++26*
-- Bloomberg clang-p2996 fork: `https://github.com/bloomberg/clang-p2996`
 - `Engine/Engine/Import/Log.cppm` — existing assert/format surface that the reflected `std::formatter` must compose with
 - `docs/STYLEGUIDE.md` — naming and style conventions to preserve across refactors

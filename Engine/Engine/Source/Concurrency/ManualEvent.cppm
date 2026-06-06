@@ -9,7 +9,7 @@ export namespace gse::async {
 	public:
 		manual_event() = default;
 
-		~manual_event() override = default;
+		~manual_event() = default;
 
 		struct awaiter {
 			manual_event* m_event;

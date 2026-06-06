@@ -1,10 +1,11 @@
-module gse.physics;
+module gse.physics:vbd_gpu_solver_impl;
 
 import std;
 
 import :vbd_gpu_solver;
 import :vbd_constraints;
 import :vbd_solver;
+
 
 import gse.assert;
 import gse.core;

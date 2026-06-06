@@ -1,7 +1,6 @@
 export module gse.concurrency:task;
 
 import std;
-import gse.std_meta;
 
 import gse.core;
 import gse.diag;
@@ -11,15 +10,14 @@ import gse.stacktrace;
 import :work_stealing_queue;
 
 export namespace gse {
-	using job = move_only_function<void()>;
+	using job = std::move_only_function<void()>;
 }
 
 namespace gse::task {
 	template <typename F>
-	using first_arg_t =
-		typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):];
+	using first_arg_t = typename [:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):];
 
-	using parallel_for_fn = move_only_function<void(std::size_t)>;
+	using parallel_for_fn = std::move_only_function<void(std::size_t)>;
 
 	auto parallel_for_impl(
 		std::size_t first,
@@ -69,7 +67,7 @@ export namespace gse::task {
 	auto parallel_invoke_range(
 		std::size_t first,
 		std::size_t last,
-		move_only_function<void(std::size_t)> func,
+		std::move_only_function<void(std::size_t)> func,
 		id id = trace::loc_id<trace::current_loc_tag()>()
 	) -> void;
 
@@ -87,7 +85,7 @@ export namespace gse::task {
 			id label = trace::loc_id<trace::current_loc_tag()>()
 		);
 
-		~group() noexcept override;
+		~group() noexcept;
 
 		auto post(
 			job j,
@@ -180,7 +178,7 @@ auto gse::task::concurrent_queue<T>::size() const -> std::size_t {
 
 namespace gse::task {
 	struct job_entry {
-		gse::move_only_function<void()> fn;
+		std::move_only_function<void()> fn;
 		id trace_id;
 		std::uint64_t parent_eid = 0;
 		std::uint64_t async_key = 0;
@@ -640,7 +638,7 @@ auto gse::task::select_post_target() -> std::size_t {
 	return external_post_rotation.fetch_add(1, std::memory_order_relaxed) % queue_count;
 }
 
-auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t last, move_only_function<void(std::size_t)> func, const id id) -> void {
+auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t last, std::move_only_function<void(std::size_t)> func, const id id) -> void {
 	if (last <= first) {
 		return;
 	}
@@ -691,15 +689,12 @@ auto gse::task::run_job(job_entry& entry) -> void {
 		trace::end_async(entry.trace_id, entry.async_key);
 	}
 
-	if (!entry.fn.is_invocable()) {
+	if (!entry.fn) {
 		log::println(
 			log::level::error,
 			log::category::task,
-			"run_job: dequeued job_entry with non-invocable fn (trace_id={}, vtable={}, invoke={}, async_trace={}, "
-			"counts_in_flight={}, has_group={})",
+			"run_job: dequeued job_entry with non-invocable fn (trace_id={}, async_trace={}, counts_in_flight={}, has_group={})",
 			entry.trace_id,
-			entry.fn.vtable_address(),
-			entry.fn.invoke_address(),
 			entry.async_trace,
 			entry.counts_in_flight,
 			entry.gp != nullptr

@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:renderer_impl;
 
 import std;
 
@@ -18,6 +18,7 @@ import :physics_transform_renderer;
 import :rt_shadow_renderer;
 import :ui_renderer;
 import :settings;
+
 
 import gse.log;
 import gse.core;

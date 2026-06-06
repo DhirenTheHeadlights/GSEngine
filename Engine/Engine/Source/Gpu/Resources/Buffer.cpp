@@ -1,6 +1,13 @@
-module gse.gpu;
+module gse.gpu:buffer_impl;
 
 import std;
+
+import :buffer;
+import :aliases;
+import :gpu_task;
+import :sync_token;
+import :transient_api;
+import :device;
 
 import gse.concurrency;
 

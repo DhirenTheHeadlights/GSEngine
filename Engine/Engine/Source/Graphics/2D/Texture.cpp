@@ -1,8 +1,9 @@
-module gse.graphics;
+module gse.graphics:texture_impl;
 
 import std;
 
 import :texture;
+
 
 import gse.assert;
 import gse.core;

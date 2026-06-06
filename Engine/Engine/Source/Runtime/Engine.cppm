@@ -22,6 +22,9 @@ import :scene;
 import :world_system;
 
 export namespace gse {
+	using engine_networked_components =
+		type_pack<physics::motion_component, physics::collision_component, render_component, player_controller>;
+
 	struct engine_config {
 		std::string title = "GSEngine Application";
 		bool create_window = true;
@@ -57,7 +60,7 @@ export namespace gse {
 
 		auto window_should_close() -> bool;
 
-		auto pump_window() -> void;
+		auto tick_window() -> void;
 
 		template <typename S, typename... Args>
 		auto add_system(

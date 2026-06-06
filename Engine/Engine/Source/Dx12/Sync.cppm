@@ -10,9 +10,8 @@ export namespace gse::dx12 {
 
 	class semaphore final : public non_copyable {
 	public:
-		semaphore() = default;
-
-		~semaphore() override = default;
+		semaphore() {}
+		~semaphore() = default;
 
 		semaphore(
 			semaphore&&
@@ -34,9 +33,8 @@ export namespace gse::dx12 {
 
 	class sync final : public non_copyable {
 	public:
-		sync() = default;
-
-		~sync() override = default;
+		sync() {}
+		~sync() = default;
 
 		sync(
 			sync&&
@@ -62,9 +60,8 @@ export namespace gse::dx12 {
 
 	class query_pool final : public non_copyable {
 	public:
-		query_pool() = default;
-
-		~query_pool() override = default;
+		query_pool() {}
+		~query_pool() = default;
 
 		query_pool(
 			query_pool&&

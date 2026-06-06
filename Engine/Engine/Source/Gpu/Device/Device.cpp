@@ -1,9 +1,9 @@
-module gse.gpu;
+module gse.gpu:device_impl;
 
 import std;
 
-import :aliases;
 import :device;
+import :aliases;
 
 import gse.vulkan;
 

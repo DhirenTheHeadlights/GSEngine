@@ -26,7 +26,7 @@ export namespace gse::gpu {
 			std::uint32_t capacity = shaders::bindless_texture_capacity
 		);
 
-		~bindless_texture_set() override;
+		~bindless_texture_set();
 
 		auto allocate(
 			const image& img,

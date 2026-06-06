@@ -15,13 +15,12 @@ export namespace gse {
 		using iterator = T*;
 		using const_iterator = const T*;
 
-		linear_vector() = default;
-
+		linear_vector() {}
 		explicit linear_vector(
 			size_type capacity
 		);
 
-		~linear_vector() override;
+		~linear_vector();
 
 		linear_vector(
 			linear_vector&& other

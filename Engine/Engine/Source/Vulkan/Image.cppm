@@ -11,9 +11,8 @@ import gse.math;
 export namespace gse::vulkan {
 	class image final : public non_copyable {
 	public:
-		image() = default;
-
-		~image() override = default;
+		image() {}
+		~image() = default;
 
 		image(
 			gpu::image_handle image,

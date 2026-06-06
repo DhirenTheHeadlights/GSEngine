@@ -1,7 +1,6 @@
 export module gse.gpu:pipeline_builder;
 
 import std;
-import gse.std_meta;
 import gse.meta;
 import gse.assert;
 import gse.log;
