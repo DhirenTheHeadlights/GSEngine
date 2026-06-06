@@ -8,13 +8,14 @@ import :types;
 import :device;
 
 import gse.core;
+import gse.assert;
 
 export namespace gse::vulkan {
 	constexpr std::uint32_t max_frames_in_flight = 2;
 
 	class sync : public non_copyable {
 	public:
-		~sync() override;
+		~sync();
 
 		sync(
 			sync&& other
@@ -127,7 +128,9 @@ auto gse::vulkan::sync::create(device& dev, const std::uint32_t image_count, con
 	for (auto& fences : in_flight_fences) {
 		fences.reserve(frames_in_flight);
 		for (std::uint32_t i = 0; i < frames_in_flight; ++i) {
-			fences.emplace_back(dev.raii_device(), fence_ci);
+			auto [result, fence] = dev.raii_device().createFence(fence_ci);
+			assert(result == vk::Result::eSuccess, "failed to create in-flight fence: {}", vk::to_string(result));
+			fences.push_back(std::move(fence));
 		}
 	}
 

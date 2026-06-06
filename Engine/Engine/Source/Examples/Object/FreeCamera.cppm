@@ -161,7 +161,7 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 					if (!col_tc) {
 						continue;
 					}
-					const auto* shape = std::get_if<physics::box_shape>(&collisions[k].shape);
+					const auto* shape = std::get_if<physics::box_shape>(&collisions[k].shape.value);
 					if (!shape) {
 						continue;
 					}
@@ -197,7 +197,7 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 						if (!col_tc) {
 							continue;
 						}
-						const auto* shape = std::get_if<physics::box_shape>(&collisions[k].shape);
+						const auto* shape = std::get_if<physics::box_shape>(&collisions[k].shape.value);
 						if (!shape) {
 							continue;
 						}

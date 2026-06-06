@@ -1,7 +1,6 @@
 export module gse.assets:resolve_handles;
 
 import std;
-import gse.std_meta;
 import gse.meta;
 import gse.ecs;
 

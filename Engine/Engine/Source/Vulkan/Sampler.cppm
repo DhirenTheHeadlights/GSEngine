@@ -12,9 +12,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class sampler final : public non_copyable {
 	public:
-		sampler() = default;
-
-		~sampler() override = default;
+		sampler() {}
+		~sampler() = default;
 
 		sampler(
 			sampler&&
@@ -27,7 +26,7 @@ export namespace gse::vulkan {
 		[[nodiscard]] static auto create(
 			const device& dev,
 			const gpu::sampler_desc& desc
-		) -> sampler;
+		) -> gpu::expected<sampler>;
 
 		[[nodiscard]] auto native(
 			this const sampler& self
@@ -47,7 +46,7 @@ export namespace gse::vulkan {
 gse::vulkan::sampler::sampler(vk::raii::Sampler&& sampler) : m_sampler(std::move(sampler)) {
 }
 
-auto gse::vulkan::sampler::create(const device& dev, const gpu::sampler_desc& desc) -> sampler {
+auto gse::vulkan::sampler::create(const device& dev, const gpu::sampler_desc& desc) -> gpu::expected<sampler> {
 	const vk::SamplerCreateInfo info{
 		.magFilter = to_vk(desc.mag),
 		.minFilter = to_vk(desc.min),
@@ -66,7 +65,11 @@ auto gse::vulkan::sampler::create(const device& dev, const gpu::sampler_desc& de
 		.borderColor = to_vk(desc.border),
 		.unnormalizedCoordinates = vk::False
 	};
-	return sampler(dev.raii_device().createSampler(info));
+	auto [result, vk_sampler] = dev.raii_device().createSampler(info);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(result));
+	}
+	return sampler(std::move(vk_sampler));
 }
 
 auto gse::vulkan::sampler::native(this const sampler& self) -> gpu::sampler_handle {

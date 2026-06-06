@@ -60,7 +60,7 @@ export namespace gse::vulkan {
 			bool name_resources = false;
 		};
 
-		~device() override;
+		~device();
 
 		device(
 			device&&

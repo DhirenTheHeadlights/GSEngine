@@ -1,9 +1,8 @@
-module gse.gpu;
+module gse.gpu:context_impl;
 
 import std;
 
 import :context;
-import gse.vulkan;
 import :device;
 import :swap_chain;
 import :frame;
@@ -12,11 +11,12 @@ import :render_graph;
 import :render_pass;
 import :bindless;
 
+import gse.vulkan;
+
 import gse.os;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 import gse.log;
 
 auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data& d) -> async::task<> {

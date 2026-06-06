@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:light_culling_renderer_impl;
 
 import std;
 
@@ -9,6 +9,7 @@ import :spot_light;
 import :directional_light;
 import :camera_system;
 import :depth_prepass_renderer;
+
 
 import gse.os;
 import gse.assets;
@@ -71,17 +72,19 @@ namespace gse::renderer::light_culling {
 	>;
 }
 
-auto gse::renderer::light_culling::system::tile_count(const data& d) -> vec2u {
-	return { (d.current_extent.x() + tile_size - 1) / tile_size, (d.current_extent.y() + tile_size - 1) / tile_size };
+namespace gse::renderer::light_culling {
+auto tile_count(const system::data& d) -> vec2u {
+	return { (d.current_width + tile_size - 1) / tile_size, (d.current_height + tile_size - 1) / tile_size };
 }
 
-auto gse::renderer::light_culling::system::update_depth_descriptor(const gpu::context::data& gpu_s, data& d) -> void {
+auto update_depth_descriptor(const gpu::context::data& gpu_s, system::data& d) -> void {
 	d.depth_view.rebind_sampled(*gpu_s.bindless_heaps, gpu_s.render_graph->depth_image());
 }
 
-auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::context::data& gpu_s, data& d) -> void {
+auto rebuild_tile_buffers(const gpu::context::data& gpu_s, system::data& d) -> void {
 	const auto ext = gpu_s.render_graph->extent();
-	d.current_extent = ext;
+	d.current_width = ext.x();
+	d.current_height = ext.y();
 
 	const auto tiles = tile_count(d);
 	const std::uint32_t total_tiles = tiles.x() * tiles.y();
@@ -109,6 +112,7 @@ auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::conte
 	}
 
 	update_depth_descriptor(gpu_s, d);
+}
 }
 
 auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {

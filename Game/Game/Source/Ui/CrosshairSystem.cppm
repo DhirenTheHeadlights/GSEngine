@@ -17,7 +17,7 @@ export namespace gs {
 
 		static auto draw_preview(
 			const gse::gui::draw_context& ctx,
-			const gse::gui::ui_rect& rect,
+			const gse::rect_t<gse::vec2f>& rect,
 			const data& crosshair
 		) -> void;
 
@@ -101,7 +101,7 @@ auto gs::crosshair_system::draw_settings_page(gse::gui::builder& b, gse::setting
 		.title = "Crosshair"
 	});
 
-	const gse::gui::ui_rect preview = lo::reserve_row(ctx, sty.preview_height, sty.padding);
+	const gse::rect_t<gse::vec2f> preview = lo::reserve_row(ctx, sty.preview_height, sty.padding);
 	draw_preview(ctx, preview, pending);
 
 	b.scroll_region(
@@ -114,7 +114,7 @@ auto gs::crosshair_system::draw_settings_page(gse::gui::builder& b, gse::setting
 	);
 }
 
-auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect, const data& crosshair) -> void {
+auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const data& crosshair) -> void {
 	const auto& sty = ctx.style;
 	const float border = sty.separator_thickness;
 	const gse::vec4f border_color = sty.color_border;
@@ -126,7 +126,7 @@ auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const
 	});
 
 	ctx.queue_sprite({
-		.rect = gse::gui::ui_rect::from_position_size(
+		.rect = gse::rect_t<gse::vec2f>::from_position_size(
 			rect.top_left(),
 			{ rect.width(), border }
 		),
@@ -134,7 +134,7 @@ auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
-		.rect = gse::gui::ui_rect::from_position_size(
+		.rect = gse::rect_t<gse::vec2f>::from_position_size(
 			{ rect.left(), rect.bottom() + border },
 			{ rect.width(), border }
 		),
@@ -142,7 +142,7 @@ auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
-		.rect = gse::gui::ui_rect::from_position_size(
+		.rect = gse::rect_t<gse::vec2f>::from_position_size(
 			rect.top_left(),
 			{ border, rect.height() }
 		),
@@ -150,7 +150,7 @@ auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
-		.rect = gse::gui::ui_rect::from_position_size(
+		.rect = gse::rect_t<gse::vec2f>::from_position_size(
 			{ rect.right() - border, rect.top() },
 			{ border, rect.height() }
 		),
@@ -167,7 +167,7 @@ auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const
 	const float gap = crosshair.gap;
 	const float outline = crosshair.outline_thickness;
 
-	const auto push_arm = [&](const gse::gui::ui_rect& r) {
+	const auto push_arm = [&](const gse::rect_t<gse::vec2f>& r) {
 		if (outline > 0.f) {
 			ctx.queue_sprite({
 				.rect = r.inset({ -outline, -outline }),
@@ -183,19 +183,19 @@ auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const
 	};
 
 	if (arm > 0.f) {
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() - gap - arm, center.y() + thickness * 0.5f },
 			{ arm, thickness }
 		));
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() + gap, center.y() + thickness * 0.5f },
 			{ arm, thickness }
 		));
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() - thickness * 0.5f, center.y() + gap + arm },
 			{ thickness, arm }
 		));
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() - thickness * 0.5f, center.y() - gap },
 			{ thickness, arm }
 		));
@@ -203,7 +203,7 @@ auto gs::crosshair_system::draw_preview(const gse::gui::draw_context& ctx, const
 
 	if (crosshair.show_dot) {
 		const float dot = crosshair.dot_size;
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() - dot * 0.5f, center.y() + dot * 0.5f },
 			{ dot, dot }
 		));

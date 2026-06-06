@@ -144,6 +144,9 @@ export namespace gse {
 		template <typename T>
 		auto channel() -> gse::channel<T>&;
 
+		template <typename T>
+		auto read_channel() -> channel_read_guard<T>;
+
 		auto make_channel_writer() -> channel_writer;
 
 		template <typename T>
@@ -243,6 +246,11 @@ auto gse::scheduler::channel() -> gse::channel<T>& {
 }
 
 template <typename T>
+auto gse::scheduler::read_channel() -> channel_read_guard<T> {
+	return channel_read_guard<T>(m_channels_store.ensure_typed<T>().data.read_raw());
+}
+
+template <typename T>
 requires gse::is_same_frame_channel_v<T>
 auto gse::scheduler::drain_channel() -> std::vector<T> {
 	return m_channels_store.template drain<T>();
@@ -292,6 +300,6 @@ auto gse::scheduler::queue_add_system(Args&&... args) -> system_handle<S> {
 }
 
 template <typename S, typename... Args>
-auto gse::run_context::add_system(Args&&... args) -> void {
-	(void)m_sched.queue_add_system<S>(std::forward<Args>(args)...);
+auto gse::queue_add_system_helper(scheduler& sched, Args&&... args) -> void {
+	(void)sched.queue_add_system<S>(std::forward<Args>(args)...);
 }

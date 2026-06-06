@@ -130,7 +130,7 @@ export namespace gse::resource {
 			asset::data& d
 		);
 
-		~loader() override = default;
+		~loader() = default;
 
 		auto flush() -> void override;
 

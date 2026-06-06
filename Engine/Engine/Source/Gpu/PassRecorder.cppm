@@ -4,7 +4,6 @@ import std;
 
 import :aliases;
 
-import gse.std_meta;
 import gse.meta;
 import gse.vulkan;
 import gse.math;

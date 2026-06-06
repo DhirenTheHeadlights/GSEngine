@@ -30,7 +30,7 @@ export namespace gs {
 		auto body_rect(
 			const gse::gui::style& sty,
 			gse::vec2f viewport_size
-		) const -> gse::gui::ui_rect override;
+		) const -> gse::rect_t<gse::vec2f> override;
 
 		auto draw_backdrop(
 			gse::gui::draw_context& ctx,
@@ -75,19 +75,19 @@ auto gs::main_menu_screen::eased_progress() const -> float {
 	return 1.0f - inv * inv * inv;
 }
 
-auto gs::main_menu_screen::body_rect(const gse::gui::style& sty, const gse::vec2f viewport_size) const -> gse::gui::ui_rect {
+auto gs::main_menu_screen::body_rect(const gse::gui::style& sty, const gse::vec2f viewport_size) const -> gse::rect_t<gse::vec2f> {
 	const float width = std::min(sty.side_panel_max_width, viewport_size.x() * 0.35f);
 	const float eased = eased_progress();
 	const float left = -width * (1.0f - eased);
-	return gse::gui::ui_rect::from_position_size(
+	return gse::rect_t<gse::vec2f>::from_position_size(
 		{ left, viewport_size.y() },
 		{ width, viewport_size.y() }
 	);
 }
 
 auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
-	const gse::gui::ui_rect full =
-		gse::gui::ui_rect::from_position_size(
+	const gse::rect_t<gse::vec2f> full =
+		gse::rect_t<gse::vec2f>::from_position_size(
 			{ 0.f, viewport_size.y() },
 			{ viewport_size.x(), viewport_size.y() }
 		);
@@ -99,7 +99,7 @@ auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse:
 		.layer = gse::render_layer::popup,
 	});
 
-	const gse::gui::ui_rect panel = body_rect(ctx.style, viewport_size);
+	const gse::rect_t<gse::vec2f> panel = body_rect(ctx.style, viewport_size);
 	const gse::vec4f panel_color = {
 		ctx.style.color_menu_body.x() * 1.05f,
 		ctx.style.color_menu_body.y() * 1.05f,
@@ -115,8 +115,8 @@ auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse:
 	});
 
 	const float border_thickness = ctx.style.separator_thickness;
-	const gse::gui::ui_rect border =
-		gse::gui::ui_rect::from_position_size(
+	const gse::rect_t<gse::vec2f> border =
+		gse::rect_t<gse::vec2f>::from_position_size(
 			{ panel.right() - border_thickness, panel.top() },
 			{ border_thickness, panel.height() }
 		);

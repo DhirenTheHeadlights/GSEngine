@@ -16,7 +16,7 @@ export namespace gse::dx12 {
 	public:
 		device() = default;
 
-		~device() override = default;
+		~device() = default;
 
 		device(
 			device&&

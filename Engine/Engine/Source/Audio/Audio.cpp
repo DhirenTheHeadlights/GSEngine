@@ -10,7 +10,6 @@ import gse.concurrency;
 import gse.assets;
 import gse.ecs;
 import gse.math;
-import gse.gpu;
 import gse.miniaudio;
 
 namespace gse::audio {
@@ -39,13 +38,9 @@ auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool
 	return true;
 }
 
-gse::audio_clip::audio_clip(const std::filesystem::path& filepath)
-	: identifiable(filepath, config::baked_resource_path), m_path(filepath) {
-}
-
 auto gse::audio_clip::load(asset::load_ctx&) -> async::task<> {
 	baked b{};
-	if (!load_baked(m_path, b)) {
+	if (!load_baked(std::filesystem::path(m_path), b)) {
 		co_return;
 	}
 	m_bytes = std::move(b.bytes.storage);

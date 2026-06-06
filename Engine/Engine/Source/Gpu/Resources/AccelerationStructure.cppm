@@ -22,7 +22,7 @@ export namespace gse::gpu {
 	};
 
 	struct tlas_instance_desc {
-		mat4f transform = mat4(1.0f);
+		spatial_matrix transform = spatial_matrix(1.0f);
 		std::uint32_t custom_index = 0;
 		std::uint8_t mask = 0xFF;
 		std::uint32_t sbt_offset = 0;

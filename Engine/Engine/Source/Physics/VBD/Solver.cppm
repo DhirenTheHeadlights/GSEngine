@@ -241,11 +241,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	{
 		trace::scope_guard sg{ trace_id<"vbd::coloring">() };
-		static_vector<bool, limits.max_bodies> locked;
+		std::inplace_vector<bool, limits.max_bodies> locked;
 		for (std::uint32_t i = 0; i < num_bodies; ++i) {
 			locked.push_back(m_bodies[i].locked);
 		}
-		m_graph.compute_coloring(num_bodies, locked.span());
+		m_graph.compute_coloring(num_bodies, locked);
 	}
 
 	m_body_motor_index.assign(num_bodies, no_motor);
@@ -1016,7 +1016,7 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 auto gse::vbd::solver::update_dual(const float alpha) -> step_delta {
 	auto& contacts = m_graph.contact_constraints();
 	const auto worker_count = std::max<std::size_t>(1, task::thread_count());
-	static_vector<length, 64> per_worker_max;
+	std::inplace_vector<length, 64> per_worker_max;
 	for (std::size_t i = 0; i < worker_count; ++i) {
 		per_worker_max.push_back(length{});
 	}
@@ -1351,7 +1351,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_delta {
 	auto& joints = m_graph.joint_constraints();
 	const auto worker_count = std::max<std::size_t>(1, task::thread_count());
-	static_vector<step_delta, 64> per_worker_max;
+	std::inplace_vector<step_delta, 64> per_worker_max;
 	for (std::size_t i = 0; i < worker_count; ++i) {
 		per_worker_max.push_back({});
 	}

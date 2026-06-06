@@ -4,7 +4,6 @@ import std;
 
 import gse.os;
 import gse.assets;
-import gse.gpu;
 import gse.math;
 import gse.meta;
 import gse.core;
@@ -33,9 +32,6 @@ export namespace gse::settings {
 
 	struct dimensioned_input_state {
 		gui::text_input_state input_state;
-		gui::dropdown_state dropdown_state;
-		std::size_t selected_unit_index = 0;
-		std::vector<std::string> unit_names;
 		bool initialized = false;
 	};
 
@@ -87,77 +83,6 @@ export namespace gse::settings {
 		) -> void;
 		auto discard_all() -> void;
 	};
-
-	template <typename Q>
-	struct quantity_unit_op {
-		using value_type = typename Q::value_type;
-		std::string name;
-		value_type (
-			*to_value
-		)(
-			const Q&
-		);
-		Q (
-			*from_value
-		)(
-			value_type
-		);
-	};
-
-	template <typename Q, typename U>
-	auto make_unit_op() -> quantity_unit_op<Q> {
-		constexpr U unit_inst{};
-		return {
-			.name = std::string(std::string_view(unit_inst.unit_name)),
-			.to_value = +[](const Q& v) -> typename Q::value_type {
-				return gse::internal::value_in<U>(v);
-			},
-			.from_value = +[](typename Q::value_type val) -> Q {
-				return Q::template from<U>(val);
-			},
-		};
-	}
-
-	template <typename Q>
-	using unit_family_tag_t = typename Q::default_unit::quantity_tag;
-
-	template <typename Q>
-	auto unit_ops_for() -> const std::vector<quantity_unit_op<Q>>& {
-		static const std::vector<quantity_unit_op<Q>> ops = [] {
-			std::vector<quantity_unit_op<Q>> result;
-			constexpr auto units_tuple = gse::internal::quantity_units<unit_family_tag_t<Q>>::units;
-			std::apply(
-				[&result](const auto&... us) {
-					(result.push_back(make_unit_op<Q, std::remove_cvref_t<decltype(us)>>()), ...);
-				},
-				units_tuple
-			);
-			return result;
-		}();
-		return ops;
-	}
-
-	template <typename Q>
-	auto default_unit_index_for() -> std::size_t {
-		using DefaultU = typename Q::default_unit;
-		constexpr auto units_tuple = gse::internal::quantity_units<unit_family_tag_t<Q>>::units;
-		std::size_t result = 0;
-		std::size_t cursor = 0;
-		std::apply(
-			[&](const auto&... us) {
-				auto visit = [&](auto unit_inst) {
-					using U = std::remove_cvref_t<decltype(unit_inst)>;
-					if (std::is_same_v<DefaultU, U>) {
-						result = cursor;
-					}
-					++cursor;
-				};
-				(visit(us), ...);
-			},
-			units_tuple
-		);
-		return result;
-	}
 
 	using custom_draw_fn = void (
 			*
@@ -400,8 +325,6 @@ auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename
 			using describe_t = [:meta::find_describe(m):];
 			constexpr std::string_view describe_text = describe_t::value;
 			constexpr std::uint64_t label_hash = stable_id(label);
-			constexpr std::uint64_t input_suffix_hash = hash_combine(label_hash, stable_id("##Input"));
-			constexpr std::uint64_t unit_suffix_hash = hash_combine(label_hash, stable_id("##Unit"));
 			constexpr std::uint64_t tooltip_suffix_hash = hash_combine(label_hash, stable_id("##tooltip"));
 			constexpr bool field_needs_restart = has_annotation<settings::restart_required>(m);
 
@@ -474,101 +397,23 @@ auto gse::settings::draw_fields(gui::builder& b, panel_state& ps, const typename
 			}
 			else if constexpr (gse::internal::is_quantity<F>) {
 				auto& dim_state = ps.dimensioned_states[field_key];
-				const auto& ops = unit_ops_for<F>();
 				auto& buffer = ps.input_buffers[field_key];
+				using unit_t = typename F::default_unit;
 
 				if (!dim_state.initialized) {
-					dim_state.selected_unit_index = default_unit_index_for<F>();
-					dim_state.unit_names.reserve(ops.size());
-					for (const auto& op : ops) {
-						dim_state.unit_names.push_back(op.name);
-					}
-					buffer = std::format("{}", ops[dim_state.selected_unit_index].to_value(local_value));
+					buffer = std::format("{}", gse::internal::value_in<unit_t>(local_value));
 					dim_state.initialized = true;
 				}
 
-				if (dim_state.selected_unit_index >= ops.size()) {
-					dim_state.selected_unit_index = 0;
-				}
-				const auto& current_op = ops[dim_state.selected_unit_index];
-				const bool has_unit_picker = ops.size() > 1;
-
-				if (has_unit_picker) {
-					auto& ctx = b.ctx;
-					if (ctx.current_menu) {
-						const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
-						const gse::gui::ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
-						const float row_y = ctx.layout_cursor.y();
-						const float label_width = content_rect.width() * 0.40f;
-						const float unit_width = content_rect.width() * 0.15f;
-						const float value_width = content_rect.width() - label_width - unit_width;
-
-						const gse::gui::ui_rect label_rect = gse::gui::ui_rect::from_position_size(
-							{ content_rect.left(), row_y },
-							{ label_width, widget_height }
-						);
-						const gse::gui::ui_rect value_rect = gse::gui::ui_rect::from_position_size(
-							{ content_rect.left() + label_width, row_y },
-							{ value_width, widget_height }
-						);
-						const gse::gui::ui_rect unit_rect = gse::gui::ui_rect::from_position_size(
-							{ content_rect.left() + label_width + value_width, row_y },
-							{ unit_width, widget_height }
-						);
-
-						ctx.queue_text({
-							.font = ctx.font,
-							.text = display_label,
-							.position = { label_rect.left(), label_rect.center().y() + ctx.font->vertical_center_offset(ctx.style.font_size) },
-							.scale = ctx.style.font_size,
-							.color = ctx.style.color_text,
-							.clip_rect = label_rect,
-						});
-
-						const gse::id input_id = gse::gui::ids::make_from_key(hash_combine(category_hash, input_suffix_hash));
-						gse::gui::draw::text_input_in_rect(
-							ctx,
-							input_id,
-							buffer,
-							dim_state.input_state,
-							value_rect,
-							b.hot_widget_id,
-							b.focus_widget_id
-						);
-
-						const std::size_t prev_index = dim_state.selected_unit_index;
-						const auto dd_result = gse::gui::draw::dropdown_in_rect_keyed(
-							ctx,
-							hash_combine(category_hash, unit_suffix_hash),
-							dim_state.selected_unit_index,
-							dim_state.unit_names,
-							dim_state.dropdown_state,
-							unit_rect,
-							b.hot_widget_id,
-							b.active_widget_id
-						);
-						if (dd_result.changed) {
-							dim_state.selected_unit_index = dd_result.new_index;
-						}
-						if (dim_state.selected_unit_index != prev_index) {
-							const auto& new_op = ops[dim_state.selected_unit_index];
-							buffer = std::format("{}", new_op.to_value(local_value));
-						}
-
-						ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
-					}
-				}
-				else {
-					b.draw<gui::text_input>({
-						.name = display_label,
-						.buffer = buffer,
-						.state = dim_state.input_state,
-					});
-				}
+				b.draw<gui::text_input>({
+					.name = display_label,
+					.buffer = buffer,
+					.state = dim_state.input_state,
+				});
 
 				typename F::value_type typed_value{};
 				if (gse::parse(buffer, typed_value)) {
-					local_value = current_op.from_value(typed_value);
+					local_value = F::template from<unit_t>(typed_value);
 				}
 			}
 			else if constexpr (gse::is_arithmetic<F>) {

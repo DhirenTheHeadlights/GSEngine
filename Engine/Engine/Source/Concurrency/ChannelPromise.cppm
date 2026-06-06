@@ -154,6 +154,6 @@ auto gse::channel_promise<T>::valid() const -> bool {
 
 template <typename T>
 auto gse::make_promise() -> std::pair<channel_future<T>, channel_promise<T>> {
-	auto state = std::make_shared<promise_state<T>>();
+	std::shared_ptr<promise_state<T>> state(new promise_state<T>());
 	return { channel_future<T>(state), channel_promise<T>(state) };
 }

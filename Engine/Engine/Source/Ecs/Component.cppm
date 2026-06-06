@@ -1,7 +1,6 @@
 export module gse.ecs:component;
 
 import std;
-import gse.std_meta;
 
 import gse.core;
 import gse.meta;

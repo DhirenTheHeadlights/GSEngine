@@ -10,6 +10,7 @@ import :physical_device;
 
 import gse.core;
 import gse.log;
+import gse.assert;
 
 export namespace gse::gpu {
 	struct semaphore_submit_info {
@@ -262,7 +263,9 @@ auto gse::vulkan::find_queue_families(const physical_device& device, const gpu::
 		if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
 			indices.graphics_family = i;
 		}
-		if (vk_device.getSurfaceSupportKHR(i, std::bit_cast<vk::SurfaceKHR>(surface))) {
+		auto [present_result, present_support] = vk_device.getSurfaceSupportKHR(i, std::bit_cast<vk::SurfaceKHR>(surface));
+		assert(present_result == vk::Result::eSuccess, "failed to query surface support: {}", vk::to_string(present_result));
+		if (present_support) {
 			indices.present_family = i;
 		}
 		if ((queue_families[i].queueFlags & vk::QueueFlagBits::eCompute) && !(queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
@@ -313,21 +316,24 @@ auto gse::vulkan::queue::submit_graphics(const gpu::submit_info& info, const gpu
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
-	std::bit_cast<vk::Queue>(m_graphics).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
+	const auto result = std::bit_cast<vk::Queue>(m_graphics).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
+	assert(result == vk::Result::eSuccess, "failed to submit graphics commands: {}", vk::to_string(result));
 }
 
 auto gse::vulkan::queue::submit_compute(const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
-	std::bit_cast<vk::Queue>(m_compute).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
+	const auto result = std::bit_cast<vk::Queue>(m_compute).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
+	assert(result == vk::Result::eSuccess, "failed to submit compute commands: {}", vk::to_string(result));
 }
 
 auto gse::vulkan::queue::submit_video_encode(const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
-	std::bit_cast<vk::Queue>(m_video_encode).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
+	const auto result = std::bit_cast<vk::Queue>(m_video_encode).submit2(vk_info, std::bit_cast<vk::Fence>(signal_fence));
+	assert(result == vk::Result::eSuccess, "failed to submit video encode commands: {}", vk::to_string(result));
 }
 
 auto gse::vulkan::queue::present(const gpu::present_info& info) -> gpu::result {

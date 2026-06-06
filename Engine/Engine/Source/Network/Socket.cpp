@@ -1,18 +1,4 @@
-module;
-
-#ifdef _WIN32
-#pragma comment(lib, "Ws2_32.lib")
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#endif
-
-module gse.network;
+module gse.network:socket_impl;
 
 import std;
 

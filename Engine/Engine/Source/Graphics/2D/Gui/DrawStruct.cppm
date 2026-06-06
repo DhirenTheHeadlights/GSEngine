@@ -2,7 +2,6 @@ export module gse.graphics:draw_struct;
 
 import std;
 
-import gse.std_meta;
 import gse.meta;
 import gse.core;
 import gse.math;

@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:gi_probe_renderer_impl;
 
 import std;
 
@@ -8,6 +8,7 @@ import :camera_system;
 import :geometry_collector;
 import :rt_shadow_renderer;
 import :shared_shaders;
+
 
 import gse.gpu;
 import gse.core;

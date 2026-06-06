@@ -5,14 +5,15 @@ import vulkan;
 
 import :handles;
 import :device;
+import :types;
 
 import gse.core;
+import gse.assert;
 
 export namespace gse::vulkan {
 	class transient_command_pool final : public non_copyable {
 	public:
-		transient_command_pool() = default;
-
+		transient_command_pool() {}
 		~transient_command_pool() = default;
 
 		transient_command_pool(
@@ -27,7 +28,7 @@ export namespace gse::vulkan {
 		static auto create(
 			const device& device,
 			std::uint32_t family
-		) -> transient_command_pool;
+		) -> gpu::expected<transient_command_pool>;
 
 		[[nodiscard]] auto allocate_primary(
 			const device& device
@@ -60,12 +61,16 @@ export namespace gse::vulkan {
 gse::vulkan::transient_command_pool::transient_command_pool(vk::raii::CommandPool&& pool) : m_pool(std::move(pool)) {
 }
 
-auto gse::vulkan::transient_command_pool::create(const device& device, const std::uint32_t family) -> transient_command_pool {
+auto gse::vulkan::transient_command_pool::create(const device& device, const std::uint32_t family) -> gpu::expected<transient_command_pool> {
 	const vk::CommandPoolCreateInfo pool_info{
 		.flags = vk::CommandPoolCreateFlagBits::eTransient,
 		.queueFamilyIndex = family,
 	};
-	return transient_command_pool(device.raii_device().createCommandPool(pool_info));
+	auto [result, pool] = device.raii_device().createCommandPool(pool_info);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(result));
+	}
+	return transient_command_pool(std::move(pool));
 }
 
 auto gse::vulkan::transient_command_pool::allocate_primary(const device& device) -> gpu::command_buffer_handle {
@@ -75,7 +80,8 @@ auto gse::vulkan::transient_command_pool::allocate_primary(const device& device)
 			.level = vk::CommandBufferLevel::ePrimary,
 			.commandBufferCount = allocation_batch_size,
 		};
-		auto fresh = device.raii_device().allocateCommandBuffers(alloc_info);
+		auto [result, fresh] = device.raii_device().allocateCommandBuffers(alloc_info);
+		assert(result == vk::Result::eSuccess, "failed to allocate transient command buffers: {}", vk::to_string(result));
 		for (auto& cb : fresh) {
 			m_owned_cbs.push_back(std::move(cb));
 		}

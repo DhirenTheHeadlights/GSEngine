@@ -1,7 +1,6 @@
 export module gse.assets:asset_format;
 
 import std;
-import gse.std_meta;
 import gse.meta;
 import gse.containers;
 
@@ -36,8 +35,9 @@ export namespace gse::asset_format {
 		static constexpr std::uint32_t value = V;
 	};
 
+	template <bool V = true>
 	struct meta_sidecar {
-		static constexpr bool value = true;
+		static constexpr bool value = V;
 	};
 }
 

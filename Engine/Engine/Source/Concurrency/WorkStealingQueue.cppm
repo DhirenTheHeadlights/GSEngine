@@ -13,7 +13,7 @@ export namespace gse::task {
 			std::size_t initial_capacity = 256
 		);
 
-		~work_stealing_queue() override;
+		~work_stealing_queue();
 
 		auto push(
 			T value
@@ -47,7 +47,7 @@ export namespace gse::task {
 				std::size_t capacity
 			);
 
-			~buffer() override;
+			~buffer();
 
 			[[nodiscard]] auto capacity() const noexcept -> std::size_t;
 
@@ -99,16 +99,14 @@ export namespace gse::task {
 			std::size_t bottom
 		) -> buffer&;
 
+		static constexpr std::size_t cache_line_size = 64;
+
 		std::unique_ptr<buffer> m_current;
 		std::vector<std::unique_ptr<buffer>> m_retired;
 		std::atomic<buffer*> m_buffer{ nullptr };
 		mutable std::shared_mutex m_resize_mutex;
-		alignas(
-			std::hardware_destructive_interference_size
-		) std::atomic<std::size_t> m_top{ 0 };
-		alignas(
-			std::hardware_destructive_interference_size
-		) std::atomic<std::size_t> m_bottom{ 0 };
+		alignas(cache_line_size) std::atomic<std::size_t> m_top{ 0 };
+		alignas(cache_line_size) std::atomic<std::size_t> m_bottom{ 0 };
 	};
 }
 

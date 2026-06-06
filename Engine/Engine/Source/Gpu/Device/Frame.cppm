@@ -68,7 +68,7 @@ export namespace gse::gpu {
 
 		sync m_sync;
 		std::uint32_t m_image_index = 0;
-		std::array<command_buffer_handle, queue_type_count> m_command_buffers{};
+		std::array<std::uint64_t, queue_type_count> m_command_buffers{};
 		std::uint32_t m_current_frame = 0;
 		bool m_frame_in_progress = false;
 		device* m_device;

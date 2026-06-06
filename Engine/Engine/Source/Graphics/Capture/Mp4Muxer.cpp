@@ -1,9 +1,10 @@
-module gse.graphics;
+module gse.graphics:mp4_muxer_impl;
 
 import std;
 
 import :mp4_muxer;
 import :capture_ring;
+
 
 import gse.math;
 import gse.gpu;
@@ -47,7 +48,7 @@ namespace gse::renderer::capture::mp4 {
 			std::array<char, 4> type
 		);
 
-		~box_scope() override;
+		~box_scope();
 
 	private:
 		std::vector<std::byte>& m_out;

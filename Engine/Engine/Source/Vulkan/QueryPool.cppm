@@ -12,9 +12,8 @@ import gse.core;
 export namespace gse::vulkan {
 	class query_pool final : public non_copyable {
 	public:
-		query_pool() = default;
-
-		~query_pool() override = default;
+		query_pool() {}
+		~query_pool() = default;
 
 		query_pool(
 			query_pool&&
@@ -29,7 +28,7 @@ export namespace gse::vulkan {
 			const device& dev,
 			std::uint32_t capacity,
 			std::string_view label = {}
-		) -> query_pool;
+		) -> gpu::expected<query_pool>;
 
 		[[nodiscard]]
 		static auto create_pipeline_stats(
@@ -37,7 +36,7 @@ export namespace gse::vulkan {
 			std::uint32_t capacity,
 			gpu::pipeline_statistic_flags statistics,
 			std::string_view label = {}
-		) -> query_pool;
+		) -> gpu::expected<query_pool>;
 
 		[[nodiscard]] auto handle(
 			this const query_pool& self
@@ -73,12 +72,15 @@ auto gse::vulkan::query_pool::translate_status(const vk::Result r) -> gpu::query
 	return r == vk::Result::eSuccess ? gpu::query_status::success : gpu::query_status::error;
 }
 
-auto gse::vulkan::query_pool::create_timestamp(const device& dev, const std::uint32_t capacity, const std::string_view label) -> query_pool {
+auto gse::vulkan::query_pool::create_timestamp(const device& dev, const std::uint32_t capacity, const std::string_view label) -> gpu::expected<query_pool> {
 	const vk::QueryPoolCreateInfo info{
 		.queryType = vk::QueryType::eTimestamp,
 		.queryCount = capacity,
 	};
-	auto pool = dev.raii_device().createQueryPool(info);
+	auto [result, pool] = dev.raii_device().createQueryPool(info);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(result));
+	}
 	if (!label.empty()) {
 		const std::string name{ label };
 		const vk::DebugUtilsObjectNameInfoEXT name_info{
@@ -91,13 +93,16 @@ auto gse::vulkan::query_pool::create_timestamp(const device& dev, const std::uin
 	return query_pool(std::move(pool));
 }
 
-auto gse::vulkan::query_pool::create_pipeline_stats(const device& dev, const std::uint32_t capacity, const gpu::pipeline_statistic_flags statistics, const std::string_view label) -> query_pool {
+auto gse::vulkan::query_pool::create_pipeline_stats(const device& dev, const std::uint32_t capacity, const gpu::pipeline_statistic_flags statistics, const std::string_view label) -> gpu::expected<query_pool> {
 	const vk::QueryPoolCreateInfo info{
 		.queryType = vk::QueryType::ePipelineStatistics,
 		.queryCount = capacity,
 		.pipelineStatistics = to_vk(statistics),
 	};
-	auto pool = dev.raii_device().createQueryPool(info);
+	auto [result, pool] = dev.raii_device().createQueryPool(info);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(result));
+	}
 	if (!label.empty()) {
 		const std::string name{ label };
 		const vk::DebugUtilsObjectNameInfoEXT name_info{

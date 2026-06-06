@@ -1,0 +1,160 @@
+name: build-gcc-trunk
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (leave blank to auto-generate gcc-trunk-vN+1)"
+        required: false
+      snapshot:
+        description: "GCC weekly snapshot date YYYYMMDD (leave blank for the latest published)"
+        required: false
+      draft:
+        description: "Create release as draft"
+        required: false
+        default: "true"
+  schedule:
+    # Weekly, Monday 07:00 UTC (GCC publishes trunk snapshots over the weekend).
+    - cron: '0 7 * * 1'
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      skip: ${{ steps.r.outputs.skip }}
+      tag: ${{ steps.r.outputs.tag }}
+      snapshot: ${{ steps.r.outputs.snapshot }}
+      draft: ${{ steps.r.outputs.draft }}
+    steps:
+      - id: r
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SNAPSHOT: ${{ inputs.snapshot }}
+          INPUT_DRAFT: ${{ inputs.draft }}
+        run: |
+          set -euo pipefail
+
+          # GCC publishes weekly trunk snapshots as dirs named "17-YYYYMMDD".
+          snapshot="${INPUT_SNAPSHOT:-}"
+          if [[ -z "$snapshot" ]]; then
+            index=$(curl -fsSL https://gcc.gnu.org/pub/gcc/snapshots/)
+            snapshot=$(printf '%s' "$index" | grep -oE '17-[0-9]{8}' | sort -u | tail -1 | sed 's/^17-//')
+          fi
+          [[ -n "$snapshot" ]] || { echo "could not resolve a snapshot date"; exit 1; }
+
+          # Skip if any existing gcc-trunk release already published this snapshot.
+          skip=false
+          if gh api "repos/${{ github.repository }}/releases" --paginate \
+               --jq '.[] | select(.tag_name|test("^gcc-trunk-")) | .body' \
+             | grep -q "$snapshot"; then
+            echo "snapshot $snapshot already published; skipping"
+            skip=true
+          fi
+
+          # Next tag = highest gcc-trunk-vN + 1.
+          tag="${INPUT_TAG:-}"
+          if [[ -z "$tag" ]]; then
+            max=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[].tag_name' \
+              | sed -nE 's/^gcc-trunk-v([0-9]+)$/\1/p' | sort -n | tail -1)
+            max=${max:-0}
+            tag="gcc-trunk-v$((max + 1))"
+          fi
+
+          draft="${INPUT_DRAFT:-false}"
+          {
+            echo "skip=$skip"
+            echo "snapshot=$snapshot"
+            echo "tag=$tag"
+            echo "draft=$draft"
+          } >> "$GITHUB_OUTPUT"
+          echo "resolved: snapshot=$snapshot tag=$tag draft=$draft skip=$skip"
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Free runner disk space
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
+            "$env:AGENT_TOOLSDIRECTORY\Ruby", "$env:AGENT_TOOLSDIRECTORY\Go", `
+            "$env:AGENT_TOOLSDIRECTORY\PyPy", "$env:AGENT_TOOLSDIRECTORY\CodeQL"
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
+
+      - name: Set up MSYS2
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          # base-devel/makepkg + GCC's makedepends (the bootstrap compiler + math libs).
+          install: >-
+            base-devel git
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-autotools mingw-w64-x86_64-binutils
+            mingw-w64-x86_64-crt-git mingw-w64-x86_64-headers-git
+            mingw-w64-x86_64-gmp mingw-w64-x86_64-gperf mingw-w64-x86_64-isl
+            mingw-w64-x86_64-libiconv mingw-w64-x86_64-mpc mingw-w64-x86_64-mpfr
+            mingw-w64-x86_64-python mingw-w64-x86_64-windows-default-manifest
+            mingw-w64-x86_64-winpthreads mingw-w64-x86_64-zlib mingw-w64-x86_64-zstd
+
+      - name: Build + package GCC ${{ needs.resolve.outputs.snapshot }}
+        shell: pwsh
+        run: |
+          python scripts/build_gcc_trunk.py `
+            --snapshot ${{ needs.resolve.outputs.snapshot }} `
+            --msys-root "${{ steps.msys2.outputs.msys2-location }}" `
+            --jobs 4
+
+      - name: Compute artifact SHA256
+        id: hash
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 dist/gcc-trunk-windows-x64.zip).Hash.ToLower()
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+          Write-Output "SHA256: $hash"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcc-trunk-windows-x64
+          path: dist/gcc-trunk-windows-x64.zip
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: ${{ needs.resolve.outputs.tag }}
+          draft: ${{ needs.resolve.outputs.draft == 'true' }}
+          files: dist/gcc-trunk-windows-x64.zip
+          body: |
+            Prebuilt native-Windows **GCC trunk** toolchain (x64), with `-freflection`
+            and `import std` support. Self-contained: compiler + binutils + mingw-w64
+            runtime + libstdc++ std module.
+
+            - Snapshot: `${{ needs.resolve.outputs.snapshot }}` (gcc.gnu.org weekly trunk)
+            - SHA256: `${{ steps.hash.outputs.sha256 }}`
+
+            ## Install
+
+            ```
+            python scripts/install_gcc_trunk.py --tag ${{ needs.resolve.outputs.tag }} --sha256 ${{ steps.hash.outputs.sha256 }} --persist
+            ```
+
+            Then configure as usual — `MINGW_ROOT` is set to the extracted toolchain:
+
+            ```
+            cmake --preset x64-mingw-gcc-Release
+            ```

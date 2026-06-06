@@ -1,10 +1,11 @@
-module gse.graphics;
+module gse.graphics:cull_compute_renderer_impl;
 
 import std;
 
 import :cull_compute_renderer;
 import :geometry_collector;
 import :camera_system;
+
 
 import gse.os;
 import gse.assets;

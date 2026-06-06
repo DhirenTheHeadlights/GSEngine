@@ -14,9 +14,8 @@ export namespace gse::dx12 {
 
 	class swap_chain final : public non_copyable {
 	public:
-		swap_chain() = default;
-
-		~swap_chain() override = default;
+		swap_chain() {}
+		~swap_chain() = default;
 
 		swap_chain(
 			swap_chain&&

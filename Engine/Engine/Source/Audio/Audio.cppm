@@ -4,11 +4,11 @@ import std;
 
 import gse.core;
 import gse.concurrency;
+import gse.config;
 import gse.assets;
 import gse.containers;
 import gse.ecs;
 import gse.math;
-import gse.gpu;
 
 export namespace gse {
 	class audio_clip : public identifiable {
@@ -26,7 +26,8 @@ export namespace gse {
 
 		explicit audio_clip(
 			const std::filesystem::path& filepath
-		);
+		) : identifiable(filepath, config::baked_resource_path), m_path(filepath.string()) {
+		}
 
 		auto load(
 			asset::load_ctx& ctx
@@ -45,7 +46,7 @@ export namespace gse {
 		auto duration() const -> time_t<float, seconds>;
 
 	private:
-		std::filesystem::path m_path;
+		std::string m_path;
 		std::vector<std::byte> m_bytes;
 		std::uint32_t m_sample_rate = 0;
 		std::uint32_t m_channels = 0;

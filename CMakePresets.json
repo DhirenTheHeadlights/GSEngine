@@ -2,169 +2,103 @@
   "version": 3,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 26,
+    "minor": 28,
     "patch": 0
   },
   "configurePresets": [
     {
-      "name": "x64-clang-p2996-libcxx-base",
+      "name": "x64-mingw-gcc-base",
       "hidden": true,
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-static",
         "VCPKG_OVERLAY_PORTS": "${sourceDir}/vcpkg-overlays/ports",
-        "CMAKE_C_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang.exe",
-        "CMAKE_CXX_COMPILER": "$env{CLANG_P2996_ROOT}/bin/clang.exe",
-        "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "$env{CLANG_P2996_ROOT}/bin/clang-scan-deps.exe",
-        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
+        "CMAKE_C_COMPILER": "$env{USERPROFILE}/.gcc-trunk/current/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "$env{USERPROFILE}/.gcc-trunk/current/bin/g++.exe",
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++26 -freflection -mavx2",
         "CMAKE_CXX_MODULE_STD": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "environment": {
-        "PATH": "$env{CLANG_P2996_ROOT}/bin;$penv{PATH}"
-      },
-      "vendor": {
-        "microsoft.com/VisualStudioSettings/CMake/1.0": {
-          "inheritEnvironments": [ "msvc_x64_x64" ]
-        }
-      },
-      "condition": {
-        "type": "notEquals",
-        "lhs": "$env{CLANG_P2996_ROOT}",
-        "rhs": ""
+        "PATH": "$env{USERPROFILE}/.gcc-trunk/current/bin;$penv{PATH}"
       }
     },
     {
-      "name": "x64-clang-p2996-libcxx-Debug",
-      "displayName": "x64 clang-p2996 libc++ Debug",
-      "inherits": "x64-clang-p2996-libcxx-base",
-      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Debug",
+      "name": "x64-mingw-gcc-Debug",
+      "displayName": "x64 MinGW GCC Debug",
+      "inherits": "x64-mingw-gcc-base",
+      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets"
+        "CMAKE_BUILD_TYPE": "Debug"
       }
     },
     {
-      "name": "x64-clang-p2996-libcxx-Release",
-      "displayName": "x64 clang-p2996 libc++ Release",
-      "inherits": "x64-clang-p2996-libcxx-base",
-      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Release",
+      "name": "x64-mingw-gcc-Release",
+      "displayName": "x64 MinGW GCC Release",
+      "inherits": "x64-mingw-gcc-base",
+      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets"
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release"
       }
     },
     {
-      "name": "x64-clang-p2996-libcxx-RelWithDebInfo",
-      "displayName": "x64 clang-p2996 libc++ RelWithDebInfo",
-      "inherits": "x64-clang-p2996-libcxx-base",
-      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-RelWithDebInfo",
+      "name": "x64-mingw-gcc-RelWithDebInfo",
+      "displayName": "x64 MinGW GCC RelWithDebInfo",
+      "inherits": "x64-mingw-gcc-base",
+      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-RelWithDebInfo",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets"
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release"
       }
     },
     {
-      "name": "x64-clang-p2996-libcxx-Release-trace",
-      "displayName": "x64 clang-p2996 libc++ Release + ftime-trace + stats",
-      "inherits": "x64-clang-p2996-libcxx-base",
-      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Release-trace",
+      "name": "x64-mingw-gcc-Profile",
+      "displayName": "x64 MinGW GCC Profile (-ftime-report)",
+      "inherits": "x64-mingw-gcc-base",
+      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Profile",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
-        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2 -ftime-trace -ftime-trace-granularity=100 -Xclang -print-stats"
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release",
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++26 -freflection -mavx2 -ftime-report"
       }
     },
     {
-      "name": "x64-clang-p2996-libcxx-Debug-trace",
-      "displayName": "x64 clang-p2996 libc++ Debug + ftime-trace + stats",
-      "inherits": "x64-clang-p2996-libcxx-base",
-      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Debug-trace",
+      "name": "x64-mingw-gcc-Debug-asan",
+      "displayName": "x64 MinGW GCC Debug + ASAN",
+      "inherits": "x64-mingw-gcc-base",
+      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Debug-asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
-        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2 -ftime-trace -ftime-trace-granularity=100 -Xclang -print-stats"
-      }
-    },
-    {
-      "name": "x64-clang-p2996-libcxx-Debug-asan",
-      "displayName": "x64 clang-p2996 libc++ Debug + ASAN",
-      "inherits": "x64-clang-p2996-libcxx-base",
-      "binaryDir": "${sourceDir}/out/build/x64-clang-p2996-libcxx-Debug-asan",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
-        "CMAKE_CXX_FLAGS_INIT": "-std=c++2c -freflection-latest --target=x86_64-pc-windows-msvc -mavx2 -fsanitize=address -fno-omit-frame-pointer -g",
-        "CMAKE_C_FLAGS_INIT": "--target=x86_64-pc-windows-msvc -fsanitize=address -fno-omit-frame-pointer -g",
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++26 -freflection -mavx2 -fsanitize=address -fno-omit-frame-pointer -g",
+        "CMAKE_C_FLAGS_INIT": "-fsanitize=address -fno-omit-frame-pointer -g",
         "CMAKE_EXE_LINKER_FLAGS_INIT": "-fsanitize=address",
         "CMAKE_SHARED_LINKER_FLAGS_INIT": "-fsanitize=address"
-      }
-    },
-    {
-      "name": "linux-gcc-trunk-Debug",
-      "displayName": "Linux GCC trunk Debug (WSL)",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/out/build/linux-gcc-trunk-Debug",
-      "condition": {
-        "type": "notEquals",
-        "lhs": "$env{WSL_DISTRO_NAME}",
-        "rhs": ""
-      },
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-linux",
-        "CMAKE_C_COMPILER":   "$env{HOME}/gcc-trunk/bin/gcc",
-        "CMAKE_CXX_COMPILER": "$env{HOME}/gcc-trunk/bin/g++",
-        "CMAKE_CXX_FLAGS_INIT": "-std=c++26 -freflection -mavx2 -Wno-changes-meaning",
-        "CMAKE_CXX_MODULE_STD": "ON",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-      },
-      "environment": {
-        "VULKAN_SDK": "$env{HOME}/vulkan-sdk/1.4.341.1/x86_64",
-        "PATH": "$env{HOME}/vulkan-sdk/1.4.341.1/x86_64/bin:$penv{PATH}",
-        "LD_LIBRARY_PATH": "$env{HOME}/vulkan-sdk/1.4.341.1/x86_64/lib:$penv{LD_LIBRARY_PATH}"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "x64-clang-p2996-libcxx-Debug",
-      "configurePreset": "x64-clang-p2996-libcxx-Debug"
+      "name": "x64-mingw-gcc-Debug",
+      "configurePreset": "x64-mingw-gcc-Debug"
     },
     {
-      "name": "linux-gcc-trunk-Debug",
-      "configurePreset": "linux-gcc-trunk-Debug"
+      "name": "x64-mingw-gcc-Release",
+      "configurePreset": "x64-mingw-gcc-Release"
     },
     {
-      "name": "x64-clang-p2996-libcxx-Release",
-      "configurePreset": "x64-clang-p2996-libcxx-Release"
+      "name": "x64-mingw-gcc-RelWithDebInfo",
+      "configurePreset": "x64-mingw-gcc-RelWithDebInfo"
     },
     {
-      "name": "x64-clang-p2996-libcxx-RelWithDebInfo",
-      "configurePreset": "x64-clang-p2996-libcxx-RelWithDebInfo"
+      "name": "x64-mingw-gcc-Profile",
+      "configurePreset": "x64-mingw-gcc-Profile"
     },
     {
-      "name": "x64-clang-p2996-libcxx-Release-trace",
-      "configurePreset": "x64-clang-p2996-libcxx-Release-trace"
-    },
-    {
-      "name": "x64-clang-p2996-libcxx-Debug-trace",
-      "configurePreset": "x64-clang-p2996-libcxx-Debug-trace"
-    },
-    {
-      "name": "x64-clang-p2996-libcxx-Debug-asan",
-      "configurePreset": "x64-clang-p2996-libcxx-Debug-asan"
+      "name": "x64-mingw-gcc-Debug-asan",
+      "configurePreset": "x64-mingw-gcc-Debug-asan"
     }
   ],
   "testPresets": []
