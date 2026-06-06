@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:atmosphere_renderer_impl;
 
 import std;
 
@@ -6,6 +6,7 @@ import :atmosphere_renderer;
 import :camera_system;
 import :forward_renderer;
 import :render_targets;
+
 
 import gse.gpu;
 import gse.core;
@@ -279,7 +280,7 @@ auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context
 		"atmosphere_ubo"
 	);
 
-	d.lut_sampler = gpu::sampler::create(gpu_s.device->allocator(), lut_sampler_desc);
+	d.lut_sampler = gpu::must(gpu::sampler::create(gpu_s.device->allocator(), lut_sampler_desc));
 	d.lut_sampler_bindless = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, lut_sampler_desc);
 	d.sky_view_sampler_bindless = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, sky_view_sampler_desc);
 

@@ -119,10 +119,10 @@ export namespace gse {
 			task::concurrent_queue<input::event> input_events;
 		};
 
-		static auto run(
-			run_context& ctx,
+		static auto tick(
+			scheduler& sched,
 			data& d
-		) -> async::task<>;
+		) -> void;
 
 		static auto shutdown(
 			shutdown_context& phase,

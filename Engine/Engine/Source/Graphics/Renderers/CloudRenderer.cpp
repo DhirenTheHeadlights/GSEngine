@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:cloud_renderer_impl;
 
 import std;
 
@@ -6,6 +6,7 @@ import :cloud_renderer;
 import :atmosphere_renderer;
 import :camera_system;
 import :render_targets;
+
 
 import gse.gpu;
 import gse.core;

@@ -45,13 +45,13 @@ export namespace gse::vulkan {
 		static auto create(
 			const device& dev,
 			const shader_object_create_info& info
-		) -> shader_object;
+		) -> gpu::expected<shader_object>;
 
 		[[nodiscard]]
 		static auto create_linked(
 			const device& dev,
 			std::span<const shader_object_create_info> infos
-		) -> std::vector<shader_object>;
+		) -> gpu::expected<std::vector<shader_object>>;
 
 		[[nodiscard]] auto handle() const -> gpu::shader_object_handle;
 
@@ -89,7 +89,7 @@ gse::vulkan::shader_object::shader_object(vk::raii::ShaderEXT&& shader, const gp
 	: m_shader(std::move(shader)), m_stage(stage) {
 }
 
-auto gse::vulkan::shader_object::create(const device& dev, const shader_object_create_info& info) -> shader_object {
+auto gse::vulkan::shader_object::create(const device& dev, const shader_object_create_info& info) -> gpu::expected<shader_object> {
 	std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT> subgroup_size_scratch;
 	std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT> mapping_scratch;
 	shader_spec_scratch spec_scratch;
@@ -101,11 +101,14 @@ auto gse::vulkan::shader_object::create(const device& dev, const shader_object_c
 		{}
 	);
 
-	auto shaders = dev.raii_device().createShadersEXT(vk_info);
+	auto [result, shaders] = dev.raii_device().createShadersEXT(vk_info);
+	if (result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(result));
+	}
 	return shader_object(std::move(shaders[0]), info.stage);
 }
 
-auto gse::vulkan::shader_object::create_linked(const device& dev, const std::span<const shader_object_create_info> infos) -> std::vector<shader_object> {
+auto gse::vulkan::shader_object::create_linked(const device& dev, const std::span<const shader_object_create_info> infos) -> gpu::expected<std::vector<shader_object>> {
 	std::vector<std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>> subgroup_size_scratch(infos.size());
 	std::vector<std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>> mapping_scratch(infos.size());
 	std::vector<shader_spec_scratch> spec_scratch(infos.size());
@@ -123,7 +126,10 @@ auto gse::vulkan::shader_object::create_linked(const device& dev, const std::spa
 		);
 	}
 
-	auto shaders = dev.raii_device().createShadersEXT(vk_infos);
+	auto [create_result, shaders] = dev.raii_device().createShadersEXT(vk_infos);
+	if (create_result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(create_result));
+	}
 	std::vector<shader_object> result;
 	result.reserve(shaders.size());
 	for (std::size_t i = 0; i < shaders.size(); ++i) {

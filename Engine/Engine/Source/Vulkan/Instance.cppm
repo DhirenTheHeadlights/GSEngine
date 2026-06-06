@@ -8,6 +8,7 @@ import :types;
 import :physical_device;
 
 import gse.core;
+import gse.assert;
 import gse.log;
 import gse.os;
 
@@ -62,7 +63,7 @@ auto gse::vulkan::instance::create_surface(const window::data& win) -> void {
 }
 
 auto gse::vulkan::instance::enumerate_physical_devices() const -> std::vector<physical_device> {
-	auto raii_devices = m_instance.enumeratePhysicalDevices();
+	auto raii_devices = std::move(*m_instance.enumeratePhysicalDevices());
 	std::vector<physical_device> result;
 	result.reserve(raii_devices.size());
 	for (auto& raii_device : raii_devices) {
@@ -81,7 +82,7 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	std::vector<const char*> validation_layers;
 	if (enable_validation) {
 		constexpr auto layer_name = "VK_LAYER_KHRONOS_validation";
-		const auto available = vk::enumerateInstanceLayerProperties();
+		const auto available = *vk::enumerateInstanceLayerProperties();
 		const bool layer_present = std::ranges::any_of(
 			available,
 			[&](const vk::LayerProperties& p) {
@@ -101,7 +102,7 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		}
 	}
 
-	const std::uint32_t highest_supported_version = vk::enumerateInstanceVersion();
+	const std::uint32_t highest_supported_version = *vk::enumerateInstanceVersion();
 	const vk::ApplicationInfo app_info{
 		.pApplicationName = "GSEngine",
 		.applicationVersion = 1,
@@ -113,7 +114,7 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	std::vector extensions(required_extensions.begin(), required_extensions.end());
 	extensions.push_back(vk::EXTDebugUtilsExtensionName);
 
-	const auto available_instance_extensions = vk::enumerateInstanceExtensionProperties();
+	const auto available_instance_extensions = *vk::enumerateInstanceExtensionProperties();
 	const auto has_instance_extension = [&](const std::string_view name) {
 		return std::ranges::any_of(
 			available_instance_extensions,
@@ -217,32 +218,27 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		.ppEnabledExtensionNames = extensions.data(),
 	};
 
-	vk::raii::Instance instance = nullptr;
 	vk::raii::Context context;
 
-	try {
-		instance = vk::raii::Instance(context, create_info);
-		log::println(
-			log::category::vulkan,
-			"Vulkan Instance Created{}!",
-			enable_validation ? " with validation layers" : ""
-		);
-	}
-	catch (vk::SystemError& err) {
-		log::println(log::level::error, log::category::vulkan, "Failed to create Vulkan instance: {}", err.what());
-		throw;
-	}
+	auto [result, instance] = context.createInstance(create_info);
+	assert(result == vk::Result::eSuccess, "Failed to create Vulkan instance: {}", vk::to_string(result));
+	log::println(
+		log::category::vulkan,
+		"Vulkan Instance Created{}!",
+		enable_validation ? " with validation layers" : ""
+	);
 
 	vk::detail::defaultDispatchLoaderDynamic.init(*instance);
 
 	vk::raii::DebugUtilsMessengerEXT debug_messenger = nullptr;
 	if (enable_validation) {
-		try {
-			debug_messenger = instance.createDebugUtilsMessengerEXT(debug_create_info);
+		auto [messenger_result, messenger] = instance.createDebugUtilsMessengerEXT(debug_create_info);
+		if (messenger_result == vk::Result::eSuccess) {
+			debug_messenger = std::move(messenger);
 			log::println(log::category::vulkan, "Debug Messenger Created Successfully!");
 		}
-		catch (vk::SystemError& err) {
-			log::println(log::level::error, log::category::vulkan, "Failed to create Debug Messenger: {}", err.what());
+		else {
+			log::println(log::level::error, log::category::vulkan, "Failed to create Debug Messenger: {}", vk::to_string(messenger_result));
 		}
 	}
 

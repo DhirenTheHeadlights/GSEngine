@@ -108,6 +108,8 @@ export namespace gse::physics {
 		vec3f twist_axis = { 0.f, 1.f, 0.f };
 	};
 
+	using joint_config = std::variant<fixed_joint, distance_joint, hinge_joint, slider_joint, spring_joint, muscle_joint, ball_joint, universal_joint>;
+
 	struct gpu_upload_payload {
 		std::vector<vbd::body_state> bodies;
 		std::vector<vbd::velocity_motor_constraint> motors;

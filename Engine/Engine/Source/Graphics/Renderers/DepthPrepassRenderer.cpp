@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:depth_prepass_renderer_impl;
 
 import std;
 
@@ -8,6 +8,7 @@ import :cull_compute_renderer;
 import :physics_transform_renderer;
 import :camera_system;
 import :render_targets;
+
 
 import gse.os;
 import gse.assets;

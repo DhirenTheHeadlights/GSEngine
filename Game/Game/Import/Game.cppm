@@ -21,6 +21,7 @@ export import :network_screen;
 export import :orbit_camera;
 export import :pause_menu_system;
 export import :player;
+export import :piston;
 export import :pose_driver;
 export import :runtime_spawns;
 export import :sandbox_scene;
@@ -32,5 +33,5 @@ export import :tumbler;
 export import :world_loader;
 
 export namespace gs {
-	using networked_components = gse::network::engine_components;
+	using networked_components = gse::engine_networked_components;
 }

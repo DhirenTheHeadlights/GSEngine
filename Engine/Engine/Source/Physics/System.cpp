@@ -1,4 +1,4 @@
-module gse.physics;
+module gse.physics:system_impl;
 
 import std;
 
@@ -26,7 +26,6 @@ import gse.math;
 import gse.meta;
 import gse.gpu;
 import gse.assets;
-import gse.graphics;
 
 namespace gse::physics {
 	auto make_joint_definition(
@@ -606,7 +605,7 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 				.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
 				.body_count = d.gpu_solver.body_count(),
 				.body_stride = sizeof(vbd::body_state),
-				.position_offset = std::meta::offset_of_v<^^vbd::body_state::position>
+				.position_offset = static_cast<std::uint32_t>(std::meta::offset_of(^^vbd::body_state::position).bytes)
 			});
 		}
 		return;
@@ -1287,6 +1286,6 @@ auto gse::physics::system::frame(frame_context& ctx, const gpu::context::data* g
 		.snapshot = &d.gpu_solver.snapshot_buffer(d.gpu_solver.latest_snapshot_slot()),
 		.body_count = d.gpu_solver.body_count(),
 		.body_stride = sizeof(vbd::body_state),
-		.position_offset = std::meta::offset_of_v<^^vbd::body_state::position>
+		.position_offset = static_cast<std::uint32_t>(std::meta::offset_of(^^vbd::body_state::position).bytes)
 	});
 }

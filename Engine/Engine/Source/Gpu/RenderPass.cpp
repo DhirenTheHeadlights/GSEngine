@@ -1,4 +1,4 @@
-module gse.gpu;
+module gse.gpu:render_pass_impl;
 
 import std;
 
@@ -9,7 +9,6 @@ import gse.assert;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
-import gse.ecs;
 
 gse::gpu::request_pass_awaitable::request_pass_awaitable(const frame_context& ctx, render_pass_descriptor desc) noexcept
 	: m_ctx(std::addressof(ctx)), m_desc(std::move(desc)) {

@@ -1,12 +1,15 @@
-module gse.os;
+module gse.os:window_impl;
 
 import std;
+
+import :window;
+import :keys;
+import :input_events;
+
 import vulkan;
 import gse.glfw;
 import gse.win32;
 
-import :keys;
-import :input_events;
 
 import gse.assert;
 import gse.math;
@@ -53,6 +56,9 @@ namespace gse {
 		int glfw_button
 	) -> std::optional<mouse_button>;
 
+	auto create_window(
+		window::data& d
+	) -> void;
 }
 
 auto gse::to_input_key(const int glfw_key) -> std::optional<key> {
@@ -224,7 +230,7 @@ auto gse::apply_display_mode(window::data& d, const display_mode mode) -> void {
 	glfwSetWindowMonitor(d.handle, target_monitor, 0, 0, target_width, target_height, target_refresh);
 }
 
-auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
+auto gse::create_window(window::data& d) -> void {
 	assert(glfwInit(), "Error initializing GLFW");
 	assert(glfwVulkanSupported(), "Vulkan not supported");
 
@@ -247,7 +253,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwSetKeyCallback(
 		d.handle,
 		[](GLFWwindow* w, const int key, int, const int action, int) {
-			auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
+			auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
 			}
@@ -271,7 +277,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwSetMouseButtonCallback(
 		d.handle,
 		[](GLFWwindow* w, const int button, const int action, int) {
-			auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
+			auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
 			}
@@ -294,7 +300,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwSetCursorPosCallback(
 		d.handle,
 		[](GLFWwindow* w, double xpos, double ypos) {
-			auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
+			auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
 			}
@@ -320,7 +326,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwSetScrollCallback(
 		d.handle,
 		[](GLFWwindow* w, const double xoffset, const double yoffset) {
-			if (auto* self = static_cast<data*>(glfwGetWindowUserPointer(w))) {
+			if (auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w))) {
 				self->input_events.push(input::mouse_scrolled{ xoffset, yoffset });
 			}
 		}
@@ -329,7 +335,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwSetCharCallback(
 		d.handle,
 		[](GLFWwindow* w, const unsigned int codepoint) {
-			if (auto* self = static_cast<data*>(glfwGetWindowUserPointer(w))) {
+			if (auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w))) {
 				self->input_events.push(input::text_entered{ codepoint });
 			}
 		}
@@ -338,7 +344,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwSetWindowFocusCallback(
 		d.handle,
 		[](GLFWwindow* w, const int focused) {
-			auto* self = static_cast<data*>(glfwGetWindowUserPointer(w));
+			auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w));
 			if (!self) {
 				return;
 			}
@@ -349,7 +355,7 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwSetFramebufferSizeCallback(
 		d.handle,
 		[](GLFWwindow* w, const int, const int) {
-			if (auto* self = static_cast<data*>(glfwGetWindowUserPointer(w))) {
+			if (auto* self = static_cast<window::data*>(glfwGetWindowUserPointer(w))) {
 				self->framebuffer_resized = true;
 			}
 		}
@@ -369,52 +375,58 @@ auto gse::window::run(run_context& ctx, data& d) -> async::task<> {
 	glfwFocusWindow(d.handle);
 
 	if (d.native_frame) {
-		install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width);
+		window::install_native_frame(d.handle, &d.chrome_caption_height, &d.chrome_controls_width);
+	}
+}
+
+auto gse::window::tick(scheduler& sched, data& d) -> void {
+	if (!d.handle) {
+		create_window(d);
 	}
 
-	while (true) {
-		for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
-			set_ui_focus(d, focus);
-		}
+	poll_events();
 
-		for ([[maybe_unused]] const auto& req : ctx.read_channel<window_minimize_request>()) {
-			d.cmd_minimize = true;
-		}
-
-		for ([[maybe_unused]] const auto& req : ctx.read_channel<window_toggle_maximize_request>()) {
-			d.cmd_toggle_maximize = true;
-		}
-
-		for (const auto& req : ctx.read_channel<window_chrome_metrics_request>()) {
-			d.chrome_caption_height = req.caption_height;
-			d.chrome_controls_width = req.controls_width;
-		}
-
-		if (d.monitor.value != d.last_monitor_index) {
-			const int old_monitor = d.last_monitor_index;
-			d.last_monitor_index = d.monitor.value;
-
-			if (d.current_display_mode == display_mode::windowed && old_monitor != d.monitor.value) {
-				move_window_to_monitor(d, d.monitor.value);
-			}
-		}
-
-		if (d.focused) {
-			apply_cursor_mode(d);
-
-			const auto desired_display_mode = static_cast<display_mode>(d.display_mode.value);
-			if (d.current_display_mode != desired_display_mode) {
-				apply_display_mode(d, desired_display_mode);
-			}
-
-			if (d.current_present_mode_index != d.present_mode.value) {
-				d.current_present_mode_index = d.present_mode.value;
-				d.framebuffer_resized = true;
-			}
-		}
-
-		co_await ctx.next_tick();
+	for (const auto& [focus] : sched.read_channel<ui_focus_request>()) {
+		set_ui_focus(d, focus);
 	}
+
+	for ([[maybe_unused]] const auto& req : sched.read_channel<window_minimize_request>()) {
+		d.cmd_minimize = true;
+	}
+
+	for ([[maybe_unused]] const auto& req : sched.read_channel<window_toggle_maximize_request>()) {
+		d.cmd_toggle_maximize = true;
+	}
+
+	for (const auto& req : sched.read_channel<window_chrome_metrics_request>()) {
+		d.chrome_caption_height = req.caption_height;
+		d.chrome_controls_width = req.controls_width;
+	}
+
+	if (d.monitor.value != d.last_monitor_index) {
+		const int old_monitor = d.last_monitor_index;
+		d.last_monitor_index = d.monitor.value;
+
+		if (d.current_display_mode == display_mode::windowed && old_monitor != d.monitor.value) {
+			move_window_to_monitor(d, d.monitor.value);
+		}
+	}
+
+	if (d.focused) {
+		apply_cursor_mode(d);
+
+		const auto desired_display_mode = static_cast<display_mode>(d.display_mode.value);
+		if (d.current_display_mode != desired_display_mode) {
+			apply_display_mode(d, desired_display_mode);
+		}
+
+		if (d.current_present_mode_index != d.present_mode.value) {
+			d.current_present_mode_index = d.present_mode.value;
+			d.framebuffer_resized = true;
+		}
+	}
+
+	apply_commands(d);
 }
 
 auto gse::window::shutdown(shutdown_context&, data& d) -> void {

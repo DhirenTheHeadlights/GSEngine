@@ -10,6 +10,7 @@ import :buffer;
 import :image;
 
 import gse.math;
+import gse.assert;
 
 export namespace gse::vulkan {
 	struct command_buffer;
@@ -413,7 +414,8 @@ auto gse::vulkan::commands::raw() const -> vk::CommandBuffer {
 }
 
 auto gse::vulkan::commands::begin() const -> void {
-	raw().begin(vk::CommandBufferBeginInfo{});
+	const auto result = raw().begin(vk::CommandBufferBeginInfo{});
+	assert(result == vk::Result::eSuccess, "failed to begin command buffer: {}", vk::to_string(result));
 }
 
 auto gse::vulkan::commands::begin_secondary(const gpu::secondary_inheritance_info& info) const -> void {
@@ -449,15 +451,18 @@ auto gse::vulkan::commands::begin_secondary(const gpu::secondary_inheritance_inf
 		.flags = flags,
 		.pInheritanceInfo = &inherit,
 	};
-	raw().begin(begin_info);
+	const auto result = raw().begin(begin_info);
+	assert(result == vk::Result::eSuccess, "failed to begin secondary command buffer: {}", vk::to_string(result));
 }
 
 auto gse::vulkan::commands::end() const -> void {
-	raw().end();
+	const auto result = raw().end();
+	assert(result == vk::Result::eSuccess, "failed to end command buffer: {}", vk::to_string(result));
 }
 
 auto gse::vulkan::commands::reset() const -> void {
-	raw().reset();
+	const auto result = raw().reset();
+	assert(result == vk::Result::eSuccess, "failed to reset command buffer: {}", vk::to_string(result));
 }
 
 auto gse::vulkan::commands::execute_commands(const gpu::command_buffer_handle secondary) const -> void {

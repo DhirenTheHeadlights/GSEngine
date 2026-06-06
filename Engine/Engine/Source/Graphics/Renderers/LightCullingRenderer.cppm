@@ -2,11 +2,7 @@ export module gse.graphics:light_culling_renderer;
 
 import std;
 
-import :point_light;
-import :spot_light;
-import :directional_light;
 import :camera_system;
-import :depth_prepass_renderer;
 import :atmosphere_renderer;
 import gse.os;
 import gse.assets;
@@ -25,7 +21,8 @@ export namespace gse::renderer::light_culling {
 
 	struct system {
 		struct data {
-			vec2u current_extent{};
+			std::uint32_t current_width = 0;
+			std::uint32_t current_height = 0;
 
 			gpu::shader_program pipeline;
 
@@ -52,20 +49,5 @@ export namespace gse::renderer::light_culling {
 			shared_view<camera::system> cam_state,
 			shared_view<atmosphere::system> atm_state
 		) -> async::task<>;
-
-	private:
-		static auto tile_count(
-			const data& d
-		) -> vec2u;
-
-		static auto update_depth_descriptor(
-			const gpu::context::data& gpu_s,
-			data& d
-		) -> void;
-
-		static auto rebuild_tile_buffers(
-			const gpu::context::data& gpu_s,
-			data& d
-		) -> void;
 	};
 }

@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:gui_impl;
 
 import std;
 
@@ -19,6 +19,7 @@ import :menu_stack;
 import :render_layer;
 import :interaction;
 
+
 import gse.os;
 import gse.config;
 import gse.assets;
@@ -29,7 +30,6 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
-import gse.math;
 import gse.meta;
 import gse.save;
 
@@ -44,10 +44,12 @@ auto gse::gui::popout_close_button_rect(const ui_rect& title_bar_rect, const sty
 	const float button_size = std::min(sty.close_button_size, sty.title_bar_height);
 	const float vertical_pad = std::max(0.f, (sty.title_bar_height - button_size) * 0.5f);
 	const float horizontal_pad = vertical_pad;
-	return ui_rect::from_position_size(
-		{ title_bar_rect.right() - button_size - horizontal_pad, title_bar_rect.top() - vertical_pad },
-		{ button_size, button_size }
-	);
+	const float left = title_bar_rect.right() - button_size - horizontal_pad;
+	const float top = title_bar_rect.top() - vertical_pad;
+	return ui_rect(ui_rect::min_max_params{
+		.min = vec2f{ left, top - button_size },
+		.max = vec2f{ left + button_size, top }
+	});
 }
 
 auto gse::gui::system::init_body(run_context& ctx, const window::data& window_s, asset::data& assets, data& d) -> async::task<> {

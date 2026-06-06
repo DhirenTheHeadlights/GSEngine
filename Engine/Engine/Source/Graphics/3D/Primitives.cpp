@@ -1,11 +1,12 @@
-module gse.graphics;
+module gse.graphics:primitives_impl;
 
 import std;
 
+import :primitives;
 import :material;
 import :mesh;
 import :model;
-import :primitives;
+
 
 import gse.assets;
 import gse.core;

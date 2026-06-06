@@ -3,6 +3,7 @@ export module gse.graphics:menu_stack;
 import std;
 
 import gse.math;
+import gse.meta;
 
 import :builder;
 import :types;
@@ -270,23 +271,18 @@ auto gse::gui::menu_stack_state::tick(builder& ui) -> void {
 
 auto gse::gui::menu_stack_state::apply(nav& n) -> void {
 	for (auto& a : n.m_actions) {
-		std::visit(
-			[this](auto&& x) {
-				using A = std::decay_t<decltype(x)>;
-				if constexpr (std::is_same_v<A, nav::pop_tag>) {
-					pop();
-				}
-				else if constexpr (std::is_same_v<A, nav::clear_tag>) {
-					clear();
-				}
-				else {
-					auto s = x();
-					s->on_push();
-					m_stack.push_back(std::move(s));
-				}
-			},
-			a
-		);
+		gse::match(a)
+			.if_is([this](const nav::pop_tag&) {
+				pop();
+			})
+			.else_if_is([this](const nav::clear_tag&) {
+				clear();
+			})
+			.else_if_is([this](const nav::factory& f) {
+				auto s = f();
+				s->on_push();
+				m_stack.push_back(std::move(s));
+			});
 	}
 	n.m_actions.clear();
 	n.m_depth = m_stack.size();

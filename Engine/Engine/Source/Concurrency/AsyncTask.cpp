@@ -1,13 +1,14 @@
-module gse.concurrency;
+module gse.concurrency:async_task_impl;
 
 import std;
-
-import gse.diag;
-import gse.log;
 
 import :async_task;
 import :frame_arena;
 import :task;
+
+import gse.diag;
+import gse.log;
+
 
 namespace gse::async {
 	struct when_all_state {

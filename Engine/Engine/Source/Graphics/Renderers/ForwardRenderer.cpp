@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:forward_renderer_impl;
 
 import std;
 
@@ -17,6 +17,7 @@ import :point_light;
 import :spot_light;
 import :directional_light;
 import :settings;
+
 
 import gse.math;
 import gse.core;

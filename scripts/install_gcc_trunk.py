@@ -75,6 +75,26 @@ def extract(zip_path: Path, dest: Path) -> None:
         z.extractall(dest)
 
 
+def link_current(tag: str) -> Path:
+    # Maintain a stable, version-independent path (~/.gcc-trunk/current) that the
+    # CMake preset points at, so a toolchain version bump never requires editing
+    # the preset or any environment variable. Re-pointed to the freshly installed
+    # tag on every run.
+    link = INSTALL_ROOT / "current"
+    target = install_path(tag)
+    if os.name == "nt":
+        # rmdir removes a junction (or empty dir) without touching the target.
+        if link.exists() or os.path.islink(link):
+            subprocess.run(["cmd", "/c", "rmdir", str(link)], check=False)
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True)
+    else:
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        os.symlink(target, link, target_is_directory=True)
+    print(f"Pointed {link} -> {target}")
+    return link
+
+
 def persist_env_var(name: str, value: str) -> None:
     if os.name != "nt":
         print(f"Add to your shell rc: export {name}={value}")
@@ -108,13 +128,17 @@ def main() -> None:
             extract(zip_path, target)
         print(f"Installed: {target}")
 
+    current = link_current(args.tag)
+
+    print(
+        "\nThe CMake presets resolve the toolchain via "
+        "$env{USERPROFILE}/.gcc-trunk/current, so no environment variable is required."
+    )
     if args.persist:
-        persist_env_var(ENV_VAR, str(target))
+        persist_env_var(ENV_VAR, str(current))
     else:
-        print("\nTo use this toolchain:")
-        print(f"  set {ENV_VAR}={target}    (cmd)")
-        print(f"  $env:{ENV_VAR} = '{target}'  (PowerShell)")
-        print("Or re-run with --persist to set it permanently on Windows.")
+        print(f"\nOptional (manual command-line use only): re-run with --persist, or")
+        print(f'  setx {ENV_VAR} "{current}"')
 
 
 if __name__ == "__main__":

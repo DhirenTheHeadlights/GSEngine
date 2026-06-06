@@ -330,7 +330,7 @@ auto gse::shaders::build_spec_constant_entries() -> std::vector<spec_constant_en
 		using member_t = [:std::meta::type_of(m):];
 		entries.push_back({
 			.constant_id = idx,
-			.offset = std::meta::offset_of_v<m>,
+			.offset = static_cast<std::uint32_t>(std::meta::offset_of(m).bytes),
 			.size = static_cast<std::uint32_t>(sizeof(member_t)),
 		});
 		++idx;

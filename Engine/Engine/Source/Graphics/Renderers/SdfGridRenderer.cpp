@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:sdf_grid_renderer_impl;
 
 import std;
 
@@ -7,6 +7,7 @@ import :atmosphere_renderer;
 import :forward_renderer;
 import :camera_system;
 import :render_targets;
+
 
 import gse.os;
 import gse.assets;

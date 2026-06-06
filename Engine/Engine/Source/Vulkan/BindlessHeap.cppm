@@ -635,7 +635,9 @@ auto gse::vulkan::allocate_heap_memory(const device& dev, const gpu::device_size
 	};
 
 	bindless_heap_memory mem;
-	mem.buffer = vk_device.createBuffer(buffer_info, nullptr);
+	auto [buffer_result, vk_buffer] = vk_device.createBuffer(buffer_info, nullptr);
+	assert(buffer_result == vk::Result::eSuccess, "failed to create bindless buffer ({}): {}", tag, vk::to_string(buffer_result));
+	mem.buffer = vk_buffer;
 
 	const auto reqs = vk_device.getBufferMemoryRequirements(mem.buffer);
 	const auto mem_props = physical_device.getMemoryProperties();
@@ -674,14 +676,14 @@ auto gse::vulkan::allocate_heap_memory(const device& dev, const gpu::device_size
 		.memoryTypeIndex = memory_type_index,
 	};
 
-	mem.memory = vk_device.allocateMemory(alloc_info, nullptr);
-	vk_device.bindBufferMemory(mem.buffer, mem.memory, 0);
-	mem.mapped = static_cast<std::byte*>(vk_device.mapMemory(
-		mem.memory,
-		0,
-		size,
-		{}
-	));
+	auto [memory_result, vk_memory] = vk_device.allocateMemory(alloc_info, nullptr);
+	assert(memory_result == vk::Result::eSuccess, "failed to allocate bindless memory ({}): {}", tag, vk::to_string(memory_result));
+	mem.memory = vk_memory;
+	const auto bind_result = vk_device.bindBufferMemory(mem.buffer, mem.memory, 0);
+	assert(bind_result == vk::Result::eSuccess, "failed to bind bindless memory ({}): {}", tag, vk::to_string(bind_result));
+	auto [map_result, mapped_ptr] = vk_device.mapMemory(mem.memory, 0, size, {});
+	assert(map_result == vk::Result::eSuccess, "failed to map bindless memory ({}): {}", tag, vk::to_string(map_result));
+	mem.mapped = static_cast<std::byte*>(mapped_ptr);
 	mem.address = vk_device.getBufferAddress(vk::BufferDeviceAddressInfo{
 		.buffer = mem.buffer
 	});
@@ -1409,50 +1411,6 @@ auto gse::vulkan::build_bindless_mappings(const std::span<const gpu::binding_use
 	}
 
 	result.push_data_size = push_offset;
-
-	log::println(
-		log::category::vulkan,
-		"bindless mappings: {} bindings, total push_data {} bytes",
-		result.mappings.size(),
-		result.push_data_size
-	);
-	for (std::size_t i = 0; i < sorted_bindings.size(); ++i) {
-		const auto& b = sorted_bindings[i];
-		const auto& m = result.mappings[i];
-		if (m.source == vk::DescriptorMappingSourceEXT::eHeapWithConstantOffset) {
-			const auto& co = m.sourceData.constantOffset;
-			log::println(
-				log::category::vulkan,
-				"  set={} binding={} count={} type={} mask={:#x} heap_offset={:#x} array_stride={} sampler_heap_offset={:#x} sampler_array_stride={}",
-				b.set,
-				b.slot,
-				b.count,
-				static_cast<int>(b.type),
-				static_cast<std::uint32_t>(m.resourceMask),
-				co.heapOffset,
-				co.heapArrayStride,
-				co.samplerHeapOffset,
-				co.samplerHeapArrayStride
-			);
-			continue;
-		}
-		const auto& pi = m.sourceData.pushIndex;
-		log::println(
-			log::category::vulkan,
-			"  set={} binding={} count={} type={} mask={:#x} heap_offset={:#x} push_offset={} stride={} sampler_heap_offset={:#x} sampler_push_offset={} use_combined={}",
-			b.set,
-			b.slot,
-			b.count,
-			static_cast<int>(b.type),
-			static_cast<std::uint32_t>(m.resourceMask),
-			pi.heapOffset,
-			pi.pushOffset,
-			pi.heapIndexStride,
-			pi.samplerHeapOffset,
-			pi.samplerPushOffset,
-			static_cast<bool>(pi.useCombinedImageSamplerIndex)
-		);
-	}
 
 	return result;
 }
