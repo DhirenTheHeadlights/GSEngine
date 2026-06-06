@@ -219,7 +219,7 @@ auto gse::physics::system::collect_collision_objects(write<transform_component>&
 	return objects;
 }
 
-auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
+auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contact_cache& contact_cache, std::vector<collision_pair>& objects, const std::flat_map<id, std::uint32_t>& id_to_body_index, const bool update_scene_state, write<transform_component>& transform, write<motion_component>& motion, write<collision_component>& collision, write<collision_result_component>* results, std::span<std::uint8_t> body_airborne) -> void {
 	trace::scope_guard sg{ trace_id<"vbd_cpu::broad_phase">() };
 
 	{
@@ -769,7 +769,8 @@ auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transf
 			trace::untraced
 		);
 
-		d.id_to_body_index.assign_unsorted(std::move(id_to_body_index_staging));
+		d.id_to_body_index.clear();
+		d.id_to_body_index.insert(id_to_body_index_staging.begin(), id_to_body_index_staging.end());
 	}
 
 	{
@@ -1002,7 +1003,7 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 		}
 	}
 
-	flat_map<id, std::uint32_t> id_to_body_index;
+	std::flat_map<id, std::uint32_t> id_to_body_index;
 	{
 		std::vector<std::pair<id, std::uint32_t>> id_staging;
 		id_staging.reserve(motion.size());
@@ -1010,7 +1011,7 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 		for (std::size_t i = 0; i < motion.size(); ++i) {
 			id_staging.emplace_back(motion_ids[i], static_cast<std::uint32_t>(i));
 		}
-		id_to_body_index.assign_unsorted(std::move(id_staging));
+		id_to_body_index.insert(id_staging.begin(), id_staging.end());
 	}
 
 	const int total_substeps = steps * substeps;

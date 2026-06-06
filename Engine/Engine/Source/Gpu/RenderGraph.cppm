@@ -298,9 +298,9 @@ export namespace gse::gpu {
 	};
 
 	struct frame_request_drain {
-		move_only_function<std::vector<render_pass_data>()> drain_passes;
-		move_only_function<std::vector<transient_image_request>()> drain_images;
-		move_only_function<std::vector<transient_buffer_request>()> drain_buffers;
+		std::move_only_function<std::vector<render_pass_data>()> drain_passes;
+		std::move_only_function<std::vector<transient_image_request>()> drain_images;
+		std::move_only_function<std::vector<transient_buffer_request>()> drain_buffers;
 	};
 
 	class render_graph {
@@ -364,8 +364,8 @@ export namespace gse::gpu {
 		struct gpu_profile_slot {
 			gpu::query_pool timestamp_pool;
 			gpu::query_pool stats_pool;
-			static_vector<id, max_profiled_passes> pass_types;
-			static_vector<gpu::queue_type, max_profiled_passes> pass_queues;
+			std::vector<id> pass_types;
+			std::vector<gpu::queue_type> pass_queues;
 			std::uint32_t pass_count = 0;
 			bool stats_issued = false;
 			time_t<std::uint64_t> cpu_ref{};

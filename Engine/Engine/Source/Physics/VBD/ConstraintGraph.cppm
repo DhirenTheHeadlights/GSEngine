@@ -58,7 +58,7 @@ export namespace gse::vbd {
 		std::vector<contact_constraint> m_contacts;
 		std::vector<velocity_motor_constraint> m_motors;
 		std::vector<joint_constraint> m_joints;
-		static_vector<std::vector<std::uint32_t>, 64> m_body_colors;
+		std::inplace_vector<std::vector<std::uint32_t>, 64> m_body_colors;
 		std::vector<std::vector<std::uint32_t>> m_body_contacts;
 		std::vector<std::vector<std::uint32_t>> m_body_joints;
 		std::vector<std::vector<std::uint32_t>> m_adjacency;
@@ -205,7 +205,7 @@ auto gse::vbd::constraint_graph::joint_constraints() const -> std::span<const jo
 }
 
 auto gse::vbd::constraint_graph::body_colors() const -> std::span<const std::vector<std::uint32_t>> {
-	return m_body_colors.span();
+	return m_body_colors;
 }
 
 auto gse::vbd::constraint_graph::body_contact_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {

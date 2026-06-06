@@ -3,8 +3,6 @@ export module gse.containers:archive;
 import std;
 import gse.assert;
 
-import :static_vector;
-
 export namespace gse {
 
 	struct archive_skip {};
@@ -56,7 +54,7 @@ export namespace gse {
 
 		template <typename T, std::size_t N>
 		auto operator&(
-			const static_vector<T, N>& vec
+			const std::inplace_vector<T, N>& vec
 		) -> binary_writer&;
 
 		template <typename T>
@@ -118,7 +116,7 @@ export namespace gse {
 
 		template <typename T, std::size_t N>
 		auto operator&(
-			static_vector<T, N>& vec
+			std::inplace_vector<T, N>& vec
 		) -> binary_reader&;
 
 		template <typename T>
@@ -205,7 +203,7 @@ auto gse::binary_writer::operator&(const std::vector<T>& vec) -> binary_writer& 
 }
 
 template <typename T, std::size_t N>
-auto gse::binary_writer::operator&(const static_vector<T, N>& vec) -> binary_writer& {
+auto gse::binary_writer::operator&(const std::inplace_vector<T, N>& vec) -> binary_writer& {
 	const auto count = static_cast<std::uint32_t>(vec.size());
 	*this& count;
 	for (const auto& item : vec) {
@@ -305,10 +303,10 @@ auto gse::binary_reader::operator&(std::vector<T>& vec) -> binary_reader& {
 }
 
 template <typename T, std::size_t N>
-auto gse::binary_reader::operator&(static_vector<T, N>& vec) -> binary_reader& {
+auto gse::binary_reader::operator&(std::inplace_vector<T, N>& vec) -> binary_reader& {
 	std::uint32_t count = 0;
 	*this& count;
-	gse::assert(count <= N, "static_vector deserialization: count {} exceeds capacity {}", count, N);
+	gse::assert(count <= N, "inplace_vector deserialization: count {} exceeds capacity {}", count, N);
 	vec.clear();
 	for (std::uint32_t i = 0; i < count; ++i) {
 		T val{};

@@ -13,7 +13,7 @@ export namespace gse::concurrency {
 	public:
 		template <typename State>
 		auto submit(
-			move_only_function<void()> work
+			std::move_only_function<void()> work
 		) -> void;
 
 		auto flush() -> void;
@@ -29,7 +29,7 @@ export namespace gse::concurrency {
 	private:
 		struct pending_entry {
 			id type;
-			gse::move_only_function<void()> work;
+			std::move_only_function<void()> work;
 		};
 
 		std::vector<pending_entry> m_pending;
@@ -60,7 +60,7 @@ export namespace gse::concurrency {
 }
 
 template <typename State>
-auto gse::concurrency::frame_scheduler::submit(move_only_function<void()> work) -> void {
+auto gse::concurrency::frame_scheduler::submit(std::move_only_function<void()> work) -> void {
 	constexpr id type_id = id_of<State>();
 
 	m_pending.push_back({

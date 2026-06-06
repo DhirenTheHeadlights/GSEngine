@@ -131,14 +131,14 @@ export namespace gse::renderer::geometry_collector {
 		static constexpr std::size_t max_batches = 256;
 
 		std::vector<owned_render_queue_entry> render_queue;
-		static_vector<normal_instance_batch, max_batches> normal_batches;
+		std::inplace_vector<normal_instance_batch, max_batches> normal_batches;
 
 		std::vector<shaders::common::instance_data> instance_staging;
 
 		std::vector<physics_mapping_entry> physics_mappings;
 		std::uint32_t physics_mapping_count = 0;
 
-		flat_map<const material*, std::uint32_t> material_palette_map;
+		std::flat_map<const material*, std::uint32_t> material_palette_map;
 
 		view_matrix view;
 		projection_matrix proj;
