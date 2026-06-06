@@ -188,8 +188,8 @@ export namespace gse::physics {
 			bool gpu_joints_dirty = true;
 			std::uint32_t gpu_uploaded_body_count = 0;
 			std::uint32_t gpu_uploaded_joint_count = 0;
-			flat_map<id, std::uint32_t> id_to_body_index;
-			flat_map<id, joint_handle> joint_handles_by_entity;
+			std::flat_map<id, std::uint32_t> id_to_body_index;
+			std::flat_map<id, joint_handle> joint_handles_by_entity;
 			std::vector<impulse_request> gpu_pending_impulses;
 
 			std::vector<std::uint8_t> body_airborne;
@@ -251,7 +251,7 @@ export namespace gse::physics {
 			vbd::solver& solver,
 			vbd::contact_cache& contact_cache,
 			std::vector<collision_pair>& objects,
-			const flat_map<id, std::uint32_t>& id_to_body_index,
+			const std::flat_map<id, std::uint32_t>& id_to_body_index,
 			bool update_scene_state,
 			write<transform_component>& transform,
 			write<motion_component>& motion,

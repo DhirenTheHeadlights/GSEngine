@@ -8,7 +8,7 @@ import :commands;
 import gse.core;
 
 export namespace gse::vulkan {
-	using frame_record_fn = move_only_function<void(gpu::command_buffer_handle)>;
+	using frame_record_fn = std::move_only_function<void(gpu::command_buffer_handle)>;
 
 	class frame_recorder final : public non_copyable {
 	public:

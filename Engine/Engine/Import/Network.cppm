@@ -66,7 +66,7 @@ export namespace gse::network {
 		angle camera_yaw{};
 		std::unique_ptr<client> client_ptr;
 		std::vector<std::shared_ptr<discovery_provider>> providers;
-		std::vector<gse::move_only_function<void(run_context&)>> deferred;
+		std::vector<std::move_only_function<void(run_context&)>> deferred;
 	};
 
 	template <typename... Components>

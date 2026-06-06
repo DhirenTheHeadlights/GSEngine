@@ -418,7 +418,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 	}
 
 	if (!data.normal_batches.empty()) {
-		static_vector<gpu::draw_mesh_tasks_indirect_command, render_data::max_batches> normal_indirect_commands;
+		std::inplace_vector<gpu::draw_mesh_tasks_indirect_command, render_data::max_batches> normal_indirect_commands;
 
 		for (const auto& batch : data.normal_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
