@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:taa_renderer_impl;
 
 import std;
 
@@ -11,6 +11,7 @@ import :physics_debug_renderer;
 import :render_targets;
 import :sdf_grid_renderer;
 import :world_text_renderer;
+
 
 import gse.gpu;
 import gse.core;

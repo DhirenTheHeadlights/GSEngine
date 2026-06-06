@@ -47,8 +47,39 @@ def set_snapshot(pkgbuild: Path, snapshot: str) -> None:
     text, n = re.subn(r"^_snapshot=.*$", f"_snapshot={snapshot}", text, count=1, flags=re.M)
     if n != 1:
         raise SystemExit("could not set _snapshot in PKGBUILD")
-    pkgbuild.write_text(text)
+    # makepkg refuses to source a PKGBUILD containing CRLF. Path.write_text() on
+    # Windows translates every "\n" -> "\r\n", which would corrupt the recipe, so
+    # write LF explicitly. The explicit newline="\n" on open() also normalises any
+    # CRLF a Windows git checkout (autocrlf) introduced into the source file.
+    with open(pkgbuild, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
     print(f"Set _snapshot={snapshot}")
+
+
+def stage_cached_source(build_recipe: Path, snapshot: str, cache_dirs: list) -> None:
+    """Make makepkg use a locally cached GCC source tarball instead of downloading.
+
+    GCC removes old weekly snapshots from its server, so building a pinned older
+    snapshot 404s. If a matching tarball is cached locally, copy it into the recipe dir
+    (makepkg checks startdir before downloading). A plain .tar is supported by pointing
+    the PKGBUILD source at it, which avoids a slow recompression to .tar.xz.
+    """
+    for cache in cache_dirs:
+        if not cache or not Path(cache).is_dir():
+            continue
+        for xz in sorted(Path(cache).glob(f"gcc-*-{snapshot}.tar.xz")):
+            print(f"Using cached source {xz} (skipping download)")
+            shutil.copy2(xz, build_recipe / xz.name)
+            return
+        for plain in sorted(Path(cache).glob(f"gcc-*-{snapshot}.tar")):
+            print(f"Using cached source {plain} (skipping download; uncompressed)")
+            shutil.copy2(plain, build_recipe / plain.name)
+            pk = build_recipe / "PKGBUILD"
+            text = pk.read_text(encoding="utf-8").replace("${_sourcedir}.tar.xz", "${_sourcedir}.tar", 1)
+            with open(pk, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+            return
+    print(f"No cached source for snapshot {snapshot}; makepkg will download it")
 
 
 def main() -> None:
@@ -56,6 +87,9 @@ def main() -> None:
     p.add_argument("--snapshot", required=True, help="GCC weekly snapshot date, e.g. 20260601")
     p.add_argument("--msys-root", type=Path, default=REPO_ROOT / "msys64", help="MSYS2 root (default <repo>/msys64)")
     p.add_argument("--recipe", type=Path, default=REPO_ROOT / "scripts" / "gcc-toolchain" / "recipe")
+    p.add_argument("--src-cache", type=Path, default=REPO_ROOT / ".gcc-src-cache",
+                   help="Dir of cached gcc-<ver>-<snapshot>.tar(.xz) tarballs, used when GCC "
+                        "has pruned the snapshot from its server (also checks <repo>/.gcc-build)")
     p.add_argument("--workdir", type=Path, default=REPO_ROOT / ".gcc-ci-build", help="Scratch build dir")
     p.add_argument("--out", type=Path, default=REPO_ROOT / "dist" / "gcc-trunk-windows-x64.zip")
     p.add_argument("--jobs", type=int, default=4)
@@ -68,6 +102,7 @@ def main() -> None:
     build_recipe.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(args.recipe, build_recipe)
     set_snapshot(build_recipe / "PKGBUILD", args.snapshot)
+    stage_cached_source(build_recipe, args.snapshot, [args.src_cache, REPO_ROOT / ".gcc-build"])
 
     recipe_msys = to_msys(build_recipe)
     # Build: fetch the official snapshot tarball, apply the vendored patch stack, build c/c++/lto.

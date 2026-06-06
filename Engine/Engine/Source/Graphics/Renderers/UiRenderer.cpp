@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:ui_renderer_impl;
 
 import std;
 
@@ -11,6 +11,7 @@ import :physics_debug_renderer;
 import :sdf_grid_renderer;
 import :tonemap_renderer;
 import :world_text_renderer;
+
 
 import gse.os;
 import gse.assets;

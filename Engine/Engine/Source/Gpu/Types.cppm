@@ -2,6 +2,7 @@ export module gse.gpu_types;
 
 import std;
 
+import gse.assert;
 import gse.core;
 import gse.math;
 
@@ -509,6 +510,21 @@ export namespace gse::gpu {
 		error_surface_lost_khr,
 		error_unknown,
 	};
+
+	template <typename T>
+	using expected = std::expected<T, result>;
+
+	template <typename T>
+	[[nodiscard]] auto must(
+		expected<T> value,
+		const std::source_location loc = std::source_location::current()
+	) -> T {
+		if (!value) {
+			assert(false, "gpu operation failed (result {}) at {}:{}", static_cast<std::int32_t>(value.error()), loc.file_name(), loc.line());
+			std::abort();
+		}
+		return std::move(*value);
+	}
 
 	enum class image_aspect_flag : std::uint32_t {
 		color = 1u << 0,

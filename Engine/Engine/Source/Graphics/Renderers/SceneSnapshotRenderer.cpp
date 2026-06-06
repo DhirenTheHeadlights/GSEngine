@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:scene_snapshot_renderer_impl;
 
 import std;
 
@@ -9,6 +9,7 @@ import :sdf_grid_renderer;
 import :tonemap_renderer;
 import :world_text_renderer;
 import :shared_shaders;
+
 
 import gse.gpu;
 import gse.core;

@@ -1,6 +1,15 @@
-module gse.graphics;
+module gse.graphics:physics_debug_renderer_impl;
 
 import std;
+
+import :physics_debug_renderer;
+import :forward_renderer;
+import :camera_system;
+import :cloud_renderer;
+import :render_targets;
+import :sdf_grid_renderer;
+import :settings;
+import :world_text_renderer;
 
 import gse.physics;
 import gse.math;
@@ -12,14 +21,6 @@ import gse.save;
 import gse.gpu;
 import gse.assets;
 
-import :physics_debug_renderer;
-import :forward_renderer;
-import :camera_system;
-import :cloud_renderer;
-import :render_targets;
-import :sdf_grid_renderer;
-import :settings;
-import :world_text_renderer;
 
 namespace gse::renderer::physics_debug {
 	struct [[

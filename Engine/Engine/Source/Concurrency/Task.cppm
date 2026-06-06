@@ -15,8 +15,7 @@ export namespace gse {
 
 namespace gse::task {
 	template <typename F>
-	using first_arg_t =
-		typename[:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):];
+	using first_arg_t = typename [:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):];
 
 	using parallel_for_fn = move_only_function<void(std::size_t)>;
 

@@ -10,7 +10,7 @@ import gse.math;
 
 export namespace gse::physics {
 	struct collision_component {
-		[[= networked]] std::variant<box_shape, sphere_shape, capsule_shape> shape = box_shape{};
+		[[= networked]] collision_shape shape;
 		[[= networked]] bool resolve_collisions = true;
 	};
 

@@ -35,8 +35,9 @@ export namespace gse::asset_format {
 		static constexpr std::uint32_t value = V;
 	};
 
+	template <bool V = true>
 	struct meta_sidecar {
-		static constexpr bool value = true;
+		static constexpr bool value = V;
 	};
 }
 

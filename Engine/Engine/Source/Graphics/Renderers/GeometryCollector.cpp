@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:geometry_collector_impl;
 
 import std;
 
@@ -10,6 +10,8 @@ import :render_component;
 import :material;
 import :primitive_resolver;
 import :texture;
+import :shared_shaders;
+
 
 import gse.math;
 import gse.core;
@@ -24,7 +26,6 @@ import gse.gpu;
 import gse.physics;
 import gse.meta;
 
-import :shared_shaders;
 
 namespace gse::renderer::geometry_collector {
 	auto material_palette_index(

@@ -343,7 +343,7 @@ auto gse::gpu::device::allocator(this auto& self) -> auto& {
 }
 
 auto gse::gpu::device::create_shader_program(const shader_program_create_info& info) const -> shader_program {
-	return shader_program::create(m_device_config, info);
+	return must(shader_program::create(m_device_config, info));
 }
 
 auto gse::gpu::device::create_sync(const std::uint32_t image_count, const std::uint32_t frames_in_flight) -> sync {
@@ -355,11 +355,11 @@ auto gse::gpu::device::create_timeline_semaphore(const std::uint64_t initial_val
 }
 
 auto gse::gpu::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) const -> query_pool {
-	return query_pool::create_timestamp(m_device_config, capacity, label);
+	return must(query_pool::create_timestamp(m_device_config, capacity, label));
 }
 
 auto gse::gpu::device::create_pipeline_stats_query_pool(const std::uint32_t capacity, const pipeline_statistic_flags statistics, const std::string_view label) const -> query_pool {
-	return query_pool::create_pipeline_stats(m_device_config, capacity, statistics, label);
+	return must(query_pool::create_pipeline_stats(m_device_config, capacity, statistics, label));
 }
 
 auto gse::gpu::device::create_bindless_heaps(const std::uint32_t texture_capacity, const std::uint32_t image_capacity, const std::uint32_t buffer_capacity, const std::uint32_t sampler_capacity) const -> std::unique_ptr<bindless_heaps> {

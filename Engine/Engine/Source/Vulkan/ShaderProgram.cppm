@@ -37,7 +37,7 @@ export namespace gse::vulkan {
 		static auto create(
 			const device& dev,
 			const shader_program_create_info& info
-		) -> shader_program;
+		) -> gpu::expected<shader_program>;
 
 		[[nodiscard]] auto layout() const -> gpu::pipeline_layout_handle;
 
@@ -80,7 +80,7 @@ gse::vulkan::shader_program::shader_program(vk::raii::PipelineLayout&& layout, s
 	: m_layout(std::move(layout)), m_shaders(std::move(shaders)), m_stages(std::move(stages)), m_shader_handles(std::move(shader_handles)), m_state(std::move(state)), m_is_compute(is_compute), m_is_mesh(is_mesh) {
 }
 
-auto gse::vulkan::shader_program::create(const device& dev, const shader_program_create_info& info) -> shader_program {
+auto gse::vulkan::shader_program::create(const device& dev, const shader_program_create_info& info) -> gpu::expected<shader_program> {
 	std::optional<vk::PushConstantRange> vk_pc_range;
 	if (info.push_constant_range.has_value()) {
 		vk_pc_range = to_vk(*info.push_constant_range);
@@ -88,18 +88,30 @@ auto gse::vulkan::shader_program::create(const device& dev, const shader_program
 	const vk::PushConstantRange* pc_ptr = vk_pc_range.has_value() ? &*vk_pc_range : nullptr;
 	const std::uint32_t pc_count = vk_pc_range.has_value() ? 1u : 0u;
 
-	vk::raii::PipelineLayout layout = dev.raii_device().createPipelineLayout({
+	auto [layout_result, layout] = dev.raii_device().createPipelineLayout({
 		.pushConstantRangeCount = pc_count,
 		.pPushConstantRanges = pc_ptr,
 	});
+	if (layout_result != vk::Result::eSuccess) {
+		return std::unexpected(from_vk(layout_result));
+	}
 
-	std::vector<shader_object> shaders = info.stages.size() == 1 ? [&] {
-		std::vector<shader_object> single;
-		single.reserve(1);
-		single.emplace_back(shader_object::create(dev, info.stages[0]));
-		return single;
-	}()
-																 : shader_object::create_linked(dev, info.stages);
+	std::vector<shader_object> shaders;
+	if (info.stages.size() == 1) {
+		auto shader = shader_object::create(dev, info.stages[0]);
+		if (!shader) {
+			return std::unexpected(shader.error());
+		}
+		shaders.reserve(1);
+		shaders.push_back(std::move(*shader));
+	}
+	else {
+		auto linked = shader_object::create_linked(dev, info.stages);
+		if (!linked) {
+			return std::unexpected(linked.error());
+		}
+		shaders = std::move(*linked);
+	}
 
 	std::vector<gpu::stage_flag> stages;
 	stages.reserve(shaders.size());

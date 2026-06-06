@@ -15,7 +15,7 @@ export namespace gse::vulkan {
 
 	[[nodiscard]]
 	auto pack_instance(
-		const mat4f& transform,
+		const spatial_matrix& transform,
 		std::uint32_t custom_index,
 		std::uint8_t mask,
 		std::uint32_t sbt_offset,
@@ -98,11 +98,12 @@ export namespace gse::vulkan {
 	};
 }
 
-auto gse::vulkan::pack_instance(const mat4f& transform, const std::uint32_t custom_index, const std::uint8_t mask, const std::uint32_t sbt_offset, const bool cull_disable, const std::uint64_t blas_address) -> as_instance {
+auto gse::vulkan::pack_instance(const spatial_matrix& transform, const std::uint32_t custom_index, const std::uint8_t mask, const std::uint32_t sbt_offset, const bool cull_disable, const std::uint64_t blas_address) -> as_instance {
+	const auto* m = reinterpret_cast<const float*>(&transform);
 	vk::TransformMatrixKHR vk_transform{};
 	for (int row = 0; row < 3; ++row) {
 		for (int col = 0; col < 4; ++col) {
-			vk_transform.matrix[row][col] = transform[col][row];
+			vk_transform.matrix[row][col] = m[col * 4 + row];
 		}
 	}
 

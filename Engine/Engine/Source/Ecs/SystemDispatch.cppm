@@ -31,7 +31,10 @@ export namespace gse {
 
 namespace gse {
 
-	template <typename State, bool = std::is_trivially_copyable_v<State>>
+	template <typename State>
+	constexpr bool state_snapshotable_v = std::is_trivially_copyable_v<State> && std::is_copy_assignable_v<State>;
+
+	template <typename State, bool = state_snapshotable_v<State>>
 	struct snapshot_storage {};
 
 	template <typename State>
@@ -202,6 +205,9 @@ namespace gse {
 
 	template <typename T>
 	constexpr id state_dep_id_v = compute_state_dep_id<dep_pointee_t<T>>();
+
+	template <typename T>
+	constexpr std::uint64_t state_dep_number_v = compute_state_dep_id<dep_pointee_t<T>>().number();
 
 	template <auto MemberFn, typename S>
 	consteval auto compute_state_dep_count() -> std::size_t;
@@ -400,12 +406,12 @@ consteval auto gse::compute_state_dep_ids() -> std::array<id, compute_state_dep_
 		if (!is_dep) {
 			continue;
 		}
-		const id dep_id = std::meta::extract<id>(std::meta::substitute(
-			^^state_dep_id_v,
+		const auto dep_number = std::meta::extract<std::uint64_t>(std::meta::substitute(
+			^^state_dep_number_v,
 			{
 				t }
 		));
-		result[i++] = dep_id;
+		result[i++] = generate_temp_id(dep_number);
 	}
 	return result;
 }
@@ -482,7 +488,7 @@ auto gse::invoke_frame_for(frame_context& ctx, void* data_ptr) -> async::task<> 
 template <typename S>
 auto gse::invoke_snapshot_for(void* data_ptr) -> void {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
-	if constexpr (std::is_trivially_copyable_v<state_of_t<S>>) {
+	if constexpr (state_snapshotable_v<state_of_t<S>>) {
 		d.snapshot.value = d.state;
 	}
 }
@@ -551,7 +557,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	else {
 		node.invoke_frame_fn = &noop_dispatchers::noop_frame_for<S>;
 	}
-	constexpr bool has_state_snapshot = std::is_trivially_copyable_v<state_of_t<S>>;
+	constexpr bool has_state_snapshot = state_snapshotable_v<state_of_t<S>>;
 	if constexpr (has_state_snapshot) {
 		node.invoke_snapshot_fn = &invoke_snapshot_for<S>;
 	}

@@ -7,6 +7,7 @@ import :handles;
 import :types;
 
 import gse.core;
+import gse.assert;
 
 export namespace gse::vulkan {
 	class physical_device : public non_copyable {
@@ -80,5 +81,7 @@ auto gse::vulkan::physical_device::scratch_offset_alignment() const -> gpu::devi
 }
 
 auto gse::vulkan::physical_device::create_device(const vk::DeviceCreateInfo& create_info) const -> vk::raii::Device {
-	return m_physical_device.createDevice(create_info);
+	auto [result, device] = m_physical_device.createDevice(create_info);
+	assert(result == vk::Result::eSuccess, "failed to create logical device: {}", vk::to_string(result));
+	return std::move(device);
 }

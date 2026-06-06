@@ -15,19 +15,14 @@
         "VCPKG_TARGET_TRIPLET": "x64-mingw-static",
         "VCPKG_OVERLAY_PORTS": "${sourceDir}/vcpkg-overlays/ports",
         "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlays/triplets",
-        "CMAKE_C_COMPILER": "$env{MINGW_ROOT}/bin/gcc.exe",
-        "CMAKE_CXX_COMPILER": "$env{MINGW_ROOT}/bin/g++.exe",
+        "CMAKE_C_COMPILER": "$env{USERPROFILE}/.gcc-trunk/current/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "$env{USERPROFILE}/.gcc-trunk/current/bin/g++.exe",
         "CMAKE_CXX_FLAGS_INIT": "-std=c++26 -freflection -mavx2",
         "CMAKE_CXX_MODULE_STD": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "environment": {
-        "PATH": "$env{MINGW_ROOT}/bin;$penv{PATH}"
-      },
-      "condition": {
-        "type": "notEquals",
-        "lhs": "$env{MINGW_ROOT}",
-        "rhs": ""
+        "PATH": "$env{USERPROFILE}/.gcc-trunk/current/bin;$penv{PATH}"
       }
     },
     {
@@ -60,6 +55,17 @@
       }
     },
     {
+      "name": "x64-mingw-gcc-Profile",
+      "displayName": "x64 MinGW GCC Profile (-ftime-report)",
+      "inherits": "x64-mingw-gcc-base",
+      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release",
+        "CMAKE_CXX_FLAGS_INIT": "-std=c++26 -freflection -mavx2 -ftime-report"
+      }
+    },
+    {
       "name": "x64-mingw-gcc-Debug-asan",
       "displayName": "x64 MinGW GCC Debug + ASAN",
       "inherits": "x64-mingw-gcc-base",
@@ -85,6 +91,10 @@
     {
       "name": "x64-mingw-gcc-RelWithDebInfo",
       "configurePreset": "x64-mingw-gcc-RelWithDebInfo"
+    },
+    {
+      "name": "x64-mingw-gcc-Profile",
+      "configurePreset": "x64-mingw-gcc-Profile"
     },
     {
       "name": "x64-mingw-gcc-Debug-asan",

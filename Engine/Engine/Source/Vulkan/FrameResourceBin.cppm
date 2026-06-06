@@ -19,6 +19,21 @@ export namespace gse::vulkan {
 
 	class frame_resource_bin final : public non_copyable {
 	public:
+		struct retained_base {
+			virtual ~retained_base() = default;
+		};
+
+		template <typename T>
+		struct retained_holder final : retained_base {
+			template <typename U>
+			explicit retained_holder(
+				U&& v
+			) : m_value(std::forward<U>(v)) {
+			}
+
+			T m_value;
+		};
+
 		frame_resource_bin() {}
 		~frame_resource_bin();
 
@@ -37,6 +52,12 @@ export namespace gse::vulkan {
 			T resource
 		) -> void;
 
+		auto retain(
+			queue_id queue,
+			std::uint64_t until_value,
+			std::unique_ptr<retained_base> resource
+		) -> void;
+
 		auto drain(
 			std::span<const queue_progress> progress
 		) -> void;
@@ -46,18 +67,6 @@ export namespace gse::vulkan {
 		[[nodiscard]] auto pending_count() const -> std::size_t;
 
 	private:
-		struct retained_base {
-			virtual ~retained_base() = default;
-		};
-
-		template <typename T>
-		struct retained_holder final : retained_base {
-			T m_value;
-
-			explicit retained_holder(T&& v) : m_value(std::move(v)) {
-			}
-		};
-
 		struct slot {
 			queue_id m_queue;
 			std::uint64_t m_until_value;
@@ -73,11 +82,15 @@ gse::vulkan::frame_resource_bin::~frame_resource_bin() = default;
 
 template <typename T>
 auto gse::vulkan::frame_resource_bin::retain(const queue_id queue, const std::uint64_t until_value, T resource) -> void {
+	retain(queue, until_value, std::make_unique<retained_holder<T>>(std::move(resource)));
+}
+
+auto gse::vulkan::frame_resource_bin::retain(const queue_id queue, const std::uint64_t until_value, std::unique_ptr<retained_base> resource) -> void {
 	std::lock_guard lock(*m_mutex);
 	m_slots.push_back({
 		.m_queue = queue,
 		.m_until_value = until_value,
-		.m_holder = std::make_unique<retained_holder<T>>(std::move(resource)),
+		.m_holder = std::move(resource),
 	});
 }
 

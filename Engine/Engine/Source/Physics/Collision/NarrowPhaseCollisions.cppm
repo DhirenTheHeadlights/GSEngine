@@ -25,7 +25,7 @@ export namespace gse::narrow_phase_collision {
 
 	struct shape_data {
 		const physics::transform_component* tc = nullptr;
-		const std::variant<physics::box_shape, physics::sphere_shape, physics::capsule_shape>* shape = nullptr;
+		const physics::collision_shape* shape = nullptr;
 	};
 
 	auto sat_speculative(

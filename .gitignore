@@ -11,6 +11,7 @@ Makefile
 /msys64/
 /.gcc-build/
 /.gcc-ci-build/
+/.gcc-src-cache/
 *.sfx.exe
 
 # IDE / editor

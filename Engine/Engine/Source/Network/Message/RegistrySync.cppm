@@ -5,18 +5,8 @@ import std;
 import :message;
 import :bitstream;
 
-import gse.physics;
-import gse.graphics;
-import gse.os;
-import gse.assets;
-import gse.gpu;
 import gse.core;
-import gse.containers;
-import gse.time;
-import gse.concurrency;
-import gse.diag;
 import gse.ecs;
-import gse.meta;
 
 export namespace gse::network {
 	template <typename T>

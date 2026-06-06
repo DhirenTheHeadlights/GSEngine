@@ -49,8 +49,6 @@ export namespace gse::gpu {
 	using frame_recorder = vulkan::frame_recorder;
 	using transient_queue = vulkan::transient_queue;
 	using transient_executor = vulkan::transient_executor;
-	using device_lost_error = vulkan::device_lost_error;
-	using out_of_date_error = vulkan::out_of_date_error;
 	constexpr auto present_mode_from_setting_index(const int index) -> present_mode {
 		switch (index) {
 			case 0:

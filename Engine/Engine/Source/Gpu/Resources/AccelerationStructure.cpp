@@ -1,6 +1,13 @@
-module gse.gpu;
+module gse.gpu:acceleration_structure_impl;
 
 import std;
+
+import :acceleration_structure;
+import :aliases;
+import :device;
+import :gpu_task;
+import :transient_api;
+import :render_graph;
 
 import gse.concurrency;
 
@@ -124,8 +131,7 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 
 	const gpu::acceleration_structure_build_geometry_info build_info{
 		.type = gpu::acceleration_structure_type::top_level,
-		.flags = gpu::build_acceleration_structure_flag::prefer_fast_build |
-			gpu::build_acceleration_structure_flag::allow_update,
+		.flags = gpu::build_acceleration_structure_flag::prefer_fast_build | gpu::build_acceleration_structure_flag::allow_update,
 		.mode = gpu::build_acceleration_structure_mode::build,
 		.dst = as_handle,
 		.geometries = std::span(&geometry, 1),
@@ -142,8 +148,7 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 	const gpu::memory_barrier post_barrier{
 		.src_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
 		.src_access = gpu::access_flag::acceleration_structure_write,
-		.dst_stages =
-			gpu::pipeline_stage_flag::acceleration_structure_build | gpu::pipeline_stage_flag::fragment_shader,
+		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build | gpu::pipeline_stage_flag::fragment_shader,
 		.dst_access = gpu::access_flag::acceleration_structure_read,
 	};
 	gpu::commands(cmd.handle()).pipeline_barrier(gpu::dependency_info{

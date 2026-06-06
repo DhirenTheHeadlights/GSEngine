@@ -44,6 +44,14 @@ export namespace gse::gpu {
 
 		auto submit_sync() -> sync_token;
 
+		auto retain(
+			buffer&& resource
+		) && -> submission&&;
+
+		auto retain(
+			std::vector<buffer>&& resources
+		) && -> submission&&;
+
 		auto await_ready() noexcept -> bool;
 
 		auto await_suspend(
@@ -57,7 +65,7 @@ export namespace gse::gpu {
 		transient_queue* m_queue;
 		frame_resource_bin* m_bin;
 		transient_command_buffer m_cmd;
-		std::vector<move_only_function<void()>> m_pending_retains;
+		std::vector<std::unique_ptr<frame_resource_bin::retained_base>> m_pending_retains;
 		std::uint64_t m_value = 0;
 		bool m_submitted = false;
 	};
@@ -92,13 +100,20 @@ gse::gpu::submission::submission(gpu::device& gpu_dev, transient_queue& queue, f
 	: m_gpu_device(&gpu_dev), m_queue(&queue), m_bin(&bin), m_cmd(std::move(cmd)) {
 }
 
+auto gse::gpu::submission::retain(buffer&& resource) && -> submission&& {
+	m_pending_retains.push_back(std::make_unique<frame_resource_bin::retained_holder<buffer>>(std::move(resource)));
+	return std::move(*this);
+}
+
+auto gse::gpu::submission::retain(std::vector<buffer>&& resources) && -> submission&& {
+	m_pending_retains.push_back(std::make_unique<frame_resource_bin::retained_holder<std::vector<buffer>>>(std::move(resources)));
+	return std::move(*this);
+}
+
 template <typename T>
 auto gse::gpu::submission::retain(T&& resource) && -> submission&& {
-	m_pending_retains.push_back(
-		[bin = m_bin, qid = m_queue->id(), value = std::ref(m_value), payload = std::forward<T>(resource)]() mutable {
-			bin->retain(qid, value.get(), std::move(payload));
-		}
-	);
+	using resource_type = std::decay_t<T>;
+	m_pending_retains.push_back(std::make_unique<frame_resource_bin::retained_holder<resource_type>>(std::forward<T>(resource)));
 	return std::move(*this);
 }
 
@@ -142,8 +157,8 @@ auto gse::gpu::submission::submit_sync() -> sync_token {
 
 	m_queue->mark_in_use(m_cmd.worker_index(), m_value);
 
-	for (auto& fn : m_pending_retains) {
-		fn();
+	for (auto& pending : m_pending_retains) {
+		m_bin->retain(m_queue->id(), m_value, std::move(pending));
 	}
 	m_pending_retains.clear();
 

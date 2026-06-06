@@ -2,9 +2,6 @@ module;
 
 #ifdef _WIN32
 #include <x86intrin.h>
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <Windows.h>
 #endif
 
 export module gse.stacktrace;
@@ -12,6 +9,7 @@ export module gse.stacktrace;
 import std;
 import gse.log;
 import gse.meta;
+import gse.win32;
 
 export namespace gse {
 	auto capture_stacktrace(
@@ -38,25 +36,27 @@ auto gse::capture_stacktrace(const std::size_t skip_frames) -> std::string {
 
 #ifdef _WIN32
 namespace gse {
+	using namespace gse::win32;
+
 	enum class seh_code : std::uint32_t {
-		access_violation = EXCEPTION_ACCESS_VIOLATION,
-		array_bounds_exceeded = EXCEPTION_ARRAY_BOUNDS_EXCEEDED,
-		datatype_misalignment = EXCEPTION_DATATYPE_MISALIGNMENT,
-		flt_denormal_operand = EXCEPTION_FLT_DENORMAL_OPERAND,
-		flt_divide_by_zero = EXCEPTION_FLT_DIVIDE_BY_ZERO,
-		flt_inexact_result = EXCEPTION_FLT_INEXACT_RESULT,
-		flt_invalid_operation = EXCEPTION_FLT_INVALID_OPERATION,
-		flt_overflow = EXCEPTION_FLT_OVERFLOW,
-		flt_stack_check = EXCEPTION_FLT_STACK_CHECK,
-		flt_underflow = EXCEPTION_FLT_UNDERFLOW,
-		illegal_instruction = EXCEPTION_ILLEGAL_INSTRUCTION,
-		in_page_error = EXCEPTION_IN_PAGE_ERROR,
-		int_divide_by_zero = EXCEPTION_INT_DIVIDE_BY_ZERO,
-		int_overflow = EXCEPTION_INT_OVERFLOW,
-		invalid_disposition = EXCEPTION_INVALID_DISPOSITION,
-		noncontinuable_exception = EXCEPTION_NONCONTINUABLE_EXCEPTION,
-		priv_instruction = EXCEPTION_PRIV_INSTRUCTION,
-		stack_overflow = EXCEPTION_STACK_OVERFLOW,
+		access_violation = exception_access_violation,
+		array_bounds_exceeded = exception_array_bounds_exceeded,
+		datatype_misalignment = exception_datatype_misalignment,
+		flt_denormal_operand = exception_flt_denormal_operand,
+		flt_divide_by_zero = exception_flt_divide_by_zero,
+		flt_inexact_result = exception_flt_inexact_result,
+		flt_invalid_operation = exception_flt_invalid_operation,
+		flt_overflow = exception_flt_overflow,
+		flt_stack_check = exception_flt_stack_check,
+		flt_underflow = exception_flt_underflow,
+		illegal_instruction = exception_illegal_instruction,
+		in_page_error = exception_in_page_error,
+		int_divide_by_zero = exception_int_divide_by_zero,
+		int_overflow = exception_int_overflow,
+		invalid_disposition = exception_invalid_disposition,
+		noncontinuable_exception = exception_noncontinuable_exception,
+		priv_instruction = exception_priv_instruction,
+		stack_overflow = exception_stack_overflow,
 	};
 
 	constexpr DWORD cpp_exception_code = 0xE06D7363;
@@ -65,15 +65,15 @@ namespace gse {
 	constexpr DWORD dbg_print_exception_wide_c = 0x4001000A;
 	constexpr DWORD ms_thread_name_code = 0x406D1388;
 
-	LONG WINAPI vectored_handler(EXCEPTION_POINTERS* info) noexcept {
+	LONG vectored_handler(EXCEPTION_POINTERS* info) noexcept {
 		const auto* rec = info->ExceptionRecord;
 		const auto code = rec->ExceptionCode;
 		if (code == cpp_exception_code || code == breakpoint_code || code == dbg_print_exception_code || code == dbg_print_exception_wide_c || code == ms_thread_name_code) {
-			return EXCEPTION_CONTINUE_SEARCH;
+			return exception_continue_search;
 		}
 
 		std::string detail;
-		if (code == EXCEPTION_ACCESS_VIOLATION && rec->NumberParameters >= 2) {
+		if (code == exception_access_violation && rec->NumberParameters >= 2) {
 			const auto op = rec->ExceptionInformation[0];
 			const auto addr = rec->ExceptionInformation[1];
 			const std::string_view op_name = op == 0 ? "read" : op == 1 ? "write"
@@ -94,13 +94,14 @@ namespace gse {
 			capture_stacktrace(1)
 		);
 		log::flush();
-		return EXCEPTION_CONTINUE_SEARCH;
+		return exception_continue_search;
 	}
 }
 #endif
 
 auto gse::install_crash_handlers() -> void {
 #ifdef _WIN32
+	using namespace gse::win32;
 	const auto* handle = AddVectoredExceptionHandler(1, &vectored_handler);
 	log::println(
 		log::level::info,
