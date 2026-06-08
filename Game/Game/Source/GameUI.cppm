@@ -202,5 +202,5 @@ auto gs::client_ui_system::run(gse::run_context& ctx, data& d, const gse::gui::s
 		});
 	}
 
-	co_return;
+	return {};
 }

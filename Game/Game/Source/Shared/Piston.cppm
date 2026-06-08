@@ -46,5 +46,5 @@ auto gs::piston::system::run(gse::run_context& ctx, gse::write<component> piston
 		p.phase += p.omega * step_dt * frame_step_count;
 	}
 
-	co_return;
+	return {};
 }

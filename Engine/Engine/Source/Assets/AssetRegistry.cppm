@@ -222,7 +222,7 @@ export namespace gse::resource {
 
 auto gse::asset::registry::init(run_context& ctx, data& d) -> async::task<> {
 	d.channels = &ctx.channels;
-	co_return;
+	return {};
 }
 
 auto gse::asset::registry::run(run_context& ctx, data& d) -> async::task<> {
@@ -251,7 +251,7 @@ auto gse::asset::registry::run(run_context& ctx, data& d) -> async::task<> {
 
 	d.watcher.poll();
 
-	co_return;
+	return {};
 }
 
 auto gse::asset::registry::shutdown(shutdown_context&, data& d) -> void {

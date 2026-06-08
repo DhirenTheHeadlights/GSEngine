@@ -83,7 +83,7 @@ auto gse::camera::system::init(data& d) -> async::task<> {
 	d.prev_jitter_ndc = d.jitter_ndc;
 	d.prev_view_matrix = d.view_matrix;
 	d.prev_projection_matrix = d.projection_matrix;
-	co_return;
+	return {};
 }
 
 auto gse::camera::system::run(run_context& ctx, data& d, read<follow_component> cameras) -> async::task<> {
@@ -183,5 +183,5 @@ auto gse::camera::system::run(run_context& ctx, data& d, read<follow_component> 
 	};
 	apply_jitter(d.projection_matrix, d.jitter_ndc);
 
-	co_return;
+	return {};
 }

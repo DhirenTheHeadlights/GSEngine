@@ -344,5 +344,5 @@ auto ide::editor_app::run(gse::run_context& ctx, data& d, const config_system::d
 			});
 		}
 
-	co_return;
+	return {};
 }

@@ -616,5 +616,5 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		}
 	}
 
-	co_return;
+	return {};
 }

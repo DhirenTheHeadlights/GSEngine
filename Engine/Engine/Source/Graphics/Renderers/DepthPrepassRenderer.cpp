@@ -71,7 +71,7 @@ auto gse::renderer::depth_prepass::system::init(run_context& ctx, const gpu::con
 		);
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<geometry_collector::system> gc_r, shared_view<camera::system> cam_state) -> async::task<> {

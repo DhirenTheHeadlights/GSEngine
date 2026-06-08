@@ -375,7 +375,7 @@ auto gse::renderer::physics_debug::system::init(const gpu::context::data& gpu_s,
 		);
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const physics::system::data& ps) -> async::task<> {

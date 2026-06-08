@@ -69,5 +69,5 @@ auto gs::client_system::init(gse::run_context& ctx) -> gse::async::task<> {
 		.timeout = gse::milliseconds(200),
 	});
 
-	co_return;
+	return {};
 }

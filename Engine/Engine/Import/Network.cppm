@@ -159,7 +159,7 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 
 		if (!d.client_ptr) {
 			d.connection_state = client::state::disconnected;
-			co_return;
+			return {};
 		}
 
 		for (const auto& req : ctx.read_channel<send_request>()) {
@@ -269,5 +269,5 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 			);
 		}
 
-	co_return;
+	return {};
 }

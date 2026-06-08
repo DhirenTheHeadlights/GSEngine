@@ -138,7 +138,7 @@ auto gse::renderer::taa::system::init(run_context& ctx, const gpu::context::data
 		}
 	);
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::taa::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {

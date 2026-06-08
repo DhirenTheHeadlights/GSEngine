@@ -206,5 +206,5 @@ auto gs::locomotion::footstep_planner::run(data& d, gse::read<skeleton_refs> ref
 		}
 	}
 
-	co_return;
+	return {};
 }

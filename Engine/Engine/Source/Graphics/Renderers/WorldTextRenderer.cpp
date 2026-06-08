@@ -166,7 +166,7 @@ auto gse::renderer::world_text::system::init(run_context& ctx, const gpu::contex
 		);
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<gui::system> gui_d, shared_view<sdf_grid::system> grid_d) -> async::task<> {

@@ -101,7 +101,7 @@ auto gse::renderer::tonemap::system::init(run_context& ctx, const gpu::context::
 		}
 	);
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<bloom::system> bloom_state) -> async::task<> {

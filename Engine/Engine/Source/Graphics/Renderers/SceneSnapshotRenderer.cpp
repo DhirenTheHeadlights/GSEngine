@@ -56,11 +56,11 @@ auto gse::renderer::scene_snapshot::system::init(const gpu::context::data& gpu_s
 	if (d.enabled && initial_extent.x() > 0 && initial_extent.y() > 0) {
 		recreate_resources(gpu_s, d, initial_extent);
 	}
-	co_return;
+	return {};
 }
 
 auto gse::renderer::scene_snapshot::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	co_return;
+	return {};
 }
 
 auto gse::renderer::scene_snapshot::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {

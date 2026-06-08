@@ -54,5 +54,5 @@ auto gs::tumbler::system::run(gse::run_context& ctx, gse::write<component> tumbl
 		t.phase += t.angular_speed * step_dt * frame_step_count;
 	}
 
-	co_return;
+	return {};
 }

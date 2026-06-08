@@ -402,7 +402,7 @@ auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu:
 auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	const auto& items = ctx.read_channel<render_data>();
 	if (items.empty()) {
-		co_return;
+		return {};
 	}
 
 	const auto& data = items[0];
@@ -459,4 +459,6 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 			material_count * sizeof(shaders::forward::material_data)
 		);
 	}
+
+	return {};
 }

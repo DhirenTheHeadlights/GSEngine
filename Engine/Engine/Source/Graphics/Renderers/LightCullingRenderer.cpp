@@ -156,7 +156,7 @@ auto gse::renderer::light_culling::system::init(run_context& ctx, const gpu::con
 		}
 	);
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<camera::system> cam_state, shared_view<atmosphere::system> atm_state) -> async::task<> {

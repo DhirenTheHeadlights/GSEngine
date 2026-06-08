@@ -146,7 +146,7 @@ auto gse::audio::system::init(data& d) -> async::task<> {
 	d.engine_initialized = true;
 	ma_engine_set_volume(&d.engine->inner, d.master_vol.value(percentage<float>::bound::zero_to_one));
 
-	co_return;
+	return {};
 }
 
 auto gse::audio::system::run(run_context& ctx, data& d) -> async::task<> {
@@ -199,7 +199,7 @@ auto gse::audio::system::run(run_context& ctx, data& d) -> async::task<> {
 		}
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::audio::system::shutdown(shutdown_context&, data& d) -> void {

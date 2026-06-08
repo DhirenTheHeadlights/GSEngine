@@ -69,7 +69,7 @@ auto gse::renderer::physics_transform::system::init(run_context& ctx, const gpu:
 
 	d.initialized = true;
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {

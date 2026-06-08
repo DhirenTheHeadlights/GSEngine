@@ -153,5 +153,5 @@ auto gse::gui::popout_system::run(gse::run_context& ctx, data& d, const system::
 			});
 		}
 
-	co_return;
+	return {};
 }

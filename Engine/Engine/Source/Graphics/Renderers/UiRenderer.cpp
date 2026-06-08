@@ -178,7 +178,7 @@ auto gse::renderer::ui::system::init(const gpu::context::data& gpu_s, data& d) -
 		);
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
@@ -186,7 +186,7 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 	const auto& text_commands = ctx.read_channel<text_command>();
 
 	if (sprite_commands.empty() && text_commands.empty()) {
-		co_return;
+		return {};
 	}
 
 	auto& [vertices, indices, batches] = d.buffered_frames.write();
@@ -330,7 +330,7 @@ auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& 
 
 	d.buffered_frames.publish();
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<scene_snapshot::system> snapshot_s) -> async::task<> {

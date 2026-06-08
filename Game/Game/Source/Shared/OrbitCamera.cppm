@@ -232,5 +232,5 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 		}
 	);
 
-	co_return;
+	return {};
 }

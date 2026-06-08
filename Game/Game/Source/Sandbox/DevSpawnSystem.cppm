@@ -65,5 +65,5 @@ auto gs::dev_spawn_system::run(gse::run_context& ctx, data& d, const gse::action
 		spawn_joint_test(*scene);
 	}
 
-	co_return;
+	return {};
 }

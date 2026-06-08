@@ -49,7 +49,7 @@ auto gse::server_system<Components...>::run(run_context& ctx, data& d, world_sys
 	if (d.srv) {
 		d.srv->update(world_d, ctx.registry(), ctx.channels, actions_d);
 	}
-	co_return;
+	return {};
 }
 
 template <typename ServerSystem>
@@ -103,7 +103,7 @@ auto gse::server_app_system<ServerSystem>::run(run_context& ctx, data& d, const 
 		},
 	});
 
-	co_return;
+	return {};
 }
 
 template <typename ServerSystem>

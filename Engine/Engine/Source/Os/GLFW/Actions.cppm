@@ -640,7 +640,7 @@ auto gse::actions::state::camera_yaw() const -> angle {
 
 auto gse::actions::system::init(data& d) -> async::task<> {
 	finalize_bindings(d);
-	co_return;
+	return {};
 }
 
 auto gse::actions::system::run(run_context& ctx, data& d, const input::system::data& input_s) -> async::task<> {
@@ -699,7 +699,7 @@ auto gse::actions::system::run(run_context& ctx, data& d, const input::system::d
 		);
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::actions::system::current_state(const data& d) -> const actions::state& {
