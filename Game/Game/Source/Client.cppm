@@ -16,13 +16,13 @@ import :tumbler;
 
 export namespace gs {
 	struct client_system {
-		static auto run(
+		static auto init(
 			gse::run_context& ctx
 		) -> gse::async::task<>;
 	};
 }
 
-auto gs::client_system::run(gse::run_context& ctx) -> gse::async::task<> {
+auto gs::client_system::init(gse::run_context& ctx) -> gse::async::task<> {
 	ctx.add_system<gs::player::system>();
 	ctx.add_system<gs::orbit_camera::system>();
 	ctx.add_system<gs::tumbler::system>();
@@ -69,7 +69,5 @@ auto gs::client_system::run(gse::run_context& ctx) -> gse::async::task<> {
 		.timeout = gse::milliseconds(200),
 	});
 
-	while (true) {
-		co_await ctx.next_tick();
-	}
+	co_return;
 }

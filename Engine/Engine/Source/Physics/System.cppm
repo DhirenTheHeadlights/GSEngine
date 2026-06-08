@@ -18,8 +18,10 @@ import gse.meta;
 import gse.gpu;
 
 import :narrow_phase_collision;
+import :joint_spec;
 import :motion_component;
 import :motor_component;
+import :muscle_component;
 import :collision_component;
 import :transform_component;
 import :contact_manifold;
@@ -198,12 +200,38 @@ export namespace gse::physics {
 			vbd::gpu_solver gpu_solver;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data* gpu_s,
-			const asset::data& assets_s,
 			data& d
 		) -> async::task<>;
+
+		struct run {
+			static auto prepare(
+				run_context& ctx,
+				const gpu::context::data* gpu_s,
+				const asset::data& assets_s,
+				data& d,
+				write<joint_spec> specs,
+				read<muscle_component> muscles
+			) -> async::task<>;
+
+			static auto ensure_results(
+				run_context& ctx,
+				data& d,
+				structural<collision_result_component> results
+			) -> async::task<>;
+
+			static auto integrate(
+				run_context& ctx,
+				data& d,
+				write<transform_component> transform,
+				write<motion_component> motion,
+				read<motor_component> motor,
+				write<collision_component> collision,
+				write<collision_result_component> results
+			) -> async::task<>;
+		};
 
 		static auto frame(
 			frame_context& ctx,

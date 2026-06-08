@@ -113,6 +113,13 @@ export namespace gse::gui {
 			static constexpr time update_interval = seconds(30.f);
 		};
 
+		static auto init(
+			run_context& ctx,
+			const window::data& window_s,
+			const asset::data& assets_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
 			const window::data& window_s,

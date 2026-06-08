@@ -2,8 +2,6 @@ export module gse.physics:joint_spec;
 
 import std;
 
-import :system;
-
 import gse.core;
 import gse.ecs;
 import gse.math;

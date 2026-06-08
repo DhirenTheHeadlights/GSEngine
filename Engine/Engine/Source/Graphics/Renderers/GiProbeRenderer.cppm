@@ -63,7 +63,7 @@ export namespace gse::renderer::gi_probe {
 			[[= gse::shared]] vec3<position> origin_world{};
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			const rt_shadow::system::data& rt_state,

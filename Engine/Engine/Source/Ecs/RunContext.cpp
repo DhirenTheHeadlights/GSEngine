@@ -41,21 +41,6 @@ namespace gse {
 	) -> async::task<>;
 }
 
-auto gse::run_context::next_tick() -> async::task<> {
-	const int locks = held_lock_count();
-	assert(
-		locks == 0,
-		"system held {} component lock(s) across co_await ctx.next_tick(); scope your acquire<> so the locked handle "
-		"is destroyed before next_tick",
-		locks
-	);
-	m_is_in_update_loop = true;
-	m_settled = true;
-	m_paused_event.set();
-	co_await m_resume_event.wait();
-	m_resume_event.reset();
-}
-
 auto gse::run_context::yield_tick() -> async::task<> {
 	const int locks = held_lock_count();
 	assert(

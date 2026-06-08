@@ -114,7 +114,7 @@ auto gse::renderer::taa::rebind_views(const gpu::context::data& gpu_s, system::d
 	}
 }
 
-auto gse::renderer::taa::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::taa::system::init(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	d.sampler = gpu_s.device->register_sampler(

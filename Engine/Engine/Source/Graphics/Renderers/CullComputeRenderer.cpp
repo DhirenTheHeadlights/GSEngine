@@ -57,7 +57,7 @@ namespace gse::renderer::cull_compute {
 	using entry = gpu::compute_entry<gpu::body_path<"Compute/cull_instances">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::threads<1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::group_id>>;
 }
 
-auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
+auto gse::renderer::cull_compute::system::init(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
 	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {

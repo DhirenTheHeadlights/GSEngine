@@ -107,7 +107,7 @@ auto gse::renderer::gi_probe::rebind_tlas_views(const gpu::context::data& gpu_s,
 	}
 }
 
-auto gse::renderer::gi_probe::system::run(run_context& ctx, const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
+auto gse::renderer::gi_probe::system::init(run_context& ctx, const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
 	d.update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	recreate_atlas(gpu_s, d);

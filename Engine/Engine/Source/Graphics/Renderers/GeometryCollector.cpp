@@ -84,7 +84,9 @@ namespace gse::renderer::geometry_collector {
 	auto tick(
 		run_context& ctx,
 		system::data& d,
-		const camera::system::data& cam_state
+		const camera::system::data& cam_state,
+		write<render_component>& render,
+		read<physics::transform_component>& transform
 	) -> async::task<>;
 }
 
@@ -335,16 +337,11 @@ auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::
 	co_return;
 }
 
-auto gse::renderer::geometry_collector::tick(run_context& ctx, system::data& d, const camera::system::data& cam_state) -> async::task<> {
+auto gse::renderer::geometry_collector::tick(run_context& ctx, system::data& d, const camera::system::data& cam_state, write<render_component>& render, read<physics::transform_component>& transform) -> async::task<> {
 	const view_matrix view_matrix = cam_state.view_matrix;
 	const projection_matrix proj_matrix = cam_state.projection_matrix;
 
 	auto body_index_map = read_body_index_map(ctx);
-
-	auto [render, transform] = co_await ctx.acquire_with(
-		write_v<render_component>,
-		read_v<physics::transform_component>
-	);
 
 	if (render.empty()) {
 		co_return;
@@ -392,13 +389,14 @@ auto gse::renderer::geometry_collector::filter_render_queue(const render_data& d
 	return result;
 }
 
-auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const camera::system::data& cam_state, const primitive_resolver::system& resolver_state) -> async::task<> {
+auto gse::renderer::geometry_collector::system::init(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	co_await initialize(ctx, gpu_s, d);
+	co_return;
+}
 
-	while (true) {
-		co_await tick(ctx, d, cam_state);
-		co_await ctx.next_tick();
-	}
+auto gse::renderer::geometry_collector::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const camera::system::data& cam_state, const primitive_resolver::system& resolver_state, write<render_component> render, read<physics::transform_component> transform) -> async::task<> {
+	co_await tick(ctx, d, cam_state, render, transform);
+	co_return;
 }
 
 auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {

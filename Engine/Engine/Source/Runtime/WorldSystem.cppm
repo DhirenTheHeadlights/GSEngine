@@ -261,54 +261,52 @@ auto gse::update_player_controllers(world_system::data& d, registry& reg) -> voi
 }
 
 auto gse::world_system::run(run_context& ctx, data& d, const actions::system::data& actions_d) -> async::task<> {
-	while (true) {
-		for (const auto& r : ctx.read_channel<set_networked_request>()) {
-			d.networked = r.value;
-		}
-		for (const auto& r : ctx.read_channel<set_authoritative_request>()) {
-			d.authoritative = r.value;
-		}
-		for (const auto& r : ctx.read_channel<set_local_controller_id_request>()) {
-			d.local_controller_id = r.controller_id;
-		}
-		if (!ctx.read_channel<deactivate_active_scene_request>().empty()) {
-			deactivate_active_scene(d);
-		}
-		for (const auto& r : ctx.read_channel<activate_scene_request>()) {
-			activate_scene(d, r.scene_id);
-		}
+	for (const auto& r : ctx.read_channel<set_networked_request>()) {
+		d.networked = r.value;
+	}
+	for (const auto& r : ctx.read_channel<set_authoritative_request>()) {
+		d.authoritative = r.value;
+	}
+	for (const auto& r : ctx.read_channel<set_local_controller_id_request>()) {
+		d.local_controller_id = r.controller_id;
+	}
+	if (!ctx.read_channel<deactivate_active_scene_request>().empty()) {
+		deactivate_active_scene(d);
+	}
+	for (const auto& r : ctx.read_channel<activate_scene_request>()) {
+		activate_scene(d, r.scene_id);
+	}
 
-		if (!d.networked) {
-			const auto& s = actions::system::current_state(actions_d);
+	if (!d.networked) {
+		const auto& s = actions::system::current_state(actions_d);
 
-			for (const auto& [scene_id, condition] : d.triggers) {
-				const evaluation_context ec{
-					.client_id = d.client_id,
-					.input = std::addressof(s),
-					.actions_sys = &actions_d,
-					.registry = &ctx.registry(),
-				};
+		for (const auto& [scene_id, condition] : d.triggers) {
+			const evaluation_context ec{
+				.client_id = d.client_id,
+				.input = std::addressof(s),
+				.actions_sys = &actions_d,
+				.registry = &ctx.registry(),
+			};
 
-				if (condition(ec) && scene_id != d.active_scene) {
-					if (d.active_scene.has_value()) {
-						if (auto* old_scene = find_scene(d, d.active_scene.value())) {
-							old_scene->set_active(false);
-						}
+			if (condition(ec) && scene_id != d.active_scene) {
+				if (d.active_scene.has_value()) {
+					if (auto* old_scene = find_scene(d, d.active_scene.value())) {
+						old_scene->set_active(false);
 					}
+				}
 
-					if (auto* new_scene = find_scene(d, scene_id)) {
-						new_scene->set_active(true);
-						d.active_scene = new_scene->id();
-						break;
-					}
+				if (auto* new_scene = find_scene(d, scene_id)) {
+					new_scene->set_active(true);
+					d.active_scene = new_scene->id();
+					break;
 				}
 			}
 		}
-
-		update_player_controllers(d, ctx.registry());
-
-		co_await ctx.next_tick();
 	}
+
+	update_player_controllers(d, ctx.registry());
+
+	co_return;
 }
 
 auto gse::world_system::shutdown(shutdown_context&, data& d) -> void {

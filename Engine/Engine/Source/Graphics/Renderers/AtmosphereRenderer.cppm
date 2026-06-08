@@ -190,7 +190,7 @@ export namespace gse::renderer::atmosphere {
 			bool luts_ready = false;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			data& d

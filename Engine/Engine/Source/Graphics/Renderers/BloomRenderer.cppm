@@ -56,7 +56,7 @@ export namespace gse::renderer::bloom {
 			gpu::bindless_handle hdr_view;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			data& d

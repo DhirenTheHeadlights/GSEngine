@@ -114,7 +114,7 @@ auto rebuild_tile_buffers(const gpu::context::data& gpu_s, system::data& d) -> v
 }
 }
 
-auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+auto gse::renderer::light_culling::system::init(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {

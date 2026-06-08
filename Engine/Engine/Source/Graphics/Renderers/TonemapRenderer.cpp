@@ -79,7 +79,7 @@ auto gse::renderer::tonemap::rebind_views(const gpu::context::data& gpu_s, syste
 	}
 }
 
-auto gse::renderer::tonemap::system::run(run_context& ctx, const gpu::context::data& gpu_s, const bloom::system::data& bloom_state, data& d) -> async::task<> {
+auto gse::renderer::tonemap::system::init(run_context& ctx, const gpu::context::data& gpu_s, const bloom::system::data& bloom_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	d.sampler = gpu_s.device->register_sampler(

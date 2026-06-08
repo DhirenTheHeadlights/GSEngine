@@ -193,7 +193,7 @@ auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data
 	};
 }
 
-auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::cloud::system::init(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.shape_bake_pipeline = gpu::build_compute_program(*gpu_s.device, shape_bake_entry::pod);
 	d.detail_bake_pipeline = gpu::build_compute_program(*gpu_s.device, detail_bake_entry::pod);
 	d.raymarch_pipeline = gpu::build_compute_program(*gpu_s.device, raymarch_entry::pod);

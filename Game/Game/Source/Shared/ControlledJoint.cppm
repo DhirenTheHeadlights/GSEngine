@@ -11,6 +11,7 @@ export namespace gs {
 		gse::id extensor_muscle;
 		float gain = 12.f;
 		float damping = 2.0f;
+		float max_activation = 1.f;
 		gse::quat rest_orientation = gse::quat(1.f, 0.f, 0.f, 0.f);
 		gse::angle prev_angle = gse::radians(0.f);
 		std::uint32_t rest_settle_ticks = 0;

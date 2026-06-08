@@ -99,7 +99,6 @@ template <typename... Components>
 auto gse::network::system<Components...>::run(run_context& ctx, const asset::data& assets_d, data& d, const actions::system::data& actions_d) -> async::task<> {
 	(ctx.template ensure_storage<Components>(), ...);
 
-	while (true) {
 		for (const auto& response : ctx.read_channel<camera_yaw_response>()) {
 			d.camera_yaw = response.yaw;
 		}
@@ -160,8 +159,7 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 
 		if (!d.client_ptr) {
 			d.connection_state = client::state::disconnected;
-			co_await ctx.next_tick();
-			continue;
+			co_return;
 		}
 
 		for (const auto& req : ctx.read_channel<send_request>()) {
@@ -271,6 +269,5 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 			);
 		}
 
-		co_await ctx.next_tick();
-	}
+	co_return;
 }

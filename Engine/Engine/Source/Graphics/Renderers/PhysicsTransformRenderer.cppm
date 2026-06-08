@@ -27,7 +27,7 @@ export namespace gse::renderer::physics_transform {
 			per_frame_resource<gpu::bindless_handle> body_views;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			const asset::data& assets_s,

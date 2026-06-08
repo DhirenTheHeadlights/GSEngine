@@ -22,6 +22,11 @@ export namespace gse::renderer::scene_snapshot {
 			bool enabled = true;
 		};
 
+		static auto init(
+			const gpu::context::data& gpu_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,

@@ -35,6 +35,11 @@ export namespace gse::asset {
 			channel_writer* channels = nullptr;
 		};
 
+		static auto init(
+			run_context& ctx,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
 			data& d
@@ -215,37 +220,38 @@ export namespace gse::resource {
 	};
 }
 
-auto gse::asset::registry::run(run_context& ctx, data& d) -> async::task<> {
+auto gse::asset::registry::init(run_context& ctx, data& d) -> async::task<> {
 	d.channels = &ctx.channels;
+	co_return;
+}
 
-	while (true) {
-		for (const auto& req : ctx.read_channel<hot_reload_request>()) {
-			if (req.enabled == d.hot_reload_enabled) {
-				continue;
-			}
-			if (req.enabled) {
-				if (d.enable_hot_reload_fn) {
-					d.enable_hot_reload_fn();
-				}
-				log::println(log::category::assets, "Hot reload enabled");
-			}
-			else {
-				if (d.disable_hot_reload_fn) {
-					d.disable_hot_reload_fn();
-				}
-				log::println(log::category::assets, "Hot reload disabled");
-			}
-			d.hot_reload_enabled = req.enabled;
-		}
-
-		d.watcher.poll();
-
-		co_await ctx.next_tick();
-
-		for (const auto& l : std::views::values(d.resource_loaders)) {
-			l->flush();
-		}
+auto gse::asset::registry::run(run_context& ctx, data& d) -> async::task<> {
+	for (const auto& l : std::views::values(d.resource_loaders)) {
+		l->flush();
 	}
+
+	for (const auto& req : ctx.read_channel<hot_reload_request>()) {
+		if (req.enabled == d.hot_reload_enabled) {
+			continue;
+		}
+		if (req.enabled) {
+			if (d.enable_hot_reload_fn) {
+				d.enable_hot_reload_fn();
+			}
+			log::println(log::category::assets, "Hot reload enabled");
+		}
+		else {
+			if (d.disable_hot_reload_fn) {
+				d.disable_hot_reload_fn();
+			}
+			log::println(log::category::assets, "Hot reload disabled");
+		}
+		d.hot_reload_enabled = req.enabled;
+	}
+
+	d.watcher.poll();
+
+	co_return;
 }
 
 auto gse::asset::registry::shutdown(shutdown_context&, data& d) -> void {

@@ -16,6 +16,10 @@ export namespace gse {
 			id state_type
 		) -> void;
 
+		auto reset_state(
+			id state_type
+		) -> void;
+
 		auto wait_state_ready(
 			id state_type
 		) -> async::task<>;
@@ -80,6 +84,11 @@ auto gse::task_graph::notify_state_ready(const id state_type) -> void {
 	for (auto h : handles) {
 		h.resume();
 	}
+}
+
+auto gse::task_graph::reset_state(const id state_type) -> void {
+	auto* slot = get_or_create_slot(state_type);
+	slot->ready.store(false, std::memory_order_release);
 }
 
 auto gse::task_graph::is_state_ready(const id state_type) -> bool {

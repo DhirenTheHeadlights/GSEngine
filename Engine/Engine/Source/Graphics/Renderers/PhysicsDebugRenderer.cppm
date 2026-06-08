@@ -67,6 +67,11 @@ export namespace gse::renderer::physics_debug {
 			std::vector<debug_vertex> line_vertices;
 		};
 
+		static auto init(
+			const gpu::context::data& gpu_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,

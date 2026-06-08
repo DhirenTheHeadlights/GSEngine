@@ -23,6 +23,8 @@ export namespace gse::vbd {
 			std::uint32_t index
 		) -> void;
 
+		auto sort_contacts_canonical() -> void;
+
 		auto compute_coloring(
 			std::uint32_t num_bodies,
 			std::span<const bool> locked
@@ -88,6 +90,18 @@ auto gse::vbd::constraint_graph::remove_joint(const std::uint32_t index) -> void
 	if (index < m_joints.size()) {
 		m_joints.erase(m_joints.begin() + index);
 	}
+}
+
+auto gse::vbd::constraint_graph::sort_contacts_canonical() -> void {
+	std::ranges::sort(m_contacts, [](const contact_constraint& a, const contact_constraint& b) {
+		if (a.body_a != b.body_a) {
+			return a.body_a < b.body_a;
+		}
+		if (a.body_b != b.body_b) {
+			return a.body_b < b.body_b;
+		}
+		return a.feature_key < b.feature_key;
+	});
 }
 
 auto gse::vbd::constraint_graph::compute_coloring(const std::uint32_t num_bodies, const std::span<const bool> locked) -> void {

@@ -71,6 +71,12 @@ export namespace gse::renderer::capture {
 			std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
 		};
 
+		static auto init(
+			run_context& ctx,
+			const gpu::context::data& gpu_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,

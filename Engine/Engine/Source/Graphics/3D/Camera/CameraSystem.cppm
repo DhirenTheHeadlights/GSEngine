@@ -50,9 +50,14 @@ export namespace gse::camera {
 			bool ui_focus = false;
 		};
 
+		static auto init(
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
-			data& d
+			data& d,
+			read<follow_component> cameras
 		) -> async::task<>;
 
 		static auto position(

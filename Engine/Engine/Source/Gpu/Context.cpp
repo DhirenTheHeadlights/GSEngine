@@ -18,7 +18,7 @@ import gse.concurrency;
 import gse.diag;
 import gse.log;
 
-auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data& d) -> async::task<> {
+auto gse::gpu::context::init(const window::data& window_s, data& d) -> async::task<> {
 	d.device = device::create(window_s, d.validation_layers_enabled, d.device_settings);
 	d.swapchain = swap_chain::create(
 		window::viewport(window_s),
@@ -33,15 +33,18 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 	);
 	d.render_graph->set_swapchain_clear(d.swapchain_clear);
 
-	while (true) {
-		for (const auto& req : ctx.read_channel<gpu_resume_request>()) {
-			if (req.handle && req.out_state) {
-				*req.out_state = &d;
-				req.handle.resume();
-			}
+	co_return;
+}
+
+auto gse::gpu::context::run(run_context& ctx, data& d) -> async::task<> {
+	for (const auto& req : ctx.read_channel<gpu_resume_request>()) {
+		if (req.handle && req.out_state) {
+			*req.out_state = &d;
+			req.handle.resume();
 		}
-		co_await ctx.next_tick();
 	}
+
+	co_return;
 }
 
 auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {

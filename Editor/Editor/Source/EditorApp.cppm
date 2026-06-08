@@ -253,6 +253,7 @@ export namespace ide {
 			lsp::client::data lsp;
 			command_registry commands;
 			int boot_frames = 0;
+			bool initialized = false;
 		};
 
 		static auto run(
@@ -264,22 +265,24 @@ export namespace ide {
 }
 
 auto ide::editor_app::run(gse::run_context& ctx, data& d, const config_system::data& config_d) -> gse::async::task<> {
-	ide::discover_commands<^^ide::commands>(d.commands);
+	if (!d.initialized) {
+		ide::discover_commands<^^ide::commands>(d.commands);
 
-	std::error_code ec;
-	d.ws.root = workspace::find_repo_root(std::filesystem::current_path(ec));
-	d.ws.fs_root.path = d.ws.root;
-	d.ws.fs_root.name = d.ws.root.filename().string();
-	d.ws.fs_root.is_dir = true;
-	workspace::open_scratch(d.ws);
+		std::error_code ec;
+		d.ws.root = workspace::find_repo_root(std::filesystem::current_path(ec));
+		d.ws.fs_root.path = d.ws.root;
+		d.ws.fs_root.name = d.ws.root.filename().string();
+		d.ws.fs_root.is_dir = true;
+		workspace::open_scratch(d.ws);
 
-	ctx.channels.push<gse::gui::push_screen_request>({
-		.factory = [channels = ctx.channels] {
-			return std::make_unique<editor_screen>(channels);
-		},
-	});
+		ctx.channels.push<gse::gui::push_screen_request>({
+			.factory = [channels = ctx.channels] {
+				return std::make_unique<editor_screen>(channels);
+			},
+		});
 
-	while (true) {
+		d.initialized = true;
+	}
 		workspace::data* ws = &d.ws;
 		const config_system::data* config = &config_d;
 
@@ -341,6 +344,5 @@ auto ide::editor_app::run(gse::run_context& ctx, data& d, const config_system::d
 			});
 		}
 
-		co_await ctx.next_tick();
-	}
+	co_return;
 }

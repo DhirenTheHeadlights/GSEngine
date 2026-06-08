@@ -76,115 +76,112 @@ namespace gse::camera {
 	}
 }
 
-auto gse::camera::system::run(run_context& ctx, data& d) -> async::task<> {
+auto gse::camera::system::init(data& d) -> async::task<> {
 	d.view_matrix = compute_view_matrix(d.current);
 	d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
 	d.jitter_ndc = vec2f{ 0.f, 0.f };
 	d.prev_jitter_ndc = d.jitter_ndc;
 	d.prev_view_matrix = d.view_matrix;
 	d.prev_projection_matrix = d.projection_matrix;
+	co_return;
+}
 
-	while (true) {
-		const time dt = system_clock::dt();
+auto gse::camera::system::run(run_context& ctx, data& d, read<follow_component> cameras) -> async::task<> {
+	const time dt = system_clock::dt();
 
-		for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
-			d.ui_focus = focus;
-		}
-
-		for (const auto& [size] : ctx.read_channel<viewport_update>()) {
-			d.viewport = size;
-		}
-
-		int highest_priority = -1;
-		id best_controller{};
-		target best_target{};
-		time best_blend_duration = milliseconds(300);
-
-		{
-			auto [cameras] = co_await ctx.acquire<read<follow_component>>();
-
-			const auto camera_ids = cameras.owner_ids();
-			for (std::size_t i = 0; i < cameras.size(); ++i) {
-				const auto& cam = cameras[i];
-				if (!cam.active) {
-					continue;
-				}
-
-				if (cam.priority > highest_priority) {
-					highest_priority = cam.priority;
-					best_controller = camera_ids[i];
-					best_blend_duration = cam.blend_in_duration;
-
-					best_target.position = cam.position + cam.offset;
-					best_target.orientation = cam.orientation;
-					best_target.fov = degrees(45.0f);
-					best_target.near_plane = meters(0.1f);
-					best_target.far_plane = meters(10000.0f);
-				}
-			}
-		}
-
-		if (best_controller.exists() && best_controller != d.active_controller_entity) {
-			if (d.active_controller_entity.exists()) {
-				d.blend_from = d.current;
-				d.blend_to = best_target;
-				d.blend_duration = best_blend_duration;
-				d.blend_elapsed = time{};
-				d.blending = true;
-			}
-			else {
-				d.current = best_target;
-			}
-			d.active_controller_entity = best_controller;
-			d.active_priority = highest_priority;
-		}
-		else if (best_controller.exists()) {
-			if (d.blending) {
-				d.blend_to = best_target;
-			}
-			else {
-				d.current = best_target;
-			}
-		}
-
-		if (d.blending) {
-			d.blend_elapsed += dt;
-			const float t = std::clamp(d.blend_elapsed / d.blend_duration, 0.f, 1.f);
-			d.current = interpolate_target(d.blend_from, d.blend_to, t);
-
-			if (t >= 1.0f) {
-				d.blending = false;
-				d.current = d.blend_to;
-			}
-		}
-
-		const vec3f forward = rotate_vector(d.current.orientation, vec3f(0.f, 0.f, -1.f));
-		d.yaw = radians(std::atan2(-forward.x(), -forward.z()));
-		if (!ctx.read_channel<camera_yaw_request>().empty()) {
-			ctx.channels.push<camera_yaw_response>({
-				.yaw = d.yaw,
-			});
-		}
-
-		d.prev_view_matrix = d.view_matrix;
-		d.prev_projection_matrix = d.projection_matrix;
-		d.prev_jitter_ndc = d.jitter_ndc;
-		d.view_matrix = compute_view_matrix(d.current);
-		d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
-
-		const float jitter_x = halton(2, d.jitter_index) - 0.5f;
-		const float jitter_y = halton(3, d.jitter_index) - 0.5f;
-		++d.jitter_index;
-		if (d.jitter_index >= 64) {
-			d.jitter_index = 1;
-		}
-
-		d.jitter_ndc = vec2f{
-			d.viewport.x() > 0.f ? jitter_x * 2.0f / d.viewport.x() : 0.f,
-			d.viewport.y() > 0.f ? jitter_y * 2.0f / d.viewport.y() : 0.f
-		};
-		apply_jitter(d.projection_matrix, d.jitter_ndc);
-
-		co_await ctx.next_tick();
+	for (const auto& [focus] : ctx.read_channel<ui_focus_request>()) {
+		d.ui_focus = focus;
 	}
+
+	for (const auto& [size] : ctx.read_channel<viewport_update>()) {
+		d.viewport = size;
+	}
+
+	int highest_priority = -1;
+	id best_controller{};
+	target best_target{};
+	time best_blend_duration = milliseconds(300);
+
+	const auto camera_ids = cameras.owner_ids();
+	for (std::size_t i = 0; i < cameras.size(); ++i) {
+		const auto& cam = cameras[i];
+		if (!cam.active) {
+			continue;
+		}
+
+		if (cam.priority > highest_priority) {
+			highest_priority = cam.priority;
+			best_controller = camera_ids[i];
+			best_blend_duration = cam.blend_in_duration;
+
+			best_target.position = cam.position + cam.offset;
+			best_target.orientation = cam.orientation;
+			best_target.fov = degrees(45.0f);
+			best_target.near_plane = meters(0.1f);
+			best_target.far_plane = meters(10000.0f);
+		}
+	}
+
+	if (best_controller.exists() && best_controller != d.active_controller_entity) {
+		if (d.active_controller_entity.exists()) {
+			d.blend_from = d.current;
+			d.blend_to = best_target;
+			d.blend_duration = best_blend_duration;
+			d.blend_elapsed = time{};
+			d.blending = true;
+		}
+		else {
+			d.current = best_target;
+		}
+		d.active_controller_entity = best_controller;
+		d.active_priority = highest_priority;
+	}
+	else if (best_controller.exists()) {
+		if (d.blending) {
+			d.blend_to = best_target;
+		}
+		else {
+			d.current = best_target;
+		}
+	}
+
+	if (d.blending) {
+		d.blend_elapsed += dt;
+		const float t = std::clamp(d.blend_elapsed / d.blend_duration, 0.f, 1.f);
+		d.current = interpolate_target(d.blend_from, d.blend_to, t);
+
+		if (t >= 1.0f) {
+			d.blending = false;
+			d.current = d.blend_to;
+		}
+	}
+
+	const vec3f forward = rotate_vector(d.current.orientation, vec3f(0.f, 0.f, -1.f));
+	d.yaw = radians(std::atan2(-forward.x(), -forward.z()));
+	if (!ctx.read_channel<camera_yaw_request>().empty()) {
+		ctx.channels.push<camera_yaw_response>({
+			.yaw = d.yaw,
+		});
+	}
+
+	d.prev_view_matrix = d.view_matrix;
+	d.prev_projection_matrix = d.projection_matrix;
+	d.prev_jitter_ndc = d.jitter_ndc;
+	d.view_matrix = compute_view_matrix(d.current);
+	d.projection_matrix = compute_projection_matrix(d.current, d.viewport);
+
+	const float jitter_x = halton(2, d.jitter_index) - 0.5f;
+	const float jitter_y = halton(3, d.jitter_index) - 0.5f;
+	++d.jitter_index;
+	if (d.jitter_index >= 64) {
+		d.jitter_index = 1;
+	}
+
+	d.jitter_ndc = vec2f{
+		d.viewport.x() > 0.f ? jitter_x * 2.0f / d.viewport.x() : 0.f,
+		d.viewport.y() > 0.f ? jitter_y * 2.0f / d.viewport.y() : 0.f
+	};
+	apply_jitter(d.projection_matrix, d.jitter_ndc);
+
+	co_return;
 }

@@ -158,17 +158,38 @@ export namespace gse {
 			system_node node
 		) -> void*;
 
+		auto wire_component_deps() -> void;
+
 		auto check_state_dep_cycles() -> void;
 
 		auto check_closed_dep_graph() -> void;
 
-		auto run_unified_update() -> void;
+		auto run_init_phase() -> void;
 
-		auto advance_run_systems_during_init() -> void;
+		auto advance_inits() -> void;
 
-		auto advance_one_run_system(
+		auto dispatch_run_systems() -> void;
+
+		auto advance_one_init_system(
 			system_node& node
 		) -> async::task<>;
+
+		auto run_node_update(
+			run_context& ctx,
+			system_node& node
+		) -> async::task<>;
+
+		auto warn_if_whole_tick_acquire(
+			system_node& node
+		) -> void;
+
+		[[nodiscard]] auto dep_init_done(
+			id dep
+		) const -> bool;
+
+		[[nodiscard]] auto is_dispatchable(
+			id node_id
+		) const -> bool;
 
 		auto drain_hot_add_queue() -> void;
 
@@ -207,7 +228,7 @@ export namespace gse {
 
 template <typename State>
 auto gse::scheduler::state(this auto& self) -> auto& {
-	auto* p = self.m_states.state_ptr(compute_state_dep_id<State>());
+	auto* p = self.m_states.state_ptr(id_of<State>());
 	assert(p != nullptr, "state not found");
 	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
 	return *static_cast<state_t*>(p);
@@ -215,14 +236,14 @@ auto gse::scheduler::state(this auto& self) -> auto& {
 
 template <typename State>
 auto gse::scheduler::try_state_of(this auto& self) -> auto* {
-	auto* p = self.m_states.state_ptr(compute_state_dep_id<State>());
+	auto* p = self.m_states.state_ptr(id_of<State>());
 	using state_t = std::conditional_t<std::is_const_v<std::remove_pointer_t<decltype(p)>>, const State, State>;
 	return static_cast<state_t*>(p);
 }
 
 template <typename State>
 auto gse::scheduler::has() const -> bool {
-	return m_states.contains(compute_state_dep_id<State>());
+	return m_states.contains(id_of<State>());
 }
 
 template <typename Resources>
