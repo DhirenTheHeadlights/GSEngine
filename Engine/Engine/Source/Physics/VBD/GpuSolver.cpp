@@ -695,7 +695,7 @@ auto gse::vbd::gpu_solver::latest_snapshot_slot() const -> std::uint32_t {
 
 auto gse::vbd::gpu_solver::initialize_compute(run_context& ctx, const gpu::context::data& gpu_s) -> async::task<> {
 	while (!gpu_s.device) {
-		co_await ctx.next_tick();
+		co_await ctx.yield_tick();
 	}
 
 	const auto build = [&](const auto& pod) {

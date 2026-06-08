@@ -55,7 +55,7 @@ namespace gse::renderer::depth_prepass::meshlet {
 	>;
 }
 
-auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+auto gse::renderer::depth_prepass::system::init(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.meshlet_pipeline = gpu::build_graphics_program(*gpu_s.device, meshlet::entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);

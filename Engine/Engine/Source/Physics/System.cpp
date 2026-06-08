@@ -227,7 +227,10 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 		std::ranges::sort(
 			objects,
 			[](const collision_pair& a, const collision_pair& b) {
-				return a.box.min.x() < b.box.min.x();
+				if (a.box.min.x() != b.box.min.x()) {
+					return a.box.min.x() < b.box.min.x();
+				}
+				return a.owner.number() < b.owner.number();
 			}
 		);
 	}
@@ -425,58 +428,80 @@ auto gse::physics::system::add_scene_contacts_to_solver(vbd::solver& solver, vbd
 
 	trace::scope_guard sg_merge{ trace_id<"vbd_cpu::broad_phase::merge">() };
 
+	std::vector<pending_point> merged_points;
+	for (auto& bucket : per_worker_points) {
+		merged_points.insert(merged_points.end(), bucket.begin(), bucket.end());
+	}
+	std::ranges::sort(merged_points, [](const pending_point& a, const pending_point& b) {
+		if (a.constraint.body_a != b.constraint.body_a) {
+			return a.constraint.body_a < b.constraint.body_a;
+		}
+		if (a.constraint.body_b != b.constraint.body_b) {
+			return a.constraint.body_b < b.constraint.body_b;
+		}
+		return a.constraint.feature_key < b.constraint.feature_key;
+	});
+
 	if (update_scene_state) {
 		auto* motion_base = motion.data();
 		const auto airborne_capacity = body_airborne.size();
-		for (const auto& bucket : per_worker_pairs) {
-			for (const auto& m : bucket) {
-				if (m.sat_normal.y() > 0.7f) {
-					if (auto* mc_b = motion.find(m.owner_b)) {
-						const auto idx = static_cast<std::size_t>(mc_b - motion_base);
-						if (idx < airborne_capacity) {
-							body_airborne[idx] = 0;
-						}
-					}
-				}
-				if (m.sat_normal.y() < -0.7f) {
-					if (auto* mc_a = motion.find(m.owner_a)) {
-						const auto idx = static_cast<std::size_t>(mc_a - motion_base);
-						if (idx < airborne_capacity) {
-							body_airborne[idx] = 0;
-						}
-					}
-				}
 
-				if (results) {
-					if (auto* res_a = results->find(m.owner_a)) {
-						res_a->colliding = true;
-						res_a->collision_normal = m.sat_normal;
-						res_a->penetration = -m.separation;
+		std::vector<pending_pair_meta> merged_pairs;
+		for (auto& bucket : per_worker_pairs) {
+			merged_pairs.insert(merged_pairs.end(), bucket.begin(), bucket.end());
+		}
+		std::ranges::sort(merged_pairs, [](const pending_pair_meta& a, const pending_pair_meta& b) {
+			if (a.owner_a.number() != b.owner_a.number()) {
+				return a.owner_a.number() < b.owner_a.number();
+			}
+			return a.owner_b.number() < b.owner_b.number();
+		});
+
+		for (const auto& m : merged_pairs) {
+			if (m.sat_normal.y() > 0.7f) {
+				if (auto* mc_b = motion.find(m.owner_b)) {
+					const auto idx = static_cast<std::size_t>(mc_b - motion_base);
+					if (idx < airborne_capacity) {
+						body_airborne[idx] = 0;
 					}
-					if (auto* res_b = results->find(m.owner_b)) {
-						res_b->colliding = true;
-						res_b->collision_normal = -m.sat_normal;
-						res_b->penetration = -m.separation;
+				}
+			}
+			if (m.sat_normal.y() < -0.7f) {
+				if (auto* mc_a = motion.find(m.owner_a)) {
+					const auto idx = static_cast<std::size_t>(mc_a - motion_base);
+					if (idx < airborne_capacity) {
+						body_airborne[idx] = 0;
 					}
+				}
+			}
+
+			if (results) {
+				if (auto* res_a = results->find(m.owner_a)) {
+					res_a->colliding = true;
+					res_a->collision_normal = m.sat_normal;
+					res_a->penetration = -m.separation;
+				}
+				if (auto* res_b = results->find(m.owner_b)) {
+					res_b->colliding = true;
+					res_b->collision_normal = -m.sat_normal;
+					res_b->penetration = -m.separation;
 				}
 			}
 		}
 	}
 
-	for (auto& bucket : per_worker_points) {
-		for (auto& pp : bucket) {
-			solver.add_contact_constraint(pp.constraint);
+	for (auto& pp : merged_points) {
+		solver.add_contact_constraint(pp.constraint);
 
-			if (update_scene_state && results) {
-				if (auto* res_a = results->find(pp.owner_a)) {
-					res_a->collision_points.push_back(pp.position_on_a);
-				}
+		if (update_scene_state && results) {
+			if (auto* res_a = results->find(pp.owner_a)) {
+				res_a->collision_points.push_back(pp.position_on_a);
 			}
 		}
 	}
 }
 
-auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+auto gse::physics::system::init(run_context& ctx, const gpu::context::data* gpu_s, data& d) -> async::task<> {
 	d.vbd_solver.configure(
 		vbd::solver_config{
 			.iterations = static_cast<std::uint32_t>(d.solver_iterations),
@@ -500,97 +525,98 @@ auto gse::physics::system::run(run_context& ctx, const gpu::context::data* gpu_s
 		d.gpu_buffers_created = d.gpu_solver.buffers_created();
 	}
 
-	while (true) {
-		{
-			auto [specs, muscles] = co_await ctx.acquire<write<joint_spec>, read<muscle_component>>();
-			const auto spec_owners = specs.owner_ids();
-			for (std::size_t i = 0; i < specs.size(); ++i) {
-				auto& spec = specs[i];
-				if (spec.resolved) {
-					continue;
-				}
-				const auto handle =
-					system::create_joint(
-						d,
-						make_joint_definition(spec.entity_a, spec.entity_b, spec.config)
-					);
-				d.joint_handles_by_entity[spec_owners[i]] = handle;
-				spec.resolved = true;
-			}
+	co_return;
+}
 
-			const auto muscle_owners = muscles.owner_ids();
-			for (std::size_t i = 0; i < muscles.size(); ++i) {
-				const auto handle_it = d.joint_handles_by_entity.find(muscle_owners[i]);
-				if (handle_it == d.joint_handles_by_entity.end()) {
-					continue;
-				}
-				if (handle_it->second >= d.joints.size()) {
-					continue;
-				}
-				d.joints[handle_it->second].activation = muscles[i].activation;
-			}
-		}
+auto gse::physics::system::run::prepare(run_context& ctx, const gpu::context::data* gpu_s, const asset::data& assets_s, data& d, write<joint_spec> specs, read<muscle_component> muscles) -> async::task<> {
+	(void)gpu_s;
+	(void)assets_s;
 
-		for (const auto owner : ctx.drain_component_adds<collision_component>()) {
-			ctx.add_component<collision_result_component>(owner);
-		}
-
-		if (const auto& stats_channel = ctx.read_channel<gpu_solver_stats>(); !stats_channel.empty()) {
-			d.gpu_stats = stats_channel[0];
-		}
-
-		if (!d.update_phys) {
-			co_await ctx.next_tick();
+	const auto spec_owners = specs.owner_ids();
+	for (std::size_t i = 0; i < specs.size(); ++i) {
+		auto& spec = specs[i];
+		if (spec.resolved) {
 			continue;
 		}
+		const auto handle =
+			system::create_joint(
+				d,
+				make_joint_definition(spec.entity_a, spec.entity_b, spec.config)
+			);
+		d.joint_handles_by_entity[spec_owners[i]] = handle;
+		spec.resolved = true;
+	}
 
+	const auto muscle_owners = muscles.owner_ids();
+	for (std::size_t i = 0; i < muscles.size(); ++i) {
+		const auto handle_it = d.joint_handles_by_entity.find(muscle_owners[i]);
+		if (handle_it == d.joint_handles_by_entity.end()) {
+			continue;
+		}
+		if (handle_it->second >= d.joints.size()) {
+			continue;
+		}
+		d.joints[handle_it->second].activation = muscles[i].activation;
+	}
+
+	if (const auto& stats_channel = ctx.read_channel<gpu_solver_stats>(); !stats_channel.empty()) {
+		d.gpu_stats = stats_channel[0];
+	}
+
+	if (d.update_phys) {
 		if (auto solver_cfg = d.vbd_solver.config(); solver_cfg.iterations != static_cast<std::uint32_t>(d.solver_iterations) || solver_cfg.use_jacobi != d.use_jacobi || solver_cfg.jacobi_omega != d.jacobi_omega) {
 			solver_cfg.iterations = static_cast<std::uint32_t>(d.solver_iterations);
 			solver_cfg.use_jacobi = d.use_jacobi;
 			solver_cfg.jacobi_omega = d.jacobi_omega;
 			d.vbd_solver.configure(solver_cfg);
 		}
-
-		const auto const_update_time = system_clock::fixed_dt<time_t<float, seconds>>();
-		const int steps = system_clock::fixed_steps_this_frame();
-
-		{
-			auto [transform, motion, motor, collision, results] = co_await ctx.acquire_with(
-				write_v<transform_component>,
-				write_v<motion_component>,
-				read_v<motor_component>,
-				write_v<collision_component>,
-				write_v<collision_result_component>
-			);
-
-			const auto impulses = ctx.read_channel<impulse_request>();
-
-			if (motion.empty() && collision.empty() && motor.empty()) {
-				clear_runtime_state(d);
-			}
-			else if (d.use_gpu_solver) {
-				trace::scope_guard sg{ trace_id<"physics::tick_gpu">() };
-				update_vbd_gpu(
-					steps,
-					d,
-					transform,
-					motion,
-					motor,
-					collision,
-					results,
-					impulses,
-					const_update_time,
-					ctx.channels
-				);
-			}
-			else {
-				trace::scope_guard sg{ trace_id<"physics::tick_cpu">() };
-				update_vbd(steps, d, transform, motion, motor, collision, results, impulses);
-			}
-		}
-
-		co_await ctx.next_tick();
 	}
+
+	co_return;
+}
+
+auto gse::physics::system::run::ensure_results(run_context& ctx, data& d, structural<collision_result_component> results) -> async::task<> {
+	(void)d;
+	for (const auto owner : ctx.drain_component_adds<collision_component>()) {
+		results.add(owner);
+	}
+	co_return;
+}
+
+auto gse::physics::system::run::integrate(run_context& ctx, data& d, write<transform_component> transform, write<motion_component> motion, read<motor_component> motor, write<collision_component> collision, write<collision_result_component> results) -> async::task<> {
+	if (!d.update_phys) {
+		co_return;
+	}
+
+	const auto const_update_time = system_clock::fixed_dt<time_t<float, seconds>>();
+	const int steps = system_clock::fixed_steps_this_frame();
+
+	const auto impulses = ctx.read_channel<impulse_request>();
+
+	if (motion.empty() && collision.empty() && motor.empty()) {
+		clear_runtime_state(d);
+	}
+	else if (d.use_gpu_solver) {
+		trace::scope_guard sg{ trace_id<"physics::tick_gpu">() };
+		update_vbd_gpu(
+			steps,
+			d,
+			transform,
+			motion,
+			motor,
+			collision,
+			results,
+			impulses,
+			const_update_time,
+			ctx.channels
+		);
+	}
+	else {
+		trace::scope_guard sg{ trace_id<"physics::tick_cpu">() };
+		update_vbd(steps, d, transform, motion, motor, collision, results, impulses);
+	}
+
+	co_return;
 }
 
 auto gse::physics::system::update_vbd_gpu(const int steps, data& d, write<transform_component>& transform, write<motion_component>& motion, read<motor_component>& motor, write<collision_component>& collision, write<collision_result_component>& results, std::span<const impulse_request> impulses, const time_t<float, seconds> dt, channel_writer& channels) -> void {
@@ -1242,6 +1268,7 @@ auto gse::physics::system::update_vbd(const int steps, data& d, write<transform_
 					d.body_sleeping[i] = bs.sleeping() ? 1 : 0;
 				}
 			}
+
 		}
 	}
 }

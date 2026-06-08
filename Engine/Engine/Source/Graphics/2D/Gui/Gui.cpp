@@ -150,13 +150,14 @@ auto gse::gui::system::init_body(run_context& ctx, const window::data& window_s,
 	d.previous_viewport_size = vec2f(window::viewport(window_s));
 }
 
-auto gse::gui::system::run(run_context& ctx, const window::data& window_s, const asset::data& assets_s, const gse::input::system::data& input_state, const save::registry& save_reg, data& d) -> async::task<> {
+auto gse::gui::system::init(run_context& ctx, const window::data& window_s, const asset::data& assets_s, data& d) -> async::task<> {
 	co_await init_body(ctx, window_s, const_cast<asset::data&>(assets_s), d);
+	co_return;
+}
 
-	while (true) {
-		co_await update_body(ctx, window_s, assets_s, input_state, save_reg, d);
-		co_await ctx.next_tick();
-	}
+auto gse::gui::system::run(run_context& ctx, const window::data& window_s, const asset::data& assets_s, const gse::input::system::data& input_state, const save::registry& save_reg, data& d) -> async::task<> {
+	co_await update_body(ctx, window_s, assets_s, input_state, save_reg, d);
+	co_return;
 }
 
 auto gse::gui::system::update_body(run_context& ctx, const window::data& window_s, const asset::data& assets_s, const gse::input::system::data& input_state, const save::registry& save_reg, data& d) -> async::task<> {

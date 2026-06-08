@@ -128,6 +128,11 @@ export namespace gse::renderer::ui {
 			triple_buffer<gpu_frame_data> buffered_frames;
 		};
 
+		static auto init(
+			const gpu::context::data& gpu_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,

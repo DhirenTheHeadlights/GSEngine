@@ -64,7 +64,7 @@ namespace gse::renderer::physics_transform {
 	>;
 }
 
-auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
+auto gse::renderer::physics_transform::system::init(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	d.initialized = true;

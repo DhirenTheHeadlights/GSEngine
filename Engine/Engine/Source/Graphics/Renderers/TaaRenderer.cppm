@@ -35,7 +35,7 @@ export namespace gse::renderer::taa {
 			[[= gse::shared]] std::array<gpu::image, 2> history;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			data& d

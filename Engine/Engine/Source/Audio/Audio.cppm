@@ -111,6 +111,10 @@ export namespace gse::audio {
 			std::vector<std::uint32_t> free_list;
 		};
 
+		static auto init(
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
 			data& d

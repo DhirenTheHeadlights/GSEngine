@@ -150,7 +150,7 @@ auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::dev
 	);
 }
 
-auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::world_text::system::init(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);

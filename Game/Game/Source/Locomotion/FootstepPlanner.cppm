@@ -57,8 +57,12 @@ export namespace gs::locomotion {
 		};
 
 		static auto run(
-			gse::run_context& ctx,
-			data& d
+			data& d,
+			gse::read<skeleton_refs> refs,
+			gse::read<intent> intents,
+			gse::read<state> states,
+			gse::read<gait> gaits,
+			gse::write<plan> plans
 		) -> gse::async::task<>;
 	};
 }
@@ -93,7 +97,7 @@ namespace gs::locomotion {
 }
 
 auto gs::locomotion::plan_may_update(const gait& g, const plan& p) -> bool {
-	return g.current == phase::idle || g.current == phase::weight_shift ||
+	return g.current == phase::idle || g.current == phase::weight_shift || g.current == phase::recover ||
 		(g.current == phase::swing && (!p.target_valid || p.swing_leg != g.swing_leg));
 }
 
@@ -149,70 +153,58 @@ auto gs::locomotion::plan_foot_target(const state& s, const gait& g, const inten
 	);
 }
 
-auto gs::locomotion::footstep_planner::run(gse::run_context& ctx, data& d) -> gse::async::task<> {
-	while (true) {
-		{
-			auto [refs, intents, states, gaits, plans] = co_await ctx.acquire_with(
-				gse::read_v<skeleton_refs>,
-				gse::read_v<intent>,
-				gse::read_v<state>,
-				gse::read_v<gait>,
-				gse::write_v<plan>
-			);
+auto gs::locomotion::footstep_planner::run(data& d, gse::read<skeleton_refs> refs, gse::read<intent> intents, gse::read<state> states, gse::read<gait> gaits, gse::write<plan> plans) -> gse::async::task<> {
+	const bool log_now = d.log_timer.tick();
+	const auto owner_ids = plans.owner_ids();
+	for (std::size_t i = 0; i < plans.size(); ++i) {
+		auto& p = plans[i];
+		const auto owner = owner_ids[i];
 
-			const bool log_now = d.log_timer.tick();
-			const auto owner_ids = plans.owner_ids();
-			for (std::size_t i = 0; i < plans.size(); ++i) {
-				auto& p = plans[i];
-				const auto owner = owner_ids[i];
-
-				const auto* r = refs.find(owner);
-				const auto* it = intents.find(owner);
-				const auto* s = states.find(owner);
-				const auto* g = gaits.find(owner);
-				if (!r || !it || !s || !g) {
-					p.target_valid = false;
-					p.locked = false;
-					continue;
-				}
-
-				if (!s->valid || g->fallen) {
-					p.target_valid = false;
-					p.locked = false;
-					continue;
-				}
-
-				const bool update = plan_may_update(*g, p);
-				if (update) {
-					p.foot_target_world = plan_foot_target(*s, *g, *it, *r, d);
-					p.swing_leg = g->swing_leg;
-					p.target_valid = true;
-					p.locked = false;
-				}
-				else {
-					p.locked = true;
-				}
-
-				if (log_now) {
-					gse::log::println(
-						"footstep_planner: owner={} phase={} swing={} planned={} target=({:+.2f},{:+.2f},{:+.2f}) "
-						"locked={} input_fwd={:+.2f} capture=(fwd={:+.3f},right={:+.3f})",
-						owner.number(),
-						g->current,
-						g->swing_leg,
-						p.swing_leg,
-						p.foot_target_world.x(),
-						p.foot_target_world.y(),
-						p.foot_target_world.z(),
-						p.locked,
-						it->forward,
-						s->capture_forward,
-						s->capture_right
-					);
-				}
-			}
+		const auto* r = refs.find(owner);
+		const auto* it = intents.find(owner);
+		const auto* s = states.find(owner);
+		const auto* g = gaits.find(owner);
+		if (!r || !it || !s || !g) {
+			p.target_valid = false;
+			p.locked = false;
+			continue;
 		}
 
-		co_await ctx.next_tick();
+		if (!s->valid || g->fallen) {
+			p.target_valid = false;
+			p.locked = false;
+			continue;
+		}
+
+		const bool update = plan_may_update(*g, p);
+		if (update) {
+			p.foot_target_world = plan_foot_target(*s, *g, *it, *r, d);
+			p.swing_leg = g->swing_leg;
+			p.target_valid = true;
+			p.locked = false;
+		}
+		else {
+			p.locked = true;
+		}
+
+		if (log_now) {
+			gse::log::println(
+				"footstep_planner: owner={} phase={} swing={} planned={} target=({:+.2f},{:+.2f},{:+.2f}) "
+				"locked={} input_fwd={:+.2f} capture=(fwd={:+.3f},right={:+.3f})",
+				owner.number(),
+				g->current,
+				g->swing_leg,
+				p.swing_leg,
+				p.foot_target_world.x(),
+				p.foot_target_world.y(),
+				p.foot_target_world.z(),
+				p.locked,
+				it->forward,
+				s->capture_forward,
+				s->capture_right
+			);
+		}
 	}
+
+	co_return;
 }

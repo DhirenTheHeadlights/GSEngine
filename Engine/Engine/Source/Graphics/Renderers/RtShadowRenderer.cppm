@@ -33,7 +33,7 @@ export namespace gse::renderer::rt_shadow {
 			per_frame_resource<gpu::bindless_handle> tlas_instance_views;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			const asset::data& assets_s,

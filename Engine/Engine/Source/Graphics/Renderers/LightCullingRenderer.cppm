@@ -35,7 +35,7 @@ export namespace gse::renderer::light_culling {
 			gpu::bindless_handle depth_view;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			const asset::data& assets_s,

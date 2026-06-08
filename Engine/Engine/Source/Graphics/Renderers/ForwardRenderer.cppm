@@ -86,7 +86,7 @@ export namespace gse::renderer::forward {
 			linear_vector<std::byte> light_staging;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			const asset::data& assets_s,

@@ -62,6 +62,11 @@ export namespace gse::renderer {
 			bool last_hot_reload_enabled = false;
 		};
 
+		static auto init(
+			run_context& ctx,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,

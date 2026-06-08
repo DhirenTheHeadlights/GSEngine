@@ -46,9 +46,13 @@ export namespace gse::gpu {
 
 		using swap_chain_recreate_callback = std::function<void()>;
 
+		static auto init(
+			const window::data& window_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
 			run_context& ctx,
-			const window::data& window_s,
 			data& d
 		) -> async::task<>;
 

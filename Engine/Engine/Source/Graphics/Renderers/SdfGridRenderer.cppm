@@ -42,7 +42,7 @@ export namespace gse::renderer::sdf_grid {
 			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			data& d

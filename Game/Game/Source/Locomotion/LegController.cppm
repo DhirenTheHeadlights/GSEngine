@@ -89,12 +89,28 @@ export namespace gs::locomotion {
 			]]
 			gse::force foot_anchor_max_force = gse::newtons(700.f);
 
+			[[
+				= gse::settings::describe<"Maximum foot anchor force for the airborne swing foot.">{}
+			]]
+			gse::force swing_foot_anchor_max_force = gse::newtons(220.f);
+
+			[[
+				= gse::settings::describe<"Muscle activation cap for the swing leg joints (limits reaction on the pelvis).">{}
+			]]
+			float swing_joint_max_activation = 0.30f;
+
 			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 		};
 
 		static auto run(
-			gse::run_context& ctx,
-			data& d
+			data& d,
+			gse::read<skeleton_refs> refs,
+			gse::read<state> states,
+			gse::read<gait> gaits,
+			gse::read<plan> plans,
+			gse::write<leg_context> contexts,
+			gse::write<controlled_joint_component> ctrls,
+			gse::write<gse::physics::motor_component> motors
 		) -> gse::async::task<>;
 	};
 }
@@ -188,6 +204,8 @@ namespace gs::locomotion {
 	auto write_targets(
 		const skeleton_refs& r,
 		const leg_joint_targets& targets,
+		leg swing_leg,
+		bool swing_gains_active,
 		gse::write<controlled_joint_component>& ctrls,
 		bool controllers_active,
 		const leg_controller::data& d
@@ -207,6 +225,7 @@ namespace gs::locomotion {
 		bool requires_ground_contact,
 		bool include_vertical,
 		bool allow_upward_vertical,
+		gse::force max_force,
 		gse::write<gse::physics::motor_component>& motors,
 		const leg_controller::data& d
 	) -> void;
@@ -320,7 +339,7 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 }
 
 auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& g, const plan& p, const skeleton_refs& r, const leg_context& ctx, const leg_controller::data& d) -> std::pair<gse::angle, gse::angle> {
-	if (g.current == phase::idle) {
+	if (g.current == phase::idle || g.current == phase::recover) {
 		return { gse::radians(0.f), d.stance_knee_rest };
 	}
 
@@ -365,19 +384,21 @@ auto gs::locomotion::weight_shift_ready(const state& s, const leg_controller::da
 		gse::abs(s.capture_right) <= d.weight_shift_capture_right_limit;
 }
 
-auto gs::locomotion::write_targets(const skeleton_refs& r, const leg_joint_targets& targets, gse::write<controlled_joint_component>& ctrls, const bool controllers_active, const leg_controller::data& d) -> void {
-	auto apply = [&](const gse::id joint_id, const gse::angle target) {
+auto gs::locomotion::write_targets(const skeleton_refs& r, const leg_joint_targets& targets, const leg swing_leg, const bool swing_gains_active, gse::write<controlled_joint_component>& ctrls, const bool controllers_active, const leg_controller::data& d) -> void {
+	auto apply = [&](const gse::id joint_id, const gse::angle target, const bool is_swing) {
 		if (auto* cj = ctrls.find(joint_id)) {
 			cj->enabled = controllers_active;
 			cj->target_angle = target;
 			cj->gain = d.joint_gain;
 			cj->damping = d.joint_damping;
+			cj->max_activation = swing_gains_active && is_swing ? d.swing_joint_max_activation : 1.f;
 		}
 	};
-	apply(r.hip_l_joint_id, targets.hip_l);
-	apply(r.knee_l_joint_id, targets.knee_l);
-	apply(r.hip_r_joint_id, targets.hip_r);
-	apply(r.knee_r_joint_id, targets.knee_r);
+	const bool left_is_swing = swing_leg == leg::left;
+	apply(r.hip_l_joint_id, targets.hip_l, left_is_swing);
+	apply(r.knee_l_joint_id, targets.knee_l, left_is_swing);
+	apply(r.hip_r_joint_id, targets.hip_r, !left_is_swing);
+	apply(r.knee_r_joint_id, targets.knee_r, !left_is_swing);
 }
 
 auto gs::locomotion::foot_anchor_velocity(const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const bool include_vertical, const bool allow_upward_vertical, const leg_controller::data& d) -> gse::vec3<gse::velocity> {
@@ -407,7 +428,7 @@ auto gs::locomotion::foot_anchor_velocity(const gse::vec3<gse::position>& curren
 	return result;
 }
 
-auto gs::locomotion::write_foot_motor(const gse::id foot_id, const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const bool active, const bool requires_ground_contact, const bool include_vertical, const bool allow_upward_vertical, gse::write<gse::physics::motor_component>& motors, const leg_controller::data& d) -> void {
+auto gs::locomotion::write_foot_motor(const gse::id foot_id, const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const bool active, const bool requires_ground_contact, const bool include_vertical, const bool allow_upward_vertical, const gse::force max_force, gse::write<gse::physics::motor_component>& motors, const leg_controller::data& d) -> void {
 	if (auto* motor = motors.find(foot_id)) {
 		motor->horizontal_only = !include_vertical;
 		motor->requires_ground_contact = requires_ground_contact;
@@ -417,188 +438,183 @@ auto gs::locomotion::write_foot_motor(const gse::id foot_id, const gse::vec3<gse
 			return;
 		}
 		motor->velocity_drive_target = foot_anchor_velocity(current, target, include_vertical, allow_upward_vertical, d);
-		motor->max_force = d.foot_anchor_max_force;
+		motor->max_force = max_force;
 	}
 }
 
-auto gs::locomotion::leg_controller::run(gse::run_context& ctx, data& d) -> gse::async::task<> {
-	while (true) {
-		{
-			auto [refs, states, gaits, plans, contexts, ctrls, motors] = co_await ctx.acquire_with(
-				gse::read_v<skeleton_refs>,
-				gse::read_v<state>,
-				gse::read_v<gait>,
-				gse::read_v<plan>,
-				gse::write_v<leg_context>,
-				gse::write_v<controlled_joint_component>,
-				gse::write_v<gse::physics::motor_component>
-			);
+auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs, gse::read<state> states, gse::read<gait> gaits, gse::read<plan> plans, gse::write<leg_context> contexts, gse::write<controlled_joint_component> ctrls, gse::write<gse::physics::motor_component> motors) -> gse::async::task<> {
+	const bool log_now = d.log_timer.tick();
+	const auto owner_ids = contexts.owner_ids();
+	for (std::size_t i = 0; i < contexts.size(); ++i) {
+		auto& cctx = contexts[i];
+		const auto owner = owner_ids[i];
 
-			const bool log_now = d.log_timer.tick();
-			const auto owner_ids = contexts.owner_ids();
-			for (std::size_t i = 0; i < contexts.size(); ++i) {
-				auto& cctx = contexts[i];
-				const auto owner = owner_ids[i];
+		const auto* r = refs.find(owner);
+		const auto* s = states.find(owner);
+		const auto* g = gaits.find(owner);
+		const auto* p = plans.find(owner);
+		if (!r || !s || !g || !p) {
+			continue;
+		}
 
-				const auto* r = refs.find(owner);
-				const auto* s = states.find(owner);
-				const auto* g = gaits.find(owner);
-				const auto* p = plans.find(owner);
-				if (!r || !s || !g || !p) {
-					continue;
-				}
+		if (s->valid && !cctx.planted_initialized) {
+			cctx.planted_foot_l = grounded_foot_position(s->foot_position_l, d);
+			cctx.planted_foot_r = grounded_foot_position(s->foot_position_r, d);
+			cctx.planted_initialized = true;
+		}
 
-				if (s->valid && !cctx.planted_initialized) {
-					cctx.planted_foot_l = grounded_foot_position(s->foot_position_l, d);
-					cctx.planted_foot_r = grounded_foot_position(s->foot_position_r, d);
-					cctx.planted_initialized = true;
-				}
+		const bool entered_swing = g->current == phase::swing &&
+			(cctx.last_phase != phase::swing || cctx.last_swing_leg != g->swing_leg);
+		const bool entered_plant = g->current == phase::plant &&
+			(cctx.last_phase != phase::plant || cctx.last_swing_leg != g->swing_leg);
+		const bool entered_recover = g->current == phase::recover && cctx.last_phase != phase::recover;
+		const bool swing_foot_grounded = foot_is_grounded(g->swing_leg, *s);
+		if (entered_swing) {
+			cctx.swing_start_foot = current_foot_position(g->swing_leg, *s);
+			cctx.swing_target_at_start = p->foot_target_world;
+			cctx.swing_initialized = true;
+		}
+		if (entered_plant) {
+			cctx.plant_initialized = false;
+		}
+		if (entered_recover) {
+			cctx.planted_foot_l = grounded_foot_position(hip_world_position(*s, *r, leg::left), d);
+			cctx.planted_foot_r = grounded_foot_position(hip_world_position(*s, *r, leg::right), d);
+		}
+		const bool plant_target_matches = p->target_valid && p->swing_leg == g->swing_leg;
+		const bool plant_target_reached = leg_target_reached(g->swing_leg, *s, *p, d);
+		if (g->current == phase::plant && swing_foot_grounded && !cctx.plant_initialized) {
+			planted_foot_position(g->swing_leg, cctx) = plant_target_matches && plant_target_reached ? grounded_foot_position(p->foot_target_world, d)
+																									 : grounded_foot_position(current_foot_position(g->swing_leg, *s), d);
+			cctx.plant_initialized = true;
+		}
+		if (g->current != phase::swing) {
+			cctx.swing_initialized = false;
+		}
+		if (g->current != phase::plant) {
+			cctx.plant_initialized = false;
+		}
+		cctx.last_phase = g->current;
+		cctx.last_swing_leg = g->swing_leg;
 
-				const bool entered_swing = g->current == phase::swing &&
-					(cctx.last_phase != phase::swing || cctx.last_swing_leg != g->swing_leg);
-				const bool entered_plant = g->current == phase::plant &&
-					(cctx.last_phase != phase::plant || cctx.last_swing_leg != g->swing_leg);
-				const bool swing_foot_grounded = foot_is_grounded(g->swing_leg, *s);
-				if (entered_swing) {
-					cctx.swing_start_foot = current_foot_position(g->swing_leg, *s);
-					cctx.swing_target_at_start = p->foot_target_world;
-					cctx.swing_initialized = true;
-				}
-				if (entered_plant) {
-					cctx.plant_initialized = false;
-				}
-				const bool plant_target_matches = p->target_valid && p->swing_leg == g->swing_leg;
-				const bool plant_target_reached = leg_target_reached(g->swing_leg, *s, *p, d);
-				if (g->current == phase::plant && swing_foot_grounded && !cctx.plant_initialized) {
-					planted_foot_position(g->swing_leg, cctx) = plant_target_matches && plant_target_reached ? grounded_foot_position(p->foot_target_world, d)
-																											 : grounded_foot_position(current_foot_position(g->swing_leg, *s), d);
-					cctx.plant_initialized = true;
-				}
-				if (g->current != phase::swing) {
-					cctx.swing_initialized = false;
-				}
-				if (g->current != phase::plant) {
-					cctx.plant_initialized = false;
-				}
-				cctx.last_phase = g->current;
-				cctx.last_swing_leg = g->swing_leg;
+		const bool controllers_active = !g->fallen && s->valid && cctx.planted_initialized;
 
-				const bool controllers_active = !g->fallen && s->valid && cctx.planted_initialized;
-
-				leg_joint_targets targets;
-				if (controllers_active) {
-					const bool hold_weight_shift = g->current == phase::weight_shift && !weight_shift_ready(*s, d);
-					const bool plant_waiting_for_contact = g->current == phase::plant && !swing_foot_grounded;
-					const bool both_stance = g->current == phase::idle || hold_weight_shift ||
-						(g->current == phase::plant && !plant_waiting_for_contact);
-					if (both_stance) {
-						const auto [hip_l, knee_l] = compute_stance(leg::left, *s, *r, cctx, d);
-						const auto [hip_r, knee_r] = compute_stance(leg::right, *s, *r, cctx, d);
-						targets.hip_l = hip_l;
-						targets.knee_l = knee_l;
-						targets.hip_r = hip_r;
-						targets.knee_r = knee_r;
-					}
-					else {
-						const leg stance_leg = other(g->swing_leg);
-						const auto [stance_hip, stance_knee] = compute_stance(stance_leg, *s, *r, cctx, d);
-						const auto [swing_hip, swing_knee] = compute_swing(g->swing_leg, *s, *g, *p, *r, cctx, d);
-						if (stance_leg == leg::left) {
-							targets.hip_l = stance_hip;
-							targets.knee_l = stance_knee;
-							targets.hip_r = swing_hip;
-							targets.knee_r = swing_knee;
-						}
-						else {
-							targets.hip_r = stance_hip;
-							targets.knee_r = stance_knee;
-							targets.hip_l = swing_hip;
-							targets.knee_l = swing_knee;
-						}
-					}
+		leg_joint_targets targets;
+		bool swing_gains_active = false;
+		if (controllers_active) {
+			const bool hold_weight_shift = g->current == phase::weight_shift && !weight_shift_ready(*s, d);
+			const bool plant_waiting_for_contact = g->current == phase::plant && !swing_foot_grounded;
+			const bool both_stance = g->current == phase::idle || g->current == phase::recover || hold_weight_shift ||
+				(g->current == phase::plant && !plant_waiting_for_contact);
+			swing_gains_active = !both_stance;
+			if (both_stance) {
+				const auto [hip_l, knee_l] = compute_stance(leg::left, *s, *r, cctx, d);
+				const auto [hip_r, knee_r] = compute_stance(leg::right, *s, *r, cctx, d);
+				targets.hip_l = hip_l;
+				targets.knee_l = knee_l;
+				targets.hip_r = hip_r;
+				targets.knee_r = knee_r;
+			}
+			else {
+				const leg stance_leg = other(g->swing_leg);
+				const auto [stance_hip, stance_knee] = compute_stance(stance_leg, *s, *r, cctx, d);
+				const auto [swing_hip, swing_knee] = compute_swing(g->swing_leg, *s, *g, *p, *r, cctx, d);
+				if (stance_leg == leg::left) {
+					targets.hip_l = stance_hip;
+					targets.knee_l = stance_knee;
+					targets.hip_r = swing_hip;
+					targets.knee_r = swing_knee;
 				}
-
-				write_targets(*r, targets, ctrls, controllers_active, d);
-				const bool left_planting =
-					g->current == phase::plant && g->swing_leg == leg::left && plant_target_matches && !cctx.plant_initialized;
-				const bool right_planting =
-					g->current == phase::plant && g->swing_leg == leg::right && plant_target_matches && !cctx.plant_initialized;
-				const bool left_swinging =
-					g->current == phase::swing && g->swing_leg == leg::left && p->target_valid && p->swing_leg == leg::left;
-				const bool right_swinging =
-					g->current == phase::swing && g->swing_leg == leg::right && p->target_valid && p->swing_leg == leg::right;
-				const bool left_stance = g->current != phase::swing || g->swing_leg != leg::left;
-				const bool right_stance = g->current != phase::swing || g->swing_leg != leg::right;
-				const bool left_airborne_stance = left_stance && !s->foot_grounded_l && !left_planting;
-				const bool right_airborne_stance = right_stance && !s->foot_grounded_r && !right_planting;
-				const bool left_supporting = left_stance && g->current != phase::idle;
-				const bool right_supporting = right_stance && g->current != phase::idle;
-				const bool left_anchor_active =
-					controllers_active && ((s->foot_grounded_l && left_stance) || left_planting || left_airborne_stance || left_swinging);
-				const bool right_anchor_active =
-					controllers_active && ((s->foot_grounded_r && right_stance) || right_planting || right_airborne_stance || right_swinging);
-				const auto left_anchor_target = left_swinging
-					? compute_swing_foot(cctx.swing_start_foot, p->foot_target_world, swing_trajectory_progress(*g, d), d.swing_lift_height)
-					: left_planting ? grounded_foot_position(p->foot_target_world, d)
-					: grounded_foot_position(cctx.planted_foot_l, d);
-				const auto right_anchor_target = right_swinging
-					? compute_swing_foot(cctx.swing_start_foot, p->foot_target_world, swing_trajectory_progress(*g, d), d.swing_lift_height)
-					: right_planting ? grounded_foot_position(p->foot_target_world, d)
-					: grounded_foot_position(cctx.planted_foot_r, d);
-				write_foot_motor(
-					r->foot_l_id,
-					s->foot_position_l,
-					left_anchor_target,
-					left_anchor_active,
-					!(left_planting || left_airborne_stance || left_swinging),
-					left_planting || left_airborne_stance || left_supporting || left_swinging,
-					left_swinging,
-					motors,
-					d
-				);
-				write_foot_motor(
-					r->foot_r_id,
-					s->foot_position_r,
-					right_anchor_target,
-					right_anchor_active,
-					!(right_planting || right_airborne_stance || right_swinging),
-					right_planting || right_airborne_stance || right_supporting || right_swinging,
-					right_swinging,
-					motors,
-					d
-				);
-
-				if (log_now) {
-					gse::log::println(
-						"leg_controller: owner={} phase={} swing={} fallen={} "
-						"hips=({:+.3f},{:+.3f}) knees=({:+.3f},{:+.3f}) "
-						"pelvis_y={:+.2f} target_y={:+.2f} lean_body=({:+.3f},{:+.3f}) "
-						"feet_y=({:+.2f},{:+.2f}) grounded=({},{}) plants=({:+.2f},{:+.2f})/({:+.2f},{:+.2f})",
-						owner.number(),
-						g->current,
-						g->swing_leg,
-						g->fallen,
-						targets.hip_l,
-						targets.hip_r,
-						targets.knee_l,
-						targets.knee_r,
-						s->pelvis_position.y(),
-						r->pelvis_target_height,
-						s->lean_body.x(),
-						-s->lean_body.z(),
-						s->foot_position_l.y(),
-						s->foot_position_r.y(),
-						s->foot_grounded_l,
-						s->foot_grounded_r,
-						cctx.planted_foot_l.x(),
-						cctx.planted_foot_l.z(),
-						cctx.planted_foot_r.x(),
-						cctx.planted_foot_r.z()
-					);
+				else {
+					targets.hip_r = stance_hip;
+					targets.knee_r = stance_knee;
+					targets.hip_l = swing_hip;
+					targets.knee_l = swing_knee;
 				}
 			}
 		}
 
-		co_await ctx.next_tick();
+		write_targets(*r, targets, g->swing_leg, swing_gains_active, ctrls, controllers_active, d);
+		const bool left_planting =
+			g->current == phase::plant && g->swing_leg == leg::left && plant_target_matches && !cctx.plant_initialized;
+		const bool right_planting =
+			g->current == phase::plant && g->swing_leg == leg::right && plant_target_matches && !cctx.plant_initialized;
+		const bool left_swinging =
+			g->current == phase::swing && g->swing_leg == leg::left && p->target_valid && p->swing_leg == leg::left;
+		const bool right_swinging =
+			g->current == phase::swing && g->swing_leg == leg::right && p->target_valid && p->swing_leg == leg::right;
+		const bool left_stance = g->current != phase::swing || g->swing_leg != leg::left;
+		const bool right_stance = g->current != phase::swing || g->swing_leg != leg::right;
+		const bool left_airborne_stance = left_stance && !s->foot_grounded_l && !left_planting;
+		const bool right_airborne_stance = right_stance && !s->foot_grounded_r && !right_planting;
+		const bool left_supporting = left_stance && g->current != phase::idle;
+		const bool right_supporting = right_stance && g->current != phase::idle;
+		const bool left_anchor_active =
+			controllers_active && ((s->foot_grounded_l && left_stance) || left_planting || left_airborne_stance || left_swinging);
+		const bool right_anchor_active =
+			controllers_active && ((s->foot_grounded_r && right_stance) || right_planting || right_airborne_stance || right_swinging);
+		const auto left_anchor_target = left_swinging
+			? compute_swing_foot(cctx.swing_start_foot, p->foot_target_world, swing_trajectory_progress(*g, d), d.swing_lift_height)
+			: left_planting ? grounded_foot_position(p->foot_target_world, d)
+			: grounded_foot_position(cctx.planted_foot_l, d);
+		const auto right_anchor_target = right_swinging
+			? compute_swing_foot(cctx.swing_start_foot, p->foot_target_world, swing_trajectory_progress(*g, d), d.swing_lift_height)
+			: right_planting ? grounded_foot_position(p->foot_target_world, d)
+			: grounded_foot_position(cctx.planted_foot_r, d);
+		write_foot_motor(
+			r->foot_l_id,
+			s->foot_position_l,
+			left_anchor_target,
+			left_anchor_active,
+			!(left_planting || left_airborne_stance || left_swinging),
+			left_planting || left_airborne_stance || left_supporting || left_swinging,
+			left_swinging,
+			left_swinging ? d.swing_foot_anchor_max_force : d.foot_anchor_max_force,
+			motors,
+			d
+		);
+		write_foot_motor(
+			r->foot_r_id,
+			s->foot_position_r,
+			right_anchor_target,
+			right_anchor_active,
+			!(right_planting || right_airborne_stance || right_swinging),
+			right_planting || right_airborne_stance || right_supporting || right_swinging,
+			right_swinging,
+			right_swinging ? d.swing_foot_anchor_max_force : d.foot_anchor_max_force,
+			motors,
+			d
+		);
+
+		if (log_now) {
+			gse::log::println(
+				"leg_controller: owner={} phase={} swing={} fallen={} "
+				"hips=({:+.3f},{:+.3f}) knees=({:+.3f},{:+.3f}) "
+				"pelvis_y={:+.2f} target_y={:+.2f} lean_body=({:+.3f},{:+.3f}) "
+				"feet_y=({:+.2f},{:+.2f}) grounded=({},{}) plants=({:+.2f},{:+.2f})/({:+.2f},{:+.2f})",
+				owner.number(),
+				g->current,
+				g->swing_leg,
+				g->fallen,
+				targets.hip_l,
+				targets.hip_r,
+				targets.knee_l,
+				targets.knee_r,
+				s->pelvis_position.y(),
+				r->pelvis_target_height,
+				s->lean_body.x(),
+				-s->lean_body.z(),
+				s->foot_position_l.y(),
+				s->foot_position_r.y(),
+				s->foot_grounded_l,
+				s->foot_grounded_r,
+				cctx.planted_foot_l.x(),
+				cctx.planted_foot_l.z(),
+				cctx.planted_foot_r.x(),
+				cctx.planted_foot_r.z()
+			);
+		}
 	}
+
+	co_return;
 }

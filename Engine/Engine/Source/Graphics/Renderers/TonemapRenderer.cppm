@@ -31,7 +31,7 @@ export namespace gse::renderer::tonemap {
 			gpu::bindless_handle velocity_view;
 		};
 
-		static auto run(
+		static auto init(
 			run_context& ctx,
 			const gpu::context::data& gpu_s,
 			const bloom::system::data& bloom_state,

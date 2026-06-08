@@ -116,6 +116,46 @@ export namespace gse {
 
 	template <typename T>
 	using write = access<T, access_mode::write>;
+
+	template <typename T>
+	class structural : non_copyable {
+	public:
+		~structural() override;
+
+		structural() = delete;
+
+		structural(
+			structural&& other
+		) noexcept;
+
+		auto operator=(
+			structural&& other
+		) noexcept -> structural&;
+
+		auto add(
+			id owner,
+			T value = T{}
+		) const -> T*;
+
+		auto remove(
+			id owner
+		) const -> void;
+
+		auto ensure_storage() const -> void;
+
+	private:
+		friend class run_context;
+
+		structural(
+			registry* reg,
+			async::rw_mutex* mutex,
+			std::atomic<int>* held_locks
+		);
+
+		registry* m_reg = nullptr;
+		async::rw_mutex* m_mutex = nullptr;
+		std::atomic<int>* m_held_locks = nullptr;
+	};
 }
 
 template <typename T, gse::access_mode M>
@@ -227,4 +267,44 @@ auto gse::access<T, M>::owner_ids() const -> std::span<const id> {
 template <typename T, gse::access_mode M>
 auto gse::access<T, M>::owner_id_at(const std::size_t i) const -> id {
 	return m_owners[i];
+}
+
+template <typename T>
+gse::structural<T>::structural(registry* reg, async::rw_mutex* mutex, std::atomic<int>* held_locks)
+	: m_reg(reg), m_mutex(mutex), m_held_locks(held_locks) {
+	if (m_mutex && m_held_locks) {
+		m_held_locks->fetch_add(1, std::memory_order_acq_rel);
+	}
+}
+
+template <typename T>
+gse::structural<T>::structural(structural&& other) noexcept
+	: m_reg(other.m_reg), m_mutex(std::exchange(other.m_mutex, nullptr)), m_held_locks(std::exchange(other.m_held_locks, nullptr)) {
+}
+
+template <typename T>
+auto gse::structural<T>::operator=(structural&& other) noexcept -> structural& {
+	if (this != &other) {
+		if (m_mutex) {
+			m_mutex->unlock_exclusive();
+			if (m_held_locks) {
+				m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
+			}
+		}
+		m_reg = other.m_reg;
+		m_mutex = std::exchange(other.m_mutex, nullptr);
+		m_held_locks = std::exchange(other.m_held_locks, nullptr);
+	}
+	return *this;
+}
+
+template <typename T>
+gse::structural<T>::~structural() {
+	if (!m_mutex) {
+		return;
+	}
+	m_mutex->unlock_exclusive();
+	if (m_held_locks) {
+		m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
+	}
 }

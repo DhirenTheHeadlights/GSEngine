@@ -168,7 +168,7 @@ auto gse::renderer::bloom::rewrite_descriptors(const gpu::context::data& gpu_s, 
 	gpu_s.device->write_sampled_image(d.hdr_view.slot(), hdr);
 }
 
-auto gse::renderer::bloom::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
+auto gse::renderer::bloom::system::init(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.downsample_pipeline = gpu::build_compute_program(*gpu_s.device, downsample_entry::pod);
 	d.upsample_pipeline = gpu::build_compute_program(*gpu_s.device, upsample_entry::pod);
 

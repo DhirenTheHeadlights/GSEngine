@@ -28,4 +28,22 @@ export namespace gse {
 
 	template <typename T>
 	using access_element_t = access_traits<std::remove_cvref_t<T>>::element_type;
+
+	template <typename T>
+	struct structural_traits {
+		static constexpr bool is_structural = false;
+		using element_type = void;
+	};
+
+	template <typename T>
+	struct structural_traits<structural<T>> {
+		static constexpr bool is_structural = true;
+		using element_type = T;
+	};
+
+	template <typename T>
+	constexpr bool is_structural_v = structural_traits<std::remove_cvref_t<T>>::is_structural;
+
+	template <typename T>
+	using structural_element_t = structural_traits<std::remove_cvref_t<T>>::element_type;
 }

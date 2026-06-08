@@ -5,9 +5,12 @@ import std;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
+import gse.log;
 
 import :phase_context;
 import :registries;
+import :access_token;
+import :traits;
 import :run_context;
 import :settings;
 import :frame_context;
@@ -74,6 +77,15 @@ namespace gse {
 		else if constexpr (is_shared_view_v<U>) {
 			return false;
 		}
+		else if constexpr (is_access_decl_v<U>) {
+			return false;
+		}
+		else if constexpr (is_access_v<U>) {
+			return false;
+		}
+		else if constexpr (is_structural_v<U>) {
+			return false;
+		}
 		else {
 			return true;
 		}
@@ -99,28 +111,139 @@ namespace gse {
 		}
 	}();
 
-	template <auto MemberFn, typename S>
-	consteval auto frame_signature_has_cyclic_deps() -> bool {
-		for (auto p : std::meta::parameters_of(MemberFn)) {
-			auto t = std::meta::dealias(std::meta::type_of(p));
-			const bool cyclic = std::meta::extract<bool>(std::meta::substitute(
-				^^is_cyclic_frame_dep_v,
-				{
-					t,
-					^^S }
-			));
-			if (cyclic) {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	template <auto MemberFn>
 	constexpr std::size_t arity_of = std::meta::parameters_of(MemberFn).size();
 
 	template <auto MemberFn, std::size_t I>
 	using arg_type_of = typename[:std::meta::type_of(std::meta::parameters_of(MemberFn)[I]):];
+
+	template <auto MemberFn, typename S>
+	consteval auto frame_signature_has_cyclic_deps() -> bool {
+		bool cyclic = false;
+		[&]<std::size_t... Is>(std::index_sequence<Is...>) {
+			(([&] {
+				using ArgT = arg_type_of<MemberFn, Is>;
+				if constexpr (is_cyclic_frame_dep_v<ArgT, S>) {
+					cyclic = true;
+				}
+			}()), ...);
+		}(std::make_index_sequence<arity_of<MemberFn>>{});
+		return cyclic;
+	}
+
+	template <typename S>
+	consteval auto run_phase_members() -> std::vector<std::meta::info> {
+		std::vector<std::meta::info> phases;
+		for (auto m : std::meta::members_of(^^typename S::run, std::meta::access_context::unchecked())) {
+			if (std::meta::is_function(m) && std::meta::is_static_member(m)) {
+				phases.push_back(m);
+			}
+		}
+		return phases;
+	}
+
+	template <typename S>
+	constexpr auto run_phases_v = std::define_static_array(run_phase_members<S>());
+
+	template <typename S>
+	consteval auto run_phase_count() -> std::size_t {
+		return run_phases_v<S>.size();
+	}
+
+	template <typename S, std::size_t I>
+	consteval auto run_phase_at() -> std::meta::info {
+		return run_phases_v<S>[I];
+	}
+
+	template <typename S>
+	auto signature_acquire_trace_id() -> id {
+		return find_or_generate_id(std::format("run_acquire:{}", type_tag<S>()));
+	}
+
+	template <auto Fn, typename S>
+	auto fill_signature_locks(
+		std::span<id> lock_ids,
+		std::span<lock_fn> lock_fns
+	) -> std::size_t {
+		std::size_t k = 0;
+		[&]<std::size_t... Is>(std::index_sequence<Is...>) {
+			(([&] {
+				using U = std::remove_cvref_t<arg_type_of<Fn, Is>>;
+				if constexpr (is_access_v<U>) {
+					lock_ids[k] = id_of<access_element_t<U>>();
+					lock_fns[k] = is_read_access_v<U> ? &acquire_shared : &acquire_exclusive;
+					++k;
+				}
+				else if constexpr (is_structural_v<U>) {
+					lock_ids[k] = id_of<structural_element_t<U>>();
+					lock_fns[k] = &acquire_exclusive;
+					++k;
+				}
+			}()), ...);
+		}(std::make_index_sequence<arity_of<Fn>>{});
+		return k;
+	}
+
+	template <auto Phase, typename S>
+	auto run_phase(
+		run_context& ctx,
+		state_of_t<S>& state
+	) -> async::task<> {
+		if constexpr (arity_of<Phase> > 0) {
+			std::array<id, arity_of<Phase>> lock_ids{};
+			std::array<lock_fn, arity_of<Phase>> lock_fns{};
+			const std::size_t n_locks = fill_signature_locks<Phase, S>(lock_ids, lock_fns);
+			if (n_locks > 0) {
+				static const id tid = signature_acquire_trace_id<S>();
+				co_await acquire_locks_in_sorted_order(
+					ctx.access_mutexes(),
+					std::span(lock_ids.data(), n_locks),
+					std::span(lock_fns.data(), n_locks),
+					tid
+				);
+			}
+		}
+		co_await [&]<std::size_t... Is>(std::index_sequence<Is...>) -> async::task<> {
+			co_await [:Phase:](resolve_run_arg<arg_type_of<Phase, Is>, S>(ctx, state)...);
+		}(std::make_index_sequence<arity_of<Phase>>{});
+	}
+
+	template <typename S, std::size_t I = 0>
+	auto run_phases_for(
+		run_context& ctx,
+		state_of_t<S>& state
+	) -> async::task<> {
+		if constexpr (I < run_phase_count<S>()) {
+			co_await run_phase<run_phase_at<S, I>(), S>(ctx, state);
+			co_await run_phases_for<S, I + 1>(ctx, state);
+		}
+	}
+
+	struct run_signature_metadata {
+		std::vector<id> state_deps;
+		std::vector<id> component_reads;
+		std::vector<id> component_writes;
+	};
+
+	template <typename Arg, typename S>
+	auto append_arg_state_dep(
+		std::vector<id>& out
+	) -> void;
+
+	template <typename Arg, typename S>
+	auto append_arg_run_metadata(
+		run_signature_metadata& out
+	) -> void;
+
+	template <auto Fn, typename S>
+	auto append_signature_state_deps(
+		std::vector<id>& out
+	) -> void;
+
+	template <auto Fn, typename S>
+	auto append_signature_run_metadata(
+		run_signature_metadata& out
+	) -> void;
 
 	template <typename T>
 	auto direct_state_ref(
@@ -147,6 +270,12 @@ namespace gse {
 
 	template <typename S>
 	auto invoke_run_for(
+		run_context& ctx,
+		void* data_ptr
+	) -> async::task<>;
+
+	template <typename S>
+	auto invoke_init_for(
 		run_context& ctx,
 		void* data_ptr
 	) -> async::task<>;
@@ -191,29 +320,17 @@ namespace gse {
 		void* data_ptr
 	) -> void;
 
-	template <auto MemberFn, typename S>
-	auto register_state_dep_tags() -> void;
+	template <typename S>
+	auto collect_run_metadata() -> run_signature_metadata;
 
 	template <typename S>
-	auto extract_run_state_deps() -> std::vector<id>;
+	auto extract_init_state_deps() -> std::vector<id>;
 
 	template <typename S>
 	auto extract_frame_state_deps() -> std::vector<id>;
 
 	template <typename T>
-	consteval auto compute_state_dep_id() -> id;
-
-	template <typename T>
-	constexpr id state_dep_id_v = compute_state_dep_id<dep_pointee_t<T>>();
-
-	template <typename T>
-	constexpr std::uint64_t state_dep_number_v = compute_state_dep_id<dep_pointee_t<T>>().number();
-
-	template <auto MemberFn, typename S>
-	consteval auto compute_state_dep_count() -> std::size_t;
-
-	template <auto MemberFn, typename S>
-	consteval auto compute_state_dep_ids() -> std::array<id, compute_state_dep_count<MemberFn, S>()>;
+	constexpr id state_dep_id_v = id_of<dep_pointee_t<T>>();
 
 	template <typename S>
 	concept shutdown_takes_state = requires(shutdown_context& p, state_of_t<S>& s) { S::shutdown(p, s); };
@@ -229,7 +346,7 @@ gse::system_node_data<S>::system_node_data(Args&&... args) : state(std::forward<
 
 template <typename T>
 auto gse::direct_state_ref(const task_context& ctx) -> const T& {
-	constexpr id state_lookup_id = compute_state_dep_id<T>();
+	constexpr id state_lookup_id = id_of<T>();
 	const void* p = nullptr;
 	if (ctx.live_state) {
 		p = ctx.states.state_ptr(state_lookup_id);
@@ -256,6 +373,15 @@ auto gse::resolve_run_arg(run_context& ctx, state_of_t<S>& state) -> decltype(au
 	else if constexpr (std::is_same_v<U, state_of_t<S>>) {
 		return (state);
 	}
+	else if constexpr (is_access_v<U>) {
+		return ctx.template make_access<U>();
+	}
+	else if constexpr (is_structural_v<U>) {
+		return ctx.template make_structural<structural_element_t<U>>();
+	}
+	else if constexpr (is_access_decl_v<U>) {
+		return U{};
+	}
 	else if constexpr (is_shared_view_v<U>) {
 		using Target = shared_view_target_t<U>;
 		constexpr id lookup_id = id_of<Target>();
@@ -269,7 +395,7 @@ auto gse::resolve_run_arg(run_context& ctx, state_of_t<S>& state) -> decltype(au
 			std::is_const_v<std::remove_pointer_t<U>>,
 			"cross-system state must be const; use channels for mutation"
 		);
-		constexpr id state_lookup_id = compute_state_dep_id<Pointee>();
+		constexpr id state_lookup_id = id_of<Pointee>();
 		const void* p = ctx.live_state
 			? ctx.states.state_ptr(state_lookup_id)
 			: (ctx.states.state_snapshot_ptr(state_lookup_id) ? ctx.states.state_snapshot_ptr(state_lookup_id)
@@ -313,7 +439,7 @@ auto gse::resolve_frame_arg(frame_context& ctx, state_of_t<S>& state) -> decltyp
 			std::is_const_v<std::remove_pointer_t<U>>,
 			"cross-system state must be const; use channels for mutation"
 		);
-		constexpr id state_lookup_id = compute_state_dep_id<Pointee>();
+		constexpr id state_lookup_id = id_of<Pointee>();
 		const void* p = ctx.live_state
 			? ctx.states.state_ptr(state_lookup_id)
 			: (ctx.states.state_snapshot_ptr(state_lookup_id) ? ctx.states.state_snapshot_ptr(state_lookup_id)
@@ -343,114 +469,97 @@ auto gse::noop_dispatchers::noop_frame_for(frame_context&, void*) -> async::task
 auto gse::noop_snapshot(void*) -> void {
 }
 
-template <typename T>
-consteval auto gse::compute_state_dep_id() -> id {
-	constexpr auto entity = std::meta::dealias(^^T);
-	if constexpr (std::meta::is_class_member(entity)) {
-		using parent_t = typename[:std::meta::parent_of(entity):];
-		if constexpr (requires { typename parent_t::data; }) {
-			if constexpr (std::is_same_v<typename parent_t::data, T>) {
-				return id_of<parent_t>();
-			}
+template <typename Arg, typename S>
+auto gse::append_arg_state_dep(std::vector<id>& out) -> void {
+	if constexpr (is_state_dep_v<Arg, S>) {
+		(void)trace_id<dep_pointee_t<Arg>>();
+		if constexpr (!is_optional_dep_v<Arg>) {
+			out.push_back(state_dep_id_v<Arg>);
 		}
 	}
-	return id_of<T>();
 }
 
-template <auto MemberFn, typename S>
-consteval auto gse::compute_state_dep_count() -> std::size_t {
-	std::size_t count = 0;
-	for (auto p : std::meta::parameters_of(MemberFn)) {
-		auto t = std::meta::dealias(std::meta::type_of(p));
-		const bool is_optional = std::meta::extract<bool>(std::meta::substitute(
-			^^is_optional_dep_v,
-			{
-				t }
-		));
-		if (is_optional) {
-			continue;
-		}
-		const bool is_dep = std::meta::extract<bool>(std::meta::substitute(
-			^^is_state_dep_v,
-			{
-				t,
-				^^S }
-		));
-		if (is_dep) {
-			++count;
-		}
+template <typename Arg, typename S>
+auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
+	append_arg_state_dep<Arg, S>(out.state_deps);
+
+	using ArgT = std::remove_cvref_t<Arg>;
+	if constexpr (is_reads_v<ArgT>) {
+		const auto ids = ArgT::component_ids();
+		out.component_reads.insert(out.component_reads.end(), ids.begin(), ids.end());
 	}
-	return count;
-}
-
-template <auto MemberFn, typename S>
-consteval auto gse::compute_state_dep_ids() -> std::array<id, compute_state_dep_count<MemberFn, S>()> {
-	std::array<id, compute_state_dep_count<MemberFn, S>()> result{};
-	std::size_t i = 0;
-	for (auto p : std::meta::parameters_of(MemberFn)) {
-		auto t = std::meta::dealias(std::meta::type_of(p));
-		const bool is_optional = std::meta::extract<bool>(std::meta::substitute(
-			^^is_optional_dep_v,
-			{
-				t }
-		));
-		if (is_optional) {
-			continue;
-		}
-		const bool is_dep = std::meta::extract<bool>(std::meta::substitute(
-			^^is_state_dep_v,
-			{
-				t,
-				^^S }
-		));
-		if (!is_dep) {
-			continue;
-		}
-		const auto dep_number = std::meta::extract<std::uint64_t>(std::meta::substitute(
-			^^state_dep_number_v,
-			{
-				t }
-		));
-		result[i++] = generate_temp_id(dep_number);
+	else if constexpr (is_access_v<ArgT> && is_read_access_v<ArgT>) {
+		out.component_reads.push_back(id_of<access_element_t<ArgT>>());
 	}
-	return result;
+
+	if constexpr (is_writes_v<ArgT>) {
+		const auto ids = ArgT::component_ids();
+		out.component_writes.insert(out.component_writes.end(), ids.begin(), ids.end());
+	}
+	else if constexpr (is_access_v<ArgT> && !is_read_access_v<ArgT>) {
+		out.component_writes.push_back(id_of<access_element_t<ArgT>>());
+	}
+	else if constexpr (is_structural_v<ArgT>) {
+		out.component_writes.push_back(id_of<structural_element_t<ArgT>>());
+	}
 }
 
-template <auto MemberFn, typename S>
-auto gse::register_state_dep_tags() -> void {
+template <auto Fn, typename S>
+auto gse::append_signature_state_deps(std::vector<id>& out) -> void {
 	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		(([] {
-			 using ArgT = arg_type_of<MemberFn, Is>;
-			 if constexpr (is_state_dep_v<ArgT, S>) {
-				 (void)trace_id<dep_pointee_t<ArgT>>();
-			 }
-		 }()),
-		 ...);
-	}(std::make_index_sequence<arity_of<MemberFn>>{});
+		((append_arg_state_dep<arg_type_of<Fn, Is>, S>(out)), ...);
+	}(std::make_index_sequence<arity_of<Fn>>{});
+	log::println(
+		"[sig-state-deps] S={} fn={} fn_arity={} collected={}",
+		type_tag<S>(),
+		std::meta::display_string_of(Fn),
+		arity_of<Fn>,
+		out.size()
+	);
+	log::flush();
+}
+
+template <auto Fn, typename S>
+auto gse::append_signature_run_metadata(run_signature_metadata& out) -> void {
+	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
+		((append_arg_run_metadata<arg_type_of<Fn, Is>, S>(out)), ...);
+	}(std::make_index_sequence<arity_of<Fn>>{});
 }
 
 template <typename S>
-auto gse::extract_run_state_deps() -> std::vector<id> {
-	if constexpr (!names_run<S>) {
-		return {};
+auto gse::collect_run_metadata() -> run_signature_metadata {
+	run_signature_metadata out;
+	if constexpr (names_run_fn<S>) {
+		append_signature_run_metadata<^^S::run, S>(out);
 	}
-	else {
-		register_state_dep_tags<^^S::run, S>();
-		constexpr auto deps = compute_state_dep_ids<^^S::run, S>();
-		return std::vector<id>(deps.begin(), deps.end());
+	else if constexpr (names_run_phased<S>) {
+		template for (constexpr auto phase : run_phases_v<S>) {
+			append_signature_run_metadata<phase, S>(out);
+		}
 	}
+	return out;
+}
+
+template <typename S>
+auto gse::extract_init_state_deps() -> std::vector<id> {
+	std::vector<id> out;
+	if constexpr (names_init<S>) {
+		[&]<std::size_t... Is>(std::index_sequence<Is...>) {
+			((append_arg_state_dep<arg_type_of<^^S::init, Is>, S>(out)), ...);
+		}(std::make_index_sequence<arity_of<^^S::init>>{});
+	}
+	return out;
 }
 
 template <typename S>
 auto gse::extract_frame_state_deps() -> std::vector<id> {
-	if constexpr (!names_frame<S>) {
-		return {};
+	std::vector<id> out;
+	if constexpr (names_frame<S>) {
+		[&]<std::size_t... Is>(std::index_sequence<Is...>) {
+			((append_arg_state_dep<arg_type_of<^^S::frame, Is>, S>(out)), ...);
+		}(std::make_index_sequence<arity_of<^^S::frame>>{});
 	}
-	else {
-		register_state_dep_tags<^^S::frame, S>();
-		constexpr auto deps = compute_state_dep_ids<^^S::frame, S>();
-		return std::vector<id>(deps.begin(), deps.end());
-	}
+	return out;
 }
 
 template <typename S>
@@ -472,9 +581,37 @@ auto gse::invoke_shutdown_for(shutdown_context& phase, void* data_ptr) -> void {
 template <typename S>
 auto gse::invoke_run_for(run_context& ctx, void* data_ptr) -> async::task<> {
 	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
+
+	if constexpr (names_run_phased<S>) {
+		co_await run_phases_for<S>(ctx, d.state);
+	}
+	else {
+		if constexpr (arity_of<^^S::run> > 0) {
+			std::array<id, arity_of<^^S::run>> lock_ids{};
+			std::array<lock_fn, arity_of<^^S::run>> lock_fns{};
+			const std::size_t n_locks = fill_signature_locks<^^S::run, S>(lock_ids, lock_fns);
+			if (n_locks > 0) {
+				static const id tid = signature_acquire_trace_id<S>();
+				co_await acquire_locks_in_sorted_order(
+					ctx.access_mutexes(),
+					std::span(lock_ids.data(), n_locks),
+					std::span(lock_fns.data(), n_locks),
+					tid
+				);
+			}
+		}
+		co_await [&]<std::size_t... Is>(std::index_sequence<Is...>) -> async::task<> {
+			co_await S::run(resolve_run_arg<arg_type_of<^^S::run, Is>, S>(ctx, d.state)...);
+		}(std::make_index_sequence<arity_of<^^S::run>>{});
+	}
+}
+
+template <typename S>
+auto gse::invoke_init_for(run_context& ctx, void* data_ptr) -> async::task<> {
+	auto& d = *static_cast<system_node_data<S>*>(data_ptr);
 	return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		return S::run(resolve_run_arg<arg_type_of<^^S::run, Is>, S>(ctx, d.state)...);
-	}(std::make_index_sequence<arity_of<^^S::run>>{});
+		return S::init(resolve_run_arg<arg_type_of<^^S::init, Is>, S>(ctx, d.state)...);
+	}(std::make_index_sequence<arity_of<^^S::init>>{});
 }
 
 template <typename S>
@@ -536,8 +673,14 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	}
 	if constexpr (names_run<S>) {
 		node.invoke_run_fn = &invoke_run_for<S>;
+	}
+	if constexpr (names_init<S>) {
+		node.invoke_init_fn = &invoke_init_for<S>;
 		node.resume_event = std::make_unique<async::manual_event>();
 		node.paused_event = std::make_unique<async::manual_event>();
+	}
+	else {
+		node.init_done = true;
 	}
 	if constexpr (names_frame<S>) {
 		static_assert(
@@ -565,8 +708,12 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 		node.invoke_snapshot_fn = &noop_snapshot;
 	}
 
-	node.run_state_deps = extract_run_state_deps<S>();
+	auto run_metadata = collect_run_metadata<S>();
+	node.run_state_deps = std::move(run_metadata.state_deps);
+	node.init_state_deps = extract_init_state_deps<S>();
 	node.frame_state_deps = extract_frame_state_deps<S>();
+	node.component_reads = std::move(run_metadata.component_reads);
+	node.component_writes = std::move(run_metadata.component_writes);
 
 	node.state_ptr = &d->state;
 	if constexpr (has_state_snapshot) {
@@ -585,6 +732,7 @@ auto gse::make_system_node(Args&&... args) -> system_node {
 	node.frame_wall_id = find_or_generate_id(std::format("frame_wall:{}", type_tag<S>()));
 	node.frame_start_id = find_or_generate_id(std::format("frame_start:{}", type_tag<S>()));
 	node.trace_id = trace_id<S>();
+	node.system_name = std::string(type_tag<S>());
 
 	return node;
 }

@@ -36,6 +36,7 @@ export namespace gs::locomotion {
 			leg last_swing_leg = leg::left;
 			bool counted_missed_plant = false;
 			bool counted_stale_target = false;
+			std::uint64_t state_hash = 1469598103934665603ull;
 		};
 
 		struct data {
@@ -58,7 +59,12 @@ export namespace gs::locomotion {
 		static auto run(
 			gse::run_context& ctx,
 			data& d,
-			const gse::world_system::data& world_d
+			const gse::world_system::data& world_d,
+			gse::read<skeleton_refs> refs,
+			gse::write<intent> intents,
+			gse::read<state> states,
+			gse::read<gait> gaits,
+			gse::read<plan> plans
 		) -> gse::async::task<>;
 	};
 }
@@ -145,6 +151,19 @@ auto gs::locomotion::highest_foot_y(const state& s) -> gse::position {
 }
 
 auto gs::locomotion::update_metrics(smoke_test::trial_metrics& metrics, const state& s, const gait& g, const plan& p, const gse::time dt) -> void {
+	const auto fold = [&](auto unit_value) {
+		metrics.state_hash ^= std::bit_cast<std::uint32_t>(unit_value);
+		metrics.state_hash *= 1099511628211ull;
+	};
+	for (const auto& v : { s.pelvis_position, s.foot_position_l, s.foot_position_r }) {
+		fold(v.x());
+		fold(v.y());
+		fold(v.z());
+	}
+	fold(s.pelvis_velocity.x());
+	fold(s.pelvis_velocity.y());
+	fold(s.pelvis_velocity.z());
+
 	metrics.elapsed += dt;
 	metrics.min_pelvis_y = std::min(metrics.min_pelvis_y, s.pelvis_position.y());
 	metrics.max_speed = std::max(metrics.max_speed, s.horizontal_speed);
@@ -205,7 +224,7 @@ auto gs::locomotion::finish_trial(gse::run_context& ctx, smoke_test::data& d, co
 	gse::log::println(
 		"locomotion_smoke: trial={} result={} time={:.2f:s} plants={} min_pelvis_y={:.2f} "
 		"max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} "
-		"missed_plants={} stale_targets={} phase={} swing={}",
+		"missed_plants={} stale_targets={} phase={} state_hash={:016x} swing={}",
 		d.trial,
 		result,
 		d.metrics.elapsed,
@@ -217,7 +236,7 @@ auto gs::locomotion::finish_trial(gse::run_context& ctx, smoke_test::data& d, co
 		d.metrics.max_foot_y,
 		d.metrics.missed_plants,
 		d.metrics.stale_targets,
-		g.current,
+		g.current, d.metrics.state_hash,
 		g.swing_leg
 	);
 
@@ -237,106 +256,93 @@ auto gs::locomotion::finish_trial(gse::run_context& ctx, smoke_test::data& d, co
 	d.reset_activation_requested = false;
 }
 
-auto gs::locomotion::smoke_test::run(gse::run_context& ctx, data& d, const gse::world_system::data& world_d) -> gse::async::task<> {
-	while (true) {
-		const auto dt = sim_frame_dt();
+auto gs::locomotion::smoke_test::run(gse::run_context& ctx, data& d, const gse::world_system::data& world_d, gse::read<skeleton_refs> refs, gse::write<intent> intents, gse::read<state> states, gse::read<gait> gaits, gse::read<plan> plans) -> gse::async::task<> {
+	const auto dt = sim_frame_dt();
 
-		if (d.config.trials <= 0) {
-			gse::log::println("locomotion_smoke: complete trials=0 passed=0 failed=0");
-			gse::shutdown();
-			co_return;
-		}
-
-		if (!d.scene_id.has_value()) {
-			d.scene_id = find_scene_id(world_d);
-		}
-
-		if (d.stage == smoke_stage::locating_scene) {
-			if (d.scene_id.has_value() && world_d.active_scene != d.scene_id) {
-				ctx.channels.push<gse::activate_scene_request>({
-					.scene_id = *d.scene_id
-				});
-			}
-			if (d.scene_id.has_value() && world_d.active_scene == d.scene_id) {
-				begin_trial(d);
-			}
-		}
-
-		if (d.stage == smoke_stage::resetting) {
-			++d.reset_ticks;
-			if (d.scene_id.has_value() && world_d.active_scene == d.scene_id && !d.reset_activation_requested) {
-				ctx.channels.push<gse::deactivate_active_scene_request>({});
-			}
-			if (d.reset_ticks >= 2 && d.scene_id.has_value() && world_d.active_scene != d.scene_id && !d.reset_activation_requested) {
-				ctx.channels.push<gse::activate_scene_request>({
-					.scene_id = *d.scene_id
-				});
-				d.reset_activation_requested = true;
-			}
-			if (d.reset_ticks >= 6 && d.reset_activation_requested && d.scene_id.has_value() && world_d.active_scene == d.scene_id) {
-				begin_trial(d);
-			}
-		}
-
-		{
-			auto [refs, intents, states, gaits, plans] = co_await ctx.acquire_with(
-				gse::read_v<skeleton_refs>,
-				gse::write_v<intent>,
-				gse::read_v<state>,
-				gse::read_v<gait>,
-				gse::read_v<plan>
-			);
-
-			std::optional<gse::id> owner;
-			const auto owner_ids = refs.owner_ids();
-			for (std::size_t i = 0; i < owner_ids.size(); ++i) {
-				const auto candidate = owner_ids[i];
-				if (intents.find(candidate) && states.find(candidate) && gaits.find(candidate) && plans.find(candidate)) {
-					owner = candidate;
-					break;
-				}
-			}
-
-			if (owner.has_value()) {
-				auto* it = intents.find(*owner);
-				const auto* s = states.find(*owner);
-				const auto* g = gaits.find(*owner);
-				const auto* p = plans.find(*owner);
-				if (it && s && g && p) {
-					if (d.stage == smoke_stage::warmup || d.stage == smoke_stage::resetting) {
-						write_smoke_intent(*it, 0.f);
-					}
-					if (d.stage == smoke_stage::warmup) {
-						d.stage_elapsed += dt;
-						if (d.stage_elapsed >= d.config.warmup && s->valid) {
-							reset_metrics(d.metrics);
-							d.stage = smoke_stage::running;
-							d.stage_elapsed = gse::seconds(0.f);
-							gse::log::println(
-								"locomotion_smoke: trial={} run owner={} pelvis_y={:.2f} grounded=({},{})",
-								d.trial,
-								owner->number(),
-								s->pelvis_position.y(),
-								s->foot_grounded_l,
-								s->foot_grounded_r
-							);
-						}
-					}
-					else if (d.stage == smoke_stage::running) {
-						write_smoke_intent(*it, d.config.forward);
-						update_metrics(d.metrics, *s, *g, *p, dt);
-						if (g->fallen || d.metrics.elapsed >= d.config.duration) {
-							finish_trial(ctx, d, *s, *g);
-						}
-					}
-				}
-			}
-		}
-
-		if (d.stage == smoke_stage::done) {
-			co_return;
-		}
-
-		co_await ctx.next_tick();
+	if (d.config.trials <= 0) {
+		gse::log::println("locomotion_smoke: complete trials=0 passed=0 failed=0");
+		gse::shutdown();
+		co_return;
 	}
+
+	if (!d.scene_id.has_value()) {
+		d.scene_id = find_scene_id(world_d);
+	}
+
+	if (d.stage == smoke_stage::locating_scene) {
+		if (d.scene_id.has_value() && world_d.active_scene != d.scene_id) {
+			ctx.channels.push<gse::activate_scene_request>({
+				.scene_id = *d.scene_id
+			});
+		}
+		if (d.scene_id.has_value() && world_d.active_scene == d.scene_id) {
+			begin_trial(d);
+		}
+	}
+
+	if (d.stage == smoke_stage::resetting) {
+		++d.reset_ticks;
+		if (d.scene_id.has_value() && world_d.active_scene == d.scene_id && !d.reset_activation_requested) {
+			ctx.channels.push<gse::deactivate_active_scene_request>({});
+		}
+		if (d.reset_ticks >= 2 && d.scene_id.has_value() && world_d.active_scene != d.scene_id && !d.reset_activation_requested) {
+			ctx.channels.push<gse::activate_scene_request>({
+				.scene_id = *d.scene_id
+			});
+			d.reset_activation_requested = true;
+		}
+		if (d.reset_ticks >= 6 && d.reset_activation_requested && d.scene_id.has_value() && world_d.active_scene == d.scene_id) {
+			begin_trial(d);
+		}
+	}
+
+	std::optional<gse::id> owner;
+	const auto owner_ids = refs.owner_ids();
+	for (std::size_t i = 0; i < owner_ids.size(); ++i) {
+		const auto candidate = owner_ids[i];
+		if (intents.find(candidate) && states.find(candidate) && gaits.find(candidate) && plans.find(candidate)) {
+			owner = candidate;
+			break;
+		}
+	}
+
+	if (owner.has_value()) {
+		auto* it = intents.find(*owner);
+		const auto* s = states.find(*owner);
+		const auto* g = gaits.find(*owner);
+		const auto* p = plans.find(*owner);
+		if (it && s && g && p) {
+			if (d.stage == smoke_stage::warmup || d.stage == smoke_stage::resetting) {
+				write_smoke_intent(*it, 0.f);
+			}
+			if (d.stage == smoke_stage::warmup) {
+				d.stage_elapsed += dt;
+				if (d.stage_elapsed >= d.config.warmup && s->valid) {
+					reset_metrics(d.metrics);
+					d.stage = smoke_stage::running;
+					d.stage_elapsed = gse::seconds(0.f);
+					gse::log::println(
+						"locomotion_smoke: trial={} run owner={} pelvis_y={:.2f} grounded=({},{})",
+						d.trial,
+						owner->number(),
+						s->pelvis_position.y(),
+						s->foot_grounded_l,
+						s->foot_grounded_r
+					);
+				}
+			}
+			else if (d.stage == smoke_stage::running) {
+				write_smoke_intent(*it, d.config.forward);
+				update_metrics(d.metrics, *s, *g, *p, dt);
+				if (g->fallen || d.metrics.elapsed >= d.config.duration) {
+					finish_trial(ctx, d, *s, *g);
+				}
+			}
+		}
+	}
+
+	if (d.stage == smoke_stage::done) {
+		co_return;
+	}
+
 }
