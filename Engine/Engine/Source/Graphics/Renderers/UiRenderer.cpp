@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:ui_renderer_impl;
 
 import std;
 
@@ -11,6 +11,7 @@ import :physics_debug_renderer;
 import :sdf_grid_renderer;
 import :tonemap_renderer;
 import :world_text_renderer;
+
 
 import gse.os;
 import gse.assets;
@@ -154,23 +155,22 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 }
 
 auto gse::renderer::ui::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.sprite_pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, sprite_entry::pod);
-	d.text_pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, msdf_entry::pod);
+	d.sprite_pipeline = gpu::build_graphics_program(*gpu_s.device, sprite_entry::pod);
+	d.text_pipeline = gpu::build_graphics_program(*gpu_s.device, msdf_entry::pod);
 
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
 	for (auto& [vertex_buffer, index_buffer] : d.gpu_frames) {
-		vertex_buffer = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		vertex_buffer = gpu_s.device->create_buffer(
 			{
 				.size = vertex_buffer_size,
 				.usage = gpu::buffer_flag::storage,
+				.bindless = true,
 			}
 		);
 
-		index_buffer = gpu_s.device->allocator().create_buffer(
+		index_buffer = gpu_s.device->create_buffer(
 			{
 				.size = index_buffer_size,
 				.usage = gpu::buffer_flag::index,
@@ -346,7 +346,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 	const auto frame_index = gpu_s.render_graph->current_frame();
 	auto& [vertex_buffer, index_buffer] = d.gpu_frames[frame_index];
 
-	vertex_buffer.buffer().host_write(vertices);
+	vertex_buffer.host_write(vertices);
 	index_buffer.host_write(indices);
 
 	const auto ext = gpu_s.render_graph->extent();
@@ -371,7 +371,7 @@ auto gse::renderer::ui::system::frame(frame_context& ctx, shared_view<gpu::conte
 			return shaders::bindless::invalid_index;
 		}
 		const auto& slot = snapshot_s.slots[frame_index];
-		return slot.valid() ? slot.index : shaders::bindless::invalid_index;
+		return slot.valid() ? slot.slot().index : shaders::bindless::invalid_index;
 	}();
 
 	sprite_push_constants sprite_pc{

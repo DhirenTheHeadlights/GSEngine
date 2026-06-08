@@ -77,11 +77,11 @@ export namespace gse::renderer::forward {
 
 			gpu::shader_program pipeline;
 
-			per_frame_resource<gpu::bindless_buffer> camera_ubo_buffers;
-			per_frame_resource<gpu::bindless_buffer> light_buffers;
-			per_frame_resource<gpu::bindless_tlas_view> tlas_views;
+			per_frame_resource<gpu::buffer> camera_ubo_buffers;
+			per_frame_resource<gpu::buffer> light_buffers;
+			per_frame_resource<gpu::bindless_handle> tlas_slots;
 
-			gpu::bindless_sampler gi_sampler;
+			gpu::bindless_handle gi_sampler;
 
 			linear_vector<std::byte> light_staging;
 		};

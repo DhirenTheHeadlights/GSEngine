@@ -20,6 +20,36 @@ export namespace gse::physics {
 		length radius;
 		length half_height;
 	};
+
+	struct collision_shape {
+		using variant_type = std::variant<box_shape, sphere_shape, capsule_shape>;
+
+		variant_type value;
+
+		collision_shape();
+		collision_shape(box_shape shape);
+		collision_shape(sphere_shape shape);
+		collision_shape(capsule_shape shape);
+		collision_shape(const collision_shape&) = default;
+		collision_shape(collision_shape&&) = default;
+		auto operator=(const collision_shape&) -> collision_shape& = default;
+		auto operator=(collision_shape&&) -> collision_shape& = default;
+		~collision_shape() = default;
+
+		auto index() const -> std::size_t;
+	};
+
+	using bone_shape = collision_shape;
+}
+
+export namespace gse {
+	auto match(
+		physics::collision_shape& shape
+	) -> variant<physics::collision_shape::variant_type&>;
+
+	auto match(
+		const physics::collision_shape& shape
+	) -> variant<const physics::collision_shape::variant_type&>;
 }
 
 export namespace gse {
@@ -75,6 +105,12 @@ export namespace gse {
 			const physics::transform_component& tc
 		);
 
+		bounding_box(const bounding_box&);
+		bounding_box(bounding_box&&);
+		auto operator=(const bounding_box&) -> bounding_box&;
+		auto operator=(bounding_box&&) -> bounding_box&;
+		~bounding_box();
+
 		auto aabb() const -> aabb;
 
 		auto obb() const -> obb;
@@ -103,6 +139,40 @@ export namespace gse {
 		vec3<displacement> m_half_extents;
 	};
 }
+
+gse::physics::collision_shape::collision_shape()
+	: value(box_shape{}) {
+}
+
+gse::physics::collision_shape::collision_shape(const box_shape shape)
+	: value(shape) {
+}
+
+gse::physics::collision_shape::collision_shape(const sphere_shape shape)
+	: value(shape) {
+}
+
+gse::physics::collision_shape::collision_shape(const capsule_shape shape)
+	: value(shape) {
+}
+
+auto gse::physics::collision_shape::index() const -> std::size_t {
+	return value.index();
+}
+
+auto gse::match(physics::collision_shape& shape) -> variant<physics::collision_shape::variant_type&> {
+	return variant<physics::collision_shape::variant_type&>(shape.value);
+}
+
+auto gse::match(const physics::collision_shape& shape) -> variant<const physics::collision_shape::variant_type&> {
+	return variant<const physics::collision_shape::variant_type&>(shape.value);
+}
+
+gse::bounding_box::bounding_box(const bounding_box&) = default;
+gse::bounding_box::bounding_box(bounding_box&&) = default;
+auto gse::bounding_box::operator=(const bounding_box&) -> bounding_box& = default;
+auto gse::bounding_box::operator=(bounding_box&&) -> bounding_box& = default;
+gse::bounding_box::~bounding_box() = default;
 
 auto gse::collision_information::axis() const -> gse::axis {
 	if (!epsilon_equal_index(collision_normal, vec3f(), static_cast<int>(axis::x))) {

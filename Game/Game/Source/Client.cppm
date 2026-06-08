@@ -63,7 +63,7 @@ auto gs::client_system::run(gse::run_context& ctx) -> gse::async::task<> {
 		},
 	};
 	ctx.channels.push<gse::network::add_provider_request>({
-		.provider = std::make_shared<gse::network::wan_directory_provider>(std::move(seed)),
+		.provider = std::shared_ptr<gse::network::wan_directory_provider>(new gse::network::wan_directory_provider(std::move(seed))),
 	});
 	ctx.channels.push<gse::network::refresh_servers_request>({
 		.timeout = gse::milliseconds(200),

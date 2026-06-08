@@ -35,7 +35,7 @@ export namespace gse {
 			id state_type
 		) -> state_slot*;
 
-		flat_map<id, std::unique_ptr<state_slot>> m_states;
+		std::flat_map<id, std::unique_ptr<state_slot>> m_states;
 		std::shared_mutex m_states_mutex;
 	};
 }
@@ -63,7 +63,7 @@ auto gse::task_graph::get_or_create_slot(const id state_type) -> state_slot* {
 	}
 	auto slot = std::make_unique<state_slot>();
 	auto* raw = slot.get();
-	m_states.emplace(state_type, std::move(slot));
+	m_states.try_emplace(state_type, std::move(slot));
 	return raw;
 }
 

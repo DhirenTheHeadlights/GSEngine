@@ -11,6 +11,7 @@
       "stopAtEntry": false,
       "console": "integratedTerminal",
       "environment": [
+        { "name": "VK_LOADER_LAYERS_DISABLE", "value": "~implicit~" },
         { "name": "VK_LAYER_PATH", "value": "${env:VULKAN_SDK}\\Bin" },
         { "name": "PATH",          "value": "${env:VULKAN_SDK}\\Bin;${env:PATH}" }
       ]

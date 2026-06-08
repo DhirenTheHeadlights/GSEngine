@@ -10,8 +10,6 @@ import gse.concurrency;
 import gse.ecs;
 import gse.assets;
 import gse.os;
-import gse.graphics;
-import gse.physics;
 
 export import :actions;
 export import :remote_peer;
@@ -65,13 +63,11 @@ export namespace gse::network {
 		std::vector<discovery_result> available_servers;
 		std::uint8_t connected_players = 0;
 		std::uint8_t connected_max_players = 0;
+		angle camera_yaw{};
 		std::unique_ptr<client> client_ptr;
 		std::vector<std::shared_ptr<discovery_provider>> providers;
-		std::vector<gse::move_only_function<void(run_context&)>> deferred;
+		std::vector<std::move_only_function<void(run_context&)>> deferred;
 	};
-
-	using engine_components =
-		type_pack<physics::motion_component, physics::collision_component, render_component, player_controller>;
 
 	template <typename... Components>
 	struct system {
@@ -81,8 +77,7 @@ export namespace gse::network {
 			run_context& ctx,
 			const asset::data& assets_d,
 			data& d,
-			const actions::system::data& actions_d,
-			const camera::system::data& cam_d
+			const actions::system::data& actions_d
 		) -> async::task<>;
 
 		static auto shutdown(
@@ -101,10 +96,15 @@ auto gse::network::system<Components...>::shutdown(shutdown_context&, data& d) -
 }
 
 template <typename... Components>
-auto gse::network::system<Components...>::run(run_context& ctx, const asset::data& assets_d, data& d, const actions::system::data& actions_d, const camera::system::data& cam_d) -> async::task<> {
+auto gse::network::system<Components...>::run(run_context& ctx, const asset::data& assets_d, data& d, const actions::system::data& actions_d) -> async::task<> {
 	(ctx.template ensure_storage<Components>(), ...);
 
 	while (true) {
+		for (const auto& response : ctx.read_channel<camera_yaw_response>()) {
+			d.camera_yaw = response.yaw;
+		}
+		ctx.channels.push<camera_yaw_request>({});
+
 		for (const auto& req : ctx.read_channel<connect_request>()) {
 			if (!d.client_ptr) {
 				const address bind = req.options.local_bind.value_or(address{
@@ -267,7 +267,7 @@ auto gse::network::system<Components...>::run(run_context& ctx, const asset::dat
 				actions::system::current_state(actions_d),
 				actions::system::axis1_ids(actions_d),
 				actions::system::axis2_ids(actions_d),
-				cam_d.yaw
+				d.camera_yaw
 			);
 		}
 

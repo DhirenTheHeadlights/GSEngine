@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:scene_snapshot_renderer_impl;
 
 import std;
 
@@ -9,6 +9,7 @@ import :sdf_grid_renderer;
 import :tonemap_renderer;
 import :world_text_renderer;
 import :shared_shaders;
+
 
 import gse.gpu;
 import gse.core;
@@ -29,13 +30,12 @@ namespace gse::renderer::scene_snapshot {
 	auto recreate_resources(GpuS& gpu_s, system::data& d, const vec2u extent) -> void {
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
 			if (d.slots[i].valid()) {
-				gpu_s.bindless_textures->release(d.slots[i]);
 				d.slots[i] = {};
 			}
 		}
 
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-			d.snapshots[i] = gpu_s.device->allocator().create_image(
+			d.snapshots[i] = gpu_s.device->create_image(
 				{
 					.size = extent,
 					.format = gpu_s.swapchain->format(),
@@ -43,7 +43,7 @@ namespace gse::renderer::scene_snapshot {
 				}
 			);
 
-			d.slots[i] = gpu_s.bindless_textures->allocate(d.snapshots[i], snapshot_sampler_desc);
+			d.slots[i] = gpu_s.device->register_texture(d.snapshots[i], snapshot_sampler_desc);
 		}
 
 		d.current_extent = extent;

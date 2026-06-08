@@ -108,6 +108,8 @@ export namespace gse::physics {
 		vec3f twist_axis = { 0.f, 1.f, 0.f };
 	};
 
+	using joint_config = std::variant<fixed_joint, distance_joint, hinge_joint, slider_joint, spring_joint, muscle_joint, ball_joint, universal_joint>;
+
 	struct gpu_upload_payload {
 		std::vector<vbd::body_state> bodies;
 		std::vector<vbd::velocity_motor_constraint> motors;
@@ -186,8 +188,8 @@ export namespace gse::physics {
 			bool gpu_joints_dirty = true;
 			std::uint32_t gpu_uploaded_body_count = 0;
 			std::uint32_t gpu_uploaded_joint_count = 0;
-			flat_map<id, std::uint32_t> id_to_body_index;
-			flat_map<id, joint_handle> joint_handles_by_entity;
+			std::flat_map<id, std::uint32_t> id_to_body_index;
+			std::flat_map<id, joint_handle> joint_handles_by_entity;
 			std::vector<impulse_request> gpu_pending_impulses;
 
 			std::vector<std::uint8_t> body_airborne;
@@ -249,7 +251,7 @@ export namespace gse::physics {
 			vbd::solver& solver,
 			vbd::contact_cache& contact_cache,
 			std::vector<collision_pair>& objects,
-			const flat_map<id, std::uint32_t>& id_to_body_index,
+			const std::flat_map<id, std::uint32_t>& id_to_body_index,
 			bool update_scene_state,
 			write<transform_component>& transform,
 			write<motion_component>& motion,

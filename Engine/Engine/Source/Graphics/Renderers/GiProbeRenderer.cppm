@@ -56,10 +56,10 @@ export namespace gse::renderer::gi_probe {
 			length trace_t_max = meters(50.0f);
 
 			gpu::shader_program update_pipeline;
-			per_frame_resource<gpu::bindless_tlas_view> tlas_views;
+			per_frame_resource<gpu::bindless_handle> tlas_views;
 			std::uint32_t frame_counter = 0;
 
-			[[= gse::shared]] gpu::bindless_image irradiance_atlas;
+			[[= gse::shared]] gpu::image irradiance_atlas;
 			[[= gse::shared]] vec3<position> origin_world{};
 		};
 

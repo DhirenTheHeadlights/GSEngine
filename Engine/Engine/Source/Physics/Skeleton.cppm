@@ -9,8 +9,6 @@ import gse.math;
 import gse.meta;
 
 export namespace gse::physics {
-	using bone_shape = std::variant<box_shape, sphere_shape, capsule_shape>;
-
 	constexpr std::uint16_t no_bone = std::numeric_limits<std::uint16_t>::max();
 
 	struct bone {
@@ -18,14 +16,14 @@ export namespace gse::physics {
 		std::uint16_t parent_index = no_bone;
 		vec3<displacement> local_offset;
 		quat local_rotation = quat(1.f, 0.f, 0.f, 0.f);
-		bone_shape shape = box_shape{};
+		bone_shape shape;
 		mass mass = kilograms(1.f);
 	};
 
 	struct skeletal_joint {
 		std::uint16_t bone_a = no_bone;
 		std::uint16_t bone_b = no_bone;
-		joint_config config = fixed_joint{};
+		joint_config config;
 	};
 
 	struct muscle {

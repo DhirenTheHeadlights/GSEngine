@@ -21,7 +21,7 @@ export namespace gs {
 		auto body_rect(
 			const gse::gui::style& sty,
 			gse::vec2f viewport_size
-		) const -> gse::gui::ui_rect override;
+		) const -> gse::rect_t<gse::vec2f> override;
 
 		auto draw_backdrop(
 			gse::gui::draw_context& ctx,
@@ -33,24 +33,24 @@ export namespace gs {
 
 		auto draw_header(
 			gse::gui::draw_context& ctx,
-			const gse::gui::ui_rect& rect,
+			const gse::rect_t<gse::vec2f>& rect,
 			gse::gui::nav& n
 		) const -> void;
 
 		auto draw_close_button(
 			gse::gui::draw_context& ctx,
-			const gse::gui::ui_rect& rect,
+			const gse::rect_t<gse::vec2f>& rect,
 			gse::gui::nav& n
 		) const -> void;
 
 		auto draw_footer(
 			gse::gui::draw_context& ctx,
-			const gse::gui::ui_rect& rect
+			const gse::rect_t<gse::vec2f>& rect
 		) -> void;
 
 		static auto draw_footer_button(
 			gse::gui::draw_context& ctx,
-			const gse::gui::ui_rect& rect,
+			const gse::rect_t<gse::vec2f>& rect,
 			std::string_view label,
 			bool enabled,
 			bool primary,
@@ -83,12 +83,12 @@ auto gs::settings_screen::title() const -> std::string_view {
 	return "Settings";
 }
 
-auto gs::settings_screen::body_rect(const gse::gui::style& sty, const gse::vec2f viewport_size) const -> gse::gui::ui_rect {
+auto gs::settings_screen::body_rect(const gse::gui::style& sty, const gse::vec2f viewport_size) const -> gse::rect_t<gse::vec2f> {
 	return gse::gui::layout::fit_card(viewport_size, sty.card_min_size, sty.card_max_size, sty.card_margin);
 }
 
 auto gs::settings_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
-	const gse::gui::ui_rect full = gse::gui::ui_rect::from_position_size(
+	const gse::rect_t<gse::vec2f> full = gse::rect_t<gse::vec2f>::from_position_size(
 		{ 0.f, viewport_size.y() },
 		{ viewport_size.x(), viewport_size.y() }
 	);
@@ -100,7 +100,7 @@ auto gs::settings_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::
 		.layer = gse::render_layer::popup,
 	});
 
-	const gse::gui::ui_rect card = body_rect(ctx.style, viewport_size);
+	const gse::rect_t<gse::vec2f> card = body_rect(ctx.style, viewport_size);
 
 	ctx.sprites.push_back({
 		.rect = card,
@@ -111,7 +111,7 @@ auto gs::settings_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::
 	});
 }
 
-auto gs::settings_screen::draw_close_button(gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect, gse::gui::nav& n) const -> void {
+auto gs::settings_screen::draw_close_button(gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, gse::gui::nav& n) const -> void {
 	const auto& sty = ctx.style;
 	const gse::id close_id = gse::gui::ids::make("settings.close");
 	const bool hovered = rect.contains(ctx.input.mouse_position()) && ctx.input_available();
@@ -141,7 +141,7 @@ auto gs::settings_screen::draw_close_button(gse::gui::draw_context& ctx, const g
 	}
 }
 
-auto gs::settings_screen::draw_header(gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect, gse::gui::nav& n) const -> void {
+auto gs::settings_screen::draw_header(gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, gse::gui::nav& n) const -> void {
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
@@ -156,8 +156,8 @@ auto gs::settings_screen::draw_header(gse::gui::draw_context& ctx, const gse::gu
 	});
 
 	const float close_pad = (rect.height() - sty.close_button_size) * 0.5f;
-	const gse::gui::ui_rect close_band = lo::inset_per_side(rect, close_pad, close_pad, close_pad, 0.f);
-	const gse::gui::ui_rect close_rect = lo::align_in(
+	const gse::rect_t<gse::vec2f> close_band = lo::inset_per_side(rect, close_pad, close_pad, close_pad, 0.f);
+	const gse::rect_t<gse::vec2f> close_rect = lo::align_in(
 		close_band,
 		{ sty.close_button_size, sty.close_button_size },
 		lo::halign::end,
@@ -165,7 +165,7 @@ auto gs::settings_screen::draw_header(gse::gui::draw_context& ctx, const gse::gu
 	);
 	draw_close_button(ctx, close_rect, n);
 
-	const gse::gui::ui_rect separator = gse::gui::ui_rect::from_position_size(
+	const gse::rect_t<gse::vec2f> separator = gse::rect_t<gse::vec2f>::from_position_size(
 		{ rect.left() + sty.padding, rect.bottom() },
 		{ rect.width() - sty.padding * 2.f, sty.separator_thickness }
 	);
@@ -206,7 +206,7 @@ auto gs::settings_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void
 	namespace lo = gse::gui::layout;
 	using spec = lo::size_spec;
 
-	const gse::gui::ui_rect card = ctx.current_menu->rect;
+	const gse::rect_t<gse::vec2f> card = ctx.current_menu->rect;
 
 	const auto [header, body, footer] = lo::split_vertical<3>(
 		card,
@@ -227,7 +227,7 @@ auto gs::settings_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void
 
 	draw_header(ctx, header, n);
 
-	const gse::gui::ui_rect vertical_sep = gse::gui::ui_rect::from_position_size(
+	const gse::rect_t<gse::vec2f> vertical_sep = gse::rect_t<gse::vec2f>::from_position_size(
 		{ body.left() + sty.sidebar_width, body.top() - sty.padding },
 		{ sty.separator_thickness, body.height() - sty.padding * 2.f }
 	);
@@ -260,7 +260,7 @@ auto gs::settings_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> void
 	draw_footer(ctx, footer);
 }
 
-auto gs::settings_screen::draw_footer_button(gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect, const std::string_view label, const bool enabled, const bool primary, const gse::id key) -> bool {
+auto gs::settings_screen::draw_footer_button(gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const std::string_view label, const bool enabled, const bool primary, const gse::id key) -> bool {
 	const auto& sty = ctx.style;
 	const bool hovered = enabled && rect.contains(ctx.input.mouse_position()) && ctx.input_available();
 
@@ -295,11 +295,11 @@ auto gs::settings_screen::draw_footer_button(gse::gui::draw_context& ctx, const 
 	return enabled && ctx.mouse_pressed_for(rect);
 }
 
-auto gs::settings_screen::draw_footer(gse::gui::draw_context& ctx, const gse::gui::ui_rect& rect) -> void {
+auto gs::settings_screen::draw_footer(gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect) -> void {
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
-	const gse::gui::ui_rect separator = gse::gui::ui_rect::from_position_size(
+	const gse::rect_t<gse::vec2f> separator = gse::rect_t<gse::vec2f>::from_position_size(
 		{ rect.left() + sty.padding, rect.top() },
 		{ rect.width() - sty.padding * 2.f, sty.separator_thickness }
 	);
@@ -347,7 +347,7 @@ auto gs::settings_screen::draw_footer(gse::gui::draw_context& ctx, const gse::gu
 	});
 
 	const float vertical_inset = (rect.height() - sty.button_height) * 0.5f;
-	const gse::gui::ui_rect button_band = lo::inset_per_side(rect,
+	const gse::rect_t<gse::vec2f> button_band = lo::inset_per_side(rect,
 															 vertical_inset,
 															 sty.padding,
 															 vertical_inset,
@@ -356,7 +356,7 @@ auto gs::settings_screen::draw_footer(gse::gui::draw_context& ctx, const gse::gu
 
 	if (needs_restart) {
 		cursor_x -= sty.accent_button_min_width;
-		const gse::gui::ui_rect restart_rect = gse::gui::ui_rect::from_position_size(
+		const gse::rect_t<gse::vec2f> restart_rect = gse::rect_t<gse::vec2f>::from_position_size(
 			{ cursor_x, button_band.top() },
 			{ sty.accent_button_min_width, sty.button_height }
 		);
@@ -367,7 +367,7 @@ auto gs::settings_screen::draw_footer(gse::gui::draw_context& ctx, const gse::gu
 	}
 
 	cursor_x -= sty.button_min_width;
-	const gse::gui::ui_rect apply_rect = gse::gui::ui_rect::from_position_size(
+	const gse::rect_t<gse::vec2f> apply_rect = gse::rect_t<gse::vec2f>::from_position_size(
 		{ cursor_x, button_band.top() },
 		{ sty.button_min_width, sty.button_height }
 	);
@@ -377,7 +377,7 @@ auto gs::settings_screen::draw_footer(gse::gui::draw_context& ctx, const gse::gu
 	cursor_x -= sty.button_spacing;
 
 	cursor_x -= sty.button_min_width;
-	const gse::gui::ui_rect discard_rect = gse::gui::ui_rect::from_position_size(
+	const gse::rect_t<gse::vec2f> discard_rect = gse::rect_t<gse::vec2f>::from_position_size(
 		{ cursor_x, button_band.top() },
 		{ sty.button_min_width, sty.button_height }
 	);

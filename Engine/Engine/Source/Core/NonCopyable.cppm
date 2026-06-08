@@ -18,7 +18,8 @@ export namespace gse {
 		auto operator=(
 			non_copyable&&
 		) -> non_copyable& = default;
-		virtual ~non_copyable() = default;
+	protected:
+		~non_copyable() = default;
 	};
 
 	class non_movable {
@@ -36,6 +37,7 @@ export namespace gse {
 		auto operator=(
 			non_movable&&
 		) -> non_movable& = delete;
-		virtual ~non_movable() = default;
+	protected:
+		~non_movable() = default;
 	};
 }

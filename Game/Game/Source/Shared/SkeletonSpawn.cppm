@@ -59,71 +59,67 @@ auto gs::spawn_bone(gse::scene& scene, const std::string& name, const gse::physi
 	};
 
 	gse::id result{};
-	std::visit(
-		[&]<typename Shape>(const Shape& shape) {
-			if constexpr (std::is_same_v<Shape, gse::physics::box_shape>) {
-				result = scene.spawn(
-					name,
-					bone_box_archetype{
-						.transform = transform,
-						.motion = motion,
-						.collision = {
-							.shape = shape
+	gse::match(b.shape)
+		.if_is([&](const gse::physics::box_shape& shape) {
+			result = scene.spawn(
+				name,
+				bone_box_archetype{
+					.transform = transform,
+					.motion = motion,
+					.collision = {
+						.shape = shape
+					},
+					.spec = {
+						.material = {
+							.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
+							.roughness = 0.6f,
 						},
-						.spec = {
-							.material = {
-								.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
-								.roughness = 0.6f,
-							},
-							.size = shape.size,
+						.size = shape.size,
+					},
+				}
+			);
+		})
+		.else_if_is([&](const gse::physics::sphere_shape& shape) {
+			result = scene.spawn(
+				name,
+				bone_sphere_archetype{
+					.transform = transform,
+					.motion = motion,
+					.collision = {
+						.shape = shape
+					},
+					.spec = {
+						.material = {
+							.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
+							.roughness = 0.6f,
 						},
-					}
-				);
-			}
-			else if constexpr (std::is_same_v<Shape, gse::physics::sphere_shape>) {
-				result = scene.spawn(
-					name,
-					bone_sphere_archetype{
-						.transform = transform,
-						.motion = motion,
-						.collision = {
-							.shape = shape
+						.radius = shape.radius,
+					},
+				}
+			);
+		})
+		.else_if_is([&](const gse::physics::capsule_shape& shape) {
+			const auto axial = 2.f * shape.half_height + 2.f * shape.radius;
+			const auto width = 2.f * shape.radius;
+			const gse::vec3<gse::length> bbox(width, axial, width);
+			result = scene.spawn(
+				name,
+				bone_box_archetype{
+					.transform = transform,
+					.motion = motion,
+					.collision = {
+						.shape = shape
+					},
+					.spec = {
+						.material = {
+							.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
+							.roughness = 0.6f,
 						},
-						.spec = {
-							.material = {
-								.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
-								.roughness = 0.6f,
-							},
-							.radius = shape.radius,
-						},
-					}
-				);
-			}
-			else if constexpr (std::is_same_v<Shape, gse::physics::capsule_shape>) {
-				const auto axial = 2.f * shape.half_height + 2.f * shape.radius;
-				const auto width = 2.f * shape.radius;
-				const gse::vec3<gse::length> bbox(width, axial, width);
-				result = scene.spawn(
-					name,
-					bone_box_archetype{
-						.transform = transform,
-						.motion = motion,
-						.collision = {
-							.shape = shape
-						},
-						.spec = {
-							.material = {
-								.base_color = gse::vec3f(0.85f, 0.7f, 0.55f),
-								.roughness = 0.6f,
-							},
-							.size = bbox,
-						},
-					}
-				);
-			}
-		},
-		b.shape
-	);
+						.size = bbox,
+					},
+				}
+			);
+		});
 	return result;
 }
 

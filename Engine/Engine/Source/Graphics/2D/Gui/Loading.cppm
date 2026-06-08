@@ -8,7 +8,7 @@ import gse.log;
 export namespace gse::loading {
 	class state : public non_copyable, public non_movable {
 	public:
-		state() = default;
+		state() {}
 		~state() = default;
 
 		auto set_phase(

@@ -7,9 +7,25 @@ project(Engine LANGUAGES CXX)
 
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
+list(FILTER ENGINE_MODULES EXCLUDE REGEX "/(Source/Dx12|Import/Dx12\\.cppm)")
 
 file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp")
 list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
+list(FILTER ENGINE_IMPLS EXCLUDE REGEX "/Source/Dx12/")
+
+# A .cpp that declares an implementation partition (module gse.x:y;) provides a
+# module and must live in a CXX_MODULES file set; a plain implementation unit
+# (module gse.x;) or global-module .cpp stays an ordinary source.
+set(ENGINE_MODULE_IMPLS "")
+set(ENGINE_PLAIN_IMPLS "")
+foreach(_impl IN LISTS ENGINE_IMPLS)
+    file(STRINGS "${_impl}" _part_decl REGEX "^module gse\\.[A-Za-z_]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
+    if(_part_decl)
+        list(APPEND ENGINE_MODULE_IMPLS "${_impl}")
+    else()
+        list(APPEND ENGINE_PLAIN_IMPLS "${_impl}")
+    endif()
+endforeach()
 
 add_library(Engine)
 
@@ -20,7 +36,16 @@ target_sources(Engine
         FILES ${ENGINE_MODULES}
 )
 
-target_sources(Engine PRIVATE ${ENGINE_IMPLS})
+target_sources(Engine
+    PRIVATE
+        FILE_SET gse_module_impls TYPE CXX_MODULES
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine" "${CMAKE_CURRENT_BINARY_DIR}/Engine"
+        FILES ${ENGINE_MODULE_IMPLS}
+)
+
+if(ENGINE_PLAIN_IMPLS)
+    target_sources(Engine PRIVATE ${ENGINE_PLAIN_IMPLS})
+endif()
 
 target_sources(Engine
     PUBLIC
@@ -35,7 +60,6 @@ find_package(JPEG REQUIRED)
 find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
-find_package(concurrentqueue CONFIG REQUIRED)
 find_package(Vulkan)
 find_package(unofficial-nsight-aftermath CONFIG QUIET)
 
@@ -48,10 +72,7 @@ target_sources(VulkanModule PUBLIC
         ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm)
 target_compile_features(VulkanModule PUBLIC cxx_std_26)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
-target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
-if(TARGET __cmake_libcxx_std)
-    target_link_libraries(VulkanModule PUBLIC __cmake_libcxx_std)
-endif()
+target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS VULKAN_HPP_NO_EXCEPTIONS)
 
 add_library(MiniaudioImpl STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
 target_include_directories(MiniaudioImpl PRIVATE ${miniaudio_INCLUDE_DIR})
@@ -97,10 +118,13 @@ target_link_libraries(Engine PUBLIC
     PNG::PNG
     JPEG::JPEG
     MiniaudioImpl
-    concurrentqueue::concurrentqueue
 )
-if(TARGET __cmake_libcxx_std)
-    target_link_libraries(Engine PUBLIC __cmake_libcxx_std)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_libraries(Engine PUBLIC stdc++exp)
+    if(WIN32)
+        target_link_libraries(Engine PUBLIC ws2_32 dbghelp)
+    endif()
 endif()
 
 if(TARGET unofficial::nsight-aftermath::nsight-aftermath)

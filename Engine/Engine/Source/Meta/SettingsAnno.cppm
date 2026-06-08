@@ -1,7 +1,6 @@
 export module gse.meta:settings_anno;
 
 import std;
-import gse.std_meta;
 
 import :annotations;
 import :fixed_string;

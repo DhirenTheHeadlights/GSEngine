@@ -1,41 +1,17 @@
 import argparse
-import json
-import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
+import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
-LATEST_RELEASE_URL = "https://api.github.com/repos/DhirenTheHeadlights/GSEngine/releases/latest"
-# Use home dir (not AppData) so Windows Store Python's VFS sandbox redirection
-# of %LOCALAPPDATA% doesn't cause cmake to disagree with Python on what exists.
-CLANG_INSTALL_ROOT = Path.home() / ".clang-p2996"
 
-
-def resolve_latest_clang_tag():
-    print(f"Resolving latest clang-p2996 release tag from {LATEST_RELEASE_URL}")
-    req = urllib.request.Request(LATEST_RELEASE_URL, headers={"Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req) as response:
-        data = json.load(response)
-    tag = data["tag_name"]
-    print(f"Latest release: {tag}")
-    return tag
-
-
-def resolve_clang_root(tag):
-    # Prefer the canonical home-dir install location first — it is never VFS-redirected.
-    canonical = CLANG_INSTALL_ROOT / tag
-    if (canonical / "bin" / "clang-cl.exe").exists():
-        return canonical
-    # Fall back to CLANG_P2996_ROOT if set and valid.
-    env_root = os.environ.get("CLANG_P2996_ROOT")
-    if env_root:
-        candidate = Path(env_root)
-        if (candidate / "bin" / "clang-cl.exe").exists():
-            return candidate
-        print(f"warning: CLANG_P2996_ROOT={candidate} has no bin/clang-cl.exe, falling back to default")
-    return canonical
+NINJA_VERSION = "v1.13.2"
+NINJA_URL = f"https://github.com/ninja-build/ninja/releases/download/{NINJA_VERSION}/ninja-win.zip"
+NINJA_DIR = Path.home() / ".gcc-trunk" / "ninja"
 
 
 def run(cmd, cwd=None, env=None):
@@ -55,31 +31,37 @@ def update_vcpkg():
     run(["git", "pull", "origin", "master"], cwd=REPO_ROOT / "Engine" / "External" / "vcpkg")
 
 
-def libcxx_already_built(clang_root):
-    return (clang_root / "lib" / "c++.lib").exists() and (clang_root / "share" / "libc++" / "v1" / "std.cppm").exists()
-
-
-def compiler_rt_already_built(clang_root):
-    lib_dir = clang_root / "lib" / "clang"
-    if not lib_dir.exists():
-        return False
-    for ver_dir in lib_dir.iterdir():
-        if (ver_dir / "lib" / "x86_64-pc-windows-msvc" / "clang_rt.asan_dynamic.lib").exists():
-            return True
-    return False
+def ensure_ninja(force=False):
+    ninja_exe = NINJA_DIR / "ninja.exe"
+    if ninja_exe.exists() and not force:
+        print(f"Ninja already installed: {ninja_exe}")
+        return
+    NINJA_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Downloading Ninja {NINJA_VERSION} from {NINJA_URL}")
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = Path(tmp) / "ninja-win.zip"
+            with urllib.request.urlopen(NINJA_URL) as response, open(zip_path, "wb") as out:
+                shutil.copyfileobj(response, out)
+            with zipfile.ZipFile(zip_path) as archive:
+                archive.extract("ninja.exe", NINJA_DIR)
+    except Exception as exc:
+        raise SystemExit(f"Failed to install Ninja: {exc}")
+    if not ninja_exe.exists():
+        raise SystemExit(f"Ninja install did not produce {ninja_exe}")
+    print(f"Installed Ninja: {ninja_exe}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Full environment bootstrap: submodules + clang-p2996 + libc++ + compiler-rt")
+    parser = argparse.ArgumentParser(description="Full environment bootstrap: submodules + native-Windows GCC trunk toolchain")
     parser.add_argument("--skip-submodules", action="store_true", help="Skip git submodule init/update")
-    parser.add_argument("--skip-clang", action="store_true", help="Skip clang-p2996 install")
-    parser.add_argument("--skip-libcxx", action="store_true", help="Skip libc++ build")
-    parser.add_argument("--skip-compiler-rt", action="store_true", help="Skip compiler-rt (ASAN runtime) build")
+    parser.add_argument("--skip-gcc", action="store_true", help="Skip GCC trunk toolchain install")
+    parser.add_argument("--skip-ninja", action="store_true", help="Skip Ninja install")
     parser.add_argument("--update-vcpkg", action="store_true", help="Pull latest vcpkg master after submodule init")
-    parser.add_argument("--clang-tag", default=None, help="clang-p2996 release tag (default: latest GitHub release)")
-    parser.add_argument("--persist", action="store_true", help="Persist CLANG_P2996_ROOT via setx")
-    parser.add_argument("--force-libcxx", action="store_true", help="Rebuild libc++ even if already installed")
-    parser.add_argument("--force-compiler-rt", action="store_true", help="Rebuild compiler-rt even if already installed")
+    parser.add_argument("--tag", default=None, help="gcc-trunk release tag (default: latest gcc-trunk-v* release)")
+    parser.add_argument("--sha256", default=None, help="Expected SHA256 of the toolchain zip")
+    parser.add_argument("--persist", action="store_true", help="Persist MINGW_ROOT via setx")
+    parser.add_argument("--force", action="store_true", help="Reinstall the toolchain even if already present")
     args = parser.parse_args()
 
     if not args.skip_submodules:
@@ -87,32 +69,23 @@ def main():
         if args.update_vcpkg:
             update_vcpkg()
 
-    if args.clang_tag is None:
-        args.clang_tag = resolve_latest_clang_tag()
-
-    clang_root = resolve_clang_root(args.clang_tag)
-
-    if not args.skip_clang:
-        clang_args = ["--tag", args.clang_tag]
+    if not args.skip_gcc:
+        gcc_args = []
+        if args.tag:
+            gcc_args += ["--tag", args.tag]
+        if args.sha256:
+            gcc_args += ["--sha256", args.sha256]
         if args.persist:
-            clang_args.append("--persist")
-        run([sys.executable, str(REPO_ROOT / "scripts" / "install_clang_p2996.py"), *clang_args])
+            gcc_args.append("--persist")
+        if args.force:
+            gcc_args.append("--force")
+        run([sys.executable, str(REPO_ROOT / "scripts" / "install_gcc_trunk.py"), *gcc_args])
 
-    if not args.skip_libcxx:
-        if libcxx_already_built(clang_root) and not args.force_libcxx:
-            print(f"libc++ already built at {clang_root} (use --force-libcxx to rebuild)")
-        else:
-            env = {**os.environ, "CLANG_P2996_ROOT": str(clang_root)}
-            run([sys.executable, str(REPO_ROOT / "scripts" / "build_libcxx_p2996.py")], env=env)
-
-    if not args.skip_compiler_rt:
-        if compiler_rt_already_built(clang_root) and not args.force_compiler_rt:
-            print(f"compiler-rt already built at {clang_root} (use --force-compiler-rt to rebuild)")
-        else:
-            env = {**os.environ, "CLANG_P2996_ROOT": str(clang_root)}
-            run([sys.executable, str(REPO_ROOT / "scripts" / "build_compiler_rt_p2996.py")], env=env)
+    if not args.skip_ninja:
+        ensure_ninja(force=args.force)
 
     print("\nBootstrap complete. CMake configure will auto-install vcpkg deps from vcpkg.json.")
+    print("Configure with: cmake --preset x64-mingw-gcc-Release")
 
 
 if __name__ == "__main__":

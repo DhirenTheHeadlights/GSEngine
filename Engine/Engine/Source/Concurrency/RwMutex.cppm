@@ -12,7 +12,7 @@ export namespace gse::async {
 	public:
 		rw_mutex() = default;
 
-		~rw_mutex() override = default;
+		~rw_mutex() = default;
 
 		struct shared_awaiter {
 			rw_mutex* m_mutex{};

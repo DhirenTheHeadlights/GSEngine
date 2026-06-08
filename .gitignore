@@ -7,6 +7,13 @@ cmake-build-*/
 Makefile
 /vc140.pdb
 
+# GCC trunk build workspace (scripts/build_gcc_trunk.py)
+/msys64/
+/.gcc-build/
+/.gcc-ci-build/
+/.gcc-src-cache/
+*.sfx.exe
+
 # IDE / editor
 /.vs
 .idea/
@@ -22,7 +29,8 @@ __pycache__/
 # External dependencies (fetched locally)
 /External/
 /Engine/External/*
-!/Engine/External/concurrentqueue.h
+!/Engine/External/moodycamel/
+!/Engine/External/moodycamel/concurrentqueue.h
 
 # Generated resources / configs
 /resources

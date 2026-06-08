@@ -1,4 +1,4 @@
-module gse.gpu;
+module gse.gpu:frame_impl;
 
 import std;
 
@@ -28,7 +28,7 @@ auto gse::gpu::frame::image_index() const -> std::uint32_t {
 }
 
 auto gse::gpu::frame::command_buffer(const queue_type queue) const -> command_buffer_handle {
-	return m_command_buffers[static_cast<std::size_t>(queue)];
+	return command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue)] };
 }
 
 auto gse::gpu::frame::frame_in_progress() const -> bool {
@@ -68,46 +68,38 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		return std::unexpected(frame_status::minimized);
 	}
 
-	try {
+	{
 		trace::scope_guard sg{ trace_id<"begin_frame::wait_fence">() };
 		for (std::size_t i = 0; i < queue_type_count; ++i) {
 			const auto fence_result =
 				m_device->wait_for_fence(
 					m_sync.in_flight_fence(static_cast<queue_type>(i), m_current_frame)
 				);
+			if (fence_result == result::error_device_lost) {
+				m_device->report_device_lost(std::format("begin_frame waitForFences (frame {})", m_current_frame));
+				return std::unexpected(frame_status::device_lost);
+			}
 			assert(fence_result == result::success, "Failed to wait for in-flight fence!");
 		}
-	}
-	catch (const device_lost_error&) {
-		m_device->report_device_lost(std::format("begin_frame waitForFences (frame {})", m_current_frame));
-		return std::unexpected(frame_status::device_lost);
 	}
 
 	const auto prior_present_id = m_present_ids_in_flight[m_current_frame];
 	if (prior_present_id != 0) {
 		trace::scope_guard sg{ trace_id<"begin_frame::wait_present">() };
-		try {
-			const auto present_wait_result = m_swapchain->wait_for_present(prior_present_id);
-			assert(
-				present_wait_result == result::success || present_wait_result == result::suboptimal_khr,
-				"vkWaitForPresentKHR returned unexpected status"
-			);
-		}
-		catch (const out_of_date_error&) {
-		}
-		catch (const device_lost_error&) {
+		const auto present_wait_result = m_swapchain->wait_for_present(prior_present_id);
+		if (present_wait_result == result::error_device_lost) {
 			m_device->report_device_lost(std::format("waitForPresentKHR (frame {})", m_current_frame));
 			return std::unexpected(frame_status::device_lost);
 		}
+		assert(
+			present_wait_result == result::success || present_wait_result == result::suboptimal_khr || present_wait_result == result::error_out_of_date_khr,
+			"vkWaitForPresentKHR returned unexpected status"
+		);
 	}
 
-	try {
+	{
 		trace::scope_guard sg{ trace_id<"begin_frame::transient">() };
 		m_device->transient().begin_frame();
-	}
-	catch (const device_lost_error&) {
-		m_device->report_device_lost(std::format("transient begin_frame (frame {})", m_current_frame));
-		return std::unexpected(frame_status::device_lost);
 	}
 
 	if (window::frame_buffer_resized(win)) {
@@ -118,16 +110,13 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 	result acquire_status = result::error_unknown;
 	std::uint32_t acquired_image_index = 0;
 
-	try {
+	{
 		trace::scope_guard sg{ trace_id<"begin_frame::acquire">() };
 		const auto acquired = m_swapchain->acquire(m_sync.image_available(m_current_frame));
 		acquire_status = acquired.result;
 		acquired_image_index = acquired.image_index;
 	}
-	catch (const out_of_date_error&) {
-		acquire_status = result::error_out_of_date_khr;
-	}
-	catch (const device_lost_error&) {
+	if (acquire_status == result::error_device_lost) {
 		m_device->report_device_lost(std::format("acquireNextImage2KHR (frame {})", m_current_frame));
 		return std::unexpected(frame_status::device_lost);
 	}
@@ -153,10 +142,10 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 	assert(release_result == result::success, "Failed to wait for swapchain release fence!");
 
 	for (std::size_t i = 0; i < queue_type_count; ++i) {
-		m_command_buffers[i] = m_device->frame_command_buffer(static_cast<queue_type>(i), m_current_frame);
+		m_command_buffers[i] = m_device->frame_command_buffer(static_cast<queue_type>(i), m_current_frame).value;
 	}
 
-	const commands cmd_main{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
+	const commands cmd_main{ command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] } };
 	cmd_main.reset();
 	cmd_main.begin();
 
@@ -199,7 +188,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 		.memory_barriers = transient_visibility_barriers
 	});
 
-	m_device->transient().recorder().run_pre_frame(m_command_buffers[static_cast<std::size_t>(queue_type::graphics)]);
+	m_device->transient().recorder().run_pre_frame(command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] });
 
 	m_frame_in_progress = true;
 
@@ -210,7 +199,7 @@ auto gse::gpu::frame::begin(window::data& win) -> std::expected<frame_token, fra
 }
 
 auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits) -> void {
-	const auto graphics_cb = m_command_buffers[static_cast<std::size_t>(queue_type::graphics)];
+	const auto graphics_cb = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
 	m_device->transient().recorder().run_post_frame(graphics_cb);
 
 	const commands cmd_tail{ graphics_cb };
@@ -249,7 +238,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 				"graphics submissions go through the main submit path, not aux_submissions"
 			);
 			const bool last_for_queue = (last_idx_per_queue[static_cast<std::size_t>(sub.queue)] == i);
-			try {
+			{
 				const command_buffer_submit_info cmd_info{
 					.command_buffer = sub.command_buffer,
 				};
@@ -262,18 +251,8 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 					sub.queue,
 					submit,
 					last_for_queue ? m_sync.in_flight_fence(sub.queue, m_current_frame)
-								   : fence_handle{}
+								   : handle<gpu::fence>{}
 				);
-			}
-			catch (const device_lost_error&) {
-				m_device->report_device_lost(
-					std::format(
-						"aux submit (frame {}, image {})",
-						m_current_frame,
-						m_image_index
-					)
-				);
-				throw;
 			}
 		}
 	}
@@ -297,40 +276,27 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::submit">() };
-		try {
-			const command_buffer_submit_info cmd_info{
-				.command_buffer = graphics_cb,
-			};
-			const submit_info submit{
-				.wait_semaphores = main_waits,
-				.command_buffers = std::span(&cmd_info, 1),
-				.signal_semaphores = std::span(&render_finished_signal, 1),
-			};
-			m_device->submit(queue_type::graphics, submit,
-							 m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
-		}
-		catch (const device_lost_error&) {
-			m_device->report_device_lost(std::format("submit2 (frame {}, image {})", m_current_frame, m_image_index));
-			throw;
-		}
+		const command_buffer_submit_info cmd_info{
+			.command_buffer = graphics_cb,
+		};
+		const submit_info submit{
+			.wait_semaphores = main_waits,
+			.command_buffers = std::span(&cmd_info, 1),
+			.signal_semaphores = std::span(&render_finished_signal, 1),
+		};
+		m_device->submit(queue_type::graphics, submit,
+						 m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
 	}
 
-	const semaphore_handle render_finished_handle = m_sync.render_finished(m_image_index);
+	const handle<gpu::semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
 	const std::uint64_t present_id = m_next_present_id++;
 
 	result present_result;
 	{
 		trace::scope_guard sg{ trace_id<"end_frame::present">() };
-		try {
-			present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id);
-		}
-		catch (const out_of_date_error&) {
-			present_result = result::error_out_of_date_khr;
-		}
-		catch (const device_lost_error&) {
-			m_device->report_device_lost(std::format("presentKHR (frame {}, image {})", m_current_frame,
-													 m_image_index));
-			throw;
+		present_result = m_swapchain->present(render_finished_handle, m_image_index, present_id);
+		if (present_result == result::error_device_lost) {
+			m_device->report_device_lost(std::format("presentKHR (frame {}, image {})", m_current_frame, m_image_index));
 		}
 	}
 

@@ -1,5 +1,4 @@
 {
-  "clangd.path": "${env:CLANG_P2996_ROOT}/bin/clangd.exe",
   "clangd.arguments": [
     "--background-index",
     "--header-insertion=never",
@@ -18,9 +17,12 @@
     "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
     "editor.formatOnSave": true
   },
-  "cmake.environmentSetupScript": "${workspaceFolder}/scripts/vsdev_env.bat",
   "cmake.debugConfig": {
     "environment": [
+      {
+        "name": "VK_LOADER_LAYERS_DISABLE",
+        "value": "~implicit~"
+      },
       {
         "name": "VK_LAYER_PATH",
         "value": "${env:VULKAN_SDK}/share/vulkan/explicit_layer.d:${env:VULKAN_SDK}/etc/vulkan/explicit_layer.d"

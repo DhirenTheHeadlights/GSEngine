@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:taa_renderer_impl;
 
 import std;
 
@@ -11,6 +11,7 @@ import :physics_debug_renderer;
 import :render_targets;
 import :sdf_grid_renderer;
 import :world_text_renderer;
+
 
 import gse.gpu;
 import gse.core;
@@ -75,12 +76,12 @@ auto gse::renderer::taa::recreate_history(const gpu::context::data& gpu_s, syste
 			image = {};
 		}
 		for (auto& view : d.history_views) {
-			view.clear();
+			view = {};
 		}
 		return;
 	}
 	for (std::size_t i = 0; i < d.history.size(); ++i) {
-		d.history[i] = gpu_s.device->allocator().create_image(
+		d.history[i] = gpu_s.device->create_image(
 			{
 				.size = extent,
 				.format = gpu::image_format::r16g16b16a16_sfloat,
@@ -89,26 +90,34 @@ auto gse::renderer::taa::recreate_history(const gpu::context::data& gpu_s, syste
 			std::format("taa_history_{}", i)
 		);
 		gpu::transition_image_to(*gpu_s.device, d.history[i]);
-		d.history_views[i].rebind_sampled(*gpu_s.bindless_heaps, d.history[i]);
+		if (!d.history_views[i].valid()) {
+			d.history_views[i] = gpu_s.device->allocate_image_slot();
+		}
+		gpu_s.device->write_sampled_image(d.history_views[i].slot(), d.history[i]);
 	}
 }
 
 auto gse::renderer::taa::rebind_views(const gpu::context::data& gpu_s, system::data& d) -> void {
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::hdr_color>();
 	if (hdr.handle()) {
-		d.hdr_view.rebind_sampled(*gpu_s.bindless_heaps, hdr);
+		if (!d.hdr_view.valid()) {
+			d.hdr_view = gpu_s.device->allocate_image_slot();
+		}
+		gpu_s.device->write_sampled_image(d.hdr_view.slot(), hdr);
 	}
 	auto& velocity = gpu_s.render_graph->framebuffer_image<targets::velocity>();
 	if (velocity.handle()) {
-		d.velocity_view.rebind_sampled(*gpu_s.bindless_heaps, velocity);
+		if (!d.velocity_view.valid()) {
+			d.velocity_view = gpu_s.device->allocate_image_slot();
+		}
+		gpu_s.device->write_sampled_image(d.velocity_view.slot(), velocity);
 	}
 }
 
 auto gse::renderer::taa::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
-	d.sampler = gpu::bindless_sampler::create(
-		*gpu_s.bindless_heaps,
+	d.sampler = gpu_s.device->register_sampler(
 		{
 			.min = gpu::sampler_filter::linear,
 			.mag = gpu::sampler_filter::linear,
@@ -178,9 +187,9 @@ auto gse::renderer::taa::system::frame(const frame_context& ctx, shared_view<gpu
 			.inv_extent = vec2f{ 1.0f / static_cast<float>(ext.x()), 1.0f / static_cast<float>(ext.y()) },
 		},
 		{
-			.hdr_color = { d.hdr_view.sampled_slot(), d.sampler.slot() },
-			.velocity_color = { d.velocity_view.sampled_slot(), d.sampler.slot() },
-			.history_color = { d.history_views[1u - frame_index].sampled_slot(), d.sampler.slot() },
+			.hdr_color = { d.hdr_view.slot(), d.sampler.slot() },
+			.velocity_color = { d.velocity_view.slot(), d.sampler.slot() },
+			.history_color = { d.history_views[1u - frame_index].slot(), d.sampler.slot() },
 		}
 	);
 	rec.draw(3);

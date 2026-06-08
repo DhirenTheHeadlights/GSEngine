@@ -131,14 +131,14 @@ export namespace gse::renderer::geometry_collector {
 		static constexpr std::size_t max_batches = 256;
 
 		std::vector<owned_render_queue_entry> render_queue;
-		static_vector<normal_instance_batch, max_batches> normal_batches;
+		std::inplace_vector<normal_instance_batch, max_batches> normal_batches;
 
 		std::vector<shaders::common::instance_data> instance_staging;
 
 		std::vector<physics_mapping_entry> physics_mappings;
 		std::uint32_t physics_mapping_count = 0;
 
-		flat_map<const material*, std::uint32_t> material_palette_map;
+		std::flat_map<const material*, std::uint32_t> material_palette_map;
 
 		view_matrix view;
 		projection_matrix proj;
@@ -151,13 +151,13 @@ export namespace gse::renderer::geometry_collector {
 
 	struct system {
 		struct data {
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> instance_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
 			static constexpr std::size_t max_instances = 4096;
 			static constexpr std::size_t max_materials = 1024;
 
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> normal_indirect_commands_buffer;
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> material_palette_buffers;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
 
 			linear_vector<std::byte> material_staging;
 			std::unordered_map<id, std::vector<std::optional<spatial_matrix>>> prev_model_matrices;

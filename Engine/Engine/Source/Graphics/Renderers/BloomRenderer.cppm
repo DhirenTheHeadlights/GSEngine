@@ -47,13 +47,13 @@ export namespace gse::renderer::bloom {
 			gpu::shader_program downsample_pipeline;
 			gpu::shader_program upsample_pipeline;
 
-			[[= gse::shared]] std::array<gpu::bindless_image, max_mip_count> mips_down;
-			[[= gse::shared]] std::array<gpu::bindless_image, max_mip_count> mips_up;
+			[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_down;
+			[[= gse::shared]] std::array<gpu::image, max_mip_count> mips_up;
 			std::array<vec2u, max_mip_count> mip_extents{};
 			[[= gse::shared]] std::uint32_t active_mip_count = 0;
 
-			gpu::bindless_sampler sampler;
-			gpu::bindless_image_view hdr_view;
+			gpu::bindless_handle sampler;
+			gpu::bindless_handle hdr_view;
 		};
 
 		static auto run(

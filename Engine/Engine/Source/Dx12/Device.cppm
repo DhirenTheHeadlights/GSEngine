@@ -2,7 +2,7 @@ export module gse.dx12:device;
 
 import std;
 
-import gse.gpu_types;
+import gse.gpu_backend;
 import gse.core;
 import gse.math;
 
@@ -16,7 +16,7 @@ export namespace gse::dx12 {
 	public:
 		device() = default;
 
-		~device() override = default;
+		~device() = default;
 
 		device(
 			device&&
@@ -41,54 +41,54 @@ export namespace gse::dx12 {
 			const void* data = nullptr,
 			std::string_view tag = "",
 			const std::source_location& loc = std::source_location::current()
-		) -> buffer;
+		) -> gpu::buffer;
 
 		[[nodiscard]] auto create_image(
 			const gpu::image_desc& desc,
 			std::string_view tag = ""
-		) -> image;
+		) -> gpu::image;
 
 		[[nodiscard]] auto create_sampler(
 			const gpu::sampler_desc& desc
-		) -> sampler;
+		) -> gpu::handle<gpu::sampler>;
 
 		[[nodiscard]] auto create_image_view(
-			gpu::image_handle img,
+			gpu::handle<gpu::image> img,
 			const gpu::image_view_create_info& info
-		) const -> gpu::image_view_handle;
+		) const -> gpu::handle<gpu::image_view>;
 
 		[[nodiscard]] auto buffer_device_address(
-			gpu::buffer_handle buf
+			gpu::handle<gpu::buffer> buf
 		) const -> gpu::device_address;
 
 		auto destroy_buffer(
-			gpu::buffer_handle buf
+			gpu::handle<gpu::buffer> buf
 		) const -> void;
 
 		auto destroy_image(
-			gpu::image_handle img
+			gpu::handle<gpu::image> img
 		) const -> void;
 
 		auto destroy_image_view(
-			gpu::image_view_handle view
+			gpu::handle<gpu::image_view> view
 		) const -> void;
 
 		[[nodiscard]] auto create_buffer_unbound(
 			const gpu::buffer_desc& info
-		) const -> std::pair<gpu::buffer_handle, gpu::memory_requirements>;
+		) const -> std::pair<gpu::handle<gpu::buffer>, gpu::memory_requirements>;
 
 		[[nodiscard]] auto create_image_unbound(
 			const gpu::image_create_info& info
-		) const -> std::pair<gpu::image_handle, gpu::memory_requirements>;
+		) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements>;
 
 		auto bind_buffer_memory(
-			gpu::buffer_handle buf,
+			gpu::handle<gpu::buffer> buf,
 			gpu::device_memory mem,
 			gpu::device_size offset
 		) const -> void;
 
 		auto bind_image_memory(
-			gpu::image_handle img,
+			gpu::handle<gpu::image> img,
 			gpu::device_memory mem,
 			gpu::device_size offset
 		) const -> void;
@@ -108,7 +108,7 @@ export namespace gse::dx12 {
 		) const -> std::uint32_t;
 
 		auto host_upload_image_layers(
-			gpu::image_handle img,
+			gpu::handle<gpu::image> img,
 			std::span<const void* const> layer_pointers,
 			vec2u extent
 		) const -> void;
@@ -120,18 +120,18 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto create_timeline_semaphore(
 			std::uint64_t initial_value
-		) const -> semaphore;
+		) const -> gpu::handle<gpu::semaphore>;
 
 		[[nodiscard]] auto create_timestamp_query_pool(
 			std::uint32_t capacity,
 			std::string_view label = {}
-		) const -> query_pool;
+		) const -> gpu::handle<gpu::query_pool>;
 
 		[[nodiscard]] auto create_pipeline_stats_query_pool(
 			std::uint32_t capacity,
 			gpu::pipeline_statistic_flags statistics,
 			std::string_view label = {}
-		) const -> query_pool;
+		) const -> gpu::handle<gpu::query_pool>;
 
 		[[nodiscard]] auto create_bindless_heaps(
 			std::uint32_t texture_capacity = 2048,
@@ -143,11 +143,11 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto create_blas(
 			const gpu::acceleration_structure_geometry& geometry,
 			std::uint32_t prim_count
-		) -> blas;
+		) -> gpu::blas;
 
 		[[nodiscard]] auto create_tlas(
 			std::uint32_t max_instances
-		) -> tlas;
+		) -> gpu::tlas;
 
 		[[nodiscard]] auto query_blas_build_sizes(
 			const gpu::acceleration_structure_geometry& geometry,
@@ -157,12 +157,12 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto acceleration_structure_scratch_alignment() const -> gpu::device_size;
 
 		[[nodiscard]] auto wait_for_fence(
-			gpu::fence_handle f,
+			gpu::handle<gpu::fence> f,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
 		) const -> gpu::result;
 
 		auto reset_fence(
-			gpu::fence_handle f
+			gpu::handle<gpu::fence> f
 		) const -> void;
 	};
 }
@@ -182,47 +182,47 @@ auto gse::dx12::device::queue_family(const gpu::queue_type) const -> std::uint32
 	return 0;
 }
 
-auto gse::dx12::device::create_buffer(const gpu::buffer_desc&, const void*, const std::string_view, const std::source_location&) -> buffer {
+auto gse::dx12::device::create_buffer(const gpu::buffer_desc&, const void*, const std::string_view, const std::source_location&) -> gpu::buffer {
 	return {};
 }
 
-auto gse::dx12::device::create_image(const gpu::image_desc&, const std::string_view) -> image {
+auto gse::dx12::device::create_image(const gpu::image_desc&, const std::string_view) -> gpu::image {
 	return {};
 }
 
-auto gse::dx12::device::create_sampler(const gpu::sampler_desc&) -> sampler {
+auto gse::dx12::device::create_sampler(const gpu::sampler_desc&) -> gpu::handle<gpu::sampler> {
 	return {};
 }
 
-auto gse::dx12::device::create_image_view(const gpu::image_handle, const gpu::image_view_create_info&) const -> gpu::image_view_handle {
+auto gse::dx12::device::create_image_view(const gpu::handle<gpu::image>, const gpu::image_view_create_info&) const -> gpu::handle<gpu::image_view> {
 	return {};
 }
 
-auto gse::dx12::device::buffer_device_address(const gpu::buffer_handle) const -> gpu::device_address {
+auto gse::dx12::device::buffer_device_address(const gpu::handle<gpu::buffer>) const -> gpu::device_address {
 	return 0;
 }
 
-auto gse::dx12::device::destroy_buffer(const gpu::buffer_handle) const -> void {
+auto gse::dx12::device::destroy_buffer(const gpu::handle<gpu::buffer>) const -> void {
 }
 
-auto gse::dx12::device::destroy_image(const gpu::image_handle) const -> void {
+auto gse::dx12::device::destroy_image(const gpu::handle<gpu::image>) const -> void {
 }
 
-auto gse::dx12::device::destroy_image_view(const gpu::image_view_handle) const -> void {
+auto gse::dx12::device::destroy_image_view(const gpu::handle<gpu::image_view>) const -> void {
 }
 
-auto gse::dx12::device::create_buffer_unbound(const gpu::buffer_desc&) const -> std::pair<gpu::buffer_handle, gpu::memory_requirements> {
+auto gse::dx12::device::create_buffer_unbound(const gpu::buffer_desc&) const -> std::pair<gpu::handle<gpu::buffer>, gpu::memory_requirements> {
 	return {};
 }
 
-auto gse::dx12::device::create_image_unbound(const gpu::image_create_info&) const -> std::pair<gpu::image_handle, gpu::memory_requirements> {
+auto gse::dx12::device::create_image_unbound(const gpu::image_create_info&) const -> std::pair<gpu::handle<gpu::image>, gpu::memory_requirements> {
 	return {};
 }
 
-auto gse::dx12::device::bind_buffer_memory(const gpu::buffer_handle, const gpu::device_memory, const gpu::device_size) const -> void {
+auto gse::dx12::device::bind_buffer_memory(const gpu::handle<gpu::buffer>, const gpu::device_memory, const gpu::device_size) const -> void {
 }
 
-auto gse::dx12::device::bind_image_memory(const gpu::image_handle, const gpu::device_memory, const gpu::device_size) const -> void {
+auto gse::dx12::device::bind_image_memory(const gpu::handle<gpu::image>, const gpu::device_memory, const gpu::device_size) const -> void {
 }
 
 auto gse::dx12::device::allocate_aliased_memory(const gpu::device_size, const std::uint32_t) const -> gpu::device_memory {
@@ -236,22 +236,22 @@ auto gse::dx12::device::find_memory_type_index(const std::uint32_t, const gpu::m
 	return 0;
 }
 
-auto gse::dx12::device::host_upload_image_layers(const gpu::image_handle, const std::span<const void* const>, const vec2u) const -> void {
+auto gse::dx12::device::host_upload_image_layers(const gpu::handle<gpu::image>, const std::span<const void* const>, const vec2u) const -> void {
 }
 
 auto gse::dx12::device::create_sync(const std::uint32_t, const std::uint32_t) const -> sync {
 	return {};
 }
 
-auto gse::dx12::device::create_timeline_semaphore(const std::uint64_t) const -> semaphore {
+auto gse::dx12::device::create_timeline_semaphore(const std::uint64_t) const -> gpu::handle<gpu::semaphore> {
 	return {};
 }
 
-auto gse::dx12::device::create_timestamp_query_pool(const std::uint32_t, const std::string_view) const -> query_pool {
+auto gse::dx12::device::create_timestamp_query_pool(const std::uint32_t, const std::string_view) const -> gpu::handle<gpu::query_pool> {
 	return {};
 }
 
-auto gse::dx12::device::create_pipeline_stats_query_pool(const std::uint32_t, const gpu::pipeline_statistic_flags, const std::string_view) const -> query_pool {
+auto gse::dx12::device::create_pipeline_stats_query_pool(const std::uint32_t, const gpu::pipeline_statistic_flags, const std::string_view) const -> gpu::handle<gpu::query_pool> {
 	return {};
 }
 
@@ -259,11 +259,11 @@ auto gse::dx12::device::create_bindless_heaps(const std::uint32_t, const std::ui
 	return std::make_unique<bindless_heaps>();
 }
 
-auto gse::dx12::device::create_blas(const gpu::acceleration_structure_geometry&, const std::uint32_t) -> blas {
+auto gse::dx12::device::create_blas(const gpu::acceleration_structure_geometry&, const std::uint32_t) -> gpu::blas {
 	return {};
 }
 
-auto gse::dx12::device::create_tlas(const std::uint32_t) -> tlas {
+auto gse::dx12::device::create_tlas(const std::uint32_t) -> gpu::tlas {
 	return {};
 }
 
@@ -275,9 +275,9 @@ auto gse::dx12::device::acceleration_structure_scratch_alignment() const -> gpu:
 	return 256;
 }
 
-auto gse::dx12::device::wait_for_fence(const gpu::fence_handle, const std::uint64_t) const -> gpu::result {
+auto gse::dx12::device::wait_for_fence(const gpu::handle<gpu::fence>, const std::uint64_t) const -> gpu::result {
 	return gpu::result::success;
 }
 
-auto gse::dx12::device::reset_fence(const gpu::fence_handle) const -> void {
+auto gse::dx12::device::reset_fence(const gpu::handle<gpu::fence>) const -> void {
 }

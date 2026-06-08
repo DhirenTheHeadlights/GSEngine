@@ -5,12 +5,10 @@ import std;
 import :aliases;
 import :device;
 import :gpu_task;
-import :transient_api;
 import :render_graph;
 
 import gse.core;
 import gse.concurrency;
-import gse.math;
 
 export namespace gse::gpu {
 	struct blas_geometry_desc {
@@ -19,15 +17,6 @@ export namespace gse::gpu {
 		std::uint32_t vertex_stride = 0;
 		const buffer* index_buffer = nullptr;
 		std::uint32_t index_count = 0;
-	};
-
-	struct tlas_instance_desc {
-		mat4f transform = mat4(1.0f);
-		std::uint32_t custom_index = 0;
-		std::uint8_t mask = 0xFF;
-		std::uint32_t sbt_offset = 0;
-		bool cull_disable = true;
-		std::uint64_t blas_address = 0;
 	};
 
 	auto build_blas(
@@ -58,18 +47,9 @@ export namespace gse::gpu {
 		std::uint32_t instance_count,
 		gpu::recording_context& rec
 	) -> void;
-
-	[[nodiscard]]
-	auto pack_instance(
-		const tlas_instance_desc& inst
-	) -> as_instance;
 }
 
 namespace gse {
-	auto to_packed_instance(
-		const gpu::tlas_instance_desc& inst
-	) -> gpu::as_instance;
-
 	auto build_blas_async(
 		gpu::device& dev,
 		gpu::acceleration_structure as_handle,

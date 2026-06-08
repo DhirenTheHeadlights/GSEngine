@@ -1,8 +1,9 @@
-module gse.graphics;
+module gse.graphics:texture_impl;
 
 import std;
 
 import :texture;
+
 
 import gse.assert;
 import gse.core;
@@ -54,6 +55,7 @@ auto gse::texture::load(asset::load_ctx& ctx) -> async::task<> {
 auto gse::texture::unload() -> void {
 	m_image_data = {};
 	m_image = {};
+	m_bindless_slot = {};
 }
 
 auto gse::texture::gpu_image() const -> const gpu::image& {
@@ -64,8 +66,8 @@ auto gse::texture::image_data() const -> const image::data& {
 	return m_image_data;
 }
 
-auto gse::texture::bindless_slot() const -> gpu::bindless_texture_slot {
-	return m_bindless_slot;
+auto gse::texture::bindless_slot() const -> gpu::bindless_slot {
+	return m_bindless_slot.slot();
 }
 
 auto gse::texture::upload_token() const -> const gpu::sync_token& {
@@ -99,7 +101,7 @@ auto gse::texture::create_vulkan_resources(gpu::context::data& context, const pr
 		std::format("texture:{}", id())
 	);
 
-	m_upload_token = gpu::upload_image_2d(*context.device, m_image, m_image_data.pixels.data());
+	m_upload_token = context.device->upload_image_2d(m_image, m_image_data.pixels.data());
 
 	constexpr auto clamp = gpu::sampler_address_mode::clamp_to_edge;
 	constexpr auto repeat = gpu::sampler_address_mode::repeat;
@@ -141,7 +143,7 @@ auto gse::texture::create_vulkan_resources(gpu::context::data& context, const pr
 			break;
 	}
 
-	m_bindless_slot = context.bindless_textures->allocate(m_image, desc);
+	m_bindless_slot = context.device->register_texture(m_image, desc);
 
 	m_image_data.pixels.clear();
 	m_image_data.pixels.shrink_to_fit();

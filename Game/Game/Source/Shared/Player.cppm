@@ -232,7 +232,7 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 							if (!col_tc) {
 								continue;
 							}
-							const auto* shape = std::get_if<gse::physics::box_shape>(&collisions[k].shape);
+							const auto* shape = std::get_if<gse::physics::box_shape>(&collisions[k].shape.value);
 							if (!shape) {
 								continue;
 							}

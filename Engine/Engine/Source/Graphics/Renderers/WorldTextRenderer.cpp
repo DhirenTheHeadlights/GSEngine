@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:world_text_renderer_impl;
 
 import std;
 
@@ -9,6 +9,7 @@ import :camera_system;
 import :gui;
 import :font;
 import :render_targets;
+
 
 import gse.gpu;
 import gse.core;
@@ -77,7 +78,6 @@ namespace gse::renderer::world_text {
 	auto ensure_vertex_capacity(
 		system::data& d,
 		gpu::device& device,
-		gpu::bindless_heaps& heaps,
 		std::size_t frame_index,
 		std::size_t required
 	) -> void;
@@ -127,7 +127,7 @@ auto gse::renderer::world_text::build_labels_for_axis(std::vector<world_text_ver
 	}
 }
 
-auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::device& device, gpu::bindless_heaps& heaps, const std::size_t frame_index, const std::size_t required) -> void {
+auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::device& device, const std::size_t frame_index, const std::size_t required) -> void {
 	auto& cap = d.vertex_capacities[frame_index];
 	auto& buf = d.vertex_buffers[frame_index];
 	if (required <= cap && buf.valid()) {
@@ -140,29 +140,27 @@ auto gse::renderer::world_text::ensure_vertex_capacity(system::data& d, gpu::dev
 	while (cap < required) {
 		cap *= 2;
 	}
-	buf = gpu::bindless_buffer::create(
-		device.allocator(),
-		heaps,
+	buf = device.create_buffer(
 		{
 			.size = cap * sizeof(world_text_vertex),
-			.usage = gpu::buffer_flag::storage
+			.usage = gpu::buffer_flag::storage,
+			.bindless = true
 		},
 		"world_text.vertex"
 	);
 }
 
 auto gse::renderer::world_text::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform
+				.usage = gpu::buffer_flag::uniform,
+				.bindless = true
 			},
 			"world_text.camera_ubo"
 		);
@@ -202,8 +200,8 @@ auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_v
 	}
 
 	const auto frame_index = gpu_s.render_graph->current_frame();
-	ensure_vertex_capacity(d, *gpu_s.device, *gpu_s.bindless_heaps, frame_index, vertices.size());
-	d.vertex_buffers[frame_index].buffer().host_write(vertices);
+	ensure_vertex_capacity(d, *gpu_s.device, frame_index, vertices.size());
+	d.vertex_buffers[frame_index].host_write(vertices);
 
 	const auto view = cam_state.view_matrix;
 	const auto proj = cam_state.projection_matrix;
@@ -217,7 +215,7 @@ auto gse::renderer::world_text::system::frame(const frame_context& ctx, shared_v
 		.jitter_ndc = cam_state.jitter_ndc,
 		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
-	d.camera_ubo_buffers[frame_index].buffer().host_write(camera);
+	d.camera_ubo_buffers[frame_index].host_write(camera);
 
 	const auto atlas_size = f.texture()->image_data().size;
 	const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);

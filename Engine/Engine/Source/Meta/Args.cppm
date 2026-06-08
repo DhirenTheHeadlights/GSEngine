@@ -1,7 +1,6 @@
 export module gse.meta:args;
 
 import std;
-import gse.std_meta;
 
 import :annotations;
 import :parse;

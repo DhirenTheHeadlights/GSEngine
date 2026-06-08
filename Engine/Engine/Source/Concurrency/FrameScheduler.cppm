@@ -13,13 +13,15 @@ export namespace gse::concurrency {
 	public:
 		template <typename State>
 		auto submit(
-			move_only_function<void()> work
+			std::move_only_function<void()> work
 		) -> void;
 
 		auto flush() -> void;
 
+		// Takes raw seconds, not gse::time — see the m_history note above
+		// (GCC PR c++/122785 modules workaround).
 		auto report_frame_time(
-			time fence_wait
+			float fence_wait_seconds
 		) -> void;
 
 		[[nodiscard]] auto spread() const -> int;
@@ -27,7 +29,7 @@ export namespace gse::concurrency {
 	private:
 		struct pending_entry {
 			id type;
-			gse::move_only_function<void()> work;
+			std::move_only_function<void()> work;
 		};
 
 		std::vector<pending_entry> m_pending;
@@ -37,7 +39,15 @@ export namespace gse::concurrency {
 		int m_spread = 1;
 
 		static constexpr std::size_t m_history_size = 60;
-		std::array<time, m_history_size> m_history{};
+		// Stored as raw seconds (float), NOT gse::time. Putting the gse::time
+		// (gse::internal::quantity) type on this partition's exported surface
+		// trips a GCC trunk modules bug under -freflection + import std:
+		//   "recursive lazy load" / "failed to load pendings for
+		//    'gse::internal::quantity'"  (GCC PR c++/122785)
+		// fired when gse.concurrency's BMI is lazily loaded. We keep quantity off
+		// the boundary and convert at the edge (report_frame_time / Engine.cpp).
+		// Revert to gse::time once the upstream fix covers this case.
+		std::array<float, m_history_size> m_history{};
 		std::size_t m_history_index = 0;
 
 		int m_frames_under_pressure = 0;
@@ -50,7 +60,7 @@ export namespace gse::concurrency {
 }
 
 template <typename State>
-auto gse::concurrency::frame_scheduler::submit(move_only_function<void()> work) -> void {
+auto gse::concurrency::frame_scheduler::submit(std::move_only_function<void()> work) -> void {
 	constexpr id type_id = id_of<State>();
 
 	m_pending.push_back({
@@ -73,30 +83,30 @@ auto gse::concurrency::frame_scheduler::flush() -> void {
 	++m_frame_counter;
 }
 
-auto gse::concurrency::frame_scheduler::report_frame_time(const time fence_wait) -> void {
-	m_history[m_history_index % m_history_size] = fence_wait;
+auto gse::concurrency::frame_scheduler::report_frame_time(const float fence_wait_seconds) -> void {
+	m_history[m_history_index % m_history_size] = fence_wait_seconds;
 	++m_history_index;
 
 	if (m_history_index < m_history_size) {
 		return;
 	}
 
-	time median{};
+	float median = 0.f;
 	{
-		std::array<time, m_history_size> sorted{};
+		std::array<float, m_history_size> sorted{};
 		std::copy_n(m_history.begin(), m_history_size, sorted.begin());
 		std::ranges::sort(sorted);
 		median = sorted[m_history_size / 2];
 	}
 
-	const time p95 = [&]() -> time {
-		std::array<time, m_history_size> sorted{};
+	const float p95 = [&]() -> float {
+		std::array<float, m_history_size> sorted{};
 		std::copy_n(m_history.begin(), m_history_size, sorted.begin());
 		std::ranges::sort(sorted);
 		return sorted[m_history_size * 95 / 100];
 	}();
 
-	const bool pressure = p95 > median * 2.f && p95 > milliseconds(2.f);
+	const bool pressure = p95 > median * 2.f && p95 > 0.002f; // 0.002 s == 2 ms
 
 	if (pressure) {
 		m_frames_under_pressure++;

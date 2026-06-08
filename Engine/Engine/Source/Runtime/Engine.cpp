@@ -1,10 +1,11 @@
-module gse.runtime;
+module gse.runtime:engine_impl;
 
 import std;
 
 import :engine;
 import :scene;
 import :world_system;
+
 
 import gse.core;
 import gse.containers;
@@ -55,6 +56,8 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 			win->native_frame = true;
 			win->mouse_visible = true;
 		}
+
+		tick_window();
 
 		auto gpu = add_system<gpu::context>();
 		gpu->swapchain_clear = m_config.render_world ? gpu::color_clear{} : gpu::color_clear{ 0.05f, 0.05f, 0.06f, 1.0f };
@@ -239,7 +242,9 @@ auto gse::engine::render() -> void {
 		}
 		const auto fence_wait = fence_timer.elapsed();
 
-		gpu_state->scheduler.report_frame_time(fence_wait);
+		// Convert gse::time -> raw seconds at the boundary; the scheduler keeps
+		// quantity off its module surface (GCC PR c++/122785 workaround).
+		gpu_state->scheduler.report_frame_time(fence_wait.as<gse::seconds>());
 		frame_ok = result.has_value();
 
 		if (!result && result.error() == gpu::frame_status::device_lost) {
@@ -329,8 +334,8 @@ auto gse::engine::window_should_close() -> bool {
 	return window_state && !window::is_open(*window_state);
 }
 
-auto gse::engine::pump_window() -> void {
+auto gse::engine::tick_window() -> void {
 	if (auto* window_state = m_scheduler.try_state_of<window::data>()) {
-		window::apply_commands(*window_state);
+		window::tick(m_scheduler, *window_state);
 	}
 }

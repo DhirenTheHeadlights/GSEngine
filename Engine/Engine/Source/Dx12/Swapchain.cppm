@@ -2,7 +2,7 @@ export module gse.dx12:swapchain;
 
 import std;
 
-import gse.gpu_types;
+import gse.gpu_backend;
 import gse.core;
 import gse.math;
 
@@ -14,9 +14,8 @@ export namespace gse::dx12 {
 
 	class swap_chain final : public non_copyable {
 	public:
-		swap_chain() = default;
-
-		~swap_chain() override = default;
+		swap_chain() {}
+		~swap_chain() = default;
 
 		swap_chain(
 			swap_chain&&
@@ -42,15 +41,15 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto image(
 			std::uint32_t index
-		) const -> gpu::image_handle;
+		) const -> gpu::handle<gpu::image>;
 
 		[[nodiscard]] auto image_view(
 			std::uint32_t index
-		) const -> gpu::image_view_handle;
+		) const -> gpu::handle<gpu::image_view>;
 
 		[[nodiscard]] auto release_fence(
 			std::uint32_t image_index
-		) const -> gpu::fence_handle;
+		) const -> gpu::handle<gpu::fence>;
 
 		[[nodiscard]] auto wait_for_present(
 			std::uint64_t present_id,
@@ -97,15 +96,15 @@ auto gse::dx12::swap_chain::set_present_mode(const gpu::present_mode mode) -> vo
 	m_present_mode = mode;
 }
 
-auto gse::dx12::swap_chain::image(const std::uint32_t) const -> gpu::image_handle {
+auto gse::dx12::swap_chain::image(const std::uint32_t) const -> gpu::handle<gpu::image> {
 	return {};
 }
 
-auto gse::dx12::swap_chain::image_view(const std::uint32_t) const -> gpu::image_view_handle {
+auto gse::dx12::swap_chain::image_view(const std::uint32_t) const -> gpu::handle<gpu::image_view> {
 	return {};
 }
 
-auto gse::dx12::swap_chain::release_fence(const std::uint32_t) const -> gpu::fence_handle {
+auto gse::dx12::swap_chain::release_fence(const std::uint32_t) const -> gpu::handle<gpu::fence> {
 	return {};
 }
 

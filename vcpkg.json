@@ -7,7 +7,6 @@
     "libjpeg-turbo",
     "miniaudio",
     "shader-slang",
-    "concurrentqueue",
     "nsight-aftermath",
     {
       "name": "freetype",

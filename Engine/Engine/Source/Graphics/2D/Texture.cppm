@@ -1,7 +1,6 @@
 export module gse.graphics:texture;
 
 import std;
-import gse.std_meta;
 
 import gse.core;
 import gse.math;
@@ -27,7 +26,7 @@ export namespace gse {
 			= asset_format::source_exts<".png", ".jpg", ".jpeg", ".tga", ".bmp">{},
 			= asset_format::magic<0x47544558>{},
 			= asset_format::version<1>{},
-			= asset_format::meta_sidecar{}
+			= asset_format::meta_sidecar<>{}
 		]] baked {
 			std::uint32_t width = 0;
 			std::uint32_t height = 0;
@@ -64,7 +63,7 @@ export namespace gse {
 
 		auto image_data() const -> const image::data&;
 
-		[[nodiscard]] auto bindless_slot() const -> gpu::bindless_texture_slot;
+		[[nodiscard]] auto bindless_slot() const -> gpu::bindless_slot;
 
 		auto upload_token() const -> const gpu::sync_token&;
 
@@ -75,7 +74,7 @@ export namespace gse {
 		) -> void;
 
 		gpu::image m_image;
-		gpu::bindless_texture_slot m_bindless_slot;
+		gpu::bindless_handle m_bindless_slot;
 		image::data m_image_data;
 		profile m_profile = profile::generic_repeat;
 		gpu::sync_token m_upload_token;
