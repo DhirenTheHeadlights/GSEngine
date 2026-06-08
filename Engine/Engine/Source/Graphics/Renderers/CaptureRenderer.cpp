@@ -276,10 +276,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 
 			auto live = mp4::live_muxer::open(
 				path,
-				{
-					.codec = d.encoder.codec(),
-					.extent = d.encoder.extent()
-				},
+				{ d.encoder.codec(), d.encoder.extent() },
 				d.encoder.stream_header()
 			);
 			if (!live) {
