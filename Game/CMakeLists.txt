@@ -11,6 +11,23 @@ set(MAIN_CPP "${GAME_SRC}/Main.cpp")
 
 file(GLOB_RECURSE GAME_MODULES CONFIGURE_DEPENDS "${GAME_DIR}/*.cppm")
 
+file(GLOB_RECURSE GAME_IMPLS CONFIGURE_DEPENDS "${GAME_DIR}/*.cpp")
+list(REMOVE_ITEM GAME_IMPLS "${MAIN_CPP}")
+
+# A .cpp that declares an implementation partition (module gs:y;) provides a
+# module and must live in a CXX_MODULES file set; a plain implementation unit
+# (module gs;) or global-module .cpp stays an ordinary source.
+set(GAME_MODULE_IMPLS "")
+set(GAME_PLAIN_IMPLS "")
+foreach(_impl IN LISTS GAME_IMPLS)
+    file(STRINGS "${_impl}" _part_decl REGEX "^module gs:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
+    if(_part_decl)
+        list(APPEND GAME_MODULE_IMPLS "${_impl}")
+    else()
+        list(APPEND GAME_PLAIN_IMPLS "${_impl}")
+    endif()
+endforeach()
+
 add_library(GoonSquadLib)
 
 target_sources(GoonSquadLib
@@ -19,6 +36,19 @@ target_sources(GoonSquadLib
         BASE_DIRS "${GAME_DIR}"
         FILES ${GAME_MODULES}
 )
+
+if(GAME_MODULE_IMPLS)
+    target_sources(GoonSquadLib
+        PRIVATE
+            FILE_SET cxx_module_impls TYPE CXX_MODULES
+            BASE_DIRS "${GAME_DIR}"
+            FILES ${GAME_MODULE_IMPLS}
+    )
+endif()
+
+if(GAME_PLAIN_IMPLS)
+    target_sources(GoonSquadLib PRIVATE ${GAME_PLAIN_IMPLS})
+endif()
 
 target_include_directories(GoonSquadLib PUBLIC
     "${INCLUDE_DIR}"
