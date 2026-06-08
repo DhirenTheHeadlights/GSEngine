@@ -6,7 +6,6 @@ import :buffer;
 import :aliases;
 import :gpu_task;
 import :sync_token;
-import :transient_api;
 import :device;
 
 auto gse::gpu::upload_to_buffers(gpu::device& dev, const std::span<const buffer_upload> uploads) -> sync_token {

@@ -7,6 +7,7 @@ import :enums;
 import :buffer;
 
 import gse.core;
+import gse.math;
 
 export namespace gse::gpu {
 	struct acceleration_structure {
@@ -97,6 +98,39 @@ export namespace gse::gpu {
 		device_size build_scratch_size = 0;
 		device_size update_scratch_size = 0;
 	};
+
+	enum class acceleration_structure_instance_flag : std::uint8_t {
+		triangle_cull_disable = 1 << 0,
+		triangle_flip_facing = 1 << 1,
+		force_opaque = 1 << 2,
+		force_no_opaque = 1 << 3,
+	};
+
+	struct acceleration_structure_instance {
+		std::array<float, 12> transform{};
+		std::uint32_t custom_index : 24 = 0;
+		std::uint32_t mask : 8 = 0;
+		std::uint32_t sbt_offset : 24 = 0;
+		std::uint32_t flags : 8 = 0;
+		device_address blas_address = 0;
+	};
+
+	static_assert(sizeof(acceleration_structure_instance) == 64);
+	static_assert(alignof(acceleration_structure_instance) == 8);
+
+	struct tlas_instance_desc {
+		spatial_matrix transform = spatial_matrix(1.0f);
+		std::uint32_t custom_index = 0;
+		std::uint8_t mask = 0xFF;
+		std::uint32_t sbt_offset = 0;
+		bool cull_disable = true;
+		std::uint64_t blas_address = 0;
+	};
+
+	[[nodiscard]]
+	auto pack_instance(
+		const tlas_instance_desc& inst
+	) -> acceleration_structure_instance;
 
 	class blas final : public non_copyable {
 	public:
@@ -209,4 +243,18 @@ auto gse::gpu::tlas::scratch_buffer() const -> const gpu::buffer& {
 
 auto gse::gpu::tlas::valid() const -> bool {
 	return static_cast<bool>(m_acceleration_structure);
+}
+
+auto gse::gpu::pack_instance(const tlas_instance_desc& inst) -> acceleration_structure_instance {
+	const auto transposed = inst.transform.transpose();
+	acceleration_structure_instance out{};
+	std::memcpy(out.transform.data(), &transposed, sizeof(out.transform));
+	out.custom_index = inst.custom_index;
+	out.mask = inst.mask;
+	out.sbt_offset = inst.sbt_offset;
+	out.flags = inst.cull_disable
+		? static_cast<std::uint8_t>(acceleration_structure_instance_flag::triangle_cull_disable)
+		: 0;
+	out.blas_address = inst.blas_address;
+	return out;
 }

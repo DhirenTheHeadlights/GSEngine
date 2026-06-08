@@ -98,6 +98,20 @@ export namespace gse::gpu {
 			std::uint64_t initial_value
 		) -> gpu::handle<gpu::semaphore>;
 
+		auto retire(
+			gpu::handle<gpu::semaphore> semaphore
+		) -> void;
+
+		[[nodiscard]]
+		auto semaphore_counter_value(
+			gpu::handle<gpu::semaphore> semaphore
+		) const -> std::uint64_t;
+
+		auto wait_semaphore(
+			gpu::handle<gpu::semaphore> semaphore,
+			std::uint64_t value
+		) const -> void;
+
 		[[nodiscard]]
 		auto create_timestamp_query_pool(
 			std::uint32_t capacity,
@@ -406,6 +420,18 @@ auto gse::gpu::device::create_sync(const std::uint32_t image_count, const std::u
 
 auto gse::gpu::device::create_timeline_semaphore(const std::uint64_t initial_value) -> gpu::handle<gpu::semaphore> {
 	return m_device_config.create_timeline_semaphore(initial_value);
+}
+
+auto gse::gpu::device::retire(const gpu::handle<gpu::semaphore> semaphore) -> void {
+	m_device_config.retire(semaphore);
+}
+
+auto gse::gpu::device::semaphore_counter_value(const gpu::handle<gpu::semaphore> semaphore) const -> std::uint64_t {
+	return m_device_config.semaphore_counter_value(semaphore);
+}
+
+auto gse::gpu::device::wait_semaphore(const gpu::handle<gpu::semaphore> semaphore, const std::uint64_t value) const -> void {
+	m_device_config.wait_semaphore(semaphore, value);
 }
 
 auto gse::gpu::device::create_timestamp_query_pool(const std::uint32_t capacity, const std::string_view label) -> gpu::handle<gpu::query_pool> {

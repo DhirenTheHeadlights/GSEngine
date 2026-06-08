@@ -6,7 +6,6 @@ import :acceleration_structure;
 import :aliases;
 import :device;
 import :gpu_task;
-import :transient_api;
 import :render_graph;
 
 import gse.concurrency;
@@ -63,20 +62,6 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure a
 	});
 
 	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(scratch));
-}
-auto gse::gpu::pack_instance(const tlas_instance_desc& inst) -> as_instance {
-	return vulkan::pack_instance(
-		inst.transform,
-		inst.custom_index,
-		inst.mask,
-		inst.sbt_offset,
-		inst.cull_disable,
-		inst.blas_address
-	);
-}
-
-auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> gpu::as_instance {
-	return gpu::pack_instance(inst);
 }
 
 auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -> blas {
@@ -172,14 +157,14 @@ auto gse::gpu::build_tlas(gpu::device& device, const std::uint32_t max_instances
 }
 
 auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const tlas_instance_desc> instances, recording_context& rec) -> void {
-	std::vector<as_instance> packed_instances;
+	std::vector<acceleration_structure_instance> packed_instances;
 	packed_instances.reserve(instances.size());
 	for (const auto& inst : instances) {
 		packed_instances.push_back(pack_instance(inst));
 	}
 
 	if (!packed_instances.empty()) {
-		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(as_instance));
+		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(acceleration_structure_instance));
 	}
 
 	const auto instance_addr = t.instance_buffer().device_address();
@@ -245,14 +230,14 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const 
 }
 
 auto gse::gpu::write_tlas_instances(tlas& t, const std::span<const tlas_instance_desc> instances) -> void {
-	std::vector<as_instance> packed_instances;
+	std::vector<acceleration_structure_instance> packed_instances;
 	packed_instances.reserve(instances.size());
 	for (const auto& inst : instances) {
 		packed_instances.push_back(pack_instance(inst));
 	}
 
 	if (!packed_instances.empty()) {
-		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(as_instance));
+		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(acceleration_structure_instance));
 	}
 }
 

@@ -13,7 +13,6 @@ import :types;
 import :sync;
 import :shader_object;
 import :shader_program;
-import :acceleration_structure;
 
 import vulkan;
 
@@ -2458,7 +2457,7 @@ auto gse::vulkan::device::create_tlas(const std::uint32_t max_instances) -> gpu:
 		}
 	);
 
-	const gpu::device_size instance_buf_size = max_instances * sizeof(as_instance);
+	const gpu::device_size instance_buf_size = max_instances * sizeof(gpu::acceleration_structure_instance);
 	auto instance_buf = create_buffer(
 		gpu::buffer_desc{
 			.size = instance_buf_size,

@@ -3,7 +3,7 @@ export module gse.vulkan:physical_device;
 import std;
 import vulkan;
 
-import :handles;
+import gse.gpu_backend;
 import :types;
 
 import gse.core;

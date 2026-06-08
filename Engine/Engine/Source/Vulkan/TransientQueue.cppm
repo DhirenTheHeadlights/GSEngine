@@ -2,10 +2,9 @@ export module gse.vulkan:transient_queue;
 
 import std;
 
-import :handles;
+import gse.gpu_backend;
 import :types;
 import :device;
-import :queue_timeline;
 import :transient_command_buffer;
 import :transient_command_pool;
 
@@ -75,7 +74,7 @@ export namespace gse::vulkan {
 	private:
 		transient_queue(
 			gpu::queue_id id,
-			queue_timeline&& timeline,
+			gpu::queue_timeline<device>&& timeline,
 			std::vector<transient_command_pool>&& pools,
 			const device& dev
 		);
@@ -86,7 +85,7 @@ export namespace gse::vulkan {
 		};
 
 		gpu::queue_id m_id;
-		queue_timeline m_timeline;
+		gpu::queue_timeline<device> m_timeline;
 		std::vector<transient_command_pool> m_pools;
 		const device* m_device;
 		std::uint64_t m_next_value = 0;
@@ -96,7 +95,7 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::transient_queue::transient_queue(gpu::queue_id id, queue_timeline&& timeline, std::vector<transient_command_pool>&& pools, const device& dev)
+gse::vulkan::transient_queue::transient_queue(gpu::queue_id id, gpu::queue_timeline<device>&& timeline, std::vector<transient_command_pool>&& pools, const device& dev)
 	: m_id(id), m_timeline(std::move(timeline)), m_pools(std::move(pools)), m_device(&dev) {
 }
 
@@ -124,7 +123,7 @@ auto gse::vulkan::transient_queue::create(device& dev, const gpu::queue_id id, c
 	for (std::size_t i = 0; i < worker_count; ++i) {
 		pools.push_back(gpu::must(transient_command_pool::create(dev, family)));
 	}
-	return transient_queue(id, queue_timeline::create(dev), std::move(pools), dev);
+	return transient_queue(id, gpu::queue_timeline<device>::create(dev), std::move(pools), dev);
 }
 
 auto gse::vulkan::transient_queue::id() const -> gpu::queue_id {

@@ -41,20 +41,12 @@ export namespace gse::gpu {
 		std::optional<recording_context>* record_ctx_slot = nullptr;
 	};
 
-	class request_pass_awaitable {
+	class request_pass_awaitable : non_copyable {
 	public:
 		request_pass_awaitable(
 			const frame_context& ctx,
 			render_pass_descriptor desc
 		) noexcept;
-
-		request_pass_awaitable(
-			const request_pass_awaitable&
-		) = delete;
-
-		auto operator=(
-			const request_pass_awaitable&
-		) -> request_pass_awaitable& = delete;
 
 		request_pass_awaitable(
 			request_pass_awaitable&&

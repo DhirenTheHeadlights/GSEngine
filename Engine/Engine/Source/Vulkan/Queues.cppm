@@ -3,7 +3,7 @@ export module gse.vulkan:queues;
 import std;
 import vulkan;
 
-import :handles;
+import gse.gpu_backend;
 import :types;
 import :commands;
 import :physical_device;

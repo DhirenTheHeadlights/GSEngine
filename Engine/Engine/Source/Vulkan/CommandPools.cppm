@@ -3,7 +3,7 @@ export module gse.vulkan:command_pools;
 import std;
 import vulkan;
 
-import :handles;
+import gse.gpu_backend;
 import :types;
 import :device;
 import :sync;

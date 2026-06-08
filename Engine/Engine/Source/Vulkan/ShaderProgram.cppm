@@ -2,7 +2,7 @@ export module gse.vulkan:shader_program;
 
 import std;
 
-import :handles;
+import gse.gpu_backend;
 import :shader_object;
 
 export namespace gse::vulkan {
