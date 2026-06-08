@@ -9,7 +9,6 @@ import :frame;
 import :transient_pool;
 import :render_graph;
 import :render_pass;
-import :bindless;
 
 import gse.vulkan;
 
@@ -27,14 +26,10 @@ auto gse::gpu::context::run(run_context& ctx, const window::data& window_s, data
 		*d.device
 	);
 	d.frame = frame::create(*d.device, *d.swapchain);
-	d.bindless_heaps = d.device->create_bindless_heaps();
-	d.bindless_textures = std::make_unique<bindless_texture_set>(*d.bindless_heaps);
 	d.render_graph = std::make_unique<gpu::render_graph>(
 		*d.device,
 		*d.swapchain,
-		*d.frame,
-		d.bindless_textures.get(),
-		d.bindless_heaps.get()
+		*d.frame
 	);
 	d.render_graph->set_swapchain_clear(d.swapchain_clear);
 
@@ -56,8 +51,6 @@ auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
 
 	d.device->wait_idle();
 
-	d.bindless_textures.reset();
-	d.bindless_heaps.reset();
 	d.render_graph.reset();
 	d.frame.reset();
 	d.swapchain.reset();
@@ -65,14 +58,9 @@ auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {
 }
 
 auto gse::gpu::context::begin_frame(data& d, window::data& window_s) -> std::expected<frame_token, frame_status> {
-	d.device->allocator().collect_garbage();
+	d.device->collect_garbage();
 
 	auto result = d.frame->begin(window_s);
-
-	if (result) {
-		d.bindless_textures->begin_frame(result->frame_index);
-		d.bindless_heaps->begin_frame();
-	}
 
 	return result;
 }

@@ -342,12 +342,12 @@ auto gse::gpu::transient_pool::plan(const std::uint32_t frame_idx, const std::sp
 	std::vector<color_aggregate> aggregates;
 
 	struct staged_image {
-		gpu::image_handle handle;
+		gpu::handle<gpu::image> handle;
 		std::uint32_t color = 0;
 		std::size_t entry_index = 0;
 	};
 	struct staged_buffer {
-		gpu::buffer_handle handle;
+		gpu::handle<gpu::buffer> handle;
 		std::uint32_t color = 0;
 		std::size_t entry_index = 0;
 	};

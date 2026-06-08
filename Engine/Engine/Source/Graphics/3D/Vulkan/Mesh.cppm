@@ -44,11 +44,11 @@ export namespace gse {
 	};
 
 	struct meshlet_gpu_data {
-		gpu::bindless_buffer vertex_storage;
-		gpu::bindless_buffer descriptors;
-		gpu::bindless_buffer vertices;
-		gpu::bindless_buffer triangles;
-		gpu::bindless_buffer bounds;
+		gpu::buffer vertex_storage;
+		gpu::buffer descriptors;
+		gpu::buffer vertices;
+		gpu::buffer triangles;
+		gpu::buffer bounds;
 		std::uint32_t count = 0;
 	};
 
@@ -137,7 +137,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 
 	constexpr auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
 
-	m_vertex_buffer = ctx.device->allocator().create_buffer(
+	m_vertex_buffer = ctx.device->create_buffer(
 		{
 			.size = vertex_buffer_size,
 			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
@@ -146,7 +146,7 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		"mesh.vertex"
 	);
 
-	m_index_buffer = ctx.device->allocator().create_buffer(
+	m_index_buffer = ctx.device->create_buffer(
 		{
 			.size = index_buffer_size,
 			.usage = gpu::buffer_flag::index | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst |
@@ -164,60 +164,55 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 		meshlet_gpu_data ml;
 		ml.count = static_cast<std::uint32_t>(m_meshlets.descriptors.size());
 
-		ml.vertex_storage = gpu::bindless_buffer::create(
-			ctx.device->allocator(),
-			*ctx.bindless_heaps,
+		ml.vertex_storage = ctx.device->create_buffer(
 			{
 				.size = vertex_buffer_size,
-				.usage = storage_dst
+				.usage = storage_dst,
+				.bindless = true
 			},
 			"mesh.meshlet.vertex_storage"
 		);
-		ml.descriptors = gpu::bindless_buffer::create(
-			ctx.device->allocator(),
-			*ctx.bindless_heaps,
+		ml.descriptors = ctx.device->create_buffer(
 			{
 				.size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(),
-				.usage = storage_dst
+				.usage = storage_dst,
+				.bindless = true
 			},
 			"mesh.meshlet.descriptors"
 		);
-		ml.vertices = gpu::bindless_buffer::create(
-			ctx.device->allocator(),
-			*ctx.bindless_heaps,
+		ml.vertices = ctx.device->create_buffer(
 			{
 				.size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(),
-				.usage = storage_dst
+				.usage = storage_dst,
+				.bindless = true
 			},
 			"mesh.meshlet.vertices"
 		);
-		ml.triangles = gpu::bindless_buffer::create(
-			ctx.device->allocator(),
-			*ctx.bindless_heaps,
+		ml.triangles = ctx.device->create_buffer(
 			{
 				.size = tri_size,
-				.usage = storage_dst
+				.usage = storage_dst,
+				.bindless = true
 			},
 			"mesh.meshlet.triangles"
 		);
-		ml.bounds = gpu::bindless_buffer::create(
-			ctx.device->allocator(),
-			*ctx.bindless_heaps,
+		ml.bounds = ctx.device->create_buffer(
 			{
 				.size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(),
-				.usage = storage_dst
+				.usage = storage_dst,
+				.bindless = true
 			},
 			"mesh.meshlet.bounds"
 		);
 
 		m_meshlet_gpu = std::move(ml);
 
-		uploads.push_back({ &m_meshlet_gpu->vertex_storage.buffer(), m_vertices.data(), vertex_buffer_size });
-		uploads.push_back({ &m_meshlet_gpu->descriptors.buffer(), m_meshlets.descriptors.data(), sizeof(meshlet_descriptor) * m_meshlets.descriptors.size() });
-		uploads.push_back({ &m_meshlet_gpu->vertices.buffer(), m_meshlets.vertex_indices.data(), sizeof(std::uint32_t) * m_meshlets.vertex_indices.size() });
-		uploads.push_back({ &m_meshlet_gpu->triangles.buffer(), m_meshlets.triangles.data(), tri_size });
+		uploads.push_back({ &m_meshlet_gpu->vertex_storage, m_vertices.data(), vertex_buffer_size });
+		uploads.push_back({ &m_meshlet_gpu->descriptors, m_meshlets.descriptors.data(), sizeof(meshlet_descriptor) * m_meshlets.descriptors.size() });
+		uploads.push_back({ &m_meshlet_gpu->vertices, m_meshlets.vertex_indices.data(), sizeof(std::uint32_t) * m_meshlets.vertex_indices.size() });
+		uploads.push_back({ &m_meshlet_gpu->triangles, m_meshlets.triangles.data(), tri_size });
 		uploads
-			.push_back({ &m_meshlet_gpu->bounds.buffer(), m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
+			.push_back({ &m_meshlet_gpu->bounds, m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
 	}
 
 	m_upload_token = gpu::upload_to_buffers(*ctx.device, uploads);

@@ -22,7 +22,7 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "environment": {
-        "PATH": "$env{USERPROFILE}/.gcc-trunk/current/bin;$penv{PATH}"
+        "PATH": "$env{USERPROFILE}/.gcc-trunk/current/bin;$env{USERPROFILE}/.gcc-trunk/ninja;$penv{PATH}"
       }
     },
     {

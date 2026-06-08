@@ -1,22 +1,13 @@
-export module gse.vulkan:frame_resource_bin;
+export module gse.gpu_backend:frame_resource_bin;
 
 import std;
 
+import :enums;
+import :sync;
+
 import gse.core;
 
-export namespace gse::vulkan {
-	enum class queue_id : std::uint8_t {
-		graphics = 0,
-		compute = 1,
-	};
-
-	constexpr std::size_t queue_id_count = 2;
-
-	struct queue_progress {
-		queue_id queue;
-		std::uint64_t reached_value;
-	};
-
+export namespace gse::gpu {
 	class frame_resource_bin final : public non_copyable {
 	public:
 		struct retained_base {
@@ -78,14 +69,14 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::frame_resource_bin::~frame_resource_bin() = default;
+gse::gpu::frame_resource_bin::~frame_resource_bin() = default;
 
 template <typename T>
-auto gse::vulkan::frame_resource_bin::retain(const queue_id queue, const std::uint64_t until_value, T resource) -> void {
+auto gse::gpu::frame_resource_bin::retain(const queue_id queue, const std::uint64_t until_value, T resource) -> void {
 	retain(queue, until_value, std::make_unique<retained_holder<T>>(std::move(resource)));
 }
 
-auto gse::vulkan::frame_resource_bin::retain(const queue_id queue, const std::uint64_t until_value, std::unique_ptr<retained_base> resource) -> void {
+auto gse::gpu::frame_resource_bin::retain(const queue_id queue, const std::uint64_t until_value, std::unique_ptr<retained_base> resource) -> void {
 	std::lock_guard lock(*m_mutex);
 	m_slots.push_back({
 		.m_queue = queue,
@@ -94,7 +85,7 @@ auto gse::vulkan::frame_resource_bin::retain(const queue_id queue, const std::ui
 	});
 }
 
-auto gse::vulkan::frame_resource_bin::drain(std::span<const queue_progress> progress) -> void {
+auto gse::gpu::frame_resource_bin::drain(std::span<const queue_progress> progress) -> void {
 	auto reached = [progress](const queue_id q) -> std::uint64_t {
 		for (const auto& p : progress) {
 			if (p.queue == q) {
@@ -119,12 +110,12 @@ auto gse::vulkan::frame_resource_bin::drain(std::span<const queue_progress> prog
 	}
 }
 
-auto gse::vulkan::frame_resource_bin::wait_idle_clear() -> void {
+auto gse::gpu::frame_resource_bin::wait_idle_clear() -> void {
 	std::lock_guard lock(*m_mutex);
 	m_slots.clear();
 }
 
-auto gse::vulkan::frame_resource_bin::pending_count() const -> std::size_t {
+auto gse::gpu::frame_resource_bin::pending_count() const -> std::size_t {
 	std::lock_guard lock(*m_mutex);
 	return m_slots.size();
 }

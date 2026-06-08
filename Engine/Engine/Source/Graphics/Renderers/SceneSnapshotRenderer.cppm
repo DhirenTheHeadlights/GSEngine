@@ -15,7 +15,7 @@ export namespace gse::renderer::scene_snapshot {
 			[[
 				= gse::shared
 			]]
-			std::array<gpu::bindless_texture_slot, per_frame_resource<gpu::image>::frames_in_flight> slots;
+			std::array<gpu::bindless_handle, per_frame_resource<gpu::image>::frames_in_flight> slots;
 			[[= gse::shared]] bool ready = false;
 
 			vec2u current_extent{ 0, 0 };

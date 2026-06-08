@@ -26,10 +26,10 @@ export namespace gse::renderer::taa {
 			float blend_alpha = 0.1f;
 
 			gpu::shader_program pipeline;
-			gpu::bindless_sampler sampler;
-			gpu::bindless_image_view hdr_view;
-			gpu::bindless_image_view velocity_view;
-			std::array<gpu::bindless_image_view, 2> history_views;
+			gpu::bindless_handle sampler;
+			gpu::bindless_handle hdr_view;
+			gpu::bindless_handle velocity_view;
+			std::array<gpu::bindless_handle, 2> history_views;
 			std::uint32_t frames_since_history_invalid = 0;
 
 			[[= gse::shared]] std::array<gpu::image, 2> history;

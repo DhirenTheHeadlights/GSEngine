@@ -31,10 +31,4 @@ export namespace gse::gpu {
 		gpu::device& dev,
 		image& img
 	) -> sync_token;
-
-	auto upload_image_2d(
-		gpu::device& dev,
-		image& img,
-		const void* pixel_data
-	) -> sync_token;
 }

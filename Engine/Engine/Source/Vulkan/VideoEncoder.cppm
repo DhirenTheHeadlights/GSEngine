@@ -6,10 +6,7 @@ import vulkan_video;
 
 import :handles;
 import :types;
-import :allocation;
-import :buffer;
-import :fence;
-import :image;
+import gse.gpu_backend;
 import :device;
 import :physical_device;
 import :queues;
@@ -69,8 +66,8 @@ export namespace gse::vulkan {
 
 		auto encode_frame(
 			std::uint32_t frame_slot,
-			gpu::image_handle y_plane,
-			gpu::image_handle uv_plane
+			gpu::handle<gpu::image> y_plane,
+			gpu::handle<gpu::image> uv_plane
 		) -> void;
 
 		auto wait(
@@ -95,7 +92,7 @@ export namespace gse::vulkan {
 			vk::raii::CommandBuffer cmd = nullptr;
 			vk::raii::Fence fence = nullptr;
 			vk::raii::QueryPool query_pool = nullptr;
-			vulkan::buffer bitstream;
+			gpu::buffer bitstream;
 			vk::Image nv12_image = nullptr;
 			vk::raii::ImageView nv12_view = nullptr;
 			vk::DeviceMemory nv12_memory = nullptr;
@@ -167,8 +164,7 @@ namespace gse::vulkan {
 		vec2u extent,
 		vk::ImageUsageFlags usage,
 		const vk::VideoProfileListInfoKHR& profile_list
-	) -> std::
-		tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory>;
+	) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory>;
 
 	auto find_memory_type(
 		const physical_device& physical_device,
@@ -474,7 +470,7 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 	return enc;
 }
 
-auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, const gpu::image_handle y_plane, const gpu::image_handle uv_plane) -> void {
+auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, const gpu::handle<gpu::image> y_plane, const gpu::handle<gpu::image> uv_plane) -> void {
 	auto& slot = m_slots[frame_slot];
 	const auto& vk_dev = m_device->raii_device();
 	const auto extent = vec2u{ m_extent };
@@ -858,7 +854,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	const gpu::submit_info submit{
 		.command_buffers = std::span(&cmd_submit, 1),
 	};
-	m_queue->submit_video_encode(submit, std::bit_cast<gpu::fence_handle>(*slot.fence));
+	m_queue->submit_video_encode(submit, std::bit_cast<gpu::handle<gpu::fence>>(*slot.fence));
 	slot.submitted = true;
 	slot.has_output = true;
 

@@ -5,9 +5,6 @@ import vulkan;
 
 import :handles;
 import :types;
-import :allocation;
-import :buffer;
-import :image;
 import :device;
 import :sync;
 
@@ -151,7 +148,7 @@ auto gse::vulkan::command::make_primary_pool(const device& device_data, const st
 	const vk::CommandBufferAllocateInfo alloc_info{
 		.commandPool = *pool,
 		.level = vk::CommandBufferLevel::ePrimary,
-		.commandBufferCount = max_frames_in_flight,
+		.commandBufferCount = gpu::max_frames_in_flight,
 	};
 
 	auto [buffers_result, buffers] = device_data.raii_device().allocateCommandBuffers(alloc_info);
@@ -274,7 +271,7 @@ auto gse::vulkan::worker_command_pools::build_family_pools(const device& device_
 
 auto gse::vulkan::worker_command_pools::create(const device& device_data, const std::array<std::uint32_t, gpu::queue_type_count>& queue_families, const std::size_t worker_count, const std::size_t secondaries_per_pool) -> worker_command_pools {
 	static_assert(
-		max_frames_in_flight == 2,
+		gpu::max_frames_in_flight == 2,
 		"worker_command_pools::create assumes per_frame_resource default of 2 frames"
 	);
 

@@ -5,7 +5,6 @@ import vulkan;
 
 import :handles;
 import :types;
-import :device;
 
 import gse.core;
 
@@ -28,49 +27,6 @@ export namespace gse::vulkan {
 		std::span<const std::byte> spec_data;
 	};
 
-	class shader_object final : public non_copyable {
-	public:
-		shader_object() {}
-		~shader_object() = default;
-
-		shader_object(
-			shader_object&&
-		) noexcept = default;
-
-		auto operator=(
-			shader_object&&
-		) noexcept -> shader_object& = default;
-
-		[[nodiscard]]
-		static auto create(
-			const device& dev,
-			const shader_object_create_info& info
-		) -> gpu::expected<shader_object>;
-
-		[[nodiscard]]
-		static auto create_linked(
-			const device& dev,
-			std::span<const shader_object_create_info> infos
-		) -> gpu::expected<std::vector<shader_object>>;
-
-		[[nodiscard]] auto handle() const -> gpu::shader_object_handle;
-
-		[[nodiscard]] auto stage() const -> gpu::stage_flag;
-
-		[[nodiscard]] auto valid() const -> bool;
-
-	private:
-		shader_object(
-			vk::raii::ShaderEXT&& shader,
-			gpu::stage_flag stage
-		);
-
-		vk::raii::ShaderEXT m_shader = nullptr;
-		gpu::stage_flag m_stage = gpu::stage_flag::vertex;
-	};
-}
-
-namespace gse::vulkan {
 	struct shader_spec_scratch {
 		std::vector<vk::SpecializationMapEntry> entries;
 		std::optional<vk::SpecializationInfo> info;
@@ -83,71 +39,6 @@ namespace gse::vulkan {
 		shader_spec_scratch& spec_scratch,
 		vk::ShaderCreateFlagsEXT extra_flags
 	) -> vk::ShaderCreateInfoEXT;
-}
-
-gse::vulkan::shader_object::shader_object(vk::raii::ShaderEXT&& shader, const gpu::stage_flag stage)
-	: m_shader(std::move(shader)), m_stage(stage) {
-}
-
-auto gse::vulkan::shader_object::create(const device& dev, const shader_object_create_info& info) -> gpu::expected<shader_object> {
-	std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT> subgroup_size_scratch;
-	std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT> mapping_scratch;
-	shader_spec_scratch spec_scratch;
-	const auto vk_info = build_vk_shader_create_info(
-		info,
-		subgroup_size_scratch,
-		mapping_scratch,
-		spec_scratch,
-		{}
-	);
-
-	auto [result, shaders] = dev.raii_device().createShadersEXT(vk_info);
-	if (result != vk::Result::eSuccess) {
-		return std::unexpected(from_vk(result));
-	}
-	return shader_object(std::move(shaders[0]), info.stage);
-}
-
-auto gse::vulkan::shader_object::create_linked(const device& dev, const std::span<const shader_object_create_info> infos) -> gpu::expected<std::vector<shader_object>> {
-	std::vector<std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>> subgroup_size_scratch(infos.size());
-	std::vector<std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>> mapping_scratch(infos.size());
-	std::vector<shader_spec_scratch> spec_scratch(infos.size());
-	std::vector<vk::ShaderCreateInfoEXT> vk_infos;
-	vk_infos.reserve(infos.size());
-	for (std::size_t i = 0; i < infos.size(); ++i) {
-		vk_infos.push_back(
-			build_vk_shader_create_info(
-				infos[i],
-				subgroup_size_scratch[i],
-				mapping_scratch[i],
-				spec_scratch[i],
-				vk::ShaderCreateFlagBitsEXT::eLinkStage
-			)
-		);
-	}
-
-	auto [create_result, shaders] = dev.raii_device().createShadersEXT(vk_infos);
-	if (create_result != vk::Result::eSuccess) {
-		return std::unexpected(from_vk(create_result));
-	}
-	std::vector<shader_object> result;
-	result.reserve(shaders.size());
-	for (std::size_t i = 0; i < shaders.size(); ++i) {
-		result.emplace_back(shader_object(std::move(shaders[i]), infos[i].stage));
-	}
-	return result;
-}
-
-auto gse::vulkan::shader_object::handle() const -> gpu::shader_object_handle {
-	return std::bit_cast<gpu::shader_object_handle>(*m_shader);
-}
-
-auto gse::vulkan::shader_object::stage() const -> gpu::stage_flag {
-	return m_stage;
-}
-
-auto gse::vulkan::shader_object::valid() const -> bool {
-	return *m_shader != nullptr;
 }
 
 auto gse::vulkan::build_vk_shader_create_info(const shader_object_create_info& info, std::optional<vk::ShaderRequiredSubgroupSizeCreateInfoEXT>& subgroup_size_scratch, std::optional<vk::ShaderDescriptorSetAndBindingMappingInfoEXT>& mapping_scratch, shader_spec_scratch& spec_scratch, const vk::ShaderCreateFlagsEXT extra_flags) -> vk::ShaderCreateInfoEXT {

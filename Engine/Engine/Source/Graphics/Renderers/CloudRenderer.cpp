@@ -161,17 +161,16 @@ auto gse::renderer::cloud::compute_cloud_target_extent(const vec2u screen_extent
 
 auto gse::renderer::cloud::recreate_cloud_target(const gpu::context::data& gpu_s, system::data& d) -> void {
 	d.cloud_target_extent = compute_cloud_target_extent(gpu_s.render_graph->extent());
-	d.cloud_target = gpu::bindless_image::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.cloud_target = gpu_s.device->create_image(
 		{
 			.size = d.cloud_target_extent,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.bindless = true,
 		},
 		"cloud_target"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.cloud_target.image());
+	gpu::transition_image_to(*gpu_s.device, d.cloud_target);
 }
 
 auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data {
@@ -195,54 +194,51 @@ auto gse::renderer::cloud::build_cloud_data(const system::data& d) -> cloud_data
 }
 
 auto gse::renderer::cloud::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.shape_bake_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, shape_bake_entry::pod);
-	d.detail_bake_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, detail_bake_entry::pod);
-	d.raymarch_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, raymarch_entry::pod);
-	d.composite_pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, composite_entry::pod);
+	d.shape_bake_pipeline = gpu::build_compute_program(*gpu_s.device, shape_bake_entry::pod);
+	d.detail_bake_pipeline = gpu::build_compute_program(*gpu_s.device, detail_bake_entry::pod);
+	d.raymarch_pipeline = gpu::build_compute_program(*gpu_s.device, raymarch_entry::pod);
+	d.composite_pipeline = gpu::build_graphics_program(*gpu_s.device, composite_entry::pod);
 
-	d.shape_noise = gpu::bindless_image::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.shape_noise = gpu_s.device->create_image(
 		{
 			.size = vec2u{ shape_noise_size.x(), shape_noise_size.y() },
 			.depth = shape_noise_size.z(),
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
 			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.bindless = true,
 		},
 		"cloud_shape_noise"
 	);
-	d.detail_noise = gpu::bindless_image::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.detail_noise = gpu_s.device->create_image(
 		{
 			.size = vec2u{ detail_noise_size.x(), detail_noise_size.y() },
 			.depth = detail_noise_size.z(),
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
 			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.bindless = true,
 		},
 		"cloud_detail_noise"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.shape_noise.image());
-	gpu::transition_image_to(*gpu_s.device, d.detail_noise.image());
+	gpu::transition_image_to(*gpu_s.device, d.shape_noise);
+	gpu::transition_image_to(*gpu_s.device, d.detail_noise);
 
 	recreate_cloud_target(gpu_s, d);
 
-	d.cloud_ubo_buffer = gpu::bindless_buffer::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.cloud_ubo_buffer = gpu_s.device->create_buffer(
 		{
 			.size = sizeof(cloud_data),
 			.usage = gpu::buffer_flag::uniform,
+			.bindless = true,
 		},
 		"cloud_ubo"
 	);
 
-	d.noise_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, noise_sampler_desc);
-	d.atmosphere_lut_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, atmosphere_lut_sampler_desc);
-	d.sky_view_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, sky_view_sampler_desc);
-	d.composite_sampler = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, composite_sampler_desc);
+	d.noise_sampler = gpu_s.device->register_sampler(noise_sampler_desc);
+	d.atmosphere_lut_sampler = gpu_s.device->register_sampler(atmosphere_lut_sampler_desc);
+	d.sky_view_sampler = gpu_s.device->register_sampler(sky_view_sampler_desc);
+	d.composite_sampler = gpu_s.device->register_sampler(composite_sampler_desc);
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
@@ -268,7 +264,7 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 	}
 
 	const cloud_data shader_payload = build_cloud_data(d);
-	d.cloud_ubo_buffer.buffer().host_write(shader_payload);
+	d.cloud_ubo_buffer.host_write(shader_payload);
 
 	if (!d.noises_ready) {
 		const auto shape_groups = vec3u{
@@ -350,7 +346,7 @@ auto gse::renderer::cloud::system::frame(const frame_context& ctx, shared_view<g
 		.depth(gpu::load_depth())
 		.after<atmosphere::sky_raster_pass, cloud_raymarch_pass>();
 
-	composite_rec.sample_image(d.cloud_target.image(), gpu::pipeline_stage_flag::fragment_shader);
+	composite_rec.sample_image(d.cloud_target, gpu::pipeline_stage_flag::fragment_shader);
 	composite_rec.set_viewport(ext);
 	composite_rec.set_scissor(ext);
 	composite_rec.push_bindings<composite_entry>({
