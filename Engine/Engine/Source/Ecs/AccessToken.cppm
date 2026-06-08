@@ -120,7 +120,7 @@ export namespace gse {
 	template <typename T>
 	class structural : non_copyable {
 	public:
-		~structural() override;
+		~structural();
 
 		structural() = delete;
 
