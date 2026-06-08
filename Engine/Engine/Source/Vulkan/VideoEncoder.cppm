@@ -4,7 +4,6 @@ import std;
 import vulkan;
 import vulkan_video;
 
-import :handles;
 import :types;
 import gse.gpu_backend;
 import :device;

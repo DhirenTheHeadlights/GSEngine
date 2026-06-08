@@ -124,6 +124,15 @@ namespace gse::narrow_phase_collision {
 		std::uint8_t incident_face = 0;
 	};
 
+	// FIXME(GCC): TEMPORARY COMPILER WORKAROUND. GCC trunk 20260602 corrupts
+	// the module CMI when this partition serializes direct or implicit default
+	// construction of std::inplace_vector<clip_vertex, 9> under -freflection.
+	// Copying an existing empty vector is clean. Remove this seed and restore
+	// normal local default construction once the upstream modules bug is fixed.
+	// The definition lives in NarrowPhaseCollisions.cpp so the bad construction
+	// path is kept out of this exported partition BMI.
+	extern const std::inplace_vector<clip_vertex, 9> empty_clip_vertices;
+
 	struct plane {
 		vec3f normal;
 		vec3<position> point;
@@ -451,7 +460,8 @@ auto gse::narrow_phase_collision::reference_edge_side_id(const std::size_t edge_
 }
 
 auto gse::narrow_phase_collision::clip_polygon(const std::inplace_vector<clip_vertex, 9>& subject, const plane& p, const bool keep_greater, const bool tag_reference_side, const std::uint8_t reference_side) -> std::inplace_vector<clip_vertex, 9> {
-	std::inplace_vector<clip_vertex, 9> out;
+	auto out = subject;
+	out.clear();
 	if (subject.empty()) {
 		return out;
 	}
@@ -518,7 +528,7 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 	const auto& reference_info = reference_is_a ? info1 : info2;
 	const auto& incident_info = reference_is_a ? info2 : info1;
 
-	std::inplace_vector<clip_vertex, 9> polygon;
+	auto polygon = empty_clip_vertices;
 	for (std::uint8_t i = 0; i < incident_info.vertices.size(); ++i) {
 		polygon.push_back({
 			.point = incident_info.vertices[i],
@@ -571,6 +581,7 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 
 	if (polygon.empty()) {
 		return clipped_face_contacts{
+			.vertices = empty_clip_vertices,
 			.reference_is_a = reference_is_a,
 			.reference_face = reference_info.face_index,
 			.incident_face = incident_info.face_index
@@ -600,7 +611,8 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 			closest_plane_distance = std::max<length>(closest_plane_distance, vertex_distance);
 		}
 
-		std::inplace_vector<clip_vertex, 9> filtered;
+		auto filtered = polygon;
+		filtered.clear();
 		for (const auto& vertex : polygon) {
 			if (const length dist = dot(reference_normal, vertex.point - reference_plane.point); closest_plane_distance - dist <= contact_band) {
 				filtered.push_back(vertex);

@@ -12,7 +12,6 @@ import :aliases;
 import gse.vulkan;
 import :device;
 import :shader_codegen;
-import :shader_markers;
 
 export namespace gse::gpu {
 	struct combined_sampler_arg {

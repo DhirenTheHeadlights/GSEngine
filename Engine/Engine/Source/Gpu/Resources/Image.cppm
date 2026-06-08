@@ -5,7 +5,6 @@ import std;
 import :aliases;
 import :gpu_task;
 import :sync_token;
-import :transient_api;
 import :device;
 
 import gse.assert;

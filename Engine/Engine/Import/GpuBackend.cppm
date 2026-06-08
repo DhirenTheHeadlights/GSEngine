@@ -8,6 +8,7 @@ export import :bindless;
 export import :buffer;
 export import :image;
 export import :accel;
+export import :queue_timeline;
 export import :arena;
 export import :allocation;
 export import :query_pool;

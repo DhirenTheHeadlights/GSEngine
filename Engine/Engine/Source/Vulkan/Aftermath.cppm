@@ -22,23 +22,15 @@ export namespace gse::vulkan {
 			std::filesystem::path shader_directory;
 		};
 
-		struct data {
-			settings cfg;
-			bool enabled = false;
-			vk::DeviceDiagnosticsConfigCreateInfoNV diag_config{};
-			std::uint64_t dump_counter = 0;
-			std::string last_dump_stem;
-		};
-
 		~aftermath();
 
 		aftermath(
-			aftermath&&
-		) noexcept = default;
+			aftermath&& other
+		) noexcept;
 
 		auto operator=(
-			aftermath&&
-		) noexcept -> aftermath& = default;
+			aftermath&& other
+		) noexcept -> aftermath&;
 
 		[[nodiscard]] static auto create(
 			settings cfg
@@ -61,9 +53,10 @@ export namespace gse::vulkan {
 		) -> void;
 
 	private:
-		aftermath();
+		aftermath() = default;
 
-		std::unique_ptr<data> m_state;
+		bool m_owns_session = false;
+		vk::DeviceDiagnosticsConfigCreateInfoNV m_diag_config{};
 	};
 }
 
@@ -73,15 +66,19 @@ namespace gse::vulkan {
 		vk::NVDeviceDiagnosticsConfigExtensionName,
 	};
 
-	inline aftermath::data* active_state = nullptr;
+	struct dump_writer {
+		std::filesystem::path dump_directory;
+		std::filesystem::path shader_directory;
+		std::uint64_t dump_counter = 0;
+		std::string last_dump_stem;
+		bool active = false;
+	};
+
+	inline dump_writer dumps;
 
 	auto default_dump_directory() -> std::filesystem::path;
 
 	auto default_shader_directory() -> std::filesystem::path;
-
-	auto build_diagnostics_flags(
-		const aftermath::settings& cfg
-	) -> vk::DeviceDiagnosticsConfigFlagsNV;
 
 	auto write_dump_to_disk(
 		const std::filesystem::path& directory,
@@ -91,11 +88,19 @@ namespace gse::vulkan {
 		std::size_t size
 	) -> std::filesystem::path;
 
-#ifdef GSE_HAVE_AFTERMATH
-	auto translate_result(
-		GFSDK_Aftermath_Result r
-	) -> std::string;
-#endif
+	auto build_diagnostics_flags(
+		const aftermath::settings& cfg
+	) -> vk::DeviceDiagnosticsConfigFlagsNV;
+
+	auto on_gpu_crash_dump(
+		const void* data,
+		std::uint32_t size
+	) -> void;
+
+	auto on_shader_debug_info(
+		const void* data,
+		std::uint32_t size
+	) -> void;
 }
 
 auto gse::vulkan::default_dump_directory() -> std::filesystem::path {
@@ -104,6 +109,18 @@ auto gse::vulkan::default_dump_directory() -> std::filesystem::path {
 
 auto gse::vulkan::default_shader_directory() -> std::filesystem::path {
 	return config::resource_path / "Misc" / "aftermath_shaders";
+}
+
+auto gse::vulkan::write_dump_to_disk(const std::filesystem::path& directory, const std::string& stem, std::string_view extension, const void* data, std::size_t size) -> std::filesystem::path {
+	std::error_code ec;
+	std::filesystem::create_directories(directory, ec);
+
+	const auto path = directory / (stem + std::string(extension));
+	std::ofstream out(path, std::ios::binary);
+	if (out) {
+		out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+	}
+	return path;
 }
 
 auto gse::vulkan::build_diagnostics_flags(const aftermath::settings& cfg) -> vk::DeviceDiagnosticsConfigFlagsNV {
@@ -123,75 +140,51 @@ auto gse::vulkan::build_diagnostics_flags(const aftermath::settings& cfg) -> vk:
 	return flags;
 }
 
-auto gse::vulkan::write_dump_to_disk(const std::filesystem::path& directory, const std::string& stem, std::string_view extension, const void* data, std::size_t size) -> std::filesystem::path {
-	std::error_code ec;
-	std::filesystem::create_directories(directory, ec);
-
-	const auto path = directory / (stem + std::string(extension));
-	std::ofstream out(path, std::ios::binary);
-	if (out) {
-		out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
-	}
-	return path;
-}
-
-#ifdef GSE_HAVE_AFTERMATH
-auto gse::vulkan::translate_result(const GFSDK_Aftermath_Result r) -> std::string {
-	return std::format("0x{:x}", static_cast<std::uint32_t>(r));
-}
-
-extern "C" void gse_aftermath_gpu_crash_dump_cb(const void* dump, const std::uint32_t size, void* user) {
-	auto* s = static_cast<gse::vulkan::aftermath::data*>(user);
-	if (s == nullptr) {
-		return;
-	}
-	const auto seq = s->dump_counter++;
-	const auto stem = std::format("gse_{}_{}", gse::system_clock::timestamp_filename(), seq);
-	s->last_dump_stem = stem;
-	const auto path = gse::vulkan::write_dump_to_disk(s->cfg.dump_directory, stem, ".nv-gpudmp", dump, size);
-	gse::log::println(
-		gse::log::level::error,
-		gse::log::category::vulkan,
+auto gse::vulkan::on_gpu_crash_dump(const void* data, std::uint32_t size) -> void {
+	const auto seq = dumps.dump_counter++;
+	const auto stem = std::format("gse_{}_{}", system_clock::timestamp_filename(), seq);
+	dumps.last_dump_stem = stem;
+	const auto path = write_dump_to_disk(dumps.dump_directory, stem, ".nv-gpudmp", data, size);
+	log::println(
+		log::level::error,
+		log::category::vulkan,
 		"Aftermath crash dump written: {}",
 		path.string()
 	);
 }
 
-extern "C" void gse_aftermath_shader_debug_info_cb(const void* dump, const std::uint32_t size, void* user) {
-	auto* s = static_cast<gse::vulkan::aftermath::data*>(user);
-	if (s == nullptr) {
-		return;
-	}
-	const auto stem = s->last_dump_stem.empty()
+auto gse::vulkan::on_shader_debug_info(const void* data, std::uint32_t size) -> void {
+	const auto stem = dumps.last_dump_stem.empty()
 		? std::format(
 			  "gse_{}_shaderdebug",
-			  gse::system_clock::timestamp_filename()
+			  system_clock::timestamp_filename()
 		  )
-		: s->last_dump_stem + "_shaderdebug";
-	gse::vulkan::write_dump_to_disk(s->cfg.shader_directory, stem, ".nvdbg", dump, size);
-}
-
-extern "C" void gse_aftermath_crash_dump_description_cb(PFN_GFSDK_Aftermath_AddGpuCrashDumpDescription add_description, void*) {
-	add_description(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationName, "GSEngine");
-	add_description(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationVersion, "0.1.0");
-}
-#endif
-
-gse::vulkan::aftermath::aftermath() : m_state(std::make_unique<data>()) {
+		: dumps.last_dump_stem + "_shaderdebug";
+	write_dump_to_disk(dumps.shader_directory, stem, ".nvdbg", data, size);
 }
 
 gse::vulkan::aftermath::~aftermath() {
-	if (!m_state || !m_state->enabled) {
+	if (!m_owns_session) {
 		return;
 	}
-#ifdef GSE_HAVE_AFTERMATH
 	wait_for_crash_dump();
-	GFSDK_Aftermath_DisableGpuCrashDumps();
-#endif
-	if (active_state == m_state.get()) {
-		active_state = nullptr;
+	gse::aftermath::disable();
+	dumps.active = false;
+}
+
+gse::vulkan::aftermath::aftermath(aftermath&& other) noexcept : m_owns_session(std::exchange(other.m_owns_session, false)), m_diag_config(other.m_diag_config) {}
+
+auto gse::vulkan::aftermath::operator=(aftermath&& other) noexcept -> aftermath& {
+	if (this != &other) {
+		if (m_owns_session) {
+			wait_for_crash_dump();
+			gse::aftermath::disable();
+			dumps.active = false;
+		}
+		m_owns_session = std::exchange(other.m_owns_session, false);
+		m_diag_config = other.m_diag_config;
 	}
-	m_state->enabled = false;
+	return *this;
 }
 
 auto gse::vulkan::aftermath::create(settings cfg) -> aftermath {
@@ -203,50 +196,36 @@ auto gse::vulkan::aftermath::create(settings cfg) -> aftermath {
 	}
 
 	aftermath tracker;
-	tracker.m_state->cfg = std::move(cfg);
-	tracker.m_state->diag_config = {
-		.flags = build_diagnostics_flags(tracker.m_state->cfg),
+	tracker.m_diag_config.flags = build_diagnostics_flags(cfg);
+
+	dumps = {
+		.dump_directory = std::move(cfg.dump_directory),
+		.shader_directory = std::move(cfg.shader_directory),
 	};
 
-#ifdef GSE_HAVE_AFTERMATH
-	const auto result = GFSDK_Aftermath_EnableGpuCrashDumps(
-		GFSDK_Aftermath_Version_API,
-		GFSDK_Aftermath_GpuCrashDumpWatchedApiFlags_Vulkan,
-		GFSDK_Aftermath_GpuCrashDumpFeatureFlags_DeferDebugInfoCallbacks,
-		&gse_aftermath_gpu_crash_dump_cb,
-		&gse_aftermath_shader_debug_info_cb,
-		&gse_aftermath_crash_dump_description_cb,
-		nullptr,
-		tracker.m_state.get()
-	);
+	tracker.m_owns_session = gse::aftermath::enable(&on_gpu_crash_dump, &on_shader_debug_info, "GSEngine", "0.1.0");
+	dumps.active = tracker.m_owns_session;
 
-	if (aftermath_succeeded(result)) {
-		tracker.m_state->enabled = true;
-		active_state = tracker.m_state.get();
+	if (tracker.m_owns_session) {
 		log::println(
 			log::category::vulkan,
 			"Nsight Aftermath crash dumps enabled (dumps -> {}, shaders -> {})",
-			tracker.m_state->cfg.dump_directory.string(),
-			tracker.m_state->cfg.shader_directory.string()
+			dumps.dump_directory.string(),
+			dumps.shader_directory.string()
 		);
+	}
+	else if (gse::aftermath::compiled_in) {
+		log::println(log::level::warning, log::category::vulkan, "Nsight Aftermath enable failed");
 	}
 	else {
-		log::println(
-			log::level::warning,
-			log::category::vulkan,
-			"Nsight Aftermath enable failed: {}",
-			translate_result(result)
-		);
+		log::println(log::category::vulkan, "Nsight Aftermath SDK not compiled in; crash dumps disabled");
 	}
-#else
-	log::println(log::category::vulkan, "Nsight Aftermath SDK not compiled in; crash dumps disabled");
-#endif
 
 	return tracker;
 }
 
 auto gse::vulkan::aftermath::available() const -> bool {
-	return m_state && m_state->enabled;
+	return m_owns_session;
 }
 
 auto gse::vulkan::aftermath::required_device_extensions() const -> std::span<const char* const> {
@@ -260,43 +239,34 @@ auto gse::vulkan::aftermath::device_create_info_pnext(void* next) -> void* {
 	if (!available()) {
 		return next;
 	}
-	m_state->diag_config.pNext = next;
-	return &m_state->diag_config;
+	m_diag_config.pNext = next;
+	return &m_diag_config;
 }
 
 auto gse::vulkan::aftermath::wait_for_crash_dump(time timeout) -> void {
-	if (!available()) {
+	if (!m_owns_session) {
 		return;
 	}
 
-#ifdef GSE_HAVE_AFTERMATH
-	const auto timeout_ms = std::chrono::milliseconds(static_cast<std::int64_t>(timeout.as<milliseconds>()));
-	const auto deadline = std::chrono::steady_clock::now() + timeout_ms;
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<std::int64_t>(timeout.as<milliseconds>()));
 	while (std::chrono::steady_clock::now() < deadline) {
-		GFSDK_Aftermath_CrashDump_Status status = GFSDK_Aftermath_CrashDump_Status_Unknown;
-		const auto result = GFSDK_Aftermath_GetCrashDumpStatus(&status);
-		if (!aftermath_succeeded(result)) {
-			return;
-		}
-		if (status == GFSDK_Aftermath_CrashDump_Status_Finished || status == GFSDK_Aftermath_CrashDump_Status_NotStarted) {
+		const auto status = gse::aftermath::status();
+		if (status == gse::aftermath::dump_status::finished || status == gse::aftermath::dump_status::not_started || status == gse::aftermath::dump_status::failed) {
 			return;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
+
 	log::println(
 		log::level::warning,
 		log::category::vulkan,
 		"Aftermath crash dump did not finish within {} ms",
 		timeout.as<milliseconds>()
 	);
-#else
-	(void)timeout;
-#endif
 }
 
 auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv) -> void {
-	auto* s = active_state;
-	if (s == nullptr || !s->enabled || spirv.empty()) {
+	if (!dumps.active || spirv.empty()) {
 		return;
 	}
 
@@ -306,8 +276,8 @@ auto gse::vulkan::aftermath::register_spirv(std::span<const std::uint32_t> spirv
 	const auto filename = std::format("{:016x}.spv", hash);
 
 	std::error_code ec;
-	std::filesystem::create_directories(s->cfg.shader_directory, ec);
-	const auto path = s->cfg.shader_directory / filename;
+	std::filesystem::create_directories(dumps.shader_directory, ec);
+	const auto path = dumps.shader_directory / filename;
 	if (std::filesystem::exists(path, ec)) {
 		return;
 	}

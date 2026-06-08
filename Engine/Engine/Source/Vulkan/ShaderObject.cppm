@@ -3,7 +3,7 @@ export module gse.vulkan:shader_object;
 import std;
 import vulkan;
 
-import :handles;
+import gse.gpu_backend;
 import :types;
 
 import gse.core;

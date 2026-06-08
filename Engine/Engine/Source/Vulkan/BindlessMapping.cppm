@@ -1,4 +1,4 @@
-export module gse.vulkan:bindless_heap;
+export module gse.vulkan:bindless_mapping;
 
 import std;
 import vulkan;

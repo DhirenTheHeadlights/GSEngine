@@ -1,6 +1,6 @@
 export module gse.vulkan;
 
-export import :handles;
+export import gse.gpu_backend;
 export import :types;
 export import :physical_device;
 export import :shader_object;
@@ -12,11 +12,9 @@ export import :queues;
 export import :command_pools;
 export import :sync;
 export import :commands;
-export import :acceleration_structure;
 export import :transient_command_buffer;
-export import :queue_timeline;
 export import :transient_command_pool;
-export import :bindless_heap;
+export import :bindless_mapping;
 export import :video_encoder;
 export import :transient_queue;
 export import :transient_executor;

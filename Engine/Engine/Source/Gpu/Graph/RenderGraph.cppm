@@ -392,7 +392,7 @@ export namespace gse::gpu {
 		};
 
 		struct queue_state {
-			gpu::handle<gpu::semaphore> timeline;
+			gpu::queue_timeline<gpu::device> timeline;
 			std::uint64_t signal_counter = 0;
 		};
 
@@ -1150,7 +1150,7 @@ gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapc
 	: m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_transient_pool(device) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 	for (auto& q : m_queue_states) {
-		q.timeline = device.create_timeline_semaphore(0);
+		q.timeline = gpu::queue_timeline<gpu::device>::create(device);
 	}
 	swapchain.on_recreate([this] {
 		recreate_framebuffer_images();
@@ -2299,7 +2299,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		sub.command_buffer = handle;
 		if (previous_value > 0) {
 			sub.waits.push_back({
-				.semaphore = state.timeline,
+				.semaphore = state.timeline.handle(),
 				.value = previous_value,
 				.stages = gpu::pipeline_stage_flag::all_commands,
 			});
@@ -2310,14 +2310,14 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 			if (queue_waits_on[qi][producer] && this_frame_signal_values[producer] > 0) {
 				sub.waits.push_back({
-					.semaphore = m_queue_states[producer].timeline,
+					.semaphore = m_queue_states[producer].timeline.handle(),
 					.value = this_frame_signal_values[producer],
 					.stages = gpu::pipeline_stage_flag::all_commands,
 				});
 			}
 		}
 		sub.signals.push_back({
-			.semaphore = state.timeline,
+			.semaphore = state.timeline.handle(),
 			.value = signal_value,
 			.stages = gpu::pipeline_stage_flag::all_commands,
 		});
@@ -2331,7 +2331,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 		if (queue_waits_on[graphics_qi][producer] && this_frame_signal_values[producer] > 0) {
 			m_pending_graphics_extra_waits.push_back({
-				.semaphore = m_queue_states[producer].timeline,
+				.semaphore = m_queue_states[producer].timeline.handle(),
 				.value = this_frame_signal_values[producer],
 				.stages = gpu::pipeline_stage_flag::all_commands,
 			});

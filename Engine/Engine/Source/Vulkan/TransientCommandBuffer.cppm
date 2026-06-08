@@ -3,7 +3,7 @@ export module gse.vulkan:transient_command_buffer;
 import std;
 import vulkan;
 
-import :handles;
+import gse.gpu_backend;
 import :commands;
 
 import gse.core;

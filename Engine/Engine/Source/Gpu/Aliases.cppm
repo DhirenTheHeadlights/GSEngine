@@ -6,7 +6,6 @@ export import gse.gpu_backend;
 import gse.vulkan;
 
 export namespace gse::gpu {
-	using as_instance = vulkan::as_instance;
 	using sync = vulkan::sync;
 	using command_buffer = vulkan::command_buffer;
 	using transient_command_buffer = vulkan::transient_command_buffer;
