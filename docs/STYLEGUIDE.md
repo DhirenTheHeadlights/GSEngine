@@ -1,9 +1,10 @@
 # GSE Style Guide
 
-Most layout decisions in this codebase are owned by `.clang-format` (e.g. tabs, brace style, pointer alignment, when to wrap, how to indent continuations, where blank lines go inside namespaces, no vertical alignment, always-braces on `if`/`for`/`while`, "fully wrapped or fully inline" arg lists, designated initializers split when exceeding column limit). This document covers everything *clang-format can't decide for you* — semantic conventions, naming, API shape, and patterns specific to the engine.
+Most layout decisions in this codebase are owned by `.clang-format` (e.g. tabs, brace style, pointer alignment, how to indent continuations, where blank lines go inside namespaces, no vertical alignment, always-braces on `if`/`for`/`while`, "fully wrapped or fully inline" arg lists, designated initializers always one per line). `ColumnLimit` is `0` — there is no line-length-based wrapping, so *where* a statement breaks is author-driven; clang-format only normalizes the indentation of a break and keeps argument lists all-or-nothing (`BinPackArguments`/`BinPackParameters` are off). This document covers everything *clang-format can't decide for you* — semantic conventions, naming, API shape, and patterns specific to the engine.
 
 ## Naming
 - STL style (snake_case for everything).
+- snake_case includes compile-time constants, `static constexpr`, enum values, and `shader_constant_block` fields. There is no `SCREAMING_SNAKE_CASE` in this codebase — the HLSL/C habit of uppercase constants does not carry over.
 - Private member variables prefixed with `m_`.
 - Do not prefix functions with `get_`. The verb is implied — a function that returns a value is already a getter. Use the noun (`name()`, `value()`), `_of` for projections (`type_of(x)`, `annotation_of<A>(m)`), or a verb that describes the action (`fetch_`, `compute_`, `find_`) when the work is non-trivial.
 
@@ -12,6 +13,24 @@ Enforced by `clang-tidy` (`readability-identifier-naming` + custom `gse-no-get-p
 ## Comments
 
 Do not add comments. Code should be self-documenting.
+
+---
+
+## Bodies on Their Own Line
+
+A body goes on its own line even when it holds a single statement — never collapse it. clang-format enforces this for `if`/`for`/`while` and for non-empty lambdas, but **not for `struct`/`class`/`union` bodies** — with `ColumnLimit` at `0`, nothing forces a record body to expand, so a one-liner survives clang-format untouched. Keep it expanded:
+
+```cpp
+// correct
+struct binding {
+    using element = T;
+};
+
+// wrong
+struct binding { using element = T; };
+```
+
+Empty bodies stay collapsed (`{}`, `= default`).
 
 ---
 
@@ -102,6 +121,8 @@ namespace {
     struct my_impl_helper { ... };
 }
 ```
+
+This is not a module-only rule. It holds in every translation unit, including non-module `.cpp` files and single-TU executables (e.g. the codegen tools) — TU-local helpers go at file scope or in a named namespace, never an anonymous one.
 
 Enforced by `clang-tidy` (`gse-no-detail-namespace`, `gse-no-anonymous-namespace`).
 
@@ -215,13 +236,21 @@ When the type is already known from the assignment target, omit the explicit typ
 
 ```cpp
 // correct — map value type is already known
-ctrl.parameters[key] = { .value = value, .is_trigger = false };
+ctrl.parameters[key] = {
+    .value = value,
+    .is_trigger = false,
+};
 
 // wrong — animation_parameter is redundant
-ctrl.parameters[key] = animation_parameter{ .value = value, .is_trigger = false };
+ctrl.parameters[key] = animation_parameter{
+    .value = value,
+    .is_trigger = false,
+};
 ```
 
 For function call arguments where the type is needed for template deduction, keep the explicit type.
+
+Designated initializers are always one per line, regardless of how short the aggregate is — never pack `.field = value` pairs onto a single line.
 
 ---
 
@@ -326,6 +355,42 @@ defer<state>([handle](state& s) {
     s.resume(handle);
 });
 ```
+
+---
+
+## Channel Pushes
+
+Pass the message type to `channels.push` as an explicit template argument; do not let it deduce from the argument. The type is the identity of the event — keep it visible at the call site:
+
+```cpp
+// correct — reads as "publish a play_request"
+ctx.channels.push<play_request>({
+    .clip = clip,
+    .loop = true,
+});
+
+// wrong — the event type hides inside a constructor expression
+ctx.channels.push(play_request{ .clip = clip, .loop = true });
+ctx.channels.push(std::move(req));
+```
+
+For an existing variable, write `channels.push<decltype(req)>(std::move(req))`, or rebuild a fresh aggregate at the push site.
+
+---
+
+## Formatters
+
+Math and engine types ship `std::formatter` specializations — `vec`, `quat`, `mat`, `rect_t`, `quantity` (so every unit type), and `id`. Enums are formattable too, through a reflection-based global formatter in `gse.meta`. Pass the whole value with a single format spec; do not decompose into components or hand-write a switch-based label helper:
+
+```cpp
+// correct — the element spec forwards to each component's quantity formatter
+gse::log::println("pos={:.2f}", drum_local);   // pos=(2.50 m, 3.20 m, 6.10 m)
+
+// wrong — decomposing what the formatter already handles
+gse::log::println("pos=({:.2f}, {:.2f}, {:.2f})", drum_local.x(), drum_local.y(), drum_local.z());
+```
+
+Inline per-component labels (`x`/`y`/`z`) are the only reason to decompose — the exception, not the default.
 
 ---
 
