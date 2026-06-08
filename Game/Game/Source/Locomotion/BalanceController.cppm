@@ -161,5 +161,5 @@ auto gs::locomotion::balance_controller::run(data& d, gse::read<skeleton_refs> r
 		}
 	}
 
-	co_return;
+	return {};
 }

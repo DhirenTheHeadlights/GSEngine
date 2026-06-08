@@ -109,5 +109,5 @@ auto gs::pose_driver::system::run(data& d, gse::read<gse::physics::joint_spec> s
 		}
 	}
 
-	co_return;
+	return {};
 }

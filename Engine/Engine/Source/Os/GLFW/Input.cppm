@@ -90,5 +90,5 @@ auto gse::input::system::run(data& d, const window::data* win) -> async::task<> 
 
 	d.states.flip();
 
-	co_return;
+	return {};
 }

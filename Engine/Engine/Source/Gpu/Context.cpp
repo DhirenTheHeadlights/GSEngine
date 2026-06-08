@@ -33,7 +33,7 @@ auto gse::gpu::context::init(const window::data& window_s, data& d) -> async::ta
 	);
 	d.render_graph->set_swapchain_clear(d.swapchain_clear);
 
-	co_return;
+	return {};
 }
 
 auto gse::gpu::context::run(run_context& ctx, data& d) -> async::task<> {
@@ -44,7 +44,7 @@ auto gse::gpu::context::run(run_context& ctx, data& d) -> async::task<> {
 		}
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::gpu::context::shutdown(shutdown_context&, data& d) -> void {

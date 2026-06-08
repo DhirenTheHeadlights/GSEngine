@@ -201,7 +201,7 @@ auto gse::renderer::forward::system::init(run_context& ctx, const gpu::context::
 		}
 	);
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<geometry_collector::system> gc_r, shared_view<light_culling::system> lc_r, shared_view<atmosphere::system> atm_state, shared_view<gi_probe::system> gi_state) -> async::task<> {

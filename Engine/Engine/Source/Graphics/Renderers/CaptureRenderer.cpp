@@ -126,7 +126,7 @@ auto gse::renderer::capture::system::init(run_context& ctx, const gpu::context::
 		d.encode_active = true;
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const actions::system::data& sys, data& d) -> async::task<> {
@@ -143,7 +143,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 		ctx.channels.push<toggle_recording_request>({});
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {

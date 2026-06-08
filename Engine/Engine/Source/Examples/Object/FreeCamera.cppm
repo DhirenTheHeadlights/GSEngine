@@ -234,5 +234,5 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 		}
 	);
 
-	co_return;
+	return {};
 }

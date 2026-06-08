@@ -57,7 +57,7 @@ auto gse::renderer::rt_shadow::system::init(run_context& ctx, const gpu::context
 
 	d.tlas_update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::rt_shadow::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {

@@ -291,5 +291,5 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 		}
 	);
 
-	co_return;
+	return {};
 }

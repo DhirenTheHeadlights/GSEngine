@@ -41,7 +41,7 @@ auto gse::renderer::system::init(run_context& ctx, data& d) -> async::task<> {
 		.action_id = dump_profile_id
 	});
 	d.dump_profile_action = actions::handle(dump_profile_id);
-	co_return;
+	return {};
 }
 
 auto gse::renderer::system::run(run_context& ctx, const gpu::context::data& gpu_s, const window::data& window_s, data& d, const actions::system::data& sys) -> async::task<> {
@@ -72,5 +72,5 @@ auto gse::renderer::system::run(run_context& ctx, const gpu::context::data& gpu_
 		d.last_viewport = new_viewport;
 	}
 
-	co_return;
+	return {};
 }

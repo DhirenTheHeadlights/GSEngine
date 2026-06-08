@@ -262,7 +262,7 @@ auto gs::locomotion::smoke_test::run(gse::run_context& ctx, data& d, const gse::
 	if (d.config.trials <= 0) {
 		gse::log::println("locomotion_smoke: complete trials=0 passed=0 failed=0");
 		gse::shutdown();
-		co_return;
+		return {};
 	}
 
 	if (!d.scene_id.has_value()) {
@@ -342,7 +342,7 @@ auto gs::locomotion::smoke_test::run(gse::run_context& ctx, data& d, const gse::
 	}
 
 	if (d.stage == smoke_stage::done) {
-		co_return;
+		return {};
 	}
 
 }

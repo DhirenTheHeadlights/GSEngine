@@ -65,7 +65,7 @@ auto gse::renderer::sdf_grid::system::init(run_context& ctx, const gpu::context:
 		);
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::sdf_grid::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {

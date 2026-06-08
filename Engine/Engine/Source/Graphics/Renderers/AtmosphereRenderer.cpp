@@ -291,7 +291,7 @@ auto gse::renderer::atmosphere::system::init(run_context& ctx, const gpu::contex
 		}
 	);
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::atmosphere::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {

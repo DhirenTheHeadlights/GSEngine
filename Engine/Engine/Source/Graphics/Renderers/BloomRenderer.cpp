@@ -193,7 +193,7 @@ auto gse::renderer::bloom::system::init(run_context& ctx, const gpu::context::da
 		}
 	);
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {

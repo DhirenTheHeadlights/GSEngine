@@ -206,5 +206,5 @@ auto gs::locomotion::state_estimator::run(data& d, gse::read<skeleton_refs> refs
 		}
 	}
 
-	co_return;
+	return {};
 }

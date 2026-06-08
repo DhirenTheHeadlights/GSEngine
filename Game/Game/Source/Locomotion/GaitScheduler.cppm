@@ -512,5 +512,5 @@ auto gs::locomotion::gait_scheduler::run(data& d, gse::read<skeleton_refs> refs,
 		}
 	}
 
-	co_return;
+	return {};
 }

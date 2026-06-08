@@ -80,7 +80,7 @@ auto gse::renderer::cull_compute::system::init(run_context& ctx, const gpu::cont
 		);
 	}
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, shared_view<geometry_collector::system> gc_r, const data& d) -> async::task<> {

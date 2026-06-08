@@ -306,7 +306,7 @@ auto gse::world_system::run(run_context& ctx, data& d, const actions::system::da
 
 	update_player_controllers(d, ctx.registry());
 
-	co_return;
+	return {};
 }
 
 auto gse::world_system::shutdown(shutdown_context&, data& d) -> void {

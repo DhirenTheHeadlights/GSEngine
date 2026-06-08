@@ -120,7 +120,7 @@ auto gse::renderer::gi_probe::system::init(run_context& ctx, const gpu::context:
 		}
 	);
 
-	co_return;
+	return {};
 }
 
 auto gse::renderer::gi_probe::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state, shared_view<atmosphere::system> atm_state, shared_view<geometry_collector::system> gc_r) -> async::task<> {

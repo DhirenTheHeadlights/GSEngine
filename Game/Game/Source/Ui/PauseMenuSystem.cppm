@@ -77,5 +77,5 @@ auto gs::pause_menu_system::run(gse::run_context& ctx, data& d, const gse::input
 		});
 	}
 
-	co_return;
+	return {};
 }
