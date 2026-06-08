@@ -345,4 +345,5 @@ auto gs::locomotion::smoke_test::run(gse::run_context& ctx, data& d, const gse::
 		return {};
 	}
 
+	return {};
 }
