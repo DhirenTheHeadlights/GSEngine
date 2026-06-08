@@ -31,7 +31,7 @@ export namespace gse::gui::ids {
 			std::string_view s
 		);
 
-		~scope() override;
+		~scope();
 	};
 }
 

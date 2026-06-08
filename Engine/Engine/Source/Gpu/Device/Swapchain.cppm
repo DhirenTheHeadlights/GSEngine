@@ -40,28 +40,28 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto image(
 			std::uint32_t index
-		) const -> image_handle;
+		) const -> handle<gpu::image>;
 
 		[[nodiscard]] auto image_view(
 			std::uint32_t index
-		) const -> image_view_handle;
+		) const -> handle<gpu::image_view>;
 
 		[[nodiscard]]
 		auto acquire(
-			semaphore_handle wait_semaphore,
+			handle<gpu::semaphore> wait_semaphore,
 			std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max()
 		) const -> gpu::acquire_next_image_result;
 
 		[[nodiscard]]
 		auto present(
-			semaphore_handle wait_semaphore,
+			handle<gpu::semaphore> wait_semaphore,
 			std::uint32_t image_index,
 			std::uint64_t present_id
 		) -> result;
 
 		[[nodiscard]] auto release_fence(
 			std::uint32_t image_index
-		) const -> fence_handle;
+		) const -> handle<gpu::fence>;
 
 		auto wait_release_fences() -> void;
 
@@ -146,19 +146,19 @@ auto gse::gpu::swap_chain::set_present_mode(const gpu::present_mode mode) -> voi
 	m_info.present_mode = mode;
 }
 
-auto gse::gpu::swap_chain::image(const std::uint32_t index) const -> image_handle {
+auto gse::gpu::swap_chain::image(const std::uint32_t index) const -> handle<gpu::image> {
 	return m_info.images[index];
 }
 
-auto gse::gpu::swap_chain::image_view(const std::uint32_t index) const -> image_view_handle {
+auto gse::gpu::swap_chain::image_view(const std::uint32_t index) const -> handle<gpu::image_view> {
 	return m_info.image_views[index];
 }
 
-auto gse::gpu::swap_chain::acquire(const semaphore_handle wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
+auto gse::gpu::swap_chain::acquire(const handle<gpu::semaphore> wait_semaphore, const std::uint64_t timeout_ns) const -> gpu::acquire_next_image_result {
 	return m_device->acquire_swapchain_image(m_info.handle, wait_semaphore, timeout_ns);
 }
 
-auto gse::gpu::swap_chain::present(const semaphore_handle wait_semaphore, const std::uint32_t image_index, const std::uint64_t present_id) -> result {
+auto gse::gpu::swap_chain::present(const handle<gpu::semaphore> wait_semaphore, const std::uint32_t image_index, const std::uint64_t present_id) -> result {
 	reset_release_fence(image_index);
 
 	const auto swapchain_handle = m_info.handle;
@@ -177,7 +177,7 @@ auto gse::gpu::swap_chain::present(const semaphore_handle wait_semaphore, const 
 	return m_device->present(info);
 }
 
-auto gse::gpu::swap_chain::release_fence(const std::uint32_t image_index) const -> fence_handle {
+auto gse::gpu::swap_chain::release_fence(const std::uint32_t image_index) const -> handle<gpu::fence> {
 	return m_device->swapchain_release_fence(m_info.handle, image_index);
 }
 

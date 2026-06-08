@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:tonemap_renderer_impl;
 
 import std;
 
@@ -11,6 +11,7 @@ import :render_targets;
 import :sdf_grid_renderer;
 import :taa_renderer;
 import :world_text_renderer;
+
 
 import gse.gpu;
 import gse.core;
@@ -64,19 +65,24 @@ namespace gse::renderer::tonemap {
 auto gse::renderer::tonemap::rebind_views(const gpu::context::data& gpu_s, system::data& d) -> void {
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::post_taa_color>();
 	if (hdr.handle()) {
-		d.hdr_view.rebind_sampled(*gpu_s.bindless_heaps, hdr);
+		if (!d.hdr_view.valid()) {
+			d.hdr_view = gpu_s.device->allocate_image_slot();
+		}
+		gpu_s.device->write_sampled_image(d.hdr_view.slot(), hdr);
 	}
 	auto& velocity = gpu_s.render_graph->framebuffer_image<targets::velocity>();
 	if (velocity.handle()) {
-		d.velocity_view.rebind_sampled(*gpu_s.bindless_heaps, velocity);
+		if (!d.velocity_view.valid()) {
+			d.velocity_view = gpu_s.device->allocate_image_slot();
+		}
+		gpu_s.device->write_sampled_image(d.velocity_view.slot(), velocity);
 	}
 }
 
 auto gse::renderer::tonemap::system::run(run_context& ctx, const gpu::context::data& gpu_s, const bloom::system::data& bloom_state, data& d) -> async::task<> {
-	d.pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
 
-	d.sampler = gpu::bindless_sampler::create(
-		*gpu_s.bindless_heaps,
+	d.sampler = gpu_s.device->register_sampler(
 		{
 			.min = gpu::sampler_filter::linear,
 			.mag = gpu::sampler_filter::linear,
@@ -112,7 +118,7 @@ auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view
 
 	const bool bloom_active = bloom_state.bloom_quality != bloom::quality_level::off && bloom_state.active_mip_count > 0;
 
-	const auto bloom_slot = bloom_active ? bloom_state.mips_up[0].sampled_slot() : d.hdr_view.sampled_slot();
+	const auto bloom_slot = bloom_active ? bloom_state.mips_up[0].sampled_slot() : d.hdr_view.slot();
 
 	auto rec = co_await gpu::pass<system>(ctx)
 		.pipeline(d.pipeline)
@@ -121,7 +127,7 @@ auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view
 
 	rec.sample_image(hdr, gpu::pipeline_stage_flag::fragment_shader);
 	if (bloom_active) {
-		rec.sample_image(bloom_state.mips_up[0].image(), gpu::pipeline_stage_flag::fragment_shader);
+		rec.sample_image(bloom_state.mips_up[0], gpu::pipeline_stage_flag::fragment_shader);
 	}
 	if (d.show_velocity) {
 		rec.sample_image(
@@ -138,9 +144,9 @@ auto gse::renderer::tonemap::system::frame(const frame_context& ctx, shared_view
 			.show_velocity = d.show_velocity ? 1u : 0u,
 		},
 		{
-			.hdr_color = { d.hdr_view.sampled_slot(), d.sampler.slot() },
+			.hdr_color = { d.hdr_view.slot(), d.sampler.slot() },
 			.bloom_color = { bloom_slot, d.sampler.slot() },
-			.velocity_color = { d.velocity_view.sampled_slot(), d.sampler.slot() },
+			.velocity_color = { d.velocity_view.slot(), d.sampler.slot() },
 		}
 	);
 	rec.draw(3);

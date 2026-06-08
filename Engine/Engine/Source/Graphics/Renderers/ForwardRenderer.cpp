@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:forward_renderer_impl;
 
 import std;
 
@@ -17,6 +17,7 @@ import :point_light;
 import :spot_light;
 import :directional_light;
 import :settings;
+
 
 import gse.math;
 import gse.core;
@@ -143,14 +144,17 @@ namespace gse::renderer::forward {
 }
 
 auto gse::renderer::forward::rebind_tlas_views(const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, system::data& d) -> void {
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_tlas_view>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		d.tlas_views[i].rebind(gpu_s.device->allocator(), *gpu_s.bindless_heaps, (*rt_state.tlas_ptrs[fi]).handle());
+		if (!d.tlas_slots[i].valid()) {
+			d.tlas_slots[i] = gpu_s.device->allocate_buffer_slot();
+		}
+		gpu_s.device->write_acceleration_structure(d.tlas_slots[i].slot(), (*rt_state.tlas_ptrs[fi]).device_address());
 	}
 }
 
 auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const rt_shadow::system::data& rt_state, const light_culling::system::data& lc_r, const atmosphere::system::data& atm_state, const gi_probe::system::data& gi_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
-	d.pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, meshlet_entry::pod);
+	d.pipeline = gpu::build_graphics_program(*gpu_s.device, meshlet_entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
@@ -158,8 +162,7 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 
 	d.light_staging.reserve(light_buffer_size);
 
-	d.gi_sampler = gpu::bindless_sampler::create(
-		*gpu_s.bindless_heaps,
+	d.gi_sampler = gpu_s.device->register_sampler(
 		{
 			.min = gpu::sampler_filter::linear,
 			.mag = gpu::sampler_filter::linear,
@@ -169,23 +172,21 @@ auto gse::renderer::forward::system::run(run_context& ctx, const gpu::context::d
 		}
 	);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform
+				.usage = gpu::buffer_flag::uniform,
+				.bindless = true
 			},
 			"forward.camera_ubo"
 		);
 
-		d.light_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.light_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = light_buffer_size,
-				.usage = gpu::buffer_flag::storage
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
 			},
 			"forward.lights"
 		);
@@ -242,7 +243,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		.jitter_ndc = cam_state.jitter_ndc,
 		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
-	d.camera_ubo_buffers[frame_index].buffer().host_write(camera);
+	d.camera_ubo_buffers[frame_index].host_write(camera);
 
 	auto dir_chunk = ctx.components<directional_light_component>();
 	auto spot_chunk = ctx.components<spot_light_component>();
@@ -333,7 +334,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	}
 
 	if (light_count > 0) {
-		d.light_buffers[frame_index].buffer().host_write(staging.data(), light_count * sizeof(shaders::forward::light));
+		d.light_buffers[frame_index].host_write(staging.data(), light_count * sizeof(shaders::forward::light));
 	}
 
 	const auto& normal_batches = data.normal_batches;
@@ -363,7 +364,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
-	rec.sample_image(gi_state.irradiance_atlas.image(), gpu::pipeline_stage_flag::fragment_shader);
+	rec.sample_image(gi_state.irradiance_atlas, gpu::pipeline_stage_flag::fragment_shader);
 
 	if (normal_batches.empty()) {
 		co_return;
@@ -371,7 +372,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 
 	const auto camera_ubo_slot = d.camera_ubo_buffers[frame_index].slot();
 	const auto lights_slot = d.light_buffers[frame_index].slot();
-	const auto tlas_slot = d.tlas_views[frame_index].slot();
+	const auto tlas_slot = d.tlas_slots[frame_index].slot();
 	const auto light_index_list_slot = lc_r.light_index_list_buffers[frame_index].slot();
 	const auto tile_light_table_slot = lc_r.tile_light_table_buffers[frame_index].slot();
 	const auto material_palette_slot = gc_r.material_palette_buffers[frame_index].slot();
@@ -439,7 +440,7 @@ auto gse::renderer::forward::system::frame(frame_context& ctx, shared_view<gpu::
 		);
 
 		rec.draw_mesh_tasks_indirect(
-			gc_r.normal_indirect_commands_buffer[frame_index].buffer(),
+			gc_r.normal_indirect_commands_buffer[frame_index],
 			i * sizeof(gpu::draw_mesh_tasks_indirect_command),
 			1,
 			sizeof(gpu::draw_mesh_tasks_indirect_command)

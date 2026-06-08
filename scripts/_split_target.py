@@ -1,5 +1,5 @@
-import json, glob, os
-BUILD = "out/build/x64-clang-p2996-libcxx-Release-trace"
+import json, glob, os, sys
+BUILD = sys.argv[1] if len(sys.argv) > 1 else "out/build"
 totals = {"Engine":0, "Game":0, "std":0, "VulkanModule":0, "other":0}
 for p in (glob.glob(os.path.join(BUILD, "**", "*.cppm.json"), recursive=True) +
           glob.glob(os.path.join(BUILD, "**", "*.cpp.json"), recursive=True)):

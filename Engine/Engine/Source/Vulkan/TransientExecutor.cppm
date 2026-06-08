@@ -3,10 +3,9 @@ export module gse.vulkan:transient_executor;
 import std;
 
 import :device;
-import :frame_recorder;
-import :frame_resource_bin;
 import :transient_queue;
 
+import gse.gpu_backend;
 import gse.concurrency;
 import gse.core;
 
@@ -40,7 +39,7 @@ export namespace gse::vulkan {
 		) -> auto&;
 
 		[[nodiscard]] auto queue(
-			queue_id id
+			gpu::queue_id id
 		) -> transient_queue&;
 
 		auto detach(
@@ -57,8 +56,8 @@ export namespace gse::vulkan {
 			transient_queue&& compute
 		);
 
-		frame_recorder m_recorder;
-		frame_resource_bin m_bin;
+		gpu::frame_recorder m_recorder;
+		gpu::frame_resource_bin m_bin;
 		transient_queue m_graphics;
 		transient_queue m_compute;
 		std::vector<async::task<>> m_detached;
@@ -73,8 +72,8 @@ gse::vulkan::transient_executor::transient_executor(transient_queue&& graphics, 
 gse::vulkan::transient_executor::~transient_executor() = default;
 
 auto gse::vulkan::transient_executor::create(device& dev, const std::uint32_t graphics_family, const std::uint32_t compute_family, const std::size_t worker_count) -> std::unique_ptr<transient_executor> {
-	auto graphics = transient_queue::create(dev, queue_id::graphics, graphics_family, worker_count);
-	auto compute = transient_queue::create(dev, queue_id::compute, compute_family, worker_count);
+	auto graphics = transient_queue::create(dev, gpu::queue_id::graphics, graphics_family, worker_count);
+	auto compute = transient_queue::create(dev, gpu::queue_id::compute, compute_family, worker_count);
 	return std::unique_ptr<transient_executor>(new transient_executor(std::move(graphics), std::move(compute)));
 }
 
@@ -86,12 +85,12 @@ auto gse::vulkan::transient_executor::bin(this auto& self) -> auto& {
 	return self.m_bin;
 }
 
-auto gse::vulkan::transient_executor::queue(const queue_id id) -> transient_queue& {
+auto gse::vulkan::transient_executor::queue(const gpu::queue_id id) -> transient_queue& {
 	switch (id) {
-		case queue_id::graphics: {
+		case gpu::queue_id::graphics: {
 			return m_graphics;
 		}
-		case queue_id::compute: {
+		case gpu::queue_id::compute: {
 			return m_compute;
 		}
 	}
@@ -107,13 +106,13 @@ auto gse::vulkan::transient_executor::begin_frame() -> void {
 	const auto graphics_progress = m_graphics.poll();
 	const auto compute_progress = m_compute.poll();
 
-	const std::array<queue_progress, queue_id_count> progress{
-		queue_progress{
-			.queue = queue_id::graphics,
+	const std::array<gpu::queue_progress, gpu::queue_id_count> progress{
+		gpu::queue_progress{
+			.queue = gpu::queue_id::graphics,
 			.reached_value = graphics_progress,
 		},
-		queue_progress{
-			.queue = queue_id::compute,
+		gpu::queue_progress{
+			.queue = gpu::queue_id::compute,
 			.reached_value = compute_progress,
 		},
 	};

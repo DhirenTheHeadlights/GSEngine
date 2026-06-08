@@ -5,7 +5,6 @@ import std;
 import :aliases;
 import :gpu_task;
 import :sync_token;
-import :transient_api;
 import :device;
 
 import gse.assert;
@@ -30,11 +29,5 @@ export namespace gse::gpu {
 	auto transition_image_to(
 		gpu::device& dev,
 		image& img
-	) -> sync_token;
-
-	auto upload_image_2d(
-		gpu::device& dev,
-		image& img,
-		const void* pixel_data
 	) -> sync_token;
 }

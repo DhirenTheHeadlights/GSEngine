@@ -1,6 +1,8 @@
-module gse.diag;
+module gse.diag:trace_impl;
 
 import std;
+
+import :trace;
 
 import gse.core;
 import gse.containers;

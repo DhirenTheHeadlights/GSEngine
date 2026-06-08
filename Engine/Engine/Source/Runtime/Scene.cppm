@@ -1,7 +1,6 @@
 export module gse.runtime:scene;
 
 import std;
-import gse.std_meta;
 
 import gse.assert;
 import gse.core;
@@ -47,7 +46,7 @@ export namespace gse {
 	class scene final : public identifiable {
 	public:
 		using player_factory_fn = std::function<gse::id(scene&, std::optional<gse::id>)>;
-		using init_fn = gse::move_only_function<void(gse::id, registry&)>;
+		using init_fn = std::move_only_function<void(gse::id, registry&)>;
 		using setup_fn = void (
 				*
 		)(
@@ -68,7 +67,7 @@ export namespace gse {
 			) -> builder&;
 
 			auto initialize(
-				gse::move_only_function<void(scene_init_context&)> fn
+				std::move_only_function<void(scene_init_context&)> fn
 			) -> builder&;
 
 			template <typename Func>
@@ -298,7 +297,7 @@ auto gse::scene::builder::push_init(init_fn fn) -> void {
 	m_scene->push_init(m_entity_id, std::move(fn));
 }
 
-auto gse::scene::builder::initialize(gse::move_only_function<void(scene_init_context&)> fn) -> builder& {
+auto gse::scene::builder::initialize(std::move_only_function<void(scene_init_context&)> fn) -> builder& {
 	push_init([fn = std::move(fn)](const gse::id self, gse::registry& reg) mutable {
 		scene_init_context ctx(self, &reg);
 		fn(ctx);

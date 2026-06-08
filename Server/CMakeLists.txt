@@ -24,4 +24,4 @@ endif()
 target_link_libraries(Server PRIVATE Engine)
 target_link_libraries(Server PRIVATE GoonSquadLib)
 
-gse_copy_libcxx_runtime(Server)
+gse_copy_runtime_deps(Server)

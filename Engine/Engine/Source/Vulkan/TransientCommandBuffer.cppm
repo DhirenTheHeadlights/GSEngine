@@ -3,10 +3,11 @@ export module gse.vulkan:transient_command_buffer;
 import std;
 import vulkan;
 
-import :handles;
+import gse.gpu_backend;
 import :commands;
 
 import gse.core;
+import gse.assert;
 
 export namespace gse::vulkan {
 	class transient_command_buffer final {
@@ -57,11 +58,13 @@ auto gse::vulkan::transient_command_buffer::begin_one_time() -> void {
 	constexpr vk::CommandBufferBeginInfo begin_info{
 		.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
 	};
-	std::bit_cast<vk::CommandBuffer>(m_cmd).begin(begin_info);
+	const auto result = std::bit_cast<vk::CommandBuffer>(m_cmd).begin(begin_info);
+	assert(result == vk::Result::eSuccess, "failed to begin command buffer: {}", vk::to_string(result));
 }
 
 auto gse::vulkan::transient_command_buffer::end() -> void {
-	std::bit_cast<vk::CommandBuffer>(m_cmd).end();
+	const auto result = std::bit_cast<vk::CommandBuffer>(m_cmd).end();
+	assert(result == vk::Result::eSuccess, "failed to end command buffer: {}", vk::to_string(result));
 }
 
 auto gse::vulkan::transient_command_buffer::set_marker_seq(const std::uint64_t seq) -> void {

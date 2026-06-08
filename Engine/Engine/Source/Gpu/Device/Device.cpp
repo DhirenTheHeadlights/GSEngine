@@ -1,9 +1,9 @@
-module gse.gpu;
+module gse.gpu:device_impl;
 
 import std;
 
-import :aliases;
 import :device;
+import :aliases;
 
 import gse.vulkan;
 
@@ -39,6 +39,8 @@ auto gse::gpu::device::create(const window::data& win, const bool validation_lay
 		surface_format,
 		creation.video_encode_enabled
 	));
+
+	dev->m_device_config.init_bindless();
 
 	dev->m_transient = transient_executor::create(
 		dev->m_device_config,
@@ -355,7 +357,7 @@ auto gse::gpu::device::frame_command_buffer(const queue_type queue, const std::u
 	return m_command.frame_command_buffer(queue, frame_index);
 }
 
-auto gse::gpu::device::submit(const queue_type queue, const submit_info& info, const gpu::fence_handle signal_fence) -> void {
+auto gse::gpu::device::submit(const queue_type queue, const submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
 	m_queue.submit(queue, info, signal_fence);
 }
 
@@ -363,11 +365,11 @@ auto gse::gpu::device::present(const present_info& info) -> result {
 	return m_queue.present(info);
 }
 
-auto gse::gpu::device::wait_for_fence(const gpu::fence_handle f, const std::uint64_t timeout_ns) const -> result {
+auto gse::gpu::device::wait_for_fence(const gpu::handle<gpu::fence> f, const std::uint64_t timeout_ns) const -> result {
 	return m_device_config.wait_for_fence(f, timeout_ns);
 }
 
-auto gse::gpu::device::reset_fence(const gpu::fence_handle f) const -> void {
+auto gse::gpu::device::reset_fence(const gpu::handle<gpu::fence> f) const -> void {
 	m_device_config.reset_fence(f);
 }
 
@@ -390,23 +392,23 @@ auto gse::gpu::device::make_video_encoder(const vec2u extent) -> std::optional<v
 	return video_encoder::create(m_device_config, m_queue, extent, caps);
 }
 
-auto gse::gpu::device::create_image_unbound(const image_create_info& info) const -> std::pair<gpu::image_handle, memory_requirements> {
+auto gse::gpu::device::create_image_unbound(const image_create_info& info) const -> std::pair<gpu::handle<gpu::image>, memory_requirements> {
 	return m_device_config.create_image_unbound(info);
 }
 
-auto gse::gpu::device::create_buffer_unbound(const buffer_desc& info) const -> std::pair<gpu::buffer_handle, memory_requirements> {
+auto gse::gpu::device::create_buffer_unbound(const buffer_desc& info) const -> std::pair<gpu::handle<gpu::buffer>, memory_requirements> {
 	return m_device_config.create_buffer_unbound(info);
 }
 
-auto gse::gpu::device::bind_image_memory(const gpu::image_handle img, const device_memory mem, const device_size offset) const -> void {
+auto gse::gpu::device::bind_image_memory(const gpu::handle<gpu::image> img, const device_memory mem, const device_size offset) const -> void {
 	m_device_config.bind_image_memory(img, mem, offset);
 }
 
-auto gse::gpu::device::bind_buffer_memory(const gpu::buffer_handle buf, const device_memory mem, const device_size offset) const -> void {
+auto gse::gpu::device::bind_buffer_memory(const gpu::handle<gpu::buffer> buf, const device_memory mem, const device_size offset) const -> void {
 	m_device_config.bind_buffer_memory(buf, mem, offset);
 }
 
-auto gse::gpu::device::create_image_view(const gpu::image_handle img, const image_view_create_info& info) const -> gpu::image_view_handle {
+auto gse::gpu::device::create_image_view(const gpu::handle<gpu::image> img, const image_view_create_info& info) const -> gpu::handle<gpu::image_view> {
 	return m_device_config.create_image_view(img, info);
 }
 
@@ -422,7 +424,7 @@ auto gse::gpu::device::find_memory_type_index(const std::uint32_t type_bits, con
 	return m_device_config.find_memory_type_index(type_bits, required);
 }
 
-auto gse::gpu::device::make_aliased_image(const gpu::image_handle img_handle, const gpu::image_view_handle view_handle, const image_format format, const vec3u extent, const image_view_create_info& view_info, const std::string_view tag) -> std::unique_ptr<image> {
+auto gse::gpu::device::make_aliased_image(const gpu::handle<gpu::image> img_handle, const gpu::handle<gpu::image_view> view_handle, const image_format format, const vec3u extent, const image_view_create_info& view_info, const std::string_view tag) -> std::unique_ptr<image> {
 	return std::make_unique<image>(
 		img_handle,
 		view_handle,
@@ -432,7 +434,7 @@ auto gse::gpu::device::make_aliased_image(const gpu::image_handle img_handle, co
 	);
 }
 
-auto gse::gpu::device::make_aliased_buffer(const gpu::buffer_handle buf_handle, const device_size size, const std::string_view tag) -> std::unique_ptr<buffer> {
+auto gse::gpu::device::make_aliased_buffer(const gpu::handle<gpu::buffer> buf_handle, const device_size size, const std::string_view tag) -> std::unique_ptr<buffer> {
 	return std::make_unique<buffer>(
 		buf_handle,
 		size,

@@ -1,6 +1,12 @@
-module gse.gpu;
+module gse.gpu:acceleration_structure_impl;
 
 import std;
+
+import :acceleration_structure;
+import :aliases;
+import :device;
+import :gpu_task;
+import :render_graph;
 
 import gse.concurrency;
 
@@ -57,20 +63,6 @@ auto gse::build_blas_async(gpu::device& dev, const gpu::acceleration_structure a
 
 	co_await gpu::submit(dev, std::move(cmd), gpu::queue_id::graphics).retain(std::move(scratch));
 }
-auto gse::gpu::pack_instance(const tlas_instance_desc& inst) -> as_instance {
-	return vulkan::pack_instance(
-		inst.transform,
-		inst.custom_index,
-		inst.mask,
-		inst.sbt_offset,
-		inst.cull_disable,
-		inst.blas_address
-	);
-}
-
-auto gse::to_packed_instance(const gpu::tlas_instance_desc& inst) -> gpu::as_instance {
-	return gpu::pack_instance(inst);
-}
 
 auto gse::gpu::build_blas(gpu::device& device, const blas_geometry_desc& desc) -> blas {
 	const auto vertex_addr = desc.vertex_buffer->device_address();
@@ -124,8 +116,7 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 
 	const gpu::acceleration_structure_build_geometry_info build_info{
 		.type = gpu::acceleration_structure_type::top_level,
-		.flags = gpu::build_acceleration_structure_flag::prefer_fast_build |
-			gpu::build_acceleration_structure_flag::allow_update,
+		.flags = gpu::build_acceleration_structure_flag::prefer_fast_build | gpu::build_acceleration_structure_flag::allow_update,
 		.mode = gpu::build_acceleration_structure_mode::build,
 		.dst = as_handle,
 		.geometries = std::span(&geometry, 1),
@@ -142,8 +133,7 @@ auto gse::build_tlas_initial_empty_async(gpu::device& dev, const gpu::accelerati
 	const gpu::memory_barrier post_barrier{
 		.src_stages = gpu::pipeline_stage_flag::acceleration_structure_build,
 		.src_access = gpu::access_flag::acceleration_structure_write,
-		.dst_stages =
-			gpu::pipeline_stage_flag::acceleration_structure_build | gpu::pipeline_stage_flag::fragment_shader,
+		.dst_stages = gpu::pipeline_stage_flag::acceleration_structure_build | gpu::pipeline_stage_flag::fragment_shader,
 		.dst_access = gpu::access_flag::acceleration_structure_read,
 	};
 	gpu::commands(cmd.handle()).pipeline_barrier(gpu::dependency_info{
@@ -167,14 +157,14 @@ auto gse::gpu::build_tlas(gpu::device& device, const std::uint32_t max_instances
 }
 
 auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const tlas_instance_desc> instances, recording_context& rec) -> void {
-	std::vector<as_instance> packed_instances;
+	std::vector<acceleration_structure_instance> packed_instances;
 	packed_instances.reserve(instances.size());
 	for (const auto& inst : instances) {
 		packed_instances.push_back(pack_instance(inst));
 	}
 
 	if (!packed_instances.empty()) {
-		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(as_instance));
+		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(acceleration_structure_instance));
 	}
 
 	const auto instance_addr = t.instance_buffer().device_address();
@@ -240,14 +230,14 @@ auto gse::gpu::rebuild_tlas(gpu::device& device, tlas& t, const std::span<const 
 }
 
 auto gse::gpu::write_tlas_instances(tlas& t, const std::span<const tlas_instance_desc> instances) -> void {
-	std::vector<as_instance> packed_instances;
+	std::vector<acceleration_structure_instance> packed_instances;
 	packed_instances.reserve(instances.size());
 	for (const auto& inst : instances) {
 		packed_instances.push_back(pack_instance(inst));
 	}
 
 	if (!packed_instances.empty()) {
-		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(as_instance));
+		t.instance_buffer().host_write(packed_instances.data(), packed_instances.size() * sizeof(acceleration_structure_instance));
 	}
 }
 

@@ -9,7 +9,7 @@ module;
 #include <span>
 #include <type_traits>
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 #include <intrin.h>
 #else
 #include <cpuid.h>
@@ -465,7 +465,7 @@ namespace gse::simd {
 }
 
 auto gse::simd::cpuid_call(const int leaf, int out[4]) -> void {
-#ifdef _WIN32
+#ifdef _MSC_VER
 	__cpuid(out, leaf);
 #else
 	unsigned a = 0;
@@ -487,7 +487,7 @@ auto gse::simd::cpuid_call(const int leaf, int out[4]) -> void {
 }
 
 auto gse::simd::cpuidex_call(const int leaf, const int subleaf, int out[4]) -> void {
-#ifdef _WIN32
+#ifdef _MSC_VER
 	__cpuidex(out, leaf, subleaf);
 #else
 	unsigned a = 0;

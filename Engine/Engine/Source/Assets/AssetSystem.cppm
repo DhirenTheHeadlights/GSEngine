@@ -1,7 +1,6 @@
 export module gse.assets:asset_system;
 
 import std;
-import gse.std_meta;
 import gse.core;
 import gse.config;
 import gse.log;

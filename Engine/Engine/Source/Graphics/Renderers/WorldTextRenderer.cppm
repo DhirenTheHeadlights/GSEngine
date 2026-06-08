@@ -17,8 +17,8 @@ export namespace gse::renderer::world_text {
 	struct system {
 		struct data {
 			gpu::shader_program pipeline;
-			per_frame_resource<gpu::bindless_buffer> camera_ubo_buffers;
-			per_frame_resource<gpu::bindless_buffer> vertex_buffers;
+			per_frame_resource<gpu::buffer> camera_ubo_buffers;
+			per_frame_resource<gpu::buffer> vertex_buffers;
 			per_frame_resource<std::size_t> vertex_capacities;
 		};
 

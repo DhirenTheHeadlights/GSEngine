@@ -3,6 +3,7 @@ export module gse.runtime:bootstrap;
 import std;
 
 import gse.core;
+import gse.math;
 import gse.containers;
 import gse.time;
 import gse.concurrency;
@@ -83,6 +84,8 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		e.initialize(setup);
 		trace::finalize_frame();
 
+		watchdog::start();
+
 		const auto loop_id = trace_id<"frame::loop">();
 		const auto poll_id = trace_id<"frame::poll_events">();
 		const auto sync_begin_id = trace_id<"frame::sync_begin">();
@@ -95,13 +98,12 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		while (!should_shutdown.load(std::memory_order_acquire)) {
 			{
 				trace::scope_guard sg{ loop_id };
+				watchdog::section watch{ loop_id, seconds(5.f) };
 				if (config.create_window) {
 					{
 						trace::scope_guard sg{ poll_id };
-						window::poll_events();
+						e.tick_window();
 					}
-
-					e.pump_window();
 
 					if (e.window_should_close()) {
 						gse::shutdown();
@@ -117,12 +119,14 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 					trace::scope_guard sg{ e.id() };
 					{
 						trace::scope_guard sg{ update_id };
+						watchdog::section watch{ update_id, seconds(3.f) };
 						e.update();
 					}
 
 					if (config.render) {
 						{
 							trace::scope_guard sg{ render_id };
+							watchdog::section watch{ render_id, seconds(3.f) };
 							e.render();
 						}
 					}
@@ -143,6 +147,8 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 				profile::ingest_frame();
 			}
 		}
+
+		watchdog::stop();
 
 		task::wait_idle();
 	});

@@ -20,11 +20,11 @@ export namespace gse::renderer::physics_transform {
 			gpu::shader_program pipeline;
 			bool initialized = false;
 
-			per_frame_resource<gpu::bindless_buffer> mapping_buffers;
+			per_frame_resource<gpu::buffer> mapping_buffers;
 			std::size_t mapping_buffer_size = 0;
 			std::uint32_t cached_mapping_count = 0;
 
-			per_frame_resource<gpu::bindless_buffer_view> body_views;
+			per_frame_resource<gpu::bindless_handle> body_views;
 		};
 
 		static auto run(

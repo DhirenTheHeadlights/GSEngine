@@ -1,0 +1,3 @@
+# makepkg cannot source a PKGBUILD that contains CRLF line endings. Keep the
+# vendored GCC recipe LF on every platform, regardless of core.autocrlf.
+scripts/gcc-toolchain/recipe/PKGBUILD text eol=lf

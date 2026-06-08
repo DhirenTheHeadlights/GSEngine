@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:light_culling_renderer_impl;
 
 import std;
 
@@ -9,6 +9,7 @@ import :spot_light;
 import :directional_light;
 import :camera_system;
 import :depth_prepass_renderer;
+
 
 import gse.os;
 import gse.assets;
@@ -71,71 +72,70 @@ namespace gse::renderer::light_culling {
 	>;
 }
 
-auto gse::renderer::light_culling::system::tile_count(const data& d) -> vec2u {
-	return { (d.current_extent.x() + tile_size - 1) / tile_size, (d.current_extent.y() + tile_size - 1) / tile_size };
+namespace gse::renderer::light_culling {
+auto tile_count(const system::data& d) -> vec2u {
+	return { (d.current_width + tile_size - 1) / tile_size, (d.current_height + tile_size - 1) / tile_size };
 }
 
-auto gse::renderer::light_culling::system::update_depth_descriptor(const gpu::context::data& gpu_s, data& d) -> void {
-	d.depth_view.rebind_sampled(*gpu_s.bindless_heaps, gpu_s.render_graph->depth_image());
+auto update_depth_descriptor(const gpu::context::data& gpu_s, system::data& d) -> void {
+	if (!d.depth_view.valid()) { d.depth_view = gpu_s.device->allocate_image_slot(); }
+	gpu_s.device->write_sampled_image(d.depth_view.slot(), gpu_s.render_graph->depth_image());
 }
 
-auto gse::renderer::light_culling::system::rebuild_tile_buffers(const gpu::context::data& gpu_s, data& d) -> void {
+auto rebuild_tile_buffers(const gpu::context::data& gpu_s, system::data& d) -> void {
 	const auto ext = gpu_s.render_graph->extent();
-	d.current_extent = ext;
+	d.current_width = ext.x();
+	d.current_height = ext.y();
 
 	const auto tiles = tile_count(d);
 	const std::uint32_t total_tiles = tiles.x() * tiles.y();
 	const std::uint32_t index_list_size = total_tiles * max_lights_per_tile * sizeof(std::uint32_t);
 	const std::uint32_t tile_table_size = total_tiles * 2 * sizeof(std::uint32_t);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-		d.light_index_list_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+		d.light_index_list_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = index_list_size,
-				.usage = gpu::buffer_flag::storage
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
 			}
 		);
 
-		d.tile_light_table_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.tile_light_table_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = tile_table_size,
-				.usage = gpu::buffer_flag::storage
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
 			}
 		);
 	}
 
 	update_depth_descriptor(gpu_s, d);
 }
+}
 
 auto gse::renderer::light_culling::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-		d.culling_params_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+		d.culling_params_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = sizeof(culling_params_data),
-				.usage = gpu::buffer_flag::uniform
+				.usage = gpu::buffer_flag::uniform,
+				.bindless = true
 			}
 		);
 
-		d.light_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.light_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = sizeof(shaders::forward::light) * max_lights,
-				.usage = gpu::buffer_flag::storage
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
 			}
 		);
 	}
 
-	d.depth_sampler = gpu::bindless_sampler::create(
-		*gpu_s.bindless_heaps,
+	d.depth_sampler = gpu_s.device->register_sampler(
 		{
 			.min = gpu::sampler_filter::nearest,
 			.mag = gpu::sampler_filter::nearest,
@@ -260,7 +260,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 	}
 
 	if (light_count > 0) {
-		light_alloc.buffer().host_write(lights.data(), light_count * sizeof(shaders::forward::light));
+		light_alloc.host_write(lights.data(), light_count * sizeof(shaders::forward::light));
 	}
 
 	const culling_params_data params{
@@ -269,7 +269,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 		.screen_size = vec2u{ extent.x(), extent.y() },
 		.num_lights = static_cast<std::uint32_t>(light_count),
 	};
-	d.culling_params_buffers[frame_index].buffer().host_write(params);
+	d.culling_params_buffers[frame_index].host_write(params);
 
 	const auto tiles = tile_count(d);
 
@@ -279,7 +279,7 @@ auto gse::renderer::light_culling::system::frame(frame_context& ctx, shared_view
 
 	rec.dispatch<entry>(
 		{
-			.depth_texture = { d.depth_view.sampled_slot(), d.depth_sampler.slot() },
+			.depth_texture = { d.depth_view.slot(), d.depth_sampler.slot() },
 			.culling_params = d.culling_params_buffers[frame_index].slot(),
 			.lights = d.light_buffers[frame_index].slot(),
 			.light_index_list = d.light_index_list_buffers[frame_index].slot(),

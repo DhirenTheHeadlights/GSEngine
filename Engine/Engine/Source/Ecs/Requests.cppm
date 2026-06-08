@@ -3,6 +3,7 @@ export module gse.ecs:requests;
 import std;
 
 import gse.core;
+import gse.math;
 
 export namespace gse {
 	struct set_networked_request {
@@ -22,4 +23,10 @@ export namespace gse {
 	};
 
 	struct deactivate_active_scene_request {};
+
+	struct camera_yaw_request {};
+
+	struct camera_yaw_response {
+		angle yaw{};
+	};
 }

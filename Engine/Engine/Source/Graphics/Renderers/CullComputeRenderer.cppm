@@ -21,8 +21,8 @@ export namespace gse::renderer::cull_compute {
 			bool enabled = true;
 
 			gpu::shader_program pipeline;
-			per_frame_resource<gpu::bindless_buffer> frustum_buffer;
-			per_frame_resource<gpu::bindless_buffer> batch_info_buffer;
+			per_frame_resource<gpu::buffer> frustum_buffer;
+			per_frame_resource<gpu::buffer> batch_info_buffer;
 		};
 
 		static auto run(

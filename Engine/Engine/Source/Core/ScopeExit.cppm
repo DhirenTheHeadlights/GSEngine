@@ -32,7 +32,7 @@ export namespace gse {
 			std::is_nothrow_move_constructible_v<F>
 		);
 
-		~scope_exit() noexcept override;
+		~scope_exit() noexcept;
 
 		auto release() noexcept -> void;
 

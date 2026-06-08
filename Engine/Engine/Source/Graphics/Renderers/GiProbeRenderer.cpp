@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:gi_probe_renderer_impl;
 
 import std;
 
@@ -8,6 +8,7 @@ import :camera_system;
 import :geometry_collector;
 import :rt_shadow_renderer;
 import :shared_shaders;
+
 
 import gse.gpu;
 import gse.core;
@@ -84,28 +85,30 @@ auto gse::renderer::gi_probe::atlas_extent() -> vec2u {
 
 auto gse::renderer::gi_probe::recreate_atlas(const gpu::context::data& gpu_s, system::data& d) -> void {
 	const auto ext = atlas_extent();
-	d.irradiance_atlas = gpu::bindless_image::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.irradiance_atlas = gpu_s.device->create_image(
 		{
 			.size = ext,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.bindless = true,
 		},
 		"gi_irradiance_atlas"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.irradiance_atlas.image());
+	gpu::transition_image_to(*gpu_s.device, d.irradiance_atlas);
 }
 
 auto gse::renderer::gi_probe::rebind_tlas_views(const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, system::data& d) -> void {
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_tlas_view>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
 		const auto fi = static_cast<std::uint32_t>(i);
-		d.tlas_views[i].rebind(gpu_s.device->allocator(), *gpu_s.bindless_heaps, (*rt_state.tlas_ptrs[fi]).handle());
+		if (!d.tlas_views[i].valid()) {
+			d.tlas_views[i] = gpu_s.device->allocate_buffer_slot();
+		}
+		gpu_s.device->write_acceleration_structure(d.tlas_views[i].slot(), (*rt_state.tlas_ptrs[fi]).device_address());
 	}
 }
 
 auto gse::renderer::gi_probe::system::run(run_context& ctx, const gpu::context::data& gpu_s, const rt_shadow::system::data& rt_state, const geometry_collector::system::data& gc_state, data& d) -> async::task<> {
-	d.update_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+	d.update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	recreate_atlas(gpu_s, d);
 	rebind_tlas_views(gpu_s, rt_state, d);

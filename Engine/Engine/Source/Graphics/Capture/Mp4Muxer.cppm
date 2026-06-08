@@ -7,6 +7,17 @@ import gse.gpu;
 
 export namespace gse::renderer::capture::mp4 {
 	struct track_info {
+		track_info()
+			: codec(gpu::video_codec::av1), extent() {
+		}
+
+		track_info(
+			gpu::video_codec codec,
+			vec2u extent
+		)
+			: codec(codec), extent(extent) {
+		}
+
 		gpu::video_codec codec;
 		vec2u extent;
 	};

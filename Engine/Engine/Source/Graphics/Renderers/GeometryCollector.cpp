@@ -1,4 +1,4 @@
-module gse.graphics;
+module gse.graphics:geometry_collector_impl;
 
 import std;
 
@@ -10,6 +10,8 @@ import :render_component;
 import :material;
 import :primitive_resolver;
 import :texture;
+import :shared_shaders;
+
 
 import gse.math;
 import gse.core;
@@ -24,7 +26,6 @@ import gse.gpu;
 import gse.physics;
 import gse.meta;
 
-import :shared_shaders;
 
 namespace gse::renderer::geometry_collector {
 	auto material_palette_index(
@@ -299,36 +300,33 @@ auto gse::renderer::geometry_collector::initialize(run_context& ctx, const gpu::
 	constexpr std::size_t material_buffer_size = system::data::max_materials * sizeof(shaders::forward::material_data);
 	d.material_staging.reserve(material_buffer_size);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t instance_buffer_size = system::data::max_instances * sizeof(shaders::common::instance_data);
-		d.instance_buffer[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.instance_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = instance_buffer_size,
-				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst
+				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src | gpu::buffer_flag::transfer_dst,
+				.bindless = true
 			},
 			"gc_instance_buffer"
 		);
 
 		constexpr std::size_t normal_indirect_buffer_size =
 			render_data::max_batches * sizeof(gpu::draw_mesh_tasks_indirect_command);
-		d.normal_indirect_commands_buffer[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.normal_indirect_commands_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = normal_indirect_buffer_size,
-				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
+				.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst,
+				.bindless = true
 			},
 			"gc_indirect_commands"
 		);
 
-		d.material_palette_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.material_palette_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = material_buffer_size,
-				.usage = gpu::buffer_flag::storage
+				.usage = gpu::buffer_flag::storage,
+				.bindless = true
 			},
 			"gc_material_palette"
 		);
@@ -413,11 +411,11 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	if (!data.instance_staging.empty()) {
-		d.instance_buffer[frame_index].buffer().host_write(data.instance_staging);
+		d.instance_buffer[frame_index].host_write(data.instance_staging);
 	}
 
 	if (!data.normal_batches.empty()) {
-		static_vector<gpu::draw_mesh_tasks_indirect_command, render_data::max_batches> normal_indirect_commands;
+		std::inplace_vector<gpu::draw_mesh_tasks_indirect_command, render_data::max_batches> normal_indirect_commands;
 
 		for (const auto& batch : data.normal_batches) {
 			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
@@ -431,7 +429,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 		}
 
 		if (!normal_indirect_commands.empty()) {
-			d.normal_indirect_commands_buffer[frame_index].buffer().host_write(normal_indirect_commands);
+			d.normal_indirect_commands_buffer[frame_index].host_write(normal_indirect_commands);
 		}
 	}
 
@@ -449,7 +447,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 				continue;
 			}
 			const auto& diffuse = mat_ptr->diffuse_texture;
-			const auto diffuse_slot = diffuse.valid() ? diffuse->bindless_slot() : gpu::bindless_texture_slot{};
+			const auto diffuse_slot = diffuse.valid() ? diffuse->bindless_slot() : gpu::bindless_slot{};
 			staging_materials[idx] = {
 				.base_color = mat_ptr->base_color,
 				.roughness = mat_ptr->roughness,
@@ -458,7 +456,7 @@ auto gse::renderer::geometry_collector::system::frame(frame_context& ctx, shared
 			};
 		}
 
-		d.material_palette_buffers[frame_index].buffer().host_write(
+		d.material_palette_buffers[frame_index].host_write(
 			mat_staging.data(),
 			material_count * sizeof(shaders::forward::material_data)
 		);

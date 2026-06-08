@@ -193,75 +193,19 @@ namespace gse {
 
 	template <typename... Accesses>
 	auto acquire_trace_id() -> id;
+
+	template <typename S, typename... Args>
+	auto queue_add_system_helper(
+		scheduler& sched,
+		Args&&... args
+	) -> void;
 }
 
 gse::run_context::run_context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, gse::registry& reg, async::rw_mutex_registry& access_mutexes, async::manual_event& resume_event, async::manual_event& paused_event, bool& is_in_update_loop, bool& settled)
 	: task_context{ states, resources_store, channels_store, channels, graph, true }, m_sched(sched), m_reg(reg), m_access_mutexes(access_mutexes), m_resume_event(resume_event), m_paused_event(paused_event), m_is_in_update_loop(is_in_update_loop), m_settled(settled) {
 }
 
-auto gse::run_context::next_tick() -> async::task<> {
-	const int locks = held_lock_count();
-	assert(
-		locks == 0,
-		"system held {} component lock(s) across co_await ctx.next_tick(); scope your acquire<> so the locked handle "
-		"is destroyed before next_tick",
-		locks
-	);
-	m_is_in_update_loop = true;
-	m_settled = true;
-	m_paused_event.set();
-	co_await m_resume_event.wait();
-	m_resume_event.reset();
-}
 
-auto gse::run_context::yield_tick() -> async::task<> {
-	const int locks = held_lock_count();
-	assert(
-		locks == 0,
-		"system held {} component lock(s) across co_await ctx.yield_tick(); scope your acquire<> so the locked handle "
-		"is destroyed before yield_tick",
-		locks
-	);
-	m_paused_event.set();
-	co_await m_resume_event.wait();
-	m_resume_event.reset();
-}
-
-auto gse::acquire_shared(async::rw_mutex_registry& mutexes, const id type) -> async::task<> {
-	auto& mutex = mutexes.mutex_for(type);
-	co_await mutex.lock_shared();
-}
-
-auto gse::acquire_exclusive(async::rw_mutex_registry& mutexes, const id type) -> async::task<> {
-	auto& mutex = mutexes.mutex_for(type);
-	co_await mutex.lock_exclusive();
-}
-
-auto gse::acquire_locks_in_sorted_order(async::rw_mutex_registry& mutexes, const std::span<const id> type_ids, const std::span<const lock_fn> fns, const id trace_id) -> async::task<> {
-	constexpr std::size_t max_arity = 16;
-	const std::size_t count = type_ids.size();
-	assert(count <= max_arity, "acquire arity {} exceeds max {}", count, max_arity);
-
-	std::array<std::size_t, max_arity> order_buf{};
-	const std::span order(order_buf.data(), count);
-	std::ranges::iota(
-		order,
-		std::size_t{ 0 }
-	);
-	std::ranges::sort(
-		order,
-		[type_ids](const std::size_t a, const std::size_t b) {
-			return type_ids[a] < type_ids[b];
-		}
-	);
-
-	const auto key = trace::allocate_async_key();
-	trace::begin_async(trace_id, key);
-	for (const std::size_t i : order) {
-		co_await fns[i](mutexes, type_ids[i]);
-	}
-	trace::end_async(trace_id, key);
-}
 
 auto gse::format_access_label(const std::string_view tag, const std::string_view type_name) -> std::string {
 	return std::format("{}<{}>", tag, type_name);
@@ -394,4 +338,9 @@ auto gse::run_context::remove_component(const id owner) -> void {
 template <typename T>
 auto gse::run_context::ensure_storage() -> void {
 	m_reg.ensure_storage<T>();
+}
+
+template <typename S, typename... Args>
+auto gse::run_context::add_system(Args&&... args) -> void {
+	queue_add_system_helper<S>(m_sched, std::forward<Args>(args)...);
 }

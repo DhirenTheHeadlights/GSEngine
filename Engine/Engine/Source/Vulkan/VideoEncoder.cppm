@@ -4,15 +4,13 @@ import std;
 import vulkan;
 import vulkan_video;
 
-import :handles;
 import :types;
-import :allocation;
-import :buffer;
-import :fence;
-import :image;
+import gse.gpu_backend;
 import :device;
 import :physical_device;
 import :queues;
+
+import gse.assert;
 
 import gse.core;
 import gse.containers;
@@ -44,8 +42,7 @@ export namespace gse::vulkan {
 
 	class video_encoder final : public non_copyable {
 	public:
-		video_encoder() = default;
-
+		video_encoder() {}
 		video_encoder(
 			video_encoder&&
 		) noexcept = default;
@@ -68,8 +65,8 @@ export namespace gse::vulkan {
 
 		auto encode_frame(
 			std::uint32_t frame_slot,
-			gpu::image_handle y_plane,
-			gpu::image_handle uv_plane
+			gpu::handle<gpu::image> y_plane,
+			gpu::handle<gpu::image> uv_plane
 		) -> void;
 
 		auto wait(
@@ -94,7 +91,7 @@ export namespace gse::vulkan {
 			vk::raii::CommandBuffer cmd = nullptr;
 			vk::raii::Fence fence = nullptr;
 			vk::raii::QueryPool query_pool = nullptr;
-			vulkan::buffer bitstream;
+			gpu::buffer bitstream;
 			vk::Image nv12_image = nullptr;
 			vk::raii::ImageView nv12_view = nullptr;
 			vk::DeviceMemory nv12_memory = nullptr;
@@ -123,7 +120,7 @@ export namespace gse::vulkan {
 		std::vector<std::byte> m_stream_header;
 		clock m_clock;
 		video_codec m_codec = video_codec::h265;
-		vec2u m_extent{};
+		internal::vec_storage<unsigned int, 2> m_extent{};
 		std::uint64_t m_frame_number = 0;
 		std::uint32_t m_gop_size = 60;
 		device* m_device = nullptr;
@@ -166,8 +163,7 @@ namespace gse::vulkan {
 		vec2u extent,
 		vk::ImageUsageFlags usage,
 		const vk::VideoProfileListInfoKHR& profile_list
-	) -> std::
-		tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory>;
+	) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory>;
 
 	auto find_memory_type(
 		const physical_device& physical_device,
@@ -187,39 +183,40 @@ auto gse::vulkan::video_encoder::probe(device& dev, queue& q) -> encode_capabili
 		profile_chain chain{};
 		build_profile(chain, codec);
 
-		try {
-			vk::VideoCapabilitiesKHR caps;
-			if (codec == video_codec::av1) {
-				caps = std::bit_cast<vk::PhysicalDevice>(physical.handle())
-					.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeAV1CapabilitiesKHR>(chain.profile)
-					.get<vk::VideoCapabilitiesKHR>();
+		vk::VideoCapabilitiesKHR caps;
+		if (codec == video_codec::av1) {
+			auto [caps_result, caps_chain] = std::bit_cast<vk::PhysicalDevice>(physical.handle())
+				.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeAV1CapabilitiesKHR>(chain.profile);
+			if (caps_result != vk::Result::eSuccess) {
+				continue;
 			}
-			else {
-				caps = std::bit_cast<vk::PhysicalDevice>(physical.handle())
-					.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeH265CapabilitiesKHR>(chain.profile)
-					.get<vk::VideoCapabilitiesKHR>();
+			caps = caps_chain.get<vk::VideoCapabilitiesKHR>();
+		}
+		else {
+			auto [caps_result, caps_chain] = std::bit_cast<vk::PhysicalDevice>(physical.handle())
+				.getVideoCapabilitiesKHR<vk::VideoCapabilitiesKHR, vk::VideoEncodeCapabilitiesKHR, vk::VideoEncodeH265CapabilitiesKHR>(chain.profile);
+			if (caps_result != vk::Result::eSuccess) {
+				continue;
 			}
-
-			const auto codec_name = codec == video_codec::av1 ? "AV1" : "H.265";
-			log::println(
-				log::category::vulkan,
-				"Video encode probe: {} supported (max {}x{})",
-				codec_name,
-				caps.maxCodedExtent.width,
-				caps.maxCodedExtent.height
-			);
-
-			return {
-				.available = true,
-				.codec = codec,
-				.max_extent = { caps.maxCodedExtent.width, caps.maxCodedExtent.height },
-				.std_header_name = caps.stdHeaderVersion.extensionName.data(),
-				.std_header_spec_version = caps.stdHeaderVersion.specVersion
-			};
+			caps = caps_chain.get<vk::VideoCapabilitiesKHR>();
 		}
-		catch (const vk::SystemError&) {
-			continue;
-		}
+
+		const auto codec_name = codec == video_codec::av1 ? "AV1" : "H.265";
+		log::println(
+			log::category::vulkan,
+			"Video encode probe: {} supported (max {}x{})",
+			codec_name,
+			caps.maxCodedExtent.width,
+			caps.maxCodedExtent.height
+		);
+
+		return {
+			.available = true,
+			.codec = codec,
+			.max_extent = { caps.maxCodedExtent.width, caps.maxCodedExtent.height },
+			.std_header_name = caps.stdHeaderVersion.extensionName.data(),
+			.std_header_spec_version = caps.stdHeaderVersion.specVersion
+		};
 	}
 
 	log::println(log::category::vulkan, "Video encode probe: no supported codec found");
@@ -252,7 +249,7 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 		std_header_version.extensionName.begin()
 	);
 	std_header_version.specVersion = probe_caps.std_header_spec_version;
-	enc.m_session = vk_dev.createVideoSessionKHR({
+	auto [session_result, session] = vk_dev.createVideoSessionKHR({
 		.queueFamilyIndex = encode_family,
 		.pVideoProfile = &chain.profile,
 		.pictureFormat = nv12_format,
@@ -262,18 +259,23 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 		.maxActiveReferencePictures = 1,
 		.pStdHeaderVersion = &std_header_version
 	});
+	assert(session_result == vk::Result::eSuccess, "failed to create video session: {}", vk::to_string(session_result));
+	enc.m_session = std::move(session);
 
-	for (const auto& req : enc.m_session.getMemoryRequirements()) {
+	auto [reqs_result, reqs] = enc.m_session.getMemoryRequirements();
+	assert(reqs_result == vk::Result::eSuccess, "failed to query video session memory requirements: {}", vk::to_string(reqs_result));
+	for (const auto& req : reqs) {
 		const auto mem_type =
 			find_memory_type(
 				physical,
 				req.memoryRequirements.memoryTypeBits,
 				vk::MemoryPropertyFlagBits::eDeviceLocal
 			);
-		auto mem = (*vk_dev).allocateMemory({
+		auto [mem_result, mem] = (*vk_dev).allocateMemory({
 			.allocationSize = req.memoryRequirements.size,
 			.memoryTypeIndex = mem_type
 		});
+		assert(mem_result == vk::Result::eSuccess, "failed to allocate video session memory: {}", vk::to_string(mem_result));
 
 		enc.m_session.bindMemory(
 			vk::BindVideoSessionMemoryInfoKHR{
@@ -314,10 +316,12 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 			.pParametersAddInfo = &h265_add
 		};
 
-		enc.m_params = vk_dev.createVideoSessionParametersKHR({
+		auto [params_result, params] = vk_dev.createVideoSessionParametersKHR({
 			.pNext = &info,
 			.videoSession = *enc.m_session
 		});
+		assert(params_result == vk::Result::eSuccess, "failed to create video session parameters: {}", vk::to_string(params_result));
+		enc.m_params = std::move(params);
 	}
 	else {
 		const auto bit_width_minus_1 = [](const std::uint32_t value) -> std::uint8_t {
@@ -356,10 +360,12 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 			.pStdSequenceHeader = seq_header
 		};
 
-		enc.m_params = vk_dev.createVideoSessionParametersKHR({
+		auto [params_result, params] = vk_dev.createVideoSessionParametersKHR({
 			.pNext = &info,
 			.videoSession = *enc.m_session
 		});
+		assert(params_result == vk::Result::eSuccess, "failed to create video session parameters: {}", vk::to_string(params_result));
+		enc.m_params = std::move(params);
 	}
 
 	{
@@ -407,25 +413,32 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 	};
 
 	for (auto& slot : enc.m_slots) {
-		slot.pool = vk_dev.createCommandPool({
+		auto [pool_result, pool] = vk_dev.createCommandPool({
 			.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
 			.queueFamilyIndex = encode_family
 		});
+		assert(pool_result == vk::Result::eSuccess, "failed to create video command pool: {}", vk::to_string(pool_result));
+		slot.pool = std::move(pool);
 
-		auto bufs = vk_dev.allocateCommandBuffers({
+		auto [bufs_result, bufs] = vk_dev.allocateCommandBuffers({
 			.commandPool = *slot.pool,
 			.level = vk::CommandBufferLevel::ePrimary,
 			.commandBufferCount = 1
 		});
+		assert(bufs_result == vk::Result::eSuccess, "failed to allocate video command buffer: {}", vk::to_string(bufs_result));
 		slot.cmd = std::move(bufs[0]);
 
-		slot.fence = vk_dev.createFence({});
+		auto [fence_result, fence] = vk_dev.createFence({});
+		assert(fence_result == vk::Result::eSuccess, "failed to create video fence: {}", vk::to_string(fence_result));
+		slot.fence = std::move(fence);
 
-		slot.query_pool = vk_dev.createQueryPool({
+		auto [query_pool_result, query_pool] = vk_dev.createQueryPool({
 			.pNext = &feedback_info,
 			.queryType = vk::QueryType::eVideoEncodeFeedbackKHR,
 			.queryCount = 1
 		});
+		assert(query_pool_result == vk::Result::eSuccess, "failed to create video query pool: {}", vk::to_string(query_pool_result));
+		slot.query_pool = std::move(query_pool);
 
 		slot.bitstream = dev.create_buffer(
 			gpu::buffer_desc{
@@ -456,9 +469,10 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const vec2u exten
 	return enc;
 }
 
-auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, const gpu::image_handle y_plane, const gpu::image_handle uv_plane) -> void {
+auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, const gpu::handle<gpu::image> y_plane, const gpu::handle<gpu::image> uv_plane) -> void {
 	auto& slot = m_slots[frame_slot];
 	const auto& vk_dev = m_device->raii_device();
+	const auto extent = vec2u{ m_extent };
 
 	if (slot.submitted) {
 		if (vk_dev.waitForFences(*slot.fence, vk::True, std::numeric_limits<std::uint64_t>::max()) != vk::Result::eSuccess) {
@@ -537,7 +551,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 		vk::ImageCopy{
 			.srcSubresource = src_subresource,
 			.dstSubresource = y_subresource,
-			.extent = { m_extent.x(), m_extent.y(), 1 }
+			.extent = { extent.x(), extent.y(), 1 }
 		}
 	);
 
@@ -549,7 +563,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 		vk::ImageCopy{
 			.srcSubresource = src_subresource,
 			.dstSubresource = uv_subresource,
-			.extent = { m_extent.x() / 2, m_extent.y() / 2, 1 }
+			.extent = { extent.x() / 2, extent.y() / 2, 1 }
 		}
 	);
 
@@ -604,19 +618,19 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	const bool use_reference = !is_keyframe && ref_dpb.active;
 
 	vk::VideoPictureResourceInfoKHR src_picture{
-		.codedExtent = { m_extent.x(), m_extent.y() },
+		.codedExtent = { extent.x(), extent.y() },
 		.baseArrayLayer = 0,
 		.imageViewBinding = *slot.nv12_view
 	};
 
 	vk::VideoPictureResourceInfoKHR dpb_picture{
-		.codedExtent = { m_extent.x(), m_extent.y() },
+		.codedExtent = { extent.x(), extent.y() },
 		.baseArrayLayer = 0,
 		.imageViewBinding = *target_dpb.view
 	};
 
 	vk::VideoPictureResourceInfoKHR ref_picture{
-		.codedExtent = { m_extent.x(), m_extent.y() },
+		.codedExtent = { extent.x(), extent.y() },
 		.baseArrayLayer = 0,
 		.imageViewBinding = *ref_dpb.view
 	};
@@ -839,7 +853,7 @@ auto gse::vulkan::video_encoder::encode_frame(const std::uint32_t frame_slot, co
 	const gpu::submit_info submit{
 		.command_buffers = std::span(&cmd_submit, 1),
 	};
-	m_queue->submit_video_encode(submit, std::bit_cast<gpu::fence_handle>(*slot.fence));
+	m_queue->submit_video_encode(submit, std::bit_cast<gpu::handle<gpu::fence>>(*slot.fence));
 	slot.submitted = true;
 	slot.has_output = true;
 
@@ -992,7 +1006,7 @@ auto gse::vulkan::build_profile(profile_chain& chain, const video_codec codec) -
 }
 
 auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const physical_device& physical_device, vec2u extent, vk::ImageUsageFlags usage, const vk::VideoProfileListInfoKHR& profile_list) -> std::tuple<vk::Image, vk::raii::ImageView, vk::DeviceMemory> {
-	auto image = (*device).createImage({
+	auto [image_result, image] = (*device).createImage({
 		.pNext = &profile_list,
 		.imageType = vk::ImageType::e2D,
 		.format = nv12_format,
@@ -1004,6 +1018,7 @@ auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const physic
 		.usage = usage,
 		.sharingMode = vk::SharingMode::eExclusive
 	});
+	assert(image_result == vk::Result::eSuccess, "failed to create nv12 image: {}", vk::to_string(image_result));
 
 	const auto mem_reqs = (*device).getImageMemoryRequirements(image);
 	const auto mem_props = physical_device.memory_properties();
@@ -1016,19 +1031,22 @@ auto gse::vulkan::create_nv12_image(const vk::raii::Device& device, const physic
 		}
 	}
 
-	auto memory = (*device).allocateMemory({
+	auto [memory_result, memory] = (*device).allocateMemory({
 		.allocationSize = mem_reqs.size,
 		.memoryTypeIndex = mem_type
 	});
+	assert(memory_result == vk::Result::eSuccess, "failed to allocate nv12 memory: {}", vk::to_string(memory_result));
 
-	(*device).bindImageMemory(image, memory, 0);
+	const auto bind_result = (*device).bindImageMemory(image, memory, 0);
+	assert(bind_result == vk::Result::eSuccess, "failed to bind nv12 image memory: {}", vk::to_string(bind_result));
 
-	auto view = device.createImageView({
+	auto [view_result, view] = device.createImageView({
 		.image = image,
 		.viewType = vk::ImageViewType::e2D,
 		.format = nv12_format,
 		.subresourceRange = color_subresource_range
 	});
+	assert(view_result == vk::Result::eSuccess, "failed to create nv12 image view: {}", vk::to_string(view_result));
 
 	return { image, std::move(view), memory };
 }

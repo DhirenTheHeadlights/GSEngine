@@ -59,7 +59,7 @@ auto gs::push_crosshair(gse::run_context& ctx, const gse::gui::system::data& gui
 	const float gap = crosshair_d.gap;
 	const float outline = crosshair_d.outline_thickness;
 
-	const auto push_arm = [&](const gse::gui::ui_rect& r) {
+	const auto push_arm = [&](const gse::rect_t<gse::vec2f>& r) {
 		if (outline > 0.f) {
 			ctx.channels.push<gse::renderer::sprite_command>({
 				.rect = r.inset({ -outline, -outline }),
@@ -77,19 +77,19 @@ auto gs::push_crosshair(gse::run_context& ctx, const gse::gui::system::data& gui
 	};
 
 	if (arm > 0.f) {
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() - gap - arm, center.y() + thickness * 0.5f },
 			{ arm, thickness }
 		));
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() + gap, center.y() + thickness * 0.5f },
 			{ arm, thickness }
 		));
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() - thickness * 0.5f, center.y() + gap + arm },
 			{ thickness, arm }
 		));
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() - thickness * 0.5f, center.y() - gap },
 			{ thickness, arm }
 		));
@@ -97,7 +97,7 @@ auto gs::push_crosshair(gse::run_context& ctx, const gse::gui::system::data& gui
 
 	if (crosshair_d.show_dot) {
 		const float dot = crosshair_d.dot_size;
-		push_arm(gse::gui::ui_rect::from_position_size(
+		push_arm(gse::rect_t<gse::vec2f>::from_position_size(
 			{ center.x() - dot * 0.5f, center.y() + dot * 0.5f },
 			{ dot, dot }
 		));
@@ -120,7 +120,7 @@ auto gs::push_recording_indicator(gse::run_context& ctx, const gse::gui::system:
 	const auto t = gse::system_clock::now();
 	const auto pulse = 0.55f + 0.45f * gse::sin(t * 4.f);
 
-	const auto rect = gse::gui::ui_rect::from_position_size(
+	const auto rect = gse::rect_t<gse::vec2f>::from_position_size(
 		top_left,
 		{ dot_size, dot_size }
 	);

@@ -1,6 +1,8 @@
-module gse.os;
+module gse.os:image_loader_impl;
 
 import std;
+
+import :image_loader;
 
 import gse.assert;
 import gse.math;

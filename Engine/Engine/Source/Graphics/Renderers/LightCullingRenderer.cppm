@@ -2,11 +2,7 @@ export module gse.graphics:light_culling_renderer;
 
 import std;
 
-import :point_light;
-import :spot_light;
-import :directional_light;
 import :camera_system;
-import :depth_prepass_renderer;
 import :atmosphere_renderer;
 import gse.os;
 import gse.assets;
@@ -25,17 +21,18 @@ export namespace gse::renderer::light_culling {
 
 	struct system {
 		struct data {
-			vec2u current_extent{};
+			std::uint32_t current_width = 0;
+			std::uint32_t current_height = 0;
 
 			gpu::shader_program pipeline;
 
-			per_frame_resource<gpu::bindless_buffer> culling_params_buffers;
-			per_frame_resource<gpu::bindless_buffer> light_buffers;
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> light_index_list_buffers;
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> tile_light_table_buffers;
+			per_frame_resource<gpu::buffer> culling_params_buffers;
+			per_frame_resource<gpu::buffer> light_buffers;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> light_index_list_buffers;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> tile_light_table_buffers;
 
-			gpu::bindless_sampler depth_sampler;
-			gpu::bindless_image_view depth_view;
+			gpu::bindless_handle depth_sampler;
+			gpu::bindless_handle depth_view;
 		};
 
 		static auto run(
@@ -52,20 +49,5 @@ export namespace gse::renderer::light_culling {
 			shared_view<camera::system> cam_state,
 			shared_view<atmosphere::system> atm_state
 		) -> async::task<>;
-
-	private:
-		static auto tile_count(
-			const data& d
-		) -> vec2u;
-
-		static auto update_depth_descriptor(
-			const gpu::context::data& gpu_s,
-			data& d
-		) -> void;
-
-		static auto rebuild_tile_buffers(
-			const gpu::context::data& gpu_s,
-			data& d
-		) -> void;
 	};
 }
