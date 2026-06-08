@@ -25,7 +25,7 @@ export namespace gse::vulkan {
 			device& device
 		) -> queue_timeline;
 
-		[[nodiscard]] auto handle() const -> gpu::semaphore_handle;
+		[[nodiscard]] auto handle() const -> gpu::handle<gpu::semaphore>;
 
 		[[nodiscard]] auto read() const -> std::uint64_t;
 
@@ -36,15 +36,15 @@ export namespace gse::vulkan {
 	private:
 		queue_timeline(
 			device& device,
-			gpu::semaphore_handle handle
+			gpu::handle<gpu::semaphore> handle
 		);
 
 		device* m_device = nullptr;
-		gpu::semaphore_handle m_semaphore;
+		gpu::handle<gpu::semaphore> m_semaphore;
 	};
 }
 
-gse::vulkan::queue_timeline::queue_timeline(device& device, const gpu::semaphore_handle handle)
+gse::vulkan::queue_timeline::queue_timeline(device& device, const gpu::handle<gpu::semaphore> handle)
 	: m_device(&device), m_semaphore(handle) {
 }
 
@@ -77,7 +77,7 @@ auto gse::vulkan::queue_timeline::create(device& device) -> queue_timeline {
 	return queue_timeline(device, device.create_timeline_semaphore(0));
 }
 
-auto gse::vulkan::queue_timeline::handle() const -> gpu::semaphore_handle {
+auto gse::vulkan::queue_timeline::handle() const -> gpu::handle<gpu::semaphore> {
 	return m_semaphore;
 }
 

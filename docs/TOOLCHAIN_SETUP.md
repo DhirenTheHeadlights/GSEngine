@@ -6,6 +6,10 @@ clang-p2996 toolchain — you download it, you don't build it.
 
 ## Teammates: install + build
 
+`python bootstrap.py` is the one-shot entry point: it inits submodules, installs the
+GCC trunk toolchain, and provisions Ninja into `~/.gcc-trunk/ninja` (the CMake presets
+add that to `PATH`, so no global install is needed). To run only the toolchain step:
+
 ```
 python scripts/install_gcc_trunk.py --persist
 cmake --preset x64-mingw-gcc-Release

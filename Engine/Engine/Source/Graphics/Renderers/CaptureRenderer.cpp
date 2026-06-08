@@ -74,7 +74,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 	else {
 		const auto half_ext = vec2u{ ext.x() / 2, ext.y() / 2 };
 
-		d.convert_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+		d.convert_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 		constexpr gpu::sampler_desc capture_sampler_desc{
 			.min = gpu::sampler_filter::nearest,
@@ -85,7 +85,7 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 		};
 
 		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
-			d.rgba_captures[i] = gpu_s.device->allocator().create_image(
+			d.rgba_captures[i] = gpu_s.device->create_image(
 				{
 					.size = ext,
 					.format = gpu::image_format::r8g8b8a8_unorm,
@@ -93,31 +93,29 @@ auto gse::renderer::capture::system::run(run_context& ctx, const gpu::context::d
 				}
 			);
 
-			d.rgba_slots[i] = gpu_s.bindless_textures->allocate(d.rgba_captures[i], capture_sampler_desc);
+			d.rgba_slots[i] = gpu_s.device->register_texture(d.rgba_captures[i], capture_sampler_desc);
 
-			d.y_planes[i] = gpu::bindless_image::create(
-				gpu_s.device->allocator(),
-				*gpu_s.bindless_heaps,
+			d.y_planes[i] = gpu_s.device->create_image(
 				{
 					.size = ext,
 					.format = gpu::image_format::r8_unorm,
 					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
+					.bindless = true
 				},
 				"capture.y_plane"
 			);
-			gpu::transition_image_to(*gpu_s.device, d.y_planes[i].image());
+			gpu::transition_image_to(*gpu_s.device, d.y_planes[i]);
 
-			d.uv_planes[i] = gpu::bindless_image::create(
-				gpu_s.device->allocator(),
-				*gpu_s.bindless_heaps,
+			d.uv_planes[i] = gpu_s.device->create_image(
 				{
 					.size = half_ext,
 					.format = gpu::image_format::r8g8_unorm,
 					.usage = gpu::image_flag::storage | gpu::image_flag::transfer_src,
+					.bindless = true
 				},
 				"capture.uv_plane"
 			);
-			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i].image());
+			gpu::transition_image_to(*gpu_s.device, d.uv_planes[i]);
 		}
 
 		d.encoder = std::move(*encoder);
@@ -227,8 +225,8 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		}
 		d.encoder.encode_frame(
 			frame_index,
-			d.y_planes[frame_index].image().handle(),
-			d.uv_planes[frame_index].image().handle()
+			d.y_planes[frame_index].handle(),
+			d.uv_planes[frame_index].handle()
 		);
 	}
 
@@ -390,7 +388,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 		const auto ext = gpu_s.render_graph->extent();
 
 		if (const auto needed = static_cast<std::size_t>(ext.x()) * ext.y() * 4; !staging.valid() || staging.size() < needed) {
-			staging = gpu_s.device->allocator().create_buffer(
+			staging = gpu_s.device->create_buffer(
 				{
 					.size = needed,
 					.usage = gpu::buffer_flag::transfer_dst,
@@ -418,7 +416,7 @@ auto gse::renderer::capture::system::frame(const frame_context& ctx, shared_view
 
 	const push_constants convert_pc{
 		.extent = ext,
-		.rgba_index = d.rgba_slots[frame_index].valid() ? d.rgba_slots[frame_index].index : shaders::bindless::invalid_index,
+		.rgba_index = d.rgba_slots[frame_index].valid() ? d.rgba_slots[frame_index].slot().index : shaders::bindless::invalid_index,
 	};
 
 	auto rec = co_await gpu::pass<system>(ctx).pipeline(d.convert_pipeline).after<ui::system>();

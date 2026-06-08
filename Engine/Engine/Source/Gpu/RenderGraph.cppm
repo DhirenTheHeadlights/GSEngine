@@ -6,7 +6,6 @@ import :aliases;
 import :device;
 import :swap_chain;
 import :frame;
-import :bindless;
 import :pipeline_builder;
 import :transient_pool;
 import :image;
@@ -253,7 +252,7 @@ export namespace gse::gpu {
 		gpu::pass_recorder m_recorder;
 		render_pass_data* m_pass = nullptr;
 		const gpu::transient_pool* m_transient_pool = nullptr;
-		bindless_heaps* m_bindless_heaps = nullptr;
+		gpu::device* m_device = nullptr;
 		std::vector<touched_resource> m_touched;
 		std::thread::id m_origin_thread;
 		pipeline_state_cache m_state_cache;
@@ -263,7 +262,7 @@ export namespace gse::gpu {
 			pass_recorder rec,
 			render_pass_data* pass,
 			const gpu::transient_pool* transient_pool,
-			bindless_heaps* heaps
+			gpu::device* device
 		);
 
 		auto check_active() const -> void;
@@ -308,9 +307,7 @@ export namespace gse::gpu {
 		explicit render_graph(
 			gpu::device& device,
 			gpu::swap_chain& swapchain,
-			gpu::frame& frame,
-			gpu::bindless_texture_set* bindless = nullptr,
-			bindless_heaps* heaps = nullptr
+			gpu::frame& frame
 		);
 
 		auto execute(
@@ -362,8 +359,8 @@ export namespace gse::gpu {
 		static constexpr std::uint32_t max_profiled_passes = 128;
 
 		struct gpu_profile_slot {
-			gpu::query_pool timestamp_pool;
-			gpu::query_pool stats_pool;
+			gpu::handle<gpu::query_pool> timestamp_pool;
+			gpu::handle<gpu::query_pool> stats_pool;
 			std::vector<id> pass_types;
 			std::vector<gpu::queue_type> pass_queues;
 			std::uint32_t pass_count = 0;
@@ -395,15 +392,13 @@ export namespace gse::gpu {
 		};
 
 		struct queue_state {
-			gpu::semaphore timeline;
+			gpu::handle<gpu::semaphore> timeline;
 			std::uint64_t signal_counter = 0;
 		};
 
 		gpu::device* m_device;
 		gpu::swap_chain* m_swapchain;
 		gpu::frame* m_frame;
-		gpu::bindless_texture_set* m_bindless = nullptr;
-		bindless_heaps* m_bindless_heaps = nullptr;
 		gpu::transient_pool m_transient_pool;
 		std::unordered_map<id, std::unique_ptr<registered_image>> m_framebuffer_images;
 		std::array<per_frame_resource<gpu_profile_slot>, gpu::queue_type_count> m_profile_slots{
@@ -427,8 +422,8 @@ namespace gse::gpu {
 	inline thread_local recording_context* tl_active_recording_context = nullptr;
 }
 
-gse::gpu::recording_context::recording_context(pass_recorder rec, render_pass_data* pass, const gpu::transient_pool* transient_pool, bindless_heaps* heaps)
-	: m_recorder(rec), m_pass(pass), m_transient_pool(transient_pool), m_bindless_heaps(heaps) {
+gse::gpu::recording_context::recording_context(pass_recorder rec, render_pass_data* pass, const gpu::transient_pool* transient_pool, gpu::device* device)
+	: m_recorder(rec), m_pass(pass), m_transient_pool(transient_pool), m_device(device) {
 	if (m_recorder.valid()) {
 		assert(
 			tl_active_recording_context == nullptr,
@@ -441,7 +436,7 @@ gse::gpu::recording_context::recording_context(pass_recorder rec, render_pass_da
 }
 
 gse::gpu::recording_context::recording_context(recording_context&& other) noexcept
-	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_bindless_heaps(other.m_bindless_heaps), m_touched(std::move(other.m_touched)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid) {
+	: m_recorder(other.m_recorder), m_pass(other.m_pass), m_transient_pool(other.m_transient_pool), m_device(other.m_device), m_touched(std::move(other.m_touched)), m_origin_thread(other.m_origin_thread), m_state_cache(other.m_state_cache), m_bindless_heaps_valid(other.m_bindless_heaps_valid) {
 	if (tl_active_recording_context == &other) {
 		tl_active_recording_context = this;
 	}
@@ -449,7 +444,7 @@ gse::gpu::recording_context::recording_context(recording_context&& other) noexce
 	other.m_recorder = pass_recorder{};
 	other.m_pass = nullptr;
 	other.m_transient_pool = nullptr;
-	other.m_bindless_heaps = nullptr;
+	other.m_device = nullptr;
 	other.m_bindless_heaps_valid = false;
 }
 
@@ -472,7 +467,7 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		m_recorder = other.m_recorder;
 		m_pass = other.m_pass;
 		m_transient_pool = other.m_transient_pool;
-		m_bindless_heaps = other.m_bindless_heaps;
+		m_device = other.m_device;
 		m_touched = std::move(other.m_touched);
 		m_origin_thread = other.m_origin_thread;
 		m_state_cache = other.m_state_cache;
@@ -484,7 +479,7 @@ auto gse::gpu::recording_context::operator=(recording_context&& other) noexcept 
 		other.m_recorder = pass_recorder{};
 		other.m_pass = nullptr;
 		other.m_transient_pool = nullptr;
-		other.m_bindless_heaps = nullptr;
+		other.m_device = nullptr;
 		other.m_bindless_heaps_valid = false;
 	}
 	return *this;
@@ -566,20 +561,20 @@ auto gse::gpu::recording_context::ensure_descriptor_heaps() -> void {
 	if (m_bindless_heaps_valid) {
 		return;
 	}
-	assert(m_bindless_heaps != nullptr, "recording_context has no bindless heaps");
-	const auto& resource_h = m_bindless_heaps->resource_heap();
+	assert(m_device != nullptr, "recording_context has no device");
+	const auto resource_binding = m_device->bindless_resource_heap_binding();
 	m_recorder.bind_resource_heap(
-		resource_h.buffer_address(),
-		resource_h.buffer_size(),
-		resource_h.reserved_offset(),
-		resource_h.reserved_size()
+		resource_binding.address,
+		resource_binding.size,
+		resource_binding.reserved_offset,
+		resource_binding.reserved_size
 	);
-	const auto& sampler_h = m_bindless_heaps->sampler_heap();
+	const auto sampler_binding = m_device->bindless_sampler_heap_binding();
 	m_recorder.bind_sampler_heap(
-		sampler_h.buffer_address(),
-		sampler_h.buffer_size(),
-		sampler_h.reserved_offset(),
-		sampler_h.reserved_size()
+		sampler_binding.address,
+		sampler_binding.size,
+		sampler_binding.reserved_offset,
+		sampler_binding.reserved_size
 	);
 	m_bindless_heaps_valid = true;
 }
@@ -1049,7 +1044,7 @@ auto gse::gpu::recording_context::bind(const gpu::shader_program& p) -> void {
 			gpu::stage_flag::task,
 			gpu::stage_flag::mesh,
 		};
-		std::array<gpu::shader_object_handle, 4> bound{};
+		std::array<gpu::handle<gpu::shader_object>, 4> bound{};
 		const auto stages = p.stages();
 		const auto handles = p.shader_handles();
 		for (std::size_t i = 0; i < all_graphics_stages.size(); ++i) {
@@ -1151,8 +1146,8 @@ namespace gse::gpu {
 		gpu::pipeline_statistic_flag::fragment_shader_invocations;
 }
 
-gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame, gpu::bindless_texture_set* bindless, bindless_heaps* heaps)
-	: m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_bindless(bindless), m_bindless_heaps(heaps), m_transient_pool(device) {
+gse::gpu::render_graph::render_graph(gpu::device& device, gpu::swap_chain& swapchain, gpu::frame& frame)
+	: m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)), m_transient_pool(device) {
 	m_timestamp_period_per_tick = nanoseconds(static_cast<double>(device.timestamp_period()));
 	for (auto& q : m_queue_states) {
 		q.timeline = device.create_timeline_semaphore(0);
@@ -1167,7 +1162,7 @@ auto gse::gpu::render_graph::create_framebuffer_image(const framebuffer_image_de
 	if (ext.x() == 0 || ext.y() == 0) {
 		return {};
 	}
-	auto img = m_device->allocator().create_image(
+	auto img = m_device->create_image(
 		gpu::image_desc{
 			.size = ext,
 			.format = desc.format,
@@ -1218,10 +1213,10 @@ auto gse::gpu::render_graph::set_swapchain_clear(const gpu::color_clear value, c
 }
 
 auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const bool allow_stats) const -> void {
-	if (!slot.timestamp_pool.valid()) {
+	if (!slot.timestamp_pool) {
 		slot.timestamp_pool = m_device->create_timestamp_query_pool(max_profiled_passes * 2 + 1);
 	}
-	if (allow_stats && !slot.stats_pool.valid()) {
+	if (allow_stats && !slot.stats_pool) {
 		slot.stats_pool = m_device->create_pipeline_stats_query_pool(max_profiled_passes, profile_stats_flags);
 	}
 }
@@ -1233,7 +1228,7 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 
 	const std::uint32_t timestamp_count = slot.pass_count * 2 + 1;
 	const auto [ts_status, timestamps] =
-		slot.timestamp_pool.results<std::uint64_t>(0, timestamp_count, sizeof(std::uint64_t));
+		m_device->query_pool_results(slot.timestamp_pool, 0, timestamp_count, sizeof(std::uint64_t));
 
 	if (ts_status != gpu::query_status::success) {
 		slot.results_valid = false;
@@ -1261,7 +1256,7 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot) -> void {
 	if (slot.stats_issued) {
 		constexpr std::uint32_t stats_per_pass = 4;
 		const auto [stats_status, stats] =
-			slot.stats_pool.results<std::uint64_t>(0, slot.pass_count, sizeof(std::uint64_t) * stats_per_pass);
+			m_device->query_pool_results(slot.stats_pool, 0, slot.pass_count, sizeof(std::uint64_t) * stats_per_pass);
 
 		if (stats_status == gpu::query_status::success) {
 			static constexpr std::array<const char*, stats_per_pass> labels{ ":ia_verts",
@@ -1446,7 +1441,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 				const gpu::commands sec_cmd(secondary);
 				sec_cmd.begin_secondary(inherit_info);
-				recording_context rec{ sec_cmd, std::addressof(pass), std::addressof(m_transient_pool), m_bindless_heaps };
+				recording_context rec{ sec_cmd, std::addressof(pass), std::addressof(m_transient_pool), m_device };
 				if (pass.primary_pipeline) {
 					rec.bind(*pass.primary_pipeline);
 				}
@@ -1554,13 +1549,13 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 	auto setup_timestamps = [&](gpu_profile_slot& s, const gpu::commands& cb, const bool with_stats) {
 		ensure_profile_pools(s, with_stats);
-		cb.reset_query_pool(s.timestamp_pool.handle(), 0, max_profiled_passes * 2 + 1);
+		cb.reset_query_pool(s.timestamp_pool, 0, max_profiled_passes * 2 + 1);
 		if (with_stats) {
-			cb.reset_query_pool(s.stats_pool.handle(), 0, max_profiled_passes);
+			cb.reset_query_pool(s.stats_pool, 0, max_profiled_passes);
 		}
 		s.cpu_ref = system_clock::now<trace::tick_step>();
 		s.frame_counter = m_frames_submitted;
-		cb.write_timestamp(gpu::pipeline_stage_flag::all_commands, s.timestamp_pool.handle(), 0);
+		cb.write_timestamp(gpu::pipeline_stage_flag::all_commands, s.timestamp_pool, 0);
 	};
 
 	if (timestamps_enabled) {
@@ -2162,14 +2157,14 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			if (profile_pass) {
 				target_primary.write_timestamp(
 					gpu::pipeline_stage_flags{},
-					target_slot.timestamp_pool.handle(),
+					target_slot.timestamp_pool,
 					1 + pass_index * 2
 				);
 				target_slot.pass_types.push_back(pass.pass_type);
 				target_slot.pass_queues.push_back(queue);
 				++target_slot.pass_count;
 				if (issue_stats) {
-					target_primary.begin_query(target_slot.stats_pool.handle(), pass_index);
+					target_primary.begin_query(target_slot.stats_pool, pass_index);
 					target_slot.stats_issued = true;
 				}
 			}
@@ -2187,7 +2182,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					const auto op = info.op;
 					const auto* color_target = resolve_color_target(info);
 
-					gpu::image_view_handle color_view;
+					gpu::handle<gpu::image_view> color_view;
 					if (color_target) {
 						color_view = color_target->view();
 						if (!extent_set) {
@@ -2215,7 +2210,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					const auto op = info.op;
 					const auto* depth_target = resolve_depth_target(info);
 
-					gpu::image_view_handle depth_view;
+					gpu::handle<gpu::image_view> depth_view;
 					if (depth_target) {
 						depth_view = depth_target->view();
 						if (!extent_set) {
@@ -2258,11 +2253,11 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 
 			if (profile_pass) {
 				if (issue_stats) {
-					target_primary.end_query(target_slot.stats_pool.handle(), pass_index);
+					target_primary.end_query(target_slot.stats_pool, pass_index);
 				}
 				target_primary.write_timestamp(
 					gpu::pipeline_stage_flag::all_commands,
-					target_slot.timestamp_pool.handle(),
+					target_slot.timestamp_pool,
 					2 + pass_index * 2
 				);
 			}
@@ -2304,7 +2299,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		sub.command_buffer = handle;
 		if (previous_value > 0) {
 			sub.waits.push_back({
-				.semaphore = state.timeline.handle(),
+				.semaphore = state.timeline,
 				.value = previous_value,
 				.stages = gpu::pipeline_stage_flag::all_commands,
 			});
@@ -2315,14 +2310,14 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 			if (queue_waits_on[qi][producer] && this_frame_signal_values[producer] > 0) {
 				sub.waits.push_back({
-					.semaphore = m_queue_states[producer].timeline.handle(),
+					.semaphore = m_queue_states[producer].timeline,
 					.value = this_frame_signal_values[producer],
 					.stages = gpu::pipeline_stage_flag::all_commands,
 				});
 			}
 		}
 		sub.signals.push_back({
-			.semaphore = state.timeline.handle(),
+			.semaphore = state.timeline,
 			.value = signal_value,
 			.stages = gpu::pipeline_stage_flag::all_commands,
 		});
@@ -2336,7 +2331,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		}
 		if (queue_waits_on[graphics_qi][producer] && this_frame_signal_values[producer] > 0) {
 			m_pending_graphics_extra_waits.push_back({
-				.semaphore = m_queue_states[producer].timeline.handle(),
+				.semaphore = m_queue_states[producer].timeline,
 				.value = this_frame_signal_values[producer],
 				.stages = gpu::pipeline_stage_flag::all_commands,
 			});

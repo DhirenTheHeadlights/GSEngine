@@ -54,7 +54,8 @@ export namespace gse::shaders {
 
 	template <typename T>
 	concept has_slang_type = requires {
-		{ slang_type<T>::name } -> std::convertible_to<std::string_view>; };
+		{ slang_type<T>::name } -> std::convertible_to<std::string_view>; 
+	};
 
 	template <typename T>
 	concept is_shader_struct = has_annotation<shader_struct_tag>(^^T);
@@ -252,8 +253,10 @@ template <gse::shaders::is_shader_enum E>
 auto gse::shaders::emit_slang_enum() -> std::string {
 	std::string out = std::format("public enum class {} {{\n", std::meta::identifier_of(^^E));
 	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
-		out += std::format("    {} = {},\n", std::meta::identifier_of(e),
-						   static_cast<std::underlying_type_t<E>>([:e:]));
+		out += std::format(
+			"    {} = {},\n", std::meta::identifier_of(e),
+			static_cast<std::underlying_type_t<E>>([:e:])
+		);
 	}
 	out += "};\n";
 	return out;

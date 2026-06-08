@@ -185,19 +185,18 @@ auto gse::renderer::atmosphere::compute_ap_volume_extent(const vec2u screen_exte
 
 auto gse::renderer::atmosphere::recreate_ap_volume(const gpu::context::data& gpu_s, system::data& d) -> void {
 	d.ap_volume_extent = compute_ap_volume_extent(gpu_s.render_graph->extent());
-	d.ap_volume = gpu::bindless_image::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.ap_volume = gpu_s.device->create_image(
 		{
 			.size = vec2u{ d.ap_volume_extent.x(), d.ap_volume_extent.y() },
 			.depth = d.ap_volume_extent.z(),
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
 			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.bindless = true,
 		},
 		"atmosphere_ap_volume"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.ap_volume.image());
+	gpu::transition_image_to(*gpu_s.device, d.ap_volume);
 }
 
 auto gse::renderer::atmosphere::compute_sun_direction(const system::data& d) -> vec3f {
@@ -227,62 +226,57 @@ auto gse::renderer::atmosphere::build_atmosphere_data(const system::data& d) -> 
 
 auto gse::renderer::atmosphere::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
 	d.transmittance_pipeline = gpu::build_compute_program(*gpu_s.device,
-														  *gpu_s.bindless_heaps,
 														  transmittance_entry::pod);
-	d.multiscatter_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, multiscatter_entry::pod);
-	d.sky_view_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, sky_view_entry::pod);
-	d.sky_raster_pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, sky_raster_entry::pod);
-	d.ap_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, ap_entry::pod);
+	d.multiscatter_pipeline = gpu::build_compute_program(*gpu_s.device, multiscatter_entry::pod);
+	d.sky_view_pipeline = gpu::build_compute_program(*gpu_s.device, sky_view_entry::pod);
+	d.sky_raster_pipeline = gpu::build_graphics_program(*gpu_s.device, sky_raster_entry::pod);
+	d.ap_pipeline = gpu::build_compute_program(*gpu_s.device, ap_entry::pod);
 
-	d.transmittance_lut = gpu::bindless_image::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.transmittance_lut = gpu_s.device->create_image(
 		{
 			.size = transmittance_lut_size,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.bindless = true,
 		},
 		"atmosphere_transmittance_lut"
 	);
-	d.multiscatter_lut = gpu::bindless_image::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.multiscatter_lut = gpu_s.device->create_image(
 		{
 			.size = multiscatter_lut_size,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.bindless = true,
 		},
 		"atmosphere_multiscatter_lut"
 	);
-	d.sky_view_lut = gpu::bindless_image::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.sky_view_lut = gpu_s.device->create_image(
 		{
 			.size = sky_view_lut_size,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+			.bindless = true,
 		},
 		"atmosphere_sky_view_lut"
 	);
-	gpu::transition_image_to(*gpu_s.device, d.transmittance_lut.image());
-	gpu::transition_image_to(*gpu_s.device, d.multiscatter_lut.image());
-	gpu::transition_image_to(*gpu_s.device, d.sky_view_lut.image());
+	gpu::transition_image_to(*gpu_s.device, d.transmittance_lut);
+	gpu::transition_image_to(*gpu_s.device, d.multiscatter_lut);
+	gpu::transition_image_to(*gpu_s.device, d.sky_view_lut);
 
 	recreate_ap_volume(gpu_s, d);
 
-	d.atmosphere_ubo_buffer = gpu::bindless_buffer::create(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
+	d.atmosphere_ubo_buffer = gpu_s.device->create_buffer(
 		{
 			.size = sizeof(atmosphere_data),
 			.usage = gpu::buffer_flag::uniform,
+			.bindless = true,
 		},
 		"atmosphere_ubo"
 	);
 
-	d.lut_sampler = gpu::must(gpu::sampler::create(gpu_s.device->allocator(), lut_sampler_desc));
-	d.lut_sampler_bindless = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, lut_sampler_desc);
-	d.sky_view_sampler_bindless = gpu::bindless_sampler::create(*gpu_s.bindless_heaps, sky_view_sampler_desc);
+	d.lut_sampler = gpu_s.device->create_sampler(lut_sampler_desc);
+	d.lut_sampler_bindless = gpu_s.device->register_sampler(lut_sampler_desc);
+	d.sky_view_sampler_bindless = gpu_s.device->register_sampler(sky_view_sampler_desc);
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
@@ -309,7 +303,7 @@ auto gse::renderer::atmosphere::system::frame(const frame_context& ctx, shared_v
 	};
 
 	const atmosphere_data shader_payload = build_atmosphere_data(d);
-	d.atmosphere_ubo_buffer.buffer().host_write(shader_payload);
+	d.atmosphere_ubo_buffer.host_write(shader_payload);
 
 	if (!d.luts_ready) {
 		const auto transmittance_groups = vec2u{

@@ -133,7 +133,7 @@ export namespace gse::gpu {
 
 		auto bind_shaders(
 			std::span<const gpu::stage_flag> stages,
-			std::span<const gpu::shader_object_handle> shaders
+			std::span<const gpu::handle<gpu::shader_object>> shaders
 		) const -> void;
 
 		auto unbind_shaders(
@@ -141,7 +141,7 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto bind_index_buffer_2(
-			gpu::buffer_handle buffer,
+			gpu::handle<gpu::buffer> buffer,
 			gpu::device_size offset,
 			gpu::device_size size,
 			gpu::index_type type
@@ -188,14 +188,14 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto draw_indexed_indirect(
-			gpu::buffer_handle buffer,
+			gpu::handle<gpu::buffer> buffer,
 			gpu::device_size offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
 		) const -> void;
 
 		auto draw_mesh_tasks_indirect(
-			gpu::buffer_handle buffer,
+			gpu::handle<gpu::buffer> buffer,
 			gpu::device_size offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
@@ -208,45 +208,45 @@ export namespace gse::gpu {
 		) const -> void;
 
 		auto dispatch_indirect(
-			gpu::buffer_handle buffer,
+			gpu::handle<gpu::buffer> buffer,
 			gpu::device_size offset
 		) const -> void;
 
 		auto copy_buffer(
-			gpu::buffer_handle src,
-			gpu::buffer_handle dst,
+			gpu::handle<gpu::buffer> src,
+			gpu::handle<gpu::buffer> dst,
 			const gpu::buffer_copy_region& region
 		) const -> void;
 
 		auto fill_buffer(
-			gpu::buffer_handle dst,
+			gpu::handle<gpu::buffer> dst,
 			gpu::device_size offset,
 			gpu::device_size size,
 			std::uint32_t data
 		) const -> void;
 
 		auto copy_buffer_to_image(
-			gpu::buffer_handle src,
-			gpu::image_handle dst,
+			gpu::handle<gpu::buffer> src,
+			gpu::handle<gpu::image> dst,
 			std::span<const gpu::buffer_image_copy_region> regions
 		) const -> void;
 
 		auto copy_image_to_buffer(
-			gpu::image_handle src,
-			gpu::buffer_handle dst,
+			gpu::handle<gpu::image> src,
+			gpu::handle<gpu::buffer> dst,
 			std::span<const gpu::buffer_image_copy_region> regions
 		) const -> void;
 
 		auto blit_image(
-			gpu::image_handle src,
-			gpu::image_handle dst,
+			gpu::handle<gpu::image> src,
+			gpu::handle<gpu::image> dst,
 			const gpu::image_blit_region& region,
 			gpu::sampler_filter filter
 		) const -> void;
 
 		auto copy_image(
-			gpu::image_handle src,
-			gpu::image_handle dst,
+			gpu::handle<gpu::image> src,
+			gpu::handle<gpu::image> dst,
 			const gpu::image_copy_region& region
 		) const -> void;
 
@@ -395,7 +395,7 @@ auto gse::gpu::pass_recorder::set_blend_constants(const std::array<float, 4> con
 	forward<"set_blend_constants">(constants);
 }
 
-auto gse::gpu::pass_recorder::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::shader_object_handle> shaders) const -> void {
+auto gse::gpu::pass_recorder::bind_shaders(const std::span<const gpu::stage_flag> stages, const std::span<const gpu::handle<gpu::shader_object>> shaders) const -> void {
 	forward<"bind_shaders">(stages, shaders);
 }
 
@@ -403,7 +403,7 @@ auto gse::gpu::pass_recorder::unbind_shaders(const std::span<const gpu::stage_fl
 	forward<"unbind_shaders">(stages);
 }
 
-auto gse::gpu::pass_recorder::bind_index_buffer_2(const gpu::buffer_handle buffer, const gpu::device_size offset, const gpu::device_size size, const gpu::index_type type) const -> void {
+auto gse::gpu::pass_recorder::bind_index_buffer_2(const gpu::handle<gpu::buffer> buffer, const gpu::device_size offset, const gpu::device_size size, const gpu::index_type type) const -> void {
 	forward<"bind_index_buffer_2">(buffer, offset, size, type);
 }
 
@@ -431,11 +431,11 @@ auto gse::gpu::pass_recorder::draw_mesh_tasks(const std::uint32_t x, const std::
 	forward<"draw_mesh_tasks">(x, y, z);
 }
 
-auto gse::gpu::pass_recorder::draw_indexed_indirect(const gpu::buffer_handle buffer, const gpu::device_size offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+auto gse::gpu::pass_recorder::draw_indexed_indirect(const gpu::handle<gpu::buffer> buffer, const gpu::device_size offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
 	forward<"draw_indexed_indirect">(buffer, offset, draw_count, stride);
 }
 
-auto gse::gpu::pass_recorder::draw_mesh_tasks_indirect(const gpu::buffer_handle buffer, const gpu::device_size offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
+auto gse::gpu::pass_recorder::draw_mesh_tasks_indirect(const gpu::handle<gpu::buffer> buffer, const gpu::device_size offset, const std::uint32_t draw_count, const std::uint32_t stride) const -> void {
 	forward<"draw_mesh_tasks_indirect">(buffer, offset, draw_count, stride);
 }
 
@@ -443,31 +443,31 @@ auto gse::gpu::pass_recorder::dispatch(const std::uint32_t x, const std::uint32_
 	forward<"dispatch">(x, y, z);
 }
 
-auto gse::gpu::pass_recorder::dispatch_indirect(const gpu::buffer_handle buffer, const gpu::device_size offset) const -> void {
+auto gse::gpu::pass_recorder::dispatch_indirect(const gpu::handle<gpu::buffer> buffer, const gpu::device_size offset) const -> void {
 	forward<"dispatch_indirect">(buffer, offset);
 }
 
-auto gse::gpu::pass_recorder::copy_buffer(const gpu::buffer_handle src, const gpu::buffer_handle dst, const gpu::buffer_copy_region& region) const -> void {
+auto gse::gpu::pass_recorder::copy_buffer(const gpu::handle<gpu::buffer> src, const gpu::handle<gpu::buffer> dst, const gpu::buffer_copy_region& region) const -> void {
 	forward<"copy_buffer">(src, dst, region);
 }
 
-auto gse::gpu::pass_recorder::fill_buffer(const gpu::buffer_handle dst, const gpu::device_size offset, const gpu::device_size size, const std::uint32_t data) const -> void {
+auto gse::gpu::pass_recorder::fill_buffer(const gpu::handle<gpu::buffer> dst, const gpu::device_size offset, const gpu::device_size size, const std::uint32_t data) const -> void {
 	forward<"fill_buffer">(dst, offset, size, data);
 }
 
-auto gse::gpu::pass_recorder::copy_buffer_to_image(const gpu::buffer_handle src, const gpu::image_handle dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
+auto gse::gpu::pass_recorder::copy_buffer_to_image(const gpu::handle<gpu::buffer> src, const gpu::handle<gpu::image> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
 	forward<"copy_buffer_to_image">(src, dst, regions);
 }
 
-auto gse::gpu::pass_recorder::copy_image_to_buffer(const gpu::image_handle src, const gpu::buffer_handle dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
+auto gse::gpu::pass_recorder::copy_image_to_buffer(const gpu::handle<gpu::image> src, const gpu::handle<gpu::buffer> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
 	forward<"copy_image_to_buffer">(src, dst, regions);
 }
 
-auto gse::gpu::pass_recorder::blit_image(const gpu::image_handle src, const gpu::image_handle dst, const gpu::image_blit_region& region, const gpu::sampler_filter filter) const -> void {
+auto gse::gpu::pass_recorder::blit_image(const gpu::handle<gpu::image> src, const gpu::handle<gpu::image> dst, const gpu::image_blit_region& region, const gpu::sampler_filter filter) const -> void {
 	forward<"blit_image">(src, dst, region, filter);
 }
 
-auto gse::gpu::pass_recorder::copy_image(const gpu::image_handle src, const gpu::image_handle dst, const gpu::image_copy_region& region) const -> void {
+auto gse::gpu::pass_recorder::copy_image(const gpu::handle<gpu::image> src, const gpu::handle<gpu::image> dst, const gpu::image_copy_region& region) const -> void {
 	forward<"copy_image">(src, dst, region);
 }
 

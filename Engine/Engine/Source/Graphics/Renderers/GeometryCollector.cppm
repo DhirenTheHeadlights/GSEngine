@@ -151,13 +151,13 @@ export namespace gse::renderer::geometry_collector {
 
 	struct system {
 		struct data {
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> instance_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
 			static constexpr std::size_t max_instances = 4096;
 			static constexpr std::size_t max_materials = 1024;
 
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> normal_indirect_commands_buffer;
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> material_palette_buffers;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
 
 			linear_vector<std::byte> material_staging;
 			std::unordered_map<id, std::vector<std::optional<spatial_matrix>>> prev_model_matrices;

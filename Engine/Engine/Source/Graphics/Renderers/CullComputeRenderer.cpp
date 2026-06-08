@@ -58,26 +58,24 @@ namespace gse::renderer::cull_compute {
 }
 
 auto gse::renderer::cull_compute::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, const geometry_collector::system::data& gc_r, data& d) -> async::task<> {
-	d.pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr std::size_t frustum_size = sizeof(std::array<vec4f, 6>);
-		d.frustum_buffer[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.frustum_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = frustum_size,
-				.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
+				.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst,
+				.bindless = true
 			}
 		);
 
 		constexpr std::size_t batch_info_size = geometry_collector::render_data::max_batches * 2 * sizeof(batch_info);
-		d.batch_info_buffer[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.batch_info_buffer[i] = gpu_s.device->create_buffer(
 			{
 				.size = batch_info_size,
-				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
+				.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst,
+				.bindless = true
 			}
 		);
 	}
@@ -110,7 +108,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<
 
 	const view_projection_matrix view_proj = data.proj * data.view;
 	const auto planes = extract_frustum_planes(view_proj);
-	d.frustum_buffer[frame_index].buffer().host_write(planes);
+	d.frustum_buffer[frame_index].host_write(planes);
 
 	using batch_info = renderer::cull_compute::batch_info;
 	std::vector<batch_info> batch_staging(normal_count);
@@ -126,7 +124,7 @@ auto gse::renderer::cull_compute::system::frame(frame_context& ctx, shared_view<
 	}
 
 	if (!batch_staging.empty()) {
-		d.batch_info_buffer[frame_index].buffer().host_write(
+		d.batch_info_buffer[frame_index].host_write(
 			batch_staging.data(),
 			batch_staging.size() * sizeof(batch_info)
 		);

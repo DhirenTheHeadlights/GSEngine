@@ -1,12 +1,12 @@
-export module gse.vulkan:allocation;
+export module gse.gpu_backend:allocation;
 
 import std;
 
-import :handles;
+import :core;
 
 import gse.core;
 
-export namespace gse::vulkan {
+export namespace gse::gpu {
 	struct sub_allocation {
 		gpu::device_size offset;
 		gpu::device_size size;
@@ -64,30 +64,30 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::allocation::allocation(const std::uint64_t memory, const gpu::device_size size, const gpu::device_size offset, void* mapped, sub_allocation* owner, allocation_debug_info debug_info)
+gse::gpu::allocation::allocation(const std::uint64_t memory, const gpu::device_size size, const gpu::device_size offset, void* mapped, sub_allocation* owner, allocation_debug_info debug_info)
 	: m_memory(memory), m_size(size), m_offset(offset), m_mapped(mapped), m_owner(owner), m_debug_info(std::move(debug_info)) {
 }
 
-auto gse::vulkan::allocation::memory() const -> std::uint64_t {
+auto gse::gpu::allocation::memory() const -> std::uint64_t {
 	return m_memory;
 }
 
-auto gse::vulkan::allocation::size() const -> gpu::device_size {
+auto gse::gpu::allocation::size() const -> gpu::device_size {
 	return m_size;
 }
 
-auto gse::vulkan::allocation::offset() const -> gpu::device_size {
+auto gse::gpu::allocation::offset() const -> gpu::device_size {
 	return m_offset;
 }
 
-auto gse::vulkan::allocation::mapped() const -> std::byte* {
+auto gse::gpu::allocation::mapped() const -> std::byte* {
 	return static_cast<std::byte*>(m_mapped);
 }
 
-auto gse::vulkan::allocation::owner() const -> sub_allocation* {
+auto gse::gpu::allocation::owner() const -> sub_allocation* {
 	return m_owner;
 }
 
-auto gse::vulkan::allocation::debug_info() const -> const allocation_debug_info& {
+auto gse::gpu::allocation::debug_info() const -> const allocation_debug_info& {
 	return m_debug_info;
 }

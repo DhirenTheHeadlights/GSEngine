@@ -17,5 +17,4 @@ export import :acceleration_structure;
 export import :buffer;
 export import :image;
 export import :pipeline_builder;
-export import :bindless;
 export import :pass_recorder;

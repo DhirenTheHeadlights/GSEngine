@@ -1,13 +1,12 @@
-export module gse.vulkan:frame_recorder;
+export module gse.gpu_backend:frame_recorder;
 
 import std;
 
-import :handles;
-import :commands;
+import :core;
 
 import gse.core;
 
-export namespace gse::vulkan {
+export namespace gse::gpu {
 	using frame_record_fn = std::move_only_function<void(gpu::command_buffer_handle)>;
 
 	class frame_recorder final : public non_copyable {
@@ -47,29 +46,29 @@ export namespace gse::vulkan {
 	};
 }
 
-gse::vulkan::frame_recorder::~frame_recorder() = default;
+gse::gpu::frame_recorder::~frame_recorder() = default;
 
-auto gse::vulkan::frame_recorder::pre_frame(frame_record_fn commands) -> void {
+auto gse::gpu::frame_recorder::pre_frame(frame_record_fn commands) -> void {
 	m_pre.push_back(std::move(commands));
 }
 
-auto gse::vulkan::frame_recorder::post_frame(frame_record_fn commands) -> void {
+auto gse::gpu::frame_recorder::post_frame(frame_record_fn commands) -> void {
 	m_post.push_back(std::move(commands));
 }
 
-auto gse::vulkan::frame_recorder::run_pre_frame(gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::frame_recorder::run_pre_frame(gpu::command_buffer_handle cmd) -> void {
 	for (auto& fn : m_pre) {
 		fn(cmd);
 	}
 }
 
-auto gse::vulkan::frame_recorder::run_post_frame(gpu::command_buffer_handle cmd) -> void {
+auto gse::gpu::frame_recorder::run_post_frame(gpu::command_buffer_handle cmd) -> void {
 	for (auto& fn : m_post) {
 		fn(cmd);
 	}
 }
 
-auto gse::vulkan::frame_recorder::clear() -> void {
+auto gse::gpu::frame_recorder::clear() -> void {
 	m_pre.clear();
 	m_post.clear();
 }

@@ -12,33 +12,6 @@ import gse.core;
 import gse.log;
 import gse.assert;
 
-export namespace gse::gpu {
-	struct semaphore_submit_info {
-		gpu::semaphore_handle semaphore;
-		std::uint64_t value = 0;
-		pipeline_stage_flags stages;
-	};
-
-	struct command_buffer_submit_info {
-		gpu::command_buffer_handle command_buffer;
-	};
-
-	struct submit_info {
-		std::span<const semaphore_submit_info> wait_semaphores;
-		std::span<const command_buffer_submit_info> command_buffers;
-		std::span<const semaphore_submit_info> signal_semaphores;
-	};
-
-	struct present_info {
-		std::span<const gpu::semaphore_handle> wait_semaphores;
-		std::span<const gpu::swap_chain_handle> swapchains;
-		std::span<const std::uint32_t> image_indices;
-		std::span<const present_mode> present_modes;
-		std::span<const gpu::fence_handle> release_fences;
-		std::span<const std::uint64_t> present_ids;
-	};
-}
-
 export namespace gse::vulkan {
 	struct queue_family {
 		std::optional<std::uint32_t> graphics_family;
@@ -52,12 +25,12 @@ export namespace gse::vulkan {
 	class queue : public non_copyable {
 	public:
 		queue(
-			gpu::queue_handle graphics,
-			gpu::queue_handle present,
-			gpu::queue_handle compute,
+			gpu::handle<gpu::queue> graphics,
+			gpu::handle<gpu::queue> present,
+			gpu::handle<gpu::queue> compute,
 			std::uint32_t graphics_family,
 			std::uint32_t compute_family,
-			gpu::queue_handle video_encode = {},
+			gpu::handle<gpu::queue> video_encode = {},
 			std::optional<std::uint32_t> video_encode_family = std::nullopt
 		);
 
@@ -82,22 +55,22 @@ export namespace gse::vulkan {
 		auto submit(
 			gpu::queue_type queue,
 			const gpu::submit_info& info,
-			gpu::fence_handle signal_fence = {}
+			gpu::handle<gpu::fence> signal_fence = {}
 		) -> void;
 
 		auto submit_graphics(
 			const gpu::submit_info& info,
-			gpu::fence_handle signal_fence = {}
+			gpu::handle<gpu::fence> signal_fence = {}
 		) -> void;
 
 		auto submit_compute(
 			const gpu::submit_info& info,
-			gpu::fence_handle signal_fence = {}
+			gpu::handle<gpu::fence> signal_fence = {}
 		) -> void;
 
 		auto submit_video_encode(
 			const gpu::submit_info& info,
-			gpu::fence_handle signal_fence = {}
+			gpu::handle<gpu::fence> signal_fence = {}
 		) -> void;
 
 		[[nodiscard]] auto present(
@@ -105,14 +78,14 @@ export namespace gse::vulkan {
 		) -> gpu::result;
 
 	private:
-		gpu::queue_handle m_graphics;
-		gpu::queue_handle m_present;
-		gpu::queue_handle m_compute;
+		gpu::handle<gpu::queue> m_graphics;
+		gpu::handle<gpu::queue> m_present;
+		gpu::handle<gpu::queue> m_compute;
 		std::uint32_t m_graphics_family_index = 0;
 		std::uint32_t m_compute_family_index = 0;
 		std::unique_ptr<std::recursive_mutex> m_mutex;
 
-		gpu::queue_handle m_video_encode;
+		gpu::handle<gpu::queue> m_video_encode;
 		std::optional<std::uint32_t> m_video_encode_family_index;
 	};
 }
@@ -281,7 +254,7 @@ auto gse::vulkan::find_queue_families(const physical_device& device, const gpu::
 	return indices;
 }
 
-gse::vulkan::queue::queue(const gpu::queue_handle graphics, const gpu::queue_handle present, const gpu::queue_handle compute, const std::uint32_t graphics_family, const std::uint32_t compute_family, const gpu::queue_handle video_encode, const std::optional<std::uint32_t> video_encode_family)
+gse::vulkan::queue::queue(const gpu::handle<gpu::queue> graphics, const gpu::handle<gpu::queue> present, const gpu::handle<gpu::queue> compute, const std::uint32_t graphics_family, const std::uint32_t compute_family, const gpu::handle<gpu::queue> video_encode, const std::optional<std::uint32_t> video_encode_family)
 	: m_graphics(graphics), m_present(present), m_compute(compute), m_graphics_family_index(graphics_family), m_compute_family_index(compute_family), m_mutex(std::make_unique<std::recursive_mutex>()), m_video_encode(video_encode), m_video_encode_family_index(video_encode_family) {
 }
 
@@ -301,7 +274,7 @@ auto gse::vulkan::queue::video_encode_family_index() const -> std::optional<std:
 	return m_video_encode_family_index;
 }
 
-auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
+auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
 	switch (queue) {
 		case gpu::queue_type::graphics:
 			submit_graphics(info, signal_fence);
@@ -312,7 +285,7 @@ auto gse::vulkan::queue::submit(const gpu::queue_type queue, const gpu::submit_i
 	}
 }
 
-auto gse::vulkan::queue::submit_graphics(const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
+auto gse::vulkan::queue::submit_graphics(const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
@@ -320,7 +293,7 @@ auto gse::vulkan::queue::submit_graphics(const gpu::submit_info& info, const gpu
 	assert(result == vk::Result::eSuccess, "failed to submit graphics commands: {}", vk::to_string(result));
 }
 
-auto gse::vulkan::queue::submit_compute(const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
+auto gse::vulkan::queue::submit_compute(const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);
@@ -328,7 +301,7 @@ auto gse::vulkan::queue::submit_compute(const gpu::submit_info& info, const gpu:
 	assert(result == vk::Result::eSuccess, "failed to submit compute commands: {}", vk::to_string(result));
 }
 
-auto gse::vulkan::queue::submit_video_encode(const gpu::submit_info& info, const gpu::fence_handle signal_fence) -> void {
+auto gse::vulkan::queue::submit_video_encode(const gpu::submit_info& info, const gpu::handle<gpu::fence> signal_fence) -> void {
 	std::lock_guard lock(*m_mutex);
 	submit_scratch scratch;
 	const auto vk_info = build_vk_submit_info(info, scratch);

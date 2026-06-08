@@ -115,7 +115,7 @@ namespace gse::renderer::ui {
 
 export namespace gse::renderer::ui {
 	struct frame_resources {
-		gpu::bindless_buffer vertex_buffer;
+		gpu::buffer vertex_buffer;
 		gpu::buffer index_buffer;
 	};
 

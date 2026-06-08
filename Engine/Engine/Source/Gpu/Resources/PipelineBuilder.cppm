@@ -11,7 +11,6 @@ import gse.slang;
 import :aliases;
 import gse.vulkan;
 import :device;
-import :bindless;
 import :shader_codegen;
 import :shader_markers;
 
@@ -163,7 +162,6 @@ export namespace gse::gpu {
 	[[nodiscard]]
 	auto build_compute_program(
 		device& dev,
-		bindless_heaps& heaps,
 		const compute_entry_pod& pod,
 		std::span<const std::byte> spec_data = {}
 	) -> shader_program;
@@ -224,7 +222,6 @@ export namespace gse::gpu {
 	[[nodiscard]]
 	auto build_graphics_program(
 		device& dev,
-		bindless_heaps& heaps,
 		const graphics_entry_pod& pod,
 		std::span<const std::byte> spec_data = {}
 	) -> shader_program;
@@ -1330,7 +1327,7 @@ auto gse::gpu::next_stage_for(const stage_flag current, const std::span<const st
 	return result;
 }
 
-auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const compute_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
+auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
 	assert(pod.build_family_sets_fn, "bindings missing on compute entry");
 	assert(
 		spec_data.empty() || spec_data.size() == pod.spec_data_size,
@@ -1399,7 +1396,7 @@ auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const c
 		}
 	}
 
-	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, heaps, pod.push_constant_size);
+	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, dev.bindless_layout(), pod.push_constant_size);
 
 	std::vector<vulkan::specialization_entry> vk_spec_entries;
 	if (pod.build_spec_entries_fn && !spec_data.empty()) {
@@ -1439,7 +1436,7 @@ auto gse::gpu::build_compute_program(device& dev, bindless_heaps& heaps, const c
 	return dev.create_shader_program(info);
 }
 
-auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const graphics_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
+auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod, const std::span<const std::byte> spec_data) -> shader_program {
 	assert(!pod.body_path.empty(), "body_path missing on graphics entry");
 	assert(pod.stage_count > 0, "graphics entry has no stages");
 	assert(pod.build_family_sets_fn, "bindings missing on graphics entry");
@@ -1495,7 +1492,7 @@ auto gse::gpu::build_graphics_program(device& dev, bindless_heaps& heaps, const 
 		}
 	}
 
-	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, heaps, pod.push_constant_size);
+	const auto bindless_mappings = vulkan::build_bindless_mappings(pack_bindings, dev.bindless_layout(), pod.push_constant_size);
 
 	std::vector<vulkan::specialization_entry> vk_spec_entries;
 	if (pod.build_spec_entries_fn && !spec_data.empty()) {
