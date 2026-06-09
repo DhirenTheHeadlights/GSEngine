@@ -43,31 +43,37 @@ export namespace gse::free_camera {
 			std::unordered_map<id, bindings> bindings_by_owner;
 		};
 
-		static auto run(
-			run_context& ctx,
-			data& d,
-			const actions::system::data& as,
-			const input::system::data& input_s,
-			const camera::system::data& cam_s,
-			write<component> cameras,
-			write<camera::follow_component> follows,
-			read<physics::transform_component> transforms,
-			read<physics::collision_component> collisions,
-			read<physics::motion_component> motions
-		) -> async::task<>;
+		struct run {
+			static auto attach(
+				run_context& ctx,
+				data& d,
+				read<component> cameras,
+				structural<camera::follow_component> follows
+			) -> async::task<>;
+
+			static auto update(
+				run_context& ctx,
+				data& d,
+				const actions::system::data& as,
+				const input::system::data& input_s,
+				const camera::system::data& cam_s,
+				write<component> cameras,
+				write<camera::follow_component> follows,
+				read<physics::transform_component> transforms,
+				read<physics::collision_component> collisions,
+				read<physics::motion_component> motions
+			) -> async::task<>;
+		};
 	};
 }
 
-auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::system::data& as, const input::system::data& input_s, const camera::system::data& cam_s, write<component> cameras, write<camera::follow_component> follows, read<physics::transform_component> transforms, read<physics::collision_component> collisions, read<physics::motion_component> motions) -> async::task<> {
-	const auto camera_ids = cameras.owner_ids();
-	for (std::size_t i = 0; i < cameras.size(); ++i) {
-		auto& c = cameras[i];
-		const auto owner_id = camera_ids[i];
-		auto [it, inserted] = d.bindings_by_owner.try_emplace(owner_id);
-		if (!inserted) {
+auto gse::free_camera::system::run::attach(run_context& ctx, data& d, read<component> cameras, structural<camera::follow_component> follows) -> async::task<> {
+	for (const auto owner_id : ctx.drain_component_adds<component>()) {
+		const auto* c = cameras.find(owner_id);
+		if (!c) {
 			continue;
 		}
-		auto& b = it->second;
+		auto& b = d.bindings_by_owner[owner_id];
 
 		b.forward = actions::add<"FreeCamera_Move_Forward">(ctx.channels, key::w);
 		b.left = actions::add<"FreeCamera_Move_Left">(ctx.channels, key::a);
@@ -89,21 +95,27 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 		);
 
 		const quat initial_orientation =
-			normalize(quat(vec3f(0.f, 1.f, 0.f), c.yaw) * quat(vec3f(1.f, 0.f, 0.f), c.pitch));
+			normalize(quat(vec3f(0.f, 1.f, 0.f), c->yaw) * quat(vec3f(1.f, 0.f, 0.f), c->pitch));
 
-		ctx.add_component<camera::follow_component>(
+		follows.add(
 			owner_id,
 			{
 				.offset = vec3<length>(meters(0.f)),
-				.priority = c.priority,
+				.priority = c->priority,
 				.blend_in_duration = milliseconds(300),
 				.active = true,
 				.use_entity_position = false,
-				.position = c.initial_position,
+				.position = c->initial_position,
 				.orientation = initial_orientation,
 			}
 		);
 	}
+
+	return {};
+}
+
+auto gse::free_camera::system::run::update(run_context& ctx, data& d, const actions::system::data& as, const input::system::data& input_s, const camera::system::data& cam_s, write<component> cameras, write<camera::follow_component> follows, read<physics::transform_component> transforms, read<physics::collision_component> collisions, read<physics::motion_component> motions) -> async::task<> {
+	const auto camera_ids = cameras.owner_ids();
 
 	const auto& cs = actions::system::current_state(as);
 	const auto& in = input::system::current_state(input_s);
@@ -111,7 +123,11 @@ auto gse::free_camera::system::run(run_context& ctx, data& d, const actions::sys
 	for (std::size_t i = 0; i < cameras.size(); ++i) {
 		auto& c = cameras[i];
 		const auto owner_id = camera_ids[i];
-		const auto& b = d.bindings_by_owner[owner_id];
+		const auto binding_it = d.bindings_by_owner.find(owner_id);
+		if (binding_it == d.bindings_by_owner.end()) {
+			continue;
+		}
+		const auto& b = binding_it->second;
 
 		auto* cam_follow = follows.find(owner_id);
 		if (!cam_follow) {

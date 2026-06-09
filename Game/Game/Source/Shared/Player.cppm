@@ -54,21 +54,30 @@ export namespace gs::player {
 			gse::interval_timer<float> input_log_timer{ gse::seconds(0.5f) };
 		};
 
-		static auto run(
-			gse::run_context& ctx,
-			data& d,
-			const gse::actions::system::data& as,
-			const gse::input::system::data& input_s,
-			const gse::camera::system::data& cam_s,
-			gse::write<component> players,
-			gse::write<gse::physics::transform_component> transforms,
-			gse::write<gse::camera::follow_component> follows,
-			gse::write<gs::locomotion::intent> intents,
-			gse::read<gs::locomotion::state> states,
-			gse::read<gs::locomotion::gait> gaits,
-			gse::read<gse::physics::collision_component> collisions,
-			gse::read<gse::physics::motion_component> motions
-		) -> gse::async::task<>;
+		struct run {
+			static auto attach(
+				gse::run_context& ctx,
+				data& d,
+				gse::read<component> players,
+				gse::structural<gse::camera::follow_component> follows
+			) -> gse::async::task<>;
+
+			static auto update(
+				gse::run_context& ctx,
+				data& d,
+				const gse::actions::system::data& as,
+				const gse::input::system::data& input_s,
+				const gse::camera::system::data& cam_s,
+				gse::write<component> players,
+				gse::write<gse::physics::transform_component> transforms,
+				gse::write<gse::camera::follow_component> follows,
+				gse::write<gs::locomotion::intent> intents,
+				gse::read<gs::locomotion::state> states,
+				gse::read<gs::locomotion::gait> gaits,
+				gse::read<gse::physics::collision_component> collisions,
+				gse::read<gse::physics::motion_component> motions
+			) -> gse::async::task<>;
+		};
 	};
 }
 
@@ -107,23 +116,20 @@ auto gs::player::register_bindings(gse::run_context& ctx, bindings& b) -> void {
 	);
 }
 
-auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::input::system::data& input_s, const gse::camera::system::data& cam_s, gse::write<component> players, gse::write<gse::physics::transform_component> transforms, gse::write<gse::camera::follow_component> follows, gse::write<gs::locomotion::intent> intents, gse::read<gs::locomotion::state> states, gse::read<gs::locomotion::gait> gaits, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
-	const auto player_ids = players.owner_ids();
-	for (std::size_t i = 0; i < players.size(); ++i) {
-		const auto owner_id = player_ids[i];
-		auto [it, inserted] = d.bindings_by_owner.try_emplace(owner_id);
-		if (!inserted) {
+auto gs::player::system::run::attach(gse::run_context& ctx, data& d, gse::read<component> players, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+	for (const auto owner_id : ctx.drain_component_adds<component>()) {
+		const auto* p = players.find(owner_id);
+		if (!p) {
 			continue;
 		}
-		register_bindings(ctx, it->second);
+		register_bindings(ctx, d.bindings_by_owner[owner_id]);
 
-		auto& p = players[i];
 		const gse::quat initial_orientation = gse::normalize(
-			gse::quat(gse::vec3f(0.f, 1.f, 0.f), p.yaw) *
-			gse::quat(gse::vec3f(1.f, 0.f, 0.f), p.pitch)
+			gse::quat(gse::vec3f(0.f, 1.f, 0.f), p->yaw) *
+			gse::quat(gse::vec3f(1.f, 0.f, 0.f), p->pitch)
 		);
 
-		ctx.add_component<gse::camera::follow_component>(
+		follows.add(
 			owner_id,
 			{
 				.offset = gse::vec3<gse::length>(gse::meters(0.f)),
@@ -136,6 +142,12 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 		);
 	}
 
+	return {};
+}
+
+auto gs::player::system::run::update(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::input::system::data& input_s, const gse::camera::system::data& cam_s, gse::write<component> players, gse::write<gse::physics::transform_component> transforms, gse::write<gse::camera::follow_component> follows, gse::write<gs::locomotion::intent> intents, gse::read<gs::locomotion::state> states, gse::read<gs::locomotion::gait> gaits, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+	const auto player_ids = players.owner_ids();
+
 	const auto& cs = gse::actions::system::current_state(as);
 	const auto& in = gse::input::system::current_state(input_s);
 	const bool log_now = d.input_log_timer.tick();
@@ -143,7 +155,11 @@ auto gs::player::system::run(gse::run_context& ctx, data& d, const gse::actions:
 	for (std::size_t i = 0; i < players.size(); ++i) {
 		auto& p = players[i];
 		const auto owner_id = player_ids[i];
-		const auto& b = d.bindings_by_owner[owner_id];
+		const auto binding_it = d.bindings_by_owner.find(owner_id);
+		if (binding_it == d.bindings_by_owner.end()) {
+			continue;
+		}
+		const auto& b = binding_it->second;
 
 		const bool is_active_view = cam_s.active_controller_entity == owner_id;
 		if (is_active_view && !cam_s.ui_focus) {
