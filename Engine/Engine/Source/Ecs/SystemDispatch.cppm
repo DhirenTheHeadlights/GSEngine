@@ -77,9 +77,6 @@ namespace gse {
 		else if constexpr (is_shared_view_v<U>) {
 			return false;
 		}
-		else if constexpr (is_access_decl_v<U>) {
-			return false;
-		}
 		else if constexpr (is_access_v<U>) {
 			return false;
 		}
@@ -155,54 +152,11 @@ namespace gse {
 		return run_phases_v<S>[I];
 	}
 
-	template <typename S>
-	auto signature_acquire_trace_id() -> id {
-		return find_or_generate_id(std::format("run_acquire:{}", type_tag<S>()));
-	}
-
-	template <auto Fn, typename S>
-	auto fill_signature_locks(
-		std::span<id> lock_ids,
-		std::span<lock_fn> lock_fns
-	) -> std::size_t {
-		std::size_t k = 0;
-		[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-			(([&] {
-				using U = std::remove_cvref_t<arg_type_of<Fn, Is>>;
-				if constexpr (is_access_v<U>) {
-					lock_ids[k] = id_of<access_element_t<U>>();
-					lock_fns[k] = is_read_access_v<U> ? &acquire_shared : &acquire_exclusive;
-					++k;
-				}
-				else if constexpr (is_structural_v<U>) {
-					lock_ids[k] = id_of<structural_element_t<U>>();
-					lock_fns[k] = &acquire_exclusive;
-					++k;
-				}
-			}()), ...);
-		}(std::make_index_sequence<arity_of<Fn>>{});
-		return k;
-	}
-
 	template <auto Phase, typename S>
 	auto run_phase(
 		run_context& ctx,
 		state_of_t<S>& state
 	) -> async::task<> {
-		if constexpr (arity_of<Phase> > 0) {
-			std::array<id, arity_of<Phase>> lock_ids{};
-			std::array<lock_fn, arity_of<Phase>> lock_fns{};
-			const std::size_t n_locks = fill_signature_locks<Phase, S>(lock_ids, lock_fns);
-			if (n_locks > 0) {
-				static const id tid = signature_acquire_trace_id<S>();
-				co_await acquire_locks_in_sorted_order(
-					ctx.access_mutexes(),
-					std::span(lock_ids.data(), n_locks),
-					std::span(lock_fns.data(), n_locks),
-					tid
-				);
-			}
-		}
 		co_await [&]<std::size_t... Is>(std::index_sequence<Is...>) -> async::task<> {
 			co_await [:Phase:](resolve_run_arg<arg_type_of<Phase, Is>, S>(ctx, state)...);
 		}(std::make_index_sequence<arity_of<Phase>>{});
@@ -379,9 +333,6 @@ auto gse::resolve_run_arg(run_context& ctx, state_of_t<S>& state) -> decltype(au
 	else if constexpr (is_structural_v<U>) {
 		return ctx.template make_structural<structural_element_t<U>>();
 	}
-	else if constexpr (is_access_decl_v<U>) {
-		return U{};
-	}
 	else if constexpr (is_shared_view_v<U>) {
 		using Target = shared_view_target_t<U>;
 		constexpr id lookup_id = id_of<Target>();
@@ -484,19 +435,11 @@ auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
 	append_arg_state_dep<Arg, S>(out.state_deps);
 
 	using ArgT = std::remove_cvref_t<Arg>;
-	if constexpr (is_reads_v<ArgT>) {
-		const auto ids = ArgT::component_ids();
-		out.component_reads.insert(out.component_reads.end(), ids.begin(), ids.end());
-	}
-	else if constexpr (is_access_v<ArgT> && is_read_access_v<ArgT>) {
+	if constexpr (is_access_v<ArgT> && is_read_access_v<ArgT>) {
 		out.component_reads.push_back(id_of<access_element_t<ArgT>>());
 	}
 
-	if constexpr (is_writes_v<ArgT>) {
-		const auto ids = ArgT::component_ids();
-		out.component_writes.insert(out.component_writes.end(), ids.begin(), ids.end());
-	}
-	else if constexpr (is_access_v<ArgT> && !is_read_access_v<ArgT>) {
+	if constexpr (is_access_v<ArgT> && !is_read_access_v<ArgT>) {
 		out.component_writes.push_back(id_of<access_element_t<ArgT>>());
 	}
 	else if constexpr (is_structural_v<ArgT>) {
@@ -586,20 +529,6 @@ auto gse::invoke_run_for(run_context& ctx, void* data_ptr) -> async::task<> {
 		co_await run_phases_for<S>(ctx, d.state);
 	}
 	else {
-		if constexpr (arity_of<^^S::run> > 0) {
-			std::array<id, arity_of<^^S::run>> lock_ids{};
-			std::array<lock_fn, arity_of<^^S::run>> lock_fns{};
-			const std::size_t n_locks = fill_signature_locks<^^S::run, S>(lock_ids, lock_fns);
-			if (n_locks > 0) {
-				static const id tid = signature_acquire_trace_id<S>();
-				co_await acquire_locks_in_sorted_order(
-					ctx.access_mutexes(),
-					std::span(lock_ids.data(), n_locks),
-					std::span(lock_fns.data(), n_locks),
-					tid
-				);
-			}
-		}
 		co_await [&]<std::size_t... Is>(std::index_sequence<Is...>) -> async::task<> {
 			co_await S::run(resolve_run_arg<arg_type_of<^^S::run, Is>, S>(ctx, d.state)...);
 		}(std::make_index_sequence<arity_of<^^S::run>>{});

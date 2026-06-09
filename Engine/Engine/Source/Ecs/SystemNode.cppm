@@ -123,7 +123,6 @@ export namespace gse {
 		std::optional<settings::register_settings_type> settings_record;
 
 		std::string system_name;
-		access_lint lint;
 	};
 
 	template <typename S, typename... Args>

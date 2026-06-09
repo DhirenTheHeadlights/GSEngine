@@ -10,6 +10,7 @@ import :phase_context;
 import :registries;
 import :registry;
 import :task_context;
+import :task_graph;
 
 export namespace gse {
 	class frame_context : public task_context {

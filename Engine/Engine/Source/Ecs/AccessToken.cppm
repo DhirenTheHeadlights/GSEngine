@@ -2,8 +2,8 @@ export module gse.ecs:access_token;
 
 import std;
 
+import gse.assert;
 import gse.core;
-import gse.concurrency;
 
 import :component;
 
@@ -29,6 +29,38 @@ export namespace gse {
 	private:
 		friend class run_context;
 		access_token() = default;
+	};
+
+	class access_guard {
+	public:
+		auto begin_read(
+			id type
+		) -> void;
+
+		auto end_read(
+			id type
+		) -> void;
+
+		auto begin_write(
+			id type
+		) -> void;
+
+		auto end_write(
+			id type
+		) -> void;
+
+	private:
+		struct slot {
+			std::atomic<int> readers{ 0 };
+			std::atomic<int> writers{ 0 };
+		};
+
+		auto slot_for(
+			id type
+		) -> slot&;
+
+		std::unordered_map<id, std::unique_ptr<slot>> m_slots;
+		std::shared_mutex m_map_mutex;
 	};
 
 	template <typename T, access_mode M = access_mode::read>
@@ -99,7 +131,7 @@ export namespace gse {
 			std::span<const id> owners,
 			lookup_fn fn = nullptr,
 			void* ctx = nullptr,
-			async::rw_mutex* mutex = nullptr,
+			access_guard* guard = nullptr,
 			std::atomic<int>* held_locks = nullptr
 		);
 
@@ -107,7 +139,7 @@ export namespace gse {
 		std::span<const id> m_owners;
 		lookup_fn m_lookup = nullptr;
 		void* m_lookup_ctx = nullptr;
-		async::rw_mutex* m_mutex = nullptr;
+		access_guard* m_guard = nullptr;
 		std::atomic<int>* m_held_locks = nullptr;
 	};
 
@@ -148,48 +180,96 @@ export namespace gse {
 
 		structural(
 			registry* reg,
-			async::rw_mutex* mutex,
-			std::atomic<int>* held_locks
+			access_guard* guard,
+			std::atomic<int>* held_locks,
+			std::vector<id>* authority
 		);
 
 		registry* m_reg = nullptr;
-		async::rw_mutex* m_mutex = nullptr;
+		access_guard* m_guard = nullptr;
 		std::atomic<int>* m_held_locks = nullptr;
+		std::vector<id>* m_authority = nullptr;
 	};
 }
 
+auto gse::access_guard::slot_for(const id type) -> slot& {
+	{
+		std::shared_lock lock(m_map_mutex);
+		if (const auto it = m_slots.find(type); it != m_slots.end()) {
+			return *it->second;
+		}
+	}
+	std::unique_lock lock(m_map_mutex);
+	if (const auto it = m_slots.find(type); it != m_slots.end()) {
+		return *it->second;
+	}
+	auto fresh = std::make_unique<slot>();
+	auto& ref = *fresh;
+	m_slots.emplace(type, std::move(fresh));
+	return ref;
+}
+
+auto gse::access_guard::begin_read(const id type) -> void {
+	auto& s = slot_for(type);
+	s.readers.fetch_add(1, std::memory_order_acq_rel);
+	assert(s.writers.load(std::memory_order_acquire) == 0, "data race: read access on component {} while a writer is active in the same tick (missing scheduler dependency)", type);
+}
+
+auto gse::access_guard::end_read(const id type) -> void {
+	slot_for(type).readers.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+auto gse::access_guard::begin_write(const id type) -> void {
+	auto& s = slot_for(type);
+	const int prev_writers = s.writers.fetch_add(1, std::memory_order_acq_rel);
+	const int readers = s.readers.load(std::memory_order_acquire);
+	assert(prev_writers == 0 && readers == 0, "data race: exclusive access on component {} while it is already being accessed in the same tick (missing scheduler dependency)", type);
+}
+
+auto gse::access_guard::end_write(const id type) -> void {
+	slot_for(type).writers.fetch_sub(1, std::memory_order_acq_rel);
+}
+
 template <typename T, gse::access_mode M>
-gse::access<T, M>::access(const span_type span, const std::span<const id> owners, const lookup_fn fn, void* ctx, async::rw_mutex* mutex, std::atomic<int>* held_locks)
-	: m_span(span), m_owners(owners), m_lookup(fn), m_lookup_ctx(ctx), m_mutex(mutex), m_held_locks(held_locks) {
-	if (m_mutex && m_held_locks) {
+gse::access<T, M>::access(const span_type span, const std::span<const id> owners, const lookup_fn fn, void* ctx, access_guard* guard, std::atomic<int>* held_locks)
+	: m_span(span), m_owners(owners), m_lookup(fn), m_lookup_ctx(ctx), m_guard(guard), m_held_locks(held_locks) {
+	if (m_guard) {
+		if constexpr (M == access_mode::read) {
+			m_guard->begin_read(id_of<T>());
+		}
+		else {
+			m_guard->begin_write(id_of<T>());
+		}
+	}
+	if (m_held_locks) {
 		m_held_locks->fetch_add(1, std::memory_order_acq_rel);
 	}
 }
 
 template <typename T, gse::access_mode M>
 gse::access<T, M>::access(access&& other) noexcept
-	: m_span(other.m_span), m_owners(other.m_owners), m_lookup(other.m_lookup), m_lookup_ctx(other.m_lookup_ctx), m_mutex(std::exchange(other.m_mutex, nullptr)), m_held_locks(std::exchange(other.m_held_locks, nullptr)) {
+	: m_span(other.m_span), m_owners(other.m_owners), m_lookup(other.m_lookup), m_lookup_ctx(other.m_lookup_ctx), m_guard(std::exchange(other.m_guard, nullptr)), m_held_locks(std::exchange(other.m_held_locks, nullptr)) {
 }
 
 template <typename T, gse::access_mode M>
 auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {
 	if (this != &other) {
-		if (m_mutex) {
+		if (m_guard) {
 			if constexpr (M == access_mode::read) {
-				m_mutex->unlock_shared();
+				m_guard->end_read(id_of<T>());
 			}
 			else {
-				m_mutex->unlock_exclusive();
+				m_guard->end_write(id_of<T>());
 			}
-			if (m_held_locks) {
-				m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
-			}
+		}
+		if (m_held_locks) {
+			m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
 		}
 		m_span = other.m_span;
 		m_owners = other.m_owners;
 		m_lookup = other.m_lookup;
 		m_lookup_ctx = other.m_lookup_ctx;
-		m_mutex = std::exchange(other.m_mutex, nullptr);
+		m_guard = std::exchange(other.m_guard, nullptr);
 		m_held_locks = std::exchange(other.m_held_locks, nullptr);
 	}
 	return *this;
@@ -197,14 +277,13 @@ auto gse::access<T, M>::operator=(access&& other) noexcept -> access& {
 
 template <typename T, gse::access_mode M>
 gse::access<T, M>::~access() {
-	if (!m_mutex) {
-		return;
-	}
-	if constexpr (M == access_mode::read) {
-		m_mutex->unlock_shared();
-	}
-	else {
-		m_mutex->unlock_exclusive();
+	if (m_guard) {
+		if constexpr (M == access_mode::read) {
+			m_guard->end_read(id_of<T>());
+		}
+		else {
+			m_guard->end_write(id_of<T>());
+		}
 	}
 	if (m_held_locks) {
 		m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
@@ -270,41 +349,57 @@ auto gse::access<T, M>::owner_id_at(const std::size_t i) const -> id {
 }
 
 template <typename T>
-gse::structural<T>::structural(registry* reg, async::rw_mutex* mutex, std::atomic<int>* held_locks)
-	: m_reg(reg), m_mutex(mutex), m_held_locks(held_locks) {
-	if (m_mutex && m_held_locks) {
+gse::structural<T>::structural(registry* reg, access_guard* guard, std::atomic<int>* held_locks, std::vector<id>* authority)
+	: m_reg(reg), m_guard(guard), m_held_locks(held_locks), m_authority(authority) {
+	if (m_guard) {
+		m_guard->begin_write(id_of<T>());
+	}
+	if (m_held_locks) {
 		m_held_locks->fetch_add(1, std::memory_order_acq_rel);
+	}
+	if (m_guard && m_authority) {
+		m_authority->push_back(id_of<T>());
 	}
 }
 
 template <typename T>
 gse::structural<T>::structural(structural&& other) noexcept
-	: m_reg(other.m_reg), m_mutex(std::exchange(other.m_mutex, nullptr)), m_held_locks(std::exchange(other.m_held_locks, nullptr)) {
+	: m_reg(other.m_reg), m_guard(std::exchange(other.m_guard, nullptr)), m_held_locks(std::exchange(other.m_held_locks, nullptr)), m_authority(std::exchange(other.m_authority, nullptr)) {
 }
 
 template <typename T>
 auto gse::structural<T>::operator=(structural&& other) noexcept -> structural& {
 	if (this != &other) {
-		if (m_mutex) {
-			m_mutex->unlock_exclusive();
-			if (m_held_locks) {
-				m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
+		if (m_guard) {
+			m_guard->end_write(id_of<T>());
+		}
+		if (m_held_locks) {
+			m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
+		}
+		if (m_guard && m_authority) {
+			if (const auto it = std::ranges::find(*m_authority, id_of<T>()); it != m_authority->end()) {
+				m_authority->erase(it);
 			}
 		}
 		m_reg = other.m_reg;
-		m_mutex = std::exchange(other.m_mutex, nullptr);
+		m_guard = std::exchange(other.m_guard, nullptr);
 		m_held_locks = std::exchange(other.m_held_locks, nullptr);
+		m_authority = std::exchange(other.m_authority, nullptr);
 	}
 	return *this;
 }
 
 template <typename T>
 gse::structural<T>::~structural() {
-	if (!m_mutex) {
-		return;
+	if (m_guard) {
+		m_guard->end_write(id_of<T>());
 	}
-	m_mutex->unlock_exclusive();
 	if (m_held_locks) {
 		m_held_locks->fetch_sub(1, std::memory_order_acq_rel);
+	}
+	if (m_guard && m_authority) {
+		if (const auto it = std::ranges::find(*m_authority, id_of<T>()); it != m_authority->end()) {
+			m_authority->erase(it);
+		}
 	}
 }

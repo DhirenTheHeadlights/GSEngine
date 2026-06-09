@@ -11,6 +11,8 @@ import :frame_context;
 import :system_node;
 import :system_dispatch;
 import :registry;
+import :task_graph;
+import :access_token;
 
 import gse.assert;
 import gse.core;
@@ -92,11 +94,15 @@ auto gse::run_node_frame(frame_context& ctx, system_node& node) -> async::task<>
 
 auto gse::scheduler::wire_component_deps() -> void {
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> writers;
+	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> readers;
 	{
 		std::size_t idx = 0;
 		for (const auto& node : m_nodes) {
 			for (const id w : node.component_writes) {
 				writers[w].emplace_back(idx, node.state_id);
+			}
+			for (const id r : node.component_reads) {
+				readers[r].emplace_back(idx, node.state_id);
 			}
 			++idx;
 		}
@@ -104,25 +110,26 @@ auto gse::scheduler::wire_component_deps() -> void {
 
 	std::size_t idx = 0;
 	for (auto& node : m_nodes) {
-		auto depend_on_earlier_writers = [&](const id comp) {
-			const auto it = writers.find(comp);
-			if (it == writers.end()) {
+		auto depend_on_earlier = [&](const auto& accessors, const id comp) {
+			const auto it = accessors.find(comp);
+			if (it == accessors.end()) {
 				return;
 			}
-			for (const auto& [writer_idx, writer_state] : it->second) {
-				if (writer_idx >= idx || writer_state == node.state_id) {
+			for (const auto& [other_idx, other_state] : it->second) {
+				if (other_idx >= idx || other_state == node.state_id) {
 					continue;
 				}
-				if (std::ranges::find(node.run_state_deps, writer_state) == node.run_state_deps.end()) {
-					node.run_state_deps.push_back(writer_state);
+				if (std::ranges::find(node.run_state_deps, other_state) == node.run_state_deps.end()) {
+					node.run_state_deps.push_back(other_state);
 				}
 			}
 		};
 		for (const id r : node.component_reads) {
-			depend_on_earlier_writers(r);
+			depend_on_earlier(writers, r);
 		}
 		for (const id w : node.component_writes) {
-			depend_on_earlier_writers(w);
+			depend_on_earlier(writers, w);
+			depend_on_earlier(readers, w);
 		}
 		++idx;
 	}
@@ -173,7 +180,10 @@ auto gse::scheduler::check_state_dep_cycles() -> void {
 					continue;
 				}
 				if (colors[dep] == color::gray) {
-					assert(false, "state_deps cycle detected: {}", format_cycle(dep));
+					const auto cycle = format_cycle(dep);
+					log::println(log::level::error, log::category::runtime, "[war-probe] state_deps cycle detected: {}", cycle);
+					log::flush();
+					assert(false, "state_deps cycle detected: {}", cycle);
 					continue;
 				}
 				if (colors[dep] == color::white) {
@@ -401,11 +411,10 @@ auto gse::scheduler::dispatch_run_systems() -> void {
 				writer,
 				m_update_graph,
 				*m_registry,
-				m_access_mutexes,
+				m_guard,
 				dummy_resume,
 				dummy_paused
 			));
-			ctx.set_access_lint(&node.lint);
 			tasks.push_back(run_node_update(ctx, node));
 		}
 	}
@@ -424,6 +433,7 @@ auto gse::scheduler::update() -> void {
 	if (!m_dep_graph_checked) {
 		wire_component_deps();
 		check_closed_dep_graph();
+		check_state_dep_cycles();
 		m_dep_graph_checked = true;
 	}
 	{
@@ -536,7 +546,7 @@ auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<>
 			*node.init_writer,
 			m_update_graph,
 			*m_registry,
-			m_access_mutexes,
+			m_guard,
 			*node.resume_event,
 			*node.paused_event
 		);
@@ -582,16 +592,12 @@ auto gse::scheduler::run_node_update(run_context& ctx, system_node& node) -> asy
 		co_await m_update_graph.wait_state_ready(dep);
 	}
 
-	node.lint.acquires_this_run = 0;
-	node.lint.structural_this_run = false;
-
 	if (m_advance_hook) {
 		m_advance_hook(node.state_id, "before");
 	}
 
 	co_await node.invoke_run_fn(ctx, node.data.get());
 	node.ran_once = true;
-	warn_if_whole_tick_acquire(node);
 
 	if (m_advance_hook) {
 		m_advance_hook(node.state_id, "after");
@@ -600,37 +606,6 @@ auto gse::scheduler::run_node_update(run_context& ctx, system_node& node) -> asy
 	m_update_graph.notify_state_ready(node.state_id);
 	if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
 		m_update_graph.notify_state_ready(node.state_type_id);
-	}
-}
-
-auto gse::scheduler::warn_if_whole_tick_acquire(system_node& node) -> void {
-	auto& lint = node.lint;
-	++lint.runs;
-	if (lint.acquires_this_run > 0) {
-		++lint.acquire_runs;
-	}
-	if (lint.acquires_this_run > 1) {
-		lint.multi_acquire_seen = true;
-	}
-	if (lint.structural_this_run) {
-		lint.structural_seen = true;
-	}
-
-	constexpr std::uint32_t warmup_ticks = 30;
-	const bool declares_access = !node.component_reads.empty() || !node.component_writes.empty();
-	const bool whole_tick_acquire =
-		!declares_access &&
-		lint.runs >= warmup_ticks &&
-		lint.acquire_runs == lint.runs &&
-		!lint.multi_acquire_seen &&
-		!lint.structural_seen;
-	if (whole_tick_acquire && !lint.warned) {
-		lint.warned = true;
-		log::println(
-			"access lint: system '{}' acquires component locks unconditionally for the entire tick with no "
-			"structural changes; declare read<>/write<> run() parameters instead of calling ctx.acquire()",
-			node.system_name
-		);
 	}
 }
 

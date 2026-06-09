@@ -17,6 +17,8 @@ import :frame_context;
 import :system_node;
 import :system_dispatch;
 import :registry;
+import :task_graph;
+import :access_token;
 
 namespace gse {
 	enum class wait_phase : std::uint8_t {
@@ -179,9 +181,6 @@ export namespace gse {
 			system_node& node
 		) -> async::task<>;
 
-		auto warn_if_whole_tick_acquire(
-			system_node& node
-		) -> void;
 
 		[[nodiscard]] auto dep_init_done(
 			id dep
@@ -220,7 +219,7 @@ export namespace gse {
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
-		async::rw_mutex_registry m_access_mutexes;
+		access_guard m_guard;
 		bool m_initialized = false;
 		bool m_dep_graph_checked = false;
 	};
