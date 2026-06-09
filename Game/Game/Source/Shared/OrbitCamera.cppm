@@ -34,32 +34,38 @@ export namespace gs::orbit_camera {
 			std::unordered_map<gse::id, bindings> bindings_by_owner;
 		};
 
-		static auto run(
-			gse::run_context& ctx,
-			data& d,
-			const gse::actions::system::data& as,
-			const gse::input::system::data& input_s,
-			const gse::camera::system::data& cam_s,
-			const gse::physics::system::data& phys_s,
-			gse::write<component> orbits,
-			gse::write<gse::camera::follow_component> follows,
-			gse::read<gse::physics::transform_component> transforms,
-			gse::read<gse::physics::collision_component> collisions,
-			gse::read<gse::physics::motion_component> motions
-		) -> gse::async::task<>;
+		struct run {
+			static auto attach(
+				gse::run_context& ctx,
+				data& d,
+				gse::read<component> orbits,
+				gse::structural<gse::camera::follow_component> follows
+			) -> gse::async::task<>;
+
+			static auto update(
+				gse::run_context& ctx,
+				data& d,
+				const gse::actions::system::data& as,
+				const gse::input::system::data& input_s,
+				const gse::camera::system::data& cam_s,
+				const gse::physics::system::data& phys_s,
+				gse::write<component> orbits,
+				gse::write<gse::camera::follow_component> follows,
+				gse::read<gse::physics::transform_component> transforms,
+				gse::read<gse::physics::collision_component> collisions,
+				gse::read<gse::physics::motion_component> motions
+			) -> gse::async::task<>;
+		};
 	};
 }
 
-auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::input::system::data& input_s, const gse::camera::system::data& cam_s, const gse::physics::system::data& phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
-	const auto orbit_ids = orbits.owner_ids();
-	for (std::size_t i = 0; i < orbits.size(); ++i) {
-		const auto& o = orbits[i];
-		const auto owner_id = orbit_ids[i];
-		auto [it, inserted] = d.bindings_by_owner.try_emplace(owner_id);
-		if (!inserted) {
+auto gs::orbit_camera::system::run::attach(gse::run_context& ctx, data& d, gse::read<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+	for (const auto owner_id : ctx.drain_component_adds<component>()) {
+		const auto* o = orbits.find(owner_id);
+		if (!o) {
 			continue;
 		}
-		auto& b = it->second;
+		auto& b = d.bindings_by_owner[owner_id];
 
 		b.toggle = gse::actions::add<"Orbit_Toggle">(ctx.channels, gse::key::c);
 		b.yaw_left = gse::actions::add<"Orbit_Yaw_Left">(ctx.channels, gse::key::left);
@@ -68,22 +74,28 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 		b.pitch_down = gse::actions::add<"Orbit_Pitch_Down">(ctx.channels, gse::key::down);
 
 		const gse::quat initial_orientation = gse::normalize(
-			gse::quat(gse::vec3f(0.f, 1.f, 0.f), o.yaw) *
-			gse::quat(gse::vec3f(1.f, 0.f, 0.f), o.pitch)
+			gse::quat(gse::vec3f(0.f, 1.f, 0.f), o->yaw) *
+			gse::quat(gse::vec3f(1.f, 0.f, 0.f), o->pitch)
 		);
 
-		ctx.add_component<gse::camera::follow_component>(
+		follows.add(
 			owner_id,
 			{
 				.offset = gse::vec3<gse::length>(gse::meters(0.f)),
-				.priority = o.priority,
+				.priority = o->priority,
 				.blend_in_duration = gse::milliseconds(300),
-				.active = o.active,
+				.active = o->active,
 				.use_entity_position = false,
 				.orientation = initial_orientation,
 			}
 		);
 	}
+
+	return {};
+}
+
+auto gs::orbit_camera::system::run::update(gse::run_context& ctx, data& d, const gse::actions::system::data& as, const gse::input::system::data& input_s, const gse::camera::system::data& cam_s, const gse::physics::system::data& phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+	const auto orbit_ids = orbits.owner_ids();
 
 	const auto& cs = gse::actions::system::current_state(as);
 	const auto& in = gse::input::system::current_state(input_s);
@@ -92,7 +104,11 @@ auto gs::orbit_camera::system::run(gse::run_context& ctx, data& d, const gse::ac
 	for (std::size_t i = 0; i < orbits.size(); ++i) {
 		auto& o = orbits[i];
 		const auto owner_id = orbit_ids[i];
-		const auto& b = d.bindings_by_owner[owner_id];
+		const auto binding_it = d.bindings_by_owner.find(owner_id);
+		if (binding_it == d.bindings_by_owner.end()) {
+			continue;
+		}
+		const auto& b = binding_it->second;
 
 		auto* cam_follow = follows.find(owner_id);
 		if (!cam_follow) {
