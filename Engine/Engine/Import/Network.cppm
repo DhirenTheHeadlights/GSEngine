@@ -77,7 +77,8 @@ export namespace gse::network {
 			run_context& ctx,
 			const asset::data& assets_d,
 			data& d,
-			const actions::system::data& actions_d
+			const actions::system::data& actions_d,
+			structural<Components>... auths
 		) -> async::task<>;
 
 		static auto shutdown(
@@ -96,7 +97,8 @@ auto gse::network::system<Components...>::shutdown(shutdown_context&, data& d) -
 }
 
 template <typename... Components>
-auto gse::network::system<Components...>::run(run_context& ctx, const asset::data& assets_d, data& d, const actions::system::data& actions_d) -> async::task<> {
+auto gse::network::system<Components...>::run(run_context& ctx, const asset::data& assets_d, data& d, const actions::system::data& actions_d, structural<Components>... auths) -> async::task<> {
+	((void)auths, ...);
 	(ctx.template ensure_storage<Components>(), ...);
 
 		for (const auto& response : ctx.read_channel<camera_yaw_response>()) {

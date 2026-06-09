@@ -9,6 +9,7 @@ import gse.diag;
 
 import :phase_context;
 import :registries;
+import :task_graph;
 
 export namespace gse {
 	struct task_context {

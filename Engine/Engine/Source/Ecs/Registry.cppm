@@ -141,14 +141,14 @@ export namespace gse {
 		template <typename T>
 		auto acquire_read(
 			access_token,
-			async::rw_mutex* mutex = nullptr,
+			access_guard* guard = nullptr,
 			std::atomic<int>* held_locks = nullptr
 		) -> read<T>;
 
 		template <typename T>
 		auto acquire_write(
 			access_token,
-			async::rw_mutex* mutex = nullptr,
+			access_guard* guard = nullptr,
 			std::atomic<int>* held_locks = nullptr
 		) -> write<T>;
 
@@ -409,7 +409,7 @@ auto gse::registry::try_component(this registry& self, const id owner) -> declty
 }
 
 template <typename T>
-auto gse::registry::acquire_read(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> read<T> {
+auto gse::registry::acquire_read(access_token, access_guard* guard, std::atomic<int>* held_locks) -> read<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
 		return read<T>(
@@ -417,18 +417,18 @@ auto gse::registry::acquire_read(access_token, async::rw_mutex* mutex, std::atom
 			{},
 			nullptr,
 			nullptr,
-			mutex,
+			guard,
 			held_locks
 		);
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> const T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
 	};
-	return read<T>(s->items(), s->owners(), lookup, s, mutex, held_locks);
+	return read<T>(s->items(), s->owners(), lookup, s, guard, held_locks);
 }
 
 template <typename T>
-auto gse::registry::acquire_write(access_token, async::rw_mutex* mutex, std::atomic<int>* held_locks) -> write<T> {
+auto gse::registry::acquire_write(access_token, access_guard* guard, std::atomic<int>* held_locks) -> write<T> {
 	auto* s = try_storage<T>();
 	if (!s) {
 		return write<T>(
@@ -436,14 +436,14 @@ auto gse::registry::acquire_write(access_token, async::rw_mutex* mutex, std::ato
 			{},
 			nullptr,
 			nullptr,
-			mutex,
+			guard,
 			held_locks
 		);
 	}
 	constexpr auto lookup = +[](void* ctx, const id owner) -> T* {
 		return static_cast<component_storage<T>*>(ctx)->try_get(owner);
 	};
-	return write<T>(s->items(), s->owners(), lookup, s, mutex, held_locks);
+	return write<T>(s->items(), s->owners(), lookup, s, guard, held_locks);
 }
 
 template <typename T>

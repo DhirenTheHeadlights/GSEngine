@@ -13,5 +13,6 @@ export import :run_context;
 export import :scheduler;
 export import :settings;
 export import :task_context;
+export import :task_graph;
 export import :traits;
 export import :system_dispatch;

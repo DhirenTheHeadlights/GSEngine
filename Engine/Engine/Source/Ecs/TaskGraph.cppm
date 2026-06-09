@@ -1,11 +1,10 @@
-export module gse.concurrency:task_graph;
+export module gse.ecs:task_graph;
 
 import std;
 
+import gse.concurrency;
 import gse.core;
 import gse.containers;
-
-import :async_task;
 
 export namespace gse {
 	class task_graph {
