@@ -1,4 +1,4 @@
-export module gs:balance_controller;
+﻿export module gs:balance_controller;
 
 import std;
 import gse;
@@ -11,7 +11,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Forward pelvis assist speed at full input.">{}
 			]]
-			gse::velocity forward_speed = gse::meters_per_second(0.20f);
+			gse::velocity forward_speed = gse::meters_per_second(0.12f);
 
 			[[
 				= gse::settings::describe<"Maximum forward pelvis assist speed.">{}
@@ -21,7 +21,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum lateral pelvis assist speed.">{}
 			]]
-			gse::velocity max_lateral_speed = gse::meters_per_second(0.70f);
+			gse::velocity max_lateral_speed = gse::meters_per_second(0.35f);
 
 			[[
 				= gse::settings::describe<"Gain from support-center error to pelvis assist.">{}
@@ -36,12 +36,12 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Forward capture below this magnitude is treated as normal gait lean and not resisted.">{}
 			]]
-			gse::displacement forward_capture_deadzone = gse::meters(0.35f);
+			gse::displacement forward_capture_deadzone = gse::meters(0.25f);
 
 			[[
 				= gse::settings::describe<"Maximum force used by the pelvis balance motor.">{}
 			]]
-			gse::force max_force = gse::newtons(500.f);
+			gse::force max_force = gse::newtons(400.f);
 
 			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 		};
@@ -99,7 +99,8 @@ auto gs::locomotion::balance_velocity_target(const state& s, const intent& it, c
 	const auto support_right = gse::dot(right, support_error);
 
 	const auto capture_forward_resisted = deadzoned(s.capture_forward, d.forward_capture_deadzone);
-	auto forward_velocity = d.forward_speed * std::clamp(
+	const float push_fade = std::clamp((gse::meters(0.35f) - s.capture_forward) / gse::meters(0.25f), 0.f, 1.f);
+	auto forward_velocity = d.forward_speed * push_fade * std::clamp(
 												  it.forward * it.intensity,
 												  -1.f,
 												  1.f

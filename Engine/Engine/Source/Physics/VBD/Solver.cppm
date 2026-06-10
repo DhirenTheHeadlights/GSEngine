@@ -129,6 +129,15 @@ export namespace gse::vbd {
 			float alpha
 		) -> void;
 
+		auto accumulate_joint_drive(
+			const joint_constraint& constraint,
+			std::uint32_t body_idx,
+			const vec3f& axis_world,
+			angle theta_axis,
+			int axis_index,
+			float sign
+		) -> void;
+
 		auto update_dual(
 			float alpha
 		) -> step_delta;
@@ -1236,6 +1245,20 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 						outer_product(j_soft, j_soft) *
 						constraint.soft_ang_stiffness[k];
 				}
+				for (int k = 0; k < 3; ++k) {
+					if (constraint.drive_stiffness[k] <= angular_stiffness{}) {
+						continue;
+					}
+					const vec3f axis_world = rotate_vector(body_a.predicted_orientation, dirs[k]);
+					accumulate_joint_drive(
+						constraint,
+						body_idx,
+						axis_world,
+						dot(axis_world, theta),
+						k,
+						sign
+					);
+				}
 			}
 			else {
 				const vec3f axis_a = rotate_vector(body_a.predicted_orientation, constraint.local_axis_a);
@@ -1300,6 +1323,17 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 							constraint.limit_penalty;
 					}
 				}
+
+				if (constraint.drive_stiffness[0] > angular_stiffness{}) {
+					accumulate_joint_drive(
+						constraint,
+						body_idx,
+						axis_a,
+						dot(axis_a, theta),
+						0,
+						sign
+					);
+				}
 			}
 		}
 	}
@@ -1348,6 +1382,29 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			}
 		}
 	}
+}
+
+auto gse::vbd::solver::accumulate_joint_drive(const joint_constraint& constraint, const std::uint32_t body_idx, const vec3f& axis_world, const angle theta_axis, const int axis_index, const float sign) -> void {
+	const auto& body_a = m_bodies[constraint.body_a];
+	const auto& body_b = m_bodies[constraint.body_b];
+	const auto stiffness_k = constraint.drive_stiffness[axis_index];
+
+	torque f_drive = stiffness_k * (theta_axis - constraint.drive_target[axis_index]);
+	auto hessian_stiffness = stiffness_k;
+	if (constraint.drive_damping > 0.f) {
+		const quat q_error_prev = body_b.old_orientation * conjugate(body_a.old_orientation) *
+			conjugate(constraint.rest_orientation);
+		const auto theta_prev = dot(axis_world, to_axis_angle(q_error_prev));
+		f_drive += stiffness_k * constraint.drive_damping * (theta_axis - theta_prev);
+		hessian_stiffness = stiffness_k * (1.f + constraint.drive_damping);
+	}
+	if (constraint.drive_max_torque > torque{}) {
+		f_drive = std::clamp(f_drive, -constraint.drive_max_torque, constraint.drive_max_torque);
+	}
+
+	const vec3f j_drive = axis_world * (-sign);
+	m_solve_state[body_idx].angular_gradient += j_drive * f_drive;
+	m_solve_state[body_idx].angular_hessian += outer_product(j_drive, j_drive) * hessian_stiffness;
 }
 
 auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> step_delta {

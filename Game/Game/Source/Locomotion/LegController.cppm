@@ -1,9 +1,8 @@
-export module gs:leg_controller;
+﻿export module gs:leg_controller;
 
 import std;
 import gse;
 
-import :controlled_joint;
 import :leg_ik;
 import :locomotion_types;
 
@@ -23,22 +22,22 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Lift height of swing foot at midphase.">{}
 			]]
-			gse::displacement swing_lift_height = gse::meters(0.26f);
+			gse::displacement swing_lift_height = gse::meters(0.20f);
 
 			[[
 				= gse::settings::describe<"Time used for swing-foot lift and descent.">{}
 			]]
-			gse::time swing_trajectory_duration = gse::seconds(0.48f);
+			gse::time swing_trajectory_duration = gse::seconds(0.36f);
 
 			[[
 				= gse::settings::describe<"Clamp range on stance hip target.">{}
 			]]
-			gse::angle stance_hip_clamp = gse::radians(0.60f);
+			gse::angle stance_hip_clamp = gse::radians(0.90f);
 
 			[[
 				= gse::settings::describe<"Clamp range on stance knee target.">{}
 			]]
-			gse::angle stance_knee_clamp = gse::radians(0.45f);
+			gse::angle stance_knee_clamp = gse::radians(1.20f);
 
 			[[
 				= gse::settings::describe<"Foot center Y used by stance IK.">{}
@@ -53,26 +52,132 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Distance below ground used as the active plant target before contact.">{}
 			]]
-			gse::displacement plant_foot_sink = gse::meters(0.08f);
+			gse::displacement plant_foot_sink = gse::meters(0.05f);
 
 			[[
 				= gse::settings::describe<"Forward capture limit for releasing the swing leg during weight shift.">{}
 			]]
-			gse::displacement weight_shift_capture_forward_limit = gse::meters(0.28f);
+			gse::displacement weight_shift_capture_forward_limit = gse::meters(0.45f);
 
 			[[
 				= gse::settings::describe<"Backward capture limit for releasing the swing leg during weight shift.">{}
 			]]
-			gse::displacement weight_shift_capture_backward_limit = gse::meters(0.18f);
+			gse::displacement weight_shift_capture_backward_limit = gse::meters(0.30f);
 
 			[[
 				= gse::settings::describe<"Lateral capture limit for releasing the swing leg during weight shift.">{}
 			]]
-			gse::displacement weight_shift_capture_right_limit = gse::meters(0.24f);
+			gse::displacement weight_shift_capture_right_limit = gse::meters(0.32f);
 
-			[[= gse::settings::describe<"Leg joint position gain.">{}]] float joint_gain = 30.f;
+			[[
+				= gse::settings::describe<"Stance hip pitch servo stiffness.">{}
+			]]
+			gse::angular_stiffness hip_drive_stiffness = gse::newton_meters_per_radian(350.f);
 
-			[[= gse::settings::describe<"Leg joint velocity damping.">{}]] float joint_damping = 6.f;
+			[[
+				= gse::settings::describe<"Swing hip pitch servo stiffness (kept low to limit trunk reaction).">{}
+			]]
+			gse::angular_stiffness swing_hip_stiffness = gse::newton_meters_per_radian(250.f);
+
+			[[
+				= gse::settings::describe<"Hip roll/yaw servo stiffness holding the leg in the sagittal plane.">{}
+			]]
+			gse::angular_stiffness hip_lateral_stiffness = gse::newton_meters_per_radian(250.f);
+
+			[[
+				= gse::settings::describe<"Knee servo stiffness.">{}
+			]]
+			gse::angular_stiffness knee_drive_stiffness = gse::newton_meters_per_radian(300.f);
+
+			[[
+				= gse::settings::describe<"Ankle servo stiffness.">{}
+			]]
+			gse::angular_stiffness ankle_drive_stiffness = gse::newton_meters_per_radian(300.f);
+
+			[[
+				= gse::settings::describe<"Joint servo damping as a multiple of stiffness times substep dt.">{}
+			]]
+			float drive_damping = 6.f;
+
+			[[
+				= gse::settings::describe<"Stance hip servo torque limit.">{}
+			]]
+			gse::torque hip_max_torque = gse::newton_meters(250.f);
+
+			[[
+				= gse::settings::describe<"Stance knee servo torque limit.">{}
+			]]
+			gse::torque knee_max_torque = gse::newton_meters(250.f);
+
+			[[
+				= gse::settings::describe<"Stance ankle servo torque limit.">{}
+			]]
+			gse::torque ankle_max_torque = gse::newton_meters(140.f);
+
+			[[
+				= gse::settings::describe<"Swing hip servo torque limit (limits trunk reaction).">{}
+			]]
+			gse::torque swing_hip_max_torque = gse::newton_meters(90.f);
+
+			[[
+				= gse::settings::describe<"Swing knee servo torque limit.">{}
+			]]
+			gse::torque swing_knee_max_torque = gse::newton_meters(80.f);
+
+			[[
+				= gse::settings::describe<"Swing ankle servo torque limit.">{}
+			]]
+			gse::torque swing_ankle_max_torque = gse::newton_meters(30.f);
+
+			[[
+				= gse::settings::describe<"Trailing-ankle plantarflexion added across weight shift (toe-off push).">{}
+			]]
+			gse::angle toe_off_angle = gse::radians(-0.20f);
+
+			[[
+				= gse::settings::describe<"Swing-hip roll target scale toward the planned lateral foot offset (0 disables).">{}
+			]]
+			float swing_roll_gain = 0.f;
+
+			[[
+				= gse::settings::describe<"Stance-hip yaw target per radian of heading error (turns the pelvis over the planted foot).">{}
+			]]
+			float steer_gain = 1.5f;
+
+			[[
+				= gse::settings::describe<"Clamp on the stance-hip steering yaw target.">{}
+			]]
+			gse::angle steer_clamp = gse::radians(0.55f);
+
+			[[
+				= gse::settings::describe<"Stance-ankle CoP shift per radian of pelvis pitch, righting the trunk.">{}
+			]]
+			float pelvis_righting_gain = 1.0f;
+
+			[[
+				= gse::settings::describe<"Pitch-rate anticipation horizon for the stance-ankle CoP shift.">{}
+			]]
+			gse::time pelvis_righting_rate_gain = gse::seconds(0.20f);
+
+			[[
+				= gse::settings::describe<"Clamp on the stance-ankle CoP shift.">{}
+			]]
+			gse::angle pelvis_righting_clamp = gse::radians(0.40f);
+
+			[[
+				= gse::settings::describe<"Adaptation rate of the standing ankle CoP trim per second of pitch error.">{}
+			]]
+			float posture_trim_rate = 0.25f;
+
+			[[
+				= gse::settings::describe<"Clamp on the adaptive ankle CoP trim.">{}
+			]]
+			gse::angle posture_trim_clamp = gse::radians(0.30f);
+
+			[[
+				= gse::settings::describe<"Fraction of the posture trim also applied as a stance-hip bias, unloading the ankle.">{}
+			]]
+			float posture_trim_hip_share = 0.5f;
 
 			[[
 				= gse::settings::describe<"Grounded foot anchor velocity gain.">{}
@@ -82,7 +187,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum grounded foot anchor speed.">{}
 			]]
-			gse::velocity foot_anchor_max_speed = gse::meters_per_second(0.75f);
+			gse::velocity foot_anchor_max_speed = gse::meters_per_second(2.5f);
 
 			[[
 				= gse::settings::describe<"Maximum grounded foot anchor force.">{}
@@ -92,12 +197,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum foot anchor force for the airborne swing foot.">{}
 			]]
-			gse::force swing_foot_anchor_max_force = gse::newtons(220.f);
-
-			[[
-				= gse::settings::describe<"Muscle activation cap for the swing leg joints (limits reaction on the pelvis).">{}
-			]]
-			float swing_joint_max_activation = 0.30f;
+			gse::force swing_foot_anchor_max_force = gse::newtons(150.f);
 
 			gse::interval_timer<float> log_timer{ gse::seconds(0.3f) };
 		};
@@ -105,22 +205,29 @@ export namespace gs::locomotion {
 		static auto run(
 			data& d,
 			gse::read<skeleton_refs> refs,
+			gse::read<intent> intents,
 			gse::read<state> states,
 			gse::read<gait> gaits,
 			gse::read<plan> plans,
 			gse::write<leg_context> contexts,
-			gse::write<controlled_joint_component> ctrls,
+			gse::write<gse::physics::joint_drive_component> drives,
 			gse::write<gse::physics::motor_component> motors
 		) -> gse::async::task<>;
 	};
 }
 
 namespace gs::locomotion {
+	struct leg_pose {
+		gse::angle hip = gse::radians(0.f);
+		gse::angle knee = gse::radians(0.f);
+		gse::angle ankle = gse::radians(0.f);
+		gse::angle hip_yaw = gse::radians(0.f);
+		gse::angle hip_roll = gse::radians(0.f);
+	};
+
 	struct leg_joint_targets {
-		gse::angle hip_l = gse::radians(0.f);
-		gse::angle knee_l = gse::radians(0.f);
-		gse::angle hip_r = gse::radians(0.f);
-		gse::angle knee_r = gse::radians(0.f);
+		leg_pose left;
+		leg_pose right;
 	};
 
 	auto smooth_step(
@@ -142,8 +249,7 @@ namespace gs::locomotion {
 		const skeleton_refs& r,
 		const leg_context& ctx,
 		const leg_controller::data& d
-	) -> std::
-		pair<gse::angle, gse::angle>;
+	) -> leg_pose;
 	auto stance_foot_target(
 		leg which,
 		const leg_context& ctx,
@@ -195,18 +301,29 @@ namespace gs::locomotion {
 		const skeleton_refs& r,
 		const leg_context& ctx,
 		const leg_controller::data& d
-	) -> std::
-		pair<gse::angle, gse::angle>;
+	) -> leg_pose;
 	auto weight_shift_ready(
 		const state& s,
 		const leg_controller::data& d
 	) -> bool;
-	auto write_targets(
+	auto pelvis_yaw_orientation(
+		const state& s
+	) -> gse::quat;
+	auto pelvis_pitch_about_right(
+		const state& s
+	) -> gse::angle;
+	auto steering_target(
+		const state& s,
+		const intent& it,
+		const leg_controller::data& d
+	) -> gse::angle;
+	auto write_drives(
 		const skeleton_refs& r,
 		const leg_joint_targets& targets,
 		leg swing_leg,
-		bool swing_gains_active,
-		gse::write<controlled_joint_component>& ctrls,
+		bool swing_active,
+		bool swing_airborne,
+		gse::write<gse::physics::joint_drive_component>& drives,
 		bool controllers_active,
 		const leg_controller::data& d
 	) -> void;
@@ -324,29 +441,59 @@ auto gs::locomotion::stance_foot_target(const leg which, const leg_context& ctx,
 	return grounded_foot_position(planted_foot_position(which, ctx), d);
 }
 
-auto gs::locomotion::compute_stance(const leg which, const state& s, const skeleton_refs& r, const leg_context& ctx, const leg_controller::data& d) -> std::pair<gse::angle, gse::angle> {
+auto gs::locomotion::compute_stance(const leg which, const state& s, const skeleton_refs& r, const leg_context& ctx, const leg_controller::data& d) -> leg_pose {
 	auto support_state = s;
 	support_state.pelvis_position.y() = std::max(support_state.pelvis_position.y(), r.pelvis_target_height);
+	support_state.pelvis_orientation = pelvis_yaw_orientation(s);
 
 	const auto hip_world = hip_world_position(support_state, r, which);
 	const auto foot_target = stance_foot_target(which, ctx, d);
-	const auto ik = solve_leg_ik(hip_world, foot_target, s.pelvis_orientation, r.thigh_length, r.shin_length);
+	const auto ik = solve_leg_ik(hip_world, foot_target, support_state.pelvis_orientation, r.thigh_length, r.shin_length);
 
-	const auto hip_target = std::clamp(ik.hip_pitch, -d.stance_hip_clamp, d.stance_hip_clamp);
+	const auto pitch = pelvis_pitch_about_right(s);
+	const auto hip_target = std::clamp(
+		ik.hip_pitch - ctx.cop_trim * d.posture_trim_hip_share,
+		-d.stance_hip_clamp,
+		d.stance_hip_clamp
+	);
 	const auto knee_target = std::clamp(ik.knee_bend, -d.stance_knee_clamp, gse::radians(0.f));
+	const auto cop_shift = std::clamp(
+		pitch * d.pelvis_righting_gain + s.pelvis_pitch_rate * d.pelvis_righting_rate_gain,
+		-d.pelvis_righting_clamp,
+		d.pelvis_righting_clamp
+	);
+	const auto ankle_target = -(hip_target + knee_target) + cop_shift + ctx.cop_trim;
 
-	return { hip_target, knee_target };
+	return {
+		.hip = hip_target,
+		.knee = knee_target,
+		.ankle = ankle_target,
+	};
 }
 
-auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& g, const plan& p, const skeleton_refs& r, const leg_context& ctx, const leg_controller::data& d) -> std::pair<gse::angle, gse::angle> {
+auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& g, const plan& p, const skeleton_refs& r, const leg_context& ctx, const leg_controller::data& d) -> leg_pose {
+	const auto pitch = pelvis_pitch_about_right(s);
+	const auto flat_ankle = [&](const gse::angle hip, const gse::angle knee) {
+		return -(pitch + hip + knee);
+	};
+
 	if (g.current == phase::idle || g.current == phase::recover) {
-		return { gse::radians(0.f), d.stance_knee_rest };
+		return {
+			.hip = gse::radians(0.f),
+			.knee = d.stance_knee_rest,
+			.ankle = flat_ankle(gse::radians(0.f), d.stance_knee_rest),
+		};
 	}
 
 	if (g.current == phase::weight_shift) {
 		const float t = phase_progress(g);
 		const auto knee = d.stance_knee_rest + (d.swing_knee_lift * 0.15f - d.stance_knee_rest) * t;
-		return { gse::radians(0.f), knee };
+		const float toe_off_fade = std::clamp((gse::meters(0.45f) - s.capture_forward) / gse::meters(0.30f), 0.f, 1.f);
+		return {
+			.hip = gse::radians(0.f),
+			.knee = knee,
+			.ankle = flat_ankle(gse::radians(0.f), knee) + d.toe_off_angle * (t * toe_off_fade),
+		};
 	}
 
 	const auto start_foot =
@@ -364,17 +511,31 @@ auto gs::locomotion::compute_swing(const leg which, const state& s, const gait& 
 	const float trajectory_t = g.current == phase::plant ? 1.f : t;
 	const auto lift = g.current == phase::plant ? gse::displacement{} : d.swing_lift_height;
 
-	const auto hip_world = hip_world_position(s, r, which);
+	auto ik_state = s;
+	ik_state.pelvis_orientation = pelvis_yaw_orientation(s);
+	const auto hip_world = hip_world_position(ik_state, r, which);
 	const auto desired_foot = clamp_foot_to_leg_reach(
 		hip_world,
 		compute_swing_foot(start_foot, target_foot, trajectory_t, lift),
-		s.pelvis_orientation,
+		ik_state.pelvis_orientation,
 		r.thigh_length,
 		r.shin_length
 	);
-	const auto ik = solve_leg_ik(hip_world, desired_foot, s.pelvis_orientation, r.thigh_length, r.shin_length);
+	const auto ik = solve_leg_ik(hip_world, desired_foot, ik_state.pelvis_orientation, r.thigh_length, r.shin_length);
 
-	return { ik.hip_pitch, ik.knee_bend };
+	const auto rel_body = gse::inverse_rotate_vector(ik_state.pelvis_orientation, desired_foot - hip_world);
+	const auto hip_roll = gse::radians(std::atan2(
+		static_cast<float>(rel_body.x()),
+		std::max(static_cast<float>(-rel_body.y()), 0.05f)
+	)) * d.swing_roll_gain;
+
+	const auto hip_target = ik.hip_pitch - pitch;
+	return {
+		.hip = hip_target,
+		.knee = ik.knee_bend,
+		.ankle = flat_ankle(hip_target, ik.knee_bend),
+		.hip_roll = hip_roll,
+	};
 }
 
 auto gs::locomotion::weight_shift_ready(const state& s, const leg_controller::data& d) -> bool {
@@ -384,21 +545,53 @@ auto gs::locomotion::weight_shift_ready(const state& s, const leg_controller::da
 		gse::abs(s.capture_right) <= d.weight_shift_capture_right_limit;
 }
 
-auto gs::locomotion::write_targets(const skeleton_refs& r, const leg_joint_targets& targets, const leg swing_leg, const bool swing_gains_active, gse::write<controlled_joint_component>& ctrls, const bool controllers_active, const leg_controller::data& d) -> void {
-	auto apply = [&](const gse::id joint_id, const gse::angle target, const bool is_swing) {
-		if (auto* cj = ctrls.find(joint_id)) {
-			cj->enabled = controllers_active;
-			cj->target_angle = target;
-			cj->gain = d.joint_gain;
-			cj->damping = d.joint_damping;
-			cj->max_activation = swing_gains_active && is_swing ? d.swing_joint_max_activation : 1.f;
+auto gs::locomotion::pelvis_yaw_orientation(const state& s) -> gse::quat {
+	const auto fwd_xz = gse::vec3f(s.pelvis_forward.x(), 0.f, s.pelvis_forward.z());
+	const float len = gse::magnitude(fwd_xz);
+	if (len <= 0.0001f) {
+		return gse::quat(1.f, 0.f, 0.f, 0.f);
+	}
+	const auto yaw = gse::radians(std::atan2(-fwd_xz.x() / len, -fwd_xz.z() / len));
+	return gse::quat(gse::vec3f(0.f, 1.f, 0.f), yaw);
+}
+
+auto gs::locomotion::pelvis_pitch_about_right(const state& s) -> gse::angle {
+	return gse::radians(std::asin(std::clamp(s.pelvis_forward.y(), -1.f, 1.f)));
+}
+
+auto gs::locomotion::steering_target(const state& s, const intent& it, const leg_controller::data& d) -> gse::angle {
+	if (!it.has_heading) {
+		return gse::radians(0.f);
+	}
+	const float current_yaw = std::atan2(-s.pelvis_forward.x(), -s.pelvis_forward.z());
+	const float yaw_error = std::remainder(static_cast<float>(it.desired_yaw) - current_yaw, 2.f * std::numbers::pi_v<float>);
+	return std::clamp(gse::radians(-yaw_error * d.steer_gain), -d.steer_clamp, d.steer_clamp);
+}
+
+auto gs::locomotion::write_drives(const skeleton_refs& r, const leg_joint_targets& targets, const leg swing_leg, const bool swing_active, const bool swing_airborne, gse::write<gse::physics::joint_drive_component>& drives, const bool controllers_active, const leg_controller::data& d) -> void {
+	auto apply = [&](const gse::id joint_id, const gse::vec3<gse::angle>& target, const gse::angular_stiffness primary, const gse::angular_stiffness lateral, const gse::torque max_torque) {
+		if (auto* drv = drives.find(joint_id)) {
+			drv->enabled = controllers_active;
+			drv->target = target;
+			drv->stiffness = gse::vec3<gse::angular_stiffness>(primary, lateral, lateral);
+			drv->damping = d.drive_damping;
+			drv->max_torque = max_torque;
 		}
 	};
-	const bool left_is_swing = swing_leg == leg::left;
-	apply(r.hip_l_joint_id, targets.hip_l, left_is_swing);
-	apply(r.knee_l_joint_id, targets.knee_l, left_is_swing);
-	apply(r.hip_r_joint_id, targets.hip_r, !left_is_swing);
-	apply(r.knee_r_joint_id, targets.knee_r, !left_is_swing);
+	const auto hinge_lateral = gse::newton_meters_per_radian(0.f);
+	auto apply_leg = [&](const leg which, const leg_pose& pose, const gse::id hip_id, const gse::id knee_id, const gse::id ankle_id) {
+		const bool swinging = swing_active && which == swing_leg;
+		const bool airborne = swing_airborne && which == swing_leg;
+		const auto hip_stiffness = swinging ? d.swing_hip_stiffness : d.hip_drive_stiffness;
+		const auto hip_torque = swinging ? d.swing_hip_max_torque : d.hip_max_torque;
+		const auto knee_torque = swinging ? d.swing_knee_max_torque : d.knee_max_torque;
+		const auto ankle_torque = airborne ? d.swing_ankle_max_torque : d.ankle_max_torque;
+		apply(hip_id, gse::vec3<gse::angle>(pose.hip, pose.hip_yaw, pose.hip_roll), hip_stiffness, d.hip_lateral_stiffness, hip_torque);
+		apply(knee_id, gse::vec3<gse::angle>(pose.knee, gse::radians(0.f), gse::radians(0.f)), d.knee_drive_stiffness, hinge_lateral, knee_torque);
+		apply(ankle_id, gse::vec3<gse::angle>(pose.ankle, gse::radians(0.f), gse::radians(0.f)), d.ankle_drive_stiffness, hinge_lateral, ankle_torque);
+	};
+	apply_leg(leg::left, targets.left, r.hip_l_joint_id, r.knee_l_joint_id, r.ankle_l_joint_id);
+	apply_leg(leg::right, targets.right, r.hip_r_joint_id, r.knee_r_joint_id, r.ankle_r_joint_id);
 }
 
 auto gs::locomotion::foot_anchor_velocity(const gse::vec3<gse::position>& current, const gse::vec3<gse::position>& target, const bool include_vertical, const bool allow_upward_vertical, const leg_controller::data& d) -> gse::vec3<gse::velocity> {
@@ -442,7 +635,7 @@ auto gs::locomotion::write_foot_motor(const gse::id foot_id, const gse::vec3<gse
 	}
 }
 
-auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs, gse::read<state> states, gse::read<gait> gaits, gse::read<plan> plans, gse::write<leg_context> contexts, gse::write<controlled_joint_component> ctrls, gse::write<gse::physics::motor_component> motors) -> gse::async::task<> {
+auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs, gse::read<intent> intents, gse::read<state> states, gse::read<gait> gaits, gse::read<plan> plans, gse::write<leg_context> contexts, gse::write<gse::physics::joint_drive_component> drives, gse::write<gse::physics::motor_component> motors) -> gse::async::task<> {
 	const bool log_now = d.log_timer.tick();
 	const auto owner_ids = contexts.owner_ids();
 	for (std::size_t i = 0; i < contexts.size(); ++i) {
@@ -450,6 +643,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		const auto owner = owner_ids[i];
 
 		const auto* r = refs.find(owner);
+		const auto* it = intents.find(owner);
 		const auto* s = states.find(owner);
 		const auto* g = gaits.find(owner);
 		const auto* p = plans.find(owner);
@@ -499,42 +693,47 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 
 		const bool controllers_active = !g->fallen && s->valid && cctx.planted_initialized;
 
+		if (controllers_active && s->any_foot_grounded) {
+			const auto frame_dt = gse::system_clock::fixed_dt<gse::time>() * gse::system_clock::fixed_steps_this_frame();
+			cctx.cop_trim = std::clamp(
+				cctx.cop_trim + s->pelvis_pitch * (d.posture_trim_rate * frame_dt.as<gse::seconds>()),
+				-d.posture_trim_clamp,
+				d.posture_trim_clamp
+			);
+		}
+
 		leg_joint_targets targets;
-		bool swing_gains_active = false;
+		bool swing_active = false;
 		if (controllers_active) {
 			const bool hold_weight_shift = g->current == phase::weight_shift && !weight_shift_ready(*s, d);
 			const bool plant_waiting_for_contact = g->current == phase::plant && !swing_foot_grounded;
 			const bool both_stance = g->current == phase::idle || g->current == phase::recover || hold_weight_shift ||
 				(g->current == phase::plant && !plant_waiting_for_contact);
-			swing_gains_active = !both_stance;
+			swing_active = !both_stance;
+			const auto steer = it && s->valid ? steering_target(*s, *it, d) : gse::radians(0.f);
 			if (both_stance) {
-				const auto [hip_l, knee_l] = compute_stance(leg::left, *s, *r, cctx, d);
-				const auto [hip_r, knee_r] = compute_stance(leg::right, *s, *r, cctx, d);
-				targets.hip_l = hip_l;
-				targets.knee_l = knee_l;
-				targets.hip_r = hip_r;
-				targets.knee_r = knee_r;
+				targets.left = compute_stance(leg::left, *s, *r, cctx, d);
+				targets.right = compute_stance(leg::right, *s, *r, cctx, d);
+				targets.left.hip_yaw = steer;
+				targets.right.hip_yaw = steer;
 			}
 			else {
 				const leg stance_leg = other(g->swing_leg);
-				const auto [stance_hip, stance_knee] = compute_stance(stance_leg, *s, *r, cctx, d);
-				const auto [swing_hip, swing_knee] = compute_swing(g->swing_leg, *s, *g, *p, *r, cctx, d);
+				auto stance_pose = compute_stance(stance_leg, *s, *r, cctx, d);
+				const auto swing_pose = compute_swing(g->swing_leg, *s, *g, *p, *r, cctx, d);
+				stance_pose.hip_yaw = steer;
 				if (stance_leg == leg::left) {
-					targets.hip_l = stance_hip;
-					targets.knee_l = stance_knee;
-					targets.hip_r = swing_hip;
-					targets.knee_r = swing_knee;
+					targets.left = stance_pose;
+					targets.right = swing_pose;
 				}
 				else {
-					targets.hip_r = stance_hip;
-					targets.knee_r = stance_knee;
-					targets.hip_l = swing_hip;
-					targets.knee_l = swing_knee;
+					targets.right = stance_pose;
+					targets.left = swing_pose;
 				}
 			}
 		}
 
-		write_targets(*r, targets, g->swing_leg, swing_gains_active, ctrls, controllers_active, d);
+		write_drives(*r, targets, g->swing_leg, swing_active, swing_active && g->current == phase::swing, drives, controllers_active, d);
 		const bool left_planting =
 			g->current == phase::plant && g->swing_leg == leg::left && plant_target_matches && !cctx.plant_initialized;
 		const bool right_planting =
@@ -589,21 +788,21 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		if (log_now) {
 			gse::log::println(
 				"leg_controller: owner={} phase={} swing={} fallen={} "
-				"hips=({:+.3f},{:+.3f}) knees=({:+.3f},{:+.3f}) "
-				"pelvis_y={:+.2f} target_y={:+.2f} lean_body=({:+.3f},{:+.3f}) "
+				"hips=({:+.3f},{:+.3f}) knees=({:+.3f},{:+.3f}) ankles=({:+.3f},{:+.3f}) "
+				"pelvis_y={:+.2f} target_y={:+.2f} "
 				"feet_y=({:+.2f},{:+.2f}) grounded=({},{}) plants=({:+.2f},{:+.2f})/({:+.2f},{:+.2f})",
 				owner.number(),
 				g->current,
 				g->swing_leg,
 				g->fallen,
-				targets.hip_l,
-				targets.hip_r,
-				targets.knee_l,
-				targets.knee_r,
+				targets.left.hip,
+				targets.right.hip,
+				targets.left.knee,
+				targets.right.knee,
+				targets.left.ankle,
+				targets.right.ankle,
 				s->pelvis_position.y(),
 				r->pelvis_target_height,
-				s->lean_body.x(),
-				-s->lean_body.z(),
 				s->foot_position_l.y(),
 				s->foot_position_r.y(),
 				s->foot_grounded_l,
