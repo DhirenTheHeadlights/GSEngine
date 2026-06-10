@@ -27,7 +27,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Time used for swing-foot lift and descent.">{}
 			]]
-			gse::time swing_trajectory_duration = gse::seconds(0.36f);
+			gse::time swing_trajectory_duration = gse::seconds(0.30f);
 
 			[[
 				= gse::settings::describe<"Clamp range on stance hip target.">{}
@@ -132,7 +132,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Trailing-ankle plantarflexion added across weight shift (toe-off push).">{}
 			]]
-			gse::angle toe_off_angle = gse::radians(-0.20f);
+			gse::angle toe_off_angle = gse::radians(-0.23f);
 
 			[[
 				= gse::settings::describe<"Swing-hip roll target scale toward the planned lateral foot offset (0 disables).">{}
@@ -162,17 +162,17 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Clamp on the stance-ankle CoP shift.">{}
 			]]
-			gse::angle pelvis_righting_clamp = gse::radians(0.40f);
+			gse::angle pelvis_righting_clamp = gse::radians(0.45f);
 
 			[[
 				= gse::settings::describe<"Adaptation rate of the standing ankle CoP trim per second of pitch error.">{}
 			]]
-			float posture_trim_rate = 0.25f;
+			float posture_trim_rate = 0.35f;
 
 			[[
 				= gse::settings::describe<"Clamp on the adaptive ankle CoP trim.">{}
 			]]
-			gse::angle posture_trim_clamp = gse::radians(0.30f);
+			gse::angle posture_trim_clamp = gse::radians(0.40f);
 
 			[[
 				= gse::settings::describe<"Fraction of the posture trim also applied as a stance-hip bias, unloading the ankle.">{}
@@ -563,9 +563,7 @@ auto gs::locomotion::steering_target(const state& s, const intent& it, const leg
 	if (!it.has_heading) {
 		return gse::radians(0.f);
 	}
-	const float current_yaw = std::atan2(-s.pelvis_forward.x(), -s.pelvis_forward.z());
-	const float yaw_error = std::remainder(static_cast<float>(it.desired_yaw) - current_yaw, 2.f * std::numbers::pi_v<float>);
-	return std::clamp(gse::radians(-yaw_error * d.steer_gain), -d.steer_clamp, d.steer_clamp);
+	return std::clamp(-heading_error(s, it) * d.steer_gain, -d.steer_clamp, d.steer_clamp);
 }
 
 auto gs::locomotion::write_drives(const skeleton_refs& r, const leg_joint_targets& targets, const leg swing_leg, const bool swing_active, const bool swing_airborne, gse::write<gse::physics::joint_drive_component>& drives, const bool controllers_active, const leg_controller::data& d) -> void {

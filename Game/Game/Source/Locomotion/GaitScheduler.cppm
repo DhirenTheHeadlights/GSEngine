@@ -7,7 +7,7 @@ import :locomotion_types;
 
 export namespace gs::locomotion {
 	struct gait_config {
-		gse::time weight_shift_duration = gse::seconds(0.15f);
+		gse::time weight_shift_duration = gse::seconds(0.12f);
 		gse::time swing_duration = gse::seconds(0.65f);
 		gse::time plant_duration = gse::seconds(0.12f);
 		gse::time sprint_weight_shift_duration = gse::seconds(0.10f);
@@ -25,17 +25,17 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Walking weight-shift phase duration.">{}
 			]]
-			gse::time weight_shift_duration = gse::seconds(0.15f);
+			gse::time weight_shift_duration = gse::seconds(0.12f);
 
 			[[
 				= gse::settings::describe<"Walking swing phase duration.">{}
 			]]
-			gse::time swing_duration = gse::seconds(0.42f);
+			gse::time swing_duration = gse::seconds(0.38f);
 
 			[[
 				= gse::settings::describe<"Walking plant phase duration.">{}
 			]]
-			gse::time plant_duration = gse::seconds(0.15f);
+			gse::time plant_duration = gse::seconds(0.12f);
 
 			[[
 				= gse::settings::describe<"Swing progress before contact may end the swing.">{}
@@ -50,7 +50,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Maximum time a swing may wait for the foot target.">{}
 			]]
-			gse::time swing_timeout = gse::seconds(0.60f);
+			gse::time swing_timeout = gse::seconds(0.52f);
 
 			[[
 				= gse::settings::describe<"Swing progress before unstable posture may force planting.">{}
@@ -71,6 +71,11 @@ export namespace gs::locomotion {
 				= gse::settings::describe<"Capture-point magnitude that triggers a step from idle.">{}
 			]]
 			gse::displacement capture_step_threshold = gse::meters(0.06f);
+
+			[[
+				= gse::settings::describe<"Heading error that triggers turn-in-place stepping.">{}
+			]]
+			gse::angle heading_step_threshold = gse::radians(0.45f);
 
 			[[
 				= gse::settings::describe<"Pelvis Y below which the character is declared fallen.">{}
@@ -377,12 +382,19 @@ auto gs::locomotion::gait_scheduler::run(data& d, gse::read<skeleton_refs> refs,
 			(s->capture_forward > cfg.capture_step_threshold ||
 			 s->capture_forward < -cfg.capture_step_threshold ||
 			 gse::abs(s->capture_right) > cfg.capture_step_threshold);
-		const bool wants_step = input_wants_step || capture_wants_step;
+		const bool heading_wants_step = s->valid && gse::abs(heading_error(*s, *it)) > d.heading_step_threshold;
+		const bool wants_step = input_wants_step || capture_wants_step || heading_wants_step;
 
 		switch (g.current) {
 			case phase::idle:
-				if (input_wants_step) {
-					begin_phase(g, phase::weight_shift, cfg.weight_shift_duration, "input", owner);
+				if (input_wants_step || heading_wants_step) {
+					begin_phase(
+						g,
+						phase::weight_shift,
+						cfg.weight_shift_duration,
+						input_wants_step ? "input" : "heading",
+						owner
+					);
 				}
 				break;
 
