@@ -78,6 +78,8 @@ auto gs::sandbox_scene_setup(gse::scene& s) -> void {
 			.hip_r_joint_id = humanoid_handle.joint_ids[11],
 			.knee_r_joint_id = humanoid_handle.joint_ids[12],
 			.ankle_r_joint_id = humanoid_handle.joint_ids[13],
+			.shoulder_l_joint_id = humanoid_handle.joint_ids[2],
+			.shoulder_r_joint_id = humanoid_handle.joint_ids[5],
 			.thigh_length = gse::meters(0.45f),
 			.shin_length = gse::meters(0.40f),
 			.hip_offset_lateral = gse::meters(0.075f),

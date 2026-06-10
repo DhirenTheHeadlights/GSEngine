@@ -180,6 +180,36 @@ export namespace gs::locomotion {
 			float posture_trim_hip_share = 0.5f;
 
 			[[
+				= gse::settings::describe<"Counter-phase arm swing amplitude.">{}
+			]]
+			gse::angle arm_swing_amplitude = gse::radians(0.35f);
+
+			[[
+				= gse::settings::describe<"Arm hang angle from the spawn T-pose.">{}
+			]]
+			gse::angle arm_hang_angle = gse::radians(1.45f);
+
+			[[
+				= gse::settings::describe<"Shoulder fore-aft swing servo stiffness.">{}
+			]]
+			gse::angular_stiffness arm_swing_stiffness = gse::newton_meters_per_radian(40.f);
+
+			[[
+				= gse::settings::describe<"Shoulder twist servo stiffness.">{}
+			]]
+			gse::angular_stiffness arm_twist_stiffness = gse::newton_meters_per_radian(30.f);
+
+			[[
+				= gse::settings::describe<"Shoulder hang servo stiffness.">{}
+			]]
+			gse::angular_stiffness arm_hang_stiffness = gse::newton_meters_per_radian(60.f);
+
+			[[
+				= gse::settings::describe<"Shoulder servo torque limit.">{}
+			]]
+			gse::torque arm_max_torque = gse::newton_meters(50.f);
+
+			[[
 				= gse::settings::describe<"Grounded foot anchor velocity gain.">{}
 			]]
 			gse::inverse_length foot_anchor_gain = gse::per_meter(4.f);
@@ -690,10 +720,10 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 		cctx.last_swing_leg = g->swing_leg;
 
 		const bool controllers_active = !g->fallen && s->valid && cctx.planted_initialized;
+		const auto frame_dt = gse::system_clock::fixed_dt<gse::time>() * gse::system_clock::fixed_steps_this_frame();
 
 		const float walk_intensity = it ? std::clamp(it->intensity, 0.f, 1.f) : 0.f;
 		if (controllers_active && s->any_foot_grounded && walk_intensity > 0.3f) {
-			const auto frame_dt = gse::system_clock::fixed_dt<gse::time>() * gse::system_clock::fixed_steps_this_frame();
 			cctx.cop_trim = std::clamp(
 				cctx.cop_trim + s->pelvis_pitch * (d.posture_trim_rate * frame_dt.as<gse::seconds>()),
 				-d.posture_trim_clamp,
@@ -701,6 +731,33 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 			);
 		}
 		cctx.cop_trim_applied = cctx.cop_trim * std::clamp(walk_intensity / 0.5f, 0.f, 1.f);
+
+		const float arm_phase_target = !controllers_active || g->current == phase::idle || g->current == phase::recover
+			? 0.f
+			: g->current == phase::swing || g->current == phase::plant ? (g->swing_leg == leg::left ? 1.f : -1.f)
+																	   : cctx.arm_phase;
+		const float arm_phase_step = frame_dt.as<gse::seconds>() / 0.4f;
+		cctx.arm_phase += std::clamp(arm_phase_target - cctx.arm_phase, -arm_phase_step, arm_phase_step);
+
+		auto write_shoulder = [&](const gse::id joint_id, const float side) {
+			if (auto* drv = drives.find(joint_id)) {
+				drv->enabled = true;
+				drv->target = gse::vec3<gse::angle>(
+					d.arm_swing_amplitude * (cctx.arm_phase * side),
+					gse::radians(0.f),
+					d.arm_hang_angle * -side
+				);
+				drv->stiffness = gse::vec3<gse::angular_stiffness>(
+					d.arm_swing_stiffness,
+					d.arm_twist_stiffness,
+					d.arm_hang_stiffness
+				);
+				drv->damping = d.drive_damping;
+				drv->max_torque = d.arm_max_torque;
+			}
+		};
+		write_shoulder(r->shoulder_l_joint_id, -1.f);
+		write_shoulder(r->shoulder_r_joint_id, 1.f);
 
 		leg_joint_targets targets;
 		bool swing_active = false;

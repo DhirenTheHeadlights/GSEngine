@@ -37,6 +37,8 @@ export namespace gs::locomotion {
 		gse::id hip_r_joint_id;
 		gse::id knee_r_joint_id;
 		gse::id ankle_r_joint_id;
+		gse::id shoulder_l_joint_id;
+		gse::id shoulder_r_joint_id;
 		gse::length thigh_length = gse::meters(0.45f);
 		gse::length shin_length = gse::meters(0.40f);
 		gse::displacement hip_offset_lateral = gse::meters(0.075f);
@@ -118,6 +120,7 @@ export namespace gs::locomotion {
 		leg last_swing_leg = leg::left;
 		gse::angle cop_trim;
 		gse::angle cop_trim_applied;
+		float arm_phase = 0.f;
 		gse::vec3<gse::position> swing_start_foot;
 		gse::vec3<gse::position> swing_target_at_start;
 		gse::vec3<gse::position> planted_foot_l;
