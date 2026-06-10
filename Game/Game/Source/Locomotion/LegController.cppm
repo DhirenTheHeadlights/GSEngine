@@ -452,7 +452,7 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 
 	const auto pitch = pelvis_pitch_about_right(s);
 	const auto hip_target = std::clamp(
-		ik.hip_pitch - ctx.cop_trim * d.posture_trim_hip_share,
+		ik.hip_pitch - ctx.cop_trim_applied * d.posture_trim_hip_share,
 		-d.stance_hip_clamp,
 		d.stance_hip_clamp
 	);
@@ -462,7 +462,7 @@ auto gs::locomotion::compute_stance(const leg which, const state& s, const skele
 		-d.pelvis_righting_clamp,
 		d.pelvis_righting_clamp
 	);
-	const auto ankle_target = -(hip_target + knee_target) + cop_shift + ctx.cop_trim;
+	const auto ankle_target = -(hip_target + knee_target) + cop_shift + ctx.cop_trim_applied;
 
 	return {
 		.hip = hip_target,
@@ -693,7 +693,8 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 
 		const bool controllers_active = !g->fallen && s->valid && cctx.planted_initialized;
 
-		if (controllers_active && s->any_foot_grounded) {
+		const float walk_intensity = it ? std::clamp(it->intensity, 0.f, 1.f) : 0.f;
+		if (controllers_active && s->any_foot_grounded && walk_intensity > 0.3f) {
 			const auto frame_dt = gse::system_clock::fixed_dt<gse::time>() * gse::system_clock::fixed_steps_this_frame();
 			cctx.cop_trim = std::clamp(
 				cctx.cop_trim + s->pelvis_pitch * (d.posture_trim_rate * frame_dt.as<gse::seconds>()),
@@ -701,6 +702,7 @@ auto gs::locomotion::leg_controller::run(data& d, gse::read<skeleton_refs> refs,
 				d.posture_trim_clamp
 			);
 		}
+		cctx.cop_trim_applied = cctx.cop_trim * std::clamp(walk_intensity / 0.5f, 0.f, 1.f);
 
 		leg_joint_targets targets;
 		bool swing_active = false;
