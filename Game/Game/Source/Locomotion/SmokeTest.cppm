@@ -1,4 +1,4 @@
-export module gs:locomotion_smoke;
+﻿export module gs:locomotion_smoke;
 
 import std;
 import gse;
@@ -285,7 +285,10 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 			});
 		}
 		if (d.scene_id.has_value() && world_d.active_scene == d.scene_id) {
-			begin_trial(d);
+			d.stage = smoke_stage::resetting;
+			d.stage_elapsed = gse::seconds(0.f);
+			d.reset_ticks = 0;
+			d.reset_activation_requested = false;
 		}
 	}
 

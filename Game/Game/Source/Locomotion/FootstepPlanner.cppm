@@ -11,7 +11,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Nominal forward step length at full input.">{}
 			]]
-			gse::displacement walk_step = gse::meters(0.33f);
+			gse::displacement walk_step = gse::meters(0.36f);
 
 			[[
 				= gse::settings::describe<"Nominal forward step length when sprinting.">{}

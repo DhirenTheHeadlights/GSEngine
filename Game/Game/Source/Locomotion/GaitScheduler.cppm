@@ -7,7 +7,7 @@ import :locomotion_types;
 
 export namespace gs::locomotion {
 	struct gait_config {
-		gse::time weight_shift_duration = gse::seconds(0.12f);
+		gse::time weight_shift_duration = gse::seconds(0.14f);
 		gse::time swing_duration = gse::seconds(0.65f);
 		gse::time plant_duration = gse::seconds(0.12f);
 		gse::time sprint_weight_shift_duration = gse::seconds(0.10f);
@@ -25,7 +25,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Walking weight-shift phase duration.">{}
 			]]
-			gse::time weight_shift_duration = gse::seconds(0.12f);
+			gse::time weight_shift_duration = gse::seconds(0.14f);
 
 			[[
 				= gse::settings::describe<"Walking swing phase duration.">{}
