@@ -112,7 +112,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Stance ankle servo torque limit.">{}
 			]]
-			gse::torque ankle_max_torque = gse::newton_meters(140.f);
+			gse::torque ankle_max_torque = gse::newton_meters(160.f);
 
 			[[
 				= gse::settings::describe<"Swing hip servo torque limit (limits trunk reaction).">{}
@@ -132,7 +132,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Trailing-ankle plantarflexion added across weight shift (toe-off push).">{}
 			]]
-			gse::angle toe_off_angle = gse::radians(-0.23f);
+			gse::angle toe_off_angle = gse::radians(-0.30f);
 
 			[[
 				= gse::settings::describe<"Swing-hip roll target scale toward the planned lateral foot offset (0 disables).">{}
@@ -185,9 +185,9 @@ export namespace gs::locomotion {
 			gse::angle arm_swing_amplitude = gse::radians(0.35f);
 
 			[[
-				= gse::settings::describe<"Arm hang angle from the spawn T-pose.">{}
+				= gse::settings::describe<"Arm hang offset from the spawn rest pose (arms spawn pre-hung).">{}
 			]]
-			gse::angle arm_hang_angle = gse::radians(1.45f);
+			gse::angle arm_hang_angle = gse::radians(0.f);
 
 			[[
 				= gse::settings::describe<"Shoulder fore-aft swing servo stiffness.">{}

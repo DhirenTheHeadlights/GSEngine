@@ -11,7 +11,7 @@ export namespace gs::locomotion {
 			[[
 				= gse::settings::describe<"Forward pelvis assist speed at full input.">{}
 			]]
-			gse::velocity forward_speed = gse::meters_per_second(0.25f);
+			gse::velocity forward_speed = gse::meters_per_second(0.32f);
 
 			[[
 				= gse::settings::describe<"Maximum forward pelvis assist speed.">{}
@@ -100,7 +100,8 @@ auto gs::locomotion::balance_velocity_target(const state& s, const intent& it, c
 
 	const auto capture_forward_resisted = deadzoned(s.capture_forward, d.forward_capture_deadzone);
 	const float push_fade = std::clamp((gse::meters(0.35f) - s.capture_forward) / gse::meters(0.25f), 0.f, 1.f);
-	auto forward_velocity = d.forward_speed * push_fade * std::clamp(
+	const float launch_ramp = std::clamp(0.35f + s.horizontal_speed / gse::meters_per_second(0.25f), 0.f, 1.f);
+	auto forward_velocity = d.forward_speed * (push_fade * launch_ramp) * std::clamp(
 												  it.forward * it.intensity,
 												  -1.f,
 												  1.f
