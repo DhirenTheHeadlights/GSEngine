@@ -16,8 +16,8 @@ export namespace gs::locomotion {
 
 	struct smoke_config {
 		[[= gse::at_least<0>{}]] int trials = 5;
-		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time duration = gse::seconds(8.f);
-		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time warmup = gse::seconds(0.5f);
+		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time duration = gse::seconds(20.f);
+		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time warmup = gse::seconds(1.0f);
 		[[= gse::within<-1.f, 1.f>{}]] float forward = 1.f;
 	};
 
@@ -29,6 +29,8 @@ export namespace gs::locomotion {
 			gse::displacement max_capture_forward = gse::meters(0.f);
 			gse::displacement max_capture_right = gse::meters(0.f);
 			gse::position max_foot_y = gse::meters(-1000.f);
+			gse::angle pitch_accum;
+			int pitch_samples = 0;
 			int plants = 0;
 			int missed_plants = 0;
 			int stale_targets = 0;
@@ -167,6 +169,8 @@ auto gs::locomotion::update_metrics(smoke_test::trial_metrics& metrics, const st
 	metrics.elapsed += dt;
 	metrics.min_pelvis_y = std::min(metrics.min_pelvis_y, s.pelvis_position.y());
 	metrics.max_speed = std::max(metrics.max_speed, s.horizontal_speed);
+	metrics.pitch_accum += s.pelvis_pitch;
+	++metrics.pitch_samples;
 	metrics.max_capture_forward = std::max(metrics.max_capture_forward, gse::abs(s.capture_forward));
 	metrics.max_capture_right = std::max(metrics.max_capture_right, gse::abs(s.capture_right));
 	metrics.max_foot_y = std::max(metrics.max_foot_y, highest_foot_y(s));
@@ -207,6 +211,7 @@ auto gs::locomotion::write_smoke_intent(intent& it, const float forward) -> void
 	it.forward = forward;
 	it.strafe = 0.f;
 	it.intensity = std::min(std::abs(forward), 1.f);
+	it.has_heading = false;
 	it.sprint = false;
 	it.jump = false;
 }
@@ -221,9 +226,11 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		++d.failed;
 	}
 
+	const auto mean_pitch =
+		d.metrics.pitch_samples > 0 ? d.metrics.pitch_accum / static_cast<float>(d.metrics.pitch_samples) : gse::radians(0.f);
 	gse::log::println(
 		"locomotion_smoke: trial={} result={} time={:.2f:s} plants={} min_pelvis_y={:.2f} "
-		"max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} "
+		"max_speed={:.2f} max_capture=(fwd={:.3f},right={:.3f}) max_foot_y={:.2f} mean_pitch={:+.3f} "
 		"missed_plants={} stale_targets={} phase={} state_hash={:016x} swing={}",
 		d.trial,
 		result,
@@ -234,6 +241,7 @@ auto gs::locomotion::finish_trial(gse::context& ctx, smoke_test::data& d, const 
 		d.metrics.max_capture_forward,
 		d.metrics.max_capture_right,
 		d.metrics.max_foot_y,
+		mean_pitch,
 		d.metrics.missed_plants,
 		d.metrics.stale_targets,
 		g.current, d.metrics.state_hash,

@@ -18,6 +18,7 @@ import gse.meta;
 import gse.gpu;
 
 import :narrow_phase_collision;
+import :joint_drive_component;
 import :joint_spec;
 import :motion_component;
 import :motor_component;
@@ -59,6 +60,11 @@ export namespace gse::physics {
 
 		float activation = 0.f;
 		force max_force = newtons(0.f);
+
+		vec3<angle> drive_target = {};
+		vec3<angular_stiffness> drive_stiffness = {};
+		float drive_damping = 0.f;
+		torque drive_max_torque = {};
 	};
 
 	using joint_handle = std::uint32_t;
@@ -165,7 +171,8 @@ export namespace gse::physics {
 				shared_view<asset::registry> assets_s,
 				data& d,
 				write<joint_spec> specs,
-				read<muscle_component> muscles
+				read<muscle_component> muscles,
+				read<joint_drive_component> drives
 			) -> async::task<>;
 
 			static auto ensure_results(
