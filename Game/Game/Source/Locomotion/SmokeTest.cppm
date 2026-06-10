@@ -18,6 +18,7 @@ export namespace gs::locomotion {
 		[[= gse::at_least<0>{}]] int trials = 5;
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time duration = gse::seconds(20.f);
 		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time warmup = gse::seconds(1.0f);
+		[[= gse::at_least<gse::seconds(0.f)>{}]] gse::time stop_after = gse::seconds(13.f);
 		[[= gse::within<-1.f, 1.f>{}]] float forward = 1.f;
 	};
 
@@ -340,7 +341,9 @@ auto gs::locomotion::smoke_test::run(gse::context& ctx, data& d, const gse::shar
 				}
 			}
 			else if (d.stage == smoke_stage::running) {
-				write_smoke_intent(*it, d.config.forward);
+				const bool stopped =
+					d.config.stop_after > gse::seconds(0.f) && d.metrics.elapsed >= d.config.stop_after;
+				write_smoke_intent(*it, stopped ? 0.f : d.config.forward);
 				update_metrics(d.metrics, *s, *g, *p, dt);
 				if (g->fallen || d.metrics.elapsed >= d.config.duration) {
 					finish_trial(ctx, d, *s, *g);

@@ -117,6 +117,7 @@ export namespace gs::locomotion {
 		phase last_phase = phase::idle;
 		leg last_swing_leg = leg::left;
 		gse::angle cop_trim;
+		gse::angle cop_trim_applied;
 		gse::vec3<gse::position> swing_start_foot;
 		gse::vec3<gse::position> swing_target_at_start;
 		gse::vec3<gse::position> planted_foot_l;
