@@ -292,56 +292,60 @@ export namespace gse::actions {
 
 	struct system {
 		struct data {
-			actions::state current_input_state;
-			id_mapped_collection<actions::description> descriptions;
+			[[= gse::shared]] actions::state current_input_state;
+			[[= gse::shared]] id_mapped_collection<actions::description> descriptions;
 			std::vector<pending_key_binding> pending_key_bindings;
 			std::map<std::string, int> rebinds;
 			std::map<std::string, int> action_defaults;
 			std::vector<pending_axis2_req> pending_axis2_reqs;
 			bindings resolved;
-			std::vector<std::uint16_t> axis1_ids_cache;
-			std::vector<std::uint16_t> axis2_ids_cache;
+			[[= gse::shared]] std::vector<std::uint16_t> axis1_ids_cache;
+			[[= gse::shared]] std::vector<std::uint16_t> axis2_ids_cache;
 			id_mapped_collection<resolved_axis2_keys> axis2_by_id;
 		};
 
+		static auto init(
+			data& d
+		) -> async::task<>;
+
 		static auto run(
-			run_context& ctx,
+			context& ctx,
 			data& d,
-			const input::system::data& input_s
+			shared_view<input::system> input_s
 		) -> async::task<>;
 
 		static auto held(
 			const actions::state& as,
-			const data& d,
+			shared_view<system> d,
 			handle h
 		) -> bool;
 
 		static auto pressed(
 			const actions::state& as,
-			const data& d,
+			shared_view<system> d,
 			handle h
 		) -> bool;
 
 		static auto released(
 			const actions::state& as,
-			const data& d,
+			shared_view<system> d,
 			handle h
 		) -> bool;
 
 		static auto current_state(
-			const data& d
+			shared_view<system> d
 		) -> const actions::state&;
 
 		static auto axis1_ids(
-			const data& d
+			shared_view<system> d
 		) -> std::span<const std::uint16_t>;
 
 		static auto axis2_ids(
-			const data& d
+			shared_view<system> d
 		) -> std::span<const std::uint16_t>;
 
 		static auto description(
-			const data& d,
+			shared_view<system> d,
 			id action_id
 		) -> const actions::description*;
 
@@ -391,37 +395,37 @@ export namespace gse::actions {
 	auto held(
 		const handle& h,
 		const actions::state& s,
-		const system::data& sys
+		shared_view<system> sys
 	) -> bool;
 
 	auto pressed(
 		const handle& h,
 		const actions::state& s,
-		const system::data& sys
+		shared_view<system> sys
 	) -> bool;
 
 	auto released(
 		const handle& h,
 		const actions::state& s,
-		const system::data& sys
+		shared_view<system> sys
 	) -> bool;
 }
 
-auto gse::actions::system::held(const actions::state& as, const data& d, const handle h) -> bool {
+auto gse::actions::system::held(const actions::state& as, const shared_view<system> d, const handle h) -> bool {
 	if (const auto* desc = description(d, h.id())) {
 		return as.held(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::system::pressed(const actions::state& as, const data& d, const handle h) -> bool {
+auto gse::actions::system::pressed(const actions::state& as, const shared_view<system> d, const handle h) -> bool {
 	if (const auto* desc = description(d, h.id())) {
 		return as.pressed(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::system::released(const actions::state& as, const data& d, const handle h) -> bool {
+auto gse::actions::system::released(const actions::state& as, const shared_view<system> d, const handle h) -> bool {
 	if (const auto* desc = description(d, h.id())) {
 		return as.released(desc->bit_index());
 	}
@@ -634,82 +638,83 @@ auto gse::actions::state::camera_yaw() const -> angle {
 	return m_camera_yaw;
 }
 
-auto gse::actions::system::run(run_context& ctx, data& d, const input::system::data& input_s) -> async::task<> {
+auto gse::actions::system::init(data& d) -> async::task<> {
 	finalize_bindings(d);
-
-	while (true) {
-		bool config_changed = false;
-
-		for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
-			add_description(d, name, action_id);
-			d.pending_key_bindings.emplace_back(name, default_key, action_id);
-			d.action_defaults[name] = static_cast<int>(default_key);
-			config_changed = true;
-		}
-
-		for (const auto& [info, axis_id] : ctx.read_channel<bind_axis2_request>()) {
-			d.pending_axis2_reqs.push_back({ info, axis_id });
-			config_changed = true;
-		}
-
-		for (const auto& [action_name, new_key] : ctx.read_channel<rebind_request>()) {
-			rebind(d, action_name, new_key);
-		}
-
-		if (config_changed) {
-			finalize_bindings(d);
-		}
-
-		const auto& in = input::system::current_state(input_s);
-
-		auto& action_state = d.current_input_state;
-		action_state.begin_frame();
-
-		const auto count = d.descriptions.size();
-		action_state.ensure_capacity(count);
-		action_state.reset_axes(d.axis1_ids_cache, d.axis2_ids_cache);
-
-		for (auto& [k, bit_index] : d.resolved.key_to_action) {
-			action_state.set_held(bit_index, in.key_held(k), count);
-		}
-
-		for (auto& [mb, bit_index] : d.resolved.mouse_to_action) {
-			action_state.set_held(bit_index, in.mouse_button_held(mb), count);
-		}
-
-		action_state.finalize_frame();
-
-		for (const auto& [neg, pos, axis, scale] : d.resolved.axes1_from_keys) {
-			const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
-			action_state.set_axis1(axis, static_cast<float>(v) * scale);
-		}
-
-		for (const auto& [id, left, right, back, fwd, scale] : d.axis2_by_id.items()) {
-			const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
-			const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
-			action_state.set_axis2(
-				static_cast<std::uint16_t>(id.number()),
-				{ static_cast<float>(x) * scale, static_cast<float>(y) * scale }
-			);
-		}
-
-		co_await ctx.next_tick();
-	}
+	return {};
 }
 
-auto gse::actions::system::current_state(const data& d) -> const actions::state& {
+auto gse::actions::system::run(context& ctx, data& d, const shared_view<input::system> input_s) -> async::task<> {
+	bool config_changed = false;
+
+	for (const auto& [name, default_key, action_id] : ctx.read_channel<add_action_request>()) {
+		add_description(d, name, action_id);
+		d.pending_key_bindings.emplace_back(name, default_key, action_id);
+		d.action_defaults[name] = static_cast<int>(default_key);
+		config_changed = true;
+	}
+
+	for (const auto& [info, axis_id] : ctx.read_channel<bind_axis2_request>()) {
+		d.pending_axis2_reqs.push_back({ info, axis_id });
+		config_changed = true;
+	}
+
+	for (const auto& [action_name, new_key] : ctx.read_channel<rebind_request>()) {
+		rebind(d, action_name, new_key);
+	}
+
+	if (config_changed) {
+		finalize_bindings(d);
+	}
+
+	const auto& in = input::system::current_state(input_s);
+
+	auto& action_state = d.current_input_state;
+	action_state.begin_frame();
+
+	const auto count = d.descriptions.size();
+	action_state.ensure_capacity(count);
+	action_state.reset_axes(d.axis1_ids_cache, d.axis2_ids_cache);
+
+	for (auto& [k, bit_index] : d.resolved.key_to_action) {
+		action_state.set_held(bit_index, in.key_held(k), count);
+	}
+
+	for (auto& [mb, bit_index] : d.resolved.mouse_to_action) {
+		action_state.set_held(bit_index, in.mouse_button_held(mb), count);
+	}
+
+	action_state.finalize_frame();
+
+	for (const auto& [neg, pos, axis, scale] : d.resolved.axes1_from_keys) {
+		const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
+		action_state.set_axis1(axis, static_cast<float>(v) * scale);
+	}
+
+	for (const auto& [id, left, right, back, fwd, scale] : d.axis2_by_id.items()) {
+		const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
+		const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
+		action_state.set_axis2(
+			static_cast<std::uint16_t>(id.number()),
+			{ static_cast<float>(x) * scale, static_cast<float>(y) * scale }
+		);
+	}
+
+	return {};
+}
+
+auto gse::actions::system::current_state(const shared_view<system> d) -> const actions::state& {
 	return d.current_input_state;
 }
 
-auto gse::actions::system::axis1_ids(const data& d) -> std::span<const std::uint16_t> {
+auto gse::actions::system::axis1_ids(const shared_view<system> d) -> std::span<const std::uint16_t> {
 	return d.axis1_ids_cache;
 }
 
-auto gse::actions::system::axis2_ids(const data& d) -> std::span<const std::uint16_t> {
+auto gse::actions::system::axis2_ids(const shared_view<system> d) -> std::span<const std::uint16_t> {
 	return d.axis2_ids_cache;
 }
 
-auto gse::actions::system::description(const data& d, const id action_id) -> const actions::description* {
+auto gse::actions::system::description(const shared_view<system> d, const id action_id) -> const actions::description* {
 	return d.descriptions.try_get(action_id);
 }
 
@@ -842,15 +847,15 @@ auto gse::actions::bind_axis2(channel_writer& channels, const pending_axis2_info
 	return axis_id;
 }
 
-auto gse::actions::held(const handle& h, const actions::state& s, const system::data& sys) -> bool {
+auto gse::actions::held(const handle& h, const actions::state& s, const shared_view<system> sys) -> bool {
 	return system::held(s, sys, h);
 }
 
-auto gse::actions::pressed(const handle& h, const actions::state& s, const system::data& sys) -> bool {
+auto gse::actions::pressed(const handle& h, const actions::state& s, const shared_view<system> sys) -> bool {
 	return system::pressed(s, sys, h);
 }
 
-auto gse::actions::released(const handle& h, const actions::state& s, const system::data& sys) -> bool {
+auto gse::actions::released(const handle& h, const actions::state& s, const shared_view<system> sys) -> bool {
 	return system::released(s, sys, h);
 }
 

@@ -13,7 +13,8 @@ export namespace gs::locomotion {
 		idle,
 		weight_shift,
 		swing,
-		plant
+		plant,
+		recover
 	};
 
 	struct skeleton_refs {

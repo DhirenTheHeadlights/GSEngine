@@ -251,7 +251,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 					sub.queue,
 					submit,
 					last_for_queue ? m_sync.in_flight_fence(sub.queue, m_current_frame)
-								   : fence_handle{}
+								   : handle<gpu::fence>{}
 				);
 			}
 		}
@@ -288,7 +288,7 @@ auto gse::gpu::frame::end(window::data& win, std::span<const queue_submission> a
 						 m_sync.in_flight_fence(queue_type::graphics, m_current_frame));
 	}
 
-	const semaphore_handle render_finished_handle = m_sync.render_finished(m_image_index);
+	const handle<gpu::semaphore> render_finished_handle = m_sync.render_finished(m_image_index);
 	const std::uint64_t present_id = m_next_present_id++;
 
 	result present_result;

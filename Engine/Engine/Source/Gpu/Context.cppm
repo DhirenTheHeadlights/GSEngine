@@ -8,7 +8,6 @@ import :frame;
 import :transient_pool;
 import :render_graph;
 import :render_pass;
-import :bindless;
 
 import gse.os;
 
@@ -40,23 +39,24 @@ export namespace gse::gpu {
 			[[= gse::shared]] std::unique_ptr<swap_chain> swapchain;
 			[[= gse::shared]] std::unique_ptr<gpu::frame> frame;
 			[[= gse::shared]] std::unique_ptr<gpu::render_graph> render_graph;
-			[[= gse::shared]] std::unique_ptr<bindless_texture_set> bindless_textures;
-			[[= gse::shared]] std::unique_ptr<gpu::bindless_heaps> bindless_heaps;
-			[[= gse::shared]] concurrency::frame_scheduler scheduler;
+			concurrency::frame_scheduler scheduler;
 
 			gpu::color_clear swapchain_clear{};
 		};
 
 		using swap_chain_recreate_callback = std::function<void()>;
 
+		static auto init(
+			shared_view<window> window_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
-			run_context& ctx,
-			const window::data& window_s,
+			gse::context& ctx,
 			data& d
 		) -> async::task<>;
 
 		static auto shutdown(
-			shutdown_context& phase,
 			data& d
 		) -> void;
 
@@ -78,7 +78,7 @@ export namespace gse::gpu {
 		) -> void;
 
 		static auto on_swap_chain_recreate(
-			const data& d,
+			shared_view<context> d,
 			swap_chain_recreate_callback callback
 		) -> void;
 

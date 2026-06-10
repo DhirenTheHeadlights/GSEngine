@@ -1,0 +1,18 @@
+export module gse.gpu_backend;
+
+export import :core;
+export import :enums;
+export import :pipeline;
+export import :sync;
+export import :bindless;
+export import :buffer;
+export import :image;
+export import :accel;
+export import :queue_timeline;
+export import :arena;
+export import :allocation;
+export import :query_pool;
+export import :sampler;
+export import :shader_program;
+export import :frame_resource_bin;
+export import :frame_recorder;

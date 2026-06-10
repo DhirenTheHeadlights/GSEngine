@@ -3,7 +3,7 @@ export module gse.vulkan:types;
 import std;
 import vulkan;
 
-import :handles;
+import gse.gpu_backend;
 
 import gse.assert;
 import gse.core;

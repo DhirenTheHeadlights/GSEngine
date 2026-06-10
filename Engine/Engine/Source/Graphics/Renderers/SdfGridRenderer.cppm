@@ -39,17 +39,17 @@ export namespace gse::renderer::sdf_grid {
 			[[= gse::shared]] vec3f label_color{ 1.0f, 1.0f, 1.0f };
 
 			gpu::shader_program pipeline;
-			per_frame_resource<gpu::bindless_buffer> camera_ubo_buffers;
+			per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		};
 
-		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d,
 			shared_view<camera::system> cam_state

@@ -151,29 +151,37 @@ export namespace gse::renderer::geometry_collector {
 
 	struct system {
 		struct data {
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> instance_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
 			static constexpr std::size_t max_instances = 4096;
 			static constexpr std::size_t max_materials = 1024;
 
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> normal_indirect_commands_buffer;
-			[[= gse::shared]] per_frame_resource<gpu::bindless_buffer> material_palette_buffers;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+			[[= gse::shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
 
 			linear_vector<std::byte> material_staging;
 			std::unordered_map<id, std::vector<std::optional<spatial_matrix>>> prev_model_matrices;
 		};
 
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
 			data& d,
-			const camera::system::data& cam_state,
-			const primitive_resolver::system& resolver_state
+			shared_view<camera::system> cam_state,
+			shared_view<primitive_resolver::system> resolver_state,
+			write<render_component> render,
+			read<physics::transform_component> transform
 		) -> async::task<>;
 
 		static auto frame(
-			frame_context& ctx,
+			context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;

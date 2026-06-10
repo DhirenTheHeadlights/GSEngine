@@ -55,27 +55,26 @@ namespace gse::renderer::depth_prepass::meshlet {
 	>;
 }
 
-auto gse::renderer::depth_prepass::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.meshlet_pipeline = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, meshlet::entry::pod);
+auto gse::renderer::depth_prepass::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+	d.meshlet_pipeline = gpu::build_graphics_program(*gpu_s.device, meshlet::entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform
+				.usage = gpu::buffer_flag::uniform,
+				.bindless = true
 			},
 			"depth_prepass.camera_ubo"
 		);
 	}
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<geometry_collector::system> gc_r, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::depth_prepass::system::frame(context& ctx, shared_view<gpu::context> gpu_s, const data& d, shared_view<geometry_collector::system> gc_r, shared_view<camera::system> cam_state) -> async::task<> {
 	const auto& render_items = ctx.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
@@ -101,7 +100,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 		.jitter_ndc = cam_state.jitter_ndc,
 		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
-	d.camera_ubo_buffers[frame_index].buffer().host_write(camera);
+	d.camera_ubo_buffers[frame_index].host_write(camera);
 
 	const auto ext = gpu_s.render_graph->extent();
 
@@ -158,7 +157,7 @@ auto gse::renderer::depth_prepass::system::frame(frame_context& ctx, shared_view
 		);
 
 		rec.draw_mesh_tasks_indirect(
-			gc_r.normal_indirect_commands_buffer[frame_index].buffer(),
+			gc_r.normal_indirect_commands_buffer[frame_index],
 			i * sizeof(gpu::draw_mesh_tasks_indirect_command),
 			1,
 			sizeof(gpu::draw_mesh_tasks_indirect_command)

@@ -77,12 +77,12 @@ namespace gse::renderer::bloom {
 	) -> std::pair<std::uint32_t, std::array<vec2u, max_mip_count>>;
 
 	auto recreate_mip_chain(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 
 	auto rewrite_descriptors(
-		const gpu::context::data& gpu_s,
+		shared_view<gpu::context> gpu_s,
 		system::data& d
 	) -> void;
 }
@@ -121,7 +121,7 @@ auto gse::renderer::bloom::compute_mip_chain(const vec2u screen_extent, const qu
 	return { produced, extents };
 }
 
-auto gse::renderer::bloom::recreate_mip_chain(const gpu::context::data& gpu_s, system::data& d) -> void {
+auto gse::renderer::bloom::recreate_mip_chain(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
 	const auto [count, extents] = compute_mip_chain(gpu_s.render_graph->extent(), d.bloom_quality);
 	d.active_mip_count = count;
 	d.mip_extents = extents;
@@ -130,49 +130,49 @@ auto gse::renderer::bloom::recreate_mip_chain(const gpu::context::data& gpu_s, s
 		d.mips_down[i] = {};
 		d.mips_up[i] = {};
 		if (i < count) {
-			d.mips_down[i] = gpu::bindless_image::create(
-				gpu_s.device->allocator(),
-				*gpu_s.bindless_heaps,
+			d.mips_down[i] = gpu_s.device->create_image(
 				{
 					.size = extents[i],
 					.format = gpu::image_format::r16g16b16a16_sfloat,
 					.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+					.bindless = true
 				},
 				std::format("bloom_down_{}", i)
 			);
-			gpu::transition_image_to(*gpu_s.device, d.mips_down[i].image());
-			d.mips_up[i] = gpu::bindless_image::create(
-				gpu_s.device->allocator(),
-				*gpu_s.bindless_heaps,
+			gpu::transition_image_to(*gpu_s.device, d.mips_down[i]);
+			d.mips_up[i] = gpu_s.device->create_image(
 				{
 					.size = extents[i],
 					.format = gpu::image_format::r16g16b16a16_sfloat,
 					.usage = gpu::image_flag::storage | gpu::image_flag::sampled,
+					.bindless = true
 				},
 				std::format("bloom_up_{}", i)
 			);
-			gpu::transition_image_to(*gpu_s.device, d.mips_up[i].image());
+			gpu::transition_image_to(*gpu_s.device, d.mips_up[i]);
 		}
 	}
 }
 
-auto gse::renderer::bloom::rewrite_descriptors(const gpu::context::data& gpu_s, system::data& d) -> void {
-	d.hdr_view.clear();
+auto gse::renderer::bloom::rewrite_descriptors(const shared_view<gpu::context> gpu_s, system::data& d) -> void {
+	d.hdr_view = {};
 
 	auto& hdr = gpu_s.render_graph->framebuffer_image<targets::post_taa_color>();
 	if (!hdr.handle() || d.active_mip_count == 0) {
 		return;
 	}
 
-	d.hdr_view.rebind_sampled(*gpu_s.bindless_heaps, hdr);
+	if (!d.hdr_view.valid()) {
+		d.hdr_view = gpu_s.device->allocate_image_slot();
+	}
+	gpu_s.device->write_sampled_image(d.hdr_view.slot(), hdr);
 }
 
-auto gse::renderer::bloom::system::run(run_context& ctx, const gpu::context::data& gpu_s, data& d) -> async::task<> {
-	d.downsample_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, downsample_entry::pod);
-	d.upsample_pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, upsample_entry::pod);
+auto gse::renderer::bloom::system::init(context& ctx, const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+	d.downsample_pipeline = gpu::build_compute_program(*gpu_s.device, downsample_entry::pod);
+	d.upsample_pipeline = gpu::build_compute_program(*gpu_s.device, upsample_entry::pod);
 
-	d.sampler = gpu::bindless_sampler::create(
-		*gpu_s.bindless_heaps,
+	d.sampler = gpu_s.device->register_sampler(
 		gpu::sampler_desc{
 			.min = gpu::sampler_filter::linear,
 			.mag = gpu::sampler_filter::linear,
@@ -187,16 +187,16 @@ auto gse::renderer::bloom::system::run(run_context& ctx, const gpu::context::dat
 
 	gpu::context::on_swap_chain_recreate(
 		gpu_s,
-		[&gpu_s, &d]() {
+		[gpu_s, &d]() {
 			recreate_mip_chain(gpu_s, d);
 			rewrite_descriptors(gpu_s, d);
 		}
 	);
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+auto gse::renderer::bloom::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
 	}
@@ -211,7 +211,10 @@ auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<g
 		co_return;
 	}
 
-	d.hdr_view.rebind_sampled(*gpu_s.bindless_heaps, hdr);
+	if (!d.hdr_view.valid()) {
+		d.hdr_view = gpu_s.device->allocate_image_slot();
+	}
+	gpu_s.device->write_sampled_image(d.hdr_view.slot(), hdr);
 
 	auto rec = co_await gpu::pass<downsample_pass>(ctx)
 		.pipeline(d.downsample_pipeline)
@@ -222,7 +225,7 @@ auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<g
 		if (i > 0) {
 			rec.barrier(gpu::barrier_scope::compute_to_compute);
 		}
-		const auto source_slot = (i == 0) ? d.hdr_view.sampled_slot() : d.mips_down[i - 1].sampled_slot();
+		const auto source_slot = (i == 0) ? d.hdr_view.slot() : d.mips_down[i - 1].sampled_slot();
 		rec.dispatch<downsample_entry>(
 			{
 				.use_karis_average = i == 0 ? 1u : 0u
@@ -246,7 +249,7 @@ auto gse::renderer::bloom::system::frame(const frame_context& ctx, shared_view<g
 	auto up_rec = co_await gpu::pass<upsample_pass>(ctx).pipeline(d.upsample_pipeline).after<downsample_pass>();
 
 	for (std::uint32_t i = 0; i < count; ++i) {
-		up_rec.sample_image(d.mips_down[i].image(), gpu::pipeline_stage_flag::compute_shader);
+		up_rec.sample_image(d.mips_down[i], gpu::pipeline_stage_flag::compute_shader);
 	}
 
 	for (std::uint32_t i = count - 1; i-- > 0;) {

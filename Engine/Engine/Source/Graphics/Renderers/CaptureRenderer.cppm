@@ -54,9 +54,9 @@ export namespace gse::renderer::capture {
 
 			gpu::shader_program convert_pipeline;
 			per_frame_resource<gpu::image> rgba_captures;
-			per_frame_resource<gpu::bindless_image> y_planes;
-			per_frame_resource<gpu::bindless_image> uv_planes;
-			std::array<gpu::bindless_texture_slot, per_frame_resource<gpu::image>::frames_in_flight> rgba_slots;
+			per_frame_resource<gpu::image> y_planes;
+			per_frame_resource<gpu::image> uv_planes;
+			std::array<gpu::bindless_handle, per_frame_resource<gpu::image>::frames_in_flight> rgba_slots;
 			bool encode_active = false;
 
 			per_frame_resource<pending_screenshot> screenshots;
@@ -68,25 +68,30 @@ export namespace gse::renderer::capture {
 			time applied_ring_budget = seconds(30.f);
 			bool first_ring_push_logged = false;
 
-			std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
+			[[= gse::shared]] std::unique_ptr<recording_state> recording = std::make_unique<recording_state>();
 		};
 
+		static auto init(
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			data& d
+		) -> async::task<>;
+
 		static auto run(
-			run_context& ctx,
-			const gpu::context::data& gpu_s,
-			const asset::data& assets_s,
-			const actions::system::data& sys,
+			context& ctx,
+			shared_view<gpu::context> gpu_s,
+			shared_view<asset::registry> assets_s,
+			shared_view<actions::system> sys,
 			data& d
 		) -> async::task<>;
 
 		static auto frame(
-			const frame_context& ctx,
+			const context& ctx,
 			shared_view<gpu::context> gpu_s,
 			data& d
 		) -> async::task<>;
 
 		static auto shutdown(
-			shutdown_context& phase,
 			data& d
 		) -> void;
 	};

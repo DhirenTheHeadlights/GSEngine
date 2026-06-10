@@ -116,8 +116,7 @@ namespace gse::renderer::physics_debug {
 
 	auto ensure_bindless_buffer_capacity(
 		gpu::device& device,
-		gpu::bindless_heaps& heaps,
-		gpu::bindless_buffer& buffer,
+		gpu::buffer& buffer,
 		std::size_t& capacity,
 		std::size_t required_bytes,
 		gpu::buffer_flag usage,
@@ -289,7 +288,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(gpu::device& device, g
 	while (capacity < required_bytes) {
 		capacity *= 2;
 	}
-	buffer = device.allocator().create_buffer(
+	buffer = device.create_buffer(
 		{
 			.size = capacity,
 			.usage = usage
@@ -297,7 +296,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(gpu::device& device, g
 	);
 }
 
-auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& device, gpu::bindless_heaps& heaps, gpu::bindless_buffer& buffer, std::size_t& capacity, const std::size_t required_bytes, const gpu::buffer_flag usage, const std::string_view tag) -> void {
+auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& device, gpu::buffer& buffer, std::size_t& capacity, const std::size_t required_bytes, const gpu::buffer_flag usage, const std::string_view tag) -> void {
 	if (required_bytes <= capacity && buffer.valid()) {
 		return;
 	}
@@ -308,31 +307,29 @@ auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& 
 	while (capacity < required_bytes) {
 		capacity *= 2;
 	}
-	buffer = gpu::bindless_buffer::create(
-		device.allocator(),
-		heaps,
+	buffer = device.create_buffer(
 		{
 			.size = capacity,
-			.usage = usage
+			.usage = usage,
+			.bindless = true
 		},
 		tag
 	);
 }
 
-auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d, const physics::system::data& ps) -> async::task<> {
-	d.pipeline_instanced = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, instanced_entry::pod);
+auto gse::renderer::physics_debug::system::init(const shared_view<gpu::context> gpu_s, data& d) -> async::task<> {
+	d.pipeline_instanced = gpu::build_graphics_program(*gpu_s.device, instanced_entry::pod);
 
-	d.pipeline_lines = gpu::build_graphics_program(*gpu_s.device, *gpu_s.bindless_heaps, lines_entry::pod);
+	d.pipeline_lines = gpu::build_graphics_program(*gpu_s.device, lines_entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-		d.camera_ubo_buffers[i] = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+		d.camera_ubo_buffers[i] = gpu_s.device->create_buffer(
 			{
 				.size = camera_ubo_size,
-				.usage = gpu::buffer_flag::uniform
+				.usage = gpu::buffer_flag::uniform,
+				.bindless = true
 			},
 			"physics_debug.camera_ubo"
 		);
@@ -347,162 +344,151 @@ auto gse::renderer::physics_debug::system::run(run_context& ctx, const gpu::cont
 		d.unit_sphere_vert_count = static_cast<std::uint32_t>(sphere_verts.size());
 		d.unit_capsule_vert_count = static_cast<std::uint32_t>(capsule_verts.size());
 
-		d.unit_box_vb = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.unit_box_vb = gpu_s.device->create_buffer(
 			{
 				.size = box_verts.size() * sizeof(vec4f),
 				.usage = gpu::buffer_flag::storage,
 				.data = box_verts.data(),
+				.bindless = true,
 			},
 			"physics_debug.unit_box"
 		);
 
-		d.unit_sphere_vb = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.unit_sphere_vb = gpu_s.device->create_buffer(
 			{
 				.size = sphere_verts.size() * sizeof(vec4f),
 				.usage = gpu::buffer_flag::storage,
 				.data = sphere_verts.data(),
+				.bindless = true,
 			},
 			"physics_debug.unit_sphere"
 		);
 
-		d.unit_capsule_vb = gpu::bindless_buffer::create(
-			gpu_s.device->allocator(),
-			*gpu_s.bindless_heaps,
+		d.unit_capsule_vb = gpu_s.device->create_buffer(
 			{
 				.size = capsule_verts.size() * sizeof(vec4f),
 				.usage = gpu::buffer_flag::storage,
 				.data = capsule_verts.data(),
+				.bindless = true,
 			},
 			"physics_debug.unit_capsule"
 		);
 	}
 
-	while (true) {
-		if (!d.enabled) {
-			d.box_instances.clear();
-			d.sphere_instances.clear();
-			d.capsule_instances.clear();
-			d.line_vertices.clear();
-			d.cpu_body_staging.clear();
-			co_await ctx.next_tick();
+	return {};
+}
+
+auto gse::renderer::physics_debug::system::run::prepare(context& ctx, data& d, const shared_view<physics::system> ps) -> async::task<> {
+	d.box_instances.clear();
+	d.sphere_instances.clear();
+	d.capsule_instances.clear();
+	d.line_vertices.clear();
+	d.cpu_body_staging.clear();
+	d.body_index_map.clear();
+
+	if (!d.enabled) {
+		return {};
+	}
+
+	const bool use_snapshot = ps.use_gpu_solver && ps.gpu_solver.buffers_created() && ps.gpu_solver.body_count() > 0;
+	if (use_snapshot) {
+		const auto safe_slot = 1u - ps.gpu_solver.latest_snapshot_slot();
+		const auto bytes = ps.gpu_solver.snapshot_buffer(safe_slot).host_read();
+		if (!bytes.empty()) {
+			const auto* snapshot_states = reinterpret_cast<const vbd::body_state*>(bytes.data());
+			const std::uint32_t snapshot_body_count = ps.gpu_solver.body_count();
+			d.cpu_body_staging.resize(snapshot_body_count);
+			for (std::uint32_t i = 0; i < snapshot_body_count; ++i) {
+				d.cpu_body_staging[i].position = snapshot_states[i].position;
+				d.cpu_body_staging[i].orientation = snapshot_states[i].orientation;
+			}
+			for (const auto& [eid, idx] : ps.id_to_body_index) {
+				d.body_index_map[eid] = idx;
+			}
+		}
+	}
+
+	return {};
+}
+
+auto gse::renderer::physics_debug::system::run::build(context& ctx, data& d, read<physics::transform_component> transforms, read<physics::motion_component> motions, read<physics::collision_component> collisions, read<physics::collision_result_component> results) -> async::task<> {
+	if (!d.enabled) {
+		return {};
+	}
+
+	if (d.cpu_body_staging.empty()) {
+		d.cpu_body_staging.resize(motions.size());
+		const auto motion_ids = motions.owner_ids();
+		const bool order_matches =
+			transforms.size() == motions.size() && std::ranges::equal(motion_ids, transforms.owner_ids());
+		for (std::size_t i = 0; i < motions.size(); ++i) {
+			const auto eid = motion_ids[i];
+			const auto* tc = order_matches ? std::addressof(transforms[i]) : transforms.find(eid);
+			if (!tc) {
+				continue;
+			}
+			auto& bs = d.cpu_body_staging[i];
+			bs.position = tc->position;
+			bs.orientation = tc->orientation;
+			d.body_index_map[eid] = static_cast<std::uint32_t>(i);
+		}
+	}
+
+	const auto collision_ids = collisions.owner_ids();
+	for (std::size_t i = 0; i < collisions.size(); ++i) {
+		const auto& coll = collisions[i];
+		if (!coll.resolve_collisions) {
 			continue;
 		}
 
-		{
-			auto [transforms, motions, collisions, results] = co_await ctx.acquire_with(
-				read_v<physics::transform_component>,
-				read_v<physics::motion_component>,
-				read_v<physics::collision_component>,
-				read_v<physics::collision_result_component>
-			);
+		const auto eid = collision_ids[i];
 
-			d.box_instances.clear();
-			d.sphere_instances.clear();
-			d.capsule_instances.clear();
-			d.line_vertices.clear();
-			d.cpu_body_staging.clear();
+		const auto idx_it = d.body_index_map.find(eid);
+		if (idx_it == d.body_index_map.end()) {
+			continue;
+		}
+		const std::uint32_t body_index = idx_it->second;
 
-			std::unordered_map<id, std::uint32_t> body_index_map;
-			const vbd::body_state* snapshot_states = nullptr;
-			std::uint32_t snapshot_body_count = 0;
-			const bool use_snapshot = ps.use_gpu_solver && ps.gpu_solver.buffers_created() && ps.gpu_solver.body_count() > 0;
-
-			if (use_snapshot) {
-				const auto safe_slot = 1u - ps.gpu_solver.latest_snapshot_slot();
-				const auto bytes = ps.gpu_solver.snapshot_buffer(safe_slot).host_read();
-				if (!bytes.empty()) {
-					snapshot_states = reinterpret_cast<const vbd::body_state*>(bytes.data());
-					snapshot_body_count = ps.gpu_solver.body_count();
-					d.cpu_body_staging.resize(snapshot_body_count);
-					for (std::uint32_t i = 0; i < snapshot_body_count; ++i) {
-						d.cpu_body_staging[i].position = snapshot_states[i].position;
-						d.cpu_body_staging[i].orientation = snapshot_states[i].orientation;
+		gse::match(coll.shape)
+			.if_is([&](const physics::box_shape& s) {
+				d.box_instances.push_back(
+					shape_instance{
+						.body_index = body_index,
+						.shape_scale = vec3<length>{ s.size.x() * 0.5f, s.size.y() * 0.5f, s.size.z() * 0.5f },
+						.color = shape_color,
 					}
-					for (const auto& [eid, idx] : ps.id_to_body_index) {
-						body_index_map[eid] = idx;
+				);
+			})
+			.else_if_is([&](const physics::sphere_shape& s) {
+				d.sphere_instances.push_back(
+					shape_instance{
+						.body_index = body_index,
+						.shape_scale = vec3<length>{ s.radius, s.radius, s.radius },
+						.color = shape_color,
 					}
-				}
-			}
-
-			if (d.cpu_body_staging.empty()) {
-				d.cpu_body_staging.resize(motions.size());
-				const auto motion_ids = motions.owner_ids();
-				const bool order_matches =
-					transforms.size() == motions.size() && std::ranges::equal(motion_ids, transforms.owner_ids());
-				for (std::size_t i = 0; i < motions.size(); ++i) {
-					const auto eid = motion_ids[i];
-					const auto* tc = order_matches ? std::addressof(transforms[i]) : transforms.find(eid);
-					if (!tc) {
-						continue;
+				);
+			})
+			.else_if_is([&](const physics::capsule_shape& s) {
+				d.capsule_instances.push_back(
+					shape_instance{
+						.body_index = body_index,
+						.shape_scale = vec3<length>{ s.radius, s.half_height, s.radius },
+						.color = shape_color,
 					}
-					auto& bs = d.cpu_body_staging[i];
-					bs.position = tc->position;
-					bs.orientation = tc->orientation;
-					body_index_map[eid] = static_cast<std::uint32_t>(i);
-				}
-			}
+				);
+			});
 
-			const auto collision_ids = collisions.owner_ids();
-			for (std::size_t i = 0; i < collisions.size(); ++i) {
-				const auto& coll = collisions[i];
-				if (!coll.resolve_collisions) {
-					continue;
-				}
-
-				const auto eid = collision_ids[i];
-
-				const auto idx_it = body_index_map.find(eid);
-				if (idx_it == body_index_map.end()) {
-					continue;
-				}
-				const std::uint32_t body_index = idx_it->second;
-
-				gse::match(coll.shape)
-					.if_is([&](const physics::box_shape& s) {
-						d.box_instances.push_back(
-							shape_instance{
-								.body_index = body_index,
-								.shape_scale = vec3<length>{ s.size.x() * 0.5f, s.size.y() * 0.5f, s.size.z() * 0.5f },
-								.color = shape_color,
-							}
-						);
-					})
-					.else_if_is([&](const physics::sphere_shape& s) {
-						d.sphere_instances.push_back(
-							shape_instance{
-								.body_index = body_index,
-								.shape_scale = vec3<length>{ s.radius, s.radius, s.radius },
-								.color = shape_color,
-							}
-						);
-					})
-					.else_if_is([&](const physics::capsule_shape& s) {
-						d.capsule_instances.push_back(
-							shape_instance{
-								.body_index = body_index,
-								.shape_scale = vec3<length>{ s.radius, s.half_height, s.radius },
-								.color = shape_color,
-							}
-						);
-					});
-
-				if (const auto* res = results.find(eid); res != nullptr) {
-					if (const auto* mc = motions.find(eid); mc != nullptr) {
-						build_contact_debug(*res, *mc, d.line_vertices);
-					}
-				}
+		if (const auto* res = results.find(eid); res != nullptr) {
+			if (const auto* mc = motions.find(eid); mc != nullptr) {
+				build_contact_debug(*res, *mc, d.line_vertices);
 			}
 		}
-
-		co_await ctx.next_tick();
 	}
+
+	return {};
 }
 
-auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
+auto gse::renderer::physics_debug::system::frame(const context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<camera::system> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -534,7 +520,7 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 		.jitter_ndc = cam_state.jitter_ndc,
 		.prev_jitter_ndc = cam_state.prev_jitter_ndc,
 	};
-	d.camera_ubo_buffers[frame_index].buffer().host_write(camera);
+	d.camera_ubo_buffers[frame_index].host_write(camera);
 
 	const auto ext = gpu_s.render_graph->extent();
 
@@ -549,19 +535,18 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 		const auto body_bytes = body_count * sizeof(vbd::body_state);
 		ensure_bindless_buffer_capacity(
 			*gpu_s.device,
-			*gpu_s.bindless_heaps,
 			d.cpu_body_buffers[frame_index],
 			d.cpu_body_capacity[frame_index],
 			body_bytes,
 			gpu::buffer_flag::storage,
 			"physics_debug.cpu_body"
 		);
-		d.cpu_body_buffers[frame_index].buffer().host_write(d.cpu_body_staging);
+		d.cpu_body_buffers[frame_index].host_write(d.cpu_body_staging);
 
 		const auto upload_instances =
 			[&](
 			std::vector<shape_instance>& instances,
-			gpu::bindless_buffer& instance_buffer,
+			gpu::buffer& instance_buffer,
 			std::size_t& capacity,
 			const std::string_view tag
 		) {
@@ -571,14 +556,13 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 				const auto bytes = instances.size() * sizeof(shape_instance);
 				ensure_bindless_buffer_capacity(
 					*gpu_s.device,
-					*gpu_s.bindless_heaps,
 					instance_buffer,
 					capacity,
 					bytes,
 					gpu::buffer_flag::storage,
 					tag
 				);
-				instance_buffer.buffer().host_write(instances);
+				instance_buffer.host_write(instances);
 			};
 
 		upload_instances(
@@ -605,14 +589,13 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 		const auto bytes = d.line_vertices.size() * sizeof(debug_vertex);
 		ensure_bindless_buffer_capacity(
 			*gpu_s.device,
-			*gpu_s.bindless_heaps,
 			d.line_vertex_buffers[frame_index],
 			d.line_vertex_capacity[frame_index],
 			bytes,
 			gpu::buffer_flag::storage,
 			"physics_debug.lines"
 		);
-		d.line_vertex_buffers[frame_index].buffer().host_write(d.line_vertices);
+		d.line_vertex_buffers[frame_index].host_write(d.line_vertices);
 	}
 
 	auto rec = co_await gpu::pass<system>(ctx)
@@ -626,8 +609,8 @@ auto gse::renderer::physics_debug::system::frame(const frame_context& ctx, share
 
 		const auto draw_shape = [&](
 			const std::vector<shape_instance>& instances,
-			const gpu::bindless_buffer& instance_buffer,
-			const gpu::bindless_buffer& unit_vb,
+			const gpu::buffer& instance_buffer,
+			const gpu::buffer& unit_vb,
 			std::uint32_t unit_vert_count
 		) {
 			if (instances.empty()) {

@@ -8,6 +8,85 @@ import gse.containers;
 
 import :aliases;
 
+export namespace gse::gpu {
+	struct dispatch_thread_id {
+		std::uint32_t x = 0;
+		std::uint32_t y = 0;
+		std::uint32_t z = 0;
+	};
+
+	struct group_id {
+		std::uint32_t x = 0;
+		std::uint32_t y = 0;
+		std::uint32_t z = 0;
+	};
+
+	struct group_thread_id {
+		std::uint32_t x = 0;
+		std::uint32_t y = 0;
+		std::uint32_t z = 0;
+	};
+
+	struct group_index {
+		std::uint32_t value = 0;
+	};
+
+	template <typename T>
+	concept is_system_value = std::is_same_v<T, dispatch_thread_id> || std::is_same_v<T, group_id> ||
+		std::is_same_v<T, group_thread_id> || std::is_same_v<T, group_index>;
+
+	template <is_system_value T>
+	consteval auto system_value_semantic() -> std::string_view;
+
+	template <is_system_value T>
+	consteval auto system_value_type_name() -> std::string_view;
+
+	template <is_system_value T>
+	consteval auto default_sv_name() -> std::string_view;
+}
+
+template <gse::gpu::is_system_value T>
+consteval auto gse::gpu::system_value_semantic() -> std::string_view {
+	if constexpr (std::is_same_v<T, dispatch_thread_id>) {
+		return "SV_DispatchThreadID";
+	}
+	else if constexpr (std::is_same_v<T, group_id>) {
+		return "SV_GroupID";
+	}
+	else if constexpr (std::is_same_v<T, group_thread_id>) {
+		return "SV_GroupThreadID";
+	}
+	else if constexpr (std::is_same_v<T, group_index>) {
+		return "SV_GroupIndex";
+	}
+}
+
+template <gse::gpu::is_system_value T>
+consteval auto gse::gpu::system_value_type_name() -> std::string_view {
+	if constexpr (std::is_same_v<T, group_index>) {
+		return "uint";
+	}
+	else {
+		return "uint3";
+	}
+}
+
+template <gse::gpu::is_system_value T>
+consteval auto gse::gpu::default_sv_name() -> std::string_view {
+	if constexpr (std::is_same_v<T, dispatch_thread_id>) {
+		return "dispatch_id";
+	}
+	else if constexpr (std::is_same_v<T, group_id>) {
+		return "group_id";
+	}
+	else if constexpr (std::is_same_v<T, group_thread_id>) {
+		return "group_thread_id";
+	}
+	else if constexpr (std::is_same_v<T, group_index>) {
+		return "group_index";
+	}
+}
+
 export namespace gse::shaders {
 	struct shader_struct_tag {};
 	struct shader_enum_tag {};
@@ -54,7 +133,8 @@ export namespace gse::shaders {
 
 	template <typename T>
 	concept has_slang_type = requires {
-		{ slang_type<T>::name } -> std::convertible_to<std::string_view>; };
+		{ slang_type<T>::name } -> std::convertible_to<std::string_view>; 
+	};
 
 	template <typename T>
 	concept is_shader_struct = has_annotation<shader_struct_tag>(^^T);
@@ -252,8 +332,10 @@ template <gse::shaders::is_shader_enum E>
 auto gse::shaders::emit_slang_enum() -> std::string {
 	std::string out = std::format("public enum class {} {{\n", std::meta::identifier_of(^^E));
 	template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
-		out += std::format("    {} = {},\n", std::meta::identifier_of(e),
-						   static_cast<std::underlying_type_t<E>>([:e:]));
+		out += std::format(
+			"    {} = {},\n", std::meta::identifier_of(e),
+			static_cast<std::underlying_type_t<E>>([:e:])
+		);
 	}
 	out += "};\n";
 	return out;

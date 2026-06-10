@@ -2,7 +2,7 @@ export module gse.dx12:bindless;
 
 import std;
 
-import gse.gpu_types;
+import gse.gpu_backend;
 import gse.core;
 
 export namespace gse::dx12 {

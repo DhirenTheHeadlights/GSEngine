@@ -10,8 +10,8 @@ export namespace gs {
 	class main_menu_screen : public gse::gui::screen {
 	public:
 		main_menu_screen(
-			const gse::world_system::data& world,
-			const gse::network::data& net,
+			gse::shared_view<gse::world_system> world,
+			gse::shared_view<gse::network::data> net,
 			const gse::save::registry& save_reg,
 			gse::channel_writer channels
 		);
@@ -40,8 +40,8 @@ export namespace gs {
 	private:
 		[[nodiscard]] auto eased_progress() const -> float;
 
-		const gse::world_system::data* m_world;
-		const gse::network::data* m_net;
+		gse::shared_view<gse::world_system> m_world;
+		gse::shared_view<gse::network::data> m_net;
 		const gse::save::registry* m_save_reg;
 		gse::channel_writer m_channels;
 		gse::clock m_opened_at;
@@ -51,8 +51,8 @@ export namespace gs {
 	};
 }
 
-gs::main_menu_screen::main_menu_screen(const gse::world_system::data& world, const gse::network::data& net, const gse::save::registry& save_reg, gse::channel_writer channels)
-	: m_world(&world), m_net(&net), m_save_reg(&save_reg), m_channels(std::move(channels)) {
+gs::main_menu_screen::main_menu_screen(const gse::shared_view<gse::world_system> world, const gse::shared_view<gse::network::data> net, const gse::save::registry& save_reg, gse::channel_writer channels)
+	: m_world(world), m_net(net), m_save_reg(&save_reg), m_channels(std::move(channels)) {
 }
 
 auto gs::main_menu_screen::on_push() -> void {
@@ -64,7 +64,7 @@ auto gs::main_menu_screen::title() const -> std::string_view {
 }
 
 auto gs::main_menu_screen::dismissable() const -> bool {
-	return m_world->active_scene.has_value();
+	return m_world.active_scene.has_value();
 }
 
 auto gs::main_menu_screen::eased_progress() const -> float {
@@ -129,7 +129,7 @@ auto gs::main_menu_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse:
 }
 
 auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void {
-	const auto& world = *m_world;
+	const auto& world = m_world;
 	const bool scene_active = world.active_scene.has_value();
 
 	if (scene_active) {
@@ -157,7 +157,7 @@ auto gs::main_menu_screen::build(gse::gui::builder& ui, gse::gui::nav&) -> void 
 		})) {
 		m_channels.push<gse::gui::push_screen_request>({
 			.factory = [net = m_net, channels = m_channels] {
-				return std::make_unique<network_screen>(*net, channels);
+				return std::make_unique<network_screen>(net, channels);
 			},
 		});
 	}

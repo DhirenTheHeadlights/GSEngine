@@ -6,7 +6,6 @@ import :image;
 import :aliases;
 import :gpu_task;
 import :sync_token;
-import :transient_api;
 import :device;
 
 import gse.concurrency;
@@ -51,12 +50,4 @@ auto gse::gpu::transition_image_to(gpu::device& dev, image& img) -> sync_token {
 	commands(cmd.handle()).pipeline_barrier(dep);
 
 	return submit(dev, std::move(cmd), queue_id::graphics).submit_sync();
-}
-
-auto gse::gpu::upload_image_2d(gpu::device& dev, image& img, const void* pixel_data) -> sync_token {
-	const auto extent3 = img.extent();
-	const vec2u extent2{ extent3.x(), extent3.y() };
-	const void* ptrs[] = { pixel_data };
-	dev.host_upload_image_layers(img.handle(), ptrs, extent2);
-	return {};
 }

@@ -64,15 +64,15 @@ namespace gse::renderer::physics_transform {
 	>;
 }
 
-auto gse::renderer::physics_transform::system::run(run_context& ctx, const gpu::context::data& gpu_s, const asset::data& assets_s, data& d) -> async::task<> {
-	d.pipeline = gpu::build_compute_program(*gpu_s.device, *gpu_s.bindless_heaps, entry::pod);
+auto gse::renderer::physics_transform::system::init(context& ctx, const shared_view<gpu::context> gpu_s, const shared_view<asset::registry> assets_s, data& d) -> async::task<> {
+	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 
 	d.initialized = true;
 
-	co_return;
+	return {};
 }
 
-auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {
+auto gse::renderer::physics_transform::system::frame(context& ctx, shared_view<gpu::context> gpu_s, data& d, shared_view<geometry_collector::system> gc_r) -> async::task<> {
 	const auto& solver_infos = ctx.read_channel<physics::gpu_solver_frame_info>();
 
 	if (solver_infos.empty()) {
@@ -97,21 +97,20 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		d.cached_mapping_count = data.physics_mapping_count;
 
 		if (d.mapping_buffer_size < required) {
-			for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_buffer>::frames_in_flight; ++i) {
-				d.mapping_buffers[i] = gpu::bindless_buffer::create(
-					gpu_s.device->allocator(),
-					*gpu_s.bindless_heaps,
+			for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+				d.mapping_buffers[i] = gpu_s.device->create_buffer(
 					{
 						.size = required,
 						.usage = gpu::buffer_flag::storage,
-						.data = data.physics_mappings.data()
+						.data = data.physics_mappings.data(),
+						.bindless = true
 					}
 				);
 			}
 			d.mapping_buffer_size = required;
 		}
 		else {
-			d.mapping_buffers[frame_index].buffer().host_write(data.physics_mappings.data(), required);
+			d.mapping_buffers[frame_index].host_write(data.physics_mappings.data(), required);
 		}
 	}
 
@@ -119,13 +118,10 @@ auto gse::renderer::physics_transform::system::frame(frame_context& ctx, shared_
 		co_return;
 	}
 
-	d.body_views[frame_index].rebind_storage(
-		gpu_s.device->allocator(),
-		*gpu_s.bindless_heaps,
-		snapshot,
-		0,
-		info.body_count * info.body_stride
-	);
+	if (!d.body_views[frame_index].valid()) {
+		d.body_views[frame_index] = gpu_s.device->allocate_buffer_slot();
+	}
+	gpu_s.device->write_storage_buffer(d.body_views[frame_index].slot(), snapshot.device_address(), info.body_count * info.body_stride);
 
 	const std::uint32_t workgroups = (d.cached_mapping_count + 63) / 64;
 
